@@ -57,6 +57,7 @@ const FP_ZERO: i16 = 0;
 
 /// `int abs(int)` — `wrapping_neg` matches C's INT_MIN wrap (the C
 /// `j<0 ? -j : j` is UB at INT_MIN but in practice returns INT_MIN).
+#[cfg(any(feature = "cabi", feature = "cabi-intdiv"))]
 #[no_mangle]
 pub extern "C" fn abs(j: i32) -> i32 {
     if j < 0 {
@@ -67,6 +68,7 @@ pub extern "C" fn abs(j: i32) -> i32 {
 }
 
 /// `long labs(long)` — Windows `long` is 32-bit on all three targets.
+#[cfg(any(feature = "cabi", feature = "cabi-intdiv"))]
 #[no_mangle]
 pub extern "C" fn labs(j: i32) -> i32 {
     if j < 0 {
@@ -408,6 +410,7 @@ pub struct div_t {
 // row had ever driven `i32::MIN` through the denominator.
 /// `div_t div(int num, int denom)` — DJ Delorie's C-truncation-toward-zero
 /// implementation (matches MSVCRT `div`).
+#[cfg(any(feature = "cabi", feature = "cabi-intdiv"))]
 #[no_mangle]
 pub extern "C" fn div(mut num: i32, mut denom: i32) -> div_t {
     if num > 0 && denom < 0 {
@@ -3763,6 +3766,7 @@ pub struct ldiv_t {
 
 /// See [`ldiv_t`]. Deliberately identical in shape to [`div`] above — same
 /// DJ Delorie body, same truncation fixup, widened only in the type name.
+#[cfg(any(feature = "cabi", feature = "cabi-intdiv"))]
 #[no_mangle]
 pub extern "C" fn ldiv(mut num: i32, mut denom: i32) -> ldiv_t {
     if num > 0 && denom < 0 {

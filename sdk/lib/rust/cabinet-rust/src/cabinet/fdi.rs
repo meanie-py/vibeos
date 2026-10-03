@@ -2719,17 +2719,21 @@ unsafe fn fdi_decomp(
                                 ERR(b"MAX_PATH exceeded.\n\0".as_ptr() as *const i8);
                                 return DECR_ILLEGALDATA;
                             }
-                            // paste path + filename (ReactOS always uses '\\' separators)
+                            // paste path + filename, Wine's way (upstream 4681b3e473a dropped the
+                            // ReactOS variant, which always inserted '\\' and so turned an empty
+                            // user path into the root-relative "\\next.cab")
                             fullpath[0] = 0;
                             if pathlen != 0 {
                                 strcpy(fullpath.as_mut_ptr(), userpath.as_ptr());
-                                if fullpath[pathlen as usize - 1] == b'\\' as i8 {
-                                    fullpath[pathlen as usize - 1] = 0;
+                                if fullpath[pathlen as usize - 1] != b'\\' as i8 {
+                                    strcat(fullpath.as_mut_ptr(), b"\\\0".as_ptr() as *const i8);
                                 }
                             }
                             if filenamelen != 0 {
-                                strcat(fullpath.as_mut_ptr(), b"\\\0".as_ptr() as *const i8);
                                 strcat(fullpath.as_mut_ptr(), (*cab).mii.nextname);
+                            } else if fullpath[0] != 0 {
+                                // remove the trailing backslash
+                                fullpath[strlen(fullpath.as_ptr()) - 1] = 0;
                             }
 
                             TRACE(b"full cab path/file name: %s\n\0".as_ptr() as *const i8, debugstr_a(fullpath.as_ptr()));

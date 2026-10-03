@@ -49,6 +49,8 @@ const GICD_ISACTIVER: usize = 0x300;
 const GICD_IPRIORITYR: usize = 0x400;
 /// Interrupt processor targets, 1 byte per interrupt (SPIs only; SGIs/PPIs RO).
 const GICD_ITARGETSR: usize = 0x800;
+/// Trigger configuration, 2 bits per interrupt (bit 1 of each: 1 = edge).
+const GICD_ICFGR: usize = 0xC00;
 /// Software-generated interrupt register (write-only; the SGI/IPI doorbell).
 const GICD_SGIR: usize = 0xF00;
 
@@ -196,7 +198,7 @@ extern "system" {
 /// Enable a device interrupt line (SPI) in the GIC distributor at the GIC
 /// priority derived from its IRQL, routed to CPU0, then set-enable. No-op
 /// until the GIC is mapped (clock init).
-pub(crate) unsafe fn enable_gic_interrupt(intid: u32, irql: u8) {
+pub(crate) unsafe fn enable_gic_interrupt(intid: u32, irql: u8, level: bool) {
     let gicd = GICD_BASE.load(Ordering::SeqCst);
     if gicd == 0 || intid as usize >= 1020 {
         return;
@@ -211,6 +213,19 @@ pub(crate) unsafe fn enable_gic_interrupt(intid: u32, irql: u8) {
     // SPIs (>=32) need an explicit CPU target; SGI/PPI target registers are RO.
     if id >= 32 {
         core::ptr::write_volatile((gicd + GICD_ITARGETSR + id) as *mut u8, 0x01u8);
+        // A level-sensitive line must be configured level: as edge, a line that
+        // stays asserted after its ISR runs never interrupts again. QEMU resets
+        // every SPI to level; real firmware need not leave them that way.
+        // Latched lines keep the firmware's setting, as nothing on arm64 asks
+        // for edge yet.
+        if level {
+            let reg = GICD_ICFGR + (id / 16) * 4;
+            let bit = 1u32 << ((id % 16) * 2 + 1);
+            let v = mmio_read(gicd, reg);
+            if v & bit != 0 {
+                mmio_write(gicd, reg, v & !bit);
+            }
+        }
     }
     mmio_write(gicd, GICD_ISENABLER + (id / 32) * 4, 1u32 << (id % 32));
 }
@@ -284,6 +299,21 @@ pub(crate) unsafe fn gic_percpu_init() -> bool {
         gic_priority(super::halstubs::KeGetCurrentIrql()) as u32,
     );
     mmio_write(gicc, GICC_CTLR, 1);
+    // Read back what took. On a GICv2 with the Security Extensions our writes
+    // are Non-secure, and every register bit of a Group 0 (Secure) interrupt
+    // is RAZ/WI to them: if firmware left this core's SGIs in Group 0, the
+    // enable above silently did nothing and this core can never take an IPI.
+    let enabled = mmio_read(gicd, GICD_ISENABLER) & (1u32 << SGI_IPI_INTID) != 0;
+    DbgPrint(
+        b"[GIC] CPU%u percpu: SGI%u enabled=%u prio=%02x GICC_CTLR=%x PMR=%02x%s\n\0".as_ptr(),
+        super::halstubs::halp_cpu_number(),
+        SGI_IPI_INTID,
+        enabled as u32,
+        core::ptr::read_volatile((gicd + GICD_IPRIORITYR + SGI_IPI_INTID as usize) as *const u8) as u32,
+        mmio_read(gicc, GICC_CTLR),
+        mmio_read(gicc, GICC_PMR),
+        if enabled { b"\0".as_ptr() } else { b" - NOT ENABLED: SGI is Group 0 (Secure)? IPIs to this CPU are dead\0".as_ptr() },
+    );
     true
 }
 
@@ -356,7 +386,7 @@ static IRQ_COUNTS: [AtomicU32; TRACE_SLOTS] =
 static IRQ_COUNT_OTHER: AtomicU32 = AtomicU32::new(0);
 /// Spurious IAR reads (1020..1023).
 static IRQ_SPURIOUS: AtomicU32 = AtomicU32::new(0);
-/// One-shot "fired but no ISR connected" bitmap for INTIDs 0..63 (+1 global
+/// One-shot "fired but no ISR claimed it" bitmap for INTIDs 0..63 (+1 global
 /// latch for the rest) so a mis-routed line reports once instead of flooding.
 static UNHANDLED_SEEN: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
 static UNHANDLED_SEEN_OTHER: AtomicU32 = AtomicU32::new(0);
@@ -388,7 +418,7 @@ unsafe fn report_unhandled(intid: u32) {
     };
     if fresh {
         DbgPrint(
-            b"[GIC] unhandled INTID %u fired (no ISR connected) - acked+dropped\n\0".as_ptr(),
+            b"[GIC] unhandled INTID %u fired, no ISR claimed it (none connected, or the ISR returned FALSE) - EOIed\n\0".as_ptr(),
             intid,
         );
         // Full GIC state at first anomaly — a misrouted/storming line is
@@ -434,12 +464,19 @@ pub unsafe extern "system" fn HalDumpGicArm64() {
         DbgPrint(b"[GIC] not initialized\n\0".as_ptr());
         return;
     }
+    let mpidr: u64;
+    core::arch::asm!("mrs {}, mpidr_el1", out(reg) mpidr, options(nomem, nostack));
     DbgPrint(
-        b"[GIC] CTLR=%x PMR=%02x RPR=%02x soft-IRQL=%u\n\0".as_ptr(),
+        b"[GIC] CTLR=%x PMR=%02x RPR=%02x soft-IRQL=%u cpu=%u mpidr=%x own-interface-mask=%02x\n\0".as_ptr(),
         mmio_read(gicc, GICC_CTLR),
         mmio_read(gicc, GICC_PMR),
         mmio_read(gicc, GICC_RPR),
         super::halstubs::KeGetCurrentIrql() as u32,
+        super::halstubs::halp_cpu_number(),
+        mpidr as u32,
+        // GICD_ITARGETSR0 byte 0 is banked: it reads as the accessing core's
+        // own CPU-interface bit, which is what an SGIR target list must name.
+        core::ptr::read_volatile((gicd + GICD_ITARGETSR) as *const u8) as u32,
     );
     for bank in 0..3usize {
         DbgPrint(

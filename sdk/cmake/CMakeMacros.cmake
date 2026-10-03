@@ -42,10 +42,18 @@ function(add_message_headers _type)
         set(_source_file ${CMAKE_CURRENT_SOURCE_DIR}/${_file})    ## ${_file_name}.mc
         utf16le_convert(${_source_file} ${_converted_file} nobom)
         macro_mc(${_flag} ${_converted_file})
+        if(MSVC)
+            set(_rc_fixup)
+        else()
+            # llvm-rc reads MESSAGETABLE as a type NAME; see mc_rc_numeric_type.cmake.
+            set(_rc_fixup COMMAND ${CMAKE_COMMAND} -DRC_FILE=${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.rc
+                -P ${REACTOS_SOURCE_DIR}/sdk/cmake/mc_rc_numeric_type.cmake)
+        endif()
         add_custom_command(
             OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.h ${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.rc
             COMMAND ${COMMAND_MC}
-            DEPENDS "${_converted_file}")
+            ${_rc_fixup}
+            DEPENDS "${_converted_file}" ${REACTOS_SOURCE_DIR}/sdk/cmake/mc_rc_numeric_type.cmake)
         set_source_files_properties(
             ${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.h ${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.rc
             PROPERTIES GENERATED TRUE)
@@ -245,6 +253,8 @@ macro(dir_to_num dir var)
         set(${var} 79)
     elseif(${dir} STREQUAL reactos/winsxs/arm64_microsoft.windows.gdiplus_6595b64144ccf1df_1.0.14393.0_none_deadbeef)
         set(${var} 81)
+    elseif(${dir} STREQUAL reactos/system32/spool/prtprocs/arm64)
+        set(${var} 82)
 
 
     else()
@@ -711,7 +721,7 @@ function(set_module_type MODULE TYPE)
     endif()
 
     if(TYPE STREQUAL kmdfdriver)
-        target_include_directories(${MODULE} PUBLIC ${REACTOS_SOURCE_DIR}/sdk/include/wdf/kmdf/1.17)
+        target_include_directories(${MODULE} PUBLIC ${REACTOS_SOURCE_DIR}/vendor/wdf/include/kmdf/1.17)
         add_importlibs(${MODULE} wdfldr)
         target_link_libraries(${MODULE} wdfdriverentry)
     endif()
@@ -823,10 +833,18 @@ function(create_registry_hives)
                 NO_CAB
                 FOR bootcd regtest)
 
+    # The INF decoration setup applies after [AddReg] ([AddReg.NT<arch>], INF_ARCH in
+    # base/setup/lib/spapisup/spapisup.h); mkhive applies it too, or the livecd hive lacks it.
+    if(ARCH STREQUAL "i386")
+        set(_inf_arch x86)
+    else()
+        set(_inf_arch ${ARCH})
+    endif()
+
     # BootCD setup system hive
     add_custom_command(
         OUTPUT ${CMAKE_BINARY_DIR}/boot/bootdata/SETUPREG.HIV
-        COMMAND native-mkhive -h:SETUPREG -u -d:${CMAKE_BINARY_DIR}/boot/bootdata ${_registry_inf} ${CMAKE_SOURCE_DIR}/boot/bootdata/setupreg.inf
+        COMMAND native-mkhive -h:SETUPREG -u -a:${_inf_arch} -d:${CMAKE_BINARY_DIR}/boot/bootdata ${_registry_inf} ${CMAKE_SOURCE_DIR}/boot/bootdata/setupreg.inf
         DEPENDS native-mkhive ${_registry_inf})
 
     add_custom_target(bootcd_hives
@@ -852,7 +870,7 @@ function(create_registry_hives)
                ${CMAKE_BINARY_DIR}/boot/bootdata/default
                ${CMAKE_BINARY_DIR}/boot/bootdata/sam
                ${CMAKE_BINARY_DIR}/boot/bootdata/security
-        COMMAND native-mkhive -h:SYSTEM,SOFTWARE,DEFAULT,SAM,SECURITY -d:${CMAKE_BINARY_DIR}/boot/bootdata ${_livecd_inf_files}
+        COMMAND native-mkhive -h:SYSTEM,SOFTWARE,DEFAULT,SAM,SECURITY -a:${_inf_arch} -d:${CMAKE_BINARY_DIR}/boot/bootdata ${_livecd_inf_files}
         DEPENDS native-mkhive ${_livecd_inf_files})
 
     add_custom_target(livecd_hives

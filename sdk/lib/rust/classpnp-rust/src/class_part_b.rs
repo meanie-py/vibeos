@@ -247,7 +247,6 @@ unsafe extern "C" {
     fn RtlStringCbPrintfA(dest: *mut i8, dest_sz: usize, fmt: *const i8, ...) -> NTSTATUS;
     fn ClasspIsOffloadDataTransferCommand(cdb: PCDB) -> BOOLEAN;
     fn InterpretSenseInfoWithoutHistory(fdo: PDEVICE_OBJECT, irp: PIRP, srb: PSCSI_REQUEST_BLOCK, major_fn: UCHAR, io_device_code: ULONG, prev_retry: ULONG, status: *mut NTSTATUS, retry_in_100ns: *mut LONGLONG) -> BOOLEAN;
-    fn ClasspSendSynchronousCompletion(device_object: PDEVICE_OBJECT, irp: PIRP, context: PVOID) -> NTSTATUS;
     fn ClasspIsReceiveTokenInformation_c(cdb: PCDB) -> BOOLEAN;
     fn DBGGETSCSIOPSTR(srb: PVOID) -> PCHAR;
     fn DBGGETSRBSTATUSSTR(srb: PVOID) -> PCHAR;
@@ -2159,7 +2158,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             SCSI_ADSENSE_FAILURE_PREDICTION_THRESHOLD_EXCEEDED => {
                                 let mut wmiEventData: [UCHAR; 8] = [0; 8];
 
-                                *(wmiEventData.as_mut_ptr() as PULONG) = core::mem::size_of::<UCHAR>() as ULONG;
+                                (wmiEventData.as_mut_ptr() as PULONG).write_unaligned(core::mem::size_of::<UCHAR>() as ULONG);
                                 wmiEventData[core::mem::size_of::<ULONG>()] = addlSenseCodeQual;
 
                                 logError = 0;
@@ -2756,7 +2755,7 @@ pub unsafe extern "system" fn ClassInterpretSenseInfo(
                             SCSI_ADSENSE_FAILURE_PREDICTION_THRESHOLD_EXCEEDED => {
                                 let mut wmiEventData: [UCHAR; 8] = [0; 8];
 
-                                *(wmiEventData.as_mut_ptr() as PULONG) = core::mem::size_of::<UCHAR>() as ULONG;
+                                (wmiEventData.as_mut_ptr() as PULONG).write_unaligned(core::mem::size_of::<UCHAR>() as ULONG);
                                 wmiEventData[core::mem::size_of::<ULONG>()] = addlSenseCodeQual;
 
                                 logError = 0;
@@ -4208,6 +4207,8 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
             Status: *mut NTSTATUS,
             RetryIn100nsUnits: *mut LONGLONG,
         ) -> BOOLEAN;
+    }
+    extern "system" {
         fn ClasspSendSynchronousCompletion(
             DeviceObject: PDEVICE_OBJECT,
             Irp: PIRP,
@@ -4294,7 +4295,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
 
         IoSetCompletionRoutine(
             irp,
-            Some(unsafe { core::mem::transmute::<unsafe extern "C" fn(*mut DEVICE_OBJECT, *mut IRP, PVOID) -> NTSTATUS, _>(ClasspSendSynchronousCompletion) }),
+            Some(unsafe { core::mem::transmute::<unsafe extern "system" fn(*mut DEVICE_OBJECT, *mut IRP, PVOID) -> NTSTATUS, _>(ClasspSendSynchronousCompletion) }),
             Srb as PVOID,
             1u8, 1u8, 1u8
         );

@@ -41,8 +41,6 @@ pub unsafe extern "system" fn KeSetTimeIncrement(
 ) {
 }
 
-#[cfg(target_arch = "x86")]
-
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn IoAssignDriveLetters(
@@ -52,8 +50,6 @@ pub unsafe extern "C" fn IoAssignDriveLetters(
     NtSystemPathString: PSTRING,
 ) {
 }
-
-#[cfg(target_arch = "x86")]
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
@@ -302,8 +298,6 @@ pub unsafe extern "C" fn IoReadPartitionTable(
     *PartitionBuffer = Partitions;
     STATUS_SUCCESS
 }
-
-#[cfg(target_arch = "x86")]
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]

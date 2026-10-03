@@ -135,7 +135,21 @@ _TAGGED_LOCATION = re.compile(r"^(?P<tags>\s*(?:\[[^\]]+\]\s*)+)(?P<file>[^\s:]+
 _TRAILING_LOCATION = re.compile(r"^(?P<head>.*)\((?P<file>[^\s:()]+):\d+(?::\d+)?\)\s*$")
 
 
+# And locations INSIDE the message: scan_dropped_asserts lists the Rust twins as
+# `… Rust has 0 (sdk/lib/rust/…/section.rs:252, …/shim_exports.rs:1454)` after its own
+# `file:line:` prefix. Only the prefix was stripped, so a 6-line fix in section.rs read as
+# "2 new" for two findings nobody touched (2026-09-26). A path with a real source extension
+# followed by `:digits` is a location wherever it sits.
+_INNER_LOCATION = re.compile(
+    r"(?P<f>[\w./+-]+\.(?:rs|c|h|cpp|hpp|py|md|txt|cmake|spec|toml|sh|S|s|asm|inc)):\d+(?::\d+)?\b"
+)
+
+
 def _finding_key(line: str) -> str:
+    return _INNER_LOCATION.sub(r"\g<f>", _finding_key_outer(line))
+
+
+def _finding_key_outer(line: str) -> str:
     m = _LOCATION.match(line)
     if m:
         return f"{m.group('file')}: {line[m.end() :].strip()}"
@@ -561,6 +575,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A bare store to the PL011 data register (Arm64UartKernelBase). The FIFO holds
+    # 16-32 bytes and drains at 115200 baud, so a CPU writing faster than that loses
+    # every byte after the FIFO fills - and QEMU's model drains instantly, so it only
+    # shows on hardware. On a physical Pi 4 it cut each Phase-1 trace to its first
+    # `[` and made a hang look like it stopped earlier than it did. 87 private copies
+    # in six crates when found. Baseline is EMPTY.
+    sru = repo / "tools" / "scan_raw_uart_writes.py"
+    specs.append(
+        (
+            "scan_raw_uart_writes",
+            [py, str(sru), "--lint"] if sru.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sbc = repo / "tools" / "scan_bugcheck_codes.py"
     specs.append(
         (
@@ -603,6 +631,34 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Four bug CLASSES that rustconv difftest-contract found in shipping Rust on
+    # 2026-09-26, each now a $0 check over every translated body. None was visible to
+    # smoke; all compile, link and boot. The two C-oracle scanners pair a Rust function
+    # with its C twin by NAME (tools/c_twin.py, index cached in tools/.cache/).
+    #   ptr_byte_diff: C's `p - q` on typed pointers counts ELEMENTS; the translation
+    #     subtracted addresses (version.dll, kernel32 vdm/move, shell32 wildcard_to_file).
+    #   misaligned_cast: a `[u8; N]` cast to *mut u32 and dereferenced (cryptlib sha1 +18).
+    #   dropped_null_guard: the C null-tests an out-param, the Rust stores through it
+    #     unconditionally (rtl compress, ole32, mlang, msvcrt, fastfat).
+    #   store_on_failure: the C writes an out-param only after its last failure return,
+    #     the Rust writes it and then returns a status that can fail (rtl compress).
+    #   bool_width (older, wired 2026-09-26): a u8/BOOLEAN return where the other side
+    #     reads a BOOL — 56 definitions across userenv, win32k, shell32, winsrv, ks, msvcrt.
+    #   cfg_vs_c: a per-arch `#[cfg]` whose arch set the C twin's `#if`s never draw — e.g.
+    #     `_WIN64` translated as `target_arch = "x86_64"` (user32 GetClassLongA/W on arm64).
+    # All were driven to zero before wiring; baselines are EMPTY.
+    for lint_name in (
+        "scan_ptr_byte_diff",
+        "scan_misaligned_cast",
+        "scan_dropped_null_guard",
+        "scan_store_on_failure",
+        "scan_bool_width",
+        "scan_cfg_vs_c",
+    ):
+        script = repo / "tools" / f"{lint_name}.py"
+        specs.append(
+            (lint_name, [py, str(script), "--lint"] if script.is_file() else ["MISSING"], "stdout")
+        )
     # One constant name, two values, both ours (§9.113b). The ORACLE-FREE half of
     # the invented-constant hunt: verify_constants needs the right C header in its
     # catalog, and the 18 findings of 2026-07-24 hid precisely because theirs
@@ -617,6 +673,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_const_contradictions",
             [py, str(scc), "--lint"] if scc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # Same scanner, other oracle: a hand copy whose value matches NO bindgen island's value
+    # for that name. A lone invented copy is invisible above (it has nothing of ours to
+    # disagree with); fsrtl's swapped GenericEqual/GreaterThan was exactly that, and hung
+    # every file open on a FAT volume. Stock is mixed (freeldr's ARC status codes share
+    # errno NAMES) → baseline gates NEW only, and is the triage queue.
+    specs.append(
+        (
+            "scan_const_vs_island",
+            [py, str(scc), "--vs-island"] if scc.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -830,6 +898,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A bare cdecl i386 symbol ALIASED (`.set _X, _X@N`) onto a stdcall body: links,
+    # then every cdecl call pops the arguments twice. fastfat's DriverEntry drifted
+    # ESP by 8 and returned into its caller's stack (BUGCHECK 0x1E) the first time a
+    # FAT volume loaded it on i386. Only @0 is sound. Baseline EMPTY.
+    sca = repo / "tools" / "scan_cdecl_alias.py"
+    specs.append(
+        (
+            "scan_cdecl_alias",
+            [py, str(sca), "--lint"] if sca.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A C byte count (RtlCopyMemory) kept as the ELEMENT count of a u16-typed
     # core::ptr::copy moves twice the bytes. fastfat's FatQueryDirectory copied
     # every long name at double length and faulted on arm64 once winsxs names
@@ -970,14 +1050,37 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
-    # Duplicate #[no_mangle] symbol ratchet: symbols defined in >=2 crates that
-    # link into the kernel PE are masked by --allow-multiple-definition (which is
-    # load-bearing — the multi-staticlib runtime dups are irreducible). We can't
-    # drop the flag, so we FREEZE its masked set and gate NEW cross-crate
-    # collisions — the IsEqualGUID-class near-miss where a translation re-defines
-    # a symbol another crate already owns. Baseline = accepted deliberate cohab
-    # (today: arbiter's amd64 KeGetCurrentIrql). See the tool docstring +
-    # docs/engineering/allow-multiple-definition-ratchet.md.
+    # A committed resource object whose TYPE is a string spelling an RT_* name: llvm-rc's
+    # reading of a keyword it lacks (MESSAGETABLE). The cargo-linked kernel and ntdll ship
+    # such blobs, generated out of band, and a stale one hid every message table in the OS
+    # (FormatMessage failed, notepad's error box read "5") behind green gates. Baseline EMPTY.
+    srn = repo / "tools" / "scan_res_named_types.py"
+    specs.append(
+        (
+            "scan_res_named_types",
+            [py, str(srn)] if srn.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # An index into a bindgen `__bindgen_padding_N` array to reach a member bindgen could
+    # not name. Its element type is the generator's choice: a regeneration turned
+    # THRDESKHEAD's [u64; 3] into [u8; 24], user32's `head.__bindgen_padding_0[2]` became one
+    # byte of the handle, and every posted message went undispatched. Baseline EMPTY.
+    sbp = repo / "tools" / "scan_bindgen_padding_index.py"
+    specs.append(
+        (
+            "scan_bindgen_padding_index",
+            [py, str(sbp)] if sbp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # Two definitions of one exported symbol, live on the same arch in the same
+    # binary. Every PE links with --allow-multiple-definition (load-bearing: each
+    # Rust staticlib graph carries its own panic runtime), so a duplicate resolves
+    # by archive order, silently. Models each binary's crate closure, Cargo
+    # features and per-arch cfg, and sees global_asm! labels — the i386 prefetch
+    # stub that crashed kmtest (88b04bf7f86) was a Rust fn beside its own crate's
+    # asm label. Baseline is EMPTY = a hard 0-gate. See the tool docstring.
     sds = repo / "tools" / "scan_duplicate_symbols.py"
     specs.append(
         (

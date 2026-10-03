@@ -22,7 +22,7 @@ pub struct _GDI_DC_ATTR_ENTRY {
 pub type GDI_DC_ATTR_ENTRY = _GDI_DC_ATTR_ENTRY;
 pub type PGDI_DC_ATTR_ENTRY = *mut _GDI_DC_ATTR_ENTRY;
 #[no_mangle]
-pub unsafe extern "system" fn DC_bAllocDcAttr(pdc: PDC) -> u8 {
+pub unsafe extern "system" fn DC_bAllocDcAttr(pdc: PDC) -> BOOL {
     let ppi: PPROCESSINFO;
     let pdcattr: PDC_ATTR;
 
@@ -30,7 +30,7 @@ pub unsafe extern "system" fn DC_bAllocDcAttr(pdc: PDC) -> u8 {
 
     pdcattr = GdiPoolAllocate((*ppi).pPoolDcAttr) as PDC_ATTR;
     if pdcattr.is_null() {
-        return 0u8;
+        return 0;
     }
 
     (*pdc).pdcattr = pdcattr;
@@ -38,7 +38,7 @@ pub unsafe extern "system" fn DC_bAllocDcAttr(pdc: PDC) -> u8 {
 
     GDIOBJ_vSetObjectAttr(core::ptr::addr_of_mut!((*pdc).BaseObject), pdcattr as *mut core::ffi::c_void);
 
-    return 1u8;
+    return 1;
 }
 #[no_mangle]
 pub unsafe extern "system" fn DC_vFreeDcAttr(pdc: PDC) {

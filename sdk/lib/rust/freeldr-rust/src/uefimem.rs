@@ -8,6 +8,7 @@ pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderFirmwareTemporary as LoaderFirmwa
 pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderFree as LoaderFree;
 pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderLoadedProgram as LoaderLoadedProgram;
 pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderReserve as LoaderReserve;
+pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderSpecialMemory as LoaderSpecialMemory;
 
 extern "C" {
     fn _exituefi();
@@ -142,8 +143,11 @@ unsafe fn UefiConvertToFreeldrDesc(EfiMemoryType: EFI_MEMORY_TYPE) -> TYPE_OF_ME
         EfiRuntimeServicesData => LoaderFirmwarePermanent,
         EfiConventionalMemory => LoaderFree,
         EfiUnusableMemory => LoaderBad,
-        EfiACPIReclaimMemory => LoaderFirmwareTemporary,
-        EfiACPIMemoryNVS => LoaderReserve,
+        // Both ACPI kinds are LoaderSpecialMemory (upstream e1853c66214). Reclaim memory was
+        // LoaderFirmwareTemporary, which MiIsMemoryTypeFree counts as FREE: the pages holding
+        // the RSDT/XSDT/DSDT joined the PFN free list before acpi.sys mapped them.
+        EfiACPIReclaimMemory => LoaderSpecialMemory,
+        EfiACPIMemoryNVS => LoaderSpecialMemory,
         EfiMemoryMappedIO => LoaderReserve,
         EfiMemoryMappedIOPortSpace => LoaderReserve,
         _ => LoaderReserve,

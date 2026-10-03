@@ -537,7 +537,10 @@ pub unsafe extern "system" fn BaseCreateVDMEnvironment(
                 SourcePtr = SourcePtr.offset(1);
             }
 
-            NameType = BaseGetEnvNameType_U(StartPtr, (SourcePtr as isize - StartPtr as isize - 1) as ULONG);
+            // C `SourcePtr - StartPtr - 1` counts WCHARs; BaseGetEnvNameType_U compares it against
+                // a WCHAR NameLength and passes it to _wcsnicmp. A byte count never matched, so no
+                // variable was ever typed as a path (found by scan_ptr_byte_diff).
+                NameType = BaseGetEnvNameType_U(StartPtr, (SourcePtr.offset_from(StartPtr) - 1) as ULONG);
         } else {
             NameType = EnvNameNotAPath;
 
@@ -613,7 +616,11 @@ pub unsafe extern "system" fn BaseCreateVDMEnvironment(
                 }
                 Delimiter = *SourcePtr;
 
-                NameLength = (SourcePtr as isize - StartPtr as isize) as ULONG;
+                // C `SourcePtr - StartPtr` counts WCHARs, and everything below uses it as a
+                // count (GetShortPathNameW's buffer size, `* sizeof(WCHAR)` for the copy,
+                // DestPtr's advance). Subtracting addresses counted BYTES, doubling all three:
+                // an over-stated buffer, a 4x copy, and a 2x advance past the name.
+                NameLength = SourcePtr.offset_from(StartPtr) as ULONG;
                 if NameLength != 0 {
                     *SourcePtr = 0;
 

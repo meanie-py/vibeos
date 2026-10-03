@@ -248,7 +248,15 @@ pub unsafe fn KeSweepICache(_base: PVOID, _size: ULONG_PTR) {
     core::arch::asm!("wbinvd", options(nostack));
 }
 
-/// KeSweepICache — arm64: DC CVAU per cache line + DSB + IC IALLU + DSB + ISB.
+/// KeSweepICache — arm64: make freshly written code visible to instruction fetch.
+///
+/// ARM's instruction fetch is not coherent with its data cache: written code sits
+/// dirty in the D-cache until cleaned to the point of unification, and the
+/// I-cache can hold stale instructions for the same address. A range cleans each
+/// line by VA; a NULL base (or zero size) means "the whole cache", which is what
+/// NtFlushInstructionCache(NULL, 0) asks for after the loader relocates an image,
+/// and needs a set/way clean because there is no range to walk. QEMU models no
+/// caches, so only hardware tells a missing clean from a present one.
 #[inline]
 #[cfg(target_arch = "aarch64")]
 pub unsafe fn KeSweepICache(base: PVOID, size: ULONG_PTR) {
@@ -260,14 +268,56 @@ pub unsafe fn KeSweepICache(base: PVOID, size: ULONG_PTR) {
             core::arch::asm!("dc cvau, {}", in(reg) addr, options(nostack));
             addr += 64;
         }
+    } else {
+        clean_dcache_to_pou_by_set_way();
     }
     core::arch::asm!(
         "dsb ish",
-        "ic iallu",
+        "ic ialluis",
         "dsb ish",
         "isb",
         options(nostack),
     );
+}
+
+/// Clean every data-cache level below the point of unification, by set/way.
+/// Set/way operations act on the LOCAL core's caches only; that is exact on a
+/// uniprocessor boot and best-effort on MP (the writer is normally this core).
+#[cfg(target_arch = "aarch64")]
+unsafe fn clean_dcache_to_pou_by_set_way() {
+    let clidr: u64;
+    core::arch::asm!("mrs {}, clidr_el1", out(reg) clidr, options(nomem, nostack));
+    // CLIDR_EL1.LoUU, bits [29:27]: levels below it must be cleaned for I/D coherence.
+    let louu = (clidr >> 27) & 0x7;
+    for level in 0..louu {
+        // Ctype<n>, 3 bits per level: 2 = data only, 3 = split, 4 = unified.
+        if (clidr >> (level * 3)) & 0x7 < 2 {
+            continue;
+        }
+        let ccsidr: u64;
+        core::arch::asm!(
+            "msr csselr_el1, {sel}",
+            "isb",
+            "mrs {out}, ccsidr_el1",
+            sel = in(reg) level << 1,
+            out = out(reg) ccsidr,
+            options(nostack),
+        );
+        // CCSIDR_EL1 without FEAT_CCIDX (Cortex-A72): LineSize [2:0] = log2(bytes)-4,
+        // Associativity [12:3] = ways-1, NumSets [27:13] = sets-1.
+        let line_shift = (ccsidr & 0x7) + 4;
+        let ways = ((ccsidr >> 3) & 0x3FF) + 1;
+        let sets = ((ccsidr >> 13) & 0x7FFF) + 1;
+        // The way number is left-justified in the 32-bit operand.
+        let way_shift = ((ways - 1) as u32).leading_zeros() as u64;
+        for way in 0..ways {
+            for set in 0..sets {
+                let op = (way << way_shift) | (set << line_shift) | (level << 1);
+                core::arch::asm!("dc csw, {}", in(reg) op, options(nostack));
+            }
+        }
+    }
+    core::arch::asm!("dsb ish", options(nostack));
 }
 
 // ============================================================================

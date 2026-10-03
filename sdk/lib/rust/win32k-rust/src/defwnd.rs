@@ -1648,14 +1648,15 @@ unsafe fn IntDefWindowProc(
                             core::mem::size_of::<RECT>() as _,
                             1,
                         );
-                        if !NT_SUCCESS(Status) {
+                        // Validate-only probe; the capture is the access, same exit.
+                        if !NT_SUCCESS(Status)
+                            || !crate::copy::capture_from_user(
+                                &mut rt as *mut RECTL as *mut core::ffi::c_void,
+                                lParam as *const core::ffi::c_void,
+                                core::mem::size_of::<RECT>(),
+                            )
+                        {
                             lResult = 1;
-                        } else {
-                            core::ptr::copy_nonoverlapping(
-                                lParam as *const RECT,
-                                &mut rt as *mut RECTL as *mut RECT,
-                                1,
-                            );
                         }
                     }
                     if lResult == 0 {

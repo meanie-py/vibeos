@@ -35,7 +35,11 @@ extern "system" {
 }
 
 const MAXIMUM_HARDERROR_PARAMETERS: usize = 0x5;
-const PORT_MAXIMUM_MESSAGE_LENGTH: usize = 328;
+// ndk/lpctypes.h:101-105: 512 on _WIN64, 256 otherwise (only sizes the stack buffer).
+#[cfg(target_pointer_width = "64")]
+const PORT_MAXIMUM_MESSAGE_LENGTH: usize = 512;
+#[cfg(not(target_pointer_width = "64"))]
+const PORT_MAXIMUM_MESSAGE_LENGTH: usize = 256;
 const LPC_ERROR_EVENT: u16 = 0x09;
 
 const SEM_FAILCRITICALERRORS: ULONG = 0x0001;

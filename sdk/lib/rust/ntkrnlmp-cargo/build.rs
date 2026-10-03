@@ -103,6 +103,10 @@ fn main() {
         "ntoskrnl/lto_workaround.c",
         "ntoskrnl/mm_lock_outlines.c",
         "ntoskrnl/ntprintf_trampoline.c",
+        // sehtry.c: real __try/__except + __try/__finally trampolines for Rust
+        // kernel code (ntkrnl_sys::seh); native SEH on amd64/arm64, a hand-built
+        // fs:[0] frame on i386. -fms-extensions comes from c_shim_flags below.
+        "ntoskrnl/sehtry.c",
         "sdk/lib/crt/mem/memcpy.c",
         "sdk/lib/crt/mem/memmove.c",
         "sdk/lib/crt/mem/memset.c",
@@ -334,7 +338,7 @@ fn main() {
         // archives (C-first cohab precedence) and applies the per-crate RUSTFLAGS
         // cmake gives them (i386 -sse + the class-wide -C no-prepopulate-passes;
         // see reactos-link build_rust_crate). cnt-rust-lib `float` is per-arch.
-        .rust_lib("rtl-rust", &[], true)
+        .rust_lib("rtl-rust", &["kernel"], false)
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         // cmlib hive library: flipped C→Rust (kernel cmlib is 100% Rust). The
         // cmake `libcmlib.a` in static_libs is now just the cohab placeholder —

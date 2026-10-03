@@ -17,8 +17,6 @@
 #ifndef __int64
 #define __int64 long long
 #endif
-#define __wfi() ((void)0)
-#define __yield() ((void)0)
 #undef FORCEINLINE
 #define FORCEINLINE
 #include <ntoskrnl.h>

@@ -1582,7 +1582,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
         core::ptr::null_mut(),
         &mut StartupInfo,
         &mut ProcessInformation,
-    )) as u8;
+    )) as BOOL;
     if bRes == 0 {
         MessageBoxW(
             core::ptr::null_mut(),

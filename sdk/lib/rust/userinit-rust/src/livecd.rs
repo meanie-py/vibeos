@@ -250,106 +250,91 @@ unsafe fn CreateLanguagesList(hwnd: HWND, pState: PSTATE) {
     SendMessageW(hList, CB_SELECTSTRING, -1i32 as WPARAM, langSel.as_ptr() as LPARAM);
 }
 
+/// Upstream f69f04bc67c's rewrite. The old body leaked the layout DLL on every successful
+/// LoadStringW and the registry key when "Layout Text" failed, loaded the DLL as code
+/// instead of as a data file, and parsed "@file,-id" by shifting the string in place.
 unsafe fn GetLayoutName(
-    szLCID: LPCWSTR,
-    szName: LPWSTR,
+    pszKLID: LPCWSTR,
+    pszName: LPWSTR,
+    NameSize: usize,
 ) -> BOOL {
     let mut hKey: HKEY = core::ptr::null_mut();
+    let mut ret: BOOL;
     let mut dwBufLen: DWORD;
-    let mut szBuf: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-    let mut szDispName: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-    let mut szIndex: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    let mut szBuf: [u16; 1 + MAX_PATH as usize + 2 + 10] = [0; 1 + MAX_PATH as usize + 2 + 10]; // "@file_path,-resID"
     let mut szPath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-    let hLib: HANDLE;
 
-    wsprintfW(
-        szBuf.as_mut_ptr(),
-        L_STR_FMT(),
-        szLCID,
-    );
+    if NameSize < 1 {
+        return 0;
+    }
+    *pszName = 0;
 
-    if RegOpenKeyExW(
-        HKEY_LOCAL_MACHINE,
-        szBuf.as_ptr(),
-        0,
-        KEY_QUERY_VALUE,
-        &mut hKey,
-    ) == ERROR_SUCCESS as i32
-    {
-        dwBufLen = core::mem::size_of_val(&szDispName) as DWORD;
+    wsprintfW(szBuf.as_mut_ptr(), L_STR_FMT(), pszKLID);
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, szBuf.as_ptr(), 0, KEY_QUERY_VALUE, &mut hKey) != ERROR_SUCCESS as i32 {
+        return 0;
+    }
 
+    'quit: {
+        dwBufLen = core::mem::size_of_val(&szBuf) as DWORD;
         if RegQueryValueExW(
             hKey,
             L_DISPNAME(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            szDispName.as_mut_ptr() as LPBYTE,
+            szBuf.as_mut_ptr() as LPBYTE,
             &mut dwBufLen,
         ) == ERROR_SUCCESS as i32
+            && szBuf[0] == '@' as u16
         {
-            if szDispName[0] == '@' as u16 {
-                let mut i: UINT = 0;
-                while (i as usize) < wcslen(szDispName.as_ptr()) as usize {
-                    if (szDispName[i as usize] == ',' as u16)
-                        && (szDispName[(i + 1) as usize] == '-' as u16)
-                    {
-                        let mut j: UINT = i + 2;
-                        let mut k: UINT = 0;
-                        while (j as usize) < wcslen(szDispName.as_ptr()) as usize + 1 {
-                            szIndex[k as usize] = szDispName[j as usize];
-                            j += 1;
-                            k += 1;
-                        }
-                        szDispName[(i - 1) as usize] = 0;
-                        break;
-                    } else {
-                        szDispName[i as usize] = szDispName[(i + 1) as usize];
-                    }
-                    i += 1;
-                }
+            'parse: {
+                // wcsrchr(szBuf, L',')
+                let Len = wcslen(szBuf.as_ptr());
+                let Some(Comma) = (0..Len).rev().find(|&i| szBuf[i] == ',' as u16) else {
+                    break 'parse;
+                };
+                szBuf[Comma] = 0;
+                let DllName = szBuf.as_ptr().add(1);
 
-                if ExpandEnvironmentStringsW(
-                    szDispName.as_ptr(),
-                    szPath.as_mut_ptr(),
-                    szPath.len() as DWORD,
-                ) != 0
-                {
-                    hLib = LoadLibraryW(szPath.as_ptr()) as HANDLE;
+                let mut Index = wcstol(szBuf.as_ptr().add(Comma + 1), core::ptr::null_mut(), 10) as i32;
+                if Index >= 0 {
+                    // Upstream: "Cannot handle non-negative indices".
+                    break 'parse;
+                }
+                Index = -Index;
+
+                if ExpandEnvironmentStringsW(DllName, szPath.as_mut_ptr(), szPath.len() as DWORD) != 0 {
+                    let hLib = LoadLibraryExW(szPath.as_ptr(), core::ptr::null_mut(), LOAD_LIBRARY_AS_DATAFILE);
                     if !hLib.is_null() {
-                        if LoadStringW(
-                            hLib as _,
-                            _wtoi(szIndex.as_ptr()) as UINT,
-                            szPath.as_mut_ptr(),
-                            szPath.len() as i32,
-                        ) != 0
-                        {
-                            wcscpy(szName, szPath.as_ptr());
-                            RegCloseKey(hKey);
-                            return 1;
-                        }
+                        ret = (LoadStringW(hLib as _, Index as UINT, szPath.as_mut_ptr(), szPath.len() as i32) != 0) as BOOL;
                         FreeLibrary(hLib as _);
+                        if ret != 0 {
+                            // StringCchCopyW(pszName, NameSize, szPath)
+                            let mut i = 0usize;
+                            while i + 1 < NameSize && szPath[i] != 0 {
+                                *pszName.add(i) = szPath[i];
+                                i += 1;
+                            }
+                            *pszName.add(i) = 0;
+                            break 'quit;
+                        }
                     }
                 }
             }
         }
 
-        dwBufLen = core::mem::size_of_val(&szBuf) as DWORD;
-
-        if RegQueryValueExW(
+        dwBufLen = (NameSize * core::mem::size_of::<WCHAR>()) as DWORD;
+        ret = (RegQueryValueExW(
             hKey,
             L_LAYOUTTEXT(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            szName as LPBYTE,
+            pszName as LPBYTE,
             &mut dwBufLen,
-        ) == ERROR_SUCCESS as i32
-        {
-            RegCloseKey(hKey);
-            return 1;
-        }
+        ) == ERROR_SUCCESS as i32) as BOOL;
     }
 
-    0
+    RegCloseKey(hKey);
+    ret
 }
 
 unsafe fn SetKeyboardLayout(hwnd: HWND) {
@@ -466,7 +451,7 @@ unsafe fn CreateKeyboardLayoutList(
             break;
         }
 
-        GetLayoutName(szLayoutId.as_ptr(), KeyName.as_mut_ptr());
+        GetLayoutName(szLayoutId.as_ptr(), KeyName.as_mut_ptr(), KeyName.len());
 
         let iIndex = SendMessageW(
             hItemsList,
@@ -483,7 +468,9 @@ unsafe fn CreateKeyboardLayoutList(
             ulLayoutId as LPARAM,
         );
 
-        if wcscmp(szLayoutId.as_ptr(), szCurrentLayoutId.as_ptr()) == 0 {
+        // Case-insensitive (upstream c45c83a4dc2): GetKeyboardLayoutNameW returns uppercase
+        // hex, the registry subkeys may not be, so the current layout was never preselected.
+        if _wcsicmp(szLayoutId.as_ptr(), szCurrentLayoutId.as_ptr()) == 0 {
             SendMessageW(
                 hItemsList,
                 CB_SETCURSEL,

@@ -170,7 +170,7 @@ extern "C" {
             }
         }
 
-        *Tag = *(Tmp.as_ptr() as *const ULONG);
+        *Tag = (Tmp.as_ptr() as *const ULONG).read_unaligned();
     }
 
     #[no_mangle]

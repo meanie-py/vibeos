@@ -357,7 +357,16 @@ def _resolve_model(model: str) -> tuple[str, str]:
     return ("deepseek", model)
 
 
+def _require_uncapped_review() -> None:
+    if os.environ.get("RUSTCONV_BUDGET_FILE") or os.environ.get("RUSTCONV_BUDGET_USD"):
+        raise RuntimeError(
+            "semdiff's direct review API does not support persistent budget reservations; "
+            "refusing to bypass the configured cap"
+        )
+
+
 def _call_deepseek(model: str, system: str, user: str) -> tuple[str, int, int]:
+    _require_uncapped_review()
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
         raise RuntimeError("DEEPSEEK_API_KEY not set (add it to .env)")
@@ -379,6 +388,7 @@ def _call_deepseek(model: str, system: str, user: str) -> tuple[str, int, int]:
 
 
 def _call_claude(model: str, system: str, user: str) -> tuple[str, int, int]:
+    _require_uncapped_review()
     client = anthropic.Anthropic()
     # Annotated, not inlined: pyright infers a bare literal as dict[str, str], and the
     # SDK's `role` is Literal["user", "assistant"] -- so the inline form matches no

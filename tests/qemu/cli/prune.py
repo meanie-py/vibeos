@@ -24,7 +24,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import canon, maintenance, queue
+from . import canon, fsutil, maintenance, queue
 
 # Same global lock dir vm.py / qemu/start.sh / qemu/ps use.
 LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
@@ -196,7 +196,7 @@ def classify(
         return "current worktree (use --self)"
     # Preserve conductor scratch for ordinary manual pruning. Scheduled retention
     # explicitly includes it, subject to the same idle window and activity lock.
-    if wtr.name == queue.INTEGRATION_DIRNAME and not allow_self and not include_integration:
+    if queue.is_integration_dirname(wtr.name) and not allow_self and not include_integration:
         return "merge-queue integration tree (its warm caches gate every batch)"
     if wtr in live_qemu:
         return "live QEMU running"
@@ -213,11 +213,8 @@ def classify(
 
 def _dir_size(path: Path) -> int:
     try:
-        out = subprocess.run(
-            ["du", "-s", "-B1", str(path)], capture_output=True, text=True, check=True
-        ).stdout
-        return int(out.split("\t", 1)[0])
-    except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+        return fsutil.disk_usage_bytes(path)
+    except OSError as exc:
         raise maintenance.MaintenanceError(f"cannot measure {path}: {exc}") from exc
 
 

@@ -224,26 +224,6 @@ boot/rtl/blrtl.cmake	1	## ${NTOS_RTL_SOURCE_DIR}/amd64/rtlmem.S
 boot/rtl/blrtl.cmake	1	## ${NTOS_RTL_SOURCE_DIR}/i386/res_asm.s
 boot/rtl/blrtl.cmake	1	## message.c
 boot/rtl/blrtl.cmake	1	## res.c ## Optional? Needs SEH
-dll/3rdparty/libtiff/CMakeLists.txt	1	#mkg3states.c
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_jbig.c
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_jpeg.c # off with JPEG_SUPPORT — see tiffconf.h
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_lzma.c
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_ojpeg.c
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_stream.cxx
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_webp.c
-dll/3rdparty/libtiff/CMakeLists.txt	1	#tif_zstd.c
-dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/auth_des.c
-dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/auth_gss.c
-dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/authgss_prot.c
-dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/crypt_client.c
-dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/des_crypt.c
-dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/svc_auth_des.c
-dll/3rdparty/libtirpc/CMakeLists.txt	1	# src/svc_auth_gss.c
-dll/3rdparty/libxslt/CMakeLists.txt	1	# Pre-defining HAVE_STAT here makes security.c's `#ifndef HAVE_STAT` guard
-dll/3rdparty/libxslt/CMakeLists.txt	1	# This tree supplies its own CRT, so security.c's HAVE__STAT->stat()->_stat()
-dll/3rdparty/mbedtls/CMakeLists.txt	1	# 3.x rewrote aesni.c from inline asm to AES-NI/PCLMUL intrinsics, which the compiler
-dll/3rdparty/mbedtls/CMakeLists.txt	1	# behind -DHAVE_HARDCLOCK. 3.x deleted hardclock from timing.c outright, so both the
-dll/3rdparty/mbedtls/CMakeLists.txt	1	# timing_hardclock.c USED to be listed here too, supplying mbedtls_timing_hardclock
 dll/cpl/desk/CMakeLists.txt	1	# advappdlg.c
 dll/cpl/desk/CMakeLists.txt	1	# advmon.c
 dll/cpl/desk/CMakeLists.txt	1	# appearance.c
@@ -290,6 +270,12 @@ dll/cpl/sysdm/CMakeLists.txt	1	# startrec.c
 dll/cpl/sysdm/CMakeLists.txt	1	# sysdm.c
 dll/cpl/sysdm/CMakeLists.txt	1	# userprofile.c
 dll/cpl/sysdm/CMakeLists.txt	1	# virtmem.c)
+dll/directx/wine/d3d10/CMakeLists.txt	1	# C4267: effect.c narrows strlen(mask) into a BYTE ComponentCount.
+dll/directx/wine/d3d11/CMakeLists.txt	1	# C4133: device.c casts a D3D_FEATURE_LEVEL* to an enum wined3d_feature_level*.
+dll/directx/wine/d3dx9_36/d3dx9.cmake	1	# math.c wants M_PI, which <math.h> only exposes on request here.
+dll/directx/wine/dmime/CMakeLists.txt	1	# performance.c drives its message pump with a CONDITION_VARIABLE.
+dll/directx/wine/dpnet/CMakeLists.txt	1	# dpnet_main.c guards its one-time init with InitOnceExecuteOnce.
+dll/directx/wine/wined3d/CMakeLists.txt	1	# C4319: context_vk.c masks a 64-bit VkDeviceSize with a size_t-wide
 dll/ntdll/CMakeLists.txt	1	# asm = generates the asm includes (ks*.inc / syscalls.inc / sysfuncs.h) the
 dll/ntdll/CMakeLists.txt	1	# dbg/dbgui.c — replaced by Rust (ntdll-rust/src/dbg/dbgui.rs);
 dll/ntdll/CMakeLists.txt	1	# dispatch/dispatch.c — replaced by Rust (ntdll-rust/src/dispatch/mod.rs,
@@ -382,6 +368,7 @@ dll/win32/iphlpapi/CMakeLists.txt	1	# media.c (→ iphlpapi-rust src/iphlpapi/me
 dll/win32/iphlpapi/CMakeLists.txt	1	# registry.c (→ iphlpapi-rust src/iphlpapi/registry.rs)
 dll/win32/iphlpapi/CMakeLists.txt	1	# resinfo_reactos.c (→ iphlpapi-rust src/iphlpapi/resinfo_reactos.rs)
 dll/win32/iphlpapi/CMakeLists.txt	1	# route_reactos.c (→ iphlpapi-rust src/iphlpapi/route_reactos.rs)
+dll/win32/jscript/CMakeLists.txt	1	# decode.c (compiler-translated into jscript-rust/src/decode.rs)
 dll/win32/kernel32/CMakeLists.txt	1	# --allow-multiple-definition needed since every proc.c symbol was removed).
 dll/win32/kernel32/CMakeLists.txt	1	# The *ansi.c files are upstream splitting the ANSI wrappers out of TUs we have
 dll/win32/kernel32/CMakeLists.txt	1	# client/actctx.c — replaced by Rust
@@ -464,8 +451,7 @@ dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# LocaleNameToLCID.c SetThrea
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# NT6 console support (client/console/vista.c) is still C and only compiled when NT6
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# built in the parent CMakeLists). DllMain.c stays C (the module entrypoint).
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# firmware.c EnumSystemLocalesEx.c GetLocaleInfoEx.c GetFileInformationByHandleEx.c
-dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# threadpool.c is a NEW upstream TU (post-fork): the Vista CreateThreadpool* /
-dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# threadpool.c — new upstream file (CreateThreadpool*/TrySubmitThreadpoolCallback
+dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# threadpool.c (upstream, post-fork) — replaced by Rust (kernel32-vista-rust threadpool.rs):
 dll/win32/kernelbase/CMakeLists.txt	1	# Import libs for the local C in dllmain.c (SetLastError -> kernel32;
 dll/win32/kernelbase/CMakeLists.txt	1	# dllmain.c + docs/engineering/fex-bringup-plan.md rung 2.
 dll/win32/kernelbase/wine/CMakeLists.txt	1	# path.c
@@ -1003,19 +989,19 @@ drivers/base/nmidebug/CMakeLists.txt	1	# as in the bootvid/kdcom cargo cuts. nmi
 drivers/base/nmidebug/CMakeLists.txt	1	# nmidebug.c is translated to Rust (sdk/lib/rust/nmidebug-rust, kept on disk per
 drivers/base/null/CMakeLists.txt	1	# (null.rc) is dropped, exactly as in the bootvid/kdcom cargo cuts. null.c/null.rc
 drivers/base/null/CMakeLists.txt	1	# null.c is translated to Rust (sdk/lib/rust/null-rust, kept on disk per the
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/executer/exdump.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/namespace/nsdump.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/namespace/nsdumpdv.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/resources/rsdump.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/resources/rsdumpinfo.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utclib.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utdebug.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utfileio.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utprint.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utresdecode.c
+drivers/bus/acpi/CMakeLists.txt	1	# ${ACPICA_DIR}/utilities/utuuid.c
 drivers/bus/acpi/CMakeLists.txt	1	# C-variadic AcpiOsPrintf stays C (acpi_printf_shim.c → Rust AcpiOsVprintf).
 drivers/bus/acpi/CMakeLists.txt	1	# acpi-rust — OSL (osl.c) Rust cohabitation flip. Mirrors processr/pl011: a
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/executer/exdump.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/namespace/nsdump.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/namespace/nsdumpdv.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/resources/rsdump.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/resources/rsdumpinfo.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utclib.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utdebug.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utfileio.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utprint.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utresdecode.c
-drivers/bus/acpi/CMakeLists.txt	1	# acpica/utilities/utuuid.c
 drivers/bus/acpi/CMakeLists.txt	1	# acpienum.c -> acpienum.rs (Phase 3b)
 drivers/bus/acpi/CMakeLists.txt	1	# busmgr/bus.c — replaced by Rust (sdk/lib/rust/acpi-rust/src/bus.rs, Phase 3a:
 drivers/bus/acpi/CMakeLists.txt	1	# busmgr/button.c -> button.rs
@@ -1153,6 +1139,7 @@ drivers/usb/usbohci/CMakeLists.txt	1	# libusbohci_rust.a). The .c files are kept
 drivers/usb/usbport/CMakeLists.txt	1	# .c files are kept on disk per the never-delete rule. guid.c stays compiled as a data-only
 drivers/usb/usbport/CMakeLists.txt	1	# All usbport .c bodies are now Rust (usbport-rust). guid.c stays as the data-only TU
 drivers/usb/usbuhci/CMakeLists.txt	1	# libusbuhci_rust.a). The .c files are kept on disk per the never-delete rule. guid.c stays
+drivers/usb/usbxhci/CMakeLists.txt	1	# implementation. rust_stub.c only gives add_library a translation unit.
 drivers/video/arm64vid/CMakeLists.txt	1	# all three UEFI arches (it renders the desktop). arm64vid.c is fully translated
 drivers/video/arm64vid/CMakeLists.txt	1	# cmake's add_library(MODULE) + the rust_cohab_stub.c + per-arch custom_command
 drivers/wdm/audio/backpln/portcls/CMakeLists.txt	1	# resource.cpp # replaced by sdk/lib/rust/portcls-rust/src/resource_*.rs
@@ -1161,10 +1148,6 @@ drivers/wdm/audio/sysaudio/CMakeLists.txt	1	# pin.c is retained on disk; its eig
 drivers/wmi/CMakeLists.txt	1	# wmilib.c # replaced by Rust (wmilib-rust); kept on disk
 drivers/wmi/CMakeLists.txt	1	# wmilib.c (WmiCompleteRequest / WmiFireEvent / WmiSystemControl) is translated
 drivers/wmi/CMakeLists.txt	1	# wmilib.sys — Rust cohabitation flip (wmilib.c -> sdk/lib/rust/wmilib-rust)
-external/fex/External/range-v3/test/view/CMakeLists.txt	1	# rv3_add_test(test.view.partial_sum_depr view.partial_sum_depr partial_sum_depr.cpp)
-external/fex/ThunkLibs/GuestLibs/CMakeLists.txt	1	# Syntax: generate(libxyz libxyz-interface.cpp)
-external/fex/ThunkLibs/HostLibs/CMakeLists.txt	1	# - libxyz-interface: Target for IDE integration (making sure libxyz-interface.cpp shows up as a source file in the project tree)
-external/fex/ThunkLibs/HostLibs/CMakeLists.txt	1	# Syntax: generate(libxyz libxyz-interface.cpp)
 hal/halarm64/CMakeLists.txt	1	# generic/halstubs.c is fully retired). The runtime hal.dll link, and hal-rust
 hal/halx86/CMakeLists.txt	1	# `mini_hal` (minihal/, the systimer.S asm half of FreeLDR's mini-HAL) stays —
 hal/halx86/CMakeLists.txt	1	# a different set (generic/systimer.S + generic/trap.S + pic/pic.S) — track
@@ -1615,7 +1598,6 @@ ntoskrnl/ntos.cmake	2	#list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i3
 ntoskrnl/ntos.cmake	1	#list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/se/debug.c) # replaced by Rust
 sdk/cmake/baseaddress_dwarf.cmake	1	# cohab grows kernel32 past its old 0x440000 slot — proc.c took it to 0x47f000,
 sdk/cmake/gcc.cmake	1	# declares them; dbghelp_apitest's pdb.c assigns the failure hook), and those
-sdk/lib/3rdparty/libxml2/CMakeLists.txt	1	# our include/libxml/xmlversion.h still defines LIBXML_ZLIB_ENABLED, so tree.c
 sdk/lib/cmlib/CMakeLists.txt	1	# Add a placeholder TU (mirrors the HAL lib_hal_*_empty.c pattern); the real
 sdk/lib/conutils/CMakeLists.txt	1	# Rust archive (lsalib-style cohab). instream.c was already not built. 3 arches.
 sdk/lib/conutils/CMakeLists.txt	1	# here (were in outstream.c, no longer built).
@@ -1690,8 +1672,6 @@ sdk/lib/drivers/csq/CMakeLists.txt	1	# csq.c (the 6 IoCsq* exports) is translate
 sdk/lib/drivers/usbdex/CMakeLists.txt	1	# add_library(usbdex usbdex.c) # replaced by Rust (usbdex-rust); kept on disk
 sdk/lib/drivers/usbdex/CMakeLists.txt	1	# usbdex — Rust cohabitation flip (usbdex.c -> sdk/lib/rust/usbdex-rust)
 sdk/lib/drivers/usbdex/CMakeLists.txt	1	# usbdex.c (the "UsbdEx lib") is translated to Rust (usbdex-rust, kept on disk
-sdk/lib/drivers/wdf/CMakeLists.txt	1	# shared/support/fxdeviceinterface.cpp # obsolete. KM/UM files are compiled instead of this one
-sdk/lib/drivers/wdf/CMakeLists.txt	1	# shared/support/km/fxtelemetrykm.cpp
 sdk/lib/evtlib/CMakeLists.txt	1	# The single evtlib.c is flipped; the kernel `evtlib` target keeps only a stub TU
 sdk/lib/evtlib/CMakeLists.txt	1	# ── kernel: drop evtlib.c, link libevtlib_rust.a ────────────────────────
 sdk/lib/libwine/CMakeLists.txt	1	# string.c implements _stricmp, already shipped with crt
@@ -1787,7 +1767,9 @@ sdk/lib/skiplist/CMakeLists.txt	1	# add_library(skiplist16 skiplist.c) # body re
 sdk/lib/skiplist/CMakeLists.txt	1	# skiplist.c → Rust (sdk/lib/rust/skiplist-rust, kept on disk per the never-delete
 sdk/lib/smlib/CMakeLists.txt	1	# smclient.c — replaced by Rust (smss-csrss-rust/src/smlib/smclient.rs)
 sdk/lib/smlib/CMakeLists.txt	1	# stays on disk (never delete the C); smlib_rust_stub.c keeps this
-sdk/lib/ucrt/stdlib/stdlib.cmake	1	# rotl.cpp / rotr.cpp / byteswap.cpp and the clang-hacks.s alias shim were
+sdk/lib/strmbase/CMakeLists.txt	1	# fork with eight extra files -- audio.c, dllfunc.c, enumpins.c, outputqueue.c,
+sdk/lib/strmbase/CMakeLists.txt	1	# has since folded into quartz itself (quartz has its own window.c now). Those
+sdk/lib/strmbase/CMakeLists.txt	1	# qualitycontrol.c, transform.c, video.c, window.c -- whose contents upstream
 sdk/lib/uuid/CMakeLists.txt	1	# bthguid.c
 sdk/lib/uuid/CMakeLists.txt	1	# cluscfgguids.c
 sdk/lib/uuid/CMakeLists.txt	1	# ctfspui_g.c
@@ -1812,6 +1794,33 @@ subsystems/csr/csrss/CMakeLists.txt	1	# The csrss link compiles ZERO C: csrss_ru
 subsystems/csr/csrss/CMakeLists.txt	1	# csrss.c is flipped to Rust (smss-csrss-rust/src/csrss.rs). csrss.exe's LINK is
 subsystems/win/basesrv/CMakeLists.txt	1	# 2026-06 (task #41): dosdev.c + vdm.c translated (Opus 4.8) and flipped too —
 subsystems/win/basesrv/CMakeLists.txt	1	# The basesrv link compiles ZERO C: basesrv_rust_stub.c was a cmake-era
+vendor/fex/External/range-v3/test/view/CMakeLists.txt	1	# rv3_add_test(test.view.partial_sum_depr view.partial_sum_depr partial_sum_depr.cpp)
+vendor/fex/ThunkLibs/GuestLibs/CMakeLists.txt	1	# Syntax: generate(libxyz libxyz-interface.cpp)
+vendor/fex/ThunkLibs/HostLibs/CMakeLists.txt	1	# - libxyz-interface: Target for IDE integration (making sure libxyz-interface.cpp shows up as a source file in the project tree)
+vendor/fex/ThunkLibs/HostLibs/CMakeLists.txt	1	# Syntax: generate(libxyz libxyz-interface.cpp)
+vendor/libtiff/CMakeLists.txt	1	#mkg3states.c
+vendor/libtiff/CMakeLists.txt	1	#tif_jbig.c
+vendor/libtiff/CMakeLists.txt	1	#tif_jpeg.c # off with JPEG_SUPPORT — see tiffconf.h
+vendor/libtiff/CMakeLists.txt	1	#tif_lzma.c
+vendor/libtiff/CMakeLists.txt	1	#tif_ojpeg.c
+vendor/libtiff/CMakeLists.txt	1	#tif_stream.cxx
+vendor/libtiff/CMakeLists.txt	1	#tif_webp.c
+vendor/libtiff/CMakeLists.txt	1	#tif_zstd.c
+vendor/libtirpc/CMakeLists.txt	1	# src/auth_des.c
+vendor/libtirpc/CMakeLists.txt	1	# src/auth_gss.c
+vendor/libtirpc/CMakeLists.txt	1	# src/authgss_prot.c
+vendor/libtirpc/CMakeLists.txt	1	# src/crypt_client.c
+vendor/libtirpc/CMakeLists.txt	1	# src/des_crypt.c
+vendor/libtirpc/CMakeLists.txt	1	# src/svc_auth_des.c
+vendor/libtirpc/CMakeLists.txt	1	# src/svc_auth_gss.c
+vendor/libxml2/CMakeLists.txt	1	# our include/libxml/xmlversion.h still defines LIBXML_ZLIB_ENABLED, so tree.c
+vendor/libxslt/CMakeLists.txt	1	# Pre-defining HAVE_STAT here makes security.c's `#ifndef HAVE_STAT` guard
+vendor/libxslt/CMakeLists.txt	1	# This tree supplies its own CRT, so security.c's HAVE__STAT->stat()->_stat()
+vendor/mbedtls/CMakeLists.txt	1	# 3.x rewrote aesni.c from inline asm to AES-NI/PCLMUL intrinsics, which the compiler
+vendor/mbedtls/CMakeLists.txt	1	# behind -DHAVE_HARDCLOCK. 3.x deleted hardclock from timing.c outright, so both the
+vendor/mbedtls/CMakeLists.txt	1	# timing_hardclock.c USED to be listed here too, supplying mbedtls_timing_hardclock
+vendor/wdf/CMakeLists.txt	1	# shared/support/fxdeviceinterface.cpp # obsolete. KM/UM files are compiled instead of this one
+vendor/wdf/CMakeLists.txt	1	# shared/support/km/fxtelemetrykm.cpp
 win32ss/CMakeLists.txt	1	# gdi/dib/alphablend.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib_alphablend.rs) — cohabitation [Phase 2b dib wave 2b: DIB_XXBPP_AlphaBlend]
 win32ss/CMakeLists.txt	1	# gdi/dib/dib.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib.rs) — cohabitation [Phase 2b dib wave 2b: table + DIB_DoRop + Dummy_*]
 win32ss/CMakeLists.txt	1	# gdi/dib/dib16bpp.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/dib16bpp.rs) — cohabitation [Phase 2b dib wave 2]

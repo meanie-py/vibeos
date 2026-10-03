@@ -345,7 +345,7 @@ unsafe fn PeLdrpLoadAndScanReferencedDll(
 // a NULL export directory for usbport and BD-failed (then UiMessageBox
 // "Cannot load boot driver" hung the smoke harness).
 const LoaderBootDriver: TYPE_OF_MEMORY = 11;
-const LDRP_DRIVER_DEPENDENT_DLL: u32 = 0x00000040;
+const LDRP_DRIVER_DEPENDENT_DLL: u32 = 0x04000000; // ndk/ldrtypes.h:60 (was 0x40, an undefined bit the kernel never tests)
 type TYPE_OF_MEMORY = u32;
 type BOOLEAN = u8;
 

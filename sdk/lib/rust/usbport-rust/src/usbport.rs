@@ -2491,14 +2491,26 @@ pub unsafe extern "system" fn USBPORT_CompleteTransfer(Urb: PURB, TransferStatus
         CurrentVa = MmGetMdlVirtualAddress(Mdl) as ULONG_PTR;
         TransferLength = (*UrbTransfer).TransferBufferLength as SIZE_T;
 
-        IsFlushSuccess = ((*DmaOperations).FlushAdapterBuffers.expect("non-null function pointer"))(
-            (*FdoExtension).DmaAdapter,
-            Mdl,
-            (*Transfer).MapRegisterBase,
-            CurrentVa as PVOID,
-            TransferLength as ULONG,
-            WriteToDevice,
-        );
+        // Our xHCI miniport DMAs only into its private common-buffer arena and
+        // copies completed IN bytes into MappedSystemVa itself. The S/G mapping
+        // above still supplies offsets for SplitTransfer, but receives no DMA.
+        // Flushing it here could copy a stale HAL bounce buffer over the data
+        // usbxhci just returned (x86 buffers beyond the adapter's address limit).
+        // Keep FreeMapRegisters below: the unused mapping still owns registers.
+        IsFlushSuccess = if (*(*FdoExtension).MiniPortInterface).Packet.MiniPortVersion
+            == USB_MINIPORT_VERSION_XHCI
+        {
+            1
+        } else {
+            ((*DmaOperations).FlushAdapterBuffers.expect("non-null function pointer"))(
+                (*FdoExtension).DmaAdapter,
+                Mdl,
+                (*Transfer).MapRegisterBase,
+                CurrentVa as PVOID,
+                TransferLength as ULONG,
+                WriteToDevice,
+            )
+        };
 
         if IsFlushSuccess == 0 {
             // DPRINT("USBPORT_CompleteTransfer: no FlushAdapterBuffers !!!\n");

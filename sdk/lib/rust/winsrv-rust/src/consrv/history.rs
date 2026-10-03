@@ -269,11 +269,11 @@ pub unsafe extern "C" fn HistoryRecallHistory(
     ExeName: PUNICODE_STRING,
     Offset: i32,
     Entry: PUNICODE_STRING,
-) -> BOOLEAN {
+) -> BOOL {
     let Hist = HistoryCurrentBuffer(Console, ExeName);
 
     if Hist.is_null() || (*Hist).NumEntries == 0 {
-        return 0u8;
+        return 0;
     }
 
     let mut Position = ((*Hist).Position as i32 + Offset) as ULONG;
@@ -283,7 +283,7 @@ pub unsafe extern "C" fn HistoryRecallHistory(
     (*Hist).Position = Position;
 
     *Entry = *(*Hist).Entries.add((*Hist).Position as usize);
-    1u8
+    1
 }
 
 #[no_mangle]
@@ -292,10 +292,10 @@ pub unsafe extern "C" fn HistoryFindEntryByPrefix(
     ExeName: PUNICODE_STRING,
     Prefix: PUNICODE_STRING,
     Entry: PUNICODE_STRING,
-) -> BOOLEAN {
+) -> BOOL {
     let Hist = HistoryCurrentBuffer(Console, ExeName);
     if Hist.is_null() || (*Hist).NumEntries == 0 {
-        return 0u8;
+        return 0;
     }
 
     if (*Console).LineUpPressed != 0 {
@@ -317,7 +317,7 @@ pub unsafe extern "C" fn HistoryFindEntryByPrefix(
         {
             (*Hist).Position = HistPos as ULONG;
             *Entry = *(*Hist).Entries.add(HistPos as usize);
-            return 1u8;
+            return 1;
         }
         HistPos -= 1;
         if HistPos < 0 {
@@ -328,7 +328,7 @@ pub unsafe extern "C" fn HistoryFindEntryByPrefix(
         }
     }
 
-    0u8
+    0
 }
 
 #[no_mangle]

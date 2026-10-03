@@ -19,13 +19,13 @@ pub static mut CsrThreadHashTable: [LIST_ENTRY; NUMBER_THREAD_HASH_BUCKETS as us
 
 #[no_mangle]
 pub unsafe extern "system" fn ProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN {
-    let mut HandleInfo: _OBJECT_HANDLE_ATTRIBUTE_INFORMATION = core::mem::zeroed();
+    let mut HandleInfo: _OBJECT_HANDLE_FLAG_INFORMATION = core::mem::zeroed();
 
     let Status = NtQueryObject(
         ObjectHandle,
         _OBJECT_INFORMATION_CLASS_ObjectHandleFlagInformation,
         &mut HandleInfo as *mut _ as PVOID,
-        core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as ULONG,
+        core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as ULONG,
         core::ptr::null_mut(),
     );
     if Status >= 0 {
@@ -34,7 +34,7 @@ pub unsafe extern "system" fn ProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN {
             ObjectHandle,
             _OBJECT_INFORMATION_CLASS_ObjectHandleFlagInformation,
             &mut HandleInfo as *mut _ as PVOID,
-            core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as ULONG,
+            core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as ULONG,
         );
         if Status >= 0 {
             return 1u8;
@@ -46,13 +46,13 @@ pub unsafe extern "system" fn ProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn UnProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN {
-    let mut HandleInfo: _OBJECT_HANDLE_ATTRIBUTE_INFORMATION = core::mem::zeroed();
+    let mut HandleInfo: _OBJECT_HANDLE_FLAG_INFORMATION = core::mem::zeroed();
 
     let Status = NtQueryObject(
         ObjectHandle,
         _OBJECT_INFORMATION_CLASS_ObjectHandleFlagInformation,
         &mut HandleInfo as *mut _ as PVOID,
-        core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as ULONG,
+        core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as ULONG,
         core::ptr::null_mut(),
     );
     if Status >= 0 {
@@ -61,7 +61,7 @@ pub unsafe extern "system" fn UnProtectHandle(ObjectHandle: HANDLE) -> BOOLEAN {
             ObjectHandle,
             _OBJECT_INFORMATION_CLASS_ObjectHandleFlagInformation,
             &mut HandleInfo as *mut _ as PVOID,
-            core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as ULONG,
+            core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as ULONG,
         );
         if Status >= 0 {
             return 1u8;

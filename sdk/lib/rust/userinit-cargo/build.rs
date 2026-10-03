@@ -36,6 +36,7 @@ fn main() {
         .import_lib("win32ss/user/user32/user32.spec", "user32.dll", "user32")
         .import_lib("win32ss/gdi/gdi32/gdi32.spec", "gdi32.dll", "gdi32")
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")
+        .import_lib("dll/win32/userenv/userenv.spec", "userenv.dll", "userenv")
         .import_lib("dll/win32/shell32/shell32.spec", "shell32.dll", "shell32")
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")

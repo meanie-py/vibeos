@@ -98,12 +98,6 @@ extern "system" {
     fn DbgLoadImageSymbols(ImageName: *mut STRING, Base: PVOID, ProcessId: ULONG_PTR);
 }
 
-#[cfg(not(target_arch = "x86"))]
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
-    fn KdpTimeSlipDpcRoutine(Dpc: *mut _KDPC, Context: PVOID, Arg1: PVOID, Arg2: PVOID);
-    fn KdpTimeSlipWork(Context: PVOID);
-}
 extern "system" {
     fn KdpTimeSlipDpcRoutine(Dpc: *mut _KDPC, Context: PVOID, Arg1: PVOID, Arg2: PVOID);
 }

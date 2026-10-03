@@ -3,7 +3,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExFreePool, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, LARGE_INTEGER, LARGE_MCB, OEM_STRING, PFILE_OBJECT, PLARGE_INTEGER, PLONGLONG, POEM_STRING, PUNICODE_STRING, RtlAreBitsSet, RtlDowncaseUnicodeString, RtlFindClearBits, RtlOemStringToCountedUnicodeString, RtlSetBits, RtlUpcaseUnicodeString};
+use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExFreePool, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, LARGE_INTEGER, LARGE_MCB, OEM_STRING, PFILE_OBJECT, PLARGE_INTEGER, PLONGLONG, POEM_STRING, PUNICODE_STRING, RtlAreBitsClear, RtlAreBitsSet, RtlDowncaseUnicodeString, RtlFindClearBits, RtlOemStringToCountedUnicodeString, RtlSetBits, RtlUpcaseUnicodeString};
 use core::ffi::c_void;
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::types::{CCB, DCB, DELETE_CONTEXT, DIRENT, FAT8DOT3, FAT_BUG_CHECK_DIRSUP, FAT_DATA, FAT_DIRENT_NT_BYTE_3_LOWER_CASE, FAT_DIRENT_NT_BYTE_8_LOWER_CASE, FCB, FCB_STATE_3_LOWER_CASE, FCB_STATE_8_LOWER_CASE, IRP_CONTEXT, LFN_DIRENT, PFCB, VCB};
@@ -54,7 +54,6 @@ extern "system" {
     fn FsRtlCheckOplockEx( Oplock: *mut OPLOCK, Irp: *mut IRP, Flags: u32, Context: *mut core::ffi::c_void, CompletionRoutine: *mut core::ffi::c_void, PostIrpRoutine: *mut core::ffi::c_void, ) -> u32;
     fn FsRtlIsNtstatusExpected(NtStatus: i32) -> u8;
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
-    fn _SEH2_GetExceptionCode() -> i32;
     fn TimerStart(dbg: u32) -> ();
     fn TimerStop(dbg: u32, name: *const i8) -> ();
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, ParentDirectory: *mut DCB) -> ();
@@ -64,7 +63,6 @@ extern "system" {
     fn FatIsNameInExpression( IrpContext: *mut IRP_CONTEXT, Expression: OEM_STRING, Name: OEM_STRING, ) -> BOOLEAN;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> ();
     fn SetFlag(Flags: *mut u32, Flag: u32) -> ();
-    fn FatExceptionFilter( IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut core::ffi::c_void, ) -> i32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -114,8 +112,6 @@ const FILE_NOTIFY_CHANGE_LAST_ACCESS: u32 = 0x20;
 const FILE_NOTIFY_CHANGE_SIZE: u32 = 8;
 const FILE_ACTION_MODIFIED: u32 = 0x03;
 const OPLOCK_FLAG_PARENT_OBJECT: u32 = 0x2;
-const EXCEPTION_EXECUTE_HANDLER: i32 = 1;
-const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
 
 #[repr(C)]
 struct FAT_TIME_STAMP {
@@ -266,28 +262,160 @@ pub unsafe extern "system" fn FatCreateNewDirent(
             // Touch the directory file to allocate space for new dirents
             Bcb = core::ptr::null_mut();
 
-            // Emulate _SEH2_TRY / _SEH2_FINALLY
-            {
-                let mut Buffer: *mut DIRENT = core::ptr::null_mut();
-                FatPrepareWriteDirectoryFile(
-                    IrpContext,
-                    ParentDirectory,
-                    UnusedVbo,
-                    1,
-                    core::ptr::addr_of_mut!(Bcb),
-                    core::ptr::addr_of_mut!(Buffer),
-                    (0i32) as _,  // FALSE
-                    (1i32) as _,  // TRUE
-                    core::ptr::addr_of_mut!(Status),
-                );
-            }
-            // _SEH2_FINALLY cleanup
-            FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
+            let p_Bcb = core::ptr::addr_of_mut!(Bcb);
+            let p_Status = core::ptr::addr_of_mut!(Status);
+            crate::seh::try_finally(
+                &mut (),
+                |_| {
+                    let mut Buffer: *mut DIRENT = core::ptr::null_mut();
+                    FatPrepareWriteDirectoryFile(
+                        IrpContext,
+                        ParentDirectory,
+                        UnusedVbo,
+                        1,
+                        p_Bcb,
+                        core::ptr::addr_of_mut!(Buffer),
+                        (0i32) as _,  // FALSE
+                        (1i32) as _,  // TRUE
+                        p_Status,
+                    );
+                },
+                |_, _| {
+                    FatUnpinBcb(IrpContext, p_Bcb as *mut *mut core::ffi::c_void);
+                },
+            );
         }
     }
 
+    // The three blocks below were dropped from the translation, and the last one
+    // is load-bearing: without RtlSetBits every new dirent stayed FREE in the
+    // in-memory bitmap, so a later create that searches for deleted dirents
+    // (RtlFindClearBits, the "hard case" above) could be handed one that is in use
+    // and overwrite a live file's directory entry. FatDeleteDirent's
+    // AreBitsSet ASSERT is where it showed, twice per i386 boot. (dirsup.c:414-534)
+
+    //
+    //  If we are only requesting a single dirent, and we did not get the
+    //  first dirent in a directory, then check that the preceding dirent
+    //  is not an orphaned LFN.  If it is, then mark it deleted.
+    //  Only do this when we are in Chicago Mode.
+    //  (This block, the unused-dirent check and the RtlSetBits below were
+    //  missing from the translation.)
+    //
+
+    Bcb = core::ptr::null_mut();
+    let p_Bcb = core::ptr::addr_of_mut!(Bcb);
+    let p_Dirent = core::ptr::addr_of_mut!(Dirent);
+    let p_Status = core::ptr::addr_of_mut!(Status);
+
+    if FatData.ChicagoMode() != 0
+        && DirentsNeeded == 1
+        && ByteOffset
+            > (if NodeType((ParentDirectory).cast()) == FAT_NTC_ROOT_DCB {
+                0
+            } else {
+                2 * core::mem::size_of::<DIRENT>() as u32
+            })
+    {
+        crate::seh::try_finally(
+            &mut (),
+            |_| {
+                FatReadDirent(
+                    IrpContext,
+                    ParentDirectory,
+                    ByteOffset - core::mem::size_of::<DIRENT>() as u32,
+                    p_Bcb,
+                    p_Dirent,
+                    p_Status as *mut i32,
+                );
+
+                if *p_Status != 0 || (**p_Dirent).FileName[0] == FAT_DIRENT_NEVER_USED {
+                    FatPopUpFileCorrupt(IrpContext, ParentDirectory);
+                    FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
+                }
+
+                if (**p_Dirent).Attributes == FAT_DIRENT_ATTR_LFN
+                    && (**p_Dirent).FileName[0] != FAT_DIRENT_DELETED
+                {
+                    // Pin it, mark it, and set it dirty.
+                    FatPinMappedData(
+                        IrpContext,
+                        ParentDirectory,
+                        ByteOffset - core::mem::size_of::<DIRENT>() as u32,
+                        core::mem::size_of::<DIRENT>() as u32,
+                        p_Bcb,
+                    );
+
+                    (**p_Dirent).FileName[0] = FAT_DIRENT_DELETED;
+
+                    FatSetDirtyBcb(IrpContext, *p_Bcb, (*ParentDirectory).Vcb, 1);
+
+                    NT_ASSERT((RtlAreBitsSet(
+                        core::ptr::addr_of_mut!(((*ParentDirectory).Specific.Dcb.as_mut()).FreeDirentBitmap).cast(),
+                        (ByteOffset - core::mem::size_of::<DIRENT>() as u32) / core::mem::size_of::<DIRENT>() as u32,
+                        DirentsNeeded,
+                    ) != 0) as i32);
+
+                    RtlClearBits(
+                        core::ptr::addr_of_mut!(((*ParentDirectory).Specific.Dcb.as_mut()).FreeDirentBitmap).cast(),
+                        (ByteOffset - core::mem::size_of::<DIRENT>() as u32) / core::mem::size_of::<DIRENT>() as u32,
+                        DirentsNeeded,
+                    );
+                }
+            },
+            |_, _| {
+                FatUnpinBcb(IrpContext, p_Bcb as *mut *mut core::ffi::c_void);
+            },
+        );
+    }
+
+    //
+    //  Assert that the dirents are in fact unused
+    //
+
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            *p_Bcb = core::ptr::null_mut();
+
+            for i in 0..DirentsNeeded {
+                FatReadDirent(
+                    IrpContext,
+                    ParentDirectory,
+                    ByteOffset + i * core::mem::size_of::<DIRENT>() as u32,
+                    p_Bcb,
+                    p_Dirent,
+                    p_Status as *mut i32,
+                );
+
+                if *p_Status != 0
+                    || ((**p_Dirent).FileName[0] != FAT_DIRENT_NEVER_USED
+                        && (**p_Dirent).FileName[0] != FAT_DIRENT_DELETED)
+                {
+                    FatPopUpFileCorrupt(IrpContext, ParentDirectory);
+                    FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
+                }
+            }
+        },
+        |_, _| {
+            FatUnpinBcb(IrpContext, p_Bcb as *mut *mut core::ffi::c_void);
+        },
+    );
+
+    //
+    //  Set the Bits in the bitmap and move the Unused Dirent Vbo.
+    //
+
+    RtlSetBits(
+        core::ptr::addr_of_mut!(((*ParentDirectory).Specific.Dcb.as_mut()).FreeDirentBitmap).cast(),
+        ByteOffset / core::mem::size_of::<DIRENT>() as u32,
+        DirentsNeeded,
+    );
+
     (*ParentDirectory).Specific.Dcb.as_mut().UnusedDirentVbo = UnusedVbo;
     (*ParentDirectory).Specific.Dcb.as_mut().DeletedDirentHint = DeletedHint;
+
+    DebugTrace(-1, Dbg as u32 , b"FatCreateNewDirent -> (VOID)\n\0".as_ptr() as *const i8, 0);
 
     ByteOffset
 }
@@ -324,10 +452,18 @@ pub unsafe extern "system" fn FatInitializeDirectoryDirent(
 
     NT_ASSERT(ntkrnl_sys::base::NT_SUCCESS(DontCare as i32) as i32);
 
-    FatConstructDot(IrpContext, Dcb, ParentDirent, Buffer.add(0));
-    FatConstructDotDot(IrpContext, Dcb, ParentDirent, Buffer.add(1));
-
-    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
+    // Add the . and .. entries; the finally unpins the buffer.
+    let p_Bcb = core::ptr::addr_of_mut!(Bcb);
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            FatConstructDot(IrpContext, Dcb, ParentDirent, Buffer.add(0));
+            FatConstructDotDot(IrpContext, Dcb, ParentDirent, Buffer.add(1));
+        },
+        |_, _| {
+            FatUnpinBcb(IrpContext, p_Bcb as *mut *mut core::ffi::c_void);
+        },
+    );
 
     DebugTrace(-1, (Dbg as i32) as u32, b"FatInitializeDirectoryDirent -> (VOID)\n\0".as_ptr() as *const i8, 0i32);
     return;
@@ -449,92 +585,97 @@ pub unsafe extern "system" fn FatDeleteDirent(
         FatBugCheck(0, 0, 0);
     }
 
-    {
-        // _SEH2_TRY block
-        ExAcquireResourceExclusiveLite(
-            (*(*FcbOrDcb).ParentDcb).Header.Resource,
-            1u8,
-        );
+    let p_Bcb = core::ptr::addr_of_mut!(Bcb);
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            ExAcquireResourceExclusiveLite(
+                (*(*FcbOrDcb).ParentDcb).Header.Resource,
+                1u8,
+            );
 
-        Offset = (*FcbOrDcb).LfnOffsetWithinDirectory;
-        while Offset <= (*FcbOrDcb).DirentOffsetWithinDirectory {
-            if Offset == (*FcbOrDcb).LfnOffsetWithinDirectory
-                || (Offset & (PAGE_SIZE - 1)) == 0
-            {
-                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
-                FatPrepareWriteDirectoryFile(
-                    IrpContext,
-                    (*FcbOrDcb).ParentDcb,
-                    Offset,
-                    core::mem::size_of::<DIRENT>() as u32,
-                    &mut Bcb,
-                    &mut Dirent,
-                    (0i32) as _,
-                    (1i32) as _,
-                    &mut DontCare,
-                );
+            Offset = (*FcbOrDcb).LfnOffsetWithinDirectory;
+            while Offset <= (*FcbOrDcb).DirentOffsetWithinDirectory {
+                if Offset == (*FcbOrDcb).LfnOffsetWithinDirectory
+                    || (Offset & (PAGE_SIZE - 1)) == 0
+                {
+                    FatUnpinBcb(IrpContext, p_Bcb as *mut *mut core::ffi::c_void);
+                    FatPrepareWriteDirectoryFile(
+                        IrpContext,
+                        (*FcbOrDcb).ParentDcb,
+                        Offset,
+                        core::mem::size_of::<DIRENT>() as u32,
+                        p_Bcb,
+                        &mut Dirent,
+                        (0i32) as _,
+                        (1i32) as _,
+                        &mut DontCare,
+                    );
+                }
+
+                ntkrnl_sys::ASSERT!((*Dirent).FirstClusterOfFile == 0 || DeleteEa == 0);
+                (*Dirent).FileName[0] = FAT_DIRENT_DELETED;
+
+                Offset += core::mem::size_of::<DIRENT>() as u32;
+                Dirent = Dirent.add(1);
             }
 
-            ntkrnl_sys::ASSERT!((*Dirent).FirstClusterOfFile == 0 || DeleteEa == 0);
-            (*Dirent).FileName[0] = FAT_DIRENT_DELETED;
+            Dirent = Dirent.sub(1);
 
-            Offset += core::mem::size_of::<DIRENT>() as u32;
-            Dirent = Dirent.add(1);
-        }
-
-        Dirent = Dirent.sub(1);
-
-        if FatIsFat32(((*FcbOrDcb).Vcb).cast()) == 0
-            && DeleteEa != 0
-            && *(*Dirent).__bindgen_anon_1.ExtendedAttributes.as_ref() != 0
-        {
-            // _SEH2_TRY
+            if FatIsFat32(((*FcbOrDcb).Vcb).cast()) == 0
+                && DeleteEa != 0
+                && *(*Dirent).__bindgen_anon_1.ExtendedAttributes.as_ref() != 0
             {
-                FatDeleteEa(
-                    IrpContext,
-                    ((*FcbOrDcb).Vcb).cast(),
-                    *(*Dirent).__bindgen_anon_1.ExtendedAttributes.as_ref(),
-                    (*FcbOrDcb).ShortName.Name.Oem.as_ref() as *const OEM_STRING,
-                );
+                // We catch all exceptions that Fat catches, but don't do anything with them.
+                let ea = *(*Dirent).__bindgen_anon_1.ExtendedAttributes.as_ref();
+                let _ = crate::seh::fat_try_except(core::ptr::addr_of!(IrpContext), || {
+                    FatDeleteEa(
+                        IrpContext,
+                        ((*FcbOrDcb).Vcb).cast(),
+                        ea,
+                        (*FcbOrDcb).ShortName.Name.Oem.as_ref() as *const OEM_STRING,
+                    );
+                });
             }
-            // _SEH2_EXCEPT (empty)
-        }
 
-        let dcb = (*(*FcbOrDcb).ParentDcb).Specific.Dcb.as_mut();
+            let dcb = (*(*FcbOrDcb).ParentDcb).Specific.Dcb.as_mut();
 
-        DirentsToDelete = ((*FcbOrDcb).DirentOffsetWithinDirectory
-            - (*FcbOrDcb).LfnOffsetWithinDirectory)
-            / (core::mem::size_of::<DIRENT>() as u32)
-            + 1;
+            DirentsToDelete = ((*FcbOrDcb).DirentOffsetWithinDirectory
+                - (*FcbOrDcb).LfnOffsetWithinDirectory)
+                / (core::mem::size_of::<DIRENT>() as u32)
+                + 1;
 
-        ntkrnl_sys::ASSERT!(dcb.UnusedDirentVbo == 0xffffffff_u32
-                || RtlAreBitsSet(
-                    core::ptr::addr_of_mut!(dcb.FreeDirentBitmap) as *mut _,
-                    (*FcbOrDcb).LfnOffsetWithinDirectory / (core::mem::size_of::<DIRENT>() as u32),
-                    DirentsToDelete,
-                ) != 0);
+            ntkrnl_sys::ASSERT!(dcb.UnusedDirentVbo == 0xffffffff_u32
+                    || RtlAreBitsSet(
+                        core::ptr::addr_of_mut!(dcb.FreeDirentBitmap) as *mut _,
+                        (*FcbOrDcb).LfnOffsetWithinDirectory / (core::mem::size_of::<DIRENT>() as u32),
+                        DirentsToDelete,
+                    ) != 0);
 
-        RtlClearBits(
-            core::ptr::addr_of_mut!(dcb.FreeDirentBitmap) as *mut _,
-            (*FcbOrDcb).LfnOffsetWithinDirectory / (core::mem::size_of::<DIRENT>() as u32),
-            DirentsToDelete,
-        );
+            RtlClearBits(
+                core::ptr::addr_of_mut!(dcb.FreeDirentBitmap) as *mut _,
+                (*FcbOrDcb).LfnOffsetWithinDirectory / (core::mem::size_of::<DIRENT>() as u32),
+                DirentsToDelete,
+            );
 
-        if !DeleteContext.is_null() {
-            (*Dirent).FileSize = (*DeleteContext).FileSize;
-            (*Dirent).FirstClusterOfFile = (*DeleteContext).FirstClusterOfFile as u16;
-        }
+            if !DeleteContext.is_null() {
+                (*Dirent).FileSize = (*DeleteContext).FileSize;
+                (*Dirent).FirstClusterOfFile = (*DeleteContext).FirstClusterOfFile as u16;
+            }
 
-        if (*FcbOrDcb).DirentOffsetWithinDirectory
-            < dcb.DeletedDirentHint
-        {
-            dcb.DeletedDirentHint =
-                (*FcbOrDcb).LfnOffsetWithinDirectory;
-        }
-    }
-    // _SEH2_FINALLY
-    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
-    ExReleaseResourceLite((*(*FcbOrDcb).ParentDcb).Header.Resource);
+            if (*FcbOrDcb).DirentOffsetWithinDirectory
+                < dcb.DeletedDirentHint
+            {
+                dcb.DeletedDirentHint =
+                    (*FcbOrDcb).LfnOffsetWithinDirectory;
+            }
+        },
+        |_, _| {
+            FatUnpinBcb(IrpContext, p_Bcb as *mut *mut core::ffi::c_void);
+            // Release our parent.
+            ExReleaseResourceLite((*(*FcbOrDcb).ParentDcb).Header.Resource);
+        },
+    );
 
     DebugTrace(-1, Dbg, b"FatDeleteDirent -> (VOID)\n\0".as_ptr() as *const i8, 0i32);
 }
@@ -559,28 +700,34 @@ pub unsafe extern "system" fn FatLfnDirentExists(
     ccb.ContainsWildCards = 0;
     ccb.Flags = CCB_FLAG_SKIP_SHORT_NAME_COMPARE | CCB_FLAG_QUERY_TEMPLATE_MIXED;
 
-    {
-        let mut dirent_byte_offset_li: VBO = 0;
-        FatLocateDirent(
-            IrpContext,
-            Dcb,
-            &mut ccb,
-            0u32,
-            &mut flags,
-            &mut dirent,
-            &mut dirent_bcb as *mut *mut BCB,
-            &mut dirent_byte_offset_li,
-            core::ptr::null_mut(),
-            LfnTmp,
-            core::ptr::null_mut(),
-        );
-        dirent_byte_offset = dirent_byte_offset_li;
-    }
-
-    if !dirent_bcb.is_null() {
-        result = 1;
-    }
-    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(dirent_bcb) as *mut *mut core::ffi::c_void);
+    let p_dirent_bcb = core::ptr::addr_of_mut!(dirent_bcb);
+    let p_result = core::ptr::addr_of_mut!(result);
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            let mut dirent_byte_offset_li: VBO = 0;
+            FatLocateDirent(
+                IrpContext,
+                Dcb,
+                &mut ccb,
+                0u32,
+                &mut flags,
+                &mut dirent,
+                p_dirent_bcb,
+                &mut dirent_byte_offset_li,
+                core::ptr::null_mut(),
+                LfnTmp,
+                core::ptr::null_mut(),
+            );
+            dirent_byte_offset = dirent_byte_offset_li;
+        },
+        |_, _| {
+            if !(*p_dirent_bcb).is_null() {
+                *p_result = 1;
+            }
+            FatUnpinBcb(IrpContext, p_dirent_bcb as *mut *mut core::ffi::c_void);
+        },
+    );
 
     result
 }
@@ -681,65 +828,105 @@ pub unsafe extern "system" fn FatLocateDirent(
 
     *ByteOffset = (OffsetToStartSearchFrom + (core::mem::size_of::<DIRENT>() as u32 - 1)) & !(core::mem::size_of::<DIRENT>() as u32 - 1);
 
-    // _SEH2_TRY block (simulated)
-    'seh2_try: {
-        loop {
-            let mut FoundValidLfn: BOOLEAN = 0;
+    let p_UpcasedLfn = core::ptr::addr_of_mut!(UpcasedLfn);
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            loop {
+                let mut FoundValidLfn: BOOLEAN = 0;
 
-            UpcasedLfnValid = 0;
+                UpcasedLfnValid = 0;
 
-            // FatReadDirent macro expansion
-            {
-                if *ByteOffset >= (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart {
-                    Status = STATUS_END_OF_FILE;
-                    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
-                } else if (*ByteOffset % PAGE_SIZE as u32 == 0) || (*Bcb).is_null()  {
-                    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
-                    FatReadDirectoryFile(
-                        IrpContext,
-                        ParentDirectory,
-                        *ByteOffset & !(PAGE_SIZE as u32 - 1),
-                        PAGE_SIZE,
-                        0i32,
-                        Bcb,
-                        Dirent,
-                        &mut Status as *mut NTSTATUS as *mut i32,
-                    );
-                    *Dirent = ((*Dirent as *mut u8).add((*ByteOffset % PAGE_SIZE as u32) as usize)) as *mut DIRENT;
+                // FatReadDirent macro expansion
+                {
+                    if *ByteOffset >= (*ParentDirectory).Header.AllocationSize.__bindgen_anon_1.LowPart {
+                        Status = STATUS_END_OF_FILE;
+                        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
+                    } else if (*ByteOffset % PAGE_SIZE as u32 == 0) || (*Bcb).is_null()  {
+                        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
+                        FatReadDirectoryFile(
+                            IrpContext,
+                            ParentDirectory,
+                            *ByteOffset & !(PAGE_SIZE as u32 - 1),
+                            PAGE_SIZE,
+                            0i32,
+                            Bcb,
+                            Dirent,
+                            &mut Status as *mut NTSTATUS as *mut i32,
+                        );
+                        *Dirent = ((*Dirent as *mut u8).add((*ByteOffset % PAGE_SIZE as u32) as usize)) as *mut DIRENT;
+                    }
                 }
-            }
 
-            if Status == STATUS_END_OF_FILE || (*(*Dirent)).FileName[0] == FAT_DIRENT_NEVER_USED {
-                DebugTrace(0i32, 0u32, b"End of directory: entry not found.\n\0".as_ptr() as *const i8, 0usize);
-                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
-                *Dirent = core::ptr::null_mut();
-                *ByteOffset = 0;
-                break;
-            }
+                if Status == STATUS_END_OF_FILE || (*(*Dirent)).FileName[0] == FAT_DIRENT_NEVER_USED {
+                    DebugTrace(0i32, 0u32, b"End of directory: entry not found.\n\0".as_ptr() as *const i8, 0usize);
+                    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*Bcb) as *mut *mut core::ffi::c_void);
+                    *Dirent = core::ptr::null_mut();
+                    *ByteOffset = 0;
+                    break;
+                }
 
-            if (*(*Dirent)).FileName[0] == FAT_DIRENT_DELETED {
-                LfnInProgress = 0;
-                // goto GetNextDirent: advance offset+pointer THEN loop. A bare
-                // `continue` jumps to the loop header and skips the increment at
-                // the bottom (lines below), pinning ByteOffset on one dirent forever.
-                *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
-                *Dirent = (*Dirent).add(1);
-                continue;
-            }
+                if (*(*Dirent)).FileName[0] == FAT_DIRENT_DELETED {
+                    LfnInProgress = 0;
+                    // goto GetNextDirent: advance offset+pointer THEN loop. A bare
+                    // `continue` jumps to the loop header and skips the increment at
+                    // the bottom (lines below), pinning ByteOffset on one dirent forever.
+                    *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
+                    *Dirent = (*Dirent).add(1);
+                    continue;
+                }
 
-            if FatData.ChicagoMode() != 0 && ARGUMENT_PRESENT(LongFileName) && (*(*Dirent)).Attributes == FAT_DIRENT_ATTR_LFN {
-                let Lfn: PLFN_DIRENT = *Dirent as PLFN_DIRENT;
-                if LfnInProgress != 0 {
-                    if ((*Lfn).Ordinal & FAT_LAST_LONG_ENTRY) != 0
-                        || (*Lfn).Ordinal == 0
-                        || (*Lfn).Ordinal != Ordinal - 1
-                        || (*Lfn).Checksum != LfnChecksum
-                        || (*Lfn).MustBeZero != 0
+                if FatData.ChicagoMode() != 0 && ARGUMENT_PRESENT(LongFileName) && (*(*Dirent)).Attributes == FAT_DIRENT_ATTR_LFN {
+                    let Lfn: PLFN_DIRENT = *Dirent as PLFN_DIRENT;
+                    if LfnInProgress != 0 {
+                        if ((*Lfn).Ordinal & FAT_LAST_LONG_ENTRY) != 0
+                            || (*Lfn).Ordinal == 0
+                            || (*Lfn).Ordinal != Ordinal - 1
+                            || (*Lfn).Checksum != LfnChecksum
+                            || (*Lfn).MustBeZero != 0
+                        {
+                            LfnInProgress = 0;
+                        } else {
+                            ntkrnl_sys::ASSERT!((LfnIndex % 13) == 0 && LfnIndex != 0);
+                            LfnIndex -= 13;
+
+                            core::ptr::copy_nonoverlapping(
+                                core::ptr::addr_of!((*Lfn).Name1) as *const WCHAR,
+                                (*LongFileName).Buffer.add(LfnIndex as usize),
+                                5usize,
+                            );
+                            core::ptr::copy_nonoverlapping(
+                                core::ptr::addr_of!((*Lfn).Name2) as *const WCHAR,
+                                (*LongFileName).Buffer.add(LfnIndex as usize + 5),
+                                6usize,
+                            );
+                            core::ptr::copy_nonoverlapping(
+                                core::ptr::addr_of!((*Lfn).Name3) as *const WCHAR,
+                                (*LongFileName).Buffer.add(LfnIndex as usize + 11),
+                                2usize,
+                            );
+
+                            Ordinal = (*Lfn).Ordinal;
+                            LfnByteOffset = *ByteOffset;
+                        }
+                    }
+
+                    if LfnInProgress == 0
+                        && ((*Lfn).Ordinal & FAT_LAST_LONG_ENTRY) != 0
+                        && ((*Lfn).Ordinal & !FAT_LAST_LONG_ENTRY) <= MAX_LFN_DIRENTS
+                        && (*Lfn).MustBeZero == 0
                     {
-                        LfnInProgress = 0;
-                    } else {
-                        ntkrnl_sys::ASSERT!((LfnIndex % 13) == 0 && LfnIndex != 0);
-                        LfnIndex -= 13;
+                        let mut CheckTail: BOOLEAN = 0;
+
+                        Ordinal = (*Lfn).Ordinal & !FAT_LAST_LONG_ENTRY;
+
+                        if Ordinal == 0 {
+                            FatPopUpFileCorrupt(IrpContext, ParentDirectory);
+                            FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
+                        }
+
+                        LfnIndex = (Ordinal as u32 - 1) * 13;
+                        FatEnsureStringBufferEnough(LongFileName, ((LfnIndex + 13) * 2) as u16);
 
                         core::ptr::copy_nonoverlapping(
                             core::ptr::addr_of!((*Lfn).Name1) as *const WCHAR,
@@ -757,223 +944,186 @@ pub unsafe extern "system" fn FatLocateDirent(
                             2usize,
                         );
 
-                        Ordinal = (*Lfn).Ordinal;
-                        LfnByteOffset = *ByteOffset;
-                    }
-                }
+                        // Compute Lfn size and check tail
+                        while LfnIndex != (Ordinal as u32 * 13) {
+                            if CheckTail == 0 {
+                                if *(*LongFileName).Buffer.add(LfnIndex as usize) == 0x0000 {
+                                    LfnSize = LfnIndex;
+                                    CheckTail = 1;
+                                }
+                            } else {
+                                if *(*LongFileName).Buffer.add(LfnIndex as usize) != 0xffff {
+                                    break;
+                                }
+                            }
+                            LfnIndex += 1;
+                        }
 
-                if LfnInProgress == 0
-                    && ((*Lfn).Ordinal & FAT_LAST_LONG_ENTRY) != 0
-                    && ((*Lfn).Ordinal & !FAT_LAST_LONG_ENTRY) <= MAX_LFN_DIRENTS
-                    && (*Lfn).MustBeZero == 0
-                {
-                    let mut CheckTail: BOOLEAN = 0;
-
-                    Ordinal = (*Lfn).Ordinal & !FAT_LAST_LONG_ENTRY;
-
-                    if Ordinal == 0 {
-                        FatPopUpFileCorrupt(IrpContext, ParentDirectory);
-                        FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
-                    }
-
-                    LfnIndex = (Ordinal as u32 - 1) * 13;
-                    FatEnsureStringBufferEnough(LongFileName, ((LfnIndex + 13) * 2) as u16);
-
-                    core::ptr::copy_nonoverlapping(
-                        core::ptr::addr_of!((*Lfn).Name1) as *const WCHAR,
-                        (*LongFileName).Buffer.add(LfnIndex as usize),
-                        5usize,
-                    );
-                    core::ptr::copy_nonoverlapping(
-                        core::ptr::addr_of!((*Lfn).Name2) as *const WCHAR,
-                        (*LongFileName).Buffer.add(LfnIndex as usize + 5),
-                        6usize,
-                    );
-                    core::ptr::copy_nonoverlapping(
-                        core::ptr::addr_of!((*Lfn).Name3) as *const WCHAR,
-                        (*LongFileName).Buffer.add(LfnIndex as usize + 11),
-                        2usize,
-                    );
-
-                    // Compute Lfn size and check tail
-                    while LfnIndex != (Ordinal as u32 * 13) {
-                        if CheckTail == 0 {
-                            if *(*LongFileName).Buffer.add(LfnIndex as usize) == 0x0000 {
+                        if LfnIndex == (Ordinal as u32 * 13) {
+                            if CheckTail == 0 {
                                 LfnSize = LfnIndex;
-                                CheckTail = 1;
                             }
-                        } else {
-                            if *(*LongFileName).Buffer.add(LfnIndex as usize) != 0xffff {
-                                break;
-                            }
+                            LfnIndex -= 13;
+                            LfnInProgress = 1;
+                            LfnChecksum = (*Lfn).Checksum;
+                            LfnByteOffset = *ByteOffset;
                         }
-                        LfnIndex += 1;
                     }
 
-                    if LfnIndex == (Ordinal as u32 * 13) {
-                        if CheckTail == 0 {
-                            LfnSize = LfnIndex;
-                        }
-                        LfnIndex -= 13;
-                        LfnInProgress = 1;
-                        LfnChecksum = (*Lfn).Checksum;
-                        LfnByteOffset = *ByteOffset;
-                    }
-                }
-
-                // goto GetNextDirent: advance offset+pointer THEN loop. A bare
-                // `continue` jumps to the loop header and skips the increment at
-                // the bottom (lines below), pinning ByteOffset on one dirent forever.
-                *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
-                *Dirent = (*Dirent).add(1);
-                continue;
-            }
-
-            if FlagOn((*(*Dirent)).Attributes as u32, FAT_DIRENT_ATTR_VOLUME_ID as u32) != 0 {
-                if FlagOn((*Ccb).Flags, CCB_FLAG_MATCH_VOLUME_ID) != 0 {
-                    break;
-                }
-                // goto GetNextDirent: advance offset+pointer THEN loop. A bare
-                // `continue` jumps to the loop header and skips the increment at
-                // the bottom (lines below), pinning ByteOffset on one dirent forever.
-                *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
-                *Dirent = (*Dirent).add(1);
-                continue;
-            }
-
-            // Check for valid LFN run
-            if LfnInProgress != 0
-                && *ByteOffset == LfnByteOffset + core::mem::size_of::<DIRENT>() as u32
-                && LfnIndex == 0
-                && FatComputeLfnChecksum(*Dirent) == LfnChecksum
-            {
-                ntkrnl_sys::ASSERT!(Ordinal == 1);
-                FoundValidLfn = 1;
-                (*LongFileName).Length = (LfnSize * core::mem::size_of::<WCHAR>() as u32) as u16;
-
-                if ARGUMENT_PRESENT(OrigLongFileName) {
-                    *OrigLongFileName = *LongFileName;
-                }
-            } else {
-                FoundValidLfn = 0;
-            }
-
-            if FlagOn((*Ccb).Flags, CCB_FLAG_MATCH_ALL) != 0 {
-                break;
-            }
-
-            if FlagOn((*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE) == 0 {
-                if (*Ccb).ContainsWildCards != 0 {
-                    _ = Fat8dot3ToString(IrpContext, *Dirent, 0, &mut Name);
-
-                    if Name.Length == 2
-                        && *Name.Buffer.add(0) == '.' as i8
-                        && *Name.Buffer.add(1) == '.' as i8
-                        && (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Wild.as_ref().Length > 1
-                    {
-                        Name.Length = 1;
-                    }
-
-                    if FatIsNameInExpression(
-                        IrpContext,
-                        *(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Wild.as_ref(),
-                        Name,
-                    ) != 0 {
-                        DebugTrace(0i32, 0u32, b"Entry found: Name = \"%Z\"\n\0".as_ptr() as *const i8, &Name as *const _ as usize);
-                        DebugTrace(0i32, 0u32, b"             VBO  = %08lx\n\0".as_ptr() as *const i8, *ByteOffset as usize);
-
-                        if !FileNameDos.is_null() {
-                            *FileNameDos = 1;
-                        }
-
-                        SetFlag(core::ptr::addr_of_mut!((*(Ccb as *mut CCB)).Flags), CCB_FLAG_OPENED_BY_SHORTNAME);
-
-                        break;
-                    }
-                } else {
-                    if FlagOn((*(*Dirent)).Attributes as u32, FAT_DIRENT_ATTR_VOLUME_ID as u32) == 0
-                        && (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Constant.as_ref().as_ptr().add(0).cast::<u32>().read_unaligned() == *((*(*Dirent)).FileName.as_ptr().add(0) as *const u32)
-                        && (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Constant.as_ref().as_ptr().add(4).cast::<u32>().read_unaligned() == *((*(*Dirent)).FileName.as_ptr().add(4) as *const u32)
-                        && (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Constant.as_ref().as_ptr().add(8).cast::<u16>().read_unaligned() == *((*(*Dirent)).FileName.as_ptr().add(8) as *const u16)
-                        && *(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Constant.as_ref().as_ptr().add(10) == *((*(*Dirent)).FileName.as_ptr().add(10) as *const u8)
-                    {
-                        DebugTrace(0i32, 0u32, b"Entry found.\n\0".as_ptr() as *const i8, 0usize);
-
-                        if !FileNameDos.is_null() {
-                            *FileNameDos = 1;
-                        }
-
-                        SetFlag(core::ptr::addr_of_mut!((*(Ccb as *mut CCB)).Flags), CCB_FLAG_OPENED_BY_SHORTNAME);
-
-                        break;
-                    }
-                }
-            }
-
-            if FoundValidLfn != 0 {
-                if (*Ccb).ContainsWildCards == 0
-                    && (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().UnicodeQueryTemplate.Length != (LfnSize * core::mem::size_of::<WCHAR>() as u32) as u16
-                {
-                    FoundValidLfn = 0;
-                    (*LongFileName).Length = 0;
-                    if ARGUMENT_PRESENT(OrigLongFileName) {
-                        (*OrigLongFileName).Length = 0;
-                    }
-                    // goto GetNextDirent: advance offset+pointer THEN loop (a bare
-                    // `continue` would skip the bottom-of-loop increment).
+                    // goto GetNextDirent: advance offset+pointer THEN loop. A bare
+                    // `continue` jumps to the loop header and skips the increment at
+                    // the bottom (lines below), pinning ByteOffset on one dirent forever.
                     *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
                     *Dirent = (*Dirent).add(1);
                     continue;
                 }
 
-                if UpcasedLfnValid == 0 {
-                    FatEnsureStringBufferEnough(&mut UpcasedLfn, (*LongFileName).Length);
-
-                    Status = (RtlUpcaseUnicodeString(&mut UpcasedLfn, LongFileName, 0)) as u32;
-                    if !NT_SUCCESS((Status) as i32) {
-                        FatNormalizeAndRaiseStatus(IrpContext, Status);
+                if FlagOn((*(*Dirent)).Attributes as u32, FAT_DIRENT_ATTR_VOLUME_ID as u32) != 0 {
+                    if FlagOn((*Ccb).Flags, CCB_FLAG_MATCH_VOLUME_ID) != 0 {
+                        break;
                     }
-
-                    UpcasedLfnValid = 1;
+                    // goto GetNextDirent: advance offset+pointer THEN loop. A bare
+                    // `continue` jumps to the loop header and skips the increment at
+                    // the bottom (lines below), pinning ByteOffset on one dirent forever.
+                    *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
+                    *Dirent = (*Dirent).add(1);
+                    continue;
                 }
 
-                if (*Ccb).ContainsWildCards != 0 {
-                    if FsRtlIsNameInExpression(
-                        &(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().UnicodeQueryTemplate as *const _UNICODE_STRING as *mut _UNICODE_STRING,
-                        &UpcasedLfn as *const _UNICODE_STRING as *mut _UNICODE_STRING,
-                        1,
-                        core::ptr::null_mut(),
-                    ) != 0 {
-                        break;
+                // Check for valid LFN run
+                if LfnInProgress != 0
+                    && *ByteOffset == LfnByteOffset + core::mem::size_of::<DIRENT>() as u32
+                    && LfnIndex == 0
+                    && FatComputeLfnChecksum(*Dirent) == LfnChecksum
+                {
+                    ntkrnl_sys::ASSERT!(Ordinal == 1);
+                    FoundValidLfn = 1;
+                    (*LongFileName).Length = (LfnSize * core::mem::size_of::<WCHAR>() as u32) as u16;
+
+                    if ARGUMENT_PRESENT(OrigLongFileName) {
+                        *OrigLongFileName = *LongFileName;
                     }
                 } else {
-                    if FsRtlAreNamesEqual(
-                        &(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().UnicodeQueryTemplate as *const _UNICODE_STRING,
-                        &UpcasedLfn as *const _UNICODE_STRING,
-                        BooleanFlagOn((*Ccb).Flags, CCB_FLAG_QUERY_TEMPLATE_MIXED),
-                        core::ptr::null(),
-                    ) != 0 {
-                        break;
+                    FoundValidLfn = 0;
+                }
+
+                if FlagOn((*Ccb).Flags, CCB_FLAG_MATCH_ALL) != 0 {
+                    break;
+                }
+
+                if FlagOn((*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE) == 0 {
+                    if (*Ccb).ContainsWildCards != 0 {
+                        _ = Fat8dot3ToString(IrpContext, *Dirent, 0, &mut Name);
+
+                        if Name.Length == 2
+                            && *Name.Buffer.add(0) == '.' as i8
+                            && *Name.Buffer.add(1) == '.' as i8
+                            && (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Wild.as_ref().Length > 1
+                        {
+                            Name.Length = 1;
+                        }
+
+                        if FatIsNameInExpression(
+                            IrpContext,
+                            *(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Wild.as_ref(),
+                            Name,
+                        ) != 0 {
+                            DebugTrace(0i32, 0u32, b"Entry found: Name = \"%Z\"\n\0".as_ptr() as *const i8, &Name as *const _ as usize);
+                            DebugTrace(0i32, 0u32, b"             VBO  = %08lx\n\0".as_ptr() as *const i8, *ByteOffset as usize);
+
+                            if !FileNameDos.is_null() {
+                                *FileNameDos = 1;
+                            }
+
+                            SetFlag(core::ptr::addr_of_mut!((*(Ccb as *mut CCB)).Flags), CCB_FLAG_OPENED_BY_SHORTNAME);
+
+                            break;
+                        }
+                    } else {
+                        if FlagOn((*(*Dirent)).Attributes as u32, FAT_DIRENT_ATTR_VOLUME_ID as u32) == 0
+                            && (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Constant.as_ref().as_ptr().add(0).cast::<u32>().read_unaligned() == *((*(*Dirent)).FileName.as_ptr().add(0) as *const u32)
+                            && (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Constant.as_ref().as_ptr().add(4).cast::<u32>().read_unaligned() == *((*(*Dirent)).FileName.as_ptr().add(4) as *const u32)
+                            && (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Constant.as_ref().as_ptr().add(8).cast::<u16>().read_unaligned() == *((*(*Dirent)).FileName.as_ptr().add(8) as *const u16)
+                            && *(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Constant.as_ref().as_ptr().add(10) == *((*(*Dirent)).FileName.as_ptr().add(10) as *const u8)
+                        {
+                            DebugTrace(0i32, 0u32, b"Entry found.\n\0".as_ptr() as *const i8, 0usize);
+
+                            if !FileNameDos.is_null() {
+                                *FileNameDos = 1;
+                            }
+
+                            SetFlag(core::ptr::addr_of_mut!((*(Ccb as *mut CCB)).Flags), CCB_FLAG_OPENED_BY_SHORTNAME);
+
+                            break;
+                        }
                     }
                 }
-            }
 
-            if FoundValidLfn != 0 {
-                FoundValidLfn = 0;
-                (*LongFileName).Length = 0;
-                if ARGUMENT_PRESENT(OrigLongFileName) {
-                    (*OrigLongFileName).Length = 0;
+                if FoundValidLfn != 0 {
+                    if (*Ccb).ContainsWildCards == 0
+                        && (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().UnicodeQueryTemplate.Length != (LfnSize * core::mem::size_of::<WCHAR>() as u32) as u16
+                    {
+                        FoundValidLfn = 0;
+                        (*LongFileName).Length = 0;
+                        if ARGUMENT_PRESENT(OrigLongFileName) {
+                            (*OrigLongFileName).Length = 0;
+                        }
+                        // goto GetNextDirent: advance offset+pointer THEN loop (a bare
+                        // `continue` would skip the bottom-of-loop increment).
+                        *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
+                        *Dirent = (*Dirent).add(1);
+                        continue;
+                    }
+
+                    if UpcasedLfnValid == 0 {
+                        FatEnsureStringBufferEnough(p_UpcasedLfn, (*LongFileName).Length);
+
+                        Status = (RtlUpcaseUnicodeString(p_UpcasedLfn, LongFileName, 0)) as u32;
+                        if !NT_SUCCESS((Status) as i32) {
+                            FatNormalizeAndRaiseStatus(IrpContext, Status);
+                        }
+
+                        UpcasedLfnValid = 1;
+                    }
+
+                    if (*Ccb).ContainsWildCards != 0 {
+                        if FsRtlIsNameInExpression(
+                            &(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().UnicodeQueryTemplate as *const _UNICODE_STRING as *mut _UNICODE_STRING,
+                            p_UpcasedLfn as *const _UNICODE_STRING as *mut _UNICODE_STRING,
+                            1,
+                            core::ptr::null_mut(),
+                        ) != 0 {
+                            break;
+                        }
+                    } else {
+                        if FsRtlAreNamesEqual(
+                            &(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().UnicodeQueryTemplate as *const _UNICODE_STRING,
+                            p_UpcasedLfn as *const _UNICODE_STRING,
+                            BooleanFlagOn((*Ccb).Flags, CCB_FLAG_QUERY_TEMPLATE_MIXED),
+                            core::ptr::null(),
+                        ) != 0 {
+                            break;
+                        }
+                    }
                 }
+
+                if FoundValidLfn != 0 {
+                    FoundValidLfn = 0;
+                    (*LongFileName).Length = 0;
+                    if ARGUMENT_PRESENT(OrigLongFileName) {
+                        (*OrigLongFileName).Length = 0;
+                    }
+                }
+
+                // GetNextDirent: (we fall through here via continue above)
+                *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
+                *Dirent = (*Dirent).add(1);
             }
-
-            // GetNextDirent: (we fall through here via continue above)
-            *ByteOffset += core::mem::size_of::<DIRENT>() as u32;
-            *Dirent = (*Dirent).add(1);
-        }
-    } // end SEH2_TRY
-
-    // _SEH2_FINALLY
-    FatFreeStringBuffer(&mut UpcasedLfn);
+        },
+        |_, _| {
+            FatFreeStringBuffer(p_UpcasedLfn);
+        },
+    );
 
     DebugTrace(-1i32, 0u32, b"FatLocateDirent -> (VOID)\n\0".as_ptr() as *const i8, 0usize);
     TimerStop(0u32, b"FatLocateDirent\0".as_ptr() as *const i8);
@@ -1185,38 +1335,42 @@ pub unsafe extern "system" fn FatIsDirectoryEmpty(
     DebugTrace(0, 0 /* Dbg */, b"  Dcb              = %p\n\0".as_ptr() as *const i8, Dcb as *mut core::ffi::c_void);
     DebugTrace(0, 0 /* Dbg */, b"  IsDirectoryEmpty = %08lx\n\0".as_ptr() as *const i8, IsDirectoryEmpty as u32);
 
-    'seh_finally: loop {
-        loop {
-            FatReadDirent(
-                IrpContext,
-                Dcb,
-                ByteOffset,
-                &mut Bcb as *mut *mut core::ffi::c_void as *mut *mut BCB,
-                &mut Dirent,
-                &mut Status,
-            );
+    let p_Bcb = core::ptr::addr_of_mut!(Bcb);
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            loop {
+                FatReadDirent(
+                    IrpContext,
+                    Dcb,
+                    ByteOffset,
+                    p_Bcb as *mut *mut BCB,
+                    &mut Dirent,
+                    &mut Status,
+                );
 
-            if (Status == (STATUS_END_OF_FILE) as i32) ||
-               ((*Dirent).FileName[0] == 0x00u8 /* FAT_DIRENT_NEVER_USED */) {
-                DebugTrace(0, 0 /* Dbg */,
-                    b"Empty.  Last exempt entry at VBO = %08lx\n\0".as_ptr() as *const i8,
-                    ByteOffset as u32);
-                IsDirectoryEmpty = 1;
-                break 'seh_finally;
+                if (Status == (STATUS_END_OF_FILE) as i32) ||
+                   ((*Dirent).FileName[0] == 0x00u8 /* FAT_DIRENT_NEVER_USED */) {
+                    DebugTrace(0, 0 /* Dbg */,
+                        b"Empty.  Last exempt entry at VBO = %08lx\n\0".as_ptr() as *const i8,
+                        ByteOffset as u32);
+                    IsDirectoryEmpty = 1;
+                    break;
+                }
+
+                if ((*Dirent).FileName[0] != 0xE5u8 /* FAT_DIRENT_DELETED */) &&
+                   ((*Dirent).Attributes != 0x0Fu8 /* FAT_DIRENT_ATTR_LFN */) {
+                    break;
+                }
+
+                ByteOffset += core::mem::size_of::<DIRENT>() as u32;
+                Dirent = Dirent.add(1);
             }
-
-            if ((*Dirent).FileName[0] != 0xE5u8 /* FAT_DIRENT_DELETED */) &&
-               ((*Dirent).Attributes != 0x0Fu8 /* FAT_DIRENT_ATTR_LFN */) {
-                break 'seh_finally;
-            }
-
-            ByteOffset += core::mem::size_of::<DIRENT>() as u32;
-            Dirent = Dirent.add(1);
-        }
-        break 'seh_finally;
-    }
-
-    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(Bcb) as *mut *mut core::ffi::c_void);
+        },
+        |_, _| {
+            FatUnpinBcb(IrpContext, p_Bcb);
+        },
+    );
 
     DebugTrace(-1, 0 /* Dbg */, b"FatIsDirectoryEmpty -> %ld\n\0".as_ptr() as *const i8, IsDirectoryEmpty as i32);
 
@@ -1479,14 +1633,21 @@ pub unsafe extern "system" fn FatSetFileSizeInDirent(
         &mut DirentBcb as *mut *mut BCB,
     );
 
-    (*Dirent).FileSize = if !AlternativeFileSize.is_null() {
-        *AlternativeFileSize
-    } else {
-        (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart
-    };
-    FatSetDirtyBcb(IrpContext, DirentBcb, (*Fcb).Vcb, ((1u8) as i32) as _);
-
-    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
+    let p_DirentBcb = core::ptr::addr_of_mut!(DirentBcb);
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            (*Dirent).FileSize = if !AlternativeFileSize.is_null() {
+                *AlternativeFileSize
+            } else {
+                (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart
+            };
+            FatSetDirtyBcb(IrpContext, *p_DirentBcb, (*Fcb).Vcb, ((1u8) as i32) as _);
+        },
+        |_, _| {
+            FatUnpinBcb(IrpContext, p_DirentBcb as *mut *mut core::ffi::c_void);
+        },
+    );
 }
 
 #[no_mangle]
@@ -1496,9 +1657,10 @@ pub unsafe extern "system" fn FatSetFileSizeInDirentNoRaise(
     AlternativeFileSize: *mut ULONG,
 ) {
 
-    // _SEH2_TRY { ... } _SEH2_EXCEPT(FatExceptionFilter(...)) { NOTHING; } _SEH2_END;
-    // (kernel code cannot use std::panic::catch_unwind; SEH exceptions are handled by the OS)
-    FatSetFileSizeInDirent(IrpContext, Fcb, AlternativeFileSize);
+    // try { FatSetFileSizeInDirent } except (FatExceptionFilter) { NOTHING; }
+    let _ = crate::seh::fat_try_except(core::ptr::addr_of!(IrpContext), || {
+        FatSetFileSizeInDirent(IrpContext, Fcb, AlternativeFileSize);
+    });
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatUpdateDirentFromFcb(
@@ -1578,104 +1740,123 @@ pub unsafe extern "system" fn FatUpdateDirentFromFcb(
     {
         DebugTrace(0, Dbg, (b"Update Time and/or file size on File/Dir\n".as_ptr() as *const u8).cast(), 0);
 
-        // _SEH2_TRY/_SEH2_EXCEPT/_SEH2_FINALLY: kernel code cannot use std::panic;
-        // SEH exceptions are handled by the OS exception mechanism.
-        {
-            // Break parent directory oplock (Win8+)
-            if !(*FcbOrDcb).ParentDcb.is_null() {
-                FsRtlCheckOplockEx(
-                    FatGetFcbOplock((*FcbOrDcb).ParentDcb),
-                    (*IrpContext).OriginatingIrp,
-                    OPLOCK_FLAG_PARENT_OBJECT,
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                );
-            }
+        // try { try { ... } except (FsRtlIsNtstatusExpected(code)) { FatResetExceptionState }
+        // } finally { FatUnpinBcb }
+        let p_DirentBcb = core::ptr::addr_of_mut!(DirentBcb);
+        crate::seh::try_finally(
+            &mut (),
+            |_| {
+                let r = crate::seh::try_except(
+                    &mut (),
+                    |_| {
+                    // Break parent directory oplock (Win8+)
+                    if !(*FcbOrDcb).ParentDcb.is_null() {
+                        FsRtlCheckOplockEx(
+                            FatGetFcbOplock((*FcbOrDcb).ParentDcb),
+                            (*IrpContext).OriginatingIrp,
+                            OPLOCK_FLAG_PARENT_OBJECT,
+                            core::ptr::null_mut(),
+                            core::ptr::null_mut(),
+                            core::ptr::null_mut(),
+                        );
+                    }
 
-            FatGetDirentFromFcbOrDcb(
-                IrpContext,
-                FcbOrDcb,
-                0, // FALSE
-                core::ptr::addr_of_mut!(Dirent),
-                core::ptr::addr_of_mut!(DirentBcb),
-            );
+                    FatGetDirentFromFcbOrDcb(
+                        IrpContext,
+                        FcbOrDcb,
+                        0, // FALSE
+                        core::ptr::addr_of_mut!(Dirent),
+                        p_DirentBcb,
+                    );
 
-            if UpdateLastWriteTime != 0 || UpdateLastAccessTime != 0 {
-                FatNtTimeToFatTime(
-                    IrpContext,
-                    core::ptr::addr_of!(CurrentTime) as *const LARGE_INTEGER,
-                    1u8, // TRUE
-                    core::ptr::addr_of_mut!(CurrentFatTime),
-                    core::ptr::null_mut::<u16>(),
-                );
-            }
+                    if UpdateLastWriteTime != 0 || UpdateLastAccessTime != 0 {
+                        FatNtTimeToFatTime(
+                            IrpContext,
+                            core::ptr::addr_of!(CurrentTime) as *const LARGE_INTEGER,
+                            1u8, // TRUE
+                            core::ptr::addr_of_mut!(CurrentFatTime),
+                            core::ptr::null_mut::<u16>(),
+                        );
+                    }
 
-            if SetArchiveBit != 0 {
-                (*Dirent).Attributes |= (FILE_ATTRIBUTE_ARCHIVE) as u8;
-                (*FcbOrDcb).DirentFatFlags |= (FILE_ATTRIBUTE_ARCHIVE) as u8;
-                NotifyFilter |= FILE_NOTIFY_CHANGE_ATTRIBUTES;
-                UpdateDirent = 1;
-            }
+                    if SetArchiveBit != 0 {
+                        (*Dirent).Attributes |= (FILE_ATTRIBUTE_ARCHIVE) as u8;
+                        (*FcbOrDcb).DirentFatFlags |= (FILE_ATTRIBUTE_ARCHIVE) as u8;
+                        NotifyFilter |= FILE_NOTIFY_CHANGE_ATTRIBUTES;
+                        UpdateDirent = 1;
+                    }
 
-            if UpdateLastWriteTime != 0 {
-                (*FcbOrDcb).LastWriteTime = CurrentTime;
-                // CurrentFatTime (local FAT_TIME_STAMP) → (*Dirent).LastWriteTime (types_arch FAT_TIME_STAMP)
-                // both are repr(C) 4-byte structs
-                *(core::ptr::addr_of_mut!((*Dirent).LastWriteTime) as *mut u32) =
-                    *(core::ptr::addr_of!(CurrentFatTime) as *const u32);
-                NotifyFilter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
-                UpdateDirent = 1;
-            }
+                    if UpdateLastWriteTime != 0 {
+                        (*FcbOrDcb).LastWriteTime = CurrentTime;
+                        // CurrentFatTime (local FAT_TIME_STAMP) → (*Dirent).LastWriteTime (types_arch FAT_TIME_STAMP)
+                        // both are repr(C) 4-byte structs
+                        *(core::ptr::addr_of_mut!((*Dirent).LastWriteTime) as *mut u32) =
+                            *(core::ptr::addr_of!(CurrentFatTime) as *const u32);
+                        NotifyFilter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
+                        UpdateDirent = 1;
+                    }
 
-            if UpdateLastAccessTime != 0 {
-                (*FcbOrDcb).LastAccessTime.QuadPart =
-                    CurrentDay.QuadPart * FatOneDay.QuadPart;
-                ExLocalTimeToSystemTime(
-                    core::ptr::addr_of!((*FcbOrDcb).LastAccessTime),
-                    core::ptr::addr_of_mut!((*FcbOrDcb).LastAccessTime),
-                );
-                // CurrentFatTime.Date (u16) → (*Dirent).LastAccessDate (FAT_DATE bitfield, 2 bytes)
-                *(core::ptr::addr_of_mut!((*Dirent).LastAccessDate) as *mut u16) = CurrentFatTime.Date;
-                NotifyFilter |= FILE_NOTIFY_CHANGE_LAST_ACCESS;
-                UpdateDirent = 1;
-            }
+                    if UpdateLastAccessTime != 0 {
+                        (*FcbOrDcb).LastAccessTime.QuadPart =
+                            CurrentDay.QuadPart * FatOneDay.QuadPart;
+                        ExLocalTimeToSystemTime(
+                            core::ptr::addr_of!((*FcbOrDcb).LastAccessTime),
+                            core::ptr::addr_of_mut!((*FcbOrDcb).LastAccessTime),
+                        );
+                        // CurrentFatTime.Date (u16) → (*Dirent).LastAccessDate (FAT_DATE bitfield, 2 bytes)
+                        *(core::ptr::addr_of_mut!((*Dirent).LastAccessDate) as *mut u16) = CurrentFatTime.Date;
+                        NotifyFilter |= FILE_NOTIFY_CHANGE_LAST_ACCESS;
+                        UpdateDirent = 1;
+                    }
 
-            if UpdateFileSize != 0 {
-                NT_ASSERT(
-                    (NodeType(FcbOrDcb as *mut core::ffi::c_void) == FAT_NTC_FCB) as i32,
-                );
-                if (*Dirent).FileSize != (*FcbOrDcb).Header.FileSize.__bindgen_anon_1.LowPart {
-                    (*Dirent).FileSize = (*FcbOrDcb).Header.FileSize.__bindgen_anon_1.LowPart;
-                    NotifyFilter |= FILE_NOTIFY_CHANGE_SIZE;
-                    UpdateDirent = 1;
-                }
-            }
+                    if UpdateFileSize != 0 {
+                        NT_ASSERT(
+                            (NodeType(FcbOrDcb as *mut core::ffi::c_void) == FAT_NTC_FCB) as i32,
+                        );
+                        if (*Dirent).FileSize != (*FcbOrDcb).Header.FileSize.__bindgen_anon_1.LowPart {
+                            (*Dirent).FileSize = (*FcbOrDcb).Header.FileSize.__bindgen_anon_1.LowPart;
+                            NotifyFilter |= FILE_NOTIFY_CHANGE_SIZE;
+                            UpdateDirent = 1;
+                        }
+                    }
 
-            FatNotifyReportChange(
-                IrpContext,
-                (*FcbOrDcb).Vcb,
-                FcbOrDcb,
-                NotifyFilter,
-                FILE_ACTION_MODIFIED,
-            );
+                    FatNotifyReportChange(
+                        IrpContext,
+                        (*FcbOrDcb).Vcb,
+                        FcbOrDcb,
+                        NotifyFilter,
+                        FILE_ACTION_MODIFIED,
+                    );
 
-            if UpdateDirent != 0 {
-                FatSetDirtyBcb(
-                    IrpContext,
-                    DirentBcb,
-                    if NotifyFilter == FILE_NOTIFY_CHANGE_LAST_ACCESS {
-                        core::ptr::null_mut()
-                    } else {
-                        (*FcbOrDcb).Vcb
+                    if UpdateDirent != 0 {
+                        FatSetDirtyBcb(
+                            IrpContext,
+                            *p_DirentBcb,
+                            if NotifyFilter == FILE_NOTIFY_CHANGE_LAST_ACCESS {
+                                core::ptr::null_mut()
+                            } else {
+                                (*FcbOrDcb).Vcb
+                            },
+                            1, // TRUE
+                        );
+                    }
                     },
-                    1, // TRUE
+                    |_, pointers| {
+                        if FsRtlIsNtstatusExpected(crate::seh::exception_code(pointers) as i32) != 0 {
+                            crate::seh::EXCEPTION_EXECUTE_HANDLER
+                        } else {
+                            crate::seh::EXCEPTION_CONTINUE_SEARCH
+                        }
+                    },
                 );
-            }
-        }
-
-        // outer finally
-        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(DirentBcb) as *mut *mut core::ffi::c_void);
+                if r.is_err() {
+                    FatResetExceptionState(IrpContext);
+                }
+            },
+            |_, _| {
+                FatUnpinBcb(IrpContext, p_DirentBcb as *mut *mut core::ffi::c_void);
+            },
+        );
     }
 }
 
@@ -1709,7 +1890,7 @@ pub unsafe extern "system" fn FatRescanDirectory(IrpContext: *mut IRP_CONTEXT, D
     let mut unused_vbo: ULONG = 0;
     let mut deleted_hint: ULONG = 0xFFFFFFFF;
     let mut dirent_index: ULONG = 0;
-    let mut dirents_this_run: ULONG;
+    let mut dirents_this_run: ULONG = 0;
     let mut start_index_of_this_run: ULONG = 0;
 
     // Enum RunType
@@ -1726,102 +1907,104 @@ pub unsafe extern "system" fn FatRescanDirectory(IrpContext: *mut IRP_CONTEXT, D
         0,
     );
 
-    // SEH_TRY/SEH_FINALLY emulation: outer loop ensures finally runs after try body
-    'seh_try: loop {
-        // Inner while(TRUE)
-        loop {
-            let mut dirent_deleted: u8 = 0; // BOOLEAN
+    let p_bcb = core::ptr::addr_of_mut!(bcb);
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
+            // Inner while(TRUE)
+            loop {
+                let mut dirent_deleted: u8 = 0; // BOOLEAN
 
-            FatReadDirent(
-                IrpContext,
-                Dcb,
-                unused_vbo,
-                core::ptr::addr_of_mut!(bcb),
-                core::ptr::addr_of_mut!(dirent),
-                (core::ptr::addr_of_mut!(status)).cast(),
-            );
+                FatReadDirent(
+                    IrpContext,
+                    Dcb,
+                    unused_vbo,
+                    p_bcb,
+                    core::ptr::addr_of_mut!(dirent),
+                    (core::ptr::addr_of_mut!(status)).cast(),
+                );
 
-            if status == STATUS_END_OF_FILE
-                || (*dirent).FileName[0] as u8 == FAT_DIRENT_NEVER_USED
-            {
-                break; // exit while
-            }
-
-            if (*dirent).FileName[0] as u8 == FAT_DIRENT_DELETED {
-                dirent_deleted = 1; // TRUE
-                if deleted_hint == 0xFFFFFFFF_u32 {
-                    deleted_hint = unused_vbo;
+                if status == STATUS_END_OF_FILE
+                    || (*dirent).FileName[0] as u8 == FAT_DIRENT_NEVER_USED
+                {
+                    break; // exit while
                 }
+
+                if (*dirent).FileName[0] as u8 == FAT_DIRENT_DELETED {
+                    dirent_deleted = 1; // TRUE
+                    if deleted_hint == 0xFFFFFFFF_u32 {
+                        deleted_hint = unused_vbo;
+                    }
+                } else {
+                    dirent_deleted = 0; // FALSE
+                }
+
+                if current_run == INITIAL_RUN {
+                    current_run = if dirent_deleted != 0 { FREE_DIRENTS } else { ALLOCATED_DIRENTS };
+                } else {
+                    // switch from free to allocated?
+                    if current_run == FREE_DIRENTS && dirent_deleted == 0 {
+                        dirents_this_run = dirent_index - start_index_of_this_run;
+                        RtlClearBits(
+                            core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).FreeDirentBitmap) as *mut _,
+                            start_index_of_this_run,
+                            dirents_this_run,
+                        );
+                        current_run = ALLOCATED_DIRENTS;
+                        start_index_of_this_run = dirent_index;
+                    }
+
+                    // switch from allocated to free?
+                    if current_run == ALLOCATED_DIRENTS && dirent_deleted != 0 {
+                        dirents_this_run = dirent_index - start_index_of_this_run;
+                        RtlSetBits(
+                            core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).FreeDirentBitmap) as *mut _,
+                            start_index_of_this_run,
+                            dirents_this_run,
+                        );
+                        current_run = FREE_DIRENTS;
+                        start_index_of_this_run = dirent_index;
+                    }
+                }
+
+                unused_vbo += core::mem::size_of::<DIRENT>() as ULONG;
+                dirent = dirent.add(1);
+                dirent_index += 1;
+            } // end while
+
+            // post‑loop final run
+            dirents_this_run = dirent_index - start_index_of_this_run;
+            if current_run == FREE_DIRENTS || current_run == INITIAL_RUN {
+                RtlClearBits(
+                    core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).FreeDirentBitmap) as *mut _,
+                    start_index_of_this_run,
+                    dirents_this_run,
+                );
             } else {
-                dirent_deleted = 0; // FALSE
+                RtlSetBits(
+                    core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).FreeDirentBitmap) as *mut _,
+                    start_index_of_this_run,
+                    dirents_this_run,
+                );
             }
 
-            if current_run == INITIAL_RUN {
-                current_run = if dirent_deleted != 0 { FREE_DIRENTS } else { ALLOCATED_DIRENTS };
-            } else {
-                // switch from free to allocated?
-                if current_run == FREE_DIRENTS && dirent_deleted == 0 {
-                    dirents_this_run = dirent_index - start_index_of_this_run;
-                    RtlClearBits(
-                        core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).FreeDirentBitmap) as *mut _,
-                        start_index_of_this_run,
-                        dirents_this_run,
-                    );
-                    current_run = ALLOCATED_DIRENTS;
-                    start_index_of_this_run = dirent_index;
-                }
-
-                // switch from allocated to free?
-                if current_run == ALLOCATED_DIRENTS && dirent_deleted != 0 {
-                    dirents_this_run = dirent_index - start_index_of_this_run;
-                    RtlSetBits(
-                        core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).FreeDirentBitmap) as *mut _,
-                        start_index_of_this_run,
-                        dirents_this_run,
-                    );
-                    current_run = FREE_DIRENTS;
-                    start_index_of_this_run = dirent_index;
-                }
+            if unused_vbo < (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart {
+                start_index_of_this_run = unused_vbo / (core::mem::size_of::<DIRENT>() as ULONG);
+                dirents_this_run = ((*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart - unused_vbo)
+                    / (core::mem::size_of::<DIRENT>() as ULONG);
+                RtlClearBits(
+                    core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).FreeDirentBitmap) as *mut _,
+                    start_index_of_this_run,
+                    dirents_this_run,
+                );
             }
 
-            unused_vbo += core::mem::size_of::<DIRENT>() as ULONG;
-            dirent = dirent.add(1);
-            dirent_index += 1;
-        } // end while
-
-        // post‑loop final run
-        dirents_this_run = dirent_index - start_index_of_this_run;
-        if current_run == FREE_DIRENTS || current_run == INITIAL_RUN {
-            RtlClearBits(
-                core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).FreeDirentBitmap) as *mut _,
-                start_index_of_this_run,
-                dirents_this_run,
-            );
-        } else {
-            RtlSetBits(
-                core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).FreeDirentBitmap) as *mut _,
-                start_index_of_this_run,
-                dirents_this_run,
-            );
-        }
-
-        if unused_vbo < (*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart {
-            start_index_of_this_run = unused_vbo / (core::mem::size_of::<DIRENT>() as ULONG);
-            dirents_this_run = ((*Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart - unused_vbo)
-                / (core::mem::size_of::<DIRENT>() as ULONG);
-            RtlClearBits(
-                core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).FreeDirentBitmap) as *mut _,
-                start_index_of_this_run,
-                dirents_this_run,
-            );
-        }
-
-        // try body complete, break to finally
-        break 'seh_try;
-    } // end 'seh_try
-
-    // _SEH2_FINALLY: unpin the Bcb
-    FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(bcb) as *mut *mut core::ffi::c_void);
+        },
+        |_, _| {
+            // unpin the Bcb
+            FatUnpinBcb(IrpContext, p_bcb as *mut *mut core::ffi::c_void);
+        },
+    );
 
     // post‑SEH adjustments
     if deleted_hint == 0xFFFFFFFF_u32 {
@@ -1842,7 +2025,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
     let mut SavedIrpContextFlag: u32;
     let mut Links: *mut LIST_ENTRY;
     let mut ReturnValue: u32 = 0;
-    let mut Fcb: *mut FCB;
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
 
     let mut bcb: *mut BCB = core::ptr::null_mut();
     let mut Dirent: *mut DIRENT = core::ptr::null_mut();
@@ -1857,13 +2040,13 @@ pub unsafe extern "system" fn FatDefragDirectory(
     let mut InvalidateFcbs: BOOLEAN = 0;
 
     let mut Directory: *mut u8 = core::ptr::null_mut();
-    let mut UnusedDirents: *mut u8;
+    let mut UnusedDirents: *mut u8 = core::ptr::null_mut();
     let mut UnusedDirentBuffer: *mut u8 = core::ptr::null_mut();
-    let mut UsedDirents: *mut u8;
+    let mut UsedDirents: *mut u8 = core::ptr::null_mut();
     let mut UsedDirentBuffer: *mut u8 = core::ptr::null_mut();
 
     let mut Bcbs: *mut *mut BCB = core::ptr::null_mut();
-    let mut Page: u32;
+    let mut Page: u32 = 0;
     let mut PagesPinned: u32 = 0;
 
     let mut DcbSize: u32;
@@ -1906,11 +2089,18 @@ pub unsafe extern "system" fn FatDefragDirectory(
         Links = (*Links).Flink;
     }
 
-    // Outer try/finally simulation using labeled loop + cleanup section
-    let mut _seh2_result_return_value: u32 = 0;
-    'seh_try_outer: loop {
-        // _SEH2_TRY {
-        {
+    // The finally reads everything through raw pointers so the body can own the locals.
+    let p_McbInitialized = core::ptr::addr_of_mut!(McbInitialized);
+    let p_Mcb = core::ptr::addr_of_mut!(Mcb);
+    let p_Lfn = core::ptr::addr_of_mut!(Lfn);
+    let p_UnusedDirentBuffer = core::ptr::addr_of_mut!(UnusedDirentBuffer);
+    let p_UsedDirentBuffer = core::ptr::addr_of_mut!(UsedDirentBuffer);
+    let p_Bcbs = core::ptr::addr_of_mut!(Bcbs);
+    let p_PagesPinned = core::ptr::addr_of_mut!(PagesPinned);
+    let p_bcb = core::ptr::addr_of_mut!(bcb);
+    crate::seh::try_finally(
+        &mut (),
+        |_| {
             let mut Ccb: CCB = core::mem::zeroed();
             let mut QueryOffset: u32 = 0;
             let mut FoundOffset: u32 = 0;
@@ -2017,7 +2207,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
                 > (DcbSize - TotalBytesAllocated) / (core::mem::size_of::<DIRENT>() as u32)
             {
                 ReturnValue = (-1i32) as u32;
-                break 'seh_try_outer;
+                return; // try_return
             }
 
             // Allocate UnusedDirentBuffer
@@ -2191,18 +2381,23 @@ pub unsafe extern "system" fn FatDefragDirectory(
             // ReturnValue = TotalBytesAllocated / sizeof(DIRENT);
             ReturnValue = TotalBytesAllocated / (core::mem::size_of::<DIRENT>() as u32);
 
-            // Inner _SEH2_TRY: FatUnpinRepinnedBcbs
+            // Flush the directory to disk.  If we raise, we will need to invalidate
+            // all of the children.
+            if crate::seh::try_except(
+                &mut (),
+                |_| FatUnpinRepinnedBcbs(IrpContext),
+                |_, pointers| {
+                    if FsRtlIsNtstatusExpected(crate::seh::exception_code(pointers) as i32) != 0 {
+                        crate::seh::EXCEPTION_EXECUTE_HANDLER
+                    } else {
+                        crate::seh::EXCEPTION_CONTINUE_SEARCH
+                    }
+                },
+            )
+            .is_err()
             {
-                // _SEH2_TRY
-                // FatUnpinRepinnedBcbs( IrpContext );
-                FatUnpinRepinnedBcbs(IrpContext);
-                // _SEH2_EXCEPT(FsRtlIsNtstatusExpected(...) ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
-                // In a mechanical translation, we simulate with a flag check;
-                // actual SEH would catch hardware exceptions. Placeholder:
+                InvalidateFcbs = 1;
             }
-            // If an exception occurred (captured by hypothetical SEH mechanism) and filter passes:
-            // InvalidateFcbs = TRUE; (handled by the hypothetical exception path)
-            // For now, this path is not triggered in the mechanical translation.
 
             // for (Links = Dcb->Specific.Dcb.ParentDcbQueue.Flink;
             //      Links != &Dcb->Specific.Dcb.ParentDcbQueue;
@@ -2230,21 +2425,31 @@ pub unsafe extern "system" fn FatDefragDirectory(
 
                 // if (!InvalidateFcbs) {
                 if InvalidateFcbs == 0 {
-                    // Inner _SEH2_TRY for FatLocateSimpleOemDirent
+                    // Safely try to pick up the dirent; if this raises, give up
+                    // and blow everyone else away too.
+                    if crate::seh::try_except(
+                        &mut (),
+                        |_| {
+                            FatLocateSimpleOemDirent(
+                                IrpContext,
+                                Dcb,
+                                (*Fcb).ShortName.Name.Oem.as_ref() as *const OEM_STRING,
+                                core::ptr::addr_of_mut!(TmpDirent),
+                                core::ptr::addr_of_mut!(TmpBcb),
+                                core::ptr::addr_of_mut!(TmpOffset) as *mut u32,
+                            );
+                        },
+                        |_, pointers| {
+                            if FsRtlIsNtstatusExpected(crate::seh::exception_code(pointers) as i32) != 0 {
+                                crate::seh::EXCEPTION_EXECUTE_HANDLER
+                            } else {
+                                crate::seh::EXCEPTION_CONTINUE_SEARCH
+                            }
+                        },
+                    )
+                    .is_err()
                     {
-                        // _SEH2_TRY
-                        // FatLocateSimpleOemDirent( IrpContext, Dcb, &Fcb->ShortName.Name.Oem,
-                        //                           &TmpDirent, &TmpBcb, (PVBO)&TmpOffset );
-                        FatLocateSimpleOemDirent(
-                            IrpContext,
-                            Dcb,
-                            (*Fcb).ShortName.Name.Oem.as_ref() as *const OEM_STRING,
-                            core::ptr::addr_of_mut!(TmpDirent),
-                            core::ptr::addr_of_mut!(TmpBcb),
-                            core::ptr::addr_of_mut!(TmpOffset) as *mut u32,
-                        );
-                        // _SEH2_EXCEPT(FsRtlIsNtstatusExpected(...) ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
-                        // Placeholder: actual SEH would set InvalidateFcbs = TRUE on handled exception.
+                        InvalidateFcbs = 1;
                     }
                 }
 
@@ -2272,63 +2477,57 @@ pub unsafe extern "system" fn FatDefragDirectory(
                 Links = (*Links).Flink;
             }
 
-            // try_exit: NOTHING;
-        }
-        // End of _SEH2_TRY body
-
-        _seh2_result_return_value = ReturnValue;
-        break 'seh_try_outer;
-    }
-
-    // _SEH2_FINALLY
-    {
-        // Free all resources
-        if McbInitialized != 0 {
-            FsRtlUninitializeLargeMcb(core::ptr::addr_of_mut!(Mcb));
-        }
-
-        if !Lfn.Buffer.is_null() {
-            ExFreePool(Lfn.Buffer as *mut c_void);
-        }
-
-        if !UnusedDirentBuffer.is_null() {
-            ExFreePool(UnusedDirentBuffer as *mut c_void);
-        }
-
-        if !UsedDirentBuffer.is_null() {
-            ExFreePool(UsedDirentBuffer as *mut c_void);
-        }
-
-        if !Bcbs.is_null() {
-            Page = 0;
-            while Page < PagesPinned {
-                FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*(Bcbs.offset(Page as isize))) as *mut *mut core::ffi::c_void);
-                Page += 1;
+        },
+        |_, _| {
+            // Free all our resources and stuff.
+            if *p_McbInitialized != 0 {
+                FsRtlUninitializeLargeMcb(p_Mcb);
             }
-            ExFreePool(Bcbs as *mut c_void);
-        }
 
-        FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(bcb) as *mut *mut core::ffi::c_void);
+            if !(*p_Lfn).Buffer.is_null() {
+                ExFreePool((*p_Lfn).Buffer as *mut c_void);
+            }
 
-        // Release Fcb resources
-        Links = (*Dcb).Specific.Dcb.as_mut().ParentDcbQueue.Flink;
-        while Links
-            != core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).ParentDcbQueue)
-                as *mut LIST_ENTRY
-        {
-            Fcb = (Links as *mut u8)
-                .offset(-(core::mem::offset_of!(FCB, ParentDcbLinks) as isize))
-                as *mut FCB;
-            ExReleaseResourceLite((*Fcb).Header.Resource);
-            Links = (*Links).Flink;
-        }
+            if !(*p_UnusedDirentBuffer).is_null() {
+                ExFreePool(*p_UnusedDirentBuffer as *mut c_void);
+            }
 
-        // Restore IrpContext->Flags
-        (*IrpContext).Flags = SavedIrpContextFlag;
-    }
-    // _SEH2_END
+            if !(*p_UsedDirentBuffer).is_null() {
+                ExFreePool(*p_UsedDirentBuffer as *mut c_void);
+            }
 
-    return _seh2_result_return_value;
+            if !(*p_Bcbs).is_null() {
+                let mut page: u32 = 0;
+                while page < *p_PagesPinned {
+                    FatUnpinBcb(IrpContext, (*p_Bcbs).offset(page as isize) as *mut *mut core::ffi::c_void);
+                    page += 1;
+                }
+                ExFreePool(*p_Bcbs as *mut c_void);
+            }
+
+            FatUnpinBcb(IrpContext, p_bcb as *mut *mut core::ffi::c_void);
+
+            // Release Fcb resources
+            let mut links = (*Dcb).Specific.Dcb.as_mut().ParentDcbQueue.Flink;
+            while links
+                != core::ptr::addr_of_mut!(((*Dcb).Specific.Dcb.as_mut()).ParentDcbQueue)
+                    as *mut LIST_ENTRY
+            {
+                let fcb = (links as *mut u8)
+                    .offset(-(core::mem::offset_of!(FCB, ParentDcbLinks) as isize))
+                    as *mut FCB;
+                ExReleaseResourceLite((*fcb).Header.Resource);
+                links = (*links).Flink;
+            }
+
+            // Restore IrpContext->Flags
+            (*IrpContext).Flags = SavedIrpContextFlag;
+        },
+    );
+
+    // Now return the offset of the first free dirent to the caller.  (The old
+    // emulation returned 0, not -1, on the try_return path.)
+    return ReturnValue;
 }
 
 

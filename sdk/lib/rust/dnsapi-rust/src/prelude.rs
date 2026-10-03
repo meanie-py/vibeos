@@ -196,7 +196,7 @@ extern "system" {
 }
 
 // 4d. adns 3rdparty async resolver (cdecl C staticlib, -DADNS_JGAA_WIN32). Signatures from
-//     sdk/lib/3rdparty/adns/src/adns.h. adns_state/adns_answer/adns_{rrtype,initflags,queryflags}
+//     vendor/adns/src/adns.h. adns_state/adns_answer/adns_{rrtype,initflags,queryflags}
 //     come from the bindgen `types` island; in_addr is a winsock base type.
 extern "C" {
     pub fn adns_init(

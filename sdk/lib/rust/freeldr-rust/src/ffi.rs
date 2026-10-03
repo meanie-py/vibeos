@@ -127,7 +127,7 @@ pub type ARC_STATUS = u32;
 // --- constants the AI used but rustconv didn't import/define ---
 // ARC_CODES (arc.h enum order): ESUCCESS=0 … ENOEXEC=15.
 pub const ESUCCESS: ARC_STATUS = 0;
-pub const ENOEXEC: ARC_STATUS = 15;
+pub const ENOEXEC: ARC_STATUS = 15; // nolint: const-contradiction (ARC_CODES enumerator, arc.h:47 — not errno ENOEXEC=8)
 // SEEKMODE / OPENMODE (enums start at 0).
 pub const SeekAbsolute: u32 = 0;
 pub const SeekRelative: u32 = 1;

@@ -36,6 +36,7 @@ extern "system" {
     fn HeapAlloc(hHeap: LPVOID, dwFlags: u32, dwBytes: usize) -> LPVOID;
     fn HeapFree(hHeap: LPVOID, dwFlags: u32, lpMem: LPVOID) -> i32;
     fn ExitThread(code: DWORD);
+    fn SetLastError(dwErrCode: DWORD);
     // ── ntdll CSR client (csr.h). WINAPI/NTAPI = stdcall on i386 → extern "system".
     fn CsrClientCallServer(
         ApiMessage: PCSR_API_MESSAGE,
@@ -207,7 +208,41 @@ pub unsafe extern "system" fn GetRawInputDeviceInfoA(
     pData: LPVOID,
     pcbSize: PUINT,
 ) -> UINT {
-    0
+    let mut pDataW = pData;
+    let mut cbSize: UINT = *pcbSize;
+
+    if uiCommand == RIDI_DEVICENAME as UINT && !pData.is_null() {
+        pDataW = HeapAlloc(GetProcessHeap(), 0, cbSize as usize * core::mem::size_of::<WCHAR>());
+        if pDataW.is_null() {
+            SetLastError(ERROR_NOT_ENOUGH_MEMORY as DWORD);
+            return UINT::MAX;
+        }
+    }
+
+    let mut Ret = NtUserGetRawInputDeviceInfo(hDevice, uiCommand, pDataW, &mut cbSize) as UINT;
+    // Divergence from stubs.c: its `Ret >= 0` is always true on a UINT, so a failed call
+    // (UINT)-1 still "converted" the uninitialised heap block into the caller's buffer.
+    // Convert only what the syscall actually filled.
+    if Ret != UINT::MAX && uiCommand == RIDI_DEVICENAME as UINT && !pDataW.is_null() {
+        if crate::winbase::WideCharToMultiByte(
+            crate::winbase::CP_THREAD_ACP,
+            0,
+            pDataW as LPCWSTR,
+            cbSize as i32,
+            pData as LPSTR,
+            *pcbSize as i32,
+            core::ptr::null(),
+            core::ptr::null_mut(),
+        ) == 0
+        {
+            Ret = UINT::MAX;
+        }
+    }
+    if pData != pDataW {
+        HeapFree(GetProcessHeap(), 0, pDataW);
+    }
+    *pcbSize = cbSize;
+    Ret
 }
 
 #[no_mangle]
@@ -233,7 +268,19 @@ pub unsafe extern "system" fn GetRawInputBuffer(
     pcbSize: PUINT,
     cbSizeHeader: UINT,
 ) -> UINT {
-    0
+    let pcti = (*GetWin32ClientInfo()).pClientThreadInfo;
+
+    if pcbSize.is_null() || cbSizeHeader as usize != core::mem::size_of::<RAWINPUTHEADER>() {
+        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+        return UINT::MAX;
+    }
+
+    if pcti.is_null() || ((*pcti).fsWakeBits as u32 & QS_RAWINPUT) == 0 {
+        *pcbSize = 0;
+        return 0;
+    }
+
+    NtUserGetRawInputBuffer(pData, pcbSize, cbSizeHeader) as UINT
 }
 
 #[no_mangle]

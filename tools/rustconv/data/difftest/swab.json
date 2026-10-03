@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "random_cases": 256,
+  "seed": 230923,
+  "validity": "Genuine standalone CRT swab.c versus exact selected shipping msvcrt _swab function. Disjoint non-null byte allocations of len bytes, len >= 0. Source remains unchanged; odd trailing destination byte remains unchanged. Host char signedness does not change byte copies. Empty precomp.h supplies no behavior.",
+  "c_source": "../../../../sdk/lib/crt/stdlib/swab.c",
+  "rust_source": "../../../../sdk/lib/rust/msvcrt-crt-rust/src/lib.rs",
+  "rust_items": [
+    "_swab"
+  ],
+  "c_include_dirs": [
+    "include"
+  ],
+  "functions": [
+    {
+      "c": "_swab",
+      "rust": "candidate::_swab",
+      "return": "void",
+      "args": [
+        {
+          "name": "src",
+          "type": "const_bytes",
+          "c_type": "char *",
+          "length": "len"
+        },
+        {
+          "name": "dst",
+          "type": "bytes",
+          "c_type": "char *",
+          "length": "len"
+        },
+        {
+          "name": "len",
+          "type": "i32",
+          "values": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            7,
+            8,
+            15,
+            16,
+            31,
+            32,
+            255,
+            256,
+            257
+          ],
+          "random_range": [
+            0,
+            1024
+          ]
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "wrong_boundary",
+      "find": "if len > 1 {",
+      "replace": "if len > 2 {"
+    },
+    {
+      "name": "dropped_write",
+      "find": "            *d = s1;",
+      "replace": "            let _ = s1;"
+    },
+    {
+      "name": "off_by_one",
+      "find": "            *d.add(1) = s0;",
+      "replace": "            *d.add(2) = s0;"
+    }
+  ]
+}

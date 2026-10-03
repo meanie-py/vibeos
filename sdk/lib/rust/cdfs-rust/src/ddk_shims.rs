@@ -256,7 +256,7 @@ pub unsafe fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS 
 
 //  mmfuncs.h MmPrepareMdlForReuse macro. #[no_mangle] so the per-file
 //  `extern "C" { fn MmPrepareMdlForReuse(...) }` decls resolve at link.
-const MDL_PARTIAL_HAS_BEEN_MAPPED: u16 = 0x0004;
+const MDL_PARTIAL_HAS_BEEN_MAPPED: u16 = 0x0020; // mmtypes.h:23 (was 0x0004 = MDL_SOURCE_IS_NONPAGED_POOL)
 
 #[no_mangle]
 pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {
@@ -381,6 +381,22 @@ extern "C" {
 pub unsafe extern "C" fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> ! {
     CdRaiseStatusEx(IrpContext, Status, 0, 0, 0);
     loop {}
+}
+
+/// read.c/write.c `SafeZeroMemory(IC, AT, BYTE_COUNT)`: zero part of the caller's buffer,
+/// turning a fault on it into `CdRaiseStatus(STATUS_INVALID_USER_BUFFER)`. Expanded to a
+/// bare RtlZeroMemory, a bad user buffer would reach CdExceptionFilter as an access
+/// violation, which it treats as unexpected and bugchecks on.
+pub unsafe fn SafeZeroMemory(IrpContext: *mut IRP_CONTEXT, At: *mut core::ffi::c_void, ByteCount: usize) {
+    const STATUS_INVALID_USER_BUFFER: NTSTATUS = 0xC00000E8u32 as i32;
+    let caught = ntkrnl_sys::seh::try_except(
+        &mut (),
+        |_| ntkrnl_sys::rtl::RtlZeroMemory(At, ByteCount),
+        |_, _| ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER,
+    );
+    if caught.is_err() {
+        CdRaiseStatus(IrpContext, STATUS_INVALID_USER_BUFFER);
+    }
 }
 
 // cd.h integer/pointer helper macros (generic; safe central shims).

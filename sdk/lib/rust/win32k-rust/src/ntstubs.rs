@@ -145,31 +145,33 @@ pub unsafe extern "system" fn NtUserInitializeClientPfnArrays(
             1,
         );
     }
+    // The probes above VALIDATE only; these four captures are the access, and they
+    // write the client callback tables the whole of user32's callback path dispatches
+    // through. A fault lands in Status, checked just below, and the tables are only
+    // declared initialised (ClientPfnInit) once every one of them has landed.
     if NT_SUCCESS(Status) {
-        RtlCopyMemory(
+        if !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!((*gpsi).apfnClientA) as *mut core::ffi::c_void,
             pfnClientA as *const core::ffi::c_void,
-            core::mem::size_of::<PFNCLIENT>() as _,
-        );
-        RtlCopyMemory(
+            core::mem::size_of::<PFNCLIENT>(),
+        ) || !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!((*gpsi).apfnClientW) as *mut core::ffi::c_void,
             pfnClientW as *const core::ffi::c_void,
-            core::mem::size_of::<PFNCLIENT>() as _,
-        );
-        RtlCopyMemory(
+            core::mem::size_of::<PFNCLIENT>(),
+        ) || !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!((*gpsi).apfnClientWorker) as *mut core::ffi::c_void,
             pfnClientWorker as *const core::ffi::c_void,
-            core::mem::size_of::<PFNCLIENTWORKER>() as _,
-        );
-
-        RtlCopyMemory(
+            core::mem::size_of::<PFNCLIENTWORKER>(),
+        ) || !crate::copy::capture_from_user(
             core::ptr::addr_of_mut!((*gpsi).aStoCidPfn) as *mut core::ffi::c_void,
             pfnClientW as *const core::ffi::c_void,
             core::mem::size_of_val(&(*gpsi).aStoCidPfn),
-        );
-
-        hModClient = hmodUser;
-        ClientPfnInit = 1;
+        ) {
+            Status = STATUS_ACCESS_VIOLATION;
+        } else {
+            hModClient = hmodUser;
+            ClientPfnInit = 1;
+        }
     }
 
     if !NT_SUCCESS(Status) {
@@ -400,23 +402,6 @@ pub unsafe extern "system" fn NtUserGetRawInputData(
     pData: LPVOID,
     pcbSize: PUINT,
     cbSizeHeader: UINT,
-) -> DWORD {
-    0
-}
-#[no_mangle]
-pub unsafe extern "system" fn NtUserGetRawInputDeviceInfo(
-    hDevice: HANDLE,
-    uiCommand: UINT,
-    pData: LPVOID,
-    pcbSize: PUINT,
-) -> DWORD {
-    0
-}
-#[no_mangle]
-pub unsafe extern "system" fn NtUserGetRawInputDeviceList(
-    pRawInputDeviceList: PRAWINPUTDEVICELIST,
-    puiNumDevices: PUINT,
-    cbSize: UINT,
 ) -> DWORD {
     0
 }

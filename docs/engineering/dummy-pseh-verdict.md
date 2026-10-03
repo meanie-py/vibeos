@@ -7,6 +7,13 @@ direction) and [kernel-exception-handling.md](archive/kernel-exception-handling.
 
 ## The verdict
 
+> **Update 2026-09-26:** Rust kernel code now has real `try_except`/`try_finally`
+> (`ntkrnl_sys::seh` over `ntoskrnl/sehtry.c`: native SEH on amd64/arm64, a hand-built
+> `fs:[0]` frame on i386). That changes step 3 below: the FS drivers' raise model can be
+> wired to its already-translated filters as written, instead of converting every raise
+> site to `Result`. Cc/Mm in-page raises, which no `Result` conversion inside cdfs could
+> reach, are caught the same way.
+
 **Keep DUMMY_PSEH as the *default* compile mode for C; give Rust code the
 three semantics PSEH provided, idiomatically. Kernel-mode catch is no
 longer impossible — this lane made it work (see the PoC below) — so
@@ -172,7 +179,7 @@ Empirically re-tested on our exact llvm-mingw clang 19.1.7 (2026-07-06):
 
 So on amd64 (and, pending the ×3 gate, arm64) **native SEH is now a
 working, validated option** — for **C**. What keeps it from being *the*
-answer: (a) **Rust cannot consume it** — Rust has no `__try`; giving Rust
+answer: (a) **Rust cannot consume it** *(superseded 2026-09-26: it can, one frame down, through C trampolines; `ntkrnl_sys::seh`, `ntoskrnl/sehtry.c`, all three arches incl. i386, boot-tested by `[SEH-TRY]`)* — Rust has no `__try`; giving Rust
 catch semantics still requires the trap-to-panic bridge, which is the
 expensive deferred project — so the ~36 Rust raise sites and the dead FS
 filters need the `Result` conversion regardless; (b) i386 native SEH does
@@ -203,6 +210,14 @@ and **first-chance VEH is compiled out** (shared librtl is built as
 `_NTOSKRNL_`; `RtlCallVectoredExceptionHandlers` elided —
 `rtl-except/src/amd64/except.rs:28`). Known TODO: nested-exception
 disposition `debugbreak()`s (`amd64/unwind.rs:689,844`).
+
+**Consequence for RPC clients: a failed call kills the caller with exit code 1.** The `RpcExcept`
+arm around every stub never runs, the dispatcher resumes the `RPC_S_*` raise (it is `< 0xC0000000`),
+`RaiseException` returns, and `RpcRaiseException` then does its "handler continued execution" `ERR`
+and `ExitProcess(1)`. Nothing crashes, so no second chance is logged; the only trace is that `ERR`
+line. On amd64, wordpad and winver died this way for as long as the spooler was down, because
+winspool's printer calls went to a server that was not listening. Until the class-2 `try_` work
+reaches rpcrt4, a dead RPC server means every one of its clients dies.
 
 ## The program — Tier 1: convert raise contracts to `Result` (do this)
 
@@ -237,7 +252,29 @@ Mechanical, incremental, each step independently smoke-gateable:
 2. **Same split for the probe exports**: raising `ProbeForRead/Write`
    (exintrin.rs) stay as the ABI edge; internal Rust callers move to
    `probe.rs`. Grep-audit: no internal Rust caller of a raising export.
-3. **Re-wire the translated FS filters**: cdfs/fastfat error paths call
+3. **DONE for cdfs (2026-09-26), via real SEH rather than `Result`.** `CdFsdDispatch`,
+   `CdFspDispatch`, `CdPerformVerify` and `CdProcessException` run under
+   `ntkrnl_sys::seh::try_except` with the translated `CdExceptionFilter` /
+   `CdProcessException`; all 35 `__finally` sites are `try_finally`; the four
+   `__except(EXECUTE_HANDLER)` sites (the two MDL locks, `SafeZeroMemory`, the directory
+   buffer fill) are real. appstorm's `fsraise` check forces a cdfs raise at every run.
+   **DONE for fastfat (2026-09-26)**, the same way: `crate::seh` (fastfat-rust/src/seh.rs)
+   adds `fat_try_except`, which takes the ADDRESS of the IrpContext local because the FSD
+   entry points assign it inside the body, and moves `FatRaiseStatus` /
+   `FatNormalizeAndRaiseStatus` / `FatResetExceptionState` from C stubs into Rust so they
+   set `IrpContext->ExceptionStatus` as the macros do (the filter keys on it).
+   `FatProcessException` and `FatPerformVerify` were hand-retranslated: the first never
+   completed the Irp, the second took its arguments as pointer-to-pointer. 207 of 215 C try
+   sites converted; many finallys regained abnormal-unwind code the translation had
+   dropped, and ~40 unrelated translation bugs surfaced in the converted regions were fixed
+   (see the commit). appstorm's `fsraise` now forces a fastfat raise on arm64
+   (`FatNotifyChangeDirectory` on a delete-pending directory -> STATUS_DELETE_PENDING).
+   **Owed:** the other 8 sites live in `FatQueryRetrievalPointers`, `FatGetVolumeBitmap`
+   and `FatGetRetrievalPointers`, which were never translated and are still
+   `STUB_BUGCHECK`s in `drivers/filesystems/fastfat/rust_cohab_stub.c` (as is
+   `FatInvalidateVolumes`); convert them when they are translated.
+   Original plan for reference:
+   **Re-wire the translated FS filters**: cdfs/fastfat error paths call
    `Cd/FatExceptionFilter` + `Cd/FatProcessException` **explicitly on
    `Err`** instead of via the dead `_SEH2_EXCEPT` arm; `Cd/FatRaiseStatus`
    becomes an early-return of `Err(status)` within our crates. The filter

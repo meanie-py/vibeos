@@ -2595,7 +2595,9 @@ pub unsafe extern "system" fn GetConsoleInputExeNameW(
     }
     // _SEH2_END
 
-    return 0; // Return TRUE
+    // console.c returns TRUE. This returned 0, which GetConsoleInputExeNameA reads as
+    // `ExeLength == 0` and bails on before converting, so the A export never filled its buffer.
+    return TRUE as DWORD;
 }
 
 #[no_mangle]

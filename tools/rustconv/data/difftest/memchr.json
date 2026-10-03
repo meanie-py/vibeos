@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "random_cases": 64,
+  "seed": 230924,
+  "c_flags": [
+    "-D__cdecl=",
+    "-fsigned-char"
+  ],
+  "rust_source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/generated.rs",
+  "validity": "Exact shipping cnt-rust memchr shim and raw_slice helper, original core_rs::mem module, genuine CRT memchr.c. One non-null initialized byte region of n bytes, left- and right-aligned against inaccessible pages. n=0 performs no access. Signed-char comparison against the untruncated int c is intentional; values outside -128..127 never match. Positive matches supplied by zero/255/ascending/descending patterns. Returned pointer must be null or inside the searched range, never one past. Host-only selected-body grade.",
+  "c_source": "../../../../sdk/lib/crt/mem/memchr.c",
+  "rust_items": [
+    "mmemchr::memchr"
+  ],
+  "rust_helpers": [
+    {
+      "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/mod.rs",
+      "items": [
+        "raw_slice"
+      ]
+    }
+  ],
+  "rust_support": {
+    "core_rs": "mem_core.rs"
+  },
+  "functions": [
+    {
+      "c": "memchr",
+      "rust": "candidate::memchr",
+      "return": {
+        "type": "void_bytes",
+        "within": [
+          "s"
+        ],
+        "nullable": true,
+        "one_past": false
+      },
+      "args": [
+        {
+          "name": "s",
+          "type": "const_void_bytes",
+          "length": "n"
+        },
+        {
+          "name": "c",
+          "type": "i32",
+          "values": [
+            -129,
+            -128,
+            -112,
+            -1,
+            0,
+            1,
+            65,
+            127,
+            128,
+            144,
+            255,
+            256
+          ],
+          "random_range": [
+            -256,
+            256
+          ]
+        },
+        {
+          "name": "n",
+          "type": "usize",
+          "values": [
+            0,
+            1,
+            2,
+            3,
+            7,
+            8,
+            31,
+            32,
+            63,
+            64
+          ],
+          "random_range": [
+            0,
+            256
+          ]
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "wrong_return",
+      "find": "Some(i) => s.add(i) as *mut core::ffi::c_void,",
+      "replace": "Some(i) => s.add(i + 1) as *mut core::ffi::c_void,"
+    },
+    {
+      "name": "read_past_end",
+      "find": "let s_s = raw_slice(s as *const u8, n);",
+      "replace": "let s_s = raw_slice(s as *const u8, n + 1);",
+      "expect": "memory_fault"
+    },
+    {
+      "name": "read_before_start",
+      "find": "let s_s = raw_slice(s as *const u8, n);",
+      "replace": "core::ptr::read_volatile((s as *const u8).sub(1)); let s_s = raw_slice(s as *const u8, n);",
+      "expect": "memory_fault"
+    }
+  ]
+}

@@ -10,7 +10,7 @@ from collections.abc import Iterator
 import pytest
 
 from .cli import config as cli_config
-from .vm import PROJECT_DIR, QemuVM, get_arch_config, reap_orphan_qemus
+from .vm import PROJECT_DIR, QemuVM, get_arch_config, launch_with_retry, reap_orphan_qemus
 
 # Add tools/ to path for scan_ud2, lint_kernel
 sys.path.insert(0, str(PROJECT_DIR / "tools"))
@@ -172,20 +172,12 @@ def vm(
     arch: str, tmp_path_factory: pytest.TempPathFactory, request: pytest.FixtureRequest
 ) -> Iterator[QemuVM]:
     """Boot QEMU once per test session, save 'ready' snapshot."""
-    # Reap ONLY orphan QEMUs whose launcher process is dead (crashed/timed-out
-    # prior runs). A QEMU with a live launcher — possibly another agent's —
-    # is never touched. Safe by construction; see vm.reap_orphan_qemus.
+    # Reap ONLY orphan QEMUs whose owner is dead (or that are past their lifetime cap):
+    # the smoke harness's lock files AND the kernel-debug toolkit's run manifests. A QEMU
+    # with a live owner -- possibly another agent's -- is never touched. In-process; see
+    # vm.reap_orphan_qemus for why this is no longer a qemu/reap.sh shell-out.
     for line in reap_orphan_qemus():
-        print(f"[pytest] {line}")
-    # Also sweep kernel-debug-toolkit orphans (qemu/start.sh manifests with
-    # a dead owner_pid). The Python reaper above only knows the smoke
-    # harness's /tmp/vibeos-qemu-locks/ lockfiles; reap.sh covers both halves.
-    reap_sh = PROJECT_DIR / "qemu" / "reap.sh"
-    if reap_sh.is_file():
-        result = subprocess.run([str(reap_sh)], capture_output=True, text=True, check=False)
-        for line in result.stderr.splitlines():
-            if line.startswith("[reap] killed") or line.startswith("[reap] FAILED"):
-                print(f"[pytest] {line}")
+        print(f"[pytest] [reap] {line}")
     # Surface a missing screenshot dependency up front (don't fail — boot is
     # still verifiable via serial markers — but tell the operator how to fix it,
     # since screenshots silently degrade to raw .ppm without it).
@@ -212,8 +204,19 @@ def vm(
     # backend got a working boot stage but a net stage that failed on KVM.
     cli_cfg = cli_config.load(PROJECT_DIR)
     backend = cli_cfg.get("qemu.backend", "native")
-    vm = QemuVM(config, work_dir, backend=backend, windows=cli_cfg.get("qemu.windows", {}))
-    vm.start()
+    # Through the shared retry, like smoke: a lost serial socket is the HOST, it resolves
+    # on a fresh VM (new port), and without this it was graded a lost boot of the OS.
+    # Each retry is printed, and a launch that fails every attempt raises as before.
+    started, _attempts, launch_exc = launch_with_retry(
+        lambda: QemuVM(config, work_dir, backend=backend, windows=cli_cfg.get("qemu.windows", {})),
+        {},
+        lambda msg: print(f"[pytest] {msg}"),
+        "launch",
+    )
+    if launch_exc is not None:
+        raise launch_exc
+    assert started is not None
+    vm = started
     # Tell watchers where to follow boot progress live — a cold arm64 TCG boot
     # is silent for minutes, so this is how an agent distinguishes "working"
     # from "wedged" without restarting the run.

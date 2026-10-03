@@ -68,12 +68,11 @@ KT_OFFSETS_I386 = [
     ("Process",                     0x128, 4, "p"),
 ]
 
-KT_OFFSETS_ARM64 = [
-    ("Header.Type",                 0x000, 1, "u"),
-    ("Header.SignalState",          0x004, 4, "i"),
-    ("Header.WaitListHead.Flink",   0x008, 8, "p"),
-    ("Header.WaitListHead.Blink",   0x010, 8, "p"),
-]
+# arm64's KTHREAD is amd64's up to 0x2f0: ntkrnl-sys's compiled asserts
+# (offset_check_{amd64,arm64}.rs) agree on every field below that, and differ only in the
+# I/O counters and StateSaveArea past it. The header-only table this replaced left
+# who-holds unable to name an arm64 thread's wait block.
+KT_OFFSETS_ARM64 = KT_OFFSETS_AMD64
 
 
 KT_SCHEMA = {

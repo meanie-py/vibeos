@@ -27,12 +27,35 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+from . import artifacts, flakes
+
 SUITE = "kmtest"
+# Every conformance round stamps its live serial with host seconds
+# (VIBEOS_SERIAL_TIMESTAMPS, tee-only), and every reader here strips the stamp
+# back off before parsing. The stamp is the only witness to how GUEST time
+# relates to HOST time: arm64 NpfsConnect's "worker woke 150 s late" arrived in
+# a round no longer than its clean siblings, so the 150 s was the guest clock
+# leaping, not a thread waiting -- and nothing in an unstamped log can say which.
+# The tee stamps after "\r" as well as "\n", so a CRLF split across two reads
+# puts a stamp between the pair -- hence the lookbehind.
+_HOST_STAMP = re.compile(r"(?:^|(?<=\r))\[\+ *\d+\.\d+\] ", re.M)
+
+
+def read_serial(path: Path) -> str:
+    """A conformance serial log with the host-time stamps removed, and then
+    newlines normalised exactly as `read_text` would -- stripping has to come
+    first, or a CR/stamp/LF split reads as two line ends."""
+    with Path(path).open(errors="replace", newline="") as fh:
+        raw = fh.read()
+    return _HOST_STAMP.sub("", raw).replace("\r\n", "\n").replace("\r", "\n")
+
+
 # base arch -> pytest arch (x86 boot the UEFI configs; arm64 is itself).
 _PYTEST_ARCH = {"i386": "i386-uefi", "amd64": "amd64-uefi"}
 
@@ -485,7 +508,7 @@ def _seed_asserts_from_rounds(args, repo: Path) -> int:
         logs = sorted(run_dir.glob("*_serial.log")) if run_dir.is_dir() else []
         if not logs:
             continue
-        results, _done, _bug = parser.parse(logs[0].read_text(errors="replace"))
+        results, _done, _bug = parser.parse(read_serial(logs[0]))
         if results:
             rounds.append(results)
     if len(rounds) < 3:
@@ -536,6 +559,11 @@ def _conformance_once(args, repo: Path) -> int:
     baseline_path = repo / "tools" / "conformance-baseline" / base / baseline_name
 
     # --- 1. build (default on) with the kmtest payload -----------------------
+    if args.no_build:
+        gap = media_payload_gap(repo / f"build-{base}")
+        if gap:
+            print(f"[conformance] --no-build refused: {gap}", file=sys.stderr)
+            return 2
     if not args.no_build:
         unprovisioned = _worktree_provisioning_gaps(repo, base)
         if unprovisioned:
@@ -601,6 +629,7 @@ def _conformance_once(args, repo: Path) -> int:
     # unrelated later runs — which is exactly what happened to the arm64 MP
     # wedge, leaving a run dir with serial and nothing else.
     env["VIBEOS_ARTIFACT_DIR"] = str(run_dir)
+    env["VIBEOS_SERIAL_TIMESTAMPS"] = "1"  # see read_serial
     sweep_cmd = [
         sys.executable,
         "-m",
@@ -641,7 +670,7 @@ def _conformance_once(args, repo: Path) -> int:
     if not log_path.is_file():
         print(f"[conformance] no serial log at {log_path} — did the guest boot?", file=sys.stderr)
         return 2
-    serial_text = log_path.read_text(errors="replace")
+    serial_text = read_serial(log_path)
     results, done_line, bugcheck = parser.parse(serial_text)
 
     lines = [parser.fmt(r) for r in results]
@@ -848,19 +877,10 @@ def _conformance_once(args, repo: Path) -> int:
     # months filed under one heading.
     serial_text = ""
     try:
-        serial_text = Path(summary["serial_log"]).read_text(errors="replace")
+        serial_text = read_serial(Path(summary["serial_log"]))
     except Exception:
         pass
-    if bugcheck:
-        shape = f"A:bugcheck {bugcheck}"
-    elif not results:
-        shape = "B:no-launch"
-    elif not done_line:
-        shape = "stalled/DID-NOT-FINISH"
-    elif regressions:
-        shape = "clean-but-ratchet-regression"
-    else:
-        shape = "clean"
+    shape = round_shape(bugcheck, results, done_line, regressions, serial_text)
     try:
         from . import triage as _triage
 
@@ -886,7 +906,56 @@ def _conformance_once(args, repo: Path) -> int:
             "rust_panics": serial_text.count("*** RUST PANIC"),
         }
     )
+    # Out of /tmp before anything reads it: reboots wipe the artifact root, and a
+    # red round's serial + results are the only way to re-grade it later.
+    if shape != "clean":
+        kept = artifacts.preserve_failure(run_dir, base, shape, repo)
+        if kept:
+            rec["preserved"] = kept
     _append_round(rec)
+
+    # ...and to the SHARED ledger under vibeos_root, which is what every other
+    # command writes and what `vibeos-cli health` reads. `_append_round` above is
+    # not a substitute: it writes `~/vibeos-flake-farm/`, OUTSIDE the tree the
+    # backups cover. On 2026-09-14 the box was rebuilt, the shared ledger came
+    # back with 19,711 rows, and the flake farm did not come back at all -- taking
+    # a 201-run arm64 census with it, along with every summary.json it had been
+    # reconstructed from. The census had to scrape /tmp in the first place because
+    # conformance verdicts were absent from the durable ledger: build 6152,
+    # smoke 4741, check 3543, gate 1265, farm 1194, land 1087, conformance ZERO.
+    #
+    # The fields below are exactly what a census needs, so the next one is a query
+    # over a durable file rather than an archaeology dig across volatile run dirs:
+    # `shape` separates a lost boot from a flaky assertion (they are two
+    # populations and pooling them corrupts the rate), and `regressions` names the
+    # tests. Keep this a SUMMARY -- the bulky per-run evidence (census_lines,
+    # serial excerpts) stays in the flake farm; this is the part that must survive.
+    artifacts.ledger_append(
+        repo,
+        cmd="conformance",
+        arch=base,
+        verdict="OK" if shape == "clean" else "FAIL",
+        classification=shape,
+        duration_ms=int(elapsed * 1000),
+        extra={
+            "suite": SUITE,
+            "smp": smp,
+            "mp_kernel": summary["mp_kernel"],
+            "launched": len(results),
+            "ok": ok,
+            "bad": bad,
+            "bugcheck": bugcheck,
+            "have_baseline": have_baseline,
+            "regressions": regressions,
+            "new_passes": new_passes,
+            # What `flake-report` grades: the round's failure signatures, whether the
+            # commit names the code that ran, and where the evidence survives.
+            "sigs": flakes.conformance_signatures(rec),
+            "dirty": artifacts._is_dirty(repo),
+            "run_id": run_dir.name,
+            "preserved": rec.get("preserved"),
+        },
+    )
 
     # --- 7. report + exit code -----------------------------------------------
     verdict = "done" if done_line else "DID NOT FINISH"
@@ -917,3 +986,51 @@ def _conformance_once(args, repo: Path) -> int:
         return 0
     print("  ratchet holds: no regressions vs baseline.")
     return 0
+
+
+def round_shape(bugcheck, results: list, done_line, regressions: list, serial_text: str) -> str:
+    """The failure MODE of one round -- the partition every flake rate is taken within.
+
+    A round whose serial holds NOTHING but the harness's own `#` header never ran a
+    guest instruction. 16 rounds in two weeks failed that way in under a minute, with no
+    kernel on serial; the one whose run dir survived shows why -- handshake_seconds
+    15.001, QEMU never connected the serial socket. Filed as B:no-launch they sat in the
+    same bucket as kernels that died before the sweep, which is a different bug on a
+    different side of the machine. Named for what is OBSERVED, not for a cause.
+    """
+    guest_serial = any(ln.strip() and not ln.startswith("#") for ln in serial_text.splitlines())
+    if bugcheck:
+        return f"A:bugcheck {bugcheck}"
+    if not guest_serial:
+        return "L:no-guest-serial"
+    if not results:
+        return "B:no-launch"
+    if not done_line:
+        return "stalled/DID-NOT-FINISH"
+    if regressions:
+        return "clean-but-ratchet-regression"
+    return "clean"
+
+
+def media_payload_gap(build_dir: Path) -> str | None:
+    """Why this build dir's media cannot run the sweep, or None if it can.
+
+    `--no-build` boots whatever media is there. A plain `vibeos-cli build` stamps
+    `{"payloads": []}`, and its media boots to a normal desktop with no sweep on it:
+    the round then drains its whole budget (~30 min) waiting for a marker that cannot
+    appear, and is filed B:no-launch -- a fake LOST BOOT in the flake corpus. That
+    cost three arches x 30 min on 2026-09-26. The build's own payload stamp answers
+    the question before a single boot; a missing stamp is refused too, since it says
+    nothing about what the media holds.
+    """
+    stamp = build_dir / "payload-selection.json"
+    fix = f"drop --no-build (conformance builds with VIBEOS_PAYLOAD={SUITE}) or build with it"
+    try:
+        names = json.loads(stamp.read_text()).get("payloads", [])
+    except OSError:
+        return f"{stamp} is missing, so nothing says what this media holds; {fix}"
+    except ValueError as e:
+        return f"{stamp} is unreadable ({e}); {fix}"
+    if SUITE not in names:
+        return f"this media was built with payloads {names or '[]'}, not {SUITE!r}; {fix}"
+    return None

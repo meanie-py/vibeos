@@ -197,10 +197,15 @@ unsafe fn ImmGetDefaultIMEWnd(hWnd: HWND) -> HWND {
 // ===========================================================================
 
 /// ntuser.h: `#define UserHMGetHandle(obj) ((obj)->head.h)`.
-/// bindgen flattened THROBJHEAD into `head.__bindgen_padding_0[0]` (HANDLE at offset 0).
+/// The HANDLE is HEAD.h, at offset 0 of every object head.
+// Read through the typed head, never an index into bindgen's __bindgen_padding_0: its
+// ELEMENT type is the generator's choice. The 2026-09-27 regeneration turned [u64; 3]
+// into [u8; 24], `[2]` became one byte of the handle, and every posted message dispatched
+// through IntCallMessageProc was dropped as ERROR_MESSAGE_SYNC_ONLY (no app closed on
+// WM_CLOSE) with every build still green.
 #[inline]
 unsafe fn UserHMGetHandle(pWnd: PWND) -> HWND {
-    (*pWnd).head.__bindgen_padding_0[0] as usize as HWND
+    (*(pWnd as *const _HEAD)).h as HWND
 }
 
 // ntuser.h: `#define GetWin32ClientInfo() ((PCLIENTINFO)(NtCurrentTeb()->Win32ClientInfo))`.

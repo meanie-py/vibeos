@@ -435,18 +435,20 @@ pub const LOCALE_NEUTRAL: LCID = 0x0000;
 pub const LOCALE_INVARIANT: LCID = 0x007f;
 
 // ===========================================================================
-// Constants — POSIX/glibc locale categories (LC_*) used by setlocale() in the
-// (Windows-dead) Unix-locale path. glibc ordinals — these match the C source's
-// `#ifdef LC_PAPER`-guarded intent (MSVCRT lacks PAPER/MEASUREMENT/TELEPHONE).
-//   // TODO verify (Unix-only, dead on Windows; values per glibc <locale.h>)
+// Constants — locale categories (LC_*). DEAD: the only C users are locale.c's
+// setlocale() paths at 801-1168, all inside `#ifndef __REACTOS__`, and nothing in
+// this crate references them. The six sdk/include/crt/locale.h defines are given
+// that header's values (LC_ALL=0 COLLATE=1 CTYPE=2 MONETARY=3 NUMERIC=4 TIME=5 —
+// they were glibc ordinals before). MESSAGES/PAPER/TELEPHONE/MEASUREMENT have no
+// ReactOS definition (locale.c:1154-1162 #ifdef-guards them); glibc values kept.
 // ===========================================================================
-pub const LC_CTYPE: i32 = 0;
-pub const LC_NUMERIC: i32 = 1;
-pub const LC_TIME: i32 = 2;
-pub const LC_COLLATE: i32 = 3;
-pub const LC_MONETARY: i32 = 4;
+pub const LC_ALL: i32 = 0;
+pub const LC_COLLATE: i32 = 1;
+pub const LC_CTYPE: i32 = 2;
+pub const LC_MONETARY: i32 = 3;
+pub const LC_NUMERIC: i32 = 4;
+pub const LC_TIME: i32 = 5;
 pub const LC_MESSAGES: i32 = 5;
-pub const LC_ALL: i32 = 6;
 pub const LC_PAPER: i32 = 7;
 pub const LC_TELEPHONE: i32 = 10;
 pub const LC_MEASUREMENT: i32 = 11;

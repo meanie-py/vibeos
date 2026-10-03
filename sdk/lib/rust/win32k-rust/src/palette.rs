@@ -1,4 +1,7 @@
 use win32k_sys::win32k::*;
+
+// Not in ntkrnl_sys::base; declared per-file, as the crate does elsewhere.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 #[allow(unused_imports)]
 use core::ffi::c_void;
 use ntkrnl_sys::base::STATUS_SUCCESS;
@@ -665,15 +668,15 @@ pub unsafe extern "system" fn NtGdiResizePalette(hpal: HPALETTE, Entries: UINT) 
 pub unsafe extern "system" fn NtGdiGetColorAdjustment(
     hdc: HDC,
     pca: LPCOLORADJUSTMENT,
-) -> u8 {
-    0u8
+) -> BOOL {
+    0
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiSetColorAdjustment(
     hdc: HDC,
     pca: LPCOLORADJUSTMENT,
-) -> u8 {
-    0u8
+) -> BOOL {
+    0
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiGetNearestColor(hDC: HDC, mut Color: COLORREF) -> COLORREF {
@@ -1056,7 +1059,15 @@ pub unsafe extern "system" fn NtGdiDoPalette(
                 ExFreePoolWithTag(pEntries, TAG_PALETTE);
                 return 0;
             }
-            memcpy(pEntries, pUnsafeEntries, cjSize as usize);
+            // Validate-only probe above; this capture is the access and takes its exit.
+            if !crate::copy::capture_from_user(
+                pEntries,
+                pUnsafeEntries,
+                cjSize as usize,
+            ) {
+                ExFreePoolWithTag(pEntries, TAG_PALETTE);
+                return 0;
+            }
         } else {
             RtlZeroMemory(pEntries, cjSize as usize);
         }
@@ -1098,10 +1109,11 @@ pub unsafe extern "system" fn NtGdiDoPalette(
             let m = if (cEntries as LONG) < ret { cEntries as LONG } else { ret };
             cjSize = (m as SIZE_T) * (core::mem::size_of::<PALETTEENTRY>() as SIZE_T);
             Status = SafeProbeForWrite(pUnsafeEntries, cjSize as SIZE_T, 1);
-            if !NT_SUCCESS(Status) {
+            // Validate-only probe; this publish is the access, and both faults clear ret.
+            if !NT_SUCCESS(Status)
+                || !crate::copy::publish_to_user(pUnsafeEntries, pEntries, cjSize as usize)
+            {
                 ret = 0;
-            } else {
-                memcpy(pUnsafeEntries, pEntries, cjSize as usize);
             }
         }
         ExFreePoolWithTag(pEntries, TAG_PALETTE);
@@ -1233,11 +1245,19 @@ pub unsafe extern "system" fn NtGdiEngCreatePalette(
         }
     }
 
-    RtlCopyMemory(
+    // Validate-only probe above; this capture is the access and takes its exit,
+    // including the conditional free the probe failure does.
+    if !crate::copy::capture_from_user(
         pulcSafe as *mut core::ffi::c_void,
         pulColors as *const core::ffi::c_void,
         (cColors as usize) * core::mem::size_of::<ULONG>(),
-    );
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        if cColors > WINDDI_MAXSETPALETTECOLORS {
+            ExFreePoolWithTag(pulcSafe as *mut core::ffi::c_void, GDITAG_UMPD);
+        }
+        return hPal;
+    }
 
     hPal = EngCreatePalette(iMode, cColors, pulcSafe, flRed, flGreen, flBlue);
 

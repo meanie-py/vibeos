@@ -3,6 +3,19 @@ use crate::frldr::*;
 use crate::meminit::*;
 use crate::mm::*;
 use core::ffi::c_void;
+
+// The C's `__rdtsc()` intrinsic, for the debug-only allocation timing below. Nothing
+// declared it, so a debug `cargo check` of this crate never compiled.
+#[cfg(all(debug_assertions, target_arch = "x86_64"))]
+#[inline(always)]
+unsafe fn __rdtsc() -> u64 {
+    core::arch::x86_64::_rdtsc()
+}
+#[cfg(all(debug_assertions, target_arch = "x86"))]
+#[inline(always)]
+unsafe fn __rdtsc() -> u64 {
+    core::arch::x86::_rdtsc()
+}
 extern "C" {
     fn TRACE(fmt: *const i8, ...);
     fn ERR(fmt: *const i8, ...);

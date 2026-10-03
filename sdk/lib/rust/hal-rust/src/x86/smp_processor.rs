@@ -353,6 +353,11 @@ pub unsafe extern "system" fn ApicStartApplicationProcessor(
     crude_stall(STALL_10MS);
 
     // ---- 3. SIPI x2 (edge-triggered startup) ----
+    // A discrete 82489DX local APIC (version < 0x10) has no STARTUP IPI (MP Spec B.4,
+    // upstream e34b04c3037); send none rather than a reserved message type.
+    if (apic_read(0x0030 /* APIC_VER */) & 0xFF) < 0x10 {
+        return;
+    }
     let sipi: u64 = (sipi_vector << ICR_VECTOR_SHIFT)
         | (APIC_MT_STARTUP << ICR_MT_SHIFT)
         | (APIC_DM_PHYSICAL << ICR_DM_SHIFT)

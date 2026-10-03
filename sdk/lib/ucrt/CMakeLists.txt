@@ -70,49 +70,25 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-reorder>)
 endif()
 
-include(conio/conio.cmake)
 include(convert/convert.cmake)
 include(dll/dll.cmake)
-include(env/env.cmake)
-include(exec/exec.cmake)
-include(filesystem/filesystem.cmake)
 include(float/float.cmake)
-include(heap/heap.cmake)
-include(initializers/initializers.cmake)
 include(internal/internal.cmake)
 include(locale/locale.cmake)
-include(lowio/lowio.cmake)
 include(math/math.cmake)
-include(mbstring/mbstring.cmake)
 include(misc/misc.cmake)
 include(startup/startup.cmake)
-include(stdio/stdio.cmake)
-include(stdlib/stdlib.cmake)
-include(string/string.cmake)
-include(time/time.cmake)
 
 # TODO: build a _DEBUG version
 add_library(ucrt OBJECT
-    ${UCRT_CONIO_SOURCES}
     ${UCRT_CONVERT_SOURCES}
     ${UCRT_DLL_SOURCES}
-    ${UCRT_ENV_SOURCES}
-    ${UCRT_EXEC_SOURCES}
-    ${UCRT_FILESYSTEM_SOURCES}
     ${UCRT_FLOAT_SOURCES}
-    ${UCRT_HEAP_SOURCES}
-    ${UCRT_INITIALIZERS_SOURCES}
     ${UCRT_INTERNAL_SOURCES}
     ${UCRT_LOCALE_SOURCES}
-    ${UCRT_LOWIO_SOURCES}
     ${UCRT_MATH_SOURCES}
-    ${UCRT_MBSTRING_SOURCES}
     ${UCRT_MISC_SOURCES}
     ${UCRT_STARTUP_SOURCES}
-    ${UCRT_STDIO_SOURCES}
-    ${UCRT_STDLIB_SOURCES}
-    ${UCRT_STRING_SOURCES}
-    ${UCRT_TIME_SOURCES}
     ${UCRT_VCRUNTIME_SOURCES}
 )
 

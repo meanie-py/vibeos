@@ -26,6 +26,7 @@ from . import (
 from . import conformance as conformance_mod
 from . import difftest as difftest_mod
 from . import farm as farm_mod
+from . import flakes as flakes_mod
 from . import gate as gate_mod
 from . import gdbengine as gdb_mod
 from . import health as health_mod
@@ -69,6 +70,13 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("build", help="ninja + binary-lints + build-index + stamp")
     arch_arg(b)
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
+    b.add_argument(
+        "--extra-target",
+        action="append",
+        default=[],
+        metavar="TARGET",
+        help="also build this Ninja target; preserves the full boot build and guards (repeatable)",
+    )
     b.add_argument(
         "--rust-storage-shards",
         type=int,
@@ -145,6 +153,50 @@ def build_parser() -> argparse.ArgumentParser:
         "Build one target with ninja and stage it as a payload instead",
     )
     b.add_argument(
+        "--winetest-sweep",
+        action="store_true",
+        help="stage the winetest SWEEP marker, so winlogon runs EVERY subtest "
+        "of each staged Wine conformance suite instead of the two hand-picked "
+        "ones (user32:wsprintf, user32:class). Enumerated from the binary via "
+        "`--list`, one guest process per subtest, so a sweep costs minutes and "
+        "is deliberately off the gate's path. Needs the suites to exist: an "
+        "i386 `build --rostests` first, then this on the arch whose media you "
+        "will boot. RECONCILED, not sticky",
+    )
+    b.add_argument(
+        "--winetest-skip",
+        default="",
+        metavar="SUBTESTS",
+        help="space-separated subtest names to QUARANTINE from --winetest-sweep, "
+        "e.g. 'input dde'. A subtest that BUGCHECKs the machine blinds every one "
+        "after it in the sweep, so the list is how a sweep gets past a known "
+        "crasher. Written into the sweep marker as `skip <name>` lines; winlogon "
+        "logs each as QUARANTINED so an absent subtest never reads as a pass. "
+        "Same discipline as tools/payloads/apitest/quarantine-amd64.txt: re-derive "
+        "entries, do not inherit them",
+    )
+    b.add_argument(
+        "--winetest-only",
+        default="",
+        metavar="SUBTESTS",
+        help="space-separated subtest names to RUN from --winetest-sweep, and "
+        "nothing else, e.g. 'combo'. The repro loop for one crashing subtest: "
+        "a guest sweep of user32 is ~40 minutes, one subtest is seconds. Written "
+        "into the sweep marker as `only <name>` lines; winlogon counts the rest "
+        "as 'not selected' in its completion line, apart from the quarantined, "
+        "so a narrowed sweep never reads as a whole one. Implies nothing without "
+        "--winetest-sweep",
+    )
+    b.add_argument(
+        "--no-wow64-stage",
+        action="store_true",
+        help="amd64: build the media WITHOUT the SysWOW64 set. The staging "
+        "snapshots build-i386 at configure time, so an amd64 build running "
+        "beside a cold i386 one reads a half-cleaned tree and fails its import "
+        "closure. `gate` passes this when it builds both, then restages amd64 "
+        "once i386 is done. RECONCILED, not sticky",
+    )
+    b.add_argument(
         "--hal-pic",
         action="store_true",
         help="i386 legacy PIC HAL escape hatch "
@@ -200,7 +252,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.add_argument("--no-gdb", action="store_true")
     s.add_argument("--attach-on-fail", action="store_true")
-    s.add_argument("--repeat", type=int, default=1, help="N independent boots (flake rate)")
+    s.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="N independent boots (flake rate); with --payload, N payload runs too",
+    )
     s.add_argument("--until", default="", help="success marker (default: arch boot marker)")
     s.add_argument("--fail-on", default=None, help="regex; abort at first match")
     s.add_argument(
@@ -342,6 +399,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="report the plan (merge needed? gate needed? who is landing) and exit",
     )
     la.add_argument(
+        "--hold",
+        metavar="REASON",
+        help="STOP THE LINE: no conductor starts a batch, submissions still queue, only this "
+        "lane may --direct. Say why; it shows in every land/land-status",
+    )
+    la.add_argument(
+        "--preempt",
+        action="store_true",
+        help="with --hold: also stop a detached conductor mid-batch (its batch stays queued)",
+    )
+    la.add_argument("--release", action="store_true", help="lift the hold and wake the queue")
+    la.add_argument(
+        "--cold",
+        action="store_true",
+        help="submit even though no build has seen this tree (its gate compiles from "
+        "scratch and can hold the queue for hours; report every use)",
+    )
+    la.add_argument(
+        "--evict",
+        metavar="REASON",
+        help="under your own --hold: kick every OTHER lane's queued submissions back to them "
+        "(verdict `evicted`, with REASON) so the line is clear for your fix",
+    )
+    la.add_argument(
+        "--withdraw",
+        action="store_true",
+        help="take THIS lane's queued submissions out of line (one already being gated is "
+        "left alone); resubmit with a plain `land` when ready",
+    )
+    la.add_argument(
         "--queue-timeout",
         type=float,
         default=0,
@@ -353,6 +440,15 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--json", action="store_true")
     ls.add_argument("--mine", action="store_true", help="only this lane's verdicts")
     ls.add_argument("--limit", type=int, default=8, help="recent verdicts to show (default 8)")
+    ls.add_argument(
+        "--tip",
+        metavar="COMMIT",
+        help="answer about ONE commit instead of the queue: landed / queued / travelling "
+        "inside a queued descendant / superseded / rejected / never queued / LOST. Use "
+        "this to check a submission rather than reading a `land` OK line — `land` is "
+        "honest in every failure shape, so its output cannot tell you (see "
+        "land-verification-asks.md)",
+    )
     ls.set_defaults(fn=land_mod.cmd_land_status)
 
     f = sub.add_parser(
@@ -400,6 +496,19 @@ def build_parser() -> argparse.ArgumentParser:
     fr.add_argument("--sha", default="", help="only records from this short sha")
     fr.set_defaults(fn=farm_mod.farm_report)
 
+    fl = sub.add_parser(
+        "flake-report",
+        help="the FLEET's failures (smoke + conformance, from the durable ledger and "
+        "preserved evidence) clustered by signature and graded FLAKE / DETERMINISTIC / "
+        "UNGRADED at the commit they were seen on",
+    )
+    fl.add_argument("--days", type=float, default=14, help="window (default 14)")
+    fl.add_argument("--arch", choices=["i386", "amd64", "arm64"], default=None)
+    fl.add_argument("--source", choices=["all", "smoke", "conformance"], default="all")
+    fl.add_argument("--min", type=int, default=2, help="hide signatures seen fewer times")
+    fl.add_argument("--json", action="store_true")
+    fl.set_defaults(fn=flakes_mod.flake_report)
+
     bo = sub.add_parser("boot", help="raw fast boot (shares smoke arch-config)")
     arch_arg(bo)
     bo.add_argument("--until", required=True)
@@ -439,6 +548,9 @@ def build_parser() -> argparse.ArgumentParser:
     gst = gdbsub.add_parser("start", help="launch a detached debug QEMU + gdbstub")
     gst.add_argument("arch", choices=ACCEPTED_ARCHES)
     gst.add_argument("--wait", action="store_true", help="halt at reset (-S) for boot-from-zero")
+    gst.add_argument(
+        "--tripwire", default="", help="kernel debug knobs, as smoke --tripwire (SPECIALPOOL=Tag)"
+    )
     gst.set_defaults(fn=gdb_mod.cmd_start)
 
     gp = gdbsub.add_parser(
@@ -725,6 +837,13 @@ def build_parser() -> argparse.ArgumentParser:
     he.add_argument("--json", action="store_true", help="raw ledger rows")
     he.set_defaults(fn=health_mod.health)
 
+    rp = sub.add_parser(
+        "reap", help="kill orphan QEMUs (owner gone) and any past their lifetime cap"
+    )
+    rp.add_argument("--dry-run", action="store_true", help="report, kill nothing")
+    rp.add_argument("--verbose", "-v", action="store_true", help="(accepted; always verbose)")
+    rp.set_defaults(fn=_cmd_reap)
+
     hs = sub.add_parser(
         "host-status", help="host CPU broker: who holds the build/boot lease (across worktrees)"
     )
@@ -771,6 +890,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--only",
         metavar="NAME[,NAME]",
         help="restrict to named *-difftest crates (default: every workspace member)",
+    )
+    dt.add_argument(
+        "--case",
+        action="append",
+        help="exact case (repeatable); needs one --only crate honouring --exact (cnt-difftest)",
+    )
+    dt.add_argument(
+        "--test-target", default="diff", help="Cargo test target for --case (default: diff)"
     )
     dt.set_defaults(fn=difftest_mod.difftest)
 
@@ -851,6 +978,19 @@ def build_parser() -> argparse.ArgumentParser:
     rp.set_defaults(fn=repro_mod.repro)
 
     return p
+
+
+def _cmd_reap(args, repo: Path) -> int:
+    """`vibeos-cli reap` -- and `qemu/reap.sh`, which is now a wrapper around it. Action lines
+    go to stderr as `[reap] ...` (start.sh passes them through to the user)."""
+    from tests.qemu.vm import reap_orphan_qemus
+
+    actions = reap_orphan_qemus(dry_run=bool(getattr(args, "dry_run", False)))
+    for line in actions:
+        print(f"[reap] {line}", file=sys.stderr)
+    failed = [a for a in actions if a.startswith("FAILED")]
+    print(f"reap: {len(actions) - len(failed)} action(s), {len(failed)} failed")
+    return 1 if failed else 0
 
 
 def main(argv: list[str] | None = None) -> int:

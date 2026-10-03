@@ -14,6 +14,8 @@ extern "system" {
 // carry the per-boot `[KMSAFECOPY] … (PASS)` oracle proving it actually catches.
 extern "C" {
     fn KmProtectedCopyMemory(Dst: PVOID, Src: PVOID, Len: usize) -> i32;
+    // Its atomic twin: 1 and the NEW value in *Result, or 0 if the add faulted.
+    fn KmProtectedInterlockedAdd(Addend: *mut i32, Value: i32, Result: *mut i32) -> i32;
 }
 
 const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005_u32 as NTSTATUS;
@@ -88,6 +90,19 @@ pub unsafe fn capture_from_user(
     bytes == 0 || KmProtectedCopyMemory(dst, src as PVOID, bytes) != 0
 }
 
+/// `InterlockedAdd` on a user LONG that cannot bugcheck: `Some(new value)`, or
+/// `None` if the address faulted.
+///
+/// Neither copy direction can express this. capture -> mutate -> publish is three
+/// accesses, and a counter another thread bumps in between would lose an update,
+/// so the read-modify-write itself is the protected access. Probe first, as with
+/// the copies: the probe is what rejects a KERNEL address, which would not fault.
+#[inline]
+pub unsafe fn interlocked_add_user(addend: *mut i32, value: i32) -> Option<i32> {
+    let mut result = 0;
+    (KmProtectedInterlockedAdd(addend, value, &mut result) != 0).then_some(result)
+}
+
 /// The WRITE direction of `capture_from_user`, and just as necessary.
 ///
 /// `SafeProbeForWrite` has exactly the same limitation as the read probe: it
@@ -125,4 +140,37 @@ pub unsafe fn zero_to_user(dst: *mut core::ffi::c_void, bytes: usize) -> bool {
         done += n;
     }
     true
+}
+
+// ---------------------------------------------------------------------------
+// A TYPED wrapper, for the one shape a byte-oriented helper cannot express.
+//
+// `capture_from_user`/`publish_to_user` take `*mut c_void` + a byte count, which
+// fits `RtlCopyMemory` exactly. `core::ptr::write_volatile(p, v)` has no length
+// at all -- it carries its size in the pointee type, so the wrapper has to be
+// generic to get it. Being generic also means the call sites need no casts,
+// which is what makes the rewrite mechanical: the `as *mut _` a cast-taking
+// helper would force has no type to infer from.
+//
+// There were element-counting `capture_n`/`publish_n` here too, for
+// `copy_nonoverlapping`'s ELEMENT count. They are gone: every site that had one
+// now spells the byte count itself and calls `capture_from_user`, and one way to
+// say a thing beats two.
+//
+// Same contract as the byte helpers: the probe stays (it is what rejects a
+// kernel-range pointer), the ACCESS becomes fault-tolerant, and `false` means
+// the copy faulted -- map it to STATUS_ACCESS_VIOLATION and the C's error path.
+
+/// `core::ptr::write_volatile(dst, val)` into user memory, protected.
+///
+/// The store is the whole hazard: a probed-but-unmapped out-parameter is the
+/// single commonest write-direction instance of this class, because it looks
+/// so much smaller than a struct copy that it reads as safe.
+#[inline]
+pub unsafe fn write_user<T>(dst: *mut T, val: T) -> bool {
+    KmProtectedCopyMemory(
+        dst as PVOID,
+        core::ptr::addr_of!(val) as *mut T as PVOID,
+        core::mem::size_of::<T>(),
+    ) != 0
 }

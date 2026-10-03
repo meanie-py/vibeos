@@ -64,7 +64,7 @@ manifest_exists "$RUN_ID" || die "no such run-id: $RUN_ID"
 
 ARCH="$(manifest_get "$RUN_ID" arch)"
 GDB_PORT="$(manifest_get "$RUN_ID" gdb_port)"
-KERNEL="$(manifest_get "$RUN_ID" kernel_image)"
+KERNEL="$(runid_kernel_image "$RUN_ID")"
 GDB_LOG="$(runid_gdb_log "$RUN_ID")"
 
 [ -n "$GDB_PORT" ] && [ "$GDB_PORT" != "null" ] || die \
@@ -214,8 +214,7 @@ fi
 if [ "$JSON" -eq 1 ]; then
     hit=false
     [ "$rc" -eq 0 ] && hit=true
-    jq -n --argjson hit "$hit" --arg brk "$BRK" --argjson timeout "$TIMEOUT" \
-        '{hit: $hit, "break": $brk, timeout_secs: $timeout}'
+    vjson obj --argjson hit "$hit" --arg break "$BRK" --argjson timeout_secs "$TIMEOUT"
 fi
 
 exit $rc

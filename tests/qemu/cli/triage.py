@@ -18,6 +18,10 @@ _BUGCHECK = re.compile(
     r"BugCheck\s+(0x[0-9A-Fa-f]+)|\*\*\*\s*(?:STOP|BUGCHECK):?\s*(0x[0-9A-Fa-f]+)"
 )
 _RUST_PANIC = re.compile(r"RUST PANIC HIT.*?PANIC LOC:\s*(\S+)", re.S)
+# Per-boot self-tests (`[SEH-TRY] ... (PASS)`, `[KMSAFECOPY] ... (FAIL)`, ...) print
+# a verdict nothing read: amd64 dispatched a kernel int3 with interrupts off for
+# weeks while its except block ran, which only fastfat's stack corruption exposed.
+_SELFTEST_FAIL = re.compile(r"\[[A-Z][A-Z0-9_-]*\][^\n]*?\(FAIL\)")
 _RUST_PANIC2 = re.compile(r"panicked at\s+'([^']*)',\s*(\S+)")
 # Kernel-mode Rust panic: the kernel-rust/rtl-rust panic handlers emit
 # `PANIC:<file>:<line>` to debugcon (port 0xE9) ONLY — serial goes silent, so
@@ -215,6 +219,13 @@ def post_boot_check(serial: str, debugcon_raw: str | None = None) -> dict | None
             "salient": salient + _flake_note(flake),
             "known_flake": flake["name"] if flake else None,
             **fields,
+        }
+    st = _SELFTEST_FAIL.search(serial)
+    if st:
+        return {
+            "classification": "SELFTEST_FAIL",
+            "salient": [f"boot self-test failed: {st.group(0)[:160]}"],
+            "known_flake": None,
         }
     return None
 
@@ -450,16 +461,44 @@ def _resolve_addr(
 def symbolicate_pc(repo: Path, arch: str, serial: str) -> str | None:
     """Best-effort: resolve a faulting PC via the offline index."""
     pc = faulting_pc(serial)
-    if not pc:
-        return None
     # Prefer the banner's own module+RVA over a guessed reloc: it is exact, needs
-    # no runtime base, and works on the arches that have no reloc entry at all.
+    # no runtime base, and works on the arches that have no reloc entry at all --
+    # nor a PC at all, since the RVA alone locates the fault.
     mod_off = faulting_module_offset(serial)
+    if not pc:
+        if not mod_off:
+            return None
+        pc = f"{mod_off[0]}+{mod_off[1]:#x}"
+    if mod_off and mod_off[0].lower() not in _KERNEL_IMAGES:
+        # The banner named a DRIVER (win32k.sys, a kmtest .sys). The kernel index
+        # holds only ntoskrnl, and some kernel symbol always sorts below any RVA,
+        # so resolving there named a confidently wrong function. Resolve against
+        # the named module's own symbols, or say it is not indexed.
+        return _resolve_in_module(repo, arch, pc, *mod_off)
     reloc = None if mod_off else kernel_relocation(arch, serial)
     if mod_off:
         pc = hex(_PE_IMAGE_BASE + mod_off[1])
-    # freeldr announces which kernel it loaded, so read it off the serial.
-    return _resolve_addr(repo, arch, pc, mp="ntkrnlmp.exe" in serial, reloc=reloc)
+    # freeldr announces which kernel it loaded, so read it off the serial. The
+    # banner's module name cannot say: the loader lists ntkrnlmp.exe under the
+    # name ntoskrnl.exe, so an MP fault read "ntoskrnl.exe+RVA" and resolved
+    # against the UP binary -- a different link, and a confidently wrong symbol.
+    mp = "ntkrnlmp.exe" in serial or bool(mod_off and mod_off[0].lower() == "ntkrnlmp.exe")
+    return _resolve_addr(repo, arch, pc, mp=mp, reloc=reloc)
+
+
+_KERNEL_IMAGES = frozenset({"ntoskrnl.exe", "ntkrnlmp.exe"})
+
+
+def _resolve_in_module(repo: Path, arch: str, pc: str, module: str, rva: int) -> str:
+    from . import symbolize
+
+    mods = [m for m in symbolize.load_modules(repo, arch) if m.name.lower() == module.lower()]
+    if not mods:
+        return (
+            f"{pc} -> {module}+{rva:#x} (module not in the {arch} user index; "
+            f"run qemu/build-user-index.sh {arch}, then ./vibeos-cli sym)"
+        )
+    return f"{pc} = " + symbolize.resolve(repo, arch, mods[0].base + rva, want_module=module)
 
 
 # `info registers -a` groups its output per vCPU behind a bare `CPU#<n>` line,

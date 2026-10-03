@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import contextlib
 import fcntl
 import json
 import os
@@ -113,6 +114,53 @@ CHARDEV_CONNECT_ERROR = "Failed to connect to '"
 # problem → relaunch with a freshly-picked port (see _launch_qemu).
 BIND_RACE_ERRORS = (HOSTFWD_BIND_ERROR, GDB_BIND_ERROR, CHARDEV_CONNECT_ERROR)
 HOSTFWD_LAUNCH_RETRIES = int(os.environ.get("VIBEOS_HOSTFWD_LAUNCH_RETRIES", "4"))
+
+# The usbstor rig's stick (VIBEOS_QEMU_USB_DISK=1): an MBR disk, one FAT16
+# partition at 1 MiB labelled USB_STICK_LABEL, holding USB_STICK_FILE.
+USB_STICK_LABEL = "VIBESTICK"
+USB_STICK_FILE = "VIBEOS.TXT"
+USB_STICK_TEXT = b"hello from the usb stick\r\n"
+_USB_STICK_MIB = 64
+
+
+def make_usb_stick_image(path: Path) -> None:
+    """Build the usbstor rig's stick image at `path`, as qcow2 (host sfdisk + mkfs.fat + mcopy)."""
+    part_offset = 1 << 20
+    part_bytes = (_USB_STICK_MIB << 20) - part_offset
+    with tempfile.TemporaryDirectory() as td:
+        part = Path(td) / "part.img"
+        payload = Path(td) / USB_STICK_FILE
+        payload.write_bytes(USB_STICK_TEXT)
+        subprocess.run(
+            ["mkfs.fat", "-F", "16", "-n", USB_STICK_LABEL, "-C", str(part), str(part_bytes >> 10)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["mcopy", "-i", str(part), str(payload), f"::/{USB_STICK_FILE}"],
+            check=True,
+            capture_output=True,
+        )
+        tmp = path.with_suffix(".tmp")
+        with tmp.open("wb") as f:
+            f.truncate(_USB_STICK_MIB << 20)
+            f.seek(part_offset)
+            f.write(part.read_bytes())
+        subprocess.run(
+            ["sfdisk", "--no-reread", "--no-tell-kernel", str(tmp)],
+            input=f"label: dos\nstart=2048, type=06\n".encode(),
+            check=True,
+            capture_output=True,
+        )
+        # qcow2, not raw: the rigs snapshot the VM (savevm), and QEMU refuses
+        # while any writable drive lacks snapshot support.
+        subprocess.run(
+            ["qemu-img", "convert", "-f", "raw", "-O", "qcow2", str(tmp), str(path)],
+            check=True,
+            capture_output=True,
+        )
+        tmp.unlink()
+
 
 # freeldr's boot-entry selector, as it appears verbatim inside the livecd ISO.
 # The x86 media has always carried BOTH flavors — [LiveCD_SMP] (/KERNEL=ntkrnlmp.exe
@@ -229,6 +277,27 @@ def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     _write_sparse_image(out, data)
     return out
+
+
+def tripwire_args() -> list[str]:
+    """vibeos tripwire channel: VIBEOS_TRIPWIRE=<cfg> injects per-boot kernel
+    debug knobs (e.g. SPECIALPOOL=Gla5) via QEMU fw_cfg — no media rebuild.
+    The kernel reads opt/org.vibeos.tripwire in MmArmInitSystem Phase 0
+    (ntoskrnl-rust src/tripwire.rs). Space/semicolon-separated KEY=VAL tokens;
+    commas are forbidden (QEMU's -fw_cfg parser owns the comma).
+
+    Module-level so every launcher shares it: the gdb engine once assembled its
+    own command line without this, so a debug boot silently ran WITHOUT the
+    tripwire it was started under — the one boot where you most want it."""
+    cfg = os.environ.get("VIBEOS_TRIPWIRE", "").strip()
+    if not cfg:
+        return []
+    if "," in cfg:
+        raise ValueError(
+            f"VIBEOS_TRIPWIRE must not contain commas (got {cfg!r}); "
+            "use spaces or semicolons between KEY=VAL tokens"
+        )
+    return ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={cfg}"]
 
 
 def smp_count() -> int | None:
@@ -401,42 +470,108 @@ def _proc_is_qemu(pid: int) -> bool:
         return False
 
 
-def reap_orphan_qemus() -> list[str]:
-    """Kill ONLY QEMUs whose launcher process is gone. Returns action log.
+def _reap_kill(info: dict) -> tuple[bool, str]:
+    """Stop an orphan the PRECISE way for its backend -- killvm.kill_one, the same path as
+    `vibeos-cli kill`. The reaper used to `killpg` the recorded pid, which on the default
+    windows-host backend is only the WSL interop shim: the real qemu.exe could survive
+    it, and the reaper then deleted the lock, leaving a VM that `ps`, `kill` and the
+    lifetime cap could no longer see. Returns (stopped, outcome line)."""
+    from .cli import killvm
 
-    Safe to call from any session: a lock whose launcher pid is still alive
-    is left strictly untouched (it may be another agent's live VM).
+    outcome = killvm.kill_one(info)
+    failed = outcome.startswith(("FAILED", "STILL ALIVE")) or "SIGKILL FAILED" in outcome
+    return not failed, outcome
+
+
+def _runs_dir() -> Path:
+    """The kernel-debug toolkit's manifests (qemu/lib/common.sh: RUNS_DIR)."""
+    return Path(os.environ.get("RUNS_DIR") or PROJECT_DIR / "qemu" / "runs")
+
+
+def reap_orphan_qemus(*, dry_run: bool = False) -> list[str]:
+    """Kill ONLY QEMUs whose launcher process is gone, or that are past their lifetime
+    deadline. Returns the action log.
+
+    Walks both trackers: the smoke harness's lock files and the kernel-debug toolkit's
+    run manifests (qemu/start.sh). The second walk was `qemu/reap.sh`, where a jq that was
+    not installed made every lock field read empty -- so every lock looked stale, and
+    each new smoke purged every live VM's lock. It is here now, where a field is a dict
+    lookup and "could not read" is an exception rather than an empty string.
+
+    Safe to call from any session: a tracker whose owner pid is still alive and whose
+    VM is within its deadline is left strictly untouched (it may be another agent's).
     """
     actions: list[str] = []
-    if not LOCK_DIR.is_dir():
-        return actions
-    for lf in LOCK_DIR.glob("*.json"):
-        try:
-            info = json.loads(lf.read_text())
-        except (OSError, ValueError):
-            lf.unlink(missing_ok=True)
-            continue
-        lpid, qpid = info.get("launcher_pid"), info.get("qemu_pid")
-        deadline = info.get("deadline")
-        launcher_alive = bool(lpid) and _pid_alive(lpid)
-        # A VM past its 30-min hard cap is reaped REGARDLESS of launcher
-        # liveness — the cap is an absolute ceiling, not an orphan check. A
-        # live launcher only protects a VM that's still within its lifetime.
-        expired = bool(deadline) and time.time() >= deadline
-        if launcher_alive and not expired:
-            continue  # live session (maybe another agent), within cap — DO NOT TOUCH
-        if qpid and _pid_alive(qpid) and _proc_is_qemu(qpid):
-            reason = "exceeded 30-min lifetime cap" if expired else f"launcher {lpid} dead"
+    now = time.time()
+    if LOCK_DIR.is_dir():
+        for lf in LOCK_DIR.glob("*.json"):
             try:
-                os.killpg(os.getpgid(qpid), signal.SIGTERM)
-                time.sleep(2)
-                if _pid_alive(qpid):
-                    os.killpg(os.getpgid(qpid), signal.SIGKILL)
-                actions.append(f"reaped qemu pid={qpid} ({reason})")
-            except (ProcessLookupError, OSError) as e:
-                actions.append(f"qemu pid={qpid} reap failed: {e}")
-                continue  # leave the lock; don't claim it's gone if kill failed
-        lf.unlink(missing_ok=True)
+                info = json.loads(lf.read_text())
+            except (OSError, ValueError):
+                # Only a lock that has STAYED unparseable is garbage. One caught
+                # mid-write by an older launcher (before locks were renamed into
+                # place) belongs to a live VM, and deleting it unregisters that VM.
+                try:
+                    if not dry_run and now - lf.stat().st_mtime > 60:
+                        lf.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                continue
+            if not isinstance(info, dict):
+                continue
+            lpid, qpid = info.get("launcher_pid"), info.get("qemu_pid")
+            deadline = info.get("deadline")
+            launcher_alive = isinstance(lpid, int) and _pid_alive(lpid)
+            # A VM past its hard cap is reaped REGARDLESS of launcher liveness -- the
+            # cap is an absolute ceiling, not an orphan check. A live launcher only
+            # protects a VM that is still within its lifetime.
+            expired = isinstance(deadline, (int, float)) and now >= deadline
+            if launcher_alive and not expired:
+                continue  # live session (maybe another agent), within cap -- DO NOT TOUCH
+            reason = "exceeded lifetime cap" if expired else f"launcher {lpid} dead"
+            linux_side = isinstance(qpid, int) and _pid_alive(qpid) and _proc_is_qemu(qpid)
+            # A windows-host VM is killed by its uid even when the Linux shim is gone:
+            # the shim dying says nothing about qemu.exe on the other side.
+            from .cli import killvm
+
+            if linux_side or killvm.win_uid_of(info):
+                if dry_run:
+                    actions.append(f"DRY-RUN would reap qemu pid={qpid} ({reason})")
+                    continue
+                stopped, outcome = _reap_kill(info)
+                if not stopped:
+                    actions.append(f"FAILED to reap qemu pid={qpid} ({reason}): {outcome}")
+                    continue  # keep the lock: never claim a VM is gone when it may not be
+                actions.append(f"killed orphan qemu pid={qpid} ({reason}): {outcome}")
+            if not dry_run:
+                lf.unlink(missing_ok=True)
+    runs = _runs_dir()
+    if runs.is_dir():
+        for manifest in sorted(runs.glob("*/manifest.json")):
+            rid = manifest.parent.name
+            try:
+                info = json.loads(manifest.read_text())
+            except (OSError, ValueError):
+                continue  # unknown is not stale
+            if not isinstance(info, dict) or info.get("stopped_at"):
+                continue
+            qpid = info.get("qemu_pid")
+            if not (isinstance(qpid, int) and _pid_alive(qpid) and _proc_is_qemu(qpid)):
+                continue
+            opid = info.get("owner_pid") or info.get("parent_pid")
+            deadline = info.get("deadline")
+            if isinstance(deadline, (int, float)) and now >= deadline:
+                reason = f"manifest {rid} exceeded lifetime cap"
+            elif not isinstance(opid, int) or _pid_alive(opid):
+                continue  # legacy manifest without an owner, or owner still here
+            else:
+                reason = f"manifest {rid} owner pid={opid} dead"
+            if dry_run:
+                actions.append(f"DRY-RUN would reap qemu pid={qpid} ({reason})")
+                continue
+            stopped, outcome = _reap_kill(info)
+            verb = "killed orphan" if stopped else "FAILED to reap"
+            actions.append(f"{verb} qemu pid={qpid} ({reason}): {outcome}")
     return actions
 
 
@@ -853,6 +988,85 @@ def _unique_launch_port(picker: Callable[[], int]) -> int:
     raise RuntimeError("port allocator repeatedly returned a port already assigned to this QEMU")
 
 
+TEMP_DISK_MB = 64
+_TEMP_PART_START = 2048  # sectors; the conventional 1 MiB alignment
+
+
+def make_temp_disk(out: Path) -> None:
+    """MBR + one FAT16 partition with an empty \\TEMP, converted to qcow2.
+
+    Built fresh per boot: it is scratch, and a disk that carried files from an
+    earlier run would let a test pass on leftovers.
+    """
+    raw = out.with_suffix(".img")
+    raw.unlink(missing_ok=True)
+    with open(raw, "wb") as f:
+        f.truncate(TEMP_DISK_MB * 1024 * 1024)
+    # type 6 = FAT16 (>32M); bootable flag off -- nothing should ever boot this.
+    subprocess.run(
+        ["sfdisk", "--quiet", str(raw)],
+        input=f"start={_TEMP_PART_START}, type=6\n",
+        text=True,
+        check=True,
+        capture_output=True,
+    )
+    sectors = TEMP_DISK_MB * 2048 - _TEMP_PART_START
+    subprocess.run(
+        [
+            "mkfs.fat",
+            "-F",
+            "16",
+            "-n",
+            "VIBEOSTEMP",
+            "--offset",
+            str(_TEMP_PART_START),
+            str(raw),
+            str(sectors // 2),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["mmd", "-i", f"{raw}@@{_TEMP_PART_START * 512}", "::/TEMP"],
+        check=True,
+        capture_output=True,
+    )
+    out.unlink(missing_ok=True)
+    subprocess.run(
+        ["qemu-img", "convert", "-f", "raw", "-O", "qcow2", str(raw), str(out)],
+        check=True,
+        capture_output=True,
+    )
+    raw.unlink()
+
+
+def temp_disk_args(arch: str, out_dir: Path) -> list[str]:
+    """The \\TEMP disk policy, shared by every launcher (QemuVM, `gdb start`).
+
+    One decision, because a launcher that reimplements it drifts: the gdb engine
+    hand-mirrored the smoke command line, never learned this disk, and so could not
+    reproduce the one crash that only happens with it attached.
+    """
+    if not arch.startswith(("i386", "amd64")):
+        return []
+    # Default ON: it is also the only hard disk any x86 smoke attaches, and the
+    # disk path stayed broken for months without a single red because nothing
+    # exercised it -- classpnp's ClassCompleteRequest spun on a never-initialized
+    # lock (every boot with a disk hung), and on i386 fastfat's DriverEntry
+    # returned into its caller's stack the first time a FAT volume loaded it.
+    # `VIBEOS_QEMU_TEMP_DISK=0` opts out.
+    if os.environ.get("VIBEOS_QEMU_TEMP_DISK", "1").strip() in ("0", "false", "no"):
+        return []
+    disk = out_dir / "tempdisk.qcow2"
+    make_temp_disk(disk)
+    return [
+        "-drive",
+        f"file={disk},format=qcow2,if=none,id=tempdisk",
+        "-device",
+        "ide-hd,drive=tempdisk",
+    ]
+
+
 def _free_tcp_port() -> int:
     """Pick a currently-free TCP port for a slirp hostfwd rule.
 
@@ -1138,6 +1352,60 @@ def get_arch_config(arch: str) -> ArchConfig:
     return cls()
 
 
+def launch_with_retry(
+    make_vm: Callable[[], QemuVM],
+    timings: dict[str, float],
+    log: Callable[[str], None],
+    label: str,
+) -> tuple[QemuVM | None, int, Exception | None]:
+    """Start a VM, retrying a host-side launch failure.
+
+    EVERY gated boot path must launch through this. It lived in cli/smoke.py, so the
+    pytest `vm` fixture -- which carries conformance, the payload suites and the net
+    suite -- kept a bare `vm.start()`: 16 conformance rounds in two weeks died on
+    "QEMU did not connect to serial socket within 15.0s", before a guest instruction
+    ran, and were graded as LOST BOOTS beside real kernel failures.
+
+    Returns (vm, attempts, last_exc); `last_exc` is None on success. A fresh VM
+    is built per attempt because the port and serial socket path are chosen in
+    QemuVM.__init__ -- retrying start() on the same instance would retry onto
+    the same bad port and could never recover.
+    """
+    last_exc: Exception | None = None
+    vm: QemuVM | None = None
+    attempts = 0
+    while attempts < LAUNCH_ATTEMPTS:
+        attempts += 1
+        vm = make_vm()
+        started = time.monotonic()
+        try:
+            vm.start()
+            timings["start_seconds"] = round(time.monotonic() - started, 3)
+            timings.update(vm.launch_timings)
+            if attempts > 1:
+                # Loud on the way through: a retried launch is still an incident.
+                timings["launch_attempts"] = attempts
+                log(f"{label}: launched on attempt {attempts} (host-side flake)")
+            return vm, attempts, None
+        except Exception as e:
+            last_exc = e
+            first = str(e).splitlines()[0][:140]
+            log(f"{label}: start failed (attempt {attempts}/{LAUNCH_ATTEMPTS}): {first}")
+            with contextlib.suppress(Exception):
+                vm.stop()
+            if attempts < LAUNCH_ATTEMPTS:
+                time.sleep(LAUNCH_RETRY_SECONDS)
+    return vm, attempts, last_exc
+
+
+# Host-side launch retries. Small on purpose: the failure mode this exists for
+# resolves on the next attempt (a lost socket / port), so a third attempt buys
+# almost nothing and a large number would turn a genuinely broken launch into a
+# slow one. Overridable for tests.
+LAUNCH_ATTEMPTS = 3
+LAUNCH_RETRY_SECONDS = 2.0
+
+
 class QemuVM:
     """Manages a single QEMU VM instance with QMP + serial control."""
 
@@ -1328,20 +1596,7 @@ class QemuVM:
         ]
 
     def _tripwire_args(self) -> list[str]:
-        """vibeos tripwire channel: VIBEOS_TRIPWIRE=<cfg> injects per-boot kernel
-        debug knobs (e.g. SPECIALPOOL=Gla5) via QEMU fw_cfg — no media rebuild.
-        The kernel reads opt/org.vibeos.tripwire in MmArmInitSystem Phase 0
-        (ntoskrnl-rust src/tripwire.rs). Space/semicolon-separated KEY=VAL tokens;
-        commas are forbidden (QEMU's -fw_cfg parser owns the comma)."""
-        cfg = os.environ.get("VIBEOS_TRIPWIRE", "").strip()
-        if not cfg:
-            return []
-        if "," in cfg:
-            raise ValueError(
-                f"VIBEOS_TRIPWIRE must not contain commas (got {cfg!r}); "
-                "use spaces or semicolons between KEY=VAL tokens"
-            )
-        return ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={cfg}"]
+        return tripwire_args()
 
     def _smp_args(self) -> list[str]:
         """VIBEOS_QEMU_SMP=<N> boots the guest with N virtual CPUs (-smp N).
@@ -1365,25 +1620,111 @@ class QemuVM:
             return []
         return shlex.split(raw)
 
+    def _xhci_enabled(self) -> bool:
+        return os.environ.get("VIBEOS_QEMU_XHCI", "").strip() in ("1", "true", "yes")
+
+    def _xhci_args(self) -> list[str]:
+        """VIBEOS_QEMU_XHCI=1 attaches a qemu-xhci controller with a USB keyboard
+        and mouse (usbxhci bring-up rig, docs/engineering/usbxhci-design.md).
+
+        The controller is pinned to PCI slot 8. Left to auto-assignment it takes
+        the first free slot, which shifts arm64's virtio-blk-pci boot disk off the
+        `Pci(0x2,0x0)` path saved in efivars, and UEFI falls through to PXE."""
+        if not self._xhci_enabled():
+            return []
+        # The sticks' -devices come after the controller that owns their bus;
+        # only their -drives ride with the staged disk args (_usb_disk_args).
+        # Two sticks, two paths: one behind a usb-hub (full speed, the hub path
+        # the Pi's VIA hub uses), and one attached directly, which QEMU puts on
+        # a USB3 root port at SuperSpeed because usb-storage can do SuperSpeed.
+        stick = (
+            [
+                "-device",
+                "usb-hub,bus=xhci.0,port=3,id=uhub",
+                "-device",
+                "usb-storage,bus=xhci.0,port=3.1,drive=usbstor0,id=ustick",
+                "-device",
+                "usb-storage,bus=xhci.0,drive=usbstor1,id=ustick_ss",
+            ]
+            if self._usb_disk_enabled()
+            else []
+        )
+        return [
+            "-device",
+            "qemu-xhci,id=xhci,addr=0x8",
+            "-device",
+            "usb-kbd,bus=xhci.0,id=ukbd",
+            "-device",
+            "usb-mouse,bus=xhci.0,id=umouse",
+            *stick,
+        ]
+
+    def _without_virtio_input(self, args: list[str]) -> list[str]:
+        """Drop arm64's virtio keyboard/mouse when the xHCI rig is on.
+
+        QEMU sends host input to the most recently ACTIVATED handler. usb-kbd
+        activates when it is created; virtio-input activates later, when the
+        guest driver starts it, and so would take every keystroke meant for USB.
+        (`input-send-event`'s `device` argument cannot pick one: it names a
+        display console, and QEMU aborts looking it up with -display none.)"""
+        if not self._xhci_enabled():
+            return args
+        out: list[str] = []
+        i = 0
+        while i < len(args):
+            if (
+                args[i] == "-device"
+                and i + 1 < len(args)
+                and args[i + 1].startswith(("virtio-keyboard-device", "virtio-mouse-device"))
+            ):
+                i += 2
+                continue
+            out.append(args[i])
+            i += 1
+        return out
+
+    def _usb_disk_enabled(self) -> bool:
+        return os.environ.get("VIBEOS_QEMU_USB_DISK", "").strip() in ("1", "true", "yes")
+
+    def _temp_disk_args(self) -> list[str]:
+        """A writable FAT volume holding \\TEMP, for x86 boots that run winetests.
+
+        The livecd's only volume is the CD, so `GetTempPath` is X:\\reactos\\TEMP --
+        read-only -- and any conformance test that writes a scratch file fails on
+        the harness rather than on the OS (user32:class's manifest is the measured
+        case: 0xc0150010 on both sides of the WoW64 A/B). winlogon points the
+        winetest children's TEMP here when it finds C:\\TEMP (winlogon.rs).
+
+        IDE, not virtio: x86 has no virtio-blk driver, and uniata already serves
+        the CD. Partitioned, not a superfloppy: FreeLDR crashes on an unpartitioned
+        BIOS-visible disk (see _scratch_device_args), and partmgr expects a table.
+        No bootindex, so OVMF never tries it ahead of the CD. qcow2 so savevm works.
+        """
+        return temp_disk_args(self.config.arch, self.scratch_path.parent)
+
     def _usb_disk_args(self) -> list[str]:
-        """VIBEOS_QEMU_USB_DISK=1 attaches an EHCI controller + usb-storage device backed
-        by a fresh 64M qcow2 next to the scratch disk (usbstor bring-up rig). The drive
-        path lives beside scratch_path so the windows-host backend stages it like any
-        other media (route through be.stage_media_paths there, same as scratch)."""
-        if os.environ.get("VIBEOS_QEMU_USB_DISK", "").strip() not in ("1", "true", "yes"):
+        """VIBEOS_QEMU_USB_DISK=1 attaches usb-storage sticks (usbstor bring-up rig):
+        with VIBEOS_QEMU_XHCI=1 two on the xHCI controller, one behind a hub and one
+        SuperSpeed (the devices themselves are added by _xhci_args), otherwise one
+        on its own EHCI controller. The stick is a
+        64M MBR disk with one FAT16 partition holding USB_STICK_FILE, so a guest
+        that mounts it has something known to read back. The image lives beside
+        scratch_path so the windows-host backend stages it like any other media."""
+        if not self._usb_disk_enabled():
             return []
         usb_disk = self.scratch_path.parent / "usbdisk.qcow2"
         if not usb_disk.exists():
-            subprocess.run(
-                ["qemu-img", "create", "-f", "qcow2", str(usb_disk), "64M"],
-                check=True,
-                capture_output=True,
-            )
+            make_usb_stick_image(usb_disk)
+        drive = ["-drive", f"file={usb_disk},format=qcow2,if=none,id=usbstor0"]
+        if self._xhci_enabled():
+            ss_disk = self.scratch_path.parent / "usbdisk-ss.qcow2"
+            if not ss_disk.exists():
+                make_usb_stick_image(ss_disk)
+            return [*drive, "-drive", f"file={ss_disk},format=qcow2,if=none,id=usbstor1"]
         return [
             "-device",
             "usb-ehci,id=xehci",
-            "-drive",
-            f"file={usb_disk},format=qcow2,if=none,id=usbstor0",
+            *drive,
             "-device",
             "usb-storage,bus=xehci.0,drive=usbstor0",
         ]
@@ -1580,8 +1921,8 @@ class QemuVM:
             check=True,
             capture_output=True,
         )
-        arch = self.config.prepare_args(self.work_dir)
-        disks = [*self._scratch_device_args(), *self._usb_disk_args()]
+        arch = self._without_virtio_input(self.config.prepare_args(self.work_dir))
+        disks = [*self._scratch_device_args(), *self._usb_disk_args(), *self._temp_disk_args()]
         self._prepared_arch_args = be.stage_media_paths(arch, staging) if windows else arch
         self._prepared_disk_args = be.stage_media_paths(disks, staging) if windows else disks
 
@@ -1600,6 +1941,7 @@ class QemuVM:
             *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
+            *self._xhci_args(),
             *self._extra_qemu_args(),
             "-monitor",
             "none",
@@ -1699,6 +2041,7 @@ class QemuVM:
             *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
+            *self._xhci_args(),
             *self._extra_qemu_args(),
             "-monitor",
             "none",
@@ -1910,7 +2253,13 @@ class QemuVM:
         try:
             LOCK_DIR.mkdir(parents=True, exist_ok=True)
             self._lock_path = LOCK_DIR / f"{os.getpid()}-{proc.pid}.json"
-            self._lock_path.write_text(
+            # Written to a temp name and RENAMED into place: write_text truncates
+            # and then writes, and reap_orphan_qemus() -- run from any session --
+            # deletes a lock it cannot parse. A reap landing in that window would
+            # unregister a LIVE VM, leaving it invisible to `vibeos-cli ps`/`kill`
+            # and outside the 30-min cap. rename is atomic on one filesystem.
+            tmp_lock = self._lock_path.with_suffix(".json.tmp")
+            tmp_lock.write_text(
                 json.dumps(
                     {
                         "launcher_pid": os.getpid(),
@@ -1930,6 +2279,7 @@ class QemuVM:
                     }
                 )
             )
+            os.replace(tmp_lock, self._lock_path)
             atexit.register(lambda p=self._lock_path: p.unlink(missing_ok=True))
         except OSError:
             self._lock_path = None
@@ -2031,12 +2381,33 @@ class QemuVM:
                 )
                 self._boot_output += extra
             except TimeoutError:
-                pass  # Settle time elapsed — that's fine
+                # Settle time elapsed -- that's fine, but what the guest printed during
+                # it is still boot output. A chatty payload never lets serial go idle,
+                # so this is the NORMAL path for one, and dropping the window here left
+                # those bytes unconsumed for restore_snapshot's flush to throw away.
+                self._absorb_pending()
 
         return self._boot_output
 
+    def _absorb_pending(self) -> None:
+        """Move every drained-but-unconsumed serial byte into `_boot_output`.
+
+        WHY (2026-09-26): `test_payload_launched` waited out whole VM lifetimes for a
+        marker that was sitting in its own serial log -- ucrtdiff's `[UCRTDIFF] done`,
+        oldcrt's `[OLDCRT] done PASS`. A fast payload finishes inside the settle window;
+        the settle timed out (the payload was talking) and kept none of it; the `ready`
+        snapshot was then taken with the payload already done; and the first test's
+        restore_snapshot flushed the unread bytes -- marker included -- and rewound the
+        guest to a point after the payload had exited, so nothing ever printed it again.
+        Output from before the snapshot belongs to the boot record, never to a flush."""
+        self._boot_output += self.serial.read_available(timeout=0)
+
     def save_snapshot(self, name: str = "ready") -> None:
         """Save VM state via QMP/HMP savevm."""
+        # Everything drained so far was printed BEFORE the snapshot: keep it (see
+        # _absorb_pending). restore_snapshot flushes what is left, and a restored guest
+        # never prints pre-snapshot output again.
+        self._absorb_pending()
         result = self.qmp.hmp(f"savevm {name}")
         if "Error" in result:
             raise RuntimeError(f"savevm failed: {result}")

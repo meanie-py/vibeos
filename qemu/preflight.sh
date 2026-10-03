@@ -71,14 +71,6 @@ check_gdb() {
     return 1
 }
 
-check_jq() {
-    if command -v jq >/dev/null 2>&1; then
-        record_pass host "jq"
-        return 0
-    fi
-    record_fail host "jq" "sudo apt-get install -y jq"
-    return 1
-}
 
 check_dwarf_tool() {
     if [ -n "$DWARF_DUMP" ]; then
@@ -245,7 +237,6 @@ fi
 
 # Host-level checks, run once.
 check_gdb || true
-check_jq || true
 check_dwarf_tool || true
 
 # Per-arch checks.
@@ -274,8 +265,7 @@ if [ "$JSON_MODE" -eq 1 ]; then
             else
                 printf ','
             fi
-            jq -nc --arg a "$arch" --arg c "$check" --arg f "$fix" \
-                '{axis:$a, check:$c, fix:$f}'
+            vjson obj -c --arg axis "$arch" --arg check "$check" --arg fix "$fix"
         done
         printf ']}\n'
     }

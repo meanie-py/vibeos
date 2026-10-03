@@ -128,9 +128,12 @@ pub unsafe extern "system" fn WriteFile(
             }
         }
 
-        if NT_SUCCESS(Status) {
+        // NULL-tolerant like Windows 8+ (upstream 72bfa0c88b7), and written BEFORE the status
+        // check so a warning status still reports the bytes moved (upstream 5e998de2483).
+        if !lpNumberOfBytesWritten.is_null() {
             *lpNumberOfBytesWritten = Iosb.Information as DWORD;
-        } else {
+        }
+        if !NT_SUCCESS(Status) {
             BaseSetLastNTError(Status);
             return 0;
         }
@@ -245,13 +248,19 @@ pub unsafe extern "system" fn ReadFile(
         }
 
         if Status == STATUS_END_OF_FILE {
-            *lpNumberOfBytesRead = 0;
+            if !lpNumberOfBytesRead.is_null() {
+                *lpNumberOfBytesRead = 0;
+            }
             return 1;
         }
 
-        if NT_SUCCESS(Status) {
+        // NULL-tolerant (upstream 72bfa0c88b7), and written before the status check so a
+        // message-mode pipe read that returns ERROR_MORE_DATA still reports its bytes
+        // (upstream 5e998de2483).
+        if !lpNumberOfBytesRead.is_null() {
             *lpNumberOfBytesRead = Iosb.Information as DWORD;
-        } else {
+        }
+        if !NT_SUCCESS(Status) {
             BaseSetLastNTError(Status);
             return 0;
         }

@@ -1483,7 +1483,7 @@ unsafe extern "C" fn NetBTSessionReq(
         ) as u32,
     );
 
-    *((buffer.as_mut_ptr() as *mut UCHAR).add(2) as *mut WORD) = htons(len as u16) as WORD;
+    ((buffer.as_mut_ptr() as *mut UCHAR).add(2) as *mut WORD).write_unaligned(htons(len as u16) as WORD);
 
     wsaBuf.len = len.wrapping_add(NBSS_HDRSIZE as u32);
     wsaBuf.buf = buffer.as_mut_ptr() as *mut CHAR;
@@ -1998,7 +1998,7 @@ unsafe extern "system" fn NetBTRecv(
                 break 'error NRC_SABORT as UCHAR;
             }
             (*session).bytesPending = (NBSS_HDRSIZE
-                + ntohs(*(buffer.as_ptr().add(2usize) as *const WORD)) as u32
+                + ntohs((buffer.as_ptr().add(2usize) as *const WORD).read_unaligned()) as u32
                 - bytesReceived) as DWORD;
             (*ncb).ncb_length = (bytesReceived.wrapping_sub(NBSS_HDRSIZE)) as WORD;
             LeaveCriticalSection(&raw mut (*session).cs);

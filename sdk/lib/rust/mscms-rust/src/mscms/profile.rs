@@ -69,7 +69,7 @@ const PROFILE_READWRITE: u32 = 0x0002; // Placeholder, correct value unknown
 
 const PROFILE_READWRITE: u32 = 0x2; // icm.h
 
-const ERROR_CALL_NOT_IMPLEMENTED: u32 = 0x78F;
+const ERROR_CALL_NOT_IMPLEMENTED: u32 = ntdll_sys::nt::ERROR_CALL_NOT_IMPLEMENTED as u32; // winerror.h: 120 (was 0x78F)
 
 unsafe extern "C" {
     fn FIXME(fmt: *const i8, ...);

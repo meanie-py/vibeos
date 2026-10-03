@@ -1827,7 +1827,8 @@ indistinguishable from a real regression on any single sweep. The merge queue ga
 for N lanes, so a non-retryable miss would reject a whole batch of innocent lanes on a coin
 flip — precisely the failure the 2026-08-08 NET_FLAKE incident recorded, where a lane whose
 entire diff was three baseline edits and a doc got rejected. So a first-attempt miss is
-`CONFORMANCE_FLAKE` and retries; a real regression reproduces and ends red. A repeated
+`CONFORMANCE_RED` (renamed from `CONFORMANCE_FLAKE` 2026-09-26: the label claimed a cause
+nobody had established) and retries; a real regression reproduces and ends red. A repeated
 experiment that holds the suspected cause fixed falsifies nothing, and the converse applies
 here: an experiment that does not repeat has not established anything either.
 

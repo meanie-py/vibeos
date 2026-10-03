@@ -167,8 +167,6 @@ NTSTATUS FsRtlCheckOplockEx(POPLOCK Oplock, PIRP Irp, ULONG Flags,
  * fastfat helpers genuinely absent in this build config (not macros here)
  * ====================================================================== */
 
-/* SafeZeroMemory: fastfat's checked-zero helper — RtlZeroMemory equivalent. */
-VOID SafeZeroMemory(PUCHAR At, ULONG ByteCount) { RtlZeroMemory(At, ByteCount); }
 
 /* CollectReadStats: FAT IO statistics accounting — no-op when stats disabled. */
 VOID CollectReadStats(PVCB Vcb, ULONG OpenType, ULONG BytesRead) { (void)Vcb; (void)OpenType; (void)BytesRead; }

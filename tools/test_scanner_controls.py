@@ -245,6 +245,223 @@ pub unsafe extern "system" fn Boom() {
 }
 """
 
+# scan_ptr_byte_diff. The version.dll bug verbatim: C's `lpNextSlash - lpSubBlock` on LPCWSTR
+# counts WCHARs, the translation subtracted addresses. The oracle is the REAL
+# dll/win32/version/version.c (the scanner pairs by function name against tracked C), so
+# the fixture keeps the real function name. GOOD holds the fix and the byte-offset shape
+# that must stay silent: both operands byte pointers, which is address arithmetic.
+_PTR_BYTE_DIFF_BAD = """\
+unsafe fn VersionInfo32_QueryValue(info: *const u8, mut lpSubBlock: LPCWSTR) -> i32 {
+    let mut lpNextSlash: LPCWSTR = lpSubBlock;
+    let len = (lpNextSlash as isize - lpSubBlock as isize) as UINT;
+    len as i32
+}
+"""
+_PTR_BYTE_DIFF_GOOD = """\
+unsafe fn VersionInfo32_QueryValue(info: *const u8, mut lpSubBlock: LPCWSTR) -> i32 {
+    let mut lpNextSlash: LPCWSTR = lpSubBlock;
+    let len = lpNextSlash.offset_from(lpSubBlock) as UINT;
+    let base: *const u8 = info;
+    let end: *const u8 = info;
+    let bytes = (end as usize - base as usize) as UINT;
+    (len + bytes) as i32
+}
+"""
+
+# scan_misaligned_cast. cryptlib A_SHAFinal before the fix: the length words stored through
+# `Buffer + Pad` cast to *mut u32 over a [u8; 72]. GOOD is the fix, plus a cast that is only
+# PASSED on (never dereferenced here), which must stay silent.
+_MISALIGNED_CAST_BAD = """\
+pub unsafe fn A_SHAFinal(Pad: u32, LengthHi: u32) {
+    let mut Buffer: [u8; 72] = [0; 72];
+    let Count: *mut u32;
+    Count = Buffer.as_mut_ptr().add(Pad as usize) as *mut u32;
+    *Count.offset(0) = LengthHi;
+}
+"""
+_MISALIGNED_CAST_GOOD = """\
+pub unsafe fn A_SHAFinal(Pad: u32, LengthHi: u32) {
+    let mut Buffer: [u8; 72] = [0; 72];
+    let Count: *mut u32;
+    Count = Buffer.as_mut_ptr().add(Pad as usize) as *mut u32;
+    Count.offset(0).write_unaligned(LengthHi);
+    consume(Buffer.as_mut_ptr() as *mut u32);
+}
+"""
+
+# scan_dropped_null_guard. compress before the fix: compress.c forwards final_size to
+# lznt1_decompress, whose `if (final_size)` is the guard — so this also pins the one-level
+# call-through. The fixture path shares `compress` with sdk/lib/rtl/compress.c, which is
+# what makes that the twin; GOOD is the guarded store.
+_NULL_GUARD_BAD = """\
+pub unsafe extern "system" fn RtlDecompressFragment(
+    format: u16, uncompressed: *mut u8, uncompressed_size: u32, compressed: *const u8,
+    compressed_size: u32, offset: u32, final_size: *mut u32, workspace: *mut u8,
+) -> i32 {
+    *final_size = 0;
+    0
+}
+"""
+_NULL_GUARD_GOOD = """\
+pub unsafe extern "system" fn RtlDecompressFragment(
+    format: u16, uncompressed: *mut u8, uncompressed_size: u32, compressed: *const u8,
+    compressed_size: u32, offset: u32, final_size: *mut u32, workspace: *mut u8,
+) -> i32 {
+    if !final_size.is_null() {
+        *final_size = 0;
+    }
+    0
+}
+"""
+
+# scan_store_on_failure. compress before the fix: lznt1_decompress writes *final_size only
+# at its `out:` label, after every `return STATUS_BAD_COMPRESSION_BUFFER`; the Rust wrote it
+# and then returned whatever status came back. The pairing needs a `rust/<crate>/` path.
+_STORE_ON_FAILURE_BAD = """\
+pub unsafe extern "system" fn RtlDecompressFragment(
+    format: u16, uncompressed: *mut u8, uncompressed_size: u32, compressed: *const u8,
+    compressed_size: u32, offset: u32, final_size: *mut u32, workspace: *mut u8,
+) -> u32 {
+    let result = decompress(uncompressed, compressed, offset);
+    if !final_size.is_null() {
+        *final_size = result.bytes_written as u32;
+    }
+    result.status
+}
+"""
+# The GOOD fixture also carries the idioms that must stay quiet: a store dominated by a
+# success test, and COM's `*pp = NULL` before a failure return.
+_STORE_ON_FAILURE_GOOD = """\
+pub unsafe extern "system" fn RtlDecompressFragment(
+    format: u16, uncompressed: *mut u8, uncompressed_size: u32, compressed: *const u8,
+    compressed_size: u32, offset: u32, final_size: *mut u32, workspace: *mut u8,
+) -> u32 {
+    let result = decompress(uncompressed, compressed, offset);
+    if result.status == STATUS_SUCCESS && !final_size.is_null() {
+        *final_size = result.bytes_written as u32;
+    }
+    result.status
+}
+pub unsafe extern "system" fn RtlCompressBuffer(
+    format: u16, src: *const u8, src_size: u32, dst: *mut u8, dst_size: u32,
+    chunk: u32, final_size: *mut u32, workspace: *mut u8,
+) -> u32 {
+    if format == 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    match compress(dst, src) {
+        Ok(n) => {
+            *final_size = n as u32;
+            STATUS_SUCCESS
+        }
+        Err(st) => st,
+    }
+}
+"""
+
+# scan_bool_width, narrow-definition half. userenv before the fix: RefreshPolicy exported
+# `-> u8` where gpolicy.c returns BOOL, so every C caller tested all of EAX against a
+# callee that set AL. The DECL half: a Rust extern declaring the u8 definition `-> BOOL`.
+_BOOL_WIDTH_BAD = {
+    "rust/userenv-rust/src/gpolicy.rs": """\
+#[no_mangle]
+pub unsafe extern "system" fn RefreshPolicy(bMachine: BOOL) -> u8 {
+    1u8
+}
+#[no_mangle]
+pub unsafe extern "system" fn MyNarrowHelper() -> u8 {
+    1u8
+}
+""",
+    "rust/caller-rust/src/lib.rs": """\
+extern "system" {
+    fn MyNarrowHelper() -> i32;
+}
+""",
+    # Per-arch cfg twins of one export, only one of them widened.
+    "rust/win32k-rust/src/region.rs": """\
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn MyRegionTest(p: PREGION) -> BOOL { 1 }
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn MyRegionTest(p: PREGION) -> u8 { 1 }
+""",
+}
+_BOOL_WIDTH_GOOD = {
+    "rust/userenv-rust/src/gpolicy.rs": """\
+#[no_mangle]
+pub unsafe extern "system" fn RefreshPolicy(bMachine: BOOL) -> BOOL {
+    1
+}
+#[no_mangle]
+pub unsafe extern "system" fn MyNarrowHelper() -> u8 {
+    1u8
+}
+""",
+    "rust/caller-rust/src/lib.rs": """\
+extern "system" {
+    fn MyNarrowHelper() -> u8;
+}
+""",
+    "rust/win32k-rust/src/region.rs": """\
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn MyRegionTest(p: PREGION) -> BOOL { 1 }
+#[cfg(not(target_arch = "x86"))]
+#[no_mangle]
+pub unsafe extern "C" fn MyRegionTest(p: PREGION) -> BOOL { 1 }
+""",
+}
+
+# scan_cfg_vs_c. user32 before the fix: class.c's `#ifdef _WIN64` index check was
+# translated as amd64-only, so arm64 returned a truncated pointer for GCLP_* indices.
+_WIN64_CFG_BAD = """\
+pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
+    let mut Ret: usize = 0;
+    #[cfg(target_arch = "x86_64")]
+    {
+        Ret = 1;
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        Ret = 2;
+    }
+    Ret as u32
+}
+"""
+_WIN64_CFG_GOOD = _WIN64_CFG_BAD.replace('target_arch = "x86_64"', 'target_pointer_width = "64"')
+
+# Its UP/SMP axis. bug.c freezes the other CPUs under `#ifdef CONFIG_SMP`; the Rust gated
+# that on an ARCH, so it froze in UP builds and never on arm64 SMP. `feature = "smp"` is
+# how Rust spells CONFIG_SMP (ntkrnlmp).
+_SMP_CFG_BAD = """\
+pub unsafe extern "system" fn KeBugCheckWithTf(BugCheckCode: u32, TrapFrame: PVOID) {
+    #[cfg(target_arch = "x86")]
+    {
+        KxFreezeExecution();
+    }
+    KiDisplayBlueScreen(BugCheckCode);
+}
+"""
+_SMP_CFG_GOOD = _SMP_CFG_BAD.replace('target_arch = "x86"', 'feature = "smp"')
+
+# The same scanner's no-C half: an orphaned cfg (its fastcall twin deleted) stacked onto
+# the next item ANDs to "never", compiling RtlPrefetchMemoryNonTemporal out on every arch.
+_DEAD_CFG_BAD = """\
+#[cfg(not(target_arch = "x86"))]
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+"""
+_DEAD_CFG_GOOD = """\
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+#[cfg(all(target_arch = "x86_64", target_os = "windows"))]
+pub fn allowed() {}
+"""
+
 _BITWISE_NOT_BAD = """\
 pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
     // C: DEV_WRITE_CACHE && !DEV_POWER_PROTECTED && !CLASS_SPECIAL_FUA_NOT_SUPPORTED.
@@ -395,6 +612,21 @@ pub unsafe fn get(pd: *mut _PROCESS_DATA, i: usize) -> *mut RealHandle {
 }
 """
 
+# scan_cdecl_alias. Seeded from fastfat's rust_cohab_forceinline.c (2026-09-26): the
+# bare cdecl name aliased onto the stdcall body double-pops the arguments. The GOOD side
+# keeps an @0 alias (sound: both conventions are the same code) and a real thunk.
+_CDECL_ALIAS_BAD = r"""
+__asm__(".globl _KeInitializeSpinLock\n"
+        ".set _KeInitializeSpinLock, _KeInitializeSpinLock@4\n");
+"""
+_CDECL_ALIAS_GOOD = r"""
+__asm__(".globl _KeGetCurrentProcessorNumber\n"
+        ".set _KeGetCurrentProcessorNumber, _KeGetCurrentProcessorNumber@0");
+__asm__(".globl _KeInitializeSpinLock\n_KeInitializeSpinLock:\n"
+        " pushl 4(%esp)\n call _KeInitializeSpinLock@4\n ret\n");
+"""
+
+
 # scan_fnptr_abi_transmute. Seeded from consrv's GuiVtbl (2026-09-23): a plain
 # Rust fn put in an NTAPI slot through `as *const ()`, which is fine on 64-bit
 # and a csrss crash on i386. GOOD is the fixed shape: extern "system", passed
@@ -405,6 +637,18 @@ pub unsafe fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> =
     unsafe { Some(core::mem::transmute(InitFrontEnd as *const ())) };
 """
+# Second shape (classpnp 2026-09-26): the source type SAYS extern "C", so rustc
+# agrees with the fn, and the inferred target re-types it for an NTAPI slot.
+_FNABI_BAD_TYPED = """\
+pub unsafe extern "C" fn Done(d: *mut u8, i: *mut u8, c: *mut u8) -> i32 { 0 }
+pub unsafe fn f(irp: *mut u8) {
+    IoSetCompletionRoutine(
+        irp,
+        Some(core::mem::transmute::<unsafe extern "C" fn(*mut u8, *mut u8, P) -> i32, _>(Done)),
+        core::ptr::null_mut(), 1, 1, 1,
+    );
+}
+"""
 _FNABI_GOOD = """\
 pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> = Some(InitFrontEnd);
@@ -413,6 +657,9 @@ extern "system" {
 }
 pub static SLOT2: Option<unsafe extern "system" fn(*mut u8) -> i32> =
     unsafe { Some(core::mem::transmute(Foreign as *const ())) };
+pub unsafe extern "C" fn cexit(code: i32) -> ! { loop {} }
+pub static EXIT: unsafe extern "C" fn(i32) =
+    unsafe { core::mem::transmute::<unsafe extern "C" fn(i32) -> !, _>(cexit) };
 """
 
 # scan_wide_byte_copy. Seeded from fastfat's FatQueryDirectory (2026-09-23): the
@@ -1355,6 +1602,67 @@ pub unsafe fn SaveViewState_body(this: *mut T) -> HRESULT {
 """
 
 
+# scan_duplicate_symbols. 88b04bf7f86: reviving an orphan-cfg'd empty Rust stub put a
+# second i386 `@RtlPrefetchMemoryNonTemporal@8` in the crate whose global_asm! already
+# defines it. rustc can't see into the assembler and --allow-multiple-definition picked
+# the stub: BUGCHECK 0x1E in kmtest RtlMemoryKM. The GOOD tree carries the three shapes
+# that must stay quiet: the stub gated off x86, smp/not-smp feature twins, and a cdecl
+# asm label beside a stdcall Rust fn of the same name (two different i386 symbols).
+_DUP_CARGO = """\
+[package]
+name = "rtlk-rust"
+version = "0.1.0"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[features]
+smp = []
+"""
+_DUP_ASM = """\
+#[cfg(target_arch = "x86")]
+core::arch::global_asm!(
+    ".globl @RtlPrefetchMemoryNonTemporal@8",
+    "@RtlPrefetchMemoryNonTemporal@8:",
+    "    ret",
+    ".globl _KeGetPcr",
+    "_KeGetPcr:",
+    "    ret",
+);
+"""
+_DUP_BAD = {
+    "rtlk-rust/Cargo.toml": _DUP_CARGO,
+    "rtlk-rust/src/lib.rs": "mod prefetch_asm;\nmod misc;\n",
+    "rtlk-rust/src/prefetch_asm.rs": _DUP_ASM,
+    "rtlk-rust/src/misc.rs": """\
+#[no_mangle]
+pub unsafe extern "fastcall" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+""",
+}
+_DUP_GOOD = {
+    "rtlk-rust/Cargo.toml": _DUP_CARGO,
+    "rtlk-rust/src/lib.rs": (
+        'mod prefetch_asm;\n#[cfg(not(target_arch = "x86"))]\nmod misc;\nmod lock;\n'
+    ),
+    "rtlk-rust/src/prefetch_asm.rs": _DUP_ASM,
+    "rtlk-rust/src/misc.rs": """\
+#[no_mangle]
+pub unsafe extern "C" fn RtlPrefetchMemoryNonTemporal(_Source: PVOID, _Length: SIZE_T) {}
+""",
+    "rtlk-rust/src/lock.rs": """\
+#[cfg(feature = "smp")]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KxAcquireSpinLock(l: *mut usize) { spin(l) }
+#[cfg(not(feature = "smp"))]
+#[no_mangle]
+pub unsafe extern "fastcall" fn KxAcquireSpinLock(_l: *mut usize) {}
+#[no_mangle]
+pub unsafe extern "system" fn KeGetPcr() -> usize { 0 }
+""",
+}
+
+
 CONTROLS: list[Control] = [
     Control(
         name="scan_dropped_asserts",
@@ -1513,6 +1821,63 @@ CONTROLS: list[Control] = [
         good={"good.rs": _ASSERT_UB_GOOD},
     ),
     Control(
+        name="scan_ptr_byte_diff",
+        script="tools/scan_ptr_byte_diff.py",
+        argv=["--lint"],
+        bad={"version-rust/src/lib.rs": _PTR_BYTE_DIFF_BAD},
+        good={"version-rust/src/lib.rs": _PTR_BYTE_DIFF_GOOD},
+    ),
+    Control(
+        name="scan_misaligned_cast",
+        script="tools/scan_misaligned_cast.py",
+        argv=["--lint"],
+        bad={"sha1.rs": _MISALIGNED_CAST_BAD},
+        good={"sha1.rs": _MISALIGNED_CAST_GOOD},
+    ),
+    Control(
+        name="scan_dropped_null_guard",
+        script="tools/scan_dropped_null_guard.py",
+        argv=["--lint"],
+        bad={"compress/src/lib.rs": _NULL_GUARD_BAD},
+        good={"compress/src/lib.rs": _NULL_GUARD_GOOD},
+    ),
+    Control(
+        name="scan_store_on_failure",
+        script="tools/scan_store_on_failure.py",
+        argv=["--lint"],
+        bad={"rust/compress/src/lib.rs": _STORE_ON_FAILURE_BAD},
+        good={"rust/compress/src/lib.rs": _STORE_ON_FAILURE_GOOD},
+    ),
+    Control(
+        name="scan_bool_width",
+        script="tools/scan_bool_width.py",
+        argv=["--lint"],
+        bad=_BOOL_WIDTH_BAD,
+        good=_BOOL_WIDTH_GOOD,
+    ),
+    Control(
+        name="scan_duplicate_symbols",
+        script="tools/scan_duplicate_symbols.py",
+        argv=["--lint"],
+        bad=_DUP_BAD,
+        good=_DUP_GOOD,
+    ),
+    Control(
+        name="scan_cfg_vs_c",
+        script="tools/scan_cfg_vs_c.py",
+        argv=["--lint"],
+        bad={
+            "rust/ntoskrnl-rust/src/ke/bug.rs": _SMP_CFG_BAD,
+            "rust/user32-rust/src/windows/class.rs": _WIN64_CFG_BAD,
+            "rust/rtlk-rust/src/misc.rs": _DEAD_CFG_BAD,
+        },
+        good={
+            "rust/ntoskrnl-rust/src/ke/bug.rs": _SMP_CFG_GOOD,
+            "rust/user32-rust/src/windows/class.rs": _WIN64_CFG_GOOD,
+            "rust/rtlk-rust/src/misc.rs": _DEAD_CFG_GOOD,
+        },
+    ),
+    Control(
         name="scan_bitwise_not_bool",
         script="tools/scan_bitwise_not_bool.py",
         argv=["--lint"],
@@ -1566,8 +1931,15 @@ CONTROLS: list[Control] = [
         name="scan_fnptr_abi_transmute",
         script="tools/scan_fnptr_abi_transmute.py",
         argv=["--lint"],
-        bad={"bad.rs": _FNABI_BAD},
+        bad={"bad.rs": _FNABI_BAD, "bad_typed.rs": _FNABI_BAD_TYPED},
         good={"good.rs": _FNABI_GOOD},
+    ),
+    Control(
+        name="scan_cdecl_alias",
+        script="tools/scan_cdecl_alias.py",
+        argv=["--lint"],
+        bad={"bridge.c": _CDECL_ALIAS_BAD},
+        good={"bridge.c": _CDECL_ALIAS_GOOD},
     ),
     Control(
         name="scan_wide_byte_copy",
@@ -1696,6 +2068,13 @@ UNCOVERED: dict[str, str] = {
         "arguments and are driven with synthetic specs in tools/test_scan_import_cc.py "
         "(15 tests), which pins each of the six blind spots its first whole-tree run had."
     ),
+    "scan_raw_uart_writes": (
+        "main() walks the real tree, but the decision is scan_text(), a pure function "
+        "over a string, driven directly in tools/test_scan_raw_uart_writes.py. Its fire "
+        "cases are the three shapes the 87 real stores took when it landed; its must-not "
+        "cases pin the nearest-binding rule that keeps an unrelated `u` from being "
+        "reported, plus comments, strings and comparisons."
+    ),
     "scan_octal_literals": (
         "main() walks the real tree, but the matcher and the comment/literal tokenizer are "
         "pure functions over a string — scan_text()/strip_noise() — and are driven directly "
@@ -1713,8 +2092,24 @@ UNCOVERED: dict[str, str] = {
         "each negative control is a shape that made an earlier draft useless (45 findings "
         "from `for` steps, 53 from prose, 80 from one unbalanced macro)."
     ),
-    "scan_duplicate_symbols": "operates on link artifacts, not source",
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
+    "scan_const_vs_island": (
+        "needs the whole tree's bindgen islands as its oracle. The decision, "
+        "island_disagreements(), is a pure function over two dicts, driven in "
+        "tools/test_scan_const_vs_island.py with the fsrtl swap as the positive control."
+    ),
+    "scan_bindgen_padding_index": (
+        "a regex over single source lines with no tree model, so a fixture dir would only "
+        "restate its unit tests. tools/test_scan_bindgen_padding_index.py drives scan_text "
+        "with the user32 wnd_pti read as the positive control and address-of/offset_of "
+        "uses (layout-stable) as negatives, and asserts the real tree is clean."
+    ),
+    "scan_res_named_types": (
+        "reads COMMITTED binary resource objects (git ls-files '*.res'), not Rust source, so "
+        "a source fixture dir has nothing to offer it. The parser is driven directly in "
+        "tools/test_scan_res_named_types.py with synthetic COFF objects: a string-typed "
+        "MESSAGETABLE fires, the integer type 11 and a genuinely custom string type do not."
+    ),
     "scan_invented_constants": (
         "needs the real tree on BOTH sides: the self-labelled Rust const and the C module "
         "that crate translates. A synthetic fixture would only prove the regex fires. Its "
@@ -1997,6 +2392,43 @@ def test_cc_mismatch_fixer_is_alive(tmp_path: Path):
     assert 'extern "stdcall" {' in text, text
     # ...and the fix must actually settle the lint it was written to settle.
     assert not cc.scan_crate(str(src)), cc.scan_crate(str(src))
+
+
+def test_cc_mismatch_flags_one_undefined_symbol_declared_two_ways(tmp_path: Path):
+    """[DECL_CC_SPLIT]: no in-crate definition, two i386 conventions across the crate.
+
+    The fastfat shape, spelled as it shipped: fileinfo.rs said "system" for the cdecl
+    IoGetCurrentIrpStackLocation thunk, on a line that also opens and closes another block,
+    while the other files said "C". The one-view-per-crate fold left esp 4 bytes off after
+    every fileinfo call (i386 BUGCHECK 0x50 saving a file). Both sides must be reported."""
+    cc = _cc_mod()
+    files = {
+        "src/cachesup.rs": (
+            'extern "C" {\n    fn IoGetCurrentIrpStackLocation(irp: *mut u8) -> *mut u8;\n}\n'
+        ),
+        "src/fileinfo.rs": (
+            'extern "system" {\n    fn FatX(a: u32);\n'
+            '    } extern "C" { fn KdPrintEx(c: u32, ...); } extern "system" {\n'
+            "    fn IoGetCurrentIrpStackLocation(Irp: *mut u8) -> *mut u8;\n}\n"
+        ),
+    }
+    hits = cc.scan_crate(str(_materialize(tmp_path, files) / "src"))
+    split = [h for h in hits if "DECL_CC_SPLIT" in h and "IoGetCurrentIrpStackLocation" in h]
+    assert any("cachesup.rs" in h for h in split) and any("fileinfo.rs" in h for h in split), hits
+
+
+def test_cc_mismatch_ignores_a_commented_out_declaration(tmp_path: Path):
+    """section.rs keeps `// DUPLICATE: fn KeRaiseIrql(..)` inside an extern "system" block
+    next to a live extern "C" one. A comment is not a declaration: no split, no mismatch."""
+    cc = _cc_mod()
+    files = {
+        "src/section.rs": (
+            'extern "C" {\n    fn KeRaiseIrql(n: u8, o: *mut u8);\n}\n'
+            'extern "system" {\n    // DUPLICATE: fn KeRaiseIrql(n: u8, o: *mut u8);\n}\n'
+        ),
+    }
+    hits = cc.scan_crate(str(_materialize(tmp_path, files) / "src"))
+    assert not hits, hits
 
 
 def test_cc_mismatch_pairs_on_the_symbol_not_the_rust_identifier(tmp_path: Path):

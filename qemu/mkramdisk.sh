@@ -109,6 +109,7 @@ REQUIRED_FILES=(
     "$BUILD_DIR/subsystems/win/basesrv/basesrv.dll"
     "$BUILD_DIR/media/nls/c_437.nls"
     "$BUILD_DIR/media/nls/c_1252.nls"
+    "$BUILD_DIR/media/nls/c_20127.nls"
     "$BUILD_DIR/dll/win32/kernel32/kernel32.dll"
     "$BUILD_DIR/win32ss/user/user32/user32.dll"
     "$BUILD_DIR/win32ss/gdi/gdi32/gdi32.dll"
@@ -149,13 +150,24 @@ REQUIRED_FILES=(
     "$BUILD_DIR/drivers/input/arm64input/arm64input.sys"
     "$BUILD_DIR/drivers/video/arm64vid/arm64vid.sys"
     # PCI + USB + HID input stack (input-unification: EHCI-on-PCIe -> usbport ->
-    # usbhub -> hidusb -> hidclass -> kbdhid/mouhid -> kbdclass/mouclass). The
+    # usbhub [-> usbccgp for composite devices] -> hidusb -> hidclass -> kbdhid/mouhid -> kbdclass/mouclass; xHCI via usbxhci). The
     # PCI root devnode is seeded by hivesys_arm64.inf (Root\*PNP0A03).
     "$BUILD_DIR/drivers/bus/pci/pci.sys"
     "$BUILD_DIR/drivers/usb/usbd/usbd.sys"
     "$BUILD_DIR/drivers/usb/usbport/usbport.sys"
     "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"
+    "$BUILD_DIR/drivers/usb/usbxhci/usbxhci.sys"
     "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"
+    "$BUILD_DIR/drivers/usb/usbccgp/usbccgp.sys"
+    # USB mass storage: usbstor -> disk (classpnp) with the partmgr class filter,
+    # and mountmgr for drive letters. The hive already names all of these as boot
+    # drivers; without the files the loader drops them and a stick enumerates
+    # with no driver.
+    "$BUILD_DIR/drivers/usb/usbstor/usbstor.sys"
+    "$BUILD_DIR/drivers/storage/class/classpnp/classpnp.sys"
+    "$BUILD_DIR/drivers/storage/class/disk/disk.sys"
+    "$BUILD_DIR/drivers/storage/partmgr/partmgr.sys"
+    "$BUILD_DIR/drivers/storage/mountmgr/mountmgr.sys"
     "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"
     "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"
     "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"
@@ -179,6 +191,11 @@ REQUIRED_FILES=(
     # Level 2 transitive deps
     "$BUILD_DIR/dll/win32/winmm/winmm.dll"
     "$BUILD_DIR/dll/win32/usp10/usp10.dll"
+    # gdi32's LoadLPK retries LoadLibraryW(L"lpk.dll") on EVERY ExtTextOut /
+    # GetTextExtentExPoint until it succeeds, so without it each glyph run
+    # walks the whole DLL search path (seen on a Pi 4: explorer spent its tray
+    # clock repaints in RtlDosSearchPath_U).
+    "$BUILD_DIR/dll/win32/lpk/lpk.dll"
     "$BUILD_DIR/win32ss/user/imm32/imm32.dll"
     "$BUILD_DIR/dll/win32/urlmon/urlmon.dll"
     "$BUILD_DIR/dll/win32/windowscodecs/windowscodecs.dll"
@@ -406,7 +423,14 @@ RMC "$BUILD_DIR/drivers/bus/pci/pci.sys"                   ::/reactos/system32/d
 RMC "$BUILD_DIR/drivers/usb/usbd/usbd.sys"                 ::/reactos/system32/drivers/usbd.sys
 RMC "$BUILD_DIR/drivers/usb/usbport/usbport.sys"           ::/reactos/system32/drivers/usbport.sys
 RMC "$BUILD_DIR/drivers/usb/usbehci/usbehci.sys"           ::/reactos/system32/drivers/usbehci.sys
+RMC "$BUILD_DIR/drivers/usb/usbxhci/usbxhci.sys"           ::/reactos/system32/drivers/usbxhci.sys
 RMC "$BUILD_DIR/drivers/usb/usbhub/usbhub.sys"             ::/reactos/system32/drivers/usbhub.sys
+RMC "$BUILD_DIR/drivers/usb/usbccgp/usbccgp.sys"           ::/reactos/system32/drivers/usbccgp.sys
+RMC "$BUILD_DIR/drivers/usb/usbstor/usbstor.sys"           ::/reactos/system32/drivers/usbstor.sys
+RMC "$BUILD_DIR/drivers/storage/class/classpnp/classpnp.sys" ::/reactos/system32/drivers/classpnp.sys
+RMC "$BUILD_DIR/drivers/storage/class/disk/disk.sys"       ::/reactos/system32/drivers/disk.sys
+RMC "$BUILD_DIR/drivers/storage/partmgr/partmgr.sys"       ::/reactos/system32/drivers/partmgr.sys
+RMC "$BUILD_DIR/drivers/storage/mountmgr/mountmgr.sys"     ::/reactos/system32/drivers/mountmgr.sys
 RMC "$BUILD_DIR/drivers/hid/hidparse/hidparse.sys"         ::/reactos/system32/drivers/hidparse.sys
 RMC "$BUILD_DIR/drivers/hid/hidclass/hidclass.sys"         ::/reactos/system32/drivers/hidclass.sys
 RMC "$BUILD_DIR/drivers/hid/hidusb/hidusb.sys"             ::/reactos/system32/drivers/hidusb.sys
@@ -426,6 +450,11 @@ RMC "$BUILD_DIR/dll/win32/comctl32/comctl32.dll"               ::/reactos/system
 # creates its v5/v6 activation contexts from %windir%\winsxs\manifests, and apps whose
 # manifest asks for Common-Controls 6.0 resolve it here. Without it every
 # CreateActCtxW in comctl32 failed on arm64.
+# %SystemRoot%\TEMP: hivesys.inf points the system TEMP/TMP there, and x86 setup
+# creates it, but nothing made it on the arm64 ramdisk -- so every app writing a
+# temp file failed with ERROR_PATH_NOT_FOUND (found by the ucrt Tier 2 findfile
+# fixture, whose CreateDirectoryW under %TEMP% failed with error 3).
+mdir -i "$RAMDISK_IMG" ::/reactos/TEMP >/dev/null 2>&1 || mmd -i "$RAMDISK_IMG" ::/reactos/TEMP
 SXS_CC="microsoft.windows.common-controls_6595b64144ccf1df"
 for d in winsxs winsxs/manifests \
          "winsxs/arm64_${SXS_CC}_5.82.2600.2982_none_deadbeef" \
@@ -450,6 +479,7 @@ RMC "$BUILD_DIR/dll/win32/uxtheme/uxtheme.dll"                 ::/reactos/system
 # Level 2 transitive deps
 RMC "$BUILD_DIR/dll/win32/winmm/winmm.dll"                    ::/reactos/system32/winmm.dll
 RMC "$BUILD_DIR/dll/win32/usp10/usp10.dll"                    ::/reactos/system32/usp10.dll
+RMC "$BUILD_DIR/dll/win32/lpk/lpk.dll"                        ::/reactos/system32/lpk.dll
 RMC "$BUILD_DIR/win32ss/user/imm32/imm32.dll"                 ::/reactos/system32/imm32.dll
 RMC "$BUILD_DIR/dll/win32/urlmon/urlmon.dll"                   ::/reactos/system32/urlmon.dll
 RMC "$BUILD_DIR/dll/win32/windowscodecs/windowscodecs.dll"     ::/reactos/system32/windowscodecs.dll
@@ -485,6 +515,10 @@ RMC "$BUILD_DIR/dll/win32/psapi/psapi.dll"                    ::/reactos/system3
 
 RMC "$BUILD_DIR/media/nls/c_437.nls"                           ::/reactos/system32/c_437.nls
 RMC "$BUILD_DIR/media/nls/c_1252.nls"                          ::/reactos/system32/c_1252.nls
+# US-ASCII. msvcrt's _setmbcp(_MB_CP_SBCS) selects it (Wine's mapping), and without the
+# table every MultiByteToWideChar(20127) fails -- so every _ismbc*/_mbcto* call answered
+# 0 even for 'A' on arm64, the only arch whose media is curated here (x86 ships all NLS).
+RMC "$BUILD_DIR/media/nls/c_20127.nls"                         ::/reactos/system32/c_20127.nls
 if [ -n "$L_INTL_NLS" ]; then
     RMC "$L_INTL_NLS"                                          ::/reactos/system32/l_intl.nls
 fi
@@ -563,6 +597,25 @@ RMC "$BUILD_DIR/dll/win32/samsrv/samsrv.dll"                   ::/reactos/system
 # import-table walk — lsass.exe's every STATIC import resolves and it still died
 # with ExitStatus=0xC0000135 (STATUS_DLL_NOT_FOUND) propagated as its exit code.
 RMC "$BUILD_DIR/dll/win32/msv1_0/msv1_0.dll"                   ::/reactos/system32/msv1_0.dll
+
+# The stock apps and control-panel applets (qemu/ramdisk-apps.txt), with their whole
+# import closure, at their livecd destinations. Derived, not hand-listed: before this the
+# ramdisk carried notepad/cmd/explorer only and appstorm found 36 of 43 apps ABSENT on
+# arm64. `vibeos-cli build --arch arm64` builds the closure; ramdisk_apps.py HARD-FAILS on
+# an unbuilt or unresolvable member rather than stage a half-bound module. Modules staged
+# by hand above are left out of its list, so the curated copy stays authoritative.
+echo "[*] Staging stock apps (qemu/ramdisk-apps.txt closure)..."
+APPS_LST="$BUILD_DIR/boot/ramdisk-apps.lst"
+python3 "$PROJECT_DIR/tools/ramdisk_apps.py" --stage --build-dir "$BUILD_DIR" > "$APPS_LST" || {
+    echo "[!] ramdisk app closure is incomplete (see above) -- run ./vibeos-cli build --arch arm64"
+    exit 1
+}
+python3 "$PROJECT_DIR/tools/strip_cd_media.py" --lst "$APPS_LST" --out "$APPS_LST.stripped" \
+    --cache "$STRIP_CACHE" --objcopy "$STRIP_OBJCOPY" || exit 1
+while IFS='=' read -r dest src; do
+    [ -n "$dest" ] || continue
+    mcopy -o -i "$RAMDISK_IMG" "$src" "::/$dest"
+done < "$APPS_LST.stripped"
 
 KMTESTS_DIR="$BUILD_DIR/modules/rostests/kmtests"
 if [ -f "$KMTESTS_DIR/kmtest_.exe" ]; then
@@ -933,10 +986,12 @@ mcopy -i "$BOOT_IMG" "$UEFILDR" ::/EFI/BOOT/BOOTAA64.EFI
 # from that one selector.
 if [ -n "$UP" ]; then
     UP_INI="$(mktemp)"
-    sed 's#^DefaultOS=ReactOS_Arm64_MP$#DefaultOS=ReactOS_Arm64_UP#' "$FREELDR_INI" > "$UP_INI"
+    # freeldr.ini is CRLF, so a bare `...MP$` anchor never matched and every --up
+    # build failed here; keep the CR the loader expects.
+    sed 's#^DefaultOS=ReactOS_Arm64_MP\(\r\{0,1\}\)$#DefaultOS=ReactOS_Arm64_UP\1#' "$FREELDR_INI" > "$UP_INI"
     # Fail loud rather than shipping UP-defaulted media from an --smp build: that
     # is a false-green (the boot looks fine and runs the wrong kernel).
-    if ! grep -q '^DefaultOS=ReactOS_Arm64_UP$' "$UP_INI"; then
+    if ! tr -d '\r' < "$UP_INI" | grep -qx 'DefaultOS=ReactOS_Arm64_UP'; then
         echo "[!] freeldr.ini: no 'DefaultOS=ReactOS_Arm64_MP' line to flip — entry names drifted"
         rm -f "$UP_INI"
         exit 1

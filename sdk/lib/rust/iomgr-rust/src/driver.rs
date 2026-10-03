@@ -223,7 +223,10 @@ const PiActionEnumDeviceTree: ULONG = 0;
 const PiActionEnumRootDevices: ULONG = 1;
 const PiActionAddBootDevices: ULONG = 3;
 const MAXIMUM_FILENAME_LENGTH: usize = 256;
-const MM_SYSLDR_NO_IMPORTS: usize = 0xFFFFFFFF;
+// mm.h: ((PVOID)(ULONG_PTR)-2). This was 0xFFFFFFFF -- a 32-bit -1, i.e. neither sentinel
+// on 64-bit -- so an image whose imports were never resolved kept a LoadedImports the unload
+// path does not recognise as a sentinel and would walk as an import list.
+const MM_SYSLDR_NO_IMPORTS: usize = (-2isize) as usize;
 const KeyBasicInformation: ULONG = 0;
 
 static FILESYSTEM_ROOT_NAME: &[u16] = &[
@@ -290,6 +293,7 @@ static DRIVER_FMT_STR: [u16; 13] = [
 #[cfg(target_arch = "aarch64")]
 extern "system" {
     static mut Arm64UartKernelBase: PVOID;
+    fn Arm64UartPutChar(c: u8);
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -300,7 +304,7 @@ macro_rules! ARM64_UART_TRACE {
             if !uart.is_null() {
                 let bytes = $s.as_bytes();
                 for &b in bytes {
-                    *uart = b as ULONG;
+                    Arm64UartPutChar(b as u8);
                 }
             }
         }
@@ -862,14 +866,14 @@ unsafe fn IopInitializeBuiltinDriver(BootLdrEntry: PLDR_DATA_TABLE_ENTRY) -> BOO
         if !uart.is_null() {
             let msg = b"[DRV] Loading ";
             for &b in msg {
-                *uart = b as ULONG;
+                Arm64UartPutChar(b as u8);
             }
             for i in 0..((*ModuleName).Length / 2) as usize {
-                *uart = (*(*ModuleName).Buffer.add(i) & 0x7F) as ULONG;
+                Arm64UartPutChar((*(*ModuleName).Buffer.add(i) & 0x7F) as u8);
             }
             let nl = b"\r\n";
             for &b in nl {
-                *uart = b as ULONG;
+                Arm64UartPutChar(b as u8);
             }
         }
     }
@@ -1268,16 +1272,16 @@ pub unsafe fn IopInitializeSystemDrivers() {
             if !uart.is_null() {
                 let msg = b"[SYSDRV] ZwLoadDriver: ";
                 for &b in msg {
-                    *uart = b as ULONG;
+                    Arm64UartPutChar(b as u8);
                 }
                 if !(**DriverList).Buffer.is_null() {
                     for k in 0..((**DriverList).Length / 2) as usize {
-                        *uart = (*(**DriverList).Buffer.add(k) as u8) as ULONG;
+                        Arm64UartPutChar((*(**DriverList).Buffer.add(k) as u8) as u8);
                     }
                 }
                 let nl = b"\r\n";
                 for &b in nl {
-                    *uart = b as ULONG;
+                    Arm64UartPutChar(b as u8);
                 }
             }
         }

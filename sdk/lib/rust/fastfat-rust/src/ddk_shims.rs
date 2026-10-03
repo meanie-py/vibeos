@@ -164,7 +164,7 @@ pub unsafe fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS 
 
 //  mmfuncs.h MmPrepareMdlForReuse macro. #[no_mangle] so the per-file
 //  `extern "C" { fn MmPrepareMdlForReuse(...) }` decls resolve at link.
-const MDL_PARTIAL_HAS_BEEN_MAPPED: u16 = 0x0004;
+const MDL_PARTIAL_HAS_BEEN_MAPPED: u16 = 0x0020; // mmtypes.h:23 (was 0x0004 = MDL_SOURCE_IS_NONPAGED_POOL)
 
 #[no_mangle]
 pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {

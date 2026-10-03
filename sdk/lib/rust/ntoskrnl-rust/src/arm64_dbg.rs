@@ -47,6 +47,18 @@ pub unsafe fn uart_putc(base: *mut u32, c: u8) {
     core::ptr::write_volatile(base, c as u32);
 }
 
+/// `uart_putc_default` for the kernel's other crates (iomgr, se, ps, lpc, ...),
+/// which cannot name this module. Every debug byte on arm64 goes through here:
+/// a bare store to the data register is silently dropped once the transmit FIFO
+/// is full, which QEMU's instantly-draining PL011 never shows. On a physical
+/// Pi 4 it cut every Phase-1 trace line down to its first `[`, so the last
+/// readable line of a hang was not the last thing the kernel said.
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "C" fn Arm64UartPutChar(c: u8) {
+    uart_putc_default(c);
+}
+
 /// `uart_putc` against the kernel's current debug UART base.
 #[inline(always)]
 pub unsafe fn uart_putc_default(c: u8) {
@@ -54,6 +66,38 @@ pub unsafe fn uart_putc_default(c: u8) {
     uart_putc(Arm64UartKernelBase as *mut u32, c);
     #[cfg(not(target_arch = "aarch64"))]
     let _ = c;
+}
+
+/// Whole-message serialization for the debug UART across CPUs.
+///
+/// Every writer of a complete message (the DbgPrint BRK handler,
+/// ARM64_UART_TRACE, ARM64_UART_TRACE_HEX) takes this around the message, so
+/// four cores' output arrives as lines instead of interleaved bytes. IRQs are
+/// masked while it is held: a writer running with IRQs on could otherwise be
+/// interrupted by a handler that prints on the same CPU and spin on its own
+/// lock forever. Returns the DAIF value to hand back to `uart_line_unlock`.
+#[cfg(target_arch = "aarch64")]
+static UART_LINE_LOCK: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+pub unsafe fn uart_line_lock() -> u64 {
+    let daif: u64;
+    core::arch::asm!("mrs {}, daif", "msr daifset, #2", out(reg) daif, options(nomem, nostack));
+    while UART_LINE_LOCK
+        .compare_exchange_weak(false, true, core::sync::atomic::Ordering::Acquire, core::sync::atomic::Ordering::Relaxed)
+        .is_err()
+    {
+        core::hint::spin_loop();
+    }
+    daif
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+pub unsafe fn uart_line_unlock(daif: u64) {
+    UART_LINE_LOCK.store(false, core::sync::atomic::Ordering::Release);
+    core::arch::asm!("msr daif, {}", in(reg) daif, options(nomem, nostack));
 }
 
 #[inline(never)]

@@ -660,7 +660,7 @@ unsafe extern "C" fn SetProfileData(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> u8 {
+pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> BOOL {
     let mut szKeyName: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut szRawProfilePath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut szProfilePath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
@@ -674,7 +674,7 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> u8 {
     let mut pUserSid: PSID = core::ptr::null_mut();
     let mut hProfileKey: HKEY = core::ptr::null_mut();
     let mut dwDisposition: u32 = 0;
-    let mut bResult: u8 = 0u8;
+    let mut bResult: BOOL = 0;
     let mut cchSize: u32 = 0;
     let mut dwError: u32 = 0;
 
@@ -684,7 +684,7 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> u8 {
         &mut hToken,
     ) == 0
     {
-        return 0u8;
+        return 0;
     }
 
     'done: {
@@ -786,7 +786,7 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> u8 {
         break 'done;
     }
 
-    bResult = 1u8;
+    bResult = 1;
 
     }
     if !hProfileKey.is_null() {
@@ -1406,13 +1406,13 @@ pub unsafe extern "system" fn DeleteProfileW(
 pub unsafe extern "system" fn GetAllUsersProfileDirectoryA(
     mut lpProfileDir: LPSTR,
     mut lpcchSize: LPDWORD,
-) -> u8 {
+) -> BOOL {
     let mut lpBuffer: LPWSTR;
-    let mut bResult: u8;
+    let mut bResult: BOOL;
 
     if lpcchSize.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
-        return 0u8;
+        return 0;
     }
 
     lpBuffer = GlobalAlloc(
@@ -1420,11 +1420,11 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryA(
         (*lpcchSize as usize).wrapping_mul(core::mem::size_of::<u16>()),
     ) as LPWSTR;
     if lpBuffer.is_null() {
-        return 0u8;
+        return 0;
     }
 
     bResult = GetAllUsersProfileDirectoryW(lpBuffer, lpcchSize);
-    if bResult != 0u8 && !lpProfileDir.is_null() {
+    if bResult != 0 && !lpProfileDir.is_null() {
         bResult = WideCharToMultiByte(
             0u32,
             0u32,
@@ -1434,7 +1434,7 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryA(
             *lpcchSize as i32,
             core::ptr::null(),
             core::ptr::null_mut(),
-        ) as u8;
+        ) as BOOL;
     }
 
     GlobalFree(lpBuffer as HLOCAL);
@@ -1446,7 +1446,7 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryA(
 pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
     lpProfileDir: LPWSTR,
     lpcchSize: LPDWORD,
-) -> u8 {
+) -> BOOL {
     let mut szProfilePath: [u16; 260] = [0; 260];
     let mut szBuffer: [u16; 260] = [0; 260];
     let mut dwType: u32 = 0;
@@ -1456,7 +1456,7 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
 
     if lpcchSize.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
-        return 0u8;
+        return 0;
     }
 
     Error = RegOpenKeyExW(
@@ -1468,7 +1468,7 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
     ) as i32;
     if Error != ERROR_SUCCESS as i32 {
         SetLastError(Error as u32);
-        return 0u8;
+        return 0;
     }
 
     dwLength = core::mem::size_of::<[u16; 260]>() as u32;
@@ -1483,7 +1483,7 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
     if (Error != ERROR_SUCCESS as i32) || (dwType != REG_SZ && dwType != REG_EXPAND_SZ) {
         RegCloseKey(hKey);
         SetLastError(Error as u32);
-        return 0u8;
+        return 0;
     }
 
     if ExpandEnvironmentStringsW(
@@ -1493,7 +1493,7 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
     ) == 0
     {
         RegCloseKey(hKey);
-        return 0u8;
+        return 0;
     }
 
     dwLength = core::mem::size_of::<[u16; 260]>() as u32;
@@ -1508,7 +1508,7 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
     if (Error != ERROR_SUCCESS as i32) || (dwType != REG_SZ && dwType != REG_EXPAND_SZ) {
         RegCloseKey(hKey);
         SetLastError(Error as u32);
-        return 0u8;
+        return 0;
     }
 
     RegCloseKey(hKey);
@@ -1520,11 +1520,11 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
     if !lpProfileDir.is_null() && *lpcchSize >= dwLength {
         StringCchCopyW(lpProfileDir, *lpcchSize as usize, szProfilePath.as_ptr());
         *lpcchSize = dwLength;
-        return 1u8;
+        return 1;
     } else {
         *lpcchSize = dwLength;
         SetLastError(ERROR_INSUFFICIENT_BUFFER);
-        return 0u8;
+        return 0;
     }
 }
 
@@ -1572,7 +1572,7 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryA(
 pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
     lpProfileDir: LPWSTR,
     lpcchSize: LPDWORD,
-) -> u8 {
+) -> BOOL {
     let mut szProfilePath: [u16; 260] = [0; 260];
     let mut szBuffer: [u16; 260] = [0; 260];
     let mut dwType: u32 = 0;
@@ -1582,7 +1582,7 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
 
     if lpcchSize.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
-        return 0u8;
+        return 0;
     }
 
     Error = RegOpenKeyExW(
@@ -1594,7 +1594,7 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
     ) as i32;
     if Error != 0i32 {
         SetLastError(Error as u32);
-        return 0u8;
+        return 0;
     }
 
     dwLength = core::mem::size_of::<[u16; 260]>() as u32;
@@ -1609,7 +1609,7 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
     if (Error != 0i32) || (dwType != REG_SZ && dwType != REG_EXPAND_SZ) {
         RegCloseKey(hKey);
         SetLastError(Error as u32);
-        return 0u8;
+        return 0;
     }
 
     if ExpandEnvironmentStringsW(
@@ -1618,7 +1618,7 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
         (core::mem::size_of::<[u16; 260]>() / core::mem::size_of::<u16>()) as u32,
     ) == 0 {
         RegCloseKey(hKey);
-        return 0u8;
+        return 0;
     }
 
     dwLength = core::mem::size_of::<[u16; 260]>() as u32;
@@ -1633,7 +1633,7 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
     if (Error != 0i32) || (dwType != REG_SZ && dwType != REG_EXPAND_SZ) {
         RegCloseKey(hKey);
         SetLastError(Error as u32);
-        return 0u8;
+        return 0;
     }
 
     RegCloseKey(hKey);
@@ -1657,11 +1657,11 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
             core::ptr::addr_of_mut!(szProfilePath) as *mut u16 as LPCWSTR,
         );
         *lpcchSize = dwLength;
-        return 1u8;
+        return 1;
     } else {
         *lpcchSize = dwLength;
         SetLastError(ERROR_INSUFFICIENT_BUFFER);
-        return 0u8;
+        return 0;
     }
 }
 
@@ -1921,7 +1921,7 @@ pub unsafe extern "system" fn GetUserProfileDirectoryW(
     hToken: HANDLE,
     lpProfileDir: LPWSTR,
     lpcchSize: LPDWORD,
-) -> u8 {
+) -> BOOL {
     let mut SidString: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
         MaximumLength: 0,
@@ -1937,16 +1937,16 @@ pub unsafe extern "system" fn GetUserProfileDirectoryW(
 
     if hToken.is_null() {
         SetLastError(ERROR_INVALID_HANDLE);
-        return 0u8;
+        return 0;
     }
 
     if lpcchSize.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
-        return 0u8;
+        return 0;
     }
 
     if GetUserSidStringFromToken(hToken, core::ptr::addr_of_mut!(SidString)) == 0 {
-        return 0u8;
+        return 0;
     }
 
     StringCbCopyW(
@@ -1971,7 +1971,7 @@ pub unsafe extern "system" fn GetUserProfileDirectoryW(
     ) as i32;
     if Error != ERROR_SUCCESS as i32 {
         SetLastError(Error as u32);
-        return 0u8;
+        return 0;
     }
 
     dwLength = core::mem::size_of::<[u16; 260]>() as u32;
@@ -1986,7 +1986,7 @@ pub unsafe extern "system" fn GetUserProfileDirectoryW(
     if (Error != ERROR_SUCCESS as i32) || (dwType != REG_SZ && dwType != REG_EXPAND_SZ) {
         RegCloseKey(hKey);
         SetLastError(Error as u32);
-        return 0u8;
+        return 0;
     }
 
     RegCloseKey(hKey);
@@ -1997,7 +1997,7 @@ pub unsafe extern "system" fn GetUserProfileDirectoryW(
         (core::mem::size_of::<[u16; 260]>() / core::mem::size_of::<u16>()) as u32,
     ) == 0
     {
-        return 0u8;
+        return 0;
     }
 
     dwLength = (wcslen(szImagePath.as_mut_ptr()) + 1) as u32;
@@ -2008,11 +2008,11 @@ pub unsafe extern "system" fn GetUserProfileDirectoryW(
             szImagePath.as_mut_ptr(),
         );
         *lpcchSize = dwLength;
-        return 1u8;
+        return 1;
     } else {
         *lpcchSize = dwLength;
         SetLastError(ERROR_INSUFFICIENT_BUFFER);
-        return 0u8;
+        return 0;
     }
 }
 

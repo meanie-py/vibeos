@@ -43,6 +43,11 @@ HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0C0310","Cl
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0C0320","Service",0x00000000,"usbehci"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0C0320","ClassGUID",0x00000000,"{36FC9E60-C465-11CF-8056-444553540000}"
 
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0C0330","Service",0x00000000,"usbxhci"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0C0330","ClassGUID",0x00000000,"{36FC9E60-C465-11CF-8056-444553540000}"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#PNP0D10","Service",0x00000000,"usbxhci"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#PNP0D10","ClassGUID",0x00000000,"{36FC9E60-C465-11CF-8056-444553540000}"
+
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\USB#Class_08&SubClass_06&Prot_50","Service",0x00000000,"usbstor"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\USB#Class_08&SubClass_06&Prot_50","ClassGUID",0x00000000,"{36FC9E60-C465-11CF-8056-444553540000}"
 
@@ -1401,6 +1406,11 @@ HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows x64","Director
 HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows x64\Print Processors",,0x00000010
 HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows x64\Print Processors\winprint","Driver",,"winprint.dll"
 
+[AddReg.NTarm64]
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM64","Directory",,"arm64"
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM64\Print Processors",,0x00000010
+HKLM,"SYSTEM\CurrentControlSet\Control\Print\Environments\Windows ARM64\Print Processors\winprint","Driver",,"winprint.dll"
+
 [AddReg]
 
 HKLM,"SYSTEM\CurrentControlSet\Control\Print\Monitors",,0x00000010
@@ -1753,6 +1763,15 @@ HKLM,"SYSTEM\CurrentControlSet\Services\Ndis","ImagePath",0x00020000,"system32\d
 HKLM,"SYSTEM\CurrentControlSet\Services\Ndis","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\Ndis","Type",0x00010001,0x00000001
 
+; NDIS user-mode I/O protocol, the transport the WLAN service uses.
+; Without a Linkage\Bind value, NDIS binds it to every adapter.
+HKLM,"SYSTEM\CurrentControlSet\Services\Ndisuio","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\Ndisuio","Group",0x00000000,"NDIS"
+HKLM,"SYSTEM\CurrentControlSet\Services\Ndisuio","ImagePath",0x00020000,"system32\drivers\ndisuio.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\Ndisuio","Start",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\Ndisuio","Type",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\Ndisuio","DisplayName",0x00000000,"NDIS Usermode I/O Protocol"
+
 ; NetLogon
 HKLM,"SYSTEM\CurrentControlSet\Services\NetLogon","DisplayName",0x00000000,%NETLOGON_SERVICE%
 HKLM,"SYSTEM\CurrentControlSet\Services\NetLogon","Description",0x00000000,%NETLOGON_SERVICE_DESCRIPTION%
@@ -1828,6 +1847,13 @@ HKLM,"SYSTEM\CurrentControlSet\Services\usbehci","Group",0x00000000,"Boot Bus Ex
 HKLM,"SYSTEM\CurrentControlSet\Services\usbehci","ImagePath",0x00020000,"system32\drivers\usbehci.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\usbehci","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\usbehci","Type",0x00010001,0x00000001
+
+; xHCI controller driver
+HKLM,"SYSTEM\CurrentControlSet\Services\usbxhci","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\usbxhci","Group",0x00000000,"Boot Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\usbxhci","ImagePath",0x00020000,"system32\drivers\usbxhci.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\usbxhci","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\usbxhci","Type",0x00010001,0x00000001
 
 ; OHCI controller driver
 HKLM,"SYSTEM\CurrentControlSet\Services\usbohci","ErrorControl",0x00010001,0x00000001

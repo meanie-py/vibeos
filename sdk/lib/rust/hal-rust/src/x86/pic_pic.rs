@@ -111,9 +111,10 @@ const PIC_TIMER_IRQ:   ULONG = 0;
 const PIC_CASCADE_IRQ: ULONG = 2;
 const PRIMARY_VECTOR_BASE: ULONG = 0x30;
 
-// IDT_INTERNAL is one of the InterruptType constants from KE — bindgen-side
-// it lives as _KINTERRUPT_TYPE_; the C header defines IDT_INTERNAL=2.
-const IDT_INTERNAL: ULONG = 2;
+// IDT_INTERNAL is a HalpRegisterVector usage flag, halx86/include/halp.h:61 =
+// 0x11 (IDT_REGISTERED|0x10). 2 is IDT_LATCHED, which left the cascade vector
+// unregistered in HalpIDTUsageFlags.
+const IDT_INTERNAL: ULONG = 0x11;
 // _KGDT_R0_CODE selector value (0x08).
 const KGDT_R0_CODE: USHORT = 0x08;
 

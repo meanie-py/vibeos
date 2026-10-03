@@ -21,6 +21,7 @@ from . import (
     cpp_core,
     cpp_tu,
     crate_repair,
+    difftest_contract,
     difftest_gen,
     dup_census,
     file_splitter,
@@ -42,10 +43,12 @@ from . import (
 )
 from .argument_facts import require_argument_facts
 from .assembler import AssemblyClobberError, assemble_file, generate_lib_rs, generate_mod_rs
+from .attempts import CHECKER_FINGERPRINT, digest, record_validation
 from .bank_audit import audit as bank_audit
 from .bank_audit import exported_symbols
 from .bank_audit import format_report as format_bank_report
 from .batch_runner import TranslationResult, submit_batch, submit_single
+from .body_audit import main as body_audit_main
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
 from .call_seal import (
     CallSealError,
@@ -728,7 +731,38 @@ CONDITIONAL_ARM_BODIES: list[str] = []
 REORDERED_WIDE_LITERAL_BODIES: list[str] = []
 
 
-def _audit_paid_body(
+def _audit_paid_body(dep, result, **kwargs) -> str:
+    """Attach a new validation edge; never mutate the archived raw purchase."""
+
+    checker = CHECKER_FINGERPRINT
+    start = time.monotonic()
+    try:
+        code = _audit_paid_body_impl(dep, result, **kwargs)
+    except Exception as error:
+        record_validation(
+            getattr(result, "attempt_id", None),
+            checker=checker,
+            verdict="audit_reject",
+            unit=dep.name,
+            source_sha256=digest(dep.body_text),
+            error=str(error),
+            elapsed_ms=round((time.monotonic() - start) * 1000),
+        )
+        raise
+    record_validation(
+        getattr(result, "attempt_id", None),
+        checker=checker,
+        verdict="audit_pass",
+        unit=dep.name,
+        source_sha256=digest(dep.body_text),
+        candidate_sha256=digest(code),
+        elapsed_ms=round((time.monotonic() - start) * 1000),
+        scope="deterministic body audits, not semantic equivalence",
+    )
+    return code
+
+
+def _audit_paid_body_impl(
     dep,
     result,
     *,
@@ -1048,6 +1082,18 @@ def cmd_candidate_check(args):
     )
     candidate_oracle.print_report(report, as_json=args.json)
     if any(item["status"] != "ok" for item in report["results"]):
+        sys.exit(1)
+
+
+def cmd_difftest_contract(args):
+    """Compile and grade a reviewed stateless host contract without paid calls."""
+    report = difftest_contract.grade(Path(args.contract), Path(args.out))
+    print(
+        json.dumps(report, indent=2)
+        if args.json
+        else f"{report['status']}: {report.get('cases', 0)} cases; {Path(args.out) / 'report.json'}"
+    )
+    if report["status"] != "pass":
         sys.exit(1)
 
 
@@ -1393,7 +1439,14 @@ def cmd_submit(args):
         sink.close()
     result.source_file = path.name
     if result.success:
-        archive.commit(0, path.stem, result.rust_code, result.input_tokens, result.output_tokens)
+        archive.commit(
+            0,
+            path.stem,
+            result.rust_code,
+            result.input_tokens,
+            result.output_tokens,
+            attempt_id=result.attempt_id,
+        )
         print(
             f"Cost: ${cost_usd(model, result.input_tokens, result.output_tokens):.2f}  "
             f"| archived: {archive.dir}",
@@ -2665,6 +2718,7 @@ def cmd_translate(args):
                 "cache_write_tokens": result.cache_write_tokens,
                 "cost_usd": round(cost_usd(model, result.input_tokens, result.output_tokens), 8),
                 "elapsed_ms": elapsed_ms,
+                "attempt_id": getattr(result, "attempt_id", None),
             }
 
         _gate_unextracted(scan, getattr(args, "allow_partial", False))
@@ -3664,7 +3718,12 @@ def cmd_translate(args):
                         artifact = None
                         if archive is not None:
                             artifact = archive.commit(
-                                fi, dp.name, r.rust_code, r.input_tokens, r.output_tokens
+                                fi,
+                                dp.name,
+                                r.rust_code,
+                                r.input_tokens,
+                                r.output_tokens,
+                                attempt_id=r.attempt_id,
                             )
                             running_cost += cost_usd(model, r.input_tokens, r.output_tokens)
                         _record_outcome(
@@ -3927,6 +3986,7 @@ def cmd_translate(args):
                         result.rust_code,
                         result.input_tokens,
                         result.output_tokens,
+                        attempt_id=result.attempt_id,
                     )
                     running_cost += cost_usd(model, result.input_tokens, result.output_tokens)
                     print(
@@ -4105,6 +4165,7 @@ def cmd_translate(args):
                         pre_res.rust_code,
                         pre_res.input_tokens,
                         pre_res.output_tokens,
+                        attempt_id=pre_res.attempt_id,
                     )
                     running_cost += cost_usd(model, pre_res.input_tokens, pre_res.output_tokens)
                 _record_preamble(
@@ -4758,6 +4819,17 @@ def cmd_extern_audit(args):
         run_extern_audit(json_output=args.json)
 
 
+def cmd_body_audit(args):
+    """Did each pre-seal translated body keep what its C body does? (lead generator)"""
+    argv = [str(m) for m in args.modules]
+    if args.all:
+        argv.append("--all")
+    if args.json:
+        argv.append("--json")
+    argv += ["--limit", str(args.limit), "--min-severity", args.min_severity]
+    return body_audit_main(argv)
+
+
 def cmd_bank_audit(args):
     """Report paid translation output that never made it into the tree."""
     responses = Path(args.responses) if args.responses else RUSTCONV_RESPONSES_DIR
@@ -4928,6 +5000,14 @@ def main():
     )
     p.add_argument("c_file", help="the translated C source, e.g. dll/win32/msvcrt/mbcs.c")
     p.add_argument("--out", help="write the cases here (default: stdout)")
+
+    p = sub.add_parser(
+        "difftest-contract",
+        help="Generate and run a reviewed scalar/byte-buffer differential contract (no LLM)",
+    )
+    p.add_argument("contract", help="JSON contract with genuine C and existing Rust source paths")
+    p.add_argument("--out", required=True, help="fresh durable artifact directory")
+    p.add_argument("--json", action="store_true", help="print the full measurement report")
 
     # crate-repair — deterministic Stage 1.5. Closes the MECHANICAL rustc roots of a freshly
     # assembled crate for $0, before any paid repair pass, and leaves a bucketed RED residual.
@@ -5620,6 +5700,24 @@ def main():
         "--dry-run", action="store_true", help="Show what --fix would change without writing"
     )
 
+    # body-audit
+    p = sub.add_parser(
+        "body-audit",
+        help="Per function: C callees a translated Rust body no longer performs",
+    )
+    p.add_argument(
+        "modules", nargs="*", help="module source dirs, e.g. drivers/filesystems/fastfat"
+    )
+    p.add_argument("--all", action="store_true", help="every module that links a Rust crate")
+    p.add_argument("--json", action="store_true", help="JSON output")
+    p.add_argument("--limit", type=int, default=0, help="at most N findings per module")
+    p.add_argument(
+        "--min-severity",
+        default="stub-loud",
+        choices=("stub-silent", "high", "medium", "low", "stub-loud"),
+        help="hide findings ranked below this",
+    )
+
     # bank-audit
     p = sub.add_parser(
         "bank-audit",
@@ -5650,6 +5748,7 @@ def main():
         "candidate-check": cmd_candidate_check,
         "crate-repair": cmd_crate_repair,
         "difftest-gen": cmd_difftest_gen,
+        "difftest-contract": cmd_difftest_contract,
         "substrate-plan": cmd_substrate_plan,
         "skeleton-check": cmd_skeleton_check,
         "cpp-com": cmd_cpp_com,
@@ -5678,6 +5777,7 @@ def main():
         "objdiff": cmd_objdiff,
         "extern-audit": cmd_extern_audit,
         "bank-audit": cmd_bank_audit,
+        "body-audit": cmd_body_audit,
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
     }

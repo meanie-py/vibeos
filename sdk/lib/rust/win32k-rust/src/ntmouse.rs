@@ -3,6 +3,9 @@ use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{PsGetCurrentThreadWin32Thread};
 use core::ffi::c_void;
 
+// Not in ntkrnl_sys::base; declared per-file, as the crate does elsewhere.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
+
 // Debug-channel macros — no kernel symbol, no-op.
 #[allow(unused_macros)]
 #[allow(unused_macros)]
@@ -612,11 +615,15 @@ pub unsafe extern "system" fn NtUserTrackMouseEvent(
             return 0;
         }
     }
-    RtlCopyMemory(
+    // Validate-only probe above; this capture is the access and takes its exit.
+    if !crate::copy::capture_from_user(
         core::ptr::addr_of_mut!(SafeTME) as *mut core::ffi::c_void,
         lpEventTrack as *const core::ffi::c_void,
-        core::mem::size_of::<TRACKMOUSEEVENT>() as usize,
-    );
+        core::mem::size_of::<TRACKMOUSEEVENT>(),
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        return 0;
+    }
 
     if SafeTME.cbSize != core::mem::size_of::<TRACKMOUSEEVENT>() as DWORD {
         EngSetLastError(ERROR_INVALID_PARAMETER);
@@ -640,15 +647,18 @@ pub unsafe extern "system" fn NtUserTrackMouseEvent(
             core::mem::size_of::<TRACKMOUSEEVENT>() as _,
             1,
         );
+        // Validate-only probe; the publish is the access. Two branches so the error
+        // reported is the one that actually happened.
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
             bRet = 0;
-        } else {
-            RtlCopyMemory(
-                lpEventTrack as *mut core::ffi::c_void,
-                core::ptr::addr_of!(SafeTME) as *const core::ffi::c_void,
-                core::mem::size_of::<TRACKMOUSEEVENT>() as usize,
-            );
+        } else if !crate::copy::publish_to_user(
+            lpEventTrack as *mut core::ffi::c_void,
+            core::ptr::addr_of!(SafeTME) as *const core::ffi::c_void,
+            core::mem::size_of::<TRACKMOUSEEVENT>(),
+        ) {
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+            bRet = 0;
         }
     } else {
         bRet = IntTrackMouseEvent(core::ptr::addr_of_mut!(SafeTME));
@@ -688,11 +698,15 @@ pub unsafe extern "system" fn NtUserGetMouseMovePointsEx(
             return -1i32 as DWORD;
         }
     }
-    RtlCopyMemory(
-        core::ptr::addr_of_mut!(Safeppt) as *mut _,
-        lpptIn as *const _,
+    // Validate-only probe above; this capture is the access and takes its exit.
+    if !crate::copy::capture_from_user(
+        core::ptr::addr_of_mut!(Safeppt) as *mut core::ffi::c_void,
+        lpptIn as *const core::ffi::c_void,
         cbSize as usize,
-    );
+    ) {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        return -1i32 as DWORD;
+    }
 
     UserEnterShared();
 

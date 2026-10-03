@@ -90,8 +90,8 @@ Prefer importing from `ntkrnl_sys::ddk` over hand-declaring: bindgen carries the
 convention, including fastcall. **Never trust a header that omits `NTAPI`** — `internal/mm.h`
 declares `MmDeleteVirtualMapping` without it and the symbol is stdcall anyway `[§9.107]`.
 
-### The five ways a convention mismatch manifests
-The same root produces five distinct symptoms; knowing which you're looking at saves the hunt.
+### The seven ways a convention mismatch manifests
+The same root produces seven distinct symptoms; knowing which you're looking at saves the hunt.
 1. **`ud2` after the call / folded success path.** The callsite's ABI contradiction lets LLVM
    prove the continuation unreachable → `unreachable` → BUGCHECK 0x1E `0xC000001D`. Cascades:
    one classpnp sweep folded ~46 functions from 76 decl↔def mismatches, and the cohab link
@@ -118,6 +118,30 @@ The same root produces five distinct symptoms; knowing which you're looking at s
    `extern "system"` breaks the fastcall members (`IofCallDriver`, `IofCompleteRequest`,
    `ObfDereferenceObject`, `ExReleaseResourceLite`): stdcall passes on the stack, fastcall in
    ecx/edx. No link error, just wrong data.
+6. **A cdecl CALLBACK in an NTAPI slot: the CALLER returns into its own arguments.** The
+   callee does not pop what stdcall says it pops, so the caller's `ret` takes an argument as
+   its return address. Symptom: BUGCHECK 0x1E with EIP in **no module**, in pool right next to
+   a device object, and a return address just past `IofCompleteRequest` two words above ESP.
+   classpnp's `ClasspSendSynchronousCompletion` was `extern "C"` and registered through
+   `transmute::<unsafe extern "C" fn(..), _>(f)`: rustc checks the source type against the
+   fn (so it agrees it is cdecl) and the inferred target re-types it. Every hard disk's first
+   synchronous SRB crashed i386 (2026-09-26); 64-bit has one convention and was fine.
+   `scan_fnptr_abi_transmute` now flags that typed shape into an `extern "system"` target or
+   an Io/Ke/Ex/Ps/Ob/FsRtl/Cc/Mm/Po argument. A `<no module>` EIP now also makes the i386
+   bugcheck print every stack word that lands in a module; the bad call's caller is there.
+7. **A bare cdecl name ALIASED onto a stdcall body: the CALLEE's caller returns into ITS
+   caller's stack.** `.set _KeInitializeSpinLock, _KeInitializeSpinLock@4` makes the bare
+   name link, but the body does `ret 4` and the cdecl caller then pops the same 4 bytes
+   again, so ESP ends every call N bytes high. A caller with an ESP-relative epilogue
+   restores its registers from the wrong slots. fastfat's DriverEntry made two such calls
+   (+8): it popped its own return address into EBX and its DriverObject into EBP, and
+   `ret 8` jumped to RegistryPath, a UNICODE_STRING on `IopInitializeDriverModule`'s
+   stack. Symptom: BUGCHECK 0x1E/0x7F with EIP **on the stack** a few dozen bytes above
+   ESP, the trap frame's EBX equal to a return address, and EBP in pool. The fix is a real
+   thunk (re-push N bytes, call `_X@N`, `ret`), not an alias; an alias is sound only for
+   `@0`. `tools/scan_cdecl_alias.py` flags `.set _X, _X@N` with N > 0. Binary check for the
+   same drift: `calll <_X@N>` immediately followed by `addl $N, %esp` that is NOT an
+   epilogue. i386 only, and only when a FAT volume made fs_rec load fastfat (2026-09-26).
 
 **Detection.** `tools/scan_cc_mismatch.py` (same-crate decl-vs-def),
 `tools/scan_import_cc.py` (cross-MODULE decls vs the .spec of the DLL that exports them,
@@ -394,6 +418,14 @@ Same family, three positions, all silent on the arch where the widths happen to 
   BAD_POOL_HEADER. **Declare booleans `u8`.** When callers disagree and you own the impl, fix
   the *definition* to return zero-extended `u32` (forces `movzbl`, valid for both). A fn
   DEFINED `-> i32` with BOOLEAN callers is safe (AL is the low byte).
+- **Return, the other way round: the DEFINITION is the narrow side.** `BOOL` is `int`, not
+  `BOOLEAN`. A translation that returns `u8` where the C says `BOOL` is wrong for every C
+  caller and every header-generated decl at once — which is why `scan_bool_width`'s 202
+  "wide decl" findings were really 25 wrong definitions (userenv's profile getters, win32k
+  `REGION_*`/`NtGdi*`, advapi32 `EncryptFile*`), and 31 more narrow exports only C called
+  had no Rust decl to point at. The same crates tend to narrow `BOOL` PARAMETERS in their
+  local extern decls too (userenv `OpenEventW(…, bInheritHandle: u8, …)`). Take the width
+  from the C prototype, never from a sibling Rust decl. Gated both ways by `scan_bool_width`.
 - **u32 def vs i64 decl.** i386 returns i64 in **EDX:EAX**; a u32 callee leaves EDX garbage.
   cdfs `SectorTruncate` returned `0x1_00000000`, which flowed through CcMapData into a spurious
   `>= FileSize` → zero-filled page → 0x1E STATUS_DISK_CORRUPT_ERROR.
@@ -958,8 +990,9 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   froze inside explorer's taskbar `OnCreate` (two of the captured names,
   `SHGetShellStyleHInstance` and `SHGetUserDisplayName`, sit in that path), which stopped
   `ProcessStartupItems` and therefore the kmtest sweep: `launched=0`, nothing runnable, HLT=1.
-  **`scan_duplicate_symbols` does not catch this** — it looks Rust-vs-Rust, and the dangerous
-  direction is Rust shadowing C++ across the cohab boundary. Get the capture set before you
+  **`scan_duplicate_symbols` does not catch this** — it models Rust definitions and
+  `global_asm!` labels, not C/C++ objects, and the dangerous direction here is Rust shadowing
+  C++ across the cohab boundary. Get the capture set before you
   wire anything, with `llvm-nm --defined-only` over both sides:
   `for o in build-<arch>/<module>/CMakeFiles/*.dir/*.obj; do llvm-nm --defined-only $o; done |
   awk '$2=="T"{print $3}' | grep -v '^__Z' | sed 's/^_//; s/@[0-9]*$//' | sort -u` intersected
@@ -1076,6 +1109,24 @@ allocation used the real element size, so nothing looked wrong until index 1.
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
 
+### `LIST_FOR_EACH_ENTRY` translated without its container_of
+
+**Symptom:** an access violation inside a list walk on the first call, often in a
+`*ReleaseGroup*`/teardown path that boot never reaches. `rtl-threadpool`'s
+`TpReleaseCleanupGroupMembers` faulted on every call, an empty group included.
+
+**Cause:** Wine's `LIST_FOR_EACH_ENTRY(obj, head, T, field)` hides a container_of
+(`LIST_ENTRY(elem, T, field)`) on both the start and the advance. The translation cast
+`head.next as *mut T` directly, which is only right when `field` is at offset 0. Here it was
+`group_entry`, deep in the struct, so the walk read a list node as an object and the head
+check never matched. Two later loops in the same function, from the same response, had the
+subtraction.
+
+**Fix:** use `LIST_ENTRY!` (rtl-threadpool's `wine_list.rs`) or `CONTAINING_RECORD` on both
+cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and check the field's
+offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
+`entry`) or were casting to a byte or void pointer.
+
 ### A C byte count kept as the element count of a `u16` copy moves twice the bytes
 **Symptom.** A string copy that over-reads its source and over-writes its destination by
 exactly its own length. It is silent until the over-read crosses an unmapped page. On arm64,
@@ -1123,6 +1174,17 @@ was ntoskrnl-only, so a whole driver fleet carried live bombs. The five shapes:
 (the kernel exports `Interlocked*` FASTCALL on i386); variadic decls over a non-variadic def.
 `cdrom.sys` carried **100** ud2 sites, all on paths boot never hits — which is exactly why
 master was green.
+
+**A sixth shape does not fold at all: two DECLARATIONS, no definition.** fastfat's
+`fileinfo.rs` declared the cdecl cohab thunk `IoGetCurrentIrpStackLocation` as `"system"` while
+`cachesup`/`create`/`dirctrl` said `"C"`. rustc keeps one declaration per symbol per crate, so
+fileinfo's call bound to `_IoGetCurrentIrpStackLocation` (cdecl, caller pops) but was compiled
+with stdcall's bookkeeping (callee pops): `push; call` and no `add esp`, then locals read at
+offsets that assume the pop. `esp` came back 4 bytes off and the next esp-relative load read a
+garbage pointer: i386 BUGCHECK 0x50, P1 nonsense, in a closure body right after the helper
+call, only when notepad saved a file to FAT. The tell in the disassembly is a cdecl call with
+no stack cleanup. `scan_cc_mismatch` reports it as `[DECL_CC_SPLIT]` (it needs no in-crate
+definition: two answers to one question are already wrong).
 
 **Not every unexpected `ud2` is this class — `scan_ud2` reports all of them under it. Read the
 instruction BEFORE the trap first; it names the cause in one look.**
@@ -1480,7 +1542,15 @@ types.
   lost-wakeup wedge, "BAD gate", and BSOD roulette from one root. Fix with a
   `#[repr(C, align(16))]` newtype. **Sweep for any C type carrying an alignment attribute.**
 - **Nested `_HEAD` structs flatten into `__bindgen_padding_0`.** `THRDESKHEAD`/`THROBJHEAD`
-  lose `head.h` (offset 0 → `addr_of!` cast) and `head.pti` (a padding index). Derive the
+  lose `head.h` and `head.pti`. Read them through the typed head —
+  `(*(p as *const _HEAD)).h`, `(*(p as *const _THROBJHEAD)).pti` — **never by indexing the
+  padding array**: its ELEMENT type is bindgen's choice. A win32k-sys regeneration turned
+  `[u64; 3]` into `[u8; 24]`, user32's `head.__bindgen_padding_0[2]` became one byte of the
+  handle, `IntCallMessageProc` saw a thread mismatch on every window, and every posted
+  message it dispatched was dropped as ERROR_MESSAGE_SYNC_ONLY: no app closed on WM_CLOSE,
+  on any arch, and every gate stayed green (appstorm found it; `scan_bindgen_padding_index`
+  gates it now). Taking the padding's *address* is layout-stable. When you must hand-derive
+  an offset instead, derive the
   offset from the real field sequence and the target's alignment — **do not blanket-apply
   `2*usize`**: head-pti is `2 * size_of::<usize>()` (8/16), but `PROCESSINFO.W32PF_flags`
   after `{PEPROCESS; DWORD}` has no tail padding and is `size_of::<usize>() + 4` (8/12). A
@@ -1707,7 +1777,10 @@ wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
   always; AArch64 for normal cacheable memory, and we never set SCTLR.A). The real objection is
   LANGUAGE-level — dereferencing a misaligned `*const u16` is UB and LLVM tags the load
   `align 2` — and it only bites where RUST ITSELF dereferences, whereas the overwhelmingly
-  common site hands the pointer straight to a Win32/Nt callee. **So: convert these to `w!()`
+  common site hands the pointer straight to a Win32/Nt callee. (Where Rust does dereference —
+  a faithful copy of C's `Count = (ULONG*)(Buffer + Pad); Count[0] = ...` over a byte array,
+  as cryptlib's `A_SHAFinal` was — use `write_unaligned`/`read_unaligned`; `rustconv
+  difftest-contract` finds the C side, because UBSan rejects the genuine reference there.) **So: convert these to `w!()`
   when you are already in the crate for another reason, and gate it with whatever you were
   doing. Never as a repo-wide sweep** — the risk of touching kernel crates for a reviewability
   win does not pay. `b"LogEvent\0" as *const u16` is the severe
@@ -2342,6 +2415,26 @@ just a label.
   — which keeps the hand-typed value honest wherever an oracle exists instead of trading one
   unchecked literal for another.
 
+### An invented term in a length computation
+usbccgp's `USBCCGP_PDOSelectConfiguration` came out of translation as `Hdr.Length -
+offset_of!(Interface) - 16`; the C is `Hdr.Length - FIELD_OFFSET(..., Interface.Length)`, with
+no 16. The remaining length never reached 0, so the loop read an interface record past the end
+of the URB, and every composite-device function after the first failed to start with
+`STATUS_INVALID_PARAMETER` ("interface 0 is not in this function"). The first function passed
+or failed depending on what memory followed the URB. Found on the Pi 4 with a composite HID
+device, 2026-09-26. **A bare numeric term in size arithmetic that the C does not have is an
+invented value, the same class as an invented constant; diff the expression, not just the
+names.**
+
+### A facility's own SUCCESS code translated as a bare `0`
+hidparser's `HidParser_UsageAndPageListDifference` ended `return HIDP_STATUS_SUCCESS;` in the
+C and `0` in the Rust. `HIDP_STATUS_SUCCESS` is `0x00110000`, not `STATUS_SUCCESS`, so kbdhid's
+check on it asserted on every keyboard report (a burst of `ASSERT FAILED: _s ==
+hid_sys::HIDP_STATUS_SUCCESS at kbdhid-rust/src/read.rs` whenever a key moved). Any caller that
+tests with `NT_SUCCESS` would not notice, which is why it survived. **When a subsystem defines its
+own success status (HIDP_, USBD_, NDIS_, SCARD_...), grep the translation for bare `0` returns in
+functions whose C returns it.**
+
 ### Locally re-declared enum members with GUESSED values (SILENT)
 The translator re-declares an enum member it needs as a local `const NAME: T = <value>` and
 guesses — often the intuitive-but-wrong value, or a *different* enum's similarly-named member.
@@ -2383,6 +2476,13 @@ A 770-entry baseline is a work queue, not a defect list, and working it alphabet
 the effort on the harmless majority. The severity of a wrong constant is predicted by one
 question: *is there a second site that must produce the same number?* Rank the queue by it.
 
+- **A rendezvous pair can live inside ONE file, as function-local shadows.** fastfat's
+  resrcsup.rs defined `FSRTL_CACHE_TOP_LEVEL_IRP` four times (-2, 2, -1, 1; the C is 0x02),
+  each Acquire/Release pair setting one value and testing another. FatReleaseForCcFlush
+  never recognised the -2 FatAcquireForCcFlush set, the bogus top-level IRP leaked, and the
+  next FatCommonWrite took it for a real IRP and faulted (BUGCHECK 0x23 on arm64, kmtest
+  ZwCreateSection). Pointer-typed flags (`(-2isize) as *mut IRP`) were invisible to
+  `scan_const_contradictions` until its value parser learned the cast forms.
 - **Rendezvous pairs — fix first.** Alloc↔free (`ExAllocatePoolWithTag`/`ExFreePoolWithTag`),
   write↔compare (a signature stamped at init and tested later), set↔test (a flag written by one
   file and masked by another), request↔dispatch (a function code the caller sends and the
@@ -2735,6 +2835,18 @@ and csrss faulted — a 0xF4 whenever a thread's first GUI connect asked for its
 desktop (amd64 setup's registration pass). Every other consrv site used the constant, so
 grep a module for `ServerData.as_ptr().add(<digit>)` / `[<digit>]` and friends; a literal
 where the C names a slot is the bug until proven otherwise.
+
+### A key the INF plainly declares is missing from the livecd hive
+
+**Symptom:** a service or DLL fails on one arch only, with "not found"-style errors for a key that
+`boot/bootdata/*.inf` clearly adds. On amd64, localspl's `_OpenEnvironment` failed with 1805
+(`ERROR_INVALID_ENVIRONMENT`), `DllMain` returned FALSE, and the spooler never started.
+**Cause:** the key lives in an arch-decorated section such as `[AddReg.NTamd64]`. Setup applies
+`AddReg` and then `AddReg.NT<INF_ARCH>` (`base/setup/lib/registry.c`), but mkhive, which builds the
+livecd hives, used to read only the undecorated sections. **Fix:** mkhive takes `-a:<arch>`, which
+`create_registry_hives` passes (`x86`/`amd64`/`arm64`). To check a key directly, search the built
+hive for its name: `grep -c "Windows x64" build-amd64/boot/bootdata/system`. Key names are stored
+as ASCII, so a plain grep finds them.
 
 ### A registry path that "obviously exists" returns `STATUS_OBJECT_PATH_NOT_FOUND`
 
@@ -3688,6 +3800,21 @@ a decision to take deliberately, not to reach for because a module will not tran
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A dropped `#if DBG` acquires a lock the release build marked as never-initialized
+
+**Symptom:** a hang at DISPATCH_LEVEL the first time a path runs, with no bugcheck and no
+lockdep report. classpnp: every hard disk hung the boot inside `DiskInitFdo`'s MBR read.
+
+**Cause:** the C keeps a debug-only structure behind `#if DBG` in BOTH its initializer and
+its users, and the non-DBG initializer stores a marker instead: `RemoveTrackingSpinlock =
+(ULONG_PTR)-1`. The translation kept the marker under `cfg(not(debug_assertions))` but lost
+the `#if DBG` around one user, `ClassCompleteRequest`, which then acquired a spinlock whose
+value reads as HELD and spun forever.
+
+**Fix:** gate the user exactly as the C does (`cfg(debug_assertions)`). When an initializer
+has a debug arm and a release arm, grep every use of the field it initializes: each one
+must sit behind the same gate, or read the release marker as "absent".
+
 ### An upstream sync keeps one half of a two-file change, and DllRegisterServer writes nothing
 **Symptom.** A COM DLL's `DllRegisterServer` returns `S_OK` and writes no keys. For ole32
 that meant no `Interface\{iid}\ProxyStubClsid32` anywhere, so `CoGetPSClsid` failed with
@@ -4194,6 +4321,16 @@ already been met the note is describing a bug, not a plan.
   no unresolved symbol and no `.spec` entry to audit. Same trap as the named-alias asymmetry
   under "A file-local fn-pointer TYPEDEF": `R (NAME)(args)` and `R (*NAME)(args)` are different
   declarations and only the second is a variable.
+- **A body can lose its TAIL with nothing to show for it.** fastfat's `FatCreateNewDirent`
+  (translated before call sealing existed) returned right after its allocation logic; the
+  orphaned-LFN check, the "dirents really unused" verify and `RtlSetBits` on the free-dirent
+  bitmap were all gone. It compiled, mounted and passed smoke on three arches for months,
+  because the missing bit only matters on the NEXT create that reuses deleted slots — which
+  could then be handed a live entry and overwrite another file's dirent. The one objection
+  was an ASSERT two calls later (`FatDeleteDirent`'s `RtlAreBitsSet`). For a pre-seal
+  translation run `rustconv body-audit <module>` (or `--all`): it diffs each paired
+  function's live C callees against its Rust body and ranks silent stubs and dropped
+  state-changing calls first. A lead generator, not a gate: read each lead against the C.
 - **The oracle for this whole class is the C TEXT, not the plan** —
   `tools/rustconv/fn_coverage.py <module>` pairs each `<name>.rs` with its `<name>.c` and reports
   C functions with no Rust definition. It is cohab-aware (a `.c` still in the CMake source list
@@ -4910,6 +5047,22 @@ CMake `set_module_type`) for what that value is — do not assume the newest.
 and check each against the C: a per-arch cfg is *legitimate* only where the C branched on
 `_M_IX86`/`_M_AMD64`/`_M_ARM64` or on a pointer-width-derived macro. Anything else is this bug.
 
+**The neighbouring mistake: `_WIN64` spelled as one ARCH.** `_WIN64` is pointer width —
+amd64 AND arm64 — so `#[cfg(target_arch = "x86_64")]` for it gives arm64 the 32-bit arm.
+user32's `GetClassLongA/W` did exactly that: on arm64 the `GCLP_*` pointer indices returned a
+truncated pointer instead of `ERROR_INVALID_INDEX`, while amd64 was right, so nothing saw it.
+Spell it `target_pointer_width = "64"`. Same family: `#if (NTDDI_VERSION < NTDDI_VISTA)`
+came back as pointer width in smlib's `SmConnectToSm` (the version is 0x502 on every arch).
+Gated by `scan_cfg_vs_c`, which compares every in-body arch cfg against the arch sets the C
+twin's own `#if`s draw.
+
+**Stacked `#[cfg]`s AND together.** Deleting an item's per-arch twin can leave its
+`#[cfg(target_arch = "x86")]` behind, which then fuses with the next item's
+`#[cfg(not(target_arch = "x86"))]` into "never". win32k's `TEXT_NextLineW` measured no text
+on any arch this way (four stacked cfgs), and eight more items were silently compiled out
+everywhere. It links, because whatever else provides or never calls the symbol keeps it
+linking. Gated by `scan_cfg_vs_c`'s dead-cfg check.
+
 ### A build-configuration `#ifdef` must be carried into the Rust, not resolved away
 
 **Symptom.** A Wine-derived module translates cleanly and then cannot compile at all: hundreds
@@ -5119,6 +5272,13 @@ the instrumentation sparse enough to still reproduce. Two or three probes bracke
 suspect call kept it failing; eighty made it green.
 
 ### Semantic rewrites that flip meaning
+- **A live ASSERT over state that only a `#[cfg(debug_assertions)]` block maintains.** The C
+  pairs `#if DBG` bookkeeping with DBG-only ASSERTs, and this tree builds the C with DBG=1.
+  The translation turned the bookkeeping into `#[cfg(debug_assertions)]` (off in release) while
+  `c4d82e425fc` made the ASSERTs live. The pushlock waker's `WaitBlock->Signaled = TRUE` was
+  compiled out, so every contended wait printed `ASSERT FAILED: (*WaitBlock).Signaled != 0`
+  with a correct wake. Any field written only under `cfg(debug_assertions)` and read by an
+  `ASSERT!` is a false positive waiting for its first execution; write it unconditionally.
 - **A duplicated statement aimed at the wrong variable.** `NtUserFindExistingCursorIcon` had
   an extra `ProbeAndCaptureUnicodeString(&ustrRsrcSafe, UserMode, pustrModule)` between the
   resource capture and the module capture: the MODULE path overwrote the RESOURCE name, so the
@@ -5437,6 +5597,16 @@ suspect call kept it failing; eighty made it green.
   string that looks live and aims at foreign memory. Eleven `Rtl*String` converters had it.
   Whenever C assigns through an out-pointer and *then* tests what it assigned, the store is
   part of the contract — keep the order.
+- **The mirror: an out-parameter store made UNCONDITIONAL.** compress.c writes
+  `*final_size` only at its `out:` label and only `if (final_size)`; its error paths `return`
+  first. The Rust `RtlDecompressFragment` stored `result.bytes_written` after every call, so
+  a NULL `FinalUncompressedSize` faulted (the C returns `STATUS_BAD_COMPRESSION_BUFFER`) and
+  every error clobbered the caller's value with 0; `RtlCompressBuffer` had the NULL half.
+  Found by `rustconv difftest-contract` (`compress.json`) on its first run with the out-param
+  declared `nullable`. When a C out-param store sits behind a label or an `if (p)`, the guard
+  and the path are both contract — and declare such params `nullable` in any difftest.
+  Both halves are gated: `scan_dropped_null_guard` (the `if (p)`) and `scan_store_on_failure`
+  (the path).
 - **`if (CAS(...))` compared against the WRONG operand — an atomic publish that frees what it
   just published.** C tests the compare-exchange result for truthiness: the call returns the
   PREVIOUS value, so non-NULL means *another thread got there first and my block is the loser*.
@@ -5684,6 +5854,13 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   pointer.
 - **`copy_nonoverlapping`/`copy` have the same element-vs-byte trap** (the `RtlCopyMemory`
   sibling).
+- **A C pointer difference lowered as ADDRESS subtraction.** `lpNextSlash - lpSubBlock` on
+  `LPCWSTR` counts WCHARs; `(a as isize - b as isize)` counts bytes. version.dll's
+  `VersionInfo32_QueryValue` passed that to `FindChild` as the key length, so every key
+  compared twice its length and no 32-bit child was ever found; the byte-typed 16-bit twin
+  was correct, which is what makes the class easy to copy. Use `a.offset_from(b)`. Found by
+  `rustconv difftest-contract` (`version.json`), together with a `VersionInfoIs16` that read
+  offset 0 instead of `szKey[0]` at offset 4, and a wide literal truncated to 15 units.
 - **A pointer difference with an adjustment folded into `offset_from`, and then applied
   AGAIN.** `sym->current - 1 - ptr` parses as `(current - 1) - ptr`; the translation correctly
   turned `current - ptr` into `offset_from(ptr)` and then kept the `- 1` as well, so msvcrt's
@@ -5769,6 +5946,55 @@ runs other agents' builds and QEMUs).
 ---
 
 ## SEH, PSEH & exception handling
+
+### Rust code CAN have real `__try/__except` and `__finally`: `ntkrnl_sys::seh`
+
+**Symptom:** a translated FS/driver path raises by design (`CdRaiseStatus`,
+`STATUS_CANT_WAIT`, a Cc in-page error) and bugchecks 0x1E, because its `_SEH2_EXCEPT` arm
+is dead under DUMMY_PSEH.
+
+**Fix:** `ntkrnl_sys::seh::{try_except, try_finally}` call the Rust body through C
+trampolines (`ntoskrnl/sehtry.c`, exported as `RtlSehTryExcept`/`RtlSehTryFinally`) that
+own a real handler: native SEH on amd64/arm64, a hand-built `fs:[0]` frame on i386. Rust
+frames carry `.pdata`, so the unwind walks through them. `fin` runs during the unwind with
+the stack intact, which is where a translated `__finally` that released a lock must go;
+left inline after the try body, it is skipped on the exception path. Closures must not
+capture anything that needs `Drop`. `[SEH-TRY] ... (PASS)` at boot proves it per arch.
+
+**i386 trap, found building it:** `RtlUnwind` returns through `ZwContinue` on a CONTEXT
+captured inside itself, so `ebx/esi/edi` come back holding RtlUnwind's values. A C handler
+that keeps its frame pointer in `esi` across the call faults on the next line. Save them
+around the call, as MSVC's `__global_unwind2` does (`SehGlobalUnwind` in sehtry.c).
+
+**amd64 trap: the catch resumed with interrupts OFF.** Symptom: fastfat caught a kernel
+int3 in `FatMountVolume`, retried the mount, and the retry's dispatch walked into garbage
+(saved RBP `0x00000001_xxxxxxxx`) until the stack overflowed (0x7F/8). Nothing was wrong
+with the unwinder. `KiBreakpointTrap` (and `KiGeneralProtectionFault`) dispatched a
+kernel-mode fault with IF=0, and `RtlUnwindEx` resumes the except block on a CONTEXT
+captured during dispatch, so the thread carried on with interrupts disabled. The next
+`FatPerformDevIoCtrl` IRP completed synchronously, but its `IopCompleteRequest` APC is a
+self-IPI that cannot fire with IF=0. So `IoCallDriver` returned without waiting and the APC
+ran seconds later, `KeSetEvent`-ing a stack KEVENT whose frame was gone. Fix: dispatch with
+the trapped frame's IF, as `KiPageFault` already did. arm64 had it too (`irqs=1/0`).
+There the sync-exception path keeps DAIF masked by design, so instead `RtlSehTryExcept`
+records PSTATE.I at try entry and restores it on the catch, as i386's hand-built catch
+already did. `[SEH-TRY] rust hw faults ... irqs=1/1`
+checks it on each boot, and smoke fails any `(FAIL)` self-test line (`SELFTEST_FAIL`). The
+general move for "a stack slot changed and nobody wrote it": `gdb probe` with a hardware
+`watch -l` armed at the owning function's entry names the writer on the first try.
+Aside: in Rust `asm!` (Intel syntax) a bare `pushf` assembles to the 16-bit `pushfw` on
+i386. Paired with a 32-bit `pop`, it left ESP two bytes off, and every local printed as
+garbage. Write `pushfd`/`pushfq`.
+
+**Converting a module (cdfs, 2026-09-26):** the translated `__finally` is usually a
+labeled `loop { ... break; }` followed by inline cleanup. Move the loop verbatim into
+`try_finally`'s body and the cleanup into `fin`; a local the finally reads that the body
+changes is read through an `addr_of_mut!` pointer taken before the call. Check each body
+for `return` (it now leaves only the closure) and give uninitialized locals a value
+(closures cannot capture them). **Enabling the exception path makes dead code live, and
+live code must link:** cdfs's FSP retry had declared a flag constant as an extern SYMBOL
+nothing defined, which linked for months only because its status could never become
+`STATUS_CANT_WAIT` under DUMMY_PSEH, so LLVM dropped the reference.
 
 ### Restoring a dropped probe, do not TIGHTEN it — `ProbeForWriteHandle` and friends check no alignment at all
 
@@ -5880,9 +6106,91 @@ different question, racily).
   line window (stretchblt's three adjacent copies blamed each other's pointers), and treat
   `p.is_null()` as a test rather than a use (the tree's `if !p.is_null() { &SafeLocal } else
   { null }` passes a *kernel* local, which was 3 of the first 4 interprocedural hits).
+- **A FIFTH false negative, and the one that hid a live crash: the probed pointer under
+  another NAME.** The scanner tracks the probed identifier, so
+  `pdwLayout = Param as PDWORD; *pdwLayout = ...` after probing `Param` reported nothing --
+  one assignment made an unprivileged kernel crash invisible to the tool built to enumerate
+  exactly this class. It is not a corner case; it is how the whole `ONEPARAM_ROUTINE` family
+  is written, and `GETPROCDEFLAYOUT` was reachable from `NtUserCallOneParam`. Taint now
+  propagates across `x = <tainted> as T;` (+8 leads). Note also that the probe may be
+  INLINED by LTO, so the disassembly shows the alignment test and `MmUserProbeAddress`
+  compare rather than a call -- recognising that shape in a trap frame is how this one was
+  found.
+- **The unprotected access can be one frame OUT, with no raw dereference in your function at
+  all.** `NtUserGetKeyboardLayoutName` hands a UNICODE_STRING whose `Buffer` is a user pointer
+  to `RtlIntegerToUnicodeString` / `RtlAppendUnicodeToString`, and *those* write through it
+  with a bare `RtlCopyMemory`. The fault lands inside ntoskrnl with your frame merely as the
+  caller, which is why it does not look like the usual shape and why no scanner sees it. The C
+  got away with it because the whole sequence sat in one `_SEH2_TRY`. Build into a kernel
+  buffer and publish -- and publish the NUL too, since callers scan for it.
+- **The fix is mechanizable, and `tools/fix_probe_then_deref.py` does 62 of them, but what it
+  REFUSES is the transferable part.** It never invents an error path: it replays the probe's
+  own failure block, three lines up, so the rewrite adds no semantics. That is sound only
+  while nothing since has changed what the block MEANS, and line distance is the wrong proxy
+  for that -- it refused one out-parameter of `NtUserGetLayeredWindowAttributes` while fixing
+  the two directly above it. The two real invalidators: the tested status has been reassigned
+  since, or a resource has been acquired that the transfer does not release
+  (`NtUserGetObjectInformation` is both -- replaying its `break 'exit` leaks two referenced
+  objects AND returns success after a faulted write). Also refuse the POSITIVE form
+  `if NT_SUCCESS(s) { <copy> }`, which has no failure block at all -- its body IS the copy,
+  and matching on the bare name proposes replaying the copy as its own error path.
+- **Error-path suites find these, and the wine conformance sweep is the cheapest one we have.**
+  Three user32 subtests BUGCHECKed i386 0x1E (`win`, `msg`, `input`); each is one of the shapes
+  above, and fixing the first fault in `win` merely uncovered the next one behind it. A suite
+  that runs to completion after a fix is the oracle; a suite you quarantined is not.
+- **A scanner exclusion that is correct in general can still be a blind spot in
+  particular.** `scan_probe_then_deref.py` skips any line containing `addr_of!`/`addr_of_mut!`,
+  and it is right to: computing an address does not load, and it is the idiom the probes
+  themselves use, so without the skip every correct probe reports itself. But
+  `InterlockedIncrement(addr_of_mut!((*pimeui).nCntInIMEProc))` never lets the address escape
+  the line -- the callee IS the access -- so the skip hid two live unprotected writes to user
+  memory in `ime.rs` while the tool reported the whole class clear. Zero is a claim like any
+  other: when a scanner reaches it, the useful next question is which shapes it cannot express,
+  not whether to believe the number. Fix: keep the exclusion, and check the skipped line for an
+  accessing intrinsic before taking it.
+- **An atomic on user memory needs its own protected primitive.** `capture_from_user`/
+  `publish_to_user` cannot express a read-modify-write: capture -> mutate -> publish loses the
+  atomicity, and silently weakening a concurrency guarantee to buy fault-tolerance is the wrong
+  trade. Use `copy::interlocked_add_user` (ntoskrnl's `KmProtectedInterlockedAdd`: a native-SEH
+  shim on amd64/arm64, a second extable key for the `lock xadd` on i386 (§9.123)). Its self-test
+  asserts the add LANDED in memory as well as returned, because a primitive that returns the
+  right sum without storing it would pass a return-value-only check.
+
 - **Where the capture belongs is the SYSCALL, not the shared helper.** `IntSetSysColors` is
   reachable with kernel pointers too, so making it copy-protected would be wrong; capture in
   `NtUserSetSysColors` and hand the callee kernel memory.
+- **The same scanner then failed the OTHER way twice, and a false POSITIVE about this class is
+  worse than a miss** — it hides the correct fix and mis-states how much work is left. (a) The
+  `addr_of!`/`addr_of_mut!` skip, there so that taking a probed struct's *field address* is not
+  read as a load, ran BEFORE the taint-end check and `continue`d past it. But
+  `prcl = core::ptr::addr_of_mut!(rclLocal);` IS the idiom for the correct fix — capture into a
+  kernel local, then repoint the name at it — so every site fixed that way kept reporting, and an
+  already-correct `NtUserClipCursor` was reported as a live defect on both arches. Ordering the
+  taint-end check first dropped 95 → 85 leads with no source change. (b) `RtlCopyMemory` is in
+  `UNSAFE_COPIES` *and* dereferences its arguments, so the direct rule and the interprocedural
+  rule both fired on every site: 281 rows for 165 real defects, and the inflated 281 was quoted
+  as the size of the remaining work. A callee that is itself a bulk copy is the direct case;
+  exclude it from the interprocedural pass and keep that pass for a deref hidden behind a
+  *project* function. **Both directions of a lead-count error are silent, so pin each with a
+  test: one that a repoint-to-kernel-local ends the taint, one that a site is reported once.**
+- **Fixing this class in bulk: `RtlCopyMemory` batches, `copy_nonoverlapping` does NOT.**
+  `RtlCopyMemory(dst, src, bytes)` matches the copy helpers argument-for-argument, so a
+  mechanical rewrite is safe. `core::ptr::copy_nonoverlapping(src, dst, ELEMENT COUNT)` is
+  reversed AND counts elements, so the same rewrite emits swapped pointers with a length of
+  `1` — it fails on the pointer types where it is lucky and silently truncates where it is not.
+  A generic pass over both was written and thrown away for exactly this; convert that spelling
+  by hand. And `write_volatile` is a third spelling: one DWORD into the caller's page is the
+  same unprotected touch, and one word is enough to take the machine.
+- **A length read OUT OF the buffer being validated is a DOUBLE FETCH, not just an
+  unprotected read.** `NtGdiCreateDIBSection` probed `bmi` for
+  `DIB_BitmapInfoSize(bmi, Usage)` bytes — a function that WALKS the caller's buffer to work out
+  how long it is. So the walk was an unprotected read, *and* the size could change between the
+  call that computed it and the probe that trusted it. The shape recurs wherever a header
+  declares its own extent (`biSize`, `cbSize`, RLE streams). **Fix: capture the header bounded
+  by an already-validated field, compute the extent from the KERNEL copy, then capture the full
+  buffer and pass the copy downstream.** Validating the captured bytes instead of the caller's
+  also closes the check-then-copy window for free — which is why `font.rs` now captures before
+  calling `IntCheckFontPathNames` rather than after.
 - **Read-modify-write of user memory has no protected primitive, and `|=` hides it.** A field
   store is a publish, but `(*pcbi).stateButton |= FLAG` and `set_fDefault(1)` on a user bitfield
   are a load AND a store; capture the struct, mutate in kernel memory, publish once.
@@ -5931,6 +6239,13 @@ Three method lessons from the hunt:
 - **Before blaming the process that was running when the box died, check whether it merely
   outlived the one that killed it.** The real culprit was a third process entirely; the two
   apparent victims were downstream of the box-kill, which is why both looked guilty.
+
+- **The mirror case: the EXCEPT arm as a bare block runs every time.** kernel32-rust
+  `GlobalSize` put `_SEH2_EXCEPT { dwSize = MAXULONG_PTR; }` in a labeled block straight after
+  the try block, so it executed unconditionally and every GlobalSize/LocalSize returned 0
+  (ERROR_INVALID_HANDLE). Callers that size buffers from it (`LocalSize()/2 - 1`) wrapped to a
+  zero-byte allocation and wrote past it. A labeled block after a try block is not a handler;
+  drop the arm (nothing raises into it) rather than keep it reachable.
 
 ### An SEH filter expression is a PREDICATE, not a value `[§9.70]`
 `GlobalLock` materialised `EXCEPTION_EXECUTE_HANDLER` into a local and branched on it, so it
@@ -6045,7 +6360,9 @@ sweep.**
   the 73 `assert!` sites: gating them before the macro exists would mean 73 baseline entries
   suppressing a class we intend to fix, and a baseline that large reads as permission.
 - **A C debug macro that does NOT block, translated as `loop {}`**, hangs the boot. Read what
-  the macro expands to.
+  the macro expands to. `NT_ASSERT` breaks and then *continues*: disk.sys had three
+  `brk #0xF001; loop {}` sites, which the arm64 build's driver sweep reports as unexpected
+  branch-to-self spins, but only once the driver is in the mkramdisk staging list.
 - **`DPRINT` is NDEBUG-dead in C**; translated as a live `DbgPrint` it is a boot slowdown that
   masquerades as a hang.
 
@@ -6400,6 +6717,24 @@ output path; CMake's OLD CMP0116 policy passes it through without normalization.
 output when supporting OLD. Do not drop the depfile: the real bindgen warm/cold
 fixture proves a nested-header-only constant/layout edit then stays stale.
 
+### A configure dependency on a file that does not exist yet is silently dropped
+
+**Symptom:** a file admitted by `if(EXISTS)` at configure time (a WoW64 guest, a stress
+binary) is built later, the next build is green, and the file is still not on the media.
+`CMAKE_CONFIGURE_DEPENDS` names it, and the dependency was meant to re-run configure the
+moment it appeared.
+
+**Cause:** CMake (3.28, measured) omits a configure dependency whose path does not exist
+from `build.ninja` entirely, so nothing ever watches for its creation. The dependency only
+works for files that were already there, which is exactly the case that does not need it.
+The merge queue's integration tree was configured before it had any guests and never
+graded the WoW64 ladder in consequence.
+
+**Fix:** depend on the file if it exists, otherwise on its nearest EXISTING ancestor
+directory. Creating an entry bumps that directory's mtime, which ninja sees, and an
+unchanged directory costs no spurious reconfigure (`dll/win32/wow64cpu/CMakeLists.txt`).
+Verify with `grep <path> build-<arch>/build.ninja` — a missing path means CMake dropped it.
+
 ### A flipped TU's leftover `.obj` keeps voting on the NEXT flip's closure
 ninja never deletes the object of a source you remove from a CMake list, so every TU we flip
 leaves a stale `.obj` under the link root forever. `rustconv hybrid-closure` globs `*.obj` for
@@ -6522,6 +6857,15 @@ gates the invariant statically: every hive `add_cd_file` stages into `reactos/sy
 as it stood before the fix it names `sam` and `security` outright. Scoped to the config
 directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
 `\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
+
+**The loader has the same blind spot for boot drivers** (2026-09-26). A Start=0 service whose
+`.sys` is not on the ramdisk (usbccgp was never staged on arm64) is dropped from the boot driver
+list with only a trace-channel `ERR` nobody sees on UEFI, so the kernel never hears of it. The
+symptom is two steps away: a composite USB device matched `USB#COMPOSITE` in the
+CriticalDeviceDatabase, and then nothing, with no AddDevice and no error. The loader now prints
+`[FLDR] boot driver not loaded, dropped from the boot driver list: <path>`. On arm64 that list
+is long (acpi, partmgr, disk, ...), because the shared hive names drivers the ramdisk never
+carries; read it when a device binds to nothing.
 
 ### An arm64 ramdisk refreshed in place keeps every file it ever held
 **Symptom.** arm64 `test_start_menu_opens` passed on some worktrees and failed on others at
@@ -6708,6 +7052,9 @@ it only ever asks "was this attempt red", never "red the same way" — which is 
 intermittents COMPOSE (one real gate burned its budget on ExPools, then NpfsConnect, then
 ExPools, and the final verdict shows none of that disagreement). Per-attempt `salient` is
 already captured at `gate.py:314`.
+Renamed `CONFORMANCE_RED` on 2026-09-26, owner-approved: the word now says what was observed
+(the ratchet failed) and not a cause. That fixes the invitation to requeue, not the missing
+discriminator above — the label is still a constant.
 
 **The generalisation, and it is not "be careful with greps":** `probes_missing_from_media` was
 the RIGHT tool for its own question — *is this string compiled in* (`--require-probe`), where a
@@ -6843,6 +7190,113 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### `grep` reports ZERO matches in 21 of our .c/.h files, because it decides they are binary
+
+**Symptom:** you grep a source file for a symbol you have every reason to expect and get
+nothing back. No error, no warning, exit status 1, just silence — and silence reads as "the
+symbol is not there", which is a fact about the code rather than about the tool.
+
+**Cause:** those files contain extended-ASCII bytes (an author name like `Hermès`, a
+copyright sign), so `grep` classifies them as binary and suppresses output. `file` says
+`C source, Non-ISO extended-ASCII text`. Twenty-one files in this tree are affected, and
+they are not obscure ones:
+
+- `ntoskrnl/ex/resource.c` — the whole ERESOURCE implementation, 2290 lines
+- `ntoskrnl/po/events.c`, `ntoskrnl/include/internal/i386/mm.h`
+- **the entire `sdk/lib/crt/printf/` cluster — 16 files** (`printf.c`, `vprintf_s.c`,
+  `_vsprintf_p.c`, `wprintf.c`, …), which is msvcrt's busiest neighbourhood
+- `sdk/lib/crt/time/localtime.c`, two `strsafe-difftest/refstub` headers
+
+**Fix:** `grep -a` (or `rg`, which does not do this). Refresh the list with
+`for f in $(find . -name '*.c' -o -name '*.h'); do grep -qI . "$f" || echo "$f"; done`.
+
+**The transferable part is the shape, not the flag: an IMPLAUSIBLE ZERO is a claim about
+your tool, not about the code.** Zero hits for `ActiveCount` in a 2290-line executive-resource
+implementation is not a finding, it is a malfunction — and it cost a wrong attribution that
+got relayed to another lane before the one-command check (`grep -a`) was run. The tell is
+cheap and always available: when a search returns nothing and the thing you searched for
+almost certainly exists, verify the SEARCH before you conclude anything about the subject.
+Same family as `$?` after a pipe and `sccache -s` reporting another server: a reading about
+a reading. Two agents hit this file on the same night; one lost a minute, the other lost a
+conclusion.
+
+### A self-consistent pair of DERIVED values cannot detect its own staleness
+
+**Symptom:** an array whose length is an enum bound, a struct whose size assertion is
+generated beside it, a table indexed by a generated constant — all compile, all agree, all
+wrong. `rtl-bootdata`'s `BsdItemTable` was declared
+`[RTL_BSD_ITEM_TABLE_ENTRY; RtlBsdItemMax as usize]` with 16 rows while upstream's
+`RTL_BSD_ITEM_TYPE` had grown to 19 members, so every
+`RtlGetSetBootStatusData(DataClass >= RtlBsdPowerTransitionExtension)` indexed off the end of
+the table. Nothing could see it: the row count and `RtlBsdItemMax` came from the *same* stale
+bindgen island, so they matched each other while both disagreed with the C header.
+
+**Cause:** the checker and the thing checked share a source. This is why a stale `-sys` crate
+is so much worse than a wrong one — `size_check_*.rs` assertions regenerate from C and
+therefore *can* catch drift, but only if the bindings are regenerated too; regenerate only the
+assertions and you get failures with no fix, regenerate neither and everything is green
+forever. Writing MORE assertions over the same stale source adds no information.
+
+**Fix:** break the tie from outside. Regenerate one side from the primary artifact (the C
+headers) and let the compiler compare — a compile error is the detector you could not write by
+hand. A standalone `clang -fsyntax-only` with `_Static_assert` on `sizeof`/`offsetof`, or
+`-Xclang -fdump-record-layouts` to read the field list, answers without going through any
+project tool. **Corollary: do not "fix" the symptom at the consumer.** Four sites in this tree
+transmuted past a stale `OB_CLOSE_METHOD` (`config-rust`, `mm/section.rs`, `iomgr-rust`,
+`lpc-rust`), two of them with `core::mem::transmute` and comments citing each other as
+precedent for "the identical drift". A transmute deletes the only check that would ever have
+noticed, so the wrong-width callback (`ULONG` handle counts where the caller passes
+`ULONG_PTR`) became permanent and invisible. Regenerating turned all four into ordinary type
+errors. When a substrate looks wrong, regenerate it; if you cannot, say so loudly rather than
+silencing the diagnostic.
+
+**When the regen COMPILES and the boot dies, suspect a stale translation the stale island was
+agreeing with.** `pnpmgr-rust` `IopGetBusTypeGuidIndex` was translated from pre-`a7f658e3221`
+C, where `IO_BUS_TYPE_GUID_LIST` ended in an inline `Guids[]`; upstream made `Guids` a separately
+allocated `PGUID`, and that change landed as dead C in a cohab-flipped file. The regenerated
+island described the new struct and everything still compiled, because the Rust spelled every
+access `addr_of!((*List).Guids) as *mut GUID` -- a cast that is valid whether the field is an
+array or a pointer. So each GUID was written over the pointer and past a 44-byte block: BUGCHECK
+0x19 on i386, silent on 64-bit where pool rounding absorbed the 8 bytes. `SPECIALPOOL=*` found it
+in one boot where three hypotheses had not. Before trusting a green compile after a regen, grep
+the consumers of every struct whose FIELD KINDS changed (array to pointer, inline to indirect)
+for `addr_of!` casts, and read the upstream commit that changed the header.
+
+### A codegen tool skips a whole ARCH and exits 0, so the FFI substrate drifts unnoticed
+
+**Symptom:** a `-sys` crate's struct layouts disagree with the C headers — `EPROCESS` 1000 bytes
+in C, 992 in Rust — while `generate_bindings.sh` and `verify_sizes.py` both report success and
+the OS still boots. The drift is invisible because the bindings and the size assertions were
+generated from the *same* stale headers, so they agree with each other; only regenerating one
+side exposes it.
+
+**Cause:** a preamble stub colliding with a header prototype. Both scripts define
+`__wfi()`/`__yield()` as zero-argument function-like macros (added because libclang cannot
+handle the intrinsics' inline-asm bodies). Once `intrin_arm64.h` arrived, `intrin.h`'s
+`void __yield(void);` parsed as a *one-argument* invocation of that macro → "too many arguments
+provided to function-like macro invocation". bindgen aborted on arm64; `verify_sizes.py`
+emitted zero arm64 assertions. Two things hid it: the retry loop only knows how to blank
+offending lines *in the generated file*, so a header error can never be cleared by it, and the
+failure path `return`ed without a nonzero exit. The `_INTRIN_H_`/`_INTRIN_X86_H_` defines that
+look like they suppress the header are inert — `intrin.h` is `#pragma once` with an
+unconditional `#define __INTRIN_H_` and no `#ifndef`.
+
+**Scope check before you believe it:** three tools carry this same preamble
+(`verify_sizes.py`, `generate_bindings.sh`, `tools/verify_offsets.py`), so grep for the stub
+rather than fixing one. And the *size* verifier understates the damage — the OFFSET verifier
+showed 43 failures over 7 structs, including a field inserted at offset 0
+(`_IO_BUS_TYPE_GUID_LIST.Lock`), which displaces every field after it. Judge severity by the
+EARLIEST drifted offset per struct, not by the count: a new field at the tail of an
+11824-byte KPRCB is harmless, a new field at offset 0 is not.
+
+**Fix:** drop the stubs where a real clang drives the compile (it handles the asm fine); print
+the actual `error:` diagnostics rather than the first N lines of stderr, which are all
+"In file included from" and name nothing; and make the per-arch failure set a nonzero exit so
+"2 of 3 arches" can never read as success. **A generated-artifact tool must fail the BUILD when
+an arch drops out, not narrate it** — a tool's own claim that it succeeded is not evidence about
+that tool, and the cheap independent check is a standalone `_Static_assert` on `sizeof`/`offsetof`
+that does not go through the tool at all.
 
 ### A suppression list both RECORDS and HIDES the bug, so the reproduction run is vacuously green
 
@@ -8531,6 +8985,163 @@ published something wrong" gets you half of it, and misses the half where you pu
 because everything appeared fine. *(First case found in the wow64 lane, second by
 conformance-ratchet; the published/investigated line is the control-plane lane's.)*
 
+**The structural remedy, where the absence is OUR OWN artifact: make the claim POSITIVELY, up
+front.** The two cases above are absences in someone else's output and can only be met with a
+control. But a missing `summary.json` in a `vibeos-cli` run dir was our absence, and it was
+overloaded three ways: the run is still going, the run was killed, or the directory was never
+a run at all. A SIGKILL -- the host's memory reaper, a broad-kill, the machine going away --
+left an artifact dir holding a `full.log` of green stage lines and no verdict, and a caller
+whose exit status is not the work's (a pipeline's last stage, a backgrounded shell's `echo`;
+see the `$?`/`PIPESTATUS` rule) read that as a pass. **A reaped process must not look
+successful to its caller.** Fix: `artifacts.create_run_dir` -- the one choke point every run
+dir passes through -- now seeds `summary.json` with `verdict: INCOMPLETE`,
+`classification: RUN_INTERRUPTED` BEFORE the work starts, and `finalize()` overwrites it. What
+is on disk is then always a true statement: incomplete until a verdict exists, a verdict once
+one does. This is `.vibeos-build-stamp.json` (written at the END, so presence means finished)
+turned inside out -- there the positive claim is completion, here it is incompletion, and both
+exist so no consumer has to infer a run's state from an exit code it may not have. **Two
+things this must not break, both of which are the general shape of adding a positive marker
+to a system that has been reading an absence.** `RUN_INTERRUPTED` had to be added to
+`queue.INCONCLUSIVE`: these runs previously arrived as `""` (nothing to read), which is
+already inconclusive, so gaining a marker would otherwise have silently moved them OUT of the
+set and started REJECTING lanes for being reaped by the host. And `gate._read_summary` routes
+a marker back to its existing no-summary branch, which keeps the child's exit code and last
+console words -- the marker says strictly less than that path already knows. So: when you
+replace an absence with a marker, find every consumer that was reading the absence and check
+whether the marker lands them somewhere worse.
+**Validated in production within the hour, on the fix's own author.** A full
+`vibeos-cli gate` was reaped mid-run at **33 GiB MemAvailable with zero `oom` in `dmesg`** --
+the harness's background-task reaper, reading `MemFree`, which is near-zero on any warm
+machine. The run dir it left behind held `lint-*`, `cohab-*`, `smoke-*` and `conf-*`
+subdirectories full of apparently-complete work; before the marker its `summary.json` would
+simply have been missing. It now reads `verdict: INCOMPLETE`, `classification:
+RUN_INTERRUPTED`. Note which way the evidence ran: the reaper's own message named memory
+pressure, and the disconfirming check -- `MemAvailable` and `dmesg`, not the killer's
+account -- is the sibling rule one entry down.
+
+### The reading is true of the HANDLE, not of the thing — a different oracle, not a fresher one
+
+**Lead with the repair, because the symptom actively suggests the wrong one.** Every instance
+below looks like staleness from the inside, so the instinct is *check it again*. Checking it
+again cannot work: the reading is correct, current, and stable, and it is about the handle you
+used rather than about the thing you asked about. The fix is always a DIFFERENT oracle.
+
+    os.kill(pid, 0) on a zombie        pid        vs  process   -> /proc/<pid>/status State: Z
+    $? after a pipeline                last stage vs  the work  -> PIPESTATUS[0]
+    sccache -s on a 148G cache dir     its server vs  that dir  -> /proc/<pid>/environ
+    MemFree                            free ctr   vs  reclaimable -> MemAvailable
+    merge-base vs a moving origin/master  ref     vs  commit    -> land-status --tip
+    df / inside WSL                    VHDX ceiling vs the host volume under it
+                                                              -> VIBEOS_DISK_BACKING_MOUNTS
+
+The zombie is the clearest member and the one to reason from. `os.kill(pid, 0)` succeeding on
+a zombie is not a stale answer: the pid genuinely is in the table until the parent reaps it,
+no signal will ever change that, and repeating the call returns the same true thing forever.
+`vibeos-cli kill` reported `STILL ALIVE after SIGTERM+SIGKILL — unkillable (D state?)` for a
+QEMU that had died promptly on the SIGTERM. *(Found and fixed by smp-bringup, `3ee8e7f16df`.)*
+
+**The most expensive member, and the one that shows the class is not a curiosity.** `df /`
+inside WSL reports the ext4 VHDX's own ceiling. The volume that can actually run out is the
+Windows one underneath it, which the guest cannot see at all. Seven lanes built concurrently
+after a build-time cut from ~45min to under 5; the VHDX grew to 990 GB against a 1 TiB ceiling
+on a host `C:` with 620 GiB free, and the HOST ran out while `df /` in the guest still reported
+room. The disk stopped attaching (HCS 0x80070570) and never mounted again -- WSL had to be
+rebuilt on a new 2 TB NVMe and everything restored from backup. Disk admission had been asking
+an honest question of the wrong subject the whole time. Fixed by
+`VIBEOS_DISK_BACKING_MOUNTS=/mnt/g`, which enters the backing mount into admission as a real
+filesystem so a build is refused on HOST headroom the same way it is on guest headroom. Note
+this one could not be caught by retrying either: `df /` would have returned the same reassuring
+number every time, right up to the failure.
+
+**The borderline member is the on-ramp, so concede it rather than defend it.**
+`git merge-base --is-ancestor <tip> origin/master` against a moving ref is BOTH a handle
+standing in for a commit AND genuinely stale, and it is the only member where "check it again
+later" does work — which makes it the one a reader will use to argue the class is just
+staleness. It is also where agents meet the class first, because queue forensics is where they
+land. So state the test outright: **if retrying helps, you are not yet in this class.**
+
+**What this class is NOT, and the two must stay separate.** A tool's own account of ITSELF —
+the low-memory killer naming its own cause while `dmesg` holds zero `oom` and 33 GiB is
+available — has no handle standing in for a thing. The reporter is the suspect, and the repair
+is a different WITNESS, not a different handle. The two sit side by side in AGENTS.md's
+"claim ABOUT a measurement" paragraph as siblings, and this entry carves that paragraph at the
+joint rather than spanning it. Tested against its six recorded instances: the handle rule
+covers five and fails exactly on the self-report one. *(Scope established by smp-bringup
+testing the formulation against the instance list rather than against the cases that suggested
+it — the same discipline that killed an earlier two-property generalisation here, which
+explained two of ten.)*
+
+**And it caught this entry's own author, in the test written to demonstrate it.** The
+regression test for `land`'s submit verification identified its two run dirs with
+`sorted(glob("*-land-queue"))[-1]`. Run dirs are `<ts>-<random>-land-queue`; both runs land in
+the same second, so the RANDOM SUFFIX decides lexicographic order, and the sort is a handle
+standing in for "the newer run". It passed locally and failed in the real `check-tooling`
+preflight, having picked the wrong dir. Sorting by name is the cheapest instance of this class
+there is, and knowing the class an hour earlier did not prevent writing it. Use set difference
+against the dirs that existed before the call, not an ordering over their names.
+
+**Corollary, from the same incident: fixing a SILENT failure by making it LOUD converts a cost
+you were not paying into one you pay immediately.** Both halves lived in the same function, and
+the loud half was introduced while fixing the silent one. `kill` had been reporting
+success-without-killing for hours at no observed cost; the "unkillable" message produced a
+wrong decision within a minute — a second replay started against media the caller believed was
+still held. Loud is still the right direction, but the new message is now load-bearing on the
+first read, so it needs the same scrutiny the silent one never got.
+
+### A per-item tally over run artifacts manufactures N findings from ONE event
+
+**Symptom.** A tally shows N items each failing across many unrelated batches, spanning lanes
+and commits. It reads as N independent, corroborated findings — and the batch spread looks like
+exactly the evidence that rules out "one lane broke it".
+
+**Cause.** One RUN-level failure that reports per-ITEM. A conformance lost boot
+(`BUGCHECK 0x1E`, `ok` and `bad` both 0) lists the ENTIRE baseline as *"in baseline (OK) but
+never launched"*, so 8 lost boots added +8 batches to every test in the baseline at once. That
+manufactured nine "flaky tests" — `CmSecurity`, `ExCallback`, `ExDoubleList`, `ExUuid`,
+`IoFilesystem`, `ZwMapViewOfSection`, `HalSystemInfo`, `FsRtlTunnel`, `RtlCaptureContextKM` —
+**none of which had ever been observed regressing in an ordinary sweep, not once.** The genuine
+set was three: `ExPools`, `NpfsConnect`, and marginally `KeEvent`/`IoInterrupt`.
+
+**Fix.** Before believing any per-item tally drawn from run-level artifacts, check for a SHARED
+CONSTANT across unrelated items. Nine tests all showing precisely 8 was the tell, sitting in
+plain sight in the table. Partition by failure MODE first and give each mode its own
+denominator — pooling them also corrupts the rate (27% pooled, 23.3% over mode-1 runs only).
+
+**Two things that make this worth its own entry rather than a footnote to the census.**
+
+*Each ghost arrives carrying its own count*, which is what makes one event read as N
+corroborations instead of one. A finding that shows up with a number attached defeats the
+instinct to ask "how do we know?", because the number looks like the answer.
+
+*Batch spread proves less than it appears to.* It rules out "one lane broke it" and nothing
+more. `ExPools` had 30 batches of perfect spread and was a HARNESS bug — a `_M_AMD64`/`_WIN64`
+arch gate making the test read half a `POOL_HEADER` — reproducible on every single boot, on one
+arch. Spread does not distinguish "flaky" from "the test is wrong on this arch", and that
+distinction is the entire six-week ExPools misfile.
+
+**Related, and it kills the obvious next move:** *"regressed in SOME runs of a batch" is not
+"nondeterministic cause".* Before the fix ExPools misread the header on every boot; what varied
+was which of `ProcessBilled`'s bits happened to be set. **A deterministic fault with a variable
+observable is indistinguishable from a flake in a pass/fail tally**, so an ALL-runs vs
+SOME-runs split cannot establish determinism no matter how clean the corpus is. And determinism
+was mostly undecidable here anyway: 151 of 170 batches held a single run, so there was nothing
+to compare within them.
+
+**The mirror error: a run that never REACHED the check is not evidence the check passed.** Grading
+"flaky" as *present in some runs at a commit, absent in others* graded `NpfsFileInfo.c:57` a FLAKE
+at 17 commits — it is deterministic (`Information = 158`, expected 154, every time). Of the 60
+rounds that "lacked" it at those commits, 6 died before the test ran and 54 completed with the line
+unparsed — a raw WCHAR swallowed the newline (`2f9bdcee30d`). The grader can fix the first kind, and
+nothing but the source data can fix the second. Absence counts only from a run that could have seen
+the failure: a completed round for an assertion; any round for a run-level event (lost boot,
+bugcheck); a green boot for a smoke signature — never a run that failed some OTHER way first. And
+one run-level event must collapse only on a VERBATIM shared constant: normalizing numbers first
+merged three tests each dropping a *different* count into one fake "mass" event. Both rules are code
+now, with the mutation-verified tests beside them: `vibeos-cli flake-report`
+(`tests/qemu/cli/flakes.py`). Read its grade, not a tally — and note that history it cannot re-parse
+stays wrong: those rounds' results files were in `/tmp`, which is why failing rounds are now
+preserved to `~/vibeos-flake-farm/fails/auto/` with their `*-results.txt`.
+
 ### A TEXT-SHAPED match is not a PROOF `[§9.119]`
 The same regex measured **146** lowerable CRT forwarders; the sound implementation lowered
 **11**. Measuring a shape by its syntax measures an **upper bound, not a yield**, and the
@@ -9069,6 +9680,27 @@ language rules) over loosening what it reports.
   which with `expool.rs`'s coalescer (`PoolType() == 0` is its absorb-this-neighbour test)
   would have been reported as a memory-corruption vector in a kernel that is writing a
   perfectly correct header.
+  **FIXED (2026-09-13):** the three `#ifdef _M_AMD64` in `kmt_test_kernel.h`'s `POOL_HEADER`
+  are now `#ifdef _WIN64`, matching the kernel's. Real Windows' `POOL_HEADER` is 16 bytes on
+  every 64-bit target -- the union's `ProcessBilled` pointer forces it -- so `_WIN64` was
+  always the correct predicate and `_M_AMD64` was an amd64-shaped assumption that held only
+  while amd64 was our sole 64-bit arch. arm64 ExPools went `pass=14 fail=4`
+  (`{119,135,178,210}`) -> `pass=17 fail=1` (`{210}`), stable across four boots, which is
+  **exactly amd64's baseline row** -- the two 64-bit arches agreeing is the confirmation, not
+  merely fewer failures. `:210` is the shared 64-bit 2GB-quota case and is not this bug.
+  The three stale `assert?`/`assert` marks at `:176`/`:178`/`:181` came out of the ratchet
+  with it: they described the misread, so leaving them would have kept the floor tolerating a
+  failure that can no longer happen. **The guard is what keeps this fixed**, not the edit --
+  `C_ASSERT(sizeof(POOL_HEADER) == sizeof(LIST_ENTRY))` now sits under the struct, wired to
+  the same invariant the kernel asserts, so the two copies cannot drift apart silently again.
+  Verified as a discriminator, not assumed: restoring `_M_AMD64` fails that assert at compile
+  time on arm64 (`'c_assert' declared as an array with a negative size`).
+  **And note which rule this turned out NOT to need.** "Never change the conformance tests"
+  had held this for six weeks as an owner decision. The owner's scoping: a build-flag or
+  arch-gate correction that makes a test read a structure the same width the kernel writes it
+  is not a semantic change and needs no approval. What needs approval is changing what a test
+  MEANS in a direction that favours us -- anything that would pass here and fail on real
+  Windows. Fix the OS, baseline the test; never the reverse.
 - **A genuine kernel fault does not fail an assertion STABLY, so determinism is evidence
   AGAINST a kernel bug.** The inversion is worth having explicitly, because the instinct runs
   the other way — a reliably failing assertion feels like the solid one to chase and the
@@ -9684,6 +10316,47 @@ boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 
 `PTE=…4C3` (AttrIndx 0) with `OPC=0x88DFFE85` — `ldar`, absorbed and the run passes. So the
 whole class collapsed to the one case that is *supposed* to happen.
 
+### Real hardware: what QEMU's TCG does not model
+Every one of these passed smoke ×N and failed on the first physical board (Raspberry Pi 4,
+2026-09-25/26). On arm64, a green QEMU run is necessary and nowhere near sufficient.
+- **Idle `WFE` with IRQs masked never wakes.** Symptom: desktop up, then ~70 s later the clock
+  freezes, serial goes silent, no bugcheck; a raw-UART tick heartbeat stops too. Cause: the
+  idle loop masked IRQs (`daifset #2`) and ran `wfe` when nothing was ready. A masked IRQ is
+  not a WFE wake-up event (it is for WFI), and nothing issued `SEV` or enabled the timer event
+  stream, so the core slept forever with the tick pending. TCG implements WFE as a yield. The
+  ~70 s was the zero-page thread: it keeps the CPU busy until all free RAM is zeroed, and the
+  first truly idle moment was fatal. Fix: `wfi`. What found it: sampling the tick's health from
+  IRQ entry, user traps AND the idle loop, and all three staying silent — "the CPU is in
+  none of those places" was the answer. Do not use WFE without an explicit `SEV` protocol.
+- **Non-shareable PTEs: cross-core atomics silently lose updates.** Symptom: the MP kernel on
+  4 cores hung in `KeIpiGenericCall` with `Count=2` though all three targets had executed their
+  `fetch_sub` (another run: the call completed with the wrong result set). Cause: `ValidKernelPte`
+  and `MmProtectToPteMask` left SH (bits [9:8]) at 0b00, so every page the memory manager mapped
+  was Non-shareable; v8.0 LDXR/STXR from different cores on such memory need not be coherent.
+  TCG makes every atomic atomic. Fix: SH = Inner Shareable on all Normal memory (stubs.rs mask,
+  `arm/init.rs` templates, the hyperspace template). Mapping one PA with two shareabilities is
+  itself a bug, so fix every template, not just the one that bit.
+- **Secondary cores arrive at EL2, via SMC.** The PSCI conduit is the FADT's to state
+  (`ARM_BOOT_ARCH`: QEMU says HVC, TF-A on a Pi says SMC; the wrong one jumps into dead vectors),
+  and TF-A starts a `CPU_ON` core at NS-EL2 whenever EL2 exists. The AP trampoline
+  (`hal-rust/src/arm64/mpboot.rs`) reads both from ACPI and drops to EL1 exactly as the loader
+  does for the boot CPU.
+- **PL011 FIFO overrun.** A bare store to the data register drops bytes once the 16–32 byte
+  FIFO fills; TCG drains instantly. Serial "stopped" mid-line and was misread as the kernel
+  stopping. Every debug byte goes through `Arm64UartPutChar` (TXFF-bounded); enforced by
+  `scan_raw_uart_writes`.
+- **A PTE attribute the MAIR doesn't mean.** `MI_PAGE_DISABLE_CACHE` set x86 PCD bits that
+  selected MAIR slot 0 (Normal WB) on arm64, so the UART and GIC were cached. TCG ignores
+  memory attributes. Fixed in `mm.rs` to AttrIndx 1 (Device) / 2 (Normal-NC).
+  The flip side: a caller that disables caching on **RAM**, where x86 PCD only means
+  "don't pollute the cache", now gets Device memory. `MiMapPagesInZeroSpace` did, and the
+  first `dc zva` in `KeZeroPages` alignment-faulted in `MmZeroPageThread` on a Raspberry
+  Pi 4 (BUGCHECK 0x1E, 0x80000002, ESR DFSC 0x21) while QEMU booted green. RAM stays
+  Normal WB on arm64; Device-mapping it also aliases the page's WB mappings.
+- **I/D cache incoherence.** Code paged in by `IoPageRead` (or relocated by the loader) sits in
+  the D-cache; the I-side fetches stale RAM (zeros decode as `UDF`, ESR EC=0). Clean to PoU and
+  invalidate the I-cache after writing code (`KeSweepICache`). TCG has no caches.
+
 ### arm64 bring-up bugs worth recognising again
 - **`0xE3 RESOURCE_NOT_OWNED` (#43) was a fastfat shim testing the wrong WAIT bit.**
   Symptom: arm64 `0xE3 (Resource, Thread, 0, 3)`, a shared release of an ERESOURCE that is
@@ -9832,6 +10505,16 @@ whole class collapsed to the one case that is *supposed* to happen.
   **Recognition rule: on a port where IRQL is priority-masked rather than DAIF-masked, DAIF
   belongs to exception entry/exit windows and nothing else. If a trap handler never touches it,
   it is running masked.**
+- **A user-mode spinner was never preempted on arm64.** The only preemption point was
+  `KfLowerIrql` crossing below DISPATCH in thread context, and a thread spinning at EL0
+  never reaches it. The clock IRQ's own lowering runs at interrupt depth > 0 and is
+  declined, so `QuantumEnd` and `NextThread` sat unread. On one CPU, any user spin-wait for
+  a lock held by a preempted thread is a whole-guest livelock: ntdll_vista's threadpool
+  worker spun in condvar `InternalLockCondVar`, and even the probe's own watchdog thread
+  never ran. Fix: `KiEL0IrqPreempt`, called from `KiEL0IrqEntry` while the user's NEON
+  state is still on the stack. It unmasks, raises to DISPATCH and lowers back, so the
+  existing thread-context path does the switch. EL0 is the safe IRQ exit: PASSIVE, no
+  kernel locks, and ELR/SPSR already in the frame.
 - **PSTATE.DAIF is NOT per-thread state** `[§9.19]` — `KiSwapContext` doesn't save/restore it, so
   a context switch **leaked exception-entry DAIF into a new thread** → boot wedges with the
   serial completely silent. A masked-swap tripwire in `KiSwapContextResume` remains in tree.
@@ -9846,6 +10529,24 @@ whole class collapsed to the one case that is *supposed* to happen.
 - **Desktop timer freeze = three stacked bugs** `[§9.21]`: `KeDelayExecutionThread` was still a
   busy-yield bring-up stub, explorer's main thread spun on a stuck `QS_PAINT` wake bit, and
   DISPATCH software-interrupt delivery was unimplemented.
+- **Serial silent for ~95 s with the guest clock still ticking, then everything due fires at
+  once** (a 10 s census missing nine scans, 30 s waits timing out together) — **arm64 had no
+  preemption.** The DISPATCH softint expired timers but parked the woken thread in
+  `Prcb->NextThread`, and only the idle loop or a voluntary wait ever switched to it;
+  `QuantumEnd` was never read. So a thread that never blocks kept the CPU — here the
+  **priority-0 zero-page thread**, clearing the free list after kmtest MmSection, once per
+  arm64 conformance round. Fix: `KfLowerIrql` calls `KiDispatchPreemptArm64` on the crossing
+  under DISPATCH (x86's DPC-interrupt tail). Three traps on the way:
+  - It must decline when IRQs are masked.
+  - The preempted thread must restore its own DAIF on resume. The first cut let the zero
+    thread come back masked from an SVC-wait swap, and it froze the box: 63 s of host time,
+    0.4 s of guest time.
+  - `KeZeroPages` went through the CRT's byte-at-a-time memset, ~12 ms per 32-page batch under
+    TCG, and every timer waited that long for the next crossing. It is `dc zva` now.
+
+  **Tell it from a dead clock** by stamping serial with host time (conformance does this
+  always) and reading `silence-samples.txt`, which the payload drain writes during any 20 s
+  quiet that later recovers.
 - **Desktop never repaints** `[§9.23]`: `gpdeskInputDesktop` stranded on the *Winlogon* desktop,
   and `SystemTime` was never seeded from the RTC (the "query the clock" block was dropped —
   arm64 needs the PL031 at `0x0901_0000`).
@@ -10093,6 +10794,83 @@ create still succeeds and a read still finds it. Assert the default-view handle'
 `KEY_WOW64_64KEY` cannot see the value just written — two independent encodings, so faking one
 still fails the other.
 
+### win32k reading a control's PRIVATE state must use the OWNER's layout
+**Symptom.** A guest-only `STATUS_INTEGER_DIVIDE_BY_ZERO` (`0xc0000094`) in the wine user32
+`combo` test, with native i386 running the same binary clean. No kernel fault, and the
+syscall's WoW64 thunk is provably correct.
+**Cause.** For the system combobox and listbox, `NtUserGetComboBoxInfo` /
+`NtUserGetListBoxInfo` do not ask the control. They reach through the pointer user32 stored in
+the window's extra bytes into user32's own `HEADCOMBO` / `LB_DESCR`. In a WoW64 process that
+pointer is 4 bytes, to a struct whose `HWND`s are 4 bytes, and the amd64 kernel read it at its
+own layout, so `hWndLBox` came from 16 bytes past where the guest put it. The test sent
+`LB_GETITEMHEIGHT` to the garbage `hwndList`, got 0, and divided by it. A thunk cannot fix
+this: the syscall's own arguments were marshalled perfectly. The layout mismatch is one hop
+further in, in memory the thunk never sees.
+**Fix.** Select the layout by the window OWNER's bitness (`wow64::IsWow64Eprocess` on the
+owner's `EPROCESS`), not the caller's. A cross-process query attaches to the owner, so the
+caller's bitness proves nothing. Read the pointer slot at that width, then probe it and
+capture through `copy::capture_from_user`: the process can write any value into its own
+control's extra bytes, and the raw deref it replaced was an unprobed kernel read published
+back to the caller. `window.rs` `CaptureComboState` / `CaptureListBoxPageSize`, with the
+guest offsets pinned by `const` asserts. **Grep for the class:** `as PWND2` in win32k. Any
+cast of a `WND` to a struct that extends past it reads client-owned extra bytes.
+
+### A "guest-only" failure in the WoW64 A/B can be a 64-BIT KERNEL failure
+**Symptom.** A winetest assertion fails under WoW64 and passes on native i386, so it gets filed
+as a seam bug, but no marshaller is involved: the arguments cross flat and are correct.
+**Cause.** The A/B control is native **i386**, so it differs from the guest in two ways, not
+one: the seam, and the width of the *kernel*. `user32:winstation`'s `EnumWindowStations`
+failure was win32k sizing a directory listing wrong. That code path only runs when the
+entries overflow a 256-byte stack buffer, and an `OBJECT_DIRECTORY_INFORMATION` entry is
+16 bytes on i386 and 32 on amd64. Three window stations fit on i386 and overflow on amd64.
+**Fix.** Before blaming the seam, ask whether the failing path depends on `sizeof` anything
+pointer-bearing on the KERNEL side. The discriminator is a native amd64 caller, not a
+better thunk. The underlying bug there was a real API-contract mistake: in multi-entry mode,
+`NtQueryDirectoryObject` with a too-small buffer returns `STATUS_MORE_ENTRIES` and reports
+the bytes it WROTE, not the size it needs. Sizing from a NULL/0 query therefore yields just
+the terminator. Grow and retry instead (`winsta.rs` `BuildWindowStationNameList`).
+
+### A pointer-sized OUT from `NtQuerySystemInformation` is 4 bytes in the guest
+**Symptom.** A 32-bit guest's `GlobalLock` returns NULL on a handle `GlobalAlloc` returned a
+moment earlier, but only for FIXED (non-moveable) memory. Anything built on it degrades
+silently: `PackDDElParam` returned 0, so every packed DDE `lParam` went out as 0.
+**Cause.** kernel32 fills `SystemRangeStart` once, with
+`NtQuerySystemInformation(SystemRangeStartInformation, &x, sizeof(ULONG_PTR))`. That is 4
+bytes in the guest, and the host kernel answers a `ULONG_PTR`, 8 bytes. The WoW64 marshaller
+passed the class through, the query failed `STATUS_INFO_LENGTH_MISMATCH`, and nobody checked
+the status. The value stayed 0, so `hMem >= SystemRangeStart` refused every pointer. The
+serial said it every boot: `class=50 passthrough => c0000004 (len=4)`.
+**Fix.** Marshal the class (`wow64_manual.c`), answering from the guest's own address-space
+limit. **Grep the boot for `passthrough => c0000004`**: a length mismatch on a passthrough
+class is this bug for whichever class it names.
+
+### A winetest's "N failures in child process" can be a child that DIED
+**Symptom.** A suite reports a huge failure count (native `user32:scroll`: 140), but the
+printed failures account for a handful, and one child printed nothing at all.
+**Cause.** Wine's `winetest_wait_child_process` reports the child's EXIT CODE as its failure
+count. A child killed by an unhandled exception exits `0x80` (csrss terminating a
+second-chance client), and the parent prints that as "128 failures in child process". Its
+buffered stdout dies with it, which is why nothing was printed. On i386 the death itself
+was invisible: `[EXIT-THR]` and the second-chance `[KI-EXC]` tripwire were amd64-only, which
+made the native CONTROL of the A/B the one arch that could not see it.
+**Fix.** Read child counts of exactly 128 as a death until proven otherwise, and find the
+`[KI-EXC] ... second chance` line (both x86 arches now print it before the exception port
+gets a chance to swallow it). The scroll instance was `uxtheme!ThemeGetWndData` returning
+another process's heap pointer for a window that process owned.
+
+### A loud refusal that returns non-zero reads as SUCCESS to a handle-returning caller
+**Symptom.** A guest logs `NEEDS MANUAL MARSHALLER — failing loud` and then carries on as if
+the call succeeded, dying several calls later somewhere unrelated.
+**Cause.** The refusal is loud in the serial log but not to the caller. It returns
+`WOW64_STATUS_INVALID_SYSTEM_SERVICE` as the syscall's value, which a caller expecting an
+`HDESK`/`HWND`/`BOOL` reads as a valid non-zero result. `user32:winstation` passed its
+`desk != 0` check on `NtUserCreateDesktop`'s refusal, and crashed three calls later on junk
+from a query against that fake handle. No single failure value fixes this: some NtUser
+calls return an NTSTATUS, where 0 means success.
+**Fix.** Treat a `NEEDS MANUAL MARSHALLER` line as the root cause of whatever the guest does
+next, and write the marshaller. When triaging a guest crash, grep its serial for that line
+before reading the crash site.
+
 ### A probe-ladder guest can be RED on one arch for weeks — the smoke stops before it runs
 **Symptom.** A guest verified green on one arch fails on the other, and no gate ever reports it.
 **Cause.** The WoW64 probe ladder is spawned by winlogon *after* the desktop marker, and the
@@ -10109,6 +10887,15 @@ it exited `0xBAD9` there from the day it landed, through every green gate.
 "remembering a recipe" smell AGENTS.md names as a bug report against the tool — and the same
 blind spot had already been written down once, in the roadmap's `_MmCopyFromCaller` entry, and
 still cost a day.)*
+**Then the drain itself raced every launch.** `--ladder` decided "done" from nothing graded
+being in flight, and each launch leaves a gap where nothing is. It stopped between
+`spawn32`'s verdict and `lua32`'s launch line (then `check()` failed a guest mid-run), and
+once that was fixed, between `sqlite32`'s and the winetest sweep's (a sweep boot went green
+having run zero subtests). The workaround had been to remember
+`VIBEOS_LADDER_DRAIN_FLOOR≈2400`. Now winlogon prints `[WINLOGON] graded program complete`
+after the last graded item on each arch, and the drain waits for that line. Once it
+appears, nothing graded can still arrive, so it also ends an i386 native sweep that used to
+sit out the whole 420s ceiling waiting for WoW64 guests that do not exist there.
 **Also the general rule for fixtures:** when the environment cannot support a rung's *fixture*
 (not its subject), skip it loudly with the errno and keep the remaining rungs running, rather
 than failing the whole guest. The arch where the fixture works keeps full coverage of that rung.
@@ -10453,8 +11240,13 @@ the snapshot. Both halves are the same bug found years apart: the WND half surfa
 EDIT control reading a garbage `EDITSTATE*` and faulting at 0x2A, and the CLS half sat behind it
 until Wine's `user32:class` was pointed at it and reported all eight class words disagreeing
 with what a syscall had just set. Address the tail off the snapped kernel object
-(`wnd_extra_base` / `cls_extra_base`), never off the copy. Anything else with a tail after the
-fixed struct is in the same position and has not been audited.
+(`wnd_extra_base` / `cls_extra_base`), never off the copy. The third instance was the
+scrollbar CONTROL: `pwnd as PSBWND` read `SBCALC` off the snapshot, so every guest
+`GetScrollPos(SB_CTL)` returned junk while `SetScrollPos`, a syscall served from the real window,
+worked (`user32:scroll` 161/170/179). That split, **writes fine and reads wrong**, is the
+signature: the kernel side is right and only the client's view is off. Audited 2026-09-26: no
+other `WND`-extending cast remains in user32-rust (`IMEWND` goes through
+`Get/SetWindowLongPtr`). Grep `as P[A-Z]*WND` for a new one.
 **SERVERINFO was never in the view, and "most things work" hid it.** `dwSRVIFlags` is at
 offset 0 in both layouts, so the flag checks worked while metrics, colours and the class-proc
 tables read garbage. Read `gpsi` only through `wow64::psi`, never as `(*gpsi).field`. The same
@@ -10564,6 +11356,15 @@ win32k is the largest single flip surface and its failures are stereotyped:
   filled, suspect the transfer-mode flag.**
 - **The first keystroke BUGCHECKs 0x1E** `[§9.38]` if the i8042prt DPC calls kbdclass
   `ClassService` as `extern "C"` — it is NTAPI stdcall on i386.
+- **arm64 USB input reached kbdclass and stopped there** (2026-09-26, first seen on the Pi 4).
+  `[KBDCLASS] first key delivered` printed, the desktop saw nothing. win32k's RIT opens exactly
+  `\Device\KeyboardClass0` and `\Device\PointerClass0`, and arm64input created both names
+  unconditionally for its virtio-input devices, so kbdclass/mouclass fell back to `...Class1`,
+  which nobody reads. The QEMU xHCI gate had only ever checked the kbdclass marker. Fix:
+  arm64input claims the names only when it finds virtio-input; the RIT now prints which driver
+  owns each device it opens and `[WIN32K] RIT first keyboard input`, the marker that proves the
+  desktop got a key. **A delivery marker proves delivery to the layer that prints it, and no
+  further.**
 - **winlogon 0xF4 on the first FAILING user-mode callback** `[§9.39]` — i386
   `KeUserModeCallback` conflated the SEH status with the callback's return status and skipped the
   user-ESP restore. The `'seh` block must yield `Result<NTSTATUS, NTSTATUS>` so the two are
@@ -10589,6 +11390,16 @@ win32k is the largest single flip surface and its failures are stereotyped:
   "which offset", and a WoW64 guest writes the one the kernel does not read by default.**
   Any kernel path that reads a TEB field a 32-bit guest also writes needs the same
   treatment; `wow64_teb32()` (amd64) and `KiWow64GdiBatchCount()` (arm64) are the shape.
+  **Its third face (2026-09-26) is a GDI HANDLE LEAK, not corruption.** The 09-20 fix reset
+  the guest batch without executing it, on the reasoning that it dropped no drawing that was
+  not already dropped. But the batch is not only drawing: gdi32's `DeleteObject` on a region
+  or brush with a user attribute is a batched `GdiBCDelRgn`/`GdiBCDelObj`. Symptom: after
+  minutes of uptime, thousands of `failed to free. pvAlloc=0`, then a 0x1E on a NULL region
+  (every Create* fails once the 64K table is full; the NULL frees are the pens that failed
+  to insert). A `[GDI-CENSUS]` dump at the first failed insert named ~63K regions owned by a
+  WoW64 osk. Fix: execute the guest batch by widening each i386 record
+  (`flush_guest_batch()`, `gdibatch.rs`). **A "discard" of a command queue discards every
+  command kind in it: enumerate them before calling one harmless.**
 - **`DesktopHeapReAlloc` passed the PDESKTOP as the HEAP pointer** `[§9.40]` (and never freed the old
   block) → amd64 0x1E on the first start-menu open. **When a Rust file reimplements C header
   inlines, diff EVERY helper, not just the one that crashed.**
@@ -10815,6 +11626,18 @@ introduced at any heap exit — it is an external stray write.**
   kmtest-sweep.exe`. The guest hung inside the taskbar's OnCreate, so explorer never processed
   the StartUp folder that launches the sweep. Zero tests, nothing runnable, `HLT=1` — the whole
   chain, from one absent line.
+- **A user thread stuck in `NtCreateFile` (or any call into a filesystem) is usually queued
+  behind someone else's ERESOURCE: find the OWNER, not the waiter.** `gdb inspect <run>
+  list-threads` → take the `WrResource` thread's ETHREAD → `gdb inspect <run> who-holds
+  <addr>` names the resource, its owner thread, and the code addresses on the owner's kernel
+  stack. The 2026-09-27 amd64 appstorm hang read as "explorer's folder window hangs" and was
+  fsrtl: a wordpad close spun forever in `FsRtlUninitializeFileLock` (a swapped
+  `GenericEqual` constant made every lock undeletable) while fastfat held the volume resource.
+  Two traps the verb now handles: **`WaitReason` and `WaitBlockList` survive the wake**, so a
+  terminated thread still "waits" on its last object (only a wait block still linked on the
+  object's `WaitListHead` is live — an exited hello32 read as a lost wakeup until that check
+  existed); and a DPC-preempted spinner shows `WrDispatchInt`, with its interrupted RIP in the
+  KTRAP_FRAME that `KiDpcInterrupt` left on its stack.
 - **Get a KNOWN-GOOD CONTROL on the same host before believing any number in a hang log.**
   This is what makes the above affordable, and both halves of that same investigation needed it:
   "77% of serial is one error" and "72 threads parked >20s" each read as damning, and a green
@@ -10842,6 +11665,48 @@ introduced at any heap exit — it is an external stray write.**
   `qemu/<arch>-uefi_smoke_live.log`. This cost ~6 build cycles once.
 - **Read `summary.json`, don't scrape stdout**, and never pipe `vibeos-cli` through `| tail` (it
   swallows the exit code).
+
+### `ASSERT FAILED: MDL_MAPPED_TO_SYSTEM_VA == 0 at iomgr-rust/src/iomdl.rs` on every USB transfer
+- **Symptom:** the assert prints repeatedly once USB devices enumerate (seen on QEMU xHCI
+  boots, some amd64 smokes and the Pi 4); nothing fails outright.
+- **Cause:** `ntkrnl-sys`'s `driver_ddk::MmGetSystemAddressForMdlSafe` mapped the MDL on
+  every call. The WDK inline returns `MappedSystemVa` when the MDL is already mapped or
+  describes nonpaged pool. So every call leaked a system mapping, overwrote
+  `MappedSystemVa`, and the MDL was freed still mapped. usbport calls it per transfer, and
+  kbdclass, mouclass, hidclass, fastfat, afd and others use the same copy.
+- **Fix:** the flag check, matching `inline::mm`. **Two ports of one header inline in one
+  crate drift; when a Rust file reimplements a WDK inline, diff it against the header.**
+
+### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
+- **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing
+  N *active*, then serial silence. `hang-cpustate` shows EL1 with `PSTATE.I` set and the
+  INTID in a register. Seen 2026-09-26 bringing up `usbxhci` (INTID 35, the xHCI INTx).
+- **Cause:** a **level-triggered line that no ISR claims fires forever.** The HAL EOIs it,
+  the line is still asserted, it re-fires at once, and the CPU never runs anything else. The
+  message does not mean "no ISR connected": it also prints when the connected ISR returned
+  FALSE. Two ways to get there, both hit the same day:
+  1. **The device was already asserting when its vector was enabled.** Firmware can hand
+     over a controller mid-flight (UEFI's own USB stack ran the xHCI and left it with
+     interrupts on), and the driver cannot quiet hardware it has not mapped yet.
+  2. **The driver raised an interrupt before its framework opened the ISR gate.** usbport
+     connects the interrupt, calls the miniport's StartController, and only *then* sets
+     the flags its ISR wrapper checks. A StartController that enables controller
+     interrupts and issues a command gets its completion interrupt declined.
+- **Fix:** quiesce before connect, and poll until the gate opens. pci.sys masks INTx (PCI
+  COMMAND bit 10) on xHCI controllers at enumeration and usbxhci unmasks it after its reset,
+  the same job Linux's `quirk_usb_handoff_xhci` does. usbxhci starts with USBCMD.INTE and
+  IMAN.IE off and lets usbport's EnableInterrupts turn them on, as EHCI does. For any new
+  device family, ask "can this line be asserted before my ISR says yes?"
+
+### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
+- **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,
+  immediately after adding a `-device` (e.g. `qemu-xhci`) to an arm64 boot. The OS never
+  starts.
+- **Cause:** the arm64 boot disk is `virtio-blk-pci` (`if=virtio` on `virt`), and the
+  efivars shipped with the harness save Boot0001 as `PciRoot(0x0)/Pci(0x2,0x0)`. A new PCI
+  device with no `addr=` takes the first free slot, the disk moves to slot 3, and Boot0001
+  now names the new device. UEFI skips it silently and falls through to network boot.
+- **Fix:** pin rig devices to a free slot (`addr=0x8`). `VIBEOS_QEMU_XHCI=1` does.
 
 ### Localization techniques that repeatedly worked
 - **DbgPrint-bisect with REAL `DbgPrint`.** Translated `TRACE!`/`WARN!`/`DPRINT` are no-op

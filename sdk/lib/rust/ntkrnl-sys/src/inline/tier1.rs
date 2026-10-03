@@ -1,7 +1,7 @@
 //! Tier 1 subsystem inline functions.
 //!
 //! IO IRP stack macros, LPC inlines/macros, HAL dispatch table macros,
-//! IRQL wrappers (i386/amd64), SeDeleteClientSecurity, SRW lock stubs, etc.
+//! IRQL wrappers (i386/amd64), SeDeleteClientSecurity, etc.
 
 use crate::base::*;
 use crate::constants::*;
@@ -565,41 +565,4 @@ pub unsafe fn KeLowerIrqlInternal(new_irql: KIRQL) {
     {
         KeLowerIrql(new_irql);
     }
-}
-
-// ============================================================================
-// SRW Lock stubs for kernel mode
-// ============================================================================
-
-/// RtlAcquireSRWLockExclusive — simple spin-lock stub for kernel mode.
-#[inline]
-pub unsafe fn RtlAcquireSRWLockExclusive(srw_lock: ddk::PRTL_SRWLOCK) {
-    use core::sync::atomic::{AtomicIsize, Ordering};
-    let atomic = &*(core::ptr::addr_of!((*srw_lock).Ptr) as *const AtomicIsize);
-    while atomic
-        .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
-        .is_err()
-    {
-        core::hint::spin_loop();
-    }
-}
-
-/// RtlReleaseSRWLockExclusive — release the spin lock.
-#[inline]
-pub unsafe fn RtlReleaseSRWLockExclusive(srw_lock: ddk::PRTL_SRWLOCK) {
-    use core::sync::atomic::{AtomicIsize, Ordering};
-    let atomic = &*(core::ptr::addr_of!((*srw_lock).Ptr) as *const AtomicIsize);
-    atomic.store(0, Ordering::Release);
-}
-
-/// RtlAcquireSRWLockShared — same as exclusive for this simple stub.
-#[inline]
-pub unsafe fn RtlAcquireSRWLockShared(srw_lock: ddk::PRTL_SRWLOCK) {
-    RtlAcquireSRWLockExclusive(srw_lock);
-}
-
-/// RtlReleaseSRWLockShared — same as exclusive for this simple stub.
-#[inline]
-pub unsafe fn RtlReleaseSRWLockShared(srw_lock: ddk::PRTL_SRWLOCK) {
-    RtlReleaseSRWLockExclusive(srw_lock);
 }

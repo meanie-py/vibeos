@@ -20,7 +20,7 @@ extern "C" {
     // cross-module freeldr fns (FLDRAPI empty → cdecl).
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn FsRegisterDevice(DeviceName: *const i8, FuncTable: *const DEVVTBL);
-    fn AddReactOSArcDiskInfo(ArcName: *mut i8, Signature: ULONG, Checksum: ULONG, ValidPartitionTable: BOOLEAN);
+    fn AddReactOSArcDiskInfo(ArcName: *mut i8, GptDiskGuid: *const c_void, Signature: ULONG, Checksum: ULONG, ValidPartitionTable: BOOLEAN);
     fn MmAllocateMemoryWithType(MemorySize: SIZE_T, MemoryType: TYPE_OF_MEMORY) -> PVOID;
     fn FrLdrTempAlloc(Size: SIZE_T, Tag: ULONG) -> PVOID;
     fn FrLdrTempFree(Allocation: PVOID, Tag: ULONG);
@@ -136,6 +136,8 @@ pub static mut FrldrBootPartition: ULONG = 0;
 static mut DiskReadBufferRaw: PVOID = core::ptr::null_mut();
 static mut DiskReadBufferAlignment: ULONG = 0;
 static mut DiskReadBufferFromPool: BOOLEAN = 0;
+// The buffer came from MmAllocateMemoryWithType, not BootServices->AllocatePool (upstream 492aeb639c9).
+static mut DiskReadBufferFallbackPool: BOOLEAN = 0;
 static Hex: [u8; 17] = *b"0123456789abcdef\0";
 static mut PcDiskIdentifier: [[CHAR; 20]; 32] = [[0; 20]; 32];
 static mut UefiBootRootIndex: ULONG = 0;
@@ -186,7 +188,12 @@ unsafe fn UefiEnsureDiskReadBufferAligned(
 
     if DiskReadBufferRaw != core::ptr::null_mut() && DiskReadBufferFromPool != 0
     {
-        (*(*GlobalSystemTable).BootServices).FreePool.unwrap()(DiskReadBufferRaw);
+        if DiskReadBufferFallbackPool != 0 {
+            crate::mm::MmFreeMemory(DiskReadBufferRaw);
+        } else {
+            (*(*GlobalSystemTable).BootServices).FreePool.unwrap()(DiskReadBufferRaw);
+        }
+        DiskReadBufferFallbackPool = 0u8;
         DiskReadBufferRaw = core::ptr::null_mut();
         DiskReadBuffer = core::ptr::null_mut();
         DiskReadBufferFromPool = 0u8;
@@ -197,9 +204,19 @@ unsafe fn UefiEnsureDiskReadBufferAligned(
                                                            &mut DiskReadBufferRaw as *mut _ as *mut *mut core::ffi::c_void);
     if EFI_ERROR(Status) != 0 || DiskReadBufferRaw == core::ptr::null_mut()
     {
-        ERR(b"Failed to allocate aligned disk read buffer (align %lu)\n\0".as_ptr() as PCHAR, (RequiredAlignment) as usize);
-        DiskReadBuffer = core::ptr::null_mut();
-        return 0u8;
+        // EFI 1.x firmware (Intel Macs among them) can refuse this; fall back to loader
+        // memory instead of failing disk access outright (upstream 492aeb639c9).
+        TRACE(b"AllocatePool failed for the disk read buffer, trying MmAllocateMemoryWithType (align %lu)\n\0".as_ptr() as PCHAR, (RequiredAlignment) as usize);
+        DiskReadBufferRaw = MmAllocateMemoryWithType(
+            (DiskReadBufferSize + (RequiredAlignment as usize)) as SIZE_T,
+            LoaderFirmwareTemporary,
+        );
+        if DiskReadBufferRaw == core::ptr::null_mut() {
+            ERR(b"Failed to allocate aligned disk read buffer (align %lu)\n\0".as_ptr() as PCHAR, (RequiredAlignment) as usize);
+            DiskReadBuffer = core::ptr::null_mut();
+            return 0u8;
+        }
+        DiskReadBufferFallbackPool = 1u8;
     }
     DiskReadBufferFromPool = 1u8;
 
@@ -883,8 +900,16 @@ unsafe fn GetHarddiskInformation(DriveNumber: UCHAR) {
 
     ValidPartitionTable = if (*Mbr).MasterBootRecordMagic == 0xAA55 { 1 } else { 0 };
 
+    // After the MBR fields: UefiReadGptHeader reuses DiskReadBuffer (upstream 7779fb44597).
+    let mut GptHeader: GPT_TABLE_HEADER = core::mem::zeroed();
+    let GptDiskGuid: *const c_void = if UefiReadGptHeader(DriveNumber, core::ptr::addr_of_mut!(GptHeader)) != 0 {
+        core::ptr::addr_of!(GptHeader.DiskGuid) as *const c_void
+    } else {
+        core::ptr::null()
+    };
+
     sprintf(ArcName.as_mut_ptr(), b"multi(0)disk(0)rdisk(%u)\0".as_ptr() as PCHAR, ArcDriveIndex);
-    AddReactOSArcDiskInfo(ArcName.as_mut_ptr(), Signature, Checksum, ValidPartitionTable);
+    AddReactOSArcDiskInfo(ArcName.as_mut_ptr(), GptDiskGuid, Signature, Checksum, ValidPartitionTable);
 
     sprintf(ArcName.as_mut_ptr(), b"multi(0)disk(0)rdisk(%u)partition(0)\0".as_ptr() as PCHAR, ArcDriveIndex);
     FsRegisterDevice(ArcName.as_mut_ptr(), &UefiDiskVtbl);
@@ -1210,7 +1235,42 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
         let mut PartitionEntry: PARTITION_TABLE_ENTRY = core::mem::zeroed();
 
         if (*(*BootBlockIo).Media).LogicalPartition != 0 {
+            // Take the number from the handle's device path (upstream 7eab8fafec4): it used to
+            // be partition 1 unconditionally, so a disk/USB boot from any other partition read
+            // freeldr.ini and the system from the wrong volume. Partition 1 stays the fallback.
+            // Walked byte-wise; freeldr-rust has no device-path types. A node is
+            // { u8 Type, u8 SubType, u16 Length }, and a HARDDRIVE_DEVICE_PATH (MEDIA_DEVICE_PATH
+            // 0x04 / MEDIA_HARDDRIVE_DP 0x01) has its UINT32 PartitionNumber right after that.
             BootPartition = FIRST_PARTITION;
+            let mut DevicePathGuid: EFI_GUID = EFI_DEVICE_PATH_PROTOCOL_GUID;
+            let mut Node: *mut u8 = core::ptr::null_mut();
+            if let Some(HandleProtocol) = (*(*GlobalSystemTable).BootServices).HandleProtocol {
+                Status = HandleProtocol(
+                    *handles.offset(UefiBootRootIndex as isize),
+                    core::ptr::addr_of_mut!(DevicePathGuid),
+                    core::ptr::addr_of_mut!(Node) as *mut *mut core::ffi::c_void,
+                );
+                if EFI_ERROR(Status) != 0 {
+                    Node = core::ptr::null_mut();
+                }
+            }
+            if !Node.is_null() {
+                loop {
+                    let (Type, SubType) = (*Node, *Node.add(1));
+                    let Length = u16::from_le_bytes([*Node.add(2), *Node.add(3)]) as usize;
+                    if Type == 0x7F && SubType == 0xFF {
+                        break; // END_ENTIRE_DEVICE_PATH
+                    }
+                    if Length < 4 {
+                        break; // malformed
+                    }
+                    if Type == 0x04 && SubType == 0x01 {
+                        BootPartition = core::ptr::read_unaligned(Node.add(4) as *const u32);
+                        break;
+                    }
+                    Node = Node.add(Length);
+                }
+            }
             TRACE(
                 b"Boot handle is logical partition, using partition %lu\n\0".as_ptr() as PCHAR, (BootPartition) as usize,
             );
@@ -1316,7 +1376,7 @@ pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
         Checksum = (!Checksum).wrapping_add(1);
         TRACE(b"CD-ROM Checksum: %x\n\0".as_ptr() as PCHAR, (Checksum) as usize);
 
-        AddReactOSArcDiskInfo(FrLdrBootPath.as_mut_ptr(), Signature, Checksum, 1u8);
+        AddReactOSArcDiskInfo(FrLdrBootPath.as_mut_ptr(), core::ptr::null(), Signature, Checksum, 1u8);
 
         FsRegisterDevice(FrLdrBootPath.as_ptr(), core::ptr::addr_of!(UefiDiskVtbl));
         TRACE(

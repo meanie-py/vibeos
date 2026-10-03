@@ -201,6 +201,119 @@ def test_all_guests_already_seen_drains_nothing_at_all():
     assert vm.serial.reads == 0, "no read at all when nothing is outstanding"
 
 
+def test_a_staged_optional_guest_is_waited_for_before_its_launch_line():
+    """The measured race: the last parity verdict arrives, the optional guest's
+    launch line has not been printed yet, and a serial-only drain stops in that
+    gap. check() -- which asks the media -- then fails lua32 while it is running.
+    With the media answer the drain keeps reading until lua32 reports."""
+    vm = _FakeVM(
+        [
+            _all_pass(),
+            "[WINLOGON] lua32.exe (i386 Lua stress guest) created (PID 944) - waiting\n",
+            "[WINLOGON] lua32.exe exit = 0x600d (0x600D = PASS)\n",
+        ]
+    )
+    out = ladder.watch(vm, seconds=5, seen="", optional_staged=["lua32"])
+    assert "lua32.exe exit = " in out
+    assert ladder.check(out, optional_staged=["lua32"]) is None
+
+
+def test_an_optional_guest_launched_during_settle_is_still_in_flight():
+    """The settle read consumed lua32's LAUNCH line; the drain must still wait
+    for its verdict rather than looking only at the newly drained text."""
+    vm = _FakeVM([_all_pass(), "[WINLOGON] lua32.exe exit = 0x600d (0x600D = PASS)\n"])
+    seen = "[WINLOGON] lua32.exe (i386 Lua stress guest) created (PID 944) - waiting\n"
+    out = ladder.watch(vm, seconds=5, seen=seen)
+    assert "lua32.exe exit = " in out
+
+
+def test_a_sweep_holds_the_drain_open_until_it_says_complete():
+    """The measured bug: the drain ended during `user32:--list` because nothing
+    GRADED was outstanding, and the boot went green having run zero subtests.
+    Every chunk below ends at a point where the old drain would have stopped."""
+    vm = _FakeVM(
+        [
+            _all_pass() + "[WT] user32:--list: started (PID 132)\n",
+            "[WT] user32:--list: exit = 0 failure(s)\n",
+            "[WT] user32:combo: started (PID 140)\n",
+            "[WT] user32:combo: exit = 23 failure(s)\n",
+            "[WT] user32: sweep complete, 1 subtests, 0 quarantined, 47 not selected\n",
+        ]
+    )
+    out = ladder.watch(vm, seconds=5, seen="")
+    assert "sweep complete" in out
+    assert ladder.check(out) is None
+
+
+def test_a_sweep_that_never_completes_is_a_red_ladder():
+    """Its unrun subtests never printed a start line, so nothing else can see
+    them -- the unfinished sweep itself has to be the finding."""
+    text = _all_pass() + "[WT] user32:--list: started (PID 132)\n"
+    red = _red(text)
+    assert red["classification"] == "LADDER_FAIL"
+    assert any("user32:--list" in s for s in red["salient"])
+
+
+def test_a_sweep_that_listed_nothing_is_finished_not_hung():
+    text = (
+        _all_pass()
+        + "[WT] user32:--list: started (PID 132)\n"
+        + "[WT] user32: --list produced no subtest names - suite NOT swept\n"
+    )
+    assert ladder.sweeps_unfinished(text) == []
+
+
+def test_the_drain_waits_for_winlogon_to_say_it_is_done():
+    """Every graded verdict is in and nothing is in flight -- the exact state the
+    old drain stopped in, twice, one launch before the next thing started.
+    With the media's winlogon known to print PROGRAM_DONE, that state is not
+    'done'; the drain reads on until winlogon says so."""
+    vm = _FakeVM(
+        [
+            _all_pass(),
+            "[WT] user32:--list: started (PID 132)\n",
+            "[WT] user32: sweep complete, 1 subtests, 0 quarantined, 47 not selected\n",
+            ladder.PROGRAM_DONE + "\n",
+        ]
+    )
+    out = ladder.watch(vm, seconds=5, seen="", program_done_expected=True)
+    assert out.endswith(ladder.PROGRAM_DONE + "\n")
+    assert vm.serial.reads == 4
+
+
+def test_program_done_ends_the_drain_even_with_guests_missing():
+    """i386 has no WoW64 guests, so their markers never arrive. Once winlogon
+    says the graded program is over, waiting for them is waiting for nothing --
+    the drain stops, and check() reports the absence."""
+    vm = _FakeVM(["[WT] native/user32:combo: exit = 23 failure(s)\n", ladder.PROGRAM_DONE + "\n"])
+    t0 = time.monotonic()
+    ladder.watch(vm, seconds=5, seen="", program_done_expected=True)
+    assert time.monotonic() - t0 < 2, "should stop at PROGRAM_DONE, not the ceiling"
+
+
+def test_program_done_matches_what_winlogon_prints():
+    """The two halves are in different languages; pin the text across them."""
+    src = (
+        Path(__file__).resolve().parents[3] / "sdk/lib/rust/winlogon-rust/src/winlogon.rs"
+    ).read_text()
+    assert ladder.PROGRAM_DONE + "\\n" in src
+
+
+def test_gui32_improving_to_a_full_pass_is_not_a_red_rung():
+    """The measured false red: desktop GetPixel readback started working, gui32
+    exited 0x600D instead of its graded soft-pass 0x600E, and the ladder failed
+    it for passing better."""
+    others = {g: c for g, c in ladder.LADDER.items() if g != "gui32"}
+    text = _serial(**others) + _serial(gui32=0x600D)
+    assert ladder.check(text) is None
+
+
+def test_gui32_still_fails_on_a_real_error_code():
+    others = {g: c for g, c in ladder.LADDER.items() if g != "gui32"}
+    text = _serial(**others) + _serial(gui32=0xBAD1)
+    assert _red(text)["classification"] == "LADDER_FAIL"
+
+
 def test_a_guest_that_never_reports_still_uses_the_budget():
     """The ceiling must stay a real ceiling — a silent guest is what it is for."""
     vm = _FakeVM([_serial(hello32=0x600D)])
@@ -245,7 +358,11 @@ def test_built_but_unstaged_says_so_and_names_the_fix(tmp_path):
     assert extra == [] and not staged
     assert "BUILT but none is staged" in why
     # The remedy must match THIS media's staging mechanism, not the other arch's.
-    assert "wow64cpu/CMakeLists.txt" in why and "VIBEOS_FEX" not in why
+    assert "./vibeos-cli build --arch amd64" in why and "VIBEOS_FEX" not in why
+    # No `touch` recipe any more: the guests are configure dependencies, so the
+    # plain build restages them. A remedy that still said touch would be a rule
+    # with no command behind it.
+    assert "touch" not in why
 
 
 def test_partially_built_names_the_missing_guest_not_a_restage(tmp_path):
@@ -903,3 +1020,96 @@ def test_a_winetest_started_in_the_settle_read_is_still_waited_for(monkeypatch):
     out = ladder.watch(vm, seconds=0.01, seen=_all_pass() + started)
     assert _WT_RED in out
     assert vm.serial.reads == 2
+
+
+# ── the amd64 build makes its own guests ────────────────────────────────────
+# The merge queue's integration tree had no build-fex-hello/, so every batch
+# skipped the ladder "not staged" and no WoW64 regression could ever red a
+# queue gate. `build --arch amd64` now builds what is absent or stale.
+
+
+def _buildable(repo: Path) -> None:
+    for rel in (ladder.GUEST_TOOLCHAIN, ladder.GUEST_PREREQ):
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_bytes(b"")
+
+
+def test_a_fresh_tree_has_nothing_to_refresh(tmp_path):
+    """A rebuilt guest re-runs the amd64 configure, so refreshing a current set
+    would cost every build a reconfigure for nothing."""
+    assert ladder.guests_to_refresh(_built_tree(tmp_path)) == []
+
+
+def test_absent_and_stale_guests_are_both_refreshed(tmp_path):
+    repo = _built_tree(tmp_path)
+    (repo / "build-fex-hello" / "reg32.exe").unlink()
+    os.utime(repo / ladder.GUEST_SOURCE["spawn32"], (_T0, _T0))
+    todo = ladder.guests_to_refresh(repo)
+    assert "reg32 (absent)" in todo
+    assert any(t.startswith("spawn32 (") for t in todo)
+    assert len(todo) == 2
+
+
+def test_refresh_names_what_it_is_missing(tmp_path):
+    repo = _built_tree(tmp_path)
+    assert "toolchain" in (ladder.refresh_blocker(repo) or "")
+    (repo / ladder.GUEST_TOOLCHAIN).parent.mkdir(parents=True)
+    (repo / ladder.GUEST_TOOLCHAIN).write_bytes(b"")
+    assert "--arch i386" in (ladder.refresh_blocker(repo) or "")
+    _buildable(repo)
+    assert ladder.refresh_blocker(repo) is None
+
+
+class _FakeRun:
+    def __init__(self):
+        self.stages = []
+        self.classification = None
+
+    def add(self, stage):
+        self.stages.append(stage)
+
+    def run(self, cmd, cwd=None, env=None, stage=None, timeout=None):
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+
+
+def test_build_stage_fails_loud_when_the_builder_leaves_guests_behind(tmp_path):
+    """The builder SKIPS a guest whose importlib is missing and still exits 0 --
+    so exit status alone would call a partial set built, and the all-or-nothing
+    staging would then quietly stage none of it."""
+    from tests.qemu.cli import build
+
+    repo = _built_tree(tmp_path)
+    _buildable(repo)
+    (repo / "build-fex-hello" / "reg32.exe").unlink()
+    (repo / ladder.GUEST_BUILDER).write_text("echo '[!] reg32.exe skipped'\n")
+    run = _FakeRun()
+    assert build._refresh_wow64_guests(run, repo) is False
+    assert run.classification == "GUEST_BUILD_FAIL"
+    assert "reg32 (absent)" in run.stages[-1].detail
+
+
+def test_build_stage_builds_then_reports_ok(tmp_path):
+    from tests.qemu.cli import build
+
+    repo = _built_tree(tmp_path)
+    _buildable(repo)
+    (repo / "build-fex-hello" / "reg32.exe").unlink()
+    (repo / ladder.GUEST_BUILDER).write_text("printf MZ > build-fex-hello/reg32.exe\n")
+    # Rewriting the builder makes it newer than every guest -- all stale -- which
+    # is right for the real script and wrong for this fixture.
+    os.utime(repo / ladder.GUEST_BUILDER, (_T0 - 1000, _T0 - 1000))
+    run = _FakeRun()
+    assert build._refresh_wow64_guests(run, repo) is True
+    assert run.stages[-1].status == "ok" and "reg32" in run.stages[-1].detail
+
+
+def test_build_stage_skips_loudly_without_an_i386_tree(tmp_path):
+    """Not this build's failure -- amd64 media is complete without guests -- but
+    the stage that could have built them says why it did not."""
+    from tests.qemu.cli import build
+
+    repo = _built_tree(tmp_path)
+    (repo / "build-fex-hello" / "reg32.exe").unlink()
+    run = _FakeRun()
+    assert build._refresh_wow64_guests(run, repo) is True
+    assert run.stages[-1].status == "skip" and "toolchain" in run.stages[-1].detail

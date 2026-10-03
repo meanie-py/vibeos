@@ -3738,8 +3738,8 @@ pub unsafe extern "C" fn RequestHandleMountQueryDeviceName(
 }
 
 const CDROM_TAG_STRINGS: u32 = 0x73436353; // placeholder
-const RTL_QUERY_REGISTRY_TYPECHECK: u32 = 0x00010000;
-const RTL_QUERY_REGISTRY_TYPECHECK_SHIFT: u32 = 16;
+const RTL_QUERY_REGISTRY_TYPECHECK: u32 = 0x00000100; // xdk/rtltypes.h:24 (was 0x10000)
+const RTL_QUERY_REGISTRY_TYPECHECK_SHIFT: u32 = 24; // xdk/rtltypes.h:26 (was 16)
 #[no_mangle]
 pub unsafe extern "C" fn RequestHandleMountQuerySuggestedLinkName(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,

@@ -2721,14 +2721,14 @@ pub unsafe extern "C" fn _wsetlocale(category: i32, wlocale: *const wchar_t) -> 
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn msvcrt_init_locale() -> u8 {
+pub unsafe extern "C" fn msvcrt_init_locale() -> BOOL {
     let mut i: i32;
 
     _lock_locales();
     MSVCRT_locale = _create_locale(0, b"C\0".as_ptr() as *const i8);
     _unlock_locales();
     if MSVCRT_locale.is_null() {
-        return FALSE;
+        return FALSE as BOOL;
     }
 
     MSVCRT___lc_codepage = (*(*MSVCRT_locale).locinfo).lc_codepage;
@@ -2741,7 +2741,7 @@ pub unsafe extern "C" fn msvcrt_init_locale() -> u8 {
         i += 1;
     }
     _setmbcp(_MB_CP_ANSI);
-    (TRUE) as u8
+    TRUE as BOOL
 }
 
 

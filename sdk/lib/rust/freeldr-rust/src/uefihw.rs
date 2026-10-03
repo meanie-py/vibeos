@@ -21,8 +21,6 @@ extern "C" {
     static mut GlobalSystemTable: *mut EFI_SYSTEM_TABLE;
     static mut GlobalImageHandle: EFI_HANDLE;
     static mut PcBiosDiskCount: UCHAR;
-    static mut EfiMemoryMap: *mut EFI_MEMORY_DESCRIPTOR;
-    static mut FreeldrDescCount: UINT32;
     static mut VramAddress: ULONG_PTR;
     static mut VramSize: ULONG;
     static mut FrameBufferData: PCM_FRAMEBUF_DEVICE_DATA;
@@ -82,8 +80,9 @@ unsafe fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *m
     if !Rsdp.is_null() {
         AcpiPresent = 1u8;
 
-        TableSize = FreeldrDescCount * core::mem::size_of::<BIOS_MEMORY_MAP>() as ULONG +
-            core::mem::size_of::<ACPI_BIOS_DATA>() as ULONG - core::mem::size_of::<BIOS_MEMORY_MAP>() as ULONG;
+        // No memory map rides along (upstream e1853c66214): the old code copied the EFI
+        // memory map -- EFI_MEMORY_DESCRIPTORs, 40+ bytes each -- into 24-byte E820 slots.
+        TableSize = core::mem::size_of::<ACPI_BIOS_DATA>() as ULONG;
 
         Size = core::mem::offset_of!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors) as ULONG + 
                core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>() as ULONG + TableSize;
@@ -113,12 +112,7 @@ unsafe fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *m
             (*AcpiBiosData).RSDTAddress.u.LowPart = (*Rsdp).rsdt_physical_address;
         }
 
-        (*AcpiBiosData).Count = (FreeldrDescCount) as u64 ;
-        core::ptr::copy_nonoverlapping(
-            EfiMemoryMap as *const u8,
-            core::ptr::addr_of_mut!((*AcpiBiosData).MemoryMap) as *mut u8,
-            (FreeldrDescCount * ((core::mem::size_of::<BIOS_MEMORY_MAP>()) as u32)) as usize,
-        );
+        (*AcpiBiosData).Count = 0;
 
         TRACE(b"RSDT %p, data size %x\n\0".as_ptr() as *const i8, ((*Rsdp).rsdt_physical_address) as usize, (TableSize) as usize);
 

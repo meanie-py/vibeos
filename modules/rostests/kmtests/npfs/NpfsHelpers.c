@@ -649,6 +649,8 @@ PipeWorkerThread(
     PVOID WaitEvents[2] = { &Context->ThreadDoneEvent,
                             &Context->StartWorkEvent };
     NTSTATUS Status;
+    ULONGLONG Triggered, Woke, Done;
+    ULONG DeadlineMs;
 
     while (TRUE)
     {
@@ -664,9 +666,28 @@ PipeWorkerThread(
             break;
         ASSERT(Status == STATUS_WAIT_1);
 
+        Woke = KeQueryInterruptTime();
+        Triggered = Context->DiagTriggered;
+        DeadlineMs = Context->DiagDeadlineMs;
         Context->Work(Context);
+        Done = KeQueryInterruptTime();
 
         KeSetEvent(&Context->WorkCompleteEvent, IO_NO_INCREMENT, TRUE);
+
+        /* DIAGNOSTIC ONLY, printed AFTER the completion signal so it cannot move the
+         * signal's timing: a work item that finished past its caller's deadline says
+         * how long waking took vs the work itself. NpfsConnect.c:109 fails when the
+         * second connect misses a 100 ms deadline while :110 proves the result was
+         * right -- more boots cannot say whether the delay is our scheduler or the
+         * pipe connect; this line can. */
+        if (DeadlineMs && Triggered && Done - Triggered > (ULONGLONG)DeadlineMs * 10000)
+        {
+            /* %lu, not %I64u: this goes through the kernel's DbgPrint, and ms fit a ULONG. */
+            DbgPrint("[NPFS-LATE] work done %lu ms after trigger (deadline %lu ms): "
+                     "woke +%lu ms, work %lu ms\n",
+                     (ULONG)((Done - Triggered) / 10000), DeadlineMs,
+                     (ULONG)((Woke - Triggered) / 10000), (ULONG)((Done - Woke) / 10000));
+        }
     }
 }
 
@@ -677,6 +698,10 @@ StartWorkerThread(
     KeInitializeEvent(&Context->ThreadDoneEvent, NotificationEvent, FALSE);
     KeInitializeEvent(&Context->StartWorkEvent, SynchronizationEvent, FALSE);
     KeInitializeEvent(&Context->WorkCompleteEvent, NotificationEvent, TRUE);
+    /* Contexts live on callers' stacks: zero the diagnostic stamps, or a work item run
+     * before any TriggerWork could print a garbage [NPFS-LATE] line. */
+    Context->DiagTriggered = 0;
+    Context->DiagDeadlineMs = 0;
 
     Context->Thread = KmtStartThread(PipeWorkerThread, Context);
 }
@@ -720,6 +745,8 @@ TriggerWork(
                                    NULL);
     ok_eq_hex(Status, STATUS_SUCCESS);
     KeClearEvent(&Context->WorkCompleteEvent);
+    Context->DiagDeadlineMs = MilliSeconds;           /* diagnostic only, see npfs.h */
+    Context->DiagTriggered = KeQueryInterruptTime();  /* diagnostic only, see npfs.h */
     KeSetEvent(&Context->StartWorkEvent, IO_NO_INCREMENT, TRUE);
     return WaitForWork(Context, MilliSeconds);
 }

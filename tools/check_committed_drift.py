@@ -328,6 +328,32 @@ def check_widl(arches: tuple[str, ...]) -> list[tuple]:
     return rows
 
 
+def check_layout(arches: tuple[str, ...]) -> list[tuple]:
+    """ntkrnl-sys's compile-time size/offset asserts vs the C headers.
+
+    `size_check_<arch>.rs` / `offset_check_<arch>.rs` pin every bindgen struct to
+    the C layout, but they only prove the island matches the headers the asserts
+    were generated FROM. An upstream header change (KPRCB's StartCycles/CycleTime,
+    EJOB's pack(1) fix, the NT6 OB callbacks) leaves island + asserts agreeing with
+    each other and both wrong, and nothing fails. Regenerating the asserts against
+    today's headers is what notices; a DRIFT here means regenerate ntkrnl-sys
+    (generate_bindings.sh) and then these files. Both tools cover all three arches
+    in one run and need every build-<arch>/ configured."""
+    missing = [a for a in ARCHES if not (REPO / f"build-{a}/sdk/include/psdk/ntdef.h").is_file()]
+    if missing:
+        return [("layout", "ntkrnl-sys", SKIP, f"needs build-{','.join(missing)}")]
+    rows = []
+    for name, tool in (
+        ("size_check", REPO / "sdk/lib/rust/ntkrnl-sys/verify_sizes.py"),
+        ("offset_check", REPO / "tools/verify_offsets.py"),
+    ):
+        cp = subprocess.run([sys.executable, str(tool), "--check"], capture_output=True, text=True)
+        rows.append(
+            ("layout", name, OK if cp.returncode == 0 else DRIFT, "C headers vs committed asserts")
+        )
+    return rows
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--arch", action="append", choices=ARCHES, help="arch(es) (default: all)")
@@ -342,6 +368,7 @@ def main(argv: list[str] | None = None) -> int:
     rows += check_widl(arches)
     rows += check_bugcodes(arches)
     rows += check_gendib(arches)
+    rows += check_layout(arches)
 
     drift = [r for r in rows if r[2] == DRIFT]
     checked = [r for r in rows if r[2] == OK]
@@ -358,6 +385,10 @@ def main(argv: list[str] | None = None) -> int:
         print("            (python3 tools/gen_cflags.py --target genincdata) or a")
         print("            ks*.template.h / genincdata.c change altered the .asmdef")
         print("  widl .rs→ reactos-link RPC replay (see cargo-drive-cmake-off-roadmap WS3)")
+        print(
+            "  layout  → sdk/lib/rust/ntkrnl-sys/generate_bindings.sh, install the staged\n"
+            "            bindgen_*.rs, then verify_sizes.py + tools/verify_offsets.py"
+        )
         return 1
     if not checked:
         print("\n(no build-<arch>/ configured — nothing checked; configure a build to verify)")

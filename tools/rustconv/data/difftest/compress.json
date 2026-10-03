@@ -1,0 +1,232 @@
+{
+  "version": 1,
+  "scope": "stateless-host",
+  "memory": "guard-pages",
+  "seed": 250930,
+  "random_cases": 96,
+  "c_allow_ub": [
+    "alignment"
+  ],
+  "validity": "Genuine sdk/lib/rtl/compress.c against the shipping compress crate: its RtlDecompressBuffer/RtlDecompressFragment/RtlCompressBuffer FFI shims and constants selected as exact bytes, with lznt1.rs compiled whole. Buffers are readable/writable for exactly their declared sizes; the compressed input is seeded arbitrary bytes (mostly malformed-input paths) plus explicit example streams produced by a reference LZNT1 encoder: back-references at every displacement width, two-chunk streams (inter-chunk padding), an uncompressed chunk, an explicit end marker, and truncated or invalid back-references. FinalSize is NULL or a 4-byte output; the C tolerates NULL, and a NULL is a legal caller choice. The C reads and writes WORD chunk headers through byte pointers at any offset, which is misaligned-access UB, so the alignment check is waived (c_allow_ub): x86-64 performs those accesses as plain unaligned loads/stores. Constants not in the refstub come from compress_host.h with their genuine values. Host 64-bit only.",
+  "c_source": "../../../../sdk/lib/rtl/compress.c",
+  "c_include_dirs": [
+    "../../../../sdk/lib/rust/rtl-difftest/refstub"
+  ],
+  "c_prelude": "compress_host.h",
+  "rust_source": "../../../../sdk/lib/rust/compress/src/lib.rs",
+  "rust_items": [
+    "STATUS_SUCCESS",
+    "STATUS_INVALID_PARAMETER",
+    "STATUS_UNSUPPORTED_COMPRESSION",
+    "COMPRESSION_FORMAT_MASK",
+    "COMPRESSION_ENGINE_MASK",
+    "COMPRESSION_FORMAT_NONE",
+    "COMPRESSION_FORMAT_DEFAULT",
+    "COMPRESSION_FORMAT_LZNT1",
+    "COMPRESSION_ENGINE_MAXIMUM",
+    "ffi::RtlCompressBuffer",
+    "ffi::RtlDecompressBuffer",
+    "ffi::RtlDecompressFragment"
+  ],
+  "rust_imports": [
+    "crate::lznt1"
+  ],
+  "rust_support": {
+    "lznt1": "../../../../sdk/lib/rust/compress/src/lznt1.rs"
+  },
+  "functions": [
+    {
+      "c": "RtlDecompressBuffer",
+      "rust": "candidate::RtlDecompressBuffer",
+      "rust_abi": "system",
+      "return": "u32",
+      "c_return_type": "int",
+      "args": [
+        {
+          "name": "format",
+          "type": "u16",
+          "values": [
+            0,
+            2,
+            3,
+            258
+          ]
+        },
+        {
+          "name": "out",
+          "type": "bytes",
+          "c_type": "unsigned char *",
+          "length": "out_size"
+        },
+        {
+          "name": "out_size",
+          "type": "u32",
+          "values": [
+            0,
+            1,
+            64,
+            4097,
+            6000
+          ],
+          "random_range": [
+            0,
+            4600
+          ]
+        },
+        {
+          "name": "input",
+          "type": "const_bytes",
+          "c_type": "unsigned char *",
+          "length": "in_size",
+          "examples": [
+            "05b0086162630920",
+            "33b0007468652071756963006b2062726f776e2000666f78206a756d708073206f7665722001f0006c617a7920646f67062e023453b0",
+            "2cb10000010203040506070008090a0b0c0d0e0f0010111213141516170018191a1b1c1d1e1f0020212223242526270028292a2b2c2d2e2f0030313233343536370038393a3b3c3d3e3f0040414243444546470048494a4b4c4d4e4f0050515253545556570058595a5b5c5d5e5f0060616263646566670068696a6b6c6d6e6f0070717273747576770078797a7b7c7d7e7f0080818283848586870088898a8b8c8d8e8f0090919293949596970098999a9b9c9d9e9f00a0a1a2a3a4a5a6a700a8a9aaabacadaeaf00b0b1b2b3b4b5b6b700b8b9babbbcbdbebf00c0c1c2c3c4c5c6c700c8c9cacbcccdcecf00d0d1d2d3d4d5d6d700d8d9dadbdcdddedf00e0e1e2e3e4e5e6e700e8e9eaebecedeeef00f0f1f2f3f4f5f6f700f8f9fafbfcfdfeff3ffeff3f003f003f003f002000",
+            "03b00241fc0f03b002418403",
+            "b6b6000201030000000200e00100000303005000d00120000100010203010002430138007c010303020008029c0101004c0028004c030100e87900b402020032000c0206013203b70068008000560301a2006c01012ece030074007c0036010200dc0198f700e20144027701016d01690105000cff01560192003e0113018c0052001c0037ff0101005d0002002b005a00aa01520236ff00ce039d0001008b015b0178010d0007ef025a01d6000102df03010e812d0026fd0362010178013d012b022801298142ff016a0142010980080119016b003d8000ff8163800481a3814582798140821b0153ff826c0005018f82aa00340131831f024cff81330153019d82c80151024400510015ff81b581810284813781680230010d8172ff012783678128817f012c813b8123801cff03ca822e01b181d482360171c2374128ff80048145410840048179428645720261ff41040010411883040117c362c11fc147ffc10881480100410381034362024f411bff81614216412001500267457dc11d0207ffc270c130c36e42ac0174427f81634007ff828d0023c105c2240294828482938150ffc2a3028a83b48138017e4111012d0272ff434302b8c10d813301588187823c413fff417a8444c12e4125810ac21b0117c220ffc27c812f011e830e815cc103c17842caff8335438a415c823f02534374828d4280ff811281218379c12502de414b417c021dff436d0105c1554461c2468262034ac296ff438e812f0108811882054200a1226346ff8271022321528113e366c24cc15c222bff60004267a212e202626c82246142c322ff80082163e2330108813a450de4702221ffa3748215c14a6262030a436b223e0337ffa26ca253a391c127e25e4208020e4291ffc3024256e28a2238c127c20b0303c207ffe3188251c3462181835c812a411da33dff040f2419e2a28100e334c12c2221a254ff42586261424b021c81624294a26e011dff42a8a1084239213be252633c2108828aff02348368e22aa110225de27f6378e363ff21112274229b6319e396a28ac1120257ffc2aac240c37fa34243a9a2ae63ba82bcff825744764222c396c38d8300020fc304ff43668433a300835de36f8211e298c208ffe293e20643418480e234041f8364c3b6ff428d62b0a200c390037762ccc23ca382ff222f0121c4cae32dc27e8242237ba2a6ff6285822644c1420f0113a25be567a474ff83c44422039b22c6425fa2b504dbc29cff637d64ea439443a5410e225421044148ff634ea3dfa1038110c3eb820ac4e5a25affa31a644603cca2298220e28243c3c338ffe2140405a21882334204633ec2751220ffc2308236222fe221526d2356e22d2526ffd4714233434da10be2250278e25fa400ff3283634473878367631a0124b329c306ffd242d30bb3383249a3020449263fa20cff634fb368936fd43f73092110e467f213ff03801245245b320c62374324e2362101ff224f831042205425d1056349b266f138ff338302729356420c8207431f2374528eff633af22b323833247340322c65945493fff4412314c381231a333c624ff119b216ffd2533264d251d35b8200143c42097202ffd322f226c28f42003463041dd22fe106ff148fa217c4632316643ae22bd4642355ff839db2108356343dc22c326242174223ff933db201341c22533623521bb20e8494ff12187241946f730e0237d20ad29493a6ff331593a2820ca295721bd27592107263ff9377420ac12d54536222628a927af214ffd214a36fb21c84450202e4b2d3234215ff62154217f31bc203924a9308749ed207ff0370b20a8109f256b216b22f825a9255ff93088207e3327334c204520e238a425dff03829282633b333a321024ba0413a331fff249d4482403a21e121a03471215924cff2340c240d328d224b22462be63001391ff220cb36d9528a3567200831ac441c276ff93a16314133ae3ac32404309f34344c0fff3a2932fe206f127822fc20db117235bffd138c4b9132fc210c2027220120c6407fff3475329259b5301a45022010360a216ff268d0348620bb2328300328052621238ffe35fe2338555b323b22043a17291821bffe337b25052a833c1c23f3356939e728cff327c7429331a362bd45b128673118224fff29dd263567f8428139ee3bce425223affe23f5322d46ae2c51331130b421c1239ff7414841a23464257324b749b74cb3228ffb44fd3e7d21f14b5a21144cfe2064398ffd243339102466270140a635f833f347dffd2230223b21e32456236d48bb574e47fff8225f38cd4d7011c53d6348503ed43c0ff33e172147257e36a746b5354b26ed469ffe246844943e0310c342e2212d364220cffc3ae249442c2e20de35ab304534f22490743e253489274010250b09002010102000001000070220300400103020010000082000038020003030300243403000004030068003001008c0202002c00840103010170dd017001015c002a000a00009c01640702260146029c0201",
+            "3b3078797a78797a78797a78797a78797a78797a78797a78797a78797a78797a78797a78797a78797a78797a78797a78797a78797a78797a78797a78797a",
+            "33b0007468652071756963006b2062726f776e2000666f78206a756d708073206f7665722001f0006c617a7920646f67062e023453b00000",
+            "33b0007468652071756963006b2062726f776e2000666f78206a756d708073206f7665722001f0006c617a7920646f67062e02",
+            "05b00861626306",
+            "03b001ff0f00"
+          ]
+        },
+        {
+          "name": "in_size",
+          "type": "u32",
+          "values": [
+            0,
+            2,
+            3,
+            64,
+            4098
+          ],
+          "random_range": [
+            0,
+            4200
+          ]
+        },
+        {
+          "name": "final_size",
+          "type": "bytes",
+          "c_type": "PULONG",
+          "rust_type": "*mut u32",
+          "align": 4,
+          "length": 4,
+          "nullable": true
+        }
+      ]
+    },
+    {
+      "c": "RtlCompressBuffer",
+      "rust": "candidate::RtlCompressBuffer",
+      "rust_abi": "system",
+      "return": "u32",
+      "c_return_type": "int",
+      "args": [
+        {
+          "name": "format",
+          "type": "u16",
+          "values": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "name": "src",
+          "type": "const_bytes",
+          "c_type": "unsigned char *",
+          "length": "src_size"
+        },
+        {
+          "name": "src_size",
+          "type": "u32",
+          "values": [
+            0,
+            1,
+            4097
+          ],
+          "random_range": [
+            0,
+            4400
+          ]
+        },
+        {
+          "name": "dst",
+          "type": "bytes",
+          "c_type": "unsigned char *",
+          "length": "dst_size"
+        },
+        {
+          "name": "dst_size",
+          "type": "u32",
+          "values": [
+            0,
+            3,
+            4101
+          ],
+          "random_range": [
+            0,
+            4600
+          ]
+        },
+        {
+          "name": "chunk",
+          "type": "u32",
+          "values": [
+            4096
+          ]
+        },
+        {
+          "name": "final_size",
+          "type": "bytes",
+          "c_type": "PULONG",
+          "rust_type": "*mut u32",
+          "align": 4,
+          "length": 4,
+          "nullable": true
+        },
+        {
+          "name": "workspace",
+          "type": "void_bytes",
+          "c_type": "PVOID",
+          "rust_type": "*mut u8",
+          "align": 1,
+          "length": 16
+        }
+      ]
+    }
+  ],
+  "mutants": [
+    {
+      "name": "format_mask",
+      "find": "let fmt = format & !COMPRESSION_ENGINE_MAXIMUM;",
+      "replace": "let fmt = format;"
+    },
+    {
+      "name": "chunk_size",
+      "find": "let chunk_size = (chunk_header & 0xFFF) as usize + 1;\n\n        if si + chunk_size > src.len() {\n            return DecompressResult {\n                status: STATUS_BAD_COMPRESSION_BUFFER,\n                bytes_written: 0,\n            };\n        }\n\n        // Add padding",
+      "replace": "let chunk_size = (chunk_header & 0xFFF) as usize;\n\n        if si + chunk_size > src.len() {\n            return DecompressResult {\n                status: STATUS_BAD_COMPRESSION_BUFFER,\n                bytes_written: 0,\n            };\n        }\n\n        // Add padding",
+      "module": "lznt1"
+    },
+    {
+      "name": "compress_header",
+      "find": "let header = 0x3000u16 | (block_size as u16 - 1);",
+      "replace": "let header = 0x3000u16 | (block_size as u16);",
+      "module": "lznt1"
+    },
+    {
+      "name": "compress_chunk_limit",
+      "find": "let block_size = (src.len() - si).min(0x1000);",
+      "replace": "let block_size = (src.len() - si).min(0x800);",
+      "module": "lznt1"
+    },
+    {
+      "name": "backref_displacement",
+      "module": "lznt1",
+      "find": "let code_displacement = (code >> length_bits) as usize + 1;",
+      "replace": "let code_displacement = (code >> length_bits) as usize + 2;"
+    }
+  ]
+}

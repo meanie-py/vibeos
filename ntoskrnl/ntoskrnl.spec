@@ -734,6 +734,7 @@
 @ stdcall -arch=i386,arm,arm64 KiDeliverApc(long ptr ptr)
 @ stdcall -arch=i386 KiDispatchInterrupt()
 @ stdcall -arch=arm64 KiDispatchInterruptArm64(long)
+@ stdcall -arch=arm64 KiDispatchPreemptArm64()
 @ stdcall -arch=arm64 KiDispatchSoftwareIntArm64()
 @ extern -arch=i386,arm,x86_64 KiEnableTimerWatchdog
 @ stdcall -arch=i386,arm,arm64 KiIpiServiceRoutine(ptr ptr)
@@ -750,6 +751,9 @@
 # NOT `-private`: spec2def skips private exports when generating the IMPORT LIB
 # (spec2def.c:750), so win32k.sys would fail to link against it.
 @ cdecl KmProtectedCopyMemory(ptr ptr long)
+@ cdecl KmProtectedInterlockedAdd(ptr long ptr)
+@ cdecl RtlSehTryExcept(ptr ptr ptr ptr ptr)
+@ cdecl RtlSehTryFinally(ptr ptr ptr ptr)
 @ stdcall LdrAccessResource(ptr ptr ptr ptr)
 @ stdcall LdrEnumResources(ptr ptr long ptr ptr)
 @ stdcall LdrFindResourceDirectory_U(ptr ptr long ptr)

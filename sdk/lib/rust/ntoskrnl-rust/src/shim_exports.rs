@@ -450,31 +450,11 @@ pub unsafe extern "C" fn KeLowerIrql(new_irql: KIRQL) {
 
 // KeGetCurrentThread — provided by ke/thrdobj.rs, not needed here.
 
-// --- SRW Lock stubs (NTAPI) ---
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlAcquireSRWLockExclusive(srw_lock: PRTL_SRWLOCK) {
-    ntkrnl_sys::inline::tier1::RtlAcquireSRWLockExclusive(srw_lock)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlReleaseSRWLockExclusive(srw_lock: PRTL_SRWLOCK) {
-    ntkrnl_sys::inline::tier1::RtlReleaseSRWLockExclusive(srw_lock)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlAcquireSRWLockShared(srw_lock: PRTL_SRWLOCK) {
-    ntkrnl_sys::inline::tier1::RtlAcquireSRWLockShared(srw_lock)
-}
-
-#[no_mangle]
-#[inline(never)]
-pub unsafe extern "C" fn RtlReleaseSRWLockShared(srw_lock: PRTL_SRWLOCK) {
-    ntkrnl_sys::inline::tier1::RtlReleaseSRWLockShared(srw_lock)
-}
+// --- SRW locks: NOT here. rtl-sync (srw.rs, the translation of ReactOS srw.c) is the
+// one provider. A CAS spin-lock stub used to be exported from this file under the same
+// four names; --allow-multiple-definition let it shadow rtl-sync's on amd64/arm64, so the
+// kernel ran a lock whose word encoding differs from the one rtl-sync's condition
+// variables read. scan_duplicate_symbols gates a second provider now.
 
 // --- Tier 1 globals ---
 
@@ -2439,11 +2419,8 @@ mod ke_amd64_exports {
         ntkrnl_sys::inline::ke_amd64::KiSendEOI()
     }
 
-    #[no_mangle]
-    pub unsafe extern "system" fn RtlFillMemoryUlong(dest: ntkrnl_sys::base::PVOID, length: usize, pattern: ntkrnl_sys::base::ULONG) {
-    let dest = opaque_ptr(dest);
-        ntkrnl_sys::inline::ke_amd64::RtlFillMemoryUlong(dest, length, pattern)
-    }
+    // RtlFillMemoryUlong: the `mem` crate (rtl/mem.c) is its one amd64 provider. A
+    // `rep stosd` copy here used to shadow it via --allow-multiple-definition.
 }
 
 // ============================================================================
@@ -2518,11 +2495,13 @@ pub unsafe extern "C" fn ARM64_UART_TRACE(msg: *const u8) {
             core::ptr::addr_of!(crate::ke::arm64::stubs::Arm64UartKernelBase),
         ) as *mut u32;
         if u.is_null() { return; }
+        let daif = crate::arm64_dbg::uart_line_lock();
         let mut p = msg;
         while *p != 0 {
-            core::ptr::write_volatile(u, *p as u32);
+            crate::arm64_dbg::uart_putc_default(*p as u8);
             p = p.add(1);
         }
+        crate::arm64_dbg::uart_line_unlock(daif);
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
@@ -2540,20 +2519,22 @@ pub unsafe extern "C" fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ntkrnl_sys
             core::ptr::addr_of!(crate::ke::arm64::stubs::Arm64UartKernelBase),
         ) as *mut u32;
         if u.is_null() { return; }
+        let daif = crate::arm64_dbg::uart_line_lock();
         let mut p = prefix;
         while *p != 0 {
-            core::ptr::write_volatile(u, *p as u32);
+            crate::arm64_dbg::uart_putc_default(*p as u8);
             p = p.add(1);
         }
-        core::ptr::write_volatile(u, b'0' as u32);
-        core::ptr::write_volatile(u, b'x' as u32);
+        crate::arm64_dbg::uart_putc_default(b'0' as u8);
+        crate::arm64_dbg::uart_putc_default(b'x' as u8);
         let nibbles = (core::mem::size_of::<ntkrnl_sys::base::ULONG_PTR>() * 2) as i32;
         let mut i = nibbles - 1;
         while i >= 0 {
             let nib = ((val >> (i * 4)) & 0xF) as usize;
-            core::ptr::write_volatile(u, HEX[nib] as u32);
+            crate::arm64_dbg::uart_putc_default(HEX[nib] as u8);
             i -= 1;
         }
+        crate::arm64_dbg::uart_line_unlock(daif);
     }
     #[cfg(not(target_arch = "aarch64"))]
     {

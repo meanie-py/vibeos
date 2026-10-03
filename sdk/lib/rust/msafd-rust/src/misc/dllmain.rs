@@ -3362,7 +3362,14 @@ pub unsafe extern "system" fn WSPGetSockOpt(
                 }
 
                 SO_CONNECT_TIME => {
-                    DwordBuffer = GetCurrentTimeInSeconds() - (*(*Socket).SharedData).ConnectTime;
+                    // Not connected -> 0xFFFFFFFF, Windows' documented answer (upstream
+                    // a68bfa2fb41); subtracting from 0 returned seconds-since-1970.
+                    let ConnectTime = (*(*Socket).SharedData).ConnectTime;
+                    DwordBuffer = if ConnectTime != 0 {
+                        GetCurrentTimeInSeconds().wrapping_sub(ConnectTime)
+                    } else {
+                        0xFFFF_FFFF
+                    };
                     Buffer = core::ptr::addr_of_mut!(DwordBuffer) as PVOID;
                     BufferSize = core::mem::size_of::<DWORD>() as INT;
                 }
@@ -4286,7 +4293,7 @@ pub unsafe extern "C" fn SockCreateOrReferenceAsyncThread() -> u8 {
     let mut hAsyncThread: HANDLE;
     let mut AsyncThreadId: DWORD = 0;
     let mut AsyncEvent: HANDLE = core::ptr::null_mut();
-    let mut HandleFlags: _OBJECT_HANDLE_ATTRIBUTE_INFORMATION = core::mem::zeroed();
+    let mut HandleFlags: _OBJECT_HANDLE_FLAG_INFORMATION = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
     if SockAsyncThreadRefCount != 0 {
@@ -4310,7 +4317,7 @@ pub unsafe extern "C" fn SockCreateOrReferenceAsyncThread() -> u8 {
             SockAsyncCompletionPort,
             _OBJECT_INFORMATION_CLASS_ObjectHandleFlagInformation,
             &mut HandleFlags as *mut _ as PVOID,
-            core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as ULONG,
+            core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as ULONG,
         );
     }
 
@@ -4377,7 +4384,7 @@ pub unsafe extern "C" fn SockGetAsyncSelectHelperAfdHandle() -> BOOLEAN {
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut IoSb: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut CompletionInfo: FILE_COMPLETION_INFORMATION = core::mem::zeroed();
-    let mut HandleFlags: _OBJECT_HANDLE_ATTRIBUTE_INFORMATION = core::mem::zeroed();
+    let mut HandleFlags: _OBJECT_HANDLE_FLAG_INFORMATION = core::mem::zeroed();
 
     if !SockAsyncHelperAfdHandle.is_null() {
         return 1u8;
@@ -4417,7 +4424,7 @@ pub unsafe extern "C" fn SockGetAsyncSelectHelperAfdHandle() -> BOOLEAN {
     NtSetInformationObject(SockAsyncCompletionPort,
                            _OBJECT_INFORMATION_CLASS_ObjectHandleFlagInformation,
                            &mut HandleFlags as *mut _ as *mut _,
-                           core::mem::size_of::<_OBJECT_HANDLE_ATTRIBUTE_INFORMATION>() as u32);
+                           core::mem::size_of::<_OBJECT_HANDLE_FLAG_INFORMATION>() as u32);
 
     SockAsyncSelectCalled = 1u8;
     1u8

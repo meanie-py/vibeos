@@ -51,9 +51,15 @@ ExPools OK pass=17 fail=1 skip=0 exit=0
     assert ExPools.c:210
     assert? ExPools.c:176
     assert? ExPools.c:181
-ExResource OK pass=399 fail=2 skip=0 exit=0
-    assert ExResource.c:409
-    assert ExResource.c:455
+ExResource OK pass=845 fail=2 skip=0 exit=0
+    assert ExResource.c:456
+    assert? ExResource.c:480
+    assert ExResource.c:503
+    assert? ExResource.c:518
+    assert? ExResource.c:620
+ExResourceBounded OK pass=879 fail=2 skip=0 exit=0
+    assert ExResource.c:456
+    assert ExResource.c:503
 ExSequencedList OK pass=0 fail=0 skip=0 exit=0
 ExSingleList OK pass=240 fail=12 skip=0 exit=0
 ExUuid OK pass=3000 fail=0 skip=0 exit=0
@@ -167,7 +173,7 @@ NpfsFileInfo OK pass=50 fail=25 skip=0 exit=0
     assert NpfsFileInfo.c:116
     assert NpfsFileInfo.c:48
     assert NpfsFileInfo.c:56
-    assert? NpfsFileInfo.c:57
+    assert NpfsFileInfo.c:57
     assert NpfsFileInfo.c:78
     assert NpfsFileInfo.c:84
     assert NpfsFileInfo.c:85
@@ -251,10 +257,55 @@ SeInheritance OK pass=704431 fail=16 skip=0 exit=0
     assert SeInheritance.c:838
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
-ZwCreateSection OK pass=7 fail=3 skip=1 exit=0
-    assert ZwCreateSection.c:266
-    assert ZwCreateSection.c:267
+ZwCreateSection OK pass=281 fail=48 skip=1 exit=0
+    assert ZwCreateSection.c:102
+    assert ZwCreateSection.c:103
+    assert ZwCreateSection.c:108
+    assert ZwCreateSection.c:110
+    assert ZwCreateSection.c:114
+    assert ZwCreateSection.c:116
+    assert ZwCreateSection.c:122
+    assert ZwCreateSection.c:126
+    assert ZwCreateSection.c:127
+    assert ZwCreateSection.c:132
+    assert ZwCreateSection.c:134
+    assert ZwCreateSection.c:138
+    assert ZwCreateSection.c:140
+    assert ZwCreateSection.c:146
+    assert ZwCreateSection.c:150
+    assert ZwCreateSection.c:151
+    assert ZwCreateSection.c:156
+    assert ZwCreateSection.c:158
+    assert ZwCreateSection.c:163
+    assert ZwCreateSection.c:165
+    assert ZwCreateSection.c:171
+    assert ZwCreateSection.c:175
+    assert ZwCreateSection.c:176
+    assert ZwCreateSection.c:181
+    assert ZwCreateSection.c:183
+    assert ZwCreateSection.c:187
+    assert ZwCreateSection.c:189
+    assert ZwCreateSection.c:195
+    assert ZwCreateSection.c:199
+    assert ZwCreateSection.c:200
+    assert ZwCreateSection.c:205
+    assert ZwCreateSection.c:207
+    assert ZwCreateSection.c:211
+    assert ZwCreateSection.c:213
+    assert ZwCreateSection.c:219
+    assert ZwCreateSection.c:223
+    assert ZwCreateSection.c:224
+    assert ZwCreateSection.c:229
+    assert ZwCreateSection.c:231
     assert ZwCreateSection.c:273
+    assert ZwCreateSection.c:354
+    assert ZwCreateSection.c:378
+    assert ZwCreateSection.c:381
+    assert ZwCreateSection.c:404
+    assert ZwCreateSection.c:448
+    assert ZwCreateSection.c:90
+    assert ZwCreateSection.c:92
+    assert ZwCreateSection.c:98
 ZwMapViewOfSection OK pass=123 fail=11 skip=1 exit=0
     assert ZwMapViewOfSection.c:180
     assert ZwMapViewOfSection.c:181

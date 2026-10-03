@@ -2235,10 +2235,25 @@ pub fn MI_PAGE_DISABLE_CACHE(pte: &mut MMPTE) {
     }
     #[cfg(target_arch = "aarch64")]
     {
-        // ARM64: set to device memory (non-cacheable) via MAIR index
-        pte.Long = (pte.Long & !0x1C) | (0x00 << 2); // AttrIndx = 0 (device)
+        pte.Long = (pte.Long & !ARM64_PTE_ATTRINDX_MASK) | ARM64_PTE_ATTR_DEVICE;
     }
 }
+
+// PTE AttrIndx (bits [4:2]) selects a MAIR_EL1 slot. freeldr programs
+// MAIR_EL1 = 0x004400FF (WinLdrSetProcessorContext): slot 0 = Normal write-back,
+// slot 1 = Device-nGnRnE, slot 2 = Normal non-cacheable. This helper used to
+// write slot 0 under a comment saying "device", so every MmMapIoSpace(MmNonCached)
+// on arm64 - the UART, the GIC - was mapped as ordinary CACHED memory. QEMU TCG
+// models no caches and never noticed; on a Raspberry Pi 4 the first UART write
+// through the Phase-1 remap vanished into the D-cache. The same bit-swap had
+// already been fixed in PTE_DISABLE_CACHE (ARM3/helpers.rs) and the protection
+// table in ke/arm64/stubs.rs; this was the third copy.
+#[cfg(target_arch = "aarch64")]
+const ARM64_PTE_ATTRINDX_MASK: ULONG_PTR = 0x7 << 2;
+#[cfg(target_arch = "aarch64")]
+const ARM64_PTE_ATTR_DEVICE: ULONG_PTR = 1 << 2;
+#[cfg(target_arch = "aarch64")]
+const ARM64_PTE_ATTR_NORMAL_NC: ULONG_PTR = 2 << 2;
 
 /// MI_PAGE_WRITE_THROUGH — set write-through bit on a PTE
 #[inline]
@@ -2264,7 +2279,9 @@ pub fn MI_PAGE_WRITE_COMBINED(pte: &mut MMPTE) {
     }
     #[cfg(target_arch = "aarch64")]
     {
-        let _ = pte;
+        // Normal non-cacheable: write-combining is allowed, and so are unaligned
+        // accesses (a framebuffer blit), which Device memory would fault.
+        pte.Long = (pte.Long & !ARM64_PTE_ATTRINDX_MASK) | ARM64_PTE_ATTR_NORMAL_NC;
     }
 }
 

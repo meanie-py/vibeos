@@ -4573,7 +4573,9 @@ unsafe extern "C" fn serializeBMP(
         )
         .wrapping_add((*pInfoBitmap).bmiHeader.biSizeImage as usize) as u32;
 
-    *ppBuffer = HeapAlloc(
+    // Both Rust callers pass a buffer; the C's NULL sizing call arrived with an upstream
+    // sync this translation predates.
+    *ppBuffer = HeapAlloc( // nolint: dropped-null-guard
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
         *pLength as SIZE_T,

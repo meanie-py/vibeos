@@ -49,9 +49,12 @@ layer fits — see "Relationship to `qemu/`" below.
 
 ## Subcommands — what each is for, and the strategy
 
-### `build --arch X [--clean] [--incremental] [--check] [--strict] [--no-cache]`
+### `build --arch X [--clean] [--incremental] [--check] [--strict] [--no-cache] [--extra-target T]`
 Compile the boot media for one arch, lint the binary, index symbols, and write a
 provenance stamp.
+
+- **`--extra-target T`** (repeatable) also builds a Ninja target the boot DAG does not
+  include, keeping the full boot build and its guards — instead of raw `ninja T`.
 
 - **Fast local iteration:** source lint is no longer part of a normal build.
   Use `check` for source analysis or opt into advisory lint with `build --check`.
@@ -212,6 +215,19 @@ a 1-in-50 flake becomes overnight statistics instead of lore. Canonical
 overnight soak: `farm --arches i386,amd64,arm64 --minutes 480 --tripwire
 "SPECIALPOOL=*"`. Staleness-gated like smoke.
 
+### `flake-report [--days N] [--arch A] [--source smoke|conformance] [--min K] [--json]`
+**Which fleet failures are flakes.** `farm-report` reads only `farm` soaks; the fleet
+runs `smoke`/`gate`/`conformance`, so this reads the durable ledger (every run) plus the
+preserved evidence under `~/vibeos-flake-farm/` (history from before ledger rows carried
+signatures). Each failure is reduced to a signature (`BUGCHECK 0x1E post-marker @ fn`,
+`HANG_TIMEOUT wedged | <last serial>`, `assert File.c:N`, the payload/ladder that failed),
+then graded at the commit it was seen on: **FLAKE** = present in one run and observed
+*absent* in another at the same commit; **DETERMINISTIC** = present in every observing run
+(n≥2); **UNGRADED** otherwise. A run only counts as absence if it could have seen the
+failure (a lost boot says nothing about an assertion it never reached). Dirty-tree runs
+are listed separately and never graded, because their commit does not name the code. The
+evidence pointer says so when it pointed into `/tmp` and is gone.
+
 ### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
 
 The source-scanner suite runs **once in two disjoint partitions**. Five audited
@@ -249,7 +265,12 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   subprocess that self-throttles on the host boot-CPU pool (`hostlock` `bootcpu`,
   capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap
   (16); the per-arch serialize cap is bypassed on the default windows-host TCG
-  backend, so same-arch retries run in parallel too.
+  backend, so same-arch retries run in parallel too. **Half that pool is reserved
+  for landing**: boots under a conductor's gate (`VIBEOS_JOB_CLASS=integration`)
+  queue separately and take the reserved permits first; every other boot — a lane's
+  own smokes, payloads, sweeps — fills only the rest, so the job that unblocks the
+  fleet never waits behind it. `VIBEOS_LAND_BOOT_RESERVE` resizes it (0 disables);
+  `host-status` shows it.
 - **`cohab:<arch>` — fresh object coverage.** `tools/verify_cohab_
   coverage.py` asks each flipped C object what it *exports* (`llvm-nm`, after every
   `-D`, `#ifdef` and ABI decoration) and checks that something linking ahead of the
@@ -268,7 +289,7 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
 - Auto-push discipline unchanged: a ×3-clean-gate-green landing is still what
   authorizes a push — but drive it through `land` (below), not by hand.
 
-### `land [--direct] [--drain] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
+### `land [--direct] [--drain] [--hold R] [--release] [--withdraw] [--evict R] [--cold] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
 **The way to land — it is a MERGE QUEUE.** With no flags, `land`:
 
 1. publishes this lane's tip to the queue (`refs/vibeos/queue/<seq>` + a record
@@ -322,9 +343,61 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   if the preflight itself cannot run it warns and proceeds, because a broken
   preflight must never be able to wedge the fleet's ability to land. `--skip-lint`
   overrides (report every use). It lints the lane tip, not the tip merged with
-  master, so it is an early filter and not a replacement for the gate.
+  master, so it is an early filter and not a replacement for the gate. The gate's
+  **source-lint partitions and host difftests** run there too, by the same rules and
+  the same override — the difftests since a lane whose own `ucrt-difftest` could not
+  link turned 17 of 18 batched gates red on 2026-09-25.
 - `--drain` conducts without submitting; `--foreground` conducts inline instead of
   spawning; `--wait` blocks for your own verdict if you'd rather not poll.
+
+### The train: pipelined gates (`VIBEOS_QUEUE_DEPTH`, default 2)
+While one batch gates, the conductor merges the NEXT batch on top of it in a
+second integration worktree (`vibeos-integration-2`) and gates that at the same
+time. The second batch's verdict is about master + first + second, so it is
+used only if the first landed whole; otherwise it is discarded and those lanes
+stay queued, neither landed nor rejected. A second batch's merge conflict with
+the first is likewise only rejected once the first is on master. Depth 1 is the
+serial queue. Why (2026-09-26): one cold ~80-minute gate held nine lanes.
+
+### `land --withdraw` — step out of line
+Takes THIS lane's queued submissions out of the queue (verdict: `withdrawn`),
+without touching anyone else's place. A submission already being gated —
+`[GATING]` in `land-status` — is left alone: its merge is in the tree under test.
+Resubmit with a plain `land`. Use it when you learn your lane is not ready, or
+would gate cold; `--hold` is for stopping everyone.
+
+### `land --evict REASON` — clear the line for a fix
+Only under your OWN manual hold (`land --hold REASON --preempt` first). Kicks
+every other lane's queued submissions back to them with verdict `EVICTED` and
+REASON (e.g. "merge origin/master and resubmit"); anything a live conductor is
+gating is left alone. Then land your fix with `--direct` and `--release`.
+
+### Warm receipts, and `land --cold`
+Every successful `vibeos-cli build` records a receipt for the working tree's
+content on that arch. `land` refuses a lane whose tree has no receipt on all
+three arches — the queue's gate builds cold and leans on the shared compiler
+caches, so code no build has seen compiles from scratch there and can hold the
+whole queue for hours. Build the three arches, commit what you built (a
+docs-only difference is fine; a docs-only lane needs no build at all), and
+`land` again. `--cold` overrides; report every use.
+
+### `land --hold REASON [--preempt]` / `land --release` — stop the line
+While a hold stands, no conductor starts a batch, `land` still **queues** your
+lane (nobody loses their place, nobody retry-loops), and only the holding lane
+may `land --direct`. `--preempt` also stops a *detached* conductor mid-batch; its
+batch stays queued, and a `--direct` lander is never killed. `--release` lifts it
+and wakes the queue. The hold shows at the top of `land-status` and `host-status`.
+
+A red base holds the line **by itself**: when a train halts on `BASE_RED`, an
+AUTO hold is pinned to that master sha, any lane may `land --direct` the fix, and
+the hold lapses as soon as master moves. A `land --direct` that lands also wakes
+the queue, so submissions never sit under `CONDUCTOR: none` afterwards.
+
+Why (2026-09-25): mainline went red, and every new submission elected a
+conductor that re-gated the same red base, all night. The load that generated
+turned a 10 ms test-timing assumption into a second, unrelated red, and the fix
+lane's gate queued behind the churn for hours. Stopping it took killing
+conductors by hand, messaging every lane, and finally `wsl --shutdown`.
 
 ### `land --direct` — the single-lane path
 One serialized critical section, under the same fleet-wide FIFO
@@ -380,6 +453,13 @@ Admission refusals are infrastructure failures, not code regressions. These are
 cooperative estimates, not filesystem quotas: legacy lanes and other writers
 remain unaccounted for. `retention --enable` can install bounded hourly cleanup
 after a quiet-fleet compatibility check; `disk-status` reports timer activity.
+
+### `host-policy [--apply | --rollback | --pause | --resume]`
+
+Fleet-operator control, not a per-lane tool: with no flag it previews a drained-fleet
+build trial; `--apply`/`--rollback` switch between three and two concurrent builds after
+the fleet drains, and `--pause`/`--resume` stop and restart CPU admission around a cutover.
+Every lane on the host feels it — do not flip it to speed up your own build.
 
 ### `host-status [--json]`
 
@@ -479,6 +559,13 @@ RUN=$(./vibeos-cli gdb start amd64 | grep run-id | awk '{print $3}')
 ./vibeos-cli gdb ps                      # list debug runs + liveness
 ./vibeos-cli gdb stop $RUN
 ```
+
+**Breakpoint addresses on i386 come from `ntkrnlmp.exe`, not `ntoskrnl.exe`.** The fleet
+boots the MP kernel (`[FLDR] load ...\ntkrnlmp.exe`) and the loader lists it under the
+NAME `ntoskrnl.exe`, so `ntoskrnl.exe+RVA` in a banner is an ntkrnlmp RVA. Addresses taken
+from `build-i386/ntoskrnl/ntoskrnl.exe` are a different link: the breakpoints are accepted
+and silently never fire. Runtime address = `[KRNLBASE]` base + (nm address - 0x400000).
+`gdb start`/`probe` attach the same `\TEMP` IDE disk smoke does (`vm.temp_disk_args`).
 
 For MP debugging, prefix `gdb start` with `VIBEOS_QEMU_SMP=1` (or the desired
 vCPU count). The launcher selects MP media, passes `-smp`, and records
@@ -666,7 +753,12 @@ per-package: `tools/rustconv/pyproject.toml`
 `tools/*.py` use the repo-root `pyproject.toml`. Policy is identical across all
 four so the surface lints under one standard.
 
-### `difftest [--only NAME[,NAME]]`
+### `difftest [--only NAME[,NAME]] [--case NAME ... --test-target T]`
+`--case` (repeatable, needs exactly one `--only` crate) runs only those exact cases, and
+fails unless exactly that many were graded — only crates whose `main` honours `--exact`
+(today `cnt-difftest`) support it. For code no crate covers, `rustconv difftest-contract`
+generates the harness from a JSON contract instead (`tools/rustconv/data/difftest/README.md`).
+
 Runs every **host differential harness** — the `*-difftest` crates, which compile
 the genuine ReactOS C as a host TU with its public symbols renamed `ref_*`, link
 that beside the shipping Rust, and fuzz the two for parity in one process. No

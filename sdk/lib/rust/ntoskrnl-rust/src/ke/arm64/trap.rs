@@ -650,15 +650,47 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
 
         0x3C => {
             let BrkImm = ISS & 0xFFFF;
+            let BrkFromKernel =
+                (*TrapFrame).__bindgen_anon_1.__bindgen_anon_1.PreviousMode != 1;
 
-            if BrkImm == 0xF000 && (*TrapFrame).__bindgen_anon_3.X[0] == 1 {
+            // brk #0xF000 from kernel mode is DbgBreakPoint/DbgBreakPointWithStatus
+            // (DebugService moved to #0xF002, Windows ARM64's service immediate).
+            // Dispatch it as STATUS_BREAKPOINT like x86 does an int3, so a kernel
+            // __except can see it; KiDispatchException steps past an unhandled one
+            // and continues, the amd64 policy. It used to be skipped here outright,
+            // so no kernel handler ever saw a breakpoint on arm64. User-mode brk is
+            // unchanged (still skipped) for now.
+            if BrkImm == 0xF000 && BrkFromKernel {
+                let mut ExRec: EXCEPTION_RECORD = core::mem::zeroed();
+                ExRec.ExceptionCode = STATUS_BREAKPOINT;
+                ExRec.ExceptionFlags = 0;
+                ExRec.ExceptionRecord = core::ptr::null_mut();
+                ExRec.ExceptionAddress = (*TrapFrame).Pc as PVOID;
+                ExRec.NumberParameters = 1;
+                ExRec.ExceptionInformation[0] = 0; // BREAKPOINT_BREAK
+                KiDispatchException(
+                    &mut ExRec as *mut EXCEPTION_RECORD,
+                    ExceptionFrame,
+                    TrapFrame,
+                    0i8,
+                    1u8,
+                );
+                return;
+            }
+
+            // Debug service: #0xF002 (DebugService), and #0xF000 from user mode for
+            // anything built before the split.
+            if (BrkImm == 0xF002 || BrkImm == 0xF000) && (*TrapFrame).__bindgen_anon_3.X[0] == 1 {
                 let Buf = (*TrapFrame).__bindgen_anon_3.X[1] as *const u8;
                 let mut Len = (*TrapFrame).__bindgen_anon_3.X[2] as ULONG;
-                let Uart = Arm64UartKernelBase as *mut ULONG;
 
                 if Len > 512 {
                     Len = 512;
                 }
+                // Copy first: faulting a user buffer in can block, which must
+                // not happen while holding the output lock below.
+                let mut Line = [0u8; 512];
+                let mut Got = 0usize;
                 for i in 0..Len {
                     if MmIsAddressValid(Buf.add(i as usize) as PVOID) == 0 {
                         if (Buf.add(i as usize) as ULONG_PTR) < MmUserProbeAddress {
@@ -668,12 +700,20 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                             break;
                         }
                     }
-                    let c = *Buf.add(i as usize);
-                    if c == b'\n' {
-                        core::ptr::write_volatile(Uart, b'\r' as ULONG);
-                    }
-                    core::ptr::write_volatile(Uart, c as ULONG);
+                    Line[Got] = *Buf.add(i as usize);
+                    Got += 1;
                 }
+                // One message reaches the UART whole (see uart_line_lock):
+                // without it every CPU's prints shredded each other byte by
+                // byte, which is how the smoke's per-CPU markers went missing.
+                let daif = crate::arm64_dbg::uart_line_lock();
+                for &c in &Line[..Got] {
+                    if c == b'\n' {
+                        crate::arm64_dbg::uart_putc_default(b'\r' as u8);
+                    }
+                    crate::arm64_dbg::uart_putc_default(c as u8);
+                }
+                crate::arm64_dbg::uart_line_unlock(daif);
             }
 
             (*TrapFrame).Pc += 4;
@@ -820,6 +860,42 @@ pub unsafe extern "C" fn KiIrqHandler(TrapFrame: PKTRAP_FRAME) {
         KI_IN_IRQ_EXCEPTION_RETIRE.store(false, core::sync::atomic::Ordering::SeqCst);
         HalpExitInterruptIrql(OldIrql);
     }
+}
+
+/// Preemption point for an IRQ that interrupted EL0, run by `KiEL0IrqEntry` after
+/// `KiIrqHandler` and before the user's NEON state is restored.
+///
+/// arm64's only other preemption point is `KfLowerIrql` crossing below DISPATCH in
+/// thread context, which a thread spinning in user mode never reaches: the clock tick
+/// set `QuantumEnd` (or a timer readied a thread into `NextThread`) and nothing ever
+/// acted on it. On one CPU that is a livelock, not just unfairness. ntdll_vista's NT
+/// threadpool worker woke from a timed condvar wait and spun for the condvar's internal
+/// lock, which the thread it had preempted held, and the whole guest stopped
+/// (the `tpprobe` payload, 2026-09-30). x86 switches here via the DPC interrupt that the
+/// IRQ's own lowering delivers.
+///
+/// This is the one IRQ exit where switching is safe. The interrupted context is user
+/// mode, so PASSIVE with no kernel locks held. The handler has EOI'd and dropped its
+/// interrupt-context depth, so the HAL treats the raise/lower as thread context. The
+/// user's ELR/SPSR are in the trap frame, and `KiTrapReturn` re-masks before reloading
+/// them. Unmasking first is what keeps this out of the DAIF-masked switch hazard, which
+/// `KiDispatchPreemptArm64` refuses anyway: the thread is parked unmasked, as an SVC
+/// that blocks is since `UNMASK_IRQ_FROM_SPSR`. The raise/lower then does exactly what
+/// the thread would have done had it lowered IRQL itself: it drains the pending
+/// DISPATCH work and then takes the quantum end or the readied thread.
+#[no_mangle]
+pub unsafe extern "C" fn KiEL0IrqPreempt() {
+    let Prcb = KeGetCurrentPrcb();
+    if (*Prcb).QuantumEnd == 0 && (*Prcb).NextThread.is_null() {
+        return;
+    }
+    if KeGetCurrentIrql() != PASSIVE_LEVEL {
+        return;
+    }
+    core::arch::asm!("msr daifclr, #2", options(nomem, nostack));
+    let OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
+    KfLowerIrql(OldIrql);
+    core::arch::asm!("msr daifset, #2", options(nomem, nostack));
 }
 
 /// True while KiIrqHandler is retiring DPCs in IRQ exception context. A

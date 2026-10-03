@@ -1,5 +1,8 @@
 use win32k_sys::win32k::*;
 
+// Not in ntkrnl_sys::base; declared per-file, as the crate does elsewhere.
+const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
+
 // ---- FASTCALL callees: C declares these `FASTCALL` (win32ss/gdi/ntgdi/text.h).
 // On i386 that is `@Name@N` decoration; on amd64/arm64 it lowers to cdecl. ----
 #[cfg(target_arch = "x86")]
@@ -365,12 +368,16 @@ pub unsafe extern "system" fn NtGdiGetRasterizerCaps(
                 core::mem::size_of::<RASTERIZER_STATUS>() as _,
                 1,
             );
-            if NT_SUCCESS(Status) {
-                RtlCopyMemory(
+            // The probe VALIDATES only; this copy is the access. A fault lands in Status,
+            // which is checked just below -- one _SEH2_TRY's worth of behaviour.
+            if NT_SUCCESS(Status)
+                && !crate::copy::publish_to_user(
                     praststat as *mut core::ffi::c_void,
                     &rsSafe as *const _ as *const core::ffi::c_void,
                     cjBytes as usize,
-                );
+                )
+            {
+                Status = STATUS_ACCESS_VIOLATION;
             }
 
             if !NT_SUCCESS(Status) {
@@ -421,12 +428,16 @@ pub unsafe extern "system" fn NtGdiGetTextCharsetInfo(
             core::mem::size_of::<FONTSIGNATURE>() as _,
             1,
         );
-        if NT_SUCCESS(Status) {
-            RtlCopyMemory(
+        // The probe VALIDATES only; this copy is the access. A fault lands in Status,
+        // which is checked just below -- one _SEH2_TRY's worth of behaviour.
+        if NT_SUCCESS(Status)
+            && !crate::copy::publish_to_user(
                 lpSig as *mut core::ffi::c_void,
                 pfsSafe as *const core::ffi::c_void,
                 core::mem::size_of::<FONTSIGNATURE>() as _,
-            );
+            )
+        {
+            Status = STATUS_ACCESS_VIOLATION;
         }
 
         if !NT_SUCCESS(Status) {
@@ -717,11 +728,15 @@ pub unsafe extern "system" fn NtGdiGetTextMetricsW(
                     return 0;
                 }
             }
-            RtlCopyMemory(
-                pUnsafeTmwi as *mut _,
-                &mut Tmwi as *mut _ as *mut _,
+            // Validate-only probe above; this publish is the access and takes its exit.
+            if !crate::copy::publish_to_user(
+                pUnsafeTmwi as *mut core::ffi::c_void,
+                &mut Tmwi as *mut _ as *const core::ffi::c_void,
                 cj as usize,
-            );
+            ) {
+                SetLastNtError(STATUS_ACCESS_VIOLATION);
+                return 0;
+            }
 
             return 1;
         }

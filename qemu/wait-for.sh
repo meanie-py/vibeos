@@ -63,8 +63,8 @@ while :; do
         if [ -n "$match" ]; then
             elapsed=$((now - start_ts))
             if [ "$JSON" -eq 1 ]; then
-                jq -nc --arg m "$match" --argjson e "$elapsed" \
-                    '{matched: true, elapsed_secs: $e, line: $m}'
+                vjson obj -c --argjson matched true --argjson elapsed_secs "$elapsed" \
+                    --arg line "$match"
             else
                 echo "$match"
             fi
@@ -94,13 +94,12 @@ fi
 tail_lines="$(tail -n 10 "$LOG" 2>/dev/null | tr -cd '\11\12\15\40-\176' || true)"
 
 if [ "$JSON" -eq 1 ]; then
-    jq -nc \
-        --argjson e "$elapsed" \
-        --argjson b "$serial_bytes" \
-        --argjson a "$alive" \
-        --arg t "$tail_lines" \
-        '{matched: false, elapsed_secs: $e, serial_bytes: $b, alive: $a,
-          tail: ($t | split("\n"))}'
+    vjson obj -c \
+        --argjson matched false \
+        --argjson elapsed_secs "$elapsed" \
+        --argjson serial_bytes "$serial_bytes" \
+        --argjson alive "$alive" \
+        --arglines tail "$tail_lines"
 else
     cat <<EOF
 [TIMEOUT] pattern '$PATTERN' not seen in ${elapsed}s

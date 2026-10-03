@@ -75,3 +75,16 @@ void __stdcall __wine_RtlUnwind(void *a, void *b, void *c, void *d)
     (void)a; (void)b; (void)c; (void)d;
     unreachable("__wine_RtlUnwind");
 }
+
+/* NOT a stub: the va_arg pullers varargs-rust names, which every module that links it
+ * supplies from sdk/lib/rust/varargs-rust/rust_varargs_shim.c.template (ucrtbase's copy
+ * is PART 1 of dll/win32/ucrtbase/ucrt_varargs_shim.c). Our Rust copy on the reference
+ * side (libucrt_ours.a: the _open/_spawn* `_v` twins) reads its arguments through them,
+ * so the harness needs the real thing. <stdarg.h> is a compiler header, not a CRT one. */
+#include <stdarg.h>
+int                vibeos_va_arg_i32(void *app) { return va_arg(*(va_list *)app, int); }
+unsigned int       vibeos_va_arg_u32(void *app) { return va_arg(*(va_list *)app, unsigned int); }
+long long          vibeos_va_arg_i64(void *app) { return va_arg(*(va_list *)app, long long); }
+unsigned long long vibeos_va_arg_u64(void *app) { return va_arg(*(va_list *)app, unsigned long long); }
+double             vibeos_va_arg_f64(void *app) { return va_arg(*(va_list *)app, double); }
+void *             vibeos_va_arg_ptr(void *app) { return va_arg(*(va_list *)app, void *); }

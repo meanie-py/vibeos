@@ -32,6 +32,18 @@ THE FIVE THINGS THAT MAKE IT SAFE
      A submission leaves the queue only when it has landed or been rejected, so the failure
      mode is repeated work, never a silent drop.
 
+THE TRAIN (2026-09-26): gates are serial, so one slow gate used to stall every lane behind
+it. At VIBEOS_QUEUE_DEPTH=2 (the default) the conductor gates the NEXT batch on top of the
+current one while the current one is still gating, in a second integration worktree:
+
+    car A: master + A          ── gate ──▶ push A
+    car B: master + A + B      ── gate ──────────▶ push B   (only if A landed WHOLE)
+
+B's verdict is about exactly the tree master will be once A lands, so it is trusted only
+then. If A goes red, B's gate is joined and thrown away and B stays queued, unjudged: it
+is neither landed nor blamed for a tree that never existed (see `_pipelined`). Depth 1 is
+the serial train. `land --withdraw` takes a lane's own submissions out of line.
+
 ORPHAN WINDOW (the one honest wart): a submission arriving between the conductor's final
 empty-queue scan and its release of the lock has no conductor. It waits until the next
 submission elects one. Microseconds wide, self-healing, and `land-status` shows it as
@@ -41,6 +53,8 @@ a drain if you ever see one sitting.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import os
 import re
@@ -48,6 +62,7 @@ import shutil
 import subprocess
 import time
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
@@ -59,8 +74,27 @@ from . import cachecfg, hostlock
 # recursive split, so the cap bounds the worst case (a 4-batch with one bad apple is
 # 1 + 2 gates, still fewer than 4 serial ones). Raise when the fleet is mostly-green.
 BATCH_CAP = max(1, int(os.environ.get("VIBEOS_QUEUE_BATCH", "4")))
+# Cars gated AT ONCE. 1 is the serial train; 2 gates the next batch on top of the one
+# ahead while that one is still gating (see `drain`). Each car beyond the first has its own
+# integration worktree and costs a second concurrent gate's worth of host.
+PIPELINE_DEPTH = max(1, int(os.environ.get("VIBEOS_QUEUE_DEPTH", "2")))
 INTEGRATION_BRANCH = "integration"
 INTEGRATION_DIRNAME = "vibeos-integration"
+
+
+def integration_names(slot: int) -> tuple[str, str]:
+    """(worktree dirname, branch) for pipeline slot `slot`. Slot 0 keeps the historical
+    names, so the tree every conductor has been warming stays the first car's."""
+    if slot == 0:
+        return INTEGRATION_DIRNAME, INTEGRATION_BRANCH
+    return f"{INTEGRATION_DIRNAME}-{slot + 1}", f"{INTEGRATION_BRANCH}-{slot + 1}"
+
+
+def is_integration_dirname(name: str) -> bool:
+    return name == INTEGRATION_DIRNAME or (
+        name.startswith(INTEGRATION_DIRNAME + "-")
+        and name[len(INTEGRATION_DIRNAME) + 1 :].isdigit()
+    )
 
 
 class QueueError(RuntimeError):
@@ -144,6 +178,101 @@ def _results_dir(repo: Path) -> Path:
 
 def _attempts_dir(repo: Path) -> Path:
     return queue_dir(repo) / "attempts"
+
+
+# ---------------------------------------------------------------------------------------
+# STOP THE LINE. A hold is one JSON file in the shared queue dir: while it exists no
+# conductor starts a batch, submissions still QUEUE (nobody loses their place, nobody
+# retry-loops), and only the holder may `land --direct`.
+#
+# WHY (2026-09-25, a whole night): mainline was red and the queue kept going. Every new
+# submission elected a conductor, every conductor gated a batch (3 cold builds + boots),
+# split it, gated the base alone, halted on BaseRed -- and the next submission started the
+# same cycle, while the load it generated turned a 10 ms test timing assumption into a
+# second, unrelated red. The fix lane's own gate queued behind that churn for hours. The
+# only way to stop it was killing conductors by hand and messaging every lane to stop
+# submitting; `wsl --shutdown` is what finally did it.
+#
+# Two kinds:
+#   * MANUAL (`land --hold REASON`): an agent stops the line to land a fix. Lasts until
+#     `land --release`; `--preempt` also stops a conductor that is mid-batch.
+#   * AUTO: the train halted on BaseRed. Pinned to the red master sha, and cleared by itself
+#     the moment origin/master moves, i.e. when a fix lands. While it stands ANY lane may
+#     `land --direct` (the fix can come from anywhere, and the direct gate proves it first).
+# ---------------------------------------------------------------------------------------
+
+HOLD_FILE = "HOLD.json"
+
+
+def hold_path(repo: Path) -> Path:
+    return queue_dir(repo) / HOLD_FILE
+
+
+def read_hold(repo: Path) -> dict | None:
+    """The raw hold record, or None. An unreadable file IS a hold -- failing open here is
+    how the line restarts under someone who stopped it."""
+    p = hold_path(repo)
+    if not p.exists():
+        return None
+    try:
+        rec = json.loads(p.read_text() or "{}")
+    except (OSError, ValueError):
+        why = f"unreadable hold file {p} -- inspect it, then `land --release`"
+        return {"lane": "?", "reason": why}
+    return rec if isinstance(rec, dict) else {"lane": "?", "reason": f"malformed {p}"}
+
+
+def set_hold(repo: Path, *, lane: str, reason: str, auto: bool = False, base: str = "") -> dict:
+    rec = {
+        "lane": lane,
+        "reason": reason,
+        "since": time.time(),
+        "auto": auto,
+        "base": base,
+        "pid": os.getpid(),
+    }
+    p = hold_path(repo)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(f".tmp{os.getpid()}")
+    tmp.write_text(json.dumps(rec, indent=2))
+    os.replace(tmp, p)  # atomic: a reader sees the old hold or the new one, never half
+    return rec
+
+
+def clear_hold(repo: Path) -> dict | None:
+    rec = read_hold(repo)
+    hold_path(repo).unlink(missing_ok=True)
+    return rec
+
+
+def effective_hold(repo: Path) -> dict | None:
+    """The hold in force, or None. An AUTO hold that is pinned to a master sha lapses as soon
+    as origin/master is somewhere else: the red base it described is gone. Reads the LOCAL
+    origin/master ref, so callers that care fetch first (drain does)."""
+    rec = read_hold(repo)
+    if rec is None:
+        return None
+    if rec.get("auto") and rec.get("base"):
+        now = git(repo, "rev-parse", "origin/master", check=False)
+        if now and now != rec["base"]:
+            clear_hold(repo)
+            return None
+    return rec
+
+
+def describe_hold(rec: dict) -> str:
+    age = max(0, int(time.time() - float(rec.get("since") or time.time())))
+    kind = "AUTO (red base)" if rec.get("auto") else f"by {rec.get('lane', '?')}"
+    return f"LINE HELD {kind}, {age // 60}m{age % 60:02d}s ago: {rec.get('reason', '')}"
+
+
+def may_land_direct(rec: dict | None, lane: str) -> bool:
+    return rec is None or bool(rec.get("auto")) or rec.get("lane") == lane
+
+
+class LineHeld(QueueError):
+    """The line is held; the conductor stops before starting a batch. Submissions stay
+    QUEUED -- this is not a verdict about anyone."""
 
 
 def begin_attempt(repo: Path, lane: str, tip: str) -> Path:
@@ -392,7 +521,7 @@ def resolve(
     rd.mkdir(parents=True, exist_ok=True)
     rec = {
         **sub.to_json(),
-        "outcome": outcome,  # landed | rejected
+        "outcome": outcome,  # landed | rejected | superseded | withdrawn | evicted
         "reason": reason,
         "classification": classification,
         "artifact": artifact,
@@ -444,14 +573,140 @@ def prune_results(repo: Path, *, max_age_s: int = 7 * 24 * 3600) -> None:
         pass
 
 
+# ── in flight, and stepping out of line ────────────────────────────────────
+#
+# WHY (2026-09-26): upstream-sync submitted a change that forced a full kernel recompile —
+# hours per arch — and then learned it would never gate inside the build timeout. It had no
+# way to step aside: `--hold` stops EVERYONE, and nothing removed one lane's own submission.
+# So it sat at the head of the queue until the gate timed out, ~80 minutes, with nine lanes
+# behind it. `withdraw` is that missing exit.
+#
+# A submission a conductor has already TAKEN into a batch cannot be withdrawn: its merge is
+# in the tree being gated, and pulling it out would push a tree nobody gated. The conductor
+# therefore publishes what it has taken (INFLIGHT.json), and both "take a batch" and
+# "withdraw" run under one flock, so a withdrawal either happens before the take or is
+# refused after it. `land --hold --preempt` remains the way to stop a batch mid-gate.
+
+STATE_LOCK = "state.lock"
+INFLIGHT_FILE = "INFLIGHT.json"
+
+
+@contextlib.contextmanager
+def state_lock(repo: Path):
+    """Short critical sections over the pending set. Never held across a gate."""
+    d = queue_dir(repo)
+    d.mkdir(parents=True, exist_ok=True)
+    with open(d / STATE_LOCK, "a+") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
+def read_inflight(repo: Path) -> dict[str, dict]:
+    """seq -> {pid, started_at} for every submission a LIVE conductor has taken. A record left
+    by a dead conductor is ignored: its submissions are still pending and will be redone."""
+    try:
+        rec = json.loads((queue_dir(repo) / INFLIGHT_FILE).read_text())
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(rec, dict):
+        return {}
+    live = {}
+    for seq, who in rec.items():
+        try:
+            pid, since = int(who["pid"]), float(who["started_at"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if _pid_alive(pid, since=since):
+            live[seq] = who
+    return live
+
+
+def _write_inflight(repo: Path, rec: dict[str, dict]) -> None:
+    path = queue_dir(repo) / INFLIGHT_FILE
+    if not rec:
+        path.unlink(missing_ok=True)
+        return
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(rec, indent=1))
+    tmp.replace(path)
+
+
+def take(repo: Path, subs: list[Submission]) -> list[Submission]:
+    """Mark `subs` in flight, dropping any withdrawn since the caller read the queue.
+    Returns what was actually taken."""
+    with state_lock(repo):
+        still = [s for s in subs if s.path.is_file()]
+        rec = read_inflight(repo)
+        now = time.time()
+        for s in still:
+            rec[s.seq] = {"pid": os.getpid(), "started_at": now, "lane": s.lane}
+        _write_inflight(repo, rec)
+    return still
+
+
+def release_inflight(repo: Path, subs: list[Submission]) -> None:
+    with state_lock(repo):
+        rec = read_inflight(repo)
+        for s in subs:
+            rec.pop(s.seq, None)
+        _write_inflight(repo, rec)
+
+
+def withdraw(repo: Path, *, lane: str | None = None) -> tuple[list[Submission], list[Submission]]:
+    """Pull this lane's QUEUED submissions out of line. Returns (withdrawn, in_flight): the
+    in-flight ones are being gated right now and are left alone."""
+    lane = lane or lane_id(repo)
+    withdrawn: list[Submission] = []
+    busy: list[Submission] = []
+    with state_lock(repo):
+        inflight = read_inflight(repo)
+        for sub in pending(repo):
+            if sub.lane != lane:
+                continue
+            if sub.seq in inflight:
+                busy.append(sub)
+                continue
+            resolve(
+                repo, sub, outcome="withdrawn", reason="the lane withdrew it (`land --withdraw`)"
+            )
+            withdrawn.append(sub)
+    return withdrawn, busy
+
+
+def evict(
+    repo: Path, *, reason: str, keep_lane: str | None = None
+) -> tuple[list[Submission], list[Submission]]:
+    """Kick every OTHER lane's queued submissions back to its owner (verdict `evicted`, with
+    `reason`). For clearing the line: the caller must already hold it (see land.py), so no
+    conductor takes a batch mid-eviction. In-flight submissions are left alone, exactly as
+    for `withdraw`. Returns (evicted, in_flight)."""
+    keep_lane = keep_lane or lane_id(repo)
+    evicted: list[Submission] = []
+    busy: list[Submission] = []
+    with state_lock(repo):
+        inflight = read_inflight(repo)
+        for sub in pending(repo):
+            if sub.lane == keep_lane:
+                continue
+            if sub.seq in inflight:
+                busy.append(sub)
+                continue
+            resolve(repo, sub, outcome="evicted", reason=reason)
+            evicted.append(sub)
+    return evicted, busy
+
+
 # ── the integration worktree ────────────────────────────────────────────────
 
 
-def integration_path(repo: Path) -> Path:
-    return cachecfg.vibeos_root(repo) / INTEGRATION_DIRNAME
+def integration_path(repo: Path, slot: int = 0) -> Path:
+    return cachecfg.vibeos_root(repo) / integration_names(slot)[0]
 
 
-def ensure_integration_worktree(repo: Path) -> Path:
+def ensure_integration_worktree(repo: Path, slot: int = 0) -> Path:
     """The dedicated tree the train builds in. Created on first use.
 
     Dedicated, rather than gating in the conductor's own worktree, for two reasons: its
@@ -460,14 +715,14 @@ def ensure_integration_worktree(repo: Path) -> Path:
     lane happens to be conductor), and no lane's checkout is ever disturbed by a train that
     dies mid-batch. Build dirs are position-independent here (everything builds at the
     canonical /tmp/vibeos mount), so this tree is exactly as buildable as any other."""
-    path = integration_path(repo)
+    path = integration_path(repo, slot)
     if (path / ".git").exists():
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
     git(repo, "fetch", "origin")
     # -B: create or reset the scratch branch. `integration` is never mainline, so resetting
     # it is not a rewind of anything shared (the reference-transaction guard covers master).
-    git(repo, "worktree", "add", "-B", INTEGRATION_BRANCH, str(path), "origin/master")
+    git(repo, "worktree", "add", "-B", integration_names(slot)[1], str(path), "origin/master")
     _seed_gitignored_boot_assets(repo, path)
     return path
 
@@ -502,11 +757,14 @@ class BatchResult:
     merged: list[Submission] = field(default_factory=list)
 
 
-def build_batch(repo: Path, wt: Path, subs: list[Submission], log) -> BatchResult:
-    """Reset the integration tree onto current origin/master and merge `subs` in order.
-    Conflicting submissions are collected (to be rejected) and skipped, not resolved."""
+def build_batch(
+    repo: Path, wt: Path, subs: list[Submission], log, *, onto: str = "origin/master"
+) -> BatchResult:
+    """Reset the integration tree onto `onto` (current origin/master, or -- in a pipelined
+    drain -- the merged tip of the car ahead) and merge `subs` in order. Conflicting
+    submissions are collected (to be rejected) and skipped, not resolved."""
     git(wt, "fetch", "origin")
-    git(wt, "reset", "--hard", "origin/master")
+    git(wt, "reset", "--hard", onto)
     git(wt, "clean", "-fdq")  # a previous batch's mid-merge debris must not leak into this one
     res = BatchResult(ok=False)
     for sub in subs:
@@ -951,6 +1209,15 @@ INCONCLUSIVE = {
     "DISK_ADMISSION_FAIL",
     "BUILD_POLICY_REFUSED",
     "SCANNER_ERROR",
+    # RUN_INTERRUPTED: the child was killed before it could finalize -- the host's
+    # memory reaper, a broad-kill, the machine going away. It is the marker
+    # `artifacts.write_interrupted_marker` seeds at run-dir creation, and it reaches
+    # here only because the child never overwrote it. Purest environment: the lane's
+    # code was never graded at all. Note this NARROWS nothing -- these runs previously
+    # arrived as "" (no summary to read), which is already in this set. The entry
+    # exists so that gaining a positive marker does not silently move them OUT of it
+    # and start rejecting lanes for being reaped.
+    "RUN_INTERRUPTED",
 }
 
 
@@ -1036,8 +1303,33 @@ def land_subset(
     if not subs:
         return
     base = base or BaseCheck()  # one per drain; shared down the whole split tree
-    res = build_batch(repo, wt, subs, log)
-    for sub in res.conflicted:
+    prepared = prepare_car(repo, wt, subs, log)
+    if prepared is None:
+        return
+    res, subs = prepared
+    judge_car(
+        repo, wt, subs, res, gate_car(wt, log, retries=retries), log, retries=retries, base=base
+    )
+
+
+def prepare_car(
+    repo: Path,
+    wt: Path,
+    subs: list[Submission],
+    log,
+    *,
+    onto: str = "origin/master",
+    defer_conflicts: bool = False,
+) -> tuple[BatchResult, list[Submission]] | None:
+    """Merge `subs` onto `onto` in `wt` and make the tree gateable. Returns None when nothing
+    is left to gate; raises Inconclusive on tree dirt.
+
+    Conflicts are rejected here, unless `defer_conflicts`: a car merged onto the UNLANDED tip
+    of the car ahead may conflict only with that car's code, and if that car then fails to
+    land the conflict never existed. The caller rejects them once the car ahead is on master
+    (see `_pipelined`), and otherwise leaves them queued."""
+    res = build_batch(repo, wt, subs, log, onto=onto)
+    for sub in [] if defer_conflicts else res.conflicted:
         resolve(
             repo,
             sub,
@@ -1047,7 +1339,7 @@ def land_subset(
         )
     subs = res.merged
     if not subs:
-        return
+        return None
     # PREFLIGHT, ~0.2s. A tree the gate will dirty can never be stamped, and the failure would
     # otherwise surface half an hour later as an opaque pre-push rejection with nothing to
     # point at. Cheap enough to run every drain; the whole point is that it costs a heartbeat
@@ -1071,17 +1363,34 @@ def land_subset(
             f"{', '.join(stray[:10])}. The gate would run green and mint no push stamp, so "
             f"the push would be refused. {len(subs)} submission(s) stay QUEUED."
         )
-    live = inert_only_batch(wt)
-    if live:
-        verdict = gate_batch(wt, log, retries=retries)
-    else:
-        # Every path this batch adds is inert. See `inert_only_batch`.
-        log(
-            f"queue: batch of {len(subs)} is DOCUMENTATION ONLY — skipping the gate "
-            "(3 builds + 4 boots) and pushing; the pre-push hook grants the same "
-            "exemption from the same predicate"
-        )
-        verdict = GateVerdict(ok=True, classification="DOCS_ONLY", artifact="", salient="")
+    return res, subs
+
+
+def gate_car(wt: Path, log, *, retries: int = 2) -> GateVerdict:
+    """Gate the prepared tree in `wt` -- or, when every path it adds is inert, don't."""
+    if inert_only_batch(wt):
+        return gate_batch(wt, log, retries=retries)
+    # Every path this batch adds is inert. See `inert_only_batch`.
+    log(
+        "queue: batch is DOCUMENTATION ONLY — skipping the gate (3 builds + 4 boots) and "
+        "pushing; the pre-push hook grants the same exemption from the same predicate"
+    )
+    return GateVerdict(ok=True, classification="DOCS_ONLY", artifact="", salient="")
+
+
+def judge_car(
+    repo: Path,
+    wt: Path,
+    subs: list[Submission],
+    res: BatchResult,
+    verdict: GateVerdict,
+    log,
+    *,
+    retries: int = 2,
+    base: BaseCheck,
+) -> None:
+    """Act on a car's verdict: push a green one, requeue an inconclusive one, and split a
+    red one until the culprit is alone."""
     ok, classification = verdict.ok, verdict.classification
     artifact, salient = verdict.artifact, verdict.salient
     if ok:
@@ -1237,13 +1546,121 @@ def land_subset(
     land_subset(repo, wt, subs[mid:], log, retries=retries, base=base, depth=depth + 1)
 
 
+def _landed_exactly(repo: Path, tip: str) -> bool:
+    """Is origin/master now exactly `tip` -- i.e. did the car ahead land whole, as merged?"""
+    git(repo, "fetch", "origin")
+    return git(repo, "rev-parse", "origin/master", check=False) == tip
+
+
+def _pipelined(
+    repo: Path,
+    lead: list[Submission],
+    follower: list[Submission],
+    log,
+    *,
+    retries: int,
+) -> None:
+    """Gate `follower` on top of `lead` while `lead` gates. CALLER MUST HOLD the land lock,
+    and releases both cars' in-flight marks.
+
+    The follower's tree is master + lead + follower, so its verdict is about exactly what
+    master will be once the lead lands -- and only then. So the follower is judged only if
+    the lead landed WHOLE (origin/master == the lead's merged tip). Any other outcome -- the
+    lead red and split, requeued as inconclusive, or halting the train -- makes the
+    follower's gate a verdict about a tree that will never exist: it is discarded, and the
+    follower stays QUEUED for the next car, unjudged and unblamed.
+
+    Both gates are always JOINED before this returns or raises: a gate outliving the land
+    lock would be running in a worktree the next conductor is about to reset."""
+    wt_lead = ensure_integration_worktree(repo, 0)
+    prepared = prepare_car(repo, wt_lead, lead, log)
+    if prepared is None:
+        return
+    res_a, lead_subs = prepared
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        gate_a = pool.submit(gate_car, wt_lead, log, retries=retries)
+        gate_b = None
+        res_b: BatchResult | None = None
+        follower_subs: list[Submission] = []
+        try:
+            wt_follow = ensure_integration_worktree(repo, 1)
+            prepared_b = prepare_car(
+                repo, wt_follow, follower, log, onto=res_a.tip, defer_conflicts=True
+            )
+        except QueueError as e:
+            # A follower that cannot even be prepared costs nothing but its speed-up: the
+            # lead is unaffected, and the follower gates normally as a later car.
+            log(f"queue: not pipelining the next car ({e}) — it stays queued")
+            prepared_b = None
+        if prepared_b is not None:
+            res_b, follower_subs = prepared_b
+            if follower_subs:
+                log(
+                    f"queue: PIPELINED — gating the next {len(follower_subs)} on top of this "
+                    f"car ({', '.join(s.lane for s in follower_subs)})"
+                )
+                gate_b = pool.submit(gate_car, wt_follow, log, retries=retries)
+        try:
+            judge_car(
+                repo,
+                wt_lead,
+                lead_subs,
+                res_a,
+                gate_a.result(),
+                log,
+                retries=retries,
+                base=BaseCheck(),
+            )
+        finally:
+            verdict_b = gate_b.result() if gate_b is not None else None
+        if res_b is None:
+            return
+        if not _landed_exactly(repo, res_a.tip):
+            log(
+                "queue: the car ahead did not land whole — discarding the pipelined verdict; "
+                f"{len(follower)} submission(s) stay QUEUED to be gated on the new master"
+            )
+            return
+        for sub in res_b.conflicted:
+            resolve(
+                repo,
+                sub,
+                outcome="rejected",
+                reason="merge conflict with master — resolve it in your lane and resubmit",
+                classification="CONFLICT",
+            )
+        if verdict_b is not None and not verdict_b.ok and verdict_b.classification in INCONCLUSIVE:
+            # Two gates at once is more host contention, and a starved SECOND gate says
+            # nothing about its lanes. It must not halt a train whose lead just landed:
+            # the follower simply goes again as the next lead, gated alone.
+            why = verdict_b.classification or "no classification"
+            log(
+                f"queue: pipelined gate was inconclusive ({why}) — "
+                f"{len(follower_subs)} submission(s) stay QUEUED"
+            )
+            return
+        if follower_subs and verdict_b is not None:
+            judge_car(
+                repo,
+                ensure_integration_worktree(repo, 1),
+                follower_subs,
+                res_b,
+                verdict_b,
+                log,
+                retries=retries,
+                base=BaseCheck(),
+            )
+
+
 def already_landed(repo: Path, sub: Submission) -> bool:
     """A tip already contained in origin/master needs no gate — it landed in someone else's
     batch (or the lane pushed it directly). Resolve it as landed rather than re-gating."""
     return git_ok(repo, "merge-base", "--is-ancestor", sub.tip, "origin/master")
 
 
-def drain(repo: Path, log, *, retries: int = 2, cap: int = BATCH_CAP) -> int:
+def drain(
+    repo: Path, log, *, retries: int = 2, cap: int = BATCH_CAP, depth: int = PIPELINE_DEPTH
+) -> int:
     """Process the queue until it is empty. CALLER MUST HOLD hostlock.land_lock.
 
     Loops rather than doing one batch: submissions that arrive while a batch gates are the
@@ -1258,6 +1675,12 @@ def drain(repo: Path, log, *, retries: int = 2, cap: int = BATCH_CAP) -> int:
         if not subs:
             return batches
         git(repo, "fetch", "origin")
+        # Checked per BATCH, not per drain: a hold placed while this conductor is gating
+        # takes effect at the next batch boundary (`land --hold --preempt` for sooner).
+        held = effective_hold(repo)
+        if held:
+            log(f"queue: {describe_hold(held)} -- {len(subs)} submission(s) stay QUEUED")
+            raise LineHeld(describe_hold(held))
         # Free landings first: anything already in master leaves the queue without a gate.
         fresh = []
         for sub in subs:
@@ -1268,20 +1691,41 @@ def drain(repo: Path, log, *, retries: int = 2, cap: int = BATCH_CAP) -> int:
                 fresh.append(sub)
         if not fresh:
             continue
-        batch = fresh[:cap]
+        batch = take(repo, fresh[:cap])
+        if not batch:
+            continue  # everything we looked at was withdrawn in the meantime
         log(
             f"queue: batch of {len(batch)} — "
             + ", ".join(f"{s.lane}@{s.tip[:8]}" for s in batch)
             + (f" ({len(fresh) - len(batch)} more queued)" if len(fresh) > len(batch) else "")
         )
+        taken = {s.seq for s in batch}
+        follower = (
+            take(repo, [s for s in fresh[cap:] if s.seq not in taken][:cap]) if depth > 1 else []
+        )
         try:
-            land_subset(repo, wt, batch, log, retries=retries)
+            if follower:
+                _pipelined(repo, batch, follower, log, retries=retries)
+            else:
+                land_subset(repo, wt, batch, log, retries=retries)
         except NoVerdict as e:
             # Everything still queued STAYS queued — it was never judged. Halting is the only
             # honest move: on a red base (or a starved host) every batch would fail for a
             # reason that has nothing to do with the lanes in it.
             log(f"queue: TRAIN HALTED — {e}")
+            if isinstance(e, BaseRed):
+                # Stop the line until master moves. Without this, every later submission
+                # elects a conductor that re-gates the same red base (the 2026-09-25 night).
+                red = git(repo, "rev-parse", "origin/master", check=False)
+                if red and read_hold(repo) is None:
+                    set_hold(repo, lane="(train)", reason=str(e)[:600], auto=True, base=red)
+                    log(
+                        f"queue: line AUTO-HELD on red master {red[:12]} -- clears itself when "
+                        "master moves; land the fix with `vibeos-cli land --direct`"
+                    )
             raise
+        finally:
+            release_inflight(repo, batch + follower)
         batches += 1
 
 
