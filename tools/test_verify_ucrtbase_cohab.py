@@ -642,7 +642,9 @@ def test_an_archive_from_another_tree_is_stale_whatever_its_mtime(tmp_path, monk
     a declared takeover the archive does not define means it was not built from here."""
     monkeypatch.setattr(vuc, "_ucrt_archive", lambda build, triple: tmp_path / "lib.a")
     monkeypatch.setattr(vuc, "_stale_against_sources", lambda a: None)  # clock says fresh
-    monkeypatch.setattr(vuc, "declared_takeovers", lambda arch=None: {"strlen": "string", "isalpha": "ctype"})
+    monkeypatch.setattr(
+        vuc, "declared_takeovers", lambda arch=None: {"strlen": "string", "isalpha": "ctype"}
+    )
     monkeypatch.setattr(vuc, "_nm_defined", lambda a: {"strlen", "memcpy"})
     why = vuc.burndown_stale("arm64")
     assert why and "isalpha" in why and "different tree" in why
