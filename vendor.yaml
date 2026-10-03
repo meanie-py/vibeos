@@ -2149,15 +2149,15 @@ trees:
 # to be classified before it can land.
 # ─────────────────────────────────────────────────────────────────────────────
   # ── vkd3d (Wine's bundled Direct3D 12 / shader-compiler library) ─────────
-  - path: sdk/lib/vkd3d
+  - path: vendor/vkd3d
     name: vkd3d
     translate: keep
     upstream: https://gitlab.winehq.org/wine/vkd3d
     license: LGPL-2.1-or-later
-    license_file: sdk/lib/vkd3d/COPYING
-    modified: unknown  # not yet diffed against a pristine 1.14 tarball -- owed
+    license_file: vendor/vkd3d/COPYING
+    modified: yes
     version:
-      file: sdk/lib/vkd3d/config.h
+      file: vendor/vkd3d/config.h
       pattern: '#define PACKAGE_VERSION "([^"]+)"'
     reason: >
       Separately released WineHQ library (Direct3D 12 on Vulkan + the HLSL/SPIR-V shader
@@ -2165,7 +2165,9 @@ trees:
       releases, not translated.
     review: >
       ADDED 2026-09-30 by the 97-commit upstream merge (upstream e98fa71fdcc, "pass at
-      building Wine-10.0"), flagged UNCLASSIFIED by `--suspects`.
+      building Wine-10.0") at sdk/lib/vkd3d, flagged UNCLASSIFIED by `--suspects`; moved to
+      vendor/vkd3d 2026-10-03. media/doc/WINESYNC.txt still names the upstream path, as
+      upstream ledgers do -- never rewrite it.
 
       `trees:`, not `ours:`, and NOT on the strength of the copyright lines: Wine itself
       does not fork vkd3d. It is a separately released WineHQ project that Wine bundles
@@ -2173,9 +2175,13 @@ trees:
       The Wine DLLs that arrived in the same merge (d2d1, d3d1x, dxgi, ...) are the
       opposite case and are filed under `ours:`.
 
-      The version probe reads config.h, which in a vendored tree is usually OUR file
-      and can be laundered (see libmpg123). It is used until this tree is compared with
-      the pristine 1.14 tarball, which is also what settles `modified:`.
+      Diffed 2026-10-03 against the pristine vkd3d-1.14 tarball (dl.winehq.org): AUTHORS
+      and COPYING are byte-identical, and so is every source file except 14 with small
+      hunks. Those are Wine's bundling edits (windows.h/d3d12.h/wine/vulkan.h and
+      wine/list.h/wine/rbtree.h includes; vkd3d_debug.h, vkd3d_version.h and the
+      include/vulkan SPIR-V headers are Wine-only additions) plus a handful of upstream
+      ReactOS `__REACTOS__` hunks, mostly MSVC portability. So the 1.14 version probe is
+      honest: the content is 1.14, and a re-vendor is a Wine-10 resync, not a copy.
 
 ours:
   - paths:

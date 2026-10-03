@@ -6,8 +6,8 @@ if (MSVC)
 endif()
 
 set(VKD3D_INCLUDE_DIRS
-    ${REACTOS_SOURCE_DIR}/sdk/lib/vkd3d/include
-    ${REACTOS_SOURCE_DIR}/sdk/lib/vkd3d/include/private)
+    ${REACTOS_SOURCE_DIR}/vendor/vkd3d/include
+    ${REACTOS_SOURCE_DIR}/vendor/vkd3d/include/private)
 
 add_subdirectory(amstream)
 add_subdirectory(d3d8)

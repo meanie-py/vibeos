@@ -5223,9 +5223,9 @@ SUCH DAMAGE.
 
 - Upstream: https://gitlab.winehq.org/wine/vkd3d
 - Version: 1.14
-- In this tree: `sdk/lib/vkd3d`
+- In this tree: `vendor/vkd3d`
 - Licence: LGPL-2.1-or-later
-- Grant reproduced from: `sdk/lib/vkd3d/COPYING`
+- Grant reproduced from: `vendor/vkd3d/COPYING`
 
 ```
 Copyright 2016-2024 the Vkd3d project authors (see the file AUTHORS for a

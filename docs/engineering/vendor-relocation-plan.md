@@ -13,7 +13,8 @@
 | 5a | wdf: `sdk/lib/drivers/wdf` → `vendor/wdf`, its public headers `sdk/include/wdf` → `vendor/wdf/include` (not from upstream's `src/framework`, so `wdf.patch` now says it reproduces the tree *less* `include/`). kmdf and cdrom bindings regenerated from both paths with one bindgen: byte-identical | **moved** |
 | 5b | acpica: `drivers/bus/acpi/acpica` → `vendor/acpica`. The acpica library stays defined in `drivers/bus/acpi/CMakeLists.txt` (its only consumer) through one `ACPICA_DIR`. HAL, acpica-sys and acpi-rust bindings regenerated from both paths with one bindgen: byte-identical | **moved** |
 | 5c | fex: `external/fex` → `vendor/fex`, its manifest `external/README-fex-vendor.md` → `vendor-patches/fex.md`; `external/` is gone and left `containers:`. `tools/fex/build-fex.sh` resets a build dir whose CMake cache still names the old source (verified: stale cache → reset → `libwow64fex.dll` built from `vendor/fex`) | **moved** |
-| CRT | `sdk/lib/ucrt`, `sdk/lib/crt/math/ieee754`, `libm_sse2` | **held** — owner, 2026-09-26: the CRT lane is working in these trees; do not move them from here |
+| 6 | vkd3d: `sdk/lib/vkd3d` → `vendor/vkd3d` (2026-10-03). Arrived with the 97-commit upstream merge after the relocation closed; its include roots are module-local, so no cflags template moved. `media/doc/WINESYNC.txt` keeps the upstream path | **moved** |
+| CRT | `sdk/lib/ucrt`, `sdk/lib/crt/math/ieee754`, `libm_sse2` | **held** — owner, 2026-09-26: the CRT lane is working in these trees; do not move them from here. 2026-10-03: ucrt is down to 28 C/C++ files as the lane translates it, so it will likely be deleted rather than moved; decide after the lane finishes |
 
 **How a tree moves** (batch 1 established it): `git mv` to `vendor/<libname>`, then
 in the consumer `add_subdirectory(${REACTOS_SOURCE_DIR}/vendor/<libname> <old-name>)`.

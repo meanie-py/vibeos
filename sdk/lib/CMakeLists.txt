@@ -79,7 +79,7 @@ add_subdirectory(udmihelp)
 add_subdirectory(uuid)
 add_subdirectory(vcruntime)
 add_subdirectory(vcstartup)
-add_subdirectory(vkd3d)
+add_subdirectory(${REACTOS_SOURCE_DIR}/vendor/vkd3d vkd3d)
 add_subdirectory(wine2ros)
 add_subdirectory(wdmguid)
 
