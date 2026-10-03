@@ -1412,3 +1412,67 @@ def test_a_vm_with_no_break_armed_reports_nothing(tmp_path, monkeypatch):
     vm = QemuVM.__new__(QemuVM)
     vm.on_qmp_ready = None
     assert vm.report_replay_break() == ""
+
+
+# --- reading a wedge: which event did the replay stop on -------------------
+
+
+def test_walk_events_reports_offset_event_and_running_icount(tmp_path):
+    """The walker is what every trace question is built on, so its records have to
+    carry all three facts: where the event starts, what it is, and the icount it
+    leaves the guest at. A record missing the offset cannot answer a wedge."""
+    body = _insn(10) + struct.pack(">BII", 22, 1, 2) + _insn(7)
+    evs = list(rr.walk_events(_replay_log(tmp_path, body)))
+    assert [(e.offset, e.eid, e.icount) for e in evs] == [
+        (12, 0, 10),  # right after the 12-byte header
+        (17, 22, 10),  # a non-instruction event does not move the icount
+        (26, 0, 17),
+    ]
+    assert evs[1].name == "EVENT_CHAR_WRITE"
+
+
+def test_boundaries_still_come_from_the_shared_walker(tmp_path):
+    """instruction_boundaries is now a consumer of walk_events rather than its own
+    decoder. Same answer, or the refactor changed behaviour."""
+    body = _insn(100) + struct.pack(">BII", 22, 1, 2) + _insn(50)
+    trace = _replay_log(tmp_path, body)
+    assert rr.instruction_boundaries(trace) == [100, 150]
+    assert [e.icount for e in rr.walk_events(trace) if e.eid == 0] == [100, 150]
+
+
+def test_events_around_offset_splits_at_the_read_position(tmp_path):
+    body = _insn(1) + _insn(2) + _insn(3) + _insn(4) + _insn(5)
+    trace = _replay_log(tmp_path, body)
+    # events start at 12, 17, 22, 27, 32; ask about a position inside the third
+    before, after = rr.events_around_offset(trace, 24, before=2, after=2)
+    assert [e.offset for e in before] == [17, 22]
+    assert [e.offset for e in after] == [27, 32]
+
+
+def test_events_around_offset_keeps_the_events_NEAREST_the_offset(tmp_path):
+    """The window has to be the last N before, not the first N of the file —
+    a wedge report built from the head of a 10MB log says nothing."""
+    trace = _replay_log(tmp_path, b"".join(_insn(i) for i in range(1, 11)))
+    before, _ = rr.events_around_offset(trace, 10_000, before=3, after=3)
+    assert [e.icount for e in before] == [36, 45, 55]
+
+
+def test_events_around_offset_handles_an_offset_past_the_end(tmp_path):
+    """QEMU's read position is a buffered kernel offset, so it can legitimately
+    sit at EOF while the replay is still working. That is not an error."""
+    trace = _replay_log(tmp_path, _insn(1) + _insn(2))
+    before, after = rr.events_around_offset(trace, 10_000)
+    assert [e.icount for e in before] == [1, 3]
+    assert after == []
+
+
+def test_event_name_refuses_to_invent_a_name_it_does_not_know(tmp_path):
+    """Only the ids whose meaning this decoder actually relies on get names. A
+    plausible label on a merely-width-known event would read as evidence in a
+    wedge report."""
+    assert rr.event_name(0) == "EVENT_INSTRUCTION"
+    assert rr.event_name(5).startswith("EVENT_ASYNC")
+    assert rr.event_name(14).startswith("EVENT_SHUTDOWN")
+    assert rr.event_name(33).startswith("EVENT_CHECKPOINT")
+    assert rr.event_name(26) == "id 26"
+    assert rr.event_name(29) == "id 29"

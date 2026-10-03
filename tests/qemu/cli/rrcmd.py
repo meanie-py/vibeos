@@ -635,6 +635,55 @@ def cmd_breaks(args, repo: Path) -> int:
     return 0
 
 
+def cmd_wedge(args, repo: Path) -> int:
+    """Name the recorded events around where a stalled replay stopped reading.
+
+    The wedge is the open rr limitation: a replay stops consuming the trace about
+    two thirds through, at a near-deterministic offset, while burning CPU. The
+    offset has been measured; which recorded event sits there has not, and that
+    is the next thing to know.
+
+    Reports a WINDOW, never a culprit. `trace_read_position` is the kernel file
+    offset of a buffered read, so QEMU has pulled bytes it has not yet acted on:
+    the stall is at or BEFORE the offset. Printing "the replay died here" from
+    that would be the handle's reading dressed up as the thing's.
+    """
+    trace = _resolve_trace(args)
+    offset = args.at
+    live = False
+    if offset is None:
+        offset = rr.trace_read_position(trace)
+        live = True
+        if offset is None:
+            print(
+                f"nobody has {trace}/replay.bin open, so there is no read position to "
+                "look at. Pass --at <offset> to inspect a position recorded earlier.",
+                file=sys.stderr,
+            )
+            return 1
+
+    size = (trace / "replay.bin").stat().st_size
+    before, after = rr.events_around_offset(trace, offset, args.count, args.count)
+    pct = 100.0 * offset / size if size else 0.0
+    src = "live reader" if live else "--at"
+    print(f"trace:  {trace}")
+    print(f"offset: {offset} of {size} ({pct:.2f}%, from {src})")
+    if not before and not after:
+        print("\nno events decode around that offset")
+        return 1
+    print("\nBEFORE (the stall is at or before one of these):")
+    for ev in before:
+        print(f"  @{ev.offset:<10} icount {ev.icount:<14} {ev.name}")
+    print("\nAFTER (context; not yet acted on):")
+    for ev in after:
+        print(f"  @{ev.offset:<10} icount {ev.icount:<14} {ev.name}")
+    print(
+        "\nThe offset is a BUFFERED kernel read position, so it runs ahead of what\n"
+        "the replay has acted on. Treat BEFORE as the evidence."
+    )
+    return 0
+
+
 def rr_cmd(args, repo: Path) -> int:
     verb = args.rr_verb
     fn = {
@@ -643,6 +692,7 @@ def rr_cmd(args, repo: Path) -> int:
         "list": cmd_list,
         "info": cmd_info,
         "breaks": cmd_breaks,
+        "wedge": cmd_wedge,
         "verify": cmd_verify,
         "prune": cmd_prune,
     }.get(verb)
