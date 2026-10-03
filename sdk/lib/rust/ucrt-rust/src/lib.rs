@@ -123,6 +123,8 @@ pub mod winapi_thunks;
 pub mod ucrt_reactos;
 #[cfg(all(feature = "fpctrl", target_arch = "aarch64"))]
 pub mod fpctrl_arm64;
+#[cfg(feature = "fenv")]
+pub mod fenv;
 #[cfg(feature = "heap")]
 pub mod heap;
 #[cfg(feature = "stdlib")]

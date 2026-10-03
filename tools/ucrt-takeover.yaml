@@ -1897,3 +1897,35 @@ families:
       - _control87
       - _controlfp
       - _statusfp
+  fenv:
+    provenance: wine-port
+    replaces:
+      - the ucrtbase.spec -stub entries for the fenv.h family, __fpe_flt_rounds and _fpreset (no body existed in any CRT source here)
+    oracle: >
+      tools/payloads/fenv in the guest on all three arches: Wine's own test_fenv (misc.c, native Windows' expected values, lifted out because the winetest's misc subtest hangs before reaching it) plus __fpe_flt_rounds per rounding mode -- i386 149, amd64 149, arm64 148 checks, 0 failed; a mutant (FENV_Y_OVERFLOW dropped from the encoding) fails 19. amd64 needed sdk/lib/crt's _control87 fixed first: it rebuilt MXCSR without the exception flags, so every fegetenv cleared them. Wine's misc __control87_2 and __fpe_flt_rounds checks pass in ucrtwine on i386.
+    note: >
+      A PORT (src/fenv.rs) of Wine's msvcrt math.c at _MSVCR_VER >= 140, its _setfp/_setfp_sse from msvcrt-crt-rust's port of the same file. fenv_t is Wine's (= native's) encoded form; ucrt-rust's own cvt and strtod called these as stubs on every conversion until now.
+    exports:
+      - __fpe_flt_rounds
+      - _fpreset
+      - feclearexcept
+      - fegetenv
+      - fegetexceptflag
+      - fegetround
+      - feholdexcept
+      - fesetenv
+      - fesetexceptflag
+      - fesetround
+      - fetestexcept
+  fenv_x87_sse:
+    provenance: wine-port
+    arches: [i386]
+    replaces:
+      - the ucrtbase.spec -arch=i386 -stub entries __control87_2 and _statusfp2
+    oracle: >
+      tools/payloads/fenv in the guest on all three arches: Wine's own test_fenv (misc.c, native Windows' expected values, lifted out because the winetest's misc subtest hangs before reaching it) plus __fpe_flt_rounds per rounding mode -- i386 149, amd64 149, arm64 148 checks, 0 failed; a mutant (FENV_Y_OVERFLOW dropped from the encoding) fails 19. amd64 needed sdk/lib/crt's _control87 fixed first: it rebuilt MXCSR without the exception flags, so every fegetenv cleared them. Wine's misc __control87_2 and __fpe_flt_rounds checks pass in ucrtwine on i386.
+    note: >
+      The i386 x87+SSE pair fenv.rs reads through (src/fenv.rs).
+    exports:
+      - __control87_2
+      - _statusfp2
