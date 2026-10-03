@@ -461,7 +461,7 @@ trees:
       Still true and still owed from the earlier pass: math/s_modf.c and math/modf.c carry
       the same Sun header while sitting outside this directory, and are deliberately not
       claimed by this path-based entry.
-  - path: sdk/lib/ucrt
+  - path: sdk/include/ucrt
     name: Microsoft UCRT
     translate: planned
     upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
@@ -482,9 +482,17 @@ trees:
       means establishing the SDK version and its terms, or replacing the tree — see
       the ucrtbase work item in the roadmap.
     modified: yes
-    headers:
-      - sdk/include/ucrt
     unwelcome: >
+      SOURCE GONE 2026-09-29. Every body in sdk/lib/ucrt is Rust
+      (sdk/lib/rust/ucrt-rust, declared family by family in
+      tools/ucrt-takeover.yaml, graded in the arm64 guest against this C before
+      each deletion) and the directory is deleted, with ReactOS's own
+      sdk/lib/ucrt_reactos glue ported beside it. Microsoft's C stays reachable as
+      a grading reference only through git history (ucrt-difftest's
+      REFERENCE_REV; ucrt_tier2_sweep.py --takeover-from). What this entry now
+      covers is the public HEADERS below -- still Microsoft's, still unlicensed,
+      and now free to be replaced by mingw-w64's, as planned. OWED.
+
       The largest unlicensed-Microsoft exposure left in the tree, and the only
       one that is still the LIVE implementation rather than inert source: ~78K
       lines carrying "Copyright (c) Microsoft Corporation. All rights reserved."

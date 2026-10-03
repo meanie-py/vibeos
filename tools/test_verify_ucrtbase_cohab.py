@@ -139,19 +139,20 @@ def _ucrtbase_link_libraries() -> list[str]:
     return names
 
 
-def test_the_authority_set_is_the_whole_link_line_except_ucrt():
+def test_the_authority_set_is_the_whole_link_line():
     """The archive check is only correct if its model IS the link line.
 
     This is the assertion that actually rotted once: the tool modelled the authority as
     `msvcrt_shared` alone, and the ucrtbase math flip -- a correct change, every symbol of it
     a crtmath body we own and had graded -- came back as 60 findings. A gate that is red on a
     correct change is one somebody switches off, so the set has to track the CMake rather than
-    be remembered. `ucrt` is the deliberate exclusion: it is the vendored Microsoft library,
-    and displacing one of ITS bodies is the entire defect this file exists to prevent.
+    be remembered. `ucrt` used to be the one deliberate exclusion (the vendored Microsoft
+    library); since 2026-10-03 it is deleted, and its return to the link line would mean
+    Microsoft's C had come back.
     """
     linked = _ucrtbase_link_libraries()
-    assert "ucrt" in linked, "ucrt vanished from the link line; the exclusion below is stale"
-    assert set(linked) - {"ucrt"} == set(vuc.OURS_ON_LINK_LINE), (
+    assert "ucrt" not in linked, "Microsoft's ucrt is back on ucrtbase's link line"
+    assert set(linked) == set(vuc.OURS_ON_LINK_LINE), (
         "ucrtbase's link line and OURS_ON_LINK_LINE disagree -- a library added there without "
         "a matching entry makes every symbol it defines look like ours shadowing genuine UCRT"
     )
