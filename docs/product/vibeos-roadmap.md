@@ -5175,7 +5175,30 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
 
   All eleven remaining are now armed with `mm_guard_trip!` (`lib.rs`) — bounded prints, every
   recovery kept, `[MMGUARD] <site> hit#=N` plus operands. **Silence from an armed site is a
-  result**: it eliminates that site. The one to read first is
+  result**: it eliminates that site.
+
+  **QUALIFIED 2026-10-03 — only on arm64. `mm_guard_trip!` is `#[cfg(target_arch =
+  "aarch64")]` and expands to NOTHING on i386/amd64**, because its printer
+  `ARM64_UART_TRACE_HEX` is an arm64 header macro. Verified against the binaries, not the
+  source: `strings build-<arch>/ntoskrnl/ntoskrnl.exe | grep -c MMGUARD` gives **arm64 43,
+  amd64 0, i386 0**. So all 14 armed sites are blind on x86 and their silence there is
+  uninterpretable — the same "probe whose silence has a hidden precondition" trap this entry
+  already names, arriving from the direction nobody checked. Any reasoning of the form "x86
+  shows nothing at these sites" is vacuous; I was one step from resting a kernel change on it.
+
+  **Owed, with its risk stated so the deferral is not silent:** make the guard portable, then
+  decide fatality. The obvious printer is `ntkrnl_sys::driver_ddk::DbgPrint` (used portably in
+  `mm/section.rs`), but the arm64 path is a raw UART write that is safe at any IRQL and in
+  early boot, and several of the 14 sites sit in PFN-lock/high-IRQL context — so a naive swap
+  risks a deadlock in the subsystem these guards exist to watch. Needs a per-site context audit
+  plus a 3-arch smoke, which is why it is not bundled with the #19 closure.
+
+  Related and also owed: `MmInsertRmap`'s two early returns (`mm/rmap.rs:453`, `:476`) still
+  `return` where the C `KeBugCheck(MEMORY_MANAGEMENT)`s (`ntoskrnl/mm/rmap.c:363`, `:380`), and
+  the returns are **not** arch-gated even though their prints are. Restoring the bugcheck is
+  correct on the contract and the arm64 evidence says they never fire (639 rounds + a
+  probe-verified sweep, 0 hits) — but there is no x86 evidence at all, per the paragraph above,
+  so instrument first and escalate second. The one to read first is
   **`rmap.MmDeleteRmap mapping-not-in-list`**: it means `MmDeleteRmap` walked the entire rmap
   list and did not find the `(Process, Address)` mapping it was told to delete, i.e. the
   caller believes the page is mapped there and the PFN database disagrees — *the* precondition
