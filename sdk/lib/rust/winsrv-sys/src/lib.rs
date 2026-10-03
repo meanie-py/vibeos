@@ -683,3 +683,15 @@ pub mod winsrv {
     // Hand-written aliases the bindgen #define chain doesn't follow.
     pub use super::aliases::*;
 }
+
+// conmsg.h's own C_ASSERT, plus the invariant postprocess_bindgen.py's anonymous-member
+// inlining relies on: CONSOLE_PROPERTIES spliced in flat must end exactly where the C struct
+// does. bindgen 0.73 changed the padding's spelling and the inline silently stopped
+// happening; a layout check is what turns the next such change into a compile error.
+#[cfg(target_arch = "x86")]
+const _: () = assert!(core::mem::size_of::<winsrv::CONSOLE_START_INFO>() == 0xFC);
+const _: () = assert!(
+    core::mem::offset_of!(winsrv::CONSOLE_START_INFO, IconIndex)
+        + core::mem::size_of::<winsrv::CONSOLE_PROPERTIES>()
+        == core::mem::size_of::<winsrv::CONSOLE_START_INFO>()
+);

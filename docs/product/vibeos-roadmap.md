@@ -747,11 +747,60 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   2026-09-26 morning on arm64 QEMU and the Pi). The same evening the Pi drew the full
   `File Edit Format View Help` bar on build `f5abd8cee6a4`; the fix came in with a
   master merge and was not identified.
-- **`ntkrnl-sys` has DRIFTED from the C headers on all three arches, and both tools that
-  would have caught it were broken by one cause and both exited 0. OPEN, owed**
-  (2026-09-26). `EPROCESS` is 1000 bytes in C and 992 in Rust on arm64; `ETHREAD` 1032 vs
-  1016; also `EJOB`, `KIPCR`, `ARBITER_ALTERNATIVE`, `IO_BUS_TYPE_GUID_LIST`,
-  `PS_JOB_TOKEN_FILTER`, `RTL_BSD_DATA`, `STACK_TRACE_DATABASE` -- ~10-11 structs per arch.
+- **`ntkrnl-sys` had DRIFTED from the C headers on all three arches, and three tools that
+  would have caught it were broken by one cause and all three exited 0. FIXED 2026-09-26**
+  -- regenerated, plus the one translation the stale island had been hiding (below). i386
+  boots to desktop; arm64/amd64 are verified by the landing gate.
+
+  **The regen surfaced a stale TRANSLATION, not a bindings bug.** i386 went to BUGCHECK 0x19
+  (pool header corrupted just past a 56-byte `TAG_NONE` block, identical down to
+  flight-record `seq=522` every run) while the baseline booted clean. `SPECIALPOOL=*`
+  turned it into a 0x50 whose trap frame put the write in `pnpmgr-rust`
+  `IopGetBusTypeGuidIndex`. Upstream `a7f658e3221` (CORE-12791) had redesigned
+  `IO_BUS_TYPE_GUID_LIST` from a struct with an inline `Guids[]` tail into a global struct
+  holding a separately allocated `PGUID` array; it arrived with the 1,269-commit merge into
+  `pnpmgr.c`/`pnpinit.c`, both already cohab-flipped, so the fix went dead on arrival.
+  The Rust kept the old algorithm, and the stale island kept describing the old struct, so
+  the two agreed with each other and nothing complained. Against the real header the first
+  GUID was written over the `Guids` pointer and 12 bytes past a 44-byte block: 8 bytes into
+  the next pool header on i386, and silently into the 16-byte rounding slack on 64-bit
+  (so amd64/arm64 carried the corruption without crashing). Ported; the old body also freed
+  the list and then released a mutex inside it on allocation failure, which upstream's
+  shape removes.
+
+  **That points at a much larger owed queue:** `upstream_triage.py` flags **428 ORACLE
+  commits inside the already-merged range** (`28a26f3b664^1..^2`) -- upstream changes to C a
+  CMake comment has switched off, i.e. files we translated -- and the oracle work so far
+  read only the unmerged tail. Each landed as dead C next to Rust nobody re-read. (A first
+  count said 465; the tool then learned to separate cohab-flipped files from modules this
+  port never builds, which moved 25 to UNBUILT. It cannot tell a fix from a feature, so 428
+  is a reading list, not a bug count -- in the unmerged tail 3 of 13 hits were real
+  correctness bugs, and `a7f658e3221` was one of these 428.)
+
+  Ruled out along the way, by tool: no extern arity mismatch in any kernel crate on i386
+  (`verify_signatures`, after fixing its HIGH false positives from comments inside param
+  lists); the four arity changes the regen made all match the existing Rust definitions.
+
+  **`ntdll-sys`, `winlogon-sys` and `winsrv-sys` were stale too -- REGENERATED 2026-09-30.**
+  A different root cause: each generator lifts flags from one ninja rule, and that rule's `.c`
+  went to Rust when the module was flipped (`csrsrv/init.c`, `winlogon.c`, `consrv/alias.c`).
+  The grep then found nothing and bindgen ran with no `-I`/`-D` at all, so these islands could
+  not have been regenerated since the flip; `verify_sizes.py` did the same and exited 0 having
+  checked nothing. Both now lift from a still-compiled stub TU and hard-fail on empty flags.
+  winsrv-sys's anonymous-member inlining (`CONSOLE_START_INFO` embeds `CONSOLE_PROPERTIES`)
+  silently stopped too -- bindgen 0.73 spells the padding `__BindgenOpaqueArray8<...>` and a
+  miss was a WARN -- now fatal, with a layout assert. The regen surfaced one real ABI bug:
+  `ConDrvCreateScreenBuffer` is cdecl in `conoutput.h` but the Rust was `extern "system"`, and
+  once the island said so LLVM turned the i386 call into `ud2`. Upstream's
+  `OBJECT_HANDLE_ATTRIBUTE_INFORMATION` -> `..._FLAG_INFORMATION` rename followed in three crates.
+
+  What was wrong: `EPROCESS` measured 1000 bytes in C and 992 in Rust on arm64 (the Rust
+  struct stopped at `Cookie` and omitted `ULONGLONG CycleTime`, which the header adds under
+  `#if defined(__REACTOS__)` as a "Temp HACK until we switch to NTDDI_VISTA"); `ETHREAD` 1032
+  vs 1016; also `EJOB`, `KIPCR`, `ARBITER_ALTERNATIVE`, `IO_BUS_TYPE_GUID_LIST`,
+  `PS_JOB_TOKEN_FILTER`, `RTL_BSD_DATA`, `STACK_TRACE_DATABASE` -- ~10-11 structs per arch,
+  and 5,623 lines / 55 new + 10 removed structs between the committed arm64 island and a
+  fresh run.
   Root cause is ONE line in two places: the bindgen wrapper and `verify_sizes.py` both
   define `__wfi()`/`__yield()` as zero-arg function-like macros, and since
   `intrin_arm64.h` landed (`28a26f3b664`, 2026-09-20) `intrin.h`'s `void __yield(void);`
@@ -759,11 +808,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (no arm64 regeneration has been possible since 2026-09-20) and `verify_sizes.py` emitted
   ZERO arm64 assertions -- and, because the error is in a header rather than in the
   generated file, its retry loop that blanks offending type lines could never clear it.
-  Both scripts reported success. `verify_sizes.py` is FIXED (real diagnostics + stubs
-  dropped; a real clang handles the asm bodies that libclang could not). `generate_bindings.sh`
-  is NOT: dropping the stub there is proven to make arm64 bindgen succeed (rc=0, 88608
-  lines) but applying it means regenerating the substrate, which touches every crate naming
-  those structs. Owed: that regeneration, on a quiet host, as its own change. Note the
+  All three scripts reported success. All three are FIXED now (stubs dropped -- a real clang
+  handles the asm bodies that only libclang could not -- plus real `error:` diagnostics
+  instead of the include chain, and `verify_sizes.py` now honours `all_ok` in GENERATE mode,
+  which is what let it lose a whole arch and still print "Done."). A fourth tool bug sat
+  behind them: `postprocess_bindgen.py`'s two helper extractors used a non-greedy match
+  bounded only by `\n#\[repr`, so they ran past the NEXT type's `#[derive(...)]` line and
+  swallowed it -- `__BindgenOpaqueArray` arrived derive-less and broke `#[derive(Copy, Clone)]`
+  on every struct containing one, `_KPRCB` included. `\n#\[derive` is now in both boundary
+  sets. Note the
   `_INTRIN_H_`/`_INTRIN_X86_H_` defines beside the stubs are inert -- `intrin.h` is
   `#pragma once` + an unconditional `#define __INTRIN_H_` with no `#ifndef`, and
   `_INTRIN_X86_H_` matches nothing in the tree.
@@ -784,16 +837,39 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the drift was tail padding. That was wrong, and I had not yet run the offset verifier
   when I wrote it.)
 
-  **Sizing the owed regen: it is probably SMALL, because severity and blast radius are
-  inversely correlated here.** Consumer files outside the generated files themselves --
+  **What the regen actually cost, versus my estimate.** I sized it from the size assertions
+  (7 structs, 66 consumer references) and called the risk "concentrated in a handful of
+  files". The consumer counts were right and the conclusion was right, but the reasoning was
+  luck: severity and blast radius are inversely correlated here. Consumer files outside the
+  generated files themselves --
   `KPRCB` 22, `KIPCR` 16, `RTL_BSD_DATA` 15, `EJOB` 6, `PS_JOB_TOKEN_FILTER` 5,
   `IO_BUS_TYPE_GUID_LIST` 2, `ARBITER_ALTERNATIVE` 0 (66 references total). The two with the
   most consumers are exactly the two that drifted only at the tail, so regenerating them
   APPENDS fields and leaves every existing access at its current offset; the one with
-  offset-0 drift has 2 references. So "touches every crate that names those structs"
-  overstates it: the mechanical risk concentrates in a handful of files. Do it as its own
-  change anyway -- with all three arches regenerable, which needs the
-  `generate_bindings.sh` stub removed first.
+  offset-0 drift has 2 references.
+
+  Seven real defects fell out, every one structurally invisible beforehand: four
+  `CloseProcedure` callbacks declared with `ULONG` handle counts where `OB_CLOSE_METHOD`
+  passes `ULONG_PTR` (`config-rust` `CmpCloseKeyObjectCallback`, `mm/section.rs`
+  `MmpCloseSection`, `iomgr-rust` `IopCloseFile`, `lpc-rust` `LpcpClosePort`) -- **two of them
+  hidden behind `core::mem::transmute`, with comments citing each other as precedent for
+  "the identical drift"**; `ob-rust` importing `ObpSetHandleAttributes` from the substrate
+  when it is `static` in C and the crate defines its own; and three MISSING
+  `rtl-bootdata::BsdItemTable` rows after `RtlBsdItemMax` grew 16 -> 19, an out-of-bounds
+  index that nothing could detect because the array length and its bound came from the same
+  stale file. Fixing the callbacks needs `ntkrnl_sys::ddk::ULONG_PTR` specifically, not
+  `base::ULONG_PTR` (`usize`): same width, distinct type, and only the declared alias coerces
+  into the slot. See the field manual, "A self-consistent pair of DERIVED values cannot
+  detect its own staleness".
+
+- **`SPECIALPOOL=*` cannot get an i386 boot past `wdf01000.sys`. OPEN, 2026-09-26.** It
+  faults (0x50, READ) in vendored KMDF `FxRequest::Release`: the source reads `m_Completed`
+  only behind `retValue == 1 &&`, but clang hoists the load of `this+0x6a` above the check
+  (it treats `this` as dereferenceable), so after `FinalRelease` deleted the object it
+  reads freed memory. Harmless on a normal pool (the value is discarded), fatal under
+  special pool because the freed page is unmapped. Not a corruption and not new. Until the
+  hoist is suppressed for that TU, arm special pool by TAG on i386, not `*`, or every
+  wildcard run stops here and reads as a new bug.
 
 - **The ucrt Tier 2 case generator reads the WRONG headers, and drops what they lack
   without a word. OPEN, owed** (2026-09-26). `gen_ucrt_tier2_cases.ast_functions` parses
@@ -4250,7 +4326,12 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     smoke 3/3 and the ratchet holding. **Owed:** the arm64-only ReadySummary recheck in
     `ke/wait.rs` and `ke/thrdschd.rs` (×2) existed because there was no preemption.
     Instrument it for dead, then remove (archive/arm64-interrupts-quest.md). Preemption at
-    IRQ exit (a spinner that never crosses DISPATCH) is still absent (§9.19 hazard).
+    IRQ exit for a spinner that never crosses DISPATCH: **FIXED 2026-09-30 for EL0**
+    (`KiEL0IrqPreempt`, run from `KiEL0IrqEntry`: unmask, then raise to DISPATCH and lower
+    back to PASSIVE). Found by the `tpprobe` payload, where an NT threadpool worker spun on
+    one CPU for a condvar lock held by the thread it had preempted, and the guest froze. A
+    spinner at EL1 below DISPATCH is still unpreempted: that IRQ exit runs in exception
+    context, which is the §9.19 hazard.
     **Known noise in the instrument:** it cannot tell a MISSED deadline from an item the
     test EXPECTS to block (a listen with no client yet), so clean sweeps print ~38 lines of
     `woke +0 ms, work 109 ms` (x86) / `work 200 ms` (arm64). The `woke` field is the signal;

@@ -444,6 +444,7 @@ extern "C" HRESULT CSysPagerWnd_CreateInstance(HWND hwndParent, REFIID riid, voi
  */
 
 #define TSWM_UPDATETASKBARPOS   (WM_USER + 2)
+#define TSWM_ACTIVATETASKINDEX  (WM_USER + 88)
 
 /* C linkage: called from Rust (explorer-rust taskband.rs SetSite). Still C++
  * (taskswnd.cpp) — the extern "C" makes it emit/consume the C symbol. */

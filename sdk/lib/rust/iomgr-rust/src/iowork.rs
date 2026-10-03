@@ -68,7 +68,9 @@ pub unsafe extern "system" fn IoQueueWorkItem(
 
 #[no_mangle]
 pub unsafe extern "system" fn IoFreeWorkItem(IoWorkItem: PIO_WORKITEM) {
-    ExFreePool(IoWorkItem as PVOID);
+    // Tagged (upstream 0086992fe78): freeing a pointer that is not a work item bugchecks
+    // BAD_POOL_CALLER at the culprit instead of going unnoticed.
+    ExFreePoolWithTag(IoWorkItem as PVOID, TAG_IOWI);
 }
 
 #[no_mangle]

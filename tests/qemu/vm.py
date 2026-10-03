@@ -279,6 +279,27 @@ def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
     return out
 
 
+def tripwire_args() -> list[str]:
+    """vibeos tripwire channel: VIBEOS_TRIPWIRE=<cfg> injects per-boot kernel
+    debug knobs (e.g. SPECIALPOOL=Gla5) via QEMU fw_cfg — no media rebuild.
+    The kernel reads opt/org.vibeos.tripwire in MmArmInitSystem Phase 0
+    (ntoskrnl-rust src/tripwire.rs). Space/semicolon-separated KEY=VAL tokens;
+    commas are forbidden (QEMU's -fw_cfg parser owns the comma).
+
+    Module-level so every launcher shares it: the gdb engine once assembled its
+    own command line without this, so a debug boot silently ran WITHOUT the
+    tripwire it was started under — the one boot where you most want it."""
+    cfg = os.environ.get("VIBEOS_TRIPWIRE", "").strip()
+    if not cfg:
+        return []
+    if "," in cfg:
+        raise ValueError(
+            f"VIBEOS_TRIPWIRE must not contain commas (got {cfg!r}); "
+            "use spaces or semicolons between KEY=VAL tokens"
+        )
+    return ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={cfg}"]
+
+
 def smp_count() -> int | None:
     """The vCPU count this run asked for (VIBEOS_QEMU_SMP), or None for a UP boot."""
     n = os.environ.get("VIBEOS_QEMU_SMP", "").strip()
@@ -1575,20 +1596,7 @@ class QemuVM:
         ]
 
     def _tripwire_args(self) -> list[str]:
-        """vibeos tripwire channel: VIBEOS_TRIPWIRE=<cfg> injects per-boot kernel
-        debug knobs (e.g. SPECIALPOOL=Gla5) via QEMU fw_cfg — no media rebuild.
-        The kernel reads opt/org.vibeos.tripwire in MmArmInitSystem Phase 0
-        (ntoskrnl-rust src/tripwire.rs). Space/semicolon-separated KEY=VAL tokens;
-        commas are forbidden (QEMU's -fw_cfg parser owns the comma)."""
-        cfg = os.environ.get("VIBEOS_TRIPWIRE", "").strip()
-        if not cfg:
-            return []
-        if "," in cfg:
-            raise ValueError(
-                f"VIBEOS_TRIPWIRE must not contain commas (got {cfg!r}); "
-                "use spaces or semicolons between KEY=VAL tokens"
-            )
-        return ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={cfg}"]
+        return tripwire_args()
 
     def _smp_args(self) -> list[str]:
         """VIBEOS_QEMU_SMP=<N> boots the guest with N virtual CPUs (-smp N).

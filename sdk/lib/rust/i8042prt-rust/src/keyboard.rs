@@ -460,7 +460,7 @@ unsafe extern "system" fn i8042InitializeKeyboardAttributes(
 
     (*KeyboardAttributes).KeyboardIdentifier.Type = (*Settings).OverrideKeyboardType as UCHAR;
     (*KeyboardAttributes).KeyboardIdentifier.Subtype = (*Settings).OverrideKeyboardSubtype as UCHAR;
-    (*KeyboardAttributes).NumberOfFunctionKeys = 4;
+    (*KeyboardAttributes).NumberOfFunctionKeys = 12; // F1-F12, not 4 (upstream c4517f4b0a3)
     (*KeyboardAttributes).NumberOfIndicators = 3;
     (*KeyboardAttributes).NumberOfKeysTotal = 101;
     (*KeyboardAttributes).InputDataQueueLength = (*Settings).KeyboardDataQueueSize;

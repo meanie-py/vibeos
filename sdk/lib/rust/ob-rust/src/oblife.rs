@@ -1327,7 +1327,7 @@ pub unsafe extern "system" fn NtSetInformationObject(
                 if ExChangeHandle(
                     ObjectTable,
                     handle,
-                    Some(ObpSetHandleAttributes),
+                    Some(crate::obhandle::ObpSetHandleAttributes),
                     core::ptr::addr_of_mut!(Context) as ULONG_PTR as _,
                 ) == 0
                 {
@@ -1341,7 +1341,7 @@ pub unsafe extern "system" fn NtSetInformationObject(
                 if ExChangeHandle(
                     ObjectTable,
                     handle,
-                    Some(ObpSetHandleAttributes),
+                    Some(crate::obhandle::ObpSetHandleAttributes),
                     core::ptr::addr_of_mut!(Context) as ULONG_PTR as _,
                 ) == 0
                 {

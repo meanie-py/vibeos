@@ -1269,7 +1269,8 @@ unsafe extern "system" fn InterfaceBusSetBusData(
 ) -> ULONG {
     DPRINT!("InterfaceBusSetBusData(...)\n");
 
-    if DataType != PCI_WHICHSPACE_CONFIG {
+    // PCIConfiguration too (upstream e7518a9c796): StorPort miniports ask for it by that name.
+    if DataType != PCI_WHICHSPACE_CONFIG && DataType != BUS_DATA_TYPE_PCIConfiguration as ULONG {
         DPRINT!("Unknown DataType %lu\n", DataType);
         return 0;
     }
@@ -1298,7 +1299,8 @@ unsafe extern "system" fn InterfaceBusGetBusData(
 ) -> ULONG {
     DPRINT!("InterfaceBusGetBusData(...) called\n");
 
-    if DataType != PCI_WHICHSPACE_CONFIG {
+    // PCIConfiguration too (upstream e7518a9c796): StorPort miniports ask for it by that name.
+    if DataType != PCI_WHICHSPACE_CONFIG && DataType != BUS_DATA_TYPE_PCIConfiguration as ULONG {
         DPRINT!("Unknown DataType %lu\n", DataType);
         return 0;
     }

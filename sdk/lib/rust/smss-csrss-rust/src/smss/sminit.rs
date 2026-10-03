@@ -248,7 +248,7 @@ pub static mut SmpRegistryConfigurationTable: [RTL_QUERY_REGISTRY_TABLE; 21] = [
         DefaultLength: 0,
     },
     RTL_QUERY_REGISTRY_TABLE {
-        QueryRoutine: qr(SmpConfigureMemoryMgmt),
+        QueryRoutine: qr(SmpConfigureExecute),
         Flags: 0,
         Name: wstr!("BootExecute\0"),
         EntryContext: core::ptr::addr_of_mut!(SmpBootExecuteList) as *mut core::ffi::c_void,
@@ -257,7 +257,7 @@ pub static mut SmpRegistryConfigurationTable: [RTL_QUERY_REGISTRY_TABLE; 21] = [
         DefaultLength: 0,
     },
     RTL_QUERY_REGISTRY_TABLE {
-        QueryRoutine: qr(SmpConfigureMemoryMgmt),
+        QueryRoutine: qr(SmpConfigureExecute),
         Flags: RTL_QUERY_REGISTRY_TOPKEY,
         Name: wstr!("SetupExecute\0"),
         EntryContext: core::ptr::addr_of_mut!(SmpSetupExecuteList) as *mut core::ffi::c_void,
@@ -383,7 +383,7 @@ pub static mut SmpRegistryConfigurationTable: [RTL_QUERY_REGISTRY_TABLE; 21] = [
         DefaultLength: 0,
     },
     RTL_QUERY_REGISTRY_TABLE {
-        QueryRoutine: qr(SmpConfigureMemoryMgmt),
+        QueryRoutine: qr(SmpConfigureExecute),
         Flags: RTL_QUERY_REGISTRY_TOPKEY,
         Name: wstr!("Execute\0"),
         EntryContext: core::ptr::addr_of_mut!(SmpExecuteList) as *mut core::ffi::c_void,
@@ -636,6 +636,30 @@ pub unsafe extern "system" fn SmpConfigureObjectDirectories(
     }
 
     STATUS_SUCCESS
+}
+
+/// The *Execute values' handler (upstream 41dadd942f7): like SmpConfigureMemoryMgmt, but an
+/// invalid or EMPTY string is skipped instead of being queued and later run as a command.
+#[no_mangle]
+pub unsafe extern "system" fn SmpConfigureExecute(
+    _ValueName: PWSTR,
+    _ValueType: u32,
+    ValueData: *mut core::ffi::c_void,
+    ValueLength: u32,
+    _Context: *mut core::ffi::c_void,
+    EntryContext: *mut core::ffi::c_void,
+) -> i32 {
+    let mut StrLength: usize = 0;
+    let Status = RtlStringCbLengthW(ValueData as *const u16, ValueLength as usize, &mut StrLength);
+    if !NT_SUCCESS(Status) || StrLength < core::mem::size_of::<u16>() {
+        return STATUS_SUCCESS;
+    }
+    SmpSaveRegistryValue(
+        EntryContext as PLIST_ENTRY,
+        ValueData as PWSTR,
+        core::ptr::null_mut(),
+        1u8,
+    )
 }
 
 #[no_mangle]
@@ -915,12 +939,22 @@ pub unsafe extern "system" fn SmpTranslateSystemPartitionInformation() {
     let mut Context: u32 = 0;
     let mut StrLength: usize = 0;
     let mut LinkBuffer: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-    let mut ValueBuffer: [i8; core::mem::size_of::<KEY_VALUE_PARTIAL_INFORMATION>() + 512] =
-        [0; core::mem::size_of::<KEY_VALUE_PARTIAL_INFORMATION>() + 512];
-    let PartialInfo: PKEY_VALUE_PARTIAL_INFORMATION = ValueBuffer.as_mut_ptr() as *mut _;
-    let mut DirInfoBuffer: [i8; core::mem::size_of::<OBJECT_DIRECTORY_INFORMATION>() + 512] =
-        [0; core::mem::size_of::<OBJECT_DIRECTORY_INFORMATION>() + 512];
-    let DirInfo: POBJECT_DIRECTORY_INFORMATION = DirInfoBuffer.as_mut_ptr() as *mut _;
+    // Header-typed buffers, so the structs read out of them are aligned (upstream
+    // aa8d624253a); a bare i8 array is 1-aligned, which makes every field access UB.
+    #[repr(C)]
+    struct ValueBufferT {
+        Info: KEY_VALUE_PARTIAL_INFORMATION,
+        Buffer: [i8; 512],
+    }
+    #[repr(C)]
+    struct DirInfoBufferT {
+        Info: OBJECT_DIRECTORY_INFORMATION,
+        Buffer: [u16; 256],
+    }
+    let mut ValueBuffer: ValueBufferT = core::mem::zeroed();
+    let PartialInfo: PKEY_VALUE_PARTIAL_INFORMATION = core::ptr::addr_of_mut!(ValueBuffer.Info);
+    let mut DirInfoBuffer: DirInfoBufferT = core::mem::zeroed();
+    let DirInfo: POBJECT_DIRECTORY_INFORMATION = core::ptr::addr_of_mut!(DirInfoBuffer.Info);
 
     /* Open the setup key */
     RtlInitUnicodeString(
@@ -990,12 +1024,9 @@ pub unsafe extern "system" fn SmpTranslateSystemPartitionInformation() {
         &mut Context,
         core::ptr::null_mut(),
     );
-    if !NT_SUCCESS(Status) {
-        return;
-    }
 
     /* Keep searching until we find it */
-    loop {
+    while NT_SUCCESS(Status) {
         if RtlEqualUnicodeString(&mut (*DirInfo).TypeName, &mut SearchString, 1u8) != 0
             && (*DirInfo).Name.Length as usize == 2 * core::mem::size_of::<u16>()
             && *(*DirInfo).Name.Buffer.add(1) == b':' as u16
@@ -1038,12 +1069,19 @@ pub unsafe extern "system" fn SmpTranslateSystemPartitionInformation() {
             &mut Context,
             core::ptr::null_mut(),
         );
-        if !NT_SUCCESS(Status) {
-            break;
-        }
     }
     if !NT_SUCCESS(Status) {
-        return;
+        // No drive letter maps the system partition (the normal case for a UEFI ESP): fall
+        // back to the OS boot drive's letter rather than writing no BootDir at all (upstream
+        // c498d0930a7, with aa8d624253a pointing Name.Buffer at storage first -- the original
+        // fallback wrote through whatever the last failed query left there). Any other
+        // failure still gives up.
+        if Status != STATUS_NO_MORE_ENTRIES {
+            return;
+        }
+        (*DirInfo).Name.Buffer = DirInfoBuffer.Buffer.as_mut_ptr();
+        *(*DirInfo).Name.Buffer = (*crate::smss::smutil::SharedUserData).NtSystemRoot[0];
+        *(*DirInfo).Name.Buffer.add(1) = (*crate::smss::smutil::SharedUserData).NtSystemRoot[1];
     }
 
     /* Open the setup key again, for full access this time */

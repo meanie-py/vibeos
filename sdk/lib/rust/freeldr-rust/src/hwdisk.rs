@@ -73,7 +73,7 @@ extern "C" {
     fn ERR(fmt: *const i8, ...);
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
     fn TRACE(fmt: *const i8, ...);
-    fn AddReactOSArcDiskInfo(ArcName: *const i8, Signature: u32, Checksum: u32, ValidPartitionTable: u8);
+    fn AddReactOSArcDiskInfo(ArcName: *const i8, GptDiskGuid: *const core::ffi::c_void, Signature: u32, Checksum: u32, ValidPartitionTable: u8);
     fn FsRegisterDevice(ArcName: *const i8, Vtbl: *const core::ffi::c_void);
     fn DiskReportError(Enable: u8);
     fn DiskGetPartitionEntry(DriveNumber: u8, PartitionNumber: u32, Entry: *mut PARTITION_TABLE_ENTRY) -> u8;
@@ -306,7 +306,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: u8) {
     ValidPartitionTable = if (*Mbr).MasterBootRecordMagic == 0xAA55 { 1 } else { 0 };
 
     sprintf(ArcName.as_mut_ptr(), b"multi(0)disk(0)rdisk(%u)\0".as_ptr() as *const i8, (DriveNumber - FIRST_BIOS_DISK) as u32);
-    AddReactOSArcDiskInfo(ArcName.as_ptr(), Signature, Checksum, ValidPartitionTable);
+    AddReactOSArcDiskInfo(ArcName.as_ptr(), core::ptr::null(), Signature, Checksum, ValidPartitionTable);
 
     sprintf(ArcName.as_mut_ptr(), b"multi(0)disk(0)rdisk(%u)partition(0)\0".as_ptr() as *const i8, (DriveNumber - FIRST_BIOS_DISK) as u32);
     FsRegisterDevice(ArcName.as_ptr(), core::ptr::addr_of!(DiskVtbl) as *const core::ffi::c_void);
@@ -493,7 +493,7 @@ pub unsafe extern "C" fn PcInitializeBootDevices() -> BOOLEAN {
         TRACE(b"Checksum: %x\n\0".as_ptr() as *const i8, (Checksum) as usize);
         crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'7');
 
-        AddReactOSArcDiskInfo(FrLdrBootPath.as_ptr() as PCHAR, Signature, Checksum, 1u8);
+        AddReactOSArcDiskInfo(FrLdrBootPath.as_ptr() as PCHAR, core::ptr::null(), Signature, Checksum, 1u8);
         crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'8');
 
         FsRegisterDevice(FrLdrBootPath.as_ptr() as PCHAR, &DiskVtbl as *const _ as *const core::ffi::c_void);

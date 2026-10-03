@@ -4943,13 +4943,16 @@ unsafe extern "C" fn fnIMLangFontLink2_GetStrCodePages(
             return E_FAIL;
         }
 
+        // Wine 10 (upstream 15c9005acb6): a character joins the run only while the code-page
+        // set stays non-empty AND it agrees with the run on the priority code page; otherwise
+        // the run ends BEFORE it. The old body narrowed unconditionally, so it ran on past
+        // the point where the set was empty (winetest mlang.c:1278 expects 3, not 4).
         if cps == 0 {
             cps = cp;
-        } else {
+        } else if (cps & cp) != 0 && ((priority_cp & cps) ^ (priority_cp & cp)) == 0 {
             cps &= cp;
-        }
-
-        if (priority_cp & cps) != 0 {
+        } else {
+            i -= 1;
             break;
         }
         i += 1;

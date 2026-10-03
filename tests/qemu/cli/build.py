@@ -74,6 +74,24 @@ def source_date_epoch(repo: Path) -> str | None:
     return ts if cp.returncode == 0 and ts.isdigit() else None
 
 
+NINJA_TIMEOUT_ENV = "VIBEOS_BUILD_TIMEOUT"
+
+
+def _ninja_timeout() -> int:
+    """The ninja stage's wall-clock budget in seconds (default one hour), overridable with
+    VIBEOS_BUILD_TIMEOUT for a deliberately cold rebuild (a regenerated -sys crate)."""
+    raw = os.environ.get(NINJA_TIMEOUT_ENV, "").strip()
+    if not raw:
+        return 3600
+    try:
+        value = int(raw)
+    except ValueError:
+        raise SystemExit(f"{NINJA_TIMEOUT_ENV}={raw!r}: expected whole seconds") from None
+    if value <= 0:
+        raise SystemExit(f"{NINJA_TIMEOUT_ENV}={raw!r}: must be positive")
+    return value
+
+
 def _classify_build_failure(out: str, err: str, rc: int | None = None) -> tuple[str, list[str]]:
     blob = out + "\n" + err
     low = blob.lower()
@@ -82,7 +100,10 @@ def _classify_build_failure(out: str, err: str, rc: int | None = None) -> tuple[
     # "error: c_int" inside one of them filed a 60-minute timeout as CARGO_CHECK_FAIL
     # (2026-09-27, a bindgen regen emitting 8,285 warnings per ntkrnl-sys compile).
     if rc == 124:
-        return "BUILD_TIMEOUT", ["stage hit its time budget; the build did not fail, it was killed"]
+        return "BUILD_TIMEOUT", [
+            f"stage hit its {_ninja_timeout()}s time budget (exit 124): killed, not failed",
+            f"re-run (ninja resumes), or raise the budget with {NINJA_TIMEOUT_ENV}=<seconds>",
+        ]
     # Host disk exhaustion FIRST: an ENOSPC surfaces as compiler/linker "error:"
     # text and would otherwise be filed as CARGO_CHECK_FAIL or BUILD_FAIL — i.e.
     # as a defect in the diff, which is exactly the wrong cause. It cost four
@@ -1110,7 +1131,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         cwd=build_dir,
         env=build_env,
         stage="ninja",
-        timeout=3600,
+        timeout=_ninja_timeout(),
     )
     if cp.returncode != 0:
         cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)

@@ -2156,6 +2156,35 @@ trees:
 # foreign-copyright directory that is in NEITHER list, so newly-imported foreign code has
 # to be classified before it can land.
 # ─────────────────────────────────────────────────────────────────────────────
+  # ── vkd3d (Wine's bundled Direct3D 12 / shader-compiler library) ─────────
+  - path: sdk/lib/vkd3d
+    name: vkd3d
+    translate: keep
+    upstream: https://gitlab.winehq.org/wine/vkd3d
+    license: LGPL-2.1-or-later
+    license_file: sdk/lib/vkd3d/COPYING
+    modified: unknown  # not yet diffed against a pristine 1.14 tarball -- owed
+    version:
+      file: sdk/lib/vkd3d/config.h
+      pattern: '#define PACKAGE_VERSION "([^"]+)"'
+    reason: >
+      Separately released WineHQ library (Direct3D 12 on Vulkan + the HLSL/SPIR-V shader
+      compiler) that Wine bundles as an external dependency; tracked against its own
+      releases, not translated.
+    review: >
+      ADDED 2026-09-30 by the 97-commit upstream merge (upstream e98fa71fdcc, "pass at
+      building Wine-10.0"), flagged UNCLASSIFIED by `--suspects`.
+
+      `trees:`, not `ours:`, and NOT on the strength of the copyright lines: Wine itself
+      does not fork vkd3d. It is a separately released WineHQ project that Wine bundles
+      under libs/ as an external library, versioned by its own releases (1.14 here).
+      The Wine DLLs that arrived in the same merge (d2d1, d3d1x, dxgi, ...) are the
+      opposite case and are filed under `ours:`.
+
+      The version probe reads config.h, which in a vendored tree is usually OUR file
+      and can be laundered (see libmpg123). It is used until this tree is compared with
+      the pristine 1.14 tarball, which is also what settles `modified:`.
+
 ours:
   - paths:
       - sdk/lib/libwine
@@ -2284,6 +2313,26 @@ ours:
       view. If the restructure is ever adopted, this is the tier queue entry to pick up;
       until then these four are dead-but-present source, same shape as a cohab-flipped
       `.c` file, just never wired in rather than wired out.
+
+  - paths:
+      - dll/directx/wine/d2d1
+      - dll/directx/wine/d3d10
+      - dll/directx/wine/d3d11
+      - dll/directx/wine/d3dx10_43
+      - dll/directx/wine/dmusic
+      - dll/directx/wine/dwrite
+      - dll/directx/wine/dxgi
+    name: Wine-10 DirectX modules
+    origin: Wine (LGPL-2.1-or-later), mostly `Copyright <year> <person> for CodeWeavers`
+    tier: "Tier 2-3 (userland DLL queue)"
+    reason: >
+      ADDED 2026-09-30 by the 97-commit upstream merge (upstream's Wine-10.0 DirectX
+      sync), flagged UNCLASSIFIED by `--suspects`. Same decision as the 24-path
+      "Wine-derived shipped modules" entry, owner-confirmed 2026-09-19: forked Wine code
+      this project ships is ours and on the translation path. d3d10, d3d11, d3dx10_43,
+      dmusic and dxgi build; d2d1 and dwrite are on disk but not wired into
+      dll/directx/wine/CMakeLists.txt, and stay in the denominator for the same reason
+      the unbuilt combase/coml2/shcore did.
 
   - paths:
       - modules/rostests/winetests/comctl32

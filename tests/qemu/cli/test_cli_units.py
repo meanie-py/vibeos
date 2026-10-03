@@ -2445,6 +2445,36 @@ def test_gdbengine_smp_media_symbols_and_cpu_count_agree(tmp_path, monkeypatch, 
     assert ge_mod._kernel_image("arm64") == mp
 
 
+@pytest.mark.parametrize("tripwire", ["", "SPECIALPOOL=*"])
+def test_gdbengine_debug_boot_carries_the_tripwire(tmp_path, monkeypatch, tripwire):
+    """The gdb engine assembles its own QEMU command line. It used to skip the
+    tripwire, so `VIBEOS_TRIPWIRE='SPECIALPOOL=*' vibeos-cli gdb start i386` booted
+    WITHOUT special pool and reproduced the original 0x19 instead of the 0x50 the
+    smoke had caught — the one boot where the knob matters most."""
+    from types import SimpleNamespace
+
+    monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", tripwire)
+    monkeypatch.setattr(ge_mod, "PROJECT_DIR", tmp_path)
+    monkeypatch.setattr(ge_mod.subprocess, "run", lambda *a, **kw: None)
+    monkeypatch.setattr(be_mod, "stage_media_paths", lambda args, staging: args)
+    monkeypatch.setattr(be_mod, "windows_free_tcp_port", lambda: 12345)
+    monkeypatch.setattr(be_mod, "windows_qemu_bin", lambda *a: "qemu-system-i386.exe")
+    monkeypatch.setattr(be_mod, "win_path", str)
+    monkeypatch.setattr(be_mod, "gateway_ip", lambda: "127.0.0.1")
+    monkeypatch.setattr(be_mod, "rewrite_accel", lambda args, accel, arch: args, raising=False)
+    config = SimpleNamespace(qemu_bin="qemu-system-i386", qemu_args=lambda work: [])
+    cmd, _ = ge_mod._build_windows_cmd(
+        "i386", config, {"qemu_dir": "qemu"}, tmp_path, tmp_path, gdb_wait=False
+    )
+    want = ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={tripwire}"] if tripwire else []
+    assert vm_mod.tripwire_args() == want
+    assert cmd.count("-fw_cfg") == len(want) // 2
+    if tripwire:
+        i = cmd.index("-fw_cfg")
+        assert cmd[i : i + 2] == want
+
+
 def test_gdbengine_expand_verb():
     assert ge_mod._expand_verb("bt 50") == "bt-tagged 50"
     assert ge_mod._expand_verb("bt") == "bt-tagged"  # no trailing space
@@ -8085,6 +8115,35 @@ def test_link_classifier_does_not_mistake_duplicate_symbol_WARNINGS_for_the_fail
         build_mod._classify_build_failure("ld.lld: error: duplicate symbol: foo", "")[0]
         == "LINK_FAIL"
     )
+
+
+def test_ninja_timeout_is_BUILD_TIMEOUT_whatever_the_output_says(monkeypatch):
+    """exit 124 is `timeout`'s, so the cause comes from the rc, never the text: a
+    2026-09-26 overrun was filed LINK_FAIL with "s: undefined" sliced out of a doc
+    comment. The salient names the budget and the knob that raises it."""
+    monkeypatch.delenv(build_mod.NINJA_TIMEOUT_ENV, raising=False)
+    cls, salient = build_mod._classify_build_failure(
+        "ld.lld: error: undefined symbol: s\n", "", 124
+    )
+    assert cls == "BUILD_TIMEOUT"
+    assert "3600s" in salient[0]
+    assert any(build_mod.NINJA_TIMEOUT_ENV in s for s in salient)
+    # the same text without the timeout's rc is still a link failure
+    assert (
+        build_mod._classify_build_failure("ld.lld: error: undefined symbol: s\n", "", 1)[0]
+        == "LINK_FAIL"
+    )
+
+
+def test_ninja_timeout_env_override(monkeypatch):
+    monkeypatch.delenv(build_mod.NINJA_TIMEOUT_ENV, raising=False)
+    assert build_mod._ninja_timeout() == 3600
+    monkeypatch.setenv(build_mod.NINJA_TIMEOUT_ENV, "14400")
+    assert build_mod._ninja_timeout() == 14400
+    for bad in ("2h", "0", "-5"):
+        monkeypatch.setenv(build_mod.NINJA_TIMEOUT_ENV, bad)
+        with pytest.raises(SystemExit):
+            build_mod._ninja_timeout()
 
 
 def test_ninja_did_work_does_not_count_the_glob_recheck_pseudo_edge():

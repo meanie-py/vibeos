@@ -1,5 +1,5 @@
 # rtl-vista-rust — thin staticlib wrapper exposing the rtl-sync `vista` link
-# surface (srw/condvar/runonce/locale) for the standalone ntdll_vista.dll
+# surface (srw/condvar/runonce/locale) plus the rtl-threadpool Tp* exports for the standalone ntdll_vista.dll
 # forwarder. Linked via reactos-link `.rust_lib("rtl-vista-rust")` — see
 # dll/ntdll/nt_0600/ntdll_vista-cargo/build.rs. Replaces the old
 # condvar/runonce/srw/locale.c that compiled into librtl_vista.a.
@@ -15,3 +15,5 @@ crate-type = ["staticlib"]
 [dependencies]
 panic-common = { path = "../panic-common", features = ["user"] }
 rtl-sync = { path = "../rtl-sync", default-features = false, features = ["vista"] }
+# The NT threadpool (Tp*), exported by ntdll_vista.spec as upstream does.
+rtl-threadpool = { path = "../rtl-threadpool", features = ["cabi"] }

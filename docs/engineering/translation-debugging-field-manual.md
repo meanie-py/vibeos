@@ -1109,6 +1109,24 @@ allocation used the real element size, so nothing looked wrong until index 1.
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
 
+### `LIST_FOR_EACH_ENTRY` translated without its container_of
+
+**Symptom:** an access violation inside a list walk on the first call, often in a
+`*ReleaseGroup*`/teardown path that boot never reaches. `rtl-threadpool`'s
+`TpReleaseCleanupGroupMembers` faulted on every call, an empty group included.
+
+**Cause:** Wine's `LIST_FOR_EACH_ENTRY(obj, head, T, field)` hides a container_of
+(`LIST_ENTRY(elem, T, field)`) on both the start and the advance. The translation cast
+`head.next as *mut T` directly, which is only right when `field` is at offset 0. Here it was
+`group_entry`, deep in the struct, so the walk read a list node as an object and the head
+check never matched. Two later loops in the same function, from the same response, had the
+subtraction.
+
+**Fix:** use `LIST_ENTRY!` (rtl-threadpool's `wine_list.rs`) or `CONTAINING_RECORD` on both
+cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and check the field's
+offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
+`entry`) or were casting to a byte or void pointer.
+
 ### A C byte count kept as the element count of a `u16` copy moves twice the bytes
 **Symptom.** A string copy that over-reads its source and over-writes its destination by
 exactly its own length. It is silent until the over-read crosses an unmapped page. On arm64,
@@ -7203,6 +7221,48 @@ Same family as `$?` after a pipe and `sccache -s` reporting another server: a re
 a reading. Two agents hit this file on the same night; one lost a minute, the other lost a
 conclusion.
 
+### A self-consistent pair of DERIVED values cannot detect its own staleness
+
+**Symptom:** an array whose length is an enum bound, a struct whose size assertion is
+generated beside it, a table indexed by a generated constant — all compile, all agree, all
+wrong. `rtl-bootdata`'s `BsdItemTable` was declared
+`[RTL_BSD_ITEM_TABLE_ENTRY; RtlBsdItemMax as usize]` with 16 rows while upstream's
+`RTL_BSD_ITEM_TYPE` had grown to 19 members, so every
+`RtlGetSetBootStatusData(DataClass >= RtlBsdPowerTransitionExtension)` indexed off the end of
+the table. Nothing could see it: the row count and `RtlBsdItemMax` came from the *same* stale
+bindgen island, so they matched each other while both disagreed with the C header.
+
+**Cause:** the checker and the thing checked share a source. This is why a stale `-sys` crate
+is so much worse than a wrong one — `size_check_*.rs` assertions regenerate from C and
+therefore *can* catch drift, but only if the bindings are regenerated too; regenerate only the
+assertions and you get failures with no fix, regenerate neither and everything is green
+forever. Writing MORE assertions over the same stale source adds no information.
+
+**Fix:** break the tie from outside. Regenerate one side from the primary artifact (the C
+headers) and let the compiler compare — a compile error is the detector you could not write by
+hand. A standalone `clang -fsyntax-only` with `_Static_assert` on `sizeof`/`offsetof`, or
+`-Xclang -fdump-record-layouts` to read the field list, answers without going through any
+project tool. **Corollary: do not "fix" the symptom at the consumer.** Four sites in this tree
+transmuted past a stale `OB_CLOSE_METHOD` (`config-rust`, `mm/section.rs`, `iomgr-rust`,
+`lpc-rust`), two of them with `core::mem::transmute` and comments citing each other as
+precedent for "the identical drift". A transmute deletes the only check that would ever have
+noticed, so the wrong-width callback (`ULONG` handle counts where the caller passes
+`ULONG_PTR`) became permanent and invisible. Regenerating turned all four into ordinary type
+errors. When a substrate looks wrong, regenerate it; if you cannot, say so loudly rather than
+silencing the diagnostic.
+
+**When the regen COMPILES and the boot dies, suspect a stale translation the stale island was
+agreeing with.** `pnpmgr-rust` `IopGetBusTypeGuidIndex` was translated from pre-`a7f658e3221`
+C, where `IO_BUS_TYPE_GUID_LIST` ended in an inline `Guids[]`; upstream made `Guids` a separately
+allocated `PGUID`, and that change landed as dead C in a cohab-flipped file. The regenerated
+island described the new struct and everything still compiled, because the Rust spelled every
+access `addr_of!((*List).Guids) as *mut GUID` -- a cast that is valid whether the field is an
+array or a pointer. So each GUID was written over the pointer and past a 44-byte block: BUGCHECK
+0x19 on i386, silent on 64-bit where pool rounding absorbed the 8 bytes. `SPECIALPOOL=*` found it
+in one boot where three hypotheses had not. Before trusting a green compile after a regen, grep
+the consumers of every struct whose FIELD KINDS changed (array to pointer, inline to indirect)
+for `addr_of!` casts, and read the upstream commit that changed the header.
+
 ### A codegen tool skips a whole ARCH and exits 0, so the FFI substrate drifts unnoticed
 
 **Symptom:** a `-sys` crate's struct layouts disagree with the C headers — `EPROCESS` 1000 bytes
@@ -10445,6 +10505,16 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   **Recognition rule: on a port where IRQL is priority-masked rather than DAIF-masked, DAIF
   belongs to exception entry/exit windows and nothing else. If a trap handler never touches it,
   it is running masked.**
+- **A user-mode spinner was never preempted on arm64.** The only preemption point was
+  `KfLowerIrql` crossing below DISPATCH in thread context, and a thread spinning at EL0
+  never reaches it. The clock IRQ's own lowering runs at interrupt depth > 0 and is
+  declined, so `QuantumEnd` and `NextThread` sat unread. On one CPU, any user spin-wait for
+  a lock held by a preempted thread is a whole-guest livelock: ntdll_vista's threadpool
+  worker spun in condvar `InternalLockCondVar`, and even the probe's own watchdog thread
+  never ran. Fix: `KiEL0IrqPreempt`, called from `KiEL0IrqEntry` while the user's NEON
+  state is still on the stack. It unmasks, raises to DISPATCH and lowers back, so the
+  existing thread-context path does the switch. EL0 is the safe IRQ exit: PASSIVE, no
+  kernel locks, and ELR/SPSR already in the frame.
 - **PSTATE.DAIF is NOT per-thread state** `[§9.19]` — `KiSwapContext` doesn't save/restore it, so
   a context switch **leaked exception-entry DAIF into a new thread** → boot wedges with the
   serial completely silent. A masked-swap tripwire in `KiSwapContextResume` remains in tree.
