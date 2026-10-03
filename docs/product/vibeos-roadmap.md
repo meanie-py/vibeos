@@ -4455,8 +4455,28 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     process and thread, and dumps that VA's own map/unmap ledger from the flight recorder
     (whole-ring tail dumps are useless here — on the motivating crash the last 32 of 643,270
     events were 100% working-set lock churn).
-  This is the §9.98 physical-page-reuse cluster, **OWNED BY the smp-bringup lane** (task #19/#23)
-  — the instrumentation and the corpus are the contribution from here, not a fix.
+  This is the §9.98 physical-page-reuse cluster, task #19/#23, **OWNED BY the smp-bringup lane
+  — and CLOSED 2026-10-03.** The root cause was fixed on 2026-08-01 (`MiPurgeStaleUserPtes`,
+  see "stale FreeLDR identity PTEs in recycled user page tables" below); what was still owed was
+  evidence that the SYMPTOM had gone, because that fix proved only that the oracle went quiet and
+  that `ZwMapViewOfSection` gained two passes.
+
+  Measured now: **639 arm64 `-smp 1` kmtest rounds (2026-09-14 → 10-03) carry 0 `BUGCHECK 0x50`
+  and 0 `0x1A`** — the cluster's two stop codes — **and 0 short sweeps out of the 582 with a
+  known total**, against the pre-fix 42/85 that finished. One fresh sweep on probe-bearing media
+  launched 93/93 with the ratchet holding and **0 hits on every armed MM site** (`MMGUARD`,
+  `FREEMAPPED`, `PFNMISMATCH`, `KSTACK`) across 15,144 serial lines, with the probe's presence in
+  `qemu/ramdisk.img` verified first — the July retraction is the reason that check is not
+  optional.
+
+  Two methodological notes from doing it, both of which cost time:
+  - **The flake ledger cannot answer this by grep.** `conformance.jsonl` stores `launched`, `ok`,
+    `bad`, `bugcheck` and `shape` plus a *pointer* to the serial log — no serial text. Grepping
+    it for `C000001D`/`MMGUARD` returns 0 for every input and means nothing. Use `launched` vs
+    `sweep_done total=`, and `bugcheck`.
+  - **Still genuinely owed, and small:** `MmInsertRmap`'s two early returns (`mm/rmap.rs:453`,
+    `:476`) still `return` where the C `KeBugCheck`s. They are loud now (`mm_guard_trip!`) and
+    probed as never firing, so they are not this bug — but they remain silent degrades.
 - **`KeEvent`'s 132-pass UP→smp1 drop is intentional test coverage, not an event failure**
   (corrected 2026-09-06). `modules/rostests/kmtests/ntos_ke/KeEvent.c:85` explicitly excludes
   its `Wait=TRUE` block when `KmtIsMultiProcessorBuild` is true: the test's manual cleanup

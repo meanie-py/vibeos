@@ -51,6 +51,34 @@ RMC() {
     mcopy -o -i "$RAMDISK_IMG" "$src" "$@"
 }
 
+# mcopy cannot create parent directories, so every deep destination needs its
+# path components made first. This exists as ONE helper because the knowledge
+# was previously written out in only ONE of the two loops that copy into the
+# image -- and payloads arrive through the OTHER one: strip_cd_media.py appends
+# the payload grafts onto the stock-apps list, so a dest like
+# `Profiles/All Users/Start Menu/Programs/StartUp/kmtest-sweep.exe` was mcopy'd
+# by a loop that had never made a directory in its life. It failed with
+# `no match for target` / `Bad target`, and only on a tree whose ramdisk.img had
+# never already been given that directory by the payload loop -- so a first-ever
+# kmtest stage aborted the build while every tree that had staged it once before
+# kept working. Probe-then-create, because `mmd` prompts on an existing
+# directory when stdout is a tty and vibeos-cli runs this under a PTY.
+MMDIR_P() {
+    local dir partial comp
+    dir="$(dirname "$1")"
+    [ "$dir" != "." ] && [ "$dir" != "/" ] || return 0
+    partial=""
+    # No pipe: a `while read` on the right of one runs in a subshell, and this
+    # has to accumulate across iterations.
+    local IFS=/
+    for comp in $dir; do
+        [ -n "$comp" ] || continue
+        partial="${partial:+$partial/}$comp"
+        mdir -i "$RAMDISK_IMG" "::/$partial" >/dev/null 2>&1 \
+            || mmd -i "$RAMDISK_IMG" "::/$partial"
+    done
+}
+
 # Parse arguments
 for arg in "$@"; do
     case "$arg" in
@@ -614,6 +642,7 @@ python3 "$PROJECT_DIR/tools/strip_cd_media.py" --lst "$APPS_LST" --out "$APPS_LS
     --cache "$STRIP_CACHE" --objcopy "$STRIP_OBJCOPY" || exit 1
 while IFS='=' read -r dest src; do
     [ -n "$dest" ] || continue
+    MMDIR_P "$dest"
     mcopy -o -i "$RAMDISK_IMG" "$src" "::/$dest"
 done < "$APPS_LST.stripped"
 
@@ -655,17 +684,7 @@ printf '%s\n' "$PAYLOAD_DESTS" | sed '/^$/d' > "$PAYLOAD_RECORD"
 if [ -n "$PAYLOAD_MANIFEST" ]; then
     echo "[*] staging payloads (VIBEOS_PAYLOAD=${VIBEOS_PAYLOAD:-<stamp>}${VIBEOS_DOOM:+ VIBEOS_DOOM=$VIBEOS_DOOM})"
     printf '%s\n' "$PAYLOAD_MANIFEST" | while IFS='=' read -r DEST SRC; do
-        # mcopy can't create parent dirs — mmd each path component first
-        # (probe-then-create, same non-interactive pattern as the Fonts dir).
-        DIR="$(dirname "$DEST")"
-        if [ "$DIR" != "." ]; then
-            PARTIAL=""
-            printf '%s\n' "$DIR" | tr '/' '\n' | while read -r COMP; do
-                PARTIAL="${PARTIAL:+$PARTIAL/}$COMP"
-                mdir -i "$RAMDISK_IMG" "::/$PARTIAL" >/dev/null 2>&1 \
-                    || mmd -i "$RAMDISK_IMG" "::/$PARTIAL"
-            done
-        fi
+        MMDIR_P "$DEST"
         echo "[*]   $(basename "$SRC") -> ::/$DEST"
         mcopy -o -i "$RAMDISK_IMG" "$SRC" "::/$DEST"
     done

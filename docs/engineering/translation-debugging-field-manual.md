@@ -10123,13 +10123,37 @@ The attribution recipe runs in ~15 min; **arm special pool first** (below) rathe
 forensics on the innocent victim.
 
 ### Physical-page reuse: a frame backing a still-mapped user page is freed and re-handed-out
-`[§9.98]` — **CHARACTERIZED, root-cause hunt OWED.** ~40% of arm64 kmtest sweeps kill a *later*
-`kmtest_.exe`, with **two faces from one root**: `0xC000001D` at an image PC (the page under the
-code changed) and `0xC0000005` in `RemoveEntryList` inlined into `RtlpCoalesceFreeBlocks` (the
-page under the heap changed). **Disproven, don't re-chase:** an `rtl_heap` translation bug.
-Tripwire #1 (free-while-mapped) came back **negative**, which narrows it. This entry exists
-because §9.96 first registered the flake with a plausible-but-unproven label — **a label is not
-a diagnosis.**
+`[§9.98]` — **FIXED 2026-08-01; symptom confirmed ABSENT 2026-10-03. Do not start this hunt.**
+~40% of arm64 kmtest sweeps used to kill a *later* `kmtest_.exe`, with **two faces from one
+root**: `0xC000001D` at an image PC (the page under the code changed) and `0xC0000005` in
+`RemoveEntryList` inlined into `RtlpCoalesceFreeBlocks` (the page under the heap changed).
+
+**Cause:** FreeLDR's identity-mapped page-table *pages* get recycled as user page tables while
+still holding FreeLDR's own entries (VA==PA, global, EL1-only), and on ARM64 TTBR0 **is** the
+user half — so a fresh user range sits on valid-looking descriptors, the demand-page fault never
+fires, and teardown decodes a stale descriptor into a PFN naming no frame. **Fix:**
+`MiPurgeStaleUserPtes` (`arm64/page.rs`) from `MmCreateMemoryArea`. amd64 carried the equivalent
+guard all along, which is why 148 x86 rounds never reproduced it. Full account: roadmap, "stale
+FreeLDR identity PTEs in recycled user page tables".
+
+**The closure evidence, which is the part worth copying.** The original fix proved the *oracle*
+went quiet (`MmDeleteRmap mapping-not-in-list` once per run → 0) and that
+`ZwMapViewOfSection` gained two passes. It did NOT show the sweep-kill rate had gone, so that
+was measured separately: **639 arm64 `-smp 1` kmtest rounds (2026-09-14 → 10-03) carry 0
+`BUGCHECK 0x50` and 0 `0x1A` — both of this bug's stop codes — and 0 short sweeps out of the
+582 with a known total**, against 42/85 finishing before. Plus one fresh probe-bearing sweep:
+93/93 launched, ratchet holding, and **0 hits across all armed MM sites** (`MMGUARD`,
+`FREEMAPPED`, `PFNMISMATCH`, `KSTACK`) in 15,144 serial lines.
+
+**Silence is only a result once you prove the probe shipped** — a July soak's every
+"under the probes" claim was vacuous because the probes landed four hours after the media was
+frozen. Check the MEDIA, not the build dir: `strings qemu/ramdisk.img | grep -c
+mapping-not-in-list` returned 4 for the run above. **Disproven, don't re-chase:** an `rtl_heap`
+translation bug; the free-while-mapped tripwire (negative); `MmInsertRmap`'s two silent returns
+(probed, never fire — still wrong as silent degrades, but not this). This entry exists because
+§9.96 first registered the flake with a plausible-but-unproven label — **a label is not a
+diagnosis** — and it is kept after the fix because the two faces are the thing a reader will
+recognise if anything like it returns.
 
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the
@@ -12270,7 +12294,7 @@ authoritative registry.
 | Bug | State |
 |---|---|
 | **`-smp` `0xF4` boot-phase flake** (~2/20 soak), described as §9.56-class | Separate from the ready-list tear, which is **fixed** — see `active-lanes/smp-bringup-quest.md`. |
-| **arm64 physical-page reuse** — a frame backing a still-mapped user page is freed and re-handed-out `[§9.98]` | Characterized, two faces proven to be one root; ~40% of arm64 kmtest sweeps. Free-while-mapped tripwire negative. |
+| **arm64 physical-page reuse** — a frame backing a still-mapped user page is freed and re-handed-out `[§9.98]` | **FIXED** (`MiPurgeStaleUserPtes`, 2026-08-01): recycled FreeLDR identity PTEs in user page tables. Absent in 639 rounds + a probe-verified sweep (2026-10-03). |
 | **arm64 user-mode SEH first-chance** — `RtlRaiseException` unimplemented | Needs a `#[naked]` capture stub. |
 | **`ExHardError`** pool illegal-instruction; **`MmSection`** in-kernel wedge `[§9.92]` | Distinct from the arm64 kernel-SEH cluster; both open. |
 | **arm64 exception-dispatch recursion** under a dropped probe `[§9.104]` | Layer 1 fixed; layer 2 is the deep root. |
