@@ -4260,6 +4260,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     it lands — looking exactly like "the copy-back path is never reached", the wrong
     conclusion — but hand symbolication stays exposed afterwards. Break on something you know
     executes before believing any silence, and pass the MP binary by name.
+  - **amd64/i386 count drifts in `NpfsReadWrite` and `KeEvent` — ROOT-CAUSED and FIXED
+    2026-10-03.** The worst live flake at the time: 16 amd64 NpfsReadWrite hits in 8 days,
+    plus 10 KeEvent hits on i386, all at a different assertion each time. The cause was
+    winlogon's boot-time ladder (WoW64 guests, then stock i386 applets under FEX) running during
+    the sweep and holding a uniprocessor guest's only CPU past the tests' 100 ms windows.
+    `[NPFS-WAIT]` shows the miss as `idle 0`, against `idle 109` for an expected block.
+    Conformance boots now pass the per-boot tripwire token `QUIET`, and winlogon skips the
+    ladder. Smoke and the gate's ladder lane still run it from the same media. amd64: 4 quiet
+    rounds with 0 misses, against 10 loud rounds with misses in 8. Field manual: "A kmtest
+    count drift on a UP guest is the boot-time ladder, not the scheduler". MmMdl's amd64 drift
+    was a separate thing, already settled by `c8228e5` (the count depends on free system VA).
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`.

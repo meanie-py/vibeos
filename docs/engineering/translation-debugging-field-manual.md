@@ -11839,6 +11839,29 @@ worktree or kill a running build to propagate this fix.
    private namespace (`canon-run.sh`, `unshare --map-root-user --mount`), so any host-side
    sizing of the canonical path silently measures an empty directory rather than failing.
 
+### A kmtest count drift on a UP guest is the boot-time ladder, not the scheduler
+**Symptom.** amd64/i386 conformance drops one or a few passes in a timing test that waits
+100 ms for a worker thread (`NpfsReadWrite`, `KeEvent.c:207` reading `STATUS_TIMEOUT`), at a
+different assertion each time. The `[NPFS-LATE]` line shows `woke +109 ms, work 0 ms`: the
+worker did not run until the caller's 100 ms wait had already expired. Host and guest clocks
+agree at whole-test granularity, so it is not a host freeze.
+
+**Cause.** winlogon's boot-time test ladder (the WoW64 guests, then the stock i386 applets:
+winmine, calc, notepad, …) is still running when the kmtest sweep starts, and each applet's
+startup under FEX is a burst of emulated user-mode work. On a uniprocessor guest that burst holds
+the only CPU for 100+ ms. `[NPFS-WAIT]` (NpfsHelpers.c) proves it: an expected block reads
+`idle 109 kernel 109, 7 interrupts`, while a miss reads `idle 0` with kernel time well short of
+the interval (the rest is user mode), or 200+ interrupts. In each miss the serial shows a
+`[WOW64] NtOpenFile …shell32.dll` loading next to the NPFS line.
+
+**Fix.** Per BOOT, never per media. Conformance boots pass the tripwire token `QUIET`
+(`conformance.with_quiet_token`); the kernel publishes the tripwire config as
+`HKLM\SYSTEM\CurrentControlSet\Control\VibeTripwire`; and winlogon's `QuietBootRequested` skips
+the ladder, saying so on serial. A staged marker file looked simpler and was wrong: the gate
+builds ONE media and boots it for smoke, the ladder AND conformance, so a media-level switch
+would turn the gate's ladder lane off without a word. On 2026-10-03 amd64 measured: 4 quiet
+rounds, 0 misses; 10 loud rounds, a miss in 8 and 3 NpfsReadWrite failures.
+
 ### `NET_FLAKE` that is not a flake `[§9.84]`
 A gate showing `✓ build ×3 ✓ lint ×3 ✓ smoke: all three` and a red net suite, where **all 15
 tests error (not fail) with the same 600 s number, first test included**, means the fixture never

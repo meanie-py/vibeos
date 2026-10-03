@@ -96,6 +96,39 @@ ASSERT_FAIL = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*\.c:\d+): Test
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ratchet import BAD, compare, fmt, load_baseline  # noqa: E402
 
+END_PREFIX = "[KMTEST:END "
+
+
+def splice_split_end_markers(lines):
+    """Rejoin an END marker that another print cut in two.
+
+    The END line comes from the user-mode sweep and the kernel prints on the same
+    serial port, so a kernel line can land in the MIDDLE of it:
+
+        [KMTEST:END ExHardE[EXIT-THR] image=SERVICES.EXE exit_status=0x0 crit=0
+        rror pass=30 fail=0 skip=0]
+
+    Unrepaired, that test (30 passes, 0 failures) reads as NO-END, which the ratchet
+    calls a regression. The repair is narrow on purpose: the fragment before the
+    intruding `[` plus the start of one of the next three lines must form a
+    COMPLETE END marker, or nothing changes. The rejoined marker goes in as its own
+    line where its tail was; the intruding text is left where it was.
+    """
+    out = list(lines)
+    for i, line in enumerate(out):
+        at = line.find(END_PREFIX)
+        if at < 0 or END.search(line):
+            continue
+        cut = line.find("[", at + 1)
+        head = line[at:cut] if cut > 0 else line[at:]
+        for k in range(i + 1, min(i + 4, len(out))):
+            m = END.match(head + out[k])
+            if m:
+                rest = out[k][len(m.group(0)) - len(head) :]
+                out[k : k + 1] = [m.group(0)] + ([rest] if rest.strip() else [])
+                break
+    return out
+
 
 def parse(log_text):
     """Return (results: list[dict], done_line: str|None, bugcheck: str|None)."""
@@ -103,7 +136,7 @@ def parse(log_text):
     current = None  # the test whose launch we've seen but not exit/timeout
     done_line = None
     bugcheck = None
-    for line in log_text.splitlines():
+    for line in splice_split_end_markers(log_text.splitlines()):
         m = LAUNCH.search(line)
         if m:
             current = {
