@@ -24,8 +24,16 @@ wrappers. The `tpprobe` payload drives every object type and found two bugs on i
 and ntdll_vista never initialized its own copy's timer/wait queues. Upstream has the second
 bug too.
 
+**pcix (17), ported 2026-10-03** as one batch into `pcix-rust`: 20494b84efc, b82fc1e2b38
+(with the `PciBuildRequirementsList` and `Device_ChangeResourceSettings` bodies its BarIndex
+walk needs), e51b1c1dbfc and 4dabb9e5825. The `Rtl*MemIoResource` helpers that 4dabb9e5825
+calls are now `rtl-misc/src/memres.rs` (all of upstream `memres.c`, flipped), and ntoskrnl
+exports them as upstream does. Cargo-checked on all three arches and built. pcix is still
+not bound, so nothing boots it.
+
 **Still owed:**
-- 17, pcix, latent. Port it as one batch before pcix is ever bound.
+- `4dabb9e5825`'s `arb/ar_memio.c` hunks. They patch functions that arrived with arbiter commit
+  `023d8af5566`, which `ar_memio.rs` does not have yet, so they land together with that port.
 
 ## Summary
 
@@ -417,8 +425,12 @@ be ported as one batch before pcix is ever enabled.
 
 ## INCONCLUSIVE
 
-There are no INCONCLUSIVE pairs. Two side observations came up during the review; each
-lists what would settle it:
+There are no INCONCLUSIVE pairs. Two side observations came up during the review. **Both
+were ported 2026-09-30.** (1) syssetup-rust now uses `DWLP_USER` at all 22 live sites in
+install/proppage/wizard, because the post-fix C uses it in every one of those functions;
+`addons.c` is unbuilt. (2) `sminit.rs` was already header-typed. The same class was still in
+`smutil.rs` `SmpQueryRegistrySosOption` (a `[u8; N]` that was also half the C's
+`WCHAR[N]` size), and that is fixed now. The original notes follow.
 
 1. **`0a2244b0b54` also changes `syssetup/install.c`, `proppage.c` and `wizard.c`**
    (`GWLP_USERDATA` → `DWLP_USER`). Those files are not in this list, and our

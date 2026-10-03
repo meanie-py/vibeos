@@ -31,8 +31,13 @@ divergence: the boot APIC id comes from CPUID(1), the value `KiGetFeatureBits` s
 kernel's on offsets before. Smoked `--smp 4` on amd64 and i386, with all three APs online
 on each.
 
+**UDP broadcast (b8ee7950af4), settled 2026-10-03:** the two-socket test, added to
+`tdidgtest.rs` and asserted by `test_net.py::test_tdi_broadcast_local_delivery`, showed the
+gap was real: both limited and directed broadcasts were MISSED by the local listener. The fix
+went into `tditrans.rs`. A successful SendDatagram to a broadcast address is queued to every
+local address object bound to the destination port, and both cases now pass.
+
 **Still owed:**
-- The UDP-broadcast question (b8ee7950af4), which needs the two-socket TDI test below.
 - The pre-existing SMP divergences listed under "HAL SMP: the rest of the AP-startup
   comparison", for the SMP lane.
 

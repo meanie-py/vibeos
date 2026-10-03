@@ -12,3 +12,5 @@ pub mod res;
 pub mod memstream;
 #[cfg(feature = "cabi")]
 pub mod registry;
+#[cfg(feature = "cabi")]
+pub mod memres;
