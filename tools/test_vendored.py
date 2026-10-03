@@ -34,11 +34,10 @@ def test_the_committed_registry_agrees_with_the_tree():
 def test_the_committed_registry_registers_the_trees_that_motivated_it():
     reg = vendored.load(REPO)
     paths = {t.path for t in reg.trees}
-    # ucrt is why this exists (task #55; its source is gone, its headers remain); ACPICA
-    # and FreeType were the two the prose named; mbedtls was the largest omission from
+    # ucrt was why this exists (task #55) and is gone, source and headers; ACPICA and
+    # FreeType were the two the prose named; mbedtls was the largest omission from
     # the tuple this replaced.
     for p in (
-        "sdk/include/ucrt",
         "vendor/acpica",
         "vendor/freetype",
         "vendor/mbedtls",
@@ -46,13 +45,13 @@ def test_the_committed_registry_registers_the_trees_that_motivated_it():
         assert p in paths, f"{p} is not registered"
 
 
-def test_ucrt_headers_are_vendored_but_our_msvcrt_is_not():
-    """The boundary task #55 turned on. ucrt's source is ours now (ucrt-rust) and gone;
-    what is still Microsoft's is the headers, and a path under the deleted tree must not
-    count as vendored -- that would hide a file reappearing there from every scan."""
+def test_ucrt_is_no_longer_vendored_and_our_msvcrt_never_was():
+    """The boundary task #55 turned on. ucrt is ours now (ucrt-rust; the headers are
+    sdk/include/crt's), and a path under either deleted tree must not count as vendored
+    -- that would hide a file reappearing there from every scan."""
     reg = vendored.load(REPO)
     assert not reg.is_vendored("sdk/lib/ucrt/string/strupr.c")
-    assert reg.is_vendored("sdk/include/ucrt/stdio.h")
+    assert not reg.is_vendored("sdk/include/ucrt/stdio.h")
     # msvcrt_shared is ours and must stay in the denominator.
     assert not reg.is_vendored("dll/win32/msvcrt/cpp.c")
     assert not reg.is_vendored("dll/win32/msvcrt/reactos/ucrt_tls_sup.c")
@@ -80,10 +79,10 @@ def test_reactos_own_code_under_libs_is_not_swept_up():
 
 
 def test_prefix_match_respects_path_boundaries():
-    """`sdk/include/ucrtx` must not be swallowed by the entry for `sdk/include/ucrt`."""
+    """`vendor/acpicax` must not be swallowed by the entry for `vendor/acpica`."""
     reg = vendored.load(REPO)
-    assert reg.is_vendored("sdk/include/ucrt")
-    assert not reg.is_vendored("sdk/include/ucrtx/a.h")
+    assert reg.is_vendored("vendor/acpica")
+    assert not reg.is_vendored("vendor/acpicax/a.c")
 
 
 def test_every_version_probe_resolves():

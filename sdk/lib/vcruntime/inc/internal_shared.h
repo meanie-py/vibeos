@@ -21,6 +21,17 @@
 extern "C" {
 #endif // __cplusplus
 
+// The UCRT side of the startup handshake. Microsoft's corecrt_startup.h used to
+// declare these alongside the public API; mingw-w64's carries only the public
+// part, so they are stated here (ucrtbase implements them in ucrt-rust).
+#ifdef __cplusplus
+typedef bool __crt_bool;
+#else
+typedef _Bool __crt_bool;
+#endif
+__crt_bool __cdecl __acrt_initialize(void);
+__crt_bool __cdecl __acrt_uninitialize(__crt_bool _Terminating);
+
 #if defined(_MSC_VER)
 #define _CRTALLOC(x) __declspec(allocate(x))
 #else

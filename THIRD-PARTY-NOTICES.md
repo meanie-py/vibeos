@@ -2,7 +2,7 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-39 vendored C/C++ components:
+38 vendored C/C++ components:
 
 - [AC'97 audio sample driver](#ac97-audio-sample-driver) — unknown — MIT
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
@@ -29,7 +29,6 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [Mbed TLS](#mbed-tls) — 3.6.7 — Apache-2.0 OR GPL-2.0-or-later
 - [Mesa 3-D graphics library](#mesa-3-d-graphics-library) — 2.6 — LGPL-2.0-or-later
 - [Microsoft compiler-tests (EH/SEH)](#microsoft-compiler-tests-ehseh) — unknown — MIT
-- [Microsoft UCRT](#microsoft-ucrt) — unknown — Microsoft (see the Windows SDK licence terms)
 - [OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)](#opengl-sdk-headers-mesa-glh-khronos-glexth-sgi-gluh) — 7.6 — MIT
 - [rdesktop (as mstsc.exe)](#rdesktop-as-mstscexe) — 1.8.3 — GPL-3.0-or-later
 - [rdesktop (rosapps tsclient)](#rdesktop-rosapps-tsclient) — 1.8.3 — GPL-3.0-or-later
@@ -4480,19 +4479,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-```
-
-## Microsoft UCRT
-
-- Upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
-- Version: unknown
-- In this tree: `sdk/include/ucrt`
-- Licence: Microsoft (see the Windows SDK licence terms)
-- Grant reproduced from: **the tree carries no licence grant**
-
-```
-THIS TREE CARRIES NO LICENCE GRANT. Its source headers bear only "Copyright (c) Microsoft Corporation. All rights reserved." with no permission statement of any kind, and there is no LICENSE, COPYING or README in either sdk/lib/ucrt or sdk/include/ucrt. The recorded licence is therefore a POINTER to the Windows SDK licence terms under which Microsoft distributes the ucrt sources, not something reproducible from this repository — and those terms are an SDK EULA, not an open-source licence.
-This is the largest unresolved provenance question in the tree (~78K lines) and the reason the entry says the SDK version is unknown: without the version we cannot even name which EULA applies. It is recorded here rather than rounded off so that generated notices state the gap instead of hiding it. Resolving it means establishing the SDK version and its terms, or replacing the tree — see the ucrtbase work item in the roadmap.
 ```
 
 ## OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)

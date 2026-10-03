@@ -99,7 +99,7 @@ def test_rust_inventory_never_counts_bindings_or_harnesses_as_translation(tmp_pa
 
 
 def test_vendored_trees_are_excluded_before_anything_else(registry):
-    for rel in ("vendor/acpica/utilities/utglobal.c", "sdk/include/ucrt/stdio.h"):
+    for rel in ("vendor/acpica/utilities/utglobal.c", "vendor/mbedtls/aes.c"):
         bucket, surface, _ = port_audit.classify(rel, registry)
         assert bucket == port_audit.EXCLUDED and surface == "Vendored (vendor.yaml)", rel
 
