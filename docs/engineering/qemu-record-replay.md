@@ -968,6 +968,50 @@ Record it here and keep going; only chase one when it looks load-bearing.
   — the plan was made without re-reading it. Finding a knob that varies serial
   density at shift 3, during early boot, is still open.
 
+  **The divergence abort, pinned down: the replay is byte-exact right up to the
+  moment it fails.** Three measurements on `wedge-b`, which is the most specific
+  thing rr has produced so far:
+
+  * The replay's guest serial is **byte-for-byte identical to the record for
+    1,100 guest lines** (excluding the two harness header lines), and then stops
+    exactly where the record carries on — the record's next line is
+    `[IRQL-CHK] PspCreateProcess-after-InitSecurity irql=0`.
+  * The log is **provably complete** (the in-tree walk reaches a shutdown event)
+    and holds **164,964 `EVENT_CHAR_WRITE` records**. Full mix: 264,783
+    `EVENT_INSTRUCTION`, 164,964 char-writes, 74,621 checkpoint id 31, 29,680 of
+    id 2, 9,672 of id 29, 7,379 of id 1; 564,976 events total.
+  * It is **deterministic**: same message, same guest line, two independent
+    replays.
+
+  So `Missing character write event in the replay log` is NOT truncation, NOT a
+  short log, and NOT the guest doing something different — the serial matches.
+  QEMU is reporting that the guest asked to write a character at a point where
+  the log's next event is not a char-write. That reads as **icount alignment
+  drift**: the replay arriving at the same guest work at a different instruction
+  position than the recording wrote down. That is a far more tractable failure
+  than "it stalls somewhere", because QEMU names the invariant that broke.
+
+  **Record and replay must bracket any media rebuild, and this is easy to get
+  wrong.** Both traces above became unreplayable when a later `vibeos-cli build
+  --arch arm64` (run to warm the land receipts) rewrote `qemu/boot.img` at 11:16
+  — the trace's `boot.qcow2` is an OVERLAY over that file, so the guest would
+  read bytes that were never recorded. `rr verify` catches it and refuses by
+  name, which is the only reason the aborts above are still trustworthy: the
+  rebuild landed AFTER both replays (10:41 and 10:47), so the media was
+  consistent while they ran. Check the mtimes before believing any
+  record/replay pair that straddles a build.
+
+  Unexplained, recorded so it is not mistaken for a result: the same `rr verify`
+  run printed `PARTIAL — agreed for 1416 lines; record has 2430, replay 1416`
+  alongside its own "not replaying" refusal. Those counts match neither trace
+  (`wedge-b` is 2117/1103). Nothing here is built on them.
+
+  **Next experiment:** re-record (required anyway, the media moved), replay, and
+  capture the fd offset at the abort so `rr wedge --at` can place it in the log —
+  specifically whether the abort lands mid-char-write-burst the way the wedge
+  did. If both failure modes sit in the same kind of position, they are probably
+  one defect with two presentations.
+
   Two caveats worth keeping, because they bound how much the top row is worth.
   The three tight measures are near-proportional to one another in this region —
   the log here is a uniform `EVENT_CHAR_WRITE` / `EVENT_INSTRUCTION +3` pattern,
