@@ -50,14 +50,6 @@ add_library(crypt32 MODULE
     crypt32.rc
     ${CMAKE_CURRENT_BINARY_DIR}/crypt32.def)
 
-if(MSVC)
-    target_compile_options(crypt32 PRIVATE
-        /wd4090 # warning C4090: 'function': different 'const' qualifiers
-        /wd4267 # warning C4267: 'function': conversion from 'size_t' to 'ULONG', possible loss of data
-        /wd4312 # warning C4312: 'type cast': conversion from 'unsigned int' to 'void *' of greater size
-    )
-endif()
-
 set_module_type(crypt32 win32dll)
 target_link_libraries(crypt32 wine ${PSEH_LIB} oldnames)
 add_delay_importlibs(crypt32 cryptnet)

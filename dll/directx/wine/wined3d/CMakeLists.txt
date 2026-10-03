@@ -52,12 +52,6 @@ add_library(d3dwine MODULE
     version.rc
     ${CMAKE_CURRENT_BINARY_DIR}/d3dwine.def)
 
-if(MSVC)
-    # C4098: 'void' function returning a void expression
-    # C4319: context_vk.c masks a 64-bit VkDeviceSize with a size_t-wide
-    target_compile_options(d3dwine PRIVATE /wd4312 /wd4098 /wd4319)
-endif()
-
 set_module_type(d3dwine win32dll)
 target_link_libraries(d3dwine wine vkd3d dxguid oldnames)
 add_importlibs(d3dwine opengl32 user32 gdi32_vista gdi32 advapi32 kernel32_vista msvcrt kernel32 ntdll)

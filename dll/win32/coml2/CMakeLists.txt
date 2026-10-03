@@ -11,11 +11,6 @@ list(APPEND SOURCE
 
 add_library(coml2 MODULE ${SOURCE} ${CMAKE_CURRENT_BINARY_DIR}/coml2.def)
 set_module_type(coml2 win32dll)
-if(MSVC)
-    # Disable warning C4090: 'function': different 'const' qualifiers
-    # Disable warning C4312: 'type cast': conversion from 'unsigned int' to 'void *' of greater size
-    target_compile_options(coml2 PRIVATE /wd4090 /wd4312)
-endif()
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
 	target_compile_options(coml2 PRIVATE -Wno-discarded-qualifiers)
 endif()

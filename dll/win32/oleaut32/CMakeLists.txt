@@ -41,10 +41,6 @@ list(APPEND SOURCE
     # DispCallFunc and doesn't call these.
     )
 
-if(MSVC)
-    add_asm_files(oleaut32_asm msvc.S)
-endif()
-
 # --- Rust cohabitation (oleaut32-rust) --------------------------------------
 # Build liboleaut32_rust.a from the workspace crate (STANDARD user-mode per-arch
 # targets; advapi32-rust/ole32-rust pattern). The #[no_mangle] bodies replace
@@ -110,12 +106,6 @@ add_library(oleaut32 MODULE
     ${PCH_SKIP_SOURCE}
     oleaut32.rc
     ${CMAKE_CURRENT_BINARY_DIR}/oleaut32.def)
-
-if(MSVC)
-    # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    # Disable warning C4267: 'initializing': conversion from 'size_t' to 'BYTE', possible loss of data
-    target_compile_options(oleaut32 PRIVATE /wd4146 /wd4267)
-endif()
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_compile_options(oleaut32 PRIVATE -Wno-misleading-indentation)

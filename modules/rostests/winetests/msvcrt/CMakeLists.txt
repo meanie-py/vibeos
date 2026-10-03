@@ -38,11 +38,6 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
     endif()
 endif()
 
-if(MSVC)
-    # 'swscanf' : unknown type field character '\xe1' in format specifier
-    target_compile_options(msvcrt_winetest PRIVATE /wd4476)
-endif()
-
 set_module_type(msvcrt_winetest win32cui)
 add_importlibs(msvcrt_winetest advapi32 msvcrt kernel32 ntdll)
 target_link_libraries(msvcrt_winetest oldnames)

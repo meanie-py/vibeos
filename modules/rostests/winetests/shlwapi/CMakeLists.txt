@@ -32,14 +32,6 @@ target_link_libraries(shlwapi_winetest uuid)
 set_module_type(shlwapi_winetest win32cui)
 add_importlibs(shlwapi_winetest shlwapi shell32 mlang oleaut32 ole32 user32 advapi32 msvcrt kernel32)
 
-if(MSVC)
-    add_importlibs(shlwapi_winetest ntdll)
-    target_compile_options(shlwapi_winetest PRIVATE
-        /wd4113
-        /wd4028
-        /utf-8)
-endif()
-
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR
    CMAKE_C_COMPILER_ID STREQUAL "Clang")
     target_compile_options(shlwapi_winetest PRIVATE 

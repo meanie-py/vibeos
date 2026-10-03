@@ -24,9 +24,7 @@ add_library(ucrtbase SHARED
     ucrtbase.def
 )
 
-if(NOT MSVC)
-    target_compile_options(ucrtbase PRIVATE -Wno-builtin-declaration-mismatch)
-endif()
+target_compile_options(ucrtbase PRIVATE -Wno-builtin-declaration-mismatch)
 
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
     # Silence warnings in ucrtbase_stubs.c
@@ -125,12 +123,8 @@ target_link_libraries(ucrtbase
 # Implicitly link to vcstartup
 target_link_libraries(libucrtbase INTERFACE vcstartup)
 
-if(MSVC)
-    target_link_libraries(ucrtbase runtmchk)
-else()
-    # For __cxa_guard_acquire / __cxa_guard_release
-    target_link_libraries(ucrtbase libsupc++)
-endif()
+# For __cxa_guard_acquire / __cxa_guard_release
+target_link_libraries(ucrtbase libsupc++)
 
 add_importlibs(ucrtbase kernel32 ntdll)
 

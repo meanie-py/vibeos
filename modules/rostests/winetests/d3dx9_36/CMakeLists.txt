@@ -16,13 +16,8 @@ add_executable(d3dx9_36_winetest
     testlist.c
     rsrc.rc)
 target_compile_definitions(d3dx9_36_winetest PRIVATE USE_WINE_TODOS __WINESRC__ isnan=_isnan strdup=_strdup)
-if(MSVC)
-    # Disable warning C4477 (printf format warnings)
-    remove_target_compile_option(d3dx9_36_winetest "/we4477")
-else()
-    # "expression does not compute the number of elements in this array"
-    target_compile_options(d3dx9_36_winetest PRIVATE -Wno-sizeof-array-div)
-endif()
+# "expression does not compute the number of elements in this array"
+target_compile_options(d3dx9_36_winetest PRIVATE -Wno-sizeof-array-div)
 
 target_link_libraries(d3dx9_36_winetest uuid dxguid)
 set_module_type(d3dx9_36_winetest win32cui)

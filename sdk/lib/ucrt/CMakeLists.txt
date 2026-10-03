@@ -7,14 +7,6 @@ list(REMOVE_ITEM INCLUDE_DIRS "${REACTOS_SOURCE_DIR}/sdk/include/crt")
 set_property(DIRECTORY . PROPERTY INCLUDE_DIRECTORIES ${INCLUDE_DIRS})
 include_directories(${REACTOS_SOURCE_DIR}/sdk/include/ucrt)
 
-if(MSVC)
-    # Disable warning C4083: expected ')'; found identifier '<warning identifier>'
-    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4083>)
-
-    # Disable warning C4189: 'cvt': local variable is initialized but not referenced
-    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4189>)
-endif()
-
 # Internal includes. ucrt_reactos/inc comes first and holds the headers ReactOS ADDED to
 # this drop (corecrt_internal_state_isolation.h) — kept outside the vendored tree so
 # sdk/lib/ucrt stays a pure Microsoft drop and a re-vendor is a copy, not a merge.

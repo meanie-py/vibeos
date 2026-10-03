@@ -77,14 +77,8 @@ list(APPEND CONSRV_SOURCE
 # Explicitly enable MS extensions to be able to use unnamed (anonymous) nested structs.
 #
 # FIXME: http://www.cmake.org/Bug/view.php?id=12998
-if(MSVC)
-    ## NOTE: No need to specify it as we use MSVC :)
-    ##target_compile_options(consrv PRIVATE "/Ze")
-    #set_source_files_properties(${CONSRV_SOURCE} PROPERTIES COMPILE_OPTIONS "/Ze")
-else()
-    #target_compile_options(consrv PRIVATE "-fms-extensions")
-    set_source_files_properties(${CONSRV_SOURCE} PROPERTIES COMPILE_OPTIONS "-fms-extensions")
-endif()
+#target_compile_options(consrv PRIVATE "-fms-extensions")
+set_source_files_properties(${CONSRV_SOURCE} PROPERTIES COMPILE_OPTIONS "-fms-extensions")
 
 add_library(consrv ${CONSRV_SOURCE})
 target_link_libraries(consrv pseh)

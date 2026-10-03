@@ -52,14 +52,6 @@ add_executable(user32_winetest
     ${PCH_SKIP_SOURCE}
     resource.rc)
 
-if(MSVC)
-    target_compile_options(user32_winetest PRIVATE "/wd4005")
-    target_compile_options(user32_winetest PRIVATE "/wd4024")
-    target_compile_options(user32_winetest PRIVATE "/wd4047")
-    target_compile_options(user32_winetest PRIVATE "/wd4098")
-    remove_target_compile_option(user32_winetest "/we4477")
-endif()
-
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_compile_options(user32_winetest PRIVATE
     -Wno-format

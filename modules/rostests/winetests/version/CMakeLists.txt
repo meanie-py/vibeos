@@ -10,10 +10,6 @@ add_importlibs(version_winetest shell32 version msvcrt kernel32)
 
 target_compile_definitions(version_winetest PRIVATE USE_WINE_TODOS)
 
-if(MSVC)
-    add_importlibs(version_winetest ntdll)
-endif()
-
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_compile_options(version_winetest PRIVATE -Wno-format-overflow)
 endif()

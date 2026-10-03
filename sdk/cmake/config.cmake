@@ -47,36 +47,18 @@ else()
 "Whether to compile for debugging.")
 endif()
 
-if(MSVC)
-    set(KDBG FALSE CACHE BOOL
-"Whether to compile in the integrated kernel debugger.")
-    if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        set(_WINKD_ FALSE CACHE BOOL "Whether to compile with the KD protocol.")
-    else()
-        set(_WINKD_ TRUE CACHE BOOL "Whether to compile with the KD protocol.")
-    endif()
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(KDBG FALSE CACHE BOOL "Whether to compile in the integrated kernel debugger.")
 else()
-    if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        set(KDBG FALSE CACHE BOOL "Whether to compile in the integrated kernel debugger.")
-    else()
-        set(KDBG TRUE CACHE BOOL "Whether to compile in the integrated kernel debugger.")
-    endif()
-    set(_WINKD_ FALSE CACHE BOOL "Whether to compile with the KD protocol.")
+    set(KDBG TRUE CACHE BOOL "Whether to compile in the integrated kernel debugger.")
 endif()
+set(_WINKD_ FALSE CACHE BOOL "Whether to compile with the KD protocol.")
 
 cmake_dependent_option(ISAPNP_ENABLE "Whether to enable the ISA PnP support." ON
                        "ARCH STREQUAL i386" OFF)
 
 set(GENERATE_DEPENDENCY_GRAPH FALSE CACHE BOOL
 "Whether to create a GraphML dependency graph of DLLs.")
-
-if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
-    option(_PREFAST_ "Whether to enable PREFAST while compiling." OFF)
-    option(_VS_ANALYZE_ "Whether to enable static analysis while compiling." OFF)
-    # RTC are incompatible with compiler optimizations.
-    cmake_dependent_option(RUNTIME_CHECKS "Whether to enable runtime checks on MSVC" ON
-                           "CMAKE_BUILD_TYPE STREQUAL Debug" OFF)
-endif()
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     option(STACK_PROTECTOR "Whether to enable the GCC stack checker while compiling" OFF)

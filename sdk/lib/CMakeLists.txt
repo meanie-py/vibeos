@@ -34,11 +34,7 @@ add_subdirectory(cryptlib)
 add_subdirectory(cpprt)
 add_subdirectory(crtheap)
 
-if(MSVC)
-    add_subdirectory(RunTmChk)
-else()
-    add_subdirectory(gcc-compat)
-endif()
+add_subdirectory(gcc-compat)
 
 add_subdirectory(delayimp)
 add_subdirectory(dmilib)

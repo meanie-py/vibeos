@@ -53,15 +53,7 @@ list(APPEND SOURCE
     uuid.c
     wincodecs_common.c)
 
-if(MSVC)
-    if(ARCH STREQUAL "i386")
-        list(APPEND SOURCE msvc-thiscall.c)
-    endif()
-    set_source_files_properties(bitmap.c PROPERTIES COMPILE_OPTIONS "/FImsvc.h")
-    list(APPEND PCH_SKIP_SOURCE bitmap.c)
-else()
-    list(APPEND SOURCE bitmap.c)
-endif()
+list(APPEND SOURCE bitmap.c)
 
 list(APPEND PCH_SKIP_SOURCE
     guid.c
@@ -75,13 +67,6 @@ add_library(windowscodecs MODULE
     version.rc
     ${CMAKE_CURRENT_BINARY_DIR}/windowscodecs.def)
 add_pch(windowscodecs precomp.h "${PCH_SKIP_SOURCE}")
-
-if(MSVC)
-    # Disable warning C4133: 'function': incompatible types - from 'WICPixelFormatNumericRepresentation *' to 'DWORD *'
-    # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    target_compile_options(windowscodecs PRIVATE /wd4133 /wd4146)
-    target_compile_options(windowscodecs PRIVATE /FItypeof.h)
-endif()
 
 set_module_type(windowscodecs win32dll)
 add_idl_reg_scripts(windowscodecs registry windowscodecs_wincodec.idl)

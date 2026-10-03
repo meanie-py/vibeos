@@ -1,9 +1,4 @@
 
-if (MSVC)
-    # Disable warning C4090: 'function': different 'const' qualifiers
-    # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    add_compile_options(/wd4090 /wd4146)
-endif()
 
 set(VKD3D_INCLUDE_DIRS
     ${REACTOS_SOURCE_DIR}/vendor/vkd3d/include

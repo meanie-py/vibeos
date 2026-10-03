@@ -178,17 +178,9 @@ list(APPEND IDL_SOURCES
     ctfutb.idl
     xmllite.idl)
 
-if(MSVC)
-    list(APPEND IDL_SOURCES
-        atliface.idl
-        cor.idl
-        cordebug.idl
-        metahost.idl)
-else()
-    list(APPEND IDL_SOURCES
-        wbemcli.idl
-        wuapi.idl)
-endif()
+list(APPEND IDL_SOURCES
+    wbemcli.idl
+    wuapi.idl)
 
 foreach(IDL_FILE ${IDL_SOURCES})
     get_filename_component(NAME ${IDL_FILE} NAME_WE)
