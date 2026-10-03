@@ -360,14 +360,7 @@ pub unsafe extern "system" fn NtUserUpdateInstance(
 ) -> DWORD {
     0
 }
-#[no_mangle]
-pub unsafe extern "system" fn NtUserUserHandleGrantAccess(
-    hUserHandle: HANDLE,
-    hJob: HANDLE,
-    bGrant: BOOL,
-) -> BOOL {
-    0
-}
+// NtUserUserHandleGrantAccess: implemented in job.rs (upstream b272427baa3).
 #[no_mangle]
 pub unsafe extern "system" fn NtUserWaitForMsgAndEvent(Unknown0: DWORD) -> DWORD {
     0

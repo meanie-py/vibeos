@@ -87,13 +87,17 @@ def _find_db_entries(c_file: Path, arch: str | None = None) -> list[tuple[dict, 
                 out.append((e, REACTOS_ROOT / bd))
                 break
     if not out:
-        # ntoskrnl compiles no C through CMake (cargo-linked, every .c flipped), so it has no
-        # db entry anywhere. macro_authority synthesizes its real compile environment from the
-        # derived kernel profile; the call seal already depends on that same command.
-        from .macro_authority import _derived_kernel_entry
+        # A FLIPPED .c has no db entry of its own. Borrow exactly what the call seal borrows
+        # (macro_authority): a surviving sibling TU's flags with this file substituted in, or,
+        # for ntoskrnl, which compiles no C through CMake at all, the command synthesized from
+        # the derived kernel profile. win32k's job.c (never built as C here) is the first case.
+        from .macro_authority import _derived_kernel_entry, _sibling_target_entry
 
         for bd in order:
-            argv = _derived_kernel_entry(REACTOS_ROOT, bd.removeprefix("build-"), c_file)
+            arch = bd.removeprefix("build-")
+            argv = _sibling_target_entry(REACTOS_ROOT, arch, c_file) or _derived_kernel_entry(
+                REACTOS_ROOT, arch, c_file
+            )
             if argv is not None:
                 entry = {"file": cf, "arguments": argv, "directory": str(REACTOS_ROOT / bd)}
                 out.append((entry, REACTOS_ROOT / bd))
