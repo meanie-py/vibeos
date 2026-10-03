@@ -86,6 +86,17 @@ def _find_db_entries(c_file: Path, arch: str | None = None) -> list[tuple[dict, 
             if str(Path(_decanon(e["file"])).resolve()) == cf:
                 out.append((e, REACTOS_ROOT / bd))
                 break
+    if not out:
+        # ntoskrnl compiles no C through CMake (cargo-linked, every .c flipped), so it has no
+        # db entry anywhere. macro_authority synthesizes its real compile environment from the
+        # derived kernel profile; the call seal already depends on that same command.
+        from .macro_authority import _derived_kernel_entry
+
+        for bd in order:
+            argv = _derived_kernel_entry(REACTOS_ROOT, bd.removeprefix("build-"), c_file)
+            if argv is not None:
+                entry = {"file": cf, "arguments": argv, "directory": str(REACTOS_ROOT / bd)}
+                out.append((entry, REACTOS_ROOT / bd))
     return out
 
 
@@ -146,6 +157,31 @@ _ATTR_NEUTRALIZERS = (
     # for the anchor. A TU that really uses _SEH2_LEAVE gets "use of undeclared label"
     # and fails LOUDLY rather than being anchored against control flow it does not have.
     # The guard that lets these win is the `#ifndef _SEH2_TRY` in pseh2.h.
+    #
+    # MSVC INTERLOCKED INTRINSICS -- the third blocker. Under -fms-extensions clang treats
+    # `_InterlockedOr` & co. as language builtins, c2rust 0.22 has no lowering for them, and it
+    # DROPS every function that calls one ("Unimplemented builtin _InterlockedOr"). That made
+    # five of ntoskrnl/ps/job.c's functions unanchorable, so its required-anchor check refused
+    # the whole TU. Renaming the intrinsic to its un-underscored name turns the declaration
+    # into an ordinary function. The `InterlockedOr` -> `_InterlockedOr` header macro then stops
+    # at `InterlockedOr`, since a macro is not re-expanded inside itself, so the anchor shows
+    # the plain call the Rust uses (ntkrnl_sys::interlocked).
+    *(
+        f"-D_Interlocked{op}{width}=Interlocked{op}{width}"
+        for op in (
+            "Exchange",
+            "ExchangeAdd",
+            "CompareExchange",
+            "CompareExchangePointer",
+            "ExchangePointer",
+            "Increment",
+            "Decrement",
+            "Or",
+            "And",
+            "Xor",
+        )
+        for width in ("", "8", "16", "64")
+    ),
 )
 
 #: PSEH overrides, tried in order. Both are behaviour-identical to the inert dummy

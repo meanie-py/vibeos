@@ -731,18 +731,35 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
    framework with a full software AHCI implementation in `pciidex/chipset/`. All of it is on
    disk and none of it is built. Probably the largest single translation opportunity this merge
    surfaced.
-3. **Job objects.** `ntoskrnl/ps/job.c` gained 2,198 lines of working implementation and
-   `win32ss/user/ntuser/job.c` is its win32k half. Ours are stubs — which is exactly why
-   `PspCloseJob` is absent from `ps-rust`.
-4. **kernelbase.** Decide whether our minimal shim can satisfy `combase`/`coml2`/`shcore` now
-   that they exist in the tree.
+3. **Job objects.** Kernel half **done 2026-10-03**:
+   - `ps-rust/src/job.rs` is upstream's `job.c` (sealed translate, $1.48 on DeepSeek,
+     integrated by hand against the crate's probe/SEH conventions).
+   - Hooked in: `PspCloseJob` is the close procedure, process creation joins the parent's job
+     (honoring breakaway), process exit sends `EXIT_PROCESS`, and kernel32 sets
+     `PROCESS_CREATE_FLAGS_BREAKAWAY` from `CREATE_BREAKAWAY_FROM_JOB`. The C took it from
+     `DEBUG_PROCESS`.
+   - `kernel32_apitest JobObject`: **99 run, 0 failures**, against 31 of 51 failing (8 skipped)
+     before.
+   - Making the translate possible meant teaching rustconv about ntoskrnl. It had no CMake
+     owner, include path or compile command for any kernel file, and c2rust dropped every
+     function that used an MSVC interlocked intrinsic. Those fixes are in `profile_derive`,
+     `macro_authority` and `c2rust_anchor`.
+   - **Still owed: the win32k half.** `win32ss/user/ntuser/job.c` is unbuilt and win32k
+     registers no `JobCallout`, so UI restrictions are stored and reported but not enforced.
+     `UserHandleGrantAccess` is the user32 face of that.
+4. ~~kernelbase vs `combase`/`coml2`/`shcore`~~ **Decided: declined by design.** ole32 stays
+   monolithic, and the split modules are commented out (row 9 of the build-repair table above),
+   so nothing needs the minimal kernelbase shim to host them. Revisit only if the split itself
+   is adopted.
 5. ~~oleaut32 `thunks.c`~~ **Verified 2026-10-03.** `dispcall.rs` carries Wine's per-arch
    `call_method` trampolines as `global_asm!`. The `dispprobe` payload exercises arg counts past
    each register window, int/float mixes, I8, R4/R8 returns, cdecl and a vtable call, and
    passes on all three arches. It found one bug, inherited from Wine: x86_64 read VT_R4 through
    the double-typed thunk, so every float return came back 0.0. Fixed with a float-typed alias.
-6. **Raw input.** `win32ss/user/ntuser/rawinput.c` is new and has no Rust twin; `user32/misc/stubs.c`
-   shows upstream implemented `GetRawInputBuffer` and `GetRawInputDeviceInfoA` too.
+6. ~~Raw input.~~ **Already done (checked 2026-10-03):** `win32k-rust/src/rawinput.rs` ports
+   `NtUserGetRawInputDeviceInfo`/`List`, and `user32-rust/src/misc/stubs.rs` has upstream's
+   `GetRawInputBuffer` and `GetRawInputDeviceInfoA`. The latter fixes stubs.c's always-true
+   `Ret >= 0` on a UINT.
 7. **PCIe ECAM.** `drivers/bus/pcix/pci/ecam.c` + `express.c`, new upstream, no Rust twin.
    (The rest of upstream's pcix fixes and `memres.c` were ported 2026-10-03; see the userdrv
    review.)
