@@ -1378,3 +1378,21 @@ class TestCargoKernelTarget:
         assert m.name == "ntoskrnl" and m.module_type == "kernel"
         assert [p.name for p in m.compiled_tus] == ["job.c"]
         assert (root / "sdk/lib/cmlib") in m.include_dirs
+
+
+def test_a_backslash_include_resolves_like_the_compiler_does(tmp_path):
+    """win32ss/gdi/dib/dib_new.c writes `#include "..\\diblib\\DibLib_interface.h"`."""
+    from rustconv.profile_derive import Include, IncludeEnv, resolve_include
+
+    (tmp_path / "dib").mkdir()
+    (tmp_path / "diblib").mkdir()
+    header = tmp_path / "diblib" / "DibLib_interface.h"
+    header.write_text("/* */\n")
+    inc = Include(
+        spelling='"..\\\\diblib\\\\DibLib_interface.h"',
+        name="..\\diblib\\DibLib_interface.h",
+        angled=False,
+        line=11,
+    )
+    env = IncludeEnv(repo_root=tmp_path, arch="amd64", module_dir=tmp_path, build_dir=None)
+    assert resolve_include(inc, tmp_path / "dib" / "dib_new.c", env) == header.resolve()

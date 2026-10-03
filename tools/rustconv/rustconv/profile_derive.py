@@ -1523,9 +1523,12 @@ def scan_preamble(
 def resolve_include(inc: Include, includer: Path, env: IncludeEnv) -> Path | None:
     """Resolve one include. Quoted form searches the includer's directory FIRST."""
     cands: list[Path] = []
+    # A Windows-style `..\\diblib\\DibLib_interface.h` (win32ss/gdi/dib/dib_new.c) is the same
+    # path to the compilers this tree is built with; on a POSIX host it is one odd filename.
+    name = inc.name.replace("\\", "/")
     if not inc.angled:
-        cands.append(includer.parent / inc.name)
-    cands.extend(d / inc.name for d, _ in env.search)
+        cands.append(includer.parent / name)
+    cands.extend(d / name for d, _ in env.search)
     for c in cands:
         if c.is_file():
             return c.resolve()

@@ -744,9 +744,18 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
      owner, include path or compile command for any kernel file, and c2rust dropped every
      function that used an MSVC interlocked intrinsic. Those fixes are in `profile_derive`,
      `macro_authority` and `c2rust_anchor`.
-   - **Still owed: the win32k half.** `win32ss/user/ntuser/job.c` is unbuilt and win32k
-     registers no `JobCallout`, so UI restrictions are stored and reported but not enforced.
-     `UserHandleGrantAccess` is the user32 face of that.
+   - **win32k half done too (2026-10-03):**
+     - `win32k-rust/src/job.rs` is upstream's `ntuser/job.c`, translated for $0.65 and
+       integrated by hand.
+     - win32k registers `Win32kJobCallout`. Processes join and leave their job's JOBINFO on
+       USER connect and disconnect, and new threads inherit `TIF_JOBRESTRICTED`.
+     - Handles carry `HANDLEENTRY_GRANTED`, so freeing one sweeps the grant lists, and
+       `NtUserUserHandleGrantAccess` is real.
+     - The translation's callout `match` named the callout types bare. They aren't constants in
+       scope, so its first arm caught everything (the §9.112 class), and the integration
+       fixes it.
+     - Like upstream, nothing enforces the restrictions yet; this is the bookkeeping that
+       enforcement reads.
 4. ~~kernelbase vs `combase`/`coml2`/`shcore`~~ **Decided: declined by design.** ole32 stays
    monolithic, and the split modules are commented out (row 9 of the build-repair table above),
    so nothing needs the minimal kernelbase shim to host them. Revisit only if the split itself
