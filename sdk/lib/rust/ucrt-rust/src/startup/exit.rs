@@ -67,6 +67,8 @@ const IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR: u32 = 14;
 const IMAGE_NT_OPTIONAL_HDR_MAGIC: u16 = 0x20B;
 #[cfg(target_pointer_width = "32")]
 const IMAGE_NT_OPTIONAL_HDR_MAGIC: u16 = 0x10B;
+/// `IMAGE_DOS_HEADER::e_lfanew`, a LONG.
+const E_LFANEW_AT: usize = 0x3C;
 /// `IMAGE_NT_HEADERS` field offsets from the NT header (Signature 0,
 /// OptionalHeader 0x18; then `NumberOfRvaAndSizes` / `DataDirectory` inside
 /// the optional header). Read off the compiled C on all three arches:
@@ -122,8 +124,7 @@ unsafe fn is_managed_app() -> bool {
         return false;
     }
 
-    // e_lfanew: a LONG at 0x3C.
-    let e_lfanew = (dos_header.add(0x3C) as *const c_long).read_unaligned();
+    let e_lfanew = (dos_header.add(E_LFANEW_AT) as *const c_long).read_unaligned();
     let pe_header = dos_header.offset(e_lfanew as isize);
 
     if (pe_header as *const u32).read_unaligned() != IMAGE_NT_SIGNATURE {
