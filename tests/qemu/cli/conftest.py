@@ -32,3 +32,14 @@ def _artifact_root_is_never_the_real_one(tmp_path, monkeypatch):
     sites that happened to hit it. Tests that patch ARTIFACT_ROOT themselves
     still win: their monkeypatch applies after this one."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "artifacts")
+
+
+@pytest.fixture(autouse=True)
+def _land_lock_opt_out_does_not_leak_in(monkeypatch):
+    """The land-lock tests assert the lock EXCLUDES; they must not inherit the opt-out.
+
+    VIBEOS_LAND_LOCK=0 is the documented single-agent/rescue switch, and it reaches every
+    child of a land run with it -- including the gate's own check-tooling. There it made
+    land_lock() a no-op, six "must raise LandLockBusy" tests failed, and the queue declared
+    origin/master red (TOOLING_FAIL, 2026-10-03) and held the line on a tree that passes."""
+    monkeypatch.delenv("VIBEOS_LAND_LOCK", raising=False)

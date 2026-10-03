@@ -782,7 +782,10 @@ pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: PIRP_CONTEXT,
         7 => { // FileFsFullSizeInformation
             *p_status = FatQueryFsFullSizeInfo(IrpContext, Vcb, Buffer as *mut FILE_FS_FULL_SIZE_INFORMATION, p_length);
         },
-        11 => { // FileFsSectorSizeInformation (NTDDI >= NTDDI_WIN8)
+        // FileFsSectorSizeInformation exists from NTDDI >= WIN8 (volinfo.c 395-400); pre-WIN8 it
+        // is the default arm's STATUS_INVALID_PARAMETER.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        11 => {
             *p_status = FatQueryFsSectorSizeInfo(IrpContext, Vcb, Buffer as *mut FatFileFsSectorSizeInformation, p_length);
         },
         _ => {
