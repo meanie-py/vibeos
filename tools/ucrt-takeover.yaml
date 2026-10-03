@@ -1,9 +1,9 @@
 # Declared takeovers of genuine Microsoft UCRT bodies.
 #
-# ucrtbase.dll is still implemented, for 1,032 of its exports, by vendored
-# Windows SDK source in `sdk/lib/ucrt` (455 files, 64,353 lines). We are
-# replacing it family by family with Rust in `sdk/lib/rust/ucrt-rust` and
-# deleting the C as each file's last export moves.
+# ucrtbase.dll was implemented, for 1,032 of its exports, by vendored Windows
+# SDK source in `sdk/lib/ucrt` (455 files, 64,353 lines). It was replaced family
+# by family with Rust in `sdk/lib/rust/ucrt-rust`, the C deleted as each file's
+# last export moved; the last of it went on 2026-10-03.
 #
 # Every one of those Rust bodies DISPLACES a Microsoft body — which is the exact
 # shape of the accident `verify_ucrtbase_cohab.py` exists to prevent, and is
@@ -1883,3 +1883,17 @@ families:
       A PORT (src/ucrt_reactos.rs) of ReactOS code, not Microsoft code: provenance ucrt-port only because it lived beside the UCRT and read its internal headers.
     exports:
       - __setusermatherr
+  fpctrl_arm64:
+    provenance: wine-port
+    arches: [arm64]
+    replaces:
+      - arm64 only -- the forward into msvcrt.dll the link made for want of a body (sdk/lib/crt/float builds this family for i386/amd64 only)
+    oracle: >
+      tools/payloads/fpctrl in the arm64 guest: ucrtbase's four against msvcrt.dll's (the bodies the forward reached), both LoadLibrary'd, every case from the same FPCR/FPSR state with the hardware read back through the other DLL; 671 cases, 0 diffs, plus a check that the two names no longer resolve to one body. Mutant (FPSR invalid/zero-divide swapped) caught at 32 diffs. QEMU TCG implements FPCR's trap-enable bits as RAZ, so the _EM_* masks only ever read back as masked there; rounding mode and every status flag do round-trip.
+    note: >
+      A PORT (src/fpctrl_arm64.rs) of Wine's aarch64 _setfp, the same mapping msvcrt-crt-rust ships, with one documented divergence in a transient FPCR write (Wine's C-precedence slip). The module is empty on i386/amd64.
+    exports:
+      - _clearfp
+      - _control87
+      - _controlfp
+      - _statusfp

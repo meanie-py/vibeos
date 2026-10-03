@@ -573,7 +573,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   d98aba47853 (fastfat top-level IRP fix).
   Owner: unassigned (fastfat/kernel lane).
 - **arm64 ucrtbase forwards `_clearfp`/`_control87`/`_controlfp`/`_statusfp` to msvcrt.dll**
-  (OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
+  (FIXED 2026-10-03: ucrt-rust `fpctrl_arm64.rs`, graded by `tools/payloads/fpctrl` against
+  msvcrt.dll's bodies -- 671 cases, 0 diffs; the allowlist entry is gone. Was OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
   control-word family for i386/amd64 only), so the link resolves all four through the msvcrt
   import library and ucrtbase ships a forward into msvcrt.dll. Found by
   `verify_ucrtbase_cohab.py`'s export/import check, which allowlists these four as OWED
