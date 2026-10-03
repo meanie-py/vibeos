@@ -63,6 +63,8 @@ _SUMMARY_LINE = re.compile(
     r"|catalog: \d+"  # 'Spec/Bindgen catalog: N …'
     r"|^\s*-> .*: *\d+$"  # verify_tables tallies
     r"|^\s*matched to a C array\s*: *\d+$"
+    r"|^\s*no C counterpart\s*: *\d+$"  # verify_tables: moves whenever a table is added
+    r"|^\s*Rust integer tables found\s*: *\d+$"
     r"|^\s*Found \d+ unprotected"  # lint_kernel header tally
     r"|^\s*Total: \d+ violations"  # lint_kernel footer tally (mixed-case)
     # verify_signatures' two header tallies and its whole '── coverage ──' block.

@@ -4262,6 +4262,11 @@ the first arm.
 **Fix.** Alias each one in the crate prelude, never re-declare with a literal:
 `pub const DENY_ACCESS: _ACCESS_MODE = _ACCESS_MODE_DENY_ACCESS;`
 
+The sealed translate does not prevent it. win32k's `job.c` (2026-10-03) came back as
+`match CalloutType { PsW32JobCalloutSetInformation => ... }`, which sealing passed because the
+NAME is right. Only `_PSW32JOBCALLOUTTYPE_PsW32JobCalloutSetInformation` exists, so every callout
+(add-process, terminate) would have set restrictions. Spell the prefixed name in the arm.
+
 **Check it BEFORE paying, and make the check multi-line.** Walk the generated island for
 `pub const <TAG>_<X>: <TAG> = n;`, intersect the bare `<X>` with the identifiers the `.c` uses,
 and subtract anything the island already defines bare. The trap is in the scan itself: bindgen

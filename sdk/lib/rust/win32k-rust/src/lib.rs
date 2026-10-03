@@ -330,6 +330,7 @@ pub mod callback;
 pub mod ntmouse;
 // [ntuser wave 30 — input]
 pub mod input;
+pub mod job; // user/ntuser/job.c — job UI restrictions (upstream b272427baa3)
 pub mod rawinput; // user/ntuser/rawinput.c — NtUserGetRawInputDeviceInfo/List (upstream #9498)
 // [ntuser wave 31 — display]
 pub mod display;
