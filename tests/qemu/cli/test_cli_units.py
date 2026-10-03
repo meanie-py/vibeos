@@ -60,6 +60,53 @@ def test_git_fingerprint_stable_then_changes(tiny_repo: Path):
     assert fp3 != fp1, "working-tree edit must change the fingerprint"
 
 
+def test_a_scoped_fingerprint_ignores_an_excluded_COMMIT(tiny_repo: Path):
+    """The STALE_MEDIA false positive: committing an excluded file moved the
+    fingerprint anyway, because the HEAD sha was hashed outside the pathspec.
+
+    A commit sha names the whole tree, so folding it in defeats every exclusion
+    the caller asked for. Every entry in NON_BUILD_PATHSPEC worked only while
+    its change sat uncommitted; committing brought the false positive back, and
+    a docs-only commit then failed a boot whose media was perfectly fresh."""
+    scope = [".", ":(exclude)docs"]
+    (tiny_repo / "docs").mkdir()
+    (tiny_repo / "docs" / "note.md").write_text("one\n")
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "docs: one")
+    before = provenance.git_fingerprint(tiny_repo, scope)
+
+    (tiny_repo / "docs" / "note.md").write_text("two\n")
+    assert provenance.git_fingerprint(tiny_repo, scope) == before, "dirty excluded file"
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "docs: two")
+    assert provenance.git_fingerprint(tiny_repo, scope) == before, (
+        "COMMITTING an excluded file must not move a scoped fingerprint"
+    )
+
+
+def test_a_scoped_fingerprint_still_catches_an_in_scope_commit(tiny_repo: Path):
+    """The other half, which is the one that must not regress: a fingerprint that
+    ignores commits entirely would be a false GREEN, and false green here boots
+    stale media and calls it a pass."""
+    scope = [".", ":(exclude)docs"]
+    before = provenance.git_fingerprint(tiny_repo, scope)
+    (tiny_repo / "kernel.c").write_text("int main(void){return 0;}\n")
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "a real source commit")
+    assert provenance.git_fingerprint(tiny_repo, scope) != before
+
+
+def test_an_unscoped_fingerprint_still_tracks_HEAD(tiny_repo: Path):
+    """Unscoped is the coarse tier-1 gate and SHOULD move on any commit: there is
+    no scope to respect, so whole-tree identity is the right question."""
+    before = provenance.git_fingerprint(tiny_repo)
+    (tiny_repo / "docs").mkdir(exist_ok=True)
+    (tiny_repo / "docs" / "x.md").write_text("x\n")
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "anything")
+    assert provenance.git_fingerprint(tiny_repo) != before
+
+
 def test_git_fingerprint_survives_a_non_utf8_file(tiny_repo: Path):
     """A latin-1 file in the diff must not take the CLI down.
 

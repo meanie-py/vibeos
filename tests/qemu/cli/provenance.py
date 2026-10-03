@@ -79,18 +79,41 @@ def git_head(repo: Path) -> str:
 
 def git_fingerprint(repo: Path, paths: list[str] | None = None) -> str:
     """Content-true fingerprint of the (optionally path-scoped) source state:
-    HEAD + working-tree diff + untracked. Immune to mtime churn from git ops.
+    committed content + working-tree diff + untracked. Immune to mtime churn
+    from git ops.
 
-    Raises ProvenanceError if any of its three git calls fails — see _run."""
+    **Scoped calls must not fold in the HEAD SHA, and this is the whole reason
+    the scoped and unscoped branches differ.** A commit sha names the whole
+    tree, so hashing it defeats every exclusion in the pathspec: a docs-only
+    commit moves HEAD, the fingerprint moves, and `build_src_hash` reports
+    build-relevant change for a file it was explicitly told to ignore. Every
+    exclusion in NON_BUILD_PATHSPEC was added to stop a false STALE_MEDIA, and
+    every one of them worked only while the change sat UNCOMMITTED — committing
+    it brought the false positive straight back. Measured on this repo: a
+    docs-only commit leaves `git diff --name-only HEAD~1 HEAD -- <scope>` empty
+    and still moved the fingerprint, which is how it was found; the oracle's own
+    explanation string had been saying "HEAD MOVED SINCE THE BUILD ... NOT a
+    stale artifact" the entire time.
+
+    So a scoped call hashes the INDEX ENTRIES in scope (`ls-files -s` gives mode
+    + blob sha per path) instead. That is content-true, respects exclusions, and
+    never mentions a commit. 21ms for 38,845 files here. The unscoped call keeps
+    the HEAD sha: it is the coarse tier-1 "did anything at all change" gate, for
+    which whole-tree identity is exactly the right question, and it is cheap.
+
+    Raises ProvenanceError if any of its git calls fails — see _run."""
     scope = paths or []
-    head = git_head(repo)
     # Hash the RAW bytes: a lossy decode would map distinct non-UTF-8 contents
     # onto the same U+FFFD run, i.e. two different working trees onto one
     # fingerprint — a false GREEN in the staleness net.
+    if scope:
+        committed = _run_bytes(["git", "ls-files", "-s", "--", *scope], repo)
+    else:
+        committed = git_head(repo).encode()
     diff = _run_bytes(["git", "diff", "HEAD", "--", *scope], repo)
     untracked = _run_bytes(["git", "status", "--porcelain", "--", *scope], repo)
     h = hashlib.sha256()
-    h.update(head.encode())
+    h.update(committed)
     h.update(b"\0")
     h.update(diff)
     h.update(b"\0")
