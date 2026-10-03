@@ -162,6 +162,9 @@ struct Addr {
     /// Pended RECEIVE_DATAGRAM IRPs (irp, buf_va, buf_len) — used when no
     /// datagram event handler is registered.
     recv_dg: Vec<(usize, usize, usize)>,
+    /// Broadcasts this host sent to our port: (payload, source ip, source port), awaiting
+    /// delivery. See `loop_back_broadcast`.
+    local_dg: Vec<(Vec<u8>, [u8; 4], u16)>,
 }
 
 struct Conn {
@@ -291,6 +294,7 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 ev_disc: None,
                 ev_recv_dg: None,
                 recv_dg: Vec::new(),
+                local_dg: Vec::new(),
             });
         }
         Cmd::CreateConn { id, conn_ctx } => {
@@ -450,9 +454,11 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
         Cmd::SendDatagram { addr_id, irp, data, len, ip, port } => {
             let mut done = STATUS_CONNECTION_REFUSED;
             let mut sent = 0usize;
+            let mut src_port = 0u16;
             if let Some(a) = state.addr(addr_id) {
                 if let Some(h) = ensure_udp(a, sockets) {
                     let s = sockets.get_mut::<udp::Socket>(h);
+                    src_port = s.endpoint().port;
                     if s.can_send() {
                         let slice = unsafe { core::slice::from_raw_parts(data as *const u8, len) };
                         let ep = (IpAddress::v4(ip[0], ip[1], ip[2], ip[3]), port);
@@ -462,6 +468,10 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                         }
                     }
                 }
+            }
+            if done == STATUS_SUCCESS && is_broadcast(iface, ip) {
+                let slice = unsafe { core::slice::from_raw_parts(data as *const u8, len) };
+                loop_back_broadcast(state, sockets, iface_ipv4(iface), src_port, port, slice);
             }
             unsafe { complete(irp, done, sent) };
         }
@@ -710,6 +720,43 @@ fn ensure_udp(addr: &mut Addr, sockets: &mut SocketSet<'static>) -> Option<Socke
     Some(h)
 }
 
+/// The limited broadcast, or the directed broadcast of the interface's subnet.
+fn is_broadcast(iface: &Interface, ip: [u8; 4]) -> bool {
+    if ip == [255, 255, 255, 255] {
+        return true;
+    }
+    iface.ip_addrs().iter().any(|c| match c {
+        smoltcp::wire::IpCidr::Ipv4(v4) => v4.broadcast().map(|b| b.octets()) == Some(ip),
+    })
+}
+
+/// Hand a broadcast this host just sent to every local address object bound to its
+/// destination port. NDIS never loops a broadcast back to its sender and neither does
+/// smoltcp, which handles broadcast only on egress. So without this, a socket on this host
+/// never sees a broadcast another local socket sent (NetBIOS, SSDP-style self-discovery).
+/// Upstream tcpip does the same thing through its loopback NCE (b8ee7950af4). The wire copy
+/// has already gone out through `send_slice`.
+fn loop_back_broadcast(
+    state: &mut TdiState,
+    sockets: &mut SocketSet<'static>,
+    src_ip: [u8; 4],
+    src_port: u16,
+    dst_port: u16,
+    payload: &[u8],
+) {
+    /// Per address object; a listener nobody drains must not grow without bound.
+    const LOCAL_DG_MAX: usize = 8;
+    for a in state.addrs.iter_mut() {
+        let bound = match a.udp {
+            Some(h) => sockets.get_mut::<udp::Socket>(h).endpoint().port,
+            None => a.local_port,
+        };
+        if bound == dst_port && a.local_dg.len() < LOCAL_DG_MAX {
+            a.local_dg.push((payload.to_vec(), src_ip, src_port));
+        }
+    }
+}
+
 /// IpEndpoint -> (IPv4 octets, port). proto-ipv4 only, so the match is exhaustive.
 fn ep_to_v4(ep: smoltcp::wire::IpEndpoint) -> ([u8; 4], u16) {
     let octets = match ep.addr {
@@ -755,38 +802,43 @@ unsafe fn fill_remote_address(ret_info: usize, octets: [u8; 4], port: u16) {
 /// dequeues it on recv() regardless of how many bytes AFD takes; if AFD returns a
 /// receive IRP for the remainder we fill it with the untaken tail.
 fn deliver_datagrams_event(s: &mut udp::Socket, handler: usize, context: usize) {
-    use crate::tdi::{
-        PtdiIndReceiveDatagram, TaIpFull, TDI_RECEIVE_ENTIRE_MESSAGE, TDI_RECEIVE_NORMAL,
-    };
     while s.can_recv() {
         let Ok((payload, meta)) = s.recv() else { break };
         let (octets, port) = ep_to_v4(meta.endpoint);
-        let mut src = TaIpFull::new(octets, port);
-        let len = payload.len() as u32;
-        let mut taken: u32 = 0;
-        let mut irp_out: PIRP = core::ptr::null_mut();
-        let f: PtdiIndReceiveDatagram = unsafe { core::mem::transmute(handler) };
-        unsafe {
-            // AFD datagram indications run at DISPATCH_LEVEL.
-            let _irql = IrqlGuard::raise_to_dpc();
-            f(
-                context as *mut _,
-                core::mem::size_of::<TaIpFull>() as i32,
-                &mut src as *mut _ as *mut _,
-                0,
-                core::ptr::null_mut(),
-                TDI_RECEIVE_NORMAL | TDI_RECEIVE_ENTIRE_MESSAGE,
-                len,
-                len,
-                &mut taken,
-                payload.as_ptr() as *mut _,
-                &mut irp_out,
-            );
-        }
-        let taken = (taken as usize).min(payload.len());
-        if !irp_out.is_null() {
-            unsafe { complete_indication_irp(irp_out, &payload[taken..]) };
-        }
+        indicate_datagram(handler, context, payload, octets, port);
+    }
+}
+
+/// One datagram to AFD's TDI_EVENT_RECEIVE_DATAGRAM handler.
+fn indicate_datagram(handler: usize, context: usize, payload: &[u8], octets: [u8; 4], port: u16) {
+    use crate::tdi::{
+        PtdiIndReceiveDatagram, TaIpFull, TDI_RECEIVE_ENTIRE_MESSAGE, TDI_RECEIVE_NORMAL,
+    };
+    let mut src = TaIpFull::new(octets, port);
+    let len = payload.len() as u32;
+    let mut taken: u32 = 0;
+    let mut irp_out: PIRP = core::ptr::null_mut();
+    let f: PtdiIndReceiveDatagram = unsafe { core::mem::transmute(handler) };
+    unsafe {
+        // AFD datagram indications run at DISPATCH_LEVEL.
+        let _irql = IrqlGuard::raise_to_dpc();
+        f(
+            context as *mut _,
+            core::mem::size_of::<TaIpFull>() as i32,
+            &mut src as *mut _ as *mut _,
+            0,
+            core::ptr::null_mut(),
+            TDI_RECEIVE_NORMAL | TDI_RECEIVE_ENTIRE_MESSAGE,
+            len,
+            len,
+            &mut taken,
+            payload.as_ptr() as *mut _,
+            &mut irp_out,
+        );
+    }
+    let taken = (taken as usize).min(payload.len());
+    if !irp_out.is_null() {
+        unsafe { complete_indication_irp(irp_out, &payload[taken..]) };
     }
 }
 
@@ -1026,6 +1078,23 @@ fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
 
     // Connectionless (UDP) datagram delivery on address objects.
     for ai in 0..state.addrs.len() {
+        // Locally looped broadcasts first (they need no smoltcp socket behind the address).
+        let a = &mut state.addrs[ai];
+        if let Some((handler, context)) = a.ev_recv_dg {
+            for (payload, ip, port) in a.local_dg.drain(..) {
+                indicate_datagram(handler, context, &payload, ip, port);
+            }
+        } else {
+            while !a.local_dg.is_empty() && !a.recv_dg.is_empty() {
+                let (payload, _ip, _port) = a.local_dg.remove(0);
+                let (irp, buf, len) = a.recv_dg.remove(0);
+                let n = payload.len().min(len);
+                unsafe {
+                    core::ptr::copy_nonoverlapping(payload.as_ptr(), buf as *mut u8, n);
+                    complete(irp, STATUS_SUCCESS, n);
+                }
+            }
+        }
         let Some(h) = state.addrs[ai].udp else { continue };
         let ev = state.addrs[ai].ev_recv_dg;
         let s = sockets.get_mut::<udp::Socket>(h);

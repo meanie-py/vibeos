@@ -915,7 +915,7 @@ unsafe extern "system" fn StatusMessageWindowProc(
     let mut pDlgData: *mut DLG_DATA;
     UNREFERENCED_PARAMETER!(wParam);
 
-    pDlgData = GetWindowLongPtrW(hwndDlg, GWLP_USERDATA) as *mut DLG_DATA;
+    pDlgData = GetWindowLongPtrW(hwndDlg, DWLP_USER) as *mut DLG_DATA;
 
     if uMsg != WM_INITDIALOG && pDlgData.is_null() {
         return FALSE;
@@ -932,7 +932,7 @@ unsafe extern "system" fn StatusMessageWindowProc(
                 (core::mem::size_of::<DLG_DATA>()) as SIZE_T,
             ) as *mut DLG_DATA;
             if !pDlgData.is_null() {
-                SetWindowLongPtrW(hwndDlg, (GWLP_USERDATA) as c_int, ((pDlgData)) as LONG_PTR);
+                SetWindowLongPtrW(hwndDlg, (DWLP_USER) as c_int, ((pDlgData)) as LONG_PTR);
 
                 (*pDlgData).hLogoBitmap = LoadImageW(
                     hDllInstance,
@@ -1078,7 +1078,7 @@ unsafe extern "system" fn StatusMessageWindowProc(
     let mut pDlgData: *mut DLG_DATA;
     UNREFERENCED_PARAMETER!(wParam);
 
-    pDlgData = GetWindowLongPtrW(hwndDlg, GWLP_USERDATA) as *mut DLG_DATA;
+    pDlgData = GetWindowLongPtrW(hwndDlg, DWLP_USER) as *mut DLG_DATA;
 
     if uMsg != (WM_INITDIALOG) as u32 && pDlgData.is_null() {
         return (FALSE) as i64;
@@ -1095,7 +1095,7 @@ unsafe extern "system" fn StatusMessageWindowProc(
                 (core::mem::size_of::<DLG_DATA>()) as u64,
             ) as *mut DLG_DATA;
             if !pDlgData.is_null() {
-                SetWindowLongPtrW(hwndDlg, (GWLP_USERDATA) as c_int, ((pDlgData as isize)) as LONG_PTR);
+                SetWindowLongPtrW(hwndDlg, (DWLP_USER) as c_int, ((pDlgData as isize)) as LONG_PTR);
 
                 (*pDlgData).hLogoBitmap = LoadImageW(
                     hDllInstance,

@@ -103,6 +103,37 @@ unsafe extern "system" fn recv_dg_indication(
     0 // STATUS_SUCCESS
 }
 
+// The broadcast listener: a SECOND address object bound to BC_PORT. A datagram this
+// host sends to a broadcast address must reach it too. NDIS does not loop broadcasts back
+// to the sender, so upstream tcpip (b8ee7950af4) delivers them locally itself, and so
+// must we.
+const BC_PORT: u16 = 47809;
+const BC_PAYLOAD: &[u8] = b"VIBEOS-BCAST";
+static BC_COUNT: AtomicUsize = AtomicUsize::new(0);
+static BC_LEN: AtomicUsize = AtomicUsize::new(0);
+
+unsafe extern "system" fn bc_dg_indication(
+    _tdi_ctx: *mut c_void,
+    _source_address_length: i32,
+    _source_address: *mut c_void,
+    _options_length: i32,
+    _options: *mut c_void,
+    _flags: u32,
+    bytes_indicated: u32,
+    _bytes_available: u32,
+    bytes_taken: *mut u32,
+    _tsdu: *mut c_void,
+    irp_out: *mut ntkrnl_sys::ddk::PIRP,
+) -> i32 {
+    *bytes_taken = bytes_indicated;
+    if !irp_out.is_null() {
+        *irp_out = null_mut();
+    }
+    BC_LEN.store(bytes_indicated as usize, Ordering::Release);
+    BC_COUNT.fetch_add(1, Ordering::AcqRel);
+    0
+}
+
 pub fn spawn() {
     let mut h = null_mut();
     let start: ntkrnl_sys::ddk::PKSTART_ROUTINE =
@@ -200,7 +231,76 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
     }
 
     ExFreePool(txbuf as PVOID);
+    broadcast_stage(dev, addr_fo);
     cleanup(addr_obj, addr_h);
+}
+
+/// Send from the first address object to the limited (255.255.255.255) and the directed
+/// (10.0.2.255, slirp's /24) broadcast on BC_PORT, and check that the local listener
+/// received each one.
+unsafe fn broadcast_stage(dev: ntkrnl_sys::ddk::PDEVICE_OBJECT, send_fo: *mut _FILE_OBJECT) {
+    let mut ea: AddrEa = zeroed();
+    ea.name_len = 16;
+    ea.value_len = size_of::<tdi::TaIpFull>() as u16;
+    ea.name[..16].copy_from_slice(b"TransportAddress");
+    ea.value = tdi::TaIpFull::new([0, 0, 0, 0], BC_PORT);
+    let h = open_dev(&UDP_NAME, &mut ea as *mut _ as PVOID, size_of::<AddrEa>() as u32);
+    if h.is_null() {
+        nsprint!("[NETSTACK] TDI dgram self-test: BROADCAST listener open FAILED\n");
+        return;
+    }
+    let mut obj: PVOID = null_mut();
+    if ObReferenceObjectByHandle(h, 0, null_mut(), 0, &mut obj, null_mut()) != 0 {
+        nsprint!("[NETSTACK] TDI dgram self-test: BROADCAST listener ref FAILED\n");
+        ZwClose(h);
+        return;
+    }
+    let fo = obj as *mut _FILE_OBJECT;
+    run_tdi((*fo).DeviceObject, fo, tdi::TDI_SET_EVENT_HANDLER, null_mut(), 0, |p| {
+        let req = p as *mut tdi::TDI_REQUEST_KERNEL_SET_EVENT;
+        (*req).EventType = tdi::TDI_EVENT_RECEIVE_DATAGRAM as u32;
+        (*req).EventHandler = bc_dg_indication as *mut c_void;
+        (*req).EventContext = 0xBCA5_0000u32 as *mut c_void;
+    });
+
+    let buf = ExAllocatePoolWithTag(0 as _, BC_PAYLOAD.len() as _, u32::from_le_bytes(*b"NetB")) as *mut u8;
+    if buf.is_null() {
+        nsprint!("[NETSTACK] TDI dgram self-test: BROADCAST pool alloc FAILED\n");
+        cleanup(obj, h);
+        return;
+    }
+    core::ptr::copy_nonoverlapping(BC_PAYLOAD.as_ptr(), buf, BC_PAYLOAD.len());
+
+    let mut got = [false; 2];
+    for (i, dst) in [[255u8, 255, 255, 255], [10, 0, 2, 255]].iter().enumerate() {
+        let before = BC_COUNT.load(Ordering::Acquire);
+        let mut remote = tdi::TaIpFull::new(*dst, BC_PORT);
+        let mut info: tdi::TDI_CONNECTION_INFORMATION = zeroed();
+        info.RemoteAddress = &mut remote as *mut _ as *mut c_void;
+        info.RemoteAddressLength = size_of::<tdi::TaIpFull>() as i32;
+        let st = run_tdi(dev, send_fo, tdi::TDI_SEND_DATAGRAM, buf as PVOID, BC_PAYLOAD.len() as u32, |p| {
+            let req = p as *mut tdi::TDI_REQUEST_KERNEL_SENDDG;
+            (*req).SendLength = BC_PAYLOAD.len() as u32;
+            (*req).SendDatagramInformation = &mut info;
+        });
+        let mut waited = 0;
+        while BC_COUNT.load(Ordering::Acquire) == before && waited < 12 {
+            delay_ms(250);
+            waited += 1;
+        }
+        got[i] = BC_COUNT.load(Ordering::Acquire) > before && BC_LEN.load(Ordering::Acquire) == BC_PAYLOAD.len();
+        nsprint!(
+            "[NETSTACK] TDI dgram self-test: broadcast to {}.{}.{}.{}:{} send {:#010x} local {}\n",
+            dst[0], dst[1], dst[2], dst[3], BC_PORT, st as u32, if got[i] { "received" } else { "MISSED" }
+        );
+    }
+    if got[0] && got[1] {
+        nsprint!("[NETSTACK] TDI dgram self-test: BROADCAST local delivery OK (limited + directed)\n");
+    } else {
+        nsprint!("[NETSTACK] TDI dgram self-test: BROADCAST local delivery FAILED\n");
+    }
+    ExFreePool(buf as PVOID);
+    cleanup(obj, h);
 }
 
 unsafe fn cleanup(addr_obj: PVOID, addr_h: *mut c_void) {

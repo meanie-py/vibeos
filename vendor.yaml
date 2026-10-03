@@ -2093,13 +2093,22 @@ trees:
       The Wine DLLs that arrived in the same merge (d2d1, d3d1x, dxgi, ...) are the
       opposite case and are filed under `ours:`.
 
-      Diffed 2026-10-03 against the pristine vkd3d-1.14 tarball (dl.winehq.org): AUTHORS
-      and COPYING are byte-identical, and so is every source file except 14 with small
-      hunks. Those are Wine's bundling edits (windows.h/d3d12.h/wine/vulkan.h and
-      wine/list.h/wine/rbtree.h includes; vkd3d_debug.h, vkd3d_version.h and the
-      include/vulkan SPIR-V headers are Wine-only additions) plus a handful of upstream
-      ReactOS `__REACTOS__` hunks, mostly MSVC portability. So the 1.14 version probe is
-      honest: the content is 1.14, and a re-vendor is a Wine-10 resync, not a copy.
+      The version probe reads config.h, which in a vendored tree is usually OUR file
+      and can be laundered (see libmpg123). The version is settled independently:
+
+      DIFFED 2026-09-30 against the pristine release, dl.winehq.org vkd3d-1.14.tar.xz
+      (sha256 c94015d59ebe8ae72c4d802af5ca1517d9744548842a4e776534612a8d905485). 33 files
+      are byte-identical and 15 differ, all by import adaptation with no functional
+      change:
+      - Wine's own: `list.h`/`rbtree.h` become `wine/...`, `vkd3d_*.h` become the SDK
+        headers, `vulkan/vulkan.h` becomes `wine/vulkan.h`, `VKD3D_DEBUG_ENV_NAME` is
+        dropped, VKD3D_IMPORT/EXPORT are blank, and the Makefile.in is Wine's.
+      - ReactOS MSVC compat (`__REACTOS__`/`_MSC_VER`): noreturn/unreachable macros, a
+        `__MINGW32__` popcount guard, the descriptor-heap alignment, and two
+        `return NULL` -> `return false` in bool functions.
+      Ours-only: CMakeLists.txt, config.h, VENDORED, and the generated or imported
+      headers (vkd3d_version.h, vkd3d_debug.h, vulkan/spirv.h, vulkan/GLSL.std.450.h).
+      So 1.14 is confirmed, and `modified: yes` means these patches only.
 
 ours:
   - paths:
