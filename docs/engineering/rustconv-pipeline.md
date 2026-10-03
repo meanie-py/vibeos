@@ -327,6 +327,28 @@ Both are now derived, and raise `TargetResolveError` rather than guessing:
   hardcoding an ASCII fold; `_invalid_parameter` + `*_errno()` instead of `STATUS_*`; exports
   are `cdecl` on every arch including i386.
 
+## Translating an ntoskrnl file (2026-10-03)
+
+ntoskrnl.exe is cargo-linked (`add_cargo_module(... KIND kernelexe)`) and every one of its
+`.c` is a commented `#${REACTOS_SOURCE_DIR}/ntoskrnl/...` entry in `ntos.cmake`. So no kernel
+file had a CMake owner, an include path or a compile command, and a sealed translate refused
+outright. That is now handled:
+- `profile_derive` treats a kernelexe target as a `kernel` module compiling `${SOURCE}`.
+- It restores repo-rooted flipped entries.
+- It follows linked targets' `target_include_directories(... INTERFACE ...)`.
+- It audits a kernel file as itself, so other, uncompilable TUs (mm/marea.c and the deleted
+  cache/ headers) do not block it.
+- `macro_authority._derived_kernel_entry` synthesizes the compile command from that derived
+  profile plus a real kernel-mode TU's compiler flags. The c2rust anchor reuses it.
+- c2rust gets `-D_InterlockedX=InterlockedX` renames, because it otherwise silently drops every
+  function that calls an MSVC interlocked intrinsic.
+
+Two things the run will NOT do for you. Kernel code lives in split crates (`ps-rust` etc.),
+but the import header is stitched for `ntoskrnl-rust`, so rewrite it to the crate's own
+substrate. And the SEH macros come back literally. Route every user access through
+`ntkrnl_sys::probe` (`probe_write_user`, `safe_copy_raw`, ...), and check each `_SEH2_TRY`
+in the C has survived: `job.c`'s handle write-backs did not.
+
 ## An SDK enum's width is an ABI fact — prove it from all three islands (2026-08-04)
 
 The `--cpp-com` scaffold refuses any state field whose type it cannot prove is scalar,

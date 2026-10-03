@@ -45,6 +45,8 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 extern "system" {
     fn RtlGetCallersAddress(CallersAddress: *mut PVOID, CallersCaller: *mut PVOID);
+    /// ntoskrnl-rust tripwire.rs: this boot's raw fw_cfg tripwire config.
+    fn VibeTripwireRead(out: *mut u8, cap: usize) -> usize;
 }
 use core::ffi::c_void;
 
@@ -991,6 +993,33 @@ unsafe fn CmpSetSystemValues(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
     );
 
     RtlFreeUnicodeString(&mut ValueName);
+
+    // vibeos (no C counterpart): publish this boot's tripwire config next to
+    // SystemStartOptions, so a user-mode harness hook can read per-boot knobs too
+    // (winlogon's QUIET). The SYSTEM hive can persist across boots, so a boot
+    // without one deletes the value rather than leaving the last boot's behind.
+    // Best effort: neither result changes what this function returns.
+    {
+        let mut Raw = [0u8; 256];
+        let mut Wide = [0u16; 257];
+        let n = VibeTripwireRead(Raw.as_mut_ptr(), Raw.len());
+        for i in 0..n {
+            Wide[i] = Raw[i] as u16;
+        }
+        RtlInitUnicodeString(&mut KeyName, w!("VibeTripwire").as_ptr());
+        if n != 0 {
+            NtSetValueKey(
+                KeyHandle,
+                &mut KeyName,
+                0,
+                REG_SZ,
+                Wide.as_mut_ptr() as *mut core::ffi::c_void,
+                ((n + 1) * core::mem::size_of::<WCHAR>()) as u32,
+            );
+        } else {
+            NtDeleteValueKey(KeyHandle, &mut KeyName);
+        }
+    }
 
     NtClose(KeyHandle);
     Status

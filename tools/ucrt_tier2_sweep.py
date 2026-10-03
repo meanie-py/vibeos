@@ -199,6 +199,65 @@ def run_shard(
 
 
 UCRT_TREE = "sdk/lib/ucrt"
+#: Everything a pre-build restores from REV: the Microsoft tree, ReactOS's glue
+#: beside it, and -- once the last batch deleted the `ucrt` target itself -- the
+#: `add_subdirectory(ucrt)` that builds it (see `_restore_subdirectory`).
+RESTORED = (UCRT_TREE, "sdk/lib/ucrt_reactos")
+SDK_LIB_CMAKE = "sdk/lib/CMakeLists.txt"
+UCRTBASE_CMAKE = "dll/win32/ucrtbase/CMakeLists.txt"
+
+
+def _restore_ucrt_link(rev: str) -> bool:
+    """Put `ucrt` back on ucrtbase's link line if REV linked it and HEAD does not:
+    tools/ucrt_tier2_refset.py finds the reference objects BY that link line. The
+    pre-build's DLL then carries the C beside the whole-archived Rust, which wins
+    every symbol; it is never booted, only read."""
+    old = subprocess.run(
+        ["git", "show", f"{rev}:{UCRTBASE_CMAKE}"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    head = "target_link_libraries(ucrtbase\n"
+    linked = head + "    ucrt\n"
+    path = ROOT / UCRTBASE_CMAKE
+    cur = path.read_text()
+    if linked not in old or linked in cur:
+        return False
+    if head not in cur:
+        raise SystemExit(
+            f"--takeover-from: cannot place `ucrt` on the link line in {UCRTBASE_CMAKE}"
+        )
+    path.write_text(cur.replace(head, linked, 1))
+    return True
+
+
+def _restore_subdirectory(rev: str) -> bool:
+    """Put `add_subdirectory(ucrt)` back into sdk/lib/CMakeLists.txt if REV had it and
+    HEAD does not. Only that line: the rest of the file is HEAD's, so a pre-build
+    against an old REV still builds today's tree around the restored C. Returns
+    whether it changed the file (the caller restores HEAD's afterwards)."""
+    old = subprocess.run(
+        ["git", "show", f"{rev}:{SDK_LIB_CMAKE}"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    line = "add_subdirectory(ucrt)\n"
+    path = ROOT / SDK_LIB_CMAKE
+    cur = path.read_text()
+    if line not in old or line in cur:
+        return False
+    # Insert where REV had it: after the line that preceded it there.
+    before = old[: old.index(line)].rstrip("\n").rsplit("\n", 1)[-1] + "\n"
+    if before not in cur:
+        raise SystemExit(
+            f"--takeover-from: cannot place `add_subdirectory(ucrt)` in {SDK_LIB_CMAKE}"
+        )
+    path.write_text(cur.replace(before, before + line, 1))
+    return True
 
 
 def prebuild_from(arch: str, rev: str) -> None:
@@ -214,11 +273,12 @@ def prebuild_from(arch: str, rev: str) -> None:
     restoring them would also link them into the pre-build's DLL beside our Rust
     entries (ucrt is an OBJECT library), and nothing about grading needs them.
 
-    Refuses to start on a dirty `sdk/lib/ucrt`: restoring HEAD afterwards would
-    otherwise discard the caller's uncommitted work there.
+    Refuses to start on a dirty tree under any path it restores: putting HEAD back
+    afterwards would otherwise discard the caller's uncommitted work there.
     """
+    paths = [*RESTORED, SDK_LIB_CMAKE, UCRTBASE_CMAKE]
     dirty = subprocess.run(
-        ["git", "status", "--porcelain", "--", UCRT_TREE],
+        ["git", "status", "--porcelain", "--", *paths],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -226,12 +286,14 @@ def prebuild_from(arch: str, rev: str) -> None:
     ).stdout.strip()
     if dirty:
         raise SystemExit(
-            f"--takeover-from: {UCRT_TREE} has uncommitted changes; commit them first:\n{dirty}"
+            f"--takeover-from: uncommitted changes under {paths}; commit them first:\n{dirty}"
         )
     subprocess.run(
-        ["git", "restore", f"--source={rev}", "--worktree", "--", UCRT_TREE], cwd=ROOT, check=True
+        ["git", "restore", f"--source={rev}", "--worktree", "--", *RESTORED], cwd=ROOT, check=True
     )
     try:
+        _restore_subdirectory(rev)
+        _restore_ucrt_link(rev)
         init = ROOT / UCRT_TREE / "initializers"
         if init.is_dir():
             shutil.rmtree(init)
@@ -241,7 +303,7 @@ def prebuild_from(arch: str, rev: str) -> None:
             "    ${UCRT_INITIALIZERS_SOURCES}\n", ""
         )
         cml.write_text(text)
-        print(f"[sweep] pre-build with {UCRT_TREE} from {rev}")
+        print(f"[sweep] pre-build with {', '.join(RESTORED)} from {rev}")
         proc = subprocess.run(
             ["./vibeos-cli", "build", "--arch", arch], cwd=ROOT, capture_output=True, text=True
         )
@@ -250,11 +312,24 @@ def prebuild_from(arch: str, rev: str) -> None:
             raise SystemExit(f"--takeover-from: pre-build failed (rc={proc.returncode})")
     finally:
         # HEAD's tracked files back, and every file the restore created removed. The
-        # tree was clean when we started, so both are exactly our own changes.
-        subprocess.run(
-            ["git", "restore", "--source=HEAD", "--worktree", "--", UCRT_TREE], cwd=ROOT, check=True
-        )
-        subprocess.run(["git", "clean", "-fdq", "--", UCRT_TREE], cwd=ROOT, check=True)
+        # paths were clean when we started, so both are exactly our own changes.
+        # `git restore` only what HEAD still tracks: once a batch deletes a whole
+        # restored directory, its files here are untracked and `git clean` owns them.
+        tracked = [
+            p
+            for p in paths
+            if subprocess.run(
+                ["git", "ls-files", "--error-unmatch", "--", p], cwd=ROOT, capture_output=True
+            ).returncode
+            == 0
+        ]
+        if tracked:
+            subprocess.run(
+                ["git", "restore", "--source=HEAD", "--worktree", "--", *tracked],
+                cwd=ROOT,
+                check=True,
+            )
+        subprocess.run(["git", "clean", "-fdq", "--", *RESTORED], cwd=ROOT, check=True)
 
 
 def main(argv: list[str] | None = None) -> int:

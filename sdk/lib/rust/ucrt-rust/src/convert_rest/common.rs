@@ -8,7 +8,7 @@ use crate::locale::CrtLocalePointers;
 use crate::ptd_host::PtdHost;
 use core::ffi::{c_char, c_int, c_uint};
 
-/// `_Mbstatet` / `mbstate_t` (`sdk/include/ucrt/corecrt.h:636`): `unsigned
+/// `_Mbstatet` / `mbstate_t` (`ucrt/corecrt.h:636`): `unsigned
 /// long _Wchar; unsigned short _Byte, _State;`. `unsigned long` is always 32
 /// bits on every Windows target, so this is 8 bytes / align 4 on all three
 /// arches -- verified against `sizeof(mbstate_t)` call sites (`MB_LEN_MAX`

@@ -1321,9 +1321,12 @@ unsafe extern "system" {
     pub fn PciExecuteCriticalSystemRoutine(Argument: ULONG_PTR) -> ULONG_PTR;
 }
 unsafe extern "system" {
+    // Hand-synced to the post-4dabb9e5825 pci.h prototype (Bar/NextBar by value);
+    // a gen_driver_types.sh regen against today's pci.h emits the same.
     pub fn PciCreateIoDescriptorFromBarLimit(
         ResourceDescriptor: PIO_RESOURCE_DESCRIPTOR,
-        BarArray: PULONG,
+        Bar: ULONG,
+        NextBar: ULONG,
         Rom: BOOLEAN,
     ) -> BOOLEAN;
 }

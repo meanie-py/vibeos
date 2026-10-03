@@ -1707,7 +1707,6 @@ sdk/lib/rtl/CMakeLists.txt	1	# encode.c — replaced by Rust implementation (sdk
 sdk/lib/rtl/CMakeLists.txt	1	# env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
 sdk/lib/rtl/CMakeLists.txt	1	# error.c — replaced by Rust implementation (sdk/lib/rust/rtl-error/)
 sdk/lib/rtl/CMakeLists.txt	1	# exception.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
-sdk/lib/rtl/CMakeLists.txt	1	# export the Rtl{Cm,Io}{En,De}codeMemIoResource family. Porting memres.c to
 sdk/lib/rtl/CMakeLists.txt	1	# generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
 sdk/lib/rtl/CMakeLists.txt	1	# handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
 sdk/lib/rtl/CMakeLists.txt	1	# heap.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/, Wave HEAP)
@@ -1724,7 +1723,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# largeint.c — replaced by Rust implementation (s
 sdk/lib/rtl/CMakeLists.txt	1	# locale.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-locale)
 sdk/lib/rtl/CMakeLists.txt	1	# luid.c — replaced by Rust implementation (sdk/lib/rust/luid/)
 sdk/lib/rtl/CMakeLists.txt	2	# mem.c — replaced by Rust implementation (sdk/lib/rust/mem/)
-sdk/lib/rtl/CMakeLists.txt	1	# memres.c is upstream-new (2026, memory/port resource descriptor encode/decode
+sdk/lib/rtl/CMakeLists.txt	1	# memres.c (upstream-new, 2026) — replaced by Rust implementation (sdk/lib/rust/rtl-misc/
 sdk/lib/rtl/CMakeLists.txt	1	# memstream.c — replaced by Rust implementation (sdk/lib/rust/rtl-misc/, Wave MISC)
 sdk/lib/rtl/CMakeLists.txt	1	# message.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
 sdk/lib/rtl/CMakeLists.txt	1	# network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
@@ -1734,7 +1733,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# ppb.c — replaced by Rust implementation (sdk/li
 sdk/lib/rtl/CMakeLists.txt	1	# prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
 sdk/lib/rtl/CMakeLists.txt	1	# priv.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRIV)
 sdk/lib/rtl/CMakeLists.txt	1	# process.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRC)
-sdk/lib/rtl/CMakeLists.txt	1	# processor.c is upstream-new (2026) but declined here: it DEFINES
+sdk/lib/rtl/CMakeLists.txt	1	# processor.c (upstream-new, 2026) — replaced by Rust (rtl-strings cabi): it defines
 sdk/lib/rtl/CMakeLists.txt	1	# propvar.c — replaced by Rust implementation (sdk/lib/rust/rtl-propvar/)
 sdk/lib/rtl/CMakeLists.txt	1	# random.c — replaced by Rust implementation (sdk/lib/rust/random/)
 sdk/lib/rtl/CMakeLists.txt	1	# rangelist.c — replaced by Rust implementation (sdk/lib/rust/rtl-rangelist/)
@@ -1763,6 +1762,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# version.c — replaced by Rust implementation (sd
 sdk/lib/rtl/CMakeLists.txt	1	# wait.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC)
 sdk/lib/rtl/CMakeLists.txt	1	# wine_debug.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
 sdk/lib/rtl/CMakeLists.txt	1	# workitem.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
+sdk/lib/rtl/CMakeLists.txt	1	#memres.c
 sdk/lib/skiplist/CMakeLists.txt	1	# add_library(skiplist16 skiplist.c) # body replaced by Rust; kept on disk
 sdk/lib/skiplist/CMakeLists.txt	1	# skiplist.c → Rust (sdk/lib/rust/skiplist-rust, kept on disk per the never-delete
 sdk/lib/smlib/CMakeLists.txt	1	# smclient.c — replaced by Rust (smss-csrss-rust/src/smlib/smclient.rs)
@@ -1942,6 +1942,7 @@ win32ss/CMakeLists.txt	1	# user/ntuser/hook.c # replaced by Rust (sdk/lib/rust/w
 win32ss/CMakeLists.txt	1	# user/ntuser/hotkey.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/hotkey.rs) — cohabitation [ntuser wave 18]
 win32ss/CMakeLists.txt	1	# user/ntuser/ime.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/ime.rs) — cohabitation [ntuser wave 36]
 win32ss/CMakeLists.txt	1	# user/ntuser/input.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/input.rs) — cohabitation [ntuser wave 30]
+win32ss/CMakeLists.txt	1	# user/ntuser/job.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/job.rs) — upstream b272427baa3, never built as C here
 win32ss/CMakeLists.txt	1	# user/ntuser/kbdlayout.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/kbdlayout.rs) — cohabitation [ntuser frontier]
 win32ss/CMakeLists.txt	1	# user/ntuser/keyboard.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/keyboard.rs) — cohabitation [ntuser wave 38]
 win32ss/CMakeLists.txt	1	# user/ntuser/layered.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/layered.rs) — cohabitation [ntuser wave 16]

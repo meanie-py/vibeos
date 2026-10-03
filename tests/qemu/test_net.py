@@ -70,6 +70,7 @@ MARK_OUT_RECV = "[NETSTACK] outbound TCP echo received"
 MARK_TDI_CONNECT = "[NETSTACK] TDI self-test: CONNECT OK"
 MARK_TDI_RT = "[NETSTACK] TDI self-test: RECEIVE OK"
 MARK_TDI_DGRAM = "[NETSTACK] TDI dgram self-test: RECEIVE_DATAGRAM OK"
+MARK_TDI_BCAST = "[NETSTACK] TDI dgram self-test: BROADCAST local delivery OK"
 MARK_TDI_SRV_LISTEN = "[NETSTACK] TDI server: listening on :8888"
 MARK_TDI_SRV_ECHO = b"TDI-SRV-ECHO"
 MARK_USERMODE_TCP = "[NETTEST] usermode winsock TCP echo OK"
@@ -333,6 +334,21 @@ def test_tdi_datagram_roundtrip(vm: QemuVM) -> None:
     assert _wait_for_marker(vm, MARK_TDI_DGRAM), (
         "TDI SEND_DATAGRAM/RECEIVE_DATAGRAM round-trip did not complete "
         "(UDP datagram path + datagram event-indication upcall)"
+    )
+
+
+def test_tdi_broadcast_local_delivery(vm: QemuVM) -> None:
+    """A UDP broadcast this host sends reaches a local socket bound to that port.
+
+    NDIS never loops a broadcast back to its sender, and smoltcp handles broadcast only
+    on egress, so without the local delivery in tditrans.rs a second socket on the
+    same host never sees it (NetBIOS, SSDP-style self-discovery). The self-test sends
+    to the limited (255.255.255.255) and the directed (10.0.2.255) broadcast and needs
+    both. Upstream tcpip fixed the same gap in b8ee7950af4.
+    """
+    _require_net_config(vm)
+    assert _wait_for_marker(vm, MARK_TDI_BCAST), (
+        "a broadcast sent through TDI never reached the local listener bound to its port"
     )
 
 

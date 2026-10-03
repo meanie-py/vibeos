@@ -67,7 +67,7 @@ fn main() {
     let archive = std::process::Command::new("git")
         .arg("-C")
         .arg(&repo)
-        .args(["archive", "--format=tar", REFERENCE_REV, "sdk/lib/ucrt"])
+        .args(["archive", "--format=tar", REFERENCE_REV, "sdk/lib/ucrt", "sdk/include/ucrt"])
         .output()
         .expect("run git archive (the reference UCRT comes from git history)");
     assert!(
@@ -112,7 +112,7 @@ fn main() {
         .flag_if_supported("-std=gnu++17")
         .warnings(false)
         .include(&stub)
-        .include(repo.join("sdk/include/ucrt"))
+        .include(tree.join("sdk/include/ucrt"))
         .include(repo.join("sdk/include/psdk"))
         .include(ucrt.join("inc"))
         .include(repo.join("sdk/lib/vcruntime/inc"))

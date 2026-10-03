@@ -1432,19 +1432,21 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
             break 'try_body_dcb; // try_return Iosb
         }
 
-        // #if (NTDDI_VERSION >= NTDDI_WIN8): check oplock key -- see crate::NTDDI_WIN8
-        if crate::NTDDI_WIN8 {
-            Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
-                FatGetFcbOplock(Dcb),
-                (*IrpContext).OriginatingIrp,
-                OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY,
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-            );
-            if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
-                break 'try_body_dcb; // try_return NOTHING
-            }
+        // Check oplock key -- NTDDI >= WIN8 only (create.c 2857-2876). Pre-WIN8 a DCB has no
+        // oplock, and FatGetFcbOplock(Dcb) lands in its free-dirent bitmap.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
+        Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
+            FatGetFcbOplock(Dcb),
+            (*IrpContext).OriginatingIrp,
+            OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        );
+        if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
+            break 'try_body_dcb; // try_return NOTHING
+        }
         }
 
         // NoEaKnowledge check
@@ -1483,11 +1485,15 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
                 DesiredAccess,
                 ShareAccess as ULONG,
             );
+            // Pre-WIN8 (create.c 2945-3010's #else) a failed share check just returns it.
+            #[cfg(not(ntddi_ge_ntddi_win8))]
+            if Iosb.__bindgen_anon_1.Status < 0 {
+                break 'try_body_dcb; // try_return Iosb
+            }
+            #[cfg(ntddi_ge_ntddi_win8)]
             if Iosb.__bindgen_anon_1.Status < 0 {
                 let mut OplockBreakStatus: NTSTATUS = STATUS_SUCCESS;
-                // #if WIN8 break-H, #else plain try_return: the else below. See crate::NTDDI_WIN8.
-                if crate::NTDDI_WIN8
-                    && Iosb.__bindgen_anon_1.Status == STATUS_SHARING_VIOLATION
+                if Iosb.__bindgen_anon_1.Status == STATUS_SHARING_VIOLATION
                     && FlagOn((*IrpSp).Parameters.Create.Options, FILE_COMPLETE_IF_OPLOCKED) == 0
                 {
                     OplockBreakStatus = FsRtlOplockBreakH(
@@ -1515,31 +1521,33 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
             }
         }
 
-        // #if (NTDDI_VERSION >= NTDDI_WIN8): directory oplocks -- see crate::NTDDI_WIN8
-        if crate::NTDDI_WIN8 {
-            if (*Dcb).UncleanCount != 0 {
-                Iosb.__bindgen_anon_1.Status = FsRtlCheckOplock(
-                    FatGetFcbOplock(Dcb),
-                    (*IrpContext).OriginatingIrp,
-                    IrpContext as *mut core::ffi::c_void,
-                    Some(core::mem::transmute::<*const (), _>(FatOplockComplete as *const ())),
-                    Some(core::mem::transmute::<*const (), _>(FatPrePostIrp as *const ())),
-                );
-            }
-            if Iosb.__bindgen_anon_1.Status == STATUS_PENDING {
-                *OplockPostIrp = 1;
-                break 'try_body_dcb;
-            }
-            if OpenRequiringOplock != 0 && Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
-                Iosb.__bindgen_anon_1.Status = FsRtlOplockFsctrl(
-                    FatGetFcbOplock(Dcb),
-                    (*IrpContext).OriginatingIrp,
-                    (*Dcb).UncleanCount + 1,
-                );
-            }
-            if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS && Iosb.__bindgen_anon_1.Status != STATUS_OPLOCK_BREAK_IN_PROGRESS {
-                break 'try_body_dcb;
-            }
+        // Oplock checks -- NTDDI >= WIN8 only (create.c 3017-3073): they ran on every reopen
+        // of a directory that still had a handle, reading its dirent bitmap as an oplock.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
+        if (*Dcb).UncleanCount != 0 {
+            Iosb.__bindgen_anon_1.Status = FsRtlCheckOplock(
+                FatGetFcbOplock(Dcb),
+                (*IrpContext).OriginatingIrp,
+                IrpContext as *mut core::ffi::c_void,
+                Some(core::mem::transmute::<*const (), _>(FatOplockComplete as *const ())),
+                Some(core::mem::transmute::<*const (), _>(FatPrePostIrp as *const ())),
+            );
+        }
+        if Iosb.__bindgen_anon_1.Status == STATUS_PENDING {
+            *OplockPostIrp = 1;
+            break 'try_body_dcb;
+        }
+        if OpenRequiringOplock != 0 && Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
+            Iosb.__bindgen_anon_1.Status = FsRtlOplockFsctrl(
+                FatGetFcbOplock(Dcb),
+                (*IrpContext).OriginatingIrp,
+                (*Dcb).UncleanCount + 1,
+            );
+        }
+        if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS && Iosb.__bindgen_anon_1.Status != STATUS_OPLOCK_BREAK_IN_PROGRESS {
+            break 'try_body_dcb;
+        }
         }
 
         // Update share access
@@ -1921,28 +1929,29 @@ pub unsafe extern "system" fn FatOpenExistingDirectory(
         UnwindDcb = FatCreateDcb(IrpContext, Vcb, ParentDcb, LfnByteOffset, DirentByteOffset, Dirent, Lfn);
         *Dcb = UnwindDcb;
 
-        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
-        if crate::NTDDI_WIN8 {
-            // Win8+: store any caller oplock key and honor atomic create-with-oplock.
-            Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
+        // Win8+: store any caller oplock key and honor atomic create-with-oplock.
+        // NTDDI >= WIN8 only: a pre-WIN8 DCB has no oplock (see FatCreateNewDirectory).
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
+        Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
+            FatGetFcbOplock(*Dcb),
+            (*IrpContext).OriginatingIrp,
+            OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        );
+        if OpenRequiringOplock != 0 && Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
+            Iosb.__bindgen_anon_1.Status = FsRtlOplockFsctrl(
                 FatGetFcbOplock(*Dcb),
                 (*IrpContext).OriginatingIrp,
-                OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY,
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
+                (*(*Dcb)).UncleanCount + 1,
             );
-            if OpenRequiringOplock != 0 && Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
-                Iosb.__bindgen_anon_1.Status = FsRtlOplockFsctrl(
-                    FatGetFcbOplock(*Dcb),
-                    (*IrpContext).OriginatingIrp,
-                    (*(*Dcb)).UncleanCount + 1,
-                );
-            }
-            // Raise to trigger cleanup of the new Dcb if either oplock call failed.
-            if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
-                FatRaiseStatus(IrpContext, Iosb.__bindgen_anon_1.Status);
-            }
+        }
+        // Raise to trigger cleanup of the new Dcb if either oplock call failed.
+        if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
+            FatRaiseStatus(IrpContext, Iosb.__bindgen_anon_1.Status);
+        }
         }
 
         // Set up our share access.
@@ -3012,8 +3021,11 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
             if CreateLfn != 0 { UnicodeName } else { core::ptr::null_mut() },
         );
 
-        // #if (NTDDI_VERSION >= NTDDI_WIN8): directory oplocks (see crate::NTDDI_WIN8)
-        if crate::NTDDI_WIN8 {
+        // NTDDI >= WIN8 only (create.c 5178-5237, FatCreateNewDirectory). Pre-WIN8 a directory
+        // has no oplock: FatGetFcbOplock(Dcb) is Specific.Fcb.Oplock, which for a DCB is a
+        // word of its in-union free-dirent bitmap.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
             Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
                 FatGetFcbOplock(Dcb as PFCB),
                 (*IrpContext).OriginatingIrp,
@@ -3461,6 +3473,11 @@ pub unsafe extern "system" fn FatCreateNewFile(
         );
         UnwindFcb = Fcb;
         UnwindDirent = core::ptr::null_mut();
+        // NTDDI >= WIN8 only (create.c 6021-6049, FatCreateNewFile; it also holds the WIN7 key
+        // check). Its parent-directory check read the DCB's free-dirent bitmap as an oplock
+        // pointer: once enough dirents were in use, a run of file creates bugchecked 0x23.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
         Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
             FatGetFcbOplock(Fcb),
             (*IrpContext).OriginatingIrp,
@@ -3476,21 +3493,19 @@ pub unsafe extern "system" fn FatCreateNewFile(
                 (*Fcb).UncleanCount + 1,
             );
         }
-        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
-        if crate::NTDDI_WIN8 {
-            if Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
-                Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
-                    FatGetFcbOplock(ParentDcb),
-                    (*IrpContext).OriginatingIrp,
-                    OPLOCK_FLAG_PARENT_OBJECT,
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut() as *mut NTSTATUS,
-                );
-            }
-            if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
-                FatRaiseStatus(IrpContext, Iosb.__bindgen_anon_1.Status);
-            }
+        if Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
+            Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
+                FatGetFcbOplock(ParentDcb),
+                (*IrpContext).OriginatingIrp,
+                OPLOCK_FLAG_PARENT_OBJECT,
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                core::ptr::null_mut() as *mut NTSTATUS,
+            );
+        }
+        if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
+            FatRaiseStatus(IrpContext, Iosb.__bindgen_anon_1.Status);
+        }
         }
         if TemporaryFile != 0 {
             SetFlag(&mut (*Fcb).FcbState, FCB_STATE_TEMPORARY);
@@ -3768,20 +3783,20 @@ pub unsafe extern "system" fn FatSupersedeOrOverwriteFile(
             ea_change = 1;
         }
 
-        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
-        if crate::NTDDI_WIN8 {
-            // Break parent directory oplock (advisory)
-            let mut oplock_status = FsRtlCheckOplockEx(
-                FatGetFcbOplock((*fcb).ParentDcb as *mut FCB),
-                (*irp_context).OriginatingIrp,
-                OPLOCK_FLAG_PARENT_OBJECT,
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-            );
-            if oplock_status != STATUS_SUCCESS as i32 {
-                FatRaiseStatus(irp_context, oplock_status);
-            }
+        // Break parent directory oplock -- NTDDI >= WIN8 only; a pre-WIN8 DCB has none.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
+        let oplock_status = FsRtlCheckOplockEx(
+            FatGetFcbOplock((*fcb).ParentDcb as *mut FCB),
+            (*irp_context).OriginatingIrp,
+            OPLOCK_FLAG_PARENT_OBJECT,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        );
+        if oplock_status != STATUS_SUCCESS as i32 {
+            FatRaiseStatus(irp_context, oplock_status);
+        }
         }
 
         // Acquire paging IO resource and zero file size

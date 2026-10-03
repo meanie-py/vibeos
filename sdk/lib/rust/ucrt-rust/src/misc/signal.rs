@@ -26,7 +26,7 @@
 //!   `EncodePointer`), so a raw memory dump of these statics never shows a
 //!   real code address directly.
 //! * `SIGABRT` and `SIGABRT_COMPAT` are DIFFERENT constants in real UCRT
-//!   headers (22 and 6 respectively -- `sdk/include/ucrt/signal.h`), NOT the
+//!   headers (22 and 6 respectively -- `ucrt/signal.h`), NOT the
 //!   mingw `crt/signal.h` value (6 for both) other C/Rust in this tree may
 //!   use; both map to the SAME `abort_action` global here, matching the C's
 //!   `case SIGABRT: case SIGABRT_COMPAT:` (distinct case labels only because
@@ -78,7 +78,7 @@ use crate::ptd::AcrtPtd;
 
 // ── constants ────────────────────────────────────────────────────────────
 
-/// UCRT's OWN `signal.h` values (`sdk/include/ucrt/signal.h`), which this
+/// UCRT's OWN `signal.h` values (`ucrt/signal.h`), which this
 /// file (a UCRT source) uses -- NOT mingw's `crt/signal.h`, where `SIGABRT`
 /// is 6. See the module doc's `SIGABRT`/`SIGABRT_COMPAT` entry.
 pub const SIGINT: c_int = 2;

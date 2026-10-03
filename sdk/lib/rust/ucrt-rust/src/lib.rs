@@ -111,6 +111,18 @@ pub mod env;
 pub mod exec_rest;
 #[cfg(feature = "internal-core")]
 pub mod internal;
+#[cfg(feature = "startup")]
+pub mod startup;
+#[cfg(feature = "argv-errors")]
+pub mod argv;
+#[cfg(feature = "cvt")]
+pub mod cvt;
+#[cfg(feature = "winapi-thunks")]
+pub mod winapi_thunks;
+#[cfg(feature = "ucrt-reactos")]
+pub mod ucrt_reactos;
+#[cfg(all(feature = "fpctrl", target_arch = "aarch64"))]
+pub mod fpctrl_arm64;
 #[cfg(feature = "heap")]
 pub mod heap;
 #[cfg(feature = "stdlib")]

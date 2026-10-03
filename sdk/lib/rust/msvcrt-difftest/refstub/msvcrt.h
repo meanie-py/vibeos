@@ -608,7 +608,7 @@ int WINAPIV _snprintf(char *str, size_t len, const char *format, ...);
  * failure is a fault rather than a wrong answer. */
 #define PF_XMMI64_INSTRUCTIONS_AVAILABLE 10
 
-/* `_fpclass`'s return codes, LIFTED VERBATIM from sdk/include/ucrt/float.h:197-206. The
+/* `_fpclass`'s return codes, LIFTED VERBATIM from ucrt/float.h:197-206. The
  * third constant family math.c needs and the third that the host cannot supply — glibc has
  * no `_FPCLASS_*` at all, so this one fails to compile rather than compiling wrong, which
  * makes it the friendly member of the set. Kept in the header's own order and spelling so a
@@ -625,7 +625,7 @@ int WINAPIV _snprintf(char *str, size_t len, const char *format, ...);
 #define _FPCLASS_PINF  0x0200
 
 /* The x87/SSE CONTROL-WORD masks that `_control87`/`_controlfp`/`_controlfp_s` translate
- * between, lifted verbatim from sdk/include/ucrt/float.h:131-164. These are the whole
+ * between, lifted verbatim from ucrt/float.h:131-164. These are the whole
  * contract of those three functions -- each is a bit-shuffle between the hardware word and
  * msvcrt's abstract one -- so a wrong mask here would grade the shuffle against the wrong
  * layout and agree with nothing. Lifted rather than typed for the reason the FP_* table
@@ -658,7 +658,7 @@ int WINAPIV _snprintf(char *str, size_t len, const char *format, ...);
 #define _DN_SAVE_OPERANDS_FLUSH_RESULTS 0x03000000
 
 /* `_statusfp`/`_clearfp`'s status-word bits, same header, same reason
- * (sdk/include/ucrt/float.h). The host has FE_* for the same concepts at different values,
+ * (ucrt/float.h). The host has FE_* for the same concepts at different values,
  * which is why gcc suggests `FE_INVALID` here -- taking that suggestion would compile and
  * grade the wrong bit. */
 #define _SW_INEXACT     0x00000001

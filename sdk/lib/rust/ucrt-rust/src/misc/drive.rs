@@ -130,7 +130,7 @@ pub unsafe extern "C" fn _getdrives() -> c_ulong {
     GetLogicalDrives()
 }
 
-/// `_diskfree_t` (`sdk/include/ucrt/direct.h`): four plain `unsigned`s, no
+/// `_diskfree_t` (`ucrt/direct.h`): four plain `unsigned`s, no
 /// padding, in this DECLARATION order (which is NOT the order
 /// `GetDiskFreeSpaceW`'s arguments bind to them -- see the module doc).
 #[repr(C)]

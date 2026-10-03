@@ -1,10 +1,4 @@
 
-# Replace the old CRT include directory with the UCRT include directory
-get_property(INCLUDE_DIRS DIRECTORY . PROPERTY INCLUDE_DIRECTORIES)
-list(REMOVE_ITEM INCLUDE_DIRS "${REACTOS_SOURCE_DIR}/sdk/include/crt")
-set_property(DIRECTORY . PROPERTY INCLUDE_DIRECTORIES ${INCLUDE_DIRS})
-include_directories(${REACTOS_SOURCE_DIR}/sdk/include/ucrt)
-
 include_directories(inc)
 
 if(DBG)

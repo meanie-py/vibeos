@@ -434,12 +434,13 @@ Same family, three positions, all silent on the arch where the widths happen to 
 - **`extern static` width drift.** `MmThrottleTop` declared `u64`, defined `u32`, permanently
   tripped the Cc write throttle → `WriteFile` on a FAT volume never returned, with every probe
   in the FS write path showing nothing wrong `[§9.36-throttle]`.
-- **`usize` over a C `ULONG`: correct on i386, wrong on both 64-bit arches.** fastfat's
-  `extern static MAX_LFN_CHARACTERS: usize` bound rust_cohab_fat.c's 4-byte data constant, so
-  every read took the next object (`TAG_DIRENT`) as its high half. The rename name buffers it
-  sized pointed into nowhere: the first `MoveFileExW` bugchecked 0x23 in `RtlCopyUnicodeString`,
-  which an older symbolization had called `FsRtlCheckOplock`. A `#define` reaching Rust as a data
-  symbol is a smell anyway; take the `const` from the island.
+  The cohab-shim variant: a shim exports a header `#define` as data
+  (`const ULONG __c_X __asm__("X") = …`) and the Rust declares the import itself.
+  fastfat's `static MAX_LFN_CHARACTERS: usize` over a 4-byte ULONG took its high half from the
+  next datum; on arm64 that was nonzero, every rename buffer pointer went non-canonical, and
+  every `MoveFileEx` bugchecked 0x23 -- amd64 too, once the rename is on a writable FAT volume
+  rather than its read-only live CD. Use the crate constant for a
+  `#define`; gated by `scan_extern_static_width` (Rust wider than the C `__asm__` definition).
 - **A narrow C return read wide, and the damage lands somewhere else entirely.** fastfat declared
   the cohab helper `UCHAR FatIndexBitSize()` as `-> u32`. The junk above the byte became the
   divisor in `ClustersDescribableByFat`, a 64 MB FAT16 volume mounted with **14 clusters**, and the
@@ -448,9 +449,9 @@ Same family, three positions, all silent on the arch where the widths happen to 
   unmasked on x64 and arm64, so a Rust definition is no safer an authority than a C one.
 - **Detector:** `scan_extern_decl_drift` reports params, statics and returns wherever a
   declaration is WIDER than its definition, against the in-crate `#[no_mangle]` definition, the
-  bindgen island, and for C, the cohab/stub files (returns) and `__asm__`-labelled data objects
-  (statics). A narrower read is not reported: on our little-endian targets it takes the low bytes
-  of the real value. Its first sweep of returns found ten symbols (win32k `RECTL_bIntersectRect`
+  bindgen island, and for C returns, the cohab/stub function definitions;
+  `scan_extern_static_width` covers statics over C `__asm__`-labelled data. A narrower read is
+  not reported: on our little-endian targets it takes the low bytes of the real value. Its first sweep of returns found ten symbols (win32k `RECTL_bIntersectRect`
   defined `u8` against rect.h's `BOOL`, kd's `CHAR` read as `LONG`, lpc's `USHORT` read as `ULONG`, ...).
 
 **Grinding a post-assembly cargo-check on ONE target bakes that target's pointer width into
@@ -1097,6 +1098,17 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   which carries the correct per-arch ABI.
 
 ---
+
+### A float return read through a double-typed trampoline is 0.0 on x64 and arm64
+
+**Symptom:** a dynamic-call path (DispCallFunc, a varargs thunk) returns 0.0 for every
+`float`-returning callee on amd64 only, while i386 is correct.
+**Cause:** one asm trampoline serves every return type, and the caller's extern declaration
+picks the register it reads. Win64 returns a `float` in xmm0's low 32 bits, so declaring the
+trampoline `-> f64` reads those bits as a denormal double, and `as f32` gives 0.0. i386 hides
+it because x87 `st(0)` holds either width. Wine's own `typelib.c` x86_64 path has this bug.
+**Fix:** alias the trampoline under a second name declared `-> f32` (arm64's C already does:
+`call_float_method`), and read float returns through it.
 
 ### `transmute(f as *const ())` into a callback slot erases the ABI check
 **Symptom.** Works on amd64/arm64; on i386 the callee reads garbage arguments. In consrv this
@@ -4266,6 +4278,11 @@ the first arm.
 **Fix.** Alias each one in the crate prelude, never re-declare with a literal:
 `pub const DENY_ACCESS: _ACCESS_MODE = _ACCESS_MODE_DENY_ACCESS;`
 
+The sealed translate does not prevent it. win32k's `job.c` (2026-10-03) came back as
+`match CalloutType { PsW32JobCalloutSetInformation => ... }`, which sealing passed because the
+NAME is right. Only `_PSW32JOBCALLOUTTYPE_PsW32JobCalloutSetInformation` exists, so every callout
+(add-process, terminate) would have set restrictions. Spell the prefixed name in the arm.
+
 **Check it BEFORE paying, and make the check multi-line.** Walk the generated island for
 `pub const <TAG>_<X>: <TAG> = n;`, intersect the bare `<X>` with the identifiers the `.c` uses,
 and subtract anything the island already defines bare. The trap is in the scan itself: bindgen
@@ -5070,6 +5087,19 @@ Spell it `target_pointer_width = "64"`. Same family: `#if (NTDDI_VERSION < NTDDI
 came back as pointer width in smlib's `SmConnectToSm` (the version is 0x502 on every arch).
 Gated by `scan_cfg_vs_c`, which compares every in-body arch cfg against the arch sets the C
 twin's own `#if`s draw.
+
+**The version block translated UNGATED, as if the newest version were on.** The other way
+round from the cfg mistake: fastfat builds at NTDDI < WIN8, and its 60 `#if (NTDDI_VERSION >=
+NTDDI_WIN8)` blocks came back as plain live code (one file even declared
+`const NTDDI_VERSION = 0x0A000000; // assume Windows 10`). Where a block only adds a feature that
+is harmless, but several used LAYOUT that version changes: pre-WIN8 the FCB's OPLOCK lives in
+`Specific.Fcb` and a directory has none, so `FsRtlCheckOplockEx(FatGetFcbOplock(ParentDcb), …)`
+read a word of the DCB's free-dirent bitmap as an oplock pointer. It bugchecked 0x23 only once
+a directory had enough dirents in use (a run of creates), and the DCB init/teardown versions
+wrote into that bitmap. Fix: the C's `#if` becomes a cfg nothing sets, declared in the crate's
+`[lints.rust] check-cfg` so a misspelling warns (fastfat: `ntddi_ge_ntddi_win8`); an `#else`
+arm becomes `#[cfg(not(...))]`. Audit a module by listing every version `#if` in the C and
+finding its live Rust: the tell is a comment like "Win8+" over code with no gate.
 
 **Stacked `#[cfg]`s AND together.** Deleting an item's per-arch twin can leave its
 `#[cfg(target_arch = "x86")]` behind, which then fuses with the next item's
@@ -10108,13 +10138,43 @@ The attribution recipe runs in ~15 min; **arm special pool first** (below) rathe
 forensics on the innocent victim.
 
 ### Physical-page reuse: a frame backing a still-mapped user page is freed and re-handed-out
-`[§9.98]` — **CHARACTERIZED, root-cause hunt OWED.** ~40% of arm64 kmtest sweeps kill a *later*
-`kmtest_.exe`, with **two faces from one root**: `0xC000001D` at an image PC (the page under the
-code changed) and `0xC0000005` in `RemoveEntryList` inlined into `RtlpCoalesceFreeBlocks` (the
-page under the heap changed). **Disproven, don't re-chase:** an `rtl_heap` translation bug.
-Tripwire #1 (free-while-mapped) came back **negative**, which narrows it. This entry exists
-because §9.96 first registered the flake with a plausible-but-unproven label — **a label is not
-a diagnosis.**
+`[§9.98]` — **FIXED 2026-08-01; symptom confirmed ABSENT 2026-10-03. Do not start this hunt.**
+~40% of arm64 kmtest sweeps used to kill a *later* `kmtest_.exe`, with **two faces from one
+root**: `0xC000001D` at an image PC (the page under the code changed) and `0xC0000005` in
+`RemoveEntryList` inlined into `RtlpCoalesceFreeBlocks` (the page under the heap changed).
+
+**Cause:** FreeLDR's identity-mapped page-table *pages* get recycled as user page tables while
+still holding FreeLDR's own entries (VA==PA, global, EL1-only), and on ARM64 TTBR0 **is** the
+user half — so a fresh user range sits on valid-looking descriptors, the demand-page fault never
+fires, and teardown decodes a stale descriptor into a PFN naming no frame. **Fix:**
+`MiPurgeStaleUserPtes` (`arm64/page.rs`) from `MmCreateMemoryArea`. amd64 carried the equivalent
+guard all along, which is why 148 x86 rounds never reproduced it. Full account: roadmap, "stale
+FreeLDR identity PTEs in recycled user page tables".
+
+**The closure evidence, which is the part worth copying.** The original fix proved the *oracle*
+went quiet (`MmDeleteRmap mapping-not-in-list` once per run → 0) and that
+`ZwMapViewOfSection` gained two passes. It did NOT show the sweep-kill rate had gone, so that
+was measured separately: **639 arm64 `-smp 1` kmtest rounds (2026-09-14 → 10-03) carry 0
+`BUGCHECK 0x50` and 0 `0x1A` — both of this bug's stop codes — and 0 short sweeps out of the
+582 with a known total**, against 42/85 finishing before. Plus one fresh probe-bearing sweep:
+93/93 launched, ratchet holding, and **0 hits across all armed MM sites** (`MMGUARD`,
+`FREEMAPPED`, `PFNMISMATCH`, `KSTACK`) in 15,144 serial lines.
+
+**Silence is only a result once you prove the probe shipped** — a July soak's every
+"under the probes" claim was vacuous because the probes landed four hours after the media was
+frozen. Check the MEDIA, not the build dir: `strings qemu/ramdisk.img | grep -c
+mapping-not-in-list` returned 4 for the run above. **And check the ARCH: a probe can be absent
+by compilation, not by staging.** `mm_guard_trip!` is `#[cfg(target_arch = "aarch64")]` — its
+printer is an arm64 header macro — so all 14 `[MMGUARD]` sites expand to nothing on i386/amd64.
+`strings build-<arch>/ntoskrnl/ntoskrnl.exe | grep -c MMGUARD`: arm64 **43**, amd64 **0**,
+i386 **0**. Every "x86 is quiet at these sites" reading is therefore vacuous, and the three
+ways a probe's silence lies now have the same one-line test — grep the artifact you actually
+booted, per arch. **Disproven, don't re-chase:** an `rtl_heap`
+translation bug; the free-while-mapped tripwire (negative); `MmInsertRmap`'s two silent returns
+(probed, never fire — still wrong as silent degrades, but not this). This entry exists because
+§9.96 first registered the flake with a plausible-but-unproven label — **a label is not a
+diagnosis** — and it is kept after the fix because the two faces are the thing a reader will
+recognise if anything like it returns.
 
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the
@@ -11854,6 +11914,29 @@ worktree or kill a running build to propagate this fix.
    private namespace (`canon-run.sh`, `unshare --map-root-user --mount`), so any host-side
    sizing of the canonical path silently measures an empty directory rather than failing.
 
+### A kmtest count drift on a UP guest is the boot-time ladder, not the scheduler
+**Symptom.** amd64/i386 conformance drops one or a few passes in a timing test that waits
+100 ms for a worker thread (`NpfsReadWrite`, `KeEvent.c:207` reading `STATUS_TIMEOUT`), at a
+different assertion each time. The `[NPFS-LATE]` line shows `woke +109 ms, work 0 ms`: the
+worker did not run until the caller's 100 ms wait had already expired. Host and guest clocks
+agree at whole-test granularity, so it is not a host freeze.
+
+**Cause.** winlogon's boot-time test ladder (the WoW64 guests, then the stock i386 applets:
+winmine, calc, notepad, …) is still running when the kmtest sweep starts, and each applet's
+startup under FEX is a burst of emulated user-mode work. On a uniprocessor guest that burst holds
+the only CPU for 100+ ms. `[NPFS-WAIT]` (NpfsHelpers.c) proves it: an expected block reads
+`idle 109 kernel 109, 7 interrupts`, while a miss reads `idle 0` with kernel time well short of
+the interval (the rest is user mode), or 200+ interrupts. In each miss the serial shows a
+`[WOW64] NtOpenFile …shell32.dll` loading next to the NPFS line.
+
+**Fix.** Per BOOT, never per media. Conformance boots pass the tripwire token `QUIET`
+(`conformance.with_quiet_token`); the kernel publishes the tripwire config as
+`HKLM\SYSTEM\CurrentControlSet\Control\VibeTripwire`; and winlogon's `QuietBootRequested` skips
+the ladder, saying so on serial. A staged marker file looked simpler and was wrong: the gate
+builds ONE media and boots it for smoke, the ladder AND conformance, so a media-level switch
+would turn the gate's ladder lane off without a word. On 2026-10-03 amd64 measured: 4 quiet
+rounds, 0 misses; 10 loud rounds, a miss in 8 and 3 NpfsReadWrite failures.
+
 ### `NET_FLAKE` that is not a flake `[§9.84]`
 A gate showing `✓ build ×3 ✓ lint ×3 ✓ smoke: all three` and a red net suite, where **all 15
 tests error (not fail) with the same 600 s number, first test included**, means the fixture never
@@ -12255,7 +12338,7 @@ authoritative registry.
 | Bug | State |
 |---|---|
 | **`-smp` `0xF4` boot-phase flake** (~2/20 soak), described as §9.56-class | Separate from the ready-list tear, which is **fixed** — see `active-lanes/smp-bringup-quest.md`. |
-| **arm64 physical-page reuse** — a frame backing a still-mapped user page is freed and re-handed-out `[§9.98]` | Characterized, two faces proven to be one root; ~40% of arm64 kmtest sweeps. Free-while-mapped tripwire negative. |
+| **arm64 physical-page reuse** — a frame backing a still-mapped user page is freed and re-handed-out `[§9.98]` | **FIXED** (`MiPurgeStaleUserPtes`, 2026-08-01): recycled FreeLDR identity PTEs in user page tables. Absent in 639 rounds + a probe-verified sweep (2026-10-03). |
 | **arm64 user-mode SEH first-chance** — `RtlRaiseException` unimplemented | Needs a `#[naked]` capture stub. |
 | **`ExHardError`** pool illegal-instruction; **`MmSection`** in-kernel wedge `[§9.92]` | Distinct from the arm64 kernel-SEH cluster; both open. |
 | **arm64 exception-dispatch recursion** under a dropped probe `[§9.104]` | Layer 1 fixed; layer 2 is the deep root. |

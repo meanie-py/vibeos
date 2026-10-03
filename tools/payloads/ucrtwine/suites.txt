@@ -1,0 +1,4 @@
+# Wine's ucrtbase conformance suite and ReactOS's ucrtbase apitest -- the two
+# rostests that exercise ucrtbase.dll, which is all ucrt-rust since 2026-10-03.
+ucrtbase_winetest.exe
+ucrtbase_apitest.exe

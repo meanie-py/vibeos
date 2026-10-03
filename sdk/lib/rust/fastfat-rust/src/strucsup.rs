@@ -162,7 +162,6 @@ const TAG_FCB: u32 = 0x46746146; // 'T' 'A' 'C' 'F'? placeholder
 // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
 // Windows value (0x200/0x204) is not what any TU here compiles.
 const NonPagedPoolNx: ntkrnl_sys::mm::POOL_TYPE = 0;
-const NTDDI_VERSION: u32 = 0x0A000000; // assume Windows 10 for compilation
 
 // Forward declarations for external functions not already available
 
@@ -870,10 +869,11 @@ pub unsafe extern "system" fn FatCreateRootDcb(
         }
         FatCheckFreeDirentBitmap(IrpContext, (*p_Dcb));
 
-        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
-        if crate::NTDDI_WIN8 {
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
             FsRtlInitializeOplock(FatGetFcbOplock(*p_Dcb));
         }
+        // #endif
 
     }, |_, abnormal| {
         DebugUnwind(b"FatCreateRootDcb\0".as_ptr() as *const i8);
@@ -1293,8 +1293,10 @@ pub unsafe extern "system" fn FatCreateDcb(
             (*dcb_inner).DeletedDirentHint = 0xffffffff;
         }
 
-        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
-        if crate::NTDDI_WIN8 {
+        // NTDDI >= WIN8 only (strucsup.c 1890-1897). Pre-WIN8 this "oplock" is a word of the
+        // DCB's in-union free-dirent bitmap, and the unwind would uninitialize it.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
             let oplock = FatGetFcbOplock(*p_Dcb);
             FsRtlInitializeOplock(oplock);
             *p_UnwindOplock = oplock;
@@ -1366,10 +1368,10 @@ pub unsafe extern "system" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr:
             }
         }
 
-        // Uninitialize the oplock. #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
-        if crate::NTDDI_WIN8 {
-            FsRtlUninitializeOplock(FatGetFcbOplock(Fcb));
-        }
+        // Uninitialize the oplock -- NTDDI >= WIN8 only (strucsup.c 2028-2034): pre-WIN8 a
+        // DCB has none, and this nulled a word of its free-dirent bitmap and freed "it".
+        #[cfg(ntddi_ge_ntddi_win8)]
+        FsRtlUninitializeOplock(FatGetFcbOplock(Fcb));
 
         NT_ASSERT(((*dcb_inner).DirectoryFileOpenCount == 0) as i32);
         NT_ASSERT(IsListEmpty(core::ptr::addr_of!((*dcb_inner).ParentDcbQueue) as *mut LIST_ENTRY) as i32);

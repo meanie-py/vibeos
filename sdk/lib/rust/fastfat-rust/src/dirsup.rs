@@ -1749,19 +1749,17 @@ pub unsafe extern "system" fn FatUpdateDirentFromFcb(
                 let r = crate::seh::try_except(
                     &mut (),
                     |_| {
-                    // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
-                    if crate::NTDDI_WIN8 {
-                        // Break parent directory oplock (Win8+)
-                        if !(*FcbOrDcb).ParentDcb.is_null() {
-                            FsRtlCheckOplockEx(
-                                FatGetFcbOplock((*FcbOrDcb).ParentDcb),
-                                (*IrpContext).OriginatingIrp,
-                                OPLOCK_FLAG_PARENT_OBJECT,
-                                core::ptr::null_mut(),
-                                core::ptr::null_mut(),
-                                core::ptr::null_mut(),
-                            );
-                        }
+                    // Break parent directory oplock -- NTDDI >= WIN8 only (dirsup.c 2720-2735).
+                    #[cfg(ntddi_ge_ntddi_win8)]
+                    if !(*FcbOrDcb).ParentDcb.is_null() {
+                        FsRtlCheckOplockEx(
+                            FatGetFcbOplock((*FcbOrDcb).ParentDcb),
+                            (*IrpContext).OriginatingIrp,
+                            OPLOCK_FLAG_PARENT_OBJECT,
+                            core::ptr::null_mut(),
+                            core::ptr::null_mut(),
+                            core::ptr::null_mut(),
+                        );
                     }
 
                     FatGetDirentFromFcbOrDcb(

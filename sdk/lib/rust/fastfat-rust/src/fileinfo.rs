@@ -964,22 +964,20 @@ unsafe extern "system" fn FatSetBasicInfo(
             FatSetDirtyBcb(IrpContext, *p_dirent_bcb, (*Fcb).Vcb, 1u8);
         }
 
-        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
-        if crate::NTDDI_WIN8 {
-            // Win8+ oplock break
-            if (*Fcb).ParentDcb.is_null() == false
-                && (ModifyLastAccess || ModifyLastWrite || ModifiedAttributes)
-            {
-                let oplock = FatGetFcbOplock((*Fcb).ParentDcb);
-                FsRtlCheckOplockEx(
-                    oplock,
-                    (*IrpContext).OriginatingIrp,
-                    OPLOCK_FLAG_PARENT_OBJECT,
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                );
-            }
+        // Parent oplock break -- NTDDI >= WIN8 only (fileinfo.c 2394-2412).
+        #[cfg(ntddi_ge_ntddi_win8)]
+        if (*Fcb).ParentDcb.is_null() == false
+            && (ModifyLastAccess || ModifyLastWrite || ModifiedAttributes)
+        {
+            let oplock = FatGetFcbOplock((*Fcb).ParentDcb);
+            FsRtlCheckOplockEx(
+                oplock,
+                (*IrpContext).OriginatingIrp,
+                OPLOCK_FLAG_PARENT_OBJECT,
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+            );
         }
     }, |_, _abnormal| {
         DebugUnwind(b"FatSetBasicInfo\0".as_ptr() as *const core::ffi::c_void);
@@ -1693,14 +1691,11 @@ pub unsafe extern "system" fn FatRenameEAs(
 
 // ==== recovered from stitcher-drop: 17_FatSetRenameInfo.rs ====
 // Forward declarations for external symbols not in imports
-extern "system" {
-    // FatDeleteFile forward-decl removed: real definition lives in this module
-    // (re-stitched body below). Keeping both was an E0428 duplicate.
-}
-
-// lfn.h's #define, from the island. This was `extern static MAX_LFN_CHARACTERS: usize` over
-// rust_cohab_fat.c's 4-byte ULONG: on 64-bit targets every read took TAG_DIRENT as its high
-// half, so the rename name buffers pointed into nowhere and the first rename bugchecked 0x23.
+// MAX_LFN_CHARACTERS is a #define (lfn.h). It used to be imported as `static ...: usize`
+// from rust_cohab_fat.c, which exports it as a 4-byte `const ULONG`: the 8-byte load took
+// its high half from whatever the linker placed next. On arm64 that was nonzero, so every
+// UnicodeBuffer.offset(MAX_LFN_CHARACTERS * k) below pointed at a non-canonical address and
+// the first RtlCopyUnicodeString into NewNameCopy took down every rename (bugcheck 0x23).
 const MAX_LFN_CHARACTERS: usize = crate::types::MAX_LFN_CHARACTERS as usize;
 
 #[no_mangle]
@@ -1834,9 +1829,12 @@ pub unsafe extern "system" fn FatSetRenameInfo(
     UniTunneledLongName.MaximumLength = core::mem::size_of_val(&UniTunneledLongNameBuffer) as u16;
     UniTunneledLongName.Buffer = UniTunneledLongNameBuffer.as_mut_ptr();
 
-    // Remember old Oem name
+    // Remember old Oem name. Divergence from the C: it copies OldOemName.Length bytes while
+    // that Length is still the 0 set above, so nothing is copied and FatRenameEAs later
+    // looks the file's EA set up under an empty old name. Take the Fcb's length first.
     {
         let oem_str = core::ptr::addr_of!((*Fcb).ShortName.Name.bindgen_union_field) as *const OEM_STRING;
+        OldOemName.Length = (*oem_str).Length.min(OldOemName.MaximumLength);
         core::ptr::copy_nonoverlapping(
             (*oem_str).Buffer as *const u8,
             OldOemName.Buffer as *mut u8,
@@ -2368,31 +2366,28 @@ pub unsafe extern "system" fn FatSetRenameInfo(
         OldParentDcb = (*Fcb).ParentDcb;
         (*Fcb).ParentDcb = TargetDcb;
 
-        // Break parent directory oplock on old parent (advisory)
-        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
-        if crate::NTDDI_WIN8 {
+        // Break parent directory oplock on old parent -- NTDDI >= WIN8 only (fileinfo.c 3754-3767).
+        #[cfg(ntddi_ge_ntddi_win8)]
+        FsRtlCheckOplockEx(
+            FatGetFcbOplock(OldParentDcb),
+            (*IrpContext).OriginatingIrp,
+            OPLOCK_FLAG_PARENT_OBJECT,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        );
+
+        if RenamedAcrossDirectories != 0 {
+            // NTDDI >= WIN8 only (fileinfo.c 3775-3788).
+            #[cfg(ntddi_ge_ntddi_win8)]
             FsRtlCheckOplockEx(
-                FatGetFcbOplock(OldParentDcb),
+                FatGetFcbOplock(TargetDcb),
                 (*IrpContext).OriginatingIrp,
                 OPLOCK_FLAG_PARENT_OBJECT,
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
             );
-        }
-
-        if RenamedAcrossDirectories != 0 {
-            // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
-            if crate::NTDDI_WIN8 {
-                FsRtlCheckOplockEx(
-                    FatGetFcbOplock(TargetDcb),
-                    (*IrpContext).OriginatingIrp,
-                    OPLOCK_FLAG_PARENT_OBJECT,
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                );
-            }
 
             // Uninitialize cachemap for source directory if empty
             {

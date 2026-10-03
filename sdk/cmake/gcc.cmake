@@ -1356,7 +1356,13 @@ find_compiler_lib(supc++ libsupc++.a LIBSUPCXX_LOCATION)
 if(LIBSUPCXX_LOCATION_FOUND)
     add_library(libsupc++ STATIC IMPORTED GLOBAL)
     set_target_properties(libsupc++ PROPERTIES IMPORTED_LOCATION ${LIBSUPCXX_LOCATION})
-    # libsupc++ requires libgcc and stdc++compat
+    # libsupc++ requires libgcc and stdc++compat, and on a GCC SEH toolchain also the
+    # unwinder in libgcc_eh.a (SJLJ/DWARF toolchains have none). Upstream gcc.cmake does the
+    # same; llvm-mingw never reaches this branch (libc++/libunwind below).
+    find_compiler_lib(gcc_eh libgcc_eh.a LIBGCC_EH_LOCATION)
+    if(LIBGCC_EH_LOCATION_FOUND)
+        target_link_libraries(libsupc++ INTERFACE "${LIBGCC_EH_LOCATION}")
+    endif()
     target_link_libraries(libsupc++ INTERFACE libgcc stdc++compat)
 else()
     # For clang/llvm-mingw, use libc++, libc++abi, and libunwind instead of libsupc++

@@ -104,24 +104,6 @@ def _static_tree(root: Path, c: str, rust: str) -> list[Path]:
     return [crate / "src"]
 
 
-_C_ULONG = 'const ULONG __c_MAX_LFN __asm__(FF_SYM("MAX_LFN")) = (ULONG)(260);\n'
-
-
-def test_a_static_wider_than_its_c_object_is_reported(tmp_path):
-    # The fastfat rename bugcheck: `usize` over a 4-byte ULONG read the next
-    # object as its high half on both 64-bit arches.
-    crates = _static_tree(tmp_path, _C_ULONG, 'extern "C" { static MAX_LFN: usize; }\n')
-    findings = scan(tmp_path, crates)
-    assert len(findings) == 1, findings
-    assert "MAX_LFN: static WIDTH" in findings[0][2]
-
-
-def test_a_narrower_static_read_is_silent(tmp_path):
-    # Low bytes of the real value on every little-endian target we build.
-    crates = _static_tree(tmp_path, _C_ULONG, 'extern "C" { static MAX_LFN: u16; }\n')
-    assert scan(tmp_path, crates) == []
-
-
 def test_a_static_wider_than_its_rust_definition_is_reported(tmp_path):
     crates = _static_tree(
         tmp_path,

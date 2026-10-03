@@ -140,8 +140,8 @@ that only the 64-bit arches could see (on i386 the two widths were equal):
 
 Both are reported in the direction that reads bits nobody wrote: a declaration
 WIDER than its definition. Authorities are the in-crate `#[no_mangle]`
-definition, and for C, the cohab/stub files a crate links by name (returns), or a
-data object carrying an explicit `__asm__` symbol label (statics).
+definition and, for C returns, the cohab/stub files a crate links by name. A static
+over C `__asm__`-labelled data is scan_extern_static_width's.
 
 Findings gate on NEW-vs-baseline (tools/lint-baseline/scan_extern_decl_drift.txt).
 Suppress a verified false positive with a trailing:
@@ -718,16 +718,7 @@ def _substrate_oracle(src_dir: Path, islands, types):
     return out
 
 
-# A C data object handed to Rust BY NAME: `const ULONG __c_X __asm__(FF_SYM("X")) = ...;`.
-# The asm label is what makes it the symbol a Rust `extern static X` binds, so it is
-# the definition that declaration must agree with. `static` objects are internal and
-# never bind one.
-_C_ASM_DATA = re.compile(
-    r"^[ \t]*(?!static\b)((?:(?:const|volatile|extern)\s+)*[A-Za-z_]\w*(?:\s*\*+)?)\s*"
-    r"(?:const\s+)?[A-Za-z_]\w*\s+__asm__\s*\(\s*(?:[A-Za-z_]\w*\s*\(\s*)?\"([^\"]+)\"",
-    re.M,
-)
-_C_QUALIFIERS = re.compile(r"\b(?:const|volatile|extern)\b")
+# C type widths for the cohab C oracle below.
 C_WIDTH = {
     "char": 1,
     "CHAR": 1,
@@ -765,55 +756,12 @@ C_WIDTH = {
 }
 
 
-def _c_files_with_asm_labels(root_dir: Path) -> list[Path]:
-    if root_dir == RUST_WS:
-        import subprocess
+def _compare_statics(crate_statics, types):
+    """`extern static` declarations against the in-crate `#[no_mangle]` definition.
 
-        out = subprocess.run(
-            ["git", "-C", str(REPO), "grep", "-lE", r"__asm__\s*\(", "--", "*.c"],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout
-        return [REPO / line for line in out.splitlines() if line]
-    return sorted(root_dir.rglob("*.c"))
-
-
-def _c_data_oracle(root_dir: Path) -> dict[str, tuple[Path, int, str, int | str]]:
-    """symbol -> (file, line, C type, width) for asm-labelled C data objects.
-
-    A symbol two C files define at different widths is dropped rather than guessed
-    at: there is no single answer to judge a declaration by.
-    """
-    out: dict[str, tuple[Path, int, str, int | str]] = {}
-    clash: set[str] = set()
-    for cf in _c_files_with_asm_labels(root_dir):
-        text = cf.read_text(errors="replace")
-        for m in _C_ASM_DATA.finditer(text):
-            ctype = _C_QUALIFIERS.sub("", m.group(1)).strip()
-            if "(" in ctype:
-                continue
-            width = PTR if "*" in ctype else C_WIDTH.get(ctype)
-            if width is None:
-                continue
-            sym = m.group(2).lstrip("_").split("@")[0]
-            line = text.count("\n", 0, m.start()) + 1
-            if sym in out and out[sym][3] != width:
-                clash.add(sym)
-            out.setdefault(sym, (cf, line, ctype, width))
-    for sym in clash:
-        out.pop(sym, None)
-    return out
-
-
-def _compare_statics(crate_statics, c_data, types):
-    """`extern static` declarations against the object they bind.
-
-    The bug this exists for: fastfat declared `static MAX_LFN_CHARACTERS: usize`
-    over rust_cohab_fat.c's 4-byte `ULONG`. On the 64-bit arches every read took
-    the NEXT object as its high half, the rename buffers it sized pointed into
-    nowhere, and the first rename bugchecked 0x23. On i386 `usize` is four bytes,
-    so the arch that would have been tested first was the one it could not break.
+    A static over C data (`__asm__`-labelled) is scan_extern_static_width's. Here:
+    freeldr's `WinLdrTerminalConnected` and i386 `KiI386PentiumLockErrataPresent`,
+    both BOOLEAN definitions read through 32-bit declarations.
 
     Only a declaration WIDER than its definition is reported: it reads (or writes)
     bytes that belong to some other object. A narrower integer read takes the low
@@ -832,9 +780,6 @@ def _compare_statics(crate_statics, c_data, types):
                 continue
             (_d, dw), (dfile, dty) = next(iter(shapes)), sdefs[sym][0]
             authority = f"def `{dty}` ({dfile.name})"
-        elif sym.lstrip("_") in c_data:
-            cf, cl, cty, dw = c_data[sym.lstrip("_")]
-            authority = f"C `{cty}` ({cf.name}:{cl})"
         else:
             continue
         for cfile, cline, cty_rust in sites:
@@ -960,9 +905,9 @@ def _compare_returns(crate_returns, c_rets, types, called):
 def scan(root_dir: Path, crate_dirs: list[Path]) -> list[tuple[Path, int, str]]:
     types, per, islands, statics, returns = sweep(root_dir, crate_dirs)
     findings: list[tuple[Path, int, str]] = []
-    c_data, c_rets = _c_data_oracle(root_dir), _c_return_oracle(root_dir)
+    c_rets = _c_return_oracle(root_dir)
     for src_dir in crate_dirs:
-        findings.extend(_compare_statics(statics[src_dir], c_data, types))
+        findings.extend(_compare_statics(statics[src_dir], types))
         findings.extend(_compare_returns(returns[src_dir], c_rets, types, per[src_dir][2]))
     for src_dir in crate_dirs:
         defs, decls, called = per[src_dir]

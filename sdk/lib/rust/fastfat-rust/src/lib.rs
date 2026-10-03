@@ -27,15 +27,6 @@ pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
 }
 
 pub mod types;
-
-/// `#if (NTDDI_VERSION >= NTDDI_WIN8)` in the C. fastfat builds at `_WIN32_WINNT=0x502`, so every
-/// such block is compiled OUT, and rust_cohab_fat.c's `FatGetFcbOplock` is the pre-Win8
-/// `&Fcb->Specific.Fcb.Oplock` -- which on a DCB is the DIRECTORY half of the union. A Win8 block
-/// run unconditionally hands the kernel directory fields as an oplock: `FsRtlCheckOplock` faulted
-/// at `*Oplock`'s 0x33 on the parent-directory check of every create (bugcheck 0x23), and the DCB
-/// oplock initializers wrote a NULL over live directory state. Gate Win8 blocks on this. (Older
-/// gates in cleanup.rs/deviosup.rs spell it as the never-set `#[cfg(ntddi_ge_*win8)]`.)
-pub(crate) const NTDDI_WIN8: bool = false;
 pub mod glue;       // harvested #define consts
 pub mod ddk_shims;  // macro/FORCEINLINE shims
 pub mod seh;        // real __try/__except/__finally (ntkrnl_sys::seh)

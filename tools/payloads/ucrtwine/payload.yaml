@@ -1,0 +1,32 @@
+# ucrtwine — Wine's ucrtbase conformance suite (and the ucrtbase apitest) in the
+# guest, against ucrtbase.dll as built: all ucrt-rust since 2026-10-03.
+#   tools/payloads/ucrtwine/build.sh i386
+#   VIBEOS_PAYLOAD=ucrtwine ./vibeos-cli build --arch i386
+#   ./vibeos-cli smoke --arch i386 --payload ucrtwine
+# Rides the apitest sweep runner (one process per subtest, stdout piped to the
+# serial as [APITEST:<suite>] lines); see ../apitest/sweep.c.
+name: ucrtwine
+description: Wine ucrtbase conformance + ucrtbase apitest against the Rust ucrtbase (i386)
+
+build_hint: "tools/payloads/ucrtwine/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/ucrtwine/sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/ucrtwine/suites.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/ucrtwine/skip.txt
+    dest: bin/apitest-skip.txt
+  # Children start on the writable FAT scratch disk: X: is the CDFS boot image.
+  - src: tools/payloads/ucrtwine/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: tools/payloads/ucrtwine/ucrtbase_winetest.exe
+    dest: bin/ucrtbase_winetest.exe
+  - src: tools/payloads/ucrtwine/ucrtbase_apitest.exe
+    dest: bin/ucrtbase_apitest.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 1800
+  launch_idle_secs: 600

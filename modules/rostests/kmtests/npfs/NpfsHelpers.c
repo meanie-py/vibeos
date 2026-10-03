@@ -667,6 +667,7 @@ PipeWorkerThread(
         ASSERT(Status == STATUS_WAIT_1);
 
         Woke = KeQueryInterruptTime();
+        Context->DiagWoke = 1;
         Triggered = Context->DiagTriggered;
         DeadlineMs = Context->DiagDeadlineMs;
         Context->Work(Context);
@@ -702,6 +703,9 @@ StartWorkerThread(
      * before any TriggerWork could print a garbage [NPFS-LATE] line. */
     Context->DiagTriggered = 0;
     Context->DiagDeadlineMs = 0;
+    RtlZeroMemory(&Context->DiagTimesTriggered, sizeof(Context->DiagTimesTriggered));
+    Context->DiagWoke = 0;
+    Context->DiagReported = FALSE;
 
     Context->Thread = KmtStartThread(PipeWorkerThread, Context);
 }
@@ -711,6 +715,78 @@ FinishWorkerThread(
     IN PTHREAD_CONTEXT Context)
 {
     KmtFinishThread(Context->Thread, &Context->ThreadDoneEvent);
+}
+
+/* DIAGNOSTIC ONLY (vibeos): fill an NPFS_DIAG_TIMES (npfs.h). PASSIVE_LEVEL only, so
+ * only the caller's side calls it; on failure every field reads 0. */
+static
+VOID
+NpfsDiagTimes(
+    OUT PNPFS_DIAG_TIMES Times)
+{
+    PSYSTEM_PROCESSOR_PERFORMANCE_INFORMATION Info;
+    ULONG Size = 64 * sizeof(*Info), Returned = 0, i;
+
+    RtlZeroMemory(Times, sizeof(*Times));
+    Info = ExAllocatePoolWithTag(NonPagedPool, Size, 'DfpN');
+    if (!Info)
+        return;
+    if (NT_SUCCESS(ZwQuerySystemInformation(SystemProcessorPerformanceInformation,
+                                            Info, Size, &Returned)))
+    {
+        for (i = 0; i < Returned / sizeof(*Info); i++)
+        {
+            Times->Idle += Info[i].IdleTime.QuadPart;
+            Times->Kernel += Info[i].KernelTime.QuadPart;
+            Times->Dpc += Info[i].DpcTime.QuadPart;
+            Times->Interrupt += Info[i].InterruptTime.QuadPart;
+            Times->Interrupts += Info[i].InterruptCount;
+        }
+    }
+    ExFreePoolWithTag(Info, 'DfpN');
+}
+
+/* DIAGNOSTIC ONLY (vibeos): the caller's view of an item that overran its deadline,
+ * printed after the wait so it cannot move it. [NPFS-LATE] (from the worker) says the
+ * worker woke or worked late, but not why. On one CPU the candidates are: the CPU sat
+ * idle with the worker stranded (a lost wakeup in our scheduler), a thread ran instead
+ * of it, or DPCs/interrupts ate the time. The time breakdown over the interval and the
+ * worker's state at the moment the caller gave up tell them apart. */
+static
+VOID
+NpfsDiagReportWait(
+    IN PTHREAD_CONTEXT Context,
+    IN BOOLEAN TimedOut)
+{
+    NPFS_DIAG_TIMES Now;
+    PNPFS_DIAG_TIMES Then = &Context->DiagTimesTriggered;
+    ULONGLONG Elapsed;
+    LONG Woke;
+    UCHAR State, WaitReason;
+    KPRIORITY Priority;
+
+    if (!Context->DiagDeadlineMs || !Context->DiagTriggered || Context->DiagReported)
+        return;
+    Woke = Context->DiagWoke;
+    State = Context->Thread->State;
+    WaitReason = Context->Thread->WaitReason;
+    Priority = KeQueryPriorityThread(Context->Thread);
+    Elapsed = KeQueryInterruptTime() - Context->DiagTriggered;
+    if (Elapsed <= (ULONGLONG)Context->DiagDeadlineMs * 10000)
+        return;
+    Context->DiagReported = TRUE;
+    NpfsDiagTimes(&Now);
+    DbgPrint("[NPFS-WAIT] caller %s %lu ms after trigger (deadline %lu ms): worker %s "
+             "(State %u WaitReason %u Pri %ld, caller Pri %ld); ms: idle %lu kernel %lu "
+             "dpc %lu int %lu, %lu interrupts\n",
+             TimedOut ? "timed out" : "done", (ULONG)(Elapsed / 10000),
+             Context->DiagDeadlineMs, Woke ? "started" : "NOT STARTED",
+             State, WaitReason, Priority, KeQueryPriorityThread(KeGetCurrentThread()),
+             (ULONG)((Now.Idle - Then->Idle) / 10000),
+             (ULONG)((Now.Kernel - Then->Kernel) / 10000),
+             (ULONG)((Now.Dpc - Then->Dpc) / 10000),
+             (ULONG)((Now.Interrupt - Then->Interrupt) / 10000),
+             Now.Interrupts - Then->Interrupts);
 }
 
 BOOLEAN
@@ -728,6 +804,7 @@ WaitForWork(
                                    FALSE,
                                    &Timeout);
     ok(Status == STATUS_SUCCESS || Status == STATUS_TIMEOUT, "Wait status %lx\n", Status);
+    NpfsDiagReportWait(Context, Status == STATUS_TIMEOUT);
     return Status != STATUS_TIMEOUT;
 }
 
@@ -745,6 +822,9 @@ TriggerWork(
                                    NULL);
     ok_eq_hex(Status, STATUS_SUCCESS);
     KeClearEvent(&Context->WorkCompleteEvent);
+    NpfsDiagTimes(&Context->DiagTimesTriggered);      /* diagnostic only, see npfs.h */
+    Context->DiagWoke = 0;                            /* diagnostic only, see npfs.h */
+    Context->DiagReported = FALSE;                    /* diagnostic only, see npfs.h */
     Context->DiagDeadlineMs = MilliSeconds;           /* diagnostic only, see npfs.h */
     Context->DiagTriggered = KeQueryInterruptTime();  /* diagnostic only, see npfs.h */
     KeSetEvent(&Context->StartWorkEvent, IO_NO_INCREMENT, TRUE);
