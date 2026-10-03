@@ -167,7 +167,7 @@ Note that upstream is already partly thinking this way: `libarm64ecfex.def` expo
 `BTCpu64FlushInstructionCache`, `BTCpu64IsProcessorFeaturePresent`, `BTCpu64NotifyMemoryDirty`
 and `BTCpu64NotifyReadFile` — BTCpu-shaped names, alongside the EC-shaped DATA exports.
 
-**The blocking constraint, and it is the thing to resolve first:** `external/fex` is VENDORED and
+**The blocking constraint, and it is the thing to resolve first:** `vendor/fex` is VENDORED and
 must stay unmodified (AGENTS.md). Fork B needs a Windows plugin that is neither `wow64fex` nor
 `arm64ecfex`, so it cannot simply be a patch to `Source/Windows/`. Three sub-options, in
 increasing order of how much they cost us:
@@ -177,7 +177,7 @@ increasing order of how much they cost us:
    the option to price first.
 2. **Upstream a third plugin to FEX-Emu.** Cleanest long-term, slowest, and puts us on someone
    else's schedule.
-3. **Carry a patch series against `external/fex`.** Violates the vendoring rule as written; would
+3. **Carry a patch series against `vendor/fex`.** Violates the vendoring rule as written; would
    need an explicit owner decision to change that rule, not a quiet exception.
 
 **Cost:** unknown until sub-option 1 is priced — that is the single highest-value next
@@ -218,7 +218,7 @@ entangled and is the part to scope properly. **That is materially cheaper than "
 has to produce an x86-64 CONTEXT from an AArch64 one" sounds** — that someone already did, for
 the x64 case, in the plugin we are not building.
 
-### The category question is ANSWERED: yes, with `external/fex` untouched
+### The category question is ANSWERED: yes, with `vendor/fex` untouched
 
 This was the one yes/no that could have taken Fork B off the table. It does not. **Measured
 2026-09-13** by building a probe module outside the vendored tree:
@@ -226,7 +226,7 @@ This was the one yes/no that could have taken Fork B off the table. It does not.
     forkbfex.dll   4,320,768 bytes
     exports:       ForkBProbeInit
     FEXCore symbols linked in: 3,715
-    git status --porcelain external/fex:  (empty -- UNMODIFIED)
+    git status --porcelain vendor/fex:  (empty -- the build DIRTIED NOTHING)
 
 The probe calls the same entry points both real plugins use —
 `FEXCore::Config::Set(CONFIG_IS64BIT_MODE, "1")`, `Context::CreateNewContext(HostFeatures)` —
@@ -235,6 +235,15 @@ standalone `tools/fex/build-fex.sh` already produces (`libFEXCore.a`, `libFEXCor
 `libCommonWindows.a`, `libCommonWindowsRuntime.a`, `libCommon.a`, `libCommonTools.a`,
 `libwow64_ex.a`, `libntdll_ex.a`, plus the External deps and compiler-rt builtins). 3,715 FEXCore
 symbols is the real recompiler, not an empty shell.
+
+**Correction 2026-10-03 — that `git status` line proved less than it was read as proving.** It
+shows the build left no *uncommitted* change, which is the relevant fact here and the conclusion
+above stands: a Fork B probe links the real recompiler without the build touching the vendored
+tree. But it is NOT evidence that the tree matches upstream, and it was later cited that way. It
+does not: `6afc128553f` (2026-07-14) carries a committed NULL-thread guard in
+`Source/Windows/WOW64/Module.cpp`, and `git status` is clean for a committed patch. The oracle
+for divergence from upstream is `vendor-patches/fex.md` and `git log -- 'vendor/fex/*'`; the
+record itself claimed "Unmodified" for nearly three months and is now fixed.
 
 **Four practical constraints found while doing it**, all surmountable, all worth knowing before
 anyone wires this into our CMake for real:
@@ -272,7 +281,7 @@ Listed because a scoping doc that reads as confident is worse than useless:
   unmeasured work.
 - **Sub-option B1's real cost.** First-pass priced above for the CONTEXT and exception surface.
   The UNPRICED part is now narrower and sharper: whether our CMake can link vendored FEXCore and
-  reuse `Source/Windows/Common/` without modifying `external/fex`. Nobody has tried it, and it is
+  reuse `Source/Windows/Common/` without modifying `vendor/fex`. Nobody has tried it, and it is
   the one question that could change Fork B's cost by category rather than degree.
 - **Anything about performance.** A 64-bit guest recompiles more code, and our current 32-bit
   path already faults inside FEX's code cache on images >500K (roadmap: `LookupCache::FindBlock`).

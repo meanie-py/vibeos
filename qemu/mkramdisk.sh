@@ -20,10 +20,26 @@ BOOT_IMG="$QEMU_DIR/boot.img"
 UEFILDR="$BUILD_DIR/boot/freeldr/freeldr/uefildr.efi"
 FREELDR_INI="$QEMU_DIR/freeldr.ini"
 
-# Ramdisk size in MB (must hold all system files ~120MB + overhead)
-RAMDISK_SIZE_MB=140
-# Boot image size in MB (must hold uefildr + freeldr.ini + ramdisk.img)
-BOOT_SIZE_MB=280
+# Ramdisk size in MB (must hold all system files ~120MB + overhead).
+#
+# VIBEOS_FEX=1 needs a BIGGER image, and 140 is not enough for it any more: that
+# image now carries the stock-app closure (ramdisk-apps.txt, ~27 MB stripped,
+# added 2026-09-28) AND the SysWOW64 closure (~34.5 MB, 58 modules), which never
+# had to coexist before. At 140 MB the FEX stage dies mid-copy with mtools'
+# "Disk full" after staging only part of the closure — and a HALF-STAGED SysWOW64
+# is the exact failure the closure check upstream of here exists to prevent,
+# because a half-bound module crashes at first call far from the missing DLL.
+# Non-FEX arm64 boots keep 140 MB: the ramdisk is loaded into RAM and the arm64
+# VM only has 1G, so the extra is charged only to the runs that need it.
+if [ "${VIBEOS_FEX:-0}" = "1" ]; then
+    RAMDISK_SIZE_MB=200
+else
+    RAMDISK_SIZE_MB=140
+fi
+# Boot image must hold uefildr + freeldr.ini + ramdisk.img. DERIVED, not a second
+# constant to keep in sync: the two drifted apart is how a ramdisk bump would
+# silently produce a boot.img too small to hold it.
+BOOT_SIZE_MB=$((RAMDISK_SIZE_MB + 140))
 
 # --refresh: fast re-stage of freshly-built artifacts into the EXISTING
 # ramdisk.img (skip the slow dd/mformat + FAT (re)creation), then fold into
@@ -269,8 +285,22 @@ if [ -n "$REFRESH" ]; then
         echo "[!] --refresh needs an existing $RAMDISK_IMG (run without --refresh once)"
         exit 1
     fi
-    echo "[*] --refresh: reusing existing ramdisk.img (re-staging artifacts only)"
-else
+    # A cached image of the WRONG SIZE must not be reused. RAMDISK_SIZE_MB is
+    # conditional (see above), so flipping VIBEOS_FEX changes the required size
+    # while --refresh would happily keep the old file and then fail with mtools'
+    # "Disk full" — which names neither the size nor the cache as the cause.
+    # Detect it here instead of asking anyone to remember to rm the image.
+    WANT_BYTES=$((RAMDISK_SIZE_MB * 1024 * 1024))
+    HAVE_BYTES=$(stat -c %s "$RAMDISK_IMG")
+    if [ "$HAVE_BYTES" != "$WANT_BYTES" ]; then
+        echo "[*] --refresh: existing ramdisk.img is ${HAVE_BYTES}B but this run needs" \
+             "${WANT_BYTES}B (${RAMDISK_SIZE_MB}MB, VIBEOS_FEX=${VIBEOS_FEX:-0}) — recreating"
+        REFRESH=""
+    else
+        echo "[*] --refresh: reusing existing ramdisk.img (re-staging artifacts only)"
+    fi
+fi
+if [ -z "$REFRESH" ]; then
     echo "[*] Creating ramdisk.img (${RAMDISK_SIZE_MB}MB FAT32)..."
     rm -f "$RAMDISK_IMG"
     : > "$PAYLOAD_RECORD"

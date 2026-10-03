@@ -1,7 +1,7 @@
 # M14 WoW64/FEX startup flake — recovered work, NOT applied
 
 **These patches are preserved, not applied, and must not be applied blindly.** One of them
-modifies `external/fex`, which is **vendored and must stay unmodified** (AGENTS.md). They are
+modifies `vendor/fex`, which is **vendored and must stay unmodified** (AGENTS.md). They are
 here because the analysis in them is worth more than the diffs, and because the worktree that
 held them (`vibeos-fex/.claude/worktrees/fex-m4`, branch `fex-arm-m4`, HEAD `87ee3f7fa09`,
 last committed 2026-07-17) was removed to unblock the host-wide build policy. Its branch
@@ -44,13 +44,13 @@ transient."*
 
 | file | touches | what it does |
 |---|---|---|
-| `01-fexcore-jit-null-block.patch` | **`external/fex` (VENDORED)** | `ExitFunctionLink` returns `DispatcherLoopTop` instead of a null host block, so a failed compile re-enters the dispatcher and recompiles rather than `br 0` → host PC=0 → process killed |
+| `01-fexcore-jit-null-block.patch` | **`vendor/fex` (VENDORED)** | `ExitFunctionLink` returns `DispatcherLoopTop` instead of a null host block, so a failed compile re-enters the dispatcher and recompiles rather than `br 0` → host PC=0 → process killed |
 | `02-wow64-force-resident.patch` | `dll/win32/wow64/wow64.c` | `NtLockVirtualMemory` over a freshly-mapped guest image, outside FEX's deferred section, to make pages resident before the guest runs |
 | `03-kernel-guest-context-dump.patch` | `ntoskrnl-rust` arm64 `stubs.rs` | on a fatal fault in a JIT block the arm64 TrapFrame holds HOST state and says nothing about the GUEST address; this digs the guest x86 CONTEXT out of the WoW64 CPU area (`TEB64.TlsSlots[WOW64_TLS_CPURESERVED=1]` @ `TEB+0x1480` → CpuArea, guest `WOW64_CONTEXT` at CpuArea+16; i386 `Eip@+0xB8`, `Esp@+0xC4`) so a PC=0 fault can name the guest address whose block failed to compile |
 
 `soak.sh` is the 6-VM soak harness the measurement came from.
 
-## Do they still apply? (measured 2026-09-14, `git apply --check`)
+## Do they still apply? (re-measured 2026-10-03, `git apply --check`)
 
 | patch | against current source |
 |---|---|
@@ -61,10 +61,18 @@ transient."*
 Re-check before relying on this table; it is a snapshot, and 01 applying cleanly is a statement
 about the vendored tree not having moved, not a licence to apply it.
 
+**The vendored tree MOVED, and the table silently lied for a week.** `external/fex` became
+`vendor/fex` in the 2026-09-26..10-03 relocation, so `01`'s diff headers addressed a path git no
+longer knew; `git apply --check` failed on a missing file while the table above still said
+"applies cleanly". Nothing warned, because a stale path and a drifted hunk fail the same way and
+only the second one is interesting. Patch 01's headers are rebased to `vendor/fex` as of this
+re-measure, and the verdicts above are the post-rebase ones. **An applicability table is a
+measurement with an expiry date; re-run the check, do not read the row.**
+
 ## Before reusing any of it
 
 - **Patch 1 cannot land as-is.** Its own comment says "Local fix, not for upstream
-  (`external/fex` is vendored)" — which is presumably why it sat uncommitted for two months. If
+  (`vendor/fex` is vendored)" — which is presumably why it sat uncommitted for two months. If
   the diagnosis holds, the landable forms are (a) fix the residency on OUR side so `CompileBlock`
   never sees a non-resident page (patch 2's approach), or (b) upstream it to FEX-Emu. Not a
   quiet local edit to a vendored tree.

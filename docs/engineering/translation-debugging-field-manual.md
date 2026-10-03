@@ -6419,7 +6419,7 @@ for f in $(git ls-files); do
 done
 ```
 
-For a *zero-byte* finding, compare against git before calling it damage: `external/fex` has 8
+For a *zero-byte* finding, compare against git before calling it damage: `vendor/fex` has 8
 zero-byte files and all 8 are zero in git too (`WORKSPACE`, `.buckconfig`, honggfuzz corpus), and
 git records 0 symlinks there, so 0 on disk is correct. **The question is never "is this file
 empty", it is "is this file what git says it should be".**

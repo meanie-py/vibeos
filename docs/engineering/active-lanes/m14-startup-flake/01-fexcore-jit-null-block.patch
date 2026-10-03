@@ -1,7 +1,7 @@
-diff --git a/external/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/external/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp
+diff --git a/vendor/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/vendor/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp
 index b9c1aefcd81..7daf27dc133 100644
---- a/external/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp
-+++ b/external/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp
+--- a/vendor/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp
++++ b/vendor/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp
 @@ -550,11 +550,29 @@ uint64_t Arm64JITCore::ExitFunctionLink(FEXCore::Core::CpuStateFrame* Frame, FEX
        auto CodeBuffer = static_cast<Arm64JITCore*>(Thread->CPUBackend.get())->CurrentCodeBuffer;
        HostCode = static_cast<Context::ContextImpl*>(Thread->CTX)->CompileBlock(Frame, GuestRip, 0);
@@ -25,7 +25,7 @@ index b9c1aefcd81..7daf27dc133 100644
 +  // path above already uses (`return DispatcherLoopTop`). Upstream FEX assumes
 +  // CompileBlock never fails for a mapped RIP (true on Linux, where the frontend
 +  // read faults the page in); the Windows/WOW64 compile path can observe the
-+  // transient. Local fix, not for upstream (external/fex is vendored).
++  // transient. Local fix, not for upstream (vendor/fex is vendored).
 +  if (!HostCode) {
 +    return Frame->Pointers.DispatcherLoopTop;
 +  }
