@@ -5,6 +5,40 @@ and without card swaps. Read this before touching the board. What has been
 found *on* the board, and where the port stands, lives in the lane doc
 `docs/engineering/active-lanes/pi4-bringup.md`.
 
+## Booting your change on the Pi (any lane)
+
+```bash
+./vibeos-cli build --arch arm64     # pi4 boot refuses stale media, like smoke
+./vibeos-cli pi4 boot               # lease, doctor, stage, netboot, desktop verdict
+./vibeos-cli pi4 boot --kernel up   # the UP kernel pair instead of MP
+```
+
+`pi4 boot` is `smoke` for the real board, and takes about two minutes. It takes
+the bench lease, checks every bench service, stages *this* tree's arm64 media
+and netboots it. It then waits for the same `shell ready` marker smoke requires,
+and classifies a failure with smoke's triage (BUGCHECK, RUST_PANIC, HANG_TIMEOUT,
+plus `NETBOOT_FAIL`, `STAGE_FAIL`, `BENCH_BUSY` and `BENCH_UNHEALTHY`). The run
+directory holds `summary.json`, this boot's slice of the serial log as
+`serial.log`, and `hdmi.png`. The screenshot waits up to 30 s for the HDMI frame
+to stop being black, because the display lags the marker by a few seconds.
+
+- **`./vibeos-cli pi4 doctor`** checks the plug, the Pico (including that it is on
+  the Pi's USB and not on another host), the serial listener, TFTP, HTTP, the
+  capture card and the staged payload. Each failure prints the command that fixes
+  it.
+- **`./vibeos-cli pi4 status`** is the one-screen view: lease, power, Pico, serial
+  and payload.
+- **`./vibeos-cli pi4 lease take --minutes 60 --why "..."`** holds the board
+  across several manual commands; release it with `pi4 lease drop`. There is one
+  board.
+  - Every bench script that changes its state (`power.sh` on/off/cycle,
+    `netboot.sh`, `serial-send.sh`, `bench.sh stage|down`, and `pico.sh` input,
+    media and `bootsel`) takes or renews the lease for your worktree.
+  - While another lane holds it, those scripts exit **75** and name the holder.
+  - Reading state (`power.sh status`, `pico.sh usb`, `hdmi.sh`, `serial.bin`) is
+    always allowed.
+  - `pi4 lease drop --force` is for a lane that died holding the lease.
+
 Everything the bench runs is in `tools/pi4/`. The Windows-side paths below
 (COM port, bench directory, python) are this bench's defaults, and each can be
 overridden by the environment variable named beside it.
@@ -15,7 +49,7 @@ overridden by the environment variable named beside it.
 |---|---|---|
 | Board | Raspberry Pi 4B, 4 GB+ | Firmware exposes 3 GiB by default (the firmware's own cap) |
 | Firmware | [pftf/RPi4 UEFI](https://github.com/pftf/RPi4) v1.53 on a FAT32 SD card | ACPI mode. VibeOS boots as `EFI\BOOT\BOOTAA64.EFI` |
-| Serial | 3.3 V USB-UART (FT232, VID 0403 / PID 6001) on the GPIO header | The only kernel debug channel |
+| Serial | Pico 2 W UART bridge over Wi-Fi (default), or a 3.3 V USB-UART (FT232) | The only kernel debug channel; see "Host services" |
 | Video | HDMI → USB capture card (DirectShow "USB Video") | `tools/pi4/hdmi.sh` |
 | Network | Ethernet on the same LAN as the host | TFTP netboot |
 | Power | Shelly Plug (Gen2+ local RPC) | `tools/pi4/power.sh`, no one at the bench needed |

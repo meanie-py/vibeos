@@ -198,6 +198,9 @@ print(json.dumps(m, indent=2))
 PY
 }
 
+. "$HERE/lease.sh"
+case "${1:-status}" in stage|down) pi4_lease ;; esac
+
 case "${1:-status}" in
     status) status ;;
     up) up ;;

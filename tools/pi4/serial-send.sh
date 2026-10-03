@@ -15,6 +15,8 @@
 set -u
 
 BENCH=${PI4_BENCH:-/mnt/d/home/vibeos-rpi4-setup}
+. "$(dirname "${BASH_SOURCE[0]}")/lease.sh"
+pi4_lease
 SEND="$BENCH/serial-send.bin"
 CHUNK=${PI4_CHUNK:-4}
 RAW=0

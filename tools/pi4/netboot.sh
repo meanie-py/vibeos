@@ -22,6 +22,8 @@
 set -u
 
 BENCH=${PI4_BENCH:-/mnt/d/home/vibeos-rpi4-setup}
+. "$(dirname "${BASH_SOURCE[0]}")/lease.sh"
+pi4_lease
 HOST_IP=${PI4_HOST_IP:-192.168.1.183}
 # RFC 7440 window: blocks sent per ACK. 1 = classic lockstep TFTP.
 TFTP_WINDOW=${PI4_TFTP_WINDOW:-32}
