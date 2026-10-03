@@ -106,8 +106,8 @@ pub unsafe extern "system" fn tranirq_Constructor(
     let mut BaseBus: ULONG = (*FdoExtension).BaseBus as ULONG;
     InterfaceData = UlongToPtr(BaseBus as ULONG) as PVOID;
 
-    let mut ParentBus: ULONG = 0;
-    let mut ParentInterface: INTERFACE_TYPE = Internal;
+    let ParentBus: ULONG;
+    let ParentInterface: INTERFACE_TYPE;
     if (*FdoExtension).BusRootFdoExtension == FdoExtension {
         ParentBus = 0;
         ParentInterface = Internal;
@@ -125,6 +125,28 @@ pub unsafe extern "system" fn tranirq_Constructor(
                     .as_ptr()
                     as *const i8,
                 80 as i32,
+            );
+        }
+    } else {
+        /* It's not, so the translator is rooted on the bus the bridge sits on */
+        let PdoExtension: PPCI_PDO_EXTENSION =
+            (*(*FdoExtension).PhysicalDeviceObject).DeviceExtension as PPCI_PDO_EXTENSION;
+        // ASSERT_PDO(PdoExtension)
+        ntkrnl_sys::ASSERT!((*PdoExtension).ExtensionType == PciPdoExtensionType as ULONG);
+        ParentBus = (*(*PdoExtension).ParentFdoExtension).BaseBus as ULONG;
+        ParentInterface = PCIBus;
+        if DbgPrint(
+            b"(%s:%d)       Is bridge FDO, parent bus %x, secondary bus %x\n\0".as_ptr() as PCSTR,
+            b"drivers/bus/pcix/arb/tr_irq.c\0".as_ptr() as *const i8,
+            87 as i32,
+            ParentBus,
+            BaseBus,
+        ) != 0
+        {
+            DbgPrint(
+                b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as PCSTR,
+                b"drivers/bus/pcix/arb/tr_irq.c\0".as_ptr() as *const i8,
+                87 as i32,
             );
         }
     }

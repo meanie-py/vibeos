@@ -33,6 +33,8 @@ use ntkrnl_sys::ddk::{
     _SYSTEM_POWER_STATE_PowerSystemWorking as PowerSystemWorking,
 };
 use core::ffi::c_void;
+use ntkrnl_sys::ddk::RtlIoEncodeMemIoResource;
+use crate::glue::{PCI_HACK_NEVER_DISCONNECT, PCI_HACK_DONT_DISABLE, PCI_HACK_NEVER_POWER_DOWN, PCI_HACK_KEEP_DECODES_ON_STOP};
 // resolve_imports.py: explicit kernel/private-type imports
 use ntkrnl_sys::ddk::{DEVICE_POWER_STATE, IO_RESOURCE_DESCRIPTOR, PCSTR, PRKEVENT, PSTR, RtlAssert, SYSTEM_POWER_STATE, _LIST_ENTRY, _PNP_BUS_INFORMATION, _UNICODE_STRING, wchar_t};
 
@@ -364,7 +366,10 @@ pub unsafe extern "system" fn PciGetRegistryValue(
             break;
         }
 
-        NeededLength -= core::mem::size_of::<KEY_VALUE_PARTIAL_INFORMATION>() as ULONG;
+        /* The data size is what the key says it is: subtracting
+         * sizeof(KEY_VALUE_PARTIAL_INFORMATION) from the query length undercounts by the
+         * Data[1] byte plus tail padding, dropping the last bytes of every value. */
+        NeededLength = (*PartialInfo).DataLength;
 
         Status = STATUS_INSUFFICIENT_RESOURCES;
         *OutputBuffer = ExAllocatePoolWithTag(PagedPool, NeededLength as usize, PCI_POOL_TAG);
@@ -1373,6 +1378,7 @@ pub unsafe extern "system" fn PciCanDisableDecodes(
     let mut BaseClass: UCHAR;
     let mut SubClass: UCHAR;
     let mut HackFlags = HackFlags;
+    let mut KeepPower: BOOLEAN = FALSE as BOOLEAN;
 
     if !DeviceExtension.is_null() {
         if (*DeviceExtension).OnDebugPath != 0 {
@@ -1390,6 +1396,7 @@ pub unsafe extern "system" fn PciCanDisableDecodes(
         HackFlags = (*DeviceExtension).HackFlags;
         SubClass = (*DeviceExtension).SubClass as UCHAR;
         BaseClass = (*DeviceExtension).BaseClass as UCHAR;
+        KeepPower = (*DeviceExtension).DisablePowerDown;
     } else {
         if Config.is_null() {
             RtlAssert(
@@ -1405,25 +1412,33 @@ pub unsafe extern "system" fn PciCanDisableDecodes(
     }
 
     if HackFlags
-        & ((PCI_HACK_PRESERVE_COMMAND | PCI_HACK_CB_SHARE_CMD_BITS | PCI_HACK_DONT_DISABLE_DECODES) as u64)
+        & ((PCI_HACK_PRESERVE_COMMAND
+            | PCI_HACK_NEVER_DISCONNECT
+            | PCI_HACK_DONT_DISABLE
+            | PCI_HACK_CB_SHARE_CMD_BITS) as u64)
         != 0
     {
         return FALSE as BOOLEAN;
     }
 
-    if BaseClass as u32 == PCI_CLASS_DISPLAY_CTLR && SubClass as u32 == PCI_SUBCLASS_VID_VGA_CTLR {
+    if ForPowerDown != 0 {
+        /* IDE controllers, legacy bridges and flagged functions may stop but not power down */
+        if KeepPower != 0 || (HackFlags & PCI_HACK_NEVER_POWER_DOWN) != 0 {
+            return FALSE as BOOLEAN;
+        }
+    } else if (HackFlags & PCI_HACK_KEEP_DECODES_ON_STOP) != 0 {
+        /* Flagged functions may power down, but keep decoding while stopped or removed */
+        return FALSE as BOOLEAN;
+    }
+
+    /* VGA adapters keep decoding unless they are being powered down */
+    if (BaseClass as u32 == PCI_CLASS_DISPLAY_CTLR && SubClass as u32 == PCI_SUBCLASS_VID_VGA_CTLR)
+        || (BaseClass as u32 == PCI_CLASS_PRE_20 && SubClass as u32 == PCI_SUBCLASS_PRE_20_VGA)
+    {
         return ForPowerDown;
     }
 
-    if BaseClass as u32 == PCI_CLASS_PRE_20 {
-        if SubClass as u32 == PCI_SUBCLASS_PRE_20_VGA {
-            return ForPowerDown;
-        }
-    } else if BaseClass as u32 == PCI_CLASS_DISPLAY_CTLR {
-        if SubClass as u32 == PCI_SUBCLASS_VID_VGA_CTLR {
-            return ForPowerDown;
-        }
-    } else if BaseClass as u32 == PCI_CLASS_BRIDGE_DEV {
+    if BaseClass as u32 == PCI_CLASS_BRIDGE_DEV {
         if SubClass as u32 == PCI_SUBCLASS_BR_ISA
             || SubClass as u32 == PCI_SUBCLASS_BR_EISA
             || SubClass as u32 == PCI_SUBCLASS_BR_MCA
@@ -1441,17 +1456,15 @@ pub unsafe extern "system" fn PciCanDisableDecodes(
             } else {
                 IsVga = ((*DeviceExtension).Dependent.type1.as_ref().VgaBitSet() != 0) as BOOLEAN;
             }
+            /* A bridge forwarding VGA follows the same rule as the adapter behind it */
             if IsVga != 0 {
                 return ForPowerDown;
             }
         }
     }
 
-    if (HackFlags & PCI_HACK_NO_PM_CAPS as u64) == 0 {
-        TRUE as BOOLEAN
-    } else {
-        FALSE as BOOLEAN
-    }
+    /* Nothing else has to keep decoding */
+    TRUE as BOOLEAN
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciClassifyDeviceType(
@@ -1559,44 +1572,44 @@ pub unsafe extern "system" fn PciIsSlotPresentInParentMethod(
 
     FoundSlot
 }
-#[no_mangle]
-pub unsafe extern "system" fn PciGetLengthFromBar(bar: u32) -> u32 {
-    let mut length: u32 = 1 << if (bar & 0x1) != 0 { 2 } else { 4 };
-    while (length & bar) == 0 && length != 0 {
-        length <<= 1;
-    }
-    if (bar & 0x6) != 0x4 {
-        // ASSERT(Length) would be here, but NDEBUG is defined; no-op.
-    }
-    length
-}
+/// Builds the requirement of a BAR from the value it reads back after all ones were
+/// written to it (upstream 4dabb9e5825 rework: named bounds, 64-bit BARs above 4 GB,
+/// a BAR implementing no address bits is absent).
+///
+/// `Bar` is the probed BAR; `NextBar` the probed BAR after it, holding the high half of
+/// a 64-bit BAR (0 when there is none); `Rom` is TRUE for an expansion ROM BAR.
+/// Returns TRUE when the BAR is 64-bit, so the BAR after it is not a BAR of its own.
+/// (`PciGetLengthFromBar` went away with this rework: the length is now the lowest
+/// implemented address bit.)
 #[no_mangle]
 pub unsafe extern "system" fn PciCreateIoDescriptorFromBarLimit(
     ResourceDescriptor: *mut IO_RESOURCE_DESCRIPTOR,
-    BarArray: *mut u32,
+    Bar: u32,
+    NextBar: u32,
     Rom: u8,
 ) -> u8 {
-    let mut CurrentBar: u32 = *BarArray.offset(0);
-    let mut BarLength: u32;
-    let mut BarMask: u32 = 0;
+    let mut Bar: u32 = Bar;
+    let mut AddressBits: u64;
+    let Length: u64;
+    let Alignment: u64;
+    let MinimumAddress: u64;
+    let MaximumAddress: u64;
+    let Type: u8;
     let mut Is64BitBar: u8 = 0;
 
     // Check if the BAR is neither I/O nor memory
-    if (CurrentBar & !PCI_ADDRESS_IO_SPACE) == 0 {
+    if (Bar & !PCI_ADDRESS_IO_SPACE) == 0 {
         (*ResourceDescriptor).Type = CmResourceTypeNull as UCHAR;
         return 0u8;
     }
 
-    // Set default flag and clear high words
+    // Set default flag
     (*ResourceDescriptor).Flags = 0u16;
-    (*ResourceDescriptor).u.Generic.MaximumAddress.__bindgen_anon_1.HighPart = 0i32;
-    (*ResourceDescriptor).u.Generic.MinimumAddress.__bindgen_anon_1.LowPart = 0u32;
-    (*ResourceDescriptor).u.Generic.MinimumAddress.__bindgen_anon_1.HighPart = 0i32;
 
     // Check for ROM Address
     if Rom != 0 {
-        CurrentBar &= PCI_ADDRESS_ROM_ADDRESS_MASK;
-        if CurrentBar == 0 {
+        Bar &= PCI_ADDRESS_ROM_ADDRESS_MASK;
+        if Bar == 0 {
             (*ResourceDescriptor).Type = CmResourceTypeNull as UCHAR;
             return 0u8;
         }
@@ -1604,45 +1617,62 @@ pub unsafe extern "system" fn PciCreateIoDescriptorFromBarLimit(
         (*ResourceDescriptor).Flags = CM_RESOURCE_MEMORY_READ_ONLY as USHORT;
     }
 
-    // Compute the length, assume it's the alignment for now
-    BarLength = PciGetLengthFromBar(CurrentBar);
-    (*ResourceDescriptor).u.Generic.Length = BarLength;
-    (*ResourceDescriptor).u.Generic.Alignment = BarLength;
-
     // Check what kind of BAR this is
-    if (CurrentBar & PCI_ADDRESS_IO_SPACE) != 0 {
-        // Use correct mask to decode the address
-        BarMask = PCI_ADDRESS_IO_ADDRESS_MASK;
+    if (Bar & PCI_ADDRESS_IO_SPACE) != 0 {
         // Set this as an I/O Port descriptor
-        (*ResourceDescriptor).Type = CmResourceTypePort as UCHAR;
+        Type = CmResourceTypePort as u8;
         (*ResourceDescriptor).Flags = CM_RESOURCE_PORT_IO as USHORT;
+        AddressBits = (Bar & PCI_ADDRESS_IO_ADDRESS_MASK) as u64;
     } else {
-        // Use correct mask to decode the address
-        BarMask = PCI_ADDRESS_MEMORY_ADDRESS_MASK;
         // Set this as a memory descriptor
-        (*ResourceDescriptor).Type = CmResourceTypeMemory as UCHAR;
+        Type = CmResourceTypeMemory as u8;
+        AddressBits = (Bar & PCI_ADDRESS_MEMORY_ADDRESS_MASK) as u64;
 
-        // Check if it's 64-bit or 20-bit decode
-        if (CurrentBar & PCI_ADDRESS_MEMORY_TYPE_MASK) == PCI_TYPE_64BIT {
-            // The next BAR has the high word, read it
-            (*ResourceDescriptor).u.Port.MaximumAddress.__bindgen_anon_1.HighPart = *BarArray.offset(1) as i32;
+        // A 64-bit BAR takes the high half of its address from the next BAR
+        if (Bar & PCI_ADDRESS_MEMORY_TYPE_MASK) == PCI_TYPE_64BIT {
+            AddressBits |= (NextBar as u64) << 32;
             Is64BitBar = 1u8;
-        } else if (CurrentBar & PCI_ADDRESS_MEMORY_TYPE_MASK) == PCI_TYPE_20BIT {
-            // Use the correct mask to decode the address
-            BarMask = !0x0FFF0000Fu32;
         }
 
         // Check if the BAR is listed as prefetchable memory
-        if (CurrentBar & PCI_ADDRESS_MEMORY_PREFETCHABLE) != 0 {
-            // Mark the descriptor in the same way
+        if (Bar & PCI_ADDRESS_MEMORY_PREFETCHABLE) != 0 {
             (*ResourceDescriptor).Flags |= CM_RESOURCE_MEMORY_PREFETCHABLE as USHORT;
         }
     }
 
-    // Now write down the maximum address based on the base + length
-    (*ResourceDescriptor).u.Port.MaximumAddress.QuadPart = (
-        ((CurrentBar & BarMask) as u64 + BarLength as u64) - 1u64
-    ) as i64;
+    // The probe leaves only the bits the BAR implements, so the lowest one is its length
+    Length = AddressBits & (!AddressBits).wrapping_add(1);
+
+    // A BAR that implements no address bits is not there
+    if Length == 0 {
+        (*ResourceDescriptor).Type = CmResourceTypeNull as UCHAR;
+        return 0u8;
+    }
+
+    // A legacy memory BAR can only be placed below 1MB
+    if Type as u32 == CmResourceTypeMemory
+        && (Bar & PCI_ADDRESS_MEMORY_TYPE_MASK) == PCI_TYPE_20BIT
+    {
+        AddressBits &= 0xFFFFF;
+    }
+
+    // A BAR aligns to its own length and decodes nothing above the bits it implements
+    Alignment = Length;
+    MinimumAddress = 0;
+    MaximumAddress = AddressBits | (Length - 1);
+
+    // A length of 4GB or more takes the large memory form
+    if RtlIoEncodeMemIoResource(
+        ResourceDescriptor,
+        Type,
+        Length,
+        Alignment,
+        MinimumAddress,
+        MaximumAddress,
+    ) < 0
+    {
+        (*ResourceDescriptor).Type = CmResourceTypeNull as UCHAR;
+    }
 
     // Return if this is a 64-bit BAR, so the loop code knows to skip the next one
     Is64BitBar

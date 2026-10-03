@@ -130,8 +130,12 @@ unsafe fn LaunchSecondStageLoader() -> ULONG {
 
     printf(b"Launching rosload.exe...\n\0".as_ptr() as *const i8);
     let entry_va = VaToPa((*RosloadDTE).EntryPoint);
-    let EntryPoint: extern "C" fn() -> LONG = core::mem::transmute(entry_va);
-    EntryPoint() as ULONG
+    // rosload's entry (RunLoader) returns VOID: reading a LONG back took whatever was left
+    // in eax/rax, and a nonzero leftover printed "Unable to load second stage loader".
+    // Upstream e87a74f1312.
+    let EntryPoint: extern "C" fn() = core::mem::transmute(entry_va);
+    EntryPoint();
+    0 // ESUCCESS
 }
 
 // ============================================================================

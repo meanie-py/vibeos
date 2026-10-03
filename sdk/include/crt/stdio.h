@@ -1325,11 +1325,28 @@ extern _CRTIMP int _commode;
 
 #endif /* !defined(NO_OLDNAMES) || !defined(_POSIX) */
 
+#ifdef _UCRT
+  /* UCRT's common stdio entry points, which every printf/scanf in its headers
+   * is an inline wrapper over (declarations from mingw-w64 13.0). */
+  int __cdecl __stdio_common_vsprintf(unsigned __int64 options, char *str, size_t len, const char *format, _locale_t locale, va_list valist);
+  int __cdecl __stdio_common_vfprintf(unsigned __int64 options, FILE *file, const char *format, _locale_t locale, va_list valist);
+  int __cdecl __stdio_common_vsscanf(unsigned __int64 options, const char *input, size_t length, const char *format, _locale_t locale, va_list valist);
+  int __cdecl __stdio_common_vfscanf(unsigned __int64 options, FILE *file, const char *format, _locale_t locale, va_list valist);
+  int __cdecl __stdio_common_vswprintf(unsigned __int64 options, wchar_t *str, size_t len, const wchar_t *format, _locale_t locale, va_list valist);
+  int __cdecl __stdio_common_vfwprintf(unsigned __int64 options, FILE *file, const wchar_t *format, _locale_t locale, va_list valist);
+  int __cdecl __stdio_common_vswscanf(unsigned __int64 options, const wchar_t *input, size_t length, const wchar_t *format, _locale_t locale, va_list valist);
+  int __cdecl __stdio_common_vfwscanf(unsigned __int64 options, FILE *file, const wchar_t *format, _locale_t locale, va_list valist);
+#endif /* _UCRT */
+
 #ifdef __cplusplus
 }
 #endif
 
 #pragma pack(pop)
+
+#ifdef _UCRT
+#include <corecrt_stdio_config.h>
+#endif
 
 #include <sec_api/stdio_s.h>
 

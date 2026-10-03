@@ -1,12 +1,6 @@
 
 spec2def(ucrtbase.dll ucrtbase.spec NO_DBG ADD_IMPORTLIB)
 
-# Hack to replace the old CRT include directory with the UCRT include directory
-get_property(INCLUDE_DIRS DIRECTORY . PROPERTY INCLUDE_DIRECTORIES)
-list(REMOVE_ITEM INCLUDE_DIRS "${REACTOS_SOURCE_DIR}/sdk/include/crt")
-set_property(DIRECTORY . PROPERTY INCLUDE_DIRECTORIES ${INCLUDE_DIRS})
-include_directories(${REACTOS_SOURCE_DIR}/sdk/include/ucrt)
-
 add_compile_definitions(
     _UCRT
     _CORECRT_BUILD
@@ -112,7 +106,6 @@ add_dependencies(ucrtbase rust_ucrt_shared)
 # its own copies of the ones it does, which would then win first-match. Forcing the Rust
 # defs in first makes the C copies the ignored duplicates.
 target_link_libraries(ucrtbase
-    ucrt
     -Wl,--whole-archive ${UCRT_SHARED_RUST_LIB} -Wl,--no-whole-archive
     msvcrt_shared
     crtmath

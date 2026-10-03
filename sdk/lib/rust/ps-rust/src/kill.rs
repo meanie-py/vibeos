@@ -1048,11 +1048,24 @@ unsafe fn PspExitProcess(last_thread: BOOLEAN, process: PEPROCESS) {
             ZwSetTimerResolution(KeMaximumIncrement, 0, core::ptr::addr_of_mut!(actual));
         }
 
-        if !(*(process as *mut _EPROCESS)).Job.is_null() {
-            let job_ptr = (*(process as *mut _EPROCESS)).Job as *mut u8;
-            let completion_port_offset = 0x100usize;
-            let completion_port = *(job_ptr.add(completion_port_offset) as *mut PVOID);
-            if !completion_port.is_null() {}
+        let job = (*(process as *mut _EPROCESS)).Job;
+        if !job.is_null() {
+            ExEnterCriticalRegionAndAcquireResourceExclusive(core::ptr::addr_of_mut!((*job).JobLock));
+
+            // Part of a job with a completion port: tell it this process exited, unless the
+            // process already made its inactive transition (upstream 55563444377).
+            if !(*job).CompletionPort.is_null()
+                && (*(process as *mut _EPROCESS)).JobStatus & crate::job::PSP_JOB_NOT_REALLY_ACTIVE == 0
+            {
+                let _ = crate::job::PspSendJobMessageLocked(
+                    job,
+                    JOB_OBJECT_MSG_EXIT_PROCESS,
+                    (*(process as *mut _EPROCESS)).UniqueProcessId,
+                    0,
+                );
+            }
+
+            ExReleaseResourceAndLeaveCriticalRegion(core::ptr::addr_of_mut!((*job).JobLock));
         }
     } else {
         MmCleanProcessAddressSpace(process);

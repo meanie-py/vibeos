@@ -28,7 +28,7 @@
 //! would diverge from the behaviour callers have been built against, and this
 //! family's job is to be indistinguishable from what it replaces.
 //!
-//! Masks come from `sdk/include/ucrt/mbctype.h:42-45` and
+//! Masks come from `ucrt/mbctype.h:42-45` and
 //! `corecrt_wctype.h:48-58`; the per-function pairs are each function's
 //! documented classification expressed in those bits.
 

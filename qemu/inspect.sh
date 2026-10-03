@@ -29,6 +29,8 @@
 #   sample-pc         -- read $pc + current process->ImageFileName, emit
 #                        one SAMPLE line. Use qemu/sample-pc.sh for a
 #                        repeated-sampling histogram.
+#   lm [addr]         -- list loaded modules, or name the one holding addr (a driver
+#                        return address in a backtrace, say)
 #   find-kbase        -- scan for runtime kernel base, store in $kbase
 #   raw <gdb-cmd>     -- run a raw GDB command (escape hatch)
 #
@@ -92,6 +94,7 @@ EX_ARGS=(
     -ex "source $GDB_HELPERS_DIR/walk-waitlist.py"
     -ex "source $GDB_HELPERS_DIR/list-threads.py"
     -ex "source $GDB_HELPERS_DIR/who-holds.py"
+    -ex "source $GDB_HELPERS_DIR/lm.py"
     -ex "source $GDB_HELPERS_DIR/sample-pc.py"
 )
 
@@ -160,6 +163,9 @@ case "$COMMAND" in
         ADDR="${ARGS[0]:-}"
         [ -n "$ADDR" ] || die "who-holds requires a KTHREAD address"
         EX_ARGS+=(-ex "who-holds $ADDR")
+        ;;
+    lm)
+        EX_ARGS+=(-ex "lm ${ARGS[0]:-}")
         ;;
     stack-scan)
         ADDR="${ARGS[0]:-}"

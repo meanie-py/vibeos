@@ -188,6 +188,22 @@ exec-rest = ["exec"]
 # internal/{locks,shared_initialization,per_thread_data}.cpp + startup/initterm.cpp:
 # the lock table, the per-thread data block, and the initializer-table loops.
 internal-core = []
+# startup/{exit,onexit,abort,assert,thread}.cpp
+startup = []
+# startup/{argv_parsing,argv_wildcards,argv_winmain}.cpp, internal/{report_runtime_error,
+# win_policies,peb_access}.cpp, misc/crtmbox.cpp
+argv-errors = ["argv-data", "findfile"]
+# convert/{cvt,cfout,_fptostr,fp_flags,wctype}.cpp -- the float formatting engine
+cvt = ["strtod"]
+# internal/winapi_thunks.cpp + internal/{CreateProcessA,GetModuleFileNameA,LoadLibraryExA,
+# OutputDebugStringA,SetCurrentDirectoryA,SetEnvironmentVariableA}.cpp
+winapi-thunks = ["findfile"]
+# sdk/lib/ucrt_reactos/ (ReactOS glue, MIT): the user _matherr hook and the three
+# __acrt_* kernel32 forwarders
+ucrt-reactos = []
+# _statusfp/_clearfp/_control87/_controlfp on arm64 (FPCR/FPSR); i386/amd64 take
+# sdk/lib/crt/float's x87/SSE bodies, so the module is empty there
+fpctrl = []
 # heap/ -- malloc/free/realloc and friends over __acrt_heap, new_handler/new_mode.
 heap = []
 # stdlib/ (qsort/bsearch/lfind/lsearch, rand/rand_s, abs/div families) and the

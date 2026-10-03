@@ -45,6 +45,16 @@ pub const CM_RESOURCE_PORT_WINDOW_DECODE: u32 = 0x0080;
 pub const CmResourceTypeBusNumber: u32 = 6;
 pub const CmResourceTypeInterrupt: u32 = 2;
 pub const CmResourceTypeMemory: u32 = 3;
+// xdk/cmtypes.h: CmResourceTypeMemoryLarge, the CM_RESOURCE_MEMORY_LARGE_* flags, and the
+// CM_SHARE_DISPOSITION values (enum: Undetermined=0, DeviceExclusive, DriverExclusive, Shared).
+// Hand-added: hal_ddk has them but only on x86/x64, and pcix builds for arm64 too.
+pub const CmResourceTypeMemoryLarge: u32 = 7;
+pub const CM_RESOURCE_MEMORY_LARGE: u32 = 0x0E00;
+pub const CM_RESOURCE_MEMORY_LARGE_40: u32 = 0x0200;
+pub const CM_RESOURCE_MEMORY_LARGE_48: u32 = 0x0400;
+pub const CM_RESOURCE_MEMORY_LARGE_64: u32 = 0x0800;
+pub const CmResourceShareDeviceExclusive: u8 = 1;
+pub const CmResourceShareDriverExclusive: u8 = 2;
 pub const CmResourceTypeNull: u32 = 0;
 pub const CmResourceTypePort: u32 = 1;
 pub const FILE_DEVICE_BUS_EXTENDER: u32 = 42;
@@ -85,7 +95,14 @@ pub const PCI_HACK_BROKEN_SUBTRACTIVE_DECODE: u64 = 0x0000008000000000;
 pub const PCI_HACK_CB_SHARE_CMD_BITS: u64 = 0x0000000000010000;
 pub const PCI_HACK_CRITICAL_DEVICE: u64 = 0x0000002000000000;
 pub const PCI_HACK_DISABLE_IDE_NATIVE_MODE: u64 = 0x0000000800000000;
-pub const PCI_HACK_DONT_DISABLE_DECODES: u64 = 0x0000000040000000;
+// Upstream 4dabb9e5825 renamed 0x40000000 from PCI_HACK_DONT_DISABLE_DECODES to
+// PCI_HACK_NEVER_POWER_DOWN and gave 0x2 / 0x4000000000 their meanings
+// (sdk/include/reactos/drivers/pci/pci.h). Hand-added, values checked against that header.
+pub const PCI_HACK_NEVER_POWER_DOWN: u64 = 0x0000000040000000;
+pub const PCI_HACK_KEEP_DECODES_ON_STOP: u64 = 0x0000000000000002;
+pub const PCI_HACK_NOT_CRITICAL_DEVICE: u64 = 0x0000004000000000;
+pub const PCI_HACK_NEVER_DISCONNECT: u64 = 0x0000000000000040;
+pub const PCI_HACK_DONT_DISABLE: u64 = 0x0000000000000080;
 pub const PCI_HACK_DOUBLE_DECKER: u64 = 0x0000000000001000;
 pub const PCI_HACK_ENUM_NO_RESOURCE: u64 = 0x0000000000000010;
 pub const PCI_HACK_FAKE_CLASS_CODE: u64 = 0x0000000200000000;
