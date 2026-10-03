@@ -1130,7 +1130,9 @@ pub unsafe extern "system" fn FatOplockRequest(
         FsControlCode,
     );
 
-    if (TypeOfOpen != UserFileOpen) && (TypeOfOpen != UserDirectoryOpen) {
+    // Directory oplocks are `#if (NTDDI_VERSION >= NTDDI_WIN8)` -- see crate::NTDDI_WIN8. At our
+    // NTDDI a directory has no oplock storage, so a directory request is INVALID_PARAMETER.
+    if (TypeOfOpen != UserFileOpen) && (!crate::NTDDI_WIN8 || TypeOfOpen != UserDirectoryOpen) {
         (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
         DebugTrace(
             -1,

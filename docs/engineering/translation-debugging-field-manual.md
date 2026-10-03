@@ -434,9 +434,24 @@ Same family, three positions, all silent on the arch where the widths happen to 
 - **`extern static` width drift.** `MmThrottleTop` declared `u64`, defined `u32`, permanently
   tripped the Cc write throttle → `WriteFile` on a FAT volume never returned, with every probe
   in the FS write path showing nothing wrong `[§9.36-throttle]`.
-- **Detector:** scan def-vs-decl per symbol for ANY return/param width mismatch, not just
-  narrow-vs-wide. Benign aliases to ignore: NTSTATUS=i32, ULONG=u32, LONGLONG=i64, BOOLEAN=u8,
-  and pointer typedefs.
+- **`usize` over a C `ULONG`: correct on i386, wrong on both 64-bit arches.** fastfat's
+  `extern static MAX_LFN_CHARACTERS: usize` bound rust_cohab_fat.c's 4-byte data constant, so
+  every read took the next object (`TAG_DIRENT`) as its high half. The rename name buffers it
+  sized pointed into nowhere: the first `MoveFileExW` bugchecked 0x23 in `RtlCopyUnicodeString`,
+  which an older symbolization had called `FsRtlCheckOplock`. A `#define` reaching Rust as a data
+  symbol is a smell anyway; take the `const` from the island.
+- **A narrow C return read wide, and the damage lands somewhere else entirely.** fastfat declared
+  the cohab helper `UCHAR FatIndexBitSize()` as `-> u32`. The junk above the byte became the
+  divisor in `ClustersDescribableByFat`, a 64 MB FAT16 volume mounted with **14 clusters**, and the
+  symptom was `ERROR_DISK_FULL` on the 29th file in a directory. **rustc does not mask its own
+  narrow returns either**: `extern "C" fn f(x: u32) -> u8 { (x >> 3) as u8 }` returns `x >> 3`
+  unmasked on x64 and arm64, so a Rust definition is no safer an authority than a C one.
+- **Detector:** `scan_extern_decl_drift` reports params, statics and returns wherever a
+  declaration is WIDER than its definition, against the in-crate `#[no_mangle]` definition, the
+  bindgen island, and for C, the cohab/stub files (returns) and `__asm__`-labelled data objects
+  (statics). A narrower read is not reported: on our little-endian targets it takes the low bytes
+  of the real value. Its first sweep of returns found ten symbols (win32k `RECTL_bIntersectRect`
+  defined `u8` against rect.h's `BOOL`, kd's `CHAR` read as `LONG`, lpc's `USHORT` read as `ULONG`, ...).
 
 **Grinding a post-assembly cargo-check on ONE target bakes that target's pointer width into
 every cast you pick.** Symptom: the lane is clean locally and the merge queue rejects it

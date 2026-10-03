@@ -147,8 +147,8 @@ pub unsafe extern "system" fn FatFsdClose(
             0
         };
 
-        // Win8+ block (unconditional)
-        if !Fcb.is_null()
+        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
+        if crate::NTDDI_WIN8 && !Fcb.is_null()
             && FlagOn((*FileObject).Flags, FO_CLEANUP_COMPLETE) == 0
             && FatIsFileOplockable(Fcb) != 0
         {

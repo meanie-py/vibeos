@@ -348,8 +348,12 @@ def main(argv: list[str] | None = None) -> int:
     # A dirty tree is NOT that commit: stamping it bare would attribute rows to code
     # that never produced them. The table file itself is excluded, since writing it
     # is what this step does.
+    # (A --table outside the repo has nothing to exclude; relative_to would raise AFTER the
+    # boots, losing the whole sweep's rows.)
+    table_path = args.table.resolve()
+    exclude = [f":!{table_path.relative_to(ROOT)}"] if table_path.is_relative_to(ROOT) else []
     dirty = subprocess.run(
-        ["git", "status", "--porcelain", "--", ".", f":!{args.table.relative_to(ROOT)}"],
+        ["git", "status", "--porcelain", "--", ".", *exclude],
         cwd=ROOT,
         check=True,
         capture_output=True,

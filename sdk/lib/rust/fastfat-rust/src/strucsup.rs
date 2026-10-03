@@ -870,11 +870,10 @@ pub unsafe extern "system" fn FatCreateRootDcb(
         }
         FatCheckFreeDirentBitmap(IrpContext, (*p_Dcb));
 
-        // #if (NTDDI_VERSION >= NTDDI_WIN8)
-        {
+        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
+        if crate::NTDDI_WIN8 {
             FsRtlInitializeOplock(FatGetFcbOplock(*p_Dcb));
         }
-        // #endif
 
     }, |_, abnormal| {
         DebugUnwind(b"FatCreateRootDcb\0".as_ptr() as *const i8);
@@ -1294,7 +1293,8 @@ pub unsafe extern "system" fn FatCreateDcb(
             (*dcb_inner).DeletedDirentHint = 0xffffffff;
         }
 
-        {
+        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
+        if crate::NTDDI_WIN8 {
             let oplock = FatGetFcbOplock(*p_Dcb);
             FsRtlInitializeOplock(oplock);
             *p_UnwindOplock = oplock;
@@ -1366,8 +1366,10 @@ pub unsafe extern "system" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr:
             }
         }
 
-        // Uninitialize the oplock.
-        FsRtlUninitializeOplock(FatGetFcbOplock(Fcb));
+        // Uninitialize the oplock. #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
+        if crate::NTDDI_WIN8 {
+            FsRtlUninitializeOplock(FatGetFcbOplock(Fcb));
+        }
 
         NT_ASSERT(((*dcb_inner).DirectoryFileOpenCount == 0) as i32);
         NT_ASSERT(IsListEmpty(core::ptr::addr_of!((*dcb_inner).ParentDcbQueue) as *mut LIST_ENTRY) as i32);

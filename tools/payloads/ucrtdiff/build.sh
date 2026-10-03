@@ -27,6 +27,7 @@ ARCHES="${1:-all}"
 # cost every export after it -- and the stopping point moved with emission order,
 # which made each table a different PREFIX of the truth. A shard finishes well
 # inside any observed wall, and N boots cover the set. Default 0/1 = everything.
+# UCRTDIFF_ONLY=rename,_mktemp grades just those exports (any shard split still applies).
 SHARD="${UCRTDIFF_SHARD:-0/1}"
 SHARD_K="${SHARD%%/*}"; SHARD_N="${SHARD##*/}"
 case "$SHARD_K$SHARD_N" in *[!0-9]*|"") echo "[ucrtdiff] FAIL: UCRTDIFF_SHARD=$SHARD is not k/N"; exit 1;; esac
@@ -132,7 +133,7 @@ for A in $ARCHES; do
     # Microsoft. isdigit vanished from the import table exactly this way.
     "$TC/${CC[$A]}" -O2 -fno-builtin -nostdlib -o "$HERE/ucrtdiff-$A.exe" "$HERE/ucrtdiff.c" "$HERE/stubs.c" \
         -DUCRTDIFF_SHARD_K="$SHARD_K" -DUCRTDIFF_SHARD_N="$SHARD_N" \
-        -DUCRTDIFF_BUDGET_MS="$BUDGET_MS" \
+        -DUCRTDIFF_BUDGET_MS="$BUDGET_MS" -DUCRTDIFF_ONLY="\"${UCRTDIFF_ONLY:-}\"" \
         "${REFALIAS[@]}" \
         -Wl,--start-group \
         "$REF" \

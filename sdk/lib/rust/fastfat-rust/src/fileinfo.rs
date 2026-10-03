@@ -964,19 +964,22 @@ unsafe extern "system" fn FatSetBasicInfo(
             FatSetDirtyBcb(IrpContext, *p_dirent_bcb, (*Fcb).Vcb, 1u8);
         }
 
-        // Win8+ oplock break
-        if (*Fcb).ParentDcb.is_null() == false
-            && (ModifyLastAccess || ModifyLastWrite || ModifiedAttributes)
-        {
-            let oplock = FatGetFcbOplock((*Fcb).ParentDcb);
-            FsRtlCheckOplockEx(
-                oplock,
-                (*IrpContext).OriginatingIrp,
-                OPLOCK_FLAG_PARENT_OBJECT,
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-            );
+        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
+        if crate::NTDDI_WIN8 {
+            // Win8+ oplock break
+            if (*Fcb).ParentDcb.is_null() == false
+                && (ModifyLastAccess || ModifyLastWrite || ModifiedAttributes)
+            {
+                let oplock = FatGetFcbOplock((*Fcb).ParentDcb);
+                FsRtlCheckOplockEx(
+                    oplock,
+                    (*IrpContext).OriginatingIrp,
+                    OPLOCK_FLAG_PARENT_OBJECT,
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
+                );
+            }
         }
     }, |_, _abnormal| {
         DebugUnwind(b"FatSetBasicInfo\0".as_ptr() as *const core::ffi::c_void);
@@ -1693,8 +1696,12 @@ pub unsafe extern "system" fn FatRenameEAs(
 extern "system" {
     // FatDeleteFile forward-decl removed: real definition lives in this module
     // (re-stitched body below). Keeping both was an E0428 duplicate.
-    static MAX_LFN_CHARACTERS: usize;
 }
+
+// lfn.h's #define, from the island. This was `extern static MAX_LFN_CHARACTERS: usize` over
+// rust_cohab_fat.c's 4-byte ULONG: on 64-bit targets every read took TAG_DIRENT as its high
+// half, so the rename name buffers pointed into nowhere and the first rename bugchecked 0x23.
+const MAX_LFN_CHARACTERS: usize = crate::types::MAX_LFN_CHARACTERS as usize;
 
 #[no_mangle]
 pub unsafe extern "system" fn FatSetRenameInfo(
@@ -2362,24 +2369,30 @@ pub unsafe extern "system" fn FatSetRenameInfo(
         (*Fcb).ParentDcb = TargetDcb;
 
         // Break parent directory oplock on old parent (advisory)
-        FsRtlCheckOplockEx(
-            FatGetFcbOplock(OldParentDcb),
-            (*IrpContext).OriginatingIrp,
-            OPLOCK_FLAG_PARENT_OBJECT,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-        );
-
-        if RenamedAcrossDirectories != 0 {
+        // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
+        if crate::NTDDI_WIN8 {
             FsRtlCheckOplockEx(
-                FatGetFcbOplock(TargetDcb),
+                FatGetFcbOplock(OldParentDcb),
                 (*IrpContext).OriginatingIrp,
                 OPLOCK_FLAG_PARENT_OBJECT,
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
             );
+        }
+
+        if RenamedAcrossDirectories != 0 {
+            // #if (NTDDI_VERSION >= NTDDI_WIN8) -- see crate::NTDDI_WIN8
+            if crate::NTDDI_WIN8 {
+                FsRtlCheckOplockEx(
+                    FatGetFcbOplock(TargetDcb),
+                    (*IrpContext).OriginatingIrp,
+                    OPLOCK_FLAG_PARENT_OBJECT,
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
+                );
+            }
 
             // Uninitialize cachemap for source directory if empty
             {

@@ -32,7 +32,8 @@ extern "system" {
     fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
     static mut LpcPortObjectType: PVOID;
     static mut LpcpLock: KGUARDED_MUTEX;
-    fn LpcpGetMessageType(Message: PPORT_MESSAGE) -> ULONG;
+    #[link_name = "LpcpGetMessageType"]
+    fn LpcpGetMessageType__c(Message: PPORT_MESSAGE) -> u16;
     fn MmCopyVirtualMemory(
         SourceProcess: PVOID,
         SourceAddress: PVOID,
@@ -42,6 +43,12 @@ extern "system" {
         PreviousMode: KPROCESSOR_MODE,
         ReturnSize: *mut usize,
     ) -> NTSTATUS;
+}
+
+// listen.rs (and lpc_x.h's macro) return the 16-bit Type: a ULONG decl read 16 bits nobody wrote.
+#[allow(non_snake_case)]
+unsafe fn LpcpGetMessageType(Message: PPORT_MESSAGE) -> ULONG {
+    LpcpGetMessageType__c(Message) as ULONG
 }
 extern "C" {
     fn LpcpReceiveWait(Semaphore: PVOID, WaitMode: KPROCESSOR_MODE) -> NTSTATUS;

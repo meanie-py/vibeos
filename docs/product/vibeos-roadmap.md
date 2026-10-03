@@ -557,21 +557,32 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **fastfat bugchecks in `FsRtlCheckOplock` on arm64** (OPEN, 2026-09-28; was "rename bugchecks
-  fastfat"). An access violation caught by `FatBugCheckExceptionFilter` becomes bugcheck 0x23.
-  P1 is always `0x100c0` because the Rust `FatBugCheck` is one out-of-line function, so it does
-  not identify the site. P4, the faulting PC, is `ntoskrnl.exe+0x11EBD8`, which is
-  `FsRtlCheckOplock+0x2c` in the current `ntkrnlmp.exe` (the default MP kernel). An earlier
-  symbolization against an older build read `RtlCopyUnicodeString` under
-  `FatSetRenameInfo`. Two triggers so far, both found by the ucrtbase Tier-2 grader:
-  - any `MoveFileExW` rename of an existing file in the guest temp dir, a never-seen target
-    name included (so not the tunnel cache);
-  - `_mktemp`'s grader creating and deleting a run of files: four shards out of four, 2026-09-28.
+- **fastfat bugchecks in `FsRtlCheckOplock` / on rename — FIXED** (2026-10-03). Three bugs,
+  none arm64-specific (amd64 reproduces with `%TEMP%` on its scratch FAT disk):
+  - **Rename (0x23 in `RtlCopyUnicodeString`).** `fileinfo.rs` declared rust_cohab_fat.c's 4-byte
+    `ULONG MAX_LFN_CHARACTERS` as `extern static: usize`; on 64-bit every read took the next
+    object as its high half and the rename name buffers pointed into nowhere.
+  - **14-cluster FAT16 (DISK_FULL at file 29).** `FatIndexBitSize` returns `UCHAR` in C and was
+    declared `-> u32`; the undefined register bits became a divisor at mount.
+  - **`_mktemp` (0x23 at `FsRtlCheckOplock`, FAR 0x33).** fastfat's C builds at
+    `_WIN32_WINNT=0x502`, where directories have no oplock storage (`FatGetFcbOplock` is
+    `&Specific.Fcb.Oplock`, the DCB union's other half). The Rust ran all 21 of the C's
+    `#if (NTDDI_VERSION >= NTDDI_WIN8)` directory/parent oplock blocks unconditionally, so every
+    create checked directory fields as an oplock and DCB creation wrote NULL over them. Gated on
+    `crate::NTDDI_WIN8` (false), including directory `FSCTL_REQUEST_OPLOCK`.
 
-  The grader skips the cases that reach it, behind `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` in
-  `tools/payloads/ucrtdiff/ucrtdiff.c`; set it to 0 when this closes. Still reproduces after
-  d98aba47853 (fastfat top-level IRP fix).
-  Owner: unassigned (fastfat/kernel lane).
+  Verified by `tools/payloads/fsprobe` (arm64 + amd64) and the ucrtdiff grader with
+  `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS 0`: rename/_wrename/_mktemp/_wmktemp/_mktemp_s/_wmktemp_s all
+  MATCH (`ucrt_tier2_sweep.py --takeover-from d888eadd919^`, `UCRTDIFF_ONLY=` those six).
+  `scan_extern_decl_drift` now gates static and return widths; its first sweep fixed ten more
+  symbols across win32k/kd/lpc/freeldr/cdrom/winsrv.
+- **fastfat runs C code its NTDDI compiles out — OPEN (audit owed)** (2026-10-03). The C has 92
+  `#if NTDDI_VERSION` blocks and the translation assumed Win10 (`strucsup.rs` still says
+  `NTDDI_VERSION = 0x0A000000`). The Win8 oplock blocks are gated (above); still ungated are the 10
+  Win7 oplock calls on FILE FCBs (valid storage, so no corruption -- a behaviour divergence: key
+  checks, `FsRtlOplockBreakH`, atomic create-with-oplock in `FatOpenExistingFcb`/`FatOpenExistingFile`/
+  `FatCreateNewFile`/`FatSetRenameInfo`), and the non-oplock Win7/Win8 blocks in fsctrl/volinfo/
+  deviosup/write/read/flush/lockctrl have not been compared. Owner: fastfat lane.
 - **arm64 ucrtbase forwards `_clearfp`/`_control87`/`_controlfp`/`_statusfp` to msvcrt.dll**
   (OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
   control-word family for i386/amd64 only), so the link resolves all four through the msvcrt

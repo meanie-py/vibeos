@@ -126,6 +126,23 @@ manufactured noise or lost coverage rather than finding bugs. The count went
 
 `&mut T` counts as one level of indirection: it is a pointer at the ABI.
 
+RETURN TYPES AND STATICS
+------------------------
+The same name-only join hides two more widths, and both shipped as fastfat bugs
+that only the 64-bit arches could see (on i386 the two widths were equal):
+
+  * `extern static MAX_LFN_CHARACTERS: usize` over a C `ULONG` read the next
+    object as its high half; the rename buffers it sized pointed into nowhere.
+  * `fn FatIndexBitSize(..) -> u32` over a C `UCHAR`: neither x64 nor AAPCS64
+    defines the register bits above a narrow return, and rustc does not mask its
+    OWN narrow returns either (`x as u8` comes back unmasked). The junk became a
+    divisor and a 64 MB FAT16 volume mounted with 14 clusters.
+
+Both are reported in the direction that reads bits nobody wrote: a declaration
+WIDER than its definition. Authorities are the in-crate `#[no_mangle]`
+definition, and for C, the cohab/stub files a crate links by name (returns), or a
+data object carrying an explicit `__asm__` symbol label (statics).
+
 Findings gate on NEW-vs-baseline (tools/lint-baseline/scan_extern_decl_drift.txt).
 Suppress a verified false positive with a trailing:
     fn Foo(..);  // nolint: decl-drift (reason)
@@ -160,7 +177,7 @@ _FACT_NODES = Query(
     _LANG,
     """[
     (call_expression) (function_signature_item) (function_item)
-    (type_item) (use_as_clause) (struct_item) (enum_item) (union_item)
+    (type_item) (use_as_clause) (struct_item) (enum_item) (union_item) (static_item)
 ] @fact""",
 )
 RUST_WS = REPO / "sdk" / "lib" / "rust"
@@ -453,6 +470,12 @@ def _sig(n, src: bytes) -> tuple[list[str], bool]:
     return params, variadic
 
 
+def _ret(n, src: bytes) -> str:
+    """The return type's text; "" for a function returning nothing."""
+    rt = n.child_by_field_name("return_type")
+    return norm(_txt(rt, src)) if rt is not None else ""
+
+
 def _owning_crate(rf: Path, crates: frozenset[Path]) -> Path | None:
     for p in rf.parents:
         if p in crates:
@@ -474,6 +497,8 @@ def file_facts(src: bytes, include_functions: bool):
     seen = defaultdict(set)
     aggregates = set()
     defs, decls, called = {}, defaultdict(list), set()
+    sdefs, sdecls = {}, defaultdict(list)
+    rdefs, rdecls = {}, defaultdict(list)
     lines = src.decode(errors="replace").splitlines() if include_functions else []
     tree = _PARSER.parse(src)
     nodes = QueryCursor(_FACT_NODES).captures(tree.root_node).get("fact", [])
@@ -490,6 +515,22 @@ def file_facts(src: bytes, include_functions: bool):
                     if not (ln < len(lines) and _nolint(lines[ln])):
                         ident = _txt(nm, src)
                         decls[_symbol(n, src, ident)].append((ln + 1, _sig(n, src), ident))
+                        rdecls[_symbol(n, src, ident)].append((ln + 1, _ret(n, src), ident))
+            if n.type == "static_item":
+                nm, ty = n.child_by_field_name("name"), n.child_by_field_name("type")
+                if nm is not None and ty is not None:
+                    ln = n.start_point[0]
+                    sym = _symbol(n, src, _txt(nm, src))
+                    if _in_foreign(n):
+                        if not (ln < len(lines) and _nolint(lines[ln])):
+                            sdecls[sym].append((ln + 1, norm(_txt(ty, src))))
+                    else:
+                        prev, attrs = n.prev_sibling, []
+                        while prev is not None and prev.type == "attribute_item":
+                            attrs.append(_txt(prev, src))
+                            prev = prev.prev_sibling
+                        if any("no_mangle" in a or "export_name" in a for a in attrs):
+                            sdefs[sym] = norm(_txt(ty, src))
             if n.type == "function_item":
                 prev, attrs = n.prev_sibling, []
                 while prev is not None and prev.type == "attribute_item":
@@ -499,6 +540,7 @@ def file_facts(src: bytes, include_functions: bool):
                     nm = n.child_by_field_name("name")
                     if nm is not None:
                         defs[_symbol(n, src, _txt(nm, src))] = _sig(n, src)
+                        rdefs[_symbol(n, src, _txt(nm, src))] = _ret(n, src)
         if n.type == "type_item":
             nm = n.child_by_field_name("name")
             ty = n.child_by_field_name("type")
@@ -523,7 +565,17 @@ def file_facts(src: bytes, include_functions: bool):
             nm = n.child_by_field_name("name")
             if nm is not None:
                 aggregates.add(_txt(nm, src))
-    return dict(seen), aggregates, defs, dict(decls), called
+    return (
+        dict(seen),
+        aggregates,
+        defs,
+        dict(decls),
+        called,
+        sdefs,
+        dict(sdecls),
+        rdefs,
+        dict(rdecls),
+    )
 
 
 def _sys_dep_srcs(crate_src: Path) -> list[Path]:
@@ -554,13 +606,15 @@ def sweep(root_dir: Path, crate_dirs: list[Path]):
     aggregates = set()
     crates = frozenset(crate_dirs)
     per = {c: ({}, defaultdict(list), defaultdict(set)) for c in crate_dirs}
+    statics = {c: ({}, defaultdict(list)) for c in crate_dirs}
+    returns = {c: ({}, defaultdict(list)) for c in crate_dirs}
     sys_dirs = frozenset(d for c in crate_dirs for d in _sys_dep_srcs(c))
     islands: dict[Path, dict[str, list]] = {d: defaultdict(list) for d in sys_dirs}
     for rf in sorted(source_files(root_dir)):
         crate = _owning_crate(rf, crates)
         island = _owning_crate(rf, sys_dirs) if _BINDGEN.search(rf.name) else None
-        aliases, structs, definitions, declarations, calls = file_facts(
-            rf.read_bytes(), crate is not None or island is not None
+        (aliases, structs, definitions, declarations, calls, sdefs, sdecls, rdefs, rdecls) = (
+            file_facts(rf.read_bytes(), crate is not None or island is not None)
         )
         for name, values in aliases.items():
             seen[name].update(values)
@@ -575,7 +629,17 @@ def sweep(root_dir: Path, crate_dirs: list[Path]):
             for name, sites in declarations.items():
                 decls[name].extend((rf, *site) for site in sites)
             called[rf].update(calls)
-    return Types(aliases=seen, aggregates=frozenset(aggregates)), per, islands
+            sd, sdc = statics[crate]
+            for name, ty in sdefs.items():
+                sd.setdefault(name, []).append((rf, ty))
+            for name, sites in sdecls.items():
+                sdc[name].extend((rf, *site) for site in sites)
+            rd, rdc = returns[crate]
+            for name, ty in rdefs.items():
+                rd.setdefault(name, []).append((rf, ty))
+            for name, sites in rdecls.items():
+                rdc[name].extend((rf, *site) for site in sites)
+    return (Types(aliases=seen, aggregates=frozenset(aggregates)), per, islands, statics, returns)
 
 
 def _arch_ptr(path: Path) -> int | None:
@@ -654,9 +718,252 @@ def _substrate_oracle(src_dir: Path, islands, types):
     return out
 
 
+# A C data object handed to Rust BY NAME: `const ULONG __c_X __asm__(FF_SYM("X")) = ...;`.
+# The asm label is what makes it the symbol a Rust `extern static X` binds, so it is
+# the definition that declaration must agree with. `static` objects are internal and
+# never bind one.
+_C_ASM_DATA = re.compile(
+    r"^[ \t]*(?!static\b)((?:(?:const|volatile|extern)\s+)*[A-Za-z_]\w*(?:\s*\*+)?)\s*"
+    r"(?:const\s+)?[A-Za-z_]\w*\s+__asm__\s*\(\s*(?:[A-Za-z_]\w*\s*\(\s*)?\"([^\"]+)\"",
+    re.M,
+)
+_C_QUALIFIERS = re.compile(r"\b(?:const|volatile|extern)\b")
+C_WIDTH = {
+    "char": 1,
+    "CHAR": 1,
+    "UCHAR": 1,
+    "BOOLEAN": 1,
+    "CCHAR": 1,
+    "BYTE": 1,
+    "short": 2,
+    "SHORT": 2,
+    "USHORT": 2,
+    "WCHAR": 2,
+    "CSHORT": 2,
+    "WORD": 2,
+    "int": 4,
+    "LONG": 4,
+    "ULONG": 4,
+    "DWORD": 4,
+    "NTSTATUS": 4,
+    "LOGICAL": 4,
+    "BOOL": 4,
+    "UINT": 4,
+    "INT": 4,
+    "ULONG32": 4,
+    "LONG32": 4,
+    "LONGLONG": 8,
+    "ULONGLONG": 8,
+    "LONG64": 8,
+    "ULONG64": 8,
+    "DWORD64": 8,
+    "ULONG_PTR": PTR,
+    "LONG_PTR": PTR,
+    "SIZE_T": PTR,
+    "SSIZE_T": PTR,
+    "PVOID": PTR,
+}
+
+
+def _c_files_with_asm_labels(root_dir: Path) -> list[Path]:
+    if root_dir == RUST_WS:
+        import subprocess
+
+        out = subprocess.run(
+            ["git", "-C", str(REPO), "grep", "-lE", r"__asm__\s*\(", "--", "*.c"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+        return [REPO / line for line in out.splitlines() if line]
+    return sorted(root_dir.rglob("*.c"))
+
+
+def _c_data_oracle(root_dir: Path) -> dict[str, tuple[Path, int, str, int | str]]:
+    """symbol -> (file, line, C type, width) for asm-labelled C data objects.
+
+    A symbol two C files define at different widths is dropped rather than guessed
+    at: there is no single answer to judge a declaration by.
+    """
+    out: dict[str, tuple[Path, int, str, int | str]] = {}
+    clash: set[str] = set()
+    for cf in _c_files_with_asm_labels(root_dir):
+        text = cf.read_text(errors="replace")
+        for m in _C_ASM_DATA.finditer(text):
+            ctype = _C_QUALIFIERS.sub("", m.group(1)).strip()
+            if "(" in ctype:
+                continue
+            width = PTR if "*" in ctype else C_WIDTH.get(ctype)
+            if width is None:
+                continue
+            sym = m.group(2).lstrip("_").split("@")[0]
+            line = text.count("\n", 0, m.start()) + 1
+            if sym in out and out[sym][3] != width:
+                clash.add(sym)
+            out.setdefault(sym, (cf, line, ctype, width))
+    for sym in clash:
+        out.pop(sym, None)
+    return out
+
+
+def _compare_statics(crate_statics, c_data, types):
+    """`extern static` declarations against the object they bind.
+
+    The bug this exists for: fastfat declared `static MAX_LFN_CHARACTERS: usize`
+    over rust_cohab_fat.c's 4-byte `ULONG`. On the 64-bit arches every read took
+    the NEXT object as its high half, the rename buffers it sized pointed into
+    nowhere, and the first rename bugchecked 0x23. On i386 `usize` is four bytes,
+    so the arch that would have been tested first was the one it could not break.
+
+    Only a declaration WIDER than its definition is reported: it reads (or writes)
+    bytes that belong to some other object. A narrower integer read takes the low
+    bytes of the real value on all three of our little-endian targets, and that is
+    how a `u8` over a header `ULONG` flag constant is spelled across fastfat.
+    """
+    sdefs, sdecls = crate_statics
+    for sym, sites in sdecls.items():
+        if sym in sdefs:
+            # One definition per arch is normal (`arm/init.rs` is 32-bit ARM's copy
+            # of MmUserProbeAddress, `ARM3/mminit.rs` everyone else's). Definitions
+            # that disagree on width leave no single answer: dropped, not guessed.
+            shapes = {resolve(t, types) for _f, t in sdefs[sym]}
+            shapes = {(0, PTR) if d else (0, w) for d, w in shapes if d is not None}
+            if len(shapes) != 1:
+                continue
+            (_d, dw), (dfile, dty) = next(iter(shapes)), sdefs[sym][0]
+            authority = f"def `{dty}` ({dfile.name})"
+        elif sym.lstrip("_") in c_data:
+            cf, cl, cty, dw = c_data[sym.lstrip("_")]
+            authority = f"C `{cty}` ({cf.name}:{cl})"
+        else:
+            continue
+        for cfile, cline, cty_rust in sites:
+            cd, cw = resolve(cty_rust, types)
+            if cd is None:
+                continue
+            cw = PTR if cd else cw
+            ptr, ow = _arch_ptr(cfile), dw
+            if ptr is not None:
+                cw = ptr if cw == PTR else cw
+                ow = ptr if ow == PTR else ow
+            if cw is None or ow is None or not _reads_undefined(ow, cw):
+                continue
+            yield (
+                cfile,
+                cline,
+                f"{sym}: static WIDTH decl `{cty_rust}` ({cw}) wider than {authority} ({ow})"
+                f"{' [pointer-sized: i386 differs]' if PTR in (cw, ow) else ''}",
+            )
+
+
+# A C function DEFINITION at column 0 in a cohab C file:
+#     UCHAR FatIndexBitSize(PBIOS_PARAMETER_BLOCK B){
+# Only the return type is taken. Parameters stay with the oracles above.
+_C_FN_DEF = re.compile(
+    r"^(?!static\b|typedef\b|return\b|else\b)(?:(?:extern|inline|__inline|FORCEINLINE)\s+)*"
+    r"([A-Za-z_]\w*)((?:\s*\*)*)\s+"
+    r"(?:(?:NTAPI|WINAPI|__stdcall|__cdecl|__fastcall|FASTCALL|CALLBACK|APIENTRY|NTSYSAPI)\s+)*"
+    r"(\**)\s*([A-Za-z_]\w*)\s*\(([^;{}()]*)\)\s*\{",
+    re.M,
+)
+
+
+def _cohab_c_files(root_dir: Path) -> list[Path]:
+    """The C a Rust crate is linked against by name: cohab shims, stubs, bridges."""
+    if root_dir == RUST_WS:
+        import subprocess
+
+        out = subprocess.run(
+            ["git", "-C", str(REPO), "ls-files", "*.c"], capture_output=True, text=True, check=False
+        ).stdout
+        return [REPO / f for f in out.splitlines() if re.search(r"cohab|rust", Path(f).name, re.I)]
+    return sorted(root_dir.rglob("*.c"))
+
+
+def _c_return_oracle(root_dir: Path) -> dict[str, tuple[Path, int, str]]:
+    """symbol -> (file, line, C return type); a symbol defined twice with
+    different return types is dropped."""
+    out: dict[str, tuple[Path, int, str]] = {}
+    clash: set[str] = set()
+    for cf in _cohab_c_files(root_dir):
+        text = cf.read_text(errors="replace")
+        for m in _C_FN_DEF.finditer(text):
+            ret = m.group(1) + ("*" if (m.group(2) + m.group(3)).strip() else "")
+            sym = m.group(4)
+            line = text.count("\n", 0, m.start()) + 1
+            if sym in out and out[sym][2] != ret:
+                clash.add(sym)
+            out.setdefault(sym, (cf, line, ret))
+    for sym in clash:
+        out.pop(sym, None)
+    return out
+
+
+def _c_width(ctype: str, types) -> int | str | None:
+    if ctype.endswith("*"):
+        return PTR
+    if ctype in C_WIDTH:
+        return C_WIDTH[ctype]
+    d, w = resolve(ctype, types)
+    if d is None:
+        return None
+    return PTR if d else w
+
+
+def _compare_returns(crate_returns, c_rets, types, called):
+    """A declared RETURN wider than the definition's: the caller reads bits the
+    callee never wrote. Neither x64 nor AAPCS64 defines the upper bits of a
+    register holding a narrower return value.
+
+    The bug this exists for: fastfat declared rust_cohab_fat.c's
+    `UCHAR FatIndexBitSize(...)` as `-> u32`. On the 64-bit arches the FAT entry
+    width came back as 16 plus whatever was in the rest of the register, it became
+    the divisor in ClustersDescribableByFat, and a 64 MB FAT16 volume mounted with
+    14 clusters. Every create past the first directory cluster failed DISK_FULL.
+    """
+    rdefs, rdecls = crate_returns
+    for sym, sites in rdecls.items():
+        if sym in rdefs:
+            shapes = {_c_width(t, types) if t else None for _f, t in rdefs[sym]}
+            if len(shapes) != 1:
+                continue
+            dw, (dfile, dty) = next(iter(shapes)), rdefs[sym][0]
+            authority = f"def `-> {dty}` ({dfile.name})"
+        elif sym in c_rets:
+            cf, cl, dty = c_rets[sym]
+            if dty in ("void", "VOID"):
+                continue
+            dw = _c_width(dty, types)
+            authority = f"C `{dty}` ({cf.name}:{cl})"
+        else:
+            continue
+        if dw is None:
+            continue
+        for cfile, cline, rty, ident in sites:
+            if not rty or ident not in called.get(cfile, ()):
+                continue
+            cw = _c_width(rty, types)
+            ptr, ow = _arch_ptr(cfile), dw
+            if ptr is not None:
+                cw = ptr if cw == PTR else cw
+                ow = ptr if ow == PTR else ow
+            if cw is None or not _reads_undefined(ow, cw):
+                continue
+            yield (
+                cfile,
+                cline,
+                f"{sym}: RETURN WIDTH decl `-> {rty}` ({cw}) wider than {authority} ({ow})"
+                f"{' [pointer-sized: i386 differs]' if PTR in (cw, ow) else ''}",
+            )
+
+
 def scan(root_dir: Path, crate_dirs: list[Path]) -> list[tuple[Path, int, str]]:
-    types, per, islands = sweep(root_dir, crate_dirs)
+    types, per, islands, statics, returns = sweep(root_dir, crate_dirs)
     findings: list[tuple[Path, int, str]] = []
+    c_data, c_rets = _c_data_oracle(root_dir), _c_return_oracle(root_dir)
+    for src_dir in crate_dirs:
+        findings.extend(_compare_statics(statics[src_dir], c_data, types))
+        findings.extend(_compare_returns(returns[src_dir], c_rets, types, per[src_dir][2]))
     for src_dir in crate_dirs:
         defs, decls, called = per[src_dir]
         # A declaration of a symbol the SUBSTRATE declares has an authority that

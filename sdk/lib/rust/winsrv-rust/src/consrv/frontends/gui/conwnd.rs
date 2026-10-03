@@ -65,7 +65,14 @@ extern "system" {
     /// `CON_SET_OUTPUT_CP` — code-page helper macro lowered to fn.
     pub fn CON_SET_OUTPUT_CP(Console: PCONSRV_CONSOLE, CodePage: UINT);
     /// `GetConsoleInputBufferMode` — consrv/coninput.c.
-    pub fn GetConsoleInputBufferMode(Console: PCONSRV_CONSOLE) -> u32;
+    #[link_name = "GetConsoleInputBufferMode"]
+    fn GetConsoleInputBufferMode__c(Console: PCONSRV_CONSOLE) -> u16;
+}
+
+// consrv/mod.rs returns InputBuffer.Mode, a USHORT; a u32 decl read 16 bits nobody wrote.
+#[allow(non_snake_case)]
+unsafe fn GetConsoleInputBufferMode(Console: PCONSRV_CONSOLE) -> u32 {
+    GetConsoleInputBufferMode__c(Console) as u32
 }
 
 // DPRINT/DPRINT1 are debug macros — translate to no-ops here so call

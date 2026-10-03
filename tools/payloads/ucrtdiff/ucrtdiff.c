@@ -429,12 +429,12 @@ static LONG CALLBACK ucrtdiff_veh(EXCEPTION_POINTERS *ep)
 #ifndef LOWIO_SKIP_SLOW_LOCK
 #define LOWIO_SKIP_SLOW_LOCK 1
 #endif
-/* The guest's fastfat bugchecks (0x23, an access violation at FsRtlCheckOplock+0x2c)
- * on some file operations: any rename, and _mktemp's create/delete run. The cases
- * that reach it are skipped while this is 1; see the comment at run_fs_rename and
- * the roadmap's known-bugs entry. */
+/* fastfat used to bugcheck (0x23) on any rename and fail _mktemp's create/delete run
+ * DISK_FULL; both were extern declarations wider than the C behind them (fileinfo.rs's
+ * MAX_LFN_CHARACTERS, allocsup.rs's FatIndexBitSize), fixed 2026-10-03. Set this to 1 to
+ * skip the cases that reach them again; see the roadmap's known-bugs entry. */
 #ifndef UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS
-#define UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS 1
+#define UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS 0
 #endif
 
 /* ---- sharding and the harness's own deadline --------------------------
@@ -461,6 +461,11 @@ static LONG CALLBACK ucrtdiff_veh(EXCEPTION_POINTERS *ep)
 #endif
 #ifndef UCRTDIFF_SHARD_N
 #define UCRTDIFF_SHARD_N 1
+#endif
+/* UCRTDIFF_ONLY="rename,_mktemp": grade only the named exports (comma-separated). For
+ * reproducing one family without a whole shard; the shard split is unaffected. */
+#ifndef UCRTDIFF_ONLY
+#define UCRTDIFF_ONLY ""
 #endif
 #ifndef UCRTDIFF_BUDGET_MS
 #define UCRTDIFF_BUDGET_MS 600000 /* 10 min of grading, well inside the VM's life */
@@ -525,10 +530,31 @@ static DWORD g_deadline_tick;
 /* Returns 0 when this export is not ours to run; the generated driver then skips
  * straight past it. Both reasons are counted so the `done` line can distinguish a
  * shard that finished from a run that was cut short. */
+static int export_selected(const char *name)
+{
+    const char *p = UCRTDIFF_ONLY;
+    if (!*p)
+        return 1;
+    while (*p) {
+        const char *n = name;
+        while (*p && *p != ',' && *p == *n) {
+            p++;
+            n++;
+        }
+        if ((!*p || *p == ',') && !*n)
+            return 1;
+        while (*p && *p != ',')
+            p++;
+        if (*p == ',')
+            p++;
+    }
+    return 0;
+}
+
 static int export_begin(const char *name)
 {
     int idx = g_ex_index++;
-    if ((idx % UCRTDIFF_SHARD_N) != UCRTDIFF_SHARD_K) {
+    if ((idx % UCRTDIFF_SHARD_N) != UCRTDIFF_SHARD_K || !export_selected(name)) {
         g_skip_shard++;
         return 0;
     }
@@ -17788,8 +17814,7 @@ static void run_fs_rename(void)
 
     char nd[MAX_PATH * 2], nr[MAX_PATH * 2];
     /* A target name this volume has never held: a just-deleted name is what FAT's
-     * tunnel cache answers, and a rename onto one currently bugchecks the guest
-     * (0x23, fastfat's rename path; see the known-bugs registry). */
+     * tunnel cache answers, which this case is not about. */
     char leaf_u[64];
     wsprintfA(leaf_u, "fs_renamed_%lu.txt", GetTickCount());
     lstrcpyA(nd, sd_path(leaf_u, 0));
@@ -17873,8 +17898,7 @@ static void run_fs__wrename(void)
 
     char nd[MAX_PATH * 2], nr[MAX_PATH * 2];
     /* A target name this volume has never held: a just-deleted name is what FAT's
-     * tunnel cache answers, and a rename onto one currently bugchecks the guest
-     * (0x23, fastfat's rename path; see the known-bugs registry). */
+     * tunnel cache answers, which this case is not about. */
     char leaf_u[64];
     wsprintfA(leaf_u, "fs_wrenamed_%lu.txt", GetTickCount());
     lstrcpyA(nd, sd_path(leaf_u, 0));
@@ -21220,8 +21244,8 @@ static const char g_lw_az[] = "abcdefghijklmnopqrstuvwxyz";
             grade2(fam ".errno", "errno-kept", e1, *ref__errno());                   \
         }                                                                            \
         /* 'a' taken: the letter moves on to 'b'. All 26 taken: EEXIST, no     \
-         * handler, template reset. Both create and delete real files, which    \
-         * bugchecks the guest today (UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS). */   \
+         * handler, template reset. Both create and delete real files; fastfat \
+         * bugchecked on that until 2026-10-03 (UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS). */ \
         if (!UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS) {                                    \
             lw_mk_occupy("mkfXXXXXX", "a", 1);                                       \
             LW_MK_CASE(fam, KIND, "a-taken", "mkfXXXXXX", 0, -1);                    \
