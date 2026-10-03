@@ -36,6 +36,9 @@ const PsW32ThreadCalloutInitialize: ULONG = 0;
 static mut PspW32ProcessCallout: PKWIN32_PROCESS_CALLOUT = None;
 #[no_mangle]
 static mut PspW32ThreadCallout: PKWIN32_THREAD_CALLOUT = None;
+/// win32k's job callout (UI restrictions), set by PsEstablishWin32Callouts (upstream b272427baa3).
+#[no_mangle]
+pub static mut PspW32JobCallout: PKWIN32_JOB_CALLOUT = None;
 #[no_mangle]
 pub static mut KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE = None;
 
@@ -123,6 +126,7 @@ pub unsafe extern "system" fn PsConvertToGuiThread() -> NTSTATUS {
 pub unsafe extern "system" fn PsEstablishWin32Callouts(callout_data: PWIN32_CALLOUTS_FPNS) {
     PspW32ProcessCallout = (*callout_data).ProcessCallout;
     PspW32ThreadCallout = (*callout_data).ThreadCallout;
+    PspW32JobCallout = (*callout_data).JobCallout;
     ExpWindowStationObjectParse = (*callout_data).WindowStationParseProcedure;
     ExpWindowStationObjectDelete = (*callout_data).WindowStationDeleteProcedure;
     ExpWindowStationObjectOkToClose = (*callout_data).WindowStationOkToCloseProcedure;

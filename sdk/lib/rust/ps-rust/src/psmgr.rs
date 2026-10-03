@@ -581,6 +581,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     object_type_initializer.GenericMapping = PspJobMapping;
     object_type_initializer.InvalidAttributes = 0;
     object_type_initializer.ValidAccessMask = JOB_OBJECT_ALL_ACCESS;
+    object_type_initializer.CloseProcedure = Some(crate::job::PspCloseJob);
     object_type_initializer.DeleteProcedure = Some(PspDeleteJob);
     ObCreateObjectType(&mut name, &mut object_type_initializer, core::ptr::null_mut(), &raw mut PsJobType);
 
