@@ -1053,6 +1053,8 @@ def _unrelated_excuses(repo: Path, sub: Submission, *, bump: bool = False) -> in
             # closed here is what keeps the bound real rather than advisory.
             return _MAX_UNRELATED_EXCUSES + 1
     return count
+
+
 def inert_only_batch(wt: Path) -> list[str]:
     """Paths this batch would add to master that something might actually RUN ([] = none).
 
@@ -1308,7 +1310,15 @@ def land_subset(
         return
     res, subs = prepared
     judge_car(
-        repo, wt, subs, res, gate_car(wt, log, retries=retries), log, retries=retries, base=base
+        repo,
+        wt,
+        subs,
+        res,
+        gate_car(wt, log, retries=retries),
+        log,
+        retries=retries,
+        base=base,
+        depth=depth,
     )
 
 
@@ -1388,9 +1398,19 @@ def judge_car(
     *,
     retries: int = 2,
     base: BaseCheck,
+    depth: int = 0,
 ) -> None:
     """Act on a car's verdict: push a green one, requeue an inconclusive one, and split a
-    red one until the culprit is alone."""
+    red one until the culprit is alone.
+
+    `depth` is how deep into that split we are, and it exists for ONE consumer:
+    `unrelated_red`'s excuse may only be spent where a conviction would otherwise happen
+    (see below). The split recursion itself does not need it -- each level re-enters and
+    halves again -- so a refactor that reads only the recursion will correctly conclude it
+    is dead and delete it. It is not: dropping it silently turns the whole-batch excuse
+    into a no-op, which is a false CONVICTION of an innocent batch and exactly the failure
+    the excuse exists to prevent. A default of 0 suits every direct caller (a whole car,
+    pipelined or not); only the split passes depth + 1."""
     ok, classification = verdict.ok, verdict.classification
     artifact, salient = verdict.artifact, verdict.salient
     if ok:

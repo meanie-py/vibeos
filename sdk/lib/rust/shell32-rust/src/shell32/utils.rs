@@ -1170,9 +1170,17 @@ pub unsafe extern "system" fn SHTestTokenPrivilegeW(
         if GetTokenInformation(hToken, TokenPrivileges, ((pTokenPriv) as _), dwLength, core::ptr::addr_of_mut!(dwLength)) != 0 {
             let mut iPriv: UINT = 0;
             let cPrivs: UINT = (*pTokenPriv).PrivilegeCount;
+            // Privileges is a C flexible array (`LUID_AND_ATTRIBUTES
+            // Privileges[ANYSIZE_ARRAY]`, xdk/setypes.h:1036, and ANYSIZE_ARRAY is 1) in a
+            // buffer LocalAlloc'd to the size GetTokenInformation asked for, so it holds
+            // PrivilegeCount of them. bindgen's [LUID_AND_ATTRIBUTES; 1] bounds-checks this
+            // walk and panics at the SECOND privilege -- and a real token carries ~20, with
+            // SE_SHUTDOWN_NAME nowhere near first, so IsShutdownAllowed() panics rather
+            // than answering. Constant index 0 is checked at compile time.
             while ret == 0 && iPriv < cPrivs {
-                ret = ((Luid.LowPart == (*pTokenPriv).Privileges[iPriv as usize].Luid.LowPart) &&
-                       (Luid.HighPart == (*pTokenPriv).Privileges[iPriv as usize].Luid.HighPart)) as BOOL;
+                let priv_ = (&raw const (*pTokenPriv).Privileges[0]).add(iPriv as usize);
+                ret = ((Luid.LowPart == (*priv_).Luid.LowPart) &&
+                       (Luid.HighPart == (*priv_).Luid.HighPart)) as BOOL;
                 iPriv += 1;
             }
         }
