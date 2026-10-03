@@ -10187,3 +10187,139 @@ def test_gate_restages_amd64_wow64_only_after_i386_is_built(tmp_path, monkeypatc
     assert order.index(restages[0]) > order.index(("i386", False, False))
     amd64_smoke = [s for s in smoked if s[0] == "amd64"]
     assert amd64_smoke and amd64_smoke[0][1] == restages, "amd64 smoked before its restage"
+
+
+# ── base-check scrub, pinned conductor, journal (2026-10-03) ─────────────────
+
+
+def test_scrub_removes_build_products_but_keeps_toolchain_and_firmware(queue_repo):
+    """The base check must gate master ALONE: a previous submission's CMake cache, cargo
+    target or staged media in the integration tree made master look red twice on
+    2026-09-26. Firmware and the toolchain are not build products and must survive."""
+    repo, _ = queue_repo
+    ignores = ("build-*/", "target/", ".build-tools/", ".venv/", "qemu/*.fd", "qemu/*.img")
+    (repo / ".gitignore").write_text("\n".join(ignores) + "\n")
+    _commit(repo, "tracked.txt")
+    for rel in (
+        "build-amd64/CMakeCache.txt",
+        "sdk/lib/rust/target/x.rlib",
+        "qemu/ramdisk.img",
+        "qemu/QEMU_EFI.fd",
+        "qemu/efivars.fd",
+        ".build-tools/clang",
+        ".venv/bin/python",
+        "untracked-scratch.txt",
+    ):
+        f = repo / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x")
+    q_mod.scrub_build_state(repo, repo)
+    assert not (repo / "build-amd64").exists()
+    assert not (repo / "sdk/lib/rust/target").exists()
+    assert not (repo / "qemu/ramdisk.img").exists()
+    assert not (repo / "untracked-scratch.txt").exists()
+    for kept in ("qemu/QEMU_EFI.fd", "qemu/efivars.fd", ".build-tools/clang", ".venv/bin/python"):
+        assert (repo / kept).is_file(), kept
+    assert (repo / "tracked.txt").is_file()
+
+
+def test_the_base_check_scrubs_before_gating(queue_repo, monkeypatch):
+    repo, _ = queue_repo
+    calls = []
+    monkeypatch.setattr(q_mod, "git", lambda w, *a, **k: calls.append(a[0]) or "")
+    monkeypatch.setattr(q_mod, "scrub_build_state", lambda r, w: calls.append("SCRUB"))
+    monkeypatch.setattr(
+        q_mod,
+        "gate_batch",
+        lambda w, log, retries=2: calls.append("GATE") or q_mod.GateVerdict(True, "", "", ""),
+    )
+    assert q_mod.BaseCheck().is_green(repo, repo, lambda m: None, retries=0)
+    assert calls.index("reset") < calls.index("SCRUB") < calls.index("GATE")
+
+
+def test_an_elected_conductor_hands_the_drain_to_masters_code(queue_repo, monkeypatch):
+    """The winner of the election used to drain with its own worktree's queue code, so a
+    lane that had not merged master ran the train with stale rules (2026-09-26: the merge
+    train sat unused behind such a lane)."""
+    repo, _ = queue_repo
+    monkeypatch.delenv("VIBEOS_CONDUCTOR_PIN")
+    seen = []
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: seen.append("own-code") or 0)
+    monkeypatch.setattr(q_mod, "_conduct_pinned", lambda *a, **k: seen.append("pinned"))
+    assert q_mod.try_become_conductor(repo, lambda m: None) is True
+    assert seen == ["pinned"]
+    monkeypatch.setenv("VIBEOS_CONDUCTOR_PIN", "0")
+    assert q_mod.try_become_conductor(repo, lambda m: None) is True
+    assert seen == ["pinned", "own-code"]
+
+
+def test_code_running_from_the_pinned_checkout_drains_itself(queue_repo, monkeypatch):
+    repo, _ = queue_repo
+    monkeypatch.delenv("VIBEOS_CONDUCTOR_PIN")
+    here = Path(q_mod.__file__).resolve().parents[3]
+    monkeypatch.setattr(q_mod, "conductor_path", lambda r: here)
+    assert not q_mod._wants_pinned_conductor(repo)
+
+
+def test_pin_conductor_checkout_follows_origin_master(queue_repo, tmp_path):
+    repo, _ = queue_repo
+    cond = q_mod.pin_conductor_checkout(repo)
+    assert cond == tmp_path / "root" / q_mod.CONDUCTOR_DIRNAME
+    head = lambda d: subprocess.run(  # noqa: E731
+        ["git", "rev-parse", "HEAD"], cwd=d, capture_output=True, text=True
+    ).stdout.strip()
+    assert head(cond) == head(repo)
+    (cond / "stray.txt").write_text("left by a dead child")
+    new = _commit(repo, "moved.txt")
+    subprocess.run(["git", "push", "-q", "origin", "master"], cwd=repo, check=True)
+    assert q_mod.pin_conductor_checkout(repo) == cond
+    assert head(cond) == new
+    assert not (cond / "stray.txt").exists()
+
+
+def _fake_pinned_cli(tmp_path: Path, body: str) -> Path:
+    cond = tmp_path / "fake-conductor"
+    cond.mkdir()
+    cli = cond / "vibeos-cli"
+    cli.write_text("#!/usr/bin/env bash\n" + body)
+    cli.chmod(0o755)
+    return cond
+
+
+def test_the_pinned_child_skips_the_lock_its_parent_holds(queue_repo, tmp_path, monkeypatch):
+    repo, _ = queue_repo
+    cond = _fake_pinned_cli(
+        tmp_path, 'echo "args=$* lock=$VIBEOS_LAND_LOCK pin=$VIBEOS_CONDUCTOR_PIN"\n'
+    )
+    monkeypatch.setattr(q_mod, "pin_conductor_checkout", lambda r: cond)
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "c" * 40)
+    lines: list[str] = []
+    q_mod._conduct_pinned(repo, lines.append, retries=3)
+    assert "conducting with master's queue code" in lines[0]
+    assert lines[1] == "args=land --drain --foreground --retries 3 lock=0 pin=0"
+
+
+def test_a_failed_pinned_child_is_no_verdict_not_a_landing(queue_repo, tmp_path, monkeypatch):
+    repo, _ = queue_repo
+    cond = _fake_pinned_cli(tmp_path, "echo halted; exit 1\n")
+    monkeypatch.setattr(q_mod, "pin_conductor_checkout", lambda r: cond)
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "c" * 40)
+    with pytest.raises(q_mod.NoVerdict):
+        q_mod._conduct_pinned(repo, lambda m: None, retries=2)
+
+
+def test_the_conductor_journal_survives_in_the_queue_dir(queue_repo, monkeypatch):
+    """A reboot wiped /tmp and with it a week of conductor logs (2026-10-02)."""
+    repo, _ = queue_repo
+    monkeypatch.setenv("VIBEOS_CONDUCTOR_FOR", "lane-x@wt")
+    echoed: list[str] = []
+    log = q_mod.journaled(repo, echoed.append)
+    log("queue: batch of 2\nsecond line")
+    journal = q_mod.queue_dir(repo) / q_mod.JOURNAL_FILE
+    text = journal.read_text().splitlines()
+    assert echoed == ["queue: batch of 2\nsecond line"]
+    assert len(text) == 2 and all("[lane-x@wt]" in t for t in text)
+    monkeypatch.setattr(q_mod, "JOURNAL_MAX_BYTES", 1)
+    log("rotated")
+    assert (journal.parent / (q_mod.JOURNAL_FILE + ".1")).is_file()
+    assert journal.read_text().count("\n") == 1

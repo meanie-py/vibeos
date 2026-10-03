@@ -359,6 +359,19 @@ stay queued, neither landed nor rejected. A second batch's merge conflict with
 the first is likewise only rejected once the first is on master. Depth 1 is the
 serial queue. Why (2026-09-26): one cold ~80-minute gate held nine lanes.
 
+### Whose code conducts, and where its log lives
+The lane that wins the election keeps the land lock but does not drain with its own
+copy of the queue: it runs the drain as a child in `vibeos-conductor`, a detached
+checkout it moves to origin/master first. A fix to the queue therefore governs the
+very next drain, whether or not the electing lane has merged it. `VIBEOS_CONDUCTOR_PIN=0`
+drains in-process (for testing queue changes before they land). Every conductor line
+is also appended to `$GIT_COMMON_DIR/vibeos-queue/journal.log` (one rotation at 8 MB),
+which survives the reboots that wipe `/tmp/vibeos-cli`.
+
+When a lone submission fails, the base check re-gates origin/master after
+`git clean -fdqx` (keeping only `.build-tools`, `.venv`, tool caches and the arm64
+firmware), so master is judged without the previous submission's build dirs.
+
 ### `land --withdraw` — step out of line
 Takes THIS lane's queued submissions out of the queue (verdict: `withdrawn`),
 without touching anyone else's place. A submission already being gated —

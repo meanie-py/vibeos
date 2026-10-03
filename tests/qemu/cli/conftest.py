@@ -32,3 +32,15 @@ def _artifact_root_is_never_the_real_one(tmp_path, monkeypatch):
     sites that happened to hit it. Tests that patch ARTIFACT_ROOT themselves
     still win: their monkeypatch applies after this one."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "artifacts")
+
+
+@pytest.fixture(autouse=True)
+def _conductors_drain_in_process(monkeypatch):
+    """No unit test may pin a conductor checkout or spawn a drain child from one.
+
+    An elected conductor hands its drain to a checkout of origin/master
+    (`queue._conduct_pinned`): a `git worktree add` beside the repo plus a real
+    `vibeos-cli land --drain` child. While it was being written, a land test that only
+    meant to check `--foreground` did exactly that (inside its tmp dir, luckily).
+    Tests that exercise the handoff unset this themselves."""
+    monkeypatch.setenv("VIBEOS_CONDUCTOR_PIN", "0")
