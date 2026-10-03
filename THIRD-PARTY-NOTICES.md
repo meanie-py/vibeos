@@ -4486,7 +4486,7 @@ SOFTWARE.
 
 - Upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
 - Version: unknown
-- In this tree: `sdk/lib/ucrt`, `sdk/include/ucrt`
+- In this tree: `sdk/include/ucrt`
 - Licence: Microsoft (see the Windows SDK licence terms)
 - Grant reproduced from: **the tree carries no licence grant**
 
