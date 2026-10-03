@@ -607,7 +607,11 @@ _SOURCE_LIST_OPEN = re.compile(
 #: The precision comes from two other places instead: the depth tracking that decides
 #: "inside", and the on-disk check below, which is what stops a HEADING that merely names a
 #: file (shell32 writes one above each flipped block) from inventing an entry.
-_COMMENTED_ENTRY = re.compile(r"^[ \t]*#[ \t]*([\w./+-]+\.(?:c|cpp|cc))(?:[ \t].*)?$")
+#: ntoskrnl's ntos.cmake spells every entry repo-rooted, `#${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c`
+#: (237 of them), so the prefix is accepted and resolved against the repo root.
+_COMMENTED_ENTRY = re.compile(
+    r"^[ \t]*#[ \t]*((?:\$\{REACTOS_SOURCE_DIR\}/)?[\w./+-]+\.(?:c|cpp|cc))(?:[ \t].*)?$"
+)
 
 #: `# list(APPEND SOURCE` / `# set(SOURCE` — what a cohab flip leaves behind.
 _COMMENTED_LIST_OPEN = re.compile(r"^[ \t]*#[ \t]?(list\s*\(\s*APPEND\s+\w+|set\s*\(\s*\w+)")
@@ -615,7 +619,7 @@ _SOURCE_ARG = re.compile(r"^(?:\$\{[^}]+\}|[\w./+-]+\.(?:c|cpp|cc|h|hpp|idl|rc))
 
 
 def uncomment_flipped_source_lists(
-    text: str, module_dir: Path | None = None
+    text: str, module_dir: Path | None = None, repo_root: Path | None = None
 ) -> tuple[str, list[str]]:
     """Restore the source list a cohab flip commented out. Returns `(text, restored files)`.
 
@@ -680,12 +684,17 @@ def uncomment_flipped_source_lists(
         # heading shell32 writes above each flipped block, which names the same file in prose.
         # Deduped for the same reason, and because rtl legitimately lists `byteswap.c` in two
         # different `if(ARCH)` arms.
-        if (
-            entry is not None
-            and module_dir is not None
-            and not (module_dir / entry.group(1)).is_file()
-        ):
-            entry = None
+        if entry is not None and module_dir is not None:
+            rel = entry.group(1)
+            if rel.startswith("${REACTOS_SOURCE_DIR}/"):
+                on_disk = (
+                    repo_root is not None
+                    and (repo_root / rel[len("${REACTOS_SOURCE_DIR}/") :]).is_file()
+                )
+            else:
+                on_disk = (module_dir / rel).is_file()
+            if not on_disk:
+                entry = None
         if entry is not None:
             final.append("    " + entry.group(1))
             if entry.group(1) not in restored:
@@ -788,16 +797,54 @@ def _targets_compiling_c(
     return out
 
 
+_INTERFACE_INCLUDE_RE = re.compile(
+    r"\btarget_include_directories\s*\(\s*(\w+)\s+INTERFACE\s+([^)]*)\)"
+)
+_INTERFACE_SCAN_ROOTS = ("sdk", "drivers", "dll", "win32ss", "ntoskrnl", "hal", "base", "boot")
+
+
+@functools.lru_cache(maxsize=4)
+def _interface_include_index(repo_root: Path) -> dict[str, tuple[Path, ...]]:
+    """`target_include_directories(<name> INTERFACE <dirs>)` across the tree: name -> dirs."""
+    index: dict[str, list[Path]] = {}
+    for top in _INTERFACE_SCAN_ROOTS:
+        for cm in (repo_root / top).rglob("CMakeLists.txt"):
+            try:
+                text = _strip_cmake_comments(cm.read_text(errors="replace"))
+            except OSError:
+                continue
+            for m in _INTERFACE_INCLUDE_RE.finditer(text):
+                for d in m.group(2).split():
+                    d = d.replace("${CMAKE_CURRENT_SOURCE_DIR}", str(cm.parent)).replace(
+                        "${REACTOS_SOURCE_DIR}", str(repo_root)
+                    )
+                    if "$" not in d:
+                        path = Path(d) if Path(d).is_absolute() else cm.parent / d
+                        index.setdefault(m.group(1), []).append(path)
+    return {k: tuple(v) for k, v in index.items()}
+
+
+_CARGO_KERNEL_RE = re.compile(r"\badd_cargo_module\s*\(\s*(\w+)[^)]*\bKIND\s+kernelexe\b")
+
+
+def _cargo_kernel_targets(cmake: Path) -> set[str]:
+    """`add_cargo_module(<name> ... KIND kernelexe)` targets in a CMakeLists (ntoskrnl)."""
+    return set(_CARGO_KERNEL_RE.findall(_strip_cmake_comments(_read_with_includes(cmake))))
+
+
 def _target_names(cmake: Path) -> set[str]:
-    """Every add_library()/add_executable() target name in a CMakeLists."""
+    """Every add_library()/add_executable() target name in a CMakeLists, plus a cargo-linked
+    kernel (`add_cargo_module(<name> ... KIND kernelexe)`, see parse_cmakelists)."""
     if not cmake.is_file():
         raise ProfileDeriveError(f"no CMakeLists.txt at {cmake}")
     text = _strip_cmake_comments(_read_with_includes(cmake))
-    return {
+    names = {
         m.group(2)
         for m in re.finditer(r"\b(add_library|add_executable)\s*\(\s*([A-Za-z0-9_${}]+)", text)
         if not m.group(2).startswith("$")
     }
+    names.update(_CARGO_KERNEL_RE.findall(text))
+    return names
 
 
 def parse_cmakelists(
@@ -822,7 +869,7 @@ def parse_cmakelists(
     raw_text = _read_with_includes(cmake)
     restored_sources: list[str] = []
     if flipped_sources:
-        raw_text, restored_sources = uncomment_flipped_source_lists(raw_text, module_dir)
+        raw_text, restored_sources = uncomment_flipped_source_lists(raw_text, module_dir, repo_root)
     text = _strip_cmake_comments(raw_text)
     vars_: dict[str, list[str]] = {
         "CMAKE_CURRENT_SOURCE_DIR": [str(module_dir)],
@@ -843,6 +890,7 @@ def parse_cmakelists(
     pch: Path | None = None
     pch_skip: set[Path] = set()
     rpc: list[str] = []
+    link_deps: dict[str, list[str]] = {}
 
     def cond() -> str | None:
         live = [c for c in cond_stack if c]
@@ -881,6 +929,20 @@ def parse_cmakelists(
             tgt = args[0]
             srcs = [a for a in args_raw[1:] if a not in ("MODULE", "SHARED", "STATIC", "WIN32")]
             targets[tgt] = ("library" if name == "add_library" else "executable", srcs)
+        elif name == "add_cargo_module" and len(args_raw) >= 3 and "kernelexe" in args_raw:
+            # ntoskrnl.exe graduated to a cargo-driven link: `add_cargo_module(ntoskrnl ...
+            # KIND kernelexe ...)` takes no source list, and the kernel's C TUs are the
+            # `${SOURCE}` list ntos.cmake builds (every one of them a flipped `#` entry now).
+            # Without this, no ntoskrnl file had a provable owner and a sealed translate of
+            # any of them refused outright.
+            targets[args[0]] = ("executable", ["${SOURCE}"])
+            module_types[args[0]] = ("kernel", False)
+            if "EXTRA_DEPENDS" in args:
+                link_deps.setdefault(args[0], []).extend(args[args.index("EXTRA_DEPENDS") + 1 :])
+        elif name == "target_link_libraries" and len(args) >= 2:
+            link_deps.setdefault(args[0], []).extend(
+                a for a in args[1:] if a not in ("PUBLIC", "PRIVATE", "INTERFACE")
+            )
         elif name == "set_module_type" and len(args) >= 2:
             module_types[args[0]] = (args[1], any(a.upper() == "UNICODE" for a in args[2:]))
         elif name == "add_definitions":
@@ -940,6 +1002,12 @@ def parse_cmakelists(
             entries.append(e)
 
     definitions.extend(per_target_defs.get(target, []))
+    # A linked library's `target_include_directories(<lib> INTERFACE dir)` is on this target's
+    # include path too. cmlib.h reaches ntoskrnl's internal/cm.h only this way, and upstream
+    # moved evtlib/arbiter/infros/skiplist/concfg headers to the same mechanism.
+    interface = _interface_include_index(repo_root)
+    for dep in link_deps.get(target, []):
+        include_dirs.extend(interface.get(dep, ()))
     mt = module_types.get(target)
     module = CMakeModule(
         cmake=cmake,
@@ -2474,6 +2542,11 @@ def derive_source(
             raise ProfileDeriveError(f"{source}: ambiguous CMake owners: {owners}")
         if owners:
             name, flipped = owners[0]
+            # The cargo-linked kernel is ~240 flipped TUs whose island is the whole of
+            # ntkrnl-sys, not a module allowlist. Auditing all of them for one file costs
+            # minutes and fails on TUs that no longer compile at all (mm/marea.c includes the
+            # deleted cache/ headers), so a kernel file is audited as itself.
+            scoped = (source,) if name in _cargo_kernel_targets(cmake) else ()
             return derive(
                 directory,
                 repo_root,
@@ -2481,6 +2554,7 @@ def derive_source(
                 target=name,
                 usermode=usermode,
                 flipped_sources=flipped,
+                sources=scoped,
             )
         if directory == repo_root.resolve():
             break
