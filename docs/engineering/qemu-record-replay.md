@@ -876,16 +876,27 @@ Record it here and keep going; only chase one when it looks load-bearing.
   `--at <offset>` for a position recorded earlier. It deliberately prints a
   window and names no culprit, for the reason in the next paragraph.
 
-  **The two offsets quoted above are not the same measurement, and the gap is
-  the point.** `trace_read_position` froze at byte **2,342,912**; the decoded
-  position of the stall is **2,145,086**. The difference is **197,826 bytes
-  (193 KiB)** of kernel read-ahead: QEMU has pulled bytes into its own buffer
-  that it has not acted on. So the fd offset is an UPPER BOUND on where the
-  replay actually is, which is why a tool must not point at "the event at the
-  read position" and call it the culprit — that is the handle's reading, not the
-  thing's. Treat the gap as a bound rather than a measured buffer size: the two
-  numbers were produced by different methods, and nothing here pins QEMU's
-  buffering.
+  **The two offsets quoted above are not the same measurement.**
+  `trace_read_position` froze at byte **2,342,912**; the table's "trace bytes"
+  figure for the same stall is **2,145,086**.
+
+  **RETRACTED, same day, by the next measurement: the 197,826-byte difference is
+  NOT kernel read-ahead.** That is what this paragraph originally said, and a
+  fresh trace disproves it. Read positions are block-granular — 2,342,912 is
+  exactly 572 x 4096 and the new trace's 798,720 is exactly 195 x 4096 — and on
+  the new trace the decode frontier sits **5 bytes** before the fd offset, with
+  the straddling `EVENT_CHAR_WRITE` needing 4 more bytes than have been read. So
+  read-ahead is bounded by ONE 4 KiB block, and cannot account for 193 KiB. The
+  2,145,086 figure must therefore be a different quantity (guest-progress
+  derived), and comparing it against an fd offset as though both measured "where
+  the replay is" was the error. Note what the block alignment does and does not
+  buy: it is guaranteed by the read granularity, so "the stall is at a block
+  boundary" is a property of the instrument, not a finding.
+
+  The reason a tool must still refuse to name the event at the read position is
+  unchanged, and now better supported: the fd offset is an upper bound on the
+  replay's logical position, so `rr wedge` prints a window and labels BEFORE as
+  the evidence.
 
   **The open caveat on "positional in the log": the two tightest measures are
   nearly collinear.** This trace is dominated by serial output, so trace bytes
@@ -904,6 +915,58 @@ Record it here and keep going; only chase one when it looks load-bearing.
   be, ~2.145MB is not a round number, a power of two, or a multiple of 32 KiB
   or 64 KiB (65.46 and 32.73 respectively), so no obvious fixed-size buffer
   explains it yet.
+
+  **2026-10-03: none of the above reproduces, and the host QEMU is no longer the
+  one it was measured on.** Every figure in this section was taken on QEMU
+  **9.0.2**. After the machine rebuild the host carries **8.2.2**
+  (`QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)`), which is a
+  DOWNGRADE, and `rr info` reports it per trace — check it before comparing any
+  number here against a fresh one. One thing is unchanged and worth recording:
+  8.2.2 writes the same replay log version **0xe0200c** (v12), so the in-tree
+  decoder, `rr breaks` and the instruction-chunk rule all apply untouched.
+
+  Two fresh arm64 `--smp 1 --payload none --shift 3` traces, recorded minutes
+  apart off identical media with identical commands, replayed to **two different
+  failure modes**:
+
+  | | wedge-shift3 | wedge-b |
+  |---|---|---|
+  | trace size | 3,113,641 | 3,044,334 |
+  | record guest lines | 2,117 | 2,117 |
+  | replay reached | 835 lines | 1,103 lines |
+  | mode | **WEDGE** — read position frozen at 798,720 (25.65%) for 8 samples over 4m38s at 85% CPU | **ABORT** — `Missing character write event in the replay log`, reproduced on two independent replays at the identical guest line |
+
+  So:
+
+  * **The "fixed trace offset" invariant is gone.** 798,720 is not 2,342,912,
+    and it is not the same fraction either (25.65% vs clean1's 22% vs kmt3's
+    0.44%). Guest lines do not match either (835 vs ~2,060). Whatever held
+    across clean1 and kmt3 does not hold here, and those two shared a guest
+    build while this one is 450 commits later on a different QEMU — so the
+    change is NOT attributed; either variable could carry it.
+  * **A third failure mode exists, and it is the most informative one yet.**
+    `Missing character write event in the replay log` is QEMU detecting
+    DIVERGENCE: the guest emitted serial output the log has no record of at that
+    position. That is not a stall, it is replay going off-script, and QEMU's own
+    consistency check caught it. It is deterministic — same message, same guest
+    line, two replays.
+  * **Both modes implicate character writes**, which is a lead and not a
+    conclusion: the abort names `EVENT_CHAR_WRITE` outright, and the wedge sits
+    mid-`EVENT_CHAR_WRITE` in a uniform `EVENT_INSTRUCTION +7` / char-write
+    burst (clean1's was `+3`). Worth chasing; not yet evidence of one cause.
+  * **Two traces of the same boot failing differently means replay is not
+    reliably deterministic here at all**, which reframes the wedge: it may be
+    one symptom of a divergence that sometimes stalls and sometimes trips the
+    char-write check, rather than a structural ceiling.
+
+  **The `--shift` discriminator does not exist.** The plan was to break the
+  trace-bytes/serial-bytes collinearity by recording at a different icount
+  shift, keeping guest serial fixed while changing instruction-record density.
+  It cannot be run: shift 1 and shift 5 both stall in the first 4,096-byte
+  buffer having produced 271 bytes of serial, so only shift 3 replays at all.
+  `rr record` warns about this at record time and this document already said so
+  — the plan was made without re-reading it. Finding a knob that varies serial
+  density at shift 3, during early boot, is still open.
 
   Two caveats worth keeping, because they bound how much the top row is worth.
   The three tight measures are near-proportional to one another in this region —

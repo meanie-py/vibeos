@@ -520,6 +520,30 @@ def test_check_staleness_reports_oracle_failure_rather_than_raising(tmp_path: Pa
     )
 
 
+def test_ps_does_not_report_a_zombie_qemu_as_alive(monkeypatch):
+    """`ps` printed exited-but-unreaped QEMUs as live, with a growing AGE, and
+    counted them against the slot total. `--stale` has the mirror bug: an owner
+    that had exited read as present, so its VM never qualified as stale.
+
+    The defect was in the READING, not in one caller -- _pid_is_zombie already
+    existed for the kill confirm path and this predicate never consulted it."""
+    from . import killvm
+
+    monkeypatch.setattr(killvm, "_pid_is_zombie", lambda pid: True)
+    monkeypatch.setattr(killvm.os, "kill", lambda pid, sig: None)
+    assert killvm._pid_alive(4242) is False
+
+
+def test_ps_still_reports_a_running_qemu_as_alive(monkeypatch):
+    """The direction that must not regress: calling a live VM dead would make
+    `kill --stale` reap VMs out from under running work."""
+    from . import killvm
+
+    monkeypatch.setattr(killvm, "_pid_is_zombie", lambda pid: False)
+    monkeypatch.setattr(killvm.os, "kill", lambda pid, sig: None)
+    assert killvm._pid_alive(4242) is True
+
+
 def test_src_delta_names_a_head_move(tiny_repo: Path):
     """ "build source changed" fires milliseconds after the same hash was stamped
     and never said WHICH input moved. A merge landing under the build is the
