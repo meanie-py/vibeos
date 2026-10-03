@@ -131,7 +131,7 @@ the config that caused it. So the transform refuses up front:
 | an existing `-icount` | we will not record on top of someone else's counting config |
 | no `-drive` at all | `rrsnapshot=` needs a snapshot-capable image |
 | the `windows-host` backend | media stage into a Windows path; the trace would straddle two path namespaces |
-| a drive behind `ide-cd` / `scsi-cd` | QEMU 9.0.2's `blkreplay` stalls the ATAPI path outright — see below. This is why **x86 cannot be recorded yet** |
+| a drive behind `ide-cd` / `scsi-cd` | QEMU 9.0.2's `blkreplay` stalls the ATAPI path outright — see below. x86 is not recordable yet, but the remaining blocker is freeldr, not this |
 
 x86 is wired end to end — the transform, the media staging and the accelerator
 demotion below are all tested against the real configs — but it **cannot
@@ -577,9 +577,48 @@ Record it here and keep going; only chase one when it looks load-bearing.
 
   Firmware and freeldr start up fine from virtio; the boot then dies where
   freeldr loads the kernel, so vibeos's x86 boot path cannot take its LiveCD
-  over virtio-blk regardless of what rr wants. Making x86 recordable therefore
-  needs blkreplay to handle ATAPI — a QEMU-side fix, or a newer QEMU — not a
-  device-set workaround on our side.
+  over virtio-blk regardless of what rr wants.
+
+  **The blocker is OURS, not QEMU's — corrected 2026-09-13.** This section used
+  to end "making x86 recordable therefore needs blkreplay to handle ATAPI — a
+  QEMU-side fix, or a newer QEMU". That was inferred from one non-ATAPI transport
+  failing. A second one says otherwise.
+
+  `usb-storage` is neither of the two models the transform refuses, and QEMU
+  accepts `blkreplay` over it without complaint — a probe recorded 94MB of
+  `replay.bin` while OVMF booted the ISO from it:
+
+  ```
+  BdsDxe: starting Boot0001 "UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:04.0-1"
+  UEFI EntryPoint: Starting freeldr from UEFI
+  [freeldr] MachInit done ... Boot devices initialized
+  [freeldr] Switching stack...          <- and no further
+  ```
+
+  Same wall as virtio-blk, to the line. And the control settles it: **the same
+  usb-storage boot with no `-icount` and no `blkreplay` stops at the identical
+  `[freeldr] Switching stack...`, same 10 lines.** rr is not involved.
+
+  So the summary for x86 is:
+
+  | transport | blkreplay | boots |
+  |---|---|---|
+  | `ide-cd` (ATAPI) | **fatal** | yes (7214 lines) |
+  | `virtio-blk-pci` | fine | no — `Switching stack...` |
+  | `usb-storage` | fine | no — `Switching stack...`, and also without rr |
+
+  Two independent non-ATAPI transports, the same failure point, reproducing
+  without rr. That is a freeldr boot-device limitation, not an rr limitation and
+  not a QEMU one. Waiting on a newer QEMU would not have helped, and the actual
+  fix is in our tree: get freeldr past `Switching stack...` when the boot device
+  is not ATAPI, and x86 record/replay follows for free over `usb-storage` with no
+  rr changes at all.
+
+  Worth noting how the wrong conclusion was reached, since it is cheap to repeat:
+  one transport was tested, it failed, and the cause was attributed to the thing
+  that transport had in common with rr's requirements rather than to the thing it
+  had in common with the other failing transport. The second sample was one
+  command away.
 
   A test still asserts a virtio-backed CD is *allowed* by the transform, so the
   path stays open for whenever the guest can boot that way.
@@ -829,6 +868,105 @@ Record it here and keep going; only chase one when it looks load-bearing.
   guest-work quantities (events, icount, clock warps, interrupts, exceptions)
   spread from 2.92% to 23%. The limit is positional in the LOG, not a count of
   anything the guest did.
+
+  **`rr wedge <trace>` makes this a one-command check.** The decode above needed
+  QEMU's own `scripts/replay-dump.py` fetched from the matching stable tag; the
+  in-tree walker now answers the same question. `rr wedge` asks a live stalled
+  replay where it stopped and prints the events either side, or takes
+  `--at <offset>` for a position recorded earlier. It deliberately prints a
+  window and names no culprit, for the reason in the next paragraph.
+
+  **The two offsets quoted above are not the same measurement.**
+  `trace_read_position` froze at byte **2,342,912**; the table's "trace bytes"
+  figure for the same stall is **2,145,086**.
+
+  **RETRACTED, same day, by the next measurement: the 197,826-byte difference is
+  NOT kernel read-ahead.** That is what this paragraph originally said, and a
+  fresh trace disproves it. Read positions are block-granular — 2,342,912 is
+  exactly 572 x 4096 and the new trace's 798,720 is exactly 195 x 4096 — and on
+  the new trace the decode frontier sits **5 bytes** before the fd offset, with
+  the straddling `EVENT_CHAR_WRITE` needing 4 more bytes than have been read. So
+  read-ahead is bounded by ONE 4 KiB block, and cannot account for 193 KiB. The
+  2,145,086 figure must therefore be a different quantity (guest-progress
+  derived), and comparing it against an fd offset as though both measured "where
+  the replay is" was the error. Note what the block alignment does and does not
+  buy: it is guaranteed by the read granularity, so "the stall is at a block
+  boundary" is a property of the instrument, not a finding.
+
+  The reason a tool must still refuse to name the event at the read position is
+  unchanged, and now better supported: the fd offset is an upper bound on the
+  replay's logical position, so `rr wedge` prints a window and labels BEFORE as
+  the evidence.
+
+  **The open caveat on "positional in the log": the two tightest measures are
+  nearly collinear.** This trace is dominated by serial output, so trace bytes
+  and serial bytes are not independent — trace-bytes-per-serial-byte is 17.53
+  on clean1 and 17.97 on kmt3, a 2.5% spread. Trace bytes (0.85%) does fit
+  better than serial bytes (1.63%), which is real evidence for position over
+  volume, but it is two samples separated by less than a factor of two in
+  tightness. **The discriminating experiment is a third recording with
+  deliberately different serial density** — the same boot with debug printing
+  turned down, or up. If the wedge is positional in the log, the trace offset
+  stays put and the serial-byte count moves; if it tracks serial volume, the
+  opposite. Until that runs, "positional in the LOG" is the better-fitting of
+  two correlated explanations rather than an established one.
+
+  Worth stating because it is the cheap half: whatever the measure turns out to
+  be, ~2.145MB is not a round number, a power of two, or a multiple of 32 KiB
+  or 64 KiB (65.46 and 32.73 respectively), so no obvious fixed-size buffer
+  explains it yet.
+
+  **2026-10-03: none of the above reproduces, and the host QEMU is no longer the
+  one it was measured on.** Every figure in this section was taken on QEMU
+  **9.0.2**. After the machine rebuild the host carries **8.2.2**
+  (`QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)`), which is a
+  DOWNGRADE, and `rr info` reports it per trace — check it before comparing any
+  number here against a fresh one. One thing is unchanged and worth recording:
+  8.2.2 writes the same replay log version **0xe0200c** (v12), so the in-tree
+  decoder, `rr breaks` and the instruction-chunk rule all apply untouched.
+
+  Two fresh arm64 `--smp 1 --payload none --shift 3` traces, recorded minutes
+  apart off identical media with identical commands, replayed to **two different
+  failure modes**:
+
+  | | wedge-shift3 | wedge-b |
+  |---|---|---|
+  | trace size | 3,113,641 | 3,044,334 |
+  | record guest lines | 2,117 | 2,117 |
+  | replay reached | 835 lines | 1,103 lines |
+  | mode | **WEDGE** — read position frozen at 798,720 (25.65%) for 8 samples over 4m38s at 85% CPU | **ABORT** — `Missing character write event in the replay log`, reproduced on two independent replays at the identical guest line |
+
+  So:
+
+  * **The "fixed trace offset" invariant is gone.** 798,720 is not 2,342,912,
+    and it is not the same fraction either (25.65% vs clean1's 22% vs kmt3's
+    0.44%). Guest lines do not match either (835 vs ~2,060). Whatever held
+    across clean1 and kmt3 does not hold here, and those two shared a guest
+    build while this one is 450 commits later on a different QEMU — so the
+    change is NOT attributed; either variable could carry it.
+  * **A third failure mode exists, and it is the most informative one yet.**
+    `Missing character write event in the replay log` is QEMU detecting
+    DIVERGENCE: the guest emitted serial output the log has no record of at that
+    position. That is not a stall, it is replay going off-script, and QEMU's own
+    consistency check caught it. It is deterministic — same message, same guest
+    line, two replays.
+  * **Both modes implicate character writes**, which is a lead and not a
+    conclusion: the abort names `EVENT_CHAR_WRITE` outright, and the wedge sits
+    mid-`EVENT_CHAR_WRITE` in a uniform `EVENT_INSTRUCTION +7` / char-write
+    burst (clean1's was `+3`). Worth chasing; not yet evidence of one cause.
+  * **Two traces of the same boot failing differently means replay is not
+    reliably deterministic here at all**, which reframes the wedge: it may be
+    one symptom of a divergence that sometimes stalls and sometimes trips the
+    char-write check, rather than a structural ceiling.
+
+  **The `--shift` discriminator does not exist.** The plan was to break the
+  trace-bytes/serial-bytes collinearity by recording at a different icount
+  shift, keeping guest serial fixed while changing instruction-record density.
+  It cannot be run: shift 1 and shift 5 both stall in the first 4,096-byte
+  buffer having produced 271 bytes of serial, so only shift 3 replays at all.
+  `rr record` warns about this at record time and this document already said so
+  — the plan was made without re-reading it. Finding a knob that varies serial
+  density at shift 3, during early boot, is still open.
 
   Two caveats worth keeping, because they bound how much the top row is worth.
   The three tight measures are near-proportional to one another in this region —
