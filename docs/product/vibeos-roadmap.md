@@ -571,6 +571,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   passes on arm64. The ucrtbase grader's `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` skip can go to 0;
   left to the ucrt lane, whose `ucrtdiff.c` is mid-edit (and whose arm64 build currently
   stops at pecheck: `__doserrno`/`_open_osfhandle` graded but not imported from ucrtbase.dll).
+- **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
+  Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
+  `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs
+  the same binaries against the pre-takeover ucrtbase.dll (`24089de2c88`, Microsoft's C)
+  staged beside them. The two agree failure for failure, so none of these is a Rust
+  regression, but each is owed: `file` AVs inside the test exe; `misc` dies on an
+  unmasked FP exception (0xC0000090) after calling the `fesetround`/`fegetenv` spec stubs;
+  `thread` AVs at EIP 0; `cpp` hangs past 120s; `string` fails two `mbstowcs` UTF-8 checks
+  (string.c:831/835); `ucrtbase_apitest` dies on an invalid handle (0xC0000008).
+  `environ`, `printf` (1,950) and `scanf` are clean on both. Only divergence found: the i386
+  `_invoke_watson` report-fault stub wrote CONTEXT out of order (fixed the same day).
+  Owner: ucrt-rust lane.
 - **arm64 ucrtbase forwards `_clearfp`/`_control87`/`_controlfp`/`_statusfp` to msvcrt.dll**
   (FIXED 2026-10-03: ucrt-rust `fpctrl_arm64.rs`, graded by `tools/payloads/fpctrl` against
   msvcrt.dll's bodies -- 671 cases, 0 diffs; the allowlist entry is gone. Was OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
