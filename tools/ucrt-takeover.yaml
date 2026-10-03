@@ -1814,7 +1814,7 @@ families:
     replaces:
       - sdk/lib/ucrt/startup/{exit,onexit,abort,assert,thread}.cpp
     oracle: >
-      ORACLE_startup
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from 64f4b234afb` (the last Microsoft C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's graded rows, 22,961 cases. MATCH: _beginthread(ex)/_endthread(ex) (77 cases), the onexit table trio (368), _set_abort_behavior (25). exit/_exit/_Exit/quick_exit/abort/_assert terminate the process and are not gradable in-process; every boot runs exit through them, three arches.
     note: >
       A PORT (src/startup/). _assert/_wassert are naked entry stubs that append their own return address (no _ReturnAddress() on stable Rust).
     exports:
@@ -1843,7 +1843,7 @@ families:
     replaces:
       - sdk/lib/ucrt/startup/{argv_parsing,argv_wildcards,argv_winmain}.cpp, internal/{report_runtime_error,win_policies,peb_access}.cpp, misc/crtmbox.cpp
     oracle: >
-      ORACLE_argv_errors
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from 64f4b234afb` (the last Microsoft C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's graded rows, 22,961 cases. MATCH: _configure_narrow_argv/_configure_wide_argv (675 cases over quoting, backslash runs and wildcard expansion), both winmain command lines (85), _query_app_type/_set_app_type (23). report_runtime_error/crtmbox only run on the way to abort.
     note: >
       A PORT (src/argv/), over the globals in argv_data.rs.
     exports:
@@ -1858,7 +1858,7 @@ families:
     replaces:
       - sdk/lib/ucrt/convert/{cvt,cfout,_fptostr,fp_flags,wctype}.cpp
     oracle: >
-      ORACLE_cvt
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from 64f4b234afb` (the last Microsoft C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's graded rows, 22,961 cases. MATCH: _ecvt_s/_fcvt_s (5,688 cases), _gcvt_s (1,335), the printf %a/%e/%f/%g engine in both legacy and standard modes plus denormal-flush, pow10, special-value and misc rows (14,616), wctype (69).
     note: >
       A PORT (src/cvt/): the float formatting engine. Also compared on the host against the Microsoft cvt/cfout/_fptostr C: 21,194,818 cases on x86_64, 0 differences. Fixes the amd64 ABI slip in fcvt.rs/gcvt.rs (the C __acrt_fltout took a struct-wrapped double, passed in RCX).
     exports:
@@ -1868,7 +1868,7 @@ families:
     replaces:
       - sdk/lib/ucrt/internal/winapi_thunks.cpp and the six internal/*A.cpp narrow wrappers
     oracle: >
-      ORACLE_winapi_thunks
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from 64f4b234afb` (the last Microsoft C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's graded rows, 22,961 cases. No export of its own: every graded row and every boot on three arches runs on these thunks. The sweep is also what caught the inlining trap the module doc records (an inlined thunk table read our uninitialized cache under the harness's deferral).
     note: >
       A PORT (src/winapi_thunks/). Nothing here is an export; every graded row and every boot runs on it.
     exports:
@@ -1878,7 +1878,7 @@ families:
     replaces:
       - sdk/lib/ucrt_reactos/ (ReactOS glue, MIT: math/matherr.cpp, locale/*.c)
     oracle: >
-      ORACLE_ucrt_reactos
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from 64f4b234afb` (the last Microsoft C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's graded rows, 22,961 cases. __setusermatherr is not graded on its own (no ref import); the forwarders are three-line cdecl->stdcall shims to kernel32 that the graded mbtowc/mbrtowc/wcrtomb/mblen, ctype, strftime/tzset and _getch rows of earlier batches all call through.
     note: >
       A PORT (src/ucrt_reactos.rs) of ReactOS code, not Microsoft code: provenance ucrt-port only because it lived beside the UCRT and read its internal headers.
     exports:
