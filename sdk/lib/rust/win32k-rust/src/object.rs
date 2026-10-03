@@ -686,6 +686,11 @@ unsafe fn free_user_entry(ht: PUSER_HANDLE_TABLE, entry: PUSER_HANDLE_ENTRY) -> 
     // #if DBG { ... DbgHandleCount-- ... } — DBG=0 release: entire block is
     // dead (PROCESSINFO::DbgHandleCount is DBG-only). Faithful no-op.
 
+    // The slot is about to be reused, so no job may keep a grant on it (upstream b272427baa3).
+    if entry_flags(entry) & HANDLEENTRY_GRANTED as u8 != 0 {
+        crate::job::IntCleanupGrantedHandle(entry_to_handle(ht, entry));
+    }
+
     ret = entry_ptr(entry);
     core::ptr::write_volatile(core::ptr::addr_of_mut!((*entry).ptr), (*ht).freelist as PVOID);
     core::ptr::write_volatile(core::ptr::addr_of_mut!((*entry).type_), 0);
@@ -1018,9 +1023,10 @@ pub unsafe extern "fastcall" fn UserFreeHandle(ht: PUSER_HANDLE_TABLE, handle: H
         return 0;
     }
 
+    // HANDLEENTRY_GRANTED has to survive for free_user_entry.
     core::ptr::write_volatile(
         core::ptr::addr_of_mut!((*entry).flags),
-        HANDLEENTRY_INDESTROY as u8,
+        (entry_flags(entry) & HANDLEENTRY_GRANTED as u8) | HANDLEENTRY_INDESTROY as u8,
     );
 
     UserDereferenceObject(entry_ptr(entry))
@@ -1038,13 +1044,29 @@ pub unsafe extern "C" fn UserFreeHandle(ht: PUSER_HANDLE_TABLE, handle: HANDLE) 
         return 0;
     }
 
+    // HANDLEENTRY_GRANTED has to survive for free_user_entry.
     core::ptr::write_volatile(
         core::ptr::addr_of_mut!((*entry).flags),
-        HANDLEENTRY_INDESTROY as u8,
+        (entry_flags(entry) & HANDLEENTRY_GRANTED as u8) | HANDLEENTRY_INDESTROY as u8,
     );
 
     UserDereferenceObject(entry_ptr(entry))
 }
+/// Validate a USER handle about to be granted to a job, and mark it so that freeing it
+/// withdraws the grant. The mark is not cleared on revoke; it only says the granted lists are
+/// worth sweeping (upstream b272427baa3, FASTCALL in the C but only win32k's job.rs calls it).
+pub(crate) unsafe fn UserMarkHandleGranted(h: HANDLE) -> BOOL {
+    let entry = handle_to_entry(gHandleTable, h);
+    if entry.is_null() {
+        return 0;
+    }
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*entry).flags),
+        entry_flags(entry) | HANDLEENTRY_GRANTED as u8,
+    );
+    1
+}
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn UserObjectInDestroy(h: HANDLE) -> BOOL {

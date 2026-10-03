@@ -76,7 +76,7 @@ pub unsafe extern "C" fn set_terminate(new_handler: TerminateHandler) -> Termina
 /// divergence (no SEH catch-all around the user handler -- this crate is
 /// `#![no_std]`, so neither `__except` nor `catch_unwind` is available).
 #[no_mangle]
-pub unsafe extern "C" fn terminate() {
+pub unsafe extern "C" fn terminate() -> ! {
     let handler = (*__acrt_getptd()).terminate;
     if let Some(handler) = handler {
         handler();

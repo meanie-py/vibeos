@@ -1683,9 +1683,10 @@ pub unsafe extern "system" fn CreateProcessInternalW(
                 );
             }
 
-            /* Check if we're going to be debugged */
-            if dwCreationFlags & DEBUG_PROCESS != 0 {
-                /* Set process flag */
+            /* CREATE_BREAKAWAY_FROM_JOB allows the child process to break
+             * away from the job associated with the calling process (upstream
+             * 55563444377; the old C keyed this off DEBUG_PROCESS) */
+            if dwCreationFlags & CREATE_BREAKAWAY_FROM_JOB != 0 {
                 Flags |= PROCESS_CREATE_FLAGS_BREAKAWAY;
             }
 

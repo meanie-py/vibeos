@@ -150,6 +150,37 @@ static DWORD WINAPI pump(LPVOID param)
  * Returns the exit code, or -1 if it could not start, or -2 on timeout.
  * With ctx->Capture set, output is parsed for subtest names instead of echoed.
  */
+/* The children's working directory: bindir, unless bin\apitest-cwd.txt names
+ * another. Opt-in, for suites that create files relative to it: the i386 media
+ * boots from a CDFS image, so X:\ (bindir and %TEMP% included) refuses every
+ * write with ERROR_ACCESS_DENIED, and such a suite reports its own environment
+ * as failures. The regular apitest sweep stages no such file -- its suites may
+ * read testdata relative to bindir. */
+static char g_child_cwd[MAX_PATH];
+
+static void load_child_cwd(const char *bindir)
+{
+    char path[MAX_PATH];
+    FILE *f;
+    size_t n;
+
+    lstrcpynA(g_child_cwd, bindir, sizeof(g_child_cwd));
+    _snprintf(path, sizeof(path), "%s\\apitest-cwd.txt", bindir);
+    f = fopen(path, "r");
+    if (!f)
+        return;
+    if (fgets(g_child_cwd, sizeof(g_child_cwd), f))
+    {
+        n = strlen(g_child_cwd);
+        while (n && (g_child_cwd[n - 1] == '\n' || g_child_cwd[n - 1] == '\r' || g_child_cwd[n - 1] == ' '))
+            g_child_cwd[--n] = 0;
+    }
+    fclose(f);
+    if (!g_child_cwd[0])
+        lstrcpynA(g_child_cwd, bindir, sizeof(g_child_cwd));
+    DbgPrint("[APITEST-SWEEP] child cwd=%s\n", g_child_cwd);
+}
+
 static int run_child(const char *bindir, const char *suite, const char *arg,
                      struct pump_ctx *ctx, DWORD timeout_ms)
 {
@@ -191,7 +222,7 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
      * context hangs the child before main(). Our pipe carries the output, so
      * having no console costs nothing. */
     if (!CreateProcessA(exepath, cmdline, NULL, NULL, TRUE, DETACHED_PROCESS,
-                        NULL, bindir, &si, &pi))
+                        NULL, g_child_cwd, &si, &pi))
     {
         DbgPrint("[APITEST-SWEEP] launch FAILED %s err=%lu\n", suite, GetLastError());
         CloseHandle(rd);
@@ -315,6 +346,32 @@ static int is_skipped(const char *suite, const char *subtest)
             return 1;
     }
     return 0;
+}
+
+static void run_one_subtest(const char *bindir, const char *suite, const char *subtest,
+                            int *subtests, int *failstart, int *timeouts)
+{
+    struct pump_ctx ctx;
+    int rc;
+
+    ZeroMemory(&ctx, sizeof(ctx));
+    ctx.Suite = suite;
+    ctx.Label = subtest;
+
+    DbgPrint("[APITEST-SWEEP] launch %s %s\n", suite, subtest);
+    rc = run_child(bindir, suite, subtest, &ctx, PER_SUBTEST_TIMEOUT_MS);
+    ++*subtests;
+
+    if (rc == -1)
+        ++*failstart;
+    else if (rc == -2)
+    {
+        ++*timeouts;
+        DbgPrint("[APITEST-SWEEP] TIMEOUT %s %s (%us) - terminated\n",
+                 suite, subtest, PER_SUBTEST_TIMEOUT_MS / 1000u);
+    }
+    else
+        DbgPrint("[APITEST-SWEEP] exit %s %s code=%d\n", suite, subtest, rc);
 }
 
 static void run_suite(const char *bindir, const char *suite,
@@ -460,6 +517,7 @@ int main(void)
     }
 
     load_skips(bindir);
+    load_child_cwd(bindir);
     DbgPrint("[APITEST-SWEEP] start list=%s\n", listpath);
 
     while (fgets(line, sizeof(line), f))
@@ -479,6 +537,19 @@ int main(void)
         if (!line[0] || line[0] == '#')
             continue;
         ++total;
+
+        /* "<suite.exe> <subtest>": run just that subtest (gen_suites --only suite:subtest).
+         * Reproducing one subtest otherwise meant running every subtest ahead of it, and a
+         * suite that stalls early (user32's AttachThreadInput) hid the rest entirely. */
+        {
+            char *sp = strchr(line, ' ');
+            if (sp)
+            {
+                *sp = 0;
+                run_one_subtest(bindir, line, sp + 1, &subtests, &failstart, &timeouts);
+                continue;
+            }
+        }
 
         run_suite(bindir, line, &subtests, &launched, &failstart, &timeouts);
     }

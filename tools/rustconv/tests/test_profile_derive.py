@@ -41,6 +41,7 @@ from rustconv.profile_derive import (
     to_json,
     uncomment_flipped_source_lists,
     walk_includes,
+    _interface_include_index,
 )
 
 # ---------------------------------------------------------------------------
@@ -1332,3 +1333,66 @@ def test_resolve_sys_crate_strips_every_target_role_suffix(tmp_path: Path) -> No
     # No own island -> the mode default, and the suffix walk must not invent a crate.
     assert resolve_sys_crate(tmp_path, "shell32_static", usermode=True) == "ntdll-sys"
     assert resolve_sys_crate(tmp_path, "portcls", usermode=False) == "ntkrnl-sys"
+
+
+class TestCargoKernelTarget:
+    """ntoskrnl links through `add_cargo_module(... KIND kernelexe)` and flips per entry."""
+
+    def _tree(self, tmp_path):
+        root = tmp_path
+        (root / "ntoskrnl/ps").mkdir(parents=True)
+        (root / "ntoskrnl/ps/job.c").write_text("int PspJob(void) { return 0; }\n")
+        (root / "sdk/lib/cmlib").mkdir(parents=True)
+        (root / "sdk/lib/cmlib/cmlib.h").write_text("/* */\n")
+        (root / "sdk/lib/cmlib/CMakeLists.txt").write_text(
+            "add_library(cmlib x.c)\n"
+            "target_include_directories(cmlib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})\n"
+        )
+        (root / "ntoskrnl/ntos.cmake").write_text(
+            "list(APPEND SOURCE\n"
+            "    # ps/ — replaced by Rust\n"
+            "    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c\n"
+            "    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/gone.c\n"
+            "    )\n"
+        )
+        (root / "ntoskrnl/CMakeLists.txt").write_text(
+            "include(ntos.cmake)\n"
+            "add_cargo_module(ntoskrnl ntoskrnl-cargo ntoskrnl.exe\n"
+            "    KIND kernelexe\n"
+            "    EXTRA_DEPENDS cmlib rtl)\n"
+        )
+        return root
+
+    def test_repo_rooted_flipped_entry_is_restored_only_if_on_disk(self, tmp_path):
+        root = self._tree(tmp_path)
+        text = (root / "ntoskrnl/ntos.cmake").read_text()
+        _out, restored = uncomment_flipped_source_lists(text, root / "ntoskrnl", root)
+        assert restored == ["${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c"]
+
+    def test_kernelexe_is_a_kernel_target_with_linked_interface_includes(self, tmp_path):
+        root = self._tree(tmp_path)
+        _interface_include_index.cache_clear()
+        m = parse_cmakelists(
+            root / "ntoskrnl/CMakeLists.txt", root, arch="amd64", flipped_sources=True
+        )
+        assert m.name == "ntoskrnl" and m.module_type == "kernel"
+        assert [p.name for p in m.compiled_tus] == ["job.c"]
+        assert (root / "sdk/lib/cmlib") in m.include_dirs
+
+
+def test_a_backslash_include_resolves_like_the_compiler_does(tmp_path):
+    """win32ss/gdi/dib/dib_new.c writes `#include "..\\diblib\\DibLib_interface.h"`."""
+    from rustconv.profile_derive import Include, IncludeEnv, resolve_include
+
+    (tmp_path / "dib").mkdir()
+    (tmp_path / "diblib").mkdir()
+    header = tmp_path / "diblib" / "DibLib_interface.h"
+    header.write_text("/* */\n")
+    inc = Include(
+        spelling='"..\\\\diblib\\\\DibLib_interface.h"',
+        name="..\\diblib\\DibLib_interface.h",
+        angled=False,
+        line=11,
+    )
+    env = IncludeEnv(repo_root=tmp_path, arch="amd64", module_dir=tmp_path, build_dir=None)
+    assert resolve_include(inc, tmp_path / "dib" / "dib_new.c", env) == header.resolve()

@@ -156,3 +156,41 @@ def test_an_unreadable_image_fails_loud(tmp_path):
     p = tmp_path / "x.exe"
     p.write_bytes(b"not a pe")
     assert pecheck.main([str(p), "--tag", "t", "--gui"]) == 1
+
+
+def test_guard_macros_and_flag_defines_are_expanded():
+    # `#define LW_ANY (REF_HAS_a || ...)` and the `#if X / #define F 1 / #else /
+    # #define F 0` flag idiom: both read as "some other #if" and kept compiled-out
+    # blocks live, demanding imports for what they declared.
+    src = (
+        "#define LW_ANY (UCRTDIFF_REF_HAS__write || UCRTDIFF_REF_HAS__read)\n"
+        "#if LW_ANY\n"
+        "int __cdecl ref__write(int);\n"
+        "#endif\n"
+        "#if UCRTDIFF_REF_HAS__lseek\n"
+        "#define LS_ON 1\n"
+        "#else\n"
+        "#define LS_ON 0\n"
+        "#endif\n"
+        "#if LS_ON\n"
+        "int __cdecl ref__lseek(int);\n"
+        "#endif\n"
+    )
+    kept = pecheck.compiled_in(src, {"_write", "_read", "_lseek"})
+    assert "ref__write" not in kept and "ref__lseek" not in kept
+    kept = pecheck.compiled_in(src, {"_write"})
+    assert "ref__write" in kept and "ref__lseek" in kept
+
+
+def test_a_harness_fallback_define_never_overrides_the_generated_zero():
+    # The harness's `#ifndef X / #define X 1` fallbacks sit in a branch this pass
+    # keeps; recording them as flags turned the generated header's 0 back into 1.
+    src = (
+        "#ifndef UCRTDIFF_REF_HAS__waccess\n"
+        "#define UCRTDIFF_REF_HAS__waccess 1\n"
+        "#endif\n"
+        "#if UCRTDIFF_REF_HAS__waccess\n"
+        "int __cdecl ref__waccess(int);\n"
+        "#endif\n"
+    )
+    assert "ref__waccess" not in pecheck.compiled_in(src, {"_waccess"})

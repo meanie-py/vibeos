@@ -796,6 +796,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rbk.set_defaults(fn=rr_mod.rr_cmd, rr_verb="breaks")
 
+    rwg = rrsub.add_parser(
+        "wedge",
+        help="name the recorded events around where a stalled replay stopped reading",
+    )
+    rwg.add_argument("trace", help="trace name, path, or `latest`")
+    rwg.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rwg.add_argument(
+        "--at",
+        type=int,
+        help="inspect this byte offset instead of asking a live replay where it stopped",
+    )
+    rwg.add_argument(
+        "--count", type=int, default=8, help="events either side of the offset (default 8)"
+    )
+    rwg.set_defaults(fn=rr_mod.rr_cmd, rr_verb="wedge")
+
     kl = sub.add_parser(
         "kill",
         help="stop a QEMU SAFELY (uid/pid-scoped; refuses to kill our own ancestors)",
