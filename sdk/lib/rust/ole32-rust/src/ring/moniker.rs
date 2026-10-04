@@ -423,6 +423,8 @@ unsafe fn get_moniker_comparison_data(
                 hr
             );
             HeapFree(GetProcessHeap(), 0, *moniker_data as LPVOID);
+            // wine-10: the caller's cleanup (rot_entry_delete) frees it again.
+            *moniker_data = core::ptr::null_mut();
             return hr;
         }
         (**moniker_data).ulCntData = size;

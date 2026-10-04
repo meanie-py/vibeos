@@ -2,14 +2,22 @@ use crate::prelude::*;
 
 // Defined by sibling ring modules, but ALSO (wrongly) declared as externs in
 // ole32_exports.rs — the prelude glob makes the bare names ambiguous, so bind explicitly.
-use crate::ring::antimoniker::CreateAntiMoniker;
+use crate::ring::antimoniker::{create_anti_moniker, is_anti_moniker, CreateAntiMoniker};
 use crate::ring::compositemoniker::CreateGenericComposite;
 
-// ---- file-scope preamble (translated) ----
+// ---- PointerMoniker: semantically ported to wine-10.0 (upstream 5f6b295cb90) ----
+//
+// Over the old translation: the moniker marshals BY VALUE through its own IMarshal (the
+// wrapped object goes across as an IUnknown) instead of falling back to the standard
+// marshaler; QueryInterface answers CLSID_PointerMoniker; IsEqual compares the wrapped
+// pointers of OUR pointer monikers by vtable identity; ComposeWith cancels one order of an
+// anti-moniker; and Enum/RelativePathTo/GetDisplayName/CommonPrefixWith return wine-10's
+// codes. CreatePointerMoniker refuses a NULL out-pointer.
+
 #[repr(C)]
 pub struct PointerMonikerImpl {
     pub IMoniker_iface: IMoniker,
-    /// reference counter for this object
+    pub IMarshal_iface: IMarshal,
     pub ref_: LONG,
     /// the object this moniker points at
     pub pObject: *mut IUnknown,
@@ -43,8 +51,34 @@ static VT_PointerMonikerImpl: IMonikerVtbl = IMonikerVtbl {
     IsSystemMoniker: Some(PointerMonikerImpl_IsSystemMoniker),
 };
 
+static pointer_moniker_marshal_vtbl: IMarshalVtbl = IMarshalVtbl {
+    QueryInterface: Some(pointer_moniker_marshal_QueryInterface),
+    AddRef: Some(pointer_moniker_marshal_AddRef),
+    Release: Some(pointer_moniker_marshal_Release),
+    GetUnmarshalClass: Some(pointer_moniker_marshal_GetUnmarshalClass),
+    GetMarshalSizeMax: Some(pointer_moniker_marshal_GetMarshalSizeMax),
+    MarshalInterface: Some(pointer_moniker_marshal_MarshalInterface),
+    UnmarshalInterface: Some(pointer_moniker_marshal_UnmarshalInterface),
+    ReleaseMarshalData: Some(pointer_moniker_marshal_ReleaseMarshalData),
+    DisconnectObject: Some(pointer_moniker_marshal_DisconnectObject),
+};
+
 unsafe fn impl_from_IMoniker(iface: *mut IMoniker) -> *mut PointerMonikerImpl {
     CONTAINING_RECORD!(iface, PointerMonikerImpl, IMoniker_iface)
+}
+
+unsafe fn impl_from_IMarshal(iface: *mut IMarshal) -> *mut PointerMonikerImpl {
+    CONTAINING_RECORD!(iface, PointerMonikerImpl, IMarshal_iface)
+}
+
+/// wine-10 `unsafe_impl_from_IMoniker`: OUR pointer moniker, identified by vtable.
+unsafe fn unsafe_impl_from_IMoniker(iface: *mut IMoniker) -> *mut PointerMonikerImpl {
+    if iface.is_null()
+        || (*iface).lpVtbl as *const IMonikerVtbl != core::ptr::addr_of!(VT_PointerMonikerImpl)
+    {
+        return core::ptr::null_mut();
+    }
+    impl_from_IMoniker(iface)
 }
 
 stdmethod! {
@@ -53,33 +87,31 @@ fn PointerMonikerImpl_QueryInterface(
     riid: *const IID,
     ppvObject: *mut LPVOID,
 ) -> HRESULT {
-    let This = impl_from_IMoniker(iface);
+    let moniker = impl_from_IMoniker(iface);
 
-    TRACE!(b"(%p,%s,%p)\n\0".as_ptr(), This, debugstr_guid(riid), ppvObject);
+    TRACE!(b"(%p,%s,%p)\n\0".as_ptr(), iface, debugstr_guid(riid), ppvObject);
 
-    /* Perform a sanity check on the parameters. */
-    if This.is_null() || ppvObject.is_null() {
+    if ppvObject.is_null() {
         return E_INVALIDARG;
     }
 
-    /* Initialize the return parameter */
     *ppvObject = core::ptr::null_mut();
 
-    /* Compare the riid with the interface IDs implemented by this object. */
     if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid)
         || IsEqualIID(core::ptr::addr_of!(IID_IPersist), riid)
         || IsEqualIID(core::ptr::addr_of!(IID_IPersistStream), riid)
         || IsEqualIID(core::ptr::addr_of!(IID_IMoniker), riid)
+        || IsEqualGUID(core::ptr::addr_of!(CLSID_PointerMoniker), riid)
     {
         *ppvObject = iface as LPVOID;
+    } else if IsEqualIID(core::ptr::addr_of!(IID_IMarshal), riid) {
+        *ppvObject = core::ptr::addr_of_mut!((*moniker).IMarshal_iface) as LPVOID;
     }
 
-    /* Check that we obtained an interface. */
     if (*ppvObject).is_null() {
         return E_NOINTERFACE;
     }
 
-    /* always increase the reference count by one when it is successful */
     IMoniker_AddRef(iface);
 
     S_OK
@@ -88,31 +120,30 @@ fn PointerMonikerImpl_QueryInterface(
 
 stdmethod! {
 fn PointerMonikerImpl_AddRef(iface: *mut IMoniker) -> ULONG {
-    let This = impl_from_IMoniker(iface);
+    let moniker = impl_from_IMoniker(iface);
+    let refcount = InterlockedIncrement(core::ptr::addr_of_mut!((*moniker).ref_)) as ULONG;
 
-    TRACE!(b"(%p)\n\0".as_ptr(), This);
+    TRACE!(b"%p, refcount %u.\n\0".as_ptr(), iface, refcount);
 
-    InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG
+    refcount
 }
 }
 
 stdmethod! {
 fn PointerMonikerImpl_Release(iface: *mut IMoniker) -> ULONG {
-    let This = impl_from_IMoniker(iface);
+    let moniker = impl_from_IMoniker(iface);
+    let refcount = InterlockedDecrement(core::ptr::addr_of_mut!((*moniker).ref_)) as ULONG;
 
-    TRACE!(b"(%p)\n\0".as_ptr(), This);
+    TRACE!(b"%p, refcount %u.\n\0".as_ptr(), iface, refcount);
 
-    let ref_ = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
-
-    /* destroy the object if there are no more references on it */
-    if ref_ == 0 {
-        if !(*This).pObject.is_null() {
-            IUnknown_Release((*This).pObject);
+    if refcount == 0 {
+        if !(*moniker).pObject.is_null() {
+            IUnknown_Release((*moniker).pObject);
         }
-        HeapFree(GetProcessHeap(), 0, This as LPVOID);
+        HeapFree(GetProcessHeap(), 0, moniker as LPVOID);
     }
 
-    ref_
+    refcount
 }
 }
 
@@ -145,18 +176,16 @@ fn PointerMonikerImpl_IsDirty(iface: *mut IMoniker) -> HRESULT {
 stdmethod! {
 fn PointerMonikerImpl_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
     TRACE!(b"(%p)\n\0".as_ptr(), pStm);
+    let _ = iface;
 
     E_NOTIMPL
 }
 }
 
 stdmethod! {
-fn PointerMonikerImpl_Save(
-    iface: *mut IMoniker,
-    pStm: *mut IStream,
-    fClearDirty: BOOL,
-) -> HRESULT {
+fn PointerMonikerImpl_Save(iface: *mut IMoniker, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT {
     TRACE!(b"(%p, %d)\n\0".as_ptr(), pStm, fClearDirty);
+    let _ = iface;
 
     E_NOTIMPL
 }
@@ -170,8 +199,7 @@ fn PointerMonikerImpl_GetSizeMax(iface: *mut IMoniker, pcbSize: *mut ULARGE_INTE
         return E_POINTER;
     }
 
-    (*pcbSize).u.LowPart = 0;
-    (*pcbSize).u.HighPart = 0;
+    (*pcbSize).QuadPart = 0;
 
     E_NOTIMPL
 }
@@ -187,14 +215,7 @@ fn PointerMonikerImpl_BindToObject(
 ) -> HRESULT {
     let This = impl_from_IMoniker(iface);
 
-    TRACE!(
-        b"(%p,%p,%p,%s,%p)\n\0".as_ptr(),
-        iface,
-        pbc,
-        pmkToLeft,
-        debugstr_guid(riid),
-        ppvResult,
-    );
+    TRACE!(b"(%p,%p,%p,%s,%p)\n\0".as_ptr(), iface, pbc, pmkToLeft, debugstr_guid(riid), ppvResult);
 
     if (*This).pObject.is_null() {
         return E_UNEXPECTED;
@@ -214,14 +235,7 @@ fn PointerMonikerImpl_BindToStorage(
 ) -> HRESULT {
     let This = impl_from_IMoniker(iface);
 
-    TRACE!(
-        b"(%p,%p,%p,%s,%p)\n\0".as_ptr(),
-        iface,
-        pbc,
-        pmkToLeft,
-        debugstr_guid(riid),
-        ppvResult,
-    );
+    TRACE!(b"(%p,%p,%p,%s,%p)\n\0".as_ptr(), iface, pbc, pmkToLeft, debugstr_guid(riid), ppvResult);
 
     if (*This).pObject.is_null() {
         return E_UNEXPECTED;
@@ -239,14 +253,7 @@ fn PointerMonikerImpl_Reduce(
     ppmkToLeft: *mut *mut IMoniker,
     ppmkReduced: *mut *mut IMoniker,
 ) -> HRESULT {
-    TRACE!(
-        b"(%p,%p,%d,%p,%p)\n\0".as_ptr(),
-        iface,
-        pbc,
-        dwReduceHowFar,
-        ppmkToLeft,
-        ppmkReduced,
-    );
+    TRACE!(b"(%p,%p,%d,%p,%p)\n\0".as_ptr(), iface, pbc, dwReduceHowFar, ppmkToLeft, ppmkReduced);
 
     if ppmkReduced.is_null() {
         return E_POINTER;
@@ -263,71 +270,32 @@ fn PointerMonikerImpl_Reduce(
 stdmethod! {
 fn PointerMonikerImpl_ComposeWith(
     iface: *mut IMoniker,
-    pmkRight: *mut IMoniker,
-    fOnlyIfNotGeneric: BOOL,
-    ppmkComposite: *mut *mut IMoniker,
+    right: *mut IMoniker,
+    only_if_not_generic: BOOL,
+    result: *mut *mut IMoniker,
 ) -> HRESULT {
-    let mut res: HRESULT = S_OK;
-    let mut mkSys: DWORD = 0;
-    let mut mkSys2: DWORD = 0;
-    let mut penumMk: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut pmostLeftMk: *mut IMoniker = core::ptr::null_mut();
-    let mut tempMkComposite: *mut IMoniker;
+    let mut order: DWORD = 0;
 
-    TRACE!(b"(%p,%d,%p)\n\0".as_ptr(), pmkRight, fOnlyIfNotGeneric, ppmkComposite);
+    TRACE!(b"%p, %p, %d, %p.\n\0".as_ptr(), iface, right, only_if_not_generic, result);
 
-    if ppmkComposite.is_null() || pmkRight.is_null() {
+    if result.is_null() || right.is_null() {
         return E_POINTER;
     }
 
-    *ppmkComposite = core::ptr::null_mut();
+    *result = core::ptr::null_mut();
 
-    IMoniker_IsSystemMoniker(pmkRight, &mut mkSys);
-
-    /* If pmkRight is an anti-moniker, the returned moniker is NULL */
-    if mkSys == MKSYS_ANTIMONIKER {
-        res
-    }
-    /* if pmkRight is a composite whose leftmost component is an anti-moniker,           */
-    /* the returned moniker is the composite after the leftmost anti-moniker is removed. */
-    else if mkSys == MKSYS_GENERICCOMPOSITE {
-        res = IMoniker_Enum(pmkRight, TRUE as BOOL, &mut penumMk);
-
-        if FAILED(res) {
-            return res;
-        }
-
-        res = IEnumMoniker_Next(penumMk, 1, &mut pmostLeftMk, core::ptr::null_mut());
-
-        IMoniker_IsSystemMoniker(pmostLeftMk, &mut mkSys2);
-
-        if mkSys2 == MKSYS_ANTIMONIKER {
-            IMoniker_Release(pmostLeftMk);
-
-            tempMkComposite = iface;
-            IMoniker_AddRef(iface);
-
-            while IEnumMoniker_Next(penumMk, 1, &mut pmostLeftMk, core::ptr::null_mut()) == S_OK {
-                res = CreateGenericComposite(tempMkComposite, pmostLeftMk, ppmkComposite);
-
-                IMoniker_Release(tempMkComposite);
-                IMoniker_Release(pmostLeftMk);
-
-                tempMkComposite = *ppmkComposite;
-                IMoniker_AddRef(tempMkComposite);
-            }
-            res
+    if is_anti_moniker(right, &mut order) {
+        return if order > 1 {
+            create_anti_moniker(order - 1, result)
         } else {
-            CreateGenericComposite(iface, pmkRight, ppmkComposite)
-        }
+            S_OK
+        };
     }
-    /* If pmkRight is not an anti-moniker, the method combines the two monikers into a generic
-       composite if fOnlyIfNotGeneric is FALSE; if fOnlyIfNotGeneric is TRUE, the method returns
-       a NULL moniker and a return value of MK_E_NEEDGENERIC */
-    else if fOnlyIfNotGeneric == 0 {
-        CreateGenericComposite(iface, pmkRight, ppmkComposite)
-    } else {
+
+    if only_if_not_generic != 0 {
         MK_E_NEEDGENERIC
+    } else {
+        CreateGenericComposite(iface, right, result)
     }
 }
 }
@@ -346,33 +314,27 @@ fn PointerMonikerImpl_Enum(
 
     *ppenumMoniker = core::ptr::null_mut();
 
-    S_OK
+    E_NOTIMPL
 }
 }
 
 stdmethod! {
-fn PointerMonikerImpl_IsEqual(
-    iface: *mut IMoniker,
-    pmkOtherMoniker: *mut IMoniker,
-) -> HRESULT {
-    let This = impl_from_IMoniker(iface);
-    let mut mkSys: DWORD = 0;
+fn PointerMonikerImpl_IsEqual(iface: *mut IMoniker, other: *mut IMoniker) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr(), iface, pmkOtherMoniker);
+    TRACE!(b"%p, %p.\n\0".as_ptr(), iface, other);
 
-    if pmkOtherMoniker.is_null() {
+    if other.is_null() {
+        return E_INVALIDARG;
+    }
+
+    let other_moniker = unsafe_impl_from_IMoniker(other);
+    if other_moniker.is_null() {
         return S_FALSE;
     }
 
-    IMoniker_IsSystemMoniker(pmkOtherMoniker, &mut mkSys);
-
-    if mkSys == MKSYS_POINTERMONIKER {
-        let pOtherMoniker = impl_from_IMoniker(pmkOtherMoniker);
-        if (*This).pObject == (*pOtherMoniker).pObject {
-            S_OK
-        } else {
-            S_FALSE
-        }
+    if (*moniker).pObject == (*other_moniker).pObject {
+        S_OK
     } else {
         S_FALSE
     }
@@ -383,11 +345,14 @@ stdmethod! {
 fn PointerMonikerImpl_Hash(iface: *mut IMoniker, pdwHash: *mut DWORD) -> HRESULT {
     let This = impl_from_IMoniker(iface);
 
+    TRACE!(b"(%p,%p)\n\0".as_ptr(), iface, pdwHash);
+
     if pdwHash.is_null() {
         return E_POINTER;
     }
 
-    *pdwHash = PtrToUlong((*This).pObject as *const core::ffi::c_void);
+    // PtrToUlong: the low 32 bits of the pointer.
+    *pdwHash = (*This).pObject as usize as DWORD;
 
     S_OK
 }
@@ -400,13 +365,7 @@ fn PointerMonikerImpl_IsRunning(
     pmkToLeft: *mut IMoniker,
     pmkNewlyRunning: *mut IMoniker,
 ) -> HRESULT {
-    TRACE!(
-        b"(%p,%p,%p,%p)\n\0".as_ptr(),
-        iface,
-        pbc,
-        pmkToLeft,
-        pmkNewlyRunning,
-    );
+    TRACE!(b"(%p,%p,%p,%p)\n\0".as_ptr(), iface, pbc, pmkToLeft, pmkNewlyRunning);
 
     S_OK
 }
@@ -436,33 +395,22 @@ fn PointerMonikerImpl_Inverse(iface: *mut IMoniker, ppmk: *mut *mut IMoniker) ->
 stdmethod! {
 fn PointerMonikerImpl_CommonPrefixWith(
     iface: *mut IMoniker,
-    pmkOther: *mut IMoniker,
-    ppmkPrefix: *mut *mut IMoniker,
+    other: *mut IMoniker,
+    prefix: *mut *mut IMoniker,
 ) -> HRESULT {
-    TRACE!(b"(%p, %p)\n\0".as_ptr(), pmkOther, ppmkPrefix);
+    TRACE!(b"%p, %p, %p.\n\0".as_ptr(), iface, other, prefix);
 
-    // pointermoniker.c (current): `if (!prefix || !other) return E_INVALIDARG;`
-    if ppmkPrefix.is_null() || pmkOther.is_null() {
+    if prefix.is_null() || other.is_null() {
         return E_INVALIDARG;
     }
 
-    *ppmkPrefix = core::ptr::null_mut();
+    *prefix = core::ptr::null_mut();
 
-    /* FAITHFUL to the C oracle (pointermoniker.c:422):
-     *
-     *     if (PointerMonikerImpl_IsEqual(iface, pmkOther))
-     *
-     * IsEqual returns an HRESULT, and C truthiness is "non-zero", so this branch is taken
-     * when IsEqual returns S_FALSE (1) — i.e. when the monikers are NOT equal — and skipped
-     * when it returns S_OK (0). That inversion is an UPSTREAM Wine/ReactOS bug, preserved
-     * here verbatim so the Rust behaves identically to the C it replaces. Do NOT "fix" it
-     * here without also fixing the C oracle; see the burn-down report.
-     */
-    if PointerMonikerImpl_IsEqual(iface, pmkOther) != 0 {
+    // wine-10 fixed the inverted test the old code carried (`!= S_OK` gave MK_S_US for
+    // UNEQUAL monikers).
+    if PointerMonikerImpl_IsEqual(iface, other) == S_OK {
         IMoniker_AddRef(iface);
-
-        *ppmkPrefix = iface;
-
+        *prefix = iface;
         MK_S_US
     } else {
         MK_E_NOPREFIX
@@ -473,18 +421,22 @@ fn PointerMonikerImpl_CommonPrefixWith(
 stdmethod! {
 fn PointerMonikerImpl_RelativePathTo(
     iface: *mut IMoniker,
-    pmOther: *mut IMoniker,
-    ppmkRelPath: *mut *mut IMoniker,
+    other: *mut IMoniker,
+    result: *mut *mut IMoniker,
 ) -> HRESULT {
-    TRACE!(b"(%p,%p,%p)\n\0".as_ptr(), iface, pmOther, ppmkRelPath);
+    TRACE!(b"%p, %p, %p.\n\0".as_ptr(), iface, other, result);
 
-    if ppmkRelPath.is_null() {
-        return E_POINTER;
+    if result.is_null() {
+        return E_INVALIDARG;
     }
 
-    *ppmkRelPath = core::ptr::null_mut();
+    *result = core::ptr::null_mut();
 
-    E_NOTIMPL
+    if !other.is_null() {
+        E_NOTIMPL
+    } else {
+        E_INVALIDARG
+    }
 }
 }
 
@@ -492,16 +444,17 @@ stdmethod! {
 fn PointerMonikerImpl_GetDisplayName(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
-    pmkToLeft: *mut IMoniker,
-    ppszDisplayName: *mut LPOLESTR,
+    toleft: *mut IMoniker,
+    name: *mut LPOLESTR,
 ) -> HRESULT {
-    TRACE!(b"(%p,%p,%p,%p)\n\0".as_ptr(), iface, pbc, pmkToLeft, ppszDisplayName);
+    TRACE!(b"%p, %p, %p, %p.\n\0".as_ptr(), iface, pbc, toleft, name);
 
-    if ppszDisplayName.is_null() {
-        return E_POINTER;
+    if name.is_null() || pbc.is_null() {
+        if !name.is_null() {
+            *name = core::ptr::null_mut();
+        }
+        return E_INVALIDARG;
     }
-
-    *ppszDisplayName = core::ptr::null_mut();
 
     E_NOTIMPL
 }
@@ -537,7 +490,7 @@ fn PointerMonikerImpl_ParseDisplayName(
         return E_UNEXPECTED;
     }
 
-    let hr = IUnknown_QueryInterface(
+    let mut hr = IUnknown_QueryInterface(
         (*This).pObject,
         core::ptr::addr_of!(IID_IParseDisplayName),
         core::ptr::addr_of_mut!(pPDN) as *mut LPVOID,
@@ -546,7 +499,7 @@ fn PointerMonikerImpl_ParseDisplayName(
         return hr;
     }
 
-    let hr = IParseDisplayName_ParseDisplayName(pPDN, pbc, pszDisplayName, pchEaten, ppmkOut);
+    hr = IParseDisplayName_ParseDisplayName(pPDN, pbc, pszDisplayName, pchEaten, ppmkOut);
     IParseDisplayName_Release(pPDN);
 
     hr
@@ -567,47 +520,212 @@ fn PointerMonikerImpl_IsSystemMoniker(iface: *mut IMoniker, pwdMksys: *mut DWORD
 }
 }
 
-unsafe fn PointerMonikerImpl_Construct(This: *mut PointerMonikerImpl, punk: *mut IUnknown) {
-    TRACE!(b"(%p)\n\0".as_ptr(), This);
+// ---- IMarshal: by value, the wrapped object crosses as an IUnknown ----
 
-    /* Initialize the virtual function table. */
-    (*This).IMoniker_iface.lpVtbl =
-        core::ptr::addr_of!(VT_PointerMonikerImpl) as *mut IMonikerVtbl;
-    (*This).ref_ = 1;
-    if !punk.is_null() {
-        IUnknown_AddRef(punk);
-    }
-    (*This).pObject = punk;
+stdmethod! {
+fn pointer_moniker_marshal_QueryInterface(
+    iface: *mut IMarshal,
+    riid: *const IID,
+    ppv: *mut LPVOID,
+) -> HRESULT {
+    let moniker = impl_from_IMarshal(iface);
+
+    TRACE!(b"(%s, %p)\n\0".as_ptr(), debugstr_guid(riid), ppv);
+
+    IMoniker_QueryInterface(core::ptr::addr_of_mut!((*moniker).IMoniker_iface), riid, ppv)
+}
 }
 
-/***********************************************************************
- *           CreatePointerMoniker (OLE32.@)
- *
- * Creates a moniker which represents a pointer.
- */
+stdmethod! {
+fn pointer_moniker_marshal_AddRef(iface: *mut IMarshal) -> ULONG {
+    let moniker = impl_from_IMarshal(iface);
+
+    IMoniker_AddRef(core::ptr::addr_of_mut!((*moniker).IMoniker_iface))
+}
+}
+
+stdmethod! {
+fn pointer_moniker_marshal_Release(iface: *mut IMarshal) -> ULONG {
+    let moniker = impl_from_IMarshal(iface);
+
+    IMoniker_Release(core::ptr::addr_of_mut!((*moniker).IMoniker_iface))
+}
+}
+
+stdmethod! {
+fn pointer_moniker_marshal_GetUnmarshalClass(
+    iface: *mut IMarshal,
+    riid: *const IID,
+    pv: LPVOID,
+    dwDestContext: DWORD,
+    pvDestContext: LPVOID,
+    mshlflags: DWORD,
+    clsid: *mut CLSID,
+) -> HRESULT {
+    let moniker = impl_from_IMarshal(iface);
+
+    TRACE!(
+        b"%s, %p, %x, %p, %x, %p.\n\0".as_ptr(),
+        debugstr_guid(riid),
+        pv,
+        dwDestContext,
+        pvDestContext,
+        mshlflags,
+        clsid,
+    );
+
+    IMoniker_GetClassID(core::ptr::addr_of_mut!((*moniker).IMoniker_iface), clsid)
+}
+}
+
+stdmethod! {
+fn pointer_moniker_marshal_GetMarshalSizeMax(
+    iface: *mut IMarshal,
+    riid: *const IID,
+    pv: LPVOID,
+    dwDestContext: DWORD,
+    pvDestContext: LPVOID,
+    mshlflags: DWORD,
+    size: *mut DWORD,
+) -> HRESULT {
+    let moniker = impl_from_IMarshal(iface);
+
+    TRACE!(
+        b"%s, %p, %d, %p, %#x, %p.\n\0".as_ptr(),
+        debugstr_guid(riid),
+        pv,
+        dwDestContext,
+        pvDestContext,
+        mshlflags,
+        size,
+    );
+
+    CoGetMarshalSizeMax(
+        size,
+        core::ptr::addr_of!(IID_IUnknown),
+        (*moniker).pObject,
+        dwDestContext,
+        pvDestContext,
+        mshlflags,
+    )
+}
+}
+
+stdmethod! {
+fn pointer_moniker_marshal_MarshalInterface(
+    iface: *mut IMarshal,
+    stream: *mut IStream,
+    riid: *const IID,
+    pv: LPVOID,
+    dwDestContext: DWORD,
+    pvDestContext: LPVOID,
+    mshlflags: DWORD,
+) -> HRESULT {
+    let moniker = impl_from_IMarshal(iface);
+
+    TRACE!(
+        b"%p, %s, %p, %x, %p, %x.\n\0".as_ptr(),
+        stream,
+        debugstr_guid(riid),
+        pv,
+        dwDestContext,
+        pvDestContext,
+        mshlflags,
+    );
+
+    CoMarshalInterface(
+        stream,
+        core::ptr::addr_of!(IID_IUnknown),
+        (*moniker).pObject,
+        dwDestContext,
+        pvDestContext,
+        mshlflags,
+    )
+}
+}
+
+stdmethod! {
+fn pointer_moniker_marshal_UnmarshalInterface(
+    iface: *mut IMarshal,
+    stream: *mut IStream,
+    riid: *const IID,
+    ppv: *mut LPVOID,
+) -> HRESULT {
+    let moniker = impl_from_IMarshal(iface);
+    let mut object: *mut IUnknown = core::ptr::null_mut();
+
+    TRACE!(b"%p, %p, %s, %p.\n\0".as_ptr(), iface, stream, debugstr_guid(riid), ppv);
+
+    let hr = CoUnmarshalInterface(
+        stream,
+        core::ptr::addr_of!(IID_IUnknown),
+        core::ptr::addr_of_mut!(object) as *mut LPVOID,
+    );
+    if FAILED(hr) {
+        ERR!(b"Couldn't unmarshal moniker, hr = %#x.\n\0".as_ptr(), hr);
+        return hr;
+    }
+
+    if !(*moniker).pObject.is_null() {
+        IUnknown_Release((*moniker).pObject);
+    }
+    (*moniker).pObject = object;
+
+    IMoniker_QueryInterface(core::ptr::addr_of_mut!((*moniker).IMoniker_iface), riid, ppv)
+}
+}
+
+stdmethod! {
+fn pointer_moniker_marshal_ReleaseMarshalData(iface: *mut IMarshal, stream: *mut IStream) -> HRESULT {
+    TRACE!(b"%p, %p.\n\0".as_ptr(), iface, stream);
+
+    S_OK
+}
+}
+
+stdmethod! {
+fn pointer_moniker_marshal_DisconnectObject(iface: *mut IMarshal, reserved: DWORD) -> HRESULT {
+    TRACE!(b"%p, %#x.\n\0".as_ptr(), iface, reserved);
+
+    S_OK
+}
+}
+
+/******************************************************************************
+ *        CreatePointerMoniker	[OLE32.@]
+ ******************************************************************************/
 #[no_mangle]
 pub unsafe extern "system" fn CreatePointerMoniker(
-    punk: LPUNKNOWN,
-    ppmk: *mut LPMONIKER,
+    object: *mut IUnknown,
+    ret: *mut *mut IMoniker,
 ) -> HRESULT {
-    TRACE!(b"(%p, %p)\n\0".as_ptr(), punk, ppmk);
+    TRACE!(b"(%p, %p)\n\0".as_ptr(), object, ret);
 
-    if ppmk.is_null() {
+    if ret.is_null() {
         return E_INVALIDARG;
     }
 
-    let This = HeapAlloc(
+    let moniker = HeapAlloc(
         GetProcessHeap(),
-        0,
+        HEAP_ZERO_MEMORY,
         core::mem::size_of::<PointerMonikerImpl>() as SIZE_T,
     ) as *mut PointerMonikerImpl;
-    if This.is_null() {
-        *ppmk = core::ptr::null_mut();
+    if moniker.is_null() {
+        *ret = core::ptr::null_mut();
         return E_OUTOFMEMORY;
     }
 
-    PointerMonikerImpl_Construct(This, punk);
-    *ppmk = core::ptr::addr_of_mut!((*This).IMoniker_iface);
+    (*moniker).IMoniker_iface.lpVtbl =
+        core::ptr::addr_of!(VT_PointerMonikerImpl) as *mut IMonikerVtbl;
+    (*moniker).IMarshal_iface.lpVtbl =
+        core::ptr::addr_of!(pointer_moniker_marshal_vtbl) as *mut IMarshalVtbl;
+    (*moniker).ref_ = 1;
+    (*moniker).pObject = object;
+    if !(*moniker).pObject.is_null() {
+        IUnknown_AddRef((*moniker).pObject);
+    }
+
+    *ret = core::ptr::addr_of_mut!((*moniker).IMoniker_iface);
 
     S_OK
 }
@@ -635,10 +753,8 @@ pub unsafe extern "system" fn PointerMoniker_CreateInstance(
     }
 
     let hr = IMoniker_QueryInterface(pMoniker, riid, ppv);
-
-    if FAILED(hr) {
-        IMoniker_Release(pMoniker);
-    }
+    /* wine-10: always drop the creation reference (the old code leaked it on success). */
+    IMoniker_Release(pMoniker);
 
     hr
 }
