@@ -9301,6 +9301,29 @@ def test_mp_kernel_on_a_up_hal_is_still_caught_on_a_default_boot(monkeypatch):
     assert bad and bad["classification"] == "SMP_UP_HAL"
 
 
+def test_ahci_boot_must_show_uniata_driving_ahci(monkeypatch):
+    """An --ahci boot that reached the desktop over some other path (controller
+    not attached, uniata in legacy mode) looks identical to a real one, so the
+    soak would bank green for code it never ran."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_AHCI_CD", "1")
+    ide_only = "[UNIATA] probing legacy channels\n[EXPLORER] _tWinMain entered\n"
+    bad = smoke_mod._ahci_check(ide_only)
+    assert bad and bad["classification"] == "AHCI_NOT_ENGAGED"
+    # found=0 means uniata looked and did not take the controller: still a fail.
+    assert smoke_mod._ahci_check("[UNIATA] AhciDetect: exit found=0 GHC=0 chans=0\n")
+    real = "[UNIATA] AhciDetect: exit found=1 GHC=80000000 chans=6\n"
+    assert smoke_mod._ahci_check(real) is None
+
+
+def test_ahci_check_is_silent_on_a_plain_boot(monkeypatch):
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_AHCI_CD", raising=False)
+    assert smoke_mod._ahci_check("[EXPLORER] _tWinMain entered\n") is None
+
+
 def test_the_up_kernel_is_opt_in_only_and_nothing_automated_opts_in():
     """UP is a dead branch: no automated path may select it.
 
@@ -10470,3 +10493,31 @@ def test_an_end_marker_cut_in_two_by_a_kernel_print_still_counts():
     broken = log.replace("rror pass=30 fail=0 skip=0]", "rror pass=30 fail=0")
     results, _, _ = P.parse(broken)
     assert results[0]["status"] == "NO-END"
+
+
+def test_polite_farm_waits_for_the_fleet_then_boots(monkeypatch):
+    """`farm --polite` must not start a boot while a land gates or another agent
+    boots, and must start one as soon as the host is quiet."""
+    from . import farm as farm_mod
+
+    busy = iter([({"kind": "land"}, []), ({}, [{"pid": 1}]), ({}, [])])
+    state = {}
+
+    def step():
+        state["cur"] = next(busy)
+
+    step()
+    monkeypatch.setattr(farm_mod.hostlock, "land_holder", lambda: state["cur"][0])
+    monkeypatch.setattr(farm_mod.hostlock, "foreign_boot_holders", lambda _pid: state["cur"][1])
+    sleeps = []
+    monkeypatch.setattr(farm_mod.time, "sleep", lambda s: (sleeps.append(s), step()))
+    assert farm_mod._wait_for_quiet_host("amd64", farm_mod.time.monotonic() + 3600)
+    assert len(sleeps) == 2
+
+
+def test_polite_farm_gives_up_at_the_deadline(monkeypatch):
+    from . import farm as farm_mod
+
+    monkeypatch.setattr(farm_mod.hostlock, "land_holder", lambda: {"kind": "land"})
+    monkeypatch.setattr(farm_mod.hostlock, "foreign_boot_holders", lambda _pid: [])
+    assert not farm_mod._wait_for_quiet_host("amd64", farm_mod.time.monotonic() - 1)
