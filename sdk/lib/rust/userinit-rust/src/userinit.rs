@@ -251,6 +251,9 @@ unsafe fn StartProcess(CommandLine: LPCWSTR, pEnvironment: LPVOID) -> BOOL {
     let mut si: STARTUPINFO = core::mem::zeroed();
     let mut pi: PROCESS_INFORMATION = core::mem::zeroed();
     let mut ExpandedCmdLine: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    let mut ProfilePath: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    let mut hToken: HANDLE = core::ptr::null_mut();
+    let mut WorkingDir: LPWSTR = core::ptr::null_mut();
 
     ExpandEnvironmentStringsW(
         CommandLine,
@@ -264,6 +267,16 @@ unsafe fn StartProcess(CommandLine: LPCWSTR, pEnvironment: LPVOID) -> BOOL {
     si.wShowWindow = SW_SHOWNORMAL as u16;
     core::ptr::write_bytes(&mut pi as *mut PROCESS_INFORMATION, 0, 1);
 
+    // Start the program in the user's profile directory, as Server 2003's userinit does
+    // (a cmd.exe shell opens there). Upstream 2263c9ca0ff "Start shell from profile path".
+    if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut hToken) != 0 {
+        let mut PathSize: DWORD = ProfilePath.len() as DWORD;
+        if GetUserProfileDirectoryW(hToken, ProfilePath.as_mut_ptr(), &mut PathSize) != 0 {
+            WorkingDir = ProfilePath.as_mut_ptr();
+        }
+        CloseHandle(hToken);
+    }
+
     if CreateProcessW(
         core::ptr::null_mut(),
         ExpandedCmdLine.as_mut_ptr(),
@@ -272,7 +285,7 @@ unsafe fn StartProcess(CommandLine: LPCWSTR, pEnvironment: LPVOID) -> BOOL {
         0,
         NORMAL_PRIORITY_CLASS | CREATE_UNICODE_ENVIRONMENT,
         pEnvironment,
-        core::ptr::null_mut(),
+        WorkingDir,
         &mut si,
         &mut pi,
     ) == 0
