@@ -1,0 +1,20 @@
+# crtmath — the i386 math entry points (_ftol*, _CI*, __libm_sse2_*) through all five
+# CRT DLLs' export tables, with their real register conventions, plus ucrtbase's
+# _chgsign/_controlfp_s/exp2f/nexttowardf and the _HUGE exports.
+#   tools/payloads/crtmath/build.sh i386
+#   VIBEOS_PAYLOAD=crtmath ./vibeos-cli build --arch i386
+#   ./vibeos-cli smoke --arch i386 --payload crtmath
+name: crtmath
+description: i386 _ftol/_CI*/__libm_sse2_* through msvcrt, msvcrt20, msvcrt40, crtdll and ucrtbase (i386)
+
+build_hint: "tools/payloads/crtmath/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/crtmath/crtmath-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/crtmath.exe
+
+test:
+  launch_marker: "[CRTMATH] done"
+  pass_marker: "[CRTMATH] done PASS"
+  launch_drain_secs: 300

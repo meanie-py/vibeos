@@ -519,6 +519,7 @@ dll/win32/msvcrt/CMakeLists.txt	1	# console.c's 4 `_cprintf`/`_cwprintf` WINAPIV
 dll/win32/msvcrt/CMakeLists.txt	1	# copies (string.c etc.) go dead (--allow-multiple-definition, MODULE-link
 dll/win32/msvcrt/CMakeLists.txt	1	# file.c's 20 `...` entry points — the 16 fprintf/printf/fwprintf/wprintf
 dll/win32/msvcrt/CMakeLists.txt	1	# file.c's own C bodies. Their delegates are all external (the `v*` twins
+dll/win32/msvcrt/CMakeLists.txt	1	# i386/__wine_RtlUnwind.s, i386/exception_ptr.s, i386/inout.s -- replaced by Rust
 dll/win32/msvcrt/CMakeLists.txt	1	# placement as the three above: no va_start on stable, and left in process.c they
 dll/win32/msvcrt/CMakeLists.txt	1	# process.c's 16 `_exec*`/`_spawn*` WINAPIV `...` entry points. Same reason and same
 dll/win32/msvcrt/CMakeLists.txt	1	# reason here — scanf.c's 16 engines are `static`, so a Rust engine cannot
@@ -1616,9 +1617,9 @@ sdk/lib/crt/libcntpr.cmake	1	# (i386 uses *_asm.s, REMOVE_ITEM'd from the asm li
 sdk/lib/crt/libcntpr.cmake	1	# (iswctype) + is_wctype.c (is_wctype).
 sdk/lib/crt/libcntpr.cmake	1	# (no funcs; unused by the linked iswctype). winesup.c stays C but its
 sdk/lib/crt/libcntpr.cmake	1	# + mem/memicmp.c + stdlib/rand_nt.c + string/ctype.c + iswctype_nt.c +
+sdk/lib/crt/libcntpr.cmake	1	# NOT 80-bit here: gcc.cmake passes -mlong-double-64.) div.c is NOT here — it's
 sdk/lib/crt/libcntpr.cmake	1	# Wave SCANF: the kernel's variadic scanf shell. scanf.c (full C engine)
 sdk/lib/crt/libcntpr.cmake	1	# Wave WCS flips the kernel (_LIBCNT_) slice of wcs.c — the 8 pure wide
-sdk/lib/crt/libcntpr.cmake	1	# `long double` arg — cnt-rust gates nexttowardf out on x86), exp2f.c (f32
 sdk/lib/crt/libcntpr.cmake	1	# amd64/arm64; i386 keeps its x87 atan_asm.s / atan2_asm.s — modf is not in
 sdk/lib/crt/libcntpr.cmake	1	# amd64/arm64; i386 keeps tan_asm.s). Uniform sin/cos quotient per the
 sdk/lib/crt/libcntpr.cmake	1	# appends printf/format_float.c + format_floatw.c — the Rust
@@ -1633,16 +1634,16 @@ sdk/lib/crt/libcntpr.cmake	1	# feature). sincos = the combined sin/cos (math/sin
 sdk/lib/crt/libcntpr.cmake	1	# feature, amd64/arm64; i386 keeps its x87 *_asm.s). These are the SAME
 sdk/lib/crt/libcntpr.cmake	1	# feature, amd64/arm64; i386 keeps its x87 *_asm.s). sin/cos are the same
 sdk/lib/crt/libcntpr.cmake	1	# hand-optimized AMD-libm tan AND arm64's arm64/tan.c (already sin/cos).
-sdk/lib/crt/libcntpr.cmake	1	# i386-only-C by ABI (80-bit `long double` arg). div.c is NOT here — it's
 sdk/lib/crt/libcntpr.cmake	1	# in libcntpr. Faithful port of the AMD-libm math/libm_sse2/hypot.c (the
 sdk/lib/crt/libcntpr.cmake	1	# is*/_tolower/_toupper/toupper + wide isw*/towlower) + iswctype_nt.c
 sdk/lib/crt/libcntpr.cmake	1	# is_wctype.c are all-arch (Wave MEM2/RAND/CTYPE, cnt-difftest-gated).
 sdk/lib/crt/libcntpr.cmake	1	# math/*f.c in a different archive). The Rust reuses the f64 foundation
 sdk/lib/crt/libcntpr.cmake	1	# so they stay C. wctype.c is only the dead wine_wctype_table data
-sdk/lib/crt/libcntpr.cmake	1	# the i386 libm_sse2.c SSE-register wrappers, nexttowardf.c (80-bit
+sdk/lib/crt/libcntpr.cmake	1	# the i386 libm_sse2.c SSE-register wrappers, nexttowardf.c (an f32 return,
 sdk/lib/crt/libcntpr.cmake	1	# the portable math/sqrt.c fast-invsqrt approximation) — cnt-rust replaces
 sdk/lib/crt/libcntpr.cmake	1	# tiny scanf_trampoline.c — Rust can't DEFINE variadics on stable. It
 sdk/lib/crt/libcntpr.cmake	1	# uses *_asm.s, so REMOVE_ITEM is a harmless no-op there); mem/memccpy.c
+sdk/lib/crt/libcntpr.cmake	1	# which the no-SSE kernel cell cannot compile), exp2f.c (f32
 sdk/lib/crt/math/math.cmake	1	# math/i386/fabs_asm.s # FIXME
 sdk/lib/crt/math/math.cmake	1	# math/j0_y0.c
 sdk/lib/crt/math/math.cmake	1	# math/j1_y1.c
@@ -1680,6 +1681,7 @@ sdk/lib/evtlib/CMakeLists.txt	1	# ── kernel: drop evtlib.c, link libevtlib_r
 sdk/lib/libwine/CMakeLists.txt	1	# string.c implements _stricmp, already shipped with crt
 sdk/lib/lsalib/CMakeLists.txt	1	# add_library(ntlsalib lsa.c) + _NTSYSTEM_ # body replaced by Rust; kept on disk
 sdk/lib/lsalib/CMakeLists.txt	1	# lsa.c is translated to Rust (lsalib-rust, kept on disk per the never-delete
+sdk/lib/pseh/CMakeLists.txt	1	# pseh-rust in its user-mode build (seh.s's SEH runtime + dummy.c's volatile symbols, the
 sdk/lib/rtl/CMakeLists.txt	1	# The asm stub's _LdrpAccessResource@16 callee lived in res.c.obj (now Rust); keeping
 sdk/lib/rtl/CMakeLists.txt	1	# access.c — replaced by Rust implementation (sdk/lib/rust/access/)
 sdk/lib/rtl/CMakeLists.txt	1	# acl.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ACL)

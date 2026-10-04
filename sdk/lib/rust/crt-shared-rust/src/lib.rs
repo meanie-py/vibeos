@@ -89,6 +89,9 @@ pub mod except_i386;
 // msvcrt_shared's i386 .s files (RtlUnwind wrapper, exception_ptr thunks, port I/O).
 #[cfg(all(target_arch = "x86", target_os = "windows"))]
 mod asm_i386;
+// crtmath's i386 entry points (_ftol*, _CI*, __libm_sse2_*), for every CRT DLL.
+#[cfg(all(target_arch = "x86", target_os = "windows"))]
+mod crtmath_i386;
 #[cfg(all(feature = "cpp", target_arch = "x86"))]
 pub mod seh_i386;
 

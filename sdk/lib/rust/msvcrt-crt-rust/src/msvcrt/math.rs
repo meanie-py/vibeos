@@ -2450,137 +2450,10 @@ pub unsafe extern "C" fn _scalbf(num: f32, power: __msvcrt_long) -> f32 {
 //    through __ASM_NAME -> "_acos" in the `call` instruction.
 // ============================================================================
 
-// The `.def/.scl/.endef` triple below is a COFF directive and the leading underscore is
-// i386 PE's decoration, so this body can only be assembled for a PE target — on any other
-// object format the assembler rejects the directive outright. `target_arch = "x86"` alone
-// said less than that, which is why the 32-bit host harness (msvcrt-seh-difftest, which
-// builds this crate for i686-unknown-linux-gnu) could not compile the crate at all. msvcrt
-// is only ever built for Windows, so narrowing the predicate loses no product code.
-// macro_rules! mirror of CREATE_FPU_FUNC1(name, call) — math.c:477-511.
-// One double popped off the FPU stack in, one pushed back out.
-#[cfg(target_arch = "x86")]
-macro_rules! create_fpu_func1 {
-    ($name:ident, $call:ident) => {
-        #[cfg(target_os = "windows")]
-        core::arch::global_asm!(
-            ".text",
-            ".align 4",
-            concat!(".globl _", stringify!($name)),
-            concat!(".def _", stringify!($name), "; .scl 2; .type 32; .endef"),
-            concat!("_", stringify!($name), ":"),
-            "pushl   %ebp",
-            "movl    %esp, %ebp",
-            "subl    $68, %esp", // sizeof(double)*8 + sizeof(int)
-            "fstpl   (%esp)",    // store function argument
-            "fwait",
-            "movl    $1, %ecx", // empty FPU stack
-            "1:",
-            "fxam",
-            "fstsw   %ax",
-            "and     $0x4500, %ax",
-            "cmp     $0x4100, %ax",
-            "je      2f",
-            "fstpl    (%esp,%ecx,8)",
-            "fwait",
-            "incl    %ecx",
-            "jmp     1b",
-            "2:",
-            "movl    %ecx, -4(%ebp)",
-            concat!("call    _", stringify!($call)),
-            "movl    -4(%ebp), %ecx",
-            "fstpl   (%esp)", // save result
-            "3:",             // restore FPU stack
-            "decl    %ecx",
-            "fldl    (%esp,%ecx,8)",
-            "cmpl    $0, %ecx",
-            "jne     3b",
-            "leave",
-            "ret",
-            options(att_syntax)
-        );
-    };
-}
-
-// macro_rules! mirror of CREATE_FPU_FUNC2(name, call) — math.c:513-549.
-// Two doubles popped off the FPU stack in (2nd arg deeper), one pushed back out.
-#[cfg(target_arch = "x86")]
-macro_rules! create_fpu_func2 {
-    ($name:ident, $call:ident) => {
-        #[cfg(target_os = "windows")]
-        core::arch::global_asm!(
-            ".text",
-            ".align 4",
-            concat!(".globl _", stringify!($name)),
-            concat!(".def _", stringify!($name), "; .scl 2; .type 32; .endef"),
-            concat!("_", stringify!($name), ":"),
-            "pushl   %ebp",
-            "movl    %esp, %ebp",
-            "subl    $68, %esp", // sizeof(double)*8 + sizeof(int)
-            "fstpl   8(%esp)",   // store function argument
-            "fwait",
-            "fstpl   (%esp)",
-            "fwait",
-            "movl    $2, %ecx", // empty FPU stack
-            "1:",
-            "fxam",
-            "fstsw   %ax",
-            "and     $0x4500, %ax",
-            "cmp     $0x4100, %ax",
-            "je      2f",
-            "fstpl    (%esp,%ecx,8)",
-            "fwait",
-            "incl    %ecx",
-            "jmp     1b",
-            "2:",
-            "movl    %ecx, -4(%ebp)",
-            concat!("call    _", stringify!($call)),
-            "movl    -4(%ebp), %ecx",
-            "fstpl   8(%esp)", // save result
-            "3:",              // restore FPU stack
-            "decl    %ecx",
-            "fldl    (%esp,%ecx,8)",
-            "cmpl    $1, %ecx",
-            "jne     3b",
-            "leave",
-            "ret",
-            options(att_syntax)
-        );
-    };
-}
-
-// math.c:551-566 — the sixteen invocations, same order, same names.
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CIacos, acos);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CIasin, asin);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CIatan, atan);
-#[cfg(target_arch = "x86")]
-create_fpu_func2!(_CIatan2, atan2);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CIcos, cos);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CIcosh, cosh);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CIexp, exp);
-#[cfg(target_arch = "x86")]
-create_fpu_func2!(_CIfmod, fmod);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CIlog, log);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CIlog10, log10);
-#[cfg(target_arch = "x86")]
-create_fpu_func2!(_CIpow, pow);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CIsin, sin);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CIsinh, sinh);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CIsqrt, sqrt);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CItan, tan);
-#[cfg(target_arch = "x86")]
-create_fpu_func1!(_CItanh, tanh);
+// The bodies (two macros and their sixteen invocations, math.c:477-566) live in
+// crt-shared-rust's `crtmath_i386` module, verbatim: ucrtbase needs the same sixteen
+// exports and does not link this crate, and msvcrt reaches crt-shared-rust through its
+// dependency on it, so one copy serves every CRT DLL.
 
 // extern "C" declarations for the sixteen symbols (i386 "C" linkage adds the
 // matching leading underscore automatically, so `_CIacos` here resolves to
@@ -2630,29 +2503,8 @@ extern "C" {
 //        "leave\n\t"
 //        "ret")
 // ASMNAME = __ASM_NAME("_ftol") = "__ftol" (second leading underscore).
-#[cfg(all(target_arch = "x86", target_os = "windows"))]
-core::arch::global_asm!(
-    ".text",
-    ".align 4",
-    ".globl __ftol",
-    ".def __ftol; .scl 2; .type 32; .endef",
-    "__ftol:",
-    "pushl   %ebp",
-    "movl    %esp, %ebp",
-    "subl    $12, %esp", // sizeof(LONGLONG) + 2*sizeof(WORD)
-    "fnstcw  (%esp)",
-    "mov     (%esp), %ax",
-    "or      $0xc00, %ax",
-    "mov     %ax, 2(%esp)",
-    "fldcw   2(%esp)",
-    "fistpq  4(%esp)",
-    "fldcw   (%esp)",
-    "movl    4(%esp), %eax",
-    "movl    8(%esp), %edx",
-    "leave",
-    "ret",
-    options(att_syntax)
-);
+// The body (math.c:568-587) lives in crt-shared-rust's `crtmath_i386` module, verbatim,
+// beside `_ftol2`/`_ftol2_sse`, for the same reason as the _CI* functions above.
 // msvcrt.spec:489 `@ cdecl -arch=i386 -ret64 _ftol()` confirms the no-arg,
 // 64-bit-integer-return (edx:eax) signature used here.
 #[cfg(target_arch = "x86")]

@@ -356,13 +356,15 @@ pub extern "C" fn nextafterf(x: f32, y: f32) -> f32 {
     fb32(uxi)
 }
 
-// ---- nexttowardf — musl; amd64/arm64 only (i386 long double is 80-bit) -
-// On Windows amd64/arm64 `long double == double`, so the second argument
-// is a plain `f64`. On i386 it is an 80-bit x87 type Rust cannot name,
-// so i386 keeps the C implementation (not REMOVE_ITEM'd there).
+// ---- nexttowardf — musl ------------------------------------------------
+// `long double == double` on every target this tree builds: amd64/arm64 by the
+// Windows ABI, and i386 because sdk/cmake/gcc.cmake compiles all of it with
+// -mlong-double-64 (the spec agrees: `nexttowardf(float double)`). So the second
+// argument is a plain `f64` everywhere. What keeps it off the i386 KERNEL cell is the
+// f32 return, a hard ABI error without SSE; the SSE2 user-mode build (ucrtbase) has it.
 
 /// `float nexttowardf(float, long double)`.
-#[cfg(not(target_arch = "x86"))]
+#[cfg(any(not(target_arch = "x86"), target_feature = "sse2"))]
 #[no_mangle]
 pub extern "C" fn nexttowardf(x: f32, y: f64) -> f32 {
     let mut uxi = x.to_bits();
@@ -880,6 +882,20 @@ pub extern "C" fn log(x: f64) -> f64 {
 #[no_mangle]
 pub extern "C" fn exp2(x: f64) -> f64 {
     let (v, _e) = musl_math::exp2(x);
+    #[cfg(feature = "crt-math-errors")]
+    if _e == MathErr::Overflow || (_e == MathErr::Underflow && x > -2147483648.0) {
+        unsafe { *_errno() = 34 }; // ERANGE
+    }
+    v
+}
+
+/// `float exp2f(float)` -- musl's, with exp2's errno contract. crtmath's exp2f.c was
+/// `powf(2, x)` behind a `volatile` 2, because clang folds `powf(2.0f, x)` into a call to
+/// exp2f itself (the self-recursion class); a direct body has nothing to fold.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn exp2f(x: f32) -> f32 {
+    let (v, _e) = musl_math::exp2f(x);
     #[cfg(feature = "crt-math-errors")]
     if _e == MathErr::Overflow || (_e == MathErr::Underflow && x > -2147483648.0) {
         unsafe { *_errno() = 34 }; // ERANGE
