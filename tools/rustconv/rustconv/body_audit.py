@@ -211,14 +211,22 @@ def mark_upstream(findings: list[Finding], repo: Path) -> None:
             continue
         # Judge against the function's own old body: dhcpcsvc's state_panic gained a whole
         # alternate-configuration arm full of RegSetValueExA calls the FILE already had.
+        # A function the old file never named is new outright; one it named but whose body
+        # the regex could not frame falls back to the whole file rather than calling all
+        # of it new.
         body = _old_body(old, f.function)
-        idents = set(_IDENT_RE.findall(body if body is not None else ""))
+        if body is None and re.search(rf"\b{re.escape(f.function)}\b", old):
+            body = old
+        idents = set(_IDENT_RE.findall(body or ""))
         f.upstream = [c for c in f.dropped if c.split("(", 1)[0] not in idents]
 
 
 def _old_body(text: str, name: str) -> str | None:
     masked = mask_code(text)
-    for m in re.finditer(rf"\b{re.escape(name)}\s*\([^;{{]*?\)\s*\{{", masked):
+    # Only a definition: from the line start, nothing but a return type before the name, so
+    # cdrom's `if (BootEnvironmentIsWinPE()) {` is not taken for the function's body.
+    pat = rf"(?m)^[ \t]*(?:[\w*]+[ \t*]+)*{re.escape(name)}\s*\([^;{{]*?\)\s*\{{"
+    for m in re.finditer(pat, masked):
         end = _matching(masked, m.end() - 1, "{", "}")
         if end is not None:
             return masked[m.end() - 1 : end + 1]

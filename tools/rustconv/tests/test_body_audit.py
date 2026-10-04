@@ -369,3 +369,18 @@ def test_the_committed_ledger_loads():
     from rustconv.body_audit import load_reviewed
 
     assert load_reviewed()
+
+
+def test_provenance_frames_the_definition_not_a_call_site():
+    """cdrom: `if (BootEnvironmentIsWinPE()) {` precedes the definition in the file."""
+    from rustconv.body_audit import _old_body
+
+    c = (
+        "BOOLEAN BootEnvironmentIsWinPE(VOID);\n"
+        "NTSTATUS DriverEntry(PVOID d)\n{\n    if (BootEnvironmentIsWinPE()) {\n"
+        "        SetFlag(d);\n    }\n}\n"
+        "BOOLEAN\nBootEnvironmentIsWinPE(\n    VOID\n    )\n/* doc */\n{\n"
+        "    WdfRegistryOpenKey(0);\n}\n"
+    )
+    body = _old_body(c, "BootEnvironmentIsWinPE")
+    assert body is not None and "WdfRegistryOpenKey" in body and "SetFlag" not in body
