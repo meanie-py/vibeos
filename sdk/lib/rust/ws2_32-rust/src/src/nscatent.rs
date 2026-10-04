@@ -168,7 +168,7 @@ pub unsafe extern "system" fn WsNcEntryInitializeFromRegistry(
 
     ErrorCode = RegQueryValueExW(
         EntryKey,
-        b"L\0i\0b\0r\0a\0r\0y\0P\0a\0t\0h\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"L\0i\0b\0r\0a\0r\0y\0P\0a\0t\0h\0\0\0") as LPCWSTR,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(RegType),
         core::ptr::addr_of_mut!((*CatalogEntry).DllPath) as LPBYTE,
@@ -182,7 +182,7 @@ pub unsafe extern "system" fn WsNcEntryInitializeFromRegistry(
 
     ErrorCode = RegQueryValueExW(
         EntryKey,
-        b"D\0i\0s\0p\0l\0a\0y\0S\0t\0r\0i\0n\0g\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"D\0i\0s\0p\0l\0a\0y\0S\0t\0r\0i\0n\0g\0\0\0") as LPCWSTR,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -198,7 +198,7 @@ pub unsafe extern "system" fn WsNcEntryInitializeFromRegistry(
 
     ErrorCode = RegQueryValueExW(
         EntryKey,
-        b"D\0i\0s\0p\0l\0a\0y\0S\0t\0r\0i\0n\0g\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"D\0i\0s\0p\0l\0a\0y\0S\0t\0r\0i\0n\0g\0\0\0") as LPCWSTR,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(RegType),
         (*CatalogEntry).ProviderName as LPBYTE,

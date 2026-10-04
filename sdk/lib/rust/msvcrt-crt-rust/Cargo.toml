@@ -261,6 +261,7 @@ ctype-tables = []
 dllmain = ["heap", "stdio", "locale", "data", "cpp", "conio-exit", "threading"]
 
 [dependencies]
+win32macros-rust = { path = "../win32macros-rust" }
 cnt-rust = { path = "../cnt-rust", default-features = false }
 # The string family moved out so ucrtbase can link the same bodies; see
 # crt-portable-rust/Cargo.toml. `string` keeps msvcrt.dll exporting them.

@@ -2070,12 +2070,14 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
     `cnt-rust` because i386 builds `-sse,-sse2` (the same ABI-required-target-feature error that
     forced every `cabi/math.rs` helper to `extern "C"`); `nexttowardf.c` takes an x87 80-bit
     `long double`, which Rust has no type for. So `libcntpr` is done.
-  - `msvcrtex` — **translated** (`crt-startup-rust` + `crt0-rust` + `crt-dllmain-rust`, ~190
-    symbols, commit `94f2d421748`) but wired through **`reactos-link`'s `.msvcrtex_crt()`**, not
-    CMake — so grepping CMakeLists for the crate name finds nothing and it looks orphaned. It
-    ships into *cargo* modules; the 44-TU C archive still ships into every module that links
-    `libmsvcrt` the C way (`dll/win32/msvcrt/CMakeLists.txt:311`). Retiring the C archive is an
-    architectural call, not a transcription.
+  - `msvcrtex` — **Rust everywhere (2026-10-04).** `crt-startup-rust` + `crt0-rust` +
+    `crt-dllmain-rust`, which cargo modules linked through reactos-link's `.msvcrtex_crt()`, are
+    now also what every CMake module gets: `msvcrtex.cmake` builds one variant per personality
+    (dll / exe / wide exe / bare) and `set_entrypoint` records which one a module links
+    (`REACTOS_CRT_KIND`). The 44 C TUs compile nowhere; only the MSVC integer/stack-probe
+    intrinsics stay asm (`msvcrtex_asm`). Two things the C archive had silently provided:
+    `_recalloc` (added upstream after the translation; now in crt-startup-rust) and a C link
+    language for modules with no C of their own (now `set_module_type`).
   - **`user32_wsprintf` — 12 TUs, and the one genuine unclaimed CRT frontier left.**
     It is the LAST target in the tree still compiling `printf/streamout.c` +
     `wstreamout.c` as C: the 708-line engine is already Rust in `cnt-rust`

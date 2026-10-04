@@ -993,6 +993,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A UTF-16 literal spelled as a byte string (`b"L\0i\0b\0..."`) and cast to a wide
+    # pointer has alignment 1; any link change can move it to an odd address, which
+    # ProbeForRead(.., sizeof(WCHAR)) rejects. ws2_32's L"LibraryPath" did exactly that
+    # when msvcrtex became Rust and bugchecked i386 (0x1E). Baseline EMPTY: use
+    # win32macros_rust::wide_bytes!.
+    suw = repo / "tools" / "scan_unaligned_wide.py"
+    specs.append(
+        (
+            "scan_unaligned_wide",
+            [py, str(suw), "--lint"] if suw.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The WoW64 win32k thunk table must be indexed by the GUEST's (i386) syscall
     # numbers, not the host's. w32ksvc32.h gates NtUserSetWindowLongPtr on
     # `#ifdef _WIN64`, so parsing it as flat text on a 64-bit host shifts every

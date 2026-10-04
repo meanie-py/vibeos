@@ -62,7 +62,6 @@ set(WINLOGON_REUSED
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
     ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libmsvcrtex.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 
 add_cargo_module(winlogon winlogon-cargo winlogon.exe

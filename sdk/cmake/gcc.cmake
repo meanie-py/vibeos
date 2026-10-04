@@ -507,6 +507,18 @@ set(CMAKE_DEPFILE_FLAGS_RC "--preprocessor=\"${CMAKE_C_COMPILER}\" ${RC_PREPROCE
 
 # Optional 3rd parameter: stdcall stack bytes
 function(set_entrypoint MODULE ENTRYPOINT)
+    # Which Rust CRT-startup personality msvcrtex links into this module
+    # (sdk/lib/crt/msvcrtex.cmake). Derived from the entry symbol itself, so the last
+    # set_entrypoint wins exactly as the linker's -entry does.
+    if(ENTRYPOINT STREQUAL "DllMainCRTStartup")
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND dll)
+    elseif(ENTRYPOINT MATCHES "^(mainCRTStartup|WinMainCRTStartup)$")
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND exe)
+    elseif(ENTRYPOINT MATCHES "^(wmainCRTStartup|wWinMainCRTStartup)$")
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND wexe)
+    else()
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND bare)
+    endif()
     if(${ENTRYPOINT} STREQUAL "0")
         # lld interprets "0" as a symbol name, not an address
         # Use __ImageBase as a dummy entry point for modules that don't need one
@@ -846,7 +858,15 @@ function(add_cargo_module _target _crate _output)
     # and well separated: of 314 workspace crates, kernel-rust reaches 33,
     # win32k-rust 5, shell32-rust 4, ntdll-rust 3. A module rebuilds when
     # something it actually links changes, which is the whole point.
-    _rust_path_dep_closure("${_ws}" "${_acm_BODY_CRATES}" _body_dirs)
+    # User-mode modules also link the CRT startup crates, which reactos-link's
+    # .msvcrtex_crt() builds in a NESTED cargo invocation: Cargo's depfile never
+    # sees them, so without this an edit to crt-startup-rust relinked no cargo
+    # module and `build` reported lsass/services stale (2026-10-04).
+    set(_closure_roots ${_acm_BODY_CRATES})
+    if(_acm_KIND MATCHES "^win32")
+        list(APPEND _closure_roots crt-startup-rust crt0-rust crt-dllmain-rust)
+    endif()
+    _rust_path_dep_closure("${_ws}" "${_closure_roots}" _body_dirs)
     foreach(_body_dir IN LISTS _body_dirs)
         file(GLOB_RECURSE _bsrcs CONFIGURE_DEPENDS
             ${_body_dir}/*.rs ${_body_dir}/Cargo.toml)

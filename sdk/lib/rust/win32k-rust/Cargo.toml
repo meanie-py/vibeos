@@ -10,6 +10,7 @@ autobins = false
 crate-type = ["rlib"]
 
 [dependencies]
+win32macros-rust = { path = "../win32macros-rust" }
 win32k-sys = { path = "../win32k-sys" }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 ntprintf = { path = "../ntprintf" }

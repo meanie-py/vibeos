@@ -240,7 +240,7 @@ set(MSVCRT_CRT_RUST_LIB "${MSVCRT_RUST_COHAB_LIB}")
 # derives the closure from the manifests and fails if this list and it disagree.
 set(MSVCRT_CRT_RUST_CRATES
     msvcrt-crt-cargo cnt-rust musl-math crt-portable-rust crt-shared-rust msvcrt-crt-rust
-    msvcrt-sys panic-common)
+    msvcrt-sys panic-common win32macros-rust)
 set(MSVCRT_CRT_RUST_GLOBS)
 set(MSVCRT_CRT_RUST_MANIFESTS)
 foreach(crate ${MSVCRT_CRT_RUST_CRATES})

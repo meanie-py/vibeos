@@ -568,6 +568,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **amd64: a user-mode Rust panic report can bugcheck the kernel (0x1E in the debug print
+  path)** (OPEN, 2026-10-04; kd lane). A panic in explorer's shell32 printed a stack walk that
+  ran into garbage, and the kernel faulted (C0000005) at `ntoskrnl+0xC64C0` reading it, which
+  symbolizes to the first line of kd-rust `KdIoPrintf` (`kdio.rs:822`), so the exact faulting
+  function is not confirmed. User mode must not be able to take the kernel down through a
+  debug print: the copy from the caller's buffer needs a probe under SEH. Repro: runs
+  `20261004-080222-cpyv4l2x` / `20261004-080920-w43f482z` (smoke-amd64, msvcrt-homebrew,
+  before the DllEntryPoint fix that removed the panic).
 - **fastfat: the free-dirent bitmap goes stale, then every create in that directory raises
   STATUS_FILE_CORRUPT_ERROR** (OPEN, 2026-10-04). Wine's ole32 `storage32` test (olewinetest
   payload, amd64) drives about 100,000 raises in 120 s. They are caught, so the test times out
