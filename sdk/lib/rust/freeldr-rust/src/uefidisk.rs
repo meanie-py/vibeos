@@ -1203,7 +1203,11 @@ unsafe fn UefiMediumIsIso9660(BlockIo: *mut EFI_BLOCK_IO) -> bool {
     {
         return false;
     }
-    let Status = ((*BlockIo).ReadBlocks).unwrap()(
+    // A probe: a device with no ReadBlocks is simply not an ISO9660 boot medium.
+    let Some(ReadBlocks) = (*BlockIo).ReadBlocks else {
+        return false;
+    };
+    let Status = ReadBlocks(
         BlockIo,
         (*(*BlockIo).Media).MediaId,
         PVD_OFFSET / BlockSize,
