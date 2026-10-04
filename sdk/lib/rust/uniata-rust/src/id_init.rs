@@ -268,6 +268,8 @@ pub unsafe extern "system" fn UniataChipDetectChannels(
         n += 1;
         i >>= 1;
     }
+    let channels_before = (*deviceExtension).NumberChannels;
+    let default_mask = 0xffffffffu32 >> (32 - channels_before);
 
     match VendorID {
         ATA_ACER_LABS_ID => {
@@ -279,13 +281,15 @@ pub unsafe extern "system" fn UniataChipDetectChannels(
             }
         }
         ATA_SERVERWORKS_ID => {
-            // The SATA parts have 4 ports (upstream svw_sata.c), and UniATA left
-            // them at the 2-channel default, hiding ports 2 and 3. One part has
-            // 8, but upstream/Linux say 0x0241 and UniATA/FreeBSD's naming says
-            // 0x0242, and the 0x400-byte BAR5 window mapped below covers exactly
-            // 4 ports; 4 is right for every part either way.
+            // The SATA parts have 4 ports, and UniATA left them at the 2-channel
+            // default, hiding ports 2 and 3. 0x0241 (Frodo8) has 8: that is what
+            // all three drivers that program the chip do (upstream svw_sata.c,
+            // Linux sata_svw chip_svw8, FreeBSD ATA_FRODO8 = 0x02411166 with 8
+            // channels). Only NAMES disagree (Linux's comment and NetBSD pcidevs
+            // call 0x0241 "Frodo4", and UniATA copied that into its table).
             if ChipType == SWKSMIO {
-                (*deviceExtension).NumberChannels = 4;
+                (*deviceExtension).NumberChannels =
+                    if ((*deviceExtension).DevID >> 16) == 0x0241 { 8 } else { 4 };
             }
         }
         ATA_PROMISE_ID => 'promise: {
@@ -416,6 +420,21 @@ pub unsafe extern "system" fn UniataChipDetectChannels(
         }
         _ => {}
     } // end match(VendorID)
+
+    // The C sized `n` (and the default PortMask) from the channel count BEFORE
+    // the match above, and clamps to it below, so every arm that RAISES the
+    // count (ALi 5287/5288 and Promise MIO to 4, ServerWorks SATA to 4/8) was
+    // cut back to the 2-channel default: dead code since UniATA was written.
+    // When an arm raised it and the mask is still the computed default (no
+    // user PortMask), size both from the arm's count. An explicit PortMask or
+    // NumberChannels registry value still limits it, which is what the clamp
+    // is for.
+    if (*deviceExtension).NumberChannels > channels_before
+        && (*deviceExtension).AHCI_PI_mask == default_mask
+    {
+        n = (*deviceExtension).NumberChannels;
+        (*deviceExtension).AHCI_PI_mask = 0xffffffffu32 >> (32 - n);
+    }
 
     i = AtapiRegCheckDevValue(
         deviceExtension as PVOID,
@@ -1001,9 +1020,10 @@ pub unsafe extern "system" fn UniataChipDetect(
                             break 'swks;
                         }
                         (*deviceExtension).AltRegMap = TRUE;
+                        // 0x100 per port: the C mapped a fixed 0x400 (4 ports).
                         BaseMemAddress = AtapiGetIoRange(
                             HwDeviceExtension, ConfigInfo, pciData, SystemIoBusNumber,
-                            5, 0, 0x400,
+                            5, 0, core::cmp::max(0x400, 0x100 * (*deviceExtension).NumberChannels),
                         );
                         if BaseMemAddress == 0 {
                             return STATUS_UNSUCCESSFUL;

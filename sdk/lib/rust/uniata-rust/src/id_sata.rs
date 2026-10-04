@@ -1198,11 +1198,25 @@ pub unsafe extern "system" fn UniataAhciStatus(
     if IS.__bindgen_anon_1.as_ref().CPDS() != 0 {}
 
     /* check for and handle connect events */
+    // UniATA attached/forgot the device here but never told SCSIPORT, so a
+    // hot-plugged disk stayed invisible to the OS until reboot. Ask for a bus
+    // rescan (upstream's port driver schedules a port reset + re-enumeration
+    // for the same event). By the time PCS fires the PHY is already up, so
+    // UniataSataConnect returns at once rather than stalling in the ISR.
+    let mut bus_changed = false;
     if IS.__bindgen_anon_1.as_ref().PCS() != 0 {
-        UniataSataEvent(HwDeviceExtension, lChannel, UNIATA_SATA_EVENT_ATTACH, 0);
+        bus_changed |= UniataSataEvent(HwDeviceExtension, lChannel, UNIATA_SATA_EVENT_ATTACH, 0) != 0;
     }
     if IS.__bindgen_anon_1.as_ref().PRCS() != 0 {
-        UniataSataEvent(HwDeviceExtension, lChannel, UNIATA_SATA_EVENT_DETACH, 0);
+        bus_changed |= UniataSataEvent(HwDeviceExtension, lChannel, UNIATA_SATA_EVENT_DETACH, 0) != 0;
+    }
+    if bus_changed {
+        DbgPrint(b"[UNIATA] ch=%u: SATA hotplug, requesting bus rescan\n\0".as_ptr().cast(), lChannel);
+        ScsiPortNotification(
+            _SCSI_NOTIFICATION_TYPE_BusChangeDetected as SCSI_NOTIFICATION_TYPE,
+            HwDeviceExtension,
+            lChannel as UCHAR as ULONG,
+        );
     }
     (*chan).AhciCompleteCI = ((*chan).AhciPrevCI ^ CI) & (*chan).AhciPrevCI; // only 1->0 states
     (*chan).AhciPrevCI = CI;

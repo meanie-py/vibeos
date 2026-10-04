@@ -77,16 +77,23 @@ ordering, AHCI interrupt-acknowledge order, busy-TFD escalation in
 `UniataAhciAbortOperation`, port-multiplier pseudo ports and SiI XmitEarlyAck, and a SATA
 link-speed downgrade on repeated DMA errors. Only the AHCI ones run under QEMU (`smoke --ahci`).
 
-**Still owed:**
-- **Hotplug attach runs inside the ISR.** `UniataAhciStatus` calls
-  `UniataSataEvent(ATTACH)` on PxIS.PCS, which can stall up to 1s plus a `CheckDevice` at
-  device IRQL. Upstream only schedules a port reset. A SCSIPORT miniport has no
-  lower-IRQL context to defer to (its timer callbacks are ISR-synchronized), so the fix is
-  a bus-change notification and re-enumeration, not a move to a timer. It is testable:
-  QEMU can hot-add an `ide-hd` on the `ich9-ahci` bus over QMP.
-- **The 8-port ServerWorks part is unresolved.** Upstream/Linux say 0x0241 and
-  UniATA/FreeBSD's naming says 0x0242. Both run at 4 ports until a datasheet settles it,
-  which also needs the BAR5 window grown past 0x400.
+**Resolved after the batch:**
+- **SATA hotplug was invisible to the OS.** uniata attached a hot-plugged disk inside the
+  ISR but never told SCSIPORT, and SCSIPORT ignored `BusChangeDetected` anyway (as
+  ReactOS's does). Now uniata notifies, and SCSIPORT's DPC turns it into
+  `IoInvalidateDeviceRelations(BusRelations)`, whose handler rescans. The attach itself
+  still runs in the ISR, but PCS fires after the PHY is up, so `UniataSataConnect`
+  returns at once. A SCSIPORT miniport has no lower-IRQL context to move it to. **Not
+  testable under QEMU:** QEMU 11 refuses `device_add ide-hd` on an `ich9-ahci` port
+  ("Bus 'ahci0.1' does not support hotplugging"), so this waits for real hardware.
+- **ServerWorks Frodo8 is 0x0241** (8 ports, BAR5 window 0x800). Every driver that
+  programs the chip agrees: upstream svw_sata.c, Linux sata_svw `chip_svw8`, and FreeBSD
+  `ATA_FRODO8 = 0x02411166` with 8 channels. Only NAMES disagree: Linux's comment and
+  NetBSD's pcidevs call 0x0241 "Frodo4", and UniATA copied that. No public datasheet.
+- **UniATA's channel-count clamp made every multi-channel arm dead.**
+  `UniataChipDetectChannels` sized its clamp from the count BEFORE the vendor match, so
+  ALi 5287/5288 and Promise MIO (4) and ServerWorks SATA were cut back to 2. Fixed when
+  the port mask is still the default.
 
 ## New upstream TUs declined because a Rust twin owns the symbols
 
