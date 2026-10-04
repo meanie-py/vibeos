@@ -1315,6 +1315,36 @@ fn main() {
         redef(&obj);
     }
 
+    // ── the same engine in its _USER32_WSPRINTF configuration ────────────
+    // user32's wsprintf family (user32-wsprintf-rust) compiles cnt-rust's streamout.rs
+    // again under cfg(streamout_user32); tests/diff.rs includes it the same way (this
+    // crate sets the cfg below). The reference is the same genuine streamout.c built
+    // -D_USER32_WSPRINTF instead of -D_LIBCNT_, which is how sdk/lib/crt builds it.
+    println!("cargo:rustc-check-cfg=cfg(streamout_user32)");
+    println!("cargo:rustc-cfg=streamout_user32");
+    let so_u32_body = so_body
+        .replace("#define _LIBCNT_\n", "#define _USER32_WSPRINTF\n")
+        .replace("#define streamout ref_streamout", "#define streamout ref_u32_streamout")
+        .replace("#define format_float ref_format_float", "#define format_float ref_u32_format_float")
+        .replace("int ref_run(", "int ref_u32_run(")
+        .replace("return ref_streamout(&f,", "return ref_u32_streamout(&f,");
+    assert!(so_u32_body.contains("_USER32_WSPRINTF") && so_u32_body.contains("ref_u32_run("));
+    let so_u32_c = out.join("ref_u32_streamout.c");
+    fs::write(&so_u32_c, &so_u32_body).unwrap();
+    let mut so_u32_build = cc::Build::new();
+    so_u32_build
+        .include(&refstub_printf)
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&so_u32_c);
+    for obj in so_u32_build.compile_intermediates() {
+        redef(&obj);
+    }
+
     // Dedicated scanf build with `-mlong-double-64` (Windows MSVC ABI:
     // long double == double == 64-bit; SysV host default is 80-bit
     // x87, which would diverge from the f64 engine AND the target).

@@ -78,6 +78,7 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 
 # One staticlib build of `crate` with exactly `features` (no defaults unless `defaults`).
+# Extra arguments are extra DEPENDS (sources the crate compiles from outside itself).
 # Each variant gets its own target dir: rust_storage_target allows one owner per artifact,
 # and these are several feature sets of the same crate.
 function(msvcrtex_rust_lib name crate features defaults)
@@ -99,9 +100,9 @@ function(msvcrtex_rust_lib name crate features defaults)
                 --manifest-path ${MSVCRTEX_RUST_WORKSPACE}/Cargo.toml
         COMMAND ${CMAKE_COMMAND} -E copy
             ${_dir}/${MSVCRTEX_RUST_TARGET}/release/lib${_artifact}.a ${_lib}
-        DEPENDS ${_srcs} ${MSVCRTEX_RUST_WORKSPACE}/${crate}/Cargo.toml
+        DEPENDS ${_srcs} ${MSVCRTEX_RUST_WORKSPACE}/${crate}/Cargo.toml ${ARGN}
         WORKING_DIRECTORY ${MSVCRTEX_RUST_WORKSPACE}
-        COMMENT "Building ${crate} [${features}] for msvcrtex (${MSVCRTEX_RUST_TARGET})"
+        COMMENT "Building ${crate} [${features}] (${MSVCRTEX_RUST_TARGET})"
         VERBATIM)
     add_custom_target(rust_${name} DEPENDS ${_lib})
     set(${name}_LIB ${_lib} PARENT_SCOPE)
