@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import shutil
 import socket
 import struct
 import subprocess
@@ -172,6 +173,30 @@ def test_smp_iso_patch_is_equal_length_and_selects_the_mp_entry(tmp_path: Path):
     assert len(patched) == len(src.read_bytes()), "ISO9660 extents: length must not change"
     assert b"DefaultOS=LiveCD_SMP\r\n\r\n" in patched
     assert b"LiveCD_Debug" not in patched
+
+
+def test_smp_patch_picks_freeldr_ini_when_the_fat_image_embeds_another_ini(tmp_path: Path):
+    """arm64 boot.img embeds ramdisk.img, which carries the livecd file set and so an
+    x86 livecd.ini with its own line-initial DefaultOS=. The raw scan finds two; the
+    one to patch is the FAT image's own ::/freeldr.ini, named via mtools."""
+    if not (shutil.which("mformat") and shutil.which("mcopy")):
+        pytest.skip("mtools not installed")
+    img = tmp_path / "boot.img"
+    img.write_bytes(b"\x00" * (2 * 1024 * 1024))
+    subprocess.run(["mformat", "-i", str(img), "::"], check=True, capture_output=True)
+    ini = tmp_path / "freeldr.ini"
+    ini.write_bytes(
+        b"[FREELOADER]\r\nDefaultOS=ReactOS_Arm64_UP\r\nTimeOut=0\r\n"
+        b"[ReactOS_Arm64_MP]\r\nOptions=/KERNEL=ntkrnlmp.exe /HAL=halmp.dll\r\n"
+    )
+    decoy = tmp_path / "livecd.ini"
+    decoy.write_bytes(b"[FREELOADER]\r\nDefaultOS=LiveCD_Debug\r\n")
+    for f in (ini, decoy):
+        subprocess.run(["mcopy", "-i", str(img), str(f), "::/"], check=True, capture_output=True)
+    out = vm_mod.smp_selected_iso(img, tmp_path / "work")
+    patched = out.read_bytes()
+    assert b"DefaultOS=ReactOS_Arm64_MP" in patched
+    assert b"DefaultOS=LiveCD_Debug" in patched, "the decoy ini must be left alone"
 
 
 def _fake_boot_img(default_os: bytes = b"ReactOS_Arm64_UP") -> bytes:

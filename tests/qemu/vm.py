@@ -202,6 +202,34 @@ def _write_sparse_image(path: Path, data: bytes | bytearray) -> None:
         output.truncate(len(data))
 
 
+def _hits_in_fat_freeldr_ini(image: Path, data: bytearray, hits: list[int]) -> list[int]:
+    """Of several line-initial DefaultOS= hits, keep the ones inside the FAT image's
+    own ::/freeldr.ini -- the only file freeldr reads.
+
+    arm64's boot.img is FAT and ALSO embeds ramdisk.img, and since the arm64 ramdisk
+    carries the livecd file set that ramdisk holds an x86 livecd.ini with its own
+    DefaultOS= line. A raw scan then finds two and cannot tell which one boots. mtools
+    names the file exactly; its bytes are then located in the image (a fresh image
+    stores a small file contiguously). Anything ambiguous returns the hits unchanged,
+    so the caller still raises rather than guessing."""
+    try:
+        cp = subprocess.run(
+            ["mcopy", "-n", "-i", str(image), "::/freeldr.ini", "-"],
+            capture_output=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return hits
+    ini = cp.stdout
+    if cp.returncode != 0 or not ini:
+        return hits
+    at = data.find(ini)
+    if at == -1 or data.find(ini, at + 1) != -1:
+        return hits
+    inside = [h for h in hits if at <= h < at + len(ini)]
+    return inside or hits
+
+
 def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
     """Boot media whose freeldr default entry is the MP pair, WITHOUT rebuilding it.
 
@@ -241,6 +269,8 @@ def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
         if i == 0 or data[i - 1] == 0x0A:
             hits.append(i)
         i = data.find(_INI_DEFAULT_OS, i + 1)
+    if len(hits) > 1:
+        hits = _hits_in_fat_freeldr_ini(iso, data, hits)
     if len(hits) != 1:
         raise RuntimeError(
             f"{iso}: expected exactly one line-initial {_INI_DEFAULT_OS.decode()} in the "
