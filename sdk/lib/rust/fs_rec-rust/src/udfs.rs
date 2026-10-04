@@ -167,7 +167,7 @@ pub unsafe extern "system" fn FsRecUdfsFsControl(
         IRP_MN_LOAD_FILE_SYSTEM => {
             Status = FsRecLoadFileSystem(
                 DeviceObject,
-                b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0U\0d\0f\0s\0\0\0".as_ptr() as PWCHAR,
+                win32macros_rust::wide_bytes!(b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0U\0d\0f\0s\0\0\0") as PWCHAR,
             );
         }
         _ => {

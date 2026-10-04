@@ -1,4 +1,5 @@
 use crate::prelude_browser::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (standard netapi32 wine-debug channel; TRACE/FIXME reference it) ----
@@ -66,7 +67,7 @@ pub unsafe extern "system" fn I_BrowserDebugTrace(
     ServerName: LPWSTR,
     Buffer: PCHAR,
 ) -> NET_API_STATUS {
-    I_BrowserrDebugTrace(ServerName, Buffer)
+    rpc_try(|| I_BrowserrDebugTrace(ServerName, Buffer)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }
 
 // ---- I_BrowserQueryEmulatedDomains ----
@@ -80,7 +81,7 @@ pub unsafe extern "system" fn I_BrowserQueryEmulatedDomains(
     *EmulatedDomains = core::ptr::null_mut();
     *EntriesRead = 0;
 
-    let status = I_BrowserrQueryEmulatedDomains(ServerName, &mut Container);
+    let status = rpc_try(|| I_BrowserrQueryEmulatedDomains(ServerName, &mut Container)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if status == NERR_Success {
         *EmulatedDomains = Container.Buffer;
@@ -108,11 +109,11 @@ pub unsafe extern "system" fn I_BrowserQueryOtherDomains(
     EnumStruct.ServerInfo.Level100 = &mut Level100Container;
 
     // RpcTryExcept omitted per rules
-    let status = I_BrowserrQueryOtherDomains(
+    let status = rpc_try(|| I_BrowserrQueryOtherDomains(
         ServerName as PWSTR,
         &mut EnumStruct,
         TotalEntries,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if status == NERR_Success || status == ERROR_MORE_DATA {
         *BufPtr = (*(EnumStruct.ServerInfo.Level100)).Buffer as LPBYTE;
@@ -142,7 +143,7 @@ pub unsafe extern "system" fn I_BrowserServerEnum(
     EnumStruct.Level = 100;
     EnumStruct.ServerInfo.Level100 = &mut Level100Container as *mut _SERVER_INFO_100_CONTAINER;
 
-    let status = I_BrowserrServerEnum(
+    let status = rpc_try(|| I_BrowserrServerEnum(
         ServerName as PWSTR,
         Transport as PWSTR,
         ClientName as PWSTR,
@@ -152,7 +153,7 @@ pub unsafe extern "system" fn I_BrowserServerEnum(
         ServerType,
         Domain as PWSTR,
         ResumeHandle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if status == NERR_Success || status == ERROR_MORE_DATA {
         *BufPtr = (*EnumStruct.ServerInfo.Level100).Buffer as LPBYTE;
@@ -169,21 +170,21 @@ pub unsafe extern "system" fn I_BrowserQueryStatistics(
     Statistics: *mut LPBROWSER_STATISTICS
 ) -> NET_API_STATUS {
     let status: NET_API_STATUS;
-    status = I_BrowserrQueryStatistics(ServerName as PWSTR, Statistics);
+    status = rpc_try(|| I_BrowserrQueryStatistics(ServerName as PWSTR, Statistics)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
 // ---- I_BrowserResetStatistics ----
 #[no_mangle]
 pub unsafe extern "system" fn I_BrowserResetStatistics(ServerName: LPCWSTR) -> NET_API_STATUS {
-    let status = I_BrowserrResetStatistics(ServerName as PWSTR);
+    let status = rpc_try(|| I_BrowserrResetStatistics(ServerName as PWSTR)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
 // ---- I_BrowserResetNetlogonState ----
 #[no_mangle]
 pub unsafe extern "system" fn I_BrowserResetNetlogonState(ServerName: LPCWSTR) -> NET_API_STATUS {
-    I_BrowserrResetNetlogonState(ServerName as PWSTR)
+    rpc_try(|| I_BrowserrResetNetlogonState(ServerName as PWSTR)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }
 
 // ---- I_BrowserSetNetlogonState ----
@@ -195,7 +196,7 @@ pub unsafe extern "system" fn I_BrowserSetNetlogonState(
     Role: DWORD,
 ) -> u32 {
     // TRY body executed directly, handler omitted per translation rules
-    let status = I_BrowserrSetNetlogonState(ServerName, DomainName, EmulatedServerName, Role);
+    let status = rpc_try(|| I_BrowserrSetNetlogonState(ServerName, DomainName, EmulatedServerName, Role)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -229,7 +230,7 @@ pub unsafe extern "system" fn NetBrowserStatisticsGet(
         _ => {}
     }
 
-    let status = NetrBrowserStatisticsGet(ServerName, Level, &mut StatisticsStruct);
+    let status = rpc_try(|| NetrBrowserStatisticsGet(ServerName, Level, &mut StatisticsStruct)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     match Level {
         100 => {

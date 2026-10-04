@@ -6,6 +6,8 @@
 //! the source.
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(cnt_libm)");
+    // set by user32-wsprintf-rust, which compiles cabi/streamout.rs as its own module
+    println!("cargo:rustc-check-cfg=cfg(streamout_user32)");
     let arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let feats = std::env::var("CARGO_CFG_TARGET_FEATURE").unwrap_or_default();
     let has = |f: &str| feats.split(',').any(|x| x == f);

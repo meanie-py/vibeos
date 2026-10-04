@@ -108,7 +108,7 @@ unsafe extern "C" fn GetProgramsPath(mut bCommonPath: BOOL, mut lpProgramsPath: 
 
     Error = RegOpenKeyExW(
         0x80000001u32 as HKEY,
-        b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\\\0U\0s\0e\0r\0 \0S\0h\0e\0l\0l\0 \0F\0o\0l\0d\0e\0r\0s\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0E\0x\0p\0l\0o\0r\0e\0r\0\\\0U\0s\0e\0r\0 \0S\0h\0e\0l\0l\0 \0F\0o\0l\0d\0e\0r\0s\0\0\0") as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         &mut hKey,
@@ -122,9 +122,9 @@ unsafe extern "C" fn GetProgramsPath(mut bCommonPath: BOOL, mut lpProgramsPath: 
     Error = RegQueryValueExW(
         hKey,
         if bCommonPath != 0 {
-            b"C\0o\0m\0m\0o\0n\0 \0P\0r\0o\0g\0r\0a\0m\0s\0\0\0".as_ptr() as LPCWSTR
+            win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0P\0r\0o\0g\0r\0a\0m\0s\0\0\0") as LPCWSTR
         } else {
-            b"P\0r\0o\0g\0r\0a\0m\0s\0\0\0".as_ptr() as LPCWSTR
+            win32macros_rust::wide_bytes!(b"P\0r\0o\0g\0r\0a\0m\0s\0\0\0") as LPCWSTR
         },
         core::ptr::null_mut(),
         &mut dwType,
@@ -518,7 +518,7 @@ pub unsafe extern "system" fn CreateGroupW(lpGroupName: LPCWSTR, bCommonGroup: B
         return 0;
     }
 
-    wcscat(szGroupPath.as_mut_ptr(), b"\\\0\0\0".as_ptr() as *const u16);
+    wcscat(szGroupPath.as_mut_ptr(), win32macros_rust::wide_bytes!(b"\\\0\0\0") as *const u16);
     wcscat(szGroupPath.as_mut_ptr(), lpGroupName);
 
     if CreateDirectoryPath(szGroupPath.as_ptr(), core::ptr::null_mut()) == 0 {
@@ -870,7 +870,7 @@ pub unsafe extern "system" fn DeleteItemW(
 
     wcscat(&mut szItemPath as LPWSTR, BACKSLASH_W.as_ptr() as LPCWSTR);
     wcscat(&mut szItemPath as LPWSTR, lpItemName);
-    wcscat(&mut szItemPath as LPWSTR, b".\0l\0n\0k\0\0\0".as_ptr() as LPCWSTR);
+    wcscat(&mut szItemPath as LPWSTR, win32macros_rust::wide_bytes!(b".\0l\0n\0k\0\0\0") as LPCWSTR);
 
     if DeleteFileW(&szItemPath as LPCWSTR) == 0 {
         return 0;

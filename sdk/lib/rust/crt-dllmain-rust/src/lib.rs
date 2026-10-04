@@ -1,4 +1,4 @@
-//! Default DllMain (startup/dllmain.c) + DllEntryPoint (startup/dllentry.c).
+//! Default DllMain (startup/dllmain.c). The default DllEntryPoint is in crt-startup-rust.
 //! Separate staticlib so a consumer-defined DllMain overrides these (see
 //! Cargo.toml). No panic handler / eh_personality here — this links only
 //! alongside crt-startup-rust + the consumer's staticlib, which provide them.
@@ -34,14 +34,9 @@ pub unsafe extern "system" fn DllMain(
 }
 
 // startup/dllentry.c
-#[no_mangle]
-pub unsafe extern "system" fn DllEntryPoint(
-    _hDllHandle: HANDLE,
-    _dwReason: DWORD,
-    _lpreserved: LPVOID,
-) -> WINBOOL {
-    TRUE
-}
+// The default DllEntryPoint is in crt-startup-rust (crtdll.rs), next to its caller: here it
+// dragged this object -- and so this default DllMain -- into every DLL, shadowing a DllMain that
+// lives in an archive.
 
 // Required to compile this staticlib standalone; the dup vs crt-startup-rust
 // (and the consumer staticlib) is absorbed by --allow-multiple-definition.

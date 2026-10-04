@@ -944,6 +944,13 @@ hand flips the error to the other two.
   address. rustc says nothing: an array IS `Sized`, so it is a legal variadic argument. A macro
   wrapper is the worst place for this class because there is no declared parameter type
   ANYWHERE for a reviewer to compare against.
+  Third and fourth instances (2026-10-04), after which it became a gate: the i386 DHCP client
+  service died in msvcrt's printf engine on every boot that ran long enough to start Dhcp,
+  reading 0x7374656e ("nets", from "netstack smoltcp adapter"), because dhcpcsvc logged
+  `(*ip).name` by value at seven sites. msgina's three direct `wsprintfW(.., DomainName,
+  UserName)` calls had it too. `scan_variadic_array_arg` (`vibeos-cli check`, empty baseline)
+  resolves each `(*v).f` argument through v's declared type, since `name` is an array in
+  `interface_info` and a pointer in the two dhcpcsvc structs beside it.
 - **`extern CCHAR Foo[N]` declared as `*const i8`** — Rust reads the first bytes of the buffer
   *as* the pointer (`"mult"` = 0x746C756D). Mirror the array type, or use a C accessor.
 - **Cross-DLL DATA import indirection.** Under `raw-dylib` the `__imp_` load already yields the
@@ -1799,6 +1806,18 @@ reading the C before touching anything — the same panic over a **signed** C co
 the C guards, is a genuine mistranslation and wants the guard restored instead. Check test
 helpers too, not just the shipping crate: one of the four was a double→`long double` rebias in
 wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
+
+### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
+**Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a
+BUGCHECK 0x1E / STATUS_DATATYPE_MISALIGNMENT out of a syscall's `ProbeForRead`, with
+`[PROBE-MISALIGN-R] Addr=<odd> Align=2`. The address is a wide string in some DLL's `.rdata`.
+**Cause:** `b"L\0i\0b\0...\0\0".as_ptr() as LPCWSTR`. A byte string has alignment 1; it
+lands on an even address only by luck, and every module's `.rdata` layout is that luck. User
+mode never notices (x86 reads unaligned); the kernel's probe does. ws2_32's `L"LibraryPath"`
+moved to 0x7be41b61 and nettest's first Winsock call bugchecked the guest. 209 such casts were
+in the tree. **Fix:** `win32macros_rust::wide_bytes!(b"...")`, which keeps the bytes and puts
+them in a 2-byte-aligned static. `tools/scan_unaligned_wide.py --lint` (in `vibeos-cli check`,
+baseline empty) refuses the cast; `--fix` rewrites it.
 
 ### Wide/narrow literal sizing
 - **The whole class above had ONE cause: the plain-C prompt never mentioned wide strings.**
@@ -2894,6 +2913,12 @@ The constants were always available via the bindgen glob; the literals were pure
 `grfMode & 0x00004000` for `STGM_DELETEONRELEASE`, which is `0x04000000`; no STGM flag is
 `0x4000`, so the check never fired (and returned `STG_E_INVALIDFLAG` where the C says
 `STG_E_INVALIDFUNCTION`).
+
+**And one from the wrong FAMILY.** oleaut32's `create_stream` called
+`GlobalAlloc(HEAP_ZERO_MEMORY, n)` where the C says `GMEM_FIXED` (0). 0x8 is not a GMEM_ bit, so
+GlobalAlloc failed with `ERROR_INVALID_PARAMETER` and no picture ever loaded from a file (Wine's
+olepicture test then crashed releasing the pointer it never got). **Gated:
+`tools/scan_gmem_flags.py`.**
 
 **The same class one bit narrower — a PARTIAL mask.** `NtOpenKey` masked `& !0x0100u32` where
 the C masks `~KEY_WOW64_RES` (**0x0300**): right family, half the width, and the named constant
@@ -6213,6 +6238,18 @@ the C let the callee write straight into the caller's buffer, terminator include
 "query into a temp, then copy out" redirect must copy everything the callee would have
 written, not just the count it returned.
 
+**User mode has it too: `ntdll_sys::seh` (2026-10-04).** Symptom: a process dies on an
+unhandled `RPC_S_SERVER_UNAVAILABLE` (0x6BA) the first time it calls a service that is not
+up yet, e.g. dnsapi before Dnscache starts on arm64. The Rust RPC clients kept only the try
+body of the C's `RpcTryExcept`. ntdll builds the same `sehtry.c` with `-DSEHTRY_USER_MODE`,
+which drops the interrupt-mask restore because `msr daifclr` traps at EL0 and `sti` faults
+at ring 3, and exports both trampolines. `ntdll_sys::seh::rpc_try(|| Stub(..))` gives
+`Err(code)`, and the caller maps it exactly as its C handler did. `tools/rpc_try_wrap.py
+--c <c files> --rs <rust files>` reads each C `RpcExcept` body and rewrites the matching Rust
+call. It exits 1 while any stub call is left unwrapped, so its listing is the to-do list.
+Test: netprobe's rpc-raise step calls OpenSCManagerW on a host that does not exist and
+expects 1722.
+
 ### DUMMY_PSEH turns a protected capture into an unprotected `memcpy` `[§9.59]`
 A whole class, not three bugs: in C, a kernel API captures a caller buffer inside `_SEH2_TRY`;
 under DUMMY_PSEH the `__try` evaporates and the copy is naked → several unrelated syscalls
@@ -6542,6 +6579,16 @@ returning `Result`, with the finally path on both exits. `try_return` must actua
 ---
 
 ## Stale artifacts & false greens
+
+### A source removed from a static library kept linking (thin `ar crT` never drops members)
+**Symptom:** a cohab flip that takes C out of a static library "works" on a warm build, and the
+link map still shows the removed `.obj` (`libvcruntime.a` kept `setjmp.dir/*.s.obj` after
+setjmp-rust replaced them, plus `vcrt_common.dir` objects from a configuration the tree no
+longer had). A clean build differs. **Cause:** every toolchain file set
+`CMAKE_C_CREATE_STATIC_LIBRARY` to `<CMAKE_AR> crT <TARGET> ...`; `r` replaces or inserts and
+never removes, and overriding the rule lost CMake's own delete-first step, so an archive only
+ever grew. **Fix (2026-10-04):** the rule is now `cmake -E rm -f <TARGET>` then `ar crT`. To
+audit a library: `llvm-ar t lib.a` against the target's source list.
 
 **The most expensive class in this file**, because the failure mode is a green that means
 nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → pl011 → gdi32 →
@@ -10002,6 +10049,47 @@ vs `tools/lint-baseline/`**, and several hold an EMPTY baseline (strict).
 
 ## Cohab flip & cold-link mechanics
 
+### A Rust staticlib is one archive member, so a default it carries can shadow the real one
+**Symptom:** a module behaves as if never initialised (shell32: comctl32 "Imagelist no longer
+valid", then a CDefView assert panic in explorer, amd64 only) after a change to which archives
+it links, not to its own code. The link map shows `DllMain` coming from a defaults archive.
+**Cause:** C archives are one object per file, so `dllentry.o` (default `DllEntryPoint`) and
+`dllmain.o` (default `DllMain`) were pulled independently. A Rust staticlib puts a crate's
+items in a few codegen units, so pulling the object for ONE symbol brings every symbol in it.
+`DllMainCRTStartup` calls `DllEntryPoint`, which almost no module defines, so every DLL pulled
+crt-dllmain-rust's object for it, and that object's default `DllMain` was now defined before
+lld ever looked for the module's real one, which in shell32 sits in `libshell32_rust.a`, not in
+an object file. **Fix:** a defaults crate may hold ONLY symbols that should be pulled for
+themselves: the default `DllEntryPoint` moved into crt-startup-rust beside its caller. To check
+any module: relink it with `-Wl,-Map=` and see which input defines `DllMain`/`main`.
+
+### A Rust archive behind an INTERFACE wrapper links AFTER the import libraries, which then answer
+**Symptom:** a DLL's export is silently satisfied by another DLL's import: ucrtbase and
+msvcrt on amd64 exported `longjmp` (msvcrt also `_setjmp`/`_setjmpex`) as forwards to ntdll
+after vcruntime's C setjmp objects became the setjmp-rust archive. Only
+`verify_ucrtbase_cohab` noticed ("exported but answered by an import from ntdll.dll"), and
+only for ucrtbase. **Cause:** CMake writes a target's direct link items first and the
+dependencies of those items after them. A Rust staticlib reached as an INTERFACE wrapper's
+`INTERFACE_LINK_LIBRARIES`, or as a static library's own dependency, lands after
+`libkernel32.a`/`libntdll.a`, and lld takes the first archive that defines a symbol, so
+ntdll's import thunk won. The C objects had been archive members of vcruntime itself, which
+is on the direct line. **Fix:** name such an archive BY PATH on the consumer's link line
+(`${PSEH_USER_LIB}`, `${VCRT_SETJMP_LIB}`); a path sits exactly where it is written, and
+Ninja still orders the link after the custom command that produces it. Define the path
+globally (gcc.cmake), not as a variable exported from the producing directory: `dll/` is
+configured before `sdk/lib/`, so such a variable is empty on a fresh configure and filled
+in only on the next one. To check: `grep` the module's `LINK_LIBRARIES` in build.ninja for
+where the archive actually sits, and relink with `-Wl,-Map=` to see who defines the symbol.
+
+### A module translated down to Rust + `.rc` links with the RC driver, and `LINKER:` flags break
+**Symptom:** `clang: error: unknown argument: '--allow-multiple-definition'` from a module's
+link, after a change elsewhere (msvcrtex becoming Rust). **Cause:** CMake picks a target's link
+language from its sources and the static libraries it links. `intl.cpl` has no C left (Rust
+staticlib + `intl.rc`), and the C msvcrtex archive every msvcrt importer linked was the only
+thing giving it C; without it the link language is RC, whose `LINKER:` wrapper is empty, so
+`target_link_options(... LINKER:--flag)` reaches clang bare. **Fix:** `set_module_type` sets
+`LINKER_LANGUAGE C` on a module with no C/C++ source (sdk/cmake/CMakeMacros.cmake).
+
 ### A partial cohab is un-cold-linkable, and the dup↔undefined pair is the oracle
 If the unit is partially flipped, CMakeLists alone cannot link it cold: you get duplicate
 symbols one way and undefined the other. That pair *is* the diagnostic.
@@ -10246,6 +10334,24 @@ expansion, not whatever the shim author happened to need that day. `verify_c_sig
 covers Rust-vs-C for declared prototypes; a shim that is *itself* mis-prototyped in C is
 outside that net.
 ---
+
+### A Rust export loses the link to a DELAY-IMPORT thunk, and the call loops forever
+**Symptom:** a process spins at 100% inside two DLLs, with no fault and no output. The PC
+samples alternate between `ole32!CreateErrorInfo` and `oleaut32!CreateErrorInfo`, which
+disassemble as `jmp [__imp_CreateErrorInfo]` on both sides. Wine's errorinfo test hung on
+every sweep. Any `GetErrorInfo`/`SetErrorInfo`/`CreateErrorInfo` caller would too.
+
+**Cause:** oleaut32's delay-import library is ONE object (`liboleaut32_delayed.delay.o`)
+with a thunk for every oleaut32 export, including the three it `-import`s back from ole32.
+lld loaded it for `SysAllocString` before ole32's `.def` exports were resolved. Loading it
+defined those names, so the Rust `errorinfo.rs` member was never pulled, although it was in
+the archive and first on the link line. `--allow-multiple-definition` kept it silent.
+
+**Fix:** `target_link_options(<mod> PRIVATE "LINKER:--require-defined=<sym>")` (i386:
+the decorated `_Sym@N`). **Not `-u`:** lld's MinGW driver maps `-u` to `-includeoptional`,
+which resolves too late to change the winner; `--require-defined` is a real `-include`.
+**Gated: `tools/scan_export_thunks.py`** (post-link, amd64; its baseline lists the
+deliberate re-exports and the harmless lost-local cases).
 
 ## Mm, PFN & paging
 
@@ -10914,6 +11020,14 @@ wrong dirent.
 **Generalize.** An uninitialised C local inside a loop is a read of the previous iteration
 whenever anything reads it before writing it, including a callee through a pointer. A
 translator that adds `= 0` (or `zeroed()`) is changing behaviour, not tidying.
+
+**Twice more in fastfat (2026-10-04), as a fresh `...Li` temporary copied back after the
+call.** `FatDefragDirectory` gave `FatLocateDirent` a zeroed `FoundOffsetLi` each pass, where the
+C passes its one `FoundOffset`. The compaction scan drifted on page 0, ended early, and rebuilt
+the free-dirent bitmap calling live root entries free, so every create in a full FAT16 root
+raised `STATUS_FILE_CORRUPT_ERROR` (~100k raises in Wine's storage32). `FatLocateSimpleOemDirent`
+zeroed `ByteOffsetLi` the same way, which lets `FatSelectNames` pick an 8.3 name that is taken.
+The tell is the temporary itself: an in/out `PVBO` parameter has to be the caller's variable.
 
 ### Completing the media wakes up code that a missing file was holding back
 **Symptom.** The first arm64 boot from the full livecd file set wedged during first-boot setup:

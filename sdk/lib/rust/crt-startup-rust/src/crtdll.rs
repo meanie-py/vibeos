@@ -1,8 +1,8 @@
 //! startup/crtdll.c — the DLL personality: `_CRT_INIT`, `DllMainCRTStartup`,
 //! `__DllMainCRTStartup`, and the dll `pre_c_init` (`.CRT$XIAA`).
 //!
-//! `DllMain`/`DllEntryPoint` are called via extern symbols so a
-//! consumer-defined `DllMain` wins; the defaults are in `crt-dllmain-rust`.
+//! `DllMain` is called via an extern symbol so a consumer-defined `DllMain` wins; the default
+//! is in `crt-dllmain-rust`. The default `DllEntryPoint` is here (see below for why).
 
 use crate::atexit::{__onexitbegin, __onexitend};
 use crate::cinit::{__xc_a, __xc_z, __xi_a, __xi_z};
@@ -18,11 +18,22 @@ extern "C" {
     fn free(ptr: *mut c_void);
 }
 
-// resolved at link to the consumer's DllMain/DllEntryPoint, else the
-// crt-dllmain-rust defaults.
+// resolved at link to the consumer's DllMain, else the crt-dllmain-rust default.
 extern "system" {
     fn DllMain(h: HANDLE, reason: DWORD, lpreserved: LPVOID) -> WINBOOL;
-    fn DllEntryPoint(h: HANDLE, reason: DWORD, lpreserved: LPVOID) -> WINBOOL;
+}
+
+/// startup/dllentry.c's default `DllEntryPoint` (returns TRUE). It lives HERE, beside its only
+/// caller, and not in crt-dllmain-rust with the default `DllMain`: in the C archive the two
+/// were separate members (dllentry.o, dllmain.o), but a Rust staticlib puts them in one object,
+/// and since almost no module defines `DllEntryPoint`, every DLL's link pulled that object in
+/// for it and got the default `DllMain` along with it. A module whose real `DllMain` sits in
+/// an archive rather than an object (shell32: libshell32_rust.a) lost to the default -- shell32
+/// never initialised and explorer panicked in CDefView on amd64 (2026-10-04). A module that
+/// defines its own `DllEntryPoint` (dciman32, msvfw32) does so in an object, which wins.
+#[no_mangle]
+pub unsafe extern "system" fn DllEntryPoint(_h: HANDLE, _reason: DWORD, _lpreserved: LPVOID) -> WINBOOL {
+    1
 }
 
 #[no_mangle]

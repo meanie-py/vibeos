@@ -217,7 +217,15 @@ unsafe fn handle_create(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
         (*fo).FsContext = id as usize as *mut core::ffi::c_void;
         (*fo).FsContext2 = kindtag as *mut core::ffi::c_void;
     }
-    nsprint!("[NETSTACK] TDI open: {:?} file object\n", kind);
+    // iphlpapi and wshtcpip open a fresh control channel for every entity query, so a
+    // desktop that polls the network (the tray, rapps) logged one line per poll: 64 in a
+    // single amd64 smoke. Say it once; address and connection opens stay one per socket.
+    static CONTROL_LOGGED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+    if !matches!(kind, TdiFileKind::ControlChannel)
+        || !CONTROL_LOGGED.swap(true, core::sync::atomic::Ordering::Relaxed)
+    {
+        nsprint!("[NETSTACK] TDI open: {:?} file object\n", kind);
+    }
     STATUS_SUCCESS
 }
 
@@ -873,6 +881,7 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
             IoMarkIrpPending(irp);
             tditrans::post(tditrans::Cmd::ReceiveDatagram {
                 addr_id: id, irp: irp as usize, buf: va, len,
+                ret_info: (*p).ReturnDatagramInformation as usize,
             });
             STATUS_PENDING
         }

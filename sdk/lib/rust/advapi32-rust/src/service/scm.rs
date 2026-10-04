@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
@@ -212,7 +213,7 @@ pub unsafe extern "system" fn ChangeServiceConfig2A(
         }
     }
 
-    dwError = RChangeServiceConfig2A(hService as SC_RPC_HANDLE, Info);
+    dwError = rpc_try(|| RChangeServiceConfig2A(hService as SC_RPC_HANDLE, Info)).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -249,7 +250,7 @@ pub unsafe extern "system" fn ChangeServiceConfig2W(
         }
     }
 
-    dwError = RChangeServiceConfig2W(hService as SC_RPC_HANDLE, Info);
+    dwError = rpc_try(|| RChangeServiceConfig2W(hService as SC_RPC_HANDLE, Info)).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -326,7 +327,7 @@ pub unsafe extern "system" fn ChangeServiceConfigA(
             }
         }
 
-        dwError = RChangeServiceConfigA(
+        dwError = rpc_try(|| RChangeServiceConfigA(
             hService as SC_RPC_HANDLE,
             dwServiceType,
             dwStartType,
@@ -340,7 +341,7 @@ pub unsafe extern "system" fn ChangeServiceConfigA(
             lpEncryptedPassword,
             dwPasswordSize,
             lpDisplayName as LPSTR,
-        );
+        )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
         break 'done;
     }
@@ -412,7 +413,7 @@ pub unsafe extern "system" fn ChangeServiceConfigW(
             }
         }
 
-        dwError = RChangeServiceConfigW(
+        dwError = rpc_try(|| RChangeServiceConfigW(
             hService as SC_RPC_HANDLE,
             dwServiceType,
             dwStartType,
@@ -426,7 +427,7 @@ pub unsafe extern "system" fn ChangeServiceConfigW(
             lpEncryptedPassword,
             dwPasswordSize,
             lpDisplayName as LPWSTR,
-        );
+        )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
     }
 
     if lpEncryptedPassword != core::ptr::null_mut() {
@@ -452,7 +453,7 @@ pub unsafe extern "system" fn CloseServiceHandle(mut hSCObject: SC_HANDLE) -> BO
         return 0;
     }
 
-    dwError = RCloseServiceHandle(core::ptr::addr_of_mut!(hSCObject) as LPSC_RPC_HANDLE);
+    dwError = rpc_try(|| RCloseServiceHandle(core::ptr::addr_of_mut!(hSCObject) as LPSC_RPC_HANDLE)).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != 0 {
         SetLastError(dwError);
@@ -470,7 +471,7 @@ pub unsafe extern "system" fn ControlService(
 ) -> BOOL {
     let dwError: DWORD;
 
-    dwError = RControlService(hService as SC_RPC_HANDLE, dwControl, lpServiceStatus);
+    dwError = rpc_try(|| RControlService(hService as SC_RPC_HANDLE, dwControl, lpServiceStatus)).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -573,7 +574,7 @@ pub unsafe extern "system" fn CreateServiceA(
             }
         }
 
-        dwError = RCreateServiceA(
+        dwError = rpc_try(|| RCreateServiceA(
             hSCManager as SC_RPC_HANDLE,
             lpServiceName as LPSTR,
             lpDisplayName as LPSTR,
@@ -590,7 +591,7 @@ pub unsafe extern "system" fn CreateServiceA(
             lpEncryptedPassword,
             dwPasswordSize,
             &mut hService as *mut SC_HANDLE as *mut SC_RPC_HANDLE,
-        );
+        )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
         break 'done;
     }
@@ -670,7 +671,7 @@ pub unsafe extern "system" fn CreateServiceW(
             }
         }
 
-        dwError = RCreateServiceW(
+        dwError = rpc_try(|| RCreateServiceW(
             hSCManager as SC_RPC_HANDLE,
             lpServiceName,
             lpDisplayName,
@@ -687,7 +688,7 @@ pub unsafe extern "system" fn CreateServiceW(
             lpEncryptedPassword,
             dwPasswordSize,
             &mut hService as *mut SC_HANDLE as *mut SC_RPC_HANDLE,
-        );
+        )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
         break 'done;
     }
@@ -710,7 +711,7 @@ pub unsafe extern "system" fn CreateServiceW(
 pub unsafe extern "system" fn DeleteService(hService: SC_HANDLE) -> BOOL {
     let dwError: DWORD;
 
-    dwError = RDeleteService(hService as SC_RPC_HANDLE);
+    dwError = rpc_try(|| RDeleteService(hService as SC_RPC_HANDLE)).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -755,14 +756,14 @@ pub unsafe extern "system" fn EnumDependentServicesA(
         dwBufferSize = cbBufSize;
     }
 
-    dwError = REnumDependentServicesA(
+    dwError = rpc_try(|| REnumDependentServicesA(
         hService as SC_RPC_HANDLE,
         dwServiceState,
         lpStatusPtr as LPBYTE,
         dwBufferSize,
         pcbBytesNeeded,
         lpServicesReturned,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError == ERROR_SUCCESS || dwError == ERROR_MORE_DATA {
         let mut lpStatusPtr = lpServices;
@@ -822,14 +823,14 @@ pub unsafe extern "system" fn EnumDependentServicesW(
         dwBufferSize = cbBufSize;
     }
 
-    dwError = REnumDependentServicesW(
+    dwError = rpc_try(|| REnumDependentServicesW(
         hService as SC_RPC_HANDLE,
         dwServiceState,
         lpStatusPtr as LPBYTE,
         dwBufferSize,
         pcbBytesNeeded,
         lpServicesReturned,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError == ERROR_SUCCESS || dwError == ERROR_MORE_DATA {
         let mut lpStatusPtr = lpServices;
@@ -895,7 +896,7 @@ pub unsafe extern "system" fn EnumServiceGroupW(
     }
 
     if lpGroup.is_null() {
-        dwError = REnumServicesStatusW(
+        dwError = rpc_try(|| REnumServicesStatusW(
             hSCManager as SC_RPC_HANDLE,
             dwServiceType,
             dwServiceState,
@@ -904,7 +905,7 @@ pub unsafe extern "system" fn EnumServiceGroupW(
             pcbBytesNeeded,
             lpServicesReturned,
             lpResumeHandle,
-        );
+        )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
     } else {
         dwError = REnumServiceGroupW(
             hSCManager as SC_RPC_HANDLE,
@@ -994,7 +995,7 @@ pub unsafe extern "system" fn EnumServicesStatusA(
         dwBufferSize = cbBufSize;
     }
 
-    dwError = REnumServicesStatusA(
+    dwError = rpc_try(|| REnumServicesStatusA(
         hSCManager as SC_RPC_HANDLE,
         dwServiceType,
         dwServiceState,
@@ -1003,7 +1004,7 @@ pub unsafe extern "system" fn EnumServicesStatusA(
         pcbBytesNeeded,
         lpServicesReturned,
         lpResumeHandle,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError == ERROR_SUCCESS || dwError == ERROR_MORE_DATA {
         dwCount = 0;
@@ -1086,7 +1087,7 @@ pub unsafe extern "system" fn EnumServicesStatusW(
         dwBufferSize = cbBufSize;
     }
 
-    dwError = REnumServicesStatusW(
+    dwError = rpc_try(|| REnumServicesStatusW(
         hSCManager as SC_RPC_HANDLE,
         dwServiceType,
         dwServiceState,
@@ -1095,7 +1096,7 @@ pub unsafe extern "system" fn EnumServicesStatusW(
         pcbBytesNeeded,
         lpServicesReturned,
         lpResumeHandle,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError == ERROR_SUCCESS || dwError == ERROR_MORE_DATA {
         let mut lpStatusPtr2 = lpStatusPtr;
@@ -1188,7 +1189,7 @@ pub unsafe extern "system" fn EnumServicesStatusExA(
         dwBufferSize = cbBufSize;
     }
 
-    dwError = REnumServicesStatusExA(
+    dwError = rpc_try(|| REnumServicesStatusExA(
         hSCManager as SC_RPC_HANDLE,
         InfoLevel,
         dwServiceType,
@@ -1199,7 +1200,7 @@ pub unsafe extern "system" fn EnumServicesStatusExA(
         lpServicesReturned,
         lpResumeHandle,
         pszGroupName as LPSTR,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError == ERROR_SUCCESS || dwError == ERROR_MORE_DATA {
         if InfoLevel == SC_ENUM_PROCESS_INFO {
@@ -1292,7 +1293,7 @@ pub unsafe extern "system" fn EnumServicesStatusExW(
         dwBufferSize = cbBufSize;
     }
 
-    dwError = REnumServicesStatusExW(
+    dwError = rpc_try(|| REnumServicesStatusExW(
         hSCManager as SC_RPC_HANDLE,
         InfoLevel,
         dwServiceType,
@@ -1303,7 +1304,7 @@ pub unsafe extern "system" fn EnumServicesStatusExW(
         lpServicesReturned,
         lpResumeHandle,
         pszGroupName as LPWSTR,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError == ERROR_SUCCESS || dwError == ERROR_MORE_DATA {
         if InfoLevel == SC_ENUM_PROCESS_INFO {
@@ -1348,13 +1349,13 @@ pub unsafe extern "system" fn I_ScSendPnPMessage(
 ) -> BOOL {
     let bResult: BOOL;
 
-    bResult = RI_ScSendPnPMessage(
+    bResult = rpc_try(|| RI_ScSendPnPMessage(
         hServiceStatus as RPC_SERVICE_STATUS_HANDLE,
         dwControlCode,
         dwEventType,
         (*(pEventData as PDEV_BROADCAST_HDR)).dbch_size,
         pEventData as LPBYTE,
-    ) as BOOL;
+    )).unwrap_or_else(|code| { SetLastError(ScmRpcStatusToWinError(code as _) as _); 0 as _ }) as BOOL;
 
     bResult
 }
@@ -1382,12 +1383,12 @@ pub unsafe extern "system" fn GetServiceDisplayNameA(
         lpNameBuffer = lpDisplayName;
     }
 
-    dwError = RGetServiceDisplayNameA(
+    dwError = rpc_try(|| RGetServiceDisplayNameA(
         hSCManager as SC_RPC_HANDLE,
         lpServiceName,
         lpNameBuffer,
         lpcchBuffer,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -1420,12 +1421,12 @@ pub unsafe extern "system" fn GetServiceDisplayNameW(
         lpNameBuffer = lpDisplayName;
     }
 
-    dwError = RGetServiceDisplayNameW(
+    dwError = rpc_try(|| RGetServiceDisplayNameW(
         hSCManager as SC_RPC_HANDLE,
         lpServiceName,
         lpNameBuffer,
         lpcchBuffer,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -1458,12 +1459,12 @@ pub unsafe extern "system" fn GetServiceKeyNameA(
         lpNameBuffer = lpServiceName;
     }
 
-    dwError = RGetServiceKeyNameA(
+    dwError = rpc_try(|| RGetServiceKeyNameA(
         hSCManager as SC_RPC_HANDLE,
         lpDisplayName,
         lpNameBuffer,
         lpcchBuffer,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -1496,12 +1497,12 @@ pub unsafe extern "system" fn GetServiceKeyNameW(
         lpNameBuffer = lpServiceName;
     }
 
-    dwError = RGetServiceKeyNameW(
+    dwError = rpc_try(|| RGetServiceKeyNameW(
         hSCManager as SC_RPC_HANDLE,
         lpDisplayName,
         lpNameBuffer,
         lpcchBuffer,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -1526,11 +1527,11 @@ pub unsafe extern "system" fn I_ScGetCurrentGroupStateW(
         pdwGroupState,
     );
 
-    dwError = RI_ScGetCurrentGroupStateW(
+    dwError = rpc_try(|| RI_ScGetCurrentGroupStateW(
         hSCManager as SC_RPC_HANDLE,
         pszGroupName,
         pdwGroupState,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -1560,11 +1561,11 @@ pub unsafe extern "system" fn I_ScValidatePnpService(
             break 'done;
         }
 
-        dwError = RI_ScValidatePnPService(
+        dwError = rpc_try(|| RI_ScValidatePnPService(
             hSCManager,
             pszServiceName as LPWSTR,
             &mut hServiceStatus as *mut SERVICE_STATUS_HANDLE as *mut RPC_SERVICE_STATUS_HANDLE,
-        );
+        )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
         *phServiceStatus = hServiceStatus;
     }
@@ -1581,10 +1582,10 @@ pub unsafe extern "system" fn LockServiceDatabase(hSCManager: SC_HANDLE) -> SC_L
     let mut hLock: SC_LOCK = core::ptr::null_mut();
     let dwError: DWORD;
 
-    dwError = RLockServiceDatabase(
+    dwError = rpc_try(|| RLockServiceDatabase(
         hSCManager as SC_RPC_HANDLE,
         core::ptr::addr_of_mut!(hLock) as *mut SC_RPC_LOCK,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -1624,12 +1625,12 @@ pub unsafe extern "system" fn OpenSCManagerA(
 
     WaitForSCManager();
 
-    dwError = ROpenSCManagerA(
+    dwError = rpc_try(|| ROpenSCManagerA(
         lpMachineName as LPSTR,
         lpDatabaseName as LPSTR,
         dwDesiredAccess,
         core::ptr::addr_of_mut!(hScm) as *mut SC_RPC_HANDLE,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     SetLastError(dwError);
     if dwError != ERROR_SUCCESS {
@@ -1650,12 +1651,12 @@ pub unsafe extern "system" fn OpenSCManagerW(
 
     WaitForSCManager();
 
-    dwError = ROpenSCManagerW(
+    dwError = rpc_try(|| ROpenSCManagerW(
         lpMachineName as LPWSTR,
         lpDatabaseName as LPWSTR,
         dwDesiredAccess,
         core::ptr::addr_of_mut!(hScm) as *mut SC_RPC_HANDLE,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     SetLastError(dwError);
     if dwError != ERROR_SUCCESS {
@@ -1679,12 +1680,12 @@ pub unsafe extern "system" fn OpenServiceA(
         return core::ptr::null_mut();
     }
 
-    dwError = ROpenServiceA(
+    dwError = rpc_try(|| ROpenServiceA(
         hSCManager as SC_RPC_HANDLE,
         lpServiceName as LPSTR,
         dwDesiredAccess,
         &mut hService as *mut SC_HANDLE as *mut SC_RPC_HANDLE,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     SetLastError(dwError);
     if dwError != ERROR_SUCCESS {
@@ -1708,12 +1709,12 @@ pub unsafe extern "system" fn OpenServiceW(
         return core::ptr::null_mut();
     }
 
-    dwError = ROpenServiceW(
+    dwError = rpc_try(|| ROpenServiceW(
         hSCManager as SC_RPC_HANDLE,
         lpServiceName as LPWSTR,
         dwDesiredAccess,
         core::ptr::addr_of_mut!(hService) as *mut SC_RPC_HANDLE,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     SetLastError(dwError);
     if dwError != ERROR_SUCCESS {
@@ -1745,12 +1746,12 @@ pub unsafe extern "system" fn QueryServiceConfigA(
         dwBufferSize = cbBufSize;
     }
 
-    dwError = RQueryServiceConfigA(
+    dwError = rpc_try(|| RQueryServiceConfigA(
         hService as SC_RPC_HANDLE,
         lpConfigPtr as LPBYTE,
         dwBufferSize,
         pcbBytesNeeded,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -1807,12 +1808,12 @@ pub unsafe extern "system" fn QueryServiceConfigW(
         dwBufferSize = cbBufSize;
     }
 
-    dwError = RQueryServiceConfigW(
+    dwError = rpc_try(|| RQueryServiceConfigW(
         hService as SC_RPC_HANDLE,
         lpConfigPtr as LPBYTE,
         dwBufferSize,
         pcbBytesNeeded,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -1905,13 +1906,13 @@ pub unsafe extern "system" fn QueryServiceConfig2A(
         }
     }
 
-    dwError = RQueryServiceConfig2A(
+    dwError = rpc_try(|| RQueryServiceConfig2A(
         hService as SC_RPC_HANDLE,
         dwInfoLevel,
         lpTempBuffer,
         dwBufferSize,
         pcbBytesNeeded,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         TRACE!(
@@ -2024,13 +2025,13 @@ pub unsafe extern "system" fn QueryServiceConfig2W(
         }
     }
 
-    dwError = RQueryServiceConfig2W(
+    dwError = rpc_try(|| RQueryServiceConfig2W(
         hService as SC_RPC_HANDLE,
         dwInfoLevel,
         lpTempBuffer,
         dwBufferSize,
         pcbBytesNeeded,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         TRACE!(
@@ -2107,12 +2108,12 @@ pub unsafe extern "system" fn QueryServiceLockStatusA(
         dwBufferSize = cbBufSize;
     }
 
-    dwError = RQueryServiceLockStatusA(
+    dwError = rpc_try(|| RQueryServiceLockStatusA(
         hSCManager as SC_RPC_HANDLE,
         lpStatusPtr as LPBYTE,
         dwBufferSize,
         pcbBytesNeeded,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -2149,12 +2150,12 @@ pub unsafe extern "system" fn QueryServiceLockStatusW(
         dwBufferSize = cbBufSize;
     }
 
-    dwError = RQueryServiceLockStatusW(
+    dwError = rpc_try(|| RQueryServiceLockStatusW(
         hSCManager as SC_RPC_HANDLE,
         lpStatusPtr as LPBYTE,
         dwBufferSize,
         pcbBytesNeeded,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -2179,13 +2180,13 @@ pub unsafe extern "system" fn QueryServiceObjectSecurity(
 ) -> BOOL {
     let dwError: DWORD;
 
-    dwError = RQueryServiceObjectSecurity(
+    dwError = rpc_try(|| RQueryServiceObjectSecurity(
         hService as SC_RPC_HANDLE,
         dwSecurityInformation,
         lpSecurityDescriptor as LPBYTE,
         cbBufSize,
         pcbBytesNeeded,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -2233,12 +2234,12 @@ pub unsafe extern "system" fn SetServiceObjectSecurity(
         return 0;
     }
 
-    dwError = RSetServiceObjectSecurity(
+    dwError = rpc_try(|| RSetServiceObjectSecurity(
         hService as SC_RPC_HANDLE,
         dwSecurityInformation,
         SelfRelativeSD as LPBYTE,
         Length,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     HeapFree(GetProcessHeap(), 0, SelfRelativeSD);
 
@@ -2266,7 +2267,7 @@ pub unsafe extern "system" fn QueryServiceStatus(
         return FALSE;
     }
 
-    dwError = RQueryServiceStatus(hService as SC_RPC_HANDLE, lpServiceStatus);
+    dwError = rpc_try(|| RQueryServiceStatus(hService as SC_RPC_HANDLE, lpServiceStatus)).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -2297,13 +2298,13 @@ pub unsafe extern "system" fn QueryServiceStatusEx(
         return FALSE;
     }
 
-    dwError = RQueryServiceStatusEx(
+    dwError = rpc_try(|| RQueryServiceStatusEx(
         hService as SC_RPC_HANDLE,
         InfoLevel,
         lpBuffer,
         cbBufSize,
         pcbBytesNeeded,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -2321,11 +2322,11 @@ pub unsafe extern "system" fn StartServiceA(
 ) -> BOOL {
     let dwError: DWORD;
 
-    dwError = RStartServiceA(
+    dwError = rpc_try(|| RStartServiceA(
         hService as SC_RPC_HANDLE,
         dwNumServiceArgs,
         lpServiceArgVectors as LPSTRING_PTRSA,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -2341,11 +2342,11 @@ pub unsafe extern "system" fn StartServiceW(
     dwNumServiceArgs: DWORD,
     lpServiceArgVectors: *mut LPCWSTR,
 ) -> BOOL {
-    let dwError: DWORD = RStartServiceW(
+    let dwError: DWORD = rpc_try(|| RStartServiceW(
         hService as SC_RPC_HANDLE,
         dwNumServiceArgs,
         lpServiceArgVectors as LPSTRING_PTRSW,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -2359,7 +2360,7 @@ pub unsafe extern "system" fn StartServiceW(
 pub unsafe extern "system" fn UnlockServiceDatabase(mut ScLock: SC_LOCK) -> BOOL {
     let mut dwError: DWORD;
 
-    dwError = RUnlockServiceDatabase(core::ptr::addr_of_mut!(ScLock) as LPSC_RPC_LOCK);
+    dwError = rpc_try(|| RUnlockServiceDatabase(core::ptr::addr_of_mut!(ScLock) as LPSC_RPC_LOCK)).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError == ERROR_INVALID_HANDLE {
         dwError = ERROR_INVALID_SERVICE_LOCK;
@@ -2377,7 +2378,7 @@ pub unsafe extern "system" fn UnlockServiceDatabase(mut ScLock: SC_LOCK) -> BOOL
 pub unsafe extern "system" fn NotifyBootConfigStatus(BootAcceptable: BOOL) -> BOOL {
     let dwError: DWORD;
 
-    dwError = RNotifyBootConfigStatus(core::ptr::null_mut(), BootAcceptable as DWORD);
+    dwError = rpc_try(|| RNotifyBootConfigStatus(core::ptr::null_mut(), BootAcceptable as DWORD)).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -2428,12 +2429,12 @@ pub unsafe extern "C" fn I_ScQueryServiceTagInfo(
     OutParams = core::ptr::null_mut();
 
     /* Call SCM to query tag information */
-    dwError = RI_ScQueryServiceTagInfo(
+    dwError = rpc_try(|| RI_ScQueryServiceTagInfo(
         hScm as SC_RPC_HANDLE,
         TagInfoLevelNameFromTag,
         core::ptr::addr_of_mut!(InParams),
         core::ptr::addr_of_mut!(OutParams),
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     'cleanup: {
         if dwError != ERROR_SUCCESS {

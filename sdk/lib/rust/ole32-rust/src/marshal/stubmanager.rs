@@ -18,9 +18,15 @@
 
 use super::types::*;
 
+extern "C" {
+    /// dll/win32/ole32/stubmanager_seh.c: IUnknown_Release under a native __try
+    /// (amd64/arm64); FALSE if the release faulted and the fault was swallowed.
+    fn ole32_release_object_guarded(object: *mut IUnknown) -> BOOL;
+}
+
 /// generates an ipid in the following format (similar to native version):
 /// Data1 = apartment-local ipid counter
-/// Data2 = apartment creator thread ID
+/// Data2 = apartment creator thread ID, or 0 for an MTA (wine-10)
 /// Data3 = process ID
 /// Data4 = random value
 unsafe fn generate_ipid(m: *mut stub_manager, ipid: *mut IPID) -> HRESULT {
@@ -33,7 +39,9 @@ unsafe fn generate_ipid(m: *mut stub_manager, ipid: *mut IPID) -> HRESULT {
 
     (*ipid).Data1 =
         InterlockedIncrement(core::ptr::addr_of_mut!((*(*m).apt).ipidc)) as u32;
-    (*ipid).Data2 = (*(*m).apt).tid as USHORT;
+    // wine-10: an MTA outlives its creator's membership (that thread can leave and
+    // become an STA), so its ipids must not be routed by the creator's tid.
+    (*ipid).Data2 = if (*(*m).apt).multi_threaded == FALSE { (*(*m).apt).tid as USHORT } else { 0 };
     (*ipid).Data3 = GetCurrentProcessId() as USHORT;
     S_OK
 }
@@ -294,10 +302,12 @@ unsafe fn stub_manager_delete(m: *mut stub_manager) {
     CoTaskMemFree((*m).oxid_info.psa as PVOID);
 
     /* C: __TRY / __EXCEPT_PAGE_FAULT around the release ("some broken apps
-     * crash in object destructors"). The C is built with USE_DUMMY_PSEH, so
-     * the guard is compiled out there too — a plain call is the faithful
-     * translation of the shipping binary. */
-    (*m).object.Release();
+     * crash in object destructors"; XP+ swallows the fault). The guard lives in
+     * a native-SEH C thunk (dll/win32/ole32/stubmanager_seh.c), since Rust has
+     * no __try and DUMMY_PSEH had compiled the C's out. */
+    if ole32_release_object_guarded((*m).object) == FALSE {
+        ERR!("Got page fault when releasing stub!\n");
+    }
 
     DEBUG_CLEAR_CRITSEC_NAME(core::ptr::addr_of_mut!((*m).lock));
     DeleteCriticalSection(core::ptr::addr_of_mut!((*m).lock));
@@ -551,6 +561,8 @@ unsafe fn ipid_to_ifstub(
             core::ptr::read_unaligned(core::ptr::addr_of!((*ipid).Data4) as *const OXID),
             TRUE,
         );
+    } else if (*ipid).Data2 == 0 && (*ipid).Data3 == GetCurrentProcessId() as USHORT {
+        *stub_apt = apartment_get_mta();
     } else {
         *stub_apt = apartment_findfromtid((*ipid).Data2 as DWORD);
     }

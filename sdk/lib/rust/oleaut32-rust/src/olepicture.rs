@@ -5811,7 +5811,10 @@ unsafe extern "C" fn create_stream(
     dwFileSize = GetFileSize(hFile, core::ptr::null_mut());
     
     if dwFileSize != INVALID_FILE_SIZE {
-        hGlobal = GlobalAlloc(HEAP_ZERO_MEMORY, dwFileSize as SIZE_T);
+        // C: GMEM_FIXED (0). This read HEAP_ZERO_MEMORY (0x8), which is not a GMEM_
+        // flag at all: GlobalAlloc rejects it (ERROR_INVALID_PARAMETER), so every
+        // file-backed OleLoadPicturePath / OleLoadPictureFile failed.
+        hGlobal = GlobalAlloc(0 /* GMEM_FIXED */, dwFileSize as SIZE_T);
         if hGlobal.is_null() {
             hr = -2147024882i32;
         } else if ReadFile(

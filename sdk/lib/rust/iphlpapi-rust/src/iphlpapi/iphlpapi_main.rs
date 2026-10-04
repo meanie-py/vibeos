@@ -917,7 +917,7 @@ pub unsafe extern "system" fn GetInterfaceInfo(
                                     .offset(ndx as isize))
                                 .Name
                             ) as *mut u16,
-                            b"\\\0D\0E\0V\0I\0C\0E\0\\\0T\0C\0P\0I\0P\0_\0\0\0".as_ptr() as *const u16,
+                            win32macros_rust::wide_bytes!(b"\\\0D\0E\0V\0I\0C\0E\0\\\0T\0C\0P\0I\0P\0_\0\0\0") as *const u16,
                         );
                         walker = name;
                         assigner = (core::ptr::addr_of_mut!(
@@ -1821,7 +1821,7 @@ pub unsafe extern "system" fn GetPerAdapterInfo(
 
     if RegQueryValueExW(
         hkey,
-        b"N\0a\0m\0e\0S\0e\0r\0v\0e\0r\0\0\0".as_ptr() as *const u16,
+        win32macros_rust::wide_bytes!(b"N\0a\0m\0e\0S\0e\0r\0v\0e\0r\0\0\0") as *const u16,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -2480,7 +2480,7 @@ unsafe fn GetInterfaceNameInternal(
     hr = StringCbPrintfW_1(
         szKeyName.as_mut_ptr(),
         core::mem::size_of::<[u16; 520]>(),
-        b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0{\x004\0D\x003\x006\0E\09\x007\x002\0-\0E\x003\x002\x005\0-\x001\x001\0C\0E\0-\0B\0F\0C\x001\0-\x000\08\x000\x000\x002\0B\0E\x001\x000\x003\x001\08\0}\0\\\0%\0s\0\\\0C\0o\0n\0n\0e\0c\0t\0i\0o\0n\0\0\0".as_ptr() as *const u16,
+        win32macros_rust::wide_bytes!(b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0N\0e\0t\0w\0o\0r\0k\0\\\0{\x004\0D\x003\x006\0E\09\x007\x002\0-\0E\x003\x002\x005\0-\x001\x001\0C\0E\0-\0B\0F\0C\x001\0-\x000\08\x000\x000\x002\0B\0E\x001\x000\x003\x001\08\0}\0\\\0%\0s\0\\\0C\0o\0n\0n\0e\0c\0t\0i\0o\0n\0\0\0") as *const u16,
         GuidString.Buffer,
     );
     RtlFreeUnicodeString(core::ptr::addr_of_mut!(GuidString));
@@ -2503,7 +2503,7 @@ unsafe fn GetInterfaceNameInternal(
 
     result = RegQueryValueExW(
         hKey,
-        b"N\0a\0m\0e\0\0\0".as_ptr() as *const u16,
+        win32macros_rust::wide_bytes!(b"N\0a\0m\0e\0\0\0") as *const u16,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(type_0),
         pInterfaceName as *mut u8,

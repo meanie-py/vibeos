@@ -1,0 +1,18 @@
+# vaentry — user32 vaentryA/W (Rust naked variadic thunks) across register/stack boundaries.
+#   tools/payloads/vaentry/build.sh {arch}
+#   VIBEOS_PAYLOAD=vaentry ./vibeos-cli build --arch {arch}
+#   ./vibeos-cli smoke --arch {arch} --payload vaentry
+name: vaentry
+description: "msvcrt + ucrtbase C ... exports as varargs-rust va_entry! thunks (Rust)"
+
+build_hint: "tools/payloads/vaentry/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/vaentry/vaentry-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/vaentry.exe
+
+test:
+  launch_marker: "[VAENTRY] done"
+  pass_marker: "[VAENTRY] done PASS"
+  launch_drain_secs: 300

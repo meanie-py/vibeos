@@ -907,6 +907,12 @@ pub extern "C" fn _scalb(x: f64, n: c_long) -> f64 {
     unsafe { ldexp(x, n) }
 }
 
+/// `_chgsign` -- crtmath float/chgsign.c: flips the sign bit (NaNs included).
+#[no_mangle]
+pub extern "C" fn _chgsign(x: f64) -> f64 {
+    f64::from_bits(x.to_bits() ^ (1u64 << 63))
+}
+
 /// `_scalbf`: `_scalb` in `float`.
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]

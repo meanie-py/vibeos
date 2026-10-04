@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -19,7 +20,7 @@ pub unsafe extern "system" fn WlanDeleteProfile(
         return ERROR_INVALID_PARAMETER;
     }
 
-    dwResult = _RpcDeleteProfile(hClientHandle, pInterfaceGuid, strProfileName);
+    dwResult = rpc_try(|| _RpcDeleteProfile(hClientHandle, pInterfaceGuid, strProfileName)).unwrap_or_else(|code| code as _);
 
     return dwResult;
 }
@@ -38,7 +39,7 @@ pub unsafe extern "system" fn WlanRenameProfile(
         return ERROR_INVALID_PARAMETER;
     }
 
-    dwResult = _RpcRenameProfile(hClientHandle, pInterfaceGuid, strOldProfileName, strNewProfileName);
+    dwResult = rpc_try(|| _RpcRenameProfile(hClientHandle, pInterfaceGuid, strOldProfileName, strNewProfileName)).unwrap_or_else(|code| code as _);
 
     return dwResult;
 }

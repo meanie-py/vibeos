@@ -568,6 +568,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **amd64: a user-mode Rust panic report can bugcheck the kernel (0x1E in the debug print
+  path)** (OPEN, 2026-10-04; kd lane). A panic in explorer's shell32 printed a stack walk that
+  ran into garbage, and the kernel faulted (C0000005) at `ntoskrnl+0xC64C0` reading it, which
+  symbolizes to the first line of kd-rust `KdIoPrintf` (`kdio.rs:822`), so the exact faulting
+  function is not confirmed. User mode must not be able to take the kernel down through a
+  debug print: the copy from the caller's buffer needs a probe under SEH. Repro: runs
+  `20261004-080222-cpyv4l2x` / `20261004-080920-w43f482z` (smoke-amd64, msvcrt-homebrew,
+  before the DllEntryPoint fix that removed the panic).
 - **fastfat: the free-dirent bitmap goes stale, then every create in that directory raises
   STATUS_FILE_CORRUPT_ERROR** (OPEN, 2026-10-04). Wine's ole32 `storage32` test (olewinetest
   payload, amd64) drives about 100,000 raises in 120 s. They are caught, so the test times out
@@ -696,14 +704,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`NextVbo` reset per iteration; Marlett never loaded); ks pin lists, fltmgr context
   terminator, pcix power/IPI spins. appstorm arm64: 40/43, cpl-appwiz and cpl-ncpa now pass.
   OPEN:
-  - **rapps on arm64**: its database download fails ("Check Internet Connection"), and the
-    OK-only error box then ignores WM_CLOSE (sndvol32's expected box did the same once in two
-    runs). Probably the user-mode network path now that setup starts Dhcp/Dnscache; netstack
-    logs a `TDI open: ControlChannel` every few seconds since. Owner: shell32-com lane.
+  - **rapps on arm64**: database download FIXED 2026-10-04 (netprobe payload: DNS, TCP and
+    wininet https to rapps.reactos.org, 2.4 MB rappmgr2.cab, VERDICT=PASS). Four layers were
+    broken: netstack never published its DHCP DNS servers to `Tcpip\Parameters\Interfaces`
+    (iphlpapi found none), smoltcp's single interface-wide ARP silence starved later lookups
+    (netstack now warms the router and on-link DNS servers), AFD select wrote poll status
+    into the IRP's copy rather than the caller's buffer, ws2_32 dropped `LUP_RETURN_BLOB` so
+    gethostbyname got no hostent; and bcrypt's ECDSA was a stub, so Let's Encrypt's chain never
+    verified (upstream bcrypt restored over mbedTLS 3.6). Still OPEN: rapps itself not
+    re-run under appstorm since; the OK-only error box ignoring WM_CLOSE; `recvfrom` ignores
+    SO_RCVTIMEO (a 3s timeout blocked 9 minutes); smoltcp's ARP silence is still global
+    (a per-address limit is a vendor patch, deferred).
   - **cpl-joy / cpl-appwiz intermittently open no window within 37s** (one each in two runs).
-  - **The dropped RpcTryExcept class**: the user-mode Rust RPC clients (advapi32
-    scm/eventlog/lsa, dnsapi, netapi32, samlib, ...) call their stubs with the C's RpcTryExcept
-    dropped ("DUMMY_PSEH -- execute directly"), so an unavailable RPC server kills the caller.
+  - **The dropped RpcTryExcept class**: FIXED 2026-10-04 for the user-mode RPC clients.
+    ntdll now exports the kernel's SEH trampolines (`RtlSehTryExcept`, sehtry.c built
+    `-DSEHTRY_USER_MODE`) and `ntdll_sys::seh::rpc_try` restores each C handler. 245 stub
+    calls go through it: dnsapi's 6 by hand, the rest in advapi32 (scm, sctrl, eventlog,
+    lsa), netapi32, samlib and wlanapi rewritten by `tools/rpc_try_wrap.py` from the C's own
+    `RpcExcept` bodies. netprobe's
+    rpc-raise step: OpenSCManagerW/OpenEventLogW on a missing host return 1722. Other
+    user-mode crates with DUMMY_PSEH-dropped handlers (non-RPC) are not yet audited.
   - **Safe boot is missing from the Rust kernel on every arch**: ex-rust neither parses
     `SAFEBOOT:` nor creates `CONTROL\SAFEBOOT\Option` (init.c Phase1InitializationDiscard).
   - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are

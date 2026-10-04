@@ -54,6 +54,9 @@ mod invalid_param;
 mod math;
 mod mbstr;
 mod misc;
+// msvcrtex_asm, transcribed: stack probes, i386 64-bit division, i386 ceilf/floorf.
+#[cfg(windows)]
+mod intrinsics;
 mod rand_s;
 
 // `rust_eh_personality` stub — the precompiled `core`/`compiler_builtins`

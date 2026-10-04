@@ -252,16 +252,7 @@ pub unsafe extern "system" fn MmDeleteKernelStack(StackBase: PVOID, GuiStack: BO
             let PageTableFrameNumber = (*Pfn1).pte_frame();
             let Pfn2 = MiGetPfnEntry(PageTableFrameNumber);
 
-            #[cfg(target_arch = "aarch64")]
-            {
-                if !Pfn2.is_null() {
-                    MiDecrementShareCount(Pfn2 as *mut _MMPFN, PageTableFrameNumber as u64);
-                }
-            }
-            #[cfg(not(target_arch = "aarch64"))]
-            {
-                MiDecrementShareCount(Pfn2 as *mut _MMPFN, (PageTableFrameNumber) as _);
-            }
+            MiDecrementShareCount(Pfn2 as *mut _MMPFN, (PageTableFrameNumber) as _);
 
             MI_SET_PFN_DELETED(Pfn1);
             MiDecrementShareCount(Pfn1 as *mut _MMPFN, (PageFrameNumber) as _);

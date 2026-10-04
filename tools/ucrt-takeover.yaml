@@ -2019,3 +2019,74 @@ families:
       - tgammaf
       - trunc
       - truncf
+
+  bessel:
+    provenance: libm-crate
+    replaces:
+      - sdk/lib/crt/math/ieee754 (vendored NetBSD FDLIBM, 1,346 lines), which ucrtbase linked for _j0.._yn until a08453c928c deleted it and moved the bodies onto the libm crate in crt-shared (cnt-rust)
+    oracle: >
+      cnt-difftest's Bessel rows (`./vibeos-cli difftest`): the C shell over libm as the oracle
+      against the shipping Rust, 84/84 rows passing at a08453c928c. Against a 200-bit mpmath
+      reference over 3M arguments neither the old FDLIBM nor libm is uniformly closer; libm's
+      worst case is far smaller (jn 10 ulp vs 901, y0 24 vs 56).
+    note: >
+      Declared after the fact: a08453c928c moved the bodies and verify_ucrtbase_cohab, which only
+      the strict source-deferred lint runs, then held master red with all six undeclared
+      (2026-10-04). Same FDLIBM lineage on both sides; ~0.3% of arguments differ by ulps.
+    exports:
+      - _j0
+      - _j1
+      - _jn
+      - _y0
+      - _y1
+      - _yn
+  chkesp_i386:
+    provenance: reactos-port
+    arches: [i386]
+    replaces:
+      - sdk/lib/vcruntime/i386/_chkesp.s (jnz -> jmp _chkesp_failed), which vcruntime assembled for ucrtbase until 79273604eb2 moved it into ucrt-rust (src/ucrt_reactos.rs, global_asm!)
+    oracle: >
+      tools/payloads/crtmath (i386): _chkesp through ucrtbase's export table with ZF=1 returns
+      quietly, and the export's first byte is jnz (0x75). The ZF=0 path tail-jumps to the same
+      C _chkesp_failed as before; the instruction text is the .s file's, two instructions.
+    note: >
+      Declared after the fact: when the .s left vcruntime, verify_ucrtbase_cohab held master red
+      on the fresh integration build (2026-10-04) while a lane build passed, because a STALE
+      _chkesp.s.obj still sat in that lane's vcruntime object directory and the check reads
+      object directories, not the archives the link actually uses.
+    exports:
+      - _chkesp
+  va_entries:
+    provenance: reactos-port
+    replaces:
+      - dll/win32/ucrtbase/ucrt_varargs_shim.c, the va_start trampolines (over the Rust `_v` twins) that were ucrtbase's own C until f1658ab724d made them varargs-rust va_entry! thunks in ucrt-rust (src/va_entries.rs)
+    oracle: >
+      tools/payloads/vaentry (all arches): _sopen/_open through ucrtbase's export table, with
+      pmode proven by the read-only attribute it produces, and _spawnl walking its argument list
+      into cmd /c exit 7; 21 checks, 0 failed on i386, amd64 and arm64. The `_v` twins behind
+      them are unchanged.
+    note: >
+      The entry points only: each body is one call to its twin with the argument list's
+      va_list. Declared with the move, after a lane build passed this check only because the
+      deleted C's stale objects were still in its ucrtbase object directory.
+    exports:
+      - _execl
+      - _execle
+      - _execlp
+      - _execlpe
+      - _wexecl
+      - _wexecle
+      - _wexeclp
+      - _wexeclpe
+      - _spawnl
+      - _spawnle
+      - _spawnlp
+      - _spawnlpe
+      - _wspawnl
+      - _wspawnle
+      - _wspawnlp
+      - _wspawnlpe
+      - _open
+      - _wopen
+      - _sopen
+      - _wsopen

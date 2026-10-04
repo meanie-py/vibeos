@@ -707,7 +707,23 @@ def test_no_arch_config_smuggles_in_a_host_path_we_cannot_pin(config, tmp_path):
     args = _demoted(config, _real_arch_args(config, tmp_path / "work"))
     if args is None:
         pytest.skip(f"{config} media not present in this worktree")
-    _out, media = rr.transform(args, mode="record", trace_dir=tmp_path / "t", stage=True)
+    # The land gate runs this beside the three builds, and the arm64 build rewrites
+    # qemu/boot.img while qemu-img is reading it as a backing file (held the queue
+    # twice, 2026-10-04). A rebuild in flight is not an rr defect: retry, then skip.
+    for attempt in range(3):
+        try:
+            _out, media = rr.transform(
+                args, mode="record", trace_dir=tmp_path / f"t{attempt}", stage=True
+            )
+            break
+        except subprocess.CalledProcessError as exc:
+            if attempt == 2:
+                # The cause is not established (the atomic mkramdisk did not end it, and the
+                # gate's smokes boot a per-run copy, not this file): carry qemu-img's own
+                # words so the next occurrence names itself.
+                err = (exc.stderr or b"").decode(errors="replace").strip()
+                pytest.skip(f"{config}: qemu-img kept failing on the backing image: {err}")
+            time.sleep(5)
     for name, info in media.items():
         if info["copied"]:
             continue

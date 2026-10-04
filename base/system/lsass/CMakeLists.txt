@@ -21,15 +21,12 @@ include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 # lsass's 6 import libs are now GENERATED in-cargo from each DLL's .spec
 # (lsass-cargo .import_lib) — no cmake reuse. oldnames.a (_name aliases) was
 # dropped (probe: zero oldname refs in liblsass_rust.a, proven by the clean
-# non-shared exe link). The msvcrtex .a path stays as the ordering anchor for
-# the in-cargo .msvcrtex_crt() c_from_compile_db replay (it needs msvcrtex's
-# compile_commands populated). sdk/lib/crt configures after base/, so the FILE
-# path is used (target names aren't in scope).
-set(LSASS_REUSED_LIBS
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libmsvcrtex.a)
+# non-shared exe link). The CRT startup is crt-startup-rust via .msvcrtex_crt(),
+# built in-cargo; it needs nothing cmake-built (the old libmsvcrtex.a anchor is gone
+# with the C archive).
 
 add_cargo_module(lsass lsass-cargo lsass.exe
     KIND win32exe
     BODY_CRATE lsass-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS ${LSASS_REUSED_LIBS})
+)

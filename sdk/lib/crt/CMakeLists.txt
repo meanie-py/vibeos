@@ -29,22 +29,18 @@ include(libcntpr.cmake)
 include(msvcrtex.cmake)
 include(oldnames.cmake)
 
-add_library(user32_wsprintf
-    printf/streamout.c
-    printf/wstreamout.c
-    printf/wsprintfA.c
-    printf/wsprintfW.c
-    printf/wvsprintfA.c
-    printf/wvsprintfW.c
-    printf/wvsnprintfA.c
-    printf/wvsnprintfW.c
-    string/strnlen.c
-    string/wcsnlen.c
-    string/mbstowcs_nt.c
-    string/wcstombs_nt.c)
-
-add_dependencies(user32_wsprintf psdk)
-target_compile_definitions(user32_wsprintf PRIVATE _USER32_WSPRINTF)
+# user32's wsprintf family is Rust (user32-wsprintf-rust, 2026-10-04): cnt-rust's
+# printf engine compiled in its _USER32_WSPRINTF configuration, the wv[s|sn]printf
+# string-stream wrappers, wsprintfA/W as naked variadic thunks, and the NT-flavoured
+# string helpers. The C it replaces, which nothing compiles any more:
+#   printf/streamout.c printf/wstreamout.c printf/wsprintfA.c printf/wsprintfW.c
+#   printf/wvsprintfA.c printf/wvsprintfW.c printf/wvsnprintfA.c printf/wvsnprintfW.c
+#   string/strnlen.c string/wcsnlen.c string/mbstowcs_nt.c string/wcstombs_nt.c
+rust_staticlib_variant(user32_wsprintf_rust user32-wsprintf-rust "" TRUE
+    ${MSVCRTEX_RUST_WORKSPACE}/cnt-rust/src/cabi/streamout.rs)
+add_library(user32_wsprintf INTERFACE)
+add_dependencies(user32_wsprintf rust_user32_wsprintf_rust)
+target_link_libraries(user32_wsprintf INTERFACE ${user32_wsprintf_rust_LIB})
 
 add_library(dbgrpt misc/dbgrpt.cpp)
 target_link_libraries(dbgrpt chkstk ${PSEH_LIB})

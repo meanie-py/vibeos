@@ -13,5 +13,6 @@ default = []
 lockdep = ["ntkrnl-sys/lockdep"]
 smp = ["ntkrnl-sys/smp"]
 [dependencies]
+win32macros-rust = { path = "../win32macros-rust" }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 dbgprint-rust = { path = "../dbgprint-rust" }

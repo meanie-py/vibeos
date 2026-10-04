@@ -97,6 +97,29 @@ pub type LPWSTR = *mut u16;
 pub type LPSTR = *mut i8;
 pub type HANDLE = *mut c_void;
 
+// ================= `L"..."` — a UTF-16 literal written as bytes, at 2-byte alignment ============
+
+/// A UTF-16LE literal spelled as a byte string (`b"L\0i\0b\0\0\0"`, the form rustconv and
+/// the translations write `L"Lib"` in), placed at a 2-byte-aligned address, as a `*const u16`.
+///
+/// `b"...".as_ptr() as LPCWSTR` compiles and usually works, and that is the trap: a byte
+/// string has alignment 1, so the linker may put it at an ODD address. User-mode x86 code
+/// reads it fine; the kernel does not. `ProbeForRead(p, len, sizeof(WCHAR))` raises
+/// STATUS_DATATYPE_MISALIGNMENT, and ws2_32's `L"LibraryPath"` landing on 0x7be41b61 when
+/// msvcrtex became Rust (2026-10-04) bugchecked the i386 guest. The bytes stay exactly as
+/// written (`tools/lint_wide_strings.py` still checks their encoding); only the placement
+/// changes. `tools/scan_unaligned_wide.py` flags the unaligned spelling.
+#[macro_export]
+macro_rules! wide_bytes {
+    ($b:literal) => {{
+        #[repr(C, align(2))]
+        struct Aligned<const N: usize>([u8; N]);
+        const BYTES: &[u8] = $b;
+        static S: Aligned<{ BYTES.len() }> = Aligned(*$b);
+        S.0.as_ptr() as *const u16
+    }};
+}
+
 // ================= minwindef.h — word and byte extraction ====================================
 
 /// `minwindef.h:189` — `#define LOWORD(l) ((WORD)((DWORD_PTR)(l) & 0xffff))`
@@ -488,6 +511,22 @@ mod tests {
                 16
             }
         );
+    }
+
+    #[test]
+    fn wide_bytes_are_aligned_and_unchanged() {
+        // Several in a row, so at least one would land odd if alignment were 1.
+        let ps = [
+            wide_bytes!(b"A\0\0\0"),
+            wide_bytes!(b"L\0i\0b\0r\0a\0r\0y\0P\0a\0t\0h\0\0\0"),
+            wide_bytes!(b"x\0\0\0"),
+        ];
+        for p in ps {
+            assert_eq!(p as usize % 2, 0);
+        }
+        let s = unsafe { core::slice::from_raw_parts(ps[1], 12) };
+        let want: [u16; 12] = [76, 105, 98, 114, 97, 114, 121, 80, 97, 116, 104, 0];
+        assert_eq!(s, &want);
     }
 
     #[test]

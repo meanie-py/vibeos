@@ -298,6 +298,7 @@ pub struct tagTrackerWindowInfo {
     pub dwOKEffect: DWORD,
     pub pdwEffect: *mut DWORD,
     pub trackingDone: BOOL,
+    pub inTrackCall: BOOL,
     pub returnValue: HRESULT,
     pub escPressed: BOOL,
     pub curTargetHWND: HWND,
@@ -985,6 +986,7 @@ pub unsafe extern "system" fn DoDragDrop(
     trackerInfo.dwOKEffect = dwOKEffect;
     trackerInfo.pdwEffect = pdwEffect;
     trackerInfo.trackingDone = 0;
+    trackerInfo.inTrackCall = 0;
     trackerInfo.escPressed = 0;
     trackerInfo.curTargetHWND = core::ptr::null_mut();
     trackerInfo.curDragTarget = core::ptr::null_mut();
@@ -2591,6 +2593,13 @@ unsafe fn give_feedback(info: *mut TrackerWindowInfo) -> HRESULT {
 unsafe fn OLEDD_TrackStateChange(trackerInfo: *mut TrackerWindowInfo) {
     let mut pt: POINT = core::mem::zeroed();
 
+    // QueryContinueDrag may run a message loop and land back here (wine-10);
+    // don't recurse into a second drag-state update mid-flight.
+    if (*trackerInfo).inTrackCall != 0 {
+        return;
+    }
+    (*trackerInfo).inTrackCall = 1;
+
     // Get the handle of the window under the mouse
     pt.x = (*trackerInfo).curMousePos.x;
     pt.y = (*trackerInfo).curMousePos.y;
@@ -2637,6 +2646,8 @@ unsafe fn OLEDD_TrackStateChange(trackerInfo: *mut TrackerWindowInfo) {
     } else {
         drag_end(trackerInfo);
     }
+
+    (*trackerInfo).inTrackCall = 0;
 }
 
 /// ole2.c:2484 OLEDD_GetButtonState

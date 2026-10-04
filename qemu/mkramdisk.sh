@@ -30,8 +30,15 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build-arm64"
 QEMU_DIR="$SCRIPT_DIR"
 
-RAMDISK_IMG="$QEMU_DIR/ramdisk.img"
-BOOT_IMG="$QEMU_DIR/boot.img"
+# Both images are built under temporary names and renamed into place at the very end, so a
+# reader never sees a half-written one. The merge-queue gate runs tooling while its arm64
+# build rewrites these: test_recordreplay's qemu-img, backing a qcow2 on boot.img, failed on
+# a green master (2026-10-04), and a concurrent smoke would boot a partial image.
+RAMDISK_IMG_FINAL="$QEMU_DIR/ramdisk.img"
+BOOT_IMG_FINAL="$QEMU_DIR/boot.img"
+RAMDISK_IMG="$QEMU_DIR/.ramdisk.img.partial-$$"
+BOOT_IMG="$QEMU_DIR/.boot.img.partial-$$"
+trap 'rm -f "$RAMDISK_IMG" "$BOOT_IMG"' EXIT
 UEFILDR="$BUILD_DIR/boot/freeldr/freeldr/uefildr.efi"
 FREELDR_INI="$QEMU_DIR/freeldr.ini"
 LIVECD_LST="$BUILD_DIR/boot/livecd.Debug.lst"
@@ -500,7 +507,10 @@ mcopy -i "$BOOT_IMG" "$RAMDISK_IMG" ::/ramdisk.img
 echo "[*] Boot image contents:"
 mdir -i "$BOOT_IMG" -/ :: 2>&1 | grep -E '(\.EFI|\.efi|\.ini|\.img|bytes free)'
 
+mv -f "$RAMDISK_IMG" "$RAMDISK_IMG_FINAL"
+mv -f "$BOOT_IMG" "$BOOT_IMG_FINAL"
+
 echo ""
 echo "[*] Done! Boot with: bash qemu/run.sh"
-echo "[*] Ramdisk: $(du -h "$RAMDISK_IMG" | cut -f1)"
-echo "[*] Boot image: $(du -h "$BOOT_IMG" | cut -f1)"
+echo "[*] Ramdisk: $(du -h "$RAMDISK_IMG_FINAL" | cut -f1)"
+echo "[*] Boot image: $(du -h "$BOOT_IMG_FINAL" | cut -f1)"

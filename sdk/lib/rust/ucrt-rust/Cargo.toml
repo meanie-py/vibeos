@@ -219,11 +219,11 @@ stdlib = []
 
 [dependencies]
 crt-portable-rust = { path = "../crt-portable-rust", optional = true }
-# `VaArgs`: reading C varargs on stable. The `...` entry points themselves are
-# three-line va_start trampolines in dll/win32/ucrtbase/ucrt_varargs_shim.c, which
-# also supplies the va_arg pullers this crate's extern block names. varargs-rust has
-# no dependencies of its own, so this edge cannot reach msvcrt-crt-rust.
-varargs-rust = { path = "../varargs-rust" }
+# `VaArgs`: reading C varargs on stable, `va_entry!` for the `...` entry points
+# (src/va_entries.rs), and `rust-pullers` for the va_arg pullers its extern block names
+# (ucrtbase has no C shim file left to supply them). varargs-rust has no dependencies of
+# its own, so this edge cannot reach msvcrt-crt-rust.
+varargs-rust = { path = "../varargs-rust", features = ["rust-pullers"] }
 # musl's libm in Rust (MIT, no_std): the algorithms behind `c99math`. Third-party, so
 # it is listed in THIRD-PARTY-NOTICES.md's Rust-crates table via `tools/vendored.py`.
 libm = { version = "0.2.16", optional = true }

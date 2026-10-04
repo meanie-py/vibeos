@@ -10,6 +10,7 @@ name = "disk_rust"
 path = "src/lib.rs"
 crate-type = ["staticlib"]
 [dependencies]
+win32macros-rust = { path = "../win32macros-rust" }
 panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 drvtrace-shim = { path = "../drvtrace-shim" }
