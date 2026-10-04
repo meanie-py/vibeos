@@ -2228,6 +2228,56 @@ unsafe extern "C" fn ShowTimeZoneList(hwnd: HWND, SetupData: PSETUPDATA, mut dwE
         0,
     );
 }
+// Upstream 3bbdfb932a3 (CORE-20406): the "automatically adjust for daylight saving" box
+// must be unchecked and disabled for a zone with no DST, and follow the zone selection. The
+// translation predates it and always checked the box, so picking a no-DST zone still turned
+// automatic DST adjustment on.
+unsafe fn HasDaylightSavingTime(Entry: PTIMEZONE_ENTRY) -> bool {
+    /* If StandardDate.wMonth and DaylightDate.wMonth are zero,
+     * the timezone does not observe daylight saving time */
+    (*Entry).TimezoneInfo.StandardDate.wMonth != 0 && (*Entry).TimezoneInfo.DaylightDate.wMonth != 0
+}
+
+unsafe fn GetSelectedTimeZoneEntry(SetupData: PSETUPDATA, dwEntryIndex: DWORD) -> PTIMEZONE_ENTRY {
+    let mut Entry: PTIMEZONE_ENTRY = (*SetupData).TimeZoneListHead;
+    while !Entry.is_null() {
+        if (*Entry).Index == dwEntryIndex {
+            return Entry;
+        }
+        Entry = (*Entry).Next;
+    }
+    core::ptr::null_mut()
+}
+
+unsafe fn GetTimeZoneEntryByIndex(SetupData: PSETUPDATA, dwComboIndex: DWORD) -> PTIMEZONE_ENTRY {
+    let mut Entry: PTIMEZONE_ENTRY = (*SetupData).TimeZoneListHead;
+    let mut i: DWORD = 0;
+    while !Entry.is_null() && i < dwComboIndex {
+        i += 1;
+        Entry = (*Entry).Next;
+    }
+    Entry
+}
+
+/// Check and enable the auto-daylight box exactly when `Entry` observes DST.
+unsafe fn SetAutoDaylightCheckbox(hwndDlg: HWND, bHasDST: bool) {
+    /* Enable or disable the checkbox based on DST support */
+    EnableWindow(GetDlgItem(hwndDlg, (IDC_AUTODAYLIGHT) as i32), bHasDST as BOOL);
+
+    /* Check the checkbox only if DST is supported, otherwise uncheck it */
+    SendDlgItemMessage(
+        hwndDlg,
+        (IDC_AUTODAYLIGHT) as i32,
+        BM_SETCHECK as UINT,
+        (if bHasDST { BST_CHECKED } else { BST_UNCHECKED }) as WPARAM,
+        0,
+    );
+}
+
+unsafe fn UpdateAutoDaylightCheckbox(hwndDlg: HWND, Entry: PTIMEZONE_ENTRY) {
+    SetAutoDaylightCheckbox(hwndDlg, !Entry.is_null() && HasDaylightSavingTime(Entry));
+}
+
 unsafe extern "C" fn SetLocalTimeZone(hwnd: HWND, SetupData: PSETUPDATA) {
     let mut TimeZoneInformation: TIME_ZONE_INFORMATION = core::mem::zeroed();
     let mut Entry: PTIMEZONE_ENTRY;
@@ -2362,29 +2412,41 @@ unsafe extern "system" fn DateTimePageDlgProc(
                     (*SetupData).TimeZoneIndex,
                 );
 
-                if (*SetupData).DisableAutoDaylightTimeSet == 0 {
-                    SendDlgItemMessage(
-                        hwndDlg,
-                        (IDC_AUTODAYLIGHT) as i32,
-                        BM_SETCHECK,
-                        BST_CHECKED as WPARAM,
-                        0,
-                    );
-                }
+                let Entry = GetSelectedTimeZoneEntry(SetupData, (*SetupData).TimeZoneIndex);
+                SetAutoDaylightCheckbox(
+                    hwndDlg,
+                    (*SetupData).DisableAutoDaylightTimeSet == 0
+                        && !Entry.is_null()
+                        && HasDaylightSavingTime(Entry),
+                );
             } else {
+                /* Get the default time zone index from the registry */
+                let mut dwEntryIndex: DWORD = (1 as i32).wrapping_neg() as u32;
+                GetTimeZoneListIndex(&mut dwEntryIndex);
+
                 ShowTimeZoneList(
                     GetDlgItem(hwndDlg, (IDC_TIMEZONELIST) as i32),
                     SetupData,
                     (1 as i32).wrapping_neg() as u32,
                 );
 
-                SendDlgItemMessage(
+                /* Set the auto-daylight checkbox based on whether
+                 * the selected timezone observes DST */
+                UpdateAutoDaylightCheckbox(hwndDlg, GetSelectedTimeZoneEntry(SetupData, dwEntryIndex));
+            }
+        }
+
+        WM_COMMAND => {
+            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && LOWORD!(wParam) as u32 == IDC_TIMEZONELIST {
+                /* User changed the timezone selection */
+                let dwIndex = SendDlgItemMessage(
                     hwndDlg,
-                    (IDC_AUTODAYLIGHT) as i32,
-                    BM_SETCHECK,
-                    BST_CHECKED as WPARAM,
+                    (IDC_TIMEZONELIST) as i32,
+                    CB_GETCURSEL as UINT,
                     0,
-                );
+                    0,
+                ) as DWORD;
+                UpdateAutoDaylightCheckbox(hwndDlg, GetTimeZoneEntryByIndex(SetupData, dwIndex));
             }
         }
 
@@ -2477,29 +2539,41 @@ unsafe extern "system" fn DateTimePageDlgProc(
                     (*SetupData).TimeZoneIndex,
                 );
 
-                if (*SetupData).DisableAutoDaylightTimeSet == 0 {
-                    SendDlgItemMessage(
-                        hwndDlg,
-                        (IDC_AUTODAYLIGHT) as i32,
-                        (BM_SETCHECK) as u32,
-                        BST_CHECKED as WPARAM,
-                        0,
-                    );
-                }
+                let Entry = GetSelectedTimeZoneEntry(SetupData, (*SetupData).TimeZoneIndex);
+                SetAutoDaylightCheckbox(
+                    hwndDlg,
+                    (*SetupData).DisableAutoDaylightTimeSet == 0
+                        && !Entry.is_null()
+                        && HasDaylightSavingTime(Entry),
+                );
             } else {
+                /* Get the default time zone index from the registry */
+                let mut dwEntryIndex: DWORD = (1 as i32).wrapping_neg() as u32;
+                GetTimeZoneListIndex(&mut dwEntryIndex);
+
                 ShowTimeZoneList(
                     GetDlgItem(hwndDlg, (IDC_TIMEZONELIST) as i32),
                     SetupData,
                     (1 as i32).wrapping_neg() as u32,
                 );
 
-                SendDlgItemMessage(
+                /* Set the auto-daylight checkbox based on whether
+                 * the selected timezone observes DST */
+                UpdateAutoDaylightCheckbox(hwndDlg, GetSelectedTimeZoneEntry(SetupData, dwEntryIndex));
+            }
+        }
+
+        WM_COMMAND => {
+            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && LOWORD!(wParam) as u32 == IDC_TIMEZONELIST {
+                /* User changed the timezone selection */
+                let dwIndex = SendDlgItemMessage(
                     hwndDlg,
-                    (IDC_AUTODAYLIGHT) as i32,
-                    (BM_SETCHECK) as u32,
-                    BST_CHECKED as WPARAM,
+                    (IDC_TIMEZONELIST) as i32,
+                    CB_GETCURSEL as UINT,
                     0,
-                );
+                    0,
+                ) as DWORD;
+                UpdateAutoDaylightCheckbox(hwndDlg, GetTimeZoneEntryByIndex(SetupData, dwIndex));
             }
         }
 
@@ -3952,7 +4026,10 @@ pub unsafe extern "C" fn ProcessUnattendSection(pSetupData: PSETUPDATA) {
             ) != 0
             {
                 let mut szPath: [WCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
-                swprintf(szName.as_mut_ptr(), (b"%d\0".as_ptr()).cast(), i);
+                // A WIDE format: this used to pass the bytes b"%d\0" reinterpreted as
+                // UTF-16 (U+6425 then whatever byte followed in .rdata), so every GuiRunOnce
+                // entry was written under the same junk value name and only the last survived.
+                swprintf(szName.as_mut_ptr(), w!("%d") as LPCWSTR, i);
                 // DPRINT removed
 
                 if ExpandEnvironmentStringsW(

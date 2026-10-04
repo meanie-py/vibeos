@@ -124,12 +124,14 @@ pub unsafe extern "system" fn HalInitializeProcessor(
 
         // Track this processor in both HAL affinity masks.  The C uses
         // InterlockedBitTestAndSetAffinity macros; the underlying op is
-        // just `lock bts` against a KAFFINITY.  Use the Rust atomic ops.
-        let mask = 1u64 << (ProcessorNumber as u64);
-        let active = &raw mut HalpActiveProcessors as *mut u64;
-        let default_aff = &raw mut HalpDefaultInterruptAffinity as *mut u64;
-        let active_atomic = &*(active as *const core::sync::atomic::AtomicU64);
-        let default_atomic = &*(default_aff as *const core::sync::atomic::AtomicU64);
+        // just `lock bts` against a KAFFINITY.  Use the Rust atomic ops, at
+        // KAFFINITY's width (ULONG_PTR): a 64-bit view of the 4-byte i386
+        // globals was a misaligned 8-byte RMW spanning the next variable.
+        let mask: usize = 1 << ProcessorNumber;
+        let active = &raw mut HalpActiveProcessors as *mut usize;
+        let default_aff = &raw mut HalpDefaultInterruptAffinity as *mut usize;
+        let active_atomic = core::sync::atomic::AtomicUsize::from_ptr(active);
+        let default_atomic = core::sync::atomic::AtomicUsize::from_ptr(default_aff);
         active_atomic.fetch_or(mask, core::sync::atomic::Ordering::SeqCst);
         default_atomic.fetch_or(mask, core::sync::atomic::Ordering::SeqCst);
 
