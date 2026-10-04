@@ -711,8 +711,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     (netstack now warms the router and on-link DNS servers), AFD select wrote poll status
     into the IRP's copy rather than the caller's buffer, ws2_32 dropped `LUP_RETURN_BLOB` so
     gethostbyname got no hostent; and bcrypt's ECDSA was a stub, so Let's Encrypt's chain never
-    verified (upstream bcrypt restored over mbedTLS 3.6). Still OPEN: the OK-only error box ignoring WM_CLOSE; `recvfrom` ignores
-    SO_RCVTIMEO (a 3s timeout blocked 9 minutes); smoltcp's ARP silence is still global
+    verified (upstream bcrypt restored over mbedTLS 3.6). SO_RCVTIMEO/SO_SNDTIMEO FIXED 2026-10-04: msafd
+    waited forever (upstream's own FIXME; a 3s timeout blocked 9 minutes), and now cancels the
+    request and fails with WSAETIMEDOUT (netprobe `rcvtimeo`: 2010ms on all arches). Still
+    OPEN: the OK-only error box ignoring WM_CLOSE; smoltcp's ARP silence is still global
     (a per-address limit is a vendor patch, deferred).
   - **arm64 appstorm, 2026-10-04 (after the network fixes; 5 soak boots).** rapps now really
     downloads, which exposed and fixed a netstack bug (TDI IRPs could not be cancelled: BUGCHECK
