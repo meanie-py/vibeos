@@ -146,6 +146,18 @@ _LOWERINGS: dict[str, tuple[str, ...]] = {
     "InterlockedExchangePointer": (r"Interlocked\w*", r"swap", r"atomic"),
     "InterlockedCompareExchangePointer": (r"Interlocked\w*", r"compare_exchange", r"atomic"),
     "InterlockedOr": (r"Interlocked\w*", r"fetch_or", r"atomic"),
+    # winuser.h wrappers over the Ex / Param entry points.
+    "CreateWindowW": (r"CreateWindowExW",),
+    "CreateWindowA": (r"CreateWindowExA",),
+    "CreateDialogW": (r"CreateDialogParamW",),
+    "CreateDialogA": (r"CreateDialogParamA",),
+    "DialogBoxW": (r"DialogBoxParamW",),
+    "DialogBoxA": (r"DialogBoxParamA",),
+    # Wine CRT allocation in a port that went to the process heap.
+    "malloc": (r"HeapAlloc", r"heap_alloc", r"malloc"),
+    "calloc": (r"HeapAlloc", r"heap_alloc_zero", r"calloc"),
+    "realloc": (r"HeapReAlloc", r"heap_realloc", r"realloc"),
+    "free": (r"HeapFree", r"heap_free", r"\bfree\b"),
     "InterlockedExchangeAdd": (r"Interlocked\w*", r"fetch_add", r"atomic"),
     # Inline initialisers the Rust open-codes as stores (acpi's AcpiOsCreateLock).
     "KeInitializeSpinLock": (r"KeInitializeSpinLock", r"=\s*0\b", r"write\(\s*\w*,?\s*0\s*\)"),
@@ -420,6 +432,9 @@ _IFDEF_LINE_RE = re.compile(r"^([ \t]*#[ \t]*)(ifdef|ifndef)[ \t]+(\w+)(.*)$")
 # Defined for every TU this tree compiles: llvm-mingw forces DUMMY_PSEH on all three arches
 # (sdk/cmake/gcc.cmake), and the root CMakeLists defines __REACTOS__.
 TREE_DEFINES = frozenset({"__REACTOS__", "_USE_DUMMY_PSEH"})
+# Never defined for a Windows target; Wine code guards host-only arms on them (advapi32
+# CredReadW's `#ifdef __APPLE__`). In a `defines` set a `!` prefix means KNOWN undefined.
+TREE_UNDEFINED = frozenset({"!__APPLE__", "!__MACH__", "!__linux__", "!__unix__", "!__FreeBSD__"})
 
 
 def _fold_defined(expr: str, pins: dict[str, int], defines: frozenset[str]) -> bool | None:
@@ -430,7 +445,9 @@ def _fold_defined(expr: str, pins: dict[str, int], defines: frozenset[str]) -> b
 
     def sub_defined(m: re.Match[str]) -> str:
         name = m.group(1) or m.group(2)
-        if name in defines or name in pins:
+        if "!" + name in defines:
+            return "0"
+        if name in defines or (name in pins and pins[name] != 0):
             return "1"
         unknown.append(name)
         return f"__U{len(unknown) - 1}"
@@ -465,6 +482,8 @@ def pin_version_guards(
         d = _IFDEF_LINE_RE.match(line)
         if d and d.group(3) in defines:
             line = f"{d.group(1)}if {int(d.group(2) == 'ifdef')}{d.group(4)}"
+        elif d and "!" + d.group(3) in defines:
+            line = f"{d.group(1)}if {int(d.group(2) == 'ifndef')}{d.group(4)}"
         m = _COND_LINE_RE.match(line)
         if m and not re.fullmatch(r"\s*\d+\s*", m.group(2).split("//")[0]):
             folded = _fold_defined(m.group(2), pins, defines)
@@ -478,13 +497,17 @@ _CMAKE_D_RE = re.compile(r"-D([A-Za-z_]\w*)(?:=(\S+?))?(?=[\s)\"]|$)")
 
 
 def module_defines(module_dir: Path) -> frozenset[str]:
-    """Names the module's CMakeLists `-D`s unconditionally (outside every `if()` block)."""
+    """Names the module's CMakeLists `-D`s unconditionally (outside every `if()` block),
+    plus `!NAME` for names known undefined: host-OS macros and the module's commented-out
+    feature switches (desk.c's `// #define CHECK_SCR_FULL_PATH` above `#ifdef` blocks)."""
     cml = module_dir / "CMakeLists.txt"
-    names = set(TREE_DEFINES)
+    names = set(TREE_DEFINES) | set(TREE_UNDEFINED)
     if not cml.is_file():
         return frozenset(names)
+    text = cml.read_text(encoding="utf-8", errors="replace")
+    names |= {"!" + n for n in disabled_switches(module_dir, text)}
     depth = 0
-    for raw in cml.read_text(encoding="utf-8", errors="replace").splitlines():
+    for raw in text.splitlines():
         line = raw.split("#")[0]
         if re.match(r"\s*if\s*\(", line, re.I):
             depth += 1
@@ -588,6 +611,10 @@ def c_bodies(
 
 # `#define KeWaitForMutexObject KeWaitForSingleObject`: an object-like ALIAS of a function.
 _ALIAS_RE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+([A-Za-z_]\w*)[ \t]*$")
+_MEMBER_ALIAS_RE = re.compile(
+    r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+\(?[A-Za-z_]\w*(?:\.|->)"
+    r"([A-Za-z_]\w*)\)?[ \t]*$"
+)
 _DEFINE_RE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)\(([^)]*)\)(.*)$")
 # Where a module's function-like macros come from: its own headers, and the DDK/NDK/XDK the
 # drivers include. Read, not preprocessed: a macro is only ever EXPANDED here to ask which
@@ -618,9 +645,10 @@ def macro_table(module_dir: Path, repo: Path) -> dict[str, str]:
         while i < len(lines):
             m = _DEFINE_RE.match(lines[i])
             if not m:
-                alias = _ALIAS_RE.match(lines[i])
+                alias = _ALIAS_RE.match(lines[i]) or _MEMBER_ALIAS_RE.match(lines[i])
                 if alias:
-                    # Modelled as a macro whose body calls the target.
+                    # Modelled as a macro whose body calls the target: for a member alias
+                    # (`#define AccFreeIndexArray NtMartaStatic.FreeIndexArray`) the field.
                     table.setdefault(alias.group(1), f"{alias.group(2)}()")
                 i += 1
                 continue
@@ -787,6 +815,9 @@ def _kept(callee: str, rust: str, idents: set[str]) -> bool:
     # A COM vtable macro `IShellFolder_Release(p)` is `((*(*p).lpVtbl).Release)(p)` in Rust.
     com = _COM_MACRO.match(callee)
     if com and com.group(1) in idents:
+        return True
+    # Wine's own implementation of the method: `ICreateTypeInfo2_fnAddRefTypeInfo`.
+    if com and any(i.endswith("_fn" + com.group(1)) for i in idents):
         return True
     return any(re.search(p, rust) for p in _LOWERINGS.get(callee, ()))
 
