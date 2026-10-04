@@ -871,7 +871,10 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
         - vartype 2517705/9 [crashed]
     - **Still owed:** `GetNextFreeBigBlock`'s `neededAddNumBlocks` (performance only). The
       remaining failures above are ordinary conformance work. First is vartest's fr-FR
-      parsing: the Rust already has wine-10's `cDigitSeparator2` logic, and `fra.nls`
-      already stores U+00A0 (compiled under `#pragma code_page(65001)`), so the next
-      step is a runtime probe of what `GetLocaleInfoW(0x40c, LOCALE_STHOUSAND |
-      LOCALE_NOUSEROVERRIDE)` actually returns.
+      parsing. The Rust already has wine-10's `cDigitSeparator2` logic, and `fra.nls`
+      stores U+00A0 in the SOURCE, but the compiled kernel32 did not: llvm-rc ignores
+      `#pragma code_page`, so every UTF-8 resource script was decoded as cp1252, and
+      LOCALE_STHOUSAND shipped as U+00C2 U+00A0 (and every translated string table in
+      the OS as mojibake). Fixed tree-wide with `--codepage=65001` in `sdk/cmake/gcc.cmake`.
+      (An earlier version of this note called the locale data fine, having read only
+      the source.)

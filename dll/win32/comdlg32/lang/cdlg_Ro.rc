@@ -60,7 +60,7 @@ Daţi un număr între %d și %d."
     PD32_MARGINS_OVERLAP                  "Marginile se suprapun sau se află în afara hârtiei.\n\
 Daţi o dimensiune diferită pentru margini."
     PD32_NR_OF_COPIES_EMPTY               "Valoarea 'Copii' nu poate să fie vidă şi trebuie să fie pozitivă."
-    PD32_TOO_LARGE_COPIES                 "Această imprimantă nu acceptă at\xE2t de multe copii.\n\
+    PD32_TOO_LARGE_COPIES                 "Această imprimantă nu acceptă atât de multe copii.\n\
 Introduceți un număr între 1 și %d."
     PD32_PRINT_ERROR                      "Eroare imprimare"
     PD32_NO_DEFAULT_PRINTER               "Imprimanta implicită nu a fost definită."

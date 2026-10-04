@@ -7421,6 +7421,17 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A resource string is right in the source and mojibake in the binary (llvm-rc ignores `#pragma code_page`)
+
+**Symptom:** a localized string or locale value is wrong at runtime while the `.rc`/`.nls`
+source is visibly correct. Wine's vartest failed every French thousands-separator case:
+`fra.nls` stores `LOCALE_STHOUSAND` as U+00A0, kernel32.dll carried U+00C2 U+00A0, and
+`VarParseNumFromStr` took `Â` as the separator. **Cause:** llvm-mingw's `windres` is llvm-rc,
+which drops `#pragma code_page(65001)` and decodes the bytes as cp1252, so every UTF-8 resource
+script in the tree compiled to mojibake. **Fix (2026-10-04):** `--codepage=65001` on both RC
+rules in `sdk/cmake/gcc.cmake`. **Check the compiled bytes, not the source:** walk the PE's
+RT_STRING block for the language (locale value `n` lives in block `n/16 + 1`).
+
 ### i386 guest float compares go the wrong way: the emulator's SAHF, not the code
 
 **Symptom:** on i386 only, an x87 floating-point comparison takes the wrong branch, while the
