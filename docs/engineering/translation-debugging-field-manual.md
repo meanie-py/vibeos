@@ -1483,6 +1483,14 @@ struct. Audit a module by listing every struct inside a `pshpack`/`poppack` pair
 checking the Rust `repr` (a ten-line script; ole32/oleaut32's other twenty were fine). This is
 the mirror image of the packed-`TDI_ADDRESS_IP` bullet above: wrong in either direction, and
 only a size assert catches it.
+**The pack can live in a PUBLIC header, where the module's own C never shows it.** cabinet's
+hand-declared `FDINOTIFICATION` was plain `repr(C)`, but `fdi.h` wraps it in `pshpack4`: on
+64-bit `pv` is at 0x1c, not 0x20, so every C client's `pfdin->pv` read half of `psz3` and half
+of `pv`. i386 was right by accident (pointers are 4 bytes, so pack 4 changes nothing), which is
+why the bug only surfaced on amd64/arm64 -- rapps crashed extracting its database. A
+module-local audit misses this; measure the header with the module's real flags (borrow its
+line from `compile_commands.json`, add `-fsyntax-only` and a `char (*x)[offsetof(T,f)+1000] = 1;`
+probe, read the numbers off the diagnostics) and pin the result with `offset_of!` asserts.
 
 ### A macro translated from the wrong side of an `#ifdef`
 **Symptom.** Values built through one helper are corrupt in a way that looks like two fields

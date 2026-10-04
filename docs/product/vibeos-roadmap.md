@@ -719,12 +719,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - **arm64 appstorm, 2026-10-04 (after the network fixes; 5 soak boots).** rapps now really
     downloads, which exposed and fixed a netstack bug (TDI IRPs could not be cancelled: BUGCHECK
     0x1E when a socket closed mid-connect, see smoltcp-netstack-design.md). What is left:
-    - **rapps does not close within 10s while "Updating Database"** (2.4 MB over TLS on TCG);
-      appstorm kills it. The app works (netprobe fetches the same file on all arches).
-    - **cpl-appwiz then opens no window** in every run where the previous rapps was killed (it
-      PASSed when that rapps closed normally). Not mutex abandonment: netprobe's mutex-abandon
-      step gets WAIT_ABANDONED at once on all arches. Next instrument: dump the second rapps'
-      threads when appstorm sees no window.
+    - **rapps "close timeout" while "Updating Database"**: FIXED 2026-10-04, two bugs. (1)
+      appstorm judged the startup download dialog; closing it makes rapps start the download
+      again from its main window (upstream gui.cpp CheckAvailable), so it never closed in 10s.
+      appstorm now waits past that dialog (`wait_past`, ~45s on arm64 TCG) and judges the main
+      window. (2) The extraction that then runs crashed: cabinet-rust's `FDINOTIFICATION` lacked
+      fdi.h's `pshpack4`, so on 64-bit rapps' fnNotify read `pv` as NULL/garbage. Packed and
+      offset-asserted; arm64 rapps now opens "ReactOS Applications Manager" and closes OK.
+      Two pre-fix boots hung on the old close path, unexplained: 20261004-161901-c5mgnl_5 went
+      silent right after "shot rapps" (likely the garbage-`pv` extraction, unproven), and
+      20261004-163220-whatl493 stopped inside appstorm's close-timeout thread dump, after the
+      UI thread and before the download thread (blocked in an ntdll syscall), with no
+      FAULTLOOP report. Inference, not shown: GetThreadContext waiting on a thread whose
+      kernel wait blocks the suspend APC.
+    - **cpl-appwiz then opened no window**: not reproduced since the TDI cancellation fix
+      (PASS in all 5 arm64 boots that reached it, three of them after a killed rapps). Not mutex abandonment either.
+    - **OWED: hand-declared user-mode FFI structs have no layout gate.** `verify_offsets.py`
+      covers ntkrnl-sys only; a struct a crate declares by hand (cabinet's FDI types, the
+      `IMAGE_*`/`DROPFILES`/`SHFILEINFO` copies in shell32/version/crt-startup) is checked by
+      nothing unless someone wrote an `offset_of!` assert. Wanted: the verify_offsets recipe
+      (clang offsets with the module's flags -> generated rustc asserts) for user-mode crates.
     - cpl-joy passed every run today.
   - **arm64 FAULTLOOP: the walker faults on a mapping software reads as valid.** The pager
     reports success 64 times on one fault while the PTE (and, now dumped, the PDE) read as

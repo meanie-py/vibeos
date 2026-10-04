@@ -21,7 +21,13 @@ ULONG __cdecl DbgPrint(const char *Format, ...);
 /* expect_box: the text of a message box that is the RIGHT answer in the test machine, not a
  * bug -- the app telling the truth about the environment. Any other box still fails, so an
  * allowance cannot hide a regression that changes what the app says. */
-typedef struct { const char *name; const char *exe; const char *args; const char *expect_box; } app_t;
+/* wait_past: the title of a progress window the app opens BEFORE its real one. rapps
+ * downloads its database first; closing that dialog makes it start the download again from
+ * its main window (upstream gui.cpp CheckAvailable), so judging the dialog under TCG's slow
+ * TLS measured the cancel path, not the app. The app is judged on the window after it. */
+typedef struct {
+    const char *name; const char *exe; const char *args; const char *expect_box; const char *wait_past;
+} app_t;
 static const app_t apps[] = {
     { "notepad", "notepad.exe", "" },       { "calc", "calc.exe", "" },
     { "regedit", "regedit.exe", "" },       { "taskmgr", "taskmgr.exe", "" },
@@ -37,7 +43,7 @@ static const app_t apps[] = {
     { "eventvwr", "eventvwr.exe", "", "attached to the system is not functioning" },
     { "devmgmt", "devmgmt.exe", "" },
     { "servman", "servman.exe", "" },       { "msconfig", "msconfig.exe", "" },
-    { "dxdiag", "dxdiag.exe", "" },         { "rapps", "rapps.exe", "" },
+    { "dxdiag", "dxdiag.exe", "" },         { "rapps", "rapps.exe", "", NULL, "Updating Database" },
     { "mplay32", "mplay32.exe", "" },       { "sndrec32", "sndrec32.exe", "" },
     { "explorer-folder", "explorer.exe", "%WINDIR%" },
     { "mycomputer", "explorer.exe", "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}" },
@@ -219,6 +225,21 @@ static void ascii(const WCHAR *w, char *o, size_t n)
     size_t i = 0;
     for (; w[i] && i + 1 < n; i++) o[i] = (w[i] >= 32 && w[i] < 127) ? (char)w[i] : '?';
     o[i] = 0;
+}
+
+static int progress_showing(const wset_t *before, const char *title)
+{
+    wset_t got;
+    new_windows(before, &got);
+    for (int i = 0; i < got.n; i++) {
+        WCHAR t[128] = L"";
+        char ta[128];
+        InternalGetWindowText(got.h[i], t, 128);
+        ascii(t, ta, sizeof ta);
+        if (!strncmp(ta, title, strlen(title)))
+            return 1;
+    }
+    return 0;
 }
 
 static void dump_hung_thread(HWND h)
@@ -707,6 +728,30 @@ int main(void)
         while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000)
             Sleep(250);
         Sleep(3000);
+        /* After the settle: rapps titles its dialog only once it has been created. */
+        if (a->wait_past && progress_showing(&before, a->wait_past)) {
+            DWORD w0 = GetTickCount();
+            while (progress_showing(&before, a->wait_past) && GetTickCount() - w0 < 300000)
+                Sleep(1000);
+            SAY("  waited %lums past \"%s\"%s\n", GetTickCount() - w0, a->wait_past,
+                progress_showing(&before, a->wait_past) ? " (STILL SHOWING)" : "");
+            while (!has_real_window(&before, &got) && GetTickCount() - w0 < 330000)
+                Sleep(250);
+            Sleep(3000);
+        }
+        /* No real window: dump every launched process still alive. appwiz's rapps outlives
+         * the rundll32 that started it, and nothing else here says what it is doing. */
+        if (!has_real_window(&before, &got)) {
+            grow_family();
+            for (int f = 0; f < nfamily; f++) {
+                HANDLE h = OpenProcess(SYNCHRONIZE, FALSE, family[f]);
+                if (h && WaitForSingleObject(h, 0) == WAIT_TIMEOUT) {
+                    SAY("  no window: pid=%lu alive, threads:\n", family[f]);
+                    dump_process(family[f]);
+                }
+                if (h) CloseHandle(h);
+            }
+        }
         new_windows(&before, &got);
         /* At least one real window: an applet host also owns tiny helper windows. */
         int ok = 0, hung = 0, errbox = 0;
