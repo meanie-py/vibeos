@@ -950,14 +950,55 @@ Record it here and keep going; only chase one when it looks load-bearing.
     position. That is not a stall, it is replay going off-script, and QEMU's own
     consistency check caught it. It is deterministic — same message, same guest
     line, two replays.
-  * **Both modes implicate character writes**, which is a lead and not a
-    conclusion: the abort names `EVENT_CHAR_WRITE` outright, and the wedge sits
-    mid-`EVENT_CHAR_WRITE` in a uniform `EVENT_INSTRUCTION +7` / char-write
-    burst (clean1's was `+3`). Worth chasing; not yet evidence of one cause.
+  * ~~**Both modes implicate character writes**~~ — **RETRACTED by the third
+    sample, see below.** The abort does name `EVENT_CHAR_WRITE` and the first
+    wedge did sit mid-char-write, but a second wedge sits in an exception burst
+    with no char-writes anywhere near it.
   * **Two traces of the same boot failing differently means replay is not
     reliably deterministic here at all**, which reframes the wedge: it may be
     one symptom of a divergence that sometimes stalls and sometimes trips the
     char-write check, rather than a structural ceiling.
+
+  **Third sample (`div-b`, 2026-10-03): a second WEDGE, in a completely
+  different kind of event burst — which kills the char-write lead.** Window at
+  the frozen offset:
+
+  ```
+  @921590  icount 9691286144  EVENT_CHECKPOINT (id 31)
+  @921591  icount 9691286619  EVENT_INSTRUCTION
+  @921596  icount 9691286619  EVENT_CHECKPOINT (id 31)
+  @921597  icount 9691289919  EVENT_INSTRUCTION
+  ```
+
+  No `EVENT_CHAR_WRITE` at all — checkpoints, instruction chunks and id 2
+  (exceptions). The first wedge sat in a uniform char-write burst, so "the wedge
+  happens mid-serial-output" was a property of that one sample, not of the wedge.
+
+  All three samples on QEMU 8.2.2, same `--smp 1 --payload none --shift 3`:
+
+  | trace | trace bytes | mode | frozen offset | % of trace | replay lines / record lines |
+  |---|---|---|---|---|---|
+  | wedge-shift3 | 3,113,641 | WEDGE | 798,720 | 25.65% | 835 / 2,117 |
+  | wedge-b | 3,044,334 | ABORT (missing char write) | — | — | 1,103 / 2,117 |
+  | div-b | 7,695,461 | WEDGE | 921,600 | 11.98% | 876 / 4,352 |
+
+  What the third sample settles:
+
+  * **The limit is not a FRACTION of the trace.** 25.65% vs 11.98% on traces
+    2.5x apart in size.
+  * **It is roughly absolute, and roughly stable:** 798,720 and 921,600 are 15%
+    apart (both exact multiples of 4096, which is the read granularity and
+    therefore not itself informative). The historical pair sat at ~2.34MB on
+    QEMU 9.0.2 with a different guest, 0.86% apart from each other. So the
+    pattern is "tight within a (QEMU, guest) pair, moves between pairs" rather
+    than a universal constant — which is why the 2.145MB figure did not
+    reproduce and why chasing a round number in it was never going to work.
+  * **Guest lines reached is just as tight as the offset**: 835, 1,103, 876 —
+    a ~14% band, while the records behind them are 2,117 / 2,117 / 4,352 lines.
+    A replay gets ~900 lines into the boot regardless of how long the recorded
+    boot was. Byte-position and guest-progress cannot be separated on this data.
+  * **Two of three wedge, one aborts, same recording command minutes apart.** The
+    failure MODE is not a property of the configuration.
 
   **The `--shift` discriminator does not exist.** The plan was to break the
   trace-bytes/serial-bytes collinearity by recording at a different icount
