@@ -658,10 +658,18 @@ def cmd_wedge(args, repo: Path) -> int:
     """
     trace = _resolve_trace(args)
     offset = args.at
-    live = False
+    src = "--at"
+    icount = getattr(args, "icount", None)
+    if icount is not None:
+        # Exact, unlike a read offset: the first event at or past the instruction count
+        # QEMU reports for a stalled replay (`info replay` on a monitor).
+        offset = next((ev.offset for ev in rr.walk_events(trace) if ev.icount >= icount), None)
+        if offset is None:
+            print(f"icount {icount} is past the last event in {trace}", file=sys.stderr)
+            return 1
+        src = f"--icount {icount}"
     if offset is None:
         offset = rr.trace_read_position(trace)
-        live = True
         if offset is None:
             print(
                 f"nobody has {trace}/replay.bin open, so there is no read position to "
@@ -669,11 +677,11 @@ def cmd_wedge(args, repo: Path) -> int:
                 file=sys.stderr,
             )
             return 1
+        src = "live reader"
 
     size = (trace / "replay.bin").stat().st_size
     before, after = rr.events_around_offset(trace, offset, args.count, args.count)
     pct = 100.0 * offset / size if size else 0.0
-    src = "live reader" if live else "--at"
     print(f"trace:  {trace}")
     print(f"offset: {offset} of {size} ({pct:.2f}%, from {src})")
     if not before and not after:

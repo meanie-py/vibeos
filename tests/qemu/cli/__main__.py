@@ -830,6 +830,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="inspect this byte offset instead of asking a live replay where it stopped",
     )
     rwg.add_argument(
+        "--icount",
+        type=int,
+        help="inspect the events at this instruction count -- the exact position of a "
+        "stalled replay, from `info replay` on a QEMU monitor (better than any read offset)",
+    )
+    rwg.add_argument(
         "--count", type=int, default=8, help="events either side of the offset (default 8)"
     )
     rwg.set_defaults(fn=rr_mod.rr_cmd, rr_verb="wedge")
