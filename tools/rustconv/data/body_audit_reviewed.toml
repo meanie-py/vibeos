@@ -60,3 +60,124 @@ callees = [
 ]
 verdict = "owed"
 note = "upstream's tcpipconf_notify.c rewrite landed on C already flipped; upstream-sync's netcfgx cluster"
+
+# Upstream deltas: `body-audit --provenance` shows every dropped callee is newer than the Rust.
+
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "AdapterDiscoveryThread"
+callees = ["FreeAdapter"]
+verdict = "owed"
+note = "upstream's DHCPCSVC alternate-configuration / RequestParams RPC work (10092f84660 and its cluster) landed on C already flipped; deferred in upstream-sync's netcfgx/dhcpcsvc cluster (active-lanes/upstream-sync-netcfgx-dhcpcsvc-verified.md)"
+
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "AdapterStop"
+callees = ["FreeAdapter"]
+verdict = "owed"
+note = "upstream's DHCPCSVC alternate-configuration / RequestParams RPC work (10092f84660 and its cluster) landed on C already flipped; deferred in upstream-sync's netcfgx/dhcpcsvc cluster (active-lanes/upstream-sync-netcfgx-dhcpcsvc-verified.md)"
+
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "setup_adapter"
+callees = ["RtlIpv4AddressToStringA"]
+verdict = "owed"
+note = "upstream's DHCPCSVC alternate-configuration / RequestParams RPC work (10092f84660 and its cluster) landed on C already flipped; deferred in upstream-sync's netcfgx/dhcpcsvc cluster (active-lanes/upstream-sync-netcfgx-dhcpcsvc-verified.md)"
+
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "state_panic"
+callees = ["CreateIpForwardEntry", "DeleteIpForwardEntry", "RegCloseKey", "RegDeleteValueA", "RegOpenKeyExA", "RegSetValueExA", "RtlIpv4AddressToStringA", "strcat", "strlen", "time"]
+verdict = "owed"
+note = "upstream's DHCPCSVC alternate-configuration / RequestParams RPC work (10092f84660 and its cluster) landed on C already flipped; deferred in upstream-sync's netcfgx/dhcpcsvc cluster (active-lanes/upstream-sync-netcfgx-dhcpcsvc-verified.md)"
+
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "DhcpHandlePnPEvent"
+callees = ["SetBinaryClassId"]
+verdict = "owed"
+note = "upstream's DHCPCSVC alternate-configuration / RequestParams RPC work (10092f84660 and its cluster) landed on C already flipped; deferred in upstream-sync's netcfgx/dhcpcsvc cluster (active-lanes/upstream-sync-netcfgx-dhcpcsvc-verified.md)"
+
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "DhcpNotifyConfigChange"
+callees = ["DhcpNotifyConfigChangeEx"]
+verdict = "owed"
+note = "upstream's DHCPCSVC alternate-configuration / RequestParams RPC work (10092f84660 and its cluster) landed on C already flipped; deferred in upstream-sync's netcfgx/dhcpcsvc cluster (active-lanes/upstream-sync-netcfgx-dhcpcsvc-verified.md)"
+
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "DhcpRequestParams"
+callees = ["Client_RequestParams", "MIDL_user_free", "MapRequestResultData"]
+verdict = "owed"
+note = "upstream's DHCPCSVC alternate-configuration / RequestParams RPC work (10092f84660 and its cluster) landed on C already flipped; deferred in upstream-sync's netcfgx/dhcpcsvc cluster (active-lanes/upstream-sync-netcfgx-dhcpcsvc-verified.md)"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentPrivate_fnUnknown1"
+callees = ["CreateNotifyObject", "INetCfgComponentControl_QueryInterface", "impl_from_INetCfgComponentPrivate"]
+verdict = "owed"
+note = "upstream's tcpipconf_notify.c / inetcfgcomp_iface.c rewrite (adapter list, notify objects) landed on C already flipped; upstream-sync's netcfgx cluster"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponent_fnRaisePropertyUi"
+callees = ["CreateNotifyObject", "INetCfgComponentPropertyUi_ApplyProperties", "INetCfgComponentPropertyUi_CancelProperties"]
+verdict = "owed"
+note = "upstream's tcpipconf_notify.c / inetcfgcomp_iface.c rewrite (adapter list, notify objects) landed on C already flipped; upstream-sync's netcfgx cluster"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentControl_fnApplyRegistryChanges"
+callees = ["GatewaysChanged", "IpAddressesChanged", "NameServersChanged", "_swprintf"]
+verdict = "owed"
+note = "upstream's tcpipconf_notify.c / inetcfgcomp_iface.c rewrite (adapter list, notify objects) landed on C already flipped; upstream-sync's netcfgx cluster"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentControl_fnInitialize"
+callees = ["Initialize"]
+verdict = "owed"
+note = "upstream's tcpipconf_notify.c / inetcfgcomp_iface.c rewrite (adapter list, notify objects) landed on C already flipped; upstream-sync's netcfgx cluster"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentControl_fnQueryInterface"
+callees = ["INetCfgComponentControl_AddRef", "IsEqualIID"]
+verdict = "owed"
+note = "upstream's tcpipconf_notify.c / inetcfgcomp_iface.c rewrite (adapter list, notify objects) landed on C already flipped; upstream-sync's netcfgx cluster"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentControl_fnRelease"
+callees = ["CoTaskMemFree", "FreeSettings", "InterlockedDecrement(->_InterlockedDecrement)"]
+verdict = "owed"
+note = "upstream's tcpipconf_notify.c / inetcfgcomp_iface.c rewrite (adapter list, notify objects) landed on C already flipped; upstream-sync's netcfgx cluster"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentPropertyUi_fnAddRef"
+callees = ["INetCfgComponentControl_AddRef", "impl_from_INetCfgComponentPropertyUi"]
+verdict = "owed"
+note = "upstream's tcpipconf_notify.c / inetcfgcomp_iface.c rewrite (adapter list, notify objects) landed on C already flipped; upstream-sync's netcfgx cluster"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentPropertyUi_fnRelease"
+callees = ["INetCfgComponentControl_Release", "impl_from_INetCfgComponentPropertyUi"]
+verdict = "owed"
+note = "upstream's tcpipconf_notify.c / inetcfgcomp_iface.c rewrite (adapter list, notify objects) landed on C already flipped; upstream-sync's netcfgx cluster"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentPropertyUi_fnSetContext"
+callees = ["CoTaskMemFree", "INetLanConnectionUiInfo_GetDeviceGuid", "IUnknown_QueryInterface", "IUnknown_Release", "StringFromCLSID", "_wcsicmp", "impl_from_INetCfgComponentPropertyUi"]
+verdict = "owed"
+note = "upstream's tcpipconf_notify.c / inetcfgcomp_iface.c rewrite (adapter list, notify objects) landed on C already flipped; upstream-sync's netcfgx cluster"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "Initialize"
+callees = ["FreeSettings", "LoadAdapterSettings", "LoadTcpipSettings"]
+verdict = "owed"
+note = "upstream's tcpipconf_notify.c / inetcfgcomp_iface.c rewrite (adapter list, notify objects) landed on C already flipped; upstream-sync's netcfgx cluster"

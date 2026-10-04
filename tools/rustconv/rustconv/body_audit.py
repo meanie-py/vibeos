@@ -209,8 +209,20 @@ def mark_upstream(findings: list[Finding], repo: Path) -> None:
         old = then[(rev, f.c_file)]
         if old is None:
             continue
-        idents = set(_IDENT_RE.findall(old))
+        # Judge against the function's own old body: dhcpcsvc's state_panic gained a whole
+        # alternate-configuration arm full of RegSetValueExA calls the FILE already had.
+        body = _old_body(old, f.function)
+        idents = set(_IDENT_RE.findall(body if body is not None else ""))
         f.upstream = [c for c in f.dropped if c.split("(", 1)[0] not in idents]
+
+
+def _old_body(text: str, name: str) -> str | None:
+    masked = mask_code(text)
+    for m in re.finditer(rf"\b{re.escape(name)}\s*\([^;{{]*?\)\s*\{{", masked):
+        end = _matching(masked, m.end() - 1, "{", "}")
+        if end is not None:
+            return masked[m.end() - 1 : end + 1]
+    return None
 
 
 def load_reviewed(path: Path = REVIEWED_PATH) -> dict[tuple[str, str], dict]:
