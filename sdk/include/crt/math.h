@@ -359,6 +359,11 @@ _Check_return_ __CRT_INLINE double fmin(_In_ double x, _In_ double y)
 }
 _Check_return_ __CRT_INLINE float fmaxf(_In_ float x, _In_ float y) { return (float)fmax((double)x, (double)y); }
 _Check_return_ __CRT_INLINE float fminf(_In_ float x, _In_ float y) { return (float)fmin((double)x, (double)y); }
+#else /* _CRTBLD */
+/* A CRT build gets the real exports instead of the inlines above. The
+   ucrtbase apitest defines _CRTBLD on non-x86 precisely to call them. */
+_Check_return_ _CRTIMP double __cdecl round(_In_ double x);
+_Check_return_ _CRTIMP float __cdecl roundf(_In_ float x);
 #endif /* !_CRTBLD */
 
 #ifndef NO_OLDNAMES /* !__STDC__ */
