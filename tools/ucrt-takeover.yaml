@@ -1934,6 +1934,17 @@ families:
       - _controlfp
       - _statusfp
       - _statusfp2
+  scalbf_amd64:
+    provenance: wine-port
+    arches: [amd64]
+    replaces:
+      - ucrtbase.spec's x86_64 alias of _scalbf (and _o__scalbf) to scalbnf, which never reported overflow or underflow to _matherr
+    oracle: >
+      Its whole body is `ldexp(x, n)` in float, and cnt-rust's ldexp is what is graded: bit-exact against glibc in cnt-difftest, and its Wine math_error points by tools/payloads/matherrs (Wine's test_math_errors: ldexp and _scalb overflow/underflow rows, 304 checks, 0 failed on all three arches).
+    note: >
+      Wine's _scalbf is `return ldexp(num, power);` from a float function; src/c99math.rs, beside _scalb (which a C library on ucrtbase's link line also defines, so it needs no declaration here). The export exists only on x86_64.
+    exports:
+      - _scalbf
   c99math:
     provenance: libm-crate
     replaces:
