@@ -92,6 +92,19 @@ BUILD_CFGS = {
             'not(all(target_arch = "x86", not(target_feature = "sse2"),'
             ' not(target_feature = "soft-float")))'
         ),
+        # cabi/streamout.rs's _USER32_WSPRINTF configuration: never set in cnt-rust's own
+        # build (it is libcntpr's engine there); see user32-wsprintf-rust.
+        "streamout_user32": "any()",
+    },
+    "user32-wsprintf-rust": {
+        # user32-wsprintf-rust/build.rs: always -- it compiles cnt-rust's streamout.rs as
+        # its own module, in the user32 configuration.
+        "streamout_user32": "all()",
+    },
+    "cnt-difftest": {
+        # cnt-difftest/build.rs: always -- tests/diff.rs includes streamout.rs a second time
+        # to grade the user32 configuration.
+        "streamout_user32": "all()",
     },
 }
 

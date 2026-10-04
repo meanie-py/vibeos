@@ -1608,6 +1608,9 @@ sdk/lib/cportlib/CMakeLists.txt	1	# add_library(cportlib cport.c) # replaced by 
 sdk/lib/cportlib/CMakeLists.txt	1	# cport.c (the NS16550 serial library) is translated to Rust (cport-rust,
 sdk/lib/cportlib/CMakeLists.txt	1	# cportlib — Rust cohabitation flip (cport.c -> sdk/lib/rust/cport-rust)
 sdk/lib/cportlib/CMakeLists.txt	1	# libcportlib.a by path, which rust_cohab_stub.c keeps present).
+sdk/lib/crt/CMakeLists.txt	1	# printf/streamout.c printf/wstreamout.c printf/wsprintfA.c printf/wsprintfW.c
+sdk/lib/crt/CMakeLists.txt	1	# printf/wvsprintfA.c printf/wvsprintfW.c printf/wvsnprintfA.c printf/wvsnprintfW.c
+sdk/lib/crt/CMakeLists.txt	1	# string/strnlen.c string/wcsnlen.c string/mbstowcs_nt.c string/wcstombs_nt.c
 sdk/lib/crt/libcntpr.cmake	1	# (float feature). These are the AMD-libm math/libm_sse2/*f.c — amd64-ONLY
 sdk/lib/crt/libcntpr.cmake	1	# (i386 uses *_asm.s, REMOVE_ITEM'd from the asm list above so the
 sdk/lib/crt/libcntpr.cmake	1	# (iswctype) + is_wctype.c (is_wctype).
