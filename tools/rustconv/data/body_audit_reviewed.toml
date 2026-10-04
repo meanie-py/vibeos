@@ -4477,3 +4477,68 @@ function = "UiShowMessageBoxesInSection"
 callees = ["UiMessageBox"]
 verdict = "benign"
 note = "the INI/command-line text goes to UiVtbl.MessageBox as-is, never as a printf format"
+
+# body-audit low-lead triage, 2026-10-04.
+
+[[reviewed]]
+module = "drivers/filesystems/fastfat"
+function = "FatFreeCcb"
+callees = ["RtlFillMemoryUlong"]
+verdict = "false"
+note = "the fill is under #if FAT_FILL_FREE, which nothing defines (debug poisoning)"
+
+[[reviewed]]
+module = "drivers/filesystems/fastfat"
+function = "FatFreeFcb"
+callees = ["RtlFillMemoryUlong"]
+verdict = "false"
+note = "the fill is under #if FAT_FILL_FREE, which nothing defines (debug poisoning)"
+
+[[reviewed]]
+module = "drivers/filesystems/fastfat"
+function = "FatFreeIrpContext"
+callees = ["RtlFillMemoryUlong"]
+verdict = "false"
+note = "the fill is under #if FAT_FILL_FREE, which nothing defines (debug poisoning)"
+
+[[reviewed]]
+module = "drivers/filesystems/fastfat"
+function = "FatFreeNonPagedFcb"
+callees = ["RtlFillMemoryUlong"]
+verdict = "false"
+note = "the fill is under #if FAT_FILL_FREE, which nothing defines (debug poisoning)"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "PathQualifyExW"
+callees = ["ZeroMemory"]
+verdict = "false"
+note = "szDotExtension is cleared by reassigning a zeroed array"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "PathResolveA"
+callees = ["ZeroMemory"]
+verdict = "false"
+note = "dirsW is cleared slot by slot before use"
+
+[[reviewed]]
+module = "drivers/storage/class/cdrom"
+function = "DeviceEnableMainTimer"
+callees = ["WDF_OBJECT_ATTRIBUTES_INIT", "WDF_TIMER_CONFIG_INIT"]
+verdict = "false"
+note = "the WDF INIT macros are open-coded with Size, ExecutionLevel and SynchronizationScope"
+
+[[reviewed]]
+module = "drivers/storage/class/cdrom"
+function = "DeviceRegisterInterface"
+callees = ["WDF_OBJECT_ATTRIBUTES_INIT"]
+verdict = "false"
+note = "WDF_OBJECT_ATTRIBUTES_INIT is open-coded with all three fields"
+
+[[reviewed]]
+module = "drivers/storage/class/cdrom"
+function = "DeviceSendStartUnit"
+callees = ["WDF_OBJECT_ATTRIBUTES_INIT", "WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE"]
+verdict = "false"
+note = "open-coded; the missing ExecutionLevel/SynchronizationScope (KMDF rejected the request, START UNIT never went out) fixed 2026-10-04"

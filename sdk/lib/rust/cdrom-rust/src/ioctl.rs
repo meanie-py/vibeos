@@ -2881,12 +2881,10 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
     let mut srb: *mut SCSI_REQUEST_BLOCK = core::ptr::null_mut();
     let mut requestParameters: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
 
-    // Zero requestParameters (expanded WDF_REQUEST_PARAMETERS_INIT)
-    core::ptr::write_bytes(
-        &mut requestParameters as *mut WDF_REQUEST_PARAMETERS as *mut u8,
-        0,
-        core::mem::size_of::<WDF_REQUEST_PARAMETERS>(),
-    );
+    // WDF_REQUEST_PARAMETERS_INIT also sets Size. The "expanded" zero-fill this replaced
+    // left Size at 0, and WdfRequestGetParameters returns without filling anything when
+    // Size is wrong: the write-cache property query always saw zero-length buffers.
+    WDF_REQUEST_PARAMETERS_INIT(&mut requestParameters);
 
     WdfRequestGetParameters(Request, &mut requestParameters);
 

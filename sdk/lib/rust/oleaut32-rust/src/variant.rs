@@ -607,8 +607,10 @@ unsafe fn VARIANT_ValidateType(vt: VARTYPE) -> HRESULT {
 #[no_mangle]
 pub unsafe extern "system" fn VariantInit(pVarg: *mut VARIANTARG) {
     TRACE!(b"(%p)\n\0".as_ptr() as PCHAR, pVarg);
-    
-    (*V_VT_ref(pVarg)) = VT_EMPTY;
+
+    // Wine 10 (e05d78ede06) clears the whole VARIANT, not just vt: a caller that reads
+    // the value fields of a fresh VT_EMPTY must see zeros, not stack garbage.
+    core::ptr::write_bytes(pVarg, 0, 1);
 }
 #[no_mangle]
 pub unsafe extern "C" fn VARIANT_ClearInd(pVarg: *mut VARIANTARG) -> HRESULT {
