@@ -1194,10 +1194,16 @@ endmacro()
 
 # PSEH lib, needed with mingw
 set(PSEH_LIB "pseh")
-# The user-mode CRT DLLs' PSEH runtime from Rust (sdk/lib/pseh: pseh-rust, `user`). A
-# variable like PSEH_LIB because tools/verify_ucrtbase_cohab.py reads bare names on
-# ucrtbase's link line as C libraries.
-set(PSEH_USER_LIB "pseh_user_rust")
+
+# Rust archives the user-mode CRT DLLs name BY PATH on their link lines: a path is placed
+# exactly where it is written (an INTERFACE wrapper's library lands after the direct items,
+# behind import libraries -- ntdll's exports longjmp on amd64 and answered ucrtbase's own),
+# and Ninja still orders the link after the custom command that produces it. Spelled here,
+# not exported from the producing directory, because dll/ is configured BEFORE sdk/lib/:
+# a variable set there is empty when the DLLs read it on a fresh configure. The producers
+# (sdk/lib/pseh, sdk/lib/vcruntime) FATAL_ERROR if their rust_staticlib_variant disagrees.
+set(PSEH_USER_LIB "${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh_user_rust_a.a")
+set(VCRT_SETJMP_LIB "${CMAKE_BINARY_DIR}/sdk/lib/vcruntime/libvcrt_setjmp_rust.a")
 
 function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_address)
     set(_object_file ${_binary_file}.o)

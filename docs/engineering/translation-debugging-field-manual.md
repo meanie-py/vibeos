@@ -10038,6 +10038,24 @@ an object file. **Fix:** a defaults crate may hold ONLY symbols that should be p
 themselves: the default `DllEntryPoint` moved into crt-startup-rust beside its caller. To check
 any module: relink it with `-Wl,-Map=` and see which input defines `DllMain`/`main`.
 
+### A Rust archive behind an INTERFACE wrapper links AFTER the import libraries, which then answer
+**Symptom:** a DLL's export is silently satisfied by another DLL's import: ucrtbase and
+msvcrt on amd64 exported `longjmp` (msvcrt also `_setjmp`/`_setjmpex`) as forwards to ntdll
+after vcruntime's C setjmp objects became the setjmp-rust archive. Only
+`verify_ucrtbase_cohab` noticed ("exported but answered by an import from ntdll.dll"), and
+only for ucrtbase. **Cause:** CMake writes a target's direct link items first and the
+dependencies of those items after them. A Rust staticlib reached as an INTERFACE wrapper's
+`INTERFACE_LINK_LIBRARIES`, or as a static library's own dependency, lands after
+`libkernel32.a`/`libntdll.a`, and lld takes the first archive that defines a symbol, so
+ntdll's import thunk won. The C objects had been archive members of vcruntime itself, which
+is on the direct line. **Fix:** name such an archive BY PATH on the consumer's link line
+(`${PSEH_USER_LIB}`, `${VCRT_SETJMP_LIB}`); a path sits exactly where it is written, and
+Ninja still orders the link after the custom command that produces it. Define the path
+globally (gcc.cmake), not as a variable exported from the producing directory: `dll/` is
+configured before `sdk/lib/`, so such a variable is empty on a fresh configure and filled
+in only on the next one. To check: `grep` the module's `LINK_LIBRARIES` in build.ninja for
+where the archive actually sits, and relink with `-Wl,-Map=` to see who defines the symbol.
+
 ### A module translated down to Rust + `.rc` links with the RC driver, and `LINKER:` flags break
 **Symptom:** `clang: error: unknown argument: '--allow-multiple-definition'` from a module's
 link, after a change elsewhere (msvcrtex becoming Rust). **Cause:** CMake picks a target's link

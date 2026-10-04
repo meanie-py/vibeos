@@ -270,9 +270,10 @@ add_custom_target(rust_msvcrt_crt DEPENDS ${MSVCRT_CRT_RUST_LIB})
 # first-match. --whole-archive forces the Rust defs in first; the C copies then
 # become the ignored duplicates (--allow-multiple-definition). See lane plan §1b.
 link_msvcrt_rust_cohab(msvcrt)
-# ${PSEH_USER_LIB} first: the SEH runtime resolves from Rust (pseh-rust) before any of these
-# libraries' own ${PSEH_LIB} dependency is reached.
-target_link_libraries(msvcrt ${PSEH_USER_LIB} msvcrt_static crtmath dbgrpt vcruntime wine chkstk)
+# ${PSEH_USER_LIB} and ${VCRT_SETJMP_LIB} first, by path (gcc.cmake): the SEH runtime and
+# setjmp/longjmp resolve from Rust before any of these libraries' own ${PSEH_LIB} and before
+# ntdll's import library, which exports _setjmp/longjmp and would otherwise answer them.
+target_link_libraries(msvcrt ${PSEH_USER_LIB} ${VCRT_SETJMP_LIB} msvcrt_static crtmath dbgrpt vcruntime wine chkstk)
 if(ARCH STREQUAL "i386")
     target_link_libraries(msvcrt chkesp)
 endif()
