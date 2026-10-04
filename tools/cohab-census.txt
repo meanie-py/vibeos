@@ -1789,6 +1789,7 @@ sdk/lib/uuid/CMakeLists.txt	1	# oledbnewiid.c
 sdk/lib/uuid/CMakeLists.txt	1	# qosguid.c
 sdk/lib/uuid/CMakeLists.txt	1	# tapi3iid.c
 sdk/lib/uuid/CMakeLists.txt	1	# vcguids.c
+sdk/lib/vcruntime/CMakeLists.txt	1	# i386/_chkesp.s is ucrt-rust's ucrt_reactos.rs (global_asm!) for ucrtbase, and msvcrt's
 sdk/lib/vcstartup/CMakeLists.txt	1	# msvcrtex needs the same hook msvcrtex gets from startup/gccmain.c. It used
 subsystems/csr/csrlib/CMakeLists.txt	1	# api.c — replaced by Rust (smss-csrss-rust/src/csrlib/api.rs)
 subsystems/csr/csrlib/CMakeLists.txt	1	# capture.c — replaced by Rust (smss-csrss-rust/src/csrlib/capture.rs)
