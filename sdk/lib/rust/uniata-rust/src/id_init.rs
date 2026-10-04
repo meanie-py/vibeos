@@ -278,6 +278,16 @@ pub unsafe extern "system" fn UniataChipDetectChannels(
                 _ => {}
             }
         }
+        ATA_SERVERWORKS_ID => {
+            // The SATA parts have 4 ports (upstream svw_sata.c), and UniATA left
+            // them at the 2-channel default, hiding ports 2 and 3. One part has
+            // 8, but upstream/Linux say 0x0241 and UniATA/FreeBSD's naming says
+            // 0x0242, and the 0x400-byte BAR5 window mapped below covers exactly
+            // 4 ports; 4 is right for every part either way.
+            if ChipType == SWKSMIO {
+                (*deviceExtension).NumberChannels = 4;
+            }
+        }
         ATA_PROMISE_ID => 'promise: {
             if ChipType != PRMIO {
                 break 'promise;
@@ -1005,6 +1015,17 @@ pub unsafe extern "system" fn UniataChipDetect(
                             &mut (*deviceExtension).BaseIoAddressSATA_0,
                             BaseMemAddress, MemIo, FALSE,
                         );
+                        {
+                            // Upstream svw_sata.c errata: clear SICR bit 18 so the
+                            // chip stops waiting for a status message before
+                            // sending a FIS (fixes Seagate drives), then clear
+                            // pending interrupts.
+                            let sata0 = (&(*deviceExtension).BaseIoAddressSATA_0) as *const _ as ULONG_PTR;
+                            AtapiWritePortEx4(core::ptr::null_mut(), sata0, 0x80,
+                                AtapiReadPortEx4(core::ptr::null_mut(), sata0, 0x80) & !0x00040000);
+                            AtapiWritePortEx4(core::ptr::null_mut(), sata0, 0x44, 0xFFFFFFFF);
+                            AtapiWritePortEx4(core::ptr::null_mut(), sata0, 0x88, 0);
+                        }
                         c = 0;
                         while c < (*deviceExtension).NumberChannels {
                             let offs: ULONG_PTR = (c as ULONG_PTR) * 0x100;

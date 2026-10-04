@@ -65,6 +65,29 @@ and both of these were in the 72 that never conflicted.
 | The new ATA stack: `atapi/` SATL driver + `pciidex/chipset/` (incl. software AHCI), and the uniata→pciide default switch (`7d33f7503bb`) | **WON'T PORT (owner, 2026-10-03).** We already drive AHCI: uniata-rust claims `ich9-ahci` (`PCI#CC_0106` in hivesys) and both x86 arches boot to desktop with the CD on AHCI (`VIBEOS_AHCI_CD=1` smoke, verified 2026-10-03). The rewrite is ~20K lines (~$10-12) of replacement for a working driver. Policy: uniata is OUR storage driver going forward. An upstream bug fix in the new stack is ported SEMANTICALLY into uniata-rust when it describes a bug uniata also has, never by bulk-adopting their files. The C stays unbuilt on disk as reference. |
 | pruned trees | pc98, xbox, arm32, BIOS realmode, ext2/btrfs/ntfs/udfs/nfs, NTVDM, ISAPNP, fast486, SAC, x86bios/INT10, legacy tcpip, floppy, fraginator, `untfs`. |
 
+### uniata-rust: what upstream's ATA stack taught us, and what is still owed
+
+The won't-port decision above comes with a standing duty: mine upstream's new stack for
+hardware knowledge uniata lacks and port it semantically. The 2026-10-03/04 survey found 13
+gaps. Ported (two commits): the ATI IXP UDMA6 bounds panic, the PxSERR clear in
+`UniataAhciStart`, the 1s wait per empty AHCI port, PUIS spin-up and the IDENTIFY
+checksum, AMD prefetch and AMD-8111 Serenade, the Intel ICH0/rev-0/Tdh and 450KX/NX
+errata, ServerWorks SATA (4 channels, SICR, DMA-before-command, no ATAPI DMA), GHC.AE
+ordering, AHCI interrupt-acknowledge order, busy-TFD escalation in
+`UniataAhciAbortOperation`, port-multiplier pseudo ports and SiI XmitEarlyAck, and a SATA
+link-speed downgrade on repeated DMA errors. Only the AHCI ones run under QEMU (`smoke --ahci`).
+
+**Still owed:**
+- **Hotplug attach runs inside the ISR.** `UniataAhciStatus` calls
+  `UniataSataEvent(ATTACH)` on PxIS.PCS, which can stall up to 1s plus a `CheckDevice` at
+  device IRQL. Upstream only schedules a port reset. A SCSIPORT miniport has no
+  lower-IRQL context to defer to (its timer callbacks are ISR-synchronized), so the fix is
+  a bus-change notification and re-enumeration, not a move to a timer. It is testable:
+  QEMU can hot-add an `ide-hd` on the `ich9-ahci` bus over QMP.
+- **The 8-port ServerWorks part is unresolved.** Upstream/Linux say 0x0241 and
+  UniATA/FreeBSD's naming says 0x0242. Both run at 4 ports until a datasheet settles it,
+  which also needs the BAR5 window grown past 0x400.
+
 ## New upstream TUs declined because a Rust twin owns the symbols
 
 Each has a note at the point of decline. This is the landmine in its subtlest form — several of
