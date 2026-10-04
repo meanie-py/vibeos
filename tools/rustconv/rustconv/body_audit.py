@@ -84,7 +84,13 @@ _IGNORED = re.compile(
     # Pure or lowered by construction: string-literal and layout macros, varargs, VARIANT
     # accessors, ACPICA's trace-and-return, Wine list iteration and TRACE-level dumps.
     r"_T|TEXT|offsetof|VOID|assert|va_start|va_end|va_arg|va_copy|V_[A-Z]\w*|"
-    r"Int32x32To64|UInt32x32To64|Int64ShllMod32|return_\w+|LIST_FOR_EACH\w*|dump_\w+|MAKELONG|MAKEWORD|LOWORD|HIWORD|LOBYTE|HIBYTE|MAKEWPARAM|MAKELPARAM)$"
+    r"Int32x32To64|UInt32x32To64|Int64ShllMod32|return_\w+|LIST_FOR_EACH\w*|dump_\w+|"
+    # Accessors, casts and trace macros that compute or print, never store: a port that
+    # open-codes them has dropped nothing.
+    r"IS_INTRESOURCE|MAKEINTATOM|HRESULT_CODE|HRESULT_FACILITY|HRESULT_SEVERITY|"
+    r"ACPI_DEBUG_PRINT\w*|ACPI_FUNCTION_\w+|ACPI_SUCCESS|ACPI_FAILURE|ACPI_NEXT_RESOURCE|"
+    r"\w+_IRP_STORAGE|URB_FROM_IRP|USB_ENDPOINT_DIRECTION_\w+|USBD_ERROR|USBD_SUCCESS|"
+    r"WSAMAKEASYNCREPLY|WDF_REL_TIMEOUT_IN_\w+|_PRAGMA_WARNING_\w+|ULONG|LONG|USHORT|UCHAR|MAKELONG|MAKEWORD|LOWORD|HIWORD|LOBYTE|HIBYTE|MAKEWPARAM|MAKELPARAM)$"
 )
 # Names whose Rust spelling is legitimately different. Any listed pattern satisfies the callee.
 _LOWERINGS: dict[str, tuple[str, ...]] = {
@@ -825,6 +831,9 @@ def _kept(callee: str, rust: str, idents: set[str]) -> bool:
         return True
     # dbgbitmap.h's RtlSetBitsDbg & co. wrap the plain call with release-invisible checks.
     if callee.endswith("Dbg") and _kept(callee[:-3], rust, idents):
+        return True
+    # shell32's crate-local CRT: `r_memcpy`, `r_strlen`.
+    if "r_" + callee in idents:
         return True
     # Case alone: Wine's `midl_user_free` is MIDL's `MIDL_user_free`.
     low = callee.lower()
