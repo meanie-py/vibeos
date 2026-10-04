@@ -53,3 +53,11 @@ target_include_directories(pseh INTERFACE include)
 if ((CMAKE_C_COMPILER_ID STREQUAL "GNU") OR
     ((CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (NOT (ARCH STREQUAL "amd64"))))
 endif()
+
+# pseh-rust in its user-mode build (seh.s's SEH runtime + dummy.c's volatile symbols, the
+# same Rust the kernel links): msvcrt.dll and ucrtbase.dll list this before their other
+# libraries so lld resolves the runtime from it, and compile no PSEH C or asm of their own.
+rust_staticlib_variant(pseh_user_rust_a pseh-rust "user" FALSE)
+add_library(pseh_user_rust INTERFACE)
+add_dependencies(pseh_user_rust rust_pseh_user_rust_a)
+target_link_libraries(pseh_user_rust INTERFACE ${pseh_user_rust_a_LIB})

@@ -114,6 +114,7 @@ add_dependencies(ucrtbase rust_ucrt_shared)
 # defs in first makes the C copies the ignored duplicates.
 target_link_libraries(ucrtbase
     -Wl,--whole-archive ${UCRT_SHARED_RUST_LIB} -Wl,--no-whole-archive
+    pseh_user_rust  # the SEH runtime from Rust, ahead of any library that drags libpseh in
     msvcrt_shared
     crtmath
     vcruntime

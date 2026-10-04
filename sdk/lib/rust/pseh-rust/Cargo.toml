@@ -30,4 +30,11 @@ edition = "2021"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-panic-common = { path = "../panic-common", features = ["kernel"] }
+panic-common = { path = "../panic-common" }
+
+[features]
+# The panic personality: the kernel links the default; msvcrt.dll and ucrtbase.dll link
+# `--no-default-features --features user` (sdk/lib/pseh: pseh_user_rust).
+default = ["kernel"]
+kernel = ["panic-common/kernel"]
+user = ["panic-common/user"]
