@@ -1800,6 +1800,18 @@ the C guards, is a genuine mistranslation and wants the guard restored instead. 
 helpers too, not just the shipping crate: one of the four was a double→`long double` rebias in
 wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
 
+### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
+**Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a
+BUGCHECK 0x1E / STATUS_DATATYPE_MISALIGNMENT out of a syscall's `ProbeForRead`, with
+`[PROBE-MISALIGN-R] Addr=<odd> Align=2`. The address is a wide string in some DLL's `.rdata`.
+**Cause:** `b"L\0i\0b\0...\0\0".as_ptr() as LPCWSTR`. A byte string has alignment 1; it
+lands on an even address only by luck, and every module's `.rdata` layout is that luck. User
+mode never notices (x86 reads unaligned); the kernel's probe does. ws2_32's `L"LibraryPath"`
+moved to 0x7be41b61 and nettest's first Winsock call bugchecked the guest. 209 such casts were
+in the tree. **Fix:** `win32macros_rust::wide_bytes!(b"...")`, which keeps the bytes and puts
+them in a 2-byte-aligned static. `tools/scan_unaligned_wide.py --lint` (in `vibeos-cli check`,
+baseline empty) refuses the cast; `--fix` rewrites it.
+
 ### Wide/narrow literal sizing
 - **The whole class above had ONE cause: the plain-C prompt never mentioned wide strings.**
   Every entry in this section is a symptom of the same missing rule, which is why fixing them
@@ -10001,6 +10013,29 @@ vs `tools/lint-baseline/`**, and several hold an EMPTY baseline (strict).
 ---
 
 ## Cohab flip & cold-link mechanics
+
+### A Rust staticlib is one archive member, so a default it carries can shadow the real one
+**Symptom:** a module behaves as if never initialised (shell32: comctl32 "Imagelist no longer
+valid", then a CDefView assert panic in explorer, amd64 only) after a change to which archives
+it links, not to its own code. The link map shows `DllMain` coming from a defaults archive.
+**Cause:** C archives are one object per file, so `dllentry.o` (default `DllEntryPoint`) and
+`dllmain.o` (default `DllMain`) were pulled independently. A Rust staticlib puts a crate's
+items in a few codegen units, so pulling the object for ONE symbol brings every symbol in it.
+`DllMainCRTStartup` calls `DllEntryPoint`, which almost no module defines, so every DLL pulled
+crt-dllmain-rust's object for it, and that object's default `DllMain` was now defined before
+lld ever looked for the module's real one, which in shell32 sits in `libshell32_rust.a`, not in
+an object file. **Fix:** a defaults crate may hold ONLY symbols that should be pulled for
+themselves: the default `DllEntryPoint` moved into crt-startup-rust beside its caller. To check
+any module: relink it with `-Wl,-Map=` and see which input defines `DllMain`/`main`.
+
+### A module translated down to Rust + `.rc` links with the RC driver, and `LINKER:` flags break
+**Symptom:** `clang: error: unknown argument: '--allow-multiple-definition'` from a module's
+link, after a change elsewhere (msvcrtex becoming Rust). **Cause:** CMake picks a target's link
+language from its sources and the static libraries it links. `intl.cpl` has no C left (Rust
+staticlib + `intl.rc`), and the C msvcrtex archive every msvcrt importer linked was the only
+thing giving it C; without it the link language is RC, whose `LINKER:` wrapper is empty, so
+`target_link_options(... LINKER:--flag)` reaches clang bare. **Fix:** `set_module_type` sets
+`LINKER_LANGUAGE C` on a module with no C/C++ source (sdk/cmake/CMakeMacros.cmake).
 
 ### A partial cohab is un-cold-linkable, and the dup↔undefined pair is the oracle
 If the unit is partially flipped, CMakeLists alone cannot link it cold: you get duplicate

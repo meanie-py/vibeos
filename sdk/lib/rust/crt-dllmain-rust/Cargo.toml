@@ -1,13 +1,12 @@
-# crt-dllmain-rust — the overridable default DllMain / DllEntryPoint
-# (startup/dllmain.c + startup/dllentry.c).
+# crt-dllmain-rust — the overridable default DllMain (startup/dllmain.c).
 #
-# These live in their OWN staticlib (not crt-startup-rust) so a consumer DLL
-# that defines its own DllMain wins at link: crt-startup-rust's
-# __DllMainCRTStartup calls DllMain/DllEntryPoint via extern symbols, the
-# consumer's (linked first) satisfy them, and these defaults are the
-# fallback (absorbed by --allow-multiple-definition, lld first-match) —
-# mirroring the C archive's lazy dllmain.o/dllentry.o pull. A DLL consumer
-# links this alongside crt-startup-rust (crtdll feature).
+# Its OWN staticlib (not crt-startup-rust) so a consumer DLL that defines its own DllMain
+# wins at link: crt-startup-rust's __DllMainCRTStartup calls DllMain via an extern symbol,
+# the consumer's (linked first) satisfies it, and this default is the fallback (absorbed by
+# --allow-multiple-definition, lld first-match), mirroring the C archive's lazy dllmain.o
+# pull. Nothing else crt-startup-rust always references may live here, or every DLL pulls
+# this object and its DllMain with it: the default DllEntryPoint moved to crt-startup-rust
+# for exactly that reason (shell32, 2026-10-04).
 
 [package]
 name = "crt-dllmain-rust"

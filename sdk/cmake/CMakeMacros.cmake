@@ -576,6 +576,19 @@ function(set_module_type MODULE TYPE)
     # Set our target property
     set_target_properties(${MODULE} PROPERTIES REACTOS_MODULE_TYPE ${TYPE})
 
+    # A module translated down to Rust + .rc/.def has no C or C++ source left, and CMake
+    # would pick its link language from what remains (RC), whose LINKER: wrapper is empty
+    # (`LINKER:--flag` reaches clang bare). The C msvcrtex archive used to lend every such
+    # module C; the Rust one cannot, so say it here.
+    get_target_property(_module_sources ${MODULE} SOURCES)
+    get_target_property(_module_linker_language ${MODULE} LINKER_LANGUAGE)
+    if(_module_sources AND NOT _module_linker_language)
+        list(FILTER _module_sources INCLUDE REGEX "\\.(c|cc|cpp|cxx)$")
+        if(NOT _module_sources)
+            set_target_properties(${MODULE} PROPERTIES LINKER_LANGUAGE C)
+        endif()
+    endif()
+
     # Add the module to the module group list, if it is defined
     if(DEFINED CURRENT_MODULE_GROUP)
         set_property(GLOBAL APPEND PROPERTY ${CURRENT_MODULE_GROUP}_MODULE_LIST "${MODULE}")
