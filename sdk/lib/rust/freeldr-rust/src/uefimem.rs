@@ -27,8 +27,9 @@ extern "C" {
     static mut GlobalImageHandle: EFI_HANDLE;
 }
 
-// debug.h enum _FRLDR_BUGCHECK_CODES (UEFIBOOT build → index 4).
-const EXIT_BOOTSERVICES_FAILURE: u32 = 4;
+// debug.h enum _FRLDR_BUGCHECK_CODES (UEFIBOOT build → index 5, after
+// ASSERT_FAILURE; upstream b0bd092c0d4).
+const EXIT_BOOTSERVICES_FAILURE: u32 = 5;
 const UNUSED_MAX_DESCRIPTOR_COUNT: ULONG = 10000;
 
 // uefimem.c NEXT_MEMORY_DESCRIPTOR(d, sz) — byte-step a descriptor pointer.

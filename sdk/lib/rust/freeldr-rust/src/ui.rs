@@ -375,12 +375,24 @@ pub unsafe extern "C" fn UiInfoBox(MessageText: PCSTR) {
 }
 
 #[no_mangle]
-// C-variadic *definitions* are unstable on stable rustc. Callers keep their
-// own `extern "C" { fn UiMessageBox(fmt, ...); }` decl; cdecl caller-cleans
-// makes this non-variadic def ABI-safe (debug.rs precedent). No %-expansion
-// (freeldr UI text is cosmetic to the `shell ready` smoke marker).
-pub unsafe extern "C" fn UiMessageBox(Format: PCSTR) {
-    (UiVtbl.MessageBox.unwrap())(Format);
+// ui.c:394. Stable rustc cannot DEFINE a C-variadic, so the trailing slots are
+// fixed parameters replayed as the va_list (va_slots, as TuiPrintf does);
+// callers keep their variadic extern decl. This used to hand Format to the
+// message box unexpanded, so every error box with an argument -- "Unknown boot
+// entry type '%s'", "Error opening file %s", ... -- showed the raw specifiers.
+pub unsafe extern "C" fn UiMessageBox(
+    Format: PCSTR,
+    a0: usize, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize,
+    a6: usize, a7: usize, a8: usize, a9: usize, a10: usize, a11: usize,
+) {
+    // C: _vsnprintf(Buffer, sizeof(Buffer) - sizeof(CHAR), Format, ap)
+    let mut Buffer: [i8; 1024] = [0; 1024];
+    va_slots_rust::format_slots_z(
+        &mut Buffer,
+        Format as *const i8,
+        &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11],
+    );
+    (UiVtbl.MessageBox.unwrap())(Buffer.as_ptr() as PCSTR);
 }
 
 #[no_mangle]
@@ -561,7 +573,10 @@ pub unsafe extern "C" fn UiShowMessageBoxesInSection(SectionId: ULONG_PTR) {
 
         UiEscapeString(MessageBoxText);
 
-        UiMessageBox(MessageBoxText);
+        // The text is DATA from FREELDR.INI / the command line: the C hands it
+        // to UiMessageBox as the format, so a '%' in it would consume argument
+        // slots nobody pushed. Show it as-is.
+        (UiVtbl.MessageBox.unwrap())(MessageBoxText);
 
         FrLdrTempFree(MessageBoxText as *mut core::ffi::c_void, TAG_UI_TEXT);
 
@@ -598,7 +613,10 @@ pub unsafe extern "C" fn UiShowMessageBoxesInArgv(
 
         UiEscapeString(MessageBoxText);
 
-        UiMessageBox(MessageBoxText);
+        // The text is DATA from FREELDR.INI / the command line: the C hands it
+        // to UiMessageBox as the format, so a '%' in it would consume argument
+        // slots nobody pushed. Show it as-is.
+        (UiVtbl.MessageBox.unwrap())(MessageBoxText);
 
         FrLdrTempFree(MessageBoxText as *mut core::ffi::c_void, TAG_UI_TEXT);
 

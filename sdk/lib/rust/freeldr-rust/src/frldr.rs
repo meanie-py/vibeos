@@ -512,12 +512,14 @@ pub const IMAGE_SUBSYSTEM_NATIVE: u16 = 1;
 // _FRLDR_BUGCHECK_CODES enum (debug.h:143). Off-by-one in earlier rustconv
 // output dropped TEST_BUGCHECK/MISSING_HARDWARE_REQUIREMENTS — shifted all
 // subsequent values down by 2. C: TEST=0, MISSING_HARDWARE=1,
-// IMAGE_CORRUPTION=2, MEMORY_INIT_FAILURE=3, EXIT_BOOTSERVICES_FAILURE=4.
+// IMAGE_CORRUPTION=2, MEMORY_INIT_FAILURE=3, ASSERT_FAILURE=4, EXIT_BOOTSERVICES_FAILURE=5
+// (upstream b0bd092c0d4 inserted ASSERT_FAILURE before the UEFIBOOT-only code).
 pub const TEST_BUGCHECK: ULONG = 0;
 pub const MISSING_HARDWARE_REQUIREMENTS: ULONG = 1;
 pub const FREELDR_IMAGE_CORRUPTION: ULONG = 2;
 pub const MEMORY_INIT_FAILURE: ULONG = 3;
-pub const EXIT_BOOTSERVICES_FAILURE: ULONG = 4;
+pub const ASSERT_FAILURE: ULONG = 4;
+pub const EXIT_BOOTSERVICES_FAILURE: ULONG = 5;
 
 // meminit.c globals the rustconv pass dropped (faithful #[no_mangle]).
 #[no_mangle] pub static mut MmLowestPhysicalPage: PFN_NUMBER = 0xFFFFFFFF;

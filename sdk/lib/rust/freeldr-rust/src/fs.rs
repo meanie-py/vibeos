@@ -662,6 +662,11 @@ pub unsafe extern "C" fn FsRegisterDevice(
     if pNewEntry.is_null() {
         return;
     }
+    // Zero the header first (upstream 56481e1b8d4): FrLdrTempAlloc memory is
+    // not cleared, and FileFuncTable -- which ArcOpen tests to decide whether
+    // the device still needs a filesystem mounted -- was otherwise left as
+    // heap garbage.
+    core::ptr::write_bytes(pNewEntry, 0, 1);
     (*pNewEntry).FuncTable = FuncTable;
     (*pNewEntry).DeviceId = INVALID_FILE_ID;
     (*pNewEntry).ReferenceCount = 0;

@@ -27,6 +27,8 @@ extern "C" {
     fn atoi(s: PCSTR) -> i32;
     fn strncmp(s1: PCSTR, s2: PCSTR, n: usize) -> i32;
     fn strtoul(s: PCSTR, endptr: *mut PCSTR, base: i32) -> u32;
+    #[cfg(target_pointer_width = "64")]
+    fn strtoull(s: PCSTR, endptr: *mut PCHAR, base: i32) -> u64;
 }
 
 // ---- rustconv dropped file-local content from headless.c, restored faithfully ----
@@ -64,6 +66,12 @@ pub static mut WinLdrTerminalDelay: ULONG = 0;
 pub static mut Port: [CPPORT; 4] = unsafe { core::mem::zeroed() };
 
 pub unsafe fn WinLdrLoadGUID(SystemGuid: PGUID) {
+    // Upstream ea93b886df7 builds EMS on every platform, and only a PC BIOS
+    // boot has the SYSID table in the 0xE0000-0xFFFFF BIOS area; elsewhere
+    // (UEFI, arm64) the C warns "needs SMBIOS table reading" and returns a
+    // zero GUID instead of scanning whatever is mapped there.
+    #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
+    {
     let mut CurrentAddress: PSYSID_UUID_ENTRY = 0xE0000 as PSYSID_UUID_ENTRY;
     while (CurrentAddress as ULONG_PTR) < 0x100000 {
         if RtlCompareMemory(
@@ -80,6 +88,7 @@ pub unsafe fn WinLdrLoadGUID(SystemGuid: PGUID) {
             return;
         }
         CurrentAddress = ((CurrentAddress as ULONG_PTR) + 1) as PSYSID_UUID_ENTRY;
+    }
     }
 
     core::ptr::write_bytes(SystemGuid as *mut u8, 0, SYSID_UUID_DATA_SIZE as usize);
@@ -265,7 +274,18 @@ pub unsafe extern "C" fn WinLdrSetupEms(BootOptions: PCSTR) {
             UiDrawStatusText(b"ACPI SRT/SPCR Table Not Supported...\0".as_ptr() as PCSTR);
             return;
         } else {
-            LoaderRedirectionInformation.PortAddress = strtoul(Option, core::ptr::null_mut(), 16) as *mut u8;
+            // strtoulptr (upstream ea93b886df7): strtoull on _WIN64, so an
+            // MMIO UART above 4 GiB is not truncated.
+            #[cfg(target_pointer_width = "64")]
+            {
+                LoaderRedirectionInformation.PortAddress =
+                    strtoull(Option, core::ptr::null_mut(), 16) as usize as *mut u8;
+            }
+            #[cfg(not(target_pointer_width = "64"))]
+            {
+                LoaderRedirectionInformation.PortAddress =
+                    strtoul(Option, core::ptr::null_mut(), 16) as usize as *mut u8;
+            }
             if !LoaderRedirectionInformation.PortAddress.is_null() {
                 LoaderRedirectionInformation.PortNumber = 3;
             }
