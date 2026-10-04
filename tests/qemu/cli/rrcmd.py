@@ -107,7 +107,12 @@ def _boot_cmd(repo: Path, arch: str, payload: str, smp: int, build: bool, timeou
         if not build:
             cmd.append("--no-build")
         return cmd
-    return [cli, "smoke", "--arch", arch, "--smp", str(smp)]
+    # --no-net: amd64's smoke runs a SECOND boot for its net suite. Under the rr env that
+    # boot re-staged fresh overlays over the trace's media after the recording ended,
+    # wiping the `init` snapshot (replay: "Snapshot 'init' does not exist"). Recording a
+    # network is unsupported anyway (recordreplay.py), and arm64 has no net stage, which
+    # is why no arm64 trace was ever hit.
+    return [cli, "smoke", "--arch", arch, "--smp", str(smp), "--no-net"]
 
 
 # --------------------------------------------------------------------------
