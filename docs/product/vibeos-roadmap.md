@@ -2359,6 +2359,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   commits 64K and returns `true`, the instruction retries. September's bug was never "a fault
   happened"; it was that the recovery did not complete.
 
+  **10-boot farm, 2026-10-03: 0/10 failures, and 539 recovered faults.**
+  `smoke --arch arm64 --ladder --repeat 10` (sequential, one boot slot — artifact
+  `/tmp/vibeos-cli/20261003-200522-wtpis3_x-smoke-arm64`, 21m09s). Every boot: **14 guests
+  pass**, `lua32` and `sqlite32` both `0x600d`. **140/140 guest verdicts green.** Per boot the
+  same two sites still fault and still recover:
+
+        LookupCache AVs/boot   51-56   (total 539: FindBlock 239, AddBlockMapping 300)
+        other AVs/boot         ~200    (total 1998, also recovered)
+        alignment fixups/boot  ~1192   (total 11920, x86-on-arm64, expected)
+
+  The narrow spread (range 5 over 10 boots) says this is **not a rare race** — it is a
+  deterministic function of how many cold pages the cache touches, firing ~54x per boot and
+  recovering every time. 539 demand-commits, 539 recoveries, 0 deaths.
+
+  **What 0/10 does and does not bound.** It is strong evidence against the JULY rate and weak
+  evidence against a low one: at July's 3/6 (50%) a 10/10 green run is p=0.001; the 95%
+  confidence upper bound from 0/10 is only ~26%. **And the farm was deliberately polite** —
+  sequential, one slot, so as not to disturb other lanes. July's 3/6 came from a 6-VM soak and
+  its mechanism is described as hitting "whichever guest is mid-actctx when starved", i.e. it
+  is host-contention-sensitive. A sequential farm is the condition LEAST likely to reproduce
+  it, so this result rules out a frequent contention-free failure and says little about the
+  contended case. **The remaining experiment is a deliberately-contended soak**, run when it
+  will not collide with other lanes — not more sequential boots, which buy more of the same.
+
   **What this does NOT establish.** One green run does not retire a nondeterministic bug — this
   one was always intermittent (`file32` faulted once and passed later), so a single pass is
   weak evidence on its own and the honest status is "not reproducing", not "fixed". Nor does it
