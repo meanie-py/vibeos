@@ -1130,7 +1130,11 @@ pub unsafe extern "system" fn FatOplockRequest(
         FsControlCode,
     );
 
-    if (TypeOfOpen != UserFileOpen) && (TypeOfOpen != UserDirectoryOpen) {
+    // Directories accept oplock requests only from NTDDI >= WIN8 (fsctrl.c 3016-3019); pre-WIN8
+    // a DCB has no oplock, and FatGetFcbOplock(Dcb) below would be its free-dirent bitmap.
+    if (TypeOfOpen != UserFileOpen)
+        && (!cfg!(ntddi_ge_ntddi_win8) || TypeOfOpen != UserDirectoryOpen)
+    {
         (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
         DebugTrace(
             -1,

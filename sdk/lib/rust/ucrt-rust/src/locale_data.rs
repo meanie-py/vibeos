@@ -482,7 +482,7 @@ pub unsafe extern "C" fn localeconv() -> *mut Lconv {
 ///
 /// Nothing in ucrtbase calls it and it is in no initializer section here: in
 /// Microsoft's CRT, a `-J` TU's `<locale.h>` references
-/// `__do_unsigned_char_lconv_initialization` (sdk/include/ucrt/locale.h:67-73),
+/// `__do_unsigned_char_lconv_initialization` (ucrt/locale.h:67-73),
 /// which pulls `lconv_unsigned_char_static.cpp` from the client's STATIC startup
 /// library, and THAT object registers a call to this export in the client's own
 /// initializer list. Neither the static object nor the linker section live in

@@ -328,6 +328,14 @@ unsafe fn find_resourceA(
     // __EXCEPT_PAGE_FAULT:
     // SetLastError(ERROR_INVALID_PARAMETER);
 
+    // get_res_nameA allocated a string name (RtlCreateUnicodeStringFromAsciiz);
+    // an integer one is the id itself.
+    if IS_INTRESOURCE!(nameW.Buffer) == 0 {
+        HeapFree(GetProcessHeap(), 0, nameW.Buffer as *mut c_void);
+    }
+    if IS_INTRESOURCE!(typeW.Buffer) == 0 {
+        HeapFree(GetProcessHeap(), 0, typeW.Buffer as *mut c_void);
+    }
     return entry as HRSRC;
 }
 unsafe fn find_resourceW(
@@ -364,6 +372,12 @@ unsafe fn find_resourceW(
         SetLastError(RtlNtStatusToDosError(status));
     }
 
+    if IS_INTRESOURCE!(nameW.Buffer) == 0 {
+        HeapFree(GetProcessHeap(), 0, nameW.Buffer as *mut c_void);
+    }
+    if IS_INTRESOURCE!(typeW.Buffer) == 0 {
+        HeapFree(GetProcessHeap(), 0, typeW.Buffer as *mut c_void);
+    }
     entry as HRSRC
 }
 
@@ -396,7 +410,12 @@ pub unsafe extern "system" fn FindResourceA(
     name: LPCSTR,
     type_: LPCSTR,
 ) -> HRSRC {
-    return FindResourceExA(hModule, type_, name, MAKELANGID!(4u16, 0u16));
+    return FindResourceExA(
+        hModule,
+        type_,
+        name,
+        MAKELANGID!(LANG_NEUTRAL as WORD, SUBLANG_NEUTRAL as WORD),
+    );
 }
 
 #[no_mangle]

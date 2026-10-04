@@ -120,7 +120,7 @@ unsafe fn i386_get_pcr() -> *mut KIPCR_i386 {
 }
 
 extern "C" {
-    static KiI386PentiumLockErrataPresent: ULONG;
+    static KiI386PentiumLockErrataPresent: BOOLEAN; // cpu.rs/cpu.c define it BOOLEAN; a ULONG read takes 3 bytes past it
 
     /// MmSubsectionBase — defined in mm/section.rs (extern static in C)
     static mut MmSubsectionBase: ULONG_PTR;

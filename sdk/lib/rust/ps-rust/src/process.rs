@@ -523,6 +523,10 @@ pub unsafe extern "system" fn PspCreateProcess(
 
     InitializeListHead(core::ptr::addr_of_mut!((*proc).ThreadListHead) as PLIST_ENTRY);
 
+    // The job process list entry (upstream 55563444377): PspAssignProcessToJob asserts it is
+    // empty and PspRemoveProcessFromJob unlinks it.
+    InitializeListHead(core::ptr::addr_of_mut!((*proc).JobLinks) as PLIST_ENTRY);
+
     PspInheritQuota(process, parent);
     ObInheritDeviceMap(parent, process);
 
@@ -866,7 +870,31 @@ pub unsafe extern "system" fn PspCreateProcess(
         SeAuditProcessCreate(process);
     }
 
-    if !parent.is_null() && !(*(parent as *mut _EPROCESS)).Job.is_null() {
+    // Attach the process to the parent's job unless the job allows silent breakaway
+    // (upstream 55563444377; the C here was a "Jobs not yet supported" DPRINT).
+    if !parent.is_null()
+        && !(*(parent as *mut _EPROCESS)).Job.is_null()
+        && (*(*(parent as *mut _EPROCESS)).Job).LimitFlags & JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK == 0
+    {
+        let parent_job = (*(parent as *mut _EPROCESS)).Job;
+
+        status = if flags & PROCESS_CREATE_FLAGS_BREAKAWAY != 0 {
+            // An explicit breakaway is denied unless the job allows it.
+            if (*parent_job).LimitFlags & JOB_OBJECT_LIMIT_BREAKAWAY_OK == 0 {
+                STATUS_ACCESS_DENIED
+            } else {
+                STATUS_SUCCESS
+            }
+        } else {
+            // Normally the child joins the parent's job.
+            crate::job::PspAssignProcessToJob(process, parent_job)
+        };
+        if status < 0 {
+            // goto CleanupWithRef
+            ObDereferenceObject(process as PVOID);
+            ObDereferenceObject(parent as PVOID);
+            return status;
+        }
     }
 
     if !parent.is_null() && needs_peb != 0 {

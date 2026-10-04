@@ -89,7 +89,7 @@ extern "system" {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn DefWndDoSizeMove(pwnd: PWND, wParam: u16);
-    fn DefWndGetHotKey(Wnd: PWND) -> LRESULT;
+    fn DefWndGetHotKey(Wnd: PWND) -> UINT; // hotkey.rs, as the C: UINT
     fn co_IntSendMessage(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn co_UserRedrawWindow(Wnd: PWND, lprcUpdate: LPRECT, hrgnUpdate: HRGN, flags: u32) -> u8;
     fn co_WinPosShowWindow(Wnd: PWND, Cmd: INT) -> BOOL;
@@ -104,7 +104,7 @@ extern "fastcall" {
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn DefWndDoSizeMove(pwnd: PWND, wParam: u16);
-    fn DefWndGetHotKey(Wnd: PWND) -> LRESULT;
+    fn DefWndGetHotKey(Wnd: PWND) -> UINT; // hotkey.rs, as the C: UINT
     fn co_IntSendMessage(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn co_UserRedrawWindow(Wnd: PWND, lprcUpdate: LPRECT, hrgnUpdate: HRGN, flags: u32) -> u8;
     fn co_WinPosShowWindow(Wnd: PWND, Cmd: INT) -> BOOL;
@@ -900,11 +900,11 @@ unsafe fn IntDefWindowProc_WM_CTLCOLOR(wParam: WPARAM, lParam: LPARAM) -> LRESUL
 }
 
 unsafe fn IntDefWindowProc_WM_GETHOTKEY(Wnd: PWND) -> LRESULT {
-    DefWndGetHotKey(Wnd)
+    DefWndGetHotKey(Wnd) as LRESULT
 }
 
 unsafe fn IntDefWindowProc_WM_SETHOTKEY(Wnd: PWND, wParam: WPARAM) -> LRESULT {
-    DefWndSetHotKey(Wnd, wParam)
+    DefWndSetHotKey(Wnd, wParam) as LRESULT
 }
 
 unsafe fn IntDefWindowProc_WM_SETREDRAW(Wnd: PWND, wParam: WPARAM) -> LRESULT {
@@ -1690,9 +1690,9 @@ extern "system" {
 }
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn DefWndSetHotKey(Wnd: PWND, wParam: WPARAM) -> LRESULT;
+    fn DefWndSetHotKey(Wnd: PWND, wParam: WPARAM) -> INT; // hotkey.rs, as the C: INT
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn DefWndSetHotKey(Wnd: PWND, wParam: WPARAM) -> LRESULT;
+    fn DefWndSetHotKey(Wnd: PWND, wParam: WPARAM) -> INT; // hotkey.rs, as the C: INT
 }

@@ -47,6 +47,26 @@ SUITE = "kmtest"
 _HOST_STAMP = re.compile(r"(?:^|(?<=\r))\[\+ *\d+\.\d+\] ", re.M)
 
 
+QUIET_TOKEN = "QUIET"
+
+
+def with_quiet_token(tripwire: str) -> str:
+    """The tripwire config for a conformance boot: the caller's, plus QUIET.
+
+    QUIET makes winlogon skip its boot-time test ladder (winlogon.rs
+    QuietBootRequested). The ladder's WoW64 guests and stock i386 applets start
+    while the sweep runs, and on a uniprocessor guest each startup under FEX holds
+    the only CPU for 100+ ms: a kmtest worker that must run inside a 100 ms window
+    misses it, which was the whole amd64 NpfsReadWrite / KeEvent count drift. It is
+    a per-BOOT knob because the gate boots one media for smoke, the ladder and
+    conformance; a media-level switch would turn the gate's ladder lane off too.
+    """
+    tokens = tripwire.replace(";", " ").split()
+    if QUIET_TOKEN in tokens:
+        return tripwire
+    return f"{tripwire} {QUIET_TOKEN}".strip()
+
+
 def read_serial(path: Path) -> str:
     """A conformance serial log with the host-time stamps removed, and then
     newlines normalised exactly as `read_text` would -- stripping has to come
@@ -630,6 +650,7 @@ def _conformance_once(args, repo: Path) -> int:
     # wedge, leaving a run dir with serial and nothing else.
     env["VIBEOS_ARTIFACT_DIR"] = str(run_dir)
     env["VIBEOS_SERIAL_TIMESTAMPS"] = "1"  # see read_serial
+    env["VIBEOS_TRIPWIRE"] = with_quiet_token(env.get("VIBEOS_TRIPWIRE", ""))
     sweep_cmd = [
         sys.executable,
         "-m",

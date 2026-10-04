@@ -64,7 +64,7 @@ pub use secure::*;
 use crate::locale::CrtLocalePointers;
 use core::ffi::c_int;
 
-/// `_NLSCMPERROR` (`sdk/include/ucrt/string.h:27` — `_CRT_INT_MAX`, i.e.
+/// `_NLSCMPERROR` (`ucrt/string.h:27` — `_CRT_INT_MAX`, i.e.
 /// `INT_MAX`). The "something went wrong" sentinel every collate/compare
 /// function in this module returns, distinct from -1/0/1.
 pub(crate) const NLSCMPERROR: c_int = c_int::MAX;

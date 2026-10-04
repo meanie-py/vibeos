@@ -61,6 +61,8 @@ if(CMAKE_CROSSCOMPILING)
     add_library(cmlib ${CMLIB_KERNEL_SOURCE})
     add_dependencies(cmlib bugcodes xdk)
     add_pch(cmlib cmlib.h CMLIB_KERNEL_SOURCE)
+    # As upstream: consumers (ntoskrnl's internal/cm.h) find cmlib.h through the target.
+    target_include_directories(cmlib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
     # ── Rust integration: cmlib-rust → kernel cmlib cohabitation ──────────
     set(RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")

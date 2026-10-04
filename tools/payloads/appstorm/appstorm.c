@@ -662,6 +662,7 @@ int main(void)
         end_prior_instances(a->exe);
         snapshot(&before);
         snapshot_pids();
+        DWORD app_t0 = GetTickCount();
         STARTUPINFOA si = { sizeof si };
         PROCESS_INFORMATION pi;
         if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
@@ -816,8 +817,11 @@ int main(void)
         /* An app that ignores WM_CLOSE is a failure, not a pass: every app on every arch
          * timing out on close (a lost PostMessage) scored PASS here until this counted. */
         int good = ok && !hung && !errbox && !crashed && shell && !strcmp(close, "OK");
-        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s\n",
-            a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED");
+        /* ms: launch to verdict. The serial log has no clock, and a run that hit the drain
+         * deadline could not say which app ate the time. */
+        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s ms=%lu\n",
+            a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED",
+            GetTickCount() - app_t0);
         good ? pass++ : fail++;
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);

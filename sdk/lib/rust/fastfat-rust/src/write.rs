@@ -47,7 +47,8 @@ extern "system" {
     fn FatWaitSync(IrpContext: PIRP_CONTEXT);
     fn FatDeleteIrpContext(IrpContext: PIRP_CONTEXT);
     fn Int32x32To64(a: i32, b: i32) -> i64;
-    fn FatReservedBytes(Bpb: *mut BIOS_PARAMETER_BLOCK) -> u64;
+    #[link_name = "FatReservedBytes"]
+    fn FatReservedBytes__c(Bpb: *mut BIOS_PARAMETER_BLOCK) -> u32;
     fn FatQuickVerifyVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatLockUserBuffer(IrpContext: PIRP_CONTEXT, Irp: PIRP, Access: u32, ByteCount: u32);
     fn FatBytesPerFat(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
@@ -60,6 +61,12 @@ extern "system" {
     fn CanFsdWait(irp: *mut IRP) -> i32;
     fn NodeType(p: *mut FCB) -> u16;
     fn FatCompleteMdl(irp_ctx: *mut IRP_CONTEXT, irp: *mut IRP) -> i32;
+}
+
+// rust_cohab_fat.c returns ULONG; a u64 decl read 32 bits nobody wrote.
+#[allow(non_snake_case)]
+unsafe fn FatReservedBytes(Bpb: *mut BIOS_PARAMETER_BLOCK) -> u64 {
+    FatReservedBytes__c(Bpb) as u64
 }
 
 // ---- file-scope preamble (translated) ----

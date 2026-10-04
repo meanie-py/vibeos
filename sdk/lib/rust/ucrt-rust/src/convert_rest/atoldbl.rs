@@ -21,7 +21,7 @@
 //!
 //! ## `_LDBL12`: a 12-byte scratch mantissa, not a real `_LDBL12` union
 //!
-//! `_LDBL12 { unsigned char ld12[12]; }` (`pack(4)`, `sdk/include/ucrt/stdlib.h`)
+//! `_LDBL12 { unsigned char ld12[12]; }` (`pack(4)`, `ucrt/stdlib.h`)
 //! packs `[XT:u16][MANLO:u32][MANHI:u32][EXP:u16]` at byte offsets
 //! `[0][2][6][10]`, but the arithmetic (`add_ld12`, `shl_ld12`, `multiply_ld12`,
 //! the normalize loop) treats the SAME 12 bytes as a flat 96-bit unsigned

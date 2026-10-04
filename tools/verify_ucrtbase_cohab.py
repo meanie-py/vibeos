@@ -78,7 +78,7 @@ def _spec_exports(spec: Path, arch: str) -> set[str]:
 TAKEOVER = REPO / "tools" / "ucrt-takeover.yaml"
 
 
-def declared_takeovers() -> dict[str, str]:
+def declared_takeovers(arch: str | None = None) -> dict[str, str]:
     """Genuine UCRT exports we have DELIBERATELY replaced -> the family that did it.
 
     Displacing a ucrt body is the exact shape of the accident this file exists to
@@ -86,6 +86,9 @@ def declared_takeovers() -> dict[str, str]:
     named an oracle. `tools/ucrt-takeover.yaml` is that declaration, and it is read
     both ways -- an undeclared displacement fails, and so does a declaration the
     archive no longer backs, because a stale entry is how a list stops being read.
+
+    A family may name `arches:` (fpctrl_arm64 exists only where sdk/lib/crt has no
+    body); with `arch` given, a family not built there declares nothing for it.
     """
     if not TAKEOVER.is_file():
         return {}
@@ -94,6 +97,8 @@ def declared_takeovers() -> dict[str, str]:
     doc = yaml.safe_load(TAKEOVER.read_text(encoding="utf-8")) or {}
     out: dict[str, str] = {}
     for fam, body in (doc.get("families") or {}).items():
+        if arch is not None and arch not in (body.get("arches") or (arch,)):
+            continue
         for sym in body.get("exports") or []:
             out[sym] = fam
     return out
@@ -182,8 +187,10 @@ def _deps_of(crate_dir: Path) -> set[str]:
             continue
         if not in_deps or not stripped or stripped.startswith("#"):
             continue
-        m = re.match(r"^([A-Za-z0-9_-]+)\s*=", stripped)
-        if m:
+        m = re.match(r"^([A-Za-z0-9_-]+)\s*=(.*)$", stripped)
+        # A registry crate (`libm = { version = ... }`) is not one: Cargo.lock pins it
+        # and nothing in this tree can edit it, so it cannot ship a stale archive.
+        if m and re.search(r"\bpath\s*=", m.group(2)):
             out.add(m.group(1))
     return out
 
@@ -434,7 +441,7 @@ def burndown_stale(arch: str) -> str | None:
         return "nm cannot read the archive"
     if arch == "i386":
         defined = {d[1:] if d.startswith("_") else d for d in defined}
-    missing = sorted(set(declared_takeovers()) - defined)
+    missing = sorted(set(declared_takeovers(arch)) - defined)
     if missing:
         return (
             f"the archive lacks {len(missing)} export(s) this tree declares taken over "
@@ -657,7 +664,7 @@ def check_archive() -> list[str]:
 
         # A DECLARED takeover is not shadowing -- it is the quest. Compared on the
         # stripped name so one declaration covers all three arches' decoration.
-        declared = declared_takeovers()
+        declared = declared_takeovers(arch)
         declared_norm = {k.lstrip("_"): v for k, v in declared.items()}
         rust_norm = {strip(s).lstrip("_") for s in rust_syms}
         gone = sorted(k for k in declared_norm if k not in rust_norm)
@@ -877,10 +884,6 @@ EXPORT_IMPORT_ALLOWED = {
         ),
         "ntdll.dll",
     ),
-    # OWED, arm64 only: the x87/SSE control-word family has no arm64 body in this
-    # tree (sdk/lib/crt builds them for i386/amd64 only), so arm64's resolve to
-    # msvcrt.dll's. Tracked in the roadmap's known-bugs registry.
-    **dict.fromkeys(("_clearfp", "_control87", "_controlfp", "_statusfp"), "msvcrt.dll"),
 }
 
 

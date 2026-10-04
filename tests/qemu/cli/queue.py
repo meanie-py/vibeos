@@ -82,6 +82,9 @@ INTEGRATION_DIRNAME = "vibeos-integration"
 CONDUCTOR_DIRNAME = "vibeos-conductor"
 JOURNAL_FILE = "journal.log"
 JOURNAL_MAX_BYTES = 8 << 20
+# "<pid>:<lane>" of a conductor that holds the land lock and hands its drain to a pinned
+# child (see `_conduct_pinned`). Read once and deleted, so nothing the drain runs inherits it.
+HANDOFF_ENV = "VIBEOS_CONDUCTOR_HANDOFF"
 
 
 def integration_names(slot: int) -> tuple[str, str]:
@@ -818,18 +821,26 @@ def _conduct_pinned(repo: Path, log, *, retries: int) -> None:
     was still serial, because the conformance lane that won it had not merged master. So a
     fix to the queue reached the queue only as fast as lanes happened to merge, and which
     rules a drain obeyed depended on who won the lock. Now the winner keeps the lock and runs
-    the drain as a child in a checkout pinned to origin/master; the child skips the lock
-    (VIBEOS_LAND_LOCK=0), since its parent holds it for exactly its lifetime. The gate was
-    never the problem: it always ran the batch's own code in the integration tree."""
+    the drain as a child in a checkout pinned to origin/master. The gate was never the
+    problem: it always ran the batch's own code in the integration tree.
+
+    The child must not take the lock its parent holds, and it must not learn that by an
+    environment switch everything below it inherits. The first version passed
+    VIBEOS_LAND_LOCK=0, which reached the gate's check-tooling, made land_lock() a no-op in
+    six unit tests, and had the queue call master red and hold the line (2026-10-03, 11:01).
+    Now the child gets the parent's pid (HANDOFF_ENV), proves it against the lock's live
+    holder, and deletes it from its own environment before draining."""
     cond = pin_conductor_checkout(repo)
     head = git(cond, "rev-parse", "HEAD")
+    pinned_queue = cond / "tests" / "qemu" / "cli" / "queue.py"
+    if HANDOFF_ENV not in pinned_queue.read_text(errors="replace"):
+        # Master predates the handoff, so its drain would WAIT on the lock held right here.
+        log(f"queue: {cond.name} @ {head[:12]} cannot take a handoff yet -- draining in-process")
+        drain(repo, journaled(repo, log), retries=retries)
+        return
     log(f"queue: conducting with master's queue code ({cond.name} @ {head[:12]})")
-    env = dict(
-        os.environ,
-        VIBEOS_LAND_LOCK="0",
-        VIBEOS_CONDUCTOR_PIN="0",
-        VIBEOS_CONDUCTOR_FOR=lane_id(repo),
-    )
+    env = dict(os.environ, VIBEOS_CONDUCTOR_PIN="0")
+    env[HANDOFF_ENV] = f"{os.getpid()}:{lane_id(repo)}"
     proc = subprocess.Popen(
         [str(cond / "vibeos-cli"), "land", "--drain", "--foreground", "--retries", str(retries)],
         cwd=str(cond),
@@ -849,7 +860,7 @@ def _conduct_pinned(repo: Path, log, *, retries: int) -> None:
         )
 
 
-def journaled(repo: Path, log):
+def journaled(repo: Path, log, *, who: str | None = None):
     """`log`, plus a timestamped copy in the queue dir's journal.
 
     WHY: every conductor log lived under /tmp/vibeos-cli, and a reboot on 2026-10-02 erased
@@ -857,7 +868,7 @@ def journaled(repo: Path, log):
     lives in the git common dir; its history belongs beside it. One rotation keeps it
     bounded."""
     path = queue_dir(repo) / JOURNAL_FILE
-    who = os.environ.get("VIBEOS_CONDUCTOR_FOR") or lane_id(repo)
+    who = who or lane_id(repo)
 
     def _log(msg: str) -> None:
         log(msg)
@@ -1664,6 +1675,21 @@ def drain(
         batches += 1
 
 
+def _drain_handed_off(repo: Path, log, handoff: str, *, retries: int) -> bool:
+    """Drain without taking the land lock, because the parent named in `handoff` holds it.
+    Refuses unless that parent is the lock's live holder: a stale or copied token must
+    never become an unlocked drain."""
+    pid, _, lane = handoff.partition(":")
+    holder = hostlock.land_holder() if hostlock.land_lock_enabled() else {}
+    if hostlock.land_lock_enabled() and str(holder.get("pid")) != pid:
+        raise QueueError(
+            f"handed a drain by pid {pid}, but the land lock's holder is "
+            f"{holder.get('pid') or 'nobody'}; refusing to drain without the lock"
+        )
+    drain(repo, journaled(repo, log, who=lane or None), retries=retries)
+    return True
+
+
 def try_become_conductor(repo: Path, log, *, retries: int = 2, timeout: float = 0.0) -> bool:
     """Take the land lock and drain. Returns False if the lock could not be had in `timeout`.
 
@@ -1680,6 +1706,9 @@ def try_become_conductor(repo: Path, log, *, retries: int = 2, timeout: float = 
     conductor that wakes to an empty queue exits in ~1s, so several waiters are cheap rather
     than wasteful. Callers that genuinely cannot block (the inline-from-submit convenience path)
     keep passing 0.0."""
+    handoff = os.environ.pop(HANDOFF_ENV, "")
+    if handoff:
+        return _drain_handed_off(repo, log, handoff, retries=retries)
     try:
         with hostlock.land_lock(f"conductor:{lane_id(repo)}", timeout=timeout, repo=str(repo)):
             if _wants_pinned_conductor(repo):

@@ -146,6 +146,55 @@ def _includer_entry(repo_root: Path, arch: str, header: Path) -> list[str] | Non
     return None
 
 
+#: The kernel-mode C TU whose compile command lends its compiler, target and codegen flags to
+#: a synthesized ntoskrnl command. Its `-D`s are all the repo-wide defaults (DBG, _M_*,
+#: WINVER, __REACTOS__ ...), so they are kept; only its `-I` list is module-specific.
+_KERNEL_BASE_TU = "drivers/bus/pcix/usage.c"
+
+
+def _derived_kernel_entry(repo_root: Path, arch: str, source: Path) -> list[str] | None:
+    """A compile command for an ntoskrnl .c, assembled from the derived kernel profile.
+
+    ntoskrnl.exe is cargo-linked and every one of its .c is flipped, so not one ntoskrnl TU
+    is in compile_commands.json and there is no sibling to borrow from either. The include
+    path and module defines the real kernel compile used are exactly what profile_derive
+    reconstructs for bindgen (ntos.cmake's include_directories/add_definitions, plus linked
+    targets' INTERFACE includes such as cmlib). The compiler, target and global flags come from a
+    real kernel-mode driver TU. Narrow on purpose: only ntoskrnl/ reaches here.
+    """
+    try:
+        rel = source.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        return None
+    if not rel.parts or rel.parts[0] != "ntoskrnl":
+        return None
+    base = _compile_entry(repo_root, arch, repo_root / _KERNEL_BASE_TU)
+    if base is None:
+        return None
+    from . import profile_derive  # local: profile_derive is heavy and only needed here
+
+    derived = profile_derive.derive_source(
+        source, repo_root, arch=arch, preferred_target="ntoskrnl", usermode=False
+    )
+    kept: list[str] = []
+    skip_next = False
+    for arg in base[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in ("-I", "-o", "-MF", "-MT", "-MQ", "-include", "-iquote"):
+            skip_next = True
+            continue
+        if arg.startswith(("-I", "-iquote")) or arg in ("-c", "-MD", "-MMD"):
+            continue
+        if arg.endswith(_KERNEL_BASE_TU):
+            continue
+        kept.append(arg)
+    includes = [f"-I{d}" for d, _kind in derived.env.search]
+    defines = [*derived.module.definitions, *derived.ver_defs]
+    return [base[0], *kept, *includes, *defines, str(source)]
+
+
 def _preprocess_defines(argv: list[str]) -> str:
     stripped: list[str] = []
     skip = False
@@ -313,6 +362,10 @@ def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
         if argv is None and not is_header:
             # See _sibling_target_entry: a FLIPPED .c has no command of its own.
             argv = _sibling_target_entry(repo_root, arch, source)
+            borrowed = argv is not None
+        if argv is None and not is_header:
+            # See _derived_kernel_entry: ntoskrnl compiles no C through CMake at all.
+            argv = _derived_kernel_entry(repo_root, arch, source)
             borrowed = argv is not None
         if argv is None:
             continue

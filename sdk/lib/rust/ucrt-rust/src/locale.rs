@@ -55,7 +55,7 @@
 use core::ffi::{c_char, c_int, c_long, c_uint, c_ulong, c_ushort, c_void};
 
 /// The public head of UCRT's locale data — `__crt_locale_data_public`
-/// (`sdk/include/ucrt/corecrt.h:621`). A `_locale_t` is a pointer to a
+/// (`ucrt/corecrt.h:621`). A `_locale_t` is a pointer to a
 /// `__crt_locale_pointers` whose first member points here, and these three
 /// fields are the ones ordinary locale-aware code actually reads.
 #[repr(C)]
@@ -108,7 +108,7 @@ pub struct CrtLocaleData {
 }
 
 
-/// UCRT's `struct __crt_locale_pointers` (`sdk/include/ucrt/corecrt.h:628`).
+/// UCRT's `struct __crt_locale_pointers` (`ucrt/corecrt.h:628`).
 /// **This is what a `_locale_t` actually points at** — the locale data hangs
 /// off `locinfo`, and the multibyte data off `mbcinfo`. Code that treats a
 /// `_locale_t` as a direct pointer to the locale data is off by one level.

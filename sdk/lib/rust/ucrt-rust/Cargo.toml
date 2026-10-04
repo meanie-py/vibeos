@@ -188,6 +188,29 @@ exec-rest = ["exec"]
 # internal/{locks,shared_initialization,per_thread_data}.cpp + startup/initterm.cpp:
 # the lock table, the per-thread data block, and the initializer-table loops.
 internal-core = []
+# startup/{exit,onexit,abort,assert,thread}.cpp
+startup = []
+# startup/{argv_parsing,argv_wildcards,argv_winmain}.cpp, internal/{report_runtime_error,
+# win_policies,peb_access}.cpp, misc/crtmbox.cpp
+argv-errors = ["argv-data", "findfile"]
+# convert/{cvt,cfout,_fptostr,fp_flags,wctype}.cpp -- the float formatting engine
+cvt = ["strtod"]
+# internal/winapi_thunks.cpp + internal/{CreateProcessA,GetModuleFileNameA,LoadLibraryExA,
+# OutputDebugStringA,SetCurrentDirectoryA,SetEnvironmentVariableA}.cpp
+winapi-thunks = ["findfile"]
+# sdk/lib/ucrt_reactos/ (ReactOS glue, MIT): the user _matherr hook and the three
+# __acrt_* kernel32 forwarders
+ucrt-reactos = []
+# _statusfp/_clearfp/_control87/_controlfp on arm64 (FPCR/FPSR); i386/amd64 take
+# sdk/lib/crt/float's x87/SSE bodies, so the module is empty there
+fpctrl = []
+# fenv.h (fegetenv ... fesetround), __fpe_flt_rounds, _fpreset, and i386's
+# __control87_2/_statusfp2 -- ucrtbase spec stubs until now (Wine port)
+fenv = ["fpctrl"]
+# The C99 math functions (acosh ... trunc) that were ucrtbase spec stubs, plus
+# _fpclassf, _dpcomp/_fdpcomp, _Cbuild/creal. The algorithms are the `libm` crate;
+# the UCRT errno contract is ours. See src/c99math.rs.
+c99math = ["dep:libm", "fenv"]
 # heap/ -- malloc/free/realloc and friends over __acrt_heap, new_handler/new_mode.
 heap = []
 # stdlib/ (qsort/bsearch/lfind/lsearch, rand/rand_s, abs/div families) and the
@@ -201,3 +224,6 @@ crt-portable-rust = { path = "../crt-portable-rust", optional = true }
 # also supplies the va_arg pullers this crate's extern block names. varargs-rust has
 # no dependencies of its own, so this edge cannot reach msvcrt-crt-rust.
 varargs-rust = { path = "../varargs-rust" }
+# musl's libm in Rust (MIT, no_std): the algorithms behind `c99math`. Third-party, so
+# it is listed in THIRD-PARTY-NOTICES.md's Rust-crates table via `tools/vendored.py`.
+libm = { version = "0.2.16", optional = true }

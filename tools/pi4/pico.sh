@@ -39,14 +39,27 @@ if [ ! -f "$PICO_DEVICE_TOKEN_FILE" ]; then
     exit 4
 fi
 
+# Reading state is free; input, media and reboots change the board under
+# whichever lane is booting it, so they need the bench lease.
+case "${1:-}" in
+    usb|status|connect|wait-ready|-h|--help|"") ;;
+    *) . "$(dirname "${BASH_SOURCE[0]}")/lease.sh"; pi4_lease ;;
+esac
+
 if [ "${1:-}" = "usb" ]; then
     out=$("$PICO_DEVBOX" --url "$PICO_URL" status </dev/null) || exit $?
     printf '%s' "$out" | python3 -c '
 import json, sys
-u = json.load(sys.stdin)["usb"]
-print("uptime=%ds mounted=%s suspended=%s resets=%d set_config=%d completed=%s" % (
+s = json.load(sys.stdin)
+u, c = s["usb"], s.get("console")
+line = "uptime=%ds mounted=%s suspended=%s resets=%d set_config=%d completed=%s" % (
     u["uptime_ms"] // 1000, u["mounted"], u["suspended"], u["bus_resets"],
-    u["set_configuration_count"], [h["lifetime_completed"] for h in u["hid"]]))'
+    u["set_configuration_count"], [h["lifetime_completed"] for h in u["hid"]])
+# Console bridge telemetry (picousb op 9); absent on firmware without it.
+if c:
+    line += " target_powered=%s console_rx=%d console_errors=%d console_dropped=%d console_client=%s" % (
+        c["target_powered"], c["rx_bytes"], c["rx_errors"], c["dropped"], c["client_attached"])
+print(line)'
     exit 0
 fi
 

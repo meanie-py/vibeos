@@ -8,6 +8,7 @@ new. `check` runs the source lints with the §20.3 baseline-diff gate.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -66,6 +67,34 @@ def debug_diff(args, repo: Path) -> int:
     return 0
 
 
+_SHELLS = {s for b in ("bash", "sh", "dash", "zsh", "fish", "ksh") for s in (b, "-" + b)}
+
+
+def _session_owner(start: int) -> int:
+    """The first non-shell ancestor of `start` -- qemu/lib/common.sh:owner_pid_for, seeded
+    ABOVE this process.
+
+    start.sh walks up from its own parent and stops at the first non-shell, which under
+    `vibeos-cli debug start` is this CLI: a process that exits as soon as start.sh returns.
+    The VM was then recorded as owned by a dead pid, and the next smoke from ANY lane reaped
+    it as an orphan (two arm64 debug VMs SIGTERMed mid-gdb by a sibling's test_payload,
+    2026-10-03, the gdb session surfacing it as "Remote communication error"). The session
+    that outlives us is whatever ran us, past the shells in between."""
+    p = start
+    for _ in range(12):
+        if p <= 1:
+            break
+        try:
+            comm = Path(f"/proc/{p}/comm").read_text().strip()
+            stat = Path(f"/proc/{p}/stat").read_text()
+        except OSError:
+            break
+        if comm not in _SHELLS:
+            return p
+        p = int(stat.rsplit(") ", 1)[1].split()[1])
+    return start
+
+
 def debug(args, repo: Path) -> int:
     verb = args.verb
     if verb == "diff":
@@ -80,7 +109,10 @@ def debug(args, repo: Path) -> int:
         return 127
     # Pass through remaining args verbatim; inherit stdio (interactive-ish).
     cmd = ["bash", str(script), *getattr(args, "rest", [])]
-    return subprocess.run(cmd, cwd=repo).returncode
+    env = None
+    if verb == "start" and not os.environ.get("VIBEOS_QEMU_OWNER_PID"):
+        env = {**os.environ, "VIBEOS_QEMU_OWNER_PID": str(_session_owner(os.getppid()))}
+    return subprocess.run(cmd, cwd=repo, env=env).returncode
 
 
 def _strict_arch_checks(run: Run, repo: Path, arch: str | None) -> None:

@@ -15,3 +15,10 @@ crate-type = ["staticlib"]
 [dependencies]
 panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
+
+# fastfat builds for NTDDI < WIN8 (the ReactOS default), so the C's
+# `#if (NTDDI_VERSION >= NTDDI_WIN8)` blocks are compiled out. Their Rust translations sit
+# behind this cfg, which nothing sets: pre-WIN8 the FCB layout differs (OPLOCK lives in
+# Specific.Fcb, and a DCB has no oplock at all), so running them reads and writes DCB fields.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ntddi_ge_ntddi_win8)'] }

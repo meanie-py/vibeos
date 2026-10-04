@@ -2113,6 +2113,13 @@ UNCOVERED: dict[str, str] = {
         "with the user32 wnd_pti read as the positive control and address-of/offset_of "
         "uses (layout-stable) as negatives, and asserts the real tree is clean."
     ),
+    "scan_extern_static_width": (
+        "pairs the whole tree's C __asm__ definitions with its Rust extern statics, so a "
+        "fixture dir would only restate its unit tests. tools/test_scan_extern_static_width.py "
+        "drives c_definitions/scan_rust with fastfat's MAX_LFN_CHARACTERS over-read as the "
+        "positive control, equal/narrower/unknown widths as negatives, and asserts the real "
+        "tree is clean."
+    ),
     "scan_res_named_types": (
         "reads COMMITTED binary resource objects (git ls-files '*.res'), not Rust source, so "
         "a source fixture dir has nothing to offer it. The parser is driven directly in "

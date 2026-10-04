@@ -29,13 +29,26 @@ fn main() {
     // to ref_<name> and includes the genuine ReactOS logic.
     let inc = |p: PathBuf| format!("#include \"{}\"\n", p.display());
     let s = |p: &str| crt.join(p);
-    // The `_FPCLASS_*` values, read out of the genuine SDK header. If the
-    // header ever stops carrying them, fail here rather than compile a
+    // The `_FPCLASS_*` values, read out of the genuine SDK header. The tree
+    // no longer carries it (sdk/include/ucrt went with the last of the
+    // Microsoft UCRT), so it comes from git history at a pinned revision. If
+    // the header stops carrying them, fail here rather than compile a
     // reference whose classifier silently returns 0 for everything.
     let fpclass_consts = {
-        let h = repo.join("sdk/include/ucrt/float.h");
-        let text = fs::read_to_string(&h)
-            .unwrap_or_else(|e| panic!("cannot read {}: {e}", h.display()));
+        const SDK_FLOAT_H: &str = "9c9d469c15278e449b2d37d437d0ebdaf62fc7ce:sdk/include/ucrt/float.h";
+        let h = SDK_FLOAT_H;
+        let shown = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["show", SDK_FLOAT_H])
+            .output()
+            .unwrap_or_else(|e| panic!("cannot run git show {SDK_FLOAT_H}: {e}"));
+        assert!(
+            shown.status.success(),
+            "git show {SDK_FLOAT_H} failed: {}",
+            String::from_utf8_lossy(&shown.stderr)
+        );
+        let text = String::from_utf8_lossy(&shown.stdout).into_owned();
         let lines: Vec<&str> = text
             .lines()
             .filter(|l| l.trim_start().starts_with("#define _FPCLASS_"))
@@ -43,7 +56,7 @@ fn main() {
         assert!(
             lines.len() >= 10,
             "expected the 10 _FPCLASS_* defines in {}, found {} -- the header moved",
-            h.display(),
+            h,
             lines.len()
         );
         format!("{}\n", lines.join("\n"))
@@ -682,7 +695,8 @@ fn main() {
         // Wave MATH-TIERC sub-wave 2: exp/log/log10/pow/fmod = the genuine
         // portable kernel-CRT .c (the same math/arm64/*.c used on both
         // amd64-llvm-mingw and arm64), renamed to ref_*. exp/log/fmod are
-        // real algorithms; log10/pow are upstream's rough stubs — all are
+        // real algorithms (log10/pow were upstream's rough stubs and are no longer
+        // references: cnt-rust takes them from the libm crate now) — all are
         // self-contained (no libm call) and bit-exact under -ffp-contract=off.
         // The `#define X ref_X` token-renames only the public symbol (e.g.
         // `log` does not touch `log10`/`logb`; `fmod` does not touch `fmodf`).
@@ -692,8 +706,6 @@ fn main() {
         // macro and corrupts the header. log10.c has no <math.h> include.
         ("exp", format!("#include <math.h>\n#define exp ref_exp\n{}", inc(s("math/arm64/exp.c")))),
         ("log", format!("#include <math.h>\n#define log ref_log\n{}", inc(s("math/arm64/log.c")))),
-        ("log10", format!("#define log10 ref_log10\n{}", inc(s("math/arm64/log10.c")))),
-        ("pow", format!("#include <math.h>\n#define pow ref_pow\n{}", inc(s("math/arm64/pow.c")))),
         ("fmod", format!("#include <math.h>\n#define fmod ref_fmod\n{}", inc(s("math/arm64/fmod.c")))),
         // Wave MATH-TIERC sub-wave 4: ceil/floor via __builtin_* so clang -O2
         // lowers them to hardware roundsd/roundss (correctly rounded) — an

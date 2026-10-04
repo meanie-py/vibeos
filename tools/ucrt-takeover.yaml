@@ -1,9 +1,9 @@
 # Declared takeovers of genuine Microsoft UCRT bodies.
 #
-# ucrtbase.dll is still implemented, for 1,032 of its exports, by vendored
-# Windows SDK source in `sdk/lib/ucrt` (455 files, 64,353 lines). We are
-# replacing it family by family with Rust in `sdk/lib/rust/ucrt-rust` and
-# deleting the C as each file's last export moves.
+# ucrtbase.dll was implemented, for 1,032 of its exports, by vendored Windows
+# SDK source in `sdk/lib/ucrt` (455 files, 64,353 lines). It was replaced family
+# by family with Rust in `sdk/lib/rust/ucrt-rust`, the C deleted as each file's
+# last export moved; the last of it went on 2026-10-03.
 #
 # Every one of those Rust bodies DISPLACES a Microsoft body — which is the exact
 # shape of the accident `verify_ucrtbase_cohab.py` exists to prevent, and is
@@ -40,9 +40,9 @@
 # .spec and so are not exports there at all. Per-arch numbers, not one number,
 # for exactly that reason.
 burndown:
-  i386: 25
-  amd64: 25
-  arm64: 25
+  i386: 0
+  amd64: 0
+  arm64: 0
 
 families:
   bits:
@@ -1809,3 +1809,201 @@ families:
       - _initterm_e
       - _lock_locales
       - _unlock_locales
+  startup:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/startup/{exit,onexit,abort,assert,thread}.cpp
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from 64f4b234afb` (the last Microsoft C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's graded rows, 22,961 cases. MATCH: _beginthread(ex)/_endthread(ex) (77 cases), the onexit table trio (368), _set_abort_behavior (25). exit/_exit/_Exit/quick_exit/abort/_assert terminate the process and are not gradable in-process; every boot runs exit through them, three arches.
+    note: >
+      A PORT (src/startup/). _assert/_wassert are naked entry stubs that append their own return address (no _ReturnAddress() on stable Rust).
+    exports:
+      - _Exit
+      - _assert
+      - _beginthread
+      - _beginthreadex
+      - _c_exit
+      - _cexit
+      - _crt_at_quick_exit
+      - _crt_atexit
+      - _endthread
+      - _endthreadex
+      - _execute_onexit_table
+      - _exit
+      - _initialize_onexit_table
+      - _register_onexit_function
+      - _register_thread_local_exe_atexit_callback
+      - _set_abort_behavior
+      - _wassert
+      - abort
+      - exit
+      - quick_exit
+  argv_errors:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/startup/{argv_parsing,argv_wildcards,argv_winmain}.cpp, internal/{report_runtime_error,win_policies,peb_access}.cpp, misc/crtmbox.cpp
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from 64f4b234afb` (the last Microsoft C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's graded rows, 22,961 cases. MATCH: _configure_narrow_argv/_configure_wide_argv (675 cases over quoting, backslash runs and wildcard expansion), both winmain command lines (85), _query_app_type/_set_app_type (23). report_runtime_error/crtmbox only run on the way to abort.
+    note: >
+      A PORT (src/argv/), over the globals in argv_data.rs.
+    exports:
+      - _configure_narrow_argv
+      - _configure_wide_argv
+      - _get_narrow_winmain_command_line
+      - _get_wide_winmain_command_line
+      - _query_app_type
+      - _set_app_type
+  cvt:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/convert/{cvt,cfout,_fptostr,fp_flags,wctype}.cpp
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from 64f4b234afb` (the last Microsoft C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's graded rows, 22,961 cases. MATCH: _ecvt_s/_fcvt_s (5,688 cases), _gcvt_s (1,335), the printf %a/%e/%f/%g engine in both legacy and standard modes plus denormal-flush, pow10, special-value and misc rows (14,616), wctype (69).
+    note: >
+      A PORT (src/cvt/): the float formatting engine. Also compared on the host against the Microsoft cvt/cfout/_fptostr C: 21,194,818 cases on x86_64, 0 differences. Fixes the amd64 ABI slip in fcvt.rs/gcvt.rs (the C __acrt_fltout took a struct-wrapped double, passed in RCX).
+    exports:
+      - wctype
+  winapi_thunks:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt/internal/winapi_thunks.cpp and the six internal/*A.cpp narrow wrappers
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from 64f4b234afb` (the last Microsoft C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's graded rows, 22,961 cases. No export of its own: every graded row and every boot on three arches runs on these thunks. The sweep is also what caught the inlining trap the module doc records (an inlined thunk table read our uninitialized cache under the harness's deferral).
+    note: >
+      A PORT (src/winapi_thunks/). Nothing here is an export; every graded row and every boot runs on it.
+    exports:
+      []
+  ucrt_reactos:
+    provenance: ucrt-port
+    replaces:
+      - sdk/lib/ucrt_reactos/ (ReactOS glue, MIT: math/matherr.cpp, locale/*.c)
+    oracle: >
+      Tier 2 in the arm64 guest, `ucrt_tier2_sweep.py --takeover-from 64f4b234afb` (the last Microsoft C restored for the reference instance, all 8 shards): 0 DIFF / FAULT / HANG across the batch's graded rows, 22,961 cases. __setusermatherr is not graded on its own (no ref import); the forwarders are three-line cdecl->stdcall shims to kernel32 that the graded mbtowc/mbrtowc/wcrtomb/mblen, ctype, strftime/tzset and _getch rows of earlier batches all call through.
+    note: >
+      A PORT (src/ucrt_reactos.rs) of ReactOS code, not Microsoft code: provenance ucrt-port only because it lived beside the UCRT and read its internal headers.
+    exports:
+      - __setusermatherr
+  fpctrl_arm64:
+    provenance: wine-port
+    arches: [arm64]
+    replaces:
+      - arm64 only -- the forward into msvcrt.dll the link made for want of a body (sdk/lib/crt/float builds this family for i386/amd64 only)
+    oracle: >
+      tools/payloads/fpctrl in the arm64 guest: ucrtbase's four against msvcrt.dll's (the bodies the forward reached), both LoadLibrary'd, every case from the same FPCR/FPSR state with the hardware read back through the other DLL; 671 cases, 0 diffs, plus a check that the two names no longer resolve to one body. Mutant (FPSR invalid/zero-divide swapped) caught at 32 diffs. QEMU TCG implements FPCR's trap-enable bits as RAZ, so the _EM_* masks only ever read back as masked there; rounding mode and every status flag do round-trip.
+    note: >
+      A PORT (src/fpctrl_arm64.rs) of Wine's aarch64 _setfp, the same mapping msvcrt-crt-rust ships, with one documented divergence in a transient FPCR write (Wine's C-precedence slip). The module is empty on i386/amd64.
+    exports:
+      - _clearfp
+      - _control87
+      - _controlfp
+      - _statusfp
+  fenv:
+    provenance: wine-port
+    replaces:
+      - the ucrtbase.spec -stub entries for the fenv.h family, __fpe_flt_rounds and _fpreset (no body existed in any CRT source here)
+    oracle: >
+      tools/payloads/fenv in the guest on all three arches: Wine's own test_fenv (misc.c, native Windows' expected values, lifted out because the winetest's misc subtest hangs before reaching it) plus __fpe_flt_rounds per rounding mode -- i386 149, amd64 149, arm64 148 checks, 0 failed; a mutant (FENV_Y_OVERFLOW dropped from the encoding) fails 19. amd64 needed sdk/lib/crt's _control87 fixed first: it rebuilt MXCSR without the exception flags, so every fegetenv cleared them. Wine's misc __control87_2 and __fpe_flt_rounds checks pass in ucrtwine on i386.
+    note: >
+      A PORT (src/fenv.rs) of Wine's msvcrt math.c at _MSVCR_VER >= 140, its _setfp/_setfp_sse from msvcrt-crt-rust's port of the same file. fenv_t is Wine's (= native's) encoded form; ucrt-rust's own cvt and strtod called these as stubs on every conversion until now.
+    exports:
+      - __fpe_flt_rounds
+      - _fpreset
+      - feclearexcept
+      - fegetenv
+      - fegetexceptflag
+      - fegetround
+      - feholdexcept
+      - fesetenv
+      - fesetexceptflag
+      - fesetround
+      - fetestexcept
+  fenv_x87_sse:
+    provenance: wine-port
+    arches: [i386]
+    replaces:
+      - the ucrtbase.spec -arch=i386 -stub entries __control87_2 and _statusfp2
+      - sdk/lib/crt/float/i386/{cntrlfp,statfp,clearfp}.c's _control87/_controlfp/_statusfp/_clearfp in ucrtbase, which drove the x87 alone and left MXCSR -- where SSE2 code, ucrtbase's own included, does its arithmetic -- untouched
+    oracle: >
+      tools/payloads/fenv in the guest on all three arches: Wine's own test_fenv (misc.c, native Windows' expected values, lifted out because the winetest's misc subtest hangs before reaching it) plus __fpe_flt_rounds per rounding mode -- i386 149, amd64 149, arm64 148 checks, 0 failed; a mutant (FENV_Y_OVERFLOW dropped from the encoding) fails 19. amd64 needed sdk/lib/crt's _control87 fixed first: it rebuilt MXCSR without the exception flags, so every fegetenv cleared them. Wine's misc __control87_2 and __fpe_flt_rounds checks pass in ucrtwine on i386.
+    note: >
+      The i386 x87+SSE pair fenv.rs reads through, and Wine's public quartet over it (src/fenv.rs): _control87 adds _EM_AMBIGUOUS when the units disagree, _statusfp ORs both status words, _clearfp clears both.
+    exports:
+      - __control87_2
+      - _clearfp
+      - _control87
+      - _controlfp
+      - _statusfp
+      - _statusfp2
+  c99math:
+    provenance: libm-crate
+    replaces:
+      - the ucrtbase.spec -stub entries for the C99 math functions and _fpclassf/_dpcomp/_fdpcomp/_Cbuild/creal (Microsoft's UCRT source drop has no libm, so no body existed in any CRT source here)
+      - dll/win32/ucrtbase/stubs.c's fma/fmaf (unfused), log2/log2f (log * M_LOG2E) and lrint/lrintf (__debugbreak)
+    oracle: >
+      tools/payloads/c99math in the guest on all three arches -- values vs the host glibc libm within a per-row ulp budget (exact where the Windows contract or a correctly-rounded value differs from glibc), errno vs the UCRT contract (Wine's test_math_errors rows and its native-verified msvcr120 remainder/_dpcomp/_Cbuild tables), rint/nearbyint/rintf in all four rounding modes, nearbyint's inexact discipline, remquo's quotient, _fpclassf -- i386 482, amd64 492, arm64 492 checks, 0 failed at first landing, i386 588, amd64 604, arm64 604 with fma/log2/lrint and the msvcrt.dll pow/log10/fmod rows; a mutant (remainder's NaN domain clause dropped) fails 3. The first run found two real bugs: libm's aarch64 rint ignores the rounding mode (now frintx/frinti), and sdk/lib/crt's i386 _controlfp never reached MXCSR (now Wine's both-unit quartet in fenv.rs).
+    note: >
+      The algorithms are the `libm` crate (musl's libm in Rust, MIT; Wine's msvcrt takes the same functions from its musl copy). Ours is the UCRT contract on top: errno (EDOM/ERANGE, never _matherr) at Wine's musl patch points, Microsoft's FP_ILOGBNAN, signed-zero ordering in fmin/fmax, and Wine's lround/llrint range checks. See src/c99math.rs.
+    exports:
+      - acosh
+      - acoshf
+      - acoshl
+      - asinh
+      - asinhf
+      - atanh
+      - atanhf
+      - atanhl
+      - cbrt
+      - cbrtf
+      - _Cbuild
+      - copysign
+      - copysignf
+      - creal
+      - _dpcomp
+      - erf
+      - erfc
+      - erfcf
+      - erff
+      - expm1
+      - expm1f
+      - fdim
+      - fdimf
+      - _fdpcomp
+      - fma
+      - fmaf
+      - fmax
+      - fmaxf
+      - fmin
+      - fminf
+      - _fpclassf
+      - ilogb
+      - ilogbf
+      - lgamma
+      - lgammaf
+      - llrint
+      - llrintf
+      - llround
+      - llroundf
+      - log1p
+      - log1pf
+      - log2
+      - log2f
+      - logb
+      - logbf
+      - lrint
+      - lrintf
+      - lround
+      - lroundf
+      - nan
+      - nanf
+      - nearbyint
+      - nearbyintf
+      - remainder
+      - remainderf
+      - remquo
+      - remquof
+      - rint
+      - rintf
+      - tgamma
+      - tgammaf
+      - trunc
+      - truncf

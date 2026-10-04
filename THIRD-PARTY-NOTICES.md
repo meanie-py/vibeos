@@ -2,7 +2,7 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-38 vendored C/C++ components:
+37 vendored C/C++ components:
 
 - [AC'97 audio sample driver](#ac97-audio-sample-driver) — unknown — MIT
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
@@ -29,7 +29,6 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [Mbed TLS](#mbed-tls) — 3.6.7 — Apache-2.0 OR GPL-2.0-or-later
 - [Mesa 3-D graphics library](#mesa-3-d-graphics-library) — 2.6 — LGPL-2.0-or-later
 - [Microsoft compiler-tests (EH/SEH)](#microsoft-compiler-tests-ehseh) — unknown — MIT
-- [Microsoft UCRT](#microsoft-ucrt) — unknown — Microsoft (see the Windows SDK licence terms)
 - [OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)](#opengl-sdk-headers-mesa-glh-khronos-glexth-sgi-gluh) — 7.6 — MIT
 - [rdesktop (as mstsc.exe)](#rdesktop-as-mstscexe) — 1.8.3 — GPL-3.0-or-later
 - [rdesktop (rosapps tsclient)](#rdesktop-rosapps-tsclient) — 1.8.3 — GPL-3.0-or-later
@@ -4481,19 +4480,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Microsoft UCRT
-
-- Upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
-- Version: unknown
-- In this tree: `sdk/lib/ucrt`, `sdk/include/ucrt`
-- Licence: Microsoft (see the Windows SDK licence terms)
-- Grant reproduced from: **the tree carries no licence grant**
-
-```
-THIS TREE CARRIES NO LICENCE GRANT. Its source headers bear only "Copyright (c) Microsoft Corporation. All rights reserved." with no permission statement of any kind, and there is no LICENSE, COPYING or README in either sdk/lib/ucrt or sdk/include/ucrt. The recorded licence is therefore a POINTER to the Windows SDK licence terms under which Microsoft distributes the ucrt sources, not something reproducible from this repository — and those terms are an SDK EULA, not an open-source licence.
-This is the largest unresolved provenance question in the tree (~78K lines) and the reason the entry says the SDK version is unknown: without the version we cannot even name which EULA applies. It is recorded here rather than rounded off so that generated notices state the gap instead of hiding it. Resolving it means establishing the SDK version and its terms, or replacing the tree — see the ucrtbase work item in the roadmap.
-```
-
 ## OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)
 
 - Upstream: Mesa 7.6 include/GL, Khronos OpenGL registry, SGI GLU
@@ -5256,7 +5242,7 @@ Copyright notice:
 
 ## Rust crates
 
-This product also links 18 third-party Rust crates, out of 58 that enter the build. Generated from `cargo metadata` into `tools/rust-crates.yaml`; see that file for the ones used only to build or test, and for why the shipped/host split errs toward listing more.
+This product also links 19 third-party Rust crates, out of 59 that enter the build. Generated from `cargo metadata` into `tools/rust-crates.yaml`; see that file for the ones used only to build or test, and for why the shipped/host split errs toward listing more.
 
 | crate | version | licence |
 | --- | --- | --- |
@@ -5268,6 +5254,7 @@ This product also links 18 third-party Rust crates, out of 58 that enter the bui
 | defmt | 1.1.0 | MIT OR Apache-2.0 |
 | hash32 | 0.3.1 | MIT OR Apache-2.0 |
 | heapless | 0.9.3 | MIT OR Apache-2.0 |
+| libm | 0.2.16 | MIT |
 | libz-rs-sys | 0.6.3 | Zlib |
 | log | 0.4.32 | MIT OR Apache-2.0 |
 | managed | 0.8.0 | 0BSD |

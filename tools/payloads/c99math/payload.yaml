@@ -1,0 +1,18 @@
+# c99math — ucrtbase's C99 math functions (ucrt-rust c99math.rs over the libm crate), value + errno.
+#   tools/payloads/c99math/build.sh {arch}
+#   VIBEOS_PAYLOAD=c99math ./vibeos-cli build --arch {arch}
+#   ./vibeos-cli smoke --arch {arch} --payload c99math
+name: c99math
+description: ucrtbase acosh/erfc/tgamma/lround/remainder/... values and errno against glibc and the UCRT contract
+
+build_hint: "tools/payloads/c99math/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/c99math/c99math-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/c99math.exe
+
+test:
+  launch_marker: "[C99MATH] done"
+  pass_marker: "[C99MATH] done PASS"
+  launch_drain_secs: 300

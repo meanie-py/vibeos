@@ -393,7 +393,9 @@ pub unsafe extern "system" fn FatCommonLockControl(
         let has_waiting_locks = !is_lock && FsRtlAreThereWaitingFileLocks(
             &raw mut (*Fcb).Specific.Fcb.as_mut().FileLock
         ) != 0;
-        if is_lock_within_size || has_waiting_locks {
+        // The "only when it interferes with oplocks" filter is NTDDI >= WIN8 (lockctrl.c
+        // 695-723); pre-WIN8 every lock-control request checks the oplock.
+        if !cfg!(ntddi_ge_ntddi_win8) || is_lock_within_size || has_waiting_locks {
             let oplock = FatGetFcbOplock(Fcb);
             *p_status = FsRtlCheckOplock(
                 oplock,

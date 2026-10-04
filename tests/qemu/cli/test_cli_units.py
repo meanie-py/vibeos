@@ -60,6 +60,53 @@ def test_git_fingerprint_stable_then_changes(tiny_repo: Path):
     assert fp3 != fp1, "working-tree edit must change the fingerprint"
 
 
+def test_a_scoped_fingerprint_ignores_an_excluded_COMMIT(tiny_repo: Path):
+    """The STALE_MEDIA false positive: committing an excluded file moved the
+    fingerprint anyway, because the HEAD sha was hashed outside the pathspec.
+
+    A commit sha names the whole tree, so folding it in defeats every exclusion
+    the caller asked for. Every entry in NON_BUILD_PATHSPEC worked only while
+    its change sat uncommitted; committing brought the false positive back, and
+    a docs-only commit then failed a boot whose media was perfectly fresh."""
+    scope = [".", ":(exclude)docs"]
+    (tiny_repo / "docs").mkdir()
+    (tiny_repo / "docs" / "note.md").write_text("one\n")
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "docs: one")
+    before = provenance.git_fingerprint(tiny_repo, scope)
+
+    (tiny_repo / "docs" / "note.md").write_text("two\n")
+    assert provenance.git_fingerprint(tiny_repo, scope) == before, "dirty excluded file"
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "docs: two")
+    assert provenance.git_fingerprint(tiny_repo, scope) == before, (
+        "COMMITTING an excluded file must not move a scoped fingerprint"
+    )
+
+
+def test_a_scoped_fingerprint_still_catches_an_in_scope_commit(tiny_repo: Path):
+    """The other half, which is the one that must not regress: a fingerprint that
+    ignores commits entirely would be a false GREEN, and false green here boots
+    stale media and calls it a pass."""
+    scope = [".", ":(exclude)docs"]
+    before = provenance.git_fingerprint(tiny_repo, scope)
+    (tiny_repo / "kernel.c").write_text("int main(void){return 0;}\n")
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "a real source commit")
+    assert provenance.git_fingerprint(tiny_repo, scope) != before
+
+
+def test_an_unscoped_fingerprint_still_tracks_HEAD(tiny_repo: Path):
+    """Unscoped is the coarse tier-1 gate and SHOULD move on any commit: there is
+    no scope to respect, so whole-tree identity is the right question."""
+    before = provenance.git_fingerprint(tiny_repo)
+    (tiny_repo / "docs").mkdir(exist_ok=True)
+    (tiny_repo / "docs" / "x.md").write_text("x\n")
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "anything")
+    assert provenance.git_fingerprint(tiny_repo) != before
+
+
 def test_git_fingerprint_survives_a_non_utf8_file(tiny_repo: Path):
     """A latin-1 file in the diff must not take the CLI down.
 
@@ -473,10 +520,38 @@ def test_check_staleness_reports_oracle_failure_rather_than_raising(tmp_path: Pa
     )
 
 
+def test_ps_does_not_report_a_zombie_qemu_as_alive(monkeypatch):
+    """`ps` printed exited-but-unreaped QEMUs as live, with a growing AGE, and
+    counted them against the slot total. `--stale` has the mirror bug: an owner
+    that had exited read as present, so its VM never qualified as stale.
+
+    The defect was in the READING, not in one caller -- _pid_is_zombie already
+    existed for the kill confirm path and this predicate never consulted it."""
+    from . import killvm
+
+    monkeypatch.setattr(killvm, "_pid_is_zombie", lambda pid: True)
+    monkeypatch.setattr(killvm.os, "kill", lambda pid, sig: None)
+    assert killvm._pid_alive(4242) is False
+
+
+def test_ps_still_reports_a_running_qemu_as_alive(monkeypatch):
+    """The direction that must not regress: calling a live VM dead would make
+    `kill --stale` reap VMs out from under running work."""
+    from . import killvm
+
+    monkeypatch.setattr(killvm, "_pid_is_zombie", lambda pid: False)
+    monkeypatch.setattr(killvm.os, "kill", lambda pid, sig: None)
+    assert killvm._pid_alive(4242) is True
+
+
 def test_src_delta_names_a_head_move(tiny_repo: Path):
     """ "build source changed" fires milliseconds after the same hash was stamped
     and never said WHICH input moved. A merge landing under the build is the
-    interesting case and now says so by name."""
+    interesting case and now says so by name — AND names the paths, which it did
+    not before: it used to return on the head move alone, so a real in-scope
+    change and a false positive printed the same line. The diff is taken against
+    the STAMP'S commit, because after a commit "vs HEAD" is empty while the build
+    is genuinely out of date."""
     old_head = provenance.git_head(tiny_repo)
     stamp = provenance.Stamp(
         arch="amd64",
@@ -492,8 +567,9 @@ def test_src_delta_names_a_head_move(tiny_repo: Path):
     _git(tiny_repo, "add", "-A")
     _git(tiny_repo, "commit", "-qm", "second")
     delta = provenance._src_delta(tiny_repo, stamp)
-    assert "HEAD MOVED SINCE THE BUILD" in delta, delta
+    assert "HEAD also moved" in delta, delta
     assert old_head[:12] in delta, delta
+    assert "b.txt" in delta, f"must name the path that actually changed: {delta}"
 
 
 def test_src_delta_flags_a_phantom_change(tiny_repo: Path):
@@ -10286,22 +10362,67 @@ def _fake_pinned_cli(tmp_path: Path, body: str) -> Path:
     return cond
 
 
-def test_the_pinned_child_skips_the_lock_its_parent_holds(queue_repo, tmp_path, monkeypatch):
+def _handoff_ready(cond: Path) -> None:
+    q = cond / "tests" / "qemu" / "cli" / "queue.py"
+    q.parent.mkdir(parents=True)
+    q.write_text(f"{q_mod.HANDOFF_ENV}\n")
+
+
+def test_the_pinned_child_gets_a_handoff_token_not_a_lock_opt_out(
+    queue_repo, tmp_path, monkeypatch
+):
+    """VIBEOS_LAND_LOCK=0 reached the gate's check-tooling and made master look red
+    (2026-10-03). The child gets a token naming its parent, nothing that disables the lock."""
     repo, _ = queue_repo
     cond = _fake_pinned_cli(
-        tmp_path, 'echo "args=$* lock=$VIBEOS_LAND_LOCK pin=$VIBEOS_CONDUCTOR_PIN"\n'
+        tmp_path,
+        'echo "args=$* lock=${VIBEOS_LAND_LOCK-unset} handoff=${VIBEOS_CONDUCTOR_HANDOFF%%:*}"\n',
     )
+    _handoff_ready(cond)
     monkeypatch.setattr(q_mod, "pin_conductor_checkout", lambda r: cond)
     monkeypatch.setattr(q_mod, "git", lambda *a, **k: "c" * 40)
     lines: list[str] = []
     q_mod._conduct_pinned(repo, lines.append, retries=3)
     assert "conducting with master's queue code" in lines[0]
-    assert lines[1] == "args=land --drain --foreground --retries 3 lock=0 pin=0"
+    assert (
+        lines[1] == f"args=land --drain --foreground --retries 3 lock=unset handoff={os.getpid()}"
+    )
+
+
+def test_a_pinned_checkout_that_predates_the_handoff_drains_in_process(
+    queue_repo, tmp_path, monkeypatch
+):
+    """Old queue code in the pinned checkout would WAIT on the lock its parent holds."""
+    repo, _ = queue_repo
+    cond = _fake_pinned_cli(tmp_path, "exit 9\n")
+    (cond / "tests/qemu/cli").mkdir(parents=True)
+    (cond / "tests/qemu/cli/queue.py").write_text("# no handoff here\n")
+    monkeypatch.setattr(q_mod, "pin_conductor_checkout", lambda r: cond)
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "c" * 40)
+    drained = []
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: drained.append(1) or 0)
+    q_mod._conduct_pinned(repo, lambda m: None, retries=2)
+    assert drained == [1]
+
+
+def test_a_handed_off_drain_needs_its_parent_to_hold_the_lock(queue_repo, monkeypatch):
+    repo, _ = queue_repo
+    drained = []
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: drained.append(1) or 0)
+    monkeypatch.setenv(q_mod.HANDOFF_ENV, "999999:lane-x@wt")
+    with pytest.raises(q_mod.QueueError):
+        q_mod.try_become_conductor(repo, lambda m: None)
+    assert q_mod.HANDOFF_ENV not in os.environ, "the token must not reach the drain's children"
+    with hl_mod.land_lock("parent", timeout=1.0):
+        monkeypatch.setenv(q_mod.HANDOFF_ENV, f"{os.getpid()}:lane-x@wt")
+        assert q_mod.try_become_conductor(repo, lambda m: None) is True
+    assert drained == [1]
 
 
 def test_a_failed_pinned_child_is_no_verdict_not_a_landing(queue_repo, tmp_path, monkeypatch):
     repo, _ = queue_repo
     cond = _fake_pinned_cli(tmp_path, "echo halted; exit 1\n")
+    _handoff_ready(cond)
     monkeypatch.setattr(q_mod, "pin_conductor_checkout", lambda r: cond)
     monkeypatch.setattr(q_mod, "git", lambda *a, **k: "c" * 40)
     with pytest.raises(q_mod.NoVerdict):
@@ -10311,9 +10432,8 @@ def test_a_failed_pinned_child_is_no_verdict_not_a_landing(queue_repo, tmp_path,
 def test_the_conductor_journal_survives_in_the_queue_dir(queue_repo, monkeypatch):
     """A reboot wiped /tmp and with it a week of conductor logs (2026-10-02)."""
     repo, _ = queue_repo
-    monkeypatch.setenv("VIBEOS_CONDUCTOR_FOR", "lane-x@wt")
     echoed: list[str] = []
-    log = q_mod.journaled(repo, echoed.append)
+    log = q_mod.journaled(repo, echoed.append, who="lane-x@wt")
     log("queue: batch of 2\nsecond line")
     journal = q_mod.queue_dir(repo) / q_mod.JOURNAL_FILE
     text = journal.read_text().splitlines()
@@ -10323,3 +10443,28 @@ def test_the_conductor_journal_survives_in_the_queue_dir(queue_repo, monkeypatch
     log("rotated")
     assert (journal.parent / (q_mod.JOURNAL_FILE + ".1")).is_file()
     assert journal.read_text().count("\n") == 1
+
+
+def test_an_end_marker_cut_in_two_by_a_kernel_print_still_counts():
+    """The user-mode END line and kernel prints share the serial port, so a kernel
+    line can land mid-marker (i386, 2026-10-03, verbatim below). Unrepaired, a
+    30/0 test read as NO-END and the ratchet called it a regression. A fragment
+    that cannot be completed into a whole marker must stay unrepaired."""
+    P = _parser()
+    log = (
+        "[KMTEST-SWEEP] launch ExHardError\n"
+        "ExHardError: 30 tests executed (0 marked as todo, 0 failures), 0 skipped.\n"
+        "[KMTEST:END ExHardE[EXIT-THR] image=SERVICES.EXE exit_status=0x0 crit=0\n"
+        "rror pass=30 fail=0 skip=0]\n"
+        "[EXIT-THR] image=KMTEST_.EXE exit_status=0x0 crit=0\n"
+        "[KMTEST-SWEEP] exit ExHardError code=0\n"
+        "[KMTEST-SWEEP] done 1 tests\n"
+    )
+    results, _, _ = P.parse(log)
+    assert [(r["name"], r["status"], r["pass"], r["fail"]) for r in results] == [
+        ("ExHardError", "OK", 30, 0)
+    ]
+    # A tail that does not complete the marker is not invented into one.
+    broken = log.replace("rror pass=30 fail=0 skip=0]", "rror pass=30 fail=0")
+    results, _, _ = P.parse(broken)
+    assert results[0]["status"] == "NO-END"

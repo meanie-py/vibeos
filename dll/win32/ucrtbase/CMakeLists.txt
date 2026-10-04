@@ -1,12 +1,6 @@
 
 spec2def(ucrtbase.dll ucrtbase.spec NO_DBG ADD_IMPORTLIB)
 
-# Hack to replace the old CRT include directory with the UCRT include directory
-get_property(INCLUDE_DIRS DIRECTORY . PROPERTY INCLUDE_DIRECTORIES)
-list(REMOVE_ITEM INCLUDE_DIRS "${REACTOS_SOURCE_DIR}/sdk/include/crt")
-set_property(DIRECTORY . PROPERTY INCLUDE_DIRECTORIES ${INCLUDE_DIRS})
-include_directories(${REACTOS_SOURCE_DIR}/sdk/include/ucrt)
-
 add_compile_definitions(
     _UCRT
     _CORECRT_BUILD
@@ -59,8 +53,17 @@ set_entrypoint(ucrtbase __acrt_DllMain 12)
 set(UCRT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(UCRT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/crt-shared-rust-target")
 if(ARCH STREQUAL "i386")
+    # SSE2, unlike every other i386 Rust module here: no kernel-side consumer links this
+    # archive (the -sse,-sse2 baseline exists for the ones that do), and Microsoft's own
+    # x86 ucrtbase.dll is built /arch:SSE2, as is every MSVC-built program that loads it.
+    # It is also the only way to use the `libm` crate: under -sse rustc refuses a Rust-ABI
+    # function that passes an f64, and libm is all Rust-ABI. Builtin triple plus -sse is
+    # the combination rustc has announced it will stop accepting (roadmap, "55 i386 crates
+    # build on an SSE/ABI combination rustc is phasing out"), so this is one fewer.
+    # Spelled out, not left empty: sdk/lib/rust/.cargo/config.toml gives this triple
+    # -sse,-sse2, and an unset RUSTFLAGS would let that apply.
     set(UCRT_RUST_TARGET "i686-pc-windows-gnu")
-    set(UCRT_RUST_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
+    set(UCRT_RUST_ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")
 elseif(ARCH STREQUAL "amd64")
     set(UCRT_RUST_TARGET "x86_64-pc-windows-gnu")
     set(UCRT_RUST_ENV "")
@@ -110,7 +113,6 @@ add_dependencies(ucrtbase rust_ucrt_shared)
 # its own copies of the ones it does, which would then win first-match. Forcing the Rust
 # defs in first makes the C copies the ignored duplicates.
 target_link_libraries(ucrtbase
-    ucrt
     -Wl,--whole-archive ${UCRT_SHARED_RUST_LIB} -Wl,--no-whole-archive
     msvcrt_shared
     crtmath

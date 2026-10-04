@@ -62,6 +62,21 @@ def _pid_is_zombie(pid: int) -> bool:
 
 
 def _pid_alive(pid: int) -> bool:
+    """Whether `pid` is a process that is still running.
+
+    A ZOMBIE is not. This matters because `os.kill(pid, 0)` says otherwise, and
+    this predicate is what `vibeos-cli ps` prints and what `--stale` selects on:
+    a QEMU that had already exited was listed as live with a growing AGE and
+    counted against the slot total, and an owner that had exited read as present
+    so its VM never qualified as stale. It misled a session twice in one day --
+    twice a replay was believed to be running while its QEMU sat in Z state.
+
+    _pid_is_zombie was added for the kill CONFIRM path and left here untouched,
+    which was the real mistake: the defect is in the READING, so fixing one
+    consumer of it and not the reading leaves every other consumer wrong.
+    """
+    if _pid_is_zombie(pid):
+        return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

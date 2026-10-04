@@ -322,3 +322,23 @@ def test_conformance_strips_every_host_stamp_the_tee_writes(tmp_path):
     # Byte-for-byte what an unstamped round would have parsed.
     assert conformance.read_serial(log) == plain.read_text(errors="replace")
     assert conformance.read_serial(plain) == plain.read_text(errors="replace")
+
+
+def test_conformance_boots_ask_for_a_quiet_boot_and_keep_the_callers_tripwire():
+    # QUIET is what stops winlogon's ladder from starving 100 ms kmtest deadlines;
+    # a caller's own knobs (a special-pool hunt) must ride along unchanged.
+    from ..vm import tripwire_args
+    from .conformance import with_quiet_token
+
+    assert with_quiet_token("") == "QUIET"
+    assert with_quiet_token("SPECIALPOOL=Gla5") == "SPECIALPOOL=Gla5 QUIET"
+    assert with_quiet_token("KD=COM2;QUIET") == "KD=COM2;QUIET"
+    # And it survives the fw_cfg encoding the boot actually uses (no commas).
+    import os
+    from unittest import mock
+
+    with mock.patch.dict(os.environ, {"VIBEOS_TRIPWIRE": with_quiet_token("SPECIALPOOL=*")}):
+        assert tripwire_args() == [
+            "-fw_cfg",
+            "name=opt/org.vibeos.tripwire,string=SPECIALPOOL=* QUIET",
+        ]

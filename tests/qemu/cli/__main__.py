@@ -20,6 +20,7 @@ from . import (
     host_clock,
     hostlock,
     maintenance,
+    pi4,
     symbolize,
     tooling,
 )
@@ -58,6 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
     checkpoint.add_parser(sub)
     host_clock.add_parser(sub)
+    pi4.add_parser(sub)
 
     def arch_arg(sp, required=True):
         sp.add_argument(
@@ -795,6 +797,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--count", type=int, default=5, help="how many boundaries either side of --near (default 5)"
     )
     rbk.set_defaults(fn=rr_mod.rr_cmd, rr_verb="breaks")
+
+    rwg = rrsub.add_parser(
+        "wedge",
+        help="name the recorded events around where a stalled replay stopped reading",
+    )
+    rwg.add_argument("trace", help="trace name, path, or `latest`")
+    rwg.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rwg.add_argument(
+        "--at",
+        type=int,
+        help="inspect this byte offset instead of asking a live replay where it stopped",
+    )
+    rwg.add_argument(
+        "--count", type=int, default=8, help="events either side of the offset (default 8)"
+    )
+    rwg.set_defaults(fn=rr_mod.rr_cmd, rr_verb="wedge")
 
     kl = sub.add_parser(
         "kill",

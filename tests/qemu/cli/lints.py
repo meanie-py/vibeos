@@ -63,6 +63,8 @@ _SUMMARY_LINE = re.compile(
     r"|catalog: \d+"  # 'Spec/Bindgen catalog: N …'
     r"|^\s*-> .*: *\d+$"  # verify_tables tallies
     r"|^\s*matched to a C array\s*: *\d+$"
+    r"|^\s*no C counterpart\s*: *\d+$"  # verify_tables: moves whenever a table is added
+    r"|^\s*Rust integer tables found\s*: *\d+$"
     r"|^\s*Found \d+ unprotected"  # lint_kernel header tally
     r"|^\s*Total: \d+ violations"  # lint_kernel footer tally (mixed-case)
     # verify_signatures' two header tallies and its whole '── coverage ──' block.
@@ -1078,6 +1080,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_bindgen_padding_index",
             [py, str(sbp)] if sbp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A Rust `extern static` read wider than the C that defines it through __asm__("NAME").
+    # fastfat read the shim's 4-byte MAX_LFN_CHARACTERS as usize; on arm64 the high half was
+    # the next datum, every rename buffer pointer went non-canonical, and every rename
+    # bugchecked 0x23 while amd64 read a zero and passed. Baseline EMPTY.
+    sesw = repo / "tools" / "scan_extern_static_width.py"
+    specs.append(
+        (
+            "scan_extern_static_width",
+            [py, str(sesw)] if sesw.is_file() else ["MISSING"],
             "stdout",
         )
     )
