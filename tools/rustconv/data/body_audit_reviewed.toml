@@ -932,3 +932,377 @@ function = "StartDlgProc"
 callees = ["SendMessageW"]
 verdict = "owed"
 note = "upstream b299049410b: no installer -> click Run; unattended -> click Install (was: always Run), via SendMessageW. Changes LiveCD boot behaviour, so port with unattend.inf and smoke. Owner: upstream-sync"
+
+# body-audit high-lead triage, 2026-10-04 (packet C).
+[[reviewed]]
+module = "dll/win32/syssetup"
+function = "PreprocessUnattend"
+callees = ["GetSetupInfPath", "ProcessDetachedProgram"]
+verdict = "owed"
+note = "upstream 30b02d038e0 (unattended GuiUnattended:DetachedProgram, ~25 C lines: ProcessDetachedProgram + GetSetupInfPath helper) is a feature not in the Rust; GetSetupInfPath itself is only a refactor of the inlined GetSystemDirectoryW+wcscat. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/syssetup"
+function = "ApplyEventlogSettings"
+callees = ["SendMessage"]
+verdict = "owed"
+note = "upstream 55f9484b958 moved InstallSecurity into the wizard completion thread with PM_STEP_START/END progress SendMessages (~125 C lines over security.c+wizard.c); the Rust keeps the pre-move shape, which still installs security from InstallReactOS. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/syssetup"
+function = "ApplyRegistryValues"
+callees = ["SendMessage"]
+verdict = "owed"
+note = "same upstream 55f9484b958 progress-reporting rewrite of the security step; Rust does the registry work, only the progress messages are missing. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/syssetup"
+function = "InstallBuiltinAccounts"
+callees = ["SendMessage"]
+verdict = "owed"
+note = "same upstream 55f9484b958 progress-reporting rewrite; account work is present, progress SendMessages are not. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/syssetup"
+function = "InstallPrivileges"
+callees = ["SendMessage"]
+verdict = "owed"
+note = "same upstream 55f9484b958 progress-reporting rewrite; privilege work is present, progress SendMessages are not. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/syssetup"
+function = "ItemCompletionThread"
+callees = ["InstallOptionalComponents", "SaveSettings"]
+verdict = "owed"
+note = "SaveSettings is upstream 55f9484b958 (security step moved here, must land together with removing InstallSecurity from InstallReactOS) and InstallOptionalComponents is upstream 6117b1bdefe (winevdm optional component, ~185 C lines in addons.c+wizard.c). Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/syssetup"
+function = "ProcessSetupInf"
+callees = ["GetSetupInfPath", "_swprintf"]
+verdict = "false"
+note = "GetSetupInfPath is an upstream-extracted helper whose body (GetSystemDirectoryW + wcscat L\"\\\\$winnt$.inf\") the Rust performs inline; _swprintf is upstream 1cf31524d50's rename of the same swprintf the Rust calls"
+
+[[reviewed]]
+module = "dll/win32/syssetup"
+function = "SetInstallationCompleted"
+callees = ["ExpandEnvironmentStringsW", "GetPrivateProfileStringW", "GetSetupInfPath", "RunCommandAndWait"]
+verdict = "owed"
+note = "upstream 30b02d038e0 SetupParams:UserExecute (run a command after unattended setup, ~20 C lines, needs the Unattended parameter threaded from FinishDlgProc); the registry writes are present. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "FreeInheritedFromArray"
+callees = ["AccFreeIndexArray"]
+verdict = "false"
+note = "AccFreeIndexArray is advapi32.h `#define AccFreeIndexArray NtMartaStatic.FreeIndexArray`; Rust calls NtMartaStatic.FreeIndexArray"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "SetEntriesInAclW"
+callees = ["AccRewriteSetEntriesInAcl"]
+verdict = "false"
+note = "AccRewriteSetEntriesInAcl is a #define for NtMartaStatic.RewriteSetEntriesInAcl, which the Rust calls"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "SetNamedSecurityInfoW"
+callees = ["AccRewriteSetNamedRights"]
+verdict = "false"
+note = "AccRewriteSetNamedRights is a #define for NtMartaStatic.RewriteSetNamedRights, which the Rust calls"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "SetSecurityInfo"
+callees = ["AccRewriteSetHandleRights"]
+verdict = "false"
+note = "AccRewriteSetHandleRights is a #define for NtMartaStatic.RewriteSetHandleRights, which the Rust calls"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "TreeResetNamedSecurityInfoW"
+callees = ["AccTreeResetNamedSecurityInfo"]
+verdict = "false"
+note = "AccTreeResetNamedSecurityInfo is a #define for NtMartaStatic.TreeResetNamedSecurityInfo, which the Rust calls"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CredReadW"
+callees = ["CFRelease", "MultiByteToWideChar", "SecKeychainItemCopyAttributesAndData", "SecKeychainItemFreeAttributesAndData", "SecKeychainSearchCopyNext", "SecKeychainSearchCreateFromAttributes", "mac_read_credential_from_item", "strcmpiW"]
+verdict = "false"
+note = "every dropped callee is inside `#ifdef __APPLE__` (macOS keychain path), dead on every ReactOS target"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CopyFileExW"
+callees = ["CloseHandle"]
+verdict = "benign"
+note = "Rust closes the two NtCreateFile handles with NtClose instead of CloseHandle; for real NT file handles CloseHandle is NtClose (no console/pseudo handle possible here)"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateProcessInternalW"
+callees = ["BasepSxsCloseHandles"]
+verdict = "false"
+note = "BasepSxsCloseHandles sits under `#if _SXS_SUPPORT_ENABLED_`, a macro defined nowhere in the tree, so the arm is compiled out"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "InterlockedExchangeAdd"
+callees = ["_InterlockedExchangeAdd"]
+verdict = "false"
+note = "_InterlockedExchangeAdd is the compiler intrinsic; the Rust is AtomicI32::fetch_add (same SeqCst xadd)"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "DllMain"
+callees = ["DisableThreadLibraryCalls"]
+verdict = "false"
+note = "the C is kernel32_vista/DllMain.c, which is still compiled C for kernel32_vista.dll (see kernel32/CMakeLists.txt); it was paired by name with kernel32.dll's own Rust DllMain"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "create_clipbrd_window"
+callees = ["CreateWindowW"]
+verdict = "false"
+note = "CreateWindowW is the winuser.h macro CreateWindowExW(0, ...); the Rust calls CreateWindowExW with dwExStyle 0"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "CreateItemMoniker"
+callees = ["IMoniker_Release", "calloc", "malloc", "memcpy"]
+verdict = "owed"
+note = "Rust is the pre-wine-10 shape (HeapAlloc + ItemMonikerImpl_Construct + QueryInterface), functionally equivalent; the calloc/malloc/IMoniker_Release form is the [OLE32] Sync to wine-10.0 (5f6b295cb90) rewrite, landed after the translation. Owner: upstream-sync (ole32 wine-10 resync)"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "ItemMoniker_CreateInstance"
+callees = ["IMoniker_QueryInterface", "IMoniker_Release"]
+verdict = "owed"
+note = "pre-wine-10 shape (Construct + QI, HeapFree on failure) does the same work; the CreateItemMoniker/IMoniker_QueryInterface/Release form is wine-10 sync 5f6b295cb90. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "GetRunningObjectTable"
+callees = ["IRunningObjectTable_AddRef", "InternalIsProcessInitialized"]
+verdict = "owed"
+note = "pre-wine-10 shape (QI on the process ROT instance, which AddRefs); wine-10 (5f6b295cb90) additionally requires COM initialised (InternalIsProcessInitialized -> CO_E_NOTINITIALIZED), a small behaviour change not ported. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "DoDragDrop"
+callees = ["CreateWindowW"]
+verdict = "false"
+note = "CreateWindowW is the winuser.h macro CreateWindowExW(0, ...); the Rust calls CreateWindowExW"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "PropertyStorage_BaseConstruct"
+callees = ["InitializeCriticalSectionEx"]
+verdict = "benign"
+note = "InitializeCriticalSection + set_critsec_debug_name instead of InitializeCriticalSectionEx(FORCE_DEBUG_INFO); only the debug-info allocation policy differs"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "PropertyStorage_DictionaryWriter"
+callees = ["PropertyStorage_WriteWStringToStream"]
+verdict = "false"
+note = "PropertyStorage_WriteWStringToStream is called under its pre-wine-10 name PropertStorage_WriteWStringToStream. (A real adjacent bug -- byte vs character entry length, doubled bytesWritten -- was fixed in 1bec04da835.)"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "AboutDlgProc"
+callees = ["CreateDialogW"]
+verdict = "false"
+note = "CreateDialogW is the winuser.h macro CreateDialogParamW(..., 0); the Rust calls CreateDialogParamW"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "DAD_DragEnter"
+callees = ["DAD_DragEnterEx", "GetCursorPos"]
+verdict = "owed"
+note = "upstream 1fd8b503be2 '[SHELL32] Implement some DAD functions' (#9256, ~70 C lines + 3 statics) landed after the port; Rust keeps the FALSE stubs. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "DAD_DragEnterEx"
+callees = ["ImageList_BeginDrag", "ImageList_DragEnter", "ImageList_EndDrag"]
+verdict = "owed"
+note = "upstream feature 1fd8b503be2 (DAD drag image via ImageList_BeginDrag/DragEnter); Rust is the pre-feature stub. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "DAD_DragLeave"
+callees = ["ImageList_DragLeave", "ImageList_EndDrag"]
+verdict = "owed"
+note = "upstream feature 1fd8b503be2; Rust is the pre-feature stub. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "DAD_DragMove"
+callees = ["ImageList_DragMove"]
+verdict = "owed"
+note = "upstream feature 1fd8b503be2; Rust is the pre-feature stub. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "DAD_SetDragImage"
+callees = ["DAD_DragLeave"]
+verdict = "owed"
+note = "upstream feature 1fd8b503be2; Rust is the pre-feature stub. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "serializeBMP"
+callees = ["BitBlt", "CreateCompatibleDC", "CreateDIBSection", "DeleteDC", "DeleteObject", "GetObjectW", "ReleaseDC", "SelectObject", "free", "malloc"]
+verdict = "owed"
+note = "Rust is the pre-wine-10 serializeBMP (HeapAlloc, no 16/32bpp->24bpp conversion, unchecked GetDIBits); the GDI conversion path and error handling are [OLEAUT32] Sync with Wine 10.0 (e05d78ede06), ~100 C lines, callers would need the NULL-buffer sizing protocol too. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ICreateTypeInfo2_fnAddImplType"
+callees = ["ICreateTypeInfo2_LayOut", "TLB_relink_custdata", "malloc", "realloc"]
+verdict = "false"
+note = "TLB_relink_custdata's body (list_init or relink prev/next) is inlined in the Rust loop; malloc/realloc are heap_alloc/HeapReAlloc; ICreateTypeInfo2_LayOut is called as ICreateTypeInfo2_fnLayOut"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ICreateTypeInfo2_fnDeleteImplType"
+callees = ["TLB_FreeCustData", "TLB_relink_custdata", "memmove"]
+verdict = "owed"
+note = "pre-wine-10 C was a FIXME E_NOTIMPL stub; wine-10 sync e05d78ede06 implemented it (~15 C lines: free custdata, memmove, relink). Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ICreateTypeInfo2_fnSetTypeFlags"
+callees = ["ICreateTypeInfo2_AddRefTypeInfo", "ICreateTypeInfo2_LayOut"]
+verdict = "false"
+note = "ICreateTypeInfo2_AddRefTypeInfo/_LayOut are called as the implementations ICreateTypeInfo2_fnAddRefTypeInfo/_fnLayOut"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeInfo_fnGetRefTypeInfo"
+callees = ["EnterCriticalSection", "IsEqualIID", "LIST_FOR_EACH_ENTRY", "LeaveCriticalSection"]
+verdict = "owed"
+note = "Rust is pre-wine-10: searches imported typelibs via EnumResourceNamesW(TYPELIB) instead of the tlb_cache under cache_section, and lacks the trailing (hRefType & 0x2) dual-interface redirect; both are wine-10 sync e05d78ede06 (~30 C lines). Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/cpl/desk"
+function = "InstallScreenSaverW"
+callees = ["FindClose", "FindFirstFile", "GetFullPathNameW"]
+verdict = "false"
+note = "all three callees are under `#ifdef CHECK_SCR_FULL_PATH`, whose only #define is commented out at desk.c:23"
+
+[[reviewed]]
+module = "dll/ntdll"
+function = "AVrfInternalHeapFreeNotification"
+callees = ["ProviderHeapFreeCallback"]
+verdict = "false"
+note = "ProviderHeapFreeCallback is a local function-pointer variable, not a function; the Rust calls the same Provider->ProviderNtdllHeapFreeCallback via `if let Some(callback)`"
+
+[[reviewed]]
+module = "dll/win32/msafd"
+function = "WSPAcceptEx"
+callees = ["GetSocketStructure", "NtDeviceIoControlFile", "SetLastError", "TranslateNtStatusError"]
+verdict = "owed"
+note = "upstream a68bfa2fb41 '[MSAFD][AFD] Implement AcceptEx' (#9187) landed after the port; Rust is the pre-feature `0` stub. Needs the AFD IOCTL_AFD_SUPER_ACCEPT side too (~80 msafd C lines + afd). Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/ws2_32"
+function = "inet_addr"
+callees = ["SetLastError", "strtoul"]
+verdict = "owed"
+note = "upstream 6679825f21e replaced BSD inet_addr with Wine's; the Rust ported only its stack-overflow guard. Still missing: NULL -> SetLastError(WSAEFAULT)+INADDR_NONE (Rust returns 0), \" \" -> 0, reject parts >255 instead of masking (~45 C lines, full replacement). Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/wshtcpip"
+function = "WSHIoctl"
+callees = ["GetProcessHeap", "HeapAlloc", "HeapFree", "SendRequest", "memcpy"]
+verdict = "owed"
+note = "upstream 248aa75023a '[WSHTCPIP][TCPIP] Implement SO_KEEPALIVE, SIO_KEEPALIVE_VALS' landed after the port (~70 wshtcpip C lines + tcpip TCP_SOCKET_KEEPALIVEVALS); Rust returns WSAEINVAL. Owner: upstream-sync"
+
+# Fixed in this triage, under helper spellings the audit does not match.
+
+[[reviewed]]
+module = "drivers/crypto/ksecdd"
+function = "KsecReadMachineSpecificCounters"
+callees = ["_MoveFromCoprocessor"]
+verdict = "false"
+note = "_MoveFromCoprocessor is the 32-bit _M_ARM arm, never built; the arm64 arm reads the counter (fixed 2026-10-04)"
+
+[[reviewed]]
+module = "drivers/ksfilter/ks"
+function = "KsProbeStreamIrp"
+callees = ["ExRaiseStatus"]
+verdict = "false"
+note = "each ExRaiseStatus lowers to a recorded status the C's handler would have produced (fixed 2026-10-04)"
+
+[[reviewed]]
+module = "drivers/storage/class/cdrom"
+function = "DeviceEvtIoInCallerContext"
+callees = ["RequestGetContext", "RequestSetReceivedTime"]
+verdict = "false"
+note = "request context and received time come from the live C glue; completion fixed 2026-10-04"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalAllocateAdapterChannel"
+callees = ["KeAcquireSpinLock(->KeAcquireSpinLockRaiseToDpc)", "KeReleaseSpinLock(->KfReleaseSpinLock)"]
+verdict = "false"
+note = "the dma.rs helpers ke_acquire_spinlock / ke_release_spinlock raise IRQL and take the lock (fixed 2026-10-04); arm64 twins are separate stubs"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalGetAdapter"
+callees = ["KeAcquireSpinLock(->KeAcquireSpinLockRaiseToDpc)", "KeReleaseSpinLock(->KfReleaseSpinLock)"]
+verdict = "false"
+note = "the dma.rs helpers ke_acquire_spinlock / ke_release_spinlock raise IRQL and take the lock (fixed 2026-10-04); arm64 twins are separate stubs"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalPutDmaAdapter"
+callees = ["KeAcquireSpinLock(->KeAcquireSpinLockRaiseToDpc)", "KeReleaseSpinLock(->KfReleaseSpinLock)"]
+verdict = "false"
+note = "the dma.rs helpers ke_acquire_spinlock / ke_release_spinlock raise IRQL and take the lock (fixed 2026-10-04); arm64 twins are separate stubs"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalReadDmaCounter"
+callees = ["KeAcquireSpinLock(->KeAcquireSpinLockRaiseToDpc)", "KeReleaseSpinLock(->KfReleaseSpinLock)"]
+verdict = "false"
+note = "the dma.rs helpers ke_acquire_spinlock / ke_release_spinlock raise IRQL and take the lock (fixed 2026-10-04); arm64 twins are separate stubs"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpGrowMapBuffers"
+callees = ["KeAcquireSpinLock(->KeAcquireSpinLockRaiseToDpc)", "KeReleaseSpinLock(->KfReleaseSpinLock)"]
+verdict = "false"
+note = "the dma.rs helpers ke_acquire_spinlock / ke_release_spinlock raise IRQL and take the lock (fixed 2026-10-04); arm64 twins are separate stubs"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpScatterGatherAdapterControl"
+callees = ["ExAllocatePoolUninitialized"]
+verdict = "false"
+note = "ExAllocatePoolWithTag stands in for ExAllocatePoolUninitialized (ported 2026-10-04, upstream 5418987cb89)"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "IoFreeAdapterChannel"
+callees = ["KeAcquireSpinLock(->KeAcquireSpinLockRaiseToDpc)", "KeReleaseSpinLock(->KfReleaseSpinLock)"]
+verdict = "false"
+note = "the dma.rs helpers ke_acquire_spinlock / ke_release_spinlock raise IRQL and take the lock (fixed 2026-10-04); arm64 twins are separate stubs"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "IoFreeMapRegisters"
+callees = ["KeAcquireSpinLock(->KeAcquireSpinLockRaiseToDpc)", "KeReleaseSpinLock(->KfReleaseSpinLock)"]
+verdict = "false"
+note = "the dma.rs helpers ke_acquire_spinlock / ke_release_spinlock raise IRQL and take the lock (fixed 2026-10-04); arm64 twins are separate stubs"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "IoMapTransfer"
+callees = ["KeAcquireSpinLock(->KeAcquireSpinLockRaiseToDpc)", "KeReleaseSpinLock(->KfReleaseSpinLock)"]
+verdict = "false"
+note = "the dma.rs helpers ke_acquire_spinlock / ke_release_spinlock raise IRQL and take the lock (fixed 2026-10-04); arm64 twins are separate stubs"
