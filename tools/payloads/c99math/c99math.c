@@ -10,6 +10,7 @@
  * is NOT msvcrt.dll's errno -- so no static mingw libm can answer in its place.
  */
 #include <windows.h>
+#include <string.h>
 
 ULONG __cdecl DbgPrint(const char *Format, ...);
 #define SAY(...) DbgPrint("[C99MATH] " __VA_ARGS__)
@@ -87,8 +88,13 @@ static void test_table(void)
     int i;
     for (i = 0; i < ARRAY_SIZE(rows); i++) {
         const struct row *r = &rows[i];
-        FARPROC p = need(r->fn);
+        FARPROC p;
         unsigned long long exp = expected[i];
+#if defined(__i386__)
+        /* x86 ucrtbase has no powf/fmodf export (the spec says -arch=!i386, as native). */
+        if (!strcmp(r->fn, "powf") || !strcmp(r->fn, "fmodf")) continue;
+#endif
+        p = need(r->fn);
         int e;
         if (!p) continue;
         *p_errno() = -1;
@@ -143,6 +149,32 @@ static void test_table(void)
         }
         }
         ok(e == r->err, "%s(%I64x): errno %d, expected %d\n", r->fn, dbits(r->x), e, r->err);
+    }
+}
+
+/* msvcrt.dll shipped cnt-rust's pow/log10/fmod too: the same value rows, against it. */
+static void test_msvcrt_values(void)
+{
+    static const char *const names[] = { "pow", "powf", "log10", "fmod", "fmodf" };
+    HMODULE m = LoadLibraryA("msvcrt.dll");
+    int i, n;
+    if (!m) { g_fail++; SAY("FAIL: no msvcrt.dll\n"); return; }
+    for (i = 0; i < ARRAY_SIZE(rows); i++) {
+        const struct row *r = &rows[i];
+        FARPROC p = NULL;
+        for (n = 0; n < ARRAY_SIZE(names); n++)
+            if (!strcmp(r->fn, names[n])) p = GetProcAddress(m, r->fn);
+        if (!p) continue;
+        if (r->k == KD)
+            ok(match64(dbits(((double (__cdecl *)(double))p)(r->x)), expected[i], r->ulps),
+               "msvcrt %s(%I64x) = %I64x\n", r->fn, dbits(r->x), dbits(((double (__cdecl *)(double))p)(r->x)));
+        else if (r->k == KD2)
+            ok(match64(dbits(((double (__cdecl *)(double, double))p)(r->x, r->y)), expected[i], r->ulps),
+               "msvcrt %s(%I64x, %I64x) = %I64x\n", r->fn, dbits(r->x), dbits(r->y),
+               dbits(((double (__cdecl *)(double, double))p)(r->x, r->y)));
+        else if (r->k == KF2)
+            ok(match32(fbits(((float (__cdecl *)(float, float))p)((float)r->x, (float)r->y)), (unsigned)expected[i], r->ulps),
+               "msvcrt %s(%x, %x)\n", r->fn, fbits((float)r->x), fbits((float)r->y));
     }
 }
 
@@ -238,6 +270,36 @@ static void test_misc(void)
         float f = p_remquof(10.0f, 3.0f, &q);
         ok(f == 1.0f && q == 3, "remquof(10, 3) = %x, quo %d\n", fbits(f), q);
     }
+    {
+        /* fma: Wine's test_math_errors tests3d (invalid -> EDOM, NaN or overflow -> none),
+         * plus the single rounding stubs.c's x*y+z could not give. */
+        double (__cdecl *p_fma)(double, double, double) = (void *)need("fma");
+        float (__cdecl *p_fmaf)(float, float, float) = (void *)need("fmaf");
+        static const struct { double a, b, c; int e; } t3[] = {
+            { INF_, 0, 0, EDOM_ }, { 0, INF_, 0, EDOM_ },
+            { INF_, 1, -INF_, EDOM_ }, { -INF_, 1, INF_, EDOM_ },
+            { 1, INF_, -INF_, EDOM_ }, { 1, -INF_, INF_, EDOM_ },
+            { NAN_, 0, 0, NOERR }, { 0, NAN_, 0, NOERR }, { 0, 0, NAN_, NOERR },
+            { 1.7976931348623157e308, 1.7976931348623157e308, 1.7976931348623157e308, NOERR },
+        };
+        int j;
+        for (j = 0; p_fma && j < ARRAY_SIZE(t3); j++) {
+            *p_errno() = -1;
+            p_fma(t3[j].a, t3[j].b, t3[j].c);
+            ok(*p_errno() == t3[j].e, "fma row %d errno %d, expected %d\n", j, *p_errno(), t3[j].e);
+        }
+        if (p_fma) {
+            /* (1 + 2^-30)^2 - 1 = 2^-29 + 2^-60: fused keeps the 2^-60 that x*y+z rounds away. */
+            double a = 1.0 + 0x1p-30;
+            r = p_fma(a, a, -1.0);
+            ok(r == 0x1p-29 + 0x1p-60, "fma not fused: %I64x\n", dbits(r));
+        }
+        if (p_fmaf) {
+            float a = 1.0f + 0x1p-13f;
+            float f = p_fmaf(a, a, -1.0f);
+            ok(f == 0x1p-12f + 0x1p-26f, "fmaf not fused: %x\n", fbits(f));
+        }
+    }
     if (p_nan) ok(dbits(p_nan("")) == 0x7ff8000000000000ULL, "nan(\"\") = %I64x\n", dbits(p_nan("")));
     if (p_nanf) ok(fbits(p_nanf("")) == 0x7fc00000u, "nanf(\"\") = %x\n", fbits(p_nanf("")));
     for (i = 0; p__dpcomp && i < ARRAY_SIZE(dp); i++) {
@@ -282,6 +344,7 @@ int __cdecl main(void)
     test_table();
     test_rounding();
     test_misc();
+    test_msvcrt_values();
     SAY("%d checks, %d failed\n", g_ok + g_fail, g_fail);
     SAY("done %s\n", g_fail ? "FAIL" : "PASS");
     return g_fail != 0;

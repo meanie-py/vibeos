@@ -83,6 +83,18 @@ static const unsigned long long expected[] = {
     0x000000003fb17218ULL, /* log1pf */
     0x00000000ff800000ULL, /* log1pf */
     0x000000007fc00000ULL, /* log1pf */
+    0x4008000000000000ULL, /* log2 */
+    0xc008000000000000ULL, /* log2 */
+    0x4024000000000000ULL, /* log2 */
+    0x3ff95c01a39fbd68ULL, /* log2 */
+    0xc0901730dabca5f6ULL, /* log2 */
+    0x7ff0000000000000ULL, /* log2 */
+    0xfff0000000000000ULL, /* log2 */
+    0x7ff8000000000000ULL, /* log2 */
+    0x7ff8000000000000ULL, /* log2 */
+    0x0000000040a00000ULL, /* log2f */
+    0x00000000ff800000ULL, /* log2f */
+    0x000000007fc00000ULL, /* log2f */
     0x0000000000000000ULL, /* lgamma */
     0x0000000000000000ULL, /* lgamma */
     0x3fe250d048e7a1bdULL, /* lgamma */
@@ -170,6 +182,14 @@ static const unsigned long long expected[] = {
     0x0000000000000000ULL, /* llround */
     0xfffffffffffffffcULL, /* llroundf */
     0x0000000000000000ULL, /* llroundf */
+    0x0000000000000002ULL, /* lrint */
+    0xfffffffffffffffcULL, /* lrint */
+    0x000000007fffffffULL, /* lrint */
+    0xffffffff80000000ULL, /* lrint */
+    0x0000000000000000ULL, /* lrint */
+    0x0000000000000000ULL, /* lrint */
+    0x0000000000000000ULL, /* lrint */
+    0x0000000000000002ULL, /* lrintf */
     0x0000000000000002ULL, /* llrint */
     0x8000000000000000ULL, /* llrint */
     0x0000000000000000ULL, /* llrint */
@@ -206,4 +226,24 @@ static const unsigned long long expected[] = {
     0xbff0000000000000ULL, /* copysign */
     0x4000000000000000ULL, /* copysign */
     0xfff0000000000000ULL, /* copysign */
+    0x3ff6a09e667f3bcdULL, /* pow */
+    0x4000000000000000ULL, /* pow */
+    0x40060b9fd68a4554ULL, /* pow */
+    0x3fd43d136248490fULL, /* pow */
+    0x4090000000000000ULL, /* pow */
+    0xc020000000000000ULL, /* pow */
+    0x3ff36fe0d9dde8a3ULL, /* pow */
+    0x408f400000000000ULL, /* pow */
+    0x000000003fb504f3ULL, /* powf */
+    0x3fd34413509f79ffULL, /* log10 */
+    0x3ffb2efb2bd82180ULL, /* log10 */
+    0x4008000000000000ULL, /* log10 */
+    0xbfe0bb6c34d81502ULL, /* log10 */
+    0xc072c00000000000ULL, /* log10 */
+    0x7ff0000000000000ULL, /* log10 */
+    0x3ff4ccccccccccd0ULL, /* fmod */
+    0xbff8000000000000ULL, /* fmod */
+    0x0000000000000001ULL, /* fmod */
+    0x0000000000000000ULL, /* fmod */
+    0x000000003fc00000ULL, /* fmodf */
 };

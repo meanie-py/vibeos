@@ -474,12 +474,17 @@ def test_the_authority_includes_ucrtbases_own_C_not_just_its_libraries():
     """
     assert set(vuc.OURS_C_AUTHORITY) == set(vuc.OURS_ON_LINK_LINE) | set(vuc.OURS_OWN_TUS)
     assert set(vuc.OURS_ON_LINK_LINE) & set(vuc.OURS_OWN_TUS) == set(), "the two must be disjoint"
-    # The symbols that motivated this. If stubs.c stops defining them the entry is
-    # stale, and a stale authority entry is exactly what this file must not carry.
+    # The six symbols that motivated this (fma/fmaf, log2/log2f, lrint/lrintf) moved to
+    # ucrt-rust's c99math (2026-10-03) and are declared takeovers there, so they must be
+    # GONE from stubs.c -- two definitions would be the silent first-match this file
+    # exists to prevent. The entry itself still carries printf.c and the rest of stubs.c.
     stubs = REPO / "dll" / "win32" / "ucrtbase" / "stubs.c"
     text = stubs.read_text(errors="replace")
+    c99 = (REPO / "sdk" / "lib" / "rust" / "ucrt-rust" / "src" / "c99math.rs").read_text()
     for sym in ("fma", "fmaf", "log2", "log2f", "lrint", "lrintf"):
-        assert f"{sym}(" in text, f"{sym} no longer in ucrtbase/stubs.c — re-derive OURS_OWN_TUS"
+        assert f" {sym}(" not in text, f"{sym} is back in ucrtbase/stubs.c beside c99math's"
+        assert f'extern "C" fn {sym}(' in c99, f"{sym} no longer in c99math.rs"
+    assert "atexit(" in text, "stubs.c no longer defines atexit — re-derive OURS_OWN_TUS"
 
 
 # ── the burn-down ratchet ────────────────────────────────────────────────────

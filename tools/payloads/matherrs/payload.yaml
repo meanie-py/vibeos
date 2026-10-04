@@ -1,0 +1,18 @@
+# matherrs — Wine's ucrtbase test_math_errors, one DbgPrint per call (finds misc's hang).
+#   tools/payloads/matherrs/build.sh {arch}
+#   VIBEOS_PAYLOAD=matherrs ./vibeos-cli build --arch {arch}
+#   ./vibeos-cli smoke --arch {arch} --payload matherrs
+name: matherrs
+description: Wine ucrtbase test_math_errors (errno + _matherr per math function), traced
+
+build_hint: "tools/payloads/matherrs/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/matherrs/matherrs-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/matherrs.exe
+
+test:
+  launch_marker: "[MATHERRS] done"
+  pass_marker: "[MATHERRS] done PASS"
+  launch_drain_secs: 300

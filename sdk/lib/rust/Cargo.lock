@@ -313,6 +313,9 @@ dependencies = [
 [[package]]
 name = "cnt-rust"
 version = "0.1.0"
+dependencies = [
+ "libm",
+]
 
 [[package]]
 name = "cnt-rust-lib"

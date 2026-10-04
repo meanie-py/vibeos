@@ -7520,6 +7520,17 @@ other. AMD's SSE2 `sin` computes `(-0.0 * 0.0) * S1` and answers `+0.0` for `sin
 the FMA3 path in the *same file* returns `x` below 2^-27 and answers `-0.0`. Neither is a
 transcription error, and only measurement finds it.
 
+**Second instance, worse: the C said `FIXME` and the port kept it as the contract.** Upstream's
+portable `math/arm64/{log10,pow}.c` are placeholders — `log10` divides by ten in a loop and adds
+`(t - 1) / 9`, `pow`'s general case is `return 0.0; // FIXME` — and cnt-rust ported both
+"verbatim, so the difftest stays bit-exact", with a fuzz that FENCED OUT the inputs that hang
+(`log10(inf)`; `fmod` with a subnormal divisor). They then became msvcrt.dll's and ucrtbase.dll's
+exports on every arch via the `cabi-math` flip: `pow(2, 0.5) == 0` shipped for weeks, and
+`log10(inf)` was the months-old "Wine misc subtest hangs". Found by lifting Wine's
+`test_math_errors` into a payload with a DbgPrint before each call. Two rules from it: a
+comment saying "FIXME"/"stub" in the C is a NOT-AN-ORACLE marker, never a fidelity target; and a
+difftest whose domain note excludes a non-terminating input is reporting a bug, not a scope.
+
 ### A differential harness that cannot see its two sides diverge in STATE will report state differences as BEHAVIOUR differences
 **Symptom.** A perf/conformance row fails hard and reproducibly — `towlower` 10.8x TOO SLOW,
 all 3 passes, flat 44 MiB/s across a 65536x size range, calibration twins clean at 1.01x — and
