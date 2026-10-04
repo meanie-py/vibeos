@@ -628,16 +628,24 @@ def test_a_registry_crate_is_not_a_rebuild_input(tmp_path: Path) -> None:
     assert vuc._deps_of(tmp_path / "ucrt-rust") == {"varargs-rust"}
 
 
-def test_a_crate_missing_from_a_rebuild_list_is_named(tmp_path: Path) -> None:
-    """Control: a list that drops a closure crate must be reported -- a gate nobody
-    has watched fail is a gate nobody knows works."""
-    for cmake, _var, _root in vuc.REBUILD_LISTS:
-        src = (vuc.REPO / cmake).read_text()
+def test_a_hand_kept_or_misrooted_rebuild_list_is_named(tmp_path: Path) -> None:
+    """Control: replacing the derivation with a hand list, or walking the wrong root,
+    must be reported -- a gate nobody has watched fail is a gate nobody knows works."""
+    (cmake_a, var_a, _), (cmake_b, _, root_b) = vuc.REBUILD_LISTS
+    for cmake, edit in (
+        (
+            cmake_a,
+            lambda t: t.replace(f"rust_crate_sources({var_a}", "set(UCRT_SHARED_RUST_CRATES", 1),
+        ),
+        (cmake_b, lambda t: t.replace(f" {root_b})", " msvcrt-crt-rust)", 1)),
+    ):
         dst = tmp_path / cmake
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(src.replace(" crt-portable-rust", "", 1))
+        dst.write_text(edit((vuc.REPO / cmake).read_text()))
     found = vuc.check_rebuild_lists(repo=tmp_path)
-    assert any("omits `crt-portable-rust`" in f for f in found), found
+    assert any(cmake_a in f and "not derived" in f for f in found), found
+    assert any(cmake_a in f and "hand-kept" in f for f in found), found
+    assert any(cmake_b in f and "walks `msvcrt-crt-rust`" in f for f in found), found
 
 
 def test_a_stale_build_is_not_a_ratchet_regression(tmp_path: Path, monkeypatch) -> None:
