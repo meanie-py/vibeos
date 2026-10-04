@@ -2211,6 +2211,10 @@ name = "secur32-sys"
 version = "0.1.0"
 
 [[package]]
+name = "serial-acpi-difftest"
+version = "0.1.0"
+
+[[package]]
 name = "serial-rust"
 version = "0.1.0"
 dependencies = [

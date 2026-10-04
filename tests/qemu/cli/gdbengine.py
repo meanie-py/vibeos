@@ -33,7 +33,14 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..vm import PROJECT_DIR, get_arch_config, smp_count, temp_disk_args
+from ..vm import (
+    PROJECT_DIR,
+    _acpitable_relative,
+    console_uart_args,
+    get_arch_config,
+    smp_count,
+    temp_disk_args,
+)
 from . import archcfg
 
 RUNS_DIR = PROJECT_DIR / "qemu" / "runs"
@@ -233,7 +240,7 @@ def _build_windows_cmd(
     win_bin = be.windows_qemu_bin(config.qemu_bin, win_cfg["qemu_dir"], accel)
 
     raw = config.qemu_args(work_dir)
-    staged = be.stage_media_paths(raw, staging)
+    staged = _acpitable_relative(be.stage_media_paths(raw, staging))
     arch_args = staged if is_arm64 else be.rewrite_accel(staged, accel, arch)
 
     scratch_dev = [
@@ -258,8 +265,9 @@ def _build_windows_cmd(
         win_bin,
         "-name",
         uid,
-        "-serial",
-        f"file:{be.win_path(serial_log)}",
+        "-chardev",
+        f"file,id=dbgser,path={be.win_path(serial_log)}",
+        *console_uart_args(getattr(config, "arch", arch), "dbgser"),
         "-monitor",
         "none",
         "-gdb",
@@ -338,6 +346,7 @@ def _start_locked(
         stderr=subprocess.STDOUT,
         stdin=subprocess.DEVNULL,
         start_new_session=True,  # detach: survives this CLI process exiting
+        cwd=staging,  # `-acpitable` names its file relative to here (vm._acpitable_relative)
     )
     run = DebugRun(
         run_id=run_id,

@@ -3222,14 +3222,14 @@ def test_backend_stage_media_paths_arm64_drives():
 
 
 def test_backend_rewrite_accel_would_break_arm64():
-    # WHY _build_windows_cmd skips rewrite_accel for arm64: rewrite_accel treats any
-    # `-cpu` as the KVM-only `-cpu host` and DROPS it under tcg — but arm64 `virt`
-    # needs the real `cortex-a72` model. It also flattens `tcg,thread=multi` -> `tcg`.
-    # Both are why arm64 keeps its machine args untouched on the windows-host backend.
+    # WHY _build_windows_cmd skips rewrite_accel for arm64: it flattens
+    # `tcg,thread=multi` -> `tcg`. It used to drop EVERY `-cpu` too (arm64 `virt`
+    # needs `cortex-a72`); now only the KVM-only `-cpu host` goes, so an explicit
+    # model such as amd64's hostile `-cpu max` survives (vm.py HOSTILE_HAZARDS).
     arm64 = ["-M", "virt", "-cpu", "cortex-a72", "-accel", "tcg,thread=multi"]
     out = be_mod.rewrite_accel(arm64, "tcg")
-    assert "cortex-a72" not in out  # the model loss we avoid by NOT calling it
-    assert out == ["-M", "virt", "-accel", "tcg"]
+    assert out == ["-M", "virt", "-cpu", "cortex-a72", "-accel", "tcg"]
+    assert be_mod.rewrite_accel(["-cpu", "host", "-accel", "kvm"], "tcg") == ["-accel", "tcg"]
 
 
 # --- host broker: cross-worktree CPU-heavy locks ---------------------------

@@ -11816,6 +11816,33 @@ introduced at any heap exit — it is an external stray write.**
   now names the new device. UEFI skips it silently and falls through to network boot.
 - **Fix:** pin rig devices to a free slot (`addr=0x8`). `VIBEOS_QEMU_XHCI=1` does.
 
+### x86 serial: the loader talks, then the kernel goes silent (no legacy COM1)
+
+**Symptom.** `[FLDR] phase: handoff to kernel` is the last serial line, yet the box
+reaches the desktop (HLT idle, Explorer on screen): smoke calls it HANG_TIMEOUT.
+Variant: user-mode lines (`[SMSS]`, `[CSRSS]`) arrive but every kernel-mode line
+(`ACPI v…`, `[KRNLBASE]`, `[WIN32K] shell ready`) is missing.
+
+**Cause.** x86 debug text reaches the wire through three writers, and only one of
+them reads `DEBUGPORT`:
+- `KdpStub` (kd64 `kdtrap.rs`) carries **user-mode** DbgPrint while real KD is off,
+  which is every boot except `/DEBUGPORT=COM2`.
+- rtl-diag's `DebugPrint` has a **ring-0 fast path** that polls the UART itself.
+- kd-rust's KD providers (`KdpSerialInit`) parse `DEBUGPORT`, but on x86 they run
+  only when real KD is on, so they are not the console.
+
+The first two wrote port 0x3F8 directly. On a machine whose UART is somewhere else
+(AMT serial-over-LAN, a BMC or a PCIe card, described by ACPI SPCR) they printed
+into nothing.
+
+**Fix.** Both now write `RtlpDebugConsolePort` (owned by rtl-diag so every image
+that links DebugPrint resolves it), which kd64's `KdInitSystem` sets from
+`DEBUGPORT=COM:0x<port>`. The loader produces that option when COMn is absent
+and SPCR names a 16550 in I/O space. Repro the whole chain with
+`VIBEOS_QEMU_HOSTILE=serial ./vibeos-cli smoke --arch amd64`. A breakpoint will
+not find this: the gdb toolkit relocates symbols from the kernel's own
+`[KRNLBASE]` serial line, which is exactly what goes missing.
+
 ### Localization techniques that repeatedly worked
 - **DbgPrint-bisect with REAL `DbgPrint`.** Translated `TRACE!`/`WARN!`/`DPRINT` are no-op
   macros, so **their absence in the serial is NOT evidence of where execution stopped** — that

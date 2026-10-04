@@ -137,6 +137,7 @@ members = [
     "byteswap",
     "cnt-ctype",
     "cnt-difftest",
+    "serial-acpi-difftest",
     "cnt-rust",
     "cnt-rust-lib",
     "crt-startup-rust",

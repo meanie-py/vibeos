@@ -272,6 +272,10 @@ pub unsafe extern "C" fn WinLdrInitializePhase1(
     LoadOptions = NewLoadOptions;
     (*LoaderBlock).LoadOptions = LoadOptions;
     RtlStringCbCopyA((*LoaderBlock).LoadOptions, core::mem::size_of_val(&(*WinLdrSystemBlock).LoadOptions), Options);
+    // If the loader's debug channel moved to an ACPI SPCR UART, KD must follow.
+    // (rosload has no debug module; the BIOS second stage never takes SPCR.)
+    #[cfg(not(feature = "rosload"))]
+    crate::debug::SpcrRewriteDebugPort((*LoaderBlock).LoadOptions, core::mem::size_of_val(&(*WinLdrSystemBlock).LoadOptions));
 
     loop {
         while *LoadOptions == ((b'/') as i8) {

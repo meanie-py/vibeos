@@ -1,6 +1,11 @@
-//! Pre-allocator PL011 discovery. Layouts follow ACPICA actbl.h, actbl1.h
-//! (DBG2), and actbl3.h (SPCR). Keep parsing independent of firmware pointers
-//! so captured hardware tables can be tested on the host.
+//! Pre-allocator console-UART discovery from ACPI. Layouts follow ACPICA
+//! actbl.h, actbl1.h (DBG2), and actbl3.h (SPCR). Keep parsing independent of
+//! firmware pointers so captured hardware tables can be tested on the host.
+//!
+//! arm64 reads a PL011 MMIO base (DBG2/SPCR, plus the GIC from the MADT).
+//! x86 reads a 16550-family I/O-port base from SPCR: real PCs without a legacy
+//! COM1 describe their console UART there (Intel AMT serial-over-LAN, a BMC, a
+//! PCIe serial card), at an address nothing else would guess.
 #[cfg(test)]
 use core::mem::offset_of;
 use core::mem::size_of;
@@ -188,7 +193,8 @@ pub unsafe fn table_at<'a>(address: u64) -> Option<&'a [u8]> {
     valid_table(data).then_some(data)
 }
 
-pub unsafe fn from_xsdt(address: u64) -> Option<u64> {
+/// The first answer `probe` gives for a table the XSDT at `address` lists.
+unsafe fn walk_xsdt<T>(address: u64, probe: impl Fn(&[u8]) -> Option<T>) -> Option<T> {
     let table = table_at(address)?;
     if table.get(..4)? != b"XSDT" {
         return None;
@@ -200,12 +206,49 @@ pub unsafe fn from_xsdt(address: u64) -> Option<u64> {
     for entry in entries.chunks_exact(size_of::<u64>()) {
         let address = read::<u64>(entry, 0)?;
         if let Some(child) = table_at(address) {
-            if let Some(base) = serial_base(child) {
-                return Some(base);
+            if let Some(found) = probe(child) {
+                return Some(found);
             }
         }
     }
     None
+}
+
+pub unsafe fn from_xsdt(address: u64) -> Option<u64> {
+    walk_xsdt(address, serial_base)
+}
+
+// SPCR interface types for the 16550 family (ACPI SPCR rev 2 / DBG2 serial
+// subtypes): full 16550, 16450 (a 16550 subset), and 16550-compatible with the
+// register layout given by the GAS.
+const NS16550: u8 = 0x00;
+const NS16450: u8 = 0x01;
+const NS16550_GAS: u8 = 0x12;
+const SYSTEM_IO: u8 = 1;
+
+/// The I/O-port base of a 16550-family console UART that an SPCR describes.
+/// None for anything else (MMIO UARTs, PL011, a malformed table): the x86
+/// loader drives its UART with port I/O.
+pub fn spcr_io_port(data: &[u8]) -> Option<u16> {
+    if !valid_table(data) {
+        return None;
+    }
+    let spcr = read::<SpcrPrefix>(data, 0)?;
+    if &spcr.header.signature != b"SPCR"
+        || !matches!(spcr.interface, NS16550 | NS16450 | NS16550_GAS)
+    {
+        return None;
+    }
+    let a = spcr.address;
+    // A 16550 occupies eight consecutive ports, all of which must fit.
+    if a.space != SYSTEM_IO || a.bit_offset != 0 || a.address == 0 || a.address > 0xfff8 {
+        return None;
+    }
+    Some(a.address as u16)
+}
+
+pub unsafe fn spcr_io_from_xsdt(address: u64) -> Option<u16> {
+    walk_xsdt(address, spcr_io_port)
 }
 
 /// GICv2 distributor and CPU-interface bases from a MADT. Returns None unless
@@ -400,4 +443,33 @@ mod tests {
         checksum(&mut data);
         assert_eq!(serial_base(&data), None);
     }
+
+    fn spcr(interface: u8, space: u8, address: u64) -> Vec<u8> {
+        let mut data = vec![0u8; 80];
+        data[..4].copy_from_slice(b"SPCR");
+        data[4..8].copy_from_slice(&80u32.to_le_bytes());
+        data[8] = 2;
+        data[36] = interface;
+        data[40] = space;
+        data[41] = 8;
+        data[44..52].copy_from_slice(&address.to_le_bytes());
+        checksum(&mut data);
+        data
+    }
+
+    #[test]
+    fn spcr_16550_in_io_space() {
+        assert_eq!(spcr_io_port(&spcr(NS16550, SYSTEM_IO, 0x5000)), Some(0x5000));
+        assert_eq!(spcr_io_port(&spcr(NS16550_GAS, SYSTEM_IO, 0x3f8)), Some(0x3f8));
+        assert_eq!(spcr_io_port(&spcr(NS16450, SYSTEM_IO, 0x2f8)), Some(0x2f8));
+        // MMIO 16550, PL011, port space overflow, zero, corrupt: not an x86 port UART.
+        assert_eq!(spcr_io_port(&spcr(NS16550, 0, 0xfe00_0000)), None);
+        assert_eq!(spcr_io_port(&spcr(PL011 as u8, SYSTEM_IO, 0x5000)), None);
+        assert_eq!(spcr_io_port(&spcr(NS16550, SYSTEM_IO, 0xfffc)), None);
+        assert_eq!(spcr_io_port(&spcr(NS16550, SYSTEM_IO, 0)), None);
+        let mut bad = spcr(NS16550, SYSTEM_IO, 0x5000);
+        bad[50] ^= 1;
+        assert_eq!(spcr_io_port(&bad), None);
+    }
+
 }

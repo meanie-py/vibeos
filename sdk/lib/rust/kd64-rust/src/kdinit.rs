@@ -347,6 +347,18 @@ pub unsafe extern "system" fn KdInitSystem(
     // /DEBUG /DEBUGPORT=COM2 (WinDbg on a dedicated second UART); every other
     // /DEBUG spelling keeps today's KdpStub text-to-COM1 behavior.
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    if !loader_block.is_null() && !(*loader_block).LoadOptions.is_null() {
+        // DEBUGPORT=COM:0x<port> moves KdpStub's text console off COM1.
+        let at = strstr((*loader_block).LoadOptions, b"DEBUGPORT=COM:\0".as_ptr() as PSTR);
+        if !at.is_null() {
+            let port = console_port(at.add(b"DEBUGPORT=COM:".len()));
+            if port != 0 {
+                crate::kdtrap::RtlpDebugConsolePort = port;
+            }
+        }
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         let mut kd_on_com2 = false;
         if !loader_block.is_null() {
@@ -948,3 +960,25 @@ pub unsafe extern "system" fn KdInitSystem(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+/// `0x5000` / `0X5000` as a 16550 I/O port base; 0 if absent or out of range.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn console_port(mut p: PSTR) -> u16 {
+    if *p == b'0' as i8 && (*p.add(1) == b'x' as i8 || *p.add(1) == b'X' as i8) {
+        p = p.add(2);
+    }
+    let mut v: u32 = 0;
+    loop {
+        let c = *p as u8;
+        let d = match c {
+            b'0'..=b'9' => c - b'0',
+            b'a'..=b'f' => c - b'a' + 10,
+            b'A'..=b'F' => c - b'A' + 10,
+            _ => break,
+        };
+        v = v.saturating_mul(16).saturating_add(d as u32);
+        p = p.add(1);
+    }
+    // All eight registers must be addressable.
+    if v == 0 || v > 0xfff8 { 0 } else { v as u16 }
+}
