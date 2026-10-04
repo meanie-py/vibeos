@@ -1304,8 +1304,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     every MP boot, from the `KeIpiGenericCall` self-test. Upstream never implemented
     `KiIpiSendPacket`; our assert names a level its only caller does not raise to (it calls at
     DISPATCH), and it went live with `c4d82e425fc`. Non-fatal; decide the contract.
-    amd64 `-smp 2` and `-smp 4`: boot dies (csrss exits, crit, 0xF4; winlogon AV), so the race
-    cannot run there. Not yet checked against master.
+    amd64 `-smp 2` and `-smp 4`: the boot death seen 2026-09-25 (csrss exits, crit, 0xF4;
+    winlogon AV) is GONE. Re-measured 2026-10-03, one boot each at `310c39bf411`: amd64
+    `-smp 2` desktop in 2m11s, `-smp 4` in 2m38s with CPUs 1-3 scheduling and net OK; i386
+    `-smp 2`/`-smp 4` desktop in 53s/56s with the IPI self-test at `0x3`/`0xf`. The fixing
+    commit was not identified. So the amd64 race phase is now runnable and OWED.
   - FIXED: `ReadProcessMemory` over an uncommitted page bugchecked (0x1E from
     `MmProbeAndLockPages` in `MiDoMappedCopy`). See the `MmCopyVirtualMemory` entry below.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers
