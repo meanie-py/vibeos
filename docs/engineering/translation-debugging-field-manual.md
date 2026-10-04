@@ -3961,6 +3961,20 @@ a decision to take deliberately, not to reach for because a module will not tran
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A C assignment became a nested `let _x`, so the outer variable never changes
+
+**Symptom:** a counter stays 0, a pointer keeps pointing at the old thing, a column never
+resets, and the code compiles warning-free. freeldr's `EnumerateHarddisks` reported 0 BIOS
+disks; oleaut32's format tokenizer wrote every `;` section into the first header; `VarSub`
+subtracted the IDispatch instead of its fetched value; consrv kept stale start columns.
+**Cause:** the translator turned `DiskCount++;` / `left = &tempLeft;` into
+`let _DiskCount = DiskCount + 1;` inside a nested block. The new binding shadows the outer
+one, and the leading underscore suppresses the unused warning that would have exposed it.
+**Fix:** assign the outer binding (make it `mut`). `scan_let_shadow` (`vibeos-cli check`)
+flags a nested `let _x` while `x` is in scope in the same function; a `_x` the C really
+declares is marked `// nolint: let-shadow (why)`. It cannot see an assignment dropped
+outright (consrv's `IntWriteConsoleOutputStringChars` lost `XStart = 0;` with no `let`).
+
 ### A dropped `#if DBG` acquires a lock the release build marked as never-initialized
 
 **Symptom:** a hang at DISPATCH_LEVEL the first time a path runs, with no bugcheck and no

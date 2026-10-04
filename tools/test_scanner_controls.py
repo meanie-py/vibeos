@@ -1728,6 +1728,27 @@ unsafe fn load(n: u32) -> HGLOBAL {
 }
 """
 
+# scan_let_shadow. Seeded from freeldr EnumerateHarddisks (2026-10-04): C `DiskCount++`
+# became a nested `let _DiskCount`, so the BIOS disk count stayed 0.
+_SHADOW_BAD = """\
+unsafe fn enumerate() -> u8 {
+    let mut DiskCount: u8 = 0;
+    while probe() {
+        let _DiskCount = DiskCount + 1;
+    }
+    DiskCount
+}
+"""
+_SHADOW_GOOD = """\
+unsafe fn enumerate() -> u8 {
+    let mut DiskCount: u8 = 0;
+    while probe() {
+        DiskCount += 1;
+    }
+    DiskCount
+}
+"""
+
 # scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
 # do-while's `continue` re-ran the same INF line forever once translated to `loop`.
 _DOWHILE_BAD = """\
@@ -1771,6 +1792,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"olepicture.rs": _GMEM_BAD},
         good={"olepicture.rs": _GMEM_GOOD},
+    ),
+    Control(
+        name="scan_let_shadow",
+        script="tools/scan_let_shadow.py",
+        argv=["--lint"],
+        bad={"hwdisk.rs": _SHADOW_BAD},
+        good={"hwdisk.rs": _SHADOW_GOOD},
     ),
     Control(
         name="scan_dowhile_continue",
