@@ -3218,8 +3218,15 @@ pub unsafe extern "system" fn CoGetClassObject(
             return FTMarshalCF_Create(iid, ppv);
         }
         if guid_eq(rclsid, &CLSID_GlobalOptions) {
+            apartment_release(apt); // the C leaked this reference; wine-10 releases it
             let cf = &raw mut GlobalOptionsCF;
             return ((*(*cf).lpVtbl).QueryInterface)(cf, iid, ppv);
+        }
+        // wine-10: the GIT is built in, never a registry lookup (it has no
+        // InprocServer32 key, so the generic path below reports REGDB_E_CLASSNOTREG).
+        if guid_eq(rclsid, &CLSID_StdGlobalInterfaceTable) {
+            apartment_release(apt);
+            return DllGetClassObject(rclsid, iid, ppv);
         }
     }
 

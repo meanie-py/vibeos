@@ -44,8 +44,8 @@ list(APPEND SOURCE
 # resumed by the dispatcher, RaiseException returns, and RpcRaiseException ends in
 # ExitProcess(1), so any client of a dead or refusing server died (Wine's ole32
 # marshal test: a proxy called from the wrong apartment). Every try body here is
-# call-shaped (the raise lands in a callee), the same contract as advapi32's
-# eventlog_seh.c. They skip the PCH, which would otherwise pin pseh2.h to DUMMY.
+# call-shaped (the raise lands in a callee), the same contract as the advapi32
+# EventLog shim. They skip the PCH, which would otherwise pin pseh2.h to DUMMY.
 # i386 keeps DUMMY: clang i386 native SEH is unreliable.
 set(RPCRT4_SEH_SOURCE
     cstub.c
