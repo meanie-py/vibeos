@@ -22,8 +22,10 @@ FREELDR_INI="$QEMU_DIR/freeldr.ini"
 
 # Ramdisk size in MB (must hold all system files ~120MB + overhead)
 RAMDISK_SIZE_MB=140
-# Boot image size in MB (must hold uefildr + freeldr.ini + ramdisk.img)
-BOOT_SIZE_MB=280
+# Boot image must hold uefildr + freeldr.ini + ramdisk.img. DERIVED, not a second
+# constant to keep in sync: the two drifting apart is how a ramdisk bump would
+# silently produce a boot.img too small to hold it.
+BOOT_SIZE_MB=$((RAMDISK_SIZE_MB + 140))
 
 # --refresh: fast re-stage of freshly-built artifacts into the EXISTING
 # ramdisk.img (skip the slow dd/mformat + FAT (re)creation), then fold into
@@ -297,8 +299,23 @@ if [ -n "$REFRESH" ]; then
         echo "[!] --refresh needs an existing $RAMDISK_IMG (run without --refresh once)"
         exit 1
     fi
-    echo "[*] --refresh: reusing existing ramdisk.img (re-staging artifacts only)"
-else
+    # A cached image of the WRONG SIZE must not be reused. Lanes size the ramdisk
+    # differently (the FEX lane needs 200MB), and the conductor's integration
+    # worktree is shared by every lane's batch: on 2026-10-03 a 284MB image left
+    # there by one batch made master's own arm64 gate die with mtools' bare
+    # "Disk full" copying it into a 280MB boot.img, a message that names neither
+    # the size nor the cache. Recreate on mismatch instead.
+    WANT_BYTES=$((RAMDISK_SIZE_MB * 1024 * 1024))
+    HAVE_BYTES=$(stat -c %s "$RAMDISK_IMG")
+    if [ "$HAVE_BYTES" != "$WANT_BYTES" ]; then
+        echo "[*] --refresh: existing ramdisk.img is ${HAVE_BYTES}B but this run needs" \
+             "${WANT_BYTES}B (${RAMDISK_SIZE_MB}MB) -- recreating"
+        REFRESH=""
+    else
+        echo "[*] --refresh: reusing existing ramdisk.img (re-staging artifacts only)"
+    fi
+fi
+if [ -z "$REFRESH" ]; then
     echo "[*] Creating ramdisk.img (${RAMDISK_SIZE_MB}MB FAT32)..."
     rm -f "$RAMDISK_IMG"
     : > "$PAYLOAD_RECORD"
