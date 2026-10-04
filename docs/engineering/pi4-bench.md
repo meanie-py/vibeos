@@ -243,6 +243,20 @@ diode, besides the Pi's USB. It stays up and on Wi-Fi across a `power.sh cycle`:
 ~10 s in. Before that it rebooted with the Pi and joined Wi-Fi too late for the
 UEFI F1 window. Driving F1 from the Pico is untested; serial works.
 
+**Pico firmware updates.** The safe path is the host: plug the Pico's USB into
+the PC and run `pico-devbox bootsel` (picousb; no button needed). Then copy
+picousb's stripped `build/firmware/picousb.uf2` onto the RP2350 drive. Never use
+picotool's raw UF2: it wraps onto the config sector. `tools/pi4/pico-flash.sh`
+does the same through the Pi's UEFI Shell with the Pico left on the Pi. It is
+experimental and refuses to run without `PI4_PICO_FLASH_ATTENDED=1`, because a
+failed copy leaves the Pico in BOOTSEL until its power is pulled.
+
+`pico.sh usb` also reports the console bridge: `target_powered` is the Pi's USB
+VBUS as the Pico sees it (`pi4 doctor` checks that it follows the plug), plus
+`console_rx`, `console_errors` and `console_dropped`. When a boot leaves the
+console silent, `console_rx` stuck at 0 means the TX/RX wires are swapped or
+open, and a climbing `console_errors` means a baud or noise problem.
+
 The Pico is VibeOS's keyboard and mouse on the Pi (usbxhci M4, 2026-09-26):
 - **Configuration:** VibeOS configures it, and `usb` then shows `mounted=True`,
   `set_config=2` and growing completions.
