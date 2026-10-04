@@ -1,11 +1,13 @@
 #![no_std]
 #![allow(non_snake_case, non_upper_case_globals)]
-//! setjmp-rust — the amd64 vcruntime `setjmp`/`longjmp` translated to Rust.
+//! setjmp-rust — the vcruntime `setjmp`/`longjmp` translated to Rust.
 //!
-//! Faithful translation of sdk/lib/vcruntime/amd64/{_setjmp.s,
-//! __longjmp_noframe.s,longjmp.c}. Only amd64 needs these (the kernel's SEH
-//! unwind path references `_setjmp`/`_setjmpex`/`longjmp`); i386 uses DUMMY_PSEH
-//! and arm64's kernel doesn't reference them, so `libsetjmp.a` is inert there.
+//! Faithful translation of sdk/lib/vcruntime/{amd64,i386,arm64}/{_setjmp*.s,
+//! __longjmp_*.s,longjmp.c}. Two consumers: the amd64 kernel's SEH unwind path
+//! (feature `kernel`, the default) and, since 2026-10-04, the vcruntime library that
+//! msvcrt.dll and ucrtbase.dll link (feature `user`, all three arches) -- the CRT
+//! DLLs no longer compile the .s/.c. `_seh_longjmp_unwind` (i386) is not here:
+//! crt-shared-rust's except_i386.rs already provides it.
 //!
 //! The register save/restore is irreducible machine code, so it lives in
 //! `global_asm!` (transcribed verbatim from the .s) — but every `_JUMP_BUFFER`
@@ -176,6 +178,301 @@ mod amd64 {
                 &mut er,
                 value as usize as *mut _,
             );
+        }
+        __longjmp_noframe(jb, value)
+    }
+}
+
+#[cfg(target_arch = "x86")]
+mod i386 {
+    use core::mem::offset_of;
+
+    /// i386 `_JUMP_BUFFER` (sdk/include/vcruntime/setjmp.h).
+    #[repr(C)]
+    pub struct JumpBuffer {
+        Ebp: u32,
+        Ebx: u32,
+        Edi: u32,
+        Esi: u32,
+        Esp: u32,
+        Eip: u32,
+        Registration: u32,
+        TryLevel: u32,
+        Cookie: u32,
+        UnwindFunc: u32,
+        UnwindData: [u32; 6],
+    }
+
+    /// `_JUMP_BUFFER_COOKIE` ("VC20"): marks a `_setjmp3` buffer.
+    const JUMP_BUFFER_COOKIE: u32 = 0x5643_3230;
+
+    // i386/_setjmp.s, _setjmp3.s, __longjmp_nounwind.s, verbatim; offsets from offset_of!.
+    // The symbol names carry the i386 cdecl underscore explicitly (global_asm is not
+    // decorated): `_setjmp` is `__setjmp`, and so on.
+    core::arch::global_asm!(
+        ".intel_syntax noprefix",
+        ".text",
+        // int ___intrinsic_setjmp(_JUMP_BUFFER* Buf) / _setjmp
+        ".globl ___intrinsic_setjmp",
+        ".globl __setjmp",
+        "___intrinsic_setjmp:",
+        "__setjmp:",
+        "    mov edx, [esp + 4]",
+        "    mov [edx + {Ebp}], ebp",
+        "    mov [edx + {Ebx}], ebx",
+        "    mov [edx + {Esi}], esi",
+        "    mov [edx + {Edi}], edi",
+        "    mov eax, [esp]",
+        "    mov [edx + {Eip}], eax",
+        "    mov [edx + {Esp}], esp",
+        "    mov eax, fs:[0]",
+        "    mov [edx + {Registration}], eax",
+        "    cmp eax, 0xFFFFFFFF",
+        "    je 1f",
+        "    mov eax, [eax + 12]", // fs:[0]->TryLevel
+        "1:",
+        "    mov [edx + {TryLevel}], eax",
+        "    xor eax, eax",
+        "    ret",
+        // int _setjmp3(_JUMP_BUFFER* Buf, unsigned Count, void* UnwindFunc, unsigned TryLevel, ...)
+        ".globl __setjmp3",
+        "__setjmp3:",
+        "    mov edx, [esp + 4]",
+        "    mov ecx, [esp + 8]",
+        "    mov [edx + {Ebp}], ebp",
+        "    mov [edx + {Ebx}], ebx",
+        "    mov [edx + {Esi}], esi",
+        "    mov [edx + {Edi}], edi",
+        "    mov eax, [esp]",
+        "    mov [edx + {Eip}], eax",
+        "    mov [edx + {Esp}], esp",
+        "    mov dword ptr [edx + {Cookie}], {COOKIE}",
+        "    xor eax, eax",
+        "    mov [edx + {UnwindFunc}], eax",
+        "    dec eax",
+        "    mov [edx + {TryLevel}], eax",
+        "    mov eax, fs:[0]",
+        "    mov [edx + {Registration}], eax",
+        "    cmp eax, 0xFFFFFFFF",
+        "    je 3f",
+        "    mov eax, [eax + 12]",
+        "    mov [edx + {TryLevel}], eax",
+        "    cmp ecx, 0",
+        "    je 3f",
+        "    mov eax, [esp + 12]",
+        "    mov [edx + {UnwindFunc}], eax",
+        "    dec ecx",
+        "    jnz 2f",
+        // "This is likely a bug in the MS implementation, we emulate it" (the C)
+        "    mov eax, [eax + 12]",
+        "    mov [edx + {TryLevel}], eax",
+        "    jmp 3f",
+        "2:",
+        "    mov eax, [esp + 16]",
+        "    mov [edx + {TryLevel}], eax",
+        "    dec ecx",
+        "    jz 3f",
+        "    cmp ecx, 6",
+        "    jbe 4f",
+        "    mov ecx, 6",
+        "4:",
+        "    push esi",
+        "    push edi",
+        "    lea esi, [esp + 28]",
+        "    lea edi, [edx + {UnwindData}]",
+        "    rep movsd",
+        "    pop edi",
+        "    pop esi",
+        "3:",
+        "    xor eax, eax",
+        "    ret",
+        // __declspec(noreturn) void __longjmp_nounwind(const _JUMP_BUFFER*, int)
+        ".globl ___longjmp_nounwind",
+        "___longjmp_nounwind:",
+        "    mov edx, [esp + 4]",
+        "    mov eax, [esp + 8]",
+        "    mov ebp, [edx + {Ebp}]",
+        "    mov ebx, [edx + {Ebx}]",
+        "    mov edi, [edx + {Edi}]",
+        "    mov esi, [edx + {Esi}]",
+        "    mov esp, [edx + {Esp}]",
+        "    add esp, 4",
+        "    jmp dword ptr [edx + {Eip}]",
+        Ebp = const offset_of!(JumpBuffer, Ebp),
+        Ebx = const offset_of!(JumpBuffer, Ebx),
+        Edi = const offset_of!(JumpBuffer, Edi),
+        Esi = const offset_of!(JumpBuffer, Esi),
+        Esp = const offset_of!(JumpBuffer, Esp),
+        Eip = const offset_of!(JumpBuffer, Eip),
+        Registration = const offset_of!(JumpBuffer, Registration),
+        TryLevel = const offset_of!(JumpBuffer, TryLevel),
+        Cookie = const offset_of!(JumpBuffer, Cookie),
+        UnwindFunc = const offset_of!(JumpBuffer, UnwindFunc),
+        UnwindData = const offset_of!(JumpBuffer, UnwindData),
+        COOKIE = const JUMP_BUFFER_COOKIE,
+    );
+
+    extern "C" {
+        fn _global_unwind2(registration: *mut core::ffi::c_void);
+        fn __longjmp_nounwind(buf: *const JumpBuffer, value: i32) -> !;
+    }
+    extern "stdcall" {
+        fn _seh_longjmp_unwind(buf: *const JumpBuffer);
+    }
+
+    /// `void __cdecl longjmp(jmp_buf, int)` -- i386/longjmp.c.
+    #[no_mangle]
+    pub unsafe extern "C" fn longjmp(buf: *mut JumpBuffer, value: i32) -> ! {
+        let jb = buf as *const JumpBuffer;
+        let value = if value == 0 { 1 } else { value };
+        let fs0: u32;
+        core::arch::asm!("mov {}, fs:[0]", out(reg) fs0, options(nostack, readonly, preserves_flags));
+        // A registration from a previous function: global unwind to the one that owns it.
+        if (*jb).Registration != fs0 {
+            _global_unwind2((*jb).Registration as usize as *mut _);
+        }
+        if (*jb).Registration != 0 {
+            if (*jb).Cookie == JUMP_BUFFER_COOKIE {
+                // a _setjmp3 buffer: its unwind function, if any
+                if (*jb).UnwindFunc != 0 {
+                    let f: extern "stdcall" fn(*const JumpBuffer) =
+                        core::mem::transmute((*jb).UnwindFunc as usize);
+                    f(jb);
+                }
+            } else if (*jb).Registration != 0xFFFF_FFFF {
+                // a legacy _setjmp buffer: old-style unwind
+                _seh_longjmp_unwind(jb);
+            }
+        }
+        __longjmp_nounwind(jb, value)
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+mod arm64 {
+    use core::mem::offset_of;
+    use ntkrnl_sys::ddk::{RtlUnwind, EXCEPTION_RECORD};
+
+    /// arm64 `_JUMP_BUFFER` (sdk/include/vcruntime/setjmp.h).
+    #[repr(C)]
+    pub struct JumpBuffer {
+        Frame: u64,
+        Reserved: u64,
+        X19: u64,
+        X20: u64,
+        X21: u64,
+        X22: u64,
+        X23: u64,
+        X24: u64,
+        X25: u64,
+        X26: u64,
+        X27: u64,
+        X28: u64,
+        Fp: u64,
+        Lr: u64,
+        Sp: u64,
+        Fpcr: u32,
+        Fpsr: u32,
+        D: [f64; 8],
+    }
+
+    // arm64/_setjmp.s + __longjmp_noframe.s, verbatim. `_setjmp` stays WEAK, as in the
+    // .s: msvcrt's MSVCRT__setjmp (except_arm64) overrides it where both are linked.
+    core::arch::global_asm!(
+        ".text",
+        ".globl _setjmpex",
+        ".globl __intrinsic_setjmpex",
+        ".globl __intrinsic_setjmp",
+        ".globl setjmp",
+        ".globl __wine_setjmpex",
+        ".weak _setjmp",
+        ".p2align 2",
+        "_setjmpex:",
+        "__intrinsic_setjmpex:",
+        "__intrinsic_setjmp:",
+        "setjmp:",
+        "__wine_setjmpex:",
+        "_setjmp:",
+        "    str x1, [x0, #{Frame}]",
+        "    str xzr, [x0, #{Reserved}]",
+        "    stp x19, x20, [x0, #{X19}]",
+        "    stp x21, x22, [x0, #{X21}]",
+        "    stp x23, x24, [x0, #{X23}]",
+        "    stp x25, x26, [x0, #{X25}]",
+        "    stp x27, x28, [x0, #{X27}]",
+        "    str x29, [x0, #{Fp}]",
+        "    str x30, [x0, #{Lr}]",
+        "    mov x2, sp",
+        "    str x2, [x0, #{Sp}]",
+        "    mrs x2, fpcr",
+        "    str w2, [x0, #{Fpcr}]",
+        "    mrs x2, fpsr",
+        "    str w2, [x0, #{Fpsr}]",
+        "    stp d8, d9, [x0, #{D8}]",
+        "    stp d10, d11, [x0, #{D10}]",
+        "    stp d12, d13, [x0, #{D12}]",
+        "    stp d14, d15, [x0, #{D14}]",
+        "    mov x0, #0",
+        "    ret",
+        ".globl __longjmp_noframe",
+        ".p2align 2",
+        "__longjmp_noframe:",
+        "    ldp d8, d9, [x0, #{D8}]",
+        "    ldp d10, d11, [x0, #{D10}]",
+        "    ldp d12, d13, [x0, #{D12}]",
+        "    ldp d14, d15, [x0, #{D14}]",
+        "    ldr w2, [x0, #{Fpcr}]",
+        "    msr fpcr, x2",
+        "    ldr w2, [x0, #{Fpsr}]",
+        "    msr fpsr, x2",
+        "    ldp x19, x20, [x0, #{X19}]",
+        "    ldp x21, x22, [x0, #{X21}]",
+        "    ldp x23, x24, [x0, #{X23}]",
+        "    ldp x25, x26, [x0, #{X25}]",
+        "    ldp x27, x28, [x0, #{X27}]",
+        "    ldr x29, [x0, #{Fp}]",
+        "    ldr x30, [x0, #{Lr}]",
+        "    ldr x2, [x0, #{Sp}]",
+        "    mov sp, x2",
+        "    cmp x1, #0",
+        "    csinc x0, x1, xzr, ne",
+        "    ret",
+        Frame = const offset_of!(JumpBuffer, Frame),
+        Reserved = const offset_of!(JumpBuffer, Reserved),
+        X19 = const offset_of!(JumpBuffer, X19),
+        X21 = const offset_of!(JumpBuffer, X21),
+        X23 = const offset_of!(JumpBuffer, X23),
+        X25 = const offset_of!(JumpBuffer, X25),
+        X27 = const offset_of!(JumpBuffer, X27),
+        Fp = const offset_of!(JumpBuffer, Fp),
+        Lr = const offset_of!(JumpBuffer, Lr),
+        Sp = const offset_of!(JumpBuffer, Sp),
+        Fpcr = const offset_of!(JumpBuffer, Fpcr),
+        Fpsr = const offset_of!(JumpBuffer, Fpsr),
+        D8 = const offset_of!(JumpBuffer, D),
+        D10 = const offset_of!(JumpBuffer, D) + 16,
+        D12 = const offset_of!(JumpBuffer, D) + 32,
+        D14 = const offset_of!(JumpBuffer, D) + 48,
+    );
+
+    const STATUS_LONGJUMP: i32 = 0x8000_0026u32 as i32;
+
+    extern "C" {
+        fn __longjmp_noframe(buf: *const JumpBuffer, value: i32) -> !;
+    }
+
+    /// `void __cdecl longjmp(jmp_buf, int)` -- arm64/longjmp.c (the exception record is
+    /// built unconditionally there, as here).
+    #[no_mangle]
+    pub unsafe extern "C" fn longjmp(buf: *mut JumpBuffer, value: i32) -> ! {
+        let value = if value == 0 { 1 } else { value };
+        let jb = buf;
+        let mut er: EXCEPTION_RECORD = core::mem::zeroed();
+        er.ExceptionCode = STATUS_LONGJUMP;
+        er.NumberParameters = 1;
+        er.ExceptionInformation[0] = jb as usize as _;
+        if (*jb).Frame != 0 {
+            RtlUnwind((*jb).Frame as *mut _, (*jb).Lr as *mut _, &mut er, value as usize as *mut _);
         }
         __longjmp_noframe(jb, value)
     }

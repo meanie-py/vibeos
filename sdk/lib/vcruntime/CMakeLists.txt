@@ -86,7 +86,14 @@ if(${ARCH} STREQUAL "i386")
     )
 endif()
 
+# setjmp/longjmp for the runtime library: setjmp-rust (2026-10-04), the same .s/.c
+# transcribed (global_asm! with offset_of! operands; instruction-identical to these
+# objects). The C `setjmp` library above stays for its non-CRT consumers (ftfd,
+# static_crt_apitest); vcruntime no longer embeds its objects.
+rust_staticlib_variant(vcrt_setjmp_rust setjmp-rust "user" FALSE)
+
 # Runtime library (linked into ucrtbase)
-add_library(vcruntime ${VCRUNTIME_SOURCES} $<TARGET_OBJECTS:setjmp>)
-target_link_libraries(vcruntime ${PSEH_LIB})
+add_library(vcruntime ${VCRUNTIME_SOURCES})
+add_dependencies(vcruntime rust_vcrt_setjmp_rust)
+target_link_libraries(vcruntime ${PSEH_LIB} ${vcrt_setjmp_rust_LIB})
 target_include_directories(vcruntime INTERFACE inc)

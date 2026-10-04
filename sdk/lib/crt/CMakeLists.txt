@@ -36,7 +36,7 @@ include(oldnames.cmake)
 #   printf/streamout.c printf/wstreamout.c printf/wsprintfA.c printf/wsprintfW.c
 #   printf/wvsprintfA.c printf/wvsprintfW.c printf/wvsnprintfA.c printf/wvsnprintfW.c
 #   string/strnlen.c string/wcsnlen.c string/mbstowcs_nt.c string/wcstombs_nt.c
-msvcrtex_rust_lib(user32_wsprintf_rust user32-wsprintf-rust "" TRUE
+rust_staticlib_variant(user32_wsprintf_rust user32-wsprintf-rust "" TRUE
     ${MSVCRTEX_RUST_WORKSPACE}/cnt-rust/src/cabi/streamout.rs)
 add_library(user32_wsprintf INTERFACE)
 add_dependencies(user32_wsprintf rust_user32_wsprintf_rust)
