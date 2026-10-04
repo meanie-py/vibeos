@@ -870,5 +870,8 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
         - usrmarshal 711/12, varformat 876/3, vartest 1033273/40
         - vartype 2517705/9 [crashed]
     - **Still owed:** `GetNextFreeBigBlock`'s `neededAddNumBlocks` (performance only). The
-      remaining failures above are ordinary conformance work, with vartest's French
-      thousands separator (locale data) the first to look at.
+      remaining failures above are ordinary conformance work. First is vartest's fr-FR
+      parsing: the Rust already has wine-10's `cDigitSeparator2` logic, and `fra.nls`
+      already stores U+00A0 (compiled under `#pragma code_page(65001)`), so the next
+      step is a runtime probe of what `GetLocaleInfoW(0x40c, LOCALE_STHOUSAND |
+      LOCALE_NOUSEROVERRIDE)` actually returns.
