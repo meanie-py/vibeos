@@ -45,8 +45,11 @@ SITE = re.compile(
 MACRO = "win32macros_rust::wide_bytes!"
 
 
-def rust_files() -> list[Path]:
-    return sorted(source_files(RUST))
+def rust_files(roots: list[Path] | None = None) -> list[Path]:
+    out: list[Path] = []
+    for root in roots or [RUST]:
+        out.extend([root] if root.is_file() else source_files(root))
+    return sorted(out)
 
 
 def crate_of(path: Path) -> Path | None:
@@ -58,9 +61,9 @@ def crate_of(path: Path) -> Path | None:
     return None
 
 
-def findings() -> list[tuple[Path, int, str]]:
+def findings(roots: list[Path] | None = None) -> list[tuple[Path, int, str]]:
     out = []
-    for f in rust_files():
+    for f in rust_files(roots):
         text = f.read_text(encoding="utf-8", errors="replace")
         if "as_ptr()" not in text:
             continue
@@ -110,13 +113,15 @@ def main() -> int:
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--lint", action="store_true")
     g.add_argument("--fix", action="store_true")
+    ap.add_argument("paths", nargs="*", type=Path, help="files/dirs (default: sdk/lib/rust)")
     a = ap.parse_args()
     if a.fix:
         return fix()
-    rows = findings()
+    rows = findings(a.paths or None)
     for f, line, src in rows:
+        where = f.relative_to(REPO) if f.is_relative_to(REPO) else f
         print(
-            f"{f.relative_to(REPO)}:{line}: unaligned UTF-16 byte literal cast to a wide "
+            f"{where}:{line}: unaligned UTF-16 byte literal cast to a wide "
             f"pointer; use win32macros_rust::wide_bytes!(...): {src[:90]}"
         )
     return 1 if rows else 0
