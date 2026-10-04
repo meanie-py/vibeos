@@ -80,7 +80,11 @@ _IGNORED = re.compile(
     r"ULongToPtr|PtrToUlong|PtrToUshort|UlongToPtr|LongToPtr|PtrToLong|HandleToUlong|"
     r"UlongToHandle|IntToPtr|PtrToInt|NT_SUCCESS|NT_ERROR|NT_WARNING|NT_INFORMATION|debugstr_\w+|wine_dbgstr_\w+|wine_dbg_sprintf|"
     r"pdump|pcheck|FIXME_\w*|TRACE_\w*|WARN_\w*|ERR_\w*|MAKEINTRESOURCE[AW]?|SUCCEEDED|FAILED|"
-    r"RTL_CONSTANT_STRING|DECLARE_CONST_UNICODE_STRING|HRESULT_FROM_WIN32|MAKELONG|MAKEWORD|LOWORD|HIWORD|LOBYTE|HIBYTE|MAKEWPARAM|MAKELPARAM)$"
+    r"RTL_CONSTANT_STRING|DECLARE_CONST_UNICODE_STRING|HRESULT_FROM_WIN32|"
+    # Pure or lowered by construction: string-literal and layout macros, varargs, VARIANT
+    # accessors, ACPICA's trace-and-return, Wine list iteration and TRACE-level dumps.
+    r"_T|TEXT|offsetof|VOID|assert|va_start|va_end|va_arg|va_copy|V_[A-Z]\w*|"
+    r"Int32x32To64|UInt32x32To64|Int64ShllMod32|return_\w+|LIST_FOR_EACH\w*|dump_\w+|MAKELONG|MAKEWORD|LOWORD|HIWORD|LOBYTE|HIBYTE|MAKEWPARAM|MAKELPARAM)$"
 )
 # Names whose Rust spelling is legitimately different. Any listed pattern satisfies the callee.
 _LOWERINGS: dict[str, tuple[str, ...]] = {
@@ -90,6 +94,10 @@ _LOWERINGS: dict[str, tuple[str, ...]] = {
     "FillMemory": (r"write_bytes", r"memset", r"\.fill\("),
     "strcpyW": (r"wcscpy", r"lstrcpyW", r"copy", r"strcpyW"),
     "wcscpy": (r"wcscpy", r"lstrcpyW", r"copy"),
+    "strlenW": (r"wcslen", r"lstrlenW", r"\.len\(\)", r"strlenW"),
+    "lstrlenW": (r"wcslen", r"lstrlenW", r"\.len\(\)"),
+    "wcslen": (r"wcslen", r"lstrlenW", r"strlenW", r"\.len\(\)"),
+    "lstrcpyW": (r"wcscpy", r"lstrcpyW", r"strcpyW", r"copy"),
     "strcpy": (r"strcpy", r"lstrcpyA", r"copy"),
     "RtlZeroMemory": (r"write_bytes", r"zeroed", r"memset", r"fill\(\s*0"),
     "RtlSecureZeroMemory": (r"write_bytes", r"write_volatile", r"zeroed"),
@@ -798,6 +806,10 @@ def _kept(callee: str, rust: str, idents: set[str]) -> bool:
         return True
     # dbgbitmap.h's RtlSetBitsDbg & co. wrap the plain call with release-invisible checks.
     if callee.endswith("Dbg") and _kept(callee[:-3], rust, idents):
+        return True
+    # Case alone: Wine's `midl_user_free` is MIDL's `MIDL_user_free`.
+    low = callee.lower()
+    if any(i.lower() == low for i in idents):
         return True
     # A/W generic names resolve to one of their variants; the IoXxxRemoveLock macros are
     # their `Ex` exports (serial calls IoReleaseRemoveLockEx directly).
