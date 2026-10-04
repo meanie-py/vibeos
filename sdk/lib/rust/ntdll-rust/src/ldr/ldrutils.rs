@@ -2433,6 +2433,16 @@ pub unsafe extern "system" fn LdrpGetProcedureAddress(
             if (*LdrEntry).Flags & LDRP_ENTRY_PROCESSED == 0 {
                 /* Call the init routine */
                 Status = LdrpRunInitializeRoutines(core::ptr::null_mut());
+
+                /* Failed: unload the entry, or it lingers in the loader
+                 * waiting to run its init routine (upstream 4a96f375a0f) */
+                if !NT_SUCCESS(Status) {
+                    DbgPrint(
+                        b"Initialization routine failed with 0x%08x\n\0".as_ptr() as PCHAR,
+                        Status,
+                    );
+                    LdrUnloadDll((*LdrEntry).DllBase);
+                }
             }
         }
 
