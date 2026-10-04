@@ -1210,14 +1210,6 @@ impl MMPFN {
 
 /// MiGetPfnEntry — returns PMMPFN from PFN number.
 /// Matches C version in mm.h: checks MmHighestPhysicalPage and MiPfnBitMap.
-///
-/// NOTE on ARM64: The MiPfnBitMap NULL-return path was disabled because callers
-/// (e.g., MiAllocatePoolPages) don't NULL-check and the QEMU virt physical
-/// memory map has gaps (firmware-reserved regions) where bitmap bits are clear
-/// but the PFN database entry exists. The C original has the same code but the
-/// gap PFNs apparently never reach this path on amd64/i386. Returning the
-/// `MmPfnDatabase[pfn]` pointer is safe because the database is sized for all
-/// PFNs 0..MmHighestPhysicalPage; gap entries are just zero-initialized.
 #[inline]
 pub unsafe fn MiGetPfnEntry(pfn: PFN_NUMBER) -> PMMPFN {
     extern "C" {
@@ -1226,13 +1218,10 @@ pub unsafe fn MiGetPfnEntry(pfn: PFN_NUMBER) -> PMMPFN {
     if pfn > MmHighestPhysicalPage {
         return core::ptr::null_mut();
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    if !MiPfnBitMap.Buffer.is_null()
+        && crate::rtl::RtlTestBit(core::ptr::addr_of_mut!(MiPfnBitMap), pfn as ULONG) == 0
     {
-        if !MiPfnBitMap.Buffer.is_null()
-            && crate::rtl::RtlTestBit(core::ptr::addr_of_mut!(MiPfnBitMap), pfn as ULONG) == 0
-        {
-            return core::ptr::null_mut();
-        }
+        return core::ptr::null_mut();
     }
     MmPfnDatabase.add(pfn)
 }
