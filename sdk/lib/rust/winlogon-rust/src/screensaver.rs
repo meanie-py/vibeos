@@ -4,9 +4,13 @@
 //! StartScreenSaver. Link-checked (the saver only runs after real idle on
 //! a logged-in desktop, not on the boot smoke path).
 //!
-//! USE_GETLASTINPUTINFO is NOT defined in this build (verified), so the
-//! hook-based activity path is the live one — the GetLastInputInfo branches
-//! are dropped rather than carried as dead cfg.
+//! winlogon.h `#define`s USE_GETLASTINPUTINFO unconditionally (line 29 — in
+//! the header, so it never shows up in build.ninja's DEFINES), so the live C
+//! path polls GetLastInputInfo and installs NO low-level keyboard/mouse hooks.
+//! The `#ifndef USE_GETLASTINPUTINFO` hook procs and the LastActivity
+//! timestamp are compiled out of the C and are not carried here. (WLSESSION in
+//! winlogon-sys still has the KeyboardHook/MouseHook/LastActivity fields; the
+//! struct is private to this all-Rust binary, so they are simply unused.)
 //!
 //! Translated by rustconv (Opus 4.8), then hand-reconciled: rustconv's
 //! hand-rolled `extern "C"` Win32 block was DROPPED (extern "C" is the
@@ -17,44 +21,6 @@
 
 use winlogon_sys::nt::*;
 use crate::preamble::*;
-
-// InterlockedExchange / InterlockedCompareExchange on a LONG. Implemented
-// as atomics rather than relying on a kernel32 export (the Win32 ones are
-// usually compiler intrinsics, not imported symbols).
-unsafe fn interlocked_exchange(dst: *mut LONG, val: LONG) -> LONG {
-    use core::sync::atomic::{AtomicI32, Ordering};
-    (*(dst as *const AtomicI32)).swap(val, Ordering::SeqCst)
-}
-unsafe fn interlocked_compare_exchange(dst: *mut LONG, exch: LONG, comp: LONG) -> LONG {
-    use core::sync::atomic::{AtomicI32, Ordering};
-    match (*(dst as *const AtomicI32)).compare_exchange(comp, exch, Ordering::SeqCst, Ordering::SeqCst)
-    {
-        Ok(v) | Err(v) => v,
-    }
-}
-
-// HOOKPROC ABI: stdcall on i386, C on amd64/arm64. Match per-arch.
-unsafe extern "system" fn KeyboardActivityProc(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-    KeyboardActivityProcImpl(nCode, wParam, lParam)
-}
-unsafe fn KeyboardActivityProcImpl(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-    interlocked_exchange(
-        core::ptr::addr_of_mut!((*WLSession).LastActivity) as *mut LONG,
-        (*(lParam as PKBDLLHOOKSTRUCT)).time as LONG,
-    );
-    CallNextHookEx(core::ptr::null_mut(), nCode, wParam, lParam)
-}
-
-unsafe extern "system" fn MouseActivityProc(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-    MouseActivityProcImpl(nCode, wParam, lParam)
-}
-unsafe fn MouseActivityProcImpl(nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-    interlocked_exchange(
-        core::ptr::addr_of_mut!((*WLSession).LastActivity) as *mut LONG,
-        (*(lParam as PMSLLHOOKSTRUCT)).time as LONG,
-    );
-    CallNextHookEx(core::ptr::null_mut(), nCode, wParam, lParam)
-}
 
 unsafe fn LoadScreenSaverParameters(Timeout: LPDWORD) {
     let mut Enabled: BOOL = 0;
@@ -83,7 +49,7 @@ unsafe extern "system" fn ScreenSaverThreadMain(lpParameter: LPVOID) -> DWORD {
 unsafe fn ScreenSaverThreadMainImpl(lpParameter: LPVOID) -> DWORD {
     let Session: PWLSESSION = lpParameter as PWLSESSION;
     let mut HandleArray: [HANDLE; 3] = [core::ptr::null_mut(); 3];
-    let mut LastActivity: DWORD;
+    let mut lastInputInfo: LASTINPUTINFO = core::mem::zeroed();
     let mut TimeToWait: DWORD;
     let mut Timeout: DWORD = 0;
     let mut ret: DWORD;
@@ -111,19 +77,17 @@ unsafe fn ScreenSaverThreadMainImpl(lpParameter: LPVOID) -> DWORD {
 
         LoadScreenSaverParameters(core::ptr::addr_of_mut!(Timeout));
 
-        interlocked_exchange(
-            core::ptr::addr_of_mut!((*Session).LastActivity) as *mut LONG,
-            GetTickCount() as LONG,
-        );
+        lastInputInfo.cbSize = core::mem::size_of::<LASTINPUTINFO>() as UINT;
 
         loop {
             /* See the time of last activity and calculate a timeout */
-            LastActivity = interlocked_compare_exchange(
-                core::ptr::addr_of_mut!((*Session).LastActivity) as *mut LONG,
-                0,
-                0,
-            ) as DWORD;
-            TimeToWait = Timeout.wrapping_sub(GetTickCount().wrapping_sub(LastActivity));
+            if GetLastInputInfo(&mut lastInputInfo) != 0 {
+                TimeToWait =
+                    Timeout.wrapping_sub(GetTickCount().wrapping_sub(lastInputInfo.dwTime));
+            } else {
+                WARN!("GetLastInputInfo() failed with error %lu\n", GetLastError());
+                TimeToWait = 10; /* Try again in 10 ms */
+            }
 
             if TimeToWait > Timeout {
                 /* GetTickCount() got back to 0 */
@@ -139,12 +103,12 @@ unsafe fn ScreenSaverThreadMainImpl(lpParameter: LPVOID) -> DWORD {
             }
 
             /* Check if we didn't had recent activity */
-            LastActivity = interlocked_compare_exchange(
-                core::ptr::addr_of_mut!((*Session).LastActivity) as *mut LONG,
-                0,
-                0,
-            ) as DWORD;
-            if LastActivity.wrapping_add(Timeout) > GetTickCount() {
+            if GetLastInputInfo(&mut lastInputInfo) == 0 {
+                WARN!("GetLastInputInfo() failed with error %lu\n", GetLastError());
+                continue;
+            }
+
+            if lastInputInfo.dwTime.wrapping_add(Timeout) > GetTickCount() {
                 continue;
             }
 
@@ -178,14 +142,6 @@ unsafe fn ScreenSaverThreadMainImpl(lpParameter: LPVOID) -> DWORD {
 
     RevertToSelf();
 
-    if !(*Session).KeyboardHook.is_null() {
-        UnhookWindowsHookEx((*Session).KeyboardHook);
-    }
-
-    if !(*Session).MouseHook.is_null() {
-        UnhookWindowsHookEx((*Session).MouseHook);
-    }
-
     CloseHandle((*Session).hEndOfScreenSaverThread);
     CloseHandle((*Session).hScreenSaverParametersChanged);
 
@@ -195,19 +151,6 @@ unsafe fn ScreenSaverThreadMainImpl(lpParameter: LPVOID) -> DWORD {
 #[no_mangle]
 pub unsafe extern "C" fn InitializeScreenSaver(Session: PWLSESSION) -> BOOL {
     let ScreenSaverThread: HANDLE;
-
-    /* Register hooks to detect keyboard and mouse activity */
-    (*Session).KeyboardHook =
-        SetWindowsHookExW(WH_KEYBOARD_LL as i32, Some(KeyboardActivityProc), hAppInstance, 0);
-    if (*Session).KeyboardHook.is_null() {
-        return 0;
-    }
-
-    (*Session).MouseHook =
-        SetWindowsHookExW(WH_MOUSE_LL as i32, Some(MouseActivityProc), hAppInstance, 0);
-    if (*Session).MouseHook.is_null() {
-        return 0;
-    }
 
     (*Session).hScreenSaverParametersChanged =
         CreateEventW(core::ptr::null_mut(), 0, 0, core::ptr::null_mut());
@@ -388,10 +331,6 @@ pub unsafe extern "C" fn StartScreenSaver(Session: PWLSESSION) {
             WLX_WM_SAS,
             WLX_SAS_TYPE_SCRNSVR_ACTIVITY as WPARAM,
             0,
-        );
-        interlocked_exchange(
-            core::ptr::addr_of_mut!((*Session).LastActivity) as *mut LONG,
-            GetTickCount() as LONG,
         );
     }
 }

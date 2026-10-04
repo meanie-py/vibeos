@@ -387,9 +387,17 @@ pub unsafe extern "system" fn IdeReadWrite(
     }
 
     if ((*Srb).SrbFlags & SRB_FLAGS_DATA_IN != 0) || use_dma != 0 {
+        // Start the DMA engine BEFORE the drive command when the chip needs it:
+        // the Bochs read workaround, and ServerWorks K2/Frodo/HT1000 SATA in
+        // both directions ("to avoid data corruption", upstream svw_sata.c
+        // CHANNEL_FLAG_DMA_BEFORE_CMD; UniATA had no such rule).
+        let dma_first = use_dma != 0
+            && ((g_opt_BochsDmaReadWorkaround != 0 && ((*Srb).SrbFlags & SRB_FLAGS_DATA_IN != 0))
+                || ((*deviceExtension).DevID & 0xffff == ATA_SERVERWORKS_ID
+                    && (*deviceExtension).HwFlags & CHIPTYPE_MASK == SWKSMIO));
         if use_dma != 0 {
             AtapiDmaDBPreSync(HwDeviceExtension, chan, Srb);
-            if g_opt_BochsDmaReadWorkaround != 0 && ((*Srb).SrbFlags & SRB_FLAGS_DATA_IN != 0) {
+            if dma_first {
                 AtapiDmaStart(HwDeviceExtension, DeviceNumber as ULONG, lChannel as ULONG, Srb);
             }
         }
@@ -409,10 +417,8 @@ pub unsafe extern "system" fn IdeReadWrite(
             let _ = statusByte;
             return SRB_STATUS_ERROR as ULONG;
         }
-        if use_dma != 0 {
-            if g_opt_BochsDmaReadWorkaround == 0 || ((*Srb).SrbFlags & SRB_FLAGS_DATA_IN == 0) {
-                AtapiDmaStart(HwDeviceExtension, DeviceNumber as ULONG, lChannel as ULONG, Srb);
-            }
+        if use_dma != 0 && !dma_first {
+            AtapiDmaStart(HwDeviceExtension, DeviceNumber as ULONG, lChannel as ULONG, Srb);
         }
         return SRB_STATUS_PENDING as ULONG;
     }

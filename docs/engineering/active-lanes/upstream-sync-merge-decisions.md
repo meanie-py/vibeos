@@ -65,6 +65,36 @@ and both of these were in the 72 that never conflicted.
 | The new ATA stack: `atapi/` SATL driver + `pciidex/chipset/` (incl. software AHCI), and the uniata→pciide default switch (`7d33f7503bb`) | **WON'T PORT (owner, 2026-10-03).** We already drive AHCI: uniata-rust claims `ich9-ahci` (`PCI#CC_0106` in hivesys) and both x86 arches boot to desktop with the CD on AHCI (`VIBEOS_AHCI_CD=1` smoke, verified 2026-10-03). The rewrite is ~20K lines (~$10-12) of replacement for a working driver. Policy: uniata is OUR storage driver going forward. An upstream bug fix in the new stack is ported SEMANTICALLY into uniata-rust when it describes a bug uniata also has, never by bulk-adopting their files. The C stays unbuilt on disk as reference. |
 | pruned trees | pc98, xbox, arm32, BIOS realmode, ext2/btrfs/ntfs/udfs/nfs, NTVDM, ISAPNP, fast486, SAC, x86bios/INT10, legacy tcpip, floppy, fraginator, `untfs`. |
 
+### uniata-rust: what upstream's ATA stack taught us, and what is still owed
+
+The won't-port decision above comes with a standing duty: mine upstream's new stack for
+hardware knowledge uniata lacks and port it semantically. The 2026-10-03/04 survey found 13
+gaps. Ported (two commits): the ATI IXP UDMA6 bounds panic, the PxSERR clear in
+`UniataAhciStart`, the 1s wait per empty AHCI port, PUIS spin-up and the IDENTIFY
+checksum, AMD prefetch and AMD-8111 Serenade, the Intel ICH0/rev-0/Tdh and 450KX/NX
+errata, ServerWorks SATA (4 channels, SICR, DMA-before-command, no ATAPI DMA), GHC.AE
+ordering, AHCI interrupt-acknowledge order, busy-TFD escalation in
+`UniataAhciAbortOperation`, port-multiplier pseudo ports and SiI XmitEarlyAck, and a SATA
+link-speed downgrade on repeated DMA errors. Only the AHCI ones run under QEMU (`smoke --ahci`).
+
+**Resolved after the batch:**
+- **SATA hotplug was invisible to the OS.** uniata attached a hot-plugged disk inside the
+  ISR but never told SCSIPORT, and SCSIPORT ignored `BusChangeDetected` anyway (as
+  ReactOS's does). Now uniata notifies, and SCSIPORT's DPC turns it into
+  `IoInvalidateDeviceRelations(BusRelations)`, whose handler rescans. The attach itself
+  still runs in the ISR, but PCS fires after the PHY is up, so `UniataSataConnect`
+  returns at once. A SCSIPORT miniport has no lower-IRQL context to move it to. **Not
+  testable under QEMU:** QEMU 11 refuses `device_add ide-hd` on an `ich9-ahci` port
+  ("Bus 'ahci0.1' does not support hotplugging"), so this waits for real hardware.
+- **ServerWorks Frodo8 is 0x0241** (8 ports, BAR5 window 0x800). Every driver that
+  programs the chip agrees: upstream svw_sata.c, Linux sata_svw `chip_svw8`, and FreeBSD
+  `ATA_FRODO8 = 0x02411166` with 8 channels. Only NAMES disagree: Linux's comment and
+  NetBSD's pcidevs call 0x0241 "Frodo4", and UniATA copied that. No public datasheet.
+- **UniATA's channel-count clamp made every multi-channel arm dead.**
+  `UniataChipDetectChannels` sized its clamp from the count BEFORE the vendor match, so
+  ALi 5287/5288 and Promise MIO (4) and ServerWorks SATA were cut back to 2. Fixed when
+  the port mask is still the default.
+
 ## New upstream TUs declined because a Rust twin owns the symbols
 
 Each has a note at the point of decline. This is the landmine in its subtlest form — several of

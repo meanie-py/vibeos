@@ -410,7 +410,10 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     let mut DosDevicesSd: _SECURITY_DESCRIPTOR = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
-    static SESSION_ROOT: [u16; 9] = [
+    // srv.h SESSION_ROOT is L"\\Sessions" (plural). The pieces below are appended
+    // with `wappend`, which stops at a NUL, so a terminator inside the buffer can
+    // never cut a name short.
+    static SESSION_ROOT: [u16; 10] = [
         b'\\' as u16,
         b'S' as u16,
         b'e' as u16,
@@ -419,9 +422,10 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
         b'i' as u16,
         b'o' as u16,
         b'n' as u16,
+        b's' as u16,
         0,
     ];
-    static BNOLINKS: [u16; 9] = [
+    static BNOLINKS: [u16; 10] = [
         b'\\' as u16,
         b'B' as u16,
         b'N' as u16,
@@ -431,17 +435,6 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
         b'N' as u16,
         b'K' as u16,
         b'S' as u16,
-    ];
-    static SESSION_ROOT_SLASH: [u16; 10] = [
-        b'\\' as u16,
-        b'S' as u16,
-        b'e' as u16,
-        b's' as u16,
-        b's' as u16,
-        b'i' as u16,
-        b'o' as u16,
-        b'n' as u16,
-        b'\\' as u16,
         0,
     ];
     static BASE_NAMED_OBJECTS: [u16; 18] = [
@@ -478,22 +471,10 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
         0,
     ];
 
+    /* _swprintf(SessionBuffer, L"%ws\\BNOLINKS", SESSION_ROOT) */
     let mut idx = 0;
-    for &c in SESSION_ROOT.iter() {
-        SessionBuffer[idx] = c;
-        idx += 1;
-        if c == 0 {
-            break;
-        }
-    }
-    for &c in BNOLINKS.iter() {
-        if c == 0 {
-            break;
-        }
-        SessionBuffer[idx] = c;
-        idx += 1;
-    }
-    SessionBuffer[idx] = 0;
+    wappend(&mut SessionBuffer, &mut idx, &SESSION_ROOT);
+    wappend(&mut SessionBuffer, &mut idx, &BNOLINKS);
     RtlInitUnicodeString(&mut SessionString, SessionBuffer.as_ptr());
 
     core::ptr::write_bytes(
@@ -522,25 +503,12 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     RtlInitUnicodeString(&mut SessionString, session_str.as_ptr());
 
     if Session != 0 {
+        /* _swprintf(BnoBuffer, L"%ws\\%lu\\BaseNamedObjects", SESSION_ROOT, Session) */
         idx = 0;
-        for &c in SESSION_ROOT_SLASH.iter() {
-            BnoBuffer[idx] = c;
-            idx += 1;
-            if c == 0 {
-                break;
-            }
-        }
-        for i in 0..session_len {
-            BnoBuffer[idx] = session_str[i];
-            idx += 1;
-        }
-        for &c in BASE_NAMED_OBJECTS[17..].iter() {
-            BnoBuffer[idx] = c;
-            idx += 1;
-            if c == 0 {
-                break;
-            }
-        }
+        wappend(&mut BnoBuffer, &mut idx, &SESSION_ROOT);
+        wappend(&mut BnoBuffer, &mut idx, &[b'\\' as u16]);
+        wappend(&mut BnoBuffer, &mut idx, &session_str[..session_len]);
+        wappend(&mut BnoBuffer, &mut idx, &BASE_NAMED_OBJECTS);
         RtlInitUnicodeString(&mut BnoString, BnoBuffer.as_ptr());
     } else {
         RtlInitUnicodeString(&mut BnoString, BASE_NAMED_OBJECTS.as_ptr());
@@ -573,19 +541,11 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
         return Status;
     }
 
+    /* _swprintf(SessionBuffer, L"%ws\\%lu", SESSION_ROOT, Session) */
     idx = 0;
-    for &c in SESSION_ROOT_SLASH.iter() {
-        SessionBuffer[idx] = c;
-        idx += 1;
-        if c == 0 {
-            break;
-        }
-    }
-    for i in 0..session_len {
-        SessionBuffer[idx] = session_str[i];
-        idx += 1;
-    }
-    SessionBuffer[idx] = 0;
+    wappend(&mut SessionBuffer, &mut idx, &SESSION_ROOT);
+    wappend(&mut SessionBuffer, &mut idx, &[b'\\' as u16]);
+    wappend(&mut SessionBuffer, &mut idx, &session_str[..session_len]);
     RtlInitUnicodeString(&mut SessionString, SessionBuffer.as_ptr());
 
     core::ptr::write_bytes(
@@ -630,6 +590,19 @@ pub unsafe extern "system" fn CsrCreateSessionObjectDirectory(Session: ULONG) ->
     );
     FreeDosDevicesProtection(&mut DosDevicesSd as *mut _ as PVOID);
     Status
+}
+
+/// Append `src` (up to its first NUL, if any) to `buf` at `*idx`, keeping `buf`
+/// NUL-terminated; silently stops at the buffer end like a bounded wcscat.
+fn wappend(buf: &mut [u16], idx: &mut usize, src: &[u16]) {
+    for &c in src {
+        if c == 0 || *idx + 1 >= buf.len() {
+            break;
+        }
+        buf[*idx] = c;
+        *idx += 1;
+    }
+    buf[*idx] = 0;
 }
 
 unsafe fn format_number(mut n: ULONG, buf: &mut [u16]) -> usize {
