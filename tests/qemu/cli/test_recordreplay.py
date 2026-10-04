@@ -716,9 +716,13 @@ def test_no_arch_config_smuggles_in_a_host_path_we_cannot_pin(config, tmp_path):
                 args, mode="record", trace_dir=tmp_path / f"t{attempt}", stage=True
             )
             break
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as exc:
             if attempt == 2:
-                pytest.skip(f"{config} media kept changing under qemu-img (a build in flight)")
+                # The cause is not established (the atomic mkramdisk did not end it, and the
+                # gate's smokes boot a per-run copy, not this file): carry qemu-img's own
+                # words so the next occurrence names itself.
+                err = (exc.stderr or b"").decode(errors="replace").strip()
+                pytest.skip(f"{config}: qemu-img kept failing on the backing image: {err}")
             time.sleep(5)
     for name, info in media.items():
         if info["copied"]:
