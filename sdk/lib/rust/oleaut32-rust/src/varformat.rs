@@ -2,6 +2,7 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "C" {
+    fn _snwprintf(buffer: *mut u16, count: usize, format: *const u16, ...) -> i32;
     fn wcstod(nptr: *const u16, endptr: *mut *mut u16) -> f64;
     fn wcsicmp(s1: *const u16, s2: *const u16) -> i32;
     fn bsearch( key: *const core::ffi::c_void, base: *const core::ffi::c_void, num: usize, size: usize, compar: unsafe extern "C" fn(*const core::ffi::c_void, *const core::ffi::c_void) -> i32, ) -> *mut core::ffi::c_void;
@@ -1094,16 +1095,19 @@ unsafe extern "C" fn VARIANT_FormatNumber(
                     *pBuff = 'E' as u16;
                     pBuff = pBuff.offset(1);
                 }
+                // Wine 10.0 bounds these: the width comes from the caller's
+                // format string ("0E+000..."), so an unbounded write could run
+                // past buff. Count leaves room for _snwprintf's NUL (buff is zeroed).
                 if exponent < 0 {
                     *pBuff = '-' as u16;
                     pBuff = pBuff.offset(1);
-                    swprintf(pBuff, szPercentZeroStar_d.as_ptr(), *pToken.offset(1) as i32, -exponent);
+                    _snwprintf(pBuff, (buff.len() - 1).saturating_sub(pBuff.offset_from(buff.as_ptr()) as usize), szPercentZeroStar_d.as_ptr(), *pToken.offset(1) as i32, -exponent);
                 } else {
                     if *pToken == FMT_NUM_EXP_POS_L || *pToken == FMT_NUM_EXP_POS_U {
                         *pBuff = '+' as u16;
                         pBuff = pBuff.offset(1);
                     }
-                    swprintf(pBuff, szPercentZeroStar_d.as_ptr(), *pToken.offset(1) as i32, exponent);
+                    _snwprintf(pBuff, (buff.len() - 1).saturating_sub(pBuff.offset_from(buff.as_ptr()) as usize), szPercentZeroStar_d.as_ptr(), *pToken.offset(1) as i32, exponent);
                 }
                 while *pBuff != 0 {
                     pBuff = pBuff.offset(1);
@@ -1868,7 +1872,7 @@ unsafe extern "C" fn VARIANT_FormatDate(
                 pBuff = pBuff.offset(1);
             }
         } else if !szPrintFmt.is_null() {
-            swprintf(pBuff, szPrintFmt, dwVal);
+            _snwprintf(pBuff, (buff.len() - 1).saturating_sub(pBuff.offset_from(buff.as_ptr()) as usize), szPrintFmt, dwVal);
             while *pBuff != 0 {
                 pBuff = pBuff.offset(1);
             }
