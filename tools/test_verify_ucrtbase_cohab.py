@@ -795,3 +795,23 @@ def test_an_allowlisted_forward_passes_only_from_its_named_dll(tmp_path: Path, m
 def test_a_missing_build_is_a_note_not_a_pass_or_failure(tmp_path: Path):
     fails, notes = vuc.check_export_imports(tmp_path)
     assert fails == [] and len(notes) == 3
+
+
+def test_a_stale_object_is_not_c_authority(tmp_path: Path) -> None:
+    """An object CMake no longer builds (its source was deleted from the target) must not
+    vouch for a symbol: only objects the current build.ninja produces count."""
+    build = tmp_path / "build-i386"
+    d = build / "sdk/lib/vcruntime/CMakeFiles/vcruntime.dir"
+    (d / "i386").mkdir(parents=True)
+    live, stale = d / "purecall.cpp.obj", d / "i386/_chkesp.s.obj"
+    live.write_bytes(b"")
+    stale.write_bytes(b"")
+    (build / "build.ninja").write_text(
+        "build sdk/lib/vcruntime/CMakeFiles/vcruntime.dir/purecall.cpp.obj: CXX_COMPILER x.cpp\n"
+        "build sdk/lib/vcruntime/libvcruntime.a: C_STATIC_LIBRARY_LINKER x\n"
+    )
+    objs = vuc._graph_objects(build)
+    assert objs is not None
+    assert live in objs
+    assert stale not in objs
+    assert vuc._graph_objects(tmp_path / "nowhere") is None

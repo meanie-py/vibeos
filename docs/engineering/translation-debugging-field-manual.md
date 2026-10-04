@@ -6589,6 +6589,11 @@ longer had). A clean build differs. **Cause:** every toolchain file set
 never removes, and overriding the rule lost CMake's own delete-first step, so an archive only
 ever grew. **Fix (2026-10-04):** the rule is now `cmake -E rm -f <TARGET>` then `ar crT`. To
 audit a library: `llvm-ar t lib.a` against the target's source list.
+The same leftovers fool any TOOL that globs an object directory: a deleted source's `.obj`
+stays in `CMakeFiles/<target>.dir/` forever. `verify_ucrtbase_cohab` read those directories as
+"our C defines this", so a lane passed with `_chkesp.s` gone (its stale `.obj` still defined
+`__chkesp`) and master went red on the fresh integration build. A tool asking what the build
+produces must ask the build graph (`build <obj>:` lines in `build.ninja`), not the directory.
 
 **The most expensive class in this file**, because the failure mode is a green that means
 nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → pl011 → gdi32 →
