@@ -1720,6 +1720,15 @@ CONTROLS: list[Control] = [
         },
     ),
     Control(
+        name="strip_msvc_cmake",
+        script="tools/strip_msvc_cmake.py",
+        argv=["--check"],
+        bad={"CMakeLists.txt": "if(MSVC OR X)\n    a()\nendif()\n"},
+        good={"CMakeLists.txt": 'if(CMAKE_C_COMPILER_ID STREQUAL "Clang")\n    a()\nendif()\n'},
+        pass_files=True,
+        file_suffix="CMakeLists.txt",
+    ),
+    Control(
         name="scan_dropped_probes",
         script="tools/scan_dropped_probes.py",
         argv=["--lint"],

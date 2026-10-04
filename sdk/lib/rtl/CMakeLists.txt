@@ -20,11 +20,6 @@ list(APPEND RTL_WINE_SOURCE
 )
 # threadpool.c was the only __WINESRC__ source; it is now Rust (rtl-threadpool)
 
-if(MSVC)
-    # Silence warning C4267: 'initializing': conversion from 'size_t' to 'const int', possible loss of data
-    set_source_files_properties(${RTL_WINE_SOURCE} PROPERTIES COMPILE_OPTIONS "/wd4267")
-endif()
-
 list(APPEND SOURCE
     ${RTL_WINE_SOURCE}
     dbgprint_variadic.c  # C-variadic trampolines for rtl-diag (DbgPrint/DbgPrintEx/DbgPrintReturnControlC + wine_dbg_*)

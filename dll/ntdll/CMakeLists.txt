@@ -115,8 +115,3 @@ add_cargo_module(ntdll ntdll-cargo ntdll.dll
     # asm = generates the asm includes (ks*.inc / syscalls.inc / sysfuncs.h) the
     # engine needs to assemble dispatch.S + ntoskrnl/ntdll.S from source.
     EXTRA_DEPENDS rtl rtl_vista libcntpr ntstatus asm)
-
-# Newer VS versions link to _ftol2 / _ftoul2_legacy
-if(MSVC AND ARCH STREQUAL "i386")
-    target_link_libraries(libntdll ftol2)
-endif()

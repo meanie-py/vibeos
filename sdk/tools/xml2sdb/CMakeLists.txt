@@ -15,9 +15,4 @@ include_directories(
 add_host_tool(xml2sdb ${SOURCE})
 target_link_libraries(xml2sdb PRIVATE host_includes)
 
-if(MSVC)
-    # Disable warning "'=': conversion from 'a' to 'b', possible loss of data"
-    target_compile_options(xml2sdb PRIVATE "/wd4244")
-else()
-    target_compile_options(xml2sdb PRIVATE "-fshort-wchar")
-endif()
+target_compile_options(xml2sdb PRIVATE "-fshort-wchar")

@@ -86,10 +86,6 @@ list(APPEND SOURCE
     view.c
     xmlhttprequest.c)
 
-if(MSVC)
-    add_asm_files(mshtml_asm msvc.S)
-endif()
-
 list(APPEND PCH_SKIP_SOURCE
     guid.c
     ${CMAKE_CURRENT_BINARY_DIR}/mshtml_stubs.c)

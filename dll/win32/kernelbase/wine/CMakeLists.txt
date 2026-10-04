@@ -32,10 +32,8 @@ endif()
 #target_link_libraries(kernelbase_path ${PSEH_LIB})
 #add_dependencies(kernelbase_path psdk)
 
-if(NOT MSVC)
-    #target_compile_options(kernelbase_path PRIVATE -Wno-unused-variable)
-    #target_compile_options(kernelbase_path PRIVATE -Wno-unused-function)
-endif()
+#target_compile_options(kernelbase_path PRIVATE -Wno-unused-variable)
+#target_compile_options(kernelbase_path PRIVATE -Wno-unused-function)
 
 list(APPEND SOURCE_STATIC
     #console.c #looks like ReactOS console.c is nothing like wine.
@@ -49,13 +47,6 @@ target_compile_definitions(kernelbase_static PRIVATE WINSHLWAPI= WINPATHCCHAPI= 
 target_link_libraries(kernelbase_static psapi_static ${PSEH_LIB})
 add_dependencies(kernelbase_static psdk)
 
-if(MSVC)
-    target_compile_options(kernelbase_static PRIVATE
-        /wd4267 # warning C4267: '=': conversion from 'size_t' to 'unsigned int', possible loss of data
-        /wd4146 # warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    )
-else()
-    target_compile_options(kernelbase_static PRIVATE -Wno-unused-variable)
-    target_compile_options(kernelbase_static PRIVATE -Wno-unused-function)
-endif()
+target_compile_options(kernelbase_static PRIVATE -Wno-unused-variable)
+target_compile_options(kernelbase_static PRIVATE -Wno-unused-function)
 

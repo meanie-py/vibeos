@@ -149,16 +149,8 @@ list(APPEND SOURCE
     client/dep.c
     k32.h)
 
-if(MSVC)
-    # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    set_source_files_properties(wine/res.c PROPERTIES COMPILE_OPTIONS "/wd4146")
-
-    # Disable warning C4267: 'initializing': conversion from 'size_t' to 'DWORD', possible loss of data
-    set_source_files_properties(winnls/string/locale.c PROPERTIES COMPILE_OPTIONS "/wd4267")
-else()
-    # Disable warning: 'variable' defined but not used
-    set_source_files_properties(winnls/string/locale.c PROPERTIES COMPILE_OPTIONS "-Wno-unused-variable")
-endif()
+# Disable warning: 'variable' defined but not used
+set_source_files_properties(winnls/string/locale.c PROPERTIES COMPILE_OPTIONS "-Wno-unused-variable")
 
 if(ARCH STREQUAL "i386")
     list(APPEND ASM_SOURCE

@@ -35,6 +35,18 @@ def _artifact_root_is_never_the_real_one(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _conductors_drain_in_process(monkeypatch):
+    """No unit test may pin a conductor checkout or spawn a drain child from one.
+
+    An elected conductor hands its drain to a checkout of origin/master
+    (`queue._conduct_pinned`): a `git worktree add` beside the repo plus a real
+    `vibeos-cli land --drain` child. While it was being written, a land test that only
+    meant to check `--foreground` did exactly that (inside its tmp dir, luckily).
+    Tests that exercise the handoff unset this themselves."""
+    monkeypatch.setenv("VIBEOS_CONDUCTOR_PIN", "0")
+
+
+@pytest.fixture(autouse=True)
 def _land_lock_opt_out_does_not_leak_in(monkeypatch):
     """The land-lock tests assert the lock EXCLUDES; they must not inherit the opt-out.
 

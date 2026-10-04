@@ -89,8 +89,7 @@ add_definitions(
 
 # There doesn't seem to be a standard for __FILE__ being relative or absolute, so detect it at runtime.
 file(RELATIVE_PATH _PATH_PREFIX ${REACTOS_BINARY_DIR} ${REACTOS_SOURCE_DIR})
-if (NOT MSVC AND ((CMAKE_C_COMPILER_ID STREQUAL "GNU") AND (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "8.0.0")
-               OR (CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "10.0.0")))
+if((CMAKE_C_COMPILER_ID STREQUAL "GNU") AND (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "8.0.0") OR (CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "10.0.0"))
     # Thankfully, GCC has this
     add_compile_options(-ffile-prefix-map=${REACTOS_SOURCE_DIR}=)
     add_compile_options(-ffile-prefix-map=${_PATH_PREFIX}=)
@@ -101,66 +100,15 @@ else()
     add_compile_definitions("$<$<COMPILE_LANGUAGE:C,CXX>:__RELFILE__=&__FILE__[__FILE__[0] == '.' ? ${_PATH_PREFIX_LENGTH} : ${REACTOS_SOURCE_DIR_LENGTH}]>")
 endif()
 
-if(MSVC_IDE)
-    add_compile_options("/MP")
-endif()
-
 # Bison and Flex support
 find_package(BISON REQUIRED)
 find_package(FLEX REQUIRED)
-
-if(MSVC_IDE)
-    # Bison needs M4 and BISON_PKGDATADIR set at build time,
-    # but visual studio is hardly ever opened from the configure-time environment.
-    # Since cmake does not support setting env variables for a custom command,
-    # we have to write a wrapper that sets the variables and then executes bison.
-    # Idea taken from https://stackoverflow.com/a/35032051/4928207
-    if(DEFINED ENV{M4})
-        # Store this environment variable for configure re-runs from withing visual studio.
-        SET(ROS_SAVED_M4 "$ENV{M4}" CACHE INTERNAL "")
-    endif()
-    if(DEFINED ENV{BISON_PKGDATADIR})
-        SET(ROS_SAVED_BISON_PKGDATADIR "$ENV{BISON_PKGDATADIR}" CACHE INTERNAL "")
-    endif()
-
-    # Tell the user about a misconfigured environment
-    if("x${ROS_SAVED_M4}x" STREQUAL "xx" OR "x${ROS_SAVED_BISON_PKGDATADIR}x" STREQUAL "xx")
-        message(FATAL_ERROR "\nM4 or BISON_PKGDATADIR environment variables not set, cannot continue!\n"
-            "See https://reactos.org/wiki/Visual_Studio for more information!")
-    endif()
-
-    file(WRITE "${CMAKE_BINARY_DIR}/bison_wrapper.cmd"
-                "@ECHO OFF\n"
-                "set M4=${ROS_SAVED_M4}\n"
-                "set BISON_PKGDATADIR=${ROS_SAVED_BISON_PKGDATADIR}\n"
-                "${BISON_EXECUTABLE} %*\n")
-    set(BISON_EXECUTABLE "${CMAKE_BINARY_DIR}/bison_wrapper.cmd")
-    # And the same hacks for FLEX
-    file(WRITE "${CMAKE_BINARY_DIR}/flex_wrapper.cmd"
-                "@ECHO OFF\n"
-                "set M4=${ROS_SAVED_M4}\n"
-                "set BISON_PKGDATADIR=${ROS_SAVED_BISON_PKGDATADIR}\n"
-                "${FLEX_EXECUTABLE} %*\n")
-    set(FLEX_EXECUTABLE "${CMAKE_BINARY_DIR}/flex_wrapper.cmd")
-endif()
 
 if(NOT CMAKE_CROSSCOMPILING)
     include(sdk/cmake/host-jobs.cmake)
     set(TOOLS_FOLDER ${CMAKE_CURRENT_BINARY_DIR})
     add_definitions(-DTARGET_${ARCH})
 
-    if(MSVC)
-        if(ARCH STREQUAL "i386")
-            add_definitions(/D_X86_ /D__i386__ /DWIN32 /D_WINDOWS)
-        elseif(ARCH STREQUAL "amd64")
-            add_definitions(-D_AMD64_ -D__x86_64__ /DWIN32 -D_WINDOWS)
-        elseif(ARCH STREQUAL "arm64")
-            add_definitions(-D__aarch64__)
-        endif()
-        if(MSVC_VERSION GREATER 1699)
-            add_definitions(/D_ALLOW_KEYWORD_MACROS)
-        endif()
-    endif()
     add_subdirectory(sdk/include/host)
 
     add_subdirectory(dll/win32/dbghelp)
@@ -168,11 +116,9 @@ if(NOT CMAKE_CROSSCOMPILING)
     add_subdirectory(sdk/lib)
 
     set(NATIVE_TARGETS asmpp bin2c widl gendib cabman fatten hpp isohybrid mkhive mkisofs obj2bin spec2def geninc mkshelllink utf16le xml2sdb)
-    if(NOT MSVC)
-        list(APPEND NATIVE_TARGETS pefixup)
-        if (ARCH STREQUAL "i386")
-            list(APPEND NATIVE_TARGETS rsym)
-        endif()
+    list(APPEND NATIVE_TARGETS pefixup)
+    if (ARCH STREQUAL "i386")
+        list(APPEND NATIVE_TARGETS rsym)
     endif()
 
     install(TARGETS ${NATIVE_TARGETS})
@@ -191,12 +137,6 @@ else()
     else()
         # Single-configuration generators, like Ninja.
         message("-- Build type: ${CMAKE_BUILD_TYPE}")
-    endif()
-
-    # Always add /MT in VS CMAKE_GENERATOR and define _SBCS otherwise VS thinks it's a multi-byte or whatever project
-    if (MSVC_IDE)
-        add_compile_options("/MT")
-        add_compile_definitions(_SBCS)
     endif()
 
 
@@ -260,16 +200,10 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
 
     # Arch Options
     if(ARCH STREQUAL "i386")
-        # clang-cl defines this one for itself
-        if(NOT (MSVC AND CMAKE_C_COMPILER_ID STREQUAL "Clang"))
-            add_definitions(-D_M_IX86)
-        endif()
+        add_definitions(-D_M_IX86)
         add_definitions(-D_X86_ -D__i386__ -Di386)
     elseif(ARCH STREQUAL "amd64")
-        # clang-cl defines this one for itself
-        if (NOT (MSVC AND CMAKE_C_COMPILER_ID STREQUAL "Clang"))
-            add_compile_definitions(_M_AMD64 _M_X64)
-        endif()
+        add_compile_definitions(_M_AMD64 _M_X64)
         add_definitions(-D_AMD64_ -D__x86_64__ -D_WIN64)
     elseif(ARCH STREQUAL "arm64")
         # GNU tools refer to arm64 as aarch64
@@ -288,11 +222,7 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
     endif()
 
     # Activate support for assembly source files
-    if (MSVC)
-        enable_language(ASM_MASM)
-    else()
-        enable_language(ASM)
-    endif()
+    enable_language(ASM)
 
     # Activate language support for resource files
     enable_language(RC)
@@ -304,11 +234,7 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
     set_i18n_language(${I18N_LANG})
 
     # Compiler specific definitions and macros
-    if(MSVC)
-        include(sdk/cmake/msvc.cmake)
-    else()
-        include(sdk/cmake/gcc.cmake)
-    endif()
+    include(sdk/cmake/gcc.cmake)
 
     # Generic macros
     include(sdk/cmake/CMakeMacros.cmake)
@@ -389,16 +315,11 @@ Enable this if the module uses typeid or dynamic_cast. You will probably need to
         include(sdk/cmake/baseaddress64.cmake)
     elseif(NO_ROSSYM)
         include(sdk/cmake/baseaddress_dwarf.cmake)
-    elseif(MSVC)
-        include(sdk/cmake/baseaddress_msvc.cmake)
     else()
         include(sdk/cmake/baseaddress.cmake)
     endif()
 
-    # For MSVC builds, this puts all debug symbols file in the same directory.
-    if(MSVC)
-        set(CMAKE_PDB_OUTPUT_DIRECTORY "${REACTOS_BINARY_DIR}/msvc_pdb")
-    elseif(SEPARATE_DBG)
+    if(SEPARATE_DBG)
         set(CMAKE_PDB_OUTPUT_DIRECTORY "${REACTOS_BINARY_DIR}/symbols")
     endif()
 

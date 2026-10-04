@@ -425,33 +425,44 @@ arches) and the PL011 UART (a real ARM peripheral).
 
 ---
 
-## 11. Retire MSVC support — Size: M
+## 11. Retire MSVC support — Size: M (CMake + stlport DONE 2026-10-03; tail owed)
 
 **MSVC is not a supported toolchain** (owner, 2026-09-26): the project builds with
 clang/llvm-mingw, and that was a settled early call. Upstream ReactOS still carries an
-MSVC build, and everything that exists only for it is dead weight here: code nothing
-compiles, CMake branches nothing takes, and tests of a compiler we do not use.
-Deliberately deferred, not urgent. Measured 2026-09-26:
+MSVC build, and everything that exists only for it is dead weight here. Owner said "kill
+it" on 2026-10-03.
 
-- **`vendor/stlport`** (116K lines): a C++ standard library wired up only by
-  `sdk/cmake/msvc.cmake`'s `cppstl`. Our builds use the toolchain's libstdc++ and compile
-  none of it. vendor.yaml records it `translate: keep` with a note saying it is dead.
-  Removing it means deleting the tree, its `if(MSVC)` block in `sdk/lib/3rdparty`,
-  `vendor-patches/stlport.patch` and its vendor.yaml/notices entries.
-- **`sdk/cmake/msvc.cmake`** (613 lines) and **`baseaddress_msvc.cmake`**.
-- **220 `if(MSVC)` / `if(NOT MSVC)` sites in 153 CMake files**: collapse each to its
-  non-MSVC arm. 29 of those files are rostests.
-- **MSVC-only tests**: the rostests behind `if(MSVC)`, and the MSVC arm of
-  `vendor/ms-compiler-tests`. Its i386 arm is built by clang today and stays.
-- **`_MSC_VER` in 589 non-vendored sources**: the long tail, retire opportunistically.
-  Many are portability guards that also select the clang path, so read each one; do not
-  delete by regex.
+**Done 2026-10-03:**
 
-**The cost is upstream-sync friction**, and it decides the order: every hunk deleted
-from a file upstream still edits becomes a merge conflict on the next sync. So take the
-self-contained pieces first (stlport, `msvc.cmake`, whole MSVC-only tests), then the
-`if(MSVC)` branches in files upstream rarely touches. Leave the `_MSC_VER` tail for
-files we already own or have translated.
+- **`tools/strip_msvc_cmake.py`** partially evaluates every CMake `if`/`elseif` with the
+  MSVC facts fixed (`MSVC`/`MSVC_IDE` false, compiler id never "MSVC") and resolves what
+  that decides: dead arms deleted with their attached comments, surviving arms dedented,
+  compound conditions rewritten (`MSVC OR X` -> `X`). Its first run resolved 203
+  conditions in 144 files. `vibeos-cli check` runs it as `strip_msvc_cmake` with an EMPTY
+  baseline, so **after an upstream merge, run `python3 tools/strip_msvc_cmake.py --write`**
+  when the check names new sites. Vendored trees are skipped (their CMake is the tree's).
+- Deleted: `vendor/stlport` (116K lines; registry entry, patch and notices with it),
+  `sdk/cmake/msvc.cmake`, `sdk/cmake/baseaddress_msvc.cmake`, `toolchain-msvc.cmake`,
+  `overrides-msvc.cmake`. The MSVC-only rostests went with their `if(MSVC)` arms, and
+  `vendor/ms-compiler-tests` is now built only by its clang i386 arm.
+
+**Still owed:**
+
+- **Orphaned MSVC-only sources**, now referenced by no CMake: `cpprt` (`ehvec.cpp`,
+  `new_nothrow.cpp`, `terminate.cpp`, `typeinfo.cpp`, `{i386,amd64}/cpprt.s`), the Wine
+  `msvc.S`/`msvc-thiscall.c` thunks (mshtml, oleaut32, rpcrt4 + `thunks-msvc.s`, vssapi,
+  ole32, windowscodecs, ks), `crt/oldnames-{common,msvcrt}.S`, msvcrt's
+  `{i386,amd64}/cpp_alias.s`, `cpp_vtables.s`, `except_*.s` (CRT lane: delete when it
+  finishes), and the winetests `get_fpu_cw.asm` / `msvc-x64.asm`. Dead-but-present, like a
+  cohab-flipped `.c`. Deleting a file upstream still edits makes a modify/delete conflict on
+  every sync, so take them when their module is translated or upstream stops touching them.
+- **Upstream's Windows/CI entry points** still name the MSVC toolchain and are left as
+  upstream ships them: `.github/workflows/build.yml` (its `build-msvc` jobs),
+  `CMakePresets.json` (`base-msvc`/`clang-cl` presets) and `configure.cmd`. We run none of
+  them; editing them buys only merge conflicts.
+- **`_MSC_VER` in ~589 non-vendored sources**: retire opportunistically in files we own or
+  have translated. Many are portability guards that also select the clang path, so read
+  each one; do not delete by regex.
 
 ---
 
