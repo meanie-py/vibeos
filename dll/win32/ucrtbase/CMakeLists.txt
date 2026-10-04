@@ -12,7 +12,8 @@ add_library(ucrtbase SHARED
     # va_start trampolines, plus varargs-rust's va_arg pullers) are ucrt-rust's
     # va_entries.rs and varargs-rust's `rust-pullers`: va_entry! thunks in the Rust
     # archive linked whole below, so they still win first-match over any archive copy.
-    stubs.c
+    # stubs.c (atexit, operator_new/delete, _chkesp_failed, __acrt_initialize_sse2) is
+    # ucrt-rust's ucrt_reactos.rs and internal/init.rs.
     ucrtbase_stubs.c
     ucrtbase.def
 )
