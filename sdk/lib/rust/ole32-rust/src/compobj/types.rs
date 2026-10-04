@@ -139,12 +139,16 @@ pub struct init_spy {
 }
 
 /// struct oletls (compobj_private.h) — what TEB->ReservedForOle points at.
+///
+/// wine-10 (combase `struct tlsdata`) layout. It is NOT private: callers read
+/// `flags` straight out of the TEB (Wine's compobj test does, at +0Ch on x86 /
+/// +14h on x64), so the field order is ABI. Keep `marshal/types.rs`'s copy in step.
 #[repr(C)]
 pub struct oletls {
     pub apt: *mut apartment,
     pub errorinfo: *mut IErrorInfo,   // see errorinfo.c
-    pub state: *mut IUnknown,         // see CoSetState
-    pub apt_mask: DWORD,              // apartment mask (+0Ch on x86)
+    pub thread_seqid: DWORD,          // returned with CoGetCurrentProcess
+    pub flags: DWORD,                 // tlsdata_flags (+0Ch on x86)
     pub unknown0: *mut c_void,
     pub inits: DWORD,                 // number of times CoInitializeEx called
     pub ole_inits: DWORD,             // number of times OleInitialize called
@@ -156,9 +160,27 @@ pub struct oletls {
     pub call_state: *mut IUnknown,       // current call context (+3Ch on x86)
     pub unknown2: [DWORD; 46],
     pub cancel_object: *mut IUnknown, // cancel object set by CoSetCancelObject (+F8h on x86)
+    pub state: *mut IUnknown,         // see CoSetState
     pub spies: list,                  // Spies installed with CoRegisterInitializeSpy
     pub spies_lock: DWORD,
 }
+
+// The ABI anchors (combase_private.h comments), and the marshal module's copy must agree.
+const _: () = {
+    use core::mem::offset_of;
+    const P: usize = core::mem::size_of::<usize>();
+    assert!(offset_of!(oletls, flags) == 2 * P + 4);
+    assert!(P != 4 || offset_of!(oletls, context_token) == 0x38);
+    assert!(P != 4 || offset_of!(oletls, cancel_object) == 0xF8);
+    assert!(offset_of!(oletls, state) == offset_of!(crate::marshal::types::oletls, state));
+    assert!(offset_of!(oletls, spies) == offset_of!(crate::marshal::types::oletls, spies));
+};
+
+/// combase_private.h `enum tlsdata_flags`
+pub const OLETLS_UUIDINITIALIZED: DWORD = 0x2;
+pub const OLETLS_DISABLE_OLE1DDE: DWORD = 0x40;
+pub const OLETLS_APARTMENTTHREADED: DWORD = 0x80;
+pub const OLETLS_MULTITHREADED: DWORD = 0x100;
 
 /// struct LocalServer (compobj.c) — marshallable object exposing registered
 /// local servers via IServiceProvider.

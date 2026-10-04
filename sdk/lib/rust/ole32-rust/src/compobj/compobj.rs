@@ -227,6 +227,7 @@ pub unsafe fn COM_CurrentCausalityId() -> GUID {
     }
     if guid_eq(&(*info).causality_id, &GUID_NULL) {
         CoCreateGuid(&raw mut (*info).causality_id);
+        (*info).flags |= OLETLS_UUIDINITIALIZED;
     }
     (*info).causality_id
 }
@@ -674,6 +675,12 @@ unsafe fn apartment_get_or_create(model: DWORD) -> *mut APARTMENT {
                 TRACE!();
             }
 
+            // wine-10 (combase apartment_get_or_create)
+            (*COM_CurrentInfo()).flags |= OLETLS_APARTMENTTHREADED;
+            if (model & COINIT_DISABLE_OLE1DDE) != 0 {
+                (*COM_CurrentInfo()).flags |= OLETLS_DISABLE_OLE1DDE;
+            }
+
             LeaveCriticalSection(&raw mut csApartment);
 
             if (*apt).main != FALSE {
@@ -691,6 +698,8 @@ unsafe fn apartment_get_or_create(model: DWORD) -> *mut APARTMENT {
             } else {
                 MTA = apartment_construct(model);
             }
+
+            (*COM_CurrentInfo()).flags |= OLETLS_MULTITHREADED | OLETLS_DISABLE_OLE1DDE;
 
             apt = MTA;
 
@@ -721,6 +730,13 @@ unsafe fn apartment_find_mta() -> *mut APARTMENT {
     LeaveCriticalSection(&raw mut csApartment);
 
     apt
+}
+
+/// combase `apartment_get_mta`: the MTA with a reference, or NULL. Exported for the
+/// marshal module's MTA ipid lookup.
+#[no_mangle]
+pub unsafe extern "C" fn apartment_get_mta() -> *mut APARTMENT {
+    apartment_find_mta()
 }
 
 /// Return the current apartment if it exists, or, failing that, the MTA. Caller
@@ -2007,6 +2023,7 @@ pub unsafe extern "C" fn leave_apartment(info: *mut oletls) {
         }
         apartment_release((*info).apt);
         (*info).apt = null_mut();
+        (*info).flags &= !(OLETLS_DISABLE_OLE1DDE | OLETLS_APARTMENTTHREADED | OLETLS_MULTITHREADED);
     }
 }
 
@@ -3201,8 +3218,15 @@ pub unsafe extern "system" fn CoGetClassObject(
             return FTMarshalCF_Create(iid, ppv);
         }
         if guid_eq(rclsid, &CLSID_GlobalOptions) {
+            apartment_release(apt); // the C leaked this reference; wine-10 releases it
             let cf = &raw mut GlobalOptionsCF;
             return ((*(*cf).lpVtbl).QueryInterface)(cf, iid, ppv);
+        }
+        // wine-10: the GIT is built in, never a registry lookup (it has no
+        // InprocServer32 key, so the generic path below reports REGDB_E_CLASSNOTREG).
+        if guid_eq(rclsid, &CLSID_StdGlobalInterfaceTable) {
+            apartment_release(apt);
+            return DllGetClassObject(rclsid, iid, ppv);
         }
     }
 
@@ -5088,6 +5112,8 @@ pub unsafe extern "system" fn CoGetApartmentType(
             apartment_release(apt);
             *type_ = APTTYPE_MTA;
             *qualifier = APTTYPEQUALIFIER_IMPLICIT_MTA;
+            // wine-10: an implicit MTA is a success, not CO_E_NOTINITIALIZED.
+            return S_OK;
         }
     }
 

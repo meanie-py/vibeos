@@ -153,6 +153,7 @@ pub const WINE_CLSCTX_DONT_HOST: DWORD = 0x8000_0000;
 // COINIT (objbase.h). COINIT_MULTITHREADED is 0 — never test against it.
 pub const COINIT_APARTMENTTHREADED: DWORD = 0x2;
 pub const COINIT_MULTITHREADED: DWORD = 0x0;
+pub const COINIT_DISABLE_OLE1DDE: DWORD = 0x4;
 
 // REGCLS (objbase.h)
 pub const REGCLS_SINGLEUSE: DWORD = 0;
