@@ -1396,6 +1396,7 @@ dependencies = [
  "crt-portable-rust",
  "crt-shared-rust",
  "msvcrt-sys",
+ "varargs-rust",
  "win32macros-rust",
 ]
 

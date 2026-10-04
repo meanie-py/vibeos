@@ -512,20 +512,12 @@ dll/win32/msv1_0/CMakeLists.txt	1	# user.c
 dll/win32/msv1_0/CMakeLists.txt	1	# user.c → src/msv1_0/user.rs
 dll/win32/msv1_0/CMakeLists.txt	1	# usercontext.c → src/msv1_0/usercontext.rs
 dll/win32/msv1_0/CMakeLists.txt	1	# usercontext.c)
-dll/win32/msvcrt/CMakeLists.txt	1	# `_vcprintf_l`, `_vcwprintf` and `_vcwprintf_l` are console.c's own exports, and are
-dll/win32/msvcrt/CMakeLists.txt	1	# above: no va_start on stable, and left in file.c they would keep calling
-dll/win32/msvcrt/CMakeLists.txt	1	# cannot be Rust (no va_start on stable) and cannot stay in wcs.c
-dll/win32/msvcrt/CMakeLists.txt	1	# console.c's 4 `_cprintf`/`_cwprintf` WINAPIV `...` entry points. Same reason and same
 dll/win32/msvcrt/CMakeLists.txt	1	# copies (string.c etc.) go dead (--allow-multiple-definition, MODULE-link
-dll/win32/msvcrt/CMakeLists.txt	1	# file.c's 20 `...` entry points — the 16 fprintf/printf/fwprintf/wprintf
-dll/win32/msvcrt/CMakeLists.txt	1	# file.c's own C bodies. Their delegates are all external (the `v*` twins
 dll/win32/msvcrt/CMakeLists.txt	1	# i386/__wine_RtlUnwind.s, i386/exception_ptr.s, i386/inout.s -- replaced by Rust
-dll/win32/msvcrt/CMakeLists.txt	1	# placement as the three above: no va_start on stable, and left in process.c they
-dll/win32/msvcrt/CMakeLists.txt	1	# process.c's 16 `_exec*`/`_spawn*` WINAPIV `...` entry points. Same reason and same
-dll/win32/msvcrt/CMakeLists.txt	1	# reason here — scanf.c's 16 engines are `static`, so a Rust engine cannot
-dll/win32/msvcrt/CMakeLists.txt	1	# scanf.c's engines they are not `static`), so first-match reaches Rust.
+dll/win32/msvcrt/CMakeLists.txt	1	# msvcrt_rust_shims (rust_varargs_shim.c, rust_scanf_shim.c, rust_file_varargs_shim.c,
+dll/win32/msvcrt/CMakeLists.txt	1	# rust_process_varargs_shim.c, rust_console_varargs_shim.c), C only because stable Rust
+dll/win32/msvcrt/CMakeLists.txt	1	# so they win first-match over scanf.c/wcs.c/file.c's copies as the module objects did.
 dll/win32/msvcrt/CMakeLists.txt	1	# the C monolith (string.c.obj) is pulled. Plain link-order is NOT enough: the
-dll/win32/msvcrt/CMakeLists.txt	1	# would keep calling process.c's own C bodies. Their `_v*`-prefixed twins are Rust in
 dll/win32/mswsock/CMakeLists.txt	1	# extensions.c
 dll/win32/mswsock/CMakeLists.txt	1	# extensions.c — replaced by Rust (mswsock-rust src/mswsock/extensions.rs — AcceptEx/TransmitFile/GetAcceptExSockaddrs)
 dll/win32/mswsock/CMakeLists.txt	1	# mswhelper.c
@@ -842,6 +834,7 @@ dll/win32/syssetup/CMakeLists.txt	1	# security.c
 dll/win32/syssetup/CMakeLists.txt	1	# wizard.c
 dll/win32/syssetup/CMakeLists.txt	1	#addons.c
 dll/win32/ucrtbase/CMakeLists.txt	1	# Silence warnings in ucrtbase_stubs.c
+dll/win32/ucrtbase/CMakeLists.txt	1	# printf.c (sprintf/_vsnprintf) and ucrt_varargs_shim.c (the `...` entry points as
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c — replaced by Rust (userenv-rust src/userenv/desktop.rs — GetAllUsers/DefaultUserProfileDirectory)
 dll/win32/userenv/CMakeLists.txt	1	# directory.c
