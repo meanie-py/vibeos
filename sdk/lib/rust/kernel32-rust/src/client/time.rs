@@ -418,12 +418,19 @@ pub unsafe extern "system" fn SetSystemTime(lpSystemTime: *const SYSTEMTIME) -> 
 #[no_mangle]
 pub unsafe extern "system" fn GetTickCount() -> DWORD {
     let mut TickCount: ULARGE_INTEGER = core::mem::zeroed();
+    let TickCountPtr = &raw const (*SharedUserData).__bindgen_anon_2.TickCount;
 
-    // _WIN64 path
-    TickCount.QuadPart = *((&raw mut (*SharedUserData).__bindgen_anon_2.TickCount) as *mut ULONG64) as ULONGLONG;
-
-    // Note: The _WIN64 path is always taken in the anchor; the while loop is not present.
-    // The anchor shows the 64-bit path directly.
+    // KiReadSystemTime: one atomic 64-bit read on _WIN64; on 32-bit the
+    // High1Time/LowPart/High2Time retry loop. The translation took the _WIN64
+    // read on every arch, which i386 splits into two loads that can tear.
+    #[cfg(target_pointer_width = "64")]
+    {
+        TickCount.QuadPart = core::ptr::read_volatile(TickCountPtr as *const ULONG64) as ULONGLONG;
+    }
+    #[cfg(not(target_pointer_width = "64"))]
+    {
+        TickCount.QuadPart = read_ksystem_time(TickCountPtr).QuadPart as ULONGLONG;
+    }
 
     return ((TickCount.__bindgen_anon_1.LowPart as u64)
         .wrapping_mul((*SharedUserData).TickCountMultiplier as u64)
