@@ -603,6 +603,7 @@ file(GLOB_RECURSE CNT_RUST_SOURCES CONFIGURE_DEPENDS
     ${RUST_WORKSPACE_DIR}/cnt-rust/src/*.rs
     ${RUST_WORKSPACE_DIR}/cnt-rust-lib/src/*.rs
     ${RUST_WORKSPACE_DIR}/cnt-ctype/src/*.rs
+    ${RUST_WORKSPACE_DIR}/musl-math/src/*.rs
 )
 add_custom_command(
     OUTPUT ${RUST_CNT_LIB}
@@ -619,6 +620,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/cnt-rust-lib/Cargo.toml
             ${RUST_WORKSPACE_DIR}/cnt-ctype/Cargo.toml
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/cnt-rust/build.rs
+            ${RUST_WORKSPACE_DIR}/musl-math/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust libcntpr umbrella (${RUST_TARGET})"
 )

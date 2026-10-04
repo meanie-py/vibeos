@@ -6,11 +6,6 @@ add_library(powrprof MODULE
     powrprof.rc
     ${CMAKE_CURRENT_BINARY_DIR}/powrprof.def)
 
-if(MSVC)
-    # Disable warning C4312: 'type cast': conversion from 'unsigned int' to 'HANDLE' of greater size
-    target_compile_options(powrprof PRIVATE /wd4312)
-endif()
-
 set_module_type(powrprof win32dll UNICODE)
 target_compile_definitions(powrprof PRIVATE _CRT_NON_CONFORMING_SWPRINTFS)
 target_link_libraries(powrprof wine)

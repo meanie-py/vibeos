@@ -164,6 +164,19 @@ all included), then auto-triage on failure.
   `--repeat` runs. `summary.json` lists all results under `boots`; its top-level
   serial archive selects the first failure, or first success if all passed.
   Use those paths for live observation and evidence, not the legacy per-arch log.
+- **`VIBEOS_QEMU_HOSTILE=all` (amd64) boots a QEMU stripped down to what a 2018+
+  mini PC gives you**, so real-hardware bugs show up at smoke speed. Or name the
+  hazards to bisect, e.g. `VIBEOS_QEMU_HOSTILE=q35,serial`:
+  - `q35`: ICH9 chipset, AHCI boot media, HPET.
+  - `cpu`: `-cpu max`, so TCG enforces the CPU's features.
+  - `nops2`: no i8042; input only through USB HID on xHCI.
+  - `novga`: GOP from ramfb only.
+  - `mem`: 6 GiB.
+  - `serial`: no COM1; the console UART sits at I/O 0x5000, named only by an
+    injected ACPI SPCR, the way AMT serial-over-LAN or a BMC is on a real PC.
+
+  All of them, plus `VIBEOS_QEMU_SMP=4`, boot green as of 2026-10-03. Opt-in, not
+  in the gate. `vibeos-cli gdb start amd64` honours the same knob.
 - `--tripwire "SPECIALPOOL=Gla5"` arms per-boot kernel debug knobs via QEMU
   fw_cfg (no media rebuild; kernel side `ntoskrnl-rust/src/tripwire.rs`) —
   special pool turns silent pool corruption into an immediate symbolicated
@@ -358,6 +371,19 @@ used only if the first landed whole; otherwise it is discarded and those lanes
 stay queued, neither landed nor rejected. A second batch's merge conflict with
 the first is likewise only rejected once the first is on master. Depth 1 is the
 serial queue. Why (2026-09-26): one cold ~80-minute gate held nine lanes.
+
+### Whose code conducts, and where its log lives
+The lane that wins the election keeps the land lock but does not drain with its own
+copy of the queue: it runs the drain as a child in `vibeos-conductor`, a detached
+checkout it moves to origin/master first. A fix to the queue therefore governs the
+very next drain, whether or not the electing lane has merged it. `VIBEOS_CONDUCTOR_PIN=0`
+drains in-process (for testing queue changes before they land). Every conductor line
+is also appended to `$GIT_COMMON_DIR/vibeos-queue/journal.log` (one rotation at 8 MB),
+which survives the reboots that wipe `/tmp/vibeos-cli`.
+
+When a lone submission fails, the base check re-gates origin/master after
+`git clean -fdqx` (keeping only `.build-tools`, `.venv`, tool caches and the arm64
+firmware), so master is judged without the previous submission's build dirs.
 
 ### `land --withdraw` — step out of line
 Takes THIS lane's queued submissions out of the queue (verdict: `withdrawn`),

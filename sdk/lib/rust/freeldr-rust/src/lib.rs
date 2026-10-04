@@ -63,8 +63,9 @@ pub mod freeldr;
 // port-IO model doesn't apply) so no Rs232Port* symbol collision.
 #[cfg(target_arch = "aarch64")]
 pub mod arm64_debug;
-#[cfg(target_arch = "aarch64")]
-mod arm64_serial_acpi;
+// Console-UART discovery from ACPI (PL011 on arm64, SPCR I/O-port 16550 on x86).
+#[cfg_attr(not(target_arch = "aarch64"), allow(dead_code))]
+pub mod arm64_serial_acpi;
 
 // 🟢 sweep — cache unit (lib/cache/{blocklist,cache}.c).
 // Gated off for `rosload` — rosload uses CacheRead* indirectly via Arc/FS

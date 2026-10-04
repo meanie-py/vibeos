@@ -567,25 +567,16 @@ pub unsafe extern "C" fn GinaInit(Session: PWLSESSION) -> BOOL {
 pub unsafe extern "C" fn CreateWindowStationAndDesktops(Session: PWLSESSION) -> BOOL {
     let mut ret: BOOL = 0; // FALSE
 
-    #[cfg(not(target_arch = "aarch64"))]
     let mut WinstaSecurity: SECURITY_ATTRIBUTES = core::mem::zeroed();
-    #[cfg(not(target_arch = "aarch64"))]
     let mut ApplicationDesktopSecurity: SECURITY_ATTRIBUTES = core::mem::zeroed();
-    #[cfg(not(target_arch = "aarch64"))]
     let mut WinlogonDesktopSecurity: SECURITY_ATTRIBUTES = core::mem::zeroed();
-    #[cfg(not(target_arch = "aarch64"))]
     let mut ScreenSaverDesktopSecurity: SECURITY_ATTRIBUTES = core::mem::zeroed();
-    #[cfg(not(target_arch = "aarch64"))]
     let mut WlWinstaSD: PSECURITY_DESCRIPTOR = null_mut();
-    #[cfg(not(target_arch = "aarch64"))]
     let mut WlApplicationDesktopSD: PSECURITY_DESCRIPTOR = null_mut();
-    #[cfg(not(target_arch = "aarch64"))]
     let mut WlWinlogonDesktopSD: PSECURITY_DESCRIPTOR = null_mut();
-    #[cfg(not(target_arch = "aarch64"))]
     let mut WlScreenSaverDesktopSD: PSECURITY_DESCRIPTOR = null_mut();
 
     'cleanup: {
-        #[cfg(not(target_arch = "aarch64"))]
         {
             if crate::security::CreateWinstaSecurity(&mut WlWinstaSD) == 0 {
                 return ret;
@@ -618,9 +609,6 @@ pub unsafe extern "C" fn CreateWindowStationAndDesktops(Session: PWLSESSION) -> 
 
         // Create the interactive window station
         (*Session).InteractiveWindowStationName = wstr!("WinSta0").as_ptr() as PWSTR;
-        #[cfg(target_arch = "aarch64")]
-        let winsta_sa: *mut SECURITY_ATTRIBUTES = null_mut();
-        #[cfg(not(target_arch = "aarch64"))]
         let winsta_sa: *mut SECURITY_ATTRIBUTES = &mut WinstaSecurity;
         (*Session).InteractiveWindowStation =
             CreateWindowStationW((*Session).InteractiveWindowStationName, 0, MAXIMUM_ALLOWED, winsta_sa);
@@ -632,7 +620,6 @@ pub unsafe extern "C" fn CreateWindowStationAndDesktops(Session: PWLSESSION) -> 
             break 'cleanup;
         }
 
-        #[cfg(not(target_arch = "aarch64"))]
         let (app_sa, wl_sa, ss_sa): (
             *mut SECURITY_ATTRIBUTES,
             *mut SECURITY_ATTRIBUTES,
@@ -650,9 +637,6 @@ pub unsafe extern "C" fn CreateWindowStationAndDesktops(Session: PWLSESSION) -> 
             null_mut(),
             0,
             MAXIMUM_ALLOWED,
-            #[cfg(target_arch = "aarch64")]
-            null_mut(),
-            #[cfg(not(target_arch = "aarch64"))]
             app_sa,
         );
         if (*Session).ApplicationDesktop.is_null() {
@@ -666,28 +650,12 @@ pub unsafe extern "C" fn CreateWindowStationAndDesktops(Session: PWLSESSION) -> 
             null_mut(),
             0,
             MAXIMUM_ALLOWED,
-            #[cfg(target_arch = "aarch64")]
-            null_mut(),
-            #[cfg(not(target_arch = "aarch64"))]
             wl_sa,
         );
-        // ARM64: a missing Winlogon desktop is non-fatal (Default suffices).
-        #[cfg(not(target_arch = "aarch64"))]
         if (*Session).WinlogonDesktop.is_null() {
             break 'cleanup;
         }
 
-        #[cfg(target_arch = "aarch64")]
-        {
-            // ARM64: skip the Screen-Saver desktop; switch to the Application
-            // desktop (SwitchDesktop makes the desktop window visible).
-            if !(*Session).ApplicationDesktop.is_null() {
-                SetThreadDesktop((*Session).ApplicationDesktop);
-                SwitchDesktop((*Session).ApplicationDesktop);
-            }
-        }
-
-        #[cfg(not(target_arch = "aarch64"))]
         {
             // Create the screen saver desktop
             (*Session).ScreenSaverDesktop = CreateDesktopW(
@@ -740,7 +708,6 @@ pub unsafe extern "C" fn CreateWindowStationAndDesktops(Session: PWLSESSION) -> 
         }
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
     {
         // Free security descriptors regardless of success or failure
         if !WlWinstaSD.is_null() {

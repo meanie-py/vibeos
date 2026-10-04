@@ -231,6 +231,19 @@ pub unsafe extern "C" fn math_error(
     exception.retval
 }
 
+/// cnt-rust's math exports (its `crt-math-errors` feature) report a domain/pole/range
+/// error here: msvcrt's `math_error`, so errno and the user's `_matherr` behave as Wine's.
+#[no_mangle]
+pub unsafe extern "C" fn __cnt_math_error(
+    r#type: i32,
+    name: *const i8,
+    arg1: f64,
+    arg2: f64,
+    retval: f64,
+) -> f64 {
+    math_error(r#type, name, arg1, arg2, retval)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn __setusermatherr(func: MSVCRT_matherr_func) {
     MSVCRT_default_matherr_func = func;

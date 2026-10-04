@@ -42,13 +42,9 @@ function(add_message_headers _type)
         set(_source_file ${CMAKE_CURRENT_SOURCE_DIR}/${_file})    ## ${_file_name}.mc
         utf16le_convert(${_source_file} ${_converted_file} nobom)
         macro_mc(${_flag} ${_converted_file})
-        if(MSVC)
-            set(_rc_fixup)
-        else()
-            # llvm-rc reads MESSAGETABLE as a type NAME; see mc_rc_numeric_type.cmake.
-            set(_rc_fixup COMMAND ${CMAKE_COMMAND} -DRC_FILE=${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.rc
-                -P ${REACTOS_SOURCE_DIR}/sdk/cmake/mc_rc_numeric_type.cmake)
-        endif()
+        # llvm-rc reads MESSAGETABLE as a type NAME; see mc_rc_numeric_type.cmake.
+        set(_rc_fixup COMMAND ${CMAKE_COMMAND} -DRC_FILE=${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.rc
+            -P ${REACTOS_SOURCE_DIR}/sdk/cmake/mc_rc_numeric_type.cmake)
         add_custom_command(
             OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.h ${CMAKE_CURRENT_BINARY_DIR}/${_file_name}.rc
             COMMAND ${COMMAND_MC}
@@ -255,6 +251,8 @@ macro(dir_to_num dir var)
         set(${var} 81)
     elseif(${dir} STREQUAL reactos/system32/spool/prtprocs/arm64)
         set(${var} 82)
+    elseif(${dir} STREQUAL reactos/bin/testdata/old)
+        set(${var} 83)
 
 
     else()
@@ -483,64 +481,19 @@ function(add_clean_target _target)
         COMMENT "Cleaning ${_target}")
 endfunction()
 
-if(NOT MSVC_IDE)
-    function(add_library name)
-        _add_library(${name} ${ARGN})
-        add_clean_target(${name})
-        # cmake adds a module_EXPORTS define when compiling a module or a shared library. We don't use that.
-        get_target_property(_type ${name} TYPE)
-        if(_type MATCHES SHARED_LIBRARY|MODULE_LIBRARY)
-            set_target_properties(${name} PROPERTIES DEFINE_SYMBOL "")
-        endif()
-    endfunction()
-
-    function(add_executable name)
-        _add_executable(${name} ${ARGN})
-        add_clean_target(${name})
-    endfunction()
-elseif(USE_FOLDER_STRUCTURE)
-    set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-    string(LENGTH ${CMAKE_SOURCE_DIR} CMAKE_SOURCE_DIR_LENGTH)
-
-    function(add_custom_target name)
-        _add_custom_target(${name} ${ARGN})
-        string(SUBSTRING ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR_LENGTH} -1 CMAKE_CURRENT_SOURCE_DIR_RELATIVE)
-        set_property(TARGET "${name}" PROPERTY FOLDER "${CMAKE_CURRENT_SOURCE_DIR_RELATIVE}")
-    endfunction()
-
-    function(add_library name)
-        _add_library(${name} ${ARGN})
-        get_target_property(_type ${name} TYPE)
-        if (NOT _type STREQUAL "INTERFACE_LIBRARY")
-            get_target_property(_target_excluded ${name} EXCLUDE_FROM_ALL)
-            if(_target_excluded AND ${name} MATCHES "^lib.*")
-                set_property(TARGET "${name}" PROPERTY FOLDER "Importlibs")
-            else()
-                string(SUBSTRING ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR_LENGTH} -1 CMAKE_CURRENT_SOURCE_DIR_RELATIVE)
-                set_property(TARGET "${name}" PROPERTY FOLDER "${CMAKE_CURRENT_SOURCE_DIR_RELATIVE}")
-            endif()
-        endif()
-        # cmake adds a module_EXPORTS define when compiling a module or a shared library. We don't use that.
-        if(_type MATCHES SHARED_LIBRARY|MODULE_LIBRARY)
-            set_target_properties(${name} PROPERTIES DEFINE_SYMBOL "")
-        endif()
-    endfunction()
-
-    function(add_executable name)
-        _add_executable(${name} ${ARGN})
-        string(SUBSTRING ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR_LENGTH} -1 CMAKE_CURRENT_SOURCE_DIR_RELATIVE)
-        set_property(TARGET "${name}" PROPERTY FOLDER "${CMAKE_CURRENT_SOURCE_DIR_RELATIVE}")
-    endfunction()
-else()
-    function(add_library name)
-        _add_library(${name} ${ARGN})
-        # cmake adds a module_EXPORTS define when compiling a module or a shared library. We don't use that.
-        get_target_property(_type ${name} TYPE)
-        if(_type MATCHES SHARED_LIBRARY|MODULE_LIBRARY)
-            set_target_properties(${name} PROPERTIES DEFINE_SYMBOL "")
-        endif()
-    endfunction()
-endif()
+function(add_library name)
+    _add_library(${name} ${ARGN})
+    add_clean_target(${name})
+    # cmake adds a module_EXPORTS define when compiling a module or a shared library. We don't use that.
+    get_target_property(_type ${name} TYPE)
+    if(_type MATCHES SHARED_LIBRARY|MODULE_LIBRARY)
+        set_target_properties(${name} PROPERTIES DEFINE_SYMBOL "")
+    endif()
+endfunction()
+function(add_executable name)
+    _add_executable(${name} ${ARGN})
+    add_clean_target(${name})
+endfunction()
 
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
     function(concatenate_files _output _file1)
@@ -587,9 +540,7 @@ function(sign_driver_if_needed TARGET)
     if(NOT (_type STREQUAL "kernelmodedriver" OR _type STREQUAL "wdmdriver"))
         return()
     endif()
-    if(NOT MSVC)
-        return()
-    endif()
+    return()
     if(NOT EXISTS "C:/ReactOSCerts/ReactOSDevCert.cer")
         return()
     endif()
@@ -766,15 +717,9 @@ function(preprocess_file __in __out)
     foreach(__def ${ARGN})
         list(APPEND __arg -D${__def})
     endforeach()
-    if(MSVC)
-        add_custom_command(OUTPUT ${_out}
-            COMMAND ${CMAKE_C_COMPILER} /EP ${__arg}
-            DEPENDS ${__in})
-    else()
-        add_custom_command(OUTPUT ${_out}
-            COMMAND ${CMAKE_C_COMPILER} -E ${__arg}
-            DEPENDS ${__in})
-    endif()
+    add_custom_command(OUTPUT ${_out}
+        COMMAND ${CMAKE_C_COMPILER} -E ${__arg}
+        DEPENDS ${__in})
 endfunction()
 
 function(get_includes OUTPUT_VAR)

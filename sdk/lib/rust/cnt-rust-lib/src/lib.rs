@@ -73,6 +73,49 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         }
         core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b'\n');
     }
+    // arm64 has no debugcon port, and this used to be a bare `loop {}` there: a
+    // panic in any driver linking libcntpr spun the CPU with nothing on serial
+    // (scan_self_recursive flags the self-jump). Print the location through the
+    // DebugService brk the kernel routes to the UART, then __fastfail, which the
+    // kernel turns into KERNEL_SECURITY_CHECK_FAILURE.
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let mut msg = [0u8; 160];
+        let mut n = 0usize;
+        let mut put = |bytes: &[u8]| {
+            for &b in bytes {
+                if n < msg.len() {
+                    msg[n] = b;
+                    n += 1;
+                }
+            }
+        };
+        put(b"PANIC:");
+        if let Some(loc) = info.location() {
+            put(loc.file().as_bytes());
+            put(b":");
+            let mut digits = [0u8; 10];
+            let mut line = loc.line();
+            let mut len = 0usize;
+            loop {
+                digits[len] = b'0' + (line % 10) as u8;
+                line /= 10;
+                len += 1;
+                if line == 0 {
+                    break;
+                }
+            }
+            while len > 0 {
+                len -= 1;
+                put(&digits[len..len + 1]);
+            }
+        }
+        put(b"\n");
+        core::arch::asm!("brk #0xf002", in("x0") 1u64, in("x1") msg.as_ptr(), in("x2") n as u64);
+        // FAST_FAIL_FATAL_APP_EXIT
+        core::arch::asm!("brk #0xf003", in("x0") 7u64, options(noreturn));
+    }
     let _ = info;
+    #[cfg(not(target_arch = "aarch64"))]
     loop {}
 }

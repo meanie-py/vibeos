@@ -308,6 +308,7 @@ dependencies = [
  "cc",
  "cnt-ctype",
  "cnt-rust",
+ "musl-math",
 ]
 
 [[package]]
@@ -315,6 +316,7 @@ name = "cnt-rust"
 version = "0.1.0"
 dependencies = [
  "libm",
+ "musl-math",
 ]
 
 [[package]]
@@ -1440,6 +1442,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "musl-math"
+version = "0.1.0"
+
+[[package]]
+name = "musl-math-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "musl-math",
+]
+
+[[package]]
 name = "netapi32-rust"
 version = "0.1.0"
 dependencies = [
@@ -2214,6 +2228,10 @@ name = "secur32-sys"
 version = "0.1.0"
 
 [[package]]
+name = "serial-acpi-difftest"
+version = "0.1.0"
+
+[[package]]
 name = "serial-rust"
 version = "0.1.0"
 dependencies = [
@@ -2561,6 +2579,7 @@ version = "0.1.0"
 dependencies = [
  "crt-portable-rust",
  "libm",
+ "musl-math",
  "varargs-rust",
 ]
 

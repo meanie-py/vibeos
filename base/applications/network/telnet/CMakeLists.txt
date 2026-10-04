@@ -32,11 +32,6 @@ add_executable(telnet ${SOURCE} telnet.rc)
 target_link_libraries(telnet cppstl)
 set_target_cpp_properties(telnet WITH_EXCEPTIONS)
 
-if (MSVC)
-    # C4838: conversion from 'int' to 'SHORT' requires a narrowing conversion
-    target_compile_options(telnet PRIVATE /wd4838)
-endif()
-
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
     target_compile_options(telnet PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wno-narrowing>)
     if(CMAKE_C_COMPILER_ID STREQUAL "GNU")

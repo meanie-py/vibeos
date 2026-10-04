@@ -9,14 +9,6 @@ function(add_host_module _module)
     set_target_properties(${_module} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${TOOLS_FOLDER})
 endfunction()
 
-if(MSVC)
-    add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -DHAVE_IO_H=1)
-    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/EHsc>")
-
-    # Disable warning "conversion from 'size_t' to 'int', possible loss of data"
-    add_compile_options("/wd4267")
-endif()
-
 add_host_tool(bin2c bin2c.c)
 add_host_tool(gendib gendib/gendib.c)
 add_host_tool(geninc geninc/geninc.c)
@@ -57,10 +49,8 @@ if (TARGET_BUILD_TYPE)
     # Silence warning about unused variable
 endif()
 
-if(NOT MSVC)
-    add_host_tool(pefixup pefixup.c)
-    if (ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
-        target_compile_definitions(pefixup PRIVATE _TARGET_PE64)
-    endif()
-    target_link_libraries(pefixup PRIVATE host_includes)
+add_host_tool(pefixup pefixup.c)
+if (ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    target_compile_definitions(pefixup PRIVATE _TARGET_PE64)
 endif()
+target_link_libraries(pefixup PRIVATE host_includes)

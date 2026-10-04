@@ -489,6 +489,13 @@ Interrupt Line/Pin from config space).
 
 ### M11 — Real-NIC support via an NDIS protocol shim
 
+**Owed by M11 (2026-10-03): put the miniport INFs back.** While netstack drives the NIC
+itself, `vendor/netkvm/CMakeLists.txt` does not stage netkvm.inf and
+`drivers/network/dd/e1000/nete1000.inf` has its 100E/100F models commented out. With them on the
+media, setup bound the NDIS miniport to the same device under netstack and the arm64 boot
+wedged in netstack's TX wait (field manual, "Completing the media wakes up code that a missing
+file was holding back"). When netstack moves above NDIS, restore both.
+
 **Status (2026-06-21) — 🟡 SCAFFOLD LANDED (compile-verified ×3, behind `feature = "ndis"`, OFF by
 default); runtime bring-up is the remaining sub-task.** The swappable backend the architecture
 promised is now built and integrated:

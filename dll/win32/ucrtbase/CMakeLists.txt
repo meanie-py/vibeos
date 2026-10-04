@@ -18,9 +18,7 @@ add_library(ucrtbase SHARED
     ucrtbase.def
 )
 
-if(NOT MSVC)
-    target_compile_options(ucrtbase PRIVATE -Wno-builtin-declaration-mismatch)
-endif()
+target_compile_options(ucrtbase PRIVATE -Wno-builtin-declaration-mismatch)
 
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
     # Silence warnings in ucrtbase_stubs.c
@@ -82,7 +80,7 @@ set(UCRT_SHARED_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcrt_shared_cargo.a")
 # cnt-rust's math were both invisible to it). verify_ucrtbase_cohab.py derives the
 # closure from the manifests and fails if this list and it disagree.
 set(UCRT_SHARED_RUST_CRATES
-    crt-shared-cargo cnt-rust crt-portable-rust crt-shared-rust panic-common msvcrt-sys
+    crt-shared-cargo cnt-rust musl-math crt-portable-rust crt-shared-rust panic-common msvcrt-sys
     ucrt-rust varargs-rust)
 set(UCRT_SHARED_RUST_GLOBS)
 set(UCRT_SHARED_RUST_MANIFESTS)
@@ -127,12 +125,8 @@ target_link_libraries(ucrtbase
 # Implicitly link to vcstartup
 target_link_libraries(libucrtbase INTERFACE vcstartup)
 
-if(MSVC)
-    target_link_libraries(ucrtbase runtmchk)
-else()
-    # For __cxa_guard_acquire / __cxa_guard_release
-    target_link_libraries(ucrtbase libsupc++)
-endif()
+# For __cxa_guard_acquire / __cxa_guard_release
+target_link_libraries(ucrtbase libsupc++)
 
 add_importlibs(ucrtbase kernel32 ntdll)
 

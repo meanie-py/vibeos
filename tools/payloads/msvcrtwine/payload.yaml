@@ -1,0 +1,32 @@
+# msvcrtwine — Wine's msvcrt conformance suite (and the msvcrt apitest) in the guest,
+# against msvcrt.dll as built. Made to grade the 2026-10-03 i386 SSE2 switch as an A/B.
+#   tools/payloads/msvcrtwine/build.sh i386
+#   VIBEOS_PAYLOAD=msvcrtwine ./vibeos-cli build --arch i386
+#   ./vibeos-cli smoke --arch i386 --payload msvcrtwine
+# Rides the apitest sweep runner (one process per subtest, stdout piped to the
+# serial as [APITEST:<suite>] lines); see ../apitest/sweep.c.
+name: msvcrtwine
+description: Wine msvcrt conformance + msvcrt apitest against the Rust msvcrt (i386)
+
+build_hint: "tools/payloads/msvcrtwine/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/msvcrtwine/sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/msvcrtwine/suites.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/msvcrtwine/skip.txt
+    dest: bin/apitest-skip.txt
+  # Children start on the writable FAT scratch disk: X: is the CDFS boot image.
+  - src: tools/payloads/msvcrtwine/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: tools/payloads/msvcrtwine/msvcrt_winetest.exe
+    dest: bin/msvcrt_winetest.exe
+  - src: tools/payloads/msvcrtwine/msvcrt_apitest.exe
+    dest: bin/msvcrt_apitest.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 1800
+  launch_idle_secs: 600

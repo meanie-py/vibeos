@@ -1,0 +1,20 @@
+# Differential harness: musl-math (our Rust port of musl's exp/exp2/log/log2/pow and their
+# f32 forms) against the PRISTINE musl C it was ported from (../musl-math/ref), compiled for
+# the host with -ffp-contract=off and the non-FMA configuration the port follows. The
+# contract is bit-exactness: same algorithm, same tables, same operation order.
+[package]
+name = "musl-math-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+musl-math = { path = "../musl-math" }
+
+[build-dependencies]
+cc = "1"
+
+[[test]]
+name = "diff"
+path = "tests/diff.rs"
+harness = false

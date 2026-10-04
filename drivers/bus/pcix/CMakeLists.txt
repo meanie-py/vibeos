@@ -77,14 +77,10 @@ set_module_type(pcix kernelmodedriver)
 target_link_libraries(pcix arbiter)
 add_dependencies(pcix rust_pcix)
 target_link_libraries(pcix ${PCIX_RUST_LIB})
-if(MSVC)
-    target_link_options(pcix PRIVATE /SECTION:.rsrc,!D)
-else()
-    add_custom_command(
-        TARGET pcix POST_BUILD
-        COMMAND native-pefixup --section:.rsrc,!D $<TARGET_FILE:pcix>
-        VERBATIM)
-endif()
+add_custom_command(
+    TARGET pcix POST_BUILD
+    COMMAND native-pefixup --section:.rsrc,!D $<TARGET_FILE:pcix>
+    VERBATIM)
 add_importlibs(pcix ntoskrnl hal)
 add_dependencies(pcix pciclass)
 add_cd_file(TARGET pcix DESTINATION reactos/system32/drivers NO_CAB FOR all)

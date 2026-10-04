@@ -988,6 +988,20 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   C function DEFINED by the current mode (`rint`, `nearbyint`, `lrint`, `llrint`) must not be
   a plain `libm` call: use `frintx`/`frinti` on arm64. On x86 libm's `x + 2^52 - 2^52` happens
   to round in MXCSR's mode.
+- **`libm` is NOT musl for `pow`/`exp`/`log`** (or `exp2`/`log2`): those are FreeBSD msun's
+  older e_pow.c and friends — under 1 ulp, but `pow(10, n)` misses the nearest double in 65 of
+  601 cases (glibc 2, musl's current code 3). msvcrt's x87 `pow` got them right, so a straight
+  swap regressed i386; the msvcrt winetest saw it because it builds its EXPECTED values with
+  `pow(10, n)`. `sdk/lib/rust/musl-math` is a port of musl's ARM-routine versions, graded
+  bit-exact against the musl C (`musl-math-difftest`). Check a crate's `origin:` header
+  before calling it "the same code as X".
+- **Generating coefficient tables from C: diff the generated values against the compiled C
+  object, not against your reading of the source.** Two generator bugs shipped wrong tables
+  that the Rust compiled and ran fine on: matching C designated initializers by POSITION
+  (exp_data.c initialises `negln2hiN` before `shift`, unlike the struct), and stripping a
+  float `f` suffix with `rstrip("f")`, which ate the last digit of every hex table integer
+  ending in `f`. Both surfaced only as "exp-family mismatches, log-family exact" in the
+  bit-exact fuzz; dumping `__exp_data` from the C object found them in a minute.
 
 ### i386 symbol lookup and asm aliasing
 - **Three decoration schemes**: cdecl `_name`, stdcall `_name@N`, fastcall `@name@N`. A grep
@@ -6915,10 +6929,16 @@ i386 and amd64, with only the known-flaky `IoDeviceObject` assertion moving besi
 drift silently — and the *kernel's* graceful degradation is what hides it. When one arch's
 result differs, diff the media before diffing the code.
 
-**Mechanised.** `tools/scan_boot_media_drift.py` (in `vibeos-cli check`, baseline EMPTY) now
-gates the invariant statically: every hive `add_cd_file` stages into `reactos/system32/config`
-`FOR livecd` must also be copied by `mkramdisk.sh` **and** listed in its `REQUIRED_FILES`, and
-`mkhive`'s `-h:` list must match the `OUTPUT` files cmake declares for it. Run against the tree
+**Mechanised, then removed at the root (2026-10-03).** The two lists are now one: arm64 builds
+the same `livecd` target as x86, and `mkramdisk.sh` lays out `boot/livecd.<config>.lst` (the list
+`mkisofs` consumes on x86) with `tools/ramdisk_tree.py`, which hard-fails on a missing source.
+Only arm64's own files (the stack-patched csrss, the FEX layer) and payloads sit on top.
+Before that the ramdisk carried ~250 hand-copied files against the livecd's ~1100, and
+`setup.exe`, `syssetup.dll` and every `.inf` were among the missing, so the livecd hive's
+first-boot `setup -mini` failed silently on every arm64 boot for its whole life.
+`tools/scan_boot_media_drift.py` (in `vibeos-cli check`, baseline EMPTY) gates that the ramdisk
+is still built from the list, and that `mkhive`'s `-h:` list matches the `OUTPUT` files cmake
+declares for it. Run against the tree
 as it stood before the fix it names `sam` and `security` outright. Scoped to the config
 directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
 `\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
@@ -7730,8 +7750,9 @@ diff is not a gate.**
   neither knowing, and the merge conflicted across six scanners. Nobody wasted time — the
   landed version was better on both counts above and simply replaced the other — but when a
   defect is announced fleet-wide, say whether you are taking it.
-- **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
-  defined corpus. arm64 has no `livecd` DAG (`archcfg.py:209` builds a hand-picked staged set),
+- **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep had no
+  defined corpus (FIXED 2026-10-03: arm64 builds `livecd` now, and the sweep's first pass over
+  the real set found 15 spins in pcix/ks/fltmgr/portcls). arm64 had no `livecd` DAG (it built a hand-picked staged set),
   so the sweep grades whatever binaries are sitting in `build-arm64/`: nothing in a fresh
   integration worktree, an arbitrary accumulation in a long-lived lane. A real `disk.sys` finding
   has therefore never blocked a gate, and a lane can equally eat a red arm64 result for a driver
@@ -10705,6 +10726,69 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 
 ---
 
+### A loop-local the C leaves uninitialised can be carrying state between iterations
+**Symptom.** On arm64's FAT ramdisk, listing a directory of long-named files returned bare 8.3
+names (`FSEX30~1.TTF`), the same file two or three times, batches of one entry from a 16 KB
+buffer, and most files not at all. `\SystemRoot\Fonts` lost 2 of 51 faces, one of them Marlett,
+so every caption button and scrollbar arrow drew as `0 1 r` / `5 6`. `fatprobe`'s enumerate step
+reproduces it with 60 files.
+
+**Cause.** `FatQueryDirectory` declares `VBO NextVbo;` inside its loop, uninitialised, and passes
+`&NextVbo` to `FatLocateDirent`, whose pinned-page fast path advances the still-pinned `Dirent`
+by `(OffsetToStartSearchFrom - *ByteOffset) / sizeof(DIRENT)`: it needs LAST iteration's value.
+The C gets it only because the stack slot is reused. The translation wrote `let mut NextVbo = 0;`
+inside the loop, so every call after the first on the first directory page started from the
+wrong dirent.
+
+**Fix.** Hoist the variable out of the loop so the value carries by construction (`dirctrl.rs`).
+
+**Generalize.** An uninitialised C local inside a loop is a read of the previous iteration
+whenever anything reads it before writing it, including a callee through a pointer. A
+translator that adds `= 0` (or `zeroed()`) is changing behaviour, not tidying.
+
+### Completing the media wakes up code that a missing file was holding back
+**Symptom.** The first arm64 boot from the full livecd file set wedged during first-boot setup:
+`CommonInstall: PlugPlay running, waiting for pending installs`, then serial silent; `debug
+profile` put every sample in netstack's `VirtQueue::add_notify_wait_pop`.
+
+**Cause.** netstack drives virtio-net and e1000 directly, below NDIS. On the old hand-staged
+ramdisk `netkvm.sys` was absent, so when setup installed netkvm.inf for the virtio NIC its
+AddDevice failed `0xC0000034` and nothing noticed. With the file present netkvm started, reset
+the device under netstack, and netstack's synchronous TX wait spun forever. i386 carried the
+same double binding (e1000.sys under netstack's e1000) without wedging only because nothing
+after setup touched the NIC. QEMU adds a default NIC on every machine (`pc`: e1000, `virt`:
+virtio-net), so "plain smoke has no NIC" was never true.
+
+**Fix.** One driver per device: the NDIS miniport INFs for hardware netstack drives (all of
+netkvm.inf, e1000's 100E/100F models) stay off the media until netstack sits above NDIS (M11 in
+`smoltcp-netstack-design.md`).
+
+**Generalize.** A file that was missing was also a switch that was off. When a media change adds
+files, the failures it exposes are rarely in the files: they are in whatever those files'
+absence had been quietly disabling. Read the `[DA] AddDevice` lines of the old boot for the
+`0xC0000034`s; each one is a driver that will start binding.
+
+### A user thread returns to a small integer: a kernel APC ran one syscall late
+**Symptom.** arm64 conformance wedged around 106 s; just before it, a svchost thread died with
+`PC=LR=0x74` (UEXC-KILL). The thread was dhcpcsvc's `AdapterDiscoveryThread`, which never
+returns. 0x74 = 116 = netstack's IFEntry reply (92-byte fixed part + 24-byte description).
+
+**Cause.** An IOCTL completes through `IopCompleteRequest`, a special kernel APC that writes the
+caller's IO_STATUS_BLOCK. On x86 lowering IRQL on the way out of the syscall fires the APC
+interrupt, so the block is written before user code runs again. arm64's software APC bit only
+drained at a `KfLowerIrql`, and neither return to EL0 (SVC exit, IRQ-from-EL0 exit) drained a
+pending kernel APC — so the APC ran inside the thread's NEXT syscall and stored
+`Information=0x74` into a stack slot the program had reused for a saved LR. Instrumenting the
+SVC exit found `KernelApcPending` set with IRQL 0 and nothing disabling APCs on ordinary
+returns (`NtTestAlert`, `NtSetInformationThread`).
+
+**Fix.** `KiDeliverUserApcArm64` (SVC exit) delivers when either APC kind is pending
+(`KiDeliverApc(UserMode)` runs the kernel list first and touches the user list only when
+`UserApcPending`); `KiEL0IrqPreempt` drains kernel APCs before the IRQ returns to user mode.
+
+**Generalize.** A user-mode crash at a PC equal to a byte count is a status block written late.
+Check that every path back to user mode delivers kernel APCs.
+
 ## WoW64 / FEX: 32↔64 divergences
 
 Every entry here is one shape: **a size, offset or index that differs between guest and host.**
@@ -11845,6 +11929,33 @@ introduced at any heap exit — it is an external stray write.**
   device with no `addr=` takes the first free slot, the disk moves to slot 3, and Boot0001
   now names the new device. UEFI skips it silently and falls through to network boot.
 - **Fix:** pin rig devices to a free slot (`addr=0x8`). `VIBEOS_QEMU_XHCI=1` does.
+
+### x86 serial: the loader talks, then the kernel goes silent (no legacy COM1)
+
+**Symptom.** `[FLDR] phase: handoff to kernel` is the last serial line, yet the box
+reaches the desktop (HLT idle, Explorer on screen): smoke calls it HANG_TIMEOUT.
+Variant: user-mode lines (`[SMSS]`, `[CSRSS]`) arrive but every kernel-mode line
+(`ACPI v…`, `[KRNLBASE]`, `[WIN32K] shell ready`) is missing.
+
+**Cause.** x86 debug text reaches the wire through three writers, and only one of
+them reads `DEBUGPORT`:
+- `KdpStub` (kd64 `kdtrap.rs`) carries **user-mode** DbgPrint while real KD is off,
+  which is every boot except `/DEBUGPORT=COM2`.
+- rtl-diag's `DebugPrint` has a **ring-0 fast path** that polls the UART itself.
+- kd-rust's KD providers (`KdpSerialInit`) parse `DEBUGPORT`, but on x86 they run
+  only when real KD is on, so they are not the console.
+
+The first two wrote port 0x3F8 directly. On a machine whose UART is somewhere else
+(AMT serial-over-LAN, a BMC or a PCIe card, described by ACPI SPCR) they printed
+into nothing.
+
+**Fix.** Both now write `RtlpDebugConsolePort` (owned by rtl-diag so every image
+that links DebugPrint resolves it), which kd64's `KdInitSystem` sets from
+`DEBUGPORT=COM:0x<port>`. The loader produces that option when COMn is absent
+and SPCR names a 16550 in I/O space. Repro the whole chain with
+`VIBEOS_QEMU_HOSTILE=serial ./vibeos-cli smoke --arch amd64`. A breakpoint will
+not find this: the gdb toolkit relocates symbols from the kernel's own
+`[KRNLBASE]` serial line, which is exactly what goes missing.
 
 ### Localization techniques that repeatedly worked
 - **DbgPrint-bisect with REAL `DbgPrint`.** Translated `TRACE!`/`WARN!`/`DPRINT` are no-op
