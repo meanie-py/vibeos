@@ -176,7 +176,11 @@ rm -f "$RAMDISK_IMG"
 dd if=/dev/zero of="$RAMDISK_IMG" bs=1M count=$RAMDISK_SIZE_MB 2>/dev/null
 # One sector per cluster (mformat -F's default): -c 8 would shrink the FAT, but
 # FreeLDR's FAT reader cannot read it.
-mformat -i "$RAMDISK_IMG" -F -v REACTOS ::
+# -m 0xf8 on both images: at a size that is an exact CHS multiple mtools knows (315MB is
+# 640 x 16 x 63), mformat picks a superfloppy layout instead (media 0xF0, drive 0x00),
+# and AAVMF then never offers the disk as a boot device: the boot fell through to PXE
+# and HTTP and hung, purely because the tree grew by a few MB (2026-10-04).
+mformat -i "$RAMDISK_IMG" -F -m 0xf8 -v REACTOS ::
 mcopy -s -i "$RAMDISK_IMG" "$STAGE_DIR"/* ::/
 
 # --- FEX hello-compute probe (opt-in, VIBEOS_FEX=1) ------------------------
@@ -451,7 +455,7 @@ BOOT_SIZE_MB=$((RAMDISK_SIZE_MB + 16))
 echo "[*] Creating boot.img (${BOOT_SIZE_MB}MB FAT32)..."
 rm -f "$BOOT_IMG"
 dd if=/dev/zero of="$BOOT_IMG" bs=1M count=$BOOT_SIZE_MB 2>/dev/null
-mformat -i "$BOOT_IMG" -F -v ROSBOOT ::
+mformat -i "$BOOT_IMG" -F -m 0xf8 -v ROSBOOT ::
 
 # Create EFI directory
 mmd -i "$BOOT_IMG" ::/EFI
