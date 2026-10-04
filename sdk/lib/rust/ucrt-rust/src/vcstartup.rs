@@ -172,7 +172,7 @@ unsafe fn fastfail_stack_cookie() -> ! {
     #[cfg(target_arch = "aarch64")]
     core::arch::asm!("brk #0xF003", in("x0") 2u64, options(nostack));
     #[allow(clippy::empty_loop)]
-    loop {}
+    loop {} // nolint: silent-failure (after a fast fail, which the kernel never returns from)
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
