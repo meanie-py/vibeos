@@ -52,12 +52,24 @@ pub unsafe extern "system" fn KsecGenRandom(
 pub unsafe extern "system" fn KsecReadMachineSpecificCounters(
     MachineSpecificCounters: PKSEC_MACHINE_SPECIFIC_COUNTERS,
 ) {
-    const PF_RDTSC_INSTRUCTION_AVAILABLE: u32 = 8;
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        const PF_RDTSC_INSTRUCTION_AVAILABLE: u32 = 8;
 
-    /* Check if RDTSC is available */
-    if ExIsProcessorFeaturePresent(PF_RDTSC_INSTRUCTION_AVAILABLE) != 0 {
-        /* Read the TSC value */
-        (*MachineSpecificCounters).Tsc = __rdtsc();
+        /* Check if RDTSC is available */
+        if ExIsProcessorFeaturePresent(PF_RDTSC_INSTRUCTION_AVAILABLE) != 0 {
+            /* Read the TSC value */
+            (*MachineSpecificCounters).Tsc = __rdtsc();
+        }
+    }
+    // The C's _M_ARM64 arm is unconditional: PF_RDTSC_INSTRUCTION_AVAILABLE is
+    // an x86 feature bit, so gating on it (as this port once did on every arch)
+    // left Tsc unset on arm64 and the counter out of the entropy pool.
+    #[cfg(target_arch = "aarch64")]
+    {
+        /* Use the performance counter as entropy source */
+        let pc = KeQueryPerformanceCounter(core::ptr::null_mut());
+        (*MachineSpecificCounters).Tsc = pc.QuadPart as _;
     }
 }
 
