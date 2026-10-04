@@ -231,6 +231,29 @@ pub unsafe extern "C" fn KiTbLazyIdleExit() {
     crate::ke::ipi::KiSmpApMarkerFlush((*(KeGetCurrentPrcb())).Number as u32);
 }
 
+/// Device-interrupt entry (trap.S KiInterruptDispatch, before the ISR runs).
+///
+/// The lazy protocol's premise was "a lazy CPU touches only stable kernel mappings",
+/// but a CPU blocked in hlt is woken by DEVICE interrupts, and an ISR touches whatever
+/// its driver mapped -- the IDE ISR copies PIO sector data through the system-VA
+/// mapping of the request's MDL. Senders skip a lazy CPU, so that CPU still held a
+/// translation for a system VA the pool had since recycled; the sector data went to
+/// the old physical page. At amd64 -smp 2 that showed as successful 16 KB image reads
+/// leaving their pages all zero (every one on CPU 1), csrss executing zeros, filesystem
+/// metadata reading back corrupt (0x6B/STATUS_DISK_CORRUPT_ERROR), and wild kernel PCs
+/// from the pages that took the misdirected writes. i386 has no lazy state and never
+/// showed it. Only the idle-exit and DPC paths serviced the deferral before; this is
+/// the third. Check first so a non-lazy CPU pays one load, not an atomic RMW.
+#[cfg(feature = "smp")]
+#[no_mangle]
+pub unsafe extern "C" fn KiTbLazyIdleExitForInterrupt() {
+    use core::sync::atomic::Ordering;
+    let me = (*(KeGetCurrentPrcb())).SetMember;
+    if KiTbLazyIdleSet.load(Ordering::SeqCst) & me != 0 {
+        KiTbLazyIdleExit();
+    }
+}
+
 /// 0xE1 receive body. Called from trap.S's KiIpiInterrupt with cr8 still at
 /// the interrupted level — raise/EOI/lower here, mirroring
 /// KiDpcInterruptHandler (ExitTrap asserts cr8 is restored on return).
