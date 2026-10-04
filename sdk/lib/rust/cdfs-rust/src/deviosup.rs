@@ -1467,6 +1467,14 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
                         if Blocks > CD_SEC_CHUNK_BLOCKS {
                             Blocks = CD_SEC_CHUNK_BLOCKS;
                         }
+                    } else {
+                        // The C's `#ifdef __REACTOS__ ... } else { Blocks = CD_SEC_CHUNK_BLOCKS; }`:
+                        // a disk-based ISO has no TOC. This arm was translated as
+                        // `cfg(not(feature = "reactos"))`, so with `reactos` on (the default) and
+                        // no TOC, Blocks stayed 0 and the first sector-cache read raised
+                        // STATUS_INVALID_PARAMETER -- every disk-based ISO mount failed, surfacing
+                        // as 0x6B/STATUS_FILE_CORRUPT_ERROR at boot.
+                        Blocks = CD_SEC_CHUNK_BLOCKS;
                     }
                     #[cfg(not(feature = "reactos"))]
                     {

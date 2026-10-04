@@ -55,6 +55,9 @@ _PINNED_ENV = (
     "VIBEOS_QEMU_EXTRA_ARGS",
     "VIBEOS_TRIPWIRE",
     "VIBEOS_UP_DEFAULT_BOOT",
+    # x86 records over usb-storage: blkreplay refuses the ATAPI ide-cd the default boot
+    # uses, and the recorded device set must be the replayed one.
+    "VIBEOS_QEMU_BOOT_TRANSPORT",
 )
 
 
