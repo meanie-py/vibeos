@@ -382,6 +382,15 @@ static inline char *make_temp_dir(void)
     char *name;
     const char *tmpdir = NULL;
 
+#if !(defined(__REACTOS__) && defined(_WIN32))
+    /* vibeos: never scratch in the current directory. Wine's tools try "tmp%08x"
+     * in the cwd first, and our IDL/RC/spec steps run with their cwd in the SOURCE
+     * tree (sdk/include/psdk, ...): every widl call made and removed a directory
+     * there, so any tool walking the tree concurrently (a gate's tooling pass next
+     * to its builds) died on a vanished tmp* dir. */
+    if (!(tmpdir = getenv("TMPDIR")) || !*tmpdir) tmpdir = "/tmp";
+#endif
+
     for (count = 0; count < 0x8000; count++)
     {
         if (tmpdir)

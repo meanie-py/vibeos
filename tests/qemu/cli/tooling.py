@@ -156,6 +156,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_retarget_cargo_depfile.py"),
     (".", ".", "tools/test_rust_module_tree.py"),
     (".", ".", "tools/test_scan_self_recursive.py"),
+    (".", ".", "tools/test_scan_export_thunks.py"),
     (".", ".", "tools/test_scan_dropped_asserts.py"),
     (".", ".", "tools/test_strip_msvc_cmake.py"),
     # The substrate half of scan_extern_decl_drift has no other oracle: its
