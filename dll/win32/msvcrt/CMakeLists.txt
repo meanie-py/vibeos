@@ -271,7 +271,7 @@ set(MSVCRT_CRT_RUST_LIB "${MSVCRT_RUST_COHAB_LIB}")
 # missing the day the string family moved into it. verify_ucrtbase_cohab.py
 # derives the closure from the manifests and fails if this list and it disagree.
 set(MSVCRT_CRT_RUST_CRATES
-    msvcrt-crt-cargo cnt-rust crt-portable-rust crt-shared-rust msvcrt-crt-rust
+    msvcrt-crt-cargo cnt-rust musl-math crt-portable-rust crt-shared-rust msvcrt-crt-rust
     msvcrt-sys panic-common)
 set(MSVCRT_CRT_RUST_GLOBS)
 set(MSVCRT_CRT_RUST_MANIFESTS)

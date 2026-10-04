@@ -207,7 +207,7 @@ pub extern "C" fn log2(x: f64) -> f64 {
     } else if x < 0.0 {
         set_errno(EDOM);
     }
-    libm::log2(x)
+    musl_math::log2(x).0
 }
 
 #[no_mangle]
@@ -218,7 +218,7 @@ pub extern "C" fn log2f(x: f32) -> f32 {
     } else if x < 0.0 {
         set_errno(EDOM);
     }
-    libm::log2f(x)
+    musl_math::log2f(x).0
 }
 
 /// `fma`: one rounding (stubs.c computed `x * y + z`, two). An invalid operation -- a NaN
@@ -862,4 +862,31 @@ pub extern "C" fn _Cbuild(re: f64, im: f64) -> Dcomplex {
 #[inline(never)]
 pub extern "C" fn creal(z: Dcomplex) -> f64 {
     z.val[0]
+}
+
+// ── the C89 functions' error contract ───────────────────────────────────────
+
+/// cnt-rust's math exports (`exp`, `log`, `pow`, ... -- its `crt-math-errors` feature)
+/// report a domain/pole/range error here. Wine's `math_error`: the user's `_matherr` sees
+/// it first and may replace the result; if it declines, `_DOMAIN` sets EDOM and
+/// `_SING`/`_OVERFLOW` ERANGE (`_UNDERFLOW` sets nothing).
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn __cnt_math_error(
+    type_: c_int,
+    name: *const c_char,
+    arg1: f64,
+    arg2: f64,
+    retval: f64,
+) -> f64 {
+    let mut e = crate::ucrt_reactos::Exception { type_, name: name as *mut c_char, arg1, arg2, retval };
+    if crate::ucrt_reactos::__acrt_invoke_user_matherr(&mut e) != 0 {
+        return e.retval;
+    }
+    match type_ {
+        1 => set_errno(EDOM),
+        2 | 3 => set_errno(ERANGE),
+        _ => {}
+    }
+    e.retval
 }

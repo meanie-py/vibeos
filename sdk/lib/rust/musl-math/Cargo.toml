@@ -1,0 +1,21 @@
+# musl-math — musl's current exp/exp2/log/log2/pow (and f32 forms), ported to Rust.
+#
+# These are ARM's "optimized-routines" (Copyright (c) 2017-2018 Arm Limited, MIT), which
+# musl adopted in 2018 and glibc ships too. The `libm` crate still carries FreeBSD msun's
+# older pow/exp/log for these: under 1 ulp, but not the nearest value in ~10% of
+# pow(10, n) (62 of 601 measured; glibc 2). msvcrt's i386 x87 pow -- and Windows' -- get
+# those right, so the CRTs take these five from here and everything else from `libm`.
+#
+# The port follows the non-FMA arms on every arch (no __FP_FAST_FMA), so results are
+# identical across i386/amd64/arm64 and bit-exact against the musl C compiled with
+# -ffp-contract=off, which is how cnt-difftest grades it. No f64 here crosses a
+# Rust-ABI boundary that rustc would reject: like `libm`, this crate cannot build on the
+# builtin i686 triple with -sse, and its dependents gate it the same way.
+[package]
+name = "musl-math"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+path = "src/lib.rs"

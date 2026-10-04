@@ -82,7 +82,7 @@ set(UCRT_SHARED_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcrt_shared_cargo.a")
 # cnt-rust's math were both invisible to it). verify_ucrtbase_cohab.py derives the
 # closure from the manifests and fails if this list and it disagree.
 set(UCRT_SHARED_RUST_CRATES
-    crt-shared-cargo cnt-rust crt-portable-rust crt-shared-rust panic-common msvcrt-sys
+    crt-shared-cargo cnt-rust musl-math crt-portable-rust crt-shared-rust panic-common msvcrt-sys
     ucrt-rust varargs-rust)
 set(UCRT_SHARED_RUST_GLOBS)
 set(UCRT_SHARED_RUST_MANIFESTS)

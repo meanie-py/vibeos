@@ -138,6 +138,8 @@ members = [
     "cnt-ctype",
     "cnt-difftest",
     "cnt-rust",
+    "musl-math",
+    "musl-math-difftest",
     "cnt-rust-lib",
     "crt-startup-rust",
     "crt-dllmain-rust",
