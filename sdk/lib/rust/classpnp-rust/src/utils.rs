@@ -2963,7 +2963,10 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
 
                 SrbSetCdbLength((Srb).cast(), 10);
 
-                let cdb = (*(Srb as *mut _SCSI_REQUEST_BLOCK)).Cdb.as_mut_ptr() as *mut _CDB;
+                // SrbGetCdb: for a STORAGE_REQUEST_BLOCK (the SrbType branch above)
+                // the CDB lives in the SrbExData, not at SCSI_REQUEST_BLOCK.Cdb; the
+                // direct field cast wrote the UNMAP CDB over the SRB_EX header.
+                let cdb = SrbGetCdb((Srb).cast()) as *mut _CDB;
                 (*cdb).UNMAP.as_mut().OperationCode = 0x42u8; // SCSIOP_UNMAP
                 (*cdb).UNMAP.as_mut().set_Anchor(0);
                 (*cdb).UNMAP.as_mut().set_GroupNumber(0);
@@ -3573,14 +3576,32 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
     maxSlabs = (maxBufferSize - core::mem::size_of::<LBA_STATUS_LIST_HEADER>() as u32) / core::mem::size_of::<LBA_STATUS_DESCRIPTOR>() as u32;
     slabsPerCommand = core::cmp::min(requestedSlabs, maxSlabs as u64);
 
-    lbaStatusSize = core::mem::size_of::<LBA_STATUS_LIST_HEADER>() as u32
-        + (slabsPerCommand as u32 * core::mem::size_of::<LBA_STATUS_DESCRIPTOR>() as u32);
-
-    lbaStatusListHeader = ExAllocatePoolWithTag(
-        NonPagedPoolNx,
-        lbaStatusSize as usize,
-        CLASS_TAG_LB_PROVISIONING,
-    ) as *mut LBA_STATUS_LIST_HEADER;
+    // ARM has specific alignment requirements (the C's `_ARM_ || _ARM64_` arm,
+    // which every other VPD/capacity allocation in this file already mirrors).
+    #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
+    {
+        lbaStatusSize = ALIGN_UP_BY(
+            (core::mem::size_of::<LBA_STATUS_LIST_HEADER>() as u32
+                + (slabsPerCommand as u32 * core::mem::size_of::<LBA_STATUS_DESCRIPTOR>() as u32))
+                as _,
+            KeGetRecommendedSharedDataAlignment() as _,
+        ) as _;
+        lbaStatusListHeader = ExAllocatePoolWithTag(
+            NonPagedPoolNxCacheAligned,
+            lbaStatusSize as usize,
+            CLASS_TAG_LB_PROVISIONING,
+        ) as *mut LBA_STATUS_LIST_HEADER;
+    }
+    #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
+    {
+        lbaStatusSize = core::mem::size_of::<LBA_STATUS_LIST_HEADER>() as u32
+            + (slabsPerCommand as u32 * core::mem::size_of::<LBA_STATUS_DESCRIPTOR>() as u32);
+        lbaStatusListHeader = ExAllocatePoolWithTag(
+            NonPagedPoolNx,
+            lbaStatusSize as usize,
+            CLASS_TAG_LB_PROVISIONING,
+        ) as *mut LBA_STATUS_LIST_HEADER;
+    }
 
     if lbaStatusListHeader.is_null() {
         TracePrint(
@@ -5075,7 +5096,7 @@ pub unsafe extern "C" fn ClasspGetCopyOffloadMaxDuration(
     let status: NTSTATUS;
 
     queryTable[0].Flags = RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK;
-    queryTable[0].Name = CLASSP_REG_COPY_OFFLOAD_MAX_TARGET_DURATION.as_ptr() as *const u16;
+    queryTable[0].Name = crate::glue::regw::CLASSP_REG_COPY_OFFLOAD_MAX_TARGET_DURATION.as_ptr() as *const u16;
     queryTable[0].EntryContext = &mut value as *mut ULONG as *mut core::ffi::c_void;
     queryTable[0].DefaultType = (REG_DWORD as u32) << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT | REG_NONE as u32;
     queryTable[0].DefaultData = &value as *const ULONG as *mut core::ffi::c_void;

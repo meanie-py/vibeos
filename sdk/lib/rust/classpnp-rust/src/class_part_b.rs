@@ -1090,8 +1090,8 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                             ClassSetDeviceParameter(
                                 fdoExtension,
-                                CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
-                                CLASSP_REG_WRITE_CACHE_VALUE_NAME.as_ptr() as PWSTR,
+                                crate::glue::regw::CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
+                                crate::glue::regw::CLASSP_REG_WRITE_CACHE_VALUE_NAME.as_ptr() as PWSTR,
                                 (*info).WriteCacheEnableOverride as ULONG
                             );
                         }
@@ -1100,8 +1100,8 @@ pub unsafe extern "system" fn ClassDeviceControl(
 
                         ClassSetDeviceParameter(
                             fdoExtension,
-                            CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
-                            CLASSP_REG_REMOVAL_POLICY_VALUE_NAME.as_ptr() as PWSTR,
+                            crate::glue::regw::CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
+                            crate::glue::regw::CLASSP_REG_REMOVAL_POLICY_VALUE_NAME.as_ptr() as PWSTR,
                             if (*info).DeviceHotplug != 0 { RemovalPolicyExpectSurpriseRemoval } else { RemovalPolicyExpectOrderlyRemoval }
                         );
                     }
