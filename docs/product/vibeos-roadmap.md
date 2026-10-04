@@ -772,8 +772,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   under `cdrom-rust init.rs:313`. Bisected to the constant alone (the commit's registry
   reads and CREATE context are innocent). The constant is held at 0x0003 with a comment;
   owed: why start fails on a TYPE_ALL-style answer, and why releasing a request the
-  driver just created reads past it (likely a context-size mismatch between
-  `CDROM_REQUEST_CONTEXT_TYPE_INFO` and the struct). x64 lane.
+  driver just created reads past it. Not a context-size mismatch: the three
+  `CDROM_REQUEST_CONTEXT` type infos all use `size_of::<CDROM_REQUEST_CONTEXT>()`, and the
+  same `DeviceClaimRelease` claims successfully on every boot, so suspect an object freed
+  earlier on the new failure path. x64 lane.
 - **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
   updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
   early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
