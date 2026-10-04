@@ -2554,7 +2554,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   upstream treats "Windows host that does not publish the CPU index" as a programming error.
   Worth a guest rung of its own; it is not what kills lua32.
 
-  **CORROBORATED by recovered July work, which reached the mechanism FIRST and explains the
+  **NOT corroborated after all — the July analysis names two mechanisms that do not operate in
+  our build (checked 2026-10-03). See `m14-startup-flake/README.md` for the full working.**
+  Short version: `GuardSignalDeferringSection` is `#else`-branched to a bare lock with no
+  deferred-signal refcount on `_WIN32` (`SignalScopeGuards.h:259`), so `CompileBlock` defers
+  nothing and a fault inside it reaches the VEH normally; and `MmWorkingSetManager`
+  (`ARM3/wslist.rs:504`) has no live caller — `ke/balmgr.rs` has its calls commented out under
+  "NO WS Management Yet!" — so nothing trims a working set and no page can be "evicted between
+  the prefault and `RtlCreateActivationContext`". The empirical numbers may still be real; the
+  explanation is refuted, and **this entry previously cited it as independent corroboration on
+  the strength of its prose alone.** Kept below as the historical record.
+
+  **Recovered July work, which reached A mechanism FIRST and appeared to explain the
   size correlation.** `docs/engineering/active-lanes/m14-startup-flake/` holds three patches
   recovered from a stale subagent worktree (`fex-arm-m4`, last touched 2026-07-17) before it was
   removed. Their analysis, arrived at independently and two months earlier: FEX's block compiler

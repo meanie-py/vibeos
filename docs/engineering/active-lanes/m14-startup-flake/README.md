@@ -81,3 +81,50 @@ measurement with an expiry date; re-run the check, do not read the row.**
   diff — expect to rewrite against current source.
 - **None of this has been re-verified on the current box.** The artifacts, and the machine, died
   in the 2026-09-13 disk failure. The measured 3/6 rate is a July number.
+
+
+## BOTH halves of the July mechanism are unsupported in the build we ship (checked 2026-10-03)
+
+Preserved here as evidence, but **do not build on this analysis without re-deriving it.** It
+was questioned on the grounds that "host contention" is doing unearned work in it — a guest's
+page residency is decided inside the VM, and host load reaches it only through narrow channels
+(timer-interrupt placement, host memory pressure), none of which obviously makes a *specific*
+page non-resident. Following that up falsified not the contention framing but the two concrete
+mechanisms underneath it:
+
+**1. "inside a signal-deferring section" — a NO-OP on Windows.**
+`FEXCore/include/FEXCore/Utils/SignalScopeGuards.h` splits at `#ifndef _WIN32` (line 18) with
+`#else` at 234 and `#endif` at 269. **We compile the 234-269 block**, where
+
+        template<template<typename> class LockType = std::unique_lock, typename MutexType>
+        static auto GuardSignalDeferringSection(MutexType& mutex, InternalThreadState*, uint64_t = ~0ULL) {
+          return LockType<MutexType> {mutex};     // that is the whole body
+        }
+
+is a bare lock with **no deferred-signal refcount**. The POSIX branch (line 211) wraps a
+`DeferredSignalRefCountGuard`; the Windows branch does not — Windows has no POSIX signals, FEX
+uses a VEH. So `CompileBlock`'s `GuardSignalDeferringSection(CodeInvalidationMutex, Thread)`
+(`Core.cpp:852`, `:954`) defers nothing, and a page fault taken inside it is delivered to the
+VEH like any other. That is consistent with what we now measure: 539 access violations inside
+`LookupCache` across a 10-boot farm, every one recovered.
+
+**2. "the pager evicted the ntdll32 code pages" — we have no pager that does that.**
+`MmWorkingSetManager` is fully implemented (`ARM3/wslist.rs:504`, it really does trim under
+`MmAvailablePages < MmMinimumFreePages`) and has **no live caller**. The balance-set manager's
+two calls are commented out — `ke/balmgr.rs:404,415`, `// MmWorkingSetManager();` under
+`// NO WS Management Yet!`, inherited from upstream ReactOS — and `git log -S` over those lines
+shows them only ever touched by the Rust translation. Nothing in this kernel trims a working
+set, so pages cannot be evicted between the patch's prefault and `RtlCreateActivationContext`.
+
+**What survives.** The *empirical* numbers may still be real — 3/6 guests dying, improving to
+1/6 with a one-time touch and to 0 with `NtLockVirtualMemory` — and if prefaulting genuinely
+helped then something about a non-resident page genuinely was fatal. But that tree is gone
+(2026-09-13 disk failure), the numbers have never been re-derived, and the *explanation*
+attached to them is now known to name two things that do not operate here. Treat the patches as
+an untested empirical lead and the prose as refuted.
+
+**The lesson, which is the reusable part.** This analysis was preserved, cross-linked from the
+roadmap, and cited as independent corroboration of a 2026-09 reading — on the strength of its
+confident mechanism prose, which nobody checked against the `#ifdef` it depends on. Two greps
+settled it. A second source agreeing with you is worth exactly what its evidence is worth, and
+"arrived at independently and two months earlier" is not evidence.
