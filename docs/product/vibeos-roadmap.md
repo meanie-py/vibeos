@@ -568,6 +568,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **fastfat: the free-dirent bitmap goes stale, then every create in that directory raises
+  STATUS_FILE_CORRUPT_ERROR** (OPEN, 2026-10-04). Wine's ole32 `storage32` test (olewinetest
+  payload, amd64) drives about 100,000 raises in 120 s. They are caught, so the test times out
+  rather than crashing, but the files are never created.
+  - Raiser: `FatCreateNewDirent`'s "assert that the dirents are in fact unused" check
+    (dirsup.rs:396). `FreeDirentBitmap` calls a slot free that is in use on disk.
+  - `FatCreateNewDirent` and `FatDeleteDirent` both read faithful to dirsup.c. The suspect is
+    another path that writes a dirent without setting its bit: rename, tunnelling, or the
+    rescan.
+  - Found with `RtlRaiseStatus`'s new backtrace (image base + RVA per frame). For an amd64
+    kernel frame, symbolize against `ntkrnlmp.exe`.
 - **rostests i386 build: 5 targets fail under llvm-mingw** (OPEN, 2026-10-04). After the
   shell32/shlwapi/ole32 export fixes (`--rostests`, `ninja -k 0`): `dllimport_test.dll`
   (lld: framedyn `CHString` "should not refer to special section 0"), `menuaccels.rc` (llvm-rc
