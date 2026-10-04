@@ -66,6 +66,28 @@ unsafe fn FindAcpiBios() -> *mut RSDP_DESCRIPTOR {
     rsdp
 }
 
+/// The I/O port of the console UART an ACPI SPCR describes, or 0. Real PCs
+/// without a legacy COM1 publish their console there: Intel AMT
+/// serial-over-LAN, a BMC, a PCIe serial card. The debug channel falls back to
+/// it when the configured COM port is absent (debug.rs).
+#[cfg(all(feature = "uefi", any(target_arch = "x86", target_arch = "x86_64")))]
+#[no_mangle]
+pub unsafe extern "C" fn UefiSpcrConsolePort() -> ULONG {
+    if GlobalSystemTable.is_null() {
+        return 0;
+    }
+    let rsdp = FindAcpiBios();
+    if rsdp.is_null() {
+        return 0;
+    }
+    let rsdp = core::ptr::read_unaligned(rsdp);
+    if rsdp.revision < 2 {
+        return 0;
+    }
+    crate::arm64_serial_acpi::spcr_io_from_xsdt(rsdp.xsdt_physical_address)
+        .map_or(0, |port| port as ULONG)
+}
+
 unsafe fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *mut ULONG) {
     let mut BiosKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let PartialResourceList: PCM_PARTIAL_RESOURCE_LIST;

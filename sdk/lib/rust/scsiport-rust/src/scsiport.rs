@@ -1478,10 +1478,12 @@ pub unsafe extern "C" fn ScsiPortNotification_v(
         }
 
         BusChangeDetected => {
-            DbgPrint(
-                b"UNIMPLEMENTED SCSI Notification called: BusChangeDetected!\n\0".as_ptr()
-                    as *const i8,
-            );
+            // Unimplemented in ReactOS's scsiport too. A miniport that sees a
+            // device arrive or leave (uniata on SATA hotplug) asks for a rescan:
+            // flag it here, at interrupt level, and ScsiPortDpcForIsr turns it
+            // into IoInvalidateDeviceRelations(BusRelations), whose handler
+            // (FdoHandleDeviceRelations) re-runs FdoScanAdapter.
+            (*DeviceExtension).InterruptData.Flags |= SCSI_PORT_BUS_CHANGE_DETECTED;
         }
 
         _ => {
@@ -1496,6 +1498,10 @@ pub unsafe extern "C" fn ScsiPortNotification_v(
 
     (*DeviceExtension).InterruptData.Flags |= SCSI_PORT_NOTIFICATION_NEEDED;
 }
+
+/// InterruptData.Flags bit for a pending BusChangeDetected (not a ReactOS
+/// flag: the SCSI_PORT_* values stop at 0x10000).
+pub const SCSI_PORT_BUS_CHANGE_DETECTED: u32 = 0x0002_0000;
 
 #[no_mangle]
 pub unsafe extern "system" fn ScsiPortValidateRange(
@@ -2355,9 +2361,10 @@ unsafe fn SpiCreatePortConfig(
                     (*InternalConfigInfo).AdapterNumber,
                 );
 
-                UnicodeString.Length = 0;
-                UnicodeString.MaximumLength = 0;
-                UnicodeString.Buffer = StrBuffer.as_mut_ptr() as PWSTR;
+                // RtlInitUnicodeString: a zero-length name relative to RootKey
+                // opens RootKey itself, so the ScsiAdapter\N subkey was never
+                // the key being parsed.
+                RtlInitUnicodeString(&mut UnicodeString, StrBuffer.as_ptr());
 
                 ObjectAttributes = core::mem::zeroed::<_OBJECT_ATTRIBUTES>();
                 ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
@@ -2428,9 +2435,9 @@ unsafe fn SpiCreatePortConfig(
                 (*InternalConfigInfo).AdapterNumber,
             );
 
-            UnicodeString.Length = 0;
-            UnicodeString.MaximumLength = 0;
-            UnicodeString.Buffer = DeviceBuffer.as_mut_ptr() as PWSTR;
+            // RtlInitUnicodeString: with Length 0 this opened the service key
+            // itself instead of its DeviceN subkey, and parsed that.
+            RtlInitUnicodeString(&mut UnicodeString, DeviceBuffer.as_ptr());
 
             ObjectAttributes = core::mem::zeroed::<_OBJECT_ATTRIBUTES>();
             ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;

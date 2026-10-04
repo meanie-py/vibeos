@@ -54,6 +54,13 @@ unsafe extern "system" fn ITypeLib2_fnAddRef(iface: *mut ITypeLib2) -> ULONG {
 
 pub(super) unsafe extern "system" fn ITypeLib2_fnRelease(iface: *mut ITypeLib2) -> ULONG {
     let This = impl_from_ITypeLib2(iface);
+    // Wine 10.0: take the cache lock BEFORE the decrement and hold it through
+    // the teardown. Locking only around list_remove left a window in which
+    // TLB_ReadTypeLib, holding the lock, found this typelib in the cache and
+    // AddRef'd it while we were already freeing it. The lock is a
+    // CRITICAL_SECTION, so the recursive Release of imported typelibs below
+    // re-enters it safely.
+    let _ = super::msft::tlb_cache_lock();
     let ref_ = InterlockedDecrement(&raw mut (*This).ref_) as ULONG;
 
     TRACE!();
@@ -62,11 +69,9 @@ pub(super) unsafe extern "system" fn ITypeLib2_fnRelease(iface: *mut ITypeLib2) 
         /* remove cache entry */
         if !(*This).path.is_null() {
             TRACE!();
-            let _ = super::msft::tlb_cache_lock();
             if !(*This).entry.next.is_null() {
                 list_remove(&raw mut (*This).entry);
             }
-            super::msft::tlb_cache_unlock();
             heap_free((*This).path as *mut c_void);
         }
         TRACE!();
@@ -152,9 +157,11 @@ pub(super) unsafe extern "system" fn ITypeLib2_fnRelease(iface: *mut ITypeLib2) 
         }
         heap_free((*This).typeinfos as *mut c_void);
         heap_free(This as *mut c_void);
+        super::msft::tlb_cache_unlock();
         return 0;
     }
 
+    super::msft::tlb_cache_unlock();
     ref_
 }
 
@@ -674,15 +681,23 @@ pub unsafe fn TLB_copy_all_custdata(
 
     let mut cdi = (*pCustData).prgCustData;
     let mut cur = (*custdata_list).next;
+    let mut hr = S_OK;
     while cur != custdata_list {
         let pCData = list_entry!(cur, TLBCustData, entry);
         (*cdi).guid = *TLB_get_guid_null((*pCData).guid);
-        VariantCopy(&raw mut (*cdi).varValue, &raw const (*pCData).data);
+        // Wine 10.0: VariantCopy CLEARS its destination first, and this one
+        // is fresh CoTaskMemAlloc garbage, so initialise it; and report a
+        // failed copy instead of S_OK.
+        VariantInit(&raw mut (*cdi).varValue);
+        hr = VariantCopy(&raw mut (*cdi).varValue, &raw const (*pCData).data);
+        if FAILED(hr) {
+            break;
+        }
         cdi = cdi.add(1);
         cur = (*cur).next;
     }
 
-    S_OK
+    hr
 }
 
 /* ITypeLib2::GetAllCustData

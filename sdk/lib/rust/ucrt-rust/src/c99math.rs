@@ -36,6 +36,8 @@ extern "C" {
     fn _errno() -> *mut c_int;
     // cnt-rust's, the MSVC `_logb` contract (an infinity keeps its sign).
     fn _logb(x: f64) -> f64;
+    // cnt-rust's, which reports overflow and underflow to `_matherr`.
+    fn ldexp(x: f64, n: c_int) -> f64;
 }
 
 #[inline(always)]
@@ -207,7 +209,7 @@ pub extern "C" fn log2(x: f64) -> f64 {
     } else if x < 0.0 {
         set_errno(EDOM);
     }
-    libm::log2(x)
+    musl_math::log2(x).0
 }
 
 #[no_mangle]
@@ -218,7 +220,7 @@ pub extern "C" fn log2f(x: f32) -> f32 {
     } else if x < 0.0 {
         set_errno(EDOM);
     }
-    libm::log2f(x)
+    musl_math::log2f(x).0
 }
 
 /// `fma`: one rounding (stubs.c computed `x * y + z`, two). An invalid operation -- a NaN
@@ -333,7 +335,9 @@ pub extern "C" fn ilogbf(x: f32) -> c_int {
 #[inline(never)]
 pub extern "C" fn logb(x: f64) -> f64 {
     if x == 0.0 {
+        // Here, not through `_logb`, which reports its pole to `_matherr`.
         set_errno(ERANGE);
+        return f64::NEG_INFINITY;
     }
     unsafe { _logb(x) }
 }
@@ -862,4 +866,51 @@ pub extern "C" fn _Cbuild(re: f64, im: f64) -> Dcomplex {
 #[inline(never)]
 pub extern "C" fn creal(z: Dcomplex) -> f64 {
     z.val[0]
+}
+
+// ── the C89 functions' error contract ───────────────────────────────────────
+
+/// cnt-rust's math exports (`exp`, `log`, `pow`, ... -- its `crt-math-errors` feature)
+/// report a domain/pole/range error here. Wine's `math_error`: the user's `_matherr` sees
+/// it first and may replace the result; if it declines, `_DOMAIN` sets EDOM and
+/// `_SING`/`_OVERFLOW` ERANGE (`_UNDERFLOW` sets nothing).
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn __cnt_math_error(
+    type_: c_int,
+    name: *const c_char,
+    arg1: f64,
+    arg2: f64,
+    retval: f64,
+) -> f64 {
+    // A report msvcrt makes and msvcr140 dropped (atan/tanh of a NaN).
+    if type_ & 0x100 != 0 {
+        return retval;
+    }
+    let mut e = crate::ucrt_reactos::Exception { type_, name: name as *mut c_char, arg1, arg2, retval };
+    if crate::ucrt_reactos::__acrt_invoke_user_matherr(&mut e) != 0 {
+        return e.retval;
+    }
+    match type_ {
+        1 => set_errno(EDOM),
+        2 | 3 => set_errno(ERANGE),
+        _ => {}
+    }
+    e.retval
+}
+
+/// `_scalb`: Wine's, which is `ldexp` -- so, unlike `scalbn`, it reports overflow and
+/// underflow to `_matherr` (Wine's `test_math_errors` checks `_scalb(1, 1e9)`).
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn _scalb(x: f64, n: c_long) -> f64 {
+    unsafe { ldexp(x, n) }
+}
+
+/// `_scalbf`: `_scalb` in `float`.
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn _scalbf(x: f32, n: c_long) -> f32 {
+    unsafe { ldexp(x as f64, n) as f32 }
 }

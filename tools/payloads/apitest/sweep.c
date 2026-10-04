@@ -22,6 +22,7 @@
  * tests that exist.
  */
 #include <windows.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -33,6 +34,7 @@ ULONG __cdecl DbgPrint(const char *Format, ...);
 
 #define MAX_SUBTESTS      256
 #define MAX_SUBTEST_NAME  64
+#define SWEEP_LINE_MAX    512
 
 struct pump_ctx
 {
@@ -193,7 +195,10 @@ static void load_child_cwd(const char *bindir)
 static int run_child(const char *bindir, const char *suite, const char *arg,
                      struct pump_ctx *ctx, DWORD timeout_ms)
 {
-    char exepath[MAX_PATH], cmdline[MAX_PATH + MAX_SUBTEST_NAME + 8];
+    /* A list line is "<exe> <rest>", and <rest> may be a whole command line
+     * (olewinetest's `reg.exe add "HKLM\...\Image File Execution Options\..."`),
+     * not just a subtest name: size it for SWEEP_LINE_MAX. */
+    char exepath[MAX_PATH], cmdline[MAX_PATH + SWEEP_LINE_MAX + 8];
     SECURITY_ATTRIBUTES sa;
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -467,10 +472,59 @@ static void run_suite(const char *bindir, const char *suite,
     ++*launched;
 }
 
+/* The LiveCD's setup.exe (syssetup InstallLiveCD) registers COM components --
+ * actxprxy's proxy/stubs among them -- in the background, AFTER auto-start, and on a
+ * slow boot after the sweep has begun. A suite racing it sees REGDB_E_IIDNOTREG:
+ * ole32's compobj test failed CoRegisterClassObject(LOCAL_SERVER) on exactly that
+ * whenever it started before "InstallLiveCD: registering components" (2026-10-04).
+ * So wait for setup.exe to exit. No setup.exe (an installed system) passes at once. */
+static int setup_running(void)
+{
+    PROCESSENTRY32W pe;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    int found = 0;
+
+    if (snap == INVALID_HANDLE_VALUE)
+        return 0;
+    pe.dwSize = sizeof(pe);
+    if (Process32FirstW(snap, &pe))
+    {
+        do
+        {
+            if (!lstrcmpiW(pe.szExeFile, L"setup.exe"))
+            {
+                found = 1;
+                break;
+            }
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return found;
+}
+
+static void wait_for_livecd_setup(void)
+{
+    int waited = 0;
+
+    while (setup_running())
+    {
+        if (waited >= 900)
+        {
+            DbgPrint("[APITEST-SWEEP] WARN: setup.exe still running after %ds -- proceeding; "
+                     "COM registration may be incomplete\n", waited);
+            return;
+        }
+        Sleep(5000);
+        waited += 5;
+    }
+    if (waited)
+        DbgPrint("[APITEST-SWEEP] LiveCD setup finished (waited ~%ds)\n", waited);
+}
+
 int main(void)
 {
     char windir[MAX_PATH], bindir[MAX_PATH], listpath[MAX_PATH];
-    char line[128];
+    char line[SWEEP_LINE_MAX];
     FILE *f;
     int total = 0, launched = 0, failstart = 0, timeouts = 0, subtests = 0;
 
@@ -525,6 +579,8 @@ int main(void)
         }
     }
 
+    wait_for_livecd_setup();
+
     load_skips(bindir);
     load_child_cwd(bindir);
     DbgPrint("[APITEST-SWEEP] start list=%s\n", listpath);
@@ -540,6 +596,10 @@ int main(void)
              * fake test in the baseline once (2026-07-12). */
             int ch;
             while ((ch = fgetc(f)) != EOF && ch != '\n') { }
+            /* Loud: a silently dropped line reads as a step nobody asked for
+             * (olewinetest's 150-char reg.exe step vanished at the old 128). */
+            DbgPrint("[APITEST-SWEEP] SKIP over-long list line (> %d chars): %.60s...\n",
+                     SWEEP_LINE_MAX - 2, line);
             continue;
         }
         *nl = 0;

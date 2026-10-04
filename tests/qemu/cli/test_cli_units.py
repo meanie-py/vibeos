@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import shutil
 import socket
 import struct
 import subprocess
@@ -172,6 +173,30 @@ def test_smp_iso_patch_is_equal_length_and_selects_the_mp_entry(tmp_path: Path):
     assert len(patched) == len(src.read_bytes()), "ISO9660 extents: length must not change"
     assert b"DefaultOS=LiveCD_SMP\r\n\r\n" in patched
     assert b"LiveCD_Debug" not in patched
+
+
+def test_smp_patch_picks_freeldr_ini_when_the_fat_image_embeds_another_ini(tmp_path: Path):
+    """arm64 boot.img embeds ramdisk.img, which carries the livecd file set and so an
+    x86 livecd.ini with its own line-initial DefaultOS=. The raw scan finds two; the
+    one to patch is the FAT image's own ::/freeldr.ini, named via mtools."""
+    if not (shutil.which("mformat") and shutil.which("mcopy")):
+        pytest.skip("mtools not installed")
+    img = tmp_path / "boot.img"
+    img.write_bytes(b"\x00" * (2 * 1024 * 1024))
+    subprocess.run(["mformat", "-i", str(img), "::"], check=True, capture_output=True)
+    ini = tmp_path / "freeldr.ini"
+    ini.write_bytes(
+        b"[FREELOADER]\r\nDefaultOS=ReactOS_Arm64_UP\r\nTimeOut=0\r\n"
+        b"[ReactOS_Arm64_MP]\r\nOptions=/KERNEL=ntkrnlmp.exe /HAL=halmp.dll\r\n"
+    )
+    decoy = tmp_path / "livecd.ini"
+    decoy.write_bytes(b"[FREELOADER]\r\nDefaultOS=LiveCD_Debug\r\n")
+    for f in (ini, decoy):
+        subprocess.run(["mcopy", "-i", str(img), str(f), "::/"], check=True, capture_output=True)
+    out = vm_mod.smp_selected_iso(img, tmp_path / "work")
+    patched = out.read_bytes()
+    assert b"DefaultOS=ReactOS_Arm64_MP" in patched
+    assert b"DefaultOS=LiveCD_Debug" in patched, "the decoy ini must be left alone"
 
 
 def _fake_boot_img(default_os: bytes = b"ReactOS_Arm64_UP") -> bytes:
@@ -3233,14 +3258,14 @@ def test_backend_stage_media_paths_arm64_drives():
 
 
 def test_backend_rewrite_accel_would_break_arm64():
-    # WHY _build_windows_cmd skips rewrite_accel for arm64: rewrite_accel treats any
-    # `-cpu` as the KVM-only `-cpu host` and DROPS it under tcg — but arm64 `virt`
-    # needs the real `cortex-a72` model. It also flattens `tcg,thread=multi` -> `tcg`.
-    # Both are why arm64 keeps its machine args untouched on the windows-host backend.
+    # WHY _build_windows_cmd skips rewrite_accel for arm64: it flattens
+    # `tcg,thread=multi` -> `tcg`. It used to drop EVERY `-cpu` too (arm64 `virt`
+    # needs `cortex-a72`); now only the KVM-only `-cpu host` goes, so an explicit
+    # model such as amd64's hostile `-cpu max` survives (vm.py HOSTILE_HAZARDS).
     arm64 = ["-M", "virt", "-cpu", "cortex-a72", "-accel", "tcg,thread=multi"]
     out = be_mod.rewrite_accel(arm64, "tcg")
-    assert "cortex-a72" not in out  # the model loss we avoid by NOT calling it
-    assert out == ["-M", "virt", "-accel", "tcg"]
+    assert out == ["-M", "virt", "-cpu", "cortex-a72", "-accel", "tcg"]
+    assert be_mod.rewrite_accel(["-cpu", "host", "-accel", "kvm"], "tcg") == ["-accel", "tcg"]
 
 
 # --- host broker: cross-worktree CPU-heavy locks ---------------------------
@@ -9301,6 +9326,29 @@ def test_mp_kernel_on_a_up_hal_is_still_caught_on_a_default_boot(monkeypatch):
     assert bad and bad["classification"] == "SMP_UP_HAL"
 
 
+def test_ahci_boot_must_show_uniata_driving_ahci(monkeypatch):
+    """An --ahci boot that reached the desktop over some other path (controller
+    not attached, uniata in legacy mode) looks identical to a real one, so the
+    soak would bank green for code it never ran."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_AHCI_CD", "1")
+    ide_only = "[UNIATA] probing legacy channels\n[EXPLORER] _tWinMain entered\n"
+    bad = smoke_mod._ahci_check(ide_only)
+    assert bad and bad["classification"] == "AHCI_NOT_ENGAGED"
+    # found=0 means uniata looked and did not take the controller: still a fail.
+    assert smoke_mod._ahci_check("[UNIATA] AhciDetect: exit found=0 GHC=0 chans=0\n")
+    real = "[UNIATA] AhciDetect: exit found=1 GHC=80000000 chans=6\n"
+    assert smoke_mod._ahci_check(real) is None
+
+
+def test_ahci_check_is_silent_on_a_plain_boot(monkeypatch):
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_AHCI_CD", raising=False)
+    assert smoke_mod._ahci_check("[EXPLORER] _tWinMain entered\n") is None
+
+
 def test_the_up_kernel_is_opt_in_only_and_nothing_automated_opts_in():
     """UP is a dead branch: no automated path may select it.
 
@@ -10144,6 +10192,38 @@ def test_payload_failed_rebuild_dies_loudly(tmp_path, monkeypatch):
         pc.ensure_built(["demo"], "i386")
 
 
+def test_payload_borrowed_binary_is_rebuilt_by_its_owner(tmp_path, monkeypatch):
+    """olewinetest stages tools/payloads/apitest/apitest-sweep-<arch>.exe. stale_binaries
+    only judges a payload's own outputs, so the borrowed runner went out stale (built
+    before sweep.c learned apitest-cwd.txt). ensure_built must rebuild the OWNER."""
+    import os
+
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    owner = payloads / "runner"
+    owner.mkdir(parents=True)
+    (owner / "payload.yaml").write_text(
+        "name: runner\nbinaries:\n"
+        "  - src: tools/payloads/runner/run-{arch}.exe\n    dest: run.exe\n"
+    )
+    (owner / "build.sh").write_text('echo built > "$(dirname "$0")/run-$1.exe"\n')
+    exe = owner / "run-amd64.exe"
+    exe.write_text("old")
+    os.utime(exe, (1, 1))  # older than build.sh: stale
+    user = payloads / "suite"
+    user.mkdir(parents=True)
+    (user / "payload.yaml").write_text(
+        "name: suite\nbinaries:\n  - src: tools/payloads/runner/run-{arch}.exe\n    dest: run.exe\n"
+    )
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+
+    assert pc.stale_binaries("suite", "amd64") == []  # not its own output...
+    assert pc.borrowed_owners("suite", "amd64") == ["runner"]
+    assert pc.ensure_built(["suite"], "amd64") == ["runner"]  # ...so the owner rebuilds it
+    assert exe.read_text().strip() == "built"
+
+
 def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatch):
     """kmtest lists its committed kmtest-tests-<arch>.txt under `binaries`. build.sh never
     writes it, so treating it as stale failed every gate with PAYLOAD_BUILD_FAIL."""
@@ -10267,6 +10347,186 @@ def test_gate_restages_amd64_wow64_only_after_i386_is_built(tmp_path, monkeypatc
     assert amd64_smoke and amd64_smoke[0][1] == restages, "amd64 smoked before its restage"
 
 
+# ── base-check scrub, pinned conductor, journal (2026-10-03) ─────────────────
+
+
+def test_scrub_removes_build_products_but_keeps_toolchain_and_firmware(queue_repo):
+    """The base check must gate master ALONE: a previous submission's CMake cache, cargo
+    target or staged media in the integration tree made master look red twice on
+    2026-09-26. Firmware and the toolchain are not build products and must survive."""
+    repo, _ = queue_repo
+    ignores = ("build-*/", "target/", ".build-tools/", ".venv/", "qemu/*.fd", "qemu/*.img")
+    (repo / ".gitignore").write_text("\n".join(ignores) + "\n")
+    _commit(repo, "tracked.txt")
+    for rel in (
+        "build-amd64/CMakeCache.txt",
+        "sdk/lib/rust/target/x.rlib",
+        "qemu/ramdisk.img",
+        "qemu/QEMU_EFI.fd",
+        "qemu/efivars.fd",
+        ".build-tools/clang",
+        ".venv/bin/python",
+        "untracked-scratch.txt",
+    ):
+        f = repo / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x")
+    q_mod.scrub_build_state(repo, repo)
+    assert not (repo / "build-amd64").exists()
+    assert not (repo / "sdk/lib/rust/target").exists()
+    assert not (repo / "qemu/ramdisk.img").exists()
+    assert not (repo / "untracked-scratch.txt").exists()
+    for kept in ("qemu/QEMU_EFI.fd", "qemu/efivars.fd", ".build-tools/clang", ".venv/bin/python"):
+        assert (repo / kept).is_file(), kept
+    assert (repo / "tracked.txt").is_file()
+
+
+def test_the_base_check_scrubs_before_gating(queue_repo, monkeypatch):
+    repo, _ = queue_repo
+    calls = []
+    monkeypatch.setattr(q_mod, "git", lambda w, *a, **k: calls.append(a[0]) or "")
+    monkeypatch.setattr(q_mod, "scrub_build_state", lambda r, w: calls.append("SCRUB"))
+    monkeypatch.setattr(
+        q_mod,
+        "gate_batch",
+        lambda w, log, retries=2: calls.append("GATE") or q_mod.GateVerdict(True, "", "", ""),
+    )
+    assert q_mod.BaseCheck().is_green(repo, repo, lambda m: None, retries=0)
+    assert calls.index("reset") < calls.index("SCRUB") < calls.index("GATE")
+
+
+def test_an_elected_conductor_hands_the_drain_to_masters_code(queue_repo, monkeypatch):
+    """The winner of the election used to drain with its own worktree's queue code, so a
+    lane that had not merged master ran the train with stale rules (2026-09-26: the merge
+    train sat unused behind such a lane)."""
+    repo, _ = queue_repo
+    monkeypatch.delenv("VIBEOS_CONDUCTOR_PIN")
+    seen = []
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: seen.append("own-code") or 0)
+    monkeypatch.setattr(q_mod, "_conduct_pinned", lambda *a, **k: seen.append("pinned"))
+    assert q_mod.try_become_conductor(repo, lambda m: None) is True
+    assert seen == ["pinned"]
+    monkeypatch.setenv("VIBEOS_CONDUCTOR_PIN", "0")
+    assert q_mod.try_become_conductor(repo, lambda m: None) is True
+    assert seen == ["pinned", "own-code"]
+
+
+def test_code_running_from_the_pinned_checkout_drains_itself(queue_repo, monkeypatch):
+    repo, _ = queue_repo
+    monkeypatch.delenv("VIBEOS_CONDUCTOR_PIN")
+    here = Path(q_mod.__file__).resolve().parents[3]
+    monkeypatch.setattr(q_mod, "conductor_path", lambda r: here)
+    assert not q_mod._wants_pinned_conductor(repo)
+
+
+def test_pin_conductor_checkout_follows_origin_master(queue_repo, tmp_path):
+    repo, _ = queue_repo
+    cond = q_mod.pin_conductor_checkout(repo)
+    assert cond == tmp_path / "root" / q_mod.CONDUCTOR_DIRNAME
+    head = lambda d: subprocess.run(  # noqa: E731
+        ["git", "rev-parse", "HEAD"], cwd=d, capture_output=True, text=True
+    ).stdout.strip()
+    assert head(cond) == head(repo)
+    (cond / "stray.txt").write_text("left by a dead child")
+    new = _commit(repo, "moved.txt")
+    subprocess.run(["git", "push", "-q", "origin", "master"], cwd=repo, check=True)
+    assert q_mod.pin_conductor_checkout(repo) == cond
+    assert head(cond) == new
+    assert not (cond / "stray.txt").exists()
+
+
+def _fake_pinned_cli(tmp_path: Path, body: str) -> Path:
+    cond = tmp_path / "fake-conductor"
+    cond.mkdir()
+    cli = cond / "vibeos-cli"
+    cli.write_text("#!/usr/bin/env bash\n" + body)
+    cli.chmod(0o755)
+    return cond
+
+
+def _handoff_ready(cond: Path) -> None:
+    q = cond / "tests" / "qemu" / "cli" / "queue.py"
+    q.parent.mkdir(parents=True)
+    q.write_text(f"{q_mod.HANDOFF_ENV}\n")
+
+
+def test_the_pinned_child_gets_a_handoff_token_not_a_lock_opt_out(
+    queue_repo, tmp_path, monkeypatch
+):
+    """VIBEOS_LAND_LOCK=0 reached the gate's check-tooling and made master look red
+    (2026-10-03). The child gets a token naming its parent, nothing that disables the lock."""
+    repo, _ = queue_repo
+    cond = _fake_pinned_cli(
+        tmp_path,
+        'echo "args=$* lock=${VIBEOS_LAND_LOCK-unset} handoff=${VIBEOS_CONDUCTOR_HANDOFF%%:*}"\n',
+    )
+    _handoff_ready(cond)
+    monkeypatch.setattr(q_mod, "pin_conductor_checkout", lambda r: cond)
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "c" * 40)
+    lines: list[str] = []
+    q_mod._conduct_pinned(repo, lines.append, retries=3)
+    assert "conducting with master's queue code" in lines[0]
+    assert (
+        lines[1] == f"args=land --drain --foreground --retries 3 lock=unset handoff={os.getpid()}"
+    )
+
+
+def test_a_pinned_checkout_that_predates_the_handoff_drains_in_process(
+    queue_repo, tmp_path, monkeypatch
+):
+    """Old queue code in the pinned checkout would WAIT on the lock its parent holds."""
+    repo, _ = queue_repo
+    cond = _fake_pinned_cli(tmp_path, "exit 9\n")
+    (cond / "tests/qemu/cli").mkdir(parents=True)
+    (cond / "tests/qemu/cli/queue.py").write_text("# no handoff here\n")
+    monkeypatch.setattr(q_mod, "pin_conductor_checkout", lambda r: cond)
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "c" * 40)
+    drained = []
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: drained.append(1) or 0)
+    q_mod._conduct_pinned(repo, lambda m: None, retries=2)
+    assert drained == [1]
+
+
+def test_a_handed_off_drain_needs_its_parent_to_hold_the_lock(queue_repo, monkeypatch):
+    repo, _ = queue_repo
+    drained = []
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: drained.append(1) or 0)
+    monkeypatch.setenv(q_mod.HANDOFF_ENV, "999999:lane-x@wt")
+    with pytest.raises(q_mod.QueueError):
+        q_mod.try_become_conductor(repo, lambda m: None)
+    assert q_mod.HANDOFF_ENV not in os.environ, "the token must not reach the drain's children"
+    with hl_mod.land_lock("parent", timeout=1.0):
+        monkeypatch.setenv(q_mod.HANDOFF_ENV, f"{os.getpid()}:lane-x@wt")
+        assert q_mod.try_become_conductor(repo, lambda m: None) is True
+    assert drained == [1]
+
+
+def test_a_failed_pinned_child_is_no_verdict_not_a_landing(queue_repo, tmp_path, monkeypatch):
+    repo, _ = queue_repo
+    cond = _fake_pinned_cli(tmp_path, "echo halted; exit 1\n")
+    _handoff_ready(cond)
+    monkeypatch.setattr(q_mod, "pin_conductor_checkout", lambda r: cond)
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "c" * 40)
+    with pytest.raises(q_mod.NoVerdict):
+        q_mod._conduct_pinned(repo, lambda m: None, retries=2)
+
+
+def test_the_conductor_journal_survives_in_the_queue_dir(queue_repo, monkeypatch):
+    """A reboot wiped /tmp and with it a week of conductor logs (2026-10-02)."""
+    repo, _ = queue_repo
+    echoed: list[str] = []
+    log = q_mod.journaled(repo, echoed.append, who="lane-x@wt")
+    log("queue: batch of 2\nsecond line")
+    journal = q_mod.queue_dir(repo) / q_mod.JOURNAL_FILE
+    text = journal.read_text().splitlines()
+    assert echoed == ["queue: batch of 2\nsecond line"]
+    assert len(text) == 2 and all("[lane-x@wt]" in t for t in text)
+    monkeypatch.setattr(q_mod, "JOURNAL_MAX_BYTES", 1)
+    log("rotated")
+    assert (journal.parent / (q_mod.JOURNAL_FILE + ".1")).is_file()
+    assert journal.read_text().count("\n") == 1
+
+
 def test_an_end_marker_cut_in_two_by_a_kernel_print_still_counts():
     """The user-mode END line and kernel prints share the serial port, so a kernel
     line can land mid-marker (i386, 2026-10-03, verbatim below). Unrepaired, a
@@ -10290,3 +10550,31 @@ def test_an_end_marker_cut_in_two_by_a_kernel_print_still_counts():
     broken = log.replace("rror pass=30 fail=0 skip=0]", "rror pass=30 fail=0")
     results, _, _ = P.parse(broken)
     assert results[0]["status"] == "NO-END"
+
+
+def test_polite_farm_waits_for_the_fleet_then_boots(monkeypatch):
+    """`farm --polite` must not start a boot while a land gates or another agent
+    boots, and must start one as soon as the host is quiet."""
+    from . import farm as farm_mod
+
+    busy = iter([({"kind": "land"}, []), ({}, [{"pid": 1}]), ({}, [])])
+    state = {}
+
+    def step():
+        state["cur"] = next(busy)
+
+    step()
+    monkeypatch.setattr(farm_mod.hostlock, "land_holder", lambda: state["cur"][0])
+    monkeypatch.setattr(farm_mod.hostlock, "foreign_boot_holders", lambda _pid: state["cur"][1])
+    sleeps = []
+    monkeypatch.setattr(farm_mod.time, "sleep", lambda s: (sleeps.append(s), step()))
+    assert farm_mod._wait_for_quiet_host("amd64", farm_mod.time.monotonic() + 3600)
+    assert len(sleeps) == 2
+
+
+def test_polite_farm_gives_up_at_the_deadline(monkeypatch):
+    from . import farm as farm_mod
+
+    monkeypatch.setattr(farm_mod.hostlock, "land_holder", lambda: {"kind": "land"})
+    monkeypatch.setattr(farm_mod.hostlock, "foreign_boot_holders", lambda _pid: [])
+    assert not farm_mod._wait_for_quiet_host("amd64", farm_mod.time.monotonic() - 1)

@@ -65,21 +65,11 @@ pub unsafe extern "system" fn GetEnvironmentVariableA(
         break 'quickie;
     }
 
-    /* Check if the size is too big to fit */
-    UniSize = (UNICODE_STRING_MAX_CHARS - 2) as USHORT;
-    if nSize <= UniSize as DWORD {
-        /* It fits, but was there a string at all? */
-        if nSize != 0 {
-            /* Keep the given size, minus a NULL-char */
-            UniSize = (nSize - 1) as USHORT;
-        } else {
-            /* No size */
-            UniSize = 0;
-        }
-    } else {
-        /* String is too big, so we need to return a NULL char as well */
-        UniSize = UniSize.wrapping_sub(1);
-    }
+    /* Set maximum size for unicode string (in chars, including ANSI_NULL).
+     * Upstream 242937b1229, which this port predated: rtl-strings'
+     * RtlQueryEnvironmentVariable (upstream ef70bdf9907) now needs room for the NUL,
+     * so the old "size minus a NULL-char" made every exactly-sized query fail. */
+    UniSize = core::cmp::min(nSize, UNICODE_STRING_MAX_CHARS as DWORD) as USHORT;
 
     /* Allocate the value string buffer */
     Buffer = RtlAllocateHeap(
@@ -150,12 +140,6 @@ pub unsafe extern "system" fn GetEnvironmentVariableA(
             VarValueU.Buffer = core::ptr::null_mut();
         }
     } else if NT_SUCCESS(Status) {
-        /* Check if the size is too big to fit */
-        UniSize = (UNICODE_STRING_MAX_BYTES - 1) as USHORT;
-        if nSize <= UniSize as DWORD {
-            UniSize = nSize as USHORT;
-        }
-
         /* Check the size */
         Result = RtlUnicodeStringToAnsiSize(&VarValueU);
         if Result <= UniSize as ULONG {
@@ -228,18 +212,13 @@ pub unsafe extern "system" fn GetEnvironmentVariableW(
         nSize = 0;
     }
 
-    if nSize <= (UNICODE_STRING_MAX_CHARS - 1) as DWORD {
-        if nSize != 0 {
-            UniSize = (nSize as USHORT)
-                .wrapping_mul(core::mem::size_of::<WCHAR>() as USHORT)
-                .wrapping_sub(core::mem::size_of::<WCHAR>() as USHORT);
-        } else {
-            UniSize = 0;
-        }
-    } else {
-        UniSize = (UNICODE_STRING_MAX_BYTES as USHORT)
-            .wrapping_sub(core::mem::size_of::<WCHAR>() as USHORT);
-    }
+    /* Set maximum size for unicode string (in chars, including UNICODE_NULL). Upstream
+     * 242937b1229, which this port took only the NULL-buffer half of: the buffer handed to
+     * RtlQueryEnvironmentVariable_U is the caller's WHOLE buffer, NUL slot included, because
+     * rtl-strings' query (upstream ef70bdf9907) needs room for the NUL. Reserving it here as
+     * well made the size-then-fetch pattern fail on the fetch: msvcrt's _popen got an empty
+     * COMSPEC and tried to execute a PATH directory (Wine misc.c:375, 2026-10-04). */
+    UniSize = core::cmp::min(nSize, UNICODE_STRING_MAX_CHARS as DWORD) as USHORT;
 
     Status = RtlInitUnicodeStringEx(&mut VarName, lpName);
     if !NT_SUCCESS(Status) {
@@ -247,7 +226,11 @@ pub unsafe extern "system" fn GetEnvironmentVariableW(
         return 0;
     }
 
-    RtlInitEmptyUnicodeString(&mut VarValue, lpBuffer, UniSize);
+    RtlInitEmptyUnicodeString(
+        &mut VarValue,
+        lpBuffer,
+        UniSize.wrapping_mul(core::mem::size_of::<WCHAR>() as USHORT),
+    );
 
     Status = RtlQueryEnvironmentVariable_U(
         core::ptr::null_mut(),

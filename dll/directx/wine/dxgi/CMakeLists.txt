@@ -27,10 +27,6 @@ add_library(dxgi MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/dxgi_stubs.c
     ${CMAKE_CURRENT_BINARY_DIR}/dxgi.def)
 
-if(MSVC)
-    target_compile_options(dxgi PRIVATE /wd5286)
-endif()
-
 set_module_type(dxgi win32dll UNICODE)
 target_link_libraries(dxgi wine dxguid dx10guid uuid)
 add_importlibs(dxgi d3dwine gdi32 user32 win32u kernel32_vista msvcrt kernel32 ntdll)

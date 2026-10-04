@@ -168,20 +168,64 @@ pub unsafe extern "C" fn EfiEntry(
 #[cfg_attr(feature = "uefildr-rust-entry", no_mangle)]
 pub unsafe extern "C" fn ExecuteLoaderCleanly(PreviousStack: PVOID) -> ! {
     TRACE(b"ExecuteLoaderCleanly Entry\n\0".as_ptr() as *const i8);
+    // KEEP THESE. "Switching stack..." used to be the last line a non-ATAPI boot
+    // ever printed, and the silence after it read as a crash AT the stack switch
+    // -- it is not, it is the output CHANNEL changing: everything from here on
+    // goes to TRACE/WARN, which the serial log does not carry. That artefact has
+    // been mistaken for a crash twice, once in this file's own documentation. Two
+    // ConOut lines answer both questions a reader actually has: did we survive
+    // _changestack, and did RunLoader give up?
+    fldr_conout(crate::wide!("[FLDR] past _changestack, entering RunLoader\r\n\0"));
     UefiServiceStack = PreviousStack;
 
     RunLoader();
 
     WARN(b"RunLoader returned, halting\n\0".as_ptr() as *const i8);
+    fldr_conout(crate::wide!("[FLDR] RunLoader RETURNED (no boot config)\r\n\0"));
     Reboot();
+}
+
+/// Print to ConOut, which the serial log carries -- unlike TRACE/WARN, whose
+/// invisibility is what made the post-stack-switch boot look like a crash.
+/// Silent if the system table or ConOut is unavailable, so it can be called from
+/// anywhere without a liveness check at the call site.
+pub(crate) unsafe fn fldr_conout(msg: *const u16) {
+    if GlobalSystemTable.is_null() {
+        return;
+    }
+    let conout = (*GlobalSystemTable).ConOut as *mut EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL;
+    if conout.is_null() {
+        return;
+    }
+    if let Some(out) = (*conout).OutputString {
+        out(conout, msg as *mut u16);
+    }
 }
 
 // C: `#if !defined(_M_ARM)` — gate out 32-bit ARM; arm64 is allowed.
 #[cfg(not(target_arch = "arm"))]
 #[cfg_attr(feature = "uefildr-rust-entry", no_mangle)]
 pub unsafe extern "C" fn Reboot() -> ! {
-    WARN(b"Something has gone wrong - halting FreeLoader\n\0".as_ptr() as *const i8);
-    loop {}
+    // Upstream 2a74f5e794d "Implement missing cold reset in Reboot()": the menu's reboot
+    // entry and every "RunLoader returned" path used to halt here forever.
+    WARN(b"Performing cold reset\n\0".as_ptr() as *const i8);
+
+    if !GlobalSystemTable.is_null() && !(*GlobalSystemTable).RuntimeServices.is_null() {
+        // EFI_RESET_SYSTEM: (ResetType, ResetStatus, DataSize, ResetData), EFIAPI.
+        type EfiResetSystem = unsafe extern "C" fn(u32, EFI_STATUS, UINTN, *mut c_void);
+        const EFI_RESET_COLD: u32 = 0; // EfiResetCold
+        let reset = (*(*GlobalSystemTable).RuntimeServices).ResetSystem;
+        if !reset.is_null() {
+            let reset: EfiResetSystem = core::mem::transmute(reset);
+            reset(EFI_RESET_COLD, 0 /* EFI_SUCCESS */, 0, core::ptr::null_mut());
+        }
+    }
+
+    // Fallback dead-loop if runtime services are missing or fail to respond.
+    loop {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        core::arch::asm!("hlt", options(nomem, nostack));
+    }
 }
 
 

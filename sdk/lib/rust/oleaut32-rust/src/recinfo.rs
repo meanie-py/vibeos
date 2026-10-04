@@ -629,10 +629,13 @@ fn IRecordInfoImpl_RecordCopy(
             continue;
         }
 
-        src = (src_rec as *mut PBYTE)
+        // C: `((BYTE*)src_rec) + offset` -- BYTE*, not PBYTE*. Through `*mut PBYTE` the
+        // offset stepped in POINTER-sized units, so every field past offset 0 was read
+        // from (and the BSTR copied out of) 8x the right address on 64-bit.
+        src = (src_rec as *mut BYTE)
             .offset((*(*This).fields.offset(i as isize)).offset as isize)
             as *mut core::ffi::c_void;
-        dest = (dest_rec as *mut PBYTE)
+        dest = (dest_rec as *mut BYTE)
             .offset((*(*This).fields.offset(i as isize)).offset as isize)
             as *mut core::ffi::c_void;
 
@@ -1033,7 +1036,9 @@ fn IRecordInfoImpl_RecordCreate(iface: *mut IRecordInfo) -> PVOID {
 
     TRACE!(b"(%p)\n\0".as_ptr() as *const i8, This);
 
-    record = HeapAlloc(GetProcessHeap(), 0, (*This).size as SIZE_T);
+    // Wine 10.0: records live in COM task memory, so a record created here can
+    // be freed by any party that frees COM memory (and RecordDestroy below).
+    record = CoTaskMemAlloc((*This).size as SIZE_T);
     IRecordInfo_RecordInit(iface, record as PVOID);
     TRACE!(b"created record at %p\n\0".as_ptr() as *const i8, record);
     record as PVOID
@@ -1076,10 +1081,7 @@ fn IRecordInfoImpl_RecordDestroy(
         return hres;
     }
 
-    if HeapFree(GetProcessHeap(), 0, pvRecord) == 0 {
-        return E_INVALIDARG;
-    }
-
+    CoTaskMemFree(pvRecord);
     return S_OK;
 }
 }
@@ -1195,9 +1197,12 @@ pub unsafe extern "system" fn GetRecordInfoFromTypeInfo(
         return E_INVALIDARG;
     }
 
+    // Zeroed, as Wine 10.0's calloc: a field whose GetVarDesc fails is skipped
+    // below, and IRecordInfoImpl_Release SysFreeString's every fields[i].name,
+    // so an unzeroed slot freed a garbage pointer.
     ret = HeapAlloc(
         GetProcessHeap(),
-        0 as DWORD,
+        HEAP_ZERO_MEMORY as DWORD,
         core::mem::size_of::<IRecordInfoImpl>() as SIZE_T,
     ) as *mut IRecordInfoImpl;
     // C: `ret->IRecordInfo_iface.lpVtbl = &IRecordInfoImplVtbl;` — the C field is
@@ -1227,7 +1232,7 @@ pub unsafe extern "system" fn GetRecordInfoFromTypeInfo(
 
     (*ret).fields = HeapAlloc(
         GetProcessHeap(),
-        0 as DWORD,
+        HEAP_ZERO_MEMORY as DWORD,
         ((*ret).n_vars as SIZE_T).wrapping_mul(core::mem::size_of::<fieldstr>() as SIZE_T),
     ) as *mut fieldstr;
     i = 0;

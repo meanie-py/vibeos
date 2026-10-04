@@ -1533,6 +1533,10 @@ pub unsafe extern "system" fn I_ScGetCurrentGroupStateW(
         pdwGroupState,
     )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
+    if dwError != ERROR_SUCCESS {
+        SetLastError(dwError);
+    }
+
     dwError
 }
 

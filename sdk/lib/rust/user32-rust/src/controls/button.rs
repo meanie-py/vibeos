@@ -154,12 +154,16 @@ pub static buttonW: [WCHAR; 7] = [
 ];
 
 
+// The state slot is a LONG (BUTTON_HFONT_GWL_OFFSET = sizeof(LONG)), so it is read and
+// written with the 32-bit accessors. A LONG_PTR store at offset 0 on 64-bit overwrites
+// the low half of the cached HFONT at offset 4: every BM_SETCHECK / BM_SETSTATE zeroed
+// the button's font (upstream 057d978fcbf, "Fix extra-byte layout on x64").
 unsafe fn get_button_state(hwnd: HWND) -> LONG {
-    GetWindowLongPtrW(hwnd, 0) as LONG
+    GetWindowLongW(hwnd, STATE_GWL_OFFSET as i32)
 }
 
 unsafe fn set_button_state(hwnd: HWND, state: LONG) {
-    SetWindowLongPtrW(hwnd, 0, state as LONG_PTR);
+    crate::windows::class::SetWindowLongW(hwnd, STATE_GWL_OFFSET as i32, state as core::ffi::c_long);
 }
 
 unsafe fn set_ui_state(hwnd: HWND, flags: LONG) {

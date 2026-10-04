@@ -425,33 +425,44 @@ arches) and the PL011 UART (a real ARM peripheral).
 
 ---
 
-## 11. Retire MSVC support — Size: M
+## 11. Retire MSVC support — Size: M (CMake + stlport DONE 2026-10-03; tail owed)
 
 **MSVC is not a supported toolchain** (owner, 2026-09-26): the project builds with
 clang/llvm-mingw, and that was a settled early call. Upstream ReactOS still carries an
-MSVC build, and everything that exists only for it is dead weight here: code nothing
-compiles, CMake branches nothing takes, and tests of a compiler we do not use.
-Deliberately deferred, not urgent. Measured 2026-09-26:
+MSVC build, and everything that exists only for it is dead weight here. Owner said "kill
+it" on 2026-10-03.
 
-- **`vendor/stlport`** (116K lines): a C++ standard library wired up only by
-  `sdk/cmake/msvc.cmake`'s `cppstl`. Our builds use the toolchain's libstdc++ and compile
-  none of it. vendor.yaml records it `translate: keep` with a note saying it is dead.
-  Removing it means deleting the tree, its `if(MSVC)` block in `sdk/lib/3rdparty`,
-  `vendor-patches/stlport.patch` and its vendor.yaml/notices entries.
-- **`sdk/cmake/msvc.cmake`** (613 lines) and **`baseaddress_msvc.cmake`**.
-- **220 `if(MSVC)` / `if(NOT MSVC)` sites in 153 CMake files**: collapse each to its
-  non-MSVC arm. 29 of those files are rostests.
-- **MSVC-only tests**: the rostests behind `if(MSVC)`, and the MSVC arm of
-  `vendor/ms-compiler-tests`. Its i386 arm is built by clang today and stays.
-- **`_MSC_VER` in 589 non-vendored sources**: the long tail, retire opportunistically.
-  Many are portability guards that also select the clang path, so read each one; do not
-  delete by regex.
+**Done 2026-10-03:**
 
-**The cost is upstream-sync friction**, and it decides the order: every hunk deleted
-from a file upstream still edits becomes a merge conflict on the next sync. So take the
-self-contained pieces first (stlport, `msvc.cmake`, whole MSVC-only tests), then the
-`if(MSVC)` branches in files upstream rarely touches. Leave the `_MSC_VER` tail for
-files we already own or have translated.
+- **`tools/strip_msvc_cmake.py`** partially evaluates every CMake `if`/`elseif` with the
+  MSVC facts fixed (`MSVC`/`MSVC_IDE` false, compiler id never "MSVC") and resolves what
+  that decides: dead arms deleted with their attached comments, surviving arms dedented,
+  compound conditions rewritten (`MSVC OR X` -> `X`). Its first run resolved 203
+  conditions in 144 files. `vibeos-cli check` runs it as `strip_msvc_cmake` with an EMPTY
+  baseline, so **after an upstream merge, run `python3 tools/strip_msvc_cmake.py --write`**
+  when the check names new sites. Vendored trees are skipped (their CMake is the tree's).
+- Deleted: `vendor/stlport` (116K lines; registry entry, patch and notices with it),
+  `sdk/cmake/msvc.cmake`, `sdk/cmake/baseaddress_msvc.cmake`, `toolchain-msvc.cmake`,
+  `overrides-msvc.cmake`. The MSVC-only rostests went with their `if(MSVC)` arms, and
+  `vendor/ms-compiler-tests` is now built only by its clang i386 arm.
+
+**Still owed:**
+
+- **Orphaned MSVC-only sources**, now referenced by no CMake: `cpprt` (`ehvec.cpp`,
+  `new_nothrow.cpp`, `terminate.cpp`, `typeinfo.cpp`, `{i386,amd64}/cpprt.s`), the Wine
+  `msvc.S`/`msvc-thiscall.c` thunks (mshtml, oleaut32, rpcrt4 + `thunks-msvc.s`, vssapi,
+  ole32, windowscodecs, ks), `crt/oldnames-{common,msvcrt}.S`, msvcrt's
+  `{i386,amd64}/cpp_alias.s`, `cpp_vtables.s`, `except_*.s` (CRT lane: delete when it
+  finishes), and the winetests `get_fpu_cw.asm` / `msvc-x64.asm`. Dead-but-present, like a
+  cohab-flipped `.c`. Deleting a file upstream still edits makes a modify/delete conflict on
+  every sync, so take them when their module is translated or upstream stops touching them.
+- **Upstream's Windows/CI entry points** still name the MSVC toolchain and are left as
+  upstream ships them: `.github/workflows/build.yml` (its `build-msvc` jobs),
+  `CMakePresets.json` (`base-msvc`/`clang-cl` presets) and `configure.cmd`. We run none of
+  them; editing them buys only merge conflicts.
+- **`_MSC_VER` in ~589 non-vendored sources**: retire opportunistically in files we own or
+  have translated. Many are portability guards that also select the clang path, so read
+  each one; do not delete by regex.
 
 ---
 
@@ -557,6 +568,42 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **fastfat: the free-dirent bitmap goes stale, then every create in that directory raises
+  STATUS_FILE_CORRUPT_ERROR** (OPEN, 2026-10-04). Wine's ole32 `storage32` test (olewinetest
+  payload, amd64) drives about 100,000 raises in 120 s. They are caught, so the test times out
+  rather than crashing, but the files are never created.
+  - Raiser: `FatCreateNewDirent`'s "assert that the dirents are in fact unused" check
+    (dirsup.rs:396). `FreeDirentBitmap` calls a slot free that is in use on disk.
+  - `FatCreateNewDirent` and `FatDeleteDirent` both read faithful to dirsup.c. The suspect is
+    another path that writes a dirent without setting its bit: rename, tunnelling, or the
+    rescan.
+  - Found with `RtlRaiseStatus`'s new backtrace (image base + RVA per frame). For an amd64
+    kernel frame, symbolize against `ntkrnlmp.exe`.
+- **rostests i386 build: 5 targets fail under llvm-mingw** (OPEN, 2026-10-04). After the
+  shell32/shlwapi/ole32 export fixes (`--rostests`, `ninja -k 0`): `dllimport_test.dll`
+  (lld: framedyn `CHString` "should not refer to special section 0"), `menuaccels.rc` (llvm-rc
+  rejects its ACCELERATORS statement), `interop_unittest` LocaleTests.cpp (libc++ `<__locale>`
+  `enum result { ok, ... }` collides with the test `ok` macro), `wine.combase.test.dll`
+  (`-llibcombase` not found), `user32_winetest` monitor.c (`ddk/d3dkmthk.h` not on its include
+  path; it lives in sdk/include/wine/ddk).
+- **i386 smoke QEMU mis-executes SAHF after a logic op** (OPEN, 2026-10-04; host tooling,
+  not vibeos). The windows-host backend's QEMU is 11.0.50, a development snapshot
+  (`v11.0.0-12631-g54e84cdc7a`, installed 2026-05-01). After `or`/`xor`/`test`/`mov`, `sahf`
+  sets CF wrong, so `fucom; fnstsw; sahf; jcc` -- every x87 float compare `-march=pentium`
+  emits -- can branch the wrong way in i386 guests. Seen as Wine msvcrt `string.c:3522`'s 5,535
+  failures (`_atodbl` is right in all of them). `tools/payloads/atodbl` checks it and goes
+  green on a fixed emulator. Owed: a released QEMU for the windows-host backend, then rerun
+  i386 float-heavy tests. Field manual: "i386 guest float compares go the wrong way".
+- **msvcrt.dll Wine winetest `misc`: FIXED 2026-10-04, was "exits 128"** (i386). The
+  subtest died after misc.c:375's `_popen` failed with EACCES and the test ran `fgets` on the
+  NULL stream. Root cause in kernel32-rust, not msvcrt: `GetEnvironmentVariableA/W` kept the
+  pre-242937b1229 sizing (reserve one char for the NUL) while rtl-strings' query follows
+  upstream ef70bdf9907 (needs room for the NUL), so every size-then-fetch caller got an empty
+  string; msvcrt's COMSPEC came back `""` and `_popen` tried to execute `X:\reactos\bin\`.
+  Now 832 tests, 11 failures: all `I10_OUTPUT` rows whose expected trailing bytes are native's
+  rounding residue (`...9`), which Wine marks `todo_wine_if`. `tools/payloads/popen` checks
+  `_popen`. msvcrt_apitest `ieee` is 33 failures of 286 (was 35), mostly `_j0`/`_j1` value
+  rows that want native's bits.
 - **fastfat bugchecks on rename and on a run of creates (arm64)** (FIXED 2026-10-03; was
   "bugchecks in `FsRtlCheckOplock`"). Two bugs, both 0x23 via `FatBugCheckExceptionFilter`:
   - rename: `FatSetRenameInfo` read the shim's 4-byte `MAX_LFN_CHARACTERS` as `usize`, so every
@@ -591,7 +638,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   to the SSE2 baseline (libm cannot compile under `-sse`), which in turn exposed
   `sdk/lib/crt`'s x87-only i386 `_control87`/`_statusfp`/`_clearfp` -- replaced by Wine's
   both-unit versions in `fenv.rs`; and `rint`/`nearbyint` on arm64 are `frintx`/`frinti`,
-  because `libm` ignores rounding modes. Still `-stub`: the `_d*`/`_fd*` internal helpers
+  because `libm` ignores rounding modes. `pow`/`exp`/`log`/`exp2`/`log2` (and f32 forms) come
+  from `sdk/lib/rust/musl-math` instead of `libm` -- a port of musl's current algorithms,
+  bit-exact against the musl C -- because libm's are FreeBSD's older ones (see the field
+  manual). i386 msvcrt.dll moved to SSE2 too (2026-10-03), and cnt-rust's exp/log/pow/log10/
+  fmod now carry Wine's errno/`_matherr` contract in both CRTs (`__cnt_math_error`). Still
+  owed: the rest of cnt-rust's C89 set (trig, sqrt, ldexp, _logb, ...) onto libm with the
+  same contract, and the ieee754 Bessel C onto libm. Still `-stub`: the `_d*`/`_fd*` internal helpers
   (`_dexp`, `_dnorm`, `_dpoly`, ...) and `_except1`. Owner: ucrt-rust.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
@@ -606,11 +659,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `log10(INFINITY)` never returned -- cnt-rust's `log10`/`pow`/`fmod` were ports of upstream's
   placeholder C (`pow(2, 0.5) == 0` shipped in msvcrt.dll and ucrtbase.dll on every arch); they
   are the `libm` crate's now, and the x87 asm on no-SSE i386 (`tools/payloads/matherrs` traces
-  Wine's test per call). As of 2026-10-03 (c99math) every C99 row passes
-  and the failures are exactly the C89 functions ucrtbase takes from cnt-rust/crtmath
-  (`acos`, `asin`, `cos`, `exp`, `exp2`, `log`, `log10`, `_logb`), which set neither errno
-  nor `_matherr` on a domain/range error -- the UCRT `math_error` contract is owed on top of
-  them, as c99math.rs does for the C99 set; misc.c:363 (`_EM_AMBIGUOUS`) is FIXED by the
+  Wine's test per call). The math-errno checks are FIXED (2026-10-04): cnt-rust's C89 set
+  reports through `__cnt_math_error` at Wine's `math_error` points, and `tools/payloads/matherrs`
+  (Wine's `test_math_errors`) is 304 checks, 0 failed on all three arches; misc.c:363 (`_EM_AMBIGUOUS`) is FIXED by the
   i386 `_control87` in fenv.rs; `cpp` hangs past 120s; `string` fails two `mbstowcs` UTF-8 checks
   (string.c:831/835) -- ROOT-CAUSED, expected: kernel32 exports `IsValidLocaleName` only at
   `-version=0x600+` and this build is NT 5.2, so ucrtbase takes its downlevel locale path,
@@ -750,6 +801,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
   entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
   smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
+- **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
+  `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
+  cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
+  `DeviceGetMmcSupportInfo`'s TYPE_ONE probe (it answers with more than the one feature),
+  and the device start then tears down through `DeviceClaimRelease(Release)` ->
+  `WdfObjectDelete` -> `FxRequest::Release`, which reads past its object: amd64/i386
+  BUGCHECK 0x19 at the next free, arm64 hang. `--tripwire "SPECIALPOOL=CDRO"` (KMDF tags a
+  driver's objects with its service name) faults at the read: `wdf01000.sys+0x197FE`
+  under `cdrom-rust init.rs:313`. Bisected to the constant alone (the commit's registry
+  reads and CREATE context are innocent). The constant is held at 0x0003 with a comment;
+  owed: why start fails on a TYPE_ALL-style answer, and why releasing a request the
+  driver just created reads past it. Not a context-size mismatch: the three
+  `CDROM_REQUEST_CONTEXT` type infos all use `size_of::<CDROM_REQUEST_CONTEXT>()`, and the
+  same `DeviceClaimRelease` claims successfully on every boot, so suspect an object freed
+  earlier on the new failure path. x64 lane.
 - **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
   updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
   early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
@@ -805,6 +871,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `RtlInsertElementGenericTable`). fastfat and cdfs are down to one benign lead each. condrv
   `ConDrvDispatch` is FALSE (the C only traces). Re-translate (with sealing) only what the
   audit and a reading of the C confirm.
+  **Burn-down (2026-10-04): every high and medium lead read. 0 open high, 0 open medium**
+  (from 198 / 951); 214 owed, 329 false/benign in `data/body_audit_reviewed.toml`, 55 `low`
+  unread. About 70 real bugs fixed, among them: hal DMA locks that only raised IRQL (no
+  exclusion on halmp) and S/G transfers over 64 KiB failing; cdrom completions skipping
+  `RequestCompletion` (no verify-required marking); classpnp registry overrides passed as
+  narrow strings (every override kept its default) and hotplug info a stub (every disk
+  non-removable); scsiport parsing the service key as the DeviceN key; disk's invented SMART
+  codes; kernel32 `UnhandledExceptionFilter` with scrambled constants (no post-mortem
+  debugger, wrong crash box, a debugger-attached crash re-faulting forever) and
+  `GetModuleHandle` misses returning stale errors; userenv shortcuts never written; csrss
+  creating `\Session` instead of `\Sessions`; gdi32 never loading lpk.dll; ks stream IRPs
+  with a NULL header; user32 button state overwriting the font handle on 64-bit; ole32
+  property dictionaries unreadable. Owed, by cluster (upstream-sync): pciidex rewrite
+  (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
+  disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
+  syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
+  so every logon, status and shutdown dialog shows no banner today: visible, on the boot
+  path.** Still to decide: cdrom carries a live C-glue `DeviceEvtIoInCallerContext` that may
+  shadow the Rust one under `--allow-multiple-definition` (check `nm`); the Rust masks the
+  APIC error LVT where the C unmasks it.
   **ntkrnl-sys was stale against the post-merge headers — FIXED** (2026-09-27): regenerated
   the kernel and HAL islands. Nine structs had drifted: `KPRCB` (upstream `144fe39589b`'s
   `StartCycles`/`CycleTime`), `EJOB`/`PS_JOB_TOKEN_FILTER` (Rust still had the leaked
@@ -1311,15 +1397,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     commits/decommits that page). Run with `VIBEOS_QEMU_SMP=N ./vibeos-cli smoke --arch X
     --payload rpmprobe` and read `[RPMPROBE] ... race` in the serial.
     i386 `-smp 4`: PASS (46,273 copies ok, 686,336 clean errors, 0 silent, no bugcheck).
-    arm64 `-smp 2`: the fixed-address probes pass, then the box WEDGES in the race phase
-    (serial silent right after the race threads start). Not localized; attach gdb during
-    the race. arm64's TB flush is a broadcast `tlbi vmalle1is`, so it is not the IPI path.
-    arm64 also prints `ASSERT FAILED: KeGetCurrentIrql() == SYNCH_LEVEL at ke/ipi.rs:312` on
-    every MP boot, from the `KeIpiGenericCall` self-test. Upstream never implemented
-    `KiIpiSendPacket`; our assert names a level its only caller does not raise to (it calls at
-    DISPATCH), and it went live with `c4d82e425fc`. Non-fatal; decide the contract.
-    amd64 `-smp 2` and `-smp 4`: boot dies (csrss exits, crit, 0xF4; winlogon AV), so the race
-    cannot run there. Not yet checked against master.
+    arm64 `-smp 2`: the 2026-09-25 race-phase wedge is GONE (re-run 2026-10-04: PASS, 84,671
+    copies, 0 silent; presumably fixed by the 09-26 KNODE/affinity/spinlock work). arm64
+    `-smp 4`: PASS 3 of 4 (59,153 / 63,700 / 902 copies, 0 silent). The fourth died BEFORE the
+    probe ran, in first-boot setup: `BUGCHECK 0x50` on `0xfffffa800041d560`, faulting in
+    `CmpFindSubKeyByName` entry (`cmlib-rust/src/cmindex.rs:1201`) under setupapi's install
+    work, i.e. a key-node pointer that was no longer mapped. OPEN, 1 in 8 arm64 `-smp 4`
+    boots that ran past setup, never seen at `-smp 1` or `-smp 2` in today's runs; the shape
+    fits a registry-lock hole (a cell pointer held across another CPU's bin change), not yet
+    shown. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
+    The `ke/ipi.rs` `== SYNCH_LEVEL` assert was already re-contracted to `>= DISPATCH_LEVEL`
+    and no longer prints.
+    amd64 `-smp 2` and `-smp 4`: FIXED 2026-10-04. The boot death seen 2026-09-25 was
+    intermittent (2/8 and 9/16 `-smp 2` boots reached the desktop), with five unrelated-looking
+    faces: csrss `0xC000001D` twice at the same basesrv address, `0x6B`/`0xC0000032`, a kernel
+    `0x1E` at a garbage PC, `0x4C`/`STATUS_INVALID_IMAGE_FORMAT`, and double faults in the
+    unwinder. Cause: amd64's lazy-idle TLB let a CPU woken from `hlt` by a DEVICE interrupt
+    run the ISR with deferred shootdowns unserviced; the IDE ISR wrote PIO sector data through
+    a stale translation of a recycled system VA, so successful reads left their pages zero
+    and some other page took the data. `KiInterruptDispatch` now services the deferral first.
+    After: 8/8 `-smp 2` boots to desktop with zero corrupt reads; rpmprobe passes the race at
+    `-smp 2` (84,240 copies) and `-smp 4` (76,114), 0 silent, where `-smp 4` had hung. Field
+    manual: "Successful reads that leave their pages ZERO".
   - FIXED: `ReadProcessMemory` over an uncommitted page bugchecked (0x1E from
     `MmProbeAndLockPages` in `MiDoMappedCopy`). See the `MmCopyVirtualMemory` entry below.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers

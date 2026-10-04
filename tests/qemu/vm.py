@@ -7,6 +7,7 @@ import contextlib
 import fcntl
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -148,7 +149,7 @@ def make_usb_stick_image(path: Path) -> None:
             f.write(part.read_bytes())
         subprocess.run(
             ["sfdisk", "--no-reread", "--no-tell-kernel", str(tmp)],
-            input=f"label: dos\nstart=2048, type=06\n".encode(),
+            input=b"label: dos\nstart=2048, type=06\n",
             check=True,
             capture_output=True,
         )
@@ -201,6 +202,34 @@ def _write_sparse_image(path: Path, data: bytes | bytearray) -> None:
         output.truncate(len(data))
 
 
+def _hits_in_fat_freeldr_ini(image: Path, data: bytearray, hits: list[int]) -> list[int]:
+    """Of several line-initial DefaultOS= hits, keep the ones inside the FAT image's
+    own ::/freeldr.ini -- the only file freeldr reads.
+
+    arm64's boot.img is FAT and ALSO embeds ramdisk.img, and since the arm64 ramdisk
+    carries the livecd file set that ramdisk holds an x86 livecd.ini with its own
+    DefaultOS= line. A raw scan then finds two and cannot tell which one boots. mtools
+    names the file exactly; its bytes are then located in the image (a fresh image
+    stores a small file contiguously). Anything ambiguous returns the hits unchanged,
+    so the caller still raises rather than guessing."""
+    try:
+        cp = subprocess.run(
+            ["mcopy", "-n", "-i", str(image), "::/freeldr.ini", "-"],
+            capture_output=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return hits
+    ini = cp.stdout
+    if cp.returncode != 0 or not ini:
+        return hits
+    at = data.find(ini)
+    if at == -1 or data.find(ini, at + 1) != -1:
+        return hits
+    inside = [h for h in hits if at <= h < at + len(ini)]
+    return inside or hits
+
+
 def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
     """Boot media whose freeldr default entry is the MP pair, WITHOUT rebuilding it.
 
@@ -240,6 +269,8 @@ def smp_selected_iso(iso: Path, work_dir: Path) -> Path:
         if i == 0 or data[i - 1] == 0x0A:
             hits.append(i)
         i = data.find(_INI_DEFAULT_OS, i + 1)
+    if len(hits) > 1:
+        hits = _hits_in_fat_freeldr_ini(iso, data, hits)
     if len(hits) != 1:
         raise RuntimeError(
             f"{iso}: expected exactly one line-initial {_INI_DEFAULT_OS.decode()} in the "
@@ -813,16 +844,55 @@ class I386UefiConfig(I386Config):
             f"if=pflash,format=raw,file={ovmf_code},readonly=on",
             "-drive",
             f"if=pflash,format=qcow2,file={ovmf_vars}",
-            "-drive",
-            f"id=cd0,if=none,format=raw,file={iso},readonly=on",
-            "-device",
-            "ide-cd,drive=cd0,bootindex=0",
+            *boot_media_device_args(iso),
             "-vga",
             "std",
             "-display",
             "none",
             "-no-reboot",
         ]
+
+
+def boot_media_device_args(iso, ide_bus: str | None = None) -> list[str]:
+    """How the UEFI boot ISO is attached — `ide-cd` unless told otherwise.
+
+    `VIBEOS_QEMU_BOOT_TRANSPORT=usb-storage|virtio-blk` swaps the device model,
+    which exists because two things need a NON-ATAPI boot device and neither
+    could get one without hand-rolling a QEMU command line:
+
+    * record/replay refuses `ide-cd`/`scsi-cd` outright — QEMU 9.0.2's
+      `blkreplay` stalls the ATAPI path — so x86 rr is unreachable while the ISO
+      can only be a CD.
+    * freeldr's UEFI boot-path code picks its ARC name from the boot handle
+      (`RemovableMedia && BlockSize == 2048` means cdrom, else rdisk+partition),
+      and that second branch has never been exercised here. A probe found the
+      boot going quiet right after "Switching stack..." over both virtio-blk and
+      usb-storage, and reproducing that needed a one-off QEMU invocation that
+      bypassed the staleness and media guards every other boot goes through.
+
+    A remembered recipe is a missing mechanism, so this is the mechanism.
+    """
+    transport = os.environ.get("VIBEOS_QEMU_BOOT_TRANSPORT", "").strip()
+    drive = ["-drive", f"id=cd0,if=none,format=raw,file={iso},readonly=on"]
+    if not transport or transport == "ide-cd":
+        # `ide_bus` pins the port (q35's AHCI holds one device per port).
+        bus = f",bus={ide_bus}" if ide_bus else ""
+        return [*drive, "-device", f"ide-cd,drive=cd0,bootindex=0{bus}"]
+    if transport == "virtio-blk":
+        return [*drive, "-device", "virtio-blk-pci,drive=cd0,bootindex=0"]
+    if transport == "usb-storage":
+        # xhci, because usb-storage on the default UHCI controller is 1.1-slow
+        # and OVMF enumerates xhci fine.
+        return [
+            *drive,
+            "-device",
+            "qemu-xhci,id=xhci",
+            "-device",
+            "usb-storage,bus=xhci.0,drive=cd0,bootindex=0",
+        ]
+    raise ValueError(
+        f"VIBEOS_QEMU_BOOT_TRANSPORT={transport!r} is not one of ide-cd, virtio-blk, usb-storage"
+    )
 
 
 @dataclass
@@ -876,6 +946,78 @@ class Amd64Config(ArchConfig):
         ]
 
 
+# Real-hardware hazards for amd64-uefi (VIBEOS_QEMU_HOSTILE=all, or a comma list to
+# bisect one at a time). Each strips something QEMU's default PC gives us for free
+# and a 2018+ mini PC does not, so real-hardware bugs show up at smoke speed:
+#   q35    ICH9 chipset: AHCI boot media, HPET, PCIe topology (not i440fx + IDE)
+#   cpu    `-cpu max`: SMEP/SMAP/UMIP/x2APIC/XSAVE features TCG then ENFORCES
+#   nops2  no i8042; input only through USB HID on xHCI
+#   novga  no legacy VGA; GOP from ramfb only
+#   mem    6 GiB, so RAM and the memory map straddle 4 GiB
+#   serial no COM1: the console UART sits at an I/O port only an ACPI SPCR names,
+#          as AMT serial-over-LAN, a BMC or a PCIe serial card does on a real PC
+HOSTILE_HAZARDS = ("q35", "cpu", "nops2", "novga", "mem", "serial")
+HOSTILE_UART = 0x5000
+HOSTILE_UART_IRQ = 5
+
+
+def console_uart_args(arch: str, chardev: str) -> list[str]:
+    """The console UART on `chardev`: COM1, or under the `serial` hostile hazard a
+    16550 at a non-legacy port that only the ACPI SPCR describes. Shared by smoke
+    and the gdb launcher so a debug boot reproduces the boot it is debugging."""
+    if arch == "amd64-uefi" and "serial" in hostile_hazards():
+        return [
+            "-device",
+            f"isa-serial,chardev={chardev},iobase={HOSTILE_UART:#x},irq={HOSTILE_UART_IRQ}",
+        ]
+    return ["-serial", f"chardev:{chardev}"]
+
+
+def make_spcr(path: Path, port: int, irq: int) -> None:
+    """ACPI SPCR rev 2 for a 16550 at I/O `port`, 115200 8N1, VT100, not on PCI.
+    The whole table, header included, as `-acpitable file=` expects."""
+    body = bytearray(80)
+    body[0:4] = b"SPCR"
+    body[4:8] = (80).to_bytes(4, "little")
+    body[8] = 2  # revision
+    body[10:16] = b"VIBEOS"
+    body[16:24] = b"HOSTILE "
+    body[24:28] = (1).to_bytes(4, "little")
+    body[28:32] = b"VIBE"
+    body[32:36] = (1).to_bytes(4, "little")
+    body[36] = 0  # interface: full 16550
+    # Generic Address Structure: SystemIO, 8-bit registers, byte access.
+    body[40:52] = bytes([1, 8, 0, 1]) + port.to_bytes(8, "little")
+    body[52] = 0x01  # interrupt type: dual-8259
+    body[53] = irq
+    body[54:58] = irq.to_bytes(4, "little")  # GSIV
+    body[58] = 7  # 115200 baud
+    body[59] = 0  # no parity
+    body[60] = 1  # one stop bit
+    body[61] = 0  # no flow control
+    body[62] = 0  # terminal type VT100
+    body[64:66] = (0xFFFF).to_bytes(2, "little")  # PCI device: none
+    body[66:68] = (0xFFFF).to_bytes(2, "little")  # PCI vendor: none
+    body[9] = (-sum(body)) & 0xFF
+    path.write_bytes(bytes(body))
+
+
+def hostile_hazards() -> set[str]:
+    raw = os.environ.get("VIBEOS_QEMU_HOSTILE", "").strip().lower()
+    if not raw:
+        return set()
+    if raw == "all":
+        return set(HOSTILE_HAZARDS)
+    want = {h.strip() for h in raw.split(",") if h.strip()}
+    unknown = want - set(HOSTILE_HAZARDS)
+    if unknown:
+        raise ValueError(
+            f"VIBEOS_QEMU_HOSTILE: unknown hazard(s) {sorted(unknown)}; "
+            f"choose from {', '.join(HOSTILE_HAZARDS)} or 'all'"
+        )
+    return want
+
+
 @dataclass
 class Amd64UefiConfig(Amd64Config):
     """amd64 booted via UEFI (OVMF) from the livecd ISO's EFI El Torito entry.
@@ -904,24 +1046,39 @@ class Amd64UefiConfig(Amd64Config):
             capture_output=True,
         )
         ovmf_vars_raw.unlink()
+        hazards = hostile_hazards()
+        machine = list(self.machine_args)
+        if "q35" in hazards or "nops2" in hazards:
+            m = machine.index("-M") + 1
+            machine[m] = ("q35" if "q35" in hazards else machine[m]) + (
+                ",i8042=off" if "nops2" in hazards else ""
+            )
+        if "cpu" in hazards:
+            # `max`, not `host`: rewrite_accel drops only the KVM passthrough model.
+            machine[machine.index("-cpu") + 1] = "max"
         return [
-            *self.machine_args,
+            *machine,
             "-m",
-            self.memory,
+            "6G" if "mem" in hazards else self.memory,
             "-drive",
             f"if=pflash,format=raw,file={ovmf_code},readonly=on",
             "-drive",
             f"if=pflash,format=qcow2,file={ovmf_vars}",
-            "-drive",
-            f"id=cd0,if=none,format=raw,file={iso},readonly=on",
-            "-device",
-            "ide-cd,drive=cd0,bootindex=0",
-            "-vga",
-            "std",
+            # ICH9 AHCI ports hold ONE device each; the temp disk auto-takes port 0.
+            *boot_media_device_args(iso, ide_bus="ide.2" if "q35" in hazards else None),
+            *(["-vga", "none", "-device", "ramfb"] if "novga" in hazards else ["-vga", "std"]),
+            *self._spcr_args(work_dir, hazards),
             "-display",
             "none",
             "-no-reboot",
         ]
+
+    def _spcr_args(self, work_dir: Path, hazards: set[str]) -> list[str]:
+        if "serial" not in hazards:
+            return []
+        spcr = work_dir / "spcr.bin"
+        make_spcr(spcr, HOSTILE_UART, HOSTILE_UART_IRQ)
+        return ["-acpitable", f"file={spcr}"]
 
 
 def _start_echo_server(label: str = "gf") -> socketserver.ThreadingTCPServer:
@@ -1065,6 +1222,18 @@ def temp_disk_args(arch: str, out_dir: Path) -> list[str]:
         "-device",
         "ide-hd,drive=tempdisk",
     ]
+
+
+def _acpitable_relative(args: list[str]) -> list[str]:
+    """`-acpitable file=` splits its value on ':' to accept several files, so a
+    staged Windows path is cut at its drive letter ("Could not open 'C'"). Name
+    the file relative to the staging dir instead, which is the Windows QEMU's
+    working directory."""
+    out = list(args)
+    for i in range(1, len(out)):
+        if out[i - 1] == "-acpitable" and out[i].startswith("file="):
+            out[i] = "file=" + re.split(r"[\\/]", out[i])[-1]
+    return out
 
 
 def _free_tcp_port() -> int:
@@ -1620,8 +1789,14 @@ class QemuVM:
             return []
         return shlex.split(raw)
 
+    def _serial_args(self) -> list[str]:
+        return console_uart_args(self.config.arch, "ser0")
+
     def _xhci_enabled(self) -> bool:
-        return os.environ.get("VIBEOS_QEMU_XHCI", "").strip() in ("1", "true", "yes")
+        if os.environ.get("VIBEOS_QEMU_XHCI", "").strip() in ("1", "true", "yes"):
+            return True
+        # Without an i8042 the only keyboard and mouse are USB ones.
+        return self.config.arch == "amd64-uefi" and "nops2" in hostile_hazards()
 
     def _xhci_args(self) -> list[str]:
         """VIBEOS_QEMU_XHCI=1 attaches a qemu-xhci controller with a USB keyboard
@@ -1923,7 +2098,9 @@ class QemuVM:
         )
         arch = self._without_virtio_input(self.config.prepare_args(self.work_dir))
         disks = [*self._scratch_device_args(), *self._usb_disk_args(), *self._temp_disk_args()]
-        self._prepared_arch_args = be.stage_media_paths(arch, staging) if windows else arch
+        self._prepared_arch_args = (
+            _acpitable_relative(be.stage_media_paths(arch, staging)) if windows else arch
+        )
         self._prepared_disk_args = be.stage_media_paths(disks, staging) if windows else disks
 
     def _build_native_cmd(self) -> list[str]:
@@ -1936,8 +2113,7 @@ class QemuVM:
             f"unix:{self.qmp_path},server,nowait",
             "-chardev",
             f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1",
-            "-serial",
-            "chardev:ser0",
+            *self._serial_args(),
             *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
@@ -2036,8 +2212,7 @@ class QemuVM:
             "chardev=qmp0,mode=control",
             "-chardev",
             f"socket,id=ser0,host={host},port={ser_port},server=off",
-            "-serial",
-            "chardev:ser0",
+            *self._serial_args(),
             *self._prepared_disk_args,
             *self._tripwire_args(),
             *self._smp_args(),
@@ -2081,6 +2256,12 @@ class QemuVM:
                     stdout=subprocess.DEVNULL,
                     stderr=stderr_log,
                     preexec_fn=os.setpgrp,
+                    # The Windows QEMU runs in its staging dir: `-acpitable` names its
+                    # file relative to it (see _acpitable_relative). Every other path
+                    # in the command is absolute, so nothing else depends on this.
+                    cwd=getattr(self, "_win_staging", None)
+                    if self._backend == "windows-host"
+                    else None,
                 )
             # A Windows-stack bind that can lose the port race: a hostfwd, or the gdbstub.
             win_bind = self._backend == "windows-host" and (

@@ -353,6 +353,13 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # drove this to zero and a concurrent lane re-introduced it the same day.
     ns = repo / "tools" / "scan_nightly_surface.py"
     specs.append(("scan_nightly_surface", [py, str(ns)] if ns.is_file() else ["MISSING"], "stdout"))
+    # MSVC is not a supported toolchain (roadmap section 11): every CMake `if()` that tests
+    # for it was resolved by tools/strip_msvc_cmake.py on 2026-10-03. Baseline is EMPTY, so
+    # an upstream merge that brings a new one fails here with the command that resolves it.
+    smc = repo / "tools" / "strip_msvc_cmake.py"
+    specs.append(
+        ("strip_msvc_cmake", [py, str(smc), "--check"] if smc.is_file() else ["MISSING"], "stdout")
+    )
     # shell32's zero-C++ lane has an exhaustive live-CMake ledger. A newly added
     # source, a claimed removal that remains compiled, or an expected source that
     # silently fell out of CMake is a hard mismatch rather than baseline debt.
@@ -721,6 +728,53 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_invented_constants",
             [py, str(sic), "--lint"] if sic.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # Its unlabelled sibling: a BARE `0x8003xxxxu32 as HRESULT` has no name to
+    # resolve, so only the C function it translates can say it is wrong -- the
+    # literal must be a value that function returns. ole32's storage32.rs carried
+    # seven that were not (STG_E_TOOMANYOPENFILES for STG_E_READFAULT and
+    # STG_E_WRITEFAULT, STG_E_INVALIDHANDLE for STG_E_INVALIDNAME, ...).
+    shl = repo / "tools" / "scan_hresult_literals.py"
+    specs.append(
+        (
+            "scan_hresult_literals",
+            [py, str(shl), "--lint"] if shl.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A C do-while's `continue` evaluates the condition; the translated `loop { ..;
+    # if !(cond) { break; } }` jumps over it. Four shipped (an endless setup dialog
+    # loop, a win32k use-after-free re-peek, a temp-name spin, a scrollbar that kept
+    # tracking). The shape also fits a faithful `for (;;)`, so the baseline holds the
+    # sites read against their C and found OK; a NEW one means: go read the C.
+    # `(base as *mut PBYTE).offset(n)` steps in POINTER units: the C's `(PBYTE)base + n`
+    # turned into 8n on 64-bit. oleaut32's RecordCopy read every field past offset 0
+    # from the wrong address; win32k's 16bpp transparent blit wrote 8x past its target.
+    sbs = repo / "tools" / "scan_byteptr_stride.py"
+    specs.append(
+        (
+            "scan_byteptr_stride",
+            [py, str(sbs), "--lint"] if sbs.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # HEAP_ZERO_MEMORY handed to GlobalAlloc: not a GMEM_ flag, so GlobalAlloc refuses it
+    # outright. oleaut32's create_stream did this and no picture ever loaded from a file.
+    sgf = repo / "tools" / "scan_gmem_flags.py"
+    specs.append(
+        (
+            "scan_gmem_flags",
+            [py, str(sgf), "--lint"] if sgf.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    sdc = repo / "tools" / "scan_dowhile_continue.py"
+    specs.append(
+        (
+            "scan_dowhile_continue",
+            [py, str(sdc), "--lint"] if sdc.is_file() else ["MISSING"],
             "stdout",
         )
     )

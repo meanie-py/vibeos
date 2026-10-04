@@ -609,10 +609,58 @@ Record it here and keep going; only chase one when it looks load-bearing.
 
   Two independent non-ATAPI transports, the same failure point, reproducing
   without rr. That is a freeldr boot-device limitation, not an rr limitation and
-  not a QEMU one. Waiting on a newer QEMU would not have helped, and the actual
-  fix is in our tree: get freeldr past `Switching stack...` when the boot device
-  is not ATAPI, and x86 record/replay follows for free over `usb-storage` with no
-  rr changes at all.
+  not a QEMU one. Waiting on a newer QEMU would not have helped.
+
+  **DIAGNOSED 2026-10-03, and "get freeldr past `Switching stack...`" was the
+  wrong goal: freeldr already gets past it.** The silence after that line is the
+  output CHANNEL changing, not a crash — every print from there on went to
+  `TRACE`/`WARN`, which the serial log does not carry, while everything before it
+  used `ConOut`, which it does. Three permanent `ConOut` probes
+  (`freeldr-rust/src/uefildr.rs`, `uefidisk.rs`) now say what happens, and
+  `VIBEOS_QEMU_BOOT_TRANSPORT=usb-storage|virtio-blk` (new, `vm.py`) makes the
+  non-ATAPI boot reproducible through the harness instead of a hand-rolled QEMU
+  line that bypasses the staleness and media guards.
+
+  | | control (`ide-cd`) | `usb-storage` |
+  |---|---|---|
+  | `[FLDR] arc branch` | `CDROM` | `HARDDISK+partition` |
+  | survived `_changestack` | **yes** | **yes** |
+  | next line | `[FLDR] phase: system hive load begin` → desktop | `[FLDR] RunLoader RETURNED (no boot config)` |
+
+  So the real failure is `RunLoader` finding **no boot configuration** on
+  `multi(0)disk(0)rdisk(N)partition(M)`. `UefiGetBootPartitionEntry` did NOT fail
+  (its probe never fired), so the path was computed and simply does not resolve.
+
+  **Root cause: the CD test is a DEVICE-MODEL test standing in for a filesystem
+  question.** `UefiSetBootpath` picks the `cdrom(N)` ARC name only when
+  `RemovableMedia && BlockSize == 2048`. An ISO served over usb-storage or
+  virtio-blk reports 512-byte blocks, fails that test, and takes the hard-disk
+  arm — where freeldr then looks for a partition table and a FAT/NTFS volume that
+  an ISO9660 image does not have.
+
+  The control that pins it: **arm64 takes `HARDDISK+partition` and boots fine**,
+  because its `boot.img` really is a FAT disk. The hard-disk arm is not broken;
+  ISO9660-behind-it is unsupported.
+
+  **The fix for x86 rr** is therefore to decide the ARC name by what the medium
+  IS rather than how the device presents — detect ISO9660 and use `cdrom(N)`
+  regardless of block size — or to teach the rdisk path to mount ISO9660. The
+  first is smaller and is where the bug is.
+
+  **Loader half FIXED 2026-10-04; the claim that rr then "follows with no rr changes"
+  was wrong.** There were two gates, not one: `UefiSetBootpath` chose the arm, and
+  `UefiInitializeBootDevices` registered the `cdrom(N)` device behind a second copy of
+  the same 2048-byte test, so the first fix alone produced `arc branch = CDROM` and
+  then the identical `RunLoader RETURNED (no boot config)`. Both now follow one
+  question -- does the device carry an ISO9660 volume (`UefiMediumIsIso9660`) -- and
+  over usb-storage freeldr loads the hive, the NLS files and every boot driver from
+  `cdrom(0)`. **The kernel then stops at `0x6B`**: QEMU's usb-storage presents
+  "QEMU HARDDISK", so usbstor hands it to `disk.sys`, no CD-ROM device object exists,
+  and cdfs (which mounts only on CD-ROM devices) has nothing to mount the system
+  volume on. Owed for x86 rr: either a USB CD presentation (`usb-bot` + `scsi-cd`,
+  which `blkreplay` refuses -- see above) or ISO9660 mounted from a disk-class device.
+  The prediction was made without booting past the loader; the boot that would have
+  checked it was one command away.
 
   Worth noting how the wrong conclusion was reached, since it is cheap to repeat:
   one transport was tested, it failed, and the cause was attributed to the thing

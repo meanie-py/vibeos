@@ -27,11 +27,6 @@ add_definitions(-Dwcsdup=_wcsdup -Dwcsicmp=_wcsicmp -D_ROAPI_)
 
 add_library(combase MODULE ${SOURCE} ${CMAKE_CURRENT_BINARY_DIR}/combase.def)
 set_module_type(combase win32dll)
-if(MSVC)
-    # Disable warning C4090: 'function': different 'const' qualifiers
-    # Disable warning C4312: 'type cast': conversion from 'unsigned int' to 'void *' of greater size
-    target_compile_options(combase PRIVATE /wd4090 /wd4312)
-endif()
 target_link_libraries(combase wine uuid pseh)
 add_importlibs(combase advapi32 ole32 oleaut32 user32 gdi32 rpcrt4 msvcrt kernel32_vista kernel32 ntdll)
 add_dependencies(combase combase_idlheader wineheaders rpcss)

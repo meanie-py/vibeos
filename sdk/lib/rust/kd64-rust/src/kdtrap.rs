@@ -308,6 +308,14 @@ pub unsafe extern "system" fn KdpTrap(
     handled
 }
 
+extern "C" {
+    /// The UART KdpStub's text path writes DbgPrint to while real KD is off,
+    /// shared with rtl's kernel-mode DebugPrint (rtl-diag owns it). COM1 unless
+    /// kdinit.rs moved it for `DEBUGPORT=COM:0x<port>`: a PC without a legacy
+    /// COM1 publishes its console UART in ACPI SPCR, and the loader hands it over.
+    pub static mut RtlpDebugConsolePort: u16;
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KdpStub(
     TrapFrame: PKTRAP_FRAME,
@@ -331,13 +339,14 @@ pub unsafe extern "system" fn KdpStub(
         if exception_command == BREAKPOINT_PRINT {
             let buffer = (*ExceptionRecord).ExceptionInformation[1] as *const UCHAR;
             let length = (*ExceptionRecord).ExceptionInformation[2] as USHORT;
-            let lcr = KdpReadPortUchar(0x3FB);
+            let port = RtlpDebugConsolePort;
+            let lcr = KdpReadPortUchar(port + 3);
             if (lcr & 0x80) != 0 {
-                KdpWritePortUchar(0x3FB, lcr & 0x7F);
+                KdpWritePortUchar(port + 3, lcr & 0x7F);
             }
             let mut i: USHORT = 0;
             while i < length {
-                KdpWritePortUchar(0x3F8, *buffer.add(i as usize));
+                KdpWritePortUchar(port, *buffer.add(i as usize));
                 i += 1;
             }
         }

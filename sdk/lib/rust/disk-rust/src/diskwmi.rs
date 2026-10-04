@@ -274,17 +274,20 @@ const READ_ATTRIBUTES: u8 = 0xD0;
 const READ_THRESHOLDS: u8 = 0xD1;
 const SMART_READ_LOG: u8 = 0xD5;
 const SMART_WRITE_LOG: u8 = 0xD6;
-const IOCTL_SCSI_MINIPORT_ENABLE_SMART: u32 = 0x050008;
-const IOCTL_SCSI_MINIPORT_DISABLE_SMART: u32 = 0x05000C;
-const IOCTL_SCSI_MINIPORT_RETURN_STATUS: u32 = 0x050010;
-const IOCTL_SCSI_MINIPORT_ENABLE_DISABLE_AUTOSAVE: u32 = 0x050014;
-const IOCTL_SCSI_MINIPORT_SAVE_ATTRIBUTE_VALUES: u32 = 0x050018;
-const IOCTL_SCSI_MINIPORT_EXECUTE_OFFLINE_DIAGS: u32 = 0x05001C;
-const IOCTL_SCSI_MINIPORT_READ_SMART_ATTRIBS: u32 = 0x050020;
-const IOCTL_SCSI_MINIPORT_READ_SMART_THRESHOLDS: u32 = 0x050024;
-const IOCTL_SCSI_MINIPORT_READ_SMART_LOG: u32 = 0x050028;
-const IOCTL_SCSI_MINIPORT_WRITE_SMART_LOG: u32 = 0x1B050C; // scsi.h ((FILE_DEVICE_SCSI<<16)+0x050c)
-const IOCTL_SCSI_MINIPORT_IDENTIFY: u32 = 0x050030;
+// ddk/scsi.h: ((FILE_DEVICE_SCSI << 16) + 0x05xx). SRB_IO_CONTROL.ControlCode
+// values the miniport dispatches on. All but WRITE_SMART_LOG were invented
+// (0x0500xx), so no IDE/ATA miniport could recognise a single SMART request.
+const IOCTL_SCSI_MINIPORT_IDENTIFY: u32 = 0x1B0501;
+const IOCTL_SCSI_MINIPORT_READ_SMART_ATTRIBS: u32 = 0x1B0502;
+const IOCTL_SCSI_MINIPORT_READ_SMART_THRESHOLDS: u32 = 0x1B0503;
+const IOCTL_SCSI_MINIPORT_ENABLE_SMART: u32 = 0x1B0504;
+const IOCTL_SCSI_MINIPORT_DISABLE_SMART: u32 = 0x1B0505;
+const IOCTL_SCSI_MINIPORT_RETURN_STATUS: u32 = 0x1B0506;
+const IOCTL_SCSI_MINIPORT_ENABLE_DISABLE_AUTOSAVE: u32 = 0x1B0507;
+const IOCTL_SCSI_MINIPORT_SAVE_ATTRIBUTE_VALUES: u32 = 0x1B0508;
+const IOCTL_SCSI_MINIPORT_EXECUTE_OFFLINE_DIAGS: u32 = 0x1B0509;
+const IOCTL_SCSI_MINIPORT_READ_SMART_LOG: u32 = 0x1B050B;
+const IOCTL_SCSI_MINIPORT_WRITE_SMART_LOG: u32 = 0x1B050C;
 const SRB_TYPE_STORAGE_REQUEST_BLOCK: u8 = 1; // srb.h:664
 // ddk/srb.h:108 == 0x28. This constant is WRITTEN into srbEx.Function here and TESTED
 // against a second, differently-wrong copy below -- the test could never match.
@@ -393,9 +396,9 @@ unsafe fn DiskDisableSmart(FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION) -> NT
     let mut bufferSize: u32 = (SRB_CTL_SIZE + SENDCMD_SIZE) as u32;
     DiskPerformSmartCommand(
         FdoExtension,
-        0u32, // IOCTL_SCSI_MINIPORT_DISABLE_SMART
-        0xB0u8,  // SMART_CMD
-        0xD9u8,  // DISABLE_SMART
+        IOCTL_SCSI_MINIPORT_DISABLE_SMART, // was 0
+        SMART_CMD,
+        DISABLE_SMART,
         0u8,
         0u8,
         &raw mut srbControl as *mut u8 as *mut SRB_IO_CONTROL,
@@ -505,9 +508,9 @@ pub unsafe extern "system" fn DiskReadSmartLog(
     if !srbControl.is_null() {
         status = DiskPerformSmartCommand(
             FdoExtension,
-            0x0000002c, // IOCTL_SCSI_MINIPORT_READ_SMART_LOG (typical value)
-            0xB0,       // SMART_CMD
-            0xD5,       // SMART_READ_LOG
+            IOCTL_SCSI_MINIPORT_READ_SMART_LOG, // was 0x2c ("typical value")
+            SMART_CMD,
+            SMART_READ_LOG,
             SectorCount,
             LogAddress,
             srbControl,
@@ -1447,9 +1450,10 @@ pub unsafe extern "C" fn DiskReadFailurePredictData(
             if !outBuffer.is_null() {
                 status = DiskPerformSmartCommand(
                     FdoExtension,
-                    0, // IOCTL_SCSI_MINIPORT_READ_SMART_ATTRIBS (unknown)
-                    0xB0, // SMART_CMD (unknown)
-                    0xD0, // READ_ATTRIBUTES (unknown)
+                    // DiskReadSmartData(): this ControlCode was 0
+                    IOCTL_SCSI_MINIPORT_READ_SMART_ATTRIBS,
+                    SMART_CMD,
+                    READ_ATTRIBUTES,
                     0u8,
                     0u8,
                     outBuffer as *mut SRB_IO_CONTROL,

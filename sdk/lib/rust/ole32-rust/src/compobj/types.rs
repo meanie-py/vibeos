@@ -125,6 +125,9 @@ pub struct apartment {
     pub win: HWND,               // message window (LOCK)
     pub filter: LPMESSAGEFILTER, // message filter (CS cs)
     pub main: BOOL,              // is this a main-threaded-apartment? (RO)
+
+    // wine-10 (combase apartment.c): CoIncrementMTAUsage cookies holding the MTA alive
+    pub usage_cookies: list,     // (CS csApartment)
 }
 
 /// struct init_spy (compobj_private.h)

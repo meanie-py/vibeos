@@ -416,7 +416,7 @@ def _boot_vm(
             pass
         if outcome == "reached":
             # A green desktop does not prove an `--smp N` run actually got SMP.
-            smp_fail = _smp_check(text, arch)
+            smp_fail = _smp_check(text, arch) or _ahci_check(text)
             if smp_fail is not None:
                 return {
                     "ok": False,
@@ -620,6 +620,19 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
         )
 
 
+def _staged_payloads(repo: Path, arch: str) -> list[str]:
+    """The payload names the last build of this arch stamped into its build dir."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "payload_compile", repo / "tools" / "payloads" / "compile.py"
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.read_stamp(repo / f"build-{arch}")
+
+
 def _payload_stage(
     run: Run, repo: Path, arch: str, payloads: str, idx: int = 0, total: int = 1
 ) -> None:
@@ -719,6 +732,35 @@ def _payload_stage(
         )
 
 
+# uniata-rust prints this from AhciDetect (id_sata.rs) once it has mapped the
+# controller's ABAR and counted its ports; found=1 is the only proof that the
+# guest drove the CD through AHCI rather than some fallback.
+_AHCI_FOUND_RE = re.compile(r"\[UNIATA\] AhciDetect: exit found=1\b")
+
+
+def ahci_requested() -> bool:
+    """`--ahci` (or the older VIBEOS_AHCI_CD=1 knob it sets): the boot CD sits
+    on an ich9-ahci controller instead of the IDE bus (backend.py)."""
+    return os.environ.get("VIBEOS_AHCI_CD", "").strip() == "1"
+
+
+def _ahci_check(text: str) -> dict | None:
+    """Prove an `--ahci` boot actually ran uniata's AHCI path. A desktop alone
+    proves nothing here: if the controller were not attached, or uniata fell
+    back to legacy/PIO mode, the boot would look identical and an AHCI soak
+    would bank green for a path it never touched."""
+    if not ahci_requested() or _AHCI_FOUND_RE.search(text):
+        return None
+    return {
+        "classification": "AHCI_NOT_ENGAGED",
+        "salient": [
+            "--ahci boot reached the desktop but uniata never reported `AhciDetect: exit found=1`",
+            "the CD was not on ich9-ahci (backend.py rewrite) or uniata did not "
+            "claim it in AHCI mode (PCI#CC_0106 in hivesys.inf)",
+        ],
+    }
+
+
 def smoke(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # base for staleness/build dir; boot resolves vm_arch
     run = Run("smoke", arch)
@@ -778,6 +820,34 @@ def smoke(args, repo: Path) -> int:
             )
         )
 
+    # --- payload preflight (hard boundary) ---
+    # Payloads are staged at BUILD time, and the build stamps which. Booting media
+    # that lacks the payload waits out its whole launch drain for a marker nothing
+    # can print, then fails as a generic "payload suite FAILED" -- and meanwhile
+    # runs whatever the media DOES carry (an rpmprobe run on kmtest media drove a
+    # kmtest sweep into a double fault and reported it as rpmprobe's failure).
+    wanted = [p.strip() for p in (getattr(args, "payload", "") or "").split(",") if p.strip()]
+    if getattr(args, "doom", False) and "doom" not in wanted:
+        wanted.append("doom")
+    if wanted:
+        staged = _staged_payloads(repo, arch)
+        absent = [p for p in wanted if p not in staged]
+        if absent:
+            run.classification = "PAYLOAD_NOT_IN_MEDIA"
+            run.add(
+                Stage(
+                    "payload-check",
+                    status="fail",
+                    detail=f"media carries {','.join(staged) or '<none>'}, not {','.join(absent)}",
+                    salient=[
+                        f"VIBEOS_PAYLOAD={','.join(wanted)} ./vibeos-cli build --arch {arch}",
+                        "then re-run this smoke",
+                    ],
+                )
+            )
+            return run.finalize(repo)
+        run.add(Stage("payload-check", status="ok", detail=",".join(wanted)))
+
     total = max(1, int(getattr(args, "repeat", 1) or 1))
     until = getattr(args, "until", None) or ""
     fail_on = getattr(args, "fail_on", None)
@@ -795,6 +865,19 @@ def smoke(args, repo: Path) -> int:
     if smp:
         os.environ["VIBEOS_QEMU_SMP"] = str(smp)
         run.add(Stage("smp", status="warn", detail=f"-smp {smp}"))
+
+    # AHCI channel: the boot CD on ich9-ahci (backend.py), and every boot must
+    # then show uniata driving it (_ahci_check). x86 only: arm64 boots a
+    # ramdisk and has no IDE CD to move.
+    if getattr(args, "ahci", False):
+        if arch == "arm64":
+            run.classification = "BAD_ARGS"
+            run.add(
+                Stage("ahci", status="fail", detail="--ahci is x86-only (arm64 boots a ramdisk)")
+            )
+            return run.finalize(repo)
+        os.environ["VIBEOS_AHCI_CD"] = "1"
+        run.add(Stage("ahci", status="warn", detail="boot CD on ich9-ahci"))
 
     results = []
     for i in range(total):

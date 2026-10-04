@@ -774,6 +774,23 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def foreign_boot_holders(own_pid: int, leases: int = DEFAULT_BOOT_LEASES) -> list[dict]:
+    """Holder metadata of every held boot permit NOT taken by `own_pid` -- what a
+    `farm --polite` worker checks before each boot so a background soak never
+    competes with another agent's smoke or gate for the pool."""
+    out = []
+    for f in _boot_lease_files(leases):
+        if not _is_held(f):
+            continue
+        try:
+            meta = json.loads(f.read_text() or "{}")
+        except (OSError, ValueError):
+            meta = {}
+        if meta.get("pid") != own_pid:
+            out.append(meta)
+    return out
+
+
 def _is_held(p: Path) -> bool:
     """Probe whether a lock file is currently held by anyone (NB flock that we immediately
     drop if it was free). A held lock → EWOULDBLOCK → True."""

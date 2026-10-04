@@ -995,6 +995,20 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   C function DEFINED by the current mode (`rint`, `nearbyint`, `lrint`, `llrint`) must not be
   a plain `libm` call: use `frintx`/`frinti` on arm64. On x86 libm's `x + 2^52 - 2^52` happens
   to round in MXCSR's mode.
+- **`libm` is NOT musl for `pow`/`exp`/`log`** (or `exp2`/`log2`): those are FreeBSD msun's
+  older e_pow.c and friends — under 1 ulp, but `pow(10, n)` misses the nearest double in 65 of
+  601 cases (glibc 2, musl's current code 3). msvcrt's x87 `pow` got them right, so a straight
+  swap regressed i386; the msvcrt winetest saw it because it builds its EXPECTED values with
+  `pow(10, n)`. `sdk/lib/rust/musl-math` is a port of musl's ARM-routine versions, graded
+  bit-exact against the musl C (`musl-math-difftest`). Check a crate's `origin:` header
+  before calling it "the same code as X".
+- **Generating coefficient tables from C: diff the generated values against the compiled C
+  object, not against your reading of the source.** Two generator bugs shipped wrong tables
+  that the Rust compiled and ran fine on: matching C designated initializers by POSITION
+  (exp_data.c initialises `negln2hiN` before `shift`, unlike the struct), and stripping a
+  float `f` suffix with `rstrip("f")`, which ate the last digit of every hex table integer
+  ending in `f`. Both surfaced only as "exp-family mismatches, log-family exact" in the
+  bit-exact fuzz; dumping `__exp_data` from the C object found them in a minute.
 
 ### i386 symbol lookup and asm aliasing
 - **Three decoration schemes**: cdecl `_name`, stdcall `_name@N`, fastcall `@name@N`. A grep
@@ -1154,6 +1168,15 @@ allocation used the real element size, so nothing looked wrong until index 1.
 
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
+
+### `(base as *mut PBYTE).offset(n)` strides by a POINTER, not a byte
+The C's `(PBYTE)base + n` came out as a cast to a pointer *to* a `PBYTE` followed by
+`.offset(n)`, which steps 8 bytes per unit on 64-bit; the result is cast straight back, so it
+compiles everywhere and is wrong only once `n != 0`. oleaut32's `IRecordInfoImpl_RecordCopy`
+read every field past offset 0 from 8x its address (Wine's vartype test died in
+`SysAllocString` on the garbage BSTR); win32k's `DIB_16BPP_TransparentBlt` wrote 8x past its
+destination rect (16bpp only, so the 32bpp smoke never saw it). **Gated:
+`tools/scan_byteptr_stride.py`** — the tree holds no legitimate `*mut PBYTE` arithmetic.
 
 ### `LIST_FOR_EACH_ENTRY` translated without its container_of
 
@@ -1446,6 +1469,33 @@ size-verified. Real damage:
 - **A dropped term in a hand-derived `sizeof` `#define`** under-allocates and overlaps the
   extension layout; **a dropped `FIELD_OFFSET(T, Array[N])` subscript scaling** under-allocates
   the heap block.
+
+### A `pshpack` region translated as plain `repr(C)`
+**Symptom.** A file-format reader rejects valid input or reads fields a few bytes off.
+oleaut32's `OleLoadPictureEx` failed every placeable metafile (Wine's olepicture `test_apm`,
+then a crash on the NULL picture), and every icon directory entry was read 2 bytes late.
+**Cause.** The C declared `APM_HEADER`, `CURSORICONFILEDIRENTRY` and `CURSORICONFILEDIR`
+between `#include "pshpack1.h"` and `poppack.h`; the translation gave them plain `#[repr(C)]`,
+so `APM_HEADER` padded to 24 bytes instead of 22 and `idEntries` moved from offset 6 to 8.
+The pack pragma is invisible at the struct, so nothing at the definition looked wrong.
+**Fix.** `#[repr(C, packed)]` plus a `const _: () = assert!(size_of / offset_of ...)` per
+struct. Audit a module by listing every struct inside a `pshpack`/`poppack` pair in its C and
+checking the Rust `repr` (a ten-line script; ole32/oleaut32's other twenty were fine). This is
+the mirror image of the packed-`TDI_ADDRESS_IP` bullet above: wrong in either direction, and
+only a size assert catches it.
+
+### A macro translated from the wrong side of an `#ifdef`
+**Symptom.** Values built through one helper are corrupt in a way that looks like two fields
+swapped. In oleaut32 every negative `DECIMAL` made with `SIGNSCALE` had scale 128, and
+`DECIMAL` products, quotients and `VarDecFromR8` results came back with sign and scale crossed
+(Wine's vartest: `VarMul ... 0.000000, expected 46.200000`).
+**Cause.** `variant.h` defines `SIGNSCALE` twice, under `#ifdef WORDS_BIGENDIAN` and `#else`;
+the translation copied the big-endian branch, `(scale << 8) | sign`, and even labelled it "LE
+branch". The same swap was then written inline in `VARIANT_DecFromDI`, and a reader tested the
+sign as `signscale & 0x80` (bit 7 of the scale byte).
+**Fix.** Use the named union fields (`scale`, `sign`) instead of composing the packed word, and
+when a macro has endian or arch branches, check which one the comment claims against the
+header itself. Grep the crate for every other composition of the same word.
 
 ### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
 `ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.
@@ -2489,6 +2539,40 @@ tests with `NT_SUCCESS` would not notice, which is why it survived. **When a sub
 own success status (HIDP_, USBD_, NDIS_, SCARD_...), grep the translation for bare `0` returns in
 functions whose C returns it.**
 
+### A bare HRESULT literal that is the right family's WRONG member
+ole32's storage32.rs spelled its errors as `return 0x80030004u32 as HRESULT;` and seven did not
+match the C: `BlockChainStream_ReadAt`/`WriteAt` returned `STG_E_TOOMANYOPENFILES` for
+`STG_E_READFAULT` and `STG_E_WRITEFAULT`, `CreateStream` returned `STG_E_INVALIDHANDLE` for
+`STG_E_INVALIDNAME` (twice) and `E_INVALIDARG` for `STG_E_INVALIDPARAMETER`, and the header
+loader returned `0x80030001`/`0x80030002` for `STG_E_OLDFORMAT`/`STG_E_INVALIDHEADER`. Same
+severity, same facility, plausible magnitude, so nothing looks wrong. **`tools/scan_hresult_literals.py`
+(in `vibeos-cli check`) holds every bare `0x8xxxxxxx as HRESULT` to the set of names the
+same-named C function uses**; it finds none of a value's names there → finding. Its one blind
+spot: a wrong member that the same function ALSO returns correctly elsewhere
+(`STG_E_INVALIDFLAG` for `STG_E_INVALIDFUNCTION` passed it). Prefer the name when you touch one.
+
+### A file-format OFFSET spelled as a number reads the neighbouring field
+`StorageImpl_LoadFileHeader` read the compound-file header with literal offsets, and one of
+eleven was the field beside the right one: `bigBlockDepotCount` came from **40**
+(`OFFSET_DIRSECTORCOUNT`, always 0 in a 512-byte-sector file) instead of **44**
+(`OFFSET_BBDEPOTCOUNT`). Writing used the named constants, so every docfile saved fine and
+**no docfile could ever be reopened**: the depot count read back 0, the first chain walk failed
+its bounds check, `STG_E_READFAULT`. Wine's stg_prop test crashed on the NULL storage that left.
+The tell was a probe, not a read: ReadAt never failed, the file was the right size, and the
+structure was logically empty. **When a parser and its writer disagree, diff their offset
+lists — the writer is usually the named one.**
+
+### A C `0` handle sentinel translated as `INVALID_HANDLE_VALUE`
+`StgCreateDocfileOnILockBytes` calls `Storage_Construct(0, 0, plkbyt, ...)`; the translation
+passed `INVALID_HANDLE_VALUE`. `StorageImpl_Construct` takes the FILE branch for any non-NULL
+handle, `FileLockBytesImpl_Construct` rejects -1, and `lockBytes` stays NULL, so every
+ILockBytes-backed storage in the OS (clipboard, OLE embedding, data caches) failed to
+construct and its cleanup then flushed through the NULL pointer. Four Wine ole32 suites died at
+one address. Both sentinels mean "no handle" and both compile; which one a callee tests is the
+contract. **A handle argument that is `INVALID_HANDLE_VALUE` in Rust and `0`/`NULL` in the C (or
+the reverse) is a finding; `CreateFileMapping(INVALID_HANDLE_VALUE, ...)` is the legitimate
+exception.**
+
 ### Locally re-declared enum members with GUESSED values (SILENT)
 The translator re-declares an enum member it needs as a local `const NAME: T = <value>` and
 guesses — often the intuitive-but-wrong value, or a *different* enum's similarly-named member.
@@ -2812,6 +2896,17 @@ measured the vis region and `prgnRao` *correctly* at update time. **A hand-typed
 literal is the flag-cousin of the magic struct offset — treat it as wrong until proven right.**
 The constants were always available via the bindgen glob; the literals were pure debris.
 **Corollary: when a pipeline has N derived stages, probe the LAST consumer, not the producers.**
+
+**And one that names NO member.** ole32's `StorageBaseImpl_CreateStream` tested
+`grfMode & 0x00004000` for `STGM_DELETEONRELEASE`, which is `0x04000000`; no STGM flag is
+`0x4000`, so the check never fired (and returned `STG_E_INVALIDFLAG` where the C says
+`STG_E_INVALIDFUNCTION`).
+
+**And one from the wrong FAMILY.** oleaut32's `create_stream` called
+`GlobalAlloc(HEAP_ZERO_MEMORY, n)` where the C says `GMEM_FIXED` (0). 0x8 is not a GMEM_ bit, so
+GlobalAlloc failed with `ERROR_INVALID_PARAMETER` and no picture ever loaded from a file (Wine's
+olepicture test then crashed releasing the pointer it never got). **Gated:
+`tools/scan_gmem_flags.py`.**
 
 **The same class one bit narrower — a PARTIAL mask.** `NtOpenKey` masked `& !0x0100u32` where
 the C masks `~KEY_WOW64_RES` (**0x0300**): right family, half the width, and the named constant
@@ -4239,6 +4334,15 @@ call and `invented` still catches a hallucinated token.
 **And say so in the contract.** The `goto` branch already documents why: told "do not
 duplicate" when the C forces duplication, models MINT NEW TOKEN NUMBERS past the end of the
 list rather than repeat one. The fall-through branch now gets the same sentence.
+
+**The opposite face: the translation did NOT replay the fall-through.** Then nothing is
+rejected and behaviour is silently lost. oleaut32's `VarMod` falls BOOL..I8 → INT → UI1..CY →
+EMPTY/DATE/DECIMAL → BSTR, so every one of those right-operand types ends at BSTR's
+"NULL % x is NULL" check; the `match` gave each arm only its own check, and
+`VarMod(NULL, int)` returned `DISP_E_TYPEMISMATCH` (Wine's vartest). Replay it explicitly: map
+the arm to a stage number and run each check `if stage <= k`. When reviewing a translated
+`switch`, look for arms that end without `break` in the C and confirm the Rust arm repeats the
+rest of the chain.
 
 **The rejection that was real, from the same run.** Do not read this entry as "the audit
 over-rejects." `AccRewriteGetNamedRights` was rejected for duplicating `SetLastError`, and
@@ -6957,6 +7061,20 @@ CriticalDeviceDatabase, and then nothing, with no AddDevice and no error. The lo
 is long (acpi, partmgr, disk, ...), because the shared hive names drivers the ramdisk never
 carries; read it when a device binds to nothing.
 
+### arm64 smoke hangs in PXE/HTTP boot with no freeldr output: boot.img is a whole number of cylinders
+
+**Symptom.** `smoke:arm64` HANG_TIMEOUT; the serial log ends in `>>Start HTTP Boot over
+IPv4`, with `BdsDxe: failed to load Boot0002 "UEFI PXEv4"` and no `Starting freeldr` line at
+all. Deterministic for that tree, and nothing in the code changed that could explain it.
+
+**Cause.** `mkramdisk.sh` sizes boot.img from the staged tree. At exactly 315MB (645120
+sectors = 640 x 16 x 63), `mformat -F` writes an MBR entry spanning the whole disk (instead
+of stopping at the last full cylinder) and a floppy media byte and drive number (0xF0, 0x00).
+AAVMF then never offers the disk as a boot device. 314MB and 316MB format normally.
+
+**Fix.** `mkramdisk.sh` passes `-m 0xf8` and bumps `BOOT_SIZE_MB` past any multiple of 1008
+sectors. Diagnose by diffing the first 512 bytes against a booting image (`cmp -l`).
+
 ### An arm64 ramdisk refreshed in place keeps every file it ever held
 **Symptom.** arm64 `test_start_menu_opens` passed on some worktrees and failed on others at
 the same commit. A payload-less build still autostarted `kmtest-sweep.exe`, plus a
@@ -7280,6 +7398,28 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### i386 guest float compares go the wrong way: the emulator's SAHF, not the code
+
+**Symptom:** on i386 only, an x87 floating-point comparison takes the wrong branch, while the
+same binary is right on the host CPU. Wine's msvcrt `string.c:3522` failed 5,535 times with
+`d.x` and `expected` printing the same digits: its `compare_double` judged two IDENTICAL
+doubles 2^63 ulps apart. Every logged `_atodbl` result was the correctly rounded double.
+
+**Cause:** the windows-host smoke backend's QEMU (11.0.50, development snapshot
+`v11.0.0-12631-g54e84cdc7a`) sets CF wrong when `sahf` follows a logic op (`or`, `xor`,
+`test`) or a plain `mov`; after `and`/`add`/`sub`/`sbb`/`inc`/`cmp`/`shl`/`neg` it is right.
+The i386 tree builds with `-march=pentium` (no `fcomi`), so EVERY compiled x87 comparison is
+`fucom; fnstsw %ax; sahf; jcc`, and the `x |= 1ULL << 63` before the second sign test is an
+`orl`. Pure integer code reproduces it, so it is not the kernel's FPU context handling.
+
+**Fix:** none in our tree; it is the emulator. `tools/payloads/atodbl` is the check: it runs
+SAHF after each op class, the exact compiled `compare_double` from its raw bytes, and the
+winetest's loop, each against its native result, and passes only on a correct emulator. When
+an i386-only float result looks impossible, run it before suspecting the code. The method that
+found it: dump raw bits through `DbgPrint` (not the printf under test), build the probe with
+the tree's flags (a default-flags build used SSE moves and passed), then run the same bytes
+natively and shrink the sequence until one instruction is left.
 
 ### `grep` reports ZERO matches in 21 of our .c/.h files, because it decides they are binary
 
@@ -10233,6 +10373,25 @@ translation bug; the free-while-mapped tripwire (negative); `MmInsertRmap`'s two
 diagnosis** — and it is kept after the fix because the two faces are the thing a reader will
 recognise if anything like it returns.
 
+### A boot that goes silent at one line may have changed output CHANNEL, not died
+
+**Symptom:** the serial log stops dead after a specific line and nothing follows,
+so that line reads as the crash site. x86 freeldr "died at
+`[freeldr] Switching stack...`" for months on any non-ATAPI boot device, and the
+conclusion written down was that the stack switch itself failed.
+
+**Cause:** the code before that line printed via UEFI `ConOut`, which the serial
+log carries; everything after it printed via `TRACE`/`WARN`, which it does not.
+The boot was running fine and invisible. A `ConOut` probe placed immediately after
+the switch printed, which took one boot to establish and overturned the whole
+reading — the real failure was ~20 lines later, in `RunLoader`.
+
+**Fix:** before believing a last-line-is-the-crash-site story, check whether the
+NEXT code uses a different print path. The discriminator is cheap: put one probe
+on the channel the log demonstrably carries, immediately after the suspect line.
+If it prints, the line is a channel boundary, not a fault — and the probe is worth
+keeping, because the next reader will otherwise draw the same wrong conclusion.
+
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the
   config manager loads the hive early and growing it shifts everything. **Don't ship the hive
@@ -10323,7 +10482,37 @@ be the kernel" is wrong.
 ### Un-parking the AP into the scheduler `[§9.52]`
 Four rules: per-processor Phase-1 loops must run **after** `KeStartAllProcessors`; the trap.S
 interrupt stub's **handler** owns the IRQL protocol; **TLB-shootdown senders must poll-service,
-never just wait**; and skipping the round-trip for `hlt`ed CPUs (lazy-idle TLB) is a large win.
+never just wait**; and skipping the round-trip for `hlt`ed CPUs (lazy-idle TLB) is a large win
+— **but only if EVERY way out of `hlt` services the deferral before running anything**, including
+device ISRs (next entry: one path did not, and it corrupted amd64 memory silently).
+
+### Successful reads that leave their pages ZERO: a lazy-TLB CPU ran a device ISR
+**Symptom** (amd64 `-smp 2`, roughly half of boots; i386 never): faces with nothing in common —
+csrss `0xC000001D` twice at the *same* address (int3 padding after an import thunk, the caller's
+return address still at `[rsp]`), `0x6B` with `STATUS_DISK_CORRUPT_ERROR`, a kernel `0x1E`
+executing at `0x8f654`, `0x4C`/`STATUS_INVALID_IMAGE_FORMAT`, double faults inside
+`RtlVirtualUnwind` (the dispatcher unwinding from a garbage PC until the stack ran out), and
+silent hangs. Boots that reached the desktop carried the corruption too.
+
+**Cause:** amd64's lazy-idle TLB protocol lets a shootdown sender skip any CPU blocked in `hlt`
+on the premise that it "touches only stable kernel mappings". A device interrupt wakes that CPU
+and `KiInterruptDispatch` runs the ISR at once — and the IDE ISR copies PIO sector data through
+the system-VA mapping of the request's MDL, a VA the system-PTE pool had recycled while this CPU
+still held the old translation. The data went to the OLD physical page: the read's own pages
+stayed zero (they come zeroed from `MmRequestPageMemoryConsumer`) while whatever now owned the
+old page was overwritten. Only idle-exit and the DPC ISR serviced the deferral.
+
+**Fix:** `KiInterruptDispatch` calls `KiTbLazyIdleExitForInterrupt` before the ISR
+(`ke/amd64/ipi.rs`). Measured: 8/8 `-smp 2` boots to desktop with zero corrupt reads, against
+9/16 and 15 zero pages in 3 of 4 boots before.
+
+**How it was found, which is the reusable part:** the faces were too varied to chase one at a
+time, so the probes went where the bytes are decided rather than where they are used. `[KI-EXC]`
+printing the code bytes at RIP turned "illegal instruction" into "this page is zeros"; a scan
+after `IoPageRead` in `MmMakeSegmentResident` then showed full 16 KB reads succeeding with zero
+pages, every one on CPU 1, against a `-smp 1` control whose only zero reads were single genuine
+tail sectors. **Diff the SMP probe output against a UP control before reading it** — half the
+first listing was legitimate zeros.
 
 ### The ready-list tear: five refuted theories and the one real hole `[§9.56]`
 **FIXED** (all three arches; 0 occurrences across every post-fix boot). The long hunt is the
@@ -10731,6 +10920,14 @@ wrong dirent.
 **Generalize.** An uninitialised C local inside a loop is a read of the previous iteration
 whenever anything reads it before writing it, including a callee through a pointer. A
 translator that adds `= 0` (or `zeroed()`) is changing behaviour, not tidying.
+
+**Twice more in fastfat (2026-10-04), as a fresh `...Li` temporary copied back after the
+call.** `FatDefragDirectory` gave `FatLocateDirent` a zeroed `FoundOffsetLi` each pass, where the
+C passes its one `FoundOffset`. The compaction scan drifted on page 0, ended early, and rebuilt
+the free-dirent bitmap calling live root entries free, so every create in a full FAT16 root
+raised `STATUS_FILE_CORRUPT_ERROR` (~100k raises in Wine's storage32). `FatLocateSimpleOemDirent`
+zeroed `ByteOffsetLi` the same way, which lets `FatSelectNames` pick an 8.3 name that is taken.
+The tell is the temporary itself: an in/out `PVBO` parameter has to be the caller's variable.
 
 ### Completing the media wakes up code that a missing file was holding back
 **Symptom.** The first arm64 boot from the full livecd file set wedged during first-boot setup:
@@ -11915,6 +12112,33 @@ introduced at any heap exit — it is an external stray write.**
   device with no `addr=` takes the first free slot, the disk moves to slot 3, and Boot0001
   now names the new device. UEFI skips it silently and falls through to network boot.
 - **Fix:** pin rig devices to a free slot (`addr=0x8`). `VIBEOS_QEMU_XHCI=1` does.
+
+### x86 serial: the loader talks, then the kernel goes silent (no legacy COM1)
+
+**Symptom.** `[FLDR] phase: handoff to kernel` is the last serial line, yet the box
+reaches the desktop (HLT idle, Explorer on screen): smoke calls it HANG_TIMEOUT.
+Variant: user-mode lines (`[SMSS]`, `[CSRSS]`) arrive but every kernel-mode line
+(`ACPI v…`, `[KRNLBASE]`, `[WIN32K] shell ready`) is missing.
+
+**Cause.** x86 debug text reaches the wire through three writers, and only one of
+them reads `DEBUGPORT`:
+- `KdpStub` (kd64 `kdtrap.rs`) carries **user-mode** DbgPrint while real KD is off,
+  which is every boot except `/DEBUGPORT=COM2`.
+- rtl-diag's `DebugPrint` has a **ring-0 fast path** that polls the UART itself.
+- kd-rust's KD providers (`KdpSerialInit`) parse `DEBUGPORT`, but on x86 they run
+  only when real KD is on, so they are not the console.
+
+The first two wrote port 0x3F8 directly. On a machine whose UART is somewhere else
+(AMT serial-over-LAN, a BMC or a PCIe card, described by ACPI SPCR) they printed
+into nothing.
+
+**Fix.** Both now write `RtlpDebugConsolePort` (owned by rtl-diag so every image
+that links DebugPrint resolves it), which kd64's `KdInitSystem` sets from
+`DEBUGPORT=COM:0x<port>`. The loader produces that option when COMn is absent
+and SPCR names a 16550 in I/O space. Repro the whole chain with
+`VIBEOS_QEMU_HOSTILE=serial ./vibeos-cli smoke --arch amd64`. A breakpoint will
+not find this: the gdb toolkit relocates symbols from the kernel's own
+`[KRNLBASE]` serial line, which is exactly what goes missing.
 
 ### Localization techniques that repeatedly worked
 - **DbgPrint-bisect with REAL `DbgPrint`.** Translated `TRACE!`/`WARN!`/`DPRINT` are no-op

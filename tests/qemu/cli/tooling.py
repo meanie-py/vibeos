@@ -91,6 +91,10 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    (".", ".", "tools/test_scan_hresult_literals.py"),
+    (".", ".", "tools/test_scan_dowhile_continue.py"),
+    (".", ".", "tools/test_scan_byteptr_stride.py"),
+    (".", ".", "tools/test_scan_gmem_flags.py"),
     (".", ".", "tools/test_scan_res_named_types.py"),
     (".", ".", "tools/test_scan_bindgen_padding_index.py"),
     (".", ".", "tools/test_scan_extern_static_width.py"),
@@ -152,6 +156,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_rust_module_tree.py"),
     (".", ".", "tools/test_scan_self_recursive.py"),
     (".", ".", "tools/test_scan_dropped_asserts.py"),
+    (".", ".", "tools/test_strip_msvc_cmake.py"),
     # The substrate half of scan_extern_decl_drift has no other oracle: its
     # findings are about declarations of symbols NOTHING in the tree defines, so
     # neither rustc nor the linker nor a same-crate definition can adjudicate one.

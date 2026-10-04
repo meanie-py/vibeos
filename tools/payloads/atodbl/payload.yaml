@@ -1,0 +1,18 @@
+# atodbl — why msvcrt string.c:3522 fails on i386: an emulator SAHF bug, not _atodbl.
+#   tools/payloads/atodbl/build.sh {arch}
+#   VIBEOS_PAYLOAD=atodbl ./vibeos-cli build --arch {arch}
+#   ./vibeos-cli smoke --arch {arch} --payload atodbl
+name: atodbl
+description: "msvcrt string.c:3522 on i386: _atodbl vs the emulator (SAHF after a logic op)"
+
+build_hint: "tools/payloads/atodbl/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/atodbl/atodbl-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/atodbl.exe
+
+test:
+  launch_marker: "[ATODBL] done"
+  pass_marker: "[ATODBL] done PASS"
+  launch_drain_secs: 300

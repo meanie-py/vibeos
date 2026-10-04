@@ -267,9 +267,18 @@ pub unsafe extern "system" fn NetGetJoinInformation(
     if lpNameBuffer.is_null() || BufferType.is_null() {
         return ERROR_INVALID_PARAMETER;
     }
-    *lpNameBuffer = core::ptr::null_mut();
-    *BufferType = NetSetupUnknownStatus;
-    0 // NERR_Success
+
+    // The translation answered NetSetupUnknownStatus with no name and never asked wkssvc,
+    // so every caller (netid's Computer Name page, systeminfo) saw neither the workgroup
+    // nor the domain. wksta_new.c:333 forwards to the service; the out-name is published
+    // only on success, exactly as there.
+    let mut pName: LPWSTR = core::ptr::null_mut();
+    // RpcTryExcept body (no SEH handler, as in the other wkssvc wrappers here)
+    let status = NetrGetJoinInformation(lpServer as WKSSVC_IMPERSONATE_HANDLE, &mut pName, BufferType);
+    if status == NERR_Success {
+        *lpNameBuffer = pName;
+    }
+    status
 }
 
 // ---- NetUseAdd ----

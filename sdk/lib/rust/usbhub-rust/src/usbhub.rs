@@ -3421,13 +3421,11 @@ pub unsafe extern "system" fn USBH_HubCancelIdleIrp(
 ) {
     IoCancelIrp(IdleIrp);
 
-    if {
-        let __target = core::ptr::addr_of_mut!((*HubExtension).IdleRequestLock);
-        let __old = *__target;
-        *__target = 1;
-        __old
-    } != 0
-    {
+    // IdleRequestLock arbitrates which of cancel / completion frees the idle
+    // IRP: whoever swaps second frees it. The swap was a plain read-then-write
+    // on both sides, so a racing cancel and completion could both see 0 (IRP
+    // leaked) or both see 1 (double IoFreeIrp).
+    if InterlockedExchange(core::ptr::addr_of_mut!((*HubExtension).IdleRequestLock), 1) != 0 {
         IoFreeIrp(IdleIrp);
     }
 }
@@ -3891,13 +3889,9 @@ pub unsafe extern "system" fn USBH_FdoIdleNotificationRequestComplete(
         }
     }
 
+    // InterlockedExchange: the other half of USBH_HubCancelIdleIrp's handshake.
     if !IdleIrp.is_null()
-        || {
-            let __ptr = core::ptr::addr_of_mut!((*HubExtension).IdleRequestLock) as *mut core::ffi::c_long;
-            let __old = *__ptr;
-            *__ptr = 1;
-            __old
-        } != 0
+        || InterlockedExchange(core::ptr::addr_of_mut!((*HubExtension).IdleRequestLock), 1) != 0
     {
         IoFreeIrp(Irp);
     }

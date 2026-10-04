@@ -270,12 +270,9 @@ dll/cpl/sysdm/CMakeLists.txt	1	# startrec.c
 dll/cpl/sysdm/CMakeLists.txt	1	# sysdm.c
 dll/cpl/sysdm/CMakeLists.txt	1	# userprofile.c
 dll/cpl/sysdm/CMakeLists.txt	1	# virtmem.c)
-dll/directx/wine/d3d10/CMakeLists.txt	1	# C4267: effect.c narrows strlen(mask) into a BYTE ComponentCount.
-dll/directx/wine/d3d11/CMakeLists.txt	1	# C4133: device.c casts a D3D_FEATURE_LEVEL* to an enum wined3d_feature_level*.
 dll/directx/wine/d3dx9_36/d3dx9.cmake	1	# math.c wants M_PI, which <math.h> only exposes on request here.
 dll/directx/wine/dmime/CMakeLists.txt	1	# performance.c drives its message pump with a CONDITION_VARIABLE.
 dll/directx/wine/dpnet/CMakeLists.txt	1	# dpnet_main.c guards its one-time init with InitOnceExecuteOnce.
-dll/directx/wine/wined3d/CMakeLists.txt	1	# C4319: context_vk.c masks a 64-bit VkDeviceSize with a size_t-wide
 dll/ntdll/CMakeLists.txt	1	# asm = generates the asm includes (ks*.inc / syscalls.inc / sysfuncs.h) the
 dll/ntdll/CMakeLists.txt	1	# dbg/dbgui.c — replaced by Rust (ntdll-rust/src/dbg/dbgui.rs);
 dll/ntdll/CMakeLists.txt	1	# dispatch/dispatch.c — replaced by Rust (ntdll-rust/src/dispatch/mod.rs,
@@ -1644,6 +1641,9 @@ sdk/lib/crt/libcntpr.cmake	1	# the portable math/sqrt.c fast-invsqrt approximati
 sdk/lib/crt/libcntpr.cmake	1	# tiny scanf_trampoline.c — Rust can't DEFINE variadics on stable. It
 sdk/lib/crt/libcntpr.cmake	1	# uses *_asm.s, so REMOVE_ITEM is a harmless no-op there); mem/memccpy.c
 sdk/lib/crt/math/math.cmake	1	# math/i386/fabs_asm.s # FIXME
+sdk/lib/crt/math/math.cmake	1	# math/j0_y0.c
+sdk/lib/crt/math/math.cmake	1	# math/j1_y1.c
+sdk/lib/crt/math/math.cmake	1	# math/jn_yn.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/_chgsign.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/_chgsignf.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/_copysign.c

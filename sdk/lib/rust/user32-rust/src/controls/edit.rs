@@ -47,6 +47,7 @@ extern "system" {
     fn GetClientRect(hWnd: HWND, lpRect: LPRECT) -> BOOL;
     fn MapWindowPoints(hWndFrom: HWND, hWndTo: HWND, lpPoints: *mut POINT, cPoints: UINT) -> INT;
     fn SetScrollInfo(hwnd: HWND, fnBar: INT, lpsi: *mut SCROLLINFO, fRedraw: BOOL) -> INT;
+    fn GetScrollInfo(hwnd: HWND, fnBar: INT, lpsi: *mut SCROLLINFO) -> BOOL;
     fn GetScrollPos(hWnd: HWND, nBar: INT) -> INT;
     fn ScrollWindowEx(hWnd: HWND, dx: INT, dy: INT, prcScroll: *const RECT, prcClip: *const RECT,
                       hrgnUpdate: HRGN, prcUpdate: LPRECT, flags: UINT) -> INT;
@@ -4478,7 +4479,17 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
             EDIT_WM_Timer(es);
         }
         WM_VSCROLL => {
-            result = EDIT_WM_VScroll(es, LOWORD(wParam as DWORD) as INT, HIWORD(wParam as DWORD) as i16 as INT);
+            /* Upstream 1dc2e6de728 (CORE-19305): wParam's HIWORD is only 16 bits, so a
+             * thumb position past line 32767 wrapped negative. Take the real 32-bit
+             * tracking position from the scroll bar instead. */
+            let mut si: SCROLLINFO = core::mem::zeroed();
+            si.cbSize = core::mem::size_of::<SCROLLINFO>() as UINT;
+            si.fMask = SIF_TRACKPOS;
+            if GetScrollInfo(hwnd, SB_VERT as INT, &mut si) == 0 {
+                result = 1;
+            } else {
+                result = EDIT_WM_VScroll(es, LOWORD(wParam as DWORD) as INT, si.nTrackPos);
+            }
         }
         WM_MOUSEWHEEL => {
             'block: {

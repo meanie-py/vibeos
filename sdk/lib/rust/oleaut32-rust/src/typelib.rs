@@ -861,7 +861,9 @@ unsafe fn find_typelib_key(guid: REFGUID, wMaj: *mut WORD, wMin: *mut WORD) -> B
                     best_min = v_min;
                     break; /* exact match */
                 }
-                if *wMin != 0xffff && v_min > best_min {
+                // Wine 10.0: never settle for a minor version BELOW the one
+                // asked for (a caller wanting 1.5 could get 1.2 before).
+                if *wMin != 0xffff && v_min >= *wMin as INT && v_min > best_min {
                     best_min = v_min;
                 }
             }
@@ -1084,16 +1086,19 @@ pub unsafe extern "system" fn QueryPathOfRegTypeLib(
     lcid: LCID,
     path: *mut BSTR,
 ) -> HRESULT {
-    let mut redir: BOOL = TRUE;
-    #[cfg(target_pointer_width = "64")]
-    {
-        let hres = query_typelib_path(guid, wMaj, wMin, SYS_WIN64, lcid, path, TRUE);
-        if SUCCEEDED(hres) {
-            return hres;
-        }
-        redir = FALSE;
+    // Wine 10.0: the native syskind first, then the OTHER one on either
+    // bitness (32-bit used to stop after win32, so a typelib registered only
+    // as win64 could not be found from a 32-bit process).
+    let (native, other) = if cfg!(target_pointer_width = "64") {
+        (SYS_WIN64, SYS_WIN32)
+    } else {
+        (SYS_WIN32, SYS_WIN64)
+    };
+    let hres = query_typelib_path(guid, wMaj, wMin, native, lcid, path, TRUE);
+    if SUCCEEDED(hres) {
+        return hres;
     }
-    query_typelib_path(guid, wMaj, wMin, SYS_WIN32, lcid, path, redir)
+    query_typelib_path(guid, wMaj, wMin, other, lcid, path, FALSE)
 }
 
 /******************************************************************************
@@ -1414,12 +1419,8 @@ pub unsafe extern "system" fn RegisterTypeLib(
         return E_FAIL;
     }
 
-    #[cfg(target_pointer_width = "32")]
-    {
-        if (*attr).syskind == SYS_WIN64 {
-            return TYPE_E_BADMODULEKIND;
-        }
-    }
+    // Wine 10.0 dropped the 32-bit refusal of SYS_WIN64 typelibs: their keys
+    // are registered under win64, which QueryPathOfRegTypeLib now reaches.
 
     get_typelib_key(
         &(*attr).guid,
@@ -1442,31 +1443,36 @@ pub unsafe extern "system" fn RegisterTypeLib(
     ) == ERROR_SUCCESS
     {
         let mut doc: LPOLESTR = null_mut();
+        let mut libName: BSTR = null_mut();
 
-        /* Set the human-readable name of the typelib */
+        /* Set the human-readable name of the typelib to the typelib's doc,
+         * if it exists, else to its name (Wine 10.0; a typelib without a doc
+         * string used to get an empty default value). */
         if FAILED(((*(*ptlib).lpVtbl).GetDocumentation)(
             ptlib,
             -1,
-            null_mut(),
+            &raw mut libName,
             &raw mut doc,
             null_mut(),
             null_mut(),
         )) {
             res = E_FAIL;
-        } else if !doc.is_null() {
+        } else if !doc.is_null() || !libName.is_null() {
+            let name = if !doc.is_null() { doc } else { libName };
             if RegSetValueExW(
                 key,
                 null(),
                 0,
                 REG_SZ,
-                doc as *const u8,
-                ((lstrlenW(doc) + 1) as usize * size_of::<OLECHAR>()) as DWORD,
+                name as *const u8,
+                ((lstrlenW(name) + 1) as usize * size_of::<OLECHAR>()) as DWORD,
             ) != ERROR_SUCCESS
             {
                 res = E_FAIL;
             }
 
             SysFreeString(doc);
+            SysFreeString(libName);
         }
 
         /* Make up the name of the typelib path subkey */
@@ -1563,9 +1569,22 @@ pub unsafe extern "system" fn RegisterTypeLib(
             if disposition == REG_CREATED_NEW_KEY && szHelpDir.is_null() {
                 freeHelpDir = SysAllocString(szFullPath);
                 szHelpDir = freeHelpDir;
-                let pIndexStr = wcsrchr(szHelpDir, '\\' as u16);
-                if !pIndexStr.is_null() {
-                    *pIndexStr = 0;
+                let mut file_name = wcsrchr(szHelpDir, '\\' as u16);
+                // Wine 10.0: a path ending in a numeric "\N" is a resource
+                // index (foo.dll\2), not a file; drop it first, or HELPDIR
+                // became the DLL path itself instead of its directory.
+                if !file_name.is_null() && *file_name.add(1) != 0 {
+                    let mut end_ptr = file_name.add(1);
+                    while (b'0' as u16..=b'9' as u16).contains(&*end_ptr) {
+                        end_ptr = end_ptr.add(1);
+                    }
+                    if *end_ptr == 0 {
+                        *file_name = 0;
+                        file_name = wcsrchr(szHelpDir, '\\' as u16);
+                    }
+                }
+                if !file_name.is_null() {
+                    *file_name = 0;
                 }
             }
 

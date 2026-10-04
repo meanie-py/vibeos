@@ -195,3 +195,31 @@ pub const NOTIFICATION_OPERATIONAL_CHANGE_CLASS_EVENTS: u8 = 0x1;    // [ddk/scs
 pub const NOTIFICATION_EXTERNAL_REQUEST_CLASS_EVENTS: u8 = 0x3;      // [ddk/scsi.h]
 pub const NOTIFICATION_MEDIA_STATUS_CLASS_EVENTS: u8 = 0x4;          // [ddk/scsi.h]
 pub const NOTIFICATION_DEVICE_BUSY_CLASS_EVENTS: u8 = 0x6;           // [ddk/scsi.h]
+
+/// classp.h spells the CLASSP_REG_* registry names as WIDE literals
+/// (`#define CLASSP_REG_SUBKEY_NAME (L"Classpnp")`), but the type substrate
+/// (`crate::types`) carries them as ASCII byte strings. Call sites that did
+/// `CLASSP_REG_X.as_ptr() as PWSTR` handed the registry "Classpnp\0" read as
+/// UTF-16 (0x6C43 0x7361 ...): every override lookup silently kept its default
+/// and ClassSetDeviceParameter created a junk-named subkey. These are the
+/// UTF-16 forms, same names, for those sites. (power.rs / clntirp.rs /
+/// autorun.rs already carry their own wide copies.)
+pub mod regw {
+    const fn widen<const N: usize>(s: &[u8; N]) -> [u16; N] {
+        let mut out = [0u16; N];
+        let mut i = 0;
+        while i < N {
+            out[i] = s[i] as u16;
+            i += 1;
+        }
+        out
+    }
+    pub static CLASSP_REG_SUBKEY_NAME: [u16; crate::types::CLASSP_REG_SUBKEY_NAME.len()] = widen(crate::types::CLASSP_REG_SUBKEY_NAME);
+    pub static CLASSP_REG_REMOVAL_POLICY_VALUE_NAME: [u16; crate::types::CLASSP_REG_REMOVAL_POLICY_VALUE_NAME.len()] = widen(crate::types::CLASSP_REG_REMOVAL_POLICY_VALUE_NAME);
+    pub static CLASSP_REG_WRITE_CACHE_VALUE_NAME: [u16; crate::types::CLASSP_REG_WRITE_CACHE_VALUE_NAME.len()] = widen(crate::types::CLASSP_REG_WRITE_CACHE_VALUE_NAME);
+    pub static CLASSP_REG_PERF_RESTORE_VALUE_NAME: [u16; crate::types::CLASSP_REG_PERF_RESTORE_VALUE_NAME.len()] = widen(crate::types::CLASSP_REG_PERF_RESTORE_VALUE_NAME);
+    pub static CLASSP_REG_QERR_OVERRIDE_MODE: [u16; crate::types::CLASSP_REG_QERR_OVERRIDE_MODE.len()] = widen(crate::types::CLASSP_REG_QERR_OVERRIDE_MODE);
+    pub static CLASSP_REG_ACCESS_ALIGNMENT_NOT_SUPPORTED: [u16; crate::types::CLASSP_REG_ACCESS_ALIGNMENT_NOT_SUPPORTED.len()] = widen(crate::types::CLASSP_REG_ACCESS_ALIGNMENT_NOT_SUPPORTED);
+    pub static CLASSP_REG_DISBALE_IDLE_POWER_NAME: [u16; crate::types::CLASSP_REG_DISBALE_IDLE_POWER_NAME.len()] = widen(crate::types::CLASSP_REG_DISBALE_IDLE_POWER_NAME);
+    pub static CLASSP_REG_COPY_OFFLOAD_MAX_TARGET_DURATION: [u16; crate::types::CLASSP_REG_COPY_OFFLOAD_MAX_TARGET_DURATION.len()] = widen(crate::types::CLASSP_REG_COPY_OFFLOAD_MAX_TARGET_DURATION);
+}

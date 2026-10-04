@@ -25,6 +25,12 @@ lose STATE come first:
   medium       any other dropped function call
   low          a dropped memory op / ALL-CAPS macro with no recognised lowering
   stub-loud    a small body that bugchecks or returns NOT_IMPLEMENTED (known, not silent)
+
+A lead someone has read against the C is recorded in `data/body_audit_reviewed.toml` with its
+verdict, so the next run does not hand it out again: `false` and `benign` leads are hidden
+(counted in the header), `owed` leads stay listed with where the work is tracked. The record
+covers the callees it names: a drop the reviewer never saw brings the lead back. A false lead
+that a RULE could have recognised belongs in the rules, not the ledger.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -45,6 +52,11 @@ from .dead_regions import dummy_pseh_except_spans, never_compiled_lines
 from .export_audit import _repo_root_of, module_rust_crates
 from .lex_mask import directive_spans, mask_code
 from .profile_derive import ProfileDeriveError
+
+try:
+    import tomllib  # type: ignore[import-not-found]  # stdlib on 3.11+; tomli backport on 3.10
+except ModuleNotFoundError:
+    import tomli as tomllib  # type: ignore[no-redef]
 
 _CALL_RE = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
 _IDENT_RE = re.compile(r"\b[A-Za-z_]\w*\b")
@@ -68,7 +80,17 @@ _IGNORED = re.compile(
     r"ULongToPtr|PtrToUlong|PtrToUshort|UlongToPtr|LongToPtr|PtrToLong|HandleToUlong|"
     r"UlongToHandle|IntToPtr|PtrToInt|NT_SUCCESS|NT_ERROR|NT_WARNING|NT_INFORMATION|debugstr_\w+|wine_dbgstr_\w+|wine_dbg_sprintf|"
     r"pdump|pcheck|FIXME_\w*|TRACE_\w*|WARN_\w*|ERR_\w*|MAKEINTRESOURCE[AW]?|SUCCEEDED|FAILED|"
-    r"HRESULT_FROM_WIN32|MAKELONG|MAKEWORD|LOWORD|HIWORD|LOBYTE|HIBYTE|MAKEWPARAM|MAKELPARAM)$"
+    r"RTL_CONSTANT_STRING|DECLARE_CONST_UNICODE_STRING|HRESULT_FROM_WIN32|"
+    # Pure or lowered by construction: string-literal and layout macros, varargs, VARIANT
+    # accessors, ACPICA's trace-and-return, Wine list iteration and TRACE-level dumps.
+    r"_T|TEXT|offsetof|VOID|assert|va_start|va_end|va_arg|va_copy|V_[A-Z]\w*|"
+    r"Int32x32To64|UInt32x32To64|Int64ShllMod32|return_\w+|LIST_FOR_EACH\w*|dump_\w+|"
+    # Accessors, casts and trace macros that compute or print, never store: a port that
+    # open-codes them has dropped nothing.
+    r"IS_INTRESOURCE|MAKEINTATOM|HRESULT_CODE|HRESULT_FACILITY|HRESULT_SEVERITY|"
+    r"ACPI_DEBUG_PRINT\w*|ACPI_FUNCTION_\w+|ACPI_SUCCESS|ACPI_FAILURE|ACPI_NEXT_RESOURCE|"
+    r"\w+_IRP_STORAGE|URB_FROM_IRP|USB_ENDPOINT_DIRECTION_\w+|USBD_ERROR|USBD_SUCCESS|"
+    r"WSAMAKEASYNCREPLY|WDF_REL_TIMEOUT_IN_\w+|_PRAGMA_WARNING_\w+|ULONG|LONG|USHORT|UCHAR|MAKELONG|MAKEWORD|LOWORD|HIWORD|LOBYTE|HIBYTE|MAKEWPARAM|MAKELPARAM)$"
 )
 # Names whose Rust spelling is legitimately different. Any listed pattern satisfies the callee.
 _LOWERINGS: dict[str, tuple[str, ...]] = {
@@ -78,6 +100,10 @@ _LOWERINGS: dict[str, tuple[str, ...]] = {
     "FillMemory": (r"write_bytes", r"memset", r"\.fill\("),
     "strcpyW": (r"wcscpy", r"lstrcpyW", r"copy", r"strcpyW"),
     "wcscpy": (r"wcscpy", r"lstrcpyW", r"copy"),
+    "strlenW": (r"wcslen", r"lstrlenW", r"\.len\(\)", r"strlenW"),
+    "lstrlenW": (r"wcslen", r"lstrlenW", r"\.len\(\)"),
+    "wcslen": (r"wcslen", r"lstrlenW", r"strlenW", r"\.len\(\)"),
+    "lstrcpyW": (r"wcscpy", r"lstrcpyW", r"strcpyW", r"copy"),
     "strcpy": (r"strcpy", r"lstrcpyA", r"copy"),
     "RtlZeroMemory": (r"write_bytes", r"zeroed", r"memset", r"fill\(\s*0"),
     "RtlSecureZeroMemory": (r"write_bytes", r"write_volatile", r"zeroed"),
@@ -134,6 +160,28 @@ _LOWERINGS: dict[str, tuple[str, ...]] = {
     "InterlockedExchangePointer": (r"Interlocked\w*", r"swap", r"atomic"),
     "InterlockedCompareExchangePointer": (r"Interlocked\w*", r"compare_exchange", r"atomic"),
     "InterlockedOr": (r"Interlocked\w*", r"fetch_or", r"atomic"),
+    # winuser.h wrappers over the Ex / Param entry points.
+    "CreateWindowW": (r"CreateWindowExW",),
+    "CreateWindowA": (r"CreateWindowExA",),
+    "CreateDialogW": (r"CreateDialogParamW",),
+    "CreateDialogA": (r"CreateDialogParamA",),
+    "DialogBoxW": (r"DialogBoxParamW",),
+    "DialogBoxA": (r"DialogBoxParamA",),
+    # Wine CRT allocation in a port that went to the process heap.
+    "malloc": (r"HeapAlloc", r"heap_alloc", r"malloc"),
+    "calloc": (r"HeapAlloc", r"heap_alloc_zero", r"calloc"),
+    "realloc": (r"HeapReAlloc", r"heap_realloc", r"realloc"),
+    "free": (r"HeapFree", r"heap_free", r"\bfree\b"),
+    "abs": (r"\.abs\(", r"wrapping_abs", r"unsigned_abs", r"\babs\b"),
+    "labs": (r"\.abs\(", r"wrapping_abs", r"unsigned_abs", r"\blabs\b"),
+    "fabs": (r"\.abs\(", r"\bfabs\b"),
+    "IsEqualIID": (r"==", r"guid_eq", r"IsEqualGUID", r"IsEqualIID", r"memcmp"),
+    "InterlockedExchangeAdd": (r"Interlocked\w*", r"fetch_add", r"atomic"),
+    # Inline initialisers the Rust open-codes as stores (acpi's AcpiOsCreateLock).
+    "KeInitializeSpinLock": (r"KeInitializeSpinLock", r"=\s*0\b", r"write\(\s*\w*,?\s*0\s*\)"),
+    "ExAllocatePoolZero": (r"ExAllocatePool\w*",),
+    "_disable": (r"\bcli\b", r"_disable"),
+    "_enable": (r"\bsti\b", r"_enable"),
     "InterlockedAnd": (r"Interlocked\w*", r"fetch_and", r"atomic"),
 }
 _MEMORY_OPS = frozenset(k for k in _LOWERINGS if "Memory" in k or k.startswith("mem"))
@@ -156,6 +204,8 @@ _STUB_MIN_C_LINES = 30
 _HELPER_DEPTH = 3
 
 SEVERITY_ORDER = ("stub-silent", "high", "medium", "low", "stub-loud")
+REVIEWED_PATH = Path(__file__).resolve().parent.parent / "data" / "body_audit_reviewed.toml"
+VERDICTS = ("false", "benign", "owed")
 
 
 @dataclass
@@ -167,6 +217,89 @@ class Finding:
     c_lines: int
     rust_lines: int
     dropped: list[str] = field(default_factory=list)
+    # From the reviewed ledger: (verdict, note) when every dropped callee was reviewed.
+    reviewed: tuple[str, str] | None = None
+    # Dropped callees the C file did not contain when the Rust file was first committed:
+    # upstream work that landed on C already flipped, not something the translator lost.
+    upstream: list[str] = field(default_factory=list)
+
+
+def _git(repo: Path, *args: str) -> str | None:
+    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True)
+    return r.stdout.decode("utf-8", errors="replace") if r.returncode == 0 else None
+
+
+def mark_upstream(findings: list[Finding], repo: Path) -> None:
+    """Fill `upstream` from git: the C as it stood at the Rust file's first commit."""
+    born: dict[str, str | None] = {}
+    then: dict[tuple[str, str], str | None] = {}
+    for f in findings:
+        if f.rust_file not in born:
+            revs = _git(repo, "log", "--diff-filter=A", "--format=%H", "--", f.rust_file)
+            born[f.rust_file] = revs.split()[-1] if revs and revs.split() else None
+        rev = born[f.rust_file]
+        if rev is None:
+            continue
+        if (rev, f.c_file) not in then:
+            then[(rev, f.c_file)] = _git(repo, "show", f"{rev}:{f.c_file}")
+        old = then[(rev, f.c_file)]
+        if old is None:
+            continue
+        # Judge against the function's own old body: dhcpcsvc's state_panic gained a whole
+        # alternate-configuration arm full of RegSetValueExA calls the FILE already had.
+        # A function the old file never named is new outright; one it named but whose body
+        # the regex could not frame falls back to the whole file rather than calling all
+        # of it new.
+        body = _old_body(old, f.function)
+        if body is None and re.search(rf"\b{re.escape(f.function)}\b", old):
+            body = old
+        idents = set(_IDENT_RE.findall(body or ""))
+        f.upstream = [c for c in f.dropped if c.split("(", 1)[0] not in idents]
+
+
+def _old_body(text: str, name: str) -> str | None:
+    masked = mask_code(text)
+    # Only a definition: from the line start, nothing but a return type before the name, so
+    # cdrom's `if (BootEnvironmentIsWinPE()) {` is not taken for the function's body.
+    pat = rf"(?m)^[ \t]*(?:[\w*]+[ \t*]+)*{re.escape(name)}\s*\([^;{{]*?\)\s*\{{"
+    for m in re.finditer(pat, masked):
+        end = _matching(masked, m.end() - 1, "{", "}")
+        if end is not None:
+            return masked[m.end() - 1 : end + 1]
+    return None
+
+
+def load_reviewed(path: Path = REVIEWED_PATH) -> dict[tuple[str, str], dict]:
+    """`(module, function)` -> its merged ledger entry. A malformed entry is an error.
+
+    One function can be reviewed more than once (its high drops in one pass, its medium
+    drops in the next): the entries merge, covering the union of their callees, under
+    the most serious verdict (owed > benign > false) with every note kept."""
+    if not path.exists():
+        return {}
+    out: dict[tuple[str, str], dict] = {}
+    for e in tomllib.loads(path.read_text(encoding="utf-8")).get("reviewed", []):
+        key = (e["module"], e["function"])
+        if e.get("verdict") not in VERDICTS or not e.get("note") or not e.get("callees"):
+            raise ValueError(f"{path}: {key}: needs verdict in {VERDICTS}, callees and a note")
+        prev = out.get(key)
+        if prev is None:
+            out[key] = dict(e)
+            continue
+        prev["callees"] = list(prev["callees"]) + [
+            c for c in e["callees"] if c not in prev["callees"]
+        ]
+        if VERDICTS.index(e["verdict"]) > VERDICTS.index(prev["verdict"]):
+            prev["verdict"] = e["verdict"]
+        prev["note"] = f"{prev['note']}; {e['note']}"
+    return out
+
+
+def apply_reviewed(module: str, findings: list[Finding], ledger: dict) -> None:
+    for f in findings:
+        e = ledger.get((module, f.function))
+        if e and set(f.dropped) <= set(e["callees"]):
+            f.reviewed = (e["verdict"], e["note"])
 
 
 def _blank_ignored_calls(text: str) -> str:
@@ -323,22 +456,95 @@ def _fold(expr: str) -> bool | None:
     return bool(eval(compile(tree, "<if>", "eval")))  # literal-only AST, checked above
 
 
-def pin_version_guards(text: str, pins: dict[str, int]) -> str:
-    """Rewrite decidable version `#if`s to `#if 0`/`#if 1`, keeping every line in place."""
-    if not pins:
-        return text
-    names = re.compile(
-        r"\b(" + "|".join(map(re.escape, sorted(pins, key=len, reverse=True))) + r")\b"
-    )
+_DEFINED_RE = re.compile(r"\bdefined\s*(?:\(\s*(\w+)\s*\)|(\w+))")
+_IFDEF_LINE_RE = re.compile(r"^([ \t]*#[ \t]*)(ifdef|ifndef)[ \t]+(\w+)(.*)$")
+# Defined for every TU this tree compiles: llvm-mingw forces DUMMY_PSEH on all three arches
+# (sdk/cmake/gcc.cmake), and the root CMakeLists defines __REACTOS__.
+TREE_DEFINES = frozenset({"__REACTOS__", "_USE_DUMMY_PSEH"})
+# Never defined for a Windows target; Wine code guards host-only arms on them (advapi32
+# CredReadW's `#ifdef __APPLE__`). In a `defines` set a `!` prefix means KNOWN undefined.
+TREE_UNDEFINED = frozenset({"!__APPLE__", "!__MACH__", "!__linux__", "!__unix__", "!__FreeBSD__"})
+
+
+def _fold_defined(expr: str, pins: dict[str, int], defines: frozenset[str]) -> bool | None:
+    """Fold an `#if` whose only unknowns are `defined(X)` terms: try each of them both ways,
+    and answer only when every assignment agrees (`defined(_WIN32K_) || defined(FOO)`)."""
+    expr = re.sub(r"/\*.*?\*/", " ", expr).split("//")[0]
+    unknown: list[str] = []
+
+    def sub_defined(m: re.Match[str]) -> str:
+        name = m.group(1) or m.group(2)
+        if "!" + name in defines:
+            return "0"
+        if name in defines or (name in pins and pins[name] != 0):
+            return "1"
+        unknown.append(name)
+        return f"__U{len(unknown) - 1}"
+
+    expr = _DEFINED_RE.sub(sub_defined, expr)
+    if pins:
+        names = re.compile(
+            r"\b(" + "|".join(map(re.escape, sorted(pins, key=len, reverse=True))) + r")\b"
+        )
+        expr = names.sub(lambda n: hex(pins[n.group(1)]), expr)
+    if len(unknown) > 4:
+        return None
+    seen: set[bool] = set()
+    for bits in range(1 << len(unknown)):
+        trial = re.sub(r"__U(\d+)", lambda u, b=bits: str((b >> int(u.group(1))) & 1), expr)
+        v = _fold(trial)
+        if v is None:
+            return None
+        seen.add(v)
+    return seen.pop() if len(seen) == 1 else None
+
+
+def pin_version_guards(
+    text: str, pins: dict[str, int], defines: frozenset[str] = TREE_DEFINES
+) -> str:
+    """Rewrite decidable `#if`s to `#if 0`/`#if 1`, keeping every line in place.
+
+    Decidable means: over integer pins (versions, switches) and names the build always
+    `-D`s (`defines`). A `defined(X)` of anything else is tried both ways."""
     out = []
     for line in text.split("\n"):
+        d = _IFDEF_LINE_RE.match(line)
+        if d and d.group(3) in defines:
+            line = f"{d.group(1)}if {int(d.group(2) == 'ifdef')}{d.group(4)}"
+        elif d and "!" + d.group(3) in defines:
+            line = f"{d.group(1)}if {int(d.group(2) == 'ifndef')}{d.group(4)}"
         m = _COND_LINE_RE.match(line)
-        if m and names.search(m.group(2)):
-            folded = _fold(names.sub(lambda n: hex(pins[n.group(1)]), m.group(2)))
+        if m and not re.fullmatch(r"\s*\d+\s*", m.group(2).split("//")[0]):
+            folded = _fold_defined(m.group(2), pins, defines)
             if folded is not None:
                 line = f"{m.group(1)} {int(folded)}"
         out.append(line)
     return "\n".join(out)
+
+
+_CMAKE_D_RE = re.compile(r"-D([A-Za-z_]\w*)(?:=(\S+?))?(?=[\s)\"]|$)")
+
+
+def module_defines(module_dir: Path) -> frozenset[str]:
+    """Names the module's CMakeLists `-D`s unconditionally (outside every `if()` block),
+    plus `!NAME` for names known undefined: host-OS macros and the module's commented-out
+    feature switches (desk.c's `// #define CHECK_SCR_FULL_PATH` above `#ifdef` blocks)."""
+    cml = module_dir / "CMakeLists.txt"
+    names = set(TREE_DEFINES) | set(TREE_UNDEFINED)
+    if not cml.is_file():
+        return frozenset(names)
+    text = cml.read_text(encoding="utf-8", errors="replace")
+    names |= {"!" + n for n in disabled_switches(module_dir, text)}
+    depth = 0
+    for raw in text.splitlines():
+        line = raw.split("#")[0]
+        if re.match(r"\s*if\s*\(", line, re.I):
+            depth += 1
+        elif re.match(r"\s*endif\s*\(", line, re.I):
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            names.update(m.group(1) for m in _CMAKE_D_RE.finditer(line))
+    return frozenset(names)
 
 
 def _dbg_lines(text: str) -> set[int]:
@@ -373,10 +579,17 @@ class CBody:
 
 
 def c_bodies(
-    path: Path, pins: dict[str, int] | None = None, real_seh: bool = False
+    path: Path,
+    pins: dict[str, int] | None = None,
+    real_seh: bool = False,
+    defines: frozenset[str] = TREE_DEFINES,
 ) -> dict[str, CBody]:
     """Each function this .c DEFINES, with the callees its LIVE body must perform."""
-    text = pin_version_guards(path.read_text(encoding="utf-8", errors="replace"), pins or {})
+    text = path.read_text(encoding="utf-8", errors="replace")
+    # acpi main.c's own `#define NDEBUG` decides its `#ifndef NDEBUG` blocks.
+    if re.search(r"^[ \t]*#[ \t]*define[ \t]+NDEBUG\b", text, re.M):
+        defines = defines | {"NDEBUG"}
+    text = pin_version_guards(text, pins or {}, defines)
     masked = _blank_ignored_calls(mask_code(text))
     dead = never_compiled_lines(text)
     masked_lines = masked.splitlines()
@@ -427,6 +640,10 @@ def c_bodies(
 
 # `#define KeWaitForMutexObject KeWaitForSingleObject`: an object-like ALIAS of a function.
 _ALIAS_RE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+([A-Za-z_]\w*)[ \t]*$")
+_MEMBER_ALIAS_RE = re.compile(
+    r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+\(?[A-Za-z_]\w*(?:\.|->)"
+    r"([A-Za-z_]\w*)\)?[ \t]*$"
+)
 _DEFINE_RE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)\(([^)]*)\)(.*)$")
 # Where a module's function-like macros come from: its own headers, and the DDK/NDK/XDK the
 # drivers include. Read, not preprocessed: a macro is only ever EXPANDED here to ask which
@@ -457,9 +674,10 @@ def macro_table(module_dir: Path, repo: Path) -> dict[str, str]:
         while i < len(lines):
             m = _DEFINE_RE.match(lines[i])
             if not m:
-                alias = _ALIAS_RE.match(lines[i])
+                alias = _ALIAS_RE.match(lines[i]) or _MEMBER_ALIAS_RE.match(lines[i])
                 if alias:
-                    # Modelled as a macro whose body calls the target.
+                    # Modelled as a macro whose body calls the target: for a member alias
+                    # (`#define AccFreeIndexArray NtMartaStatic.FreeIndexArray`) the field.
                     table.setdefault(alias.group(1), f"{alias.group(2)}()")
                 i += 1
                 continue
@@ -539,12 +757,22 @@ class RustIndex:
     bodies: dict[str, str]  # masked (comment/literal-free) body text per fn name
     files: dict[str, Path]
     macros: dict[str, str]
+    # `#[link_name = "ClassAcquireRemoveLock"] fn class_acquire_remove_lock(..)`: the Rust
+    # name -> the symbol it really calls.
+    aliases: dict[str, str] = field(default_factory=dict)
+
+
+_LINK_NAME_RE = re.compile(
+    r'#\[link_name\s*=\s*"(\w+)"\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?'
+    r"(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?fn\s+(\w+)"
+)
 
 
 def rust_index(srcs: list[Path]) -> RustIndex:
     bodies: dict[str, str] = {}
     files: dict[str, Path] = {}
     macros: dict[str, str] = {}
+    aliases: dict[str, str] = {}
     for f in srcs:
         text = f.read_text(encoding="utf-8", errors="replace")
         # Generated bindgen islands hold declarations, never translated bodies.
@@ -555,11 +783,13 @@ def rust_index(srcs: list[Path]) -> RustIndex:
             # dropped call quoted in a comment must not count as kept.
             bodies[name] = bodies.get(name, "") + "\n" + mask_code(body)
             files.setdefault(name, f)
+        for m in _LINK_NAME_RE.finditer(text):
+            aliases[m.group(2)] = m.group(1)
         for m in re.finditer(r"macro_rules!\s*(\w+)\s*\{", text):
             end = _matching(text, m.end() - 1, "{", "}")
             if end is not None:
                 macros[m.group(1)] = mask_code(text[m.end() : end])
-    return RustIndex(bodies, files, macros)
+    return RustIndex(bodies, files, macros, aliases)
 
 
 def _effective(name: str, idx: RustIndex, c_names: set[str]) -> str:
@@ -589,6 +819,10 @@ def _snake(name: str) -> str:
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).lower()
 
 
+_PRINTF = re.compile(
+    r"^_?(?:s|sn|vs|vsn|ws|wvs)n?w?printf[AW]?$|^(?:sprintfW|snprintfW|wsprintf[AW])$|"
+    r"^(?:Rtl)?String(?:Cch|Cb)V?Printf(?:Ex)?[AW]?$|^string_c(?:ch|b)_printf\w*$"
+)
 _COM_MACRO = re.compile(r"^I[A-Z]\w*?_(\w+)$")
 
 
@@ -598,8 +832,25 @@ def _kept(callee: str, rust: str, idents: set[str]) -> bool:
     # dbgbitmap.h's RtlSetBitsDbg & co. wrap the plain call with release-invisible checks.
     if callee.endswith("Dbg") and _kept(callee[:-3], rust, idents):
         return True
-    # A/W generic names resolve to one of their variants.
-    if callee + "W" in idents or callee + "A" in idents:
+    # shell32's crate-local CRT: `r_memcpy`, `r_strlen`.
+    if "r_" + callee in idents:
+        return True
+    # Case alone: Wine's `midl_user_free` is MIDL's `MIDL_user_free`.
+    low = callee.lower()
+    if any(i.lower() == low for i in idents):
+        return True
+    # A/W generic names resolve to one of their variants; the IoXxxRemoveLock macros are
+    # their `Ex` exports (serial calls IoReleaseRemoveLockEx directly).
+    if any(callee + sfx in idents for sfx in ("W", "A", "Ex")):
+        return True
+    # ... and the reverse: the Rust calls the msvcrt `_wcsicmp` for Wine's `wcsicmp`.
+    if "_" + callee in idents:
+        return True
+    # Any printf-family call formats the same text (ShellAboutW: swprintf -> StringCchPrintfW).
+    if _PRINTF.match(callee) and any(_PRINTF.match(i) for i in idents):
+        return True
+    # `_InterlockedExchangeAdd` is the intrinsic spelling, `_swprintf` the msvcrt one.
+    if callee.startswith("_") and callee.lstrip("_") and _kept(callee.lstrip("_"), rust, idents):
         return True
     # Compiler intrinsics (`__readmsr`, `_ReadWriteBarrier`, `__inbyte`) are inline asm or
     # fences in Rust, under whatever name the port chose.
@@ -610,6 +861,9 @@ def _kept(callee: str, rust: str, idents: set[str]) -> bool:
     # A COM vtable macro `IShellFolder_Release(p)` is `((*(*p).lpVtbl).Release)(p)` in Rust.
     com = _COM_MACRO.match(callee)
     if com and com.group(1) in idents:
+        return True
+    # Wine's own implementation of the method: `ICreateTypeInfo2_fnAddRefTypeInfo`.
+    if com and any(i.endswith("_fn" + com.group(1)) for i in idents):
         return True
     return any(re.search(p, rust) for p in _LOWERINGS.get(callee, ()))
 
@@ -630,6 +884,7 @@ def audit(
     macros: dict[str, str] | None = None,
     pins: dict[str, int] | None = None,
     real_seh: bool | None = None,
+    defines: frozenset[str] = TREE_DEFINES,
 ) -> list[Finding]:
     """`glue_c`: C the build still compiles (cohab shims). A Rust body that delegates to one
     of its functions has not dropped that work, so those bodies join the helper pool."""
@@ -638,7 +893,7 @@ def audit(
     if real_seh is None:
         real_seh = uses_real_seh(rust_srcs)
     for f in c_files:
-        c_all.update(c_bodies(f, pins, real_seh))
+        c_all.update(c_bodies(f, pins, real_seh, defines))
     idx = rust_index(rust_srcs)
     for f in glue_c or []:
         text = f.read_text(encoding="utf-8", errors="replace")
@@ -667,6 +922,7 @@ def audit(
         rust = _effective(name, idx, c_names)
         rust_lines = max(1, rust.strip().count("\n") + 1) if rust.strip() else 0
         idents = set(_IDENT_RE.findall(rust))
+        idents |= {idx.aliases[i] for i in idents if i in idx.aliases}
         dropped = []
         for c in sorted(cb.required):
             if _kept(c, rust, idents):
@@ -719,7 +975,9 @@ def module_inputs(
     c_files = [
         p
         for p in sorted(source_files(module_dir, "*.c"))
-        if p.resolve() not in live and not p.name.startswith("rust_")
+        if p.resolve() not in live
+        and not p.name.startswith("rust_")
+        and not _other_target(p, module_dir)
     ]
     glue = sorted(p for p in live if p.is_relative_to(module_dir.resolve()))
     workspace = repo / "sdk" / "lib" / "rust"
@@ -728,6 +986,26 @@ def module_inputs(
         if (crate / "src").is_dir():
             srcs.extend(sorted(source_files(crate / "src", "*.rs")))
     return c_files, srcs, glue
+
+
+_TARGET_RE = re.compile(
+    r"^[ \t]*(?:set_module_type|add_library|add_executable|add_cargo_\w+)\(", re.M
+)
+
+
+def _other_target(c_file: Path, module_dir: Path) -> bool:
+    """True when a CMakeLists between the file and `module_dir` builds its own binary.
+
+    win32k's own C was deleted when ntuser/ntgdi went Rust-only, so `win32ss` paired its
+    crate with user32/, gdi32/ and framebuf/ C: same names (IntDrawScrollBar, Eng*), other
+    binaries. 21 false leads, each comparing win32k Rust against a user-mode body."""
+    d = c_file.parent
+    while d != module_dir and module_dir in d.parents:
+        cml = d / "CMakeLists.txt"
+        if cml.is_file() and _TARGET_RE.search(cml.read_text(encoding="utf-8", errors="replace")):
+            return True
+        d = d.parent
+    return False
 
 
 _AUDIT_ROOTS = ("base", "dll", "drivers", "hal", "ntoskrnl", "subsystems", "win32ss", "boot")
@@ -744,18 +1022,32 @@ def all_modules(repo: Path) -> list[Path]:
     return out
 
 
-def render(module: str, findings: list[Finding], limit: int) -> str:
-    counts = {s: sum(1 for f in findings if f.severity == s) for s in SEVERITY_ORDER}
+def render(module: str, findings: list[Finding], limit: int, show_reviewed: bool = False) -> str:
+    hidden = [f for f in findings if f.reviewed and f.reviewed[0] != "owed"]
+    owed = [f for f in findings if f.reviewed and f.reviewed[0] == "owed"]
+    open_ = [f for f in findings if not f.reviewed]
+    counts = {s: sum(1 for f in open_ if f.severity == s) for s in SEVERITY_ORDER}
     head = ", ".join(f"{n} {s}" for s, n in counts.items() if n)
-    lines = [f"body-audit {module}: {head or 'clean'}"]
-    for f in findings[:limit] if limit else findings:
+    tail = "".join(
+        f"; {n} {what}" for n, what in ((len(owed), "owed"), (len(hidden), "reviewed")) if n
+    )
+    lines = [f"body-audit {module}: {head or 'clean'}{tail}"]
+    shown = open_ + owed + (hidden if show_reviewed else [])
+    for f in shown[:limit] if limit else shown:
         dropped = ", ".join(f.dropped[:8]) + (" …" if len(f.dropped) > 8 else "")
+        tag = f"{f.severity}, {f.reviewed[0]}" if f.reviewed else f.severity
         lines.append(
-            f"  [{f.severity}] {f.function}  C {f.c_lines}L / Rust {f.rust_lines}L"
+            f"  [{tag}] {f.function}  C {f.c_lines}L / Rust {f.rust_lines}L"
             f"  ({f.c_file} -> {f.rust_file})"
         )
         if dropped:
             lines.append(f"      dropped: {dropped}")
+        if f.upstream:
+            whole = " (all)" if len(f.upstream) == len(f.dropped) else ""
+            new = ", ".join(f.upstream[:8])
+            lines.append(f"      new in the C since translation{whole}: {new}")
+        if f.reviewed:
+            lines.append(f"      {f.reviewed[0]}: {f.reviewed[1]}")
     return "\n".join(lines)
 
 
@@ -774,7 +1066,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--min-severity", choices=SEVERITY_ORDER, default="stub-loud", help="hide lower ranks"
     )
+    ap.add_argument(
+        "--provenance",
+        action="store_true",
+        help="mark dropped callees the C gained after the Rust was committed (git, slower)",
+    )
+    ap.add_argument(
+        "--show-reviewed",
+        action="store_true",
+        help="also list leads the ledger marks false/benign (data/body_audit_reviewed.toml)",
+    )
     args = ap.parse_args(argv)
+    ledger = load_reviewed()
     cutoff = SEVERITY_ORDER.index(args.min_severity)
     modules = [m.resolve() for m in args.modules]
     if args.all:
@@ -803,14 +1106,23 @@ def main(argv: list[str] | None = None) -> int:
         found = [
             f
             for f in audit(
-                c_files, srcs, repo, glue_c=glue, macros=macros, pins=version_pins(module, repo)
+                c_files,
+                srcs,
+                repo,
+                glue_c=glue,
+                macros=macros,
+                pins=version_pins(module, repo),
+                defines=module_defines(module),
             )
             if SEVERITY_ORDER.index(f.severity) <= cutoff
         ]
         key = str(module.relative_to(repo))
+        apply_reviewed(key, found, ledger)
+        if args.provenance:
+            mark_upstream(found, repo)
         report[key] = found
         if not args.json:
-            print(render(key, found, args.limit))
+            print(render(key, found, args.limit, args.show_reviewed))
     for line in skipped:
         print(f"body-audit SKIPPED (could not resolve the build): {line}", file=sys.stderr)
     if args.json:

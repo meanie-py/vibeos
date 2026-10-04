@@ -184,14 +184,18 @@ def cond_truth(line: str, pinned: dict[str, int] | None = None) -> bool | None:
     m = _COND_OPEN_RE.match(line)
     if m is None:
         return None
-    kind, rest = m.group(1), m.group(2).strip()
+    # A trailing comment is not part of the condition: `#if 0 // TODO` is still `#if 0`.
+    rest = re.sub(r"/\*.*?\*/", " ", m.group(2)).split("//")[0].strip()
+    kind = m.group(1)
     if kind in ("ifdef", "ifndef"):
         sym = rest.split()[0] if rest.split() else ""
         if sym in KNOWN_DEFINED:
             return kind == "ifdef"
         return None
-    if re.fullmatch(r"0+", rest):
+    if re.fullmatch(r"\(?\s*0+\s*\)?", rest):
         return False
+    if re.fullmatch(r"\(?\s*[1-9]\d*\s*\)?", rest):
+        return True
     m2 = re.fullmatch(r"(!)?\s*defined\s*\(?\s*(\w+)\s*\)?", rest)
     if m2 and m2.group(2) in KNOWN_DEFINED:
         return m2.group(1) is None

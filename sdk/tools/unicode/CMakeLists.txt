@@ -86,14 +86,3 @@ list(APPEND SOURCE
 
 add_library(unicode STATIC ${SOURCE})
 target_link_libraries(unicode PRIVATE host_includes)
-
-if(MSVC)
-    # Disable warning "'<': signed/unsigned mismatch"
-    target_compile_options(unicode PRIVATE "/wd4018")
-
-    # Disable warning "unary minus operator applied to unsigned type, result still unsigned"
-    target_compile_options(unicode PRIVATE "/wd4146")
-
-    # Disable warning "conversion from 'const WCHAR' to 'char', possible loss of data"
-    target_compile_options(unicode PRIVATE "/wd4244")
-endif()

@@ -1016,55 +1016,34 @@ fn main() {
 
     // ── the Bessel wrappers ──────────────────────────────────────────────
     //
-    // What is graded here is ONLY the 102 lines of ours: the errno and
-    // _fpclass shell in math/{j0_y0,j1_y1,jn_yn}.c. The `__ieee754_*` bodies
-    // underneath are VENDORED Sun FDLIBM (vendor.yaml; there is a VENDORED
-    // stamp in that directory) and are deliberately not a translation target,
-    // so they are compiled ONCE under their real names and BOTH SIDES CALL
-    // THE SAME CODE. That is the point: with the 1,346 lines of numerics held
-    // identical, any divergence a row reports is in the shell, which is the
-    // only part anybody ported.
+    // What is graded here is the errno and _fpclass shell in
+    // math/{j0_y0,j1_y1,jn_yn}.c. The numerics under it are the `libm` crate's on BOTH
+    // sides: tests/diff.rs defines the `__ieee754_*` names the C wrappers call as
+    // `libm::j0`.., the same functions cnt-rust calls (the vendored FDLIBM C those names
+    // used to bind is gone). So any divergence a row reports is in the shell.
+    // refstub/ieee754/ieee754.h stands in for the deleted header's prototypes.
     //
     // `_finite`/`_fpclass`/`sqrt` are likewise left to bind cnt-rust's own
     // shims on both sides. They have their own rows already
     // (diff_math_class_f64), and pinning them here too would blur which of
     // the two layers a failure lives in.
-    let ieee_dir = crt.join("math/ieee754");
-    // glibc's <math.h> declares `__cos` and `__sincos` as ordinary extern
-    // functions; ieee754.h defines both `static __inline`, which is a hard
-    // error on the host. They are private helpers of that header, so renaming
-    // them out of the way changes nothing anyone calls.
-    // <math.h> comes FIRST (the same ordering the exp2 unit above documents):
-    // the rename must hit ieee754.h's `static __inline` DEFINITIONS and not
-    // glibc's prior extern declarations of the same two names, or the static
-    // and the extern collide under the new name instead of the old one.
-    let ieee_shim: &str =
-        "#include <math.h>\n#define __cos cnt_fdlibm_cos\n#define __sincos cnt_fdlibm_sincos\n";
-
     let bessel_units: Vec<(&str, String)> = vec![
-        // The vendored numerics, verbatim. `__int32` is the one MSVC-ism in
-        // ieee754.h; everything else in that header is plain C.
-        ("fdlibm_j0_y0", format!("#define __int32 int\n{ieee_shim}{}", inc(ieee_dir.join("j0_y0.c")))),
-        ("fdlibm_j1_y1", format!("#define __int32 int\n{ieee_shim}{}", inc(ieee_dir.join("j1_y1.c")))),
-        ("fdlibm_jn_yn", format!("#define __int32 int\n{ieee_shim}{}", inc(ieee_dir.join("jn_yn.c")))),
-        // Our shell, renamed. The wrappers declare `int *_errno(void);`
-        // themselves; <errno.h> is for EDOM, and the _FPCLASS_* values come
-        // from the SDK header the same way the fpclass unit above gets them.
-        ("bessel_j0_y0", format!("#define __int32 int\n{ieee_shim}#include <errno.h>\nint _finite(double);\nint _fpclass(double);\n{}#define _j0 ref__j0\n#define _y0 ref__y0\n{}",
+        // The wrappers declare `int *_errno(void);` themselves; <errno.h> is for EDOM,
+        // and the _FPCLASS_* values come from the SDK header the same way the fpclass
+        // unit above gets them.
+        ("bessel_j0_y0", format!("#include <math.h>\n#include <errno.h>\nint _finite(double);\nint _fpclass(double);\n{}#define _j0 ref__j0\n#define _y0 ref__y0\n{}",
             fpclass_consts, inc(crt.join("math/j0_y0.c")))),
-        ("bessel_j1_y1", format!("#define __int32 int\n{ieee_shim}#include <errno.h>\nint _finite(double);\nint _fpclass(double);\n{}#define _j1 ref__j1\n#define _y1 ref__y1\n{}",
+        ("bessel_j1_y1", format!("#include <math.h>\n#include <errno.h>\nint _finite(double);\nint _fpclass(double);\n{}#define _j1 ref__j1\n#define _y1 ref__y1\n{}",
             fpclass_consts, inc(crt.join("math/j1_y1.c")))),
         // jn_yn.c declares _fpclass itself (via a `fpclass_t` typedef), so it
         // must NOT get a second declaration.
-        ("bessel_jn_yn", format!("#define __int32 int\n{ieee_shim}#include <errno.h>\nint _finite(double);\n{}#define _jn ref__jn\n#define _yn ref__yn\n{}",
+        ("bessel_jn_yn", format!("#include <math.h>\n#include <errno.h>\nint _finite(double);\n{}#define _jn ref__jn\n#define _yn ref__yn\n{}",
             fpclass_consts, inc(crt.join("math/jn_yn.c")))),
     ];
     let mut bessel_build = cc::Build::new();
     bessel_build
         .include(&refstub)
-        // so the wrappers' `#include "ieee754/ieee754.h"` resolves
-        .include(crt.join("math"))
-        .include(&ieee_dir)
+        // the wrappers' `#include "ieee754/ieee754.h"` finds refstub's stand-in
         .warnings(false)
         .flag("-w")
         .flag("-ffp-contract=off")

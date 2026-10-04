@@ -41,13 +41,13 @@ panic-common = { path = "../panic-common", features = ["user"] }
 # msvcrt-seh-difftest link, and 66 #[no_mangle] libm names there would shadow the HOST libm
 # under the reference TUs, contaminating the oracle.
 #
-# This does NOT weaken the crate's guarantee. cnt-rust's only dependency is the `libm`
-# registry crate, so the edge cannot reach msvcrt-crt-rust, which is the one thing this crate
+# This does NOT weaken the crate's guarantee. cnt-rust's only dependencies are the `libm`
+# registry crate and `musl-math` (which has none), so the edge cannot reach msvcrt-crt-rust, which is the one thing this crate
 # exists to keep out -- `tools/verify_ucrtbase_cohab.py` walks the graph and asserts it rather
 # than trusting the claim. The 66 are graded in cnt-difftest, per-arch: bit-exact against the C
 # sdk/lib/crt/math compiles, except log10/pow (upstream's placeholders, now libm's), which are
 # graded against correctly rounded values.
-cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-math"] }
+cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-math", "crt-math-errors"] }
 
 # ucrtbase's OWN surface, taken over from the vendored Microsoft UCRT one family
 # at a time. Unlike crt-shared-rust these bodies deliberately DISPLACE genuine

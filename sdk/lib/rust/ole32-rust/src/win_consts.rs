@@ -10,6 +10,10 @@ use crate::prelude::*;
 
 /// objidl.h
 pub const ADVF_PRIMEFIRST: DWORD = 0x2;
+/// oleidl.h (harvest_consts.py: build-amd64/sdk/include/psdk/oleidl.h enum)
+pub const BINDSPEED_IMMEDIATE: DWORD = 3;
+/// oleidl.h (harvest_consts.py: build-amd64/sdk/include/psdk/oleidl.h enum)
+pub const BINDSPEED_INDEFINITE: DWORD = 1;
 /// oleidl.h
 pub const BINDSPEED_MODERATE: DWORD = 0x2;
 /// winuser.h

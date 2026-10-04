@@ -57,7 +57,7 @@ This is analysis only. No code was touched, no fix was applied, nothing was comm
 | 44 | `a4b6fe9630e` | [SYSSETUP] Revamp the Finish page | `dll/win32/syssetup/wizard.c` | **N/A — feature** | UI revamp, not opened |
 | 45 | `2d07d8a7cdc` | [CONUTILS] Improve build interface, avoid winuser.h | `sdk/lib/conutils/pager.c` | **N/A — build/cosmetic** | not opened |
 | 46 | `1f97ad1f930` | [RTL] Sync actctx.c to wine 10.0 | `sdk/lib/rtl/actctx.c` | **NOT REACHED** | large wine-sync, too big for this pass |
-| 47 | `5f6b295cb90` | [OLE32] Sync to wine-10.0 | 9 ole32 files | **NOT REACHED** | large multi-file wine-sync, too big for this pass |
+| 47 | `5f6b295cb90` | [OLE32] Sync to wine-10.0 | 9 ole32 files | **IN PROGRESS** | ported semantically by the upstream-sync lane; status in upstream-sync-merge-decisions.md owed #10 |
 | 48 | `c81bc9f21ea` | [KERNEL32] Split off ANSI functions (#8555) | `dll/win32/kernel32/winnls/string/lcformat.c` | **N/A — refactor** | file-split, not opened for behavior change |
 | 49 | `278234259dce`* | [NTOS:FSTUB] Fix bugs in drive-letters algorithm | `ntoskrnl/fstub/disksup.c` | **duplicate of wave-1 #11** | already flagged there as "too large, not swept"; still not reached |
 

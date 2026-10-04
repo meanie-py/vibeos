@@ -33,8 +33,4 @@ add_importlibs(quartz_winetest
     ole32 oleaut32 advapi32 user32 gdi32 msvfw32 winmm
     d3d9 ddraw dsound msdmo kernel32_vista msvcrt kernel32 ntdll)
 
-if(MSVC)
-    add_importlibs(quartz_winetest ntdll)
-endif()
-
 add_rostests_file(TARGET quartz_winetest)

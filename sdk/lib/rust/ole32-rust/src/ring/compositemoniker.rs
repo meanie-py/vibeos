@@ -1,9 +1,8 @@
 //! CompositeMoniker implementation — translation of dll/win32/ole32/compositemoniker.c
 //!
-//! A generic composite moniker (IMoniker + IROTData + IMarshal) over a growable table of
-//! component monikers, plus the EnumMonikerImpl (IEnumMoniker) that walks it in either
-//! direction. Every table slot holds a REFERENCE, so the AddRef/Release pairing against
-//! the C is load-bearing.
+//! A generic composite moniker (IMoniker + IROTData + IMarshal) as a binary node over
+//! its left and right halves (wine-10.0), plus the EnumMonikerImpl (IEnumMoniker) that
+//! walks a snapshot of its leaves in either direction.
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -21,45 +20,54 @@ extern "system" {
     fn OleSaveToStream(pPStm: *mut IPersistStream, pStm: *mut IStream) -> HRESULT;
 }
 
-/// compositemoniker.c: `#define BLOCK_TAB_SIZE 5` — the first table size and its
-/// increment block size.
-const BLOCK_TAB_SIZE: ULONG = 5;
-
 // ---------------------------------------------------------------------------
-// structs
+// Semantically ported to wine-10.0 (upstream 5f6b295cb90). The old translation kept
+// the components in a growable table and cancelled anti-monikers by walking it, which
+// underflowed its index once every component cancelled (tabLastIndex 0 -> -1). wine-10
+// makes a composite a binary node -- `left`, `right`, and `comp_count` leaves below
+// it -- and creates one through moniker_simplify_composition, which composes the
+// rightmost leaf of the left tree with the leftmost leaf of the right tree (non-
+// generically) until they stop combining. A composition that cancels to nothing
+// yields NULL, not an empty composite.
 // ---------------------------------------------------------------------------
 
-/// CompositeMoniker data structure (`ref` → `ref_`, a Rust keyword).
+/// CompositeMoniker data structure (`ref` -> `ref_`, a Rust keyword).
 #[repr(C)]
 pub struct CompositeMonikerImpl {
     pub IMoniker_iface: IMoniker,
     pub IROTData_iface: IROTData,
     pub IMarshal_iface: IMarshal,
     pub ref_: LONG,
-    /// dynamic table containing all components (monikers) of this composite moniker
-    pub tabMoniker: *mut *mut IMoniker,
-    /// size of tabMoniker
-    pub tabSize: ULONG,
-    /// first free index in tabMoniker
-    pub tabLastIndex: ULONG,
+    pub left: *mut IMoniker,
+    pub right: *mut IMoniker,
+    /// Number of non-composite leaves under this node; 0 = uninitialized (activation).
+    pub comp_count: u32,
 }
 
-/// EnumMoniker data structure
+/// EnumMoniker data structure: a snapshot of the components, each holding a reference.
 #[repr(C)]
 pub struct EnumMonikerImpl {
     pub IEnumMoniker_iface: IEnumMoniker,
     pub ref_: LONG,
-    /// dynamic table containing the enumerated monikers
-    pub tabMoniker: *mut *mut IMoniker,
-    /// size of tabMoniker
-    pub tabSize: ULONG,
-    /// index pointer on the current moniker
-    pub currentPos: ULONG,
+    pub monikers: *mut *mut IMoniker,
+    pub count: u32,
+    pub pos: u32,
 }
 
 #[inline]
 unsafe fn impl_from_IMoniker(iface: *mut IMoniker) -> *mut CompositeMonikerImpl {
     CONTAINING_RECORD!(iface, CompositeMonikerImpl, IMoniker_iface)
+}
+
+/// OUR composite, identified by vtable (never by IsSystemMoniker).
+unsafe fn unsafe_impl_from_IMoniker(iface: *mut IMoniker) -> *mut CompositeMonikerImpl {
+    if iface.is_null()
+        || (*iface).lpVtbl as *const IMonikerVtbl
+            != core::ptr::addr_of!(VT_CompositeMonikerImpl)
+    {
+        return core::ptr::null_mut();
+    }
+    impl_from_IMoniker(iface)
 }
 
 #[inline]
@@ -77,6 +85,16 @@ unsafe fn impl_from_IEnumMoniker(iface: *mut IEnumMoniker) -> *mut EnumMonikerIm
     CONTAINING_RECORD!(iface, EnumMonikerImpl, IEnumMoniker_iface)
 }
 
+unsafe fn heap_calloc(n: usize, size: usize) -> *mut c_void {
+    HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (n.max(1) * size) as SIZE_T) as *mut c_void
+}
+
+unsafe fn heap_free(p: *mut c_void) {
+    if !p.is_null() {
+        HeapFree(GetProcessHeap(), 0, p);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // IMoniker
 // ---------------------------------------------------------------------------
@@ -92,15 +110,12 @@ fn CompositeMonikerImpl_QueryInterface(
     TRACE!(b"(%p,%s,%p)\n\0".as_ptr() as *const c_char, This,
            debugstr_guid(riid as *const c_void), ppvObject);
 
-    /* Perform a sanity check on the parameters.*/
     if ppvObject.is_null() {
         return E_INVALIDARG;
     }
 
-    /* Initialize the return parameter */
     *ppvObject = core::ptr::null_mut();
 
-    /* Compare the riid with the interface IDs implemented by this object.*/
     if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid)
         || IsEqualIID(core::ptr::addr_of!(IID_IPersist), riid)
         || IsEqualIID(core::ptr::addr_of!(IID_IPersistStream), riid)
@@ -113,12 +128,10 @@ fn CompositeMonikerImpl_QueryInterface(
         *ppvObject = core::ptr::addr_of_mut!((*This).IMarshal_iface) as *mut c_void;
     }
 
-    /* Check that we obtained an interface.*/
     if (*ppvObject).is_null() {
         return E_NOINTERFACE;
     }
 
-    /* QueryInterface always increases the reference count by one when it is successful */
     IMoniker_AddRef(iface);
 
     S_OK
@@ -135,35 +148,24 @@ fn CompositeMonikerImpl_AddRef(iface: *mut IMoniker) -> ULONG {
 }
 }
 
-unsafe fn CompositeMonikerImpl_ReleaseMonikersInTable(This: *mut CompositeMonikerImpl) {
-    let mut i: ULONG = 0;
-
-    while i < (*This).tabLastIndex {
-        IMoniker_Release(*(*This).tabMoniker.add(i as usize));
-        i += 1;
-    }
-
-    (*This).tabLastIndex = 0;
-}
-
 stdmethod! {
 fn CompositeMonikerImpl_Release(iface: *mut IMoniker) -> ULONG {
-    let This = impl_from_IMoniker(iface);
+    let moniker = impl_from_IMoniker(iface);
+    let refcount = InterlockedDecrement(core::ptr::addr_of_mut!((*moniker).ref_)) as ULONG;
 
-    TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, This);
+    TRACE!(b"%p, refcount %u\n\0".as_ptr() as *const c_char, iface, refcount);
 
-    let ref_ = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
-
-    /* destroy the object if there are no more references to it */
-    if ref_ == 0 {
-        /* release all the components before destroying this object */
-        CompositeMonikerImpl_ReleaseMonikersInTable(This);
-
-        HeapFree(GetProcessHeap(), 0, (*This).tabMoniker as LPVOID);
-        HeapFree(GetProcessHeap(), 0, This as LPVOID);
+    if refcount == 0 {
+        if !(*moniker).left.is_null() {
+            IMoniker_Release((*moniker).left);
+        }
+        if !(*moniker).right.is_null() {
+            IMoniker_Release((*moniker).right);
+        }
+        heap_free(moniker as *mut c_void);
     }
 
-    ref_
+    refcount
 }
 }
 
@@ -182,9 +184,11 @@ fn CompositeMonikerImpl_GetClassID(iface: *mut IMoniker, pClassID: *mut CLSID) -
 }
 
 stdmethod! {
-/// The OLE-provided IPersistStream::IsDirty implementations always return S_FALSE
-/// because their internal state never changes.
 fn CompositeMonikerImpl_IsDirty(iface: *mut IMoniker) -> HRESULT {
+    /* Note that the OLE-provided implementations of the IPersistStream::IsDirty
+       method in the OLE-provided moniker interfaces always return S_FALSE because
+       their internal state never changes. */
+
     TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, iface);
 
     S_FALSE
@@ -192,105 +196,114 @@ fn CompositeMonikerImpl_IsDirty(iface: *mut IMoniker) -> HRESULT {
 }
 
 stdmethod! {
-fn CompositeMonikerImpl_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
-    let This = impl_from_IMoniker(iface);
-    let mut res: HRESULT;
-    let mut moniker_count: DWORD = 0;
-    let mut i: DWORD;
+fn CompositeMonikerImpl_Load(iface: *mut IMoniker, stream: *mut IStream) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
+    let mut last: *mut IMoniker = core::ptr::null_mut();
+    let mut m: *mut IMoniker = core::ptr::null_mut();
+    let mut c: *mut IMoniker = core::ptr::null_mut();
+    let mut count: DWORD = 0;
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, pStm);
+    TRACE!(b"%p, %p\n\0".as_ptr() as *const c_char, iface, stream);
 
-    /* this function calls OleLoadFromStream for each moniker within this object */
-
-    res = IStream_Read(pStm, core::ptr::addr_of_mut!(moniker_count) as *mut c_void,
-                       core::mem::size_of::<DWORD>() as ULONG, core::ptr::null_mut());
-    if res != S_OK {
-        ERR!(b"couldn't reading moniker count from stream\n\0".as_ptr() as *const c_char);
-        return E_FAIL;
+    if (*moniker).comp_count != 0 {
+        return E_UNEXPECTED;
     }
 
-    CompositeMonikerImpl_ReleaseMonikersInTable(This);
-
-    i = 0;
-    while i < moniker_count {
-        res = OleLoadFromStream(
-            pStm,
-            core::ptr::addr_of!(IID_IMoniker),
-            (*This).tabMoniker.add((*This).tabLastIndex as usize) as *mut LPVOID,
-        );
-        if FAILED(res) {
-            ERR!(b"couldn't load moniker from stream, res = 0x%08x\n\0".as_ptr() as *const c_char,
-                 res);
-            break;
-        }
-
-        /* resize the table if needed */
-        (*This).tabLastIndex += 1;
-        if (*This).tabLastIndex == (*This).tabSize {
-            (*This).tabSize += BLOCK_TAB_SIZE;
-            (*This).tabMoniker = HeapReAlloc(
-                GetProcessHeap(),
-                0,
-                (*This).tabMoniker as LPVOID,
-                ((*This).tabSize as usize * core::mem::size_of::<*mut IMoniker>()) as SIZE_T,
-            ) as *mut *mut IMoniker;
-
-            if (*This).tabMoniker.is_null() {
-                return E_OUTOFMEMORY;
-            }
-        }
-
-        i += 1;
+    let mut hr = IStream_Read(
+        stream,
+        core::ptr::addr_of_mut!(count) as *mut c_void,
+        core::mem::size_of::<DWORD>() as ULONG,
+        core::ptr::null_mut(),
+    );
+    if hr != S_OK {
+        WARN!(b"Failed to read component count, hr %#x.\n\0".as_ptr() as *const c_char, hr);
+        return hr;
     }
 
-    res
+    if count < 2 {
+        WARN!(b"Unexpected component count %u.\n\0".as_ptr() as *const c_char, count);
+        return E_UNEXPECTED;
+    }
+
+    hr = OleLoadFromStream(stream, core::ptr::addr_of!(IID_IMoniker),
+                           core::ptr::addr_of_mut!(last) as *mut LPVOID);
+    if FAILED(hr) {
+        return hr;
+    }
+
+    for i in 1..count - 1 {
+        hr = OleLoadFromStream(stream, core::ptr::addr_of!(IID_IMoniker),
+                               core::ptr::addr_of_mut!(m) as *mut LPVOID);
+        if FAILED(hr) {
+            WARN!(b"Failed to initialize component %u, hr %#x.\n\0".as_ptr() as *const c_char,
+                  i, hr);
+            IMoniker_Release(last);
+            return hr;
+        }
+        hr = CreateGenericComposite(last, m, &mut c);
+        IMoniker_Release(last);
+        IMoniker_Release(m);
+        if FAILED(hr) {
+            return hr;
+        }
+        last = c;
+    }
+
+    hr = OleLoadFromStream(stream, core::ptr::addr_of!(IID_IMoniker),
+                           core::ptr::addr_of_mut!(m) as *mut LPVOID);
+    if FAILED(hr) {
+        IMoniker_Release(last);
+        return hr;
+    }
+
+    (*moniker).left = last;
+    (*moniker).right = m;
+    (*moniker).comp_count = count;
+
+    hr
+}
+}
+
+unsafe fn composite_save_components(moniker: *mut IMoniker, stream: *mut IStream) -> HRESULT {
+    let comp_moniker = unsafe_impl_from_IMoniker(moniker);
+
+    if !comp_moniker.is_null() {
+        let mut hr = composite_save_components((*comp_moniker).left, stream);
+        if SUCCEEDED(hr) {
+            hr = composite_save_components((*comp_moniker).right, stream);
+        }
+        hr
+    } else {
+        OleSaveToStream(moniker as *mut IPersistStream, stream)
+    }
+}
+
+stdmethod! {
+fn CompositeMonikerImpl_Save(iface: *mut IMoniker, stream: *mut IStream, clear_dirty: BOOL) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
+
+    TRACE!(b"%p, %p, %d\n\0".as_ptr() as *const c_char, iface, stream, clear_dirty);
+
+    if (*moniker).comp_count == 0 {
+        return E_UNEXPECTED;
+    }
+
+    let hr = IStream_Write(
+        stream,
+        core::ptr::addr_of!((*moniker).comp_count) as *const c_void,
+        core::mem::size_of::<u32>() as ULONG,
+        core::ptr::null_mut(),
+    );
+    if FAILED(hr) {
+        return hr;
+    }
+
+    composite_save_components(iface, stream)
 }
 }
 
 stdmethod! {
-fn CompositeMonikerImpl_Save(iface: *mut IMoniker, pStm: *mut IStream, fClearDirty: BOOL)
-    -> HRESULT
-{
-    let This = impl_from_IMoniker(iface);
-    let mut res: HRESULT;
-    let mut enumMk: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut pmk: *mut IMoniker = core::ptr::null_mut();
-    let moniker_count: DWORD = (*This).tabLastIndex;
-
-    TRACE!(b"(%p,%p,%d)\n\0".as_ptr() as *const c_char, iface, pStm, fClearDirty);
-
-    /* This function calls OleSaveToStream for each moniker within this object. */
-    res = IStream_Write(pStm, core::ptr::addr_of!(moniker_count) as *const c_void,
-                        core::mem::size_of::<DWORD>() as ULONG, core::ptr::null_mut());
-    if FAILED(res) {
-        return res;
-    }
-
-    IMoniker_Enum(iface, 1 /* TRUE */, &mut enumMk);
-
-    while IEnumMoniker_Next(enumMk, 1, &mut pmk, core::ptr::null_mut()) == S_OK {
-        res = OleSaveToStream(pmk as *mut IPersistStream, pStm);
-
-        IMoniker_Release(pmk);
-
-        if FAILED(res) {
-            IEnumMoniker_Release(enumMk);
-            return res;
-        }
-    }
-
-    IEnumMoniker_Release(enumMk);
-
-    S_OK
-}
-}
-
-stdmethod! {
-/// The sizeMax of this object is calculated by calling GetSizeMax on each moniker within
-/// this object then summing all returned values.
-fn CompositeMonikerImpl_GetSizeMax(iface: *mut IMoniker, pcbSize: *mut ULARGE_INTEGER)
-    -> HRESULT
-{
+fn CompositeMonikerImpl_GetSizeMax(iface: *mut IMoniker, pcbSize: *mut ULARGE_INTEGER) -> HRESULT {
     let mut enumMk: *mut IEnumMoniker = core::ptr::null_mut();
     let mut pmk: *mut IMoniker = core::ptr::null_mut();
     let mut ptmpSize: ULARGE_INTEGER = core::mem::zeroed();
@@ -301,16 +314,16 @@ fn CompositeMonikerImpl_GetSizeMax(iface: *mut IMoniker, pcbSize: *mut ULARGE_IN
         return E_POINTER;
     }
 
+    /* The sizeMax of this object is calculated by calling GetSizeMax on each moniker
+       within this object then summing all returned values. */
     (*pcbSize).QuadPart = core::mem::size_of::<DWORD>() as ULONGLONG;
 
-    IMoniker_Enum(iface, 1 /* TRUE */, &mut enumMk);
+    IMoniker_Enum(iface, TRUE as BOOL, &mut enumMk);
 
     while IEnumMoniker_Next(enumMk, 1, &mut pmk, core::ptr::null_mut()) == S_OK {
         IMoniker_GetSizeMax(pmk, &mut ptmpSize);
-
         IMoniker_Release(pmk);
-
-        (*pcbSize).QuadPart = ptmpSize.QuadPart + core::mem::size_of::<CLSID>() as ULONGLONG;
+        (*pcbSize).QuadPart += ptmpSize.QuadPart + core::mem::size_of::<CLSID>() as ULONGLONG;
     }
 
     IEnumMoniker_Release(enumMk);
@@ -319,63 +332,73 @@ fn CompositeMonikerImpl_GetSizeMax(iface: *mut IMoniker, pcbSize: *mut ULARGE_IN
 }
 }
 
+/// wine-10 compose_with: try a non-generic composition first, else a generic one.
+unsafe fn compose_with(left: *mut IMoniker, right: *mut IMoniker, c: *mut *mut IMoniker) -> HRESULT {
+    let hr = IMoniker_ComposeWith(left, right, TRUE as BOOL, c);
+    if FAILED(hr) && hr != MK_E_NEEDGENERIC {
+        return hr;
+    }
+    CreateGenericComposite(left, right, c)
+}
+
 stdmethod! {
 fn CompositeMonikerImpl_BindToObject(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
-    pmkToLeft: *mut IMoniker,
+    toleft: *mut IMoniker,
     riid: *const IID,
-    ppvResult: *mut *mut c_void,
+    result: *mut *mut c_void,
 ) -> HRESULT {
-    let mut res: HRESULT = E_FAIL;
-    let mut prot: *mut IRunningObjectTable = core::ptr::null_mut();
-    let mut tempMk: *mut IMoniker = core::ptr::null_mut();
-    let mut antiMk: *mut IMoniker = core::ptr::null_mut();
-    let mut rightMostMk: *mut IMoniker = core::ptr::null_mut();
-    let mut enumMoniker: *mut IEnumMoniker = core::ptr::null_mut();
+    let moniker = impl_from_IMoniker(iface);
+    let mut left: *mut IMoniker = core::ptr::null_mut();
+    let mut rightmost: *mut IMoniker = core::ptr::null_mut();
+    let mut c: *mut IMoniker = core::ptr::null_mut();
+    let mut rot: *mut IRunningObjectTable = core::ptr::null_mut();
+    let mut object: *mut IUnknown = core::ptr::null_mut();
 
-    TRACE!(b"(%p,%p,%p,%s,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
-           debugstr_guid(riid as *const c_void), ppvResult);
+    TRACE!(b"%p, %p, %p, %s, %p.\n\0".as_ptr() as *const c_char, iface, pbc, toleft,
+           debugstr_guid(riid as *const c_void), result);
 
-    if ppvResult.is_null() {
+    if result.is_null() {
         return E_POINTER;
     }
 
-    *ppvResult = core::ptr::null_mut();
+    *result = core::ptr::null_mut();
 
-    /* If pmkToLeft is NULL, this method looks for the moniker in the ROT, and if found,
-     * queries the retrieved object for the requested interface pointer. */
-    if pmkToLeft.is_null() {
-        res = IBindCtx_GetRunningObjectTable(pbc, &mut prot);
-
-        if SUCCEEDED(res) {
-            /* if the requested class was loaded before ! we don't need to reload it */
-            res = IRunningObjectTable_GetObject(prot, iface,
-                                                ppvResult as *mut *mut IUnknown);
-
-            if res == S_OK {
-                return res;
+    if toleft.is_null() {
+        let mut hr = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
+        if SUCCEEDED(hr) {
+            hr = IRunningObjectTable_GetObject(rot, iface, &mut object);
+            IRunningObjectTable_Release(rot);
+            if FAILED(hr) {
+                return E_INVALIDARG;
             }
+
+            hr = IUnknown_QueryInterface(object, riid, result);
+            IUnknown_Release(object);
         }
-    } else {
-        /* If pmkToLeft is not NULL, the method recursively calls IMoniker::BindToObject on
-         * the rightmost component of the composite, passing the rest of the composite as
-         * the pmkToLeft parameter for that call */
-        IMoniker_Enum(iface, 0 /* FALSE */, &mut enumMoniker);
-        IEnumMoniker_Next(enumMoniker, 1, &mut rightMostMk, core::ptr::null_mut());
-        IEnumMoniker_Release(enumMoniker);
 
-        res = crate::ring::antimoniker::CreateAntiMoniker(&mut antiMk);
-        res = IMoniker_ComposeWith(iface, antiMk, 0, &mut tempMk);
-        IMoniker_Release(antiMk);
-
-        res = IMoniker_BindToObject(rightMostMk, pbc, tempMk, riid, ppvResult);
-
-        IMoniker_Release(tempMk);
-        IMoniker_Release(rightMostMk);
+        return hr;
     }
 
-    res
+    /* Try to bind rightmost component with (toleft, composite->left) composite at its
+       left side */
+    let mut hr = composite_get_rightmost(moniker, &mut left, &mut rightmost);
+    if FAILED(hr) {
+        return hr;
+    }
+
+    hr = compose_with(toleft, left, &mut c);
+    IMoniker_Release(left);
+
+    if SUCCEEDED(hr) {
+        hr = IMoniker_BindToObject(rightmost, pbc, c, riid, result);
+        IMoniker_Release(c);
+    }
+
+    IMoniker_Release(rightmost);
+
+    hr
 }
 }
 
@@ -383,61 +406,41 @@ stdmethod! {
 fn CompositeMonikerImpl_BindToStorage(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
-    pmkToLeft: *mut IMoniker,
+    toleft: *mut IMoniker,
     riid: *const IID,
-    ppvResult: *mut *mut c_void,
+    result: *mut *mut c_void,
 ) -> HRESULT {
-    let mut res: HRESULT;
-    let mut tempMk: *mut IMoniker = core::ptr::null_mut();
-    let mut antiMk: *mut IMoniker = core::ptr::null_mut();
-    let mut rightMostMk: *mut IMoniker = core::ptr::null_mut();
-    let leftMk: *mut IMoniker;
-    let mut enumMoniker: *mut IEnumMoniker = core::ptr::null_mut();
+    let moniker = impl_from_IMoniker(iface);
+    let mut left: *mut IMoniker = core::ptr::null_mut();
+    let mut rightmost: *mut IMoniker = core::ptr::null_mut();
+    let mut composed_left: *mut IMoniker = core::ptr::null_mut();
 
-    TRACE!(b"(%p,%p,%p,%s,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
-           debugstr_guid(riid as *const c_void), ppvResult);
+    TRACE!(b"%p, %p, %p, %s, %p.\n\0".as_ptr() as *const c_char, iface, pbc, toleft,
+           debugstr_guid(riid as *const c_void), result);
 
-    *ppvResult = core::ptr::null_mut();
+    *result = core::ptr::null_mut();
 
-    /* This method recursively calls BindToStorage on the rightmost component of the
-     * composite, passing the rest of the composite as the pmkToLeft parameter. */
+    let mut hr = composite_get_rightmost(moniker, &mut left, &mut rightmost);
+    if FAILED(hr) {
+        return hr;
+    }
 
-    if !pmkToLeft.is_null() {
-        let mut left: *mut IMoniker = core::ptr::null_mut();
-        res = IMoniker_ComposeWith(pmkToLeft, iface, 0 /* FALSE */, &mut left);
-        if FAILED(res) {
-            return res;
-        }
-        leftMk = left;
+    if !toleft.is_null() {
+        hr = compose_with(toleft, left, &mut composed_left);
     } else {
-        leftMk = iface;
+        composed_left = left;
+        IMoniker_AddRef(composed_left);
     }
 
-    IMoniker_Enum(iface, 0 /* FALSE */, &mut enumMoniker);
-    IEnumMoniker_Next(enumMoniker, 1, &mut rightMostMk, core::ptr::null_mut());
-    IEnumMoniker_Release(enumMoniker);
-
-    res = crate::ring::antimoniker::CreateAntiMoniker(&mut antiMk);
-    if FAILED(res) {
-        return res;
-    }
-    res = IMoniker_ComposeWith(leftMk, antiMk, 0, &mut tempMk);
-    if FAILED(res) {
-        return res;
-    }
-    IMoniker_Release(antiMk);
-
-    res = IMoniker_BindToStorage(rightMostMk, pbc, tempMk, riid, ppvResult);
-
-    IMoniker_Release(tempMk);
-
-    IMoniker_Release(rightMostMk);
-
-    if !pmkToLeft.is_null() {
-        IMoniker_Release(leftMk);
+    if SUCCEEDED(hr) {
+        hr = IMoniker_BindToStorage(rightmost, pbc, composed_left, riid, result);
+        IMoniker_Release(composed_left);
     }
 
-    res
+    IMoniker_Release(rightmost);
+    IMoniker_Release(left);
+
+    hr
 }
 }
 
@@ -445,78 +448,49 @@ stdmethod! {
 fn CompositeMonikerImpl_Reduce(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
-    dwReduceHowFar: DWORD,
-    ppmkToLeft: *mut *mut IMoniker,
-    ppmkReduced: *mut *mut IMoniker,
+    howfar: DWORD,
+    toleft: *mut *mut IMoniker,
+    reduced: *mut *mut IMoniker,
 ) -> HRESULT {
-    let res: HRESULT;
-    let mut tempMk: *mut IMoniker = core::ptr::null_mut();
-    let mut antiMk: *mut IMoniker = core::ptr::null_mut();
-    let mut rightMostMk: *mut IMoniker = core::ptr::null_mut();
-    let mut leftReducedComposedMk: *mut IMoniker = core::ptr::null_mut();
-    let mut rightMostReducedMk: *mut IMoniker = core::ptr::null_mut();
-    let mut enumMoniker: *mut IEnumMoniker = core::ptr::null_mut();
+    let moniker = impl_from_IMoniker(iface);
+    let mut reduced_left: *mut IMoniker = core::ptr::null_mut();
+    let mut reduced_right: *mut IMoniker = core::ptr::null_mut();
 
-    TRACE!(b"(%p,%p,%d,%p,%p)\n\0".as_ptr() as *const c_char, iface, pbc, dwReduceHowFar,
-           ppmkToLeft, ppmkReduced);
+    TRACE!(b"%p, %p, %u, %p, %p.\n\0".as_ptr() as *const c_char, iface, pbc, howfar, toleft,
+           reduced);
 
-    if ppmkReduced.is_null() {
-        return E_POINTER;
+    if pbc.is_null() || reduced.is_null() {
+        return E_INVALIDARG;
     }
 
-    /* This method recursively calls Reduce for each of its component monikers. */
+    let mut hr = IMoniker_Reduce((*moniker).left, pbc, howfar, core::ptr::null_mut(),
+                                 &mut reduced_left);
+    if FAILED(hr) {
+        return hr;
+    }
 
-    if ppmkToLeft.is_null() {
-        IMoniker_Enum(iface, 0 /* FALSE */, &mut enumMoniker);
-        IEnumMoniker_Next(enumMoniker, 1, &mut rightMostMk, core::ptr::null_mut());
-        IEnumMoniker_Release(enumMoniker);
+    let mut m: *mut IMoniker = (*moniker).left;
+    hr = IMoniker_Reduce((*moniker).right, pbc, howfar, &mut m, &mut reduced_right);
+    if FAILED(hr) {
+        IMoniker_Release(reduced_left);
+        return hr;
+    }
 
-        crate::ring::antimoniker::CreateAntiMoniker(&mut antiMk);
-        IMoniker_ComposeWith(iface, antiMk, 0, &mut tempMk);
-        IMoniker_Release(antiMk);
-
-        res = IMoniker_Reduce(rightMostMk, pbc, dwReduceHowFar, &mut tempMk, ppmkReduced);
-        IMoniker_Release(tempMk);
-        IMoniker_Release(rightMostMk);
-
-        res
-    } else if (*ppmkToLeft).is_null() {
-        IMoniker_Reduce(iface, pbc, dwReduceHowFar, core::ptr::null_mut(), ppmkReduced)
+    let was_reduced = reduced_left != (*moniker).left || reduced_right != (*moniker).right;
+    if was_reduced {
+        hr = CreateGenericComposite(reduced_left, reduced_right, reduced);
     } else {
-        /* separate the composite moniker in to left and right moniker */
-        IMoniker_Enum(iface, 0 /* FALSE */, &mut enumMoniker);
-        IEnumMoniker_Next(enumMoniker, 1, &mut rightMostMk, core::ptr::null_mut());
-        IEnumMoniker_Release(enumMoniker);
+        *reduced = iface;
+        IMoniker_AddRef(*reduced);
+    }
 
-        crate::ring::antimoniker::CreateAntiMoniker(&mut antiMk);
-        IMoniker_ComposeWith(iface, antiMk, 0, &mut tempMk);
-        IMoniker_Release(antiMk);
+    IMoniker_Release(reduced_left);
+    IMoniker_Release(reduced_right);
 
-        /* If any of the components reduces itself, the method returns S_OK and passes back
-         * a composite of the reduced components.
-         * (The C tests the HRESULTs for C truthiness — i.e. NON-ZERO, so S_OK(0) is
-         * "false" here. Kept verbatim.) */
-        if IMoniker_Reduce(rightMostMk, pbc, dwReduceHowFar, core::ptr::null_mut(),
-                           &mut rightMostReducedMk) != 0
-            && IMoniker_Reduce(rightMostMk, pbc, dwReduceHowFar, &mut tempMk,
-                               &mut leftReducedComposedMk) != 0
-        {
-            IMoniker_Release(tempMk);
-            IMoniker_Release(rightMostMk);
-
-            CreateGenericComposite(leftReducedComposedMk, rightMostReducedMk, ppmkReduced)
-        } else {
-            /* If no reduction occurred, the method passes back the same moniker and returns
-             * MK_S_REDUCED_TO_SELF. */
-            IMoniker_Release(tempMk);
-            IMoniker_Release(rightMostMk);
-
-            IMoniker_AddRef(iface);
-
-            *ppmkReduced = iface;
-
-            MK_S_REDUCED_TO_SELF
-        }
+    if was_reduced {
+        hr
+    } else {
+        MK_S_REDUCED_TO_SELF
     }
 }
 }
@@ -524,149 +498,172 @@ fn CompositeMonikerImpl_Reduce(
 stdmethod! {
 fn CompositeMonikerImpl_ComposeWith(
     iface: *mut IMoniker,
-    pmkRight: *mut IMoniker,
-    fOnlyIfNotGeneric: BOOL,
-    ppmkComposite: *mut *mut IMoniker,
+    right: *mut IMoniker,
+    only_if_not_generic: BOOL,
+    composite: *mut *mut IMoniker,
 ) -> HRESULT {
-    TRACE!(b"(%p,%p,%d,%p)\n\0".as_ptr() as *const c_char, iface, pmkRight,
-           fOnlyIfNotGeneric, ppmkComposite);
+    TRACE!(b"%p, %p, %d, %p.\n\0".as_ptr() as *const c_char, iface, right,
+           only_if_not_generic, composite);
 
-    if ppmkComposite.is_null() || pmkRight.is_null() {
-        return E_POINTER;
+    *composite = core::ptr::null_mut();
+
+    if only_if_not_generic != 0 {
+        MK_E_NEEDGENERIC
+    } else {
+        CreateGenericComposite(iface, right, composite)
     }
-
-    *ppmkComposite = core::ptr::null_mut();
-
-    /* If fOnlyIfNotGeneric is TRUE, this method sets *pmkComposite to NULL and returns
-     * MK_E_NEEDGENERIC; otherwise, the method returns the result of combining the two
-     * monikers by calling the CreateGenericComposite function */
-
-    if fOnlyIfNotGeneric != 0 {
-        return MK_E_NEEDGENERIC;
-    }
-
-    CreateGenericComposite(iface, pmkRight, ppmkComposite)
 }
+}
+
+unsafe fn composite_get_components(
+    moniker: *mut IMoniker,
+    components: *mut *mut IMoniker,
+    index: *mut u32,
+) {
+    let comp_moniker = unsafe_impl_from_IMoniker(moniker);
+
+    if !comp_moniker.is_null() {
+        composite_get_components((*comp_moniker).left, components, index);
+        composite_get_components((*comp_moniker).right, components, index);
+    } else {
+        *components.add(*index as usize) = moniker;
+        *index += 1;
+    }
+}
+
+/// The leaves of `iface` left to right (borrowed, NOT AddRef'd) in a heap array the
+/// caller frees with heap_free.
+unsafe fn composite_get_components_alloc(
+    iface: *mut IMoniker,
+    count: *mut u32,
+    components: *mut *mut *mut IMoniker,
+) -> HRESULT {
+    let moniker = unsafe_impl_from_IMoniker(iface);
+
+    *count = if !moniker.is_null() { (*moniker).comp_count } else { 1 };
+
+    *components =
+        heap_calloc(*count as usize, core::mem::size_of::<*mut IMoniker>()) as *mut *mut IMoniker;
+    if (*components).is_null() {
+        return E_OUTOFMEMORY;
+    }
+
+    let mut index: u32 = 0;
+    composite_get_components(iface, *components, &mut index);
+
+    S_OK
 }
 
 stdmethod! {
 fn CompositeMonikerImpl_Enum(
     iface: *mut IMoniker,
-    fForward: BOOL,
-    ppenumMoniker: *mut *mut IEnumMoniker,
+    forward: BOOL,
+    ret_enum: *mut *mut IEnumMoniker,
 ) -> HRESULT {
-    let This = impl_from_IMoniker(iface);
+    let mut monikers: *mut *mut IMoniker = core::ptr::null_mut();
+    let mut count: u32 = 0;
 
-    TRACE!(b"(%p,%d,%p)\n\0".as_ptr() as *const c_char, iface, fForward, ppenumMoniker);
+    TRACE!(b"%p, %d, %p\n\0".as_ptr() as *const c_char, iface, forward, ret_enum);
 
-    if ppenumMoniker.is_null() {
-        return E_POINTER;
+    if ret_enum.is_null() {
+        return E_INVALIDARG;
     }
 
-    EnumMonikerImpl_CreateEnumMoniker((*This).tabMoniker, (*This).tabLastIndex, 0, fForward,
-                                      ppenumMoniker)
+    let mut hr = composite_get_components_alloc(iface, &mut count, &mut monikers);
+    if FAILED(hr) {
+        return hr;
+    }
+
+    hr = create_enumerator(monikers, count, forward, ret_enum);
+    heap_free(monikers as *mut c_void);
+
+    hr
 }
 }
 
 stdmethod! {
-fn CompositeMonikerImpl_IsEqual(iface: *mut IMoniker, pmkOtherMoniker: *mut IMoniker)
-    -> HRESULT
-{
-    let mut enumMoniker1: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut enumMoniker2: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut tempMk1: *mut IMoniker = core::ptr::null_mut();
-    let mut tempMk2: *mut IMoniker = core::ptr::null_mut();
-    let mut res1: HRESULT;
-    let mut res2: HRESULT;
-    let mut res: HRESULT;
-    let mut done: BOOL;
+fn CompositeMonikerImpl_IsEqual(iface: *mut IMoniker, other: *mut IMoniker) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
+    let mut components: *mut *mut IMoniker = core::ptr::null_mut();
+    let mut other_components: *mut *mut IMoniker = core::ptr::null_mut();
+    let mut count: u32 = 0;
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, pmkOtherMoniker);
+    TRACE!(b"%p, %p.\n\0".as_ptr() as *const c_char, iface, other);
 
-    if pmkOtherMoniker.is_null() {
+    if other.is_null() {
+        return E_INVALIDARG;
+    }
+
+    let other_moniker = unsafe_impl_from_IMoniker(other);
+    if other_moniker.is_null() {
         return S_FALSE;
     }
 
-    /* This method returns S_OK if the components of both monikers are equal when compared
-     * in the left-to-right order. */
-    IMoniker_Enum(pmkOtherMoniker, 1 /* TRUE */, &mut enumMoniker1);
-
-    if enumMoniker1.is_null() {
+    if (*moniker).comp_count != (*other_moniker).comp_count {
         return S_FALSE;
     }
 
-    IMoniker_Enum(iface, 1 /* TRUE */, &mut enumMoniker2);
+    let mut hr = composite_get_components_alloc(iface, &mut count, &mut components);
+    if FAILED(hr) {
+        return hr;
+    }
+    hr = composite_get_components_alloc(other, &mut count, &mut other_components);
+    if FAILED(hr) {
+        heap_free(components as *mut c_void);
+        return hr;
+    }
 
-    loop {
-        res1 = IEnumMoniker_Next(enumMoniker1, 1, &mut tempMk1, core::ptr::null_mut());
-        res2 = IEnumMoniker_Next(enumMoniker2, 1, &mut tempMk2, core::ptr::null_mut());
-
-        if (res1 == S_OK) && (res2 == S_OK) {
-            res = IMoniker_IsEqual(tempMk1, tempMk2);
-            done = (res == S_FALSE) as BOOL;
+    /* C: `(hr = IMoniker_IsEqual(...) != S_OK)` -- the misplaced parenthesis stores
+       the comparison, 0 or 1, which happens to be S_OK or S_FALSE. Same result here,
+       written as meant. */
+    for i in 0..(*moniker).comp_count as usize {
+        hr = if IMoniker_IsEqual(*components.add(i), *other_components.add(i)) != S_OK {
+            S_FALSE
         } else {
-            /* The C assigns a BOOL to the HRESULT here:
-             *     res = (res1==S_FALSE) && (res2==S_FALSE);
-             * i.e. 1 (== S_FALSE) when BOTH enumerators are exhausted, else 0 (== S_OK).
-             * Kept verbatim — do not "fix" the polarity, the oracle is the C. */
-            res = ((res1 == S_FALSE) && (res2 == S_FALSE)) as HRESULT;
-            done = 1;
-        }
-
-        if res1 == S_OK {
-            IMoniker_Release(tempMk1);
-        }
-
-        if res2 == S_OK {
-            IMoniker_Release(tempMk2);
-        }
-
-        if done != 0 {
+            S_OK
+        };
+        if hr != S_OK {
             break;
         }
     }
 
-    IEnumMoniker_Release(enumMoniker1);
-    IEnumMoniker_Release(enumMoniker2);
+    heap_free(other_components as *mut c_void);
+    heap_free(components as *mut c_void);
 
-    res
+    hr
 }
 }
 
 stdmethod! {
-fn CompositeMonikerImpl_Hash(iface: *mut IMoniker, pdwHash: *mut DWORD) -> HRESULT {
-    let mut enumMoniker: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut tempMk: *mut IMoniker = core::ptr::null_mut();
-    let mut res: HRESULT;
-    let mut tempHash: DWORD = 0;
+fn CompositeMonikerImpl_Hash(iface: *mut IMoniker, hash: *mut DWORD) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
+    let mut left_hash: DWORD = 0;
+    let mut right_hash: DWORD = 0;
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, pdwHash);
+    TRACE!(b"%p, %p\n\0".as_ptr() as *const c_char, iface, hash);
 
-    if pdwHash.is_null() {
+    if hash.is_null() {
         return E_POINTER;
     }
 
-    res = IMoniker_Enum(iface, 1 /* TRUE */, &mut enumMoniker);
-    if FAILED(res) {
-        return res;
+    if (*moniker).comp_count == 0 {
+        return E_UNEXPECTED;
     }
 
-    *pdwHash = 0;
+    *hash = 0;
 
-    while IEnumMoniker_Next(enumMoniker, 1, &mut tempMk, core::ptr::null_mut()) == S_OK {
-        res = IMoniker_Hash(tempMk, &mut tempHash);
-        if FAILED(res) {
-            /* NOTE: the C breaks out here WITHOUT releasing tempMk. Kept verbatim. */
-            break;
-        }
-        *pdwHash ^= tempHash;
-
-        IMoniker_Release(tempMk);
+    let mut hr = IMoniker_Hash((*moniker).left, &mut left_hash);
+    if FAILED(hr) {
+        return hr;
+    }
+    hr = IMoniker_Hash((*moniker).right, &mut right_hash);
+    if FAILED(hr) {
+        return hr;
     }
 
-    IEnumMoniker_Release(enumMoniker);
+    *hash = left_hash ^ right_hash;
 
-    res
+    hr
 }
 }
 
@@ -674,74 +671,58 @@ stdmethod! {
 fn CompositeMonikerImpl_IsRunning(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
-    pmkToLeft: *mut IMoniker,
-    pmkNewlyRunning: *mut IMoniker,
+    toleft: *mut IMoniker,
+    newly_running: *mut IMoniker,
 ) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
+    let mut c: *mut IMoniker = core::ptr::null_mut();
+    let mut left: *mut IMoniker = core::ptr::null_mut();
+    let mut rightmost: *mut IMoniker = core::ptr::null_mut();
     let mut rot: *mut IRunningObjectTable = core::ptr::null_mut();
-    let mut res: HRESULT;
-    let mut tempMk: *mut IMoniker = core::ptr::null_mut();
-    let mut antiMk: *mut IMoniker = core::ptr::null_mut();
-    let mut rightMostMk: *mut IMoniker = core::ptr::null_mut();
-    let mut enumMoniker: *mut IEnumMoniker = core::ptr::null_mut();
 
-    TRACE!(b"(%p,%p,%p,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
-           pmkNewlyRunning);
+    TRACE!(b"%p, %p, %p, %p.\n\0".as_ptr() as *const c_char, iface, pbc, toleft,
+           newly_running);
 
-    /* If pmkToLeft is non-NULL, this method composes pmkToLeft with this moniker and calls
-     * IsRunning on the result. */
-    if !pmkToLeft.is_null() {
-        CreateGenericComposite(pmkToLeft, iface, &mut tempMk);
-
-        res = IMoniker_IsRunning(tempMk, pbc, core::ptr::null_mut(), pmkNewlyRunning);
-
-        IMoniker_Release(tempMk);
-
-        res
-    } else if !pmkNewlyRunning.is_null() {
-        /* If pmkToLeft is NULL, this method returns S_OK if pmkNewlyRunning is non-NULL and
-         * is equal to this moniker */
-        if IMoniker_IsEqual(iface, pmkNewlyRunning) == S_OK {
-            S_OK
-        } else {
-            S_FALSE
-        }
-    } else {
-        if pbc.is_null() {
-            return E_INVALIDARG;
-        }
-
-        /* If pmkToLeft and pmkNewlyRunning are both NULL, this method checks the ROT to see
-         * whether the moniker is running. If so, the method returns S_OK; otherwise, it
-         * recursively calls IMoniker::IsRunning on the rightmost component of the composite,
-         * passing the remainder of the composite as the pmkToLeft parameter for that call. */
-        res = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
-
-        if FAILED(res) {
-            return res;
-        }
-
-        res = IRunningObjectTable_IsRunning(rot, iface);
-        IRunningObjectTable_Release(rot);
-
-        if res == S_OK {
-            S_OK
-        } else {
-            IMoniker_Enum(iface, 0 /* FALSE */, &mut enumMoniker);
-            IEnumMoniker_Next(enumMoniker, 1, &mut rightMostMk, core::ptr::null_mut());
-            IEnumMoniker_Release(enumMoniker);
-
-            res = crate::ring::antimoniker::CreateAntiMoniker(&mut antiMk);
-            res = IMoniker_ComposeWith(iface, antiMk, 0, &mut tempMk);
-            IMoniker_Release(antiMk);
-
-            res = IMoniker_IsRunning(rightMostMk, pbc, tempMk, pmkNewlyRunning);
-
-            IMoniker_Release(tempMk);
-            IMoniker_Release(rightMostMk);
-
-            res
-        }
+    if pbc.is_null() {
+        return E_INVALIDARG;
     }
+
+    if !toleft.is_null() {
+        let mut hr = CreateGenericComposite(toleft, iface, &mut c);
+        if SUCCEEDED(hr) {
+            hr = IMoniker_IsRunning(c, pbc, core::ptr::null_mut(), newly_running);
+            IMoniker_Release(c);
+        }
+
+        return hr;
+    }
+
+    if !newly_running.is_null() {
+        return IMoniker_IsEqual(iface, newly_running);
+    }
+
+    let mut hr = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
+    if FAILED(hr) {
+        return hr;
+    }
+
+    hr = IRunningObjectTable_IsRunning(rot, iface);
+    IRunningObjectTable_Release(rot);
+    if hr == S_OK {
+        return S_OK;
+    }
+
+    hr = composite_get_rightmost(moniker, &mut left, &mut rightmost);
+    if FAILED(hr) {
+        return hr;
+    }
+
+    hr = IMoniker_IsRunning(rightmost, pbc, left, core::ptr::null_mut());
+
+    IMoniker_Release(left);
+    IMoniker_Release(rightmost);
+
+    hr
 }
 }
 
@@ -749,409 +730,342 @@ stdmethod! {
 fn CompositeMonikerImpl_GetTimeOfLastChange(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
-    pmkToLeft: *mut IMoniker,
-    pCompositeTime: *mut FILETIME,
+    toleft: *mut IMoniker,
+    changetime: *mut FILETIME,
 ) -> HRESULT {
-    let mut res: HRESULT;
-    let mut tempMk: *mut IMoniker = core::ptr::null_mut();
-    let mut antiMk: *mut IMoniker = core::ptr::null_mut();
-    let mut rightMostMk: *mut IMoniker = core::ptr::null_mut();
-    let leftMk: *mut IMoniker;
-    let mut enumMoniker: *mut IEnumMoniker = core::ptr::null_mut();
+    let moniker = impl_from_IMoniker(iface);
+    let mut left: *mut IMoniker = core::ptr::null_mut();
+    let mut rightmost: *mut IMoniker = core::ptr::null_mut();
+    let mut composed_left: *mut IMoniker = core::ptr::null_mut();
+    let mut running: *mut IMoniker = core::ptr::null_mut();
+    let mut rot: *mut IRunningObjectTable = core::ptr::null_mut();
 
-    TRACE!(b"(%p,%p,%p,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
-           pCompositeTime);
+    TRACE!(b"%p, %p, %p, %p.\n\0".as_ptr() as *const c_char, iface, pbc, toleft, changetime);
 
-    if pCompositeTime.is_null() {
+    if changetime.is_null() || pbc.is_null() {
         return E_INVALIDARG;
     }
 
-    /* This method creates a composite of pmkToLeft (if non-NULL) and this moniker and uses
-     * the ROT to retrieve the time of last change. If the object is not in the ROT, the
-     * method recursively calls IMoniker::GetTimeOfLastChange on the rightmost component of
-     * the composite, passing the remainder of the composite as pmkToLeft. */
-    if !pmkToLeft.is_null() {
-        let mut rot: *mut IRunningObjectTable = core::ptr::null_mut();
-        let mut left: *mut IMoniker = core::ptr::null_mut();
+    let mut hr = composite_get_rightmost(moniker, &mut left, &mut rightmost);
+    if FAILED(hr) {
+        return hr;
+    }
 
-        res = IMoniker_ComposeWith(pmkToLeft, iface, 0 /* FALSE */, &mut left);
-        if FAILED(res) {
-            return res;
-        }
-        leftMk = left;
-
-        res = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
-        if FAILED(res) {
-            IMoniker_Release(leftMk);
-            return res;
-        }
-
-        if IRunningObjectTable_GetTimeOfLastChange(rot, leftMk, pCompositeTime) == S_OK {
-            IMoniker_Release(leftMk);
-            return res;
+    if !toleft.is_null() {
+        /* Compose (toleft, left) and check that against rightmost */
+        hr = compose_with(toleft, left, &mut composed_left);
+        if SUCCEEDED(hr) && !composed_left.is_null() {
+            hr = compose_with(composed_left, rightmost, &mut running);
         }
     } else {
-        leftMk = iface;
+        composed_left = left;
+        IMoniker_AddRef(composed_left);
+        running = iface;
+        IMoniker_AddRef(running);
     }
 
-    IMoniker_Enum(iface, 0 /* FALSE */, &mut enumMoniker);
-    IEnumMoniker_Next(enumMoniker, 1, &mut rightMostMk, core::ptr::null_mut());
-    IEnumMoniker_Release(enumMoniker);
-
-    res = crate::ring::antimoniker::CreateAntiMoniker(&mut antiMk);
-    res = IMoniker_ComposeWith(leftMk, antiMk, 0, &mut tempMk);
-    IMoniker_Release(antiMk);
-
-    res = IMoniker_GetTimeOfLastChange(rightMostMk, pbc, tempMk, pCompositeTime);
-
-    IMoniker_Release(tempMk);
-    IMoniker_Release(rightMostMk);
-
-    if !pmkToLeft.is_null() {
-        IMoniker_Release(leftMk);
+    if SUCCEEDED(hr) {
+        hr = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
+        if SUCCEEDED(hr) {
+            if IRunningObjectTable_GetTimeOfLastChange(rot, running, changetime) != S_OK {
+                hr = IMoniker_GetTimeOfLastChange(rightmost, pbc, composed_left, changetime);
+            }
+            IRunningObjectTable_Release(rot);
+        }
     }
 
-    res
+    if !composed_left.is_null() {
+        IMoniker_Release(composed_left);
+    }
+    if !running.is_null() {
+        IMoniker_Release(running);
+    }
+    IMoniker_Release(rightmost);
+    IMoniker_Release(left);
+
+    hr
 }
 }
 
 stdmethod! {
-fn CompositeMonikerImpl_Inverse(iface: *mut IMoniker, ppmk: *mut *mut IMoniker) -> HRESULT {
-    let res: HRESULT;
-    let mut tempMk: *mut IMoniker = core::ptr::null_mut();
-    let mut antiMk: *mut IMoniker = core::ptr::null_mut();
-    let mut rightMostMk: *mut IMoniker = core::ptr::null_mut();
-    let mut tempInvMk: *mut IMoniker = core::ptr::null_mut();
-    let mut rightMostInvMk: *mut IMoniker = core::ptr::null_mut();
-    let mut enumMoniker: *mut IEnumMoniker = core::ptr::null_mut();
+fn CompositeMonikerImpl_Inverse(iface: *mut IMoniker, inverse: *mut *mut IMoniker) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
+    let mut right_inverted: *mut IMoniker = core::ptr::null_mut();
+    let mut left_inverted: *mut IMoniker = core::ptr::null_mut();
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, ppmk);
+    TRACE!(b"%p, %p.\n\0".as_ptr() as *const c_char, iface, inverse);
 
-    if ppmk.is_null() {
-        return E_POINTER;
+    if inverse.is_null() {
+        return E_INVALIDARG;
     }
 
-    /* This method returns a composite moniker that consists of the inverses of each of the
-     * components of the original composite, stored in reverse order */
+    *inverse = core::ptr::null_mut();
 
-    *ppmk = core::ptr::null_mut();
-
-    let mut hr = crate::ring::antimoniker::CreateAntiMoniker(&mut antiMk);
+    let mut hr = IMoniker_Inverse((*moniker).right, &mut right_inverted);
     if FAILED(hr) {
         return hr;
     }
-
-    hr = IMoniker_ComposeWith(iface, antiMk, 0 /* FALSE */, &mut tempMk);
-    IMoniker_Release(antiMk);
+    hr = IMoniker_Inverse((*moniker).left, &mut left_inverted);
     if FAILED(hr) {
+        IMoniker_Release(right_inverted);
         return hr;
     }
 
-    if tempMk.is_null() {
-        IMoniker_Inverse(iface, ppmk)
-    } else {
-        IMoniker_Enum(iface, 0 /* FALSE */, &mut enumMoniker);
-        IEnumMoniker_Next(enumMoniker, 1, &mut rightMostMk, core::ptr::null_mut());
-        IEnumMoniker_Release(enumMoniker);
+    hr = CreateGenericComposite(right_inverted, left_inverted, inverse);
 
-        IMoniker_Inverse(rightMostMk, &mut rightMostInvMk);
-        CompositeMonikerImpl_Inverse(tempMk, &mut tempInvMk);
+    IMoniker_Release(left_inverted);
+    IMoniker_Release(right_inverted);
 
-        res = CreateGenericComposite(rightMostInvMk, tempInvMk, ppmk);
-
-        IMoniker_Release(tempMk);
-        IMoniker_Release(rightMostMk);
-        IMoniker_Release(tempInvMk);
-        IMoniker_Release(rightMostInvMk);
-
-        res
-    }
+    hr
 }
 }
 
 stdmethod! {
 fn CompositeMonikerImpl_CommonPrefixWith(
     iface: *mut IMoniker,
-    pmkOther: *mut IMoniker,
-    ppmkPrefix: *mut *mut IMoniker,
+    other: *mut IMoniker,
+    prefix: *mut *mut IMoniker,
 ) -> HRESULT {
-    let mut mkSys: DWORD = 0;
-    let mut res1: HRESULT;
-    let mut res2: HRESULT;
-    let mut tempMk1: *mut IMoniker = core::ptr::null_mut();
-    let mut tempMk2: *mut IMoniker = core::ptr::null_mut();
-    let mut mostLeftMk1: *mut IMoniker = core::ptr::null_mut();
-    let mut mostLeftMk2: *mut IMoniker = core::ptr::null_mut();
-    let mut enumMoniker1: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut enumMoniker2: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut i: ULONG;
-    let mut nbCommonMk: ULONG = 0;
+    let moniker = impl_from_IMoniker(iface);
+    let mut count: u32 = 0;
+    let mut prefix_len: u32 = 0;
+    let mut leftmost: *mut IMoniker = core::ptr::null_mut();
+    let mut hr: HRESULT;
+
+    TRACE!(b"%p, %p, %p\n\0".as_ptr() as *const c_char, iface, other, prefix);
 
     /* If the other moniker is a composite, this method compares the components of each
-     * composite from left to right. The returned common prefix moniker might also be a
-     * composite moniker, depending on how many of the leftmost components were common to
-     * both monikers. */
+       composite from left to right. The returned common prefix moniker might also be a
+       composite moniker, depending on how many of the leftmost components were common
+       to both monikers. */
 
-    if ppmkPrefix.is_null() {
-        return E_POINTER;
+    if !prefix.is_null() {
+        *prefix = core::ptr::null_mut();
     }
 
-    *ppmkPrefix = core::ptr::null_mut();
-
-    if pmkOther.is_null() {
-        return MK_E_NOPREFIX;
+    if other.is_null() || prefix.is_null() {
+        return E_INVALIDARG;
     }
 
-    IMoniker_IsSystemMoniker(pmkOther, &mut mkSys);
+    let other_moniker = unsafe_impl_from_IMoniker(other);
+    if !other_moniker.is_null() {
+        let mut components: *mut *mut IMoniker = core::ptr::null_mut();
+        let mut other_components: *mut *mut IMoniker = core::ptr::null_mut();
+        let mut c: *mut IMoniker = core::ptr::null_mut();
 
-    if mkSys == MKSYS_GENERICCOMPOSITE {
-        IMoniker_Enum(iface, 1 /* TRUE */, &mut enumMoniker1);
-        IMoniker_Enum(pmkOther, 1 /* TRUE */, &mut enumMoniker2);
+        hr = composite_get_components_alloc(iface, &mut count, &mut components);
+        if FAILED(hr) {
+            return hr;
+        }
+        hr = composite_get_components_alloc(other, &mut count, &mut other_components);
+        if FAILED(hr) {
+            heap_free(components as *mut c_void);
+            return hr;
+        }
 
-        loop {
-            res1 = IEnumMoniker_Next(enumMoniker1, 1, &mut mostLeftMk1, core::ptr::null_mut());
-            res2 = IEnumMoniker_Next(enumMoniker2, 1, &mut mostLeftMk2, core::ptr::null_mut());
+        count = (*moniker).comp_count.min((*other_moniker).comp_count);
+        let prefix_components =
+            heap_calloc(count as usize, core::mem::size_of::<*mut IMoniker>()) as *mut *mut IMoniker;
+        if prefix_components.is_null() {
+            heap_free(components as *mut c_void);
+            heap_free(other_components as *mut c_void);
+            return E_OUTOFMEMORY;
+        }
 
-            if (res1 == S_FALSE) && (res2 == S_FALSE) {
-                /* If the monikers are equal, the method returns MK_S_US and sets ppmkPrefix
-                 * to this moniker. */
-                *ppmkPrefix = iface;
-                IMoniker_AddRef(iface);
-                return MK_S_US;
-            } else if (res1 == S_OK) && (res2 == S_OK) {
-                if IMoniker_IsEqual(mostLeftMk1, mostLeftMk2) == S_OK {
-                    nbCommonMk += 1;
-                } else {
-                    break;
-                }
-            } else if res1 == S_OK {
-                /* If the other moniker is a prefix of this moniker, the method returns
-                 * MK_S_HIM and sets ppmkPrefix to the other moniker. */
-                *ppmkPrefix = pmkOther;
-                return MK_S_HIM;
-            } else {
-                /* If this moniker is a prefix of the other, this method returns MK_S_ME and
-                 * sets ppmkPrefix to this moniker. */
-                *ppmkPrefix = iface;
-                return MK_S_ME;
+        /* Collect prefix components */
+        for i in 0..count as usize {
+            let mut p: *mut IMoniker = core::ptr::null_mut();
+
+            hr = IMoniker_CommonPrefixWith(*components.add(i), *other_components.add(i), &mut p);
+            if FAILED(hr) {
+                break;
+            }
+            *prefix_components.add(prefix_len as usize) = p;
+            prefix_len += 1;
+            /* S_OK means that prefix was found and is neither of tested monikers */
+            if hr == S_OK {
+                break;
             }
         }
 
-        IEnumMoniker_Release(enumMoniker1);
-        IEnumMoniker_Release(enumMoniker2);
+        heap_free(components as *mut c_void);
+        heap_free(other_components as *mut c_void);
 
-        /* If there is no common prefix, this method returns MK_E_NOPREFIX and sets
-         * ppmkPrefix to NULL. */
-        if nbCommonMk == 0 {
+        if prefix_len == 0 {
+            heap_free(prefix_components as *mut c_void);
             return MK_E_NOPREFIX;
         }
 
-        IEnumMoniker_Reset(enumMoniker1);
-
-        IEnumMoniker_Next(enumMoniker1, 1, &mut tempMk1, core::ptr::null_mut());
-
-        /* if we have more than one common moniker the result will be a composite moniker */
-        if nbCommonMk > 1 {
-            /* initialize the common prefix moniker with the composite of the two first
-             * monikers (from the left) */
-            IEnumMoniker_Next(enumMoniker1, 1, &mut tempMk2, core::ptr::null_mut());
-            CreateGenericComposite(tempMk1, tempMk2, ppmkPrefix);
-            IMoniker_Release(tempMk1);
-            IMoniker_Release(tempMk2);
-
-            /* compose all common monikers in a composite moniker */
-            i = 0;
-            while i < nbCommonMk {
-                IEnumMoniker_Next(enumMoniker1, 1, &mut tempMk1, core::ptr::null_mut());
-
-                CreateGenericComposite(*ppmkPrefix, tempMk1, &mut tempMk2);
-
-                IMoniker_Release(*ppmkPrefix);
-
-                IMoniker_Release(tempMk1);
-
-                *ppmkPrefix = tempMk2;
-                i += 1;
-            }
-
-            S_OK
-        } else {
-            /* if we have only one common moniker the result will be a simple moniker which
-             * is the most-left one */
-            *ppmkPrefix = tempMk1;
-
-            S_OK
-        }
-    } else {
-        /* If the other moniker is not a composite, the method simply compares it to the
-         * leftmost component of this moniker. */
-        IMoniker_Enum(iface, 1 /* TRUE */, &mut enumMoniker1);
-
-        IEnumMoniker_Next(enumMoniker1, 1, &mut mostLeftMk1, core::ptr::null_mut());
-
-        if IMoniker_IsEqual(pmkOther, mostLeftMk1) == S_OK {
-            *ppmkPrefix = pmkOther;
-
-            MK_S_HIM
-        } else {
-            MK_E_NOPREFIX
-        }
-    }
-}
-}
-
-/// GetAfterCommonPrefix (local function)
-/// This function returns a moniker that consists of the remainder when the common prefix
-/// is removed.
-unsafe fn GetAfterCommonPrefix(
-    pGenMk: *mut IMoniker,
-    commonMk: *mut IMoniker,
-    restMk: *mut *mut IMoniker,
-) {
-    let mut tempMk: *mut IMoniker = core::ptr::null_mut();
-    let mut tempMk1: *mut IMoniker = core::ptr::null_mut();
-    let mut tempMk2: *mut IMoniker = core::ptr::null_mut();
-    let mut enumMoniker1: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut enumMoniker2: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut enumMoniker3: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut nbRestMk: ULONG = 0;
-    let mut mkSys: DWORD = 0;
-    let mut res1: HRESULT;
-    let mut res2: HRESULT;
-
-    *restMk = core::ptr::null_mut();
-
-    /* to create an enumerator for pGenMk with current position pointed on the first element
-     * after the common prefix: enum the two monikers (left-right) then compare these
-     * enumerations (left-right) and stop on the first difference. */
-    IMoniker_Enum(pGenMk, 1 /* TRUE */, &mut enumMoniker1);
-
-    IMoniker_IsSystemMoniker(commonMk, &mut mkSys);
-
-    if mkSys == MKSYS_GENERICCOMPOSITE {
-        IMoniker_Enum(commonMk, 1 /* TRUE */, &mut enumMoniker2);
-        loop {
-            res1 = IEnumMoniker_Next(enumMoniker1, 1, &mut tempMk1, core::ptr::null_mut());
-            res2 = IEnumMoniker_Next(enumMoniker2, 1, &mut tempMk2, core::ptr::null_mut());
-
-            if (res1 == S_FALSE) || (res2 == S_FALSE) {
-                if res1 == S_OK {
-                    nbRestMk += 1;
-                }
-
-                IMoniker_Release(tempMk1);
-                IMoniker_Release(tempMk2);
-
+        let mut last = *prefix_components;
+        for i in 1..prefix_len as usize {
+            hr = CreateGenericComposite(last, *prefix_components.add(i), &mut c);
+            IMoniker_Release(last);
+            IMoniker_Release(*prefix_components.add(i));
+            if FAILED(hr) {
                 break;
             }
-            IMoniker_Release(tempMk1);
-            IMoniker_Release(tempMk2);
+            last = c;
         }
-    } else {
-        IEnumMoniker_Next(enumMoniker1, 1, &mut tempMk1, core::ptr::null_mut());
-        IMoniker_Release(tempMk1);
-    }
+        heap_free(prefix_components as *mut c_void);
 
-    /* count the number of elements in the enumerator after the common prefix */
-    IEnumMoniker_Clone(enumMoniker1, &mut enumMoniker3);
-
-    while IEnumMoniker_Next(enumMoniker3, 1, &mut tempMk, core::ptr::null_mut()) == S_OK {
-        IMoniker_Release(tempMk);
-        nbRestMk += 1;
-    }
-
-    if nbRestMk == 0 {
-        return;
-    }
-
-    /* create a generic composite moniker with monikers located after the common prefix */
-    IEnumMoniker_Next(enumMoniker1, 1, &mut tempMk1, core::ptr::null_mut());
-
-    if nbRestMk == 1 {
-        *restMk = tempMk1;
-    } else {
-        IEnumMoniker_Next(enumMoniker1, 1, &mut tempMk2, core::ptr::null_mut());
-
-        CreateGenericComposite(tempMk1, tempMk2, restMk);
-
-        IMoniker_Release(tempMk1);
-
-        IMoniker_Release(tempMk2);
-
-        while IEnumMoniker_Next(enumMoniker1, 1, &mut tempMk1, core::ptr::null_mut()) == S_OK {
-            CreateGenericComposite(*restMk, tempMk1, &mut tempMk2);
-
-            IMoniker_Release(tempMk1);
-
-            IMoniker_Release(*restMk);
-
-            *restMk = tempMk2;
+        if SUCCEEDED(hr) {
+            *prefix = last;
+            hr = if IMoniker_IsEqual(iface, *prefix) == S_OK {
+                MK_S_US
+            } else if prefix_len < count {
+                S_OK
+            } else if prefix_len == (*moniker).comp_count {
+                MK_S_ME
+            } else {
+                MK_S_HIM
+            };
         }
+
+        return hr;
     }
+
+    /* For non-composite, compare to leftmost component */
+    hr = composite_get_leftmost(moniker, &mut leftmost);
+    if SUCCEEDED(hr) {
+        hr = IMoniker_IsEqual(leftmost, other);
+        if hr == S_OK {
+            *prefix = leftmost;
+            IMoniker_AddRef(*prefix);
+        }
+
+        hr = if hr == S_OK { MK_S_HIM } else { MK_E_NOPREFIX };
+        IMoniker_Release(leftmost);
+    }
+
+    hr
+}
+}
+
+unsafe fn composite_compose_components(
+    comp: *mut *mut IMoniker,
+    count: u32,
+    ret: *mut *mut IMoniker,
+) -> HRESULT {
+    let mut c: *mut IMoniker = core::ptr::null_mut();
+    let mut hr: HRESULT = S_OK;
+
+    let mut last = *comp;
+    IMoniker_AddRef(last);
+
+    for i in 1..count as usize {
+        hr = CreateGenericComposite(last, *comp.add(i), &mut c);
+        IMoniker_Release(last);
+        if FAILED(hr) {
+            break;
+        }
+        last = c;
+    }
+
+    *ret = if SUCCEEDED(hr) { last } else { core::ptr::null_mut() };
+
+    hr
 }
 
 stdmethod! {
 fn CompositeMonikerImpl_RelativePathTo(
     iface: *mut IMoniker,
-    pmkOther: *mut IMoniker,
-    ppmkRelPath: *mut *mut IMoniker,
+    other: *mut IMoniker,
+    relpath: *mut *mut IMoniker,
 ) -> HRESULT {
-    let res: HRESULT;
-    let mut restOtherMk: *mut IMoniker = core::ptr::null_mut();
-    let mut restThisMk: *mut IMoniker = core::ptr::null_mut();
-    let mut invRestThisMk: *mut IMoniker = core::ptr::null_mut();
-    let mut commonMk: *mut IMoniker = core::ptr::null_mut();
+    let mut this_count: u32 = 0;
+    let mut other_count: u32 = 0;
+    let mut prefix_len: u32 = 0;
+    let mut inv: *mut IMoniker = core::ptr::null_mut();
+    let mut tail: *mut IMoniker = core::ptr::null_mut();
+    let mut other_tail: *mut IMoniker = core::ptr::null_mut();
+    let mut rel: *mut IMoniker = core::ptr::null_mut();
+    let mut components: *mut *mut IMoniker = core::ptr::null_mut();
+    let mut other_components: *mut *mut IMoniker = core::ptr::null_mut();
+    let mut start: u32 = 0;
+    let mut other_start: u32 = 0;
 
-    TRACE!(b"(%p,%p,%p)\n\0".as_ptr() as *const c_char, iface, pmkOther, ppmkRelPath);
+    TRACE!(b"%p, %p, %p.\n\0".as_ptr() as *const c_char, iface, other, relpath);
 
-    if ppmkRelPath.is_null() {
-        return E_POINTER;
+    if relpath.is_null() {
+        return E_INVALIDARG;
     }
 
-    *ppmkRelPath = core::ptr::null_mut();
+    *relpath = core::ptr::null_mut();
 
-    /* This method finds the common prefix of the two monikers and creates two monikers that
-     * consist of the remainder when the common prefix is removed. Then it creates the
-     * inverse for the remainder of this moniker and composes the remainder of the other
-     * moniker on the right of it. */
-
-    /* finds the common prefix of the two monikers */
-    res = IMoniker_CommonPrefixWith(iface, pmkOther, &mut commonMk);
-
-    /* if there's no common prefix or the two monikers are equal the relative is the other
-     * moniker */
-    if (res == MK_E_NOPREFIX) || (res == MK_S_US) {
-        *ppmkRelPath = pmkOther;
-        IMoniker_AddRef(pmkOther);
-        return MK_S_HIM;
+    let mut hr = composite_get_components_alloc(iface, &mut this_count, &mut components);
+    if FAILED(hr) {
+        return hr;
+    }
+    hr = composite_get_components_alloc(other, &mut other_count, &mut other_components);
+    if FAILED(hr) {
+        heap_free(components as *mut c_void);
+        return hr;
     }
 
-    GetAfterCommonPrefix(iface, commonMk, &mut restThisMk);
-    GetAfterCommonPrefix(pmkOther, commonMk, &mut restOtherMk);
-
-    /* if other is a prefix of this moniker the relative path is the inverse of the remainder
-     * path of this moniker when the common prefix is removed */
-    if res == MK_S_HIM {
-        IMoniker_Inverse(restThisMk, ppmkRelPath);
-        IMoniker_Release(restThisMk);
-    }
-    /* if this moniker is a prefix of the other moniker the relative path is the remainder
-     * path of the other moniker when the common prefix is removed */
-    else if res == MK_S_ME {
-        *ppmkRelPath = restOtherMk;
-        IMoniker_AddRef(restOtherMk);
-    }
-    /* the relative path is the inverse for the remainder of this moniker and the remainder
-     * of the other moniker on the right of it. */
-    else if res == S_OK {
-        IMoniker_Inverse(restThisMk, &mut invRestThisMk);
-        IMoniker_Release(restThisMk);
-        CreateGenericComposite(invRestThisMk, restOtherMk, ppmkRelPath);
-        IMoniker_Release(invRestThisMk);
-        IMoniker_Release(restOtherMk);
+    /* Skip common prefix of equal components */
+    let count = other_count.min(this_count);
+    while IMoniker_IsEqual(*components.add(prefix_len as usize),
+                           *other_components.add(prefix_len as usize)) == S_OK
+    {
+        prefix_len += 1;
+        if prefix_len == count {
+            break;
+        }
     }
 
-    S_OK
+    if prefix_len != 0 {
+        this_count -= prefix_len;
+        other_count -= prefix_len;
+        other_start += prefix_len;
+        start += prefix_len;
+    } else {
+        /* Replace first component of the other tail with relative path */
+        hr = IMoniker_RelativePathTo(*components, *other_components, &mut rel);
+        if SUCCEEDED(hr) {
+            *other_components = rel;
+        }
+
+        this_count -= 1;
+        start += 1;
+    }
+
+    /* Invert left side tail */
+    if this_count != 0 && SUCCEEDED(hr) {
+        hr = composite_compose_components(components.add(start as usize), this_count, &mut tail);
+        if SUCCEEDED(hr) {
+            hr = IMoniker_Inverse(tail, &mut inv);
+            IMoniker_Release(tail);
+            tail = inv;
+        }
+    }
+
+    if other_count != 0 && SUCCEEDED(hr) {
+        hr = composite_compose_components(other_components.add(other_start as usize),
+                                          other_count, &mut other_tail);
+    }
+
+    if !tail.is_null() || !other_tail.is_null() {
+        hr = CreateGenericComposite(tail, other_tail, relpath);
+    } else if SUCCEEDED(hr) {
+        *relpath = other;
+        IMoniker_AddRef(*relpath);
+        hr = MK_S_HIM;
+    }
+
+    if !rel.is_null() {
+        IMoniker_Release(rel);
+    }
+    if !tail.is_null() {
+        IMoniker_Release(tail);
+    }
+    if !other_tail.is_null() {
+        IMoniker_Release(other_tail);
+    }
+
+    heap_free(other_components as *mut c_void);
+    heap_free(components as *mut c_void);
+
+    hr
 }
 }
 
@@ -1160,54 +1074,46 @@ fn CompositeMonikerImpl_GetDisplayName(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
-    ppszDisplayName: *mut LPOLESTR,
+    displayname: *mut LPOLESTR,
 ) -> HRESULT {
-    let mut lengthStr: ULONG = 1;
-    let mut enumMoniker: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut tempMk: *mut IMoniker = core::ptr::null_mut();
-    let mut tempStr: LPOLESTR = core::ptr::null_mut();
+    let moniker = impl_from_IMoniker(iface);
+    let mut left_name: *mut WCHAR = core::ptr::null_mut();
+    let mut right_name: *mut WCHAR = core::ptr::null_mut();
 
-    TRACE!(b"(%p,%p,%p,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
-           ppszDisplayName);
+    TRACE!(b"%p, %p, %p, %p\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
+           displayname);
 
-    if ppszDisplayName.is_null() {
-        return E_POINTER;
+    if pbc.is_null() || displayname.is_null() || (*moniker).comp_count == 0 {
+        return E_INVALIDARG;
     }
 
-    *ppszDisplayName = CoTaskMemAlloc(core::mem::size_of::<WCHAR>() as SIZE_T) as LPOLESTR;
+    let mut hr = IMoniker_GetDisplayName((*moniker).left, pbc, core::ptr::null_mut(),
+                                         &mut left_name);
+    if FAILED(hr) {
+        return hr;
+    }
+    hr = IMoniker_GetDisplayName((*moniker).right, pbc, core::ptr::null_mut(), &mut right_name);
+    if FAILED(hr) {
+        CoTaskMemFree(left_name as *mut c_void);
+        return hr;
+    }
 
-    if (*ppszDisplayName).is_null() {
+    *displayname = CoTaskMemAlloc(
+        ((lstrlenW(left_name) + lstrlenW(right_name) + 1) as usize
+            * core::mem::size_of::<WCHAR>()) as SIZE_T,
+    ) as LPOLESTR;
+    if (*displayname).is_null() {
+        CoTaskMemFree(left_name as *mut c_void);
+        CoTaskMemFree(right_name as *mut c_void);
         return E_OUTOFMEMORY;
     }
 
-    /* This method returns the concatenation of the display names returned by each component
-     * moniker of the composite */
+    *(*displayname) = 0;
+    lstrcatW(*displayname, left_name);
+    lstrcatW(*displayname, right_name);
 
-    **ppszDisplayName = 0;
-
-    IMoniker_Enum(iface, 1 /* TRUE */, &mut enumMoniker);
-
-    while IEnumMoniker_Next(enumMoniker, 1, &mut tempMk, core::ptr::null_mut()) == S_OK {
-        IMoniker_GetDisplayName(tempMk, pbc, core::ptr::null_mut(), &mut tempStr);
-
-        lengthStr += lstrlenW(tempStr) as ULONG;
-
-        *ppszDisplayName = CoTaskMemRealloc(
-            *ppszDisplayName as LPVOID,
-            (lengthStr as usize * core::mem::size_of::<WCHAR>()) as SIZE_T,
-        ) as LPOLESTR;
-
-        if (*ppszDisplayName).is_null() {
-            return E_OUTOFMEMORY;
-        }
-
-        lstrcatW(*ppszDisplayName, tempStr);
-
-        CoTaskMemFree(tempStr as LPVOID);
-        IMoniker_Release(tempMk);
-    }
-
-    IEnumMoniker_Release(enumMoniker);
+    CoTaskMemFree(left_name as *mut c_void);
+    CoTaskMemFree(right_name as *mut c_void);
 
     S_OK
 }
@@ -1218,36 +1124,39 @@ fn CompositeMonikerImpl_ParseDisplayName(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
-    pszDisplayName: LPOLESTR,
-    pchEaten: *mut ULONG,
-    ppmkOut: *mut *mut IMoniker,
+    name: LPOLESTR,
+    eaten: *mut ULONG,
+    result: *mut *mut IMoniker,
 ) -> HRESULT {
-    let mut enumMoniker: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut tempMk: *mut IMoniker = core::ptr::null_mut();
-    let mut rightMostMk: *mut IMoniker = core::ptr::null_mut();
-    let mut antiMk: *mut IMoniker = core::ptr::null_mut();
+    let moniker = impl_from_IMoniker(iface);
+    let mut left: *mut IMoniker = core::ptr::null_mut();
+    let mut rightmost: *mut IMoniker = core::ptr::null_mut();
 
-    /* This method recursively calls IMoniker::ParseDisplayName on the rightmost component
-     * of the composite, passing everything else as the pmkToLeft parameter for that call. */
+    TRACE!(b"%p, %p, %p, %s, %p, %p.\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
+           debugstr_w(name), eaten, result);
 
-    /* get the most right moniker */
-    IMoniker_Enum(iface, 0 /* FALSE */, &mut enumMoniker);
-    IEnumMoniker_Next(enumMoniker, 1, &mut rightMostMk, core::ptr::null_mut());
-    IEnumMoniker_Release(enumMoniker);
+    if pbc.is_null() {
+        return E_INVALIDARG;
+    }
 
-    /* get the left moniker */
-    crate::ring::antimoniker::CreateAntiMoniker(&mut antiMk);
-    IMoniker_ComposeWith(iface, antiMk, 0, &mut tempMk);
-    IMoniker_Release(antiMk);
+    let mut hr = composite_get_rightmost(moniker, &mut left, &mut rightmost);
+    if FAILED(hr) {
+        return hr;
+    }
 
-    IMoniker_ParseDisplayName(rightMostMk, pbc, tempMk, pszDisplayName, pchEaten, ppmkOut)
+    /* Let rightmost component parse the name, using what's left of the composite as a
+       left side. */
+    hr = IMoniker_ParseDisplayName(rightmost, pbc, left, name, eaten, result);
+
+    IMoniker_Release(left);
+    IMoniker_Release(rightmost);
+
+    hr
 }
 }
 
 stdmethod! {
-fn CompositeMonikerImpl_IsSystemMoniker(iface: *mut IMoniker, pwdMksys: *mut DWORD)
-    -> HRESULT
-{
+fn CompositeMonikerImpl_IsSystemMoniker(iface: *mut IMoniker, pwdMksys: *mut DWORD) -> HRESULT {
     TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, pwdMksys);
 
     if pwdMksys.is_null() {
@@ -1300,113 +1209,100 @@ fn CompositeMonikerROTDataImpl_Release(iface: *mut IROTData) -> ULONG {
 }
 }
 
-stdmethod! {
-fn CompositeMonikerROTDataImpl_GetComparisonData(
-    iface: *mut IROTData,
-    pbData: *mut byte,
-    cbMax: ULONG,
-    pcbData: *mut ULONG,
+unsafe fn composite_get_moniker_comparison_data(
+    moniker: *mut IMoniker,
+    data: *mut BYTE,
+    max_len: ULONG,
+    ret_len: *mut ULONG,
 ) -> HRESULT {
-    let This = impl_from_IROTData(iface);
-    let mut pEnumMk: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut pmk: *mut IMoniker = core::ptr::null_mut();
-    let mut hr: HRESULT;
+    let mut rot_data: *mut IROTData = core::ptr::null_mut();
 
-    TRACE!(b"(%p, %u, %p)\n\0".as_ptr() as *const c_char, pbData, cbMax, pcbData);
-
-    *pcbData = core::mem::size_of::<CLSID>() as ULONG;
-
-    hr = IMoniker_Enum(core::ptr::addr_of_mut!((*This).IMoniker_iface), 1 /* TRUE */,
-                       &mut pEnumMk);
+    let mut hr = IMoniker_QueryInterface(moniker, core::ptr::addr_of!(IID_IROTData),
+                                         core::ptr::addr_of_mut!(rot_data) as *mut *mut c_void);
     if FAILED(hr) {
+        WARN!(b"Failed to get IROTData for component moniker, hr %#x.\n\0".as_ptr()
+              as *const c_char, hr);
         return hr;
     }
 
-    while IEnumMoniker_Next(pEnumMk, 1, &mut pmk, core::ptr::null_mut()) == S_OK {
-        let mut pROTData: *mut IROTData = core::ptr::null_mut();
-        hr = IMoniker_QueryInterface(
-            pmk,
-            core::ptr::addr_of!(IID_IROTData),
-            &mut pROTData as *mut *mut IROTData as *mut *mut c_void,
-        );
-        if FAILED(hr) {
-            ERR!(b"moniker doesn't support IROTData interface\n\0".as_ptr() as *const c_char);
-        }
+    hr = IROTData_GetComparisonData(rot_data, data, max_len, ret_len);
+    IROTData_Release(rot_data);
 
-        if SUCCEEDED(hr) {
-            let mut cbData: ULONG = 0;
-            hr = IROTData_GetComparisonData(pROTData, core::ptr::null_mut(), 0, &mut cbData);
-            IROTData_Release(pROTData);
-            if SUCCEEDED(hr) || (hr == E_OUTOFMEMORY) {
-                *pcbData += cbData;
-                hr = S_OK;
-            } else {
-                ERR!(b"IROTData_GetComparisonData failed with error 0x%08x\n\0".as_ptr()
-                     as *const c_char, hr);
-            }
-        }
+    hr
+}
 
-        IMoniker_Release(pmk);
+stdmethod! {
+fn CompositeMonikerROTDataImpl_GetComparisonData(
+    iface: *mut IROTData,
+    data: *mut BYTE,
+    max_len: ULONG,
+    ret_len: *mut ULONG,
+) -> HRESULT {
+    let moniker = impl_from_IROTData(iface);
+    let mut len: ULONG;
+    let mut data = data;
+    let mut max_len = max_len;
 
-        if FAILED(hr) {
-            IEnumMoniker_Release(pEnumMk);
-            return hr;
-        }
+    TRACE!(b"%p, %p, %u, %p\n\0".as_ptr() as *const c_char, iface, data, max_len, ret_len);
+
+    if (*moniker).comp_count == 0 {
+        return E_UNEXPECTED;
     }
-    if cbMax < *pcbData {
+
+    /* Get required size first */
+    *ret_len = core::mem::size_of::<CLSID>() as ULONG;
+
+    len = 0;
+    let mut hr = composite_get_moniker_comparison_data((*moniker).left, core::ptr::null_mut(), 0,
+                                                       &mut len);
+    if SUCCEEDED(hr) || hr == E_OUTOFMEMORY {
+        *ret_len += len;
+    } else {
+        WARN!(b"Failed to get comparison data length for left component, hr %#x.\n\0".as_ptr()
+              as *const c_char, hr);
+        return hr;
+    }
+
+    len = 0;
+    hr = composite_get_moniker_comparison_data((*moniker).right, core::ptr::null_mut(), 0,
+                                               &mut len);
+    if SUCCEEDED(hr) || hr == E_OUTOFMEMORY {
+        *ret_len += len;
+    } else {
+        WARN!(b"Failed to get comparison data length for right component, hr %#x.\n\0".as_ptr()
+              as *const c_char, hr);
+        return hr;
+    }
+
+    if max_len < *ret_len {
         return E_OUTOFMEMORY;
     }
 
-    IEnumMoniker_Reset(pEnumMk);
-
-    memcpy(
-        pbData as *mut c_void,
-        core::ptr::addr_of!(CLSID_CompositeMoniker) as *const c_void,
-        core::mem::size_of::<CLSID>(),
-    );
-    let mut pbData = pbData.add(core::mem::size_of::<CLSID>());
-    let mut cbMax = cbMax - core::mem::size_of::<CLSID>() as ULONG;
-
-    while IEnumMoniker_Next(pEnumMk, 1, &mut pmk, core::ptr::null_mut()) == S_OK {
-        let mut pROTData: *mut IROTData = core::ptr::null_mut();
-        hr = IMoniker_QueryInterface(
-            pmk,
-            core::ptr::addr_of!(IID_IROTData),
-            &mut pROTData as *mut *mut IROTData as *mut *mut c_void,
-        );
-        if FAILED(hr) {
-            ERR!(b"moniker doesn't support IROTData interface\n\0".as_ptr() as *const c_char);
-        }
-
-        if SUCCEEDED(hr) {
-            let mut cbData: ULONG = 0;
-            hr = IROTData_GetComparisonData(pROTData, pbData, cbMax, &mut cbData);
-            IROTData_Release(pROTData);
-            if SUCCEEDED(hr) {
-                pbData = pbData.add(cbData as usize);
-                cbMax -= cbData;
-            } else {
-                ERR!(b"IROTData_GetComparisonData failed with error 0x%08x\n\0".as_ptr()
-                     as *const c_char, hr);
-            }
-        }
-
-        IMoniker_Release(pmk);
-
-        if FAILED(hr) {
-            IEnumMoniker_Release(pEnumMk);
-            return hr;
-        }
+    memcpy(data as *mut c_void, core::ptr::addr_of!(CLSID_CompositeMoniker) as *const c_void,
+           core::mem::size_of::<CLSID>());
+    data = data.add(core::mem::size_of::<CLSID>());
+    max_len -= core::mem::size_of::<CLSID>() as ULONG;
+    hr = composite_get_moniker_comparison_data((*moniker).left, data, max_len, &mut len);
+    if FAILED(hr) {
+        WARN!(b"Failed to get comparison data for left component, hr %#x.\n\0".as_ptr()
+              as *const c_char, hr);
+        return hr;
     }
-
-    IEnumMoniker_Release(pEnumMk);
+    data = data.add(len as usize);
+    max_len -= len;
+    hr = composite_get_moniker_comparison_data((*moniker).right, data, max_len, &mut len);
+    if FAILED(hr) {
+        WARN!(b"Failed to get comparison data for right component, hr %#x.\n\0".as_ptr()
+              as *const c_char, hr);
+        return hr;
+    }
 
     S_OK
 }
 }
 
 // ---------------------------------------------------------------------------
-// IMarshal
+// IMarshal: by value -- the two halves are marshalled as IMonikers in turn.
 // ---------------------------------------------------------------------------
 
 stdmethod! {
@@ -1417,11 +1313,9 @@ fn CompositeMonikerMarshalImpl_QueryInterface(
 ) -> HRESULT {
     let This = impl_from_IMarshal(iface);
 
-    TRACE!(b"(%p,%s,%p)\n\0".as_ptr() as *const c_char, iface,
-           debugstr_guid(riid as *const c_void), ppv);
+    TRACE!(b"(%s, %p)\n\0".as_ptr() as *const c_char, debugstr_guid(riid as *const c_void), ppv);
 
-    CompositeMonikerImpl_QueryInterface(core::ptr::addr_of_mut!((*This).IMoniker_iface), riid,
-                                        ppv)
+    CompositeMonikerImpl_QueryInterface(core::ptr::addr_of_mut!((*This).IMoniker_iface), riid, ppv)
 }
 }
 
@@ -1429,7 +1323,7 @@ stdmethod! {
 fn CompositeMonikerMarshalImpl_AddRef(iface: *mut IMarshal) -> ULONG {
     let This = impl_from_IMarshal(iface);
 
-    TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, iface);
+    TRACE!(b"\n\0".as_ptr() as *const c_char);
 
     CompositeMonikerImpl_AddRef(core::ptr::addr_of_mut!((*This).IMoniker_iface))
 }
@@ -1439,7 +1333,7 @@ stdmethod! {
 fn CompositeMonikerMarshalImpl_Release(iface: *mut IMarshal) -> ULONG {
     let This = impl_from_IMarshal(iface);
 
-    TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, iface);
+    TRACE!(b"\n\0".as_ptr() as *const c_char);
 
     CompositeMonikerImpl_Release(core::ptr::addr_of_mut!((*This).IMoniker_iface))
 }
@@ -1475,158 +1369,119 @@ fn CompositeMonikerMarshalImpl_GetMarshalSizeMax(
     mshlflags: DWORD,
     pSize: *mut DWORD,
 ) -> HRESULT {
-    let This = impl_from_IMarshal(iface);
-    let mut pEnumMk: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut pmk: *mut IMoniker = core::ptr::null_mut();
-    let mut hr: HRESULT;
-    let mut size: ULARGE_INTEGER = core::mem::zeroed();
+    let moniker = impl_from_IMarshal(iface);
+    let mut size: ULONG = 0;
 
     TRACE!(b"(%s, %p, %x, %p, %x, %p)\n\0".as_ptr() as *const c_char,
            debugstr_guid(riid as *const c_void), pv, dwDestContext, pvDestContext, mshlflags,
            pSize);
 
+    if (*moniker).comp_count == 0 {
+        return E_UNEXPECTED;
+    }
+
     *pSize = 0x10; /* to match native */
 
-    hr = IMoniker_Enum(core::ptr::addr_of_mut!((*This).IMoniker_iface), 1 /* TRUE */,
-                       &mut pEnumMk);
+    let mut hr = CoGetMarshalSizeMax(&mut size, core::ptr::addr_of!(IID_IMoniker),
+                                     (*moniker).left as *mut IUnknown, dwDestContext,
+                                     pvDestContext, mshlflags);
     if FAILED(hr) {
         return hr;
     }
+    *pSize += size;
 
-    hr = IMoniker_GetSizeMax(core::ptr::addr_of_mut!((*This).IMoniker_iface), &mut size);
-
-    while IEnumMoniker_Next(pEnumMk, 1, &mut pmk, core::ptr::null_mut()) == S_OK {
-        let mut size: ULONG = 0;
-
-        hr = CoGetMarshalSizeMax(&mut size, core::ptr::addr_of!(IID_IMoniker),
-                                 pmk as *mut IUnknown, dwDestContext, pvDestContext,
-                                 mshlflags);
-        if SUCCEEDED(hr) {
-            *pSize += size;
-        }
-
-        IMoniker_Release(pmk);
-
-        if FAILED(hr) {
-            IEnumMoniker_Release(pEnumMk);
-            return hr;
-        }
+    hr = CoGetMarshalSizeMax(&mut size, core::ptr::addr_of!(IID_IMoniker),
+                             (*moniker).right as *mut IUnknown, dwDestContext, pvDestContext,
+                             mshlflags);
+    if FAILED(hr) {
+        return hr;
     }
+    *pSize += size;
 
-    IEnumMoniker_Release(pEnumMk);
-
-    S_OK
+    hr
 }
 }
 
 stdmethod! {
 fn CompositeMonikerMarshalImpl_MarshalInterface(
     iface: *mut IMarshal,
-    pStm: *mut IStream,
+    stream: *mut IStream,
     riid: *const IID,
     pv: *mut c_void,
     dwDestContext: DWORD,
     pvDestContext: *mut c_void,
-    mshlflags: DWORD,
+    flags: DWORD,
 ) -> HRESULT {
-    let This = impl_from_IMarshal(iface);
-    let mut pEnumMk: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut pmk: *mut IMoniker = core::ptr::null_mut();
-    let mut hr: HRESULT;
-    let mut i: ULONG = 0;
+    let moniker = impl_from_IMarshal(iface);
 
-    TRACE!(b"(%p, %s, %p, %x, %p, %x)\n\0".as_ptr() as *const c_char, pStm,
-           debugstr_guid(riid as *const c_void), pv, dwDestContext, pvDestContext, mshlflags);
+    TRACE!(b"%p, %p, %s, %p, %x, %p, %#x\n\0".as_ptr() as *const c_char, iface, stream,
+           debugstr_guid(riid as *const c_void), pv, dwDestContext, pvDestContext, flags);
 
-    hr = IMoniker_Enum(core::ptr::addr_of_mut!((*This).IMoniker_iface), 1 /* TRUE */,
-                       &mut pEnumMk);
+    if (*moniker).comp_count == 0 {
+        return E_UNEXPECTED;
+    }
+
+    let mut hr = CoMarshalInterface(stream, core::ptr::addr_of!(IID_IMoniker),
+                                    (*moniker).left as *mut IUnknown, dwDestContext,
+                                    pvDestContext, flags);
     if FAILED(hr) {
+        WARN!(b"Failed to marshal left component, hr %#x.\n\0".as_ptr() as *const c_char, hr);
         return hr;
     }
 
-    while IEnumMoniker_Next(pEnumMk, 1, &mut pmk, core::ptr::null_mut()) == S_OK {
-        hr = CoMarshalInterface(pStm, core::ptr::addr_of!(IID_IMoniker), pmk as *mut IUnknown,
-                                dwDestContext, pvDestContext, mshlflags);
-
-        IMoniker_Release(pmk);
-
-        if FAILED(hr) {
-            IEnumMoniker_Release(pEnumMk);
-            return hr;
-        }
-        i += 1;
+    hr = CoMarshalInterface(stream, core::ptr::addr_of!(IID_IMoniker),
+                            (*moniker).right as *mut IUnknown, dwDestContext, pvDestContext,
+                            flags);
+    if FAILED(hr) {
+        WARN!(b"Failed to marshal right component, hr %#x.\n\0".as_ptr() as *const c_char, hr);
     }
 
-    if i != 2 {
-        FIXME!(b"moniker count of %d not supported\n\0".as_ptr() as *const c_char, i);
-    }
-
-    IEnumMoniker_Release(pEnumMk);
-
-    S_OK
+    hr
 }
 }
 
 stdmethod! {
 fn CompositeMonikerMarshalImpl_UnmarshalInterface(
     iface: *mut IMarshal,
-    pStm: *mut IStream,
+    stream: *mut IStream,
     riid: *const IID,
     ppv: *mut *mut c_void,
 ) -> HRESULT {
-    let This = impl_from_IMarshal(iface);
-    let mut hr: HRESULT;
+    let moniker = impl_from_IMarshal(iface);
 
-    TRACE!(b"(%p, %s, %p)\n\0".as_ptr() as *const c_char, pStm,
+    TRACE!(b"%p, %p, %s, %p\n\0".as_ptr() as *const c_char, iface, stream,
            debugstr_guid(riid as *const c_void), ppv);
 
-    CompositeMonikerImpl_ReleaseMonikersInTable(This);
-
-    /* resize the table if needed */
-    if (*This).tabLastIndex + 2 > (*This).tabSize {
-        /* C: This->tabSize += max(BLOCK_TAB_SIZE, 2); */
-        (*This).tabSize += if BLOCK_TAB_SIZE > 2 { BLOCK_TAB_SIZE } else { 2 };
-        (*This).tabMoniker = HeapReAlloc(
-            GetProcessHeap(),
-            0,
-            (*This).tabMoniker as LPVOID,
-            ((*This).tabSize as usize * core::mem::size_of::<*mut IMoniker>()) as SIZE_T,
-        ) as *mut *mut IMoniker;
-
-        if (*This).tabMoniker.is_null() {
-            return E_OUTOFMEMORY;
-        }
+    if !(*moniker).left.is_null() {
+        IMoniker_Release((*moniker).left);
+        (*moniker).left = core::ptr::null_mut();
     }
 
-    hr = CoUnmarshalInterface(
-        pStm,
-        core::ptr::addr_of!(IID_IMoniker),
-        (*This).tabMoniker.add((*This).tabLastIndex as usize) as *mut LPVOID,
-    );
+    if !(*moniker).right.is_null() {
+        IMoniker_Release((*moniker).right);
+        (*moniker).right = core::ptr::null_mut();
+    }
+
+    let mut hr = CoUnmarshalInterface(stream, core::ptr::addr_of!(IID_IMoniker),
+                                      core::ptr::addr_of_mut!((*moniker).left) as *mut LPVOID);
     if FAILED(hr) {
-        ERR!(b"couldn't unmarshal moniker, hr = 0x%08x\n\0".as_ptr() as *const c_char, hr);
+        WARN!(b"Failed to unmarshal left moniker, hr %#x.\n\0".as_ptr() as *const c_char, hr);
         return hr;
     }
-    (*This).tabLastIndex += 1;
-    hr = CoUnmarshalInterface(
-        pStm,
-        core::ptr::addr_of!(IID_IMoniker),
-        (*This).tabMoniker.add((*This).tabLastIndex as usize) as *mut LPVOID,
-    );
+
+    hr = CoUnmarshalInterface(stream, core::ptr::addr_of!(IID_IMoniker),
+                              core::ptr::addr_of_mut!((*moniker).right) as *mut LPVOID);
     if FAILED(hr) {
-        ERR!(b"couldn't unmarshal moniker, hr = 0x%08x\n\0".as_ptr() as *const c_char, hr);
+        WARN!(b"Failed to unmarshal right moniker, hr %#x.\n\0".as_ptr() as *const c_char, hr);
         return hr;
     }
-    (*This).tabLastIndex += 1;
 
-    IMoniker_QueryInterface(core::ptr::addr_of_mut!((*This).IMoniker_iface), riid, ppv)
+    IMoniker_QueryInterface(core::ptr::addr_of_mut!((*moniker).IMoniker_iface), riid, ppv)
 }
 }
 
 stdmethod! {
-fn CompositeMonikerMarshalImpl_ReleaseMarshalData(iface: *mut IMarshal, pStm: *mut IStream)
-    -> HRESULT
-{
+fn CompositeMonikerMarshalImpl_ReleaseMarshalData(iface: *mut IMarshal, pStm: *mut IStream) -> HRESULT {
     TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, pStm);
     let _ = iface;
     /* can't release a state-based marshal as nothing on server side to release */
@@ -1635,9 +1490,7 @@ fn CompositeMonikerMarshalImpl_ReleaseMarshalData(iface: *mut IMarshal, pStm: *m
 }
 
 stdmethod! {
-fn CompositeMonikerMarshalImpl_DisconnectObject(iface: *mut IMarshal, dwReserved: DWORD)
-    -> HRESULT
-{
+fn CompositeMonikerMarshalImpl_DisconnectObject(iface: *mut IMarshal, dwReserved: DWORD) -> HRESULT {
     TRACE!(b"(0x%x)\n\0".as_ptr() as *const c_char, dwReserved);
     let _ = iface;
     /* can't disconnect a state-based marshal as nothing on server side to disconnect from */
@@ -1655,32 +1508,25 @@ fn EnumMonikerImpl_QueryInterface(
     riid: *const IID,
     ppvObject: *mut *mut c_void,
 ) -> HRESULT {
-    let _This = impl_from_IEnumMoniker(iface);
-
-    TRACE!(b"(%p,%s,%p)\n\0".as_ptr() as *const c_char, This,
+    TRACE!(b"(%p,%s,%p)\n\0".as_ptr() as *const c_char, iface,
            debugstr_guid(riid as *const c_void), ppvObject);
 
-    /* Perform a sanity check on the parameters.*/
     if ppvObject.is_null() {
         return E_INVALIDARG;
     }
 
-    /* Initialize the return parameter */
     *ppvObject = core::ptr::null_mut();
 
-    /* Compare the riid with the interface IDs implemented by this object.*/
     if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid)
         || IsEqualIID(core::ptr::addr_of!(IID_IEnumMoniker), riid)
     {
         *ppvObject = iface as *mut c_void;
     }
 
-    /* Check that we obtained an interface.*/
     if (*ppvObject).is_null() {
         return E_NOINTERFACE;
     }
 
-    /* QueryInterface always increases the reference count by one when it is successful */
     IEnumMoniker_AddRef(iface);
 
     S_OK
@@ -1699,74 +1545,72 @@ fn EnumMonikerImpl_AddRef(iface: *mut IEnumMoniker) -> ULONG {
 
 stdmethod! {
 fn EnumMonikerImpl_Release(iface: *mut IEnumMoniker) -> ULONG {
-    let This = impl_from_IEnumMoniker(iface);
-    let mut i: ULONG;
+    let e = impl_from_IEnumMoniker(iface);
+    let refcount = InterlockedDecrement(core::ptr::addr_of_mut!((*e).ref_)) as ULONG;
 
-    TRACE!(b"(%p)\n\0".as_ptr() as *const c_char, This);
+    TRACE!(b"%p, refcount %u.\n\0".as_ptr() as *const c_char, iface, refcount);
 
-    let ref_ = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
-
-    /* destroy the object if there are no more references to it */
-    if ref_ == 0 {
-        i = 0;
-        while i < (*This).tabSize {
-            IMoniker_Release(*(*This).tabMoniker.add(i as usize));
-            i += 1;
+    if refcount == 0 {
+        for i in 0..(*e).count as usize {
+            IMoniker_Release(*(*e).monikers.add(i));
         }
-
-        HeapFree(GetProcessHeap(), 0, (*This).tabMoniker as LPVOID);
-        HeapFree(GetProcessHeap(), 0, This as LPVOID);
+        heap_free((*e).monikers as *mut c_void);
+        heap_free(e as *mut c_void);
     }
 
-    ref_
+    refcount
 }
 }
 
 stdmethod! {
 fn EnumMonikerImpl_Next(
     iface: *mut IEnumMoniker,
-    celt: ULONG,
-    rgelt: *mut *mut IMoniker,
-    pceltFethed: *mut ULONG,
+    count: ULONG,
+    m: *mut *mut IMoniker,
+    fetched: *mut ULONG,
 ) -> HRESULT {
-    let This = impl_from_IEnumMoniker(iface);
+    let e = impl_from_IEnumMoniker(iface);
     let mut i: ULONG = 0;
 
-    // compositemoniker.c: `if (!m) return E_INVALIDARG; *m = NULL;`
-    if rgelt.is_null() {
+    TRACE!(b"%p, %u, %p, %p.\n\0".as_ptr() as *const c_char, iface, count, m, fetched);
+
+    if m.is_null() {
         return E_INVALIDARG;
     }
-    *rgelt = core::ptr::null_mut();
 
-    /* retrieve the requested number of monikers from the current position */
-    while ((*This).currentPos < (*This).tabSize) && (i < celt) {
-        *rgelt.add(i as usize) = *(*This).tabMoniker.add((*This).currentPos as usize);
-        (*This).currentPos += 1;
-        IMoniker_AddRef(*rgelt.add(i as usize));
+    *m = core::ptr::null_mut();
+
+    /* retrieve the requested number of moniker from the current position */
+    while (*e).pos < (*e).count && i < count {
+        *m.add(i as usize) = *(*e).monikers.add((*e).pos as usize);
+        (*e).pos += 1;
+        IMoniker_AddRef(*m.add(i as usize));
         i += 1;
     }
 
-    if !pceltFethed.is_null() {
-        *pceltFethed = i;
+    if !fetched.is_null() {
+        *fetched = i;
     }
 
-    if i == celt {
-        S_OK
-    } else {
-        S_FALSE
-    }
+    if i == count { S_OK } else { S_FALSE }
 }
 }
 
 stdmethod! {
-fn EnumMonikerImpl_Skip(iface: *mut IEnumMoniker, celt: ULONG) -> HRESULT {
-    let This = impl_from_IEnumMoniker(iface);
+fn EnumMonikerImpl_Skip(iface: *mut IEnumMoniker, count: ULONG) -> HRESULT {
+    let e = impl_from_IEnumMoniker(iface);
 
-    if ((*This).currentPos + celt) >= (*This).tabSize {
+    TRACE!(b"%p, %u.\n\0".as_ptr() as *const c_char, iface, count);
+
+    if count == 0 {
+        return S_OK;
+    }
+
+    if (*e).pos as u64 + count as u64 >= (*e).count as u64 {
         return S_FALSE;
     }
 
-    (*This).currentPos += celt;
+    (*e).pos += count;
 
     S_OK
 }
@@ -1774,95 +1618,30 @@ fn EnumMonikerImpl_Skip(iface: *mut IEnumMoniker, celt: ULONG) -> HRESULT {
 
 stdmethod! {
 fn EnumMonikerImpl_Reset(iface: *mut IEnumMoniker) -> HRESULT {
-    let This = impl_from_IEnumMoniker(iface);
+    let e = impl_from_IEnumMoniker(iface);
 
-    (*This).currentPos = 0;
+    TRACE!(b"%p.\n\0".as_ptr() as *const c_char, iface);
+
+    (*e).pos = 0;
 
     S_OK
 }
 }
 
 stdmethod! {
-fn EnumMonikerImpl_Clone(iface: *mut IEnumMoniker, ppenum: *mut *mut IEnumMoniker)
-    -> HRESULT
-{
-    let This = impl_from_IEnumMoniker(iface);
+fn EnumMonikerImpl_Clone(iface: *mut IEnumMoniker, ret: *mut *mut IEnumMoniker) -> HRESULT {
+    TRACE!(b"%p, %p.\n\0".as_ptr() as *const c_char, iface, ret);
 
-    EnumMonikerImpl_CreateEnumMoniker((*This).tabMoniker, (*This).tabSize, (*This).currentPos,
-                                      1 /* TRUE */, ppenum)
-}
-}
-
-unsafe fn EnumMonikerImpl_CreateEnumMoniker(
-    tabMoniker: *mut *mut IMoniker,
-    tabSize: ULONG,
-    currentPos: ULONG,
-    leftToRight: BOOL,
-    ppmk: *mut *mut IEnumMoniker,
-) -> HRESULT {
-    let newEnumMoniker: *mut EnumMonikerImpl;
-    let mut i: ULONG;
-
-    if currentPos > tabSize {
+    if ret.is_null() {
         return E_INVALIDARG;
     }
 
-    newEnumMoniker = HeapAlloc(
-        GetProcessHeap(),
-        0,
-        core::mem::size_of::<EnumMonikerImpl>() as SIZE_T,
-    ) as *mut EnumMonikerImpl;
+    *ret = core::ptr::null_mut();
 
-    if newEnumMoniker.is_null() {
-        return STG_E_INSUFFICIENTMEMORY;
-    }
-
-    /* Initialize the virtual function table. */
-    (*newEnumMoniker).IEnumMoniker_iface.lpVtbl =
-        core::ptr::addr_of!(VT_EnumMonikerImpl) as *mut IEnumMonikerVtbl;
-    (*newEnumMoniker).ref_ = 1;
-
-    (*newEnumMoniker).tabSize = tabSize;
-    (*newEnumMoniker).currentPos = currentPos;
-
-    (*newEnumMoniker).tabMoniker = HeapAlloc(
-        GetProcessHeap(),
-        0,
-        (tabSize as usize * core::mem::size_of::<*mut IMoniker>()) as SIZE_T,
-    ) as *mut *mut IMoniker;
-
-    if (*newEnumMoniker).tabMoniker.is_null() {
-        HeapFree(GetProcessHeap(), 0, newEnumMoniker as LPVOID);
-        return E_OUTOFMEMORY;
-    }
-
-    if leftToRight != 0 {
-        i = 0;
-        while i < tabSize {
-            *(*newEnumMoniker).tabMoniker.add(i as usize) = *tabMoniker.add(i as usize);
-            IMoniker_AddRef(*tabMoniker.add(i as usize));
-            i += 1;
-        }
-    } else {
-        i = tabSize;
-        while i > 0 {
-            *(*newEnumMoniker).tabMoniker.add((tabSize - i) as usize) =
-                *tabMoniker.add((i - 1) as usize);
-            IMoniker_AddRef(*tabMoniker.add((i - 1) as usize));
-            i -= 1;
-        }
-    }
-
-    *ppmk = core::ptr::addr_of_mut!((*newEnumMoniker).IEnumMoniker_iface);
-
-    S_OK
+    E_NOTIMPL
+}
 }
 
-// ---------------------------------------------------------------------------
-// vtbls
-// ---------------------------------------------------------------------------
-
-/// Virtual function table for the IEnumMoniker class
 pub static VT_EnumMonikerImpl: IEnumMonikerVtbl = IEnumMonikerVtbl {
     QueryInterface: Some(EnumMonikerImpl_QueryInterface),
     AddRef: Some(EnumMonikerImpl_AddRef),
@@ -1872,6 +1651,46 @@ pub static VT_EnumMonikerImpl: IEnumMonikerVtbl = IEnumMonikerVtbl {
     Reset: Some(EnumMonikerImpl_Reset),
     Clone: Some(EnumMonikerImpl_Clone),
 };
+
+/// An enumerator over `count` components, each AddRef'd, reversed when !forward.
+unsafe fn create_enumerator(
+    components: *mut *mut IMoniker,
+    count: u32,
+    forward: BOOL,
+    ret: *mut *mut IEnumMoniker,
+) -> HRESULT {
+    let object =
+        heap_calloc(1, core::mem::size_of::<EnumMonikerImpl>()) as *mut EnumMonikerImpl;
+    if object.is_null() {
+        return E_OUTOFMEMORY;
+    }
+
+    (*object).IEnumMoniker_iface.lpVtbl =
+        core::ptr::addr_of!(VT_EnumMonikerImpl) as *mut IEnumMonikerVtbl;
+    (*object).ref_ = 1;
+    (*object).count = count;
+
+    (*object).monikers =
+        heap_calloc(count as usize, core::mem::size_of::<*mut IMoniker>()) as *mut *mut IMoniker;
+    if (*object).monikers.is_null() {
+        heap_free(object as *mut c_void);
+        return E_OUTOFMEMORY;
+    }
+
+    for i in 0..count as usize {
+        let src = if forward != 0 { i } else { count as usize - i - 1 };
+        *(*object).monikers.add(i) = *components.add(src);
+        IMoniker_AddRef(*(*object).monikers.add(i));
+    }
+
+    *ret = core::ptr::addr_of_mut!((*object).IEnumMoniker_iface);
+
+    S_OK
+}
+
+// ---------------------------------------------------------------------------
+// vtables
+// ---------------------------------------------------------------------------
 
 /// Virtual function table for the CompositeMonikerImpl class which includes IPersist,
 /// IPersistStream and IMoniker functions.
@@ -1922,240 +1741,398 @@ pub static VT_MarshalImpl: IMarshalVtbl = IMarshalVtbl {
 };
 
 // ---------------------------------------------------------------------------
-// construction / exports
+// The component tree: composites flattened to a binary tree of leaves, so the
+// simplifier can cancel the rightmost leaf of one side against the leftmost leaf of
+// the other. A leaf holds a reference to its moniker; an inner node holds none.
 // ---------------------------------------------------------------------------
 
-/// Composite-Moniker_Construct (local function)
-unsafe fn CompositeMonikerImpl_Construct(
-    ppMoniker: *mut *mut IMoniker,
-    pmkFirst: *mut IMoniker,
-    pmkRest: *mut IMoniker,
+#[repr(C)]
+struct comp_node {
+    moniker: *mut IMoniker,
+    parent: *mut comp_node,
+    left: *mut comp_node,
+    right: *mut comp_node,
+}
+
+unsafe fn moniker_get_tree_representation(
+    moniker: *mut IMoniker,
+    parent: *mut comp_node,
+    ret: *mut *mut comp_node,
 ) -> HRESULT {
-    let mut mkSys: DWORD = 0;
-    let mut enumMoniker: *mut IEnumMoniker = core::ptr::null_mut();
-    let mut tempMk: *mut IMoniker = core::ptr::null_mut();
-    let res: HRESULT;
-    let This: *mut CompositeMonikerImpl;
-    let mut i: c_int;
-
-    This = HeapAlloc(
-        GetProcessHeap(),
-        0,
-        core::mem::size_of::<CompositeMonikerImpl>() as SIZE_T,
-    ) as *mut CompositeMonikerImpl;
-
-    if This.is_null() {
+    let node = heap_calloc(1, core::mem::size_of::<comp_node>()) as *mut comp_node;
+    if node.is_null() {
         return E_OUTOFMEMORY;
     }
+    (*node).parent = parent;
 
-    TRACE!(b"(%p,%p,%p)\n\0".as_ptr() as *const c_char, This, pmkFirst, pmkRest);
-
-    /* Initialize the virtual function table. */
-    (*This).IMoniker_iface.lpVtbl =
-        core::ptr::addr_of!(VT_CompositeMonikerImpl) as *mut IMonikerVtbl;
-    (*This).IROTData_iface.lpVtbl = core::ptr::addr_of!(VT_ROTDataImpl) as *mut IROTDataVtbl;
-    (*This).IMarshal_iface.lpVtbl = core::ptr::addr_of!(VT_MarshalImpl) as *mut IMarshalVtbl;
-    (*This).ref_ = 1;
-
-    (*This).tabSize = BLOCK_TAB_SIZE;
-    (*This).tabLastIndex = 0;
-
-    (*This).tabMoniker = HeapAlloc(
-        GetProcessHeap(),
-        0,
-        ((*This).tabSize as usize * core::mem::size_of::<*mut IMoniker>()) as SIZE_T,
-    ) as *mut *mut IMoniker;
-    if (*This).tabMoniker.is_null() {
-        HeapFree(GetProcessHeap(), 0, This as LPVOID);
-        return E_OUTOFMEMORY;
+    let comp_moniker = unsafe_impl_from_IMoniker(moniker);
+    if !comp_moniker.is_null() {
+        moniker_get_tree_representation((*comp_moniker).left, node, &mut (*node).left);
+        moniker_get_tree_representation((*comp_moniker).right, node, &mut (*node).right);
+    } else {
+        (*node).moniker = moniker;
+        IMoniker_AddRef((*node).moniker);
     }
 
-    if pmkFirst.is_null() && pmkRest.is_null() {
-        *ppMoniker = core::ptr::addr_of_mut!((*This).IMoniker_iface);
+    *ret = node;
+
+    S_OK
+}
+
+unsafe fn moniker_tree_get_rightmost(mut root: *mut comp_node) -> *mut comp_node {
+    if (*root).left.is_null() && (*root).right.is_null() {
+        return if !(*root).moniker.is_null() { root } else { core::ptr::null_mut() };
+    }
+    while !(*root).right.is_null() {
+        root = (*root).right;
+    }
+    root
+}
+
+unsafe fn moniker_tree_get_leftmost(mut root: *mut comp_node) -> *mut comp_node {
+    if (*root).left.is_null() && (*root).right.is_null() {
+        return if !(*root).moniker.is_null() { root } else { core::ptr::null_mut() };
+    }
+    while !(*root).left.is_null() {
+        root = (*root).left;
+    }
+    root
+}
+
+unsafe fn moniker_tree_node_release(node: *mut comp_node) {
+    if !(*node).moniker.is_null() {
+        IMoniker_Release((*node).moniker);
+    }
+    heap_free(node as *mut c_void);
+}
+
+/// Releases the whole tree. Divergence from wine-10, whose moniker_tree_release frees
+/// only the root and its two children: every node below depth one leaked on each
+/// composition of a three-or-more-leaf composite (each leaf still holding its
+/// moniker reference).
+unsafe fn moniker_tree_release(node: *mut comp_node) {
+    if !(*node).left.is_null() {
+        moniker_tree_release((*node).left);
+    }
+    if !(*node).right.is_null() {
+        moniker_tree_release((*node).right);
+    }
+    moniker_tree_node_release(node);
+}
+
+unsafe fn moniker_tree_replace_node(node: *mut comp_node, replace_with: *mut comp_node) {
+    if !(*node).parent.is_null() {
+        let parent = (*node).parent;
+        if (*parent).left == node {
+            (*parent).left = replace_with;
+        } else {
+            (*parent).right = replace_with;
+        }
+        (*replace_with).parent = parent;
+        /* Divergence from wine-10: `node` is now unreachable (an inner node, so it
+           holds no reference) and wine leaks it. Its children are the replacement and
+           the leaf the caller frees next, so free just this node. */
+        heap_free(node as *mut c_void);
+    } else if !(*replace_with).moniker.is_null() {
+        /* Replacing root with non-composite */
+        (*node).moniker = (*replace_with).moniker;
+        IMoniker_AddRef((*node).moniker);
+        (*node).left = core::ptr::null_mut();
+        (*node).right = core::ptr::null_mut();
+        moniker_tree_node_release(replace_with);
+    } else {
+        /* Attaching composite branches to the root */
+        (*node).left = (*replace_with).left;
+        (*node).right = (*replace_with).right;
+        /* The adopted branches still name replace_with as their parent. */
+        if !(*node).left.is_null() {
+            (*(*node).left).parent = node;
+        }
+        if !(*node).right.is_null() {
+            (*(*node).right).parent = node;
+        }
+        moniker_tree_node_release(replace_with);
+    }
+}
+
+/// Removes leaf `node`; `left` says it is the left tree's rightmost leaf (so its
+/// sibling is its parent's left child) rather than the right tree's leftmost leaf.
+unsafe fn moniker_tree_discard(node: *mut comp_node, left: bool) {
+    if !(*node).parent.is_null() {
+        let parent = (*node).parent;
+        moniker_tree_replace_node(parent, if left { (*parent).left } else { (*parent).right });
+        moniker_tree_node_release(node);
+    } else {
+        IMoniker_Release((*node).moniker);
+        (*node).moniker = core::ptr::null_mut();
+    }
+}
+
+unsafe fn moniker_create_from_tree(
+    root: *const comp_node,
+    count: *mut u32,
+    moniker: *mut *mut IMoniker,
+) -> HRESULT {
+    let mut left_moniker: *mut IMoniker = core::ptr::null_mut();
+    let mut right_moniker: *mut IMoniker = core::ptr::null_mut();
+
+    *moniker = core::ptr::null_mut();
+
+    /* Non-composite node */
+    if (*root).left.is_null() && (*root).right.is_null() {
+        *count += 1;
+        *moniker = (*root).moniker;
+        if !(*moniker).is_null() {
+            IMoniker_AddRef(*moniker);
+        }
         return S_OK;
     }
 
-    IMoniker_IsSystemMoniker(pmkFirst, &mut mkSys);
-
-    /* put the first moniker contents in the beginning of the table */
-    if mkSys != MKSYS_GENERICCOMPOSITE {
-        *(*This).tabMoniker.add((*This).tabLastIndex as usize) = pmkFirst;
-        (*This).tabLastIndex += 1;
-        IMoniker_AddRef(pmkFirst);
-    } else {
-        IMoniker_Enum(pmkFirst, 1 /* TRUE */, &mut enumMoniker);
-
-        while IEnumMoniker_Next(
-            enumMoniker,
-            1,
-            (*This).tabMoniker.add((*This).tabLastIndex as usize),
-            core::ptr::null_mut(),
-        ) == S_OK
-        {
-            (*This).tabLastIndex += 1;
-            if (*This).tabLastIndex == (*This).tabSize {
-                let tab_moniker = (*This).tabMoniker;
-
-                (*This).tabSize += BLOCK_TAB_SIZE;
-                (*This).tabMoniker = HeapReAlloc(
-                    GetProcessHeap(),
-                    0,
-                    (*This).tabMoniker as LPVOID,
-                    ((*This).tabSize as usize * core::mem::size_of::<*mut IMoniker>()) as SIZE_T,
-                ) as *mut *mut IMoniker;
-
-                if (*This).tabMoniker.is_null() {
-                    i = 0;
-                    while i < (*This).tabLastIndex as c_int {
-                        IMoniker_Release(*tab_moniker.offset(i as isize));
-                        i += 1;
-                    }
-                    HeapFree(GetProcessHeap(), 0, tab_moniker as LPVOID);
-                    HeapFree(GetProcessHeap(), 0, This as LPVOID);
-                    return E_OUTOFMEMORY;
-                }
-            }
-        }
-
-        IEnumMoniker_Release(enumMoniker);
+    let mut hr = moniker_create_from_tree((*root).left, count, &mut left_moniker);
+    if FAILED(hr) {
+        return hr;
+    }
+    hr = moniker_create_from_tree((*root).right, count, &mut right_moniker);
+    if FAILED(hr) {
+        IMoniker_Release(left_moniker);
+        return hr;
     }
 
-    /* put the rest moniker contents after the first one and make simplification if needed */
+    hr = CreateGenericComposite(left_moniker, right_moniker, moniker);
+    IMoniker_Release(left_moniker);
+    IMoniker_Release(right_moniker);
+    hr
+}
 
-    IMoniker_IsSystemMoniker(pmkRest, &mut mkSys);
+unsafe fn moniker_get_tree_comp_count(root: *const comp_node, count: *mut u32) {
+    if (*root).left.is_null() && (*root).right.is_null() {
+        *count += 1;
+        return;
+    }
 
-    if mkSys != MKSYS_GENERICCOMPOSITE {
-        /* add a simple moniker to the moniker table */
-        res = IMoniker_ComposeWith(
-            *(*This).tabMoniker.add(((*This).tabLastIndex - 1) as usize),
-            pmkRest,
-            1, /* TRUE */
-            &mut tempMk,
-        );
+    moniker_get_tree_comp_count((*root).left, count);
+    moniker_get_tree_comp_count((*root).right, count);
+}
 
-        if res == MK_E_NEEDGENERIC {
-            /* there's no simplification in this case */
-            *(*This).tabMoniker.add((*This).tabLastIndex as usize) = pmkRest;
+/// Splits a composite into its rightmost leaf and everything to the left of it, both
+/// returned with a reference.
+unsafe fn composite_get_rightmost(
+    composite: *mut CompositeMonikerImpl,
+    left: *mut *mut IMoniker,
+    rightmost: *mut *mut IMoniker,
+) -> HRESULT {
+    let mut root: *mut comp_node = core::ptr::null_mut();
+    let mut count: u32 = 0;
 
-            (*This).tabLastIndex += 1;
+    /* Shortcut for trivial case when right component is non-composite */
+    if unsafe_impl_from_IMoniker((*composite).right).is_null() {
+        *left = (*composite).left;
+        IMoniker_AddRef(*left);
+        *rightmost = (*composite).right;
+        IMoniker_AddRef(*rightmost);
+        return S_OK;
+    }
 
-            IMoniker_AddRef(pmkRest);
-        } else if tempMk.is_null() {
-            /* we have an antimoniker after a simple moniker so we can make a simplification
-             * in this case */
-            IMoniker_Release(*(*This).tabMoniker.add(((*This).tabLastIndex - 1) as usize));
+    *left = core::ptr::null_mut();
+    *rightmost = core::ptr::null_mut();
 
-            (*This).tabLastIndex -= 1;
-        } else if SUCCEEDED(res) {
-            /* the non-generic composition was successful so we can make a simplification in
-             * this case */
-            IMoniker_Release(*(*This).tabMoniker.add(((*This).tabLastIndex - 1) as usize));
+    let mut hr = moniker_get_tree_representation(
+        core::ptr::addr_of_mut!((*composite).IMoniker_iface),
+        core::ptr::null_mut(),
+        &mut root,
+    );
+    if FAILED(hr) {
+        return hr;
+    }
 
-            *(*This).tabMoniker.add(((*This).tabLastIndex - 1) as usize) = tempMk;
+    let node = moniker_tree_get_rightmost(root);
+    if node.is_null() {
+        WARN!(b"Couldn't get right most component.\n\0".as_ptr() as *const c_char);
+        moniker_tree_release(root);
+        return E_FAIL;
+    }
+
+    *rightmost = (*node).moniker;
+    IMoniker_AddRef(*rightmost);
+    moniker_tree_discard(node, true);
+
+    hr = moniker_create_from_tree(root, &mut count, left);
+    moniker_tree_release(root);
+    if FAILED(hr) {
+        IMoniker_Release(*rightmost);
+        *rightmost = core::ptr::null_mut();
+    }
+
+    hr
+}
+
+unsafe fn composite_get_leftmost(
+    composite: *mut CompositeMonikerImpl,
+    leftmost: *mut *mut IMoniker,
+) -> HRESULT {
+    let mut root: *mut comp_node = core::ptr::null_mut();
+
+    if unsafe_impl_from_IMoniker((*composite).left).is_null() {
+        *leftmost = (*composite).left;
+        IMoniker_AddRef(*leftmost);
+        return S_OK;
+    }
+
+    let hr = moniker_get_tree_representation(
+        core::ptr::addr_of_mut!((*composite).IMoniker_iface),
+        core::ptr::null_mut(),
+        &mut root,
+    );
+    if FAILED(hr) {
+        return hr;
+    }
+
+    let node = moniker_tree_get_leftmost(root);
+    if node.is_null() {
+        WARN!(b"Couldn't get left most component.\n\0".as_ptr() as *const c_char);
+        moniker_tree_release(root);
+        return E_FAIL;
+    }
+
+    *leftmost = (*node).moniker;
+    IMoniker_AddRef(*leftmost);
+
+    moniker_tree_release(root);
+
+    S_OK
+}
+
+/// Composes the facing leaves of `left` and `right` non-generically until they stop
+/// combining; returns the simplified sides (either may come back NULL, cancelled)
+/// and the total leaf count.
+unsafe fn moniker_simplify_composition(
+    left: *mut IMoniker,
+    right: *mut IMoniker,
+    count: *mut u32,
+    new_left: *mut *mut IMoniker,
+    new_right: *mut *mut IMoniker,
+) -> HRESULT {
+    let mut left_tree: *mut comp_node = core::ptr::null_mut();
+    let mut right_tree: *mut comp_node = core::ptr::null_mut();
+    let mut modified: u32 = 0;
+    let mut hr: HRESULT = S_OK;
+
+    *count = 0;
+    *new_left = core::ptr::null_mut();
+    *new_right = core::ptr::null_mut();
+
+    if FAILED(moniker_get_tree_representation(left, core::ptr::null_mut(), &mut left_tree)) {
+        return E_OUTOFMEMORY;
+    }
+    if FAILED(moniker_get_tree_representation(right, core::ptr::null_mut(), &mut right_tree)) {
+        moniker_tree_release(left_tree);
+        return E_OUTOFMEMORY;
+    }
+
+    /* Simplify by composing trees together, in a non-generic way. */
+    loop {
+        let l = moniker_tree_get_rightmost(left_tree);
+        if l.is_null() {
+            break;
+        }
+        let r = moniker_tree_get_leftmost(right_tree);
+        if r.is_null() {
+            break;
+        }
+
+        let mut c: *mut IMoniker = core::ptr::null_mut();
+        if FAILED(IMoniker_ComposeWith((*l).moniker, (*r).moniker, TRUE as BOOL, &mut c)) {
+            break;
+        }
+        modified += 1;
+
+        if !c.is_null() {
+            /* Replace with composed moniker on the left side */
+            IMoniker_Release((*l).moniker);
+            (*l).moniker = c;
         } else {
-            i = 0;
-            while i < (*This).tabLastIndex as c_int {
-                IMoniker_Release(*(*This).tabMoniker.offset(i as isize));
-                i += 1;
-            }
-            HeapFree(GetProcessHeap(), 0, (*This).tabMoniker as LPVOID);
-            HeapFree(GetProcessHeap(), 0, This as LPVOID);
-            return res;
+            moniker_tree_discard(l, true);
         }
-
-        /* resize tabMoniker if needed */
-        if (*This).tabLastIndex == (*This).tabSize {
-            let tab_moniker = (*This).tabMoniker;
-
-            (*This).tabSize += BLOCK_TAB_SIZE;
-
-            /* NOTE: the C sizes this one with sizeof(IMoniker) (not the element type) —
-             * same value in practice (IMoniker is a single vtbl pointer). Kept verbatim. */
-            (*This).tabMoniker = HeapReAlloc(
-                GetProcessHeap(),
-                0,
-                (*This).tabMoniker as LPVOID,
-                ((*This).tabSize as usize * core::mem::size_of::<IMoniker>()) as SIZE_T,
-            ) as *mut *mut IMoniker;
-
-            if (*This).tabMoniker.is_null() {
-                i = 0;
-                while i < (*This).tabLastIndex as c_int {
-                    IMoniker_Release(*tab_moniker.offset(i as isize));
-                    i += 1;
-                }
-                HeapFree(GetProcessHeap(), 0, tab_moniker as LPVOID);
-                HeapFree(GetProcessHeap(), 0, This as LPVOID);
-                return E_OUTOFMEMORY;
-            }
-        }
-    } else {
-        /* add a composite moniker to the moniker table (do the same thing for each moniker
-         * within the composite moniker as a simple moniker (see above)) */
-        IMoniker_Enum(pmkRest, 1 /* TRUE */, &mut enumMoniker);
-
-        while IEnumMoniker_Next(
-            enumMoniker,
-            1,
-            (*This).tabMoniker.add((*This).tabLastIndex as usize),
-            core::ptr::null_mut(),
-        ) == S_OK
-        {
-            let res2 = IMoniker_ComposeWith(
-                *(*This).tabMoniker.add(((*This).tabLastIndex - 1) as usize),
-                *(*This).tabMoniker.add((*This).tabLastIndex as usize),
-                1, /* TRUE */
-                &mut tempMk,
-            );
-
-            if res2 == MK_E_NEEDGENERIC {
-                (*This).tabLastIndex += 1;
-            } else if tempMk.is_null() {
-                IMoniker_Release(*(*This).tabMoniker.add(((*This).tabLastIndex - 1) as usize));
-                IMoniker_Release(*(*This).tabMoniker.add((*This).tabLastIndex as usize));
-                (*This).tabLastIndex -= 1;
-            } else {
-                IMoniker_Release(*(*This).tabMoniker.add(((*This).tabLastIndex - 1) as usize));
-
-                *(*This).tabMoniker.add(((*This).tabLastIndex - 1) as usize) = tempMk;
-            }
-
-            if (*This).tabLastIndex == (*This).tabSize {
-                let tab_moniker = (*This).tabMoniker;
-
-                (*This).tabSize += BLOCK_TAB_SIZE;
-
-                (*This).tabMoniker = HeapReAlloc(
-                    GetProcessHeap(),
-                    0,
-                    (*This).tabMoniker as LPVOID,
-                    ((*This).tabSize as usize * core::mem::size_of::<*mut IMoniker>()) as SIZE_T,
-                ) as *mut *mut IMoniker;
-
-                if (*This).tabMoniker.is_null() {
-                    i = 0;
-                    while i < (*This).tabLastIndex as c_int {
-                        IMoniker_Release(*tab_moniker.offset(i as isize));
-                        i += 1;
-                    }
-                    HeapFree(GetProcessHeap(), 0, tab_moniker as LPVOID);
-                    HeapFree(GetProcessHeap(), 0, This as LPVOID);
-                    return E_OUTOFMEMORY;
-                }
-            }
-        }
-
-        IEnumMoniker_Release(enumMoniker);
+        moniker_tree_discard(r, false);
     }
 
-    /* only one moniker, then just return it */
-    if (*This).tabLastIndex == 1 {
-        *ppMoniker = *(*This).tabMoniker.add(0);
-        IMoniker_AddRef(*ppMoniker);
-        IMoniker_Release(core::ptr::addr_of_mut!((*This).IMoniker_iface));
+    if modified == 0 {
+        *new_left = left;
+        IMoniker_AddRef(*new_left);
+        *new_right = right;
+        IMoniker_AddRef(*new_right);
+
+        moniker_get_tree_comp_count(left_tree, count);
+        moniker_get_tree_comp_count(right_tree, count);
     } else {
-        *ppMoniker = core::ptr::addr_of_mut!((*This).IMoniker_iface);
+        hr = moniker_create_from_tree(left_tree, count, new_left);
+        if SUCCEEDED(hr) {
+            hr = moniker_create_from_tree(right_tree, count, new_right);
+        }
     }
+
+    moniker_tree_release(left_tree);
+    moniker_tree_release(right_tree);
+
+    if FAILED(hr) {
+        if !(*new_left).is_null() {
+            IMoniker_Release(*new_left);
+        }
+        if !(*new_right).is_null() {
+            IMoniker_Release(*new_right);
+        }
+        *new_left = core::ptr::null_mut();
+        *new_right = core::ptr::null_mut();
+    }
+
+    hr
+}
+
+unsafe fn create_composite(
+    left: *mut IMoniker,
+    right: *mut IMoniker,
+    moniker: *mut *mut IMoniker,
+) -> HRESULT {
+    let mut new_left: *mut IMoniker = core::ptr::null_mut();
+    let mut new_right: *mut IMoniker = core::ptr::null_mut();
+
+    *moniker = core::ptr::null_mut();
+
+    let object =
+        heap_calloc(1, core::mem::size_of::<CompositeMonikerImpl>()) as *mut CompositeMonikerImpl;
+    if object.is_null() {
+        return E_OUTOFMEMORY;
+    }
+
+    (*object).IMoniker_iface.lpVtbl =
+        core::ptr::addr_of!(VT_CompositeMonikerImpl) as *mut IMonikerVtbl;
+    (*object).IROTData_iface.lpVtbl = core::ptr::addr_of!(VT_ROTDataImpl) as *mut IROTDataVtbl;
+    (*object).IMarshal_iface.lpVtbl = core::ptr::addr_of!(VT_MarshalImpl) as *mut IMarshalVtbl;
+    (*object).ref_ = 1;
+
+    /* Uninitialized moniker created by object activation */
+    if left.is_null() && right.is_null() {
+        *moniker = core::ptr::addr_of_mut!((*object).IMoniker_iface);
+        return S_OK;
+    }
+
+    let hr = moniker_simplify_composition(left, right, &mut (*object).comp_count, &mut new_left,
+                                          &mut new_right);
+    if FAILED(hr) {
+        IMoniker_Release(core::ptr::addr_of_mut!((*object).IMoniker_iface));
+        return hr;
+    }
+
+    if new_left.is_null() || new_right.is_null() {
+        *moniker = if !new_left.is_null() { new_left } else { new_right };
+        IMoniker_Release(core::ptr::addr_of_mut!((*object).IMoniker_iface));
+        return S_OK;
+    }
+
+    (*object).left = new_left;
+    (*object).right = new_right;
+
+    *moniker = core::ptr::addr_of_mut!((*object).IMoniker_iface);
 
     S_OK
 }
@@ -2163,47 +2140,29 @@ unsafe fn CompositeMonikerImpl_Construct(
 /// CreateGenericComposite [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn CreateGenericComposite(
-    pmkFirst: *mut IMoniker,
-    pmkRest: *mut IMoniker,
-    ppmkComposite: *mut *mut IMoniker,
+    left: *mut IMoniker,
+    right: *mut IMoniker,
+    composite: *mut *mut IMoniker,
 ) -> HRESULT {
-    let mut moniker: *mut IMoniker = core::ptr::null_mut();
-    let mut hr: HRESULT;
+    TRACE!(b"%p, %p, %p\n\0".as_ptr() as *const c_char, left, right, composite);
 
-    TRACE!(b"(%p,%p,%p)\n\0".as_ptr() as *const c_char, pmkFirst, pmkRest, ppmkComposite);
-
-    if ppmkComposite.is_null() {
+    if composite.is_null() {
         return E_POINTER;
     }
 
-    *ppmkComposite = core::ptr::null_mut();
-
-    if pmkFirst.is_null() && !pmkRest.is_null() {
-        *ppmkComposite = pmkRest;
-        IMoniker_AddRef(pmkRest);
+    if left.is_null() && !right.is_null() {
+        *composite = right;
+        IMoniker_AddRef(*composite);
         return S_OK;
-    } else if !pmkFirst.is_null() && pmkRest.is_null() {
-        *ppmkComposite = pmkFirst;
-        IMoniker_AddRef(pmkFirst);
+    } else if !left.is_null() && right.is_null() {
+        *composite = left;
+        IMoniker_AddRef(*composite);
         return S_OK;
-    } else if pmkFirst.is_null() && pmkRest.is_null() {
+    } else if left.is_null() && right.is_null() {
         return S_OK;
     }
 
-    hr = CompositeMonikerImpl_Construct(&mut moniker, pmkFirst, pmkRest);
-
-    if FAILED(hr) {
-        return hr;
-    }
-
-    hr = IMoniker_QueryInterface(
-        moniker,
-        core::ptr::addr_of!(IID_IMoniker),
-        ppmkComposite as *mut *mut c_void,
-    );
-    IMoniker_Release(moniker);
-
-    hr
+    create_composite(left, right, composite)
 }
 
 /// MonikerCommonPrefixWith [OLE32.@]
@@ -2227,7 +2186,6 @@ pub unsafe extern "system" fn CompositeMoniker_CreateInstance(
     ppv: *mut *mut c_void,
 ) -> HRESULT {
     let mut pMoniker: *mut IMoniker = core::ptr::null_mut();
-    let mut hr: HRESULT;
 
     TRACE!(b"(%p, %s, %p)\n\0".as_ptr() as *const c_char, pUnk,
            debugstr_guid(riid as *const c_void), ppv);
@@ -2240,9 +2198,7 @@ pub unsafe extern "system" fn CompositeMoniker_CreateInstance(
         return CLASS_E_NOAGGREGATION;
     }
 
-    hr = CompositeMonikerImpl_Construct(&mut pMoniker, core::ptr::null_mut(),
-                                        core::ptr::null_mut());
-
+    let mut hr = create_composite(core::ptr::null_mut(), core::ptr::null_mut(), &mut pMoniker);
     if SUCCEEDED(hr) {
         hr = IMoniker_QueryInterface(pMoniker, riid, ppv);
         IMoniker_Release(pMoniker);

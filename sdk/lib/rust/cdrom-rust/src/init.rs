@@ -166,17 +166,26 @@ const STATUS_DEVICE_PROTOCOL_ERROR: NTSTATUS = 0xC0000186_u32 as i32; // 0xC0000
 
 const PLUGPLAY_REGKEY_DEVICE: u32 = 1;
 
-// Constants — assumed provided by the caller’s scope
-const CDROM_SUBKEY_NAME: *const u16 = /* external */ core::ptr::null();
-const CDROM_NON_MMC_DRIVE_NAME: *const u16 = core::ptr::null();
-const CDROM_NON_MMC_VENDOR_SPECIFIC_PROFILE: *const u16 = core::ptr::null();
-const CDROM_TYPE_ONE_GET_CONFIG_NAME: *const u16 = core::ptr::null();
+// cdrom.h registry names (wide literals). These were NULL placeholders, so
+// DeviceSetParameter wrote its flag into the UNNAMED default value of the
+// device's hardware key, and nothing could ever read it back.
+const CDROM_SUBKEY_NAME: *const u16 = ntkrnl_sys::w!("CdRom").as_ptr();
+const CDROM_NON_MMC_DRIVE_NAME: *const u16 = ntkrnl_sys::w!("NonMmc").as_ptr();
+const CDROM_NON_MMC_VENDOR_SPECIFIC_PROFILE: *const u16 =
+    ntkrnl_sys::w!("NonMmcVendorSpecificProfile").as_ptr();
+const CDROM_TYPE_ONE_GET_CONFIG_NAME: *const u16 = ntkrnl_sys::w!("NoTypeOneGetConfig").as_ptr();
 
 const CDROM_HACK_BAD_GET_CONFIG_SUPPORT: u32 = 0x100;  // was 0x0001 (LLM-invented); bindgen-correct
 const CDROM_HACK_BAD_VENDOR_PROFILES: u32 = 0x1000;  // was 0x0002 (LLM-invented); bindgen-correct
 const CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG: u32 = 0x800;  // was 0x0004 (LLM-invented); bindgen-correct
 
-const FeatureProfileList: u32 = 0x0003; // example value
+// HELD at 0x0003 (FeatureRemovableMedium) although cdrom.h's FeatureProfileList is 0x0000:
+// with the correct value QEMU's DVD-ROM fails the TYPE_ONE probe below, and the teardown
+// that follows goes through DeviceClaimRelease(Release) into FxRequest::Release reading
+// past its object (amd64/i386 BUGCHECK 0x19, arm64 hang; special pool on tag CDRO,
+// 2026-10-04). Restore the real value once that failure path is fixed (roadmap, "cdrom
+// FeatureProfileList").
+const FeatureProfileList: u32 = 0x0003;
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u32 = 0;
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE: u32 = 0x2;  // was 1 (LLM-invented); bindgen-correct
 
@@ -5023,13 +5032,30 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
 
     *IsMmcDevice = 0; // FALSE
 
+    // read the registry in case the drive failed previously,
+    // and a timeout is occurring. (The three DeviceGetParameter reads in this
+    // function were dropped: the flags DeviceSetParameter persists below were
+    // never consulted, so a non-MMC drive re-timed-out on every start.)
     previously_failed = 0; // FALSE
+    DeviceGetParameter(
+        DeviceExtension as *mut core::ffi::c_void,
+        CDROM_SUBKEY_NAME as *mut u16,
+        CDROM_NON_MMC_DRIVE_NAME as *mut u16,
+        &mut previously_failed,
+    );
     if previously_failed != 0 {
         (*DeviceExtension).DeviceAdditionalData.HackFlags |=
             CDROM_HACK_BAD_GET_CONFIG_SUPPORT as ntkrnl_sys::ddk::ULONG_PTR;
     }
 
+    // read from the registry in case the drive reports bad profile lengths
     previously_failed = 0;
+    DeviceGetParameter(
+        DeviceExtension as *mut core::ffi::c_void,
+        CDROM_SUBKEY_NAME as *mut u16,
+        CDROM_NON_MMC_VENDOR_SPECIFIC_PROFILE as *mut u16,
+        &mut previously_failed,
+    );
     if previously_failed != 0 {
         (*DeviceExtension).DeviceAdditionalData.HackFlags |=
             CDROM_HACK_BAD_VENDOR_PROFILES as ntkrnl_sys::ddk::ULONG_PTR;
@@ -5180,7 +5206,15 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
             return -1073741670; // STATUS_INSUFFICIENT_RESOURCES
         }
 
+        // read the registry in case the drive failed previously,
+        // and a timeout is occurring.
         previously_failed = 0;
+        DeviceGetParameter(
+            DeviceExtension as *mut core::ffi::c_void,
+            CDROM_SUBKEY_NAME as *mut u16,
+            CDROM_TYPE_ONE_GET_CONFIG_NAME as *mut u16,
+            &mut previously_failed,
+        );
         if previously_failed != 0 {
             (*DeviceExtension).DeviceAdditionalData.HackFlags |=
                 CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG as ntkrnl_sys::ddk::ULONG_PTR;

@@ -1753,54 +1753,68 @@ unsafe extern "C" fn SetUserLocaleName(hwnd: HWND) {
 
     SetWindowTextW(hwnd, LocaleText.as_ptr());
 }
+// Ported from upstream d482579dff3 ("[SYSSETUP] Fix retrieval of the currently active keyboard
+// layout ID and its name", #9420). The earlier body guessed the KLID from the default input
+// HKL (LOWORD as the layout, a 0xF000 HIWORD as a "Layout Id" to search for), which cannot map
+// an HKL back to its KLID: with an en-AU locale and a U.S. or Dvorak layout it named the wrong
+// layout or none. The KLID is now read from HKCU\Keyboard Layout\Preload\1, put through
+// HKCU\Keyboard Layout\Substitutes, and only then looked up under Keyboard Layouts; when no
+// name is found the KLID itself is shown.
 unsafe extern "C" fn SetKeyboardLayoutName(hwnd: HWND) {
-    let mut hkl: HKL = core::ptr::null_mut();
-    let mut LayoutSpecial: BOOL = (FALSE) as i32;
-    let mut LayoutPath: [WCHAR; 256] = [0; 256];
-    let mut LocaleName: [WCHAR; 32] = [0; 32];
-    let mut SpecialId: [WCHAR; 5] = [0; 5];
-    let mut ResText: [WCHAR; 256] = [0; 256];
-    let mut dwValueSize: DWORD = 0;
     let mut hKey: HKEY = core::ptr::null_mut();
-    let mut i: UINT = 0;
-    // wizard.c:1252 `#define MAX_LAYOUTS_PER_LANGID 0x10000`, #undef'd at :1299 — a
-    // function-scoped macro, so it reaches neither the island nor the prelude.
-    const MAX_LAYOUTS_PER_LANGID: UINT = 0x10000;
+    let mut res: LONG;
+    let mut dwSize: DWORD;
+    let mut dwType: DWORD = 0;
+    let mut szKLID: [WCHAR; KL_NAMELENGTH as usize] = [0; KL_NAMELENGTH as usize];
+    let mut szLayoutId: [WCHAR; KL_NAMELENGTH as usize] = [0; KL_NAMELENGTH as usize];
+    let mut LayoutName: [WCHAR; 128] = [0; 128];
+    let mut LayoutPath: [WCHAR; 256] = [0; 256];
+    let mut ResText: [WCHAR; 256] = [0; 256];
 
-    if SystemParametersInfoW((SPI_GETDEFAULTINPUTLANG) as u32, 0, (&mut hkl as *mut HKL as LPDWORD).cast(), 0) == 0 {
-        hkl = GetKeyboardLayout(0);
-    }
-
-    if (HIWORD!(hkl as u32) & 0xF000) == 0xF000 {
-        StringCchPrintfW!(SpecialId.as_mut_ptr(), (ARRAYSIZE!(SpecialId)) as usize, w!("%04x") as PCWSTR, ((HIWORD!(hkl as u32) & 0x0FFF) as c_uint));
-        LayoutSpecial = (TRUE) as i32;
-    }
-
-    i = 0;
-    while i < (if LayoutSpecial != 0 { MAX_LAYOUTS_PER_LANGID } else { 1 }) {
-        StringCchPrintfW!(LocaleName.as_mut_ptr(), (ARRAYSIZE!(LocaleName)) as usize, w!("%08lx") as PCWSTR, (i << 16) | LOWORD!(hkl as u32) as u32);
-
-        StringCchCopyW(LayoutPath.as_mut_ptr(), (ARRAYSIZE!(LayoutPath)) as usize, w!("SYSTEM\\CurrentControlSet\\Control\\Keyboard Layouts\\") as PCWSTR);
-        StringCchCatW(LayoutPath.as_mut_ptr(), (ARRAYSIZE!(LayoutPath)) as usize, LocaleName.as_ptr());
-        LocaleName[0] = UNICODE_NULL;
-
-        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, LayoutPath.as_ptr(), 0, KEY_ALL_ACCESS, &mut hKey) == (ERROR_SUCCESS) as i32 {
-            dwValueSize = core::mem::size_of_val(&LocaleName) as DWORD;
-            if LayoutSpecial == 0 || ((RegQueryValueExW(hKey, w!("Layout Id") as PCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), (LocaleName.as_mut_ptr() as PVOID).cast(), &mut dwValueSize) == (ERROR_SUCCESS) as i32) && (wcscmp(LocaleName.as_ptr(), SpecialId.as_ptr()) == 0)) {
-                LocaleName[0] = UNICODE_NULL;
-                dwValueSize = core::mem::size_of_val(&LocaleName) as DWORD;
-                RegQueryValueExW(hKey, w!("Layout Text") as PCWSTR, core::ptr::null_mut(), core::ptr::null_mut(), (LocaleName.as_mut_ptr() as PVOID).cast(), &mut dwValueSize);
-                i = MAX_LAYOUTS_PER_LANGID;
-            }
-            RegCloseKey(hKey);
-        } else {
-            break;
+    // Retrieve the current keyboard layout ID; fall back to the U.S. layout if none was found.
+    szKLID[0] = UNICODE_NULL;
+    if RegOpenKeyExW(HKEY_CURRENT_USER, w!("Keyboard Layout\\Preload") as PCWSTR, 0, KEY_QUERY_VALUE, &mut hKey) == (ERROR_SUCCESS) as i32 {
+        dwSize = core::mem::size_of_val(&szKLID) as DWORD;
+        res = RegQueryValueExW(hKey, w!("1") as PCWSTR, core::ptr::null_mut(), &mut dwType, (szKLID.as_mut_ptr() as PVOID).cast(), &mut dwSize);
+        if res != (ERROR_SUCCESS) as i32 || dwType != REG_SZ || dwSize != core::mem::size_of_val(&szKLID) as DWORD {
+            szKLID[0] = UNICODE_NULL;
         }
-        i += 1;
+        RegCloseKey(hKey);
+    }
+    if szKLID[0] == UNICODE_NULL {
+        StringCchCopyW(szKLID.as_mut_ptr(), (ARRAYSIZE!(szKLID)) as usize, w!("00000409") as PCWSTR);
+    }
+
+    // If this is a substituted layout ID, replace it with the target ID.
+    if RegOpenKeyExW(HKEY_CURRENT_USER, w!("Keyboard Layout\\Substitutes") as PCWSTR, 0, KEY_QUERY_VALUE, &mut hKey) == (ERROR_SUCCESS) as i32 {
+        dwSize = core::mem::size_of_val(&szLayoutId) as DWORD;
+        res = RegQueryValueExW(hKey, szKLID.as_ptr(), core::ptr::null_mut(), &mut dwType, (szLayoutId.as_mut_ptr() as PVOID).cast(), &mut dwSize);
+        if res == (ERROR_SUCCESS) as i32 && dwType == REG_SZ && dwSize == core::mem::size_of_val(&szKLID) as DWORD {
+            StringCchCopyW(szKLID.as_mut_ptr(), (ARRAYSIZE!(szKLID)) as usize, szLayoutId.as_ptr());
+        }
+        RegCloseKey(hKey);
+    }
+
+    LayoutName[0] = UNICODE_NULL;
+
+    // Open the layout ID registry key and retrieve its human-readable name.
+    StringCchPrintfW!(LayoutPath.as_mut_ptr(), (ARRAYSIZE!(LayoutPath)) as usize, w!("SYSTEM\\CurrentControlSet\\Control\\Keyboard Layouts\\%s") as PCWSTR, szKLID.as_ptr());
+    if RegOpenKeyExW(HKEY_LOCAL_MACHINE, LayoutPath.as_ptr(), 0, KEY_QUERY_VALUE, &mut hKey) == (ERROR_SUCCESS) as i32 {
+        dwSize = core::mem::size_of_val(&LayoutName) as DWORD;
+        res = RegQueryValueExW(hKey, w!("Layout Text") as PCWSTR, core::ptr::null_mut(), &mut dwType, (LayoutName.as_mut_ptr() as PVOID).cast(), &mut dwSize);
+        if res != (ERROR_SUCCESS) as i32 || dwType != REG_SZ {
+            LayoutName[0] = UNICODE_NULL;
+        }
+        RegCloseKey(hKey);
+    }
+
+    // If no layout name was found, just display the current layout ID.
+    if LayoutName[0] == UNICODE_NULL {
+        StringCchCopyW(LayoutName.as_mut_ptr(), (ARRAYSIZE!(LayoutName)) as usize, szKLID.as_ptr());
     }
 
     LoadStringW(hDllInstance, (IDS_LAYOUTTEXT) as u32, ResText.as_mut_ptr(), (ARRAYSIZE!(ResText)) as i32);
-    StringCchPrintfW!(LayoutPath.as_mut_ptr(), (ARRAYSIZE!(LayoutPath)) as usize, ResText.as_ptr(), LocaleName.as_ptr());
+    StringCchPrintfW!(LayoutPath.as_mut_ptr(), (ARRAYSIZE!(LayoutPath)) as usize, ResText.as_ptr(), LayoutName.as_ptr());
 
     SetWindowTextW(hwnd, LayoutPath.as_ptr());
 }
@@ -2228,6 +2242,56 @@ unsafe extern "C" fn ShowTimeZoneList(hwnd: HWND, SetupData: PSETUPDATA, mut dwE
         0,
     );
 }
+// Upstream 3bbdfb932a3 (CORE-20406): the "automatically adjust for daylight saving" box
+// must be unchecked and disabled for a zone with no DST, and follow the zone selection. The
+// translation predates it and always checked the box, so picking a no-DST zone still turned
+// automatic DST adjustment on.
+unsafe fn HasDaylightSavingTime(Entry: PTIMEZONE_ENTRY) -> bool {
+    /* If StandardDate.wMonth and DaylightDate.wMonth are zero,
+     * the timezone does not observe daylight saving time */
+    (*Entry).TimezoneInfo.StandardDate.wMonth != 0 && (*Entry).TimezoneInfo.DaylightDate.wMonth != 0
+}
+
+unsafe fn GetSelectedTimeZoneEntry(SetupData: PSETUPDATA, dwEntryIndex: DWORD) -> PTIMEZONE_ENTRY {
+    let mut Entry: PTIMEZONE_ENTRY = (*SetupData).TimeZoneListHead;
+    while !Entry.is_null() {
+        if (*Entry).Index == dwEntryIndex {
+            return Entry;
+        }
+        Entry = (*Entry).Next;
+    }
+    core::ptr::null_mut()
+}
+
+unsafe fn GetTimeZoneEntryByIndex(SetupData: PSETUPDATA, dwComboIndex: DWORD) -> PTIMEZONE_ENTRY {
+    let mut Entry: PTIMEZONE_ENTRY = (*SetupData).TimeZoneListHead;
+    let mut i: DWORD = 0;
+    while !Entry.is_null() && i < dwComboIndex {
+        i += 1;
+        Entry = (*Entry).Next;
+    }
+    Entry
+}
+
+/// Check and enable the auto-daylight box exactly when `Entry` observes DST.
+unsafe fn SetAutoDaylightCheckbox(hwndDlg: HWND, bHasDST: bool) {
+    /* Enable or disable the checkbox based on DST support */
+    EnableWindow(GetDlgItem(hwndDlg, (IDC_AUTODAYLIGHT) as i32), bHasDST as BOOL);
+
+    /* Check the checkbox only if DST is supported, otherwise uncheck it */
+    SendDlgItemMessage(
+        hwndDlg,
+        (IDC_AUTODAYLIGHT) as i32,
+        BM_SETCHECK as UINT,
+        (if bHasDST { BST_CHECKED } else { BST_UNCHECKED }) as WPARAM,
+        0,
+    );
+}
+
+unsafe fn UpdateAutoDaylightCheckbox(hwndDlg: HWND, Entry: PTIMEZONE_ENTRY) {
+    SetAutoDaylightCheckbox(hwndDlg, !Entry.is_null() && HasDaylightSavingTime(Entry));
+}
+
 unsafe extern "C" fn SetLocalTimeZone(hwnd: HWND, SetupData: PSETUPDATA) {
     let mut TimeZoneInformation: TIME_ZONE_INFORMATION = core::mem::zeroed();
     let mut Entry: PTIMEZONE_ENTRY;
@@ -2362,29 +2426,41 @@ unsafe extern "system" fn DateTimePageDlgProc(
                     (*SetupData).TimeZoneIndex,
                 );
 
-                if (*SetupData).DisableAutoDaylightTimeSet == 0 {
-                    SendDlgItemMessage(
-                        hwndDlg,
-                        (IDC_AUTODAYLIGHT) as i32,
-                        BM_SETCHECK,
-                        BST_CHECKED as WPARAM,
-                        0,
-                    );
-                }
+                let Entry = GetSelectedTimeZoneEntry(SetupData, (*SetupData).TimeZoneIndex);
+                SetAutoDaylightCheckbox(
+                    hwndDlg,
+                    (*SetupData).DisableAutoDaylightTimeSet == 0
+                        && !Entry.is_null()
+                        && HasDaylightSavingTime(Entry),
+                );
             } else {
+                /* Get the default time zone index from the registry */
+                let mut dwEntryIndex: DWORD = (1 as i32).wrapping_neg() as u32;
+                GetTimeZoneListIndex(&mut dwEntryIndex);
+
                 ShowTimeZoneList(
                     GetDlgItem(hwndDlg, (IDC_TIMEZONELIST) as i32),
                     SetupData,
                     (1 as i32).wrapping_neg() as u32,
                 );
 
-                SendDlgItemMessage(
+                /* Set the auto-daylight checkbox based on whether
+                 * the selected timezone observes DST */
+                UpdateAutoDaylightCheckbox(hwndDlg, GetSelectedTimeZoneEntry(SetupData, dwEntryIndex));
+            }
+        }
+
+        WM_COMMAND => {
+            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && LOWORD!(wParam) as u32 == IDC_TIMEZONELIST {
+                /* User changed the timezone selection */
+                let dwIndex = SendDlgItemMessage(
                     hwndDlg,
-                    (IDC_AUTODAYLIGHT) as i32,
-                    BM_SETCHECK,
-                    BST_CHECKED as WPARAM,
+                    (IDC_TIMEZONELIST) as i32,
+                    CB_GETCURSEL as UINT,
                     0,
-                );
+                    0,
+                ) as DWORD;
+                UpdateAutoDaylightCheckbox(hwndDlg, GetTimeZoneEntryByIndex(SetupData, dwIndex));
             }
         }
 
@@ -2477,29 +2553,41 @@ unsafe extern "system" fn DateTimePageDlgProc(
                     (*SetupData).TimeZoneIndex,
                 );
 
-                if (*SetupData).DisableAutoDaylightTimeSet == 0 {
-                    SendDlgItemMessage(
-                        hwndDlg,
-                        (IDC_AUTODAYLIGHT) as i32,
-                        (BM_SETCHECK) as u32,
-                        BST_CHECKED as WPARAM,
-                        0,
-                    );
-                }
+                let Entry = GetSelectedTimeZoneEntry(SetupData, (*SetupData).TimeZoneIndex);
+                SetAutoDaylightCheckbox(
+                    hwndDlg,
+                    (*SetupData).DisableAutoDaylightTimeSet == 0
+                        && !Entry.is_null()
+                        && HasDaylightSavingTime(Entry),
+                );
             } else {
+                /* Get the default time zone index from the registry */
+                let mut dwEntryIndex: DWORD = (1 as i32).wrapping_neg() as u32;
+                GetTimeZoneListIndex(&mut dwEntryIndex);
+
                 ShowTimeZoneList(
                     GetDlgItem(hwndDlg, (IDC_TIMEZONELIST) as i32),
                     SetupData,
                     (1 as i32).wrapping_neg() as u32,
                 );
 
-                SendDlgItemMessage(
+                /* Set the auto-daylight checkbox based on whether
+                 * the selected timezone observes DST */
+                UpdateAutoDaylightCheckbox(hwndDlg, GetSelectedTimeZoneEntry(SetupData, dwEntryIndex));
+            }
+        }
+
+        WM_COMMAND => {
+            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && LOWORD!(wParam) as u32 == IDC_TIMEZONELIST {
+                /* User changed the timezone selection */
+                let dwIndex = SendDlgItemMessage(
                     hwndDlg,
-                    (IDC_AUTODAYLIGHT) as i32,
-                    (BM_SETCHECK) as u32,
-                    BST_CHECKED as WPARAM,
+                    (IDC_TIMEZONELIST) as i32,
+                    CB_GETCURSEL as UINT,
                     0,
-                );
+                    0,
+                ) as DWORD;
+                UpdateAutoDaylightCheckbox(hwndDlg, GetTimeZoneEntryByIndex(SetupData, dwIndex));
             }
         }
 
@@ -3952,7 +4040,10 @@ pub unsafe extern "C" fn ProcessUnattendSection(pSetupData: PSETUPDATA) {
             ) != 0
             {
                 let mut szPath: [WCHAR; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
-                swprintf(szName.as_mut_ptr(), (b"%d\0".as_ptr()).cast(), i);
+                // A WIDE format: this used to pass the bytes b"%d\0" reinterpreted as
+                // UTF-16 (U+6425 then whatever byte followed in .rdata), so every GuiRunOnce
+                // entry was written under the same junk value name and only the last survived.
+                swprintf(szName.as_mut_ptr(), w!("%d") as LPCWSTR, i);
                 // DPRINT removed
 
                 if ExpandEnvironmentStringsW(

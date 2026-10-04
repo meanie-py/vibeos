@@ -638,69 +638,76 @@ pub unsafe extern "C" fn RegisterTypeLibraries(
     }
 
     loop {
-        if SetupGetStringFieldW(
-            &mut InfContext,
-            1,
-            szName.as_mut_ptr(),
-            ARRAYSIZE!(szName),
-            core::ptr::null_mut(),
-        ) == 0
-        {
-            FatalError(b"SetupGetStringFieldW failed\n\0".as_ptr() as *mut i8);
-            continue;
-        }
+        // C: `do { ... continue; ... } while (SetupFindNextLine(...))` -- a `continue`
+        // still advances to the next INF line. A bare `continue` here re-processed the
+        // SAME line forever after any failure (FatalError only shows a message box), so
+        // one bad TypeLibraries entry hung setup in an endless dialog loop.
+        'next: {
+            if SetupGetStringFieldW(
+                &mut InfContext,
+                1,
+                szName.as_mut_ptr(),
+                ARRAYSIZE!(szName),
+                core::ptr::null_mut(),
+            ) == 0
+            {
+                FatalError(b"SetupGetStringFieldW failed\n\0".as_ptr() as *mut i8);
+                break 'next;
+            }
 
-        if SetupGetIntField(&mut InfContext, 2, &mut csidl) == 0 {
-            csidl = (CSIDL_SYSTEM) as i32;
-        }
+            if SetupGetIntField(&mut InfContext, 2, &mut csidl) == 0 {
+                csidl = (CSIDL_SYSTEM) as i32;
+            }
 
-        hret = SHGetFolderPathW(
-            core::ptr::null_mut(),
-            csidl,
-            core::ptr::null_mut(),
-            0,
-            szPath.as_mut_ptr(),
-        );
-        if hret < 0 {
-            FatalError(
-                b"SHGetFolderPathW failed hret=0x%lx\n\0".as_ptr() as *mut i8,
-                hret,
-            );
-            continue;
-        }
-
-        p = PathAddBackslash(szPath.as_mut_ptr());
-        wcscpy(p, szName.as_mut_ptr());
-
-        if !pItemsData.is_null() && !pNotify.is_null() {
-            (*pNotify).Progress += 1;
-            (*pNotify).CurrentItem = szName.as_mut_ptr();
-
-            // DPRINT removed
-            SendMessage(
-                (*pItemsData).hwndDlg,
-                (PM_STEP_START) as u32,
+            hret = SHGetFolderPathW(
+                core::ptr::null_mut(),
+                csidl,
+                core::ptr::null_mut(),
                 0,
-                pNotify as LPARAM,
+                szPath.as_mut_ptr(),
             );
-        }
+            if hret < 0 {
+                FatalError(
+                    b"SHGetFolderPathW failed hret=0x%lx\n\0".as_ptr() as *mut i8,
+                    hret,
+                );
+                break 'next;
+            }
 
-        hmod = LoadLibraryW(szPath.as_mut_ptr());
-        if hmod.is_null() {
-            FatalError(b"LoadLibraryW failed\n\0".as_ptr() as *mut i8);
-            continue;
-        }
+            p = PathAddBackslash(szPath.as_mut_ptr());
+            wcscpy(p, szName.as_mut_ptr());
 
-        __wine_register_resources(hmod);
+            if !pItemsData.is_null() && !pNotify.is_null() {
+                (*pNotify).Progress += 1;
+                (*pNotify).CurrentItem = szName.as_mut_ptr();
 
-        if !pItemsData.is_null() && !pNotify.is_null() {
-            // DPRINT removed
-            SendMessage(
-                (*pItemsData).hwndDlg,
-                (PM_STEP_END) as u32,
-                0,
-                pNotify as LPARAM,
-            );
+                // DPRINT removed
+                SendMessage(
+                    (*pItemsData).hwndDlg,
+                    (PM_STEP_START) as u32,
+                    0,
+                    pNotify as LPARAM,
+                );
+            }
+
+            hmod = LoadLibraryW(szPath.as_mut_ptr());
+            if hmod.is_null() {
+                FatalError(b"LoadLibraryW failed\n\0".as_ptr() as *mut i8);
+                break 'next;
+            }
+
+            __wine_register_resources(hmod);
+
+            if !pItemsData.is_null() && !pNotify.is_null() {
+                // DPRINT removed
+                SendMessage(
+                    (*pItemsData).hwndDlg,
+                    (PM_STEP_END) as u32,
+                    0,
+                    pNotify as LPARAM,
+                );
+            }
+
         }
 
         if SetupFindNextLine(&mut InfContext, &mut InfContext) == 0 {
@@ -1501,6 +1508,23 @@ unsafe extern "system" fn LiveCdRegistrationProgress(
     FILEOP_DOIT as UINT
 }
 
+/// InstallLiveCD's `error:` label. The box promises "press ENTER to reboot", and since
+/// upstream d55a77c350e the C keeps that promise; the translation predates it and just
+/// returned, leaving a LiveCD that failed to come up with nothing but a dead box.
+unsafe fn LiveCdFailed() {
+    MessageBoxW(
+        core::ptr::null_mut(),
+        w!("Failed to load LiveCD! You can shutdown your computer, or press ENTER to reboot.") as LPCWSTR,
+        w!("ReactOS LiveCD") as LPCWSTR,
+        (MB_OK) as u32,
+    );
+    // HACK (upstream too): this should be done by the caller of InstallWindowsNt().
+    if pSetupEnablePrivilege(SE_SHUTDOWN_NAME!() as PCWSTR, (TRUE) as i32) == 0 {
+        // DPRINT1 removed
+    }
+    ExitWindowsEx((EWX_REBOOT) as u32, 0);
+}
+
 unsafe extern "C" fn InstallLiveCD() -> u32 {
     let mut StartupInfo: STARTUPINFOW = core::mem::zeroed();
     let mut ProcessInformation: PROCESS_INFORMATION = core::mem::zeroed();
@@ -1509,12 +1533,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
     DPRINT1!("[SYSSETUP] InstallLiveCD: start\n");
     PreprocessUnattend((FALSE) as i32);
     if CommonInstall() == 0 {
-        MessageBoxW(
-            core::ptr::null_mut(),
-            w!("Failed to load LiveCD! You can shutdown your computer, or press ENTER to reboot.") as LPCWSTR,
-            w!("ReactOS LiveCD") as LPCWSTR,
-            (MB_OK) as u32,
-        );
+        LiveCdFailed();
         return 0;
     }
 
@@ -1584,12 +1603,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
         &mut ProcessInformation,
     )) as BOOL;
     if bRes == 0 {
-        MessageBoxW(
-            core::ptr::null_mut(),
-            w!("Failed to load LiveCD! You can shutdown your computer, or press ENTER to reboot.") as LPCWSTR,
-            w!("ReactOS LiveCD") as LPCWSTR,
-            (MB_OK) as u32,
-        );
+        LiveCdFailed();
         return 0;
     }
 
@@ -1995,135 +2009,132 @@ unsafe extern "C" fn SaveDefaultUserHive() -> u32 {
 }
 unsafe extern "C" fn InstallReactOS() -> u32 {
     let mut szBuffer: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];
-    let mut token: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut privs: TOKEN_PRIVILEGES = core::mem::zeroed();
     let mut hKey: HKEY = core::ptr::null_mut();
     let hHotkeyThread: *mut core::ffi::c_void;
 
-    InitializeSetupActionLog((FALSE) as i32);
-    LogItem!(core::ptr::null_mut(), w!("Installing ReactOS") as PCWSTR);
+    // Upstream d55a77c350e: every failure below still reaches the reboot after the block
+    // (it used to `return 0` and leave setup sitting in a dead process), and failing to get
+    // the shutdown privilege is now logged, no longer fatal.
+    'quit: {
+        InitializeSetupActionLog((FALSE) as i32);
+        LogItem!(core::ptr::null_mut(), w!("Installing ReactOS") as PCWSTR);
 
-    CreateTempDir(w!("TEMP") as PCWSTR);
-    CreateTempDir(w!("TMP") as PCWSTR);
+        CreateTempDir(w!("TEMP") as PCWSTR);
+        CreateTempDir(w!("TMP") as PCWSTR);
 
-    if InitializeProgramFilesDir() == 0 {
-        FatalError(b"InitializeProgramFilesDir() failed\0".as_ptr() as *mut i8);
-        return 0;
-    }
-
-    if InitializeProfiles() == 0 {
-        FatalError(b"InitializeProfiles() failed\0".as_ptr() as *mut i8);
-        return 0;
-    }
-
-    InitializeDefaultUserLocale();
-
-    if GetWindowsDirectoryW(szBuffer.as_mut_ptr(), ARRAYSIZE!(szBuffer)) != 0 {
-        if RegOpenKeyExW(
-            HKEY_LOCAL_MACHINE,
-            w!("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion") as PCWSTR,
-            0,
-            KEY_WRITE,
-            &mut hKey
-        ) == (ERROR_SUCCESS) as i32 {
-            RegSetValueExW(
-                hKey,
-                w!("PathName") as PCWSTR,
-                0,
-                (REG_SZ) as u32,
-                szBuffer.as_mut_ptr() as LPBYTE,
-                ((wcslen(szBuffer.as_ptr()) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32
-            );
-
-            RegSetValueExW(
-                hKey,
-                w!("SystemRoot") as PCWSTR,
-                0,
-                (REG_SZ) as u32,
-                szBuffer.as_mut_ptr() as LPBYTE,
-                ((wcslen(szBuffer.as_ptr()) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32
-            );
-
-            RegCloseKey(hKey);
+        if InitializeProgramFilesDir() == 0 {
+            FatalError(b"InitializeProgramFilesDir() failed\0".as_ptr() as *mut i8);
+            break 'quit;
         }
 
-        PathAddBackslash(szBuffer.as_mut_ptr());
-        wcscat(szBuffer.as_mut_ptr(), w!("system") as PCWSTR);
-        CreateDirectory(szBuffer.as_mut_ptr(), core::ptr::null_mut());
+        if InitializeProfiles() == 0 {
+            FatalError(b"InitializeProfiles() failed\0".as_ptr() as *mut i8);
+            break 'quit;
+        }
+
+        InitializeDefaultUserLocale();
+
+        if GetWindowsDirectoryW(szBuffer.as_mut_ptr(), ARRAYSIZE!(szBuffer)) != 0 {
+            if RegOpenKeyExW(
+                HKEY_LOCAL_MACHINE,
+                w!("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion") as PCWSTR,
+                0,
+                KEY_WRITE,
+                &mut hKey
+            ) == (ERROR_SUCCESS) as i32 {
+                RegSetValueExW(
+                    hKey,
+                    w!("PathName") as PCWSTR,
+                    0,
+                    (REG_SZ) as u32,
+                    szBuffer.as_mut_ptr() as LPBYTE,
+                    ((wcslen(szBuffer.as_ptr()) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32
+                );
+
+                RegSetValueExW(
+                    hKey,
+                    w!("SystemRoot") as PCWSTR,
+                    0,
+                    (REG_SZ) as u32,
+                    szBuffer.as_mut_ptr() as LPBYTE,
+                    ((wcslen(szBuffer.as_ptr()) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32
+                );
+
+                RegCloseKey(hKey);
+            }
+
+            PathAddBackslash(szBuffer.as_mut_ptr());
+            wcscat(szBuffer.as_mut_ptr(), w!("system") as PCWSTR);
+            CreateDirectory(szBuffer.as_mut_ptr(), core::ptr::null_mut());
+        }
+
+        if SaveDefaultUserHive() != ERROR_SUCCESS {
+            FatalError(b"SaveDefaultUserHive() failed\0".as_ptr() as *mut i8);
+            break 'quit;
+        }
+
+        if CopySystemProfile(0) == 0 {
+            FatalError(b"CopySystemProfile() failed\0".as_ptr() as *mut i8);
+            break 'quit;
+        }
+
+        hHotkeyThread = CreateThread(core::ptr::null_mut(), 0, Some(HotkeyThread), core::ptr::null_mut(), 0, core::ptr::null_mut());
+
+        PreprocessUnattend((TRUE) as i32);
+        if CommonInstall() == 0 {
+            break 'quit;
+        }
+
+        // Upstream 17846e97d08 (CORE-20422): bring up TCP/IP before the wizard, so the
+        // second-stage installer can download Wine Gecko again.
+        let ret = InstallNetworkComponent(w!("MS_TCPIP") as PWSTR);
+        if ret == 0 && GetLastError() != ERROR_FILE_NOT_FOUND {
+            // DPRINT removed
+        } else {
+            SetupStartService(w!("Tcpip") as LPCWSTR, (FALSE) as i32);
+            SetupStartService(w!("Dhcp") as LPCWSTR, (FALSE) as i32);
+            SetupStartService(w!("Dnscache") as LPCWSTR, (FALSE) as i32);
+        }
+
+        InstallWizard();
+
+        // Upstream 55f9484b958 moved this into the wizard's ItemCompletionThread
+        // (SaveSettings, with progress steps). That rewrite is not ported, so it must stay
+        // here: dropping it alone would leave the security settings never installed.
+        InstallSecurity();
+
+        SetAutoAdminLogon();
+
+        SetupCloseInfFile(hSysSetupInf);
+        SetSetupType(0);
+
+        if !hHotkeyThread.is_null() {
+            PostThreadMessage(GetThreadId(hHotkeyThread), (WM_QUIT) as u32, 0, 0);
+            CloseHandle(hHotkeyThread);
+        }
+
+        LogItem!(core::ptr::null_mut(), w!("Installing ReactOS done") as PCWSTR);
+        TerminateSetupActionLog();
+
+        if !AdminInfo.Name.is_null() {
+            RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Name as LPVOID);
+        }
+
+        if !AdminInfo.Domain.is_null() {
+            RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Domain as LPVOID);
+        }
+
+        if !AdminInfo.Password.is_null() {
+            RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Password as LPVOID);
+        }
+
+    } // 'quit
+
+    // HACK (upstream too): this should be done by the caller of InstallWindowsNt().
+    // Enable the shutdown privilege and reboot the machine.
+    if pSetupEnablePrivilege(SE_SHUTDOWN_NAME!() as PCWSTR, (TRUE) as i32) == 0 {
+        // DPRINT1 removed
     }
-
-    if SaveDefaultUserHive() != ERROR_SUCCESS {
-        FatalError(b"SaveDefaultUserHive() failed\0".as_ptr() as *mut i8);
-        return 0;
-    }
-
-    if CopySystemProfile(0) == 0 {
-        FatalError(b"CopySystemProfile() failed\0".as_ptr() as *mut i8);
-        return 0;
-    }
-
-    hHotkeyThread = CreateThread(core::ptr::null_mut(), 0, Some(HotkeyThread), core::ptr::null_mut(), 0, core::ptr::null_mut());
-
-    PreprocessUnattend((TRUE) as i32);
-    if CommonInstall() == 0 {
-        return 0;
-    }
-
-    InstallWizard();
-
-    InstallSecurity();
-
-    SetAutoAdminLogon();
-
-    SetupCloseInfFile(hSysSetupInf);
-    SetSetupType(0);
-
-    if !hHotkeyThread.is_null() {
-        PostThreadMessage(GetThreadId(hHotkeyThread), (WM_QUIT) as u32, 0, 0);
-        CloseHandle(hHotkeyThread);
-    }
-
-    LogItem!(core::ptr::null_mut(), w!("Installing ReactOS done") as PCWSTR);
-    TerminateSetupActionLog();
-
-    if !AdminInfo.Name.is_null() {
-        RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Name as LPVOID);
-    }
-
-    if !AdminInfo.Domain.is_null() {
-        RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Domain as LPVOID);
-    }
-
-    if !AdminInfo.Password.is_null() {
-        RtlFreeHeap(RtlGetProcessHeap(), 0, AdminInfo.Password as LPVOID);
-    }
-
-    if OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &mut token) == 0 {
-        FatalError(b"OpenProcessToken() failed!\0".as_ptr() as *mut i8);
-        return 0;
-    }
-    if LookupPrivilegeValue(
-        core::ptr::null_mut(),
-        SE_SHUTDOWN_NAME!(),
-        &mut privs.Privileges[0].Luid
-    ) == 0 {
-        FatalError(b"LookupPrivilegeValue() failed!\0".as_ptr() as *mut i8);
-        return 0;
-    }
-    privs.PrivilegeCount = 1;
-    privs.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-    if AdjustTokenPrivileges(
-        token,
-        (FALSE) as i32,
-        &mut privs,
-        0,
-        core::ptr::null_mut(),
-        core::ptr::null_mut()
-    ) == 0 {
-        FatalError(b"AdjustTokenPrivileges() failed!\0".as_ptr() as *mut i8);
-        return 0;
-    }
-
     ExitWindowsEx((EWX_REBOOT) as u32, 0);
     return 0;
 }

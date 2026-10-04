@@ -37,21 +37,6 @@ if(ARCH STREQUAL "i386")
     )
 endif()
 
-if(MSVC)
-    add_compile_options(
-        /wd4090 # 'function': different 'const' qualifiers
-        /wd4146 # 'minus' operator applied to unsigned type, result still unsigned
-        /wd4164 # 'function': intrinsic function not declared
-        /wd4267 # 'conversion from 'size_t' to 'unsigned int', possible loss of data'
-        /wd4723 # potential divide by 0
-    )
-    if(ARCH STREQUAL "amd64")
-        add_compile_options(#msvcrt PRIVATE
-            /wd4334 # 'result of 32-bit shift implicitly converted to 64 bits (was 64-bit shift intended?)'
-        )
-    endif()
-endif()
-
 ###############################################################################
 # A static library shared with ucrtbase
 ###############################################################################
@@ -80,23 +65,6 @@ elseif(ARCH STREQUAL "arm64")
     list(APPEND SHARED_SOURCE
         except_arm64.c
     )
-endif()
-
-# MSVC asm code
-if(MSVC)
-    if(ARCH STREQUAL "i386")
-        list(APPEND SHARED_ASM_SOURCE
-            i386/cpp_alias.s
-            i386/cpp_vtables.s
-            i386/except_i386_asm.s
-        )
-    elseif(ARCH STREQUAL "amd64")
-        list(APPEND SHARED_ASM_SOURCE
-            amd64/cpp_alias.s
-            amd64/cpp_vtables.s
-            amd64/except_x86_64.s
-        )
-    endif()
 endif()
 
 add_asm_files(msvcrt_shared_asm ${SHARED_ASM_SOURCE})
@@ -226,8 +194,7 @@ set_module_type(msvcrt win32dll ENTRYPOINT DllMain 12)
 # msvcrt_static so lld first-match selects the Rust symbols; the C monolith
 # copies (string.c etc.) go dead (--allow-multiple-definition, MODULE-link
 # default). Mirrors libcntpr.cmake's cnt-rust swap but with USER-MODE codegen
-# (i386 keeps the ReactOS -sse,-sse2 baseline like the C build; wave 1 is
-# integer-only so SSE is irrelevant). See
+# (i386 is SSE2 since 2026-10-03 -- see the RUSTFLAGS below). See
 # docs/engineering/active-lanes/msvcrt-from-pieces-plan.md.
 # NOTE: `-C no-prepopulate-passes` (the captures(none) class-guard, field manual
 # §1253) is deliberately NOT set here. It disables rustc's optimization pipeline
@@ -245,8 +212,17 @@ set_module_type(msvcrt win32dll ENTRYPOINT DllMain 12)
 set(MSVCRT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(MSVCRT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/msvcrt-crt-rust-target")
 if(ARCH STREQUAL "i386")
+    # SSE2, as ucrtbase (2026-10-03): no kernel-side consumer links this archive, every
+    # MSVC-built x86 program has required SSE2 since VS2012, and it is the only way the
+    # `libm` crate builds here (under -sse rustc rejects its Rust-ABI f64 functions). The
+    # cost is pre-SSE2 CPUs (Pentium III / Athlon XP and older), which nothing we target
+    # has. The FP-control quartet (_control87/_statusfp/_clearfp) is already Wine's
+    # both-unit version (msvcrt-crt-rust/src/msvcrt/math.rs), so fesetround reaches MXCSR.
+    # Spelled out, not left empty: sdk/lib/rust/.cargo/config.toml gives this triple
+    # -sse,-sse2, and an unset RUSTFLAGS would let that apply. msvcrt20/msvcrt40/crtdll
+    # link this same archive.
     set(MSVCRT_RUST_TARGET "i686-pc-windows-gnu")
-    set(MSVCRT_RUST_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
+    set(MSVCRT_RUST_ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")
 elseif(ARCH STREQUAL "amd64")
     set(MSVCRT_RUST_TARGET "x86_64-pc-windows-gnu")
     set(MSVCRT_RUST_ENV "")
@@ -263,7 +239,7 @@ set(MSVCRT_CRT_RUST_LIB "${MSVCRT_RUST_COHAB_LIB}")
 # missing the day the string family moved into it. verify_ucrtbase_cohab.py
 # derives the closure from the manifests and fails if this list and it disagree.
 set(MSVCRT_CRT_RUST_CRATES
-    msvcrt-crt-cargo cnt-rust crt-portable-rust crt-shared-rust msvcrt-crt-rust
+    msvcrt-crt-cargo cnt-rust musl-math crt-portable-rust crt-shared-rust msvcrt-crt-rust
     msvcrt-sys panic-common)
 set(MSVCRT_CRT_RUST_GLOBS)
 set(MSVCRT_CRT_RUST_MANIFESTS)
@@ -303,12 +279,6 @@ if(ARCH STREQUAL "i386")
 endif()
 add_importlibs(msvcrt kernel32 kernel32_vista ntdll)
 add_delay_importlibs(msvcrt user32 advapi32)
-
-if(MSVC)
-    # Silence warning C4102: export of deleting destructor "name"
-    target_link_options(msvcrt PRIVATE "/ignore:4102")
-    set_property(TARGET libmsvcrt APPEND PROPERTY STATIC_LIBRARY_OPTIONS "/ignore:4102")
-endif()
 
 add_cd_file(TARGET msvcrt DESTINATION reactos/system32 FOR all)
 

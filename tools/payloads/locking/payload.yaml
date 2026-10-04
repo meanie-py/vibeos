@@ -1,0 +1,19 @@
+# locking — _locking's retry contract (1 s apart, ten tries, EDEADLOCK) in ucrtbase.dll and
+# msvcrt.dll, graded against the documented behaviour; too slow for ucrtdiff's 8 s budget.
+#   tools/payloads/locking/build.sh {arch}
+#   VIBEOS_PAYLOAD=locking ./vibeos-cli build --arch {arch}
+#   ./vibeos-cli smoke --arch {arch} --payload locking
+name: locking
+description: _locking retry/EDEADLOCK contract in ucrtbase and msvcrt
+
+build_hint: "tools/payloads/locking/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/locking/locking-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/locking.exe
+
+test:
+  launch_marker: "[LOCKING] done"
+  pass_marker: "[LOCKING] done PASS"
+  launch_drain_secs: 300

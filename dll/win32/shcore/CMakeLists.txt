@@ -14,9 +14,6 @@ list(APPEND SOURCE
 
 add_library(shcore MODULE ${SOURCE})
 set_module_type(shcore win32dll ENTRYPOINT 0)
-if(MSVC)
-    target_compile_options(shcore PRIVATE /wd4267) # warning C4267: '=': conversion from 'size_t' to 'ULONG', possible loss of data
-endif()
 target_link_libraries(shcore crtheap wine wine_dll_canunload)
 add_importlibs(shcore combase advapi32 advapi32_vista kernel32 ntdll)
 add_dependencies(shcore psdk)

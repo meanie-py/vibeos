@@ -378,7 +378,7 @@
 378 stdcall -noname MLLoadLibraryW(wstr long long)
 379 stub -noname Shell_GetCachedImageIndexWrapW
 380 stub -noname Shell_GetCachedImageIndexWrapA
-381 stub -noname AssocCopyVerbs
+381 stdcall -noname AssocCopyVerbs(ptr ptr)
 382 stdcall -noname ZoneComputePaneSize(ptr)
 383 stub -noname ZoneConfigureW
 384 stub -noname SHRestrictedMessageBox
@@ -404,10 +404,10 @@
 404 stdcall -noname IShellFolder_EnumObjects(ptr ptr long ptr) SHIShellFolder_EnumObjects
 405 stdcall -noname MLBuildResURLA(str ptr long str ptr long)
 406 stdcall -noname MLBuildResURLW(wstr ptr long wstr ptr long)
-407 stub -noname AssocMakeProgid
-408 stub -noname AssocMakeShell
-409 stub -noname AssocMakeApplicationByKeyW
-410 stub -noname AssocMakeApplicationByKeyA
+407 stdcall -noname AssocMakeProgid(ptr ptr ptr ptr)
+408 stdcall -noname AssocMakeShell(ptr ptr ptr ptr)
+409 stdcall -noname AssocMakeApplicationByKeyW(ptr ptr ptr)
+410 stdcall -noname AssocMakeApplicationByKeyA(ptr ptr ptr)
 411 stub -noname AssocMakeFileExtsToApplicationW
 412 stub -noname AssocMakeFileExtsToApplicationA
 413 stdcall -noname SHGetMachineInfo(long)
@@ -541,7 +541,7 @@
 541 stub -noname SHInvokeCommandsOnContextMenu
 542 stdcall -noname GetUIVersion()
 543 stdcall -noname CreateColorSpaceWrapW(ptr) gdi32.CreateColorSpaceW
-544 stub -noname QuerySourceCreateFromKey
+544 stdcall -noname QuerySourceCreateFromKey(ptr wstr long ptr ptr)
 545 stdcall -noname SHForwardContextMenuMsg(ptr long long long ptr long)
 546 stub -noname IUnknown_DoContextMenuPopup
 547 stdcall DelayLoadFailureHook(str str) kernel32.DelayLoadFailureHook
