@@ -34,6 +34,7 @@ POWER=1
 RAMDISK=0
 SANBOOT=1
 SHELL_ONLY=0
+PICO_FLASH=0
 for arg in "$@"; do
     case "$arg" in
         --no-launch) LAUNCH=0 ;;
@@ -47,7 +48,10 @@ for arg in "$@"; do
         # Power-cycle into the firmware's UEFI Shell and stop there: for reading
         # bench media (the card, a USB stick) with a second FAT implementation.
         --shell) SHELL_ONLY=1 ;;
-        *) echo "usage: $0 [--no-power] | --card [--no-power] [--no-launch] [--ramdisk] | --shell [--no-power]" >&2; exit 2 ;;
+        # Copy payload/pico.uf2 onto the Pico's BOOTSEL volume from the Shell.
+        # Use tools/pi4/pico-flash.sh, which stages and verifies around this.
+        --pico-flash) PICO_FLASH=1 ;;
+        *) echo "usage: $0 [--no-power] | --card [--no-power] [--no-launch] [--ramdisk] | --shell [--no-power] | --pico-flash" >&2; exit 2 ;;
     esac
 done
 
@@ -166,6 +170,20 @@ tftp_to_card() {
         exit 1
     fi
 }
+
+# The Pico's USB is on the Pi, so its BOOTSEL volume appears HERE, not on the
+# host. picoflash.nsh sleeps first, so it is already running when the Pico (and
+# with it this serial console) drops off the network to become that volume; it
+# then rescans USB and copies the UF2 onto whichever filesystem has INFO_UF2.TXT.
+if [ "$PICO_FLASH" -eq 1 ]; then
+    tftp_to_card pico.uf2 "$CARD:\\pico.uf2"
+    tftp_to_card picoflash.nsh "$CARD:\\picoflash.nsh"
+    log "starting the copy script, then rebooting the Pico into BOOTSEL"
+    "$SEND" "$CARD:\\picoflash.nsh"
+    sleep 2
+    "$(dirname "$0")/pico.sh" bootsel >/dev/null || { log "the Pico refused bootsel"; exit 1; }
+    exit 0
+fi
 
 if [ "$SANBOOT" -eq 1 ]; then
     log "TFTP: ipxe.efi + autoexec.ipxe onto the card"

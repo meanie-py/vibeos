@@ -2,7 +2,8 @@
 //! `acosh`, `asinh`, `atanh`, `cbrt`, `erf`/`erfc`, `expm1`, `log1p`, `lgamma`,
 //! `tgamma`, `logb`/`ilogb`, `rint`/`nearbyint`/`lround`/`llround`/`llrint`,
 //! `trunc`, `remainder`/`remquo`, `fmin`/`fmax`/`fdim`, `copysign`, `nan`, each
-//! with its `f` form, plus `_fpclassf`, `_dpcomp`/`_fdpcomp` and `_Cbuild`/`creal`.
+//! with its `f` form -- and `fma`, `log2`, `lrint`, which were worse than stubs in
+//! dll/win32/ucrtbase/stubs.c (`lrint` was `__debugbreak()`) -- plus `_fpclassf`, `_dpcomp`/`_fdpcomp` and `_Cbuild`/`creal`.
 //! A stub printed "calling stub" and returned whatever was in the return register,
 //! so every UCRT program using one got a wrong number with no error.
 //!
@@ -193,6 +194,53 @@ pub extern "C" fn log1pf(x: f32) -> f32 {
         set_errno(EDOM);
     }
     libm::log1pf(x)
+}
+
+/// `log2`: `±0` is a pole (`ERANGE`), a negative argument a domain error (Wine's musl
+/// patch points). Was `log(x) * M_LOG2E` in stubs.c, which is not exact even at powers
+/// of two.
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn log2(x: f64) -> f64 {
+    if x == 0.0 {
+        set_errno(ERANGE);
+    } else if x < 0.0 {
+        set_errno(EDOM);
+    }
+    libm::log2(x)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn log2f(x: f32) -> f32 {
+    if x == 0.0 {
+        set_errno(ERANGE);
+    } else if x < 0.0 {
+        set_errno(EDOM);
+    }
+    libm::log2f(x)
+}
+
+/// `fma`: one rounding (stubs.c computed `x * y + z`, two). An invalid operation -- a NaN
+/// result from NaN-free operands, i.e. `inf * 0` or `inf - inf` -- is `EDOM`.
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn fma(x: f64, y: f64, z: f64) -> f64 {
+    let r = libm::fma(x, y, z);
+    if r.is_nan() && !x.is_nan() && !y.is_nan() && !z.is_nan() {
+        set_errno(EDOM);
+    }
+    r
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn fmaf(x: f32, y: f32, z: f32) -> f32 {
+    let r = libm::fmaf(x, y, z);
+    if r.is_nan() && !x.is_nan() && !y.is_nan() && !z.is_nan() {
+        set_errno(EDOM);
+    }
+    r
 }
 
 // ── gamma ────────────────────────────────────────────────────────────────────
@@ -530,6 +578,43 @@ pub extern "C" fn llrintf(x: f32) -> i64 {
         return 0;
     }
     to_i64_like_c(d)
+}
+
+/// `lrint`: Wine's range is `[LONG_MIN, ULONG_MAX]`, and the conversion to `long` of a
+/// value past `LONG_MAX` is x86's indefinite `LONG_MIN`, as `llrint`'s is.
+fn lrint_range(d: f64) -> bool {
+    d >= -TWO_31 && d < 2.0 * TWO_31
+}
+
+fn to_long_like_c(d: f64) -> c_long {
+    if cfg!(any(target_arch = "x86", target_arch = "x86_64")) && d >= TWO_31 {
+        c_long::MIN
+    } else {
+        d as c_long
+    }
+}
+
+/// `lrint`. Was `__debugbreak()` in dll/win32/ucrtbase/stubs.c.
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn lrint(x: f64) -> c_long {
+    let d = rint_env(x);
+    if !lrint_range(d) {
+        set_errno(EDOM);
+        return 0;
+    }
+    to_long_like_c(d)
+}
+
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn lrintf(x: f32) -> c_long {
+    let d = rintf_env(x) as f64;
+    if !lrint_range(d) {
+        set_errno(EDOM);
+        return 0;
+    }
+    to_long_like_c(d)
 }
 
 fn to_i64_like_c(d: f64) -> i64 {

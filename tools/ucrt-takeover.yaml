@@ -1938,8 +1938,9 @@ families:
     provenance: libm-crate
     replaces:
       - the ucrtbase.spec -stub entries for the C99 math functions and _fpclassf/_dpcomp/_fdpcomp/_Cbuild/creal (Microsoft's UCRT source drop has no libm, so no body existed in any CRT source here)
+      - dll/win32/ucrtbase/stubs.c's fma/fmaf (unfused), log2/log2f (log * M_LOG2E) and lrint/lrintf (__debugbreak)
     oracle: >
-      tools/payloads/c99math in the guest on all three arches -- values vs the host glibc libm within a per-row ulp budget (exact where the Windows contract or a correctly-rounded value differs from glibc), errno vs the UCRT contract (Wine's test_math_errors rows and its native-verified msvcr120 remainder/_dpcomp/_Cbuild tables), rint/nearbyint/rintf in all four rounding modes, nearbyint's inexact discipline, remquo's quotient, _fpclassf -- i386 482, amd64 492, arm64 492 checks, 0 failed; a mutant (remainder's NaN domain clause dropped) fails 3. The first run found two real bugs: libm's aarch64 rint ignores the rounding mode (now frintx/frinti), and sdk/lib/crt's i386 _controlfp never reached MXCSR (now Wine's both-unit quartet in fenv.rs).
+      tools/payloads/c99math in the guest on all three arches -- values vs the host glibc libm within a per-row ulp budget (exact where the Windows contract or a correctly-rounded value differs from glibc), errno vs the UCRT contract (Wine's test_math_errors rows and its native-verified msvcr120 remainder/_dpcomp/_Cbuild tables), rint/nearbyint/rintf in all four rounding modes, nearbyint's inexact discipline, remquo's quotient, _fpclassf -- i386 482, amd64 492, arm64 492 checks, 0 failed at first landing, i386 588, amd64 604, arm64 604 with fma/log2/lrint and the msvcrt.dll pow/log10/fmod rows; a mutant (remainder's NaN domain clause dropped) fails 3. The first run found two real bugs: libm's aarch64 rint ignores the rounding mode (now frintx/frinti), and sdk/lib/crt's i386 _controlfp never reached MXCSR (now Wine's both-unit quartet in fenv.rs).
     note: >
       The algorithms are the `libm` crate (musl's libm in Rust, MIT; Wine's msvcrt takes the same functions from its musl copy). Ours is the UCRT contract on top: errno (EDOM/ERANGE, never _matherr) at Wine's musl patch points, Microsoft's FP_ILOGBNAN, signed-zero ordering in fmin/fmax, and Wine's lround/llrint range checks. See src/c99math.rs.
     exports:
@@ -1967,6 +1968,8 @@ families:
       - fdim
       - fdimf
       - _fdpcomp
+      - fma
+      - fmaf
       - fmax
       - fmaxf
       - fmin
@@ -1982,8 +1985,12 @@ families:
       - llroundf
       - log1p
       - log1pf
+      - log2
+      - log2f
       - logb
       - logbf
+      - lrint
+      - lrintf
       - lround
       - lroundf
       - nan

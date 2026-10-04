@@ -695,7 +695,8 @@ fn main() {
         // Wave MATH-TIERC sub-wave 2: exp/log/log10/pow/fmod = the genuine
         // portable kernel-CRT .c (the same math/arm64/*.c used on both
         // amd64-llvm-mingw and arm64), renamed to ref_*. exp/log/fmod are
-        // real algorithms; log10/pow are upstream's rough stubs — all are
+        // real algorithms (log10/pow were upstream's rough stubs and are no longer
+        // references: cnt-rust takes them from the libm crate now) — all are
         // self-contained (no libm call) and bit-exact under -ffp-contract=off.
         // The `#define X ref_X` token-renames only the public symbol (e.g.
         // `log` does not touch `log10`/`logb`; `fmod` does not touch `fmodf`).
@@ -705,8 +706,6 @@ fn main() {
         // macro and corrupts the header. log10.c has no <math.h> include.
         ("exp", format!("#include <math.h>\n#define exp ref_exp\n{}", inc(s("math/arm64/exp.c")))),
         ("log", format!("#include <math.h>\n#define log ref_log\n{}", inc(s("math/arm64/log.c")))),
-        ("log10", format!("#define log10 ref_log10\n{}", inc(s("math/arm64/log10.c")))),
-        ("pow", format!("#include <math.h>\n#define pow ref_pow\n{}", inc(s("math/arm64/pow.c")))),
         ("fmod", format!("#include <math.h>\n#define fmod ref_fmod\n{}", inc(s("math/arm64/fmod.c")))),
         // Wave MATH-TIERC sub-wave 4: ceil/floor via __builtin_* so clang -O2
         // lowers them to hardware roundsd/roundss (correctly rounded) — an
