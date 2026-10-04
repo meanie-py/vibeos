@@ -645,8 +645,22 @@ Record it here and keep going; only chase one when it looks load-bearing.
   **The fix for x86 rr** is therefore to decide the ARC name by what the medium
   IS rather than how the device presents — detect ISO9660 and use `cdrom(N)`
   regardless of block size — or to teach the rdisk path to mount ISO9660. The
-  first is smaller and is where the bug is. Then x86 record/replay follows over
-  usb-storage with no rr changes at all.
+  first is smaller and is where the bug is.
+
+  **Loader half FIXED 2026-10-04; the claim that rr then "follows with no rr changes"
+  was wrong.** There were two gates, not one: `UefiSetBootpath` chose the arm, and
+  `UefiInitializeBootDevices` registered the `cdrom(N)` device behind a second copy of
+  the same 2048-byte test, so the first fix alone produced `arc branch = CDROM` and
+  then the identical `RunLoader RETURNED (no boot config)`. Both now follow one
+  question -- does the device carry an ISO9660 volume (`UefiMediumIsIso9660`) -- and
+  over usb-storage freeldr loads the hive, the NLS files and every boot driver from
+  `cdrom(0)`. **The kernel then stops at `0x6B`**: QEMU's usb-storage presents
+  "QEMU HARDDISK", so usbstor hands it to `disk.sys`, no CD-ROM device object exists,
+  and cdfs (which mounts only on CD-ROM devices) has nothing to mount the system
+  volume on. Owed for x86 rr: either a USB CD presentation (`usb-bot` + `scsi-cd`,
+  which `blkreplay` refuses -- see above) or ISO9660 mounted from a disk-class device.
+  The prediction was made without booting past the loader; the boot that would have
+  checked it was one command away.
 
   Worth noting how the wrong conclusion was reached, since it is cheap to repeat:
   one transport was tested, it failed, and the cause was attributed to the thing
