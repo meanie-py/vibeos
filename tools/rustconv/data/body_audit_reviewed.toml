@@ -1306,3 +1306,2056 @@ function = "IoMapTransfer"
 callees = ["KeAcquireSpinLock(->KeAcquireSpinLockRaiseToDpc)", "KeReleaseSpinLock(->KfReleaseSpinLock)"]
 verdict = "false"
 note = "the dma.rs helpers ke_acquire_spinlock / ke_release_spinlock raise IRQL and take the lock (fixed 2026-10-04); arm64 twins are separate stubs"
+
+# body-audit medium-lead triage, 2026-10-04 (packet B).
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "PrepareAdapterForService"
+callees = ["LoadAlternateConfiguration"]
+verdict = "owed"
+note = "owed to upstream-sync: 10092f84660 alternate-configuration cluster (LoadAlternateConfiguration), tracked there as deferred"
+
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "dhcp"
+callees = ["void"]
+verdict = "false"
+note = "`void (*handler)(struct packet *)` is a function-pointer DECLARATION, not a call; Rust binds `handler` per match arm"
+
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "priv_script_write_params"
+callees = ["broadcast_addr", "subnet_number"]
+verdict = "benign"
+note = "subnet_number/broadcast_addr results only feed `#if 0` script_set_env calls in the C; nothing observable is computed"
+
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "addr_eq"
+callees = ["memcmp"]
+verdict = "false"
+note = "memcmp is the slice equality `a_slice == b_slice` over iabuf[..len]"
+
+[[reviewed]]
+module = "base/services/umpnpmgr"
+function = "PNP_FreeLogConf"
+callees = ["NextResourceRequirement"]
+verdict = "owed"
+note = "owed to upstream-sync: 46e69e6e507 implements deleting one alternative from a multi-list requirements list in PNP_FreeLogConf (+50 lines, feature)"
+
+[[reviewed]]
+module = "base/services/umpnpmgr"
+function = "ServiceMain"
+callees = ["IsMiniNT"]
+verdict = "owed"
+note = "owed to upstream-sync: b1bd421163b replaces RunningOnLiveMedium() with IsMiniNT() (MiniNT-key check), ~-34 lines refactor"
+
+[[reviewed]]
+module = "base/system/services"
+function = "ScmCopyControlSet"
+callees = ["_swprintf"]
+verdict = "false"
+note = "_swprintf is 1cf31524d50's rename of swprintf; Rust formats SYSTEM\\ControlSet%03lu with write_controlset_name"
+
+[[reviewed]]
+module = "base/system/services"
+function = "ScmDeleteControlSet"
+callees = ["_swprintf"]
+verdict = "false"
+note = "_swprintf is 1cf31524d50's rename of swprintf; Rust formats SYSTEM\\ControlSet%03lu with write_controlset_name"
+
+[[reviewed]]
+module = "base/system/services"
+function = "ScmCreateNewControlPipe"
+callees = ["StringCchPrintfW"]
+verdict = "false"
+note = "StringCchPrintfW open-coded: NtControlPipe prefix copied + decimal appended bounded by the buffer length"
+
+[[reviewed]]
+module = "base/system/services"
+function = "ScmLoadService"
+callees = ["StringCchPrintfW"]
+verdict = "false"
+note = "StringCchPrintfW(L\"%lu\") open-coded via scm_append_u32 into the bounded szLogBuffer"
+
+[[reviewed]]
+module = "base/system/services"
+function = "ScmQueryServiceLockStatusA"
+callees = ["strcpy"]
+verdict = "false"
+note = "strcpy/wcscpy of \"\" is the single NUL store just past the struct"
+
+[[reviewed]]
+module = "base/system/services"
+function = "ScmQueryServiceLockStatusW"
+callees = ["wcscpy"]
+verdict = "false"
+note = "strcpy/wcscpy of \"\" is the single NUL store just past the struct"
+
+[[reviewed]]
+module = "base/system/services"
+function = "ScmStopThread"
+callees = ["StringCchPrintfW"]
+verdict = "false"
+note = "ScmStopThread delegates to ScmStopThread_impl, which formats %lu into szLogBuffer with a bounded helper"
+
+[[reviewed]]
+module = "base/system/smss"
+function = "SmpCreateDynamicEnvironmentVariables"
+callees = ["RtlStringCbPrintfW"]
+verdict = "false"
+note = "RtlStringCbPrintfW(\", %.*s\") is the exported _snwprintf with a WCHAR count; same bounded append"
+
+[[reviewed]]
+module = "base/system/smss"
+function = "SmpAllocateSessionId"
+callees = ["UNIMPLEMENTED_DBGBREAK(->__debugbreak)"]
+verdict = "benign"
+note = "UNIMPLEMENTED_DBGBREAK only on SessionId wrap-around (2^32 sessions); Rust leaves a comment, path unreachable in practice"
+
+[[reviewed]]
+module = "base/system/smss"
+function = "SmpParseCommandLine"
+callees = ["RtlInitEmptyUnicodeString", "RtlStringCbCopyW"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString is the struct-literal init of FullPathString; RtlStringCbCopyW is the bounded copy_nonoverlapping + NUL"
+
+[[reviewed]]
+module = "base/system/userinit"
+function = "GetLayoutName"
+callees = ["StringCchCopyW", "StringCchPrintfW", "wcsrchr"]
+verdict = "owed"
+note = "owed to upstream-sync: f69f04bc67c rewrites GetLayoutName (buffer length param, LoadLibraryEx datafile, two leak fixes), ~94 lines"
+
+[[reviewed]]
+module = "base/system/userinit"
+function = "ParseUnattend"
+callees = ["GetKeyState"]
+verdict = "owed"
+note = "owed to upstream-sync: b299049410b unattended-setup default actions + Ctrl+Shift+F10 override, ~72 lines"
+
+[[reviewed]]
+module = "base/system/userinit"
+function = "RunLiveCD"
+callees = ["ExpandInstallerPath", "StringCchCatW", "StringCchCopyW", "wcsrchr"]
+verdict = "owed"
+note = "owed to upstream-sync: 064dd8f8320 caches the installer path early (ExpandInstallerPath moves to livecd.c) + b299049410b, ~150 lines"
+
+[[reviewed]]
+module = "base/system/userinit"
+function = "wWinMain"
+callees = ["IsMiniNT"]
+verdict = "owed"
+note = "owed to upstream-sync: d524789ed0e replaces the LiveMedium check with IsMiniNT() (MiniNT key), ~-32 lines refactor"
+
+[[reviewed]]
+module = "base/system/winlogon"
+function = "CallNotificationDll"
+callees = ["__volatile__"]
+verdict = "owed"
+note = "i386-only CORE-20279 ESP-restore asm belt (and the SEH guard) for broken cdecl 3rd-party notify handlers omitted; ~15 lines core::arch::asm!; winlogon lane"
+
+[[reviewed]]
+module = "base/system/winlogon"
+function = "HandleShutdown"
+callees = ["DialogBox", "GetDesktopWindow"]
+verdict = "false"
+note = "DialogBox/GetDesktopWindow sit under `if (FALSE)` in the C; Rust keeps the dead branch as `if false`"
+
+[[reviewed]]
+module = "base/system/winlogon"
+function = "StartSystemShutdown"
+callees = ["_InterlockedCompareExchange8"]
+verdict = "false"
+note = "_InterlockedCompareExchange8 is the local interlocked_cmpxchg8 helper, same operands and comparison"
+
+[[reviewed]]
+module = "base/system/winlogon"
+function = "TerminateSystemShutdown"
+callees = ["_InterlockedCompareExchange8"]
+verdict = "false"
+note = "_InterlockedCompareExchange8 is the local interlocked_cmpxchg8 helper, same operands and comparison"
+
+[[reviewed]]
+module = "dll/win32/lsasrv"
+function = "LsapGetDomainInfo"
+callees = ["RtlInitUnicodeString"]
+verdict = "false"
+note = "RtlInitUnicodeString(L\"BUILTIN\") is the explicit Length=14/MaximumLength=16 init"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "StdDispatch_QueryInterface"
+callees = ["IsEqualIID"]
+verdict = "false"
+note = "IsEqualIID is the local guid_eq helper"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "OLEFontImpl_Construct"
+callees = ["wcsdup"]
+verdict = "false"
+note = "wcsdup is e05d78ede06's rename of strdupW; Rust calls the old strdupW equivalent"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "realize_font"
+callees = ["wcsdup"]
+verdict = "false"
+note = "wcsdup is e05d78ede06's rename of strdupW; Rust calls the old strdupW equivalent"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "copy_from_variant"
+callees = ["CASE_COPY(->x)"]
+verdict = "false"
+note = "CASE_COPY(x) token-pastes VT_##x/V_##x; Rust expands every case as a match arm (the audit read the macro parameter `x` as a callee)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "copy_to_variant"
+callees = ["CASE_COPY(->x)"]
+verdict = "false"
+note = "CASE_COPY(x) token-pastes VT_##x/V_##x; Rust expands every case as a match arm (the audit read the macro parameter `x` as a callee)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "CreateTypeLib2"
+callees = ["wcsdup"]
+verdict = "false"
+note = "wcsdup is the Wine-10 rename of heap_alloc+lstrcpyW; Rust allocates and copies the path"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ICreateTypeInfo2_fnAddFuncDesc"
+callees = ["TLB_relink_custdata"]
+verdict = "false"
+note = "TLB_relink_custdata is Wine 10's helper for the relink loop the Rust already has inline; memset is HeapReAlloc(HEAP_ZERO_MEMORY)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ICreateTypeInfo2_fnAddVarDesc"
+callees = ["TLB_relink_custdata", "memset"]
+verdict = "false"
+note = "TLB_relink_custdata is Wine 10's helper for the relink loop the Rust already has inline; memset is HeapReAlloc(HEAP_ZERO_MEMORY)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ICreateTypeInfo2_fnDeleteFuncDesc"
+callees = ["TLB_relink_custdata", "memmove", "typeinfo_release_funcdesc"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; ICreateTypeInfo2::DeleteFuncDesc is still the pre-sync E_NOTIMPL stub"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeInfo2_fnGetAllFuncCustData"
+callees = ["ITypeInfoImpl_GetInternalFuncDesc"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; Get*CustData now resolve through ITypeInfoImpl_GetInternalFuncDesc (dispatch-inherited funcs for TKIND_DISPATCH)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeInfo2_fnGetAllParamCustData"
+callees = ["ITypeInfoImpl_GetInternalFuncDesc"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; Get*CustData now resolve through ITypeInfoImpl_GetInternalFuncDesc (dispatch-inherited funcs for TKIND_DISPATCH)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeInfo2_fnGetFuncCustData"
+callees = ["ITypeInfoImpl_GetInternalFuncDesc"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; Get*CustData now resolve through ITypeInfoImpl_GetInternalFuncDesc (dispatch-inherited funcs for TKIND_DISPATCH)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeInfo2_fnGetParamCustData"
+callees = ["ITypeInfoImpl_GetInternalFuncDesc"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; Get*CustData now resolve through ITypeInfoImpl_GetInternalFuncDesc (dispatch-inherited funcs for TKIND_DISPATCH)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeInfoImpl_Destroy"
+callees = ["typeinfo_release_funcdesc"]
+verdict = "false"
+note = "typeinfo_release_funcdesc is Wine 10's extraction of the per-funcdesc free loop the Rust has inline"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeInfoImpl_GetInternalFuncDesc"
+callees = ["ITypeInfoImpl_GetInternalDispatchFuncDesc"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; GetInternalFuncDesc now forwards TKIND_DISPATCH to GetInternalDispatchFuncDesc and returns TLBFuncDesc + hrefoffset"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeInfo_fnGetDllEntry"
+callees = ["IS_INTRESOURCE", "TLB_get_funcdesc_by_memberid_invkind"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; GetDllEntry now looks up by memid+invkind (TLB_get_funcdesc_by_memberid_invkind); IS_INTRESOURCE itself is IS_INTRESOURCE_PTR"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeInfo_fnGetNames"
+callees = ["typeinfo_getnames"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; GetNames refactored onto typeinfo_getnames"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeInfo_fnInvoke"
+callees = ["SafeArrayAllocDescriptorEx"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; Invoke's vararg SAFEARRAY creation changed to SafeArrayAllocDescriptorEx"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeInfo_fnQueryInterface"
+callees = ["IsEqualIID"]
+verdict = "false"
+note = "IsEqualIID is the local guid_eq helper"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeLib2_Constructor_MSFT"
+callees = ["TLB_fix_typeinfo_ptr_size"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; MSFT constructor gained TLB_fix_typeinfo_ptr_size"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeLib2_Constructor_SLTG"
+callees = ["strcmp"]
+verdict = "false"
+note = "strcmp of index_string vs index_name is the open-coded byte compare loop over the two C strings"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeLib2_fnGetTypeInfoOfGuid"
+callees = ["IsEqualIID"]
+verdict = "false"
+note = "IsEqualIID is the local guid_eq helper"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeLib2_fnQueryInterface"
+callees = ["IsEqualIID"]
+verdict = "false"
+note = "IsEqualIID is the local guid_eq helper"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeLibComp_fnAddRef"
+callees = ["impl_from_ITypeComp"]
+verdict = "false"
+note = "impl_from_ITypeComp is the module-prefixed tlb_impl_from_ITypeComp"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeLibComp_fnBind"
+callees = ["impl_from_ITypeComp"]
+verdict = "false"
+note = "impl_from_ITypeComp is the module-prefixed tlb_impl_from_ITypeComp"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeLibComp_fnBindType"
+callees = ["impl_from_ITypeComp"]
+verdict = "false"
+note = "impl_from_ITypeComp is the module-prefixed tlb_impl_from_ITypeComp"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeLibComp_fnQueryInterface"
+callees = ["impl_from_ITypeComp"]
+verdict = "false"
+note = "impl_from_ITypeComp is the module-prefixed tlb_impl_from_ITypeComp"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "ITypeLibComp_fnRelease"
+callees = ["impl_from_ITypeComp"]
+verdict = "false"
+note = "impl_from_ITypeComp is the module-prefixed tlb_impl_from_ITypeComp"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "MSFT_DoVars"
+callees = ["MSFT_CustData"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; MSFT_DoVars now reads per-var custdata via MSFT_CustData"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "MSFT_ReadValue"
+callees = ["MultiByteToWideChar"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; MSFT_ReadValue's VT_BSTR read now converts with MultiByteToWideChar(CP_ACP)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "RegisterTypeLib"
+callees = ["MESSAGE", "XX(->MESSAGE)", "swprintf"]
+verdict = "false"
+note = "MESSAGE/XX only print under TRACE_ON(typelib) (channel off); the swprintf version/flags strings are put_hex_lower/put_dec"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "SLTG_DoFuncs"
+callees = ["isalnum"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; SLTG_DoFuncs param-name check gained !isalnum(paramName[-1])"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "SLTG_DoRefs"
+callees = ["sscanf"]
+verdict = "false"
+note = "sscanf/strtol/memcpy are open-coded with scan_lit/scan_hex/hex_val, same field order and widths"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "TLB_GUIDFromString"
+callees = ["memcpy", "sscanf", "strtol"]
+verdict = "false"
+note = "sscanf/strtol/memcpy are open-coded with scan_lit/scan_hex/hex_val, same field order and widths"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "TLB_Mapping_QueryInterface"
+callees = ["IsEqualIID"]
+verdict = "false"
+note = "IsEqualIID is the local guid_eq helper"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "TLB_NEFile_QueryInterface"
+callees = ["IsEqualIID"]
+verdict = "false"
+note = "IsEqualIID is the local guid_eq helper"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "TLB_PEFile_QueryInterface"
+callees = ["IsEqualIID"]
+verdict = "false"
+note = "IsEqualIID is the local guid_eq helper"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "TLB_ReadTypeLib"
+callees = ["GetFinalPathNameByHandleW", "wcsdup", "wcsicmp"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; TLB_ReadTypeLib canonicalises the path with GetFinalPathNameByHandleW; wcsdup/wcsicmp themselves are heap_alloc+lstrcpyW/_wcsicmp"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "TLB_copy_all_custdata"
+callees = ["VariantInit"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; TLB_copy_all_custdata now VariantInit()s the destination before VariantCopy"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "TLB_get_custdata_by_guid"
+callees = ["IsEqualIID"]
+verdict = "false"
+note = "IsEqualIID is the local guid_eq helper"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "TLB_register_interface"
+callees = ["swprintf"]
+verdict = "false"
+note = "swprintf(L\"%x.%x\") is put_hex_lower '.' put_hex_lower"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "find_typelib_key"
+callees = ["lstrcpyW", "sscanf"]
+verdict = "false"
+note = "lstrcpyW is the memcpy of wide!(\"Typelib\\\\\") incl. NUL; sscanf(\"%x.%x\") is parse_hex_dot_hex (Wine 10 separately added `v_min >= *wMin`, owed with the e05d78ede06 sync)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "get_interface_key"
+callees = ["lstrcpyW"]
+verdict = "false"
+note = "lstrcpyW is the memcpy of wide!(\"Interface\\\\\") incl. NUL"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "get_lcid_subkey"
+callees = ["swprintf"]
+verdict = "false"
+note = "swprintf(L\"%lx\\\\\") is put_hex_lower + '\\\\' + NUL"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "get_typelib_key"
+callees = ["lstrcpyW", "swprintf"]
+verdict = "false"
+note = "lstrcpyW is the memcpy of wide!(\"Typelib\\\\\"); swprintf(L\"\\\\%x.%x\") is put_hex_lower"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VARIANT_FormatDate"
+callees = ["VarDateFromR8", "wcstod"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; VARIANT_FormatDate now accepts a numeric BSTR via wcstod + VarDateFromR8"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VarFormatCurrency"
+callees = ["VarCyFromStr"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; VarFormatCurrency now converts BSTR input with VarCyFromStr"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VarTokenizeFormatString"
+callees = ["wcsnicmp"]
+verdict = "false"
+note = "wcsnicmp is _wcsnicmp (git -S hit is only the fork commit)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VARIANT_CopyIRecordInfo"
+callees = ["CoTaskMemAlloc", "memset"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; VARIANT_CopyIRecordInfo now allocates with CoTaskMemAlloc and zeroes"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VARIANT_GetLocalisedNumberChars"
+callees = ["GetLastError", "wcslen"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; VARIANT_GetLocalisedNumberChars gained the ERROR_INSUFFICIENT_BUFFER retry and sCurrencyLen"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VarAbs"
+callees = ["ABS_CASE(->typ)"]
+verdict = "false"
+note = "ABS_CASE(typ,min) token-pastes VT_##typ; Rust expands each case as a match arm"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VarParseNumFromStr"
+callees = ["is_digit", "wcsncmp"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; VarParseNumFromStr rewritten around is_digit and multi-char currency (wcsncmp sCurrency)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VARIANT_BstrFromReal"
+callees = ["labs", "wcschr", "wcstol"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; VARIANT_BstrFromReal rewritten exponent handling (wcschr 'E', labs(wcstol))"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VARIANT_BstrReplaceDecimal"
+callees = ["wcscat"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; VARIANT_BstrReplaceDecimal now re-appends the exponent (wcscat)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VarBoolFromStr"
+callees = ["wcsicmp"]
+verdict = "false"
+note = "wcsicmp is _wcsicmp"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VarCyFromR8"
+callees = ["__volatile__"]
+verdict = "benign"
+note = "the x87 fnclex/fistpll asm branch is replaced by the C's own portable #else branch; per the C comment only boundary cases differ, i386 only"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VarDateFromStr"
+callees = ["wcsnicmp"]
+verdict = "false"
+note = "wcsnicmp is _wcsnicmp (git -S hit is only the fork commit)"
+
+[[reviewed]]
+module = "dll/win32/oleaut32"
+function = "VarDecAdd"
+callees = ["VARIANT_int_divbychar"]
+verdict = "owed"
+note = "owed to upstream-sync: oleaut32 Wine 10.0 sync e05d78ede06 (2026-07-20, ~2.3k-line typelib.c + variant/vartype/varformat delta) landed on C after the 2026-07-13 flip; VarDecAdd rounding path now uses VARIANT_int_divbychar"
+
+[[reviewed]]
+module = "subsystems/csr/csrsrv"
+function = "CsrApiRequestThread"
+callees = ["NtTerminateThread"]
+verdict = "false"
+note = "NtTerminateThread follows a while(TRUE) with no top-level break in the C: unreachable; Rust's loop never exits either"
+
+[[reviewed]]
+module = "subsystems/csr/csrsrv"
+function = "CsrConnectToUser"
+callees = ["RtlInitAnsiString"]
+verdict = "false"
+note = "RtlInitAnsiString is the explicit Buffer/Length/MaximumLength init (\"user32\" 6/7, \"ClientThreadSetup\" 17/18)"
+
+[[reviewed]]
+module = "subsystems/csr/csrsrv"
+function = "CsrValidateMessageString"
+callees = ["wcslen"]
+verdict = "false"
+note = "wcslen is the open-coded `while *ptr != 0` count"
+
+[[reviewed]]
+module = "subsystems/csr/csrsrv"
+function = "CsrParseServerCommandLine"
+callees = ["strchr"]
+verdict = "false"
+note = "strchr(ParameterName, '=') is the open-coded scan for b'='"
+
+[[reviewed]]
+module = "subsystems/csr/csrsrv"
+function = "CsrSbApiPortInitialize"
+callees = ["RtlAppendUnicodeToString"]
+verdict = "false"
+note = "RtlAppendUnicodeToString(L\"\\\\\") / (SB_PORT_NAME) are RtlAppendUnicodeStringToString of locally built UNICODE_STRINGs"
+
+[[reviewed]]
+module = "subsystems/csr/csrsrv"
+function = "CsrUnhandledExceptionFilter"
+callees = ["RtlInitUnicodeString"]
+verdict = "false"
+note = "RtlInitUnicodeString(L\"Windows SubSystem\") is the explicit Length=34 init"
+
+[[reviewed]]
+module = "subsystems/win/basesrv"
+function = "BaseInitializeStaticServerData"
+callees = ["_swprintf", "wcscat", "wcsncpy"]
+verdict = "false"
+note = "_swprintf (1cf31524d50 rename), wcscat (\\System32, \\kernel32.dll at +9) and wcsncpy (CSDVersion, bounded 127) are all open-coded"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "DdCreateSurface"
+callees = ["sprintf"]
+verdict = "benign"
+note = "`#if 1` sprintf+OutputDebugStringA \"Optimze max to %d Surface\" debug nag dropped; no functional effect"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "DdGetDriverInfo"
+callees = ["RtlCopyMemory(->memcpy)"]
+verdict = "false"
+note = "RtlCopyMemory(&guidInfo, ..., sizeof(GUID)) is the struct assignment pDrvInfoData.guidInfo = (*pData).guidInfo"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "AngleArc"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "ArcTo"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "CreateDIBitmap"
+callees = ["abs"]
+verdict = "false"
+note = "abs is i32::wrapping_abs()"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "GdiGetBitmapBitsSize"
+callees = ["abs"]
+verdict = "false"
+note = "abs is i32::wrapping_abs()"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "SetDIBits"
+callees = ["abs"]
+verdict = "false"
+note = "abs is i32::wrapping_abs()"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "SetDIBitsToDevice"
+callees = ["HANDLE_METADC(->_Func)", "abs"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee; abs is .wrapping_abs()"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "StretchDIBits"
+callees = ["HANDLE_METADC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "ModifyWorldTransform"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "GdiSelectBrush"
+callees = ["HANDLE_METADC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "GdiSelectFont"
+callees = ["HANDLE_METADC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "GdiSelectPen"
+callees = ["HANDLE_METADC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "GetDeviceCaps"
+callees = ["HANDLE_METADC16(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "SetDCBrushColor"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "SetDCPenColor"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "GetGlyphOutlineA"
+callees = ["IntGetGlyphOutlineA"]
+verdict = "owed"
+note = "owed to upstream-sync: d47cdbbdff2 (#9210) refactors GetGlyphOutlineA/W onto IntGetGlyphOutline* (DBCS lead-byte via GdiGetCodePage, bIgnoreRotation FALSE), ~120 lines + spec"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "GetGlyphOutlineW"
+callees = ["IntGetGlyphOutlineW"]
+verdict = "owed"
+note = "owed to upstream-sync: d47cdbbdff2 (#9210) refactors GetGlyphOutlineA/W onto IntGetGlyphOutline* (DBCS lead-byte via GdiGetCodePage, bIgnoreRotation FALSE), ~120 lines + spec"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "GetGlyphOutlineWow"
+callees = ["IntGetGlyphOutlineA"]
+verdict = "owed"
+note = "owed to upstream-sync: d47cdbbdff2 (#9210) implements GetGlyphOutlineWow (still the UNIMPLEMENTED stub) + gdi32.spec change"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "IntFontFamilyCompareEx"
+callees = ["labs"]
+verdict = "false"
+note = "labs is i32::wrapping_abs()"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "height_to_LP"
+callees = ["fabs"]
+verdict = "false"
+note = "fabs is the local dabs! macro"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "width_to_LP"
+callees = ["fabs"]
+verdict = "false"
+note = "fabs is the local dabs! macro"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "BitBlt"
+callees = ["HANDLE_METADC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "GdiAlphaBlend"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "GdiGradientFill"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "GdiTransparentBlt"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "MaskBlt"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "PatBlt"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "PlgBlt"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "PolyBezier"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "PolyBezierTo"
+callees = ["HANDLE_EMETAFDC(->_Func)", "LineTo"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "PolyDraw"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "PolyPolygon"
+callees = ["HANDLE_METADC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "PolyPolyline"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "PolylineTo"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "StretchBlt"
+callees = ["HANDLE_METADC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "AbortPath"
+callees = ["HANDLE_METADC0P(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "BeginPath"
+callees = ["HANDLE_METADC0P(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "CloseFigure"
+callees = ["HANDLE_METADC0P(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "EndPath"
+callees = ["HANDLE_METADC0P(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "FillPath"
+callees = ["HANDLE_METADC0P(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "FlattenPath"
+callees = ["HANDLE_METADC0P(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "PathToRegion"
+callees = ["HANDLE_METADC0P(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "SelectClipPath"
+callees = ["HANDLE_EMETAFDC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "StrokeAndFillPath"
+callees = ["HANDLE_METADC0P(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "StrokePath"
+callees = ["HANDLE_METADC0P(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "WidenPath"
+callees = ["HANDLE_METADC0P(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "StartDocW"
+callees = ["RtlCopyMemory(->memcpy)"]
+verdict = "false"
+note = "RtlCopyMemory(&diW, lpdi, sizeof(DOCINFOW)) is the struct assignment diW = *lpdi"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "ExtTextOutW"
+callees = ["HANDLE_METADC(->_Func)"]
+verdict = "false"
+note = "HANDLE_* metafile dispatch is open-coded per function: GDI_HANDLE_GET_TYPE check, METADC16 route, GdiGetLDC + SetLastError(ERROR_INVALID_HANDLE), EMFDC_<Func>/METADC_<Func> (targets in still-C wine/emfdc.c, mfdc.c); the audit read the macro's pasted `_Func` as a callee"
+
+[[reviewed]]
+module = "win32ss/gdi/gdi32"
+function = "LogFontW2A"
+callees = ["COPYS(->MultiByteToWideChar)"]
+verdict = "false"
+note = "COPYS is #define'd twice in utils.c; inside LogFontW2A it is WideCharToMultiByte, which Rust calls \u2014 the audit resolved the other function's definition"
+
+[[reviewed]]
+module = "win32ss/reactx/dxg"
+function = "DdHmgAlloc"
+callees = ["KeGetCurrentThread(->KeGetCurrentPrcb)"]
+verdict = "false"
+note = "KeGetCurrentThread() is PsGetCurrentThread() (same KTHREAD pointer)"
+
+[[reviewed]]
+module = "win32ss/reactx/dxg"
+function = "DdHmgLock"
+callees = ["KeGetCurrentThread(->KeGetCurrentPrcb)"]
+verdict = "false"
+note = "KeGetCurrentThread() is PsGetCurrentThread() (same KTHREAD pointer)"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "LogFontW2A"
+callees = ["COPYS(->MultiByteToWideChar)"]
+verdict = "false"
+note = "COPYS is a function-local #define (WideCharToMultiByte here) re-defined elsewhere in the file as MultiByteToWideChar; Rust calls the right one"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "EnumDisplaySettingsExA"
+callees = ["COPYS(->MultiByteToWideChar)"]
+verdict = "false"
+note = "COPYS is a function-local #define (WideCharToMultiByte here) re-defined elsewhere in the file as MultiByteToWideChar; Rust calls the right one"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "ValidateCallProc"
+callees = ["GetUser32Handle"]
+verdict = "false"
+note = "GetUser32Handle is GetUser32HandleInto (stack scratch entry) reached via the *_impl helpers"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "ValidateHandle"
+callees = ["GetUser32Handle"]
+verdict = "false"
+note = "GetUser32Handle is GetUser32HandleInto (stack scratch entry) reached via the *_impl helpers"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "ValidateHandleNoErr"
+callees = ["GetUser32Handle"]
+verdict = "false"
+note = "GetUser32Handle is GetUser32HandleInto (stack scratch entry) reached via the *_impl helpers"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "KillSystemTimer"
+callees = ["NtUserxKillSystemTimer"]
+verdict = "false"
+note = "NtUserxKillSystemTimer is the ntwrapper inline NtUserCallHwndParam(..., HWNDPARAM_ROUTINE_KILLSYSTEMTIMER)"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "CliSaveImeHotKey"
+callees = ["StringCchPrintfW"]
+verdict = "false"
+note = "StringCchPrintfW(%08lX) is wsprintfW into a MAX_PATH buffer; the output is fixed-length and always fits"
+
+[[reviewed]]
+module = "win32ss/user/winsrv"
+function = "GetSelectionBeginEnd"
+callees = ["_InterlockedExchange16"]
+verdict = "false"
+note = "_InterlockedExchange16 is the local atomic_xchg_seqcst helper"
+
+[[reviewed]]
+module = "win32ss/user/winsrv"
+function = "UserpFormatMessages"
+callees = ["RtlCopyMemory(->memcpy)"]
+verdict = "false"
+note = "RtlCopyMemory(&CopyParameters, Parameters, sizeof) is the array assignment CopyParameters = Parameters"
+
+[[reviewed]]
+module = "win32ss/user/winsrv"
+function = "_scwprintf"
+callees = ["_vscwprintf"]
+verdict = "benign"
+note = "documented degraded variadic stub: returns wcslen(fmt)+256 and callers format with the truncating RtlStringCbPrintfW, so only args formatting >256 chars truncate a hard-error message"
+
+# body-audit medium-lead triage, 2026-10-04 (packet C).
+[[reviewed]]
+module = "dll/cpl/sysdm"
+function = "ResourceMessageBox"
+callees = ["StringCchVPrintfW"]
+verdict = "false"
+note = "variadic shim stages the va slots and calls ResourceMessageBox_v, which does StringCchPrintfW_v"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "RegCreateKeyExA"
+callees = ["RtlInitEmptyUnicodeString"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString(&s, NULL, 0) is a header inline; the Rust writes Length/MaximumLength/Buffer = 0/0/NULL directly"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "RegDeleteKeyExA"
+callees = ["RtlInitEmptyUnicodeString"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString(&s, NULL, 0) is a header inline; the Rust writes Length/MaximumLength/Buffer = 0/0/NULL directly"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "RegOpenKeyExA"
+callees = ["RtlInitEmptyUnicodeString"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString(&s, NULL, 0) is a header inline; the Rust writes Length/MaximumLength/Buffer = 0/0/NULL directly"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "RegQueryValueExA"
+callees = ["RtlInitEmptyUnicodeString"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString(&s, NULL, 0) is a header inline; the Rust writes Length/MaximumLength/Buffer = 0/0/NULL directly"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "RegReplaceKeyA"
+callees = ["RtlInitEmptyUnicodeString"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString(&s, NULL, 0) is a header inline; the Rust writes Length/MaximumLength/Buffer = 0/0/NULL directly"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "RegRestoreKeyA"
+callees = ["RtlInitEmptyUnicodeString"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString(&s, NULL, 0) is a header inline; the Rust writes Length/MaximumLength/Buffer = 0/0/NULL directly"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "RegSaveKeyA"
+callees = ["RtlInitEmptyUnicodeString"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString(&s, NULL, 0) is a header inline; the Rust writes Length/MaximumLength/Buffer = 0/0/NULL directly"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "RegSaveKeyExA"
+callees = ["RtlInitEmptyUnicodeString"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString(&s, NULL, 0) is a header inline; the Rust writes Length/MaximumLength/Buffer = 0/0/NULL directly"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "RegUnLoadKeyA"
+callees = ["RtlInitEmptyUnicodeString"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString(&s, NULL, 0) is a header inline; the Rust writes Length/MaximumLength/Buffer = 0/0/NULL directly"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CRYPT_CreateMachineGuid"
+callees = ["swprintf"]
+verdict = "false"
+note = "the Rust formats with sprintfW and the full 11-conversion UUID format (the pre-sync C's call); swprintf is the wine-10.0 sync's spelling. The sync's KEY_WOW64_64KEY is part of the owed crypt sync"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptContextAddRef"
+callees = ["provider_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptCreateHash"
+callees = ["key_from_handle", "provider_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptDecrypt"
+callees = ["hash_from_handle", "key_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptDeriveKey"
+callees = ["hash_from_handle", "provider_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptDestroyHash"
+callees = ["hash_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptDestroyKey"
+callees = ["key_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptDuplicateHash"
+callees = ["hash_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptDuplicateKey"
+callees = ["key_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptEncrypt"
+callees = ["hash_from_handle", "key_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptExportKey"
+callees = ["key_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptGenKey"
+callees = ["provider_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptGenRandom"
+callees = ["provider_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptGetHashParam"
+callees = ["hash_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptGetKeyParam"
+callees = ["key_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptGetProvParam"
+callees = ["provider_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptGetUserKey"
+callees = ["provider_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptHashData"
+callees = ["hash_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptHashSessionKey"
+callees = ["hash_from_handle", "key_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptImportKey"
+callees = ["key_from_handle", "provider_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptReleaseContext"
+callees = ["provider_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptSetHashParam"
+callees = ["hash_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptSetKeyParam"
+callees = ["key_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptSetProvParam"
+callees = ["provider_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptSignHashW"
+callees = ["hash_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/advapi32"
+function = "CryptVerifySignatureW"
+callees = ["hash_from_handle", "key_from_handle"]
+verdict = "owed"
+note = "owed to upstream-sync: wine-10.0 crypt sync dff8ac82705 (~660 lines of crypt.c) routes every handle through page-fault-guarded pointer_from_handle; the Rust is the pre-sync C and keeps every null+magic check that C had (verified per function), so only the SEH guard on garbage handles and the sync's error-code/hHash-validation changes are missing"
+
+[[reviewed]]
+module = "dll/win32/cabinet"
+function = "compress_MSZIP"
+callees = ["deflateInit2"]
+verdict = "false"
+note = "deflateInit2 is zlib's macro for deflateInit2_(..., version, sizeof(z_stream)); the Rust calls deflateInit2_ explicitly"
+
+[[reviewed]]
+module = "dll/win32/iphlpapi"
+function = "GetInterfaceNameInternal"
+callees = ["StringCbPrintfW"]
+verdict = "false"
+note = "StringCbPrintfW_1 is the crate's fixed-arity StringCbPrintfW; same bounded format"
+
+[[reviewed]]
+module = "dll/win32/iphlpapi"
+function = "NhGetGuidFromInterfaceName"
+callees = ["RtlGUIDFromString", "RtlInitUnicodeString", "_wcsnicmp"]
+verdict = "benign"
+note = "hand-written port of upstream 7f9e42cfe21: wcsnicmp_ascii + guid_from_braced replace _wcsnicmp/RtlGUIDFromString; folds case only for ASCII (a localized name differing from the query only in non-ASCII case no longer matches), and refuses an empty stored name the C would match against anything"
+
+[[reviewed]]
+module = "dll/win32/mlang"
+function = "EnumRfc1766_create"
+callees = ["EnumSystemLocalesEx"]
+verdict = "owed"
+note = "owed to upstream-sync: mlang wine-10.0 sync 15c9005acb6 (~830-line mlang.c rewrite: EnumSystemLocalesEx, wide mlang_data tables, font-link InitOnce); the Rust is the pre-sync C and does the old-C work"
+
+[[reviewed]]
+module = "dll/win32/mlang"
+function = "EnumScript_create"
+callees = ["wcscpy"]
+verdict = "owed"
+note = "owed to upstream-sync: mlang wine-10.0 sync 15c9005acb6 (~830-line mlang.c rewrite: EnumSystemLocalesEx, wide mlang_data tables, font-link InitOnce); the Rust is the pre-sync C and does the old-C work"
+
+[[reviewed]]
+module = "dll/win32/mlang"
+function = "GetGlobalFontLinkObject"
+callees = ["IUnknown_QueryInterface", "InitOnceExecuteOnce"]
+verdict = "owed"
+note = "owed to upstream-sync: mlang wine-10.0 sync 15c9005acb6 (~830-line mlang.c rewrite: EnumSystemLocalesEx, wide mlang_data tables, font-link InitOnce); the Rust is the pre-sync C and does the old-C work"
+
+[[reviewed]]
+module = "dll/win32/mlang"
+function = "enum_locales_proc"
+callees = ["LocaleNameToLCID"]
+verdict = "owed"
+note = "owed to upstream-sync: mlang wine-10.0 sync 15c9005acb6 (~830-line mlang.c rewrite: EnumSystemLocalesEx, wide mlang_data tables, font-link InitOnce); the Rust is the pre-sync C and does the old-C work"
+
+[[reviewed]]
+module = "dll/win32/mlang"
+function = "fill_cp_info"
+callees = ["wcscpy"]
+verdict = "owed"
+note = "owed to upstream-sync: mlang wine-10.0 sync 15c9005acb6 (~830-line mlang.c rewrite: EnumSystemLocalesEx, wide mlang_data tables, font-link InitOnce); the Rust is the pre-sync C and does the old-C work"
+
+[[reviewed]]
+module = "dll/win32/mlang"
+function = "fnIMLangFontLink2_GetScriptFontInfo"
+callees = ["wcscpy"]
+verdict = "owed"
+note = "owed to upstream-sync: mlang wine-10.0 sync 15c9005acb6 (~830-line mlang.c rewrite: EnumSystemLocalesEx, wide mlang_data tables, font-link InitOnce); the Rust is the pre-sync C and does the old-C work"
+
+[[reviewed]]
+module = "dll/win32/mlang"
+function = "fnIMultiLanguage3_GetCodePageDescription"
+callees = ["lstrcpynW"]
+verdict = "owed"
+note = "owed to upstream-sync: mlang wine-10.0 sync 15c9005acb6 (~830-line mlang.c rewrite: EnumSystemLocalesEx, wide mlang_data tables, font-link InitOnce); the Rust is the pre-sync C and does the old-C work"
+
+[[reviewed]]
+module = "dll/win32/mlang"
+function = "map_font"
+callees = ["EnumFontFamiliesExW"]
+verdict = "owed"
+note = "owed to upstream-sync: mlang wine-10.0 sync 15c9005acb6 (~830-line mlang.c rewrite: EnumSystemLocalesEx, wide mlang_data tables, font-link InitOnce); the Rust is the pre-sync C and does the old-C work"
+
+[[reviewed]]
+module = "dll/win32/msafd"
+function = "SockLoadHelperDll"
+callees = ["wcscat"]
+verdict = "false"
+note = "wcscpy+wcscat key building moved into build_transport_winsock_key, a bounded concatenation into a 260-WCHAR buffer"
+
+[[reviewed]]
+module = "dll/win32/msafd"
+function = "SockLoadTransportMapping"
+callees = ["wcscat"]
+verdict = "false"
+note = "wcscpy+wcscat key building moved into build_transport_winsock_key, a bounded concatenation into a 260-WCHAR buffer"
+
+[[reviewed]]
+module = "dll/win32/msgina"
+function = "ChangePasswordDialogProc"
+callees = ["DrawBrandingBitmap"]
+verdict = "owed"
+note = "owed to upstream-sync: msgina branding library 6ae2d5ab43f (~345 lines gui.c + shutdown.c); LIVE REGRESSION: that commit deleted IDI_ROSLOGO/IDI_BAR from msgina.rc, so the Rust's LoadImageW of them now returns NULL and every logon/status/shutdown dialog loses its banner"
+
+[[reviewed]]
+module = "dll/win32/msgina"
+function = "LegalNoticeDialogProc"
+callees = ["DrawBrandingBitmap"]
+verdict = "owed"
+note = "owed to upstream-sync: msgina branding library 6ae2d5ab43f (~345 lines gui.c + shutdown.c); LIVE REGRESSION: that commit deleted IDI_ROSLOGO/IDI_BAR from msgina.rc, so the Rust's LoadImageW of them now returns NULL and every logon/status/shutdown dialog loses its banner"
+
+[[reviewed]]
+module = "dll/win32/msgina"
+function = "LogOffDialogProc"
+callees = ["DrawBrandingBitmap"]
+verdict = "owed"
+note = "owed to upstream-sync: msgina branding library 6ae2d5ab43f (~345 lines gui.c + shutdown.c); LIVE REGRESSION: that commit deleted IDI_ROSLOGO/IDI_BAR from msgina.rc, so the Rust's LoadImageW of them now returns NULL and every logon/status/shutdown dialog loses its banner"
+
+[[reviewed]]
+module = "dll/win32/msgina"
+function = "SecurityDialogProc"
+callees = ["DrawBrandingBitmap"]
+verdict = "owed"
+note = "owed to upstream-sync: msgina branding library 6ae2d5ab43f (~345 lines gui.c + shutdown.c); LIVE REGRESSION: that commit deleted IDI_ROSLOGO/IDI_BAR from msgina.rc, so the Rust's LoadImageW of them now returns NULL and every logon/status/shutdown dialog loses its banner"
+
+[[reviewed]]
+module = "dll/win32/msgina"
+function = "StatusDialogProc"
+callees = ["DrawBrandingBitmap", "DrawScrollingBrandingBitmap"]
+verdict = "owed"
+note = "owed to upstream-sync: msgina branding library 6ae2d5ab43f (~345 lines gui.c + shutdown.c); LIVE REGRESSION: that commit deleted IDI_ROSLOGO/IDI_BAR from msgina.rc, so the Rust's LoadImageW of them now returns NULL and every logon/status/shutdown dialog loses its banner"
+
+[[reviewed]]
+module = "dll/win32/msgina"
+function = "WelcomeDialogProc"
+callees = ["DrawBrandingBitmap"]
+verdict = "owed"
+note = "owed to upstream-sync: msgina branding library 6ae2d5ab43f (~345 lines gui.c + shutdown.c); LIVE REGRESSION: that commit deleted IDI_ROSLOGO/IDI_BAR from msgina.rc, so the Rust's LoadImageW of them now returns NULL and every logon/status/shutdown dialog loses its banner"
+
+[[reviewed]]
+module = "dll/win32/msgina"
+function = "ShutdownDialogProc"
+callees = ["DrawBrandingBitmap"]
+verdict = "owed"
+note = "owed to upstream-sync: msgina branding library 6ae2d5ab43f (~345 lines gui.c + shutdown.c); LIVE REGRESSION: that commit deleted IDI_ROSLOGO/IDI_BAR from msgina.rc, so the Rust's LoadImageW of them now returns NULL and every logon/status/shutdown dialog loses its banner"
+
+[[reviewed]]
+module = "dll/win32/msgina"
+function = "DuplicateString"
+callees = ["wcslen"]
+verdict = "false"
+note = "wcslen is open-coded as a NUL scan, then copy_nonoverlapping of (len+1) WCHARs"
+
+[[reviewed]]
+module = "dll/win32/msv1_0"
+function = "LsaApCallPackage"
+callees = ["MsvpLm20ChallengeRequest"]
+verdict = "owed"
+note = "owed to upstream-sync: d9d27f89433 implements MsV1_0Lm20ChallengeRequest (MsvpLm20ChallengeRequest, ~90 lines: RtlGenRandom challenge into a client buffer) plus MessageType ASSERTs; the Rust still answers STATUS_NOT_IMPLEMENTED"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentBindings_fnSupportsBindingInterface"
+callees = ["_wcsicmp", "impl_from_INetCfgComponentBindings", "wcschr"]
+verdict = "owed"
+note = "owed to upstream-sync's netcfgx cluster: upstream d55dbfc87f0 (implements SupportsBindingInterface, ~36 lines; the Rust still returns E_NOTIMPL) landed on the flipped C after translation"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "ApplyOrCancelChanges"
+callees = ["INetCfgComponentControl_ApplyPnpChanges"]
+verdict = "owed"
+note = "owed to upstream-sync's netcfgx cluster: upstream bd363a821e9 (ApplyPnpChanges with a reconfig callback, ~24 lines) landed on the flipped C after translation"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentControl_fnAddRef"
+callees = ["InterlockedIncrement(->_InterlockedIncrement)"]
+verdict = "owed"
+note = "owed to upstream-sync's netcfgx cluster: upstream 9b450d9f7f7 (tcpipconf_notify.c TCPIP notify-object rewrite) landed on the flipped C after translation"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentPropertyUi_fnMergePropPages"
+callees = ["impl_from_INetCfgComponentPropertyUi"]
+verdict = "owed"
+note = "owed to upstream-sync's netcfgx cluster: upstream 9b450d9f7f7 (tcpipconf_notify.c TCPIP notify-object rewrite) landed on the flipped C after translation"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentPropertyUi_fnQueryInterface"
+callees = ["impl_from_INetCfgComponentPropertyUi"]
+verdict = "owed"
+note = "owed to upstream-sync's netcfgx cluster: upstream 9b450d9f7f7 (tcpipconf_notify.c TCPIP notify-object rewrite) landed on the flipped C after translation"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "InitializeTcpipBasicDlgCtrls"
+callees = ["CheckRadioButton"]
+verdict = "owed"
+note = "owed to upstream-sync's netcfgx cluster: upstream 0df3463af02 (radio-button fix on the basic page, inside the tcpipconf_notify.c rewrite) landed on the flipped C after translation"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "TcpipAltConfDlg"
+callees = ["GetWindowLongPtr", "MAKEIPADDRESS"]
+verdict = "owed"
+note = "owed to upstream-sync's netcfgx cluster: upstream 7139e57ff89 (alternate-configuration fix, inside the tcpipconf_notify.c rewrite) landed on the flipped C after translation"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "CreateAntiMoniker"
+callees = ["create_anti_moniker"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "BindCtxImpl_Release"
+callees = ["heap_free"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "CreateBindCtx"
+callees = ["heap_alloc_zero"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "ClassMoniker_CreateFromDisplayName"
+callees = ["UuidFromStringW", "create_class_moniker", "lstrlenW", "memcpy", "wcsnicmp"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "CreateClassMoniker"
+callees = ["create_class_moniker"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "OleFlushClipboard"
+callees = ["COM_CurrentInfo"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "OleSetClipboard"
+callees = ["COM_CurrentInfo"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "get_ole_clipbrd"
+callees = ["InitOnceExecuteOnce"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "DllMain"
+callees = ["clipbrd_destroy"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "CompositeMoniker_CreateInstance"
+callees = ["create_composite"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "CreateGenericComposite"
+callees = ["create_composite"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "StdMarshalCF_CreateInstance"
+callees = ["InternalCoStdMarshalObject"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "GetClassFile"
+callees = ["PathCchFindExtension"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "MkParseDisplayName"
+callees = ["wcsnicmp"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "rot_entry_delete"
+callees = ["InternalIrotRevoke"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 replaced the RPC IrotRevoke(get_irot_handle(), ...) the Rust still calls with combase's InternalIrotRevoke"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "OleRegGetMiscStatus"
+callees = ["swprintf"]
+verdict = "false"
+note = "wsprintfW(keyName, L\"%d\", dwAspect) in place of swprintf; same output, 16-WCHAR buffer cannot overflow for a DWORD"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "OleRegGetUserType"
+callees = ["swprintf"]
+verdict = "false"
+note = "wsprintfW(auxkeynameW, L\"AuxUserType\\\\%d\", form) in place of swprintf; same output"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "OleUninitialize"
+callees = ["clipbrd_uninitialize"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "PropertyStorage_PropVariantCopy"
+callees = ["SysAllocStringLen", "SysStringLen"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "PropertyStorage_ReadDictionary"
+callees = ["buffer_read_byte", "buffer_read_dword", "buffer_read_word"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "PropertyStorage_ReadProperty"
+callees = ["propertystorage_get_elemsize", "propertystorage_read_scalar"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "PropertyStorage_WritePropertyToStream"
+callees = ["SysStringByteLen", "SysStringLen", "WideCharToMultiByte", "heap_alloc", "heap_free"]
+verdict = "owed"
+note = "owed to upstream-sync: ole32 wine-10.0 sync 5f6b295cb90 (~12.7k-line multi-file sync); the Rust is the pre-sync C, which had no such call"
+
+[[reviewed]]
+module = "dll/win32/ole32"
+function = "StorageUtl_ReadWord"
+callees = ["lendian16toh(->_byteswap_ushort)"]
+verdict = "false"
+note = "lendian16toh is u16::from_le"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "HCR_GetClassNameA"
+callees = ["sprintf"]
+verdict = "false"
+note = "the formatting is open-coded with a bounded buffer builder (ABuf/WBuf, hex/int appenders); same output"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "HCR_GetClassNameW"
+callees = ["swprintf"]
+verdict = "false"
+note = "the formatting is open-coded with a bounded buffer builder (ABuf/WBuf, hex/int appenders); same output"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "HCR_GetIconA"
+callees = ["sprintf"]
+verdict = "false"
+note = "the formatting is open-coded with a bounded buffer builder (ABuf/WBuf, hex/int appenders); same output"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "HCR_RegOpenClassIDKey"
+callees = ["sprintf"]
+verdict = "false"
+note = "the formatting is open-coded with a bounded buffer builder (ABuf/WBuf, hex/int appenders); same output"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "HCU_GetIconW"
+callees = ["StringCchPrintfW"]
+verdict = "false"
+note = "the formatting is open-coded with a bounded buffer builder (ABuf/WBuf, hex/int appenders); same output"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "HLM_GetIconW"
+callees = ["StringCchPrintfW"]
+verdict = "false"
+note = "the formatting is open-coded with a bounded buffer builder (ABuf/WBuf, hex/int appenders); same output"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "RenderFILENAMEA"
+callees = ["memcpy", "strlen"]
+verdict = "false"
+note = "r_strlen / r_memcpy are file-local spellings of strlen / memcpy"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "Control_DoLaunch"
+callees = ["MAKEINTATOM", "proc"]
+verdict = "false"
+note = "MAKEINTATOM is make_int_atom; applet->proc(...) goes through call_proc on the renamed proc_ field"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "Control_LoadApplet"
+callees = ["StringCchCopy", "proc"]
+verdict = "false"
+note = "StringCchCopy is string_cch_copy_w; applet->proc(...) goes through call_proc on the renamed proc_ field"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "Control_UnloadApplet"
+callees = ["proc"]
+verdict = "false"
+note = "applet->proc(...) goes through call_proc on the renamed proc_ field"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "ILIsEqual"
+callees = ["_ILMemCmpEqualIDList"]
+verdict = "false"
+note = "_ILMemCmpEqualIDList is _il_memcmp_equal_idlist"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "ILRemoveLastID"
+callees = ["_ILIsEmpty"]
+verdict = "false"
+note = "_ILIsEmpty is _il_is_empty"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "SHELL32_CreateSimpleIDListFromPath"
+callees = ["_ILParsePathW"]
+verdict = "false"
+note = "_ILParsePathW is _il_parse_path_w"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "SHGetDataFromIDListW"
+callees = ["GetShellFolder1ItemDetailsExToBuffer"]
+verdict = "false"
+note = "GetShellFolder1ItemDetailsExToBuffer is get_shellfolder1_item_details_ex_to_buffer"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "SHSimpleIDListFromPathA"
+callees = ["_ILParsePathW"]
+verdict = "false"
+note = "_ILParsePathW is _il_parse_path_w"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "SHSimpleIDListFromPathW"
+callees = ["_ILParsePathW"]
+verdict = "false"
+note = "_ILParsePathW is _il_parse_path_w"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILCopyCidaToaPidl"
+callees = ["HIDA_GetPIDLFolder"]
+verdict = "false"
+note = "HIDA_GetPIDLFolder is hida_get_pidl_folder"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILCreateDrive"
+callees = ["_ILAlloc", "lstrcpyA", "toupper"]
+verdict = "false"
+note = "_ILAlloc is _il_alloc, lstrcpyA is r_strcpy, toupper is r_toupper"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILCreateEntireNetwork"
+callees = ["_ILAlloc"]
+verdict = "false"
+note = "_ILAlloc is _il_alloc (memcpy is r_memcpy)"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILCreateFromFindDataW"
+callees = ["_ILAlloc", "memcpy"]
+verdict = "false"
+note = "_ILAlloc is _il_alloc, memcpy is r_memcpy"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILCreateGuid"
+callees = ["_ILAlloc"]
+verdict = "false"
+note = "_ILAlloc is _il_alloc (memcpy is r_memcpy)"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILGetDataPointer"
+callees = ["_ILIsEmpty"]
+verdict = "false"
+note = "_ILIsEmpty is _il_is_empty"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILGetDepth"
+callees = ["_ILUnsafeNext"]
+verdict = "false"
+note = "_ILUnsafeNext is _il_unsafe_next"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILGetFileAttributes"
+callees = ["_ILGetFSType"]
+verdict = "false"
+note = "_ILGetFSType is _il_get_fs_type"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILGetFileDateTime"
+callees = ["_ILGetFSType"]
+verdict = "false"
+note = "_ILGetFSType is _il_get_fs_type"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILGetFileSize"
+callees = ["_ILGetFSType"]
+verdict = "false"
+note = "_ILGetFSType is _il_get_fs_type"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILGetFileStructW"
+callees = ["_ILIsFolderOrFile(->_ILGetFSType)"]
+verdict = "false"
+note = "_ILIsFolderOrFile(pidl) expands to _ILGetFSType(pidl) != 0, written as _il_get_fs_type(pidl) == 0 -> NULL"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILGetSTextPointer"
+callees = ["_ILGetFSType", "strlen"]
+verdict = "false"
+note = "the Rust _ILGetSTextPointer is a one-line alias of _il_get_stext_pointer, which calls _il_get_fs_type and r_strlen"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILGetTextPointer"
+callees = ["_ILGetFSType"]
+verdict = "false"
+note = "_ILGetFSType is _il_get_fs_type"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILIsDrive"
+callees = ["_ILGetType"]
+verdict = "false"
+note = "_ILGetType is _il_get_type"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILIsFolder"
+callees = ["_ILGetFSType"]
+verdict = "false"
+note = "_ILGetFSType is _il_get_fs_type"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILIsParentEx"
+callees = ["_ILUnsafeNext"]
+verdict = "false"
+note = "_ILUnsafeNext is _il_unsafe_next"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILIsUnicode"
+callees = ["_ILGetFSType"]
+verdict = "false"
+note = "_ILGetFSType is _il_get_fs_type"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILIsValue"
+callees = ["_ILGetFSType"]
+verdict = "false"
+note = "_ILGetFSType is _il_get_fs_type"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_ILSimpleGetTextW"
+callees = ["_ILGetTextPointerW"]
+verdict = "false"
+note = "_ILGetTextPointerW is _il_get_text_pointer_w"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "CommandLineToArgvW"
+callees = ["isblank", "isspace"]
+verdict = "false"
+note = "isblank / isspace are r_isblank / r_isspace (msvcrt classes: space+tab / the six C whitespace)"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "DragQueryFileA"
+callees = ["strlen"]
+verdict = "false"
+note = "strlen is r_strlen"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "DAD_ShowDragImage"
+callees = ["ImageList_DragShowNolock"]
+verdict = "owed"
+note = "owed to upstream-sync: 1fd8b503be2 implements the DAD_* drag-image functions (~134 lines of shellord.c); the Rust DAD_ShowDragImage is still a FALSE stub"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "SHELL_GlobalCounterChanged"
+callees = ["SHELL_GlobalCounterGet(->SHGlobalCounterGetValue_Vista)"]
+verdict = "false"
+note = "shlwapi_undoc.h:35 is `#if FALSE && ...`, so the live SHELL_GlobalCounterGet is SHGlobalCounterGetValue(handle), which the Rust calls; the audit expanded the dead _Vista arm"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "SHGetNewLinkInfoW"
+callees = ["snprintfW", "strrchrW"]
+verdict = "false"
+note = "snprintfW / strrchrW are wine/unicode.h names for _snwprintf / wcsrchr, which the Rust calls"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "SHGetSetSettings"
+callees = ["SHELL_GlobalCounterIncrement(->SHGlobalCounterIncrement_Vista)", "SHGSS_GetSetAdv(->getsetmacro)", "SHGSS_GetSetStruct(->getsetmacro)"]
+verdict = "false"
+note = "the live SHELL_GlobalCounterIncrement arm is SHGlobalCounterIncrement (the `#if FALSE &&` _Vista arm is dead); the SHGSS_GetSetAdv/GetSetStruct X-macros are open-coded as a 16-row table"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "SHRunControlPanel"
+callees = ["SHELL32_RunControlPanel"]
+verdict = "false"
+note = "upstream a83411cfefe moved the body into SHELL32_RunControlPanel and forwards to it; the Rust SHRunControlPanel carries that body inline (incl. the null-commandLine check)"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "ShellMessageBoxA"
+callees = ["__ms_va_end", "__ms_va_start"]
+verdict = "false"
+note = "variadic shim stages the va slots and calls ShellMessageBoxA_v; __ms_va_start/end have no Rust counterpart"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "PathCleanupSpec"
+callees = ["strlen"]
+verdict = "false"
+note = "strlen is r_strlen (strlenW is r_wcslen)"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "PathMakeUniqueNameW"
+callees = ["StringCchPrintfW"]
+verdict = "false"
+note = "StringCchPrintfW is the file's string_cch_printf (bounded, typed FA args)"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "PathProcessCommandA"
+callees = ["strlen"]
+verdict = "false"
+note = "strlen is r_strlen"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "PathYetAnotherMakeUniqueName"
+callees = ["sprintfW"]
+verdict = "false"
+note = "sprintfW is the file's string_cch_printf, bounded to MAX_PATH (exceeds the C)"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "SHGetFolderPathAndSubDirW"
+callees = ["StringCchPrintfW", "_SHExpandEnvironmentStrings"]
+verdict = "false"
+note = "_SHExpandEnvironmentStrings is SHExpandEnvironmentStrings_; the end: tail's StringCchPrintfW is string_cch_printf in shgfp_end"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "_SHGetUserShellFolderPath"
+callees = ["_SHExpandEnvironmentStrings"]
+verdict = "false"
+note = "_SHExpandEnvironmentStrings is SHExpandEnvironmentStrings_"
+
+[[reviewed]]
+module = "dll/win32/shell32"
+function = "SHCreateSessionKey"
+callees = ["swprintf"]
+verdict = "false"
+note = "swprintf(L\"...SessionInfo\\\\%08x%08x\") is open-coded: prefix copy + two 8-digit hex loops + NUL"
+
+[[reviewed]]
+module = "dll/win32/syssetup"
+function = "StatusMessageWindowProc"
+callees = ["LoadLibraryExW"]
+verdict = "owed"
+note = "owed to upstream-sync: 9ac0265bf4e (branding library) loads banner/line from rosbrand.dll; it also deleted IDB_REACTOS/IDB_LINE from syssetup.rc, so the Rust's LoadImageW now gets NULL and the 2nd-stage setup status window has no logo or progress bar"
+
+[[reviewed]]
+module = "dll/win32/syssetup"
+function = "FinishDlgProc"
+callees = ["ShowDlgItem(->ShowWindow)", "ShowWindow", "SwitchToThisWindow"]
+verdict = "owed"
+note = "owed to upstream-sync: a4b6fe9630e revamps the Finish page (~73 lines of wizard.c: ShowDlgItem/SwitchToThisWindow countdown UI)"
+
+[[reviewed]]
+module = "dll/win32/syssetup"
+function = "SetKeyboardLayoutName"
+callees = ["wcscpy"]
+verdict = "benign"
+note = "upstream d482579dff3 ported (cd9c85f4557); its wcscpy calls are StringCchCopyW, since a 9-WCHAR REG_SZ read with dwSize == sizeof(szKLID) need not carry a NUL"

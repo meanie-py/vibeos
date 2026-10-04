@@ -166,6 +166,10 @@ _LOWERINGS: dict[str, tuple[str, ...]] = {
     "calloc": (r"HeapAlloc", r"heap_alloc_zero", r"calloc"),
     "realloc": (r"HeapReAlloc", r"heap_realloc", r"realloc"),
     "free": (r"HeapFree", r"heap_free", r"\bfree\b"),
+    "abs": (r"\.abs\(", r"wrapping_abs", r"unsigned_abs", r"\babs\b"),
+    "labs": (r"\.abs\(", r"wrapping_abs", r"unsigned_abs", r"\blabs\b"),
+    "fabs": (r"\.abs\(", r"\bfabs\b"),
+    "IsEqualIID": (r"==", r"guid_eq", r"IsEqualGUID", r"IsEqualIID", r"memcmp"),
     "InterlockedExchangeAdd": (r"Interlocked\w*", r"fetch_add", r"atomic"),
     # Inline initialisers the Rust open-codes as stores (acpi's AcpiOsCreateLock).
     "KeInitializeSpinLock": (r"KeInitializeSpinLock", r"=\s*0\b", r"write\(\s*\w*,?\s*0\s*\)"),
@@ -798,6 +802,10 @@ def _snake(name: str) -> str:
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).lower()
 
 
+_PRINTF = re.compile(
+    r"^_?(?:s|sn|vs|vsn|ws|wvs)n?w?printf[AW]?$|^(?:sprintfW|snprintfW|wsprintf[AW])$|"
+    r"^(?:Rtl)?String(?:Cch|Cb)V?Printf(?:Ex)?[AW]?$|^string_c(?:ch|b)_printf\w*$"
+)
 _COM_MACRO = re.compile(r"^I[A-Z]\w*?_(\w+)$")
 
 
@@ -814,6 +822,12 @@ def _kept(callee: str, rust: str, idents: set[str]) -> bool:
     # A/W generic names resolve to one of their variants; the IoXxxRemoveLock macros are
     # their `Ex` exports (serial calls IoReleaseRemoveLockEx directly).
     if any(callee + sfx in idents for sfx in ("W", "A", "Ex")):
+        return True
+    # ... and the reverse: the Rust calls the msvcrt `_wcsicmp` for Wine's `wcsicmp`.
+    if "_" + callee in idents:
+        return True
+    # Any printf-family call formats the same text (ShellAboutW: swprintf -> StringCchPrintfW).
+    if _PRINTF.match(callee) and any(_PRINTF.match(i) for i in idents):
         return True
     # `_InterlockedExchangeAdd` is the intrinsic spelling, `_swprintf` the msvcrt one.
     if callee.startswith("_") and callee.lstrip("_") and _kept(callee.lstrip("_"), rust, idents):

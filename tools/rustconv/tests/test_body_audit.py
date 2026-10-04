@@ -427,3 +427,21 @@ def test_a_four_char_tag_closes_its_quote():
     from rustconv.lex_mask import mask_code
 
     assert "Next" in mask_code("ULONG t = 'dnE#';\nNext(t);\n")
+
+
+def test_printf_family_and_renamed_crt_spellings_are_kept(tmp_path):
+    c = """
+VOID F(LPWSTR b, LPCWSTR a, LPCWSTR x)
+{
+    swprintf(b, L"%s", a);
+    if (wcsicmp(a, x) == 0 && IsEqualIID(&IID_A, &IID_B))
+        abs(1);
+}
+"""
+    rust = """
+pub unsafe extern "system" fn F(b: LPWSTR, a: LPCWSTR, x: LPCWSTR) {
+    StringCchPrintfW(b, 256, fmt.as_ptr(), a);
+    if _wcsicmp(a, x) == 0 && guid_eq(&IID_A, &IID_B) { let _ = 1i32.abs(); }
+}
+"""
+    assert _run(tmp_path, c, rust) == {}
