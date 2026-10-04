@@ -1064,6 +1064,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   consume), and the drainer appends the same text to `_buf` that it tees to the file.
   So the in-memory stream and the tee diverge somewhere not yet found. Until it is, a
   payload's verdict must be read from its serial log, not from the smoke exit code.
+- **Pyright does not cover the harness core -- OWED (2026-10-04).** `tests/qemu/cli/tooling.py`
+  now ruff- and format-checks all of `tests/qemu`, but `_PYRIGHT_ROOTS` still stops at
+  `tests/qemu/cli`, so `vm.py`, `backend.py` and the test modules have no type checking. The
+  lint widening found two `assert False` in `test_smoke.py` that `python -O` would strip;
+  types are the next layer of the same blind spot. Expect a real first-pass count before
+  gating it.
 - **`test_bindgen_generation` fails under PARALLEL check-tooling and passes alone — it
   blocked a land. OPEN** (2026-09-25). Five of its eleven cases failed inside
   `./vibeos-cli check-tooling` with
