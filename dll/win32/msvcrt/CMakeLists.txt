@@ -52,11 +52,8 @@ if(ARCH STREQUAL "i386")
     list(APPEND SHARED_SOURCE
         except_i386.c
     )
-    list(APPEND SHARED_ASM_SOURCE
-        i386/__wine_RtlUnwind.s
-        i386/exception_ptr.s
-        i386/inout.s
-    )
+    # i386/__wine_RtlUnwind.s, i386/exception_ptr.s, i386/inout.s -- replaced by Rust
+    # (crt-shared-rust src/asm_i386.rs, global_asm!).
 elseif(ARCH STREQUAL "amd64")
     list(APPEND SHARED_SOURCE
         except_x86_64.c
