@@ -161,13 +161,18 @@ pub unsafe extern "C" fn _purecall() -> c_int {
 // ---- __report_gsfailure.c --------------------------------------------------------------
 
 /// `__fastfail(FAST_FAIL_STACK_COOKIE_CHECK_FAILURE)`: code 2, raised the way the
-/// intrinsic is (int 0x29 with the code in ecx/rcx; brk #0xF003 with it in x0).
+/// intrinsic is (int 0x29 with the code in ecx/rcx; brk #0xF003 with it in x0). Not
+/// `options(noreturn)`: rustc follows a noreturn asm with a `ud2` trap, which scan_ud2
+/// (rightly) reads as a miscompile; the kernel never returns from a fast fail, and the
+/// loop after it costs one jump that never runs.
 #[inline(always)]
 unsafe fn fastfail_stack_cookie() -> ! {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    core::arch::asm!("int 0x29", in("ecx") 2u32, options(noreturn, nostack));
+    core::arch::asm!("int 0x29", in("ecx") 2u32, options(nostack));
     #[cfg(target_arch = "aarch64")]
-    core::arch::asm!("brk #0xF003", in("x0") 2u64, options(noreturn, nostack));
+    core::arch::asm!("brk #0xF003", in("x0") 2u64, options(nostack));
+    #[allow(clippy::empty_loop)]
+    loop {}
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
