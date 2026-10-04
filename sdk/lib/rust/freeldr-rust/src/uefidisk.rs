@@ -1230,6 +1230,13 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
             ArcDriveIndex,
         );
         TRACE(b"Boot path set to CD-ROM: %s\n\0".as_ptr() as PCHAR, (FrLdrBootPath.as_ptr()) as usize);
+        // Which ARC branch the boot handle took -- one line, and it is the first
+        // thing worth knowing when a boot device behaves unexpectedly. The CD arm
+        // needs RemovableMedia && BlockSize == 2048, which is a DEVICE-MODEL test
+        // standing in for a filesystem question: an ISO served over usb-storage or
+        // virtio-blk reports 512-byte blocks, fails this, and takes the hard-disk
+        // arm, where RunLoader then finds no boot configuration.
+        crate::uefildr::fldr_conout(crate::wide!("[FLDR] arc branch = CDROM\r\n\0"));
     } else {
         let mut BootPartition: ULONG = 0;
         let mut PartitionEntry: PARTITION_TABLE_ENTRY = core::mem::zeroed();
@@ -1282,6 +1289,9 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
             ) == 0
             {
                 ERR(b"Failed to get boot partition entry\n\0".as_ptr() as PCHAR);
+                crate::uefildr::fldr_conout(
+                    crate::wide!("[FLDR] UefiGetBootPartitionEntry FAILED\r\n\0"),
+                );
                 return 0u8;
             }
         }
@@ -1295,6 +1305,9 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
         );
         TRACE(
             b"Boot path set to hard disk: %s\n\0".as_ptr() as PCHAR, (FrLdrBootPath.as_ptr()) as usize,
+        );
+        crate::uefildr::fldr_conout(
+            crate::wide!("[FLDR] arc branch = HARDDISK+partition\r\n\0"),
         );
     }
 

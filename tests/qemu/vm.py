@@ -813,16 +813,53 @@ class I386UefiConfig(I386Config):
             f"if=pflash,format=raw,file={ovmf_code},readonly=on",
             "-drive",
             f"if=pflash,format=qcow2,file={ovmf_vars}",
-            "-drive",
-            f"id=cd0,if=none,format=raw,file={iso},readonly=on",
-            "-device",
-            "ide-cd,drive=cd0,bootindex=0",
+            *boot_media_device_args(iso),
             "-vga",
             "std",
             "-display",
             "none",
             "-no-reboot",
         ]
+
+
+def boot_media_device_args(iso) -> list[str]:
+    """How the UEFI boot ISO is attached — `ide-cd` unless told otherwise.
+
+    `VIBEOS_QEMU_BOOT_TRANSPORT=usb-storage|virtio-blk` swaps the device model,
+    which exists because two things need a NON-ATAPI boot device and neither
+    could get one without hand-rolling a QEMU command line:
+
+    * record/replay refuses `ide-cd`/`scsi-cd` outright — QEMU 9.0.2's
+      `blkreplay` stalls the ATAPI path — so x86 rr is unreachable while the ISO
+      can only be a CD.
+    * freeldr's UEFI boot-path code picks its ARC name from the boot handle
+      (`RemovableMedia && BlockSize == 2048` means cdrom, else rdisk+partition),
+      and that second branch has never been exercised here. A probe found the
+      boot going quiet right after "Switching stack..." over both virtio-blk and
+      usb-storage, and reproducing that needed a one-off QEMU invocation that
+      bypassed the staleness and media guards every other boot goes through.
+
+    A remembered recipe is a missing mechanism, so this is the mechanism.
+    """
+    transport = os.environ.get("VIBEOS_QEMU_BOOT_TRANSPORT", "").strip()
+    drive = ["-drive", f"id=cd0,if=none,format=raw,file={iso},readonly=on"]
+    if not transport or transport == "ide-cd":
+        return [*drive, "-device", "ide-cd,drive=cd0,bootindex=0"]
+    if transport == "virtio-blk":
+        return [*drive, "-device", "virtio-blk-pci,drive=cd0,bootindex=0"]
+    if transport == "usb-storage":
+        # xhci, because usb-storage on the default UHCI controller is 1.1-slow
+        # and OVMF enumerates xhci fine.
+        return [
+            *drive,
+            "-device",
+            "qemu-xhci,id=xhci",
+            "-device",
+            "usb-storage,bus=xhci.0,drive=cd0,bootindex=0",
+        ]
+    raise ValueError(
+        f"VIBEOS_QEMU_BOOT_TRANSPORT={transport!r} is not one of ide-cd, virtio-blk, usb-storage"
+    )
 
 
 @dataclass
@@ -912,10 +949,7 @@ class Amd64UefiConfig(Amd64Config):
             f"if=pflash,format=raw,file={ovmf_code},readonly=on",
             "-drive",
             f"if=pflash,format=qcow2,file={ovmf_vars}",
-            "-drive",
-            f"id=cd0,if=none,format=raw,file={iso},readonly=on",
-            "-device",
-            "ide-cd,drive=cd0,bootindex=0",
+            *boot_media_device_args(iso),
             "-vga",
             "std",
             "-display",

@@ -10196,6 +10196,25 @@ translation bug; the free-while-mapped tripwire (negative); `MmInsertRmap`'s two
 diagnosis** — and it is kept after the fix because the two faces are the thing a reader will
 recognise if anything like it returns.
 
+### A boot that goes silent at one line may have changed output CHANNEL, not died
+
+**Symptom:** the serial log stops dead after a specific line and nothing follows,
+so that line reads as the crash site. x86 freeldr "died at
+`[freeldr] Switching stack...`" for months on any non-ATAPI boot device, and the
+conclusion written down was that the stack switch itself failed.
+
+**Cause:** the code before that line printed via UEFI `ConOut`, which the serial
+log carries; everything after it printed via `TRACE`/`WARN`, which it does not.
+The boot was running fine and invisible. A `ConOut` probe placed immediately after
+the switch printed, which took one boot to establish and overturned the whole
+reading — the real failure was ~20 lines later, in `RunLoader`.
+
+**Fix:** before believing a last-line-is-the-crash-site story, check whether the
+NEXT code uses a different print path. The discriminator is cheap: put one probe
+on the channel the log demonstrably carries, immediately after the suspect line.
+If it prints, the line is a channel boundary, not a fault — and the probe is worth
+keeping, because the next reader will otherwise draw the same wrong conclusion.
+
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the
   config manager loads the hive early and growing it shifts everything. **Don't ship the hive
