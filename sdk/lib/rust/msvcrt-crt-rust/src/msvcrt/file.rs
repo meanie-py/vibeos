@@ -1603,16 +1603,21 @@ pub unsafe extern "C" fn _locking(fd: i32, mode: i32, nbytes: __msvcrt_long) -> 
         return -1;
     }
 
+    // _LK_LOCK/_LK_RLCK: the documented contract is ten attempts ONE SECOND apart, then
+    // EDEADLOCK, and a failed attempt sets errno (EACCES for a held region). Wine's C
+    // sleeps 1 ms between tries and sets no errno at all, so a lock released half a second
+    // into the wait was never taken and a caller could not tell why it failed;
+    // tools/payloads/locking grades both DLLs against the contract.
     if mode == (_LK_LOCK) as i32 || mode == (_LK_RLCK) as i32 {
         let mut nretry: i32 = 10;
         ret = 1;
         while nretry > 0 {
             nretry -= 1;
             ret = LockFile((*info).handle, cur_locn, 0, (nbytes) as u32, 0);
-            if ret != 0 {
+            if ret != 0 || nretry == 0 {
                 break;
             }
-            Sleep(1);
+            Sleep(1000);
         }
     } else if mode == (_LK_UNLCK) as i32 {
         ret = UnlockFile((*info).handle, cur_locn, 0, (nbytes) as u32, 0);
@@ -1620,6 +1625,12 @@ pub unsafe extern "C" fn _locking(fd: i32, mode: i32, nbytes: __msvcrt_long) -> 
         ret = LockFile((*info).handle, cur_locn, 0, (nbytes) as u32, 0);
     }
 
+    if ret == 0 {
+        msvcrt_set_errno(GetLastError() as i32);
+        if mode == (_LK_LOCK) as i32 || mode == (_LK_RLCK) as i32 {
+            *_errno() = 36; // EDEADLOCK
+        }
+    }
     release_ioinfo(info);
     if ret != 0 {
         0
