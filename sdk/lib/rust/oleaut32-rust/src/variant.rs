@@ -5026,7 +5026,8 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             (*V_I2_ref(pVarOut)) = !(*V_I2_ref(pVarIn));
         }
         VT_UI2 => {
-            (*V_I4_ref(pVarOut)) = !(*V_UI2_ref(pVarIn)) as i32;
+            // C promotes the USHORT to int before `~`: ~0 is -1, not 0xFFFF
+            (*V_I4_ref(pVarOut)) = !(*V_UI2_ref(pVarIn) as i32);
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
         VT_DECIMAL => {
