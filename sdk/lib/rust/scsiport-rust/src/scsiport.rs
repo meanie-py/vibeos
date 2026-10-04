@@ -2361,9 +2361,10 @@ unsafe fn SpiCreatePortConfig(
                     (*InternalConfigInfo).AdapterNumber,
                 );
 
-                UnicodeString.Length = 0;
-                UnicodeString.MaximumLength = 0;
-                UnicodeString.Buffer = StrBuffer.as_mut_ptr() as PWSTR;
+                // RtlInitUnicodeString: a zero-length name relative to RootKey
+                // opens RootKey itself, so the ScsiAdapter\N subkey was never
+                // the key being parsed.
+                RtlInitUnicodeString(&mut UnicodeString, StrBuffer.as_ptr());
 
                 ObjectAttributes = core::mem::zeroed::<_OBJECT_ATTRIBUTES>();
                 ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
@@ -2434,9 +2435,9 @@ unsafe fn SpiCreatePortConfig(
                 (*InternalConfigInfo).AdapterNumber,
             );
 
-            UnicodeString.Length = 0;
-            UnicodeString.MaximumLength = 0;
-            UnicodeString.Buffer = DeviceBuffer.as_mut_ptr() as PWSTR;
+            // RtlInitUnicodeString: with Length 0 this opened the service key
+            // itself instead of its DeviceN subkey, and parsed that.
+            RtlInitUnicodeString(&mut UnicodeString, DeviceBuffer.as_ptr());
 
             ObjectAttributes = core::mem::zeroed::<_OBJECT_ATTRIBUTES>();
             ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
