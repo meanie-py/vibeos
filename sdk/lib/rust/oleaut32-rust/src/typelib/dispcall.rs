@@ -488,8 +488,9 @@ pub unsafe extern "system" fn DispCallFunc(
     while i < count {
         let arg = *vargs.add(i as usize);
 
+        // Wine 10.0: no VT_EMPTY case, an EMPTY argument takes a slot like
+        // any other integer argument.
         match *types.add(i as usize) {
-            VT_EMPTY => {}
             VT_R4 => {
                 if fpcount < 8 {
                     regs.fp[fpcount as usize].f = (*arg).n3.fltVal;
@@ -508,21 +509,36 @@ pub unsafe extern "system" fn DispCallFunc(
                     argspos += 1;
                 }
             }
-            VT_DECIMAL | VT_VARIANT => {
+            // A DECIMAL (16 bytes) travels by value in two slots. Wine copies
+            // sizeof(VARIANT) = 24 bytes there, one slot more than it reserves,
+            // which can land in x8 (the result pointer); copy the 16 it uses.
+            VT_DECIMAL => {
                 if rcount < 7 {
                     memcpy(
                         (&raw mut regs.x as *mut usize).add(rcount as usize) as *mut c_void,
                         arg as *const c_void,
-                        size_of::<VARIANT>(),
+                        size_of::<DECIMAL>(),
                     );
                     rcount += 2;
                 } else {
                     memcpy(
                         args.add(argspos as usize) as *mut c_void,
                         arg as *const c_void,
-                        size_of::<VARIANT>(),
+                        size_of::<DECIMAL>(),
                     );
                     argspos += 2;
+                }
+            }
+            // Wine 10.0: a VARIANT (24 bytes, larger than 16) is passed by
+            // REFERENCE under AAPCS64, one slot holding its address. The
+            // pre-10 code copied it by value into two slots.
+            VT_VARIANT => {
+                if rcount < 8 {
+                    regs.x[rcount as usize] = arg as usize;
+                    rcount += 1;
+                } else {
+                    *args.add(argspos as usize) = arg as usize;
+                    argspos += 1;
                 }
             }
             VT_BOOL => {

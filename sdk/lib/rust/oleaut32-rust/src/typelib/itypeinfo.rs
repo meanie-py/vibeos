@@ -59,6 +59,7 @@ extern "system" {
     // oleaut32 other TUs
     fn GetActiveObject(rclsid: REFCLSID, pvReserved: PVOID, ppunk: *mut *mut IUnknown) -> HRESULT;
     fn SafeArrayCreate(vt: VARTYPE, cDims: UINT, rgsabound: *mut SAFEARRAYBOUND) -> *mut SAFEARRAY;
+    fn SafeArrayAllocDescriptorEx(vt: VARTYPE, cDims: UINT, ppsaOut: *mut *mut SAFEARRAY) -> HRESULT;
     fn SafeArrayAccessData(psa: *mut SAFEARRAY, ppvData: *mut PVOID) -> HRESULT;
     fn SafeArrayUnaccessData(psa: *mut SAFEARRAY) -> HRESULT;
     fn SafeArrayDestroy(psa: *mut SAFEARRAY) -> HRESULT;
@@ -320,25 +321,14 @@ pub unsafe fn TLB_CopyElemDesc(
     S_OK
 }
 
-pub unsafe fn TLB_SanitizeBSTR(str_: BSTR) -> HRESULT {
-    let len = SysStringLen(str_);
-    let mut i: UINT = 0;
-    while i < len {
-        if *str_.add(i as usize) > 0x7f {
-            *str_.add(i as usize) = b'?' as u16;
-        }
-        i += 1;
-    }
-    S_OK
-}
-
+/// Wine 10.0: only INT/UINT are normalised. The '?'-for-non-ASCII BSTR
+/// rewrite (TLB_SanitizeBSTR) is gone: the writer now encodes BSTRs to the
+/// code page properly (WMSFT_encode_variant), so defaults keep their text.
 pub unsafe fn TLB_SanitizeVariant(var: *mut VARIANT) -> HRESULT {
     if (*var).vt == VT_INT {
         VariantChangeType(var, var, 0, VT_I4)
     } else if (*var).vt == VT_UINT {
         VariantChangeType(var, var, 0, VT_UI4)
-    } else if (*var).vt == VT_BSTR {
-        TLB_SanitizeBSTR((*var).n3.bstrVal)
     } else {
         S_OK
     }
@@ -433,9 +423,13 @@ pub unsafe fn TLB_AllocAndInitFuncDesc(
         (*dest).lprgelemdescParam = null_mut();
     }
 
-    /* special treatment for dispinterfaces: this makes functions appear to
-     * return their [retval] value when it is really returning an HRESULT */
-    if dispinterface != FALSE && (*dest).elemdescFunc.tdesc.vt == VT_HRESULT {
+    /* special treatment for dispinterface FUNCDESC based on an interface
+     * FUNCDESC (Wine 10.0): the arguments IDispatch::Invoke passes separately
+     * ([retval] in pVarResult, [lcid] from Invoke's lcid) leave the signature.
+     * Keyed on the SOURCE not being a dispatch function (dest->funckind was
+     * already overwritten above), where the pre-10 code keyed on an HRESULT
+     * return and never removed [lcid]. */
+    if dispinterface != FALSE && (*src).funckind != FUNC_DISPATCH {
         if (*dest).cParams != 0
             && ((*(*dest).lprgelemdescParam.add((*dest).cParams as usize - 1))
                 .u
@@ -457,10 +451,22 @@ pub unsafe fn TLB_AllocAndInitFuncDesc(
 
             /* remove the last parameter */
             (*dest).cParams -= 1;
-        } else {
-            /* otherwise this function is made to appear to have no return
-             * value */
+        } else if (*dest).elemdescFunc.tdesc.vt == VT_HRESULT {
+            /* an HRESULT is returned in pExcepInfo->scode, not pVarResult, so
+             * the signature shows no return value */
             (*dest).elemdescFunc.tdesc.vt = VT_VOID;
+        }
+
+        /* the now-last parameter may be [lcid], supplied from Invoke(lcid) */
+        if (*dest).cParams != 0
+            && ((*(*dest).lprgelemdescParam.add((*dest).cParams as usize - 1))
+                .u
+                .paramdesc
+                .wParamFlags
+                & PARAMFLAG_FLCID)
+                != 0
+        {
+            (*dest).cParams -= 1;
         }
     }
 
@@ -491,6 +497,30 @@ pub unsafe extern "C" fn ITypeInfoImpl_GetInternalFuncDesc(
 
     *ppFuncDesc = &raw const (*(*This).funcdescs.add(index as usize)).funcdesc;
     S_OK
+}
+
+/// Wine 10.0's ITypeInfoImpl_GetInternalFuncDesc, which returns the
+/// TLBFuncDesc (so callers reach its custdata) and resolves a DISPINTERFACE
+/// index through the inherited interfaces, as GetFuncDesc already did. The
+/// custom-data getters indexed funcdescs[] directly, so on a dispinterface
+/// they answered for the wrong function.
+unsafe fn internal_tlb_funcdesc(iface: *mut ITypeInfo, index: UINT) -> Result<*mut TLBFuncDesc, HRESULT> {
+    // funcdesc is TLBFuncDesc's first field (repr(C)), so the FUNCDESC the
+    // resolvers hand back IS the TLBFuncDesc.
+    const _: () = assert!(core::mem::offset_of!(TLBFuncDesc, funcdesc) == 0);
+    let This = impl_from_ITypeInfo(iface);
+    let mut fd: *const FUNCDESC = null();
+    let mut hrefoffset: UINT = 0;
+    let hr = if (*This).typeattr.typekind == TKIND_DISPATCH {
+        ITypeInfoImpl_GetInternalDispatchFuncDesc(iface, index, &raw mut fd, null_mut(), &raw mut hrefoffset)
+    } else {
+        ITypeInfoImpl_GetInternalFuncDesc(iface, index, &raw mut fd)
+    };
+    if FAILED(hr) {
+        Err(hr)
+    } else {
+        Ok(fd as *mut TLBFuncDesc)
+    }
 }
 
 /* internal function to make the inherited interfaces' methods appear part of
@@ -749,6 +779,32 @@ unsafe extern "system" fn ITypeInfo_fnGetNames(
         return E_INVALIDARG;
     }
 
+    typeinfo_getnames(
+        iface as *mut ITypeInfo,
+        memid,
+        rgBstrNames,
+        cMaxNames,
+        pcNames,
+        (*This).typeattr.typekind == TKIND_DISPATCH,
+    )
+}
+
+/// Wine 10.0's typeinfo_getnames. `dispinterface` is decided once, by the
+/// typeinfo the CALLER asked, and carried through the inheritance recursion:
+/// names of trailing [retval]/[lcid] parameters are hidden exactly as
+/// TLB_AllocAndInitFuncDesc hides the parameters, so GetNames and GetFuncDesc
+/// agree on a dispinterface (the pre-10 code listed names for parameters
+/// GetFuncDesc no longer reported).
+unsafe fn typeinfo_getnames(
+    iface: *mut ITypeInfo,
+    memid: MEMBERID,
+    rgBstrNames: *mut BSTR,
+    cMaxNames: UINT,
+    pcNames: *mut UINT,
+    dispinterface: bool,
+) -> HRESULT {
+    let This = impl_from_ITypeInfo(iface);
+
     *pcNames = 0;
 
     let pFDesc = TLB_get_funcdesc_by_memberid(
@@ -757,6 +813,7 @@ unsafe extern "system" fn ITypeInfo_fnGetNames(
         memid,
     );
     if !pFDesc.is_null() {
+        let mut params = (*pFDesc).funcdesc.cParams as i32;
         if cMaxNames == 0 || (*pFDesc).Name.is_null() {
             return S_OK;
         }
@@ -764,8 +821,20 @@ unsafe extern "system" fn ITypeInfo_fnGetNames(
         *rgBstrNames = SysAllocString(TLB_get_bstr((*pFDesc).Name));
         *pcNames += 1;
 
+        if dispinterface && (*pFDesc).funcdesc.funckind != FUNC_DISPATCH {
+            let flags = |k: i32| {
+                (*(*pFDesc).funcdesc.lprgelemdescParam.add(k as usize)).u.paramdesc.wParamFlags
+            };
+            if params > 0 && (flags(params - 1) & PARAMFLAG_FRETVAL) != 0 {
+                params -= 1; /* Invoke(pVarResult) supplies [retval] */
+            }
+            if params > 0 && (flags(params - 1) & PARAMFLAG_FLCID) != 0 {
+                params -= 1; /* Invoke(lcid) supplies [lcid] */
+            }
+        }
+
         let mut i: i32 = 0;
-        while i < (*pFDesc).funcdesc.cParams as i32 {
+        while i < params {
             if *pcNames >= cMaxNames || (*(*pFDesc).pParamDesc.add(i as usize)).Name.is_null() {
                 return S_OK;
             }
@@ -798,9 +867,8 @@ unsafe extern "system" fn ITypeInfo_fnGetNames(
                 &raw mut pTInfo,
             );
             if SUCCEEDED(result) {
-                let result = ((*(*pTInfo).lpVtbl).GetNames)(
-                    pTInfo, memid, rgBstrNames, cMaxNames, pcNames,
-                );
+                let result =
+                    typeinfo_getnames(pTInfo, memid, rgBstrNames, cMaxNames, pcNames, dispinterface);
                 ((*(*pTInfo).lpVtbl).Release)(pTInfo);
                 return result;
             }
@@ -1587,6 +1655,24 @@ unsafe extern "system" fn ITypeInfo_fnInvoke(
                                 (*missing_arg).vt = VT_ERROR;
                                 (*missing_arg).n3.scode = DISP_E_PARAMNOTFOUND;
                             }
+                        } else if (*func_desc).cParamsOpt < 0
+                            && (*rgvt.add(i as usize) & !VT_BYREF) == (VT_VARIANT | VT_ARRAY)
+                        {
+                            // Wine 10.0: a vararg method called with NO varargs
+                            // gets an empty SAFEARRAY, as Windows passes; it used
+                            // to fail DISP_E_BADPARAMCOUNT.
+                            hres = SafeArrayAllocDescriptorEx(VT_EMPTY, 1, &raw mut safearray_slot);
+                            if FAILED(hres) {
+                                break 'args;
+                            }
+                            let arg = rgvarg.add(i as usize);
+                            if *rgvt.add(i as usize) & VT_BYREF != 0 {
+                                (*arg).n3.byref = &raw mut safearray_slot as *mut c_void;
+                            } else {
+                                (*arg).n3.byref = safearray_slot as *mut c_void; /* V_ARRAY */
+                            }
+                            (*arg).vt = *rgvt.add(i as usize);
+                            *prgpvarg.add(i as usize) = arg;
                         } else {
                             hres = DISP_E_BADPARAMCOUNT;
                             break 'args;
@@ -1843,6 +1929,32 @@ unsafe extern "system" fn ITypeInfo_fnInvoke(
         return E_NOTIMPL;
     }
 
+    /* not found, check for special error cases (Wine 10.0): a property PUT on
+     * a member that only has a GET, with the argument count of a put, is a
+     * parameter-count error on Windows, not DISP_E_MEMBERNOTFOUND. */
+    let mut fdc: UINT = 0;
+    while fdc < (*This).typeattr.cFuncs as UINT {
+        let func_desc = &raw const (*(*This).funcdescs.add(fdc as usize)).funcdesc;
+        if memid == (*func_desc).memid
+            && (wFlags as u32 & INVOKE_PROPERTYPUT as u32) != 0
+            && ((*func_desc).invkind as u32 & INVOKE_PROPERTYGET as u32) != 0
+        {
+            let mut count_inputs: UINT = 0;
+            let mut k: i32 = 0;
+            while k < (*func_desc).cParams as i32 {
+                let flags = (*(*func_desc).lprgelemdescParam.add(k as usize)).u.paramdesc.wParamFlags;
+                if (flags as u32 & PARAMFLAG_FRETVAL as u32) == 0 {
+                    count_inputs += 1;
+                }
+                k += 1;
+            }
+            if count_inputs == 0 || (*pDispParams).cArgs == count_inputs + 1 {
+                return DISP_E_BADPARAMCOUNT;
+            }
+        }
+        fdc += 1;
+    }
+
     /* not found, look for it in inherited interfaces */
     ((*(*iface).lpVtbl).GetTypeKind)(iface, &raw mut type_kind);
     if type_kind == TKIND_INTERFACE || type_kind == TKIND_DISPATCH {
@@ -2010,11 +2122,18 @@ unsafe extern "system" fn ITypeInfo_fnGetDllEntry(
         return TYPE_E_BADMODULEKIND;
     }
 
-    let pFDesc = TLB_get_funcdesc_by_memberid(
-        (*This).funcdescs,
-        (*This).typeattr.cFuncs as UINT,
-        memid,
-    );
+    // Wine 10.0: match the INVOKEKIND too. A module's property get and put
+    // share a memid, and the first match handed back the wrong entry point.
+    let mut pFDesc: *mut TLBFuncDesc = null_mut();
+    let mut k: UINT = 0;
+    while k < (*This).typeattr.cFuncs as UINT {
+        let f = (*This).funcdescs.add(k as usize);
+        if (*f).funcdesc.memid == memid && (*f).funcdesc.invkind == invKind {
+            pFDesc = f;
+            break;
+        }
+        k += 1;
+    }
     if !pFDesc.is_null() {
         /* dump_TypeInfo / dump_TLBFuncDescOne — compiled out */
 
@@ -2258,6 +2377,37 @@ unsafe extern "system" fn ITypeInfo_fnGetRefTypeInfo(
                     ((*(*pTLib).lpVtbl).AddRef)(pTLib);
                     result = S_OK;
                 } else {
+                    // Wine 10.0: an already-loaded typelib with the right
+                    // libid, version and lcid is reused from the cache before
+                    // anything is searched or loaded again.
+                    let imp = (*ref_type).pImpTLInfo;
+                    let want = TLB_get_guid_null((*imp).guid);
+                    let (cache, _) = super::msft::tlb_cache_lock();
+                    let mut cur = (*cache).next;
+                    while cur != cache {
+                        let entry = list_entry!(cur, ITypeLibImpl, entry);
+                        if !(*entry).guid.is_null()
+                            && (*(*entry).guid).guid == *want
+                            && (*entry).ver_major == (*imp).wVersionMajor
+                            && (*entry).ver_minor == (*imp).wVersionMinor
+                            && (*entry).set_lcid == (*imp).lcid
+                        {
+                            pTLib = &raw mut (*entry).ITypeLib2_iface as *mut ITypeLib;
+                            ((*(*pTLib).lpVtbl).AddRef)(pTLib);
+                            break;
+                        }
+                        cur = (*cur).next;
+                    }
+                    super::msft::tlb_cache_unlock();
+                }
+                if !pTLib.is_null() && (*(*ref_type).pImpTLInfo).pImpTypeLib.is_null() {
+                    result = S_OK;
+                    (*(*ref_type).pImpTLInfo).pImpTypeLib = impl_from_ITypeLib(pTLib);
+                    ((*(*pTLib).lpVtbl).AddRef)(pTLib);
+                } else if (*(*ref_type).pImpTLInfo).pImpTypeLib.is_null() {
+                    // (resource table, then disk: the pre-10 search, kept as
+                    // the fallback; wine-10 dropped the resource search, which
+                    // came from Wine Staging and still finds embedded typelibs.)
                     let mut params = search_res_tlb_params {
                         guid: TLB_get_guid_null((*(*ref_type).pImpTLInfo).guid),
                         pTLib: null_mut(),
@@ -2317,6 +2467,18 @@ unsafe extern "system" fn ITypeInfo_fnGetRefTypeInfo(
             }
             if !pTLib.is_null() {
                 ((*(*pTLib).lpVtbl).Release)(pTLib);
+            }
+        }
+
+        // Wine 10.0: bit 0x2 of an hreftype names the OTHER half of a dual
+        // interface. Hand back that alternate (GetRefTypeInfo(-2) on what was
+        // found); before, the plain typeinfo came back for both halves.
+        if SUCCEEDED(result) && (hRefType & 0x2) != 0 && !(*ppTInfo).is_null() {
+            let found = *ppTInfo;
+            let mut alt: *mut ITypeInfo = null_mut();
+            if SUCCEEDED(((*(*found).lpVtbl).GetRefTypeInfo)(found, -2i32 as HREFTYPE, &raw mut alt)) {
+                ((*(*found).lpVtbl).Release)(found);
+                *ppTInfo = alt;
             }
         }
     }
@@ -2678,24 +2840,22 @@ unsafe extern "system" fn ITypeInfo2_fnGetFuncCustData(
     guid: REFGUID,
     pVarVal: *mut VARIANT,
 ) -> HRESULT {
-    let This = impl_from_ITypeInfo2(iface);
-    let pFDesc = (*This).funcdescs.add(index as usize);
-
     TRACE!();
 
-    if index >= (*This).typeattr.cFuncs as UINT {
-        return TYPE_E_ELEMENTNOTFOUND;
-    }
+    let pFDesc = match internal_tlb_funcdesc(iface as *mut ITypeInfo, index) {
+        Ok(f) => f,
+        Err(hr) => return hr,
+    };
 
+    // Wine 10.0: a GUID with no data is S_OK with an EMPTY variant, not
+    // TYPE_E_ELEMENTNOTFOUND.
+    VariantInit(pVarVal);
     let pCData = TLB_get_custdata_by_guid(&raw mut (*pFDesc).custdata_list, guid);
     if pCData.is_null() {
-        return TYPE_E_ELEMENTNOTFOUND;
+        S_OK
+    } else {
+        VariantCopy(pVarVal, &raw const (*pCData).data)
     }
-
-    VariantInit(pVarVal);
-    VariantCopy(pVarVal, &raw const (*pCData).data);
-
-    S_OK
 }
 
 /* ITypeInfo2::GetParamCustData
@@ -2709,14 +2869,12 @@ unsafe extern "system" fn ITypeInfo2_fnGetParamCustData(
     guid: REFGUID,
     pVarVal: *mut VARIANT,
 ) -> HRESULT {
-    let This = impl_from_ITypeInfo2(iface);
-    let pFDesc = (*This).funcdescs.add(indexFunc as usize);
-
     TRACE!();
 
-    if indexFunc >= (*This).typeattr.cFuncs as UINT {
-        return TYPE_E_ELEMENTNOTFOUND;
-    }
+    let pFDesc = match internal_tlb_funcdesc(iface as *mut ITypeInfo, indexFunc) {
+        Ok(f) => f,
+        Err(hr) => return hr,
+    };
 
     if indexParam >= (*pFDesc).funcdesc.cParams as UINT {
         return TYPE_E_ELEMENTNOTFOUND;
@@ -2894,14 +3052,12 @@ unsafe extern "system" fn ITypeInfo2_fnGetAllFuncCustData(
     index: UINT,
     pCustData: *mut CUSTDATA,
 ) -> HRESULT {
-    let This = impl_from_ITypeInfo2(iface);
-    let pFDesc = (*This).funcdescs.add(index as usize);
-
     TRACE!();
 
-    if index >= (*This).typeattr.cFuncs as UINT {
-        return TYPE_E_ELEMENTNOTFOUND;
-    }
+    let pFDesc = match internal_tlb_funcdesc(iface as *mut ITypeInfo, index) {
+        Ok(f) => f,
+        Err(hr) => return hr,
+    };
 
     super::itypelib::TLB_copy_all_custdata(&raw mut (*pFDesc).custdata_list, pCustData)
 }
@@ -2916,14 +3072,12 @@ unsafe extern "system" fn ITypeInfo2_fnGetAllParamCustData(
     indexParam: UINT,
     pCustData: *mut CUSTDATA,
 ) -> HRESULT {
-    let This = impl_from_ITypeInfo2(iface);
-    let pFDesc = (*This).funcdescs.add(indexFunc as usize);
-
     TRACE!();
 
-    if indexFunc >= (*This).typeattr.cFuncs as UINT {
-        return TYPE_E_ELEMENTNOTFOUND;
-    }
+    let pFDesc = match internal_tlb_funcdesc(iface as *mut ITypeInfo, indexFunc) {
+        Ok(f) => f,
+        Err(hr) => return hr,
+    };
 
     if indexParam >= (*pFDesc).funcdesc.cParams as UINT {
         return TYPE_E_ELEMENTNOTFOUND;

@@ -10167,6 +10167,38 @@ def test_payload_failed_rebuild_dies_loudly(tmp_path, monkeypatch):
         pc.ensure_built(["demo"], "i386")
 
 
+def test_payload_borrowed_binary_is_rebuilt_by_its_owner(tmp_path, monkeypatch):
+    """olewinetest stages tools/payloads/apitest/apitest-sweep-<arch>.exe. stale_binaries
+    only judges a payload's own outputs, so the borrowed runner went out stale (built
+    before sweep.c learned apitest-cwd.txt). ensure_built must rebuild the OWNER."""
+    import os
+
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    owner = payloads / "runner"
+    owner.mkdir(parents=True)
+    (owner / "payload.yaml").write_text(
+        "name: runner\nbinaries:\n"
+        "  - src: tools/payloads/runner/run-{arch}.exe\n    dest: run.exe\n"
+    )
+    (owner / "build.sh").write_text('echo built > "$(dirname "$0")/run-$1.exe"\n')
+    exe = owner / "run-amd64.exe"
+    exe.write_text("old")
+    os.utime(exe, (1, 1))  # older than build.sh: stale
+    user = payloads / "suite"
+    user.mkdir(parents=True)
+    (user / "payload.yaml").write_text(
+        "name: suite\nbinaries:\n  - src: tools/payloads/runner/run-{arch}.exe\n    dest: run.exe\n"
+    )
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+
+    assert pc.stale_binaries("suite", "amd64") == []  # not its own output...
+    assert pc.borrowed_owners("suite", "amd64") == ["runner"]
+    assert pc.ensure_built(["suite"], "amd64") == ["runner"]  # ...so the owner rebuilds it
+    assert exe.read_text().strip() == "built"
+
+
 def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatch):
     """kmtest lists its committed kmtest-tests-<arch>.txt under `binaries`. build.sh never
     writes it, so treating it as stale failed every gate with PAYLOAD_BUILD_FAIL."""

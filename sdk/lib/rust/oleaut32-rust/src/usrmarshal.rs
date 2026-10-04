@@ -711,12 +711,20 @@ pub unsafe extern "system" fn VARIANT_UserUnmarshal(
         let mem_size: ULONG;
         Pos = Pos.offset(4);
 
-        match (*header).vt & !VT_BYREF {
-            VT_UNKNOWN | VT_DISPATCH | VT_BSTR => {
-                mem_size = core::mem::size_of::<*mut core::ffi::c_void>() as ULONG;
-            }
-            _ => {
-                mem_size = type_size;
+        // Wine 10.0: a byref ARRAY holds a SAFEARRAY pointer. get_type_size says
+        // 4 for any VT_ARRAY (its WIRE size), so the pre-10 code allocated 4
+        // bytes and the unmarshal then stored an 8-byte pointer: a heap
+        // overflow on amd64/arm64.
+        if (*header).vt & VT_ARRAY != 0 {
+            mem_size = core::mem::size_of::<*mut core::ffi::c_void>() as ULONG;
+        } else {
+            match (*header).vt & !VT_BYREF {
+                VT_UNKNOWN | VT_DISPATCH | VT_BSTR => {
+                    mem_size = core::mem::size_of::<*mut core::ffi::c_void>() as ULONG;
+                }
+                _ => {
+                    mem_size = type_size;
+                }
             }
         }
 

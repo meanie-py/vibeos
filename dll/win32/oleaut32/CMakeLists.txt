@@ -113,6 +113,13 @@ endif()
 
 add_idl_headers(oleaut32_idlheader oleaut32_oaidl.idl)
 add_dependencies(oleaut32 oleaut32_idlheader rust_oleaut32)
+# Upstream's wine-10.0 sync (e05d78ede06) took resources 2/3 (the hand-written
+# oleaut32_oaidl.rgs / oleaut32_ocidl.rgs WINE_REGISTRY scripts) out of
+# oleaut32.rc and generates them from the idl here instead. The September merge
+# kept the .rc change and lost this line, so DllRegisterServer registered no
+# StdFont/StdPicture/PSFactoryBuffer classes and CoGetClassObject(CLSID_StdFont)
+# failed REGDB_E_CLASSNOTREG (Wine's olefont/olepicture tests).
+add_idl_reg_scripts(oleaut32 registry oleaut32_oaidl.idl oleaut32_ocidl.idl)
 set_module_type(oleaut32 win32dll)
 # OLEAUT32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
 target_link_libraries(oleaut32 ${OLEAUT32_RUST_LIB} wine wineldr uuid ${PSEH_LIB} oldnames)

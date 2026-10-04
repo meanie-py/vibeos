@@ -285,15 +285,12 @@ pub unsafe fn MSFT_ReadValue(pVar: *mut VARIANT, offset: i32, pcx: *mut TLBConte
             } else {
                 let ptr = heap_alloc_zero(size as usize) as *mut i8;
                 MSFT_Read(ptr as *mut c_void, size as DWORD, pcx, DO_NOT_SEEK);
-                (*pVar).n3.bstrVal = SysAllocStringLen(null(), size as UINT);
-                /* FIXME: do we need a AtoW conversion here? */
-                *(*pVar).n3.bstrVal.add(size as usize) = 0;
-                let mut i = size;
-                while i > 0 {
-                    i -= 1;
-                    /* char -> OLECHAR assignment sign-extends like the C */
-                    *(*pVar).n3.bstrVal.add(i as usize) = *ptr.add(i as usize) as u16;
-                }
+                // Wine 10.0 answers the old "do we need a AtoW conversion?"
+                // FIXME: yes. The bytes are ANSI (CP_ACP); widening each one
+                // (sign-extended) turned every non-ASCII constant to garbage.
+                let len = MultiByteToWideChar(CP_ACP, 0, ptr, size, null_mut(), 0);
+                (*pVar).n3.bstrVal = SysAllocStringLen(null(), len as UINT);
+                MultiByteToWideChar(CP_ACP, 0, ptr, size, (*pVar).n3.bstrVal, len);
                 heap_free(ptr as *mut c_void);
             }
             size = -4;
@@ -467,9 +464,15 @@ pub unsafe fn MSFT_DoFuncs(
         (*ptfd).funcdesc.callconv = ((*pFuncRec).FKCCIC >> 8) & 0xF;
         (*ptfd).funcdesc.cParams = (*pFuncRec).nrargs;
         (*ptfd).funcdesc.cParamsOpt = (*pFuncRec).nroargs;
-        (*ptfd).funcdesc.oVft = (((*pFuncRec).VtableOffset as i32 & !1)
-            * size_of::<*mut c_void>() as i32
-            / (*(*pTI).pTypeLib).ptr_size) as SHORT;
+        // Wine 10.0: a dispatch function has no vtable slot, and the offset is
+        // UNSIGNED: through `as i32` an offset >= 0x8000 went negative.
+        (*ptfd).funcdesc.oVft = if (*ptfd).funcdesc.funckind == FUNC_DISPATCH {
+            0
+        } else {
+            (((*pFuncRec).VtableOffset as u16 as i32 & !1)
+                * size_of::<*mut c_void>() as i32
+                / (*(*pTI).pTypeLib).ptr_size) as SHORT
+        };
         (*ptfd).funcdesc.wFuncFlags = LOWORD((*pFuncRec).Flags as u32);
 
         /* nameoffset is sometimes -1 on the second half of a propget/propput
@@ -645,6 +648,12 @@ pub unsafe fn MSFT_DoVars(
             (*ptvd).HelpString = MSFT_ReadString(pcx, (*pVarRec).HelpString);
         }
 
+        // Wine 10.0: variables carry custom data too (GetVarCustData /
+        // GetAllVarCustData were always empty for a loaded typelib).
+        if reclength > offset_of!(MSFT_VarRecord, oCustData) as i32 {
+            MSFT_CustData(pcx, (*pVarRec).oCustData, &raw mut (*ptvd).custdata_list);
+        }
+
         if reclength > offset_of!(MSFT_VarRecord, HelpStringContext) as i32 {
             (*ptvd).HelpStringContext = (*pVarRec).HelpStringContext;
         }
@@ -700,10 +709,12 @@ pub unsafe fn MSFT_DoImplTypes(pcx: *mut TLBContext, pTI: *mut ITypeInfoImpl, co
     }
 }
 
-/// when a 32-bit typelib is loaded in 64-bit mode, we need to resize pointers
-/// and some structures, and fix the alignment (#ifdef _WIN64 in the C)
-#[cfg(target_pointer_width = "64")]
+/// A typelib built for the OTHER pointer size needs its pointer-sized types
+/// resized and realigned. Wine 10.0 (TLB_fix_typeinfo_ptr_size) does this in
+/// both directions; the pre-10 code was 32-on-64 only (#ifdef _WIN64), so an
+/// i386 process loading a win64 typelib kept 64-bit sizes and alignments.
 pub unsafe fn TLB_fix_32on64_typeinfo(info: *mut ITypeInfoImpl) {
+    let native = if cfg!(target_pointer_width = "64") { SYS_WIN64 } else { SYS_WIN32 };
     if (*info).typeattr.typekind == TKIND_ALIAS {
         match (*(*info).tdescAlias).vt {
             VT_BSTR | VT_DISPATCH | VT_UNKNOWN | VT_PTR | VT_SAFEARRAY | VT_LPSTR | VT_LPWSTR => {
@@ -713,22 +724,16 @@ pub unsafe fn TLB_fix_32on64_typeinfo(info: *mut ITypeInfoImpl) {
             VT_CARRAY | VT_USERDEFINED => {
                 TLB_size_instance(
                     info,
-                    SYS_WIN64,
+                    native,
                     (*info).tdescAlias,
                     &raw mut (*info).typeattr.cbSizeInstance,
                     &raw mut (*info).typeattr.cbAlignment,
                 );
             }
             VT_VARIANT => {
-                /* NOTE: preserved C fallthrough — VT_VARIANT sets size/align
-                 * then FALLS THROUGH into the default arm (no break in the C). */
+                // Wine 10.0 ends this case (the old C fell through to default).
                 (*info).typeattr.cbSizeInstance = size_of::<VARIANT>() as ULONG;
-                (*info).typeattr.cbAlignment = 8;
-                if (*info).typeattr.cbSizeInstance < size_of::<*mut c_void>() as ULONG {
-                    (*info).typeattr.cbAlignment = (*info).typeattr.cbSizeInstance as WORD;
-                } else {
-                    (*info).typeattr.cbAlignment = size_of::<*mut c_void>() as WORD;
-                }
+                (*info).typeattr.cbAlignment = size_of::<*mut c_void>() as WORD;
             }
             _ => {
                 if (*info).typeattr.cbSizeInstance < size_of::<*mut c_void>() as ULONG {
@@ -1582,10 +1587,13 @@ pub unsafe fn TLB_ReadTypeLib(
         heap_free(file as *mut c_void);
     }
 
+    // Wine 10.0: FILE_SHARE_READ. With share mode 0 the open failed on any
+    // typelib another handle had open, and the path was then cached
+    // un-normalised, so the same file could load twice under two names.
     let h = CreateFileW(
         pszPath,
         GENERIC_READ,
-        0,
+        FILE_SHARE_READ,
         null_mut(),
         OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL,
@@ -2017,14 +2025,11 @@ pub unsafe fn ITypeLib2_Constructor_MSFT(pLib: LPVOID, dwTLBLength: DWORD) -> *m
         }
     }
 
-    #[cfg(target_pointer_width = "64")]
-    {
-        if (*pTypeLibImpl).syskind == SYS_WIN32 {
-            let mut i: i32 = 0;
-            while i < (*pTypeLibImpl).TypeInfoCount {
-                TLB_fix_32on64_typeinfo(*(*pTypeLibImpl).typeinfos.add(i as usize));
-                i += 1;
-            }
+    if (*pTypeLibImpl).ptr_size != size_of::<*mut c_void>() as i32 {
+        let mut i: i32 = 0;
+        while i < (*pTypeLibImpl).TypeInfoCount {
+            TLB_fix_32on64_typeinfo(*(*pTypeLibImpl).typeinfos.add(i as usize));
+            i += 1;
         }
     }
 

@@ -1454,6 +1454,33 @@ size-verified. Real damage:
   extension layout; **a dropped `FIELD_OFFSET(T, Array[N])` subscript scaling** under-allocates
   the heap block.
 
+### A `pshpack` region translated as plain `repr(C)`
+**Symptom.** A file-format reader rejects valid input or reads fields a few bytes off.
+oleaut32's `OleLoadPictureEx` failed every placeable metafile (Wine's olepicture `test_apm`,
+then a crash on the NULL picture), and every icon directory entry was read 2 bytes late.
+**Cause.** The C declared `APM_HEADER`, `CURSORICONFILEDIRENTRY` and `CURSORICONFILEDIR`
+between `#include "pshpack1.h"` and `poppack.h`; the translation gave them plain `#[repr(C)]`,
+so `APM_HEADER` padded to 24 bytes instead of 22 and `idEntries` moved from offset 6 to 8.
+The pack pragma is invisible at the struct, so nothing at the definition looked wrong.
+**Fix.** `#[repr(C, packed)]` plus a `const _: () = assert!(size_of / offset_of ...)` per
+struct. Audit a module by listing every struct inside a `pshpack`/`poppack` pair in its C and
+checking the Rust `repr` (a ten-line script; ole32/oleaut32's other twenty were fine). This is
+the mirror image of the packed-`TDI_ADDRESS_IP` bullet above: wrong in either direction, and
+only a size assert catches it.
+
+### A macro translated from the wrong side of an `#ifdef`
+**Symptom.** Values built through one helper are corrupt in a way that looks like two fields
+swapped. In oleaut32 every negative `DECIMAL` made with `SIGNSCALE` had scale 128, and
+`DECIMAL` products, quotients and `VarDecFromR8` results came back with sign and scale crossed
+(Wine's vartest: `VarMul ... 0.000000, expected 46.200000`).
+**Cause.** `variant.h` defines `SIGNSCALE` twice, under `#ifdef WORDS_BIGENDIAN` and `#else`;
+the translation copied the big-endian branch, `(scale << 8) | sign`, and even labelled it "LE
+branch". The same swap was then written inline in `VARIANT_DecFromDI`, and a reader tested the
+sign as `signscale & 0x80` (bit 7 of the scale byte).
+**Fix.** Use the named union fields (`scale`, `sign`) instead of composing the packed word, and
+when a macro has endian or arch branches, check which one the comment claims against the
+header itself. Grep the crate for every other composition of the same word.
+
 ### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
 `ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.
 A module built `set_module_type(<m> win32dll UNICODE)` picks that up through the island's
@@ -4246,6 +4273,15 @@ call and `invented` still catches a hallucinated token.
 **And say so in the contract.** The `goto` branch already documents why: told "do not
 duplicate" when the C forces duplication, models MINT NEW TOKEN NUMBERS past the end of the
 list rather than repeat one. The fall-through branch now gets the same sentence.
+
+**The opposite face: the translation did NOT replay the fall-through.** Then nothing is
+rejected and behaviour is silently lost. oleaut32's `VarMod` falls BOOL..I8 → INT → UI1..CY →
+EMPTY/DATE/DECIMAL → BSTR, so every one of those right-operand types ends at BSTR's
+"NULL % x is NULL" check; the `match` gave each arm only its own check, and
+`VarMod(NULL, int)` returned `DISP_E_TYPEMISMATCH` (Wine's vartest). Replay it explicitly: map
+the arm to a stage number and run each check `if stage <= k`. When reviewing a translated
+`switch`, look for arms that end without `break` in the C and confirm the Rust arm repeats the
+rest of the chain.
 
 **The rejection that was real, from the same run.** Do not read this entry as "the audit
 over-rejects." `AccRewriteGetNamedRights` was rejected for duplicating `SetLastError`, and
@@ -7289,6 +7325,28 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### i386 guest float compares go the wrong way: the emulator's SAHF, not the code
+
+**Symptom:** on i386 only, an x87 floating-point comparison takes the wrong branch, while the
+same binary is right on the host CPU. Wine's msvcrt `string.c:3522` failed 5,535 times with
+`d.x` and `expected` printing the same digits: its `compare_double` judged two IDENTICAL
+doubles 2^63 ulps apart. Every logged `_atodbl` result was the correctly rounded double.
+
+**Cause:** the windows-host smoke backend's QEMU (11.0.50, development snapshot
+`v11.0.0-12631-g54e84cdc7a`) sets CF wrong when `sahf` follows a logic op (`or`, `xor`,
+`test`) or a plain `mov`; after `and`/`add`/`sub`/`sbb`/`inc`/`cmp`/`shl`/`neg` it is right.
+The i386 tree builds with `-march=pentium` (no `fcomi`), so EVERY compiled x87 comparison is
+`fucom; fnstsw %ax; sahf; jcc`, and the `x |= 1ULL << 63` before the second sign test is an
+`orl`. Pure integer code reproduces it, so it is not the kernel's FPU context handling.
+
+**Fix:** none in our tree; it is the emulator. `tools/payloads/atodbl` is the check: it runs
+SAHF after each op class, the exact compiled `compare_double` from its raw bytes, and the
+winetest's loop, each against its native result, and passes only on a correct emulator. When
+an i386-only float result looks impossible, run it before suspecting the code. The method that
+found it: dump raw bits through `DbgPrint` (not the printf under test), build the probe with
+the tree's flags (a default-flags build used SSE moves and passed), then run the same bytes
+natively and shrink the sequence until one instruction is left.
 
 ### `grep` reports ZERO matches in 21 of our .c/.h files, because it decides they are binary
 
@@ -10351,7 +10409,37 @@ be the kernel" is wrong.
 ### Un-parking the AP into the scheduler `[§9.52]`
 Four rules: per-processor Phase-1 loops must run **after** `KeStartAllProcessors`; the trap.S
 interrupt stub's **handler** owns the IRQL protocol; **TLB-shootdown senders must poll-service,
-never just wait**; and skipping the round-trip for `hlt`ed CPUs (lazy-idle TLB) is a large win.
+never just wait**; and skipping the round-trip for `hlt`ed CPUs (lazy-idle TLB) is a large win
+— **but only if EVERY way out of `hlt` services the deferral before running anything**, including
+device ISRs (next entry: one path did not, and it corrupted amd64 memory silently).
+
+### Successful reads that leave their pages ZERO: a lazy-TLB CPU ran a device ISR
+**Symptom** (amd64 `-smp 2`, roughly half of boots; i386 never): faces with nothing in common —
+csrss `0xC000001D` twice at the *same* address (int3 padding after an import thunk, the caller's
+return address still at `[rsp]`), `0x6B` with `STATUS_DISK_CORRUPT_ERROR`, a kernel `0x1E`
+executing at `0x8f654`, `0x4C`/`STATUS_INVALID_IMAGE_FORMAT`, double faults inside
+`RtlVirtualUnwind` (the dispatcher unwinding from a garbage PC until the stack ran out), and
+silent hangs. Boots that reached the desktop carried the corruption too.
+
+**Cause:** amd64's lazy-idle TLB protocol lets a shootdown sender skip any CPU blocked in `hlt`
+on the premise that it "touches only stable kernel mappings". A device interrupt wakes that CPU
+and `KiInterruptDispatch` runs the ISR at once — and the IDE ISR copies PIO sector data through
+the system-VA mapping of the request's MDL, a VA the system-PTE pool had recycled while this CPU
+still held the old translation. The data went to the OLD physical page: the read's own pages
+stayed zero (they come zeroed from `MmRequestPageMemoryConsumer`) while whatever now owned the
+old page was overwritten. Only idle-exit and the DPC ISR serviced the deferral.
+
+**Fix:** `KiInterruptDispatch` calls `KiTbLazyIdleExitForInterrupt` before the ISR
+(`ke/amd64/ipi.rs`). Measured: 8/8 `-smp 2` boots to desktop with zero corrupt reads, against
+9/16 and 15 zero pages in 3 of 4 boots before.
+
+**How it was found, which is the reusable part:** the faces were too varied to chase one at a
+time, so the probes went where the bytes are decided rather than where they are used. `[KI-EXC]`
+printing the code bytes at RIP turned "illegal instruction" into "this page is zeros"; a scan
+after `IoPageRead` in `MmMakeSegmentResident` then showed full 16 KB reads succeeding with zero
+pages, every one on CPU 1, against a `-smp 1` control whose only zero reads were single genuine
+tail sectors. **Diff the SMP probe output against a UP control before reading it** — half the
+first listing was legitimate zeros.
 
 ### The ready-list tear: five refuted theories and the one real hole `[§9.56]`
 **FIXED** (all three arches; 0 occurrences across every post-fix boot). The long hunt is the

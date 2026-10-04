@@ -33,6 +33,7 @@ ULONG __cdecl DbgPrint(const char *Format, ...);
 
 #define MAX_SUBTESTS      256
 #define MAX_SUBTEST_NAME  64
+#define SWEEP_LINE_MAX    512
 
 struct pump_ctx
 {
@@ -193,7 +194,10 @@ static void load_child_cwd(const char *bindir)
 static int run_child(const char *bindir, const char *suite, const char *arg,
                      struct pump_ctx *ctx, DWORD timeout_ms)
 {
-    char exepath[MAX_PATH], cmdline[MAX_PATH + MAX_SUBTEST_NAME + 8];
+    /* A list line is "<exe> <rest>", and <rest> may be a whole command line
+     * (olewinetest's `reg.exe add "HKLM\...\Image File Execution Options\..."`),
+     * not just a subtest name: size it for SWEEP_LINE_MAX. */
+    char exepath[MAX_PATH], cmdline[MAX_PATH + SWEEP_LINE_MAX + 8];
     SECURITY_ATTRIBUTES sa;
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -470,7 +474,7 @@ static void run_suite(const char *bindir, const char *suite,
 int main(void)
 {
     char windir[MAX_PATH], bindir[MAX_PATH], listpath[MAX_PATH];
-    char line[128];
+    char line[SWEEP_LINE_MAX];
     FILE *f;
     int total = 0, launched = 0, failstart = 0, timeouts = 0, subtests = 0;
 
@@ -540,6 +544,10 @@ int main(void)
              * fake test in the baseline once (2026-07-12). */
             int ch;
             while ((ch = fgetc(f)) != EOF && ch != '\n') { }
+            /* Loud: a silently dropped line reads as a step nobody asked for
+             * (olewinetest's 150-char reg.exe step vanished at the old 128). */
+            DbgPrint("[APITEST-SWEEP] SKIP over-long list line (> %d chars): %.60s...\n",
+                     SWEEP_LINE_MAX - 2, line);
             continue;
         }
         *nl = 0;
