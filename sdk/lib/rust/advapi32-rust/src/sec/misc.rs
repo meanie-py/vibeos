@@ -1456,7 +1456,8 @@ pub unsafe extern "system" fn TreeResetNamedSecurityInfoW(
 
     ErrorCode
 }
-unsafe fn InternalfnProgressW(
+// A FN_PROGRESSW: TreeResetNamedSecurityInfoA hands it to the W call, so it is WINAPI.
+unsafe extern "system" fn InternalfnProgressW(
     pObjectName: LPWSTR,
     Status: DWORD,
     pInvokeSetting: PPROG_INVOKE_SETTING,
@@ -1522,7 +1523,36 @@ pub unsafe extern "system" fn TreeResetNamedSecurityInfoA(
     ProgressInvokeSetting: PROG_INVOKE_SETTING,
     Args: PVOID,
 ) -> DWORD {
-    ERROR_CALL_NOT_IMPLEMENTED
+    // advapi32 builds UNICODE at _WIN32_WINNT 0x502, so accctrl.h defines HAS_FN_PROGRESSW
+    // and the C's live arm is this thunk to the W version. The translation took the
+    // `#ifndef HAS_FN_PROGRESSW` stub arm and returned ERROR_CALL_NOT_IMPLEMENTED.
+    let mut ifnProgressData: INTERNAL_FNPROGRESSW_DATA = core::mem::zeroed();
+    let mut ObjectName: _UNICODE_STRING = core::mem::zeroed();
+
+    if RtlCreateUnicodeStringFromAsciiz(core::ptr::addr_of_mut!(ObjectName), pObjectName) == 0 {
+        return ERROR_NOT_ENOUGH_MEMORY;
+    }
+
+    ifnProgressData.fnProgress = fnProgress;
+    ifnProgressData.Args = Args;
+
+    let Ret = TreeResetNamedSecurityInfoW(
+        ObjectName.Buffer,
+        ObjectType,
+        SecurityInfo,
+        pOwner,
+        pGroup,
+        pDacl,
+        pSacl,
+        KeepExplicit,
+        if fnProgress.is_some() { Some(InternalfnProgressW) } else { None },
+        ProgressInvokeSetting,
+        core::ptr::addr_of_mut!(ifnProgressData) as PVOID,
+    );
+
+    RtlFreeUnicodeString(core::ptr::addr_of_mut!(ObjectName));
+
+    Ret
 }
 
 

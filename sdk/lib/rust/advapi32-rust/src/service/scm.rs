@@ -1532,6 +1532,10 @@ pub unsafe extern "system" fn I_ScGetCurrentGroupStateW(
         pdwGroupState,
     );
 
+    if dwError != ERROR_SUCCESS {
+        SetLastError(dwError);
+    }
+
     dwError
 }
 
