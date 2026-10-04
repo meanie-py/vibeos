@@ -1,0 +1,19 @@
+# netprobe — the client network path rapps' database download takes, one layer at a time:
+# DNS, a raw TCP connect, then wininet over http and https. Each step prints its exact error.
+#   tools/payloads/netprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=netprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload netprobe
+name: netprobe
+description: DNS, TCP connect and wininet http/https to the rapps database host
+
+build_hint: "tools/payloads/netprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/netprobe/netprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/netprobe.exe
+
+test:
+  launch_marker: "[NETPROBE] done"
+  pass_marker: "[NETPROBE] done VERDICT=PASS"
+  launch_drain_secs: 1200

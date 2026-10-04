@@ -741,3 +741,8 @@ extern "system" {
         NotificationEventHandle: HANDLE,
     ) -> NTSTATUS;
 }
+
+// ---- rpcrt4: the C's `RpcExcept` handlers map a caught RPC exception through it (RPC_ENTRY = stdcall). ----
+extern "system" {
+    pub fn I_RpcMapWin32Status(Status: core::ffi::c_long) -> core::ffi::c_long;
+}

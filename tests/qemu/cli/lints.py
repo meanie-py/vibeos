@@ -640,6 +640,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # An array FIELD passed by value to a C variadic (`note("%s", (*ip).name)`): C decays
+    # it to a pointer, Rust passes the array, and only i386 copies the bytes onto the stack,
+    # so `%s` reads the string's first four bytes as a pointer. The i386 DHCP client died on
+    # 0x7374656e ("nets") every boot; msgina's "logged on as DOMAIN\\User" line had the same
+    # shape (2026-10-04). Fields are resolved through each variable's declared type, because
+    # the same field name is an array in one struct and a pointer in the next. Baseline is EMPTY.
+    sva = repo / "tools" / "scan_variadic_array_arg.py"
+    specs.append(
+        (
+            "scan_variadic_array_arg",
+            [py, str(sva), "--lint"] if sva.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Four bug CLASSES that rustconv difftest-contract found in shipping Rust on
     # 2026-09-26, each now a $0 check over every translated body. None was visible to
     # smoke; all compile, link and boot. The two C-oracle scanners pair a Rust function

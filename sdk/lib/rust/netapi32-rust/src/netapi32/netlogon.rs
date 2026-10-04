@@ -1,4 +1,5 @@
 use crate::prelude_rpc::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (standard netapi32 wine-debug channel; TRACE/FIXME reference it) ----
@@ -88,13 +89,13 @@ pub unsafe extern "system" fn DsAddressToSiteNamesW(
     *SiteNames = core::ptr::null_mut();
 
     // This is the body of RpcTryExcept / RpcEndExcept (exception handler omitted)
-    status = DsrAddressToSiteNamesW(
+    status = rpc_try(|| DsrAddressToSiteNamesW(
         ComputerName as PWSTR,
         EntryCount,
         // netlogon.c:235 — `(PNL_SOCKET_ADDRESS)SocketAddresses`
         SocketAddresses as PNL_SOCKET_ADDRESS,
         &mut SiteNameArray,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if status == 0 {
         let entry_count = (*SiteNameArray).EntryCount;
@@ -177,13 +178,13 @@ pub unsafe extern "system" fn DsAddressToSiteNamesExW(
     let mut SiteNameArray: PNL_SITE_NAME_EX_ARRAY = core::ptr::null_mut();
     let mut SiteNamesBuffer: *mut PWSTR = core::ptr::null_mut();
     let mut SubnetNamesBuffer: *mut PWSTR = core::ptr::null_mut();
-    let mut status = DsrAddressToSiteNamesExW(
+    let mut status = rpc_try(|| DsrAddressToSiteNamesExW(
         ComputerName as PWSTR,
         EntryCount,
         // netlogon.c:471 — `(PNL_SOCKET_ADDRESS)SocketAddresses`
         SocketAddresses as PNL_SOCKET_ADDRESS,
         &mut SiteNameArray,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if status == NERR_Success {
         if (*SiteNameArray).EntryCount == 0 {
@@ -276,7 +277,7 @@ pub unsafe extern "system" fn DsDeregisterDnsHostRecordsW(
     DsaGuid: *mut GUID,
     DnsHostName: PWSTR,
 ) -> DWORD {
-    DsrDeregisterDnsHostRecords(ServerName, DnsDomainName, DomainGuid, DsaGuid, DnsHostName)
+    rpc_try(|| DsrDeregisterDnsHostRecords(ServerName, DnsDomainName, DomainGuid, DsaGuid, DnsHostName)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }
 
 // ---- DsEnumerateDomainTrustsW ----
@@ -291,7 +292,7 @@ pub unsafe extern "system" fn DsEnumerateDomainTrustsW(
     let status: DWORD;
 
     // RpcTryExcept body (exception handler omitted as per translation rules)
-    status = DsrEnumerateDomainTrusts(ServerName, Flags, &mut DomainsArray);
+    status = rpc_try(|| DsrEnumerateDomainTrusts(ServerName, Flags, &mut DomainsArray)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if status == 0 {
         *Domains = DomainsArray.Domains;
         *DomainCount = DomainsArray.DomainCount;
@@ -312,7 +313,7 @@ pub unsafe extern "system" fn DsGetDcNameWithAccountW(
     Flags: ULONG,
     DomainControllerInfo: *mut PDOMAIN_CONTROLLER_INFOW,
 ) -> DWORD {
-    let status = DsrGetDcNameEx2(
+    let status = rpc_try(|| DsrGetDcNameEx2(
         ComputerName as PWSTR,
         AccountName as PWSTR,
         AccountControlBits,
@@ -321,7 +322,7 @@ pub unsafe extern "system" fn DsGetDcNameWithAccountW(
         SiteName as PWSTR,
         Flags,
         DomainControllerInfo,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -344,7 +345,7 @@ pub unsafe extern "system" fn DsGetDcSiteCoverageW(
     *SiteNames = core::ptr::null_mut();
 
     // Execute the try body directly (PSEH2_EXCEPT removed)
-    status = DsrGetDcSiteCoverageW(ServerName as PWSTR, &mut SiteNameArray);
+    status = rpc_try(|| DsrGetDcSiteCoverageW(ServerName as PWSTR, &mut SiteNameArray)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if status == 0 {
         // NERR_Success == 0
         let entry_count = (*SiteNameArray).EntryCount;
@@ -411,12 +412,12 @@ pub unsafe extern "system" fn DsGetForestTrustInformationW(
     ForestTrustInfo: *mut *mut LSA_FOREST_TRUST_INFORMATION,
 ) -> DWORD {
     let status: NET_API_STATUS =
-        DsrGetForestTrustInformation(
+        rpc_try(|| DsrGetForestTrustInformation(
             ServerName as *mut u16,
             TrustedDomainName as *mut u16,
             Flags,
             ForestTrustInfo,
-        );
+        )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -426,7 +427,7 @@ pub unsafe extern "system" fn DsGetSiteNameW(
     ComputerName: LPCWSTR,
     SiteName: *mut LPWSTR,
 ) -> DWORD {
-    DsrGetSiteName(ComputerName as PWSTR, SiteName)
+    rpc_try(|| DsrGetSiteName(ComputerName as PWSTR, SiteName)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }
 
 // ---- DsMergeForestTrustInformationW ----
@@ -467,7 +468,7 @@ pub unsafe extern "system" fn NetEnumerateTrustedDomains(
         DomainNameByteCount: 0,
         DomainNames: core::ptr::null_mut(),
     };
-    let Status = NetrEnumerateTrustedDomains(ServerName, &mut DomainNameBuffer);
+    let Status = rpc_try(|| NetrEnumerateTrustedDomains(ServerName, &mut DomainNameBuffer)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if NT_SUCCESS(Status) {
         // netlogon.c:1487 — `*DomainNames = (LPWSTR)DomainNameBuffer.DomainNames;`
         *DomainNames = DomainNameBuffer.DomainNames as LPWSTR;
@@ -484,11 +485,11 @@ pub unsafe extern "system" fn NetGetAnyDCName(
 ) -> NET_API_STATUS {
     let mut Status: NET_API_STATUS;
     *BufPtr = core::ptr::null_mut();
-    Status = NetrGetAnyDCName(
+    Status = rpc_try(|| NetrGetAnyDCName(
         ServerName as PWSTR,
         DomainName as PWSTR,
         BufPtr as *mut PWSTR,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     Status
 }
 
@@ -499,7 +500,7 @@ pub unsafe extern "system" fn NetLogonGetTimeServiceParentDomain(
     DomainName: *mut LPWSTR,
     PdcSameSite: LPBOOL,
 ) -> NET_API_STATUS {
-    let Status = NetrLogonGetTimeServiceParentDomain(ServerName, DomainName, PdcSameSite);
+    let Status = rpc_try(|| NetrLogonGetTimeServiceParentDomain(ServerName, DomainName, PdcSameSite)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     Status
 }
 
@@ -510,7 +511,7 @@ pub unsafe extern "system" fn NetLogonSetServiceBits(
     ServiceBitsOfInterest: DWORD,
     ServiceBits: DWORD,
 ) -> NTSTATUS {
-    NetrLogonSetServiceBits(ServerName, ServiceBitsOfInterest, ServiceBits)
+    rpc_try(|| NetrLogonSetServiceBits(ServerName, ServiceBitsOfInterest, ServiceBits)).unwrap_or_else(|code| code as _)
 }
 
 // ---- DsAddressToSiteNamesA ----
