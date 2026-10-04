@@ -277,11 +277,17 @@ pub unsafe extern "system" fn UniataSataPhyEnable(
         }
     }
 
+    // Keep the link-speed limit across the COMRESET: the C rebuilt SControl
+    // from 0 here, so a downgrade (UniataSataDowngradeLinkSpeed) could never
+    // take effect.
+    let spd_limit = SControl.__bindgen_anon_1.as_ref().SPD();
+
     retry = 0;
     while retry < 10 {
         loop_i = 0;
         while loop_i < 10 {
             *SControl.Reg.as_mut() = 0;
+            SControl.__bindgen_anon_1.as_mut().set_SPD(spd_limit);
             SControl.__bindgen_anon_1.as_mut().set_DET(SControl_DET_Init);
             UniataSataWritePort4(chan, IDX_SATA_SControl as ULONG, *SControl.Reg.as_ref(), pm_port);
             ScsiPortStallExecution(100);
@@ -295,6 +301,7 @@ pub unsafe extern "system" fn UniataSataPhyEnable(
         loop_i = 0;
         while loop_i < 10 {
             *SControl.Reg.as_mut() = 0;
+            SControl.__bindgen_anon_1.as_mut().set_SPD(spd_limit);
             SControl.__bindgen_anon_1.as_mut().set_DET(SControl_DET_DoNothing);
             SControl.__bindgen_anon_1.as_mut().set_IPM(SControl_IPM_NoPartialSlumber);
             UniataSataWritePort4(chan, IDX_SATA_SControl as ULONG, *SControl.Reg.as_ref(), pm_port);
@@ -309,6 +316,44 @@ pub unsafe extern "system" fn UniataSataPhyEnable(
     }
 
     IDE_STATUS_WRONG as UCHAR
+}
+
+/// Cap the SATA link one generation below what it negotiated, for a link
+/// throwing repeated DMA errors (upstream ahci_hw.c AtaAhciDowngradeInterface-
+/// Speed, driven from dev_error.c: a bad cable usually shows up as CRC errors,
+/// and a slower link is the step before giving up on DMA). Takes effect at
+/// the next COMRESET, which UniataSataPhyEnable now preserves it across.
+/// Upstream only lowers a limit that is ALREADY set (`!= LIMIT_NONE`), so a
+/// link starting unrestricted, i.e. every link, could never be downgraded;
+/// this lowers it from the negotiated speed. Returns whether it changed.
+pub unsafe fn UniataSataDowngradeLinkSpeed(
+    HwDeviceExtension: PVOID,
+    lChannel: ULONG,
+    pm_port: ULONG,
+) -> bool {
+    let deviceExtension = HwDeviceExtension as PHW_DEVICE_EXTENSION;
+    let chan: PHW_CHANNEL = (*deviceExtension).chan.add(lChannel as usize);
+    if UniataIsSATARangeAvailable(deviceExtension, lChannel) == 0 {
+        return false;
+    }
+    let mut SStatus: SATA_SSTATUS_REG = core::mem::zeroed();
+    let mut SControl: SATA_SCONTROL_REG = core::mem::zeroed();
+    *SStatus.Reg.as_mut() = UniataSataReadPort4(chan, IDX_SATA_SStatus as ULONG, pm_port);
+    *SControl.Reg.as_mut() = UniataSataReadPort4(chan, IDX_SATA_SControl as ULONG, pm_port);
+    let cur = SStatus.__bindgen_anon_1.as_ref().SPD();
+    if cur <= SStatus_SPD_Gen1 || cur > SStatus_SPD_Gen3 {
+        return false;
+    }
+    let limit = SControl.__bindgen_anon_1.as_ref().SPD();
+    let want = cur - 1; // SControl_SPD_LimGen<n> == n
+    if limit != SControl_SPD_NoRestrict && limit <= want {
+        return false;
+    }
+    SControl.__bindgen_anon_1.as_mut().set_SPD(want);
+    UniataSataWritePort4(chan, IDX_SATA_SControl as ULONG, *SControl.Reg.as_ref(), pm_port);
+    DbgPrint(b"[UNIATA] ch=%u: repeated DMA errors, SATA link limited to Gen%u\n\0".as_ptr().cast(),
+        lChannel, want);
+    true
 }
 
 // ===========================================================================
@@ -601,12 +646,29 @@ pub unsafe extern "system" fn UniataSataIdentifyPM(chan: PHW_CHANNEL) {
 
     PM_Ports &= 0x0000000f;
 
+    // Hide each PM's pseudo/config port (upstream ahci_hw.c, after FreeBSD).
+    // UniATA forced 5 on 3726/4726 whatever the count, knew neither the SiI 3826
+    // nor the Marvell parts, and left the SiI "XmitEarlyAck" bit (GSCR 129
+    // bit 0) set, which upstream clears on both SiI 37xx/38xx parts.
     match PM_DeviceId {
-        0x37261095 => {
-            PM_Ports = 5;
+        0x37261095 | 0x38261095 => {
+            let mut v: ULONG = 0;
+            if UniataSataReadPM(chan, AHCI_DEV_SEL_PM, 129, &mut v) != 0 && (v & 1) != 0 {
+                UniataSataWritePM(chan, AHCI_DEV_SEL_PM, 129, v & !1);
+            }
+            if PM_Ports == 6 {
+                PM_Ports = 5;
+            }
         }
         0x47261095 => {
-            PM_Ports = 5;
+            if PM_Ports == 7 {
+                PM_Ports = 5;
+            }
+        }
+        0x57231095 | 0x57331095 | 0x57341095 | 0x57441095 => {
+            if PM_Ports > 0 {
+                PM_Ports -= 1;
+            }
         }
         _ => {}
     }
@@ -672,7 +734,21 @@ pub unsafe extern "system" fn UniataAhciInit(HwDeviceExtension: PVOID) -> BOOLEA
     let mut GHC: ULONG;
     let MemIo: BOOLEAN;
 
-    CAP2 = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_CAP2 as ULONG);
+    // AHCI 1.3.1 sec. 10.1.2: set GHC.AE before touching any other AHCI
+    // register. UniataAhciDetect restores the firmware's GHC on exit, which on
+    // an HBA that also does legacy IDE (CAP.SAM=1) can have AE=0, and the C
+    // then read CAP2 and did the BIOS handoff in legacy mode. CAP2 itself only
+    // exists from AHCI 1.2 on; before that the offset is reserved. Both rules
+    // are upstream's (ahci_generic.c). The IE clearing below is unchanged.
+    GHC = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_GHC as ULONG);
+    if (GHC & AHCI_GHC_AE) == 0 {
+        UniataAhciWriteHostPort4(deviceExtension, IDX_AHCI_GHC as ULONG, GHC | AHCI_GHC_AE);
+    }
+    CAP2 = if UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_VS as ULONG) >= 0x0001_0200 {
+        UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_CAP2 as ULONG)
+    } else {
+        0
+    };
     if (CAP2 & AHCI_CAP2_BOH) != 0 {
         BOHC = UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_BOHC as ULONG);
         UniataAhciWriteHostPort4(deviceExtension, IDX_AHCI_BOHC as ULONG, BOHC | AHCI_BOHC_OOS);
@@ -1110,19 +1186,37 @@ pub unsafe extern "system" fn UniataAhciStatus(
     *SError.Reg.as_mut() = AtapiReadPort4(chan, IDX_SATA_SError);
 
     /* clear interrupt(s) */
-    UniataAhciWriteHostPort4(deviceExtension, IDX_AHCI_IS as ULONG, hIS);
+    // Port first, host last (AHCI 1.3.1 sec. 5.6.4, upstream ahci_io.c): IS.IPS
+    // re-asserts while the port's PxIS is still set, so the C's host-first
+    // order left a pending port bit behind and drew a second, spurious
+    // interrupt on real HBAs. (QEMU recomputes IS from PxIS, so it never showed.)
     UniataAhciWriteChannelPort4(chan, IDX_AHCI_P_IS as ULONG, *IS.Reg.as_ref());
     AtapiWritePort4(chan, IDX_SATA_SError, *SError.Reg.as_ref());
+    UniataAhciWriteHostPort4(deviceExtension, IDX_AHCI_IS as ULONG, hIS);
 
     /* do we have cold connect surprise */
     if IS.__bindgen_anon_1.as_ref().CPDS() != 0 {}
 
     /* check for and handle connect events */
+    // UniATA attached/forgot the device here but never told SCSIPORT, so a
+    // hot-plugged disk stayed invisible to the OS until reboot. Ask for a bus
+    // rescan (upstream's port driver schedules a port reset + re-enumeration
+    // for the same event). By the time PCS fires the PHY is already up, so
+    // UniataSataConnect returns at once rather than stalling in the ISR.
+    let mut bus_changed = false;
     if IS.__bindgen_anon_1.as_ref().PCS() != 0 {
-        UniataSataEvent(HwDeviceExtension, lChannel, UNIATA_SATA_EVENT_ATTACH, 0);
+        bus_changed |= UniataSataEvent(HwDeviceExtension, lChannel, UNIATA_SATA_EVENT_ATTACH, 0) != 0;
     }
     if IS.__bindgen_anon_1.as_ref().PRCS() != 0 {
-        UniataSataEvent(HwDeviceExtension, lChannel, UNIATA_SATA_EVENT_DETACH, 0);
+        bus_changed |= UniataSataEvent(HwDeviceExtension, lChannel, UNIATA_SATA_EVENT_DETACH, 0) != 0;
+    }
+    if bus_changed {
+        DbgPrint(b"[UNIATA] ch=%u: SATA hotplug, requesting bus rescan\n\0".as_ptr().cast(), lChannel);
+        ScsiPortNotification(
+            _SCSI_NOTIFICATION_TYPE_BusChangeDetected as SCSI_NOTIFICATION_TYPE,
+            HwDeviceExtension,
+            lChannel as UCHAR as ULONG,
+        );
     }
     (*chan).AhciCompleteCI = ((*chan).AhciPrevCI ^ CI) & (*chan).AhciPrevCI; // only 1->0 states
     (*chan).AhciPrevCI = CI;
@@ -1593,6 +1687,18 @@ pub unsafe extern "system" fn UniataAhciAbortOperation(chan: PHW_CHANNEL) -> BOO
         return FALSE as BOOLEAN;
     }
     UniataAhciStartFR(chan);
+    // AHCI 1.3.1 sec. 10.3.1: PxCMD.ST must not be set while PxTFD has BSY or
+    // DRQ. CLO clears them only when CAP.SCLO says the HBA can, so the C could
+    // restart a port whose device was still busy. Upstream's fatal-error path
+    // (ahci_hw.c AtaAhciHandleFatalError, "Busy TFD") escalates to a port reset
+    // instead; UniataAhciHardReset is that COMRESET, and it restarts the port
+    // itself once the device is ready.
+    let TFD = UniataAhciReadChannelPort4(chan, IDX_AHCI_P_TFD as ULONG);
+    if (TFD & (IDE_STATUS_BUSY | IDE_STATUS_DRQ)) != 0 {
+        let mut signature: ULONG = 0;
+        return (UniataAhciHardReset((*chan).DeviceExtension as PVOID, (*chan).lChannel, &mut signature) == 0)
+            as BOOLEAN;
+    }
     UniataAhciStart(chan);
 
     TRUE as BOOLEAN

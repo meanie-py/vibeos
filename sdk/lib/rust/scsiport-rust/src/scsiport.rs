@@ -1478,10 +1478,12 @@ pub unsafe extern "C" fn ScsiPortNotification_v(
         }
 
         BusChangeDetected => {
-            DbgPrint(
-                b"UNIMPLEMENTED SCSI Notification called: BusChangeDetected!\n\0".as_ptr()
-                    as *const i8,
-            );
+            // Unimplemented in ReactOS's scsiport too. A miniport that sees a
+            // device arrive or leave (uniata on SATA hotplug) asks for a rescan:
+            // flag it here, at interrupt level, and ScsiPortDpcForIsr turns it
+            // into IoInvalidateDeviceRelations(BusRelations), whose handler
+            // (FdoHandleDeviceRelations) re-runs FdoScanAdapter.
+            (*DeviceExtension).InterruptData.Flags |= SCSI_PORT_BUS_CHANGE_DETECTED;
         }
 
         _ => {
@@ -1496,6 +1498,10 @@ pub unsafe extern "C" fn ScsiPortNotification_v(
 
     (*DeviceExtension).InterruptData.Flags |= SCSI_PORT_NOTIFICATION_NEEDED;
 }
+
+/// InterruptData.Flags bit for a pending BusChangeDetected (not a ReactOS
+/// flag: the SCSI_PORT_* values stop at 0x10000).
+pub const SCSI_PORT_BUS_CHANGE_DETECTED: u32 = 0x0002_0000;
 
 #[no_mangle]
 pub unsafe extern "system" fn ScsiPortValidateRange(
