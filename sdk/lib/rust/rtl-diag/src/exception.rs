@@ -151,8 +151,10 @@ pub unsafe extern "system" fn RtlRaiseStatus(mut Status: NTSTATUS) {
             RtlPcToFileHeader(frames[k], &mut base);
             let mut size: u32 = 0;
             if !base.is_null() {
-                let nt = (base as *const u8).add(*((base as *const u8).add(0x3C) as *const u32) as usize);
-                size = *(nt.add(0x50) as *const u32); // OptionalHeader.SizeOfImage (PE32+)
+                let nt = ntkrnl_sys::ddk::RtlImageNtHeader(base);
+                if !nt.is_null() {
+                    size = (*nt).OptionalHeader.SizeOfImage;
+                }
             }
             DbgPrint(
                 b"[RAISE]   frame %lu = %p (image %p +0x%lX, size 0x%lX)\n\0".as_ptr() as PCSTR,
