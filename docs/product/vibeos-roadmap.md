@@ -654,6 +654,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   owed: the rest of cnt-rust's C89 set (trig, sqrt, ldexp, _logb, ...) onto libm with the
   same contract, and the ieee754 Bessel C onto libm. Still `-stub`: the `_d*`/`_fd*` internal helpers
   (`_dexp`, `_dnorm`, `_dpoly`, ...) and `_except1`. Owner: ucrt-rust.
+- **Delay-loaded imports are not delay-loaded** (OPEN, 2026-10-04; all arches). `VIBEOS_ENABLE_DELAYLOAD`
+  is ON, yet no module carries a delay-import directory (`DelayImportDescriptorRVA` 0 in shell32,
+  comdlg32, setup's reactos.exe on i386 and amd64): every `add_delay_importlibs` DLL is bound as
+  a regular import, and the delay-load runtime (`__delayLoadHelper2`, Rust since 2026-10-04 in
+  `sdk/lib/rust/delayimp-rust`) is linked everywhere and called nowhere. The sdk apitests say so
+  themselves -- `tools/payloads/delayimp` (i386): all three skip with "No
+  IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT found", nohook exits 0 and globalhook/runtimehook exit 128,
+  identically against the C and the Rust runtime (A/B). Owed: find where the `_delayed`
+  import libraries stop producing delay thunks (gcc.cmake `add_delay_importlibs`,
+  docs/engineering/archive/delay-import-llvm-mingw-design.md), then grade the helper for real.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
   `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs

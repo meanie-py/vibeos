@@ -1,0 +1,14 @@
+# delayimp-rust — the delay-load helper every module with delay imports links
+# (sdk/lib/delayimp: delayimp.c, pfnDliNotifyHook2.c, pfnDliFailureHook2.c).
+# User mode only (no kernel-mode module delay-imports), built by sdk/lib/delayimp as
+# rust_staticlib_variant(delayimp_rust ...) and linked by gcc.cmake's add_delay_importlibs.
+[package]
+name = "delayimp-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
