@@ -483,16 +483,9 @@ pub unsafe extern "C" fn CdUpdateDirentName(
                 let src: *const u8 = NewVersion as *const u8;
                 let dst: *mut u8 = (NewVersion as *mut u8).sub(core::mem::size_of::<WCHAR>());
 
-                // memmove implementation (overlapping-safe)
-                if (dst as *const u8) < src {
-                    for i in 0..count {
-                        *dst.add(i) = *src.add(i);
-                    }
-                } else {
-                    for i in (0..count).rev() {
-                        *dst.add(i) = *src.add(i);
-                    }
-                }
+                // Overlapping move: ptr::copy is memmove. A hand-rolled byte
+                // loop is the shape LLVM folds back into a memmove call.
+                core::ptr::copy(src, dst, count);
 
                 (*Dirent).CdFileName.VersionString.Buffer = NewVersion;
             }
