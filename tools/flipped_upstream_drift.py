@@ -14,7 +14,11 @@ commit is the latest commit that touched a comment naming that file in that CMak
 so undercounts. The drift is the non-merge commits in `flip..merge-base(HEAD, upstream)`
 that touch the C: upstream commits merged after the flip. Our own edits to dead C are not
 counted. A commit counted here may already be mirrored in the Rust by hand, so this is a
-review queue, not a list of bugs.
+review queue, not a list of bugs. Known false-positive class: a file RE-PORTED after its flip
+(the Rust rewritten from a newer C) still dates its drift from the flip comment --
+ntoskrnl/ps/job.c (+2198) was re-translated from upstream's current job.c in 7c3ef6934ea.
+Dating from the commit that last rewrote the Rust would remove these; that needs the C->Rust
+mapping this tool does not have.
 
 USAGE
     python3 tools/flipped_upstream_drift.py [--upstream upstream/master] [--top N]

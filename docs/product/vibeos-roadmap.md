@@ -575,14 +575,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `enum result { ok, ... }` collides with the test `ok` macro), `wine.combase.test.dll`
   (`-llibcombase` not found), `user32_winetest` monitor.c (`ddk/d3dkmthk.h` not on its include
   path; it lives in sdk/include/wine/ddk).
-- **msvcrt.dll Wine winetest: `misc` exits 128, `string` 5,547 failures (i386)** (OPEN,
-  2026-10-04). `tools/payloads/msvcrtwine` (`msvcrt_winetest` + `msvcrt_apitest`): the `misc`
-  subtest dies with exit code 128 after its `_popen` failures (misc.c:375, error 13), and
-  `string` fails 5,547 of 410,010, almost all string.c:3522 `_atodbl`. Both are identical on the
-  x87 and SSE2 builds and before and after the 2026-10-04 libm move (runs
-  `20261003-214256-80iif9qt` vs `20261004-004218-17xphadk`), so neither is a math regression.
-  msvcrt_apitest `ieee` is 33 failures of 286 (was 35), the rest of them `_j0`/`_j1` value rows
-  that want native's bits.
+- **i386 smoke QEMU mis-executes SAHF after a logic op** (OPEN, 2026-10-04; host tooling,
+  not vibeos). The windows-host backend's QEMU is 11.0.50, a development snapshot
+  (`v11.0.0-12631-g54e84cdc7a`, installed 2026-05-01). After `or`/`xor`/`test`/`mov`, `sahf`
+  sets CF wrong, so `fucom; fnstsw; sahf; jcc` -- every x87 float compare `-march=pentium`
+  emits -- can branch the wrong way in i386 guests. Seen as Wine msvcrt `string.c:3522`'s 5,535
+  failures (`_atodbl` is right in all of them). `tools/payloads/atodbl` checks it and goes
+  green on a fixed emulator. Owed: a released QEMU for the windows-host backend, then rerun
+  i386 float-heavy tests. Field manual: "i386 guest float compares go the wrong way".
+- **msvcrt.dll Wine winetest: `misc` exits 128 (i386)** (OPEN, 2026-10-04).
+  `tools/payloads/msvcrtwine`: the `misc` subtest dies with exit code 128 after its `_popen`
+  failures (misc.c:375, error 13), identical on the x87 and SSE2 builds and before and after
+  the libm move (runs `20261003-214256-80iif9qt` vs `20261004-004218-17xphadk`).
+  msvcrt_apitest `ieee` is 33 failures of 286 (was 35), mostly `_j0`/`_j1` value rows that
+  want native's bits.
 - **fastfat bugchecks on rename and on a run of creates (arm64)** (FIXED 2026-10-03; was
   "bugchecks in `FsRtlCheckOplock`"). Two bugs, both 0x23 via `FatBugCheckExceptionFilter`:
   - rename: `FatSetRenameInfo` read the shim's 4-byte `MAX_LFN_CHARACTERS` as `usize`, so every

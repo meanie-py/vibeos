@@ -7276,6 +7276,28 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### i386 guest float compares go the wrong way: the emulator's SAHF, not the code
+
+**Symptom:** on i386 only, an x87 floating-point comparison takes the wrong branch, while the
+same binary is right on the host CPU. Wine's msvcrt `string.c:3522` failed 5,535 times with
+`d.x` and `expected` printing the same digits: its `compare_double` judged two IDENTICAL
+doubles 2^63 ulps apart. Every logged `_atodbl` result was the correctly rounded double.
+
+**Cause:** the windows-host smoke backend's QEMU (11.0.50, development snapshot
+`v11.0.0-12631-g54e84cdc7a`) sets CF wrong when `sahf` follows a logic op (`or`, `xor`,
+`test`) or a plain `mov`; after `and`/`add`/`sub`/`sbb`/`inc`/`cmp`/`shl`/`neg` it is right.
+The i386 tree builds with `-march=pentium` (no `fcomi`), so EVERY compiled x87 comparison is
+`fucom; fnstsw %ax; sahf; jcc`, and the `x |= 1ULL << 63` before the second sign test is an
+`orl`. Pure integer code reproduces it, so it is not the kernel's FPU context handling.
+
+**Fix:** none in our tree; it is the emulator. `tools/payloads/atodbl` is the check: it runs
+SAHF after each op class, the exact compiled `compare_double` from its raw bytes, and the
+winetest's loop, each against its native result, and passes only on a correct emulator. When
+an i386-only float result looks impossible, run it before suspecting the code. The method that
+found it: dump raw bits through `DbgPrint` (not the printf under test), build the probe with
+the tree's flags (a default-flags build used SSE moves and passed), then run the same bytes
+natively and shrink the sequence until one instruction is left.
+
 ### `grep` reports ZERO matches in 21 of our .c/.h files, because it decides they are binary
 
 **Symptom:** you grep a source file for a symbol you have every reason to expect and get
