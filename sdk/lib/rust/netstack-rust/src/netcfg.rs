@@ -83,3 +83,113 @@ fn mask_octets(prefix_len: u8) -> [u8; 4] {
     // big-endian so octet order is a.b.c.d (network order).
     bits.to_be_bytes()
 }
+
+/// Publish the lease's DNS servers where the user-mode resolver looks for them.
+///
+/// dnsapi takes its server list from iphlpapi's GetNetworkParams, which enumerates
+/// `Tcpip\Parameters\Interfaces\*` and reads each interface's `NameServer` or
+/// `DhcpNameServer` (comma-separated, split by resinfo's EnumNameServers). On
+/// Windows dhcpcsvc writes `DhcpNameServer` when it binds a lease; here netstack's
+/// own DHCP client owns the lease (dhcpcsvc's DISCOVERs never see a reply), so
+/// unless netstack writes it, every name lookup fails with "host not found" while
+/// the network itself works. Runs on the poll worker at PASSIVE, once per lease.
+pub fn publish_dns_servers(servers: &[[u8; 4]]) {
+    use ntkrnl_sys::ddk::{ZwClose, ZwCreateKey, ZwSetValueKey, OBJECT_ATTRIBUTES, UNICODE_STRING};
+
+    if servers.is_empty() {
+        return;
+    }
+    // "a.b.c.d,a.b.c.d" as UTF-16, NUL-terminated (REG_SZ).
+    let mut text = [0u16; 128];
+    let mut n = 0usize;
+    for (i, ip) in servers.iter().enumerate() {
+        if i > 0 && n < text.len() - 1 {
+            text[n] = b',' as u16;
+            n += 1;
+        }
+        for (j, octet) in ip.iter().enumerate() {
+            if j > 0 && n < text.len() - 1 {
+                text[n] = b'.' as u16;
+                n += 1;
+            }
+            let mut digits = [0u8; 3];
+            let mut v = *octet;
+            let mut len = 0;
+            loop {
+                digits[len] = b'0' + v % 10;
+                v /= 10;
+                len += 1;
+                if v == 0 {
+                    break;
+                }
+            }
+            while len > 0 && n < text.len() - 1 {
+                len -= 1;
+                text[n] = digits[len] as u16;
+                n += 1;
+            }
+        }
+    }
+    let data_bytes = ((n + 1) * 2) as u32;
+
+    // Create each level in turn: the hives need not carry Interfaces yet.
+    const PATH: [&str; 4] = [
+        "\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Services\\Tcpip",
+        "Parameters",
+        "Interfaces",
+        "netstack",
+    ];
+    const KEY_ALL_ACCESS: u32 = 0xF003F;
+    const OBJ_CASE_INSENSITIVE: u32 = 0x40;
+    const OBJ_KERNEL_HANDLE: u32 = 0x200;
+    const REG_SZ: u32 = 1;
+
+    unsafe {
+        let mut parent: *mut core::ffi::c_void = core::ptr::null_mut();
+        let mut wide = [0u16; 96];
+        for part in PATH {
+            let mut len = 0usize;
+            for b in part.bytes() {
+                wide[len] = b as u16;
+                len += 1;
+            }
+            let mut name = UNICODE_STRING {
+                Length: (len * 2) as u16,
+                MaximumLength: (len * 2) as u16,
+                Buffer: wide.as_mut_ptr(),
+            };
+            let mut oa: OBJECT_ATTRIBUTES = core::mem::zeroed();
+            oa.Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as u32;
+            oa.RootDirectory = parent;
+            oa.ObjectName = &mut name;
+            oa.Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
+            let mut key = core::ptr::null_mut();
+            let st = ZwCreateKey(&mut key, KEY_ALL_ACCESS, &mut oa, 0, core::ptr::null_mut(), 0, core::ptr::null_mut());
+            if !parent.is_null() {
+                ZwClose(parent);
+            }
+            if st < 0 {
+                crate::serial::nsprint!("[NETSTACK] dns: ZwCreateKey {} failed {:#x}\n", part, st);
+                return;
+            }
+            parent = key;
+        }
+        let value: [u16; 14] = [
+            b'D' as u16, b'h' as u16, b'c' as u16, b'p' as u16, b'N' as u16, b'a' as u16,
+            b'm' as u16, b'e' as u16, b'S' as u16, b'e' as u16, b'r' as u16, b'v' as u16,
+            b'e' as u16, b'r' as u16,
+        ];
+        let mut vname = UNICODE_STRING {
+            Length: (value.len() * 2) as u16,
+            MaximumLength: (value.len() * 2) as u16,
+            Buffer: value.as_ptr() as *mut u16,
+        };
+        let st = ZwSetValueKey(parent, &mut vname, 0, REG_SZ, text.as_mut_ptr() as *mut _, data_bytes);
+        ZwClose(parent);
+        if st < 0 {
+            crate::serial::nsprint!("[NETSTACK] dns: ZwSetValueKey failed {:#x}\n", st);
+        } else {
+            crate::serial::nsprint!("[NETSTACK] dns servers published ({} entries)\n", servers.len());
+        }
+    }
+}

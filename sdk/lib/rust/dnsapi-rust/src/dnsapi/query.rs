@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 
@@ -256,7 +257,7 @@ pub unsafe extern "system" fn DnsFlushResolverCache() -> i32 {
     extern "system" {
         fn R_ResolverFlushCache(param: *mut core::ffi::c_void) -> u32;
     }
-    let Status: u32 = R_ResolverFlushCache(core::ptr::null_mut());
+    let Status: u32 = rpc_try(|| R_ResolverFlushCache(core::ptr::null_mut())).unwrap_or_else(|code| code);
     (Status == 0) as i32
 }
 
@@ -267,7 +268,8 @@ pub unsafe extern "system" fn DnsFlushResolverCacheEntry_W(pszEntry: *const u16)
     if pszEntry.is_null() {
         return 0;
     }
-    status = R_ResolverFlushCacheEntry(core::ptr::null_mut(), pszEntry, DNS_TYPE_ANY as u16) as i32;
+    status = rpc_try(|| R_ResolverFlushCacheEntry(core::ptr::null_mut(), pszEntry, DNS_TYPE_ANY as u16))
+        .unwrap_or_else(|code| code) as i32;
     if status == 0 { 1 } else { 0 }
 }
 
@@ -281,7 +283,7 @@ pub unsafe extern "system" fn DnsGetCacheDataTable(
     }
 
     let mut CacheEntries: *mut DNS_CACHE_ENTRY = core::ptr::null_mut();
-    let Status = CRrReadCache(core::ptr::null_mut(), &mut CacheEntries);
+    let Status = rpc_try(|| CRrReadCache(core::ptr::null_mut(), &mut CacheEntries)).unwrap_or_else(|code| code as _);
 
     if Status != ERROR_SUCCESS {
         return 0i32;
@@ -420,10 +422,9 @@ pub unsafe extern "system" fn DnsFlushResolverCacheEntry_A(pszEntry: LPCSTR) -> 
         return 0;
     }
 
-    // RpcTryExcept body (DUMMY_PSEH – execute directly)
-    Status = R_ResolverFlushCacheEntry(core::ptr::null_mut(), pszUnicodeEntry, DNS_TYPE_ANY as u16);
+    Status = rpc_try(|| R_ResolverFlushCacheEntry(core::ptr::null_mut(), pszUnicodeEntry, DNS_TYPE_ANY as u16))
+        .unwrap_or_else(|code| code);
 
-    // Cleanup after try block (RpcEndExcept omitted)
     RtlFreeHeap(RtlGetProcessHeap(), 0, pszUnicodeEntry as *mut core::ffi::c_void);
 
     if Status == ERROR_SUCCESS { 1 } else { 0 }
@@ -443,10 +444,9 @@ pub unsafe extern "system" fn DnsFlushResolverCacheEntry_UTF8(pszEntry: LPCSTR) 
         return 0i32;
     }
 
-    // RpcTryExcept body (no exception handling)
-    Status = R_ResolverFlushCacheEntry(core::ptr::null_mut(), pszUnicodeEntry, DNS_TYPE_ANY as u16);
+    Status = rpc_try(|| R_ResolverFlushCacheEntry(core::ptr::null_mut(), pszUnicodeEntry, DNS_TYPE_ANY as u16))
+        .unwrap_or_else(|code| code);
 
-    // RpcEndExcept: cleanup and return
     RtlFreeHeap(RtlGetProcessHeap(), 0, pszUnicodeEntry as *mut core::ffi::c_void);
     (Status == ERROR_SUCCESS) as BOOL
 }
@@ -795,14 +795,19 @@ pub unsafe extern "system" fn DnsQuery_W(
         i += 1;
     }
 
-    Status = R_ResolverQuery(
-        core::ptr::null_mut(),
-        Name,
-        Type,
-        Options,
-        &mut dwRecords as *mut DWORD,
-        QueryResultSet as *mut *mut DNS_RECORDW,
-    );
+    // RpcTryExcept, as the C: before the DNS Client service is up the stub raises
+    // RPC_S_SERVER_UNAVAILABLE, and that is this call's answer, not the caller's death.
+    Status = rpc_try(|| {
+        R_ResolverQuery(
+            core::ptr::null_mut(),
+            Name,
+            Type,
+            Options,
+            &mut dwRecords as *mut DWORD,
+            QueryResultSet as *mut *mut DNS_RECORDW,
+        )
+    })
+    .unwrap_or_else(|code| code);
 
     Status
 }

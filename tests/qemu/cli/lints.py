@@ -640,6 +640,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # An array FIELD passed by value to a C variadic (`note("%s", (*ip).name)`): C decays
+    # it to a pointer, Rust passes the array, and only i386 copies the bytes onto the stack,
+    # so `%s` reads the string's first four bytes as a pointer. The i386 DHCP client died on
+    # 0x7374656e ("nets") every boot; msgina's "logged on as DOMAIN\\User" line had the same
+    # shape (2026-10-04). Fields are resolved through each variable's declared type, because
+    # the same field name is an array in one struct and a pointer in the next. Baseline is EMPTY.
+    sva = repo / "tools" / "scan_variadic_array_arg.py"
+    specs.append(
+        (
+            "scan_variadic_array_arg",
+            [py, str(sva), "--lint"] if sva.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Four bug CLASSES that rustconv difftest-contract found in shipping Rust on
     # 2026-09-26, each now a $0 check over every translated body. None was visible to
     # smoke; all compile, link and boot. The two C-oracle scanners pair a Rust function
@@ -743,6 +757,16 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_byteptr_stride",
             [py, str(sbs), "--lint"] if sbs.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # HEAP_ZERO_MEMORY handed to GlobalAlloc: not a GMEM_ flag, so GlobalAlloc refuses it
+    # outright. oleaut32's create_stream did this and no picture ever loaded from a file.
+    sgf = repo / "tools" / "scan_gmem_flags.py"
+    specs.append(
+        (
+            "scan_gmem_flags",
+            [py, str(sgf), "--lint"] if sgf.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -1508,6 +1532,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_ud2", status="skip", detail="no binary"))
         run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
         run.add(Stage("scan_self_recursive", status="skip", detail="no binary"))
+        run.add(Stage("scan_export_thunks", status="skip", detail="no binary"))
         return
     # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
     # their output is arch-specific so a single baseline can't match across arches
@@ -1544,3 +1569,20 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         strict=strict,
         by_exit_code=True,
     )
+    # An export that is a jump to another DLL's same-named import: a local body lost the
+    # link to an import library. ole32's GetErrorInfo/SetErrorInfo/CreateErrorInfo went
+    # to oleaut32, which forwards them back: an endless loop for every caller. amd64 only
+    # (the scan reads llvm-objdump's IAT-name annotation); the defect is link-order, not
+    # arch, so one graded arch catches the class.
+    if arch == "amd64":
+        sxt = repo / "tools" / "scan_export_thunks.py"
+        _lint_stage(
+            run,
+            repo,
+            "scan_export_thunks",
+            [py, str(sxt), "--check", str(build_dir)] if sxt.is_file() else ["MISSING"],
+            strict=strict,
+            by_exit_code=True,
+        )
+    else:
+        run.add(Stage("scan_export_thunks", status="skip", detail="amd64-only scan"))

@@ -944,6 +944,13 @@ hand flips the error to the other two.
   address. rustc says nothing: an array IS `Sized`, so it is a legal variadic argument. A macro
   wrapper is the worst place for this class because there is no declared parameter type
   ANYWHERE for a reviewer to compare against.
+  Third and fourth instances (2026-10-04), after which it became a gate: the i386 DHCP client
+  service died in msvcrt's printf engine on every boot that ran long enough to start Dhcp,
+  reading 0x7374656e ("nets", from "netstack smoltcp adapter"), because dhcpcsvc logged
+  `(*ip).name` by value at seven sites. msgina's three direct `wsprintfW(.., DomainName,
+  UserName)` calls had it too. `scan_variadic_array_arg` (`vibeos-cli check`, empty baseline)
+  resolves each `(*v).f` argument through v's declared type, since `name` is an array in
+  `interface_info` and a pointer in the two dhcpcsvc structs beside it.
 - **`extern CCHAR Foo[N]` declared as `*const i8`** — Rust reads the first bytes of the buffer
   *as* the pointer (`"mult"` = 0x746C756D). Mirror the array type, or use a C accessor.
 - **Cross-DLL DATA import indirection.** Under `raw-dylib` the `__imp_` load already yields the
@@ -2906,6 +2913,12 @@ The constants were always available via the bindgen glob; the literals were pure
 `grfMode & 0x00004000` for `STGM_DELETEONRELEASE`, which is `0x04000000`; no STGM flag is
 `0x4000`, so the check never fired (and returned `STG_E_INVALIDFLAG` where the C says
 `STG_E_INVALIDFUNCTION`).
+
+**And one from the wrong FAMILY.** oleaut32's `create_stream` called
+`GlobalAlloc(HEAP_ZERO_MEMORY, n)` where the C says `GMEM_FIXED` (0). 0x8 is not a GMEM_ bit, so
+GlobalAlloc failed with `ERROR_INVALID_PARAMETER` and no picture ever loaded from a file (Wine's
+olepicture test then crashed releasing the pointer it never got). **Gated:
+`tools/scan_gmem_flags.py`.**
 
 **The same class one bit narrower — a PARTIAL mask.** `NtOpenKey` masked `& !0x0100u32` where
 the C masks `~KEY_WOW64_RES` (**0x0300**): right family, half the width, and the named constant
@@ -6224,6 +6237,18 @@ the C let the callee write straight into the caller's buffer, terminator include
 **Fix.** Copy the terminator too when the capacity allows (write it into the temp first). Any
 "query into a temp, then copy out" redirect must copy everything the callee would have
 written, not just the count it returned.
+
+**User mode has it too: `ntdll_sys::seh` (2026-10-04).** Symptom: a process dies on an
+unhandled `RPC_S_SERVER_UNAVAILABLE` (0x6BA) the first time it calls a service that is not
+up yet, e.g. dnsapi before Dnscache starts on arm64. The Rust RPC clients kept only the try
+body of the C's `RpcTryExcept`. ntdll builds the same `sehtry.c` with `-DSEHTRY_USER_MODE`,
+which drops the interrupt-mask restore because `msr daifclr` traps at EL0 and `sti` faults
+at ring 3, and exports both trampolines. `ntdll_sys::seh::rpc_try(|| Stub(..))` gives
+`Err(code)`, and the caller maps it exactly as its C handler did. `tools/rpc_try_wrap.py
+--c <c files> --rs <rust files>` reads each C `RpcExcept` body and rewrites the matching Rust
+call. It exits 1 while any stub call is left unwrapped, so its listing is the to-do list.
+Test: netprobe's rpc-raise step calls OpenSCManagerW on a host that does not exist and
+expects 1722.
 
 ### DUMMY_PSEH turns a protected capture into an unprotected `memcpy` `[§9.59]`
 A whole class, not three bugs: in C, a kernel API captures a caller buffer inside `_SEH2_TRY`;
@@ -10310,6 +10335,24 @@ covers Rust-vs-C for declared prototypes; a shim that is *itself* mis-prototyped
 outside that net.
 ---
 
+### A Rust export loses the link to a DELAY-IMPORT thunk, and the call loops forever
+**Symptom:** a process spins at 100% inside two DLLs, with no fault and no output. The PC
+samples alternate between `ole32!CreateErrorInfo` and `oleaut32!CreateErrorInfo`, which
+disassemble as `jmp [__imp_CreateErrorInfo]` on both sides. Wine's errorinfo test hung on
+every sweep. Any `GetErrorInfo`/`SetErrorInfo`/`CreateErrorInfo` caller would too.
+
+**Cause:** oleaut32's delay-import library is ONE object (`liboleaut32_delayed.delay.o`)
+with a thunk for every oleaut32 export, including the three it `-import`s back from ole32.
+lld loaded it for `SysAllocString` before ole32's `.def` exports were resolved. Loading it
+defined those names, so the Rust `errorinfo.rs` member was never pulled, although it was in
+the archive and first on the link line. `--allow-multiple-definition` kept it silent.
+
+**Fix:** `target_link_options(<mod> PRIVATE "LINKER:--require-defined=<sym>")` (i386:
+the decorated `_Sym@N`). **Not `-u`:** lld's MinGW driver maps `-u` to `-includeoptional`,
+which resolves too late to change the winner; `--require-defined` is a real `-include`.
+**Gated: `tools/scan_export_thunks.py`** (post-link, amd64; its baseline lists the
+deliberate re-exports and the harmless lost-local cases).
+
 ## Mm, PFN & paging
 
 ### The `OriginalPte` / `RmapListHead` union overlay `[§9.13]`
@@ -10958,6 +11001,14 @@ wrong dirent.
 **Generalize.** An uninitialised C local inside a loop is a read of the previous iteration
 whenever anything reads it before writing it, including a callee through a pointer. A
 translator that adds `= 0` (or `zeroed()`) is changing behaviour, not tidying.
+
+**Twice more in fastfat (2026-10-04), as a fresh `...Li` temporary copied back after the
+call.** `FatDefragDirectory` gave `FatLocateDirent` a zeroed `FoundOffsetLi` each pass, where the
+C passes its one `FoundOffset`. The compaction scan drifted on page 0, ended early, and rebuilt
+the free-dirent bitmap calling live root entries free, so every create in a full FAT16 root
+raised `STATUS_FILE_CORRUPT_ERROR` (~100k raises in Wine's storage32). `FatLocateSimpleOemDirent`
+zeroed `ByteOffsetLi` the same way, which lets `FatSelectNames` pick an 8.3 name that is taken.
+The tell is the temporary itself: an in/out `PVBO` parameter has to be the caller's variable.
 
 ### Completing the media wakes up code that a missing file was holding back
 **Symptom.** The first arm64 boot from the full livecd file set wedged during first-boot setup:

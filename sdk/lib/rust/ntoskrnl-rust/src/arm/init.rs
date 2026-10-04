@@ -632,6 +632,13 @@ unsafe fn MiBuildPfnDatabase(
     MiBuildPfnDatabaseFromPageTables();
 
     MiInitializePfnDatabase(LoaderBlock);
+
+    // Reset the free descriptor back so the physical memory block is built from
+    // the real ranges (amd64 and i386 do this too). arm64 used to skip it, so the
+    // pages MxGetNextPage carved -- the page tables and the initial nonpaged pool
+    // -- were missing from MmPhysicalMemoryBlock and the PFN bitmap, and
+    // MiGetPfnEntry had to stop honouring the bitmap to keep the pool working.
+    *MxFreeDescriptor = MxOldFreeDescriptor;
 }
 
 #[cfg(target_arch = "aarch64")]

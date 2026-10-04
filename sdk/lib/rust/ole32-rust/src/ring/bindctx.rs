@@ -25,6 +25,22 @@ pub struct BindCtxObject {
 
 pub type PBindCtxObject = *mut BindCtxObject;
 
+/// objidl.idl `BIND_OPTS3`: `BIND_OPTS2` plus the `hwnd` wine-10 stores. com-sys's
+/// island predates it, so the layout is mirrored here field for field.
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct BIND_OPTS3 {
+    pub cbStruct: DWORD,
+    pub grfFlags: DWORD,
+    pub grfMode: DWORD,
+    pub dwTickCountDeadline: DWORD,
+    pub dwTrackFlags: DWORD,
+    pub dwClassContext: DWORD,
+    pub locale: LCID,
+    pub pServerInfo: *mut COSERVERINFO,
+    pub hwnd: HWND,
+}
+
 #[repr(C)]
 pub struct BindCtxImpl {
     pub IBindCtx_iface: IBindCtx,
@@ -32,7 +48,7 @@ pub struct BindCtxImpl {
     pub bindCtxTable: *mut BindCtxObject,
     pub bindCtxTableLastIndex: u32,
     pub bindCtxTableSize: u32,
-    pub bindOption2: BIND_OPTS2,
+    pub options: BIND_OPTS3,
 }
 
 pub type PBindCtxImpl = *mut BindCtxImpl;
@@ -223,13 +239,13 @@ unsafe extern "system" fn BindCtxImpl_SetBindOptions(iface: *mut IBindCtx, pbind
         return E_POINTER;
     }
 
-    if (*pbindopts).cbStruct > core::mem::size_of::<BIND_OPTS2>() as u32 {
+    if (*pbindopts).cbStruct > core::mem::size_of::<BIND_OPTS3>() as u32 {
         WARN!(b"invalid size\n\0".as_ptr() as *const i8);
         return E_INVALIDARG; /* FIXME : not verified */
     }
     core::ptr::copy_nonoverlapping(
         pbindopts as *const u8,
-        core::ptr::addr_of_mut!((*This).bindOption2) as *mut u8,
+        core::ptr::addr_of_mut!((*This).options) as *mut u8,
         (*pbindopts).cbStruct as usize
     );
     S_OK
@@ -246,12 +262,12 @@ unsafe extern "system" fn BindCtxImpl_GetBindOptions(iface: *mut IBindCtx, pbind
     }
 
     cbStruct = (*pbindopts).cbStruct;
-    if cbStruct > core::mem::size_of::<BIND_OPTS2>() as ULONG {
-        cbStruct = core::mem::size_of::<BIND_OPTS2>() as ULONG;
+    if cbStruct > core::mem::size_of::<BIND_OPTS3>() as ULONG {
+        cbStruct = core::mem::size_of::<BIND_OPTS3>() as ULONG;
     }
 
     core::ptr::copy_nonoverlapping(
-        core::ptr::addr_of!((*This).bindOption2) as *const u8,
+        core::ptr::addr_of!((*This).options) as *const u8,
         pbindopts as *mut u8,
         cbStruct as usize
     );
@@ -491,30 +507,6 @@ unsafe fn BindCtxImpl_ExpandTable(This: *mut BindCtxImpl) -> HRESULT {
     return S_OK;
 }
 
-unsafe fn BindCtxImpl_Construct(This: *mut BindCtxImpl) -> HRESULT {
-
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, This);
-
-    (*This).IBindCtx_iface.lpVtbl = &VT_BindCtxImpl as *const IBindCtxVtbl as *mut IBindCtxVtbl;
-    (*This).ref_ = 0;
-
-    (*This).bindOption2.cbStruct = core::mem::size_of::<BIND_OPTS2>() as u32;
-    (*This).bindOption2.grfFlags = 0;
-    (*This).bindOption2.grfMode = STGM_READWRITE;
-    (*This).bindOption2.dwTickCountDeadline = 0;
-
-    (*This).bindOption2.dwTrackFlags = 0;
-    (*This).bindOption2.dwClassContext = CLSCTX_SERVER;
-    (*This).bindOption2.locale = GetThreadLocale();
-    (*This).bindOption2.pServerInfo = core::ptr::null_mut();
-
-    (*This).bindCtxTableSize = 0;
-    (*This).bindCtxTableLastIndex = 0;
-    (*This).bindCtxTable = core::ptr::null_mut();
-
-    S_OK
-}
-
 #[no_mangle]
 pub unsafe extern "system" fn CreateBindCtx(reserved: u32, ppbc: *mut *mut IBindCtx) -> HRESULT {
 
@@ -531,22 +523,21 @@ pub unsafe extern "system" fn CreateBindCtx(reserved: u32, ppbc: *mut *mut IBind
         return E_INVALIDARG;
     }
 
-    let newBindCtx = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<BindCtxImpl>() as _) as *mut BindCtxImpl;
-    if newBindCtx.is_null() {
+    let object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<BindCtxImpl>() as _) as *mut BindCtxImpl;
+    if object.is_null() {
         return E_OUTOFMEMORY;
     }
 
-    let hr = BindCtxImpl_Construct(newBindCtx);
-    if FAILED(hr) {
-        HeapFree(GetProcessHeap(), 0, newBindCtx as LPVOID);
-        return hr;
-    }
+    (*object).IBindCtx_iface.lpVtbl = &VT_BindCtxImpl as *const IBindCtxVtbl as *mut IBindCtxVtbl;
+    (*object).ref_ = 1;
+    (*object).options.cbStruct = core::mem::size_of::<BIND_OPTS3>() as u32;
+    (*object).options.grfMode = STGM_READWRITE;
+    (*object).options.dwClassContext = CLSCTX_SERVER;
+    (*object).options.locale = GetThreadLocale();
 
-    return BindCtxImpl_QueryInterface(
-        core::ptr::addr_of_mut!((*newBindCtx).IBindCtx_iface),
-        core::ptr::addr_of!(IID_IBindCtx),
-        ppbc as *mut LPVOID
-    );
+    *ppbc = core::ptr::addr_of_mut!((*object).IBindCtx_iface);
+
+    S_OK
 }
 
 #[no_mangle]

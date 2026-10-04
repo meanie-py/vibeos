@@ -833,11 +833,42 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
     - **Wine olewinetest, amd64, before → after:**
       - clipboard, compobj, defaulthandler, ole2 and ole_server all crashed and now run
         (566/11, 985/35, 38/8, 3003/41, 33/2).
-    - **Still owed:**
-      - `OleConvertIStorageToOLESTREAMEx`, plus the export stubs listed in the reader's
-        finding 18 (`CoGetApartmentType`, `CoIncrementMTAUsage`, ...).
-      - `CF_HDROP` in `get_tymed_from_nonole_cf`, and the `OLEDD_TrackStateChange`
-        re-entrancy guard.
-      - `struct oletls` flags, `BIND_OPTS3`, and the `GetObject` ROT lock.
-      - `GetNextFreeBigBlock`'s `neededAddNumBlocks` (performance only).
-      - `OBJ_CASE_INSENSITIVE` on the HKCR opens.
+    - **Also done:** `CF_HDROP` tymed, the `OLEDD_TrackStateChange` re-entrancy guard,
+      `BIND_OPTS3`, ROT `GetObject` unlocks before unmarshalling, `OBJ_CASE_INSENSITIVE`
+      on the three HKCR opens (upstream's `__REACTOS__` fix; our CM is case-sensitive
+      without it), and the new exports: `Co{In,De}crementMTAUsage` (cookie list on the
+      MTA), `CoCreateInstanceFromApp`, `OleConvertIStorageToOLESTREAMEx` (a stub upstream
+      too), plus `CoGetApartmentType`/`CoGetCallState`/`CoGetActivationState`, which were
+      already in the Rust but missing from `ole32.spec`.
+    - **Also ported, once the tests showed they are observable:**
+      - The wine-10 `struct oletls` layout and flags. Callers read `flags` straight out
+        of `TEB->ReservedForOle`, so the field order is ABI; it is pinned by const
+        offset asserts in both copies.
+      - The implicit-MTA `CoGetApartmentType` success.
+      - MTA ipids with `Data2 = 0`, so an MTA outlives its creator thread.
+      - `CoGetClassObject` serving the GIT and `ManualResetEvent` in-proc.
+      - The stub manager's guarded final release (a native-SEH C thunk).
+    - **Declined, not owed:** the implicit-MTA cookie in the TLS block, plus
+      `DestroyRunningObjectTable` and `Ole32DllGetClassObject`. All three exist only
+      for the combase split.
+    - **Not wine-10, found by the sweep:**
+      - ole32's `Get/Set/CreateErrorInfo` exports were oleaut32 delay-import thunks that
+        jumped straight back, an endless loop. Gated by `scan_export_thunks`.
+      - rpcrt4's RPC error handlers never ran under DUMMY_PSEH; now native SEH on
+        amd64/arm64.
+      - oleaut32 asked `GlobalAlloc` for `HEAP_ZERO_MEMORY`. Gated by `scan_gmem_flags`.
+    - **Wine olewinetest, amd64, end of 2026-10-04 (tests / failures), 29 subtests, 0
+      timeouts, 0 crashes.** The bracket shows the state that morning.
+      - ole32:
+        - clipboard 568/10, compobj 1083/40, defaulthandler 38/8, dragdrop 15/0
+        - errorinfo 19/0 [hung], hglobalstream 277/0, marshal 1160/33 [crashed]
+        - moniker 5428/127, ole2 3003/41, ole_server 33/2, propvariant 1523/1
+        - stg_prop 232/9, storage32 18940/47 [timed out], usrmarshal 750/26
+      - oleaut32:
+        - dispatch 58/0, olefont 2430/3, olepicture 1738/14 [crashed]
+        - safearray 11563/1, tmarshal 754/20 [hung], typelib 7628/47
+        - usrmarshal 711/12, varformat 876/3, vartest 1033273/40
+        - vartype 2517705/9 [crashed]
+    - **Still owed:** `GetNextFreeBigBlock`'s `neededAddNumBlocks` (performance only). The
+      remaining failures above are ordinary conformance work, with vartest's French
+      thousands separator (locale data) the first to look at.

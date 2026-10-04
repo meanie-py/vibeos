@@ -704,14 +704,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`NextVbo` reset per iteration; Marlett never loaded); ks pin lists, fltmgr context
   terminator, pcix power/IPI spins. appstorm arm64: 40/43, cpl-appwiz and cpl-ncpa now pass.
   OPEN:
-  - **rapps on arm64**: its database download fails ("Check Internet Connection"), and the
-    OK-only error box then ignores WM_CLOSE (sndvol32's expected box did the same once in two
-    runs). Probably the user-mode network path now that setup starts Dhcp/Dnscache; netstack
-    logs a `TDI open: ControlChannel` every few seconds since. Owner: shell32-com lane.
+  - **rapps on arm64**: database download FIXED 2026-10-04 (netprobe payload: DNS, TCP and
+    wininet https to rapps.reactos.org, 2.4 MB rappmgr2.cab, VERDICT=PASS). Four layers were
+    broken: netstack never published its DHCP DNS servers to `Tcpip\Parameters\Interfaces`
+    (iphlpapi found none), smoltcp's single interface-wide ARP silence starved later lookups
+    (netstack now warms the router and on-link DNS servers), AFD select wrote poll status
+    into the IRP's copy rather than the caller's buffer, ws2_32 dropped `LUP_RETURN_BLOB` so
+    gethostbyname got no hostent; and bcrypt's ECDSA was a stub, so Let's Encrypt's chain never
+    verified (upstream bcrypt restored over mbedTLS 3.6). Still OPEN: rapps itself not
+    re-run under appstorm since; the OK-only error box ignoring WM_CLOSE; `recvfrom` ignores
+    SO_RCVTIMEO (a 3s timeout blocked 9 minutes); smoltcp's ARP silence is still global
+    (a per-address limit is a vendor patch, deferred).
   - **cpl-joy / cpl-appwiz intermittently open no window within 37s** (one each in two runs).
-  - **The dropped RpcTryExcept class**: the user-mode Rust RPC clients (advapi32
-    scm/eventlog/lsa, dnsapi, netapi32, samlib, ...) call their stubs with the C's RpcTryExcept
-    dropped ("DUMMY_PSEH -- execute directly"), so an unavailable RPC server kills the caller.
+  - **The dropped RpcTryExcept class**: FIXED 2026-10-04 for the user-mode RPC clients.
+    ntdll now exports the kernel's SEH trampolines (`RtlSehTryExcept`, sehtry.c built
+    `-DSEHTRY_USER_MODE`) and `ntdll_sys::seh::rpc_try` restores each C handler. 245 stub
+    calls go through it: dnsapi's 6 by hand, the rest in advapi32 (scm, sctrl, eventlog,
+    lsa), netapi32, samlib and wlanapi rewritten by `tools/rpc_try_wrap.py` from the C's own
+    `RpcExcept` bodies. netprobe's
+    rpc-raise step: OpenSCManagerW/OpenEventLogW on a missing host return 1722. Other
+    user-mode crates with DUMMY_PSEH-dropped handlers (non-RPC) are not yet audited.
   - **Safe boot is missing from the Rust kernel on every arch**: ex-rust neither parses
     `SAFEBOOT:` nor creates `CONTROL\SAFEBOOT\Option` (init.c Phase1InitializationDiscard).
   - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are
@@ -1393,13 +1405,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     commits/decommits that page). Run with `VIBEOS_QEMU_SMP=N ./vibeos-cli smoke --arch X
     --payload rpmprobe` and read `[RPMPROBE] ... race` in the serial.
     i386 `-smp 4`: PASS (46,273 copies ok, 686,336 clean errors, 0 silent, no bugcheck).
-    arm64 `-smp 2`: the fixed-address probes pass, then the box WEDGES in the race phase
-    (serial silent right after the race threads start). Not localized; attach gdb during
-    the race. arm64's TB flush is a broadcast `tlbi vmalle1is`, so it is not the IPI path.
-    arm64 also prints `ASSERT FAILED: KeGetCurrentIrql() == SYNCH_LEVEL at ke/ipi.rs:312` on
-    every MP boot, from the `KeIpiGenericCall` self-test. Upstream never implemented
-    `KiIpiSendPacket`; our assert names a level its only caller does not raise to (it calls at
-    DISPATCH), and it went live with `c4d82e425fc`. Non-fatal; decide the contract.
+    arm64 `-smp 2`: the 2026-09-25 race-phase wedge is GONE (re-run 2026-10-04: PASS, 84,671
+    copies, 0 silent; presumably fixed by the 09-26 KNODE/affinity/spinlock work). arm64
+    `-smp 4`: PASS 3 of 4 (59,153 / 63,700 / 902 copies, 0 silent). The fourth died BEFORE the
+    probe ran, in first-boot setup: `BUGCHECK 0x50` on `0xfffffa800041d560`, faulting in
+    `CmpFindSubKeyByName` entry (`cmlib-rust/src/cmindex.rs:1201`) under setupapi's install
+    work, i.e. a key-node pointer that was no longer mapped. OPEN, 1 in 8 arm64 `-smp 4`
+    boots that ran past setup, never seen at `-smp 1` or `-smp 2` in today's runs; the shape
+    fits a registry-lock hole (a cell pointer held across another CPU's bin change), not yet
+    shown. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
+    The `ke/ipi.rs` `== SYNCH_LEVEL` assert was already re-contracted to `>= DISPATCH_LEVEL`
+    and no longer prints.
     amd64 `-smp 2` and `-smp 4`: FIXED 2026-10-04. The boot death seen 2026-09-25 was
     intermittent (2/8 and 9/16 `-smp 2` boots reached the desktop), with five unrelated-looking
     faces: csrss `0xC000001D` twice at the same basesrv address, `0x6B`/`0xC0000032`, a kernel

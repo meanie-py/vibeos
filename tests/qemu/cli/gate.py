@@ -708,6 +708,8 @@ def _resolve_arches(raw: str | None) -> list[str]:
     return out
 
 
+# vCPUs for every smoke leg the gate runs (see smoke_extra in gate()).
+GATE_SMP = 2
 FULL_ARCH_SET = {"i386", "amd64", "arm64"}
 
 
@@ -833,7 +835,13 @@ def gate(args, repo: Path) -> int:
     # parallel gate lane (default) or not at all (--no-net). The smoke itself
     # therefore always gets --no-net — its net stage is the serial-two-boots
     # shape this lane split removes.
-    smoke_extra: list[str] = ["--no-net"]
+    # Every arch's smoke leg boots TWO CPUs. Until 2026-10-04 the gate booted one, so
+    # nothing on the landing path ever ran the MP kernel's cross-CPU paths -- and
+    # amd64 shipped a lazy-TLB hole that corrupted memory on roughly half of -smp 2
+    # boots (field manual: "Successful reads that leave their pages ZERO"), visible
+    # only to whoever passed --smp by hand. The MP kernel has been the default media
+    # selection since 2026-09-12; this makes the gate run it the way it ships.
+    smoke_extra: list[str] = ["--no-net", "--smp", str(GATE_SMP)]
 
     run = Run("gate", "+".join(arches))
     # Host free space BEFORE anything builds. A full disk does not present as a

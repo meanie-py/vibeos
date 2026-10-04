@@ -18,6 +18,7 @@ it belongs on the other side of the door.
 from __future__ import annotations
 
 import ast
+import os
 import re
 from collections import defaultdict
 from dataclasses import replace
@@ -25,6 +26,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .lex_mask import mask_code
+
+
+def _headers_under(root: Path) -> list[Path]:
+    """Every *.h below root. Not Path.rglob: it raises FileNotFoundError when a
+    directory vanishes mid-walk, and the gate runs tooling while builds come and go
+    in the same tree -- a tmpXXXXXXXX directory created and removed under
+    sdk/include/psdk failed test_cpp_com on a green master (2026-10-04). os.walk
+    skips a directory it can no longer list."""
+    out = []
+    for parent, _dirs, files in os.walk(root):
+        out.extend(Path(parent) / f for f in files if f.endswith(".h"))
+    return out
+
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -463,7 +477,7 @@ def _sdk_numeric_definitions(source_path: Path, used_words: set[str]) -> dict[st
     for root in search_roots:
         if not root.is_dir():
             continue
-        for header in sorted(root.rglob("*.h")):
+        for header in sorted(_headers_under(root)):
             if not header.is_file():
                 continue
             # Line by line, as rg matched: `^\s*` must not run across blank lines.

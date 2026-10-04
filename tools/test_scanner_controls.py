@@ -1679,6 +1679,28 @@ pub unsafe extern "system" fn KeGetPcr() -> usize { 0 }
 }
 
 
+# dhcpcsvc, 2026-10-04: `(*ip).name` is a `[c_char; 256]`, passed by value to a variadic
+# logger. i386 pushes the bytes, so `%s` dereferenced "nets". The good side keeps the
+# `.as_ptr()` fix and a same-named POINTER field, which a name-only match would flag.
+_VARIADIC_ARRAY_BAD = """\
+pub struct interface_info { pub next: *mut interface_info, pub name: [c_char; 256] }
+extern "C" { pub fn note(format: *const c_char, ...) -> c_int; }
+unsafe fn send_discover(ipp: *mut c_void) {
+    let ip = ipp as *mut interface_info;
+    note(b"DHCPDISCOVER on %s\\0".as_ptr() as *const i8, (*ip).name);
+}
+"""
+_VARIADIC_ARRAY_GOOD = """\
+pub struct interface_info { pub next: *mut interface_info, pub name: [c_char; 256] }
+pub struct universe { pub name: *const c_char }
+extern "C" { pub fn note(format: *const c_char, ...) -> c_int; }
+unsafe fn send_discover(ipp: *mut c_void, u: *mut universe) {
+    let ip = ipp as *mut interface_info;
+    note(b"DHCPDISCOVER on %s\\0".as_ptr() as *const i8, (*ip).name.as_ptr());
+    note(b"%s\\0".as_ptr() as *const i8, (*u).name);
+}
+"""
+
 # scan_byteptr_stride. Seeded from oleaut32 IRecordInfoImpl_RecordCopy (2026-10-04): the C's
 # `((BYTE*)src_rec) + offset` translated through `*mut PBYTE`, an 8x stride.
 _BYTEPTR_BAD = """\
@@ -1690,6 +1712,19 @@ unsafe fn copy(src_rec: *mut c_void, off: isize) -> *mut c_void {
 _BYTEPTR_GOOD = """\
 unsafe fn copy(src_rec: *mut c_void, off: isize) -> *mut c_void {
     (src_rec as *mut BYTE).offset(off) as *mut c_void
+}
+"""
+
+# scan_gmem_flags. Seeded from oleaut32 create_stream (2026-10-04): the C's GMEM_FIXED came
+# out as HEAP_ZERO_MEMORY, which GlobalAlloc rejects.
+_GMEM_BAD = """\
+unsafe fn load(n: u32) -> HGLOBAL {
+    GlobalAlloc(HEAP_ZERO_MEMORY, n as SIZE_T)
+}
+"""
+_GMEM_GOOD = """\
+unsafe fn load(n: u32) -> HGLOBAL {
+    GlobalAlloc(GMEM_FIXED, n as SIZE_T)
 }
 """
 
@@ -1729,6 +1764,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"recinfo.rs": _BYTEPTR_BAD},
         good={"recinfo.rs": _BYTEPTR_GOOD},
+    ),
+    Control(
+        name="scan_gmem_flags",
+        script="tools/scan_gmem_flags.py",
+        argv=["--lint"],
+        bad={"olepicture.rs": _GMEM_BAD},
+        good={"olepicture.rs": _GMEM_GOOD},
     ),
     Control(
         name="scan_dowhile_continue",
@@ -1965,6 +2007,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BITWISE_NOT_BAD},
         good={"good.rs": _BITWISE_NOT_GOOD},
+    ),
+    Control(
+        name="scan_variadic_array_arg",
+        script="tools/scan_variadic_array_arg.py",
+        argv=["--lint"],
+        bad={"bad.rs": _VARIADIC_ARRAY_BAD},
+        good={"good.rs": _VARIADIC_ARRAY_GOOD},
     ),
     Control(
         name="scan_magic_offsets",

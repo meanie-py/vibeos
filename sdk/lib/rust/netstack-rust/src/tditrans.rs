@@ -28,6 +28,9 @@ use crate::time::now;
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_TIMEOUT: NTSTATUS = 0x0000_0102;
 const STATUS_CONNECTION_REFUSED: NTSTATUS = 0xC000_0236u32 as NTSTATUS;
+const STATUS_IO_TIMEOUT: NTSTATUS = 0xC000_00B5u32 as NTSTATUS;
+/// Windows' default connect timeout: the initial SYN plus two retries (3s, 6s, 12s).
+const CONNECT_TIMEOUT_MS: i64 = 21_000;
 const STATUS_CONNECTION_RESET: NTSTATUS = 0xC000_020Du32 as NTSTATUS;
 
 /// Identifier the management ICMP socket binds to (distinct from the boot
@@ -70,7 +73,7 @@ pub enum Cmd {
     Disconnect { conn_id: u64, irp: usize },
     // Connectionless (UDP) datagram path — rides on the ADDRESS object.
     SendDatagram { addr_id: u64, irp: usize, data: usize, len: usize, ip: [u8; 4], port: u16 },
-    ReceiveDatagram { addr_id: u64, irp: usize, buf: usize, len: usize },
+    ReceiveDatagram { addr_id: u64, irp: usize, buf: usize, len: usize, ret_info: usize },
     CloseConn { id: u64 },
     CloseAddr { id: u64 },
     /// ICMP echo (ping): emit an echo request on the management ICMP socket and
@@ -161,7 +164,7 @@ struct Addr {
     ev_recv_dg: Option<(usize, usize)>,
     /// Pended RECEIVE_DATAGRAM IRPs (irp, buf_va, buf_len) — used when no
     /// datagram event handler is registered.
-    recv_dg: Vec<(usize, usize, usize)>,
+    recv_dg: Vec<(usize, usize, usize, usize)>,
     /// Broadcasts this host sent to our port: (payload, source ip, source port), awaiting
     /// delivery. See `loop_back_broadcast`.
     local_dg: Vec<(Vec<u8>, [u8; 4], u16)>,
@@ -173,6 +176,8 @@ struct Conn {
     conn_ctx: usize,
     handle: Option<SocketHandle>,
     connect_irp: usize,
+    /// When the pending TDI_CONNECT was issued (ms), for the SYN-SENT timeout.
+    connect_ms: i64,
     /// Pended TDI_LISTEN IRP + the caller's ReturnConnectionInformation (filled
     /// with the remote address on accept). 0 when not listening.
     listen_irp: usize,
@@ -304,6 +309,7 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 conn_ctx,
                 handle: None,
                 connect_irp: 0,
+                connect_ms: 0,
                 listen_irp: 0,
                 listen_ret: 0,
                 listen_port: 0,
@@ -346,6 +352,7 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 c.handle = Some(handle);
                 if r.is_ok() {
                     c.connect_irp = irp;
+                    c.connect_ms = crate::time::now().total_millis();
                 } else {
                     unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
                 }
@@ -475,10 +482,10 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
             }
             unsafe { complete(irp, done, sent) };
         }
-        Cmd::ReceiveDatagram { addr_id, irp, buf, len } => {
+        Cmd::ReceiveDatagram { addr_id, irp, buf, len, ret_info } => {
             if let Some(a) = state.addr(addr_id) {
                 ensure_udp(a, sockets);
-                a.recv_dg.push((irp, buf, len));
+                a.recv_dg.push((irp, buf, len, ret_info));
             } else {
                 unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
             }
@@ -843,14 +850,22 @@ fn indicate_datagram(handler: usize, context: usize, payload: &[u8], octets: [u8
 }
 
 /// Deliver queued datagrams to pended RECEIVE_DATAGRAM IRPs (no event handler).
-fn deliver_datagrams_irp(s: &mut udp::Socket, recv_dg: &mut Vec<(usize, usize, usize)>) {
+///
+/// The sender's address goes in the IRP's ReturnDatagramInformation, which AFD copies
+/// into the datagram it queues: left empty, recvfrom() reported every UDP reply as
+/// coming from 0.0.0.0, and a resolver that checks the reply's source drops it.
+fn deliver_datagrams_irp(s: &mut udp::Socket, recv_dg: &mut Vec<(usize, usize, usize, usize)>) {
     while !recv_dg.is_empty() && s.can_recv() {
-        let (irp, buf, len) = recv_dg.remove(0);
+        let (irp, buf, len, ret_info) = recv_dg.remove(0);
         match s.recv() {
-            Ok((payload, _meta)) => {
+            Ok((payload, meta)) => {
                 let n = payload.len().min(len);
                 let dst = unsafe { core::slice::from_raw_parts_mut(buf as *mut u8, n) };
                 dst.copy_from_slice(&payload[..n]);
+                if ret_info != 0 {
+                    let (octets, port) = ep_to_v4(meta.endpoint);
+                    unsafe { fill_remote_address(ret_info, octets, port) };
+                }
                 unsafe { complete(irp, STATUS_SUCCESS, n) };
             }
             Err(_) => unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) },
@@ -1020,6 +1035,21 @@ fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
                     state.conns[ci].connect_irp = 0;
                     unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
                 }
+                // smoltcp never gives up on a SYN by itself, and one parked in SYN-SENT
+                // for a host that never answers ARP re-ARPs every second -- smoltcp
+                // rate-limits ARP for the whole interface, so that starves every other
+                // new destination (the DNS server, for one). Fail it the way Windows
+                // does, after ~21s of SYN retries.
+                State::SynSent
+                    if crate::time::now().total_millis() - state.conns[ci].connect_ms
+                        > CONNECT_TIMEOUT_MS =>
+                {
+                    s.abort();
+                    let irp = state.conns[ci].connect_irp;
+                    state.conns[ci].connect_irp = 0;
+                    nsprint!("[NETSTACK] TDI connect timed out in SYN-SENT (conn {})\n", state.conns[ci].id);
+                    unsafe { complete(irp, STATUS_IO_TIMEOUT, 0) };
+                }
                 _ => {}
             }
         }
@@ -1086,11 +1116,14 @@ fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
             }
         } else {
             while !a.local_dg.is_empty() && !a.recv_dg.is_empty() {
-                let (payload, _ip, _port) = a.local_dg.remove(0);
-                let (irp, buf, len) = a.recv_dg.remove(0);
+                let (payload, ip, port) = a.local_dg.remove(0);
+                let (irp, buf, len, ret_info) = a.recv_dg.remove(0);
                 let n = payload.len().min(len);
                 unsafe {
                     core::ptr::copy_nonoverlapping(payload.as_ptr(), buf as *mut u8, n);
+                    if ret_info != 0 {
+                        fill_remote_address(ret_info, ip, port);
+                    }
                     complete(irp, STATUS_SUCCESS, n);
                 }
             }

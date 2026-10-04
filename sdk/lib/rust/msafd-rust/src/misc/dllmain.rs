@@ -854,9 +854,16 @@ pub unsafe extern "C" fn TranslateNtStatusError(Status: NTSTATUS) -> INT {
     const STATUS_REMOTE_NOT_LISTENING: NTSTATUS = 0xC00000BCu32 as NTSTATUS;
     const STATUS_LOCAL_DISCONNECT: NTSTATUS = 0xC000013Bu32 as NTSTATUS;
     const STATUS_REMOTE_DISCONNECT: NTSTATUS = 0xC000013Cu32 as NTSTATUS;
+    // Not in the C's table, so they fell to the "unhandled" WSAENETDOWN arm: a TCP
+    // connect that timed out read as "network is down" and a refused one logged an
+    // MSAFD error per call. Windows maps them to WSAETIMEDOUT / WSAECONNREFUSED, and
+    // netstack completes connects with both.
+    const STATUS_IO_TIMEOUT: NTSTATUS = 0xC00000B5u32 as NTSTATUS;
+    const STATUS_CONNECTION_REFUSED: NTSTATUS = 0xC0000236u32 as NTSTATUS;
     match Status {
         STATUS_CANT_WAIT => (WSAEWOULDBLOCK as i32),
-        STATUS_TIMEOUT => WSAETIMEDOUT as i32,
+        STATUS_TIMEOUT | STATUS_IO_TIMEOUT => WSAETIMEDOUT as i32,
+        STATUS_CONNECTION_REFUSED => WSAECONNREFUSED as i32,
         STATUS_SUCCESS => NO_ERROR as INT,
         STATUS_FILE_CLOSED => WSAECONNRESET as i32,
         STATUS_END_OF_FILE => WSAESHUTDOWN as i32,
