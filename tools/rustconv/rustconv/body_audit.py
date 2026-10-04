@@ -80,7 +80,7 @@ _IGNORED = re.compile(
     r"ULongToPtr|PtrToUlong|PtrToUshort|UlongToPtr|LongToPtr|PtrToLong|HandleToUlong|"
     r"UlongToHandle|IntToPtr|PtrToInt|NT_SUCCESS|NT_ERROR|NT_WARNING|NT_INFORMATION|debugstr_\w+|wine_dbgstr_\w+|wine_dbg_sprintf|"
     r"pdump|pcheck|FIXME_\w*|TRACE_\w*|WARN_\w*|ERR_\w*|MAKEINTRESOURCE[AW]?|SUCCEEDED|FAILED|"
-    r"HRESULT_FROM_WIN32|MAKELONG|MAKEWORD|LOWORD|HIWORD|LOBYTE|HIBYTE|MAKEWPARAM|MAKELPARAM)$"
+    r"RTL_CONSTANT_STRING|DECLARE_CONST_UNICODE_STRING|HRESULT_FROM_WIN32|MAKELONG|MAKEWORD|LOWORD|HIWORD|LOBYTE|HIBYTE|MAKEWPARAM|MAKELPARAM)$"
 )
 # Names whose Rust spelling is legitimately different. Any listed pattern satisfies the callee.
 _LOWERINGS: dict[str, tuple[str, ...]] = {
@@ -146,6 +146,12 @@ _LOWERINGS: dict[str, tuple[str, ...]] = {
     "InterlockedExchangePointer": (r"Interlocked\w*", r"swap", r"atomic"),
     "InterlockedCompareExchangePointer": (r"Interlocked\w*", r"compare_exchange", r"atomic"),
     "InterlockedOr": (r"Interlocked\w*", r"fetch_or", r"atomic"),
+    "InterlockedExchangeAdd": (r"Interlocked\w*", r"fetch_add", r"atomic"),
+    # Inline initialisers the Rust open-codes as stores (acpi's AcpiOsCreateLock).
+    "KeInitializeSpinLock": (r"KeInitializeSpinLock", r"=\s*0\b", r"write\(\s*\w*,?\s*0\s*\)"),
+    "ExAllocatePoolZero": (r"ExAllocatePool\w*",),
+    "_disable": (r"\bcli\b", r"_disable"),
+    "_enable": (r"\bsti\b", r"_enable"),
     "InterlockedAnd": (r"Interlocked\w*", r"fetch_and", r"atomic"),
 }
 _MEMORY_OPS = frozenset(k for k in _LOWERINGS if "Memory" in k or k.startswith("mem"))
@@ -409,22 +415,84 @@ def _fold(expr: str) -> bool | None:
     return bool(eval(compile(tree, "<if>", "eval")))  # literal-only AST, checked above
 
 
-def pin_version_guards(text: str, pins: dict[str, int]) -> str:
-    """Rewrite decidable version `#if`s to `#if 0`/`#if 1`, keeping every line in place."""
-    if not pins:
-        return text
-    names = re.compile(
-        r"\b(" + "|".join(map(re.escape, sorted(pins, key=len, reverse=True))) + r")\b"
-    )
+_DEFINED_RE = re.compile(r"\bdefined\s*(?:\(\s*(\w+)\s*\)|(\w+))")
+_IFDEF_LINE_RE = re.compile(r"^([ \t]*#[ \t]*)(ifdef|ifndef)[ \t]+(\w+)(.*)$")
+# Defined for every TU this tree compiles: llvm-mingw forces DUMMY_PSEH on all three arches
+# (sdk/cmake/gcc.cmake), and the root CMakeLists defines __REACTOS__.
+TREE_DEFINES = frozenset({"__REACTOS__", "_USE_DUMMY_PSEH"})
+
+
+def _fold_defined(expr: str, pins: dict[str, int], defines: frozenset[str]) -> bool | None:
+    """Fold an `#if` whose only unknowns are `defined(X)` terms: try each of them both ways,
+    and answer only when every assignment agrees (`defined(_WIN32K_) || defined(FOO)`)."""
+    expr = re.sub(r"/\*.*?\*/", " ", expr).split("//")[0]
+    unknown: list[str] = []
+
+    def sub_defined(m: re.Match[str]) -> str:
+        name = m.group(1) or m.group(2)
+        if name in defines or name in pins:
+            return "1"
+        unknown.append(name)
+        return f"__U{len(unknown) - 1}"
+
+    expr = _DEFINED_RE.sub(sub_defined, expr)
+    if pins:
+        names = re.compile(
+            r"\b(" + "|".join(map(re.escape, sorted(pins, key=len, reverse=True))) + r")\b"
+        )
+        expr = names.sub(lambda n: hex(pins[n.group(1)]), expr)
+    if len(unknown) > 4:
+        return None
+    seen: set[bool] = set()
+    for bits in range(1 << len(unknown)):
+        trial = re.sub(r"__U(\d+)", lambda u, b=bits: str((b >> int(u.group(1))) & 1), expr)
+        v = _fold(trial)
+        if v is None:
+            return None
+        seen.add(v)
+    return seen.pop() if len(seen) == 1 else None
+
+
+def pin_version_guards(
+    text: str, pins: dict[str, int], defines: frozenset[str] = TREE_DEFINES
+) -> str:
+    """Rewrite decidable `#if`s to `#if 0`/`#if 1`, keeping every line in place.
+
+    Decidable means: over integer pins (versions, switches) and names the build always
+    `-D`s (`defines`). A `defined(X)` of anything else is tried both ways."""
     out = []
     for line in text.split("\n"):
+        d = _IFDEF_LINE_RE.match(line)
+        if d and d.group(3) in defines:
+            line = f"{d.group(1)}if {int(d.group(2) == 'ifdef')}{d.group(4)}"
         m = _COND_LINE_RE.match(line)
-        if m and names.search(m.group(2)):
-            folded = _fold(names.sub(lambda n: hex(pins[n.group(1)]), m.group(2)))
+        if m and not re.fullmatch(r"\s*\d+\s*", m.group(2).split("//")[0]):
+            folded = _fold_defined(m.group(2), pins, defines)
             if folded is not None:
                 line = f"{m.group(1)} {int(folded)}"
         out.append(line)
     return "\n".join(out)
+
+
+_CMAKE_D_RE = re.compile(r"-D([A-Za-z_]\w*)(?:=(\S+?))?(?=[\s)\"]|$)")
+
+
+def module_defines(module_dir: Path) -> frozenset[str]:
+    """Names the module's CMakeLists `-D`s unconditionally (outside every `if()` block)."""
+    cml = module_dir / "CMakeLists.txt"
+    names = set(TREE_DEFINES)
+    if not cml.is_file():
+        return frozenset(names)
+    depth = 0
+    for raw in cml.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.split("#")[0]
+        if re.match(r"\s*if\s*\(", line, re.I):
+            depth += 1
+        elif re.match(r"\s*endif\s*\(", line, re.I):
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            names.update(m.group(1) for m in _CMAKE_D_RE.finditer(line))
+    return frozenset(names)
 
 
 def _dbg_lines(text: str) -> set[int]:
@@ -459,10 +527,17 @@ class CBody:
 
 
 def c_bodies(
-    path: Path, pins: dict[str, int] | None = None, real_seh: bool = False
+    path: Path,
+    pins: dict[str, int] | None = None,
+    real_seh: bool = False,
+    defines: frozenset[str] = TREE_DEFINES,
 ) -> dict[str, CBody]:
     """Each function this .c DEFINES, with the callees its LIVE body must perform."""
-    text = pin_version_guards(path.read_text(encoding="utf-8", errors="replace"), pins or {})
+    text = path.read_text(encoding="utf-8", errors="replace")
+    # acpi main.c's own `#define NDEBUG` decides its `#ifndef NDEBUG` blocks.
+    if re.search(r"^[ \t]*#[ \t]*define[ \t]+NDEBUG\b", text, re.M):
+        defines = defines | {"NDEBUG"}
+    text = pin_version_guards(text, pins or {}, defines)
     masked = _blank_ignored_calls(mask_code(text))
     dead = never_compiled_lines(text)
     masked_lines = masked.splitlines()
@@ -625,12 +700,22 @@ class RustIndex:
     bodies: dict[str, str]  # masked (comment/literal-free) body text per fn name
     files: dict[str, Path]
     macros: dict[str, str]
+    # `#[link_name = "ClassAcquireRemoveLock"] fn class_acquire_remove_lock(..)`: the Rust
+    # name -> the symbol it really calls.
+    aliases: dict[str, str] = field(default_factory=dict)
+
+
+_LINK_NAME_RE = re.compile(
+    r'#\[link_name\s*=\s*"(\w+)"\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?'
+    r"(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?fn\s+(\w+)"
+)
 
 
 def rust_index(srcs: list[Path]) -> RustIndex:
     bodies: dict[str, str] = {}
     files: dict[str, Path] = {}
     macros: dict[str, str] = {}
+    aliases: dict[str, str] = {}
     for f in srcs:
         text = f.read_text(encoding="utf-8", errors="replace")
         # Generated bindgen islands hold declarations, never translated bodies.
@@ -641,11 +726,13 @@ def rust_index(srcs: list[Path]) -> RustIndex:
             # dropped call quoted in a comment must not count as kept.
             bodies[name] = bodies.get(name, "") + "\n" + mask_code(body)
             files.setdefault(name, f)
+        for m in _LINK_NAME_RE.finditer(text):
+            aliases[m.group(2)] = m.group(1)
         for m in re.finditer(r"macro_rules!\s*(\w+)\s*\{", text):
             end = _matching(text, m.end() - 1, "{", "}")
             if end is not None:
                 macros[m.group(1)] = mask_code(text[m.end() : end])
-    return RustIndex(bodies, files, macros)
+    return RustIndex(bodies, files, macros, aliases)
 
 
 def _effective(name: str, idx: RustIndex, c_names: set[str]) -> str:
@@ -684,8 +771,12 @@ def _kept(callee: str, rust: str, idents: set[str]) -> bool:
     # dbgbitmap.h's RtlSetBitsDbg & co. wrap the plain call with release-invisible checks.
     if callee.endswith("Dbg") and _kept(callee[:-3], rust, idents):
         return True
-    # A/W generic names resolve to one of their variants.
-    if callee + "W" in idents or callee + "A" in idents:
+    # A/W generic names resolve to one of their variants; the IoXxxRemoveLock macros are
+    # their `Ex` exports (serial calls IoReleaseRemoveLockEx directly).
+    if any(callee + sfx in idents for sfx in ("W", "A", "Ex")):
+        return True
+    # `_InterlockedExchangeAdd` is the intrinsic spelling, `_swprintf` the msvcrt one.
+    if callee.startswith("_") and callee.lstrip("_") and _kept(callee.lstrip("_"), rust, idents):
         return True
     # Compiler intrinsics (`__readmsr`, `_ReadWriteBarrier`, `__inbyte`) are inline asm or
     # fences in Rust, under whatever name the port chose.
@@ -716,6 +807,7 @@ def audit(
     macros: dict[str, str] | None = None,
     pins: dict[str, int] | None = None,
     real_seh: bool | None = None,
+    defines: frozenset[str] = TREE_DEFINES,
 ) -> list[Finding]:
     """`glue_c`: C the build still compiles (cohab shims). A Rust body that delegates to one
     of its functions has not dropped that work, so those bodies join the helper pool."""
@@ -724,7 +816,7 @@ def audit(
     if real_seh is None:
         real_seh = uses_real_seh(rust_srcs)
     for f in c_files:
-        c_all.update(c_bodies(f, pins, real_seh))
+        c_all.update(c_bodies(f, pins, real_seh, defines))
     idx = rust_index(rust_srcs)
     for f in glue_c or []:
         text = f.read_text(encoding="utf-8", errors="replace")
@@ -753,6 +845,7 @@ def audit(
         rust = _effective(name, idx, c_names)
         rust_lines = max(1, rust.strip().count("\n") + 1) if rust.strip() else 0
         idents = set(_IDENT_RE.findall(rust))
+        idents |= {idx.aliases[i] for i in idents if i in idx.aliases}
         dropped = []
         for c in sorted(cb.required):
             if _kept(c, rust, idents):
@@ -805,7 +898,9 @@ def module_inputs(
     c_files = [
         p
         for p in sorted(source_files(module_dir, "*.c"))
-        if p.resolve() not in live and not p.name.startswith("rust_")
+        if p.resolve() not in live
+        and not p.name.startswith("rust_")
+        and not _other_target(p, module_dir)
     ]
     glue = sorted(p for p in live if p.is_relative_to(module_dir.resolve()))
     workspace = repo / "sdk" / "lib" / "rust"
@@ -814,6 +909,26 @@ def module_inputs(
         if (crate / "src").is_dir():
             srcs.extend(sorted(source_files(crate / "src", "*.rs")))
     return c_files, srcs, glue
+
+
+_TARGET_RE = re.compile(
+    r"^[ \t]*(?:set_module_type|add_library|add_executable|add_cargo_\w+)\(", re.M
+)
+
+
+def _other_target(c_file: Path, module_dir: Path) -> bool:
+    """True when a CMakeLists between the file and `module_dir` builds its own binary.
+
+    win32k's own C was deleted when ntuser/ntgdi went Rust-only, so `win32ss` paired its
+    crate with user32/, gdi32/ and framebuf/ C: same names (IntDrawScrollBar, Eng*), other
+    binaries. 21 false leads, each comparing win32k Rust against a user-mode body."""
+    d = c_file.parent
+    while d != module_dir and module_dir in d.parents:
+        cml = d / "CMakeLists.txt"
+        if cml.is_file() and _TARGET_RE.search(cml.read_text(encoding="utf-8", errors="replace")):
+            return True
+        d = d.parent
+    return False
 
 
 _AUDIT_ROOTS = ("base", "dll", "drivers", "hal", "ntoskrnl", "subsystems", "win32ss", "boot")
@@ -914,7 +1029,13 @@ def main(argv: list[str] | None = None) -> int:
         found = [
             f
             for f in audit(
-                c_files, srcs, repo, glue_c=glue, macros=macros, pins=version_pins(module, repo)
+                c_files,
+                srcs,
+                repo,
+                glue_c=glue,
+                macros=macros,
+                pins=version_pins(module, repo),
+                defines=module_defines(module),
             )
             if SEVERITY_ORDER.index(f.severity) <= cutoff
         ]

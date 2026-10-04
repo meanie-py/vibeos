@@ -181,3 +181,754 @@ function = "Initialize"
 callees = ["FreeSettings", "LoadAdapterSettings", "LoadTcpipSettings"]
 verdict = "owed"
 note = "upstream's tcpipconf_notify.c / inetcfgcomp_iface.c rewrite (adapter list, notify objects) landed on C already flipped; upstream-sync's netcfgx cluster"
+
+# body-audit high-lead triage, 2026-10-04 (packet A).
+[[reviewed]]
+module = "hal/halx86"
+function = "ApicInitializeIOApic"
+callees = ["ApicWriteIORedirectionEntry", "HalAddressToPte(->MiAddressToPte)"]
+verdict = "false"
+note = "apic_write_io_redirection_entry is the helper (IORedirection vs io_redirection snake split); HalAddressToPte is open-coded PTE_BASE arithmetic per arch"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "ApicInitializeLocalApic"
+callees = ["KeRegisterInterruptHandler"]
+verdict = "false"
+note = "KeRegisterInterruptHandler is the crate-local register_interrupt_handler (IDT gate write per arch)"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpAllocateSystemInterrupt"
+callees = ["ApicWriteIORedirectionEntry"]
+verdict = "false"
+note = "apic_write_io_redirection_entry helper (snake split of 'IO')"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpInitializeTsc"
+callees = ["KeQueryInterruptHandler", "KeRegisterInterruptHandler", "_disable", "_enable"]
+verdict = "false"
+note = "query/register_interrupt_handler helpers; _disable/_enable are cli()/sti() asm helpers"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalInitSystem"
+callees = ["HalInitializeBios", "KeInitializeSpinLock"]
+verdict = "benign"
+note = "HalInitializeBios: the fast486/x86bios engine is deliberately retired in this tree (generic.cmake); KeInitializeSpinLock is an inline write_volatile(0)"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalInitializeProcessor"
+callees = ["InterlockedBitTestAndSetAffinity"]
+verdict = "false"
+note = "InterlockedBitTestAndSetAffinity is an atomic fetch_or (its width bug on i386 was fixed in passing, f3db2890a99)"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpMapPhysicalMemory64Vista"
+callees = ["HalAddressToPte(->MiAddressToPte)"]
+verdict = "false"
+note = "HalAddressToPte is the crate-local address_to_pte helper"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpUnmapVirtualAddressVista"
+callees = ["HalAddressToPte(->MiAddressToPte)"]
+verdict = "false"
+note = "HalAddressToPte is the crate-local address_to_pte helper"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpReboot"
+callees = ["HalpWriteResetCommand"]
+verdict = "false"
+note = "HalpWriteResetCommand is the crate-local write_reset_command helper"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpEnableInterruptHandler"
+callees = ["KeRegisterInterruptHandler"]
+verdict = "false"
+note = "KeRegisterInterruptHandler is the crate-local register_interrupt_handler"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpQueryInterface"
+callees = ["HalpLegacyPCCreateArbiter", "HalpLegacyPCQueryArbInterface", "IsEqualIID", "RtlZeroMemory(->memset)"]
+verdict = "owed"
+note = "upstream b9eb90a2fb6 (#9526 bus/PCI-bus interface handlers, ~70 lines) + cf89458d9e2 (#9527 Legacy PC arbiter, new legacypcirqarb.c ~200 lines) landed after the flip; Rust still returns STATUS_NOT_SUPPORTED. Owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "arbusno_Initializer"
+callees = ["ArbiterLibInitializeInstance"]
+verdict = "owed"
+note = "upstream 023d8af5566 'Implement the PCIX Arbiters' (#9502, ~500 lines) + d0e71de116a arbiter ordering lib (#9393) landed after the flip; Rust arbiters are the old stubs. Owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "ario_ApplyBrokenVideoHack"
+callees = ["ArbiterLibDefaultAssignmentOrdering", "ArbiterLibFreeOrderingList"]
+verdict = "owed"
+note = "upstream 023d8af5566 'Implement the PCIX Arbiters' (#9502, ~500 lines) + d0e71de116a arbiter ordering lib (#9393) landed after the flip; Rust arbiters are the old stubs. Owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "ario_Initializer"
+callees = ["ArbiterLibInitializeInstance", "RtlZeroMemory(->memset)"]
+verdict = "owed"
+note = "upstream 023d8af5566 'Implement the PCIX Arbiters' (#9502, ~500 lines) + d0e71de116a arbiter ordering lib (#9393) landed after the flip; Rust arbiters are the old stubs. Owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "armem_Initializer"
+callees = ["ArbiterLibInitializeInstance", "RtlZeroMemory(->memset)"]
+verdict = "owed"
+note = "upstream 023d8af5566 'Implement the PCIX Arbiters' (#9502, ~500 lines) + d0e71de116a arbiter ordering lib (#9393) landed after the flip; Rust arbiters are the old stubs. Owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "PciArbiterDestructor"
+callees = ["ArbiterLibDeleteInstance"]
+verdict = "owed"
+note = "upstream 023d8af5566 'Implement the PCIX Arbiters' (#9502, ~500 lines) + d0e71de116a arbiter ordering lib (#9393) landed after the flip; Rust arbiters are the old stubs. Owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "PciInitializeArbiterRanges"
+callees = ["StartArbiter"]
+verdict = "owed"
+note = "upstream 023d8af5566 'Implement the PCIX Arbiters' (#9502, ~500 lines) + d0e71de116a arbiter ordering lib (#9393) landed after the flip; Rust arbiters are the old stubs. Owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "PciAddDevice"
+callees = ["PciInitializeEcam"]
+verdict = "owed"
+note = "upstream e51b1c1dbfc 'basic ECAM support' (#9542: new pci/ecam.c ~410 lines + hooks in fdo.c/config.c) landed after the flip. Owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "PciReadWriteConfigSpace"
+callees = ["PciEcamReadWriteConfig"]
+verdict = "owed"
+note = "upstream e51b1c1dbfc 'basic ECAM support' (#9542: new pci/ecam.c ~410 lines + hooks in fdo.c/config.c) landed after the flip. Owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "Bus_AddDevice"
+callees = ["ExAllocatePoolWithTag(->ExAllocatePoolWithTag)", "ExFreePoolWithTag", "IoGetDeviceProperty"]
+verdict = "false"
+note = "dropped calls sit in #ifndef NDEBUG and main.c line 5 #defines NDEBUG"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "AcpiOsCreateLock"
+callees = ["KeInitializeSpinLock"]
+verdict = "false"
+note = "KeInitializeSpinLock is the inline `*spinlock = 0`"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "AcpiOsCreateMutex"
+callees = ["ExInitializeFastMutex"]
+verdict = "false"
+note = "ExInitializeFastMutex is the crate-local init_fast_mutex helper"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "AcpiOsCreateSemaphore"
+callees = ["KeInitializeSpinLock"]
+verdict = "false"
+note = "KeInitializeSpinLock is the inline `(*sem).Lock = 0`"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "AcpiOsTerminate"
+callees = ["ExFreePoolWithTag"]
+verdict = "owed"
+note = "upstream 63deca5a962 (#8980 loader-provided RSDP, ~200 lines osl.c/pnp.c) not ported; the Rust synthesises its RSDP in a static, so nothing leaks today. Owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "AcpiOsWritable"
+callees = ["ProbeForWrite"]
+verdict = "benign"
+note = "ACPICA has no caller in tree; ProbeForWrite on kernel memory raises and under DUMMY_PSEH would bugcheck, so returning TRUE (as AcpiOsReadable does) loses nothing"
+
+[[reviewed]]
+module = "drivers/storage/class/classpnp"
+function = "ClasspPrepareMcnIrp"
+callees = ["ClassAcquireRemoveLock(->ClassAcquireRemoveLockEx)"]
+verdict = "false"
+note = "ClassAcquireRemoveLock is called via an extern alias #[link_name=\"ClassAcquireRemoveLock\"] fn ClassAcquireRemoveLockR -> ddk_shims.rs shim"
+
+[[reviewed]]
+module = "drivers/storage/class/classpnp"
+function = "ClassDeviceProcessOffloadRead"
+callees = ["ClasspServicePopulateTokenTransferRequest", "ClasspValidateOffloadInputParameters", "IoGetCurrentIrpStackLocation"]
+verdict = "owed"
+note = "ODX copy-offload token path (class.c ClasspService*TokenTransferRequest and helpers, ~2.4K C lines) is a deliberate loud stub returning STATUS_NOT_SUPPORTED; not upstream. Owner classpnp lane"
+
+[[reviewed]]
+module = "drivers/storage/class/classpnp"
+function = "ClassDeviceProcessOffloadWrite"
+callees = ["ClasspServiceWriteUsingTokenTransferRequest", "ClasspValidateOffloadInputParameters", "IoGetCurrentIrpStackLocation"]
+verdict = "owed"
+note = "ODX copy-offload token path (class.c ClasspService*TokenTransferRequest and helpers, ~2.4K C lines) is a deliberate loud stub returning STATUS_NOT_SUPPORTED; not upstream. Owner classpnp lane"
+
+[[reviewed]]
+module = "drivers/storage/class/classpnp"
+function = "ClassInternalIoControl"
+callees = ["ClassAcquireRemoveLock(->ClassAcquireRemoveLockEx)"]
+verdict = "false"
+note = "ClassAcquireRemoveLock via #[link_name] alias ClassAcquireRemoveLockULONG -> ddk_shims.rs shim"
+
+[[reviewed]]
+module = "drivers/storage/class/classpnp"
+function = "ClasspEjectionControl"
+callees = ["ClasspAllocateSrb(->ExAllocatePool)"]
+verdict = "false"
+note = "ClasspAllocateSrb is the lookaside arm (ExAllocateFromNPagedLookasideList); the audit expanded the #ifdef ALLOCATE_SRB_FROM_POOL arm"
+
+[[reviewed]]
+module = "drivers/storage/class/classpnp"
+function = "ClassBuildRequest"
+callees = ["ClasspAllocateSrb(->ExAllocatePool)"]
+verdict = "false"
+note = "ClasspAllocateSrb is the lookaside arm (ExAllocateFromNPagedLookasideList); the audit expanded the #ifdef ALLOCATE_SRB_FROM_POOL arm"
+
+[[reviewed]]
+module = "drivers/serial/serial"
+function = "SerialSetBaudRate"
+callees = ["IoReleaseRemoveLock"]
+verdict = "false"
+note = "IoReleaseRemoveLock is called as IoReleaseRemoveLockEx (macro target)"
+
+[[reviewed]]
+module = "drivers/serial/serial"
+function = "SerialSetLineControl"
+callees = ["IoReleaseRemoveLock"]
+verdict = "false"
+note = "IoReleaseRemoveLock is called as IoReleaseRemoveLockEx (macro target)"
+
+[[reviewed]]
+module = "drivers/serial/serial"
+function = "SerialAddDeviceInternal"
+callees = ["IoInitializeRemoveLock", "_swprintf"]
+verdict = "false"
+note = "IoInitializeRemoveLockEx is the macro target; _swprintf is upstream's rename (1cf31524d50) of the same ntoskrnl swprintf export the Rust calls"
+
+[[reviewed]]
+module = "drivers/serial/serial"
+function = "SerialRead"
+callees = ["IoReleaseRemoveLock"]
+verdict = "false"
+note = "IoReleaseRemoveLock is called as IoReleaseRemoveLockEx (macro target)"
+
+[[reviewed]]
+module = "drivers/storage/class/cdrom"
+function = "BootEnvironmentIsWinPE"
+callees = ["WdfRegistryClose", "WdfRegistryOpenKey"]
+verdict = "benign"
+note = "stub returns FALSE; the only consumer sets CDROM_FLAG_WINPE_MODE, which nothing in cdrom reads"
+
+[[reviewed]]
+module = "drivers/storage/class/cdrom"
+function = "DriverEvtDeviceAdd"
+callees = ["RtlStringCchPrintfW", "WdfDeviceSetAlignmentRequirement"]
+verdict = "false"
+note = "RtlStringCchPrintfW is crate::write_wide_cdrom_name; WdfDeviceSetAlignmentRequirement is the direct DeviceObject->AlignmentRequirement store in DeviceFinishBasicInitialization"
+
+[[reviewed]]
+module = "drivers/ksfilter/ks"
+function = "AllocateItem"
+callees = ["ExAllocatePoolZero"]
+verdict = "false"
+note = "ExAllocatePoolZero is ExAllocatePoolWithTag + write_bytes(0)"
+
+[[reviewed]]
+module = "drivers/base/beep"
+function = "DriverEntry"
+callees = ["IoInitializeDpcRequest", "RTL_CONSTANT_STRING(->decltype)"]
+verdict = "false"
+note = "IoInitializeDpcRequest is KeInitializeDpc(&DeviceObject->Dpc); RTL_CONSTANT_STRING is a hand-built UNICODE_STRING (the macro expands to no call)"
+
+[[reviewed]]
+module = "drivers/network/afd"
+function = "AfdCancelHandler"
+callees = ["IoFreeMdl", "MmUnlockPages", "ObfDereferenceObject"]
+verdict = "owed"
+note = "upstream a68bfa2fb41 'Implement AcceptEx' (#9187, ~440 lines across afd/msafd incl. the IOCTL_AFD_SUPER_ACCEPT cancel arm) landed after the flip. Owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXFdoDispatchPnp"
+callees = ["IoAcquireRemoveLock(->IoAcquireRemoveLockEx)", "IoDeleteDevice", "IoDetachDevice", "IoReleaseRemoveLock", "IoReleaseRemoveLockAndWait", "PciIdeXFdoQueryId", "PciIdeXPnpQueryDeviceUsageNotification", "PciIdeXPnpQueryPnpDeviceState"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXFdoFreeResources"
+callees = ["AtaCtrlCallStopController", "ExFreePoolWithTag", "FreeResources", "IoDeleteController"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXFdoQueryBusRelations"
+callees = ["ExAllocatePoolUninitialized", "InsertTailList", "PciIdeXGetChannelState"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXFdoRemoveDevice"
+callees = ["PciIdeXPdoRemoveDevice"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXFdoStartDevice"
+callees = ["AhciGetControllerProperties", "AtaCtrlCallStartController", "AtaCtrlPciCollectInformation", "PataGetControllerProperties", "PciIdeGetControllerProperties"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXPdoCreateDevice"
+callees = ["IoInitializeRemoveLock"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXSetBusData"
+callees = ["ExAllocatePoolUninitialized"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXAddDevice"
+callees = ["PciIdeXAddDeviceEx"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXPdoDispatchPnp"
+callees = ["IoAcquireRemoveLock(->IoAcquireRemoveLockEx)", "IoReleaseRemoveLock", "PciIdeXPdoQueryInterface", "PciIdeXPnpQueryDeviceUsageNotification", "PciIdeXPnpQueryPnpDeviceState"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXPdoQueryDeviceText"
+callees = ["ExAllocatePoolUninitialized", "RtlStringCchPrintfExW"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXPdoQueryId"
+callees = ["ExAllocatePoolUninitialized"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXPdoQueryTargetDeviceRelations"
+callees = ["ExAllocatePoolUninitialized"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXPdoRemoveDevice"
+callees = ["IoCompleteRequest(->IofCompleteRequest)", "IoReleaseRemoveLock", "IoReleaseRemoveLockAndWait", "PciIdeXPdoStopDevice", "RemoveEntryList"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXPdoStopDevice"
+callees = ["PciIdeFreeResources", "PciIdeXPdoFreeDmaResources"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXDispatchPower"
+callees = ["IoAcquireRemoveLock(->IoAcquireRemoveLockEx)", "IoCompleteRequest(->IofCompleteRequest)", "IoReleaseRemoveLock"]
+verdict = "owed"
+note = "upstream ae2827f4810 '[PCIIDEX] Add DMA support' (+#9430) rewrote pciidex after the Rust flip (~13.7K C lines: AHCI/PATA chipset layer, ATA controller interface, ACPI, remove locks, DMA); the Rust is the pre-rewrite driver. Whole-driver re-port, owner upstream-sync"
+
+# body-audit high-lead triage, 2026-10-04 (packet B).
+[[reviewed]]
+module = "win32ss"
+function = "IntHideMousePointer"
+callees = ["EngLockSurface", "EngUnlockSurface"]
+verdict = "false"
+note = "wrong binary: C is the framebuf display driver's pointer.c; win32k's gdi/eng/mouse.c (deleted 8d3c33ee41e) audits clean against mouse.rs"
+
+[[reviewed]]
+module = "win32ss"
+function = "EngAcquireSemaphore"
+callees = ["RtlEnterCriticalSection"]
+verdict = "false"
+note = "wrong binary: C is gdi32's user-mode eng.c wrapper; win32k's gdi/eng/semaphor.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "EngComputeGlyphSet"
+callees = ["GlobalAlloc", "GlobalFree", "NtGdiEngComputeGlyphSet", "copy_my_glyphset"]
+verdict = "false"
+note = "wrong binary: C is gdi32's user-mode eng.c; win32k's gdi/eng/stubs.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "EngCreateSemaphore"
+callees = ["GetProcessHeap", "RtlAllocateHeap", "RtlInitializeCriticalSection"]
+verdict = "false"
+note = "wrong binary: C is gdi32's user-mode eng.c; win32k's gdi/eng/semaphor.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "EngDeleteSemaphore"
+callees = ["GetProcessHeap", "RtlDeleteCriticalSection", "RtlFreeHeap"]
+verdict = "false"
+note = "wrong binary: C is gdi32's user-mode eng.c; win32k's gdi/eng/semaphor.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "EngFindResource"
+callees = ["FindResourceW", "LoadResource", "LockResource", "SizeofResource"]
+verdict = "false"
+note = "wrong binary: C is gdi32's user-mode eng.c; win32k's gdi/eng/stubs.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "EngFreeModule"
+callees = ["FreeLibrary"]
+verdict = "false"
+note = "wrong binary: C is gdi32's user-mode eng.c; win32k's gdi/eng/mapping.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "EngReleaseSemaphore"
+callees = ["RtlLeaveCriticalSection"]
+verdict = "false"
+note = "wrong binary: C is gdi32's user-mode eng.c; win32k's gdi/eng/semaphor.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "DrawTextExWorker"
+callees = ["CreateRectRgn", "DeleteObject", "ExtTextOutW", "GdiFlush", "GetClipRgn", "GetGraphicsMode", "GetProcessHeap", "GetTextExtentPointW", "GetTextMetricsW", "GetViewportExtEx", "GetWindowExtEx", "HeapAlloc", "HeapFree", "IntersectClipRect", "SelectClipRgn", "assert(->_font_assert)", "strlenW(->lstrlenW)", "wcslen"]
+verdict = "false"
+note = "dropped calls are the user-mode #else arms of #ifdef _WIN32K_ (win32ss/CMakeLists -D_WIN32K_); Rust calls every kernel-arm callee (Gre*/NtGdi*/ExAllocatePool/UserExtTextOutW), wcslen open-coded"
+
+[[reviewed]]
+module = "win32ss"
+function = "TEXT_DrawUnderscore"
+callees = ["CreatePen", "DeleteObject", "GetTextColor", "GetTextExtentPointW", "LineTo", "MoveToEx", "SelectObject"]
+verdict = "false"
+note = "dropped calls are the user-mode #else arm of #ifdef _WIN32K_; Rust does the kernel arm exactly (GreGetTextExtentW, NtGdiCreatePen/SelectPen/LineTo, GreMoveTo, GreDeleteObject)"
+
+[[reviewed]]
+module = "win32ss"
+function = "IntDrawScrollBar"
+callees = ["GetFocus", "GetWindowLongPtrW", "IntGetScrollBarInfo", "IsRectEmpty", "SetCaretPos"]
+verdict = "false"
+note = "wrong binary: C is user32's controls/scrollbar.c; win32k's ntuser/scrollbar.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "DefSetText"
+callees = ["NtUserDefSetText", "RtlInitLargeAnsiString", "RtlInitLargeUnicodeString"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/defwnd.c; win32k's ntuser/defwnd.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "DefWndControlColor"
+callees = ["GetSysColor", "GetSysColorBrush", "SetBkColor", "SetTextColor", "UnrealizeObject"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/defwnd.c; win32k's ntuser/defwnd.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "DefWndGetIcon"
+callees = ["SetLastError"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/defwnd.c; win32k's ntuser/defwnd.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "UserPaintCaption"
+callees = ["GetDCEx", "NtUserDrawCaption", "NtUserQueryWindow", "ReleaseDC", "SendMessageW"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/defwnd.c; win32k's ntuser/defwnd.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "IntDrawDiagEdge"
+callees = ["GetStockObject", "GetSysColor", "LineTo", "MoveToEx", "Polygon", "SelectObject", "SetDCBrushColor", "SetDCPenColor"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/draw.c; win32k's ntuser/draw.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "IntDrawRectEdge"
+callees = ["GetStockObject", "GetSysColorBrush", "SetRect"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/draw.c; win32k's ntuser/draw.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "UITOOLS95_DFC_ButtonCheckRadio"
+callees = ["CreateFontIndirect", "DeleteObject", "Ellipse", "GetBkMode", "GetStockObject", "GetSysColor", "GetTextColor", "InflateRect", "RGB", "SelectObject", "SetBkColor", "SetBkMode", "SetRect", "SetTextColor", "TextOut", "lstrcpy"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/draw.c; win32k's ntuser/draw.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "UITOOLS95_DrawFrameCaption"
+callees = ["CreateFontIndirect", "DeleteObject", "GetBkMode", "GetSysColor", "GetTextColor", "OffsetRect", "SelectObject", "SetBkMode", "SetTextColor", "TextOut", "lstrcpy"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/draw.c; win32k's ntuser/draw.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "UITOOLS95_DrawFrameMenu"
+callees = ["CreateFontIndirect", "DeleteObject", "GetSysColor", "SelectObject", "SetTextColor", "TextOut", "lstrcpy"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/draw.c; win32k's ntuser/draw.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "UITOOLS95_DrawFrameScroll"
+callees = ["CreateFontIndirect", "DeleteObject", "GetBkMode", "GetSysColor", "GetTextColor", "OffsetRect", "SelectObject", "SetBkMode", "SetTextColor", "TextOut", "lstrcpy"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/draw.c; win32k's ntuser/draw.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "UITOOLS_DrawCheckedRect"
+callees = ["GetSysColor", "GetSysColorBrush", "PatBlt", "SelectObject", "SetBkColor"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/draw.c; win32k's ntuser/draw.c (deleted 8d3c33ee41e) audits clean"
+
+[[reviewed]]
+module = "win32ss"
+function = "IntNotifyWinEvent"
+callees = ["GetMaskFromEvent", "NtUserxNotifyWinEvent"]
+verdict = "false"
+note = "wrong binary: C is user32's windows/hook.c; against win32k's ntuser/event.c (deleted 8d3c33ee41e) only a medium NtCurrentTeb read differs"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "EDIT_PaintText"
+callees = ["CreateFontIndirectW", "DeleteObject", "GetCurrentObject", "GetObjectW", "SelectObject"]
+verdict = "false"
+note = "dropped calls are the else-branch of `#ifdef __REACTOS__ if (TRUE) #else ...`: the underline-font path is unreachable in our build"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "DdeConnect"
+callees = ["CreateWindowA", "CreateWindowW"]
+verdict = "false"
+note = "CreateWindowA/W are winuser.h macros for CreateWindowExA/W(0, ...), which the Rust calls"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "WDML_Initialize"
+callees = ["CreateWindowW"]
+verdict = "false"
+note = "CreateWindowW is a winuser.h macro for CreateWindowExW(0, ...), which the Rust calls"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "DllMain"
+callees = ["CsrClientConnectToServer", "DisableThreadLibraryCalls", "_swprintf", "wcscpy"]
+verdict = "false"
+note = "all four calls sit in `#if 0 // Disabling this code is a BIG HACK!!`; dead_regions misses the #if 0 because of the trailing comment"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "UITOOLS95_DFC_ButtonCheckRadio"
+callees = ["RGB", "SetBkColor"]
+verdict = "false"
+note = "RGB/SetBkColor are in the #else arm of `#if 1` (the Ellipse path is live and ported)"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "MsgiKMToUMCleanup"
+callees = ["GetProcessHeap", "GlobalUnlock", "HeapFree"]
+verdict = "false"
+note = "the calls are inside `#ifdef TODO // Kept as historic.`; TODO is never defined, so the C body is empty like the Rust"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "SPY_DumpStructure"
+callees = ["GetClassNameW", "GetLastError", "SPY_Bsearch_Notify", "SetLastError", "strcmpW"]
+verdict = "benign"
+note = "WM_NOTIFY arm only feeds TRACE/SPY_DumpMem output (spy is debug-only, spy_init returns FALSE unless TRACE_ON(message)); GetLastError/SetLastError bracket a GetClassNameW done for that dump"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "PcInitializeBootDevices"
+callees = ["DiskInitialize", "DiskReportError"]
+verdict = "owed"
+note = "upstream 56481e1b8d4 (Modularize disk registration, landed after flip): DiskInitialize in disk/disk.c replaces the per-arch MBR/checksum/FsRegisterDevice code; Rust has the pre-refactor logic plus vibeos GPT args. ~120-line disk.c + ~150 lines of call sites. Owner: upstream-sync"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "DetectPS2AuxPort"
+callees = ["PS2ControllerWait", "READ_PORT_UCHAR(->__inbyte)", "StallExecutionProcessor", "WRITE_PORT_UCHAR(->__outbyte)"]
+verdict = "false"
+note = "the port probe is the #else arm of `#if 1` ('detection is too unreliable'); the live arm returns TRUE, as the Rust does"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "GetHarddiskInformation"
+callees = ["DiskInitialize", "RtlStringCbPrintfA"]
+verdict = "owed"
+note = "same upstream refactor 56481e1b8d4 (DiskInitialize + RtlStringCbPrintfA naming); Rust keeps the pre-refactor inline registration. Owner: upstream-sync"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "UefiInitializeBootDevices"
+callees = ["DiskInitialize", "DiskReportError"]
+verdict = "owed"
+note = "same upstream refactor 56481e1b8d4 for uefidisk.c (DiskInitialize); Rust keeps the inline MBR/FsRegisterDevice path. Owner: upstream-sync"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "UefiHwIdle"
+callees = ["CreateEvent", "EFI_ERROR", "SetTimer", "StallExecutionProcessor", "WaitForEvent"]
+verdict = "owed"
+note = "upstream dc9ee344787 (fix UEFI boot-menu countdown) made UefiHwIdle a 10ms timer-event wait and StallExecutionProcessor a BootServices->Stall; it ships with a KbHit rewrite that conflicts with vibeos's own KbHit fix. ~40 lines over 3 files, boot-path menu timing, needs smoke. Owner: upstream-sync"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "UefiInitializeVideo"
+callees = ["UefiInitializeAppleGraphics", "UefiInitializeGop"]
+verdict = "owed"
+note = "upstream 1d3f99a87ad adds Apple Graphics Info protocol fallback (UefiInitializeGop split + UefiInitializeAppleGraphics, ~80 lines + AppleGraphInfo.h); Rust is GOP-only. Owner: upstream-sync"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "LoadOperatingSystem"
+callees = ["DriveMapMapDrivesInSection"]
+verdict = "benign"
+note = "DriveMapMapDrivesInSection is under `#ifdef _M_IX86 #ifndef UEFIBOOT`: BIOS INT13 drive mapping, meaningless since the BIOS loader was pruned and x86 boots UEFI-only"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "MainBootMenuKeyPressFilter"
+callees = ["FreeLdrSetupMenu", "GetOSLoadingMethod", "OsMenu"]
+verdict = "owed"
+note = "upstream 9ff4e4b9ef4 + bf26ae38a54 (landed after flip): F2 FreeLdr setup menu, per-OS-type OsMenu via GetOSLoadingMethod; Rust is the old F8 DoOptionsMenu filter, matching the C at flip. Part of a ~400-line menu restructure. Owner: upstream-sync"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "RunLoader"
+callees = ["DisplayBootTimeOptions", "FreeLdrSetupMenu", "IniGetFileSectionListHead", "IsListEmpty"]
+verdict = "owed"
+note = "upstream bf26ae38a54 + 9ff4e4b9ef4: missing-FREELDR.INI fallback to the setup menu (IsListEmpty(IniGetFileSectionListHead)), DisplayBootTimeOptions per redraw, F2 hint; Rust matches the C at flip. Owner: upstream-sync"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "FrLdrHeapCreate"
+callees = ["FrLdrHeapInsertFreeList", "__rdtsc"]
+verdict = "false"
+note = "audit lexer bug: lex_mask does not close the multi-char literal 'dnE#', so the body's brace match runs to line 530 and swallows FrLdrHeapAllocateEx's calls; the real body calls neither"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "AddMemoryDescriptor"
+callees = ["DbgDumpMemoryMap"]
+verdict = "false"
+note = "DbgDumpMemoryMap is inside `#if 0 // only enable on demand!`; dead_regions misses #if 0 with a trailing comment"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "AppendBootTimeOptions"
+callees = ["NtLdrAddOptions", "NtLdrUpdateOptions"]
+verdict = "owed"
+note = "upstream 9ff4e4b9ef4 moved it to ntldr/advopts.c and bac97c58e25 reworked it onto NtLdrAddOptions/NtLdrUpdateOptions (self-excluding SAFEBOOT options, DBG HAL override); Rust is the old strcat version. Owner: upstream-sync"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "WinLdrSetProcessorContext"
+callees = ["Ke386GetGlobalDescriptorTable", "Ke386SetGlobalDescriptorTable"]
+verdict = "false"
+note = "audit compared i386 C against the amd64 twin; winldr_i386.rs does __sgdt_i386/__lgdt_i386, the expansion of the Ke386Get/SetGlobalDescriptorTable intrin_i.h macros"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "LoadReactOSSetup"
+callees = ["AppendBootTimeOptions", "NtLdrNormalizeOptions", "NtLdrUpdateOptions"]
+verdict = "owed"
+note = "upstream 1ac657ed0e8 + 925d227faaf (after flip): normalise boot options early and append boot-time (F8) options to setup's command line; Rust predates both. Owner: upstream-sync"
+
+[[reviewed]]
+module = "base/system/smss"
+function = "SmpApiLoop"
+callees = ["_InterlockedExchangeAdd"]
+verdict = "false"
+note = "_InterlockedExchangeAdd(&SmTotalApiThreads, 1) is AtomicI32::fetch_add(1, SeqCst) in the Rust"
+
+[[reviewed]]
+module = "base/system/winlogon"
+function = "WinMain"
+callees = ["CallNotificationDlls", "CleanupNotifications", "CreateThread", "DialogBoxParam", "DispatchMessageW", "GetDesktopWindow", "GetMessageW", "HandleShutdown", "InitializeSAS", "PostMessageW", "RemoveStatusMessage", "TranslateMessage"]
+verdict = "benign"
+note = "all but CreateThread are in the `#else` of `#if _M_ARM64 || _USE_DUMMY_PSEH || _USE_PSEH_CLANG`, dead because gcc.cmake forces DUMMY_PSEH on every llvm-mingw arch; CreateThread(FontLoadThread) was removed on purpose (win32k IntLoadSystemFonts loads fonts, comment in winlogon.rs)"
+
+[[reviewed]]
+module = "subsystems/csr/csrsrv"
+function = "GetDosDevicesProtection"
+callees = ["RtlFreeHeap"]
+verdict = "false"
+note = "the RtlFreeHeap is unreachable: both if/else arms `goto Quickie`, which is past it (the Fail: label is commented out); the Dacl lives on in the SD and FreeDosDevicesProtection frees it"
+
+[[reviewed]]
+module = "dll/win32/msgina"
+function = "LockedDialogProc"
+callees = ["DrawBrandingBitmap", "SetWindowLongPtrW"]
+verdict = "owed"
+note = "upstream 6ae2d5ab43f (2026-09-03, after flip) 'Use new branding library': drops DLG_DATA, stores pgContext in GWLP_USERDATA, draws via DrawBrandingBitmap; ~345 gui.c lines + new branding lib + rc changes. Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/msgina"
+function = "LogonDialogProc"
+callees = ["DrawBrandingBitmap", "SetWindowLongPtrW"]
+verdict = "owed"
+note = "upstream 6ae2d5ab43f branding-library rewrite (same as LockedDialogProc). Owner: upstream-sync"
+
+[[reviewed]]
+module = "dll/win32/msgina"
+function = "UnlockDialogProc"
+callees = ["DrawBrandingBitmap", "SetWindowLongPtrW"]
+verdict = "owed"
+note = "upstream 6ae2d5ab43f branding-library rewrite (same as LockedDialogProc). Owner: upstream-sync"
+
+[[reviewed]]
+module = "base/system/userinit"
+function = "LocaleDlgProc"
+callees = ["SendMessageW"]
+verdict = "owed"
+note = "upstream b299049410b (after flip): WM_INITDIALOG uses SendMessageW not PostMessageW so EndDialog works before the dialog shows; part of the unattended-setup behaviour change (~50 lines livecd.c + unattend.inf), which changes what the LiveCD boots into. Owner: upstream-sync"
+
+[[reviewed]]
+module = "base/system/userinit"
+function = "StartDlgProc"
+callees = ["SendMessageW"]
+verdict = "owed"
+note = "upstream b299049410b: no installer -> click Run; unattended -> click Install (was: always Run), via SendMessageW. Changes LiveCD boot behaviour, so port with unattend.inf and smoke. Owner: upstream-sync"

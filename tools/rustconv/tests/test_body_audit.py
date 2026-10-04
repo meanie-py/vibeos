@@ -384,3 +384,46 @@ def test_provenance_frames_the_definition_not_a_call_site():
     )
     body = _old_body(c, "BootEnvironmentIsWinPE")
     assert body is not None and "WdfRegistryOpenKey" in body and "SetFlag" not in body
+
+
+def test_rules_from_the_2026_10_04_triage(tmp_path):
+    """Each shape was a false lead in the high-lead burn-down."""
+    c = """
+#define NDEBUG
+VOID A(PDEVICE_OBJECT d)
+{
+    UNICODE_STRING s = RTL_CONSTANT_STRING(L"x");
+    IoReleaseRemoveLock(&d->Lock, 0);
+    ClassAcquireRemoveLock(d, 0);
+    _InterlockedExchangeAdd(&d->N, 1);
+#ifndef NDEBUG
+    DumpEverything(d);
+#endif
+#if defined(_USE_DUMMY_PSEH) || defined(NEVER_SEEN)
+    LiveArm(d);
+#else
+    DeadArm(d);
+#endif
+#if 0 // retired
+    Retired(d);
+#endif
+}
+"""
+    rust = """
+#[link_name = "ClassAcquireRemoveLock"]
+fn class_acquire_remove_lock(d: PVOID, t: PVOID) -> i32;
+pub unsafe extern "system" fn A(d: PDEVICE_OBJECT) {
+    IoReleaseRemoveLockEx(addr_of_mut!((*d).Lock), null_mut(), 0);
+    class_acquire_remove_lock(d, null_mut());
+    (*d).N.fetch_add(1, SeqCst);
+    LiveArm(d);
+}
+"""
+    assert _run(tmp_path, c, rust) == {}
+
+
+def test_a_four_char_tag_closes_its_quote():
+    """freeldr heap.c's `'dnE#'` left the masker inside a literal for 460 lines."""
+    from rustconv.lex_mask import mask_code
+
+    assert "Next" in mask_code("ULONG t = 'dnE#';\nNext(t);\n")
