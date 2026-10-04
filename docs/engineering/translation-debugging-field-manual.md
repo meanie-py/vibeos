@@ -10860,6 +10860,14 @@ wrong dirent.
 whenever anything reads it before writing it, including a callee through a pointer. A
 translator that adds `= 0` (or `zeroed()`) is changing behaviour, not tidying.
 
+**Twice more in fastfat (2026-10-04), as a fresh `...Li` temporary copied back after the
+call.** `FatDefragDirectory` gave `FatLocateDirent` a zeroed `FoundOffsetLi` each pass, where the
+C passes its one `FoundOffset`. The compaction scan drifted on page 0, ended early, and rebuilt
+the free-dirent bitmap calling live root entries free, so every create in a full FAT16 root
+raised `STATUS_FILE_CORRUPT_ERROR` (~100k raises in Wine's storage32). `FatLocateSimpleOemDirent`
+zeroed `ByteOffsetLi` the same way, which lets `FatSelectNames` pick an 8.3 name that is taken.
+The tell is the temporary itself: an in/out `PVBO` parameter has to be the caller's variable.
+
 ### Completing the media wakes up code that a missing file was holding back
 **Symptom.** The first arm64 boot from the full livecd file set wedged during first-boot setup:
 `CommonInstall: PlugPlay running, waiting for pending installs`, then serial silent; `debug

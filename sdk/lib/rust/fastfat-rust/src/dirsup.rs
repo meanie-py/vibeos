@@ -1150,7 +1150,10 @@ pub unsafe extern "system" fn FatLocateSimpleOemDirent(
     LocalCcb.ContainsWildCards = 0;
     LocalCcb.Flags = 0;
     
-    let mut ByteOffsetLi: VBO = 0;
+    // The caller's ByteOffset itself, as in the C (see FatDefragDirectory): with a pinned
+    // Bcb, FatLocateDirent reads it as where Dirent was left. A fresh 0 made a re-scan
+    // skip everything before the previous hit, so FatSelectNames' numeric-tail loop
+    // could call a taken 8.3 name free and create a duplicate short name.
     FatLocateDirent(
         IrpContext,
         ParentDirectory,
@@ -1159,12 +1162,11 @@ pub unsafe extern "system" fn FatLocateSimpleOemDirent(
         core::ptr::null_mut(),
         Dirent,
         Bcb,
-        &mut ByteOffsetLi,
+        ByteOffset,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
-    *ByteOffset = ByteOffsetLi;
 }
 
 #[no_mangle]
@@ -2143,23 +2145,26 @@ pub unsafe extern "system" fn FatDefragDirectory(
                 // FatLocateDirent( IrpContext, Dcb, &Ccb, QueryOffset, NULL,
                 //                  &Dirent, &Bcb, (PVBO)&FoundOffset, NULL,
                 //                  &Lfn, NULL );
-                {
-                    let mut FoundOffsetLi: VBO = 0;
-                    FatLocateDirent(
-                        IrpContext,
-                        Dcb,
-                        core::ptr::addr_of_mut!(Ccb),
-                        QueryOffset as u32,
-                        core::ptr::null_mut(),
-                        core::ptr::addr_of_mut!(Dirent),
-                        core::ptr::addr_of_mut!(bcb) as *mut *mut BCB,
-                        core::ptr::addr_of_mut!(FoundOffsetLi),
-                        core::ptr::null_mut(),
-                        core::ptr::addr_of_mut!(Lfn),
-                        core::ptr::null_mut(),
-                    );
-                    FoundOffset = FoundOffsetLi;
-                }
+                // `FoundOffset` itself, as in the C: FatLocateDirent reads *ByteOffset as
+                // where the previous call left the pinned Dirent. A fresh 0 each pass made
+                // it advance Dirent by QueryOffset/32 from the last hit on page 0, so the
+                // compaction scan read the wrong dirents, ended early, and the bitmap it
+                // rebuilt called live root entries free -- after which every create in a
+                // full FAT16 root raised STATUS_FILE_CORRUPT_ERROR from
+                // FatCreateNewDirent. (Same class as FatQueryDirectory's NextVbo.)
+                FatLocateDirent(
+                    IrpContext,
+                    Dcb,
+                    core::ptr::addr_of_mut!(Ccb),
+                    QueryOffset as u32,
+                    core::ptr::null_mut(),
+                    core::ptr::addr_of_mut!(Dirent),
+                    core::ptr::addr_of_mut!(bcb) as *mut *mut BCB,
+                    core::ptr::addr_of_mut!(FoundOffset),
+                    core::ptr::null_mut(),
+                    core::ptr::addr_of_mut!(Lfn),
+                    core::ptr::null_mut(),
+                );
 
                 if Dirent != core::ptr::null_mut() {
                     let mut LfnByteOffset: u32;
