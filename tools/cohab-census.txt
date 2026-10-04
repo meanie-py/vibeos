@@ -835,6 +835,7 @@ dll/win32/syssetup/CMakeLists.txt	1	# wizard.c
 dll/win32/syssetup/CMakeLists.txt	1	#addons.c
 dll/win32/ucrtbase/CMakeLists.txt	1	# Silence warnings in ucrtbase_stubs.c
 dll/win32/ucrtbase/CMakeLists.txt	1	# printf.c (sprintf/_vsnprintf) and ucrt_varargs_shim.c (the `...` entry points as
+dll/win32/ucrtbase/CMakeLists.txt	1	# stubs.c (atexit, operator_new/delete, _chkesp_failed, __acrt_initialize_sse2) is
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c — replaced by Rust (userenv-rust src/userenv/desktop.rs — GetAllUsers/DefaultUserProfileDirectory)
 dll/win32/userenv/CMakeLists.txt	1	# directory.c
