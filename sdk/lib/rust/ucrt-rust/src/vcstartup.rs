@@ -161,18 +161,20 @@ pub unsafe extern "C" fn _purecall() -> c_int {
 // ---- __report_gsfailure.c --------------------------------------------------------------
 
 /// `__fastfail(FAST_FAIL_STACK_COOKIE_CHECK_FAILURE)`: code 2, raised the way the
-/// intrinsic is (int 0x29 with the code in ecx/rcx; brk #0xF003 with it in x0). Not
-/// `options(noreturn)`: rustc follows a noreturn asm with a `ud2` trap, which scan_ud2
-/// (rightly) reads as a miscompile; the kernel never returns from a fast fail, and the
-/// loop after it costs one jump that never runs.
+/// intrinsic is (int 0x29 with the code in ecx/rcx; brk #0xF003 with it in x0). The fast
+/// fail never returns, and how that is SPELLED is set by two binary scans: on x86 an
+/// `options(noreturn)` asm is followed by a `ud2` trap (scan_ud2 reads ud2 as a miscompile),
+/// so a `jmp .` loop ends it; on arm64 a loop is a `b .` spin (scan_ud2's arm64 hang
+/// signature), so it is `options(noreturn)`, as ucrt-rust's arm64 abort.rs already does.
 #[inline(always)]
 unsafe fn fastfail_stack_cookie() -> ! {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    core::arch::asm!("int 0x29", in("ecx") 2u32, options(nostack));
+    {
+        core::arch::asm!("int 0x29", in("ecx") 2u32, options(nostack));
+        loop {} // nolint: silent-failure (after a fast fail, which the kernel never returns from)
+    }
     #[cfg(target_arch = "aarch64")]
-    core::arch::asm!("brk #0xF003", in("x0") 2u64, options(nostack));
-    #[allow(clippy::empty_loop)]
-    loop {} // nolint: silent-failure (after a fast fail, which the kernel never returns from)
+    core::arch::asm!("brk #0xF003", in("x0") 2u64, options(noreturn, nostack));
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
