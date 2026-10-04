@@ -731,6 +731,57 @@ pub unsafe extern "system" fn SerialPnp(
             /* TRACE_ */
             return ForwardIrpAndForget(DeviceObject, Irp);
         }
+        0x17 => {
+            /* IRP_MN_SURPRISE_REMOVAL — upstream ae50db9f96d ([SERIAL] Implement
+             * surprise removal handler, #9202), landed on the C after this file
+             * was translated. Without it a yanked port kept its interrupt
+             * connected, its \DosDevices\COMn link and its SERIALCOMM value. */
+            DeviceExtension = (*DeviceObject).DeviceExtension as PSERIAL_DEVICE_EXTENSION;
+            (*DeviceExtension).PnpState = crate::types::SERIAL_DEVICE_STATE_dsSurpriseRemoved;
+
+            IoSetDeviceInterfaceState(
+                &raw mut (*DeviceExtension).SerialInterfaceName,
+                0 as BOOLEAN,
+            );
+
+            if !(*DeviceExtension).Interrupt.is_null() {
+                ntkrnl_sys::ddk::IoDisconnectInterrupt((*DeviceExtension).Interrupt);
+                (*DeviceExtension).Interrupt = core::ptr::null_mut();
+            }
+
+            let mut LinkNameBuffer: [WCHAR; 32] = [0; 32];
+            let mut DeviceNameBuffer: [WCHAR; 32] = [0; 32];
+            let mut LinkName: _UNICODE_STRING = core::mem::zeroed();
+            let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
+            let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
+            let mut objectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+            let mut hKey: HANDLE = core::ptr::null_mut();
+
+            let fmt_link: [::core::ffi::c_ushort; 19] = ::core::mem::transmute(*b"\\\0D\0o\0s\0D\0e\0v\0i\0c\0e\0s\0\\\0C\0O\0M\0%\0l\0u\0\0\0");
+            swprintf(&raw mut LinkNameBuffer as *mut u16, fmt_link.as_ptr(), (*DeviceExtension).ComPort);
+            RtlInitUnicodeString(&raw mut LinkName, &raw mut LinkNameBuffer as *mut WCHAR as PCWSTR);
+            IoDeleteSymbolicLink(&raw mut LinkName);
+
+            let fmt_dev: [::core::ffi::c_ushort; 18] = ::core::mem::transmute(*b"\\\0D\0e\0v\0i\0c\0e\0\\\0S\0e\0r\0i\0a\0l\0%\0l\0u\0\0\0");
+            swprintf(&raw mut DeviceNameBuffer as *mut u16, fmt_dev.as_ptr(), (*DeviceExtension).SerialPortNumber);
+            RtlInitUnicodeString(&raw mut DeviceName, &raw mut DeviceNameBuffer as *mut WCHAR as PCWSTR);
+            let fmt_key: [::core::ffi::c_ushort; 48] = ::core::mem::transmute(*b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0H\0A\0R\0D\0W\0A\0R\0E\0\\\0D\0e\0v\0i\0c\0e\0M\0a\0p\0\\\0S\0E\0R\0I\0A\0L\0C\0O\0M\0M\0\0\0");
+            RtlInitUnicodeString(&raw mut KeyName, fmt_key.as_ptr() as PCWSTR);
+            objectAttributes.Length = ::core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
+            objectAttributes.ObjectName = &raw mut KeyName as PUNICODE_STRING;
+            objectAttributes.Attributes = (OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE) as ULONG;
+
+            if NT_SUCCESS(ntkrnl_sys::ddk::ZwOpenKey(
+                &raw mut hKey,
+                KEY_SET_VALUE as ACCESS_MASK,
+                &raw mut objectAttributes,
+            )) {
+                ntkrnl_sys::ddk::ZwDeleteValueKey(hKey, &raw mut DeviceName);
+                ZwClose(hKey);
+            }
+
+            return ForwardIrpAndForget(DeviceObject, Irp);
+        }
         _ => {
             /* TRACE_ Unknown minor function */
             return ForwardIrpAndForget(DeviceObject, Irp);

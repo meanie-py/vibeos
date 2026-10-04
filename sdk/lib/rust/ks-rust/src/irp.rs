@@ -14,7 +14,7 @@ use core::ffi::c_void;
 // ---- cross-module helpers + bindgen-name aliases (used only in this module) ----
 use crate::misc::{CompleteRequest, AllocateItem, FreeItem};
 use crate::device::{IKsDevice_Create, IKsDevice_Power, IKsDevice_Pnp};
-use ntkrnl_sys::ddk::{FILE_INFORMATION_CLASS, LOCK_OPERATION};
+use ntkrnl_sys::ddk::{FILE_INFORMATION_CLASS, IoAllocateMdl, LOCK_OPERATION};
 use ntkrnl_sys::ddk::{
     _FILE_INFORMATION_CLASS_FileBasicInformation as FileBasicInformation,
     _FILE_INFORMATION_CLASS_FileStandardInformation as FileStandardInformation,
@@ -596,7 +596,6 @@ pub unsafe extern "system" fn KsProbeStreamIrp(
     let mut Buffer: *mut core::ffi::c_void;
     let Operation: LOCK_OPERATION;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let StreamHeader: PKSSTREAM_HEADER;
     let IoStack: PIO_STACK_LOCATION;
     let Length: ULONG;
 
@@ -605,68 +604,217 @@ pub unsafe extern "system" fn KsProbeStreamIrp(
 
     if (*Irp).RequestorMode == 0i8 || !(*Irp).AssociatedIrp.SystemBuffer.is_null() {
         if (*Irp).RequestorMode == 0i8 {
+            /* no need to allocate stream header */
             (*Irp).AssociatedIrp.SystemBuffer = (*Irp).UserBuffer;
         }
-        'AllocMdl: loop {
-            if (ProbeFlags & KSPROBE_ALLOCATEMDL) == 0 {
-                return STATUS_SUCCESS;
+    } else {
+        /* probe user mode buffers */
+        if !(Length != 0
+            && (HeaderSize == 0
+                || Length % HeaderSize == 0
+                || ((ProbeFlags & KSPROBE_ALLOWFORMATCHANGE) != 0
+                    && Length as usize == core::mem::size_of::<KSSTREAM_HEADER>())))
+        {
+            return STATUS_INVALID_BUFFER_SIZE;
+        }
+
+        /* allocate stream header buffer */
+        (*Irp).AssociatedIrp.SystemBuffer = AllocateItem(NonPagedPool, Length as usize);
+        if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        /* mark irp as buffered so that changes the stream headers are propagated back */
+        (*Irp).Flags = IRP_DEALLOCATE_BUFFER | IRP_BUFFERED_IO;
+
+        if (ProbeFlags & KSPROBE_STREAMWRITE) != 0 {
+            if (ProbeFlags & KSPROBE_MODIFY) != 0 {
+                ProbeForWrite((*Irp).UserBuffer, Length as usize, 1);
+            } else {
+                ProbeForRead((*Irp).UserBuffer, Length as usize, 1);
             }
-            if !(*Irp).MdlAddress.is_null() {
+        } else {
+            /* stream reads means writing */
+            ProbeForWrite((*Irp).UserBuffer, Length as usize, 1);
+            (*Irp).Flags |= IRP_INPUT_OPERATION;
+        }
+
+        /* copy stream buffer (RtlMoveMemory) */
+        core::ptr::copy(
+            (*Irp).UserBuffer as *const u8,
+            (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+            Length as usize,
+        );
+
+        if (ProbeFlags & KSPROBE_ALLOCATEMDL) == 0 {
+            /* validate the captured headers; with no MDL requested there is
+             * nothing more to do (the C's `goto AllocMdl` returns at once) */
+            return ks_check_stream_headers(Irp, ProbeFlags, HeaderSize, Length, false);
+        }
+        /* else fall through to AllocMdl, which validates and allocates */
+    }
+
+    /* AllocMdl: */
+    if (ProbeFlags & KSPROBE_ALLOCATEMDL) == 0 {
+        /* nothing more to do */
+        return STATUS_SUCCESS;
+    }
+    if (*Irp).MdlAddress.is_null() {
+        /* check all stream headers, allocating an MDL for each data frame */
+        Status = ks_check_stream_headers(Irp, ProbeFlags, HeaderSize, Length, true);
+        if !NT_SUCCESS(Status) {
+            return Status;
+        }
+        if (*Irp).MdlAddress.is_null() {
+            /* No header carried a frame, so there is nothing to probe. The C
+             * jumps to ProbeMdl regardless and dereferences the NULL MdlAddress. */
+            return Status;
+        }
+    }
+
+    /* ProbeMdl: */
+    if (ProbeFlags & KSPROBE_PROBEANDLOCK) != 0 {
+        if (*(*Irp).MdlAddress).MdlFlags as u32 & (MDL_PAGES_LOCKED | MDL_SOURCE_IS_NONPAGED_POOL as u32) != 0 {
+            if (ProbeFlags & KSPROBE_SYSTEMADDRESS) != 0 {
+                Mdl = (*Irp).MdlAddress;
                 loop {
-                    if (ProbeFlags & KSPROBE_PROBEANDLOCK) != 0 {
-                        if (*(*Irp).MdlAddress).MdlFlags as u32 & (MDL_PAGES_LOCKED | MDL_SOURCE_IS_NONPAGED_POOL as u32) != 0 {
-                            if (ProbeFlags & KSPROBE_SYSTEMADDRESS) != 0 {
-                                Mdl = (*Irp).MdlAddress;
-                                loop {
-                                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL as i16;
-                                    if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
-                                        Buffer = (*Mdl).MappedSystemVa;
-                                    } else {
-                                        Buffer = MmMapLockedPages(Mdl, 0i8);
-                                    }
-                                    if Buffer.is_null() {
-                                        ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
-                                    }
-                                    Mdl = (*Mdl).Next;
-                                    if Mdl.is_null() {
-                                        break;
-                                    }
-                                }
-                            }
-                        } else {
-                            Mdl = (*Irp).MdlAddress;
-                            if (ProbeFlags & KSPROBE_STREAMWRITE) == 0 || (ProbeFlags & KSPROBE_MODIFY) != 0 {
-                                Operation = IoWriteAccess;
-                            } else {
-                                Operation = IoReadAccess;
-                            }
-                            loop {
-                                MmProbeAndLockPages(Mdl, (*Irp).RequestorMode, Operation);
-                                if (ProbeFlags & KSPROBE_SYSTEMADDRESS) != 0 {
-                                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL as i16;
-                                    if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
-                                        Buffer = (*Mdl).MappedSystemVa;
-                                    } else {
-                                        Buffer = MmMapLockedPages(Mdl, 0i8);
-                                    }
-                                    if Buffer.is_null() {
-                                        ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
-                                    }
-                                }
-                                Mdl = (*Mdl).Next;
-                                if Mdl.is_null() {
-                                    break;
-                                }
-                            }
-                        }
+                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL as i16;
+                    if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
+                        Buffer = (*Mdl).MappedSystemVa;
+                    } else {
+                        Buffer = MmMapLockedPages(Mdl, 0i8);
                     }
-                    return Status;
+                    if Buffer.is_null() {
+                        /* the C raises this into its own handler, which only
+                         * records it as the status (dead under DUMMY_PSEH) */
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    Mdl = (*Mdl).Next;
+                    if Mdl.is_null() {
+                        break;
+                    }
                 }
             }
-            break 'AllocMdl;
+        } else {
+            Mdl = (*Irp).MdlAddress;
+            if (ProbeFlags & KSPROBE_STREAMWRITE) == 0 || (ProbeFlags & KSPROBE_MODIFY) != 0 {
+                Operation = IoWriteAccess;
+            } else {
+                Operation = IoReadAccess;
+            }
+            loop {
+                MmProbeAndLockPages(Mdl, (*Irp).RequestorMode, Operation);
+                if (ProbeFlags & KSPROBE_SYSTEMADDRESS) != 0 {
+                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL as i16;
+                    if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
+                        Buffer = (*Mdl).MappedSystemVa;
+                    } else {
+                        Buffer = MmMapLockedPages(Mdl, 0i8);
+                    }
+                    if Buffer.is_null() {
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                }
+                Mdl = (*Mdl).Next;
+                if Mdl.is_null() {
+                    break;
+                }
+            }
         }
     }
     Status
+}
+
+/// The two "check all stream headers" loops of KsProbeStreamIrp (irp.c). They
+/// differ in one place: the AllocMdl pass (`allocate_frames`) also allocates an
+/// MDL for every header's data frame; the user-buffer pass only for a format
+/// change packet. Each C `ExRaiseStatus(X)` lands in a handler that just records
+/// X as the status, so it is returned directly here: under DUMMY_PSEH that
+/// handler is dead and the raise would bugcheck instead of failing the IRP.
+unsafe fn ks_check_stream_headers(
+    Irp: PIRP,
+    ProbeFlags: ULONG,
+    HeaderSize: ULONG,
+    mut Length: ULONG,
+    allocate_frames: bool,
+) -> NTSTATUS {
+    let header_len = core::mem::size_of::<KSSTREAM_HEADER>() as ULONG;
+    let mut StreamHeader = (*Irp).AssociatedIrp.SystemBuffer as PKSSTREAM_HEADER;
+    if StreamHeader.is_null() {
+        return STATUS_INVALID_BUFFER_SIZE;
+    }
+
+    loop {
+        let size = (*StreamHeader).Size;
+        if HeaderSize != 0 {
+            /* does the supplied header size match stream header size and no type changed */
+            if size != HeaderSize && ((*StreamHeader).OptionsFlags & KSSTREAM_HEADER_OPTIONSF_TYPECHANGED) == 0 {
+                return STATUS_INVALID_BUFFER_SIZE;
+            }
+        } else if size < header_len || (size & 7) != 0 {
+            /* stream must be at least of size KSSTREAM_HEADER and 8-byte block aligned */
+            return STATUS_INVALID_BUFFER_SIZE;
+        }
+
+        if Length < size {
+            return STATUS_INVALID_BUFFER_SIZE;
+        }
+        if size == 0 {
+            /* A zero-sized format-change header passes the HeaderSize test and
+             * would never advance; the C spins here forever. */
+            return STATUS_INVALID_BUFFER_SIZE;
+        }
+
+        if (ProbeFlags & KSPROBE_STREAMWRITE) != 0 {
+            if (*StreamHeader).DataUsed > (*StreamHeader).FrameExtent {
+                /* frame extend can never be smaller */
+                return STATUS_INVALID_BUFFER_SIZE;
+            }
+
+            /* is this stream change packet */
+            if ((*StreamHeader).OptionsFlags & KSSTREAM_HEADER_OPTIONSF_TYPECHANGED) != 0 {
+                if Length != header_len || StreamHeader as PVOID != (*Irp).AssociatedIrp.SystemBuffer {
+                    /* stream changed - must be send in a single packet */
+                    return STATUS_INVALID_BUFFER_SIZE;
+                }
+                if (ProbeFlags & KSPROBE_ALLOWFORMATCHANGE) == 0 {
+                    /* caller does not permit format changes */
+                    return STATUS_INVALID_PARAMETER;
+                }
+                if (*StreamHeader).FrameExtent != 0 {
+                    if IoAllocateMdl((*StreamHeader).Data, (*StreamHeader).FrameExtent, 0, 1, Irp).is_null() {
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    /* break-out to probe for the irp */
+                    return STATUS_SUCCESS;
+                }
+            }
+        } else {
+            if (*StreamHeader).DataUsed != 0 {
+                /* DataUsed must be zero for stream read operation */
+                return STATUS_INVALID_BUFFER_SIZE;
+            }
+            if (*StreamHeader).OptionsFlags != 0 {
+                /* no flags supported for reading */
+                return STATUS_INVALID_PARAMETER;
+            }
+        }
+
+        if allocate_frames && (*StreamHeader).FrameExtent != 0 {
+            /* IoAllocateMdl chains each MDL onto Irp->MdlAddress. (The C asserts
+             * MdlAddress == NULL here, which the second header always trips.) */
+            if IoAllocateMdl((*StreamHeader).Data, (*StreamHeader).FrameExtent, 0, 1, Irp).is_null() {
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+        }
+
+        /* move to next stream header */
+        Length -= size;
+        if Length == 0 {
+            return STATUS_SUCCESS;
+        }
+        StreamHeader = (StreamHeader as ULONG_PTR + size as ULONG_PTR) as PKSSTREAM_HEADER;
+    }
 }
 
 #[no_mangle]

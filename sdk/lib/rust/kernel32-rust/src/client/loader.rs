@@ -781,20 +781,25 @@ pub unsafe extern "system" fn GetModuleHandleForUnicodeString(
     if DllPath.is_null() {
         Status = STATUS_NO_MEMORY;
     } else {
-        // _SEH2_TRY
-        {
-            Status = LdrGetDllHandle(DllPath, core::ptr::null_mut(), ModuleName, &mut Module);
-        }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            /* Fail with the SEH error */
-            Status = _SEH2_GetExceptionCode();
-        }
-        // _SEH2_END;
+        // The C wraps this in _SEH2_TRY/_SEH2_EXCEPT. The translation used to run the
+        // except arm unconditionally, which overwrote Status with the DUMMY_PSEH
+        // `_SEH2_GetExceptionCode()` (0 = STATUS_SUCCESS), and it then dropped the C's whole
+        // tail: DllPath leaked on every miss and no last error was set, though
+        // BasepGetModuleHandleExW's caller relies on it ("Last error is already set") --
+        // GetModuleHandleW of an unloaded module returned NULL with a stale GetLastError.
+        Status = LdrGetDllHandle(DllPath, core::ptr::null_mut(), ModuleName, &mut Module);
     }
 
-    // Note: The original C function appears to be missing a return statement at the end.
-    // Based on the context, we return Module as HMODULE.
+    /* Free the DllPath */
+    RtlFreeHeap(RtlGetProcessHeap(), 0, DllPath as PVOID);
+
+    /* In case of error set last win32 error and return NULL */
+    if !NT_SUCCESS(Status) {
+        BaseSetLastNTError(Status);
+        Module = core::ptr::null_mut();
+    }
+
+    /* Return module */
     Module as HMODULE
 }
 
