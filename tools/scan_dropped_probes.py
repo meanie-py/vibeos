@@ -130,6 +130,7 @@ PROBE_ALTS = (
     r"probe_write_boolean",
     r"probe_write_size_t",
     r"probe_read_generic",
+    r"probe_write_generic",
     r"probe_capture_unicode_string_header",
     r"write_user_nofail",
     r"write_user",
