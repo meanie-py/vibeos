@@ -206,8 +206,26 @@ pub(crate) unsafe fn fldr_conout(msg: *const u16) {
 #[cfg(not(target_arch = "arm"))]
 #[cfg_attr(feature = "uefildr-rust-entry", no_mangle)]
 pub unsafe extern "C" fn Reboot() -> ! {
-    WARN(b"Something has gone wrong - halting FreeLoader\n\0".as_ptr() as *const i8);
-    loop {}
+    // Upstream 2a74f5e794d "Implement missing cold reset in Reboot()": the menu's reboot
+    // entry and every "RunLoader returned" path used to halt here forever.
+    WARN(b"Performing cold reset\n\0".as_ptr() as *const i8);
+
+    if !GlobalSystemTable.is_null() && !(*GlobalSystemTable).RuntimeServices.is_null() {
+        // EFI_RESET_SYSTEM: (ResetType, ResetStatus, DataSize, ResetData), EFIAPI.
+        type EfiResetSystem = unsafe extern "C" fn(u32, EFI_STATUS, UINTN, *mut c_void);
+        const EFI_RESET_COLD: u32 = 0; // EfiResetCold
+        let reset = (*(*GlobalSystemTable).RuntimeServices).ResetSystem;
+        if !reset.is_null() {
+            let reset: EfiResetSystem = core::mem::transmute(reset);
+            reset(EFI_RESET_COLD, 0 /* EFI_SUCCESS */, 0, core::ptr::null_mut());
+        }
+    }
+
+    // Fallback dead-loop if runtime services are missing or fail to respond.
+    loop {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        core::arch::asm!("hlt", options(nomem, nostack));
+    }
 }
 
 
