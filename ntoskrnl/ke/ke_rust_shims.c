@@ -126,6 +126,8 @@ VOID FASTCALL KeAcquireInStackQueuedSpinLock(IN PKSPIN_LOCK SpinLock, IN PKLOCK_
  *   flavor, each raising to its own SYNCH_LEVEL.
  * ============================================================ */
 #if defined(_M_IX86)
+/* nolint: duplicate-symbol (hal.dll's import thunk is the twin; this calls
+ * through the same __imp_ slot, so either one is HAL's body) */
 KIRQL NTAPI KeRaiseIrqlToSynchLevel(VOID)
 {
     KIRQL result;

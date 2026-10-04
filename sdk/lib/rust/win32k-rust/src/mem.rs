@@ -179,7 +179,6 @@ pub unsafe extern "system" fn EngSecureMem(Address: PVOID, Length: ULONG) -> HAN
     -1isize as HANDLE
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn EngSecureMemForRead(Address: PVOID, Length: ULONG) -> HANDLE {
     let __SehStatus = SafeProbeForRead(Address, Length as SIZE_T, 1);
@@ -197,26 +196,6 @@ pub unsafe extern "system" fn EngSecureMemForRead(Address: PVOID, Length: ULONG)
     while cPages > 0 {
         cPages -= 1;
         // (void)*pjProbe; — read probe.
-        core::ptr::read_volatile(pjProbe);
-        pjProbe = pjProbe.add(PAGE_SIZE as usize);
-    }
-    -1isize as HANDLE
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "system" fn EngSecureMemForRead(Address: PVOID, Length: ULONG) -> HANDLE {
-    let __SehStatus = SafeProbeForRead(Address, Length as SIZE_T, 1);
-    if !NT_SUCCESS(__SehStatus) {
-        return core::ptr::null_mut();
-    }
-    let mut cPages: ULONG = ((((Address as usize) & (PAGE_SIZE as usize - 1))
-        + Length as usize
-        + (PAGE_SIZE as usize - 1)) / PAGE_SIZE as usize) as ULONG;
-    let mut pjProbe: *mut u8 =
-        ((Address as usize) & !(PAGE_SIZE as usize - 1)) as *mut u8;
-    while cPages > 0 {
-        cPages -= 1;
         core::ptr::read_volatile(pjProbe);
         pjProbe = pjProbe.add(PAGE_SIZE as usize);
     }

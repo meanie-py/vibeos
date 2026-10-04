@@ -282,23 +282,10 @@ pub unsafe extern "system" fn SURFACE_AllocSurface(
     SURFACE_AllocSurface_impl(iType, cx, cy, iFormat, fjBitmap, cjWidth, cjBufSize, pvBits)
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn EngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
     // SURFACE_ShareLockSurface(hsurf) — macro surface.h:91 expands to
     //   GDIOBJ_ShareLockObj(hsurf as HGDIOBJ, GDI_OBJECT_TYPE_BITMAP) as PSURFACE
-    let psurf =
-        GDIOBJ_ShareLockObj(hsurf as HGDIOBJ, GDI_OBJECT_TYPE_BITMAP) as PSURFACE;
-    if psurf.is_null() {
-        core::ptr::null_mut()
-    } else {
-        core::ptr::addr_of_mut!((*psurf).SurfObj)
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "system" fn EngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
     let psurf =
         GDIOBJ_ShareLockObj(hsurf as HGDIOBJ, GDI_OBJECT_TYPE_BITMAP) as PSURFACE;
     if psurf.is_null() {
@@ -424,7 +411,6 @@ pub unsafe extern "system" fn EngCreateDeviceSurface(
     GDIOBJ_vUnlockObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
     return hsurf;
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn EngAssociateSurface(
     hsurf: HSURF,
@@ -466,49 +452,6 @@ pub unsafe extern "system" fn EngAssociateSurface(
 
     // SURFACE_ShareUnlockSurface(psurf) — macro surface.h:102
     //   => GDIOBJ_vDereferenceObject((POBJ)pBMObj)
-    GDIOBJ_vDereferenceObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
-
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "system" fn EngAssociateSurface(
-    hsurf: HSURF,
-    hdev: HDEV,
-    flHooks: FLONG,
-) -> i32 {
-
-    let pso: *mut SURFOBJ;
-    let psurf: PSURFACE;
-    let ppdev: *mut PDEVOBJ;
-    let ppal: PPALETTE;
-
-    ppdev = hdev as *mut PDEVOBJ;
-
-    // SURFACE_ShareLockSurface(hsurf) — macro surface.h:91
-    psurf = GDIOBJ_ShareLockObj(hsurf as HGDIOBJ, GDI_OBJECT_TYPE_BITMAP) as PSURFACE;
-    if psurf.is_null() {
-        return 0;
-    }
-    pso = core::ptr::addr_of_mut!((*psurf).SurfObj);
-
-    (*pso).hdev = hdev;
-    (*pso).dhpdev = (*ppdev).dhpdev;
-
-    (*psurf).flags &= !HOOK_FLAGS;
-    (*psurf).flags |= flHooks & HOOK_FLAGS;
-
-    // PALETTE_ShareLockPalette(hpalDefault) — macro palette.h:57
-    ppal = GDIOBJ_ShareLockObj(
-        (*ppdev).devinfo.hpalDefault as HGDIOBJ,
-        GDI_OBJECT_TYPE_PALETTE,
-    ) as PPALETTE;
-    SURFACE_vSetPalette(psurf, ppal);
-    // PALETTE_ShareUnlockPalette(ppal) — macro palette.h:59
-    GDIOBJ_vDereferenceObject(core::ptr::addr_of_mut!((*ppal).BaseObject));
-
-    // SURFACE_ShareUnlockSurface(psurf) — macro surface.h:102
     GDIOBJ_vDereferenceObject(core::ptr::addr_of_mut!((*psurf).BaseObject));
 
     1

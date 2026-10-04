@@ -13,10 +13,8 @@
  *     the format is fixed so we open-code the concat to drop the
  *     dependency. (Rust can't safely cross the `va_arg` boundary on
  *     stable, so the shim itself stays — the symbol is what matters.)
- *   - `ProbeForWriteHandle` / `ProbeForReadLargeInteger` — wrap probe.h
- *     macros and provide the manual range-check + volatile copy. Kept
- *     here until the corresponding `common-inlines` impls grow the
- *     same `MmUserProbeAddress` bound check (see TODO in that crate).
+ *   (`ProbeForWriteHandle` / `ProbeForReadLargeInteger` lived here until
+ *     ntkrnl-sys's typed probes got probe.h's `MmUserProbeAddress` check.)
  *
  * Header-free since the cargo-driven build PoC: no `<ntoskrnl.h>`, no
  * `<ntstrsafe.h>`, no `<debug.h>`, no `<internal/io_i.h>`. Local
@@ -66,37 +64,6 @@ typedef struct _UNICODE_STRING
     USHORT MaximumLength;
     PWCHAR Buffer;
 } UNICODE_STRING, *PUNICODE_STRING;
-
-/* --- Externs from the rest of the kernel ---------------------------- */
-extern void NTAPI ProbeForWrite(PVOID Address, ULONG_PTR Length, ULONG Alignment);
-extern void NTAPI ExRaiseAccessViolation(void);
-extern PVOID MmUserProbeAddress;
-
-/*
- * Probe helper macros from probe.h — Rust extern "system" needs function wrappers.
- * The C body adds an explicit `MmUserProbeAddress` overflow/upper-bound check
- * that the `common-inlines` impls currently elide; on i386 the NTAPI symbol
- * decoration (`_X@N`) is distinct from the cdecl version so both coexist.
- */
-VOID
-NTAPI
-ProbeForWriteHandle(IN PHANDLE Ptr)
-{
-    ProbeForWrite(Ptr, sizeof(HANDLE), sizeof(HANDLE));
-}
-
-LARGE_INTEGER
-NTAPI
-ProbeForReadLargeInteger(IN const LARGE_INTEGER *Ptr)
-{
-    LARGE_INTEGER Result;
-    if ((ULONG_PTR)Ptr + sizeof(LARGE_INTEGER) < (ULONG_PTR)Ptr ||
-        (ULONG_PTR)Ptr + sizeof(LARGE_INTEGER) > (ULONG_PTR)MmUserProbeAddress) {
-        ExRaiseAccessViolation();
-    }
-    Result = *(volatile const LARGE_INTEGER *)Ptr;
-    return Result;
-}
 
 /*
  * RtlUnicodeStringPrintf_4wZ — open-coded "%wZ%wZ#%wZ%wZ" concat for

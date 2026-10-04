@@ -21,6 +21,8 @@ extern "system" {
 }
 
 // startup/dllmain.c
+// nolint: duplicate-symbol (the default; a consumer's own DllMain is meant to
+// win, as mlang-rust's does)
 #[no_mangle]
 pub unsafe extern "system" fn DllMain(
     hDllHandle: HANDLE,

@@ -1483,10 +1483,11 @@ def _sacred_analysis(run: Run, repo: Path, arch: str, script: Path):
 def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
     """Need a built binary (run after `build`).
 
-    scan_ud2 + sacred primitives + scan_self_recursive. All three are POST-LINK
-    miscompile detectors: they read the emitted code, because the defects they
-    catch are invisible in the source (an ABI mismatch that LLVM turned into a
-    `ud2`; a Rust `memcpy` that LLVM lowered into a call to itself).
+    scan_ud2 + sacred primitives + scan_self_recursive are POST-LINK miscompile
+    detectors: they read the emitted code, because the defects they catch are
+    invisible in the source (an ABI mismatch that LLVM turned into a `ud2`; a
+    Rust `memcpy` that LLVM lowered into a call to itself). scan_link_duplicates
+    reads what the linker said about the same link.
     """
     py = sys.executable
     build_dir = repo / f"build-{arch}"
@@ -1495,6 +1496,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_ud2", status="skip", detail="no binary"))
         run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
         run.add(Stage("scan_self_recursive", status="skip", detail="no binary"))
+        run.add(Stage("scan_link_duplicates", status="skip", detail="no binary"))
         return
     # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
     # their output is arch-specific so a single baseline can't match across arches
@@ -1528,6 +1530,19 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         repo,
         "scan_self_recursive",
         [py, str(selfrec), "--check", str(build_dir)] if selfrec.is_file() else ["MISSING"],
+        strict=strict,
+        by_exit_code=True,
+    )
+    # Every duplicate symbol lld resolved under --allow-multiple-definition in a
+    # cargo-linked PE, C and asm included (lld names both definers; the cargo
+    # cache keeps the warning). The source-level scan_duplicate_symbols sees
+    # only Rust; see tools/scan_link_duplicates.py.
+    linkdup = repo / "tools" / "scan_link_duplicates.py"
+    _lint_stage(
+        run,
+        repo,
+        "scan_link_duplicates",
+        [py, str(linkdup), "--check", str(build_dir)] if linkdup.is_file() else ["MISSING"],
         strict=strict,
         by_exit_code=True,
     )

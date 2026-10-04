@@ -24,3 +24,9 @@ reactos-link = { path = "../reactos-link" }
 
 [dependencies]
 panic-common = { path = "../panic-common", features = ["user"] }
+
+[lints.rust]
+# lld reports every duplicate symbol it resolves under --allow-multiple-definition
+# as a warning; surface it so tools/scan_link_duplicates.py can read it back
+# from cargo's cached diagnostics.
+linker_messages = "warn"

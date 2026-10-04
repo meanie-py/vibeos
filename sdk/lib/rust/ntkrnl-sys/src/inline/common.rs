@@ -87,39 +87,82 @@ pub unsafe fn PspClearCrossThreadFlag(thread: ddk::PETHREAD, flag: ULONG) {
 // ============================================================================
 // Probe macros (from sdk/include/reactos/probe.h)
 // ============================================================================
+//
+// Every typed probe is `ProbeForReadGenericType` / `ProbeForWriteGenericType`:
+// raise an access violation unless the whole object lies below
+// `MmUserProbeAddress` (and the span does not wrap), then touch it. These used to
+// be bare volatile accesses with NO range check, so every syscall whose probe
+// resolved here (NtProtectVirtualMemory's OldAccessProtection, the config/po/dbgk
+// out-params, ...) wrote through a kernel pointer handed in from user mode.
 
-/// ProbeForReadLargeInteger — volatile read of a LARGE_INTEGER from user-mode.
+extern "system" {
+    // ex-rust's definition returns `()`; don't trust a `-> !` it doesn't promise.
+    #[link_name = "ExRaiseAccessViolation"]
+    fn probe_raise_access_violation();
+}
+
+extern "C" {
+    static MmUserProbeAddress: ULONG_PTR;
+}
+
+/// probe.h's test: `Ptr + sizeof(Type) - 1` wraps or reaches `MmUserProbeAddress`.
+#[inline]
+unsafe fn probe_outside_user<T>(ptr: *const T) -> bool {
+    let first = ptr as ULONG_PTR;
+    let last = first.wrapping_add(core::mem::size_of::<T>() - 1);
+    last < first || last >= MmUserProbeAddress
+}
+
+/// `ProbeForReadGenericType(Ptr, T, Default)`; `Default` is all-zero for every user.
+#[inline]
+unsafe fn probe_read_generic_type<T: Copy>(ptr: *const T) -> T {
+    if probe_outside_user(ptr) {
+        probe_raise_access_violation();
+        return core::mem::zeroed();
+    }
+    core::ptr::read_volatile(ptr)
+}
+
+/// `ProbeForWriteGenericType(Ptr, T)`: the touch writes the value back unchanged.
+#[inline]
+unsafe fn probe_write_generic_type<T: Copy>(ptr: *mut T) {
+    if probe_outside_user(ptr) {
+        probe_raise_access_violation();
+        return;
+    }
+    core::ptr::write_volatile(ptr, core::ptr::read_volatile(ptr));
+}
+
+/// ProbeForReadLargeInteger — probe.h `ProbeForReadGenericType(.., LARGE_INTEGER, ..)`.
 #[inline]
 pub unsafe fn ProbeForReadLargeInteger(
     addr: *const ddk::_LARGE_INTEGER,
 ) -> ddk::_LARGE_INTEGER {
-    core::ptr::read_volatile(addr)
+    probe_read_generic_type(addr)
 }
 
-/// ProbeForReadUchar — volatile read of a UCHAR from user-mode.
+/// ProbeForReadUchar — probe.h `ProbeForReadGenericType(Ptr, UCHAR, 0)`.
 #[inline]
 pub unsafe fn ProbeForReadUchar(addr: *const u8) -> u8 {
-    core::ptr::read_volatile(addr)
+    probe_read_generic_type(addr)
 }
 
-/// ProbeForReadUshort — volatile read of a USHORT from user-mode.
+/// ProbeForReadUshort — probe.h `ProbeForReadGenericType(Ptr, USHORT, 0)`.
 #[inline]
 pub unsafe fn ProbeForReadUshort(addr: *const u16) -> u16 {
-    core::ptr::read_volatile(addr)
+    probe_read_generic_type(addr)
 }
 
-/// ProbeForWriteHandle — volatile read/write to validate user-mode handle ptr.
+/// ProbeForWriteHandle — probe.h `ProbeForWriteGenericType(Ptr, HANDLE)`.
 #[inline]
 pub unsafe fn ProbeForWriteHandle(ptr: *mut ddk::HANDLE) {
-    let val = core::ptr::read_volatile(ptr);
-    core::ptr::write_volatile(ptr, val);
+    probe_write_generic_type(ptr)
 }
 
-/// ProbeForWriteUlong — volatile read/write to validate user-mode ULONG ptr.
+/// ProbeForWriteUlong — probe.h `ProbeForWriteGenericType(Ptr, ULONG)`.
 #[inline]
 pub unsafe fn ProbeForWriteUlong(ptr: *mut ULONG) {
-    let val = core::ptr::read_volatile(ptr);
-    core::ptr::write_volatile(ptr, val);
+    probe_write_generic_type(ptr)
 }
 
 // ============================================================================
@@ -447,11 +490,10 @@ pub unsafe fn RtlLongLongAdd(
 // ProbeForWritePointer (macro from probe.h)
 // ============================================================================
 
-/// ProbeForWritePointer — volatile read/write to validate user-mode pointer-sized ptr.
+/// ProbeForWritePointer — probe.h `ProbeForWriteGenericType(Ptr, PVOID)`.
 #[inline]
 pub unsafe fn ProbeForWritePointer(ptr: *mut PVOID) {
-    let val = core::ptr::read_volatile(ptr);
-    core::ptr::write_volatile(ptr, val);
+    probe_write_generic_type(ptr)
 }
 
 // ============================================================================
@@ -547,22 +589,20 @@ pub unsafe fn ExceptionRecord32To64(
 // ProbeForWriteBoolean (probe.h macro wrapping ProbeForWriteGenericType)
 // ============================================================================
 
-/// ProbeForWriteBoolean — volatile read/write to validate user-mode BOOLEAN ptr.
+/// ProbeForWriteBoolean — probe.h `ProbeForWriteGenericType(Ptr, BOOLEAN)`.
 #[inline]
 pub unsafe fn ProbeForWriteBoolean(ptr: *mut BOOLEAN) {
-    let val = core::ptr::read_volatile(ptr);
-    core::ptr::write_volatile(ptr, val);
+    probe_write_generic_type(ptr)
 }
 
 // ============================================================================
 // ProbeForWriteLangId (probe.h macro wrapping ProbeForWriteGenericType)
 // ============================================================================
 
-/// ProbeForWriteLangId — volatile read/write to validate user-mode LANGID ptr.
+/// ProbeForWriteLangId — probe.h `ProbeForWriteGenericType(Ptr, LANGID)`.
 #[inline]
 pub unsafe fn ProbeForWriteLangId(ptr: *mut u16) {
-    let val = core::ptr::read_volatile(ptr);
-    core::ptr::write_volatile(ptr, val);
+    probe_write_generic_type(ptr)
 }
 
 // ============================================================================

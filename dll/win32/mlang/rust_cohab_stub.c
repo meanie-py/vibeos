@@ -19,10 +19,7 @@ void TRACE(const char *f, ...) { (void)f; }
 void WARN(const char *f, ...)  { (void)f; }
 void FIXME(const char *f, ...) { (void)f; }
 
-const char *__stdcall debugstr_a(const char *s) { return s; }
-const char *__stdcall debugstr_an(const char *s, int n) { (void)n; return s; }
-const char *__stdcall debugstr_w(const unsigned short *s) { (void)s; return ""; }
-const char *__stdcall debugstr_wn(const unsigned short *s, int n) { (void)s; (void)n; return ""; }
+/* debugstr_a/an/w/wn: mlang-rust debug_shims.rs (cdecl, as every Rust decl). */
 const char *__stdcall debugstr_guid(const void *g) { (void)g; return ""; }
 const char *__stdcall wine_dbgstr_w(const unsigned short *s) { (void)s; return ""; }
 
@@ -55,10 +52,7 @@ void __stdcall list_add_tail(struct cohab_list *l, struct cohab_list *e)
     l->prev = e;
 }
 
-/* mlang.rc resource registration (DllRegisterServer) — no-op stub, S_OK.
- * Resource registration is not exercised at the QEMU desktop boot. */
-long __stdcall __wine_register_resources(void *hinst) { (void)hinst; return 0; }
-long __stdcall __wine_unregister_resources(void *hinst) { (void)hinst; return 0; }
+/* __wine_(un)register_resources: mlang-rust debug_shims.rs (no-op, S_OK). */
 
 /* InterlockedIncrement/Decrement: on i386 these come from kernel32 as _X@4, but
  * on amd64/arm64 they are compiler intrinsics the import lib does not export as

@@ -58,3 +58,9 @@ cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-m
 # crate) reaches msvcrt-crt-rust -- the one thing this crate exists to keep out.
 # That is asserted by check_structure, not assumed.
 ucrt-rust = { path = "../ucrt-rust", features = ["bits", "ismbbyte", "portable-string", "ctype", "ismbc", "tocase", "strtox", "atox", "xtoa", "findfile", "output", "strtod", "stat", "locale-data", "locale-init", "mbctype", "qualified-locale", "setlocale", "exec", "atof", "ctime", "timeset", "argv-data", "align", "invalid-parameter", "lowio-open", "mbstring", "string-ops", "time", "stdio-bufio", "stdio-files", "stdio-input", "convert-rest", "misc", "filesystem", "lowio", "internal-core", "heap", "stdlib", "conio", "env", "exec-rest", "startup", "argv-errors", "cvt", "winapi-thunks", "ucrt-reactos", "fpctrl", "fenv", "c99math"] }
+
+[lints.rust]
+# lld reports every duplicate symbol it resolves under --allow-multiple-definition
+# as a warning; surface it so tools/scan_link_duplicates.py can read it back
+# from cargo's cached diagnostics.
+linker_messages = "warn"

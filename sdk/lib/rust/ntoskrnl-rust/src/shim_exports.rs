@@ -2463,16 +2463,9 @@ mod ke_i386_exports {
         ntkrnl_sys::inline::ke_i386::KiSetGdtDescriptorBase(entry, base)
     }
 
-    #[no_mangle]
-    #[inline(never)]
-    pub unsafe extern "system" fn RtlFillMemoryUlong(
-        dest: ntkrnl_sys::base::PVOID,
-        length: usize,
-        pattern: ntkrnl_sys::base::ULONG,
-    ) {
-    let dest = opaque_ptr(dest);
-        ntkrnl_sys::inline::ke_i386::RtlFillMemoryUlong(dest, length, pattern)
-    }
+    // RtlFillMemoryUlong: no export here. i386's is rtlmem.s
+    // (`_RtlFillMemoryUlong@12`, linked by both kernels); this twin won or lost
+    // by asm_archive order alone (ntkrnlmp took the asm, ntoskrnl this).
 }
 
 // ============================================================================
