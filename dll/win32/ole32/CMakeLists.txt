@@ -127,6 +127,20 @@ add_idl_reg_scripts(ole32 registry dcom.idl ole32_objidl.idl ole32_oleidl.idl ol
 # OLE32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
 target_link_libraries(ole32 ${OLE32_RUST_LIB} wine uuid ${PSEH_LIB} oldnames)
 target_link_options(ole32 PRIVATE LINKER:--allow-multiple-definition)
+# oleaut32's delay-import lib is ONE object holding a thunk for every oleaut32 export,
+# including the three it forwards back to us (`-import` in oleaut32.spec). It gets
+# loaded for SysAllocString long before the .def exports are resolved, so its thunks
+# took Get/Set/CreateErrorInfo and the Rust errorinfo bodies were never linked: ole32
+# exported jumps into oleaut32, which jumped straight back -- an endless tail-call
+# loop for any caller. Make them undefined up front so the Rust archive, read first,
+# supplies them. `-u` will not do: lld's MinGW driver maps it to -includeoptional,
+# resolved too late to matter; --require-defined is a real -include.
+# (--allow-multiple-definition is why the clash was silent.)
+if(ARCH STREQUAL "i386")
+    target_link_options(ole32 PRIVATE "LINKER:--require-defined=_CreateErrorInfo@4,--require-defined=_GetErrorInfo@8,--require-defined=_SetErrorInfo@8")
+else()
+    target_link_options(ole32 PRIVATE "LINKER:--require-defined=CreateErrorInfo,--require-defined=GetErrorInfo,--require-defined=SetErrorInfo")
+endif()
 add_delay_importlibs(ole32 oleaut32)
 add_importlibs(ole32 advapi32 user32 gdi32 rpcrt4 msvcrt kernel32 kernel32_vista ntdll)
 add_dependencies(ole32 ole32idl rust_ole32)

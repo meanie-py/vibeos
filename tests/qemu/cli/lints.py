@@ -1505,6 +1505,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_ud2", status="skip", detail="no binary"))
         run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
         run.add(Stage("scan_self_recursive", status="skip", detail="no binary"))
+        run.add(Stage("scan_export_thunks", status="skip", detail="no binary"))
         return
     # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
     # their output is arch-specific so a single baseline can't match across arches
@@ -1541,3 +1542,20 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         strict=strict,
         by_exit_code=True,
     )
+    # An export that is a jump to another DLL's same-named import: a local body lost the
+    # link to an import library. ole32's GetErrorInfo/SetErrorInfo/CreateErrorInfo went
+    # to oleaut32, which forwards them back: an endless loop for every caller. amd64 only
+    # (the scan reads llvm-objdump's IAT-name annotation); the defect is link-order, not
+    # arch, so one graded arch catches the class.
+    if arch == "amd64":
+        sxt = repo / "tools" / "scan_export_thunks.py"
+        _lint_stage(
+            run,
+            repo,
+            "scan_export_thunks",
+            [py, str(sxt), "--check", str(build_dir)] if sxt.is_file() else ["MISSING"],
+            strict=strict,
+            by_exit_code=True,
+        )
+    else:
+        run.add(Stage("scan_export_thunks", status="skip", detail="amd64-only scan"))

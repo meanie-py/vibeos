@@ -10217,6 +10217,24 @@ covers Rust-vs-C for declared prototypes; a shim that is *itself* mis-prototyped
 outside that net.
 ---
 
+### A Rust export loses the link to a DELAY-IMPORT thunk, and the call loops forever
+**Symptom:** a process spins at 100% inside two DLLs, with no fault and no output. The PC
+samples alternate between `ole32!CreateErrorInfo` and `oleaut32!CreateErrorInfo`, which
+disassemble as `jmp [__imp_CreateErrorInfo]` on both sides. Wine's errorinfo test hung on
+every sweep. Any `GetErrorInfo`/`SetErrorInfo`/`CreateErrorInfo` caller would too.
+
+**Cause:** oleaut32's delay-import library is ONE object (`liboleaut32_delayed.delay.o`)
+with a thunk for every oleaut32 export, including the three it `-import`s back from ole32.
+lld loaded it for `SysAllocString` before ole32's `.def` exports were resolved. Loading it
+defined those names, so the Rust `errorinfo.rs` member was never pulled, although it was in
+the archive and first on the link line. `--allow-multiple-definition` kept it silent.
+
+**Fix:** `target_link_options(<mod> PRIVATE "LINKER:--require-defined=<sym>")` (i386:
+the decorated `_Sym@N`). **Not `-u`:** lld's MinGW driver maps `-u` to `-includeoptional`,
+which resolves too late to change the winner; `--require-defined` is a real `-include`.
+**Gated: `tools/scan_export_thunks.py`** (post-link, amd64; its baseline lists the
+deliberate re-exports and the harmless lost-local cases).
+
 ## Mm, PFN & paging
 
 ### The `OriginalPte` / `RmapListHead` union overlay `[§9.13]`
