@@ -555,6 +555,25 @@ record and replay would be different machines.
 Divergence on replay is a **finding about our own system**, not an obstruction.
 Record it here and keep going; only chase one when it looks load-bearing.
 
+- **The arm64 wedge is QEMU refusing an exception the recording does not have --
+  i.e. a divergence that happened EARLIER, silently (2026-10-04).** Measured on a
+  fresh kmtest trace (`a64-km-1`, 35 MB, sweep 93/93), by hand with a monitor:
+  `info replay` froze at **icount 19,803,007,807** on two runs (deterministic), 13.7%
+  of the serial. `rr wedge --icount` puts that **22,902 instructions into a recorded
+  chunk that ran 1,249,999 instructions to its next timer interrupt** with no
+  exception event in it. `info registers` at the freeze: **EL0, PC = the `ret` after
+  an `svc #0`** in an ntdll syscall stub -- the replayed guest is making a system call
+  the recorded guest never made there. QEMU's replay only takes an exception when the
+  log's next event is that exception; otherwise the vCPU waits, forever. So the
+  wedge offset is where an earlier divergence first becomes VISIBLE, not where
+  anything goes wrong -- which is why it was roughly absolute per (QEMU, guest) and
+  tight within a pair, and why no event "at" the offset ever looked guilty.
+  Not the x86 cause: replaying this trace from power-on (disks reverted to `init`,
+  no snapshot load) stalls at icount 0 -- arm64 needs the snapshot, x86 cannot use it.
+  **Next:** find the first instruction boundary where record and replay guest state
+  differ (replay-break at earlier boundaries, compare against a recording that
+  breaks at the same boundaries), not more reading of the stall site.
+
 - **`blkreplay` cannot drive an ATAPI CD, which is why x86 cannot be recorded
   (2026-09-13). MEASURED, root-caused, and now refused up front.**
 
