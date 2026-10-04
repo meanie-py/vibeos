@@ -671,9 +671,14 @@ pub unsafe extern "system" fn FindFirstFileExW(
 
         let mut HadADot: BOOLEAN = 0;
 
-        let mut DirectoryInfo: [BYTE; FIND_DATA_SIZE] = [0; FIND_DATA_SIZE];
+        // C: `DECLSPEC_ALIGN(4) BYTE DirectoryInfo[FIND_DATA_SIZE]` —
+        // NtQueryDirectoryFile requires a ULONG-aligned buffer, and a bare
+        // byte array is only guaranteed alignment 1.
+        #[repr(C, align(4))]
+        struct AlignedDirectoryInfo([BYTE; FIND_DATA_SIZE]);
+        let mut DirectoryInfo = AlignedDirectoryInfo([0; FIND_DATA_SIZE]);
         let mut DirInfo: DIR_INFORMATION = DIR_INFORMATION {
-            DirInfo: DirectoryInfo.as_mut_ptr() as PVOID,
+            DirInfo: DirectoryInfo.0.as_mut_ptr() as PVOID,
         };
 
         RtlInitUnicodeString(&mut FileName, lpFileName);

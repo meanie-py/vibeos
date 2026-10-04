@@ -776,6 +776,13 @@ pub unsafe extern "system" fn LdrpSnapThunk(
     'failure: loop {
         if (Ordinal as ULONG) >= (*ExportDirectory).NumberOfFunctions {
             // FailurePath
+            // A forwarder DLL loaded on the way here must be unloaded, or it
+            // lingers in the loader waiting to run its init routine (upstream
+            // 4a96f375a0f "[NTDLL] Unload DLLs on loader failure").
+            if !ForwarderHandle.is_null() {
+                LdrUnloadDll(ForwarderHandle);
+            }
+
             // ARM64: DUMMY_PSEH can't catch RtlRaiseStatus. Skip the hard error
             // and fall through to the non-fatal path (Thunk = 0xffbadd11); the
             // caller tolerates it. Matches the #ifdef _M_ARM64 branch in ldrpe.c.

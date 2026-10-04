@@ -729,19 +729,24 @@ pub unsafe extern "system" fn FatalExit(ExitCode: core::ffi::c_int) {
 
 #[no_mangle]
 pub unsafe extern "system" fn GetPriorityClass(hProcess: HANDLE) -> DWORD {
-    let mut PriorityClass: PROCESS_PRIORITY_CLASS = core::mem::zeroed();
+    // C: `PROCESS_PRIORITY_CLASS DECLSPEC_ALIGN(4) PriorityClass`. The kernel
+    // probes this info class with ULONG alignment; the bare two-byte struct is
+    // only guaranteed alignment 1 (STATUS_DATATYPE_MISALIGNMENT if unlucky).
+    #[repr(C, align(4))]
+    struct AlignedPriorityClass(PROCESS_PRIORITY_CLASS);
+    let mut PriorityClass = AlignedPriorityClass(core::mem::zeroed());
 
     /* Query the kernel */
     let Status = NtQueryInformationProcess(
         hProcess,
         ProcessPriorityClass,
-        &mut PriorityClass as *mut _ as PVOID,
+        &mut PriorityClass.0 as *mut _ as PVOID,
         core::mem::size_of::<PROCESS_PRIORITY_CLASS>() as ULONG,
         core::ptr::null_mut(),
     );
     if NT_SUCCESS(Status) {
         /* Handle the conversion from NT to Win32 classes */
-        return match PriorityClass.PriorityClass as ULONG {
+        return match PriorityClass.0.PriorityClass as ULONG {
             PROCESS_PRIORITY_CLASS_IDLE => IDLE_PRIORITY_CLASS,
             PROCESS_PRIORITY_CLASS_BELOW_NORMAL => BELOW_NORMAL_PRIORITY_CLASS,
             PROCESS_PRIORITY_CLASS_ABOVE_NORMAL => ABOVE_NORMAL_PRIORITY_CLASS,
