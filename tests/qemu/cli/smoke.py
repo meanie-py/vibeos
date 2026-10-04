@@ -620,6 +620,19 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
         )
 
 
+def _staged_payloads(repo: Path, arch: str) -> list[str]:
+    """The payload names the last build of this arch stamped into its build dir."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "payload_compile", repo / "tools" / "payloads" / "compile.py"
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.read_stamp(repo / f"build-{arch}")
+
+
 def _payload_stage(
     run: Run, repo: Path, arch: str, payloads: str, idx: int = 0, total: int = 1
 ) -> None:
@@ -806,6 +819,34 @@ def smoke(args, repo: Path) -> int:
                 detail=f"{len(require)} probe(s) present in every boot image",
             )
         )
+
+    # --- payload preflight (hard boundary) ---
+    # Payloads are staged at BUILD time, and the build stamps which. Booting media
+    # that lacks the payload waits out its whole launch drain for a marker nothing
+    # can print, then fails as a generic "payload suite FAILED" -- and meanwhile
+    # runs whatever the media DOES carry (an rpmprobe run on kmtest media drove a
+    # kmtest sweep into a double fault and reported it as rpmprobe's failure).
+    wanted = [p.strip() for p in (getattr(args, "payload", "") or "").split(",") if p.strip()]
+    if getattr(args, "doom", False) and "doom" not in wanted:
+        wanted.append("doom")
+    if wanted:
+        staged = _staged_payloads(repo, arch)
+        absent = [p for p in wanted if p not in staged]
+        if absent:
+            run.classification = "PAYLOAD_NOT_IN_MEDIA"
+            run.add(
+                Stage(
+                    "payload-check",
+                    status="fail",
+                    detail=f"media carries {','.join(staged) or '<none>'}, not {','.join(absent)}",
+                    salient=[
+                        f"VIBEOS_PAYLOAD={','.join(wanted)} ./vibeos-cli build --arch {arch}",
+                        "then re-run this smoke",
+                    ],
+                )
+            )
+            return run.finalize(repo)
+        run.add(Stage("payload-check", status="ok", detail=",".join(wanted)))
 
     total = max(1, int(getattr(args, "repeat", 1) or 1))
     until = getattr(args, "until", None) or ""
