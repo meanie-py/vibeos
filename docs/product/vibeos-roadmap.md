@@ -1906,6 +1906,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   A boot at 2026-09-21 00:45 ran the same guests 11/11, so it is recent; the amd64 media
   changed only by winlogon.exe between the two, which is suspicious but unproven —
   nothing in that diff runs before marshal32.
+  **Rate (2026-10-04):** 1 miss in 25 queue-batch gates (04:11-15:09, `smoke-amd64-a1`
+  serial, `[WINLOGON] marshal32.exe exit =` present or not). The miss (gate
+  `20261004-145947-0qwjkolk`) held master as LADDER_FAIL beside a real DIFFTEST_FAIL; a
+  lone LADDER_FAIL with this signature is this entry, not the batch under test.
 
 - **Wine's conformance suites now run under WoW64, and the first two subtests found
   four separate bugs. OPEN** (2026-09-21). `user32:wsprintf` passes clean (46 tests, 0
