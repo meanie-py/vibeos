@@ -293,6 +293,23 @@ cannot resolve (`NTDDI_VERSION` arms) and hand-restructured bodies still produce
 Motivating case: fastfat's `FatCreateNewDirent` lost `RtlSetBits`, so every new dirent stayed
 free in memory. Re-translate only what the audit confirms broken.
 
+**The ledger and provenance (2026-10-04).** `tools/rustconv/data/body_audit_reviewed.toml`
+records a verdict per `(module, function)` over the exact callees a human read: `false` and
+`benign` are hidden (counted in the header), `owed` stays listed with where the work is
+tracked, and a drop nobody reviewed brings the lead back. Several entries for one function
+merge. `--provenance` asks git whether each dropped callee was in that C function's body when
+the Rust file was first committed; one that was not is upstream work landed on C already
+flipped (a re-port for upstream-sync), not something the translator lost. A false lead that a
+rule could recognise belongs in `body_audit.py`, not the ledger; `--show-reviewed` lists the
+hidden ones.
+
+The 2026-10-04 burn-down read every high and medium lead (198 + 951): about 70 real bugs
+fixed, 214 owed upstream re-ports, the rest false or benign, and the false shapes became
+rules (C from another binary under the module dir, `#if 0 // comment`, module `-D` names and
+the forced `_USE_DUMMY_PSEH`, a four-char pool tag swallowing 460 lines in the masker,
+`#[link_name]` aliases, member-access macro aliases, printf-family equivalence). Medium
+fell from 951 to 474 on rules alone before anyone read a lead.
+
 ## `--target`: proven from the tree, or refused (2026-07-24)
 
 `--target <name>` for a `dll/win32/*` module not in `TARGETS` builds a Target via

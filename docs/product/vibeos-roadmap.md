@@ -816,6 +816,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `RtlInsertElementGenericTable`). fastfat and cdfs are down to one benign lead each. condrv
   `ConDrvDispatch` is FALSE (the C only traces). Re-translate (with sealing) only what the
   audit and a reading of the C confirm.
+  **Burn-down (2026-10-04): every high and medium lead read. 0 open high, 0 open medium**
+  (from 198 / 951); 214 owed, 329 false/benign in `data/body_audit_reviewed.toml`, 55 `low`
+  unread. About 70 real bugs fixed, among them: hal DMA locks that only raised IRQL (no
+  exclusion on halmp) and S/G transfers over 64 KiB failing; cdrom completions skipping
+  `RequestCompletion` (no verify-required marking); classpnp registry overrides passed as
+  narrow strings (every override kept its default) and hotplug info a stub (every disk
+  non-removable); scsiport parsing the service key as the DeviceN key; disk's invented SMART
+  codes; kernel32 `UnhandledExceptionFilter` with scrambled constants (no post-mortem
+  debugger, wrong crash box, a debugger-attached crash re-faulting forever) and
+  `GetModuleHandle` misses returning stale errors; userenv shortcuts never written; csrss
+  creating `\Session` instead of `\Sessions`; gdi32 never loading lpk.dll; ks stream IRPs
+  with a NULL header; user32 button state overwriting the font handle on 64-bit; ole32
+  property dictionaries unreadable. Owed, by cluster (upstream-sync): pciidex rewrite
+  (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
+  disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
+  syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
+  so every logon, status and shutdown dialog shows no banner today: visible, on the boot
+  path.** Still to decide: cdrom carries a live C-glue `DeviceEvtIoInCallerContext` that may
+  shadow the Rust one under `--allow-multiple-definition` (check `nm`); the Rust masks the
+  APIC error LVT where the C unmasks it.
   **ntkrnl-sys was stale against the post-merge headers — FIXED** (2026-09-27): regenerated
   the kernel and HAL islands. Nine structs had drifted: `KPRCB` (upstream `144fe39589b`'s
   `StartCycles`/`CycleTime`), `EJOB`/`PS_JOB_TOKEN_FILTER` (Rust still had the leaked
