@@ -32,6 +32,7 @@ extern "C" {
     fn ERR(fmt: *const i8, ...);
 }
 unsafe extern "system" {
+    fn SafeProbeForRead(address: *const core::ffi::c_void, length: usize, alignment: u32) -> i32;
     fn GetTextExtentExPointW( hdc: HDC, lpszString: LPCWSTR, cchString: i32, nMaxExtent: i32, lpnFit: *mut i32, lpnDx: *mut i32, lpSize: *mut SIZE, ) -> i32;
 }
 // UserEnterCo/UserLeaveCo are C macros for UserEnterExclusive()/UserLeave()
@@ -880,7 +881,22 @@ pub unsafe extern "system" fn UserExtTextOutW(
     IntCbFreeMemory(Argument as *mut core::ffi::c_void);
 
     if NT_SUCCESS(Status) {
-        bResult = *(ResultPointer as LPBOOL);
+        /* ResultPointer is written by user mode: the C probes it and loads it inside
+         * one _SEH2_TRY, falling back to GreExtTextOutW on a fault. The probe here is
+         * validate-only, so the load itself must be the fault-tolerant copy. */
+        Status = SafeProbeForRead(ResultPointer as *const core::ffi::c_void, core::mem::size_of::<BOOL>(), 1);
+        if NT_SUCCESS(Status)
+            && !crate::copy::capture_from_user(
+                core::ptr::addr_of_mut!(bResult) as *mut core::ffi::c_void,
+                ResultPointer as *const core::ffi::c_void,
+                core::mem::size_of::<BOOL>(),
+            )
+        {
+            Status = 0xC0000005_u32 as NTSTATUS; // STATUS_ACCESS_VIOLATION
+        }
+        if !NT_SUCCESS(Status) {
+            ERR!("Failed to copy result from user mode!\n");
+        }
     }
 
     if !NT_SUCCESS(Status) {
