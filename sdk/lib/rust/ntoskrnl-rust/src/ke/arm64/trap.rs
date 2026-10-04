@@ -477,6 +477,14 @@ unsafe fn ki_fault_retry_tripped(TrapFrame: PKTRAP_FRAME, DFSC: ULONG) -> bool {
     let pte_va = 0xFFFFF68000000000u64
         .wrapping_add(((va >> 12) & 0xF_FFFF_FFFFu64) << 3);
     let pte = core::ptr::read_volatile(pte_va as *const u64);
+    // The same formula once more gives the PDE. A level-2 fault (DFSC 0x06) is about it,
+    // and so is any loop where the PTE reads valid: is the table it lives in the one the
+    // walker uses?
+    let pde_va = 0xFFFFF68000000000u64
+        .wrapping_add(((pte_va >> 12) & 0xF_FFFF_FFFFu64) << 3);
+    let pde = core::ptr::read_volatile(pde_va as *const u64);
+    TrapPuts(b" PDE@");              TrapPutHex64(pde_va);
+    TrapPuts(b"=");                  TrapPutHex64(pde);
     TrapPuts(b" PTE@");              TrapPutHex64(pte_va);
     TrapPuts(b"=");                  TrapPutHex64(pte);
     TrapPuts(b"\r\n");

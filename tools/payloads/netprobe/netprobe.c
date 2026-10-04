@@ -48,6 +48,46 @@ static void step_rpc_raise(void)
     if (log) CloseEventLog(log);
 }
 
+/* rapps holds a named mutex across its database download; appstorm kills it there, and the
+ * next rapps (/appwiz) waits on that mutex for up to ten minutes. A dead owner's mutex must
+ * come back WAIT_ABANDONED at once. The child is this exe run with "mutex-holder". */
+static void step_mutex_abandon(void)
+{
+    WCHAR exe[MAX_PATH], cmd[MAX_PATH + 32];
+    STARTUPINFOW si = { sizeof si };
+    PROCESS_INFORMATION pi;
+    HANDLE m;
+    DWORD w, i;
+
+    SAY("step mutex-abandon\n");
+    GetModuleFileNameW(NULL, exe, MAX_PATH);
+    wsprintfW(cmd, L"\"%s\" mutex-holder", exe);
+    if (!CreateProcessW(exe, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        CHECK(0, "mutex-abandon: CreateProcess err=%lu\n", GetLastError());
+        return;
+    }
+    /* Wait until the child owns it. */
+    for (i = 0; i < 100; i++) {
+        m = OpenMutexW(SYNCHRONIZE, FALSE, L"vibeos-netprobe-abandon");
+        if (m) break;
+        Sleep(100);
+    }
+    CHECK(m != NULL, "mutex-abandon: child never created the mutex\n");
+    if (m) {
+        Sleep(500);
+        TerminateProcess(pi.hProcess, 1);
+        w = WaitForSingleObject(pi.hProcess, 10000);
+        SAY("mutex-abandon: child exit wait=%lu\n", w);
+        w = WaitForSingleObject(m, 5000);
+        SAY("mutex-abandon: wait on dead owner's mutex=%#lx (0x80 = abandoned)\n", w);
+        CHECK(w == WAIT_ABANDONED, "mutex-abandon: got %#lx, want WAIT_ABANDONED\n", w);
+        if (w == WAIT_ABANDONED || w == WAIT_OBJECT_0) ReleaseMutex(m);
+        CloseHandle(m);
+    }
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+}
+
 static void wait_dnscache(void)
 {
     SERVICE_STATUS st;
@@ -307,15 +347,22 @@ static void step_url(HINTERNET hOpen, const WCHAR *url)
     InternetCloseHandle(h);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     WSADATA wsa;
     HINTERNET hOpen;
     ULONG addr;
 
+    if (argc > 1 && !strcmp(argv[1], "mutex-holder")) {
+        HANDLE m = CreateMutexW(NULL, TRUE, L"vibeos-netprobe-abandon");
+        (void)m;
+        Sleep(INFINITE);
+        return 0;
+    }
     SAY("start\n");
     CHECK(WSAStartup(MAKEWORD(2, 2), &wsa) == 0, "WSAStartup\n");
     step_rpc_raise();
+    step_mutex_abandon();
     wait_dnscache();
     step_raw_udp("10.0.2.3");
     step_raw_udp("8.8.8.8");

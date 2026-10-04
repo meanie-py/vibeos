@@ -676,6 +676,18 @@ Remaining open:
   before then has no CSP and imports nothing (`rootstore.c: Failed to import system certs into
   registry, 00000057`, from `CryptCreateHash(0, ...)`), and caches that result for the process.
   Wait for `setup.exe` to exit first, as appstorm and netprobe do.
+- **✅ FIXED (2026-10-04) — pended TDI IRPs could not be cancelled.** No netstack IRP had a
+  cancel routine, so `IoCancelIrp` was a no-op. AFD closes a socket by cancelling its in-flight
+  TDI requests and then freeing the FCB their completion routines point at; the worker later
+  completed the connect anyway, into a freed FCB, and `MakeSocketIntoConnection` called
+  `TdiReceive` on a freed connection object (arm64 BUGCHECK 0x1E in `IoGetRelatedDeviceObject`
+  when appstorm closed rapps mid-download; and a thread blocked on such an IRP could not exit).
+  Now every pended IRP is registered in `tditrans::PENDING`; exactly one side claims it: the cancel
+  routine (completes `STATUS_CANCELLED` synchronously, as tcpip's `DispCancelRequest` does, then
+  tells the worker to drop references and abort a pending connect) or the worker's `complete`.
+  The worker touches a pended IRP's buffer only inside `with_pending`, under the same lock.
+  Cancels are routine once they work: AFD cancels its in-flight DNS datagram receives on every
+  socket close.
 - **Later (v1+):** see the **Post-Parity Roadmap (M8+)** section above — server-side TCP
   (TDI_LISTEN/ACCEPT), the management plane (iphlpapi/ipconfig/ping), interrupt-driven RX,
   NDIS real-NIC support, then completeness/perf (IPv6, multicast, zero-copy, offloads).

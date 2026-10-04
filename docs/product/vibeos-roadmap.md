@@ -711,11 +711,27 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     (netstack now warms the router and on-link DNS servers), AFD select wrote poll status
     into the IRP's copy rather than the caller's buffer, ws2_32 dropped `LUP_RETURN_BLOB` so
     gethostbyname got no hostent; and bcrypt's ECDSA was a stub, so Let's Encrypt's chain never
-    verified (upstream bcrypt restored over mbedTLS 3.6). Still OPEN: rapps itself not
-    re-run under appstorm since; the OK-only error box ignoring WM_CLOSE; `recvfrom` ignores
+    verified (upstream bcrypt restored over mbedTLS 3.6). Still OPEN: the OK-only error box ignoring WM_CLOSE; `recvfrom` ignores
     SO_RCVTIMEO (a 3s timeout blocked 9 minutes); smoltcp's ARP silence is still global
     (a per-address limit is a vendor patch, deferred).
-  - **cpl-joy / cpl-appwiz intermittently open no window within 37s** (one each in two runs).
+  - **arm64 appstorm, 2026-10-04 (after the network fixes; 5 soak boots).** rapps now really
+    downloads, which exposed and fixed a netstack bug (TDI IRPs could not be cancelled: BUGCHECK
+    0x1E when a socket closed mid-connect, see smoltcp-netstack-design.md). What is left:
+    - **rapps does not close within 10s while "Updating Database"** (2.4 MB over TLS on TCG);
+      appstorm kills it. The app works (netprobe fetches the same file on all arches).
+    - **cpl-appwiz then opens no window** in every run where the previous rapps was killed (it
+      PASSed when that rapps closed normally). Not mutex abandonment: netprobe's mutex-abandon
+      step gets WAIT_ABANDONED at once on all arches. Next instrument: dump the second rapps'
+      threads when appstorm sees no window.
+    - cpl-joy passed every run today.
+  - **arm64 FAULTLOOP: the walker faults on a mapping software reads as valid.** The pager
+    reports success 64 times on one fault while the PTE (and, now dumped, the PDE) read as
+    well-formed valid descriptors -- not the #39 reserved-descriptor class. Seen as DFSC 0x07 on
+    fresh heap pages in ntdll (resolves after the burst; every arm64 run since at least
+    2026-10-03) and as DFSC 0x06 in kernel32!Thread32Next on a toolhelp snapshot (appstorm's
+    thread dump), where it can hang the run. FALSIFIED: stale translations. Invalidating the VA
+    and the PTE/PDE self-map VAs (`tlbi vaae1is`) on every repeat did not shorten a single loop
+    (0x8F6 flushes, same 64-count reports), so the walker and the self-map really disagree.
   - **The dropped RpcTryExcept class**: FIXED 2026-10-04 for the user-mode RPC clients.
     ntdll now exports the kernel's SEH trampolines (`RtlSehTryExcept`, sehtry.c built
     `-DSEHTRY_USER_MODE`) and `ntdll_sys::seh::rpc_try` restores each C handler. 245 stub
