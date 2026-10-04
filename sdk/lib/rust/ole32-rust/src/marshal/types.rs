@@ -1931,6 +1931,7 @@ extern "C" {
     pub fn apartment_createwindowifneeded(apt: *mut apartment) -> HRESULT;
     pub fn apartment_getwindow(apt: *const apartment) -> HWND;
     pub fn apartment_get_current_or_mta() -> *mut apartment;
+    pub fn apartment_get_mta() -> *mut apartment;
     pub fn enter_apartment(info: *mut oletls, model: DWORD) -> HRESULT;
     pub fn leave_apartment(info: *mut oletls);
     pub fn COM_OpenKeyForCLSID(

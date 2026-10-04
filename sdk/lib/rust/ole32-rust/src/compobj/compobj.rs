@@ -732,6 +732,13 @@ unsafe fn apartment_find_mta() -> *mut APARTMENT {
     apt
 }
 
+/// combase `apartment_get_mta`: the MTA with a reference, or NULL. Exported for the
+/// marshal module's MTA ipid lookup.
+#[no_mangle]
+pub unsafe extern "C" fn apartment_get_mta() -> *mut APARTMENT {
+    apartment_find_mta()
+}
+
 /// Return the current apartment if it exists, or, failing that, the MTA. Caller
 /// must free the returned apartment in either case.
 #[no_mangle]
