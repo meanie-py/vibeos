@@ -1490,9 +1490,15 @@ pub unsafe extern "system" fn PciExecuteCriticalSystemRoutine(IpiContext: ULONG_
     let Context: PPCI_IPI_CONTEXT = IpiContext as PPCI_IPI_CONTEXT;
     if InterlockedDecrement(core::ptr::addr_of_mut!((*Context).RunCount)) == 0 {
         ((*Context).Function).unwrap()((*Context).DeviceExtension, (*Context).Context);
-        (*Context).Barrier = 0;
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*Context).Barrier), 0);
     } else {
-        while (*Context).Barrier != 0 {}
+        // The other CPUs spin here until the one running the routine clears Barrier.
+        // pci.h leaves it a plain ULONG, so the C's `while (Context->Barrier);` only
+        // works if the compiler happens to re-read it; the Rust load was hoisted out
+        // of the loop, leaving an unconditional `b .` (scan_ud2) for every other CPU.
+        while core::ptr::read_volatile(core::ptr::addr_of!((*Context).Barrier)) != 0 {
+            core::hint::spin_loop();
+        }
     }
     0 as ULONG_PTR
 }

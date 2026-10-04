@@ -45,7 +45,15 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/testdata/)
     file(GLOB_RECURSE TESTDATA_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/testdata/ ${CMAKE_CURRENT_SOURCE_DIR}/testdata/*)
     foreach(item ${TESTDATA_FILES})
-        add_rostests_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/testdata/${item} SUBDIR testdata)
+        # Keep the file's own subdirectory: testdata/old/test.ttf and testdata/test.ttf
+        # used to land on the same reactos/bin/testdata/test.ttf, and which copy a test
+        # saw depended on how the media builder resolved the duplicate.
+        get_filename_component(_subdir ${item} DIRECTORY)
+        if(_subdir)
+            add_rostests_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/testdata/${item} SUBDIR testdata/${_subdir})
+        else()
+            add_rostests_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/testdata/${item} SUBDIR testdata)
+        endif()
     endforeach(item)
 endif()
 

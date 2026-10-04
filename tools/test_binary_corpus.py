@@ -1,9 +1,10 @@
-"""The post-link scanners must judge a DECLARED corpus, not a directory listing.
+"""The post-link scanners judge the build tree minus staging copies, on every arch.
 
-arm64 has no livecd DAG, so `build-arm64/` accumulates binaries that nothing in
-the arm64 build rebuilds. Grading those makes the verdict a function of which
-files happen to sit in a directory: a corpus change reads as a code change, and
-a real finding in an unrebuilt binary can never be fixed by anyone.
+arm64 used to be graded from mkramdisk.sh's hand-written copy lines, because it
+had no livecd DAG and build-arm64/ accumulated binaries nothing rebuilt. It builds
+`livecd` now, and its ramdisk is a symlink tree of the livecd list, so the risk
+that remains is the opposite one: grading the symlinked COPIES next to their
+originals.
 """
 
 from __future__ import annotations
@@ -13,20 +14,16 @@ from pathlib import Path
 
 import pytest
 
-from tools.binary_corpus import PE_SUFFIXES, declared_arm64_sources, governed_binaries
+from tools.binary_corpus import PE_SUFFIXES, STAGING_DIRS, governed_binaries
 
-MKRAMDISK = """#!/bin/bash
-BUILD_DIR="$PROJECT_DIR/build-arm64"
-RMC "$BUILD_DIR/drivers/serial/pl011/pl011.sys"  ::/reactos/system32/drivers/pl011.sys
-RMC "$BUILD_DIR/win32ss/printing/base/winspool/winspool.drv" ::/reactos/system32/winspool.drv
-RMC "$BUILD_DIR/boot/bootdata/system"            ::/reactos/system32/config/system
-"""
+DECLARED = [
+    "drivers/serial/pl011/pl011.sys",
+    "win32ss/printing/base/winspool/winspool.drv",
+]
 
 
 def _repo(tmp_path: Path, arch: str, files: list[str]) -> tuple[Path, Path]:
     repo = tmp_path / "repo"
-    (repo / "qemu").mkdir(parents=True)
-    (repo / "qemu" / "mkramdisk.sh").write_text(MKRAMDISK)
     build = repo / f"build-{arch}"
     for rel in files:
         p = build / rel
@@ -35,31 +32,31 @@ def _repo(tmp_path: Path, arch: str, files: list[str]) -> tuple[Path, Path]:
     return repo, build
 
 
-DECLARED = [
-    "drivers/serial/pl011/pl011.sys",
-    "win32ss/printing/base/winspool/winspool.drv",
-]
-
-
-def test_arm64_corpus_excludes_a_binary_nothing_stages(tmp_path):
-    """The defect: a stray binary in build-arm64/ was swept as if it were shipped."""
-    repo, build = _repo(tmp_path, "arm64", [*DECLARED, "base/shell/filebrowser/rshell.dll"])
+@pytest.mark.parametrize("arch", ["i386", "amd64", "arm64"])
+def test_every_arch_corpus_is_the_build_tree(tmp_path, arch):
+    """Same rule on all three: the livecd DAG re-rolls every shipped binary each build."""
+    repo, build = _repo(tmp_path, arch, [*DECLARED, "base/shell/rshell/rshell.dll"])
     rels = {str(p.relative_to(build)) for p in governed_binaries(build, repo).paths}
+    assert rels == {*DECLARED, "base/shell/rshell/rshell.dll"}
+
+
+def test_the_ramdisk_symlink_tree_is_not_graded_twice(tmp_path):
+    """mkramdisk.sh lays the livecd list out as symlinks under boot/ramdisk/.
+
+    os.walk lists a symlink to a file as a file, so without the prune every shipped
+    binary would be reported once for itself and once for its ramdisk link.
+    """
+    repo, build = _repo(tmp_path, "arm64", DECLARED)
+    tree = build / "boot" / "ramdisk" / "reactos" / "system32" / "drivers"
+    tree.mkdir(parents=True)
+    (tree / "pl011.sys").symlink_to(build / DECLARED[0])
+    (build / "boot" / "ramdisk-overlay").mkdir()
+    (build / "boot" / "ramdisk-overlay" / "csrss.exe").write_bytes(b"MZ")
+    rels = {
+        str(p.relative_to(build))
+        for p in governed_binaries(build, repo, staging_dirs=STAGING_DIRS).paths
+    }
     assert rels == set(DECLARED)
-
-
-def test_x86_corpus_is_the_build_tree(tmp_path):
-    """x86 keeps the tree: the livecd DAG re-rolls every shipped binary each build."""
-    repo, build = _repo(tmp_path, "i386", [*DECLARED, "base/shell/filebrowser/rshell.dll"])
-    rels = {str(p.relative_to(build)) for p in governed_binaries(build, repo).paths}
-    assert rels == {*DECLARED, "base/shell/filebrowser/rshell.dll"}
-
-
-def test_declared_but_absent_is_reported_not_dropped(tmp_path):
-    """A shipped binary missing from the build dir is a gap, not a smaller corpus."""
-    repo, build = _repo(tmp_path, "arm64", DECLARED[:1])
-    corpus = governed_binaries(build, repo)
-    assert corpus.missing == ["win32ss/printing/base/winspool/winspool.drv"]
 
 
 def test_drv_is_a_pe_suffix(tmp_path):
@@ -115,17 +112,3 @@ def test_staging_dirs_are_pruned_during_the_walk_not_after(tmp_path, monkeypatch
     # empty list" is true for the wrong reason.
     assert seen, "os.walk was never called — this assertion would pass vacuously"
     assert not any("livecd" in s for s in seen), "descended into a pruned directory"
-
-
-def test_the_real_mkramdisk_declares_a_nonempty_arm64_corpus():
-    """Guard the failure mode this change INTRODUCES: a silently empty corpus.
-
-    A gate that grades zero binaries passes. If a refactor of mkramdisk.sh ever
-    stops spelling `"$BUILD_DIR/<path>"`, this fails here rather than turning the
-    arm64 binary gate into a no-op that reports PASSED.
-    """
-    repo = Path(__file__).resolve().parent.parent
-    declared = declared_arm64_sources(repo)
-    assert len(declared) > 50, f"arm64 staging list collapsed to {len(declared)} binaries"
-    assert "ntoskrnl/ntoskrnl.exe" in declared
-    assert "win32ss/win32k.sys" in declared

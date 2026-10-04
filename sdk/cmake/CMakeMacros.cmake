@@ -251,6 +251,8 @@ macro(dir_to_num dir var)
         set(${var} 81)
     elseif(${dir} STREQUAL reactos/system32/spool/prtprocs/arm64)
         set(${var} 82)
+    elseif(${dir} STREQUAL reactos/bin/testdata/old)
+        set(${var} 83)
 
 
     else()

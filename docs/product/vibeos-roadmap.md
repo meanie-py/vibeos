@@ -642,35 +642,37 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `verify_ucrtbase_cohab.py`'s export/import check, which allowlists these four as OWED
   (`EXPORT_IMPORT_ALLOWED`); remove them there when an arm64 FPCR-backed port lands.
   Owner: ucrt-rust lane.
-- **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28; narrowed 2026-10-03). Fixed
-  on 2026-10-03:
-  - The closure's literal scan only indexed BUILT modules, so 16 unbuilt runtime loads
-    (riched20 for charmap/eventvwr/wordpad/rapps, mshtml's jscript/shdoclc, ...) were dropped
-    silently.
-  - None of the services the hive auto-starts had an image on the ramdisk (the SCM logged
-    `done: 2` for 13 of them); svchost, rpcss, DcomLaunch, PlugPlay (umpnpmgr), EventLog and the
-    spooler with its provider/monitor/processor are staged now, and PlugPlay auto-starts
-    (hivesys_arm64.inf).
-  - Once a svchost could run out of services, its ExitThread spun forever and wedged the guest
-    (ThreadAmILastThread vs NtTerminateThread disagreed; fixed in ps-rust and kernel32).
-
-  Left, all one root cause -- **the arm64 boot never runs first-boot setup.** x86's livecd
-  runs `setup -mini` (syssetup InstallLiveCD) on every boot; arm64's winlogon spawns explorer
-  itself, setup.exe/syssetup.dll/inf are not on the ramdisk, and RunSetup fails silently. So
-  arm64 lacks what setup provides: the COM registrations (ole32 is registered in
-  syssetup.inf's EarlyPhaseSetup; without it CoRegisterClassObject cannot marshal
-  IClassFactory, so iexplore's CLSID_InternetExplorer registration fails 80004002 and the
-  process faults; cpl-appwiz/cpl-ncpa log CLSID_TaskbarList not registered), the network
-  components (Tcpip/Dhcp/Dnscache come from nettcpip.inf; rapps' gethostbyname reaches the
-  resolver RPC with no Dnscache and dies on the unhandled RPC_S_SERVER_UNAVAILABLE), and the
-  device installs. Options: run setup on arm64 like x86 (stage setup/syssetup/inf and
-  reconcile winlogon's direct explorer spawn with setup launching userinit), or pre-register
-  at hive build time from the widl-generated registry scripts (`*_r.res`) and add the
-  nettcpip services to hivesys_arm64.inf. Also owed: the user-mode Rust RPC clients
-  (advapi32 scm/eventlog/lsa, dnsapi, netapi32, samlib, ...) call their stubs with the C's
-  RpcTryExcept dropped ("DUMMY_PSEH -- execute directly"), so any unavailable RPC server
-  kills the calling app instead of returning an error. On i386 `cpl-appwiz` opens no window
-  either (rapps exits 0 where amd64's shows "Add/Remove Programs"). Owner: shell32-com lane.
+- **arm64 boots the livecd file set and runs first-boot setup** (2026-10-03). arm64's
+  media was ~250 hand-staged files against the livecd's ~1100; `qemu/mkramdisk.sh` now lays out
+  the same `livecd.<config>.lst` x86's mkisofs reads (tools/ramdisk_tree.py) and arm64 builds
+  the same `livecd` target, so `setup -mini` runs on every boot as on x86 (COM registrations,
+  Tcpip/Dhcp/Dnscache, device installs). In the same pass arm64 stopped skipping: winlogon's
+  RPC server, notifications, GINA and lsass wait; the bulk Start=1 driver load (was a fixed
+  three-driver list); `/MININT` (and the kernel now creates `Control\MiniNT`, dropped by the
+  port on every arch); the per-arch window-station/desktop security descriptors; bugchecks on
+  IoInitSystem/PsInitSystem/SeRmInitPhase1 failure. Bugs the full media exposed, fixed:
+  setupapi did not know PROCESSOR_ARCHITECTURE_ARM64; netkvm/e1000 miniports bound under
+  netstack (see smoltcp-netstack-design.md M11); fastfat enumeration lost entries
+  (`NextVbo` reset per iteration; Marlett never loaded); ks pin lists, fltmgr context
+  terminator, pcix power/IPI spins. appstorm arm64: 40/43, cpl-appwiz and cpl-ncpa now pass.
+  OPEN:
+  - **rapps on arm64**: its database download fails ("Check Internet Connection"), and the
+    OK-only error box then ignores WM_CLOSE (sndvol32's expected box did the same once in two
+    runs). Probably the user-mode network path now that setup starts Dhcp/Dnscache; netstack
+    logs a `TDI open: ControlChannel` every few seconds since. Owner: shell32-com lane.
+  - **cpl-joy / cpl-appwiz intermittently open no window within 37s** (one each in two runs).
+  - **The dropped RpcTryExcept class**: the user-mode Rust RPC clients (advapi32
+    scm/eventlog/lsa, dnsapi, netapi32, samlib, ...) call their stubs with the C's RpcTryExcept
+    dropped ("DUMMY_PSEH -- execute directly"), so an unavailable RPC server kills the caller.
+  - **Safe boot is missing from the Rust kernel on every arch**: ex-rust neither parses
+    `SAFEBOOT:` nor creates `CONTROL\SAFEBOOT\Option` (init.c Phase1InitializationDiscard).
+  - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are
+    still `UNIMPLEMENTED; loop {}`, baselined in scan_ud2's KNOWN_DRIVER_UD2. arm64 binds
+    pci.sys, so they are unreached there.
+  - Remaining arm64 divergences: winlogon still creates `\Windows\WindowStations` and csrsrv
+    skips CsrConnectToUser on arm64; the csrss stack-commit patch in mkramdisk's overlay;
+    shell32 CDefView skips SHChangeNotifyRegister on arm64; winlogon's arm64-only notepad and
+    cmd spawns. On i386 `cpl-appwiz` opens no window.
 - **Posted messages to other threads' windows were dropped** (FIXED 2026-09-27). The
   win32k-sys regeneration (c53b7807aad) turned THRDESKHEAD's `[u64; 3]` padding into
   `[u8; 24]`; user32 read `head.pti` as `__bindgen_padding_0[2]`, so IntCallMessageProc saw a

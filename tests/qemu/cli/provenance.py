@@ -379,16 +379,22 @@ def _depinfo_rs_mtime(repo: Path, cargo_out: Path, crate: Path) -> float | None:
 
 
 def mkramdisk_required_rels(repo: Path) -> list[str]:
-    """Build-relative paths of the arm64 ramdisk boot set, parsed from
-    mkramdisk.sh's REQUIRED_FILES array (`"$BUILD_DIR/<rel>"`). This is the
-    AUTHORITATIVE staged set — a superset of archcfg.staged_bins_rel (the
-    advapi32 false-green was staged HERE but absent from archcfg) — and it is
-    self-maintaining: a driver added to mkramdisk auto-joins the freshness net."""
+    """Build-relative paths of the arm64 ramdisk boot set: every livecd-list source
+    under build-arm64/ (mkramdisk.sh lays that list out, tools/ramdisk_tree.py). It is
+    the AUTHORITATIVE staged set and self-maintaining -- an add_cd_file(FOR livecd)
+    joins the freshness net with no edit here. Empty before the first configure."""
+    lst = repo / "build-arm64" / "boot" / "livecd.Debug.lst"
     try:
-        text = (repo / "qemu" / "mkramdisk.sh").read_text(errors="ignore")
+        text = lst.read_text(errors="ignore")
     except OSError:
         return []
-    return re.findall(r'"\$BUILD_DIR/([^"]+)"', text)
+    rels = []
+    for line in text.splitlines():
+        src = line.split("=", 1)[-1]
+        for root in ("/tmp/vibeos/build-arm64/", f"{repo}/build-arm64/"):
+            if src.startswith(root):
+                rels.append(src[len(root) :])
+    return list(dict.fromkeys(rels))
 
 
 def boot_set_cohab_rels(repo: Path, arch: str) -> list[str]:
@@ -405,7 +411,19 @@ def boot_set_cohab_rels(repo: Path, arch: str) -> list[str]:
     if not cfg.needs_mkramdisk:
         return []
     boot_set = set(mkramdisk_required_rels(repo)) | set(cfg.staged_bins_rel)
-    return sorted(rel for rel in boot_set if _crate_for_stem(repo, Path(rel).stem) is not None)
+    # Only linked images: the livecd list also carries acpi.inf, cdrom.inf ... whose
+    # stems match a cohab crate but which no staticlib ever feeds.
+    return sorted(
+        rel
+        for rel in boot_set
+        if Path(rel).suffix.lower() in _PE_SUFFIXES
+        and _crate_for_stem(repo, Path(rel).stem) is not None
+    )
+
+
+_PE_SUFFIXES = frozenset(
+    {".exe", ".dll", ".sys", ".drv", ".cpl", ".ocx", ".efi", ".acm", ".ax", ".tlb", ".mui", ".scr"}
+)
 
 
 def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:

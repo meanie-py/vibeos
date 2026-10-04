@@ -47,7 +47,7 @@ extern "system" {
     fn FatConvertToSharedFcb( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, );
     fn FatGetEaLength( IrpContext: *mut core::ffi::c_void, Vcb: *mut core::ffi::c_void, Dirent: *mut core::ffi::c_void, EaSize: *mut u32, );
     fn FatIsNameShortOemValid( IrpContext: *mut core::ffi::c_void, OemString: OEM_STRING, ContainsWildCards: u8, AllowWildCards: u8, IsConstant: u8, ) -> u8;
-    fn FatLocateDirent( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, Ccb: *mut core::ffi::c_void, CurrentVbo: u32, MatchFlags: *mut u32, Dirent: *mut *mut core::ffi::c_void, Bcb: *mut *mut core::ffi::c_void, NextVbo: *mut VBO, FileNameDos: *mut u8, LongFileName: *mut _UNICODE_STRING, OrigFileName: *mut _UNICODE_STRING, );
+    fn FatLocateDirent( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, Ccb: *mut core::ffi::c_void, CurrentVbo: u32, MatchFlags: *mut u32, Dirent: *mut *mut core::ffi::c_void, Bcb: *mut *mut core::ffi::c_void, NextVbo: *mut u32, FileNameDos: *mut u8, LongFileName: *mut _UNICODE_STRING, OrigFileName: *mut _UNICODE_STRING, );
     fn FatMapUserBuffer( IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ) -> *mut u8;
     fn FatStringTo8dot3( IrpContext: *mut core::ffi::c_void, LocalBestFit: OEM_STRING, Constant: *mut OEM_STRING, );
     fn FatResetExceptionState(IrpContext: *mut core::ffi::c_void);
@@ -514,14 +514,19 @@ pub unsafe extern "system" fn FatQueryDirectory(
             }
         }
 
+        // NextVbo is the byte offset of the dirent FatLocateDirent found LAST time, and it
+        // must survive into the next iteration: FatLocateDirent's pinned-page fast path
+        // advances the still-pinned Dirent pointer by (CurrentVbo - *NextVbo) / 32. The C
+        // declares it inside the loop UNINITIALISED and gets the old value back only
+        // because the stack slot is reused. The translation's `= 0` per iteration made
+        // every later call on the first directory page start from the wrong dirent: names
+        // came back as bare 8.3 (mid-LFN), repeated, or skipped, and most of
+        // \SystemRoot\Fonts (Marlett among them) was never enumerated on arm64's FAT
+        // ramdisk. Hoisted so the value carries by construction. fastfat's VBO is a
+        // ULONG32 (fat.h:38); this module's VBO comes from an ntkrnl_sys glob and is 64-bit,
+        // so the declaration says u32 explicitly, as FatLocateDirent writes it.
+        let mut NextVbo: u32 = 0;
         loop {
-            // NOTE: this `VBO` is NOT fastfat's. fastfat's VBO is ULONG32 (fat.h:38),
-            // but this module never imports crate::types::VBO — it picks one up from a
-            // `use ntkrnl_sys::*` glob, where it is 64-bit. FatLocateDirent below is a C
-            // function that writes 4 bytes through this pointer; the read-back only
-            // works because the `= 0` init leaves the high half clear on little-endian.
-            // The `as u32` at the FileId call sites is the C's own implicit narrowing.
-            let mut NextVbo: VBO = 0;
             let mut FileNameLength: u32 = 0;
             let mut BytesRemainingInBuffer: u32 = 0;
             let mut FileNameDos: u8 = 0;
@@ -822,7 +827,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
 
             LastEntry = NextEntry;
             NextEntry += QuadAlign(BaseLength + BytesConverted) as u32;
-            *p_CurrentVbo = NextVbo + core::mem::size_of::<DIRENT>() as VBO;
+            *p_CurrentVbo = NextVbo as VBO + core::mem::size_of::<DIRENT>() as VBO;
         }
     }, |_, abnormal| {
         // _SEH2_FINALLY. The C finally releases the Fcb, unpins the Bcb, and frees the
