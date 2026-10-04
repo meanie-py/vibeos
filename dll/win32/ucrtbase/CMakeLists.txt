@@ -8,11 +8,10 @@ add_compile_definitions(
 )
 
 add_library(ucrtbase SHARED
-    printf.c
-    # The `...` entry points of the ucrt-rust takeovers (and the va_arg pullers
-    # varargs-rust needs), as va_start trampolines over Rust `_v` twins. In the
-    # MODULE, not the ucrt archive, so they win first-match over any archive copy.
-    ucrt_varargs_shim.c
+    # printf.c (sprintf/_vsnprintf) and ucrt_varargs_shim.c (the `...` entry points as
+    # va_start trampolines, plus varargs-rust's va_arg pullers) are ucrt-rust's
+    # va_entries.rs and varargs-rust's `rust-pullers`: va_entry! thunks in the Rust
+    # archive linked whole below, so they still win first-match over any archive copy.
     stubs.c
     ucrtbase_stubs.c
     ucrtbase.def
@@ -73,22 +72,12 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 
 set(UCRT_SHARED_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcrt_shared_cargo.a")
-# Every crate whose code lands in libcrt_shared_cargo.a -- the path-dependency
-# closure of crt-shared-cargo. A crate missing here compiles into the archive but
-# never triggers its rebuild, so an edit to it ships a STALE archive with no error:
-# this list had drifted to two of seven crates (ucrt-rust's takeover families and
-# cnt-rust's math were both invisible to it). verify_ucrtbase_cohab.py derives the
-# closure from the manifests and fails if this list and it disagree.
-set(UCRT_SHARED_RUST_CRATES
-    crt-shared-cargo cnt-rust musl-math crt-portable-rust crt-shared-rust panic-common msvcrt-sys
-    ucrt-rust varargs-rust)
-set(UCRT_SHARED_RUST_GLOBS)
-set(UCRT_SHARED_RUST_MANIFESTS)
-foreach(crate ${UCRT_SHARED_RUST_CRATES})
-    list(APPEND UCRT_SHARED_RUST_GLOBS ${UCRT_RUST_WORKSPACE_DIR}/${crate}/src/*.rs)
-    list(APPEND UCRT_SHARED_RUST_MANIFESTS ${UCRT_RUST_WORKSPACE_DIR}/${crate}/Cargo.toml)
-endforeach()
-file(GLOB_RECURSE UCRT_SHARED_RUST_SOURCES CONFIGURE_DEPENDS ${UCRT_SHARED_RUST_GLOBS})
+# Every source compiled into libcrt_shared_cargo.a: crt-shared-cargo's path-dependency
+# closure, walked from the manifests (sources, Cargo.toml and build.rs of each crate). A
+# crate missing here compiles into the archive but never triggers its rebuild -- a stale
+# archive, no error. This was a hand-kept crate list that drifted to two of seven crates;
+# verify_ucrtbase_cohab.py fails if the derivation is replaced again.
+rust_crate_sources(UCRT_SHARED_RUST_SOURCES "${UCRT_RUST_WORKSPACE_DIR}" crt-shared-cargo)
 add_custom_command(
     OUTPUT ${UCRT_SHARED_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -101,7 +90,6 @@ add_custom_command(
         ${UCRT_SHARED_RUST_LIB}
     DEPENDS
             ${UCRT_SHARED_RUST_SOURCES}
-            ${UCRT_SHARED_RUST_MANIFESTS}
             ${UCRT_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust ucrtbase msvcrt_shared cohab (${UCRT_RUST_TARGET})"
 )

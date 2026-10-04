@@ -4170,3 +4170,5 @@ pub mod string_l;
 // uses. The 40 `...` entry points cannot be Rust (no `va_start` on stable) and live in
 // `dll/win32/msvcrt/rust_scanf_shim.c`. `pub` for the difftest.
 pub mod scanf;
+// The C `...` entry points (were the rust_*_shim.c files), as va_entry! thunks.
+mod va_entries;

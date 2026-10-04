@@ -87,6 +87,9 @@ pub mod align;
 pub mod invalid_parameter;
 #[cfg(feature = "lowio-open")]
 pub mod lowio_open;
+// The `...` entry points (were ucrt_varargs_shim.c and the sprintf in printf.c).
+#[cfg(all(target_os = "windows", feature = "exec", feature = "lowio-open", feature = "output"))]
+mod va_entries;
 #[cfg(feature = "mbstring")]
 pub mod mbstring;
 #[cfg(feature = "string-ops")]
