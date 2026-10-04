@@ -619,8 +619,22 @@ unsafe fn WMSFT_encode_variant(value: *mut VARIANT, file: *mut WMSFT_TLBFile) ->
         }
 
         VT_BSTR => {
+            // Wine 10.0: the stored string is the CP_ACP encoding and its
+            // length is the ENCODED length. The pre-10 code sized it by
+            // SysStringLen and pre-filled '?' for every non-ASCII character,
+            // so multibyte code pages wrote the wrong length.
             let bstr = v.n3.bstrVal;
-            let len: i32 = ((6 + SysStringLen(bstr) + 3) & !0x3u32) as i32;
+            let mb_len = WideCharToMultiByte(
+                CP_ACP,
+                0,
+                bstr,
+                SysStringLen(bstr) as INT,
+                null_mut(),
+                0,
+                null(),
+                null_mut(),
+            );
+            let len: i32 = (6 + mb_len + 3) & !0x3;
             let data: *mut i8;
 
             if !(*file).custdata_seg.data.is_null() {
@@ -638,28 +652,18 @@ unsafe fn WMSFT_encode_variant(value: *mut VARIANT, file: *mut WMSFT_TLBFile) ->
             }
 
             *(data as *mut u16) = (*value).vt;
-            core::ptr::write_unaligned(data.add(2) as *mut u32, SysStringLen(bstr));
-            let mut i: u32 = 0;
-            while i < SysStringLen(bstr) {
-                let c = *bstr.add(i as usize);
-                if c <= 0x7f {
-                    *data.add(i as usize + 6) = c as i8;
-                } else {
-                    *data.add(i as usize + 6) = b'?' as i8;
-                }
-                i += 1;
-            }
+            core::ptr::write_unaligned(data.add(2) as *mut u32, mb_len as u32);
             WideCharToMultiByte(
                 CP_ACP,
                 0,
                 bstr,
                 SysStringLen(bstr) as INT,
                 data.add(6),
-                len - 6,
+                mb_len,
                 null(),
                 null_mut(),
             );
-            let mut i = 6 + SysStringLen(bstr) as i32;
+            let mut i = 6 + mb_len;
             while i < len {
                 *data.add(i as usize) = 0x57;
                 i += 1;
@@ -2948,13 +2952,65 @@ unsafe extern "system" fn ICreateTypeInfo2_fnLayOut(iface: *mut ICreateTypeInfo2
     hres
 }
 
+/// Wine 10.0 TLB_relink_custdata: a list head that moved (memmove of the
+/// array that holds it) must have its neighbours re-pointed at it.
+unsafe fn tlb_relink_custdata(custdata_list: *mut list) {
+    if (*custdata_list).prev == (*custdata_list).next {
+        list_init(custdata_list);
+    } else {
+        (*(*custdata_list).prev).next = custdata_list;
+        (*(*custdata_list).next).prev = custdata_list;
+    }
+}
+
+/// Wine 10.0 typeinfo_release_funcdesc: what ITypeInfoImpl_Destroy frees for
+/// each function, for one function.
+unsafe fn typeinfo_release_funcdesc(func: *mut TLBFuncDesc) {
+    let mut j: i32 = 0;
+    while j < (*func).funcdesc.cParams as i32 {
+        let elemdesc = (*func).funcdesc.lprgelemdescParam.add(j as usize);
+        if (*elemdesc).u.paramdesc.wParamFlags & PARAMFLAG_FHASDEFAULT != 0 {
+            VariantClear(&raw mut (*(*elemdesc).u.paramdesc.pparamdescex).varDefaultValue);
+        }
+        TLB_FreeCustData(&raw mut (*(*func).pParamDesc.add(j as usize)).custdata_list);
+        j += 1;
+    }
+    heap_free((*func).funcdesc.lprgelemdescParam as *mut c_void);
+    heap_free((*func).pParamDesc as *mut c_void);
+    TLB_FreeCustData(&raw mut (*func).custdata_list);
+}
+
+/// Implemented in Wine 10.0 (was an E_NOTIMPL stub).
 unsafe extern "system" fn ICreateTypeInfo2_fnDeleteFuncDesc(
     iface: *mut ICreateTypeInfo2,
     index: UINT,
 ) -> HRESULT {
     let This = info_impl_from_ICreateTypeInfo2(iface);
-    FIXME!("{:p} {} - stub (DeleteFuncDesc)", This, index);
-    E_NOTIMPL
+    TRACE!();
+
+    if index >= (*This).typeattr.cFuncs as UINT {
+        return TYPE_E_ELEMENTNOTFOUND;
+    }
+
+    typeinfo_release_funcdesc((*This).funcdescs.add(index as usize));
+
+    (*This).typeattr.cFuncs -= 1;
+    let n = (*This).typeattr.cFuncs as UINT;
+    if index != n {
+        memmove(
+            (*This).funcdescs.add(index as usize) as *mut c_void,
+            (*This).funcdescs.add(index as usize + 1) as *const c_void,
+            size_of::<TLBFuncDesc>() * (n - index) as usize,
+        );
+        let mut i = index;
+        while i < n {
+            tlb_relink_custdata(&raw mut (*(*This).funcdescs.add(i as usize)).custdata_list);
+            i += 1;
+        }
+    }
+
+    (*This).needs_layout = TRUE;
+    S_OK
 }
 
 unsafe extern "system" fn ICreateTypeInfo2_fnDeleteFuncDescByMemId(
@@ -2985,13 +3041,36 @@ unsafe extern "system" fn ICreateTypeInfo2_fnDeleteVarDescByMemId(
     E_NOTIMPL
 }
 
+/// Implemented in Wine 10.0 (was an E_NOTIMPL stub).
 unsafe extern "system" fn ICreateTypeInfo2_fnDeleteImplType(
     iface: *mut ICreateTypeInfo2,
     index: UINT,
 ) -> HRESULT {
     let This = info_impl_from_ICreateTypeInfo2(iface);
-    FIXME!("{:p} {} - stub (DeleteImplType)", This, index);
-    E_NOTIMPL
+    TRACE!();
+
+    if index >= (*This).typeattr.cImplTypes as UINT {
+        return TYPE_E_ELEMENTNOTFOUND;
+    }
+
+    TLB_FreeCustData(&raw mut (*(*This).impltypes.add(index as usize)).custdata_list);
+    (*This).typeattr.cImplTypes -= 1;
+    let n = (*This).typeattr.cImplTypes as UINT;
+
+    if index < n {
+        memmove(
+            (*This).impltypes.add(index as usize) as *mut c_void,
+            (*This).impltypes.add(index as usize + 1) as *const c_void,
+            size_of::<TLBImplType>() * (n - index) as usize,
+        );
+        let mut i = index;
+        while i < n {
+            tlb_relink_custdata(&raw mut (*(*This).impltypes.add(i as usize)).custdata_list);
+            i += 1;
+        }
+    }
+
+    S_OK
 }
 
 unsafe extern "system" fn ICreateTypeInfo2_fnSetCustData(

@@ -66,7 +66,12 @@ def main(argv: list[str] | None = None) -> int:
     if only:
         lines.append("# RESTRICTED by --only to: " + ", ".join(args.only))
     # Register first (see payload.yaml): the sweep runs `<bin>\\<exe> <rest>`.
-    lines += ["regsvr32.exe /s ole32.dll", "regsvr32.exe /s oleaut32.dll"]
+    # windowscodecs: OleLoadPicture decodes through WIC (CLSID_WICImagingFactory).
+    lines += [
+        "regsvr32.exe /s ole32.dll",
+        "regsvr32.exe /s oleaut32.dll",
+        "regsvr32.exe /s windowscodecs.dll",
+    ]
     n = 0
     for suite, subs in table.items():
         for sub in subs:

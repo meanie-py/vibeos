@@ -2248,6 +2248,39 @@ pub unsafe extern "system" fn VarDecAdd(
         }
 
         if overflow != 0 {
+            // Wine 10.0: a SUM (equal signs) that overflows 96 bits drops one
+            // decimal digit of scale, rounding half up, instead of failing;
+            // only a scale-0 sum has nowhere to go. (Differences cannot carry.)
+            if left_sign_neg == right_sign_neg {
+                let scale = (*pLeft).__bindgen_anon_1.__bindgen_anon_1.scale;
+                if scale == 0 {
+                    break 'calc -2147352566i32; /* DISP_E_OVERFLOW */
+                }
+                let mut n: [u32; 4] = [
+                    (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Lo32,
+                    (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Mid32,
+                    (*pDecOut).Hi32,
+                    overflow,
+                ];
+                let remainder = VARIANT_int_divbychar(n.as_mut_ptr(), 4, 10);
+                if remainder >= 5 {
+                    let mut carry = true;
+                    for digit in n.iter_mut() {
+                        if !carry {
+                            break;
+                        }
+                        let (v, c) = digit.overflowing_add(1);
+                        *digit = v;
+                        carry = c;
+                    }
+                }
+                (*pDecOut).__bindgen_anon_1.__bindgen_anon_1.scale = scale - 1;
+                (*pDecOut).__bindgen_anon_1.__bindgen_anon_1.sign = sign;
+                (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Lo32 = n[0];
+                (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Mid32 = n[1];
+                (*pDecOut).Hi32 = n[2];
+                break 'calc 0i32; /* S_OK */
+            }
             break 'calc -2147352566i32; /* DISP_E_OVERFLOW */
         }
 
@@ -3617,10 +3650,36 @@ unsafe fn VARIANT_BstrReplaceDecimal(buff: *const u16, lcid: u32, dwFlags: u32) 
         minFormat.lpThousandSep = empty.as_ptr() as *mut u16;
         minFormat.NegativeOrder = 1;
 
-        let p = wcschr(buff, b'.' as u16);
+        // Wine 10.0: the locale's leading-zero setting (was hard-coded 0), and
+        // an exponent is split off before formatting and re-appended after,
+        // so "1,5E+20" does not count "5E+20" as decimal digits.
+        GetLocaleInfoW(
+            lcid,
+            LOCALE_ILZERO | LOCALE_RETURN_NUMBER | (dwFlags & LOCALE_NOUSEROVERRIDE),
+            &mut minFormat.LeadingZero as *mut u32 as *mut u16,
+            (core::mem::size_of::<u32>() / core::mem::size_of::<u16>()) as i32,
+        );
+
+        // buff is the caller's local buffer; copy so the exponent can be cut
+        let mut work: [u16; 256] = [0u16; 256];
+        let n = (lstrlenW(buff) as usize).min(255);
+        core::ptr::copy_nonoverlapping(buff, work.as_mut_ptr(), n);
+        let p = wcschr(work.as_ptr(), b'.' as u16);
+        let e = wcschr(if p.is_null() { work.as_ptr() } else { p.add(1) }, b'E' as u16);
         if !p.is_null() {
-            minFormat.NumDigits = lstrlenW(p.add(1)) as u32;
+            minFormat.NumDigits = if e.is_null() {
+                lstrlenW(p.add(1)) as u32
+            } else {
+                e.offset_from(p.add(1)) as u32
+            };
         }
+        let mut exponent: [u16; 16] = [0u16; 16];
+        if !e.is_null() {
+            let en = (lstrlenW(e) as usize).min(15);
+            core::ptr::copy_nonoverlapping(e, exponent.as_mut_ptr(), en);
+            *(e as *mut u16) = 0;
+        }
+        let buff = work.as_ptr();
 
         numbuff[0] = 0u16;
         if GetNumberFormatW(lcid, 0, buff, &minFormat, numbuff.as_mut_ptr(), 256) == 0 {
@@ -3630,6 +3689,13 @@ unsafe fn VARIANT_BstrReplaceDecimal(buff: *const u16, lcid: u32, dwFlags: u32) 
             );
             bstrOut = SysAllocString(buff);
         } else {
+            if exponent[0] != 0 {
+                let l = lstrlenW(numbuff.as_ptr()) as usize;
+                let el = lstrlenW(exponent.as_ptr()) as usize;
+                if l + el < numbuff.len() {
+                    core::ptr::copy_nonoverlapping(exponent.as_ptr(), numbuff.as_mut_ptr().add(l), el + 1);
+                }
+            }
             TRACE!(
                 b"created minimal NLS string %s\n\0".as_ptr() as *const i8,
                 debugstr_w(numbuff.as_ptr()),
@@ -3646,7 +3712,7 @@ unsafe fn VARIANT_BstrFromReal(
     lcid: u32,
     dwFlags: u32,
     pbstrOut: *mut *mut u16,
-    lpszFormat: *const u16,
+    ndigits: i32,
 ) -> HRESULT {
     let mut buff: [u16; 256] = [0; 256];
 
@@ -3654,7 +3720,38 @@ unsafe fn VARIANT_BstrFromReal(
         return E_INVALIDARG;
     }
 
-    swprintf(buff.as_mut_ptr(), lpszFormat, dblIn);
+    // Wine 10.0: %.*G first; if that chose an exponent but the number fits in
+    // `ndigits` significant digits as plain decimals, print it that way
+    // instead (VarBstrFromR8(0.00001) is "0.00001", not "1E-05"). %.*f is only
+    // reached for magnitudes below 10^ndigits, so it cannot overrun buff.
+    let fmt_g: [u16; 5] = [b'%' as u16, b'.' as u16, b'*' as u16, b'G' as u16, 0];
+    let mut len = swprintf(buff.as_mut_ptr(), fmt_g.as_ptr(), ndigits, dblIn);
+    let e = wcschr(buff.as_ptr(), b'E' as u16);
+    if !e.is_null() {
+        let dot = wcschr(buff.as_ptr(), b'.' as u16);
+        let extra_decimals = if dot.is_null() { 0 } else { e.offset_from(dot) as i32 - 2 };
+        // the exponent: optional sign, then decimal digits (wcstol(e+1, NULL, 10))
+        let mut q = e.add(1);
+        let neg = *q == b'-' as u16;
+        if neg || *q == b'+' as u16 {
+            q = q.add(1);
+        }
+        let mut exp: i32 = 0;
+        while (b'0' as u16..=b'9' as u16).contains(&*q) {
+            exp = exp * 10 + (*q - b'0' as u16) as i32;
+            q = q.add(1);
+        }
+        if exp + extra_decimals < ndigits {
+            let fmt_f: [u16; 5] = [b'%' as u16, b'.' as u16, b'*' as u16, b'f' as u16, 0];
+            len = swprintf(buff.as_mut_ptr(), fmt_f.as_ptr(), ndigits, dblIn);
+            while len > 0 && buff[len as usize - 1] == b'0' as u16 {
+                len -= 1;
+            }
+        }
+    }
+    if len >= 0 && (len as usize) < buff.len() {
+        buff[len as usize] = 0;
+    }
 
     if buff[0] == b'-' as u16 {
         const SZ_ACCEPT: [u16; 3] = [b'0' as u16, b'.' as u16, 0];
@@ -3695,7 +3792,7 @@ pub unsafe extern "system" fn VarBstrFromR4(
     dwFlags: u32,
     pbstrOut: *mut *mut u16,
 ) -> HRESULT {
-    VARIANT_BstrFromReal(fltIn as f64, lcid, dwFlags, pbstrOut, szFloatFormatW.as_ptr())
+    VARIANT_BstrFromReal(fltIn as f64, lcid, dwFlags, pbstrOut, 7)
 }
 
 #[no_mangle]
@@ -3705,7 +3802,7 @@ pub unsafe extern "system" fn VarBstrFromR8(
     dwFlags: u32,
     pbstrOut: *mut *mut u16,
 ) -> HRESULT {
-    VARIANT_BstrFromReal(dblIn, lcid, dwFlags, pbstrOut, szDoubleFormatW.as_ptr())
+    VARIANT_BstrFromReal(dblIn, lcid, dwFlags, pbstrOut, 15)
 }
 
 #[no_mangle]

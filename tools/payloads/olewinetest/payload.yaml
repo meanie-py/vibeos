@@ -26,6 +26,10 @@ binaries:
     dest: bin/apitest-suites.txt
   - src: tools/payloads/olewinetest/winetest-skip-{arch}.txt
     dest: bin/apitest-skip.txt
+  # Children start on the writable FAT scratch disk: X: is the CDFS boot image,
+  # and typelib/vartype create their test typelibs with GetTempFileName(".").
+  - src: tools/payloads/olewinetest/cwd.txt
+    dest: bin/apitest-cwd.txt
   - src: build-{arch}/modules/rostests/winetests/oleaut32/oleaut32_winetest.exe
     dest: bin/oleaut32_winetest.exe
   - src: build-{arch}/modules/rostests/winetests/ole32/ole32_winetest.exe

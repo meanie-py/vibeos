@@ -562,10 +562,10 @@ fn OLEFontImpl_QueryInterface(
     } else if IsEqualGUID(core::ptr::addr_of!(IID_IPersistPropertyBag), riid)
     {
         *ppvObject = core::ptr::addr_of_mut!((*this).IPersistPropertyBag_iface) as *mut core::ffi::c_void;
-    } else if IsEqualGUID(core::ptr::addr_of!(IID_IPersistStreamInit), riid)
-    {
-        *ppvObject = core::ptr::addr_of_mut!((*this).IPersistStreamInit_iface) as *mut core::ffi::c_void;
     }
+    // Wine 10.0, as Windows: the font object does not expose
+    // IPersistStreamInit (Wine's olefont test checks it is ABSENT). The
+    // interface's vtable stays in the struct, unreachable.
 
     if (*ppvObject).is_null() {
         FIXME!(
