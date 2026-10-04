@@ -34,4 +34,9 @@ target_link_libraries(netkvm virtio)
 set_module_type(netkvm kernelmodedriver)
 add_importlibs(netkvm ndis ntoskrnl hal)
 add_cd_file(TARGET netkvm DESTINATION reactos/system32/drivers FOR all)
-add_driver_inf(netkvm netkvm.inf)
+# netkvm.inf is NOT staged: every ID it lists (virtio-net 1AF4:1000 and 1AF4:1041) is
+# driven directly by netstack.sys, which does not sit above NDIS yet (M11 in
+# docs/engineering/smoltcp-netstack-design.md). With the INF on the media, setup bound
+# this miniport to the NIC under netstack, reset the device, and netstack's
+# synchronous virtqueue wait spun forever, wedging the boot. Re-add it with M11.
+# add_driver_inf(netkvm netkvm.inf)

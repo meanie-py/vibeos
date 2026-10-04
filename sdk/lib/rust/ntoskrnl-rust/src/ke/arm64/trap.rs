@@ -678,6 +678,42 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                 return;
             }
 
+            // brk #0xF003 is __fastfail (x0 = the FAST_FAIL_* code): the arm64 form of
+            // x86's int 0x29, handled as i386's KiRaiseSecurityCheckFailureHandler is.
+            // Kernel mode bugchecks KERNEL_SECURITY_CHECK_FAILURE; user mode gets a
+            // non-continuable STATUS_STACK_BUFFER_OVERRUN. It used to fall through to
+            // the skip below, so a fastfail carried on past the brk -- and a Rust
+            // panic handler built on it spun silently instead of stopping loudly.
+            if BrkImm == 0xF003 {
+                let Code = (*TrapFrame).__bindgen_anon_3.X[0];
+                let mut ExRec: EXCEPTION_RECORD = core::mem::zeroed();
+                ExRec.ExceptionCode = STATUS_STACK_BUFFER_OVERRUN;
+                ExRec.ExceptionFlags = 1; // EXCEPTION_NONCONTINUABLE
+                ExRec.ExceptionRecord = core::ptr::null_mut();
+                ExRec.ExceptionAddress = (*TrapFrame).Pc as PVOID;
+                ExRec.NumberParameters = 1;
+                ExRec.ExceptionInformation[0] = Code;
+                if BrkFromKernel {
+                    TrapPuts(b"[FASTFAIL] kernel-mode __fastfail\r\n");
+                    KiDumpTrapFrame(TrapFrame);
+                    KeBugCheckEx(
+                        KERNEL_SECURITY_CHECK_FAILURE,
+                        Code as ULONG_PTR,
+                        TrapFrame as ULONG_PTR,
+                        &mut ExRec as *mut EXCEPTION_RECORD as ULONG_PTR,
+                        0,
+                    );
+                }
+                KiDispatchException(
+                    &mut ExRec as *mut EXCEPTION_RECORD,
+                    ExceptionFrame,
+                    TrapFrame,
+                    1i8, // UserMode
+                    1u8,
+                );
+                return;
+            }
+
             // Debug service: #0xF002 (DebugService), and #0xF000 from user mode for
             // anything built before the split.
             if (BrkImm == 0xF002 || BrkImm == 0xF000) && (*TrapFrame).__bindgen_anon_3.X[0] == 1 {

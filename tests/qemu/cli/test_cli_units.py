@@ -749,7 +749,7 @@ def test_staleness_arm64_restage_trap(tmp_path: Path):
 @pytest.fixture
 def arm64_cohab_repo(tmp_path: Path) -> Path:
     """An arm64 repo with one Rust-cohab driver (foo-rust -> foo.sys), staged via
-    mkramdisk REQUIRED_FILES, plus a build-arm64 artifact + boot.img + stamp — the
+    the livecd list mkramdisk lays out, plus a build-arm64 artifact + boot.img + stamp — the
     fixture for the staged-build cohab freshness net (advapi32/fastfat class)."""
     r = tmp_path / "repo"
     crate = r / "sdk" / "lib" / "rust" / "foo-rust"
@@ -763,11 +763,14 @@ def arm64_cohab_repo(tmp_path: Path) -> Path:
     )
     (r / "build-arm64" / "drivers" / "x" / "foo").mkdir(parents=True)
     (r / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys").write_bytes(b"SYS")
-    (r / "qemu").mkdir()
-    (r / "qemu" / "mkramdisk.sh").write_text(
-        'REQUIRED_FILES=(\n    "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"\n'
-        '    "$BUILD_DIR/drivers/x/foo/foo.sys"\n)\n'
+    (r / "build-arm64" / "boot").mkdir()
+    (r / "build-arm64" / "boot" / "livecd.Debug.lst").write_text(
+        "/tmp/vibeos/build-arm64/boot/empty\n"
+        "reactos/system32/ntoskrnl.exe=/tmp/vibeos/build-arm64/ntoskrnl/ntoskrnl.exe\n"
+        "reactos/system32/drivers/foo.sys=/tmp/vibeos/build-arm64/drivers/x/foo/foo.sys\n"
+        "reactos/inf/foo.inf=/tmp/vibeos/build-arm64/drivers/x/foo/foo.inf\n"
     )
+    (r / "qemu").mkdir()
     (r / "qemu" / "boot.img").write_bytes(b"BOOT")
     (r / "docs").mkdir()
     (r / "docs" / "readme.md").write_text("hi\n")
@@ -783,6 +786,14 @@ def arm64_cohab_repo(tmp_path: Path) -> Path:
 def test_mkramdisk_required_rels_parsed(arm64_cohab_repo: Path):
     rels = provenance.mkramdisk_required_rels(arm64_cohab_repo)
     assert "drivers/x/foo/foo.sys" in rels and "ntoskrnl/ntoskrnl.exe" in rels
+
+
+def test_only_linked_images_join_the_cohab_net(arm64_cohab_repo: Path):
+    """The livecd list carries .inf files whose stem matches a cohab crate (acpi.inf,
+    cdrom.inf); no staticlib feeds them, so they must not be judged stale against one."""
+    rels = provenance.boot_set_cohab_rels(arm64_cohab_repo, "arm64")
+    assert "drivers/x/foo/foo.sys" in rels
+    assert "drivers/x/foo/foo.inf" not in rels
 
 
 def test_crate_for_stem_separator_normalization(arm64_cohab_repo: Path):
@@ -5272,8 +5283,10 @@ def cohab_repo(tmp_path: Path, monkeypatch) -> Path:
     mod = r / "build-arm64" / "drivers" / "widget"
     cargo_out = mod / "rust-widget-target" / "aarch64-pc-windows-gnullvm" / "release"
     cargo_out.mkdir(parents=True)
-    (r / "qemu").mkdir(parents=True)
-    (r / "qemu" / "mkramdisk.sh").write_text('RMC "$BUILD_DIR/drivers/widget/widget.sys" ::/w\n')
+    (r / "build-arm64" / "boot").mkdir(parents=True)
+    (r / "build-arm64" / "boot" / "livecd.Debug.lst").write_text(
+        "reactos/system32/drivers/widget.sys=/tmp/vibeos/build-arm64/drivers/widget/widget.sys\n"
+    )
     for p, t in (
         (crate / "lib.rs", 1000),
         (cargo_out / "libwidget_rust.a", 2000),
@@ -8471,23 +8484,21 @@ _CMAKE_FIXTURE = """
 """
 
 
-def _ramdisk_fixture(copied, required):
-    return (
-        "REQUIRED_FILES=(\n"
-        + "".join(f'    "$BUILD_DIR/boot/bootdata/{h}"\n' for h in required)
-        + ")\n\n"
-        + "".join(
-            f'RMC "$BUILD_DIR/boot/bootdata/{h}"   ::/reactos/system32/config/{h}\n' for h in copied
+def _ramdisk_fixture(from_livecd: bool):
+    if from_livecd:
+        return (
+            'LIVECD_LST="$BUILD_DIR/boot/livecd.Debug.lst"\n'
+            'python3 "$PROJECT_DIR/tools/ramdisk_tree.py" --out "$STAGE_DIR" ramdisk-livecd.lst\n'
         )
-    )
+    return 'RMC "$BUILD_DIR/boot/bootdata/system"   ::/reactos/system32/config/system\n'
 
 
-def _run_drift(tmp_path, copied, required):
+def _run_drift(tmp_path, from_livecd):
     repo = Path(__file__).resolve().parents[3]
     cmake = tmp_path / "CMakeMacros.cmake"
     cmake.write_text(_CMAKE_FIXTURE)
     ramdisk = tmp_path / "mkramdisk.sh"
-    ramdisk.write_text(_ramdisk_fixture(copied, required))
+    ramdisk.write_text(_ramdisk_fixture(from_livecd))
     return subprocess.run(
         [
             "python3",
@@ -8502,35 +8513,26 @@ def _run_drift(tmp_path, copied, required):
     )
 
 
-def test_boot_media_drift_passes_when_both_media_agree(tmp_path):
-    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system", "sam"])
+def test_boot_media_drift_passes_when_the_ramdisk_is_the_livecd_list(tmp_path):
+    r = _run_drift(tmp_path, from_livecd=True)
     assert r.returncode == 0, r.stdout
     assert "findings=0" in r.stdout
 
 
-def test_boot_media_drift_catches_a_hive_missing_from_the_ramdisk(tmp_path):
-    """The #71 bug exactly: `sam` on the livecd, absent from the ramdisk. The kernel
-    fabricates an empty volatile hive rather than failing, so nothing else can see it."""
-    r = _run_drift(tmp_path, copied=["system"], required=["system"])
+def test_boot_media_drift_catches_a_hand_staged_ramdisk(tmp_path):
+    """The #71 shape: a ramdisk copied by hand carried `system` but not `sam`, and the
+    kernel fabricated an empty volatile SAM rather than failing. A script that stops
+    laying out the livecd list is back to depending on someone remembering each hive."""
+    r = _run_drift(tmp_path, from_livecd=False)
     assert r.returncode == 1
-    assert "[RAMDISK_MISSING]" in r.stdout
-    assert "'sam'" in r.stdout
-
-
-def test_boot_media_drift_catches_a_copied_but_unguarded_hive(tmp_path):
-    """Copied without a REQUIRED_FILES entry: if the build stops emitting it, the copy
-    stages nothing and we are back to a fabricated hive with no error anywhere."""
-    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system"])
-    assert r.returncode == 1
-    assert "[RAMDISK_UNGUARDED]" in r.stdout
-    assert "'sam'" in r.stdout
+    assert "[RAMDISK_NOT_FROM_LIVECD]" in r.stdout
+    assert "sam" in r.stdout
 
 
 def test_boot_media_drift_ignores_hives_staged_outside_the_config_dir(tmp_path):
     """BCD goes to efi/boot for the EFI boot manager — it is not a \\REGISTRY\\MACHINE
-    hive and the ramdisk is not an ESP, so demanding it would be a false positive."""
-    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system", "sam"])
-    assert r.returncode == 0
+    hive, so it is not part of the reference set."""
+    r = _run_drift(tmp_path, from_livecd=False)
     assert "BCD" not in r.stdout
 
 
@@ -8540,7 +8542,7 @@ def test_boot_media_drift_fails_loudly_if_it_can_no_longer_find_the_reference_se
     cmake = tmp_path / "CMakeMacros.cmake"
     cmake.write_text("# the hive blocks moved somewhere else\n")
     ramdisk = tmp_path / "mkramdisk.sh"
-    ramdisk.write_text(_ramdisk_fixture([], []))
+    ramdisk.write_text(_ramdisk_fixture(True))
     repo = Path(__file__).resolve().parents[3]
     r = subprocess.run(
         [

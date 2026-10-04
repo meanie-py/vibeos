@@ -12,7 +12,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -328,75 +327,6 @@ def _policy_build_env(env: dict | None) -> dict | None:
     if policy is None:
         return env
     return dict(os.environ if env is None else env, CARGO_BUILD_JOBS=str(policy["cargo_jobs"]))
-
-
-def _ninja_known_targets(repo: Path, build_dir: Path, wrap, env) -> set[str]:
-    """All declared ninja target paths (`ninja -t targets all`), for filtering the
-    mkramdisk boot manifest down to buildable file targets. Plain subprocess (not
-    run.run) — the ~40K-line target list would bloat every full.log."""
-    try:
-        cp = subprocess.run(
-            wrap(["ninja", "-t", "targets", "all"]),
-            cwd=build_dir,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return set()
-    return {ln.split(":", 1)[0].strip() for ln in cp.stdout.splitlines() if ":" in ln}
-
-
-def _build_ramdisk_apps(run: Run, repo: Path, build_dir: Path, wrap, env, args) -> bool:
-    """Build the arm64 ramdisk's stock apps and their import closure (tools/ramdisk_apps.py).
-
-    The closure is read from BUILT binaries' import tables, so each round of newly built
-    modules can name the next round's imports: repeat until the tool asks for nothing.
-    A fresh tree converges in four rounds (apps -> dnsapi & co -> d3dwine -> opengl32); a
-    warm one asks for nothing on the first."""
-    tool = [sys.executable, str(repo / "tools" / "ramdisk_apps.py"), "--build-dir", str(build_dir)]
-    built: list[str] = []
-    for _round in range(8):
-        cp = subprocess.run([*tool, "--targets"], capture_output=True, text=True, cwd=repo)
-        if cp.returncode != 0:
-            run.add(
-                Stage(
-                    "ramdisk-apps",
-                    exit=cp.returncode,
-                    status="fail",
-                    detail="closure unresolvable",
-                    salient=cp.stderr.splitlines()[-4:],
-                )
-            )
-            return False
-        todo = [t for t in cp.stdout.split() if t not in built]
-        if not todo:
-            run.add(Stage("ramdisk-apps", status="ok", detail=f"{len(built)} built"))
-            return True
-        built += todo
-        cp = run.run(
-            wrap(["ninja", *_ninja_jobs(), *_ninja_keep_going(args), *todo]),
-            cwd=build_dir,
-            env=env,
-            stage="ramdisk-apps",
-            timeout=3600,
-        )
-        if cp.returncode != 0:
-            cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
-            run.classification = cls
-            run.add(
-                Stage(
-                    "ramdisk-apps",
-                    exit=cp.returncode,
-                    status="fail",
-                    detail=cls,
-                    salient=salient or ["see full log"],
-                )
-            )
-            return False
-    run.add(Stage("ramdisk-apps", status="fail", detail="closure did not converge in 8 rounds"))
-    return False
 
 
 def build(args, repo: Path) -> int:
@@ -1098,29 +1028,14 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     run.add(Stage("ninja-prime", status="ok", detail="generated headers"))
 
     # --- ninja the boot target(s) ---
-    # arm64 (mkramdisk arches): force-build the ENTIRE boot manifest (mkramdisk
-    # REQUIRED_FILES — file paths are valid ninja targets), not just the curated
-    # ninja_targets list. Two bugs this kills: (a) the cohab-flip false-green —
-    # a Rust .sys/.dll missing from ninja_targets left a STALE C binary that
-    # mkramdisk staged (fastfat/ramdisk/advapi32 class); (b) the fresh-tree gap —
-    # a canonized/provisioned build-arm64 had never built smss.exe etc. at all
-    # (the curated list assumed a previously-full tree). Deriving from the boot
-    # manifest keeps it self-maintaining; ninja dedups anything a phony target
-    # already covers. x86 builds the full `livecd` DAG and needs neither.
+    # Every arch builds its `livecd` DAG, which is the whole boot set. The cohab rels are
+    # forced on top because a cargo-LINKED module's link only re-runs when its declared
+    # deps change (cargo_link_staleness_reasons covers that case too).
     targets = list(dict.fromkeys([*cfg.ninja_targets, *getattr(args, "extra_target", [])]))
     if any(not target or target.startswith("-") for target in targets):
         run.add(Stage("targets", status="fail", detail="invalid extra Ninja target"))
         return run.finalize(repo)
-    if cfg.needs_mkramdisk:
-        # Not every staged file is a ninja target (e.g. media/nls/l_intl.nls is
-        # copied by an aggregate rule) — intersect with the known target list or
-        # ninja hard-errors on the first unknown.
-        known = _ninja_known_targets(repo, build_dir, wrap, build_env)
-        cohab = [
-            r for r in provenance.mkramdisk_required_rels(repo) if r not in targets and r in known
-        ]
-    else:
-        cohab = [r for r in provenance.boot_set_cohab_rels(repo, arch) if r not in targets]
+    cohab = [r for r in provenance.boot_set_cohab_rels(repo, arch) if r not in targets]
     if cohab:
         run.log(
             "force-building the boot-manifest set (self-heal):\n" + "\n".join(cohab),
@@ -1147,9 +1062,6 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         )
         return run.finalize(repo)
     run.add(Stage("ninja", status="ok", detail="+".join(targets)))
-
-    if cfg.needs_mkramdisk and not _build_ramdisk_apps(run, repo, build_dir, wrap, build_env, args):
-        return run.finalize(repo)
 
     # --- flag→artifact verification (T1.2): requested features must PROVE
     # themselves in the output; unrequested ones must be absent. ---
