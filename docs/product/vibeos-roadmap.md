@@ -568,6 +568,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **rostests i386 build: 5 targets fail under llvm-mingw** (OPEN, 2026-10-04). After the
+  shell32/shlwapi/ole32 export fixes (`--rostests`, `ninja -k 0`): `dllimport_test.dll`
+  (lld: framedyn `CHString` "should not refer to special section 0"), `menuaccels.rc` (llvm-rc
+  rejects its ACCELERATORS statement), `interop_unittest` LocaleTests.cpp (libc++ `<__locale>`
+  `enum result { ok, ... }` collides with the test `ok` macro), `wine.combase.test.dll`
+  (`-llibcombase` not found), `user32_winetest` monitor.c (`ddk/d3dkmthk.h` not on its include
+  path; it lives in sdk/include/wine/ddk).
 - **msvcrt.dll Wine winetest: `misc` exits 128, `string` 5,547 failures (i386)** (OPEN,
   2026-10-04). `tools/payloads/msvcrtwine` (`msvcrt_winetest` + `msvcrt_apitest`): the `misc`
   subtest dies with exit code 128 after its `_popen` failures (misc.c:375, error 13), and

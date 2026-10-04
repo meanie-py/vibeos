@@ -128,6 +128,7 @@ class_factory!(AntiMonikerCFVtbl, AntiMonikerCF, AntiMonikerCF_CreateInstance, A
 class_factory!(CompositeMonikerCFVtbl, CompositeMonikerCF, CompositeMonikerCF_CreateInstance, CompositeMoniker_CreateInstance);
 class_factory!(ClassMonikerCFVtbl, ClassMonikerCF, ClassMonikerCF_CreateInstance, ClassMoniker_CreateInstance);
 class_factory!(PointerMonikerCFVtbl, PointerMonikerCF, PointerMonikerCF_CreateInstance, PointerMoniker_CreateInstance);
+class_factory!(ObjrefMonikerCFVtbl, ObjrefMonikerCF, ObjrefMonikerCF_CreateInstance, ObjrefMoniker_CreateInstance);
 class_factory!(ComCatCFVtbl, ComCatCF, ComCatCF_CreateInstance, ComCat_CreateInstance);
 
 // C: `IClassFactory GlobalOptionsCF = { &GlobalOptionsCFVtbl };` — the ONE object in
@@ -179,6 +180,9 @@ pub unsafe extern "system" fn DllGetClassObject(
     }
     if IsEqualCLSID(rclsid, core::ptr::addr_of!(CLSID_PointerMoniker)) {
         return IClassFactory_QueryInterface(core::ptr::addr_of_mut!(PointerMonikerCF), iid, ppv);
+    }
+    if IsEqualCLSID(rclsid, core::ptr::addr_of!(CLSID_ObjrefMoniker)) {
+        return IClassFactory_QueryInterface(core::ptr::addr_of_mut!(ObjrefMonikerCF), iid, ppv);
     }
     if IsEqualGUID(rclsid, core::ptr::addr_of!(CLSID_StdComponentCategoriesMgr)) {
         return IClassFactory_QueryInterface(core::ptr::addr_of_mut!(ComCatCF), iid, ppv);
