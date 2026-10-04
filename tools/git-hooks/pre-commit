@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#
+# pre-commit hook — OVERSIZED-FILE GUARD (2026-10-04).
+#
+# A scripted doc edit did `s.replace(old, new)` with `old` an EMPTY slice (its end marker sat
+# before its start), which inserts `new` between every character: the roadmap went from
+# 483 KB to 565 MB and was committed. `vibeos-cli check`, `check-tooling` and three builds
+# all passed it; only an unrelated merge conflict kept it out of the land queue. GitHub
+# refuses blobs over 100 MB, but only at push time, after the queue has the commit.
+#
+# Refuses a commit that stages any blob over $VIBEOS_MAX_BLOB_MB (default 50) or that grows a
+# tracked text file more than 20x when it was already over 64 KB. Escape hatch:
+#   VIBEOS_ALLOW_BIG=1 git commit …   (say so in your report)
+# Lives in the COMMON git dir (tools/install-git-hooks.sh), so it guards every worktree.
+
+[ "${VIBEOS_ALLOW_BIG:-}" = "1" ] && exit 0
+max=$(( ${VIBEOS_MAX_BLOB_MB:-50} * 1024 * 1024 ))
+bad=0
+while IFS= read -r -d '' path; do
+    new=$(git cat-file -s ":$path" 2>/dev/null) || continue
+    if [ "$new" -gt "$max" ]; then
+        echo "pre-commit: $path is $(( new / 1048576 )) MB staged (limit $(( max / 1048576 )) MB)" >&2
+        bad=1
+        continue
+    fi
+    old=$(git cat-file -s "HEAD:$path" 2>/dev/null) || continue
+    if [ "$old" -gt 65536 ] && [ "$new" -gt $(( old * 20 )) ]; then
+        echo "pre-commit: $path grew ${old} -> ${new} bytes (>20x): a runaway edit?" >&2
+        bad=1
+    fi
+done < <(git diff --cached --name-only -z --diff-filter=AM)
+if [ "$bad" = 1 ]; then
+    echo "pre-commit: refused. If this is intended: VIBEOS_ALLOW_BIG=1 git commit ... (report it)" >&2
+    exit 1
+fi
+exit 0
