@@ -440,17 +440,29 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
 
     new_entry = ExAllocateFromNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList)) as PMM_RMAP_ENTRY;
     if new_entry.is_null() {
-        // The C `KeBugCheck(MEMORY_MANAGEMENT)`s here (mm/rmap.c). Returning
-        // instead means the caller believes the mapping was recorded when it was
-        // not — and a lost reverse mapping is exactly the precondition for
-        // freeing a frame that is still mapped. Report it before continuing so
-        // the silence is not the only evidence.
+        // The C `KeBugCheck(MEMORY_MANAGEMENT)`s here (mm/rmap.c:363), and so do
+        // we now on x86. Returning instead means the caller believes the mapping
+        // was recorded when it was not — and a lost reverse mapping is exactly
+        // the precondition for freeing a frame that is still mapped.
+        //
+        // These two sites were the ONLY ones of the 14 armed MM guards that
+        // returned on every arch; the other nine recovery points already split
+        // arm64-recovers / x86-bugchecks. arm64 keeps the recovery because
+        // removing it turns a boot into a bugcheck (same reasoning as
+        // [PFNMISMATCH]); x86 now matches both the C and its nine siblings.
         mm_guard_trip!(
             "rmap.MmInsertRmap lookaside-alloc FAILED (rmap NOT inserted)", 8,
             "Page" => Page, "Process" => Process as ULONG_PTR,
             "Address" => Address as ULONG_PTR,
         );
-        return; // defensive: skip instead of bugcheck
+        #[cfg(target_arch = "aarch64")]
+        {
+            return;
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            KeBugCheck(MEMORY_MANAGEMENT);
+        }
     }
     (*new_entry).Address = Address;
     (*new_entry).Process = Process;
@@ -459,13 +471,13 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
         let actual_pfn = MmGetPfnForProcess(Process, Address);
         if actual_pfn != Page as _ {
             // The C DPRINT1s ("Insert rmap ... which doesn't match physical
-            // address ...") and then `KeBugCheck(MEMORY_MANAGEMENT)`. This
-            // translation returns instead, so the rmap is silently NOT inserted
-            // and the caller is told nothing. That is the leading candidate for
-            // the arm64 `MmDeleteRmap mapping-not-in-list` seen once per run:
-            // nothing was ever put in the list to delete. Report both PFNs so
-            // the next boot says which side is wrong, instead of only proving
-            // that something is.
+            // address ...") and then `KeBugCheck(MEMORY_MANAGEMENT)`
+            // (mm/rmap.c:380); x86 now does too. Returning silently leaves the
+            // rmap NOT inserted with the caller told nothing. This was once the
+            // leading candidate for the arm64 `MmDeleteRmap mapping-not-in-list`
+            // seen once per run — that turned out to be stale FreeLDR identity
+            // PTEs (§9.98), and this site was probed as never firing. Both PFNs
+            // are reported so a future hit says which side is wrong.
             mm_guard_trip!(
                 "rmap.MmInsertRmap PFN MISMATCH (rmap NOT inserted)", 8,
                 "Page" => Page, "actual_pfn" => actual_pfn as ULONG_PTR,
@@ -473,7 +485,14 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
                 "Address" => Address as ULONG_PTR,
             );
             ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), new_entry as PVOID);
-            return; // defensive: skip instead of bugcheck
+            #[cfg(target_arch = "aarch64")]
+            {
+                return;
+            }
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                KeBugCheck(MEMORY_MANAGEMENT);
+            }
         }
     }
 
