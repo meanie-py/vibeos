@@ -950,6 +950,19 @@ unsafe fn ManualResetEvent_Construct(
     hr
 }
 
+/// compobj_private.h `ManualResetEvent_CreateInstance`: the IClassFactory entry
+/// ole32's ManualResetEventCF (oleproxy) hands out, so CoGetClassObject can serve
+/// CLSID_ManualResetEvent in-proc as wine-10 does.
+#[no_mangle]
+pub unsafe extern "system" fn ManualResetEvent_CreateInstance(
+    _iface: *mut IClassFactory,
+    outer: *mut IUnknown,
+    riid: REFIID,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    ManualResetEvent_Construct(outer, riid, ppv)
+}
+
 // ---------------------------------------------------------------------------
 // LocalServer object (marshallable IServiceProvider over registered classes)
 // ---------------------------------------------------------------------------
@@ -3224,7 +3237,10 @@ pub unsafe extern "system" fn CoGetClassObject(
         }
         // wine-10: the GIT is built in, never a registry lookup (it has no
         // InprocServer32 key, so the generic path below reports REGDB_E_CLASSNOTREG).
-        if guid_eq(rclsid, &CLSID_StdGlobalInterfaceTable) {
+        if guid_eq(rclsid, &CLSID_StdGlobalInterfaceTable)
+            || ((dwClsContext & CLSCTX_APPCONTAINER) == 0
+                && guid_eq(rclsid, &CLSID_ManualResetEvent))
+        {
             apartment_release(apt);
             return DllGetClassObject(rclsid, iid, ppv);
         }

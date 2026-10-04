@@ -1,4 +1,5 @@
 use crate::prelude_rpc::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (standard netapi32 wine-debug channel; TRACE/FIXME reference it) ----
@@ -107,11 +108,11 @@ pub unsafe extern "system" fn DsRoleGetPrimaryDomainInformation(
     }
 
     // RpcTryExcept body (exception handler omitted)
-    status = DsRolerGetPrimaryDomainInformation(
+    status = rpc_try(|| DsRolerGetPrimaryDomainInformation(
         hBinding,
         InfoLevel,
         Buffer as *mut PDSROLER_PRIMARY_DOMAIN_INFORMATION,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if !hBinding.is_null() {
         DsSetupUnbind(hBinding);

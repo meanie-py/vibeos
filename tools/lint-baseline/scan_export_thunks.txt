@@ -1,0 +1,41 @@
+# scan_export_thunks baseline — known exports that are a same-named import thunk (amd64).
+#
+# Each entry is an export whose code is `jmp [__imp_<same name>]`, i.e. the module
+# hands out another DLL's function under its own name. That is fine as long as the
+# other module defines it for real; it is a hang when the other module forwards it
+# back (ole32 <-> oleaut32 *ErrorInfo, 2026-10-04). Add an entry only after checking
+# the target module does NOT re-export the name back.
+#
+# HAL: hal.spec maps these to Halp* wrappers (hal-rust x86/drive.rs) whose whole body
+# is a call to ntoskrnl's Io* of the same name, so it compiles to the jump.
+hal.dll: IoAssignDriveLetters
+hal.dll: IoReadPartitionTable
+hal.dll: IoSetPartitionInformation
+hal.dll: IoWritePartitionTable
+halmp.dll: IoAssignDriveLetters
+halmp.dll: IoReadPartitionTable
+halmp.dll: IoSetPartitionInformation
+halmp.dll: IoWritePartitionTable
+# imagehlp.spec `-import`: dbghelp's (dbghelp forwards ImageRvaToVa on to ntdll, not
+# back here).
+imagehlp.dll: ImageDirectoryEntryToData
+imagehlp.dll: ImageRvaToVa
+# NOT deliberate, but harmless: the specs declare these as the CRT's own, and the ntdll
+# import won the link instead. ntdll's are real implementations, so nothing loops.
+# Owed to the CRT lane if it wants its own bodies to ship (--require-defined).
+msvcrt.dll: memmove
+ucrtbase.dll: memcmp
+ucrtbase.dll: memcpy
+ucrtbase.dll: memmove
+ucrtbase.dll: memset
+ucrtbase.dll: strchr
+ucrtbase.dll: strrchr
+ucrtbase.dll: strstr
+ucrtbase.dll: wcschr
+ucrtbase.dll: wcsrchr
+# oleaut32.spec `-import GetErrorInfo`: ole32's, which is a real Rust body (ole32's
+# CMakeLists forces it with --require-defined; that is the bug this lint was born of).
+oleaut32.dll: GetErrorInfo
+# Same story as the CRT entries: rosload.spec declares RtlAssert, the import won, and
+# the imported one is real.
+rosload.exe: RtlAssert

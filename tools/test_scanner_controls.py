@@ -662,6 +662,22 @@ pub static EXIT: unsafe extern "C" fn(i32) =
     unsafe { core::mem::transmute::<unsafe extern "C" fn(i32) -> !, _>(cexit) };
 """
 
+# scan_unaligned_wide. Seeded from ws2_32's L"LibraryPath" (2026-10-04): a UTF-16 literal
+# spelled as a byte string and cast to a wide pointer, alignment 1, which landed on an odd
+# address and failed the kernel's ProbeForRead. GOOD has the aligned macro form and a narrow
+# C string that must not be mistaken for a wide one.
+_UNALIGNED_WIDE_BAD = """\
+pub unsafe fn f() {
+    RegQueryValueExW(key, b"L\\0i\\0b\\0\\0\\0".as_ptr() as LPCWSTR, 0 as _);
+}
+"""
+_UNALIGNED_WIDE_GOOD = """\
+pub unsafe fn f() {
+    RegQueryValueExW(key, win32macros_rust::wide_bytes!(b"L\\0i\\0b\\0\\0\\0") as LPCWSTR, 0 as _);
+    OutputDebugStringA(b"text\\0".as_ptr() as PCSTR);
+}
+"""
+
 # scan_wide_byte_copy. Seeded from fastfat's FatQueryDirectory (2026-09-23): the
 # C's RtlCopyMemory byte count kept as the element count of a u16 copy. GOOD has
 # the fixed byte copy, a count already in WCHARs (/ size_of), and an ANSI copy
@@ -1663,6 +1679,28 @@ pub unsafe extern "system" fn KeGetPcr() -> usize { 0 }
 }
 
 
+# dhcpcsvc, 2026-10-04: `(*ip).name` is a `[c_char; 256]`, passed by value to a variadic
+# logger. i386 pushes the bytes, so `%s` dereferenced "nets". The good side keeps the
+# `.as_ptr()` fix and a same-named POINTER field, which a name-only match would flag.
+_VARIADIC_ARRAY_BAD = """\
+pub struct interface_info { pub next: *mut interface_info, pub name: [c_char; 256] }
+extern "C" { pub fn note(format: *const c_char, ...) -> c_int; }
+unsafe fn send_discover(ipp: *mut c_void) {
+    let ip = ipp as *mut interface_info;
+    note(b"DHCPDISCOVER on %s\\0".as_ptr() as *const i8, (*ip).name);
+}
+"""
+_VARIADIC_ARRAY_GOOD = """\
+pub struct interface_info { pub next: *mut interface_info, pub name: [c_char; 256] }
+pub struct universe { pub name: *const c_char }
+extern "C" { pub fn note(format: *const c_char, ...) -> c_int; }
+unsafe fn send_discover(ipp: *mut c_void, u: *mut universe) {
+    let ip = ipp as *mut interface_info;
+    note(b"DHCPDISCOVER on %s\\0".as_ptr() as *const i8, (*ip).name.as_ptr());
+    note(b"%s\\0".as_ptr() as *const i8, (*u).name);
+}
+"""
+
 # scan_byteptr_stride. Seeded from oleaut32 IRecordInfoImpl_RecordCopy (2026-10-04): the C's
 # `((BYTE*)src_rec) + offset` translated through `*mut PBYTE`, an 8x stride.
 _BYTEPTR_BAD = """\
@@ -1971,6 +2009,13 @@ CONTROLS: list[Control] = [
         good={"good.rs": _BITWISE_NOT_GOOD},
     ),
     Control(
+        name="scan_variadic_array_arg",
+        script="tools/scan_variadic_array_arg.py",
+        argv=["--lint"],
+        bad={"bad.rs": _VARIADIC_ARRAY_BAD},
+        good={"good.rs": _VARIADIC_ARRAY_GOOD},
+    ),
+    Control(
         name="scan_magic_offsets",
         script="tools/scan_magic_offsets.py",
         argv=["--lint"],
@@ -2026,6 +2071,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bridge.c": _CDECL_ALIAS_BAD},
         good={"bridge.c": _CDECL_ALIAS_GOOD},
+    ),
+    Control(
+        name="scan_unaligned_wide",
+        script="tools/scan_unaligned_wide.py",
+        argv=["--lint"],
+        bad={"bad.rs": _UNALIGNED_WIDE_BAD},
+        good={"good.rs": _UNALIGNED_WIDE_GOOD},
     ),
     Control(
         name="scan_wide_byte_copy",

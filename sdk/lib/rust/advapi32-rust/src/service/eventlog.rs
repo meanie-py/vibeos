@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
@@ -177,7 +178,7 @@ pub unsafe extern "system" fn ElfBackupEventLogFileA(
         return STATUS_INVALID_PARAMETER;
     }
 
-    Status = ElfrBackupELFA(hEventLog, BackupFileNameA as PRPC_STRING);
+    Status = rpc_try(|| ElfrBackupELFA(hEventLog, BackupFileNameA as PRPC_STRING)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -223,7 +224,7 @@ pub unsafe extern "system" fn ElfBackupEventLogFileW(
         return STATUS_INVALID_PARAMETER;
     }
 
-    Status = ElfrBackupELFW(hEventLog, BackupFileNameU as PRPC_UNICODE_STRING);
+    Status = rpc_try(|| ElfrBackupELFW(hEventLog, BackupFileNameU as PRPC_UNICODE_STRING)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -271,7 +272,7 @@ pub unsafe extern "system" fn ElfClearEventLogFileA(
 ) -> NTSTATUS {
     let Status: NTSTATUS;
 
-    Status = ElfrClearELFA(hEventLog, BackupFileNameA as PRPC_STRING);
+    Status = rpc_try(|| ElfrClearELFA(hEventLog, BackupFileNameA as PRPC_STRING)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -310,7 +311,7 @@ pub unsafe extern "system" fn ElfClearEventLogFileW(
 ) -> NTSTATUS {
     let Status: NTSTATUS;
 
-    Status = ElfrClearELFW(hEventLog, BackupFileNameU as PRPC_UNICODE_STRING);
+    Status = rpc_try(|| ElfrClearELFW(hEventLog, BackupFileNameU as PRPC_UNICODE_STRING)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -356,7 +357,7 @@ pub unsafe extern "system" fn ClearEventLogW(
 pub unsafe extern "system" fn ElfCloseEventLog(mut hEventLog: HANDLE) -> NTSTATUS {
     let Status: NTSTATUS;
 
-    Status = ElfrCloseEL(core::ptr::addr_of_mut!(hEventLog));
+    Status = rpc_try(|| ElfrCloseEL(core::ptr::addr_of_mut!(hEventLog))).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -408,13 +409,13 @@ pub unsafe extern "system" fn GetEventLogInformation(
         return 0;
     }
 
-    Status = ElfrGetLogInformation(
+    Status = rpc_try(|| ElfrGetLogInformation(
         hEventLog,
         dwInfoLevel,
         lpBuffer as LPBYTE,
         cbBufSize,
         pcbBytesNeeded,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if !NT_SUCCESS(Status) {
         SetLastError(RtlNtStatusToDosError(Status));
@@ -435,7 +436,7 @@ pub unsafe extern "system" fn ElfNumberOfRecords(
         return STATUS_INVALID_PARAMETER;
     }
 
-    Status = ElfrNumberOfRecords(hEventLog, NumberOfRecords);
+    Status = rpc_try(|| ElfrNumberOfRecords(hEventLog, NumberOfRecords)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -461,7 +462,7 @@ pub unsafe extern "system" fn ElfOldestRecord(hEventLog: HANDLE, OldestRecordNum
         return STATUS_INVALID_PARAMETER;
     }
 
-    Status = ElfrOldestRecord(hEventLog, OldestRecordNumber);
+    Status = rpc_try(|| ElfrOldestRecord(hEventLog, OldestRecordNumber)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -489,7 +490,7 @@ pub unsafe extern "system" fn ElfChangeNotify(hEventLog: HANDLE, hEvent: HANDLE)
     RpcClientId.UniqueProcess = HandleToUlong(ClientId.UniqueProcess);
     RpcClientId.UniqueThread = HandleToUlong(ClientId.UniqueThread);
 
-    Status = ElfrChangeNotify(hEventLog, RpcClientId, HandleToUlong(hEvent));
+    Status = rpc_try(|| ElfrChangeNotify(hEventLog, RpcClientId, HandleToUlong(hEvent))).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -527,13 +528,13 @@ pub unsafe extern "system" fn ElfOpenBackupEventLogA(
 
     *phEventLog = core::ptr::null_mut();
 
-    Status = ElfrOpenBELA(
+    Status = rpc_try(|| ElfrOpenBELA(
         pUNCServerName,
         BackupFileNameA as PRPC_STRING,
         1,
         1,
         phEventLog as *mut *mut core::ffi::c_void,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -609,13 +610,13 @@ pub unsafe extern "system" fn ElfOpenBackupEventLogW(
 
     *phEventLog = core::ptr::null_mut();
 
-    Status = ElfrOpenBELW(
+    Status = rpc_try(|| ElfrOpenBELW(
         pUNCServerName,
         BackupFileNameU as *mut _,
         1,
         1,
         phEventLog as *mut _,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -681,14 +682,14 @@ pub unsafe extern "system" fn ElfOpenEventLogA(
 
     *phEventLog = core::ptr::null_mut();
 
-    Status = ElfrOpenELA(
+    Status = rpc_try(|| ElfrOpenELA(
         pUNCServerName,
         SourceNameA as PRPC_STRING,
         core::ptr::addr_of_mut!(EmptyStringA),
         1,
         1,
         phEventLog as *mut IELF_HANDLE,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -734,14 +735,14 @@ pub unsafe extern "system" fn ElfOpenEventLogW(
 
     *phEventLog = core::ptr::null_mut();
 
-    Status = ElfrOpenELW(
+    Status = rpc_try(|| ElfrOpenELW(
         pUNCServerName,
         SourceNameU as PRPC_UNICODE_STRING,
         core::ptr::addr_of_mut!(EmptyStringU),
         1,
         1,
         phEventLog as *mut *mut core::ffi::c_void,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -795,7 +796,7 @@ pub unsafe extern "system" fn ElfReadEventLogA(
         return STATUS_INVALID_PARAMETER;
     }
 
-    Status = ElfrReadELA(
+    Status = rpc_try(|| ElfrReadELA(
         hEventLog,
         ReadFlags,
         RecordOffset,
@@ -803,7 +804,7 @@ pub unsafe extern "system" fn ElfReadEventLogA(
         Buffer as *mut u8,
         NumberOfBytesRead,
         MinNumberOfBytesNeeded,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -864,7 +865,7 @@ pub unsafe extern "system" fn ElfReadEventLogW(
         return STATUS_INVALID_PARAMETER;
     }
 
-    Status = ElfrReadELW(
+    Status = rpc_try(|| ElfrReadELW(
         hEventLog,
         ReadFlags,
         RecordOffset,
@@ -872,7 +873,7 @@ pub unsafe extern "system" fn ElfReadEventLogW(
         Buffer as *mut u8,
         NumberOfBytesRead,
         MinNumberOfBytesNeeded,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -925,14 +926,14 @@ pub unsafe extern "system" fn ElfRegisterEventSourceA(
 
     *phEventLog = core::ptr::null_mut();
 
-    Status = ElfrRegisterEventSourceA(
+    Status = rpc_try(|| ElfrRegisterEventSourceA(
         pUNCServerName,
         SourceNameA as PRPC_STRING,
         core::ptr::addr_of_mut!(EmptyStringA),
         1,
         1,
         phEventLog as *mut IELF_HANDLE,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1044,7 +1045,7 @@ pub unsafe extern "system" fn ElfReportEventA(
     NtQuerySystemTime(&mut SystemTime);
     RtlTimeToSecondsSince1970(&mut SystemTime, &mut Time);
 
-    Status = ElfrReportEventA(
+    Status = rpc_try(|| ElfrReportEventA(
         hEventLog,
         Time,
         EventType,
@@ -1059,7 +1060,7 @@ pub unsafe extern "system" fn ElfReportEventA(
         Flags,
         RecordNumber,
         TimeWritten,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1292,7 +1293,7 @@ pub unsafe extern "system" fn ElfReportEventAndSourceW(
 ) -> NTSTATUS {
     let Status: NTSTATUS;
 
-    Status = ElfrReportEventAndSourceW(
+    Status = rpc_try(|| ElfrReportEventAndSourceW(
         hEventLog,
         Time,
         EventType,
@@ -1308,7 +1309,7 @@ pub unsafe extern "system" fn ElfReportEventAndSourceW(
         Flags,
         RecordNumber,
         TimeWritten,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1317,7 +1318,7 @@ pub unsafe extern "system" fn ElfReportEventAndSourceW(
 pub unsafe extern "system" fn ElfFlushEventLog(hEventLog: HANDLE) -> NTSTATUS {
     let Status: NTSTATUS;
 
-    Status = ElfrFlushEL(hEventLog);
+    Status = rpc_try(|| ElfrFlushEL(hEventLog)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }

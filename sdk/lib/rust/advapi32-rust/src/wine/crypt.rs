@@ -350,6 +350,31 @@ unsafe fn CRYPT_CreateMachineGuid() {
     }
 }
 
+/// The C's `pointer_from_handle`: a handle is good when it points at the right magic, and
+/// reading it is wrapped in `__TRY/__EXCEPT_PAGE_FAULT`, because callers hand in garbage.
+/// crypt32's root import passes the uninitialized `HCRYPTPROV` that a failed
+/// `CryptAcquireContextW` left behind (no CSP registered yet), and on amd64 the bare read
+/// killed the process instead of failing ERROR_INVALID_PARAMETER.
+unsafe fn handle_has_magic(handle: usize, magic: DWORD) -> bool {
+    if handle == 0 {
+        return false;
+    }
+    let mut found: DWORD = 0;
+    ntdll_sys::seh::try_except(
+        &mut found,
+        |f| *f = core::ptr::read_volatile(handle as *const DWORD),
+        |_, ptrs| {
+            if ntdll_sys::seh::exception_code(ptrs) as u32 == 0xC000_0005 {
+                ntdll_sys::seh::EXCEPTION_EXECUTE_HANDLER
+            } else {
+                ntdll_sys::seh::EXCEPTION_CONTINUE_SEARCH
+            }
+        },
+    )
+    .is_ok()
+        && found == magic
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn CloseEncryptedFileRaw(context: *mut core::ffi::c_void) {
     FIXME!("(%p): stub\n", context);
@@ -598,7 +623,7 @@ pub unsafe extern "system" fn CryptContextAddRef(
         return 0;
     }
 
-    if (*pProv).dwMagic != MAGIC_CRYPTPROV {
+    if !handle_has_magic(pProv as usize, MAGIC_CRYPTPROV) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
@@ -617,7 +642,7 @@ pub unsafe extern "system" fn CryptReleaseContext(hProv: HCRYPTPROV, dwFlags: DW
         return 0;
     }
 
-    if (*pProv).dwMagic != MAGIC_CRYPTPROV {
+    if !handle_has_magic(pProv as usize, MAGIC_CRYPTPROV) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
@@ -643,7 +668,7 @@ pub unsafe extern "system" fn CryptGenRandom(hProv: HCRYPTPROV, dwLen: DWORD, pb
         return 0;
     }
 
-    if (*prov).dwMagic != MAGIC_CRYPTPROV {
+    if !handle_has_magic(prov as usize, MAGIC_CRYPTPROV) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
@@ -674,8 +699,8 @@ pub unsafe extern "system" fn CryptCreateHash(
 
     if prov.is_null()
         || phHash.is_null()
-        || (*prov).dwMagic != MAGIC_CRYPTPROV
-        || (!key.is_null() && (*key).dwMagic != MAGIC_CRYPTKEY)
+        || !handle_has_magic(prov as usize, MAGIC_CRYPTPROV)
+        || (!key.is_null() && !handle_has_magic(key as usize, MAGIC_CRYPTKEY))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -738,8 +763,8 @@ pub unsafe extern "system" fn CryptDecrypt(
         || pbData.is_null()
         || pdwDataLen.is_null()
         || (*key).pProvider.is_null()
-        || (*key).dwMagic != MAGIC_CRYPTKEY
-        || (*(*key).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(key as usize, MAGIC_CRYPTKEY)
+        || !handle_has_magic((*key).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -774,8 +799,8 @@ pub unsafe extern "system" fn CryptDeriveKey(
         return 0;
     }
     if phKey.is_null()
-        || (*prov).dwMagic != MAGIC_CRYPTPROV
-        || (*hash).dwMagic != MAGIC_CRYPTHASH
+        || !handle_has_magic(prov as usize, MAGIC_CRYPTPROV)
+        || !handle_has_magic(hash as usize, MAGIC_CRYPTHASH)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -819,8 +844,8 @@ pub unsafe extern "system" fn CryptDestroyHash(hHash: HCRYPTHASH) -> BOOL {
     }
 
     if (*hash).pProvider.is_null()
-        || (*hash).dwMagic != MAGIC_CRYPTHASH
-        || (*(*hash).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(hash as usize, MAGIC_CRYPTHASH)
+        || !handle_has_magic((*hash).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -845,8 +870,8 @@ pub unsafe extern "system" fn CryptDestroyKey(hKey: HCRYPTKEY) -> BOOL {
     }
 
     if (*key).pProvider.is_null()
-        || (*key).dwMagic != MAGIC_CRYPTKEY
-        || (*(*key).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(key as usize, MAGIC_CRYPTKEY)
+        || !handle_has_magic((*key).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -875,8 +900,8 @@ pub unsafe extern "system" fn CryptDuplicateHash(
         || !pdwReserved.is_null()
         || phHash.is_null()
         || (*orghash).pProvider.is_null()
-        || (*orghash).dwMagic != MAGIC_CRYPTHASH
-        || (*(*orghash).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(orghash as usize, MAGIC_CRYPTHASH)
+        || !handle_has_magic((*orghash).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -930,8 +955,8 @@ pub unsafe extern "system" fn CryptDuplicateKey(
         || !pdwReserved.is_null()
         || phKey.is_null()
         || (*orgkey).pProvider.is_null()
-        || (*orgkey).dwMagic != MAGIC_CRYPTKEY
-        || (*(*orgkey).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(orgkey as usize, MAGIC_CRYPTKEY)
+        || !handle_has_magic((*orgkey).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -994,8 +1019,8 @@ pub unsafe extern "system" fn CryptEncrypt(
     if key.is_null()
         || pdwDataLen.is_null()
         || (*key).pProvider.is_null()
-        || (*key).dwMagic != MAGIC_CRYPTKEY
-        || (*(*key).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(key as usize, MAGIC_CRYPTKEY)
+        || !handle_has_magic((*key).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -1420,8 +1445,8 @@ pub unsafe extern "system" fn CryptExportKey(
     if key.is_null()
         || pdwDataLen.is_null()
         || (*key).pProvider.is_null()
-        || (*key).dwMagic != MAGIC_CRYPTKEY
-        || (*(*key).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(key as usize, MAGIC_CRYPTKEY)
+        || !handle_has_magic((*key).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -1457,7 +1482,7 @@ pub unsafe extern "system" fn CryptGenKey(
         phKey,
     );
 
-    if phKey.is_null() || prov.is_null() || (*prov).dwMagic != MAGIC_CRYPTPROV {
+    if phKey.is_null() || prov.is_null() || !handle_has_magic(prov as usize, MAGIC_CRYPTPROV) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
@@ -1627,8 +1652,8 @@ pub unsafe extern "system" fn CryptGetHashParam(
     if hash.is_null()
         || pdwDataLen.is_null()
         || (*hash).pProvider.is_null()
-        || (*hash).dwMagic != MAGIC_CRYPTHASH
-        || (*(*hash).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(hash as usize, MAGIC_CRYPTHASH)
+        || !handle_has_magic((*hash).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -1658,8 +1683,8 @@ pub unsafe extern "system" fn CryptGetKeyParam(
     if key.is_null()
         || pdwDataLen.is_null()
         || (*key).pProvider.is_null()
-        || (*key).dwMagic != MAGIC_CRYPTKEY
-        || (*(*key).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(key as usize, MAGIC_CRYPTKEY)
+        || !handle_has_magic((*key).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -1686,7 +1711,7 @@ pub unsafe extern "system" fn CryptGetProvParam(
 ) -> BOOL {
     let prov = hProv as PCRYPTPROV;
 
-    if prov.is_null() || (*prov).dwMagic != MAGIC_CRYPTPROV {
+    if prov.is_null() || !handle_has_magic(prov as usize, MAGIC_CRYPTPROV) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
@@ -1713,7 +1738,7 @@ pub unsafe extern "system" fn CryptGetUserKey(
         SetLastError(ERROR_INVALID_HANDLE);
         return 0;
     }
-    if phUserKey.is_null() || (*prov).dwMagic != MAGIC_CRYPTPROV {
+    if phUserKey.is_null() || !handle_has_magic(prov as usize, MAGIC_CRYPTPROV) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
@@ -1755,8 +1780,8 @@ pub unsafe extern "system" fn CryptHashData(
         return 0;
     }
     if (*hash).pProvider.is_null()
-        || (*hash).dwMagic != MAGIC_CRYPTHASH
-        || (*(*hash).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(hash as usize, MAGIC_CRYPTHASH)
+        || !handle_has_magic((*hash).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -1790,9 +1815,9 @@ pub unsafe extern "system" fn CryptHashSessionKey(
     }
 
     if (*hash).pProvider.is_null()
-        || (*hash).dwMagic != MAGIC_CRYPTHASH
-        || (*(*hash).pProvider).dwMagic != MAGIC_CRYPTPROV
-        || (*key).dwMagic != MAGIC_CRYPTKEY
+        || !handle_has_magic(hash as usize, MAGIC_CRYPTHASH)
+        || !handle_has_magic((*hash).pProvider as usize, MAGIC_CRYPTPROV)
+        || !handle_has_magic(key as usize, MAGIC_CRYPTKEY)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -1833,8 +1858,8 @@ pub unsafe extern "system" fn CryptImportKey(
         || pbData.is_null()
         || dwDataLen == 0
         || phKey.is_null()
-        || (*prov).dwMagic != MAGIC_CRYPTPROV
-        || (!pubkey.is_null() && (*pubkey).dwMagic != MAGIC_CRYPTKEY)
+        || !handle_has_magic(prov as usize, MAGIC_CRYPTPROV)
+        || (!pubkey.is_null() && !handle_has_magic(pubkey as usize, MAGIC_CRYPTKEY))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -1894,8 +1919,8 @@ pub unsafe extern "system" fn CryptSignHashW(
     }
     if pdwSigLen.is_null()
         || (*hash).pProvider.is_null()
-        || (*hash).dwMagic != MAGIC_CRYPTHASH
-        || (*(*hash).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(hash as usize, MAGIC_CRYPTHASH)
+        || !handle_has_magic((*hash).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -1944,8 +1969,8 @@ pub unsafe extern "system" fn CryptSetHashParam(
     if hash.is_null()
         || pbData.is_null()
         || (*hash).pProvider.is_null()
-        || (*hash).dwMagic != MAGIC_CRYPTHASH
-        || (*(*hash).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(hash as usize, MAGIC_CRYPTHASH)
+        || !handle_has_magic((*hash).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -1981,8 +2006,8 @@ pub unsafe extern "system" fn CryptSetKeyParam(
     if key.is_null()
         || pbData.is_null()
         || (*key).pProvider.is_null()
-        || (*key).dwMagic != MAGIC_CRYPTKEY
-        || (*(*key).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic(key as usize, MAGIC_CRYPTKEY)
+        || !handle_has_magic((*key).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -2147,7 +2172,7 @@ pub unsafe extern "system" fn CryptSetProvParam(
         SetLastError(ERROR_INVALID_HANDLE);
         return 0;
     }
-    if (*prov).dwMagic != MAGIC_CRYPTPROV {
+    if !handle_has_magic(prov as usize, MAGIC_CRYPTPROV) {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
@@ -2194,12 +2219,12 @@ pub unsafe extern "system" fn CryptVerifySignatureW(
 
     if hash.is_null()
         || key.is_null()
-        || (*key).dwMagic != MAGIC_CRYPTKEY
-        || (*hash).dwMagic != MAGIC_CRYPTHASH
+        || !handle_has_magic(key as usize, MAGIC_CRYPTKEY)
+        || !handle_has_magic(hash as usize, MAGIC_CRYPTHASH)
         || (*hash).pProvider.is_null()
-        || (*(*hash).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic((*hash).pProvider as usize, MAGIC_CRYPTPROV)
         || (*key).pProvider.is_null()
-        || (*(*key).pProvider).dwMagic != MAGIC_CRYPTPROV
+        || !handle_has_magic((*key).pProvider as usize, MAGIC_CRYPTPROV)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;

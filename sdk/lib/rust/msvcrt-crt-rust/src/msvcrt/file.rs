@@ -50,7 +50,7 @@ use crate::{_wcsnicmp, memcmp, towlower, towupper, wcschr, wcslen, wcsncmp};
 
 /// A `L"..."` wide-string constant, encoded at compile time.
 ///
-/// The five call sites below used to spell these as `b"ccs\0".as_ptr() as *const wchar_t`
+/// The five call sites below used to spell these as `win32macros_rust::wide_bytes!(b"ccs\0") as *const wchar_t`
 /// — a byte string reinterpreted as UTF-16. `b"TMP\0"` is the four BYTES `54 4D 50 00`,
 /// which read as `wchar_t` is `0x4D54, 0x0050, <whatever follows in rodata>`: not "TMP",
 /// not NUL-terminated, and never equal to anything it was compared against. It compiles

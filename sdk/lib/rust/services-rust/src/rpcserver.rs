@@ -732,7 +732,7 @@ pub unsafe extern "C" fn ScmCanonDriverImagePath(dwStartType: DWORD, lpServiceNa
 
     ServiceNameLen = wcslen(lpServiceName);
 
-    if ServiceNameLen > 12 && _wcsnicmp(b"\\\0S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0\\\0\0\0".as_ptr() as *const wchar_t, lpServiceName, 12) == 0 {
+    if ServiceNameLen > 12 && _wcsnicmp(win32macros_rust::wide_bytes!(b"\\\0S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0\\\0\0\0") as *const wchar_t, lpServiceName, 12) == 0 {
         *lpCanonName = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (ServiceNameLen + 1) * core::mem::size_of::<wchar_t>()) as *mut wchar_t;
 
         if (*lpCanonName).is_null() {
@@ -748,7 +748,7 @@ pub unsafe extern "C" fn ScmCanonDriverImagePath(dwStartType: DWORD, lpServiceNa
         return NO_ERROR;
     }
 
-    if ServiceNameLen > 13 && _wcsnicmp(b"%\0S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0%\0\\\0\0\0".as_ptr() as *const wchar_t, lpServiceName, 13) == 0 {
+    if ServiceNameLen > 13 && _wcsnicmp(win32macros_rust::wide_bytes!(b"%\0S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0%\0\\\0\0\0") as *const wchar_t, lpServiceName, 13) == 0 {
         *lpCanonName = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (ServiceNameLen + 1) * core::mem::size_of::<wchar_t>()) as *mut wchar_t;
 
         if (*lpCanonName).is_null() {
@@ -756,7 +756,7 @@ pub unsafe extern "C" fn ScmCanonDriverImagePath(dwStartType: DWORD, lpServiceNa
         }
 
         if dwStartType == SERVICE_BOOT_START {
-            wcscpy(*lpCanonName, b"\\\0S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0\\\0\0\0".as_ptr() as *const wchar_t);
+            wcscpy(*lpCanonName, win32macros_rust::wide_bytes!(b"\\\0S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0\\\0\0\0") as *const wchar_t);
         }
 
         wcscat(*lpCanonName, lpServiceName.add(13));
@@ -1895,7 +1895,7 @@ pub unsafe extern "system" fn RChangeServiceConfigW(
         if !lpDisplayName.is_null() && *lpDisplayName != 0 {
             RegSetValueExW(
                 hServiceKey,
-                b"D\0i\0s\0p\0l\0a\0y\0N\0a\0m\0e\0\0\0".as_ptr() as *const wchar_t,
+                win32macros_rust::wide_bytes!(b"D\0i\0s\0p\0l\0a\0y\0N\0a\0m\0e\0\0\0") as *const wchar_t,
                 0,
                 REG_SZ,
                 lpDisplayName as *const u8,
@@ -1923,7 +1923,7 @@ pub unsafe extern "system" fn RChangeServiceConfigW(
         if dwServiceType != SERVICE_NO_CHANGE {
             dwError = RegSetValueExW(
                 hServiceKey,
-                b"T\0y\0p\0e\0\0\0".as_ptr() as *const wchar_t,
+                win32macros_rust::wide_bytes!(b"T\0y\0p\0e\0\0\0") as *const wchar_t,
                 0,
                 REG_DWORD,
                 &dwServiceType as *const DWORD as *const u8,
@@ -1939,7 +1939,7 @@ pub unsafe extern "system" fn RChangeServiceConfigW(
         if dwStartType != SERVICE_NO_CHANGE {
             dwError = RegSetValueExW(
                 hServiceKey,
-                b"S\0t\0a\0r\0t\0\0\0".as_ptr() as *const wchar_t,
+                win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0\0\0") as *const wchar_t,
                 0,
                 REG_DWORD,
                 &dwStartType as *const DWORD as *const u8,
@@ -1955,7 +1955,7 @@ pub unsafe extern "system" fn RChangeServiceConfigW(
         if dwErrorControl != SERVICE_NO_CHANGE {
             dwError = RegSetValueExW(
                 hServiceKey,
-                b"E\0r\0r\0o\0r\0C\0o\0n\0t\0r\0o\0l\0\0\0".as_ptr() as *const wchar_t,
+                win32macros_rust::wide_bytes!(b"E\0r\0r\0o\0r\0C\0o\0n\0t\0r\0o\0l\0\0\0") as *const wchar_t,
                 0,
                 REG_DWORD,
                 &dwErrorControl as *const DWORD as *const u8,
@@ -1985,7 +1985,7 @@ pub unsafe extern "system" fn RChangeServiceConfigW(
 
             dwError = RegSetValueExW(
                 hServiceKey,
-                b"I\0m\0a\0g\0e\0P\0a\0t\0h\0\0\0".as_ptr() as *const wchar_t,
+                win32macros_rust::wide_bytes!(b"I\0m\0a\0g\0e\0P\0a\0t\0h\0\0\0") as *const wchar_t,
                 0,
                 REG_EXPAND_SZ,
                 lpImagePathW as *const u8,
@@ -2004,7 +2004,7 @@ pub unsafe extern "system" fn RChangeServiceConfigW(
         if !lpLoadOrderGroup.is_null() && *lpLoadOrderGroup != 0 {
             dwError = RegSetValueExW(
                 hServiceKey,
-                b"G\0r\0o\0u\0p\0\0\0".as_ptr() as *const wchar_t,
+                win32macros_rust::wide_bytes!(b"G\0r\0o\0u\0p\0\0\0") as *const wchar_t,
                 0,
                 REG_SZ,
                 lpLoadOrderGroup as *const u8,
@@ -2028,7 +2028,7 @@ pub unsafe extern "system" fn RChangeServiceConfigW(
 
             dwError = RegSetValueExW(
                 hServiceKey,
-                b"T\0a\0g\0\0\0".as_ptr() as *const wchar_t,
+                win32macros_rust::wide_bytes!(b"T\0a\0g\0\0\0") as *const wchar_t,
                 0,
                 REG_DWORD,
                 core::ptr::addr_of!((*lpService).dwTag) as *const u8,
@@ -2052,7 +2052,7 @@ pub unsafe extern "system" fn RChangeServiceConfigW(
             if !lpServiceStartName.is_null() && *lpServiceStartName != 0 {
                 dwError = RegSetValueExW(
                     hServiceKey,
-                    b"O\0b\0j\0e\0c\0t\0N\0a\0m\0e\0\0\0".as_ptr() as *const wchar_t,
+                    win32macros_rust::wide_bytes!(b"O\0b\0j\0e\0c\0t\0N\0a\0m\0e\0\0\0") as *const wchar_t,
                     0,
                     REG_SZ,
                     lpServiceStartName as *const u8,

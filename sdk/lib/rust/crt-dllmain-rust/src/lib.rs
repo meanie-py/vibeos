@@ -1,9 +1,9 @@
-//! Default DllMain (startup/dllmain.c) + DllEntryPoint (startup/dllentry.c),
-//! named `vibeos_default_*`: crt-startup-rust's crtdll object maps `DllMain` /
-//! `DllEntryPoint` onto them with lld `-alternatename`, so they are used only
-//! when the consumer does not define them (never a duplicate symbol). No panic
-//! handler / eh_personality here — this links only alongside crt-startup-rust +
-//! the consumer's staticlib, which provide them.
+//! Default DllMain (startup/dllmain.c), named `vibeos_default_DllMain`:
+//! crt-startup-rust's crtdll object maps `DllMain` onto it with lld
+//! `-alternatename`, so it is used only when the consumer defines no DllMain
+//! (never a duplicate symbol). The default DllEntryPoint is in crt-startup-rust.
+//! No panic handler / eh_personality here — this links only alongside
+//! crt-startup-rust + the consumer's staticlib, which provide them.
 #![no_std]
 #![allow(non_snake_case)]
 
@@ -36,14 +36,9 @@ pub unsafe extern "system" fn vibeos_default_DllMain(
 }
 
 // startup/dllentry.c
-#[no_mangle]
-pub unsafe extern "system" fn vibeos_default_DllEntryPoint(
-    _hDllHandle: HANDLE,
-    _dwReason: DWORD,
-    _lpreserved: LPVOID,
-) -> WINBOOL {
-    TRUE
-}
+// The default DllEntryPoint is in crt-startup-rust (crtdll.rs), next to its caller: here it
+// dragged this object -- and so this default DllMain -- into every DLL, shadowing a DllMain that
+// lives in an archive.
 
 // Required to compile this staticlib standalone; the dup vs crt-startup-rust
 // (and the consumer staticlib) is absorbed by --allow-multiple-definition.

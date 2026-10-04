@@ -28,6 +28,24 @@
 
 ULONG __cdecl DbgPrint(const char *Format, ...);
 
+#define SAY(...) DbgPrint("[APITEST-SWEEP] " __VA_ARGS__)
+#include "../stackdump.h"
+
+/* A TIMEOUT used to arrive with nothing but its name: errorinfo and tmarshal hung for
+ * weeks with no clue where. Dump every thread of the child before killing it; feed the
+ * addresses to `vibeos-cli sym`. */
+static void dump_child_threads(DWORD pid)
+{
+    THREADENTRY32 te = { sizeof te };
+    HANDLE s = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (s == INVALID_HANDLE_VALUE)
+        return;
+    for (BOOL k = Thread32First(s, &te); k; k = Thread32Next(s, &te))
+        if (te.th32OwnerProcessID == pid)
+            dump_thread(pid, te.th32ThreadID);
+    CloseHandle(s);
+}
+
 #define PER_SUBTEST_TIMEOUT_MS (120u * 1000u)
 #define ENUMERATE_TIMEOUT_MS   (60u * 1000u)
 #define PIPE_BUF_BYTES       4096
@@ -291,6 +309,7 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
     wait = WaitForSingleObject(pi.hProcess, timeout_ms);
     if (wait == WAIT_TIMEOUT)
     {
+        dump_child_threads(pi.dwProcessId);
         TerminateProcess(pi.hProcess, 0xDEAD);
         WaitForSingleObject(pi.hProcess, 10000);
     }

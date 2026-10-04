@@ -272,8 +272,7 @@ pub unsafe extern "system" fn DiskAddDevice(
             );
         } else {
             queryTable[0].Flags = (RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK) as ULONG;
-            queryTable[0].Name = b"R\0o\0o\0t\0P\0a\0r\0t\0i\0t\0i\0o\0n\0M\0o\0u\0n\0t\0a\0b\0l\0e\0\0\0"
-                .as_ptr() as *const u16;
+            queryTable[0].Name = win32macros_rust::wide_bytes!(b"R\0o\0o\0t\0P\0a\0r\0t\0i\0t\0i\0o\0n\0M\0o\0u\0n\0t\0a\0b\0l\0e\0\0\0") as *const u16;
             queryTable[0].EntryContext = &raw mut rootPartitionMountable as *mut core::ffi::c_void;
             queryTable[0].DefaultType = (REG_DWORD << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT | REG_NONE) as ULONG;
 

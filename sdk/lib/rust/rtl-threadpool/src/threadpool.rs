@@ -394,7 +394,7 @@ unsafe extern "system" fn timerqueue_thread_proc(param: PVOID) -> ULONG {
     let mut timeout: LARGE_INTEGER = core::mem::zeroed();
     let mut ptr: *mut list;
 
-    set_thread_name(b"w\0i\0n\0e\0_\0t\0h\0r\0e\0a\0d\0p\0o\0o\0l\0_\0t\0i\0m\0e\0r\0q\0u\0e\0u\0e\0\0\0".as_ptr() as *const WCHAR);
+    set_thread_name(win32macros_rust::wide_bytes!(b"w\0i\0n\0e\0_\0t\0h\0r\0e\0a\0d\0p\0o\0o\0l\0_\0t\0i\0m\0e\0r\0q\0u\0e\0u\0e\0\0\0") as *const WCHAR);
 
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(timerqueue.cs));
     loop {
