@@ -167,7 +167,14 @@ endif()
 # This allows to have CMake test the compiler without linking
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
-set(CMAKE_C_CREATE_STATIC_LIBRARY "<CMAKE_AR> crT <TARGET> <LINK_FLAGS> <OBJECTS>")
+# Remove the archive before writing it. `ar crT` only adds or replaces members, so
+# without the rm an object whose source left the target (a cohab flip, a moved
+# file) stayed in the archive of every long-lived build dir and could still win
+# the link: amd64/i386 l3codeca.acm linked a stale flat-layout libmpg123 over the
+# current one, found by tools/link_guard.py. A clean build never showed it.
+set(CMAKE_C_CREATE_STATIC_LIBRARY
+    "\"${CMAKE_COMMAND}\" -E rm -f <TARGET>"
+    "<CMAKE_AR> crT <TARGET> <LINK_FLAGS> <OBJECTS>")
 set(CMAKE_CXX_CREATE_STATIC_LIBRARY ${CMAKE_C_CREATE_STATIC_LIBRARY})
 set(CMAKE_ASM_CREATE_STATIC_LIBRARY ${CMAKE_C_CREATE_STATIC_LIBRARY})
 

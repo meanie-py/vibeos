@@ -18,8 +18,28 @@ extern "C" {
     fn free(ptr: *mut c_void);
 }
 
-// resolved at link to the consumer's DllMain/DllEntryPoint, else the
-// crt-dllmain-rust defaults.
+// Resolved at link to the consumer's DllMain/DllEntryPoint, else the
+// crt-dllmain-rust defaults. "Else" is an lld `-alternatename` (used only when
+// the name is still undefined at the end of the link), not link order: the
+// defaults used to be plain `DllMain`/`DllEntryPoint` definitions, and a module
+// defining only DllMain pulled the crt-dllmain object in for DllEntryPoint and
+// got two DllMains, kept by order (mlang). This object is always linked (it is
+// the DLL entry point), so its directive always applies.
+#[cfg(target_arch = "x86")]
+core::arch::global_asm!(
+    ".section .drectve,\"yni\"",
+    ".ascii \" -alternatename:_DllMain@12=_vibeos_default_DllMain@12\"",
+    ".ascii \" -alternatename:_DllEntryPoint@12=_vibeos_default_DllEntryPoint@12 \"",
+    ".text",
+);
+#[cfg(not(target_arch = "x86"))]
+core::arch::global_asm!(
+    ".section .drectve,\"yni\"",
+    ".ascii \" -alternatename:DllMain=vibeos_default_DllMain\"",
+    ".ascii \" -alternatename:DllEntryPoint=vibeos_default_DllEntryPoint \"",
+    ".text",
+);
+
 extern "system" {
     fn DllMain(h: HANDLE, reason: DWORD, lpreserved: LPVOID) -> WINBOOL;
     fn DllEntryPoint(h: HANDLE, reason: DWORD, lpreserved: LPVOID) -> WINBOOL;

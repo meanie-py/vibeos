@@ -1592,45 +1592,9 @@ pub static nameprep_char_type: [u16; 1] = [0];
 #[no_mangle]
 pub static nameprep_mapping: [WCHAR; 1] = [0];
 
-// ===========================================================================
-// LCIDToLocaleName — faithful Rust port of kernel32_vista/LCIDToLocaleName.c.
-// Vista-gated (kernel32.spec: -version=0x600+), so not in this build's
-// kernel32.def and unreachable via the export table; its only callers
-// (GetSystemDefaultLocaleName / GetUserDefaultLocaleName in locale.rs) are
-// likewise vista-gated and unexported. Defined in Rust so the C vista object —
-// and its RtlLcidToLocaleName reference (an ntdll export only the ntdll_vista
-// importlib carries, which the kernel32 module does not link) — stays out of the
-// module link. RtlLcidToLocaleName is reached via a raw-dylib ntdll import so
-// the call binds to the real ntdll.dll export at load time (no static importlib).
-const LOCALE_NAME_MAX_LENGTH_K32: usize = 85;
-const LOCALE_ALLOW_NEUTRAL_NAMES_K32: DWORD = 0x08000000;
-const RTL_LOCALE_ALLOW_NEUTRAL_NAMES_K32: ULONG = 0x00000002;
-const ERROR_INVALID_PARAMETER_K32: DWORD = 0x57;
-
-extern "system" {
-    fn SetLastError(dwErrCode: DWORD);
-}
-
-// LCIDToLocaleName: ReactOS-faithful STUB. The real conversion needs ntdll's
-// RtlLcidToLocaleName, which is -version=0x600+ in ntdll.spec and NOT exported by
-// this build's ntdll.dll — so it cannot be imported (raw-dylib or importlib) without
-// an unresolvable entrypoint at kernel32 load (BUGCHECK 0x4C / STATUS_ENTRYPOINT_
-// NOT_FOUND). In ReactOS the only callers (GetSystemDefaultLocaleName /
-// GetUserDefaultLocaleName / ResolveLocaleName) live under `#ifndef __REACTOS__`
-// and are themselves shipped as failing stubs, so returning failure here matches
-// the C behavior exactly and keeps the kernel32 module free of vista-gated imports.
-const ERROR_CALL_NOT_IMPLEMENTED_K32: DWORD = 120;
-
-#[no_mangle]
-pub unsafe extern "system" fn LCIDToLocaleName(
-    _Locale: LCID,
-    _lpName: LPWSTR,
-    _cchName: ::core::ffi::c_int,
-    _dwFlags: DWORD,
-) -> ::core::ffi::c_int {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED_K32);
-    0
-}
+// LCIDToLocaleName is kernel32-vista-rust's (locale.rs), which kernel32.dll also
+// links. A failing stub here was a duplicate symbol that only lost by link order;
+// tools/link_guard.py now refuses those.
 
 // ===========================================================================
 // NLS substrate additions for nls.rs (ReactOS nls.c) + lcformat.rs (Wine

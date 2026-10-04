@@ -162,7 +162,8 @@ fn main() {
     // cnt-rust-lib features mirror sdk/lib/crt/libcntpr.cmake: i386 no `float`,
     // amd64 `float`. build_rust_crate's cnt-rust-lib special case supplies the
     // per-arch RUSTFLAGS. Same path ntdll-cargo uses. (rosload is i386/amd64.)
-    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+    // `freeldr`: the loader's own iswctype (freeldr-rust) is the only one.
+    let cnt_feats: &[&str] = if arch == "x86" { &["freeldr"] } else { &["float", "freeldr"] };
 
     let mut linker = Linker::new(target_json)
         // freeldr-rust body built DIRECTLY by reactos-link (was the cmake

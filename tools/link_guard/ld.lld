@@ -1,0 +1,3 @@
+#!/bin/sh
+# clang --ld-path target: every PE link reaches lld through tools/link_guard.py.
+exec python3 "$(dirname "$0")/../link_guard.py" "$@"
