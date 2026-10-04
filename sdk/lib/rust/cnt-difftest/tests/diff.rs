@@ -3236,8 +3236,8 @@ extern "C" {
     fn ref_frexp(x: f64, e: *mut i32) -> f64;
     fn ref_ldiv(num: i32, denom: i32) -> RDivT;
     fn ref_fpclass(d: f64) -> i32;
-    // The Bessel wrappers. Both sides call the SAME vendored FDLIBM
-    // `__ieee754_*` underneath (build.rs), so a divergence here is in the
+    // The Bessel wrappers. Both sides call the SAME `libm` numerics
+    // underneath (build.rs), so a divergence here is in the
     // 102 lines of errno/_fpclass shell that are ours.
     fn ref__j0(num: f64) -> f64;
     fn ref__j1(num: f64) -> f64;
@@ -3447,7 +3447,7 @@ fn diff_math_lastmile() {
 
 /// `_j0` `_j1` `_jn` `_y0` `_y1` `_yn` — `math/{j0_y0,j1_y1,jn_yn}.c`.
 ///
-/// The numerics are vendored Sun FDLIBM and identical on both sides by
+/// The numerics are `libm`'s and identical on both sides by
 /// construction, so what these rows actually grade is the shell: WHICH
 /// arguments set `EDOM`, and the `-inf -> sqrt(-1)` epilogue. Both are easy
 /// to get subtly wrong and invisible to a value-only comparison, so errno is
@@ -3460,6 +3460,21 @@ fn diff_math_lastmile() {
 /// sets EDOM anyway and the prologue's negative-zero test cannot be observed
 /// through errno at all. So these rows pin `_y0`/`_y1`'s NN and ND arms but
 /// are structurally unable to pin NZ. Don't read a green run as covering it.
+// The numerics under the C wrappers: the `libm` functions cnt-rust's wrappers call (see
+// build.rs), so `diff_math_bessel` grades only the shell.
+#[no_mangle]
+extern "C" fn __ieee754_j0(x: f64) -> f64 { libm::j0(x) }
+#[no_mangle]
+extern "C" fn __ieee754_j1(x: f64) -> f64 { libm::j1(x) }
+#[no_mangle]
+extern "C" fn __ieee754_jn(n: i32, x: f64) -> f64 { libm::jn(n, x) }
+#[no_mangle]
+extern "C" fn __ieee754_y0(x: f64) -> f64 { libm::y0(x) }
+#[no_mangle]
+extern "C" fn __ieee754_y1(x: f64) -> f64 { libm::y1(x) }
+#[no_mangle]
+extern "C" fn __ieee754_yn(n: i32, x: f64) -> f64 { libm::yn(n, x) }
+
 fn diff_math_bessel() {
     let mut rng = Rng(0xbe55_e100_d00d_f00d);
 
@@ -3769,6 +3784,40 @@ fn diff_math_nextafterf() {
     }
 }
 
+/// The exports over `libm`: sin/cos/tan, asin/acos/atan, atan2, the hyperbolics and hypot
+/// return exactly `libm`'s value (the AMD ports they replaced keep their rows against the
+/// C above, as `*_amd`). No error hook is linked here (`crt-math-errors` is off), so this
+/// pins the values; the guest's matherrs payload pins the reports.
+fn diff_math_libm_exports() {
+    let mut rng = Rng(0x11b3_c0de_5eed_0001);
+    let mut xs: Vec<f64> = f64_edge_bits().into_iter().map(f64::from_bits).collect();
+    for _ in 0..200_000 {
+        xs.push(f64::from_bits(rng.next()));
+        xs.push((rng.next() as i64 as f64) / 1e15);
+    }
+    for &x in &xs {
+        let y = f64::from_bits(rng.next());
+        let b = x.to_bits();
+        macro_rules! one { ($($f:ident),*) => {$(
+            assert!(same_f64(cabi::$f(x), libm::$f(x)), concat!(stringify!($f), " {:#018x}"), b);
+        )*} }
+        one!(sin, cos, tan, asin, acos, atan, sinh, cosh, tanh);
+        assert!(same_f64(cabi::atan2(y, x), libm::atan2(y, x)), "atan2 {b:#018x}");
+        assert!(same_f64(cabi::_hypot(y, x), libm::hypot(y, x)), "_hypot {b:#018x}");
+        let (xf, yf) = (x as f32, y as f32);
+        let bf = xf.to_bits();
+        macro_rules! onef { ($($f:ident),*) => {$(
+            assert!(cabi::$f(xf).to_bits() == libm::$f(xf).to_bits() || (cabi::$f(xf).is_nan() && libm::$f(xf).is_nan()),
+                concat!(stringify!($f), " {:#010x}"), bf);
+        )*} }
+        onef!(sinf, cosf, tanf, asinf, acosf, atanf, sinhf, coshf, tanhf);
+        let (a, e) = (cabi::atan2f(yf, xf), libm::atan2f(yf, xf));
+        assert!(a.to_bits() == e.to_bits() || (a.is_nan() && e.is_nan()), "atan2f {bf:#010x}");
+        let (a, e) = (cabi::_hypotf(yf, xf), libm::hypotf(yf, xf));
+        assert!(a.to_bits() == e.to_bits() || (a.is_nan() && e.is_nan()), "_hypotf {bf:#010x}");
+    }
+}
+
 fn diff_math_sincos() {
     // cnt-rust ports AMD's libm_sse2/{sin,cos}.asm; the oracle is libm, to 1
     // ULP. Bit-exactness is not available (different algorithms) and the old
@@ -3787,10 +3836,10 @@ fn diff_math_sincos() {
     // in kind rather than in degree, so they are asserted EXACTLY even though
     // the sweep below is a tolerance: sin(±0) must carry the sign of zero, and
     // cos(0) must be exactly 1.0.
-    assert_eq!(cabi::sin(0.0).to_bits(), 0u64, "sin(+0.0) must be +0.0");
-    assert_eq!(cabi::sin(-0.0).to_bits(), 1u64 << 63, "sin(-0.0) must be -0.0");
-    assert_eq!(cabi::cos(0.0), 1.0, "cos(0) must be exactly 1");
-    assert_eq!(cabi::cos(-0.0), 1.0, "cos(-0) must be exactly 1");
+    assert_eq!(cabi::sin_amd(0.0).to_bits(), 0u64, "sin(+0.0) must be +0.0");
+    assert_eq!(cabi::sin_amd(-0.0).to_bits(), 1u64 << 63, "sin(-0.0) must be -0.0");
+    assert_eq!(cabi::cos_amd(0.0), 1.0, "cos(0) must be exactly 1");
+    assert_eq!(cabi::cos_amd(-0.0), 1.0, "cos(-0) must be exactly 1");
 
     let edges = [
         0.0f64, -0.0, 1.0, -1.0, 0.5, -0.5, 3.0, -3.0, 100.0, -100.0, 1000.0, -1000.0,
@@ -3805,7 +3854,7 @@ fn diff_math_sincos() {
         1e10, -1e10, 1e18, 1e17, 1.234_567_89e17, f64::MAX,
     ];
     for &x in &edges {
-        let (s, c) = (cabi::sin(x), cabi::cos(x));
+        let (s, c) = (cabi::sin_amd(x), cabi::cos_amd(x));
         assert!(near_ulps(s, unsafe { ref_sin(x) }, BOUND), "sin {x:e}");
         assert!(near_ulps(c, unsafe { ref_cos(x) }, BOUND), "cos {x:e}");
         // A trig function that leaves [-1, 1] is the failure that made this
@@ -3829,7 +3878,7 @@ fn diff_math_sincos() {
             let u = rng.next();
             let t = (u >> 11) as f64 / (1u64 << 53) as f64;
             for x in [lo + t * (hi - lo), -(lo + t * (hi - lo))] {
-                let (s, c) = (cabi::sin(x), cabi::cos(x));
+                let (s, c) = (cabi::sin_amd(x), cabi::cos_amd(x));
                 assert!(near_ulps(s, unsafe { ref_sin(x) }, BOUND), "sin {x:e}");
                 assert!(near_ulps(c, unsafe { ref_cos(x) }, BOUND), "cos {x:e}");
                 assert!(s.abs() <= 1.0 && c.abs() <= 1.0, "sin/cos out of range at {x:e}");
@@ -4094,7 +4143,7 @@ fn diff_math_tan() {
     let mut rng = Rng(0x7a17_c05c);
     for &b in &f64_edge_bits() {
         let x = f64::from_bits(b);
-        assert!(same_f64(cabi::tan(x), unsafe { ref_tan(x) }), "tan {b:#018x}");
+        assert!(same_f64(cabi::tan_amd(x), unsafe { ref_tan(x) }), "tan {b:#018x}");
     }
     let edges = [
         0.0f64, -0.0, 1.0, -1.0, 0.5, -0.5, 3.0, -3.0, 100.0, -100.0, 1000.0, -1000.0,
@@ -4106,19 +4155,19 @@ fn diff_math_tan() {
         5.0e5, -5.0e5, 4.999_999e5, 5.000_001e5, 1.0e300, -1.0e300,
     ];
     for &x in &edges {
-        assert!(same_f64(cabi::tan(x), unsafe { ref_tan(x) }), "tan {x:e}");
+        assert!(same_f64(cabi::tan_amd(x), unsafe { ref_tan(x) }), "tan {x:e}");
     }
     // dense over the hand-reduction range, then the whole f64 line (which is
     // overwhelmingly the Payne-Hanek path).
     for _ in 0..200_000 {
         let u = rng.next();
         let x = (u as f64) / (u64::MAX as f64) * 4000.0 - 2000.0;
-        assert!(same_f64(cabi::tan(x), unsafe { ref_tan(x) }), "tan {x}");
+        assert!(same_f64(cabi::tan_amd(x), unsafe { ref_tan(x) }), "tan {x}");
     }
     for _ in 0..200_000 {
         let b = rng.next();
         let x = f64::from_bits(b);
-        assert!(same_f64(cabi::tan(x), unsafe { ref_tan(x) }), "tan {b:#018x}");
+        assert!(same_f64(cabi::tan_amd(x), unsafe { ref_tan(x) }), "tan {b:#018x}");
     }
 }
 
@@ -4289,7 +4338,7 @@ fn diff_math_atan() {
     }
     for &b in &b64 {
         let x = f64::from_bits(b);
-        let got = cabi::atan(x);
+        let got = cabi::atan_amd(x);
         assert!(same_f64(got, unsafe { ref_atan_p(x) }), "atan {b:#018x}");
         assert!(near_ulps(got, unsafe { ref_atan(x) }, 1), "atan vs AMD {b:#018x}");
     }
@@ -4299,7 +4348,7 @@ fn diff_math_atan() {
         for &bx in &edges {
             let y = f64::from_bits(by);
             let x = f64::from_bits(bx);
-            let got = cabi::atan2(y, x);
+            let got = cabi::atan2_amd(y, x);
             assert!(
                 same_f64(got, unsafe { ref_atan2_p(y, x) }),
                 "atan2 y={by:#018x} x={bx:#018x}"
@@ -4313,7 +4362,7 @@ fn diff_math_atan() {
     for _ in 0..200_000 {
         let y = f64::from_bits(rng.next());
         let x = f64::from_bits(rng.next());
-        let got = cabi::atan2(y, x);
+        let got = cabi::atan2_amd(y, x);
         assert!(
             same_f64(got, unsafe { ref_atan2_p(y, x) }),
             "atan2 y={:#018x} x={:#018x}",
@@ -4392,12 +4441,12 @@ fn diff_math_tanh() {
     }
     for &b in &b64 {
         let x = f64::from_bits(b);
-        assert!(same_f64(cabi::tanh(x), unsafe { ref_tanh(x) }), "tanh {b:#018x}");
+        assert!(same_f64(cabi::tanh_amd(x), unsafe { ref_tanh(x) }), "tanh {b:#018x}");
     }
     for _ in 0..200_000 {
         let u = rng.next();
         let x = (u as f64) / (u64::MAX as f64) * 50.0 - 25.0;
-        assert!(same_f64(cabi::tanh(x), unsafe { ref_tanh(x) }), "tanh {x}");
+        assert!(same_f64(cabi::tanh_amd(x), unsafe { ref_tanh(x) }), "tanh {x}");
     }
 }
 
@@ -4414,14 +4463,14 @@ fn diff_math_sinh_cosh() {
     }
     for &b in &b64 {
         let x = f64::from_bits(b);
-        assert!(same_f64(cabi::sinh(x), unsafe { ref_sinh(x) }), "sinh {b:#018x}");
-        assert!(same_f64(cabi::cosh(x), unsafe { ref_cosh(x) }), "cosh {b:#018x}");
+        assert!(same_f64(cabi::sinh_amd(x), unsafe { ref_sinh(x) }), "sinh {b:#018x}");
+        assert!(same_f64(cabi::cosh_amd(x), unsafe { ref_cosh(x) }), "cosh {b:#018x}");
     }
     for _ in 0..200_000 {
         let u = rng.next();
         let x = (u as f64) / (u64::MAX as f64) * 1440.0 - 720.0;
-        assert!(same_f64(cabi::sinh(x), unsafe { ref_sinh(x) }), "sinh {x}");
-        assert!(same_f64(cabi::cosh(x), unsafe { ref_cosh(x) }), "cosh {x}");
+        assert!(same_f64(cabi::sinh_amd(x), unsafe { ref_sinh(x) }), "sinh {x}");
+        assert!(same_f64(cabi::cosh_amd(x), unsafe { ref_cosh(x) }), "cosh {x}");
     }
 }
 
@@ -4437,14 +4486,14 @@ fn diff_math_asin_acos() {
     }
     for &b in &b64 {
         let x = f64::from_bits(b);
-        assert!(same_f64(cabi::asin(x), unsafe { ref_asin(x) }), "asin {b:#018x}");
-        assert!(same_f64(cabi::acos(x), unsafe { ref_acos(x) }), "acos {b:#018x}");
+        assert!(same_f64(cabi::asin_amd(x), unsafe { ref_asin(x) }), "asin {b:#018x}");
+        assert!(same_f64(cabi::acos_amd(x), unsafe { ref_acos(x) }), "acos {b:#018x}");
     }
     for _ in 0..400_000 {
         let u = rng.next();
         let x = (u as f64) / (u64::MAX as f64) * 2.2 - 1.1;
-        assert!(same_f64(cabi::asin(x), unsafe { ref_asin(x) }), "asin {x}");
-        assert!(same_f64(cabi::acos(x), unsafe { ref_acos(x) }), "acos {x}");
+        assert!(same_f64(cabi::asin_amd(x), unsafe { ref_asin(x) }), "asin {x}");
+        assert!(same_f64(cabi::acos_amd(x), unsafe { ref_acos(x) }), "acos {x}");
     }
 }
 
@@ -4462,7 +4511,7 @@ fn diff_math_hypot() {
             let y = f64::from_bits(by);
             let x = f64::from_bits(bx);
             assert!(
-                same_f64(cabi::_hypot(x, y), unsafe { ref__hypot(x, y) }),
+                same_f64(cabi::_hypot_amd(x, y), unsafe { ref__hypot(x, y) }),
                 "hypot x={bx:#018x} y={by:#018x}"
             );
         }
@@ -4471,7 +4520,7 @@ fn diff_math_hypot() {
         let x = f64::from_bits(rng.next());
         let y = f64::from_bits(rng.next());
         assert!(
-            same_f64(cabi::_hypot(x, y), unsafe { ref__hypot(x, y) }),
+            same_f64(cabi::_hypot_amd(x, y), unsafe { ref__hypot(x, y) }),
             "hypot x={:#018x} y={:#018x}",
             x.to_bits(),
             y.to_bits()
@@ -4485,7 +4534,7 @@ fn diff_math_hypot() {
         let x = f64::from_bits(bx);
         let y = f64::from_bits(by);
         assert!(
-            same_f64(cabi::_hypot(x, y), unsafe { ref__hypot(x, y) }),
+            same_f64(cabi::_hypot_amd(x, y), unsafe { ref__hypot(x, y) }),
             "hypot eqexp x={bx:#018x} y={by:#018x}"
         );
     }
@@ -4538,7 +4587,7 @@ fn diff_math_sincos_modff_hypotf() {
             let x = f32::from_bits(bx);
             let y = f32::from_bits(by);
             assert!(
-                same_f32(cabi::_hypotf(x, y), unsafe { ref__hypotf(x, y) }),
+                same_f32(cabi::_hypotf_amd(x, y), unsafe { ref__hypotf(x, y) }),
                 "hypotf x={bx:#010x} y={by:#010x}"
             );
         }
@@ -4547,7 +4596,7 @@ fn diff_math_sincos_modff_hypotf() {
         let x = f32::from_bits(rng.next() as u32);
         let y = f32::from_bits(rng.next() as u32);
         assert!(
-            same_f32(cabi::_hypotf(x, y), unsafe { ref__hypotf(x, y) }),
+            same_f32(cabi::_hypotf_amd(x, y), unsafe { ref__hypotf(x, y) }),
             "hypotf x={:#010x} y={:#010x}",
             x.to_bits(),
             y.to_bits()
@@ -4572,38 +4621,38 @@ fn diff_math_f32_trig() {
     }
     for &b in &b32 {
         let x = f32::from_bits(b);
-        assert!(same_f32(cabi::acosf(x), unsafe { ref_acosf(x) }), "acosf {b:#010x}");
-        assert!(same_f32(cabi::asinf(x), unsafe { ref_asinf(x) }), "asinf {b:#010x}");
-        assert!(same_f32(cabi::atanf(x), unsafe { ref_atanf(x) }), "atanf {b:#010x}");
-        assert!(same_f32(cabi::sinhf(x), unsafe { ref_sinhf(x) }), "sinhf {b:#010x}");
-        assert!(same_f32(cabi::coshf(x), unsafe { ref_coshf(x) }), "coshf {b:#010x}");
-        assert!(same_f32(cabi::tanhf(x), unsafe { ref_tanhf(x) }), "tanhf {b:#010x}");
-        assert!(same_f32(cabi::tanf(x), unsafe { ref_tanf(x) }), "tanf {b:#010x}");
+        assert!(same_f32(cabi::acosf_amd(x), unsafe { ref_acosf(x) }), "acosf {b:#010x}");
+        assert!(same_f32(cabi::asinf_amd(x), unsafe { ref_asinf(x) }), "asinf {b:#010x}");
+        assert!(same_f32(cabi::atanf_amd(x), unsafe { ref_atanf(x) }), "atanf {b:#010x}");
+        assert!(same_f32(cabi::sinhf_amd(x), unsafe { ref_sinhf(x) }), "sinhf {b:#010x}");
+        assert!(same_f32(cabi::coshf_amd(x), unsafe { ref_coshf(x) }), "coshf {b:#010x}");
+        assert!(same_f32(cabi::tanhf_amd(x), unsafe { ref_tanhf(x) }), "tanhf {b:#010x}");
+        assert!(same_f32(cabi::tanf_amd(x), unsafe { ref_tanf(x) }), "tanf {b:#010x}");
     }
     // asin/acos: dense over the valid domain [-1,1] + a little past.
     for _ in 0..400_000 {
         let u = rng.next();
         let x = ((u as f64) / (u64::MAX as f64) * 2.2 - 1.1) as f32;
-        assert!(same_f32(cabi::asinf(x), unsafe { ref_asinf(x) }), "asinf {x}");
-        assert!(same_f32(cabi::acosf(x), unsafe { ref_acosf(x) }), "acosf {x}");
+        assert!(same_f32(cabi::asinf_amd(x), unsafe { ref_asinf(x) }), "asinf {x}");
+        assert!(same_f32(cabi::acosf_amd(x), unsafe { ref_acosf(x) }), "acosf {x}");
     }
     // tanf: dense near pi/2 multiples (small + large), and big magnitudes that
     // drive the __remainder_piby2f Payne-Hanek path (|x| >= 5e5).
     for _ in 0..400_000 {
         let u = rng.next();
         let x = ((u as f64) / (u64::MAX as f64) * 200.0 - 100.0) as f32;
-        assert!(same_f32(cabi::tanf(x), unsafe { ref_tanf(x) }), "tanf small {x}");
+        assert!(same_f32(cabi::tanf_amd(x), unsafe { ref_tanf(x) }), "tanf small {x}");
         let big = ((rng.next() as f64) / (u64::MAX as f64) * 2.0e8 - 1.0e8) as f32;
-        assert!(same_f32(cabi::tanf(big), unsafe { ref_tanf(big) }), "tanf big {big}");
+        assert!(same_f32(cabi::tanf_amd(big), unsafe { ref_tanf(big) }), "tanf big {big}");
     }
     // sinh/cosh/tanh/atan: dense over their active ranges.
     for _ in 0..400_000 {
         let u = rng.next();
         let x = ((u as f64) / (u64::MAX as f64) * 200.0 - 100.0) as f32;
-        assert!(same_f32(cabi::sinhf(x), unsafe { ref_sinhf(x) }), "sinhf {x}");
-        assert!(same_f32(cabi::coshf(x), unsafe { ref_coshf(x) }), "coshf {x}");
-        assert!(same_f32(cabi::tanhf(x), unsafe { ref_tanhf(x) }), "tanhf {x}");
-        assert!(same_f32(cabi::atanf(x), unsafe { ref_atanf(x) }), "atanf {x}");
+        assert!(same_f32(cabi::sinhf_amd(x), unsafe { ref_sinhf(x) }), "sinhf {x}");
+        assert!(same_f32(cabi::coshf_amd(x), unsafe { ref_coshf(x) }), "coshf {x}");
+        assert!(same_f32(cabi::tanhf_amd(x), unsafe { ref_tanhf(x) }), "tanhf {x}");
+        assert!(same_f32(cabi::atanf_amd(x), unsafe { ref_atanf(x) }), "atanf {x}");
     }
     // atan2f: all edge×edge pairs + random pairs (every sign/zero/inf quadrant).
     let edges = f32_edge_bits();
@@ -4612,7 +4661,7 @@ fn diff_math_f32_trig() {
             let y = f32::from_bits(by);
             let x = f32::from_bits(bx);
             assert!(
-                same_f32(cabi::atan2f(y, x), unsafe { ref_atan2f(y, x) }),
+                same_f32(cabi::atan2f_amd(y, x), unsafe { ref_atan2f(y, x) }),
                 "atan2f y={by:#010x} x={bx:#010x}"
             );
         }
@@ -4621,7 +4670,7 @@ fn diff_math_f32_trig() {
         let y = f32::from_bits(rng.next() as u32);
         let x = f32::from_bits(rng.next() as u32);
         assert!(
-            same_f32(cabi::atan2f(y, x), unsafe { ref_atan2f(y, x) }),
+            same_f32(cabi::atan2f_amd(y, x), unsafe { ref_atan2f(y, x) }),
             "atan2f y={:#010x} x={:#010x}",
             y.to_bits(),
             x.to_bits()
@@ -4905,6 +4954,7 @@ fn main() {
         diff_math_roundf,
         diff_math_nextafter,
         diff_math_nextafterf,
+        diff_math_libm_exports,
         diff_math_sincos,
         diff_math_sqrt,
         diff_math_nexttowardf,

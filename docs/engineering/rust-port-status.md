@@ -1406,11 +1406,17 @@ Three things worth keeping:
   `if(USE_LLVM_MINGW)`, and we build WITH llvm-mingw, whose clang cannot assemble MASM. The
   arm that actually compiles (math.cmake:161-166) names `math/sinf.c`. Ordinary C, on all
   three arches. Check which arm is live before sizing anything else in this tree.
-* **The Bessel bodies are vendored and were nearly paid for.** `_j0`..`_yn` are 102 lines of
-  ours sitting on 1,346 lines of Sun FDLIBM under `math/ieee754/`, which `vendor.yaml`
-  registered 2026-09-06 precisely so nobody translates them. Only the errno/`_fpclass` shell
-  was ported; cnt-difftest compiles the FDLIBM once and has BOTH sides call it, so a row can
-  only ever report a divergence in the part that is ours.
+* **The Bessel bodies are `libm`'s (2026-10-04).** `_j0`..`_yn` are 102 lines of ours (the
+  errno/`_fpclass` shell) over the `libm` crate's j0..yn. They used to sit on 1,346 lines of
+  vendored NetBSD FDLIBM under `math/ieee754/`, now deleted: same lineage, ~0.3% of 3M
+  arguments differ by ulps, and against a 200-bit reference `libm` has the far smaller worst
+  case (jn 10 ulp vs 901). cnt-difftest has BOTH sides call `libm` under the C shell, so a row
+  only ever reports a divergence in the part that is ours.
+* **cnt-rust's transcendental C89 set is `libm`'s too** wherever `cnt_libm` holds: sin, cos,
+  tan, asin, acos, atan, atan2, the hyperbolics, `_hypot`, and their `f` forms, each with
+  Wine's `math_error` points through `__cnt_math_error` (exp/log/pow/log10/fmod went first).
+  The AMD ports stay as `*_amd`, graded against their C, and are still the exports on the
+  no-SSE i686 build. sqrt, ldexp and `_logb` kept their exact bodies and gained the reports.
 * **`_j0`..`_yn` are `cabi-math` ONLY, not `cabi`.** They call `_errno`, which the kernel
   does not have (not in ntoskrnl.spec). cnt-rust is one codegen unit, so an ungated `_errno`
   would make the whole math object fail the kernel link. Verified by `nm`: the i386
@@ -1478,7 +1484,7 @@ here. Do not assume the ucrtbase link-order finding above applies to it.
 | bucket | files | lines |
 |---|---|---|
 | AMD LibM — `math/libm_sse2/`, vendored | 48 | 8,900 |
-| Sun FDLIBM — `math/ieee754/`, vendored | 3 | 1,346 |
+| Sun FDLIBM — `math/ieee754/`, vendored (deleted 2026-10-04 for `libm`) | 3 | 1,346 |
 | i386-only (x87 asm shims, `_CI*`, `libm_sse2.c`) | 13 | 772 |
 | already has a `cnt-rust` Rust body | 60 | 2,234 |
 | **ours, still C** | **35** | **1,259** |

@@ -598,8 +598,7 @@ fn reduce_sincos(ax: u64) -> (f64, f64, i32) {
 }
 
 /// `double sin(double)` — AMD's `libm_sse2/sin.asm`.
-#[no_mangle]
-pub extern "C" fn sin(x: f64) -> f64 {
+pub extern "C" fn sin_amd(x: f64) -> f64 {
     let ux = x.to_bits();
     let ax = ux & 0x7FFF_FFFF_FFFF_FFFF;
 
@@ -643,8 +642,7 @@ pub extern "C" fn sin(x: f64) -> f64 {
 }
 
 /// `double cos(double)` — AMD's `libm_sse2/cos.asm`.
-#[no_mangle]
-pub extern "C" fn cos(x: f64) -> f64 {
+pub extern "C" fn cos_amd(x: f64) -> f64 {
     let ux = x.to_bits();
     let ax = ux & 0x7FFF_FFFF_FFFF_FFFF;
 
@@ -688,8 +686,7 @@ pub extern "C" fn cos(x: f64) -> f64 {
 /// `double sqrt(double)` — hardware `sqrtsd` (correctly rounded; handles
 /// ±0/±inf/NaN/negative per IEEE, so no special-case prologue needed).
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
-pub extern "C" fn sqrt(x: f64) -> f64 {
+extern "C" fn sqrt_hw(x: f64) -> f64 {
     let r: f64;
     unsafe {
         core::arch::asm!("sqrtsd {0}, {1}", out(xmm_reg) r, in(xmm_reg) x, options(pure, nomem, nostack));
@@ -699,8 +696,7 @@ pub extern "C" fn sqrt(x: f64) -> f64 {
 
 /// `double sqrt(double)` — hardware `fsqrt`.
 #[cfg(target_arch = "aarch64")]
-#[no_mangle]
-pub extern "C" fn sqrt(x: f64) -> f64 {
+extern "C" fn sqrt_hw(x: f64) -> f64 {
     let r: f64;
     unsafe {
         core::arch::asm!("fsqrt {0:d}, {1:d}", out(vreg) r, in(vreg) x, options(pure, nomem, nostack));
@@ -710,8 +706,7 @@ pub extern "C" fn sqrt(x: f64) -> f64 {
 
 /// `float sqrtf(float)` — hardware `sqrtss`.
 #[cfg(target_arch = "x86_64")]
-#[no_mangle]
-pub extern "C" fn sqrtf(x: f32) -> f32 {
+extern "C" fn sqrtf_hw(x: f32) -> f32 {
     let r: f32;
     unsafe {
         core::arch::asm!("sqrtss {0}, {1}", out(xmm_reg) r, in(xmm_reg) x, options(pure, nomem, nostack));
@@ -721,8 +716,7 @@ pub extern "C" fn sqrtf(x: f32) -> f32 {
 
 /// `float sqrtf(float)` — hardware `fsqrt` (single).
 #[cfg(target_arch = "aarch64")]
-#[no_mangle]
-pub extern "C" fn sqrtf(x: f32) -> f32 {
+extern "C" fn sqrtf_hw(x: f32) -> f32 {
     let r: f32;
     unsafe {
         core::arch::asm!("fsqrt {0:s}, {1:s}", out(vreg) r, in(vreg) x, options(pure, nomem, nostack));
@@ -734,8 +728,7 @@ pub extern "C" fn sqrtf(x: f32) -> f32 {
 /// Memory in/out (f64 can't live in one GP reg); fld pushes / fstp pops, so
 /// the x87 stack is balanced. No `nomem` — the asm reads/writes `r`.
 #[cfg(target_arch = "x86")]
-#[no_mangle]
-pub extern "C" fn sqrt(x: f64) -> f64 {
+extern "C" fn sqrt_hw(x: f64) -> f64 {
     let mut r = x;
     unsafe {
         core::arch::asm!(
@@ -751,8 +744,7 @@ pub extern "C" fn sqrt(x: f64) -> f64 {
 
 /// `float sqrtf(float)` — i386 x87 `fsqrt` (single), no SSE.
 #[cfg(target_arch = "x86")]
-#[no_mangle]
-pub extern "C" fn sqrtf(x: f32) -> f32 {
+extern "C" fn sqrtf_hw(x: f32) -> f32 {
     let mut r = x;
     unsafe {
         core::arch::asm!(
@@ -762,6 +754,27 @@ pub extern "C" fn sqrtf(x: f32) -> f32 {
             p = in(reg) core::ptr::addr_of_mut!(r),
             options(nostack),
         );
+    }
+    r
+}
+
+/// `double sqrt(double)`: the hardware square root (correctly rounded on every arch) and
+/// Wine's one report, `_DOMAIN` for a negative argument (`-0` and NaN pass).
+#[no_mangle]
+pub extern "C" fn sqrt(x: f64) -> f64 {
+    let r = sqrt_hw(x);
+    if x < 0.0 {
+        return report(1, c"sqrt".as_ptr(), x, 0.0, r);
+    }
+    r
+}
+
+/// `float sqrtf(float)`: as `sqrt`.
+#[no_mangle]
+pub extern "C" fn sqrtf(x: f32) -> f32 {
+    let r = sqrtf_hw(x);
+    if x < 0.0 {
+        return report(1, c"sqrtf".as_ptr(), x as f64, 0.0, r as f64) as f32;
     }
     r
 }
@@ -793,11 +806,31 @@ pub extern "C" fn sqrtf(x: f32) -> f32 {
 #[cfg(cnt_libm)]
 use musl_math::MathErr;
 
-#[cfg(all(cnt_libm, feature = "crt-math-errors"))]
+#[cfg(feature = "crt-math-errors")]
 extern "C" {
     /// The CRT's `math_error`: `type` is `_DOMAIN` 1 / `_SING` 2 / `_OVERFLOW` 3 /
     /// `_UNDERFLOW` 4; returns the (possibly user-replaced) result.
     fn __cnt_math_error(type_: i32, name: *const core::ffi::c_char, arg1: f64, arg2: f64, retval: f64) -> f64;
+}
+
+/// OR'd into a `__cnt_math_error` type: this report exists only before msvcr140.
+const PRE140: i32 = 0x100;
+
+/// Report `type_` (`_DOMAIN` 1, `_SING` 2, `_OVERFLOW` 3, `_UNDERFLOW` 4, maybe `| PRE140`)
+/// to the CRT and return its (possibly user-replaced) result; without
+/// `crt-math-errors`, `retval`. `extern "C"` so it builds on the no-SSE i686 target too,
+/// where the exact functions below (sqrt, ldexp, `_logb`) still call it.
+#[inline(always)]
+extern "C" fn report(type_: i32, name: *const core::ffi::c_char, arg1: f64, arg2: f64, retval: f64) -> f64 {
+    #[cfg(feature = "crt-math-errors")]
+    {
+        unsafe { __cnt_math_error(type_, name, arg1, arg2, retval) }
+    }
+    #[cfg(not(feature = "crt-math-errors"))]
+    {
+        let _ = (type_, name, arg1, arg2);
+        retval
+    }
 }
 
 #[cfg(cnt_libm)]
@@ -900,6 +933,164 @@ pub extern "C" fn log10f(x: f32) -> f32 {
 pub extern "C" fn fmodf(x: f32, y: f32) -> f32 {
     let r = libm::fmodf(x, y);
     crt_errf((r, if x.is_infinite() { MathErr::Domain } else { MathErr::None }), c"fmodf", x, y)
+}
+
+// ── trig, inverse trig, hyperbolics, hypot: `libm`, with Wine's error points ───────────
+//
+// The AMD ports further down (`sin_amd`, ...) were accurate, so this is not a quality fix:
+// it is one maintained implementation in place of ~2,000 lines of ours, and the place
+// Wine's error contract attaches. Where `cnt_libm` fails (the builtin no-SSE i686 build)
+// the `_amd` bodies are still the exports, through `amd_exports!` below, and cnt-difftest
+// keeps grading them against their C.
+//
+// Wine's reports, from its math.c: sin/cos/tan of an infinity and acos/asin outside
+// [-1, 1] are `_DOMAIN` (a NaN argument passes quietly); atan of a NaN is `_DOMAIN` in
+// msvcrt only (`_MSVCR_VER == 0`), tanh of a NaN in everything before msvcr140. Those last
+// two carry `PRE140`, which ucrtbase's hook drops and msvcrt's strips. sinh, cosh, atan2
+// and hypot report nothing.
+
+#[cfg(cnt_libm)]
+#[inline(always)]
+fn dom_if(c: bool) -> MathErr {
+    if c { MathErr::Domain } else { MathErr::None }
+}
+
+macro_rules! libm_trig {
+    ($($name:ident / $libm:ident ( $t:ty ) $c:literal, $err:expr;)*) => {$(
+        #[doc = concat!("`", stringify!($name), "` -- `libm`'s.")]
+        #[cfg(cnt_libm)]
+        #[no_mangle]
+        pub extern "C" fn $name(x: $t) -> $t {
+            let r = libm::$libm(x);
+            #[allow(clippy::redundant_closure_call)]
+            let e = ($err)(x);
+            crt_err((r as f64, e), $c, x as f64, 0.0) as $t
+        }
+    )*};
+}
+
+libm_trig! {
+    sin / sin (f64) c"sin", |x: f64| dom_if(x.is_infinite());
+    cos / cos (f64) c"cos", |x: f64| dom_if(x.is_infinite());
+    tan / tan (f64) c"tan", |x: f64| dom_if(x.is_infinite());
+    asin / asin (f64) c"asin", |x: f64| dom_if(x.abs() > 1.0);
+    acos / acos (f64) c"acos", |x: f64| dom_if(x.abs() > 1.0);
+    sinh / sinh (f64) c"sinh", |_| MathErr::None;
+    cosh / cosh (f64) c"cosh", |_| MathErr::None;
+    sinf / sinf (f32) c"sinf", |x: f32| dom_if(x.is_infinite());
+    cosf / cosf (f32) c"cosf", |x: f32| dom_if(x.is_infinite());
+    tanf / tanf (f32) c"tanf", |x: f32| dom_if(x.is_infinite());
+    asinf / asinf (f32) c"asinf", |x: f32| dom_if(x.abs() > 1.0);
+    acosf / acosf (f32) c"acosf", |x: f32| dom_if(x.abs() > 1.0);
+    sinhf / sinhf (f32) c"sinhf", |_| MathErr::None;
+    coshf / coshf (f32) c"coshf", |_| MathErr::None;
+}
+
+/// `atan` -- `libm`'s; msvcrt reports a NaN argument.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn atan(x: f64) -> f64 {
+    if x.is_nan() {
+        return report(1 | PRE140, c"atan".as_ptr(), x, 0.0, x);
+    }
+    libm::atan(x)
+}
+
+/// `atanf` -- `libm`'s; msvcrt reports a NaN argument.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn atanf(x: f32) -> f32 {
+    if x.is_nan() {
+        return report(1 | PRE140, c"atanf".as_ptr(), x as f64, 0.0, x as f64) as f32;
+    }
+    libm::atanf(x)
+}
+
+/// `tanh` -- `libm`'s; before msvcr140 a NaN argument is reported, quieted.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn tanh(x: f64) -> f64 {
+    if x.is_nan() {
+        let q = fb64(x.to_bits() | 0x0008_0000_0000_0000);
+        return report(1 | PRE140, c"tanh".as_ptr(), q, 0.0, q);
+    }
+    libm::tanh(x)
+}
+
+/// `tanhf` -- `libm`'s; before msvcr140 a NaN argument is reported, quieted.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn tanhf(x: f32) -> f32 {
+    if x.is_nan() {
+        let q = fb32(x.to_bits() | 0x0040_0000);
+        return report(1 | PRE140, c"tanhf".as_ptr(), q as f64, 0.0, q as f64) as f32;
+    }
+    libm::tanhf(x)
+}
+
+/// `atan2` -- `libm`'s.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn atan2(y: f64, x: f64) -> f64 {
+    libm::atan2(y, x)
+}
+
+/// `atan2f` -- `libm`'s.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn atan2f(y: f32, x: f32) -> f32 {
+    libm::atan2f(y, x)
+}
+
+/// `_hypot` -- `libm`'s.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn _hypot(x: f64, y: f64) -> f64 {
+    libm::hypot(x, y)
+}
+
+/// `_hypotf` -- `libm`'s.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn _hypotf(x: f32, y: f32) -> f32 {
+    libm::hypotf(x, y)
+}
+
+/// The no-SSE i686 build's exports: the AMD ports, which build there because every one
+/// of them is `extern "C"`.
+macro_rules! amd_exports {
+    ($($name:ident => $amd:ident ( $($a:ident : $t:ty),* ) -> $r:ty;)*) => {$(
+        #[cfg(not(cnt_libm))]
+        #[no_mangle]
+        pub extern "C" fn $name($($a: $t),*) -> $r {
+            $amd($($a),*)
+        }
+    )*};
+}
+
+amd_exports! {
+    sin => sin_amd(x: f64) -> f64;
+    cos => cos_amd(x: f64) -> f64;
+    tan => tan_amd(x: f64) -> f64;
+    asin => asin_amd(x: f64) -> f64;
+    acos => acos_amd(x: f64) -> f64;
+    atan => atan_amd(x: f64) -> f64;
+    sinh => sinh_amd(x: f64) -> f64;
+    cosh => cosh_amd(x: f64) -> f64;
+    tanh => tanh_amd(x: f64) -> f64;
+    atan2 => atan2_amd(y: f64, x: f64) -> f64;
+    _hypot => _hypot_amd(x: f64, y: f64) -> f64;
+    sinf => sinf_amd(x: f32) -> f32;
+    cosf => cosf_amd(x: f32) -> f32;
+    tanf => tanf_amd(x: f32) -> f32;
+    asinf => asinf_amd(x: f32) -> f32;
+    acosf => acosf_amd(x: f32) -> f32;
+    atanf => atanf_amd(x: f32) -> f32;
+    sinhf => sinhf_amd(x: f32) -> f32;
+    coshf => coshf_amd(x: f32) -> f32;
+    tanhf => tanhf_amd(x: f32) -> f32;
+    atan2f => atan2f_amd(y: f32, x: f32) -> f32;
+    _hypotf => _hypotf_amd(x: f32, y: f32) -> f32;
 }
 
 /// `double exp(double)` — range reduction + degree-5 rational approximation.
@@ -1384,8 +1575,7 @@ fn remainder_piby2(x_in: f64) -> (f64, f64, i32) {
 }
 
 /// `double tan(double)` — AMD's `libm_sse2/tan.c`.
-#[no_mangle]
-pub extern "C" fn tan(x: f64) -> f64 {
+pub extern "C" fn tan_amd(x: f64) -> f64 {
     let ux = x.to_bits();
     let ax = ux & 0x7FFF_FFFF_FFFF_FFFF;
 
@@ -1639,8 +1829,7 @@ pub extern "C" fn ceilf(x: f32) -> f32 {
 ///
 /// The result is bit-exact with glibc over 7.2M random + edge cases, i.e.
 /// strictly better than either C, and it is the same body on all three arches.
-#[no_mangle]
-pub extern "C" fn ldexp(x: f64, n: i32) -> f64 {
+extern "C" fn ldexp_exact(x: f64, n: i32) -> f64 {
     let bits = x.to_bits();
     let sign = bits & 0x8000_0000_0000_0000;
     let mut mag = bits & 0x7FFF_FFFF_FFFF_FFFF;
@@ -1677,12 +1866,26 @@ pub extern "C" fn ldexp(x: f64, n: i32) -> f64 {
     fb64(sign | (((target + 53) as u64) << 52) | mant) * fb64(0x3CA0_0000_0000_0000) // 0x1p-53
 }
 
+/// `double ldexp(double, int)`, with Wine's reports: a finite argument scaled to an
+/// infinity is `_OVERFLOW`, a nonzero finite one scaled to zero `_UNDERFLOW`.
+#[no_mangle]
+pub extern "C" fn ldexp(x: f64, n: i32) -> f64 {
+    let z = ldexp_exact(x, n);
+    if x.is_finite() && !z.is_finite() {
+        return report(3, c"ldexp".as_ptr(), x, n as f64, z);
+    }
+    if x != 0.0 && x.is_finite() && z == 0.0 {
+        return report(4, c"ldexp".as_ptr(), x, n as f64, z);
+    }
+    z
+}
+
 /// `double _logb(double)` — unbiased binary exponent (MSVC name).
 #[no_mangle]
 pub extern "C" fn _logb(x: f64) -> f64 {
     let mut u = x.to_bits() & 0x7FFF_FFFF_FFFF_FFFF; // clear sign
     if u == 0 {
-        return f64::NEG_INFINITY; // _logb(0) = -inf
+        return report(2, c"_logb".as_ptr(), x, 0.0, f64::NEG_INFINITY); // a pole, as in Wine
     }
     let mut exp = (u >> 52) as i32;
     if exp == 0x7FF {
@@ -1838,8 +2041,7 @@ const ATAN_AT: [f64; 11] = [
 ];
 
 /// `double atan(double)` — arctangent (portable fdlibm).
-#[no_mangle]
-pub extern "C" fn atan(mut x: f64) -> f64 {
+pub extern "C" fn atan_amd(mut x: f64) -> f64 {
     let hx = (x.to_bits() >> 32) as u32 as i32;
     let ix = hx & 0x7FFF_FFFF;
     let id: i32;
@@ -1911,8 +2113,7 @@ const ATAN2_PI_2: f64 = 1.57079632679489655800e+00;
 const ATAN2_PI_4: f64 = 7.85398163397448278999e-01;
 
 /// `double atan2(double y, double x)` — arctangent of y/x (portable fdlibm).
-#[no_mangle]
-pub extern "C" fn atan2(y: f64, x: f64) -> f64 {
+pub extern "C" fn atan2_amd(y: f64, x: f64) -> f64 {
     let xb = x.to_bits();
     let yb = y.to_bits();
     let hx = (xb >> 32) as u32 as i32;
@@ -1932,7 +2133,7 @@ pub extern "C" fn atan2(y: f64, x: f64) -> f64 {
 
     // x == 1.0
     if hx == 0x3FF0_0000 && lx == 0 {
-        return atan(y);
+        return atan_amd(y);
     }
 
     // m = 2 * sign(x) + sign(y)
@@ -2177,8 +2378,7 @@ pub extern "C" fn exp2_amd(x: f64) -> f64 {
 // from_bits(bits).
 
 /// `double tanh(double)` — hyperbolic tangent.
-#[no_mangle]
-pub extern "C" fn tanh(x: f64) -> f64 {
+pub extern "C" fn tanh_amd(x: f64) -> f64 {
     const THIRTYTWO_BY_LOG2: f64 = 4.61662413084468283841e+01;
     const LOG2_BY_32_LEAD: f64 = 2.16608493356034159660e-02;
     const LOG2_BY_32_TAIL: f64 = 5.68948749532545630390e-11;
@@ -2352,8 +2552,7 @@ fn sinh_cosh_dy_poly(dy: f64) -> (f64, f64) {
 }
 
 /// `double sinh(double)` — hyperbolic sine.
-#[no_mangle]
-pub extern "C" fn sinh(x: f64) -> f64 {
+pub extern "C" fn sinh_amd(x: f64) -> f64 {
     const MAX_SINH_ARG: f64 = 7.10475860073943977113e+02;
     const THIRTYTWO_BY_LOG2: f64 = 4.61662413084468283841e+01;
     const LOG2_BY_32_LEAD: f64 = 2.16608493356034159660e-02;
@@ -2417,8 +2616,7 @@ pub extern "C" fn sinh(x: f64) -> f64 {
 }
 
 /// `double cosh(double)` — hyperbolic cosine (even).
-#[no_mangle]
-pub extern "C" fn cosh(x: f64) -> f64 {
+pub extern "C" fn cosh_amd(x: f64) -> f64 {
     const MAX_COSH_ARG: f64 = 7.10475860073943977113e+02;
     const THIRTYTWO_BY_LOG2: f64 = 4.61662413084468283841e+01;
     const LOG2_BY_32_LEAD: f64 = 2.16608493356034159660e-02;
@@ -2493,8 +2691,7 @@ extern "C" fn asin_rational(r: f64) -> f64 {
 }
 
 /// `double asin(double)` — arcsine.
-#[no_mangle]
-pub extern "C" fn asin(x: f64) -> f64 {
+pub extern "C" fn asin_amd(x: f64) -> f64 {
     const PIBY2_TAIL: f64 = 6.1232339957367660e-17;
     const HPIBY2_HEAD: f64 = 7.8539816339744831e-01;
     const PIBY2: f64 = 1.5707963267948965e+00;
@@ -2555,8 +2752,7 @@ pub extern "C" fn asin(x: f64) -> f64 {
 }
 
 /// `double acos(double)` — arccosine.
-#[no_mangle]
-pub extern "C" fn acos(x: f64) -> f64 {
+pub extern "C" fn acos_amd(x: f64) -> f64 {
     const PI: f64 = 3.1415926535897933e+00;
     const PIBY2: f64 = 1.5707963267948965580e+00;
     const PIBY2_HEAD: f64 = 1.5707963267948965580e+00;
@@ -2619,8 +2815,7 @@ pub extern "C" fn acos(x: f64) -> f64 {
 
 /// `double _hypot(double x, double y)` — Euclidean distance, no spurious
 /// overflow/underflow.
-#[no_mangle]
-pub extern "C" fn _hypot(x: f64, y: f64) -> f64 {
+pub extern "C" fn _hypot_amd(x: f64, y: f64) -> f64 {
     const LARGE: f64 = 1.79769313486231570815e+308;
 
     let mut ux = x.to_bits() & 0x7FFF_FFFF_FFFF_FFFF;
@@ -2747,8 +2942,7 @@ pub unsafe extern "C" fn modff(x: f32, iptr: *mut f32) -> f32 {
 /// `float _hypotf(float x, float y)` — f32 Euclidean distance. Faithful port
 /// of math/libm_sse2/hypotf.c: all math in f64 (float² fits, no scaling),
 /// then round to f32. NaN/Inf per C99 (Inf wins); overflow → +Inf.
-#[no_mangle]
-pub extern "C" fn _hypotf(x: f32, y: f32) -> f32 {
+pub extern "C" fn _hypotf_amd(x: f32, y: f32) -> f32 {
     // The largest finite float, as a double.
     const LARGE: f64 = 3.40282346638528859812e+38;
 
@@ -3003,8 +3197,7 @@ extern "C" fn asinf_rational(r: f32) -> f32 {
 }
 
 /// `float asinf(float)` — arcsine.
-#[no_mangle]
-pub extern "C" fn asinf(x: f32) -> f32 {
+pub extern "C" fn asinf_amd(x: f32) -> f32 {
     const PIBY2_TAIL: f32 = 7.5497894159e-08;
     const HPIBY2_HEAD: f32 = 7.8539812565e-01;
     const PIBY2: f32 = 1.5707963705e+00;
@@ -3062,8 +3255,7 @@ pub extern "C" fn asinf(x: f32) -> f32 {
 }
 
 /// `float acosf(float)` — arccosine.
-#[no_mangle]
-pub extern "C" fn acosf(x: f32) -> f32 {
+pub extern "C" fn acosf_amd(x: f32) -> f32 {
     const PIBY2_F: f32 = 1.5707963705e+00;
     const PI: f64 = 3.1415926535897933e+00;
     const PIBY2_HEAD: f64 = 1.5707963267948965580e+00;
@@ -3116,8 +3308,7 @@ pub extern "C" fn acosf(x: f32) -> f32 {
 }
 
 /// `float atanf(float)` — arctangent. Computed in f64, returned as f32.
-#[no_mangle]
-pub extern "C" fn atanf(fx: f32) -> f32 {
+pub extern "C" fn atanf_amd(fx: f32) -> f32 {
     const PIBY2: f64 = 1.5707963267948966e+00;
 
     let x0 = fx as f64;
@@ -3172,8 +3363,7 @@ pub extern "C" fn atanf(fx: f32) -> f32 {
 }
 
 /// `float sinhf(float)` — hyperbolic sine.
-#[no_mangle]
-pub extern "C" fn sinhf(fx: f32) -> f32 {
+pub extern "C" fn sinhf_amd(fx: f32) -> f32 {
     const MAX_SINH_ARG: f64 = 8.94159862922329438106e+01;
     const T32: f64 = 4.61662413084468283841e+01;
     const L2_LEAD: f64 = 2.16608493356034159660e-02;
@@ -3223,8 +3413,7 @@ pub extern "C" fn sinhf(fx: f32) -> f32 {
 }
 
 /// `float coshf(float)` — hyperbolic cosine.
-#[no_mangle]
-pub extern "C" fn coshf(fx: f32) -> f32 {
+pub extern "C" fn coshf_amd(fx: f32) -> f32 {
     const MAX_COSH_ARG: f64 = 8.94159862922329438106e+01;
     const T32: f64 = 4.61662413084468283841e+01;
     const L2_LEAD: f64 = 2.16608493356034159660e-02;
@@ -3274,8 +3463,7 @@ pub extern "C" fn coshf(fx: f32) -> f32 {
 }
 
 /// `float tanhf(float)` — hyperbolic tangent. All single precision.
-#[no_mangle]
-pub extern "C" fn tanhf(x: f32) -> f32 {
+pub extern "C" fn tanhf_amd(x: f32) -> f32 {
     const T32: f32 = 4.6166240692e+01;
     const L2_LEAD: f32 = 2.1659851074e-02;
     const L2_TAIL: f32 = 9.9831822808e-07;
@@ -3419,8 +3607,7 @@ fn remainder_piby2f_inline(ux_in: u64) -> (f64, i32) {
 }
 
 /// `float tanf(float)` — tangent. Reduction in f64, core via tanf_piby4.
-#[no_mangle]
-pub extern "C" fn tanf(x: f32) -> f32 {
+pub extern "C" fn tanf_amd(x: f32) -> f32 {
     let dx = x as f64;
     let ux = dx.to_bits();
     let ax = ux & 0x7fff_ffff_ffff_ffff;
@@ -3504,8 +3691,7 @@ pub extern "C" fn tanf(x: f32) -> f32 {
 
 /// `float atan2f(float y, float x)` — full-quadrant arctangent. f64 core +
 /// the atan(j/256) look-up table; returned as f32.
-#[no_mangle]
-pub extern "C" fn atan2f(fy: f32, fx: f32) -> f32 {
+pub extern "C" fn atan2f_amd(fy: f32, fx: f32) -> f32 {
     const PI: f64 = 3.1415926535897932e+00;
     const PIBY2: f64 = 1.5707963267948966e+00;
     const PIBY4: f64 = 7.8539816339744831e-01;
@@ -3674,15 +3860,13 @@ pub extern "C" fn atan2f(fy: f32, fx: f32) -> f32 {
 // which cnt-difftest already pins against the same sources.
 
 /// `float sinf(float)` — `math/sinf.c`.
-#[no_mangle]
-pub extern "C" fn sinf(x: f32) -> f32 {
-    sin(x as f64) as f32
+pub extern "C" fn sinf_amd(x: f32) -> f32 {
+    sin_amd(x as f64) as f32
 }
 
 /// `float cosf(float)` — `math/cosf.c`.
-#[no_mangle]
-pub extern "C" fn cosf(x: f32) -> f32 {
-    cos(x as f64) as f32
+pub extern "C" fn cosf_amd(x: f32) -> f32 {
+    cos_amd(x as f64) as f32
 }
 
 /// `float expf(float)` — `math/expf.c`.
@@ -3887,12 +4071,12 @@ pub extern "C" fn _fpclass(d: f64) -> i32 {
 // ══════════════════════════════════════════════════════════════════════
 // The Bessel wrappers — `math/{j0_y0,j1_y1,jn_yn}.c`
 //
-// 102 lines of ours sitting on 1,346 lines that are NOT ours: the
-// `__ieee754_*` bodies under `math/ieee754/` are vendored Sun FDLIBM
-// (vendor.yaml, plus a VENDORED stamp in that directory) and are
-// deliberately outside the translation effort. So these stay `extern`
-// and only the errno/classification shell around them is ported — which
-// is the entire difference between the two files.
+// The errno/classification shell is the port of those three files; the numerics under
+// it are the `libm` crate's j0..yn (msun's FDLIBM). They replaced 1,346 lines of
+// vendored NetBSD FDLIBM (`math/ieee754`), the same lineage: over 3M arguments the two
+// differ in ~0.3%, by ulps, and against a 200-bit reference neither is uniformly
+// closer -- the vendored j0 more often, `libm` with the far smaller worst case (jn 10
+// ulp against 901, y0 24 against 56).
 //
 // WHY THESE ARE `cabi-math` AND NOT PLAIN `cabi`: they call `_errno`,
 // which the kernel does not have (it is not in ntoskrnl.spec, and
@@ -3900,19 +4084,12 @@ pub extern "C" fn _fpclass(d: f64) -> i32 {
 // is one codegen unit, so an ungated reference to `_errno` from this
 // module would make the WHOLE math object undefined-symbol at the kernel
 // link. `cabi-math` is the usermode-CRT feature (msvcrt-crt-cargo,
-// crt-shared-cargo), where both `_errno` and the FDLIBM bodies resolve.
+// crt-shared-cargo), where `_errno` resolves and `cnt_libm` holds.
 // cnt-difftest therefore enables cabi AND cabi-math, so these are graded.
 // ══════════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "cabi-math")]
 extern "C" {
-    // Vendored FDLIBM — see the note above. Never translate these.
-    fn __ieee754_j0(x: f64) -> f64;
-    fn __ieee754_j1(x: f64) -> f64;
-    fn __ieee754_jn(n: i32, x: f64) -> f64;
-    fn __ieee754_y0(x: f64) -> f64;
-    fn __ieee754_y1(x: f64) -> f64;
-    fn __ieee754_yn(n: i32, x: f64) -> f64;
     /// The CRT's per-thread errno slot. Declared exactly as the C does
     /// (`int *_errno(void);` at the top of each of the three wrappers).
     fn _errno() -> *mut i32;
@@ -3952,7 +4129,7 @@ pub extern "C" fn _j0(num: f64) -> f64 {
         if _finite(num) == 0 {
             *_errno() = EDOM;
         }
-        __ieee754_j0(num)
+        libm::j0(num)
     }
 }
 
@@ -3964,7 +4141,7 @@ pub extern "C" fn _j1(num: f64) -> f64 {
         if _finite(num) == 0 {
             *_errno() = EDOM;
         }
-        __ieee754_j1(num)
+        libm::j1(num)
     }
 }
 
@@ -3977,7 +4154,7 @@ pub extern "C" fn _j1(num: f64) -> f64 {
 #[cfg(feature = "cabi-math")]
 #[no_mangle]
 pub extern "C" fn _jn(n: i32, num: f64) -> f64 {
-    unsafe { __ieee754_jn(n, num) }
+    libm::jn(n, num)
 }
 
 /// `double _y0(double)` — `math/j0_y0.c`.
@@ -3998,7 +4175,7 @@ pub extern "C" fn _y0(num: f64) -> f64 {
         {
             *_errno() = EDOM;
         }
-        y_domain_epilogue(__ieee754_y0(num))
+        y_domain_epilogue(libm::y0(num))
     }
 }
 
@@ -4015,7 +4192,7 @@ pub extern "C" fn _y1(num: f64) -> f64 {
         {
             *_errno() = EDOM;
         }
-        y_domain_epilogue(__ieee754_y1(num))
+        y_domain_epilogue(libm::y1(num))
     }
 }
 
@@ -4031,6 +4208,6 @@ pub extern "C" fn _yn(order: i32, num: f64) -> f64 {
         if _finite(num) == 0 {
             *_errno() = EDOM;
         }
-        y_domain_epilogue(__ieee754_yn(order, num))
+        y_domain_epilogue(libm::yn(order, num))
     }
 }

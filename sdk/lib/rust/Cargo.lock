@@ -308,6 +308,7 @@ dependencies = [
  "cc",
  "cnt-ctype",
  "cnt-rust",
+ "libm",
  "musl-math",
 ]
 

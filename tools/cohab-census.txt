@@ -1641,6 +1641,9 @@ sdk/lib/crt/libcntpr.cmake	1	# the portable math/sqrt.c fast-invsqrt approximati
 sdk/lib/crt/libcntpr.cmake	1	# tiny scanf_trampoline.c — Rust can't DEFINE variadics on stable. It
 sdk/lib/crt/libcntpr.cmake	1	# uses *_asm.s, so REMOVE_ITEM is a harmless no-op there); mem/memccpy.c
 sdk/lib/crt/math/math.cmake	1	# math/i386/fabs_asm.s # FIXME
+sdk/lib/crt/math/math.cmake	1	# math/j0_y0.c
+sdk/lib/crt/math/math.cmake	1	# math/j1_y1.c
+sdk/lib/crt/math/math.cmake	1	# math/jn_yn.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/_chgsign.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/_chgsignf.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/_copysign.c
