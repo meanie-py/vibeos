@@ -4121,6 +4121,16 @@ unsafe extern "C" fn y_domain_epilogue(retval: f64) -> f64 {
     retval
 }
 
+/// A NaN argument comes back as itself, quieted. FDLIBM's bodies return `x*x` or
+/// `1/(x+x*x)` there, which on SSE2 and AArch64 keeps the payload, and msvcrt_apitest's
+/// ieee rows check it (`_y0(0xFFFFFFFFFFFFFFFF)` is that NaN); `libm` hands back a
+/// canonical NaN instead.
+#[cfg(feature = "cabi-math")]
+#[inline(always)]
+extern "C" fn bessel_nan(x: f64) -> f64 {
+    fb64(x.to_bits() | 0x0008_0000_0000_0000)
+}
+
 /// `double _j0(double)` — `math/j0_y0.c`.
 #[cfg(feature = "cabi-math")]
 #[no_mangle]
@@ -4129,7 +4139,7 @@ pub extern "C" fn _j0(num: f64) -> f64 {
         if _finite(num) == 0 {
             *_errno() = EDOM;
         }
-        libm::j0(num)
+        if num.is_nan() { bessel_nan(num) } else { libm::j0(num) }
     }
 }
 
@@ -4141,7 +4151,7 @@ pub extern "C" fn _j1(num: f64) -> f64 {
         if _finite(num) == 0 {
             *_errno() = EDOM;
         }
-        libm::j1(num)
+        if num.is_nan() { bessel_nan(num) } else { libm::j1(num) }
     }
 }
 
@@ -4154,7 +4164,7 @@ pub extern "C" fn _j1(num: f64) -> f64 {
 #[cfg(feature = "cabi-math")]
 #[no_mangle]
 pub extern "C" fn _jn(n: i32, num: f64) -> f64 {
-    libm::jn(n, num)
+    if num.is_nan() { bessel_nan(num) } else { libm::jn(n, num) }
 }
 
 /// `double _y0(double)` — `math/j0_y0.c`.
@@ -4175,7 +4185,7 @@ pub extern "C" fn _y0(num: f64) -> f64 {
         {
             *_errno() = EDOM;
         }
-        y_domain_epilogue(libm::y0(num))
+        y_domain_epilogue(if num.is_nan() { bessel_nan(num) } else { libm::y0(num) })
     }
 }
 
@@ -4192,7 +4202,7 @@ pub extern "C" fn _y1(num: f64) -> f64 {
         {
             *_errno() = EDOM;
         }
-        y_domain_epilogue(libm::y1(num))
+        y_domain_epilogue(if num.is_nan() { bessel_nan(num) } else { libm::y1(num) })
     }
 }
 
@@ -4208,6 +4218,6 @@ pub extern "C" fn _yn(order: i32, num: f64) -> f64 {
         if _finite(num) == 0 {
             *_errno() = EDOM;
         }
-        y_domain_epilogue(libm::yn(order, num))
+        y_domain_epilogue(if num.is_nan() { bessel_nan(num) } else { libm::yn(order, num) })
     }
 }

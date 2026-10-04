@@ -3461,19 +3461,23 @@ fn diff_math_lastmile() {
 /// through errno at all. So these rows pin `_y0`/`_y1`'s NN and ND arms but
 /// are structurally unable to pin NZ. Don't read a green run as covering it.
 // The numerics under the C wrappers: the `libm` functions cnt-rust's wrappers call (see
-// build.rs), so `diff_math_bessel` grades only the shell.
+// build.rs), so `diff_math_bessel` grades only the shell. A NaN passes through quieted,
+// as FDLIBM's `x*x` / `1/(x+x*x)` did and cnt-rust's wrappers do.
+fn fdlibm_nan(x: f64, f: impl Fn(f64) -> f64) -> f64 {
+    if x.is_nan() { f64::from_bits(x.to_bits() | 0x0008_0000_0000_0000) } else { f(x) }
+}
 #[no_mangle]
-extern "C" fn __ieee754_j0(x: f64) -> f64 { libm::j0(x) }
+extern "C" fn __ieee754_j0(x: f64) -> f64 { fdlibm_nan(x, libm::j0) }
 #[no_mangle]
-extern "C" fn __ieee754_j1(x: f64) -> f64 { libm::j1(x) }
+extern "C" fn __ieee754_j1(x: f64) -> f64 { fdlibm_nan(x, libm::j1) }
 #[no_mangle]
-extern "C" fn __ieee754_jn(n: i32, x: f64) -> f64 { libm::jn(n, x) }
+extern "C" fn __ieee754_jn(n: i32, x: f64) -> f64 { fdlibm_nan(x, |x| libm::jn(n, x)) }
 #[no_mangle]
-extern "C" fn __ieee754_y0(x: f64) -> f64 { libm::y0(x) }
+extern "C" fn __ieee754_y0(x: f64) -> f64 { fdlibm_nan(x, libm::y0) }
 #[no_mangle]
-extern "C" fn __ieee754_y1(x: f64) -> f64 { libm::y1(x) }
+extern "C" fn __ieee754_y1(x: f64) -> f64 { fdlibm_nan(x, libm::y1) }
 #[no_mangle]
-extern "C" fn __ieee754_yn(n: i32, x: f64) -> f64 { libm::yn(n, x) }
+extern "C" fn __ieee754_yn(n: i32, x: f64) -> f64 { fdlibm_nan(x, |x| libm::yn(n, x)) }
 
 fn diff_math_bessel() {
     let mut rng = Rng(0xbe55_e100_d00d_f00d);
@@ -3519,6 +3523,16 @@ fn diff_math_bessel() {
         *_errno() = 0;
         let v = f();
         (v, *_errno())
+    }
+
+    // NaN payloads, bit-exact (same_f64 below lets any NaN match any NaN). msvcrt_apitest's
+    // ieee rows check these; `libm` alone returns a canonical NaN.
+    for b in [0xFFFF_FFFF_FFFF_FFFFu64, 0xFFF8_0000_0000_0001, 0x7FF0_0000_0000_0001] {
+        let q = b | 0x0008_0000_0000_0000;
+        let x = f64::from_bits(b);
+        for v in [cabi::_j0(x), cabi::_j1(x), cabi::_jn(3, x), cabi::_y0(x), cabi::_y1(x), cabi::_yn(3, x)] {
+            assert_eq!(v.to_bits(), q, "Bessel NaN payload {b:#018x}");
+        }
     }
 
     for &x in &xs {
