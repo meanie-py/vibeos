@@ -16,4 +16,4 @@ binaries:
 test:
   launch_marker: "[NETPROBE] done"
   pass_marker: "[NETPROBE] done VERDICT=PASS"
-  launch_drain_secs: 480
+  launch_drain_secs: 1200

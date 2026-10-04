@@ -10,7 +10,7 @@ declare -A CC=( [arm64]=aarch64-w64-mingw32-gcc [amd64]=x86_64-w64-mingw32-gcc [
 for A in $ARCHES; do
     # GUI subsystem + classic msvcrt, same recipe and reasons as ../regdiff/build.sh.
     "$TC/${CC[$A]}" -O2 -o "$HERE/netprobe-$A.exe" "$HERE/netprobe.c" \
-        -lmsvcrt-os -lntdll -lws2_32 -lwininet -ldnsapi -ladvapi32 -lkernel32 \
+        -lmsvcrt-os -lntdll -lws2_32 -lwininet -ldnsapi -lcrypt32 -ladvapi32 -lkernel32 \
         -Wl,--subsystem,windows -Wl,-e,mainCRTStartup
     # Headers + import table read directly (tools/payloads/pecheck.py): the old
     # `objdump -p | grep -q` under pipefail passed or failed at random on SIGPIPE.

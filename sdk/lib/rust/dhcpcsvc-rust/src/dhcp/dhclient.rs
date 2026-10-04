@@ -712,7 +712,7 @@ unsafe fn send_decline(ipp: *mut core::ffi::c_void) {
     let ip = ipp as *mut interface_info;
     note(
         (b"DHCPDECLINE on %s to %s port %d\0".as_ptr() as *const u8) as *const i8,
-        (*ip).name,
+        (*ip).name.as_ptr(),
         inet_ntoa(sockaddr_broadcast.sin_addr),
         ntohs(sockaddr_broadcast.sin_port) as u32,
     );
@@ -1428,7 +1428,7 @@ unsafe extern "C" fn send_discover(ipp: *mut core::ffi::c_void) {
         }
         if (*(*ip).client).medium.is_null() {
             if fail != 0 {
-                error(b"No valid media types for %s!\0".as_ptr() as *const i8, (*ip).name);
+                error(b"No valid media types for %s!\0".as_ptr() as *const i8, (*ip).name.as_ptr());
             }
             (*(*ip).client).medium = (*(*(*ip).client).config).media;
             increase = 1;
@@ -1459,7 +1459,7 @@ unsafe extern "C" fn send_discover(ipp: *mut core::ffi::c_void) {
     (*(*ip).client).secs = (*(*ip).client).packet.secs;
     note(
         b"DHCPDISCOVER on %s to %s port %d interval %ld\0".as_ptr() as *const i8,
-        (*ip).name,
+        (*ip).name.as_ptr(),
         inet_ntoa(sockaddr_broadcast.sin_addr),
         ntohs(sockaddr_broadcast.sin_port) as i32,
         (*(*ip).client).interval as i64,
@@ -1922,7 +1922,7 @@ pub unsafe extern "C" fn send_request(ipp: *mut core::ffi::c_void) {
 
     note(
         b"DHCPREQUEST on %s to %s port %d\0".as_ptr() as *const i8,
-        (*ip).name,
+        (*ip).name.as_ptr(),
         inet_ntoa(destination.sin_addr),
         ntohs(destination.sin_port) as u32,
     );
@@ -2325,7 +2325,7 @@ unsafe fn write_client_lease(ip: *mut interface_info, lease: *mut client_lease, 
     fprintf(
         leaseFile,
         b"  interface \"%s\";\n\0".as_ptr() as *const i8,
-        (*ip).name
+        (*ip).name.as_ptr()
     );
     fprintf(
         leaseFile,

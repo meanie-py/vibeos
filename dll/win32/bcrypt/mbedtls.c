@@ -433,6 +433,13 @@ NTSTATUS hash_init(struct hash *hash)
     mbedtls_md_init(&hash->hash_ctx);
     switch (hash->alg_id)
     {
+#if MBEDTLS_VERSION_MAJOR >= 3
+        /* Mbed TLS 3.x removed MD2 and MD4 (upstream wrote this file against 2.x). */
+        case ALG_ID_MD2:
+        case ALG_ID_MD4:
+            FIXME("MD2/MD4 are not in Mbed TLS 3.x\n");
+            return STATUS_NOT_SUPPORTED;
+#else
         case ALG_ID_MD2:
             md_type = MBEDTLS_MD_MD2;
             break;
@@ -440,6 +447,7 @@ NTSTATUS hash_init(struct hash *hash)
         case ALG_ID_MD4:
             md_type = MBEDTLS_MD_MD4;
             break;
+#endif
 
         case ALG_ID_MD5:
             md_type = MBEDTLS_MD_MD5;
@@ -530,8 +538,13 @@ mbedtls_cipher_type_t key_get_cipher(const struct key *key)
     switch (key->alg_id)
     {
         case ALG_ID_RC4:
+#if MBEDTLS_VERSION_MAJOR >= 3
+            FIXME("RC4 is not in Mbed TLS 3.x\n");
+            return MBEDTLS_CIPHER_NONE;
+#else
             WARN("handle block size\n");
             return MBEDTLS_CIPHER_ARC4_128;
+#endif
 
         case ALG_ID_3DES:
             WARN("handle block size\n");
@@ -563,9 +576,11 @@ mbedtls_cipher_type_t key_get_cipher(const struct key *key)
                     if (key->u.s.secret_len == 32) return MBEDTLS_CIPHER_AES_256_CBC;
                     break;
                 case CHAIN_MODE_CFB:
+#if MBEDTLS_VERSION_MAJOR < 3 /* CFB8 is not in Mbed TLS 3.x */
                     if (key->u.s.secret_len == 16) return MBEDTLS_CIPHER_AES_128_CFB8;
                     if (key->u.s.secret_len == 24) return MBEDTLS_CIPHER_AES_192_CFB8;
                     if (key->u.s.secret_len == 32) return MBEDTLS_CIPHER_AES_256_CFB8;
+#endif
                     break;
                 default:
                     break;
@@ -1580,7 +1595,9 @@ static NTSTATUS key_import_dh_params(struct key *key, mbedtls_dhm_context *dh_ke
     mbedtls_mpi_read_binary(&dh_key->G, p, key_len);
 
     key->u.a.bitlen = dh_params->cbKeyLength * 8;
+#if MBEDTLS_VERSION_MAJOR < 3 /* 3.x derives the length from P */
     dh_key->len = key_len;
+#endif
 
     return STATUS_SUCCESS;
 }
@@ -1605,7 +1622,9 @@ static NTSTATUS key_import_dh_public(struct key *key, mbedtls_dhm_context *dh_ke
     mbedtls_mpi_read_binary(&dh_key->GX, p, key_len);
 
     key->u.a.bitlen = dh_blob->cbKey * 8;
+#if MBEDTLS_VERSION_MAJOR < 3 /* 3.x derives the length from P */
     dh_key->len = key_len;
+#endif
 
     return STATUS_SUCCESS;
 }
@@ -1631,7 +1650,9 @@ static NTSTATUS key_import_dh(struct key *key, mbedtls_dhm_context *dh_key, UCHA
     mbedtls_mpi_read_binary(&dh_key->X, p, key_len);
 
     key->u.a.bitlen = dh_blob->cbKey * 8;
+#if MBEDTLS_VERSION_MAJOR < 3 /* 3.x derives the length from P */
     dh_key->len = key_len;
+#endif
 
     return STATUS_SUCCESS;
 }
@@ -2200,7 +2221,9 @@ static mbedtls_md_type_t get_digest_from_id(const WCHAR *alg_id)
     if (!wcscmp(alg_id, BCRYPT_SHA256_ALGORITHM)) return MBEDTLS_MD_SHA256;
     if (!wcscmp(alg_id, BCRYPT_SHA384_ALGORITHM)) return MBEDTLS_MD_SHA384;
     if (!wcscmp(alg_id, BCRYPT_SHA512_ALGORITHM)) return MBEDTLS_MD_SHA512;
+#if MBEDTLS_VERSION_MAJOR < 3
     if (!wcscmp(alg_id, BCRYPT_MD2_ALGORITHM)) return MBEDTLS_MD_MD2;
+#endif
     if (!wcscmp(alg_id, BCRYPT_MD5_ALGORITHM)) return MBEDTLS_MD_MD5;
     return MBEDTLS_MD_NONE;
 }
@@ -2468,8 +2491,13 @@ NTSTATUS key_asymmetric_sign(void *args)
                             bcrypt_rng, NULL);
     else
 #endif
+#if MBEDTLS_VERSION_MAJOR >= 3
+        ret = mbedtls_pk_sign(&key_data(params->key)->a.pk.privkey, hash_alg, params->input, params->input_len, output, 1024,
+                            &sig_len, bcrypt_rng, NULL);
+#else
         ret = mbedtls_pk_sign(&key_data(params->key)->a.pk.privkey, hash_alg, params->input, params->input_len, output, &sig_len,
                             bcrypt_rng, NULL);
+#endif
     if (ret)
     {
         free(output);
@@ -2736,36 +2764,43 @@ NTSTATUS key_asymmetric_derive_key(void *args)
         case ALG_ID_ECDH_P256:
         case ALG_ID_ECDH_P384:
         {
-            mbedtls_ecdh_context ecdh;
+            /* The parts, not an mbedtls_ecdh_context: in Mbed TLS 3.x the context keeps
+             * grp/d/Qp/z inside ctx.mbed_ecdh (no MBEDTLS_ECDH_LEGACY_CONTEXT), and the
+             * shared-secret call below only ever wanted the parts. Same on 2.x. */
+            mbedtls_ecp_group grp;
+            mbedtls_mpi d, z;
+            mbedtls_ecp_point Qp;
             mbedtls_ecp_keypair *ecp_keypair_pr;
             mbedtls_ecp_keypair *ecp_keypair_pu;
 
-            mbedtls_ecdh_init(&ecdh);
             ecp_keypair_pr = mbedtls_pk_ec(key_data(params->privkey)->a.pk.privkey);
             ecp_keypair_pu = mbedtls_pk_ec(key_data(params->pubkey)->a.pk.pubkey);
             if (!ecp_keypair_pr || !ecp_keypair_pu) return STATUS_INTERNAL_ERROR;
-            mbedtls_ecp_group_load(&ecdh.grp, ecp_keypair_pr->grp.id);
-            mbedtls_mpi_copy(&ecdh.d, &ecp_keypair_pr->d);
-            mbedtls_ecp_copy(&ecdh.Qp, &ecp_keypair_pu->Q);
+            mbedtls_ecp_group_init(&grp);
+            mbedtls_mpi_init(&d);
+            mbedtls_mpi_init(&z);
+            mbedtls_ecp_point_init(&Qp);
+            mbedtls_ecp_group_load(&grp, ecp_keypair_pr->grp.id);
+            mbedtls_mpi_copy(&d, &ecp_keypair_pr->d);
+            mbedtls_ecp_copy(&Qp, &ecp_keypair_pu->Q);
 
-            *params->ret_len = mbedtls_mpi_size(&ecdh.grp.P);
+            *params->ret_len = mbedtls_mpi_size(&grp.P);
+            ret = 0;
             if (params->output)
             {
                 if (params->output_len < *params->ret_len)
-                {
-                    mbedtls_ecdh_free(&ecdh);
-                    return STATUS_BUFFER_TOO_SMALL;
-                }
-                ret = mbedtls_ecdh_compute_shared(&ecdh.grp, &ecdh.z, &ecdh.Qp, &ecdh.d, bcrypt_rng, NULL);
-                if (ret)
-                {
+                    ret = -1;
+                else if ((ret = mbedtls_ecdh_compute_shared(&grp, &z, &Qp, &d, bcrypt_rng, NULL)))
                     FIXME("mbedtls_ecdh_compute_shared failed: %d\n", ret);
-                    mbedtls_ecdh_free(&ecdh);
-                    return STATUS_UNSUCCESSFUL;
-                }
-                mbedtls_mpi_write_binary(&ecdh.z, params->output, *params->ret_len);
+                else
+                    mbedtls_mpi_write_binary(&z, params->output, *params->ret_len);
             }
-            mbedtls_ecdh_free(&ecdh);
+            mbedtls_ecp_point_free(&Qp);
+            mbedtls_mpi_free(&z);
+            mbedtls_mpi_free(&d);
+            mbedtls_ecp_group_free(&grp);
+            if (ret == -1) return STATUS_BUFFER_TOO_SMALL;
+            if (ret) return STATUS_UNSUCCESSFUL;
             break;
         }
         case ALG_ID_DH:

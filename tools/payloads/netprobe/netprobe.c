@@ -1,11 +1,15 @@
 /* netprobe — the client side of the network, one layer at a time, each step's exact error
  * printed (rapps' "Updating Database" failed on arm64 before any socket reached netstack):
- *   0. wait for the DNS Client service: dnsapi asks it over RPC, and before it runs that RPC
+ *   0. RPC to a server that is not there returns an error instead of killing the caller
+ *      (the Rust clients' rpc_try, standing in for the C's RpcTryExcept);
+ *   0b. wait for the DNS Client service: dnsapi asks it over RPC, and before it runs that RPC
  *      raises RPC_S_SERVER_UNAVAILABLE (fatal on arm64, where the Rust clients dropped the C's
  *      RpcTryExcept) -- a startup-folder program gets there first;
  *   1. gethostbyname and getaddrinfo of the rapps database host (dnsapi -> UDP 53);
  *   2. a raw winsock TCP connect to port 80 of the address that came back;
- *   3. wininet InternetOpenUrlW over http, then over https (schannel), reading the body.
+ *   3. the trust anchor https needs: the ROOT store's size, ISRG Root X1 in it (Let's Encrypt),
+ *      and the chain engine's verdict on it (wininet's 12045 ERROR_INTERNET_INVALID_CA);
+ *   4. wininet InternetOpenUrlW over http, then over https (schannel), reading the body.
  * Verdict: "[NETPROBE] done VERDICT=PASS|FAIL" — PASS needs every step. */
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -13,6 +17,8 @@
 #include <wininet.h>
 #include <string.h>
 #include <windns.h>
+#include <wincrypt.h>
+#include <tlhelp32.h>
 
 ULONG __cdecl DbgPrint(const char *Format, ...);
 #define SAY(...) DbgPrint("[NETPROBE] " __VA_ARGS__)
@@ -21,6 +27,26 @@ static LONG failures;
 #define CHECK(cond, ...) do { if (!(cond)) { SAY("FAIL " __VA_ARGS__); failures++; } } while (0)
 
 static const char HOST[] = "rapps.reactos.org";
+
+/* An RPC client stub raises when its server cannot be reached. Each call below must come
+ * back with an error code; reaching the next line at all is the test. */
+static void step_rpc_raise(void)
+{
+    SC_HANDLE scm;
+    HANDLE log;
+
+    SAY("step rpc-raise\n");
+    SetLastError(0);
+    scm = OpenSCManagerW(L"\\\\vibeos-no-such-host", NULL, SC_MANAGER_CONNECT);
+    SAY("OpenSCManagerW(no host) -> %p err=%lu\n", scm, GetLastError());
+    CHECK(scm == NULL && GetLastError() != 0, "OpenSCManagerW(no host) did not fail cleanly\n");
+    if (scm) CloseServiceHandle(scm);
+    SetLastError(0);
+    log = OpenEventLogW(L"\\\\vibeos-no-such-host", L"Application");
+    SAY("OpenEventLogW(no host) -> %p err=%lu\n", log, GetLastError());
+    CHECK(log == NULL && GetLastError() != 0, "OpenEventLogW(no host) did not fail cleanly\n");
+    if (log) CloseEventLog(log);
+}
 
 static void wait_dnscache(void)
 {
@@ -162,6 +188,103 @@ static void step_tcp(ULONG addr)
     closesocket(s);
 }
 
+/* The livecd's boot-time `setup -mini` registers rsaenh (the default CSP crypt32 hashes
+ * every root with) only after it has started Dnscache, minutes after the desktop on arm64
+ * TCG. A crypt32 that opens the ROOT store before then imports nothing, and caches that
+ * for the life of the process. Same wait as appstorm's. */
+static void wait_setup(void)
+{
+    int i;
+    SAY("step wait-setup\n");
+    for (i = 0; i < 900; i++) {
+        PROCESSENTRY32W pe = { sizeof pe };
+        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        int found = 0;
+        if (snap != INVALID_HANDLE_VALUE) {
+            if (Process32FirstW(snap, &pe))
+                do found = !lstrcmpiW(pe.szExeFile, L"setup.exe"); while (!found && Process32NextW(snap, &pe));
+            CloseHandle(snap);
+        }
+        if (!found) { SAY("setup finished after %ds\n", i); return; }
+        Sleep(1000);
+    }
+    SAY("FAIL setup still running after 900s\n");
+    failures++;
+}
+
+static void step_roots(void)
+{
+    HCERTSTORE root;
+    PCCERT_CONTEXT c = NULL, isrg = NULL;
+    DWORD n = 0;
+    HKEY key;
+
+    SAY("step roots\n");
+    {
+        /* advapi32 validates a CSP handle by reading its magic under __EXCEPT_PAGE_FAULT;
+         * crypt32 passes garbage when no CSP is registered yet. Fail, don't die. */
+        HCRYPTHASH h = 0;
+        BOOL ok;
+        SetLastError(0);
+        ok = CryptCreateHash((HCRYPTPROV)(ULONG_PTR)0xDEAD0000, CALG_SHA1, 0, 0, &h);
+        SAY("CryptCreateHash(unmapped handle) -> %d err=%lu\n", ok, GetLastError());
+        CHECK(!ok && GetLastError() == ERROR_INVALID_PARAMETER, "CryptCreateHash(unmapped handle)\n");
+    }
+    {
+        /* crypt32 hashes every root through the default CSP; with none, CryptCreateHash(0)
+         * fails ERROR_INVALID_PARAMETER and the root import writes nothing. */
+        HCRYPTPROV prov = 0;
+        BOOL ok = CryptAcquireContextW(&prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT);
+        SAY("CryptAcquireContext(PROV_RSA_FULL) -> %d err=%lu\n", ok, ok ? 0 : GetLastError());
+        CHECK(ok, "no default RSA CSP\n");
+        if (ok) CryptReleaseContext(prov, 0);
+        if (!RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Cryptography\\Defaults\\Provider Types\\Type 001",
+                           0, KEY_READ, &key)) {
+            WCHAR name[128];
+            DWORD cb = sizeof name;
+            if (RegQueryValueExW(key, L"Name", NULL, NULL, (BYTE *)name, &cb)) name[0] = 0;
+            SAY("Provider Types\\Type 001 Name=%ls\n", name);
+            RegCloseKey(key);
+        } else
+            SAY("Provider Types\\Type 001: missing\n");
+    }
+    if (!RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\SystemCertificates\\Root\\Certificates",
+                       0, KEY_READ, &key)) {
+        DWORD subkeys = 0;
+        RegQueryInfoKeyW(key, NULL, NULL, NULL, &subkeys, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+        SAY("registry Root\\Certificates: %lu subkeys\n", subkeys);
+        RegCloseKey(key);
+    } else
+        SAY("registry Root\\Certificates: missing\n");
+
+    root = CertOpenSystemStoreW(0, L"ROOT");
+    CHECK(root != NULL, "CertOpenSystemStore ROOT err=%lu\n", GetLastError());
+    if (!root) return;
+    while ((c = CertEnumCertificatesInStore(root, c))) {
+        WCHAR name[128];
+        n++;
+        if (!isrg && CertGetNameStringW(c, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, NULL, name, 128) &&
+            !lstrcmpW(name, L"ISRG Root X1"))
+            isrg = CertDuplicateCertificateContext(c);
+    }
+    SAY("ROOT store: %lu certs, ISRG Root X1 %s\n", n, isrg ? "present" : "MISSING");
+    CHECK(isrg != NULL, "ISRG Root X1 not in the ROOT store\n");
+    if (isrg) {
+        CERT_CHAIN_PARA para = { sizeof para };
+        PCCERT_CHAIN_CONTEXT chain = NULL;
+        if (CertGetCertificateChain(NULL, isrg, NULL, NULL, &para, 0, NULL, &chain)) {
+            SAY("ISRG chain: error=%#lx info=%#lx\n", chain->TrustStatus.dwErrorStatus,
+                chain->TrustStatus.dwInfoStatus);
+            CHECK(!(chain->TrustStatus.dwErrorStatus & CERT_TRUST_IS_UNTRUSTED_ROOT),
+                  "ISRG Root X1 chains to an untrusted root\n");
+            CertFreeCertificateChain(chain);
+        } else
+            CHECK(0, "CertGetCertificateChain ISRG err=%lu\n", GetLastError());
+        CertFreeCertificateContext(isrg);
+    }
+    CertCloseStore(root, 0);
+}
+
 static void step_url(HINTERNET hOpen, const WCHAR *url)
 {
     HINTERNET h;
@@ -192,6 +315,7 @@ int main(void)
 
     SAY("start\n");
     CHECK(WSAStartup(MAKEWORD(2, 2), &wsa) == 0, "WSAStartup\n");
+    step_rpc_raise();
     wait_dnscache();
     step_raw_udp("10.0.2.3");
     step_raw_udp("8.8.8.8");
@@ -202,6 +326,9 @@ int main(void)
     step_dnsquery(HOST, DNS_QUERY_BYPASS_CACHE);
     addr = step_dns();
     step_tcp(addr);
+
+    wait_setup();
+    step_roots();
 
     SAY("step wininet\n");
     hOpen = InternetOpenW(L"netprobe", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);

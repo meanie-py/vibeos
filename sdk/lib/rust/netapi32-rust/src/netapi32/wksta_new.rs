@@ -1,4 +1,5 @@
 use crate::prelude_rpc::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (standard netapi32 wine-debug channel; TRACE/FIXME reference it) ----
@@ -209,7 +210,7 @@ pub unsafe extern "system" fn NetEnumerateComputerNames(
     let mut status: NET_API_STATUS;
 
     // RpcTryExcept body (no SEH handler)
-    status = NetrEnumerateComputerNames(Server as PWSTR, NameType, Reserved, &mut ComputerNameArray);
+    status = rpc_try(|| NetrEnumerateComputerNames(Server as PWSTR, NameType, Reserved, &mut ComputerNameArray)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if status == 0 /* NERR_Success */ {
         *EntryCount = (*ComputerNameArray).EntryCount;
 
@@ -279,7 +280,7 @@ pub unsafe extern "system" fn NetUseAdd(
     Buf: LPBYTE,
     ParmError: LPDWORD,
 ) -> u32 {
-    let status = NetrUseAdd(UncServerName, Level, Buf as *mut _, ParmError);
+    let status = rpc_try(|| NetrUseAdd(UncServerName, Level, Buf as *mut _, ParmError)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -290,7 +291,7 @@ pub unsafe extern "system" fn NetUseDel(
     UseName: LMSTR,
     ForceCond: DWORD,
 ) -> NET_API_STATUS {
-    let status = NetrUseDel(UncServerName, UseName, ForceCond);
+    let status = rpc_try(|| NetrUseDel(UncServerName, UseName, ForceCond)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -333,13 +334,13 @@ pub unsafe extern "system" fn NetUseEnum(
 
     // RPC try block
     {
-        status = NetrUseEnum(
+        status = rpc_try(|| NetrUseEnum(
             UncServerName,
             &mut UseEnumInfo as *mut USE_ENUM_STRUCT,
             PreferedMaximumSize,
             TotalEntries,
             ResumeHandle,
-        );
+        )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
         if status == 0 || status == ERROR_MORE_DATA {
             match Level {
                 0 => {
@@ -371,7 +372,7 @@ pub unsafe extern "system" fn NetUseGetInfo(
     BufPtr: *mut *mut u8,
 ) -> u32 {
     *BufPtr = core::ptr::null_mut();
-    let status = NetrUseGetInfo(UncServerName, UseName, Level, BufPtr as *mut _);
+    let status = rpc_try(|| NetrUseGetInfo(UncServerName, UseName, Level, BufPtr as *mut _)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -386,7 +387,7 @@ pub unsafe extern "system" fn NetWkstaGetInfo(
         return ERROR_INVALID_PARAMETER;
     }
     *bufptr = core::ptr::null_mut();
-    let status = NetrWkstaGetInfo(servername, level, bufptr as *mut _);
+    let status = rpc_try(|| NetrWkstaGetInfo(servername, level, bufptr as *mut _)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -399,7 +400,7 @@ pub unsafe extern "system" fn NetWkstaSetInfo(
     parm_err: *mut u32,
 ) -> u32 {
     // wksta_new.c:916 casts the caller buffer: `(LPWKSTA_INFO)buffer`.
-    let status = NetrWkstaSetInfo(servername, level, buffer as LPWKSTA_INFO, parm_err);
+    let status = rpc_try(|| NetrWkstaSetInfo(servername, level, buffer as LPWKSTA_INFO, parm_err)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -414,12 +415,12 @@ pub unsafe extern "system" fn NetWkstaTransportAdd(
     // The translation declared a local empty `struct _WKSTA_TRANSPORT_INFO_0;` here, shadowing
     // the real wire type from the island. wksta_new.c:946 simply casts:
     // `(LPWKSTA_TRANSPORT_INFO_0)buf`.
-    let status = NetrWkstaTransportAdd(
+    let status = rpc_try(|| NetrWkstaTransportAdd(
         servername,
         level,
         buf as LPWKSTA_TRANSPORT_INFO_0,
         parm_err,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -430,7 +431,7 @@ pub unsafe extern "system" fn NetWkstaTransportDel(
     transportname: LPWSTR,
     ucond: DWORD,
 ) -> NET_API_STATUS {
-    let status = NetrWkstaTransportDel(servername, transportname, ucond);
+    let status = rpc_try(|| NetrWkstaTransportDel(servername, transportname, ucond)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -459,13 +460,13 @@ pub unsafe extern "system" fn NetWkstaUserEnum(
         _ => return ERROR_INVALID_PARAMETER,
     }
 
-    let status = NetrWkstaUserEnum(
+    let status = rpc_try(|| NetrWkstaUserEnum(
         servername,
         &mut UserEnumInfo,
         prefmaxlen,
         totalentries,
         resumehandle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if status == 0 || status == ERROR_MORE_DATA {
         match level {
@@ -498,7 +499,7 @@ pub unsafe extern "system" fn NetWkstaUserGetInfo(
     extern "system" {
         fn NetrWkstaUserGetInfo(reserved: *mut u16, level: u32, info: *mut *mut u8) -> u32;
     }
-    let status = NetrWkstaUserGetInfo(core::ptr::null_mut(), level, bufptr);
+    let status = rpc_try(|| NetrWkstaUserGetInfo(core::ptr::null_mut(), level, bufptr)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -515,13 +516,13 @@ pub unsafe extern "system" fn NetWkstaUserSetInfo(
         return ERROR_INVALID_PARAMETER;
     }
 
-    let status = NetrWkstaUserSetInfo(
+    let status = rpc_try(|| NetrWkstaUserSetInfo(
         core::ptr::null_mut(),
         level,
         // wksta_new.c:1180 — `(LPWKSTA_USER_INFO)&buf`
         core::ptr::addr_of_mut!(buf) as LPWKSTA_USER_INFO,
         parm_err,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     status
 }
@@ -542,14 +543,14 @@ pub unsafe extern "system" fn NetAddAlternateComputerName(
         return status;
     }
     // RpcTryExcept
-    status = NetrAddAlternateComputerName(
+    status = rpc_try(|| NetrAddAlternateComputerName(
         BindingHandle,
         Server as PWSTR,
         AlternateName as PWSTR,
         DomainAccount as PWSTR,
         EncryptedPassword,
         Reserved,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER) { status = I_RpcMapWin32Status(RpcExceptionCode()); } RpcEndExcept
     NetpUnbind(BindingHandle);
     status
@@ -572,7 +573,7 @@ pub unsafe extern "system" fn NetGetJoinableOUs(
         return status;
     }
     // RpcTryExcept body executed directly; handler omitted
-    status = NetrGetJoinableOUs2(
+    status = rpc_try(|| NetrGetJoinableOUs2(
         BindingHandle,
         lpServer as PWSTR,
         lpDomain as PWSTR,
@@ -580,7 +581,7 @@ pub unsafe extern "system" fn NetGetJoinableOUs(
         EncryptedPassword,
         OUCount,
         OUs,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     NetpUnbind(BindingHandle);
     status
 }
@@ -604,7 +605,7 @@ pub unsafe extern "system" fn NetJoinDomain(
         return status;
     }
 
-    status = NetrJoinDomain2(
+    status = rpc_try(|| NetrJoinDomain2(
         binding_handle,
         lpServer as PWSTR,
         lpDomain as PWSTR,
@@ -612,7 +613,7 @@ pub unsafe extern "system" fn NetJoinDomain(
         lpAccount as PWSTR,
         core::ptr::null_mut(),
         fJoinOptions,
-    );
+    )).unwrap_or_else(|code| code as _);
 
     NetpUnbind(binding_handle);
 
@@ -635,14 +636,14 @@ pub unsafe extern "system" fn NetRemoveAlternateComputerName(
         return status;
     }
 
-    status = NetrRemoveAlternateComputerName(
+    status = rpc_try(|| NetrRemoveAlternateComputerName(
         BindingHandle,
         Server as *mut u16,
         AlternateName as *mut u16,
         DomainAccount as *mut u16,
         core::ptr::null_mut(),
         Reserved,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     NetpUnbind(BindingHandle);
 
@@ -663,14 +664,14 @@ pub unsafe extern "system" fn NetRenameMachineInDomain(
     if status != 0 {
         return status;
     }
-    let status = NetrRenameMachineInDomain2(
+    let status = rpc_try(|| NetrRenameMachineInDomain2(
         binding_handle,
         lpServer as PWSTR,
         lpNewMachineName as PWSTR,
         lpAccount as PWSTR,
         core::ptr::null_mut(),
         fRenameOptions,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     NetpUnbind(binding_handle);
     status
 }
@@ -693,14 +694,14 @@ pub unsafe extern "system" fn NetSetPrimaryComputerName(
         return status;
     }
 
-    status = NetrSetPrimaryComputerName(
+    status = rpc_try(|| NetrSetPrimaryComputerName(
         BindingHandle,
         Server as *mut u16,
         PrimaryName as *mut u16,
         DomainAccount as *mut u16,
         EncryptedPassword as *mut _,
         Reserved,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     NetpUnbind(BindingHandle);
     return status;
@@ -722,13 +723,13 @@ pub unsafe extern "system" fn NetUnjoinDomain(
         return status;
     }
     // RPC try block (exception handler omitted per translation rules)
-    let status = NetrUnjoinDomain2(
+    let status = rpc_try(|| NetrUnjoinDomain2(
         binding_handle,
         lpServer as *mut u16,
         lpAccount as *mut u16,
         encrypted_password,
         fUnjoinOptions,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     NetpUnbind(binding_handle);
     status
 }
@@ -753,14 +754,14 @@ pub unsafe extern "system" fn NetValidateName(
         return status;
     }
 
-    status = NetrValidateName2(
+    status = rpc_try(|| NetrValidateName2(
         BindingHandle,
         lpServer as PWSTR,
         lpName as PWSTR,
         lpAccount as PWSTR,
         EncryptedPassword,
         NameType,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     NetpUnbind(BindingHandle);
     status

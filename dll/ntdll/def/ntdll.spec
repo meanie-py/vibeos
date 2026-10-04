@@ -1155,6 +1155,8 @@
 @ stdcall RtlSeekMemoryStream(ptr int64 long ptr)
 @ stdcall RtlSelfRelativeToAbsoluteSD2(ptr ptr)
 @ stdcall RtlSelfRelativeToAbsoluteSD(ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr)
+@ cdecl RtlSehTryExcept(ptr ptr ptr ptr ptr)
+@ cdecl RtlSehTryFinally(ptr ptr ptr ptr)
 @ stdcall -stub -version=0x600+ RtlSendMsgToSm(ptr ptr)
 @ stdcall RtlSetAllBits(ptr)
 @ stdcall RtlSetAttributesSecurityDescriptor(ptr long ptr)

@@ -1663,6 +1663,28 @@ pub unsafe extern "system" fn KeGetPcr() -> usize { 0 }
 }
 
 
+# dhcpcsvc, 2026-10-04: `(*ip).name` is a `[c_char; 256]`, passed by value to a variadic
+# logger. i386 pushes the bytes, so `%s` dereferenced "nets". The good side keeps the
+# `.as_ptr()` fix and a same-named POINTER field, which a name-only match would flag.
+_VARIADIC_ARRAY_BAD = """\
+pub struct interface_info { pub next: *mut interface_info, pub name: [c_char; 256] }
+extern "C" { pub fn note(format: *const c_char, ...) -> c_int; }
+unsafe fn send_discover(ipp: *mut c_void) {
+    let ip = ipp as *mut interface_info;
+    note(b"DHCPDISCOVER on %s\\0".as_ptr() as *const i8, (*ip).name);
+}
+"""
+_VARIADIC_ARRAY_GOOD = """\
+pub struct interface_info { pub next: *mut interface_info, pub name: [c_char; 256] }
+pub struct universe { pub name: *const c_char }
+extern "C" { pub fn note(format: *const c_char, ...) -> c_int; }
+unsafe fn send_discover(ipp: *mut c_void, u: *mut universe) {
+    let ip = ipp as *mut interface_info;
+    note(b"DHCPDISCOVER on %s\\0".as_ptr() as *const i8, (*ip).name.as_ptr());
+    note(b"%s\\0".as_ptr() as *const i8, (*u).name);
+}
+"""
+
 CONTROLS: list[Control] = [
     Control(
         name="scan_dropped_asserts",
@@ -1883,6 +1905,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BITWISE_NOT_BAD},
         good={"good.rs": _BITWISE_NOT_GOOD},
+    ),
+    Control(
+        name="scan_variadic_array_arg",
+        script="tools/scan_variadic_array_arg.py",
+        argv=["--lint"],
+        bad={"bad.rs": _VARIADIC_ARRAY_BAD},
+        good={"good.rs": _VARIADIC_ARRAY_GOOD},
     ),
     Control(
         name="scan_magic_offsets",

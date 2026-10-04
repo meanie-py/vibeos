@@ -1,4 +1,5 @@
 use crate::prelude_rpc::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (standard netapi32 wine-debug channel; TRACE/FIXME reference it) ----
@@ -96,14 +97,14 @@ pub unsafe extern "system" fn NetConnectionEnum(
         _ => {}
     }
 
-    let status = NetrConnectionEnum(
+    let status = rpc_try(|| NetrConnectionEnum(
         servername,
         qualifier,
         &mut EnumStruct as *mut _CONNECT_ENUM_STRUCT,
         prefmaxlen,
         totalentries,
         resume_handle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     match level {
         0 => {
@@ -130,7 +131,7 @@ pub unsafe extern "system" fn NetFileClose(
     servername: *mut u16,
     fileid: u32,
 ) -> u32 {
-    let status = NetrFileClose(servername, fileid);
+    let status = rpc_try(|| NetrFileClose(servername, fileid)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -171,7 +172,7 @@ pub unsafe extern "system" fn NetFileEnum(
     }
 
     // RpcTryExcept body (no SEH)
-    let status = NetrFileEnum(
+    let status = rpc_try(|| NetrFileEnum(
         servername,
         basepath,
         username,
@@ -179,7 +180,7 @@ pub unsafe extern "system" fn NetFileEnum(
         prefmaxlen,
         totalentries,
         resume_handle as *mut u32,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     match level {
         2 => {
@@ -211,7 +212,7 @@ pub unsafe extern "system" fn NetFileGetInfo(
     let status;
     *bufptr = core::ptr::null_mut();
     // srvsvc.c:269 — `(LPFILE_INFO)bufptr`
-    status = NetrFileGetInfo(servername, fileid, level, bufptr as LPFILE_INFO);
+    status = rpc_try(|| NetrFileGetInfo(servername, fileid, level, bufptr as LPFILE_INFO)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -222,10 +223,10 @@ pub unsafe extern "system" fn NetRemoteTOD(
     BufferPtr: *mut LPBYTE,
 ) -> NET_API_STATUS {
     *BufferPtr = core::ptr::null_mut();
-    NetrRemoteTOD(
+    rpc_try(|| NetrRemoteTOD(
         UncServerName as SRVSVC_HANDLE,
         BufferPtr as *mut LPTIME_OF_DAY_INFO,
-    )
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }
 
 // ---- NetServerDiskEnum ----
@@ -246,14 +247,14 @@ pub unsafe extern "system" fn NetServerDiskEnum(
         Buffer: core::ptr::null_mut(),
     };
 
-    let status: u32 = NetrServerDiskEnum(
+    let status: u32 = rpc_try(|| NetrServerDiskEnum(
         servername,
         level,
         &mut EnumContainer,
         prefmaxlen,
         totalentries,
         resume_handle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if !EnumContainer.Buffer.is_null() {
         // srvsvc.c:341 — `*bufptr = (LPBYTE)EnumContainer.Buffer;`
@@ -280,7 +281,7 @@ pub unsafe extern "system" fn NetServerGetInfo(
 ) -> NET_API_STATUS {
     *bufptr = core::ptr::null_mut();
     // srvsvc.c:385 — `(LPSERVER_INFO *)bufptr`
-    let status = NetrServerGetInfo(servername, level, bufptr as *mut LPSERVER_INFO);
+    let status = rpc_try(|| NetrServerGetInfo(servername, level, bufptr as *mut LPSERVER_INFO)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -293,12 +294,12 @@ pub unsafe extern "system" fn NetServerSetInfo(
     parm_err: LPDWORD,
 ) -> NET_API_STATUS {
     // srvsvc.c:414 — `(LPSERVER_INFO)&buf`
-    let status = NetrServerSetInfo(
+    let status = rpc_try(|| NetrServerSetInfo(
         servername,
         level,
         core::ptr::addr_of!(buf) as LPSERVER_INFO,
         parm_err,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -310,7 +311,7 @@ pub unsafe extern "system" fn I_NetServerSetServiceBits(
     servicebits: DWORD,
     updateimmediately: DWORD,
 ) -> NET_API_STATUS {
-    NetrServerSetServiceBits(servername, transport, servicebits, updateimmediately)
+    rpc_try(|| NetrServerSetServiceBits(servername, transport, servicebits, updateimmediately)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }
 
 // ---- NetServerTransportAdd ----
@@ -320,7 +321,7 @@ pub unsafe extern "system" fn NetServerTransportAdd(
     level: DWORD,
     bufptr: LPBYTE,
 ) -> NET_API_STATUS {
-    NetrServerTransportAdd(servername, level, bufptr as *mut _)
+    rpc_try(|| NetrServerTransportAdd(servername, level, bufptr as *mut _)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }
 
 // ---- NetServerTransportAddEx ----
@@ -330,7 +331,7 @@ pub unsafe extern "system" fn NetServerTransportAddEx(
     level: DWORD,
     bufptr: LPBYTE,
 ) -> NET_API_STATUS {
-    let status = NetrServerTransportAddEx(servername, level, bufptr as *mut _);
+    let status = rpc_try(|| NetrServerTransportAddEx(servername, level, bufptr as *mut _)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -341,7 +342,7 @@ pub unsafe extern "system" fn NetServerTransportDel(
     level: DWORD,
     bufptr: LPBYTE,
 ) -> NET_API_STATUS {
-    let status = NetrServerTransportDel(servername, level, bufptr as *mut _);
+    let status = rpc_try(|| NetrServerTransportDel(servername, level, bufptr as *mut _)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -372,13 +373,13 @@ pub unsafe extern "system" fn NetServerTransportEnum(
     }
 
     // RpcTryExcept – executed directly, handler omitted as dead code
-    let status = NetrServerTransportEnum(
+    let status = rpc_try(|| NetrServerTransportEnum(
         servername,
         &mut EnumStruct,
         prefmaxlen,
         totalentries,
         resume_handle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     match level {
         0 => {
@@ -408,7 +409,7 @@ pub unsafe extern "system" fn NetSessionDel(
     UncClientName: *mut u16,
     username: *mut u16,
 ) -> NET_API_STATUS {
-    NetrSessionDel(servername, UncClientName, username)
+    rpc_try(|| NetrSessionDel(servername, UncClientName, username)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }
 
 // ---- NetSessionEnum ----
@@ -450,7 +451,7 @@ pub unsafe extern "system" fn NetSessionEnum(
     }
 
     // RpcTryExcept omitted
-    status = NetrSessionEnum(
+    status = rpc_try(|| NetrSessionEnum(
         servername,
         UncClientName,
         username,
@@ -458,7 +459,7 @@ pub unsafe extern "system" fn NetSessionEnum(
         prefmaxlen,
         totalentries,
         resume_handle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     match level {
         0 => {
@@ -533,7 +534,7 @@ pub unsafe extern "system" fn NetSessionGetInfo(
         _ => {}
     }
 
-    status = NetrSessionEnum(
+    status = rpc_try(|| NetrSessionEnum(
         servername,
         UncClientName,
         username,
@@ -541,7 +542,7 @@ pub unsafe extern "system" fn NetSessionGetInfo(
         0xFFFFFFFFu32, // MAX_PREFERRED_LENGTH
         &mut dwTotalEntries,
         core::ptr::null_mut(),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     match level {
         0 => {
@@ -587,12 +588,12 @@ pub unsafe extern "system" fn NetShareAdd(
         return ERROR_INVALID_LEVEL;
     }
 
-    let status = NetrShareAdd(
+    let status = rpc_try(|| NetrShareAdd(
         servername,
         level,
         &buf as *const *mut u8 as LPSHARE_INFO,
         parm_err,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     status
 }
@@ -604,7 +605,7 @@ pub unsafe extern "system" fn NetShareCheck(
     device: LPWSTR,
     type_: LPDWORD,
 ) -> NET_API_STATUS {
-    NetrShareCheck(servername, device, type_)
+    rpc_try(|| NetrShareCheck(servername, device, type_)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }
 
 // ---- NetShareDel ----
@@ -618,7 +619,7 @@ pub unsafe extern "system" fn NetShareDel(
         return ERROR_INVALID_PARAMETER;
     }
 
-    let status = NetrShareDel(servername, netname, reserved);
+    let status = rpc_try(|| NetrShareDel(servername, netname, reserved)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -633,7 +634,7 @@ pub unsafe extern "system" fn NetShareDelSticky(
     if netname.is_null() || (*netname == 0u16) || reserved != 0 {
         return ERROR_INVALID_PARAMETER;
     }
-    status = NetrShareDelSticky(servername, netname, reserved);
+    status = rpc_try(|| NetrShareDelSticky(servername, netname, reserved)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     return status;
 }
 
@@ -679,13 +680,13 @@ pub unsafe extern "system" fn NetShareEnum(
         _ => {}
     }
 
-    let status = NetrShareEnum(
+    let status = rpc_try(|| NetrShareEnum(
         servername,
         &mut enum_struct,
         prefmaxlen,
         totalentries,
         resume_handle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     match level {
         0 => {
@@ -760,13 +761,13 @@ pub unsafe extern "system" fn NetShareEnumSticky(
         _ => {}
     }
 
-    let status = NetrShareEnum(
+    let status = rpc_try(|| NetrShareEnum(
         servername,
         &mut enum_struct as *mut SHARE_ENUM_STRUCT as LPSHARE_ENUM_STRUCT,
         prefmaxlen,
         totalentries,
         resume_handle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     match level {
         0 => {
@@ -822,7 +823,7 @@ pub unsafe extern "system" fn NetShareGetInfo(
     *bufptr = core::ptr::null_mut();
 
     // srvsvc.c:1201 — `(LPSHARE_INFO)bufptr`
-    let status = NetrShareGetInfo(servername, netname, level, bufptr as LPSHARE_INFO);
+    let status = rpc_try(|| NetrShareGetInfo(servername, netname, level, bufptr as LPSHARE_INFO)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }
 
@@ -841,13 +842,13 @@ pub unsafe extern "system" fn NetShareSetInfo(
         return ERROR_INVALID_LEVEL;
     }
 
-    let status = NetrShareSetInfo(
+    let status = rpc_try(|| NetrShareSetInfo(
         servername,
         netname,
         level,
         // srvsvc.c:1236 — `(LPSHARE_INFO)&buf`
         core::ptr::addr_of_mut!(buf) as LPSHARE_INFO,
         parm_err,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     status
 }

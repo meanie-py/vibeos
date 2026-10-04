@@ -944,6 +944,13 @@ hand flips the error to the other two.
   address. rustc says nothing: an array IS `Sized`, so it is a legal variadic argument. A macro
   wrapper is the worst place for this class because there is no declared parameter type
   ANYWHERE for a reviewer to compare against.
+  Third and fourth instances (2026-10-04), after which it became a gate: the i386 DHCP client
+  service died in msvcrt's printf engine on every boot that ran long enough to start Dhcp,
+  reading 0x7374656e ("nets", from "netstack smoltcp adapter"), because dhcpcsvc logged
+  `(*ip).name` by value at seven sites. msgina's three direct `wsprintfW(.., DomainName,
+  UserName)` calls had it too. `scan_variadic_array_arg` (`vibeos-cli check`, empty baseline)
+  resolves each `(*v).f` argument through v's declared type, since `name` is an array in
+  `interface_info` and a pointer in the two dhcpcsvc structs beside it.
 - **`extern CCHAR Foo[N]` declared as `*const i8`** — Rust reads the first bytes of the buffer
   *as* the pointer (`"mult"` = 0x746C756D). Mirror the array type, or use a C accessor.
 - **Cross-DLL DATA import indirection.** Under `raw-dylib` the `__imp_` load already yields the
@@ -6114,6 +6121,18 @@ the C let the callee write straight into the caller's buffer, terminator include
 **Fix.** Copy the terminator too when the capacity allows (write it into the temp first). Any
 "query into a temp, then copy out" redirect must copy everything the callee would have
 written, not just the count it returned.
+
+**User mode has it too: `ntdll_sys::seh` (2026-10-04).** Symptom: a process dies on an
+unhandled `RPC_S_SERVER_UNAVAILABLE` (0x6BA) the first time it calls a service that is not
+up yet, e.g. dnsapi before Dnscache starts on arm64. The Rust RPC clients kept only the try
+body of the C's `RpcTryExcept`. ntdll builds the same `sehtry.c` with `-DSEHTRY_USER_MODE`,
+which drops the interrupt-mask restore because `msr daifclr` traps at EL0 and `sti` faults
+at ring 3, and exports both trampolines. `ntdll_sys::seh::rpc_try(|| Stub(..))` gives
+`Err(code)`, and the caller maps it exactly as its C handler did. `tools/rpc_try_wrap.py
+--c <c files> --rs <rust files>` reads each C `RpcExcept` body and rewrites the matching Rust
+call. It exits 1 while any stub call is left unwrapped, so its listing is the to-do list.
+Test: netprobe's rpc-raise step calls OpenSCManagerW on a host that does not exist and
+expects 1722.
 
 ### DUMMY_PSEH turns a protected capture into an unprotected `memcpy` `[§9.59]`
 A whole class, not three bugs: in C, a kernel API captures a caller buffer inside `_SEH2_TRY`;
