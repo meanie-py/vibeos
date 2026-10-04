@@ -5376,6 +5376,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   risks a deadlock in the subsystem these guards exist to watch. Needs a per-site context audit
   plus a 3-arch smoke, which is why it is not bundled with the #19 closure.
 
+  **RESOLVED on every arch (2026-10-03/04).** `mm_guard_trip!` went portable (11 sites,
+  `DbgPrint` on x86) on 10-03; the three spinlock-held sites use `mm_guard_trip_atomic!`, which
+  now writes through `raw_trace_hex` -- the arm64 UART tracer, or on x86 a polled COM1 write
+  that takes no lock and is safe at any IRQL. Verified on the binaries: `MMGUARD` strings in
+  `ntkrnlmp.exe` are now **amd64 42, i386 42** (from 0 on 10-03). All 14 sites report on all
+  three arches, so x86 silence at them now means something.
+
   Related and also owed: `MmInsertRmap`'s two early returns (`mm/rmap.rs:453`, `:476`) still
   `return` where the C `KeBugCheck(MEMORY_MANAGEMENT)`s (`ntoskrnl/mm/rmap.c:363`, `:380`), and
   the returns are **not** arch-gated even though their prints are. Restoring the bugcheck is

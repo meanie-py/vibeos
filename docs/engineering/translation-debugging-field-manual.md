@@ -10489,6 +10489,25 @@ pages, every one on CPU 1, against a `-smp 1` control whose only zero reads were
 tail sectors. **Diff the SMP probe output against a UP control before reading it** — half the
 first listing was legitimate zeros.
 
+### The machine keeps running after a BUGCHECK: the other CPUs were never frozen
+**Symptom** (MP, both amd64 and arm64): the serial carries thread exits, network
+self-tests and DLL loads *after* the `*** BUGCHECK` line, interleaved with the flight
+recorder dump. The crash record describes a machine that was still changing.
+
+**Cause:** arm64's `KxFreezeExecution` was an empty stub, so a bugcheck stopped nothing.
+amd64's was real but ran where the C puts it, after `KeBugCheckWithTf`'s trap-frame scans
+and flight-recorder dump, which take long enough under TCG for other CPUs to do real work.
+
+**Fix:** arm64 implements the freeze (staged `IpiFrozen` states, SGI delivery, target side
+in `KiIpiServiceRoutine`); with no NMI, the owner's wait is bounded and names any CPU that
+did not stop. amd64 and arm64 freeze at the top of `KeBugCheckWithTf`, right after the
+banner, so a hung freeze still leaves the crash code. Not i386: its freeze rides a maskable
+vector with an unbounded wait. Because amd64's NMI freeze can park a CPU while it holds the
+HIGH_LEVEL print lock, `KdbpAcquireLock` takes that lock by force after a bounded spin once
+a bugcheck is active. **Verify with `--tripwire FREEZE_SELFTEST=1 --smp 4`:** a ticker on
+the last CPU must stop within one line of the banner (measured: one tick, then only the
+dump, on both arches).
+
 ### The ready-list tear: five refuted theories and the one real hole `[§9.56]`
 **FIXED** (all three arches; 0 occurrences across every post-fix boot). The long hunt is the
 lesson, so keep the shape: `Prcb->DispatcherReadyListHead[pri]` (8/9 observed) was found torn,
