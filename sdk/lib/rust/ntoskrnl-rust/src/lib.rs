@@ -51,9 +51,88 @@ pub use dbgprint_rust::{
 /// reader to infer one. Prints are bounded per site: these sit on hot paths and
 /// an unbounded print would itself change the timing it is trying to observe.
 ///
-/// Silence from an armed site is a real result: it eliminates that site.
+/// Silence from an armed site is a real result: it eliminates that site —
+/// **on the arches where the probe actually compiles.** That caveat is load
+/// bearing and was discovered the hard way: this macro was `#[cfg(aarch64)]`
+/// in its entirety, because its only printer (`ARM64_UART_TRACE_HEX`) is an
+/// arm64 header macro, so all fourteen armed sites expanded to NOTHING on
+/// i386/amd64. `strings build-<arch>/ntoskrnl/ntoskrnl.exe | grep -c MMGUARD`
+/// read arm64 43, amd64 0, i386 0 — and "x86 is quiet at these sites" was
+/// therefore a statement about the compiler, not about x86. It is now portable:
+/// arm64 keeps the raw UART write, every other arch uses `DbgPrint`.
+///
+/// **Use `mm_guard_trip_atomic!` instead wherever a spinlock is held.** The PFN
+/// lock sites (`rmap.rs` MmPageOutPhysicalAddress / MmDeleteRmap, `section.rs`
+/// MiGrabDataSection) run at DISPATCH_LEVEL or above, and the C never DPRINTs
+/// under that lock anywhere in `mm/` — checked, not assumed. A raw UART poke is
+/// safe at any IRQL; a formatted printer that takes its own lock is not, and a
+/// deadlock inside the subsystem these guards watch would be the worst possible
+/// failure for them. Those sites stay arm64-only BY DECISION, which is a
+/// different thing from the accident above.
 #[allow(unused_macros)]
 macro_rules! mm_guard_trip {
+    ($site:expr, $limit:expr $(, $label:expr => $val:expr)* $(,)?) => {{
+        use core::sync::atomic::{AtomicU32, Ordering};
+        static HITS: AtomicU32 = AtomicU32::new(0);
+        let n = HITS.fetch_add(1, Ordering::Relaxed);
+        if n < $limit {
+            #[cfg(target_arch = "aarch64")]
+            {
+                extern "C" {
+                    fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ntkrnl_sys::ddk::ULONG_PTR);
+                }
+                ARM64_UART_TRACE_HEX(
+                    concat!("[MMGUARD] ", $site, " hit#=\0").as_ptr(),
+                    (n + 1) as ntkrnl_sys::ddk::ULONG_PTR,
+                );
+                $(
+                    ARM64_UART_TRACE_HEX(
+                        concat!("[MMGUARD]   ", $label, "=\0").as_ptr(),
+                        ($val) as ntkrnl_sys::ddk::ULONG_PTR,
+                    );
+                )*
+                if n + 1 == $limit {
+                    ARM64_UART_TRACE_HEX(
+                        concat!("[MMGUARD] ", $site, " further hits suppressed after \0").as_ptr(),
+                        $limit as ntkrnl_sys::ddk::ULONG_PTR,
+                    );
+                }
+            }
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                // One call per operand, mirroring the arm64 line format exactly so
+                // the same grep works on every arch's serial log.
+                ntkrnl_sys::driver_ddk::DbgPrint(
+                    concat!("[MMGUARD] ", $site, " hit#=%p\n\0").as_ptr() as *const i8,
+                    (n + 1) as ntkrnl_sys::ddk::ULONG_PTR,
+                );
+                $(
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        concat!("[MMGUARD]   ", $label, "=%p\n\0").as_ptr() as *const i8,
+                        ($val) as ntkrnl_sys::ddk::ULONG_PTR,
+                    );
+                )*
+                if n + 1 == $limit {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        concat!("[MMGUARD] ", $site, " further hits suppressed after %p\n\0")
+                            .as_ptr() as *const i8,
+                        $limit as ntkrnl_sys::ddk::ULONG_PTR,
+                    );
+                }
+            }
+        }
+    }};
+}
+
+/// `mm_guard_trip!` for sites that hold a SPINLOCK — arm64-only on purpose.
+///
+/// Identical output, but no `DbgPrint` arm: at DISPATCH_LEVEL or above a
+/// formatted printer that takes its own lock can deadlock, and the C avoids
+/// DPRINTing under the PFN lock throughout `mm/`. The raw UART write is safe at
+/// any IRQL, so arm64 still reports. Draining these to x86 needs a lock-free
+/// sink (the flight recorder), not a print — that is the open follow-up.
+#[allow(unused_macros)]
+macro_rules! mm_guard_trip_atomic {
     ($site:expr, $limit:expr $(, $label:expr => $val:expr)* $(,)?) => {{
         #[cfg(target_arch = "aarch64")]
         {

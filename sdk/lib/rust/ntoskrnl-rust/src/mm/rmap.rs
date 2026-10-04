@@ -151,7 +151,7 @@ pub unsafe extern "system" fn MmPageOutPhysicalAddress(Page: PFN_NUMBER) -> NTST
             // An rmap entry's Address must be page-aligned. Unaligned means the
             // entry — or the list it came off — is already corrupt, which is the
             // §9.97 signature read from the rmap side.
-            mm_guard_trip!(
+            mm_guard_trip_atomic!(
                 "rmap.MmPageOutPhysicalAddress unaligned-rmap-Address", 8,
                 "Page" => Page, "Address" => Address as ULONG_PTR,
                 "Process" => Process as ULONG_PTR, "entry" => entry as ULONG_PTR,
@@ -581,7 +581,7 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
     // wrong at this point, and that is precisely the precondition for freeing a
     // frame that is still mapped (§9.97). Of the twelve suppressions this is the
     // one most likely to fire first on the reuse path; x86 bugchecks here.
-    mm_guard_trip!(
+    mm_guard_trip_atomic!(
         "rmap.MmDeleteRmap mapping-not-in-list", 8,
         "Page" => Page, "Process" => Process as ULONG_PTR,
         "Address" => Address as ULONG_PTR,
