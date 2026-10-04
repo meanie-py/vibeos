@@ -921,9 +921,15 @@ pub unsafe fn SLTG_DoFuncs(
             (*pFuncDesc).funcdesc.callconv = ((*pFunc).nacc & 0x7) as CALLCONV;
             (*pFuncDesc).funcdesc.cParams = ((*pFunc).nacc >> 3) as SHORT;
             (*pFuncDesc).funcdesc.cParamsOpt = (((*pFunc).retnextopt & 0x7e) >> 1) as SHORT;
-            (*pFuncDesc).funcdesc.oVft = (((*pFunc).vtblpos as i32 & !1)
-                * size_of::<*mut c_void>() as i32
-                / (*(*pTI).pTypeLib).ptr_size) as SHORT;
+            // Wine 10.0: a dispatch function has no vtable slot, and the offset is
+            // UNSIGNED: through `as i32` an offset >= 0x8000 went negative.
+            (*pFuncDesc).funcdesc.oVft = if (*pFuncDesc).funcdesc.funckind == FUNC_DISPATCH {
+                0
+            } else {
+                (((*pFunc).vtblpos as u16 as i32 & !1)
+                    * size_of::<*mut c_void>() as i32
+                    / (*(*pTI).pTypeLib).ptr_size) as SHORT
+            };
             if (*pFunc).helpstring != 0xffff {
                 (*pFuncDesc).HelpString = decode_string(
                     hlp_strings,

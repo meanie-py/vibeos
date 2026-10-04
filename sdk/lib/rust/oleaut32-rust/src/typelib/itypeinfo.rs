@@ -2010,11 +2010,18 @@ unsafe extern "system" fn ITypeInfo_fnGetDllEntry(
         return TYPE_E_BADMODULEKIND;
     }
 
-    let pFDesc = TLB_get_funcdesc_by_memberid(
-        (*This).funcdescs,
-        (*This).typeattr.cFuncs as UINT,
-        memid,
-    );
+    // Wine 10.0: match the INVOKEKIND too. A module's property get and put
+    // share a memid, and the first match handed back the wrong entry point.
+    let mut pFDesc: *mut TLBFuncDesc = null_mut();
+    let mut k: UINT = 0;
+    while k < (*This).typeattr.cFuncs as UINT {
+        let f = (*This).funcdescs.add(k as usize);
+        if (*f).funcdesc.memid == memid && (*f).funcdesc.invkind == invKind {
+            pFDesc = f;
+            break;
+        }
+        k += 1;
+    }
     if !pFDesc.is_null() {
         /* dump_TypeInfo / dump_TLBFuncDescOne — compiled out */
 

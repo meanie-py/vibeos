@@ -30,6 +30,13 @@ binaries:
     dest: bin/oleaut32_winetest.exe
   - src: build-{arch}/modules/rostests/winetests/ole32/ole32_winetest.exe
     dest: bin/ole32_winetest.exe
+  # The live CD's hives are prebuilt and never run DllRegisterServer (syssetup's
+  # RegisterDlls is an install step), so the classes these suites create
+  # (CLSID_StdFont, StdPicture, the PS factories) are absent and the tests fail
+  # on REGDB_E_CLASSNOTREG instead of on our code. The list opens by
+  # registering both DLLs, as an installed system already has.
+  - src: build-{arch}/base/system/regsvr32/regsvr32.exe
+    dest: bin/regsvr32.exe
 
 test:
   launch_marker: "[APITEST-SWEEP] done"

@@ -285,15 +285,12 @@ pub unsafe fn MSFT_ReadValue(pVar: *mut VARIANT, offset: i32, pcx: *mut TLBConte
             } else {
                 let ptr = heap_alloc_zero(size as usize) as *mut i8;
                 MSFT_Read(ptr as *mut c_void, size as DWORD, pcx, DO_NOT_SEEK);
-                (*pVar).n3.bstrVal = SysAllocStringLen(null(), size as UINT);
-                /* FIXME: do we need a AtoW conversion here? */
-                *(*pVar).n3.bstrVal.add(size as usize) = 0;
-                let mut i = size;
-                while i > 0 {
-                    i -= 1;
-                    /* char -> OLECHAR assignment sign-extends like the C */
-                    *(*pVar).n3.bstrVal.add(i as usize) = *ptr.add(i as usize) as u16;
-                }
+                // Wine 10.0 answers the old "do we need a AtoW conversion?"
+                // FIXME: yes. The bytes are ANSI (CP_ACP); widening each one
+                // (sign-extended) turned every non-ASCII constant to garbage.
+                let len = MultiByteToWideChar(CP_ACP, 0, ptr, size, null_mut(), 0);
+                (*pVar).n3.bstrVal = SysAllocStringLen(null(), len as UINT);
+                MultiByteToWideChar(CP_ACP, 0, ptr, size, (*pVar).n3.bstrVal, len);
                 heap_free(ptr as *mut c_void);
             }
             size = -4;
@@ -467,9 +464,15 @@ pub unsafe fn MSFT_DoFuncs(
         (*ptfd).funcdesc.callconv = ((*pFuncRec).FKCCIC >> 8) & 0xF;
         (*ptfd).funcdesc.cParams = (*pFuncRec).nrargs;
         (*ptfd).funcdesc.cParamsOpt = (*pFuncRec).nroargs;
-        (*ptfd).funcdesc.oVft = (((*pFuncRec).VtableOffset as i32 & !1)
-            * size_of::<*mut c_void>() as i32
-            / (*(*pTI).pTypeLib).ptr_size) as SHORT;
+        // Wine 10.0: a dispatch function has no vtable slot, and the offset is
+        // UNSIGNED: through `as i32` an offset >= 0x8000 went negative.
+        (*ptfd).funcdesc.oVft = if (*ptfd).funcdesc.funckind == FUNC_DISPATCH {
+            0
+        } else {
+            (((*pFuncRec).VtableOffset as u16 as i32 & !1)
+                * size_of::<*mut c_void>() as i32
+                / (*(*pTI).pTypeLib).ptr_size) as SHORT
+        };
         (*ptfd).funcdesc.wFuncFlags = LOWORD((*pFuncRec).Flags as u32);
 
         /* nameoffset is sometimes -1 on the second half of a propget/propput
@@ -643,6 +646,12 @@ pub unsafe fn MSFT_DoVars(
 
         if reclength > offset_of!(MSFT_VarRecord, HelpString) as i32 {
             (*ptvd).HelpString = MSFT_ReadString(pcx, (*pVarRec).HelpString);
+        }
+
+        // Wine 10.0: variables carry custom data too (GetVarCustData /
+        // GetAllVarCustData were always empty for a loaded typelib).
+        if reclength > offset_of!(MSFT_VarRecord, oCustData) as i32 {
+            MSFT_CustData(pcx, (*pVarRec).oCustData, &raw mut (*ptvd).custdata_list);
         }
 
         if reclength > offset_of!(MSFT_VarRecord, HelpStringContext) as i32 {
