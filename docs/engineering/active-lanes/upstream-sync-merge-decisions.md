@@ -62,6 +62,7 @@ and both of these were in the 72 that never conflicted.
 | `dll/win32/kernelbase` → wine-based `kernelbase_ros` | **The biggest judgment call in the merge.** Ours is a deliberately minimal Vista-scoped shim, documented as such in its own header. See "owed" below. |
 | ole32 → `combase`/`coml2`/`pathcch_static` split | Same reasoning; ole32 is Rust-flipped here. |
 | libjpeg 9f → 10 | A major API break, and the research lane owns vendor bumps. libpng and mbedTLS were declined because **ours are newer** (1.6.58 vs 1.6.54; 3.6.7 vs 2.16.11). libtiff 4.7.0 → 4.7.1 was taken. |
+| The new ATA stack: `atapi/` SATL driver + `pciidex/chipset/` (incl. software AHCI), and the uniata→pciide default switch (`7d33f7503bb`) | **WON'T PORT (owner, 2026-10-03).** We already drive AHCI: uniata-rust claims `ich9-ahci` (`PCI#CC_0106` in hivesys) and both x86 arches boot to desktop with the CD on AHCI (`VIBEOS_AHCI_CD=1` smoke, verified 2026-10-03). The rewrite is ~20K lines (~$10-12) of replacement for a working driver. Policy: uniata is OUR storage driver going forward. An upstream bug fix in the new stack is ported SEMANTICALLY into uniata-rust when it describes a bug uniata also has, never by bulk-adopting their files. The C stays unbuilt on disk as reference. |
 | pruned trees | pc98, xbox, arm32, BIOS realmode, ext2/btrfs/ntfs/udfs/nfs, NTVDM, ISAPNP, fast486, SAC, x86bios/INT10, legacy tcpip, floppy, fraginator, `untfs`. |
 
 ## New upstream TUs declined because a Rust twin owns the symbols
@@ -112,6 +113,7 @@ its own `__readx18`/`__writex18` family.
     software AHCI implementation** (ahci_generic/ahci_hw/ahci_io), and a new `acpi.c`.
     Our `pciidex-rust` came from the pre-fork fdo.c/pciidex.c.
   Likely the single biggest concrete translation opportunity this merge surfaced.
+  **Superseded 2026-10-03: declined, see "Whole upstream changes DECLINED" — uniata-rust already does AHCI.**
 - **pcix**: upstream added `pci/ecam.c` + `pci/express.c` (PCIe ECAM config space). No Rust
   twin; left out of the build. Real feature gap, not a bug.
 - `drivers/base/CMakeLists.txt`: our GDB-flag mutual exclusion between kdcom and kdgdb is

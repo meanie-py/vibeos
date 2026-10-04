@@ -168,12 +168,38 @@ pub unsafe extern "C" fn EfiEntry(
 #[cfg_attr(feature = "uefildr-rust-entry", no_mangle)]
 pub unsafe extern "C" fn ExecuteLoaderCleanly(PreviousStack: PVOID) -> ! {
     TRACE(b"ExecuteLoaderCleanly Entry\n\0".as_ptr() as *const i8);
+    // KEEP THESE. "Switching stack..." used to be the last line a non-ATAPI boot
+    // ever printed, and the silence after it read as a crash AT the stack switch
+    // -- it is not, it is the output CHANNEL changing: everything from here on
+    // goes to TRACE/WARN, which the serial log does not carry. That artefact has
+    // been mistaken for a crash twice, once in this file's own documentation. Two
+    // ConOut lines answer both questions a reader actually has: did we survive
+    // _changestack, and did RunLoader give up?
+    fldr_conout(crate::wide!("[FLDR] past _changestack, entering RunLoader\r\n\0"));
     UefiServiceStack = PreviousStack;
 
     RunLoader();
 
     WARN(b"RunLoader returned, halting\n\0".as_ptr() as *const i8);
+    fldr_conout(crate::wide!("[FLDR] RunLoader RETURNED (no boot config)\r\n\0"));
     Reboot();
+}
+
+/// Print to ConOut, which the serial log carries -- unlike TRACE/WARN, whose
+/// invisibility is what made the post-stack-switch boot look like a crash.
+/// Silent if the system table or ConOut is unavailable, so it can be called from
+/// anywhere without a liveness check at the call site.
+pub(crate) unsafe fn fldr_conout(msg: *const u16) {
+    if GlobalSystemTable.is_null() {
+        return;
+    }
+    let conout = (*GlobalSystemTable).ConOut as *mut EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL;
+    if conout.is_null() {
+        return;
+    }
+    if let Some(out) = (*conout).OutputString {
+        out(conout, msg as *mut u16);
+    }
 }
 
 // C: `#if !defined(_M_ARM)` — gate out 32-bit ARM; arm64 is allowed.
