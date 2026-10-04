@@ -222,6 +222,14 @@ pub unsafe extern "system" fn UniataSataConnect(
             }
             break;
         }
+        // An EMPTY port never reports presence, and the C sat out the whole
+        // second on it anyway: four empty ich9-ahci ports cost ~4s of every AHCI
+        // boot. Upstream's ahci_hw.c (AtaAhciPhyCheckDevicePresence) gives up
+        // once DET still says "no device" after 40ms; a device that IS there
+        // (DET=1, PHY not up yet) keeps the full second to negotiate.
+        if i >= 4 && SStatus.__bindgen_anon_1.as_ref().DET() == SStatus_DET_NoDev {
+            return IDE_STATUS_WRONG as UCHAR;
+        }
         ScsiPortStallExecution(10000);
         i += 1;
     }
@@ -1818,6 +1826,11 @@ pub unsafe extern "system" fn UniataAhciStart(chan: PHW_CHANNEL) {
 
     /* clear SATA error register */
     *SError.Reg.as_mut() = AtapiReadPort4(chan, IDX_SATA_SError);
+    // PxSERR is write-1-to-clear, and the C only READ it, despite the comment
+    // above. Stale link bits then survive into UniataAhciWaitCommandReady, which
+    // treats any nonzero SError as a timeout. Upstream's ahci_hw.c clears it
+    // before every command issue and after PHY ready ("Required for a D2H FIS").
+    AtapiWritePort4(chan, IDX_SATA_SError, *SError.Reg.as_ref());
 
     /* clear any interrupts pending on this channel */
     IS = UniataAhciReadChannelPort4(chan, IDX_AHCI_P_IS as ULONG);

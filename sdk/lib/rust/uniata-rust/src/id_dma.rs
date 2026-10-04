@@ -1872,7 +1872,12 @@ unsafe fn dma_init_serverworks(
 
     macro_rules! ret { ($v:expr) => {{ *apiomode_io = apiomode; *wdmamode_io = wdmamode; *udmamode_io = udmamode; return $v; }}; }
 
-    i = udmamode as LONG;
+    // sw_pio_modes[8 + i] has no slot past UDMA5: no ServerWorks/ATI PATA part
+    // does UDMA6 (upstream ati.c caps every IXP at UDMA5). The chip table said
+    // UDMA6 for the IXP300+ PATA parts, and the C read one past the array (UB);
+    // in Rust that is a bounds panic, i.e. a BUGCHECK at boot. The table is fixed
+    // too, but this function's own table is the limit, so enforce it here.
+    i = core::cmp::min(udmamode as LONG, 5);
     while i >= 0 {
         if setmode(ATA_UDMA0 + i as ULONG) != 0 {
             let mut reg56: USHORT = 0; get_pci!(0x56, reg56, 2);
@@ -1897,7 +1902,10 @@ unsafe fn dma_init_serverworks(
             let mut a: UCHAR = 0; get_pci!(0x54, a, 1);
             set_pci!(0x54, a as ULONG & !(0x01 << dev), UCHAR, 1);
             let mut reg44: ULONG = 0; get_pci!(0x44, reg44, 4);
-            reg44 = (reg44 & !(0xff << bit_offset)) | (sw_dma_modes[wdmamode as usize] << bit_offset);
+            // The C indexed with `wdmamode` (the drive's ceiling) instead of `i` (the
+            // mode just accepted), so a drive that refused its top WDMA mode still
+            // got the fastest timing. Upstream's svw_pata.c programs the mode set.
+            reg44 = (reg44 & !(0xff << bit_offset)) | (sw_dma_modes[i as usize] << bit_offset);
             set_pci!(0x44, reg44, ULONG, 4);
             let mut reg40: ULONG = 0; get_pci!(0x40, reg40, 4);
             reg40 = (reg40 & !(0xff << bit_offset)) | (sw_pio_modes[5 + i as usize] << bit_offset);
