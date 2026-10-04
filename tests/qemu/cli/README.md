@@ -164,6 +164,19 @@ all included), then auto-triage on failure.
   `--repeat` runs. `summary.json` lists all results under `boots`; its top-level
   serial archive selects the first failure, or first success if all passed.
   Use those paths for live observation and evidence, not the legacy per-arch log.
+- **`VIBEOS_QEMU_HOSTILE=all` (amd64) boots a QEMU stripped down to what a 2018+
+  mini PC gives you**, so real-hardware bugs show up at smoke speed. Or name the
+  hazards to bisect, e.g. `VIBEOS_QEMU_HOSTILE=q35,serial`:
+  - `q35`: ICH9 chipset, AHCI boot media, HPET.
+  - `cpu`: `-cpu max`, so TCG enforces the CPU's features.
+  - `nops2`: no i8042; input only through USB HID on xHCI.
+  - `novga`: GOP from ramfb only.
+  - `mem`: 6 GiB.
+  - `serial`: no COM1; the console UART sits at I/O 0x5000, named only by an
+    injected ACPI SPCR, the way AMT serial-over-LAN or a BMC is on a real PC.
+
+  All of them, plus `VIBEOS_QEMU_SMP=4`, boot green as of 2026-10-03. Opt-in, not
+  in the gate. `vibeos-cli gdb start amd64` honours the same knob.
 - `--tripwire "SPECIALPOOL=Gla5"` arms per-boot kernel debug knobs via QEMU
   fw_cfg (no media rebuild; kernel side `ntoskrnl-rust/src/tripwire.rs`) —
   special pool turns silent pool corruption into an immediate symbolicated

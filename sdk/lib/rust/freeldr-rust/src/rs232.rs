@@ -59,6 +59,14 @@ pub unsafe extern "C" fn Rs232PortInitialize(
         } else {
             return 0u8;
         }
+    } else if ComPort <= 0xfff8 {
+        // Not a COM number but an I/O-port base (DEBUGPORT=COM:0x5000, or the
+        // UART an ACPI SPCR describes): no legacy board has one there to guess.
+        if CpDoesPortExist(UlongToPtr(ComPort)) != 0 {
+            Address = UlongToPtr(ComPort);
+        } else {
+            return 0u8;
+        }
     } else {
         return 0u8;
     }

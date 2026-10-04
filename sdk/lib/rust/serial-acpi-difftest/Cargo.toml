@@ -1,0 +1,13 @@
+# Host harness for the loader's console-UART discovery from ACPI
+# (freeldr-rust/src/arm64_serial_acpi.rs). Not a C-vs-Rust differential: the
+# oracle is CAPTURED FIRMWARE TABLES (the Pi 4B's DBG2) plus synthetic SPCRs
+# for x86. Named *-difftest so `vibeos-cli difftest`, and therefore the gate,
+# runs it; the module's own #[cfg(test)] tests are the suite.
+[package]
+name = "serial-acpi-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "lib.rs"
