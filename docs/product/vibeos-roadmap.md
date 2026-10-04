@@ -809,6 +809,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
   entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
   smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
+- **Kernel user-pointer probes: a bad pointer bugchecks, and some never check — OPEN**
+  (2026-10-04). The C syscalls probe inside `_SEH2_TRY` and return the exception code;
+  this kernel has no SEH, so a raising probe is an unhandled exception (BUGCHECK 0x1E)
+  wherever the C would have returned `STATUS_ACCESS_VIOLATION`. The link-guard work
+  found the typed `ntkrnl-sys` Probe* helpers (`inline/common.rs`, `macros.rs`) doing NO
+  `MmUserProbeAddress` check at all, so a user caller could make the kernel read or write
+  a kernel address; it added the check and moved all 26 call sites of those helpers to
+  `probe.rs`'s `Result` probes with the C handler's cleanup. Still owed, ~160 sites:
+  the raising `ProbeForRead`/`ProbeForWrite` exports (82 calls; a bad user buffer
+  bugchecks), `ProbeAndCapture*` (37), and the still-UNCHECKED typed helpers in
+  `inline/mm.rs` and friends (`ProbeForWriteIoStatusBlock`, `ProbeForWriteSize_t`,
+  `ProbeForReadUnicodeString`, … ~40 calls, the same kernel-address hole). Biggest
+  users: win32k-rust 46, ntoskrnl-rust 46, iomgr-rust 19, ex-rust 14, ks-rust 13. Fix
+  shape: per site, `probe_read_generic`/`probe_write_generic` + the C except handler.
 - **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
   `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
   cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
