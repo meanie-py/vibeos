@@ -873,6 +873,7 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
             IoMarkIrpPending(irp);
             tditrans::post(tditrans::Cmd::ReceiveDatagram {
                 addr_id: id, irp: irp as usize, buf: va, len,
+                ret_info: (*p).ReturnDatagramInformation as usize,
             });
             STATUS_PENDING
         }
