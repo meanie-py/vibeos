@@ -746,6 +746,16 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # HEAP_ZERO_MEMORY handed to GlobalAlloc: not a GMEM_ flag, so GlobalAlloc refuses it
+    # outright. oleaut32's create_stream did this and no picture ever loaded from a file.
+    sgf = repo / "tools" / "scan_gmem_flags.py"
+    specs.append(
+        (
+            "scan_gmem_flags",
+            [py, str(sgf), "--lint"] if sgf.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sdc = repo / "tools" / "scan_dowhile_continue.py"
     specs.append(
         (

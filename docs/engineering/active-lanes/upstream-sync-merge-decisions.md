@@ -833,11 +833,16 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
     - **Wine olewinetest, amd64, before → after:**
       - clipboard, compobj, defaulthandler, ole2 and ole_server all crashed and now run
         (566/11, 985/35, 38/8, 3003/41, 33/2).
-    - **Still owed:**
-      - `OleConvertIStorageToOLESTREAMEx`, plus the export stubs listed in the reader's
-        finding 18 (`CoGetApartmentType`, `CoIncrementMTAUsage`, ...).
-      - `CF_HDROP` in `get_tymed_from_nonole_cf`, and the `OLEDD_TrackStateChange`
-        re-entrancy guard.
-      - `struct oletls` flags, `BIND_OPTS3`, and the `GetObject` ROT lock.
-      - `GetNextFreeBigBlock`'s `neededAddNumBlocks` (performance only).
+    - **Also done:** `CF_HDROP` tymed, the `OLEDD_TrackStateChange` re-entrancy guard,
+      `BIND_OPTS3`, ROT `GetObject` unlocks before unmarshalling, `OBJ_CASE_INSENSITIVE`
+      on the three HKCR opens (upstream's `__REACTOS__` fix; our CM is case-sensitive
+      without it), and the new exports: `Co{In,De}crementMTAUsage` (cookie list on the
+      MTA), `CoCreateInstanceFromApp`, `OleConvertIStorageToOLESTREAMEx` (a stub upstream
+      too), plus `CoGetApartmentType`/`CoGetCallState`/`CoGetActivationState`, which were
+      already in the Rust but missing from `ole32.spec`.
+    - **Declined, not owed:** the `struct oletls` reshuffle (`thread_seqid`, `flags`) and
+      the implicit-MTA cookie. Both are combase-internal, and with combase declined the TLS
+      block is private to our ole32. So are `DestroyRunningObjectTable` and
+      `Ole32DllGetClassObject`, which exist only for the split.
+    - **Still owed:** `GetNextFreeBigBlock`'s `neededAddNumBlocks` (performance only).
       - `OBJ_CASE_INSENSITIVE` on the HKCR opens.
