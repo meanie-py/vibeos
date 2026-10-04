@@ -67,7 +67,6 @@ endif()
 # target. crt0-rust (default main -> WinMain bridge) and crt-dllmain-rust (default DllMain)
 # are separate archives after the module's own objects, so a module's own definition wins.
 #
-# Only the MSVC integer/stack-probe intrinsics stay assembly (msvcrtex_asm).
 set(MSVCRTEX_RUST_WORKSPACE "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 rust_staticlib_variant(msvcrtex_dll crt-startup-rust "crtdll" FALSE)
 rust_staticlib_variant(msvcrtex_exe crt-startup-rust "crtexe" FALSE)
@@ -90,14 +89,9 @@ target_link_libraries(msvcrtex INTERFACE
     "$<$<STREQUAL:${_kind},wexe>:${msvcrtex_wcrt0_LIB}>"
     "$<$<NOT:$<IN_LIST:${_kind},dll;exe;wexe>>:${msvcrtex_bare_LIB}>")
 
-if(MSVCRTEX_ASM_SOURCE)
-    set_source_files_properties(${MSVCRTEX_ASM_SOURCE} PROPERTIES COMPILE_DEFINITIONS "_DLL;_MSVCRTEX_")
-    add_asm_files(msvcrtex_asm_obj ${MSVCRTEX_ASM_SOURCE})
-    add_library(msvcrtex_asm STATIC ${msvcrtex_asm_obj})
-    set_target_properties(msvcrtex_asm PROPERTIES LINKER_LANGUAGE C)
-    add_dependencies(msvcrtex_asm asm)
-    target_link_libraries(msvcrtex INTERFACE msvcrtex_asm)
-endif()
+# MSVCRTEX_ASM_SOURCE (the stack probes, i386 _alldiv/_aulldiv, i386 ceilf/floorf) is
+# crt-startup-rust's `intrinsics` module (global_asm!), in every variant above; no
+# msvcrtex_asm library is built.
 
 # msvcrtex depends on msvcrt and kernel32
 # + ntdll: crt-startup-rust's panic path (panic-common) imports DbgPrint,

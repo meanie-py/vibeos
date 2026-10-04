@@ -10,8 +10,8 @@
  *
  * Expected values are the same DLL's own plain export (sin, pow, ...) where one exists,
  * so this grades the thunk, not the libm under it. Also checked: msvcrt40's `_HUGE` and
- * crtdll's `_HUGE_dll` (now MSVCRT__HUGE), and ucrtbase's _chgsign, _controlfp_s,
- * exp2f and nexttowardf, which moved from crtmath's C into ucrt-rust/cnt-rust.
+ * crtdll's `_HUGE_dll` (now MSVCRT__HUGE), ucrtbase's _chgsign, _controlfp_s, exp2f
+ * and nexttowardf (moved from crtmath's C into ucrt-rust/cnt-rust), and `_chkesp`.
  */
 #include <windows.h>
 #include <stdio.h>
@@ -300,6 +300,26 @@ static void probe_huge(const char *dll, const char *sym)
     check(dll, what, p && *p > 1.7e308 && *p == *p);
 }
 
+
+/* _chkesp: MSVC debug code calls it with ZF from `cmp esp, saved`. ZF=1 must return
+ * quietly. ZF=0 must reach the DLL's failure hook, which breaks into the debugger; the
+ * smoke guest runs a kernel debugger that takes a user-mode int3 first, so that path is
+ * checked statically: the export must begin with `jnz` (0x75). msvcrt's used to be an
+ * empty function (`ret`, 0xc3) that never reported anything. */
+static void probe_chkesp(const char *dll)
+{
+    HMODULE h = LoadLibraryA(dll);
+    unsigned char *f = h ? (unsigned char *)GET("_chkesp") : NULL;
+    if (!f) {
+        check(dll, "_chkesp resolves", 0);
+        return;
+    }
+    __asm__ volatile("xor %%eax, %%eax\n\tcall *%0" : : "r"(f) : "eax", "ecx", "edx", "memory", "cc");
+    check(dll, "_chkesp(ZF=1) returns", 1);
+    check(dll, "_chkesp tests ZF (jnz first)", f[0] == 0x75);
+    SAY("%s _chkesp first byte %02x\n", dll, f[0]);
+}
+
 int __cdecl main(void)
 {
     static const char *const dlls[] = {"msvcrt.dll", "msvcrt20.dll", "msvcrt40.dll", "crtdll.dll", "ucrtbase.dll"};
@@ -310,6 +330,8 @@ int __cdecl main(void)
     probe_huge("msvcrt.dll", "_HUGE");
     probe_huge("msvcrt40.dll", "_HUGE");
     probe_huge("crtdll.dll", "_HUGE_dll");
+    probe_chkesp("msvcrt.dll"); /* msvcrt20/msvcrt40/crtdll export no _chkesp */
+    probe_chkesp("ucrtbase.dll");
     SAY("%d checks, %d failed\n", g_checks, g_fail);
     SAY("done %s\n", g_fail ? "FAIL" : "PASS");
     return 0;

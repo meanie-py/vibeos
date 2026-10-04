@@ -132,3 +132,18 @@ pub unsafe extern "C" fn __acrt_WideCharToMultiByte(
 pub unsafe extern "C" fn __acrt_GetStringTypeW(info_type: u32, src: *const u16, cch_src: c_int, char_type: *mut u16) -> c_int {
     GetStringTypeW(info_type, src, cch_src, char_type)
 }
+
+// sdk/lib/vcruntime/i386/_chkesp.s: MSVC debug code calls `_chkesp` with ZF from comparing
+// esp before and after a call; a mismatch tail-jumps to `_chkesp_failed`.
+#[cfg(all(target_arch = "x86", target_os = "windows"))]
+core::arch::global_asm!(
+    ".intel_syntax noprefix",
+    ".text",
+    ".globl __chkesp",
+    "__chkesp:",
+    "    jnz .Lchkesp_failed",
+    "    ret",
+    ".Lchkesp_failed:",
+    "    jmp __chkesp_failed",
+    ".att_syntax prefix",
+);
