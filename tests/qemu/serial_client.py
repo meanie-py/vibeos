@@ -43,12 +43,12 @@ class SerialClient:
 
         # Shared buffer filled by the background reader thread.
         self._buf = ""
-        self._pos = 0                      # consumed offset (per read_* progress)
+        self._pos = 0  # consumed offset (per read_* progress)
         self._last_data = time.monotonic()
         self._lock = threading.Lock()
         self._closed = False
         self._reader: threading.Thread | None = None
-        self._sock_dead = False            # set when peer closes
+        self._sock_dead = False  # set when peer closes
 
         # Optional live-log tee. When set, the drainer appends every byte it
         # receives to this file handle and flushes immediately, so an agent can
@@ -99,8 +99,8 @@ class SerialClient:
         opened the tee is silently disabled — it must never break serial drain.
         """
         try:
-            self._tee = open(path, "w", encoding="latin-1",
-                             errors="replace", buffering=1)
+            # Held for the client's lifetime and closed in close(), so no context manager.
+            self._tee = open(path, "w", encoding="latin-1", errors="replace", buffering=1)  # noqa: SIM115
             if header:
                 self._tee.write(header)
                 self._tee.flush()
@@ -121,7 +121,8 @@ class SerialClient:
                 conn.setblocking(False)
                 self._conn = conn
                 self._reader = threading.Thread(
-                    target=self._drain_loop, name="serial-drainer", daemon=True)
+                    target=self._drain_loop, name="serial-drainer", daemon=True
+                )
                 self._reader.start()
                 return
 
@@ -164,13 +165,12 @@ class SerialClient:
             # Live-log tee (side-channel, never allowed to break the drain).
             if self._tee is not None:
                 try:
-                    self._tee.write(self._stamp_tee_text(text)
-                                    if self._tee_stamp else text)
+                    self._tee.write(self._stamp_tee_text(text) if self._tee_stamp else text)
                     self._tee.flush()
                 except (OSError, ValueError):
                     pass
             # Keep the guest's kernel debugger / pager from wedging boot.
-            tail = self._buf[-(len(text) + 80):]
+            tail = self._buf[-(len(text) + 80) :]
             try:
                 if "kdb:>" in tail:
                     conn.sendall(b"cont\n")
@@ -227,8 +227,9 @@ class SerialClient:
                 )
             time.sleep(0.05)
 
-    def read_until_idle(self, idle_seconds: float = 5.0, timeout: float = 120.0,
-                        min_bytes: int = 1024) -> str:
+    def read_until_idle(
+        self, idle_seconds: float = 5.0, timeout: float = 120.0, min_bytes: int = 1024
+    ) -> str:
         """Return buffered output once no new bytes arrive for `idle_seconds`
         (and at least `min_bytes` seen). Raises TimeoutError on overall timeout.
         """
@@ -259,7 +260,7 @@ class SerialClient:
         while True:
             buf, _, _ = self._snapshot()
             if len(buf) > self._pos:
-                out = buf[self._pos:]
+                out = buf[self._pos :]
                 self._pos = len(buf)
                 return out
             if time.monotonic() >= deadline:

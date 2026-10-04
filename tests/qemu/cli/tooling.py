@@ -32,7 +32,11 @@ _PYRIGHT = str(_VBIN / "pyright")
 # tools/fex was outside every lint root, which is how an unused import and an
 # unlinted closure walker sat there unnoticed. A tool the merge train depends on
 # belongs under the same standard as the rest of our python.
-_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli", "tools/fex"]
+# tests/qemu was linted only below cli/, so the harness core -- vm.py, backend.py and
+# test_smoke.py itself -- carried 29 findings, including two `assert False` in the
+# north-star test that `python -O` strips. The whole tree is ruff- and format-checked;
+# pyright still covers cli/ only (typing the harness core is its own job).
+_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu", "tools/fex"]
 _PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
