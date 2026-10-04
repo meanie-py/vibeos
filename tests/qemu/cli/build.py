@@ -1259,7 +1259,12 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     if cfg.needs_mkramdisk:
         mk = repo / "qemu" / "mkramdisk.sh"
         ramdisk = repo / "qemu" / "ramdisk.img"
-        flag = "--refresh" if ramdisk.is_file() else ""
+        # A --clean build never reuses the FAT image: it is untracked state that outlives
+        # whichever revision made it. The conductor's integration worktree gated a lane
+        # whose mkramdisk sized the image to its contents (284 MB), then gated master,
+        # whose script reused that image and failed copying it into its fixed 280 MB
+        # boot.img -- "Disk full", read as a red master, and the train halted.
+        flag = "--refresh" if ramdisk.is_file() and not getattr(args, "clean", False) else ""
         cmd = ["bash", str(mk)] + ([flag] if flag else [])
         # Both pairs are staged unconditionally and freeldr.ini ships both entries;
         # the MP one is the DEFAULT since 2026-09-12. `--up` here moves `DefaultOS=`
