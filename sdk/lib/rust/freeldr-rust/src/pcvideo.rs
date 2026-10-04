@@ -279,7 +279,11 @@ unsafe fn PcVideoGetBiosMode(
 unsafe fn PcVideoGetDisplayMode() {
     let mut Mode: USHORT = 0;
 
-    if PcVideoGetBiosMode(&mut Mode) != 0 &&
+    // Is the current mode VESA? (VBE 4F03h. This asked INT 10h AH=0Fh for the
+    // BIOS mode instead and fed that 0x00-0x13 number to VBE 4F01h, so a real
+    // VESA start mode was never recognised, and a BIOS that answers 4F01h for
+    // a legacy mode number got taken for a VESA graphics mode.)
+    if PcVideoVesaGetCurrentSVGAMode(&mut Mode) != 0 &&
        PcVideoVesaGetSVGAModeInformation(Mode, &mut VesaVideoModeInformation) != 0
     {
         TRACE(b"VESA mode detected\n\0".as_ptr() as *const i8);

@@ -6988,6 +6988,20 @@ CriticalDeviceDatabase, and then nothing, with no AddDevice and no error. The lo
 is long (acpi, partmgr, disk, ...), because the shared hive names drivers the ramdisk never
 carries; read it when a device binds to nothing.
 
+### arm64 smoke hangs in PXE/HTTP boot with no freeldr output: boot.img is a whole number of cylinders
+
+**Symptom.** `smoke:arm64` HANG_TIMEOUT; the serial log ends in `>>Start HTTP Boot over
+IPv4`, with `BdsDxe: failed to load Boot0002 "UEFI PXEv4"` and no `Starting freeldr` line at
+all. Deterministic for that tree, and nothing in the code changed that could explain it.
+
+**Cause.** `mkramdisk.sh` sizes boot.img from the staged tree. At exactly 315MB (645120
+sectors = 640 x 16 x 63), `mformat -F` writes an MBR entry spanning the whole disk (instead
+of stopping at the last full cylinder) and a floppy media byte and drive number (0xF0, 0x00).
+AAVMF then never offers the disk as a boot device. 314MB and 316MB format normally.
+
+**Fix.** `mkramdisk.sh` passes `-m 0xf8` and bumps `BOOT_SIZE_MB` past any multiple of 1008
+sectors. Diagnose by diffing the first 512 bytes against a booting image (`cmp -l`).
+
 ### An arm64 ramdisk refreshed in place keeps every file it ever held
 **Symptom.** arm64 `test_start_menu_opens` passed on some worktrees and failed on others at
 the same commit. A payload-less build still autostarted `kmtest-sweep.exe`, plus a

@@ -343,7 +343,12 @@ pub unsafe extern "system" fn KdDebuggerInitialize0(
             while *PortString == b' ' as i8 {
                 PortString = PortString.add(1);
             }
-            PortString = PortString.add(1);
+            /* Skip the equals sign, but never the terminator: a command line
+             * ending in a bare "DEBUGPORT" would read past its end (upstream
+             * 956d9f7973f) */
+            if *PortString != 0 {
+                PortString = PortString.add(1);
+            }
 
             if strncmp(PortString, b"VBOX\0".as_ptr() as PCHAR, 4) != 0 {
                 KDDBGPRINT!(b"Invalid debugport: '%s'\n\0".as_ptr() as PCHAR, CommandLine);

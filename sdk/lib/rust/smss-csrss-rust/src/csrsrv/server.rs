@@ -126,8 +126,9 @@ pub unsafe extern "system" fn CsrLoadServerDll(
 
             Parameters[0] = &TempString as *const _ as ULONG_PTR;
             Parameters[1] = &ErrorString as *const _ as ULONG_PTR;
-            ErrorString.Length = 32;
-            ErrorString.MaximumLength = 36;
+            // RtlInitUnicodeString(&ErrorString, L"Default Load Path"): 17 chars.
+            ErrorString.Length = ((ERROR_PATH.len() - 1) * core::mem::size_of::<u16>()) as u16;
+            ErrorString.MaximumLength = core::mem::size_of_val(&ERROR_PATH) as u16;
             ErrorString.Buffer = ERROR_PATH.as_ptr() as *mut u16;
 
             NtRaiseHardError(

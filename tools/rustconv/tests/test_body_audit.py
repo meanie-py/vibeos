@@ -352,6 +352,21 @@ def test_reviewed_ledger_hides_only_the_callees_it_names(tmp_path):
     assert "  [high, owed] O" in out and "] F " not in out
 
 
+def test_reviewed_ledger_merges_two_passes_over_one_function(tmp_path):
+    from rustconv.body_audit import load_reviewed
+
+    led = tmp_path / "reviewed.toml"
+    led.write_text(
+        '[[reviewed]]\nmodule = "m"\nfunction = "F"\ncallees = ["A"]\n'
+        'verdict = "false"\nnote = "high pass"\n'
+        '[[reviewed]]\nmodule = "m"\nfunction = "F"\ncallees = ["B"]\n'
+        'verdict = "owed"\nnote = "medium pass"\n'
+    )
+    e = load_reviewed(led)[("m", "F")]
+    assert e["callees"] == ["A", "B"] and e["verdict"] == "owed"
+    assert e["note"] == "high pass; medium pass"
+
+
 def test_reviewed_ledger_rejects_an_entry_without_a_note(tmp_path):
     import pytest
 
@@ -427,3 +442,21 @@ def test_a_four_char_tag_closes_its_quote():
     from rustconv.lex_mask import mask_code
 
     assert "Next" in mask_code("ULONG t = 'dnE#';\nNext(t);\n")
+
+
+def test_printf_family_and_renamed_crt_spellings_are_kept(tmp_path):
+    c = """
+VOID F(LPWSTR b, LPCWSTR a, LPCWSTR x)
+{
+    swprintf(b, L"%s", a);
+    if (wcsicmp(a, x) == 0 && IsEqualIID(&IID_A, &IID_B))
+        abs(1);
+}
+"""
+    rust = """
+pub unsafe extern "system" fn F(b: LPWSTR, a: LPCWSTR, x: LPCWSTR) {
+    StringCchPrintfW(b, 256, fmt.as_ptr(), a);
+    if _wcsicmp(a, x) == 0 && guid_eq(&IID_A, &IID_B) { let _ = 1i32.abs(); }
+}
+"""
+    assert _run(tmp_path, c, rust) == {}

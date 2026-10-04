@@ -321,7 +321,7 @@ pub unsafe extern "C" fn ClasspScanForSpecialInRegistry(
         }
 
         let mut subkey_name: _UNICODE_STRING = core::mem::zeroed();
-        RtlInitUnicodeString(&mut subkey_name, CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR);
+        RtlInitUnicodeString(&mut subkey_name, crate::glue::regw::CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR);
         // InitializeObjectAttributes
         let mut object_attributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
         object_attributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32;
@@ -371,22 +371,96 @@ pub unsafe extern "C" fn ClasspScanForSpecialInRegistry(
     }
 }
 
-// class.c:12507  ClasspInitializeHotplugInfo — boot-safe minimal: zero the struct + set Size.
-// Fixed boot disks => non-removable/non-hotplug/no-writecache-override (all zero). Full path
-// queries IoGetDeviceProperty(RemovalPolicy) + ClassGetDeviceParameter registry overrides; OWED.
+// class.c:12507  ClasspInitializeHotplugInfo. This was a link-gap stub that only zeroed the
+// struct, so every disk -- USB sticks included -- reported non-removable media, no media
+// hotplug for FDO_HACK_CANNOT_LOCK_MEDIA drives, no device hotplug for surprise-removal
+// devices, and ignored the user's removal-policy / write-cache overrides.
 #[no_mangle]
 pub unsafe extern "C" fn ClasspInitializeHotplugInfo(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
 ) -> NTSTATUS {
+    use ntkrnl_sys::ddk::{
+        IoGetDeviceProperty,
+        DEVICE_REGISTRY_PROPERTY_DevicePropertyRemovalPolicy as DevicePropertyRemovalPolicy,
+        _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectOrderlyRemoval as RemovalPolicyExpectOrderlyRemoval,
+        _DEVICE_REMOVAL_POLICY_RemovalPolicyExpectSurpriseRemoval as RemovalPolicyExpectSurpriseRemoval,
+    };
+
     let fdoData = (*FdoExtension).PrivateFdoData;
+    let mut deviceRemovalPolicy: u32 = 0;
+    let mut resultLength: ULONG = 0;
+    let mut writeCacheOverride: ULONG;
+
+    // start with some default settings
     core::ptr::write_bytes(
         core::ptr::addr_of_mut!((*fdoData).HotplugInfo) as *mut u8,
         0,
         core::mem::size_of::<STORAGE_HOTPLUG_INFO>(),
     );
-    core::ptr::write_volatile(
-        core::ptr::addr_of_mut!((*fdoData).HotplugInfo.Size),
-        core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as u32,
+
+    // set the size (aka version)
+    (*fdoData).HotplugInfo.Size = core::mem::size_of::<STORAGE_HOTPLUG_INFO>() as u32;
+
+    // set if the device has removable media
+    (*fdoData).HotplugInfo.MediaRemovable =
+        ((*(*FdoExtension).DeviceDescriptor).RemovableMedia != 0) as BOOLEAN;
+
+    // devices that do not fail PREVENT_MEDIA_REMOVAL although they cannot lock
+    // the media: lets the filesystems turn off delayed-write caching for them.
+    (*fdoData).HotplugInfo.MediaHotplug =
+        (((*(*FdoExtension).PrivateFdoData).HackFlags as u32 & FDO_HACK_CANNOT_LOCK_MEDIA) != 0)
+            as BOOLEAN;
+
+    // Query the default removal policy from the kernel
+    let status = IoGetDeviceProperty(
+        (*FdoExtension).LowerPdo,
+        DevicePropertyRemovalPolicy,
+        core::mem::size_of::<u32>() as ULONG,
+        (&raw mut deviceRemovalPolicy).cast(),
+        &mut resultLength,
     );
+    if !NT_SUCCESS(status) {
+        return status;
+    }
+
+    if resultLength != core::mem::size_of::<u32>() as ULONG {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    // The user may override only an orderly / surprise removal default.
+    if deviceRemovalPolicy == RemovalPolicyExpectOrderlyRemoval as u32
+        || deviceRemovalPolicy == RemovalPolicyExpectSurpriseRemoval as u32
+    {
+        let mut userRemovalPolicy: ULONG = 0;
+
+        ClassGetDeviceParameter(
+            FdoExtension,
+            crate::glue::regw::CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
+            crate::glue::regw::CLASSP_REG_REMOVAL_POLICY_VALUE_NAME.as_ptr() as PWSTR,
+            &mut userRemovalPolicy,
+        );
+
+        // use the override only if it is an allowed value
+        if userRemovalPolicy == RemovalPolicyExpectOrderlyRemoval as u32
+            || userRemovalPolicy == RemovalPolicyExpectSurpriseRemoval as u32
+        {
+            deviceRemovalPolicy = userRemovalPolicy;
+        }
+    }
+
+    // let the kernel's removal policy decide DeviceHotplug
+    (*fdoData).HotplugInfo.DeviceHotplug =
+        (deviceRemovalPolicy == RemovalPolicyExpectSurpriseRemoval as u32) as BOOLEAN;
+
+    // the per-device *filesystem* write-cache override
+    writeCacheOverride = 0;
+    ClassGetDeviceParameter(
+        FdoExtension,
+        crate::glue::regw::CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
+        crate::glue::regw::CLASSP_REG_WRITE_CACHE_VALUE_NAME.as_ptr() as PWSTR,
+        &mut writeCacheOverride,
+    );
+    (*fdoData).HotplugInfo.WriteCacheEnableOverride = (writeCacheOverride != 0) as BOOLEAN;
+
     STATUS_SUCCESS
 }

@@ -778,6 +778,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
   entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
   smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
+- **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
+  `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
+  cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
+  `DeviceGetMmcSupportInfo`'s TYPE_ONE probe (it answers with more than the one feature),
+  and the device start then tears down through `DeviceClaimRelease(Release)` ->
+  `WdfObjectDelete` -> `FxRequest::Release`, which reads past its object: amd64/i386
+  BUGCHECK 0x19 at the next free, arm64 hang. `--tripwire "SPECIALPOOL=CDRO"` (KMDF tags a
+  driver's objects with its service name) faults at the read: `wdf01000.sys+0x197FE`
+  under `cdrom-rust init.rs:313`. Bisected to the constant alone (the commit's registry
+  reads and CREATE context are innocent). The constant is held at 0x0003 with a comment;
+  owed: why start fails on a TYPE_ALL-style answer, and why releasing a request the
+  driver just created reads past it. Not a context-size mismatch: the three
+  `CDROM_REQUEST_CONTEXT` type infos all use `size_of::<CDROM_REQUEST_CONTEXT>()`, and the
+  same `DeviceClaimRelease` claims successfully on every boot, so suspect an object freed
+  earlier on the new failure path. x64 lane.
 - **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
   updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
   early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
@@ -833,6 +848,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `RtlInsertElementGenericTable`). fastfat and cdfs are down to one benign lead each. condrv
   `ConDrvDispatch` is FALSE (the C only traces). Re-translate (with sealing) only what the
   audit and a reading of the C confirm.
+  **Burn-down (2026-10-04): every high and medium lead read. 0 open high, 0 open medium**
+  (from 198 / 951); 214 owed, 329 false/benign in `data/body_audit_reviewed.toml`, 55 `low`
+  unread. About 70 real bugs fixed, among them: hal DMA locks that only raised IRQL (no
+  exclusion on halmp) and S/G transfers over 64 KiB failing; cdrom completions skipping
+  `RequestCompletion` (no verify-required marking); classpnp registry overrides passed as
+  narrow strings (every override kept its default) and hotplug info a stub (every disk
+  non-removable); scsiport parsing the service key as the DeviceN key; disk's invented SMART
+  codes; kernel32 `UnhandledExceptionFilter` with scrambled constants (no post-mortem
+  debugger, wrong crash box, a debugger-attached crash re-faulting forever) and
+  `GetModuleHandle` misses returning stale errors; userenv shortcuts never written; csrss
+  creating `\Session` instead of `\Sessions`; gdi32 never loading lpk.dll; ks stream IRPs
+  with a NULL header; user32 button state overwriting the font handle on 64-bit; ole32
+  property dictionaries unreadable. Owed, by cluster (upstream-sync): pciidex rewrite
+  (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
+  disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
+  syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
+  so every logon, status and shutdown dialog shows no banner today: visible, on the boot
+  path.** Still to decide: cdrom carries a live C-glue `DeviceEvtIoInCallerContext` that may
+  shadow the Rust one under `--allow-multiple-definition` (check `nm`); the Rust masks the
+  APIC error LVT where the C unmasks it.
   **ntkrnl-sys was stale against the post-merge headers — FIXED** (2026-09-27): regenerated
   the kernel and HAL islands. Nine structs had drifted: `KPRCB` (upstream `144fe39589b`'s
   `StartCycles`/`CycleTime`), `EJOB`/`PS_JOB_TOKEN_FILTER` (Rust still had the leaked

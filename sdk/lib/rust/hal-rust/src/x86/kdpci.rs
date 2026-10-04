@@ -387,8 +387,15 @@ pub unsafe extern "system" fn HalpRegisterPciDebuggingDeviceInfo() {
         // with build_wstr instead of fixing it. Deleted 2026-07-15 after scan_wide_literals
         // decoded it and reported the drop; the live path below was always correct.
         let key_name_buf = build_wstr(b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\PCI\\Debug\0");
+        // build_wstr returns a fixed [u16; 64]: the string length is up to its
+        // NUL, not the array length. (Length was (64 - 1) * 2, so the key name
+        // carried three trailing NULs: "...\\PCI\\Debug\0\0\0".)
+        let key_name_chars = key_name_buf
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(key_name_buf.len());
         let mut key_name: UNICODE_STRING = core::mem::zeroed();
-        key_name.Length = ((key_name_buf.len() - 1) * 2) as USHORT;
+        key_name.Length = (key_name_chars * 2) as USHORT;
         key_name.MaximumLength = (key_name_buf.len() * 2) as USHORT;
         key_name.Buffer = key_name_buf.as_ptr() as *mut u16;
 

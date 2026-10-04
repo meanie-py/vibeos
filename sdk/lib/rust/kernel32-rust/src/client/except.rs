@@ -16,6 +16,10 @@ const MEM_IMAGE: ULONG = 0x1000000;
 const IMAGE_DIRECTORY_ENTRY_RESOURCE: USHORT = 2;
 const EXCEPTION_CONTINUE_SEARCH: LONG = 0;
 const EXCEPTION_CONTINUE_EXECUTION: LONG = -1;
+// ntstatus.h; not emitted by the substrate.
+const STATUS_UNHANDLED_EXCEPTION: NTSTATUS = 0xC0000144_u32 as NTSTATUS;
+const STATUS_USER_APC: NTSTATUS = 0x000000C0;
+const STATUS_ALERTED: NTSTATUS = 0x00000101;
 
 // SharedUserData->NtSystemRoot: WCHAR[260] at offset 0x30 of KUSER_SHARED_DATA
 // (fixed VA 0x7FFE0000). KUSER_SHARED_DATA is not in bindgen; read the field
@@ -388,11 +392,15 @@ pub unsafe extern "system" fn GetErrorMode() -> u32 {
 pub unsafe extern "system" fn UnhandledExceptionFilter(
     ExceptionInfo: PEXCEPTION_POINTERS,
 ) -> i32 {
-    static mut AeDebugKey: _UNICODE_STRING = _UNICODE_STRING {
-        Length: 0,
-        MaximumLength: 0,
-        Buffer: core::ptr::null_mut(),
-    };
+    // C: `static UNICODE_STRING AeDebugKey = RTL_CONSTANT_STRING(
+    //     L"\\Registry\\Machine\\" REGSTR_PATH_AEDEBUG)`. The translation
+    // left it EMPTY, so NtOpenKey never found the AeDebug key and the
+    // post-mortem debugger settings were never read.
+    let mut AeDebugKey: _UNICODE_STRING = core::mem::zeroed();
+    RtlInitUnicodeString(
+        &mut AeDebugKey,
+        w!("\\Registry\\Machine\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AeDebug").as_ptr(),
+    );
     static mut IsSecondChance: u8 = 0;
 
     let mut Status: i32;
@@ -407,7 +415,7 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
 
     let mut KeyHandle: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
-    let mut ValueString: _UNICODE_STRING;
+    let mut ValueString: _UNICODE_STRING = core::mem::zeroed();
     let mut Length: u32 = 0;
     let mut Buffer: [u8; core::mem::size_of::<KEY_VALUE_PARTIAL_INFORMATION>() + 260 * 2] =
         [0; core::mem::size_of::<KEY_VALUE_PARTIAL_INFORMATION>() + 260 * 2];
@@ -460,8 +468,11 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
         core::mem::size_of::<*mut core::ffi::c_void>() as u32,
         core::ptr::null_mut(),
     );
+    // Being debugged: pass the exception on to the debugger. The C returns
+    // EXCEPTION_CONTINUE_SEARCH (0); this said -1, EXCEPTION_CONTINUE_EXECUTION,
+    // which re-ran the faulting instruction forever under a debugger.
     if (Status as i32 >= 0) && (!DebugPort.is_null()) {
-        return -1i32;
+        return EXCEPTION_CONTINUE_SEARCH;
     }
 
     RealFilter = core::mem::transmute::<*mut core::ffi::c_void, LPTOP_LEVEL_EXCEPTION_FILTER>(
@@ -471,7 +482,7 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
     );
     if let Some(filter) = RealFilter {
         RetValue = filter(ExceptionInfo);
-        if RetValue != -1i32 {
+        if RetValue != EXCEPTION_CONTINUE_SEARCH {
             return RetValue;
         }
     }
@@ -501,7 +512,8 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
 
     ErrorParameters[3] = (*ExceptionRecord).ExceptionInformation[1] as usize;
 
-    DebugResponse = 0;
+    // C: `DebugResponse = OptionOk` (1); this was 0, OptionAbortRetryIgnore.
+    DebugResponse = OptionOk as u32;
     AeDebugAuto = 0;
 
     ObjectAttributes = _OBJECT_ATTRIBUTES {
@@ -518,11 +530,9 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
         &mut ObjectAttributes,
     );
     if Status as i32 >= 0 {
-        ValueString = _UNICODE_STRING {
-            Length: 2,
-            MaximumLength: 2,
-            Buffer: &mut 0u16,
-        };
+        // The value names were a Length-2 / Length-16 string over a single
+        // temporary 0u16 (an out-of-bounds read, and never "Auto"/"Debugger").
+        RtlInitUnicodeString(&mut ValueString, w!("Auto").as_ptr());
         Status = NtQueryValueKey(
             KeyHandle,
             &mut ValueString,
@@ -537,11 +547,7 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
             AeDebugAuto = 0;
         }
 
-        ValueString = _UNICODE_STRING {
-            Length: 16,
-            MaximumLength: 16,
-            Buffer: &mut 0u16,
-        };
+        RtlInitUnicodeString(&mut ValueString, w!("Debugger").as_ptr());
         Status = NtQueryValueKey(
             KeyHandle,
             &mut ValueString,
@@ -558,7 +564,7 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
                 AeDebugPath = AeDebugPath.offset(1);
             }
             if *AeDebugPath != 0 {
-                DebugResponse = 1;
+                DebugResponse = OptionOkCancel as u32;
             } else {
                 AeDebugPath = core::ptr::null_mut();
             }
@@ -571,20 +577,29 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
 
     'Quit: {
     if !(!AeDebugPath.is_null() && (AeDebugAuto != 0)) {
+        // C: STATUS_UNHANDLED_EXCEPTION | HARDERROR_OVERRIDE_ERRORMODE. This
+        // raised 0xC000008E (STATUS_FLOAT_DIVIDE_BY_ZERO) | 0x40000000, so every
+        // application-error box reported a float divide by zero; the option
+        // offered on a second chance was OptionAbortRetryIgnore, not OptionOk.
         Status = NtRaiseHardError(
-            (0xC000008Eu32 | 0x40000000u32) as NTSTATUS,
+            (STATUS_UNHANDLED_EXCEPTION as u32 | HARDERROR_OVERRIDE_ERRORMODE) as NTSTATUS,
             4,
             0,
             ErrorParameters.as_mut_ptr() as PULONG_PTR,
-            if IsSecondChance == 0 { DebugResponse } else { 0 },
+            if IsSecondChance == 0 { DebugResponse } else { OptionOk as u32 },
             &mut ErrorResponse,
         );
     } else {
         Status = 0;
-        ErrorResponse = if AeDebugPath.is_null() { 2 } else { 2 };
+        ErrorResponse = if !AeDebugPath.is_null() {
+            ResponseCancel as u32
+        } else {
+            ResponseOk as u32
+        };
     }
 
-    if ((Status as i32) < 0) || (ErrorResponse != 2) || (IsSecondChance != 0) {
+    // "Cancel" is the debug choice. This tested 2 (ResponseAbort).
+    if ((Status as i32) < 0) || (ErrorResponse != ResponseCancel as u32) || (IsSecondChance != 0) {
         break 'Quit;
     }
 
@@ -685,14 +700,16 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
         WaitHandles[1] = ProcessInfo.hProcess;
 
         loop {
+            // C: WaitAny, looping on STATUS_ALERTED / STATUS_USER_APC. This
+            // waited WaitAll (0) and looped on 0xC00000E1/0xC00000E2.
             Status = NtWaitForMultipleObjects(
                 2,
                 WaitHandles.as_mut_ptr(),
-                0u32,
+                WaitAny,
                 1,
                 core::ptr::null_mut(),
             );
-            if !((Status as i32 == 0xC00000E1u32 as i32) || (Status as i32 == 0xC00000E2u32 as i32)) {
+            if !((Status == STATUS_ALERTED) || (Status == STATUS_USER_APC)) {
                 break;
             }
         }
@@ -717,7 +734,7 @@ pub unsafe extern "system" fn UnhandledExceptionFilter(
             NtClose(hDebugEvent);
         }
 
-        return -1i32;
+        return EXCEPTION_CONTINUE_SEARCH;
     }
 
     if !hDebugEvent.is_null() {

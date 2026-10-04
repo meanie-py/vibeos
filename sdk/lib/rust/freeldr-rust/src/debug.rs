@@ -566,6 +566,25 @@ pub unsafe extern "system" fn KeBugCheckEx(
     loop {}
 }
 
+extern "C" {
+    // i386bug.rs / arm64_debug.rs (same decl as pcmem.rs). The Rust
+    // definition prints its Format verbatim, so it is handed the message
+    // already formatted, with no further arguments.
+    fn FrLdrBugCheckWithMessage(BugCode: ULONG, File: PCHAR, Line: ULONG, Format: PCHAR, ...);
+}
+
+// Upstream b0bd092c0d4 "[FREELDR] Make ASSERT bugcheck on failure": after the
+// debug print, an assertion is a FrLdrBugCheckWithMessage(ASSERT_FAILURE, ...)
+// halt, not a DbgBreakPoint that boot then carries on from.
+unsafe fn assert_bugcheck(FileName: PVOID, LineNumber: ULONG, msg: &[i8; 512]) {
+    FrLdrBugCheckWithMessage(
+        crate::frldr::ASSERT_FAILURE,
+        FileName as PCHAR,
+        LineNumber,
+        msg.as_ptr() as PCHAR,
+    );
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn RtlAssert(
     FailedAssertion: PVOID,
@@ -592,6 +611,7 @@ pub unsafe extern "system" fn RtlAssert(
             Message,
         );
         DbgPrintSz(buf.as_ptr() as PCSTR);
+        assert_bugcheck(FileName, LineNumber, &buf);
     } else {
         sprintf(
             buf.as_mut_ptr(),
@@ -601,6 +621,7 @@ pub unsafe extern "system" fn RtlAssert(
             LineNumber,
         );
         DbgPrintSz(buf.as_ptr() as PCSTR);
+        assert_bugcheck(FileName, LineNumber, &buf);
     }
 
     DbgBreakPoint();

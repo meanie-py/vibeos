@@ -480,7 +480,8 @@ unsafe fn setup_adapter(Adapter: *mut DHCP_ADAPTER, new_lease: *mut client_lease
 // ---- reset_adapter ----
 unsafe fn reset_adapter(Adapter: *mut DHCP_ADAPTER) {
     let mut Buffer: [u8; 200] = {
-        let src = b"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\0";
+        // Trailing separator: the adapter name is strcat()ed straight on.
+        let src = b"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\\0";
         let mut arr = [0u8; 200];
         core::ptr::copy_nonoverlapping(src.as_ptr(), arr.as_mut_ptr(), src.len().min(200));
         arr
@@ -524,7 +525,7 @@ unsafe fn reset_adapter(Adapter: *mut DHCP_ADAPTER) {
             0,
             REG_SZ,
             IpAddress.as_ptr() as LPBYTE,
-            (IpAddress.len() - 1) as DWORD,
+            IpAddress.len() as DWORD, // strlen + 1: REG_SZ data includes the NUL
         );
         RegSetValueExA(
             hkey,
@@ -532,7 +533,7 @@ unsafe fn reset_adapter(Adapter: *mut DHCP_ADAPTER) {
             0,
             REG_SZ,
             SubnetMask.as_ptr() as LPBYTE,
-            (SubnetMask.len() - 1) as DWORD,
+            SubnetMask.len() as DWORD, // strlen + 1: REG_SZ data includes the NUL
         );
         RegSetValueExA(
             hkey,
@@ -540,7 +541,7 @@ unsafe fn reset_adapter(Adapter: *mut DHCP_ADAPTER) {
             0,
             REG_SZ,
             Server.as_ptr() as LPBYTE,
-            (Server.len() - 1) as DWORD,
+            Server.len() as DWORD, // strlen + 1: REG_SZ data includes the NUL
         );
 
         lease = 3600u32;

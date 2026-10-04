@@ -1776,7 +1776,7 @@ unsafe fn WDML_FormatServiceSpec(
             i += 1;
         }
     }
-    // hex digits zero-padded to width
+    // hex digits right-justified to width — `%*x` pads with SPACES, not zeros
     let mut hexbuf: [u16; 16] = [0; 16];
     let mut hlen = 0usize;
     let mut v = pid;
@@ -1792,7 +1792,7 @@ unsafe fn WDML_FormatServiceSpec(
         v >>= 4;
     }
     while hlen < width && hlen < 16 {
-        hexbuf[hlen] = b'0' as u16;
+        hexbuf[hlen] = b' ' as u16;
         hlen += 1;
     }
     // emit reversed
