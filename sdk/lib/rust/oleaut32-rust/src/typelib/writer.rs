@@ -2208,11 +2208,10 @@ unsafe extern "system" fn ICreateTypeInfo2_fnAddFuncDesc(
         return TYPE_E_INCONSISTENTPROPFUNCS;
     }
 
-    #[cfg(target_pointer_width = "64")]
-    {
-        if (*(*This).pTypeLib).syskind == SYS_WIN64 && (*funcDesc).oVft % 8 != 0 {
-            return E_INVALIDARG;
-        }
+    // Wine 10.0: on any bitness, a win64 typelib's vtable offsets are
+    // pointer-aligned.
+    if (*(*This).pTypeLib).syskind == SYS_WIN64 && (*funcDesc).oVft % 8 != 0 {
+        return E_INVALIDARG;
     }
 
     memset(&raw mut tmp_func_desc as *mut c_void, 0, size_of::<TLBFuncDesc>());

@@ -2838,7 +2838,15 @@ pub const BITMAP_FORMAT_GIF: u16 = 0x4947;
 pub const BITMAP_FORMAT_PNG: u16 = 0x5089;
 pub const BITMAP_FORMAT_APM: u16 = 0xcdd7;
 
-#[repr(C)]
+// C: these three sit inside #include "pshpack1.h" (byte-packed, they mirror
+// FILE formats). Translated as plain repr(C), APM_HEADER was 24 bytes instead
+// of 22, so OleLoadPicture read a placeable metafile from the wrong offset and
+// failed (Wine's olepicture test_apm), and CURSORICONFILEDIR's entries landed
+// at offset 8 instead of 6, two bytes off for every icon and cursor.
+const _: () = assert!(core::mem::size_of::<_APM_HEADER>() == 22);
+const _: () = assert!(core::mem::size_of::<CURSORICONFILEDIRENTRY>() == 16);
+const _: () = assert!(core::mem::offset_of!(CURSORICONFILEDIR, idEntries) == 6);
+#[repr(C, packed)]
 pub struct _APM_HEADER {
     pub key: DWORD,
     pub handle: WORD,
@@ -2852,7 +2860,7 @@ pub struct _APM_HEADER {
 }
 pub type APM_HEADER = _APM_HEADER;
 
-#[repr(C)]
+#[repr(C, packed)]
 pub struct CURSORICONFILEDIRENTRY {
     pub bWidth: BYTE,
     pub bHeight: BYTE,
@@ -2864,7 +2872,7 @@ pub struct CURSORICONFILEDIRENTRY {
     pub dwDIBOffset: DWORD,
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 pub struct CURSORICONFILEDIR {
     pub idReserved: WORD,
     pub idType: WORD,

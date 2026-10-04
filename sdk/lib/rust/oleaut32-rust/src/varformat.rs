@@ -2,6 +2,7 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "C" {
+    fn wcstod(nptr: *const u16, endptr: *mut *mut u16) -> f64;
     fn wcsicmp(s1: *const u16, s2: *const u16) -> i32;
     fn bsearch( key: *const core::ffi::c_void, base: *const core::ffi::c_void, num: usize, size: usize, compar: unsafe extern "C" fn(*const core::ffi::c_void, *const core::ffi::c_void) -> i32, ) -> *mut core::ffi::c_void;
     fn _wcsnicmp(s1: LPCWSTR, s2: LPCWSTR, n: usize) -> i32;
@@ -1502,7 +1503,24 @@ unsafe extern "C" fn VARIANT_FormatDate(
 
         hRes = VariantChangeTypeEx(&mut vDate, pVarIn, lcid, usFlags, VT_DATE as u16);
         if FAILED(hRes) {
-            return hRes;
+            // Wine 10.0: a BSTR that is a DATE in numeric form ("31809.40")
+            // fails the locale date parse but is still a date: read it as a
+            // double. Anything else keeps the failure.
+            if *V_VT_ref(pVarIn) != VT_BSTR as VARTYPE {
+                return hRes;
+            }
+            let mut endptr: *mut u16 = core::ptr::null_mut();
+            let tmp = wcstod(*V_BSTR_ref(pVarIn), &mut endptr);
+            if endptr.is_null() || *endptr != 0 {
+                return hRes; /* not a double in string form */
+            }
+            let mut out: f64 = 0.0;
+            hRes = crate::vartype::VarDateFromR8(tmp, &mut out);
+            if FAILED(hRes) {
+                return hRes;
+            }
+            *V_VT_ref(&mut vDate) = VT_DATE as VARTYPE;
+            *V_DATE_ref(&mut vDate) = out;
         }
         dateHeader = rgbTok.offset(FmtGetPositive(header) as isize) as *const FMT_DATE_HEADER;
     }
@@ -2447,8 +2465,28 @@ pub unsafe extern "system" fn VarFormatCurrency(
     *pbstrOut = core::ptr::null_mut();
 
     let mut vStr: VARIANT = core::mem::zeroed();
-    *V_VT_ref(&mut vStr) = VT_EMPTY as VARTYPE;
-    let mut hRet = VariantCopyInd(&mut vStr, pVarIn);
+    // Wine 10.0: a currency string is PARSED as currency first (it may carry
+    // the locale's currency symbol and separators, which GetCurrencyFormatW
+    // would refuse in the raw string).
+    let mut hRet;
+    let vt_in = *V_VT_ref(pVarIn);
+    if vt_in == VT_BSTR as VARTYPE || vt_in == (VT_BSTR | VT_BYREF) as VARTYPE {
+        let bstr = if vt_in & VT_BYREF as VARTYPE != 0 {
+            *((*pVarIn).n1.n2.n3.byref as *mut BSTR)
+        } else {
+            *V_BSTR_ref(pVarIn)
+        };
+        let mut cy: CY = core::mem::zeroed();
+        hRet = crate::vartype::VarCyFromStr(bstr, LOCALE_USER_DEFAULT, 0, &mut cy);
+        if FAILED(hRet) {
+            return hRet;
+        }
+        *V_VT_ref(&mut vStr) = VT_CY as VARTYPE;
+        *V_CY_ref(&mut vStr) = cy;
+    } else {
+        *V_VT_ref(&mut vStr) = VT_EMPTY as VARTYPE;
+        hRet = VariantCopyInd(&mut vStr, pVarIn);
+    }
 
     if SUCCEEDED(hRet) {
         // C passes &vStr as BOTH dest and src.

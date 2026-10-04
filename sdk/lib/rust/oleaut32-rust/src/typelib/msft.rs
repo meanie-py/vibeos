@@ -709,10 +709,12 @@ pub unsafe fn MSFT_DoImplTypes(pcx: *mut TLBContext, pTI: *mut ITypeInfoImpl, co
     }
 }
 
-/// when a 32-bit typelib is loaded in 64-bit mode, we need to resize pointers
-/// and some structures, and fix the alignment (#ifdef _WIN64 in the C)
-#[cfg(target_pointer_width = "64")]
+/// A typelib built for the OTHER pointer size needs its pointer-sized types
+/// resized and realigned. Wine 10.0 (TLB_fix_typeinfo_ptr_size) does this in
+/// both directions; the pre-10 code was 32-on-64 only (#ifdef _WIN64), so an
+/// i386 process loading a win64 typelib kept 64-bit sizes and alignments.
 pub unsafe fn TLB_fix_32on64_typeinfo(info: *mut ITypeInfoImpl) {
+    let native = if cfg!(target_pointer_width = "64") { SYS_WIN64 } else { SYS_WIN32 };
     if (*info).typeattr.typekind == TKIND_ALIAS {
         match (*(*info).tdescAlias).vt {
             VT_BSTR | VT_DISPATCH | VT_UNKNOWN | VT_PTR | VT_SAFEARRAY | VT_LPSTR | VT_LPWSTR => {
@@ -722,22 +724,16 @@ pub unsafe fn TLB_fix_32on64_typeinfo(info: *mut ITypeInfoImpl) {
             VT_CARRAY | VT_USERDEFINED => {
                 TLB_size_instance(
                     info,
-                    SYS_WIN64,
+                    native,
                     (*info).tdescAlias,
                     &raw mut (*info).typeattr.cbSizeInstance,
                     &raw mut (*info).typeattr.cbAlignment,
                 );
             }
             VT_VARIANT => {
-                /* NOTE: preserved C fallthrough — VT_VARIANT sets size/align
-                 * then FALLS THROUGH into the default arm (no break in the C). */
+                // Wine 10.0 ends this case (the old C fell through to default).
                 (*info).typeattr.cbSizeInstance = size_of::<VARIANT>() as ULONG;
-                (*info).typeattr.cbAlignment = 8;
-                if (*info).typeattr.cbSizeInstance < size_of::<*mut c_void>() as ULONG {
-                    (*info).typeattr.cbAlignment = (*info).typeattr.cbSizeInstance as WORD;
-                } else {
-                    (*info).typeattr.cbAlignment = size_of::<*mut c_void>() as WORD;
-                }
+                (*info).typeattr.cbAlignment = size_of::<*mut c_void>() as WORD;
             }
             _ => {
                 if (*info).typeattr.cbSizeInstance < size_of::<*mut c_void>() as ULONG {
@@ -1591,10 +1587,13 @@ pub unsafe fn TLB_ReadTypeLib(
         heap_free(file as *mut c_void);
     }
 
+    // Wine 10.0: FILE_SHARE_READ. With share mode 0 the open failed on any
+    // typelib another handle had open, and the path was then cached
+    // un-normalised, so the same file could load twice under two names.
     let h = CreateFileW(
         pszPath,
         GENERIC_READ,
-        0,
+        FILE_SHARE_READ,
         null_mut(),
         OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL,
@@ -2026,14 +2025,11 @@ pub unsafe fn ITypeLib2_Constructor_MSFT(pLib: LPVOID, dwTLBLength: DWORD) -> *m
         }
     }
 
-    #[cfg(target_pointer_width = "64")]
-    {
-        if (*pTypeLibImpl).syskind == SYS_WIN32 {
-            let mut i: i32 = 0;
-            while i < (*pTypeLibImpl).TypeInfoCount {
-                TLB_fix_32on64_typeinfo(*(*pTypeLibImpl).typeinfos.add(i as usize));
-                i += 1;
-            }
+    if (*pTypeLibImpl).ptr_size != size_of::<*mut c_void>() as i32 {
+        let mut i: i32 = 0;
+        while i < (*pTypeLibImpl).TypeInfoCount {
+            TLB_fix_32on64_typeinfo(*(*pTypeLibImpl).typeinfos.add(i as usize));
+            i += 1;
         }
     }
 

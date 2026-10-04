@@ -82,7 +82,9 @@ def main(argv: list[str] | None = None) -> int:
             lines.append(f"{suite}_winetest.exe {sub}")
             n += 1
     (HERE / f"winetest-suites-{args.arch}.txt").write_text("\n".join(lines) + "\n")
-    (HERE / f"winetest-skip-{args.arch}.txt").write_text("# none: skips are applied when the list is generated\n")
+    (HERE / f"winetest-skip-{args.arch}.txt").write_text(
+        "# none: skips are applied when the list is generated\n"
+    )
     print(f"gen_suites: {n} subtest(s) -> winetest-suites-{args.arch}.txt")
     return 0
 

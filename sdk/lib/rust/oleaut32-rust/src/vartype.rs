@@ -3752,6 +3752,19 @@ unsafe fn VARIANT_BstrFromReal(
     if len >= 0 && (len as usize) < buff.len() {
         buff[len as usize] = 0;
     }
+    // Wine builds this with a C-locale UCRT printf, whose exponent has two
+    // digits ("1.234E+16", what native oleaut32 returns). Our msvcrt prints
+    // three, like classic msvcrt ("1.234E+016"); drop the padding zero
+    // (Wine's vartype test, 'expected 1,234E+16').
+    {
+        let e = wcschr(buff.as_ptr(), b'E' as u16) as *mut u16;
+        if !e.is_null() && (*e.add(1) == b'+' as u16 || *e.add(1) == b'-' as u16) {
+            let d = e.add(2);
+            if *d == b'0' as u16 && lstrlenW(d) == 3 {
+                core::ptr::copy(d.add(1), d, 3); /* two digits + NUL */
+            }
+        }
+    }
 
     if buff[0] == b'-' as u16 {
         const SZ_ACCEPT: [u16; 3] = [b'0' as u16, b'.' as u16, 0];
