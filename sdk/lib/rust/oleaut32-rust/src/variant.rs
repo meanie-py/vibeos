@@ -607,7 +607,9 @@ unsafe fn VARIANT_ValidateType(vt: VARTYPE) -> HRESULT {
 #[no_mangle]
 pub unsafe extern "system" fn VariantInit(pVarg: *mut VARIANTARG) {
     TRACE!(b"(%p)\n\0".as_ptr() as PCHAR, pVarg);
-    
+
+    // Wine 10.0, as Windows 8.1+: the whole VARIANT is zeroed, not just vt.
+    core::ptr::write_bytes(pVarg as *mut u8, 0, core::mem::size_of::<VARIANTARG>());
     (*V_VT_ref(pVarg)) = VT_EMPTY;
 }
 #[no_mangle]
@@ -716,10 +718,12 @@ unsafe fn VARIANT_CopyIRecordInfo(dest: *mut VARIANT, src: *mut VARIANT) -> HRES
         return hr;
     }
 
-    (*dest_rec).pvRecord = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size as SIZE_T);
+    // COM task memory, as RecordCreate/RecordDestroy now use (Wine 10.0).
+    (*dest_rec).pvRecord = CoTaskMemAlloc(size as SIZE_T);
     if (*dest_rec).pvRecord.is_null() {
         return E_OUTOFMEMORY;
     }
+    core::ptr::write_bytes((*dest_rec).pvRecord as *mut u8, 0, size as usize);
 
     (*dest_rec).pRecInfo = (*src_rec).pRecInfo;
     IRecordInfo_AddRef((*src_rec).pRecInfo);
@@ -1018,9 +1022,10 @@ unsafe fn VARIANT_RollUdate(lpUd: *mut UDATE) -> HRESULT {
     if iYear > 9999 || iYear < -9999 {
         return E_INVALIDARG;
     }
-    if iYear >= 0 && iYear < 30 {
+    // Wine 10.0, as current Windows: two-digit years 00-49 are 20xx (was 00-29).
+    if iYear >= 0 && iYear <= 49 {
         iYear += 2000;
-    } else if iYear >= 30 && iYear < 100 {
+    } else if iYear >= 50 && iYear < 100 {
         iYear += 1900;
     }
 
@@ -4387,7 +4392,6 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
 
 #[no_mangle]
 pub unsafe extern "system" fn VarAbs(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> HRESULT {
-    let mut varIn: VARIANT = core::mem::zeroed();
     let mut hRet: HRESULT = S_OK;
     let mut temp: VARIANT = core::mem::zeroed();
 
@@ -4454,37 +4458,29 @@ pub unsafe extern "system" fn VarAbs(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
                 (*V_I8_ref(pVarOut)) = -(*V_I8_ref(pVarIn));
             }
         }
+        // Wine 10.0. Floats have no unrepresentable minimum, so the old
+        // `== R4_MIN/R8_MIN -> DISP_E_OVERFLOW` (R4_MIN/R8_MIN are the smallest
+        // DENORMALS) rejected a valid input. And a BSTR is parsed straight into
+        // pVarOut: the old code parsed into a local and wrote pVarOut only for a
+        // negative value, so VarAbs("5") returned VT_R8 holding the shallow-
+        // copied BSTR pointer's bits.
         VT_R4 => {
-            if (*V_R4_ref(pVarIn)) == R4_MIN as f32 {
-                hRet = DISP_E_OVERFLOW;
-            } else if (*V_R4_ref(pVarIn)) < 0.0 {
-                (*V_R4_ref(pVarOut)) = -(*V_R4_ref(pVarIn));
+            if (*V_R4_ref(pVarOut)) < 0.0 {
+                (*V_R4_ref(pVarOut)) = -(*V_R4_ref(pVarOut));
             }
         }
         VT_BSTR => {
-            hRet = VarR8FromStr(*V_BSTR_ref(pVarIn) , LOCALE_USER_DEFAULT, 0, V_R8_ref(&mut varIn));
+            hRet = VarR8FromStr(*V_BSTR_ref(pVarIn), LOCALE_USER_DEFAULT, 0, V_R8_ref(pVarOut));
             if !FAILED(hRet) {
                 (*V_VT_ref(pVarOut)) = VT_R8;
-                pVarIn = &mut varIn;
-                if (*V_R8_ref(pVarIn)) == R8_MIN {
-                    hRet = DISP_E_OVERFLOW;
-                } else if (*V_R8_ref(pVarIn)) < 0.0 {
-                    (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarIn));
+                if (*V_R8_ref(pVarOut)) < 0.0 {
+                    (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarOut));
                 }
             }
         }
-        VT_DATE => {
-            if (*V_R8_ref(pVarIn)) == R8_MIN {
-                hRet = DISP_E_OVERFLOW;
-            } else if (*V_R8_ref(pVarIn)) < 0.0 {
-                (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarIn));
-            }
-        }
-        VT_R8 => {
-            if (*V_R8_ref(pVarIn)) == R8_MIN {
-                hRet = DISP_E_OVERFLOW;
-            } else if (*V_R8_ref(pVarIn)) < 0.0 {
-                (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarIn));
+        VT_DATE | VT_R8 => {
+            if (*V_R8_ref(pVarOut)) < 0.0 {
+                (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarOut));
             }
         }
         VT_CY => {
@@ -5388,6 +5384,9 @@ pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: 
     VariantInit(&mut tempRight);
     VariantInit(&mut lv);
     VariantInit(&mut rv);
+    // Wine 10.0: the early-error exits below return `result` untouched, so
+    // give it a defined type first.
+    (*V_VT_ref(result)) = VT_EMPTY;
 
     TRACE!(b"(%s,%s,%p)\n\0".as_ptr() as *const i8, debugstr_variant(left), debugstr_variant(right), result);
 
@@ -5446,7 +5445,10 @@ pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: 
             }
             VT_UI1 | VT_UI2 | VT_UI4 | VT_UI8 | VT_UINT | VT_R4 | VT_R8 | VT_CY => {
                 if (*V_VT_ref(left_ptr)) == VT_EMPTY {
+                    // Wine 10.0: and a VALUE. VarMod(EMPTY, x) returned VT_I4
+                    // with whatever the caller's variant held.
                     (*V_VT_ref(result)) = VT_I4;
+                    (*V_I4_ref(result)) = 0;
                     rc = S_OK;
                     break 'end;
                 }

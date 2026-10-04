@@ -375,6 +375,9 @@ unsafe fn WMSFT_compile_strings(This: *mut ITypeLibImpl, file: *mut WMSFT_TLBFil
         );
         if size == 0 {
             heap_free((*file).string_seg.data);
+            // Wine 10.0: null it. The caller (SaveAllChanges) runs
+            // WMSFT_free_file on failure, which freed it a second time.
+            (*file).string_seg.data = null_mut();
             return E_UNEXPECTED;
         }
 
@@ -2528,7 +2531,12 @@ unsafe extern "system" fn ICreateTypeInfo2_fnAddVarDesc(
     }
 
     TLBVarDesc_Constructor(var_desc);
-    TLB_AllocAndInitVarDesc(varDesc, &raw mut (*var_desc).vardesc_create);
+    // Wine 10.0: a failed copy (out of memory, VariantCopy failing) must not
+    // fall through to dereferencing the null vardesc_create.
+    let hr = TLB_AllocAndInitVarDesc(varDesc, &raw mut (*var_desc).vardesc_create);
+    if FAILED(hr) {
+        return hr;
+    }
     core::ptr::copy_nonoverlapping((*var_desc).vardesc_create, &raw mut (*var_desc).vardesc, 1);
 
     (*This).typeattr.cVars += 1;

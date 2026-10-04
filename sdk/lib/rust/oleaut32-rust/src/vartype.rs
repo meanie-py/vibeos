@@ -1554,7 +1554,10 @@ pub unsafe extern "system" fn VarR8Round(dblIn: f64, nDig: i32, pDblOut: *mut f6
     } else if fract >= 0.0 {
         whole
     } else if fract == -0.5 {
-        whole - fmod(whole, 2.0)
+        // Wine 10.0 (upstream e05d78ede06): `+`, not `-`. fmod keeps the sign
+        // of `whole`, so for -3.5 this is -3 + -1 = -4 (round half to even);
+        // the old `-` gave -2.
+        whole + fmod(whole, 2.0)
     } else if fract > -0.5 {
         whole
     } else {
@@ -4237,7 +4240,11 @@ pub unsafe extern "system" fn VarBstrCat(
         return E_OUTOFMEMORY;
     }
 
-    (*(*pbstrOut) as *mut u8).write_unaligned(0u8);
+    // C: (*pbstrOut)[0] = '\0'. The translation wrote
+    // `(*(*pbstrOut) as *mut u8).write_unaligned(0)`, which casts the first
+    // WCHAR's VALUE (0, just memset) to a pointer and stores through it: every
+    // VarBstrCat call faulted on address 0.
+    *(*pbstrOut) = 0;
 
     if !pbstrLeft.is_null() {
         core::ptr::copy_nonoverlapping(
@@ -4547,7 +4554,8 @@ unsafe fn VARIANT_MakeDate(
 
     (*st).wDay = v1 as u16;
     (*st).wMonth = v2 as u16;
-    let year: u32 = if v3 < 30 {
+    // Wine 10.0, as current Windows: two-digit years 00-49 are 20xx (was 00-29).
+    let year: u32 = if v3 <= 49 {
         2000 + v3
     } else if v3 < 100 {
         1900 + v3
@@ -4619,7 +4627,9 @@ pub unsafe extern "system" fn VarDateFromStr(
     // Parse the string into our structure
     while *strIn != 0 {
         let ch = *strIn as u32;
-        if iswdigit(ch) != 0 {
+        // ASCII digits only (Wine 10.0): iswdigit also accepts other scripts'
+        // digits, which wcstoul below cannot convert.
+        if (b'0' as u32..=b'9' as u32).contains(&ch) {
             if dp.dwCount >= 6 {
                 hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
                 break;

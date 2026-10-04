@@ -354,6 +354,10 @@ pub unsafe extern "system" fn OleCreateFontIndirect(
         fd.fUnderline = 0;
         fd.fStrikethrough = 0;
         lpFontDesc = core::ptr::addr_of_mut!(fd);
+    } else if (*lpFontDesc).lpstrName.is_null() {
+        // Wine 10.0, as Windows: a FONTDESC with no face name is rejected.
+        // Before, OLEFontImpl_Construct strdupW'd the NULL and faulted.
+        return CTL_E_INVALIDPROPERTYVALUE;
     }
 
     newFont = OLEFontImpl_Construct(lpFontDesc);

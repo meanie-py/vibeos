@@ -1,0 +1,37 @@
+# Wine's own ole32/oleaut32 conformance suites, run by the apitest sweep runner.
+#
+# Why this exists: ole32 and oleaut32 are Rust ports of the PRE-wine-10.0 C, and
+# upstream's wine-10.0 syncs (5f6b295cb90, e05d78ede06) landed on the dead C
+# afterwards. Porting that delta needs a before/after oracle, and the best one
+# is Wine's own tests for exactly these modules. The full rostests corpus is
+# not a usable vehicle (--rostests does not build on every arch, and it stages
+# 128 suites), so this payload stages just the two suites from a build dir that
+# has them (any earlier `vibeos-cli build --arch X --rostests`) and reuses the
+# apitest sweep runner, which already pipes each child's stdout to serial as
+# [APITEST:<suite> <subtest>] lines.
+#
+# Wine test executables do nothing useful without a subtest name, so the list
+# is one `<suite>.exe <subtest>` line per test: gen_suites.py reads each
+# suite's testlist.c.
+name: olewinetest
+description: Wine ole32 + oleaut32 conformance suites under the apitest sweep runner
+
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch}"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/olewinetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/olewinetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: build-{arch}/modules/rostests/winetests/oleaut32/oleaut32_winetest.exe
+    dest: bin/oleaut32_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/ole32/ole32_winetest.exe
+    dest: bin/ole32_winetest.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 3600
+  launch_idle_secs: 600

@@ -514,10 +514,11 @@ pub unsafe extern "system" fn OaBuildVersion() -> ULONG {
         0x80000a03 => MAKELONG(0xffff, 20) as ULONG,
         0x00003303 => MAKELONG(0xffff, 30) as ULONG,
         0x80000004 | 0x80000a04 | 0x00000004 | 0x00000005 => MAKELONG(0xffff, 40) as ULONG,
-        0x00000105 | 0x00000205 | 0x00000006 | 0x00000106 => MAKELONG(0xffff, 50) as ULONG,
+        // 0x206 is Win8/10/11 (Wine 10.0); unknown versions now answer as Win10.
+        0x00000105 | 0x00000205 | 0x00000006 | 0x00000106 | 0x00000206 => MAKELONG(0xffff, 50) as ULONG,
         _ => {
             FIXME!(b"Version value not known yet. Please investigate it !\n\0".as_ptr() as PCHAR);
-            MAKELONG(0xffff, 40) as ULONG
+            MAKELONG(0xffff, 50) as ULONG
         }
     }
 }
