@@ -9,11 +9,11 @@ from rustconv.call_seal import seal_calls, unseal_calls
 from rustconv.callgraph import FunctionDep, extract_call_graph
 from rustconv.config import REACTOS_ROOT, SHELL32_ISLAND_FILES, TARGETS, detect_target
 from rustconv.cpp_com import (
-    _drop_duplicate_type_definitions,
     _WINDOWS_SCALAR_TYPEDEFS,
     CppComError,
     InterfaceMethod,
     InterfaceSpec,
+    _drop_duplicate_type_definitions,
     _parse_plain_state_field,
     _state_field_name,
     _vtbl_declared_slots,
@@ -3533,26 +3533,30 @@ class TestDeleteThisLowering:
         assert "__rustconv_delete" not in out
 
 
-def test_header_discovery_retries_disappearing_directory(tmp_path, monkeypatch):
+def _vanish_on_scan(monkeypatch, victim: Path) -> list:
+    """os.scandir that deletes `victim` the first time the walk reaches it."""
     import os
 
-    from rustconv.cpp_com import _header_files
-
-    scratch = tmp_path / "scratch"
-    scratch.mkdir()
-    header = tmp_path / "real.h"
-    header.write_text("struct ActualState { int value; };\n")
-    accessor = getattr(Path, "_accessor", os)
-    scanned = accessor.scandir
+    scanned = os.scandir
     raced = []
 
     def disappear(path):
-        if Path(path) == scratch and not raced:
+        if Path(path) == victim and not raced:
             raced.append(True)
-            scratch.rmdir()
+            victim.rmdir()
         return scanned(path)
 
-    monkeypatch.setattr(accessor, "scandir", disappear)
+    monkeypatch.setattr(os, "scandir", disappear)
+    return raced
+
+
+def test_header_discovery_skips_a_vanishing_scratch_directory(tmp_path, monkeypatch):
+    from rustconv.cpp_com import _header_files
+
+    (tmp_path / "tmp6af3226e").mkdir()
+    header = tmp_path / "real.h"
+    header.write_text("struct ActualState { int value; };\n")
+    raced = _vanish_on_scan(monkeypatch, tmp_path / "tmp6af3226e")
     assert _header_files(tmp_path) == [header]
     assert raced
 
@@ -3560,20 +3564,17 @@ def test_header_discovery_retries_disappearing_directory(tmp_path, monkeypatch):
 def test_header_discovery_never_returns_partial_corpus(tmp_path, monkeypatch):
     from rustconv.cpp_com import _header_files
 
-    attempts = []
-
-    def interrupted(root, pattern):
-        attempts.append(root)
-        yield root / "partial.h"
-        raise FileNotFoundError("directory churn")
-
-    monkeypatch.setattr(Path, "rglob", interrupted)
-    with pytest.raises(FileNotFoundError, match="directory churn"):
+    (tmp_path / "real.h").write_text("int x;\n")
+    (tmp_path / "subdir").mkdir()
+    (tmp_path / "subdir" / "more.h").write_text("int y;\n")
+    (tmp_path / "subdir").joinpath("more.h").unlink()
+    raced = _vanish_on_scan(monkeypatch, tmp_path / "subdir")
+    # A real directory vanishing mid-walk is churn in the corpus itself: raise.
+    with pytest.raises(FileNotFoundError):
         _header_files(tmp_path)
-    assert len(attempts) == 3
+    assert raced
     with pytest.raises(FileNotFoundError):
         _header_files(tmp_path / "missing")
-    assert len(attempts) == 3
 
 
 def test_elaborated_struct_state_field_is_the_same_type_as_the_bare_spelling():

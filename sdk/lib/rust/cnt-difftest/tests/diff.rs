@@ -3109,6 +3109,79 @@ fn diff_streamout_chars_strings_percent() {
     }
 }
 
+// ── the _USER32_WSPRINTF configuration (user32-wsprintf-rust) ─────────────────────────────
+// The same engine file, compiled here under cfg(streamout_user32) (build.rs), against the
+// genuine streamout.c built -D_USER32_WSPRINTF (`ref_u32_run`). The rows aim at the six
+// configuration differences: `*` width/precision printed literally, one size prefix, no
+// float conversions, `fieldwidth += 2` for `#x`/`#X`/`#p`, and the string stream with no
+// NULL-base counting mode -- plus the ordinary rows, which must agree in both builds.
+#[path = "../../cnt-rust/src/cabi/streamout.rs"]
+#[allow(dead_code, unused_imports)]
+mod u32so;
+
+extern "C" {
+    fn ref_u32_run(base: *mut u8, cnt: i32, fmt: *const u8, va: *mut u8) -> i32;
+}
+
+fn so_u32_both(fmt: &str, slots: &[u64], cnt_init: i32) {
+    let mut fmtz: Vec<u8> = fmt.as_bytes().to_vec();
+    fmtz.push(0);
+    let va = if slots.is_empty() { core::ptr::null_mut() } else { slots.as_ptr() as *mut u8 };
+    let mut rbuf = [0u8; 512];
+    let rn = unsafe { ref_u32_run(rbuf.as_mut_ptr(), cnt_init, fmtz.as_ptr(), va) };
+    let mut cbuf = [0u8; 512];
+    let mut f = u32so::File {
+        _ptr: cbuf.as_mut_ptr(),
+        _cnt: cnt_init,
+        _base: cbuf.as_mut_ptr(),
+        _flag: 0x40 | 0x2,
+        _file: 0,
+        _charbuf: 0,
+        _bufsiz: 0,
+        _tmpfname: core::ptr::null_mut(),
+    };
+    let cn = unsafe { u32so::streamout(&mut f, fmtz.as_ptr(), va) };
+    assert_eq!(cn, rn, "user32 return mismatch: fmt={fmt:?} cnt_init={cnt_init} cnt={cn} ref={rn}");
+    assert_eq!(
+        &cbuf[..], &rbuf[..],
+        "user32 output mismatch: fmt={:?} cnt_init={}\n cnt={:?}\n ref={:?}",
+        fmt, cnt_init,
+        String::from_utf8_lossy(&cbuf[..cn.max(0) as usize]),
+        String::from_utf8_lossy(&rbuf[..rn.max(0) as usize]),
+    );
+}
+
+macro_rules! so32 {
+    ($cnt:expr, $fmt:literal $(, $a:expr)* $(,)?) => {
+        so_u32_both($fmt, &[$( ToSlot::slot($a) ),*], $cnt)
+    };
+}
+
+fn diff_streamout_user32() {
+    let hello = b"Hello, world\0";
+    for &cnt in &[512i32, -2, 8, 1, 0] {
+        // ordinary rows
+        so32!(cnt, "plain");
+        so32!(cnt, "%d|%u|%x|%X|%o", -42i32, 4000000000u32, 0xbeefu32, 0xabcdu32, 0o17u32);
+        so32!(cnt, "%5d|%-5d|%05d|%+d|% d|%8.5d", 42i32, 42i32, 42i32, 42i32, 42i32, 42i32);
+        so32!(cnt, "%s|%10s|%-15s|%.5s", hello.as_ptr() as *const u8, hello.as_ptr() as *const u8,
+              hello.as_ptr() as *const u8, hello.as_ptr() as *const u8);
+        so32!(cnt, "%s", core::ptr::null::<u8>());
+        so32!(cnt, "%c%c|100%%", b'A' as i32, b'z' as i32);
+        so32!(cnt, "%lld|%I64x", 0x1_0000_0000i64, 0xdead_beef_cafeu64);
+        // `*` width / precision: printed, the specification abandoned
+        so32!(cnt, "%*d", 6i32, 42i32);
+        so32!(cnt, "%.*d", 4i32, 42i32);
+        so32!(cnt, "[%-*s]", 6i32, hello.as_ptr() as *const u8);
+        // one size prefix only (USE_MULTISIZE 0): the second is a specifier
+        so32!(cnt, "%hld|%lhd|%llx", 7i32, 7i32, 0x1234u64);
+        // no float conversions: each falls back to a literal character
+        so32!(cnt, "%f|%e|%g|%a|%G", 1.5f64, 1.5f64, 1.5f64, 1.5f64, 1.5f64);
+        // `#` hex prefix widens the field by two
+        so32!(cnt, "%#x|%#10x|%-#10X|%#p|%#08x", 0x2au32, 0x2au32, 0x2au32, 0x1000u64, 0x2au32);
+    }
+}
+
 fn diff_streamout_float() {
     // %f/%e/%g/%E/%G — ref uses the SAME fl libm model as cnt's
     // format_float (build.rs #defines floor/log10/pow bit-identically),
@@ -4973,6 +5046,7 @@ fn main() {
         diff_ctype,
         diff_streamout_integers,
         diff_streamout_chars_strings_percent,
+        diff_streamout_user32,
         diff_streamout_float,
         diff_math_abs,
         diff_math_class_f64,

@@ -112,8 +112,13 @@ add_dependencies(ucrtbase rust_ucrt_shared)
 # because msvcrt_shared still gets pulled for the symbols Rust does NOT define and drags in
 # its own copies of the ones it does, which would then win first-match. Forcing the Rust
 # defs in first makes the C copies the ignored duplicates.
+# ${PSEH_USER_LIB} and ${VCRT_SETJMP_LIB}: the SEH runtime and setjmp/longjmp from
+# Rust, by path so they sit HERE -- ahead of libpseh and of ntdll's import library, which
+# exports longjmp on amd64 and would otherwise answer ucrtbase's own longjmp export.
 target_link_libraries(ucrtbase
     -Wl,--whole-archive ${UCRT_SHARED_RUST_LIB} -Wl,--no-whole-archive
+    ${PSEH_USER_LIB}
+    ${VCRT_SETJMP_LIB}
     msvcrt_shared
     crtmath
     vcruntime

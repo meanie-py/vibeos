@@ -2752,6 +2752,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "user32-wsprintf-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "userenv-rust"
 version = "0.1.0"
 dependencies = [

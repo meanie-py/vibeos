@@ -1,0 +1,21 @@
+# user32-wsprintf-rust — user32's wsprintf family: sdk/lib/crt's `user32_wsprintf` static lib
+# (printf/{w,}streamout.c, {w,}sprintf{A,W}.c, wv{s,sn}printf{A,W}.c, string/{str,wcs}nlen.c,
+# string/{mbstowcs,wcstombs}_nt.c, all built -D_USER32_WSPRINTF) in Rust.
+#
+# The engine is cnt-rust's cabi/streamout.rs compiled again under cfg(streamout_user32)
+# (build.rs), NOT a cargo feature on cnt-rust: a feature is unified across every dependent and
+# would hand libcntpr (the kernel's printf) the user32 configuration.
+[package]
+name = "user32-wsprintf-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }

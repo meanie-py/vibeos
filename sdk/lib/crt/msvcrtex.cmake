@@ -67,53 +67,14 @@ endif()
 # target. crt0-rust (default main -> WinMain bridge) and crt-dllmain-rust (default DllMain)
 # are separate archives after the module's own objects, so a module's own definition wins.
 #
-# Only the MSVC integer/stack-probe intrinsics stay assembly (msvcrtex_asm).
 set(MSVCRTEX_RUST_WORKSPACE "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-if(ARCH STREQUAL "i386")
-    set(MSVCRTEX_RUST_TARGET "i686-pc-windows-gnu")
-elseif(ARCH STREQUAL "amd64")
-    set(MSVCRTEX_RUST_TARGET "x86_64-pc-windows-gnu")
-elseif(ARCH STREQUAL "arm64")
-    set(MSVCRTEX_RUST_TARGET "aarch64-pc-windows-gnullvm")
-endif()
-
-# One staticlib build of `crate` with exactly `features` (no defaults unless `defaults`).
-# Each variant gets its own target dir: rust_storage_target allows one owner per artifact,
-# and these are several feature sets of the same crate.
-function(msvcrtex_rust_lib name crate features defaults)
-    set(_dir "${CMAKE_CURRENT_BINARY_DIR}/rust-${name}-target")
-    set(_lib "${CMAKE_CURRENT_BINARY_DIR}/lib${name}.a")
-    string(REPLACE "-" "_" _artifact "${crate}")
-    rust_crate_sources(_srcs "${MSVCRTEX_RUST_WORKSPACE}" ${crate})
-    set(_feat)
-    if(NOT defaults)
-        list(APPEND _feat --no-default-features)
-    endif()
-    if(features)
-        list(APPEND _feat --features ${features})
-    endif()
-    add_custom_command(
-        OUTPUT ${_lib}
-        COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${_dir}
-            cargo build --release --target ${MSVCRTEX_RUST_TARGET} -p ${crate} ${_feat}
-                --manifest-path ${MSVCRTEX_RUST_WORKSPACE}/Cargo.toml
-        COMMAND ${CMAKE_COMMAND} -E copy
-            ${_dir}/${MSVCRTEX_RUST_TARGET}/release/lib${_artifact}.a ${_lib}
-        DEPENDS ${_srcs} ${MSVCRTEX_RUST_WORKSPACE}/${crate}/Cargo.toml
-        WORKING_DIRECTORY ${MSVCRTEX_RUST_WORKSPACE}
-        COMMENT "Building ${crate} [${features}] for msvcrtex (${MSVCRTEX_RUST_TARGET})"
-        VERBATIM)
-    add_custom_target(rust_${name} DEPENDS ${_lib})
-    set(${name}_LIB ${_lib} PARENT_SCOPE)
-endfunction()
-
-msvcrtex_rust_lib(msvcrtex_dll crt-startup-rust "crtdll" FALSE)
-msvcrtex_rust_lib(msvcrtex_exe crt-startup-rust "crtexe" FALSE)
-msvcrtex_rust_lib(msvcrtex_wexe crt-startup-rust "wcrtexe" FALSE)
-msvcrtex_rust_lib(msvcrtex_bare crt-startup-rust "" FALSE)
-msvcrtex_rust_lib(msvcrtex_dllmain crt-dllmain-rust "" TRUE)
-msvcrtex_rust_lib(msvcrtex_crt0 crt0-rust "ansi" FALSE)
-msvcrtex_rust_lib(msvcrtex_wcrt0 crt0-rust "wide" FALSE)
+rust_staticlib_variant(msvcrtex_dll crt-startup-rust "crtdll" FALSE)
+rust_staticlib_variant(msvcrtex_exe crt-startup-rust "crtexe" FALSE)
+rust_staticlib_variant(msvcrtex_wexe crt-startup-rust "wcrtexe" FALSE)
+rust_staticlib_variant(msvcrtex_bare crt-startup-rust "" FALSE)
+rust_staticlib_variant(msvcrtex_dllmain crt-dllmain-rust "" TRUE)
+rust_staticlib_variant(msvcrtex_crt0 crt0-rust "ansi" FALSE)
+rust_staticlib_variant(msvcrtex_wcrt0 crt0-rust "wide" FALSE)
 
 add_library(msvcrtex INTERFACE)
 add_dependencies(msvcrtex rust_msvcrtex_dll rust_msvcrtex_exe rust_msvcrtex_wexe rust_msvcrtex_bare
@@ -128,14 +89,9 @@ target_link_libraries(msvcrtex INTERFACE
     "$<$<STREQUAL:${_kind},wexe>:${msvcrtex_wcrt0_LIB}>"
     "$<$<NOT:$<IN_LIST:${_kind},dll;exe;wexe>>:${msvcrtex_bare_LIB}>")
 
-if(MSVCRTEX_ASM_SOURCE)
-    set_source_files_properties(${MSVCRTEX_ASM_SOURCE} PROPERTIES COMPILE_DEFINITIONS "_DLL;_MSVCRTEX_")
-    add_asm_files(msvcrtex_asm_obj ${MSVCRTEX_ASM_SOURCE})
-    add_library(msvcrtex_asm STATIC ${msvcrtex_asm_obj})
-    set_target_properties(msvcrtex_asm PROPERTIES LINKER_LANGUAGE C)
-    add_dependencies(msvcrtex_asm asm)
-    target_link_libraries(msvcrtex INTERFACE msvcrtex_asm)
-endif()
+# MSVCRTEX_ASM_SOURCE (the stack probes, i386 _alldiv/_aulldiv, i386 ceilf/floorf) is
+# crt-startup-rust's `intrinsics` module (global_asm!), in every variant above; no
+# msvcrtex_asm library is built.
 
 # msvcrtex depends on msvcrt and kernel32
 # + ntdll: crt-startup-rust's panic path (panic-common) imports DbgPrint,

@@ -2078,43 +2078,16 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
     intrinsics stay asm (`msvcrtex_asm`). Two things the C archive had silently provided:
     `_recalloc` (added upstream after the translation; now in crt-startup-rust) and a C link
     language for modules with no C of their own (now `set_module_type`).
-  - **`user32_wsprintf` — 12 TUs, and the one genuine unclaimed CRT frontier left.**
-    It is the LAST target in the tree still compiling `printf/streamout.c` +
-    `wstreamout.c` as C: the 708-line engine is already Rust in `cnt-rust`
-    (`cabi/streamout.rs`) and flipped for `libcntpr` (`libcntpr.cmake:125`). The other
-    10 TUs are 4 trivial leaves (`strnlen` 5 lines, `wcsnlen` 6, `mbstowcs_nt` 66,
-    `wcstombs_nt` 57) and 8 irreducible variadic shells.
-
-    **It is not free wiring, because `-D_USER32_WSPRINTF` (`sdk/lib/crt/CMakeLists.txt:47`)
-    is a different CONFIGURATION of that engine**, and `cabi/streamout.rs:294` says those
-    paths are deliberately not compiled. The delta is bounded and fully enumerable — six
-    points, mostly subtractive:
-      1. no `_IOSTRG`/`_base == NULL` early-return in `streamout_char`/`_astring`/`_wstring`
-         (3 sites, `streamout.c:231/257/285`);
-      2. the buffer path is `defined(_USER32_WSPRINTF) || defined(_LIBCNT_)` — ALREADY
-         what the Rust implements, so this one costs nothing;
-      3. `USE_MULTISIZE 0` (`:318`) — no size modifiers;
-      4. `*` field width and precision emit the literal `*` instead of consuming a
-         `va_arg` (`:376`, `:407`);
-      5. no float conversions — the `G/E/A/g/e/a/f` cases are `#ifndef`-ed out (`:548`);
-      6. `fieldwidth += 2` for the `FLAG_SPECIAL` `0x` prefix (`:608`).
-
-    **Do NOT implement this as a cargo feature on `cnt-rust`.** Cargo features are an
-    additive UNION and this one is not additive: it changes the behaviour of symbols that
-    already exist rather than adding new ones. `cnt-rust` has 10 dependents and is one
-    codegen unit, so unification would hand `libcntpr` — the KERNEL's printf — the user32
-    variant, silently and with no diagnostic. Its own Cargo.toml already documents this
-    hazard for `cabi`/`cabi-math` ("The msvcrt DIFFTEST must NOT see this feature").
-    The right shape is a separate crate, exactly the precedent `crt-shared-rust` set when
-    ucrtbase needed its own configuration of the shared TUs.
-
-    Link mechanics, checked: there is no `--whole-archive` rail in `sdk/cmake`, and
-    `win32ss/user/user32/CMakeLists.txt:126` lists `user32_wsprintf` BEFORE
-    `${USER32_RUST_LIB}`, so a Rust twin loses to the C by lld first-match. Unlike
-    ucrtbase this is fixable: `user32_wsprintf` is a plain static lib whose source list
-    can be edited, which is the ordinary cohab pattern. Scoped 2026-09-13, not started —
-    user32 is on the boot path, so this wants its own session with a 3-arch smoke, not
-    the tail of one.
+  - **`user32_wsprintf` — Rust (2026-10-04, `user32-wsprintf-rust`).** cnt-rust's
+    `cabi/streamout.rs` compiled a second time under `cfg(streamout_user32)` (a per-crate cfg,
+    so libcntpr cannot inherit it, which is why this is not a cargo feature), carrying the six
+    `_USER32_WSPRINTF` differences; the `wv[s|sn]printf{A,W}` string-stream wrappers; the
+    NT-flavoured `mbtowc`/`wctomb`/`mbstowcs`/`wcstombs` and `str/wcsnlen`; and `wsprintfA/W`,
+    the two C-variadic exports, as naked thunks (`varargs.rs`: spill the register-passed
+    variadics next to the stack ones, call a `va_list` helper; SEH directives on amd64/arm64).
+    cnt-difftest grades the configuration against the genuine streamout.c built
+    `-D_USER32_WSPRINTF` (a dropped `fieldwidth += 2` fails it); `tools/payloads/wsprintf`
+    grades the thunks across the register/stack boundary on all three arches.
 
 
   Recorded because the obvious check misleads: `grep -rl '\bcrt\b' --include=CMakeLists.txt`

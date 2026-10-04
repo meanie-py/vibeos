@@ -52,11 +52,8 @@ if(ARCH STREQUAL "i386")
     list(APPEND SHARED_SOURCE
         except_i386.c
     )
-    list(APPEND SHARED_ASM_SOURCE
-        i386/__wine_RtlUnwind.s
-        i386/exception_ptr.s
-        i386/inout.s
-    )
+    # i386/__wine_RtlUnwind.s, i386/exception_ptr.s, i386/inout.s -- replaced by Rust
+    # (crt-shared-rust src/asm_i386.rs, global_asm!).
 elseif(ARCH STREQUAL "amd64")
     list(APPEND SHARED_SOURCE
         except_x86_64.c
@@ -273,7 +270,10 @@ add_custom_target(rust_msvcrt_crt DEPENDS ${MSVCRT_CRT_RUST_LIB})
 # first-match. --whole-archive forces the Rust defs in first; the C copies then
 # become the ignored duplicates (--allow-multiple-definition). See lane plan §1b.
 link_msvcrt_rust_cohab(msvcrt)
-target_link_libraries(msvcrt msvcrt_static crtmath dbgrpt vcruntime wine chkstk ${PSEH_LIB})
+# ${PSEH_USER_LIB} and ${VCRT_SETJMP_LIB} first, by path (gcc.cmake): the SEH runtime and
+# setjmp/longjmp resolve from Rust before any of these libraries' own ${PSEH_LIB} and before
+# ntdll's import library, which exports _setjmp/longjmp and would otherwise answer them.
+target_link_libraries(msvcrt ${PSEH_USER_LIB} ${VCRT_SETJMP_LIB} msvcrt_static crtmath dbgrpt vcruntime wine chkstk)
 if(ARCH STREQUAL "i386")
     target_link_libraries(msvcrt chkesp)
 endif()

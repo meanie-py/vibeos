@@ -15,8 +15,10 @@ entries or state fields are reported and make ``require_supported`` fail loudly.
 from __future__ import annotations
 
 import ast
+import fnmatch
 import hashlib
 import json
+import os
 import re
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
@@ -735,20 +737,35 @@ def _class_bases(header: Path, class_name: str) -> list[str]:
     raise CppComError(f"{class_name}: class definition not found in {header}")
 
 
-def _header_files(root: Path, pattern: str = "*.h") -> list[Path]:
-    """Retry directory enumeration if concurrent tooling removes a scratch directory.
+def _is_scratch_dir(name: str) -> bool:
+    """A tool's temporary directory (`tmp6af3226e`, `.partial-x`), never part of a corpus."""
+    return name.startswith((".", "tmp"))
 
-    Materialize the entire walk before returning: a partial corpus must never
-    escape. Missing roots and persistent directory churn still fail.
+
+def _header_files(root: Path, pattern: str = "*.h") -> list[Path]:
+    """Every file under ``root`` matching ``pattern``; a vanishing SCRATCH directory is skipped.
+
+    Concurrent tooling creates and removes scratch directories inside the tree: the gate
+    runs check-tooling beside three builds, and `tmp6af3226e`-style directories appeared
+    under sdk/include/psdk mid-walk, which made ``Path.rglob`` raise and held the land
+    queue twice on 2026-10-04 even with retries. A scratch directory holds no header of
+    the corpus, so its disappearing is skipped. Any OTHER directory vanishing still
+    raises, so a partial corpus never escapes, and a missing root fails. The walk is
+    materialized before returning.
     """
-    for attempt in range(3):
-        root.stat()
-        try:
-            return list(root.rglob(pattern))
-        except FileNotFoundError:
-            if attempt == 2:
-                raise
-    raise AssertionError("unreachable")
+    root.stat()
+
+    def onerror(err: OSError) -> None:
+        if isinstance(err, FileNotFoundError) and _is_scratch_dir(Path(err.filename or "").name):
+            return
+        raise err
+
+    out: list[Path] = []
+    for parent, dirs, files in os.walk(root, onerror=onerror):
+        dirs.sort()
+        base = Path(parent)
+        out.extend(base / name for name in sorted(files) if fnmatch.fnmatchcase(name, pattern))
+    return out
 
 
 def find_class_header(source: Path, class_name: str) -> Path:

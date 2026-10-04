@@ -167,14 +167,13 @@ endif()
 # This allows to have CMake test the compiler without linking
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
-# Remove the archive before writing it. `ar crT` only adds or replaces members, so
-# without the rm an object whose source left the target (a cohab flip, a moved
-# file) stayed in the archive of every long-lived build dir and could still win
-# the link: amd64/i386 l3codeca.acm linked a stale flat-layout libmpg123 over the
-# current one, found by tools/link_guard.py. A clean build never showed it.
-set(CMAKE_C_CREATE_STATIC_LIBRARY
-    "\"${CMAKE_COMMAND}\" -E rm -f <TARGET>"
-    "<CMAKE_AR> crT <TARGET> <LINK_FLAGS> <OBJECTS>")
+# Delete the archive first. `ar r` replaces or inserts members and never removes one, so
+# without this an object dropped from a library's source list keeps linking from the stale
+# .obj a warm build dir still holds: vcruntime's setjmp objects did, after setjmp-rust took
+# their place (2026-10-04), and amd64/i386 l3codeca.acm linked a stale flat-layout libmpg123
+# over the current one (found by tools/link_guard.py). CMake's own default rule removes the
+# target; overriding it lost that.
+set(CMAKE_C_CREATE_STATIC_LIBRARY "${CMAKE_COMMAND} -E rm -f <TARGET>" "<CMAKE_AR> crT <TARGET> <LINK_FLAGS> <OBJECTS>")
 set(CMAKE_CXX_CREATE_STATIC_LIBRARY ${CMAKE_C_CREATE_STATIC_LIBRARY})
 set(CMAKE_ASM_CREATE_STATIC_LIBRARY ${CMAKE_C_CREATE_STATIC_LIBRARY})
 

@@ -53,3 +53,12 @@ target_include_directories(pseh INTERFACE include)
 if ((CMAKE_C_COMPILER_ID STREQUAL "GNU") OR
     ((CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (NOT (ARCH STREQUAL "amd64"))))
 endif()
+
+# pseh-rust in its user-mode build (seh.s's SEH runtime + dummy.c's volatile symbols, the
+# same Rust the kernel links): the CRT DLLs list it before their other libraries so lld
+# resolves the runtime from it, and compile no PSEH C or asm of their own.
+rust_staticlib_variant(pseh_user_rust_a pseh-rust "user" FALSE)
+# Consumers write ${PSEH_USER_LIB} (gcc.cmake), this archive's path.
+if(NOT pseh_user_rust_a_LIB STREQUAL PSEH_USER_LIB)
+    message(FATAL_ERROR "PSEH_USER_LIB (${PSEH_USER_LIB}) is not pseh-rust's archive (${pseh_user_rust_a_LIB})")
+endif()
