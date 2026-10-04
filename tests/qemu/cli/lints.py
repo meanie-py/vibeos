@@ -735,6 +735,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # loop, a win32k use-after-free re-peek, a temp-name spin, a scrollbar that kept
     # tracking). The shape also fits a faithful `for (;;)`, so the baseline holds the
     # sites read against their C and found OK; a NEW one means: go read the C.
+    # `(base as *mut PBYTE).offset(n)` steps in POINTER units: the C's `(PBYTE)base + n`
+    # turned into 8n on 64-bit. oleaut32's RecordCopy read every field past offset 0
+    # from the wrong address; win32k's 16bpp transparent blit wrote 8x past its target.
+    sbs = repo / "tools" / "scan_byteptr_stride.py"
+    specs.append(
+        (
+            "scan_byteptr_stride",
+            [py, str(sbs), "--lint"] if sbs.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sdc = repo / "tools" / "scan_dowhile_continue.py"
     specs.append(
         (

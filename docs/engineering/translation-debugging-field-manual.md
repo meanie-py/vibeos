@@ -1162,6 +1162,15 @@ allocation used the real element size, so nothing looked wrong until index 1.
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
 
+### `(base as *mut PBYTE).offset(n)` strides by a POINTER, not a byte
+The C's `(PBYTE)base + n` came out as a cast to a pointer *to* a `PBYTE` followed by
+`.offset(n)`, which steps 8 bytes per unit on 64-bit; the result is cast straight back, so it
+compiles everywhere and is wrong only once `n != 0`. oleaut32's `IRecordInfoImpl_RecordCopy`
+read every field past offset 0 from 8x its address (Wine's vartype test died in
+`SysAllocString` on the garbage BSTR); win32k's `DIB_16BPP_TransparentBlt` wrote 8x past its
+destination rect (16bpp only, so the 32bpp smoke never saw it). **Gated:
+`tools/scan_byteptr_stride.py`** — the tree holds no legitimate `*mut PBYTE` arithmetic.
+
 ### `LIST_FOR_EACH_ENTRY` translated without its container_of
 
 **Symptom:** an access violation inside a list walk on the first call, often in a

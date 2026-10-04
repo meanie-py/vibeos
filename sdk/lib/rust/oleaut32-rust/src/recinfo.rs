@@ -629,10 +629,13 @@ fn IRecordInfoImpl_RecordCopy(
             continue;
         }
 
-        src = (src_rec as *mut PBYTE)
+        // C: `((BYTE*)src_rec) + offset` -- BYTE*, not PBYTE*. Through `*mut PBYTE` the
+        // offset stepped in POINTER-sized units, so every field past offset 0 was read
+        // from (and the BSTR copied out of) 8x the right address on 64-bit.
+        src = (src_rec as *mut BYTE)
             .offset((*(*This).fields.offset(i as isize)).offset as isize)
             as *mut core::ffi::c_void;
-        dest = (dest_rec as *mut PBYTE)
+        dest = (dest_rec as *mut BYTE)
             .offset((*(*This).fields.offset(i as isize)).offset as isize)
             as *mut core::ffi::c_void;
 
