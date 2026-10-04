@@ -80,7 +80,14 @@ _JMP = re.compile(r"^\s*[0-9a-f]+:\s+(?:jmp|jmpq|b)\s+(?:0x)?([0-9a-f]+)\b")
 _SUFFIXES = (".sys", ".dll", ".exe", ".drv")
 # Directories of build INTERMEDIATES / staged copies — the same module appears
 # there under a hashed name, so scanning them double-reports every finding.
-_SKIP_DIRS = ("CMakeFiles", "host-tools", "/boot/stripped/", "/boot/staging/")
+_SKIP_DIRS = (
+    "CMakeFiles",
+    "host-tools",
+    "/boot/stripped/",
+    "/boot/staging/",
+    "/boot/ramdisk/",
+    "/boot/ramdisk-overlay/",
+)
 
 
 def objdump(build_dir: Path) -> str:

@@ -80,40 +80,15 @@ add_host_tool(mkisofs
     ${REACTOS_SOURCE_DIR}/vendor/schilytools/mkisofs/write.c)
 target_link_libraries(mkisofs libmdigest libschily libsiconv)
 
-if(MSVC)
+# libschily implements an own printf function with support for the %r formatter.
+# Silence compilers checking for invalid formatting sequences.
+target_compile_options(libschily PRIVATE "-Wno-format")
+# MATCHES must be used here because on macOS, CMake uses the compiler ID "AppleClang".
+if(CMAKE_C_COMPILER_ID MATCHES "Clang$" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "15")
     # mkisofs uses K&R-style function definitions to support very old compilers.
-    # MSVC complains about the resulting foo() vs. foo(void) mismatches.
-    target_compile_options(mkisofs PRIVATE "/wd4113")
-
-    if(ARCH STREQUAL "amd64")
-        # Disable warning "conversion from 'size_t' to 'int', possible loss of data"
-        target_compile_options(mkisofs PRIVATE "/wd4267")
-
-        # Disable warning "'type cast': pointer truncation from 'const char *' to 'long'"
-        target_compile_options(libschily PRIVATE "/wd4311")
-    endif()
-
-    # Disable warning "'<': signed/unsigned mismatch"
-    target_compile_options(mkisofs PRIVATE "/wd4018")
-
-    # Disable warning "'nchar': unreferenced local variable"
-    target_compile_options(mkisofs PRIVATE "/wd4101")
-
-    # Disable warning "'+=': conversion from 'x' to 'y', possible loss of data"
-    target_compile_options(libschily PRIVATE "/wd4244")
-    target_compile_options(mkisofs PRIVATE "/wd4244")
-else()
-    # libschily implements an own printf function with support for the %r formatter.
-    # Silence compilers checking for invalid formatting sequences.
-    target_compile_options(libschily PRIVATE "-Wno-format")
-
-    # MATCHES must be used here because on macOS, CMake uses the compiler ID "AppleClang".
-    if(CMAKE_C_COMPILER_ID MATCHES "Clang$" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "15")
-        # mkisofs uses K&R-style function definitions to support very old compilers.
-        # This causes warnings with modern compilers.
-        target_compile_options(libmdigest PRIVATE "-Wno-deprecated-non-prototype")
-        target_compile_options(libschily PRIVATE "-Wno-deprecated-non-prototype")
-        target_compile_options(libsiconv PRIVATE "-Wno-deprecated-non-prototype")
-        target_compile_options(mkisofs PRIVATE "-Wno-deprecated-non-prototype")
-    endif()
+    # This causes warnings with modern compilers.
+    target_compile_options(libmdigest PRIVATE "-Wno-deprecated-non-prototype")
+    target_compile_options(libschily PRIVATE "-Wno-deprecated-non-prototype")
+    target_compile_options(libsiconv PRIVATE "-Wno-deprecated-non-prototype")
+    target_compile_options(mkisofs PRIVATE "-Wno-deprecated-non-prototype")
 endif()

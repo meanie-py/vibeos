@@ -9,8 +9,9 @@
 # it is driven by cargo (arm64input-cargo's build.rs → reactos-link,
 # ModuleKind::KernelDll, entry=DriverEntry, no exports). add_cargo_module builds
 # arm64input-rust + links it with the ntoskrnl/hal import libs into the shipping
-# PE and applies the kernel-dll post-link. NO_CD mirrors the original (the C
-# target registered no add_cd_file; mkramdisk picks the .sys up by path for the
-# arm64 ramdisk). Only added for ARCH==arm64 (drivers/input/CMakeLists.txt).
+# PE and applies the kernel-dll post-link. It is a livecd file like arm64vid and
+# pl011: the arm64 ramdisk is built from the livecd list, so a driver without a
+# destination never reaches the media. Only added for ARCH==arm64
+# (drivers/input/CMakeLists.txt).
 add_cargo_module(arm64input arm64input-cargo arm64input.sys KIND kerneldll
-    BODY_CRATE arm64input-rust NO_CD)
+    BODY_CRATE arm64input-rust DESTINATION reactos/system32/drivers)

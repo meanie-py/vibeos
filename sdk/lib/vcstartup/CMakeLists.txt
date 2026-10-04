@@ -49,18 +49,16 @@ list(APPEND VCSTARTUP_SOURCES
     wmainCRTStartup.cpp
 )
 
-if(NOT MSVC)
-    # clang/gcc-mingw emit a `call __main` at the top of every `main` to run the
-    # `.ctors` global constructors, so an exe that links vcstartup instead of
-    # msvcrtex needs the same hook msvcrtex gets from startup/gccmain.c. It used
-    # to come from `-lgcc`, which the pinned llvm-mingw toolchain does not ship:
-    # that is why ucrtbase_winetest was the one winetest that could not link.
-    # A no-op would also satisfy the linker and would silently skip every global
-    # constructor, so use the real walk.
-    list(APPEND VCSTARTUP_SOURCES
-        ${REACTOS_SOURCE_DIR}/sdk/lib/crt/startup/gccmain.c
-    )
-endif()
+# clang/gcc-mingw emit a `call __main` at the top of every `main` to run the
+# `.ctors` global constructors, so an exe that links vcstartup instead of
+# msvcrtex needs the same hook msvcrtex gets from startup/gccmain.c. It used
+# to come from `-lgcc`, which the pinned llvm-mingw toolchain does not ship:
+# that is why ucrtbase_winetest was the one winetest that could not link.
+# A no-op would also satisfy the linker and would silently skip every global
+# constructor, so use the real walk.
+list(APPEND VCSTARTUP_SOURCES
+    ${REACTOS_SOURCE_DIR}/sdk/lib/crt/startup/gccmain.c
+)
 
 # Startup library (linked into executables, linking to ucrtbase)
 add_library(vcstartup ${VCSTARTUP_SOURCES})

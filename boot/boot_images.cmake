@@ -161,19 +161,27 @@ add_user_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/livecd.cmake.lst "Profiles" "D
 # the boot set is 70-92% DWARF that the PE loader never maps but freeldr
 # streams off the CD at ~2.2MB/s (see docs/engineering/performance-investigation.md).
 # The build tree keeps full DWARF — every sym tool reads build-dir binaries.
-add_custom_target(livecd
-    COMMAND ${CMAKE_COMMAND} -E env python3 ${REACTOS_SOURCE_DIR}/tools/strip_cd_media.py
-        --lst ${CMAKE_CURRENT_BINARY_DIR}/livecd.$<CONFIG>.lst
-        --out ${CMAKE_CURRENT_BINARY_DIR}/livecd.stripped.lst
-        --cache ${CMAKE_CURRENT_BINARY_DIR}/stripped
-        --objcopy ${CMAKE_OBJCOPY}
-    COMMAND native-mkisofs -quiet -o ${REACTOS_BINARY_DIR}/livecd.iso -iso-level 4
-        -publisher ${ISO_MANUFACTURER} -preparer ${ISO_MANUFACTURER} -volid ${ISO_VOLNAME} -volset ${ISO_VOLNAME}
-        ${ISO_EFI_BOOT_PARAMS} -hide boot.catalog
-        -sort ${CMAKE_CURRENT_BINARY_DIR}/bootfiles.sort
-        -no-cache-inodes -graft-points -path-list ${CMAKE_CURRENT_BINARY_DIR}/livecd.stripped.lst
-    DEPENDS native-mkisofs
-    VERBATIM)
+if(ARCH STREQUAL "arm64")
+    # arm64 boots a FAT ramdisk, not an ISO: qemu/mkramdisk.sh lays this same
+    # livecd.$<CONFIG>.lst out into ramdisk.img (tools/ramdisk_tree.py), so here
+    # `livecd` only has to BUILD everything the list names. Every add_cd_file(FOR
+    # livecd) adds its target as a dependency of this one, exactly as on x86.
+    add_custom_target(livecd)
+else()
+    add_custom_target(livecd
+        COMMAND ${CMAKE_COMMAND} -E env python3 ${REACTOS_SOURCE_DIR}/tools/strip_cd_media.py
+            --lst ${CMAKE_CURRENT_BINARY_DIR}/livecd.$<CONFIG>.lst
+            --out ${CMAKE_CURRENT_BINARY_DIR}/livecd.stripped.lst
+            --cache ${CMAKE_CURRENT_BINARY_DIR}/stripped
+            --objcopy ${CMAKE_OBJCOPY}
+        COMMAND native-mkisofs -quiet -o ${REACTOS_BINARY_DIR}/livecd.iso -iso-level 4
+            -publisher ${ISO_MANUFACTURER} -preparer ${ISO_MANUFACTURER} -volid ${ISO_VOLNAME} -volset ${ISO_VOLNAME}
+            ${ISO_EFI_BOOT_PARAMS} -hide boot.catalog
+            -sort ${CMAKE_CURRENT_BINARY_DIR}/bootfiles.sort
+            -no-cache-inodes -graft-points -path-list ${CMAKE_CURRENT_BINARY_DIR}/livecd.stripped.lst
+        DEPENDS native-mkisofs
+        VERBATIM)
+endif()
 
 ## HybridCD
 # Create the file list
@@ -195,7 +203,13 @@ add_custom_target(hybridcd
 
 if(DEFINED EFI_PLATFORM_ID)
     # For things like flashing USB drives, we also add the efi file into efi/boot.
-    add_cd_file(TARGET efisys FILE ${CMAKE_CURRENT_BINARY_DIR}/efisys.bin DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FOR bootcd regtest livecd hybridcd)
+    # The El Torito EFI image is for CD boot; the arm64 ramdisk's boot.img carries
+    # BOOTAA64.EFI itself, and efisys needs the BIOS FAT boot sector arm64 never builds.
+    if(ARCH STREQUAL "arm64")
+        add_cd_file(TARGET efisys FILE ${CMAKE_CURRENT_BINARY_DIR}/efisys.bin DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FOR bootcd regtest hybridcd)
+    else()
+        add_cd_file(TARGET efisys FILE ${CMAKE_CURRENT_BINARY_DIR}/efisys.bin DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FOR bootcd regtest livecd hybridcd)
+    endif()
 
     # uefildr is a cargo-driven custom_target (no $<TARGET_FILE:>); pass TARGET
     # for the build dependency AND FILE for the explicit path (same pattern as

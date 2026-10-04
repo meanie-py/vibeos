@@ -56,11 +56,9 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_compile_options(browseui PRIVATE -Wno-unused-but-set-variable)
 endif()
 
-if(NOT MSVC)
-    # Binutils linker bug
-    if(LTCG)
-        target_link_options(browseui PRIVATE "-Wl,--allow-multiple-definition")
-    endif()
+# Binutils linker bug
+if(LTCG)
+    target_link_options(browseui PRIVATE "-Wl,--allow-multiple-definition")
 endif()
 
 add_custom_command(TARGET browseui POST_BUILD

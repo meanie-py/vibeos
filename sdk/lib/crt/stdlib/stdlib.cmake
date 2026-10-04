@@ -40,15 +40,3 @@ list(APPEND CRT_STDLIB_SOURCE
     stdlib/wmakpath.c
     stdlib/wmakpath_s.c
 )
-
-if(MSVC AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    if(ARCH STREQUAL "i386")
-        list(APPEND CRT_STDLIB_ASM_SOURCE
-            stdlib/clang-alias.s
-        )
-    elseif(ARCH STREQUAL "amd64")
-        list(APPEND CRT_STDLIB_ASM_SOURCE
-            stdlib/clang-alias.s
-        )
-    endif()
-endif()

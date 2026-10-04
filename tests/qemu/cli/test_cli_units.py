@@ -749,7 +749,7 @@ def test_staleness_arm64_restage_trap(tmp_path: Path):
 @pytest.fixture
 def arm64_cohab_repo(tmp_path: Path) -> Path:
     """An arm64 repo with one Rust-cohab driver (foo-rust -> foo.sys), staged via
-    mkramdisk REQUIRED_FILES, plus a build-arm64 artifact + boot.img + stamp — the
+    the livecd list mkramdisk lays out, plus a build-arm64 artifact + boot.img + stamp — the
     fixture for the staged-build cohab freshness net (advapi32/fastfat class)."""
     r = tmp_path / "repo"
     crate = r / "sdk" / "lib" / "rust" / "foo-rust"
@@ -763,11 +763,14 @@ def arm64_cohab_repo(tmp_path: Path) -> Path:
     )
     (r / "build-arm64" / "drivers" / "x" / "foo").mkdir(parents=True)
     (r / "build-arm64" / "drivers" / "x" / "foo" / "foo.sys").write_bytes(b"SYS")
-    (r / "qemu").mkdir()
-    (r / "qemu" / "mkramdisk.sh").write_text(
-        'REQUIRED_FILES=(\n    "$BUILD_DIR/ntoskrnl/ntoskrnl.exe"\n'
-        '    "$BUILD_DIR/drivers/x/foo/foo.sys"\n)\n'
+    (r / "build-arm64" / "boot").mkdir()
+    (r / "build-arm64" / "boot" / "livecd.Debug.lst").write_text(
+        "/tmp/vibeos/build-arm64/boot/empty\n"
+        "reactos/system32/ntoskrnl.exe=/tmp/vibeos/build-arm64/ntoskrnl/ntoskrnl.exe\n"
+        "reactos/system32/drivers/foo.sys=/tmp/vibeos/build-arm64/drivers/x/foo/foo.sys\n"
+        "reactos/inf/foo.inf=/tmp/vibeos/build-arm64/drivers/x/foo/foo.inf\n"
     )
+    (r / "qemu").mkdir()
     (r / "qemu" / "boot.img").write_bytes(b"BOOT")
     (r / "docs").mkdir()
     (r / "docs" / "readme.md").write_text("hi\n")
@@ -783,6 +786,14 @@ def arm64_cohab_repo(tmp_path: Path) -> Path:
 def test_mkramdisk_required_rels_parsed(arm64_cohab_repo: Path):
     rels = provenance.mkramdisk_required_rels(arm64_cohab_repo)
     assert "drivers/x/foo/foo.sys" in rels and "ntoskrnl/ntoskrnl.exe" in rels
+
+
+def test_only_linked_images_join_the_cohab_net(arm64_cohab_repo: Path):
+    """The livecd list carries .inf files whose stem matches a cohab crate (acpi.inf,
+    cdrom.inf); no staticlib feeds them, so they must not be judged stale against one."""
+    rels = provenance.boot_set_cohab_rels(arm64_cohab_repo, "arm64")
+    assert "drivers/x/foo/foo.sys" in rels
+    assert "drivers/x/foo/foo.inf" not in rels
 
 
 def test_crate_for_stem_separator_normalization(arm64_cohab_repo: Path):
@@ -5272,8 +5283,10 @@ def cohab_repo(tmp_path: Path, monkeypatch) -> Path:
     mod = r / "build-arm64" / "drivers" / "widget"
     cargo_out = mod / "rust-widget-target" / "aarch64-pc-windows-gnullvm" / "release"
     cargo_out.mkdir(parents=True)
-    (r / "qemu").mkdir(parents=True)
-    (r / "qemu" / "mkramdisk.sh").write_text('RMC "$BUILD_DIR/drivers/widget/widget.sys" ::/w\n')
+    (r / "build-arm64" / "boot").mkdir(parents=True)
+    (r / "build-arm64" / "boot" / "livecd.Debug.lst").write_text(
+        "reactos/system32/drivers/widget.sys=/tmp/vibeos/build-arm64/drivers/widget/widget.sys\n"
+    )
     for p, t in (
         (crate / "lib.rs", 1000),
         (cargo_out / "libwidget_rust.a", 2000),
@@ -8471,23 +8484,21 @@ _CMAKE_FIXTURE = """
 """
 
 
-def _ramdisk_fixture(copied, required):
-    return (
-        "REQUIRED_FILES=(\n"
-        + "".join(f'    "$BUILD_DIR/boot/bootdata/{h}"\n' for h in required)
-        + ")\n\n"
-        + "".join(
-            f'RMC "$BUILD_DIR/boot/bootdata/{h}"   ::/reactos/system32/config/{h}\n' for h in copied
+def _ramdisk_fixture(from_livecd: bool):
+    if from_livecd:
+        return (
+            'LIVECD_LST="$BUILD_DIR/boot/livecd.Debug.lst"\n'
+            'python3 "$PROJECT_DIR/tools/ramdisk_tree.py" --out "$STAGE_DIR" ramdisk-livecd.lst\n'
         )
-    )
+    return 'RMC "$BUILD_DIR/boot/bootdata/system"   ::/reactos/system32/config/system\n'
 
 
-def _run_drift(tmp_path, copied, required):
+def _run_drift(tmp_path, from_livecd):
     repo = Path(__file__).resolve().parents[3]
     cmake = tmp_path / "CMakeMacros.cmake"
     cmake.write_text(_CMAKE_FIXTURE)
     ramdisk = tmp_path / "mkramdisk.sh"
-    ramdisk.write_text(_ramdisk_fixture(copied, required))
+    ramdisk.write_text(_ramdisk_fixture(from_livecd))
     return subprocess.run(
         [
             "python3",
@@ -8502,35 +8513,26 @@ def _run_drift(tmp_path, copied, required):
     )
 
 
-def test_boot_media_drift_passes_when_both_media_agree(tmp_path):
-    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system", "sam"])
+def test_boot_media_drift_passes_when_the_ramdisk_is_the_livecd_list(tmp_path):
+    r = _run_drift(tmp_path, from_livecd=True)
     assert r.returncode == 0, r.stdout
     assert "findings=0" in r.stdout
 
 
-def test_boot_media_drift_catches_a_hive_missing_from_the_ramdisk(tmp_path):
-    """The #71 bug exactly: `sam` on the livecd, absent from the ramdisk. The kernel
-    fabricates an empty volatile hive rather than failing, so nothing else can see it."""
-    r = _run_drift(tmp_path, copied=["system"], required=["system"])
+def test_boot_media_drift_catches_a_hand_staged_ramdisk(tmp_path):
+    """The #71 shape: a ramdisk copied by hand carried `system` but not `sam`, and the
+    kernel fabricated an empty volatile SAM rather than failing. A script that stops
+    laying out the livecd list is back to depending on someone remembering each hive."""
+    r = _run_drift(tmp_path, from_livecd=False)
     assert r.returncode == 1
-    assert "[RAMDISK_MISSING]" in r.stdout
-    assert "'sam'" in r.stdout
-
-
-def test_boot_media_drift_catches_a_copied_but_unguarded_hive(tmp_path):
-    """Copied without a REQUIRED_FILES entry: if the build stops emitting it, the copy
-    stages nothing and we are back to a fabricated hive with no error anywhere."""
-    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system"])
-    assert r.returncode == 1
-    assert "[RAMDISK_UNGUARDED]" in r.stdout
-    assert "'sam'" in r.stdout
+    assert "[RAMDISK_NOT_FROM_LIVECD]" in r.stdout
+    assert "sam" in r.stdout
 
 
 def test_boot_media_drift_ignores_hives_staged_outside_the_config_dir(tmp_path):
     """BCD goes to efi/boot for the EFI boot manager — it is not a \\REGISTRY\\MACHINE
-    hive and the ramdisk is not an ESP, so demanding it would be a false positive."""
-    r = _run_drift(tmp_path, copied=["system", "sam"], required=["system", "sam"])
-    assert r.returncode == 0
+    hive, so it is not part of the reference set."""
+    r = _run_drift(tmp_path, from_livecd=False)
     assert "BCD" not in r.stdout
 
 
@@ -8540,7 +8542,7 @@ def test_boot_media_drift_fails_loudly_if_it_can_no_longer_find_the_reference_se
     cmake = tmp_path / "CMakeMacros.cmake"
     cmake.write_text("# the hive blocks moved somewhere else\n")
     ramdisk = tmp_path / "mkramdisk.sh"
-    ramdisk.write_text(_ramdisk_fixture([], []))
+    ramdisk.write_text(_ramdisk_fixture(True))
     repo = Path(__file__).resolve().parents[3]
     r = subprocess.run(
         [
@@ -10263,6 +10265,186 @@ def test_gate_restages_amd64_wow64_only_after_i386_is_built(tmp_path, monkeypatc
     assert order.index(restages[0]) > order.index(("i386", False, False))
     amd64_smoke = [s for s in smoked if s[0] == "amd64"]
     assert amd64_smoke and amd64_smoke[0][1] == restages, "amd64 smoked before its restage"
+
+
+# ── base-check scrub, pinned conductor, journal (2026-10-03) ─────────────────
+
+
+def test_scrub_removes_build_products_but_keeps_toolchain_and_firmware(queue_repo):
+    """The base check must gate master ALONE: a previous submission's CMake cache, cargo
+    target or staged media in the integration tree made master look red twice on
+    2026-09-26. Firmware and the toolchain are not build products and must survive."""
+    repo, _ = queue_repo
+    ignores = ("build-*/", "target/", ".build-tools/", ".venv/", "qemu/*.fd", "qemu/*.img")
+    (repo / ".gitignore").write_text("\n".join(ignores) + "\n")
+    _commit(repo, "tracked.txt")
+    for rel in (
+        "build-amd64/CMakeCache.txt",
+        "sdk/lib/rust/target/x.rlib",
+        "qemu/ramdisk.img",
+        "qemu/QEMU_EFI.fd",
+        "qemu/efivars.fd",
+        ".build-tools/clang",
+        ".venv/bin/python",
+        "untracked-scratch.txt",
+    ):
+        f = repo / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("x")
+    q_mod.scrub_build_state(repo, repo)
+    assert not (repo / "build-amd64").exists()
+    assert not (repo / "sdk/lib/rust/target").exists()
+    assert not (repo / "qemu/ramdisk.img").exists()
+    assert not (repo / "untracked-scratch.txt").exists()
+    for kept in ("qemu/QEMU_EFI.fd", "qemu/efivars.fd", ".build-tools/clang", ".venv/bin/python"):
+        assert (repo / kept).is_file(), kept
+    assert (repo / "tracked.txt").is_file()
+
+
+def test_the_base_check_scrubs_before_gating(queue_repo, monkeypatch):
+    repo, _ = queue_repo
+    calls = []
+    monkeypatch.setattr(q_mod, "git", lambda w, *a, **k: calls.append(a[0]) or "")
+    monkeypatch.setattr(q_mod, "scrub_build_state", lambda r, w: calls.append("SCRUB"))
+    monkeypatch.setattr(
+        q_mod,
+        "gate_batch",
+        lambda w, log, retries=2: calls.append("GATE") or q_mod.GateVerdict(True, "", "", ""),
+    )
+    assert q_mod.BaseCheck().is_green(repo, repo, lambda m: None, retries=0)
+    assert calls.index("reset") < calls.index("SCRUB") < calls.index("GATE")
+
+
+def test_an_elected_conductor_hands_the_drain_to_masters_code(queue_repo, monkeypatch):
+    """The winner of the election used to drain with its own worktree's queue code, so a
+    lane that had not merged master ran the train with stale rules (2026-09-26: the merge
+    train sat unused behind such a lane)."""
+    repo, _ = queue_repo
+    monkeypatch.delenv("VIBEOS_CONDUCTOR_PIN")
+    seen = []
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: seen.append("own-code") or 0)
+    monkeypatch.setattr(q_mod, "_conduct_pinned", lambda *a, **k: seen.append("pinned"))
+    assert q_mod.try_become_conductor(repo, lambda m: None) is True
+    assert seen == ["pinned"]
+    monkeypatch.setenv("VIBEOS_CONDUCTOR_PIN", "0")
+    assert q_mod.try_become_conductor(repo, lambda m: None) is True
+    assert seen == ["pinned", "own-code"]
+
+
+def test_code_running_from_the_pinned_checkout_drains_itself(queue_repo, monkeypatch):
+    repo, _ = queue_repo
+    monkeypatch.delenv("VIBEOS_CONDUCTOR_PIN")
+    here = Path(q_mod.__file__).resolve().parents[3]
+    monkeypatch.setattr(q_mod, "conductor_path", lambda r: here)
+    assert not q_mod._wants_pinned_conductor(repo)
+
+
+def test_pin_conductor_checkout_follows_origin_master(queue_repo, tmp_path):
+    repo, _ = queue_repo
+    cond = q_mod.pin_conductor_checkout(repo)
+    assert cond == tmp_path / "root" / q_mod.CONDUCTOR_DIRNAME
+    head = lambda d: subprocess.run(  # noqa: E731
+        ["git", "rev-parse", "HEAD"], cwd=d, capture_output=True, text=True
+    ).stdout.strip()
+    assert head(cond) == head(repo)
+    (cond / "stray.txt").write_text("left by a dead child")
+    new = _commit(repo, "moved.txt")
+    subprocess.run(["git", "push", "-q", "origin", "master"], cwd=repo, check=True)
+    assert q_mod.pin_conductor_checkout(repo) == cond
+    assert head(cond) == new
+    assert not (cond / "stray.txt").exists()
+
+
+def _fake_pinned_cli(tmp_path: Path, body: str) -> Path:
+    cond = tmp_path / "fake-conductor"
+    cond.mkdir()
+    cli = cond / "vibeos-cli"
+    cli.write_text("#!/usr/bin/env bash\n" + body)
+    cli.chmod(0o755)
+    return cond
+
+
+def _handoff_ready(cond: Path) -> None:
+    q = cond / "tests" / "qemu" / "cli" / "queue.py"
+    q.parent.mkdir(parents=True)
+    q.write_text(f"{q_mod.HANDOFF_ENV}\n")
+
+
+def test_the_pinned_child_gets_a_handoff_token_not_a_lock_opt_out(
+    queue_repo, tmp_path, monkeypatch
+):
+    """VIBEOS_LAND_LOCK=0 reached the gate's check-tooling and made master look red
+    (2026-10-03). The child gets a token naming its parent, nothing that disables the lock."""
+    repo, _ = queue_repo
+    cond = _fake_pinned_cli(
+        tmp_path,
+        'echo "args=$* lock=${VIBEOS_LAND_LOCK-unset} handoff=${VIBEOS_CONDUCTOR_HANDOFF%%:*}"\n',
+    )
+    _handoff_ready(cond)
+    monkeypatch.setattr(q_mod, "pin_conductor_checkout", lambda r: cond)
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "c" * 40)
+    lines: list[str] = []
+    q_mod._conduct_pinned(repo, lines.append, retries=3)
+    assert "conducting with master's queue code" in lines[0]
+    assert (
+        lines[1] == f"args=land --drain --foreground --retries 3 lock=unset handoff={os.getpid()}"
+    )
+
+
+def test_a_pinned_checkout_that_predates_the_handoff_drains_in_process(
+    queue_repo, tmp_path, monkeypatch
+):
+    """Old queue code in the pinned checkout would WAIT on the lock its parent holds."""
+    repo, _ = queue_repo
+    cond = _fake_pinned_cli(tmp_path, "exit 9\n")
+    (cond / "tests/qemu/cli").mkdir(parents=True)
+    (cond / "tests/qemu/cli/queue.py").write_text("# no handoff here\n")
+    monkeypatch.setattr(q_mod, "pin_conductor_checkout", lambda r: cond)
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "c" * 40)
+    drained = []
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: drained.append(1) or 0)
+    q_mod._conduct_pinned(repo, lambda m: None, retries=2)
+    assert drained == [1]
+
+
+def test_a_handed_off_drain_needs_its_parent_to_hold_the_lock(queue_repo, monkeypatch):
+    repo, _ = queue_repo
+    drained = []
+    monkeypatch.setattr(q_mod, "drain", lambda *a, **k: drained.append(1) or 0)
+    monkeypatch.setenv(q_mod.HANDOFF_ENV, "999999:lane-x@wt")
+    with pytest.raises(q_mod.QueueError):
+        q_mod.try_become_conductor(repo, lambda m: None)
+    assert q_mod.HANDOFF_ENV not in os.environ, "the token must not reach the drain's children"
+    with hl_mod.land_lock("parent", timeout=1.0):
+        monkeypatch.setenv(q_mod.HANDOFF_ENV, f"{os.getpid()}:lane-x@wt")
+        assert q_mod.try_become_conductor(repo, lambda m: None) is True
+    assert drained == [1]
+
+
+def test_a_failed_pinned_child_is_no_verdict_not_a_landing(queue_repo, tmp_path, monkeypatch):
+    repo, _ = queue_repo
+    cond = _fake_pinned_cli(tmp_path, "echo halted; exit 1\n")
+    _handoff_ready(cond)
+    monkeypatch.setattr(q_mod, "pin_conductor_checkout", lambda r: cond)
+    monkeypatch.setattr(q_mod, "git", lambda *a, **k: "c" * 40)
+    with pytest.raises(q_mod.NoVerdict):
+        q_mod._conduct_pinned(repo, lambda m: None, retries=2)
+
+
+def test_the_conductor_journal_survives_in_the_queue_dir(queue_repo, monkeypatch):
+    """A reboot wiped /tmp and with it a week of conductor logs (2026-10-02)."""
+    repo, _ = queue_repo
+    echoed: list[str] = []
+    log = q_mod.journaled(repo, echoed.append, who="lane-x@wt")
+    log("queue: batch of 2\nsecond line")
+    journal = q_mod.queue_dir(repo) / q_mod.JOURNAL_FILE
+    text = journal.read_text().splitlines()
+    assert echoed == ["queue: batch of 2\nsecond line"]
+    assert len(text) == 2 and all("[lane-x@wt]" in t for t in text)
+    monkeypatch.setattr(q_mod, "JOURNAL_MAX_BYTES", 1)
+    log("rotated")
+    assert (journal.parent / (q_mod.JOURNAL_FILE + ".1")).is_file()
+    assert journal.read_text().count("\n") == 1
 
 
 def test_an_end_marker_cut_in_two_by_a_kernel_print_still_counts():

@@ -30,13 +30,6 @@ add_library(d3d11 MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/d3d11_stubs.c
     ${CMAKE_CURRENT_BINARY_DIR}/d3d11.def)
 
-if(MSVC)
-    # C5286: implicit conversion between enum types
-    # C4133: device.c casts a D3D_FEATURE_LEVEL* to an enum wined3d_feature_level*.
-    # C4098: 'void' function returning a void expression
-    target_compile_options(d3d11 PRIVATE /wd5286 /wd4133 /wd4098)
-endif()
-
 set_module_type(d3d11 win32dll UNICODE)
 target_link_libraries(d3d11 wine dxguid dx10guid uuid oldnames)
 add_importlibs(d3d11 dxgi d3dwine gdi32 msvcrt kernel32 ntdll)

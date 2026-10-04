@@ -273,6 +273,46 @@ extern "C" {
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
 }
 
+/// `Control\MiniNT` (volatile) on a /MININT boot, as Phase1InitializationDiscard does in
+/// init.c after IoInitSystem. The Rust port had dropped the block, so userinit's IsMiniNT()
+/// and every other reader of the key answered "not WinPE" on a livecd boot.
+unsafe fn ExpCreateMiniNTKey() {
+    const KEY_ALL_ACCESS: u32 = 0xF003F;
+    const REG_OPTION_VOLATILE: u32 = 1;
+    let mut KeyName: _UNICODE_STRING = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut KeyHandle: HANDLE = core::ptr::null_mut();
+    let mut OptionHandle: HANDLE = core::ptr::null_mut();
+    let mut Disposition: ULONG = 0;
+
+    RtlInitUnicodeString(
+        &mut KeyName,
+        w!("\\REGISTRY\\MACHINE\\SYSTEM\\CURRENTCONTROLSET\\CONTROL").as_ptr() as *mut u16,
+    );
+    InitializeObjectAttributes(&mut ObjectAttributes, &mut KeyName, OBJ_CASE_INSENSITIVE, core::ptr::null_mut(), core::ptr::null_mut());
+    let Status = ntkrnl_sys::ddk::ZwOpenKey(&mut KeyHandle, KEY_ALL_ACCESS, &mut ObjectAttributes);
+    if Status < 0 {
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, Status as u32 as ULONG_PTR, 6, 0, 0);
+    }
+
+    RtlInitUnicodeString(&mut KeyName, w!("MiniNT").as_ptr() as *mut u16);
+    InitializeObjectAttributes(&mut ObjectAttributes, &mut KeyName, OBJ_CASE_INSENSITIVE, KeyHandle, core::ptr::null_mut());
+    let Status = ntkrnl_sys::ddk::ZwCreateKey(
+        &mut OptionHandle,
+        KEY_ALL_ACCESS,
+        &mut ObjectAttributes,
+        0,
+        core::ptr::null_mut(),
+        REG_OPTION_VOLATILE,
+        &mut Disposition,
+    );
+    if Status < 0 {
+        KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE1_INITIALIZATION_FAILED, Status as u32 as ULONG_PTR, 6, 0, 0);
+    }
+    NtClose(KeyHandle);
+    NtClose(OptionHandle);
+}
+
 unsafe fn ExpCreateSystemRootLink(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> NTSTATUS {
     let mut LinkName: _UNICODE_STRING = core::mem::zeroed();
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -1604,19 +1644,18 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
     uart_trace!("[PHASE1] IoInitSystem");
     IoInitSucceeded = IoInitSystem(LoaderBlock);
     if IoInitSucceeded == 0 {
-        // arm64 deliberately carries on where every other arch bugchecks. That
-        // escape hatch is only defensible if it is LOUD: report it, or a genuine
-        // I/O-init failure is indistinguishable from a healthy boot.
-        uart_trace!("[PHASE1] IoInitSystem failed (continuing on ARM64)");
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            KeBugCheck(ntkrnl_sys::bugcodes::IO1_INITIALIZATION_FAILED);
-        }
-    } else {
-        uart_trace!("[PHASE1] IoInitSystem succeeded!");
+        // arm64 used to carry on here; it no longer fails, so it bugchecks like x86.
+        KeBugCheck(ntkrnl_sys::bugcodes::IO1_INITIALIZATION_FAILED);
     }
+    uart_trace!("[PHASE1] IoInitSystem succeeded!");
 
     InbvSetProgressBarSubset(0, 100);
+
+    // TODO(safeboot): init.c parses SAFEBOOT: and creates CONTROL\SAFEBOOT\Option here;
+    // the Rust port has neither half yet (roadmap). The WinPE half follows.
+    if InitIsWinPEMode != 0 {
+        ExpCreateMiniNTKey();
+    }
 
     InbvUpdateProgressBar(80);
 
@@ -1634,14 +1673,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     uart_trace!("[PHASE1] PsInitSystem");
     if PsInitSystem(LoaderBlock) == 0 {
-        // Same arm64 escape hatch as IoInitSystem above, and it was firing on
-        // EVERY boot until the PspLookupKernelUserEntryPoints fix (three x86-only
-        // ntdll exports looked up unconditionally). Silent then; loud now.
-        uart_trace!("[PHASE1] PsInitSystem failed (continuing on ARM64)");
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            KeBugCheck(ntkrnl_sys::bugcodes::PROCESS1_INITIALIZATION_FAILED);
-        }
+        KeBugCheck(ntkrnl_sys::bugcodes::PROCESS1_INITIALIZATION_FAILED);
     }
 
     if LoaderBlock == KeLoaderBlock {
@@ -1651,11 +1683,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     uart_trace!("[PHASE1] SeRmInitPhase1");
     if SeRmInitPhase1() == 0 {
-        uart_trace!("[PHASE1] SeRmInitPhase1 failed (continuing on ARM64)");
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            KeBugCheck(ntkrnl_sys::bugcodes::PROCESS1_INITIALIZATION_FAILED);
-        }
+        KeBugCheck(ntkrnl_sys::bugcodes::PROCESS1_INITIALIZATION_FAILED);
     }
 
     InbvUpdateProgressBar(100);

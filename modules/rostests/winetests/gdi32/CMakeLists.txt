@@ -34,18 +34,9 @@ target_compile_definitions(gdi32_winetest PRIVATE
     DXGKDDI_INTERFACE_VERSION=DXGKDDI_INTERFACE_VERSION_WDDM2_2
 )
 
-if(MSVC AND ARCH STREQUAL "amd64")
-    # warning C4334: '<<': result of 32-bit shift implicitly converted to 64 bits (was 64-bit shift intended?)
-    target_compile_options(gdi32_winetest PRIVATE /wd4334)
-endif()
-
 set_module_type(gdi32_winetest win32cui)
 target_link_libraries(gdi32_winetest oldnames)
 add_importlibs(gdi32_winetest gdi32 gdi32_vista user32 setupapi advapi32 msvcrt kernel32 ntdll)
-
-if(MSVC)
-    add_importlibs(gdi32_winetest ntdll)
-endif()
 
 #add_pch(gdi32_winetest precomp.h "${PCH_SKIP_SOURCE}")
 add_rostests_file(TARGET gdi32_winetest)

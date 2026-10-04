@@ -21,10 +21,6 @@ set_module_type(combase_winetest win32cui)
 add_importlibs(combase_winetest oleaut32 ole32 combase user32 gdi32 advapi32 msvcrt kernel32)
 add_dependencies(combase_winetest wine.combase.test)
 
-if(MSVC)
-    add_importlibs(combase_winetest ntdll)
-endif()
-
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
 	target_compile_options(combase_winetest PRIVATE -Wno-format-overflow -Wno-discarded-qualifiers)
 endif()
@@ -35,11 +31,6 @@ add_library(wine.combase.test MODULE wine.combase.test.c ${CMAKE_CURRENT_BINARY_
 target_link_libraries(wine.combase.test wine)
 set_module_type(wine.combase.test win32dll)
 add_importlibs(wine.combase.test combase msvcrt kernel32 ntdll)
-
-# combase_winetest.rc: let rc.exe find wine.combase.test.dll in its subdirectory, i.e. Debug.
-if (MSVC_IDE)
-    target_include_directories(combase_winetest PRIVATE $<$<COMPILE_LANGUAGE:RC>:$<TARGET_FILE_DIR:wine.combase.test>>)
-endif()
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
 	target_compile_options(wine.combase.test PRIVATE -Wno-discarded-qualifiers)

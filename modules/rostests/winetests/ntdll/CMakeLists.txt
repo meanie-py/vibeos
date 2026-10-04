@@ -39,25 +39,10 @@ list(APPEND SOURCE
     wow64.c
 )
 
-if(MSVC AND ARCH STREQUAL "amd64")
-    add_asm_files(ntdll_winetest_asm msvc-x64.asm)
-    list(APPEND SOURCE ${ntdll_winetest_asm})
-endif()
-
 add_executable(ntdll_winetest
     ${SOURCE})
 
 target_link_libraries(ntdll_winetest pseh)
-
-if(MSVC)
-    target_compile_options(ntdll_winetest PRIVATE
-        /wd4024 # warning C4024: 'function': different types for formal and actual parameter 1
-        /wd4047 # warning C4047: 'function': 'type' differs in levels of indirection from 'type'
-        /wd4101 # warning C4101: 'variable': unreferenced local variable
-        /wd4319 # warning C4319: '~': zero extending 'unsigned int' to 'UINT_PTR' of greater size
-        /wd4334 # warning C4334: '<<': result of 32-bit shift implicitly converted to 64 bits (was 64-bit shift intended?)
-    )
-endif()
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
     target_compile_options(ntdll_winetest PRIVATE "-Wno-format")

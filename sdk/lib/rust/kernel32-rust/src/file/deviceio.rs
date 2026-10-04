@@ -140,7 +140,9 @@ pub unsafe extern "system" fn DeviceIoControl(
     let FsIoCtl: BOOL;
     let mut Status: NTSTATUS;
     let ApcContext: PVOID;
-    let Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
+    // `mut` and `&mut`: the kernel writes this block, so a shared borrow cast to
+    // `*mut` would be UB that lets LLVM fold the Status/Information reads to 0.
+    let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
 
     FsIoCtl = ((dwIoControlCode >> 16) == FILE_DEVICE_FILE_SYSTEM) as BOOL;
 
@@ -199,7 +201,7 @@ pub unsafe extern "system" fn DeviceIoControl(
                 core::ptr::null_mut(),
                 None,
                 core::ptr::null_mut(),
-                &Iosb as *const _IO_STATUS_BLOCK as *mut _IO_STATUS_BLOCK,
+                &mut Iosb as *mut _IO_STATUS_BLOCK,
                 dwIoControlCode,
                 lpInBuffer,
                 nInBufferSize,
@@ -212,7 +214,7 @@ pub unsafe extern "system" fn DeviceIoControl(
                 core::ptr::null_mut(),
                 None,
                 core::ptr::null_mut(),
-                &Iosb as *const _IO_STATUS_BLOCK as *mut _IO_STATUS_BLOCK,
+                &mut Iosb as *mut _IO_STATUS_BLOCK,
                 dwIoControlCode,
                 lpInBuffer,
                 nInBufferSize,

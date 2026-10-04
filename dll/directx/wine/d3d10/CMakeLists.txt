@@ -25,12 +25,6 @@ add_library(d3d10 MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/d3d10_stubs.c
     ${CMAKE_CURRENT_BINARY_DIR}/d3d10.def)
 
-if(MSVC)
-    # C5286: implicit conversion between enum types
-    # C4267: effect.c narrows strlen(mask) into a BYTE ComponentCount.
-    target_compile_options(d3d10 PRIVATE /wd5286 /wd4267)
-endif()
-
 set_module_type(d3d10 win32dll UNICODE)
 target_link_libraries(d3d10 wine dxguid dx10guid uuid oldnames)
 add_importlibs(d3d10 d3d10core d3dcompiler_39 dxgi d3dwine msvcrt kernel32 ntdll)

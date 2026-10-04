@@ -120,9 +120,7 @@ else()
     add_library(cmlibhost STATIC ${SOURCE})
     target_include_directories(cmlibhost INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
-    if(NOT MSVC)
-        target_compile_options(cmlibhost PRIVATE -fshort-wchar -Wno-multichar)
-    endif()
+    target_compile_options(cmlibhost PRIVATE -fshort-wchar -Wno-multichar)
 
     target_link_libraries(cmlibhost PRIVATE host_includes)
 endif()

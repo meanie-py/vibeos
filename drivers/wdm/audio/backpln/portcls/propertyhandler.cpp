@@ -255,7 +255,8 @@ PinPropertyHandler(
     {
         DPRINT("Failed to obtain ISubdevice interface from port driver\n");
         DbgBreakPoint();
-        while(TRUE);
+        // Was `while(TRUE);`: fail the request instead of spinning the CPU forever.
+        return Status;
     }
 
     // get current stack location

@@ -1,17 +1,4 @@
 
-if(MSVC)
-    add_compile_options(
-        /wd4090 # C4090: 'function': different 'const' qualifiers
-        /wd4146 # C4146: unary minus operator applied to unsigned type, result still unsigned
-        /wd4189 # C4189: 'x': local variable is initialized but not referenced
-        /wd4267 # C4267: '=': conversion from 'size_t' to 'int', possible loss of data
-        /wd4305) # C4305: '=': truncation from 'double' to 'FLOAT'
-    if(ARCH STREQUAL "amd64")
-        add_compile_options(
-            /wd4312 # C4312: 'type cast': conversion from 'unsigned int' to 'char *' of greater size
-            )
-    endif()
-endif()
 
 add_subdirectory(activeds)
 add_subdirectory(advapi32)

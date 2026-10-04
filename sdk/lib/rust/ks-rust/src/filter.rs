@@ -1650,19 +1650,24 @@ pub unsafe extern "C" fn IKsFilter_AddPin(
 
     CurPin = *(*This).FirstPin.offset((*Pin).Id as isize);
 
+    // Walk to the last sibling. Divergence from filter.c, whose loop body says
+    // `NextPin = CurPin;`: it never advances, so a filter with two instances of
+    // one pin spun forever adding a third (LLVM proved no progress and emitted a
+    // bare `b .`, which scan_ud2 reported). Advance the cursor instead.
     loop {
         NextPin = KsPinGetNextSiblingPin(CurPin);
         if NextPin.is_null() {
             break;
         }
-        NextPin = CurPin;
-        if NextPin.is_null() {
-            break;
-        }
+        CurPin = NextPin;
     }
 
     BasicHeader = (CurPin as usize).wrapping_sub(core::mem::size_of::<KSBASIC_HEADER>()) as PKSBASIC_HEADER;
     (*BasicHeader).Next.Pin = Pin;
+    // Also a divergence: filter.c counts only the FIRST instance of a pin, while
+    // IKsFilter_RemovePin decrements for every one, so the count underflowed.
+    *(*This).PinInstanceCount.offset((*Pin).Id as isize) =
+        (*(*This).PinInstanceCount.offset((*Pin).Id as isize)).wrapping_add(1);
 }
 #[no_mangle]
 pub unsafe extern "C" fn IKsFilter_RemovePin(
@@ -1698,10 +1703,9 @@ pub unsafe extern "C" fn IKsFilter_RemovePin(
             break;
         }
         LastPin = CurPin;
-        NextPin = CurPin;
-        if NextPin.is_null() {
-            break;
-        }
+        // filter.c writes `NextPin = CurPin;` here, the same non-advancing walk as
+        // IKsFilter_AddPin's; removing any pin but the first spun forever.
+        CurPin = NextPin;
     }
 }
 

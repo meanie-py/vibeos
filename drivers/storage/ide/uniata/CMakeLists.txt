@@ -75,12 +75,6 @@ add_library(uniata MODULE
     ${SOURCE}
     idedma.rc)
 
-if(MSVC)
-    # Disable warning C4267: '=': conversion from 'size_t' to 'USHORT', possible loss of data
-    # Disable warning C4838: conversion from 'int' to 'ULONG' requires a narrowing conversion
-    target_compile_options(uniata PRIVATE /wd4267 /wd4838)
-endif()
-
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
     target_compile_options(uniata PRIVATE -Wno-narrowing -Wno-unused-but-set-variable)
 endif()

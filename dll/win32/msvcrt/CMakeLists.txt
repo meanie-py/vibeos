@@ -37,21 +37,6 @@ if(ARCH STREQUAL "i386")
     )
 endif()
 
-if(MSVC)
-    add_compile_options(
-        /wd4090 # 'function': different 'const' qualifiers
-        /wd4146 # 'minus' operator applied to unsigned type, result still unsigned
-        /wd4164 # 'function': intrinsic function not declared
-        /wd4267 # 'conversion from 'size_t' to 'unsigned int', possible loss of data'
-        /wd4723 # potential divide by 0
-    )
-    if(ARCH STREQUAL "amd64")
-        add_compile_options(#msvcrt PRIVATE
-            /wd4334 # 'result of 32-bit shift implicitly converted to 64 bits (was 64-bit shift intended?)'
-        )
-    endif()
-endif()
-
 ###############################################################################
 # A static library shared with ucrtbase
 ###############################################################################
@@ -80,23 +65,6 @@ elseif(ARCH STREQUAL "arm64")
     list(APPEND SHARED_SOURCE
         except_arm64.c
     )
-endif()
-
-# MSVC asm code
-if(MSVC)
-    if(ARCH STREQUAL "i386")
-        list(APPEND SHARED_ASM_SOURCE
-            i386/cpp_alias.s
-            i386/cpp_vtables.s
-            i386/except_i386_asm.s
-        )
-    elseif(ARCH STREQUAL "amd64")
-        list(APPEND SHARED_ASM_SOURCE
-            amd64/cpp_alias.s
-            amd64/cpp_vtables.s
-            amd64/except_x86_64.s
-        )
-    endif()
 endif()
 
 add_asm_files(msvcrt_shared_asm ${SHARED_ASM_SOURCE})
@@ -311,12 +279,6 @@ if(ARCH STREQUAL "i386")
 endif()
 add_importlibs(msvcrt kernel32 kernel32_vista ntdll)
 add_delay_importlibs(msvcrt user32 advapi32)
-
-if(MSVC)
-    # Silence warning C4102: export of deleting destructor "name"
-    target_link_options(msvcrt PRIVATE "/ignore:4102")
-    set_property(TARGET libmsvcrt APPEND PROPERTY STATIC_LIBRARY_OPTIONS "/ignore:4102")
-endif()
 
 add_cd_file(TARGET msvcrt DESTINATION reactos/system32 FOR all)
 

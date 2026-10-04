@@ -11,11 +11,6 @@ if(ARCH STREQUAL "i386")
     list(APPEND CRT_EXCEPT_SOURCE
         except/i386/CxxHandleV8Frame.c
     )
-    if(MSVC)
-        list(APPEND CRT_EXCEPT_ASM_SOURCE
-            except/i386/cpp.s
-            except/i386/cpp_alias.s)
-    endif()
 elseif(ARCH STREQUAL "amd64")
     list(APPEND LIBCNTPR_EXCEPT_SOURCE
         except/amd64/ehandler.c
@@ -27,11 +22,6 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND CRT_EXCEPT_ASM_SOURCE
         except/amd64/seh.s
     )
-    if(MSVC)
-        list(APPEND CRT_EXCEPT_ASM_SOURCE
-            except/amd64/cpp.s
-            except/amd64/cpp_alias.s)
-    endif()
 endif()
 
 list(APPEND CRT_EXCEPT_SOURCE
