@@ -955,12 +955,35 @@ fn dom_if(c: bool) -> MathErr {
     if c { MathErr::Domain } else { MathErr::None }
 }
 
+/// A NaN argument, quieted, sign and payload kept: what Wine's math.c returns for these
+/// (`if (isnan(x)) return x`), and what msvcrt's misc test checks. `libm`'s cosh/sinh take
+/// `|x|` first and hand back the NaN with its sign cleared.
+#[cfg(cnt_libm)]
+trait QuietNan: Copy {
+    fn quiet(self) -> Self;
+}
+#[cfg(cnt_libm)]
+impl QuietNan for f64 {
+    fn quiet(self) -> Self {
+        f64::from_bits(self.to_bits() | 0x0008_0000_0000_0000)
+    }
+}
+#[cfg(cnt_libm)]
+impl QuietNan for f32 {
+    fn quiet(self) -> Self {
+        f32::from_bits(self.to_bits() | 0x0040_0000)
+    }
+}
+
 macro_rules! libm_trig {
     ($($name:ident / $libm:ident ( $t:ty ) $c:literal, $err:expr;)*) => {$(
         #[doc = concat!("`", stringify!($name), "` -- `libm`'s.")]
         #[cfg(cnt_libm)]
         #[no_mangle]
         pub extern "C" fn $name(x: $t) -> $t {
+            if x.is_nan() {
+                return x.quiet();
+            }
             let r = libm::$libm(x);
             #[allow(clippy::redundant_closure_call)]
             let e = ($err)(x);
