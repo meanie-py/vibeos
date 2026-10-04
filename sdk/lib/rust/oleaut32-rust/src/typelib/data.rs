@@ -733,10 +733,12 @@ pub unsafe fn TLB_size_instance(
         }
         VT_VARIANT => {
             *size = size_of::<VARIANT>() as ULONG;
-            #[cfg(target_pointer_width = "64")]
-            {
-                if sys == SYS_WIN32 {
-                    *size -= 8; /* 32-bit VARIANT is 8 bytes smaller than 64-bit VARIANT */
+            // a VARIANT is 8 bytes larger on 64-bit, in either direction (Wine 10.0)
+            if get_ptr_size(sys) as usize != size_of::<*mut c_void>() {
+                if cfg!(target_pointer_width = "64") {
+                    *size -= 8;
+                } else {
+                    *size += 8;
                 }
             }
         }

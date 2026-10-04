@@ -53,15 +53,15 @@ def die(msg: str) -> NoReturn:  # noqa: F821 - py3.8 compat, no typing import ne
 
 
 def available() -> list[str]:
-    return sorted(
-        p.parent.name for p in PAYLOADS_DIR.glob("*/payload.yaml")
-    )
+    return sorted(p.parent.name for p in PAYLOADS_DIR.glob("*/payload.yaml"))
 
 
 def load_spec(name: str) -> dict:
     spec_path = PAYLOADS_DIR / name / "payload.yaml"
     if not spec_path.is_file():
-        die(f"unknown payload {name!r} (no {spec_path}). Available: {', '.join(available()) or '<none>'}")
+        die(
+            f"unknown payload {name!r} (no {spec_path}). Available: {', '.join(available()) or '<none>'}"
+        )
     try:
         spec = yaml.safe_load(spec_path.read_text())
     except yaml.YAMLError as e:
@@ -94,10 +94,7 @@ def manifest(names: list[str], arch: str) -> dict[str, Path]:
         spec = load_spec(name)
         arches = spec.get("arches")
         if arches is not None and arch not in arches:
-            die(
-                f"payload {name!r} does not support arch {arch!r} "
-                f"(spec says arches: {arches})"
-            )
+            die(f"payload {name!r} does not support arch {arch!r} (spec says arches: {arches})")
         hint = spec.get("build_hint", "").format(arch=arch)
         for b in spec["binaries"]:
             src = (REPO / str(b["src"]).format(arch=arch)).resolve()
@@ -132,8 +129,13 @@ def stale_binaries(name: str, arch: str) -> list[Path]:
     """
     spec = load_spec(name)
     pdir = PAYLOADS_DIR / name
-    srcs = [p for p in pdir.iterdir() if p.is_file() and not p.name.startswith(".")
-            and p.suffix.lower() not in (".exe", ".dll", ".png", ".log")]
+    srcs = [
+        p
+        for p in pdir.iterdir()
+        if p.is_file()
+        and not p.name.startswith(".")
+        and p.suffix.lower() not in (".exe", ".dll", ".png", ".log")
+    ]
     srcs += list(PAYLOADS_DIR.glob("*.h"))
     newest = max((p.stat().st_mtime for p in srcs), default=0.0)
     resolved_srcs = {p.resolve() for p in srcs}
@@ -151,20 +153,49 @@ def stale_binaries(name: str, arch: str) -> list[Path]:
     return out
 
 
+def borrowed_owners(name: str, arch: str) -> list[str]:
+    """Other payloads whose build outputs `name` stages (e.g. every Wine-suite payload
+    borrows tools/payloads/apitest/apitest-sweep-<arch>.exe). stale_binaries only judges
+    a payload's OWN outputs, so without this a borrowed binary was staged however stale:
+    olewinetest booted a sweep runner built before sweep.c learned apitest-cwd.txt, and
+    the suites' scratch files went to the read-only CD (2026-10-04)."""
+    owners = []
+    for b in load_spec(name)["binaries"]:
+        src = (REPO / str(b["src"]).format(arch=arch)).resolve()
+        try:
+            owner = src.relative_to(PAYLOADS_DIR.resolve()).parts[0]
+        except ValueError:
+            continue  # not under tools/payloads (a build-dir artifact ninja owns)
+        if (
+            owner != name
+            and owner not in owners
+            and (PAYLOADS_DIR / owner / "payload.yaml").is_file()
+        ):
+            owners.append(owner)
+    return owners
+
+
 def ensure_built(names: list[str], arch: str) -> list[str]:
     """Rebuild every selected payload whose binaries are stale (see stale_binaries) with
-    its own build.sh. Returns the names rebuilt; dies loudly if a build fails or a
+    its own build.sh, and first every payload whose outputs they borrow
+    (borrowed_owners). Returns the names rebuilt; dies loudly if a build fails or a
     stale payload has no build.sh to run."""
-    rebuilt = []
+    expanded: list[str] = []
     for name in names:
+        for owner in borrowed_owners(name, arch) + [name]:
+            if owner not in expanded:
+                expanded.append(owner)
+    rebuilt = []
+    for name in expanded:
         stale = stale_binaries(name, arch)
         if not stale:
             continue
         script = PAYLOADS_DIR / name / "build.sh"
         if not script.is_file():
             die(f"payload {name!r}: {stale[0]} is stale or missing and there is no {script}")
-        cp = subprocess.run(["bash", str(script), arch], cwd=str(REPO),
-                            capture_output=True, text=True)
+        cp = subprocess.run(
+            ["bash", str(script), arch], cwd=str(REPO), capture_output=True, text=True
+        )
         if cp.returncode != 0:
             tail = "\n".join((cp.stderr or cp.stdout or "(no output)").strip().splitlines()[-5:])
             die(f"payload {name!r}: build.sh {arch} failed:\n{tail}")

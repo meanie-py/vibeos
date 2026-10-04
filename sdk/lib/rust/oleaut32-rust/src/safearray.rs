@@ -890,11 +890,14 @@ pub unsafe extern "system" fn SafeArrayRedim(psa: *mut SAFEARRAY, psabound: *mut
 
     TRACE!(b"(%p,%p)\n\0".as_ptr(), psa, psabound);
 
-    if psa.is_null() || (*psa).fFeatures & FADF_FIXEDSIZE != 0 || psabound.is_null() {
+    if psa.is_null() || psabound.is_null() {
         return E_INVALIDARG;
     }
 
-    if (*psa).cLocks > 0 {
+    // Wine 10.0, as Windows: a fixed-size array cannot be resized for the same
+    // reason a locked one cannot, and says so with the same HRESULT (was
+    // E_INVALIDARG).
+    if (*psa).fFeatures & FADF_FIXEDSIZE != 0 || (*psa).cLocks > 0 {
         return DISP_E_ARRAYISLOCKED;
     }
 
