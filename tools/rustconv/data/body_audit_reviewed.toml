@@ -3359,3 +3359,1121 @@ function = "SetKeyboardLayoutName"
 callees = ["wcscpy"]
 verdict = "benign"
 note = "upstream d482579dff3 ported (cd9c85f4557); its wcscpy calls are StringCchCopyW, since a 9-WCHAR REG_SZ read with dwSize == sizeof(szKLID) need not carry a NUL"
+
+# body-audit medium-lead triage, 2026-10-04 (packet A).
+
+[[reviewed]]
+module = "dll/ntdll"
+function = "AVrfpLoadAndInitializeProvider"
+callees = ["RtlInitEmptyUnicodeString"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString is a FORCEINLINE; the Rust sets Buffer/Length/MaximumLength inline"
+
+[[reviewed]]
+module = "dll/ntdll"
+function = "LdrpApplyFileNameRedirection"
+callees = ["RtlInitUnicodeString"]
+verdict = "benign"
+note = "deliberate, commented divergence: the api-set host is emitted as a bare DLL name resolved by the search path, so NtSystemRoot is never needed"
+
+[[reviewed]]
+module = "dll/ntdll"
+function = "RtlGetTickCount"
+callees = ["KiReadSystemTime", "KiTickCountToMs"]
+verdict = "false"
+note = "KiReadSystemTime is open-coded by the crate's read_ksystem_time (High1Time/LowPart/High2Time retry loop); upstream only swapped the pre-existing open-coded loop for the header inline; the 32-bit formula equals KiTickCountToMs mod 2^32 (upstream 9d1418fcb6e is a refactor)"
+
+[[reviewed]]
+module = "dll/ntdll"
+function = "RtlConvertUiListToApiList"
+callees = ["RtlInitEmptyUnicodeString"]
+verdict = "false"
+note = "RtlInitEmptyUnicodeString(ApiList, NULL, 0) is inlined as three volatile field stores"
+
+[[reviewed]]
+module = "dll/ntdll"
+function = "RtlGetVersion"
+callees = ["wcsncpy"]
+verdict = "false"
+note = "wcsncpy(dst, src, min(wcslen, 127)) is open-coded as a wcslen loop plus copy_nonoverlapping into the pre-zeroed szCSDVersion"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "SetConsoleInputExeNameA"
+callees = ["NtCurrentTeb"]
+verdict = "false"
+note = "the C call sits under #ifdef USE_TEB_STATIC_USTR, which is never defined in this build; the Rust mirrors the compiled branch (stack buffer)"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "DllMain"
+callees = ["RtlStringCbPrintfW"]
+verdict = "false"
+note = "RtlStringCbPrintfW is open-coded as _snwprintf(count = cch-1) + rtl_strcbprintf_w_status (ntstrsafe.rs), which maps truncation to STATUS_BUFFER_OVERFLOW and terminates"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "FindFirstChangeNotificationA"
+callees = ["ConvertWin32AnsiChangeApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateFileMappingA"
+callees = ["ConvertWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "OpenFileMappingA"
+callees = ["ConvertOpenWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateMailslotA"
+callees = ["ConvertWin32AnsiObjectApiToUnicodeApi2(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "BasepMoveFileDelayed"
+callees = ["RtlStringCbPrintfW"]
+verdict = "false"
+note = "RtlStringCbPrintfW is _snwprintf(cch-1) into a zero-initialised buffer; the C ignores the result too"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateNamedPipeA"
+callees = ["ConvertWin32AnsiChangeApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateJobObjectA"
+callees = ["ConvertWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateJobObjectW"
+callees = ["CreateNtObjectFromWin32Api(->ntobj)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (NtCreate/NtOpen<ntobj>) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "OpenJobObjectA"
+callees = ["ConvertOpenWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "OpenJobObjectW"
+callees = ["OpenNtObjectFromWin32Api(->ntobj)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (NtCreate/NtOpen<ntobj>) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "BasepComputeProcessPath"
+callees = ["UNIMPLEMENTED_DBGBREAK(->__debugbreak)"]
+verdict = "benign"
+note = "UNIMPLEMENTED_DBGBREAK for the unimplemented RTL_PERTHREAD_CURDIR case is dropped; the Rust continues exactly as the C does after the break"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateEventA"
+callees = ["ConvertWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateEventW"
+callees = ["CreateNtObjectFromWin32Api(->ntobj)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (NtCreate/NtOpen<ntobj>) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateMutexA"
+callees = ["ConvertWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateMutexW"
+callees = ["CreateNtObjectFromWin32Api(->ntobj)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (NtCreate/NtOpen<ntobj>) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateSemaphoreExW"
+callees = ["CreateNtObjectFromWin32Api(->ntobj)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (NtCreate/NtOpen<ntobj>) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateSemaphoreW"
+callees = ["CreateNtObjectFromWin32Api(->ntobj)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (NtCreate/NtOpen<ntobj>) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateWaitableTimerW"
+callees = ["CreateNtObjectFromWin32Api(->ntobj)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (NtCreate/NtOpen<ntobj>) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "OpenEventA"
+callees = ["ConvertOpenWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "OpenEventW"
+callees = ["OpenNtObjectFromWin32Api(->ntobj)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (NtCreate/NtOpen<ntobj>) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "OpenMutexW"
+callees = ["OpenNtObjectFromWin32Api(->ntobj)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (NtCreate/NtOpen<ntobj>) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "OpenSemaphoreW"
+callees = ["OpenNtObjectFromWin32Api(->ntobj)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (NtCreate/NtOpen<ntobj>) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "OpenWaitableTimerW"
+callees = ["OpenNtObjectFromWin32Api(->ntobj)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (NtCreate/NtOpen<ntobj>) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateSemaphoreA"
+callees = ["ConvertWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "CreateWaitableTimerA"
+callees = ["ConvertWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "OpenMutexA"
+callees = ["ConvertOpenWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "OpenSemaphoreA"
+callees = ["ConvertOpenWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "OpenWaitableTimerA"
+callees = ["ConvertOpenWin32AnsiObjectApiToUnicodeApi(->W)"]
+verdict = "false"
+note = "token-pasted macro: the audit records the unexpanded '##' fragment; the Rust calls the pasted callee (<obj>W) with the macro's exact control flow and last-error mapping"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "ExitThread"
+callees = ["ERROR_FATAL(->GetCurrentProcess,TerminateProcess,__debugbreak)"]
+verdict = "benign"
+note = "documented divergence: after NtTerminateThread returns (last thread), the Rust calls ExitProcess instead of the C spinning forever behind ERROR_FATAL"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "FileTimeToLocalFileTime"
+callees = ["KiReadSystemTime"]
+verdict = "false"
+note = "KiReadSystemTime is open-coded by the crate's read_ksystem_time (High1Time/LowPart/High2Time retry loop); upstream only swapped the pre-existing open-coded loop for the header inline"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "GetLocalTime"
+callees = ["KiReadSystemTime"]
+verdict = "false"
+note = "KiReadSystemTime is open-coded by the crate's read_ksystem_time (High1Time/LowPart/High2Time retry loop); upstream only swapped the pre-existing open-coded loop for the header inline"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "GetSystemTime"
+callees = ["KiReadSystemTime"]
+verdict = "false"
+note = "KiReadSystemTime is open-coded by the crate's read_ksystem_time (High1Time/LowPart/High2Time retry loop); upstream only swapped the pre-existing open-coded loop for the header inline"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "GetSystemTimeAsFileTime"
+callees = ["KiReadSystemTime"]
+verdict = "false"
+note = "KiReadSystemTime is open-coded by the crate's read_ksystem_time (High1Time/LowPart/High2Time retry loop); upstream only swapped the pre-existing open-coded loop for the header inline"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "LocalFileTimeToFileTime"
+callees = ["KiReadSystemTime"]
+verdict = "false"
+note = "KiReadSystemTime is open-coded by the crate's read_ksystem_time (High1Time/LowPart/High2Time retry loop); upstream only swapped the pre-existing open-coded loop for the header inline"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "SetLocalTime"
+callees = ["KiReadSystemTime"]
+verdict = "false"
+note = "KiReadSystemTime is open-coded by the crate's read_ksystem_time (High1Time/LowPart/High2Time retry loop); upstream only swapped the pre-existing open-coded loop for the header inline"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "COMM_ParseStopBits"
+callees = ["strncmpW"]
+verdict = "false"
+note = "strncmpW is wcsncmp"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "GetCalendarInfoA"
+callees = ["NLS_GetAnsiCodePage"]
+verdict = "benign"
+note = "NLS_GetAnsiCodePage is open-coded as NLS_GetFormats + node->dwCodePage; the helper's extra '!cp' rejection is not reproduced, but upstream's own NLS_GetDateTimeFormatA (lcformat.c:877) does the same"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "GetCurrencyFormatA"
+callees = ["NLS_GetAnsiCodePage"]
+verdict = "benign"
+note = "NLS_GetAnsiCodePage is open-coded as NLS_GetFormats + node->dwCodePage; the helper's extra '!cp' rejection is not reproduced, but upstream's own NLS_GetDateTimeFormatA (lcformat.c:877) does the same"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "GetNumberFormatA"
+callees = ["NLS_GetAnsiCodePage"]
+verdict = "benign"
+note = "NLS_GetAnsiCodePage is open-coded as NLS_GetFormats + node->dwCodePage; the helper's extra '!cp' rejection is not reproduced, but upstream's own NLS_GetDateTimeFormatA (lcformat.c:877) does the same"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "GetUserGeoID"
+callees = ["strtolW"]
+verdict = "false"
+note = "strtolW is wcstol"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "SetUserGeoID"
+callees = ["sprintfW"]
+verdict = "false"
+note = "sprintfW is _snwprintf(bufferW.len())"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "enum_uilang_proc_w"
+callees = ["sprintfW"]
+verdict = "false"
+note = "sprintfW is _snwprintf"
+
+[[reviewed]]
+module = "drivers/base/kdcom"
+function = "KdDebuggerInitialize0"
+callees = ["_strnicmp", "strtoul"]
+verdict = "benign"
+note = "_strnicmp after _strupr is strncmp; the COM:<addr> form is kdcom-rust's own hex_port (0x-prefixed, as freeldr/kd write it) rather than upstream's strtoul(base 0). The overrun fix from the same upstream batch (956d9f7973f) is ported"
+
+[[reviewed]]
+module = "drivers/base/kdgdb"
+function = "KdDebuggerInitialize0"
+callees = ["_strnicmp", "strtoul"]
+verdict = "owed"
+note = "owed: upstream 6e3e7f0d23c (DEBUGPORT=GDB syntax) and 6c532e771e8 (DEBUGPORT=COM:<addr>) not ported to kdgdb-rust (~15 lines); overrun fix 956d9f7973f ported; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/base/kdvm"
+function = "KdDebuggerInitialize0"
+callees = ["_strnicmp"]
+verdict = "false"
+note = "_strnicmp after _strupr is strncmp (the overrun fix from upstream 956d9f7973f is ported)"
+
+[[reviewed]]
+module = "drivers/base/kdvm"
+function = "KdVmSendReceive"
+callees = ["KdVmExchangeData"]
+verdict = "false"
+note = "renamed: kdvbox.c's KdVmExchangeData is KdVmKdVmExchangeData in kdvbox.rs"
+
+[[reviewed]]
+module = "drivers/base/nmidebug"
+function = "NmiDbgCallback"
+callees = ["void"]
+verdict = "false"
+note = "'void' is the cast in ((void(*)())&KiBugCheckData[4])(), not a callee; the Rust transmutes and calls the same address"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "acpi_bus_add"
+callees = ["snprintf"]
+verdict = "false"
+note = "snprintf is _snprintf"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "acpi_bus_exit"
+callees = ["acpi_ec_exit", "acpi_pci_link_exit", "acpi_pci_root_exit"]
+verdict = "false"
+note = "the C call sits under #ifdef CONFIG_ACPI_PCI / CONFIG_ACPI_EC, which is undefined in this build; the Rust mirrors the compiled branch (comment in bus.rs)"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "acpi_device_unregister"
+callees = ["put_device"]
+verdict = "false"
+note = "the C call sits under #ifdef CONFIG_LDM, which is undefined in this build; the Rust mirrors the compiled branch"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "acpi_init"
+callees = ["acpi_pci_link_init", "acpi_pci_root_init"]
+verdict = "false"
+note = "the C call sits under #ifdef CONFIG_ACPI_PCI, which is undefined in this build; the Rust mirrors the compiled branch"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "acpi_create_registry_table"
+callees = ["RtlStringCbPrintfW"]
+verdict = "false"
+note = "RtlStringCbPrintfW(%08X) is swprintf into the 9-WCHAR buffer; a ULONG always fits"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "acpi_util_eval_error"
+callees = ["ACPI_DEBUG_PRINT", "AcpiFormatException", "AcpiGetName"]
+verdict = "false"
+note = "the C call sits under #ifdef ACPI_DEBUG_OUTPUT, which is undefined in this build; the Rust mirrors the compiled branch; the compiled body is just return"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "AcpiOsInitialize"
+callees = ["AcpiBuildLoaderRootPointer"]
+verdict = "owed"
+note = "owed: upstream 63deca5a962 (UEFI loader-provided ACPI root pointer in the OSL, ~200 lines) not ported; acpi-rust has its own registry-RSDT synthetic-RSDP path in AcpiOsGetRootPointer that overlaps it; reconcile in upstream-sync"
+
+[[reviewed]]
+module = "drivers/bus/acpi"
+function = "AcpiOsReadable"
+callees = ["ProbeForRead"]
+verdict = "benign"
+note = "AcpiOsReadable has no caller in vendor/acpica; the C ProbeForRead also fails every kernel address, and under DUMMY_PSEH the probe could not be caught anyway"
+
+[[reviewed]]
+module = "drivers/bus/pci"
+function = "FdoEnumerateDevices"
+callees = ["RtlCopyMemory(->memcpy)"]
+verdict = "false"
+note = "RtlCopyMemory of whole structs is struct assignment (Device->SlotNumber = slot, Device->PciConfig = config)"
+
+[[reviewed]]
+module = "drivers/bus/pci"
+function = "PciLocateKdDevices"
+callees = ["RtlStringCbPrintfW"]
+verdict = "false"
+note = "RtlStringCbPrintfW is swprintf into the 16-WCHAR buffer; \"PCI\\\\Debug\\\\N\" for N < 2 always fits"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "arbusno_Constructor"
+callees = ["PciArbiterConstructor"]
+verdict = "owed"
+note = "owed: upstream 023d8af5566 \"[PCIX] Implement the PCIX Arbiters\" (#9502, ~500 lines) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "ario_Constructor"
+callees = ["PciArbiterConstructor"]
+verdict = "owed"
+note = "owed: upstream 023d8af5566 \"[PCIX] Implement the PCIX Arbiters\" (#9502, ~500 lines) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "armem_Constructor"
+callees = ["PciArbiterConstructor"]
+verdict = "owed"
+note = "owed: upstream 023d8af5566 \"[PCIX] Implement the PCIX Arbiters\" (#9502, ~500 lines) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "PciGetEnhancedCapabilities"
+callees = ["PciGetExpressCapabilities"]
+verdict = "owed"
+note = "owed: upstream 7baff0a9338 PCI Express capability discovery (#9543, ~170 lines, new express.c) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "PciPdoIrpQueryInterface"
+callees = ["PciQueryInterface"]
+verdict = "owed"
+note = "owed: upstream 81f04b39ba4 \"[PCIX] Initial pass of PCI Interfaces\" (#8465, ~220 lines) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "PciGetRegistryValue"
+callees = ["RtlInitUnicodeString"]
+verdict = "false"
+note = "RtlInitUnicodeString is inlined (wcslen loop, Length = MaximumLength = 2*len)"
+
+[[reviewed]]
+module = "drivers/bus/pcix"
+function = "PciIsDatacenter"
+callees = ["UNIMPLEMENTED_FATAL(->GetCurrentProcess,TerminateProcess)"]
+verdict = "false"
+note = "UNIMPLEMENTED_FATAL expands to the kernel form (DbgPrint + DbgBreakPoint + KeBugCheckEx); the audit applied the user-mode expansion"
+
+[[reviewed]]
+module = "drivers/crypto/ksecdd"
+function = "DriverEntry"
+callees = ["__volatile__"]
+verdict = "benign"
+note = "the C's i386 debugcon traces (outb 'K0'..'K3' to port 0xE9) are dropped; '__volatile__' is inline asm, not a callee"
+
+[[reviewed]]
+module = "drivers/crypto/ksecdd"
+function = "KsecGatherEntropyData"
+callees = ["__outbyte"]
+verdict = "benign"
+note = "the C's i386 debugcon traces (__outbyte 0xE9 'e0'..'e6') are dropped"
+
+[[reviewed]]
+module = "drivers/filesystems/cdfs"
+function = "CdInitializeEnumeration"
+callees = ["__analysis_assert"]
+verdict = "false"
+note = "__analysis_assert is a SAL annotation (compiles to nothing); the Rust keeps it as a comment beside NT_ASSERT"
+
+[[reviewed]]
+module = "drivers/filesystems/cdfs"
+function = "CdUpcaseName"
+callees = ["__analysis_assert"]
+verdict = "false"
+note = "__analysis_assert is a SAL annotation (compiles to nothing); the Rust keeps it as a comment beside NT_ASSERT"
+
+[[reviewed]]
+module = "drivers/filesystems/fastfat"
+function = "FatProcessException"
+callees = ["KeGetCurrentIrql(->__ff_inl_KeGetCurrentIrql)"]
+verdict = "false"
+note = "the KeGetCurrentIrql test is the #else of NTDDI_VERSION >= NTDDI_VISTA; the Rust takes the compiled KeAreAllApcsDisabled branch"
+
+[[reviewed]]
+module = "drivers/input/i8042prt"
+function = "i8042InitializeHwHacks"
+callees = ["i8042GetHyperVOSBuild"]
+verdict = "owed"
+note = "owed: upstream 39ca039e02f Hyper-V inverted PS/2 mouse Y-axis compensation (#9254, ~70 lines across hwhacks.c/mouse.c) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/input/i8042prt"
+function = "HandlePowerKeys"
+callees = ["InterlockedExchange(->_InterlockedExchange)"]
+verdict = "benign"
+note = "InterlockedExchange(&LastPowerKey) is an aligned volatile store; the work item that reads it is queued right after through IoQueueWorkItem's lock"
+
+[[reviewed]]
+module = "drivers/input/kbdclass"
+function = "ClassCallback"
+callees = ["InterlockedCompareExchange(->_InterlockedCompareExchange)"]
+verdict = "benign"
+note = "the one-shot \"[KBDCLASS] first key delivered\" smoke log is guarded by a plain test-and-set under the class spinlock instead of InterlockedCompareExchange; worst case a duplicate log line"
+
+[[reviewed]]
+module = "drivers/ksfilter/ks"
+function = "KsFastPropertyHandler"
+callees = ["ProbeForRead"]
+verdict = "false"
+note = "ProbeForRead is done by the crate wrapper KsSafeProbeForRead (range check against MmUserProbeAddress without touching the page, DUMMY_PSEH-safe)"
+
+[[reviewed]]
+module = "drivers/network/afd"
+function = "ListenComplete"
+callees = ["SatisfySuperAccept"]
+verdict = "owed"
+note = "owed: upstream a68bfa2fb41 \"[MSAFD][AFD] Implement AcceptEx\" (#9187, ~330 lines in afd) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/network/afd"
+function = "AfdDispatch"
+callees = ["AfdSuperAccept"]
+verdict = "owed"
+note = "owed: upstream a68bfa2fb41 \"[MSAFD][AFD] Implement AcceptEx\" (#9187, ~330 lines in afd) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/storage/class/cdrom"
+function = "DeviceEvtFileClose"
+callees = ["DeviceGetExtension", "FileObjectGetContext"]
+verdict = "false"
+note = "forwarded to the live C shim CdromDeviceEvtFileClose (rust_dbgprint_shim.c), which does the context lookup and all three cleanups"
+
+[[reviewed]]
+module = "drivers/storage/class/cdrom"
+function = "DeviceCreateWellKnownName"
+callees = ["RtlStringCchPrintfW"]
+verdict = "false"
+note = "RtlStringCchPrintfW is the crate helper write_wide_cdrom_name (prefix + decimal, STATUS_BUFFER_TOO_SMALL on overflow)"
+
+[[reviewed]]
+module = "drivers/storage/class/cdrom"
+function = "RequestHandleQueryPropertyRetrieveCachedData"
+callees = ["strlen"]
+verdict = "false"
+note = "strlen is open-coded as a NUL-scan loop at each of the four offsets"
+
+[[reviewed]]
+module = "drivers/storage/class/classpnp"
+function = "ClasspIsPortable"
+callees = ["IoGetDevicePropertyData"]
+verdict = "benign"
+note = "link-gap stub returns SUCCESS/not-portable; the C calls IoGetDevicePropertyData, which ntoskrnl_vista implements as STATUS_NOT_IMPLEMENTED, so it also never reports portable (the caller only acts on success+TRUE); owed when IoGetDevicePropertyData is implemented"
+
+[[reviewed]]
+module = "drivers/storage/class/classpnp"
+function = "InterpretTransferPacketError"
+callees = ["ClasspTransferPacketGetCdb", "ClasspTransferPacketGetSenseInfoBuffer", "ClasspTransferPacketGetSenseInfoBufferLength"]
+verdict = "false"
+note = "the ClasspTransferPacketGet* inlines are the crate helpers classp_get_cdb / classp_get_sense_buf / classp_get_sense_buf_len (retry.rs, documented as such)"
+
+[[reviewed]]
+module = "drivers/storage/class/disk"
+function = "DiskGetIdentifyInfo"
+callees = ["DiskGetIdentifyData"]
+verdict = "false"
+note = "DiskGetIdentifyData is a diskwmi.c macro for DiskPerformSmartCommand(IOCTL_SCSI_MINIPORT_IDENTIFY, ID_CMD, ...), which the Rust calls (control code corrected in the same pass)"
+
+[[reviewed]]
+module = "drivers/storage/class/disk"
+function = "DiskReadFailurePredictStatus"
+callees = ["DiskReadSmartStatus"]
+verdict = "false"
+note = "DiskReadSmartStatus is a diskwmi.c macro for DiskPerformSmartCommand(IOCTL_SCSI_MINIPORT_RETURN_STATUS, SMART_CMD, RETURN_SMART_STATUS, ...), which the Rust calls"
+
+[[reviewed]]
+module = "drivers/storage/class/disk"
+function = "DiskReadFailurePredictThresholds"
+callees = ["DiskReadSmartThresholds"]
+verdict = "false"
+note = "DiskReadSmartThresholds is a diskwmi.c macro for DiskPerformSmartCommand(IOCTL_SCSI_MINIPORT_READ_SMART_THRESHOLDS, SMART_CMD, READ_THRESHOLDS, ...), which the Rust calls"
+
+[[reviewed]]
+module = "drivers/storage/class/disk"
+function = "DiskIsNT4Geometry"
+callees = ["IsContainerPartition"]
+verdict = "false"
+note = "IsContainerPartition is a ntdddisk.h predicate macro, inlined as == PARTITION_EXTENDED || == PARTITION_XINT13_EXTENDED"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciide"
+function = "PciIdeGetControllerProperties"
+callees = ["PciIdeXGetBusData"]
+verdict = "owed"
+note = "owed: upstream ae2827f4810 '[PCIIDEX] Add DMA support' (~15k lines, pciidex/pciide rewrite) landed after the Rust translation; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXPdoQueryCapabilities"
+callees = ["PciIdeXPnpRepeatRequest"]
+verdict = "owed"
+note = "owed: upstream ae2827f4810 '[PCIIDEX] Add DMA support' (~15k lines, pciidex/pciide rewrite) landed after the Rust translation; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXPdoQueryResourceRequirements"
+callees = ["PciIdeXGetChannelState", "PciIdeXMakePortRequirement"]
+verdict = "owed"
+note = "owed: upstream ae2827f4810 '[PCIIDEX] Add DMA support' (~15k lines, pciidex/pciide rewrite) landed after the Rust translation; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXPdoQueryResources"
+callees = ["PciIdeXGetChannelState", "PciIdeXMakePortResource"]
+verdict = "owed"
+note = "owed: upstream ae2827f4810 '[PCIIDEX] Add DMA support' (~15k lines, pciidex/pciide rewrite) landed after the Rust translation; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/storage/ide/pciidex"
+function = "PciIdeXPdoStartDevice"
+callees = ["AtaAcpiGetTimingMode", "PciIdeConnectInterrupt", "PciIdeParseResources", "PciIdeXPdoInitDma"]
+verdict = "owed"
+note = "owed: upstream ae2827f4810 '[PCIIDEX] Add DMA support' (~15k lines, pciidex/pciide rewrite) landed after the Rust translation; upstream-sync lane"
+
+[[reviewed]]
+module = "drivers/storage/mountmgr"
+function = "IsFtVolume"
+callees = ["IsFTPartition"]
+verdict = "false"
+note = "IsFTPartition is a ntdddisk.h predicate macro, inlined term for term"
+
+[[reviewed]]
+module = "drivers/storage/mountmgr"
+function = "QueryDeviceInformation"
+callees = ["IsFTPartition"]
+verdict = "false"
+note = "IsFTPartition is a ntdddisk.h predicate macro, inlined term for term"
+
+[[reviewed]]
+module = "drivers/usb/usbport"
+function = "USBPORT_DmaEndpointWorker"
+callees = ["DbgBreakPoint(->__debugbreak)"]
+verdict = "false"
+note = "the C call sits under #ifndef NDEBUG_USBPORT_CORE, which is defined by endpoint.c in this build; the Rust mirrors the compiled branch; the DbgBreakPoint is compiled out"
+
+[[reviewed]]
+module = "drivers/video/arm64vid"
+function = "Arm64VidDiscoverFramebuffer"
+callees = ["RtlStringCchPrintfW"]
+verdict = "false"
+note = "RtlStringCchPrintfW of the two single-digit indices is open-coded as digit substitution into the path template"
+
+[[reviewed]]
+module = "drivers/video/arm64vid"
+function = "RegSetSz"
+callees = ["wcslen"]
+verdict = "false"
+note = "wcslen is open-coded as a NUL-scan loop"
+
+[[reviewed]]
+module = "hal/halarm64"
+function = "ExAcquireFastMutex"
+callees = ["InterlockedDecrement(->_InterlockedDecrement)"]
+verdict = "benign"
+note = "the C stub only decrements Count; the Rust calls the real ExAcquireFastMutexUnsafe, which also waits when contended (exceeds the stub)"
+
+[[reviewed]]
+module = "hal/halarm64"
+function = "ExReleaseFastMutex"
+callees = ["InterlockedIncrement(->_InterlockedIncrement)"]
+verdict = "benign"
+note = "the C stub only increments Count; the Rust calls the real ExReleaseFastMutexUnsafe, which also wakes a waiter (exceeds the stub)"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpMadtPlaceBootProcessor"
+callees = ["KeGetCurrentPrcb"]
+verdict = "benign"
+note = "documented divergence: the boot APIC id comes from CPUID(1).EBX[31:24] (the value KiGetFeatureBits stores in Prcb->InitialApicId) instead of the HAL-side _KPRCB view"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalGetEnvironmentVariable"
+callees = ["_stricmp", "strncpy"]
+verdict = "false"
+note = "twin mismatch: the audit paired halx86 cmos.c with arm64/halstubs.rs (the arm64 stub, matching halarm64 halstubs.c); the arch-matched Rust twin is x86/cmos.rs (stricmp_ascii / strncpy_ascii), which does the work"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalSetEnvironmentVariable"
+callees = ["_stricmp"]
+verdict = "false"
+note = "twin mismatch: the audit paired halx86 cmos.c with arm64/halstubs.rs (the arm64 stub, matching halarm64 halstubs.c); the arch-matched Rust twin is x86/cmos.rs (stricmp_ascii), which does the work"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpGetParameters"
+callees = ["strstr"]
+verdict = "false"
+note = "strstr is the crate helper cmdline_contains"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpFlushTLB"
+callees = ["_disable"]
+verdict = "false"
+note = "_disable is the crate intrinsic wrapper disable_interrupts"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpAcquireCmosSpinLock"
+callees = ["_disable"]
+verdict = "false"
+note = "_disable is the crate intrinsic wrapper disable_interrupts"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HaliQuerySystemInformation"
+callees = ["HaliQueryProcessorBrandString"]
+verdict = "owed"
+note = "owed: upstream 1704b28ed04 \"[HAL] Implement HaliQueryProcessorBrandString\" (~45 lines, CPUID brand string for HalProcessorBrandString) not ported to hal-rust sysinfo.rs; upstream-sync lane"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpAdjustPCIResourceList"
+callees = ["UNIMPLEMENTED_DBGBREAK(->__debugbreak)"]
+verdict = "benign"
+note = "the UNIMPLEMENTED_DBGBREAK for the unsupported /PCILOCK switch is dropped; the C continues past it identically"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpDebugPciDumpBus"
+callees = ["strlen", "strncpy", "strpbrk", "strstr"]
+verdict = "false"
+note = "strstr / strpbrk / strlen / strncpy are the crate helpers byte_strstr / byte_find_newline / literal lengths / byte_strncpy (NEWLINE is \"\\n\" in bussupp.c)"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpMarkChipsetDecode"
+callees = ["RtlInitUnicodeString"]
+verdict = "false"
+note = "RtlInitUnicodeString of literals is open-coded with exact-length const UTF-16 tables"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HaliInitPnpDriver"
+callees = ["RtlInitUnicodeString"]
+verdict = "false"
+note = "twin mismatch: the audit paired legacy/halpnpdd.c with arm64/pnpdd.rs; the arch-matched Rust twin is x86/legacy_halpnpdd.rs (deliberately cfg(any()) in favour of the ACPI x86/halpnpdd.rs); all build the driver name from an exact-length const table, which does the work"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpDispatchWmi"
+callees = ["UNIMPLEMENTED_DBGBREAK(->__debugbreak)"]
+verdict = "benign"
+note = "the UNIMPLEMENTED_DBGBREAK in the WMI dispatch stub is dropped; both return STATUS_SUCCESS"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalProcessorIdle"
+callees = ["_enable"]
+verdict = "false"
+note = "twin mismatch: the audit paired halx86 pic/processor.c with arm64/halstubs.rs (wfi); the arch-matched Rust twin is x86/processor.rs (asm \"sti; hlt\"), which does the work"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HaliHaltSystem"
+callees = ["_disable"]
+verdict = "false"
+note = "_disable + __halt are inline asm \"cli; hlt\""
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "FrLdrBugCheckWithMessage"
+callees = ["PrintTextV", "_disable"]
+verdict = "owed"
+note = "owed: the i386 twin (i386bug.rs) prints Format literally -- a C-variadic cannot be defined on stable, needs the va_slots replay -- and omits BugCodeStrings[BugCode]; the paired arm64_debug.rs matches arm64 debug.c's bare loop; freeldr lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "PcHwDetect"
+callees = ["DetectPciBus"]
+verdict = "owed"
+note = "owed: upstream a97929d2e61 hwpci split (#9541: DetectPciBios -> platform-independent DetectPciBus with a per-machine callback, ~190 lines) not ported; behaviour-neutral refactor; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "UefiConsGetCh"
+callees = ["EFI_ERROR", "ReadKeyStroke"]
+verdict = "benign"
+note = "upstream dc9ee344787 fixed the same countdown bug with CheckEvent(WaitForKey); freeldr-rust's equivalent local fix reads and buffers the key in KbHit. Only a GetCh without a prior KbHit (noui's 'Press any key') differs: KEY_EXTENDED instead of 0"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "UefiConsKbHit"
+callees = ["CheckEvent"]
+verdict = "benign"
+note = "upstream dc9ee344787 fixed the same countdown bug with CheckEvent(WaitForKey); freeldr-rust's equivalent local fix reads and buffers the key in KbHit"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "UefiGetBootPartitionEntry"
+callees = ["DiskReadGptHeader"]
+verdict = "owed"
+note = "owed: upstream #8843 moved the GPT header reader into part_gpt.c (DiskReadGptHeader); uefidisk.rs keeps its own pre-move UefiReadGptHeader, which does the same read; reconcile with the partition rework; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "UefiSetBootpath"
+callees = ["DevicePathNodeLength", "DevicePathSubType", "DevicePathType", "IsDevicePathEnd", "NextDevicePathNode"]
+verdict = "owed"
+note = "owed: upstream 7eab8fafec4 \"[FREELDR:UEFI] Determine boot partition number from device path\" (#9376, ~30 lines: walk the boot handle device path for the MEDIA_HARDDRIVE_DP partition number) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "UefiVideoCopyOffScreenBufferToVRAM"
+callees = ["UefiDrawBgrtLogo"]
+verdict = "owed"
+note = "owed: upstream 9a7f64a0c64 BGRT boot-logo support (#8820) not ported to uefivid.rs; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "GetOSLoadingMethod"
+callees = ["WarnDeprecated", "strlen"]
+verdict = "benign"
+note = "WarnDeprecated (variadic) is inlined as a fixed warning box without the %s/indent substitution; 'Unknown boot entry type' drops the name"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "EditCustomBootReactOS"
+callees = ["RtlZeroMemory(->memset)"]
+verdict = "false"
+note = "RtlZeroMemory of freshly declared locals is the [0; N] initialiser"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "DiskGetBrfrPartitionEntry"
+callees = ["DiskIsBrfr"]
+verdict = "owed"
+note = "owed: upstream partition rework (#8843 split into part_mbr/part_brfr/part_gpt, e2c92c0ffb7 PARTITION_INFORMATION interface) not ported; partition.rs implements the pre-split partition.c API; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "DiskGetActivePartitionEntry"
+callees = ["DiskMbrPartitionTableEntryToInformation"]
+verdict = "owed"
+note = "owed: upstream partition rework (#8843 split into part_mbr/part_brfr/part_gpt, e2c92c0ffb7 PARTITION_INFORMATION interface) not ported; partition.rs implements the pre-split partition.c API; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "DiskGetMbrPartitionEntry"
+callees = ["DiskMbrPartitionTableEntryToInformation"]
+verdict = "owed"
+note = "owed: upstream partition rework (#8843 split into part_mbr/part_brfr/part_gpt, e2c92c0ffb7 PARTITION_INFORMATION interface) not ported; partition.rs implements the pre-split partition.c API; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "DiskDetectPartitionType"
+callees = ["DiskIsBrfr", "DiskReadGptHeader"]
+verdict = "owed"
+note = "owed: upstream partition rework (#8843 split into part_mbr/part_brfr/part_gpt, e2c92c0ffb7 PARTITION_INFORMATION interface) not ported; partition.rs implements the pre-split partition.c API; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "DiskGetPartitionEntry"
+callees = ["DiskGetGptPartitionEntry", "MachDiskGetDriveGeometry(->DiskGetDriveGeometry)"]
+verdict = "owed"
+note = "owed: upstream partition rework (#8843 split into part_mbr/part_brfr/part_gpt, e2c92c0ffb7 PARTITION_INFORMATION interface) not ported; partition.rs implements the pre-split partition.c API; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "MsgBoxPrint"
+callees = ["UiMessageBox", "_vsnprintf"]
+verdict = "benign"
+note = "MsgBoxPrint has no caller anywhere in freeldr (C or Rust); the export is a no-op"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "ConvertConfigToVA"
+callees = ["PaToVa", "VaToPa"]
+verdict = "false"
+note = "PaToVa / VaToPa are the crate generics PaToVaG / VaToPaG"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "List_PaToVa"
+callees = ["PaToVa"]
+verdict = "false"
+note = "PaToVa is the crate generic PaToVaG"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "LoadAndBootWindows"
+callees = ["NtLdrNormalizeOptions"]
+verdict = "owed"
+note = "owed: upstream 1ac657ed0e8 \"[FREELDR:NTLDR] Normalize the boot options as soon as possible, and fix the algorithm\" (~60 lines) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "LoadWindowsCore"
+callees = ["NtLdrDetectBootVid"]
+verdict = "owed"
+note = "owed: upstream 62deebac2d8 bootvid auto-detection (#8720, ~170 lines) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "WinLdrInitializePhase1"
+callees = ["strcspn", "strrchr"]
+verdict = "owed"
+note = "owed: upstream 9baf0933fb8 ArcBootDeviceName / ArcHalDeviceName determination (~60 lines) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "InitOperatingSystemList"
+callees = ["UiMessageBox"]
+verdict = "owed"
+note = "owed: upstream bf26ae38a54 \"Make FreeLoader a bit more usable even if FREELDR.INI is missing\" (~34 lines) not ported; upstream-sync lane"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "TuiPrintf"
+callees = ["_vsnprintf"]
+verdict = "false"
+note = "_vsnprintf is the va_slots replay (format_slots over fixed trailing slots), which calls libcntpr _vsnprintf"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "UiMessageBox"
+callees = ["_vsnprintf"]
+verdict = "false"
+note = "the paired directui.rs is not wired (CMakeLists: ui/directui.c is #if 0); the live UiMessageBox in ui.rs now formats through va_slots"
+
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "UnhandledExceptionFilter"
+callees = ["StringCchPrintfW"]
+verdict = "false"
+note = "fixed in 2f125c104ca (AeDebug key/value names, hard-error status and options, response codes, wait type); the remaining StringCchPrintfW is open-coded as _snwprintf(cch-1) + strsafe_printf_hr"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "FindFirstFileExW"
+callees = ["DECLSPEC_ALIGN(->__declspec)"]
+verdict = "false"
+note = "fixed in 2f125c104ca; DECLSPEC_ALIGN(4) is now a repr(C, align(4)) newtype around the buffer"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "GetPriorityClass"
+callees = ["DECLSPEC_ALIGN(->__declspec)"]
+verdict = "false"
+note = "fixed in 2f125c104ca; DECLSPEC_ALIGN(4) is now a repr(C, align(4)) newtype around the PROCESS_PRIORITY_CLASS"
+
+[[reviewed]]
+module = "dll/win32/kernel32"
+function = "GetTickCount"
+callees = ["KiReadSystemTime", "KiTickCountToMs"]
+verdict = "false"
+note = "fixed in 2f125c104ca; KiReadSystemTime is a volatile 64-bit read on 64-bit and read_ksystem_time on 32-bit, KiTickCountToMs the open-coded formula (equal mod 2^32)"
+
+[[reviewed]]
+module = "drivers/storage/class/classpnp"
+function = "TransferPktComplete"
+callees = ["InterlockedExchangeNoFence64"]
+verdict = "false"
+note = "fixed in 11705e64068; InterlockedExchangeNoFence64 is AtomicI64::swap(Relaxed) on 32-bit, the C _WIN64/__REACTOS__ plain volatile read+write on 64-bit"
+
+[[reviewed]]
+module = "drivers/storage/class/disk"
+function = "DiskReadFailurePredictData"
+callees = ["DiskReadSmartData"]
+verdict = "false"
+note = "fixed in c1e1c1e3fb5; DiskReadSmartData is a diskwmi.c macro, now DiskPerformSmartCommand(IOCTL_SCSI_MINIPORT_READ_SMART_ATTRIBS, SMART_CMD, READ_ATTRIBUTES, ...)"
+
+[[reviewed]]
+module = "hal/halx86"
+function = "HalpRegisterPciDebuggingDeviceInfo"
+callees = ["RtlInitUnicodeString"]
+verdict = "false"
+note = "fixed in e61300e1441; RtlInitUnicodeString is open-coded (Length up to the NUL of the build_wstr buffer)"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "WinLdrLoadGUID"
+callees = ["_WARN(->message)"]
+verdict = "benign"
+note = "fixed in e1849b2dceb (BIOS-area scan only on PC BIOS builds); the non-PC branch omits the C _WARN debug message"
+
+# Fixed or rewritten in the 2026-10-04 medium pass; still read through other spellings.
+
+[[reviewed]]
+module = "base/services/dhcpcsvc"
+function = "reset_adapter"
+callees = ["strlen"]
+verdict = "benign"
+note = "fixed 2026-10-04 (key path, NUL-terminated REG_SZ); string lengths come from the Rust buffers, not strlen"
+
+[[reviewed]]
+module = "base/system/smss"
+function = "SmpInvokeAutoChk"
+callees = ["RtlFreeUnicodeString", "RtlInitAnsiString", "RtlStringCbPrintfA"]
+verdict = "false"
+note = "fixed 2026-10-04; the skip message is built with the crate's own wide formatting, not the ANSI string calls"
+
+[[reviewed]]
+module = "base/system/winlogon"
+function = "InitializeScreenSaver"
+callees = ["SetWindowsHookEx"]
+verdict = "false"
+note = "winlogon.h:29 defines USE_GETLASTINPUTINFO, so the hook arm is dead; the Rust polls GetLastInputInfo (fixed 2026-10-04)"
+
+[[reviewed]]
+module = "base/system/winlogon"
+function = "ScreenSaverThreadMain"
+callees = ["InterlockedCompareExchange(->_InterlockedCompareExchange)", "InterlockedExchange(->_InterlockedExchange)", "UnhookWindowsHookEx"]
+verdict = "false"
+note = "USE_GETLASTINPUTINFO (winlogon.h:29) makes the hook/LastActivity arm dead; the live arm's GetTickCount is in the Rust"
+
+[[reviewed]]
+module = "base/system/winlogon"
+function = "StartScreenSaver"
+callees = ["GetTickCount", "InterlockedExchange(->_InterlockedExchange)"]
+verdict = "false"
+note = "USE_GETLASTINPUTINFO (winlogon.h:29) makes the LastActivity arm dead (fixed 2026-10-04)"
+
+[[reviewed]]
+module = "subsystems/csr/csrsrv"
+function = "CsrCreateSessionObjectDirectory"
+callees = ["_swprintf"]
+verdict = "false"
+note = "the _swprintf paths are built with wappend (\\Sessions fixed 2026-10-04)"
+
+[[reviewed]]
+module = "subsystems/csr/csrsrv"
+function = "CsrLoadServerDll"
+callees = ["RtlInitUnicodeString", "strncpy"]
+verdict = "false"
+note = "fixed 2026-10-04; the default load path is a wide literal, no RtlInitUnicodeString/strncpy needed"
+
+[[reviewed]]
+module = "win32ss"
+function = "UserExtTextOutW"
+callees = ["ProbeForRead"]
+verdict = "false"
+note = "the LPK callback result is now probed through the crate's fault-tolerant copy (fixed 2026-10-04)"
+
+[[reviewed]]
+module = "win32ss/user/user32"
+function = "WDML_AddServer"
+callees = ["snprintfW"]
+verdict = "false"
+note = "fixed 2026-10-04; formatted with the crate's wide printf"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "UiShowMessageBoxesInArgv"
+callees = ["UiMessageBox"]
+verdict = "benign"
+note = "the INI/command-line text goes to UiVtbl.MessageBox as-is, never as a printf format"
+
+[[reviewed]]
+module = "boot/freeldr/freeldr"
+function = "UiShowMessageBoxesInSection"
+callees = ["UiMessageBox"]
+verdict = "benign"
+note = "the INI/command-line text goes to UiVtbl.MessageBox as-is, never as a printf format"

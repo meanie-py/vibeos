@@ -352,6 +352,21 @@ def test_reviewed_ledger_hides_only_the_callees_it_names(tmp_path):
     assert "  [high, owed] O" in out and "] F " not in out
 
 
+def test_reviewed_ledger_merges_two_passes_over_one_function(tmp_path):
+    from rustconv.body_audit import load_reviewed
+
+    led = tmp_path / "reviewed.toml"
+    led.write_text(
+        '[[reviewed]]\nmodule = "m"\nfunction = "F"\ncallees = ["A"]\n'
+        'verdict = "false"\nnote = "high pass"\n'
+        '[[reviewed]]\nmodule = "m"\nfunction = "F"\ncallees = ["B"]\n'
+        'verdict = "owed"\nnote = "medium pass"\n'
+    )
+    e = load_reviewed(led)[("m", "F")]
+    assert e["callees"] == ["A", "B"] and e["verdict"] == "owed"
+    assert e["note"] == "high pass; medium pass"
+
+
 def test_reviewed_ledger_rejects_an_entry_without_a_note(tmp_path):
     import pytest
 

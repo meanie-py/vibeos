@@ -264,7 +264,11 @@ def _old_body(text: str, name: str) -> str | None:
 
 
 def load_reviewed(path: Path = REVIEWED_PATH) -> dict[tuple[str, str], dict]:
-    """`(module, function)` -> its ledger entry. A malformed entry is an error, not a skip."""
+    """`(module, function)` -> its merged ledger entry. A malformed entry is an error.
+
+    One function can be reviewed more than once (its high drops in one pass, its medium
+    drops in the next): the entries merge, covering the union of their callees, under
+    the most serious verdict (owed > benign > false) with every note kept."""
     if not path.exists():
         return {}
     out: dict[tuple[str, str], dict] = {}
@@ -272,9 +276,16 @@ def load_reviewed(path: Path = REVIEWED_PATH) -> dict[tuple[str, str], dict]:
         key = (e["module"], e["function"])
         if e.get("verdict") not in VERDICTS or not e.get("note") or not e.get("callees"):
             raise ValueError(f"{path}: {key}: needs verdict in {VERDICTS}, callees and a note")
-        if key in out:
-            raise ValueError(f"{path}: {key} is listed twice")
-        out[key] = e
+        prev = out.get(key)
+        if prev is None:
+            out[key] = dict(e)
+            continue
+        prev["callees"] = list(prev["callees"]) + [
+            c for c in e["callees"] if c not in prev["callees"]
+        ]
+        if VERDICTS.index(e["verdict"]) > VERDICTS.index(prev["verdict"]):
+            prev["verdict"] = e["verdict"]
+        prev["note"] = f"{prev['note']}; {e['note']}"
     return out
 
 
