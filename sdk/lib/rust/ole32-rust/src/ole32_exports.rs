@@ -87,6 +87,7 @@ extern "system" {
     pub fn SysAllocStringLen(strIn: *const u16, ui: UINT) -> BSTR;
     pub fn SysFreeString(bstrString: BSTR);
     pub fn SysStringLen(bstrString: BSTR) -> UINT;
+    pub fn SysStringByteLen(bstrString: BSTR) -> UINT;
 }
 
 /// `IsValidInterface` is ole32-internal (ifs.c) but is NOT one of the DLL's exports —

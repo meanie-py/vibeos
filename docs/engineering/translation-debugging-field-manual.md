@@ -1162,6 +1162,15 @@ allocation used the real element size, so nothing looked wrong until index 1.
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
 
+### `(base as *mut PBYTE).offset(n)` strides by a POINTER, not a byte
+The C's `(PBYTE)base + n` came out as a cast to a pointer *to* a `PBYTE` followed by
+`.offset(n)`, which steps 8 bytes per unit on 64-bit; the result is cast straight back, so it
+compiles everywhere and is wrong only once `n != 0`. oleaut32's `IRecordInfoImpl_RecordCopy`
+read every field past offset 0 from 8x its address (Wine's vartype test died in
+`SysAllocString` on the garbage BSTR); win32k's `DIB_16BPP_TransparentBlt` wrote 8x past its
+destination rect (16bpp only, so the 32bpp smoke never saw it). **Gated:
+`tools/scan_byteptr_stride.py`** — the tree holds no legitimate `*mut PBYTE` arithmetic.
+
 ### `LIST_FOR_EACH_ENTRY` translated without its container_of
 
 **Symptom:** an access violation inside a list walk on the first call, often in a
@@ -2523,6 +2532,40 @@ tests with `NT_SUCCESS` would not notice, which is why it survived. **When a sub
 own success status (HIDP_, USBD_, NDIS_, SCARD_...), grep the translation for bare `0` returns in
 functions whose C returns it.**
 
+### A bare HRESULT literal that is the right family's WRONG member
+ole32's storage32.rs spelled its errors as `return 0x80030004u32 as HRESULT;` and seven did not
+match the C: `BlockChainStream_ReadAt`/`WriteAt` returned `STG_E_TOOMANYOPENFILES` for
+`STG_E_READFAULT` and `STG_E_WRITEFAULT`, `CreateStream` returned `STG_E_INVALIDHANDLE` for
+`STG_E_INVALIDNAME` (twice) and `E_INVALIDARG` for `STG_E_INVALIDPARAMETER`, and the header
+loader returned `0x80030001`/`0x80030002` for `STG_E_OLDFORMAT`/`STG_E_INVALIDHEADER`. Same
+severity, same facility, plausible magnitude, so nothing looks wrong. **`tools/scan_hresult_literals.py`
+(in `vibeos-cli check`) holds every bare `0x8xxxxxxx as HRESULT` to the set of names the
+same-named C function uses**; it finds none of a value's names there → finding. Its one blind
+spot: a wrong member that the same function ALSO returns correctly elsewhere
+(`STG_E_INVALIDFLAG` for `STG_E_INVALIDFUNCTION` passed it). Prefer the name when you touch one.
+
+### A file-format OFFSET spelled as a number reads the neighbouring field
+`StorageImpl_LoadFileHeader` read the compound-file header with literal offsets, and one of
+eleven was the field beside the right one: `bigBlockDepotCount` came from **40**
+(`OFFSET_DIRSECTORCOUNT`, always 0 in a 512-byte-sector file) instead of **44**
+(`OFFSET_BBDEPOTCOUNT`). Writing used the named constants, so every docfile saved fine and
+**no docfile could ever be reopened**: the depot count read back 0, the first chain walk failed
+its bounds check, `STG_E_READFAULT`. Wine's stg_prop test crashed on the NULL storage that left.
+The tell was a probe, not a read: ReadAt never failed, the file was the right size, and the
+structure was logically empty. **When a parser and its writer disagree, diff their offset
+lists — the writer is usually the named one.**
+
+### A C `0` handle sentinel translated as `INVALID_HANDLE_VALUE`
+`StgCreateDocfileOnILockBytes` calls `Storage_Construct(0, 0, plkbyt, ...)`; the translation
+passed `INVALID_HANDLE_VALUE`. `StorageImpl_Construct` takes the FILE branch for any non-NULL
+handle, `FileLockBytesImpl_Construct` rejects -1, and `lockBytes` stays NULL, so every
+ILockBytes-backed storage in the OS (clipboard, OLE embedding, data caches) failed to
+construct and its cleanup then flushed through the NULL pointer. Four Wine ole32 suites died at
+one address. Both sentinels mean "no handle" and both compile; which one a callee tests is the
+contract. **A handle argument that is `INVALID_HANDLE_VALUE` in Rust and `0`/`NULL` in the C (or
+the reverse) is a finding; `CreateFileMapping(INVALID_HANDLE_VALUE, ...)` is the legitimate
+exception.**
+
 ### Locally re-declared enum members with GUESSED values (SILENT)
 The translator re-declares an enum member it needs as a local `const NAME: T = <value>` and
 guesses — often the intuitive-but-wrong value, or a *different* enum's similarly-named member.
@@ -2846,6 +2889,11 @@ measured the vis region and `prgnRao` *correctly* at update time. **A hand-typed
 literal is the flag-cousin of the magic struct offset — treat it as wrong until proven right.**
 The constants were always available via the bindgen glob; the literals were pure debris.
 **Corollary: when a pipeline has N derived stages, probe the LAST consumer, not the producers.**
+
+**And one that names NO member.** ole32's `StorageBaseImpl_CreateStream` tested
+`grfMode & 0x00004000` for `STGM_DELETEONRELEASE`, which is `0x04000000`; no STGM flag is
+`0x4000`, so the check never fired (and returned `STG_E_INVALIDFLAG` where the C says
+`STG_E_INVALIDFUNCTION`).
 
 **The same class one bit narrower — a PARTIAL mask.** `NtOpenKey` masked `& !0x0100u32` where
 the C masks `~KEY_WOW64_RES` (**0x0300**): right family, half the width, and the named constant

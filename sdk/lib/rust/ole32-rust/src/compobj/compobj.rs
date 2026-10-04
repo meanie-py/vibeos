@@ -5256,6 +5256,8 @@ pub unsafe extern "system" fn DllMain(
         }
 
         DLL_PROCESS_DETACH => {
+            // wine-10: the lazily created OLE clipboard lives until here.
+            crate::ring::clipboard::clipbrd_destroy();
             if !reserved.is_null() {
                 return TRUE;
             }

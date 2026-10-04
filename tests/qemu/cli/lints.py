@@ -717,6 +717,43 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Its unlabelled sibling: a BARE `0x8003xxxxu32 as HRESULT` has no name to
+    # resolve, so only the C function it translates can say it is wrong -- the
+    # literal must be a value that function returns. ole32's storage32.rs carried
+    # seven that were not (STG_E_TOOMANYOPENFILES for STG_E_READFAULT and
+    # STG_E_WRITEFAULT, STG_E_INVALIDHANDLE for STG_E_INVALIDNAME, ...).
+    shl = repo / "tools" / "scan_hresult_literals.py"
+    specs.append(
+        (
+            "scan_hresult_literals",
+            [py, str(shl), "--lint"] if shl.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A C do-while's `continue` evaluates the condition; the translated `loop { ..;
+    # if !(cond) { break; } }` jumps over it. Four shipped (an endless setup dialog
+    # loop, a win32k use-after-free re-peek, a temp-name spin, a scrollbar that kept
+    # tracking). The shape also fits a faithful `for (;;)`, so the baseline holds the
+    # sites read against their C and found OK; a NEW one means: go read the C.
+    # `(base as *mut PBYTE).offset(n)` steps in POINTER units: the C's `(PBYTE)base + n`
+    # turned into 8n on 64-bit. oleaut32's RecordCopy read every field past offset 0
+    # from the wrong address; win32k's 16bpp transparent blit wrote 8x past its target.
+    sbs = repo / "tools" / "scan_byteptr_stride.py"
+    specs.append(
+        (
+            "scan_byteptr_stride",
+            [py, str(sbs), "--lint"] if sbs.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    sdc = repo / "tools" / "scan_dowhile_continue.py"
+    specs.append(
+        (
+            "scan_dowhile_continue",
+            [py, str(sdc), "--lint"] if sdc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The type-level sibling of the above, and the reason it exists is that a width
     # disagreement does not merely compare wrong, it CORRUPTS MEMORY. fastfat's VBO
     # (task #46) was `ULONG32` in the generated islands, `LARGE_INTEGER` in dirsup.rs

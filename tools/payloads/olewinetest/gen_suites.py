@@ -86,10 +86,16 @@ def main(argv: list[str] | None = None) -> int:
         lines.append("# GlobalFlag " + flags + " on " + suite + ": a DEBUG run, not a baseline")
     # Register first (see payload.yaml): the sweep runs `<bin>\\<exe> <rest>`.
     # windowscodecs: OleLoadPicture decodes through WIC (CLSID_WICImagingFactory).
+    # urlmon / shell32: ole32's compobj and marshal suites CoCreateInstance
+    # CLSID_InternetZoneManager and CLSID_ShellDesktop. An installed system has them
+    # registered by setup; the live CD does not, and the tests release the NULL
+    # that REGDB_E_CLASSNOTREG leaves behind.
     lines += [
         "regsvr32.exe /s ole32.dll",
         "regsvr32.exe /s oleaut32.dll",
         "regsvr32.exe /s windowscodecs.dll",
+        "regsvr32.exe /s urlmon.dll",
+        "regsvr32.exe /s shell32.dll",
     ]
     n = 0
     for suite, subs in table.items():

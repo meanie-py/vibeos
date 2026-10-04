@@ -638,69 +638,76 @@ pub unsafe extern "C" fn RegisterTypeLibraries(
     }
 
     loop {
-        if SetupGetStringFieldW(
-            &mut InfContext,
-            1,
-            szName.as_mut_ptr(),
-            ARRAYSIZE!(szName),
-            core::ptr::null_mut(),
-        ) == 0
-        {
-            FatalError(b"SetupGetStringFieldW failed\n\0".as_ptr() as *mut i8);
-            continue;
-        }
+        // C: `do { ... continue; ... } while (SetupFindNextLine(...))` -- a `continue`
+        // still advances to the next INF line. A bare `continue` here re-processed the
+        // SAME line forever after any failure (FatalError only shows a message box), so
+        // one bad TypeLibraries entry hung setup in an endless dialog loop.
+        'next: {
+            if SetupGetStringFieldW(
+                &mut InfContext,
+                1,
+                szName.as_mut_ptr(),
+                ARRAYSIZE!(szName),
+                core::ptr::null_mut(),
+            ) == 0
+            {
+                FatalError(b"SetupGetStringFieldW failed\n\0".as_ptr() as *mut i8);
+                break 'next;
+            }
 
-        if SetupGetIntField(&mut InfContext, 2, &mut csidl) == 0 {
-            csidl = (CSIDL_SYSTEM) as i32;
-        }
+            if SetupGetIntField(&mut InfContext, 2, &mut csidl) == 0 {
+                csidl = (CSIDL_SYSTEM) as i32;
+            }
 
-        hret = SHGetFolderPathW(
-            core::ptr::null_mut(),
-            csidl,
-            core::ptr::null_mut(),
-            0,
-            szPath.as_mut_ptr(),
-        );
-        if hret < 0 {
-            FatalError(
-                b"SHGetFolderPathW failed hret=0x%lx\n\0".as_ptr() as *mut i8,
-                hret,
-            );
-            continue;
-        }
-
-        p = PathAddBackslash(szPath.as_mut_ptr());
-        wcscpy(p, szName.as_mut_ptr());
-
-        if !pItemsData.is_null() && !pNotify.is_null() {
-            (*pNotify).Progress += 1;
-            (*pNotify).CurrentItem = szName.as_mut_ptr();
-
-            // DPRINT removed
-            SendMessage(
-                (*pItemsData).hwndDlg,
-                (PM_STEP_START) as u32,
+            hret = SHGetFolderPathW(
+                core::ptr::null_mut(),
+                csidl,
+                core::ptr::null_mut(),
                 0,
-                pNotify as LPARAM,
+                szPath.as_mut_ptr(),
             );
-        }
+            if hret < 0 {
+                FatalError(
+                    b"SHGetFolderPathW failed hret=0x%lx\n\0".as_ptr() as *mut i8,
+                    hret,
+                );
+                break 'next;
+            }
 
-        hmod = LoadLibraryW(szPath.as_mut_ptr());
-        if hmod.is_null() {
-            FatalError(b"LoadLibraryW failed\n\0".as_ptr() as *mut i8);
-            continue;
-        }
+            p = PathAddBackslash(szPath.as_mut_ptr());
+            wcscpy(p, szName.as_mut_ptr());
 
-        __wine_register_resources(hmod);
+            if !pItemsData.is_null() && !pNotify.is_null() {
+                (*pNotify).Progress += 1;
+                (*pNotify).CurrentItem = szName.as_mut_ptr();
 
-        if !pItemsData.is_null() && !pNotify.is_null() {
-            // DPRINT removed
-            SendMessage(
-                (*pItemsData).hwndDlg,
-                (PM_STEP_END) as u32,
-                0,
-                pNotify as LPARAM,
-            );
+                // DPRINT removed
+                SendMessage(
+                    (*pItemsData).hwndDlg,
+                    (PM_STEP_START) as u32,
+                    0,
+                    pNotify as LPARAM,
+                );
+            }
+
+            hmod = LoadLibraryW(szPath.as_mut_ptr());
+            if hmod.is_null() {
+                FatalError(b"LoadLibraryW failed\n\0".as_ptr() as *mut i8);
+                break 'next;
+            }
+
+            __wine_register_resources(hmod);
+
+            if !pItemsData.is_null() && !pNotify.is_null() {
+                // DPRINT removed
+                SendMessage(
+                    (*pItemsData).hwndDlg,
+                    (PM_STEP_END) as u32,
+                    0,
+                    pNotify as LPARAM,
+                );
+            }
+
         }
 
         if SetupFindNextLine(&mut InfContext, &mut InfContext) == 0 {

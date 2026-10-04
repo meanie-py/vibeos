@@ -428,7 +428,7 @@ pub unsafe extern "system" fn OleInitialize(_reserved: LPVOID) -> HRESULT {
     {
         TRACE!(b"() - Initializing the OLE libraries\n\0".as_ptr());
 
-        OLEClipbrd_Initialize();
+        // wine-10: no OLEClipbrd_Initialize -- the clipboard is created on first use.
         OLEDD_Initialize();
         OLEMenu_Initialize();
     }
@@ -455,7 +455,7 @@ pub unsafe extern "system" fn OleUninitialize() {
     {
         TRACE!(b"() - Freeing the last reference count\n\0".as_ptr());
 
-        OLEClipbrd_UnInitialize();
+        crate::ring::clipboard::clipbrd_uninitialize();
         OLEMenu_UnInitialize();
     }
 

@@ -22,6 +22,7 @@
  * tests that exist.
  */
 #include <windows.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -471,6 +472,55 @@ static void run_suite(const char *bindir, const char *suite,
     ++*launched;
 }
 
+/* The LiveCD's setup.exe (syssetup InstallLiveCD) registers COM components --
+ * actxprxy's proxy/stubs among them -- in the background, AFTER auto-start, and on a
+ * slow boot after the sweep has begun. A suite racing it sees REGDB_E_IIDNOTREG:
+ * ole32's compobj test failed CoRegisterClassObject(LOCAL_SERVER) on exactly that
+ * whenever it started before "InstallLiveCD: registering components" (2026-10-04).
+ * So wait for setup.exe to exit. No setup.exe (an installed system) passes at once. */
+static int setup_running(void)
+{
+    PROCESSENTRY32W pe;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    int found = 0;
+
+    if (snap == INVALID_HANDLE_VALUE)
+        return 0;
+    pe.dwSize = sizeof(pe);
+    if (Process32FirstW(snap, &pe))
+    {
+        do
+        {
+            if (!lstrcmpiW(pe.szExeFile, L"setup.exe"))
+            {
+                found = 1;
+                break;
+            }
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return found;
+}
+
+static void wait_for_livecd_setup(void)
+{
+    int waited = 0;
+
+    while (setup_running())
+    {
+        if (waited >= 900)
+        {
+            DbgPrint("[APITEST-SWEEP] WARN: setup.exe still running after %ds -- proceeding; "
+                     "COM registration may be incomplete\n", waited);
+            return;
+        }
+        Sleep(5000);
+        waited += 5;
+    }
+    if (waited)
+        DbgPrint("[APITEST-SWEEP] LiveCD setup finished (waited ~%ds)\n", waited);
+}
+
 int main(void)
 {
     char windir[MAX_PATH], bindir[MAX_PATH], listpath[MAX_PATH];
@@ -528,6 +578,8 @@ int main(void)
                 DbgPrint("[APITEST-SWEEP] SCM auto-start complete (waited ~%ds)\n", waited);
         }
     }
+
+    wait_for_livecd_setup();
 
     load_skips(bindir);
     load_child_cwd(bindir);
