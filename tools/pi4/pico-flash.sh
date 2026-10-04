@@ -40,7 +40,7 @@ log() { printf '[pico-flash] %s\n' "$*" >&2; }
 [ -f "$UF2" ] || { log "no UF2 at $UF2 (build it: bash tools/build.sh in picousb)"; exit 1; }
 python3 "$PICOUSB/tools/firmware_uf2.py" check "$UF2" || exit 1
 
-before=$("$HERE/pico.sh" usb) || { log "the Pico is not answering; nothing to update"; exit 1; }
+before=$(bash "$HERE/pico.sh" usb) || { log "the Pico is not answering; nothing to update"; exit 1; }
 log "before: $before"
 up_before=$(printf '%s' "$before" | sed -n 's/^uptime=\([0-9]*\)s.*/\1/p')
 
@@ -72,12 +72,12 @@ echo [pico-flash] no BOOTSEL volume appeared
 :finished
 NSH
 
-"$HERE/netboot.sh" --pico-flash || exit 1
+bash "$HERE/netboot.sh" --pico-flash || exit 1
 
 log "waiting for the Pico to come back on its new firmware"
 for _ in $(seq 1 60); do
     sleep 5
-    if after=$("$HERE/pico.sh" usb 2>/dev/null); then
+    if after=$(bash "$HERE/pico.sh" usb 2>/dev/null); then
         up=$(printf '%s' "$after" | sed -n 's/^uptime=\([0-9]*\)s.*/\1/p')
         # Its uptime restarting is the proof it rebooted, i.e. the copy finished.
         if [ -n "$up" ] && [ "$up" -lt "${up_before:-0}" ]; then

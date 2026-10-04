@@ -6,6 +6,7 @@
 #   tools/pi4/bench.sh down
 #   tools/pi4/bench.sh stage    # copy the current arm64 build into the TFTP payload
 #   tools/pi4/bench.sh http     # just the sanboot HTTP server (needs the TCP 8069 rule)
+#   tools/pi4/bench.sh serial-restart  # replace a listener whose capture has stalled
 #
 # The serial listener is PI4_SERIAL=pico (default): pico_serial.py in WSL, talking
 # to the Pico 2 W's GPIO UART bridge over Wi-Fi. PI4_SERIAL=com runs the old
@@ -73,7 +74,7 @@ except Exception as e:
 PY
     printf 'tftp server     : %s\n' "${t:-down}"
     printf 'http server     : %s\n' "$(pids 'serve_http.py' | xargs)"
-    printf 'power           : %s\n' "$("$HERE/power.sh" status 2>&1)"
+    printf 'power           : %s\n' "$(bash "$HERE/power.sh" status 2>&1)"
 }
 
 up() {
@@ -208,7 +209,19 @@ PY
 }
 
 . "$HERE/lease.sh"
-case "${1:-status}" in stage|down) pi4_lease ;; esac
+case "${1:-status}" in stage|down|serial-restart) pi4_lease ;; esac
+
+# A pico_serial.py whose stream has stalled still reports LISTENING/connected, and `up`
+# keeps a live listener, so it needs replacing explicitly (netboot names this command).
+serial_restart() {
+    local p
+    p=$(pico_serial_pid)
+    if [ -n "$p" ]; then
+        kill "$p" && echo "stopped pico_serial.py ($p)"
+        for _ in 1 2 3 4 5; do [ -z "$(pico_serial_pid)" ] && break; sleep 1; done
+    fi
+    up
+}
 
 case "${1:-status}" in
     status) status ;;
@@ -216,5 +229,6 @@ case "${1:-status}" in
     down) down ;;
     stage) stage ;;
     http) http ;;
-    *) echo "usage: $0 status|up|down|stage|http" >&2; exit 2 ;;
+    serial-restart) serial_restart ;;
+    *) echo "usage: $0 status|up|down|stage|http|serial-restart" >&2; exit 2 ;;
 esac
