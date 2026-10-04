@@ -179,9 +179,13 @@ const CDROM_HACK_BAD_GET_CONFIG_SUPPORT: u32 = 0x100;  // was 0x0001 (LLM-invent
 const CDROM_HACK_BAD_VENDOR_PROFILES: u32 = 0x1000;  // was 0x0002 (LLM-invented); bindgen-correct
 const CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG: u32 = 0x800;  // was 0x0004 (LLM-invented); bindgen-correct
 
-// _FEATURE_NUMBER_FeatureProfileList. Was 0x0003 ("example value"), which is
-// FeatureRemovableMedium: the MMC probe asked for the wrong starting feature.
-const FeatureProfileList: u32 = crate::types::_FEATURE_NUMBER_FeatureProfileList as u32;
+// HELD at 0x0003 (FeatureRemovableMedium) although cdrom.h's FeatureProfileList is 0x0000:
+// with the correct value QEMU's DVD-ROM fails the TYPE_ONE probe below, and the teardown
+// that follows goes through DeviceClaimRelease(Release) into FxRequest::Release reading
+// past its object (amd64/i386 BUGCHECK 0x19, arm64 hang; special pool on tag CDRO,
+// 2026-10-04). Restore the real value once that failure path is fixed (roadmap, "cdrom
+// FeatureProfileList").
+const FeatureProfileList: u32 = 0x0003;
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u32 = 0;
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE: u32 = 0x2;  // was 1 (LLM-invented); bindgen-correct
 

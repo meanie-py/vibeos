@@ -761,6 +761,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
   entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
   smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
+- **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
+  `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
+  cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
+  `DeviceGetMmcSupportInfo`'s TYPE_ONE probe (it answers with more than the one feature),
+  and the device start then tears down through `DeviceClaimRelease(Release)` ->
+  `WdfObjectDelete` -> `FxRequest::Release`, which reads past its object: amd64/i386
+  BUGCHECK 0x19 at the next free, arm64 hang. `--tripwire "SPECIALPOOL=CDRO"` (KMDF tags a
+  driver's objects with its service name) faults at the read: `wdf01000.sys+0x197FE`
+  under `cdrom-rust init.rs:313`. Bisected to the constant alone (the commit's registry
+  reads and CREATE context are innocent). The constant is held at 0x0003 with a comment;
+  owed: why start fails on a TYPE_ALL-style answer, and why releasing a request the
+  driver just created reads past it (likely a context-size mismatch between
+  `CDROM_REQUEST_CONTEXT_TYPE_INFO` and the struct). x64 lane.
 - **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
   updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
   early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
