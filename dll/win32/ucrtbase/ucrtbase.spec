@@ -1383,8 +1383,8 @@
 @ cdecl _o__resetstkoflw() _resetstkoflw
 @ cdecl _o__rmdir(str) _rmdir
 @ cdecl _o__rmtmp() _rmtmp
-@ cdecl _o__scalb(double long) scalbn
-@ cdecl -arch=x86_64 _o__scalbf(float long) scalbnf
+@ cdecl _o__scalb(double long) _scalb
+@ cdecl -arch=x86_64 _o__scalbf(float long) _scalbf
 @ cdecl _o__searchenv(str str ptr) _searchenv
 @ cdecl _o__searchenv_s(str str ptr long) _searchenv_s
 @ cdecl _o__seh_filter_dll(long ptr) _seh_filter_dll # __CppXcptFilter
@@ -1935,8 +1935,8 @@
 @ cdecl -ret64 _rotl64(int64 long)
 @ cdecl _rotr(long long)
 @ cdecl -ret64 _rotr64(int64 long)
-@ cdecl _scalb(double long) scalbn # double _scalb(double x, long exp);
-@ cdecl -arch=x86_64 _scalbf(float long) scalbnf # float _scalbf(float x, long exp);
+@ cdecl _scalb(double long)
+@ cdecl -arch=x86_64 _scalbf(float long)
 @ cdecl _searchenv(str str ptr)
 @ cdecl _searchenv_s(str str ptr long)
 @ cdecl _seh_filter_dll(long ptr) # __CppXcptFilter

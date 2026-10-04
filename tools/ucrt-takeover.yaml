@@ -1934,11 +1934,23 @@ families:
       - _controlfp
       - _statusfp
       - _statusfp2
+  scalbf_amd64:
+    provenance: wine-port
+    arches: [amd64]
+    replaces:
+      - ucrtbase.spec's x86_64 alias of _scalbf (and _o__scalbf) to scalbnf, which never reported overflow or underflow to _matherr
+    oracle: >
+      Its whole body is `ldexp(x, n)` in float, and cnt-rust's ldexp is what is graded: bit-exact against glibc in cnt-difftest, and its Wine math_error points by tools/payloads/matherrs (Wine's test_math_errors: ldexp and _scalb overflow/underflow rows, 304 checks, 0 failed on all three arches).
+    note: >
+      Wine's _scalbf is `return ldexp(num, power);` from a float function; src/c99math.rs, beside _scalb (which a C library on ucrtbase's link line also defines, so it needs no declaration here). The export exists only on x86_64.
+    exports:
+      - _scalbf
   c99math:
     provenance: libm-crate
     replaces:
       - the ucrtbase.spec -stub entries for the C99 math functions and _fpclassf/_dpcomp/_fdpcomp/_Cbuild/creal (Microsoft's UCRT source drop has no libm, so no body existed in any CRT source here)
       - dll/win32/ucrtbase/stubs.c's fma/fmaf (unfused), log2/log2f (log * M_LOG2E) and lrint/lrintf (__debugbreak)
+      - ucrtbase.spec's aliasing of _scalb/_scalbf (and _o__scalb/_o__scalbf) to scalbn/scalbnf, which never reported overflow to _matherr; Wine's _scalb is ldexp
     oracle: >
       tools/payloads/c99math in the guest on all three arches -- values vs the host glibc libm within a per-row ulp budget (exact where the Windows contract or a correctly-rounded value differs from glibc), errno vs the UCRT contract (Wine's test_math_errors rows and its native-verified msvcr120 remainder/_dpcomp/_Cbuild tables), rint/nearbyint/rintf in all four rounding modes, nearbyint's inexact discipline, remquo's quotient, _fpclassf -- i386 482, amd64 492, arm64 492 checks, 0 failed at first landing, i386 588, amd64 604, arm64 604 with fma/log2/lrint and the msvcrt.dll pow/log10/fmod rows; a mutant (remainder's NaN domain clause dropped) fails 3. The first run found two real bugs: libm's aarch64 rint ignores the rounding mode (now frintx/frinti), and sdk/lib/crt's i386 _controlfp never reached MXCSR (now Wine's both-unit quartet in fenv.rs).
     note: >

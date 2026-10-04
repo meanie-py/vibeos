@@ -241,7 +241,8 @@ pub unsafe extern "C" fn __cnt_math_error(
     arg2: f64,
     retval: f64,
 ) -> f64 {
-    math_error(r#type, name, arg1, arg2, retval)
+    // 0x100 marks a report only msvcrt (before msvcr140) makes; this is that msvcrt.
+    math_error(r#type & 0xff, name, arg1, arg2, retval)
 }
 
 #[no_mangle]

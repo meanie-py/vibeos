@@ -2,7 +2,7 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-38 vendored C/C++ components:
+37 vendored C/C++ components:
 
 - [AC'97 audio sample driver](#ac97-audio-sample-driver) — unknown — MIT
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
@@ -13,7 +13,6 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [dosfstools (fsck.fat)](#dosfstools-fsckfat) — 4.1 — GPL-3.0-or-later
 - [dxtn (S3TC)](#dxtn-s3tc) — unknown — MIT
 - [EDK2 / TianoCore headers](#edk2--tianocore-headers) — unknown — BSD-2-Clause
-- [FDLIBM (Sun Microsystems freely-distributable libm)](#fdlibm-sun-microsystems-freely-distributable-libm) — 1.8 — FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
 - [FEX-Emu](#fex-emu) — FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08) — MIT
 - [FreeType](#freetype) — 2.10.4 — GPL-2.0-only
 - [libdxg D3DKMT thunk header](#libdxg-d3dkmt-thunk-header) — git commit 045831e — MIT
@@ -1343,30 +1342,6 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
 ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
-```
-
-## FDLIBM (Sun Microsystems freely-distributable libm)
-
-- Upstream: https://github.com/NetBSD/src (lib/libm/src) — FDLIBM-derived; ancestral source https://www.netlib.org/fdlibm/
-- Version: 1.8
-- In this tree: `sdk/lib/crt/math/ieee754`
-- Licence: FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
-- Grant reproduced from: `sdk/lib/crt/math/ieee754/j0_y0.c (header comment)`
-
-```
-@(#)e_j0.c 5.1 93/09/24 */
-
-====================================================
-Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
-
-Developed at SunPro, a Sun Microsystems, Inc. business.
-Permission to use, copy, modify, and distribute this
-software is freely granted, provided that this notice
-is preserved.
-====================================================
-
-Modified by Naohiko Shimizu/Tokai University, Japan 1997/08/26,
-   for performance improvement on pipelined processors.
 ```
 
 ## FEX-Emu
