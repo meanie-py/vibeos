@@ -42,6 +42,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from source_walk import source_files
+
 REPO = Path(__file__).resolve().parents[1]
 NOLINT = "nolint: duplicate-symbol"
 
@@ -155,7 +158,7 @@ def _nolint(d: Definer, symbol: str) -> bool:
     crate = REPO / "sdk/lib/rust" / m.group(1).replace("_", "-") / "src"
     name = re.sub(r"@\d+$", "", symbol).lstrip("_@") or symbol
     defn = re.compile(rf"\bfn\s+_?{re.escape(name)}\s*[(<]|\b{re.escape(name)}:")
-    for path in crate.rglob("*.rs") if crate.is_dir() else ():
+    for path in source_files(crate) if crate.is_dir() else ():
         for i, ln in enumerate(path.read_text(errors="replace").splitlines(), 1):
             if defn.search(ln) and _marked(path, i):
                 return True
