@@ -1304,11 +1304,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     every MP boot, from the `KeIpiGenericCall` self-test. Upstream never implemented
     `KiIpiSendPacket`; our assert names a level its only caller does not raise to (it calls at
     DISPATCH), and it went live with `c4d82e425fc`. Non-fatal; decide the contract.
-    amd64 `-smp 2` and `-smp 4`: the boot death seen 2026-09-25 (csrss exits, crit, 0xF4;
-    winlogon AV) is GONE. Re-measured 2026-10-03, one boot each at `310c39bf411`: amd64
-    `-smp 2` desktop in 2m11s, `-smp 4` in 2m38s with CPUs 1-3 scheduling and net OK; i386
-    `-smp 2`/`-smp 4` desktop in 53s/56s with the IPI self-test at `0x3`/`0xf`. The fixing
-    commit was not identified. So the amd64 race phase is now runnable and OWED.
+    amd64 `-smp 2` and `-smp 4`: the boot death seen 2026-09-25 is NOT gone -- it is
+    intermittent, and a one-boot-per-cell check on 2026-10-03 that read "gone" was wrong.
+    Measured 2026-10-03/04 at `-smp 2`: 2 of 8 boots reached the desktop. Faces: csrss
+    `0xC000001D` TWICE at the identical address `basesrv+0x2af86` (int3 padding after the
+    `RtlCreateUnicodeString` import thunk, with the caller's return address still at
+    `[rsp]`, so the bytes executed were not the file's); `0x6B` with `0xC0000032`
+    (STATUS_DISK_CORRUPT_ERROR) in process init; a `0x1E` executing at `0x8f654`; and two
+    `0x7F/8` double faults inside the unwinder (`RtlVirtualUnwind`, `RtlpUnwindInternal`),
+    which read as the secondary effect of unwinding from a garbage PC. Common shape: memory
+    the CPU used differed from what was written. Not a missing shootdown at the export:
+    `KeInvalidateTlbEntry` in `ntkrnlmp.exe` does `invlpg` then tail-jumps to
+    `ki_tb_shootdown`. `[KI-EXC]` now prints the faulting CPU, the code page's physical
+    address and the bytes around RIP, so the next csrss sample settles code-page vs.
+    wrong-target. `-smp 4` boots more reliably (4/4 desktop) but one kmtest boot double-
+    faulted the same way, and **rpmprobe reaches the desktop and then prints nothing for
+    20 minutes**, while the same media at `-smp 1` passes everything including the race
+    (191,164 copies, 0 silent). OWED.
   - FIXED: `ReadProcessMemory` over an uncommitted page bugchecked (0x1E from
     `MmProbeAndLockPages` in `MiDoMappedCopy`). See the `MmCopyVirtualMemory` entry below.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers

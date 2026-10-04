@@ -674,6 +674,37 @@ pub unsafe extern "system" fn KiDispatchException(
             // The stack words: when RIP is not code at all (a call through a garbage pointer),
             // the caller is the return address at [RSP], and nothing else on this line names
             // it. Print RSP and the first qwords above it that look like user code addresses.
+            // The bytes the CPU actually fetched, which CPU it was, and the physical page
+            // behind them. csrss died at -smp 2 with 0xC000001D on an address whose file
+            // bytes are int3 padding -- illegal only if memory differs from the image. With
+            // these, one sample says whether the code page is wrong (bytes differ from the
+            // file) or execution arrived through a wrong target (bytes match), and whether
+            // it tracks one processor.
+            let rip = (*TrapFrame).Rip as usize;
+            let line = (rip & !0xf).wrapping_sub(0x10);
+            let phys = if MmIsAddressValid(rip as _) != 0 {
+                ntkrnl_sys::ddk::MmGetPhysicalAddress(rip as _).QuadPart as usize
+            } else {
+                0
+            };
+            crate::dbg_print!(
+                b"[KI-EXC]   cpu=%lu rip.phys=%p\n\0",
+                ntkrnl_sys::ddk::KeGetCurrentProcessorNumber() as u32,
+                phys,
+            );
+            let mut q = 0usize;
+            while q < 4 {
+                let a = line + q * 8;
+                if MmIsAddressValid(a as _) == 0 {
+                    break;
+                }
+                crate::dbg_print!(
+                    b"[KI-EXC]   code[%p]=%p\n\0",
+                    a,
+                    core::ptr::read_unaligned(a as *const u64).swap_bytes() as usize,
+                );
+                q += 1;
+            }
             let rsp = (*TrapFrame).Rsp as usize;
             crate::dbg_print!(b"[KI-EXC]   rsp=%p\n\0", rsp);
             let mut shown = 0;
