@@ -1918,12 +1918,19 @@ unsafe extern "C" fn PropertyStorage_DictionaryWriter(
     if (*This).codePage == CP_UNICODE {
         let mut keyLen: DWORD = 0;
         let pad: DWORD = 0;
+        // The on-disk entry length of a CP_UNICODE dictionary is a CHARACTER count:
+        // PropertyStorage_ReadDictionary (same file) reads it as one and doubles it to
+        // bytes. The pre-wine-10 C wrote a BYTE count here and then added
+        // `keyLen * sizeof(WCHAR)` to bytesWritten, so a dictionary this wrote could not be
+        // read back (the reader skipped twice the string) and every property offset after
+        // it in the section was shifted by the doubled count. Write the character count,
+        // and account the string, its padding and the section offset in bytes -- what
+        // wine-10.0 does, keeping the old reader-matching padding rule (pad only when the
+        // byte length is not already DWORD-aligned; wine-10 pads a full DWORD when it is).
+        let cchKey: DWORD = (lstrlenW(key as LPCWSTR) + 1) as DWORD;
+        let cbKey: DWORD = cchKey * core::mem::size_of::<WCHAR>() as DWORD;
 
-        StorageUtl_WriteDWord(
-            core::ptr::addr_of_mut!(keyLen) as LPBYTE,
-            0,
-            ((lstrlenW(key as LPCWSTR) + 1) * core::mem::size_of::<WCHAR>() as i32) as DWORD,
-        );
+        StorageUtl_WriteDWord(core::ptr::addr_of_mut!(keyLen) as LPBYTE, 0, cchKey);
         (*c).hr = IStream_Write(
             (*This).stm,
             core::ptr::addr_of!(keyLen) as *const c_void,
@@ -1939,34 +1946,26 @@ unsafe extern "C" fn PropertyStorage_DictionaryWriter(
         (*c).hr = PropertStorage_WriteWStringToStream(
             (*This).stm,
             key as LPCWSTR,
-            keyLen,
+            cbKey,
             core::ptr::addr_of_mut!(count),
         );
         if FAILED((*c).hr) {
             return SUCCEEDED((*c).hr) as BOOL;
         }
-        // UPSTREAM BUG (stg_prop.c:1621): `c->bytesWritten += keyLen * sizeof(WCHAR)` —
-        // keyLen is already a BYTE count (set two statements up), so the running total
-        // is doubled for unicode dictionaries. Preserved bug-for-bug.
-        (*c).bytesWritten = (*c)
-            .bytesWritten
-            .wrapping_add(keyLen.wrapping_mul(core::mem::size_of::<WCHAR>() as DWORD));
-        if keyLen % core::mem::size_of::<DWORD>() as DWORD != 0 {
+        (*c).bytesWritten = (*c).bytesWritten.wrapping_add(cbKey);
+        if cbKey % core::mem::size_of::<DWORD>() as DWORD != 0 {
+            let cbPad = core::mem::size_of::<DWORD>() as DWORD
+                - cbKey % core::mem::size_of::<DWORD>() as DWORD;
             (*c).hr = IStream_Write(
                 (*This).stm,
                 core::ptr::addr_of!(pad) as *const c_void,
-                (core::mem::size_of::<DWORD>() as DWORD)
-                    .wrapping_sub(keyLen % core::mem::size_of::<DWORD>() as DWORD)
-                    as ULONG,
+                cbPad as ULONG,
                 core::ptr::addr_of_mut!(count),
             );
             if FAILED((*c).hr) {
                 return SUCCEEDED((*c).hr) as BOOL;
             }
-            (*c).bytesWritten = (*c).bytesWritten.wrapping_add(
-                (core::mem::size_of::<DWORD>() as DWORD)
-                    .wrapping_sub(keyLen % core::mem::size_of::<DWORD>() as DWORD),
-            );
+            (*c).bytesWritten = (*c).bytesWritten.wrapping_add(cbPad);
         }
     } else {
         let mut keyLen: DWORD = 0;

@@ -95,13 +95,13 @@ unsafe fn disable_interrupts() {
 
 #[cfg(not(feature = "minihal"))]
 #[inline(always)]
-unsafe fn kx_acquire_spinlock(lock: PKSPIN_LOCK) {
+pub(crate) unsafe fn kx_acquire_spinlock(lock: PKSPIN_LOCK) {
     unsafe { ntkrnl_sys::inline::ke::KxAcquireSpinLock(lock as *mut _) }
 }
 
 #[cfg(not(feature = "minihal"))]
 #[inline(always)]
-unsafe fn kx_release_spinlock(lock: PKSPIN_LOCK) {
+pub(crate) unsafe fn kx_release_spinlock(lock: PKSPIN_LOCK) {
     unsafe { ntkrnl_sys::inline::ke::KxReleaseSpinLock(lock as *mut _) }
 }
 
@@ -113,13 +113,13 @@ unsafe fn kx_release_spinlock(lock: PKSPIN_LOCK) {
 // nothing to exclude either way.
 #[cfg(feature = "minihal")]
 #[inline(always)]
-unsafe fn kx_acquire_spinlock(_lock: PKSPIN_LOCK) {
+pub(crate) unsafe fn kx_acquire_spinlock(_lock: PKSPIN_LOCK) {
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
 
 #[cfg(feature = "minihal")]
 #[inline(always)]
-unsafe fn kx_release_spinlock(_lock: PKSPIN_LOCK) {
+pub(crate) unsafe fn kx_release_spinlock(_lock: PKSPIN_LOCK) {
     core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
 

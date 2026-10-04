@@ -346,14 +346,22 @@ unsafe extern "C" fn AddListViewItems(hwndDlg: HWND, pData: PBACKGROUND_DATA) {
                 }
             }
 
-            SHGetFileInfoW(
+            // Upstream 3016c40dc72 (CORE-19896): a wallpaper file that has since been deleted
+            // must not be listed, and the icon SHGetFileInfoW hands back is ours to destroy
+            // once the image list has copied it (it leaked one HICON per page open before).
+            if SHGetFileInfoW(
                 wallpaperFilename.as_ptr(),
                 0,
                 (&mut sfi as *mut _ as *mut core::ffi::c_void).cast(),
                 core::mem::size_of_val(&sfi) as u32,
                 SHGFI_ICON | SHGFI_SMALLICON | SHGFI_DISPLAYNAME,
-            );
+            ) == 0
+            {
+                RegCloseKey(regKey);
+                return;
+            }
             sfi.iIcon = ImageList_AddIcon!(himl, sfi.hIcon);
+            DestroyIcon(sfi.hIcon);
 
             i += 1;
 
