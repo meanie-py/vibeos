@@ -3472,12 +3472,16 @@ extern "C" fn __ieee754_j0(x: f64) -> f64 { fdlibm_nan(x, libm::j0) }
 extern "C" fn __ieee754_j1(x: f64) -> f64 { fdlibm_nan(x, libm::j1) }
 #[no_mangle]
 extern "C" fn __ieee754_jn(n: i32, x: f64) -> f64 { fdlibm_nan(x, |x| libm::jn(n, x)) }
+// y0/y1/yn of a negative argument: FDLIBM's run-time `zero/zero`, the CPU's default NaN.
+fn fdlibm_neg(x: f64, f: impl Fn(f64) -> f64) -> f64 {
+    if x < 0.0 { std::hint::black_box(0.0f64) / std::hint::black_box(0.0f64) } else { f(x) }
+}
 #[no_mangle]
-extern "C" fn __ieee754_y0(x: f64) -> f64 { fdlibm_nan(x, libm::y0) }
+extern "C" fn __ieee754_y0(x: f64) -> f64 { fdlibm_nan(x, |x| fdlibm_neg(x, libm::y0)) }
 #[no_mangle]
-extern "C" fn __ieee754_y1(x: f64) -> f64 { fdlibm_nan(x, libm::y1) }
+extern "C" fn __ieee754_y1(x: f64) -> f64 { fdlibm_nan(x, |x| fdlibm_neg(x, libm::y1)) }
 #[no_mangle]
-extern "C" fn __ieee754_yn(n: i32, x: f64) -> f64 { fdlibm_nan(x, |x| libm::yn(n, x)) }
+extern "C" fn __ieee754_yn(n: i32, x: f64) -> f64 { fdlibm_nan(x, |x| fdlibm_neg(x, |x| libm::yn(n, x))) }
 
 fn diff_math_bessel() {
     let mut rng = Rng(0xbe55_e100_d00d_f00d);
@@ -3532,6 +3536,13 @@ fn diff_math_bessel() {
         let x = f64::from_bits(b);
         for v in [cabi::_j0(x), cabi::_j1(x), cabi::_jn(3, x), cabi::_y0(x), cabi::_y1(x), cabi::_yn(3, x)] {
             assert_eq!(v.to_bits(), q, "Bessel NaN payload {b:#018x}");
+        }
+    }
+    // ...and a negative argument to y0/y1/yn is the CPU's default NaN (0xFFF8... here).
+    let dflt = (std::hint::black_box(0.0f64) / std::hint::black_box(0.0f64)).to_bits();
+    for x in [-1.0, -f64::MAX, -1e-320, f64::NEG_INFINITY] {
+        for v in [cabi::_y0(x), cabi::_y1(x), cabi::_yn(3, x)] {
+            assert_eq!(v.to_bits(), dflt, "y of negative {x}");
         }
     }
 

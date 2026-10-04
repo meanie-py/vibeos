@@ -4131,6 +4131,15 @@ extern "C" fn bessel_nan(x: f64) -> f64 {
     fb64(x.to_bits() | 0x0008_0000_0000_0000)
 }
 
+/// FDLIBM's y0/y1/yn of a negative argument: `zero/zero`, evaluated at run time, so it is
+/// this CPU's default NaN -- `0xFFF8000000000000` on x86, which msvcrt_apitest's ieee rows
+/// expect. `libm` writes the same division, but rustc folds it to `f64::NAN` (`0x7FF8...`).
+#[cfg(feature = "cabi-math")]
+#[inline(always)]
+extern "C" fn bessel_neg() -> f64 {
+    core::hint::black_box(0.0f64) / core::hint::black_box(0.0f64)
+}
+
 /// `double _j0(double)` — `math/j0_y0.c`.
 #[cfg(feature = "cabi-math")]
 #[no_mangle]
@@ -4185,7 +4194,13 @@ pub extern "C" fn _y0(num: f64) -> f64 {
         {
             *_errno() = EDOM;
         }
-        y_domain_epilogue(if num.is_nan() { bessel_nan(num) } else { libm::y0(num) })
+        y_domain_epilogue(if num.is_nan() {
+            bessel_nan(num)
+        } else if num < 0.0 {
+            bessel_neg()
+        } else {
+            libm::y0(num)
+        })
     }
 }
 
@@ -4202,7 +4217,13 @@ pub extern "C" fn _y1(num: f64) -> f64 {
         {
             *_errno() = EDOM;
         }
-        y_domain_epilogue(if num.is_nan() { bessel_nan(num) } else { libm::y1(num) })
+        y_domain_epilogue(if num.is_nan() {
+            bessel_nan(num)
+        } else if num < 0.0 {
+            bessel_neg()
+        } else {
+            libm::y1(num)
+        })
     }
 }
 
@@ -4218,6 +4239,12 @@ pub extern "C" fn _yn(order: i32, num: f64) -> f64 {
         if _finite(num) == 0 {
             *_errno() = EDOM;
         }
-        y_domain_epilogue(if num.is_nan() { bessel_nan(num) } else { libm::yn(order, num) })
+        y_domain_epilogue(if num.is_nan() {
+            bessel_nan(num)
+        } else if num < 0.0 {
+            bessel_neg()
+        } else {
+            libm::yn(order, num)
+        })
     }
 }
