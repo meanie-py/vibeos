@@ -61,7 +61,14 @@ list(APPEND SOURCE
     # usrmarshal.c — replaced by Rust (ole32-rust ring/usrmarshal.rs — the NDR *_User{Size,Marshal,Unmarshal,Free} helpers)
     )
 
+# The stub manager's guarded object release (see the file header): a real __try on
+# amd64/arm64; i386 keeps the DUMMY pass-through.
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    set_source_files_properties(stubmanager_seh.c PROPERTIES COMPILE_DEFINITIONS _USE_NATIVE_SEH)
+endif()
+
 list(APPEND PCH_SKIP_SOURCE
+    stubmanager_seh.c
     guid.c
     ${CMAKE_CURRENT_BINARY_DIR}/dcom_p.c
     ${CMAKE_CURRENT_BINARY_DIR}/ole32_objidl_p.c

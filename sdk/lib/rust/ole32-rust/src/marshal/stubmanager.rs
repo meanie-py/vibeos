@@ -18,6 +18,12 @@
 
 use super::types::*;
 
+extern "C" {
+    /// dll/win32/ole32/stubmanager_seh.c: IUnknown_Release under a native __try
+    /// (amd64/arm64); FALSE if the release faulted and the fault was swallowed.
+    fn ole32_release_object_guarded(object: *mut IUnknown) -> BOOL;
+}
+
 /// generates an ipid in the following format (similar to native version):
 /// Data1 = apartment-local ipid counter
 /// Data2 = apartment creator thread ID, or 0 for an MTA (wine-10)
@@ -296,10 +302,12 @@ unsafe fn stub_manager_delete(m: *mut stub_manager) {
     CoTaskMemFree((*m).oxid_info.psa as PVOID);
 
     /* C: __TRY / __EXCEPT_PAGE_FAULT around the release ("some broken apps
-     * crash in object destructors"). The C is built with USE_DUMMY_PSEH, so
-     * the guard is compiled out there too — a plain call is the faithful
-     * translation of the shipping binary. */
-    (*m).object.Release();
+     * crash in object destructors"; XP+ swallows the fault). The guard lives in
+     * a native-SEH C thunk (dll/win32/ole32/stubmanager_seh.c), since Rust has
+     * no __try and DUMMY_PSEH had compiled the C's out. */
+    if ole32_release_object_guarded((*m).object) == FALSE {
+        ERR!("Got page fault when releasing stub!\n");
+    }
 
     DEBUG_CLEAR_CRITSEC_NAME(core::ptr::addr_of_mut!((*m).lock));
     DeleteCriticalSection(core::ptr::addr_of_mut!((*m).lock));
