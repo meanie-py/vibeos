@@ -178,24 +178,6 @@ fn user_data_offset() -> u32 {
 }
 
 // ============================================================================
-// ARM64 QEMU TCG workaround
-// ============================================================================
-
-#[cfg(all(not(test), target_arch = "aarch64"))]
-#[inline]
-unsafe fn gt_barrier() {
-    // Memory barrier only — UART trace removed (Arm64UartKernelBase is
-    // kernel-only and not available when linked into user-mode DLLs like ntdll).
-    core::arch::asm!("dsb sy", "isb", options(nostack, preserves_flags));
-}
-
-#[cfg(any(test, not(target_arch = "aarch64")))]
-#[inline]
-unsafe fn gt_barrier() {
-    // No-op on non-ARM64
-}
-
-// ============================================================================
 // Extern splaytree functions (resolved at link time)
 // ============================================================================
 
@@ -238,7 +220,6 @@ unsafe fn find_node_or_parent(
     buffer: *const c_void,
     node_or_parent: *mut *mut SplayLinks,
 ) -> u32 {
-    gt_barrier();
 
     // Empty tree check
     if (*table).table_root.is_null() {
@@ -253,21 +234,7 @@ unsafe fn find_node_or_parent(
         return TABLE_EMPTY_TREE;
     }
 
-    #[cfg(target_arch = "aarch64")]
-    let mut loop_count: u32 = 0;
-
     loop {
-        #[cfg(target_arch = "aarch64")]
-        {
-            loop_count += 1;
-            if loop_count > 100_000 {
-                // Infinite loop safety — break out
-                *node_or_parent = current;
-                return TABLE_INSERT_AS_LEFT;
-            }
-        }
-
-        gt_barrier();
         let result = ((*table).compare_routine)(table, buffer, node_to_user_data(current));
 
         if result == GENERIC_LESS_THAN {
@@ -328,7 +295,6 @@ pub unsafe fn generic_table_insert_full(
 
     if search_result != TABLE_FOUND_NODE {
         // Allocate a new node
-        gt_barrier();
         let alloc_size = buffer_size + user_data_offset();
         let raw = ((*table).allocate_routine)(table, alloc_size);
         if raw.is_null() {
@@ -366,7 +332,6 @@ pub unsafe fn generic_table_insert_full(
     }
 
     // Splay the tree
-    gt_barrier();
     (*table).table_root = RtlSplay(new_node);
 
     if !new_element.is_null() {
@@ -477,7 +442,6 @@ mod ffi {
             return core::ptr::null_mut();
         }
 
-        gt_barrier();
         (*table).table_root = RtlSplay(*(node_or_parent as *mut *mut SplayLinks));
         node_to_user_data(*(node_or_parent as *mut *mut SplayLinks))
     }
@@ -500,7 +464,6 @@ mod ffi {
         (*table).which_ordered_element = 0;
         (*table).ordered_pointer = &mut (*table).insert_order_list;
 
-        gt_barrier();
         ((*table).free_routine)(table, node_or_parent as *mut c_void);
         1
     }
@@ -522,13 +485,11 @@ mod ffi {
             while !sl_left(node).is_null() {
                 node = sl_left(node);
             }
-            gt_barrier();
             (*table).table_root = RtlSplay(node);
             found_node = node;
         } else {
             let node = RtlRealSuccessor((*table).table_root);
             if !node.is_null() {
-                gt_barrier();
                 (*table).table_root = RtlSplay(node);
             }
             found_node = node;

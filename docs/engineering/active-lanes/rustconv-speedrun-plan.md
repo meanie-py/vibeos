@@ -143,9 +143,33 @@ every translated body. **Owed, in order:**
      32-bit ARM); six empty `#[cfg(x86)] {}` blocks in ExpInitializeExecutive phase 1.
      Deliberate, left: kernel32 WoW64 CSR leniency (already nolint'd), SharedUserData
      ImageNumber WoW64 range, kdbg absent on arm64.
-   - Owed: iomgr `IopInitializeSystemDrivers` arm64 loads only netstack/afd/npfs instead
-     of the CmGetSystemDriverList loop (works around ZwLoadDriver hanging on
-     ramdisk-absent services) — a BRINGUP-SHORTCUT that needs the hang root-caused.
+   - ~~Owed: iomgr `IopInitializeSystemDrivers` arm64 shortcut~~ gone upstream of us:
+     `4b80ba728a8` gave arm64 the livecd file set, so it loads the registry's list.
+   - DONE 2026-10-04, the four arm64 shortcuts owed above:
+     - `MiGetPfnEntry` ignored the PFN bitmap on arm64 because the bitmap was WRONG
+       there: arm64's MiInitMachineDependent never did `*MxFreeDescriptor =
+       MxOldFreeDescriptor` (i386 and amd64 do), so every page MxGetNextPage carved
+       (page tables, initial nonpaged pool: PFN 0x5E486-0x5E982 on QEMU virt) was
+       absent from MmPhysicalMemoryBlock. A `#[track_caller]` probe counted 2922
+       bitmap-clear lookups per boot across pool/procsup/mdlsup/iosup; with the
+       restore only iosup's MMIO/firmware lookups (GIC 0x8000, virtio 0xA000,
+       0x7C3FF/0x7C7A0) still miss, which is the C's "this is I/O" answer. So the
+       shortcut was also mapping device MMIO with RAM cache attributes and leaving
+       MmUnmapIoSpace's PTEs unzeroed. Bitmap honoured on every arch now; procsup's
+       arm64-only NULL guard went with it.
+     - `MiBalancerThreadInner`: NO_PAGES_AVAILABLE on every arch (C and Rust). The
+       arm64 `break` ("no pagefile") never fired in 530 fleet arm64 boots, and no
+       arch has a pagefile on the livecd.
+     - generictable: arm64's 100k-iteration splay-walk guard returned INSERT_AS_LEFT
+       (silently wrong on a deep tree) and its `dsb sy; isb` "TCG workaround" had no
+       C counterpart. Both removed.
+     - `KeSetTimeIncrement`: probed, NO change. arm64's InterruptTime / SharedUserData
+       TickCount / KeTickCount are 0 at that point (3 boots), so it lacks amd64's
+       stale-base hang. (Both loaders zero the page, so who dirties it on amd64 is
+       still unexplained.)
+   - Owed, seen while there: ex-rust `pool.rs` arm64 eagerly commits PAGED pool
+     (other arches demand-zero), and its arm64 "clear residual allocation bits"
+     blocks are clear-then-set no-ops.
    - DONE, tooling: scan_cfg_vs_c now has a UP/SMP axis (C `CONFIG_SMP` = Rust
      `feature = "smp"`). First find: KeBugCheckWithTf's CPU freeze was gated on x86/x86_64
      (C: `#ifdef CONFIG_SMP`) — ran in UP kernels, never on arm64 SMP. Now

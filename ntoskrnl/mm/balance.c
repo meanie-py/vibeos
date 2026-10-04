@@ -399,14 +399,8 @@ MiBalancerThread(PVOID Unused)
                 if (InitialTarget != 0 &&
                     InitialTarget == OldTarget)
                 {
-#ifdef _M_ARM64
-                    /* ARM64: No pagefile — we can't free pages by paging out.
-                     * Just break out of the loop instead of bugchecking. */
-                    break;
-#else
                     /* Game over */
                     KeBugCheck(NO_PAGES_AVAILABLE);
-#endif
                 }
             }
             while (InitialTarget != 0);
