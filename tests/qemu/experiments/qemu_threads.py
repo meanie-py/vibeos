@@ -74,23 +74,33 @@ def main() -> None:
     if hot:
         _, _, comm = hot
         if "KVM" in comm or "CPU" in comm:
-            print(f"\nVERDICT: the vCPU thread ({comm}) is hot ⇒ guest-side: "
-                  f"either hlt is being woken (re-check exit reasons / pending "
-                  f"vector) OR a guest PIO/MMIO poll loop causes a vmexit storm "
-                  f"(KVM vCPU thread burns host CPU even with guest 'idle').")
+            print(
+                f"\nVERDICT: the vCPU thread ({comm}) is hot ⇒ guest-side: "
+                f"either hlt is being woken (re-check exit reasons / pending "
+                f"vector) OR a guest PIO/MMIO poll loop causes a vmexit storm "
+                f"(KVM vCPU thread burns host CPU even with guest 'idle')."
+            )
         else:
-            print(f"\nVERDICT: a non-vCPU QEMU thread ({comm}) is hot ⇒ "
-                  f"QEMU device-emulation hot loop, NOT a guest bug. The guest "
-                  f"is genuinely idle; the host burn is QEMU emulating some "
-                  f"device (likely whatever the guest left actively polling).")
+            print(
+                f"\nVERDICT: a non-vCPU QEMU thread ({comm}) is hot ⇒ "
+                f"QEMU device-emulation hot loop, NOT a guest bug. The guest "
+                f"is genuinely idle; the host burn is QEMU emulating some "
+                f"device (likely whatever the guest left actively polling)."
+            )
 
     # KVM exit-reason stats if debugfs is readable (often needs privilege).
     kdir = Path("/sys/kernel/debug/kvm")
     if kdir.exists() and os.access(kdir, os.R_OK):
         try:
             stats = {}
-            for f in ("halt_exits", "io_exits", "mmio_exits", "irq_exits",
-                      "halt_poll_success_ns", "halt_wakeup"):
+            for f in (
+                "halt_exits",
+                "io_exits",
+                "mmio_exits",
+                "irq_exits",
+                "halt_poll_success_ns",
+                "halt_wakeup",
+            ):
                 p = kdir / f
                 if p.exists():
                     stats[f] = p.read_text().strip()

@@ -24,8 +24,7 @@ def main() -> None:
     print("=== boot i386 (livecd Run key -> start notepad.exe) ===")
     vm.start()
     vm.wait_for_boot()
-    print("  desktop up; waiting 25s for explorer to process Run key + "
-          "notepad to render...")
+    print("  desktop up; waiting 25s for explorer to process Run key + notepad to render...")
     time.sleep(25)
 
     ppm = vm.work_dir / "agent.ppm"
@@ -33,6 +32,7 @@ def main() -> None:
     png = PROJECT_DIR / "qemu" / "i386_agent_notepad.png"
     try:
         from PIL import Image
+
         Image.open(ppm).save(png, "PNG")
         sz = png.stat().st_size
     except Exception as e:

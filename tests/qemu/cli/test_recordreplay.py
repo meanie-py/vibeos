@@ -1086,6 +1086,19 @@ def test_a_recording_is_never_a_gate_boot(tmp_path):
         assert cmd[1] in ("conformance", "smoke")
 
 
+def test_a_smoke_recording_never_runs_the_net_stage(tmp_path):
+    """amd64's smoke runs a second boot for its net suite. Under the rr env that boot
+    re-staged fresh overlays over the trace's media after the recording ended, and the
+    replay then failed with "Snapshot 'init' does not exist" -- the first x86 trace was
+    destroyed by its own recorder."""
+    from .rrcmd import _boot_cmd
+
+    for arch in ("amd64", "i386", "arm64"):
+        cmd = _boot_cmd(tmp_path, arch, "none", 1, False, 600)
+        assert cmd[1] == "smoke"
+        assert "--no-net" in cmd
+
+
 def test_a_trace_from_before_the_finalisation_fix_is_refused(tmp_path):
     """Traces recorded before `rr record` waited for the trace to stop growing are
     TRUNCATED and look identical from the outside — same manifest, media, pristine,

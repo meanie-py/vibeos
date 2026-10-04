@@ -328,9 +328,26 @@ macro_rules! kdio_printf {
 pub unsafe extern "system" fn KdbpAcquireLock(SpinLock: *mut KSPIN_LOCK) -> KIRQL {
     let mut OldIrql: KIRQL = 0;
 
+    extern "C" {
+        static KeBugCheckActive: ULONG;
+    }
     loop {
         // Spin while the lock is held (KeTestSpinLock returns FALSE while held).
-        while KeTestSpinLock(SpinLock) == 0 {}
+        //
+        // ...but not forever once a bugcheck is under way. The bugcheck freezes the
+        // other CPUs, and amd64 delivers that freeze by NMI, which HIGH_LEVEL does not
+        // mask: a CPU can be parked FOR GOOD while holding this lock, and every crash
+        // print after it would spin here with the evidence unwritten. After a bounded
+        // wait the bugchecking CPU takes the lock; interleaved output beats none.
+        let mut spins: u64 = 0;
+        while KeTestSpinLock(SpinLock) == 0 {
+            spins += 1;
+            if spins > 20_000_000 && core::ptr::read_volatile(core::ptr::addr_of!(KeBugCheckActive)) != 0 {
+                KeRaiseIrql(HIGH_LEVEL_IRQL, &mut OldIrql);
+                return OldIrql;
+            }
+            core::hint::spin_loop();
+        }
 
         KeRaiseIrql(HIGH_LEVEL_IRQL, &mut OldIrql);
 

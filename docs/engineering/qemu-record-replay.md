@@ -131,12 +131,39 @@ the config that caused it. So the transform refuses up front:
 | an existing `-icount` | we will not record on top of someone else's counting config |
 | no `-drive` at all | `rrsnapshot=` needs a snapshot-capable image |
 | the `windows-host` backend | media stage into a Windows path; the trace would straddle two path namespaces |
-| a drive behind `ide-cd` / `scsi-cd` | QEMU 9.0.2's `blkreplay` stalls the ATAPI path outright — see below. x86 is not recordable yet, but the remaining blocker is freeldr, not this |
+| a drive behind `ide-cd` / `scsi-cd` | QEMU 9.0.2's `blkreplay` stalls the ATAPI path outright — see below. x86 records over usb-storage instead (next paragraph) |
 
-x86 is wired end to end — the transform, the media staging and the accelerator
-demotion below are all tested against the real configs — but it **cannot
-actually record today**, because its boot ISO sits behind `ide-cd`. arm64 is the
-only arch proven on real media.
+**x86 records AND replays to the desktop (2026-10-04)**, booting its ISO over
+usb-storage: `VIBEOS_QEMU_BOOT_TRANSPORT=usb-storage ./vibeos-cli rr record --arch
+amd64 --payload none`, then `rr replay <trace>` (replay to `shell ready` in 1m26s,
+92% of the trace consumed -- the rest is past the marker). Getting there took one
+loader fix, three kernel layers and three harness fixes, each found by the one before:
+
+- freeldr booted `rdisk(N)partition(M)` for any ISO not on a 2048-byte-block device;
+  it now asks whether the medium carries ISO9660.
+- the kernel then needed the boot ArcName bound to a DISK holding the ISO
+  (`IopAssignCdArcNameFromDisk`), partition zero's `VPB_RAW_MOUNT` lifted on that one
+  device so cdfs's `\CdfsHdd` can mount it, and a cdfs translation bug fixed (the
+  sector cache's no-TOC branch was translated under the wrong cfg, so every
+  disk-based ISO raised STATUS_INVALID_PARAMETER).
+- `rr record` passes `--no-net`: amd64's smoke runs a second boot for its net suite,
+  and under the rr env it overwrote the trace's media after the recording ended.
+- `-rtc clock=vm` on x86: the PC RTC ticks on the host clock by default, which filled
+  the log with host-clock timer checkpoints. Recordings got ~3x faster, ~5x smaller.
+- **x86 replay does not load the `init` snapshot.** Loading it re-armed a
+  virtual-clock timer due at time zero (a device post-load hook); in replay mode
+  that timer may only run at a recorded `CHECKPOINT_CLOCK_VIRTUAL`, and the
+  recording has none before its first instruction. The vCPU then spins in
+  `icount_handle_deadline -> qemu_clock_notify` while the main loop idles, at
+  instruction count 0, forever (and SIGTERM goes unanswered: the main loop that
+  handles it never runs). Recording still creates the snapshot; `prepare_replay`
+  reverts every disk to it, so the replay starts from the same disks and the same
+  power-on state the recording did. Found by `info replay` on a monitor (count 0),
+  `-d exec` (not one translation block), and a backtrace of QEMU run under gdb
+  (`ptrace_scope` refuses an attach). arm64 still loads the snapshot.
+
+virtio-blk does not boot yet: the virtio ISO disk is not enumerated when ArcNames
+are made, so only the empty scratch disk is scanned.
 
 One refusal the transform does NOT make is x86's default accelerator. `amd64`
 and `i386` boot `-accel kvm -cpu host`, which would fail the first row of that
@@ -661,6 +688,9 @@ Record it here and keep going; only chase one when it looks load-bearing.
   which `blkreplay` refuses -- see above) or ISO9660 mounted from a disk-class device.
   The prediction was made without booting past the loader; the boot that would have
   checked it was one command away.
+
+  **RESOLVED the same day**: usb-storage boots to the desktop and records and replays.
+  The kernel and harness layers are listed under "What it refuses" near the top.
 
   Worth noting how the wrong conclusion was reached, since it is cheap to repeat:
   one transport was tested, it failed, and the cause was attributed to the thing
