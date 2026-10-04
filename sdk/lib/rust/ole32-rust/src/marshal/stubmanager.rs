@@ -20,7 +20,7 @@ use super::types::*;
 
 /// generates an ipid in the following format (similar to native version):
 /// Data1 = apartment-local ipid counter
-/// Data2 = apartment creator thread ID
+/// Data2 = apartment creator thread ID, or 0 for an MTA (wine-10)
 /// Data3 = process ID
 /// Data4 = random value
 unsafe fn generate_ipid(m: *mut stub_manager, ipid: *mut IPID) -> HRESULT {
@@ -33,7 +33,9 @@ unsafe fn generate_ipid(m: *mut stub_manager, ipid: *mut IPID) -> HRESULT {
 
     (*ipid).Data1 =
         InterlockedIncrement(core::ptr::addr_of_mut!((*(*m).apt).ipidc)) as u32;
-    (*ipid).Data2 = (*(*m).apt).tid as USHORT;
+    // wine-10: an MTA outlives its creator's membership (that thread can leave and
+    // become an STA), so its ipids must not be routed by the creator's tid.
+    (*ipid).Data2 = if (*(*m).apt).multi_threaded == FALSE { (*(*m).apt).tid as USHORT } else { 0 };
     (*ipid).Data3 = GetCurrentProcessId() as USHORT;
     S_OK
 }
@@ -551,6 +553,8 @@ unsafe fn ipid_to_ifstub(
             core::ptr::read_unaligned(core::ptr::addr_of!((*ipid).Data4) as *const OXID),
             TRUE,
         );
+    } else if (*ipid).Data2 == 0 && (*ipid).Data3 == GetCurrentProcessId() as USHORT {
+        *stub_apt = apartment_get_mta();
     } else {
         *stub_apt = apartment_findfromtid((*ipid).Data2 as DWORD);
     }

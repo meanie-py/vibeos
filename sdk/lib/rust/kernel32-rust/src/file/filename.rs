@@ -200,8 +200,15 @@ pub unsafe extern "system" fn GetTempFileNameW(
     TempFileName = TempFileName.offset(
         (PrefixString.Length as usize).wrapping_div(core::mem::size_of::<WCHAR>()) as isize,
     );
+    // Divergence from the C (still so on upstream master): it never rewinds TempFileName,
+    // so every retry after a CREATE_NEW collision appends the next ID after the previous
+    // "XXXX.tmp" instead of replacing it -- the names grow by 8 WCHARs per attempt and
+    // walk off the end of the caller's MAX_PATH buffer. ole32's transacted-storage
+    // scratch files hit it in Wine's storage32 test_locking (GetTempFileNameW faulted).
+    let IdStart = TempFileName;
 
     loop {
+        TempFileName = IdStart;
         if uUnique == 0 {
             CsrClientCallServer(
                 &raw mut ApiMessage as PCSR_API_MESSAGE,
@@ -211,6 +218,11 @@ pub unsafe extern "system" fn GetTempFileNameW(
             );
             if (*GetTempFile).UniqueID == 0 {
                 Num = Num.wrapping_add(1);
+                // C `continue` in a do-while still evaluates `while (Num & 0xFFFF)`;
+                // a bare `continue` in this `loop` skipped it and could spin forever.
+                if (Num & 0xFFFF) == 0 {
+                    break;
+                }
                 continue;
             }
             ID = (*GetTempFile).UniqueID;

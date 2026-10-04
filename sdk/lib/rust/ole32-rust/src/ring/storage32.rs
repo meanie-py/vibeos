@@ -1350,65 +1350,89 @@ unsafe fn StorageBaseImpl_IsStreamOpen(stg: *mut StorageBaseImpl, streamEntry: D
     return 0;
 }
 
+/// Every offset and HRESULT here is NAMED. The translation spelled them as bare numbers
+/// and got four wrong: bigBlockDepotCount was read from 40 (OFFSET_DIRSECTORCOUNT, always
+/// 0 in a v3 file) instead of 44 (OFFSET_BBDEPOTCOUNT), so every reopened 512-byte-sector
+/// docfile had an empty depot and its first chain walk failed STG_E_READFAULT; and the
+/// old-magic / bad-magic / bad-geometry returns were 0x80030001 / 0x80030002 / 0x80030002
+/// for STG_E_OLDFORMAT / STG_E_INVALIDHEADER / STG_E_INVALIDHEADER.
 unsafe fn StorageImpl_LoadFileHeader(This: *mut StorageImpl) -> HRESULT {
     let mut hr: HRESULT;
-    let mut headerBigBlock: [BYTE; 512] = [0; 512];
-    let mut index: i32;
+    let mut headerBigBlock: [BYTE; HEADER_SIZE as usize] = [0; HEADER_SIZE as usize];
     let mut offset: ULARGE_INTEGER = core::mem::zeroed();
     let mut bytes_read: DWORD = 0;
 
-    
-
     TRACE(b"\n\0".as_ptr() as *const c_char);
 
+    /* Get a pointer to the big block of data containing the header. */
     offset.u.HighPart = 0;
     offset.u.LowPart = 0;
-    hr = StorageImpl_ReadAt(This, offset, headerBigBlock.as_mut_ptr() as *mut core::ffi::c_void, 512, &mut bytes_read);
-    if hr >= 0 && bytes_read != 512 {
-        hr = 0x80030002u32 as HRESULT;
+    hr = StorageImpl_ReadAt(
+        This,
+        offset,
+        headerBigBlock.as_mut_ptr() as *mut core::ffi::c_void,
+        HEADER_SIZE,
+        &mut bytes_read,
+    );
+    if SUCCEEDED(hr) && bytes_read != HEADER_SIZE {
+        hr = STG_E_FILENOTFOUND;
     }
 
-    if hr >= 0 {
-        if memcmp(headerBigBlock.as_ptr() as *const core::ffi::c_void, STORAGE_oldmagic.as_ptr() as *const core::ffi::c_void, core::mem::size_of_val(&STORAGE_oldmagic)) == 0 {
-            return 0x80030001u32 as HRESULT;
+    /* Extract the information from the header. */
+    if SUCCEEDED(hr) {
+        /* Check for the "magic number" signature and return an error if it is not found. */
+        if memcmp(
+            headerBigBlock.as_ptr() as *const core::ffi::c_void,
+            STORAGE_oldmagic.as_ptr() as *const core::ffi::c_void,
+            core::mem::size_of_val(&STORAGE_oldmagic),
+        ) == 0
+        {
+            return STG_E_OLDFORMAT;
         }
 
-        if memcmp(headerBigBlock.as_ptr() as *const core::ffi::c_void, STORAGE_magic.as_ptr() as *const core::ffi::c_void, core::mem::size_of_val(&STORAGE_magic)) != 0 {
-            return 0x80030002u32 as HRESULT;
+        if memcmp(
+            headerBigBlock.as_ptr() as *const core::ffi::c_void,
+            STORAGE_magic.as_ptr() as *const core::ffi::c_void,
+            core::mem::size_of_val(&STORAGE_magic),
+        ) != 0
+        {
+            return STG_E_INVALIDHEADER;
         }
 
-        StorageUtl_ReadWord(headerBigBlock.as_ptr(), 30, &mut (*This).bigBlockSizeBits);
+        let h = headerBigBlock.as_ptr();
+        StorageUtl_ReadWord(h, OFFSET_BIGBLOCKSIZEBITS, &mut (*This).bigBlockSizeBits);
+        StorageUtl_ReadWord(h, OFFSET_SMALLBLOCKSIZEBITS, &mut (*This).smallBlockSizeBits);
+        StorageUtl_ReadDWord(h, OFFSET_BBDEPOTCOUNT, &mut (*This).bigBlockDepotCount);
+        StorageUtl_ReadDWord(h, OFFSET_ROOTSTARTBLOCK, &mut (*This).rootStartBlock);
+        StorageUtl_ReadDWord(h, OFFSET_TRANSACTIONSIG, &mut (*This).transactionSig);
+        StorageUtl_ReadDWord(h, OFFSET_SMALLBLOCKLIMIT, &mut (*This).smallBlockLimit);
+        StorageUtl_ReadDWord(h, OFFSET_SBDEPOTSTART, &mut (*This).smallBlockDepotStart);
+        StorageUtl_ReadDWord(h, OFFSET_EXTBBDEPOTSTART, &mut (*This).extBigBlockDepotStart);
+        StorageUtl_ReadDWord(h, OFFSET_EXTBBDEPOTCOUNT, &mut (*This).extBigBlockDepotCount);
 
-        StorageUtl_ReadWord(headerBigBlock.as_ptr(), 32, &mut (*This).smallBlockSizeBits);
-
-        StorageUtl_ReadDWord(headerBigBlock.as_ptr(), 40, &mut (*This).bigBlockDepotCount);
-
-        StorageUtl_ReadDWord(headerBigBlock.as_ptr(), 48, &mut (*This).rootStartBlock);
-
-        StorageUtl_ReadDWord(headerBigBlock.as_ptr(), 52, &mut (*This).transactionSig);
-
-        StorageUtl_ReadDWord(headerBigBlock.as_ptr(), 56, &mut (*This).smallBlockLimit);
-
-        StorageUtl_ReadDWord(headerBigBlock.as_ptr(), 60, &mut (*This).smallBlockDepotStart);
-
-        StorageUtl_ReadDWord(headerBigBlock.as_ptr(), 68, &mut (*This).extBigBlockDepotStart);
-
-        StorageUtl_ReadDWord(headerBigBlock.as_ptr(), 72, &mut (*This).extBigBlockDepotCount);
-
-        index = 0;
-        while index < 109 {
-            StorageUtl_ReadDWord(headerBigBlock.as_ptr(), 76 + (core::mem::size_of::<ULONG>() as u32 * index as u32), &mut (*This).bigBlockDepotStart[index as usize]);
-            index += 1;
+        for index in 0..COUNT_BBDEPOTINHEADER {
+            StorageUtl_ReadDWord(
+                h,
+                OFFSET_BBDEPOTSTART + (core::mem::size_of::<ULONG>() as ULONG * index as ULONG),
+                &mut (*This).bigBlockDepotStart[index as usize],
+            );
         }
 
+        /* Make the bitwise arithmetic to get the size of the blocks in bytes. */
         (*This).bigBlockSize = 0x000000001u32 << (*This).bigBlockSizeBits as DWORD;
         (*This).smallBlockSize = 0x000000001u32 << (*This).smallBlockSizeBits as DWORD;
 
-        if ((*This).bigBlockSize != 512 && (*This).bigBlockSize != 4096) || (*This).smallBlockSize != 64 || (*This).smallBlockLimit != 4096 {
+        /* Right now, the code is making some assumptions about the size of the blocks,
+           just make sure they are what we're expecting. */
+        if ((*This).bigBlockSize != MIN_BIG_BLOCK_SIZE as ULONG
+            && (*This).bigBlockSize != MAX_BIG_BLOCK_SIZE as ULONG)
+            || (*This).smallBlockSize != DEF_SMALL_BLOCK_SIZE as ULONG
+            || (*This).smallBlockLimit != LIMIT_TO_USE_SMALL_BLOCK
+        {
             FIXME(b"Broken OLE storage file? bigblock=0x%x, smallblock=0x%x, sblimit=0x%x\n\0".as_ptr() as *const c_char);
-            hr = 0x80030002u32 as HRESULT;
+            hr = STG_E_INVALIDHEADER;
         } else {
-            hr = 0;
+            hr = S_OK;
         }
     }
 
@@ -1643,8 +1667,25 @@ fn StorageBaseImpl_Stat(
 }
 }
 
+/// OleConvertIStorageToOLESTREAMEx (wine-10: still a FIXME stub upstream).
 #[no_mangle]
-pub unsafe extern "system" fn SetConvertStg(storage: *mut IStorage, convert: BOOLEAN) -> HRESULT {
+pub unsafe extern "system" fn OleConvertIStorageToOLESTREAMEx(
+    stg: LPSTORAGE,
+    cf: CLIPFORMAT,
+    width: LONG,
+    height: LONG,
+    size: DWORD,
+    medium: LPSTGMEDIUM,
+    olestream: LPOLESTREAM,
+) -> HRESULT {
+    FIXME(b"%p, %x, %ld, %ld, %ld, %p, %p: stub\n\0".as_ptr() as LPCSTR);
+
+    E_NOTIMPL
+}
+
+// C: `BOOL convert`. Was `BOOLEAN`, which reads only the low byte: 0x100 was FALSE.
+#[no_mangle]
+pub unsafe extern "system" fn SetConvertStg(storage: *mut IStorage, convert: BOOL) -> HRESULT {
     static stream_1oleW: [u16; 5] = [1, 'O' as u16, 'l' as u16, 'e' as u16, 0];
     let flags: DWORD = if convert != 0 { 0x00000004 } else { 0 };
     let mut stream: *mut IStream = core::ptr::null_mut();
@@ -2294,11 +2335,11 @@ fn StorageBaseImpl_CreateStream(
     }
 
     if pwcsName.is_null() {
-        return 0x80030006u32 as HRESULT;
+        return STG_E_INVALIDNAME; // C: STG_E_INVALIDNAME (was 0x80030006, STG_E_INVALIDHANDLE)
     }
 
     if reserved1 != 0 || reserved2 != 0 {
-        return 0x80070057u32 as HRESULT;
+        return STG_E_INVALIDPARAMETER; // C: STG_E_INVALIDPARAMETER (was E_INVALIDARG)
     }
 
     if FAILED(validateSTGM(grfMode)) {
@@ -2313,8 +2354,10 @@ fn StorageBaseImpl_CreateStream(
         return 0x80030102u32 as HRESULT;
     }
 
-    if (grfMode & 0x00004000) != 0 || (grfMode & 0x00010000) != 0 {
-        return 0x800300FFu32 as HRESULT;
+    // C: STGM_DELETEONRELEASE (0x04000000) | STGM_TRANSACTED -> STG_E_INVALIDFUNCTION. The
+    // translation tested 0x00004000 (no STGM flag at all) and returned STG_E_INVALIDFLAG.
+    if (grfMode & STGM_DELETEONRELEASE) != 0 || (grfMode & STGM_TRANSACTED) != 0 {
+        return STG_E_INVALIDFUNCTION;
     }
 
     if ((*This).openFlags & 0x00010000) == 0 {
@@ -2358,8 +2401,8 @@ fn StorageBaseImpl_CreateStream(
 
     newStreamEntry.sizeOfNameString = ((lstrlenW(pwcsName) + 1) * 2) as WORD;
 
-    if newStreamEntry.sizeOfNameString > 64 {
-        return 0x80030006u32 as HRESULT;
+    if newStreamEntry.sizeOfNameString > DIRENTRY_NAME_BUFFER_LEN as WORD {
+        return STG_E_INVALIDNAME; // C: STG_E_INVALIDNAME (was 0x80030006)
     }
 
     lstrcpyW(newStreamEntry.name.as_mut_ptr(), pwcsName);
@@ -3037,6 +3080,12 @@ unsafe fn StorageImpl_GrabLocks(This: *mut StorageImpl, openFlags: DWORD) -> HRE
         }
     }
 
+    // wine-10.0: a read-only, deny-write open takes neither the READ nor the
+    // DENY_WRITE lock, so it can coexist with a STGM_PRIORITY opener (Wine's
+    // test_storage_refcount opens exactly this while one is held).
+    let ro_denyw =
+        STGM_ACCESS_MODE(openFlags) == STGM_READ && share_mode == STGM_SHARE_DENY_WRITE;
+
     offset.QuadPart = RANGELOCK_CHECKLOCKS as ULONGLONG;
     cb.QuadPart = 1;
     hr = StorageImpl_LockRegionSync(This, offset, cb, LOCK_ONLYONCE, &mut supported);
@@ -3084,7 +3133,7 @@ unsafe fn StorageImpl_GrabLocks(This: *mut StorageImpl, openFlags: DWORD) -> HRE
         }
     }
 
-    if SUCCEEDED(hr) && (STGM_ACCESS_MODE(openFlags) != STGM_WRITE) {
+    if SUCCEEDED(hr) && (STGM_ACCESS_MODE(openFlags) != STGM_WRITE) && !ro_denyw {
         hr = StorageImpl_LockOne(This, RANGELOCK_READ_FIRST, RANGELOCK_READ_LAST);
     }
 
@@ -3096,7 +3145,7 @@ unsafe fn StorageImpl_GrabLocks(This: *mut StorageImpl, openFlags: DWORD) -> HRE
         hr = StorageImpl_LockOne(This, RANGELOCK_DENY_READ_FIRST, RANGELOCK_DENY_READ_LAST);
     }
 
-    if SUCCEEDED(hr) && (share_mode == STGM_SHARE_DENY_WRITE || share_mode == STGM_SHARE_EXCLUSIVE) {
+    if SUCCEEDED(hr) && (share_mode == STGM_SHARE_DENY_WRITE || share_mode == STGM_SHARE_EXCLUSIVE) && !ro_denyw {
         hr = StorageImpl_LockOne(This, RANGELOCK_DENY_WRITE_FIRST, RANGELOCK_DENY_WRITE_LAST);
     }
 
@@ -3402,7 +3451,8 @@ unsafe fn UpdateRawDirEntry(buffer: *mut BYTE, newData: *const DirEntry) {
     StorageUtl_WriteDWord(
         buffer,
         OFFSET_PS_MTIMEHIGH,
-        (*newData).ctime.dwHighDateTime,
+        // wine-10 fix: was ctime's high half.
+        (*newData).mtime.dwHighDateTime,
     );
 
     StorageUtl_WriteDWord(
@@ -3831,7 +3881,8 @@ unsafe fn BlockChainStream_WriteAt(
                     (*cachedBlock).data.as_mut_ptr() as *mut core::ffi::c_void,
                     &mut read
                 )) && read == 0 {
-                    return 0x80030004u32 as HRESULT;
+                    // C: STG_E_READFAULT (was 0x80030004, STG_E_TOOMANYOPENFILES)
+                    return STG_E_READFAULT;
                 }
             }
 
@@ -3856,7 +3907,8 @@ unsafe fn BlockChainStream_WriteAt(
         }
     }
 
-    if size_remaining == 0 { 0 } else { 0x80030004u32 as HRESULT }
+    // C: STG_E_WRITEFAULT (was 0x80030004, STG_E_TOOMANYOPENFILES)
+    if size_remaining == 0 { S_OK } else { STG_E_WRITEFAULT }
 }
 
 unsafe extern "C" fn StorageImpl_Flush(storage: *mut StorageBaseImpl) -> HRESULT {
@@ -6766,7 +6818,8 @@ unsafe fn BlockChainStream_ReadAt(
                     &mut read,
                 );
                 if read_result < 0 && read == 0 {
-                    return 0x80030004u32 as i32;
+                    // C: STG_E_READFAULT (was 0x80030004, STG_E_TOOMANYOPENFILES)
+                    return STG_E_READFAULT;
                 }
 
                 (*cachedBlock).read = 1;
@@ -7909,8 +7962,12 @@ pub unsafe extern "system" fn StgCreateDocfileOnILockBytes(
         return STG_E_INVALIDPOINTER;
     }
 
+    // C passes 0 ("no file"): StorageImpl_Construct takes the file branch for any
+    // non-NULL handle, so INVALID_HANDLE_VALUE here sent every ILockBytes-backed
+    // storage to FileLockBytesImpl_Construct, which rejects it -- the construct
+    // failed, and its cleanup then flushed through the NULL lockBytes.
     hr = Storage_Construct(
-        INVALID_HANDLE_VALUE,
+        core::ptr::null_mut(),
         core::ptr::null(),
         plkbyt,
         grfMode,

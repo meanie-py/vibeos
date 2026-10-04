@@ -814,3 +814,35 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
 9. ~~`sdk/cmake/gcc.cmake` `libgcc_eh`~~ **Done 2026-10-03:** our build is always llvm-mingw,
    which takes the libc++/libunwind branch. The GCC branch now links `libgcc_eh.a` into
    libsupc++ when the toolchain has one, as upstream does.
+10. **ole32 wine-10.0 delta (`5f6b295cb90`), ported semantically into ole32-rust.** In
+    progress since 2026-10-04.
+    - **Done:**
+      - The moniker family: anti (order count, `is_anti_moniker`/`create_anti_moniker`),
+        class (trailing display-name data), item, file, pointer (by-value IMarshal),
+        composite (the binary-tree rework, plus a fix for two of Wine's own tree leaks).
+      - Lazy clipboard lifetime; storage `ro_denyw` locking and the `mtime` write.
+      - stg_prop: bounded reads, `VT_CLSID`, vectors, section seek, `I8`/`BSTR`/`BLOB`
+        writes, codepage sign, `Enum(NULL)`.
+      - ROT double free.
+    - **Translation bugs found on the way:**
+      - `StgCreateDocfileOnILockBytes` passed `INVALID_HANDLE_VALUE` for C's `0`, so every
+        in-memory storage failed.
+      - The docfile loader read the depot count from the wrong offset, so no docfile
+        could be reopened.
+      - Seven wrong bare HRESULTs; `tools/scan_hresult_literals.py` is now gated.
+    - **Wine olewinetest, amd64, before → after:**
+      - clipboard, compobj, defaulthandler, ole2 and ole_server all crashed and now run
+        (566/11, 985/35, 38/8, 3003/41, 33/2).
+    - **Also done:** `CF_HDROP` tymed, the `OLEDD_TrackStateChange` re-entrancy guard,
+      `BIND_OPTS3`, ROT `GetObject` unlocks before unmarshalling, `OBJ_CASE_INSENSITIVE`
+      on the three HKCR opens (upstream's `__REACTOS__` fix; our CM is case-sensitive
+      without it), and the new exports: `Co{In,De}crementMTAUsage` (cookie list on the
+      MTA), `CoCreateInstanceFromApp`, `OleConvertIStorageToOLESTREAMEx` (a stub upstream
+      too), plus `CoGetApartmentType`/`CoGetCallState`/`CoGetActivationState`, which were
+      already in the Rust but missing from `ole32.spec`.
+    - **Declined, not owed:** the `struct oletls` reshuffle (`thread_seqid`, `flags`) and
+      the implicit-MTA cookie. Both are combase-internal, and with combase declined the TLS
+      block is private to our ole32. So are `DestroyRunningObjectTable` and
+      `Ole32DllGetClassObject`, which exist only for the split.
+    - **Still owed:** `GetNextFreeBigBlock`'s `neededAddNumBlocks` (performance only).
+      - `OBJ_CASE_INSENSITIVE` on the HKCR opens.
