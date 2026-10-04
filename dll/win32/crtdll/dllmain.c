@@ -79,14 +79,8 @@ static void convert_struct_stat( struct crtdll_stat *dst, const struct _stat *sr
 }
 
 
-/*********************************************************************
- *                  __GetMainArgs  (CRTDLL.@)
- */
-void __GetMainArgs( int *argc, char ***argv, char ***envp, int expand_wildcards )
-{
-    int new_mode = 0;
-    __getmainargs( argc, argv, envp, expand_wildcards, &new_mode );
-}
+/* __GetMainArgs (CRTDLL.@) is msvcrt-crt-rust's (msvcrt/data.rs). A C copy here
+ * was a duplicate symbol kept by link order; tools/link_guard.py refuses those. */
 
 
 /*********************************************************************

@@ -170,7 +170,9 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 # Delete the archive first. `ar r` replaces or inserts members and never removes one, so
 # without this an object dropped from a library's source list keeps linking from the stale
 # .obj a warm build dir still holds: vcruntime's setjmp objects did, after setjmp-rust took
-# their place (2026-10-04). CMake's own default rule removes the target; overriding it lost that.
+# their place (2026-10-04), and amd64/i386 l3codeca.acm linked a stale flat-layout libmpg123
+# over the current one (found by tools/link_guard.py). CMake's own default rule removes the
+# target; overriding it lost that.
 set(CMAKE_C_CREATE_STATIC_LIBRARY "${CMAKE_COMMAND} -E rm -f <TARGET>" "<CMAKE_AR> crT <TARGET> <LINK_FLAGS> <OBJECTS>")
 set(CMAKE_CXX_CREATE_STATIC_LIBRARY ${CMAKE_C_CREATE_STATIC_LIBRARY})
 set(CMAKE_ASM_CREATE_STATIC_LIBRARY ${CMAKE_C_CREATE_STATIC_LIBRARY})

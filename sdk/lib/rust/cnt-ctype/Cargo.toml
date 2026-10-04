@@ -19,4 +19,10 @@ edition = "2021"
 [lib]
 path = "src/lib.rs"
 
+[features]
+# freeldr defines its own `iswctype` ("the wctype table is 144 KB, too much for
+# poor freeldr" — freeldr.c), so its link must not carry this crate's export
+# too: two definitions resolve by link order. Leaves only the C-ABI symbol out.
+no-iswctype = []
+
 [dependencies]

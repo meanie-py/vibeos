@@ -26,4 +26,4 @@ def test_kernel_probe(tmp_path: Path) -> None:
         text=True,
     )
     result = subprocess.run([str(binary)], check=True, capture_output=True, text=True)
-    assert "5 passed; 0 failed" in result.stdout
+    assert "9 passed; 0 failed" in result.stdout

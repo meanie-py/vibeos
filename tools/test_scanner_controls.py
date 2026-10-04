@@ -1455,6 +1455,20 @@ pub unsafe fn NtSetValueKey(Data: PVOID, DataSize: ULONG) -> NTSTATUS {
 //     _SEH2_TRY { ProbeForRead(Data, DataSize, 1); } _SEH2_END;
 //     RtlCopyMemory(DataCopy, Data, DataSize);
 // }
+// The write-side substrate counts too: IopCreateFile's ProbeForWriteHandle became
+// probe_write_generic (2026-10-04), and the scanner first reported it as dropped.
+pub unsafe fn NtOpenSection(SectionHandle: *mut HANDLE) -> NTSTATUS {
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(SectionHandle, 1, PreviousMode) {
+        return status;
+    }
+    *SectionHandle = Handle;
+    STATUS_SUCCESS
+}
+// NTSTATUS NtOpenSection(PHANDLE SectionHandle)
+// {
+//     _SEH2_TRY { ProbeForWriteHandle(SectionHandle); } _SEH2_END;
+//     *SectionHandle = Handle;
+// }
 """
 
 # scan_dropped_asserts. Seeded from task #39, 2026-09-06: MI_MAKE_HARDWARE_PTE_USER

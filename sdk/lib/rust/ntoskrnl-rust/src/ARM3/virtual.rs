@@ -2279,8 +2279,14 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
 
     /* Probe + capture user pointers (DUMMY_PSEH: no SEH wrap) */
     if PreviousMode != 0i32 as i8 {
-        ProbeForWritePointer(UBaseAddress);
-        ProbeForWriteSize_t(URegionSize);
+        // C: inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+        // so the Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(UBaseAddress, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(URegionSize, 1, PreviousMode) {
+            return status;
+        }
     }
     PBaseAddress = *UBaseAddress;
     PRegionSize = *URegionSize as ULONG_PTR;
@@ -2848,8 +2854,14 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
 
     /* Probe + capture (DUMMY_PSEH: no SEH wrap) */
     if PreviousMode != 0i32 as i8 {
-        ProbeForWritePointer(UBaseAddress);
-        ProbeForWriteUlong(URegionSize as *mut ULONG);
+        // C: inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+        // so the Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(UBaseAddress, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(URegionSize as *mut ULONG, 1, PreviousMode) {
+            return status;
+        }
     }
     PBaseAddress = *UBaseAddress;
     PRegionSize = *URegionSize;
@@ -3415,9 +3427,17 @@ pub unsafe extern "system" fn NtProtectVirtualMemory(
     }
 
     if PreviousMode != 0i32 as i8 {
-        ProbeForWritePointer(UnsafeBaseAddress);
-        ProbeForWriteSize_t(UnsafeNumberOfBytesToProtect);
-        ProbeForWriteUlong(UnsafeOldAccessProtection);
+        // C: inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+        // so the Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(UnsafeBaseAddress, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(UnsafeNumberOfBytesToProtect, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(UnsafeOldAccessProtection, 1, PreviousMode) {
+            return status;
+        }
 
         BaseAddress = *UnsafeBaseAddress;
         NumberOfBytesToProtect = *UnsafeNumberOfBytesToProtect;
@@ -3725,8 +3745,14 @@ pub unsafe extern "system" fn NtLockVirtualMemory(
         return STATUS_INVALID_PARAMETER;
     }
 
-    ProbeForWritePointer(BaseAddress);
-    ProbeForWriteSize_t(NumberOfBytesToLock);
+    // C probes these unconditionally (no previous-mode test), inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+    // so the Result probe returns it instead of raising unhandled.
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(BaseAddress, 1, 1i8) {
+        return status;
+    }
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(NumberOfBytesToLock, 1, 1i8) {
+        return status;
+    }
 
     CapturedBaseAddress = *BaseAddress;
     CapturedBytesToLock = *NumberOfBytesToLock;
@@ -3983,8 +4009,14 @@ pub unsafe extern "system" fn NtUnlockVirtualMemory(
         return STATUS_INVALID_PARAMETER;
     }
 
-    ProbeForWritePointer(BaseAddress);
-    ProbeForWriteSize_t(NumberOfBytesToUnlock);
+    // C probes these unconditionally (no previous-mode test), inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+    // so the Result probe returns it instead of raising unhandled.
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(BaseAddress, 1, 1i8) {
+        return status;
+    }
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(NumberOfBytesToUnlock, 1, 1i8) {
+        return status;
+    }
 
     CapturedBaseAddress = *BaseAddress;
     CapturedBytesToUnlock = *NumberOfBytesToUnlock;
@@ -4065,9 +4097,17 @@ pub unsafe extern "system" fn NtFlushVirtualMemory(
     let mut LocalStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
 
     if PreviousMode != 0i32 as i8 {
-        ProbeForWritePointer(BaseAddress);
-        ProbeForWriteSize_t(NumberOfBytesToFlush);
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
+        // C: inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+        // so the Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(BaseAddress, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(NumberOfBytesToFlush, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(IoStatusBlock, 1, PreviousMode) {
+            return status;
+        }
 
         CapturedBaseAddress = *BaseAddress;
         CapturedBytesToFlush = *NumberOfBytesToFlush;
@@ -4142,8 +4182,14 @@ pub unsafe extern "system" fn NtGetWriteWatch(
             return STATUS_INVALID_PARAMETER_3;
         }
 
-        ProbeForWriteSize_t(EntriesInUserAddressArray);
-        ProbeForWriteUlong(Granularity);
+        // C: inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+        // so the Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(EntriesInUserAddressArray, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(Granularity, 1, PreviousMode) {
+            return status;
+        }
 
         CapturedEntryCount = *EntriesInUserAddressArray;
 

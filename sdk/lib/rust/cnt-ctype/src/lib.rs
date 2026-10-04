@@ -279,6 +279,7 @@ pub unsafe extern "C" fn toupper(c: i32) -> i32 {
 
 // ---- wide classification (now fully Rust: iswctype_nt.c flipped) ----
 /// `int iswctype(wint_t _C, wctype_t _Type)` (iswctype_nt.c).
+#[cfg(not(feature = "no-iswctype"))]
 #[no_mangle]
 pub unsafe extern "C" fn iswctype(c: u16, t: u16) -> i32 {
     ct::iswctype(c, t)

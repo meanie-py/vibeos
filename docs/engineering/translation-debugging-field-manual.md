@@ -10286,6 +10286,29 @@ free, because the failing name tracks the attribute string verbatim.
 A clean cargo + ninja can still bugcheck mid-init. The link is a necessary gate, never a
 sufficient one — which is the whole reason smoke is the north star.
 
+### `link-guard: … duplicate symbol(s) resolved by link order`
+- **Symptom:** a link fails with that line, naming a symbol, the copy that was `kept` and the
+  one `dropped`.
+- **Cause:** every PE links with `--allow-multiple-definition`, which keeps the first
+  definition lld meets. `tools/link_guard.py` sits in front of lld (clang `--ld-path`, set in
+  `gcc.cmake` and `reactos-link`) and allows only toolchain-runtime twins, the Rust panic
+  runtime, and imports where the local body is the one kept. Before the guard, the first
+  census found C glue beating the Rust translation in cdrom (`DeviceEvtIoInCallerContext`; the
+  Rust had never run), fastfat and disk. It also found C stubs beating Rust CRT bodies, and
+  panic-common's `_Unwind_Resume` stub kept as libc++abi's unwinder in C++ rapps.
+- **Fix:** delete the copy that shouldn't exist. Never reorder the link to make the right one
+  win: order is exactly what this guard exists to stop trusting. For a real fallback (a body
+  that should be used only when nothing else defines the name), use a weak C definition or an
+  lld `-alternatename` directive, as panic-common's `_Unwind_Resume` does. Neither of those is
+  a duplicate at all.
+- **Census:** `VIBEOS_LINK_GUARD=report VIBEOS_LINK_GUARD_LOG=<file> ./vibeos-cli build --arch X`
+  records every duplicate as JSON lines without failing.
+- **Stale archive members:** the census also found the second way order bites. Static
+  libraries were written with `ar crT` and never removed first, so a long-lived build dir
+  kept objects whose source had left the target. amd64/i386 l3codeca linked a stale
+  libmpg123 over the current one. The archive rule now removes the archive first
+  (`toolchain-llvm-mingw.cmake`).
+
 ### A C++ `static_cast` back to a Rust-owned class is already wrong, and it links
 **Symptom.** None. It compiles, links, and runs — until the class's C++ half leaves CMake, at
 which point you get an undefined symbol and discover the bug on the way past.

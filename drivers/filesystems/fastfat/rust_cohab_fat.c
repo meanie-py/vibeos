@@ -356,10 +356,6 @@ static BOOLEAN __c_FatIsNameShortOemValid(PIRP_CONTEXT IC, OEM_STRING N, BOOLEAN
 #undef FatIsNameShortOemValid
 BOOLEAN FatIsNameShortOemValid(PIRP_CONTEXT IrpContext, OEM_STRING OemName, BOOLEAN CanContainWildCards, BOOLEAN PathNameOk, BOOLEAN LeadingBackslashOk){ return __c_FatIsNameShortOemValid(IrpContext, OemName, CanContainWildCards, PathNameOk, LeadingBackslashOk); }
 
-/* FatTestRaisedStatus: fault-injection debug global referenced by the FatRaiseStatus
- * debug path (pulled in by FatVerifyIndexIsValid). Defaults to 0 (disabled). */
-BOOLEAN FatTestRaisedStatus = 0;
-
 /* ---- header-defined macro constants the Rust translation references as DATA ----
  * These C macros (DCB_UNION_SLACK_SPACE / FCB_LOOKUP_ALLOCATIONSIZE_HINT / etc.)
  * were translated as `extern static` data refs. Provide them as real DATA symbols
