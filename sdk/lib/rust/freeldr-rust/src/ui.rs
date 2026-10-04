@@ -576,7 +576,9 @@ pub unsafe extern "C" fn UiShowMessageBoxesInSection(SectionId: ULONG_PTR) {
         // The text is DATA from FREELDR.INI / the command line: the C hands it
         // to UiMessageBox as the format, so a '%' in it would consume argument
         // slots nobody pushed. Show it as-is.
-        (UiVtbl.MessageBox.unwrap())(MessageBoxText);
+        if let Some(message_box) = UiVtbl.MessageBox {
+            message_box(MessageBoxText);
+        }
 
         FrLdrTempFree(MessageBoxText as *mut core::ffi::c_void, TAG_UI_TEXT);
 
@@ -616,7 +618,9 @@ pub unsafe extern "C" fn UiShowMessageBoxesInArgv(
         // The text is DATA from FREELDR.INI / the command line: the C hands it
         // to UiMessageBox as the format, so a '%' in it would consume argument
         // slots nobody pushed. Show it as-is.
-        (UiVtbl.MessageBox.unwrap())(MessageBoxText);
+        if let Some(message_box) = UiVtbl.MessageBox {
+            message_box(MessageBoxText);
+        }
 
         FrLdrTempFree(MessageBoxText as *mut core::ffi::c_void, TAG_UI_TEXT);
 
