@@ -2019,3 +2019,24 @@ families:
       - tgammaf
       - trunc
       - truncf
+
+  bessel:
+    provenance: libm-crate
+    replaces:
+      - sdk/lib/crt/math/ieee754 (vendored NetBSD FDLIBM, 1,346 lines), which ucrtbase linked for _j0.._yn until a08453c928c deleted it and moved the bodies onto the libm crate in crt-shared (cnt-rust)
+    oracle: >
+      cnt-difftest's Bessel rows (`./vibeos-cli difftest`): the C shell over libm as the oracle
+      against the shipping Rust, 84/84 rows passing at a08453c928c. Against a 200-bit mpmath
+      reference over 3M arguments neither the old FDLIBM nor libm is uniformly closer; libm's
+      worst case is far smaller (jn 10 ulp vs 901, y0 24 vs 56).
+    note: >
+      Declared after the fact: a08453c928c moved the bodies and verify_ucrtbase_cohab, which only
+      the strict source-deferred lint runs, then held master red with all six undeclared
+      (2026-10-04). Same FDLIBM lineage on both sides; ~0.3% of arguments differ by ulps.
+    exports:
+      - _j0
+      - _j1
+      - _jn
+      - _y0
+      - _y1
+      - _yn
