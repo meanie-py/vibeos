@@ -1663,7 +1663,64 @@ pub unsafe extern "system" fn KeGetPcr() -> usize { 0 }
 }
 
 
+# scan_byteptr_stride. Seeded from oleaut32 IRecordInfoImpl_RecordCopy (2026-10-04): the C's
+# `((BYTE*)src_rec) + offset` translated through `*mut PBYTE`, an 8x stride.
+_BYTEPTR_BAD = """\
+unsafe fn copy(src_rec: *mut c_void, off: isize) -> *mut c_void {
+    (src_rec as *mut PBYTE)
+        .offset(off) as *mut c_void
+}
+"""
+_BYTEPTR_GOOD = """\
+unsafe fn copy(src_rec: *mut c_void, off: isize) -> *mut c_void {
+    (src_rec as *mut BYTE).offset(off) as *mut c_void
+}
+"""
+
+# scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
+# do-while's `continue` re-ran the same INF line forever once translated to `loop`.
+_DOWHILE_BAD = """\
+unsafe fn register(ctx: *mut Ctx) {
+    loop {
+        if read_line(ctx) == 0 {
+            continue;
+        }
+        if next_line(ctx) == 0 {
+            break;
+        }
+    }
+}
+"""
+_DOWHILE_GOOD = """\
+unsafe fn register(ctx: *mut Ctx) {
+    loop {
+        'next: {
+            if read_line(ctx) == 0 {
+                break 'next;
+            }
+        }
+        if next_line(ctx) == 0 {
+            break;
+        }
+    }
+}
+"""
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_byteptr_stride",
+        script="tools/scan_byteptr_stride.py",
+        argv=["--lint"],
+        bad={"recinfo.rs": _BYTEPTR_BAD},
+        good={"recinfo.rs": _BYTEPTR_GOOD},
+    ),
+    Control(
+        name="scan_dowhile_continue",
+        script="tools/scan_dowhile_continue.py",
+        argv=["--lint"],
+        bad={"install.rs": _DOWHILE_BAD},
+        good={"install.rs": _DOWHILE_GOOD},
+    ),
     Control(
         name="scan_dropped_asserts",
         script="tools/scan_dropped_asserts.py",
@@ -2006,6 +2063,14 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_hresult_literals": (
+        "its oracle is the C module scan_invented_constants.c_dirs_for() finds for a crate in "
+        "the real tree, so a fixture directory has no crate to map. The decision is "
+        "scan_files(rs_files, c_dirs, names), driven directly in "
+        "tools/test_scan_hresult_literals.py with an explicit C dir: it must flag ole32's "
+        "STG_E_TOOMANYOPENFILES-for-READFAULT shape and must not flag a value the C function "
+        "returns, a named const, a nolint line, an extern declaration, or an NTSTATUS function."
+    ),
     # Already have dedicated suites (the prototypes this harness generalizes).
     "scan_wide_literals": "covered by tools/test_scan_wide_literals.py (20 tests)",
     "verify_c_signatures": "covered by tools/test_verify_c_signatures.py (9 tests)",
