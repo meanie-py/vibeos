@@ -361,7 +361,9 @@ unsafe fn create_classes_root_hkey(access: DWORD) -> HKEY {
     attr.Length = size_of::<OBJECT_ATTRIBUTES>() as ULONG;
     attr.RootDirectory = null_mut();
     attr.ObjectName = &raw mut name;
-    attr.Attributes = 0;
+    // C `#ifdef __REACTOS__`: our configuration manager matches key names
+    // case-sensitively unless asked, so `CLSID\{abc...}` vs `{ABC...}` missed.
+    attr.Attributes = OBJ_CASE_INSENSITIVE;
     attr.SecurityDescriptor = null_mut();
     attr.SecurityQualityOfService = null_mut();
     RtlInitUnicodeString(&raw mut name, classes_rootW.as_ptr());
@@ -439,7 +441,9 @@ pub unsafe extern "C" fn create_classes_key(
     attr.Length = size_of::<OBJECT_ATTRIBUTES>() as ULONG;
     attr.RootDirectory = hkey;
     attr.ObjectName = &raw mut nameW;
-    attr.Attributes = 0;
+    // C `#ifdef __REACTOS__`: our configuration manager matches key names
+    // case-sensitively unless asked, so `CLSID\{abc...}` vs `{ABC...}` missed.
+    attr.Attributes = OBJ_CASE_INSENSITIVE;
     attr.SecurityDescriptor = null_mut();
     attr.SecurityQualityOfService = null_mut();
     RtlInitUnicodeString(&raw mut nameW, name);
@@ -465,7 +469,9 @@ pub unsafe extern "C" fn open_classes_key(
     attr.Length = size_of::<OBJECT_ATTRIBUTES>() as ULONG;
     attr.RootDirectory = hkey;
     attr.ObjectName = &raw mut nameW;
-    attr.Attributes = 0;
+    // C `#ifdef __REACTOS__`: our configuration manager matches key names
+    // case-sensitively unless asked, so `CLSID\{abc...}` vs `{ABC...}` missed.
+    attr.Attributes = OBJ_CASE_INSENSITIVE;
     attr.SecurityDescriptor = null_mut();
     attr.SecurityQualityOfService = null_mut();
     RtlInitUnicodeString(&raw mut nameW, name);
@@ -627,6 +633,7 @@ unsafe fn apartment_construct(model: DWORD) -> *mut APARTMENT {
     list_init(&raw mut (*apt).proxies);
     list_init(&raw mut (*apt).stubmgrs);
     list_init(&raw mut (*apt).loaded_dlls);
+    list_init(&raw mut (*apt).usage_cookies);
     (*apt).ipidc = 0;
     (*apt).refs = 1;
     (*apt).remunk_exported = FALSE;
@@ -5089,6 +5096,97 @@ pub unsafe extern "system" fn CoGetApartmentType(
     } else {
         CO_E_NOTINITIALIZED
     }
+}
+
+/// combase apartment.c `struct mta_cookie`: the opaque CO_MTA_USAGE_COOKIE.
+#[repr(C)]
+struct mta_cookie {
+    entry: list,
+}
+
+/***********************************************************************
+ *           CoIncrementMTAUsage [OLE32.@]  (wine-10 combase)
+ */
+#[no_mangle]
+pub unsafe extern "system" fn CoIncrementMTAUsage(cookie: *mut PVOID) -> HRESULT {
+    TRACE!();
+
+    *cookie = null_mut();
+
+    let mta_cookie = heap_alloc(size_of::<mta_cookie>()) as *mut mta_cookie;
+    if mta_cookie.is_null() {
+        return E_OUTOFMEMORY;
+    }
+
+    EnterCriticalSection(&raw mut csApartment);
+
+    if !MTA.is_null() {
+        apartment_addref(MTA);
+    } else {
+        MTA = apartment_construct(COINIT_MULTITHREADED);
+    }
+    list_add_head(&raw mut (*MTA).usage_cookies, &raw mut (*mta_cookie).entry);
+
+    LeaveCriticalSection(&raw mut csApartment);
+
+    *cookie = mta_cookie as PVOID;
+
+    S_OK
+}
+
+/***********************************************************************
+ *           CoDecrementMTAUsage [OLE32.@]  (wine-10 combase)
+ */
+#[no_mangle]
+pub unsafe extern "system" fn CoDecrementMTAUsage(cookie: PVOID) -> HRESULT {
+    TRACE!();
+
+    EnterCriticalSection(&raw mut csApartment);
+
+    if !MTA.is_null() {
+        let head = &raw mut (*MTA).usage_cookies;
+        let mut cur = (*head).next;
+        while cur != head {
+            if cur as PVOID == cookie {
+                // `entry` is the first field, so the node IS the cookie.
+                list_remove(cur);
+                heap_free(cur as PVOID);
+                // csApartment is a recursive critical section; apartment_release
+                // re-enters it, exactly as combase's does under apt_cs.
+                apartment_release(MTA);
+                break;
+            }
+            cur = (*cur).next;
+        }
+    }
+
+    LeaveCriticalSection(&raw mut csApartment);
+
+    S_OK
+}
+
+/***********************************************************************
+ *           CoCreateInstanceFromApp [OLE32.@]  (wine-10 combase)
+ */
+#[no_mangle]
+pub unsafe extern "system" fn CoCreateInstanceFromApp(
+    rclsid: REFCLSID,
+    outer: *mut IUnknown,
+    cls_context: DWORD,
+    server_info: PVOID,
+    count: ULONG,
+    results: *mut MULTI_QI,
+) -> HRESULT {
+    TRACE!();
+
+    CoCreateInstanceEx(
+        rclsid,
+        outer,
+        cls_context | CLSCTX_APPCONTAINER,
+        server_info as *mut COSERVERINFO,
+        count,
+        results,
+    )
 }
 
 /***********************************************************************
