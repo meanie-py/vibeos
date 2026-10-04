@@ -246,7 +246,10 @@ VOID Open(PFCB f)
 
 def test_a_dead_c_file_superseded_by_live_c_is_not_a_translation(tmp_path):
     """gdi32: Wine's enhmfdrv/bitblt.c sits unbuilt beside the live emfdrv.c stub it lost to."""
-    c = "BOOL EMFDRV_PatBlt(PHYSDEV d)\n{\n    EMFDRV_WriteRecord(d);\n    EMFDRV_UpdateBBox(d);\n}\n"
+    c = (
+        "BOOL EMFDRV_PatBlt(PHYSDEV d)\n{\n    EMFDRV_WriteRecord(d);\n"
+        "    EMFDRV_UpdateBBox(d);\n}\n"
+    )
     glue = "BOOL EMFDRV_PatBlt(WINEDC *dc)\n{\n    return TRUE;\n}\n"
     assert _run(tmp_path, c, "pub fn unrelated() {}\n", glue=glue) == {}
 
@@ -322,3 +325,47 @@ def test_a_nested_macro_called_by_name_keeps_what_it_expands_to(tmp_path):
     rust_lost = "pub unsafe fn Locate(b: *mut PBCB) { FatReadDirectoryFile(b); }\n"
     got = _run(tmp_path, c, rust_lost, macros=macros)["Locate"]
     assert got.dropped == ["FatReadDirent(->CcUnpinData)"]
+
+
+def test_reviewed_ledger_hides_only_the_callees_it_names(tmp_path):
+    """A reviewed lead stays hidden until a drop the reviewer never saw appears."""
+    from rustconv.body_audit import Finding, apply_reviewed, load_reviewed, render
+
+    led = tmp_path / "reviewed.toml"
+    led.write_text(
+        '[[reviewed]]\nmodule = "m"\nfunction = "F"\ncallees = ["RtlSetBits"]\n'
+        'verdict = "false"\nnote = "kept by a helper"\n'
+        '[[reviewed]]\nmodule = "m"\nfunction = "O"\ncallees = ["IoStartPacket"]\n'
+        'verdict = "owed"\nnote = "lane x"\n'
+    )
+    ledger = load_reviewed(led)
+    f_ok = Finding("F", "a.c", "a.rs", "high", 10, 10, ["RtlSetBits"])
+    f_new = Finding("F", "a.c", "a.rs", "high", 10, 10, ["RtlSetBits", "RtlClearBits"])
+    f_owed = Finding("O", "a.c", "a.rs", "high", 10, 10, ["IoStartPacket"])
+    apply_reviewed("m", [f_ok, f_owed], ledger)
+    apply_reviewed("m", [f_new], ledger)
+    assert f_ok.reviewed == ("false", "kept by a helper")
+    assert f_new.reviewed is None
+    assert f_owed.reviewed == ("owed", "lane x")
+    out = render("m", [f_ok, f_owed], 0)
+    assert out.splitlines()[0] == "body-audit m: clean; 1 owed; 1 reviewed"
+    assert "  [high, owed] O" in out and "] F " not in out
+
+
+def test_reviewed_ledger_rejects_an_entry_without_a_note(tmp_path):
+    import pytest
+
+    from rustconv.body_audit import load_reviewed
+
+    led = tmp_path / "reviewed.toml"
+    led.write_text(
+        '[[reviewed]]\nmodule = "m"\nfunction = "F"\ncallees = ["X"]\nverdict = "false"\n'
+    )
+    with pytest.raises(ValueError):
+        load_reviewed(led)
+
+
+def test_the_committed_ledger_loads():
+    from rustconv.body_audit import load_reviewed
+
+    assert load_reviewed()

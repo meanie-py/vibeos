@@ -25,6 +25,12 @@ lose STATE come first:
   medium       any other dropped function call
   low          a dropped memory op / ALL-CAPS macro with no recognised lowering
   stub-loud    a small body that bugchecks or returns NOT_IMPLEMENTED (known, not silent)
+
+A lead someone has read against the C is recorded in `data/body_audit_reviewed.toml` with its
+verdict, so the next run does not hand it out again: `false` and `benign` leads are hidden
+(counted in the header), `owed` leads stay listed with where the work is tracked. The record
+covers the callees it names: a drop the reviewer never saw brings the lead back. A false lead
+that a RULE could have recognised belongs in the rules, not the ledger.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -45,6 +52,11 @@ from .dead_regions import dummy_pseh_except_spans, never_compiled_lines
 from .export_audit import _repo_root_of, module_rust_crates
 from .lex_mask import directive_spans, mask_code
 from .profile_derive import ProfileDeriveError
+
+try:
+    import tomllib  # type: ignore[import-not-found]  # stdlib on 3.11+; tomli backport on 3.10
+except ModuleNotFoundError:
+    import tomli as tomllib  # type: ignore[no-redef]
 
 _CALL_RE = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
 _IDENT_RE = re.compile(r"\b[A-Za-z_]\w*\b")
@@ -156,6 +168,8 @@ _STUB_MIN_C_LINES = 30
 _HELPER_DEPTH = 3
 
 SEVERITY_ORDER = ("stub-silent", "high", "medium", "low", "stub-loud")
+REVIEWED_PATH = Path(__file__).resolve().parent.parent / "data" / "body_audit_reviewed.toml"
+VERDICTS = ("false", "benign", "owed")
 
 
 @dataclass
@@ -167,6 +181,58 @@ class Finding:
     c_lines: int
     rust_lines: int
     dropped: list[str] = field(default_factory=list)
+    # From the reviewed ledger: (verdict, note) when every dropped callee was reviewed.
+    reviewed: tuple[str, str] | None = None
+    # Dropped callees the C file did not contain when the Rust file was first committed:
+    # upstream work that landed on C already flipped, not something the translator lost.
+    upstream: list[str] = field(default_factory=list)
+
+
+def _git(repo: Path, *args: str) -> str | None:
+    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True)
+    return r.stdout.decode("utf-8", errors="replace") if r.returncode == 0 else None
+
+
+def mark_upstream(findings: list[Finding], repo: Path) -> None:
+    """Fill `upstream` from git: the C as it stood at the Rust file's first commit."""
+    born: dict[str, str | None] = {}
+    then: dict[tuple[str, str], str | None] = {}
+    for f in findings:
+        if f.rust_file not in born:
+            revs = _git(repo, "log", "--diff-filter=A", "--format=%H", "--", f.rust_file)
+            born[f.rust_file] = revs.split()[-1] if revs and revs.split() else None
+        rev = born[f.rust_file]
+        if rev is None:
+            continue
+        if (rev, f.c_file) not in then:
+            then[(rev, f.c_file)] = _git(repo, "show", f"{rev}:{f.c_file}")
+        old = then[(rev, f.c_file)]
+        if old is None:
+            continue
+        idents = set(_IDENT_RE.findall(old))
+        f.upstream = [c for c in f.dropped if c.split("(", 1)[0] not in idents]
+
+
+def load_reviewed(path: Path = REVIEWED_PATH) -> dict[tuple[str, str], dict]:
+    """`(module, function)` -> its ledger entry. A malformed entry is an error, not a skip."""
+    if not path.exists():
+        return {}
+    out: dict[tuple[str, str], dict] = {}
+    for e in tomllib.loads(path.read_text(encoding="utf-8")).get("reviewed", []):
+        key = (e["module"], e["function"])
+        if e.get("verdict") not in VERDICTS or not e.get("note") or not e.get("callees"):
+            raise ValueError(f"{path}: {key}: needs verdict in {VERDICTS}, callees and a note")
+        if key in out:
+            raise ValueError(f"{path}: {key} is listed twice")
+        out[key] = e
+    return out
+
+
+def apply_reviewed(module: str, findings: list[Finding], ledger: dict) -> None:
+    for f in findings:
+        e = ledger.get((module, f.function))
+        if e and set(f.dropped) <= set(e["callees"]):
+            f.reviewed = (e["verdict"], e["note"])
 
 
 def _blank_ignored_calls(text: str) -> str:
@@ -744,18 +810,32 @@ def all_modules(repo: Path) -> list[Path]:
     return out
 
 
-def render(module: str, findings: list[Finding], limit: int) -> str:
-    counts = {s: sum(1 for f in findings if f.severity == s) for s in SEVERITY_ORDER}
+def render(module: str, findings: list[Finding], limit: int, show_reviewed: bool = False) -> str:
+    hidden = [f for f in findings if f.reviewed and f.reviewed[0] != "owed"]
+    owed = [f for f in findings if f.reviewed and f.reviewed[0] == "owed"]
+    open_ = [f for f in findings if not f.reviewed]
+    counts = {s: sum(1 for f in open_ if f.severity == s) for s in SEVERITY_ORDER}
     head = ", ".join(f"{n} {s}" for s, n in counts.items() if n)
-    lines = [f"body-audit {module}: {head or 'clean'}"]
-    for f in findings[:limit] if limit else findings:
+    tail = "".join(
+        f"; {n} {what}" for n, what in ((len(owed), "owed"), (len(hidden), "reviewed")) if n
+    )
+    lines = [f"body-audit {module}: {head or 'clean'}{tail}"]
+    shown = open_ + owed + (hidden if show_reviewed else [])
+    for f in shown[:limit] if limit else shown:
         dropped = ", ".join(f.dropped[:8]) + (" …" if len(f.dropped) > 8 else "")
+        tag = f"{f.severity}, {f.reviewed[0]}" if f.reviewed else f.severity
         lines.append(
-            f"  [{f.severity}] {f.function}  C {f.c_lines}L / Rust {f.rust_lines}L"
+            f"  [{tag}] {f.function}  C {f.c_lines}L / Rust {f.rust_lines}L"
             f"  ({f.c_file} -> {f.rust_file})"
         )
         if dropped:
             lines.append(f"      dropped: {dropped}")
+        if f.upstream:
+            whole = " (all)" if len(f.upstream) == len(f.dropped) else ""
+            new = ", ".join(f.upstream[:8])
+            lines.append(f"      new in the C since translation{whole}: {new}")
+        if f.reviewed:
+            lines.append(f"      {f.reviewed[0]}: {f.reviewed[1]}")
     return "\n".join(lines)
 
 
@@ -774,7 +854,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--min-severity", choices=SEVERITY_ORDER, default="stub-loud", help="hide lower ranks"
     )
+    ap.add_argument(
+        "--provenance",
+        action="store_true",
+        help="mark dropped callees the C gained after the Rust was committed (git, slower)",
+    )
+    ap.add_argument(
+        "--show-reviewed",
+        action="store_true",
+        help="also list leads the ledger marks false/benign (data/body_audit_reviewed.toml)",
+    )
     args = ap.parse_args(argv)
+    ledger = load_reviewed()
     cutoff = SEVERITY_ORDER.index(args.min_severity)
     modules = [m.resolve() for m in args.modules]
     if args.all:
@@ -808,9 +899,12 @@ def main(argv: list[str] | None = None) -> int:
             if SEVERITY_ORDER.index(f.severity) <= cutoff
         ]
         key = str(module.relative_to(repo))
+        apply_reviewed(key, found, ledger)
+        if args.provenance:
+            mark_upstream(found, repo)
         report[key] = found
         if not args.json:
-            print(render(key, found, args.limit))
+            print(render(key, found, args.limit, args.show_reviewed))
     for line in skipped:
         print(f"body-audit SKIPPED (could not resolve the build): {line}", file=sys.stderr)
     if args.json:

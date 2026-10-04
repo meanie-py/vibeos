@@ -1,0 +1,62 @@
+# rustconv body-audit: leads a human has read against the C.
+#
+# verdict = "false"   the Rust does the work under a shape no rule recognises
+#           "benign"  the Rust diverges, and the divergence loses nothing
+#           "owed"    real, and tracked elsewhere: the note names where (still listed)
+#
+# `callees` are the dropped strings exactly as the audit prints them. The entry covers only
+# those: a new drop in the same function brings the lead back. A false lead that a RULE
+# could have recognised belongs in body_audit.py's rules, not here. Fixed leads need no
+# entry: they stop being reported.
+
+[[reviewed]]
+module = "drivers/base/condrv"
+function = "ConDrvDispatch"
+callees = ["IoGetCurrentIrpStackLocation"]
+verdict = "false"
+note = "the C only fetches the stack location to trace it (2026-09-27 pass)"
+
+[[reviewed]]
+module = "drivers/filesystems/fastfat"
+function = "FatConstructNamesInFcb"
+callees = [
+    "FatNormalizeAndRaiseStatus(->ExRaiseStatus,FsRtlNormalizeNtstatus)",
+    "RtlFreeOemString",
+    "RtlUpcaseUnicodeStringToCountedOemString",
+]
+verdict = "benign"
+note = "an extended-character LFN is stored Unicode-only, skipping the C's OEM round-trip attempt; nothing leaks"
+
+[[reviewed]]
+module = "drivers/filesystems/cdfs"
+function = "CdDeleteFcbNonpaged"
+callees = ["CdDeallocateFcbNonpaged(->_CdFreePool)"]
+verdict = "false"
+note = "_CdFreePool is a header inline: ExFreePool plus nulling the caller's local; the Rust frees with ExFreePoolWithTag"
+
+[[reviewed]]
+module = "win32ss"
+function = "NtUserGetRawInputDeviceInfo"
+callees = ["ProbeForRead", "ProbeForWrite", "RtlCopyMemory(->memcpy)"]
+verdict = "false"
+note = "user buffers go through crate::copy's fault-tolerant primitives, which validate and copy (c53b7807aad)"
+
+[[reviewed]]
+module = "win32ss"
+function = "NtUserGetRawInputDeviceList"
+callees = ["ProbeForRead", "ProbeForWrite"]
+verdict = "false"
+note = "user buffers go through crate::copy's fault-tolerant primitives, which validate and copy (c53b7807aad)"
+
+[[reviewed]]
+module = "dll/win32/netcfgx"
+function = "INetCfgComponentControl_fnApplyPnpChanges"
+callees = [
+    "AddIPAddress", "CloseServiceHandle", "CoTaskMemAlloc", "CoTaskMemFree", "ControlService",
+    "CreateIpForwardEntry", "DeleteIPAddress", "DeleteIpForwardEntry", "DhcpCApiCleanup",
+    "DhcpCApiInitialize", "DhcpStaticRefreshParams", "GatewaysChanged", "GetIpForwardTable",
+    "IpAddressesChanged", "NameServersChanged", "OpenSCManagerW", "OpenServiceW", "ZeroMemory",
+    "htonl",
+]
+verdict = "owed"
+note = "upstream's tcpipconf_notify.c rewrite landed on C already flipped; upstream-sync's netcfgx cluster"
