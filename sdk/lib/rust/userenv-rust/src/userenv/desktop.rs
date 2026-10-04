@@ -239,6 +239,146 @@ pub unsafe extern "system" fn AddDesktopItemA(
     bResult
 }
 
+// IShellLinkW / IPersistFile, as far as AddDesktopItemW and AddItemW reach into them. Slot
+// order is shobjidl.idl's / objidl.idl's (checked against syssetup-rust's bindgen
+// IShellLinkWVtbl / IPersistFileVtbl); the slots these two never call are kept as
+// pointer-sized placeholders so every used slot sits at its real offset.
+#[repr(C)]
+struct IShellLinkW {
+    lpVtbl: *const IShellLinkWVtbl,
+}
+#[repr(C)]
+struct IShellLinkWVtbl {
+    QueryInterface:
+        unsafe extern "system" fn(This: *mut IShellLinkW, riid: *const IID, ppv: *mut LPVOID) -> HRESULT,
+    AddRef: usize,
+    Release: unsafe extern "system" fn(This: *mut IShellLinkW) -> ULONG,
+    GetPath: usize,
+    GetIDList: usize,
+    SetIDList: usize,
+    GetDescription: usize,
+    SetDescription: unsafe extern "system" fn(This: *mut IShellLinkW, pszName: LPCWSTR) -> HRESULT,
+    GetWorkingDirectory: usize,
+    SetWorkingDirectory: unsafe extern "system" fn(This: *mut IShellLinkW, pszDir: LPCWSTR) -> HRESULT,
+    GetArguments: usize,
+    SetArguments: unsafe extern "system" fn(This: *mut IShellLinkW, pszArgs: LPCWSTR) -> HRESULT,
+    GetHotkey: usize,
+    SetHotkey: unsafe extern "system" fn(This: *mut IShellLinkW, wHotkey: WORD) -> HRESULT,
+    GetShowCmd: usize,
+    SetShowCmd: unsafe extern "system" fn(This: *mut IShellLinkW, iShowCmd: INT) -> HRESULT,
+    GetIconLocation: usize,
+    SetIconLocation:
+        unsafe extern "system" fn(This: *mut IShellLinkW, pszIconPath: LPCWSTR, iIcon: INT) -> HRESULT,
+    SetRelativePath: usize,
+    Resolve: usize,
+    SetPath: unsafe extern "system" fn(This: *mut IShellLinkW, pszFile: LPCWSTR) -> HRESULT,
+}
+#[repr(C)]
+struct IPersistFile {
+    lpVtbl: *const IPersistFileVtbl,
+}
+#[repr(C)]
+struct IPersistFileVtbl {
+    QueryInterface: usize,
+    AddRef: usize,
+    Release: unsafe extern "system" fn(This: *mut IPersistFile) -> ULONG,
+    GetClassID: usize,
+    IsDirty: usize,
+    Load: usize,
+    Save: unsafe extern "system" fn(This: *mut IPersistFile, pszFileName: LPCWSTR, fRemember: BOOL) -> HRESULT,
+    SaveCompleted: usize,
+    GetCurFile: usize,
+}
+// From the uuid static library userenv links (dll/win32/userenv/CMakeLists.txt keeps it for these).
+extern "C" {
+    static CLSID_ShellLink: CLSID;
+    static IID_IShellLinkW: IID;
+    static IID_IPersistFile: IID;
+}
+// wtypes.idl: CLSCTX_INPROC_SERVER = 0x1 (not in this crate's bindgen island).
+const CLSCTX_INPROC_SERVER: DWORD = 0x1;
+// L"%HOMEDRIVE%%HOMEPATH%"
+static HOME_DIR_W: [u16; 22] = [
+    b'%' as u16, b'H' as u16, b'O' as u16, b'M' as u16, b'E' as u16, b'D' as u16, b'R' as u16,
+    b'I' as u16, b'V' as u16, b'E' as u16, b'%' as u16, b'%' as u16, b'H' as u16, b'O' as u16,
+    b'M' as u16, b'E' as u16, b'P' as u16, b'A' as u16, b'T' as u16, b'H' as u16, b'%' as u16, 0,
+];
+
+/// The shell-link half shared by AddDesktopItemW and AddItemW: create a ShellLink object,
+/// describe the target, and persist it to `szLinkPath`. Both C bodies carry this sequence
+/// verbatim; the original translation replaced it with `bResult = TRUE`, so both exports
+/// reported success while never writing the .lnk.
+unsafe fn SaveShellLink(
+    Ole32: *mut DYN_FUNCS,
+    szLinkPath: LPCWSTR,
+    lpItemName: LPCWSTR,
+    szCommand: LPCWSTR,
+    szArguments: LPCWSTR,
+    lpIconLocation: LPCWSTR,
+    iIcon: INT,
+    lpWorkingDirectory: LPCWSTR,
+    wHotKey: WORD,
+    iShowCmd: INT,
+) -> BOOL {
+    let fns = (*Ole32).fn_.__bindgen_anon_1.as_ref();
+    // LoadDynamicImports fails unless it resolved every entry, so these are all Some.
+    let (Some(CoInitialize), Some(CoCreateInstance), Some(CoUninitialize)) =
+        (fns.CoInitialize, fns.CoCreateInstance, fns.CoUninitialize)
+    else {
+        return 0;
+    };
+    let mut psl: *mut IShellLinkW = core::ptr::null_mut();
+    let mut ppf: *mut IPersistFile = core::ptr::null_mut();
+    let mut bResult: BOOL = 0;
+
+    CoInitialize(core::ptr::null_mut());
+
+    let mut hr = CoCreateInstance(
+        core::ptr::addr_of!(CLSID_ShellLink),
+        core::ptr::null_mut(),
+        CLSCTX_INPROC_SERVER,
+        core::ptr::addr_of!(IID_IShellLinkW),
+        core::ptr::addr_of_mut!(psl) as *mut LPVOID,
+    );
+    if SUCCEEDED(hr) == 0 {
+        CoUninitialize();
+        return 0;
+    }
+
+    hr = ((*(*psl).lpVtbl).QueryInterface)(
+        psl,
+        core::ptr::addr_of!(IID_IPersistFile),
+        core::ptr::addr_of_mut!(ppf) as *mut LPVOID,
+    );
+    if SUCCEEDED(hr) != 0 {
+        let vt = &*(*psl).lpVtbl;
+        (vt.SetDescription)(psl, lpItemName);
+        (vt.SetPath)(psl, szCommand);
+        (vt.SetArguments)(psl, szArguments);
+        (vt.SetIconLocation)(psl, lpIconLocation, iIcon);
+        if !lpWorkingDirectory.is_null() {
+            (vt.SetWorkingDirectory)(psl, lpWorkingDirectory);
+        } else {
+            (vt.SetWorkingDirectory)(psl, HOME_DIR_W.as_ptr());
+        }
+        (vt.SetHotkey)(psl, wHotKey);
+        (vt.SetShowCmd)(psl, iShowCmd);
+
+        hr = ((*(*ppf).lpVtbl).Save)(ppf, szLinkPath, TRUE);
+        if SUCCEEDED(hr) != 0 {
+            bResult = TRUE;
+        }
+
+        ((*(*ppf).lpVtbl).Release)(ppf);
+    }
+
+    ((*(*psl).lpVtbl).Release)(psl);
+
+    CoUninitialize();
+
+    bResult
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn AddDesktopItemW(
     bCommonDesktop: BOOL,
@@ -258,10 +398,6 @@ pub unsafe extern "system" fn AddDesktopItemW(
     let mut hFind: HANDLE;
     let mut Ptr: LPWSTR;
     let mut dwLength: DWORD;
-    let mut psl: *mut core::ffi::c_void;
-    let mut ppf: *mut core::ffi::c_void;
-    let mut hr: HRESULT = 0;
-    let mut bResult: BOOL = 0;
 
     if GetDesktopPath(bCommonDesktop, core::ptr::addr_of_mut!(szLinkPath[0])) == 0 {
         return 0;
@@ -300,17 +436,18 @@ pub unsafe extern "system" fn AddDesktopItemW(
         return 0;
     }
 
-    if SUCCEEDED(0) == 0 {
-        UnloadDynamicImports(core::ptr::addr_of_mut!(Ole32));
-        return 0;
-    }
-
-    psl = core::ptr::null_mut();
-    ppf = core::ptr::null_mut();
-
-    if SUCCEEDED(hr) != 0 {
-        bResult = 1;
-    }
+    let bResult = SaveShellLink(
+        core::ptr::addr_of_mut!(Ole32),
+        szLinkPath.as_ptr(),
+        lpItemName,
+        szCommand.as_ptr(),
+        szArguments.as_ptr(),
+        lpIconLocation,
+        iIcon,
+        lpWorkingDirectory,
+        wHotKey,
+        iShowCmd,
+    );
 
     UnloadDynamicImports(core::ptr::addr_of_mut!(Ole32));
 
@@ -595,9 +732,6 @@ pub unsafe extern "system" fn AddItemW(
     let mut hFind: HANDLE;
     let mut Ptr: *mut u16;
     let mut dwLength: u32;
-    let mut psl: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut ppf: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut hr: HRESULT = 0;
     let mut bResult: BOOL;
 
     bResult = 0;
@@ -622,7 +756,7 @@ pub unsafe extern "system" fn AddItemW(
 
     wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), BACKSLASH_W.as_ptr() as *const u16);
     wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), lpItemName);
-    wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), b".\0l\0n\0k\0\0\0".as_ptr() as *const u16);
+    wcscat(core::ptr::addr_of_mut!(szLinkPath[0]), DOT_LNK_W.as_ptr());
 
     Ptr = wcschr(lpArguments, ' ' as u16);
     if !Ptr.is_null() {
@@ -644,17 +778,18 @@ pub unsafe extern "system" fn AddItemW(
         return 0;
     }
 
-    hr = 0;
-    if SUCCEEDED(hr) == 0 {
-        UnloadDynamicImports(core::ptr::addr_of_mut!(Ole32));
-        return 0;
-    }
-
-    if SUCCEEDED(hr) != 0 {
-        if SUCCEEDED(hr) != 0 {
-            bResult = 1;
-        }
-    }
+    bResult = SaveShellLink(
+        core::ptr::addr_of_mut!(Ole32),
+        szLinkPath.as_ptr(),
+        lpItemName,
+        szCommand.as_ptr(),
+        szArguments.as_ptr(),
+        lpIconLocation,
+        iIcon,
+        lpWorkingDirectory,
+        wHotKey,
+        iShowCmd,
+    );
 
     UnloadDynamicImports(core::ptr::addr_of_mut!(Ole32));
 
