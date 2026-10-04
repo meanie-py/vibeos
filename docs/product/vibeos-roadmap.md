@@ -2327,6 +2327,43 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
   it is a one-command check.
 
+- **RETRACTED 2026-10-03: "arm64 WoW64 guests fault INSIDE FEX's code cache" was never a bug.**
+  Settled by rebuilding the tree it was measured on (`c3bacfab2d4`, worktree
+  `vibeos-fex-sept`, same `lua32.exe` by sha256) and booting it. Demonstrated:
+
+  1. **`lua32` passes on the September tree** — all six rungs, `exit = 0x600d` — once the boot
+     is not cut short (`smoke --until "sqlite32.exe exit"`; twice, artifacts
+     `20261003-205955-c25w6b__` and `20261003-210513-ias8s8nj`).
+  2. **The September "death" was the ladder harness.** That tree's `watch()` computes
+     in-flight optional guests from the serial drained *since the call*, so it breaks the
+     moment the last parity guest reports if `lua32`'s launch line has not arrived yet — and
+     winlogon only launches `lua32` after the last parity guest exits. Reproduced with
+     `--ladder` on the September tree (`20261003-205536-fvua4odz`): drain stopped at 73.7s of a
+     420s ceiling, `LADDER_FAIL: lua32.exe never reported`, while the serial after the stop
+     shows `lua32` still alive, making syscalls. Fixed `8756f3fbe4a` (2026-09-26, "ladder drain
+     stops racing launches") — after the September measurement, before the October farm.
+  3. **The symbolicated `[UEXC]` records are the normal path.** The September tree logs 3
+     LookupCache AVs in *every* FEX process, including the nine that pass, at the same RVAs and
+     the same first address `0x7FFFBEFB7858` the September entry quoted as the crash. They are
+     FEX's designed overcommit emulation (below) and they recover.
+  4. **`sqlite32`'s failure is real but is a KERNEL bug, not FEX:** `BUGCHECK 0x1E`
+     (`0xC0000098`, `STATUS_FILE_INVALID`) raised via `RtlRaiseStatus` on sqlite32's own thread,
+     raising frames outside ntoskrnl's symbol table (a driver; fastfat is the obvious suspect for
+     an on-disk database, unproven). **`2252abfbb61` — the fastfat dirent-bitmap fix — is NOT
+     the cure:** cherry-picked onto the September tree it removes the `FatDeleteDirent` ASSERT
+     (3 hits → 0) but `sqlite32` still bugchecks identically. Something else between 09-13 and
+     10-03 fixed it; `sqlite32` passes 10/10 at HEAD. Owed to the fastfat/IO lane as a
+     bisect, not to FEX.
+
+  Inferred (consistent with all of the above, not separately tested): the "size correlation"
+  was a coincidence of which guests were OPTIONAL — `lua32` and `sqlite32` were the only two
+  subject to the drain race, and both happen to be big; the size-matched control was optional
+  too. None of the four arm64 exception-path fixes is needed to explain anything. The
+  overcommit analysis and the 10-boot farm below remain accurate as descriptions of FEX's
+  behaviour; they are no longer evidence of a bug.
+
+  **History, kept because the retraction is only as good as the record it corrects.**
+
 - **arm64 WoW64 guests fault INSIDE FEX's code cache — DOES NOT REPRODUCE at
   `87944d5e281`+ (2026-10-03), and the measurement CONFIRMS the overcommit mechanism rather
   than clearing it.** One `smoke --arch arm64 --ladder` run, artifact
@@ -2372,6 +2409,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   The narrow spread (range 5 over 10 boots) says this is **not a rare race** — it is a
   deterministic function of how many cold pages the cache touches, firing ~54x per boot and
   recovering every time. 539 demand-commits, 539 recoveries, 0 deaths.
+
+  **The commit-and-retry chain is verified end to end — from logs we already had, no new
+  instrumentation.** The kernel's `[UEXC]` dump carries `P1` = `ExceptionInformation[1]`, the
+  fault address. Attributing each AV to its process by load base, across all 10 boots:
+  **538 LookupCache AVs, 0 repeat faults on the same page, 0 faults inside a 64K window an
+  earlier fault would have committed.** Every AV is the first touch of a fresh region, and
+  that process's next fault always lands outside the 64K `HandleAccessViolation` commits — so
+  handler reached, commit succeeded, instruction retried, 538/538. Reads 238 / writes 300,
+  matching `FindBlock` (reads) and `AddBlockMapping` (writes). The first fault in a process is
+  at `0x7FFFBEFB7858`, **byte-identical to the September address above** — `MEM_TOP_DOWN`
+  places the reservation identically every time, so the two measurements are directly
+  comparable.
+
+  **What that says about September.** A failed *commit* would show as a repeat fault at the
+  same address — a retry loop, i.e. a hang. September's guests instead **died with
+  `c0000005`**, which means the AV went *unhandled*: either `Query.Enclosed` was false (the
+  address was not in a registered overcommit interval) or the plugin's handler was never
+  reached. No September serial survives the disk failure to tell those apart, so the only way
+  forward is to reproduce it: build the 2026-09-13 tree and boot it.
 
   **What 0/10 does and does not bound.** It is strong evidence against the JULY rate and weak
   evidence against a low one: at July's 3/6 (50%) a 10/10 green run is p=0.001; the 95%

@@ -6444,6 +6444,29 @@ cannot run still returns something that reads like an answer.
 "Binary files differ" and none of the bytes, so a preserve-patch generated without it silently
 cannot restore anything binary-ish. Pass `--binary` when the patch is the only copy.
 
+### Inspecting a binary with `objcopy --dump-section` REWRITES it in place
+
+**Symptom.** A build output changes size and hash after it was linked, with no build having
+run — `libwow64fex.dll` went 4,562,944 → 4,542,464 bytes in three separate build dirs, each
+time seconds after someone "only looked at" its `.text`. Media staged from it afterwards
+carries the altered binary, so a reproduction built on it is not of the thing you built, and
+any symbolication recorded against the original hash no longer matches the file on disk.
+
+**Cause.** `objcopy [options] <input> [<output>]` — when `<output>` is omitted, objcopy writes
+its result back over `<input>`. `--dump-section NAME=FILE` extracts a section *and still emits
+the object*, re-serialized: for a PE, llvm-objcopy re-lays the sections and drops padding,
+hence the 20,480-byte shrink. The dumped section bytes are the original ones, so the
+comparison you were running looks correct; the damage is to the file you inspected. The
+mtime moves to the instant of the inspection, which on a file linked a minute earlier is easy
+to misread as the link.
+
+**Fix.** Give objcopy an explicit throwaway output, or never point it at a build output:
+`llvm-objcopy --dump-section .text=/tmp/x.text in.dll /dev/null` (or copy the file first).
+Prefer read-only tools for inspection — `llvm-readobj --sections`, `llvm-objdump -h`, `-s -j
+.text`. If it has already happened, restore from a staged copy whose hash you recorded (the
+ramdisk/ISO is a faithful archive of what was built), or force a relink by deleting the output
+— an mtime-newer-than-inputs file will not relink on its own.
+
 ### A correct staleness oracle and a build graph that cannot act on it
 
 **Symptom:** `build` fails `BUILD_INCOMPLETE` naming a stale binary — e.g.
@@ -11007,6 +11030,35 @@ sit out the whole 420s ceiling waiting for WoW64 guests that do not exist there.
 **Also the general rule for fixtures:** when the environment cannot support a rung's *fixture*
 (not its subject), skip it loudly with the errno and keep the remaining rungs running, rather
 than failing the whole guest. The arch where the fixture works keeps full coverage of that rung.
+
+### On a JIT host a `[UEXC]` record is not a crash — FEX takes access violations BY DESIGN
+
+**Symptom.** A WoW64 guest on arm64 fails to report, and its serial holds `[UEXC]
+Code=0xC0000005` records whose PCs symbolicate cleanly into FEXCore — `LookupCache::FindBlock`,
+`LookupCache::AddBlockMapping` — with a translation-fault ESR (`0x92000006/7`) at a plausible
+high address (`0x7FFFBEFB7858`). It reads as a crash in FEX's code cache, the symbolication is
+correct, and a "size-matched control" fails the same way. This was filed as an open FEX bug for
+three weeks.
+
+**Cause.** The kernel prints `[UEXC]` for every user exception it *dispatches*, handled or not.
+FEX on Windows emulates Linux-style overcommit with exceptions: `LookupCache` reserves its map
+with `Commit=false`, registers it with `OvercommitTracker`, and the plugin's exception handler
+commits 64K on each first touch and resumes. So every FEX process takes a handful of these on
+cold pages (3/process on 2026-09-13's tree, ~54/boot on 2026-10-03's) — including every guest
+that passes. Add ~1,200 alignment fixups and ~200 other recovered AVs per boot. The record is
+the normal path. What actually failed in that case was two unrelated things: the ladder drain
+quit before an optional guest's launch line arrived (fixed `8756f3fbe4a`), so `lua32` was cut
+off while still alive; and `sqlite32` hit a real kernel bugcheck (`0x1E`,
+`STATUS_FILE_INVALID`). The "control" was optional too, so it hit the same drain race.
+
+**Fix.** Before treating a `[UEXC]` as the failure, establish that the process *died of it*:
+look for the guest's `exit = 0x…` line, a `[UEXC-KILL]` banner, or a repeat fault at the same
+`P1` (a recovery that does not complete re-faults at the same address — a retry loop, not a
+death). Then compare against a guest that PASSED in the same boot: if it carries the same
+records at the same RVAs, they are not your bug. `P1` is `ExceptionInformation[1]`, the fault
+address, so "no page faults twice in a process" is a free end-to-end check of the recovery.
+And when a guest "never reports", read the serial *after* the harness stopped draining — a
+guest still making syscalls was cut off, not killed.
 
 ### A stock binary flushes out what a hand-written guest never can `[§9.67]`
 Every guest through M10 was written by us — a hidden bias, because a guest you author can only
