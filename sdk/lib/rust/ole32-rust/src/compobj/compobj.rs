@@ -227,6 +227,7 @@ pub unsafe fn COM_CurrentCausalityId() -> GUID {
     }
     if guid_eq(&(*info).causality_id, &GUID_NULL) {
         CoCreateGuid(&raw mut (*info).causality_id);
+        (*info).flags |= OLETLS_UUIDINITIALIZED;
     }
     (*info).causality_id
 }
@@ -674,6 +675,12 @@ unsafe fn apartment_get_or_create(model: DWORD) -> *mut APARTMENT {
                 TRACE!();
             }
 
+            // wine-10 (combase apartment_get_or_create)
+            (*COM_CurrentInfo()).flags |= OLETLS_APARTMENTTHREADED;
+            if (model & COINIT_DISABLE_OLE1DDE) != 0 {
+                (*COM_CurrentInfo()).flags |= OLETLS_DISABLE_OLE1DDE;
+            }
+
             LeaveCriticalSection(&raw mut csApartment);
 
             if (*apt).main != FALSE {
@@ -691,6 +698,8 @@ unsafe fn apartment_get_or_create(model: DWORD) -> *mut APARTMENT {
             } else {
                 MTA = apartment_construct(model);
             }
+
+            (*COM_CurrentInfo()).flags |= OLETLS_MULTITHREADED | OLETLS_DISABLE_OLE1DDE;
 
             apt = MTA;
 
@@ -2007,6 +2016,7 @@ pub unsafe extern "C" fn leave_apartment(info: *mut oletls) {
         }
         apartment_release((*info).apt);
         (*info).apt = null_mut();
+        (*info).flags &= !(OLETLS_DISABLE_OLE1DDE | OLETLS_APARTMENTTHREADED | OLETLS_MULTITHREADED);
     }
 }
 
@@ -5088,6 +5098,8 @@ pub unsafe extern "system" fn CoGetApartmentType(
             apartment_release(apt);
             *type_ = APTTYPE_MTA;
             *qualifier = APTTYPEQUALIFIER_IMPLICIT_MTA;
+            // wine-10: an implicit MTA is a success, not CO_E_NOTINITIALIZED.
+            return S_OK;
         }
     }
 
