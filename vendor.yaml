@@ -1961,6 +1961,26 @@ trees:
 
       The version probe reads config.h, which in a vendored tree is usually OUR file
       and can be laundered (see libmpg123). The version is settled independently:
+  - path: sdk/lib/rust/musl-math/ref
+    name: musl libc math (exp/exp2/log/log2/pow and f32 forms; ARM optimized-routines)
+    translate: keep
+    upstream: https://git.musl-libc.org/cgit/musl/tree/src/math
+    license: MIT
+    license_file: sdk/lib/rust/musl-math/ref/COPYRIGHT
+    modified: no
+    version:
+      literal: musl master, src/math, fetched 2026-10-03
+    reason: >
+      The pristine C that sdk/lib/rust/musl-math ports to Rust -- musl's exp, exp2, log,
+      log2, pow, expf, exp2f, logf, log2f and powf with their coefficient tables and the
+      __math_* helpers, i.e. ARM's optimized-routines (Copyright (c) 2017-2018 Arm Limited,
+      MIT) as musl ships them. It is a TEST ORACLE, never linked into the product:
+      musl-math-difftest compiles it for the host (shim/ stands in for <math.h>, whose
+      glibc internals collide with musl's libm.h) and requires the Rust port to match it
+      bit for bit. The port exists because the `libm` crate still carries FreeBSD msun's
+      older pow/exp/log, which miss the nearest double in ~10% of pow(10, n); msvcrt's x87
+      pow and Windows' do not. shim/ is ours (two small headers); everything else is musl.
+
 
       DIFFED 2026-09-30 against the pristine release, dl.winehq.org vkd3d-1.14.tar.xz
       (sha256 c94015d59ebe8ae72c4d802af5ca1517d9744548842a4e776534612a8d905485). 33 files

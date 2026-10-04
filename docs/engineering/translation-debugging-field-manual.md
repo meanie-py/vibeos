@@ -988,6 +988,20 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   C function DEFINED by the current mode (`rint`, `nearbyint`, `lrint`, `llrint`) must not be
   a plain `libm` call: use `frintx`/`frinti` on arm64. On x86 libm's `x + 2^52 - 2^52` happens
   to round in MXCSR's mode.
+- **`libm` is NOT musl for `pow`/`exp`/`log`** (or `exp2`/`log2`): those are FreeBSD msun's
+  older e_pow.c and friends — under 1 ulp, but `pow(10, n)` misses the nearest double in 65 of
+  601 cases (glibc 2, musl's current code 3). msvcrt's x87 `pow` got them right, so a straight
+  swap regressed i386; the msvcrt winetest saw it because it builds its EXPECTED values with
+  `pow(10, n)`. `sdk/lib/rust/musl-math` is a port of musl's ARM-routine versions, graded
+  bit-exact against the musl C (`musl-math-difftest`). Check a crate's `origin:` header
+  before calling it "the same code as X".
+- **Generating coefficient tables from C: diff the generated values against the compiled C
+  object, not against your reading of the source.** Two generator bugs shipped wrong tables
+  that the Rust compiled and ran fine on: matching C designated initializers by POSITION
+  (exp_data.c initialises `negln2hiN` before `shift`, unlike the struct), and stripping a
+  float `f` suffix with `rstrip("f")`, which ate the last digit of every hex table integer
+  ending in `f`. Both surfaced only as "exp-family mismatches, log-family exact" in the
+  bit-exact fuzz; dumping `__exp_data` from the C object found them in a minute.
 
 ### i386 symbol lookup and asm aliasing
 - **Three decoration schemes**: cdecl `_name`, stdcall `_name@N`, fastcall `@name@N`. A grep

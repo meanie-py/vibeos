@@ -33,5 +33,5 @@ msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }
 # reference TUs — oracle contamination. Engine equality is graded where
 # it lives: cnt-difftest, against the same sdk/lib/crt/math sources
 # crtmath compiles.
-cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-math", "cabi-intdiv"] }
+cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-math", "cabi-intdiv", "crt-math-errors"] }
 panic-common = { path = "../panic-common", features = ["user"] }

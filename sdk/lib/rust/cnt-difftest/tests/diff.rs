@@ -3883,7 +3883,10 @@ fn diff_math_nexttowardf() {
 // --- Wave MATH-TIERC sub-wave 2: exp / log / log10 / pow / fmod -------------
 
 fn diff_math_exp() {
-    // Range-reduce + degree-5 rational; bit-exact vs the genuine .c under
+    // Two contracts. The exported `exp` is musl's (musl-math, graded bit-exact against
+    // the musl C in musl-math-difftest) wherever libm-class crates build; `exp_fdlibm`,
+    // what the no-SSE i686 build exports instead, is
+    // range-reduce + degree-5 rational; bit-exact vs the genuine .c under
     // -ffp-contract=off. Random bit images cover NaN/±inf/subnormal/
     // overflow(>709)/underflow(<-745)/tiny(<2^-28); a dense moderate sweep
     // exercises the polynomial + 2^k scaling path.
@@ -3894,12 +3897,14 @@ fn diff_math_exp() {
     }
     for &b in &bits {
         let x = f64::from_bits(b);
-        assert!(same_f64(cabi::exp(x), unsafe { ref_exp(x) }), "exp {b:#018x}");
+        assert!(same_f64(cabi::exp_fdlibm(x), unsafe { ref_exp(x) }), "exp {b:#018x}");
+        assert!(same_f64(cabi::exp(x), musl_math::exp(x).0), "exp(musl) {b:#018x}");
     }
     for _ in 0..200_000 {
         let u = rng.next();
         let x = (u as f64) / (u64::MAX as f64) * 1500.0 - 750.0;
-        assert!(same_f64(cabi::exp(x), unsafe { ref_exp(x) }), "exp {x}");
+        assert!(same_f64(cabi::exp_fdlibm(x), unsafe { ref_exp(x) }), "exp {x}");
+        assert!(same_f64(cabi::exp(x), musl_math::exp(x).0), "exp(musl) {x}");
     }
 }
 
@@ -3914,12 +3919,14 @@ fn diff_math_log() {
     }
     for &b in &bits {
         let x = f64::from_bits(b);
-        assert!(same_f64(cabi::log(x), unsafe { ref_log(x) }), "log {b:#018x}");
+        assert!(same_f64(cabi::log_fdlibm(x), unsafe { ref_log(x) }), "log {b:#018x}");
+        assert!(same_f64(cabi::log(x), musl_math::log(x).0), "log(musl) {b:#018x}");
     }
     for _ in 0..200_000 {
         let u = rng.next();
         let x = (u as f64) / (u64::MAX as f64) * 1.0e6;
-        assert!(same_f64(cabi::log(x), unsafe { ref_log(x) }), "log {x}");
+        assert!(same_f64(cabi::log_fdlibm(x), unsafe { ref_log(x) }), "log {x}");
+        assert!(same_f64(cabi::log(x), musl_math::log(x).0), "log(musl) {x}");
     }
 }
 
@@ -4363,12 +4370,14 @@ fn diff_math_exp2() {
     }
     for &b in &b64 {
         let x = f64::from_bits(b);
-        assert!(same_f64(cabi::exp2(x), unsafe { ref_exp2(x) }), "exp2 {b:#018x}");
+        assert!(same_f64(cabi::exp2_amd(x), unsafe { ref_exp2(x) }), "exp2 {b:#018x}");
+        assert!(same_f64(cabi::exp2(x), musl_math::exp2(x).0), "exp2(musl) {b:#018x}");
     }
     for _ in 0..200_000 {
         let u = rng.next();
         let x = (u as f64) / (u64::MAX as f64) * 2200.0 - 1100.0;
-        assert!(same_f64(cabi::exp2(x), unsafe { ref_exp2(x) }), "exp2 {x}");
+        assert!(same_f64(cabi::exp2_amd(x), unsafe { ref_exp2(x) }), "exp2 {x}");
+        assert!(same_f64(cabi::exp2(x), musl_math::exp2(x).0), "exp2(musl) {x}");
     }
 }
 

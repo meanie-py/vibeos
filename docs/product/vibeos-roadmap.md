@@ -602,7 +602,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   to the SSE2 baseline (libm cannot compile under `-sse`), which in turn exposed
   `sdk/lib/crt`'s x87-only i386 `_control87`/`_statusfp`/`_clearfp` -- replaced by Wine's
   both-unit versions in `fenv.rs`; and `rint`/`nearbyint` on arm64 are `frintx`/`frinti`,
-  because `libm` ignores rounding modes. Still `-stub`: the `_d*`/`_fd*` internal helpers
+  because `libm` ignores rounding modes. `pow`/`exp`/`log`/`exp2`/`log2` (and f32 forms) come
+  from `sdk/lib/rust/musl-math` instead of `libm` -- a port of musl's current algorithms,
+  bit-exact against the musl C -- because libm's are FreeBSD's older ones (see the field
+  manual). i386 msvcrt.dll moved to SSE2 too (2026-10-03), and cnt-rust's exp/log/pow/log10/
+  fmod now carry Wine's errno/`_matherr` contract in both CRTs (`__cnt_math_error`). Still
+  owed: the rest of cnt-rust's C89 set (trig, sqrt, ldexp, _logb, ...) onto libm with the
+  same contract, and the ieee754 Bessel C onto libm. Still `-stub`: the `_d*`/`_fd*` internal helpers
   (`_dexp`, `_dnorm`, `_dpoly`, ...) and `_except1`. Owner: ucrt-rust.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs

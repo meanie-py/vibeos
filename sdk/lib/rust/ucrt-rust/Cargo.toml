@@ -210,7 +210,7 @@ fenv = ["fpctrl"]
 # The C99 math functions (acosh ... trunc) that were ucrtbase spec stubs, plus
 # _fpclassf, _dpcomp/_fdpcomp, _Cbuild/creal. The algorithms are the `libm` crate;
 # the UCRT errno contract is ours. See src/c99math.rs.
-c99math = ["dep:libm", "fenv"]
+c99math = ["dep:libm", "dep:musl-math", "fenv", "ucrt-reactos"]
 # heap/ -- malloc/free/realloc and friends over __acrt_heap, new_handler/new_mode.
 heap = []
 # stdlib/ (qsort/bsearch/lfind/lsearch, rand/rand_s, abs/div families) and the
@@ -227,3 +227,6 @@ varargs-rust = { path = "../varargs-rust" }
 # musl's libm in Rust (MIT, no_std): the algorithms behind `c99math`. Third-party, so
 # it is listed in THIRD-PARTY-NOTICES.md's Rust-crates table via `tools/vendored.py`.
 libm = { version = "0.2.16", optional = true }
+# Our port of musl's current log2/exp2 (the libm crate's are FreeBSD's older ones); see
+# musl-math/Cargo.toml. Same target constraints as libm.
+musl-math = { path = "../musl-math", optional = true }

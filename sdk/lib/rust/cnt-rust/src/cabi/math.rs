@@ -780,9 +780,138 @@ pub extern "C" fn sqrtf(x: f32) -> f32 {
 // >=64 count but the host reference compiles to masked `shr`/`shl`).
 // ===========================================================================
 
-/// `double exp(double)` — range reduction + degree-5 rational approximation.
+// ── the CRT error contract, and musl's exp/log/pow ─────────────────────────
+//
+// Where `cnt_libm` holds (everything but the builtin no-SSE i686 build), exp/exp2/log/pow
+// and expf/logf/powf are `musl-math` -- our port of musl's current ARM-routine algorithms,
+// graded bit-exact against the musl C in musl-math-difftest -- and log10/fmod are `libm`.
+// Each reports its domain/pole/range error the way Wine's copy of the same musl code calls
+// `math_error`: through `__cnt_math_error`, which the CRT defines (errno, `_matherr`) when
+// the `crt-math-errors` feature is on. The kernel leaves it off and never names the hook.
+// The bodies below them (the fdlibm/AMD ports) remain only for the no-SSE i686 build.
+
+#[cfg(cnt_libm)]
+use musl_math::MathErr;
+
+#[cfg(all(cnt_libm, feature = "crt-math-errors"))]
+extern "C" {
+    /// The CRT's `math_error`: `type` is `_DOMAIN` 1 / `_SING` 2 / `_OVERFLOW` 3 /
+    /// `_UNDERFLOW` 4; returns the (possibly user-replaced) result.
+    fn __cnt_math_error(type_: i32, name: *const core::ffi::c_char, arg1: f64, arg2: f64, retval: f64) -> f64;
+}
+
+#[cfg(cnt_libm)]
+#[inline(always)]
+fn crt_err(r: (f64, MathErr), name: &core::ffi::CStr, arg1: f64, arg2: f64) -> f64 {
+    #[cfg(feature = "crt-math-errors")]
+    {
+        let t = match r.1 {
+            MathErr::None => return r.0,
+            MathErr::Domain => 1,
+            MathErr::Sing => 2,
+            MathErr::Overflow => 3,
+            MathErr::Underflow => 4,
+        };
+        unsafe { __cnt_math_error(t, name.as_ptr(), arg1, arg2, r.0) }
+    }
+    #[cfg(not(feature = "crt-math-errors"))]
+    {
+        let _ = (name, arg1, arg2);
+        r.0
+    }
+}
+
+#[cfg(cnt_libm)]
+#[inline(always)]
+fn crt_errf(r: (f32, MathErr), name: &core::ffi::CStr, arg1: f32, arg2: f32) -> f32 {
+    crt_err((r.0 as f64, r.1), name, arg1 as f64, arg2 as f64) as f32
+}
+
+/// `double exp(double)` -- musl's. NaN is `_DOMAIN`, as in Wine.
+#[cfg(cnt_libm)]
 #[no_mangle]
 pub extern "C" fn exp(x: f64) -> f64 {
+    crt_err(musl_math::exp(x), c"exp", x, 0.0)
+}
+
+/// `double log(double)` -- musl's. ±0 is a pole; a negative argument or NaN `_DOMAIN`.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn log(x: f64) -> f64 {
+    crt_err(musl_math::log(x), c"log", x, 0.0)
+}
+
+/// `double exp2(double)` -- musl's. Wine's exp2.c sets errno ERANGE on overflow and on
+/// underflow down to -2^31 (below that it returns 0 quietly), and never calls `_matherr`.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn exp2(x: f64) -> f64 {
+    let (v, _e) = musl_math::exp2(x);
+    #[cfg(feature = "crt-math-errors")]
+    if _e == MathErr::Overflow || (_e == MathErr::Underflow && x > -2147483648.0) {
+        unsafe { *_errno() = 34 }; // ERANGE
+    }
+    v
+}
+
+/// `float expf(float)` -- musl's.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn expf(x: f32) -> f32 {
+    crt_errf(musl_math::expf(x), c"expf", x, 0.0)
+}
+
+/// `float logf(float)` -- musl's. Wine's logf.c lets NaN through without a report.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn logf(x: f32) -> f32 {
+    if x.is_nan() {
+        return x;
+    }
+    crt_errf(musl_math::logf(x), c"logf", x, 0.0)
+}
+
+/// `float powf(float, float)` -- musl's.
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn powf(x: f32, y: f32) -> f32 {
+    crt_errf(musl_math::powf(x, y), c"powf", x, y)
+}
+
+/// `float log10f(float)` -- libm's, with Wine's log10f.c error points. Not on i386 (see
+/// the older body's note).
+#[cfg(all(not(target_arch = "x86"), cnt_libm))]
+#[no_mangle]
+pub extern "C" fn log10f(x: f32) -> f32 {
+    let r = libm::log10f(x);
+    let e = if x == 0.0 {
+        MathErr::Sing
+    } else if x < 0.0 {
+        MathErr::Domain
+    } else {
+        MathErr::None
+    };
+    crt_errf((r, e), c"log10f", x, 0.0)
+}
+
+/// `float fmodf(float, float)` -- libm's; an infinite dividend is `_DOMAIN` (Wine).
+#[cfg(cnt_libm)]
+#[no_mangle]
+pub extern "C" fn fmodf(x: f32, y: f32) -> f32 {
+    let r = libm::fmodf(x, y);
+    crt_errf((r, if x.is_infinite() { MathErr::Domain } else { MathErr::None }), c"fmodf", x, y)
+}
+
+/// `double exp(double)` — range reduction + degree-5 rational approximation.
+#[cfg(not(cnt_libm))]
+#[no_mangle]
+pub extern "C" fn exp(x: f64) -> f64 {
+    exp_fdlibm(x)
+}
+
+/// The body the no-SSE i686 build exports as `exp` (everything else takes musl's);
+/// kept callable everywhere so cnt-difftest still grades it against its C.
+pub extern "C" fn exp_fdlibm(x: f64) -> f64 {
     const LN2_HI: f64 = 6.93147180369123816490e-01;
     const LN2_LO: f64 = 1.90821492927058500170e-10;
     const INV_LN2: f64 = 1.44269504088896338700e+00;
@@ -868,8 +997,15 @@ pub extern "C" fn exp(x: f64) -> f64 {
 }
 
 /// `double log(double)` — natural logarithm, fdlibm-style.
+#[cfg(not(cnt_libm))]
 #[no_mangle]
 pub extern "C" fn log(x: f64) -> f64 {
+    log_fdlibm(x)
+}
+
+/// The body the no-SSE i686 build exports as `log` (everything else takes musl's);
+/// kept callable everywhere so cnt-difftest still grades it against its C.
+pub extern "C" fn log_fdlibm(x: f64) -> f64 {
     const LN2_HI: f64 = 6.93147180369123816490e-01;
     const LN2_LO: f64 = 1.90821492927058500170e-10;
     const LG1: f64 = 6.666666666666735130e-01;
@@ -965,20 +1101,29 @@ pub extern "C" fn log(x: f64) -> f64 {
 // `pow_asm.s`/`log10_asm.s`/`fmod_asm.s` link, as the original port intended for i386.
 
 /// `double log10(double)`.
-#[cfg(not(all(target_arch = "x86", not(target_feature = "sse2"), not(target_feature = "soft-float"))))]
+#[cfg(cnt_libm)]
 #[no_mangle]
 pub extern "C" fn log10(x: f64) -> f64 {
-    libm::log10(x)
+    // Wine's log10.c: ±0 is a pole, a negative argument a domain error, NaN passes.
+    let r = libm::log10(x);
+    let e = if x == 0.0 {
+        MathErr::Sing
+    } else if x < 0.0 {
+        MathErr::Domain
+    } else {
+        MathErr::None
+    };
+    crt_err((r, e), c"log10", x, 0.0)
 }
 
 /// `double pow(double, double)`.
-#[cfg(not(all(target_arch = "x86", not(target_feature = "sse2"), not(target_feature = "soft-float"))))]
+#[cfg(cnt_libm)]
 #[no_mangle]
 pub extern "C" fn pow(base: f64, exponent: f64) -> f64 {
-    libm::pow(base, exponent)
+    crt_err(musl_math::pow(base, exponent), c"pow", base, exponent)
 }
 
-#[cfg(all(target_arch = "x86", not(target_feature = "sse2"), not(target_feature = "soft-float")))]
+#[cfg(not(cnt_libm))]
 extern "C" {
     // math/i386/{pow,fmod}_asm.s (crtmath).
     fn pow(base: f64, exponent: f64) -> f64;
@@ -990,10 +1135,12 @@ extern "C" {
 /// binades and its `while (!(xi >> 52))` loop then spins; cnt-difftest had to fence the case
 /// out of its domain). `fmod` is exact, so libm's is bit-identical to it everywhere it
 /// terminated. i386 msvcrt.dll links `math/i386/fmod_asm.s`, as for `pow`.
-#[cfg(not(all(target_arch = "x86", not(target_feature = "sse2"), not(target_feature = "soft-float"))))]
+#[cfg(cnt_libm)]
 #[no_mangle]
 pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
-    libm::fmod(x, y)
+    // Wine's fmod.c reports only an infinite dividend; fmod(x, 0) is a quiet NaN.
+    let r = libm::fmod(x, y);
+    crt_err((r, if x.is_infinite() { MathErr::Domain } else { MathErr::None }), c"fmod", x, y)
 }
 
 // ===========================================================================
@@ -1951,8 +2098,15 @@ extern "C" fn scale_double_2(x: f64, n: i32) -> f64 {
 // flipped on amd64+arm64 behind the float feature, i386 keeps C.
 
 /// `double exp2(double)` — 2**x.
+#[cfg(not(cnt_libm))]
 #[no_mangle]
 pub extern "C" fn exp2(x: f64) -> f64 {
+    exp2_amd(x)
+}
+
+/// The body the no-SSE i686 build exports as `exp2` (everything else takes musl's);
+/// kept callable everywhere so cnt-difftest still grades it against its C.
+pub extern "C" fn exp2_amd(x: f64) -> f64 {
     const MAX_EXP2_ARG: f64 = 1024.0;
     const MIN_EXP2_ARG: f64 = -1074.0;
     const LOG2: f64 = 6.931471805599453094178e-01;
@@ -3532,12 +3686,14 @@ pub extern "C" fn cosf(x: f32) -> f32 {
 }
 
 /// `float expf(float)` — `math/expf.c`.
+#[cfg(not(cnt_libm))]
 #[no_mangle]
 pub extern "C" fn expf(x: f32) -> f32 {
     exp(x as f64) as f32
 }
 
 /// `float logf(float)` — `math/logf.c`.
+#[cfg(not(cnt_libm))]
 #[no_mangle]
 pub extern "C" fn logf(x: f32) -> f32 {
     log(x as f64) as f32
@@ -3552,13 +3708,14 @@ pub extern "C" fn logf(x: f32) -> f32 {
 // nothing), which is precisely what `tools/verify_ucrtbase_cohab.py`
 // exists to catch — and did catch, on this change, at `__copysignf`
 // (i386 decorates cdecl exports with a leading underscore).
-#[cfg(not(target_arch = "x86"))]
+#[cfg(all(not(target_arch = "x86"), not(cnt_libm)))]
 #[no_mangle]
 pub extern "C" fn log10f(x: f32) -> f32 {
     log10(x as f64) as f32
 }
 
 /// `float powf(float, float)` — `math/powf.c`.
+#[cfg(not(cnt_libm))]
 #[no_mangle]
 #[allow(unused_unsafe)] // `pow` is an extern (x87 asm) only in i386 msvcrt.dll
 pub extern "C" fn powf(x: f32, y: f32) -> f32 {
@@ -3566,6 +3723,7 @@ pub extern "C" fn powf(x: f32, y: f32) -> f32 {
 }
 
 /// `float fmodf(float, float)` — `math/fmodf.c`.
+#[cfg(not(cnt_libm))]
 #[no_mangle]
 #[allow(unused_unsafe)] // `fmod` is an extern (x87 asm) only in i386 msvcrt.dll
 pub extern "C" fn fmodf(x: f32, y: f32) -> f32 {
