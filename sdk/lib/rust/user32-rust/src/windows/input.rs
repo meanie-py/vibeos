@@ -976,12 +976,26 @@ unsafe fn IsValidKLID(pwszKLID: LPCWSTR) -> i32 {
 unsafe fn GetSystemLibraryPath(pszPath: LPWSTR, cchPath: INT, pszFileName: LPCWSTR) {
     let mut szSysDir: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     GetSystemDirectoryW(szSysDir.as_mut_ptr(), szSysDir.len() as u32);
+    /* StringCchPrintfW(pszPath, cchPath, ...): the output is bounded by cchPath and
+     * always NUL-terminated (truncated if it does not fit). wsprintfW alone knows no
+     * destination size, and the file name here comes from the registry, so format
+     * into wsprintfW's own 1024-char ceiling and copy at most cchPath - 1 back. */
+    if cchPath <= 0 {
+        return;
+    }
+    let mut szTemp: [u16; 1025] = [0; 1025];
     wsprintfW(
-        pszPath,
+        szTemp.as_mut_ptr(),
         w!("%s\\%s").as_ptr() as LPCWSTR,
         szSysDir.as_ptr(),
         pszFileName,
     );
+    let mut i = 0usize;
+    while i + 1 < cchPath as usize && szTemp[i] != 0 {
+        *pszPath.add(i) = szTemp[i];
+        i += 1;
+    }
+    *pszPath.add(i) = 0;
 }
 
 #[no_mangle]

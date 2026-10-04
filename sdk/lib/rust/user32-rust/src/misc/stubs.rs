@@ -368,7 +368,10 @@ pub unsafe extern "system" fn InitializeWin32EntryTable(EntryTablePlus0x1000: *m
 
 #[no_mangle]
 pub unsafe extern "system" fn IsServerSideWindow(wnd: HWND) -> BOOL {
-    0
+    /* Upstream f7291343167 (CORE-19946): undocumented — TRUE when the window's
+     * procedure lives in kernel mode. uxtheme from Windows calls it heavily. */
+    let Wnd = crate::internal::ValidateHwnd(wnd);
+    (!Wnd.is_null() && ((*Wnd).state & WNDS_SERVERSIDEWINDOWPROC) != 0) as BOOL
 }
 
 #[no_mangle]

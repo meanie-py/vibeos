@@ -160,6 +160,8 @@ extern "system" {
         lpDx: *const core::ffi::c_int,
     ) -> BOOL;
     fn GetTextExtentPointA(hdc: HDC, lpString: LPCSTR, c: core::ffi::c_int, psizl: *mut SIZE) -> BOOL;
+    fn GetTextExtentPoint32W(hdc: HDC, lpString: LPCWSTR, c: core::ffi::c_int, psizl: *mut SIZE) -> BOOL;
+    fn GetCurrentObject(hdc: HDC, type_: UINT) -> *mut c_void;
 
     // user32 own-exports surviving as C (controls/edit.c) / siblings.
     fn TabbedTextOutW(
@@ -819,6 +821,11 @@ unsafe fn LISTBOX_PaintItem(
         if !item.is_null() && (*item).selected != 0 {
             oldBk = SetBkColor(hdc, GetSysColor(COLOR_HIGHLIGHT as INT));
             oldText = SetTextColor(hdc, GetSysColor(COLOR_HIGHLIGHTTEXT as INT));
+        } else {
+            /* Upstream 16a65a0df29 (CORE-20433): paint the background with the brush
+             * WM_CTLCOLORLISTBOX selected into the DC, not the ETO_OPAQUE bk colour. */
+            let br = GetCurrentObject(hdc, OBJ_BRUSH as UINT) as HBRUSH;
+            FillRect(hdc, rect, br);
         }
 
         TRACE!(
@@ -845,12 +852,24 @@ unsafe fn LISTBOX_PaintItem(
                 core::ptr::null_mut(),
             );
         } else if ((*descr).style & LBS_USETABSTOPS) == 0 {
+            /* Upstream 16a65a0df29: for an unselected item, limit the opaque box to the
+             * text so the brush fill above shows through the rest of the row. The C
+             * clamps `rc.right` to the bare extent `sz.cx`, a width used as a
+             * coordinate: in any column but the first (rect->left > 0) that makes
+             * rc.right < rc.left, and ETO_CLIPPED then clips the whole string away.
+             * Clamp to where the text actually ends instead. */
+            let mut rc: RECT = *rect;
+            if (*item).selected == 0 {
+                let mut sz: SIZE = core::mem::zeroed();
+                GetTextExtentPoint32W(hdc, (*item).str_, strlenW((*item).str_) as INT, &mut sz);
+                rc.right = core::cmp::min((*rect).left + 1 + sz.cx, rc.right);
+            }
             ExtTextOutW(
                 hdc,
                 (*rect).left + 1,
                 (*rect).top,
                 ETO_OPAQUE | ETO_CLIPPED,
-                rect,
+                &rc,
                 (*item).str_,
                 strlenW((*item).str_) as UINT,
                 core::ptr::null_mut(),
@@ -1464,32 +1483,18 @@ unsafe fn LISTBOX_Paint(descr: *mut LB_DESCR, hdc: HDC) -> LRESULT {
     if IS_OWNERDRAW(descr) == 0 {
         if rect.top < (*descr).height {
             rect.bottom = (*descr).height;
-            ExtTextOutW(
-                hdc,
-                0,
-                0,
-                ETO_OPAQUE | ETO_CLIPPED,
-                &rect,
-                core::ptr::null_mut(),
-                0,
-                core::ptr::null_mut(),
-            );
+            /* Upstream 16a65a0df29: fill with the WM_CTLCOLORLISTBOX brush. */
+            let br = GetCurrentObject(hdc, OBJ_BRUSH as UINT) as HBRUSH;
+            FillRect(hdc, &rect, br);
         }
         if rect.right < (*descr).width {
             rect.left = rect.right;
             rect.right = (*descr).width;
             rect.top = 0;
             rect.bottom = (*descr).height;
-            ExtTextOutW(
-                hdc,
-                0,
-                0,
-                ETO_OPAQUE | ETO_CLIPPED,
-                &rect,
-                core::ptr::null_mut(),
-                0,
-                core::ptr::null_mut(),
-            );
+            /* Upstream 16a65a0df29: fill with the WM_CTLCOLORLISTBOX brush. */
+            let br = GetCurrentObject(hdc, OBJ_BRUSH as UINT) as HBRUSH;
+            FillRect(hdc, &rect, br);
         }
     }
     if oldFont != 0 as HFONT {
