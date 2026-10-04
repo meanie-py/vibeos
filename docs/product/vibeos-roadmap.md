@@ -568,6 +568,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **msvcrt.dll Wine winetest: `misc` exits 128, `string` 5,547 failures (i386)** (OPEN,
+  2026-10-04). `tools/payloads/msvcrtwine` (`msvcrt_winetest` + `msvcrt_apitest`): the `misc`
+  subtest dies with exit code 128 after its `_popen` failures (misc.c:375, error 13), and
+  `string` fails 5,547 of 410,010, almost all string.c:3522 `_atodbl`. Both are identical on the
+  x87 and SSE2 builds and before and after the 2026-10-04 libm move (runs
+  `20261003-214256-80iif9qt` vs `20261004-004218-17xphadk`), so neither is a math regression.
+  msvcrt_apitest `ieee` is 33 failures of 286 (was 35), the rest of them `_j0`/`_j1` value rows
+  that want native's bits.
 - **fastfat bugchecks on rename and on a run of creates (arm64)** (FIXED 2026-10-03; was
   "bugchecks in `FsRtlCheckOplock`"). Two bugs, both 0x23 via `FatBugCheckExceptionFilter`:
   - rename: `FatSetRenameInfo` read the shim's 4-byte `MAX_LFN_CHARACTERS` as `usize`, so every
@@ -623,11 +631,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `log10(INFINITY)` never returned -- cnt-rust's `log10`/`pow`/`fmod` were ports of upstream's
   placeholder C (`pow(2, 0.5) == 0` shipped in msvcrt.dll and ucrtbase.dll on every arch); they
   are the `libm` crate's now, and the x87 asm on no-SSE i386 (`tools/payloads/matherrs` traces
-  Wine's test per call). As of 2026-10-03 (c99math) every C99 row passes
-  and the failures are exactly the C89 functions ucrtbase takes from cnt-rust/crtmath
-  (`acos`, `asin`, `cos`, `exp`, `exp2`, `log`, `log10`, `_logb`), which set neither errno
-  nor `_matherr` on a domain/range error -- the UCRT `math_error` contract is owed on top of
-  them, as c99math.rs does for the C99 set; misc.c:363 (`_EM_AMBIGUOUS`) is FIXED by the
+  Wine's test per call). The math-errno checks are FIXED (2026-10-04): cnt-rust's C89 set
+  reports through `__cnt_math_error` at Wine's `math_error` points, and `tools/payloads/matherrs`
+  (Wine's `test_math_errors`) is 304 checks, 0 failed on all three arches; misc.c:363 (`_EM_AMBIGUOUS`) is FIXED by the
   i386 `_control87` in fenv.rs; `cpp` hangs past 120s; `string` fails two `mbstowcs` UTF-8 checks
   (string.c:831/835) -- ROOT-CAUSED, expected: kernel32 exports `IsValidLocaleName` only at
   `-version=0x600+` and this build is NT 5.2, so ucrtbase takes its downlevel locale path,
