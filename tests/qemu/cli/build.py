@@ -1274,12 +1274,12 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         if getattr(args, "up_kernel", False):
             cmd.append("--up")
         cp = run.run(cmd, cwd=repo, stage="mkramdisk", timeout=900)
-        # --refresh only overwrites and adds into the existing fixed-size FAT image, so a
-        # tree that once staged something big (a VIBEOS_FEX SysWOW64 closure, an old
-        # payload) carries it into every later refresh until mtools says "Disk full" --
-        # which held the land queue red-based on 2026-10-03 while a fresh image of the
-        # same tree had 34 MB free. The image is THIS tree's derived state: rebuild it
-        # from scratch once, loudly, rather than fail a build whose inputs fit.
+        # The warm-build half of the same hazard: --refresh only overwrites and adds into
+        # the existing fixed-size FAT image, so a tree that once staged something big (a
+        # VIBEOS_FEX SysWOW64 closure, an old payload) carries it into every later refresh
+        # until mtools says "Disk full", though a fresh image of the same inputs fits. The
+        # image is THIS tree's derived state: rebuild it from scratch once, loudly, rather
+        # than fail a build whose inputs fit.
         out = (cp.stdout or "") + (cp.stderr or "")
         if cp.returncode != 0 and flag == "--refresh" and "Disk full" in out:
             run.add(
