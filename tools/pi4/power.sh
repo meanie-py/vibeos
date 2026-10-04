@@ -32,6 +32,9 @@ s = json.load(sys.stdin)
 print(("on " if s["output"] else "off"), "%.1f W" % s.get("apower", 0.0))'
 }
 
+. "$(dirname "${BASH_SOURCE[0]}")/lease.sh"
+case "${1:-status}" in status) ;; *) pi4_lease ;; esac
+
 case "${1:-status}" in
     status) status ;;
     on)  rpc 'Switch.Set?id=0&on=true' >/dev/null && status ;;

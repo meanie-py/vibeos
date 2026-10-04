@@ -36,7 +36,10 @@ WBENCH=$(wslpath -w "$BENCH")
 ps_run() { "$PS" -NoProfile -Command "$1" 2>&1 | tr -d '\r'; }
 # Start-Process children inherit powershell's stdout; if that is a pipe, the
 # pipe never closes and the caller hangs until the service exits. Detach fully.
-ps_launch() { "$PS" -NoProfile -Command "$1" >/dev/null 2>&1 </dev/null; }
+# Start-Process can also leave powershell.exe running after the child is up
+# (seen 2026-10-03: `up` sat 7 minutes with TFTP already serving), so bound it;
+# every caller re-checks the service by PID afterwards.
+ps_launch() { timeout 15 "$PS" -NoProfile -Command "$1" >/dev/null 2>&1 </dev/null; }
 
 # PIDs by command line, so we never touch an unrelated powershell/python.
 pids() {
@@ -194,6 +197,9 @@ m = {'status': 'STAGED', 'kernel': __import__('os').environ.get('PI4_KERNEL', 'm
 print(json.dumps(m, indent=2))
 PY
 }
+
+. "$HERE/lease.sh"
+case "${1:-status}" in stage|down) pi4_lease ;; esac
 
 case "${1:-status}" in
     status) status ;;
