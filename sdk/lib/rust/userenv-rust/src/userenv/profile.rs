@@ -1461,7 +1461,7 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
 
     Error = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\0\0") as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         core::ptr::addr_of_mut!(hKey),
@@ -1474,7 +1474,7 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
     dwLength = core::mem::size_of::<[u16; 260]>() as u32;
     Error = RegQueryValueExW(
         hKey,
-        b"P\0r\0o\0f\0i\0l\0e\0s\0D\0i\0r\0e\0c\0t\0o\0r\0y\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"P\0r\0o\0f\0i\0l\0e\0s\0D\0i\0r\0e\0c\0t\0o\0r\0y\0\0\0") as LPCWSTR,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(dwType),
         szBuffer.as_mut_ptr() as LPBYTE,
@@ -1499,7 +1499,7 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
     dwLength = core::mem::size_of::<[u16; 260]>() as u32;
     Error = RegQueryValueExW(
         hKey,
-        b"A\0l\0l\0U\0s\0e\0r\0s\0P\0r\0o\0f\0i\0l\0e\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"A\0l\0l\0U\0s\0e\0r\0s\0P\0r\0o\0f\0i\0l\0e\0\0\0") as LPCWSTR,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(dwType),
         szBuffer.as_mut_ptr() as LPBYTE,
@@ -1513,7 +1513,7 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
 
     RegCloseKey(hKey);
 
-    StringCbCatW(szProfilePath.as_mut_ptr(), core::mem::size_of::<[u16; 260]>(), b"\\\0\0\0".as_ptr() as LPCWSTR);
+    StringCbCatW(szProfilePath.as_mut_ptr(), core::mem::size_of::<[u16; 260]>(), win32macros_rust::wide_bytes!(b"\\\0\0\0") as LPCWSTR);
     StringCbCatW(szProfilePath.as_mut_ptr(), core::mem::size_of::<[u16; 260]>(), szBuffer.as_ptr());
 
     dwLength = (wcslen(szProfilePath.as_ptr()) + 1) as u32;
@@ -1587,7 +1587,7 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
 
     Error = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE as HKEY,
-        b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\0\0") as LPCWSTR,
         0,
         KEY_QUERY_VALUE,
         core::ptr::addr_of_mut!(hKey),
@@ -1600,7 +1600,7 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
     dwLength = core::mem::size_of::<[u16; 260]>() as u32;
     Error = RegQueryValueExW(
         hKey,
-        b"P\0r\0o\0f\0i\0l\0e\0s\0D\0i\0r\0e\0c\0t\0o\0r\0y\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"P\0r\0o\0f\0i\0l\0e\0s\0D\0i\0r\0e\0c\0t\0o\0r\0y\0\0\0") as LPCWSTR,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(dwType),
         core::ptr::addr_of_mut!(szBuffer) as *mut u16 as LPBYTE,
@@ -1624,7 +1624,7 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
     dwLength = core::mem::size_of::<[u16; 260]>() as u32;
     Error = RegQueryValueExW(
         hKey,
-        b"D\0e\0f\0a\0u\0l\0t\0U\0s\0e\0r\0P\0r\0o\0f\0i\0l\0e\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"D\0e\0f\0a\0u\0l\0t\0U\0s\0e\0r\0P\0r\0o\0f\0i\0l\0e\0\0\0") as LPCWSTR,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(dwType),
         core::ptr::addr_of_mut!(szBuffer) as *mut u16 as LPBYTE,
@@ -1641,7 +1641,7 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
     StringCbCatW(
         core::ptr::addr_of_mut!(szProfilePath) as LPWSTR,
         core::mem::size_of::<[u16; 260]>(),
-        b"\\\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"\\\0\0\0") as LPCWSTR,
     );
     StringCbCatW(
         core::ptr::addr_of_mut!(szProfilePath) as LPWSTR,
@@ -1952,7 +1952,7 @@ pub unsafe extern "system" fn GetUserProfileDirectoryW(
     StringCbCopyW(
         core::ptr::addr_of_mut!(szKeyName) as *mut u16,
         core::mem::size_of::<[u16; 260]>(),
-        b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\\\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\\\0\0\0") as LPCWSTR,
     );
     StringCbCatW(
         core::ptr::addr_of_mut!(szKeyName) as *mut u16,
@@ -1977,7 +1977,7 @@ pub unsafe extern "system" fn GetUserProfileDirectoryW(
     dwLength = core::mem::size_of::<[u16; 260]>() as u32;
     Error = RegQueryValueExW(
         hKey,
-        b"P\0r\0o\0f\0i\0l\0e\0I\0m\0a\0g\0e\0P\0a\0t\0h\0\0\0".as_ptr() as LPCWSTR,
+        win32macros_rust::wide_bytes!(b"P\0r\0o\0f\0i\0l\0e\0I\0m\0a\0g\0e\0P\0a\0t\0h\0\0\0") as LPCWSTR,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(dwType),
         core::ptr::addr_of_mut!(szRawImagePath) as *mut u8,
@@ -2435,7 +2435,7 @@ pub unsafe extern "system" fn UnloadUserProfile(mut hToken: HANDLE, mut hProfile
                 &mut hUserKey,
             );
             if dwError == ERROR_SUCCESS {
-                RegDeleteKeyW(hUserKey, b"V\0o\0l\0a\0t\0i\0l\0e\0 \0E\0n\0v\0i\0r\0o\0n\0m\0e\0n\0t\0\0\0".as_ptr() as PWSTR);
+                RegDeleteKeyW(hUserKey, win32macros_rust::wide_bytes!(b"V\0o\0l\0a\0t\0i\0l\0e\0 \0E\0n\0v\0i\0r\0o\0n\0m\0e\0n\0t\0\0\0") as PWSTR);
                 RegCloseKey(hUserKey);
             }
 
@@ -2449,7 +2449,7 @@ pub unsafe extern "system" fn UnloadUserProfile(mut hToken: HANDLE, mut hProfile
 
             dwError = RegOpenKeyExW(
                 HKEY_LOCAL_MACHINE,
-                b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\0\0".as_ptr() as PWSTR,
+                win32macros_rust::wide_bytes!(b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\0\0") as PWSTR,
                 0,
                 KEY_QUERY_VALUE,
                 &mut hProfilesKey,
@@ -2474,7 +2474,7 @@ pub unsafe extern "system" fn UnloadUserProfile(mut hToken: HANDLE, mut hProfile
             dwLength = core::mem::size_of::<DWORD>() as DWORD;
             dwError = RegQueryValueExW(
                 hProfileKey,
-                b"S\0t\0a\0t\0e\0\0\0".as_ptr() as PWSTR,
+                win32macros_rust::wide_bytes!(b"S\0t\0a\0t\0e\0\0\0") as PWSTR,
                 core::ptr::null_mut(),
                 &mut dwType,
                 &mut dwState as *mut DWORD as PBYTE,

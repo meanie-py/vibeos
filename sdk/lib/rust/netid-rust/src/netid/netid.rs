@@ -107,7 +107,7 @@ unsafe extern "C" fn GetComputerNames(
     let mut dwError: u32;
 
     dwError = (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-                            b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0T\0c\0p\0I\0p\0\\\0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\0\0".as_ptr() as *const u16,
+                            win32macros_rust::wide_bytes!(b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0T\0c\0p\0I\0p\0\\\0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\0\0") as *const u16,
                             0,
                             KEY_QUERY_VALUE,
                             &mut KeyHandle)) as u32;
@@ -115,7 +115,7 @@ unsafe extern "C" fn GetComputerNames(
     {
         dwSize = core::mem::size_of_val(&(*pNetIdData).szHostName) as u32;
         RegQueryValueExW(KeyHandle,
-                         b"N\0V\0 \0H\0o\0s\0t\0N\0a\0m\0e\0\0\0".as_ptr() as *const u16,
+                         win32macros_rust::wide_bytes!(b"N\0V\0 \0H\0o\0s\0t\0N\0a\0m\0e\0\0\0") as *const u16,
                          core::ptr::null_mut(),
                          core::ptr::null_mut(),
                          (*pNetIdData).szHostName.as_mut_ptr() as LPBYTE,
@@ -123,7 +123,7 @@ unsafe extern "C" fn GetComputerNames(
 
         dwSize = core::mem::size_of_val(&(*pNetIdData).szOldHostName) as u32;
         RegQueryValueExW(KeyHandle,
-                         b"H\0o\0s\0t\0N\0a\0m\0e\0\0\0".as_ptr() as *const u16,
+                         win32macros_rust::wide_bytes!(b"H\0o\0s\0t\0N\0a\0m\0e\0\0\0") as *const u16,
                          core::ptr::null_mut(),
                          core::ptr::null_mut(),
                          (*pNetIdData).szOldHostName.as_mut_ptr() as LPBYTE,
@@ -131,7 +131,7 @@ unsafe extern "C" fn GetComputerNames(
 
         dwSize = core::mem::size_of_val(&(*pNetIdData).szDomainName) as u32;
         RegQueryValueExW(KeyHandle,
-                         b"N\0V\0 \0D\0o\0m\0a\0i\0n\0\0\0".as_ptr() as *const u16,
+                         win32macros_rust::wide_bytes!(b"N\0V\0 \0D\0o\0m\0a\0i\0n\0\0\0") as *const u16,
                          core::ptr::null_mut(),
                          core::ptr::null_mut(),
                          (*pNetIdData).szDomainName.as_mut_ptr() as LPBYTE,
@@ -139,7 +139,7 @@ unsafe extern "C" fn GetComputerNames(
 
         dwSize = core::mem::size_of_val(&(*pNetIdData).szOldDomainName) as u32;
         RegQueryValueExW(KeyHandle,
-                         b"D\0o\0m\0a\0i\0n\0\0\0".as_ptr() as *const u16,
+                         win32macros_rust::wide_bytes!(b"D\0o\0m\0a\0i\0n\0\0\0") as *const u16,
                          core::ptr::null_mut(),
                          core::ptr::null_mut(),
                          (*pNetIdData).szOldDomainName.as_mut_ptr() as LPBYTE,
@@ -147,7 +147,7 @@ unsafe extern "C" fn GetComputerNames(
 
         dwSize = core::mem::size_of_val(&(*pNetIdData).bSyncDomainWithMembership) as u32;
         if RegQueryValueExW(KeyHandle,
-                             b"S\0y\0n\0c\0D\0o\0m\0a\0i\0n\0W\0i\0t\0h\0M\0e\0m\0b\0e\0r\0s\0h\0i\0p\0\0\0".as_ptr() as *const u16,
+                             win32macros_rust::wide_bytes!(b"S\0y\0n\0c\0D\0o\0m\0a\0i\0n\0W\0i\0t\0h\0M\0e\0m\0b\0e\0r\0s\0h\0i\0p\0\0\0") as *const u16,
                              core::ptr::null_mut(),
                              core::ptr::null_mut(),
                              core::ptr::addr_of_mut!((*pNetIdData).bSyncDomainWithMembership) as LPBYTE,
@@ -160,7 +160,7 @@ unsafe extern "C" fn GetComputerNames(
     }
 
     dwError = (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-                            b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0C\0o\0m\0p\0u\0t\0e\0r\0N\0a\0m\0e\0\\\0C\0o\0m\0p\0u\0t\0e\0r\0N\0a\0m\0e\0\0\0".as_ptr() as *const u16,
+                            win32macros_rust::wide_bytes!(b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0C\0o\0m\0p\0u\0t\0e\0r\0N\0a\0m\0e\0\\\0C\0o\0m\0p\0u\0t\0e\0r\0N\0a\0m\0e\0\0\0") as *const u16,
                             0,
                             KEY_QUERY_VALUE,
                             &mut KeyHandle)) as u32;
@@ -168,7 +168,7 @@ unsafe extern "C" fn GetComputerNames(
     {
         dwSize = core::mem::size_of_val(&(*pNetIdData).szComputerName) as u32;
         RegQueryValueExW(KeyHandle,
-                         b"C\0o\0m\0p\0u\0t\0e\0r\0N\0a\0m\0e\0\0\0".as_ptr() as *const u16,
+                         win32macros_rust::wide_bytes!(b"C\0o\0m\0p\0u\0t\0e\0r\0N\0a\0m\0e\0\0\0") as *const u16,
                          core::ptr::null_mut(),
                          core::ptr::null_mut(),
                          (*pNetIdData).szComputerName.as_mut_ptr() as LPBYTE,
@@ -599,13 +599,13 @@ unsafe extern "C" fn NetworkDlg_OnOK(
 
     if (*pNetIdData).bSyncDomainWithMembershipChanged != 0 {
         dwError = (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
-                                b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0T\0c\0p\0I\0p\0\\\0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\0\0".as_ptr() as *const u16,
+                                win32macros_rust::wide_bytes!(b"S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0S\0e\0r\0v\0i\0c\0e\0s\0\\\0T\0c\0p\0I\0p\0\\\0P\0a\0r\0a\0m\0e\0t\0e\0r\0s\0\0\0") as *const u16,
                                 0,
                                 KEY_SET_VALUE,
                                 &mut KeyHandle)) as u32;
         if dwError == ERROR_SUCCESS {
             RegSetValueExW(KeyHandle,
-                           b"S\0y\0n\0c\0D\0o\0m\0a\0i\0n\0W\0i\0t\0h\0M\0e\0m\0b\0e\0r\0s\0h\0i\0p\0\0\0".as_ptr() as *const u16,
+                           win32macros_rust::wide_bytes!(b"S\0y\0n\0c\0D\0o\0m\0a\0i\0n\0W\0i\0t\0h\0M\0e\0m\0b\0e\0r\0s\0h\0i\0p\0\0\0") as *const u16,
                            0,
                            REG_DWORD,
                            core::ptr::addr_of_mut!((*pNetIdData).bSyncDomainWithMembership) as LPBYTE,

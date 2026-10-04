@@ -30,7 +30,7 @@ const SEP_PRIVILEGE_SET_MAX_COUNT: ULONG = 60;
 static mut SeSubsystemName: _UNICODE_STRING = _UNICODE_STRING {
     Length: 16,
     MaximumLength: 18,
-    Buffer: b"S\0e\0c\0u\0r\0i\0t\0y\0\0\0".as_ptr() as PWCHAR,
+    Buffer: win32macros_rust::wide_bytes!(b"S\0e\0c\0u\0r\0i\0t\0y\0\0\0") as PWCHAR,
 };
 
 #[no_mangle]

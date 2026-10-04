@@ -2623,8 +2623,8 @@ pub unsafe extern "system" fn SmpInit(
     SmBaseTag = RtlCreateTagHeap(
         RtlGetProcessHeap(),
         0,
-        b"S\0M\0S\0S\0!\0\0\0".as_ptr() as PWCHAR,
-        b"I\0N\0I\0T\0\0\0".as_ptr() as PWCHAR,
+        win32macros_rust::wide_bytes!(b"S\0M\0S\0S\0!\0\0\0") as PWCHAR,
+        win32macros_rust::wide_bytes!(b"I\0N\0I\0T\0\0\0") as PWCHAR,
     );
     SmpHeap = RtlGetProcessHeap();
 
@@ -2664,15 +2664,15 @@ pub unsafe extern "system" fn SmpInit(
     /* Initialize subsystem names */
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(SmpSubsystemName),
-        b"N\0T\0-\0S\0e\0s\0s\0i\0o\0n\0 \0M\0a\0n\0a\0g\0e\0r\0\0\0".as_ptr() as PWCHAR,
+        win32macros_rust::wide_bytes!(b"N\0T\0-\0S\0e\0s\0s\0i\0o\0n\0 \0M\0a\0n\0a\0g\0e\0r\0\0\0") as PWCHAR,
     );
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(PosixName),
-        b"P\0O\0S\0I\0X\0\0\0".as_ptr() as PWCHAR,
+        win32macros_rust::wide_bytes!(b"P\0O\0S\0I\0X\0\0\0") as PWCHAR,
     );
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(Os2Name),
-        b"O\0S\02\0\0\0".as_ptr() as PWCHAR,
+        win32macros_rust::wide_bytes!(b"O\0S\02\0\0\0") as PWCHAR,
     );
 
     /* Create the SM API Port */
@@ -2733,7 +2733,7 @@ pub unsafe extern "system" fn SmpInit(
     /* Create the write event that autochk can set after running */
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(EventName),
-        b"\\\0D\0e\0v\0i\0c\0e\0\\\0V\0o\0l\0u\0m\0e\0s\0S\0a\0f\0e\0F\0o\0r\0W\0r\0i\0t\0e\0A\0c\0c\0e\0s\0s\0\0\0".as_ptr() as PWCHAR,
+        win32macros_rust::wide_bytes!(b"\\\0D\0e\0v\0i\0c\0e\0\\\0V\0o\0l\0u\0m\0e\0s\0S\0a\0f\0e\0F\0o\0r\0W\0r\0i\0t\0e\0A\0c\0c\0e\0s\0s\0\0\0") as PWCHAR,
     );
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();

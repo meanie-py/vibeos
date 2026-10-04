@@ -18,6 +18,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+win32macros-rust = { path = "../win32macros-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 # win32k FFI surface (NtUser*/Nt* fns, SimpleCallRoutines consts, win32k struct
 # layouts) — bindgen, builds clean for the usermode targets, arch-consistent. The

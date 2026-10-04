@@ -41,180 +41,144 @@ static REG_PROFILES_DIRECTORY: [u16; 18] = [
 static mut UserShellFolders: [FOLDERDATA; 19] = unsafe {
     [
         _FOLDERDATA {
-            lpValueName: b"A\0p\0p\0D\0a\0t\0a\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"A\0p\0p\0l\0i\0c\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"A\0p\0p\0D\0a\0t\0a\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"A\0p\0p\0l\0i\0c\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0") as LPWSTR,
             uId: IDS_APPDATA as UINT,
             bHidden: TRUE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"D\0e\0s\0k\0t\0o\0p\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"D\0e\0s\0k\0t\0o\0p\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"D\0e\0s\0k\0t\0o\0p\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"D\0e\0s\0k\0t\0o\0p\0\0\0") as LPWSTR,
             uId: IDS_DESKTOP as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0") as LPWSTR,
             uId: IDS_FAVORITES as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"P\0e\0r\0s\0o\0n\0a\0l\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"M\0y\0 \0D\0o\0c\0u\0m\0e\0n\0t\0s\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"P\0e\0r\0s\0o\0n\0a\0l\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"M\0y\0 \0D\0o\0c\0u\0m\0e\0n\0t\0s\0\0\0") as LPWSTR,
             uId: IDS_MYDOCUMENTS as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"N\0e\0t\0H\0o\0o\0d\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"N\0e\0t\0H\0o\0o\0d\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"N\0e\0t\0H\0o\0o\0d\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"N\0e\0t\0H\0o\0o\0d\0\0\0") as LPWSTR,
             uId: IDS_NETHOOD as UINT,
             bHidden: TRUE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"P\0r\0i\0n\0t\0H\0o\0o\0d\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"P\0r\0i\0n\0t\0H\0o\0o\0d\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"P\0r\0i\0n\0t\0H\0o\0o\0d\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"P\0r\0i\0n\0t\0H\0o\0o\0d\0\0\0") as LPWSTR,
             uId: IDS_PRINTHOOD as UINT,
             bHidden: TRUE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"R\0e\0c\0e\0n\0t\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"R\0e\0c\0e\0n\0t\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"R\0e\0c\0e\0n\0t\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"R\0e\0c\0e\0n\0t\0\0\0") as LPWSTR,
             uId: IDS_RECENT as UINT,
             bHidden: TRUE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"S\0e\0n\0d\0T\0o\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"S\0e\0n\0d\0T\0o\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"S\0e\0n\0d\0T\0o\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"S\0e\0n\0d\0T\0o\0\0\0") as LPWSTR,
             uId: IDS_SENDTO as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0") as LPWSTR,
             uId: IDS_TEMPLATES as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0") as LPWSTR,
             uId: IDS_STARTMENU as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"P\0r\0o\0g\0r\0a\0m\0s\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"P\0r\0o\0g\0r\0a\0m\0s\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\0\0") as LPWSTR,
             uId: IDS_PROGRAMS as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"S\0t\0a\0r\0t\0u\0p\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\\\0S\0t\0a\0r\0t\0u\0p\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0u\0p\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\\\0S\0t\0a\0r\0t\0u\0p\0\0\0") as LPWSTR,
             uId: IDS_STARTUP as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\0\0") as LPWSTR,
             uId: IDS_LOCALSETTINGS as UINT,
             bHidden: TRUE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"L\0o\0c\0a\0l\0 \0A\0p\0p\0D\0a\0t\0a\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0A\0p\0p\0l\0i\0c\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0A\0p\0p\0D\0a\0t\0a\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0A\0p\0p\0l\0i\0c\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0") as LPWSTR,
             uId: IDS_LOCALAPPDATA as UINT,
             bHidden: TRUE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"T\0e\0m\0p\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0T\0e\0m\0p\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"T\0e\0m\0p\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0T\0e\0m\0p\0\0\0") as LPWSTR,
             uId: IDS_TEMP as UINT,
             bHidden: FALSE,
             bShellFolder: FALSE,
             bUserShellFolder: FALSE,
         },
         _FOLDERDATA {
-            lpValueName: b"C\0a\0c\0h\0e\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0T\0e\0m\0p\0o\0r\0a\0r\0y\0 \0I\0n\0t\0e\0r\0n\0e\0t\0 \0F\0i\0l\0e\0s\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"C\0a\0c\0h\0e\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0T\0e\0m\0p\0o\0r\0a\0r\0y\0 \0I\0n\0t\0e\0r\0n\0e\0t\0 \0F\0i\0l\0e\0s\0\0\0") as LPWSTR,
             uId: IDS_CACHE as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"H\0i\0s\0t\0o\0r\0y\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0H\0i\0s\0t\0o\0r\0y\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"H\0i\0s\0t\0o\0r\0y\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0H\0i\0s\0t\0o\0r\0y\0\0\0") as LPWSTR,
             uId: IDS_HISTORY as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"C\0o\0o\0k\0i\0e\0s\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"C\0o\0o\0k\0i\0e\0s\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0o\0k\0i\0e\0s\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"C\0o\0o\0k\0i\0e\0s\0\0\0") as LPWSTR,
             uId: IDS_COOKIES as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
@@ -234,80 +198,64 @@ static mut UserShellFolders: [FOLDERDATA; 19] = unsafe {
 static mut CommonShellFolders: [FOLDERDATA; 9] = unsafe {
     [
         _FOLDERDATA {
-            lpValueName: b"C\0o\0m\0m\0o\0n\0 \0A\0p\0p\0D\0a\0t\0a\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"A\0p\0p\0l\0i\0c\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0A\0p\0p\0D\0a\0t\0a\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"A\0p\0p\0l\0i\0c\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0") as LPWSTR,
             uId: IDS_APPDATA as UINT,
             bHidden: TRUE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"C\0o\0m\0m\0o\0n\0 \0D\0e\0s\0k\0t\0o\0p\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"D\0e\0s\0k\0t\0o\0p\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0D\0e\0s\0k\0t\0o\0p\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"D\0e\0s\0k\0t\0o\0p\0\0\0") as LPWSTR,
             uId: IDS_DESKTOP as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"C\0o\0m\0m\0o\0n\0 \0F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0") as LPWSTR,
             uId: IDS_FAVORITES as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"C\0o\0m\0m\0o\0n\0 \0D\0o\0c\0u\0m\0e\0n\0t\0s\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"M\0y\0 \0D\0o\0c\0u\0m\0e\0n\0t\0s\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0D\0o\0c\0u\0m\0e\0n\0t\0s\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"M\0y\0 \0D\0o\0c\0u\0m\0e\0n\0t\0s\0\0\0") as LPWSTR,
             uId: IDS_MYDOCUMENTS as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"C\0o\0m\0m\0o\0n\0 \0T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0") as LPWSTR,
             uId: IDS_TEMPLATES as UINT,
             bHidden: TRUE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"C\0o\0m\0m\0o\0n\0 \0S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0") as LPWSTR,
             uId: IDS_STARTMENU as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"C\0o\0m\0m\0o\0n\0 \0P\0r\0o\0g\0r\0a\0m\0s\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0P\0r\0o\0g\0r\0a\0m\0s\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\0\0") as LPWSTR,
             uId: IDS_PROGRAMS as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
             bUserShellFolder: TRUE,
         },
         _FOLDERDATA {
-            lpValueName: b"C\0o\0m\0m\0o\0n\0 \0S\0t\0a\0r\0t\0u\0p\0\0\0"
-                .as_ptr() as LPWSTR,
-            lpPath: b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\\\0S\0t\0a\0r\0t\0u\0p\0\0\0"
-                .as_ptr() as LPWSTR,
+            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0S\0t\0a\0r\0t\0u\0p\0\0\0") as LPWSTR,
+            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\\\0S\0t\0a\0r\0t\0u\0p\0\0\0") as LPWSTR,
             uId: IDS_STARTUP as UINT,
             bHidden: FALSE,
             bShellFolder: TRUE,
