@@ -602,7 +602,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   while the sweep ran it from the read-only CDFS); `misc` dies on an unmasked FP exception
   (0xC0000090) or times out after calling the `fesetround`/`fegetenv` spec stubs, and its
   math-errno checks (misc.c:774/776) fail on ours past the point where the baseline has
-  already crashed, so they are UNCOMPARED -- as of 2026-10-03 (c99math) every C99 row passes
+  already crashed, so they are UNCOMPARED. The HANG is ROOT-CAUSED and FIXED (2026-10-03):
+  `log10(INFINITY)` never returned -- cnt-rust's `log10`/`pow`/`fmod` were ports of upstream's
+  placeholder C (`pow(2, 0.5) == 0` shipped in msvcrt.dll and ucrtbase.dll on every arch); they
+  are the `libm` crate's now, and the x87 asm on no-SSE i386 (`tools/payloads/matherrs` traces
+  Wine's test per call). As of 2026-10-03 (c99math) every C99 row passes
   and the failures are exactly the C89 functions ucrtbase takes from cnt-rust/crtmath
   (`acos`, `asin`, `cos`, `exp`, `exp2`, `log`, `log10`, `_logb`), which set neither errno
   nor `_matherr` on a domain/range error -- the UCRT `math_error` contract is owed on top of
