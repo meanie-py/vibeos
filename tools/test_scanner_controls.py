@@ -1677,6 +1677,19 @@ unsafe fn copy(src_rec: *mut c_void, off: isize) -> *mut c_void {
 }
 """
 
+# scan_gmem_flags. Seeded from oleaut32 create_stream (2026-10-04): the C's GMEM_FIXED came
+# out as HEAP_ZERO_MEMORY, which GlobalAlloc rejects.
+_GMEM_BAD = """\
+unsafe fn load(n: u32) -> HGLOBAL {
+    GlobalAlloc(HEAP_ZERO_MEMORY, n as SIZE_T)
+}
+"""
+_GMEM_GOOD = """\
+unsafe fn load(n: u32) -> HGLOBAL {
+    GlobalAlloc(GMEM_FIXED, n as SIZE_T)
+}
+"""
+
 # scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
 # do-while's `continue` re-ran the same INF line forever once translated to `loop`.
 _DOWHILE_BAD = """\
@@ -1713,6 +1726,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"recinfo.rs": _BYTEPTR_BAD},
         good={"recinfo.rs": _BYTEPTR_GOOD},
+    ),
+    Control(
+        name="scan_gmem_flags",
+        script="tools/scan_gmem_flags.py",
+        argv=["--lint"],
+        bad={"olepicture.rs": _GMEM_BAD},
+        good={"olepicture.rs": _GMEM_GOOD},
     ),
     Control(
         name="scan_dowhile_continue",

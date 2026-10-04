@@ -2895,6 +2895,12 @@ The constants were always available via the bindgen glob; the literals were pure
 `0x4000`, so the check never fired (and returned `STG_E_INVALIDFLAG` where the C says
 `STG_E_INVALIDFUNCTION`).
 
+**And one from the wrong FAMILY.** oleaut32's `create_stream` called
+`GlobalAlloc(HEAP_ZERO_MEMORY, n)` where the C says `GMEM_FIXED` (0). 0x8 is not a GMEM_ bit, so
+GlobalAlloc failed with `ERROR_INVALID_PARAMETER` and no picture ever loaded from a file (Wine's
+olepicture test then crashed releasing the pointer it never got). **Gated:
+`tools/scan_gmem_flags.py`.**
+
 **The same class one bit narrower — a PARTIAL mask.** `NtOpenKey` masked `& !0x0100u32` where
 the C masks `~KEY_WOW64_RES` (**0x0300**): right family, half the width, and the named constant
 was already defined in that same file and used correctly by `NtCreateKey` sixty lines above.

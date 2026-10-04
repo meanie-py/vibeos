@@ -94,6 +94,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_hresult_literals.py"),
     (".", ".", "tools/test_scan_dowhile_continue.py"),
     (".", ".", "tools/test_scan_byteptr_stride.py"),
+    (".", ".", "tools/test_scan_gmem_flags.py"),
     (".", ".", "tools/test_scan_res_named_types.py"),
     (".", ".", "tools/test_scan_bindgen_padding_index.py"),
     (".", ".", "tools/test_scan_extern_static_width.py"),
