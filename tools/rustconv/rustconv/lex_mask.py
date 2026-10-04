@@ -30,6 +30,7 @@ from __future__ import annotations
 import re
 
 _LABEL_OR_LIFETIME = re.compile(r"'[A-Za-z_]\w*")
+_FOUR_CHAR_TAG = re.compile(r"'[^'\\\n,:;>]{4}'")
 
 
 def opens_a_literal(text: str, index: int) -> bool:
@@ -42,7 +43,12 @@ def opens_a_literal(text: str, index: int) -> bool:
     match = _LABEL_OR_LIFETIME.match(text, index)
     if match is None:
         return True  # `'x'`, `'\n'`, `'\''` — an escape or a bare quote
-    return text[match.end() : match.end() + 1] == "'"
+    if text[match.end() : match.end() + 1] == "'":
+        return True
+    # A four-character pool tag that leaves the identifier alphabet: freeldr heap.c's
+    # `'dnE#'`, `'SFI '`. Read as a label, the quote stayed open and the masker swallowed
+    # the next 460 lines. Exactly four and no `,:;>`, so `<'ab, 'c>` stays two lifetimes.
+    return _FOUR_CHAR_TAG.match(text, index) is not None
 
 
 _opens_a_literal = opens_a_literal

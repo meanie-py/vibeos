@@ -568,6 +568,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **rostests i386 build: 5 targets fail under llvm-mingw** (OPEN, 2026-10-04). After the
+  shell32/shlwapi/ole32 export fixes (`--rostests`, `ninja -k 0`): `dllimport_test.dll`
+  (lld: framedyn `CHString` "should not refer to special section 0"), `menuaccels.rc` (llvm-rc
+  rejects its ACCELERATORS statement), `interop_unittest` LocaleTests.cpp (libc++ `<__locale>`
+  `enum result { ok, ... }` collides with the test `ok` macro), `wine.combase.test.dll`
+  (`-llibcombase` not found), `user32_winetest` monitor.c (`ddk/d3dkmthk.h` not on its include
+  path; it lives in sdk/include/wine/ddk).
 - **msvcrt.dll Wine winetest: `misc` exits 128, `string` 5,547 failures (i386)** (OPEN,
   2026-10-04). `tools/payloads/msvcrtwine` (`msvcrt_winetest` + `msvcrt_apitest`): the `misc`
   subtest dies with exit code 128 after its `_popen` failures (misc.c:375, error 13), and
@@ -1329,23 +1336,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     every MP boot, from the `KeIpiGenericCall` self-test. Upstream never implemented
     `KiIpiSendPacket`; our assert names a level its only caller does not raise to (it calls at
     DISPATCH), and it went live with `c4d82e425fc`. Non-fatal; decide the contract.
-    amd64 `-smp 2` and `-smp 4`: the boot death seen 2026-09-25 is NOT gone -- it is
-    intermittent, and a one-boot-per-cell check on 2026-10-03 that read "gone" was wrong.
-    Measured 2026-10-03/04 at `-smp 2`: 2 of 8 boots reached the desktop. Faces: csrss
-    `0xC000001D` TWICE at the identical address `basesrv+0x2af86` (int3 padding after the
-    `RtlCreateUnicodeString` import thunk, with the caller's return address still at
-    `[rsp]`, so the bytes executed were not the file's); `0x6B` with `0xC0000032`
-    (STATUS_DISK_CORRUPT_ERROR) in process init; a `0x1E` executing at `0x8f654`; and two
-    `0x7F/8` double faults inside the unwinder (`RtlVirtualUnwind`, `RtlpUnwindInternal`),
-    which read as the secondary effect of unwinding from a garbage PC. Common shape: memory
-    the CPU used differed from what was written. Not a missing shootdown at the export:
-    `KeInvalidateTlbEntry` in `ntkrnlmp.exe` does `invlpg` then tail-jumps to
-    `ki_tb_shootdown`. `[KI-EXC]` now prints the faulting CPU, the code page's physical
-    address and the bytes around RIP, so the next csrss sample settles code-page vs.
-    wrong-target. `-smp 4` boots more reliably (4/4 desktop) but one kmtest boot double-
-    faulted the same way, and **rpmprobe reaches the desktop and then prints nothing for
-    20 minutes**, while the same media at `-smp 1` passes everything including the race
-    (191,164 copies, 0 silent). OWED.
+    amd64 `-smp 2` and `-smp 4`: FIXED 2026-10-04. The boot death seen 2026-09-25 was
+    intermittent (2/8 and 9/16 `-smp 2` boots reached the desktop), with five unrelated-looking
+    faces: csrss `0xC000001D` twice at the same basesrv address, `0x6B`/`0xC0000032`, a kernel
+    `0x1E` at a garbage PC, `0x4C`/`STATUS_INVALID_IMAGE_FORMAT`, and double faults in the
+    unwinder. Cause: amd64's lazy-idle TLB let a CPU woken from `hlt` by a DEVICE interrupt
+    run the ISR with deferred shootdowns unserviced; the IDE ISR wrote PIO sector data through
+    a stale translation of a recycled system VA, so successful reads left their pages zero
+    and some other page took the data. `KiInterruptDispatch` now services the deferral first.
+    After: 8/8 `-smp 2` boots to desktop with zero corrupt reads; rpmprobe passes the race at
+    `-smp 2` (84,240 copies) and `-smp 4` (76,114), 0 silent, where `-smp 4` had hung. Field
+    manual: "Successful reads that leave their pages ZERO".
   - FIXED: `ReadProcessMemory` over an uncommitted page bugchecked (0x1E from
     `MmProbeAndLockPages` in `MiDoMappedCopy`). See the `MmCopyVirtualMemory` entry below.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers

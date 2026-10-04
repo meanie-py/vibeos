@@ -143,6 +143,8 @@ extern "system" {
     // userenv.dll: the LiveCD shell's environment block (upstream eec8c977083).
     pub fn CreateEnvironmentBlock(lpEnvironment: *mut LPVOID, hToken: HANDLE, bInherit: BOOL) -> BOOL;
     pub fn DestroyEnvironmentBlock(lpEnvironment: LPVOID) -> BOOL;
+    // userenv.dll: StartProcess's working directory (upstream 2263c9ca0ff).
+    pub fn GetUserProfileDirectoryW(hToken: HANDLE, lpProfileDir: LPWSTR, lpcchSize: LPDWORD) -> BOOL;
     pub fn DialogBoxParamW(
         hInstance: HINSTANCE,
         lpTemplateName: LPCWSTR,
