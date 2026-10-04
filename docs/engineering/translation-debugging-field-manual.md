@@ -6555,6 +6555,16 @@ returning `Result`, with the finally path on both exits. `try_return` must actua
 
 ## Stale artifacts & false greens
 
+### A source removed from a static library kept linking (thin `ar crT` never drops members)
+**Symptom:** a cohab flip that takes C out of a static library "works" on a warm build, and the
+link map still shows the removed `.obj` (`libvcruntime.a` kept `setjmp.dir/*.s.obj` after
+setjmp-rust replaced them, plus `vcrt_common.dir` objects from a configuration the tree no
+longer had). A clean build differs. **Cause:** every toolchain file set
+`CMAKE_C_CREATE_STATIC_LIBRARY` to `<CMAKE_AR> crT <TARGET> ...`; `r` replaces or inserts and
+never removes, and overriding the rule lost CMake's own delete-first step, so an archive only
+ever grew. **Fix (2026-10-04):** the rule is now `cmake -E rm -f <TARGET>` then `ar crT`. To
+audit a library: `llvm-ar t lib.a` against the target's source list.
+
 **The most expensive class in this file**, because the failure mode is a green that means
 nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → pl011 → gdi32 →
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
