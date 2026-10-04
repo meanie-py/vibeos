@@ -358,12 +358,23 @@ unsafe fn KiDeliverUserApcArm64(
     TrapFrame: PKTRAP_FRAME,
     ExceptionFrame: ntkrnl_sys::ddk::PKEXCEPTION_FRAME,
 ) {
-    // Only a return to EL0 (user) with a pending user APC needs this.
+    // Only a return to EL0 (user) with a pending APC needs this.
     if ((*TrapFrame).Spsr & 0xF) != 0 {
         return;
     }
     let Thread = KeGetCurrentThread() as PKTHREAD;
-    if kt_ApcState(Thread).UserApcPending == 0 {
+    // A pending KERNEL APC must be drained here too, not just a user one. x86
+    // never gets back to user mode with one pending: lowering IRQL on the way
+    // out fires the APC interrupt. arm64's software APC bit only drains at a
+    // KfLowerIrql, so a kernel APC still pending at this point used to run at
+    // the thread's NEXT syscall -- and for IopCompleteRequest that means
+    // writing the I/O status block into a user stack slot the caller had
+    // already reused. dhcpcsvc's AdapterDiscoveryThread returned to PC=0x74
+    // that way: 0x74 is netstack's 116-byte IFEntry reply, landed on a saved
+    // LR, and the dead svchost wedged the arm64 conformance sweep.
+    // KiDeliverApc(UserMode) runs the kernel list first and only touches the
+    // user list when UserApcPending is set.
+    if kt_ApcState(Thread).UserApcPending == 0 && kt_ApcState(Thread).KernelApcPending == 0 {
         return;
     }
 
@@ -922,7 +933,15 @@ pub unsafe extern "C" fn KiIrqHandler(TrapFrame: PKTRAP_FRAME) {
 #[no_mangle]
 pub unsafe extern "C" fn KiEL0IrqPreempt() {
     let Prcb = KeGetCurrentPrcb();
-    if (*Prcb).QuantumEnd == 0 && (*Prcb).NextThread.is_null() {
+    // A DPC this IRQ retired may have completed an IRP for the interrupted thread,
+    // queuing its IopCompleteRequest kernel APC. KiIrqHandler leaves that pending
+    // (delivering from exception context wedges); this is the thread-context point
+    // where x86's APC interrupt would fire before user code resumes. Left for the
+    // thread's next syscall, the APC writes the I/O status block into user memory
+    // the program has since reused.
+    let Thread = KeGetCurrentThread() as PKTHREAD;
+    let KernelApc = kt_ApcState(Thread).KernelApcPending != 0;
+    if (*Prcb).QuantumEnd == 0 && (*Prcb).NextThread.is_null() && !KernelApc {
         return;
     }
     if KeGetCurrentIrql() != PASSIVE_LEVEL {
@@ -931,6 +950,13 @@ pub unsafe extern "C" fn KiEL0IrqPreempt() {
     core::arch::asm!("msr daifclr, #2", options(nomem, nostack));
     let OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
     KfLowerIrql(OldIrql);
+    // The lower above drains the APC only if this CPU's software APC bit is set;
+    // the APC may have been requested on another CPU or before a switch.
+    if kt_ApcState(Thread).KernelApcPending != 0 {
+        let OldIrql = KfRaiseIrql(APC_LEVEL);
+        ntkrnl_sys::ddk::KiDeliverApc(0i8 /* KernelMode */, core::ptr::null_mut(), core::ptr::null_mut());
+        KfLowerIrql(OldIrql);
+    }
     core::arch::asm!("msr daifset, #2", options(nomem, nostack));
 }
 

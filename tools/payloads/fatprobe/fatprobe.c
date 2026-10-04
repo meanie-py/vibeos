@@ -7,7 +7,7 @@
  *      16 KB NtQueryDirectoryFile, each name exactly once (arm64's Fonts directory came back
  *      with duplicates, 8.3 names and most files missing, so Marlett never loaded);
  *   5. every name listed in %windir% (and system32) opens by its path, so a lookup and a listing
- *      of the same directory agree (appstorm's SearchPath could not find X:\reactos\iexplore.exe).
+ *      of the same directory agree, and SearchPath finds what the listing shows.
  * Each step is announced before it runs, so a bugcheck names the step that took the guest down.
  * Verdict: "[FATPROBE] done VERDICT=PASS|FAIL". */
 #include <windows.h>
@@ -164,32 +164,13 @@ static void step_lookup(void)
     lookup_dir(w);
     lookup_dir(s32);
     {
-        /* appstorm's SearchPathA(NULL, "iexplore.exe") failed while the file opened by path. */
-        static const char *const names[] = { "iexplore.exe", "regedit.exe", "notepad.exe", "hh.exe" };
+        /* Names found by SearchPath must resolve through the same directory read that
+         * listed them. iexplore.exe is NOT one of them: setup moves it to Program Files
+         * on writable media, and only the App Paths key points there. */
+        static const char *const names[] = { "regedit.exe", "notepad.exe", "hh.exe" };
         char found[MAX_PATH];
         int k;
-        {
-            static char env[2048];
-            char probe[MAX_PATH], me[MAX_PATH], *slash;
-            const char *dirs[3];
-            DWORD a;
-            GetModuleFileNameA(NULL, me, MAX_PATH);
-            if ((slash = strrchr(me, '\\'))) *slash = 0;
-            dirs[0] = me;
-            GetSystemDirectoryA(probe, MAX_PATH);
-            dirs[1] = _strdup(probe);
-            GetWindowsDirectoryA(probe, MAX_PATH);
-            dirs[2] = _strdup(probe);
-            for (k = 0; k < 3; k++) {
-                wsprintfA(probe, "%s\\iexplore.exe", dirs[k]);
-                SetLastError(0);
-                a = GetFileAttributesA(probe);
-                SAY("probe %s -> attrs=%lx err=%lu\n", probe, a, GetLastError());
-            }
-            GetEnvironmentVariableA("PATH", env, sizeof env);
-            SAY("PATH=%s\n", env);
-        }
-        for (k = 0; k < 4; k++) {
+        for (k = 0; k < 3; k++) {
             DWORD n = SearchPathA(NULL, names[k], NULL, MAX_PATH, found, NULL);
             CHECK(n != 0, "SearchPathA %s err=%lu\n", names[k], GetLastError());
             if (n) SAY("SearchPathA %s -> %s\n", names[k], found);

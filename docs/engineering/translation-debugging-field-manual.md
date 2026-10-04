@@ -10712,6 +10712,27 @@ files, the failures it exposes are rarely in the files: they are in whatever tho
 absence had been quietly disabling. Read the `[DA] AddDevice` lines of the old boot for the
 `0xC0000034`s; each one is a driver that will start binding.
 
+### A user thread returns to a small integer: a kernel APC ran one syscall late
+**Symptom.** arm64 conformance wedged around 106 s; just before it, a svchost thread died with
+`PC=LR=0x74` (UEXC-KILL). The thread was dhcpcsvc's `AdapterDiscoveryThread`, which never
+returns. 0x74 = 116 = netstack's IFEntry reply (92-byte fixed part + 24-byte description).
+
+**Cause.** An IOCTL completes through `IopCompleteRequest`, a special kernel APC that writes the
+caller's IO_STATUS_BLOCK. On x86 lowering IRQL on the way out of the syscall fires the APC
+interrupt, so the block is written before user code runs again. arm64's software APC bit only
+drained at a `KfLowerIrql`, and neither return to EL0 (SVC exit, IRQ-from-EL0 exit) drained a
+pending kernel APC — so the APC ran inside the thread's NEXT syscall and stored
+`Information=0x74` into a stack slot the program had reused for a saved LR. Instrumenting the
+SVC exit found `KernelApcPending` set with IRQL 0 and nothing disabling APCs on ordinary
+returns (`NtTestAlert`, `NtSetInformationThread`).
+
+**Fix.** `KiDeliverUserApcArm64` (SVC exit) delivers when either APC kind is pending
+(`KiDeliverApc(UserMode)` runs the kernel list first and touches the user list only when
+`UserApcPending`); `KiEL0IrqPreempt` drains kernel APCs before the IRQ returns to user mode.
+
+**Generalize.** A user-mode crash at a PC equal to a byte count is a status block written late.
+Check that every path back to user mode delivers kernel APCs.
+
 ## WoW64 / FEX: 32↔64 divergences
 
 Every entry here is one shape: **a size, offset or index that differs between guest and host.**
