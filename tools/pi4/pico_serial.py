@@ -100,8 +100,11 @@ class Capture:
                 raise
             except (OSError, TimeoutError) as error:
                 if self.connected:
-                    print(f"pico-serial: console dropped ({type(error).__name__}); reconnecting",
-                          file=sys.stderr, flush=True)
+                    print(
+                        f"pico-serial: console dropped ({type(error).__name__}); reconnecting",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                 self.connected = False
                 self.state("LISTENING", last_error=type(error).__name__)
             await asyncio.sleep(delay)

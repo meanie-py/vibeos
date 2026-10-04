@@ -187,8 +187,10 @@ def _deps_of(crate_dir: Path) -> set[str]:
             continue
         if not in_deps or not stripped or stripped.startswith("#"):
             continue
-        m = re.match(r"^([A-Za-z0-9_-]+)\s*=", stripped)
-        if m:
+        m = re.match(r"^([A-Za-z0-9_-]+)\s*=(.*)$", stripped)
+        # A registry crate (`libm = { version = ... }`) is not one: Cargo.lock pins it
+        # and nothing in this tree can edit it, so it cannot ship a stale archive.
+        if m and re.search(r"\bpath\s*=", m.group(2)):
             out.add(m.group(1))
     return out
 

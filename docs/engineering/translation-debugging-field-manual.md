@@ -976,6 +976,18 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   amd64 + arm64 build proves nothing here); and the check fires per-ABI-classification, not
   per-mention, so a sibling `fn f(x: f64) -> (f64, f64)` returning through sret can sit right
   next to the rejected one and compile — don't conclude from it that plain `fn` is fine.
+- **So a THIRD-PARTY float crate (`libm`) cannot build there at all** — it is all Rust-ABI,
+  and you cannot `extern "C"` someone else's crate. ucrtbase solved it by dropping to the
+  SSE2 baseline (no kernel consumer; Microsoft's x86 ucrtbase is `/arch:SSE2`). That makes
+  the x87-only `sdk/lib/crt` i386 `_control87`/`_statusfp`/`_clearfp` WRONG for that module:
+  `fesetround` moved the x87 while every SSE2 add rounded in MXCSR. They now drive both units
+  (Wine's versions, `ucrt-rust/src/fenv.rs`). Raising another module's baseline needs the same
+  check.
+- **`libm` ignores the FP environment by design** — Rust has no rounding modes. Its aarch64
+  `rint` is `frintn` (always nearest, no inexact), so `rint(1.2)` under `FE_UPWARD` is 1. Any
+  C function DEFINED by the current mode (`rint`, `nearbyint`, `lrint`, `llrint`) must not be
+  a plain `libm` call: use `frintx`/`frinti` on arm64. On x86 libm's `x + 2^52 - 2^52` happens
+  to round in MXCSR's mode.
 
 ### i386 symbol lookup and asm aliasing
 - **Three decoration schemes**: cdecl `_name`, stdcall `_name@N`, fastcall `@name@N`. A grep
@@ -7513,6 +7525,17 @@ the sign of zero is a difference in kind, not in degree.
 other. AMD's SSE2 `sin` computes `(-0.0 * 0.0) * S1` and answers `+0.0` for `sin(-0.0)`, while
 the FMA3 path in the *same file* returns `x` below 2^-27 and answers `-0.0`. Neither is a
 transcription error, and only measurement finds it.
+
+**Second instance, worse: the C said `FIXME` and the port kept it as the contract.** Upstream's
+portable `math/arm64/{log10,pow}.c` are placeholders — `log10` divides by ten in a loop and adds
+`(t - 1) / 9`, `pow`'s general case is `return 0.0; // FIXME` — and cnt-rust ported both
+"verbatim, so the difftest stays bit-exact", with a fuzz that FENCED OUT the inputs that hang
+(`log10(inf)`; `fmod` with a subnormal divisor). They then became msvcrt.dll's and ucrtbase.dll's
+exports on every arch via the `cabi-math` flip: `pow(2, 0.5) == 0` shipped for weeks, and
+`log10(inf)` was the months-old "Wine misc subtest hangs". Found by lifting Wine's
+`test_math_errors` into a payload with a DbgPrint before each call. Two rules from it: a
+comment saying "FIXME"/"stub" in the C is a NOT-AN-ORACLE marker, never a fidelity target; and a
+difftest whose domain note excludes a non-terminating input is reporting a bug, not a scope.
 
 ### A differential harness that cannot see its two sides diverge in STATE will report state differences as BEHAVIOUR differences
 **Symptom.** A perf/conformance row fails hard and reproducibly — `towlower` 10.8x TOO SLOW,

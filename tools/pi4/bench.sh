@@ -36,7 +36,10 @@ WBENCH=$(wslpath -w "$BENCH")
 ps_run() { "$PS" -NoProfile -Command "$1" 2>&1 | tr -d '\r'; }
 # Start-Process children inherit powershell's stdout; if that is a pipe, the
 # pipe never closes and the caller hangs until the service exits. Detach fully.
-ps_launch() { "$PS" -NoProfile -Command "$1" >/dev/null 2>&1 </dev/null; }
+# Start-Process can also leave powershell.exe running after the child is up
+# (seen 2026-10-03: `up` sat 7 minutes with TFTP already serving), so bound it;
+# every caller re-checks the service by PID afterwards.
+ps_launch() { timeout 15 "$PS" -NoProfile -Command "$1" >/dev/null 2>&1 </dev/null; }
 
 # PIDs by command line, so we never touch an unrelated powershell/python.
 pids() {
@@ -46,7 +49,8 @@ pids() {
 pico_serial_pid() {
     local p
     p=$(cat "$PICO_PID" 2>/dev/null) || return 1
-    grep -q pico_serial.py "/proc/$p/cmdline" 2>/dev/null && echo "$p"
+    # -a: cmdline is NUL-separated, and grep calls that binary and reports no match.
+    grep -qa pico_serial.py "/proc/$p/cmdline" 2>/dev/null && echo "$p"
 }
 
 serial_pids() {
@@ -76,6 +80,14 @@ up() {
     mkdir -p "$BENCH/payload"
     cp "$HERE/Capture-RpiSerial.ps1" "$HERE/serve_tftp.py" "$BENCH/"
     if [ "$SERIAL" = pico ]; then
+        # A COM listener run in between rewrites serial-current.json, leaving a
+        # live pico listener that the state file no longer names: restart it.
+        local live
+        live=$(pico_serial_pid)
+        if [ -n "$live" ] && ! grep -q "\"pid\": $live," "$BENCH/serial-current.json" 2>/dev/null; then
+            kill "$live" && echo "restarting pico_serial.py ($live): serial-current.json names another listener"
+            sleep 2
+        fi
         if [ -z "$(pico_serial_pid)" ]; then
             setsid nohup "$PICO_PY" -u "$HERE/pico_serial.py" "$BENCH" \
                 >"$BENCH/pico-serial.log" 2>&1 </dev/null &
@@ -194,6 +206,9 @@ m = {'status': 'STAGED', 'kernel': __import__('os').environ.get('PI4_KERNEL', 'm
 print(json.dumps(m, indent=2))
 PY
 }
+
+. "$HERE/lease.sh"
+case "${1:-status}" in stage|down) pi4_lease ;; esac
 
 case "${1:-status}" in
     status) status ;;

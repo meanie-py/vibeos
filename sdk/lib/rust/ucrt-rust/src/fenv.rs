@@ -82,6 +82,8 @@ pub struct FenvT {
 /// `fexcept_t`: `unsigned long`.
 pub type FexceptT = u32;
 
+// sdk/lib/crt's on amd64, fpctrl_arm64's on arm64; i386 defines its own below.
+#[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn _control87(newval: u32, mask: u32) -> u32;
     fn _controlfp(newval: u32, mask: u32) -> u32;
@@ -251,7 +253,7 @@ unsafe fn set_mxcsr(val: u32) {
 /// `_setfp_sse`: MXCSR. Read into `*cw`/`*sw` (bits outside the mask come from
 /// the hardware), write back what is inside it; a null pointer leaves that half.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-unsafe fn setfp_sse(cw: *mut u32, mut cw_mask: u32, sw: *mut u32, mut sw_mask: u32) {
+pub(crate) unsafe fn setfp_sse(cw: *mut u32, mut cw_mask: u32, sw: *mut u32, mut sw_mask: u32) {
     let mut fpword = get_mxcsr();
     let old_fpword = fpword;
 
@@ -345,7 +347,7 @@ unsafe fn setfp_sse(cw: *mut u32, mut cw_mask: u32, sw: *mut u32, mut sw_mask: u
 
 /// `_setfp` on i386: the x87 control and status words.
 #[cfg(target_arch = "x86")]
-unsafe fn setfp(cw: *mut u32, mut cw_mask: u32, sw: *mut u32, mut sw_mask: u32) {
+pub(crate) unsafe fn setfp(cw: *mut u32, mut cw_mask: u32, sw: *mut u32, mut sw_mask: u32) {
     let (mut oldcw, mut newcw, mut oldsw, mut newsw): (u32, u32, u32, u32) = (0, 0, 0, 0);
 
     cw_mask &= _MCW_EM | _MCW_IC | _MCW_RC | _MCW_PC;
@@ -468,12 +470,12 @@ unsafe fn setfp(cw: *mut u32, mut cw_mask: u32, sw: *mut u32, mut sw_mask: u32) 
 
 /// `_setfp` on amd64 is MXCSR alone.
 #[cfg(target_arch = "x86_64")]
-unsafe fn setfp(cw: *mut u32, cw_mask: u32, sw: *mut u32, sw_mask: u32) {
+pub(crate) unsafe fn setfp(cw: *mut u32, cw_mask: u32, sw: *mut u32, sw_mask: u32) {
     setfp_sse(cw, cw_mask, sw, sw_mask);
 }
 
 #[cfg(target_arch = "aarch64")]
-use crate::fpctrl_arm64::setfp;
+pub(crate) use crate::fpctrl_arm64::setfp;
 
 // ── i386: the x87 + SSE pair ─────────────────────────────────────────────────
 
@@ -515,6 +517,67 @@ pub unsafe extern "C" fn __control87_2(newval: u32, mask: u32, x86_cw: *mut u32,
         *sse2_cw = 0;
     }
     1
+}
+
+const _EM_AMBIGUOUS: u32 = 0x8000_0000;
+
+// The four public control/status entry points, i386. sdk/lib/crt's i386 bodies (DJ
+// Delorie's, float/i386/{cntrlfp,statfp,clearfp}.c) drive the x87 ALONE, so on an SSE2
+// machine `fesetround`, `_controlfp(_RC_UP, _MCW_RC)` and friends left MXCSR -- where
+// every SSE2-compiled caller does its arithmetic, ucrtbase's own Rust included -- at
+// round-to-nearest, and `_statusfp` never saw an SSE exception. Windows drives both
+// units; so does Wine, whose versions these are, and `_control87` reports a disagreement
+// between them as `_EM_AMBIGUOUS` (Wine's misc.c checks exactly that).
+
+/// `_control87`: both units through `__control87_2`; the x87 word, OR'd with the SSE
+/// word, plus `_EM_AMBIGUOUS` when their masks or rounding modes differ.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn _control87(newval: u32, mask: u32) -> u32 {
+    let (mut flags, mut sse2_cw) = (0u32, 0u32);
+    __control87_2(newval, mask, &mut flags, &mut sse2_cw);
+    if sse2_supported() {
+        if (flags ^ sse2_cw) & (_MCW_EM | _MCW_RC) != 0 {
+            flags |= _EM_AMBIGUOUS;
+        }
+        flags |= sse2_cw;
+    }
+    flags
+}
+
+/// `_controlfp`: `_control87` that never touches `_EM_DENORMAL`.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn _controlfp(newval: u32, mask: u32) -> u32 {
+    _control87(newval, mask & !_EM_DENORMAL)
+}
+
+/// `_statusfp`: the x87 and SSE status words OR'd (Windows defines no "ambiguous"
+/// status bit, so Wine returns both).
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn _statusfp() -> u32 {
+    let (mut x86_sw, mut sse2_sw) = (0u32, 0u32);
+    _statusfp2(&mut x86_sw, &mut sse2_sw);
+    x86_sw | sse2_sw
+}
+
+/// `_clearfp`: both units' exception flags, then clears them.
+#[cfg(target_arch = "x86")]
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn _clearfp() -> u32 {
+    let mut flags = 0u32;
+    setfp(core::ptr::null_mut(), 0, &mut flags, _MCW_EM);
+    if sse2_supported() {
+        let mut sse_sw = 0u32;
+        setfp_sse(core::ptr::null_mut(), 0, &mut sse_sw, _MCW_EM);
+        flags |= sse_sw;
+    }
+    flags
 }
 
 // ── the exports ──────────────────────────────────────────────────────────────

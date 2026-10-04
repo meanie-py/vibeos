@@ -474,12 +474,17 @@ def test_the_authority_includes_ucrtbases_own_C_not_just_its_libraries():
     """
     assert set(vuc.OURS_C_AUTHORITY) == set(vuc.OURS_ON_LINK_LINE) | set(vuc.OURS_OWN_TUS)
     assert set(vuc.OURS_ON_LINK_LINE) & set(vuc.OURS_OWN_TUS) == set(), "the two must be disjoint"
-    # The symbols that motivated this. If stubs.c stops defining them the entry is
-    # stale, and a stale authority entry is exactly what this file must not carry.
+    # The six symbols that motivated this (fma/fmaf, log2/log2f, lrint/lrintf) moved to
+    # ucrt-rust's c99math (2026-10-03) and are declared takeovers there, so they must be
+    # GONE from stubs.c -- two definitions would be the silent first-match this file
+    # exists to prevent. The entry itself still carries printf.c and the rest of stubs.c.
     stubs = REPO / "dll" / "win32" / "ucrtbase" / "stubs.c"
     text = stubs.read_text(errors="replace")
+    c99 = (REPO / "sdk" / "lib" / "rust" / "ucrt-rust" / "src" / "c99math.rs").read_text()
     for sym in ("fma", "fmaf", "log2", "log2f", "lrint", "lrintf"):
-        assert f"{sym}(" in text, f"{sym} no longer in ucrtbase/stubs.c — re-derive OURS_OWN_TUS"
+        assert f" {sym}(" not in text, f"{sym} is back in ucrtbase/stubs.c beside c99math's"
+        assert f'extern "C" fn {sym}(' in c99, f"{sym} no longer in c99math.rs"
+    assert "atexit(" in text, "stubs.c no longer defines atexit — re-derive OURS_OWN_TUS"
 
 
 # ── the burn-down ratchet ────────────────────────────────────────────────────
@@ -608,6 +613,19 @@ def test_archive_source_crates_are_walked_not_listed() -> None:
 
 def test_rebuild_lists_match_the_crate_closure() -> None:
     assert vuc.check_rebuild_lists() == []
+
+
+def test_a_registry_crate_is_not_a_rebuild_input(tmp_path: Path) -> None:
+    """`libm = { version = ... }` is pinned by Cargo.lock and nothing in the tree can
+    edit it, so it is not part of the closure a rebuild list must name; a path crate
+    beside it still is."""
+    _crate(
+        tmp_path,
+        "ucrt-rust",
+        'libm = { version = "0.2.16", optional = true }\n'
+        'varargs-rust = { path = "../varargs-rust" }\n',
+    )
+    assert vuc._deps_of(tmp_path / "ucrt-rust") == {"varargs-rust"}
 
 
 def test_a_crate_missing_from_a_rebuild_list_is_named(tmp_path: Path) -> None:
