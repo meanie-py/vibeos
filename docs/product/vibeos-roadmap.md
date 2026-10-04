@@ -583,12 +583,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   failures (`_atodbl` is right in all of them). `tools/payloads/atodbl` checks it and goes
   green on a fixed emulator. Owed: a released QEMU for the windows-host backend, then rerun
   i386 float-heavy tests. Field manual: "i386 guest float compares go the wrong way".
-- **msvcrt.dll Wine winetest: `misc` exits 128 (i386)** (OPEN, 2026-10-04).
-  `tools/payloads/msvcrtwine`: the `misc` subtest dies with exit code 128 after its `_popen`
-  failures (misc.c:375, error 13), identical on the x87 and SSE2 builds and before and after
-  the libm move (runs `20261003-214256-80iif9qt` vs `20261004-004218-17xphadk`).
-  msvcrt_apitest `ieee` is 33 failures of 286 (was 35), mostly `_j0`/`_j1` value rows that
-  want native's bits.
+- **msvcrt.dll Wine winetest `misc`: FIXED 2026-10-04, was "exits 128"** (i386). The
+  subtest died after misc.c:375's `_popen` failed with EACCES and the test ran `fgets` on the
+  NULL stream. Root cause in kernel32-rust, not msvcrt: `GetEnvironmentVariableA/W` kept the
+  pre-242937b1229 sizing (reserve one char for the NUL) while rtl-strings' query follows
+  upstream ef70bdf9907 (needs room for the NUL), so every size-then-fetch caller got an empty
+  string; msvcrt's COMSPEC came back `""` and `_popen` tried to execute `X:\reactos\bin\`.
+  Now 832 tests, 11 failures: all `I10_OUTPUT` rows whose expected trailing bytes are native's
+  rounding residue (`...9`), which Wine marks `todo_wine_if`. `tools/payloads/popen` checks
+  `_popen`. msvcrt_apitest `ieee` is 33 failures of 286 (was 35), mostly `_j0`/`_j1` value
+  rows that want native's bits.
 - **fastfat bugchecks on rename and on a run of creates (arm64)** (FIXED 2026-10-03; was
   "bugchecks in `FsRtlCheckOplock`"). Two bugs, both 0x23 via `FatBugCheckExceptionFilter`:
   - rename: `FatSetRenameInfo` read the shim's 4-byte `MAX_LFN_CHARACTERS` as `usize`, so every

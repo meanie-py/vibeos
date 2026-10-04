@@ -3827,6 +3827,14 @@ fn diff_math_libm_exports() {
             assert!(same_f64(cabi::$f(x), libm::$f(x)), concat!(stringify!($f), " {:#018x}"), b);
         )*} }
         one!(sin, cos, tan, asin, acos, atan, sinh, cosh, tanh);
+        if x.is_nan() {
+            // Wine's contract, which msvcrt's misc test checks: the NaN comes back quieted
+            // with its sign and payload (same_f64 lets any NaN match any NaN).
+            let q = b | 0x0008_0000_0000_0000;
+            for v in [cabi::sin(x), cabi::cos(x), cabi::tan(x), cabi::asin(x), cabi::acos(x), cabi::sinh(x), cabi::cosh(x)] {
+                assert_eq!(v.to_bits(), q, "NaN passthrough {b:#018x}");
+            }
+        }
         assert!(same_f64(cabi::atan2(y, x), libm::atan2(y, x)), "atan2 {b:#018x}");
         assert!(same_f64(cabi::_hypot(y, x), libm::hypot(y, x)), "_hypot {b:#018x}");
         let (xf, yf) = (x as f32, y as f32);
