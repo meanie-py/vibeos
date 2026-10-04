@@ -39,6 +39,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--arch", required=True, choices=("i386", "amd64", "arm64"))
     ap.add_argument("--only", action="append", metavar="SUITE[:Subtest]")
     ap.add_argument("--skip", action="append", metavar="SUITE:Subtest")
+    ap.add_argument(
+        "--global-flag",
+        action="append",
+        metavar="SUITE=HEX",
+        help="set the Image File Execution Options GlobalFlag for SUITE_winetest.exe before "
+        "the suites run (staged reg.exe), e.g. oleaut32=0x02000000 for page heap: a heap "
+        "corruption then faults AT the bad store instead of at a later free",
+    )
     args = ap.parse_args(argv)
 
     build = REPO / f"build-{args.arch}" / "modules" / "rostests" / "winetests"
@@ -65,6 +73,17 @@ def main(argv: list[str] | None = None) -> int:
     ]
     if only:
         lines.append("# RESTRICTED by --only to: " + ", ".join(args.only))
+    ifeo = "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options"
+    for gf in args.global_flag or []:
+        suite, _, flags = gf.partition("=")
+        suite = suite.removesuffix("_winetest.exe").removesuffix("_winetest")
+        if suite not in SUITES or not flags:
+            print(f"gen_suites: bad --global-flag {gf!r} (want SUITE=HEX)", file=sys.stderr)
+            return 1
+        lines.append(
+            f'reg.exe add "{ifeo}\\{suite}_winetest.exe" /v GlobalFlag /t REG_DWORD /d {flags} /f'
+        )
+        lines.append("# GlobalFlag " + flags + " on " + suite + ": a DEBUG run, not a baseline")
     # Register first (see payload.yaml): the sweep runs `<bin>\\<exe> <rest>`.
     # windowscodecs: OleLoadPicture decodes through WIC (CLSID_WICImagingFactory).
     lines += [

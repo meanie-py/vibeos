@@ -1454,6 +1454,33 @@ size-verified. Real damage:
   extension layout; **a dropped `FIELD_OFFSET(T, Array[N])` subscript scaling** under-allocates
   the heap block.
 
+### A `pshpack` region translated as plain `repr(C)`
+**Symptom.** A file-format reader rejects valid input or reads fields a few bytes off.
+oleaut32's `OleLoadPictureEx` failed every placeable metafile (Wine's olepicture `test_apm`,
+then a crash on the NULL picture), and every icon directory entry was read 2 bytes late.
+**Cause.** The C declared `APM_HEADER`, `CURSORICONFILEDIRENTRY` and `CURSORICONFILEDIR`
+between `#include "pshpack1.h"` and `poppack.h`; the translation gave them plain `#[repr(C)]`,
+so `APM_HEADER` padded to 24 bytes instead of 22 and `idEntries` moved from offset 6 to 8.
+The pack pragma is invisible at the struct, so nothing at the definition looked wrong.
+**Fix.** `#[repr(C, packed)]` plus a `const _: () = assert!(size_of / offset_of ...)` per
+struct. Audit a module by listing every struct inside a `pshpack`/`poppack` pair in its C and
+checking the Rust `repr` (a ten-line script; ole32/oleaut32's other twenty were fine). This is
+the mirror image of the packed-`TDI_ADDRESS_IP` bullet above: wrong in either direction, and
+only a size assert catches it.
+
+### A macro translated from the wrong side of an `#ifdef`
+**Symptom.** Values built through one helper are corrupt in a way that looks like two fields
+swapped. In oleaut32 every negative `DECIMAL` made with `SIGNSCALE` had scale 128, and
+`DECIMAL` products, quotients and `VarDecFromR8` results came back with sign and scale crossed
+(Wine's vartest: `VarMul ... 0.000000, expected 46.200000`).
+**Cause.** `variant.h` defines `SIGNSCALE` twice, under `#ifdef WORDS_BIGENDIAN` and `#else`;
+the translation copied the big-endian branch, `(scale << 8) | sign`, and even labelled it "LE
+branch". The same swap was then written inline in `VARIANT_DecFromDI`, and a reader tested the
+sign as `signscale & 0x80` (bit 7 of the scale byte).
+**Fix.** Use the named union fields (`scale`, `sign`) instead of composing the packed word, and
+when a macro has endian or arch branches, check which one the comment claims against the
+header itself. Grep the crate for every other composition of the same word.
+
 ### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
 `ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.
 A module built `set_module_type(<m> win32dll UNICODE)` picks that up through the island's
@@ -4246,6 +4273,15 @@ call and `invented` still catches a hallucinated token.
 **And say so in the contract.** The `goto` branch already documents why: told "do not
 duplicate" when the C forces duplication, models MINT NEW TOKEN NUMBERS past the end of the
 list rather than repeat one. The fall-through branch now gets the same sentence.
+
+**The opposite face: the translation did NOT replay the fall-through.** Then nothing is
+rejected and behaviour is silently lost. oleaut32's `VarMod` falls BOOL..I8 → INT → UI1..CY →
+EMPTY/DATE/DECIMAL → BSTR, so every one of those right-operand types ends at BSTR's
+"NULL % x is NULL" check; the `match` gave each arm only its own check, and
+`VarMod(NULL, int)` returned `DISP_E_TYPEMISMATCH` (Wine's vartest). Replay it explicitly: map
+the arm to a stage number and run each check `if stage <= k`. When reviewing a translated
+`switch`, look for arms that end without `break` in the C and confirm the Rust arm repeats the
+rest of the chain.
 
 **The rejection that was real, from the same run.** Do not read this entry as "the audit
 over-rejects." `AccRewriteGetNamedRights` was rejected for duplicating `SetLastError`, and

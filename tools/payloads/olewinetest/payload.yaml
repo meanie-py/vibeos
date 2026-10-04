@@ -41,6 +41,9 @@ binaries:
   # registering both DLLs, as an installed system already has.
   - src: build-{arch}/base/system/regsvr32/regsvr32.exe
     dest: bin/regsvr32.exe
+  # gen_suites.py --global-flag writes reg.exe steps (page heap etc. per suite).
+  - src: build-{arch}/base/applications/cmdutils/reg/reg.exe
+    dest: bin/reg.exe
 
 test:
   launch_marker: "[APITEST-SWEEP] done"

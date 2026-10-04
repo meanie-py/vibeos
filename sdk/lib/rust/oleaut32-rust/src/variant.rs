@@ -5429,45 +5429,54 @@ pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: 
             }
         }
 
-        match (*V_VT_ref(right_ptr)) & VT_TYPEMASK {
-            VT_BOOL | VT_I1 | VT_I2 | VT_I4 | VT_I8 => {
-                if ((*V_VT_ref(left_ptr)) == VT_INT) && ((*V_VT_ref(right_ptr)) == VT_I8) {
-                    (*V_VT_ref(result)) = VT_EMPTY;
-                    rc = DISP_E_TYPEMISMATCH;
-                    break 'end;
-                }
+        // C: these cases FALL THROUGH into each other (BOOL..I8 -> INT -> UI1..CY
+        // -> EMPTY/DATE/DECIMAL -> BSTR), so every one of them ends at BSTR's
+        // "NULL % x is NULL" check. The translation gave each arm only its own
+        // check, so VarMod(NULL, <any non-BSTR>) went on to convert NULL to I8
+        // and failed DISP_E_TYPEMISMATCH (Wine's vartest). `stage` replays the
+        // fallthrough: an arm runs its own check and every later one.
+        let rvt = (*V_VT_ref(right_ptr)) & VT_TYPEMASK;
+        let stage: u8 = match rvt {
+            VT_BOOL | VT_I1 | VT_I2 | VT_I4 | VT_I8 => 1,
+            VT_INT => 2,
+            VT_UI1 | VT_UI2 | VT_UI4 | VT_UI8 | VT_UINT | VT_R4 | VT_R8 | VT_CY => 3,
+            VT_EMPTY | VT_DATE | VT_DECIMAL => 4,
+            VT_BSTR => 5,
+            _ => 0,
+        };
+        if stage != 0 {
+            if stage <= 1 && ((*V_VT_ref(left_ptr)) == VT_INT) && ((*V_VT_ref(right_ptr)) == VT_I8) {
+                (*V_VT_ref(result)) = VT_EMPTY;
+                rc = DISP_E_TYPEMISMATCH;
+                break 'end;
             }
-            VT_INT => {
-                if ((*V_VT_ref(right_ptr)) == VT_INT) && ((*V_VT_ref(left_ptr)) == VT_I8) {
-                    (*V_VT_ref(result)) = VT_EMPTY;
-                    rc = DISP_E_TYPEMISMATCH;
-                    break 'end;
-                }
+            if stage <= 2 && ((*V_VT_ref(right_ptr)) == VT_INT) && ((*V_VT_ref(left_ptr)) == VT_I8) {
+                (*V_VT_ref(result)) = VT_EMPTY;
+                rc = DISP_E_TYPEMISMATCH;
+                break 'end;
             }
-            VT_UI1 | VT_UI2 | VT_UI4 | VT_UI8 | VT_UINT | VT_R4 | VT_R8 | VT_CY => {
-                if (*V_VT_ref(left_ptr)) == VT_EMPTY {
-                    // Wine 10.0: and a VALUE. VarMod(EMPTY, x) returned VT_I4
-                    // with whatever the caller's variant held.
-                    (*V_VT_ref(result)) = VT_I4;
-                    (*V_I4_ref(result)) = 0;
-                    rc = S_OK;
-                    break 'end;
-                }
+            if stage <= 3 && (*V_VT_ref(left_ptr)) == VT_EMPTY {
+                // Wine 10.0: and a VALUE (the result held whatever the caller had).
+                (*V_VT_ref(result)) = VT_I4;
+                (*V_I4_ref(result)) = 0;
+                rc = S_OK;
+                break 'end;
             }
-            VT_EMPTY | VT_DATE | VT_DECIMAL => {
-                if (*V_VT_ref(left_ptr)) == VT_ERROR {
-                    (*V_VT_ref(result)) = VT_EMPTY;
-                    rc = DISP_E_TYPEMISMATCH;
-                    break 'end;
-                }
+            if stage <= 4 && (*V_VT_ref(left_ptr)) == VT_ERROR {
+                (*V_VT_ref(result)) = VT_EMPTY;
+                rc = DISP_E_TYPEMISMATCH;
+                break 'end;
             }
-            VT_BSTR => {
-                if (*V_VT_ref(left_ptr)) == VT_NULL {
-                    (*V_VT_ref(result)) = VT_NULL;
-                    rc = S_OK;
-                    break 'end;
-                }
+            if (*V_VT_ref(left_ptr)) == VT_NULL {
+                (*V_VT_ref(result)) = VT_NULL;
+                rc = S_OK;
+                break 'end;
             }
+        }
+
+        match rvt {
+            VT_BOOL | VT_I1 | VT_I2 | VT_I4 | VT_I8 | VT_INT | VT_UI1 | VT_UI2 | VT_UI4 | VT_UI8
+            | VT_UINT | VT_R4 | VT_R8 | VT_CY | VT_EMPTY | VT_DATE | VT_DECIMAL | VT_BSTR => {}
             VT_VOID => {
                 (*V_VT_ref(result)) = VT_EMPTY;
                 rc = DISP_E_BADVARTYPE;

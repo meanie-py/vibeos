@@ -1677,9 +1677,11 @@ pub unsafe extern "system" fn VarCyFromDec(pdecIn: *const DECIMAL, pCyOut: *mut 
         if rounded.Hi32 != 0 {
             return DISP_E_OVERFLOW;
         }
-        let signscale = rounded.__bindgen_anon_1.signscale;
-        let scale = (signscale & 0x7F) as usize;
-        let sign = (signscale & 0x80) != 0;
+        // C: DEC_SCALE / DEC_SIGN, the named bytes. Testing signscale & 0x80
+        // read bit 7 of the SCALE byte (sign is the high byte, 0x8000), so a
+        // negative DECIMAL converted to CY came out positive.
+        let scale = rounded.__bindgen_anon_1.__bindgen_anon_1.scale as usize;
+        let sign = rounded.__bindgen_anon_1.__bindgen_anon_1.sign != 0;
         let lo64 = rounded.__bindgen_anon_2.Lo64 as f64;
         let divisor = CY_Divisors[scale] as f64;
         let d = if sign { -lo64 / divisor } else { lo64 / divisor };
@@ -2301,7 +2303,10 @@ unsafe fn VARIANT_DIFromDec(from: *const DECIMAL, to: *mut VARIANT_DI) {
 unsafe fn VARIANT_DecFromDI(from: *const VARIANT_DI, to: *mut DECIMAL) {
     let sign_byte: u8 = if (*from).sign != 0 { 0x80 } else { 0 };
     let scale = (*from).scale;
-    (*to).__bindgen_anon_1.signscale = ((scale as u16) << 8) | sign_byte as u16;
+    // sign in the HIGH byte, scale in the low (little-endian DECIMAL; see
+    // SIGNSCALE). This had them swapped, so every product, quotient and
+    // R4/R8->DECIMAL conversion came back with sign and scale crossed.
+    (*to).__bindgen_anon_1.signscale = ((sign_byte as u16) << 8) | scale as u16;
     (*to).__bindgen_anon_2.__bindgen_anon_1.Lo32 = (*from).bitsnum[0];
     (*to).__bindgen_anon_2.__bindgen_anon_1.Mid32 = (*from).bitsnum[1];
     (*to).Hi32 = (*from).bitsnum[2];

@@ -92,9 +92,12 @@ pub unsafe fn DEC_MID32_ref(d: *mut DECIMAL) -> *mut u32 { core::ptr::addr_of_mu
 pub unsafe fn DEC_LO32_ref(d: *mut DECIMAL) -> *mut u32 { core::ptr::addr_of_mut!((*d).__bindgen_anon_2.__bindgen_anon_1.Lo32) }
 #[inline]
 pub unsafe fn DEC_LO64_ref(d: *mut DECIMAL) -> *mut u64 { core::ptr::addr_of_mut!((*d).__bindgen_anon_2.Lo64) }
-/// variant.h: `SIGNSCALE(sign,scale) (((scale) << 8) | sign)` (LE branch)
+/// variant.h little-endian branch: `SIGNSCALE(sign,scale) (((sign) << 8) | scale)`
+/// (DECIMAL keeps `scale` in the low byte). The translation took the
+/// WORDS_BIGENDIAN branch, `(scale << 8) | sign`, so SIGNSCALE(DECIMAL_NEG, 0)
+/// stored scale 128 / sign 0: every negative DECIMAL made this way was garbage.
 #[inline]
-pub fn SIGNSCALE(sign: u8, scale: u8) -> u16 { ((scale as u16) << 8) | sign as u16 }
+pub fn SIGNSCALE(sign: u8, scale: u8) -> u16 { ((sign as u16) << 8) | scale as u16 }
 #[inline]
 pub unsafe fn DECIMAL_SETZERO(d: *mut DECIMAL) {
     core::ptr::write_bytes(d as *mut u8, 0, core::mem::size_of::<DECIMAL>());
