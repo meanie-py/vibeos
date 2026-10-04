@@ -1194,6 +1194,10 @@ endmacro()
 
 # PSEH lib, needed with mingw
 set(PSEH_LIB "pseh")
+# The user-mode CRT DLLs' PSEH runtime from Rust (sdk/lib/pseh: pseh-rust, `user`). A
+# variable like PSEH_LIB because tools/verify_ucrtbase_cohab.py reads bare names on
+# ucrtbase's link line as C libraries.
+set(PSEH_USER_LIB "pseh_user_rust")
 
 function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_address)
     set(_object_file ${_binary_file}.o)

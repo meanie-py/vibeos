@@ -270,9 +270,9 @@ add_custom_target(rust_msvcrt_crt DEPENDS ${MSVCRT_CRT_RUST_LIB})
 # first-match. --whole-archive forces the Rust defs in first; the C copies then
 # become the ignored duplicates (--allow-multiple-definition). See lane plan §1b.
 link_msvcrt_rust_cohab(msvcrt)
-# pseh_user_rust first: the SEH runtime resolves from Rust (pseh-rust) before any of these
+# ${PSEH_USER_LIB} first: the SEH runtime resolves from Rust (pseh-rust) before any of these
 # libraries' own ${PSEH_LIB} dependency is reached.
-target_link_libraries(msvcrt pseh_user_rust msvcrt_static crtmath dbgrpt vcruntime wine chkstk)
+target_link_libraries(msvcrt ${PSEH_USER_LIB} msvcrt_static crtmath dbgrpt vcruntime wine chkstk)
 if(ARCH STREQUAL "i386")
     target_link_libraries(msvcrt chkesp)
 endif()

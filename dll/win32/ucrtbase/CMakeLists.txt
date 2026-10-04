@@ -112,9 +112,11 @@ add_dependencies(ucrtbase rust_ucrt_shared)
 # because msvcrt_shared still gets pulled for the symbols Rust does NOT define and drags in
 # its own copies of the ones it does, which would then win first-match. Forcing the Rust
 # defs in first makes the C copies the ignored duplicates.
+# ${PSEH_USER_LIB}: the SEH runtime from Rust (pseh-rust), ahead of any library that
+# drags libpseh in.
 target_link_libraries(ucrtbase
     -Wl,--whole-archive ${UCRT_SHARED_RUST_LIB} -Wl,--no-whole-archive
-    pseh_user_rust  # the SEH runtime from Rust, ahead of any library that drags libpseh in
+    ${PSEH_USER_LIB}
     msvcrt_shared
     crtmath
     vcruntime
