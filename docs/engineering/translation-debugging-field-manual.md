@@ -6915,10 +6915,16 @@ i386 and amd64, with only the known-flaky `IoDeviceObject` assertion moving besi
 drift silently — and the *kernel's* graceful degradation is what hides it. When one arch's
 result differs, diff the media before diffing the code.
 
-**Mechanised.** `tools/scan_boot_media_drift.py` (in `vibeos-cli check`, baseline EMPTY) now
-gates the invariant statically: every hive `add_cd_file` stages into `reactos/system32/config`
-`FOR livecd` must also be copied by `mkramdisk.sh` **and** listed in its `REQUIRED_FILES`, and
-`mkhive`'s `-h:` list must match the `OUTPUT` files cmake declares for it. Run against the tree
+**Mechanised, then removed at the root (2026-10-03).** The two lists are now one: arm64 builds
+the same `livecd` target as x86, and `mkramdisk.sh` lays out `boot/livecd.<config>.lst` (the list
+`mkisofs` consumes on x86) with `tools/ramdisk_tree.py`, which hard-fails on a missing source.
+Only arm64's own files (the stack-patched csrss, the FEX layer) and payloads sit on top.
+Before that the ramdisk carried ~250 hand-copied files against the livecd's ~1100, and
+`setup.exe`, `syssetup.dll` and every `.inf` were among the missing, so the livecd hive's
+first-boot `setup -mini` failed silently on every arm64 boot for its whole life.
+`tools/scan_boot_media_drift.py` (in `vibeos-cli check`, baseline EMPTY) gates that the ramdisk
+is still built from the list, and that `mkhive`'s `-h:` list matches the `OUTPUT` files cmake
+declares for it. Run against the tree
 as it stood before the fix it names `sam` and `security` outright. Scoped to the config
 directory on purpose — the BCD hive goes to `efi/boot` for the EFI boot manager and is not a
 `\REGISTRY\MACHINE` hive, so requiring it on the ramdisk would be a false positive.
@@ -7520,6 +7526,17 @@ other. AMD's SSE2 `sin` computes `(-0.0 * 0.0) * S1` and answers `+0.0` for `sin
 the FMA3 path in the *same file* returns `x` below 2^-27 and answers `-0.0`. Neither is a
 transcription error, and only measurement finds it.
 
+**Second instance, worse: the C said `FIXME` and the port kept it as the contract.** Upstream's
+portable `math/arm64/{log10,pow}.c` are placeholders — `log10` divides by ten in a loop and adds
+`(t - 1) / 9`, `pow`'s general case is `return 0.0; // FIXME` — and cnt-rust ported both
+"verbatim, so the difftest stays bit-exact", with a fuzz that FENCED OUT the inputs that hang
+(`log10(inf)`; `fmod` with a subnormal divisor). They then became msvcrt.dll's and ucrtbase.dll's
+exports on every arch via the `cabi-math` flip: `pow(2, 0.5) == 0` shipped for weeks, and
+`log10(inf)` was the months-old "Wine misc subtest hangs". Found by lifting Wine's
+`test_math_errors` into a payload with a DbgPrint before each call. Two rules from it: a
+comment saying "FIXME"/"stub" in the C is a NOT-AN-ORACLE marker, never a fidelity target; and a
+difftest whose domain note excludes a non-terminating input is reporting a bug, not a scope.
+
 ### A differential harness that cannot see its two sides diverge in STATE will report state differences as BEHAVIOUR differences
 **Symptom.** A perf/conformance row fails hard and reproducibly — `towlower` 10.8x TOO SLOW,
 all 3 passes, flat 44 MiB/s across a 65536x size range, calibration twins clean at 1.01x — and
@@ -7719,8 +7736,9 @@ diff is not a gate.**
   neither knowing, and the merge conflicted across six scanners. Nobody wasted time — the
   landed version was better on both counts above and simply replaced the other — but when a
   defect is announced fleet-wide, say whether you are taking it.
-- **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep has no
-  defined corpus. arm64 has no `livecd` DAG (`archcfg.py:209` builds a hand-picked staged set),
+- **Which artifacts a worktree happens to carry** — `scan_ud2`'s arm64 driver sweep had no
+  defined corpus (FIXED 2026-10-03: arm64 builds `livecd` now, and the sweep's first pass over
+  the real set found 15 spins in pcix/ks/fltmgr/portcls). arm64 had no `livecd` DAG (it built a hand-picked staged set),
   so the sweep grades whatever binaries are sitting in `build-arm64/`: nothing in a fresh
   integration worktree, an arbitrary accumulation in a long-lived lane. A real `disk.sys` finding
   has therefore never blocked a gate, and a lane can equally eat a red arm64 result for a driver
@@ -10196,6 +10214,25 @@ translation bug; the free-while-mapped tripwire (negative); `MmInsertRmap`'s two
 diagnosis** — and it is kept after the fix because the two faces are the thing a reader will
 recognise if anything like it returns.
 
+### A boot that goes silent at one line may have changed output CHANNEL, not died
+
+**Symptom:** the serial log stops dead after a specific line and nothing follows,
+so that line reads as the crash site. x86 freeldr "died at
+`[freeldr] Switching stack...`" for months on any non-ATAPI boot device, and the
+conclusion written down was that the stack switch itself failed.
+
+**Cause:** the code before that line printed via UEFI `ConOut`, which the serial
+log carries; everything after it printed via `TRACE`/`WARN`, which it does not.
+The boot was running fine and invisible. A `ConOut` probe placed immediately after
+the switch printed, which took one boot to establish and overturned the whole
+reading — the real failure was ~20 lines later, in `RunLoader`.
+
+**Fix:** before believing a last-line-is-the-crash-site story, check whether the
+NEXT code uses a different print path. The discriminator is cheap: put one probe
+on the channel the log demonstrably carries, immediately after the suspect line.
+If it prints, the line is a channel boundary, not a fault — and the probe is worth
+keeping, because the next reader will otherwise draw the same wrong conclusion.
+
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the
   config manager loads the hive early and growing it shifts everything. **Don't ship the hive
@@ -10674,6 +10711,69 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 - **arm64 user-mode pegged in `KeStallExecutionProcessor`** starves explorer/win32k entirely.
 
 ---
+
+### A loop-local the C leaves uninitialised can be carrying state between iterations
+**Symptom.** On arm64's FAT ramdisk, listing a directory of long-named files returned bare 8.3
+names (`FSEX30~1.TTF`), the same file two or three times, batches of one entry from a 16 KB
+buffer, and most files not at all. `\SystemRoot\Fonts` lost 2 of 51 faces, one of them Marlett,
+so every caption button and scrollbar arrow drew as `0 1 r` / `5 6`. `fatprobe`'s enumerate step
+reproduces it with 60 files.
+
+**Cause.** `FatQueryDirectory` declares `VBO NextVbo;` inside its loop, uninitialised, and passes
+`&NextVbo` to `FatLocateDirent`, whose pinned-page fast path advances the still-pinned `Dirent`
+by `(OffsetToStartSearchFrom - *ByteOffset) / sizeof(DIRENT)`: it needs LAST iteration's value.
+The C gets it only because the stack slot is reused. The translation wrote `let mut NextVbo = 0;`
+inside the loop, so every call after the first on the first directory page started from the
+wrong dirent.
+
+**Fix.** Hoist the variable out of the loop so the value carries by construction (`dirctrl.rs`).
+
+**Generalize.** An uninitialised C local inside a loop is a read of the previous iteration
+whenever anything reads it before writing it, including a callee through a pointer. A
+translator that adds `= 0` (or `zeroed()`) is changing behaviour, not tidying.
+
+### Completing the media wakes up code that a missing file was holding back
+**Symptom.** The first arm64 boot from the full livecd file set wedged during first-boot setup:
+`CommonInstall: PlugPlay running, waiting for pending installs`, then serial silent; `debug
+profile` put every sample in netstack's `VirtQueue::add_notify_wait_pop`.
+
+**Cause.** netstack drives virtio-net and e1000 directly, below NDIS. On the old hand-staged
+ramdisk `netkvm.sys` was absent, so when setup installed netkvm.inf for the virtio NIC its
+AddDevice failed `0xC0000034` and nothing noticed. With the file present netkvm started, reset
+the device under netstack, and netstack's synchronous TX wait spun forever. i386 carried the
+same double binding (e1000.sys under netstack's e1000) without wedging only because nothing
+after setup touched the NIC. QEMU adds a default NIC on every machine (`pc`: e1000, `virt`:
+virtio-net), so "plain smoke has no NIC" was never true.
+
+**Fix.** One driver per device: the NDIS miniport INFs for hardware netstack drives (all of
+netkvm.inf, e1000's 100E/100F models) stay off the media until netstack sits above NDIS (M11 in
+`smoltcp-netstack-design.md`).
+
+**Generalize.** A file that was missing was also a switch that was off. When a media change adds
+files, the failures it exposes are rarely in the files: they are in whatever those files'
+absence had been quietly disabling. Read the `[DA] AddDevice` lines of the old boot for the
+`0xC0000034`s; each one is a driver that will start binding.
+
+### A user thread returns to a small integer: a kernel APC ran one syscall late
+**Symptom.** arm64 conformance wedged around 106 s; just before it, a svchost thread died with
+`PC=LR=0x74` (UEXC-KILL). The thread was dhcpcsvc's `AdapterDiscoveryThread`, which never
+returns. 0x74 = 116 = netstack's IFEntry reply (92-byte fixed part + 24-byte description).
+
+**Cause.** An IOCTL completes through `IopCompleteRequest`, a special kernel APC that writes the
+caller's IO_STATUS_BLOCK. On x86 lowering IRQL on the way out of the syscall fires the APC
+interrupt, so the block is written before user code runs again. arm64's software APC bit only
+drained at a `KfLowerIrql`, and neither return to EL0 (SVC exit, IRQ-from-EL0 exit) drained a
+pending kernel APC — so the APC ran inside the thread's NEXT syscall and stored
+`Information=0x74` into a stack slot the program had reused for a saved LR. Instrumenting the
+SVC exit found `KernelApcPending` set with IRQL 0 and nothing disabling APCs on ordinary
+returns (`NtTestAlert`, `NtSetInformationThread`).
+
+**Fix.** `KiDeliverUserApcArm64` (SVC exit) delivers when either APC kind is pending
+(`KiDeliverApc(UserMode)` runs the kernel list first and touches the user list only when
+`UserApcPending`); `KiEL0IrqPreempt` drains kernel APCs before the IRQ returns to user mode.
+
+**Generalize.** A user-mode crash at a PC equal to a byte count is a status block written late.
+Check that every path back to user mode delivers kernel APCs.
 
 ## WoW64 / FEX: 32↔64 divergences
 

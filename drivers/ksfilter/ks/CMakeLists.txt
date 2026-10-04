@@ -57,10 +57,6 @@ add_custom_target(rust_ks DEPENDS ${KS_RUST_LIB})
 #     event.c filter.c filterfactory.c image.c irp.c methods.c misc.c pin.c property.c
 #     topology.c unknown.c worker.c kcom.c swenum.c precomp.h)
 
-if(MSVC)
-    add_asm_files(ks_asm msvc.S)
-endif()
-
 add_library(ks MODULE
     rust_cohab_stub.c
     ${ks_asm}

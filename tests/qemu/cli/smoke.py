@@ -416,7 +416,7 @@ def _boot_vm(
             pass
         if outcome == "reached":
             # A green desktop does not prove an `--smp N` run actually got SMP.
-            smp_fail = _smp_check(text, arch)
+            smp_fail = _smp_check(text, arch) or _ahci_check(text)
             if smp_fail is not None:
                 return {
                     "ok": False,
@@ -719,6 +719,35 @@ def _payload_stage(
         )
 
 
+# uniata-rust prints this from AhciDetect (id_sata.rs) once it has mapped the
+# controller's ABAR and counted its ports; found=1 is the only proof that the
+# guest drove the CD through AHCI rather than some fallback.
+_AHCI_FOUND_RE = re.compile(r"\[UNIATA\] AhciDetect: exit found=1\b")
+
+
+def ahci_requested() -> bool:
+    """`--ahci` (or the older VIBEOS_AHCI_CD=1 knob it sets): the boot CD sits
+    on an ich9-ahci controller instead of the IDE bus (backend.py)."""
+    return os.environ.get("VIBEOS_AHCI_CD", "").strip() == "1"
+
+
+def _ahci_check(text: str) -> dict | None:
+    """Prove an `--ahci` boot actually ran uniata's AHCI path. A desktop alone
+    proves nothing here: if the controller were not attached, or uniata fell
+    back to legacy/PIO mode, the boot would look identical and an AHCI soak
+    would bank green for a path it never touched."""
+    if not ahci_requested() or _AHCI_FOUND_RE.search(text):
+        return None
+    return {
+        "classification": "AHCI_NOT_ENGAGED",
+        "salient": [
+            "--ahci boot reached the desktop but uniata never reported `AhciDetect: exit found=1`",
+            "the CD was not on ich9-ahci (backend.py rewrite) or uniata did not "
+            "claim it in AHCI mode (PCI#CC_0106 in hivesys.inf)",
+        ],
+    }
+
+
 def smoke(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # base for staleness/build dir; boot resolves vm_arch
     run = Run("smoke", arch)
@@ -795,6 +824,19 @@ def smoke(args, repo: Path) -> int:
     if smp:
         os.environ["VIBEOS_QEMU_SMP"] = str(smp)
         run.add(Stage("smp", status="warn", detail=f"-smp {smp}"))
+
+    # AHCI channel: the boot CD on ich9-ahci (backend.py), and every boot must
+    # then show uniata driving it (_ahci_check). x86 only: arm64 boots a
+    # ramdisk and has no IDE CD to move.
+    if getattr(args, "ahci", False):
+        if arch == "arm64":
+            run.classification = "BAD_ARGS"
+            run.add(
+                Stage("ahci", status="fail", detail="--ahci is x86-only (arm64 boots a ramdisk)")
+            )
+            return run.finalize(repo)
+        os.environ["VIBEOS_AHCI_CD"] = "1"
+        run.add(Stage("ahci", status="warn", detail="boot CD on ich9-ahci"))
 
     results = []
     for i in range(total):

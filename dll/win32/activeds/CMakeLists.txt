@@ -11,10 +11,6 @@ add_library(activeds MODULE
     ${SOURCE}
     ${CMAKE_CURRENT_BINARY_DIR}/activeds.def)
 
-if(MSVC)
-    target_compile_options(activeds PRIVATE /wd4267) # conversion from 'size_t' to 'int', possible loss of data
-endif()
-
 set_module_type(activeds win32dll)
 add_idl_reg_scripts(activeds registry activeds.idl)
 target_link_libraries(activeds wine wine_dll_register wine_dll_canunload uuid oldnames)

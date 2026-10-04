@@ -425,33 +425,44 @@ arches) and the PL011 UART (a real ARM peripheral).
 
 ---
 
-## 11. Retire MSVC support — Size: M
+## 11. Retire MSVC support — Size: M (CMake + stlport DONE 2026-10-03; tail owed)
 
 **MSVC is not a supported toolchain** (owner, 2026-09-26): the project builds with
 clang/llvm-mingw, and that was a settled early call. Upstream ReactOS still carries an
-MSVC build, and everything that exists only for it is dead weight here: code nothing
-compiles, CMake branches nothing takes, and tests of a compiler we do not use.
-Deliberately deferred, not urgent. Measured 2026-09-26:
+MSVC build, and everything that exists only for it is dead weight here. Owner said "kill
+it" on 2026-10-03.
 
-- **`vendor/stlport`** (116K lines): a C++ standard library wired up only by
-  `sdk/cmake/msvc.cmake`'s `cppstl`. Our builds use the toolchain's libstdc++ and compile
-  none of it. vendor.yaml records it `translate: keep` with a note saying it is dead.
-  Removing it means deleting the tree, its `if(MSVC)` block in `sdk/lib/3rdparty`,
-  `vendor-patches/stlport.patch` and its vendor.yaml/notices entries.
-- **`sdk/cmake/msvc.cmake`** (613 lines) and **`baseaddress_msvc.cmake`**.
-- **220 `if(MSVC)` / `if(NOT MSVC)` sites in 153 CMake files**: collapse each to its
-  non-MSVC arm. 29 of those files are rostests.
-- **MSVC-only tests**: the rostests behind `if(MSVC)`, and the MSVC arm of
-  `vendor/ms-compiler-tests`. Its i386 arm is built by clang today and stays.
-- **`_MSC_VER` in 589 non-vendored sources**: the long tail, retire opportunistically.
-  Many are portability guards that also select the clang path, so read each one; do not
-  delete by regex.
+**Done 2026-10-03:**
 
-**The cost is upstream-sync friction**, and it decides the order: every hunk deleted
-from a file upstream still edits becomes a merge conflict on the next sync. So take the
-self-contained pieces first (stlport, `msvc.cmake`, whole MSVC-only tests), then the
-`if(MSVC)` branches in files upstream rarely touches. Leave the `_MSC_VER` tail for
-files we already own or have translated.
+- **`tools/strip_msvc_cmake.py`** partially evaluates every CMake `if`/`elseif` with the
+  MSVC facts fixed (`MSVC`/`MSVC_IDE` false, compiler id never "MSVC") and resolves what
+  that decides: dead arms deleted with their attached comments, surviving arms dedented,
+  compound conditions rewritten (`MSVC OR X` -> `X`). Its first run resolved 203
+  conditions in 144 files. `vibeos-cli check` runs it as `strip_msvc_cmake` with an EMPTY
+  baseline, so **after an upstream merge, run `python3 tools/strip_msvc_cmake.py --write`**
+  when the check names new sites. Vendored trees are skipped (their CMake is the tree's).
+- Deleted: `vendor/stlport` (116K lines; registry entry, patch and notices with it),
+  `sdk/cmake/msvc.cmake`, `sdk/cmake/baseaddress_msvc.cmake`, `toolchain-msvc.cmake`,
+  `overrides-msvc.cmake`. The MSVC-only rostests went with their `if(MSVC)` arms, and
+  `vendor/ms-compiler-tests` is now built only by its clang i386 arm.
+
+**Still owed:**
+
+- **Orphaned MSVC-only sources**, now referenced by no CMake: `cpprt` (`ehvec.cpp`,
+  `new_nothrow.cpp`, `terminate.cpp`, `typeinfo.cpp`, `{i386,amd64}/cpprt.s`), the Wine
+  `msvc.S`/`msvc-thiscall.c` thunks (mshtml, oleaut32, rpcrt4 + `thunks-msvc.s`, vssapi,
+  ole32, windowscodecs, ks), `crt/oldnames-{common,msvcrt}.S`, msvcrt's
+  `{i386,amd64}/cpp_alias.s`, `cpp_vtables.s`, `except_*.s` (CRT lane: delete when it
+  finishes), and the winetests `get_fpu_cw.asm` / `msvc-x64.asm`. Dead-but-present, like a
+  cohab-flipped `.c`. Deleting a file upstream still edits makes a modify/delete conflict on
+  every sync, so take them when their module is translated or upstream stops touching them.
+- **Upstream's Windows/CI entry points** still name the MSVC toolchain and are left as
+  upstream ships them: `.github/workflows/build.yml` (its `build-msvc` jobs),
+  `CMakePresets.json` (`base-msvc`/`clang-cl` presets) and `configure.cmd`. We run none of
+  them; editing them buys only merge conflicts.
+- **`_MSC_VER` in ~589 non-vendored sources**: retire opportunistically in files we own or
+  have translated. Many are portability guards that also select the clang path, so read
+  each one; do not delete by regex.
 
 ---
 
@@ -602,7 +613,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   while the sweep ran it from the read-only CDFS); `misc` dies on an unmasked FP exception
   (0xC0000090) or times out after calling the `fesetround`/`fegetenv` spec stubs, and its
   math-errno checks (misc.c:774/776) fail on ours past the point where the baseline has
-  already crashed, so they are UNCOMPARED -- as of 2026-10-03 (c99math) every C99 row passes
+  already crashed, so they are UNCOMPARED. The HANG is ROOT-CAUSED and FIXED (2026-10-03):
+  `log10(INFINITY)` never returned -- cnt-rust's `log10`/`pow`/`fmod` were ports of upstream's
+  placeholder C (`pow(2, 0.5) == 0` shipped in msvcrt.dll and ucrtbase.dll on every arch); they
+  are the `libm` crate's now, and the x87 asm on no-SSE i386 (`tools/payloads/matherrs` traces
+  Wine's test per call). As of 2026-10-03 (c99math) every C99 row passes
   and the failures are exactly the C89 functions ucrtbase takes from cnt-rust/crtmath
   (`acos`, `asin`, `cos`, `exp`, `exp2`, `log`, `log10`, `_logb`), which set neither errno
   nor `_matherr` on a domain/range error -- the UCRT `math_error` contract is owed on top of
@@ -627,35 +642,37 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `verify_ucrtbase_cohab.py`'s export/import check, which allowlists these four as OWED
   (`EXPORT_IMPORT_ALLOWED`); remove them there when an arm64 FPCR-backed port lands.
   Owner: ucrt-rust lane.
-- **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28; narrowed 2026-10-03). Fixed
-  on 2026-10-03:
-  - The closure's literal scan only indexed BUILT modules, so 16 unbuilt runtime loads
-    (riched20 for charmap/eventvwr/wordpad/rapps, mshtml's jscript/shdoclc, ...) were dropped
-    silently.
-  - None of the services the hive auto-starts had an image on the ramdisk (the SCM logged
-    `done: 2` for 13 of them); svchost, rpcss, DcomLaunch, PlugPlay (umpnpmgr), EventLog and the
-    spooler with its provider/monitor/processor are staged now, and PlugPlay auto-starts
-    (hivesys_arm64.inf).
-  - Once a svchost could run out of services, its ExitThread spun forever and wedged the guest
-    (ThreadAmILastThread vs NtTerminateThread disagreed; fixed in ps-rust and kernel32).
-
-  Left, all one root cause -- **the arm64 boot never runs first-boot setup.** x86's livecd
-  runs `setup -mini` (syssetup InstallLiveCD) on every boot; arm64's winlogon spawns explorer
-  itself, setup.exe/syssetup.dll/inf are not on the ramdisk, and RunSetup fails silently. So
-  arm64 lacks what setup provides: the COM registrations (ole32 is registered in
-  syssetup.inf's EarlyPhaseSetup; without it CoRegisterClassObject cannot marshal
-  IClassFactory, so iexplore's CLSID_InternetExplorer registration fails 80004002 and the
-  process faults; cpl-appwiz/cpl-ncpa log CLSID_TaskbarList not registered), the network
-  components (Tcpip/Dhcp/Dnscache come from nettcpip.inf; rapps' gethostbyname reaches the
-  resolver RPC with no Dnscache and dies on the unhandled RPC_S_SERVER_UNAVAILABLE), and the
-  device installs. Options: run setup on arm64 like x86 (stage setup/syssetup/inf and
-  reconcile winlogon's direct explorer spawn with setup launching userinit), or pre-register
-  at hive build time from the widl-generated registry scripts (`*_r.res`) and add the
-  nettcpip services to hivesys_arm64.inf. Also owed: the user-mode Rust RPC clients
-  (advapi32 scm/eventlog/lsa, dnsapi, netapi32, samlib, ...) call their stubs with the C's
-  RpcTryExcept dropped ("DUMMY_PSEH -- execute directly"), so any unavailable RPC server
-  kills the calling app instead of returning an error. On i386 `cpl-appwiz` opens no window
-  either (rapps exits 0 where amd64's shows "Add/Remove Programs"). Owner: shell32-com lane.
+- **arm64 boots the livecd file set and runs first-boot setup** (2026-10-03). arm64's
+  media was ~250 hand-staged files against the livecd's ~1100; `qemu/mkramdisk.sh` now lays out
+  the same `livecd.<config>.lst` x86's mkisofs reads (tools/ramdisk_tree.py) and arm64 builds
+  the same `livecd` target, so `setup -mini` runs on every boot as on x86 (COM registrations,
+  Tcpip/Dhcp/Dnscache, device installs). In the same pass arm64 stopped skipping: winlogon's
+  RPC server, notifications, GINA and lsass wait; the bulk Start=1 driver load (was a fixed
+  three-driver list); `/MININT` (and the kernel now creates `Control\MiniNT`, dropped by the
+  port on every arch); the per-arch window-station/desktop security descriptors; bugchecks on
+  IoInitSystem/PsInitSystem/SeRmInitPhase1 failure. Bugs the full media exposed, fixed:
+  setupapi did not know PROCESSOR_ARCHITECTURE_ARM64; netkvm/e1000 miniports bound under
+  netstack (see smoltcp-netstack-design.md M11); fastfat enumeration lost entries
+  (`NextVbo` reset per iteration; Marlett never loaded); ks pin lists, fltmgr context
+  terminator, pcix power/IPI spins. appstorm arm64: 40/43, cpl-appwiz and cpl-ncpa now pass.
+  OPEN:
+  - **rapps on arm64**: its database download fails ("Check Internet Connection"), and the
+    OK-only error box then ignores WM_CLOSE (sndvol32's expected box did the same once in two
+    runs). Probably the user-mode network path now that setup starts Dhcp/Dnscache; netstack
+    logs a `TDI open: ControlChannel` every few seconds since. Owner: shell32-com lane.
+  - **cpl-joy / cpl-appwiz intermittently open no window within 37s** (one each in two runs).
+  - **The dropped RpcTryExcept class**: the user-mode Rust RPC clients (advapi32
+    scm/eventlog/lsa, dnsapi, netapi32, samlib, ...) call their stubs with the C's RpcTryExcept
+    dropped ("DUMMY_PSEH -- execute directly"), so an unavailable RPC server kills the caller.
+  - **Safe boot is missing from the Rust kernel on every arch**: ex-rust neither parses
+    `SAFEBOOT:` nor creates `CONTROL\SAFEBOOT\Option` (init.c Phase1InitializationDiscard).
+  - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are
+    still `UNIMPLEMENTED; loop {}`, baselined in scan_ud2's KNOWN_DRIVER_UD2. arm64 binds
+    pci.sys, so they are unreached there.
+  - Remaining arm64 divergences: winlogon still creates `\Windows\WindowStations` and csrsrv
+    skips CsrConnectToUser on arm64; the csrss stack-commit patch in mkramdisk's overlay;
+    shell32 CDefView skips SHChangeNotifyRegister on arm64; winlogon's arm64-only notepad and
+    cmd spawns. On i386 `cpl-appwiz` opens no window.
 - **Posted messages to other threads' windows were dropped** (FIXED 2026-09-27). The
   win32k-sys regeneration (c53b7807aad) turned THRDESKHEAD's `[u64; 3]` padding into
   `[u8; 24]`; user32 read `head.pti` as `__bindgen_padding_0[2]`, so IntCallMessageProc saw a
@@ -1300,8 +1317,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     every MP boot, from the `KeIpiGenericCall` self-test. Upstream never implemented
     `KiIpiSendPacket`; our assert names a level its only caller does not raise to (it calls at
     DISPATCH), and it went live with `c4d82e425fc`. Non-fatal; decide the contract.
-    amd64 `-smp 2` and `-smp 4`: boot dies (csrss exits, crit, 0xF4; winlogon AV), so the race
-    cannot run there. Not yet checked against master.
+    amd64 `-smp 2` and `-smp 4`: the boot death seen 2026-09-25 (csrss exits, crit, 0xF4;
+    winlogon AV) is GONE. Re-measured 2026-10-03, one boot each at `310c39bf411`: amd64
+    `-smp 2` desktop in 2m11s, `-smp 4` in 2m38s with CPUs 1-3 scheduling and net OK; i386
+    `-smp 2`/`-smp 4` desktop in 53s/56s with the IPI self-test at `0x3`/`0xf`. The fixing
+    commit was not identified. So the amd64 race phase is now runnable and OWED.
   - FIXED: `ReadProcessMemory` over an uncommitted page bugchecked (0x1E from
     `MmProbeAndLockPages` in `MiDoMappedCopy`). See the `MmCopyVirtualMemory` entry below.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers

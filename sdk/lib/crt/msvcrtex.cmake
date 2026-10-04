@@ -43,29 +43,16 @@ if(ARCH STREQUAL "i386")
         math/i386/alldiv_asm.s
         math/i386/aulldiv_asm.s
         )
-    if (CMAKE_C_COMPILER_ID STREQUAL "Clang" AND NOT MSVC)
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
         list(APPEND MSVCRTEX_ASM_SOURCE
             math/i386/ceilf.S
             math/i386/floorf.S)
         list(APPEND MSVCRTEX_SOURCE
             math/i386/sqrtf.c)
     endif()
-    if(MSVC AND DLL_EXPORT_VERSION LESS 0x600)
-        list(APPEND MSVCRTEX_ASM_SOURCE
-            except/i386/__CxxFrameHandler3.s
-            math/i386/ftol2_asm.s
-            math/i386/ftoul2_legacy_asm.s)
-        list(APPEND MSVCRTEX_SOURCE
-            except/i386/CxxHandleV8Frame.c)
-    endif()
 elseif(ARCH STREQUAL "amd64")
     list(APPEND MSVCRTEX_ASM_SOURCE
         except/amd64/chkstk_ms.s)
-    if(MSVC AND DLL_EXPORT_VERSION LESS 0x600)
-        list(APPEND MSVCRTEX_ASM_SOURCE
-            except/amd64/__CxxFrameHandler3.s
-        )
-    endif()
 endif()
 
 set_source_files_properties(${MSVCRTEX_ASM_SOURCE} PROPERTIES COMPILE_DEFINITIONS "_DLL;_MSVCRTEX_")
@@ -88,9 +75,7 @@ set_source_files_properties(startup/crtdll.c PROPERTIES COMPILE_DEFINITIONS CRTD
 set_source_files_properties(startup/crtexe.c
                             startup/wcrtexe.c PROPERTIES COMPILE_DEFINITIONS _M_CEE_PURE)
 
-if(NOT MSVC)
-    target_link_libraries(msvcrtex INTERFACE oldnames)
-endif()
+target_link_libraries(msvcrtex INTERFACE oldnames)
 
 # For clang/llvm-mingw, link compiler-rt builtins for i386 64-bit division
 # (__divdi3, __udivdi3, __umoddi3, __moddi3) and other builtins

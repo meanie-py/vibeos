@@ -3185,8 +3185,6 @@ extern "C" {
     // Wave MATH-TIERC sub-wave 2
     fn ref_exp(x: f64) -> f64;
     fn ref_log(x: f64) -> f64;
-    fn ref_log10(x: f64) -> f64;
-    fn ref_pow(base: f64, exponent: f64) -> f64;
     fn ref_fmod(x: f64, y: f64) -> f64;
     // Wave MATH-TIERC sub-wave 3
     fn ref_tan(x: f64) -> f64;
@@ -3925,55 +3923,70 @@ fn diff_math_log() {
     }
 }
 
+/// Within `ulps` of `want`, which is the correctly rounded value (exact decimal
+/// arithmetic, 80 digits). `log10`/`pow` are the `libm` crate's now, which does not promise
+/// correct rounding, so a reference that IS correctly rounded is graded to an ulp budget.
+fn within_ulps(got: f64, want: f64, ulps: u64) -> bool {
+    let (g, w) = (got.to_bits() as i64, want.to_bits() as i64);
+    (got.is_sign_negative() == want.is_sign_negative()) && g.abs_diff(w) <= ulps
+}
+
 fn diff_math_log10() {
-    // Upstream's rough stub — its `while temp>=10`/`while temp<1` loops
-    // would spin forever on inf, and the C reference has the IDENTICAL
-    // loops, so the contract (and this fuzz) is FINITE values only (the
-    // printf use). x<=0 returns the -1e308 sentinel on both sides. Every
-    // op is identical FP → bit-exact across all finite magnitudes.
-    let mut rng = Rng(0x10ad_1100);
-    let mut xs: Vec<f64> =
-        vec![0.0, -0.0, -1.0, -1.0e9, 1.0, 10.0, 100.0, 0.1, 0.5, 9.999, 1.0e-20, 1.0e20];
-    for _ in 0..100_000 {
-        let frac = (rng.next() as f64) / (u64::MAX as f64);
-        // finite positives spanning ~1e-30 .. ~1e30
-        xs.push(frac * 1.0e30 + f64::MIN_POSITIVE);
-        let frac2 = (rng.next() as f64) / (u64::MAX as f64);
-        xs.push(frac2 * 1.0e-10 + f64::MIN_POSITIVE);
+    // Was bit-exact against upstream's `math/arm64/log10.c`, which is not a logarithm: it
+    // divided by ten in a loop and added `(t - 1) / 9`, so log10(2) was 0.111, and log10(inf)
+    // never returned (this fuzz had to exclude it). cnt-rust's `log10` is libm's now.
+    let table: [(f64, f64); 10] = [
+        (2.0, f64::from_bits(0x3fd34413509f79ff)),
+        (3.0, f64::from_bits(0x3fde8927964fd5fd)),
+        (50.0, f64::from_bits(0x3ffb2efb2bd82180)),
+        (1000.0, f64::from_bits(0x4008000000000000)),
+        (0.5, f64::from_bits(0xbfd34413509f79ff)),
+        (0.001, f64::from_bits(0xc008000000000000)),
+        (7.5e-300, f64::from_bits(0xc072b1ffbfc2bbc8)),
+        (f64::MAX, f64::from_bits(0x40734413509f79ff)),
+        (123456.789, f64::from_bits(0x40145db61a282512)),
+        (0.3, f64::from_bits(0xbfe0bb6c34d81502)),
+    ];
+    for (x, want) in table {
+        assert!(within_ulps(cabi::log10(x), want, 1), "log10 {x} = {}", cabi::log10(x));
     }
-    for &x in &xs {
-        assert!(same_f64(cabi::log10(x), unsafe { ref_log10(x) }), "log10 {x}");
+    // Exact powers of ten are exact, and the specials terminate.
+    for k in -22i32..=22 {
+        let x = format!("1e{k}").parse::<f64>().unwrap();
+        assert_eq!(cabi::log10(x), k as f64, "log10 1e{k}");
     }
+    assert_eq!(cabi::log10(f64::INFINITY), f64::INFINITY);
+    assert_eq!(cabi::log10(0.0), f64::NEG_INFINITY);
+    assert!(cabi::log10(-1.0).is_nan() && cabi::log10(f64::NAN).is_nan());
 }
 
 fn diff_math_pow() {
-    // Upstream's integer-exponent stub. Small integer exponents drive the
-    // multiply loop; non-integer exponents return 0.0 on both sides (the
-    // FIXME general case). Huge |exponent| is out of contract (slow loop +
-    // `(int)` cast saturation divergence) and excluded. Identical FP
-    // multiply sequence ⇒ bit-exact.
-    let mut rng = Rng(0x90e0_5103);
-    let bases = [
-        0.0f64, -0.0, 1.0, -1.0, 2.0, -2.0, 0.5, -0.5, 10.0, 3.0, -3.0, 1.5, -7.25, 123.4,
+    // Was bit-exact against upstream's `math/arm64/pow.c`, whose general case was
+    // `return 0.0; // FIXME` -- pow(2, 0.5) == 0 shipped in msvcrt.dll and ucrtbase.dll.
+    let table: [(f64, f64, f64); 10] = [
+        (2.0, 0.5, f64::from_bits(0x3ff6a09e667f3bcd)),
+        (8.0, 1.0 / 3.0, f64::from_bits(0x4000000000000000)),
+        (1.5, 2.5, f64::from_bits(0x40060b9fd68a4554)),
+        (10.0, -0.5, f64::from_bits(0x3fd43d136248490f)),
+        (2.0, 10.0, f64::from_bits(0x4090000000000000)),
+        (3.0, -3.0, f64::from_bits(0x3fa2f684bda12f68)),
+        (0.5, 0.25, f64::from_bits(0x3feae89f995ad3ad)),
+        (100.0, 1.5, f64::from_bits(0x408f400000000000)),
+        (7.0, 0.1, f64::from_bits(0x3ff36fe0d9dde8a3)),
+        (1e-5, 0.75, f64::from_bits(0x3f274eea61c12624)),
     ];
-    let exps = [
-        0.0f64, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 10.0, -10.0, 20.0, -20.0, 0.5, -0.5, 1.5, 2.5,
-        -3.7,
-    ];
-    for &b in &bases {
-        for &e in &exps {
-            assert!(same_f64(cabi::pow(b, e), unsafe { ref_pow(b, e) }), "pow {b} {e}");
-        }
+    for (b, e, want) in table {
+        assert!(within_ulps(cabi::pow(b, e), want, 1), "pow {b} {e} = {}", cabi::pow(b, e));
     }
-    for _ in 0..50_000 {
-        let base = (rng.next() as f64) / (u64::MAX as f64) * 200.0 - 100.0;
-        let ue = rng.next();
-        let mut e = ((ue % 61) as i32 - 30) as f64; // integer in [-30, 30]
-        if ue & 1 == 0 {
-            e += 0.5; // non-integer half the time → 0.0 path
-        }
-        assert!(same_f64(cabi::pow(base, e), unsafe { ref_pow(base, e) }), "pow {base} {e}");
+    // Integer powers that are exact in binary stay exact; C99 F.9.4.4's specials.
+    for k in -60i32..=60 {
+        assert_eq!(cabi::pow(2.0, k as f64), f64::from_bits(((1023 + k) as u64) << 52), "pow 2 {k}");
     }
+    assert_eq!(cabi::pow(-2.0, 3.0), -8.0);
+    assert_eq!(cabi::pow(f64::NAN, 0.0), 1.0);
+    assert_eq!(cabi::pow(1.0, f64::NAN), 1.0);
+    assert_eq!(cabi::pow(0.0, -1.0), f64::INFINITY);
+    assert!(cabi::pow(-1.0, 0.5).is_nan());
 }
 
 fn diff_math_fmod() {
@@ -4051,6 +4064,11 @@ fn diff_math_fmod() {
             );
         }
     }
+    // The case the upstream C (and this fuzz's former domain note) never returned from:
+    // a normal x and a subnormal y. libm's fmod is exact here too.
+    let y = f64::from_bits(3); // 3 * 2^-1074
+    // 1.0 is 2^1074 units of 2^-1074, and 2^1074 = 4^537 = 1 (mod 3): the remainder is 1 unit.
+    assert_eq!(cabi::fmod(1.0, y), f64::from_bits(1), "fmod 1 subnormal");
 }
 
 // --- Wave MATH-TIERC sub-wave 3: tan ---------------------------------------

@@ -29,11 +29,6 @@ add_library(ddraw MODULE
 
 add_idl_reg_scripts(ddraw registry ddraw_classes.idl)
 
-if(MSVC)
-    # C5286: implicit conversion between enum types
-    target_compile_options(ddraw PRIVATE /wd5286)
-endif()
-
 set_module_type(ddraw win32dll UNICODE)
 target_link_libraries(ddraw wine wine_dll_register wine_dll_canunload dxguid uuid ${PSEH_LIB})
 add_importlibs(ddraw d3dwine user32 gdi32 advapi32 msvcrt kernel32 ntdll)

@@ -686,7 +686,7 @@ unsafe fn MiGrabDataSection(SectionObjectPointer: PSECTION_OBJECT_POINTERS) -> P
             #[cfg(target_arch = "aarch64")]
             {
                 if GrabSpinCount % 1000 == 0 {
-                    mm_guard_trip!(
+                    mm_guard_trip_atomic!(
                         "section.MiGrabDataSection INCREATE/INDELETE spin", u32::MAX,
                         "SegFlags" => (*Segment).SegFlags,
                         "SpinCount" => GrabSpinCount,

@@ -2,7 +2,7 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-38 vendored C/C++ components:
+37 vendored C/C++ components:
 
 - [AC'97 audio sample driver](#ac97-audio-sample-driver) — unknown — MIT
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
@@ -34,7 +34,6 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [rdesktop (rosapps tsclient)](#rdesktop-rosapps-tsclient) — 1.8.3 — GPL-3.0-or-later
 - [Schily Tools (mkisofs)](#schily-tools-mkisofs) — schily-2017-09-07 — CDDL-1.0
 - [SGI GLU (OpenGL Utility Library)](#sgi-glu-opengl-utility-library) — glu-9.0.1 (Mesa git tag, not a release tarball) — SGI-B-2.0
-- [STLport](#stlport) — 5.2.1 — STLport licence (permissive)
 - [TreeList control](#treelist-control) — ??? (Imported on 2018.11.06: 2fdfb41 (0.4.11-dev-668)) — GPL-3.0-or-later
 - [VirtIO driver library](#virtio-driver-library) — unknown — BSD-3-Clause
 - [VirtIO NetKVM guest driver (NDIS 5)](#virtio-netkvm-guest-driver-ndis-5) — git commit 5e01b36 — BSD-3-Clause
@@ -5005,82 +5004,6 @@ other dealings in this Software without prior written authorization from
 Silicon Graphics, Inc.
 ```
 
-## STLport
-
-- Upstream: http://www.stlport.org/
-- Version: 5.2.1
-- In this tree: `vendor/stlport`
-- Licence: STLport licence (permissive)
-- Modified by us: yes, see `vendor-patches/stlport.patch`
-- Grant reproduced from: `vendor/stlport/README`
-
-```
-**********************************************************************
-* 	README file for STLport 5.0                                    *
-*                                                                    *
-**********************************************************************
-
-This directory contains the STLport-5.0 release.
-
-What's inside :
-
-README           - this file
-INSTALL          - installation instructions
-
-bin              - installation directory for STLport unit tests;
-                   it may contain more subdirs, if you use
-                   crosscompilation
-build/lib        - build directory for STLport library (if you use
-                   STLport iostreams and/or locale only)
-build/test/unit  - build directory for regression (unit) tests
-build/test/eh    - build directory for exception handling tests
-stlport          - main STLport include directory
-src              - source for iostreams implementation and other parts
-                   that aren't pure template code
-lib              - installation directory for STLport library (if you
-                   use STLport iostreams and/or locale only);
-                   it may contain more subdirs, if you use
-                   crosscompilation
-test/unit        - unit (regression) tests
-test/eh          - exception handling test using STLport iostreams
-etc              - miscellanous files (ChangeLog, TODO, scripts, etc.)
-
-GETTING STLPORT
-
-To download the latest version of STLport, please be sure to visit
-https://sourceforge.net/project/showfiles.php?group_id=146814
-
-LEGALESE
-
-This software is being distributed under the following terms:
-
- *
- *
- * Copyright (c) 1994
- * Hewlett-Packard Company
- *
- * Copyright (c) 1996-1999
- * Silicon Graphics Computer Systems, Inc.
- *
- * Copyright (c) 1997
- * Moscow Center for SPARC Technology
- *
- * Copyright (c) 1999-2003
- * Boris Fomitchev
- *
- * This material is provided "as is", with absolutely no warranty expressed
- * or implied. Any use is at your own risk.
- *
- * Permission to use or copy this software for any purpose is hereby granted
- * without fee, provided the above notices are retained on all copies.
- * Permission to modify the code and to distribute modified code is granted,
- * provided the above notices are retained, and a notice that the code was
- * modified is included with the above copyright notice.
- *
-
-**********************************************************************
-```
-
 ## TreeList control
 
 - Upstream: https://github.com/sebkirche/treelist
@@ -5209,9 +5132,9 @@ SUCH DAMAGE.
 
 - Upstream: https://gitlab.winehq.org/wine/vkd3d
 - Version: 1.14
-- In this tree: `sdk/lib/vkd3d`
+- In this tree: `vendor/vkd3d`
 - Licence: LGPL-2.1-or-later
-- Grant reproduced from: `sdk/lib/vkd3d/COPYING`
+- Grant reproduced from: `vendor/vkd3d/COPYING`
 
 ```
 Copyright 2016-2024 the Vkd3d project authors (see the file AUTHORS for a

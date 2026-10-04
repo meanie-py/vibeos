@@ -951,163 +951,49 @@ pub extern "C" fn log(x: f64) -> f64 {
     dk * LN2_HI - ((hfsq - (s * (hfsq + rr) + dk * LN2_LO)) - f)
 }
 
-/// `double log10(double)` — upstream's rough stub (FIXME), verbatim.
+// `log10` and `pow` were "faithful" ports of upstream's `math/arm64/{log10,pow}.c`, which
+// are not implementations: `log10` divided by ten in a loop and added `(t - 1) / 9`
+// (log10(2) = 0.111, and log10(inf) never returned -- the hang that killed Wine's ucrtbase
+// misc test for months), and `pow` returned 0.0 for every non-integer exponent
+// (pow(2, 0.5) == 0). Both shipped as msvcrt.dll's and ucrtbase.dll's exports on every
+// arch, and in libcntpr in place of i386's real x87 `log10_asm.s`/`pow_asm.s`.
+//
+// Now: the `libm` crate (musl's, MIT) wherever it can build -- including the i386 kernel
+// cells, whose `x86-softfloat` json passes f64 in integer registers. The one place it cannot
+// is the BUILTIN i686 triple with -sse,-sse2 (i386 msvcrt.dll), where rustc refuses libm's
+// Rust-ABI f64 functions outright; there nothing is defined here, and crtmath's x87
+// `pow_asm.s`/`log10_asm.s`/`fmod_asm.s` link, as the original port intended for i386.
+
+/// `double log10(double)`.
+#[cfg(not(all(target_arch = "x86", not(target_feature = "sse2"), not(target_feature = "soft-float"))))]
 #[no_mangle]
 pub extern "C" fn log10(x: f64) -> f64 {
-    if x <= 0.0 {
-        return -1.0e308; // -infinity approximation
-    }
-    let mut result = 0.0f64;
-    let mut temp = x;
-    if temp >= 1.0 {
-        while temp >= 10.0 {
-            temp /= 10.0;
-            result += 1.0;
-        }
-        result += (temp - 1.0) / 9.0;
-    } else {
-        while temp < 1.0 {
-            temp *= 10.0;
-            result -= 1.0;
-        }
-        result += (temp - 1.0) / 9.0;
-    }
-    result
+    libm::log10(x)
 }
 
-/// `double pow(double, double)` — upstream's integer-exponent stub (FIXME),
-/// verbatim. Non-integer / general case returns 0.0 exactly as the C does.
+/// `double pow(double, double)`.
+#[cfg(not(all(target_arch = "x86", not(target_feature = "sse2"), not(target_feature = "soft-float"))))]
 #[no_mangle]
 pub extern "C" fn pow(base: f64, exponent: f64) -> f64 {
-    let mut result = 1.0f64;
-
-    if exponent == 0.0 {
-        return 1.0;
-    }
-    if base == 0.0 {
-        return 0.0;
-    }
-    if base == 1.0 {
-        return 1.0;
-    }
-
-    let iexp = exponent as i32; // truncate toward zero
-    // NB: explicit `while` (not `for _ in 0..iexp`) — a `Range<i32>`
-    // iterator pulls in `<i32 as Step>::forward_unchecked`, whose
-    // out-of-line copy LLVM emits as `ud2` under the i386 no-SSE
-    // `-C no-prepopulate-passes` build (flagged unexpected by scan_ud2).
-    // The `while` form iterates identically without touching `Step`.
-    if (iexp as f64) == exponent && iexp >= 0 {
-        let mut k = 0i32;
-        while k < iexp {
-            result *= base;
-            k += 1;
-        }
-        return result;
-    }
-    if (iexp as f64) == exponent && iexp < 0 {
-        let iexp = -iexp;
-        let mut k = 0i32;
-        while k < iexp {
-            result *= base;
-            k += 1;
-        }
-        return 1.0 / result;
-    }
-
-    0.0 // FIXME: general case not implemented (matches C)
+    libm::pow(base, exponent)
 }
 
-/// `double fmod(double, double)` — fdlibm bit-twiddling remainder.
+#[cfg(all(target_arch = "x86", not(target_feature = "sse2"), not(target_feature = "soft-float")))]
+extern "C" {
+    // math/i386/{pow,fmod}_asm.s (crtmath).
+    fn pow(base: f64, exponent: f64) -> f64;
+    fn fmod(x: f64, y: f64) -> f64;
+}
+
+/// `double fmod(double, double)`. Was a port of upstream's `math/arm64/fmod.c`, which never
+/// returns for a normal `x` and a subnormal `y` (its normalisation puts the two in different
+/// binades and its `while (!(xi >> 52))` loop then spins; cnt-difftest had to fence the case
+/// out of its domain). `fmod` is exact, so libm's is bit-identical to it everywhere it
+/// terminated. i386 msvcrt.dll links `math/i386/fmod_asm.s`, as for `pow`.
+#[cfg(not(all(target_arch = "x86", not(target_feature = "sse2"), not(target_feature = "soft-float"))))]
 #[no_mangle]
 pub extern "C" fn fmod(x: f64, y: f64) -> f64 {
-    let mut xi = x.to_bits();
-    let mut yi = y.to_bits();
-
-    // Sign of x
-    let sx = xi & 0x8000_0000_0000_0000;
-
-    // Clear signs
-    xi &= 0x7FFF_FFFF_FFFF_FFFF;
-    yi &= 0x7FFF_FFFF_FFFF_FFFF;
-
-    // Special cases
-    if yi == 0 || xi >= 0x7FF0_0000_0000_0000 || yi > 0x7FF0_0000_0000_0000 {
-        return (x * y) / (x * y); // NaN
-    }
-    if xi < yi {
-        return x;
-    }
-
-    // Extract exponents
-    let mut ex = (xi >> 52) as i32;
-    let mut ey = (yi >> 52) as i32;
-
-    // Normalize subnormal x
-    if ex == 0 {
-        let mut i = xi << 12;
-        ex -= 11;
-        while (i >> 63) == 0 {
-            i <<= 1;
-            ex -= 1;
-        }
-        xi = xi.wrapping_shl((1 - ex) as u32);
-        ex = 0;
-    } else {
-        xi &= 0x000F_FFFF_FFFF_FFFF;
-        xi |= 0x0010_0000_0000_0000;
-    }
-
-    // Normalize subnormal y
-    if ey == 0 {
-        let mut i = yi << 12;
-        ey -= 11;
-        while (i >> 63) == 0 {
-            i <<= 1;
-            ey -= 1;
-        }
-        yi = yi.wrapping_shl((1 - ey) as u32);
-        ey = 0;
-    } else {
-        yi &= 0x000F_FFFF_FFFF_FFFF;
-        yi |= 0x0010_0000_0000_0000;
-    }
-
-    // Modular reduction
-    while ex > ey {
-        if xi >= yi {
-            xi -= yi;
-            if xi == 0 {
-                return fb64(sx);
-            }
-        }
-        xi <<= 1;
-        ex -= 1;
-    }
-
-    if xi >= yi {
-        xi -= yi;
-        if xi == 0 {
-            return fb64(sx);
-        }
-    }
-
-    // Normalize result
-    while (xi >> 52) == 0 {
-        xi <<= 1;
-        ex -= 1;
-    }
-
-    // Construct result
-    if ex > 0 {
-        xi -= 0x0010_0000_0000_0000;
-        xi |= (ex as u64) << 52;
-    } else {
-        xi = xi.wrapping_shr((1 - ex) as u32);
-    }
-
-    xi |= sx;
-    fb64(xi)
+    libm::fmod(x, y)
 }
 
 // ===========================================================================
@@ -3674,14 +3560,16 @@ pub extern "C" fn log10f(x: f32) -> f32 {
 
 /// `float powf(float, float)` — `math/powf.c`.
 #[no_mangle]
+#[allow(unused_unsafe)] // `pow` is an extern (x87 asm) only in i386 msvcrt.dll
 pub extern "C" fn powf(x: f32, y: f32) -> f32 {
-    pow(x as f64, y as f64) as f32
+    unsafe { pow(x as f64, y as f64) as f32 }
 }
 
 /// `float fmodf(float, float)` — `math/fmodf.c`.
 #[no_mangle]
+#[allow(unused_unsafe)] // `fmod` is an extern (x87 asm) only in i386 msvcrt.dll
 pub extern "C" fn fmodf(x: f32, y: f32) -> f32 {
-    fmod(x as f64, y as f64) as f32
+    unsafe { fmod(x as f64, y as f64) as f32 }
 }
 
 // ---- the sign-copy pair ----------------------------------------------

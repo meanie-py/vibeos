@@ -69,3 +69,11 @@ cabi-intdiv = []
 float = []
 
 [dependencies]
+
+# musl's libm in Rust (MIT): `log10`, `pow` and `fmod` (src/cabi/math.rs), which were
+# ports of upstream's placeholder C. Not on the builtin i686 triple with -sse,-sse2 (i386
+# msvcrt.dll): there rustc rejects libm's Rust-ABI f64 functions outright, and crtmath's
+# x87 asm provides all three. The i386 kernel's `x86-softfloat` json reports `soft-float`
+# and builds it fine. A registry crate, so it cannot reach msvcrt-crt-rust.
+[target.'cfg(not(all(target_arch = "x86", not(target_feature = "sse2"), not(target_feature = "soft-float"))))'.dependencies]
+libm = "0.2.16"

@@ -6,10 +6,6 @@ list(APPEND SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/vssapi_stubs.c
     ${CMAKE_CURRENT_BINARY_DIR}/vssapi.def)
 
-if(MSVC AND ARCH STREQUAL "i386")
-    add_asm_files(vssapi_asm msvc.s)
-endif()
-
 add_library(vssapi MODULE ${SOURCE} ${vssapi_asm})
 set_module_type(vssapi win32dll)
 target_link_libraries(vssapi wine)

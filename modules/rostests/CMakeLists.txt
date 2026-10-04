@@ -4,15 +4,11 @@ start_module_group(rostests)
 # upstream added a linker script here to give the tests their own section. Our
 # llvm-mingw lld rejects it outright ("lld: error: unknown argument: -T") on every
 # rostests link, so it is off for Clang. Nothing depends on the section today.
-if(NOT MSVC AND NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
+if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_link_options("-Wl,-T,${CMAKE_CURRENT_SOURCE_DIR}/test-section.lds")
 endif()
 
 add_definitions(-DHAVE_APITEST)
-
-if(MSVC_IDE)
-    add_definitions(-DWINETEST_MSVC_IDE_FORMATTING)
-endif()
 
 # Upstream excluded kmtests on GCC-amd64 ("broken with new x64 PSEH") — moot for us:
 # llvm-mingw uses USE_DUMMY_PSEH on every arch, so build it everywhere. kmtests is
@@ -49,7 +45,15 @@ endif()
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/testdata/)
     file(GLOB_RECURSE TESTDATA_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/testdata/ ${CMAKE_CURRENT_SOURCE_DIR}/testdata/*)
     foreach(item ${TESTDATA_FILES})
-        add_rostests_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/testdata/${item} SUBDIR testdata)
+        # Keep the file's own subdirectory: testdata/old/test.ttf and testdata/test.ttf
+        # used to land on the same reactos/bin/testdata/test.ttf, and which copy a test
+        # saw depended on how the media builder resolved the duplicate.
+        get_filename_component(_subdir ${item} DIRECTORY)
+        if(_subdir)
+            add_rostests_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/testdata/${item} SUBDIR testdata/${_subdir})
+        else()
+            add_rostests_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/testdata/${item} SUBDIR testdata)
+        endif()
     endforeach(item)
 endif()
 

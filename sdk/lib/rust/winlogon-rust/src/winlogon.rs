@@ -2779,153 +2779,67 @@ pub unsafe extern "system" fn WinMain(
 
     /* LockWorkstation(WLSession) — empty macro */
 
-    /* arm64 + amd64: load a keyboard layout. Without one, win32k's key dispatch
-     * drops EVERY key at "NO keyboard layout" (UserProcessKeyboardInput:
-     * pti->KeyboardLayout NULL and gspklBaseLayout NULL) — keys reach kbdclass
-     * and the RIT and then silently vanish, so no app ever sees WM_KEYDOWN. A
-     * normal logon loads layouts via profile loading/userinit, which this
-     * customized boot path skips. Was #[cfg(aarch64)]-only ("required for
-     * RIT→WM_KEYDOWN delivery") — amd64 needed it for the same reason (found
-     * 2026-07-07 by the Doom playable gate: keys traced to [WIN32K] KEYDROP:
-     * NO keyboard layout; amd64 now green + playable).
-     *
-     * i386 EXCLUDED: LoadKeyboardLayoutW -> UserLoadKbdDll ->
-     * NtCreateSection(SEC_IMAGE) for kbdus.dll DEADLOCKS in the i386 Rust MM
-     * (the "#if 0" the old code cited) — it wedges winlogon before explorer
-     * spawns, so i386 never reaches the desktop. Until that MM deadlock is
-     * fixed, i386 keeps the pre-existing behavior (no layout -> app keys dead,
-     * tracked); the boot-to-desktop North Star wins over interactive input. */
-    #[cfg(not(target_arch = "x86"))] // nolint: cfg-vs-c (test-harness hook, Rust-only)
-    {
-        if InitKeyboardLayouts() == 0 {
-            DbgPrint(
-                b"[WINLOGON] InitKeyboardLayouts failed (non-fatal)\n\0".as_ptr()
-                    as *const i8,
-            );
-        } else {
-            DbgPrint(b"[WINLOGON] Keyboard layout loaded\n\0".as_ptr() as *const i8);
-        }
+    /* One path on every arch. arm64 used to skip winlogon's RPC server, notifications
+     * and GINA ("nothing on arm64 consumes them yet"), not wait for lsass, and load the
+     * keyboard layout from a block of its own; the media now carries msgina and the rest,
+     * so it runs what x86 runs. Without a layout win32k drops every key at
+     * "NO keyboard layout" (gspklBaseLayout null). */
+    if InitKeyboardLayouts() == 0 {
+        DbgPrint(b"[WINLOGON] InitKeyboardLayouts failed (non-fatal)\n\0".as_ptr() as *const i8);
+    } else {
+        DbgPrint(b"[WINLOGON] InitKeyboardLayouts OK\n\0".as_ptr() as *const i8);
     }
 
-    #[cfg(target_arch = "aarch64")]
-    {
-        /* arm64 still skips winlogon's OWN RPC server, notifications and GINA
-         * (nothing on arm64 consumes the winlogon RPC interface yet) — but NOT
-         * the SCM, and NOT lsass.
-         *
-         * services.exe is the Service Control Manager, and without it arm64 has
-         * no CreateService/StartService at all: that is what blocked the kmtest
-         * conformance sweep, where every test is advapi32 -> RPC over
-         * \pipe\ntsvcs -> services.exe and so raised RPC_S_SERVER_UNAVAILABLE
-         * (0x6BA) before printing a line. Its whole import set and npfs.sys (the
-         * pipe transport) are staged on the ramdisk now.
-         *
-         * lsass MUST come with it, and is not optional: ScmCreateServiceDatabase
-         * ends with ScmWaitForLsa(), which is a
-         * WaitForSingleObject(LSA_RPC_SERVER_ACTIVE, INFINITE) — the event only
-         * lsass.exe ever signals (services-rust/src/services.rs:253). Starting
-         * the SCM WITHOUT lsass therefore hangs services.exe inside
-         * ScmCreateServiceDatabase forever (measured 2026-07-15: the SCM reached
-         * "LastKnownGood OK" and then sat on that INFINITE wait for 420s+, so
-         * SC_AutoStartComplete never fired and the kmtest sweep timed out every
-         * test). x86 has never hit it because its branch below starts lsass.
-         *
-         * All three (SCM, lsass, and the RPC/pipe transport under them) are
-         * non-fatal exactly like the x86 branch: if any fails we log and boot on,
-         * so the desktop North Star cannot regress behind them.
-         *
-         * DELIBERATE divergence from x86: we do NOT call WaitForLsass() after
-         * StartLsass(). services.exe already does its own ScmWaitForLsa, so
-         * nothing needs winlogon to block here — and making winlogon wait on
-         * lsass would put a brand-new INFINITE wait directly on the arm64
-         * boot-to-desktop path (the very failure mode above, moved into the
-         * process that OWNS the boot). Let the SCM do the waiting. */
+    /* System fonts are win32k's job: IntLoadSystemFonts loads every file in
+     * \\SystemRoot\\Fonts at InitFontSupport, on every arch, as upstream does.
+     * winlogon used to AddFontResourceW eight fonts by name here because the
+     * kernel skipped that load on x86. The list lacked the console's "VGA" face,
+     * so no console window could be created. */
+
+    DbgPrint(b"[WINLOGON] Calling StartRpcServer\n\0".as_ptr() as *const i8);
+    if crate::rpcserver::StartRpcServer() == 0 {
+        DbgPrint(b"[WINLOGON] StartRpcServer failed (non-fatal)\n\0".as_ptr() as *const i8);
+    } else {
+        DbgPrint(b"[WINLOGON] StartRpcServer OK\n\0".as_ptr() as *const i8);
+    }
+
+    DbgPrint(b"[WINLOGON] Calling StartServicesManager\n\0".as_ptr() as *const i8);
+    if StartServicesManager() == 0 {
         DbgPrint(
-            b"[WINLOGON] ARM64: Skipping RPC, notifications, GINA\n\0".as_ptr() as *const i8,
+            b"[WINLOGON] StartServicesManager failed (non-fatal)\n\0".as_ptr() as *const i8,
         );
-        DbgPrint(b"[WINLOGON] ARM64: Calling StartServicesManager\n\0".as_ptr() as *const i8);
-        if StartServicesManager() == 0 {
-            DbgPrint(
-                b"[WINLOGON] StartServicesManager failed (non-fatal)\n\0".as_ptr() as *const i8,
-            );
-        } else {
-            DbgPrint(b"[WINLOGON] StartServicesManager OK\n\0".as_ptr() as *const i8);
-        }
-
-        DbgPrint(b"[WINLOGON] ARM64: Calling StartLsass\n\0".as_ptr() as *const i8);
-        if StartLsass() == 0 {
-            DbgPrint(
-                b"[WINLOGON] StartLsass failed (error %lu, non-fatal)\n\0".as_ptr() as *const i8,
-                GetLastError(),
-            );
-        } else {
-            DbgPrint(b"[WINLOGON] ARM64: StartLsass OK\n\0".as_ptr() as *const i8);
-        }
+    } else {
+        DbgPrint(b"[WINLOGON] StartServicesManager OK\n\0".as_ptr() as *const i8);
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        // _USE_DUMMY_PSEH path (x86/amd64). InitKeyboardLayouts was `#if 0`
-        // in the C for a NtCreateSection SEC_IMAGE deadlock in Rust MM; that Mm
-        // family was fixed 2026-07-05 (field manual §9.13), and without a layout
-        // win32k drops every keystroke (gspklBaseLayout null). Re-enabled.
-        if InitKeyboardLayouts() == 0 {
-            DbgPrint(b"[WINLOGON] InitKeyboardLayouts failed (non-fatal)\n\0".as_ptr() as *const i8);
-        } else {
-            DbgPrint(b"[WINLOGON] InitKeyboardLayouts OK\n\0".as_ptr() as *const i8);
-        }
-
-        /* System fonts are win32k's job: IntLoadSystemFonts loads every file in
-         * \\SystemRoot\\Fonts at InitFontSupport, on every arch, as upstream does.
-         * winlogon used to AddFontResourceW eight fonts by name here because the
-         * kernel skipped that load on x86. The list lacked the console's "VGA" face,
-         * so no console window could be created. */
-
-        DbgPrint(b"[WINLOGON] Calling StartRpcServer\n\0".as_ptr() as *const i8);
-        if crate::rpcserver::StartRpcServer() == 0 {
-            DbgPrint(b"[WINLOGON] StartRpcServer failed (non-fatal)\n\0".as_ptr() as *const i8);
-        } else {
-            DbgPrint(b"[WINLOGON] StartRpcServer OK\n\0".as_ptr() as *const i8);
-        }
-
-        DbgPrint(b"[WINLOGON] Calling StartServicesManager\n\0".as_ptr() as *const i8);
-        if StartServicesManager() == 0 {
-            DbgPrint(
-                b"[WINLOGON] StartServicesManager failed (non-fatal)\n\0".as_ptr() as *const i8,
-            );
-        } else {
-            DbgPrint(b"[WINLOGON] StartServicesManager OK\n\0".as_ptr() as *const i8);
-        }
-
-        DbgPrint(b"[WINLOGON] Calling StartLsass\n\0".as_ptr() as *const i8);
-        if StartLsass() == 0 {
-            DbgPrint(
-                b"[WINLOGON] StartLsass failed (error %lu, non-fatal)\n\0".as_ptr() as *const i8,
-                GetLastError(),
-            );
-        } else {
-            DbgPrint(
-                b"[WINLOGON] StartLsass OK, calling WaitForLsass\n\0".as_ptr() as *const i8,
-            );
-            /* Wait for the LSA server */
-            WaitForLsass();
-            DbgPrint(b"[WINLOGON] WaitForLsass returned\n\0".as_ptr() as *const i8);
-        }
-
-        /* Init Notifications */
-        DbgPrint(b"[WINLOGON] Calling InitNotifications\n\0".as_ptr() as *const i8);
-        crate::notify::InitNotifications();
+    DbgPrint(b"[WINLOGON] Calling StartLsass\n\0".as_ptr() as *const i8);
+    if StartLsass() == 0 {
         DbgPrint(
-            b"[WINLOGON] InitNotifications done, calling GinaInit\n\0".as_ptr() as *const i8,
+            b"[WINLOGON] StartLsass failed (error %lu, non-fatal)\n\0".as_ptr() as *const i8,
+            GetLastError(),
         );
-
-        /* Load and initialize gina */
-        if GinaInit(WLSession) == 0 {
-            DbgPrint(b"[WINLOGON] GinaInit failed (non-fatal)\n\0".as_ptr() as *const i8);
-        }
-
-        DisplayStatusMessage(WLSession, (*WLSession).WinlogonDesktop, IDS_REACTOSISSTARTINGUP);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] StartLsass OK, calling WaitForLsass\n\0".as_ptr() as *const i8,
+        );
+        /* Wait for the LSA server */
+        WaitForLsass();
+        DbgPrint(b"[WINLOGON] WaitForLsass returned\n\0".as_ptr() as *const i8);
     }
+
+    /* Init Notifications */
+    DbgPrint(b"[WINLOGON] Calling InitNotifications\n\0".as_ptr() as *const i8);
+    crate::notify::InitNotifications();
+    DbgPrint(
+        b"[WINLOGON] InitNotifications done, calling GinaInit\n\0".as_ptr() as *const i8,
+    );
+
+    /* Load and initialize gina */
+    if GinaInit(WLSession) == 0 {
+        DbgPrint(b"[WINLOGON] GinaInit failed (non-fatal)\n\0".as_ptr() as *const i8);
+    }
+
+    DisplayStatusMessage(WLSession, (*WLSession).WinlogonDesktop, IDS_REACTOSISSTARTINGUP);
 
     // --- customized boot path (#if _M_ARM64 || _USE_DUMMY_PSEH: every arch) ---
 

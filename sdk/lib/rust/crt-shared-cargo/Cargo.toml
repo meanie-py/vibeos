@@ -41,11 +41,12 @@ panic-common = { path = "../panic-common", features = ["user"] }
 # msvcrt-seh-difftest link, and 66 #[no_mangle] libm names there would shadow the HOST libm
 # under the reference TUs, contaminating the oracle.
 #
-# This does NOT weaken the crate's guarantee. cnt-rust has an EMPTY [dependencies] table, so
-# the edge cannot reach msvcrt-crt-rust, which is the one thing this crate exists to keep out
-# -- `tools/verify_ucrtbase_cohab.py` walks the graph and asserts it rather than trusting the
-# claim. Every one of the 66 is graded bit-exact against the C sdk/lib/crt/math compiles, in
-# cnt-difftest, per-arch.
+# This does NOT weaken the crate's guarantee. cnt-rust's only dependency is the `libm`
+# registry crate, so the edge cannot reach msvcrt-crt-rust, which is the one thing this crate
+# exists to keep out -- `tools/verify_ucrtbase_cohab.py` walks the graph and asserts it rather
+# than trusting the claim. The 66 are graded in cnt-difftest, per-arch: bit-exact against the C
+# sdk/lib/crt/math compiles, except log10/pow (upstream's placeholders, now libm's), which are
+# graded against correctly rounded values.
 cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-math"] }
 
 # ucrtbase's OWN surface, taken over from the vendored Microsoft UCRT one family
@@ -53,7 +54,7 @@ cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-m
 # ucrt bodies, which is why every one of them is declared in
 # tools/ucrt-takeover.yaml and checked both ways by verify_ucrtbase_cohab.
 #
-# It has an EMPTY [dependencies] table, so this edge cannot reach
-# msvcrt-crt-rust -- the one thing this crate exists to keep out. That is
-# asserted by check_structure, not assumed.
+# None of its dependencies (varargs-rust, crt-portable-rust, the `libm` registry
+# crate) reaches msvcrt-crt-rust -- the one thing this crate exists to keep out.
+# That is asserted by check_structure, not assumed.
 ucrt-rust = { path = "../ucrt-rust", features = ["bits", "ismbbyte", "portable-string", "ctype", "ismbc", "tocase", "strtox", "atox", "xtoa", "findfile", "output", "strtod", "stat", "locale-data", "locale-init", "mbctype", "qualified-locale", "setlocale", "exec", "atof", "ctime", "timeset", "argv-data", "align", "invalid-parameter", "lowio-open", "mbstring", "string-ops", "time", "stdio-bufio", "stdio-files", "stdio-input", "convert-rest", "misc", "filesystem", "lowio", "internal-core", "heap", "stdlib", "conio", "env", "exec-rest", "startup", "argv-errors", "cvt", "winapi-thunks", "ucrt-reactos", "fpctrl", "fenv", "c99math"] }

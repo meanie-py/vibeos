@@ -36,11 +36,6 @@ add_executable(ole32_winetest
 # see https://gitlab.kitware.com/cmake/cmake/issues/19933
 set_property(SOURCE ole32_winetest.rc PROPERTY OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ole32_testlib.dll)
 
-# ole32_winetest.rc: let rc.exe find ole32_testlib.dll in its subdirectory, i.e. Debug.
-if (MSVC_IDE)
-    target_include_directories(ole32_winetest PRIVATE $<$<COMPILE_LANGUAGE:RC>:$<TARGET_FILE_DIR:ole32_testlib>>)
-endif()
-
 target_link_libraries(ole32_winetest uuid)
 set_module_type(ole32_winetest win32cui)
 add_importlibs(ole32_winetest oleaut32 ole32 user32 gdi32 advapi32 msvcrt kernel32 ntdll)

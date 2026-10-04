@@ -53,11 +53,6 @@ list(APPEND SOURCE
 list(APPEND PCH_SKIP_SOURCE
     testlist.c)
 
-if (MSVC AND ARCH STREQUAL "amd64")
-    list(APPEND SOURCE
-    get_fpu_cw.asm)
-endif()
-
 add_executable(kernel32_winetest
     ${SOURCE}
     ${PCH_SKIP_SOURCE}
@@ -66,28 +61,6 @@ add_executable(kernel32_winetest
 # CMake 3.9 and higher requires to specify this dependency manually
 # see https://gitlab.kitware.com/cmake/cmake/issues/19933
 set_property(SOURCE resource.rc PROPERTY OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/dummy.dll ${CMAKE_CURRENT_BINARY_DIR}/dummy.dll)
-
-# resource.rc: let rc.exe find the dlls in their subdirectory, i.e. Debug.
-if (MSVC_IDE)
-    target_include_directories(kernel32_winetest PRIVATE
-        $<$<COMPILE_LANGUAGE:RC>:$<TARGET_FILE_DIR:kernel32_winetest_dummy>>)
-endif()
-
-if (MSVC)
-    # error C4101: unreferenced local variable
-    target_compile_options(kernel32_winetest PRIVATE /wd4101)
-
-    # Approximates a __FILE__ macro with forward slashes instead of back slashes
-    # and defines it as __FILE_FW_SLASH__.
-    foreach(source_file ${SOURCE})
-        get_filename_component(abs_source_file "${source_file}" ABSOLUTE)
-        file(RELATIVE_PATH rel_path "${CMAKE_SOURCE_DIR}" "${abs_source_file}")
-        string(REPLACE "\\" "/" rel_path_forward "${rel_path}")
-        set_source_files_properties(${source_file} PROPERTIES
-            COMPILE_DEFINITIONS "__FILE_FW_SLASH__=\"../${rel_path_forward}\""
-        )
-    endforeach()
-endif()
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
     target_compile_options(kernel32_winetest PRIVATE

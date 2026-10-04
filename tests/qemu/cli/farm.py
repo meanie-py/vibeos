@@ -26,7 +26,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from . import archcfg, provenance
+from . import archcfg, hostlock, provenance
 from . import config as cli_config  # noqa: F401  (parity with smoke; config read in _one_boot)
 from .artifacts import Run
 from .smoke import _one_boot
@@ -124,6 +124,31 @@ def _append(rec: dict) -> None:
             f.write(json.dumps(rec) + "\n")
 
 
+POLITE_POLL_S = 30.0
+
+
+def _wait_for_quiet_host(arch: str, deadline: float) -> bool:
+    """`--polite`: block until nobody else is landing or booting. Checked BEFORE
+    each boot, never during one, so a soak only ever fills idle time and yields
+    the pool back at the next boot boundary. False if the deadline passed."""
+    announced = ""
+    while time.monotonic() < deadline:
+        holder = hostlock.land_holder()
+        others = hostlock.foreign_boot_holders(os.getpid())
+        if not holder and not others:
+            return True
+        why = (
+            f"a land is gating ({holder.get('kind', '?')})"
+            if holder
+            else f"{len(others)} other boot(s) running"
+        )
+        if why != announced:
+            print(f"[farm {arch}] polite: waiting, {why}", flush=True)
+            announced = why
+        time.sleep(POLITE_POLL_S)
+    return False
+
+
 def _farm_arch(
     repo: Path,
     arch: str,
@@ -133,9 +158,12 @@ def _farm_arch(
     dirty: bool,
     tripwire: str,
     stats: dict,
+    polite: bool = False,
 ) -> None:
     i = 0
     while time.monotonic() < deadline and i < max_boots:
+        if polite and not _wait_for_quiet_host(arch, deadline):
+            break
         i += 1
         run = Run("farm", arch)
         t0 = time.monotonic()
@@ -164,6 +192,7 @@ def _farm_arch(
             # UP one, and reading that off the surrounding shell history later is
             # exactly the sort of provenance gap that produces a retraction.
             "smp": int(os.environ.get("VIBEOS_QEMU_SMP", 0) or 0),
+            "ahci": os.environ.get("VIBEOS_AHCI_CD", "") == "1",
             "ok": r.get("ok", False),
             "outcome": r.get("outcome", ""),
             "classification": r.get("classification", ""),
@@ -215,6 +244,16 @@ def farm(args, repo: Path) -> int:
     if smp:
         os.environ["VIBEOS_QEMU_SMP"] = str(smp)
 
+    # Same shape for --ahci: smoke's `_ahci_check` fails any boot that did not
+    # actually run uniata's AHCI path, so the soak cannot bank IDE boots as AHCI.
+    polite = bool(getattr(args, "polite", False))
+    ahci = bool(getattr(args, "ahci", False))
+    if ahci:
+        if any(archcfg.base_arch(a) == "arm64" for a in arches):
+            print("[farm] --ahci is x86-only (arm64 boots a ramdisk, no IDE CD to move)")
+            return 1
+        os.environ["VIBEOS_AHCI_CD"] = "1"
+
     # Farming stale media produces garbage data — same hard boundary as smoke.
     for arch in arches:
         st = provenance.check_staleness(repo, archcfg.base_arch(arch))
@@ -241,6 +280,8 @@ def farm(args, repo: Path) -> int:
         f"[farm] arches={','.join(arches)} sha={sha}{' DIRTY' if dirty else ''}"
         + (f" tripwire={tripwire!r}" if tripwire else "")
         + (f" -smp {smp}" if smp else "")
+        + (" ahci" if ahci else "")
+        + (" polite" if polite else "")
         + (f" budget={minutes:.0f}min" if minutes else f" budget={max_boots} boots/arch")
         + f" -> {CORPUS}"
     )
@@ -249,7 +290,17 @@ def farm(args, repo: Path) -> int:
     threads = [
         threading.Thread(
             target=_farm_arch,
-            args=(repo, archcfg.base_arch(a), deadline, max_boots, sha, dirty, tripwire, stats),
+            args=(
+                repo,
+                archcfg.base_arch(a),
+                deadline,
+                max_boots,
+                sha,
+                dirty,
+                tripwire,
+                stats,
+                polite,
+            ),
             daemon=True,
         )
         for a in arches

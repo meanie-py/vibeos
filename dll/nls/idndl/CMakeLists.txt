@@ -10,9 +10,7 @@ add_library(idndl MODULE
 
 set_entrypoint(idndl 0)
 
-if(NOT MSVC)
-    target_compile_options(idndl PRIVATE -fno-exceptions -fno-rtti)
-endif()
+target_compile_options(idndl PRIVATE -fno-exceptions -fno-rtti)
 
 add_importlibs(idndl kernel32)
 add_dependencies(idndl psdk)

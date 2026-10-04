@@ -55,11 +55,7 @@ add_library(dnsrslvr SHARED ${SOURCE} dnsrslvr.rc ${CMAKE_CURRENT_BINARY_DIR}/dn
 add_dependencies(dnsrslvr rust_dnsrslvr)
 
 # Rust staticlib FIRST so its #[no_mangle] bodies win over any surviving C definition.
-if(NOT MSVC)
-    target_link_libraries(dnsrslvr ${DNSRSLVR_RUST_LIB} ${PSEH_LIB})
-else()
-    target_link_libraries(dnsrslvr ${DNSRSLVR_RUST_LIB})
-endif()
+target_link_libraries(dnsrslvr ${DNSRSLVR_RUST_LIB} ${PSEH_LIB})
 
 set_module_type(dnsrslvr win32dll UNICODE)
 add_importlibs(dnsrslvr advapi32 rpcrt4 dnsapi iphlpapi msvcrt kernel32 ntdll)
