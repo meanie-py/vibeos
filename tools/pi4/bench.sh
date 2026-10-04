@@ -49,7 +49,8 @@ pids() {
 pico_serial_pid() {
     local p
     p=$(cat "$PICO_PID" 2>/dev/null) || return 1
-    grep -q pico_serial.py "/proc/$p/cmdline" 2>/dev/null && echo "$p"
+    # -a: cmdline is NUL-separated, and grep calls that binary and reports no match.
+    grep -qa pico_serial.py "/proc/$p/cmdline" 2>/dev/null && echo "$p"
 }
 
 serial_pids() {
@@ -79,6 +80,14 @@ up() {
     mkdir -p "$BENCH/payload"
     cp "$HERE/Capture-RpiSerial.ps1" "$HERE/serve_tftp.py" "$BENCH/"
     if [ "$SERIAL" = pico ]; then
+        # A COM listener run in between rewrites serial-current.json, leaving a
+        # live pico listener that the state file no longer names: restart it.
+        local live
+        live=$(pico_serial_pid)
+        if [ -n "$live" ] && ! grep -q "\"pid\": $live," "$BENCH/serial-current.json" 2>/dev/null; then
+            kill "$live" && echo "restarting pico_serial.py ($live): serial-current.json names another listener"
+            sleep 2
+        fi
         if [ -z "$(pico_serial_pid)" ]; then
             setsid nohup "$PICO_PY" -u "$HERE/pico_serial.py" "$BENCH" \
                 >"$BENCH/pico-serial.log" 2>&1 </dev/null &
