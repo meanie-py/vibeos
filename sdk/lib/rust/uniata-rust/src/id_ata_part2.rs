@@ -281,6 +281,79 @@ pub unsafe extern "system" fn IssueIdentify(
     Command: UCHAR,
     NoSetup: BOOLEAN,
 ) -> BOOLEAN {
+    issue_identify_once(HwDeviceExtension, DeviceNumber, lChannel, Command, NoSetup, true)
+}
+
+/// SET FEATURES subcommand 07h: spin up a drive that powered up in standby.
+const ATA_C_F_PUIS_SPINUP: UCHAR = 0x07;
+
+/// IDENTIFY words that say the data is not the real thing yet (ACS-3 7.12.7):
+/// word 2 = 37C8h/738Ch means the drive is in Power-Up-In-Standby and needs
+/// SET FEATURES 07h before it answers properly; word 0 bit 2 means the
+/// response was incomplete. Same tests as upstream's identify_funcs.h
+/// (AtaDevInPuisState / AtaDevIsIdentifyDataIncomplete).
+unsafe fn identify_needs_spinup(fid: *const IDENTIFY_DATA) -> bool {
+    let w = fid as *const USHORT;
+    let word0 = *w;
+    let word2 = *w.add(2);
+    word2 == 0x37C8 || word2 == 0x738C || (word0 & (1 << 2)) != 0
+}
+
+/// Word 255: low byte A5h marks an integrity checksum, and then all 512 bytes
+/// must sum to 0 mod 256. No signature means the drive does not provide one,
+/// which is valid (upstream AtaDevIsIdentifyDataValid).
+unsafe fn identify_checksum_ok(fid: *const IDENTIFY_DATA) -> bool {
+    let b = fid as *const UCHAR;
+    if *b.add(510) != 0xA5 {
+        return true;
+    }
+    let mut sum: UCHAR = 0;
+    for i in 0..512 {
+        sum = sum.wrapping_add(*b.add(i));
+    }
+    sum == 0
+}
+
+/// Send SET FEATURES 07h and give the drive the 20 seconds upstream allows
+/// (dev_identify.c AtaDeviceSpinUp): a spin-up is seconds, far past the 1s
+/// every other uniata command waits.
+unsafe fn spin_up_puis_drive(
+    deviceExtension: PHW_DEVICE_EXTENSION,
+    chan: PHW_CHANNEL,
+    DeviceNumber: ULONG,
+    lChannel: ULONG,
+    use_ahci: bool,
+) -> UCHAR {
+    if use_ahci {
+        return UniataAhciSendPIOCommand(
+            deviceExtension as PVOID, lChannel, DeviceNumber,
+            core::ptr::null_mut(), core::ptr::null_mut(), 0,
+            IDE_COMMAND_SET_FEATURES as UCHAR, 0, 0, ATA_C_F_PUIS_SPINUP as USHORT,
+            0, ATA_WAIT_INTR as ULONG, 20000,
+        );
+    }
+    let mut statusByte = AtaCommand(
+        deviceExtension, DeviceNumber, lChannel,
+        IDE_COMMAND_SET_FEATURES as UCHAR, 0, 0, 0,
+        0, ATA_C_F_PUIS_SPINUP, ATA_WAIT_BASE_READY as ULONG,
+    );
+    // WaitOnBaseBusyLong is ~0.5s; 40 of them is upstream's 20s.
+    let mut n = 0;
+    while (statusByte as u32 & IDE_STATUS_BUSY) != 0 && n < 40 {
+        statusByte = WaitOnBaseBusyLong(chan);
+        n += 1;
+    }
+    statusByte
+}
+
+unsafe fn issue_identify_once(
+    HwDeviceExtension: PVOID,
+    DeviceNumber: ULONG,
+    lChannel: ULONG,
+    Command: UCHAR,
+    NoSetup: BOOLEAN,
+    allow_spinup: bool,
+) -> BOOLEAN {
     let deviceExtension = HwDeviceExtension as PHW_DEVICE_EXTENSION;
     let chan: PHW_CHANNEL = (*deviceExtension).chan.add(lChannel as usize);
     let mut waitCount: ULONG = 50000;
@@ -522,6 +595,21 @@ pub unsafe extern "system" fn IssueIdentify(
 
         statusByte = WaitForDrq(chan);
         statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status); // GetBaseStatus
+    }
+
+    // Neither check existed in UniATA; both are upstream's (dev_identify.c).
+    // A drive in PUIS answers IDENTIFY with placeholder data, and the C then
+    // enumerated it from that. Spin it up and identify once more (only once:
+    // a drive that still says PUIS keeps the old behaviour rather than loop).
+    let fidp = &(*deviceExtension).FullIdentifyData as *const IDENTIFY_DATA;
+    if allow_spinup && (*LunExt).DeviceFlags & DFLAGS_MANUAL_CHS == 0 && identify_needs_spinup(fidp) {
+        DbgPrint(b"[UNIATA] IssueIdentify ch=%u dev=%u: PUIS/incomplete IDENTIFY, spinning up\n\0".as_ptr().cast(), lChannel, DeviceNumber);
+        spin_up_puis_drive(deviceExtension, chan, DeviceNumber, lChannel, use_ahci != 0);
+        return issue_identify_once(HwDeviceExtension, DeviceNumber, lChannel, Command, NoSetup, false);
+    }
+    if !identify_checksum_ok(fidp) {
+        DbgPrint(b"[UNIATA] IssueIdentify ch=%u dev=%u: IDENTIFY checksum error\n\0".as_ptr().cast(), lChannel, DeviceNumber);
+        return FALSE;
     }
 
     if NoSetup != 0 {

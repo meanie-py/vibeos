@@ -176,7 +176,10 @@ rm -f "$RAMDISK_IMG"
 dd if=/dev/zero of="$RAMDISK_IMG" bs=1M count=$RAMDISK_SIZE_MB 2>/dev/null
 # One sector per cluster (mformat -F's default): -c 8 would shrink the FAT, but
 # FreeLDR's FAT reader cannot read it.
-mformat -i "$RAMDISK_IMG" -F -v REACTOS ::
+# -m 0xf8 on both images: at a size that is an exact CHS multiple (315MB is 640 x 16 x
+# 63), mformat otherwise picks a floppy media byte and drive number (0xF0, 0x00). See
+# BOOT_SIZE_MB below for the half of that which stopped arm64 booting.
+mformat -i "$RAMDISK_IMG" -F -m 0xf8 -v REACTOS ::
 mcopy -s -i "$RAMDISK_IMG" "$STAGE_DIR"/* ::/
 
 # --- FEX hello-compute probe (opt-in, VIBEOS_FEX=1) ------------------------
@@ -448,10 +451,15 @@ echo "[*] Ramdisk: $(mdir -i "$RAMDISK_IMG" :: 2>/dev/null | tail -1 | sed 's/^ 
 # --- Create boot.img ---
 # uefildr + freeldr.ini + the ramdisk image, with a little slack.
 BOOT_SIZE_MB=$((RAMDISK_SIZE_MB + 16))
+# Never a whole number of 16-head/63-sector cylinders (1008 sectors): at such a size
+# (315MB) mformat's partition entry spans the entire disk instead of stopping short at a
+# cylinder boundary, and AAVMF never offers boot.img as a boot device -- the boot falls
+# through to PXE and HTTP and smoke:arm64 hangs with no freeldr output (2026-10-04).
+while [ $(( BOOT_SIZE_MB * 2048 % 1008 )) -eq 0 ]; do BOOT_SIZE_MB=$((BOOT_SIZE_MB + 1)); done
 echo "[*] Creating boot.img (${BOOT_SIZE_MB}MB FAT32)..."
 rm -f "$BOOT_IMG"
 dd if=/dev/zero of="$BOOT_IMG" bs=1M count=$BOOT_SIZE_MB 2>/dev/null
-mformat -i "$BOOT_IMG" -F -v ROSBOOT ::
+mformat -i "$BOOT_IMG" -F -m 0xf8 -v ROSBOOT ::
 
 # Create EFI directory
 mmd -i "$BOOT_IMG" ::/EFI

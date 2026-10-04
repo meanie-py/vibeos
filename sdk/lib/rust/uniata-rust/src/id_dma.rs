@@ -716,7 +716,19 @@ pub unsafe extern "system" fn AtapiDmaReinit(
     if ((*deviceExtension).HwFlags & UNIATA_AHCI != 0)
         && ((*LunExt).DeviceFlags & DFLAGS_ATAPI_DEVICE == 0)
     {
-        // skip unnecessary checks (nothing to do for HDD on AHCI)
+        // An AHCI disk has no transfer mode to lower, so the C did nothing on
+        // an error retry. The link speed can be lowered instead: once the same
+        // request has failed again (retry >= 1, i.e. not an occasional error),
+        // cap the link one SATA generation down.
+        if (*dma_req_core(AtaReq)).Flags as ULONG & REQ_FLAG_FORCE_DOWNRATE != 0
+            && (*dma_req_core(AtaReq)).retry >= 1
+        {
+            UniataSataDowngradeLinkSpeed(
+                deviceExtension as PVOID,
+                (*(*LunExt).chan).lChannel,
+                if (*(*LunExt).chan).ChannelCtrlFlags & CTRFLAGS_AHCI_PM != 0 { (*LunExt).Lun } else { 0 },
+            );
+        }
         return;
     }
 
@@ -1018,6 +1030,14 @@ pub unsafe extern "system" fn AtapiDmaInit(
     }
 
     (*chan).last_cdev = DeviceNumber;
+    // ServerWorks K2/Frodo/HT1000 SATA cannot DMA to ATAPI devices (upstream
+    // svw_sata.c HW_FLAGS_NO_ATAPI_DMA on every part UniATA lists; only the
+    // HT1100, which it does not list, can). UniATA never checked.
+    if VendorID == ATA_SERVERWORKS_ID && ChipType == SWKSMIO && isAtapi != 0 {
+        AtaSetTransferMode(deviceExtension, DeviceNumber, lChannel, LunExt,
+            ATA_PIO0 + core::cmp::max(apiomode, 0) as ULONG);
+        return;
+    }
     if dma_is_sata_range_available(deviceExtension, lChannel) != 0
         || (ChipFlags & UNIATA_AHCI != 0)
         || ((*chan).MaxTransferMode >= ATA_SA150)
@@ -1310,6 +1330,26 @@ unsafe fn dma_init_vendor(
             }
         }
         x if x == ATA_AMD_ID || x == ATA_NVIDIA_ID || x == ATA_VIA_ID => {
+            if VendorID == ATA_AMD_ID {
+                // Two AMD rules from upstream's chipset/amd.c that UniATA lacks.
+                // 1. Read/write prefetch only on a channel with nothing but
+                //    fixed disks: AtapiChipInit turns it on for both channels
+                //    (reg 0x41 |= 0xf0) before any device is known, and amd.c
+                //    clears a channel's bits (0xC0 >> 2*ch) once a non-disk
+                //    device is on it. AMDBUG parts (766) already have it off.
+                if isAtapi != 0 && (ChipFlags & AMDBUG) == 0 {
+                    let mut a: UCHAR = 0; get_pci!(0x41, a, 1);
+                    set_pci!(0x41, a & !(0xC0u8 >> (Channel * 2)), UCHAR, 1);
+                }
+                // 2. AMD-8111 on the Serenade board (subsystem 36C0h) cannot do
+                //    UDMA6.
+                if ((*deviceExtension).DevID >> 16) == 0x7469 {
+                    let mut subsys: USHORT = 0; get_pci!(0x2E, subsys, 2);
+                    if subsys == 0x36C0 {
+                        udmamode = min_c(udmamode, 5);
+                    }
+                }
+            }
             if VendorID == ATA_VIA_ID {
                 if (ChipFlags & VIASATA != 0) && (Channel == 0) {
                     setmode(ATA_SA150);
@@ -1656,6 +1696,57 @@ unsafe fn dma_init_vendor(
 }
 
 // --- Intel arm (always returns; helper returns true) ---
+/// Intel 450KX/450NX host-bridge errata that make IDE bus-master DMA unsafe
+/// (450KX/GX Spec Update 243109-015, 450NX 243848-009; upstream intel.c
+/// IntelPciBridgeErrataMatch). UniATA never checked. Scans bus 0, where these
+/// bridges live, once; the answer is cached (0 = not yet, 1 = no, 2 = yes).
+unsafe fn intel_450_bridge_errata(HwDeviceExtension: PVOID) -> bool {
+    use core::sync::atomic::{AtomicU8, Ordering};
+    static CACHED: AtomicU8 = AtomicU8::new(0);
+    match CACHED.load(Ordering::Relaxed) {
+        1 => return false,
+        2 => return true,
+        _ => {}
+    }
+    let mut hit = false;
+    for slot in 0..32u32 {
+        let mut ids: ULONG = 0;
+        let mut rev: UCHAR = 0;
+        if ScsiPortGetBusDataByOffset(HwDeviceExtension, PCIConfiguration, 0, slot,
+            &mut ids as *mut _ as PVOID, 0, 4) < 4 || (ids & 0xffff) != 0x8086 {
+            continue;
+        }
+        ScsiPortGetBusDataByOffset(HwDeviceExtension, PCIConfiguration, 0, slot,
+            &mut rev as *mut _ as PVOID, 8, 1);
+        match ids >> 16 {
+            // 450KX before B0: 0-byte length write failure (#2)
+            0x84C4 if rev < 0x04 => hit = true,
+            0x84CB => {
+                let mut pxb: USHORT = 0;
+                ScsiPortGetBusDataByOffset(HwDeviceExtension, PCIConfiguration, 0, slot,
+                    &mut pxb as *mut _ as PVOID, 0x40, 2);
+                // B0 PXB livelock (#19); arbiter deadlock with PCI bus lock on
+                // anything but B1 (#20); data corruption with re-streaming on C0 (#25)
+                if rev == 0x00 || (rev != 0x02 && pxb & 0x4000 != 0) || (rev == 0x04 && pxb & 0x0040 != 0) {
+                    hit = true;
+                }
+            }
+            _ => {}
+        }
+        if hit {
+            break;
+        }
+    }
+    CACHED.store(if hit { 2 } else { 1 }, Ordering::Relaxed);
+    hit
+}
+
+/// Upstream intel.c's TYPE_ICH parts (82801AA ... ICH8-M PATA).
+const INTEL_ICH_PATA_IDS: [ULONG; 16] = [
+    0x2411, 0x2421, 0x244A, 0x244B, 0x245B, 0x248A, 0x248B, 0x24C1,
+    0x24CA, 0x24CB, 0x24DB, 0x25A2, 0x266F, 0x269E, 0x27DF, 0x2850,
+];
+
 unsafe fn dma_init_intel(
     deviceExtension: PHW_DEVICE_EXTENSION,
     HwDeviceExtension: PVOID,
@@ -1672,10 +1763,25 @@ unsafe fn dma_init_intel(
     udmamode_io: &mut SCHAR,
 ) -> bool {
     let mut apiomode = *apiomode_io;
-    let wdmamode = *wdmamode_io;
+    let mut wdmamode = *wdmamode_io;
     let mut udmamode = *udmamode_io;
     let mut i: LONG;
     let LunExt = (*(*deviceExtension).chan.add(lChannel as usize)).lun[DeviceNumber as usize];
+    // Intel errata from upstream's intel.c that UniATA lacks:
+    let devid = (*deviceExtension).DevID >> 16;
+    let is_ich = INTEL_ICH_PATA_IDS.contains(&devid);
+    // ICH/ICH0 revision 0: "IDE Bus Master Concurrency", PIO only.
+    if (devid == 0x2411 || devid == 0x2421) && (*deviceExtension).RevID == 0 {
+        udmamode = -1;
+        wdmamode = -1;
+    }
+    if intel_450_bridge_errata(HwDeviceExtension) {
+        udmamode = -1;
+        wdmamode = -1;
+    }
+    // Every ICH: "MW DMA Mode-1 Tdh", so MWDMA0/1 cannot be driven; only
+    // MWDMA2 is offered below.
+    let wdma_floor: LONG = if is_ich { 2 } else { 0 };
     macro_rules! get_pci { ($o:expr,$v:expr,$s:expr) => {{ ScsiPortGetBusDataByOffset(HwDeviceExtension, PCIConfiguration, SystemIoBusNumber, slotNumber, &mut $v as *mut _ as PVOID, $o as ULONG, $s); }}; }
     macro_rules! set_pci { ($o:expr,$val:expr,$ty:ty,$s:expr) => {{ let mut _a: $ty = $val as $ty; ScsiPortSetBusDataByOffset(HwDeviceExtension, PCIConfiguration as ULONG, SystemIoBusNumber, slotNumber, &mut _a as *mut _ as PVOID, $o as ULONG, $s); }}; }
     let setmode = |m: ULONG| -> BOOLEAN { AtaSetTransferMode(deviceExtension, DeviceNumber, lChannel, LunExt, m) };
@@ -1793,7 +1899,7 @@ unsafe fn dma_init_intel(
         }
         set_pci!(0x54, reg54 & !(0x1001 << dev), USHORT, 2);
         i = wdmamode as LONG;
-        while i >= 0 {
+        while i >= wdma_floor {
             if setmode(ATA_WDMA0 + i as ULONG) != 0 {
                 udma_ok = TRUE as BOOLEAN;
                 idx = (i + 5) as ULONG;

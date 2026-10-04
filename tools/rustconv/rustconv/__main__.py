@@ -4824,8 +4824,9 @@ def cmd_body_audit(args):
     argv = [str(m) for m in args.modules]
     if args.all:
         argv.append("--all")
-    if args.json:
-        argv.append("--json")
+    for flag in ("json", "provenance", "show_reviewed"):
+        if getattr(args, flag):
+            argv.append("--" + flag.replace("_", "-"))
     argv += ["--limit", str(args.limit), "--min-severity", args.min_severity]
     return body_audit_main(argv)
 
@@ -5716,6 +5717,16 @@ def main():
         default="stub-loud",
         choices=("stub-silent", "high", "medium", "low", "stub-loud"),
         help="hide findings ranked below this",
+    )
+    p.add_argument(
+        "--provenance",
+        action="store_true",
+        help="mark dropped callees the C gained after the Rust was committed (git)",
+    )
+    p.add_argument(
+        "--show-reviewed",
+        action="store_true",
+        help="also list leads data/body_audit_reviewed.toml marks false/benign",
     )
 
     # bank-audit

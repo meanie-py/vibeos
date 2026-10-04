@@ -1794,8 +1794,12 @@ CdromRequestCompletion(
     NTSTATUS Status,
     ULONG_PTR Information)
 {
-    UNREFERENCED_PARAMETER(DeviceExtension);
-    WdfRequestCompleteWithInformation(Request, Status, Information);
+    /* Every call site this stands in for is a RequestCompletion() in the C
+     * (cdrom.c, ioctl.c). A bare WdfRequestCompleteWithInformation skipped its
+     * two side effects: IoSetHardErrorOrVerifyDevice for user-induced errors
+     * (no-media / verify-required never prompted or forced a re-mount) and the
+     * surprise-removed -> STATUS_DEVICE_DOES_NOT_EXIST mapping IMAPI relies on. */
+    RequestCompletion(DeviceExtension, Request, Status, Information);
 }
 
 VOID

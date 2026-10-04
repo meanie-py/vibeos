@@ -10359,7 +10359,37 @@ be the kernel" is wrong.
 ### Un-parking the AP into the scheduler `[§9.52]`
 Four rules: per-processor Phase-1 loops must run **after** `KeStartAllProcessors`; the trap.S
 interrupt stub's **handler** owns the IRQL protocol; **TLB-shootdown senders must poll-service,
-never just wait**; and skipping the round-trip for `hlt`ed CPUs (lazy-idle TLB) is a large win.
+never just wait**; and skipping the round-trip for `hlt`ed CPUs (lazy-idle TLB) is a large win
+— **but only if EVERY way out of `hlt` services the deferral before running anything**, including
+device ISRs (next entry: one path did not, and it corrupted amd64 memory silently).
+
+### Successful reads that leave their pages ZERO: a lazy-TLB CPU ran a device ISR
+**Symptom** (amd64 `-smp 2`, roughly half of boots; i386 never): faces with nothing in common —
+csrss `0xC000001D` twice at the *same* address (int3 padding after an import thunk, the caller's
+return address still at `[rsp]`), `0x6B` with `STATUS_DISK_CORRUPT_ERROR`, a kernel `0x1E`
+executing at `0x8f654`, `0x4C`/`STATUS_INVALID_IMAGE_FORMAT`, double faults inside
+`RtlVirtualUnwind` (the dispatcher unwinding from a garbage PC until the stack ran out), and
+silent hangs. Boots that reached the desktop carried the corruption too.
+
+**Cause:** amd64's lazy-idle TLB protocol lets a shootdown sender skip any CPU blocked in `hlt`
+on the premise that it "touches only stable kernel mappings". A device interrupt wakes that CPU
+and `KiInterruptDispatch` runs the ISR at once — and the IDE ISR copies PIO sector data through
+the system-VA mapping of the request's MDL, a VA the system-PTE pool had recycled while this CPU
+still held the old translation. The data went to the OLD physical page: the read's own pages
+stayed zero (they come zeroed from `MmRequestPageMemoryConsumer`) while whatever now owned the
+old page was overwritten. Only idle-exit and the DPC ISR serviced the deferral.
+
+**Fix:** `KiInterruptDispatch` calls `KiTbLazyIdleExitForInterrupt` before the ISR
+(`ke/amd64/ipi.rs`). Measured: 8/8 `-smp 2` boots to desktop with zero corrupt reads, against
+9/16 and 15 zero pages in 3 of 4 boots before.
+
+**How it was found, which is the reusable part:** the faces were too varied to chase one at a
+time, so the probes went where the bytes are decided rather than where they are used. `[KI-EXC]`
+printing the code bytes at RIP turned "illegal instruction" into "this page is zeros"; a scan
+after `IoPageRead` in `MmMakeSegmentResident` then showed full 16 KB reads succeeding with zero
+pages, every one on CPU 1, against a `-smp 1` control whose only zero reads were single genuine
+tail sectors. **Diff the SMP probe output against a UP control before reading it** — half the
+first listing was legitimate zeros.
 
 ### The ready-list tear: five refuted theories and the one real hole `[§9.56]`
 **FIXED** (all three arches; 0 occurrences across every post-fix boot). The long hunt is the
