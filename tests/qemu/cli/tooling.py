@@ -68,6 +68,7 @@ _PYTEST_SUITES = [
     # forbidden imports). It replaced `objdump | grep -q` pipes that passed and failed
     # at random under pipefail, so it must not become a new untested oracle.
     (".", ".", "tools/payloads/test_pecheck.py"),
+    (".", ".", "tools/payloads/olewinetest/test_classify_failures.py"),
     # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
     # being named and documented as seconds, so a chatty payload spent a declared
     # 7200s in 12-28 minutes. Nothing could see it: the boot still "worked", it
