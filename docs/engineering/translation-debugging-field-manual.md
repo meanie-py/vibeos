@@ -6608,6 +6608,14 @@ stays in `CMakeFiles/<target>.dir/` forever. `verify_ucrtbase_cohab` read those 
 "our C defines this", so a lane passed with `_chkesp.s` gone (its stale `.obj` still defined
 `__chkesp`) and master went red on the fresh integration build. A tool asking what the build
 produces must ask the build graph (`build <obj>:` lines in `build.ninja`), not the directory.
+The mirror image: a library you keep "compiled, unlinked, as a reference" is NOT compiled once
+nothing links it, because `vibeos-cli build` makes what `livecd` depends on, not ALL. Every
+existing build dir still holds its objects from before the unlink, so it passes locally and
+goes red only on a fresh tree: `msvcrt_static` came off msvcrt's link line and the gate's
+difftest failed `DIFFTEST_STALE_ORACLE` (its oracle objects were never built; master red,
+2026-10-04). **Fix:** `add_dependencies(<module> <reference-lib>)`, which builds it without
+linking it (msvcrt → msvcrt_static; ucrtbase → its reference libraries). Prove it in a FRESH
+worktree, not by checking that the objects exist in yours.
 
 **The most expensive class in this file**, because the failure mode is a green that means
 nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → pl011 → gdi32 →
