@@ -68,7 +68,9 @@ DEFINED_FN_RE = re.compile(
 
 # `extern "<abi>" {` — the `{` must follow the ABI string, which is what distinguishes a
 # block from a *type* (`x as unsafe extern "C" fn(..) -> HRESULT`) or a definition.
-EXTERN_BLOCK_RE = re.compile(rf"extern\s+({ABI})\s*\{{")
+# `unsafe` is INSIDE the match so a dropped block takes it along: matched from `extern`, a
+# removed `unsafe extern "C" {...}` left a bare `unsafe` line, and a rewritten one doubled it.
+EXTERN_BLOCK_RE = re.compile(rf"(?:unsafe\s+)?extern\s+({ABI})\s*\{{")
 
 # Substrate globs rustconv emits (the generic sys-crate surface), to be swapped for the
 # crate prelude. `ntdll_sys::nt`, `ntkrnl_sys::ddk`, `win32k_sys::*`, …
@@ -470,7 +472,15 @@ def fix_macro_calls(src: str, macros: set[str], defined: set[str]) -> tuple[str,
         # preceding `!` too would silently skip `if !NAME(x)`, which is how C spells a
         # boolean test and is 17 of mbcs.c's 42 `MSVCRT_CHECK_PMT` sites.
         pattern = re.compile(rf"(?<!\w){re.escape(name)}(?!\s*!)\s*\(")
-        src, count = pattern.subn(f"{name}!(", src)
+
+        def bang(m: re.Match[str], name: str = name) -> str:
+            # `fn NAME(` is a DECLARATION (an extern decl of what the prelude has as a
+            # macro): `fn DPRINT1!(` is not Rust. integrate() drops such decls as provided.
+            if re.search(r"\bfn\s+$", m.string[max(0, m.start() - 16) : m.start()]):
+                return m.group(0)
+            return f"{name}!("
+
+        src, count = pattern.subn(bang, src)
         if count:
             fixed.append(f"{name}×{count}")
     return src, fixed
@@ -604,7 +614,8 @@ def integrate(
 
     # A prelude macro is spelled as a plain call in the C, so it comes back as a plain call.
     # Which names are macros is a fact about the PRELUDE, not about the C — see prelude_macros.
-    src, report.macro_calls_fixed = fix_macro_calls(src, prelude_macros(crate), defined)
+    macros = prelude_macros(crate)
+    src, report.macro_calls_fixed = fix_macro_calls(src, macros, defined)
 
     out, pos = [], 0
     for start, end, body, abi in extern_block_spans(src):
@@ -624,7 +635,7 @@ def integrate(
             name = m.group(1)
             if name in defined:
                 report.dropped_self.append(name)
-            elif name in provided:
+            elif name in provided or name in macros:
                 report.dropped_provided.append(name)
             elif sm:
                 # A data static (IID_*/CLSID_*, …) the prelude doesn't have: a genuine

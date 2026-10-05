@@ -43,6 +43,7 @@ from typing import Any
 
 from .c_integer_promotions import comparison_operands, promoted_type
 from .config import RUST_TARGETS
+from .fact_seal import rust_integer_spelling
 
 # --- rules ------------------------------------------------------------------------------------
 
@@ -60,6 +61,8 @@ RULE_INDEX_USIZE = "index_usize"
 RULE_MACRO_CALL = "macro_call_bang"
 RULE_SIZEOF_TYPE = "sizeof_type_name"
 RULE_ARRAY_DECAY = "array_decay"
+RULE_C_INT_SUFFIX = "c_integer_suffix"
+RULE_NULL_FN_POINTER = "null_fn_pointer"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -80,6 +83,8 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_INDEX_USIZE,
     RULE_MACRO_CALL,
     RULE_SIZEOF_TYPE,
+    RULE_C_INT_SUFFIX,
+    RULE_NULL_FN_POINTER,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -1539,6 +1544,108 @@ def _array_decay_cast(
     return edits, skipped, True
 
 
+_C_SUFFIX_MSG = re.compile(r"^invalid suffix `([uUlL]+)` for number literal$")
+
+
+def _c_int_suffix_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A C integer suffix (`8192ULL`) that reached Rust: the same value, Rust-spelled.
+
+    The fact seal restored the C spelling verbatim before it learned not to; bodies banked
+    before that fix still carry it. The suffix's type request is the surrounding code's
+    business, exactly as for an unsuffixed literal, so dropping it is the whole repair.
+    """
+    message = str(diagnostic.get("message") or "")
+    if not _C_SUFFIX_MSG.match(message):
+        return [], [], False
+    edits: list[Edit] = []
+    skipped: list[Skipped] = []
+    for span in diagnostic.get("spans") or []:
+        if not span.get("is_primary"):
+            continue
+        file_name = str(span.get("file_name") or "")
+        line = int(span.get("line_start") or 0)
+        start = int(span.get("byte_start") or 0)
+        end = int(span.get("byte_end") or 0)
+        data = load(file_name)
+        text = data[start:end].decode("utf-8", "replace") if data is not None else ""
+        fixed = rust_integer_spelling(text)
+        if data is None or fixed == text or not re.fullmatch(r"(?:0[xXoO])?[0-9A-Fa-f]+", fixed):
+            skipped.append(
+                Skipped(RULE_C_INT_SUFFIX, "not_a_c_integer_literal", file_name, line, text)
+            )
+            continue
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=fixed,
+                rule=RULE_C_INT_SUFFIX,
+                authority="rustc rejects the C suffix; the value is unchanged without it",
+                original=text,
+                line=line,
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        )
+    return edits, skipped, True
+
+
+_NULL_EXPR = re.compile(
+    r"^(?:(?:core::)?ptr::)?null(?:_mut)?(?:::<[^()]*>)?\(\)(?:\s+as\s+[^;,()]+)?$"
+    r"|^0\s+as\s+\*(?:mut|const)\s+[^;,()]+$"
+)
+
+
+def _null_fn_pointer_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A NULL C function pointer where bindgen types the slot `Option<fn ...>`: that is `None`.
+
+    Only the literal null spellings qualify (`core::ptr::null_mut()`, `ptr::null()`,
+    `0 as *mut _`); any other pointer handed to an `Option<fn>` slot is a real type question
+    and stays RED.
+    """
+    texts = json.dumps(diagnostic.get("children") or [])
+    if "Option<" not in texts or "fn(" not in texts:
+        return [], [], False
+    edits: list[Edit] = []
+    skipped: list[Skipped] = []
+    claimed = False
+    for span, expected, found in _mismatch_sites(diagnostic):
+        if not expected.startswith("Option<") or not _RAW_POINTER.match(found):
+            continue
+        claimed = True
+        file_name = str(span.get("file_name") or "")
+        line = int(span.get("line_start") or 0)
+        start = int(span.get("byte_start") or 0)
+        end = int(span.get("byte_end") or 0)
+        data = load(file_name)
+        text = data[start:end].decode("utf-8", "replace").strip() if data is not None else ""
+        if data is None or not _NULL_EXPR.match(text):
+            skipped.append(
+                Skipped(RULE_NULL_FN_POINTER, "not_a_null_literal", file_name, line, text)
+            )
+            continue
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement="None",
+                rule=RULE_NULL_FN_POINTER,
+                authority="rustc: the slot is Option<fn>, and the argument is a null pointer",
+                original=text,
+                line=line,
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        )
+    return edits, skipped, claimed
+
+
 def _no_std_path_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -2130,6 +2237,8 @@ _RULE_TABLE: dict[
     RULE_INDEX_USIZE: _index_usize_rule,
     RULE_MACRO_CALL: _macro_call_rule,
     RULE_SIZEOF_TYPE: _sizeof_type_rule,
+    RULE_C_INT_SUFFIX: _c_int_suffix_rule,
+    RULE_NULL_FN_POINTER: _null_fn_pointer_rule,
 }
 
 

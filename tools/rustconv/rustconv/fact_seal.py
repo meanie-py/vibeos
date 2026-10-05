@@ -564,5 +564,23 @@ def unseal_facts(
         )
 
     for fact in sealed.facts:
-        rust = rust.replace(fact.placeholder, fact.original)
+        spelling = rust_integer_spelling(fact.original) if fact.kind == "integer" else fact.original
+        rust = rust.replace(fact.placeholder, spelling)
     return rust
+
+
+def rust_integer_spelling(c: str) -> str:
+    """The same VALUE as a C integer literal, spelled as valid Rust.
+
+    The seal restores what the C wrote, and two C spellings are not Rust: a `U`/`L`/`ULL`
+    suffix does not compile (setuplib fsrec.c's `8192ULL`), and a leading-zero OCTAL literal
+    compiles to the wrong number -- `0644` is decimal 644 in Rust. The type a suffix asked
+    for is the surrounding code's business, exactly as for an unsuffixed literal.
+    """
+    m = re.fullmatch(r"(0[xX][0-9A-Fa-f]+|0[oO][0-7]+|[0-9]+)([uUlL]*)", c)
+    if not m:
+        return c
+    digits = m.group(1)
+    if len(digits) > 1 and digits[0] == "0" and digits[1].isdigit():
+        return "0o" + digits[1:]
+    return digits

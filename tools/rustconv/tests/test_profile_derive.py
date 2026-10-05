@@ -157,6 +157,8 @@ def test_static_library_inherits_its_consumers_mode(tmp_path):
     m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root, target="widget_static")
     assert m.is_usermode
     assert any(f.code == "MODULE_TYPE_INHERITED" for f in m.findings)
+    # one consumer: the crate belongs to it (widget-rust, `widget)` arm), not widget_static
+    assert m.crate_stem == "widget"
 
 
 def test_generated_sources_are_kept_separate_from_translatable_ones(tmp_path):
