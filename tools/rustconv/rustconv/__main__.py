@@ -134,6 +134,7 @@ from .kernel_preamble import derive_kernel_preamble
 from .macro_authority import function_like_macros
 from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
+from .placement_audit import placement_findings
 from .postprocess import postprocess
 from .preamble_audit import audit_preamble
 from .probe_migrate import (
@@ -917,6 +918,12 @@ def _unseal_worker(
                 ignored_envelope=ignored_envelope,
                 strict=strict,
             )
+            # The closed SET check above passes a permutation; this catches constants
+            # that came back in each other's places (placement_audit.py).
+            for finding in placement_findings(dep.body_text, rust):
+                if strict:
+                    raise FactSealError(finding.message())
+                ignored_envelope.append(finding.message().replace("\n", "; "))
         # LAST, which is the exact reverse of the sealing order. It is also the only one
         # that substitutes RUST rather than restoring C: running it earlier would hand the
         # fact seal's by-name recovery a body full of generated `0x0041u16` elements to
