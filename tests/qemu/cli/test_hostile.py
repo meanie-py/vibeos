@@ -47,3 +47,18 @@ def test_acpitable_path_has_no_drive_colon() -> None:
     out = vm._acpitable_relative(args)
     assert out[3] == "file=spcr.bin"
     assert out[5] == "file=C:/a"  # only -acpitable's value is rewritten
+
+
+def test_arm64_hazards_reach_the_machine(monkeypatch: pytest.MonkeyPatch) -> None:
+    cfg = vm.Arm64Config()
+    monkeypatch.delenv("VIBEOS_QEMU_HOSTILE", raising=False)
+    assert cfg.hostile_machine_args() == cfg.machine_args
+    assert cfg.hostile_memory() == cfg.memory
+    monkeypatch.setenv("VIBEOS_QEMU_HOSTILE", "a76,el2,mem")
+    machine = cfg.hostile_machine_args()
+    assert machine[machine.index("-M") + 1] == "virt,virtualization=on"
+    assert machine[machine.index("-cpu") + 1] == "cortex-a76"
+    assert cfg.hostile_memory() == "6G"
+    # machine_args itself is never mutated: a later plain boot stays plain.
+    plain = vm.Arm64Config().machine_args
+    assert plain[plain.index("-cpu") + 1] == "cortex-a72"

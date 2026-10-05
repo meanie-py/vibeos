@@ -34,12 +34,24 @@ DEFAULT_MINUTES = 30
 REFUSED = 75  # EX_TEMPFAIL; pico.sh already uses 3 for "unreachable"
 
 
+BOARDS = ("pi4", "pi5")
+
+
+def board() -> str:
+    """Which bench: VIBEOS_BENCH_BOARD (tools/pi5/env.sh sets pi5), default pi4.
+    Each board has its own lease; holding one says nothing about the other."""
+    name = os.environ.get("VIBEOS_BENCH_BOARD", "pi4")
+    if name not in BOARDS:
+        raise ValueError(f"VIBEOS_BENCH_BOARD={name!r}: choose from {', '.join(BOARDS)}")
+    return name
+
+
 def lock_dir() -> Path:
     return Path(os.environ.get("VIBEOS_HOSTLOCK_DIR", "/tmp/vibeos-qemu-locks/host"))
 
 
 def lease_file() -> Path:
-    return lock_dir() / "pi4-lease.json"
+    return lock_dir() / f"{board()}-lease.json"
 
 
 def owner_of(cwd: Path | None = None) -> str:
@@ -63,7 +75,7 @@ def owner_of(cwd: Path | None = None) -> str:
 @contextlib.contextmanager
 def _locked() -> Iterator[None]:
     lock_dir().mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(lock_dir() / "pi4-lease.lock"), os.O_RDWR | os.O_CREAT, 0o666)
+    fd = os.open(str(lock_dir() / f"{board()}-lease.lock"), os.O_RDWR | os.O_CREAT, 0o666)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield
@@ -140,8 +152,9 @@ def main(argv: list[str]) -> int:
             ok, held = take(owner, minutes)
         if not ok:
             print(
-                f"pi4 bench is {describe(held)}.\n"
-                "  Wait for it, or coordinate with that lane; `vibeos-cli pi4 status` shows it.",
+                f"{board()} bench is {describe(held)}.\n"
+                "  Wait for it, or coordinate with that lane; "
+                f"`vibeos-cli {board()} status` shows it.",
                 file=sys.stderr,
             )
             return REFUSED
