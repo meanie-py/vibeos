@@ -865,8 +865,10 @@ fn FileMonikerImpl_Enum(
 ) -> HRESULT {
     TRACE!(b"(%p,%d,%p)\n\0".as_ptr() as *const c_char, iface, fForward, ppenumMoniker);
 
+    // Windows answers E_INVALIDARG here (moniker.c:2225, todo_wine in Wine, which
+    // returns E_POINTER).
     if ppenumMoniker.is_null() {
-        return E_POINTER;
+        return E_INVALIDARG;
     }
 
     *ppenumMoniker = core::ptr::null_mut();
