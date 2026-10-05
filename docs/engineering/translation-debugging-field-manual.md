@@ -3961,6 +3961,20 @@ a decision to take deliberately, not to reach for because a module will not tran
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A C assignment became a nested `let _x`, so the outer variable never changes
+
+**Symptom:** a counter stays 0, a pointer keeps pointing at the old thing, a column never
+resets, and the code compiles warning-free. freeldr's `EnumerateHarddisks` reported 0 BIOS
+disks; oleaut32's format tokenizer wrote every `;` section into the first header; `VarSub`
+subtracted the IDispatch instead of its fetched value; consrv kept stale start columns.
+**Cause:** the translator turned `DiskCount++;` / `left = &tempLeft;` into
+`let _DiskCount = DiskCount + 1;` inside a nested block. The new binding shadows the outer
+one, and the leading underscore suppresses the unused warning that would have exposed it.
+**Fix:** assign the outer binding (make it `mut`). `scan_let_shadow` (`vibeos-cli check`)
+flags a nested `let _x` while `x` is in scope in the same function; a `_x` the C really
+declares is marked `// nolint: let-shadow (why)`. It cannot see an assignment dropped
+outright (consrv's `IntWriteConsoleOutputStringChars` lost `XStart = 0;` with no `let`).
+
 ### A dropped `#if DBG` acquires a lock the release build marked as never-initialized
 
 **Symptom:** a hang at DISPATCH_LEVEL the first time a path runs, with no bugcheck and no
@@ -7420,6 +7434,17 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### A resource string is right in the source and mojibake in the binary (llvm-rc ignores `#pragma code_page`)
+
+**Symptom:** a localized string or locale value is wrong at runtime while the `.rc`/`.nls`
+source is visibly correct. Wine's vartest failed every French thousands-separator case:
+`fra.nls` stores `LOCALE_STHOUSAND` as U+00A0, kernel32.dll carried U+00C2 U+00A0, and
+`VarParseNumFromStr` took `Â` as the separator. **Cause:** llvm-mingw's `windres` is llvm-rc,
+which drops `#pragma code_page(65001)` and decodes the bytes as cp1252, so every UTF-8 resource
+script in the tree compiled to mojibake. **Fix (2026-10-04):** `--codepage=65001` on both RC
+rules in `sdk/cmake/gcc.cmake`. **Check the compiled bytes, not the source:** walk the PE's
+RT_STRING block for the language (locale value `n` lives in block `n/16 + 1`).
 
 ### i386 guest float compares go the wrong way: the emulator's SAHF, not the code
 

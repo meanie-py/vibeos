@@ -459,7 +459,14 @@ set(CMAKE_C_COMPILE_OBJECT "<CMAKE_C_COMPILER> <DEFINES> ${_compress_debug_secti
 set(CMAKE_CXX_COMPILE_OBJECT "<CMAKE_CXX_COMPILER> <DEFINES> <INCLUDES> <FLAGS> -o <OBJECT> -c <SOURCE>")
 set(CMAKE_ASM_COMPILE_OBJECT "<CMAKE_ASM_COMPILER> ${_compress_debug_sections_flag} -x assembler-with-cpp -o <OBJECT> -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm <INCLUDES> <FLAGS> <DEFINES> -D__ASM__ -c <SOURCE>")
 
-set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
+# --codepage=65001: llvm-rc IGNORES `#pragma code_page`, so without a default every
+# UTF-8 resource script was decoded as cp1252 -- "fran\xc3\xa7ais" for "français" in
+# every translated string table, and kernel32's French LOCALE_STHOUSAND came out as
+# U+00C2 U+00A0, which VarParseNumFromStr then took as the separator. The tree's
+# resource scripts are all UTF-8 (the six that declare 1251/1252/932 are pure ASCII),
+# so UTF-8 is the one right default, and llvm-rc rejects invalid UTF-8 loudly.
+set(RC_CODEPAGE_FLAG "--codepage=65001")
+set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff ${RC_CODEPAGE_FLAG} <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
 
 # use_gnu_rc() — compile THIS DIRECTORY's .rc files with GNU windres instead of
 # llvm-mingw's (which is llvm-rc in a trench coat). Only for the handful of
@@ -488,7 +495,7 @@ function(use_gnu_rc)
         return()
     endif()
     set(CMAKE_RC_COMPILE_OBJECT
-        "${GNU_RC_COMPILER} -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>"
+        "${GNU_RC_COMPILER} -O coff ${RC_CODEPAGE_FLAG} <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>"
         PARENT_SCOPE)
 endfunction()
 

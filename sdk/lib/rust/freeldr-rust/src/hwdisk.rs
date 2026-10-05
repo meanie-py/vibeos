@@ -347,7 +347,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: u8) {
 
 unsafe fn EnumerateHarddisks(BootDriveReported: PBOOLEAN) -> u8 {
 
-    let DiskCount: u8;
+    let mut DiskCount: u8;
     let mut DriveNumber: u8;
     let _i: u32;
     let _Changed: u8;
@@ -379,7 +379,9 @@ unsafe fn EnumerateHarddisks(BootDriveReported: PBOOLEAN) -> u8 {
             *BootDriveReported = 1u8;
         }
 
-        let _DiskCount = DiskCount + 1;
+        // C `DiskCount++`: a shadowing `let` here left the count at 0, so
+        // PcBiosDiskCount registered no INT13 drives in the hardware tree.
+        DiskCount += 1;
         DriveNumber += 1;
         memset(DiskReadBuffer as *mut core::ffi::c_void, 0xcd, DiskReadBufferSize);
     }

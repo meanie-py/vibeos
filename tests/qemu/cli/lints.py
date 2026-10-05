@@ -770,6 +770,16 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A C assignment translated as a nested `let _x`: the underscore hides the unused
+    # binding and the outer variable keeps its old value. freeldr reported 0 BIOS disks.
+    sls = repo / "tools" / "scan_let_shadow.py"
+    specs.append(
+        (
+            "scan_let_shadow",
+            [py, str(sls), "--lint"] if sls.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sdc = repo / "tools" / "scan_dowhile_continue.py"
     specs.append(
         (
