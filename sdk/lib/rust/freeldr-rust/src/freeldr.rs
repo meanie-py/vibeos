@@ -232,10 +232,13 @@ pub unsafe extern "C" fn mbtowc(
     1
 }
 
-// nolint: duplicate-symbol (overrides cnt-rust's iswctype on purpose, as freeldr.c overrides libcntpr)
+// The wctype table is 144 KB, too much for poor freeldr (freeldr.c). The link
+// builds cnt-rust-lib with `freeldr`, which leaves cnt-ctype's iswctype out.
+// `(char)wc` as in the C: `_isctype` indexes a 256-entry table.
+// nolint: duplicate-symbol (freeldr links build cnt-rust-lib with `freeldr`, whose `no-iswctype` leaves cnt-ctype's out; link_guard.py enforces it)
 #[no_mangle]
 pub unsafe extern "C" fn iswctype(wc: wint_t, wctypeFlags: wctype_t) -> i32 {
-    _isctype(wc as i32, wctypeFlags as i32)
+    _isctype(wc as u8 as i8 as i32, wctypeFlags as i32)
 }
 
 // ============================================================================

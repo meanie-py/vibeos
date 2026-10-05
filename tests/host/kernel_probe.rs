@@ -9,6 +9,10 @@ mod ddk {
         pub Flink: *mut _LIST_ENTRY,
         pub Blink: *mut _LIST_ENTRY,
     }
+    /// The NT raise has no handler here; a panic is what `should_panic` sees.
+    pub unsafe fn ExRaiseAccessViolation() -> ! {
+        panic!("ExRaiseAccessViolation");
+    }
 }
 #[path = "../../sdk/lib/rust/ntkrnl-sys/src/base.rs"]
 mod base;
@@ -164,4 +168,31 @@ fn object_reference_is_released_after_capture_failure() {
         Err(STATUS_ACCESS_VIOLATION)
     );
     assert_eq!(DEREFERENCES.load(Ordering::SeqCst), 1);
+}
+
+// probe_user_range: probe.h's typed-macro range check, which the Rust Probe*
+// helpers once skipped (a user pointer at or above MmUserProbeAddress went
+// straight through to the kernel's read or write).
+#[test]
+fn user_range_accepts_a_user_address() {
+    let value = 0u64;
+    unsafe { probe_user_range(&value) };
+}
+
+#[test]
+#[should_panic(expected = "ExRaiseAccessViolation")]
+fn user_range_rejects_a_kernel_address() {
+    unsafe { probe_user_range((usize::MAX / 2) as *const u32) };
+}
+
+#[test]
+#[should_panic(expected = "ExRaiseAccessViolation")]
+fn user_range_rejects_a_value_straddling_the_boundary() {
+    unsafe { probe_user_range((usize::MAX / 2 - 3) as *const u64) };
+}
+
+#[test]
+#[should_panic(expected = "ExRaiseAccessViolation")]
+fn user_range_rejects_wraparound() {
+    unsafe { probe_user_range((usize::MAX - 1) as *const u32) };
 }

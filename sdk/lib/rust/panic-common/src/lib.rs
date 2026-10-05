@@ -142,10 +142,35 @@ impl Write for Cursor {
 /// So this is a REACHABILITY ASSERTION, not an unwinder. Reaching it means a Rust
 /// frame is unwinding inside a kernel that has no Rust unwinder; say so loudly and
 /// halt, rather than returning into a half-unwound stack.
+///
+/// It is a FALLBACK, never a definition of `_Unwind_Resume` itself. A C++ module
+/// links the real unwinder (libunwind) too, and C++ exceptions need it. When this
+/// was `#[no_mangle] _Unwind_Resume`, link order picked between the two: in rapps
+/// lld loaded this stub AS libc++abi's `_Unwind_Resume`, so a C++ exception
+/// unwinding through a cleanup frame would have panicked. Instead the `.drectve`
+/// below tells lld to use this body only if `_Unwind_Resume` is still undefined at
+/// the end of the link. Both items live in the crate root, the same object as
+/// `panic_common`, so any module whose panic handler is linked gets the fallback.
 #[no_mangle]
-pub extern "C" fn _Unwind_Resume(_exception: *mut core::ffi::c_void) -> ! {
+pub extern "C" fn vibeos_unwind_resume_fallback(_exception: *mut core::ffi::c_void) -> ! {
     panic!("_Unwind_Resume reached: a Rust frame is unwinding, but every crate is panic=abort");
 }
+
+// The directive is raw assembly, not a `#[used]` static: rustc lists every used
+// static in its `symbols.o`, and lld discards `.drectve` sections, so a static
+// there is an undefined symbol at every link. i386 COFF prefixes C names with `_`.
+#[cfg(target_arch = "x86")]
+core::arch::global_asm!(
+    ".section .drectve,\"yni\"",
+    ".ascii \" -alternatename:__Unwind_Resume=_vibeos_unwind_resume_fallback \"",
+    ".text",
+);
+#[cfg(not(target_arch = "x86"))]
+core::arch::global_asm!(
+    ".section .drectve,\"yni\"",
+    ".ascii \" -alternatename:_Unwind_Resume=vibeos_unwind_resume_fallback \"",
+    ".text",
+);
 
 /// The shared panic body. `krate` should be `env!("CARGO_PKG_NAME")`.
 pub fn panic_common(krate: &'static str, info: &PanicInfo) -> ! {

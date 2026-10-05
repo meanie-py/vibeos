@@ -824,6 +824,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
   entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
   smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
+- **Kernel user-pointer probes: a bad pointer bugchecks, and some never check — OPEN**
+  (2026-10-04). The C syscalls probe inside `_SEH2_TRY` and return the exception code;
+  this kernel has no SEH, so a raising probe is an unhandled exception (BUGCHECK 0x1E)
+  wherever the C would have returned `STATUS_ACCESS_VIOLATION`. The link-guard work
+  found the typed `ntkrnl-sys` Probe* helpers (`inline/common.rs`, `macros.rs`) doing NO
+  `MmUserProbeAddress` check at all, so a user caller could make the kernel read or write
+  a kernel address; it added the check and moved all 26 call sites of those helpers to
+  `probe.rs`'s `Result` probes with the C handler's cleanup. Still owed, ~160 sites:
+  the raising `ProbeForRead`/`ProbeForWrite` exports (82 calls; a bad user buffer
+  bugchecks), `ProbeAndCapture*` (37), and the still-UNCHECKED typed helpers in
+  `inline/mm.rs` and friends (`ProbeForWriteIoStatusBlock`, `ProbeForWriteSize_t`,
+  `ProbeForReadUnicodeString`, … ~40 calls, the same kernel-address hole). Biggest
+  users: win32k-rust 46, ntoskrnl-rust 46, iomgr-rust 19, ex-rust 14, ks-rust 13. Fix
+  shape: per site, `probe_read_generic`/`probe_write_generic` + the C except handler.
 - **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
   `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
   cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
@@ -1099,6 +1113,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   consume), and the drainer appends the same text to `_buf` that it tees to the file.
   So the in-memory stream and the tee diverge somewhere not yet found. Until it is, a
   payload's verdict must be read from its serial log, not from the smoke exit code.
+- **Pyright does not cover the harness core -- OWED (2026-10-04).** `tests/qemu/cli/tooling.py`
+  now ruff- and format-checks all of `tests/qemu`, but `_PYRIGHT_ROOTS` still stops at
+  `tests/qemu/cli`, so `vm.py`, `backend.py` and the test modules have no type checking. The
+  lint widening found two `assert False` in `test_smoke.py` that `python -O` would strip;
+  types are the next layer of the same blind spot. Expect a real first-pass count before
+  gating it.
 - **`test_bindgen_generation` fails under PARALLEL check-tooling and passes alone — it
   blocked a land. OPEN** (2026-09-25). Five of its eleven cases failed inside
   `./vibeos-cli check-tooling` with
@@ -1921,6 +1941,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   A boot at 2026-09-21 00:45 ran the same guests 11/11, so it is recent; the amd64 media
   changed only by winlogon.exe between the two, which is suspicious but unproven —
   nothing in that diff runs before marshal32.
+  **Rate (2026-10-04):** 1 miss in 25 queue-batch gates (04:11-15:09, `smoke-amd64-a1`
+  serial, `[WINLOGON] marshal32.exe exit =` present or not). The miss (gate
+  `20261004-145947-0qwjkolk`) held master as LADDER_FAIL beside a real DIFFTEST_FAIL; a
+  lone LADDER_FAIL with this signature is this entry, not the batch under test.
 
 - **Wine's conformance suites now run under WoW64, and the first two subtests found
   four separate bugs. OPEN** (2026-09-21). `user32:wsprintf` passes clean (46 tests, 0
@@ -5410,6 +5434,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   early boot, and several of the 14 sites sit in PFN-lock/high-IRQL context — so a naive swap
   risks a deadlock in the subsystem these guards exist to watch. Needs a per-site context audit
   plus a 3-arch smoke, which is why it is not bundled with the #19 closure.
+
+  **RESOLVED on every arch (2026-10-03/04).** `mm_guard_trip!` went portable (11 sites,
+  `DbgPrint` on x86) on 10-03; the three spinlock-held sites use `mm_guard_trip_atomic!`, which
+  now writes through `raw_trace_hex` -- the arm64 UART tracer, or on x86 a polled COM1 write
+  that takes no lock and is safe at any IRQL. Verified on the binaries: `MMGUARD` strings in
+  `ntkrnlmp.exe` are now **amd64 42, i386 42** (from 0 on 10-03). All 14 sites report on all
+  three arches, so x86 silence at them now means something.
 
   Related and also owed: `MmInsertRmap`'s two early returns (`mm/rmap.rs:453`, `:476`) still
   `return` where the C `KeBugCheck(MEMORY_MANAGEMENT)`s (`ntoskrnl/mm/rmap.c:363`, `:380`), and

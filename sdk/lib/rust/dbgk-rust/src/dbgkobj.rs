@@ -125,8 +125,6 @@ extern "system" {
 }
 extern "C" {
     fn CONTAINING_RECORD(address: PVOID, ty: PVOID, field: PVOID) -> PVOID;
-    fn ProbeForWriteHandle(ptr: *mut HANDLE);
-    fn ProbeForReadLargeInteger(ptr: *const LARGE_INTEGER);
     fn DefaultSetInfoBufferCheck(
         OperationClass: ULONG,
         ClassList: *const _INFORMATION_CLASS_INFO,
@@ -138,10 +136,6 @@ extern "C" {
     fn PspSetProcessFlag(Process: PEPROCESS, Flags: ULONG) -> ULONG;
     fn PspSetCrossThreadFlag(Thread: PETHREAD, Flags: ULONG) -> ULONG;
     fn NtCurrentProcess() -> HANDLE;
-}
-// NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
-extern "system" {
-    fn ProbeForWriteUlong(ptr: *mut ULONG);
 }
 extern "system" {
     #[link_name = "IoGetCurrentProcess"]
@@ -1463,8 +1457,12 @@ pub unsafe extern "system" fn NtCreateDebugObject(
     let mut h_debug: HANDLE = core::ptr::null_mut();
     let mut status: NTSTATUS;
 
+    // C: inside _SEH2_TRY, handler returns the exception code. No SEH here, so
+    // the Result probe returns it instead of raising unhandled.
     if previous_mode != 0i8 {
-        ProbeForWriteHandle(debug_handle);
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(debug_handle, 1, previous_mode) {
+            return status;
+        }
     }
 
     if flags & !DBGK_ALL_FLAGS != 0 {
@@ -1750,7 +1748,11 @@ pub unsafe extern "system" fn NtSetInformationDebugObject(
     }
 
     if !return_length.is_null() {
-        ProbeForWriteUlong(return_length);
+        // C probes this whatever the previous mode (the typed probe.h macros take
+        // none), inside _SEH2_TRY whose handler returns the exception code.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(return_length, 1, 1i8) {
+            return status;
+        }
         *return_length = core::mem::size_of::<DEBUG_OBJECT_KILL_PROCESS_ON_EXIT_INFORMATION>() as ULONG;
     }
 
@@ -1811,8 +1813,12 @@ pub unsafe extern "system" fn NtWaitForDebugEvent(
 
     if previous_mode != 0i8 {
         if !timeout.is_null() {
-            ProbeForReadLargeInteger(timeout);
-            local_time_out = *timeout;
+            // C: probe then copy, inside _SEH2_TRY whose handler returns the
+            // exception code. The Result probe captures the value in one read.
+            match ntkrnl_sys::probe::probe_read_generic(timeout as *const LARGE_INTEGER, 1, previous_mode) {
+                Ok(value) => local_time_out = value,
+                Err(status) => return status,
+            }
         }
 
         ProbeForWrite(

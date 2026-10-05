@@ -1455,6 +1455,20 @@ pub unsafe fn NtSetValueKey(Data: PVOID, DataSize: ULONG) -> NTSTATUS {
 //     _SEH2_TRY { ProbeForRead(Data, DataSize, 1); } _SEH2_END;
 //     RtlCopyMemory(DataCopy, Data, DataSize);
 // }
+// The write-side substrate counts too: IopCreateFile's ProbeForWriteHandle became
+// probe_write_generic (2026-10-04), and the scanner first reported it as dropped.
+pub unsafe fn NtOpenSection(SectionHandle: *mut HANDLE) -> NTSTATUS {
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(SectionHandle, 1, PreviousMode) {
+        return status;
+    }
+    *SectionHandle = Handle;
+    STATUS_SUCCESS
+}
+// NTSTATUS NtOpenSection(PHANDLE SectionHandle)
+// {
+//     _SEH2_TRY { ProbeForWriteHandle(SectionHandle); } _SEH2_END;
+//     *SectionHandle = Handle;
+// }
 """
 
 # scan_dropped_asserts. Seeded from task #39, 2026-09-06: MI_MAKE_HARDWARE_PTE_USER
@@ -1728,6 +1742,27 @@ unsafe fn load(n: u32) -> HGLOBAL {
 }
 """
 
+# scan_let_shadow. Seeded from freeldr EnumerateHarddisks (2026-10-04): C `DiskCount++`
+# became a nested `let _DiskCount`, so the BIOS disk count stayed 0.
+_SHADOW_BAD = """\
+unsafe fn enumerate() -> u8 {
+    let mut DiskCount: u8 = 0;
+    while probe() {
+        let _DiskCount = DiskCount + 1;
+    }
+    DiskCount
+}
+"""
+_SHADOW_GOOD = """\
+unsafe fn enumerate() -> u8 {
+    let mut DiskCount: u8 = 0;
+    while probe() {
+        DiskCount += 1;
+    }
+    DiskCount
+}
+"""
+
 # scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
 # do-while's `continue` re-ran the same INF line forever once translated to `loop`.
 _DOWHILE_BAD = """\
@@ -1771,6 +1806,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"olepicture.rs": _GMEM_BAD},
         good={"olepicture.rs": _GMEM_GOOD},
+    ),
+    Control(
+        name="scan_let_shadow",
+        script="tools/scan_let_shadow.py",
+        argv=["--lint"],
+        bad={"hwdisk.rs": _SHADOW_BAD},
+        good={"hwdisk.rs": _SHADOW_GOOD},
     ),
     Control(
         name="scan_dowhile_continue",

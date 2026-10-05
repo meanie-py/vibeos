@@ -2419,15 +2419,30 @@ unsafe fn IopCreateFile(
     let mut Status = STATUS_SUCCESS;
 
     if AccessMode != 0i8 {
-        ProbeForWriteHandle(FileHandle);
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
-
-        if !AllocationSize.is_null() {
-            SafeAllocationSize = ProbeForReadLargeInteger(AllocationSize);
-            if SafeAllocationSize.QuadPart < 0 {
-                ExFreePool(OpenPacket as PVOID);
-                return STATUS_INVALID_PARAMETER;
+        // The C probes inside _SEH2_TRY, and its except handler frees the packet
+        // and returns the exception code. With no SEH here, a raising probe is an
+        // unhandled exception (kmtest IoCreateFile, kernel pointers from a user
+        // previous mode: BUGCHECK 0x1E), so probe through the Result API and run
+        // the handler's cleanup on Err. Range check, no alignment, as the macros.
+        let probed = (|| -> Result<LARGE_INTEGER, NTSTATUS> {
+            ntkrnl_sys::probe::probe_write_generic(FileHandle, 1, AccessMode)?;
+            ntkrnl_sys::probe::probe_write_generic(IoStatusBlock, 1, AccessMode)?;
+            if AllocationSize.is_null() {
+                Ok(zeroed())
+            } else {
+                ntkrnl_sys::probe::probe_read_generic(AllocationSize as *const LARGE_INTEGER, 1, AccessMode)
             }
+        })();
+        match probed {
+            Ok(size) => SafeAllocationSize = size,
+            Err(status) => {
+                ExFreePool(OpenPacket as PVOID);
+                return status;
+            }
+        }
+        if SafeAllocationSize.QuadPart < 0 {
+            ExFreePool(OpenPacket as PVOID);
+            return STATUS_INVALID_PARAMETER;
         }
 
         if !EaBuffer.is_null() && EaLength != 0 {

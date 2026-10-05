@@ -1,7 +1,9 @@
-//! Default DllMain (startup/dllmain.c). The default DllEntryPoint is in crt-startup-rust.
-//! Separate staticlib so a consumer-defined DllMain overrides these (see
-//! Cargo.toml). No panic handler / eh_personality here — this links only
-//! alongside crt-startup-rust + the consumer's staticlib, which provide them.
+//! Default DllMain (startup/dllmain.c), named `vibeos_default_DllMain`:
+//! crt-startup-rust's crtdll object maps `DllMain` onto it with lld
+//! `-alternatename`, so it is used only when the consumer defines no DllMain
+//! (never a duplicate symbol). The default DllEntryPoint is in crt-startup-rust.
+//! No panic handler / eh_personality here — this links only alongside
+//! crt-startup-rust + the consumer's staticlib, which provide them.
 #![no_std]
 #![allow(non_snake_case)]
 
@@ -22,7 +24,7 @@ extern "system" {
 
 // startup/dllmain.c
 #[no_mangle]
-pub unsafe extern "system" fn DllMain(
+pub unsafe extern "system" fn vibeos_default_DllMain(
     hDllHandle: HANDLE,
     dwReason: DWORD,
     _lpreserved: LPVOID,

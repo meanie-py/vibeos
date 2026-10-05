@@ -2463,16 +2463,9 @@ mod ke_i386_exports {
         ntkrnl_sys::inline::ke_i386::KiSetGdtDescriptorBase(entry, base)
     }
 
-    #[no_mangle]
-    #[inline(never)]
-    pub unsafe extern "system" fn RtlFillMemoryUlong(
-        dest: ntkrnl_sys::base::PVOID,
-        length: usize,
-        pattern: ntkrnl_sys::base::ULONG,
-    ) {
-    let dest = opaque_ptr(dest);
-        ntkrnl_sys::inline::ke_i386::RtlFillMemoryUlong(dest, length, pattern)
-    }
+    // RtlFillMemoryUlong is sdk/lib/rtl/i386/rtlmem.s's (`_RtlFillMemoryUlong@12`,
+    // the same `rep stosd`), which the kernel links with the rest of the Rtl
+    // memory family. A copy here was a duplicate symbol kept by link order.
 }
 
 // ============================================================================

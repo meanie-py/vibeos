@@ -882,13 +882,15 @@ def boot_media_device_args(iso, ide_bus: str | None = None) -> list[str]:
         return [*drive, "-device", "virtio-blk-pci,drive=cd0,bootindex=0"]
     if transport == "usb-storage":
         # xhci, because usb-storage on the default UHCI controller is 1.1-slow
-        # and OVMF enumerates xhci fine.
+        # and OVMF enumerates xhci fine. removable=on, as a real stick reports: QEMU
+        # defaults it OFF, and classpnp will not let a filesystem mount on partition
+        # zero of a FIXED disk -- which is where an MBR-less ISO's ISO9660 volume is.
         return [
             *drive,
             "-device",
             "qemu-xhci,id=xhci",
             "-device",
-            "usb-storage,bus=xhci.0,drive=cd0,bootindex=0",
+            "usb-storage,bus=xhci.0,drive=cd0,bootindex=0,removable=on",
         ]
     raise ValueError(
         f"VIBEOS_QEMU_BOOT_TRANSPORT={transport!r} is not one of ide-cd, virtio-blk, usb-storage"

@@ -253,7 +253,7 @@ unsafe fn send_complete_impl(
     }
 
     if (*FCB).Send.BytesUsed != 0 {
-        let _Status = TdiSend(
+        let _Status = TdiSend( // nolint: let-shadow (C never reads Status; returns STATUS_SUCCESS)
             core::ptr::addr_of_mut!((*FCB).SendIrp.InFlightRequest),
             (*FCB).Connection.Object,
             0,

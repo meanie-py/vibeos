@@ -2158,7 +2158,11 @@ pub unsafe extern "system" fn NtCreateSection(
             );
             safe_maximum_size = *maximum_size;
         }
-        ProbeForWriteHandle(section_handle);
+        // C: inside _SEH2_TRY, handler returns the exception code. No SEH here, so the
+        // Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(section_handle, 1, previous_mode) {
+            return status;
+        }
     } else {
         if !maximum_size.is_null() {
             safe_maximum_size = *maximum_size;
@@ -2206,7 +2210,11 @@ pub unsafe extern "system" fn NtOpenSection(
     let object_attributes = opaque_ptr(object_attributes);
     let previous_mode = ExGetPreviousMode();
     if previous_mode != 0i8 {
-        ProbeForWriteHandle(section_handle);
+        // C: inside _SEH2_TRY, handler returns the exception code. No SEH here, so the
+        // Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(section_handle, 1, previous_mode) {
+            return status;
+        }
     }
     let mut handle: HANDLE = core::ptr::null_mut();
     let status = ObOpenObjectByName(
@@ -2283,9 +2291,14 @@ pub unsafe extern "system" fn NtMapViewOfSection(
 
     // Check for unsafe parameters
     if previous_mode != 0i8 {
-        // Probe the parameters
-        ProbeForWritePointer(base_address);
-        ProbeForWriteSize_t(view_size);
+        // Probe the parameters. C: inside _SEH2_TRY, handler returns the exception
+        // code. No SEH here, so the Result probe returns it instead of raising.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(base_address, 1, previous_mode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(view_size, 1, previous_mode) {
+            return status;
+        }
     }
 
     // Check if a section offset was given
