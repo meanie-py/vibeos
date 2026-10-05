@@ -220,6 +220,13 @@ add_custom_command(
 add_custom_target(rust_msvcrt_crt DEPENDS ${MSVCRT_CRT_RUST_LIB})
 
 link_msvcrt_rust_cohab(msvcrt)
+# Build-order only, nothing is linked: msvcrt_static is no longer on any link line, but the
+# host difftests (msvcrt-difftest, msvcrt-scanf-difftest) and gen_ctype_tables.py /
+# gen_msvcrt_ref_protos.py / verify_cohab_coverage.py read its OBJECTS as their oracle, and
+# a build only makes what `livecd` depends on. Without this a fresh tree never compiled it
+# and the gate's difftest failed DIFFTEST_STALE_ORACLE (master red, 2026-10-04), while every
+# existing build dir still held the objects from before the unlink.
+add_dependencies(msvcrt msvcrt_static)
 # Nothing else. The SEH runtime and setjmp/longjmp are pseh-rt/setjmp-rt inside the archive
 # (whole-archived, so defined before ntdll's import library, which exports _setjmp/longjmp,
 # is consulted); msvcrt_static, crtmath, vcruntime, wine, chkstk and chkesp contributed no
