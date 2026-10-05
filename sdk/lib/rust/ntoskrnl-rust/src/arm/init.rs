@@ -437,6 +437,16 @@ unsafe fn MiBuildNonPagedPool() {
         MmMaximumNonPagedPoolInBytes = MI_MAX_NONPAGED_POOL_SIZE;
     }
 
+    // i386/init.c's rule, dropped in this port: leave room to expand. arm64 caps the
+    // initial and the maximum pool at the same 128 MiB, so from ~4 GiB of RAM up both
+    // hit it and the expansion range is empty. MiInitializeNonPagedPool then charges
+    // its two guard pages against zero, the count wraps to ~4G, and initialising that
+    // many expansion PTEs faults past the pool's page tables (a 4 GiB Pi 5 and QEMU
+    // with 6 GiB both died there, before any output but serial).
+    if MmMaximumNonPagedPoolInBytes < MmSizeOfNonPagedPoolInBytes + PAGE_SIZE * 16 {
+        MmMaximumNonPagedPoolInBytes = MmSizeOfNonPagedPoolInBytes + PAGE_SIZE * 16;
+    }
+
     MmMaximumNonPagedPoolInPages = MmMaximumNonPagedPoolInBytes >> PAGE_SHIFT;
 
     MmNonPagedPoolStart = (MmPfnDatabase as PUCHAR).add(MxPfnAllocation * PAGE_SIZE) as PVOID;

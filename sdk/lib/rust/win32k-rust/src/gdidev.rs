@@ -58,18 +58,6 @@ pub unsafe extern "C" fn IntEnumHDev() -> PPDEVOBJ {
     // This will do for now.
     (*gpmdev).ppdevGlobal
 }
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "system" fn NtGdiDrawEscape(
-    hdc: HDC,
-    iEsc: INT,
-    cjIn: INT,
-    pjIn: LPSTR,
-) -> INT {
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiDrawEscape(
     hdc: HDC,

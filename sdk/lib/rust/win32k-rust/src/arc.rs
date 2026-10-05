@@ -742,11 +742,6 @@ pub unsafe extern "system" fn NtGdiAngleArc(
     if ((*(*pDC).pdcattr).ulDirty_ & (DIRTY_LINE | DC_PEN_DIRTY)) != 0 {
         DC_vUpdateLineBrush(pDC);
     }
-    #[cfg(target_arch = "x86")]
-    {
-        Ret = IntGdiAngleArc(pDC, x, y, dwRadius, worker.f, worker1.f);
-    }
-    #[cfg(not(target_arch = "x86"))]
     {
         Ret = IntGdiAngleArc(pDC, x, y, dwRadius, worker.f, worker1.f);
     }
@@ -802,22 +797,6 @@ pub unsafe extern "system" fn NtGdiArcInternal(
         return 0;
     }
 
-    #[cfg(target_arch = "x86")]
-    {
-        Ret = IntGdiArcInternal(
-            arctype,
-            dc,
-            LeftRect,
-            TopRect,
-            RightRect,
-            BottomRect,
-            XStartArc,
-            YStartArc,
-            XEndArc,
-            YEndArc,
-        );
-    }
-    #[cfg(not(target_arch = "x86"))]
     {
         Ret = IntGdiArcInternal(
             arctype,

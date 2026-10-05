@@ -1,0 +1,4 @@
+# cloud-init: a new instance_id makes Raspberry Pi OS run first-boot setup again,
+# which is how the bench user, its key and the hostname get onto an existing card.
+dsmode: local
+instance_id: vibeos-pi5-bench-1

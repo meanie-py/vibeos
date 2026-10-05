@@ -277,7 +277,6 @@ pub unsafe extern "system" fn xHalSetWakeAlarm(
 ) {
 }
 
-#[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "system" fn xHalTranslateBusAddress(
     _InterfaceType: INTERFACE_TYPE,
@@ -286,21 +285,6 @@ pub unsafe extern "system" fn xHalTranslateBusAddress(
     _AddressSpace: PULONG,
     _TranslatedAddress: PPHYSICAL_ADDRESS,
 ) -> BOOLEAN {
-    KeBugCheckEx(HAL_INITIALIZATION_FAILED, 0, 0, 0, 0);
-}
-
-#[cfg(target_arch = "x86")]
-#[no_mangle]
-pub unsafe extern "system" fn xHalTranslateBusAddress(
-    _InterfaceType: INTERFACE_TYPE,
-    _BusNumber: ULONG,
-    _BusAddress: PHYSICAL_ADDRESS,
-    _AddressSpace: PULONG,
-    _TranslatedAddress: PPHYSICAL_ADDRESS,
-) -> BOOLEAN {
-    // The C version dumped the return address via debugcon (port 0xE9)
-    // before crashing. Skip the dump here — KeBugCheckEx already gives
-    // us a backtrace.
     KeBugCheckEx(HAL_INITIALIZATION_FAILED, 0, 0, 0, 0);
 }
 

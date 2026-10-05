@@ -219,30 +219,6 @@ unsafe fn REGION_bAddRect(
     1u8
 }
 
-#[cfg(target_arch = "x86")]
-unsafe fn IntDumpRegion(hRgn: HRGN) {
-    let Data: PREGION;
-
-    Data = REGION_LockRgn(hRgn);
-    if Data.is_null() {
-        DbgPrint(b"IntDumpRegion called with invalid region!\n\0".as_ptr() as PCHAR);
-        return;
-    }
-
-    DbgPrint(
-        b"IntDumpRegion(%x): %d,%d-%d,%d %d\n\0".as_ptr() as PCHAR,
-        hRgn,
-        (*Data).rdh.rcBound.left,
-        (*Data).rdh.rcBound.top,
-        (*Data).rdh.rcBound.right,
-        (*Data).rdh.rcBound.bottom,
-        (*Data).rdh.iType,
-    );
-
-    REGION_UnlockRgn(Data);
-}
-
-#[cfg(not(target_arch = "x86"))]
 unsafe fn IntDumpRegion(hRgn: HRGN) {
     let Data: PREGION;
 
@@ -1156,53 +1132,6 @@ unsafe fn REGION_bMergeRect(
     1u8
 }
 
-#[cfg(target_arch = "x86")]
-unsafe fn REGION_UnionO(
-    pReg: PREGION,
-    mut r1: PRECTL,
-    r1End: PRECTL,
-    mut r2: PRECTL,
-    r2End: PRECTL,
-    top: i32,
-    bottom: i32,
-) -> u8 {
-    while (r1 != r1End) && (r2 != r2End) {
-        if (*r1).left < (*r2).left {
-            if REGION_bMergeRect(pReg, (*r1).left, top, (*r1).right, bottom) == 0 {
-                return 0;
-            }
-            r1 = r1.offset(1);
-        } else {
-            if REGION_bMergeRect(pReg, (*r2).left, top, (*r2).right, bottom) == 0 {
-                return 0;
-            }
-            r2 = r2.offset(1);
-        }
-    }
-
-    if r1 != r1End {
-        loop {
-            if REGION_bMergeRect(pReg, (*r1).left, top, (*r1).right, bottom) == 0 {
-                return 0;
-            }
-            r1 = r1.offset(1);
-            if r1 == r1End {
-                break;
-            }
-        }
-    } else {
-        while r2 != r2End {
-            if REGION_bMergeRect(pReg, (*r2).left, top, (*r2).right, bottom) == 0 {
-                return 0;
-            }
-            r2 = r2.offset(1);
-        }
-    }
-
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
 unsafe fn REGION_UnionO(
     pReg: PREGION,
     mut r1: PRECTL,
@@ -4542,11 +4471,6 @@ pub unsafe extern "system" fn NtGdiRectInRegion(
         return 0;
     }
 
-    #[cfg(target_arch = "x86")]
-    {
-        IntRectInRegion(hrgn, core::ptr::addr_of_mut!(rcTemp))
-    }
-    #[cfg(not(target_arch = "x86"))]
     {
         IntRectInRegion(hrgn, core::ptr::addr_of_mut!(rcTemp))
     }

@@ -387,17 +387,8 @@ pub unsafe extern "system" fn WNDOBJ_vSetConsumer(
 
     if Hack != 0 {
         FIXME!(b"Is this hack really needed?\n\0".as_ptr() as PCHAR);
-        #[cfg(target_arch = "x86")]
         IntEngWndCallChangeProc(Clip, WOC_RGN_CLIENT);
-        #[cfg(not(target_arch = "x86"))]
-        IntEngWndCallChangeProc(Clip, WOC_RGN_CLIENT);
-        #[cfg(target_arch = "x86")]
         IntEngWndCallChangeProc(Clip, WOC_CHANGED);
-        #[cfg(not(target_arch = "x86"))]
-        IntEngWndCallChangeProc(Clip, WOC_CHANGED);
-        #[cfg(target_arch = "x86")]
-        IntEngWndCallChangeProc(Clip, WOC_DRAWN);
-        #[cfg(not(target_arch = "x86"))]
         IntEngWndCallChangeProc(Clip, WOC_DRAWN);
     }
 }
