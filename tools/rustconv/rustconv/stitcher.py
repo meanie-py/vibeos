@@ -188,7 +188,9 @@ def _extract_extern_blocks(code: str) -> tuple[list[str], str]:
         stripped = line.strip()
 
         # Detect start of extern block
-        if re.match(r'extern\s+"[^"]*"\s*\{', stripped):
+        # `unsafe extern "X" {` is the Rust 2024 spelling the model increasingly writes;
+        # missing it left the block (or, after a later strip, a bare `unsafe` line) behind.
+        if re.match(r'(?:unsafe\s+)?extern\s+"[^"]*"\s*\{', stripped):
             block_lines = [line]
             brace_count = stripped.count("{") - stripped.count("}")
             i += 1

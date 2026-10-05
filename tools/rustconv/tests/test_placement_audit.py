@@ -83,3 +83,14 @@ def test_restored_integers_are_rust_with_the_c_value():
     assert r("0644") == "0o644"  # C octal; verbatim it would be decimal 644
     assert r("0") == "0" and r("10") == "10"
     assert r("0o17") == "0o17"
+
+
+def test_crate_repair_c_suffix_and_null_fn_rules_are_registered():
+    from rustconv import crate_repair as cr
+
+    assert cr.RULE_C_INT_SUFFIX in cr.DIAGNOSTIC_RULES
+    assert cr.RULE_NULL_FN_POINTER in cr.DIAGNOSTIC_RULES
+    assert cr._NULL_EXPR.match("core::ptr::null_mut()")
+    assert cr._NULL_EXPR.match("ptr::null::<u8>()")
+    assert cr._NULL_EXPR.match("0 as *mut c_void")
+    assert not cr._NULL_EXPR.match("some_ptr")

@@ -17,6 +17,7 @@ STAGES (each re-runnable; state in ~/vibeos-rust-staging/port/<stem>/state.json)
   scaffold   write the crate skeleton (never overwrites; the island is kept).
   translate  sealed DeepSeek translation of each TU that has no body yet, under --cost-cap.
   integrate  move each translated file onto the crate prelude (crate_integrate).
+  resolve    fill the prelude from what the tree already agrees on (prelude_resolve).
   check      cargo check on all three targets; error counts per file.
 
 It never touches CMake, the workspace members or the build: the flip is a separate,
@@ -33,7 +34,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import crate_integrate
+from . import crate_integrate, prelude_resolve
 from . import profile_derive as pd
 
 REPO = Path(__file__).resolve().parents[3]
@@ -338,6 +339,84 @@ def stage_integrate(stem: str) -> None:
 
 
 # --------------------------------------------------------------------------------------
+# resolve
+# --------------------------------------------------------------------------------------
+
+
+def _c_defined_names(tus: list[Path]) -> set[str]:
+    """Functions this module's own C defines: a not-yet-translated TU's names, which must
+    never be resolved to an extern (it would shadow the real body once it lands)."""
+    if str(REPO) not in sys.path:
+        sys.path.insert(0, str(REPO))
+    from tools.c_twin import blank_c, defined_names
+
+    out: set[str] = set()
+    for tu in tus:
+        out.update(defined_names(blank_c(tu.read_text(errors="replace"))))
+    return out
+
+
+def stage_resolve(stem: str, max_passes: int = 4) -> None:
+    """Fill the prelude with what the tree already agrees on (prelude_resolve.py)."""
+    state = load_state(stem)
+    started = time.time()
+    crate = _crate_dir(state)
+    prelude = crate / "src" / "prelude.rs"
+    workspace = REPO / "sdk" / "lib" / "rust"
+    pending = _c_defined_names([REPO / t for t in state["tus"]])
+    copied = prelude_resolve.existing_block(prelude)
+    res = prelude_resolve.Resolution()
+    for n in range(1, max_passes + 1):
+        names = prelude_resolve.unresolved_names(
+            state["crate"], RUST_TARGETS["amd64"], workspace, STATE_ROOT / stem / "target-amd64"
+        )
+        res.pending = sorted(names & pending)
+        todo = names - pending - set(copied)
+        items = prelude_resolve.workspace_items(todo, workspace, crate)
+        new = 0
+        res.conflicting, res.undefined = {}, []
+        for name in sorted(todo):
+            found = items.get(name, [])
+            if not found:
+                res.undefined.append(name)
+                continue
+            pick, why = prelude_resolve.consensus(name, found)
+            if pick is None:
+                res.conflicting[name] = why
+                continue
+            copied[name] = pick
+            new += 1
+        print(f"resolve pass {n}: {len(names)} unresolved, {new} copied from tree consensus")
+        if not new:
+            break
+        prelude_resolve.write_block(prelude, prelude_resolve.render(copied))
+    res.copied = copied
+    _record(
+        state,
+        "resolve",
+        started,
+        copied=len(copied),
+        pending=res.pending,
+        undefined=res.undefined,
+        conflicting=sorted(res.conflicting),
+    )
+    if res.pending:
+        print(
+            f"resolve: {len(res.pending)} name(s) wait on untranslated TUs: "
+            + ", ".join(res.pending)
+        )
+    if res.undefined:
+        print(
+            "resolve: defined nowhere in the tree (island allowlist? invented?): "
+            + ", ".join(res.undefined)
+        )
+    if res.conflicting:
+        print("resolve: not copied (the tree disagrees, or it is not ours to copy):")
+        for name, why in sorted(res.conflicting.items()):
+            print(f"    {name}: {why}")
+
+
+# --------------------------------------------------------------------------------------
 # check
 # --------------------------------------------------------------------------------------
 
@@ -422,6 +501,8 @@ def main(args) -> int:
             )
         elif args.port_stage == "integrate":
             stage_integrate(args.stem)
+        elif args.port_stage == "resolve":
+            stage_resolve(args.stem)
         elif args.port_stage == "check":
             stage_check(args.stem)
         elif args.port_stage == "status":
@@ -439,7 +520,7 @@ def add_parser(sub) -> None:
         q = stages.add_parser(name)
         q.add_argument("module", help="module directory (holding CMakeLists.txt)")
         q.add_argument("--target", default=None, help="CMake target, when there are several")
-    for name in ("island", "integrate", "check", "status"):
+    for name in ("island", "integrate", "resolve", "check", "status"):
         stages.add_parser(name).add_argument("stem")
     q = stages.add_parser("translate")
     q.add_argument("stem")
