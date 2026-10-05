@@ -649,7 +649,7 @@ def stage_macros(
             return
         from .__main__ import MODEL_ALIASES
         from .batch_runner import submit_single
-        from .config import DEEPSEEK_MAX_TOKENS, MODEL_PRICING
+        from .config import DEEPSEEK_MAX_TOKENS, MODEL_PRICING, cost_usd
 
         api_model = MODEL_ALIASES.get(model, model)
         pin, pout = MODEL_PRICING[api_model]
@@ -664,7 +664,7 @@ def stage_macros(
         # that scales by the struct size where the C adds BYTES as an integer.
         os.environ["RUSTCONV_DEEPSEEK_THINKING"] = "enabled" if thinking == "on" else "disabled"
         res = submit_single(text, model=api_model, system_prompt=local_macros.SYSTEM)
-        usd = (res.input_tokens * pin + res.output_tokens * pout) / 1e6
+        usd = cost_usd(api_model, res.input_tokens, res.output_tokens, res.cache_read_tokens)
         if not res.success:
             raise PortError(f"macros: model call failed: {res.error}")
         raw = STATE_ROOT / stem / f"macros-reply-{int(time.time())}.json"
