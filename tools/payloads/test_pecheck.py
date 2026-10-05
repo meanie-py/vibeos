@@ -194,3 +194,50 @@ def test_a_harness_fallback_define_never_overrides_the_generated_zero():
         "#endif\n"
     )
     assert "ref__waccess" not in pecheck.compiled_in(src, {"_waccess"})
+
+
+_SPEC = """\
+@ stdcall RegOpenKeyExA(long str long long ptr)
+@ stdcall -version=0x600+ RegDeleteTreeA(long str)
+@ stdcall -version=0x502-0x600 OldOnly(long)
+@ stub CancelOverlappedAccess
+@ stdcall -stub HalfDone(long)
+@ stdcall -arch=i386 X86Only(long)
+@ stdcall -arch=!i386 NotX86(long)
+@ stdcall -arch=win64 Wide(long)
+@ cdecl -arch=i386 Twin(long) Twin32
+@ cdecl -arch=win64 Twin(long) Twin64
+123 stdcall -noname Ordinal(long)
+"""
+
+
+def test_spec_exports_follow_spec2def_version_arch_and_stub_rules(tmp_path):
+    sp = tmp_path / "advapi32.spec"
+    sp.write_text(_SPEC)
+    e = pecheck.spec_exports(sp, "arm64", 0x502)
+    assert e["RegOpenKeyExA"] == "ok"
+    assert "0x600+" in e["RegDeleteTreeA"]
+    assert e["OldOnly"] == "ok"
+    assert e["CancelOverlappedAccess"] == "stub" and e["HalfDone"] == "stub"
+    assert e["X86Only"].startswith("not exported") and e["NotX86"] == "ok"
+    assert e["Wide"] == "ok" and e["Twin"] == "ok" and e["Ordinal"] == "ok"
+    x86 = pecheck.spec_exports(sp, "i386", 0x502)
+    assert x86["X86Only"] == "ok" and x86["NotX86"].startswith("not exported")
+    assert x86["Wide"].startswith("not exported") and x86["Twin"] == "ok"
+    assert pecheck.spec_exports(sp, "x86_64", 0x600)["RegDeleteTreeA"] == "ok"
+
+
+def test_an_import_our_dll_does_not_export_fails_the_build(tmp_path, capsys, monkeypatch):
+    repo = tmp_path / "repo"
+    (repo / "sdk/cmake").mkdir(parents=True)
+    (repo / "sdk/cmake/config.cmake").write_text('set(DLL_EXPORT_VERSION "0x502" CACHE STRING\n')
+    (repo / "dll/win32/advapi32").mkdir(parents=True)
+    (repo / "dll/win32/advapi32/advapi32.spec").write_text(_SPEC)
+    monkeypatch.setattr(pecheck, "REPO", repo)
+    good = _write(tmp_path, imports={"ADVAPI32.dll": ["RegOpenKeyExA"], "foreign.dll": ["Any"]})
+    assert pecheck.main([str(good), "--tag", "t"]) == 0
+    bad = tmp_path / "bad.exe"
+    bad.write_bytes(_pe({"ADVAPI32.dll": ["RegOpenKeyExA", "RegDeleteTreeA"]}))
+    assert pecheck.main([str(bad), "--tag", "t"]) == 1
+    assert "ADVAPI32.dll!RegDeleteTreeA" in capsys.readouterr().out
+    assert pecheck.main([str(bad), "--tag", "t", "--no-spec-check"]) == 0

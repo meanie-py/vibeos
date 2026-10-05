@@ -131,6 +131,21 @@ static DWORD WINAPI reader(void *arg)
     return 0;
 }
 
+/* RegDeleteTreeA is a Vista export; this advapi32 is NT 5.2. */
+static void del_tree(HKEY parent, const char *name)
+{
+    HKEY k;
+    char sub[64];
+    if (RegOpenKeyExA(parent, name, 0, KEY_ALL_ACCESS, &k)) return;
+    for (;;) {
+        DWORD n = sizeof(sub);
+        if (RegEnumKeyExA(k, 0, sub, &n, NULL, NULL, NULL, NULL)) break;
+        del_tree(k, sub);
+    }
+    RegCloseKey(k);
+    RegDeleteKeyA(parent, name);
+}
+
 int main(void)
 {
     HANDLE th[WRITERS + READERS];
@@ -139,7 +154,7 @@ int main(void)
 
     GetSystemInfo(&si);
     SAY("start cpus=%lu writers=%d readers=%d run=%dms\n", si.dwNumberOfProcessors, WRITERS, READERS, RUN_MS);
-    RegDeleteTreeA(HKEY_CURRENT_USER, "Software\\VibeRegStress");
+    del_tree(HKEY_CURRENT_USER, "Software\\VibeRegStress");
     e = RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\VibeRegStress", 0, NULL, 0, KEY_ALL_ACCESS, NULL, &g_root, NULL);
     if (e) { SAY("FAIL create root err=%ld\n", e); SAY("done FAIL\n"); return 1; }
 
@@ -169,7 +184,7 @@ int main(void)
         HeapFree(GetProcessHeap(), 0, buf);
     }
     RegCloseKey(g_root);
-    RegDeleteTreeA(HKEY_CURRENT_USER, "Software\\VibeRegStress");
+    del_tree(HKEY_CURRENT_USER, "Software\\VibeRegStress");
 
     SAY("writes=%ld reads=%ld subkeys=%ld failures=%ld\n", g_writes, g_reads, g_subkeys, g_fail);
     SAY("done %s\n", g_fail || g_writes < 100 ? "FAIL" : "PASS");
