@@ -77,10 +77,8 @@ MODULES = {
     "msvcrt": {
         "spec": "dll/win32/msvcrt/msvcrt.spec",
         "dll": "dll/win32/msvcrt/msvcrt.dll",
-        # The module's own objects. (The `...` entry points' object library,
-        # msvcrt_rust_shims, is gone since f1658ab724d: they are va_entry! thunks in the
-        # Rust archive, which "rust" below already covers.)
-        "obj_dirs": ("dll/win32/msvcrt/CMakeFiles/msvcrt.dir",),
+        # No DLL links msvcrt_static since 2026-10-04; kept so a relink would be named
+        # rather than misfiled as some other archive.
         "own_c": "libmsvcrt_static.a",
         "rust": "libmsvcrt_crt_cargo.a",
         # spec2def generates this TU and puts NOTHING but stub bodies in it. An export
@@ -90,6 +88,15 @@ MODULES = {
         "stubs_obj": "msvcrt_stubs.c.obj",
     },
 }
+# The i386-only legacy CRTs link the same archive (msvcrt_rust_cohab.cmake); their own
+# behaviour is in it too, under CRTDLL_/MSVCRT20_ names their specs map.
+for _legacy in ("msvcrt20", "msvcrt40", "crtdll"):
+    MODULES[_legacy] = {
+        **MODULES["msvcrt"],
+        "spec": f"dll/win32/{_legacy}/{_legacy}.spec",
+        "dll": f"dll/win32/{_legacy}/{_legacy}.dll",
+        "stubs_obj": f"{_legacy}_stubs.c.obj",
+    }
 
 # The arches a `-arch=` spec filter can name, and which build each one belongs to. spec2def
 # resolves these; the list mirrors its own, and a name absent here is a spec typo rather than
@@ -195,8 +202,37 @@ def defined_in(nm: Path, path: Path) -> dict[str, str]:
         who, _addr, kindc, sym = m.groups()
         if not kindc.isupper() or sym == "@feat.00":
             continue
-        out.setdefault(sym, Path(who.split(":")[-1] or who).name)
+        member = Path(who.split(":")[-1] or who).name
+        out.setdefault(sym, member)
+        # i386 `__stdcall` decorates the DEFINITION (`__adj_fdiv_m16i@4`) while the spec names
+        # the bare symbol, so key the undecorated spelling too, or every stdcall export reads
+        # UNRESOLVED (12 of msvcrt's did).
+        if re.fullmatch(r"[^@]+@\d+", sym):
+            out.setdefault(sym.split("@")[0], member)
     return out
+
+
+def _dll_block(build: Path, mod: dict) -> str:
+    ninja = build / "build.ninja"
+    if not ninja.is_file():
+        sys.exit(f"export_census: {ninja} missing.\n  fix: ./vibeos-cli build --arch <a>")
+    text = ninja.read_text()
+    at = text.find(f"build {mod['dll']}:")
+    if at < 0:
+        sys.exit(f"export_census: no rule building {mod['dll']} in {ninja}")
+    return text[at : text.find("\nbuild ", at + 1)]
+
+
+def module_objects(build: Path, mod: dict) -> list[Path]:
+    """The objects linked DIRECTLY into the DLL: the build statement's explicit inputs.
+
+    Not a glob of the target's `CMakeFiles/*.dir`. A deleted source leaves its object behind
+    there, and the glob counted msvcrt's five retired `rust_*_shim.c.obj` as live providers
+    of 113 exports for weeks after the shims became va_entry! thunks in the Rust archive.
+    """
+    statement = _dll_block(build, mod).split("\n", 1)[0]
+    explicit = statement.split(":", 1)[1].split("|", 1)[0].split()[1:]  # [0] is the rule
+    return [build / t for t in explicit if t.endswith(".obj")]
 
 
 def link_inputs(build: Path, mod: dict) -> tuple[list[Path], list[Path]]:
@@ -208,15 +244,7 @@ def link_inputs(build: Path, mod: dict) -> tuple[list[Path], list[Path]]:
     matters too: msvcrt's `memmove` comes from a compiler-rt builtins archive that appears
     only there, so a tool reading LINK_LIBRARIES alone reports it as backed by nothing.
     """
-    ninja = build / "build.ninja"
-    if not ninja.is_file():
-        sys.exit(f"export_census: {ninja} missing.\n  fix: ./vibeos-cli build --arch <a>")
-    text = ninja.read_text()
-    at = text.find(f"build {mod['dll']}:")
-    if at < 0:
-        sys.exit(f"export_census: no rule building {mod['dll']} in {ninja}")
-    block = text[at : text.find("\nbuild ", at + 1)]
-
+    block = _dll_block(build, mod)
     whole, lazy, in_whole = [], [], False
     for var in ("LINK_LIBRARIES", "LINK_FLAGS"):
         m = re.search(rf"^\s*{var} = (.*)$", block, re.M)
@@ -273,11 +301,9 @@ def census(module: str, arch: str) -> dict:
     # so they precede everything; --whole-archive members precede every lazy archive.
     providers: list[tuple[str, dict[str, str]]] = []
     mod_objs: dict[str, str] = {}
-    for rel in mod["obj_dirs"]:
-        obj_dir = build / rel
-        for obj in sorted(obj_dir.rglob("*.obj")) if obj_dir.is_dir() else []:
-            for sym, _member in defined_in(nm, obj).items():
-                mod_objs.setdefault(sym, obj.name)
+    for obj in module_objects(build, mod):
+        for sym, _member in defined_in(nm, obj).items():
+            mod_objs.setdefault(sym, obj.name)
     providers.append(("module-obj", mod_objs))
     for a in whole + lazy:
         providers.append((a.name, defined_in(nm, a)))

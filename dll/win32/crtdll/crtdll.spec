@@ -94,7 +94,7 @@
 @ cdecl _fgetchar()
 @ cdecl _fgetwchar()
 @ cdecl _filbuf(ptr)
-@ extern _fileinfo_dll
+@ extern _fileinfo_dll CRTDLL__fileinfo_dll
 @ cdecl _filelength(long)
 @ cdecl _fileno(ptr)
 @ cdecl _findclose(long)
@@ -281,23 +281,23 @@
 @ cdecl _splitpath(str ptr ptr ptr ptr)
 @ cdecl _stat(str ptr) CRTDLL__stat
 @ cdecl _statusfp()
-@ cdecl _strcmpi(str str)
+@ cdecl _strcmpi(str str) _stricmp
 @ cdecl _strdate(ptr)
-@ cdecl _strdec(str str)
+@ cdecl _strdec(str str) CRTDLL__strdec
 @ cdecl _strdup(str)
 @ cdecl _strerror(long)
 @ cdecl _stricmp(str str)
 @ cdecl _stricoll(str str)
-@ cdecl _strinc(str)
+@ cdecl _strinc(str) CRTDLL__strinc
 @ cdecl _strlwr(str)
-@ cdecl _strncnt(str long)
-@ cdecl _strnextc(str)
+@ cdecl _strncnt(str long) CRTDLL__strncnt
+@ cdecl _strnextc(str) CRTDLL__strnextc
 @ cdecl _strnicmp(str str long)
-@ cdecl _strninc(str long)
+@ cdecl _strninc(str long) CRTDLL__strninc
 @ cdecl _strnset(str long long)
 @ cdecl _strrev(str)
 @ cdecl _strset(str long)
-@ cdecl _strspnp(str str)
+@ cdecl _strspnp(str str) CRTDLL__strspnp
 @ cdecl _strtime(ptr)
 @ cdecl _strupr(str)
 @ cdecl _swab(str str long)

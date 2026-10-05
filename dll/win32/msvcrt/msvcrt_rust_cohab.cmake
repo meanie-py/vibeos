@@ -1,22 +1,20 @@
-# Link msvcrt-crt-rust into a CRT DLL whose C is msvcrt_static.
+# Link msvcrt-crt-rust into a CRT DLL: msvcrt.dll, and on i386 msvcrt20, msvcrt40 and crtdll.
 #
-# msvcrt.dll is not the only DLL built from msvcrt_static: msvcrt20, msvcrt40 and
-# crtdll (i386) link the same archive, compiled once at _MSVCR_VER=0 with the same
-# flags. Until this existed they took none of the Rust, so each shipped a complete
-# copy of the Wine C that msvcrt.dll had already retired. Same objects, same C being
-# displaced, so the evidence that grades msvcrt.dll's Rust -- msvcrt-difftest against
-# the genuine msvcrt C -- is the evidence for them too.
+# The archive IS the DLL's CRT. It used to sit ahead of msvcrt_static (the Wine C, compiled
+# once at _MSVCR_VER=0) with --allow-multiple-definition picking the Rust copies; once the link
+# maps showed no DLL pulling a single msvcrt_static object, the C came off every link line
+# (2026-10-04), so a symbol the Rust lacks is now an undefined-symbol error, not a silent C
+# fallback. msvcrt_static is still compiled as an unlinked REFERENCE: tools read its objects
+# (gen_ctype_tables.py's oracle, gen_msvcrt_ref_protos.py, verify_cohab_coverage.py).
 #
-# Call BEFORE the target's target_link_libraries(... msvcrt_static ...): the archive
-# goes in under --whole-archive so every Rust definition exists before msvcrt_static
-# is pulled (plain link order is not enough -- the C monolith is still pulled for its
-# un-flipped symbols and drags its own copies of the flipped ones). The C copies are
-# then ignored duplicates (--allow-multiple-definition). A DLL's OWN module objects
-# still come first and keep their version-specific overrides -- crtdll's dll main
-# TU is the one that matters, with its own _strinc, _strdec and stat shims.
+# The legacy DLLs' own overrides (crtdll's dllmain.c, msvcrt20.c) are in the archive too,
+# under CRTDLL_/MSVCRT20_ names their spec files map (src/legacy.rs), so the one archive can
+# serve all four without one DLL's quirk becoming another's export.
 #
-# Included from directories CMake processes BEFORE dll/win32/msvcrt (crtdll), so it
-# names the archive by path and the targets by name; both resolve at generate time.
+# --whole-archive keeps every definition, the data exports and DllMain included, without
+# relying on what the .def happens to reference. Included from directories CMake processes
+# BEFORE dll/win32/msvcrt (crtdll), so it names the archive by path and the targets by name;
+# both resolve at generate time.
 set(MSVCRT_RUST_COHAB_LIB "${CMAKE_BINARY_DIR}/dll/win32/msvcrt/libmsvcrt_crt_cargo.a")
 
 function(link_msvcrt_rust_cohab target)

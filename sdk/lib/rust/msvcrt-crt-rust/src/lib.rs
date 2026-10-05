@@ -4174,3 +4174,7 @@ pub mod scanf;
 mod va_entries;
 // sdk/lib/crt/misc/dbgrpt.cpp: the _CrtDbgReport family (was the `dbgrpt` C++ library).
 mod dbgrpt;
+// crtdll's dllmain.c and msvcrt20.c: the legacy DLLs' own overrides, under prefixed names.
+// x86 only, as the DLLs are (dll/win32/CMakeLists.txt builds them for i386 alone).
+#[cfg(all(feature = "dllmain", target_arch = "x86"))]
+mod legacy;

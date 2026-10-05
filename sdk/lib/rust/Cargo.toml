@@ -213,6 +213,8 @@ members = [
     "setjmp-rust",
     "pseh-rust",
     "delayimp-rust",
+    "delayimp-rust/hooks/notify",
+    "delayimp-rust/hooks/failure",
     "arbiter-rust",
     "lsass-sys",
     "lsalib-rust",

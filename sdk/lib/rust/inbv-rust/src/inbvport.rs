@@ -88,39 +88,6 @@ pub unsafe extern "system" fn InbvPortInitialize(
     let mut port_number = PortNumber;
     let mut port_address = PortAddress;
 
-    #[cfg(target_arch = "x86")]
-    {
-        if baud_rate == 0 {
-            baud_rate = 19200;
-        }
-
-        if port_number != 0 {
-            if port_address.is_null() {
-                port_address = match port_number {
-                    1 => 0x3F8 as *mut UCHAR,
-                    2 => 0x2F8 as *mut UCHAR,
-                    3 => 0x3E8 as *mut UCHAR,
-                    _ => {
-                        port_number = 4;
-                        0x2E8 as *mut UCHAR
-                    }
-                };
-            }
-        } else {
-            port_address = 0x2F8 as *mut UCHAR;
-            if CpDoesPortExist(port_address) != 0 {
-                port_number = 2;
-            } else {
-                port_address = 0x3F8 as *mut UCHAR;
-                if CpDoesPortExist(port_address) == 0 {
-                    return 0u8;
-                }
-                port_number = 1;
-            }
-        }
-    }
-
-    #[cfg(not(target_arch = "x86"))]
     {
         if baud_rate == 0 {
             baud_rate = 19200;

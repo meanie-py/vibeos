@@ -109,3 +109,19 @@ def test_link_inputs_reads_whole_archive_and_link_flags(tmp_path):
     whole, lazy = mod.link_inputs(build, {"dll": "dll/x.dll"})
     assert [p.name for p in whole] == ["rust.a"]
     assert [p.name for p in lazy] == ["own.a", "later.a", "builtins.a"]
+
+
+def test_module_objects_are_the_build_statements_inputs_not_a_glob(tmp_path):
+    """A stale object left in the target's directory by a deleted source is not linked."""
+    obj_dir = tmp_path / "dll/CMakeFiles/x.dir"
+    obj_dir.mkdir(parents=True)
+    (obj_dir / "live.c.obj").write_text("")
+    (obj_dir / "deleted_shim.c.obj").write_text("")
+    (tmp_path / "build.ninja").write_text(
+        "build dll/x.dll: LINKER dll/CMakeFiles/x.dir/live.c.obj dll/x.res"
+        " | lib/dep.a dll/CMakeFiles/x.dir/implicit.obj || order_only\n"
+        "  LINK_LIBRARIES = lib/dep.a\n"
+        "build something/else: phony\n"
+    )
+    objs = mod.module_objects(tmp_path, {"dll": "dll/x.dll"})
+    assert [p.name for p in objs] == ["live.c.obj"]

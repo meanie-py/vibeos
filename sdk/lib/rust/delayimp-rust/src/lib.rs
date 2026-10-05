@@ -6,7 +6,8 @@
 //! resolves the name or ordinal, patches the IAT slot and returns the address. The two hook
 //! pointers let a module observe or override each step (MSVC's documented contract, which
 //! base/setup/reactos and the sdk_apitest delayimp test exercise). A module that defines its
-//! own hook does so in its own object, which links ahead of this archive and wins.
+//! own hook does so in its own object, which links ahead of this archive, so the hook's
+//! member here is never pulled (see hooks/).
 #![no_std]
 #![allow(non_upper_case_globals, non_snake_case, non_camel_case_types)]
 
@@ -62,10 +63,15 @@ pub struct DelayLoadInfo {
 /// `PfnDliHook`: `FARPROC (WINAPI *)(unsigned dliNotify, PDelayLoadInfo)`.
 pub type PfnDliHook = Option<unsafe extern "system" fn(u32, *mut DelayLoadInfo) -> Farproc>;
 
-#[no_mangle]
-pub static mut __pfnDliNotifyHook2: PfnDliHook = None;
-#[no_mangle]
-pub static mut __pfnDliFailureHook2: PfnDliHook = None;
+// The hook slots are defined in two crates of their own (hooks/notify, hooks/failure), so
+// each is a separate archive member that a module defining its own hook never pulls; read
+// here by symbol name. `extern crate` keeps both in the staticlib.
+extern crate delayimp_failure_hook;
+extern crate delayimp_notify_hook;
+extern "C" {
+    static mut __pfnDliNotifyHook2: PfnDliHook;
+    static mut __pfnDliFailureHook2: PfnDliHook;
+}
 
 const dliStartProcessing: u32 = 0;
 const dliNotePreLoadLibrary: u32 = 1;

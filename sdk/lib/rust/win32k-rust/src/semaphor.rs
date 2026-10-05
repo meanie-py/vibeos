@@ -33,7 +33,6 @@ const GDITAG_SEMAPHORE: u32 = 0x6d655347u32;
 // The provided C code contains only SAL annotations and a #define,
 // neither of which produce Rust declarations.
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn EngCreateSemaphore() -> HSEMAPHORE {
     // www.osr.com/ddk/graphics/gdifncs_95lz.htm
@@ -54,27 +53,6 @@ pub unsafe extern "system" fn EngCreateSemaphore() -> HSEMAPHORE {
     psem as HSEMAPHORE
 }
 
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "system" fn EngCreateSemaphore() -> HSEMAPHORE {
-    let psem: DdkPERESOURCE = ExAllocatePoolWithTag(
-        NonPagedPool,
-        core::mem::size_of::<ntkrnl_sys::ddk::_ERESOURCE>() as SIZE_T,
-        GDITAG_SEMAPHORE,
-    ) as DdkPERESOURCE;
-    if psem.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    if !NT_SUCCESS(ExInitializeResourceLite(psem)) {
-        ExFreePoolWithTag(psem as *mut core::ffi::c_void, GDITAG_SEMAPHORE);
-        return core::ptr::null_mut();
-    }
-
-    psem as HSEMAPHORE
-}
-
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn EngAcquireSemaphore(hsem: HSEMAPHORE) {
     // www.osr.com/ddk/graphics/gdifncs_14br.htm
@@ -87,20 +65,6 @@ pub unsafe extern "system" fn EngAcquireSemaphore(hsem: HSEMAPHORE) {
     // dwEngAcquireCount lives on W32THREAD (THREADINFO's prefix). The
     // bindgen'd _THREADINFO buries it in __bindgen_padding_0, so go via
     // PW32THREAD.
-    let w32thread = PsGetThreadWin32Thread(PsGetCurrentThread()) as PW32THREAD;
-    if !w32thread.is_null() {
-        (*w32thread).dwEngAcquireCount = (*w32thread).dwEngAcquireCount.wrapping_add(1);
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "system" fn EngAcquireSemaphore(hsem: HSEMAPHORE) {
-    if hsem.is_null() {
-        return;
-    }
-
-    ExEnterCriticalRegionAndAcquireResourceExclusive(hsem as DdkPERESOURCE);
     let w32thread = PsGetThreadWin32Thread(PsGetCurrentThread()) as PW32THREAD;
     if !w32thread.is_null() {
         (*w32thread).dwEngAcquireCount = (*w32thread).dwEngAcquireCount.wrapping_add(1);
