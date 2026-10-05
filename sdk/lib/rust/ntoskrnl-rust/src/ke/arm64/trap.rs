@@ -518,8 +518,10 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
             // Device memory" (PTE AttrIndx bits [3:2] != 0) from "instruction
             // demands alignment on Normal memory" (LDAR/STLR/LDAPR — what FEX
             // emits for x86-TSO). Alignment fault ⇒ translation succeeded, so
-            // the self-map PTE chain for FAR is walkable.
-            if DFSC == 0x21 {
+            // the self-map PTE chain for FAR is walkable. Capped like the
+            // [UEXC] records (stubs.rs `uexc_should_print`): FEX takes these by
+            // design and each line blocks on the UART.
+            if DFSC == 0x21 && crate::ke::arm64::stubs::align_trap_should_print() {
                 let far = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress;
                 let pc = (*TrapFrame).Pc;
                 TrapPuts(b"[ALIGN] FAR="); TrapPutHex64(far);
