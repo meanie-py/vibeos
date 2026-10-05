@@ -197,6 +197,36 @@ residue: two constants that share one slot in different branches, and slots a tr
 renamed beyond case/underscore. Next, in the owner's order: measure per-module agent time
 from git history, build `rustconv port`, then Setup and the driver fleet ($10 DeepSeek).
 
+**2026-10-05 overnight: `rustconv port`, first module through it (setuplib).** `port
+derive | island | scaffold | translate | integrate | resolve | check | status` drives one
+plain-C module, recording each stage's time in `~/vibeos-rust-staging/port/<stem>/`.
+setuplib (base/setup/lib, 23 TUs, 21K lines) is the test module, kept LOCAL (crate +
+workspace member + gen_driver_types arm) until green -- 12 of 23 TUs translated, $2.42 of
+the $10 spent. Every error-count drop came from a tool fix, not a hand edit: 60 -> 19 per
+arch over the first 6 TUs. What the module exposed, each fixed where it lives:
+- profile_derive: sibling static target's TUs reported DEAD ("do not pay"); relative
+  include dirs resolved against the repo root; a static lib's mode/crate name not
+  inherited from its one consumer; scaffold prelude lacked NT_SUCCESS!/CONTAINING_RECORD!
+  and win32macros (by name -- a glob made HANDLE/WCHAR ambiguous).
+- translate: `--target name:path` for modules outside dll/ and sdk/lib; `#define NDEBUG`
+  preambles hard-failed after all paid functions; C integer suffixes (`8192ULL`) and C
+  octal restored verbatim by the fact seal; `unsafe extern` blocks mis-handled by the
+  stitcher and crate_integrate (bare/doubled `unsafe`); a data-only TU skipped; an
+  `#ifndef NDEBUG` body demanded a c2rust anchor; parallel rejects never retried.
+- crate-repair: `c_integer_suffix`, `null_fn_pointer` (`null_mut()` into `Option<fn>`).
+- `port resolve`: unresolved names filled from TREE CONSENSUS (consts agree by value,
+  extern fns by ABI class, never types) -- `_wcsicmp` has 16 hand declarations in the tree.
+- Lexer/parse errors hide every name-resolution error in the crate; early counts were
+  falsely low. Treat a parse error as "count unknown".
+
+**Thinking OFF vs ON (DeepSeek v4-pro), indicative, not controlled (different TUs):**
+~300 vs ~13,900 output tokens per call on small functions, i.e. ~1/40th the cost; the
+cheap bodies carried C `goto`/labels over literally in 2 of 6 TUs. Now a deterministic
+acceptance check (c_body_checks) rejects those, banked bodies are re-audited on replay,
+and `port translate --escalate` takes the cheap pass then re-buys only rejects with
+thinking on (mui/osdetect: 3 bodies, $0.35). Next measurement owed: errors per function
+after the full deterministic pipeline, escalate vs always-on, on the remaining 11 TUs.
+
 **2026-10-05, owner's direction for the next round.** Order: correctness (done above),
 measurement, `rustconv port`, then ReactOS-native Setup and the driver-fleet residue
 before any Wine module. On those, TOOLING BEATS VELOCITY: each translation is a test of
