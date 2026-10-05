@@ -25,7 +25,13 @@ def test_requested_arch_does_not_fall_back_to_another_build(tmp_path, monkeypatc
 def test_strict_rejects_empty_extracted_map(monkeypatch):
     monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub static X: i32 = 0;")
     with pytest.raises(anchor.C2RustError, match="no extracted function"):
-        anchor.build_anchor_map(Path("pilot.c"), strict=True)
+        anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names={"Expected"})
+
+
+def test_a_data_only_tu_needs_no_function_anchors(monkeypatch):
+    # setuplib fileqsup.c: one file-scope global, no functions -- only a preamble to translate
+    monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub static X: i32 = 0;")
+    assert anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names=set()) == {}
 
 
 def test_strict_rejects_partial_map(monkeypatch):

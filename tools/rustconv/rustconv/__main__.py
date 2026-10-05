@@ -51,6 +51,7 @@ from .bank_audit import format_report as format_bank_report
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .body_audit import main as body_audit_main
 from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
+from .c_body_checks import body_findings, control_flow_findings
 from .call_seal import (
     CallSealError,
     call_contract,
@@ -847,6 +848,30 @@ def _audit_paid_body_impl(
     return result.rust_code
 
 
+def _stale_c_body(dep, hit: str, args, reaudit_failed: set[str]) -> bool:
+    """Re-judge a banked plain-C body against TODAY's deterministic checks.
+
+    A cache hit used to be accepted as banked, so a check added after the purchase could
+    never reach it -- the stricter audit was blind to everything already paid for. The
+    finding is always printed; the body is discarded for re-purchase only under an
+    explicit --rebuy-rejected (a policy change asks for revalidation, it does not
+    authorise payment by itself).
+    """
+    if getattr(dep, "cpp_class", None):
+        return False
+    findings = body_findings(dep.body_text, hit)
+    if not findings:
+        return False
+    print(
+        f"  {dep.name}: banked body FAILS the current audit: " + "; ".join(findings),
+        file=sys.stderr,
+    )
+    if not getattr(args, "rebuy_rejected", False):
+        return False
+    reaudit_failed.add(dep.name)
+    return True
+
+
 def _adopt_rejected(
     dep, cache, fact_seals, call_seals, wide_seals, cpp_com_mode: bool, func_idx, contract, sealed
 ) -> str | None:
@@ -962,6 +987,11 @@ def _unseal_worker(
                 if strict:
                     raise FactSealError(finding.message())
                 ignored_envelope.append(finding.message().replace("\n", "; "))
+        if not getattr(dep, "cpp_class", None):
+            for note in control_flow_findings(dep.body_text, rust):
+                if strict:
+                    raise FactSealError(note)
+                ignored_envelope.append(note)
         # LAST, which is the exact reverse of the sealing order. It is also the only one
         # that substitutes RUST rather than restoring C: running it earlier would hand the
         # fact seal's by-name recovery a body full of generated `0x0041u16` elements to
@@ -3285,6 +3315,9 @@ def cmd_translate(args):
             else extract_call_graph(scan, spec_exports=file_res.exports)
         )
         translated: dict[str, str] = {}
+        # Banked plain-C bodies that fail a check added since they were bought (see
+        # _stale_c_body); only these may be re-bought under --rebuy-rejected.
+        reaudit_failed: set[str] = set()
         deterministic_workers: set[str] = set()
         if cpp_com_mode:
             for dep in sorted_deps:
@@ -3612,6 +3645,8 @@ def cmd_translate(args):
                     elif hit is not None and is_cpp_source:
                         hit = normalize_cpp_idioms(dep.body_text, hit)
                         hit = _cpp_free_half_semantics(dep, hit)
+                    elif hit is not None and _stale_c_body(dep, hit, args, reaudit_failed):
+                        hit = None
                     # No unseal on a cache hit. What is banked is the ACCEPTED text, already
                     # unsealed (`_audit_paid_body` mutates `rust_code` before `cache.put`),
                     # and `ResponseCache.get` refuses any entry that still holds a token —
@@ -3627,7 +3662,11 @@ def cmd_translate(args):
                         )
                         continue
                 if not no_resume:
-                    cache.refuse_repurchase(dep.name)
+                    cache.refuse_repurchase(
+                        dep.name,
+                        allow_rejected=getattr(args, "rebuy_rejected", False),
+                        failed_audit=dep.name in reaudit_failed,
+                    )
                 if getattr(args, "replay_only", False):
                     raise ValueError(f"--replay-only: no accepted cached body for {dep.name}")
                 todo.append((func_idx, dep))
@@ -3873,8 +3912,10 @@ def cmd_translate(args):
                 elif hit is not None and is_cpp_source:
                     hit = normalize_cpp_idioms(dep.body_text, hit)
                     hit = _cpp_free_half_semantics(dep, hit)
+                elif hit is not None and _stale_c_body(dep, hit, args, reaudit_failed):
+                    hit = None
                 # No unseal on a cache hit — see the same site on the parallel path.
-                if hit is None:
+                if hit is None and dep.name not in reaudit_failed:
                     hit = _adopt_rejected(
                         dep,
                         cache,
@@ -3899,7 +3940,11 @@ def cmd_translate(args):
 
             # Per-function resolve
             if not no_resume:
-                cache.refuse_repurchase(dep.name)
+                cache.refuse_repurchase(
+                    dep.name,
+                    allow_rejected=getattr(args, "rebuy_rejected", False),
+                    failed_audit=dep.name in reaudit_failed,
+                )
             if getattr(args, "replay_only", False):
                 raise ValueError(f"--replay-only: no accepted cached body for {dep.name}")
             func_res = resolve_function(dep, catalog, file_res.exports, scan.defines)
@@ -4092,9 +4137,14 @@ def cmd_translate(args):
                 + stale
             )
 
-        if not translated:
+        file_scope = "" if cpp_com_mode else (scan.preamble_text or scan.globals_text or "")
+        if not translated and not (
+            file_scope.strip() and _preamble_has_translatable_content(file_scope)
+        ):
             print(f"  No functions translated for {c_file.name}", file=sys.stderr)
             continue
+        # A data-only TU (setuplib fileqsup.c: one exported global, no functions) still owns
+        # its file-scope definitions; skipping it here left the symbol undefined.
 
         # Translate the file-scope preamble (structs / typedefs /
         # #define→const / static tables) as ONE synthetic unit. The
@@ -5586,6 +5636,14 @@ def main():
         "token slip in one function throws away every other function in the TU; the "
         "survivors after the deterministic fixes are sampling noise on the biggest "
         "bodies. Each retry is billed and applies the identical acceptance checks.",
+    )
+    p.add_argument(
+        "--rebuy-rejected",
+        action="store_true",
+        help="Re-buy functions whose only banked state is a body the deterministic audit "
+        "REJECTED (inspect the reject first: suspect the audit before the model). Accepted "
+        "bodies are never re-bought. `rustconv port translate` uses it to retry a TU whose "
+        "parallel run ended with rejects.",
     )
     p.add_argument(
         "--sdk-header",

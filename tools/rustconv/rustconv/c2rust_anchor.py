@@ -514,7 +514,9 @@ def build_anchor_map(
     if text is None:
         return {}
     fns = _parse_functions(text)
-    if strict and not fns:
+    # Only an error when functions were EXPECTED: a TU of file-scope data alone (setuplib's
+    # fileqsup.c) correctly transpiles to no functions, and has only a preamble to translate.
+    if strict and not fns and required_names:
         raise C2RustError(f"{c_file}: c2rust output contains no extracted function definitions")
     missing = (required_names or set()) - set(fns)
     if strict and missing:
