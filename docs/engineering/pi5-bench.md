@@ -41,8 +41,8 @@ carries two systems in one FAT partition (`tools/pi5/card/`):
   stager's kernel in the root, then the same with `kernel=` pointed away from it.
   `stage.sh` moves an older card's stager into `linux/`. It installs the
   `config.txt` that depends on that only once all four files are there.
-- **Any later reset is Linux again.** With `PI5_PLUG` set, `pi5 boot` power-cycles a
-  board that is still in VibeOS or hung.
+- **Any later reset is Linux again.** `pi5 boot` power-cycles a board that is still
+  in VibeOS or hung through its plug, then waits for the stager's SSH.
 
 The EEPROM stays on the version the board shipped with: worproject reports that
 newer EEPROMs break the UEFI's display on D0 boards. Both bench boards report
@@ -72,9 +72,10 @@ delete that file after rebuilding a card.
   - **Without it, the verdict is HDMI-only and passes only as a warning:** the
     desktop background has to fill at least 20% of the frame.
   - GPIO14/15 belong to RP1, which neither UEFI nor VibeOS sets up yet.
-- **Plug:** a Shelly plug named by `PI5_PLUG`. `tools/pi5/power.sh` refuses to run
-  without it, because `tools/pi4/power.sh` would otherwise fall back to the Pi 4's
-  plug.
+- **Plug:** a Shelly Plug US Gen4, `shellyplugusg4-acebe6f18e28` (`tools/pi5/env.sh`;
+  `PI5_PLUG` overrides). `tools/pi5/power.sh` refuses to run if none is named,
+  because `tools/pi4/power.sh` would otherwise fall back to the Pi 4's plug. The
+  meter reads 0 W for the first ~30 s after power-on; a booted stager draws ~5 W.
 - **Pico:** `picousb` is the Pi 5's (`picousb5` is the Pi 4's). Use
   `tools/pi5/pico.sh` for input.
 - **Capture:** the Pi 5's card has USB vendor id 345f and the Pi 4's has 534d. Both
