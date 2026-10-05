@@ -162,8 +162,14 @@ loader fix, three kernel layers and three harness fixes, each found by the one b
   `-d exec` (not one translation block), and a backtrace of QEMU run under gdb
   (`ptrace_scope` refuses an attach). arm64 still loads the snapshot.
 
-virtio-blk does not boot yet: the virtio ISO disk is not enumerated when ArcNames
-are made, so only the empty scratch disk is scanned.
+virtio-blk does not boot, and it is not a timing problem: **the x86 kernel has no
+virtio-blk driver at all** (2026-10-05). freeldr reads the ISO through the firmware's
+own virtio BlockIo and loads every boot driver from it; the boot-driver list it loads
+(uniata, scsiport, buslogic, usbstor, disk, cdrom, ...) has nothing that binds a
+virtio-blk PCI function, so from the kernel's side the ISO does not exist and the
+boot ends in `0x6B`. The one disk `IopCreateArcNames` did see was the IDE `tempdisk`,
+not the virtio scratch disk, which is unused by the x86 kernel too. Booting from it is
+a new storage driver, not a fix; usb-storage covers what rr needs.
 
 One refusal the transform does NOT make is x86's default accelerator. `amd64`
 and `i386` boot `-accel kvm -cpu host`, which would fail the first row of that
@@ -378,6 +384,54 @@ The hook is deliberately not wrapped in `try`/`except`. A swallowed failure
 would leave the caller believing a break was armed when it was not, and that
 presents as "the break never fired" — indistinguishable from a break landing at
 an illegal icount, which is a real and separate failure.
+
+## Finding where a replay diverged: `rr record --sample` + `rr diverge`
+
+A wedge is where a divergence becomes VISIBLE: QEMU only notices when the diverged
+guest takes an exception the log does not contain. To find where it HAPPENED you need
+the guest's state from both sides at the same icount, and the recording is the only
+chance to capture its half.
+
+```
+./vibeos-cli rr record --arch arm64 --payload kmtest --name t --sample 10
+./vibeos-cli rr diverge t
+```
+
+`--sample SECS` pauses the recording every SECS of wall time over a second, private
+QMP socket and writes a fingerprint to `samples.jsonl`: the exact icount
+(`query-replay`), `info registers -a`, and a hash per MiB of guest RAM (`pmemsave`
+through a fifo, so nothing lands on disk but the store below). Every distinct MiB is
+also kept zlib'd in `ram/<hash>.z`, deduplicated across samples: ~2,500 MiB / 370 MB
+for an arm64 kmtest boot. Pausing costs the guest nothing, since under icount its
+clock is the instruction counter. `rr diverge` replays with a `replay-break` at each
+sampled icount, takes the same fingerprint, and stops at the first mismatch, naming
+the register lines and the physical byte runs that differ (`diverge.json` has all of
+it). A replay that wedges first is caught by its icount freezing, and the verdict is
+then "between the last match and the wedge".
+
+**Measured properties (QEMU 8.2.2, arm64):**
+
+* A recording pause does NOT end an instruction chunk; 17 of 31 and 20 of 30 samples
+  happened to land on one, all of them in event-dense stretches. `resume after a
+  replay-break` works: 16 consecutive break/fingerprint/`cont` cycles in one replay.
+* **A pause that drains I/O is not comparable.** QMP `stop` drains block I/O, so the
+  recording's fingerprint can already include a request completed AT the pause, which
+  the trace logs as an `EVENT_ASYNC` at exactly that icount; the replay's break lands
+  before that completion is applied. Seen 10 times per firmware-phase run, always the
+  same two MiB (a virtqueue index one ahead, a flag byte). `diverge` lists such samples
+  as `inconclusive` and keeps going; it never calls them a match.
+* **So is a pause at an interrupt.** An interrupt logged at exactly the sampled icount is
+  taken without executing an instruction, and whether the fingerprint lands before or
+  after entry is not stable: the same trace had one such sample match and the next show
+  the replay at the IRQ vector (`PC=..5a80`, `PSTATE=3c5`) with the recording still in
+  ordinary code, every other register equal and RAM identical. Also `inconclusive`, and
+  only in exactly that shape — any other register, or any RAM, differing is reported as
+  real. Both rules live in `rrsample.artifact`, with tests.
+* The first sample is usually skipped: the replay is already past it when the checker
+  connects.
+* Whether 8.2.2 can break MID-chunk is still unmeasured — every off-boundary sample so
+  far fell after the wedge. (9.0.2 aborted with `Playback shouldn't have to iowait`;
+  8.2.2's binary does not contain that message.)
 
 ## Superseded: the earlier conclusion that a replay cannot be stopped
 

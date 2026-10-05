@@ -695,6 +695,12 @@ QMP `replay-break` landing part-way through a chunk aborts the whole replay with
 single boot, so there is no rounding rule — `--near <icount>` snaps a target to
 the next legal one and says how far into a chunk the unsnapped value sat.
 
+`rr record --sample SECS` fingerprints the guest (registers + per-MiB RAM hashes,
+the bytes kept deduplicated in the trace) every SECS of wall time; `rr diverge
+<trace>` replays it, breaks at each fingerprint, and reports the last icount where
+replay and recording agreed and the first that differs, down to the byte. A wedge is
+where a divergence becomes visible; this finds where it happened.
+
 Design, gdb recipe and the divergence log: `docs/engineering/qemu-record-replay.md`.
 
 ### `ps [--json]`
