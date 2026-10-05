@@ -284,13 +284,22 @@ class ResponseCache:
             return None  # poisoned by a pre-fix run: re-translate instead of replaying
         return text
 
-    def refuse_repurchase(self, name: str) -> None:
-        """A rejected or incompatible purchase is a repair task, not a fresh cache miss."""
-        if (
-            name in self._manifest
-            or (self.dir / (_safe_filename(name) + ".rs")).exists()
-            or self.get_rejected(name) is not None
-        ):
+    def refuse_repurchase(
+        self, name: str, *, allow_rejected: bool = False, failed_audit: bool = False
+    ) -> None:
+        """A rejected or incompatible purchase is a repair task, not a fresh cache miss.
+
+        `allow_rejected` (translate --rebuy-rejected) lets a name whose ONLY banked state is
+        a body the deterministic audit REJECTED be bought again: that reject was inspected
+        and the model was wrong, so a re-roll is the repair. An accepted body is never
+        re-bought this way.
+        """
+        accepted = name in self._manifest or (self.dir / (_safe_filename(name) + ".rs")).exists()
+        # `failed_audit`: the accepted body fails a check added since it was bought, so it is
+        # a reject in all but storage. Its original response stays in the run archive.
+        if allow_rejected and (not accepted or failed_audit):
+            return
+        if accepted or self.get_rejected(name) is not None:
             raise ValueError(
                 f"{self.dir}: {name} already has purchased output which did not replay. "
                 "Refusing to buy it again automatically; inspect/repair the banked body "

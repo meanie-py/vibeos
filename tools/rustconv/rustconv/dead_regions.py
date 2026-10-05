@@ -170,7 +170,9 @@ def eval_int_guard(expr: str, pinned: dict[str, int]) -> bool | None:
     return False if all(v is False for v in verdicts) else None
 
 
-def cond_truth(line: str, pinned: dict[str, int] | None = None) -> bool | None:
+def cond_truth(
+    line: str, pinned: dict[str, int] | None = None, local: frozenset[str] = frozenset()
+) -> bool | None:
     """``True``/``False`` when a preprocessor condition is FIXED for this tree, else ``None``.
 
     Deliberately narrow. Everything it cannot settle is ``None``, and every caller treats
@@ -189,7 +191,7 @@ def cond_truth(line: str, pinned: dict[str, int] | None = None) -> bool | None:
     kind = m.group(1)
     if kind in ("ifdef", "ifndef"):
         sym = rest.split()[0] if rest.split() else ""
-        if sym in KNOWN_DEFINED:
+        if sym in KNOWN_DEFINED or sym in local:
             return kind == "ifdef"
         return None
     if re.fullmatch(r"\(?\s*0+\s*\)?", rest):
@@ -197,11 +199,14 @@ def cond_truth(line: str, pinned: dict[str, int] | None = None) -> bool | None:
     if re.fullmatch(r"\(?\s*[1-9]\d*\s*\)?", rest):
         return True
     m2 = re.fullmatch(r"(!)?\s*defined\s*\(?\s*(\w+)\s*\)?", rest)
-    if m2 and m2.group(2) in KNOWN_DEFINED:
+    if m2 and (m2.group(2) in KNOWN_DEFINED or m2.group(2) in local):
         return m2.group(1) is None
     if pinned:
         return eval_int_guard(rest, pinned)
     return None
+
+
+_LOCAL_DEFINE_RE = re.compile(r"^[ \t]*#[ \t]*(define|undef)[ \t]+([A-Za-z_]\w*)\b(?!\()")
 
 
 def never_compiled_lines(text: str, pinned: dict[str, int] | None = None) -> set[int]:
@@ -227,7 +232,17 @@ def never_compiled_lines(text: str, pinned: dict[str, int] | None = None) -> set
     dead: set[int] = set()
     # stack frames: (this arm is dead, the condition was decidable, some arm already taken)
     stack: list[tuple[bool, bool, bool]] = []
+    # Names this FILE defines on a line every build compiles: `#define NDEBUG` above an
+    # `#ifndef NDEBUG` debug dumper (setuplib osdetect.c's DumpNTOSInstalls) makes that body
+    # dead, and c2rust -- which sees the preprocessed TU -- rightly has no anchor for it.
+    local: set[str] = set()
     for n, line in enumerate(text.splitlines(), 1):
+        d = _LOCAL_DEFINE_RE.match(line)
+        if d and all(known and not dead_arm for dead_arm, known, _ in stack):
+            if d.group(1) == "define":
+                local.add(d.group(2))
+            else:
+                local.discard(d.group(2))
         m = _COND_ANY_RE.match(line)
         if m is None:
             if any(d for d, _, _ in stack):
@@ -235,7 +250,7 @@ def never_compiled_lines(text: str, pinned: dict[str, int] | None = None) -> set
             continue
         directive = m.group(1)
         if directive in ("if", "ifdef", "ifndef"):
-            truth = cond_truth(line, pinned)
+            truth = cond_truth(line, pinned, frozenset(local))
             stack.append((truth is False, truth is not None, truth is True))
         elif directive in ("else", "elif") and stack:
             _, known, taken = stack[-1]

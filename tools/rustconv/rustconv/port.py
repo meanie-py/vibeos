@@ -208,7 +208,7 @@ def _has_body(path: Path) -> bool:
     if not path.is_file():
         return False
     text = path.read_text(errors="replace")
-    return bool(re.search(r"\bfn\s+\w+", text))
+    return bool(re.search(r"\b(?:fn|static|const)\s+\w+", text))
 
 
 def stage_translate(
@@ -220,14 +220,15 @@ def stage_translate(
     dry_run: bool,
     mode: str = "mechanical",
     concurrency: int = 5,
+    thinking: str = "on",
+    escalate: bool = False,
 ) -> None:
     state = load_state(stem)
     started = time.time()
-    todo = [
-        t
-        for t in state["tus"]
-        if (not only or Path(t).name in only) and not _has_body(_tu_output(state, t))
-    ]
+    picked = [t for t in state["tus"] if not only or Path(t).name in only]
+    # An escalation pass revisits TUs that already have output: their good bodies replay
+    # for $0 and only rejected / audit-failing functions are bought again, with thinking.
+    todo = picked if escalate else [t for t in picked if not _has_body(_tu_output(state, t))]
     spent = 0.0
     done: list[dict] = []
     for tu in todo:
@@ -266,11 +267,39 @@ def stage_translate(
         ]
         if dry_run:
             cmd.append("--dry-run")
+        env = dict(
+            os.environ, RUSTCONV_DEEPSEEK_THINKING="enabled" if thinking == "on" else "disabled"
+        )
+        if escalate:
+            cmd += ["--rebuy-rejected", "--reassemble"]
         t0 = time.time()
-        proc = subprocess.run(cmd, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True)
+        proc = subprocess.run(
+            cmd, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True, env=env
+        )
         log = STATE_ROOT / stem / f"translate-{Path(tu).stem}.log"
         log.write_text(proc.stdout + proc.stderr)
         cost = _run_cost(proc.stdout + proc.stderr)
+        if (
+            not dry_run
+            and not _has_body(out)
+            and "parallel translation completed with rejected" in proc.stdout + proc.stderr
+        ):
+            # The parallel path does not re-roll a rejected worker; the sequential one does,
+            # with the reject fed back. Accepted workers replay for $0, so this buys only
+            # the rejects again.
+            retry = [c for c in cmd if c not in ("--concurrency", str(concurrency))]
+            retry += ["--concurrency", "1", "--rebuy-rejected"]
+            retry[retry.index("--cost-cap") + 1] = f"{max(0.01, left - cost):.2f}"
+            proc = subprocess.run(
+                retry, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True, env=env
+            )
+            log.write_text(
+                log.read_text()
+                + "\n=== sequential retry of rejects ===\n"
+                + proc.stdout
+                + proc.stderr
+            )
+            cost += _run_cost(proc.stdout + proc.stderr)
         spent += cost
         done.append(
             {
@@ -292,6 +321,8 @@ def stage_translate(
         model=model,
         mode=mode,
         concurrency=concurrency,
+        thinking=thinking,
+        escalate=escalate,
         usd=round(spent, 4),
         runs=done,
         dry_run=dry_run,
@@ -498,7 +529,20 @@ def main(args) -> int:
                 dry_run=args.dry_run,
                 mode=args.mode,
                 concurrency=args.concurrency,
+                thinking="off" if args.escalate else args.thinking,
             )
+            if args.escalate and not args.dry_run:
+                stage_translate(
+                    args.stem,
+                    model=args.model,
+                    cost_cap=args.cost_cap,
+                    only=args.only or [],
+                    dry_run=False,
+                    mode=args.mode,
+                    concurrency=args.concurrency,
+                    thinking="on",
+                    escalate=True,
+                )
         elif args.port_stage == "integrate":
             stage_integrate(args.stem)
         elif args.port_stage == "resolve":
@@ -533,3 +577,12 @@ def add_parser(sub) -> None:
     # translate fans out under --concurrency.
     q.add_argument("--mode", choices=["mechanical", "idiomatic"], default="mechanical")
     q.add_argument("--concurrency", type=int, default=5)
+    # Measured on setuplib: thinking OFF is ~1/40th the cost per small function, but it
+    # carried C `goto`s over literally in 2 of 6 TUs. --escalate takes the cheap pass first,
+    # then re-buys ONLY what the deterministic checks reject, with thinking on.
+    q.add_argument("--thinking", choices=["on", "off"], default="on")
+    q.add_argument(
+        "--escalate",
+        action="store_true",
+        help="cheap pass with thinking off, then thinking on for rejects only",
+    )

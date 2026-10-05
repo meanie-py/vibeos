@@ -13,3 +13,17 @@ def test_real_content_still_goes_to_the_model():
     assert real("#define NDEBUG\nstatic const int table[] = { 1, 2 };\n")
     assert real("#define INITGUID\n#include <guiddef.h>\n")  # changes which GUIDs it emits
     assert real("#define MAX_ITEMS 10\n")  # a valued define is a constant
+
+
+def test_a_locally_defined_switch_kills_its_ifndef_arm():
+    from rustconv.dead_regions import never_compiled_lines
+
+    # setuplib osdetect.c: `#define NDEBUG` up top, a debug dumper under `#ifndef NDEBUG`
+    src = "#define NDEBUG\n#include <debug.h>\n#ifndef NDEBUG\nstatic void Dump(void) {}\n#endif\n"
+    assert never_compiled_lines(src) == {4}
+    # a define inside an arm we cannot decide decides nothing
+    src = "#if DBG\n#define NDEBUG\n#endif\n#ifndef NDEBUG\nint x;\n#endif\n"
+    assert never_compiled_lines(src) == set()
+    # #undef cancels it
+    src = "#define NDEBUG\n#undef NDEBUG\n#ifndef NDEBUG\nint x;\n#endif\n"
+    assert never_compiled_lines(src) == set()
