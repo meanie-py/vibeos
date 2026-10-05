@@ -9,7 +9,6 @@
 // sdk/lib/crt/except/i386/chkstk_asm.s
 #[cfg(target_arch = "x86")]
 core::arch::global_asm!(
-    ".intel_syntax noprefix",
     ".text",
     ".globl __chkstk",
     ".globl __alloca_probe",
@@ -47,13 +46,11 @@ core::arch::global_asm!(
     "    mov eax, [eax + 4]",
     "    push eax",
     "    ret",
-    ".att_syntax prefix",
 );
 
 // sdk/lib/crt/except/i386/chkstk_ms.s
 #[cfg(target_arch = "x86")]
 core::arch::global_asm!(
-    ".intel_syntax noprefix",
     ".text",
     ".globl ___chkstk_ms",
     "___chkstk_ms:",
@@ -74,13 +71,11 @@ core::arch::global_asm!(
     "    pop eax",
     "    pop ecx",
     "    ret",
-    ".att_syntax prefix",
 );
 
 // sdk/lib/crt/math/i386/alldiv_asm.s
 #[cfg(target_arch = "x86")]
 core::arch::global_asm!(
-    ".intel_syntax noprefix",
     ".text",
     ".globl __alldiv",
     "__alldiv:",
@@ -162,13 +157,11 @@ core::arch::global_asm!(
     "    pop esi",
     "    pop edi",
     "    ret 16",
-    ".att_syntax prefix",
 );
 
 // sdk/lib/crt/math/i386/aulldiv_asm.s
 #[cfg(target_arch = "x86")]
 core::arch::global_asm!(
-    ".intel_syntax noprefix",
     ".text",
     ".globl __aulldiv",
     "__aulldiv:",
@@ -220,13 +213,11 @@ core::arch::global_asm!(
     "    pop esi",
     "    pop ebx",
     "    ret 16",
-    ".att_syntax prefix",
 );
 
 // sdk/lib/crt/math/i386/ceilf.S
 #[cfg(target_arch = "x86")]
 core::arch::global_asm!(
-    ".intel_syntax noprefix",
     ".text",
     "    .align 4",
     ".globl _ceilf",
@@ -243,13 +234,11 @@ core::arch::global_asm!(
     "    fldcw [esp + 4]",
     "    add esp, 8",
     "    ret",
-    ".att_syntax prefix",
 );
 
 // sdk/lib/crt/math/i386/floorf.S
 #[cfg(target_arch = "x86")]
 core::arch::global_asm!(
-    ".intel_syntax noprefix",
     ".text",
     "    .align 4",
     ".globl _floorf",
@@ -266,7 +255,6 @@ core::arch::global_asm!(
     "    fldcw [esp + 4]",
     "    add esp, 8",
     "    ret",
-    ".att_syntax prefix",
 );
 
 // sdk/lib/crt/except/amd64/chkstk_ms.s -- `__chkstk` with `__alloca_probe` and a weak
@@ -274,7 +262,6 @@ core::arch::global_asm!(
 // asm.inc spellings of the SEH directives written out here.
 #[cfg(target_arch = "x86_64")]
 core::arch::global_asm!(
-    ".intel_syntax noprefix",
     ".text",
     ".globl __chkstk",
     ".globl __alloca_probe",
@@ -304,5 +291,4 @@ core::arch::global_asm!(
     "    pop rcx",
     "    ret",
     ".seh_endproc",
-    ".att_syntax prefix",
 );

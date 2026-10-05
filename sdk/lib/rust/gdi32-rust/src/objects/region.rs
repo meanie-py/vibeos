@@ -746,7 +746,7 @@ pub unsafe extern "system" fn ExtSelectClipRgn(hdc: HDC, hrgn: HRGN, iMode: INT)
             return METADC_ExtSelectClipRgn(hdc, hrgn, iMode) as INT;
         } else {
             let pLDC: PLDC = GdiGetLDC(hdc);
-            let _Ret: INT = 0;
+            let _Ret: INT = 0; // nolint: let-shadow (HANDLE_METADC's own _Ret, as in the C)
             if pLDC.is_null() {
                 SetLastError(ERROR_INVALID_HANDLE);
                 return _Ret;

@@ -392,11 +392,31 @@ def transform(
     #   qemu-system-aarch64: migration/vmstate.c:140: vmstate_load_state:
     #   Assertion `first_elem || !n_elems || !size' failed.
     # A/B'd on one trace with nothing else changed. See the divergence log.
+    x86 = is_x86_argv(argv)
+    # x86's MC146818 RTC ticks on QEMU_CLOCK_HOST by default, so its timers land in
+    # the log as host-clock checkpoints (five before the first instruction alone).
+    # clock=vm puts it on the virtual clock: recordings came out ~3x faster and ~5x
+    # smaller. Its base date is still one recorded host-clock read.
+    if x86 and "-rtc" not in argv:
+        out += ["-rtc", "clock=vm"]
+    # x86 REPLAY does not load the `init` snapshot. Loading it re-arms a virtual-clock
+    # timer due at time zero (a device post-load hook), which in replay may only run at
+    # a recorded CHECKPOINT_CLOCK_VIRTUAL -- and the recording has none before its first
+    # instruction. Main loop and vCPU then livelock (vCPU in icount_handle_deadline ->
+    # qemu_clock_notify, forever) at instruction count 0. Recording still CREATES the
+    # snapshot: prepare_replay reverts every disk to it, so the replay starts from the
+    # same disks and the same power-on state the recording did.
+    snap = "" if (x86 and mode == "replay") else ",rrsnapshot=init"
     out += [
         "-icount",
-        f"shift={icount_shift},rr={mode},rrfile={rrfile},rrsnapshot=init",
+        f"shift={icount_shift},rr={mode},rrfile={rrfile}{snap}",
     ]
     return out, media
+
+
+def is_x86_argv(argv: list[str]) -> bool:
+    """Whether a QEMU command line is an x86 machine (by its binary name)."""
+    return bool(argv) and ("x86_64" in argv[0] or "i386" in argv[0])
 
 
 # --------------------------------------------------------------------------
@@ -531,6 +551,19 @@ def prepare_replay(trace_dir: Path) -> None:
     if media.exists():
         shutil.rmtree(media)
     shutil.copytree(pristine, media)
+    argv = load_manifest(trace_dir).get("argv") if (trace_dir / "manifest.json").is_file() else None
+    if is_x86_argv(argv or []):
+        # x86 replays from power-on, not from the snapshot (see transform): put each
+        # disk back to its state at record start, which the snapshot holds.
+        for img in sorted(media.glob("*.qcow2")):
+            cp = subprocess.run(
+                ["qemu-img", "snapshot", "-a", "init", str(img)], capture_output=True, text=True
+            )
+            if cp.returncode != 0:
+                raise RecordReplayError(
+                    f"cannot revert {img.name} to its record-start state (`init`): "
+                    f"{cp.stderr.strip()} -- the replay would start from post-recording disks"
+                )
 
 
 def load_manifest(trace_dir: Path) -> dict:

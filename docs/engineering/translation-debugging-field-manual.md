@@ -3969,6 +3969,20 @@ a decision to take deliberately, not to reach for because a module will not tran
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### A C assignment became a nested `let _x`, so the outer variable never changes
+
+**Symptom:** a counter stays 0, a pointer keeps pointing at the old thing, a column never
+resets, and the code compiles warning-free. freeldr's `EnumerateHarddisks` reported 0 BIOS
+disks; oleaut32's format tokenizer wrote every `;` section into the first header; `VarSub`
+subtracted the IDispatch instead of its fetched value; consrv kept stale start columns.
+**Cause:** the translator turned `DiskCount++;` / `left = &tempLeft;` into
+`let _DiskCount = DiskCount + 1;` inside a nested block. The new binding shadows the outer
+one, and the leading underscore suppresses the unused warning that would have exposed it.
+**Fix:** assign the outer binding (make it `mut`). `scan_let_shadow` (`vibeos-cli check`)
+flags a nested `let _x` while `x` is in scope in the same function; a `_x` the C really
+declares is marked `// nolint: let-shadow (why)`. It cannot see an assignment dropped
+outright (consrv's `IntWriteConsoleOutputStringChars` lost `XStart = 0;` with no `let`).
+
 ### A dropped `#if DBG` acquires a lock the release build marked as never-initialized
 
 **Symptom:** a hang at DISPATCH_LEVEL the first time a path runs, with no bugcheck and no
@@ -6597,6 +6611,11 @@ longer had). A clean build differs. **Cause:** every toolchain file set
 never removes, and overriding the rule lost CMake's own delete-first step, so an archive only
 ever grew. **Fix (2026-10-04):** the rule is now `cmake -E rm -f <TARGET>` then `ar crT`. To
 audit a library: `llvm-ar t lib.a` against the target's source list.
+The same leftovers fool any TOOL that globs an object directory: a deleted source's `.obj`
+stays in `CMakeFiles/<target>.dir/` forever. `verify_ucrtbase_cohab` read those directories as
+"our C defines this", so a lane passed with `_chkesp.s` gone (its stale `.obj` still defined
+`__chkesp`) and master went red on the fresh integration build. A tool asking what the build
+produces must ask the build graph (`build <obj>:` lines in `build.ninja`), not the directory.
 
 **The most expensive class in this file**, because the failure mode is a green that means
 nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → pl011 → gdi32 →
@@ -7428,6 +7447,17 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### A resource string is right in the source and mojibake in the binary (llvm-rc ignores `#pragma code_page`)
+
+**Symptom:** a localized string or locale value is wrong at runtime while the `.rc`/`.nls`
+source is visibly correct. Wine's vartest failed every French thousands-separator case:
+`fra.nls` stores `LOCALE_STHOUSAND` as U+00A0, kernel32.dll carried U+00C2 U+00A0, and
+`VarParseNumFromStr` took `Â` as the separator. **Cause:** llvm-mingw's `windres` is llvm-rc,
+which drops `#pragma code_page(65001)` and decodes the bytes as cp1252, so every UTF-8 resource
+script in the tree compiled to mojibake. **Fix (2026-10-04):** `--codepage=65001` on both RC
+rules in `sdk/cmake/gcc.cmake`. **Check the compiled bytes, not the source:** walk the PE's
+RT_STRING block for the language (locale value `n` lives in block `n/16 + 1`).
 
 ### i386 guest float compares go the wrong way: the emulator's SAHF, not the code
 
@@ -10294,6 +10324,29 @@ free, because the failing name tracks the attribute string verbatim.
 A clean cargo + ninja can still bugcheck mid-init. The link is a necessary gate, never a
 sufficient one — which is the whole reason smoke is the north star.
 
+### `link-guard: … duplicate symbol(s) resolved by link order`
+- **Symptom:** a link fails with that line, naming a symbol, the copy that was `kept` and the
+  one `dropped`.
+- **Cause:** every PE links with `--allow-multiple-definition`, which keeps the first
+  definition lld meets. `tools/link_guard.py` sits in front of lld (clang `--ld-path`, set in
+  `gcc.cmake` and `reactos-link`) and allows only toolchain-runtime twins, the Rust panic
+  runtime, and imports where the local body is the one kept. Before the guard, the first
+  census found C glue beating the Rust translation in cdrom (`DeviceEvtIoInCallerContext`; the
+  Rust had never run), fastfat and disk. It also found C stubs beating Rust CRT bodies, and
+  panic-common's `_Unwind_Resume` stub kept as libc++abi's unwinder in C++ rapps.
+- **Fix:** delete the copy that shouldn't exist. Never reorder the link to make the right one
+  win: order is exactly what this guard exists to stop trusting. For a real fallback (a body
+  that should be used only when nothing else defines the name), use a weak C definition or an
+  lld `-alternatename` directive, as panic-common's `_Unwind_Resume` does. Neither of those is
+  a duplicate at all.
+- **Census:** `VIBEOS_LINK_GUARD=report VIBEOS_LINK_GUARD_LOG=<file> ./vibeos-cli build --arch X`
+  records every duplicate as JSON lines without failing.
+- **Stale archive members:** the census also found the second way order bites. Static
+  libraries were written with `ar crT` and never removed first, so a long-lived build dir
+  kept objects whose source had left the target. amd64/i386 l3codeca linked a stale
+  libmpg123 over the current one. The archive rule now removes the archive first
+  (`toolchain-llvm-mingw.cmake`).
+
 ### A C++ `static_cast` back to a Rust-owned class is already wrong, and it links
 **Symptom.** None. It compiles, links, and runs — until the class's C++ half leaves CMake, at
 which point you get an undefined symbol and discover the bug on the way past.
@@ -10602,6 +10655,25 @@ after `IoPageRead` in `MmMakeSegmentResident` then showed full 16 KB reads succe
 pages, every one on CPU 1, against a `-smp 1` control whose only zero reads were single genuine
 tail sectors. **Diff the SMP probe output against a UP control before reading it** — half the
 first listing was legitimate zeros.
+
+### The machine keeps running after a BUGCHECK: the other CPUs were never frozen
+**Symptom** (MP, both amd64 and arm64): the serial carries thread exits, network
+self-tests and DLL loads *after* the `*** BUGCHECK` line, interleaved with the flight
+recorder dump. The crash record describes a machine that was still changing.
+
+**Cause:** arm64's `KxFreezeExecution` was an empty stub, so a bugcheck stopped nothing.
+amd64's was real but ran where the C puts it, after `KeBugCheckWithTf`'s trap-frame scans
+and flight-recorder dump, which take long enough under TCG for other CPUs to do real work.
+
+**Fix:** arm64 implements the freeze (staged `IpiFrozen` states, SGI delivery, target side
+in `KiIpiServiceRoutine`); with no NMI, the owner's wait is bounded and names any CPU that
+did not stop. amd64 and arm64 freeze at the top of `KeBugCheckWithTf`, right after the
+banner, so a hung freeze still leaves the crash code. Not i386: its freeze rides a maskable
+vector with an unbounded wait. Because amd64's NMI freeze can park a CPU while it holds the
+HIGH_LEVEL print lock, `KdbpAcquireLock` takes that lock by force after a bounded spin once
+a bugcheck is active. **Verify with `--tripwire FREEZE_SELFTEST=1 --smp 4`:** a ticker on
+the last CPU must stop within one line of the banner (measured: one tick, then only the
+dump, on both arches).
 
 ### The ready-list tear: five refuted theories and the one real hole `[§9.56]`
 **FIXED** (all three arches; 0 occurrences across every post-fix boot). The long hunt is the

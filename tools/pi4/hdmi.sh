@@ -10,10 +10,16 @@
 set -u
 
 BENCH=${PI4_BENCH:-/mnt/d/home/vibeos-rpi4-setup}
-DEVICE=${PI4_HDMI_DEVICE:-USB Video}
 OUT=${1:-$BENCH/hdmi-now.png}
 FFMPEG=${PI4_FFMPEG:-$(ls -d /mnt/c/Users/*/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg*/ffmpeg-*/bin/ffmpeg.exe 2>/dev/null | head -1)}
 [ -n "$FFMPEG" ] || { echo "pi4-hdmi: ffmpeg.exe not found (winget install Gyan.FFmpeg, or set PI4_FFMPEG)" >&2; exit 1; }
+# Both benches' cards call themselves "USB Video", so pick ours by its USB vendor
+# id (Pi 4: 534d; tools/pi5/env.sh sets the Pi 5's). A name alone grabs whichever
+# Windows lists first, which can be the other board's screen.
+VID=${PI4_HDMI_VID:-534d}
+DEVICE=${PI4_HDMI_DEVICE:-$("$FFMPEG" -hide_banner -list_devices true -f dshow -i dummy 2>&1 </dev/null |
+    grep -o "@device_pnp_[^\"]*vid_${VID}[^\"]*" | head -1)}
+[ -n "$DEVICE" ] || { echo "pi4-hdmi: no capture card with USB vendor id $VID is plugged in" >&2; exit 1; }
 
 # ffmpeg.exe is a Windows program: hand it a Windows path, write via a temp name
 # so a failed grab never leaves a stale frame looking current.

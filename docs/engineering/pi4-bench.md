@@ -229,7 +229,10 @@ the card".
 ## USB input: the Pico
 
 A Pico 2 W running the picousb firmware (`D:\home\Projects\picousb`) sits in a
-Pi USB port. It presents a boot keyboard, boot mouse, mass storage and an
+Pi USB port. The bench has two: **`picousb5` is wired to the Pi 4** (USB and UART)
+and `picousb` to the Pi 5. Every Pi 4 script reads `PI4_PICO_HOST` (default
+`picousb5`), and `bench.sh up` restarts a serial listener that is reading the
+other Pico. It presents a boot keyboard, boot mouse, mass storage and an
 absolute pointer, is controlled over Wi-Fi, and reports what the Pi's USB host
 did to it. `tools/pi4/pico.sh` wraps its CLI (address, token file, venv; setup
 in the script header):

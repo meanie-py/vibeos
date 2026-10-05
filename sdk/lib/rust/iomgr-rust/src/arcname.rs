@@ -396,7 +396,8 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
                 if !SymbolicLinkList.is_null() {
                     ExFreePool(SymbolicLinkList as PVOID);
                 }
-                return Status;
+                // No CD-ROM device at all: the CD image may be on a disk-class device.
+                return IopAssignCdArcNameFromDisk(LoaderBlock, (*ArcDiskSignature).CheckSum);
             }
         }
 
@@ -470,15 +471,125 @@ pub unsafe extern "system" fn IopCreateArcNamesCd(LoaderBlock: PLOADER_PARAMETER
         DiskNumber = DiskNumber.wrapping_add(1);
     }
 
-    Status = STATUS_SUCCESS;
-    core::mem::forget(Status);
     if !PartitionBuffer.is_null() {
         ExFreePoolWithTag(PartitionBuffer as PVOID, TAG_IO);
     }
     if !SymbolicLinkList.is_null() {
         ExFreePool(SymbolicLinkList as PVOID);
     }
-    Status
+    // No CD-ROM matched the boot CD's checksum: look for it on a disk-class device.
+    IopAssignCdArcNameFromDisk(LoaderBlock, (*ArcDiskSignature).CheckSum)
+}
+
+/// The boot CD's ArcName when the image is not on a CD-ROM device at all.
+///
+/// freeldr boots `cdrom(N)` whenever the medium carries ISO9660, whatever the device
+/// (UefiMediumIsIso9660): an ISO served over usb-storage or virtio-blk is a DISK to the
+/// kernel, so the CD scan above finds no `\Device\CdRom*` and the boot dies at 0x6B with no
+/// `\ArcName\<boot>`. This walks `\Device\Harddisk<n>\Partition0`, checksums 2048 bytes at
+/// 0x8000 exactly as the CD path does, and binds the boot ArcName to the disk that matches.
+/// cdfs mounts ISO9660 on disks through its `\CdfsHdd` object. A divergence from the C,
+/// which only ever looked at CD-ROM devices.
+unsafe fn IopAssignCdArcNameFromDisk(LoaderBlock: PLOADER_PARAMETER_BLOCK, Expected: ULONG) -> NTSTATUS {
+    let DiskCount = (*IoGetConfigurationInformation()).DiskCount;
+    let Buffer = ExAllocatePoolWithTag(NonPagedPoolCacheAligned, 2048, TAG_IO) as *mut ULONG;
+    if Buffer.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    let mut Result: NTSTATUS = STATUS_SUCCESS;
+    for Disk in 0..DiskCount {
+        let mut Name: [i8; 64] = [0; 64];
+        sprintf(Name.as_mut_ptr(), b"\\Device\\Harddisk%lu\\Partition0\0".as_ptr() as *const i8, Disk);
+        let mut NameA: ANSI_STRING = core::mem::zeroed();
+        let mut NameW: _UNICODE_STRING = core::mem::zeroed();
+        RtlInitAnsiString(core::ptr::addr_of_mut!(NameA), Name.as_ptr());
+        if RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(NameW), core::ptr::addr_of_mut!(NameA), 1u8) < 0 {
+            continue;
+        }
+        let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
+        let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
+        let mut Status = IoGetDeviceObjectPointer(
+            core::ptr::addr_of_mut!(NameW),
+            FILE_READ_ATTRIBUTES,
+            core::ptr::addr_of_mut!(FileObject),
+            core::ptr::addr_of_mut!(DeviceObject),
+        );
+        if Status < 0 {
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(NameW));
+            continue;
+        }
+        let mut Event: KEVENT = core::mem::zeroed();
+        let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
+        let mut Offset: LARGE_INTEGER = core::mem::zeroed();
+        Offset.QuadPart = 0x8000;
+        KeInitializeEvent(core::ptr::addr_of_mut!(Event), _EVENT_TYPE_NotificationEvent, 0u8);
+        let Irp = IoBuildSynchronousFsdRequest(
+            IRP_MJ_READ,
+            DeviceObject,
+            Buffer as PVOID,
+            2048,
+            core::ptr::addr_of_mut!(Offset),
+            core::ptr::addr_of_mut!(Event),
+            core::ptr::addr_of_mut!(Iosb),
+        );
+        let mut CheckSum: ULONG = 0;
+        if !Irp.is_null() {
+            Status = IoCallDriver(DeviceObject, Irp);
+            if Status == STATUS_PENDING {
+                KeWaitForSingleObject(
+                    core::ptr::addr_of_mut!(Event) as PVOID,
+                    _KWAIT_REASON_Executive,
+                    0i8,
+                    0u8,
+                    core::ptr::null_mut(),
+                );
+                Status = Iosb.__bindgen_anon_1.Status;
+            }
+            if Status >= 0 {
+                for i in 0..(2048 / core::mem::size_of::<ULONG>()) {
+                    CheckSum = CheckSum.wrapping_add(*Buffer.add(i));
+                }
+            }
+        }
+        let Matched = Status >= 0 && CheckSum.wrapping_add(Expected) == 0;
+        if Matched {
+            // disk.sys marks partition zero VPB_RAW_MOUNT unless the registry says otherwise,
+            // so only RAW may mount there -- right for a super-floppy, whose filesystem mounts
+            // once through partition 1. An MBR-less ISO has no partition 1: its ISO9660 volume
+            // IS partition zero, and with the flag cdfs never got the mount (0x7B, c0000001).
+            // Lift it on this one device, the boot medium just identified, and nowhere else.
+            let Real = (*FileObject).DeviceObject;
+            if !Real.is_null() && !(*Real).Vpb.is_null() {
+                (*(*Real).Vpb).Flags &= !0x0010; // VPB_RAW_MOUNT
+            }
+        }
+        ObDereferenceObject(FileObject as PVOID);
+        crate::dbg_print!(
+            b"[CDARC] disk-class %s read st=%x checksum=%x expected=%x\r\n\0",
+            Name.as_ptr(),
+            Status,
+            CheckSum,
+            Expected,
+        );
+        if Matched {
+            let mut Arc: [i8; 128] = [0; 128];
+            sprintf(Arc.as_mut_ptr(), b"\\ArcName\\%s\0".as_ptr() as *const i8, (*LoaderBlock).ArcBootDeviceName);
+            let mut ArcA: ANSI_STRING = core::mem::zeroed();
+            let mut ArcW: _UNICODE_STRING = core::mem::zeroed();
+            RtlInitAnsiString(core::ptr::addr_of_mut!(ArcA), Arc.as_ptr());
+            Result = RtlAnsiStringToUnicodeString(core::ptr::addr_of_mut!(ArcW), core::ptr::addr_of_mut!(ArcA), 1u8);
+            if Result >= 0 {
+                crate::dbg_print!(b"[CDARC] boot CD found on %s -> %s\r\n\0", Name.as_ptr(), Arc.as_ptr());
+                IoAssignArcName(core::ptr::addr_of_mut!(ArcW), core::ptr::addr_of_mut!(NameW));
+                RtlFreeUnicodeString(core::ptr::addr_of_mut!(ArcW));
+            }
+            RtlFreeUnicodeString(core::ptr::addr_of_mut!(NameW));
+            break;
+        }
+        RtlFreeUnicodeString(core::ptr::addr_of_mut!(NameW));
+    }
+    ExFreePoolWithTag(Buffer as PVOID, TAG_IO);
+    Result
 }
 
 // CODE_SEG("INIT")

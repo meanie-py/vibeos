@@ -1543,9 +1543,17 @@ impl Linker {
         }
 
         // ---- PE link flags (common to every module kind) -------------
+        let ld_path = format!(
+            "--ld-path={}",
+            self.repo_root.join("tools/link_guard/ld.lld").display()
+        );
         for f in [
             "-nostdlib",
             "-fuse-ld=lld",
+            // lld through tools/link_guard.py, which fails the link on any
+            // duplicate symbol that --allow-multiple-definition (below) would
+            // otherwise resolve silently by link order. Same policy as gcc.cmake.
+            ld_path.as_str(),
             "-Wl,--enable-auto-image-base,--disable-auto-import",
             "-Wl,--major-image-version,5",
             "-Wl,--minor-image-version,01",

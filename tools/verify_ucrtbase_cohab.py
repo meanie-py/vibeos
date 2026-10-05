@@ -305,42 +305,43 @@ def _closure(root: str, ws: Path | None = None) -> set[str]:
     return set(seen)
 
 
-#: Each Rust staticlib a CRT DLL links: (its CMakeLists, the `set(...)` naming the
-#: crates whose sources trigger its rebuild, the crate cargo builds).
+#: Each Rust staticlib a CRT DLL links: (its CMakeLists, the variable holding its rebuild
+#: inputs, the crate cargo builds).
 REBUILD_LISTS = (
-    ("dll/win32/ucrtbase/CMakeLists.txt", "UCRT_SHARED_RUST_CRATES", "crt-shared-cargo"),
-    ("dll/win32/msvcrt/CMakeLists.txt", "MSVCRT_CRT_RUST_CRATES", "msvcrt-crt-cargo"),
+    ("dll/win32/ucrtbase/CMakeLists.txt", "UCRT_SHARED_RUST_SOURCES", "crt-shared-cargo"),
+    ("dll/win32/msvcrt/CMakeLists.txt", "MSVCRT_CRT_RUST_SOURCES", "msvcrt-crt-cargo"),
 )
 
 
 def check_rebuild_lists(repo: Path | None = None, ws: Path | None = None) -> list[str]:
-    """Each archive's CMake rebuild list must name its whole crate closure.
+    """Each archive's rebuild inputs must be DERIVED from its crate's closure.
 
     A crate compiled INTO an archive but missing from the custom command's DEPENDS
     never triggers a rebuild: edit it and the build ships the stale archive, green,
-    with no error anywhere. ucrtbase's list named two of its seven crates -- the
-    ucrt-rust takeover families and cnt-rust's math were invisible to it -- and
-    msvcrt's lacked crt-portable-rust the day the string family moved there.
+    with no error anywhere. Both CRT archives used to name their crates in hand-kept
+    lists, and those drifted three times (ucrtbase's to two of seven crates; msvcrt's
+    lacked crt-portable-rust, then varargs-rust). They now call
+    `rust_crate_sources(<var> <workspace> <root>)`, which walks the manifests; this
+    check holds them to it, so a hand list cannot come back.
     """
     repo = REPO if repo is None else repo
+    del ws  # the closure is CMake's to compute now; kept for the callers' signature
     findings = []
     for cmake, var, root in REBUILD_LISTS:
         text = (repo / cmake).read_text(errors="replace")
-        m = re.search(rf"set\(\s*{var}\s+([^)]*)\)", text)
-        if not m:
-            findings.append(f"{cmake}: no `set({var} ...)` -- the rebuild list is missing")
-            continue
-        listed = set(m.group(1).split())
-        want = _closure(root, ws)
-        for crate in sorted(want - listed):
+        call = re.search(rf"rust_crate_sources\(\s*{var}\s+\S+\s+(\S+)\s*\)", text)
+        if not call:
             findings.append(
-                f"{cmake}: {var} omits `{crate}`, which is compiled into {root}'s archive -- "
-                f"an edit to it would ship a STALE archive. fix: add it to {var}"
+                f"{cmake}: {var} is not derived by `rust_crate_sources({var} <ws> {root})` -- "
+                f"a hand-kept list drifts and ships a STALE archive. fix: derive it"
             )
-        for crate in sorted(listed - want):
+        elif call.group(1) != root:
             findings.append(
-                f"{cmake}: {var} names `{crate}`, which {root} no longer depends on. fix: remove it"
+                f"{cmake}: {var} walks `{call.group(1)}`, but cargo builds `{root}`. "
+                f"fix: rust_crate_sources({var} <ws> {root})"
             )
+        if re.search(r"set\(\s*\w+_RUST_CRATES\b", text):
+            findings.append(f"{cmake}: a hand-kept `*_RUST_CRATES` list is back. fix: remove it")
     return findings
 
 
@@ -521,6 +522,30 @@ def _nm_defined(path: Path | list[Path]) -> set[str] | None:
     return None
 
 
+def _graph_objects(build: Path) -> set[Path] | None:
+    """Every object file the CURRENT build graph produces (`build <obj>: ...` in build.ninja).
+
+    An object directory also holds whatever an earlier configure produced: delete a source
+    from CMake and its .obj stays behind, forever. Counted as C authority, such a leftover
+    vouches for a symbol nothing compiles any more -- it greened a lane whose
+    vcruntime/i386/_chkesp.s was gone (its stale .obj still defined __chkesp) while the
+    fresh integration build, which never had the file, went red on master (2026-10-04).
+    None when there is no build.ninja to ask; the caller then keeps the directory glob.
+    """
+    ninja = build / "build.ninja"
+    if not ninja.is_file():
+        return None
+    out: set[Path] = set()
+    with ninja.open(errors="replace") as fh:
+        for line in fh:
+            if not line.startswith("build "):
+                continue
+            target = line[6:].split(":", 1)[0].split(" | ", 1)[0].strip()
+            if target.endswith((".obj", ".o")):
+                out.add(build / target.replace("$ ", " "))
+    return out
+
+
 def check_archive() -> list[str]:
     """Built archive's symbols must be a subset of what OUR libs on the link line define.
 
@@ -567,9 +592,12 @@ def check_archive() -> list[str]:
 
         objs: list[Path] = []
         missing: list[str] = []
+        live = _graph_objects(build)
         for target, obj_dir in OURS_C_AUTHORITY.items():
             d = build / obj_dir
             found = sorted(d.rglob("*.obj")) + sorted(d.rglob("*.o"))
+            if live is not None:
+                found = [o for o in found if o in live]
             if found:
                 objs += found
             else:

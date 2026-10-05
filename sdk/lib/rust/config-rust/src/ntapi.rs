@@ -119,7 +119,6 @@ unsafe fn ProbeForReadUnicodeString(ptr: PUNICODE_STRING) -> _UNICODE_STRING {
 
 // Probe shims (defined as `extern "C"` in shim_exports.rs)
 extern "C" {
-    fn ProbeForWriteHandle(Address: PHANDLE);
     fn ProbeAndCaptureUnicodeString(
         CapturedString: *mut _UNICODE_STRING,
         PreviousMode: KPROCESSOR_MODE,
@@ -129,10 +128,6 @@ extern "C" {
         CapturedString: *mut _UNICODE_STRING,
         PreviousMode: KPROCESSOR_MODE,
     );
-}
-// NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
-extern "system" {
-    fn ProbeForWriteUlong(Address: *mut ULONG);
 }
 
 // Cross-module Rust functions referenced by name (these are #[no_mangle] elsewhere)
@@ -396,7 +391,11 @@ pub unsafe extern "system" fn NtCreateKey(
             }
         }
 
-        ProbeForWriteHandle(KeyHandle);
+        // C: inside _SEH2_TRY, whose handler returns the exception code. No SEH
+        // here, so the Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(KeyHandle, 1, PreviousMode) {
+            return status;
+        }
         *KeyHandle = core::ptr::null_mut();
 
         let _ = core::slice::from_raw_parts(
@@ -405,7 +404,9 @@ pub unsafe extern "system" fn NtCreateKey(
         );
 
         if !Disposition.is_null() {
-            ProbeForWriteUlong(Disposition);
+            if let Err(status) = ntkrnl_sys::probe::probe_write_generic(Disposition, 1, PreviousMode) {
+                return status;
+            }
         }
     } else {
         if !Class.is_null() {
@@ -1468,15 +1469,20 @@ pub unsafe extern "system" fn NtLockProductActivationKeys(
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
     if !pPrivateVer.is_null() {
+        // C: probed inside _SEH2_TRY, handler returns the exception code.
         if PreviousMode != 0i8 {
-            ProbeForWriteUlong(pPrivateVer);
+            if let Err(status) = ntkrnl_sys::probe::probe_write_generic(pPrivateVer, 1, PreviousMode) {
+                return status;
+            }
         }
         *pPrivateVer = PRODUCT_ACTIVATION_VERSION;
     }
 
     if !pSafeMode.is_null() {
         if PreviousMode != 0i8 {
-            ProbeForWriteUlong(pSafeMode);
+            if let Err(status) = ntkrnl_sys::probe::probe_write_generic(pSafeMode, 1, PreviousMode) {
+                return status;
+            }
         }
         *pSafeMode = InitSafeBootMode;
     }
@@ -1553,7 +1559,10 @@ pub unsafe extern "system" fn NtQueryOpenSubKeys(
             return STATUS_ACCESS_VIOLATION;
         }
 
-        ProbeForWriteUlong(HandleCount);
+        // C: inside _SEH2_TRY, handler returns the exception code.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(HandleCount, 1, PreviousMode) {
+            return status;
+        }
     }
 
     Status = ObOpenObjectByName(

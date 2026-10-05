@@ -27,10 +27,8 @@ void _chkesp_failed(void)
 }
 #endif
 
-int __cdecl __acrt_initialize_sse2(void)
-{
-    return 0;
-}
+// __acrt_initialize_sse2 is ucrt-rust's (internal/init.rs, i386 only, nothing else
+// names it). A C copy here was a duplicate symbol kept by link order.
 
 // fma/fmaf, log2/log2f and lrint/lrintf lived here as "simplistic" bodies (an unfused
 // multiply-add, log(x) * M_LOG2E, and __debugbreak()). They are ucrt-rust's c99math.rs

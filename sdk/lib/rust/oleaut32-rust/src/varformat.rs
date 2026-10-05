@@ -349,8 +349,8 @@ pub unsafe extern "system" fn VarTokenizeFormatString(
 
     let mut cbTok = cbTok;
     let header = rgbTok as *mut FMT_HEADER;
-    let str_header = rgbTok.add(core::mem::size_of::<FMT_HEADER>()) as *mut FMT_STRING_HEADER;
-    let num_header = str_header as *mut FMT_NUMBER_HEADER;
+    let mut str_header = rgbTok.add(core::mem::size_of::<FMT_HEADER>()) as *mut FMT_STRING_HEADER;
+    let mut num_header = str_header as *mut FMT_NUMBER_HEADER;
     let mut pOut = rgbTok.add(core::mem::size_of::<FMT_HEADER>() + core::mem::size_of::<FMT_STRING_HEADER>());
     let mut pLastHours: *mut u8 = core::ptr::null_mut();
     let mut fmt_number: u8 = 0;
@@ -410,8 +410,10 @@ pub unsafe extern "system" fn VarTokenizeFormatString(
                 pOut = pOut.add(1);
 
                 (*header).starts[fmt_number as usize] = pOut.offset_from(rgbTok) as u8;
-                let str_header = pOut as *mut FMT_STRING_HEADER;
-                let _num_header = pOut as *mut FMT_NUMBER_HEADER;
+                // Re-point the OUTER headers (C assigns, not declares): every token of
+                // the new section updates its own whole/fractional/flags.
+                str_header = pOut as *mut FMT_STRING_HEADER;
+                num_header = pOut as *mut FMT_NUMBER_HEADER;
                 core::ptr::write_bytes(str_header, 0, 1);
                 pOut = pOut.add(core::mem::size_of::<FMT_STRING_HEADER>());
                 fmt_state = 0;
@@ -1269,7 +1271,11 @@ unsafe extern "C" fn VARIANT_FormatNumber(
                         }
                     }
                 }
-                pToken = pToken.offset(1);
+                // C `break`s out of the case on the sign path, before this `pToken++`: the
+                // count byte must stay unconsumed for the re-visit (shouldAdvance is clear).
+                if shouldAdvance != 0 {
+                    pToken = pToken.offset(1);
+                }
             }
             FMT_NUM_COPY_SKIP => {
                 TRACE!(
@@ -1424,7 +1430,11 @@ unsafe extern "C" fn VARIANT_FormatNumber(
                         }
                     }
                 }
-                pToken = pToken.offset(1);
+                // C `break`s out of the case on the sign path, before this `pToken++`: the
+                // count byte must stay unconsumed for the re-visit (shouldAdvance is clear).
+                if shouldAdvance != 0 {
+                    pToken = pToken.offset(1);
+                }
             }
             _ => {
                 ERR!(b"Unknown token 0x%02x!\n\0".as_ptr() as PCHAR, *pToken);

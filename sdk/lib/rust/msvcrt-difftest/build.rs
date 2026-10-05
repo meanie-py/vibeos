@@ -3836,15 +3836,22 @@ fn main() {
     // Only for a crate that links file.rs; see `subject_stdio`.
     const SHIM_ABI_SAFE: &[&str] = &["_open", "_wopen", "_sopen", "_wsopen"];
     let shim_c = msvcrt_dir.join("rust_file_varargs_shim.c");
-    // The shims are their own object library since 89fe4906dfc (msvcrt_rust_cohab.cmake),
-    // so msvcrt20/40 and crtdll can link the same ones. Reading the OLD `msvcrt.dir` path
-    // kept passing only in build dirs configured before the move, which still held a stale
-    // copy of this object -- the harness graded a days-old shim there and failed on every
-    // freshly configured tree.
-    let shim_obj = repo.join(
-        "build-amd64/dll/win32/msvcrt/CMakeFiles/msvcrt_rust_shims.dir/rust_file_varargs_shim.c.obj",
-    );
-    let shim_symbols: Vec<String> = object_symbols(&repo, &shim_obj, &["T"]);
+    // The shipping DLLs no longer compile this file: since f1658ab724d the `...` entry
+    // points are msvcrt-crt-rust's va_entries.rs, varargs-rust va_entry! thunks that exist
+    // only for Windows targets (they spill Windows argument registers). On this SysV host
+    // the C remains the stand-in for the open family, whose bodies va_entries.rs transcribes.
+    // Its symbol list therefore comes from the SOURCE: the Windows object this used to read
+    // is no longer built, and a stale copy of it in an old build dir is what let a lane's
+    // gate pass while master's fresh tree failed (2026-10-04).
+    let shim_symbols: Vec<String> = fs::read_to_string(&shim_c)
+        .unwrap_or_else(|e| panic!("{}: {e}", shim_c.display()))
+        .lines()
+        .filter_map(|ln| {
+            let (_, rest) = ln.split_once(" WINAPIV ")?;
+            let name = rest.split('(').next()?.trim();
+            (!ln.starts_with(char::is_whitespace) && !name.is_empty()).then(|| name.to_string())
+        })
+        .collect();
     for keep in SHIM_ABI_SAFE {
         assert!(
             shim_symbols.iter().any(|s| s == keep),

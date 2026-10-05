@@ -36,6 +36,7 @@ class BenchConfig(Amd64Config):
     loadvm latency is RAM-bound, not settle-bound — 30s is enough to be past
     explorer init and representative of a real working set.
     """
+
     desktop_settle_seconds: float = 30.0
     machine_args: list[str] = field(
         default_factory=lambda: ["-M", "pc", "-accel", "kvm", "-cpu", "host"]
@@ -44,10 +45,14 @@ class BenchConfig(Amd64Config):
     def qemu_args(self, work_dir: Path) -> list[str]:
         return [
             *self.machine_args,
-            "-m", self.memory,
-            "-vga", "cirrus",
-            "-cdrom", str(STABLE_ISO),
-            "-display", "none",
+            "-m",
+            self.memory,
+            "-vga",
+            "cirrus",
+            "-cdrom",
+            str(STABLE_ISO),
+            "-display",
+            "none",
             "-no-reboot",
         ]
 
@@ -56,7 +61,9 @@ def _stat_mb(p: Path) -> float:
     return p.stat().st_size / (1024 * 1024) if p.exists() else 0.0
 
 
-def _qmp_job(vm: QemuVM, command: str, *, timeout: float = 120.0, **args) -> tuple[float, str | None]:
+def _qmp_job(
+    vm: QemuVM, command: str, *, timeout: float = 120.0, **args
+) -> tuple[float, str | None]:
     """Run an async QMP snapshot job, poll query-jobs to conclusion.
 
     Returns (elapsed_seconds, error_or_None).
@@ -116,7 +123,7 @@ def main() -> None:
             vm.restore_snapshot("ready")
             dt = time.monotonic() - t
             loadvm_times.append(dt)
-            print(f"  loadvm[{i:2d}] {dt*1000:7.1f} ms")
+            print(f"  loadvm[{i:2d}] {dt * 1000:7.1f} ms")
         results["exp1_hmp"] = {
             "savevm_seconds": round(save_secs, 3),
             "loadvm_ms_min": round(min(loadvm_times) * 1000, 1),
@@ -125,8 +132,10 @@ def main() -> None:
             "loadvm_ms_max": round(max(loadvm_times) * 1000, 1),
             "speedup_vs_boot": round(boot_secs / statistics.median(loadvm_times), 1),
         }
-        print(f"  -> median loadvm {results['exp1_hmp']['loadvm_ms_median']} ms; "
-              f"{results['exp1_hmp']['speedup_vs_boot']}x faster than reboot")
+        print(
+            f"  -> median loadvm {results['exp1_hmp']['loadvm_ms_median']} ms; "
+            f"{results['exp1_hmp']['speedup_vs_boot']}x faster than reboot"
+        )
 
         # ---- Exp 2: snapshot blob size vs guest RAM ----
         print("\n=== Exp 2: snapshot blob size vs guest RAM ===")
@@ -136,8 +145,8 @@ def main() -> None:
             "guest_ram_mb": 512,
             "nominal_virtual_disk_mb": 64,
             "note": "qcow2 internal snapshot stores RAM+device blob as overflow "
-                    "clusters; host file grows past the 64M nominal size — the "
-                    "real loadvm read floor.",
+            "clusters; host file grows past the 64M nominal size — the "
+            "real loadvm read floor.",
         }
         print(f"  scratch.qcow2 = {scratch_mb:.1f} MB (RAM=512MB, nominal vdisk=64MB)")
 
@@ -145,38 +154,48 @@ def main() -> None:
         print("\n=== Exp 3: async QMP snapshot jobs vs blocking HMP ===")
         exp3: dict = {}
         save_dt, save_err = _qmp_job(
-            vm, "snapshot-save", **{
-                "job-id": "asave", "tag": "asnap",
-                "vmstate": "scratch", "devices": ["scratch"]})
+            vm,
+            "snapshot-save",
+            **{"job-id": "asave", "tag": "asnap", "vmstate": "scratch", "devices": ["scratch"]},
+        )
         exp3["snapshot_save_seconds"] = round(save_dt, 3)
         exp3["snapshot_save_error"] = save_err
         if save_err:
             print(f"  snapshot-save FAILED: {save_err}")
         else:
-            print(f"  async snapshot-save: {save_dt*1000:.1f} ms")
+            print(f"  async snapshot-save: {save_dt * 1000:.1f} ms")
             load_dt, load_err = _qmp_job(
-                vm, "snapshot-load", **{
-                    "job-id": "aload", "tag": "asnap",
-                    "vmstate": "scratch", "devices": ["scratch"]})
+                vm,
+                "snapshot-load",
+                **{"job-id": "aload", "tag": "asnap", "vmstate": "scratch", "devices": ["scratch"]},
+            )
             exp3["snapshot_load_seconds"] = round(load_dt, 3)
             exp3["snapshot_load_error"] = load_err
-            print(f"  async snapshot-load: {load_dt*1000:.1f} ms"
-                  + (f" (ERROR {load_err})" if load_err else ""))
-            _qmp_job(vm, "snapshot-delete", timeout=30, **{
-                "job-id": "adel", "tag": "asnap", "devices": ["scratch"]})
-        exp3["note"] = ("async jobs are non-blocking — host-side test prep can "
-                        "overlap the restore; HMP loadvm blocks the QMP socket.")
+            print(
+                f"  async snapshot-load: {load_dt * 1000:.1f} ms"
+                + (f" (ERROR {load_err})" if load_err else "")
+            )
+            _qmp_job(
+                vm,
+                "snapshot-delete",
+                timeout=30,
+                **{"job-id": "adel", "tag": "asnap", "devices": ["scratch"]},
+            )
+        exp3["note"] = (
+            "async jobs are non-blocking — host-side test prep can "
+            "overlap the restore; HMP loadvm blocks the QMP socket."
+        )
         results["exp3_async"] = exp3
 
         # ---- Exp 4: snapshot tree (multi-named fixture states) ----
         print("\n=== Exp 4: snapshot tree (>1 named fixture state) ===")
-        vm.save_snapshot("ready")           # state A
-        time.sleep(15)                       # advance guest
-        vm.save_snapshot("ready2")           # state B (deeper)
+        vm.save_snapshot("ready")  # state A
+        time.sleep(15)  # advance guest
+        vm.save_snapshot("ready2")  # state B (deeper)
         snaps = vm.qmp.hmp("info snapshots")
         tree_ok = "ready" in snaps and "ready2" in snaps
         alt_times = []
-        for i in range(3):
+        for _ in range(3):
             for tag in ("ready", "ready2"):
                 t = time.monotonic()
                 try:
@@ -189,10 +208,12 @@ def main() -> None:
             "both_snapshots_present": tree_ok,
             "alternating_restores": alt_times,
             "note": "two named snapshots coexist on one scratch qcow2; tests can "
-                    "branch from boot OR a deeper post-setup state.",
+            "branch from boot OR a deeper post-setup state.",
         }
-        print(f"  both snapshots present: {tree_ok}; "
-              f"alternating restores all-clean: {all(e is None for _,_,e in alt_times)}")
+        print(
+            f"  both snapshots present: {tree_ok}; "
+            f"alternating restores all-clean: {all(e is None for _, _, e in alt_times)}"
+        )
 
         # ---- Exp 5: restore torture loop (OS robustness under repeat loadvm) ----
         print("\n=== Exp 5: 50x restore torture loop ===")
@@ -217,18 +238,20 @@ def main() -> None:
             "error": torture_err,
             "qmp_status_after": status.get("status"),
             "screendump_ok_after": shot_ok,
-            "verdict": "PASS" if (torture_err is None
-                                  and status.get("status") == "running"
-                                  and shot_ok) else "FAIL",
+            "verdict": "PASS"
+            if (torture_err is None and status.get("status") == "running" and shot_ok)
+            else "FAIL",
         }
-        print(f"  verdict: {results['exp5_torture']['verdict']} "
-              f"(status={status.get('status')}, screendump_ok={shot_ok}, "
-              f"err={torture_err})")
+        print(
+            f"  verdict: {results['exp5_torture']['verdict']} "
+            f"(status={status.get('status')}, screendump_ok={shot_ok}, "
+            f"err={torture_err})"
+        )
 
         # ---- Exp 6: post-restore serial desync characterization ----
         print("\n=== Exp 6: post-restore serial desync (informs handshake) ===")
         byte_counts = []
-        for i in range(10):
+        for _ in range(10):
             vm.restore_snapshot("ready")
             t = time.monotonic()
             junk = vm.serial.read_available(timeout=2.0)
@@ -240,12 +263,14 @@ def main() -> None:
             "mean": round(statistics.mean(byte_counts), 1),
             "stdev": round(statistics.pstdev(byte_counts), 1),
             "note": "current restore hack is read_available(0.2s); high/variable "
-                    "byte counts here => a guest->host nonce handshake is needed "
-                    "for reliable per-test resync at scale.",
+            "byte counts here => a guest->host nonce handshake is needed "
+            "for reliable per-test resync at scale.",
         }
-        print(f"  bytes/restore: min={min(byte_counts)} max={max(byte_counts)} "
-              f"mean={results['exp6_serial']['mean']} "
-              f"stdev={results['exp6_serial']['stdev']}")
+        print(
+            f"  bytes/restore: min={min(byte_counts)} max={max(byte_counts)} "
+            f"mean={results['exp6_serial']['mean']} "
+            f"stdev={results['exp6_serial']['stdev']}"
+        )
 
     finally:
         vm.stop()

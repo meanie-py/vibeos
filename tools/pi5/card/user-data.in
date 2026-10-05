@@ -1,0 +1,18 @@
+#cloud-config
+# The Pi 5 bench's Linux stager. tools/pi5/make-card.sh fills in the key.
+hostname: vibeos-pi5
+manage_etc_hosts: true
+ssh_pwauth: false
+users:
+  - name: bench
+    groups: [sudo]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - "@SSH_PUBKEY@"
+runcmd:
+  - [systemctl, enable, --now, ssh]
+  # A newer EEPROM is what breaks the archived UEFI's display (worproject's
+  # end-of-support note). Keep the board on the bootloader it shipped with.
+  - [systemctl, mask, --now, rpi-eeprom-update.service]

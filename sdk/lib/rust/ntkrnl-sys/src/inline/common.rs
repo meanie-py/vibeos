@@ -26,6 +26,8 @@ extern "system" {
     fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 
+use crate::probe::probe_user_range;
+
 // ============================================================================
 // ICIF flags for DefaultQueryInfoBufferCheck / DefaultSetInfoBufferCheck
 // ============================================================================
@@ -93,24 +95,28 @@ pub unsafe fn PspClearCrossThreadFlag(thread: ddk::PETHREAD, flag: ULONG) {
 pub unsafe fn ProbeForReadLargeInteger(
     addr: *const ddk::_LARGE_INTEGER,
 ) -> ddk::_LARGE_INTEGER {
+    probe_user_range(addr);
     core::ptr::read_volatile(addr)
 }
 
 /// ProbeForReadUchar — volatile read of a UCHAR from user-mode.
 #[inline]
 pub unsafe fn ProbeForReadUchar(addr: *const u8) -> u8 {
+    probe_user_range(addr);
     core::ptr::read_volatile(addr)
 }
 
 /// ProbeForReadUshort — volatile read of a USHORT from user-mode.
 #[inline]
 pub unsafe fn ProbeForReadUshort(addr: *const u16) -> u16 {
+    probe_user_range(addr);
     core::ptr::read_volatile(addr)
 }
 
 /// ProbeForWriteHandle — volatile read/write to validate user-mode handle ptr.
 #[inline]
 pub unsafe fn ProbeForWriteHandle(ptr: *mut ddk::HANDLE) {
+    probe_user_range(ptr);
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }
@@ -118,6 +124,7 @@ pub unsafe fn ProbeForWriteHandle(ptr: *mut ddk::HANDLE) {
 /// ProbeForWriteUlong — volatile read/write to validate user-mode ULONG ptr.
 #[inline]
 pub unsafe fn ProbeForWriteUlong(ptr: *mut ULONG) {
+    probe_user_range(ptr);
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }
@@ -450,6 +457,7 @@ pub unsafe fn RtlLongLongAdd(
 /// ProbeForWritePointer — volatile read/write to validate user-mode pointer-sized ptr.
 #[inline]
 pub unsafe fn ProbeForWritePointer(ptr: *mut PVOID) {
+    probe_user_range(ptr);
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }
@@ -550,6 +558,7 @@ pub unsafe fn ExceptionRecord32To64(
 /// ProbeForWriteBoolean — volatile read/write to validate user-mode BOOLEAN ptr.
 #[inline]
 pub unsafe fn ProbeForWriteBoolean(ptr: *mut BOOLEAN) {
+    probe_user_range(ptr);
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }
@@ -561,6 +570,7 @@ pub unsafe fn ProbeForWriteBoolean(ptr: *mut BOOLEAN) {
 /// ProbeForWriteLangId — volatile read/write to validate user-mode LANGID ptr.
 #[inline]
 pub unsafe fn ProbeForWriteLangId(ptr: *mut u16) {
+    probe_user_range(ptr);
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }

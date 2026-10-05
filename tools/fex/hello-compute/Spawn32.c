@@ -220,10 +220,6 @@ static DWORD RunChild(void)
      * parent must not inject: a target whose loader has not finished is the
      * INITIAL-thread case, a different path entirely, and racing the two would
      * make this guest test whichever one won. */
-    /* Done first, before Ready: the parent sets it and the child must already hold a
-     * reference, or a parent that sets and closes it first leaves the child creating a
-     * fresh, unsignalled event and timing out (rung4 "child did not exit", 2026-10-04). */
-    Done = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_DONE);
     Ready = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_READY);
     Go = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_GO);
     if (!Ready || !Go) {
@@ -243,6 +239,7 @@ static DWORD RunChild(void)
      * exit code -- see S32_EVENT_DONE. A timeout here is not a failure of the
      * thing under test, so it still exits CHILD_MAGIC and lets the parent's
      * own rungs decide. */
+    Done = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_DONE);
     if (Done) {
         WaitForSingleObject(Done, CHILD_WAIT_MS);
         CloseHandle(Done);
@@ -317,12 +314,22 @@ static DWORD RunParent(void)
         return S32_FAIL_READY;
     }
 
+    /* DONE must exist BEFORE the child can look for it, and must outlive the
+     * child's wait. A named event dies with its last handle: creating it after
+     * rung 7, setting it and closing it at once let a child that reached its own
+     * CreateEventW a moment later get a FRESH, unsignalled event -- it then sat
+     * out its whole 30s wait while ours on its exit ran out too, and the ladder
+     * reported 0xBAE4 for a race in this file (four gates on 2026-10-04). */
+    hDone = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_DONE);
+
     hRemote = CreateRemoteThread(pi.hProcess, NULL, 0, RemoteBody, NULL, 0, &remoteTid);
     if (!hRemote) {
         SayHex("[spawn32] rung6 CreateRemoteThread FAILED, GetLastError", GetLastError());
         TerminateProcess(pi.hProcess, 1);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
+        if (hDone)
+            CloseHandle(hDone);
         return S32_FAIL_REMOTE;
     }
     SayHex("[spawn32] rung6 CreateRemoteThread OK, tid", remoteTid);
@@ -339,26 +346,25 @@ static DWORD RunParent(void)
         CloseHandle(hRemote);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
+        if (hDone)
+            CloseHandle(hDone);
         return S32_FAIL_REMOTE_RUN;
     }
     Say("[spawn32] rung7 remote thread ran to completion OK\n");
     CloseHandle(hRemote);
 
     /* Release the child now that rung 7 has its answer. */
-    /* Keep the handle until the child is gone: closing it here destroyed the named event
-     * whenever the child had not opened it yet. */
-    hDone = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_DONE);
     if (hDone)
         SetEvent(hDone);
 
     waited = WaitForSingleObject(pi.hProcess, CHILD_WAIT_MS);
-    if (hDone)
-        CloseHandle(hDone);
     if (waited != WAIT_OBJECT_0) {
         SayHex("[spawn32] rung4 child did not exit, wait", waited);
         TerminateProcess(pi.hProcess, 1);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
+        if (hDone)
+            CloseHandle(hDone);
         return S32_FAIL_WAIT;
     }
     Say("[spawn32] rung4 child exited OK\n");
@@ -367,12 +373,16 @@ static DWORD RunParent(void)
         SayHex("[spawn32] rung5 wrong child exit code", code);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
+        if (hDone)
+            CloseHandle(hDone);
         return S32_FAIL_EXITCODE;
     }
     Say("[spawn32] rung5 child exit code intact OK\n");
 
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
+    if (hDone)
+        CloseHandle(hDone);
     return S32_PASS;
 }
 

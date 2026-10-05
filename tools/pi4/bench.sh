@@ -26,6 +26,8 @@ BENCH=${PI4_BENCH:-/mnt/d/home/vibeos-rpi4-setup}
 PORT=${PI4_COM:-COM5}
 SERIAL=${PI4_SERIAL:-pico}
 PICO_PY=${PICO_PY:-$HOME/.venvs/picousb/bin/python}
+# The Pico wired to THIS Pi (pico.sh reads the same variable). picousb is on the Pi 5.
+PICO_HOST=${PI4_PICO_HOST:-picousb5}
 PICO_PID="$BENCH/pico-serial.pid"
 PS=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
 HTTP_PORT=${PI4_HTTP_PORT:-8069}
@@ -88,9 +90,13 @@ up() {
         if [ -n "$live" ] && ! grep -q "\"pid\": $live," "$BENCH/serial-current.json" 2>/dev/null; then
             kill "$live" && echo "restarting pico_serial.py ($live): serial-current.json names another listener"
             sleep 2
+        elif [ -n "$live" ] && ! tr '\0' '\n' <"/proc/$live/cmdline" | grep -qx "$PICO_HOST"; then
+            # A listener on the other bench's Pico records THAT board's console here.
+            kill "$live" && echo "restarting pico_serial.py ($live): it is not reading $PICO_HOST"
+            sleep 2
         fi
         if [ -z "$(pico_serial_pid)" ]; then
-            setsid nohup "$PICO_PY" -u "$HERE/pico_serial.py" "$BENCH" \
+            setsid nohup "$PICO_PY" -u "$HERE/pico_serial.py" "$BENCH" "$PICO_HOST" \
                 >"$BENCH/pico-serial.log" 2>&1 </dev/null &
             echo $! > "$PICO_PID"
             sleep 3

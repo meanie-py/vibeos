@@ -628,16 +628,24 @@ def test_a_registry_crate_is_not_a_rebuild_input(tmp_path: Path) -> None:
     assert vuc._deps_of(tmp_path / "ucrt-rust") == {"varargs-rust"}
 
 
-def test_a_crate_missing_from_a_rebuild_list_is_named(tmp_path: Path) -> None:
-    """Control: a list that drops a closure crate must be reported -- a gate nobody
-    has watched fail is a gate nobody knows works."""
-    for cmake, _var, _root in vuc.REBUILD_LISTS:
-        src = (vuc.REPO / cmake).read_text()
+def test_a_hand_kept_or_misrooted_rebuild_list_is_named(tmp_path: Path) -> None:
+    """Control: replacing the derivation with a hand list, or walking the wrong root,
+    must be reported -- a gate nobody has watched fail is a gate nobody knows works."""
+    (cmake_a, var_a, _), (cmake_b, _, root_b) = vuc.REBUILD_LISTS
+    for cmake, edit in (
+        (
+            cmake_a,
+            lambda t: t.replace(f"rust_crate_sources({var_a}", "set(UCRT_SHARED_RUST_CRATES", 1),
+        ),
+        (cmake_b, lambda t: t.replace(f" {root_b})", " msvcrt-crt-rust)", 1)),
+    ):
         dst = tmp_path / cmake
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(src.replace(" crt-portable-rust", "", 1))
+        dst.write_text(edit((vuc.REPO / cmake).read_text()))
     found = vuc.check_rebuild_lists(repo=tmp_path)
-    assert any("omits `crt-portable-rust`" in f for f in found), found
+    assert any(cmake_a in f and "not derived" in f for f in found), found
+    assert any(cmake_a in f and "hand-kept" in f for f in found), found
+    assert any(cmake_b in f and "walks `msvcrt-crt-rust`" in f for f in found), found
 
 
 def test_a_stale_build_is_not_a_ratchet_regression(tmp_path: Path, monkeypatch) -> None:
@@ -787,3 +795,23 @@ def test_an_allowlisted_forward_passes_only_from_its_named_dll(tmp_path: Path, m
 def test_a_missing_build_is_a_note_not_a_pass_or_failure(tmp_path: Path):
     fails, notes = vuc.check_export_imports(tmp_path)
     assert fails == [] and len(notes) == 3
+
+
+def test_a_stale_object_is_not_c_authority(tmp_path: Path) -> None:
+    """An object CMake no longer builds (its source was deleted from the target) must not
+    vouch for a symbol: only objects the current build.ninja produces count."""
+    build = tmp_path / "build-i386"
+    d = build / "sdk/lib/vcruntime/CMakeFiles/vcruntime.dir"
+    (d / "i386").mkdir(parents=True)
+    live, stale = d / "purecall.cpp.obj", d / "i386/_chkesp.s.obj"
+    live.write_bytes(b"")
+    stale.write_bytes(b"")
+    (build / "build.ninja").write_text(
+        "build sdk/lib/vcruntime/CMakeFiles/vcruntime.dir/purecall.cpp.obj: CXX_COMPILER x.cpp\n"
+        "build sdk/lib/vcruntime/libvcruntime.a: C_STATIC_LIBRARY_LINKER x\n"
+    )
+    objs = vuc._graph_objects(build)
+    assert objs is not None
+    assert live in objs
+    assert stale not in objs
+    assert vuc._graph_objects(tmp_path / "nowhere") is None

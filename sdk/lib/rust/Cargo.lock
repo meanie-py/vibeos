@@ -519,6 +519,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "delayimp-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "desk-rust"
 version = "0.1.0"
 dependencies = [
@@ -1396,6 +1403,7 @@ dependencies = [
  "crt-portable-rust",
  "crt-shared-rust",
  "msvcrt-sys",
+ "varargs-rust",
  "win32macros-rust",
 ]
 

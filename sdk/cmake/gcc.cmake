@@ -442,24 +442,31 @@ set(CMAKE_C_CREATE_SHARED_MODULE ${CMAKE_C_CREATE_SHARED_LIBRARY})
 set(CMAKE_CXX_CREATE_SHARED_MODULE ${CMAKE_CXX_CREATE_SHARED_LIBRARY})
 set(CMAKE_RC_CREATE_SHARED_MODULE ${CMAKE_RC_CREATE_SHARED_LIBRARY})
 
-# --allow-multiple-definition (EXE too): libcntpr_rust.a now reaches EXE
-# links — freeldr rosload.exe / uefildr.efi link BOTH the i386 asm CRT
-# (liblibcntpr.a) and the Rust CRT (libcntpr_rust.a), so a fresh relink
-# double-defines memset/memcpy/strlen/…. SHARED/MODULE already carry the
-# flag for the same Rust-archive reason; EXEs need it now too (lld
-# first-match wins — both CRT impls are correct).
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--gc-sections,--allow-multiple-definition")
-# --allow-multiple-definition: Rust crates each define __rustc::rust_begin_unwind;
-# when multiple .a libraries link into one PE (e.g. ntdll), LLD sees duplicates.
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--allow-multiple-definition")
-set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--allow-multiple-definition")
+# Duplicate symbols: --allow-multiple-definition turns lld's duplicate ERROR into
+# a warning, and tools/link_guard.py (reached through --ld-path) reads those
+# warnings and fails the link on any duplicate that is not irreducible toolchain
+# runtime or an import. The flag is load-bearing only for the runtime cases (each
+# Rust staticlib carries its own panic runtime; compiler_builtins overlaps
+# libclang_rt.builtins). Before the guard it silently let C glue beat translated
+# Rust by link order: cdrom, fastfat, disk, crtdll, ucrtbase.
+set(_vibeos_dup_policy "-Wl,--allow-multiple-definition --ld-path=${REACTOS_SOURCE_DIR}/tools/link_guard/ld.lld")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--gc-sections ${_vibeos_dup_policy}")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup ${_vibeos_dup_policy}")
+set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup ${_vibeos_dup_policy}")
 
 set(CMAKE_C_COMPILE_OBJECT "<CMAKE_C_COMPILER> <DEFINES> ${_compress_debug_sections_flag} <INCLUDES> <FLAGS> -o <OBJECT> -c <SOURCE>")
 # FIXME: Once the GCC toolchain bugs are fixed, add _compress_debug_sections_flag to CXX too
 set(CMAKE_CXX_COMPILE_OBJECT "<CMAKE_CXX_COMPILER> <DEFINES> <INCLUDES> <FLAGS> -o <OBJECT> -c <SOURCE>")
 set(CMAKE_ASM_COMPILE_OBJECT "<CMAKE_ASM_COMPILER> ${_compress_debug_sections_flag} -x assembler-with-cpp -o <OBJECT> -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm <INCLUDES> <FLAGS> <DEFINES> -D__ASM__ -c <SOURCE>")
 
-set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
+# --codepage=65001: llvm-rc IGNORES `#pragma code_page`, so without a default every
+# UTF-8 resource script was decoded as cp1252 -- "fran\xc3\xa7ais" for "français" in
+# every translated string table, and kernel32's French LOCALE_STHOUSAND came out as
+# U+00C2 U+00A0, which VarParseNumFromStr then took as the separator. The tree's
+# resource scripts are all UTF-8 (the six that declare 1251/1252/932 are pure ASCII),
+# so UTF-8 is the one right default, and llvm-rc rejects invalid UTF-8 loudly.
+set(RC_CODEPAGE_FLAG "--codepage=65001")
+set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff ${RC_CODEPAGE_FLAG} <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
 
 # use_gnu_rc() — compile THIS DIRECTORY's .rc files with GNU windres instead of
 # llvm-mingw's (which is llvm-rc in a trench coat). Only for the handful of
@@ -488,7 +495,7 @@ function(use_gnu_rc)
         return()
     endif()
     set(CMAKE_RC_COMPILE_OBJECT
-        "${GNU_RC_COMPILER} -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>"
+        "${GNU_RC_COMPILER} -O coff ${RC_CODEPAGE_FLAG} <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>"
         PARENT_SCOPE)
 endfunction()
 
@@ -842,6 +849,17 @@ function(add_cargo_module _target _crate _output)
         ${_ws}/reactos-link/src/*.rs)
     if(_acm_BODY_CRATE)
         list(APPEND _acm_BODY_CRATES ${_acm_BODY_CRATE})
+    endif()
+    # reactos-link's msvcrtex_crt() builds the Rust CRT floor (crt-startup-rust,
+    # crt-dllmain-rust, crt0-rust) as nested libs. Cargo's depfile does not carry
+    # them, so editing crtdll.rs left lsass/winlogon linked against the old CRT
+    # (`build` reported them stale, ninja had no edge to rerun). Watch them for
+    # every module whose build.rs asks for that CRT; the build.rs is the truth.
+    file(READ "${_ws}/${_crate}/build.rs" _acm_buildrs)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ws}/${_crate}/build.rs")
+    string(FIND "${_acm_buildrs}" "msvcrtex_crt" _acm_uses_crt)
+    if(NOT _acm_uses_crt EQUAL -1)
+        list(APPEND _acm_BODY_CRATES crt-startup-rust crt-dllmain-rust crt0-rust)
     endif()
     # Follow Cargo path dependencies TRANSITIVELY, not just the crates named in
     # BODY_CRATES. A declaration names the crate that holds the module's bodies,

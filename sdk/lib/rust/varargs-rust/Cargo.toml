@@ -11,3 +11,8 @@ autobenches = false
 crate-type = ["rlib"]
 
 [dependencies]
+
+[features]
+# The six vibeos_va_arg_* pullers in Rust (Windows targets), for a module whose `...`
+# entries are va_entry! thunks and so has no rust_varargs_shim.c to supply them.
+rust-pullers = []
