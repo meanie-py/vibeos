@@ -736,7 +736,14 @@ pub unsafe extern "system" fn NtQuerySecurityObject(
 
     ObDereferenceObject(Object);
 
-    *ResultLength = CallLength;
+    // C: _SEH2_TRY { *ResultLength = Length; } _SEH2_EXCEPT { Status = code; }
+    if let Err(s) = safe_copy_raw(
+        ResultLength as PVOID,
+        &CallLength as *const ULONG as *const core::ffi::c_void,
+        core::mem::size_of::<ULONG>(),
+    ) {
+        Status = s;
+    }
 
     Status
 }

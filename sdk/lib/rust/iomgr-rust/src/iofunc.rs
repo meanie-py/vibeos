@@ -2130,11 +2130,16 @@ pub unsafe extern "system" fn NtQueryDirectoryFile(
             if AuxBuffer.is_null() {
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
-            core::ptr::copy_nonoverlapping(
-                CapturedFileName.Buffer as *const u8,
-                (AuxBuffer as usize + core::mem::size_of::<_UNICODE_STRING>()) as *mut u8,
+            // C: the capture copy sits in the same _SEH2_TRY as the probes; its
+            // handler frees AuxBuffer and returns the code.
+            if let Err(e) = safe_copy_raw(
+                (AuxBuffer as usize + core::mem::size_of::<_UNICODE_STRING>()) as PVOID,
+                CapturedFileName.Buffer as *const core::ffi::c_void,
                 CapturedFileName.Length as usize,
-            );
+            ) {
+                ExFreePoolWithTag(AuxBuffer, TAG_IOBUF);
+                return e;
+            }
             SearchPattern = AuxBuffer as PUNICODE_STRING;
             (*SearchPattern).Buffer =
                 (AuxBuffer as usize + core::mem::size_of::<_UNICODE_STRING>()) as *mut u16;
@@ -3117,11 +3122,21 @@ pub unsafe extern "system" fn NtSetInformationFile(
         }
 
         if FileInformationClass == FilePositionInformation {
-            (*FileObject).CurrentByteOffset =
-                (*(FileInformation as PFILE_POSITION_INFORMATION)).CurrentByteOffset;
-            (*IoStatusBlock).Information = 0;
-            (*IoStatusBlock).__bindgen_anon_1.Status = STATUS_SUCCESS;
-            Status = STATUS_SUCCESS;
+            // C: the read of FileInformation and the IoStatusBlock stores are one
+            // _SEH2_TRY whose handler sets Status to the code.
+            Status = match probe_read_generic(FileInformation as *const FILE_POSITION_INFORMATION, 1, 0) {
+                Ok(position) => {
+                    (*FileObject).CurrentByteOffset = position.CurrentByteOffset;
+                    match write_back(IoStatusBlock, _IO_STATUS_BLOCK {
+                        __bindgen_anon_1: _IO_STATUS_BLOCK__bindgen_ty_1 { Status: STATUS_SUCCESS },
+                        Information: 0,
+                    }) {
+                        Ok(()) => STATUS_SUCCESS,
+                        Err(e) => e,
+                    }
+                }
+                Err(e) => e,
+            };
             IopUpdateTransferCount(IopOtherTransfer, Length);
             IopUnlockFileObject(FileObject);
             ObDereferenceObject(FileObject as PVOID);
@@ -3285,7 +3300,10 @@ pub unsafe extern "system" fn NtSetInformationFile(
             }
 
             Status = KernelIosb.__bindgen_anon_1.Status;
-            *IoStatusBlock = KernelIosb;
+            // C: _SEH2_TRY { *IoStatusBlock = KernelIosb; } _SEH2_EXCEPT { Status = code; }
+            if let Err(e) = write_back(IoStatusBlock, KernelIosb) {
+                Status = e;
+            }
             ExFreePoolWithTag(Event as PVOID, TAG_IO);
         } else {
             Status = KeWaitForSingleObject(
@@ -3436,9 +3454,13 @@ pub unsafe extern "system" fn NtUnlockFile(
             DeviceObject,
         ) != 0
         {
-            *IoStatusBlock = KernelIosb;
+            // C: _SEH2_TRY { *IoStatusBlock = KernelIosb; } _SEH2_EXCEPT { Status = code; }
+            let Status = match write_back(IoStatusBlock, KernelIosb) {
+                Ok(()) => KernelIosb.__bindgen_anon_1.Status,
+                Err(e) => e,
+            };
             ObDereferenceObject(FileObject as PVOID);
-            return KernelIosb.__bindgen_anon_1.Status;
+            return Status;
         }
     }
 
@@ -3715,12 +3737,16 @@ pub unsafe extern "system" fn NtWriteFile(
             if Success != 0 && KernelIosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
                 IopUpdateOperationCount(IopWriteTransfer);
                 IopUpdateTransferCount(IopWriteTransfer, KernelIosb.Information as ULONG);
-                if Iosb32 {
+                // C: _SEH2_TRY { store the IOSB } _SEH2_EXCEPT { KernelIosb.Status = code; }
+                let written = if Iosb32 {
                     let P = IoStatusBlock as *mut IoStatusBlock32;
-                    (*P).Status = KernelIosb.__bindgen_anon_1.Status;
-                    (*P).Information = KernelIosb.Information as u32;
+                    write_back(core::ptr::addr_of_mut!((*P).Status), KernelIosb.__bindgen_anon_1.Status)
+                        .and_then(|()| write_back(core::ptr::addr_of_mut!((*P).Information), KernelIosb.Information as u32))
                 } else {
-                    *IoStatusBlock = KernelIosb;
+                    write_back(IoStatusBlock, KernelIosb)
+                };
+                if let Err(e) = written {
+                    KernelIosb.__bindgen_anon_1.Status = e;
                 }
 
                 if !EventObject.is_null() {
@@ -3941,46 +3967,68 @@ pub unsafe extern "system" fn NtQueryVolumeInformationFile(
         && ((*FileObject).Flags & FO_DIRECT_DEVICE_OPEN != 0
             || (*(*FileObject).DeviceObject).DeviceType != FILE_DEVICE_NETWORK_FILE_SYSTEM)
     {
-        let FsDeviceInfo = FsInformation as PFILE_FS_DEVICE_INFORMATION;
         DeviceObject = (*FileObject).DeviceObject;
 
-        (*FsDeviceInfo).DeviceType = (*DeviceObject).DeviceType;
-        (*FsDeviceInfo).Characteristics = (*DeviceObject).Characteristics;
+        let mut FsDeviceInfo: FILE_FS_DEVICE_INFORMATION = core::mem::zeroed();
+        FsDeviceInfo.DeviceType = (*DeviceObject).DeviceType;
+        FsDeviceInfo.Characteristics = (*DeviceObject).Characteristics;
         if IopGetMountFlag(DeviceObject) != 0 {
-            (*FsDeviceInfo).Characteristics |= FILE_DEVICE_IS_MOUNTED;
+            FsDeviceInfo.Characteristics |= FILE_DEVICE_IS_MOUNTED;
         }
 
-        (*IoStatusBlock).Information = core::mem::size_of::<FILE_FS_DEVICE_INFORMATION>() as _;
-        (*IoStatusBlock).__bindgen_anon_1.Status = STATUS_SUCCESS;
+        // C: the stores into FsInformation and IoStatusBlock are one _SEH2_TRY whose
+        // handler returns the code.
+        let iosb = _IO_STATUS_BLOCK {
+            __bindgen_anon_1: _IO_STATUS_BLOCK__bindgen_ty_1 { Status: STATUS_SUCCESS },
+            Information: core::mem::size_of::<FILE_FS_DEVICE_INFORMATION>() as _,
+        };
+        let Status = match write_user(FsInformation as PFILE_FS_DEVICE_INFORMATION, FsDeviceInfo, 0)
+            .and_then(|()| write_user(IoStatusBlock, iosb, 0))
+        {
+            Ok(()) => STATUS_SUCCESS,
+            Err(e) => e,
+        };
 
         if (*FileObject).Flags & FO_SYNCHRONOUS_IO != 0 {
             IopUnlockFileObject(FileObject);
         }
 
         ObDereferenceObject(FileObject as PVOID);
-        return STATUS_SUCCESS;
+        return Status;
     } else if FsInformationClass == FileFsDriverPathInformation {
         let mut DriverPathInfo: PVOID = core::ptr::null_mut();
 
+        // C: the capture, the DriverInPath store and the IoStatusBlock stores are one
+        // _SEH2_TRY whose handler returns the code. (The quota allocation raises on
+        // failure in the C; here it is checked.)
         DriverPathInfo = ExAllocatePoolWithQuotaTag(NonPagedPool, Length as _, TAG_IO);
-        core::ptr::copy_nonoverlapping(
-            FsInformation as *const u8,
-            DriverPathInfo as *mut u8,
-            Length as usize,
-        );
-
-        Status = IopGetDriverPathInformation(
-            FileObject,
-            DriverPathInfo as PFILE_FS_DRIVER_PATH_INFORMATION,
-            Length,
-        );
+        Status = if DriverPathInfo.is_null() {
+            STATUS_INSUFFICIENT_RESOURCES
+        } else {
+            match safe_copy_raw(DriverPathInfo, FsInformation as *const core::ffi::c_void, Length as usize) {
+                Ok(()) => IopGetDriverPathInformation(
+                    FileObject,
+                    DriverPathInfo as PFILE_FS_DRIVER_PATH_INFORMATION,
+                    Length,
+                ),
+                Err(e) => e,
+            }
+        };
 
         if Status >= 0 {
-            (*(FsInformation as PFILE_FS_DRIVER_PATH_INFORMATION)).DriverInPath =
-                (*(DriverPathInfo as PFILE_FS_DRIVER_PATH_INFORMATION)).DriverInPath;
-            (*IoStatusBlock).Information =
-                core::mem::size_of::<FILE_FS_DRIVER_PATH_INFORMATION>() as _;
-            (*IoStatusBlock).__bindgen_anon_1.Status = STATUS_SUCCESS;
+            let iosb = _IO_STATUS_BLOCK {
+                __bindgen_anon_1: _IO_STATUS_BLOCK__bindgen_ty_1 { Status: STATUS_SUCCESS },
+                Information: core::mem::size_of::<FILE_FS_DRIVER_PATH_INFORMATION>() as _,
+            };
+            let written = write_user(
+                core::ptr::addr_of_mut!((*(FsInformation as PFILE_FS_DRIVER_PATH_INFORMATION)).DriverInPath),
+                (*(DriverPathInfo as PFILE_FS_DRIVER_PATH_INFORMATION)).DriverInPath,
+                0,
+            )
+            .and_then(|()| write_user(IoStatusBlock, iosb, 0));
+            if let Err(e) = written {
+                Status = e;
+            }
         }
 
         if !DriverPathInfo.is_null() {

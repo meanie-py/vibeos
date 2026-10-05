@@ -492,6 +492,19 @@ pub unsafe fn safe_copy_raw(
     fault_tolerant_copy(dst, src, length)
 }
 
+/// Store one value through a caller's pointer that was range-probed earlier: the
+/// C's `_SEH2_TRY { *Ptr = Value; } _SEH2_EXCEPT { Status = code; }`. No probe and
+/// no alignment check (the probe already ran, with the C's alignment); the store
+/// itself survives an unmapped page.
+#[inline]
+pub unsafe fn write_back<T: Copy>(dst: *mut T, value: T) -> Result<(), NTSTATUS> {
+    safe_copy_raw(
+        dst.cast(),
+        core::ptr::addr_of!(value).cast(),
+        core::mem::size_of::<T>(),
+    )
+}
+
 /// Validate a user-mode source buffer, then fault-tolerantly copy `length` bytes
 /// to a kernel buffer.
 ///
@@ -570,6 +583,7 @@ extern "system" {
 }
 extern "system" {
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
+    fn ExAllocatePoolWithTag(PoolType: i32, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
 }
 
 /// RAII guard that calls `ObDereferenceObject` on drop.
@@ -638,6 +652,94 @@ impl Drop for PoolAllocGuard {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
             unsafe { ExFreePoolWithTag(self.ptr, self.tag); }
+        }
+    }
+}
+
+// ============================================================================
+// Output bounce: query syscalls that fill a caller's buffer in place
+// ============================================================================
+
+const TAG_OUTPUT_BOUNCE: ULONG = u32::from_le_bytes(*b"PbOb");
+
+/// A pool stand-in for a user-mode caller's output buffer.
+///
+/// The NtQuery* syscalls fill their output buffer IN PLACE inside one `_SEH2_TRY`,
+/// often under a lock, so a user page that goes bad mid-query was the handler's
+/// problem. With no SEH it is a bugcheck. Running the query against a pool copy
+/// and copying it out once at the end covers every write in the body at once,
+/// including the ones made by helpers (`RtlCopySidAndAttributesArray`, ...).
+///
+/// The buffer is copied IN first, so bytes the query leaves alone come back
+/// unchanged. A class that stores a pointer INTO the buffer (a UNICODE_STRING
+/// whose text follows it, a SID array) must move it to the caller's address with
+/// [`OutputBounce::rebase`] before [`OutputBounce::finish`].
+///
+/// Kernel-mode callers (and empty buffers) are passed straight through.
+pub struct OutputBounce {
+    pool: PVOID,
+    user: PVOID,
+    length: usize,
+}
+
+impl OutputBounce {
+    pub unsafe fn new(user: PVOID, length: usize, previous_mode: KPROCESSOR_MODE) -> Result<Self, NTSTATUS> {
+        if previous_mode == 0 || length == 0 || user.is_null() {
+            return Ok(Self { pool: core::ptr::null_mut(), user, length: 0 });
+        }
+        let pool = ExAllocatePoolWithTag(1 /* PagedPool */, length, TAG_OUTPUT_BOUNCE);
+        if pool.is_null() {
+            return Err(STATUS_INSUFFICIENT_RESOURCES);
+        }
+        if let Err(status) = fault_tolerant_copy(pool, user, length) {
+            ExFreePoolWithTag(pool, TAG_OUTPUT_BOUNCE);
+            return Err(status);
+        }
+        Ok(Self { pool, user, length })
+    }
+
+    /// The buffer the query should fill.
+    pub fn buffer(&self) -> PVOID {
+        if self.pool.is_null() { self.user } else { self.pool }
+    }
+
+    /// The mode to pass to a probe or write INTO the buffer: kernel once it is pool.
+    pub fn mode(&self, previous_mode: KPROCESSOR_MODE) -> KPROCESSOR_MODE {
+        if self.pool.is_null() { previous_mode } else { 0 }
+    }
+
+    /// Whether `size` bytes at `p` lie inside the pool copy.
+    pub fn contains(&self, p: *const core::ffi::c_void, size: usize) -> bool {
+        let base = self.pool as usize;
+        let p = p as usize;
+        !self.pool.is_null() && p >= base && p.wrapping_add(size) <= base + self.length && p.wrapping_add(size) >= p
+    }
+
+    /// Move a pointer that points into the pool copy to the same offset in the
+    /// caller's buffer. Anything else is left alone.
+    pub unsafe fn rebase<T>(&self, field: *mut *mut T) {
+        if self.contains(field as *const _, core::mem::size_of::<*mut T>()) && self.contains(*field as *const _, 0) {
+            *field = ((*field as usize) - (self.pool as usize) + (self.user as usize)) as *mut T;
+        }
+    }
+
+    /// Copy the result out and release the pool copy. `Err` is a fault on the
+    /// caller's buffer: the C handler's exception code.
+    pub unsafe fn finish(mut self) -> Result<(), NTSTATUS> {
+        if self.pool.is_null() {
+            return Ok(());
+        }
+        let result = fault_tolerant_copy(self.user, self.pool, self.length);
+        ExFreePoolWithTag(self.pool, TAG_OUTPUT_BOUNCE);
+        self.pool = core::ptr::null_mut();
+        result
+    }
+}
+
+impl Drop for OutputBounce {
+    fn drop(&mut self) {
+        if !self.pool.is_null() {
+            unsafe { ExFreePoolWithTag(self.pool, TAG_OUTPUT_BOUNCE) };
         }
     }
 }

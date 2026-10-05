@@ -782,20 +782,41 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
             (*SymlinkObject).LinkTarget.Length as ULONG
         };
 
+        // C: these three stores into the caller's memory sit in one _SEH2_TRY, whose
+        // handler sets Status to the code. They run under the object lock, which the
+        // fault-tolerant copy lets us still release.
+        let write_back = |dst: PVOID, src: *const core::ffi::c_void, size: usize| -> Result<(), NTSTATUS> {
+            safe_copy_raw(dst, src, size)
+        };
+        let mut written: Result<(), NTSTATUS> = Ok(());
         if LengthUsed <= SafeLinkTarget.MaximumLength as ULONG {
-            core::ptr::copy_nonoverlapping(
-                (*SymlinkObject).LinkTarget.Buffer as *const u8,
-                SafeLinkTarget.Buffer as *mut u8,
+            let length = (*SymlinkObject).LinkTarget.Length;
+            written = write_back(
+                SafeLinkTarget.Buffer as PVOID,
+                (*SymlinkObject).LinkTarget.Buffer as *const core::ffi::c_void,
                 LengthUsed as usize,
-            );
-
-            (*LinkTarget).Length = (*SymlinkObject).LinkTarget.Length;
+            )
+            .and_then(|()| {
+                write_back(
+                    core::ptr::addr_of_mut!((*LinkTarget).Length) as PVOID,
+                    &length as *const _ as *const core::ffi::c_void,
+                    core::mem::size_of_val(&length),
+                )
+            });
         } else {
             Status = STATUS_BUFFER_TOO_SMALL;
         }
 
-        if ResultLength != core::ptr::null_mut() {
-            *ResultLength = (*SymlinkObject).LinkTarget.MaximumLength as ULONG;
+        if written.is_ok() && ResultLength != core::ptr::null_mut() {
+            let maximum = (*SymlinkObject).LinkTarget.MaximumLength as ULONG;
+            written = write_back(
+                ResultLength as PVOID,
+                &maximum as *const ULONG as *const core::ffi::c_void,
+                core::mem::size_of::<ULONG>(),
+            );
+        }
+        if let Err(s) = written {
+            Status = s;
         }
 
         ObpReleaseObjectLock(ObjectHeader);

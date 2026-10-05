@@ -1454,6 +1454,27 @@ pub unsafe extern "C" fn HackSecureVirtualMemory(pmdl: PMDL) -> NTSTATUS {
 }
 """
 
+# scan_raw_user_access: the store after the probe. BAD writes the caller's handle with
+# a plain deref; GOOD does the same through write_back, and computing a field's
+# address (addr_of_mut!) is not an access.
+_RAWUSER_BAD = """
+pub unsafe extern "system" fn NtOpenKeyedEvent(OutHandle: PHANDLE, Access: ULONG) -> NTSTATUS {
+    let OutHandle = opaque_ptr(OutHandle);
+    probe_write_generic(OutHandle, 1, 1)?;
+    *OutHandle = core::ptr::null_mut();
+    STATUS_SUCCESS
+}
+"""
+_RAWUSER_GOOD = """
+pub unsafe extern "system" fn NtOpenKeyedEvent(OutHandle: PHANDLE, Info: PIO_STATUS) -> NTSTATUS {
+    let OutHandle = opaque_ptr(OutHandle);
+    probe_write_generic(OutHandle, 1, 1)?;
+    let _ = write_back(OutHandle, core::ptr::null_mut());
+    let _ = write_back(core::ptr::addr_of_mut!((*Info).Information), 0);
+    STATUS_SUCCESS
+}
+"""
+
 
 # scan_dropped_seh_pairs. The LPC shape: the C is cohab-flipped OUT of the build
 # (commented in the CMake source list) and a separate .rs took over under
@@ -1970,11 +1991,18 @@ CONTROLS: list[Control] = [
         good={"sdk/lib/rust/ex-rust/src/uuid.rs": _RAISINGPROBE_GOOD},
     ),
     Control(
-        name="scan_raising_probes_mdl",
+        name="scan_raising_probes",
         script="tools/scan_raising_probes.py",
         argv=["--lint"],
         bad={"sdk/lib/rust/win32k-rust/src/mem.rs": _RAISINGMDL_BAD},
         good={"sdk/lib/rust/win32k-rust/src/mem.rs": _RAISINGMDL_GOOD},
+    ),
+    Control(
+        name="scan_raw_user_access",
+        script="tools/scan_raw_user_access.py",
+        argv=[],
+        bad={"sdk/lib/rust/ex-rust/src/keyedevt.rs": _RAWUSER_BAD},
+        good={"sdk/lib/rust/ex-rust/src/keyedevt.rs": _RAWUSER_GOOD},
     ),
     Control(
         name="strip_msvc_cmake",

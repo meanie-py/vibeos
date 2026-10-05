@@ -815,6 +815,32 @@ pub unsafe extern "system" fn NtQuerySystemEnvironmentValue(
 
     let PreviousMode = ExGetPreviousMode();
 
+    // The translation had dropped the C's probe block, so ValueBuffer and
+    // ReturnLength were written unprobed: a kernel address there was written to.
+    if PreviousMode != 0 {
+        if let Err(s) = ntkrnl_sys::probe::probe_user_buffer(
+            VariableName as PVOID,
+            core::mem::size_of::<_UNICODE_STRING>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return s;
+        }
+        if let Err(s) = ntkrnl_sys::probe::probe_user_buffer(
+            ValueBuffer as PVOID,
+            ValueBufferLength as usize,
+            core::mem::size_of::<WCHAR>(),
+            PreviousMode,
+        ) {
+            return s;
+        }
+        if !ReturnLength.is_null() {
+            if let Err(s) = ntkrnl_sys::probe::probe_write_generic(ReturnLength, 1, PreviousMode) {
+                return s;
+            }
+        }
+    }
+
     if SeSinglePrivilegeCheck(SeSystemEnvironmentPrivilege, PreviousMode) == 0u8 {
         return STATUS_PRIVILEGE_NOT_HELD;
     }
@@ -840,12 +866,24 @@ pub unsafe extern "system" fn NtQuerySystemEnvironmentValue(
     RtlFreeAnsiString(&mut AName);
 
     if Result == ESUCCESS {
-        RtlInitAnsiString(&mut AValue, AnsiValueBuffer);
-        RtlInitEmptyUnicodeString(&mut WValue, ValueBuffer, ValueBufferLength as USHORT);
-        Status = RtlAnsiStringToUnicodeString(&mut WValue, &AValue, 0u8);
-        if !ReturnLength.is_null() {
-            *ReturnLength = WValue.Length as ULONG;
-        }
+        // C: the conversion into ValueBuffer and the ReturnLength store sit in one
+        // _SEH2_TRY. Convert into a pool copy and copy it out fault-tolerantly.
+        Status = match ntkrnl_sys::probe::OutputBounce::new(ValueBuffer as PVOID, ValueBufferLength as usize, PreviousMode) {
+            Ok(bounce) => {
+                RtlInitAnsiString(&mut AValue, AnsiValueBuffer);
+                RtlInitEmptyUnicodeString(&mut WValue, bounce.buffer() as PWSTR, ValueBufferLength as USHORT);
+                let mut status = RtlAnsiStringToUnicodeString(&mut WValue, &AValue, 0u8);
+                if let Err(s) = bounce.finish() {
+                    status = s;
+                } else if !ReturnLength.is_null() {
+                    if let Err(s) = ntkrnl_sys::probe::write_user(ReturnLength, WValue.Length as ULONG, 0) {
+                        status = s;
+                    }
+                }
+                status
+            }
+            Err(s) => s,
+        };
     } else {
         Status = STATUS_UNSUCCESSFUL;
     }

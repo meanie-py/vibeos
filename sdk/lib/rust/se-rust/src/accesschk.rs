@@ -914,13 +914,20 @@ unsafe fn SepAccessCheck(
         return STATUS_SUCCESS;
     }
 
-    if let Err(s) = probe_user_buffer(GenericMapping as *const core::ffi::c_void, core::mem::size_of::<_GENERIC_MAPPING>(), core::mem::size_of::<ULONG>(), PreviousMode) {
-        return s;
-    }
-    if let Err(s) = probe_user_buffer(PrivilegeSetLength as *const core::ffi::c_void, core::mem::size_of::<ULONG>(), core::mem::size_of::<ULONG>(), PreviousMode) {
-        return s;
-    }
-    if let Err(s) = probe_user_buffer(PrivilegeSet as *const core::ffi::c_void, *PrivilegeSetLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+    // Everything the caller passed is user memory from here on, and the C touches it
+    // under _SEH2_TRY. Inputs are captured once (the C read *PrivilegeSetLength twice);
+    // outputs are written to pool and copied out at the end (copy_results).
+    let mut CapturedGenericMapping: _GENERIC_MAPPING =
+        match probe_read_generic(GenericMapping as *const _GENERIC_MAPPING, core::mem::size_of::<ULONG>(), PreviousMode) {
+            Ok(m) => m,
+            Err(s) => return s,
+        };
+    let GenericMapping: PGENERIC_MAPPING = &mut CapturedGenericMapping;
+    CapturedPrivilegeSetLength = match probe_read_generic(PrivilegeSetLength as *const ULONG, core::mem::size_of::<ULONG>(), PreviousMode) {
+        Ok(l) => l,
+        Err(s) => return s,
+    };
+    if let Err(s) = probe_user_buffer(PrivilegeSet as *const core::ffi::c_void, CapturedPrivilegeSetLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
         return s;
     }
 
@@ -944,7 +951,43 @@ unsafe fn SepAccessCheck(
         }
     }
 
-    CapturedPrivilegeSetLength = *PrivilegeSetLength;
+    let result_count = if UseResultList != 0 { ObjectTypeListLength as usize } else { 1 };
+    let results_size = result_count * (core::mem::size_of::<ACCESS_MASK>() + core::mem::size_of::<NTSTATUS>());
+    let results_tag = u32::from_le_bytes(*b"SeAr");
+    let results = ExAllocatePoolWithTag(PagedPool, results_size as SIZE_T, results_tag);
+    if results.is_null() {
+        return ntkrnl_sys::base::STATUS_INSUFFICIENT_RESOURCES;
+    }
+    let _results_guard = PoolAllocGuard::new(results, results_tag);
+    let UserGrantedAccess = GrantedAccess;
+    let UserAccessStatus = AccessStatus;
+    let GrantedAccess = results as PACCESS_MASK;
+    let AccessStatus = GrantedAccess.add(result_count) as PNTSTATUS;
+    let copy_results = move || -> NTSTATUS {
+        let copied = safe_copy_raw(
+            UserGrantedAccess as PVOID,
+            GrantedAccess as *const core::ffi::c_void,
+            result_count * core::mem::size_of::<ACCESS_MASK>(),
+        )
+        .and_then(|()| {
+            safe_copy_raw(
+                UserAccessStatus as PVOID,
+                AccessStatus as *const core::ffi::c_void,
+                result_count * core::mem::size_of::<NTSTATUS>(),
+            )
+        });
+        match copied {
+            Ok(()) => STATUS_SUCCESS,
+            Err(s) => s,
+        }
+    };
+    let write_length = move |length: ULONG| -> Result<(), NTSTATUS> {
+        safe_copy_raw(
+            PrivilegeSetLength as PVOID,
+            &length as *const ULONG as *const core::ffi::c_void,
+            core::mem::size_of::<ULONG>(),
+        )
+    };
 
     if DesiredAccess & (GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_ALL) != 0 {
         return STATUS_GENERIC_NOT_MAPPED;
@@ -1007,7 +1050,7 @@ unsafe fn SepAccessCheck(
             *GrantedAccess = 0;
         }
 
-        return STATUS_SUCCESS;
+        return copy_results();
     }
 
     if !Privileges.is_null() {
@@ -1017,27 +1060,45 @@ unsafe fn SepAccessCheck(
             SeFreePrivileges(Privileges);
             SeReleaseObjectTypeList(CapturedObjectTypeList, PreviousMode);
             ObDereferenceObject(Token as PVOID);
-            *PrivilegeSetLength = RequiredPrivilegeSetLength;
+            if let Err(s) = write_length(RequiredPrivilegeSetLength) {
+                return s;
+            }
             return STATUS_BUFFER_TOO_SMALL;
         }
 
-        core::ptr::copy_nonoverlapping(
-            Privileges as *const u8,
-            PrivilegeSet as *mut u8,
+        let copied = safe_copy_raw(
+            PrivilegeSet as PVOID,
+            Privileges as *const core::ffi::c_void,
             RequiredPrivilegeSetLength as usize,
         );
 
         SeFreePrivileges(Privileges);
+        if let Err(s) = copied {
+            SeReleaseObjectTypeList(CapturedObjectTypeList, PreviousMode);
+            ObDereferenceObject(Token as PVOID);
+            return s;
+        }
     } else {
         if CapturedPrivilegeSetLength < core::mem::size_of::<PRIVILEGE_SET>() as ULONG {
             SeReleaseObjectTypeList(CapturedObjectTypeList, PreviousMode);
             ObDereferenceObject(Token as PVOID);
-            *PrivilegeSetLength = core::mem::size_of::<PRIVILEGE_SET>() as ULONG;
+            if let Err(s) = write_length(core::mem::size_of::<PRIVILEGE_SET>() as ULONG) {
+                return s;
+            }
             return STATUS_BUFFER_TOO_SMALL;
         }
 
-        (*PrivilegeSet).PrivilegeCount = 0;
-        (*PrivilegeSet).Control = 0;
+        // PrivilegeCount = 0; Control = 0;
+        let empty: [ULONG; 2] = [0, 0];
+        if let Err(s) = safe_copy_raw(
+            PrivilegeSet as PVOID,
+            empty.as_ptr() as *const core::ffi::c_void,
+            core::mem::size_of_val(&empty),
+        ) {
+            SeReleaseObjectTypeList(CapturedObjectTypeList, PreviousMode);
+            ObDereferenceObject(Token as PVOID);
+            return s;
+        }
     }
 
     Status = SeCaptureSecurityDescriptor(
@@ -1144,7 +1205,7 @@ unsafe fn SepAccessCheck(
 
     ObDereferenceObject(Token as PVOID);
 
-    STATUS_SUCCESS
+    copy_results()
 }
 
 #[no_mangle]

@@ -208,7 +208,7 @@ pub(crate) unsafe fn capture_string_buffer(
     }
     let guard = ntkrnl_sys::probe::PoolAllocGuard::new(copy as _, tag);
     ntkrnl_sys::probe::safe_copy_raw(copy as *mut c_void, s.Buffer as *const c_void, length)?;
-    core::ptr::write_bytes(copy.add(length), 0, core::mem::size_of::<u16>());
+    (copy.add(length) as *mut u16).write_unaligned(0);
     s.Buffer = copy as _;
     s.MaximumLength = s.Length + core::mem::size_of::<u16>() as u16;
     Ok(Some(guard))

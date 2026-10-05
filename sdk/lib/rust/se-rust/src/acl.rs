@@ -242,8 +242,20 @@ pub unsafe extern "system" fn SepCaptureAcl(
         if let Err(s) = probe_user_buffer(InputAcl as _, core::mem::size_of::<ACL>(), core::mem::size_of::<ULONG>(), AccessMode) {
             return s;
         }
-        acl_size = (*InputAcl).AclSize as ULONG;
-        
+        // AclSize lives in user memory: read it fault-tolerantly (the C reads it
+        // inside _SEH2_TRY).
+        let mut user_acl_size: USHORT = 0;
+        if let Err(s) = safe_copy_from_user(
+            core::ptr::addr_of_mut!(user_acl_size) as PVOID,
+            core::ptr::addr_of!((*InputAcl).AclSize) as _,
+            core::mem::size_of::<USHORT>(),
+            1,
+            AccessMode,
+        ) {
+            return s;
+        }
+        acl_size = user_acl_size as ULONG;
+
         // Second probe: validate the full ACL size
         if let Err(s) = probe_user_buffer(InputAcl as _, acl_size as usize, core::mem::size_of::<ULONG>(), AccessMode) {
             return s;
@@ -264,6 +276,9 @@ pub unsafe extern "system" fn SepCaptureAcl(
         if let Err(s) = safe_copy_from_user(new_acl as PVOID, InputAcl as _, acl_size as usize, core::mem::size_of::<ULONG>(), AccessMode) {
             return s;
         }
+        // The caller can grow AclSize between the read above and the copy, and
+        // RtlValidAcl walks the copy by that field. Pin it to the size allocated.
+        (*new_acl).AclSize = user_acl_size;
 
         _guard.disarm();  // Success — keep the allocation
     } else {

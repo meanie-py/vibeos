@@ -5091,9 +5091,15 @@ gone. Grep-wise it is invisible; the C's own trailing comment is the only oracle
 
 **Fix.** Validate-first (`dummy-pseh-verdict.md`): `probe_user_buffer` / `probe_read_user` /
 `probe_write_user` from `ntkrnl-sys::probe` return `Result<_, NTSTATUS>` instead of raising.
-Match the C's alignment argument. Say in the comment what validate-first does NOT restore — the
-C's second SEH also covers the window between probe and copy, and a range check proves where a
-buffer is, never that it stays mapped.
+Match the C's alignment argument. Validate-first does NOT restore the C's second SEH, which
+covers the ACCESS after the probe: a range check proves where a buffer is, never that it stays
+mapped. Every touch after the probe therefore goes through a fault-tolerant primitive too:
+`safe_copy_raw` / `probe_read_generic` for reads, `write_back` for a single store,
+`OutputBounce` for a query that fills the caller's buffer in place (run it against a pool copy,
+rebase any pointer INTO the buffer, copy out once). A capture that sizes a SID/ACL from a count
+in user memory must pin that count in the copy, or a racing caller grows it past the
+allocation. `tools/scan_raw_user_access.py` lists the Nt* syscalls that still touch a pointer
+argument raw (baseline gate; a new row fails `vibeos-cli check`).
 
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
 HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
