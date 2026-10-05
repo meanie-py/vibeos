@@ -115,10 +115,9 @@ add_library(lsasrv MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/lsasrv.def)
 
 set_module_type(lsasrv win32dll UNICODE)
-# --allow-multiple-definition: lsa-stub is a no_std staticlib carrying its own
-# panic_handler/eh_personality (lld first-match wins; the stub never panics).
+# lsa-stub is a no_std staticlib carrying its own panic_handler/eh_personality;
+# link_guard allows that panic-runtime twin (the stub never panics).
 target_link_libraries(lsasrv ${LSASRV_RUST_LIB} ${LSA_STUB_LIB} wine ${PSEH_LIB})
-target_link_options(lsasrv PRIVATE LINKER:--allow-multiple-definition)
 add_importlibs(lsasrv samsrv rpcrt4 msvcrt kernel32 advapi32 ntdll)
 add_pch(lsasrv lsasrv.h SOURCE)
 add_dependencies(lsasrv rust_lsa_stub rust_lsasrv)

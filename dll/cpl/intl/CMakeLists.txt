@@ -81,9 +81,6 @@ add_library(intl MODULE
 set_module_type(intl cpl UNICODE)
 # libintl_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(intl ${INTL_RUST_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(intl PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(intl rust_intl)
 add_importlibs(intl user32 comctl32 advapi32 setupapi shlwapi shell32 msvcrt kernel32 ntdll)
 add_pch(intl intl.h SOURCE)

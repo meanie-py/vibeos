@@ -21,10 +21,40 @@ type KPROCESSOR_MODE = i8;
 pub const STATUS_DATATYPE_MISALIGNMENT: NTSTATUS = 0x80000002_u32 as i32;
 pub const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005_u32 as i32;
 
-extern "C" {
-    /// MmUserProbeAddress — highest user-mode address + 1.
-    /// Pointers above this are kernel-mode and must not be passed from user-mode.
-    static MmUserProbeAddress: ULONG_PTR;
+/// MmUserProbeAddress — highest user-mode address + 1. Pointers at or above it
+/// are kernel-mode and must not be passed from user mode.
+///
+/// A data export of ntoskrnl, so how it binds depends on who links this crate
+/// (feature `import_mm_user_probe_address`, see Cargo.toml).
+#[cfg(not(feature = "import_mm_user_probe_address"))]
+#[inline(always)]
+unsafe fn mm_user_probe_address() -> ULONG_PTR {
+    extern "C" {
+        static MmUserProbeAddress: ULONG_PTR;
+    }
+    MmUserProbeAddress
+}
+
+/// Driver side: i386/arm64 bind through raw-dylib `+verbatim` (the symbol is the
+/// value); amd64 binds `__imp_` and dereferences. Same as win32k's safe_user_io.
+#[cfg(all(feature = "import_mm_user_probe_address", any(target_arch = "x86", target_arch = "aarch64")))]
+#[inline(always)]
+unsafe fn mm_user_probe_address() -> ULONG_PTR {
+    #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+    extern "C" {
+        static MmUserProbeAddress: ULONG_PTR;
+    }
+    MmUserProbeAddress
+}
+
+#[cfg(all(feature = "import_mm_user_probe_address", not(any(target_arch = "x86", target_arch = "aarch64"))))]
+#[inline(always)]
+unsafe fn mm_user_probe_address() -> ULONG_PTR {
+    extern "C" {
+        #[link_name = "__imp_MmUserProbeAddress"]
+        static MmUserProbeAddress_imp: *const ULONG_PTR;
+    }
+    *MmUserProbeAddress_imp
 }
 
 /// The range test every typed probe.h macro makes before it touches `Ptr`:
@@ -45,7 +75,7 @@ extern "C" {
 pub unsafe fn probe_user_range<T>(ptr: *const T) {
     let first = ptr as ULONG_PTR;
     let last = first.wrapping_add(core::mem::size_of::<T>() - 1);
-    if last < first || last >= MmUserProbeAddress {
+    if last < first || last >= mm_user_probe_address() {
         crate::ddk::ExRaiseAccessViolation();
     }
 }
@@ -136,7 +166,7 @@ pub unsafe fn probe_user_buffer(
     if length > 0 {
         let addr = buffer as usize;
         let end = addr.wrapping_add(length);
-        if end < addr || end > MmUserProbeAddress {
+        if end < addr || end > mm_user_probe_address() {
             return Err(STATUS_ACCESS_VIOLATION);
         }
     }

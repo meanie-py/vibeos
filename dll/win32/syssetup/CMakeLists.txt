@@ -84,9 +84,6 @@ add_library(syssetup MODULE
 set_module_type(syssetup win32dll UNICODE)
 # libsyssetup_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(syssetup ${SYSSETUP_RUST_LIB} uuid wine tzlib ${PSEH_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(syssetup PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(syssetup rust_syssetup)
 add_importlibs(syssetup advapi32 gdi32 user32 samlib userenv comctl32 setupapi rpcrt4 ole32 shell32 shlwapi msvcrt kernel32 ntdll)
 add_cd_file(TARGET syssetup DESTINATION reactos/system32 FOR all)

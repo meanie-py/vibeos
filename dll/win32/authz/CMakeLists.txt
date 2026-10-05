@@ -56,9 +56,6 @@ add_library(authz MODULE
 set_module_type(authz win32dll UNICODE)
 # libauthz_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(authz ${AUTHZ_RUST_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(authz PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(authz rust_authz)
 add_importlibs(authz advapi32 msvcrt kernel32 ntdll)
 # add_pch dropped with precomp.h: the only C left is the generated authz_stubs.c, which does

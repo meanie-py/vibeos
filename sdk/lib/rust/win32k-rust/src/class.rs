@@ -139,12 +139,6 @@ unsafe fn co_IntCopyImage_h(h: PVOID, ty: UINT, cx: INT, cy: INT, flags: UINT) -
     co_IntCopyImage(h, ty, cx, cy, flags) as HICON
 }
 
-// ProbeForRead/ProbeForWrite (Mm, NTAPI) — real exported symbols.
-extern "system" {
-    fn ProbeForRead(Address: *const c_void, Length: usize, Alignment: u32);
-    fn ProbeForWrite(Address: *mut c_void, Length: usize, Alignment: u32);
-}
-
 // MmUserProbeAddress — highest user-mode address + 1 (DATA export from ntoskrnl,
 // ntoskrnl.spec `@ extern`). A plain extern reference is unsatisfiable for a data
 // import (the import lib provides only __imp_, no thunk). Per-arch like console.rs's
@@ -237,7 +231,9 @@ unsafe fn ProbeForWriteUnicodeString(ptr: PUNICODE_STRING) -> Result<(), NTSTATU
     let st = SafeProbeForWrite(
         ptr as *mut c_void,
         core::mem::size_of::<_UNICODE_STRING>() as SIZE_T,
-        core::mem::align_of::<_UNICODE_STRING>() as u32,
+        // probe.h ProbeForWriteGenericType checks range only, no alignment;
+        // align_of (8 on 64-bit) would reject addresses the C accepts.
+        1,
     );
     if st < 0 {
         Err(st)
@@ -464,13 +460,14 @@ pub unsafe extern "system" fn ProbeAndCaptureUnicodeStringOrAtom(
             }
 
             /* Copy the string and zero terminate it */
-            // ProbeForRead(ustr_copy.Buffer, pustrOut->Length, 1) + RtlCopyMemory --
-            // no separate probe needed, safe_copy_raw's fault protection covers
-            // both the range check and the actual byte-for-byte copy.
-            if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+            // ProbeForRead(ustr_copy.Buffer, pustrOut->Length, 1) + RtlCopyMemory.
+            // The range check is NOT optional: safe_copy_raw alone would happily
+            // copy from a kernel address the user named.
+            if let Err(st) = crate::safe_user_io::copy_from_user(
                 (*pustrOut).Buffer as *mut c_void,
                 ustr_copy.Buffer as *const c_void,
                 (*pustrOut).Length as usize,
+                1,
             ) {
                 // pustrOut->Buffer is allocated at this point, so (unlike the
                 // first probe above) the handler's `if (pustrOut->Buffer)`

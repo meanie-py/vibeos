@@ -123,7 +123,6 @@ add_idl_reg_scripts(oleaut32 registry oleaut32_oaidl.idl oleaut32_ocidl.idl)
 set_module_type(oleaut32 win32dll)
 # OLEAUT32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
 target_link_libraries(oleaut32 ${OLEAUT32_RUST_LIB} wine wineldr uuid ${PSEH_LIB} oldnames)
-target_link_options(oleaut32 PRIVATE LINKER:--allow-multiple-definition)
 add_delay_importlibs(oleaut32 comctl32 urlmon windowscodecs)
 add_importlibs(oleaut32 ole32 rpcrt4 user32 gdi32 advapi32 kernel32_vista msvcrt kernel32 ntdll)
 add_pch(oleaut32 precomp.h "${PCH_SKIP_SOURCE}")

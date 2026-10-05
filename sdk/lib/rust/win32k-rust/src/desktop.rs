@@ -6,7 +6,7 @@ use ntkrnl_sys::ob::{ObDereferenceObject, ObReferenceObject};
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
 use ntkrnl_sys::interlocked::{InterlockedExchangePointer, InterlockedIncrement, InterlockedDecrement};
-use ntkrnl_sys::base::{NT_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_NO_MEMORY, STATUS_SUCCESS};
+use ntkrnl_sys::base::{NT_SUCCESS, STATUS_NO_MEMORY, STATUS_SUCCESS};
 use ntkrnl_sys::constants::{STATUS_ACCESS_DENIED, STATUS_BUFFER_OVERFLOW, STATUS_OBJECT_NAME_COLLISION, STATUS_OBJECT_NAME_EXISTS, STATUS_OBJECT_NAME_NOT_FOUND, STATUS_UNSUCCESSFUL};
 use core::ffi::c_void;
 
@@ -370,89 +370,16 @@ unsafe fn ReleaseCapturedUnicodeString(CapturedString: PUNICODE_STRING, CurrentM
     }
 }
 
-// MmUserProbeAddress — highest user VA (ntoskrnl DATA export). Per-arch raw-dylib.
-#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
-extern "C" {
-    static MmUserProbeAddress: ULONG_PTR;
-}
-#[cfg(target_arch = "x86_64")]
-extern "C" {
-    #[link_name = "__imp_MmUserProbeAddress"]
-    static MmUserProbeAddress_imp: *const ULONG_PTR;
-}
-#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
-#[inline(always)]
-unsafe fn mm_user_probe_address() -> usize { MmUserProbeAddress as usize }
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-unsafe fn mm_user_probe_address() -> usize { *MmUserProbeAddress_imp as usize }
-
-// ProbeForReadUnicodeString — capture a UNICODE_STRING by value (range-checked read).
-#[inline(always)]
-unsafe fn ProbeForReadUnicodeString(ptr: *const _UNICODE_STRING) -> _UNICODE_STRING {
-    let addr = ptr as usize;
-    let end = addr.wrapping_add(core::mem::size_of::<_UNICODE_STRING>().wrapping_sub(1));
-    if end < addr || end >= mm_user_probe_address() {
-        return core::mem::zeroed();
-    }
-    core::ptr::read_volatile(ptr)
-}
-
-// ProbeForRead (Mm NTAPI) — real exported symbol; range-check + raise under PSEH (dead here).
-extern "system" {
-    fn ProbeForRead(Address: *const c_void, Length: SIZE_T, Alignment: u32);
-}
-
-// ProbeAndCaptureUnicodeString (probe.h static __inline) — probe + deep-copy the buffer.
+// ProbeAndCaptureUnicodeString (probe.h static __inline) — probe + deep-copy.
+// Delegates to the one SEH-faithful implementation: the old local copy used the
+// RAISING ProbeForRead (unhandled here = BUGCHECK 0x1E) and an unprotected copy.
 #[inline(always)]
 unsafe fn ProbeAndCaptureUnicodeString(
     Dest: PUNICODE_STRING,
     CurrentMode: KPROCESSOR_MODE,
     UnsafeSrc: *const _UNICODE_STRING,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
-    if CurrentMode != 0 {
-        *Dest = ProbeForReadUnicodeString(UnsafeSrc);
-        if !(*Dest).Buffer.is_null() {
-            if (*Dest).Length != 0 {
-                ProbeForRead(
-                    (*Dest).Buffer as *const c_void,
-                    (*Dest).Length as SIZE_T,
-                    core::mem::size_of::<u16>() as u32,
-                );
-                let Buffer = ExAllocatePoolWithTag(
-                    PagedPool,
-                    ((*Dest).Length as SIZE_T) + core::mem::size_of::<u16>() as SIZE_T,
-                    u32::from_le_bytes(*b"RTSU"),
-                ) as PWSTR;
-                if Buffer.is_null() {
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-                RtlCopyMemory(Buffer as *mut c_void, (*Dest).Buffer as *const c_void, (*Dest).Length as usize);
-                *Buffer.add(((*Dest).Length / 2) as usize) = UNICODE_NULL;
-                (*Dest).Buffer = Buffer;
-                if (*Dest).Length % 2 != 0 {
-                    (*Dest).Length -= 1;
-                }
-                if (*Dest).Length as u32 >= 0xFFFE {
-                    (*Dest).MaximumLength = (*Dest).Length;
-                } else {
-                    (*Dest).MaximumLength = (*Dest).Length + 2;
-                }
-            } else {
-                (*Dest).MaximumLength = 0;
-                (*Dest).Buffer = core::ptr::null_mut();
-            }
-        } else {
-            (*Dest).Length = 0;
-            (*Dest).MaximumLength = 0;
-        }
-    } else {
-        *Dest = *UnsafeSrc;
-    }
-    let _ = &mut Status;
-    Status
+    crate::safe_user_io::probe_and_capture_unicode_string(Dest, CurrentMode as i8, UnsafeSrc)
 }
 
 // ---- file-scope preamble (translated) ----
