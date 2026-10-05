@@ -35,9 +35,8 @@ _PYRIGHT = str(_VBIN / "pyright")
 # tests/qemu was linted only below cli/, so the harness core -- vm.py, backend.py and
 # test_smoke.py itself -- carried 29 findings, including two `assert False` in the
 # north-star test that `python -O` strips. The whole tree is ruff- and format-checked;
-# pyright still covers cli/ only (typing the harness core is its own job).
 _RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu", "tools/fex"]
-_PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
+_PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu"]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),

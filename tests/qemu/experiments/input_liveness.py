@@ -108,7 +108,7 @@ def _phase(vm: QemuVM, pid: int, label: str) -> dict:
         a = Image.open(vm.work_dir / f"_il_{label}_pre.ppm").convert("RGB")
         b = Image.open(vm.work_dir / f"_il_{label}_post.ppm").convert("RGB")
         d = ImageChops.difference(a, b).convert("L")
-        moved = sum(1 for px in d.getdata() if px > 16)
+        moved = sum(d.histogram()[17:])  # pixels with a delta > 16
         changed = round(moved / (a.width * a.height) * 100, 3)
     except Exception:
         pass
@@ -132,6 +132,7 @@ def main() -> None:
     t0 = time.monotonic()
     vm.start()
     vm.wait_for_boot()
+    assert vm._proc is not None
     pid = vm._proc.pid
     res: dict = {"boot_seconds": round(time.monotonic() - t0, 1), "qemu_pid": pid}
     print(f"  booted in {res['boot_seconds']}s; qemu pid={pid}")

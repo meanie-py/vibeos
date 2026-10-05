@@ -7,6 +7,7 @@
     rr replay <trace> [--gdb]                    # run that exact boot again
     rr verify <trace>                            # replay and diff serial vs the record
     rr breaks <trace> [--near N]                 # icounts a replay can legally stop at
+    rr record ... --sample 10 ; rr diverge <trace>   # first icount replay != record
 
 A trace is a self-contained directory under $VIBEOS_RR_ROOT (default
 ~/vibeos-rr/): the instruction-stream log, private copies of every image the
@@ -40,6 +41,7 @@ import time
 from pathlib import Path
 
 from . import recordreplay as rr  # re-exported for the arg parser
+from . import rrsample
 
 # Traces are expensive (a full boot each) and worth keeping across reboots, so
 # they do NOT live in /tmp.
@@ -149,6 +151,10 @@ def cmd_record(args, repo: Path) -> int:
             file=sys.stderr,
         )
     env["VIBEOS_QEMU_SMP"] = str(args.smp)
+    if getattr(args, "sample", None):
+        # Fingerprint the guest every N seconds so `rr diverge` has a recorded
+        # half to compare against. See rrsample.py.
+        env[rrsample.SAMPLE_ENV_VAR] = str(args.sample)
     # The trace has to come off the native stack; see recordreplay's module
     # docstring. Say so up front rather than letting the VM raise mid-launch.
     env["VIBEOS_QEMU_BACKEND"] = "native"
@@ -199,6 +205,16 @@ def cmd_record(args, repo: Path) -> int:
     mpath.write_text(json.dumps(meta, indent=2) + "\n")
 
     print(f"[rr] boot rc={rc} in {elapsed:.0f}s; trace {size / 1e6:.0f}MB at {trace}")
+    if size == 0 and "argv" not in meta:
+        # vm.py writes the argv the moment it launches QEMU; without it the boot
+        # command refused before any VM existed (stale media, a --no-build
+        # mismatch), and "QEMU was killed" would send the reader the wrong way.
+        print(
+            f"[rr] NO TRACE WRITTEN — the boot command exited rc={rc} without ever "
+            "launching QEMU. Its own message above says why.",
+            file=sys.stderr,
+        )
+        return 1
     if size == 0:
         print(
             "[rr] NO TRACE WRITTEN — the recording did not reach a clean shutdown.\n"
@@ -477,6 +493,66 @@ def cmd_replay(args, repo: Path) -> int:
     return rc
 
 
+def cmd_diverge(args, repo: Path) -> int:
+    """Replay with a break at every recorded fingerprint; report the first mismatch.
+
+    The wedge is where a divergence becomes VISIBLE. This finds where it HAPPENED,
+    to the resolution the recording was sampled at. Needs `rr record --sample`.
+    """
+    trace = _resolve_trace(args)
+    samples = trace / rrsample.SAMPLES_FILE
+    if not samples.is_file() or not samples.read_text().strip():
+        print(
+            f"[rr] {trace.name} has no fingerprints ({rrsample.SAMPLES_FILE}); there is "
+            "nothing recorded to compare a replay against. Re-record it with "
+            "`rr record ... --sample 10`.",
+            file=sys.stderr,
+        )
+        return 2
+    verdict_path = trace / rrsample.VERDICT_FILE
+    verdict_path.unlink(missing_ok=True)
+    os.environ[rrsample.SAMPLE_ENV_VAR] = "check"
+    args.gdb = False
+    args.break_at = None
+    rc = cmd_replay(args, repo)
+    if not verdict_path.is_file():
+        print(f"[rr] diverge: no verdict written (replay rc={rc})", file=sys.stderr)
+        return 1
+    v = json.loads(verdict_path.read_text())
+    print(f"[rr] diverge: compared {v['compared']} of {v['samples']} fingerprints")
+    for sk in v["skipped"]:
+        print(f"[rr]   skipped icount {sk['icount']}: {sk['why']}")
+    for ic in v.get("inconclusive", []):
+        print(f"[rr]   inconclusive icount {ic['icount']}: {ic['why']} ({ic['mem_mib']})")
+    print(f"[rr]   last match:     {v['last_match']}")
+    mm = v.get("first_mismatch")
+    if mm:
+        print(f"[rr]   FIRST MISMATCH: icount {mm['icount']}")
+        for line in mm.get("regs", [])[:40]:
+            print(f"[rr]     {line}")
+        mib = mm.get("mem_mib", [])
+        if mib:
+            print(f"[rr]     RAM differs in {len(mib)} MiB: {' '.join(mib[:32])}")
+        for chunk in mm.get("mem_bytes", [])[:4]:
+            if "error" in chunk:
+                print(f"[rr]     {chunk['base']}: {chunk['error']}")
+                continue
+            print(f"[rr]     {chunk['base']}: {chunk['bytes_differing']} bytes differ")
+            for run in chunk["runs"][:3]:
+                print(f"[rr]       {run['addr']} +{run['len']}  (dump from {run['at']})")
+                print(f"[rr]         record {run['record']}")
+                print(f"[rr]         replay {run['replay']}")
+        print(f"[rr]   full detail: {verdict_path}")
+        return 1
+    if v.get("error"):
+        print(f"[rr]   ERROR: {v['error']}")
+        for line in (v.get("wedge_regs") or "").splitlines()[:4]:
+            print(f"[rr]     {line.strip()}")
+        return 1
+    print("[rr]   every compared fingerprint matched")
+    return 0
+
+
 def cmd_list(args, repo: Path) -> int:
     root = _root(args)
     if not root.is_dir():
@@ -710,6 +786,7 @@ def rr_cmd(args, repo: Path) -> int:
         "breaks": cmd_breaks,
         "wedge": cmd_wedge,
         "verify": cmd_verify,
+        "diverge": cmd_diverge,
         "prune": cmd_prune,
     }.get(verb)
     if fn is None:
