@@ -125,7 +125,8 @@ def doctor_stages(repo: Path, run_dir: Path | None = None) -> list[Stage]:
                 status="fail",
                 detail=str(usb["error"]),
                 salient=[
-                    "the Pico 2 W is not answering on ws://picousb:8080",
+                    "the Pico 2 W is not answering on "
+                    f"{os.environ.get('PI4_PICO_HOST', 'picousb5')}:8080",
                     "green LED off = no Wi-Fi; its own log is on GP4 (picousb docs/protocol.md)",
                 ],
             )
@@ -480,7 +481,7 @@ def _brightness(path: Path) -> float | None:
         return None
 
 
-def _screenshot(run: Run, repo: Path, settle: float = 30) -> None:
+def _screenshot(run: Run, repo: Path, settle: float = 30, hdmi: list[str] | None = None) -> None:
     """The Pi's HDMI lags `shell ready` by a few seconds (measured 2026-10-03: the
     frame AT the marker was black, the desktop was up seconds later), so keep
     grabbing until the frame is not black, and say so if it never lights up."""
@@ -488,7 +489,7 @@ def _screenshot(run: Run, repo: Path, settle: float = 30) -> None:
     deadline = time.monotonic() + settle
     level = None
     while True:
-        rc, _out = _quick([*_script(repo, "hdmi.sh"), str(shot)], timeout=60)
+        rc, _out = _quick([*(hdmi or _script(repo, "hdmi.sh")), str(shot)], timeout=60)
         if rc == 0 and shot.is_file():
             run.extra["screenshot"] = str(shot)
             level = _brightness(shot)

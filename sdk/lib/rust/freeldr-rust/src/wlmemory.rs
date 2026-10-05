@@ -99,12 +99,12 @@ unsafe fn MempAddMemoryBlock(
         b"MempAddMemoryBlock(BasePage=0x%lx, PageCount=0x%lx, Type=%ld)\n\0".as_ptr() as *const i8, (BasePage) as usize, (PageCount) as usize, (Type) as usize,
     );
 
-    if BasePage >= MM_MAX_PAGE as PFN_NUMBER {
+    if BasePage >= MM_MAX_PAGE {
         return;
     }
 
-    if BasePage + PageCount > MM_MAX_PAGE as PFN_NUMBER {
-        PageCount = MM_MAX_PAGE as PFN_NUMBER - BasePage;
+    if BasePage + PageCount > MM_MAX_PAGE {
+        PageCount = MM_MAX_PAGE - BasePage;
     }
 
     if MadCount as usize >= MAX_MAD_COUNT {

@@ -177,6 +177,17 @@ all included), then auto-triage on failure.
 
   All of them, plus `VIBEOS_QEMU_SMP=4`, boot green as of 2026-10-03. Opt-in, not
   in the gate. `vibeos-cli gdb start amd64` honours the same knob.
+
+  arm64 takes the same variable, with the ways a Raspberry Pi differs from
+  QEMU's default virt (`all` applies them too):
+  - `a76`: `-cpu cortex-a76`, the Pi 5's core (ARMv8.2: PAN and friends enforced).
+  - `el2`: firmware hands off at EL2, as both Pis' UEFI do, so the loader's drop
+    to EL1 runs.
+  - `mem`: 6 GiB. This is what caught the 4 GiB Pi 5's silent hang (nonpaged
+    pool sizing underflow).
+
+  `a76,el2,mem` boots green on arm64 as of 2026-10-04. amd64 `mem` sees only
+  4 GiB until the roadmap's "amd64 RAM above 4 GiB" bug is fixed.
 - `--tripwire "SPECIALPOOL=Gla5"` arms per-boot kernel debug knobs via QEMU
   fw_cfg (no media rebuild; kernel side `ntoskrnl-rust/src/tripwire.rs`) —
   special pool turns silent pool corruption into an immediate symbolicated
