@@ -341,14 +341,20 @@ static DWORD RunParent(void)
     Say("[spawn32] rung7 remote thread ran to completion OK\n");
     CloseHandle(hRemote);
 
-    /* Release the child now that rung 7 has its answer. */
+    /* Release the child now that rung 7 has its answer. The handle stays open
+     * until the child is gone: a named event dies with its last handle, and
+     * the child may not have reached its own CreateEventW(DONE) yet. Closing
+     * here let the child create a FRESH, unsignalled DONE and sit out its whole
+     * 30s wait while ours expired first -- rung4 "did not exit, wait 0x102",
+     * verdict 0xBAE4, with the child's "saw the signal" line printed AFTER our
+     * rung7 line (arm64 ladder, 2026-10-04). */
     hDone = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_DONE);
-    if (hDone) {
+    if (hDone)
         SetEvent(hDone);
-        CloseHandle(hDone);
-    }
 
     waited = WaitForSingleObject(pi.hProcess, CHILD_WAIT_MS);
+    if (hDone)
+        CloseHandle(hDone);
     if (waited != WAIT_OBJECT_0) {
         SayHex("[spawn32] rung4 child did not exit, wait", waited);
         TerminateProcess(pi.hProcess, 1);
