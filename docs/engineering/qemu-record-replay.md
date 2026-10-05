@@ -624,9 +624,28 @@ Record it here and keep going; only chase one when it looks load-bearing.
   tight within a pair, and why no event "at" the offset ever looked guilty.
   Not the x86 cause: replaying this trace from power-on (disks reverted to `init`,
   no snapshot load) stalls at icount 0 -- arm64 needs the snapshot, x86 cannot use it.
-  **Next:** find the first instruction boundary where record and replay guest state
-  differ (replay-break at earlier boundaries, compare against a recording that
-  breaks at the same boundaries), not more reading of the stall site.
+  **Narrowed with `rr diverge` (2026-10-05)** on three sampled recordings
+  (`a64-samp-1..3`, 10s / 10s / 2s): registers and every MiB of RAM match the
+  recording through the firmware and the whole kernel boot, up to **18,853,259,727**;
+  the plain replay wedges at **18,953,239,940**, 100M instructions later. In that
+  window the recording logs no block I/O at all (the arm64 boot runs from a ramdisk;
+  the last async event is at 14.7G), only serial writes, 680 exceptions, 82
+  interrupts and one host-clock read. The replayed serial is a byte-exact prefix
+  of the recorded one up to `PspUserThreadStartup: returning` — the first user
+  thread leaving the kernel — and the wedge PC is
+  `ntdll!LdrOpenImageFileOptionsKey+0x30` at EL0. So the divergence is in the first
+  user process's loader, and it is in state the fingerprint does not cover (system
+  registers, the exclusive monitor, device state such as the GIC and timers),
+  since RAM and GPRs still matched.
+
+  Two plain replays of the same trace stall at the identical read offset
+  (1,040,384), so replay is deterministic; but one `diverge` run, which pauses the
+  replay at each fingerprint, got PAST that point (matching the recording at
+  18,971,127,479) and wedged at 18,985,805,350 in the same function instead. A
+  replay-side pause can therefore change the outcome — evidence that the missing
+  input is something a stop/cont cycle touches. **Next:** extend the fingerprint
+  past RAM and GPRs (system registers via the gdbstub, device vmstate) so the
+  first differing state is named rather than inferred.
 
 - **`blkreplay` cannot drive an ATAPI CD, which is why x86 cannot be recorded
   (2026-09-13). MEASURED, root-caused, and now refused up front.**
