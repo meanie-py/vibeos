@@ -193,3 +193,30 @@ def test_the_tool_runs_against_this_worktree_and_classifies_everything():
         pytest.skip("build graph older than a CMakeLists edit: reconfigure, then rerun")
     assert proc.returncode == 0, proc.stderr
     assert "every compiled source is classified" in proc.stdout
+
+
+def test_write_doc_replaces_only_the_generated_block(tmp_path):
+    """The ledger went stale twice because refreshing it was a copy-paste. --write-doc owns
+    exactly the marked block and leaves the hand-written commentary around it alone."""
+    doc = tmp_path / "status.md"
+    doc.write_text(
+        f"# Title\n\nprose before\n{port_audit.DOC_BEGIN}\nold table\n"
+        f"{port_audit.DOC_END}\nprose after\n"
+    )
+    inv = {"translation": 3, "generated": 2, "harness": 1}
+    port_audit.write_doc("| new | table |", inv, commit="abc1234", day="2026-10-05", doc=doc)
+    text = doc.read_text()
+    assert "old table" not in text and "| new | table |" in text
+    assert "`abc1234` on 2026-10-05" in text and "6 lines of `.rs`" in text
+    assert text.startswith("# Title\n\nprose before\n") and text.endswith("prose after\n")
+    port_audit.write_doc("| newer |", inv, commit="def5678", day="2026-10-06", doc=doc)
+    assert doc.read_text().count(port_audit.DOC_BEGIN) == 1, "a second write must not nest blocks"
+
+
+def test_write_doc_refuses_a_page_without_exactly_one_block(tmp_path):
+    doc = tmp_path / "status.md"
+    doc.write_text("no markers here\n")
+    with pytest.raises(port_audit.PortAuditError):
+        port_audit.write_doc(
+            "x", {"translation": 0, "generated": 0, "harness": 0}, commit="a", day="d", doc=doc
+        )

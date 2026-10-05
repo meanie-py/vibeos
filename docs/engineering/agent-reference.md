@@ -728,6 +728,7 @@ python3 tools/port_audit.py --json         # same rows, machine-readable
 python3 tools/port_audit.py --check        # ratchet: every compiled source is classified
 python3 tools/port_audit.py --detail "Win32 DLLs"   # live directories in one surface
 python3 tools/port_audit.py --rust         # lines of Rust: translation / generated / harness
+python3 tools/port_audit.py --write-doc    # refresh the ledger block in rust-port-status.md
 ```
 
 Answers "where are we at on the core OS" from the **ninja build graph of this worktree's
