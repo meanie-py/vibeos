@@ -985,21 +985,35 @@ def parse_cmakelists(
     if target not in targets:
         raise ProfileDeriveError(f"{cmake}: no target {target!r} (have: {', '.join(targets)})")
 
-    target_kind, src_args = targets[target]
-    entries: list[SourceEntry] = []
-    seen: set[str] = set()
-    for a in src_args:
-        m = re.fullmatch(r"\$\{(\w+)\}", a)
-        expanded_entries = (
-            entries_by_var.get(m.group(1), []) if m else [_classify_entry(a, module_dir, None)]
-        )
-        if m and m.group(1) not in entries_by_var and m.group(1) in vars_:
-            expanded_entries = [_classify_entry(v, module_dir, None) for v in vars_[m.group(1)]]
-        for e in expanded_entries:
-            if e.raw in seen:
-                continue
-            seen.add(e.raw)
-            entries.append(e)
+    def target_entries(name: str) -> list[SourceEntry]:
+        out: list[SourceEntry] = []
+        seen: set[str] = set()
+        for a in targets[name][1]:
+            m = re.fullmatch(r"\$\{(\w+)\}", a)
+            expanded_entries = (
+                entries_by_var.get(m.group(1), []) if m else [_classify_entry(a, module_dir, None)]
+            )
+            if m and m.group(1) not in entries_by_var and m.group(1) in vars_:
+                expanded_entries = [_classify_entry(v, module_dir, None) for v in vars_[m.group(1)]]
+            for e in expanded_entries:
+                if e.raw in seen:
+                    continue
+                seen.add(e.raw)
+                out.append(e)
+        return out
+
+    target_kind, _ = targets[target]
+    entries = target_entries(target)
+    # TUs a SIBLING target in this same CMakeLists compiles. setuplib's 24 .c are built by
+    # `setuplib_static` and linked into `setuplib`; judged against `setuplib` alone they read
+    # as dead source, and the finding said "do not pay to translate them" about live code.
+    sibling_tus: dict[Path, str] = {}
+    for other in targets:
+        if other == target:
+            continue
+        for e in target_entries(other):
+            if e.kind == "tu" and e.path is not None:
+                sibling_tus.setdefault(e.path.resolve(), other)
 
     definitions.extend(per_target_defs.get(target, []))
     # A linked library's `target_include_directories(<lib> INTERFACE dir)` is on this target's
@@ -1025,6 +1039,24 @@ def parse_cmakelists(
         rpc_interfaces=rpc,
         findings=findings,
     )
+    if module.module_type is None:
+        # A static library has no set_module_type(); it runs in whatever image links it.
+        # When every consumer in this CMakeLists agrees on the mode, inherit it rather than
+        # make every caller remember --usermode (setuplib_static -> setuplib, a nativedll).
+        consumers = sorted(t for t, deps in link_deps.items() if target in deps)
+        kinds = {module_types[c][0] for c in consumers if c in module_types}
+        modes = {k in KERNEL_MODULE_TYPES for k in kinds}
+        if consumers and len(modes) == 1 and all(c in module_types for c in consumers):
+            module.module_type = sorted(kinds)[0]
+            findings.append(
+                Finding(
+                    "info",
+                    "MODULE_TYPE_INHERITED",
+                    f"{target!r} has no set_module_type(); it links into "
+                    f"{', '.join(consumers)} ({', '.join(sorted(kinds))}), so it is "
+                    f"{'kernel' if modes == {True} else 'usermode'} like them.",
+                )
+            )
     if restored_sources:
         findings.append(
             Finding(
@@ -1040,11 +1072,27 @@ def parse_cmakelists(
     # Dead source: on disk, absent from the compiled list. Translating one of these
     # is paid-for work that nobody links (it happened last batch).
     compiled = {p.resolve() for p in module.compiled_tus}
+    by_sibling: dict[str, list[Path]] = {}
     for cand in sorted(module_dir.rglob("*.c")) + sorted(module_dir.rglob("*.cpp")):
         if any(part in {"tests", "test", "build", ".git"} for part in cand.parts):
             continue
-        if cand.resolve() not in compiled:
+        if cand.resolve() in compiled:
+            continue
+        owner = sibling_tus.get(cand.resolve())
+        if owner is not None:
+            by_sibling.setdefault(owner, []).append(cand)
+        else:
             module.dead_sources.append(cand)
+    for owner, files in sorted(by_sibling.items()):
+        findings.append(
+            Finding(
+                "warn",
+                "SIBLING_TARGET",
+                f"{len(files)} .c are compiled by sibling target {owner!r}, not {target!r}: "
+                f"they are LIVE. To derive the island for them, pass --target {owner}: "
+                + ", ".join(_rel(p, repo_root) for p in files[:6]),
+            )
+        )
     if module.dead_sources:
         findings.append(
             Finding(
