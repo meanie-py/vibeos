@@ -1263,11 +1263,6 @@ pub unsafe extern "system" fn NtGdiDeleteObjectApp(hobj: HANDLE) -> BOOL {
         return GreDeleteObject(hobj);
     }
 
-    #[cfg(target_arch = "x86")]
-    {
-        IntGdiDeleteDC(hobj as _, 0)
-    }
-    #[cfg(not(target_arch = "x86"))]
     {
         IntGdiDeleteDC(hobj as _, 0)
     }

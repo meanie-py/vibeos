@@ -174,9 +174,6 @@ extern "C" {
     pub static mut KdbSingleStepOver: BOOLEAN;
     pub static mut KdTermSize: SIZE;
     // Linker-provided image base
-    #[cfg(target_arch = "x86")]
-    pub static __ImageBase: u8;
-    #[cfg(not(target_arch = "x86"))]
     pub static __ImageBase: u8;
 }
 

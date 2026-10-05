@@ -167,9 +167,17 @@ every translated body. **Owed, in order:**
        TickCount / KeTickCount are 0 at that point (3 boots), so it lacks amd64's
        stale-base hang. (Both loaders zero the page, so who dirties it on amd64 is
        still unexplained.)
-   - Owed, seen while there: ex-rust `pool.rs` arm64 eagerly commits PAGED pool
-     (other arches demand-zero), and its arm64 "clear residual allocation bits"
-     blocks are clear-then-set no-ops.
+   - DONE 2026-10-04: ex-rust `pool.rs` (and the dead pool.c) arm64 eager paged-pool
+     commit and "clear residual allocation bits" blocks removed. Paged pool is
+     demand-zero on every arch; a probe saw no residual Start/End/Verifier bits in
+     3 arm64 boots once the free-descriptor restore landed (8f82e3e57ace).
+   - DONE 2026-10-04: 35 identical `cfg(P)` / `cfg(not(P))` twins merged (28 win32k).
+   - ~~Owed: `scan_duplicate_symbols` for C/asm objects~~ superseded by link-guard
+     (5cabdbde74a, another session): `tools/link_guard.py` fronts ld.lld and FAILS a
+     link on a non-runtime duplicate, CMake and cargo alike. It fixed every finding
+     my parallel post-link scanner had (the unchecked Rust `Probe*` helpers,
+     i386 `RtlFillMemoryUlong`, mlang, winsrv, crt-dllmain), so the scanner was
+     dropped unlanded rather than kept as a second, weaker check.
    - DONE, tooling: scan_cfg_vs_c now has a UP/SMP axis (C `CONFIG_SMP` = Rust
      `feature = "smp"`). First find: KeBugCheckWithTf's CPU freeze was gated on x86/x86_64
      (C: `#ifdef CONFIG_SMP`) — ran in UP kernels, never on arm64 SMP. Now

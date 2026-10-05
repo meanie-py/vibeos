@@ -647,45 +647,6 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
         //
         KeFlushEntireTb(TRUE, TRUE);
 
-#ifdef _M_ARM64
-        /* ARM64: Eagerly commit physical pages for paged pool.
-         * Now that VBAR_EL1 is installed we could use demand-zero, but
-         * this path is still active for early allocations before the
-         * page fault handler is fully tested. */
-        TempPte = ValidKernelPte;
-        PointerPte = MiAddressToPte(BaseVa);
-        StartPte = PointerPte + SizeInPages;
-        OldIrql = MiAcquirePfnLock();
-        do
-        {
-            PMMPFN Pfn2;
-
-            MI_SET_USAGE(MI_USAGE_PAGED_POOL);
-            MI_SET_PROCESS2("Kernel");
-            PageFrameNumber = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
-            TempPte.u.Hard.PageFrameNumber = PageFrameNumber;
-            MI_WRITE_VALID_PTE(PointerPte, TempPte);
-
-            Pfn1 = MI_PFN_ELEMENT(PageFrameNumber);
-            Pfn1->u4.EntireFrame = 0;
-            Pfn1->u3.e2.ReferenceCount = 1;
-            Pfn1->u2.ShareCount = 1;
-            Pfn1->PteAddress = PointerPte;
-            Pfn1->u3.e1.PageLocation = ActiveAndValid;
-            Pfn1->u3.e1.CacheAttribute = MiCached;
-            Pfn1->u4.PteFrame = PFN_FROM_PTE(MiAddressToPte(PointerPte));
-
-            /* Increment the containing page table's share count */
-            Pfn2 = MI_PFN_ELEMENT(Pfn1->u4.PteFrame);
-            Pfn2->u2.ShareCount++;
-        } while (++PointerPte < StartPte);
-        MiReleasePfnLock(OldIrql);
-
-        /* Zero the pages */
-        RtlZeroMemory(BaseVa, SizeInPages << PAGE_SHIFT);
-
-        return BaseVa;
-#else
         /* Setup a demand-zero writable PTE */
         MI_MAKE_SOFTWARE_PTE(&TempPte, MM_READWRITE);
 
@@ -706,7 +667,6 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
         // Return the allocation address to the caller
         //
         return BaseVa;
-#endif
     }
 
     //
@@ -805,15 +765,6 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
                 //
                 Pfn1 = MiGetPfnEntry(PFN_FROM_PTE(PointerPte));
 
-#ifdef _M_ARM64
-                /* ARM64: Clear allocation tracking bits. Pages from the
-                 * NonPagedPool free list may carry residual state from
-                 * MiBuildPfnDatabaseFromLoaderBlock processing. */
-                Pfn1->u3.e1.StartOfAllocation = 0;
-                Pfn1->u3.e1.EndOfAllocation = 0;
-                Pfn1->u4.VerifierAllocation = 0;
-#endif
-
                 //
                 // Now mark it as the beginning of an allocation
                 //
@@ -843,9 +794,6 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
                 //
                 // Mark this PFN as the last (might be the same as the first)
                 //
-#ifdef _M_ARM64
-                Pfn1->u3.e1.EndOfAllocation = 0;
-#endif
                 ASSERT(Pfn1->u3.e1.EndOfAllocation == 0);
                 Pfn1->u3.e1.EndOfAllocation = 1;
 
