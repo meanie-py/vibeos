@@ -30,3 +30,12 @@ def test_a_struct_field_split_across_lines_is_not_a_label():
 def test_goto_in_a_comment_or_string_is_ignored():
     rust = 'fn f() {\n    // C: goto Quit;\n    let s = "goto Quit;";\n}'
     assert control_flow_findings(C, rust) == []
+
+
+def test_a_body_that_does_not_parse_is_a_finding():
+    from rustconv.c_body_checks import parse_findings
+
+    assert parse_findings("unsafe fn f() -> u32 { let x: u32 = 1; x }") == []
+    bad = 'unsafe fn f() { g(h, L"AddReg.NT" INF_ARCH, 0); }'
+    assert parse_findings(bad) and "does not parse" in parse_findings(bad)[0]
+    assert parse_findings("fn f() { (*p)->x = 1; }")

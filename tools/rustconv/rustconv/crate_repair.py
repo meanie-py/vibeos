@@ -2190,6 +2190,31 @@ def _sizeof_type_rule(
     masked = _mask_lexical(data)
     if _in_macro_definition(masked, start):
         return [], [], False
+    # A TYPE argument is a C macro's contract, not a lost `sizeof`: setuplib's
+    # `RTL_NUMBER_OF_FIELD(VOLINFO, DeviceName)` was rewritten to take
+    # `size_of::<VOLINFO>()` while the macro was still unported (so a plain call to rustc),
+    # and stayed broken once it was. C macros are spelled in capitals; Rust ones carry `!`.
+    depth, i = 0, start - 1
+    while i >= 0 and not (masked[i : i + 1] == b"(" and depth == 0):
+        depth += {b")": 1, b"]": 1, b"}": 1, b"(": -1, b"[": -1, b"{": -1}.get(masked[i : i + 1], 0)
+        i -= 1
+    head = re.search(rb"([A-Za-z_]\w*)\s*(!?)\s*$", masked[max(0, i - 80) : max(0, i)])
+    if i >= 0 and head is not None:
+        callee = head.group(1).decode()
+        if head.group(2) or re.fullmatch(r"[A-Z][A-Z0-9_]*", callee):
+            return (
+                [],
+                [
+                    Skipped(
+                        RULE_SIZEOF_TYPE,
+                        "macro_type_argument",
+                        file_name,
+                        int(span.get("line_start") or 0),
+                        f"`{name}` is an argument of `{callee}`, a macro that takes a type",
+                    )
+                ],
+                False,
+            )
 
     replacement = f"core::mem::size_of::<{name}>()"
     lo, hi = start, end
@@ -3114,7 +3139,23 @@ def _local_authorities(crate_dir: Path) -> tuple[dict[str, list[str]], frozenset
         sources[path.as_posix()] = data
         names.update(m.group(1).decode("utf-8", "replace") for m in _RE_TYPE_ALIAS.finditer(data))
         names.update(m.group(1).decode("utf-8", "replace") for m in _RE_USED_TYPE.finditer(data))
-    return harvest_signatures(sources), frozenset(names)
+    signatures = harvest_signatures(sources)
+    # The SAME glob chain, one link further: a usermode island opens with the PUBLIC
+    # `pub use ntdll_sys::nt::*;`, so ntdll-sys's `RtlAllocateHeap(.., Size: SIZE_T)` and its
+    # `SIZE_T` reach the caller through one path, exactly as the argument above requires.
+    # setuplib's 23 `callee_not_local` declines were all of this shape. Local declarations
+    # still win, and a kernel island's glob is private (`use`), so it is never followed.
+    islands = [sources[p] for p in sources if re.search(r"/types_[a-z0-9]+\.rs$", p)]
+    if any(re.search(rb"^pub use ntdll_sys::nt::\*;", d, re.M) for d in islands):
+        sys_src = crate_dir.parent / "ntdll-sys" / "src"
+        sys_sources = {p.as_posix(): p.read_bytes() for p in sorted(sys_src.glob("bindgen_*.rs"))}
+        for name, params in harvest_signatures(sys_sources).items():
+            signatures.setdefault(name, params)
+        for data in sys_sources.values():
+            names.update(
+                m.group(1).decode("utf-8", "replace") for m in _RE_TYPE_ALIAS.finditer(data)
+            )
+    return signatures, frozenset(names)
 
 
 def _flex_edits_for_crate(

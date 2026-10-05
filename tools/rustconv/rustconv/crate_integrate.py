@@ -451,6 +451,75 @@ def prelude_macros(crate: Path) -> set[str]:
 _C_SOURCE_BANNER = "\n// ORIGINAL C SOURCE"
 
 
+_C_ENUM = re.compile(
+    r"(?P<attrs>(?:^[ \t]*#\[[^\]]*\][ \t]*\n)*)^(?P<indent>[ \t]*)pub enum (?P<name>[A-Za-z_]\w*)"
+    r"\s*\{(?P<body>[^{}]*)\}[ \t]*\n?",
+    re.M,
+)
+_VARIANT = re.compile(r"^\s*([A-Za-z_]\w*)\s*(?:=\s*(.+?))?\s*$", re.S)
+
+
+def lower_c_enums(src: str) -> tuple[str, list[str]]:
+    """A translated C `enum` -> bindgen's shape: `pub type E = c_uint;` + one const each.
+
+    The preamble pass renders `typedef enum _ADAPTER_TYPE { EisaAdapter, .. }` as a Rust
+    `pub enum`, but the C bodies -- and so the translations -- spell the enumerators bare
+    (`AdapterTypeMax`) and do integer arithmetic on them, and a Rust enum holding a value
+    that is not one of its variants is undefined behaviour. The bindgen islands already use
+    `c_uint` + consts (`c_int` when an enumerator is negative), so translated code does too.
+    Only FIELDLESS enums are touched; `E::Variant` paths are rewritten to the bare name.
+    """
+    lowered: list[str] = []
+
+    def repl(m: re.Match[str]) -> str:
+        parts = [p for p in _split_top_commas(m.group("body")) if p.strip()]
+        variants = []
+        for part in parts:
+            code = re.sub(r"//[^\n]*|/\*.*?\*/", "", part, flags=re.S)
+            if not code.strip():
+                continue
+            v = _VARIANT.match(code)
+            if v is None:
+                return m.group(0)  # a data-carrying variant: a real Rust enum, not C's
+            variants.append((v.group(1), v.group(2)))
+        name, indent = m.group("name"), m.group("indent")
+        negative = any(val is not None and val.strip().startswith("-") for _, val in variants)
+        ctype = "::core::ffi::c_int" if negative else "::core::ffi::c_uint"
+        out = [f"{indent}pub type {name} = {ctype};"]
+        prev = None
+        for vname, val in variants:
+            expr = val.strip() if val is not None else ("0" if prev is None else f"{prev} + 1")
+            out.append(f"{indent}pub const {vname}: {name} = {expr};")
+            prev = vname
+        lowered.append(name)
+        return "\n".join(out) + "\n"
+
+    src = _C_ENUM.sub(repl, src)
+    if lowered:
+        aliases = set(lowered)
+        for m in re.finditer(r"pub type (\w+) = (\w+);", src):
+            if m.group(2) in aliases:
+                aliases.add(m.group(1))
+        src = re.sub(rf"\b(?:{'|'.join(map(re.escape, sorted(aliases)))})::(\w+)\b", r"\1", src)
+    return src, lowered
+
+
+def _split_top_commas(body: str) -> list[str]:
+    parts, depth, cur = [], 0, []
+    for ch in body:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur))
+    return parts
+
+
 def fix_macro_calls(src: str, macros: set[str], defined: set[str]) -> tuple[str, list[str]]:
     """Turn `NAME(args)` into `NAME!(args)` for every prelude macro. Returns (src, fixed).
 
@@ -501,6 +570,7 @@ class Report:
     prelude_added: bool = False
     dropped_provided: list[str] = field(default_factory=list)  # prelude already has it
     dropped_self: list[str] = field(default_factory=list)  # this file defines it
+    enums_lowered: list[str] = field(default_factory=list)  # C enum -> c_uint + consts
     kept_unprovided: list[str] = field(default_factory=list)  # REPORT: verify each
     kept_statics: list[str] = field(default_factory=list)  # e.g. IID_* link symbols
     promoted_pub: list[str] = field(default_factory=list)
@@ -591,6 +661,7 @@ def integrate(
         provided = provided_names(crate)
 
     src = _swap_substrate(src, report)
+    src, report.enums_lowered = lower_c_enums(src)
 
     # Cross-TU helper promotion: a name that some OTHER module in the crate declares extern
     # must be `pub` where it's defined. Exclude anything the prelude already provides —

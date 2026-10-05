@@ -28,7 +28,9 @@ def test_profile_arm_is_inserted_before_the_default_and_replaced_in_place():
     assert port.upsert_profile_arm(once, ARM, "beta") == once
     # a re-derived arm REPLACES the old one rather than adding a second
     changed = port.upsert_profile_arm(once, ARM.replace("base/setup/lib", "base/setup/x"), "beta")
-    assert changed.count("  beta)") == 1 and "base/setup/x" in changed and "setup/lib" not in changed
+    assert (
+        changed.count("  beta)") == 1 and "base/setup/x" in changed and "setup/lib" not in changed
+    )
 
 
 def test_script_without_a_default_arm_is_refused():
@@ -51,3 +53,26 @@ def test_workspace_member_is_added_once(tmp_path, monkeypatch):
     assert not port.add_workspace_member("b-rust")
     text = manifest.read_text()
     assert text.count('"b-rust"') == 1 and text.index('"a-rust"') < text.index('"b-rust"')
+
+
+def test_to_buy_sums_the_resume_cache_lines():
+    log = (
+        "  Resume cache: 0 banked ($0 replay), 19 to buy   [x]\n"
+        "  Resume cache: 3 banked ($0 replay), 2 to buy   [y]\n"
+    )
+    assert port._to_buy(log) == 21
+    assert port._to_buy("Resumed 8 unit(s) from cache") == 0
+
+
+def test_a_failed_glob_import_is_reported_as_masking(tmp_path):
+    (tmp_path / "a.rs").write_text("use x::*;\nuse crate::y::Z;\n")
+    err = (
+        "a.rs:1:5: error[E0432]: unresolved import `x`: could not find `x`\n"
+        "a.rs:2:5: error[E0432]: unresolved import `crate::y::Z`: no `Z`\n"
+    )
+    assert port._masking_glob(err, tmp_path) == ["a.rs:1"]
+
+
+def test_tokens_reads_both_log_formats():
+    log = "  [3] A OK (6118/16287)  [running $0.07]\n  [4/9] B... OK (6736 in / 1312 out)\n"
+    assert port._tokens(log) == (2, 12854, 17599)

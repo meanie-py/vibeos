@@ -50,8 +50,8 @@ from .bank_audit import exported_symbols
 from .bank_audit import format_report as format_bank_report
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .body_audit import main as body_audit_main
-from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
-from .c_body_checks import body_findings, control_flow_findings
+from .c2rust_anchor import C2RustError, CompiledOut, build_anchor_map, build_preamble
+from .c_body_checks import body_findings, control_flow_findings, parse_findings
 from .call_seal import (
     CallSealError,
     call_contract,
@@ -133,7 +133,7 @@ from .function_prompt import (
 from .function_resolver import resolve_function
 from .kernel_com import generate_owner
 from .kernel_preamble import derive_kernel_preamble
-from .macro_authority import function_like_macros
+from .macro_authority import function_like_macros, string_literal_macros
 from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
 from .placement_audit import placement_findings
@@ -988,7 +988,7 @@ def _unseal_worker(
                     raise FactSealError(finding.message())
                 ignored_envelope.append(finding.message().replace("\n", "; "))
         if not getattr(dep, "cpp_class", None):
-            for note in control_flow_findings(dep.body_text, rust):
+            for note in parse_findings(rust) + control_flow_findings(dep.body_text, rust):
                 if strict:
                     raise FactSealError(note)
                 ignored_envelope.append(note)
@@ -2667,6 +2667,17 @@ def cmd_translate(args):
         name.strip() for name in (getattr(args, "skip_fn", None) or []) if name.strip()
     }
     skip_fn_matched: set[str] = set()
+    rebuy_fn_requested = {
+        name.strip() for name in (getattr(args, "rebuy_fn", None) or []) if name.strip()
+    }
+    rebuy_fn_matched: set[str] = set()
+
+    def _rebuy_requested(name: str) -> bool:
+        if name in rebuy_fn_requested:
+            rebuy_fn_matched.add(name)
+            return True
+        return False
+
     # Decided ONCE, not per file, so the refusal below is stated once and not twenty times.
     # Never on the COM path: shell32's C++ literals are already lowered deterministically by
     # `rewrite_wide_literals`, and its prompts are banked under exactly that behaviour.
@@ -2891,8 +2902,15 @@ def cmd_translate(args):
         # FIRST of the three, so the fact seal sees an identifier where a literal was and
         # never has to reason about string contents, and so a wide literal's own array
         # BOUND (`WCHAR k[200] = L"..."`) is still a plain integer when this reads it.
+        # `L"AddReg.NT" INF_ARCH` folds only with the macro's real per-arch value.
+        string_macros = (
+            string_literal_macros(REACTOS_ROOT, c_file.resolve()) if wide_seal_enabled else {}
+        )
         wide_seals = (
-            {dep.name: seal_wide_literals(model_bodies[dep.name]) for dep in sorted_deps}
+            {
+                dep.name: seal_wide_literals(model_bodies[dep.name], string_macros)
+                for dep in sorted_deps
+            }
             if wide_seal_enabled
             else {}
         )
@@ -3169,12 +3187,29 @@ def cmd_translate(args):
             # (strict=True) instead of silently degrading to a worse pure-LLM translation.
             # Fails before any paid API call, so no money is wasted on unanchored output.
             try:
-                c2rust_anchors = build_anchor_map(
-                    c_file,
-                    strict=True,
-                    required_names={dep.name for dep in sorted_deps},
-                    arch=args.arch,
-                )
+                try:
+                    c2rust_anchors = build_anchor_map(
+                        c_file,
+                        strict=True,
+                        required_names={dep.name for dep in sorted_deps},
+                        arch=args.arch,
+                    )
+                except CompiledOut as gone:
+                    # The compiler's own verdict, finer than `never_compiled_lines`: a
+                    # condition only the preprocessor could settle. Same treatment.
+                    sorted_deps = [d for d in sorted_deps if d.name not in gone.names]
+                    print(
+                        f"  dead branch (per c2rust, every built arch): {len(gone.names)} "
+                        f"body/bodies not translated and not billed: "
+                        f"{', '.join(sorted(gone.names))}",
+                        file=sys.stderr,
+                    )
+                    c2rust_anchors = build_anchor_map(
+                        c_file,
+                        strict=True,
+                        required_names={dep.name for dep in sorted_deps},
+                        arch=args.arch,
+                    )
                 # File-scope static/const DATA (tables/S-boxes) compiler-exact — prepended
                 # to the preamble so the LLM never has to (mis)transcribe a lookup table.
                 c2rust_preamble = build_preamble(c_file, strict=True, arch=args.arch)
@@ -3666,6 +3701,8 @@ def cmd_translate(args):
                         dep.name,
                         allow_rejected=getattr(args, "rebuy_rejected", False),
                         failed_audit=dep.name in reaudit_failed,
+                        body_text=dep.body_text,
+                        explicit=_rebuy_requested(dep.name),
                     )
                 if getattr(args, "replay_only", False):
                     raise ValueError(f"--replay-only: no accepted cached body for {dep.name}")
@@ -3944,6 +3981,8 @@ def cmd_translate(args):
                     dep.name,
                     allow_rejected=getattr(args, "rebuy_rejected", False),
                     failed_audit=dep.name in reaudit_failed,
+                    body_text=dep.body_text,
+                    explicit=_rebuy_requested(dep.name),
                 )
             if getattr(args, "replay_only", False):
                 raise ValueError(f"--replay-only: no accepted cached body for {dep.name}")
@@ -4191,7 +4230,9 @@ def cmd_translate(args):
         # every one of the 18 arrays that shipped without the terminator its readers scan
         # for was a file-scope `static const WCHAR X[] = L"...";`, which only this pass sees.
         preamble_wide_seal = (
-            seal_wide_literals(preamble_src) if (wide_seal_enabled and preamble_src) else None
+            seal_wide_literals(preamble_src, string_literal_macros(REACTOS_ROOT, c_file.resolve()))
+            if (wide_seal_enabled and preamble_src)
+            else None
         )
 
         pre_hit = None if (no_resume or not preamble_src) else cache.get(PREAMBLE_KEY, preamble_src)
@@ -4756,6 +4797,12 @@ def cmd_translate(args):
     # belongs to one TU); across the WHOLE worklist it means the name is misspelled, and the
     # caller believes a body was left to them that was in fact translated and shipped. That is
     # the inverse of the skip's own guarantee, so it is an audit finding, not a log line.
+    unmatched_rebuy = sorted(rebuy_fn_requested - rebuy_fn_matched)
+    if unmatched_rebuy:
+        audit_findings.setdefault("--rebuy-fn NAMES THAT MATCHED NOTHING", []).extend(
+            f"'{name}' was never a cache miss in this worklist (misspelled, or it replayed)"
+            for name in unmatched_rebuy
+        )
     unmatched_skip = unmatched_skip_fn(skip_fn_requested, skip_fn_matched)
     if unmatched_skip:
         audit_findings.setdefault("--skip-fn NAMES THAT MATCHED NOTHING", []).extend(
@@ -5683,6 +5730,19 @@ def main():
             "functions, hand-write this one. Never silent — each name becomes an audit "
             "finding, and an unknown name is an error rather than a no-op. Repeatable, "
             "and accepts several names per flag."
+        ),
+    )
+    p.add_argument(
+        "--rebuy-fn",
+        dest="rebuy_fn",
+        action="extend",
+        nargs="*",
+        default=[],
+        metavar="NAME",
+        help=(
+            "FUNCTION names whose ACCEPTED banked body may be bought again, e.g. after a seal "
+            "got stricter and the banked body no longer replays. Named, never inferred; a name "
+            "that was never a cache miss is reported. Repeatable."
         ),
     )
     p.add_argument(

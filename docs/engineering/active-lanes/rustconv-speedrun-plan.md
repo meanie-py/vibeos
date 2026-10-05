@@ -227,6 +227,33 @@ and `port translate --escalate` takes the cheap pass then re-buys only rejects w
 thinking on (mui/osdetect: 3 bodies, $0.35). Next measurement owed: errors per function
 after the full deterministic pipeline, escalate vs always-on, on the remaining 11 TUs.
 
+**Thinking OFF vs ON, MEASURED (2026-10-05 day, per-call `meta.json` in `.responses/`).** The
+~1/40 above was output tokens on small functions; input dominates the bill. setuplib's last 11
+TUs (221 calls) with thinking off: 5,524 in / 689 out per call, **$0.010/call**. Overnight
+thinking-on calls (71): 4,696 in / 7,041 out, **$0.034/call**. The 6 bodies the escalation pass
+re-bought with thinking: 26,407 out, $0.115/call. Cheap-then-escalate came to ~$0.013 per
+function, ~2.7x cheaper than always-on. The cost is not the rejects but the TU each one voids:
+4 of 11 TUs assembled NOTHING after the cheap pass because one function stayed rejected.
+Quality (errors/function after the deterministic pipeline) is the comparison still owed.
+
+**What the second setuplib round fixed (2026-10-05 day).** c2rust: attached `-isystem/path`
+was dropped, so every arm64 c2rust run lost the CRT include dir under `-nostdinc` and silently
+anchored from amd64; `--preserve-unused-functions` (liveness is per arch); a body only another
+arch compiles is anchored from it, one no arch compiles is dropped from the bill; file-scope
+`L"…"` temporaries hoisted to named statics (mui's 22 dangling-pointer errors). Scanner:
+**tree-sitter ended 174 of the tree's 827 PSEH functions at the `_SEH2_TRY` block**, sending
+the FINALLY/EXCEPT tail to the model as stray "preamble"; the scanner now parses a
+same-length SEH-masked copy (174 -> 8). Shipped twins of those 174 were checked for the
+lost tail's calls: most survived (c2rust anchor or recall), EXCEPT-only losses are inert
+under dummy PSEH, and the residue is a review queue in
+`~/vibeos-rust-staging/port/seh-truncation-suspects.json` (owed). Also owed: a `{` opened
+inside `#if` and closed after `#endif` (virtual.c MiDeletePte, rxce RxRemoveNameNetFcb)
+still defeats the scanner either way. `port`: enum aliases and the win32macros list in
+`resolve`, a `macros` stage, `check` warns when a failed glob import hides resolution
+errors, per-pass logs with token totals, one cap across both escalate passes (the cap stops
+NEW TUs; one in flight can overshoot -- $3.18 on a $3 cap). crate-repair's width rule now
+reads ntdll-sys signatures through the island's public glob (23 -> 3 `callee_not_local`).
+
 **2026-10-05, owner's direction for the next round.** Order: correctness (done above),
 measurement, `rustconv port`, then ReactOS-native Setup and the driver-fleet residue
 before any Wine module. On those, TOOLING BEATS VELOCITY: each translation is a test of

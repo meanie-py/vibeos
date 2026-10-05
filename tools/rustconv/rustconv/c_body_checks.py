@@ -14,6 +14,8 @@ label, so a struct field split across lines (`Buffer:` / value) cannot trip it.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 
 from .placement_audit import placement_findings
 
@@ -40,8 +42,37 @@ def control_flow_findings(c_body: str, rust: str) -> list[str]:
     return out
 
 
+def parse_findings(rust: str) -> list[str]:
+    """The body does not even PARSE as Rust -- judged by rustc's own parser (rustfmt).
+
+    One unparseable body hides every name-resolution and type error in its crate: setuplib
+    sat at "94 errors" with C syntax left in five bodies (`L"x" INF_ARCH`, `a->b`, an
+    anonymous `struct { .. }` type) masking ~1,800. A body that does not parse was never a
+    translation, so it is rejected at purchase like any other envelope damage. Not
+    tree-sitter: it flags 19 of the tree's 3,403 shipping files that rustc accepts.
+    """
+    exe = shutil.which("rustfmt")
+    if exe is None:
+        raise RuntimeError(
+            "rustfmt not on PATH: the Rust parse check cannot run (rustup component add rustfmt)"
+        )
+    proc = subprocess.run(
+        [exe, "--edition", "2021", "--emit", "stdout"],
+        input=rust,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if proc.returncode == 0:
+        return []
+    first = next((ln for ln in proc.stderr.splitlines() if ln.startswith("error")), "")
+    return [f"the Rust does not parse ({first or 'rustfmt rejected it'})"]
+
+
 def body_findings(c_body: str, rust: str) -> list[str]:
-    """Every deterministic finding for one plain-C body (control flow + constant placement)."""
-    return control_flow_findings(c_body, rust) + [
-        f.message().replace("\n", "; ") for f in placement_findings(c_body, rust)
-    ]
+    """Every deterministic finding for one plain-C body (parse, control flow, placement)."""
+    return (
+        parse_findings(rust)
+        + control_flow_findings(c_body, rust)
+        + [f.message().replace("\n", "; ") for f in placement_findings(c_body, rust)]
+    )

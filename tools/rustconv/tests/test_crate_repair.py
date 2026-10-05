@@ -1385,3 +1385,20 @@ def test_size_of_val_wrapper_is_swallowed_whole():
     assert [e.replacement for e in plan.edits] == ["core::mem::size_of::<NONCLIENTMETRICS>()"]
     edit = plan.edits[0]
     assert src[edit.byte_start : edit.byte_end] == b"core::mem::size_of_val(&NONCLIENTMETRICS)"
+
+
+def test_a_macro_type_argument_is_not_a_lost_sizeof():
+    """setuplib: `RTL_NUMBER_OF_FIELD(VOLINFO, DeviceName)` became `size_of::<VOLINFO>()`."""
+    for call in (
+        b"RTL_NUMBER_OF_FIELD(VOLINFO, DeviceName)",
+        b"RTL_NUMBER_OF_FIELD!(VOLINFO, DeviceName)",
+    ):
+        src = b"pub fn f() -> usize {\n    " + call + b" + 1\n}\n"
+        plan = propose_edits(
+            [_found_type_diag(b"VOLINFO", src)],
+            _reader({"src/a.rs": src}),
+            target="i386",
+            rules=[RULE_SIZEOF_TYPE],
+        )
+        assert not plan.edits
+        assert [s.reason for s in plan.skipped] == ["macro_type_argument"]

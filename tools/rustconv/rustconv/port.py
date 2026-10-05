@@ -34,7 +34,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import crate_integrate, prelude_resolve
+from . import crate_integrate, local_macros, prelude_resolve
 from . import profile_derive as pd
 
 REPO = Path(__file__).resolve().parents[3]
@@ -222,13 +222,21 @@ def stage_translate(
     concurrency: int = 5,
     thinking: str = "on",
     escalate: bool = False,
-) -> None:
+    rebuy_fn: list[str] | None = None,
+) -> tuple[float, list[str]]:
+    """Run translate per TU; return (USD spent, file names of the TUs it ran)."""
     state = load_state(stem)
     started = time.time()
     picked = [t for t in state["tus"] if not only or Path(t).name in only]
     # An escalation pass revisits TUs that already have output: their good bodies replay
     # for $0 and only rejected / audit-failing functions are bought again, with thinking.
-    todo = picked if escalate else [t for t in picked if not _has_body(_tu_output(state, t))]
+    # `--rebuy-fn` names bodies inside TUs that already have output, so those are revisited
+    # too (their other functions replay for $0).
+    todo = (
+        picked
+        if escalate or rebuy_fn
+        else [t for t in picked if not _has_body(_tu_output(state, t))]
+    )
     spent = 0.0
     done: list[dict] = []
     for tu in todo:
@@ -272,17 +280,27 @@ def stage_translate(
         )
         if escalate:
             cmd += ["--rebuy-rejected", "--reassemble"]
+        # Only the names THIS TU defines: translate reports a name its worklist never
+        # missed, and every other TU's names would be exactly that.
+        c_text = (REPO / tu).read_text(errors="replace")
+        mine = [n for n in rebuy_fn or [] if re.search(rf"^\s*{re.escape(n)}\s*\(", c_text, re.M)]
+        if mine:
+            cmd += ["--rebuy-fn", *mine]
+            if "--reassemble" not in cmd:
+                cmd.append("--reassemble")
         t0 = time.time()
         proc = subprocess.run(
             cmd, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True, env=env
         )
-        log = STATE_ROOT / stem / f"translate-{Path(tu).stem}.log"
+        # One log per TU per PASS: the escalation pass used to overwrite the cheap pass's
+        # log, which destroyed exactly the token counts the cheap-vs-thinking comparison needs.
+        log = STATE_ROOT / stem / f"translate-{Path(tu).stem}-thinking-{thinking}.log"
         log.write_text(proc.stdout + proc.stderr)
         cost = _run_cost(proc.stdout + proc.stderr)
-        if (
-            not dry_run
-            and not _has_body(out)
-            and "parallel translation completed with rejected" in proc.stdout + proc.stderr
+        # Keyed on the run's own report, not on the output file: a TU revisited for
+        # --rebuy-fn / --escalate still holds its PREVIOUS output, so "no body" never fired.
+        if not dry_run and "parallel translation completed with rejected" in (
+            proc.stdout + proc.stderr
         ):
             # The parallel path does not re-roll a rejected worker; the sequential one does,
             # with the reject fed back. Accepted workers replay for $0, so this buys only
@@ -301,18 +319,29 @@ def stage_translate(
             )
             cost += _run_cost(proc.stdout + proc.stderr)
         spent += cost
+        fns, tok_in, tok_out = _tokens(log.read_text())
         done.append(
             {
                 "tu": tu,
                 "rc": proc.returncode,
+                "bought": fns,
+                "tokens_in": tok_in,
+                "tokens_out": tok_out,
                 "usd": cost,
                 "seconds": round(time.time() - t0, 1),
                 "body": _has_body(out),
             }
         )
+        to_buy = _to_buy(log.read_text())
+        done[-1]["to_buy"] = to_buy
+        status = (
+            f"would buy {to_buy} fn(s)" if dry_run else ("body" if _has_body(out) else "NO BODY")
+        )
+        if dry_run and proc.returncode:
+            status = f"REFUSED (see {log})"
         print(
             f"translate: {Path(tu).name}: rc={proc.returncode} ${cost:.4f} "
-            f"{'body' if _has_body(out) else 'NO BODY'} ({round(time.time() - t0)}s)"
+            f"{status} ({round(time.time() - t0)}s)"
         )
     _record(
         state,
@@ -327,7 +356,29 @@ def stage_translate(
         runs=done,
         dry_run=dry_run,
     )
-    print(f"translate: {len(done)} TU(s), ${spent:.4f}")
+    print(
+        f"translate: {len(done)} TU(s), ${spent:.4f}"
+        + (f", {sum(d['to_buy'] for d in done)} fn(s) to buy" if dry_run else "")
+    )
+    return spent, [Path(d["tu"]).name for d in done]
+
+
+def _tokens(log: str) -> tuple[int, int, int]:
+    """(functions bought, input tokens, output tokens) from a translate log.
+
+    Sequential lines read `OK (6736 in / 1312 out)`, parallel ones `OK (6118/16287)`.
+    """
+    n = tin = tout = 0
+    for m in re.finditer(r"\bOK \((\d+)(?: in / |/)(\d+)(?: out)?\)", log):
+        n += 1
+        tin += int(m.group(1))
+        tout += int(m.group(2))
+    return n, tin, tout
+
+
+def _to_buy(log: str) -> int:
+    """Functions a run would pay for: the `Resume cache: … N to buy` line(s) it printed."""
+    return sum(int(m.group(1)) for m in re.finditer(r"\b(\d+) to buy\b", log))
 
 
 _COST_RE = re.compile(r"\$([0-9]+\.[0-9]+)")
@@ -395,16 +446,56 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     prelude = crate / "src" / "prelude.rs"
     workspace = REPO / "sdk" / "lib" / "rust"
     pending = _c_defined_names([REPO / t for t in state["tus"]])
-    copied = prelude_resolve.existing_block(prelude)
+    if prelude_resolve.refresh_shared_macros(prelude, workspace / "win32macros-rust" / "src"):
+        print("resolve: refreshed the win32macros-rust re-export list")
+    # A name that is a function-like MACRO to this module's own preprocessor is never an
+    # extern fn, whatever another crate declared: winsrv's `fn RTL_FIELD_SIZE(t: usize, f:
+    # usize)` was copied by consensus and shadowed the real macro. Dropped, including copies
+    # an earlier run made.
+    from .macro_authority import function_like_macros
+
+    c_macros: set[str] = set()
+    for tu in state["tus"]:
+        try:
+            c_macros |= function_like_macros(REPO, (REPO / tu).resolve())
+        except Exception as e:  # reported, then judged without it
+            print(f"resolve: no macro authority for {tu}: {str(e).splitlines()[0][:120]}")
+    copied = {
+        k: v
+        for k, v in prelude_resolve.existing_block(prelude).items()
+        if not (v.kind == "fn" and k in c_macros)
+    }
+    siblings = prelude_resolve.existing_siblings(prelude)
+    modules_dir = crate / "src" / stem
     res = prelude_resolve.Resolution()
+    ambiguous: dict[str, list[str]] = {}
     for n in range(1, max_passes + 1):
         names = prelude_resolve.unresolved_names(
             state["crate"], RUST_TARGETS["amd64"], workspace, STATE_ROOT / stem / "target-amd64"
         )
+        # The crate's OWN definitions first: a name one translated module defines is
+        # imported from it, never copied from the tree.
+        found_here = prelude_resolve.sibling_definitions(names - set(siblings), modules_dir)
+        wired = 0
+        for name, defs in sorted(found_here.items()):
+            mods = sorted({m for m, _ in defs})
+            if len(mods) != 1:
+                ambiguous[name] = mods
+                continue
+            if not all(is_pub for _, is_pub in defs):
+                prelude_resolve.promote_pub(modules_dir / f"{mods[0]}.rs", name)
+            siblings[name] = mods[0]
+            wired += 1
+        if wired:
+            prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
+        names -= set(found_here)
         res.pending = sorted(names & pending)
-        todo = names - pending - set(copied)
+        todo = names - pending - set(copied) - c_macros
+        aliases = prelude_resolve.island_enum_aliases(todo, crate / "src")
+        copied.update(aliases)
+        todo -= set(aliases)
         items = prelude_resolve.workspace_items(todo, workspace, crate)
-        new = 0
+        new = len(aliases)
         res.conflicting, res.undefined = {}, []
         for name in sorted(todo):
             found = items.get(name, [])
@@ -417,10 +508,17 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
                 continue
             copied[name] = pick
             new += 1
-        print(f"resolve pass {n}: {len(names)} unresolved, {new} copied from tree consensus")
-        if not new:
+        print(
+            f"resolve pass {n}: {len(names)} unresolved, {wired} wired to a sibling module, "
+            f"{new} copied from tree consensus"
+        )
+        if not new and not wired:
             break
         prelude_resolve.write_block(prelude, prelude_resolve.render(copied))
+    # Unconditionally: a pass that finds nothing new still has to drop the stale copies
+    # filtered above, and the shared-macro list is judged against the cleaned prelude.
+    prelude_resolve.write_block(prelude, prelude_resolve.render(copied))
+    prelude_resolve.refresh_shared_macros(prelude, workspace / "win32macros-rust" / "src")
     res.copied = copied
     _record(
         state,
@@ -431,10 +529,17 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         undefined=res.undefined,
         conflicting=sorted(res.conflicting),
     )
+    if siblings:
+        print(f"resolve: {len(siblings)} name(s) imported from the module's own translations")
+    if ambiguous:
+        print(
+            "resolve: defined by more than one translated module (C `static` twins?), "
+            "not wired: " + ", ".join(f"{k} ({'/'.join(v)})" for k, v in sorted(ambiguous.items()))
+        )
     if res.pending:
         print(
-            f"resolve: {len(res.pending)} name(s) wait on untranslated TUs: "
-            + ", ".join(res.pending)
+            f"resolve: {len(res.pending)} name(s) the module's C defines but no translated "
+            "module does (untranslated TU, or a header inline): " + ", ".join(res.pending)
         )
     if res.undefined:
         print(
@@ -445,6 +550,136 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         print("resolve: not copied (the tree disagrees, or it is not ours to copy):")
         for name, why in sorted(res.conflicting.items()):
             print(f"    {name}: {why}")
+
+
+# --------------------------------------------------------------------------------------
+# macros
+# --------------------------------------------------------------------------------------
+
+
+def _seed_item_bank(stem: str, macros: dict, thinking: str, item_path) -> None:
+    """Split replies banked whole (before the per-item bank) into items, when still valid.
+
+    A whole-set reply counts only if its key is the one the CURRENT rules and definitions
+    give that set -- the same test that made it replay before.
+    """
+    for old in sorted((STATE_ROOT / stem).glob("macros-*.json")):
+        try:
+            data = json.loads(old.read_text())
+            names = set(data["macros"])
+        except (OSError, ValueError, KeyError):
+            continue
+        if not names <= set(macros) or old.stem.startswith("macros-reply-"):
+            continue
+        subset = {n: macros[n] for n in names}
+        if old.stem not in (
+            f"macros-{local_macros.key(subset, thinking)}",
+            f"macros-{local_macros.legacy_key(subset, thinking)}",
+        ):
+            continue
+        try:
+            items = local_macros.parse_reply(data["reply"], names)
+        except ValueError:
+            continue
+        for name, item in items.items():
+            if not item_path(name).is_file():
+                item_path(name).write_text(item)
+
+
+def stage_macros(
+    stem: str, *, model: str, cost_cap: float, dry_run: bool, thinking: str = "on"
+) -> None:
+    """Port the module's own function-like C macros the crate calls (local_macros.py)."""
+    state = load_state(stem)
+    started = time.time()
+    crate = _crate_dir(state)
+    prelude = crate / "src" / "prelude.rs"
+    module_dir = REPO / state["module_dir"]
+    files = sorted([*module_dir.rglob("*.h"), *module_dir.rglob("*.c")])
+    defs, ambiguous = local_macros.module_macros(files, REPO)
+    # Functions the module's HEADERS define inline: a macro of the same name wins.
+    for name, fn in local_macros.header_functions(sorted(module_dir.rglob("*.h")), REPO).items():
+        defs.setdefault(name, fn)
+    names = prelude_resolve.unresolved_names(
+        state["crate"],
+        RUST_TARGETS["amd64"],
+        REPO / "sdk" / "lib" / "rust",
+        STATE_ROOT / stem / "target-amd64",
+    )
+    # An object-like macro is ported only where the crate CALLS it (`SpInfFindFirstLine(..)`);
+    # used as a plain value it is a constant, which is resolve's business.
+    called = {
+        n
+        for n in names & set(defs)
+        if defs[n].params is not None
+        or defs[n].kind == "fn"
+        or any(
+            re.search(rf"\b{re.escape(n)}\s*\(", rs.read_text(errors="replace"))
+            for rs in (crate / "src" / stem).glob("*.rs")
+        )
+    }
+    wanted = called | local_macros.existing(prelude)
+    macros = local_macros.closure(wanted, defs)
+    skipped = sorted(names & ambiguous)
+    if skipped:
+        print(f"macros: defined differently in two places, hand-port: {', '.join(skipped)}")
+    if not macros:
+        print("macros: nothing to port")
+        _record(state, "macros", started, ported=0, usd=0.0)
+        return
+    # Banked PER ITEM (by its definition, the prompt rules and the thinking mode), so a
+    # macro added later buys only itself rather than re-buying the whole set.
+    item_dir = STATE_ROOT / stem / "macros"
+    item_dir.mkdir(parents=True, exist_ok=True)
+
+    def item_path(name: str) -> Path:
+        return item_dir / f"{name}-{local_macros.key({name: macros[name]}, thinking)}.rs"
+
+    _seed_item_bank(stem, macros, thinking, item_path)
+    ported = {n: item_path(n).read_text() for n in macros if item_path(n).is_file()}
+    todo = {n: m for n, m in macros.items() if n not in ported}
+    usd = 0.0
+    if not todo:
+        print(f"macros: {len(macros)} item(s) replayed from the bank ($0)")
+    else:
+        text = local_macros.prompt(todo, local_macros.in_scope_macros(prelude) | set(ported))
+        print(f"macros: {len(todo)} to port ({len(ported)} banked): {', '.join(sorted(todo))}")
+        if dry_run:
+            print(text)
+            return
+        from .__main__ import MODEL_ALIASES
+        from .batch_runner import submit_single
+        from .config import DEEPSEEK_MAX_TOKENS, MODEL_PRICING
+
+        api_model = MODEL_ALIASES.get(model, model)
+        pin, pout = MODEL_PRICING[api_model]
+        # Worst case: every output token the request may use (reasoning counts).
+        out_max = DEEPSEEK_MAX_TOKENS if thinking == "on" else 16000
+        ceiling = (len(text) / 2 * pin + out_max * pout) / 1e6
+        if ceiling > cost_cap:
+            raise PortError(f"macros: worst case ${ceiling:.3f} exceeds --cost-cap ${cost_cap:.2f}")
+        # Thinking ON by default, unlike bodies: a macro gets none of the per-function audits
+        # (seals, placement, c2rust anchor), and 22 of them cost cents. The thinking-off
+        # reply for setuplib compiled `VersionInfo32_Children` as a pointer `.wrapping_add`
+        # that scales by the struct size where the C adds BYTES as an integer.
+        os.environ["RUSTCONV_DEEPSEEK_THINKING"] = "enabled" if thinking == "on" else "disabled"
+        res = submit_single(text, model=api_model, system_prompt=local_macros.SYSTEM)
+        usd = (res.input_tokens * pin + res.output_tokens * pout) / 1e6
+        if not res.success:
+            raise PortError(f"macros: model call failed: {res.error}")
+        raw = STATE_ROOT / stem / f"macros-reply-{int(time.time())}.json"
+        raw.write_text(json.dumps({"macros": sorted(todo), "reply": res.rust_code, "usd": usd}))
+        try:
+            fresh = local_macros.parse_reply(res.rust_code, set(todo))
+        except ValueError as e:
+            raise PortError(f"macros: reply rejected ({e}); banked reply: {raw}") from e
+        for name, item in fresh.items():
+            item_path(name).write_text(item)
+        ported.update(fresh)
+        print(f"macros: bought for ${usd:.4f}, reply kept in {raw}")
+    changed = local_macros.write_block(prelude, local_macros.render(ported, macros))
+    _record(state, "macros", started, ported=len(ported), usd=round(usd, 4), changed=changed)
+    print(f"macros: {len(ported)} in the prelude; run `port integrate {stem}` to fix call sites")
 
 
 # --------------------------------------------------------------------------------------
@@ -468,6 +703,7 @@ def stage_check(stem: str) -> dict:
         )
         per_file: dict[str, int] = {}
         untranslated = 0
+        masked = _masking_glob(proc.stderr, REPO / "sdk" / "lib" / "rust")
         for line in proc.stderr.splitlines():
             m = re.match(r"^(\S+\.rs):\d+:\d+: error", line)
             if not m:
@@ -483,11 +719,20 @@ def stage_check(stem: str) -> dict:
             "errors": sum(per_file.values()),
             "untranslated": untranslated,
             "by_file": per_file,
+            "masked_by": masked,
         }
         print(
             f"check {arch}: rc={proc.returncode} errors={sum(per_file.values())} "
             f"(+{untranslated} module(s) not translated yet)"
         )
+        if masked:
+            # rustc stops reporting unresolved names once a glob import fails: the name might
+            # have come from that glob. inicache's invented `use ntdll_sys::nt::tier1::*;`
+            # took setuplib from 40-odd E0425 to ZERO while fixing nothing.
+            print(
+                f"check {arch}: UNDERCOUNT -- a failed glob import hides every unresolved-name "
+                f"error; fix it first (`port integrate` swaps substrate globs): {', '.join(masked)}"
+            )
     _record(
         state,
         "check",
@@ -495,6 +740,23 @@ def stage_check(stem: str) -> dict:
         **{a: {k: r[k] for k in ("rc", "errors", "untranslated")} for a, r in result.items()},
     )
     return result
+
+
+def _masking_glob(stderr: str, root: Path) -> list[str]:
+    """`file:line` of each failed GLOB import (E0432 whose `use` ends in `::*`).
+
+    The short message format names only the path prefix, so the source line decides.
+    """
+    out = []
+    for m in re.finditer(r"^(\S+\.rs):(\d+):\d+: error\[E0432\]", stderr, re.M):
+        try:
+            text = (root / m.group(1)).read_text(errors="replace").splitlines()
+            src = text[int(m.group(2)) - 1]
+        except (OSError, IndexError):
+            continue
+        if re.search(r"::\s*\*\s*;", src):
+            out.append(f"{m.group(1)}:{m.group(2)}")
+    return out
 
 
 def stage_status(stem: str) -> None:
@@ -521,7 +783,7 @@ def main(args) -> int:
         elif args.port_stage == "scaffold":
             stage_scaffold(_module(args.module), args.target)
         elif args.port_stage == "translate":
-            stage_translate(
+            spent, ran = stage_translate(
                 args.stem,
                 model=args.model,
                 cost_cap=args.cost_cap,
@@ -530,19 +792,31 @@ def main(args) -> int:
                 mode=args.mode,
                 concurrency=args.concurrency,
                 thinking="off" if args.escalate else args.thinking,
+                rebuy_fn=args.rebuy_fn,
             )
             if args.escalate and not args.dry_run:
+                # One cap for the whole invocation, and the escalation revisits only what
+                # the cheap pass just bought -- not every TU that already had output. With
+                # nothing new (everything already translated) it re-checks what was asked.
                 stage_translate(
                     args.stem,
                     model=args.model,
-                    cost_cap=args.cost_cap,
-                    only=args.only or [],
+                    cost_cap=max(0.0, args.cost_cap - spent),
+                    only=ran or args.only or [],
                     dry_run=False,
                     mode=args.mode,
                     concurrency=args.concurrency,
                     thinking="on",
                     escalate=True,
                 )
+        elif args.port_stage == "macros":
+            stage_macros(
+                args.stem,
+                model=args.model,
+                cost_cap=args.cost_cap,
+                dry_run=args.dry_run,
+                thinking=args.thinking,
+            )
         elif args.port_stage == "integrate":
             stage_integrate(args.stem)
         elif args.port_stage == "resolve":
@@ -566,10 +840,25 @@ def add_parser(sub) -> None:
         q.add_argument("--target", default=None, help="CMake target, when there are several")
     for name in ("island", "integrate", "resolve", "check", "status"):
         stages.add_parser(name).add_argument("stem")
+    q = stages.add_parser("macros", help="port the module's own C macros the crate calls")
+    q.add_argument("stem")
+    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("--cost-cap", type=float, default=0.30)
+    q.add_argument("--dry-run", action="store_true")
+    q.add_argument("--thinking", choices=("on", "off"), default="on")
     q = stages.add_parser("translate")
     q.add_argument("stem")
     q.add_argument("-m", "--model", default="deepseek")
-    q.add_argument("--cost-cap", type=float, required=True, help="USD for this invocation")
+    q.add_argument(
+        "--cost-cap",
+        type=float,
+        required=True,
+        help=(
+            "USD for this invocation: no new TU starts once it is spent. A TU already running "
+            "is never killed (that re-bills it), and translate's own per-TU cap is an "
+            "estimate, so the last TU can overshoot -- setuplib's $3 run ended at $3.18"
+        ),
+    )
     q.add_argument("--only", nargs="*", help="TU file names to limit the run to")
     q.add_argument("--dry-run", action="store_true")
     # mechanical: a faithful transliteration (C control flow and pointers kept), which is
@@ -585,4 +874,12 @@ def add_parser(sub) -> None:
         "--escalate",
         action="store_true",
         help="cheap pass with thinking off, then thinking on for rejects only",
+    )
+    q.add_argument(
+        "--rebuy-fn",
+        action="extend",
+        nargs="*",
+        default=[],
+        metavar="NAME",
+        help="accepted bodies to buy again (passed to translate --rebuy-fn); revisits their TUs",
     )
