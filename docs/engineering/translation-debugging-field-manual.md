@@ -10931,6 +10931,20 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 - **I/D cache incoherence.** Code paged in by `IoPageRead` (or relocated by the loader) sits in
   the D-cache; the I-side fetches stale RAM (zeros decode as `UDF`, ESR EC=0). Clean to PoU and
   invalidate the I-cache after writing code (`KeSweepICache`). TCG has no caches.
+- **Every QEMU smoke boot has a NIC; the board may not.** QEMU attaches a default NIC when the
+  command line names none, and no smoke config passes `-nic none`, so plain smoke has always
+  had virtio-net (arm64) or e1000 (x86), whatever a docstring says. So a "no adapter" path never
+  runs in QEMU. On the Pi 4 (GENET, which netstack does not drive) the engine worker exited
+  while TDI kept pending IRPs into its dead inbox, and a loopback `sendto` hung forever.
+  Reproduce NIC-less in QEMU with `VIBEOS_QEMU_EXTRA_ARGS="-nic user,model=rtl8139"` (a NIC
+  nothing drives). Not `-nic none`: that renumbers PCI, the efivars boot entry then names the
+  wrong device, and the firmware drops to the Shell.
+- **A UART print inside a trap costs ~90 ms per KB at 115200 baud.** QEMU's UART is instant, so
+  per-fault diagnostics are free there. FEX takes ~1,200 alignment faults per ladder boot by
+  design (unaligned `STLR`/`LDAR` on an A72, which has no LSE2; QEMU raises them too), and the
+  ~1 KB `[UEXC]`+`[ALIGN]` record per fault was minutes of serial time on the board. Those
+  codes are now capped after 32 records (tripwire `UEXCVERBOSE` restores all). Before timing
+  anything on hardware, count what the trap path prints.
 
 ### arm64 bring-up bugs worth recognising again
 - **`0xE3 RESOURCE_NOT_OWNED` (#43) was a fastfat shim testing the wrong WAIT bit.**

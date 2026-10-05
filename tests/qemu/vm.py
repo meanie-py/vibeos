@@ -1456,8 +1456,12 @@ class Arm64NetConfig(Arm64Config):
     works on amd64 enumerates here. Same slirp mini-internet + hostfwd/guestfwd
     contract as Amd64UefiNetConfig — see that class for the slirp topology.
 
-    Deliberately NOT the default arm64 smoke config: boot smoke keeps its
-    meaning (no NIC), net is its own signal (tests/qemu/test_net.py).
+    Deliberately NOT the default arm64 smoke config: net is its own signal
+    (tests/qemu/test_net.py). Plain smoke is NOT NIC-less, though: QEMU adds a
+    default NIC (virtio-net-pci on `virt`) when the command line names none, and
+    Arm64Config passes no `-nic none`. For a NIC-less boot use
+    VIBEOS_QEMU_EXTRA_ARGS="-nic user,model=rtl8139" (a NIC netstack does not
+    drive); `-nic none` renumbers PCI and the firmware loses the boot disk.
     """
 
     arch: str = "arm64-net"

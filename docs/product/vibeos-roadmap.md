@@ -568,17 +568,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **Pi 4 (real hardware): a loopback UDP `sendto()` never returns** (OPEN, 2026-10-04; owed to
-  the Pi networking work, which is in progress). `marshal32`'s sendto rung (`AF_INET` datagram
-  to `127.0.0.1:9` on an unbound socket, which forces AFD's null-transport-address path) hangs
-  on the board, and winlogon reads `exit = 0x103` (still alive). The same media passes that rung
-  in QEMU both UP and `-smp 4`, so it is neither FEX nor plain SMP. Loopback never touches the
-  NIC, so suspect tcpip/AFD state that depends on what adapters the board did or did not bring
-  up. Not yet tested natively (no arm64-native loopback-sendto probe exists), so FEX is
-  excluded only by the QEMU pass. Run: `/tmp/vibeos-cli/20261004-202912-qddv97oj-pi4-boot-arm64`
-  (its `serial.log` stops at the desktop marker; the guests are in the bench capture after the
-  run's `serial_offset`).
-
+- **Pi 4 (real hardware): a loopback UDP `sendto()` never returned** (FIXED 2026-10-04,
+  `e0674df2c66`). With no NIC netstack drives, the engine worker exited while TDI kept pending
+  IRPs into its dead inbox. They now fail fast with STATUS_NETWORK_UNREACHABLE. QEMU never showed
+  it because every smoke boot has QEMU's default NIC. **Still owed:** loopback with no NIC fails
+  rather than WORKS (Windows always has a loopback interface). That wants a smoltcp loopback
+  device in the engine, worth doing alongside the Pi's GENET driver.
 - **amd64: a user-mode Rust panic report can bugcheck the kernel (0x1E in the debug print
   path)** (OPEN, 2026-10-04; kd lane). A panic in explorer's shell32 printed a stack walk that
   ran into garbage, and the kernel faulted (C0000005) at `ntoskrnl+0xC64C0` reading it, which
@@ -2556,7 +2551,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 - **2026-10-04: x86 guests run under FEX on a real Raspberry Pi 4.** The FEX arm64 media
   (`VIBEOS_FEX=1`, MP kernel, Cortex-A72 x4) netbooted to the desktop and ran the whole ladder:
-  **13 of 14 x86 guests pass** plus `fexprobe` — including both stress guests, `lua32` and
+**13 of 14 x86 guests pass** plus `fexprobe` — including both stress guests, `lua32` and
   `sqlite32` — with no bugcheck. The one miss is `marshal32`, which hangs in a loopback
   `sendto()` that is a board-side networking bug, not FEX (registry: "Pi 4 (real hardware): a
   loopback UDP `sendto()` never returns"). Run `/tmp/vibeos-cli/20261004-202912-qddv97oj-pi4-boot-arm64`.
@@ -2577,6 +2572,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     4.5 s — and the whole ladder takes 121.6 s, 67.6 s of which is winlogon waiting out the
     hung `marshal32`. Power-on to desktop was 347 s; most of it is sanbooting the 564 MB FEX
     image (a plain arm64 image reached the desktop in ~100 s on 2026-09-26), unmeasured split.
+  - **Then 11/11 + all four non-parity guests, fully green, on the board** once netstack stopped
+    pending TDI IRPs into a dead engine (`e0674df2c66`):
+    `/tmp/vibeos-cli/20261004-221515-_d97sb6p-pi4-boot-arm64`, ladder drained in 61 s.
   - QEMU on the same tree: the ladder was red on `spawn32` (0xBAE4) — a lost-wakeup race in the
     guest itself (it closed the named DONE event before the child opened it), fixed in
     `509f9d7939f`; green UP and `-smp 4` after.
