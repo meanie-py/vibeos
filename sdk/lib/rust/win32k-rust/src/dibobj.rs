@@ -80,9 +80,6 @@ extern "C" {
     fn DIB_1BPP_HLine(so: *mut SURFOBJ, x1: LONG, x2: LONG, y: LONG, c: ULONG);
 }
 
-extern "system" {
-    fn ProbeForWrite(a: *mut core::ffi::c_void, l: usize, al: u32);
-}
 // EXLATEOBJ_* = ENGAPI/NTAPI; SafeProbe* = NTAPI, SIZE_T length.
 extern "system" {
     fn EXLATEOBJ_vInitialize(pexlo: *mut EXLATEOBJ, ppalSrc: PPALETTE, ppalDst: PPALETTE, crBackgroundClr: COLORREF, crForegroundClr: COLORREF, iForeIndex: ULONG);
@@ -1274,19 +1271,18 @@ pub unsafe extern "system" fn NtGdiGetDIBitsInternal(
             if cjMaxInfo > infoSize {
                 cjMaxInfo = infoSize;
             }
-            ProbeForWrite(pbmi as *mut _, cjMaxInfo as usize, 1);
-            // The probe VALIDATES only; this publish is the access. There is no Status
-            // in this function -- iResult IS the return value, so a fault has to clear
-            // it rather than report success for bits that were never written out.
-            if !crate::copy::publish_to_user(
+            // C: _SEH2_TRY { ProbeForWrite(pbmi, cjMaxInfo, 1);
+            //                RtlCopyMemory(pbmi, pbmiSafe, cjMaxInfo); }
+            //      _SEH2_EXCEPT { /* Ignore */ (VOID)0; }
+            // The handler deliberately ignores the fault: the scan lines already
+            // went to pjBits (secured user memory), only the header copy-back
+            // failed, so iResult stands and no last-error is set.
+            let _ = crate::safe_user_io::copy_to_user(
                 pbmi as *mut core::ffi::c_void,
                 pbmiSafe as *const core::ffi::c_void,
                 cjMaxInfo as usize,
-            ) {
-                SetLastNtError(STATUS_ACCESS_VIOLATION);
-                iResult = 0;
-                break 'cleanup;
-            }
+                1,
+            );
         }
     }
 

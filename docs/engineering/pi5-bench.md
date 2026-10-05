@@ -12,23 +12,35 @@ different is how a build reaches the board.
 ./vibeos-cli pi5 lease take --minutes 60 --why "..."   # separate from the Pi 4's lease
 ```
 
-VibeOS reached the desktop on the Pi 5 on 2026-10-04, booted from this card.
+VibeOS reached the desktop on the Pi 5 on 2026-10-04. The first hands-free
+`pi5 boot` took 2m48s from SSH stage to desktop.
 
 ## How a build gets there: the Linux stager and tryboot
 
 The Pi 5's UEFI is worproject's rpi5-uefi v0.3. It is archived, and that release is
 its last. Its network stack has no driver for the board's Ethernet, because the
 Ethernet sits behind the RP1 I/O chip. So there is no netboot, and the SD card
-carries two systems in one FAT partition (`tools/pi5/card/config.txt`):
+carries two systems in one FAT partition (`tools/pi5/card/`):
 
 - **A normal boot starts Raspberry Pi OS: the stager.** It owns the Ethernet.
   cloud-init sets it up as `bench@vibeos-pi5`, with key-only SSH using the host's
   `~/.ssh/id_ed25519`, and masks `rpi-eeprom-update`.
 - **`pi5 boot` copies this tree's files and reboots once into VibeOS.**
   `tools/pi5/stage.sh` copies `BOOTAA64.EFI`, `freeldr.ini`, the ramdisk and
-  `config.txt` over SSH and checks each by SHA-256 on the card. It then runs
-  `reboot '0 tryboot'`. The firmware applies `[tryboot]` for that one boot: UEFI as
-  the armstub with its own device tree, then VibeOS.
+  both config files over SSH and checks each by SHA-256 on the card. It then runs
+  `reboot '0 tryboot'`. For that one boot the firmware reads `tryboot.txt`
+  **instead of** `config.txt`: UEFI as the armstub with its own device tree, then
+  VibeOS. A `[tryboot]` section in `config.txt` is never consulted; that filter is
+  for `autoboot.txt`. With one, the first `pi5 boot` left the bootloader cycling
+  SD → USB → restart.
+- **`tryboot.txt` is the UEFI release's own `config.txt`, unmodified, and the
+  partition root is a UEFI-only card.** The stager's kernel, initramfs, device tree
+  and `cmdline.txt` live in `linux/` (`config.txt`: `os_prefix=linux/`), and the
+  root's `bcm2712-rpi-5-b.dtb` is the UEFI release's. Variations booted to a live,
+  all-black HDMI frame with no UEFI logo, twice: a renamed device tree with the
+  stager's kernel in the root, then the same with `kernel=` pointed away from it.
+  `stage.sh` moves an older card's stager into `linux/`. It installs the
+  `config.txt` that depends on that only once all four files are there.
 - **Any later reset is Linux again.** With `PI5_PLUG` set, `pi5 boot` power-cycles a
   board that is still in VibeOS or hung.
 

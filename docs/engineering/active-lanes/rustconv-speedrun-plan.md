@@ -183,6 +183,41 @@ every translated body. **Owed, in order:**
      (C: `#ifdef CONFIG_SMP`) — ran in UP kernels, never on arm64 SMP. Now
      `feature = "smp"`; arm64's KxFreezeExecution is still an empty stub (owed).
 
+**2026-10-05: defect 2 (permuted constants) has a placement check.** The fact seal
+verifies a closed SET, so `a = 10; b = 20;` returned as `a = 20; b = 10;` passed.
+`rustconv/placement_audit.py` gives every constant occurrence a slot (callee + argument
+index, assignment target, comparison/bitwise operand, `return` keyed by its `if`, `case`
+keyed by its arm) and reports only a CYCLE of constants each sitting in a slot where the
+C never puts it. `translate` rejects such a body (last attempt: accepted and listed under
+UNVERIFIED CONSTANTS), and `scan_constant_placement` gates the tree (empty baseline).
+Measured, not assumed: 0 findings over 73,524 shipped functions with a C twin (the false-
+positive rate a reject costs), and 38.8% of 1,500 seeded swaps of real constants caught
+(it was 4.9% with statement-word contexts, which is why slots replaced them). Known
+residue: two constants that share one slot in different branches, and slots a translation
+renamed beyond case/underscore. Next, in the owner's order: measure per-module agent time
+from git history, build `rustconv port`, then Setup and the driver fleet ($10 DeepSeek).
+
+**2026-10-05, owner's direction for the next round.** Order: correctness (done above),
+measurement, `rustconv port`, then ReactOS-native Setup and the driver-fleet residue
+before any Wine module. On those, TOOLING BEATS VELOCITY: each translation is a test of
+the pipeline for the Wine climb, so a module is worth porting when it exercises or proves
+a tool change. Budget: $10 of DeepSeek before the owner tops up.
+
+**Where agent time goes (measured 2026-10-05, $0).** Tool calls in the three translation
+lanes' session transcripts, each charged until the next event (gaps capped at 15 min),
+~280 active hours: smoke/gate/land 18-28%, check/tests 16-20%, build 8-12%, reading 17-24%,
+model text 12-18% -- and the paid translate calls 1-6%. Verification and integration, not
+translation, is the cost; `rustconv port` aims there. A desk-sized module (19 TUs) went
+translate -> lint fixes -> island allowlist -> hand-written prelude -> cargo grind on 3
+arches -> CMake flip (~40 lines of per-module cargo plumbing) in ~6 hours.
+
+**profile_derive fixes found by the first `port` probe (setuplib).** (1) With
+`--target setuplib`, the 23 TUs its STATIC sibling `setuplib_static` compiles were reported
+DEAD_SOURCE, "do not pay to translate them" -- live code. They are now SIBLING_TARGET,
+naming the `--target` to pass. (2) A static library with no set_module_type() inherits its
+consumers' mode when they agree (MODULE_TYPE_INHERITED) instead of demanding
+`--usermode`.
+
 ## TASK 0, AND DO NOT SKIP IT: measure where the money and the time actually go
 
 Every number below is an anecdote from a lane that happened to notice something. Nobody has

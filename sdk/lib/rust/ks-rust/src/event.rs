@@ -18,7 +18,6 @@ use crate::api::GUID_NULL;
 
 // ProbeForRead is a real ntoskrnl export; declare it locally (same pattern as property.rs).
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 
 // Object-type data exports (ntoskrnl). In the WDK these are `POBJECT_TYPE*`, hence the
@@ -133,15 +132,24 @@ pub unsafe extern "system" fn KspEnableEvent(
     }
 
     if (*Irp).RequestorMode == 1i8 {
-        /* DUMMY_PSEH: probe and copy (exception handling is dead code) */
-        ProbeForRead((*IoStack).Parameters.DeviceIoControl.Type3InputBuffer, core::mem::size_of::<KSEVENT>() as ULONG_PTR, 1);
-        ProbeForRead((*Irp).UserBuffer, (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as ULONG_PTR, 1);
-        core::ptr::copy(
-            (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const u8,
-            &mut Event as *mut KSEVENT as *mut u8,
-            core::mem::size_of::<KSEVENT>(),
-        );
-        Status = STATUS_SUCCESS;
+        // C: both probes + the copy under _SEH2_TRY, whose handler stores the
+        // exception code in Status; failure returns it.
+        Status = ntkrnl_sys::probe::probe_user_buffer(
+            (*Irp).UserBuffer,
+            (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize,
+            1,
+            1,
+        )
+        .and_then(|()| {
+            ntkrnl_sys::probe::safe_copy_from_user(
+                &mut Event as *mut KSEVENT as PVOID,
+                (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer,
+                core::mem::size_of::<KSEVENT>(),
+                1,
+                1,
+            )
+        })
+        .map_or_else(|status| status, |()| STATUS_SUCCESS);
 
         if !NT_SUCCESS(Status) {
             return Status;

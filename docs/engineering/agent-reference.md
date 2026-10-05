@@ -471,6 +471,15 @@ Each bug class it finds becomes a gated `check` scanner over every body. The fir
   246-site review queue.
 - `scan_dropped_null_guard`: the C null-tests an out-param, and the Rust stores through
   it unconditionally.
+- `scan_constant_placement`: the C's constants are all present but in each other's places
+  (`a = 10; b = 20;` came back `a = 20; b = 10;`). The fact seal checks a closed SET, which
+  a permutation satisfies; rustconv `translate` now rejects these too
+  (`rustconv/placement_audit.py`). Each constant gets a slot (callee + argument index,
+  assignment target, comparison/bitwise operand, `return` keyed by its `if`, `case` keyed
+  by its arm), and only a CYCLE of constants each in a slot where the C never puts it is
+  reported. Measured 2026-10-05: 0 findings over 73,524 shipped functions; 38.8% of seeded
+  swaps caught. Not caught: two constants sharing one slot (`ret = A` / `ret = B` in
+  different branches) and slots the translation renamed.
 - `scan_store_on_failure`: the C writes an out-param only after its last failure `return`
   (compress.c's `out:` label), and the Rust writes it and then returns a status that can
   fail. A store dominated by a success test, and a `*pp = NULL` (COM's rule), stay quiet.

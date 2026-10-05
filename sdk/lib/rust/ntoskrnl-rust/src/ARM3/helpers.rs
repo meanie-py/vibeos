@@ -964,7 +964,6 @@ extern "system" {
     pub fn MiReleaseProcessReferenceToSessionDataPage(SessionGlobal: PVOID);
     pub fn PsChargeProcessNonPagedPoolQuota(Process: PVOID, Amount: SIZE_T) -> NTSTATUS;
     pub fn PsReturnProcessNonPagedPoolQuota(Process: PVOID, Amount: SIZE_T);
-    pub fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     pub fn RtlImageNtHeader(Base: PVOID) -> PVOID;
     pub fn RtlImageDirectoryEntryToData(
         BaseAddress: PVOID, MappedAsImage: BOOLEAN, Directory: USHORT, Size: *mut ULONG,

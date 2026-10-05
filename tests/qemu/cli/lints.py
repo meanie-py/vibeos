@@ -669,6 +669,8 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     #     reads a BOOL — 56 definitions across userenv, win32k, shell32, winsrv, ks, msvcrt.
     #   cfg_vs_c: a per-arch `#[cfg]` whose arch set the C twin's `#if`s never draw — e.g.
     #     `_WIN64` translated as `target_arch = "x86_64"` (user32 GetClassLongA/W on arm64).
+    #   constant_placement: the C's constants all present but in each other's places
+    #     (`a = 10; b = 20;` -> `a = 20; b = 10;`), which the fact seal's SET check passes.
     # All were driven to zero before wiring; baselines are EMPTY.
     for lint_name in (
         "scan_ptr_byte_diff",
@@ -677,6 +679,7 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         "scan_store_on_failure",
         "scan_bool_width",
         "scan_cfg_vs_c",
+        "scan_constant_placement",
     ):
         script = repo / "tools" / f"{lint_name}.py"
         specs.append(
@@ -882,6 +885,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_dropped_seh_pairs",
             [py, str(sdsp), "--lint"] if sdsp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # The KEPT-probe half: the probe is still there, but it is the RAISING one. The C
+    # catches it in a _SEH2_EXCEPT; with DUMMY_PSEH nothing does, so one bad pointer
+    # from user mode is BUGCHECK 0x1E. About 160 such calls (ProbeForRead/Write and the
+    # typed probe.h helpers) were converted to ntkrnl_sys::probe's Result probes on
+    # 2026-10-04. Gated at ZERO for the same reason as the pairs scanner above.
+    srp = repo / "tools" / "scan_raising_probes.py"
+    specs.append(
+        (
+            "scan_raising_probes",
+            [py, str(srp), "--lint"] if srp.is_file() else ["MISSING"],
             "stdout",
         )
     )

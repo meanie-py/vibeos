@@ -5,10 +5,10 @@ once and `tools/link_guard.py` can stop allowing the Rust panic runtime as a dup
 For those binaries, that is also the last thing `--allow-multiple-definition` is still
 needed for.
 
-**Status (2026-10-04): scoped, not started.** Sequenced after two smaller items on the
-roadmap: the ~160 kernel probe sites ("Kernel user-pointer probes" in the bug registry)
-and deleting the 37 per-module `--allow-multiple-definition` copies that `gcc.cmake` made
-redundant.
+**Status (2026-10-04): scoped, not started.** Its two prerequisites are done: the ~160
+kernel probe sites ("Kernel user-pointer probes" in the bug registry) and the per-module
+`--allow-multiple-definition` copies, now deleted. `gcc.cmake` applies the flag (and the
+guard) globally.
 
 ---
 

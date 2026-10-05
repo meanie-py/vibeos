@@ -83,9 +83,6 @@ add_library(aclui MODULE
 set_module_type(aclui win32dll UNICODE)
 # libaclui_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(aclui ${ACLUI_RUST_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(aclui PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(aclui rust_aclui)
 add_importlibs(aclui user32 gdi32 comctl32 ole32 oleaut32 advapi32 uxtheme msvcrt kernel32 ntdll)
 # add_pch dropped with the C: guid.c was already PCH_SKIP, and the two TUs left

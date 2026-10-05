@@ -43,9 +43,6 @@ add_library(wsock32 MODULE
 set_module_type(wsock32 win32dll UNICODE)
 # libwsock32_rust.a FIRST so its #[no_mangle] DllMain wins.
 target_link_libraries(wsock32 ${WSOCK32_RUST_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(wsock32 PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(wsock32 rust_wsock32)
 add_importlibs(wsock32 mswsock ws2_32 msvcrt kernel32 ntdll)
 add_cd_file(TARGET wsock32 DESTINATION reactos/system32 FOR all)

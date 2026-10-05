@@ -138,7 +138,6 @@ set_module_type(ole32 win32dll)
 add_idl_reg_scripts(ole32 registry dcom.idl ole32_objidl.idl ole32_oleidl.idl ole32_unknwn.idl)
 # OLE32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
 target_link_libraries(ole32 ${OLE32_RUST_LIB} wine uuid ${PSEH_LIB} oldnames)
-target_link_options(ole32 PRIVATE LINKER:--allow-multiple-definition)
 # oleaut32's delay-import lib is ONE object holding a thunk for every oleaut32 export,
 # including the three it forwards back to us (`-import` in oleaut32.spec). It gets
 # loaded for SysAllocString long before the .def exports are resolved, so its thunks
