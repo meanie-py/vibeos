@@ -1592,30 +1592,76 @@ pub unsafe extern "system" fn VarCyFromR4(fltIn: f32, pCyOut: *mut CY) -> HRESUL
 
 #[no_mangle]
 pub unsafe extern "system" fn VarCyFromR8(dblIn: f64, pCyOut: *mut CY) -> HRESULT {
-    if dblIn < -922337203685477.5807_f64 || dblIn >= 922337203685477.5807_f64 {
-        return DISP_E_OVERFLOW;
+    // Wine 10.0 on x86/x86_64 does this on the x87 (fldl; fmull 10000; fistpll with
+    // precision 64 bits, round-to-nearest-even) and says that is what matches Windows;
+    // its plain-double fallback "produces slightly different results for boundary
+    // cases": 922337203685476.0 * 10000 needs 67 bits, so the double product loses
+    // the low digits. Do the x87's arithmetic exactly in integers, on every arch.
+    match cy_from_r8_x87(dblIn) {
+        Some(v) => {
+            (*pCyOut).int64 = v;
+            S_OK
+        }
+        None => DISP_E_OVERFLOW,
     }
-    let value = dblIn * 10000.0_f64;
-    let whole = if value < 0.0_f64 { ceil(value) } else { floor(value) };
-    let fract = value - whole;
-    let res: i64;
-    if fract > 0.5 {
-        res = (whole as i64) + 1;
-    } else if fract == 0.5 {
-        let is_odd = (whole as i64) & 1;
-        res = (whole as i64) + is_odd;
-    } else if fract >= 0.0 {
-        res = whole as i64;
-    } else if fract == -0.5 {
-        let is_odd = (whole as i64) & 1;
-        res = (whole as i64) - is_odd;
-    } else if fract > -0.5 {
-        res = whole as i64;
+}
+
+/// Round `p / 2^sh` to the nearest integer, ties to even.
+fn round_shift_even(p: u128, sh: u32) -> u128 {
+    if sh == 0 {
+        return p;
+    }
+    if sh >= 127 {
+        // p < 2^68 here, so the quotient rounds to 0.
+        return 0;
+    }
+    let q = p >> sh;
+    let rem = p & ((1u128 << sh) - 1);
+    let half = 1u128 << (sh - 1);
+    if rem > half || (rem == half && (q & 1) == 1) { q + 1 } else { q }
+}
+
+/// fldl d; fmull 10000.0; fistpll -- `None` where fistpll raises Invalid.
+fn cy_from_r8_x87(d: f64) -> Option<i64> {
+    if !d.is_finite() {
+        return None;
+    }
+    let bits = d.to_bits();
+    let neg = (bits >> 63) != 0;
+    let bexp = ((bits >> 52) & 0x7ff) as i32;
+    let frac = bits & ((1u64 << 52) - 1);
+    let (m, mut e) = if bexp == 0 { (frac, -1074) } else { (frac | (1u64 << 52), bexp - 1075) };
+    if m == 0 {
+        return Some(0);
+    }
+    // fmull: the exact product (< 2^67), rounded to the x87's 64-bit significand.
+    let mut p = (m as u128) * 10000;
+    let nbits = 128 - p.leading_zeros();
+    if nbits > 64 {
+        let sh = nbits - 64;
+        p = round_shift_even(p, sh);
+        e += sh as i32;
+    }
+    // fistpll: to an integer, ties to even.
+    let mag: u128 = if e >= 0 {
+        if e >= 64 {
+            return None;
+        }
+        let v = p << e;
+        if v >> 64 != 0 {
+            return None;
+        }
+        v
     } else {
-        res = (whole as i64) - 1;
+        round_shift_even(p, (-e) as u32)
+    };
+    if neg {
+        if mag > 1u128 << 63 { None } else { Some((mag as i128).wrapping_neg() as i64) }
+    } else if mag > i64::MAX as u128 {
+        None
+    } else {
+        Some(mag as i64)
     }
-    (*pCyOut).int64 = res;
-    S_OK
 }
 
 #[no_mangle]
