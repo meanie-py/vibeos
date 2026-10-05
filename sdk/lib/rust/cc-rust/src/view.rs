@@ -473,7 +473,7 @@ pub unsafe extern "C" fn CcRosFlushDirtyPages(
 
         let shared_cache_map = (*current).SharedCacheMap;
 
-        if called_from_lazy != 0 && BooleanFlagOn((*(*shared_cache_map).FileObject).Flags, 0x10000) != 0 {
+        if called_from_lazy != 0 && BooleanFlagOn((*(*shared_cache_map).FileObject).Flags, crate::fs::FO_TEMPORARY_FILE) != 0 {
             CcRosVacbDecRefCount(current);
             continue;
         }

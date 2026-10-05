@@ -732,22 +732,35 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
       UI thread and before the download thread (blocked in an ntdll syscall), with no
       FAULTLOOP report. Inference, not shown: GetThreadContext waiting on a thread whose
       kernel wait blocks the suspend APC.
-    - **cpl-appwiz then opened no window**: not reproduced since the TDI cancellation fix
-      (PASS in all 5 arm64 boots that reached it, three of them after a killed rapps). Not mutex abandonment either.
+    - **cpl-appwiz then opens no window** (OPEN): rapps /appwiz stays alive with no window.
+      Failed again 2026-10-04 (20261004-173345-lbmi6pz6) after passing 5 boots; not mutex
+      abandonment. appstorm's no-window dump missed it (rundll32 exits and orphans rapps before
+      the family is grown); fixed, so the next failure dumps rapps' threads.
     - **OWED: hand-declared user-mode FFI structs have no layout gate.** `verify_offsets.py`
       covers ntkrnl-sys only; a struct a crate declares by hand (cabinet's FDI types, the
       `IMAGE_*`/`DROPFILES`/`SHFILEINFO` copies in shell32/version/crt-startup) is checked by
       nothing unless someone wrote an `offset_of!` assert. Wanted: the verify_offsets recipe
       (clang offsets with the module's flags -> generated rustc asserts) for user-mode crates.
     - cpl-joy passed every run today.
-  - **arm64 FAULTLOOP: the walker faults on a mapping software reads as valid.** The pager
-    reports success 64 times on one fault while the PTE (and, now dumped, the PDE) read as
-    well-formed valid descriptors -- not the #39 reserved-descriptor class. Seen as DFSC 0x07 on
-    fresh heap pages in ntdll (resolves after the burst; every arm64 run since at least
-    2026-10-03) and as DFSC 0x06 in kernel32!Thread32Next on a toolhelp snapshot (appstorm's
-    thread dump), where it can hang the run. FALSIFIED: stale translations. Invalidating the VA
-    and the PTE/PDE self-map VAs (`tlbi vaae1is`) on every repeat did not shorten a single loop
-    (0x8F6 flushes, same 64-count reports), so the walker and the self-map really disagree.
+  - **arm64 `-smp 2`: BUGCHECK 0x1E in `CmpCreateKeyControlBlock`** (config-rust
+    cmkcbncb.rs:759), on CPU 1, loading through a garbage KCB pointer (FAR 0x0014...3A) while
+    walking the KCB hash chain. New with smp-bringup (18d1d4a3517): first seen 2026-10-04 in
+    the queue's base gate (farm 20261004-185704-eff80o8u), then 0/4 on a clean master
+    checkout, so a race, not a deterministic break. Smells like the KCB cache's locking
+    with two CPUs live; owner: the SMP lane.
+  - **arm64 FAULTLOOP was the detector, not a loop** (RESOLVED 2026-10-04). The report
+    fingerprinted a fault as (VA, PC, TTBR0); a stream of DISTINCT faults sharing those --
+    Cc reading many small files (rapps' cab extraction), each new VACB recycled onto the same
+    view VA and taking one first-touch soft fault in memcpy, or the heap re-committing one
+    page -- counted as "the pager succeeded 64 times on the same fault". Measured before the
+    fix: every round entered with AT(VA) faulting and left it valid (a fresh view, not a
+    stale TLB or a lying walker), the reader's VACB was live and correct each time, the PFN
+    differed per round, and MM freed/recreated the area between rounds with no reader
+    registered. The fingerprint now includes a hash of the faulting registers: a real loop
+    re-faults with identical state, churn does not. Two appstorm boots after: zero reports.
+    The probes stay: AT on entry/report, faulting args, frames named module+offset, and an
+    unmap tripwire armed only while a loop is live. Whether the DFSC 0x06 Thread32Next case
+    was a real hang is not settled -- the two silent appstorm hangs today printed no report.
   - **The dropped RpcTryExcept class**: FIXED 2026-10-04 for the user-mode RPC clients.
     ntdll now exports the kernel's SEH trampolines (`RtlSehTryExcept`, sehtry.c built
     `-DSEHTRY_USER_MODE`) and `ntdll_sys::seh::rpc_try` restores each C handler. 245 stub

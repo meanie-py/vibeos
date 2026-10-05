@@ -12082,6 +12082,15 @@ introduced at any heap exit — it is an external stray write.**
   each PC — a `wfi` is idle, a `b .` is a park, and an unfetchable page is the loop. If a FROZEN
   verdict ever comes with an odd sample out in `KiTrapReturn`, that is the loop caught mid-eret,
   not a dead clock; read the trap handler's retry decision for that abort, not the timers.
+- **A "same fault, pager succeeded N times" report is only a loop if the REGISTERS repeat.**
+  arm64's `[FAULTLOOP]` report keyed a fault on (VA, PC, TTBR0) and fired in every arm64 boot;
+  a day went into stale TLBs and page-table walkers before the measurements said otherwise.
+  The tells: the PTE's PFN differs between reports, `AT S1E1R` on the VA faults on every
+  ENTRY and succeeds after the pager, and the faulting args (dest, length) differ. That is a
+  stream of distinct first-touch faults sharing an address -- Cc's per-file VACBs recycled onto
+  one view VA by the lookaside, memcpy taking one soft fault on each -- not one instruction
+  stuck. The fingerprint now hashes the faulting registers; check the report's churn count
+  before reading anything into it.
 - **A wedge whose vCPU keeps stopping at EL0 is a user-mode spin; find its process from EL1.**
   arm64 appstorm went silent mid-run three times (2026-10-03) and first read as "the guest got
   slow". Every gdb stop landed at `kernel32!ExitThread+0x5c`: the `loop {}` after
