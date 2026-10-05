@@ -125,7 +125,8 @@ def doctor_stages(repo: Path, run_dir: Path | None = None) -> list[Stage]:
                 status="fail",
                 detail=str(usb["error"]),
                 salient=[
-                    "the Pico 2 W is not answering on ws://picousb:8080",
+                    "the Pico 2 W is not answering on "
+                    f"{os.environ.get('PI4_PICO_HOST', 'picousb5')}:8080",
                     "green LED off = no Wi-Fi; its own log is on GP4 (picousb docs/protocol.md)",
                 ],
             )

@@ -724,6 +724,19 @@ class Arm64Config(ArchConfig):
         ]
     )
 
+    def hostile_machine_args(self) -> list[str]:
+        """machine_args with the arm64 hostile hazards (a76, el2) applied."""
+        hazards = hostile_hazards()
+        machine = list(self.machine_args)
+        if "el2" in hazards:
+            machine[machine.index("-M") + 1] += ",virtualization=on"
+        if "a76" in hazards:
+            machine[machine.index("-cpu") + 1] = "cortex-a76"
+        return machine
+
+    def hostile_memory(self) -> str:
+        return "6G" if "mem" in hostile_hazards() else self.memory
+
     def qemu_args(self, work_dir: Path) -> list[str]:
         # Same boot-entry selection x86 gets: the ramdisk always carries both
         # kernel/HAL pairs and both freeldr entries, so an --smp run repoints
@@ -742,9 +755,9 @@ class Arm64Config(ArchConfig):
         efivars_raw.unlink()
 
         return [
-            *self.machine_args,
+            *self.hostile_machine_args(),
             "-m",
-            self.memory,
+            self.hostile_memory(),
             "-drive",
             f"if=pflash,format=raw,file={uefi_fw},readonly=on",
             "-drive",
@@ -955,10 +968,16 @@ class Amd64Config(ArchConfig):
 #   cpu    `-cpu max`: SMEP/SMAP/UMIP/x2APIC/XSAVE features TCG then ENFORCES
 #   nops2  no i8042; input only through USB HID on xHCI
 #   novga  no legacy VGA; GOP from ramfb only
-#   mem    6 GiB, so RAM and the memory map straddle 4 GiB
+#   mem    6 GiB, so RAM and the memory map straddle 4 GiB (arm64 too: its RAM
+#          starts at 1 GiB on virt, so this is well past the Pi 5's 4 GiB)
 #   serial no COM1: the console UART sits at an I/O port only an ACPI SPCR names,
 #          as AMT serial-over-LAN, a BMC or a PCIe serial card does on a real PC
-HOSTILE_HAZARDS = ("q35", "cpu", "nops2", "novga", "mem", "serial")
+# and for arm64, the two ways a Raspberry Pi differs from QEMU's default virt CPU:
+#   a76    `-cpu cortex-a76` (the Pi 5's core): ARMv8.2, so PAN, UAO and the
+#          other post-v8.0 SCTLR/PSTATE controls exist and are enforced
+#   el2    `virtualization=on`: firmware hands off at EL2, as both Pis' UEFI do,
+#          so the loader's drop to EL1 runs (QEMU otherwise starts us at EL1)
+HOSTILE_HAZARDS = ("q35", "cpu", "nops2", "novga", "mem", "serial", "a76", "el2")
 HOSTILE_UART = 0x5000
 HOSTILE_UART_IRQ = 5
 
@@ -1428,9 +1447,9 @@ class Arm64TestKernelConfig(Arm64Config):
         efivars_raw.unlink()
 
         return [
-            *self.machine_args,
+            *self.hostile_machine_args(),
             "-m",
-            self.memory,
+            self.hostile_memory(),
             "-drive",
             f"if=pflash,format=raw,file={uefi_fw},readonly=on",
             "-drive",

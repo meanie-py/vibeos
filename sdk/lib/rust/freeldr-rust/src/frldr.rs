@@ -84,9 +84,20 @@ pub const TAG_CACHE_BLOCK: ULONG = u32::from_be_bytes(*b"BcaC") as ULONG;
 pub const MM_PAGE_SIZE: SIZE_T = 4096;
 pub const MM_PAGE_MASK: ULONG = 0xFFF;
 pub const MM_PAGE_SHIFT: ULONG = 12;
-// i386 non-PAE: 20 bits for the PFN. (MM_MAX_PAGE_LOADER already defined
-// below as PFN_NUMBER — reused, not redefined.)
-pub const MM_MAX_PAGE: ULONG = 0xFFFFF;
+// mm.h: the highest PFN the loader will DESCRIBE to the kernel, per arch. It was
+// i386's 20-bit value on every arch, which silently cut the memory map at 4 GiB:
+// on arm64 with more RAM, the loader's own tables spanned all of it while the
+// kernel's descriptor list stopped at 4 GiB, and MM init faulted (6 GiB QEMU).
+#[cfg(target_arch = "x86")]
+pub const MM_MAX_PAGE: PFN_NUMBER = 0xFFFFF; /* 20 bits for the PFN */
+// mm.h says 0x1FFFFF (8 GiB, its own "can't handle the full memory range yet" cap,
+// CORE-20265). Ours stays at 4 GiB for now: with 6 GiB described the amd64 kernel
+// bugchecks 0x19 and q35's AHCI path hangs - see the roadmap's known-bugs entry
+// "amd64 RAM above 4 GiB". Raise this when that is fixed; hostile `mem` tests it.
+#[cfg(target_arch = "x86_64")]
+pub const MM_MAX_PAGE: PFN_NUMBER = 0xFFFFF;
+#[cfg(target_arch = "aarch64")]
+pub const MM_MAX_PAGE: PFN_NUMBER = 0xFFFFFFFFF; /* 36 bits for the PFN */
 pub const TEMP_HEAP_SIZE: SIZE_T = 32 * 1024 * 1024;
 // ndk ketypes.h: KI_USER_SHARED_DATA fixed VA. Per-arch:
 //   i386  (ndk/i386/ketypes.h):   0xffdf0000
@@ -484,7 +495,14 @@ pub type POOL_TYPE = u32;
 pub const FREELDR_BASE: usize = 0xF800;
 pub const FREELDR_PE_BASE: usize = 0x10000;
 pub const FREELDR_SECTION_COUNT: usize = 4;
+// 4 GiB of flat loader address range. arm64's is 0x100000 in mm.h: the i386
+// 0xFFFFF left the last page below 4 GiB out of the loader's page lookup table.
+// amd64 keeps 0xFFFFF: mm.h's 0x3FFFF is the BIOS loader's 1 GiB identity map,
+// and the UEFI loader here has always run with 4 GiB.
+#[cfg(not(target_arch = "aarch64"))]
 pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0xFFFFF;
+#[cfg(target_arch = "aarch64")]
+pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0x100000;
 // x86common.h: MEMORY_MARGIN = HEX(88000), MAX_FREELDR_PE_SIZE = MEMORY_MARGIN
 // - FREELDR_PE_BASE - PAGE_SIZE = 0x77000. Earlier rustconv emitted the literal
 // 0x70000 instead of the MEMORY_MARGIN macro, capping the PE at 0x5f000 = 380KB.

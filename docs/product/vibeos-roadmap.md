@@ -568,6 +568,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **amd64 RAM above 4 GiB: the kernel cannot use it yet** (OPEN, 2026-10-04). The loader's
+  `MM_MAX_PAGE` (freeldr-rust `frldr.rs`) cuts amd64's memory map at 4 GiB, as the Rust has
+  always done; mm.h's 8 GiB would expose the rest. With it raised, `VIBEOS_QEMU_HOSTILE=mem`
+  (6 GiB) bugchecks 0x19 (pool header, P1=5) and hostile `all` hangs in uniata's AHCI
+  start. Repro: runs `20261004-194815-lrtpx0w2` and `20261004-194452-8j2swl96` (smoke-amd64,
+  graviton lane). Raise the cap once both are green. arm64 already describes all RAM: its
+  pool-sizing underflow was the 4 GiB Pi 5's silent hang (fixed in `arm/init.rs`).
 - **amd64: a user-mode Rust panic report can bugcheck the kernel (0x1E in the debug print
   path)** (OPEN, 2026-10-04; kd lane). A panic in explorer's shell32 printed a stack walk that
   ran into garbage, and the kernel faulted (C0000005) at `ntoskrnl+0xC64C0` reading it, which
