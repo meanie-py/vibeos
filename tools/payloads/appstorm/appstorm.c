@@ -489,6 +489,29 @@ static int app_msgbox(DWORD pid, const char *name, const char *step)
     return 0;
 }
 
+/* App Paths, as ShellExecute resolves an exe that is not on PATH. syssetup.inf's [Finalize]
+ * (RunOnceEx, first boot) moves iexplore.exe from %windir% into Program Files and registers it
+ * here. The x86 livecd is read-only, so the move fails there and SearchPath still finds it in
+ * %windir%; the arm64 ramdisk is writable and gets the real install, so only this finds it. */
+static int app_path(const char *exe, char *out)
+{
+    char key[MAX_PATH], raw[MAX_PATH];
+    DWORD len = sizeof raw, type;
+    HKEY hk;
+    int ok = 0;
+    wsprintfA(key, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\%s", exe);
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, key, 0, KEY_QUERY_VALUE, &hk))
+        return 0;
+    if (!RegQueryValueExA(hk, NULL, NULL, &type, (BYTE *)raw, &len) && (type == REG_SZ || type == REG_EXPAND_SZ)) {
+        char *p = raw;
+        if (*p == '"') { p++; p[strcspn(p, "\"")] = 0; }
+        ExpandEnvironmentStringsA(p, out, MAX_PATH);
+        ok = GetFileAttributesA(out) != INVALID_FILE_ATTRIBUTES;
+    }
+    RegCloseKey(hk);
+    return ok;
+}
+
 /* notepad: type text, File > Save As, name a file on the scratch volume, OK. The Pi crashed
  * notepad here, and the dialog is shell32 end to end (DefView lists the folder, the combo
  * autocompletes against the filesystem), so it reaches code no launch-and-close does. */
@@ -636,7 +659,7 @@ int main(void)
         char path[MAX_PATH], cmd[1024], args[MAX_PATH];
         if (!wanted(a->name))
             continue;
-        if (!SearchPathA(NULL, a->exe, NULL, MAX_PATH, path, NULL)) {
+        if (!SearchPathA(NULL, a->exe, NULL, MAX_PATH, path, NULL) && !app_path(a->exe, path)) {
             SAY("app %s ABSENT (%s)\n", a->name, a->exe);
             absent++;
             continue;
@@ -662,6 +685,7 @@ int main(void)
         end_prior_instances(a->exe);
         snapshot(&before);
         snapshot_pids();
+        DWORD app_t0 = GetTickCount();
         STARTUPINFOA si = { sizeof si };
         PROCESS_INFORMATION pi;
         if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
@@ -816,8 +840,11 @@ int main(void)
         /* An app that ignores WM_CLOSE is a failure, not a pass: every app on every arch
          * timing out on close (a lost PostMessage) scored PASS here until this counted. */
         int good = ok && !hung && !errbox && !crashed && shell && !strcmp(close, "OK");
-        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s\n",
-            a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED");
+        /* ms: launch to verdict. The serial log has no clock, and a run that hit the drain
+         * deadline could not say which app ate the time. */
+        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s ms=%lu\n",
+            a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED",
+            GetTickCount() - app_t0);
         good ? pass++ : fail++;
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);

@@ -279,7 +279,11 @@ unsafe fn PcVideoGetBiosMode(
 unsafe fn PcVideoGetDisplayMode() {
     let mut Mode: USHORT = 0;
 
-    if PcVideoGetBiosMode(&mut Mode) != 0 &&
+    // Is the current mode VESA? (VBE 4F03h. This asked INT 10h AH=0Fh for the
+    // BIOS mode instead and fed that 0x00-0x13 number to VBE 4F01h, so a real
+    // VESA start mode was never recognised, and a BIOS that answers 4F01h for
+    // a legacy mode number got taken for a VESA graphics mode.)
+    if PcVideoVesaGetCurrentSVGAMode(&mut Mode) != 0 &&
        PcVideoVesaGetSVGAModeInformation(Mode, &mut VesaVideoModeInformation) != 0
     {
         TRACE(b"VESA mode detected\n\0".as_ptr() as *const i8);
@@ -304,14 +308,9 @@ unsafe fn PcVideoGetDisplayMode() {
         ScreenWidth = (*(0x44A as *const USHORT)) as u32 ;
         ScreenHeight = 1 + *(0x484 as *const UCHAR) as ULONG;
 
-        BytesPerScanLine = ((*(0x489 as *const UCHAR)) & 0x90) as u32 ;
-        BytesPerScanLine = ((BytesPerScanLine & 0x80) >> 6) | ((BytesPerScanLine & 0x10) >> 4);
-        BytesPerScanLine = match BytesPerScanLine {
-            x if x == VERTRES_200_SCANLINES as u32 => 200,
-            x if x == VERTRES_350_SCANLINES as u32 => 350,
-            x if x == VERTRES_400_SCANLINES as u32 => 400,
-            _ => 160,
-        };
+        // Text mode: one byte for the character, one for the attribute. (Upstream
+        // bd881161ac2: BDA byte 0x489 holds the vertical scan-line count, not a row stride.)
+        BytesPerScanLine = ScreenWidth * 2;
 
         DisplayMode = VideoTextMode;
         VesaVideoMode = 0u8;
@@ -322,7 +321,7 @@ unsafe fn PcVideoGetDisplayMode() {
         BiosVideoMode = VIDEOMODE_NORMAL_TEXT;
         ScreenWidth = 80;
         ScreenHeight = 25;
-        BytesPerScanLine = 160;
+        BytesPerScanLine = ScreenWidth * 2;
         DisplayMode = VideoTextMode;
         VesaVideoMode = 0u8;
     }
@@ -463,6 +462,7 @@ unsafe fn PcVideoSetMode80x25() -> BOOLEAN {
     PcVideoSetBiosMode(0x03);
     ScreenWidth = 80;
     ScreenHeight = 25;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 
@@ -475,6 +475,7 @@ unsafe fn PcVideoSetMode80x50_80x43() -> BOOLEAN {
         PcVideoDefineCursor(6, 7);
         ScreenWidth = 80;
         ScreenHeight = 50;
+        BytesPerScanLine = ScreenWidth * 2;
     } else if VideoCard == VIDEOCARD_EGA {
         PcVideoSetBiosMode(0x03);
         PcVideoSetFont8x8();
@@ -483,6 +484,7 @@ unsafe fn PcVideoSetMode80x50_80x43() -> BOOLEAN {
         PcVideoDefineCursor(6, 7);
         ScreenWidth = 80;
         ScreenHeight = 43;
+        BytesPerScanLine = ScreenWidth * 2;
     } else {
         return 0u8;
     }
@@ -496,6 +498,7 @@ unsafe fn PcVideoSetMode80x28() -> BOOLEAN {
     PcVideoDefineCursor(11, 12);
     ScreenWidth = 80;
     ScreenHeight = 28;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 
@@ -504,6 +507,7 @@ unsafe fn PcVideoSetMode80x30() -> BOOLEAN {
     PcVideoSet480ScanLines();
     ScreenWidth = 80;
     ScreenHeight = 30;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 
@@ -515,6 +519,7 @@ unsafe fn PcVideoSetMode80x34() -> BOOLEAN {
     PcVideoSetDisplayEnd();
     ScreenWidth = 80;
     ScreenHeight = 34;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 
@@ -527,6 +532,7 @@ unsafe fn PcVideoSetMode80x43() -> BOOLEAN {
     PcVideoDefineCursor(6, 7);
     ScreenWidth = 80;
     ScreenHeight = 43;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 
@@ -540,6 +546,7 @@ unsafe fn PcVideoSetMode80x60() -> BOOLEAN {
     PcVideoSetDisplayEnd();
     ScreenWidth = 80;
     ScreenHeight = 60;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 

@@ -87,6 +87,9 @@ pub mod align;
 pub mod invalid_parameter;
 #[cfg(feature = "lowio-open")]
 pub mod lowio_open;
+// The `...` entry points (were ucrt_varargs_shim.c and the sprintf in printf.c).
+#[cfg(all(target_os = "windows", feature = "exec", feature = "lowio-open", feature = "output"))]
+mod va_entries;
 #[cfg(feature = "mbstring")]
 pub mod mbstring;
 #[cfg(feature = "string-ops")]
@@ -111,6 +114,22 @@ pub mod env;
 pub mod exec_rest;
 #[cfg(feature = "internal-core")]
 pub mod internal;
+#[cfg(feature = "startup")]
+pub mod startup;
+#[cfg(feature = "argv-errors")]
+pub mod argv;
+#[cfg(feature = "cvt")]
+pub mod cvt;
+#[cfg(feature = "winapi-thunks")]
+pub mod winapi_thunks;
+#[cfg(feature = "ucrt-reactos")]
+pub mod ucrt_reactos;
+#[cfg(all(feature = "fpctrl", target_arch = "aarch64"))]
+pub mod fpctrl_arm64;
+#[cfg(feature = "fenv")]
+pub mod fenv;
+#[cfg(feature = "c99math")]
+pub mod c99math;
 #[cfg(feature = "heap")]
 pub mod heap;
 #[cfg(feature = "stdlib")]

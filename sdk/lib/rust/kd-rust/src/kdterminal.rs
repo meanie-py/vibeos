@@ -83,8 +83,16 @@ extern "C" {
 
 extern "system" {
     fn KdbpTryGetCharKeyboard(ScanCode: *mut ULONG, Retry: ULONG) -> LONG;
-    fn KdbpTryGetCharSerial(Retry: ULONG) -> LONG;
+    #[link_name = "KdbpTryGetCharSerial"]
+    fn KdbpTryGetCharSerial__c(Retry: ULONG) -> CHAR;
     fn KdbpSendCommandSerial(Command: PCSTR);
+}
+
+// kdserial.rs returns CHAR: through a LONG decl the bits above the byte were never written, so
+// its -1 (no input) need not compare equal to -1. Sign-extended here, as the C caller would.
+#[allow(non_snake_case)]
+unsafe fn KdbpTryGetCharSerial(Retry: ULONG) -> LONG {
+    KdbpTryGetCharSerial__c(Retry) as LONG
 }
 
 // KdbpGetCharSerial is a C macro `#define KdbpGetCharSerial() KdbpTryGetCharSerial(0)`

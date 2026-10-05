@@ -131,12 +131,39 @@ the config that caused it. So the transform refuses up front:
 | an existing `-icount` | we will not record on top of someone else's counting config |
 | no `-drive` at all | `rrsnapshot=` needs a snapshot-capable image |
 | the `windows-host` backend | media stage into a Windows path; the trace would straddle two path namespaces |
-| a drive behind `ide-cd` / `scsi-cd` | QEMU 9.0.2's `blkreplay` stalls the ATAPI path outright — see below. This is why **x86 cannot be recorded yet** |
+| a drive behind `ide-cd` / `scsi-cd` | QEMU 9.0.2's `blkreplay` stalls the ATAPI path outright — see below. x86 records over usb-storage instead (next paragraph) |
 
-x86 is wired end to end — the transform, the media staging and the accelerator
-demotion below are all tested against the real configs — but it **cannot
-actually record today**, because its boot ISO sits behind `ide-cd`. arm64 is the
-only arch proven on real media.
+**x86 records AND replays to the desktop (2026-10-04)**, booting its ISO over
+usb-storage: `VIBEOS_QEMU_BOOT_TRANSPORT=usb-storage ./vibeos-cli rr record --arch
+amd64 --payload none`, then `rr replay <trace>` (replay to `shell ready` in 1m26s,
+92% of the trace consumed -- the rest is past the marker). Getting there took one
+loader fix, three kernel layers and three harness fixes, each found by the one before:
+
+- freeldr booted `rdisk(N)partition(M)` for any ISO not on a 2048-byte-block device;
+  it now asks whether the medium carries ISO9660.
+- the kernel then needed the boot ArcName bound to a DISK holding the ISO
+  (`IopAssignCdArcNameFromDisk`), partition zero's `VPB_RAW_MOUNT` lifted on that one
+  device so cdfs's `\CdfsHdd` can mount it, and a cdfs translation bug fixed (the
+  sector cache's no-TOC branch was translated under the wrong cfg, so every
+  disk-based ISO raised STATUS_INVALID_PARAMETER).
+- `rr record` passes `--no-net`: amd64's smoke runs a second boot for its net suite,
+  and under the rr env it overwrote the trace's media after the recording ended.
+- `-rtc clock=vm` on x86: the PC RTC ticks on the host clock by default, which filled
+  the log with host-clock timer checkpoints. Recordings got ~3x faster, ~5x smaller.
+- **x86 replay does not load the `init` snapshot.** Loading it re-armed a
+  virtual-clock timer due at time zero (a device post-load hook); in replay mode
+  that timer may only run at a recorded `CHECKPOINT_CLOCK_VIRTUAL`, and the
+  recording has none before its first instruction. The vCPU then spins in
+  `icount_handle_deadline -> qemu_clock_notify` while the main loop idles, at
+  instruction count 0, forever (and SIGTERM goes unanswered: the main loop that
+  handles it never runs). Recording still creates the snapshot; `prepare_replay`
+  reverts every disk to it, so the replay starts from the same disks and the same
+  power-on state the recording did. Found by `info replay` on a monitor (count 0),
+  `-d exec` (not one translation block), and a backtrace of QEMU run under gdb
+  (`ptrace_scope` refuses an attach). arm64 still loads the snapshot.
+
+virtio-blk does not boot yet: the virtio ISO disk is not enumerated when ArcNames
+are made, so only the empty scratch disk is scanned.
 
 One refusal the transform does NOT make is x86's default accelerator. `amd64`
 and `i386` boot `-accel kvm -cpu host`, which would fail the first row of that
@@ -577,9 +604,99 @@ Record it here and keep going; only chase one when it looks load-bearing.
 
   Firmware and freeldr start up fine from virtio; the boot then dies where
   freeldr loads the kernel, so vibeos's x86 boot path cannot take its LiveCD
-  over virtio-blk regardless of what rr wants. Making x86 recordable therefore
-  needs blkreplay to handle ATAPI — a QEMU-side fix, or a newer QEMU — not a
-  device-set workaround on our side.
+  over virtio-blk regardless of what rr wants.
+
+  **The blocker is OURS, not QEMU's — corrected 2026-09-13.** This section used
+  to end "making x86 recordable therefore needs blkreplay to handle ATAPI — a
+  QEMU-side fix, or a newer QEMU". That was inferred from one non-ATAPI transport
+  failing. A second one says otherwise.
+
+  `usb-storage` is neither of the two models the transform refuses, and QEMU
+  accepts `blkreplay` over it without complaint — a probe recorded 94MB of
+  `replay.bin` while OVMF booted the ISO from it:
+
+  ```
+  BdsDxe: starting Boot0001 "UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:04.0-1"
+  UEFI EntryPoint: Starting freeldr from UEFI
+  [freeldr] MachInit done ... Boot devices initialized
+  [freeldr] Switching stack...          <- and no further
+  ```
+
+  Same wall as virtio-blk, to the line. And the control settles it: **the same
+  usb-storage boot with no `-icount` and no `blkreplay` stops at the identical
+  `[freeldr] Switching stack...`, same 10 lines.** rr is not involved.
+
+  So the summary for x86 is:
+
+  | transport | blkreplay | boots |
+  |---|---|---|
+  | `ide-cd` (ATAPI) | **fatal** | yes (7214 lines) |
+  | `virtio-blk-pci` | fine | no — `Switching stack...` |
+  | `usb-storage` | fine | no — `Switching stack...`, and also without rr |
+
+  Two independent non-ATAPI transports, the same failure point, reproducing
+  without rr. That is a freeldr boot-device limitation, not an rr limitation and
+  not a QEMU one. Waiting on a newer QEMU would not have helped.
+
+  **DIAGNOSED 2026-10-03, and "get freeldr past `Switching stack...`" was the
+  wrong goal: freeldr already gets past it.** The silence after that line is the
+  output CHANNEL changing, not a crash — every print from there on went to
+  `TRACE`/`WARN`, which the serial log does not carry, while everything before it
+  used `ConOut`, which it does. Three permanent `ConOut` probes
+  (`freeldr-rust/src/uefildr.rs`, `uefidisk.rs`) now say what happens, and
+  `VIBEOS_QEMU_BOOT_TRANSPORT=usb-storage|virtio-blk` (new, `vm.py`) makes the
+  non-ATAPI boot reproducible through the harness instead of a hand-rolled QEMU
+  line that bypasses the staleness and media guards.
+
+  | | control (`ide-cd`) | `usb-storage` |
+  |---|---|---|
+  | `[FLDR] arc branch` | `CDROM` | `HARDDISK+partition` |
+  | survived `_changestack` | **yes** | **yes** |
+  | next line | `[FLDR] phase: system hive load begin` → desktop | `[FLDR] RunLoader RETURNED (no boot config)` |
+
+  So the real failure is `RunLoader` finding **no boot configuration** on
+  `multi(0)disk(0)rdisk(N)partition(M)`. `UefiGetBootPartitionEntry` did NOT fail
+  (its probe never fired), so the path was computed and simply does not resolve.
+
+  **Root cause: the CD test is a DEVICE-MODEL test standing in for a filesystem
+  question.** `UefiSetBootpath` picks the `cdrom(N)` ARC name only when
+  `RemovableMedia && BlockSize == 2048`. An ISO served over usb-storage or
+  virtio-blk reports 512-byte blocks, fails that test, and takes the hard-disk
+  arm — where freeldr then looks for a partition table and a FAT/NTFS volume that
+  an ISO9660 image does not have.
+
+  The control that pins it: **arm64 takes `HARDDISK+partition` and boots fine**,
+  because its `boot.img` really is a FAT disk. The hard-disk arm is not broken;
+  ISO9660-behind-it is unsupported.
+
+  **The fix for x86 rr** is therefore to decide the ARC name by what the medium
+  IS rather than how the device presents — detect ISO9660 and use `cdrom(N)`
+  regardless of block size — or to teach the rdisk path to mount ISO9660. The
+  first is smaller and is where the bug is.
+
+  **Loader half FIXED 2026-10-04; the claim that rr then "follows with no rr changes"
+  was wrong.** There were two gates, not one: `UefiSetBootpath` chose the arm, and
+  `UefiInitializeBootDevices` registered the `cdrom(N)` device behind a second copy of
+  the same 2048-byte test, so the first fix alone produced `arc branch = CDROM` and
+  then the identical `RunLoader RETURNED (no boot config)`. Both now follow one
+  question -- does the device carry an ISO9660 volume (`UefiMediumIsIso9660`) -- and
+  over usb-storage freeldr loads the hive, the NLS files and every boot driver from
+  `cdrom(0)`. **The kernel then stops at `0x6B`**: QEMU's usb-storage presents
+  "QEMU HARDDISK", so usbstor hands it to `disk.sys`, no CD-ROM device object exists,
+  and cdfs (which mounts only on CD-ROM devices) has nothing to mount the system
+  volume on. Owed for x86 rr: either a USB CD presentation (`usb-bot` + `scsi-cd`,
+  which `blkreplay` refuses -- see above) or ISO9660 mounted from a disk-class device.
+  The prediction was made without booting past the loader; the boot that would have
+  checked it was one command away.
+
+  **RESOLVED the same day**: usb-storage boots to the desktop and records and replays.
+  The kernel and harness layers are listed under "What it refuses" near the top.
+
+  Worth noting how the wrong conclusion was reached, since it is cheap to repeat:
+  one transport was tested, it failed, and the cause was attributed to the thing
+  that transport had in common with rr's requirements rather than to the thing it
+  had in common with the other failing transport. The second sample was one
+  command away.
 
   A test still asserts a virtio-backed CD is *allowed* by the transform, so the
   path stays open for whenever the guest can boot that way.
@@ -829,6 +946,190 @@ Record it here and keep going; only chase one when it looks load-bearing.
   guest-work quantities (events, icount, clock warps, interrupts, exceptions)
   spread from 2.92% to 23%. The limit is positional in the LOG, not a count of
   anything the guest did.
+
+  **`rr wedge <trace>` makes this a one-command check.** The decode above needed
+  QEMU's own `scripts/replay-dump.py` fetched from the matching stable tag; the
+  in-tree walker now answers the same question. `rr wedge` asks a live stalled
+  replay where it stopped and prints the events either side, or takes
+  `--at <offset>` for a position recorded earlier. It deliberately prints a
+  window and names no culprit, for the reason in the next paragraph.
+
+  **The two offsets quoted above are not the same measurement.**
+  `trace_read_position` froze at byte **2,342,912**; the table's "trace bytes"
+  figure for the same stall is **2,145,086**.
+
+  **RETRACTED, same day, by the next measurement: the 197,826-byte difference is
+  NOT kernel read-ahead.** That is what this paragraph originally said, and a
+  fresh trace disproves it. Read positions are block-granular — 2,342,912 is
+  exactly 572 x 4096 and the new trace's 798,720 is exactly 195 x 4096 — and on
+  the new trace the decode frontier sits **5 bytes** before the fd offset, with
+  the straddling `EVENT_CHAR_WRITE` needing 4 more bytes than have been read. So
+  read-ahead is bounded by ONE 4 KiB block, and cannot account for 193 KiB. The
+  2,145,086 figure must therefore be a different quantity (guest-progress
+  derived), and comparing it against an fd offset as though both measured "where
+  the replay is" was the error. Note what the block alignment does and does not
+  buy: it is guaranteed by the read granularity, so "the stall is at a block
+  boundary" is a property of the instrument, not a finding.
+
+  The reason a tool must still refuse to name the event at the read position is
+  unchanged, and now better supported: the fd offset is an upper bound on the
+  replay's logical position, so `rr wedge` prints a window and labels BEFORE as
+  the evidence.
+
+  **The open caveat on "positional in the log": the two tightest measures are
+  nearly collinear.** This trace is dominated by serial output, so trace bytes
+  and serial bytes are not independent — trace-bytes-per-serial-byte is 17.53
+  on clean1 and 17.97 on kmt3, a 2.5% spread. Trace bytes (0.85%) does fit
+  better than serial bytes (1.63%), which is real evidence for position over
+  volume, but it is two samples separated by less than a factor of two in
+  tightness. **The discriminating experiment is a third recording with
+  deliberately different serial density** — the same boot with debug printing
+  turned down, or up. If the wedge is positional in the log, the trace offset
+  stays put and the serial-byte count moves; if it tracks serial volume, the
+  opposite. Until that runs, "positional in the LOG" is the better-fitting of
+  two correlated explanations rather than an established one.
+
+  Worth stating because it is the cheap half: whatever the measure turns out to
+  be, ~2.145MB is not a round number, a power of two, or a multiple of 32 KiB
+  or 64 KiB (65.46 and 32.73 respectively), so no obvious fixed-size buffer
+  explains it yet.
+
+  **2026-10-03: none of the above reproduces, and the host QEMU is no longer the
+  one it was measured on.** Every figure in this section was taken on QEMU
+  **9.0.2**. After the machine rebuild the host carries **8.2.2**
+  (`QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)`), which is a
+  DOWNGRADE, and `rr info` reports it per trace — check it before comparing any
+  number here against a fresh one. One thing is unchanged and worth recording:
+  8.2.2 writes the same replay log version **0xe0200c** (v12), so the in-tree
+  decoder, `rr breaks` and the instruction-chunk rule all apply untouched.
+
+  Two fresh arm64 `--smp 1 --payload none --shift 3` traces, recorded minutes
+  apart off identical media with identical commands, replayed to **two different
+  failure modes**:
+
+  | | wedge-shift3 | wedge-b |
+  |---|---|---|
+  | trace size | 3,113,641 | 3,044,334 |
+  | record guest lines | 2,117 | 2,117 |
+  | replay reached | 835 lines | 1,103 lines |
+  | mode | **WEDGE** — read position frozen at 798,720 (25.65%) for 8 samples over 4m38s at 85% CPU | **ABORT** — `Missing character write event in the replay log`, reproduced on two independent replays at the identical guest line |
+
+  So:
+
+  * **The "fixed trace offset" invariant is gone.** 798,720 is not 2,342,912,
+    and it is not the same fraction either (25.65% vs clean1's 22% vs kmt3's
+    0.44%). Guest lines do not match either (835 vs ~2,060). Whatever held
+    across clean1 and kmt3 does not hold here, and those two shared a guest
+    build while this one is 450 commits later on a different QEMU — so the
+    change is NOT attributed; either variable could carry it.
+  * **A third failure mode exists, and it is the most informative one yet.**
+    `Missing character write event in the replay log` is QEMU detecting
+    DIVERGENCE: the guest emitted serial output the log has no record of at that
+    position. That is not a stall, it is replay going off-script, and QEMU's own
+    consistency check caught it. It is deterministic — same message, same guest
+    line, two replays.
+  * ~~**Both modes implicate character writes**~~ — **RETRACTED by the third
+    sample, see below.** The abort does name `EVENT_CHAR_WRITE` and the first
+    wedge did sit mid-char-write, but a second wedge sits in an exception burst
+    with no char-writes anywhere near it.
+  * **Two traces of the same boot failing differently means replay is not
+    reliably deterministic here at all**, which reframes the wedge: it may be
+    one symptom of a divergence that sometimes stalls and sometimes trips the
+    char-write check, rather than a structural ceiling.
+
+  **Third sample (`div-b`, 2026-10-03): a second WEDGE, in a completely
+  different kind of event burst — which kills the char-write lead.** Window at
+  the frozen offset:
+
+  ```
+  @921590  icount 9691286144  EVENT_CHECKPOINT (id 31)
+  @921591  icount 9691286619  EVENT_INSTRUCTION
+  @921596  icount 9691286619  EVENT_CHECKPOINT (id 31)
+  @921597  icount 9691289919  EVENT_INSTRUCTION
+  ```
+
+  No `EVENT_CHAR_WRITE` at all — checkpoints, instruction chunks and id 2
+  (exceptions). The first wedge sat in a uniform char-write burst, so "the wedge
+  happens mid-serial-output" was a property of that one sample, not of the wedge.
+
+  All three samples on QEMU 8.2.2, same `--smp 1 --payload none --shift 3`:
+
+  | trace | trace bytes | mode | frozen offset | % of trace | replay lines / record lines |
+  |---|---|---|---|---|---|
+  | wedge-shift3 | 3,113,641 | WEDGE | 798,720 | 25.65% | 835 / 2,117 |
+  | wedge-b | 3,044,334 | ABORT (missing char write) | — | — | 1,103 / 2,117 |
+  | div-b | 7,695,461 | WEDGE | 921,600 | 11.98% | 876 / 4,352 |
+
+  What the third sample settles:
+
+  * **The limit is not a FRACTION of the trace.** 25.65% vs 11.98% on traces
+    2.5x apart in size.
+  * **It is roughly absolute, and roughly stable:** 798,720 and 921,600 are 15%
+    apart (both exact multiples of 4096, which is the read granularity and
+    therefore not itself informative). The historical pair sat at ~2.34MB on
+    QEMU 9.0.2 with a different guest, 0.86% apart from each other. So the
+    pattern is "tight within a (QEMU, guest) pair, moves between pairs" rather
+    than a universal constant — which is why the 2.145MB figure did not
+    reproduce and why chasing a round number in it was never going to work.
+  * **Guest lines reached is just as tight as the offset**: 835, 1,103, 876 —
+    a ~14% band, while the records behind them are 2,117 / 2,117 / 4,352 lines.
+    A replay gets ~900 lines into the boot regardless of how long the recorded
+    boot was. Byte-position and guest-progress cannot be separated on this data.
+  * **Two of three wedge, one aborts, same recording command minutes apart.** The
+    failure MODE is not a property of the configuration.
+
+  **The `--shift` discriminator does not exist.** The plan was to break the
+  trace-bytes/serial-bytes collinearity by recording at a different icount
+  shift, keeping guest serial fixed while changing instruction-record density.
+  It cannot be run: shift 1 and shift 5 both stall in the first 4,096-byte
+  buffer having produced 271 bytes of serial, so only shift 3 replays at all.
+  `rr record` warns about this at record time and this document already said so
+  — the plan was made without re-reading it. Finding a knob that varies serial
+  density at shift 3, during early boot, is still open.
+
+  **The divergence abort, pinned down: the replay is byte-exact right up to the
+  moment it fails.** Three measurements on `wedge-b`, which is the most specific
+  thing rr has produced so far:
+
+  * The replay's guest serial is **byte-for-byte identical to the record for
+    1,100 guest lines** (excluding the two harness header lines), and then stops
+    exactly where the record carries on — the record's next line is
+    `[IRQL-CHK] PspCreateProcess-after-InitSecurity irql=0`.
+  * The log is **provably complete** (the in-tree walk reaches a shutdown event)
+    and holds **164,964 `EVENT_CHAR_WRITE` records**. Full mix: 264,783
+    `EVENT_INSTRUCTION`, 164,964 char-writes, 74,621 checkpoint id 31, 29,680 of
+    id 2, 9,672 of id 29, 7,379 of id 1; 564,976 events total.
+  * It is **deterministic**: same message, same guest line, two independent
+    replays.
+
+  So `Missing character write event in the replay log` is NOT truncation, NOT a
+  short log, and NOT the guest doing something different — the serial matches.
+  QEMU is reporting that the guest asked to write a character at a point where
+  the log's next event is not a char-write. That reads as **icount alignment
+  drift**: the replay arriving at the same guest work at a different instruction
+  position than the recording wrote down. That is a far more tractable failure
+  than "it stalls somewhere", because QEMU names the invariant that broke.
+
+  **Record and replay must bracket any media rebuild, and this is easy to get
+  wrong.** Both traces above became unreplayable when a later `vibeos-cli build
+  --arch arm64` (run to warm the land receipts) rewrote `qemu/boot.img` at 11:16
+  — the trace's `boot.qcow2` is an OVERLAY over that file, so the guest would
+  read bytes that were never recorded. `rr verify` catches it and refuses by
+  name, which is the only reason the aborts above are still trustworthy: the
+  rebuild landed AFTER both replays (10:41 and 10:47), so the media was
+  consistent while they ran. Check the mtimes before believing any
+  record/replay pair that straddles a build.
+
+  Unexplained, recorded so it is not mistaken for a result: the same `rr verify`
+  run printed `PARTIAL — agreed for 1416 lines; record has 2430, replay 1416`
+  alongside its own "not replaying" refusal. Those counts match neither trace
+  (`wedge-b` is 2117/1103). Nothing here is built on them.
+
+  **Next experiment:** re-record (required anyway, the media moved), replay, and
+  capture the fd offset at the abort so `rr wedge --at` can place it in the log —
+  specifically whether the abort lands mid-char-write-burst the way the wedge
+  did. If both failure modes sit in the same kind of position, they are probably
+  one defect with two presentations.
 
   Two caveats worth keeping, because they bound how much the top row is worth.
   The three tight measures are near-proportional to one another in this region —

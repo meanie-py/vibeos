@@ -1205,8 +1205,19 @@ pub unsafe extern "system" fn GdiRealizationInfo(hdc: HDC, pri: PREALIZATION_INF
 #[no_mangle]
 pub unsafe extern "system" fn GdiInitializeLanguagePack(InitParam: DWORD) {
     let _ = InitParam;
-    /* LANGPACK is not defined → the (compiled-out) `if (!LoadLPK(...))` leaves an
-     * unconditional early return; the `gbLpk = TRUE;` tail is dead code. */
+    /* gdi32's CMakeLists defines LANGPACK, so the C body is live: load lpk.dll
+     * (whose DllMain applies RTL mirroring for the process) and, if it is present,
+     * record it in gbLpk, which GetFontLanguageInfo consults. LPK_INIT is gdi32p.h's 1. */
+    const LPK_INIT: INT = 1;
+    if crate::objects::utils::LoadLPK(LPK_INIT) == 0 {
+        // no lpk found!
+        return;
+    }
+
+    /* Call InitializeLpkHooks with 4 procedure addresses loaded from lpk.dll —
+     * compiled out (#if 0) in the C as well. */
+
+    crate::main::dllmain::gbLpk = TRUE;
 }
 
 #[no_mangle]

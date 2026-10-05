@@ -1774,7 +1774,12 @@ pub unsafe extern "system" fn co_IntGetPeekMessage(
         if Present != 0 {
             if (*pMsg).message >= WM_DDE_FIRST && (*pMsg).message <= WM_DDE_LAST {
                 if IntDdeGetMessageHook(pMsg, ExtraInfo) == 0 {
-                    continue;
+                    // C: `continue` in `do { } while (bGMSG && !Present)` -- with Present
+                    // set that condition is false, so the C leaves the loop here. A bare
+                    // `continue` re-peeked instead: under PM_NOREMOVE the same DDE message
+                    // whose data IntDdeGetMessageHook had just freed (use-after-free and a
+                    // double ExFreePoolWithTag); under GetMessage it dropped the message.
+                    break;
                 }
             }
 
@@ -1889,7 +1894,12 @@ pub unsafe extern "system" fn co_IntGetPeekMessage(
         if Present != 0 {
             if (*pMsg).message >= WM_DDE_FIRST && (*pMsg).message <= WM_DDE_LAST {
                 if IntDdeGetMessageHook(pMsg, ExtraInfo) == 0 {
-                    continue;
+                    // C: `continue` in `do { } while (bGMSG && !Present)` -- with Present
+                    // set that condition is false, so the C leaves the loop here. A bare
+                    // `continue` re-peeked instead: under PM_NOREMOVE the same DDE message
+                    // whose data IntDdeGetMessageHook had just freed (use-after-free and a
+                    // double ExFreePoolWithTag); under GetMessage it dropped the message.
+                    break;
                 }
             }
 

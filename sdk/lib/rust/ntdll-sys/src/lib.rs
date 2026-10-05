@@ -32,6 +32,7 @@
 mod bindgen_common;
 mod constants;
 mod inlines;
+pub mod seh;
 
 #[cfg(target_arch = "aarch64")]
 mod bindgen_arm64;

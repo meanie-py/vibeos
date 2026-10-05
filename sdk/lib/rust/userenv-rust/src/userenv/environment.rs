@@ -171,8 +171,8 @@ unsafe extern "C" fn SetUserEnvironmentVariable(
         RtlInitUnicodeString(core::ptr::addr_of_mut!(DstValue), lpValue);
     }
 
-    if _wcsicmp(lpName, b"T\0E\0M\0P\0\0\0".as_ptr() as *const u16) == 0
-        || _wcsicmp(lpName, b"T\0M\0P\0\0\0".as_ptr() as *const u16) == 0
+    if _wcsicmp(lpName, win32macros_rust::wide_bytes!(b"T\0E\0M\0P\0\0\0") as *const u16) == 0
+        || _wcsicmp(lpName, win32macros_rust::wide_bytes!(b"T\0M\0P\0\0\0") as *const u16) == 0
     {
         if GetShortPathNameW(
             DstValue.Buffer,

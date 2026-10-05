@@ -442,17 +442,17 @@ set(CMAKE_C_CREATE_SHARED_MODULE ${CMAKE_C_CREATE_SHARED_LIBRARY})
 set(CMAKE_CXX_CREATE_SHARED_MODULE ${CMAKE_CXX_CREATE_SHARED_LIBRARY})
 set(CMAKE_RC_CREATE_SHARED_MODULE ${CMAKE_RC_CREATE_SHARED_LIBRARY})
 
-# --allow-multiple-definition (EXE too): libcntpr_rust.a now reaches EXE
-# links — freeldr rosload.exe / uefildr.efi link BOTH the i386 asm CRT
-# (liblibcntpr.a) and the Rust CRT (libcntpr_rust.a), so a fresh relink
-# double-defines memset/memcpy/strlen/…. SHARED/MODULE already carry the
-# flag for the same Rust-archive reason; EXEs need it now too (lld
-# first-match wins — both CRT impls are correct).
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--gc-sections,--allow-multiple-definition")
-# --allow-multiple-definition: Rust crates each define __rustc::rust_begin_unwind;
-# when multiple .a libraries link into one PE (e.g. ntdll), LLD sees duplicates.
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--allow-multiple-definition")
-set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--allow-multiple-definition")
+# Duplicate symbols: --allow-multiple-definition turns lld's duplicate ERROR into
+# a warning, and tools/link_guard.py (reached through --ld-path) reads those
+# warnings and fails the link on any duplicate that is not irreducible toolchain
+# runtime or an import. The flag is load-bearing only for the runtime cases (each
+# Rust staticlib carries its own panic runtime; compiler_builtins overlaps
+# libclang_rt.builtins). Before the guard it silently let C glue beat translated
+# Rust by link order: cdrom, fastfat, disk, crtdll, ucrtbase.
+set(_vibeos_dup_policy "-Wl,--allow-multiple-definition --ld-path=${REACTOS_SOURCE_DIR}/tools/link_guard/ld.lld")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--gc-sections ${_vibeos_dup_policy}")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup ${_vibeos_dup_policy}")
+set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup ${_vibeos_dup_policy}")
 
 set(CMAKE_C_COMPILE_OBJECT "<CMAKE_C_COMPILER> <DEFINES> ${_compress_debug_sections_flag} <INCLUDES> <FLAGS> -o <OBJECT> -c <SOURCE>")
 # FIXME: Once the GCC toolchain bugs are fixed, add _compress_debug_sections_flag to CXX too
@@ -507,6 +507,18 @@ set(CMAKE_DEPFILE_FLAGS_RC "--preprocessor=\"${CMAKE_C_COMPILER}\" ${RC_PREPROCE
 
 # Optional 3rd parameter: stdcall stack bytes
 function(set_entrypoint MODULE ENTRYPOINT)
+    # Which Rust CRT-startup personality msvcrtex links into this module
+    # (sdk/lib/crt/msvcrtex.cmake). Derived from the entry symbol itself, so the last
+    # set_entrypoint wins exactly as the linker's -entry does.
+    if(ENTRYPOINT STREQUAL "DllMainCRTStartup")
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND dll)
+    elseif(ENTRYPOINT MATCHES "^(mainCRTStartup|WinMainCRTStartup)$")
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND exe)
+    elseif(ENTRYPOINT MATCHES "^(wmainCRTStartup|wWinMainCRTStartup)$")
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND wexe)
+    else()
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND bare)
+    endif()
     if(${ENTRYPOINT} STREQUAL "0")
         # lld interprets "0" as a symbol name, not an address
         # Use __ImageBase as a dummy entry point for modules that don't need one
@@ -831,6 +843,17 @@ function(add_cargo_module _target _crate _output)
     if(_acm_BODY_CRATE)
         list(APPEND _acm_BODY_CRATES ${_acm_BODY_CRATE})
     endif()
+    # reactos-link's msvcrtex_crt() builds the Rust CRT floor (crt-startup-rust,
+    # crt-dllmain-rust, crt0-rust) as nested libs. Cargo's depfile does not carry
+    # them, so editing crtdll.rs left lsass/winlogon linked against the old CRT
+    # (`build` reported them stale, ninja had no edge to rerun). Watch them for
+    # every module whose build.rs asks for that CRT; the build.rs is the truth.
+    file(READ "${_ws}/${_crate}/build.rs" _acm_buildrs)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ws}/${_crate}/build.rs")
+    string(FIND "${_acm_buildrs}" "msvcrtex_crt" _acm_uses_crt)
+    if(NOT _acm_uses_crt EQUAL -1)
+        list(APPEND _acm_BODY_CRATES crt-startup-rust crt-dllmain-rust crt0-rust)
+    endif()
     # Follow Cargo path dependencies TRANSITIVELY, not just the crates named in
     # BODY_CRATES. A declaration names the crate that holds the module's bodies,
     # but those bodies call into sibling crates by path, and editing one of THOSE
@@ -846,7 +869,15 @@ function(add_cargo_module _target _crate _output)
     # and well separated: of 314 workspace crates, kernel-rust reaches 33,
     # win32k-rust 5, shell32-rust 4, ntdll-rust 3. A module rebuilds when
     # something it actually links changes, which is the whole point.
-    _rust_path_dep_closure("${_ws}" "${_acm_BODY_CRATES}" _body_dirs)
+    # User-mode modules also link the CRT startup crates, which reactos-link's
+    # .msvcrtex_crt() builds in a NESTED cargo invocation: Cargo's depfile never
+    # sees them, so without this an edit to crt-startup-rust relinked no cargo
+    # module and `build` reported lsass/services stale (2026-10-04).
+    set(_closure_roots ${_acm_BODY_CRATES})
+    if(_acm_KIND MATCHES "^win32")
+        list(APPEND _closure_roots crt-startup-rust crt0-rust crt-dllmain-rust)
+    endif()
+    _rust_path_dep_closure("${_ws}" "${_closure_roots}" _body_dirs)
     foreach(_body_dir IN LISTS _body_dirs)
         file(GLOB_RECURSE _bsrcs CONFIGURE_DEPENDS
             ${_body_dir}/*.rs ${_body_dir}/Cargo.toml)
@@ -1175,6 +1206,16 @@ endmacro()
 # PSEH lib, needed with mingw
 set(PSEH_LIB "pseh")
 
+# Rust archives the user-mode CRT DLLs name BY PATH on their link lines: a path is placed
+# exactly where it is written (an INTERFACE wrapper's library lands after the direct items,
+# behind import libraries -- ntdll's exports longjmp on amd64 and answered ucrtbase's own),
+# and Ninja still orders the link after the custom command that produces it. Spelled here,
+# not exported from the producing directory, because dll/ is configured BEFORE sdk/lib/:
+# a variable set there is empty when the DLLs read it on a fresh configure. The producers
+# (sdk/lib/pseh, sdk/lib/vcruntime) FATAL_ERROR if their rust_staticlib_variant disagrees.
+set(PSEH_USER_LIB "${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh_user_rust_a.a")
+set(VCRT_SETJMP_LIB "${CMAKE_BINARY_DIR}/sdk/lib/vcruntime/libvcrt_setjmp_rust.a")
+
 function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_address)
     set(_object_file ${_binary_file}.o)
 
@@ -1356,7 +1397,13 @@ find_compiler_lib(supc++ libsupc++.a LIBSUPCXX_LOCATION)
 if(LIBSUPCXX_LOCATION_FOUND)
     add_library(libsupc++ STATIC IMPORTED GLOBAL)
     set_target_properties(libsupc++ PROPERTIES IMPORTED_LOCATION ${LIBSUPCXX_LOCATION})
-    # libsupc++ requires libgcc and stdc++compat
+    # libsupc++ requires libgcc and stdc++compat, and on a GCC SEH toolchain also the
+    # unwinder in libgcc_eh.a (SJLJ/DWARF toolchains have none). Upstream gcc.cmake does the
+    # same; llvm-mingw never reaches this branch (libc++/libunwind below).
+    find_compiler_lib(gcc_eh libgcc_eh.a LIBGCC_EH_LOCATION)
+    if(LIBGCC_EH_LOCATION_FOUND)
+        target_link_libraries(libsupc++ INTERFACE "${LIBGCC_EH_LOCATION}")
+    endif()
     target_link_libraries(libsupc++ INTERFACE libgcc stdc++compat)
 else()
     # For clang/llvm-mingw, use libc++, libc++abi, and libunwind instead of libsupc++

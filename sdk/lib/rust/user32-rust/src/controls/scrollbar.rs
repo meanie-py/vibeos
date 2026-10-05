@@ -1341,6 +1341,12 @@ unsafe fn ScrollTrackScrollBar_impl(Wnd: HWND, SBType: INT, mut Pt: POINT) {
             break;
         }
         if CallMsgFilterW(&mut Msg, MSGF_SCROLLBAR as INT) != 0 {
+            // C `continue` in `do { } while (Msg.message != WM_LBUTTONUP && GetCapture() ==
+            // Wnd)` still tests that condition: a filtered button-up or lost capture ends
+            // tracking. A bare `continue` skipped it and kept tracking.
+            if Msg.message == WM_LBUTTONUP || GetCapture() != Wnd {
+                break;
+            }
             continue;
         }
         if Msg.message == WM_LBUTTONUP

@@ -19,7 +19,10 @@ pub unsafe extern "C" fn FltpRegisterContexts(
     mut Filter: PFLT_FILTER,
     mut Context: *const FLT_CONTEXT_REGISTRATION,
 ) -> NTSTATUS {
-    const FLT_CONTEXT_END: ::core::ffi::c_int = -1;
+    // FLT_CONTEXT_END comes from the fltkernel.h island (0xffff). A local `-1` shadowed
+    // it here: ContextType is a USHORT, so the widened compare could never match, the
+    // terminator scan ran off the array, and LLVM reduced the side-effect-free endless
+    // walk to a bare `b .` in FltRegisterFilter (scan_ud2).
     const MAX_CONTEXT_TYPES: ::core::ffi::c_int = 6;
     const FM_TAG_CONTEXT_REGISTA: ULONG = 0x67655243; // 'CReg'
     const STATUS_FLT_INVALID_CONTEXT_REGISTRATION: NTSTATUS = 0xC01C0017_u32 as i32;
@@ -36,7 +39,7 @@ pub unsafe extern "C" fn FltpRegisterContexts(
     ContextPtr = Context as PCFLT_CONTEXT_REGISTRATION;
     while !ContextPtr.is_null() {
         /* Bail if we found the terminator */
-        if (*ContextPtr).ContextType as ::core::ffi::c_int == FLT_CONTEXT_END {
+        if (*ContextPtr).ContextType as u32 == FLT_CONTEXT_END {
             break;
         }
 
@@ -86,7 +89,7 @@ pub unsafe extern "C" fn FltpRegisterContexts(
             };
 
             /* Bail if we found the terminator */
-            if (*ContextPtr).ContextType as ::core::ffi::c_int == FLT_CONTEXT_END {
+            if (*ContextPtr).ContextType as u32 == FLT_CONTEXT_END {
                 break;
             }
 

@@ -3,11 +3,9 @@ include(ExternalProject)
 
 function(setup_host_tools)
     list(APPEND HOST_TOOLS asmpp bin2c widl gendib cabman fatten hpp isohybrid mkhive mkisofs obj2bin spec2def geninc mkshelllink txt2nls utf16le xml2sdb)
-    if(NOT MSVC)
-        list(APPEND HOST_TOOLS pefixup)
-        if (ARCH STREQUAL "i386")
-            list(APPEND HOST_TOOLS rsym)
-        endif()
+    list(APPEND HOST_TOOLS pefixup)
+    if (ARCH STREQUAL "i386")
+        list(APPEND HOST_TOOLS rsym)
     endif()
     if ((ARCH STREQUAL "amd64") AND (CMAKE_C_COMPILER_ID STREQUAL "GNU"))
         execute_process(
@@ -23,9 +21,6 @@ function(setup_host_tools)
     list(TRANSFORM HOST_TOOLS PREPEND "${REACTOS_BINARY_DIR}/host-tools/bin/" OUTPUT_VARIABLE HOST_TOOLS_OUTPUT)
     if (CMAKE_HOST_WIN32)
         list(TRANSFORM HOST_TOOLS_OUTPUT APPEND ".exe")
-        if(MSVC_IDE)
-            set(HOST_EXTRA_DIR "$(ConfigurationName)/")
-        endif()
         set(HOST_EXE_SUFFIX ".exe")
         set(HOST_MODULE_SUFFIX ".dll")
     else()
@@ -54,44 +49,9 @@ function(setup_host_tools)
     if(ARCH STREQUAL HOST_ARCH)
         set(HOST_TOOLS_CMAKE_COMMAND "${CMAKE_COMMAND}")
         message("Not cross-compiling, no special host-tools cmake command")
-    elseif(MSVC)
-        message("Compiling on ${HOST_ARCH} for ${ARCH} (MSVC)")
-        set(HOST_TOOLS_CMAKE_COMMAND "${REACTOS_BINARY_DIR}/host-tools/cmake_shim.cmd")
-        if(MSVC_VERSION EQUAL 1900)
-            file(WRITE ${HOST_TOOLS_CMAKE_COMMAND}
-                "set VSCMD_SKIP_SENDTELEMETRY=1\n"
-                "@call \"$ENV{VCINSTALLDIR}\\vcvarsall.bat\" ${VCVARSALL_ARCH}\n"
-                "\"${CMAKE_COMMAND}\" %*"
-            )
-        elseif(MSVC_VERSION GREATER_EQUAL 1910)
-            # 2017 and 2019 use the same folder structure
-            file(WRITE ${HOST_TOOLS_CMAKE_COMMAND}
-                "@set VSCMD_ARG_no_logo=1\n"
-                "@call \"$ENV{VCINSTALLDIR}\\Auxiliary\\Build\\vcvarsall.bat\" /clean_env\n"
-                "@call \"$ENV{VCINSTALLDIR}\\Auxiliary\\Build\\vcvarsall.bat\" ${VCVARSALL_ARCH}\n"
-                "\"${CMAKE_COMMAND}\" %*"
-            )
-        else()
-            message(FATAL "Unable to figure out vcvarsall path")
-        endif()
     else()
         set(HOST_TOOLS_CMAKE_COMMAND "${CMAKE_COMMAND}")
         message("Cross-compiling on non-msvc, no special host-tools cmake command")
-    endif()
-
-    # CMake might choose clang if it finds it in the PATH. Always prefer cl for host tools
-    if (MSVC)
-        list(APPEND CMAKE_HOST_TOOLS_EXTRA_ARGS
-            -DCMAKE_C_COMPILER=cl
-            -DCMAKE_CXX_COMPILER=cl)
-    endif()
-
-    if (MSVC_IDE)
-        # Required for Bison/Flex wrappers created by /CMakeLists.txt.
-        list(APPEND CMAKE_HOST_TOOLS_EXTRA_ARGS
-            -DROS_SAVED_BISON_PKGDATADIR=${ROS_SAVED_BISON_PKGDATADIR}
-            -DROS_SAVED_M4=${ROS_SAVED_M4}
-            )
     endif()
 
     if(NOT DEFINED HOST_BUILD_TYPE)

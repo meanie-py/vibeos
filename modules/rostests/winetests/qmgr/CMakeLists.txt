@@ -14,8 +14,4 @@ set_module_type(qmgr_winetest win32cui)
 add_importlibs(qmgr_winetest ole32 shlwapi user32 msvcrt kernel32)
 target_link_libraries(qmgr_winetest uuid)
 
-if(MSVC)
-    add_importlibs(qmgr_winetest ntdll)
-endif()
-
 add_rostests_file(TARGET qmgr_winetest)

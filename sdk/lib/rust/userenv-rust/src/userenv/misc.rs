@@ -72,7 +72,7 @@ pub struct DynOle32Storage {
 // references resolves to this definition. DynOle32Storage is layout-compatible with DYN_MODULE.
 #[no_mangle]
 pub static mut DynOle32: DynOle32Storage = DynOle32Storage {
-    Library: b"o\0l\0e\x003\x002\0.\0d\0l\0l\0\0\0".as_ptr() as LPWSTR,
+    Library: win32macros_rust::wide_bytes!(b"o\0l\0e\x003\x002\0.\0d\0l\0l\0\0\0") as LPWSTR,
     Functions: [
         b"CoInitialize\0" as *const u8 as *const ::core::ffi::c_char as LPSTR,
         b"CoCreateInstance\0" as *const u8 as *const ::core::ffi::c_char as LPSTR,
@@ -266,8 +266,8 @@ pub unsafe extern "C" fn GetPolicyValues(
     mut QueryTable: PPOLICY_VALUES,
 ) -> LONG {
     static mut PolicyKeys: [PCWSTR; 2] = [
-        b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0W\0i\0n\0l\0o\0g\0o\0n\0\0\0".as_ptr() as PCWSTR,
-        b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0P\0o\0l\0i\0c\0i\0e\0s\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0S\0y\0s\0t\0e\0m\0\0\0".as_ptr() as PCWSTR,
+        win32macros_rust::wide_bytes!(b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0W\0i\0n\0l\0o\0g\0o\0n\0\0\0") as PCWSTR,
+        win32macros_rust::wide_bytes!(b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0P\0o\0l\0i\0c\0i\0e\0s\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0\\\0S\0y\0s\0t\0e\0m\0\0\0") as PCWSTR,
     ];
     let mut i: DWORD = 0;
     i = 0 as DWORD;
@@ -500,7 +500,7 @@ pub unsafe extern "C" fn ReportErrorWorker(
         let mut cbData: DWORD = core::mem::size_of::<ULONG>() as DWORD;
         GetPolicyValue(
             HKEY_LOCAL_MACHINE,
-            b"P\0r\0o\0f\0i\0l\0e\0D\0l\0g\0T\0i\0m\0e\0O\0u\0t\0\0\0".as_ptr() as PCWSTR,
+            win32macros_rust::wide_bytes!(b"P\0r\0o\0f\0i\0l\0e\0D\0l\0g\0T\0i\0m\0e\0O\0u\0t\0\0\0") as PCWSTR,
             REG_DWORD,
             core::ptr::addr_of_mut!(ulTimeout) as PVOID,
             core::ptr::addr_of_mut!(cbData),

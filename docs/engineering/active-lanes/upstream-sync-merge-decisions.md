@@ -62,7 +62,38 @@ and both of these were in the 72 that never conflicted.
 | `dll/win32/kernelbase` → wine-based `kernelbase_ros` | **The biggest judgment call in the merge.** Ours is a deliberately minimal Vista-scoped shim, documented as such in its own header. See "owed" below. |
 | ole32 → `combase`/`coml2`/`pathcch_static` split | Same reasoning; ole32 is Rust-flipped here. |
 | libjpeg 9f → 10 | A major API break, and the research lane owns vendor bumps. libpng and mbedTLS were declined because **ours are newer** (1.6.58 vs 1.6.54; 3.6.7 vs 2.16.11). libtiff 4.7.0 → 4.7.1 was taken. |
+| The new ATA stack: `atapi/` SATL driver + `pciidex/chipset/` (incl. software AHCI), and the uniata→pciide default switch (`7d33f7503bb`) | **WON'T PORT (owner, 2026-10-03).** We already drive AHCI: uniata-rust claims `ich9-ahci` (`PCI#CC_0106` in hivesys) and both x86 arches boot to desktop with the CD on AHCI (`VIBEOS_AHCI_CD=1` smoke, verified 2026-10-03). The rewrite is ~20K lines (~$10-12) of replacement for a working driver. Policy: uniata is OUR storage driver going forward. An upstream bug fix in the new stack is ported SEMANTICALLY into uniata-rust when it describes a bug uniata also has, never by bulk-adopting their files. The C stays unbuilt on disk as reference. |
 | pruned trees | pc98, xbox, arm32, BIOS realmode, ext2/btrfs/ntfs/udfs/nfs, NTVDM, ISAPNP, fast486, SAC, x86bios/INT10, legacy tcpip, floppy, fraginator, `untfs`. |
+
+### uniata-rust: what upstream's ATA stack taught us, and what is still owed
+
+The won't-port decision above comes with a standing duty: mine upstream's new stack for
+hardware knowledge uniata lacks and port it semantically. The 2026-10-03/04 survey found 13
+gaps. Ported (two commits): the ATI IXP UDMA6 bounds panic, the PxSERR clear in
+`UniataAhciStart`, the 1s wait per empty AHCI port, PUIS spin-up and the IDENTIFY
+checksum, AMD prefetch and AMD-8111 Serenade, the Intel ICH0/rev-0/Tdh and 450KX/NX
+errata, ServerWorks SATA (4 channels, SICR, DMA-before-command, no ATAPI DMA), GHC.AE
+ordering, AHCI interrupt-acknowledge order, busy-TFD escalation in
+`UniataAhciAbortOperation`, port-multiplier pseudo ports and SiI XmitEarlyAck, and a SATA
+link-speed downgrade on repeated DMA errors. Only the AHCI ones run under QEMU (`smoke --ahci`).
+
+**Resolved after the batch:**
+- **SATA hotplug was invisible to the OS.** uniata attached a hot-plugged disk inside the
+  ISR but never told SCSIPORT, and SCSIPORT ignored `BusChangeDetected` anyway (as
+  ReactOS's does). Now uniata notifies, and SCSIPORT's DPC turns it into
+  `IoInvalidateDeviceRelations(BusRelations)`, whose handler rescans. The attach itself
+  still runs in the ISR, but PCS fires after the PHY is up, so `UniataSataConnect`
+  returns at once. A SCSIPORT miniport has no lower-IRQL context to move it to. **Not
+  testable under QEMU:** QEMU 11 refuses `device_add ide-hd` on an `ich9-ahci` port
+  ("Bus 'ahci0.1' does not support hotplugging"), so this waits for real hardware.
+- **ServerWorks Frodo8 is 0x0241** (8 ports, BAR5 window 0x800). Every driver that
+  programs the chip agrees: upstream svw_sata.c, Linux sata_svw `chip_svw8`, and FreeBSD
+  `ATA_FRODO8 = 0x02411166` with 8 channels. Only NAMES disagree: Linux's comment and
+  NetBSD's pcidevs call 0x0241 "Frodo4", and UniATA copied that. No public datasheet.
+- **UniATA's channel-count clamp made every multi-channel arm dead.**
+  `UniataChipDetectChannels` sized its clamp from the count BEFORE the vendor match, so
+  ALi 5287/5288 and Promise MIO (4) and ServerWorks SATA were cut back to 2. Fixed when
+  the port mask is still the default.
 
 ## New upstream TUs declined because a Rust twin owns the symbols
 
@@ -112,6 +143,7 @@ its own `__readx18`/`__writex18` family.
     software AHCI implementation** (ahci_generic/ahci_hw/ahci_io), and a new `acpi.c`.
     Our `pciidex-rust` came from the pre-fork fdo.c/pciidex.c.
   Likely the single biggest concrete translation opportunity this merge surfaced.
+  **Superseded 2026-10-03: declined, see "Whole upstream changes DECLINED" — uniata-rust already does AHCI.**
 - **pcix**: upstream added `pci/ecam.c` + `pci/express.c` (PCIe ECAM config space). No Rust
   twin; left out of the build. Real feature gap, not a bug.
 - `drivers/base/CMakeLists.txt`: our GDB-flag mutual exclusion between kdcom and kdgdb is
@@ -724,27 +756,122 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
 
 ## Owed, in rough priority order
 
-1. **`RtlIsProcessorFeaturePresent` and `RtlGetCurrentProcessorNumberEx` have no implementation
-   anywhere in the tree** and are exported by `ntdll.spec`, `ntdll_vista.spec` and
-   `kernelbase.spec`. Upstream's new `processor.c` is the only definition that has ever existed,
-   but it also redefines `RtlGetCurrentProcessorNumber`, which `rtl-strings` owns. Hand-port the
-   two, or split the file.
+1. ~~`RtlIsProcessorFeaturePresent` / `RtlGetCurrentProcessorNumberEx` unimplemented.~~ **Done
+   2026-09-30:** hand-ported into `rtl-strings` beside `RtlGetCurrentProcessorNumber`. The Ex one
+   answers group 0 without the 0xA00+ `NtGetCurrentProcessorNumberEx` syscall we don't have.
 2. **Upstream's AHCI/SATA work.** A new SATL/port atapi driver plus a 16-file chipset quirks
    framework with a full software AHCI implementation in `pciidex/chipset/`. All of it is on
    disk and none of it is built. Probably the largest single translation opportunity this merge
    surfaced.
-3. **Job objects.** `ntoskrnl/ps/job.c` gained 2,198 lines of working implementation and
-   `win32ss/user/ntuser/job.c` is its win32k half. Ours are stubs — which is exactly why
-   `PspCloseJob` is absent from `ps-rust`.
-4. **kernelbase.** Decide whether our minimal shim can satisfy `combase`/`coml2`/`shcore` now
-   that they exist in the tree.
-5. **oleaut32 `thunks.c`.** Declined on the inference that `dispatch.rs` replaces it. An
-   arbitrary-arity native call trampoline is usually precisely what stable Rust cannot emit —
-   verify `DispCallFunc` actually works without it.
-6. **Raw input.** `win32ss/user/ntuser/rawinput.c` is new and has no Rust twin; `user32/misc/stubs.c`
-   shows upstream implemented `GetRawInputBuffer` and `GetRawInputDeviceInfoA` too.
+3. **Job objects.** Kernel half **done 2026-10-03**:
+   - `ps-rust/src/job.rs` is upstream's `job.c` (sealed translate, $1.48 on DeepSeek,
+     integrated by hand against the crate's probe/SEH conventions).
+   - Hooked in: `PspCloseJob` is the close procedure, process creation joins the parent's job
+     (honoring breakaway), process exit sends `EXIT_PROCESS`, and kernel32 sets
+     `PROCESS_CREATE_FLAGS_BREAKAWAY` from `CREATE_BREAKAWAY_FROM_JOB`. The C took it from
+     `DEBUG_PROCESS`.
+   - `kernel32_apitest JobObject`: **99 run, 0 failures**, against 31 of 51 failing (8 skipped)
+     before.
+   - Making the translate possible meant teaching rustconv about ntoskrnl. It had no CMake
+     owner, include path or compile command for any kernel file, and c2rust dropped every
+     function that used an MSVC interlocked intrinsic. Those fixes are in `profile_derive`,
+     `macro_authority` and `c2rust_anchor`.
+   - **win32k half done too (2026-10-03):**
+     - `win32k-rust/src/job.rs` is upstream's `ntuser/job.c`, translated for $0.65 and
+       integrated by hand.
+     - win32k registers `Win32kJobCallout`. Processes join and leave their job's JOBINFO on
+       USER connect and disconnect, and new threads inherit `TIF_JOBRESTRICTED`.
+     - Handles carry `HANDLEENTRY_GRANTED`, so freeing one sweeps the grant lists, and
+       `NtUserUserHandleGrantAccess` is real.
+     - The translation's callout `match` named the callout types bare. They aren't constants in
+       scope, so its first arm caught everything (the §9.112 class), and the integration
+       fixes it.
+     - Like upstream, nothing enforces the restrictions yet; this is the bookkeeping that
+       enforcement reads.
+     - `user32_apitest UserHandleGrantAccess`: **67 run, 0 failures**. It was reached with the
+       sweep's new single-subtest form (`gen_suites --only user32_apitest.exe:UserHandleGrantAccess`),
+       because the full user32 sweep stalls at its first subtest.
+4. ~~kernelbase vs `combase`/`coml2`/`shcore`~~ **Decided: declined by design.** ole32 stays
+   monolithic, and the split modules are commented out (row 9 of the build-repair table above),
+   so nothing needs the minimal kernelbase shim to host them. Revisit only if the split itself
+   is adopted.
+5. ~~oleaut32 `thunks.c`~~ **Verified 2026-10-03.** `dispcall.rs` carries Wine's per-arch
+   `call_method` trampolines as `global_asm!`. The `dispprobe` payload exercises arg counts past
+   each register window, int/float mixes, I8, R4/R8 returns, cdecl and a vtable call, and
+   passes on all three arches. It found one bug, inherited from Wine: x86_64 read VT_R4 through
+   the double-typed thunk, so every float return came back 0.0. Fixed with a float-typed alias.
+6. ~~Raw input.~~ **Already done (checked 2026-10-03):** `win32k-rust/src/rawinput.rs` ports
+   `NtUserGetRawInputDeviceInfo`/`List`, and `user32-rust/src/misc/stubs.rs` has upstream's
+   `GetRawInputBuffer` and `GetRawInputDeviceInfoA`. The latter fixes stubs.c's always-true
+   `Ret >= 0` on a UINT.
 7. **PCIe ECAM.** `drivers/bus/pcix/pci/ecam.c` + `express.c`, new upstream, no Rust twin.
-8. **`drivers/bus/acpi/osl.c` was merged rather than picked** — boot-check that upstream's
-   `AcpiLoaderRsdp` fast path does not skip what the legacy BIOS scan supplied.
-9. **`sdk/cmake/gcc.cmake`** — we kept the llvm-mingw libc++ path over upstream's `libgcc_eh`
-   addition. Unclear whether it matters for a non-llvm-mingw GCC build.
+   (The rest of upstream's pcix fixes and `memres.c` were ported 2026-10-03; see the userdrv
+   review.)
+8. ~~`drivers/bus/acpi/osl.c` fast path~~ **Moot (checked 2026-10-03):** `osl.c` is commented
+   out, and the OSL is `acpi-rust` (`osl.rs` `AcpiOsGetRootPointer`). That runs the legacy BIOS
+   scan FIRST and only then synthesizes an RSDP from the loader-registered "ACPI BIOS"
+   address, so the shipping path cannot skip anything the scan supplies.
+9. ~~`sdk/cmake/gcc.cmake` `libgcc_eh`~~ **Done 2026-10-03:** our build is always llvm-mingw,
+   which takes the libc++/libunwind branch. The GCC branch now links `libgcc_eh.a` into
+   libsupc++ when the toolchain has one, as upstream does.
+10. **ole32 wine-10.0 delta (`5f6b295cb90`), ported semantically into ole32-rust.** In
+    progress since 2026-10-04.
+    - **Done:**
+      - The moniker family: anti (order count, `is_anti_moniker`/`create_anti_moniker`),
+        class (trailing display-name data), item, file, pointer (by-value IMarshal),
+        composite (the binary-tree rework, plus a fix for two of Wine's own tree leaks).
+      - Lazy clipboard lifetime; storage `ro_denyw` locking and the `mtime` write.
+      - stg_prop: bounded reads, `VT_CLSID`, vectors, section seek, `I8`/`BSTR`/`BLOB`
+        writes, codepage sign, `Enum(NULL)`.
+      - ROT double free.
+    - **Translation bugs found on the way:**
+      - `StgCreateDocfileOnILockBytes` passed `INVALID_HANDLE_VALUE` for C's `0`, so every
+        in-memory storage failed.
+      - The docfile loader read the depot count from the wrong offset, so no docfile
+        could be reopened.
+      - Seven wrong bare HRESULTs; `tools/scan_hresult_literals.py` is now gated.
+    - **Wine olewinetest, amd64, before → after:**
+      - clipboard, compobj, defaulthandler, ole2 and ole_server all crashed and now run
+        (566/11, 985/35, 38/8, 3003/41, 33/2).
+    - **Also done:** `CF_HDROP` tymed, the `OLEDD_TrackStateChange` re-entrancy guard,
+      `BIND_OPTS3`, ROT `GetObject` unlocks before unmarshalling, `OBJ_CASE_INSENSITIVE`
+      on the three HKCR opens (upstream's `__REACTOS__` fix; our CM is case-sensitive
+      without it), and the new exports: `Co{In,De}crementMTAUsage` (cookie list on the
+      MTA), `CoCreateInstanceFromApp`, `OleConvertIStorageToOLESTREAMEx` (a stub upstream
+      too), plus `CoGetApartmentType`/`CoGetCallState`/`CoGetActivationState`, which were
+      already in the Rust but missing from `ole32.spec`.
+    - **Also ported, once the tests showed they are observable:**
+      - The wine-10 `struct oletls` layout and flags. Callers read `flags` straight out
+        of `TEB->ReservedForOle`, so the field order is ABI; it is pinned by const
+        offset asserts in both copies.
+      - The implicit-MTA `CoGetApartmentType` success.
+      - MTA ipids with `Data2 = 0`, so an MTA outlives its creator thread.
+      - `CoGetClassObject` serving the GIT and `ManualResetEvent` in-proc.
+      - The stub manager's guarded final release (a native-SEH C thunk).
+    - **Declined, not owed:** the implicit-MTA cookie in the TLS block, plus
+      `DestroyRunningObjectTable` and `Ole32DllGetClassObject`. All three exist only
+      for the combase split.
+    - **Not wine-10, found by the sweep:**
+      - ole32's `Get/Set/CreateErrorInfo` exports were oleaut32 delay-import thunks that
+        jumped straight back, an endless loop. Gated by `scan_export_thunks`.
+      - rpcrt4's RPC error handlers never ran under DUMMY_PSEH; now native SEH on
+        amd64/arm64.
+      - oleaut32 asked `GlobalAlloc` for `HEAP_ZERO_MEMORY`. Gated by `scan_gmem_flags`.
+    - **Wine olewinetest, amd64, end of 2026-10-04 (tests / failures), 29 subtests, 0
+      timeouts, 0 crashes.** The bracket shows the state that morning.
+      - ole32:
+        - clipboard 568/10, compobj 1083/40, defaulthandler 38/8, dragdrop 15/0
+        - errorinfo 19/0 [hung], hglobalstream 277/0, marshal 1160/33 [crashed]
+        - moniker 5428/127, ole2 3003/41, ole_server 33/2, propvariant 1523/1
+        - stg_prop 232/9, storage32 18940/47 [timed out], usrmarshal 750/26
+      - oleaut32:
+        - dispatch 58/0, olefont 2430/3, olepicture 1738/14 [crashed]
+        - safearray 11563/1, tmarshal 754/20 [hung], typelib 7628/47
+        - usrmarshal 711/12, varformat 876/3, vartest 1033273/40
+        - vartype 2517705/9 [crashed]
+    - **Still owed:** `GetNextFreeBigBlock`'s `neededAddNumBlocks` (performance only). The
+      remaining failures above are ordinary conformance work. First is vartest's fr-FR
+      parsing: the Rust already has wine-10's `cDigitSeparator2` logic, and `fra.nls`
+      already stores U+00A0 (compiled under `#pragma code_page(65001)`), so the next
+      step is a runtime probe of what `GetLocaleInfoW(0x40c, LOCALE_STHOUSAND |
+      LOCALE_NOUSEROVERRIDE)` actually returns.

@@ -437,8 +437,7 @@ unsafe fn SepImpersonateAnonymousToken(
     let mut include_everyone_value_data: ULONG = 0;
 
     let status = SepRegQueryHelper(
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0L\0s\0a\0\0\0"
-            .as_ptr() as *mut u16,
+        win32macros_rust::wide_bytes!(b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0L\0s\0a\0\0\0") as *mut u16,
         w!("EveryoneIncludesAnonymous").as_ptr() as *mut u16,
         REG_DWORD,
         core::mem::size_of::<ULONG>() as ULONG,

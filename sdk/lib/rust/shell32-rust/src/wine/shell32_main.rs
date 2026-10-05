@@ -2321,14 +2321,17 @@ pub unsafe extern "system" fn ShellAboutW(
         szFormat.as_mut_ptr(),
         szFormat.len() as INT,
     );
-    // StringCchPrintfW(szVersionString, _countof, szFormat, KERNEL_VERSION_STR, KERNEL_VERSION_BUILD_STR)
-    swprintf(
+    // shell32_main.c:1348 bounds this with StringCchPrintfW. The translation used the
+    // unbounded swprintf and NUL-terminated slot 255 afterwards, which is too late: a
+    // translated IDS_ABOUT_VERSION_STRING long enough to overflow had already written past
+    // the 256-WCHAR stack buffer.
+    strsafe_rust::StringCchPrintfW!(
         szVersionString.as_mut_ptr(),
+        szVersionString.len(),
         szFormat.as_ptr(),
         KERNEL_VERSION_STR.as_ptr(),
         KERNEL_VERSION_BUILD_STR.as_ptr(),
     );
-    szVersionString[255] = 0; // StringCchPrintfW guarantees NUL-termination within the buffer
 
     info.szApp = szApp;
     info.szOSVersion = szVersionString.as_ptr();

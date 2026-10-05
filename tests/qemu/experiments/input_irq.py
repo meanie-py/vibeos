@@ -34,8 +34,10 @@ def _irq(vm: QemuVM) -> dict[int, int]:
 
 
 def _key(vm: QemuVM, q: str, down: bool) -> None:
-    vm.qmp.execute("input-send-event", events=[
-        {"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": q}}}])
+    vm.qmp.execute(
+        "input-send-event",
+        events=[{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": q}}}],
+    )
 
 
 def main() -> None:
@@ -57,14 +59,22 @@ def main() -> None:
                 _key(vm, k, True)
                 _key(vm, k, False)
         for _ in range(40):
-            vm.qmp.execute("input-send-event", events=[
-                {"type": "rel", "data": {"axis": "x", "value": 25}},
-                {"type": "rel", "data": {"axis": "y", "value": 18}}])
+            vm.qmp.execute(
+                "input-send-event",
+                events=[
+                    {"type": "rel", "data": {"axis": "x", "value": 25}},
+                    {"type": "rel", "data": {"axis": "y", "value": 18}},
+                ],
+            )
         for _ in range(4):
-            vm.qmp.execute("input-send-event", events=[
-                {"type": "btn", "data": {"button": "left", "down": True}}])
-            vm.qmp.execute("input-send-event", events=[
-                {"type": "btn", "data": {"button": "left", "down": False}}])
+            vm.qmp.execute(
+                "input-send-event",
+                events=[{"type": "btn", "data": {"button": "left", "down": True}}],
+            )
+            vm.qmp.execute(
+                "input-send-event",
+                events=[{"type": "btn", "data": {"button": "left", "down": False}}],
+            )
         time.sleep(2)
         after = _irq(vm)
 
@@ -72,21 +82,29 @@ def main() -> None:
         mouse = after.get(12, 0) - before.get(12, 0)
         print(f"\n  IRQ1  (PS/2 keyboard) delta = {kbd}")
         print(f"  IRQ12 (PS/2 mouse)    delta = {mouse}")
-        print(f"  all IRQ deltas: "
-              f"{ {k: after.get(k,0)-before.get(k,0) for k in sorted(set(before)|set(after)) if after.get(k,0)-before.get(k,0)} }")
+        deltas = {
+            k: after.get(k, 0) - before.get(k, 0)
+            for k in sorted(set(before) | set(after))
+            if after.get(k, 0) - before.get(k, 0)
+        }
+        print(f"  all IRQ deltas: {deltas}")
 
         if kbd > 0 or mouse > 0:
-            print("\n  VERDICT: input IRQ FIRES in the guest — QEMU->i8042 "
-                  "delivery is OK. The break is ABOVE the controller: "
-                  "i8042prt/kbdclass/mouclass ISR, win32k RawInputThread, or "
-                  "the input desktop (Tier-B: kdb BP on the ISR / dump "
-                  "grpdeskRitInput vs the rendered desktop).")
+            print(
+                "\n  VERDICT: input IRQ FIRES in the guest — QEMU->i8042 "
+                "delivery is OK. The break is ABOVE the controller: "
+                "i8042prt/kbdclass/mouclass ISR, win32k RawInputThread, or "
+                "the input desktop (Tier-B: kdb BP on the ISR / dump "
+                "grpdeskRitInput vs the rendered desktop)."
+            )
         else:
-            print("\n  VERDICT: NO input IRQ — QEMU input-send-event is not "
-                  "reaching the guest i8042 at all (input routing / no PS2 "
-                  "consumer with -display none). The break is BELOW the "
-                  "driver stack; fix is QEMU-side (e.g. add an explicit "
-                  "kbd/mouse device or input route), not win32k.")
+            print(
+                "\n  VERDICT: NO input IRQ — QEMU input-send-event is not "
+                "reaching the guest i8042 at all (input routing / no PS2 "
+                "consumer with -display none). The break is BELOW the "
+                "driver stack; fix is QEMU-side (e.g. add an explicit "
+                "kbd/mouse device or input route), not win32k."
+            )
     finally:
         vm.stop()
 

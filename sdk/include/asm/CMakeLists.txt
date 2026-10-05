@@ -4,11 +4,7 @@ add_library(genincdata MODULE genincdata.c)
 set_entrypoint(genincdata 0)
 add_dependencies(genincdata bugcodes psdk xdk)
 
-if(MSVC)
-    set(OPT_MS "-ms")
-else()
-    set(OPT_MS "")
-endif()
+set(OPT_MS "")
 
 if(ARCH STREQUAL "i386")
     set(_filename ks386.inc)

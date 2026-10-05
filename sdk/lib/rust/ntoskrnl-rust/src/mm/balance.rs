@@ -441,22 +441,16 @@ unsafe fn MiBalancerThreadInner() {
 
                 if initial_target != 0 && initial_target == old_target {
                     // The balancer made a full pass and freed nothing, so it is
-                    // wedged against a target it cannot meet. x86 declares
-                    // NO_PAGES_AVAILABLE; arm64 just leaves the loop and carries on
-                    // short of pages — which is one way a sweep degrades into
-                    // "everything times out" with no bugcheck (faces B/D).
+                    // wedged against a target it cannot meet: game over, on every
+                    // arch. arm64 used to `break` here instead ("no pagefile"),
+                    // but no arch has a pagefile on the livecd, and carrying on
+                    // short of pages only turned this into a later, anonymous
+                    // timeout. The guard never fired in 530 arm64 boots.
                     mm_guard_trip!(
                         "balance.MiBalancerThread no-progress", 4,
                         "target" => initial_target,
                     );
-                    #[cfg(target_arch = "aarch64")]
-                    {
-                        break;
-                    }
-                    #[cfg(not(target_arch = "aarch64"))]
-                    {
-                        KeBugCheck(NO_PAGES_AVAILABLE as u32);
-                    }
+                    KeBugCheck(NO_PAGES_AVAILABLE as u32);
                 }
 
                 if initial_target == 0 {

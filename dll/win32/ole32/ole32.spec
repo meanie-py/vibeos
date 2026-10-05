@@ -20,8 +20,10 @@
 @ stdcall CoCreateGuid(ptr)
 @ stdcall CoCreateInstance(ptr ptr long ptr ptr)
 @ stdcall CoCreateInstanceEx(ptr ptr long ptr long ptr)
+@ stdcall CoCreateInstanceFromApp(ptr ptr long ptr long ptr)
 # CoCreateObjectInContext
 # CoDeactivateObject
+@ stdcall CoDecrementMTAUsage(ptr)
 @ stdcall CoDisableCallCancellation(ptr)
 @ stdcall -stub -version=0x600+ CoDisconnectContext(long)
 @ stdcall CoDisconnectObject(ptr long)
@@ -33,8 +35,11 @@
 @ stdcall CoFreeLibrary(long)
 @ stdcall CoFreeUnusedLibraries()
 @ stdcall CoFreeUnusedLibrariesEx(long long)
+@ stdcall CoGetActivationState(int128 long ptr)
 # CoGetApartmentID
+@ stdcall CoGetApartmentType(ptr ptr)
 @ stdcall CoGetCallContext(ptr ptr)
+@ stdcall CoGetCallState(long ptr)
 @ stdcall CoGetCallerTID(ptr)
 @ stdcall -stub CoGetCancelObject(long ptr ptr)
 @ stdcall CoGetClassObject(ptr long ptr ptr ptr)
@@ -61,6 +66,7 @@
 @ stdcall -stub CoGetStdMarshalEx(ptr long ptr)
 # CoGetSystemSecurityPermissions
 @ stdcall CoGetTreatAsClass(ptr ptr)
+@ stdcall CoIncrementMTAUsage(ptr)
 @ stdcall CoImpersonateClient()
 @ stdcall CoInitialize(ptr)
 @ stdcall CoInitializeEx(ptr long)
@@ -127,7 +133,7 @@
 @ stdcall CreateGenericComposite(ptr ptr ptr)
 @ stdcall CreateILockBytesOnHGlobal(ptr long ptr)
 @ stdcall CreateItemMoniker(wstr wstr ptr)
-@ stub CreateObjrefMoniker
+@ stdcall CreateObjrefMoniker(ptr ptr)
 @ stdcall CreateOleAdviseHolder(ptr)
 @ stdcall CreatePointerMoniker(ptr ptr)
 # CreateStdProgressIndicator
@@ -210,7 +216,7 @@
 @ stub MonikerRelativePathTo
 @ stdcall OleBuildVersion()
 @ stdcall OleConvertIStorageToOLESTREAM(ptr ptr)
-@ stub OleConvertIStorageToOLESTREAMEx
+@ stdcall OleConvertIStorageToOLESTREAMEx(ptr long long long long ptr ptr)
 @ stdcall OleConvertOLESTREAMToIStorage(ptr ptr ptr)
 @ stub OleConvertOLESTREAMToIStorageEx
 @ stdcall OleCreate(ptr ptr long ptr ptr ptr ptr)

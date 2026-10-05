@@ -1,8 +1,8 @@
 //! startup/crtdll.c — the DLL personality: `_CRT_INIT`, `DllMainCRTStartup`,
 //! `__DllMainCRTStartup`, and the dll `pre_c_init` (`.CRT$XIAA`).
 //!
-//! `DllMain`/`DllEntryPoint` are called via extern symbols so a
-//! consumer-defined `DllMain` wins; the defaults are in `crt-dllmain-rust`.
+//! `DllMain` is called via an extern symbol so a consumer-defined `DllMain` wins; the default
+//! is in `crt-dllmain-rust`. The default `DllEntryPoint` is here (see below for why).
 
 use crate::atexit::{__onexitbegin, __onexitend};
 use crate::cinit::{__xc_a, __xc_z, __xi_a, __xi_z};
@@ -18,11 +18,50 @@ extern "C" {
     fn free(ptr: *mut c_void);
 }
 
-// resolved at link to the consumer's DllMain/DllEntryPoint, else the
-// crt-dllmain-rust defaults.
+// Resolved at link to the consumer's DllMain/DllEntryPoint, else the
+// crt-dllmain-rust defaults. "Else" is an lld `-alternatename` (used only when
+// the name is still undefined at the end of the link), not link order: the
+// defaults used to be plain `DllMain`/`DllEntryPoint` definitions, and a module
+// defining only DllMain pulled the crt-dllmain object in for DllEntryPoint and
+// got two DllMains, kept by order (mlang). This object is always linked (it is
+// the DLL entry point), so its directive always applies.
+#[cfg(target_arch = "x86")]
+core::arch::global_asm!(
+    ".section .drectve,\"yni\"",
+    ".ascii \" -alternatename:_DllMain@12=_vibeos_default_DllMain@12\"",
+    ".ascii \" -alternatename:_DllEntryPoint@12=_vibeos_default_DllEntryPoint@12 \"",
+    ".text",
+);
+#[cfg(not(target_arch = "x86"))]
+core::arch::global_asm!(
+    ".section .drectve,\"yni\"",
+    ".ascii \" -alternatename:DllMain=vibeos_default_DllMain\"",
+    ".ascii \" -alternatename:DllEntryPoint=vibeos_default_DllEntryPoint \"",
+    ".text",
+);
+
 extern "system" {
     fn DllMain(h: HANDLE, reason: DWORD, lpreserved: LPVOID) -> WINBOOL;
     fn DllEntryPoint(h: HANDLE, reason: DWORD, lpreserved: LPVOID) -> WINBOOL;
+}
+
+/// startup/dllentry.c's default `DllEntryPoint` (returns TRUE), reached through the
+/// `-alternatename` above. It lives HERE, beside its only caller, and not in
+/// crt-dllmain-rust with the default `DllMain`: in the C archive the two were separate
+/// members (dllentry.o, dllmain.o), but a Rust staticlib puts them in one object, and since
+/// almost no module defines `DllEntryPoint`, every DLL's link pulled that object in for it
+/// and got the default `DllMain` along with it. A module whose real `DllMain` sits in an
+/// archive rather than an object (shell32: libshell32_rust.a) lost to the default -- shell32
+/// never initialised and explorer panicked in CDefView on amd64 (2026-10-04). A module that
+/// defines its own `DllEntryPoint` (dciman32, msvfw32) gets it with no duplicate, because
+/// this default is only an alternate name.
+#[no_mangle]
+pub unsafe extern "system" fn vibeos_default_DllEntryPoint(
+    _h: HANDLE,
+    _reason: DWORD,
+    _lpreserved: LPVOID,
+) -> WINBOOL {
+    1
 }
 
 #[no_mangle]

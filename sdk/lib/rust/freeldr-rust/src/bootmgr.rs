@@ -45,8 +45,10 @@ extern "C" {
     fn FrLdrHeapAlloc(size: usize, tag: ULONG) -> *mut c_void;
     fn FrLdrHeapFree(p: *mut c_void, tag: ULONG);
     fn IniGetNumSectionItems(SectionId: ULONG_PTR) -> ULONG;
-    fn IniGetSectionSettingNameSize(SectionId: ULONG_PTR, index: ULONG) -> usize;
-    fn IniGetSectionSettingValueSize(SectionId: ULONG_PTR, index: ULONG) -> usize;
+    #[link_name = "IniGetSectionSettingNameSize"]
+    fn IniGetSectionSettingNameSize__c(SectionId: ULONG_PTR, index: ULONG) -> ULONG;
+    #[link_name = "IniGetSectionSettingValueSize"]
+    fn IniGetSectionSettingValueSize__c(SectionId: ULONG_PTR, index: ULONG) -> ULONG;
     fn IniReadSettingByNumber(
         SectionId: ULONG_PTR, index: ULONG,
         name: PCHAR, name_size: usize,
@@ -93,6 +95,18 @@ extern "C" {
     // bootmgr.c → options.c (still C in rosload, Rust in uefi build).
     fn DoOptionsMenu(OperatingSystem: *mut OperatingSystemItem);
     fn DisplayBootTimeOptions();
+}
+
+// inifile.rs (and the C) return ULONG; a usize decl read 32 bits nobody wrote on 64-bit.
+#[allow(non_snake_case)]
+unsafe fn IniGetSectionSettingValueSize(SectionId: ULONG_PTR, index: ULONG) -> usize {
+    IniGetSectionSettingValueSize__c(SectionId, index) as usize
+}
+
+// inifile.rs (and the C) return ULONG; a usize decl read 32 bits nobody wrote on 64-bit.
+#[allow(non_snake_case)]
+unsafe fn IniGetSectionSettingNameSize(SectionId: ULONG_PTR, index: ULONG) -> usize {
+    IniGetSectionSettingNameSize__c(SectionId, index) as usize
 }
 
 // keycodes.h: KEY_F8 = 0x42, KEY_F10 = 0x44

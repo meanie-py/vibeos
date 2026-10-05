@@ -85,6 +85,27 @@ BUILD_CFGS = {
         "hal_apic": 'any(target_arch = "x86_64", all(target_arch = "x86", feature = "apic"))',
         "hal_pic": 'all(target_arch = "x86", not(feature = "apic"))',
     },
+    "cnt-rust": {
+        # cnt-rust/build.rs: the libm/musl-math engines build everywhere except the builtin
+        # i686 triple with -sse,-sse2 (rustc rejects their Rust-ABI f64 functions there).
+        "cnt_libm": (
+            'not(all(target_arch = "x86", not(target_feature = "sse2"),'
+            ' not(target_feature = "soft-float")))'
+        ),
+        # cabi/streamout.rs's _USER32_WSPRINTF configuration: never set in cnt-rust's own
+        # build (it is libcntpr's engine there); see user32-wsprintf-rust.
+        "streamout_user32": "any()",
+    },
+    "user32-wsprintf-rust": {
+        # user32-wsprintf-rust/build.rs: always -- it compiles cnt-rust's streamout.rs as
+        # its own module, in the user32 configuration.
+        "streamout_user32": "all()",
+    },
+    "cnt-difftest": {
+        # cnt-difftest/build.rs: always -- tests/diff.rs includes streamout.rs a second time
+        # to grade the user32 configuration.
+        "streamout_user32": "all()",
+    },
 }
 
 

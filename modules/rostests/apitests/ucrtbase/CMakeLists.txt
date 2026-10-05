@@ -1,10 +1,4 @@
 
-# Hack to replace the old CRT include directory with the UCRT include directory
-get_property(INCLUDE_DIRS DIRECTORY . PROPERTY INCLUDE_DIRECTORIES)
-list(REMOVE_ITEM INCLUDE_DIRS "${REACTOS_SOURCE_DIR}/sdk/include/crt")
-set_property(DIRECTORY . PROPERTY INCLUDE_DIRECTORIES ${INCLUDE_DIRS})
-include_directories(${REACTOS_SOURCE_DIR}/sdk/include/ucrt)
-
 list(APPEND SOURCE
     ../crt/_finite.c
     ../crt/_isnan.c
@@ -42,12 +36,10 @@ set_module_type(ucrtbase_apitest win32cui)
 target_compile_definitions(ucrtbase_apitest PRIVATE USE_WINE_TODOS TEST_UCRTBASE TEST_DLL_NAME="ucrtbase.dll")
 
 target_link_libraries(ucrtbase_apitest ${PSEH_LIB} chkstk)
-if(NOT MSVC)
-    # Add this manually here, so it can link to ucrtbase.dll and vcstartup.
-    # Use the toolchain-aware target (gcc.cmake) — raw -lgcc doesn't exist on
-    # llvm-mingw, which ships compiler-rt builtins instead.
-    target_link_libraries(ucrtbase_apitest libgcc)
-endif()
+# Add this manually here, so it can link to ucrtbase.dll and vcstartup.
+# Use the toolchain-aware target (gcc.cmake) — raw -lgcc doesn't exist on
+# llvm-mingw, which ships compiler-rt builtins instead.
+target_link_libraries(ucrtbase_apitest libgcc)
 
 add_importlibs(ucrtbase_apitest ucrtbase kernel32 ntdll)
 add_rostests_file(TARGET ucrtbase_apitest)

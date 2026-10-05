@@ -558,6 +558,11 @@ pub unsafe extern "system" fn KiIpiServiceRoutine(
                 crate::ke::i386::freeze::KiProcessorFreezeHandler(TrapFrame, ExceptionFrame);
             }
         }
+        // arm64: the same staged state, delivered on the IPI SGI (no NMI here).
+        #[cfg(target_arch = "aarch64")] // nolint: cfg-vs-c (arm64 freeze target, Rust-only; i386 has its own arm above)
+        {
+            crate::ke::arm64::stubs::KiArm64FreezeHandler();
+        }
 
         if core::sync::atomic::AtomicI32::from_ptr(
             core::ptr::addr_of_mut!((*Prcb).IpiFrozen) as *mut i32

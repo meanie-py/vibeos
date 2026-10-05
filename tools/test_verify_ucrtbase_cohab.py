@@ -139,19 +139,20 @@ def _ucrtbase_link_libraries() -> list[str]:
     return names
 
 
-def test_the_authority_set_is_the_whole_link_line_except_ucrt():
+def test_the_authority_set_is_the_whole_link_line():
     """The archive check is only correct if its model IS the link line.
 
     This is the assertion that actually rotted once: the tool modelled the authority as
     `msvcrt_shared` alone, and the ucrtbase math flip -- a correct change, every symbol of it
     a crtmath body we own and had graded -- came back as 60 findings. A gate that is red on a
     correct change is one somebody switches off, so the set has to track the CMake rather than
-    be remembered. `ucrt` is the deliberate exclusion: it is the vendored Microsoft library,
-    and displacing one of ITS bodies is the entire defect this file exists to prevent.
+    be remembered. `ucrt` used to be the one deliberate exclusion (the vendored Microsoft
+    library); since 2026-10-03 it is deleted, and its return to the link line would mean
+    Microsoft's C had come back.
     """
     linked = _ucrtbase_link_libraries()
-    assert "ucrt" in linked, "ucrt vanished from the link line; the exclusion below is stale"
-    assert set(linked) - {"ucrt"} == set(vuc.OURS_ON_LINK_LINE), (
+    assert "ucrt" not in linked, "Microsoft's ucrt is back on ucrtbase's link line"
+    assert set(linked) == set(vuc.OURS_ON_LINK_LINE), (
         "ucrtbase's link line and OURS_ON_LINK_LINE disagree -- a library added there without "
         "a matching entry makes every symbol it defines look like ours shadowing genuine UCRT"
     )
@@ -473,12 +474,17 @@ def test_the_authority_includes_ucrtbases_own_C_not_just_its_libraries():
     """
     assert set(vuc.OURS_C_AUTHORITY) == set(vuc.OURS_ON_LINK_LINE) | set(vuc.OURS_OWN_TUS)
     assert set(vuc.OURS_ON_LINK_LINE) & set(vuc.OURS_OWN_TUS) == set(), "the two must be disjoint"
-    # The symbols that motivated this. If stubs.c stops defining them the entry is
-    # stale, and a stale authority entry is exactly what this file must not carry.
+    # The six symbols that motivated this (fma/fmaf, log2/log2f, lrint/lrintf) moved to
+    # ucrt-rust's c99math (2026-10-03) and are declared takeovers there, so they must be
+    # GONE from stubs.c -- two definitions would be the silent first-match this file
+    # exists to prevent. The entry itself still carries printf.c and the rest of stubs.c.
     stubs = REPO / "dll" / "win32" / "ucrtbase" / "stubs.c"
     text = stubs.read_text(errors="replace")
+    c99 = (REPO / "sdk" / "lib" / "rust" / "ucrt-rust" / "src" / "c99math.rs").read_text()
     for sym in ("fma", "fmaf", "log2", "log2f", "lrint", "lrintf"):
-        assert f"{sym}(" in text, f"{sym} no longer in ucrtbase/stubs.c — re-derive OURS_OWN_TUS"
+        assert f" {sym}(" not in text, f"{sym} is back in ucrtbase/stubs.c beside c99math's"
+        assert f'extern "C" fn {sym}(' in c99, f"{sym} no longer in c99math.rs"
+    assert "atexit(" in text, "stubs.c no longer defines atexit — re-derive OURS_OWN_TUS"
 
 
 # ── the burn-down ratchet ────────────────────────────────────────────────────
@@ -609,16 +615,37 @@ def test_rebuild_lists_match_the_crate_closure() -> None:
     assert vuc.check_rebuild_lists() == []
 
 
-def test_a_crate_missing_from_a_rebuild_list_is_named(tmp_path: Path) -> None:
-    """Control: a list that drops a closure crate must be reported -- a gate nobody
-    has watched fail is a gate nobody knows works."""
-    for cmake, _var, _root in vuc.REBUILD_LISTS:
-        src = (vuc.REPO / cmake).read_text()
+def test_a_registry_crate_is_not_a_rebuild_input(tmp_path: Path) -> None:
+    """`libm = { version = ... }` is pinned by Cargo.lock and nothing in the tree can
+    edit it, so it is not part of the closure a rebuild list must name; a path crate
+    beside it still is."""
+    _crate(
+        tmp_path,
+        "ucrt-rust",
+        'libm = { version = "0.2.16", optional = true }\n'
+        'varargs-rust = { path = "../varargs-rust" }\n',
+    )
+    assert vuc._deps_of(tmp_path / "ucrt-rust") == {"varargs-rust"}
+
+
+def test_a_hand_kept_or_misrooted_rebuild_list_is_named(tmp_path: Path) -> None:
+    """Control: replacing the derivation with a hand list, or walking the wrong root,
+    must be reported -- a gate nobody has watched fail is a gate nobody knows works."""
+    (cmake_a, var_a, _), (cmake_b, _, root_b) = vuc.REBUILD_LISTS
+    for cmake, edit in (
+        (
+            cmake_a,
+            lambda t: t.replace(f"rust_crate_sources({var_a}", "set(UCRT_SHARED_RUST_CRATES", 1),
+        ),
+        (cmake_b, lambda t: t.replace(f" {root_b})", " msvcrt-crt-rust)", 1)),
+    ):
         dst = tmp_path / cmake
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(src.replace(" crt-portable-rust", "", 1))
+        dst.write_text(edit((vuc.REPO / cmake).read_text()))
     found = vuc.check_rebuild_lists(repo=tmp_path)
-    assert any("omits `crt-portable-rust`" in f for f in found), found
+    assert any(cmake_a in f and "not derived" in f for f in found), found
+    assert any(cmake_a in f and "hand-kept" in f for f in found), found
+    assert any(cmake_b in f and "walks `msvcrt-crt-rust`" in f for f in found), found
 
 
 def test_a_stale_build_is_not_a_ratchet_regression(tmp_path: Path, monkeypatch) -> None:
@@ -641,7 +668,9 @@ def test_an_archive_from_another_tree_is_stale_whatever_its_mtime(tmp_path, monk
     a declared takeover the archive does not define means it was not built from here."""
     monkeypatch.setattr(vuc, "_ucrt_archive", lambda build, triple: tmp_path / "lib.a")
     monkeypatch.setattr(vuc, "_stale_against_sources", lambda a: None)  # clock says fresh
-    monkeypatch.setattr(vuc, "declared_takeovers", lambda: {"strlen": "string", "isalpha": "ctype"})
+    monkeypatch.setattr(
+        vuc, "declared_takeovers", lambda arch=None: {"strlen": "string", "isalpha": "ctype"}
+    )
     monkeypatch.setattr(vuc, "_nm_defined", lambda a: {"strlen", "memcpy"})
     why = vuc.burndown_stale("arm64")
     assert why and "isalpha" in why and "different tree" in why

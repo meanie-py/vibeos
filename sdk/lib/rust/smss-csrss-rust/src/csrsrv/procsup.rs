@@ -262,6 +262,9 @@ pub unsafe extern "system" fn CsrCreateProcess(
     (*CsrThread).CreateTime = KernelTimes.CreateTime;
     (*CsrThread).ClientId = *ClientId;
     (*CsrThread).ThreadHandle = hThread;
+    /* Guard the handle against a stray NtClose; CsrThreadRefcountZero unprotects
+     * it before closing, as for every other CSR thread handle. */
+    super::thredsup::ProtectHandle(hThread);
     (*CsrThread).Flags = 0;
     Status = CsrInsertThread(CsrProcess, CsrThread);
     if Status < 0 {

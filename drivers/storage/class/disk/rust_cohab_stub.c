@@ -9,18 +9,11 @@
  */
 typedef int disk_rust_cohab_placeholder;
 
-/* REVERSE_BYTES family — header macros (classpnp.h/scsi.h) that the Rust
- * translation calls as functions. Implemented in C because rustc declines to emit
- * a `#[no_mangle]` body for a name that also has a `#[macro_export]` macro in the
- * crate; C guarantees the symbol (cdecl `_REVERSE_BYTES` on i386). Byte-reverse a
- * big-endian SCSI field in place. (Same as classpnp's rust_cohab_stub.c.) */
-void REVERSE_BYTES(void *Dest, const void *Src)
-{
-    unsigned char *d = (unsigned char *)Dest;
-    const unsigned char *s = (const unsigned char *)Src;
-    d[0] = s[3]; d[1] = s[2]; d[2] = s[1]; d[3] = s[0];
-}
-
+/* REVERSE_BYTES_QUAD / _SHORT — header macros (classpnp.h/scsi.h) the Rust
+ * translation calls as functions; C guarantees the symbol (cdecl on i386).
+ * Byte-reverse a big-endian SCSI field in place. Plain REVERSE_BYTES is Rust's
+ * (disk-rust ddk_shims.rs): a copy here was a duplicate symbol, which
+ * tools/link_guard.py now refuses. */
 void REVERSE_BYTES_QUAD(void *Dest, const void *Src)
 {
     unsigned char *d = (unsigned char *)Dest;

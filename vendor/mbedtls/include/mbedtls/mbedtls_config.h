@@ -2827,6 +2827,10 @@
  */
 #define MBEDTLS_DHM_C
 
+/* ReactOS: DSA, which Mbed TLS does not have. dsa.c is ReactOS's own (upstream
+ * 340f6cfec4e, after libtomcrypt); bcrypt's Mbed TLS backend uses it. */
+#define MBEDTLS_DSA_C
+
 /**
  * \def MBEDTLS_ECDH_C
  *

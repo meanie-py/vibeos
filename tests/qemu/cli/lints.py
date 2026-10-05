@@ -63,6 +63,8 @@ _SUMMARY_LINE = re.compile(
     r"|catalog: \d+"  # 'Spec/Bindgen catalog: N …'
     r"|^\s*-> .*: *\d+$"  # verify_tables tallies
     r"|^\s*matched to a C array\s*: *\d+$"
+    r"|^\s*no C counterpart\s*: *\d+$"  # verify_tables: moves whenever a table is added
+    r"|^\s*Rust integer tables found\s*: *\d+$"
     r"|^\s*Found \d+ unprotected"  # lint_kernel header tally
     r"|^\s*Total: \d+ violations"  # lint_kernel footer tally (mixed-case)
     # verify_signatures' two header tallies and its whole '── coverage ──' block.
@@ -351,6 +353,13 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # drove this to zero and a concurrent lane re-introduced it the same day.
     ns = repo / "tools" / "scan_nightly_surface.py"
     specs.append(("scan_nightly_surface", [py, str(ns)] if ns.is_file() else ["MISSING"], "stdout"))
+    # MSVC is not a supported toolchain (roadmap section 11): every CMake `if()` that tests
+    # for it was resolved by tools/strip_msvc_cmake.py on 2026-10-03. Baseline is EMPTY, so
+    # an upstream merge that brings a new one fails here with the command that resolves it.
+    smc = repo / "tools" / "strip_msvc_cmake.py"
+    specs.append(
+        ("strip_msvc_cmake", [py, str(smc), "--check"] if smc.is_file() else ["MISSING"], "stdout")
+    )
     # shell32's zero-C++ lane has an exhaustive live-CMake ledger. A newly added
     # source, a claimed removal that remains compiled, or an expected source that
     # silently fell out of CMake is a hard mismatch rather than baseline debt.
@@ -631,6 +640,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # An array FIELD passed by value to a C variadic (`note("%s", (*ip).name)`): C decays
+    # it to a pointer, Rust passes the array, and only i386 copies the bytes onto the stack,
+    # so `%s` reads the string's first four bytes as a pointer. The i386 DHCP client died on
+    # 0x7374656e ("nets") every boot; msgina's "logged on as DOMAIN\\User" line had the same
+    # shape (2026-10-04). Fields are resolved through each variable's declared type, because
+    # the same field name is an array in one struct and a pointer in the next. Baseline is EMPTY.
+    sva = repo / "tools" / "scan_variadic_array_arg.py"
+    specs.append(
+        (
+            "scan_variadic_array_arg",
+            [py, str(sva), "--lint"] if sva.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Four bug CLASSES that rustconv difftest-contract found in shipping Rust on
     # 2026-09-26, each now a $0 check over every translated body. None was visible to
     # smoke; all compile, link and boot. The two C-oracle scanners pair a Rust function
@@ -705,6 +728,53 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_invented_constants",
             [py, str(sic), "--lint"] if sic.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # Its unlabelled sibling: a BARE `0x8003xxxxu32 as HRESULT` has no name to
+    # resolve, so only the C function it translates can say it is wrong -- the
+    # literal must be a value that function returns. ole32's storage32.rs carried
+    # seven that were not (STG_E_TOOMANYOPENFILES for STG_E_READFAULT and
+    # STG_E_WRITEFAULT, STG_E_INVALIDHANDLE for STG_E_INVALIDNAME, ...).
+    shl = repo / "tools" / "scan_hresult_literals.py"
+    specs.append(
+        (
+            "scan_hresult_literals",
+            [py, str(shl), "--lint"] if shl.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A C do-while's `continue` evaluates the condition; the translated `loop { ..;
+    # if !(cond) { break; } }` jumps over it. Four shipped (an endless setup dialog
+    # loop, a win32k use-after-free re-peek, a temp-name spin, a scrollbar that kept
+    # tracking). The shape also fits a faithful `for (;;)`, so the baseline holds the
+    # sites read against their C and found OK; a NEW one means: go read the C.
+    # `(base as *mut PBYTE).offset(n)` steps in POINTER units: the C's `(PBYTE)base + n`
+    # turned into 8n on 64-bit. oleaut32's RecordCopy read every field past offset 0
+    # from the wrong address; win32k's 16bpp transparent blit wrote 8x past its target.
+    sbs = repo / "tools" / "scan_byteptr_stride.py"
+    specs.append(
+        (
+            "scan_byteptr_stride",
+            [py, str(sbs), "--lint"] if sbs.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # HEAP_ZERO_MEMORY handed to GlobalAlloc: not a GMEM_ flag, so GlobalAlloc refuses it
+    # outright. oleaut32's create_stream did this and no picture ever loaded from a file.
+    sgf = repo / "tools" / "scan_gmem_flags.py"
+    specs.append(
+        (
+            "scan_gmem_flags",
+            [py, str(sgf), "--lint"] if sgf.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    sdc = repo / "tools" / "scan_dowhile_continue.py"
+    specs.append(
+        (
+            "scan_dowhile_continue",
+            [py, str(sdc), "--lint"] if sdc.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -923,6 +993,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A UTF-16 literal spelled as a byte string (`b"L\0i\0b\0..."`) and cast to a wide
+    # pointer has alignment 1; any link change can move it to an odd address, which
+    # ProbeForRead(.., sizeof(WCHAR)) rejects. ws2_32's L"LibraryPath" did exactly that
+    # when msvcrtex became Rust and bugchecked i386 (0x1E). Baseline EMPTY: use
+    # win32macros_rust::wide_bytes!.
+    suw = repo / "tools" / "scan_unaligned_wide.py"
+    specs.append(
+        (
+            "scan_unaligned_wide",
+            [py, str(suw), "--lint"] if suw.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The WoW64 win32k thunk table must be indexed by the GUEST's (i386) syscall
     # numbers, not the host's. w32ksvc32.h gates NtUserSetWindowLongPtr on
     # `#ifdef _WIN64`, so parsing it as flat text on a 64-bit host shifts every
@@ -1071,6 +1154,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_bindgen_padding_index",
             [py, str(sbp)] if sbp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A Rust `extern static` read wider than the C that defines it through __asm__("NAME").
+    # fastfat read the shim's 4-byte MAX_LFN_CHARACTERS as usize; on arm64 the high half was
+    # the next datum, every rename buffer pointer went non-canonical, and every rename
+    # bugchecked 0x23 while amd64 read a zero and passed. Baseline EMPTY.
+    sesw = repo / "tools" / "scan_extern_static_width.py"
+    specs.append(
+        (
+            "scan_extern_static_width",
+            [py, str(sesw)] if sesw.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -1437,6 +1532,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_ud2", status="skip", detail="no binary"))
         run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
         run.add(Stage("scan_self_recursive", status="skip", detail="no binary"))
+        run.add(Stage("scan_export_thunks", status="skip", detail="no binary"))
         return
     # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
     # their output is arch-specific so a single baseline can't match across arches
@@ -1473,3 +1569,20 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         strict=strict,
         by_exit_code=True,
     )
+    # An export that is a jump to another DLL's same-named import: a local body lost the
+    # link to an import library. ole32's GetErrorInfo/SetErrorInfo/CreateErrorInfo went
+    # to oleaut32, which forwards them back: an endless loop for every caller. amd64 only
+    # (the scan reads llvm-objdump's IAT-name annotation); the defect is link-order, not
+    # arch, so one graded arch catches the class.
+    if arch == "amd64":
+        sxt = repo / "tools" / "scan_export_thunks.py"
+        _lint_stage(
+            run,
+            repo,
+            "scan_export_thunks",
+            [py, str(sxt), "--check", str(build_dir)] if sxt.is_file() else ["MISSING"],
+            strict=strict,
+            by_exit_code=True,
+        )
+    else:
+        run.add(Stage("scan_export_thunks", status="skip", detail="amd64-only scan"))

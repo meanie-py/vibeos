@@ -43,7 +43,7 @@ The kernel + win32k + the core client-DLL/boot spine + the driver fleet are **~9
 ### Tier 2 — Systemic Rust-native fixes (above Wine-DLL translation)
 
 - **⭐ Exported-symbol trampoline refactor** *(new; Size: M, mechanical)* — split every exported symbol into a snake_case **native `nt_foo()`** (plain Rust ABI, holds the logic) + a generated **`NtFoo` trampoline** that is the *only* place `extern "system"/"fastcall"/stdcall` lives. Done mechanically in Python across all ~1,700+ monolith exports (thousands fleet-wide). **This is the capstone of the ghost-tax "two copies of the truth" program**: internal callers hit the native fn, so there is no hand-written `extern` decl left to drift — it kills the ABI-mismatch bug class the crate-split flushes cross-crate, `scan_cc_mismatch` catches same-crate (316 baseline), and `verify_ffi` guards (161). Also the natural substrate for idiomation (§3) and for **generating** crate-split's cross-crate decls instead of hand-writing them — so do it *aware of* the crate-split. **Re-scoped 2026-07-25 — Size is L-XL, not M: the real surface is 24,823 `#[no_mangle]` exports fleet-wide** (the ~1,700 figure was ntoskrnl-only, and is accurate for it; win32k alone is 3,788). It also cannot be an edit campaign over the decls that exist — it must GENERATE them from one authority and retype call sites in the same pass. Two shortcuts were probed and closed as dead ends (decl-follows-def bakes in wrong ABIs; `verify_ffi`'s 6 ABI findings are correctly baselined local shims, not bugs) — see the warnings-burndown lane plan, 2026-07-25, before restarting.
-- **msvcrt / ucrtbase from pieces** *(Size: M-L; msvcrt DONE, ucrtbase's rail LANDED 2026-09-05)* — the CRT floor is still ~581 `.c`. Rather than translate it from scratch, **assemble** the Rust CRT from what already exists — `cnt-rust` (libcntpr kernel CRT subset) + the 39-crate `rtl-rust` umbrella — and NT-ify the gaps. Displaces the last big userland C floor. **ucrtbase now links Rust**: its shared TUs live in `crt-shared-rust` and it links `crt-shared-cargo`, deliberately NOT msvcrt's archive — those two collide with ucrtbase.spec on 891 names of which only 35 are ours, so the obvious wiring would have silently shadowed 856 genuine Microsoft UCRT bodies under `--allow-multiple-definition`. `tools/verify_ucrtbase_cohab.py` gates it; see rust-port-status.md's CRT row.
+- **msvcrt / ucrtbase from pieces** *(Size: M-L; msvcrt DONE; ucrtbase DONE 2026-10-03 -- no Microsoft source or headers left)* — the CRT floor is still ~581 `.c`. Rather than translate it from scratch, **assemble** the Rust CRT from what already exists — `cnt-rust` (libcntpr kernel CRT subset) + the 39-crate `rtl-rust` umbrella — and NT-ify the gaps. Displaces the last big userland C floor. **ucrtbase now links Rust**: its shared TUs live in `crt-shared-rust` and it links `crt-shared-cargo`, deliberately NOT msvcrt's archive — those two collide with ucrtbase.spec on 891 names of which only 35 are ours, so the obvious wiring would have silently shadowed 856 genuine Microsoft UCRT bodies under `--allow-multiple-definition`. `tools/verify_ucrtbase_cohab.py` gates it; see rust-port-status.md's CRT row.
 - **ntoskrnl crate-split continuation** *(Size: M)* — debug + land **ex** (x86 hang, branch `ex-crate-split-x86-hang`), then split **ke** and **mm/ARM3**; then **win32k** (flat 257K single crate, textbook USER/GDI seam, `freetype` a free leaf — one coordinated pass in a quiet window). Detail + recipe: the crate-split plan.
 
 ### Tier 3 — Resume translation (the through-line)
@@ -425,33 +425,44 @@ arches) and the PL011 UART (a real ARM peripheral).
 
 ---
 
-## 11. Retire MSVC support — Size: M
+## 11. Retire MSVC support — Size: M (CMake + stlport DONE 2026-10-03; tail owed)
 
 **MSVC is not a supported toolchain** (owner, 2026-09-26): the project builds with
 clang/llvm-mingw, and that was a settled early call. Upstream ReactOS still carries an
-MSVC build, and everything that exists only for it is dead weight here: code nothing
-compiles, CMake branches nothing takes, and tests of a compiler we do not use.
-Deliberately deferred, not urgent. Measured 2026-09-26:
+MSVC build, and everything that exists only for it is dead weight here. Owner said "kill
+it" on 2026-10-03.
 
-- **`vendor/stlport`** (116K lines): a C++ standard library wired up only by
-  `sdk/cmake/msvc.cmake`'s `cppstl`. Our builds use the toolchain's libstdc++ and compile
-  none of it. vendor.yaml records it `translate: keep` with a note saying it is dead.
-  Removing it means deleting the tree, its `if(MSVC)` block in `sdk/lib/3rdparty`,
-  `vendor-patches/stlport.patch` and its vendor.yaml/notices entries.
-- **`sdk/cmake/msvc.cmake`** (613 lines) and **`baseaddress_msvc.cmake`**.
-- **220 `if(MSVC)` / `if(NOT MSVC)` sites in 153 CMake files**: collapse each to its
-  non-MSVC arm. 29 of those files are rostests.
-- **MSVC-only tests**: the rostests behind `if(MSVC)`, and the MSVC arm of
-  `vendor/ms-compiler-tests`. Its i386 arm is built by clang today and stays.
-- **`_MSC_VER` in 589 non-vendored sources**: the long tail, retire opportunistically.
-  Many are portability guards that also select the clang path, so read each one; do not
-  delete by regex.
+**Done 2026-10-03:**
 
-**The cost is upstream-sync friction**, and it decides the order: every hunk deleted
-from a file upstream still edits becomes a merge conflict on the next sync. So take the
-self-contained pieces first (stlport, `msvc.cmake`, whole MSVC-only tests), then the
-`if(MSVC)` branches in files upstream rarely touches. Leave the `_MSC_VER` tail for
-files we already own or have translated.
+- **`tools/strip_msvc_cmake.py`** partially evaluates every CMake `if`/`elseif` with the
+  MSVC facts fixed (`MSVC`/`MSVC_IDE` false, compiler id never "MSVC") and resolves what
+  that decides: dead arms deleted with their attached comments, surviving arms dedented,
+  compound conditions rewritten (`MSVC OR X` -> `X`). Its first run resolved 203
+  conditions in 144 files. `vibeos-cli check` runs it as `strip_msvc_cmake` with an EMPTY
+  baseline, so **after an upstream merge, run `python3 tools/strip_msvc_cmake.py --write`**
+  when the check names new sites. Vendored trees are skipped (their CMake is the tree's).
+- Deleted: `vendor/stlport` (116K lines; registry entry, patch and notices with it),
+  `sdk/cmake/msvc.cmake`, `sdk/cmake/baseaddress_msvc.cmake`, `toolchain-msvc.cmake`,
+  `overrides-msvc.cmake`. The MSVC-only rostests went with their `if(MSVC)` arms, and
+  `vendor/ms-compiler-tests` is now built only by its clang i386 arm.
+
+**Still owed:**
+
+- **Orphaned MSVC-only sources**, now referenced by no CMake: `cpprt` (`ehvec.cpp`,
+  `new_nothrow.cpp`, `terminate.cpp`, `typeinfo.cpp`, `{i386,amd64}/cpprt.s`), the Wine
+  `msvc.S`/`msvc-thiscall.c` thunks (mshtml, oleaut32, rpcrt4 + `thunks-msvc.s`, vssapi,
+  ole32, windowscodecs, ks), `crt/oldnames-{common,msvcrt}.S`, msvcrt's
+  `{i386,amd64}/cpp_alias.s`, `cpp_vtables.s`, `except_*.s` (CRT lane: delete when it
+  finishes), and the winetests `get_fpu_cw.asm` / `msvc-x64.asm`. Dead-but-present, like a
+  cohab-flipped `.c`. Deleting a file upstream still edits makes a modify/delete conflict on
+  every sync, so take them when their module is translated or upstream stops touching them.
+- **Upstream's Windows/CI entry points** still name the MSVC toolchain and are left as
+  upstream ships them: `.github/workflows/build.yml` (its `build-msvc` jobs),
+  `CMakePresets.json` (`base-msvc`/`clang-cl` presets) and `configure.cmd`. We run none of
+  them; editing them buys only merge conflicts.
+- **`_MSC_VER` in ~589 non-vendored sources**: retire opportunistically in files we own or
+  have translated. Many are portability guards that also select the clang path, so read
+  each one; do not delete by regex.
 
 ---
 
@@ -557,39 +568,171 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **fastfat bugchecks in `FsRtlCheckOplock` on arm64** (OPEN, 2026-09-28; was "rename bugchecks
-  fastfat"). An access violation caught by `FatBugCheckExceptionFilter` becomes bugcheck 0x23.
-  P1 is always `0x100c0` because the Rust `FatBugCheck` is one out-of-line function, so it does
-  not identify the site. P4, the faulting PC, is `ntoskrnl.exe+0x11EBD8`, which is
-  `FsRtlCheckOplock+0x2c` in the current `ntkrnlmp.exe` (the default MP kernel). An earlier
-  symbolization against an older build read `RtlCopyUnicodeString` under
-  `FatSetRenameInfo`. Two triggers so far, both found by the ucrtbase Tier-2 grader:
-  - any `MoveFileExW` rename of an existing file in the guest temp dir, a never-seen target
-    name included (so not the tunnel cache);
-  - `_mktemp`'s grader creating and deleting a run of files: four shards out of four, 2026-09-28.
-
-  The grader skips the cases that reach it, behind `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` in
-  `tools/payloads/ucrtdiff/ucrtdiff.c`; set it to 0 when this closes. Still reproduces after
-  d98aba47853 (fastfat top-level IRP fix).
-  Owner: unassigned (fastfat/kernel lane).
+- **amd64: a user-mode Rust panic report can bugcheck the kernel (0x1E in the debug print
+  path)** (OPEN, 2026-10-04; kd lane). A panic in explorer's shell32 printed a stack walk that
+  ran into garbage, and the kernel faulted (C0000005) at `ntoskrnl+0xC64C0` reading it, which
+  symbolizes to the first line of kd-rust `KdIoPrintf` (`kdio.rs:822`), so the exact faulting
+  function is not confirmed. User mode must not be able to take the kernel down through a
+  debug print: the copy from the caller's buffer needs a probe under SEH. Repro: runs
+  `20261004-080222-cpyv4l2x` / `20261004-080920-w43f482z` (smoke-amd64, msvcrt-homebrew,
+  before the DllEntryPoint fix that removed the panic).
+- **fastfat: the free-dirent bitmap goes stale, then every create in that directory raises
+  STATUS_FILE_CORRUPT_ERROR** (OPEN, 2026-10-04). Wine's ole32 `storage32` test (olewinetest
+  payload, amd64) drives about 100,000 raises in 120 s. They are caught, so the test times out
+  rather than crashing, but the files are never created.
+  - Raiser: `FatCreateNewDirent`'s "assert that the dirents are in fact unused" check
+    (dirsup.rs:396). `FreeDirentBitmap` calls a slot free that is in use on disk.
+  - `FatCreateNewDirent` and `FatDeleteDirent` both read faithful to dirsup.c. The suspect is
+    another path that writes a dirent without setting its bit: rename, tunnelling, or the
+    rescan.
+  - Found with `RtlRaiseStatus`'s new backtrace (image base + RVA per frame). For an amd64
+    kernel frame, symbolize against `ntkrnlmp.exe`.
+- **rostests i386 build: 5 targets fail under llvm-mingw** (OPEN, 2026-10-04). After the
+  shell32/shlwapi/ole32 export fixes (`--rostests`, `ninja -k 0`): `dllimport_test.dll`
+  (lld: framedyn `CHString` "should not refer to special section 0"), `menuaccels.rc` (llvm-rc
+  rejects its ACCELERATORS statement), `interop_unittest` LocaleTests.cpp (libc++ `<__locale>`
+  `enum result { ok, ... }` collides with the test `ok` macro), `wine.combase.test.dll`
+  (`-llibcombase` not found), `user32_winetest` monitor.c (`ddk/d3dkmthk.h` not on its include
+  path; it lives in sdk/include/wine/ddk).
+- **i386 smoke QEMU mis-executes SAHF after a logic op** (OPEN, 2026-10-04; host tooling,
+  not vibeos). The windows-host backend's QEMU is 11.0.50, a development snapshot
+  (`v11.0.0-12631-g54e84cdc7a`, installed 2026-05-01). After `or`/`xor`/`test`/`mov`, `sahf`
+  sets CF wrong, so `fucom; fnstsw; sahf; jcc` -- every x87 float compare `-march=pentium`
+  emits -- can branch the wrong way in i386 guests. Seen as Wine msvcrt `string.c:3522`'s 5,535
+  failures (`_atodbl` is right in all of them). `tools/payloads/atodbl` checks it and goes
+  green on a fixed emulator. Owed: a released QEMU for the windows-host backend, then rerun
+  i386 float-heavy tests. Field manual: "i386 guest float compares go the wrong way".
+- **msvcrt.dll Wine winetest `misc`: FIXED 2026-10-04, was "exits 128"** (i386). The
+  subtest died after misc.c:375's `_popen` failed with EACCES and the test ran `fgets` on the
+  NULL stream. Root cause in kernel32-rust, not msvcrt: `GetEnvironmentVariableA/W` kept the
+  pre-242937b1229 sizing (reserve one char for the NUL) while rtl-strings' query follows
+  upstream ef70bdf9907 (needs room for the NUL), so every size-then-fetch caller got an empty
+  string; msvcrt's COMSPEC came back `""` and `_popen` tried to execute `X:\reactos\bin\`.
+  Now 832 tests, 11 failures: all `I10_OUTPUT` rows whose expected trailing bytes are native's
+  rounding residue (`...9`), which Wine marks `todo_wine_if`. `tools/payloads/popen` checks
+  `_popen`. msvcrt_apitest `ieee` is 33 failures of 286 (was 35), mostly `_j0`/`_j1` value
+  rows that want native's bits.
+- **fastfat bugchecks on rename and on a run of creates (arm64)** (FIXED 2026-10-03; was
+  "bugchecks in `FsRtlCheckOplock`"). Two bugs, both 0x23 via `FatBugCheckExceptionFilter`:
+  - rename: `FatSetRenameInfo` read the shim's 4-byte `MAX_LFN_CHARACTERS` as `usize`, so every
+    name buffer carved from `UnicodeBuffer` had a garbage high half and the first
+    `RtlCopyUnicodeString` faulted. Not arm64-only: amd64 bugchecks the same way once the
+    rename is on a writable FAT volume (its `%TEMP%` is the read-only CD; run
+    `20261003-125533-far1ln8_`, `tools/payloads/fsprobe`). Gated by `scan_extern_static_width`.
+  - creates/deletes: the translation ran fastfat's `NTDDI >= WIN8` blocks on a pre-WIN8 layout,
+    so parent-directory oplock checks read the DCB's free-dirent bitmap as an oplock pointer
+    (and DCB init/teardown wrote into it). Those blocks sit behind `cfg(ntddi_ge_ntddi_win8)`
+    now; the field manual's "version block translated UNGATED" entry has the audit.
+  - a third, found by `tools/payloads/fsprobe` on amd64's scratch FAT16 disk: `UCHAR
+    FatIndexBitSize()` declared `-> u32`; the undefined register bits became the divisor in
+    `ClustersDescribableByFat`, the 64 MB volume mounted with 14 clusters, and the 29th file in
+    a directory failed `ERROR_DISK_FULL`. Gated by `scan_extern_decl_drift`'s return widths.
+  `tools/payloads/fatprobe` (rename, 64 create/delete, rename with a second handle open)
+  passes on arm64; `fsprobe` (renames of each kind, 52 live long names) on arm64 and amd64.
+  `UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS` is now 0: rename/_wrename/_mktemp/_wmktemp/_mktemp_s/
+  _wmktemp_s all grade MATCH. The plain arm64 ucrtdiff build stops at pecheck
+  (`__doserrno`/`_open_osfhandle` graded but not imported); grade through
+  `ucrt_tier2_sweep.py --takeover-from d888eadd919^`, narrowed with `UCRTDIFF_ONLY=`.
+- **fastfat's `NTDDI >= WIN7` blocks are still translated ungated — OPEN (audit owed)**
+  (2026-10-03). The WIN8 audit above does not cover them. Ten are oplock calls on FILE FCBs
+  (valid storage, so no corruption; a behaviour divergence: key checks, `FsRtlOplockBreakH`,
+  atomic create-with-oplock in `FatOpenExistingFcb`/`FatOpenExistingFile`/`FatCreateNewFile`/
+  `FatSetRenameInfo`); fsctrl.c has 12 more. Owner: fastfat lane.
+- **ucrtbase's ~70 C99 math stubs** (FIXED, 2026-10-03): `acosh` ... `trunc`, their `f`
+  forms, `_fpclassf`, `_dpcomp`/`_fdpcomp`, `_Cbuild`/`creal` are `ucrt-rust/src/c99math.rs`
+  -- the algorithms from the `libm` crate (musl's, MIT; the code Wine itself runs), the UCRT
+  errno contract ours. Graded by `tools/payloads/c99math` (value vs glibc within a stated ulp
+  budget, errno vs Wine's tables) on all three arches. Two things it took: i386 ucrtbase moved
+  to the SSE2 baseline (libm cannot compile under `-sse`), which in turn exposed
+  `sdk/lib/crt`'s x87-only i386 `_control87`/`_statusfp`/`_clearfp` -- replaced by Wine's
+  both-unit versions in `fenv.rs`; and `rint`/`nearbyint` on arm64 are `frintx`/`frinti`,
+  because `libm` ignores rounding modes. `pow`/`exp`/`log`/`exp2`/`log2` (and f32 forms) come
+  from `sdk/lib/rust/musl-math` instead of `libm` -- a port of musl's current algorithms,
+  bit-exact against the musl C -- because libm's are FreeBSD's older ones (see the field
+  manual). i386 msvcrt.dll moved to SSE2 too (2026-10-03), and cnt-rust's exp/log/pow/log10/
+  fmod now carry Wine's errno/`_matherr` contract in both CRTs (`__cnt_math_error`). Still
+  owed: the rest of cnt-rust's C89 set (trig, sqrt, ldexp, _logb, ...) onto libm with the
+  same contract, and the ieee754 Bessel C onto libm. Still `-stub`: the `_d*`/`_fd*` internal helpers
+  (`_dexp`, `_dnorm`, `_dpoly`, ...) and `_except1`. Owner: ucrt-rust.
+- **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
+  Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
+  `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs
+  the same binaries against the pre-takeover ucrtbase.dll (`24089de2c88`, Microsoft's C)
+  staged beside them. The two agree failure for failure, so none of these is a Rust
+  regression, but each is owed: `file` 10 failures of 120 (identical on both; was an AV
+  while the sweep ran it from the read-only CDFS); `misc` dies on an unmasked FP exception
+  (0xC0000090) or times out after calling the `fesetround`/`fegetenv` spec stubs, and its
+  math-errno checks (misc.c:774/776) fail on ours past the point where the baseline has
+  already crashed, so they are UNCOMPARED. The HANG is ROOT-CAUSED and FIXED (2026-10-03):
+  `log10(INFINITY)` never returned -- cnt-rust's `log10`/`pow`/`fmod` were ports of upstream's
+  placeholder C (`pow(2, 0.5) == 0` shipped in msvcrt.dll and ucrtbase.dll on every arch); they
+  are the `libm` crate's now, and the x87 asm on no-SSE i386 (`tools/payloads/matherrs` traces
+  Wine's test per call). The math-errno checks are FIXED (2026-10-04): cnt-rust's C89 set
+  reports through `__cnt_math_error` at Wine's `math_error` points, and `tools/payloads/matherrs`
+  (Wine's `test_math_errors`) is 304 checks, 0 failed on all three arches; misc.c:363 (`_EM_AMBIGUOUS`) is FIXED by the
+  i386 `_control87` in fenv.rs; `cpp` hangs past 120s; `string` fails two `mbstowcs` UTF-8 checks
+  (string.c:831/835) -- ROOT-CAUSED, expected: kernel32 exports `IsValidLocaleName` only at
+  `-version=0x600+` and this build is NT 5.2, so ucrtbase takes its downlevel locale path,
+  where ".UTF-8" is not a code page and `en_US.UTF-8` resolves by LCID to ANSI 1252 (UCRT
+  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` dies on an invalid handle (0xC0000008).
+  `environ`, `printf` (1,950), `scanf` and `thread` (60) are clean on both. `thread` was
+  an AV at EIP 0 until two fixes the same day: kernel32's `FindResourceA` asked for
+  language 4 (LANG_CHINESE) instead of LANG_NEUTRAL, so EVERY ANSI resource lookup in the
+  OS failed with 1815, and %TEMP% sat on the read-only boot image. Only ucrtbase
+  divergence found: the i386 `_invoke_watson` report-fault stub wrote CONTEXT out of
+  order (fixed the same day).
+  Owner: ucrt-rust lane.
 - **arm64 ucrtbase forwards `_clearfp`/`_control87`/`_controlfp`/`_statusfp` to msvcrt.dll**
-  (OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
+  (FIXED 2026-10-03: ucrt-rust `fpctrl_arm64.rs`, graded by `tools/payloads/fpctrl` against
+  msvcrt.dll's bodies -- 671 cases, 0 diffs; the allowlist entry is gone. Was OPEN, 2026-09-28). No arm64 body exists in this tree (`sdk/lib/crt` builds the
   control-word family for i386/amd64 only), so the link resolves all four through the msvcrt
   import library and ucrtbase ships a forward into msvcrt.dll. Found by
   `verify_ucrtbase_cohab.py`'s export/import check, which allowlists these four as OWED
   (`EXPORT_IMPORT_ALLOWED`); remove them there when an arm64 FPCR-backed port lands.
   Owner: ucrt-rust lane.
-- **arm64 app failures appstorm now reaches** (OPEN, 2026-09-28). The arm64 ramdisk stages
-  the stock apps and their import closure (`qemu/ramdisk-apps.txt`, `tools/ramdisk_apps.py`),
-  so appstorm runs all 43 entries there instead of 7: 34 pass. The 9 left, by symptom:
-  wordpad/devmgmt/dxdiag/rapps exit 0x6BA (RPC_S_SERVER_UNAVAILABLE: the ramdisk has no
-  spoolsv and no PlugPlay service -- a service needs its registry config staged, not just
-  the binary); charmap and eventvwr open no window; cpl-appwiz and cpl-ncpa open no window.
-  iexplore still faults (0xC0000005) after `failed to register CLSID_InternetExplorer:
-  80004002` even with actxprxy staged -- and ieframe dereferencing the NULL its failed
-  registration left is a bug of its own. That is the Pi's "internet browser died". On i386
-  `cpl-appwiz` opens no window either: control -> rundll32 -> rapps runs, but rapps exits 0
-  at once where amd64's shows "Add/Remove Programs". amd64 is 43/43. Owner: shell32-com lane.
+- **arm64 boots the livecd file set and runs first-boot setup** (2026-10-03). arm64's
+  media was ~250 hand-staged files against the livecd's ~1100; `qemu/mkramdisk.sh` now lays out
+  the same `livecd.<config>.lst` x86's mkisofs reads (tools/ramdisk_tree.py) and arm64 builds
+  the same `livecd` target, so `setup -mini` runs on every boot as on x86 (COM registrations,
+  Tcpip/Dhcp/Dnscache, device installs). In the same pass arm64 stopped skipping: winlogon's
+  RPC server, notifications, GINA and lsass wait; the bulk Start=1 driver load (was a fixed
+  three-driver list); `/MININT` (and the kernel now creates `Control\MiniNT`, dropped by the
+  port on every arch); the per-arch window-station/desktop security descriptors; bugchecks on
+  IoInitSystem/PsInitSystem/SeRmInitPhase1 failure. Bugs the full media exposed, fixed:
+  setupapi did not know PROCESSOR_ARCHITECTURE_ARM64; netkvm/e1000 miniports bound under
+  netstack (see smoltcp-netstack-design.md M11); fastfat enumeration lost entries
+  (`NextVbo` reset per iteration; Marlett never loaded); ks pin lists, fltmgr context
+  terminator, pcix power/IPI spins. appstorm arm64: 40/43, cpl-appwiz and cpl-ncpa now pass.
+  OPEN:
+  - **rapps on arm64**: database download FIXED 2026-10-04 (netprobe payload: DNS, TCP and
+    wininet https to rapps.reactos.org, 2.4 MB rappmgr2.cab, VERDICT=PASS). Four layers were
+    broken: netstack never published its DHCP DNS servers to `Tcpip\Parameters\Interfaces`
+    (iphlpapi found none), smoltcp's single interface-wide ARP silence starved later lookups
+    (netstack now warms the router and on-link DNS servers), AFD select wrote poll status
+    into the IRP's copy rather than the caller's buffer, ws2_32 dropped `LUP_RETURN_BLOB` so
+    gethostbyname got no hostent; and bcrypt's ECDSA was a stub, so Let's Encrypt's chain never
+    verified (upstream bcrypt restored over mbedTLS 3.6). Still OPEN: rapps itself not
+    re-run under appstorm since; the OK-only error box ignoring WM_CLOSE; `recvfrom` ignores
+    SO_RCVTIMEO (a 3s timeout blocked 9 minutes); smoltcp's ARP silence is still global
+    (a per-address limit is a vendor patch, deferred).
+  - **cpl-joy / cpl-appwiz intermittently open no window within 37s** (one each in two runs).
+  - **The dropped RpcTryExcept class**: FIXED 2026-10-04 for the user-mode RPC clients.
+    ntdll now exports the kernel's SEH trampolines (`RtlSehTryExcept`, sehtry.c built
+    `-DSEHTRY_USER_MODE`) and `ntdll_sys::seh::rpc_try` restores each C handler. 245 stub
+    calls go through it: dnsapi's 6 by hand, the rest in advapi32 (scm, sctrl, eventlog,
+    lsa), netapi32, samlib and wlanapi rewritten by `tools/rpc_try_wrap.py` from the C's own
+    `RpcExcept` bodies. netprobe's
+    rpc-raise step: OpenSCManagerW/OpenEventLogW on a missing host return 1722. Other
+    user-mode crates with DUMMY_PSEH-dropped handlers (non-RPC) are not yet audited.
+  - **Safe boot is missing from the Rust kernel on every arch**: ex-rust neither parses
+    `SAFEBOOT:` nor creates `CONTROL\SAFEBOOT\Option` (init.c Phase1InitializationDiscard).
+  - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are
+    still `UNIMPLEMENTED; loop {}`, baselined in scan_ud2's KNOWN_DRIVER_UD2. arm64 binds
+    pci.sys, so they are unreached there.
+  - Remaining arm64 divergences: winlogon still creates `\Windows\WindowStations` and csrsrv
+    skips CsrConnectToUser on arm64; the csrss stack-commit patch in mkramdisk's overlay;
+    shell32 CDefView skips SHChangeNotifyRegister on arm64; winlogon's arm64-only notepad and
+    cmd spawns. On i386 `cpl-appwiz` opens no window.
 - **Posted messages to other threads' windows were dropped** (FIXED 2026-09-27). The
   win32k-sys regeneration (c53b7807aad) turned THRDESKHEAD's `[u64; 3]` padding into
   `[u8; 24]`; user32 read `head.pti` as `__bindgen_padding_0[2]`, so IntCallMessageProc saw a
@@ -666,6 +809,35 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
   entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
   smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
+- **Kernel user-pointer probes: a bad pointer bugchecks, and some never check — OPEN**
+  (2026-10-04). The C syscalls probe inside `_SEH2_TRY` and return the exception code;
+  this kernel has no SEH, so a raising probe is an unhandled exception (BUGCHECK 0x1E)
+  wherever the C would have returned `STATUS_ACCESS_VIOLATION`. The link-guard work
+  found the typed `ntkrnl-sys` Probe* helpers (`inline/common.rs`, `macros.rs`) doing NO
+  `MmUserProbeAddress` check at all, so a user caller could make the kernel read or write
+  a kernel address; it added the check and moved all 26 call sites of those helpers to
+  `probe.rs`'s `Result` probes with the C handler's cleanup. Still owed, ~160 sites:
+  the raising `ProbeForRead`/`ProbeForWrite` exports (82 calls; a bad user buffer
+  bugchecks), `ProbeAndCapture*` (37), and the still-UNCHECKED typed helpers in
+  `inline/mm.rs` and friends (`ProbeForWriteIoStatusBlock`, `ProbeForWriteSize_t`,
+  `ProbeForReadUnicodeString`, … ~40 calls, the same kernel-address hole). Biggest
+  users: win32k-rust 46, ntoskrnl-rust 46, iomgr-rust 19, ex-rust 14, ks-rust 13. Fix
+  shape: per site, `probe_read_generic`/`probe_write_generic` + the C except handler.
+- **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
+  `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
+  cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
+  `DeviceGetMmcSupportInfo`'s TYPE_ONE probe (it answers with more than the one feature),
+  and the device start then tears down through `DeviceClaimRelease(Release)` ->
+  `WdfObjectDelete` -> `FxRequest::Release`, which reads past its object: amd64/i386
+  BUGCHECK 0x19 at the next free, arm64 hang. `--tripwire "SPECIALPOOL=CDRO"` (KMDF tags a
+  driver's objects with its service name) faults at the read: `wdf01000.sys+0x197FE`
+  under `cdrom-rust init.rs:313`. Bisected to the constant alone (the commit's registry
+  reads and CREATE context are innocent). The constant is held at 0x0003 with a comment;
+  owed: why start fails on a TYPE_ALL-style answer, and why releasing a request the
+  driver just created reads past it. Not a context-size mismatch: the three
+  `CDROM_REQUEST_CONTEXT` type infos all use `size_of::<CDROM_REQUEST_CONTEXT>()`, and the
+  same `DeviceClaimRelease` claims successfully on every boot, so suspect an object freed
+  earlier on the new failure path. x64 lane.
 - **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
   updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
   early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
@@ -721,6 +893,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `RtlInsertElementGenericTable`). fastfat and cdfs are down to one benign lead each. condrv
   `ConDrvDispatch` is FALSE (the C only traces). Re-translate (with sealing) only what the
   audit and a reading of the C confirm.
+  **Burn-down (2026-10-04): every high and medium lead read. 0 open high, 0 open medium**
+  (from 198 / 951); 214 owed, 329 false/benign in `data/body_audit_reviewed.toml`, 55 `low`
+  unread. About 70 real bugs fixed, among them: hal DMA locks that only raised IRQL (no
+  exclusion on halmp) and S/G transfers over 64 KiB failing; cdrom completions skipping
+  `RequestCompletion` (no verify-required marking); classpnp registry overrides passed as
+  narrow strings (every override kept its default) and hotplug info a stub (every disk
+  non-removable); scsiport parsing the service key as the DeviceN key; disk's invented SMART
+  codes; kernel32 `UnhandledExceptionFilter` with scrambled constants (no post-mortem
+  debugger, wrong crash box, a debugger-attached crash re-faulting forever) and
+  `GetModuleHandle` misses returning stale errors; userenv shortcuts never written; csrss
+  creating `\Session` instead of `\Sessions`; gdi32 never loading lpk.dll; ks stream IRPs
+  with a NULL header; user32 button state overwriting the font handle on 64-bit; ole32
+  property dictionaries unreadable. Owed, by cluster (upstream-sync): pciidex rewrite
+  (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
+  disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
+  syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
+  so every logon, status and shutdown dialog shows no banner today: visible, on the boot
+  path.** Still to decide: cdrom carries a live C-glue `DeviceEvtIoInCallerContext` that may
+  shadow the Rust one under `--allow-multiple-definition` (check `nm`); the Rust masks the
+  APIC error LVT where the C unmasks it.
   **ntkrnl-sys was stale against the post-merge headers — FIXED** (2026-09-27): regenerated
   the kernel and HAL islands. Nine structs had drifted: `KPRCB` (upstream `144fe39589b`'s
   `StartCycles`/`CycleTime`), `EJOB`/`PS_JOB_TOKEN_FILTER` (Rust still had the leaked
@@ -880,6 +1072,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   missing from the ismbc takeover check. Fix: parse the UCRT headers the DLL is built
   against, then regrade the whole table, since the case set will move. Until then the
   table's coverage is "what mingw declares", not "what ucrtbase exports".
+  2026-10-03: `sdk/include/ucrt` is deleted, so "the headers the DLL is built against" is
+  now sdk/include/crt, which declares less, not more. The honest source of the export
+  list is `ucrtbase.spec`; the declarations for the ones mingw lacks come from git
+  history at the `--takeover-from` revision, the same place the reference C now lives.
 
 - **`test_payload_launched` misses a launch marker that IS in its own serial log.
   ROOT-CAUSED + FIXED 2026-09-26: `restore_snapshot`'s flush ate it.** A fast payload
@@ -902,6 +1098,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   consume), and the drainer appends the same text to `_buf` that it tees to the file.
   So the in-memory stream and the tee diverge somewhere not yet found. Until it is, a
   payload's verdict must be read from its serial log, not from the smoke exit code.
+- **Pyright does not cover the harness core -- OWED (2026-10-04).** `tests/qemu/cli/tooling.py`
+  now ruff- and format-checks all of `tests/qemu`, but `_PYRIGHT_ROOTS` still stops at
+  `tests/qemu/cli`, so `vm.py`, `backend.py` and the test modules have no type checking. The
+  lint widening found two `assert False` in `test_smoke.py` that `python -O` would strip;
+  types are the next layer of the same blind spot. Expect a real first-pass count before
+  gating it.
 - **`test_bindgen_generation` fails under PARALLEL check-tooling and passes alone — it
   blocked a land. OPEN** (2026-09-25). Five of its eleven cases failed inside
   `./vibeos-cli check-tooling` with
@@ -1223,15 +1425,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     commits/decommits that page). Run with `VIBEOS_QEMU_SMP=N ./vibeos-cli smoke --arch X
     --payload rpmprobe` and read `[RPMPROBE] ... race` in the serial.
     i386 `-smp 4`: PASS (46,273 copies ok, 686,336 clean errors, 0 silent, no bugcheck).
-    arm64 `-smp 2`: the fixed-address probes pass, then the box WEDGES in the race phase
-    (serial silent right after the race threads start). Not localized; attach gdb during
-    the race. arm64's TB flush is a broadcast `tlbi vmalle1is`, so it is not the IPI path.
-    arm64 also prints `ASSERT FAILED: KeGetCurrentIrql() == SYNCH_LEVEL at ke/ipi.rs:312` on
-    every MP boot, from the `KeIpiGenericCall` self-test. Upstream never implemented
-    `KiIpiSendPacket`; our assert names a level its only caller does not raise to (it calls at
-    DISPATCH), and it went live with `c4d82e425fc`. Non-fatal; decide the contract.
-    amd64 `-smp 2` and `-smp 4`: boot dies (csrss exits, crit, 0xF4; winlogon AV), so the race
-    cannot run there. Not yet checked against master.
+    arm64 `-smp 2`: the 2026-09-25 race-phase wedge is GONE (re-run 2026-10-04: PASS, 84,671
+    copies, 0 silent; presumably fixed by the 09-26 KNODE/affinity/spinlock work). arm64
+    `-smp 4`: PASS 3 of 4 (59,153 / 63,700 / 902 copies, 0 silent). The fourth died BEFORE the
+    probe ran, in first-boot setup: `BUGCHECK 0x50` on `0xfffffa800041d560`, faulting in
+    `CmpFindSubKeyByName` entry (`cmlib-rust/src/cmindex.rs:1201`) under setupapi's install
+    work, i.e. a key-node pointer that was no longer mapped. OPEN, 1 in 8 arm64 `-smp 4`
+    boots that ran past setup, never seen at `-smp 1` or `-smp 2` in today's runs; the shape
+    fits a registry-lock hole (a cell pointer held across another CPU's bin change), not yet
+    shown. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
+    The `ke/ipi.rs` `== SYNCH_LEVEL` assert was already re-contracted to `>= DISPATCH_LEVEL`
+    and no longer prints.
+    amd64 `-smp 2` and `-smp 4`: FIXED 2026-10-04. The boot death seen 2026-09-25 was
+    intermittent (2/8 and 9/16 `-smp 2` boots reached the desktop), with five unrelated-looking
+    faces: csrss `0xC000001D` twice at the same basesrv address, `0x6B`/`0xC0000032`, a kernel
+    `0x1E` at a garbage PC, `0x4C`/`STATUS_INVALID_IMAGE_FORMAT`, and double faults in the
+    unwinder. Cause: amd64's lazy-idle TLB let a CPU woken from `hlt` by a DEVICE interrupt
+    run the ISR with deferred shootdowns unserviced; the IDE ISR wrote PIO sector data through
+    a stale translation of a recycled system VA, so successful reads left their pages zero
+    and some other page took the data. `KiInterruptDispatch` now services the deferral first.
+    After: 8/8 `-smp 2` boots to desktop with zero corrupt reads; rpmprobe passes the race at
+    `-smp 2` (84,240 copies) and `-smp 4` (76,114), 0 silent, where `-smp 4` had hung. Field
+    manual: "Successful reads that leave their pages ZERO".
   - FIXED: `ReadProcessMemory` over an uncommitted page bugchecked (0x1E from
     `MmProbeAndLockPages` in `MiDoMappedCopy`). See the `MmCopyVirtualMemory` entry below.
   - FIXED: `SystemProcessorPerformanceInformation` reported no idle time. The ex-rust helpers
@@ -2301,7 +2516,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `ntoskrnl/ntkrnlmp/ntkrnlmp.exe`, and confirm against what the boot actually loaded
   (`ramdisk(0)\reactos\system32\ntkrnlmp.exe` appears in the serial).
 
-- **55 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent**
+- **54 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent**
   (2026-09-13, research lane). They pass `-C target-feature=-sse,-sse2` while targeting the
   BUILTIN `i686-pc-windows-gnu`, whose spec declares `rustc-abi: x86-sse2`. Both the pinned
   stable (1.92.0) and the pinned nightly (2025-12-14) emit: *"target feature `sse2` must be
@@ -2320,7 +2535,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   links `csq arbiter cmlib ntlsalib rtl`, so those land inside the kernel image and must be
   no-SSE however user-ish `sdk/lib/rtl` looks. **Classifying these by directory is the wrong
   oracle**; the question is link-graph reachability into a kernel PE. Only `concfg`, `msvcrt`
-  and `ucrtbase` are candidates for simply dropping the flag (no kernel-side consumer found).
+  and `ucrtbase` are candidates for simply dropping the flag (no kernel-side consumer found);
+  ucrtbase DID drop it (2026-10-03, for the `libm` crate -- see its CMakeLists).
   So the fix for the other 52 is the softfloat ABI the kernel json already carries, not a KIND
   split. **Still unverified:** whether a newer rustc actually hard-errors — that is rustc's own
   claim, not a test of mine. Whoever bumps
@@ -3649,6 +3865,27 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   crashing boot, which is still more than a soak ever gave us.
   Both limitations, their measurements, and what to re-test on a QEMU upgrade are in
   `docs/engineering/qemu-record-replay.md`.
+  **Update 2026-10-03 — half of that is fixed, and #39 closed by another route.** A replay
+  CAN be stopped: `./vibeos-cli rr replay --break-at <icount>` arms a QMP `replay-break`
+  over the harness's own QMP connection and the guest pauses at the requested instruction.
+  The constraint is arithmetic, not a QEMU defect. Each `EVENT_INSTRUCTION` in the log means
+  "run N more instructions, then read the log again", so only the cumulative sums are legal
+  targets; a mid-chunk target aborts with `Playback shouldn't have to iowait (insn total
+  <end>/<remainder> left)`, which is QEMU reporting the remainder it was asked to skip.
+  `rr breaks <trace>` prints the legal set and `--break-at` snaps forward to the next one.
+  So the earlier "even a breakpoint HIT aborts QEMU" reading was a mid-chunk stop, not an
+  inability to stop — verified prospectively, with the prediction written before the run:
+  the boundary target PAUSED and the mid-chunk target aborted with the exact predicted
+  remainder (`insn total 2100388618/624674 left`).
+  The **wedge** is still open and is what still blocks replaying a whole boot. It is
+  structural, not a guest point: two independently recorded traces diverge at guest line
+  1,120 yet stall within ~1% of each other, and each replay passes the other's stall point.
+  Log-position quantities cluster tight (trace bytes 0.85%, lines 1.21%) while guest-work
+  quantities spread (icount 6.69%, exceptions 23.01%). Not block I/O — all 2,277
+  `EVENT_ASYNC` records fall in the first 1.5% of the trace (ramdisk boot).
+  And the motivation has moved: **#43's fix retired #39, so rr did not close it.** rr stands
+  on its own as a deterministic-capture tool, and its next customer is the #19/#23
+  physical-page-reuse cluster rather than this bug.
 - **FIXED (2026-09-06): system cursors load, and the residual NULLs are correct behaviour
   wearing an alarming message.** `SYSTEMCUR(ARROW) == NULL, should not happen!!` was firing **78x** per boot (6 system  classes x 13 GUI processes) and kept firing to within 300 lines of `shell ready` —
   `gasyscur[ROCR_ARROW].handle` was NULL for the *entire* boot, so every server-side class
@@ -4551,6 +4788,17 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     it lands — looking exactly like "the copy-back path is never reached", the wrong
     conclusion — but hand symbolication stays exposed afterwards. Break on something you know
     executes before believing any silence, and pass the MP binary by name.
+  - **amd64/i386 count drifts in `NpfsReadWrite` and `KeEvent` — ROOT-CAUSED and FIXED
+    2026-10-03.** The worst live flake at the time: 16 amd64 NpfsReadWrite hits in 8 days,
+    plus 10 KeEvent hits on i386, all at a different assertion each time. The cause was
+    winlogon's boot-time ladder (WoW64 guests, then stock i386 applets under FEX) running during
+    the sweep and holding a uniprocessor guest's only CPU past the tests' 100 ms windows.
+    `[NPFS-WAIT]` shows the miss as `idle 0`, against `idle 109` for an expected block.
+    Conformance boots now pass the per-boot tripwire token `QUIET`, and winlogon skips the
+    ladder. Smoke and the gate's ladder lane still run it from the same media. amd64: 4 quiet
+    rounds with 0 misses, against 10 loud rounds with misses in 8. Field manual: "A kmtest
+    count drift on a UP guest is the boot-time ladder, not the scheduler". MmMdl's amd64 drift
+    was a separate thing, already settled by `c8228e5` (the count depends on free system VA).
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`.
@@ -4725,8 +4973,28 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     process and thread, and dumps that VA's own map/unmap ledger from the flight recorder
     (whole-ring tail dumps are useless here — on the motivating crash the last 32 of 643,270
     events were 100% working-set lock churn).
-  This is the §9.98 physical-page-reuse cluster, **OWNED BY the smp-bringup lane** (task #19/#23)
-  — the instrumentation and the corpus are the contribution from here, not a fix.
+  This is the §9.98 physical-page-reuse cluster, task #19/#23, **OWNED BY the smp-bringup lane
+  — and CLOSED 2026-10-03.** The root cause was fixed on 2026-08-01 (`MiPurgeStaleUserPtes`,
+  see "stale FreeLDR identity PTEs in recycled user page tables" below); what was still owed was
+  evidence that the SYMPTOM had gone, because that fix proved only that the oracle went quiet and
+  that `ZwMapViewOfSection` gained two passes.
+
+  Measured now: **639 arm64 `-smp 1` kmtest rounds (2026-09-14 → 10-03) carry 0 `BUGCHECK 0x50`
+  and 0 `0x1A`** — the cluster's two stop codes — **and 0 short sweeps out of the 582 with a
+  known total**, against the pre-fix 42/85 that finished. One fresh sweep on probe-bearing media
+  launched 93/93 with the ratchet holding and **0 hits on every armed MM site** (`MMGUARD`,
+  `FREEMAPPED`, `PFNMISMATCH`, `KSTACK`) across 15,144 serial lines, with the probe's presence in
+  `qemu/ramdisk.img` verified first — the July retraction is the reason that check is not
+  optional.
+
+  Two methodological notes from doing it, both of which cost time:
+  - **The flake ledger cannot answer this by grep.** `conformance.jsonl` stores `launched`, `ok`,
+    `bad`, `bugcheck` and `shape` plus a *pointer* to the serial log — no serial text. Grepping
+    it for `C000001D`/`MMGUARD` returns 0 for every input and means nothing. Use `launched` vs
+    `sweep_done total=`, and `bugcheck`.
+  - **Still genuinely owed, and small:** `MmInsertRmap`'s two early returns (`mm/rmap.rs:453`,
+    `:476`) still `return` where the C `KeBugCheck`s. They are loud now (`mm_guard_trip!`) and
+    probed as never firing, so they are not this bug — but they remain silent degrades.
 - **`KeEvent`'s 132-pass UP→smp1 drop is intentional test coverage, not an event failure**
   (corrected 2026-09-06). `modules/rostests/kmtests/ntos_ke/KeEvent.c:85` explicitly excludes
   its `Wait=TRUE` block when `KmtIsMultiProcessorBuild` is true: the test's manual cleanup
@@ -5421,7 +5689,37 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
 
   All eleven remaining are now armed with `mm_guard_trip!` (`lib.rs`) — bounded prints, every
   recovery kept, `[MMGUARD] <site> hit#=N` plus operands. **Silence from an armed site is a
-  result**: it eliminates that site. The one to read first is
+  result**: it eliminates that site.
+
+  **QUALIFIED 2026-10-03 — only on arm64. `mm_guard_trip!` is `#[cfg(target_arch =
+  "aarch64")]` and expands to NOTHING on i386/amd64**, because its printer
+  `ARM64_UART_TRACE_HEX` is an arm64 header macro. Verified against the binaries, not the
+  source: `strings build-<arch>/ntoskrnl/ntoskrnl.exe | grep -c MMGUARD` gives **arm64 43,
+  amd64 0, i386 0**. So all 14 armed sites are blind on x86 and their silence there is
+  uninterpretable — the same "probe whose silence has a hidden precondition" trap this entry
+  already names, arriving from the direction nobody checked. Any reasoning of the form "x86
+  shows nothing at these sites" is vacuous; I was one step from resting a kernel change on it.
+
+  **Owed, with its risk stated so the deferral is not silent:** make the guard portable, then
+  decide fatality. The obvious printer is `ntkrnl_sys::driver_ddk::DbgPrint` (used portably in
+  `mm/section.rs`), but the arm64 path is a raw UART write that is safe at any IRQL and in
+  early boot, and several of the 14 sites sit in PFN-lock/high-IRQL context — so a naive swap
+  risks a deadlock in the subsystem these guards exist to watch. Needs a per-site context audit
+  plus a 3-arch smoke, which is why it is not bundled with the #19 closure.
+
+  **RESOLVED on every arch (2026-10-03/04).** `mm_guard_trip!` went portable (11 sites,
+  `DbgPrint` on x86) on 10-03; the three spinlock-held sites use `mm_guard_trip_atomic!`, which
+  now writes through `raw_trace_hex` -- the arm64 UART tracer, or on x86 a polled COM1 write
+  that takes no lock and is safe at any IRQL. Verified on the binaries: `MMGUARD` strings in
+  `ntkrnlmp.exe` are now **amd64 42, i386 42** (from 0 on 10-03). All 14 sites report on all
+  three arches, so x86 silence at them now means something.
+
+  Related and also owed: `MmInsertRmap`'s two early returns (`mm/rmap.rs:453`, `:476`) still
+  `return` where the C `KeBugCheck(MEMORY_MANAGEMENT)`s (`ntoskrnl/mm/rmap.c:363`, `:380`), and
+  the returns are **not** arch-gated even though their prints are. Restoring the bugcheck is
+  correct on the contract and the arm64 evidence says they never fire (639 rounds + a
+  probe-verified sweep, 0 hits) — but there is no x86 evidence at all, per the paragraph above,
+  so instrument first and escalate second. The one to read first is
   **`rmap.MmDeleteRmap mapping-not-in-list`**: it means `MmDeleteRmap` walked the entire rmap
   list and did not find the `(Process, Address)` mapping it was told to delete, i.e. the
   caller believes the page is mapped there and the PFN database disagrees — *the* precondition

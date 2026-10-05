@@ -706,6 +706,18 @@ pub unsafe extern "system" fn ScsiPortDpcForIsr(
             }
         }
 
+        // A miniport reported a bus change: have PnP re-query our bus
+        // relations, which rescans the adapter. LowerDevice is the PDO that
+        // ScsiPortInitialize got from IoReportDetectedDevice.
+        if (InterruptData.Flags as u32 & crate::scsiport::SCSI_PORT_BUS_CHANGE_DETECTED) != 0
+            && !(*DeviceExtension).Common.LowerDevice.is_null()
+        {
+            ntkrnl_sys::ddk::IoInvalidateDeviceRelations(
+                (*DeviceExtension).Common.LowerDevice,
+                ntkrnl_sys::ddk::_DEVICE_RELATION_TYPE_BusRelations,
+            );
+        }
+
         // If it's ready for the next request
         if (InterruptData.Flags as u32 & SCSI_PORT_NEXT_REQUEST_READY) != 0 {
             // Check for a duplicate request (NextRequest+NextLuRequest)

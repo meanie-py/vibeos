@@ -20,6 +20,7 @@ from . import (
     host_clock,
     hostlock,
     maintenance,
+    pi4,
     symbolize,
     tooling,
 )
@@ -58,6 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
     checkpoint.add_parser(sub)
     host_clock.add_parser(sub)
+    pi4.add_parser(sub)
 
     def arch_arg(sp, required=True):
         sp.add_argument(
@@ -288,6 +290,13 @@ def build_parser() -> argparse.ArgumentParser:
         "run is the MP kernel on one vcpu. N>1 needs SMP-capable media (ntkrnlmp)",
     )
     s.add_argument(
+        "--ahci",
+        action="store_true",
+        help="x86 only: put the boot CD on an ich9-ahci controller instead of IDE, "
+        "so uniata's AHCI path carries the whole boot. The boot FAILS "
+        "(AHCI_NOT_ENGAGED) unless uniata reports finding the controller",
+    )
+    s.add_argument(
         "--no-net",
         action="store_true",
         help="skip the amd64 netstack net-suite (default-on; escape hatch for fast iteration)",
@@ -487,6 +496,19 @@ def build_parser() -> argparse.ArgumentParser:
         "_smp_check, so a soak that quietly booted the UP kernel FAILS rather "
         "than banking hours of false green. Without this the SMP lane could not "
         "use the farm corpus at all and had to hand-loop smoke",
+    )
+    f.add_argument(
+        "--ahci",
+        action="store_true",
+        help="soak with the boot CD on ich9-ahci (x86 only), same knob as "
+        "`smoke --ahci`; every boot must show uniata driving AHCI",
+    )
+    f.add_argument(
+        "--polite",
+        action="store_true",
+        help="background soak: before each boot, wait while a land holds the "
+        "lock or any OTHER process holds a boot permit, so the soak only fills "
+        "idle time and never competes with another agent's smoke or gate",
     )
     f.add_argument("--allow-stale", action="store_true")
     f.set_defaults(fn=farm_mod.farm)
@@ -795,6 +817,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--count", type=int, default=5, help="how many boundaries either side of --near (default 5)"
     )
     rbk.set_defaults(fn=rr_mod.rr_cmd, rr_verb="breaks")
+
+    rwg = rrsub.add_parser(
+        "wedge",
+        help="name the recorded events around where a stalled replay stopped reading",
+    )
+    rwg.add_argument("trace", help="trace name, path, or `latest`")
+    rwg.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rwg.add_argument(
+        "--at",
+        type=int,
+        help="inspect this byte offset instead of asking a live replay where it stopped",
+    )
+    rwg.add_argument(
+        "--icount",
+        type=int,
+        help="inspect the events at this instruction count -- the exact position of a "
+        "stalled replay, from `info replay` on a QEMU monitor (better than any read offset)",
+    )
+    rwg.add_argument(
+        "--count", type=int, default=8, help="events either side of the offset (default 8)"
+    )
+    rwg.set_defaults(fn=rr_mod.rr_cmd, rr_verb="wedge")
 
     kl = sub.add_parser(
         "kill",

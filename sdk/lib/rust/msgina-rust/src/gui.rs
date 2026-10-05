@@ -1140,7 +1140,7 @@ unsafe fn OnInitSecurityDlg(hwnd: HWND, pgContext: PGINA_CONTEXT) {
 
     LoadStringW((*pgContext).hDllInstance, IDS_LOGONMSG.try_into().unwrap(), buffer1.as_mut_ptr(), buffer1.len() as i32);
 
-    wsprintfW(buffer2.as_mut_ptr(), FMT_SS.as_ptr(), (*pgContext).DomainName, (*pgContext).UserName);
+    wsprintfW(buffer2.as_mut_ptr(), FMT_SS.as_ptr(), (*pgContext).DomainName.as_ptr(), (*pgContext).UserName.as_ptr());
     wsprintfW(buffer4.as_mut_ptr(), buffer1.as_ptr(), buffer2.as_ptr());
     SetDlgItemTextW(hwnd, IDC_SECURITY_MESSAGE, buffer4.as_ptr());
 
@@ -1900,8 +1900,8 @@ unsafe fn SetLockMessage(
     wsprintfW(
         buffer2.as_mut_ptr(),
         format.as_ptr(),
-        (*pgContext).DomainName,
-        (*pgContext).UserName,
+        (*pgContext).DomainName.as_ptr(),
+        (*pgContext).UserName.as_ptr(),
     );
 
     wsprintfW(
@@ -1980,8 +1980,8 @@ unsafe fn DoUnlock(
                 wsprintfW(
                     buffer2.as_mut_ptr(),
                     buffer1.as_ptr(),
-                    (*pgContext).DomainName,
-                    (*pgContext).UserName,
+                    (*pgContext).DomainName.as_ptr(),
+                    (*pgContext).UserName.as_ptr(),
                 );
                 LoadStringW(
                     (*pgContext).hDllInstance,
@@ -2004,8 +2004,10 @@ unsafe fn DoUnlock(
     }
 
     if !password.is_null() {
+        // SecureZeroMemory, not write_bytes: a plain store right before HeapFree is a dead
+        // store the optimizer may delete, leaving the typed password in the freed block.
         let pwd_len: usize = (wcslen(password) + 1) * core::mem::size_of::<u16>();
-        core::ptr::write_bytes(password as *mut u8, 0, pwd_len);
+        SecureZeroMemory(password as PVOID, pwd_len);
         HeapFree(GetProcessHeap(), 0, password as _);
     }
 

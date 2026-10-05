@@ -35,7 +35,8 @@ extern "system" {
     static mut LpcpLock: KGUARDED_MUTEX;
     static mut LpcpNextMessageId: ULONG;
 
-    fn LpcpGetMessageType(msg: PPORT_MESSAGE) -> ULONG;
+    #[link_name = "LpcpGetMessageType"]
+    fn LpcpGetMessageType__c(msg: PPORT_MESSAGE) -> u16;
     fn LpcpMoveMessage(
         dest: PPORT_MESSAGE,
         src: PPORT_MESSAGE,
@@ -52,6 +53,12 @@ extern "system" {
         object: *mut PVOID,
         info: PVOID,
     ) -> NTSTATUS;
+}
+
+// listen.rs (and lpc_x.h's macro) return the 16-bit Type: a ULONG decl read 16 bits nobody wrote.
+#[allow(non_snake_case)]
+unsafe fn LpcpGetMessageType(msg: PPORT_MESSAGE) -> ULONG {
+    LpcpGetMessageType__c(msg) as ULONG
 }
 extern "system" {
     fn KeEnterCriticalRegion();

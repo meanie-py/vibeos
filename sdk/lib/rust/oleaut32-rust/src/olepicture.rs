@@ -2838,7 +2838,15 @@ pub const BITMAP_FORMAT_GIF: u16 = 0x4947;
 pub const BITMAP_FORMAT_PNG: u16 = 0x5089;
 pub const BITMAP_FORMAT_APM: u16 = 0xcdd7;
 
-#[repr(C)]
+// C: these three sit inside #include "pshpack1.h" (byte-packed, they mirror
+// FILE formats). Translated as plain repr(C), APM_HEADER was 24 bytes instead
+// of 22, so OleLoadPicture read a placeable metafile from the wrong offset and
+// failed (Wine's olepicture test_apm), and CURSORICONFILEDIR's entries landed
+// at offset 8 instead of 6, two bytes off for every icon and cursor.
+const _: () = assert!(core::mem::size_of::<_APM_HEADER>() == 22);
+const _: () = assert!(core::mem::size_of::<CURSORICONFILEDIRENTRY>() == 16);
+const _: () = assert!(core::mem::offset_of!(CURSORICONFILEDIR, idEntries) == 6);
+#[repr(C, packed)]
 pub struct _APM_HEADER {
     pub key: DWORD,
     pub handle: WORD,
@@ -2852,7 +2860,7 @@ pub struct _APM_HEADER {
 }
 pub type APM_HEADER = _APM_HEADER;
 
-#[repr(C)]
+#[repr(C, packed)]
 pub struct CURSORICONFILEDIRENTRY {
     pub bWidth: BYTE,
     pub bHeight: BYTE,
@@ -2864,7 +2872,7 @@ pub struct CURSORICONFILEDIRENTRY {
     pub dwDIBOffset: DWORD,
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 pub struct CURSORICONFILEDIR {
     pub idReserved: WORD,
     pub idType: WORD,
@@ -4506,11 +4514,18 @@ fn OLEPictureImpl_Load(
     hr
 }
 }
+/// Wine 10.0 additions (keeping this crate's BOOL return): a NULL ppBuffer
+/// only computes *pLength (GetSizeMax's query); a 16/32 bpp bitmap is
+/// serialised as 24 bpp (Windows' BMP writer does the same); a bitmap GDI
+/// cannot describe fails instead of serialising garbage; the screen DC is
+/// released (it leaked).
 unsafe extern "C" fn serializeBMP(
     hBitmap: HBITMAP,
     ppBuffer: *mut *mut core::ffi::c_void,
     pLength: *mut u32,
 ) -> i32 {
+    let mut hBitmap = hBitmap;
+    let mut hdib: HBITMAP = core::ptr::null_mut();
 
     let mut success: i32 = 0;
     let hDC: HDC;
@@ -4529,8 +4544,46 @@ unsafe extern "C" fn serializeBMP(
     ) as *mut BITMAPINFO;
 
     hDC = GetDC(core::ptr::null_mut());
+
+    let mut bm: BITMAP = core::mem::zeroed();
+    if GetObjectW(hBitmap as HGDIOBJ, core::mem::size_of::<BITMAP>() as i32, &mut bm as *mut BITMAP as LPVOID) == 0 {
+        HeapFree(GetProcessHeap(), 0, pInfoBitmap as LPVOID);
+        ReleaseDC(core::ptr::null_mut(), hDC);
+        return 0;
+    }
+    if bm.bmBitsPixel == 16 || bm.bmBitsPixel == 32 {
+        (*pInfoBitmap).bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
+        (*pInfoBitmap).bmiHeader.biWidth = bm.bmWidth;
+        (*pInfoBitmap).bmiHeader.biHeight = bm.bmHeight;
+        (*pInfoBitmap).bmiHeader.biPlanes = 1;
+        (*pInfoBitmap).bmiHeader.biBitCount = 24;
+        (*pInfoBitmap).bmiHeader.biCompression = 0; /* BI_RGB */
+        let mut bits: *mut core::ffi::c_void = core::ptr::null_mut();
+        hdib = CreateDIBSection(hDC, pInfoBitmap as *const core::ffi::c_void, 0 /* DIB_RGB_COLORS */,
+            &mut bits, core::ptr::null_mut(), 0) as HBITMAP;
+        let mut ok = !hdib.is_null();
+        if ok && !ppBuffer.is_null() {
+            let src = CreateCompatibleDC(hDC);
+            let dst = CreateCompatibleDC(hDC);
+            SelectObject(src, hBitmap as HGDIOBJ);
+            SelectObject(dst, hdib as HGDIOBJ);
+            ok = BitBlt(dst, 0, 0, bm.bmWidth, bm.bmHeight, src, 0, 0, 0x00CC0020 /* SRCCOPY */) != 0;
+            DeleteDC(src);
+            DeleteDC(dst);
+        }
+        if !ok {
+            if !hdib.is_null() {
+                DeleteObject(hdib as HGDIOBJ);
+            }
+            HeapFree(GetProcessHeap(), 0, pInfoBitmap as LPVOID);
+            ReleaseDC(core::ptr::null_mut(), hDC);
+            return 0;
+        }
+        hBitmap = hdib;
+    }
+
     (*pInfoBitmap).bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
-    GetDIBits(
+    if GetDIBits(
         hDC,
         hBitmap,
         0,
@@ -4538,7 +4591,35 @@ unsafe extern "C" fn serializeBMP(
         core::ptr::null_mut(),
         pInfoBitmap,
         0,
-    );
+    ) == 0
+    {
+        if !hdib.is_null() {
+            DeleteObject(hdib as HGDIOBJ);
+        }
+        HeapFree(GetProcessHeap(), 0, pInfoBitmap as LPVOID);
+        ReleaseDC(core::ptr::null_mut(), hDC);
+        return 0;
+    }
+
+    if ppBuffer.is_null() {
+        let entries: usize = if (*pInfoBitmap).bmiHeader.biClrUsed != 0 {
+            ((*pInfoBitmap).bmiHeader.biClrUsed as usize).min(256)
+        } else if (*pInfoBitmap).bmiHeader.biBitCount <= 8 {
+            1usize << (*pInfoBitmap).bmiHeader.biBitCount
+        } else {
+            0
+        };
+        *pLength = (core::mem::size_of::<BITMAPFILEHEADER>()
+            + core::mem::size_of::<BITMAPINFOHEADER>()
+            + entries * core::mem::size_of::<RGBQUAD>()
+            + (*pInfoBitmap).bmiHeader.biSizeImage as usize) as u32;
+        if !hdib.is_null() {
+            DeleteObject(hdib as HGDIOBJ);
+        }
+        HeapFree(GetProcessHeap(), 0, pInfoBitmap as LPVOID);
+        ReleaseDC(core::ptr::null_mut(), hDC);
+        return 1;
+    }
 
     pPixelData = HeapAlloc(
         GetProcessHeap(),
@@ -4573,9 +4654,8 @@ unsafe extern "C" fn serializeBMP(
         )
         .wrapping_add((*pInfoBitmap).bmiHeader.biSizeImage as usize) as u32;
 
-    // Both Rust callers pass a buffer; the C's NULL sizing call arrived with an upstream
-    // sync this translation predates.
-    *ppBuffer = HeapAlloc( // nolint: dropped-null-guard
+    // (ppBuffer is non-NULL here: the NULL sizing call returned above.)
+    *ppBuffer = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
         *pLength as SIZE_T,
@@ -4615,6 +4695,10 @@ unsafe extern "C" fn serializeBMP(
 
     HeapFree(GetProcessHeap(), 0, pPixelData as LPVOID);
     HeapFree(GetProcessHeap(), 0, pInfoBitmap as LPVOID);
+    if !hdib.is_null() {
+        DeleteObject(hdib as HGDIOBJ);
+    }
+    ReleaseDC(core::ptr::null_mut(), hDC);
     return success;
 }
 unsafe extern "C" fn serializeIcon(
@@ -5037,26 +5121,40 @@ fn OLEPictureImpl_GetSizeMax(
     iface: *mut IPersistStream,
     pcbSize: *mut ULARGE_INTEGER,
 ) -> HRESULT {
+    // Wine 10.0 implements this (was an E_NOTIMPL stub): the stored data's
+    // length, or for a dirty/unloaded bitmap the size serializeBMP would
+    // write, plus the 8-byte stream header Save emits.
     let This: *mut OLEPictureImpl = impl_from_IPersistStream(iface);
-    if (*__wine_dbch___default).flags as i32
-        & (1 << __WINE_DBCL_FIXME as i32)
-        != 0
-    {
-        let __dbch: *mut __wine_debug_channel = __wine_dbch___default;
-        let __dbcl: __wine_debug_class = __WINE_DBCL_FIXME;
-        ros_dbg_log(
-            __dbcl,
-            __dbch,
-            b"dll/win32/oleaut32/olepicture.c\0"
-                as *const u8 as *const i8,
-            b"OLEPictureImpl_GetSizeMax\0" as *const u8 as *const i8,
-            1869,
-            b"(%p,%p),stub!\n\0" as *const u8 as *const i8,
-            This,
-            pcbSize,
-        );
+    let mut hr: HRESULT = E_NOTIMPL;
+    let mut datasize: u32 = (*This).datalen as u32;
+
+    if pcbSize.is_null() {
+        return E_INVALIDARG;
     }
-    E_NOTIMPL
+
+    match (*This).desc.picType as i32 {
+        0 /* PICTYPE_NONE */ => hr = S_OK,
+        1 /* PICTYPE_BITMAP */ => {
+            if (*This).bIsDirty != 0 || (*This).data.is_null() {
+                let fmt = if (*This).keepOrigFormat != 0 { (*This).loadtime_format as u32 } else { 0x4d42 };
+                if fmt == 0x4d42 /* BITMAP_FORMAT_BMP */ {
+                    hr = if serializeBMP(
+                        (*This).desc.__bindgen_anon_1.bmp.as_ref().hbitmap,
+                        core::ptr::null_mut(),
+                        &mut datasize,
+                    ) != 0 { S_OK } else { E_INVALIDARG };
+                }
+                // JPEG/GIF/PNG re-encoding is not implemented (Wine: FIXME)
+            } else {
+                hr = S_OK;
+            }
+        }
+        _ => {} /* icon / metafile / enhmetafile: not implemented (Wine: FIXME) */
+    }
+
+    (*pcbSize).u.HighPart = 0;
+    (*pcbSize).u.LowPart = datasize.wrapping_add(8);
+    hr
 }
 }
 stdmethod! {
@@ -5713,7 +5811,10 @@ unsafe extern "C" fn create_stream(
     dwFileSize = GetFileSize(hFile, core::ptr::null_mut());
     
     if dwFileSize != INVALID_FILE_SIZE {
-        hGlobal = GlobalAlloc(HEAP_ZERO_MEMORY, dwFileSize as SIZE_T);
+        // C: GMEM_FIXED (0). This read HEAP_ZERO_MEMORY (0x8), which is not a GMEM_
+        // flag at all: GlobalAlloc rejects it (ERROR_INVALID_PARAMETER), so every
+        // file-backed OleLoadPicturePath / OleLoadPictureFile failed.
+        hGlobal = GlobalAlloc(0 /* GMEM_FIXED */, dwFileSize as SIZE_T);
         if hGlobal.is_null() {
             hr = -2147024882i32;
         } else if ReadFile(

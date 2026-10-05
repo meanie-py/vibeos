@@ -9,12 +9,17 @@ one that crashed — into an artifact you can run again, identically, as many
 times as you like.  That turns "reproduce it again and hope" into "open the
 recording".
 
-Caveat worth knowing before you plan around this: on QEMU 9.0.2 the gdbstub is
-unusable against a replay for DEBUGGING.  Attaching at -S and `continue` work,
-but every later stop -- stepi, attaching mid-run, and a breakpoint hit -- aborts
-QEMU.  A replay cannot be stopped, so reverse execution (the original
-motivation) is unreachable and a trace is a deterministic CAPTURE rather than a
-debugging session.  See docs/engineering/qemu-record-replay.md.
+Caveat worth knowing before you plan around this, CORRECTED: a replay CAN be
+stopped, but only on an instruction-chunk boundary.  `rr replay --break-at N`
+arms a QMP `replay-break` and the guest pauses; `rr breaks` prints the legal
+targets.  What aborts QEMU is a stop PART WAY through a chunk, which is what
+every gdb stop was -- stepi, a mid-run attach and a breakpoint hit all land
+wherever the guest happens to be, so "the gdbstub is unusable" was the symptom
+of the chunk rule rather than a separate defect.  gdb stepping is still
+unavailable for that reason and reverse execution with it; a trace plus
+`--break-at` is a capture you can stop at a chosen instruction, not a debugging
+session.  What does still block replaying a whole boot is the WEDGE.  See
+docs/engineering/qemu-record-replay.md.
 
 The tool is the deliverable.  Catching any specific bug with it is a bonus.
 
@@ -68,7 +73,9 @@ import shutil
 import struct
 import subprocess
 import time
+from collections.abc import Iterator
 from pathlib import Path
+from typing import NamedTuple
 
 # Default icount shift.  `shift=N` costs the virtual clock 2**N ns per
 # instruction, which is the same as fixing the guest's apparent CPU at 2**-N
@@ -385,11 +392,31 @@ def transform(
     #   qemu-system-aarch64: migration/vmstate.c:140: vmstate_load_state:
     #   Assertion `first_elem || !n_elems || !size' failed.
     # A/B'd on one trace with nothing else changed. See the divergence log.
+    x86 = is_x86_argv(argv)
+    # x86's MC146818 RTC ticks on QEMU_CLOCK_HOST by default, so its timers land in
+    # the log as host-clock checkpoints (five before the first instruction alone).
+    # clock=vm puts it on the virtual clock: recordings came out ~3x faster and ~5x
+    # smaller. Its base date is still one recorded host-clock read.
+    if x86 and "-rtc" not in argv:
+        out += ["-rtc", "clock=vm"]
+    # x86 REPLAY does not load the `init` snapshot. Loading it re-arms a virtual-clock
+    # timer due at time zero (a device post-load hook), which in replay may only run at
+    # a recorded CHECKPOINT_CLOCK_VIRTUAL -- and the recording has none before its first
+    # instruction. Main loop and vCPU then livelock (vCPU in icount_handle_deadline ->
+    # qemu_clock_notify, forever) at instruction count 0. Recording still CREATES the
+    # snapshot: prepare_replay reverts every disk to it, so the replay starts from the
+    # same disks and the same power-on state the recording did.
+    snap = "" if (x86 and mode == "replay") else ",rrsnapshot=init"
     out += [
         "-icount",
-        f"shift={icount_shift},rr={mode},rrfile={rrfile},rrsnapshot=init",
+        f"shift={icount_shift},rr={mode},rrfile={rrfile}{snap}",
     ]
     return out, media
+
+
+def is_x86_argv(argv: list[str]) -> bool:
+    """Whether a QEMU command line is an x86 machine (by its binary name)."""
+    return bool(argv) and ("x86_64" in argv[0] or "i386" in argv[0])
 
 
 # --------------------------------------------------------------------------
@@ -524,6 +551,19 @@ def prepare_replay(trace_dir: Path) -> None:
     if media.exists():
         shutil.rmtree(media)
     shutil.copytree(pristine, media)
+    argv = load_manifest(trace_dir).get("argv") if (trace_dir / "manifest.json").is_file() else None
+    if is_x86_argv(argv or []):
+        # x86 replays from power-on, not from the snapshot (see transform): put each
+        # disk back to its state at record start, which the snapshot holds.
+        for img in sorted(media.glob("*.qcow2")):
+            cp = subprocess.run(
+                ["qemu-img", "snapshot", "-a", "init", str(img)], capture_output=True, text=True
+            )
+            if cp.returncode != 0:
+                raise RecordReplayError(
+                    f"cannot revert {img.name} to its record-start state (`init`): "
+                    f"{cp.stderr.strip()} -- the replay would start from post-recording disks"
+                )
 
 
 def load_manifest(trace_dir: Path) -> dict:
@@ -681,12 +721,118 @@ _V12_PAYLOAD = {
     29: 8,  # EVENT_CLOCK_VIRTUAL_RT
 }
 _V12_ASYNC_IDS = frozenset(range(3, 11))
+
+# v12 shutdown event ids: EVENT_SHUTDOWN through EVENT_SHUTDOWN___MAX. A log that
+# ends on one of these ended because the machine stopped, not because the writer
+# was killed.
+_V12_SHUTDOWN_IDS = frozenset(range(11, 22))
 _V12_RANDOM_ID = 27
 # REPLAY_ASYNC_EVENT_BH carries a u64 step id; the other async kinds we have
 # never seen in an arm64 trace, and guessing their width would silently
 # desynchronise the whole walk, so they stop it instead.
 _V12_ASYNC_PAYLOAD = {0: 8}
 _SUPPORTED_REPLAY_VERSION = 0xE0200C
+
+
+# Event names this decoder is SURE of, taken from the sizes it already relies on
+# (see _V12_PAYLOAD / _V12_ASYNC_IDS above). Ids absent here are printed as
+# "id <n>" rather than guessed at: inventing a plausible name for an event we
+# only know the width of would put a label in a wedge report that reads as
+# evidence and is not.
+_EVENT_NAMES = {0: "EVENT_INSTRUCTION", 22: "EVENT_CHAR_WRITE", 27: "EVENT_RANDOM"}
+
+
+def event_name(eid: int) -> str:
+    if eid in _EVENT_NAMES:
+        return _EVENT_NAMES[eid]
+    if eid in _V12_ASYNC_IDS:
+        return f"EVENT_ASYNC (id {eid})"
+    if eid in _V12_SHUTDOWN_IDS:
+        return f"EVENT_SHUTDOWN (id {eid})"
+    if 30 <= eid <= 38:
+        return f"EVENT_CHECKPOINT (id {eid})"
+    return f"id {eid}"
+
+
+class ReplayEvent(NamedTuple):
+    """One decoded record: where it starts, what it is, and the icount it ends at."""
+
+    offset: int
+    eid: int
+    icount: int
+
+    @property
+    def name(self) -> str:
+        return event_name(self.eid)
+
+
+def walk_events(trace_dir: Path) -> Iterator[ReplayEvent]:
+    """Decode `replay.bin` into its events, in order.
+
+    One walker, because every question we ask of a trace is a question about this
+    same byte stream: which icounts are legal break targets, whether the log
+    reaches a shutdown, and which event a wedged replay is sitting on. Three
+    hand-rolled decoders would drift apart, and a decoder that drifts does not
+    fail — it returns plausible numbers.
+
+    Raises RecordReplayError rather than stopping early on anything it cannot
+    size, for the reason given on `instruction_boundaries`: a short answer here
+    is indistinguishable from a correct one.
+    """
+    path = Path(trace_dir) / "replay.bin"
+    if not path.is_file():
+        raise RecordReplayError(f"{path} does not exist — nothing was recorded here")
+    total = 0
+    with path.open("rb") as fh:
+        head = fh.read(12)  # u32 version + u64 of header junk
+        if len(head) < 12:
+            raise RecordReplayError(f"{path} is truncated: {len(head)} bytes, no header")
+        version = struct.unpack(">I", head[:4])[0]
+        if version != _SUPPORTED_REPLAY_VERSION:
+            raise RecordReplayError(
+                f"{path} is replay version 0x{version:x}; this decoder only knows "
+                f"0x{_SUPPORTED_REPLAY_VERSION:x}. Refusing to guess at event sizes — "
+                "a mis-sized event desynchronises the walk and yields plausible "
+                "nonsense rather than an error."
+            )
+        while True:
+            at = fh.tell()
+            b = fh.read(1)
+            if not b:
+                break
+            eid = b[0]
+            if eid == 0:
+                raw = fh.read(4)
+                if len(raw) < 4:
+                    break  # trailing partial event: the recording was cut short
+                total += struct.unpack(">I", raw)[0]
+                yield ReplayEvent(at, eid, total)
+                continue
+            if eid in _V12_ASYNC_IDS:
+                kind = fh.read(1)
+                fh.read(1)  # checkpoint id, only used to cross-check
+                if not kind:
+                    break
+                width = _V12_ASYNC_PAYLOAD.get(kind[0])
+                if width is None:
+                    raise RecordReplayError(
+                        f"{path}: async event kind {kind[0]} at offset {fh.tell()} has "
+                        "no known payload width, so the rest of the log cannot be "
+                        "walked. Boundary list would be silently short."
+                    )
+                fh.read(width)
+                yield ReplayEvent(at, eid, total)
+                continue
+            if eid == _V12_RANDOM_ID:
+                fh.read(4)  # ret
+                size_raw = fh.read(4)
+                if len(size_raw) < 4:
+                    break
+                fh.read(struct.unpack(">I", size_raw)[0])
+                yield ReplayEvent(at, eid, total)
+                continue
+            fh.read(_V12_PAYLOAD.get(eid, 0))
+            yield ReplayEvent(at, eid, total)
 
 
 def instruction_boundaries(trace_dir: Path) -> list[int]:
@@ -716,64 +862,39 @@ def instruction_boundaries(trace_dir: Path) -> list[int]:
     than returning a short list: a truncated boundary set would silently make
     `snap_break_icount` recommend an icount that aborts the replay.
     """
-    path = Path(trace_dir) / "replay.bin"
-    if not path.is_file():
-        raise RecordReplayError(f"{path} does not exist — nothing was recorded here")
-    out: list[int] = []
-    total = 0
-    with path.open("rb") as fh:
-        head = fh.read(12)  # u32 version + u64 of header junk
-        if len(head) < 12:
-            raise RecordReplayError(f"{path} is truncated: {len(head)} bytes, no header")
-        version = struct.unpack(">I", head[:4])[0]
-        if version != _SUPPORTED_REPLAY_VERSION:
-            raise RecordReplayError(
-                f"{path} is replay version 0x{version:x}; this decoder only knows "
-                f"0x{_SUPPORTED_REPLAY_VERSION:x}. Refusing to guess at event sizes — "
-                "a mis-sized event desynchronises the walk and yields plausible "
-                "nonsense rather than an error."
-            )
-        while True:
-            b = fh.read(1)
-            if not b:
+    return [e.icount for e in walk_events(trace_dir) if e.eid == 0]
+
+
+def events_around_offset(
+    trace_dir: Path, offset: int, before: int = 5, after: int = 5
+) -> tuple[list[ReplayEvent], list[ReplayEvent]]:
+    """The events preceding and following a byte offset in `replay.bin`.
+
+    For reading a WEDGE. `trace_read_position` gives the offset a stalled replay
+    stopped reading at, and the question is which recorded event it could not
+    get past.
+
+    Returns (preceding, following) and deliberately does not name a single
+    culprit, because the offset cannot support one: it is the kernel file
+    position of a buffered read, so QEMU has consumed bytes into its own buffer
+    that it has not yet acted on. The true stall event is therefore at or BEFORE
+    the offset, by up to a buffer's worth — which makes `preceding` the evidence
+    and `following` the context. A tool that printed "the replay died on this
+    event" from this input would be reporting the handle's reading as the
+    thing's, which is the mistake this docstring exists to prevent.
+    """
+    preceding: list[ReplayEvent] = []
+    following: list[ReplayEvent] = []
+    for ev in walk_events(trace_dir):
+        if ev.offset < offset:
+            preceding.append(ev)
+            if len(preceding) > before:
+                preceding.pop(0)
+        else:
+            following.append(ev)
+            if len(following) >= after:
                 break
-            eid = b[0]
-            if eid == 0:
-                raw = fh.read(4)
-                if len(raw) < 4:
-                    break  # trailing partial event: the recording was cut short
-                total += struct.unpack(">I", raw)[0]
-                out.append(total)
-                continue
-            if eid in _V12_ASYNC_IDS:
-                kind = fh.read(1)
-                fh.read(1)  # checkpoint id, only used to cross-check
-                if not kind:
-                    break
-                width = _V12_ASYNC_PAYLOAD.get(kind[0])
-                if width is None:
-                    raise RecordReplayError(
-                        f"{path}: async event kind {kind[0]} at offset {fh.tell()} has "
-                        "no known payload width, so the rest of the log cannot be "
-                        "walked. Boundary list would be silently short."
-                    )
-                fh.read(width)
-                continue
-            if eid == _V12_RANDOM_ID:
-                fh.read(4)  # ret
-                size_raw = fh.read(4)
-                if len(size_raw) < 4:
-                    break
-                fh.read(struct.unpack(">I", size_raw)[0])
-                continue
-            fh.read(_V12_PAYLOAD.get(eid, 0))
-    return out
-
-
-# v12 shutdown event ids: EVENT_SHUTDOWN through EVENT_SHUTDOWN___MAX. A log that
-# ends on one of these ended because the machine stopped, not because the writer
-# was killed.
-_V12_SHUTDOWN_IDS = frozenset(range(11, 22))
+    return preceding, following
 
 
 def trace_is_provably_complete(trace_dir: Path) -> bool:

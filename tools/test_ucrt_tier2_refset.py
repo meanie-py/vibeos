@@ -19,7 +19,13 @@ ARCHES = ("i386", "amd64", "arm64")
 
 
 def _built(arch: str) -> bool:
-    return (REPO / f"build-{arch}").is_dir()
+    """A build whose ucrtbase still links Microsoft's C objects.
+
+    Since the last batch the tree carries none: only a `ucrt_tier2_sweep.py
+    --takeover-from` pre-build restores them, so a plain build has nothing to check.
+    """
+    link = REPO / f"build-{arch}" / "build.ninja"
+    return link.is_file() and "CMakeFiles/ucrt.dir/" in link.read_text(errors="replace")
 
 
 def test_decoration_is_settled_per_arch_not_per_symbol():
@@ -60,7 +66,7 @@ def test_object_list_comes_from_the_link_line_not_a_glob(arch):
     fails to link with duplicate symbols.
     """
     if not _built(arch):
-        pytest.skip(f"build-{arch} not present")
+        pytest.skip(f"build-{arch} links no Microsoft ucrt objects")
     objs = refset.ucrt_objects(REPO / f"build-{arch}")
     assert objs, "no ucrt objects found on the link line"
     names = [o.name for o in objs]
@@ -84,7 +90,7 @@ def test_object_list_comes_from_the_link_line_not_a_glob(arch):
 def test_every_rule_renames_a_symbol_that_exists(arch):
     """A rule for an absent symbol is a silent no-op, which is how a body goes ungraded."""
     if not _built(arch):
-        pytest.skip(f"build-{arch} not present")
+        pytest.skip(f"build-{arch} links no Microsoft ucrt objects")
     objs = refset.ucrt_objects(REPO / f"build-{arch}")
     defined = refset.defined_symbols(objs)
     rules = refset.rename_rules(arch, defined)
@@ -101,7 +107,7 @@ def test_the_reference_set_is_only_microsoft_c(arch):
     static libs. Only the `ucrt` target's objects are Microsoft's.
     """
     if not _built(arch):
-        pytest.skip(f"build-{arch} not present")
+        pytest.skip(f"build-{arch} links no Microsoft ucrt objects")
     build = REPO / f"build-{arch}"
     objs = refset.ucrt_objects(build)
     for o in objs:

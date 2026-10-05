@@ -257,12 +257,12 @@ list(APPEND CRT_MATH_SOURCE
     math/fdivbug.c
     math/frexp.c
     math/huge_val.c
-    math/ieee754/j0_y0.c
-    math/ieee754/j1_y1.c
-    math/ieee754/jn_yn.c
-    math/j0_y0.c
-    math/j1_y1.c
-    math/jn_yn.c
+    # The Bessel functions: cnt-rust's _j0.._yn over the `libm` crate. The vendored
+    # FDLIBM bodies (math/ieee754) are gone; these wrappers stay on disk as the
+    # cnt-difftest oracle for the errno shell.
+    # math/j0_y0.c
+    # math/j1_y1.c
+    # math/jn_yn.c
     math/ldiv.c
     math/logf.c
     math/powf.c

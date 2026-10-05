@@ -44,6 +44,18 @@ unsafe fn _DbgPortWrite(Port: USHORT, Value: UCHAR) {
     );
 }
 
+/// The UART kernel-mode DebugPrint writes to: COM1 unless kd64's KdInitSystem
+/// moved it (DEBUGPORT=COM:0x<port>, an ACPI SPCR UART the loader found on a PC
+/// without a legacy COM1). Defined here, in rtl, because every image that links
+/// DebugPrint must resolve it; kd64's KdpStub prints to the same port.
+#[no_mangle]
+pub static mut RtlpDebugConsolePort: u16 = 0x3F8;
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+unsafe fn console_port() -> USHORT {
+    core::ptr::read_volatile(core::ptr::addr_of!(RtlpDebugConsolePort))
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn DebugPrint(
     DebugString: PSTRING,
@@ -55,14 +67,15 @@ pub unsafe extern "system" fn DebugPrint(
         let cs: USHORT;
         core::arch::asm!("mov {0:x}, cs", out(reg) cs);
         if (cs & 3) == 0 {
-            let lcr = _DbgPortRead(0x3FB);
+            let port = console_port();
+            let lcr = _DbgPortRead(port + 3);
             if lcr & 0x80 != 0 {
-                _DbgPortWrite(0x3FB, lcr & 0x7F);
+                _DbgPortWrite(port + 3, lcr & 0x7F);
             }
             let mut i: USHORT = 0;
             while i < (*DebugString).Length {
-                while _DbgPortRead(0x3FD) & 0x20 == 0 {}
-                _DbgPortWrite(0x3F8, *(*DebugString).Buffer.offset(i as isize) as UCHAR);
+                while _DbgPortRead(port + 5) & 0x20 == 0 {}
+                _DbgPortWrite(port, *(*DebugString).Buffer.offset(i as isize) as UCHAR);
                 i += 1;
             }
             return STATUS_SUCCESS as ULONG;

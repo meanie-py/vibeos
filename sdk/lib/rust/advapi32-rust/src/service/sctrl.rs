@@ -1,4 +1,6 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
+use crate::service_scm::ScmRpcStatusToWinError;
 use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
@@ -805,13 +807,13 @@ pub unsafe extern "system" fn I_ScSetServiceBitsA(
 ) -> BOOL {
     let bResult: BOOL;
 
-    bResult = RI_ScSetServiceBitsA(
+    bResult = rpc_try(|| RI_ScSetServiceBitsA(
         hServiceStatus as RPC_SERVICE_STATUS_HANDLE,
         dwServiceBits,
         bSetBitsOn,
         bUpdateImmediately,
         lpString,
-    ) as BOOL;
+    )).unwrap_or_else(|code| { SetLastError(ScmRpcStatusToWinError(code as _) as _); 0 as _ }) as BOOL;
 
     bResult
 }
@@ -835,13 +837,13 @@ pub unsafe extern "system" fn I_ScSetServiceBitsW(
         debugstr_w(lpString),
     );
 
-    bResult = RI_ScSetServiceBitsW(
+    bResult = rpc_try(|| RI_ScSetServiceBitsW(
         hServiceStatus as RPC_SERVICE_STATUS_HANDLE,
         dwServiceBits,
         bSetBitsOn,
         bUpdateImmediately,
         lpString,
-    ) as BOOL;
+    )).unwrap_or_else(|code| { SetLastError(ScmRpcStatusToWinError(code as _) as _); 0 as _ }) as BOOL;
 
     bResult
 }
@@ -869,10 +871,10 @@ pub unsafe extern "system" fn SetServiceStatus(
 ) -> BOOL {
     let dwError: DWORD;
 
-    dwError = RSetServiceStatus(
+    dwError = rpc_try(|| RSetServiceStatus(
         hServiceStatus as RPC_SERVICE_STATUS_HANDLE,
         lpServiceStatus,
-    );
+    )).unwrap_or_else(|code| ScmRpcStatusToWinError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);

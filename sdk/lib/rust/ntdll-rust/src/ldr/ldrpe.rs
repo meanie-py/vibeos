@@ -776,6 +776,18 @@ pub unsafe extern "system" fn LdrpSnapThunk(
     'failure: loop {
         if (Ordinal as ULONG) >= (*ExportDirectory).NumberOfFunctions {
             // FailurePath
+            // A forwarder DLL loaded on the way here must be unloaded, or it
+            // lingers in the loader waiting to run its init routine (upstream
+            // 4a96f375a0f "[NTDLL] Unload DLLs on loader failure"). Not on arm64,
+            // where the C's own _M_ARM64 arm tolerates the failed snap below and the
+            // process carries on resolving through the forwarder: unloading it there
+            // unmapped a DLL csrss was still snapping and faulted in LdrpSnapThunk
+            // reading its import table (smoke:arm64 hang, 2026-10-04).
+            #[cfg(not(target_arch = "aarch64"))]
+            if !ForwarderHandle.is_null() {
+                LdrUnloadDll(ForwarderHandle);
+            }
+
             // ARM64: DUMMY_PSEH can't catch RtlRaiseStatus. Skip the hard error
             // and fall through to the non-fatal path (Thunk = 0xffbadd11); the
             // caller tolerates it. Matches the #ifdef _M_ARM64 branch in ldrpe.c.

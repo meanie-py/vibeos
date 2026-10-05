@@ -1,0 +1,18 @@
+# wsprintf — user32 wsprintfA/W (Rust naked variadic thunks) across register/stack boundaries.
+#   tools/payloads/wsprintf/build.sh {arch}
+#   VIBEOS_PAYLOAD=wsprintf ./vibeos-cli build --arch {arch}
+#   ./vibeos-cli smoke --arch {arch} --payload wsprintf
+name: wsprintf
+description: "user32 wsprintfA/W naked variadic thunks (Rust)"
+
+build_hint: "tools/payloads/wsprintf/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/wsprintf/wsprintf-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/wsprintf.exe
+
+test:
+  launch_marker: "[WSPRINTF] done"
+  pass_marker: "[WSPRINTF] done PASS"
+  launch_drain_secs: 300

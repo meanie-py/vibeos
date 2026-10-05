@@ -29,6 +29,8 @@
 #   sample-pc         -- read $pc + current process->ImageFileName, emit
 #                        one SAMPLE line. Use qemu/sample-pc.sh for a
 #                        repeated-sampling histogram.
+#   lm [addr]         -- list loaded modules, or name the one holding addr (a driver
+#                        return address in a backtrace, say)
 #   find-kbase        -- scan for runtime kernel base, store in $kbase
 #   raw <gdb-cmd>     -- run a raw GDB command (escape hatch)
 #
@@ -92,13 +94,14 @@ EX_ARGS=(
     -ex "source $GDB_HELPERS_DIR/walk-waitlist.py"
     -ex "source $GDB_HELPERS_DIR/list-threads.py"
     -ex "source $GDB_HELPERS_DIR/who-holds.py"
+    -ex "source $GDB_HELPERS_DIR/lm.py"
     -ex "source $GDB_HELPERS_DIR/sample-pc.py"
 )
 
 # Auto-resolve kbase + relocate symbols. If we already cached it in the
 # manifest, pass it to find-kbase to skip the scan; otherwise let the helper
 # scan memory and write back to the manifest after.
-CACHED_KBASE="$(manifest_get "$RUN_ID" kernel_runtime_base 2>/dev/null || true)"
+CACHED_KBASE="$(runid_kernel_base "$RUN_ID")"
 if [ -n "$CACHED_KBASE" ] && [ "$CACHED_KBASE" != "null" ]; then
     EX_ARGS+=(-ex "find-kbase $CACHED_KBASE")
 else
@@ -160,6 +163,9 @@ case "$COMMAND" in
         ADDR="${ARGS[0]:-}"
         [ -n "$ADDR" ] || die "who-holds requires a KTHREAD address"
         EX_ARGS+=(-ex "who-holds $ADDR")
+        ;;
+    lm)
+        EX_ARGS+=(-ex "lm ${ARGS[0]:-}")
         ;;
     stack-scan)
         ADDR="${ARGS[0]:-}"

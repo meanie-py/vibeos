@@ -107,6 +107,10 @@ fn main() {
             "win32ss/gdi/dib/i386/dib32bpp_hline.s",
             "win32ss/gdi/dib/i386/dib32bpp_colorfill.s",
             "win32ss/gdi/eng/i386/floatobj.S",
+            // x87 pow/fmod: this cell's cnt-rust-lib is the builtin no-SSE i686 build,
+            // which leaves them to the asm (cnt-rust/src/cabi/math.rs, `pow`).
+            "sdk/lib/crt/math/i386/pow_asm.s",
+            "sdk/lib/crt/math/i386/fmod_asm.s",
         ]
     } else {
         &[]

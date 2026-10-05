@@ -17,6 +17,12 @@
 
 #if defined(__x86_64__) || defined(__aarch64__)
 
+/* Weak: some test TUs (RtlMemory.c, RtlStrSafe.c, ExInterlocked.c) DO emit an
+ * out-of-line body for these, and then this copy must lose regardless of link
+ * order. As strong definitions they were duplicates resolved by order, which
+ * tools/link_guard.py refuses. */
+#define KMT_FALLBACK __attribute__((weak))
+
 typedef unsigned short KMT_USHORT;
 typedef unsigned int KMT_ULONG;
 typedef unsigned long long KMT_SIZE_T;
@@ -30,7 +36,7 @@ typedef struct
     unsigned short *Buffer;
 } KMT_UNICODE_STRING;
 
-void *RtlSecureZeroMemory(void *Pointer, KMT_SIZE_T Size)
+KMT_FALLBACK void *RtlSecureZeroMemory(void *Pointer, KMT_SIZE_T Size)
 {
     volatile char *vptr = (volatile char *)Pointer;
     while (Size--)
@@ -38,7 +44,7 @@ void *RtlSecureZeroMemory(void *Pointer, KMT_SIZE_T Size)
     return Pointer;
 }
 
-void RtlInitEmptyUnicodeString(KMT_UNICODE_STRING *UnicodeString,
+KMT_FALLBACK void RtlInitEmptyUnicodeString(KMT_UNICODE_STRING *UnicodeString,
                                unsigned short *Buffer,
                                KMT_USHORT BufferSize)
 {
@@ -49,13 +55,13 @@ void RtlInitEmptyUnicodeString(KMT_UNICODE_STRING *UnicodeString,
 
 #if defined(__x86_64__)
 /* clang builtin on arm64; FORCEINLINE wrapper on amd64 (xdk/interlocked.h) */
-KMT_LONG64 _InterlockedAdd64(volatile KMT_LONG64 *Target, KMT_LONG64 Value)
+KMT_FALLBACK KMT_LONG64 _InterlockedAdd64(volatile KMT_LONG64 *Target, KMT_LONG64 Value)
 {
     return __atomic_add_fetch(Target, Value, __ATOMIC_SEQ_CST);
 }
 
 /* amd64-only FORCEINLINE in xdk/rtlfuncs.h; a real ntoskrnl export elsewhere */
-void RtlFillMemoryUlong(void *Destination, KMT_SIZE_T Length, KMT_ULONG Pattern)
+KMT_FALLBACK void RtlFillMemoryUlong(void *Destination, KMT_SIZE_T Length, KMT_ULONG Pattern)
 {
     KMT_ULONG *Address = (KMT_ULONG *)Destination;
     Length /= sizeof(KMT_ULONG);

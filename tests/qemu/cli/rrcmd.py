@@ -55,6 +55,9 @@ _PINNED_ENV = (
     "VIBEOS_QEMU_EXTRA_ARGS",
     "VIBEOS_TRIPWIRE",
     "VIBEOS_UP_DEFAULT_BOOT",
+    # x86 records over usb-storage: blkreplay refuses the ATAPI ide-cd the default boot
+    # uses, and the recorded device set must be the replayed one.
+    "VIBEOS_QEMU_BOOT_TRANSPORT",
 )
 
 
@@ -104,7 +107,12 @@ def _boot_cmd(repo: Path, arch: str, payload: str, smp: int, build: bool, timeou
         if not build:
             cmd.append("--no-build")
         return cmd
-    return [cli, "smoke", "--arch", arch, "--smp", str(smp)]
+    # --no-net: amd64's smoke runs a SECOND boot for its net suite. Under the rr env that
+    # boot re-staged fresh overlays over the trace's media after the recording ended,
+    # wiping the `init` snapshot (replay: "Snapshot 'init' does not exist"). Recording a
+    # network is unsupported anyway (recordreplay.py), and arm64 has no net stage, which
+    # is why no arm64 trace was ever hit.
+    return [cli, "smoke", "--arch", arch, "--smp", str(smp), "--no-net"]
 
 
 # --------------------------------------------------------------------------
@@ -635,6 +643,63 @@ def cmd_breaks(args, repo: Path) -> int:
     return 0
 
 
+def cmd_wedge(args, repo: Path) -> int:
+    """Name the recorded events around where a stalled replay stopped reading.
+
+    The wedge is the open rr limitation: a replay stops consuming the trace about
+    two thirds through, at a near-deterministic offset, while burning CPU. The
+    offset has been measured; which recorded event sits there has not, and that
+    is the next thing to know.
+
+    Reports a WINDOW, never a culprit. `trace_read_position` is the kernel file
+    offset of a buffered read, so QEMU has pulled bytes it has not yet acted on:
+    the stall is at or BEFORE the offset. Printing "the replay died here" from
+    that would be the handle's reading dressed up as the thing's.
+    """
+    trace = _resolve_trace(args)
+    offset = args.at
+    src = "--at"
+    icount = getattr(args, "icount", None)
+    if icount is not None:
+        # Exact, unlike a read offset: the first event at or past the instruction count
+        # QEMU reports for a stalled replay (`info replay` on a monitor).
+        offset = next((ev.offset for ev in rr.walk_events(trace) if ev.icount >= icount), None)
+        if offset is None:
+            print(f"icount {icount} is past the last event in {trace}", file=sys.stderr)
+            return 1
+        src = f"--icount {icount}"
+    if offset is None:
+        offset = rr.trace_read_position(trace)
+        if offset is None:
+            print(
+                f"nobody has {trace}/replay.bin open, so there is no read position to "
+                "look at. Pass --at <offset> to inspect a position recorded earlier.",
+                file=sys.stderr,
+            )
+            return 1
+        src = "live reader"
+
+    size = (trace / "replay.bin").stat().st_size
+    before, after = rr.events_around_offset(trace, offset, args.count, args.count)
+    pct = 100.0 * offset / size if size else 0.0
+    print(f"trace:  {trace}")
+    print(f"offset: {offset} of {size} ({pct:.2f}%, from {src})")
+    if not before and not after:
+        print("\nno events decode around that offset")
+        return 1
+    print("\nBEFORE (the stall is at or before one of these):")
+    for ev in before:
+        print(f"  @{ev.offset:<10} icount {ev.icount:<14} {ev.name}")
+    print("\nAFTER (context; not yet acted on):")
+    for ev in after:
+        print(f"  @{ev.offset:<10} icount {ev.icount:<14} {ev.name}")
+    print(
+        "\nThe offset is a BUFFERED kernel read position, so it runs ahead of what\n"
+        "the replay has acted on. Treat BEFORE as the evidence."
+    )
+    return 0
+
+
 def rr_cmd(args, repo: Path) -> int:
     verb = args.rr_verb
     fn = {
@@ -643,6 +708,7 @@ def rr_cmd(args, repo: Path) -> int:
         "list": cmd_list,
         "info": cmd_info,
         "breaks": cmd_breaks,
+        "wedge": cmd_wedge,
         "verify": cmd_verify,
         "prune": cmd_prune,
     }.get(verb)

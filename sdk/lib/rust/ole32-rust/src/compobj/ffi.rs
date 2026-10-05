@@ -238,6 +238,8 @@ pub const ERROR_MORE_DATA: LSTATUS = 234;
 
 // ntstatus
 pub const STATUS_OBJECT_NAME_NOT_FOUND: NTSTATUS = 0xC000_0034u32 as NTSTATUS;
+/// ntdef.h
+pub const OBJ_CASE_INSENSITIVE: ULONG = 0x0000_0040;
 
 // activation context (winnt.h)
 pub const ACTIVATION_CONTEXT_SECTION_COM_SERVER_REDIRECTION: ULONG = 4;

@@ -755,6 +755,12 @@ FUNC KiInterruptDispatch
     /* Save the address of the InterruptListEntry in rsi */
     lea rsi, [rbx + KINTERRUPT_InterruptListEntry]
 
+#ifdef CONFIG_SMP
+    /* A CPU woken from lazy-TLB idle must flush BEFORE the ISR runs: the ISR
+       writes through driver mappings of recycled system VAs (see ipi.rs). */
+    call KiTbLazyIdleExitForInterrupt
+#endif
+
 .DoDispatchInterrupt:
     /* Raise IRQL to SynchronizeIrql */
     movzx rax, byte ptr [rbx + KINTERRUPT_SynchronizeIrql]

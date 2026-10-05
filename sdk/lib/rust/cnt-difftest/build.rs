@@ -29,13 +29,26 @@ fn main() {
     // to ref_<name> and includes the genuine ReactOS logic.
     let inc = |p: PathBuf| format!("#include \"{}\"\n", p.display());
     let s = |p: &str| crt.join(p);
-    // The `_FPCLASS_*` values, read out of the genuine SDK header. If the
-    // header ever stops carrying them, fail here rather than compile a
+    // The `_FPCLASS_*` values, read out of the genuine SDK header. The tree
+    // no longer carries it (sdk/include/ucrt went with the last of the
+    // Microsoft UCRT), so it comes from git history at a pinned revision. If
+    // the header stops carrying them, fail here rather than compile a
     // reference whose classifier silently returns 0 for everything.
     let fpclass_consts = {
-        let h = repo.join("sdk/include/ucrt/float.h");
-        let text = fs::read_to_string(&h)
-            .unwrap_or_else(|e| panic!("cannot read {}: {e}", h.display()));
+        const SDK_FLOAT_H: &str = "9c9d469c15278e449b2d37d437d0ebdaf62fc7ce:sdk/include/ucrt/float.h";
+        let h = SDK_FLOAT_H;
+        let shown = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["show", SDK_FLOAT_H])
+            .output()
+            .unwrap_or_else(|e| panic!("cannot run git show {SDK_FLOAT_H}: {e}"));
+        assert!(
+            shown.status.success(),
+            "git show {SDK_FLOAT_H} failed: {}",
+            String::from_utf8_lossy(&shown.stderr)
+        );
+        let text = String::from_utf8_lossy(&shown.stdout).into_owned();
         let lines: Vec<&str> = text
             .lines()
             .filter(|l| l.trim_start().starts_with("#define _FPCLASS_"))
@@ -43,7 +56,7 @@ fn main() {
         assert!(
             lines.len() >= 10,
             "expected the 10 _FPCLASS_* defines in {}, found {} -- the header moved",
-            h.display(),
+            h,
             lines.len()
         );
         format!("{}\n", lines.join("\n"))
@@ -682,7 +695,8 @@ fn main() {
         // Wave MATH-TIERC sub-wave 2: exp/log/log10/pow/fmod = the genuine
         // portable kernel-CRT .c (the same math/arm64/*.c used on both
         // amd64-llvm-mingw and arm64), renamed to ref_*. exp/log/fmod are
-        // real algorithms; log10/pow are upstream's rough stubs — all are
+        // real algorithms (log10/pow were upstream's rough stubs and are no longer
+        // references: cnt-rust takes them from the libm crate now) — all are
         // self-contained (no libm call) and bit-exact under -ffp-contract=off.
         // The `#define X ref_X` token-renames only the public symbol (e.g.
         // `log` does not touch `log10`/`logb`; `fmod` does not touch `fmodf`).
@@ -692,8 +706,6 @@ fn main() {
         // macro and corrupts the header. log10.c has no <math.h> include.
         ("exp", format!("#include <math.h>\n#define exp ref_exp\n{}", inc(s("math/arm64/exp.c")))),
         ("log", format!("#include <math.h>\n#define log ref_log\n{}", inc(s("math/arm64/log.c")))),
-        ("log10", format!("#define log10 ref_log10\n{}", inc(s("math/arm64/log10.c")))),
-        ("pow", format!("#include <math.h>\n#define pow ref_pow\n{}", inc(s("math/arm64/pow.c")))),
         ("fmod", format!("#include <math.h>\n#define fmod ref_fmod\n{}", inc(s("math/arm64/fmod.c")))),
         // Wave MATH-TIERC sub-wave 4: ceil/floor via __builtin_* so clang -O2
         // lowers them to hardware roundsd/roundss (correctly rounded) — an
@@ -1004,55 +1016,34 @@ fn main() {
 
     // ── the Bessel wrappers ──────────────────────────────────────────────
     //
-    // What is graded here is ONLY the 102 lines of ours: the errno and
-    // _fpclass shell in math/{j0_y0,j1_y1,jn_yn}.c. The `__ieee754_*` bodies
-    // underneath are VENDORED Sun FDLIBM (vendor.yaml; there is a VENDORED
-    // stamp in that directory) and are deliberately not a translation target,
-    // so they are compiled ONCE under their real names and BOTH SIDES CALL
-    // THE SAME CODE. That is the point: with the 1,346 lines of numerics held
-    // identical, any divergence a row reports is in the shell, which is the
-    // only part anybody ported.
+    // What is graded here is the errno and _fpclass shell in
+    // math/{j0_y0,j1_y1,jn_yn}.c. The numerics under it are the `libm` crate's on BOTH
+    // sides: tests/diff.rs defines the `__ieee754_*` names the C wrappers call as
+    // `libm::j0`.., the same functions cnt-rust calls (the vendored FDLIBM C those names
+    // used to bind is gone). So any divergence a row reports is in the shell.
+    // refstub/ieee754/ieee754.h stands in for the deleted header's prototypes.
     //
     // `_finite`/`_fpclass`/`sqrt` are likewise left to bind cnt-rust's own
     // shims on both sides. They have their own rows already
     // (diff_math_class_f64), and pinning them here too would blur which of
     // the two layers a failure lives in.
-    let ieee_dir = crt.join("math/ieee754");
-    // glibc's <math.h> declares `__cos` and `__sincos` as ordinary extern
-    // functions; ieee754.h defines both `static __inline`, which is a hard
-    // error on the host. They are private helpers of that header, so renaming
-    // them out of the way changes nothing anyone calls.
-    // <math.h> comes FIRST (the same ordering the exp2 unit above documents):
-    // the rename must hit ieee754.h's `static __inline` DEFINITIONS and not
-    // glibc's prior extern declarations of the same two names, or the static
-    // and the extern collide under the new name instead of the old one.
-    let ieee_shim: &str =
-        "#include <math.h>\n#define __cos cnt_fdlibm_cos\n#define __sincos cnt_fdlibm_sincos\n";
-
     let bessel_units: Vec<(&str, String)> = vec![
-        // The vendored numerics, verbatim. `__int32` is the one MSVC-ism in
-        // ieee754.h; everything else in that header is plain C.
-        ("fdlibm_j0_y0", format!("#define __int32 int\n{ieee_shim}{}", inc(ieee_dir.join("j0_y0.c")))),
-        ("fdlibm_j1_y1", format!("#define __int32 int\n{ieee_shim}{}", inc(ieee_dir.join("j1_y1.c")))),
-        ("fdlibm_jn_yn", format!("#define __int32 int\n{ieee_shim}{}", inc(ieee_dir.join("jn_yn.c")))),
-        // Our shell, renamed. The wrappers declare `int *_errno(void);`
-        // themselves; <errno.h> is for EDOM, and the _FPCLASS_* values come
-        // from the SDK header the same way the fpclass unit above gets them.
-        ("bessel_j0_y0", format!("#define __int32 int\n{ieee_shim}#include <errno.h>\nint _finite(double);\nint _fpclass(double);\n{}#define _j0 ref__j0\n#define _y0 ref__y0\n{}",
+        // The wrappers declare `int *_errno(void);` themselves; <errno.h> is for EDOM,
+        // and the _FPCLASS_* values come from the SDK header the same way the fpclass
+        // unit above gets them.
+        ("bessel_j0_y0", format!("#include <math.h>\n#include <errno.h>\nint _finite(double);\nint _fpclass(double);\n{}#define _j0 ref__j0\n#define _y0 ref__y0\n{}",
             fpclass_consts, inc(crt.join("math/j0_y0.c")))),
-        ("bessel_j1_y1", format!("#define __int32 int\n{ieee_shim}#include <errno.h>\nint _finite(double);\nint _fpclass(double);\n{}#define _j1 ref__j1\n#define _y1 ref__y1\n{}",
+        ("bessel_j1_y1", format!("#include <math.h>\n#include <errno.h>\nint _finite(double);\nint _fpclass(double);\n{}#define _j1 ref__j1\n#define _y1 ref__y1\n{}",
             fpclass_consts, inc(crt.join("math/j1_y1.c")))),
         // jn_yn.c declares _fpclass itself (via a `fpclass_t` typedef), so it
         // must NOT get a second declaration.
-        ("bessel_jn_yn", format!("#define __int32 int\n{ieee_shim}#include <errno.h>\nint _finite(double);\n{}#define _jn ref__jn\n#define _yn ref__yn\n{}",
+        ("bessel_jn_yn", format!("#include <math.h>\n#include <errno.h>\nint _finite(double);\n{}#define _jn ref__jn\n#define _yn ref__yn\n{}",
             fpclass_consts, inc(crt.join("math/jn_yn.c")))),
     ];
     let mut bessel_build = cc::Build::new();
     bessel_build
         .include(&refstub)
-        // so the wrappers' `#include "ieee754/ieee754.h"` resolves
-        .include(crt.join("math"))
-        .include(&ieee_dir)
+        // the wrappers' `#include "ieee754/ieee754.h"` finds refstub's stand-in
         .warnings(false)
         .flag("-w")
         .flag("-ffp-contract=off")
@@ -1321,6 +1312,36 @@ fn main() {
         .cargo_metadata(false)
         .file(&so_c);
     for obj in so_build.compile_intermediates() {
+        redef(&obj);
+    }
+
+    // ── the same engine in its _USER32_WSPRINTF configuration ────────────
+    // user32's wsprintf family (user32-wsprintf-rust) compiles cnt-rust's streamout.rs
+    // again under cfg(streamout_user32); tests/diff.rs includes it the same way (this
+    // crate sets the cfg below). The reference is the same genuine streamout.c built
+    // -D_USER32_WSPRINTF instead of -D_LIBCNT_, which is how sdk/lib/crt builds it.
+    println!("cargo:rustc-check-cfg=cfg(streamout_user32)");
+    println!("cargo:rustc-cfg=streamout_user32");
+    let so_u32_body = so_body
+        .replace("#define _LIBCNT_\n", "#define _USER32_WSPRINTF\n")
+        .replace("#define streamout ref_streamout", "#define streamout ref_u32_streamout")
+        .replace("#define format_float ref_format_float", "#define format_float ref_u32_format_float")
+        .replace("int ref_run(", "int ref_u32_run(")
+        .replace("return ref_streamout(&f,", "return ref_u32_streamout(&f,");
+    assert!(so_u32_body.contains("_USER32_WSPRINTF") && so_u32_body.contains("ref_u32_run("));
+    let so_u32_c = out.join("ref_u32_streamout.c");
+    fs::write(&so_u32_c, &so_u32_body).unwrap();
+    let mut so_u32_build = cc::Build::new();
+    so_u32_build
+        .include(&refstub_printf)
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .flag("-mlong-double-64")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&so_u32_c);
+    for obj in so_u32_build.compile_intermediates() {
         redef(&obj);
     }
 

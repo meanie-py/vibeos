@@ -9,12 +9,11 @@ use crate::prelude::*;
 // ---- file-scope preamble (translated) ----
 pub const SAFEARRAY_HIDDEN_SIZE: usize = core::mem::size_of::<GUID>();
 
-pub const ignored_copy_features: u16 = 
-    0x0001 | // FADF_AUTO
-    0x0002 | // FADF_STATIC
-    0x0004 | // FADF_EMBEDDED
-    0x0010 | // FADF_FIXEDSIZE
-    0x0020;  // FADF_CREATEVECTOR
+// C: FADF_AUTO|FADF_STATIC|FADF_EMBEDDED|FADF_FIXEDSIZE|FADF_CREATEVECTOR.
+// Named, not hex: the translation wrote 0x0020 for FADF_CREATEVECTOR (0x2000),
+// which is FADF_RECORD, so a copied record array lost its RECORD flag.
+pub const ignored_copy_features: u16 =
+    FADF_AUTO | FADF_STATIC | FADF_EMBEDDED | FADF_FIXEDSIZE | FADF_CREATEVECTOR;
 
 unsafe fn SAFEARRAY_Malloc(size: ULONG) -> *mut core::ffi::c_void {
     
@@ -242,14 +241,19 @@ unsafe fn SAFEARRAY_CopyData(psa: *mut SAFEARRAY, dest: *mut SAFEARRAY) -> HRESU
         return 0;
     }
 
-    if (*dest).pvData.is_null() || (*psa).fFeatures & 0x0001 != 0 {
+    // Every FADF test below was a hex literal in the translation, and four of
+    // them named the WRONG flag: VARIANT as 0x0080 (= HAVEVARTYPE, so nearly
+    // every array was copied as 24-byte VARIANTs: the heap overrun behind
+    // Wine's safearray test, caught by page heap in VariantCopy), DATADELETED
+    // and HAVEVARTYPE as 0x0001 (= AUTO), CREATEVECTOR as 0x0800 (= VARIANT).
+    if (*dest).pvData.is_null() || (*psa).fFeatures & FADF_DATADELETED != 0 {
         return 0x80070057u32 as HRESULT;
     } else {
         let mut ulCellCount = SAFEARRAY_GetCellCount(psa);
 
-        (*dest).fFeatures = ((*dest).fFeatures & 0x0800) | ((*psa).fFeatures & !ignored_copy_features);
+        (*dest).fFeatures = ((*dest).fFeatures & FADF_CREATEVECTOR) | ((*psa).fFeatures & !ignored_copy_features);
 
-        if (*psa).fFeatures & 0x0080 != 0 {
+        if (*psa).fFeatures & FADF_VARIANT != 0 {
             let mut src_var = (*psa).pvData as *mut VARIANT;
             let mut dest_var = (*dest).pvData as *mut VARIANT;
 
@@ -262,7 +266,7 @@ unsafe fn SAFEARRAY_CopyData(psa: *mut SAFEARRAY, dest: *mut SAFEARRAY) -> HRESU
                 src_var = src_var.offset(1);
                 dest_var = dest_var.offset(1);
             }
-        } else if (*psa).fFeatures & 0x0100 != 0 {
+        } else if (*psa).fFeatures & FADF_BSTR != 0 {
             let mut src_bstr = (*psa).pvData as *mut BSTR;
             let mut dest_bstr = (*dest).pvData as *mut BSTR;
 
@@ -280,7 +284,7 @@ unsafe fn SAFEARRAY_CopyData(psa: *mut SAFEARRAY, dest: *mut SAFEARRAY) -> HRESU
                 src_bstr = src_bstr.offset(1);
                 dest_bstr = dest_bstr.offset(1);
             }
-        } else if (*psa).fFeatures & 0x0020 != 0 {
+        } else if (*psa).fFeatures & FADF_RECORD != 0 {
             let mut dest_data = (*dest).pvData as *mut PBYTE;
             let mut src_data = (*psa).pvData as *mut PBYTE;
             let mut record: *mut IRecordInfo = core::ptr::null_mut();
@@ -299,7 +303,7 @@ unsafe fn SAFEARRAY_CopyData(psa: *mut SAFEARRAY, dest: *mut SAFEARRAY) -> HRESU
             SafeArraySetRecordInfo(dest, record);
             (*dest).cbElements = (*psa).cbElements;
             IRecordInfo_Release(record);
-        } else if (*psa).fFeatures & (0x0200 | 0x0400) != 0 {
+        } else if (*psa).fFeatures & (FADF_UNKNOWN | FADF_DISPATCH) != 0 {
             let mut dest_unk = (*dest).pvData as *mut *mut IUnknown;
             let mut src_unk = (*psa).pvData as *mut *mut IUnknown;
 
@@ -319,11 +323,11 @@ unsafe fn SAFEARRAY_CopyData(psa: *mut SAFEARRAY, dest: *mut SAFEARRAY) -> HRESU
             memcpy((*dest).pvData as *mut core::ffi::c_void, (*psa).pvData as *const core::ffi::c_void, (ulCellCount * (*psa).cbElements) as usize);
         }
 
-        if (*psa).fFeatures & 0x0040 != 0 {
+        if (*psa).fFeatures & FADF_HAVEIID != 0 {
             let mut guid: GUID = core::mem::zeroed();
             SafeArrayGetIID(psa, &mut guid);
             SafeArraySetIID(dest, &guid);
-        } else if (*psa).fFeatures & 0x0001 != 0 {
+        } else if (*psa).fFeatures & FADF_HAVEVARTYPE != 0 {
             SAFEARRAY_SetHiddenDWORD(dest, SAFEARRAY_GetHiddenDWORD(psa));
         }
     }
@@ -890,11 +894,14 @@ pub unsafe extern "system" fn SafeArrayRedim(psa: *mut SAFEARRAY, psabound: *mut
 
     TRACE!(b"(%p,%p)\n\0".as_ptr(), psa, psabound);
 
-    if psa.is_null() || (*psa).fFeatures & FADF_FIXEDSIZE != 0 || psabound.is_null() {
+    if psa.is_null() || psabound.is_null() {
         return E_INVALIDARG;
     }
 
-    if (*psa).cLocks > 0 {
+    // Wine 10.0, as Windows: a fixed-size array cannot be resized for the same
+    // reason a locked one cannot, and says so with the same HRESULT (was
+    // E_INVALIDARG).
+    if (*psa).fFeatures & FADF_FIXEDSIZE != 0 || (*psa).cLocks > 0 {
         return DISP_E_ARRAYISLOCKED;
     }
 

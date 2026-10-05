@@ -1,0 +1,18 @@
+# fenv — ucrtbase's fenv.h family (ucrt-rust fenv.rs) graded by Wine's test_fenv.
+#   tools/payloads/fenv/build.sh {arch}
+#   VIBEOS_PAYLOAD=fenv ./vibeos-cli build --arch {arch}
+#   ./vibeos-cli smoke --arch {arch} --payload fenv
+name: fenv
+description: ucrtbase fegetenv/fesetenv/fesetround/... against Wine's test_fenv expectations
+
+build_hint: "tools/payloads/fenv/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/fenv/fenv-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/fenv.exe
+
+test:
+  launch_marker: "[FENV] done"
+  pass_marker: "[FENV] done PASS"
+  launch_drain_secs: 300

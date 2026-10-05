@@ -514,10 +514,11 @@ pub unsafe extern "system" fn OaBuildVersion() -> ULONG {
         0x80000a03 => MAKELONG(0xffff, 20) as ULONG,
         0x00003303 => MAKELONG(0xffff, 30) as ULONG,
         0x80000004 | 0x80000a04 | 0x00000004 | 0x00000005 => MAKELONG(0xffff, 40) as ULONG,
-        0x00000105 | 0x00000205 | 0x00000006 | 0x00000106 => MAKELONG(0xffff, 50) as ULONG,
+        // 0x206 is Win8/10/11 (Wine 10.0); unknown versions now answer as Win10.
+        0x00000105 | 0x00000205 | 0x00000006 | 0x00000106 | 0x00000206 => MAKELONG(0xffff, 50) as ULONG,
         _ => {
             FIXME!(b"Version value not known yet. Please investigate it !\n\0".as_ptr() as PCHAR);
-            MAKELONG(0xffff, 40) as ULONG
+            MAKELONG(0xffff, 50) as ULONG
         }
     }
 }
@@ -634,7 +635,9 @@ unsafe fn reg_get_typelib_module(iid: REFIID, module: *mut u16, len: u32) -> i32
     };
     
     let mut tlguid: [i8; 200] = [0; 200];
-    let mut typelibkey: [i8; 300] = [0; 300];
+    // Wine 10.0: 316 = "Typelib\\" + tlguid (200) + "\\" + ver (100) +
+    // "\\0\\win32" + NUL; 300 could be overrun by maximal registry values.
+    let mut typelibkey: [i8; 316] = [0; 316];
     let mut interfacekey: [i8; 300] = [0; 300];
     let mut ver: [i8; 100] = [0; 100];
     let mut tlfn: [i8; 260] = [0; 260];
@@ -701,8 +704,9 @@ unsafe fn reg_get_typelib_module(iid: REFIID, module: *mut u16, len: u32) -> i32
     if RegQueryValueA(0x80000000u32 as HKEY, typelibkey.as_ptr(), tlfn.as_mut_ptr(), &mut tlfnlen) != 0 {
         #[cfg(target_pointer_width = "64")]
         {
-            sprintf(
+            snprintf(
                 typelibkey.as_mut_ptr(),
+                core::mem::size_of_val(&typelibkey),
                 b"Typelib\\%s\\%s\\0\\win32\0".as_ptr() as *const i8,
                 tlguid.as_ptr(),
                 ver.as_ptr()

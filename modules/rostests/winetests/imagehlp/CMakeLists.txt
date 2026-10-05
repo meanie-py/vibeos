@@ -17,10 +17,6 @@ list(APPEND SOURCE
     imagehlp.rc)
 
 add_executable(imagehlp_winetest ${SOURCE})
-# imagehlp_testdll.rc: let rc.exe find imagehlp_testdll.dll in its subdirectory, i.e. Debug.
-if (MSVC_IDE)
-    target_include_directories(imagehlp_winetest PRIVATE $<$<COMPILE_LANGUAGE:RC>:$<TARGET_FILE_DIR:imagehlp_testdll>>)
-endif()
 set_module_type(imagehlp_winetest win32cui)
 add_importlibs(imagehlp_winetest imagehlp psapi msvcrt kernel32 ntdll)
 add_rostests_file(TARGET imagehlp_winetest)

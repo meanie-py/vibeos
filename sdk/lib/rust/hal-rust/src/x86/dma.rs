@@ -40,17 +40,28 @@ unsafe fn KeInitializeSpinLock(sl: *mut KSPIN_LOCK) {
     unsafe { *sl = 0 }
 }
 
-// KeAcquireSpinLock / KeReleaseSpinLock are macros that don't have exported
-// symbols.  Under UP + DUMMY_PSEH (our build config) they collapse to a
-// plain IRQL raise/lower with no actual locking.  Define local equivalents.
+// KeAcquireSpinLock / KeReleaseSpinLock are macros over
+// KeAcquireSpinLockRaiseToDpc / KeReleaseSpinLock: raise to DISPATCH_LEVEL,
+// then take the lock (release: drop the lock, then lower). These once only
+// moved the IRQL, which is all the UP hal.dll needs, but this file is also
+// built into halmp.dll (`smp` feature), where that left the DMA adapter list
+// and every master adapter's map-register state with no mutual exclusion
+// between CPUs. The lock half goes through spinlock.rs's funnel, the same one
+// the exported Kf*SpinLock bodies use (and which stays a fence in mini_hal).
 #[inline]
-unsafe fn ke_acquire_spinlock(_lock: *mut KSPIN_LOCK, old_irql: *mut KIRQL) {
-    unsafe { *old_irql = kf_raise_irql(DISPATCH_LEVEL as KIRQL) }
+unsafe fn ke_acquire_spinlock(lock: *mut KSPIN_LOCK, old_irql: *mut KIRQL) {
+    unsafe {
+        *old_irql = kf_raise_irql(DISPATCH_LEVEL as KIRQL);
+        crate::x86::spinlock::kx_acquire_spinlock(lock);
+    }
 }
 
 #[inline]
-unsafe fn ke_release_spinlock(_lock: *mut KSPIN_LOCK, old_irql: KIRQL) {
-    unsafe { kf_lower_irql(old_irql) }
+unsafe fn ke_release_spinlock(lock: *mut KSPIN_LOCK, old_irql: KIRQL) {
+    unsafe {
+        crate::x86::spinlock::kx_release_spinlock(lock);
+        kf_lower_irql(old_irql);
+    }
 }
 use ntkrnl_sys::hal_ddk::{
     BOOLEAN, DEVICE_DESCRIPTION_VERSION1, DEVICE_DESCRIPTION_VERSION2, DISPATCH_LEVEL, DMA_OPERATIONS,
@@ -96,7 +107,9 @@ const PAGE_SIZE: ULONG = 4096;
 const PAGE_SHIFT: ULONG = 12;
 const TAG_DMA: ULONG = u32::from_le_bytes(*b"DMA ");
 const MAX_MAP_REGISTERS: ULONG = 64;
-const MAX_SG_ELEMENTS: usize = 0x10;
+// Upstream 442892d14d5 (#8910) raised this from 0x10 (0x20 in 5418987cb89):
+// at 0x10 any S/G transfer spanning more than 16 pages (64 KiB) failed.
+const MAX_SG_ELEMENTS: usize = 0x30;
 const MDL_MAPPED_TO_SYSTEM_VA: USHORT = 0x0001;
 const MDL_SOURCE_IS_NONPAGED_POOL: USHORT = 0x0004;
 const HAL_MEMORY_ALLOCATION: ULONG = 0x0000_00AC;
@@ -1018,18 +1031,37 @@ pub unsafe extern "system" fn HalpScatterGatherAdapterControl(
     unsafe {
         let ctx = Context as *mut ScatterGatherContext;
         let adapter = (*ctx).adapter_object;
-        let mut elements = [SCATTER_GATHER_ELEMENT {
-            Address: core::mem::zeroed(),
-            Length: 0,
-            Reserved: 0,
-        }; MAX_SG_ELEMENTS];
         let mut element_count = 0usize;
         let mut remaining = (*ctx).length;
         let current_va = (*ctx).current_va;
+        // RemainingLength / PAGE_SIZE + 1 for the remainder, + 1 cushion
+        // (upstream 442892d14d5, #8910): a buffer of that length spans at most
+        // that many pages, and IoMapTransfer never returns less than one page
+        // run per element, so this bounds the element count.
+        let est_sg_elements =
+            core::cmp::min((remaining / PAGE_SIZE + 2) as usize, MAX_SG_ELEMENTS);
 
         (*ctx).map_register_base = MapRegisterBase;
 
-        while remaining > 0 && element_count < MAX_SG_ELEMENTS {
+        // Upstream 5418987cb89 moved this scratch array off the stack into pool
+        // (it is 0x30 elements now).
+        let elements = ExAllocatePoolWithTag(
+            _POOL_TYPE_NonPagedPool as _,
+            (core::mem::size_of::<SCATTER_GATHER_ELEMENT>() * est_sg_elements) as SIZE_T,
+            TAG_DMA,
+        ) as *mut SCATTER_GATHER_ELEMENT;
+        if elements.is_null() {
+            return _IO_ALLOCATION_ACTION_DeallocateObject as u32;
+        }
+        // Zeroed so the slice below never views uninitialised memory.
+        ptr::write_bytes(elements, 0, est_sg_elements);
+        let elements = core::slice::from_raw_parts_mut(elements, est_sg_elements);
+
+        // Bounded by the allocation, not MAX_SG_ELEMENTS as in the C: the two
+        // only agree while the estimate above holds, and if it ever does not,
+        // running out of elements fails the transfer below instead of
+        // overrunning the pool block.
+        while remaining > 0 && element_count < est_sg_elements {
             elements[element_count].Length = remaining;
             elements[element_count].Reserved = 0;
             let mut len_local = elements[element_count].Length;
@@ -1051,6 +1083,7 @@ pub unsafe extern "system" fn HalpScatterGatherAdapterControl(
         }
 
         if remaining > 0 {
+            ExFreePoolWithTag(elements.as_mut_ptr() as PVOID, TAG_DMA);
             return _IO_ALLOCATION_ACTION_DeallocateObject as u32;
         }
 
@@ -1067,6 +1100,7 @@ pub unsafe extern "system" fn HalpScatterGatherAdapterControl(
             (*sg).Elements.as_mut_ptr(),
             element_count,
         );
+        ExFreePoolWithTag(elements.as_mut_ptr() as PVOID, TAG_DMA);
 
         if let Some(routine) = (*ctx).adapter_list_control_routine {
             routine(

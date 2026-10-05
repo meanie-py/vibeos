@@ -22,13 +22,6 @@ add_library(winmm MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/winmm.def)
 
 
-if(MSVC)
-    # Disable warning C4090: 'function': different 'const' qualifiers
-    # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    # Disable warning C4312: 'type cast': conversion from 'DWORD' to 'HTASK' of greater size
-    target_compile_options(winmm PRIVATE /wd4090 /wd4146 /wd4312)
-endif()
-
 set_module_type(winmm win32dll)
 target_link_libraries(winmm wine ${PSEH_LIB} oldnames)
 add_importlibs(winmm userenv advapi32 user32 msvcrt kernel32 ntdll)

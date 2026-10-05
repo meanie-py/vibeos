@@ -293,6 +293,23 @@ cannot resolve (`NTDDI_VERSION` arms) and hand-restructured bodies still produce
 Motivating case: fastfat's `FatCreateNewDirent` lost `RtlSetBits`, so every new dirent stayed
 free in memory. Re-translate only what the audit confirms broken.
 
+**The ledger and provenance (2026-10-04).** `tools/rustconv/data/body_audit_reviewed.toml`
+records a verdict per `(module, function)` over the exact callees a human read: `false` and
+`benign` are hidden (counted in the header), `owed` stays listed with where the work is
+tracked, and a drop nobody reviewed brings the lead back. Several entries for one function
+merge. `--provenance` asks git whether each dropped callee was in that C function's body when
+the Rust file was first committed; one that was not is upstream work landed on C already
+flipped (a re-port for upstream-sync), not something the translator lost. A false lead that a
+rule could recognise belongs in `body_audit.py`, not the ledger; `--show-reviewed` lists the
+hidden ones.
+
+The 2026-10-04 burn-down read every high and medium lead (198 + 951): about 70 real bugs
+fixed, 214 owed upstream re-ports, the rest false or benign, and the false shapes became
+rules (C from another binary under the module dir, `#if 0 // comment`, module `-D` names and
+the forced `_USE_DUMMY_PSEH`, a four-char pool tag swallowing 460 lines in the masker,
+`#[link_name]` aliases, member-access macro aliases, printf-family equivalence). Medium
+fell from 951 to 474 on rules alone before anyone read a lead.
+
 ## `--target`: proven from the tree, or refused (2026-07-24)
 
 `--target <name>` for a `dll/win32/*` module not in `TARGETS` builds a Target via
@@ -326,6 +343,28 @@ Both are now derived, and raise `TargetResolveError` rather than guessing:
   `pcumap` is at 208 on i386, 336 elsewhere); read the real `pclmap`/`pcumap` rather than
   hardcoding an ASCII fold; `_invalid_parameter` + `*_errno()` instead of `STATUS_*`; exports
   are `cdecl` on every arch including i386.
+
+## Translating an ntoskrnl file (2026-10-03)
+
+ntoskrnl.exe is cargo-linked (`add_cargo_module(... KIND kernelexe)`) and every one of its
+`.c` is a commented `#${REACTOS_SOURCE_DIR}/ntoskrnl/...` entry in `ntos.cmake`. So no kernel
+file had a CMake owner, an include path or a compile command, and a sealed translate refused
+outright. That is now handled:
+- `profile_derive` treats a kernelexe target as a `kernel` module compiling `${SOURCE}`.
+- It restores repo-rooted flipped entries.
+- It follows linked targets' `target_include_directories(... INTERFACE ...)`.
+- It audits a kernel file as itself, so other, uncompilable TUs (mm/marea.c and the deleted
+  cache/ headers) do not block it.
+- `macro_authority._derived_kernel_entry` synthesizes the compile command from that derived
+  profile plus a real kernel-mode TU's compiler flags. The c2rust anchor reuses it.
+- c2rust gets `-D_InterlockedX=InterlockedX` renames, because it otherwise silently drops every
+  function that calls an MSVC interlocked intrinsic.
+
+Two things the run will NOT do for you. Kernel code lives in split crates (`ps-rust` etc.),
+but the import header is stitched for `ntoskrnl-rust`, so rewrite it to the crate's own
+substrate. And the SEH macros come back literally. Route every user access through
+`ntkrnl_sys::probe` (`probe_write_user`, `safe_copy_raw`, ...), and check each `_SEH2_TRY`
+in the C has survived: `job.c`'s handle write-backs did not.
 
 ## An SDK enum's width is an ABI fact — prove it from all three islands (2026-08-04)
 

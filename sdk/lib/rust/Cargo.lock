@@ -308,11 +308,17 @@ dependencies = [
  "cc",
  "cnt-ctype",
  "cnt-rust",
+ "libm",
+ "musl-math",
 ]
 
 [[package]]
 name = "cnt-rust"
 version = "0.1.0"
+dependencies = [
+ "libm",
+ "musl-math",
+]
 
 [[package]]
 name = "cnt-rust-lib"
@@ -537,6 +543,7 @@ dependencies = [
  "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -608,6 +615,7 @@ version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
  "ntkrnl-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -681,6 +689,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -902,6 +911,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1142,6 +1152,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
+name = "libm"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
+
+[[package]]
 name = "libz-rs-sys"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1202,6 +1218,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "samsrv-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1379,6 +1396,8 @@ dependencies = [
  "crt-portable-rust",
  "crt-shared-rust",
  "msvcrt-sys",
+ "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1428,6 +1447,18 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "musl-math"
+version = "0.1.0"
+
+[[package]]
+name = "musl-math-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "musl-math",
 ]
 
 [[package]]
@@ -1705,6 +1736,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1727,6 +1759,7 @@ version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
  "ntkrnl-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2092,6 +2125,7 @@ name = "rtl-threadpool"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2189,6 +2223,7 @@ version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
  "ntkrnl-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2202,6 +2237,10 @@ dependencies = [
 
 [[package]]
 name = "secur32-sys"
+version = "0.1.0"
+
+[[package]]
+name = "serial-acpi-difftest"
 version = "0.1.0"
 
 [[package]]
@@ -2226,6 +2265,7 @@ name = "services-rust"
 version = "0.1.0"
 dependencies = [
  "panic-common",
+ "win32macros-rust",
  "winsrv-sys",
 ]
 
@@ -2255,6 +2295,7 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "va-slots-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2316,6 +2357,7 @@ dependencies = [
  "ntdll-sys",
  "ntprintf",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2551,6 +2593,8 @@ name = "ucrt-rust"
 version = "0.1.0"
 dependencies = [
  "crt-portable-rust",
+ "libm",
+ "musl-math",
  "varargs-rust",
 ]
 
@@ -2705,6 +2749,14 @@ version = "0.1.0"
 dependencies = [
  "panic-common",
  "win32k-sys",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "user32-wsprintf-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
 ]
 
 [[package]]
@@ -2714,6 +2766,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2815,6 +2868,7 @@ dependencies = [
  "ntprintf",
  "ntprintf_w",
  "win32k-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2960,6 +3014,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]

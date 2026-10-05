@@ -9,11 +9,6 @@
 ##              Copyright 2023 Hermès Bélusca-Maïto <hermes.belusca-maito@reactos.org>
 ##
 
-if(MSVC)
-    # Explicitly use string pooling
-    add_compile_options("/GF")
-endif()
-
 #spec2def(freeldr_pe.exe freeldr.spec)
 
 include_directories(BEFORE include)

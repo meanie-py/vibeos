@@ -429,12 +429,12 @@ static LONG CALLBACK ucrtdiff_veh(EXCEPTION_POINTERS *ep)
 #ifndef LOWIO_SKIP_SLOW_LOCK
 #define LOWIO_SKIP_SLOW_LOCK 1
 #endif
-/* The guest's fastfat bugchecks (0x23, an access violation at FsRtlCheckOplock+0x2c)
- * on some file operations: any rename, and _mktemp's create/delete run. The cases
- * that reach it are skipped while this is 1; see the comment at run_fs_rename and
- * the roadmap's known-bugs entry. */
+/* fastfat used to bugcheck (0x23) on any rename and fail _mktemp's create/delete run
+ * DISK_FULL; both were extern declarations wider than the C behind them (fileinfo.rs's
+ * MAX_LFN_CHARACTERS, allocsup.rs's FatIndexBitSize), fixed 2026-10-03. Set this to 1 to
+ * skip the cases that reach them again; see the roadmap's known-bugs entry. */
 #ifndef UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS
-#define UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS 1
+#define UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS 0
 #endif
 
 /* ---- sharding and the harness's own deadline --------------------------
@@ -461,6 +461,11 @@ static LONG CALLBACK ucrtdiff_veh(EXCEPTION_POINTERS *ep)
 #endif
 #ifndef UCRTDIFF_SHARD_N
 #define UCRTDIFF_SHARD_N 1
+#endif
+/* UCRTDIFF_ONLY="rename,_mktemp": grade only the named exports (comma-separated). For
+ * reproducing one family without a whole shard; the shard split is unaffected. */
+#ifndef UCRTDIFF_ONLY
+#define UCRTDIFF_ONLY ""
 #endif
 #ifndef UCRTDIFF_BUDGET_MS
 #define UCRTDIFF_BUDGET_MS 600000 /* 10 min of grading, well inside the VM's life */
@@ -525,10 +530,31 @@ static DWORD g_deadline_tick;
 /* Returns 0 when this export is not ours to run; the generated driver then skips
  * straight past it. Both reasons are counted so the `done` line can distinguish a
  * shard that finished from a run that was cut short. */
+static int export_selected(const char *name)
+{
+    const char *p = UCRTDIFF_ONLY;
+    if (!*p)
+        return 1;
+    while (*p) {
+        const char *n = name;
+        while (*p && *p != ',' && *p == *n) {
+            p++;
+            n++;
+        }
+        if ((!*p || *p == ',') && !*n)
+            return 1;
+        while (*p && *p != ',')
+            p++;
+        if (*p == ',')
+            p++;
+    }
+    return 0;
+}
+
 static int export_begin(const char *name)
 {
     int idx = g_ex_index++;
-    if ((idx % UCRTDIFF_SHARD_N) != UCRTDIFF_SHARD_K) {
+    if ((idx % UCRTDIFF_SHARD_N) != UCRTDIFF_SHARD_K || !export_selected(name)) {
         g_skip_shard++;
         return 0;
     }
@@ -17788,8 +17814,7 @@ static void run_fs_rename(void)
 
     char nd[MAX_PATH * 2], nr[MAX_PATH * 2];
     /* A target name this volume has never held: a just-deleted name is what FAT's
-     * tunnel cache answers, and a rename onto one currently bugchecks the guest
-     * (0x23, fastfat's rename path; see the known-bugs registry). */
+     * tunnel cache answers, which this case is not about. */
     char leaf_u[64];
     wsprintfA(leaf_u, "fs_renamed_%lu.txt", GetTickCount());
     lstrcpyA(nd, sd_path(leaf_u, 0));
@@ -17873,8 +17898,7 @@ static void run_fs__wrename(void)
 
     char nd[MAX_PATH * 2], nr[MAX_PATH * 2];
     /* A target name this volume has never held: a just-deleted name is what FAT's
-     * tunnel cache answers, and a rename onto one currently bugchecks the guest
-     * (0x23, fastfat's rename path; see the known-bugs registry). */
+     * tunnel cache answers, which this case is not about. */
     char leaf_u[64];
     wsprintfA(leaf_u, "fs_wrenamed_%lu.txt", GetTickCount());
     lstrcpyA(nd, sd_path(leaf_u, 0));
@@ -21220,8 +21244,8 @@ static const char g_lw_az[] = "abcdefghijklmnopqrstuvwxyz";
             grade2(fam ".errno", "errno-kept", e1, *ref__errno());                   \
         }                                                                            \
         /* 'a' taken: the letter moves on to 'b'. All 26 taken: EEXIST, no     \
-         * handler, template reset. Both create and delete real files, which    \
-         * bugchecks the guest today (UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS). */   \
+         * handler, template reset. Both create and delete real files; fastfat \
+         * bugchecked on that until 2026-10-03 (UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS). */ \
         if (!UCRTDIFF_FASTFAT_OPLOCK_BUGCHECKS) {                                    \
             lw_mk_occupy("mkfXXXXXX", "a", 1);                                       \
             LW_MK_CASE(fam, KIND, "a-taken", "mkfXXXXXX", 0, -1);                    \
@@ -23456,6 +23480,1915 @@ static void run_exr__unloaddll(void)
 #define EXEC_REST_HAND_ENTRIES EXR_CWAIT_HAND EXR_SYSTEM_HAND EXR_GETPROC_HAND EXR_LOADDLL_HAND
 
 
+/* ---- startup: inlined from staging/startup.c ---- */
+/* ucrtdiff staging snippet -- batch `startup`
+ * (sdk/lib/rust/ucrt-rust/src/startup/: exit.rs, onexit.rs, abort.rs,
+ * assert.rs, thread.rs).
+ *
+ * Guards, one per C file (each file can be deleted on its own):
+ *   UCRTDIFF_REF_HAS__initialize_onexit_table   -- startup/onexit.cpp
+ *   UCRTDIFF_REF_HAS__set_abort_behavior        -- startup/abort.cpp
+ *   UCRTDIFF_REF_HAS__beginthreadex             -- startup/thread.cpp
+ * exit.cpp and assert.cpp have NO block: every export there either ends the
+ * process (exit/_exit/_Exit/quick_exit, _assert/_wassert via abort or a
+ * message box), runs this process's own atexit table (_cexit), or latches
+ * process-wide state for good (_c_exit sets c_termination_complete;
+ * _register_thread_local_exe_atexit_callback may only be called once and
+ * then terminate()s). The harness has no child-process mode to host them.
+ *
+ * SAFETY (read before editing): this runs in a process whose own CRT is the
+ * DLL side.
+ *   - Only PRIVATE onexit tables are touched, one per side, each initialized
+ *     by its own side first (a zero, un-initialized table would decode to the
+ *     cookie and be handed to recalloc/free -- Microsoft's contract, and a heap
+ *     corruption here). Every table is drained with its own side's
+ *     _execute_onexit_table, which is what frees its array. _crt_atexit and
+ *     _crt_at_quick_exit are NOT graded: they register into the process's own
+ *     exit tables, and on the DLL side that changes what this process runs at
+ *     exit.
+ *   - _set_abort_behavior: each side's original flags are read first and
+ *     restored with mask ~0 at the end, on both sides. abort() is never called.
+ *   - Threads: every wait has a timeout well inside the per-export budget;
+ *     every _beginthreadex handle is closed; _beginthread's handle is never
+ *     used (the thread closes it itself) -- a thread that must be waited for
+ *     duplicates a real handle to itself first. Spawned threads only RECORD;
+ *     grade2 runs on the runner thread (it drops writes from any other).
+ *   - Each side's thread is ended by ITS OWN CRT (ud__endthreadex from a
+ *     DLL-started thread, ref__endthreadex from a ref-started one).
+ *
+ * Encoded pointers: both sides store the onexit table ENCODED with their own
+ * __security_cookie, and the two cookies differ. So raw fields are never
+ * compared across sides; each side's cookie is recovered from its own freshly
+ * initialized empty table (whose three fields ARE the encoded null = the
+ * cookie), and counts/capacities/slot contents are compared DECODED.
+ */
+
+/* ======================================================================
+ * onexit.cpp
+ * ====================================================================== */
+#if UCRTDIFF_REF_HAS__initialize_onexit_table
+
+typedef struct sx_onexit_table {
+    void **first;
+    void **last;
+    void **end;
+} sx_onexit_table;
+typedef int(__cdecl *sx_onexit_t)(void);
+
+int __cdecl ref__initialize_onexit_table(sx_onexit_table *);
+int __cdecl ref__register_onexit_function(sx_onexit_table *, sx_onexit_t);
+int __cdecl ref__execute_onexit_table(sx_onexit_table *);
+extern int(__cdecl *const ud__initialize_onexit_table)(sx_onexit_table *) __asm__(UD_IMP(_initialize_onexit_table));
+extern int(__cdecl *const ud__register_onexit_function)(sx_onexit_table *, sx_onexit_t) __asm__(UD_IMP(_register_onexit_function));
+extern int(__cdecl *const ud__execute_onexit_table)(sx_onexit_table *) __asm__(UD_IMP(_execute_onexit_table));
+
+/* One side's entry points, so a scenario is written once and run per side. */
+typedef struct sx_side {
+    int(__cdecl *init)(sx_onexit_table *);
+    int(__cdecl *reg)(sx_onexit_table *, sx_onexit_t);
+    int(__cdecl *exec)(sx_onexit_table *);
+    int *(__cdecl *err)(void);
+    volatile long *iph;
+} sx_side;
+
+static int *__cdecl sx_dll_errno(void) { return _errno(); }
+static int *__cdecl sx_ref_errno(void) { return ref__errno(); }
+
+static sx_side sx_dll_side(void)
+{
+    sx_side s = { ud__initialize_onexit_table, ud__register_onexit_function, ud__execute_onexit_table,
+                  sx_dll_errno, &g_iph_dll };
+    return s;
+}
+static sx_side sx_ref_side(void)
+{
+    sx_side s = { ref__initialize_onexit_table, ref__register_onexit_function, ref__execute_onexit_table,
+                  sx_ref_errno, &g_iph_ref };
+    return s;
+}
+
+/* The execution log: callbacks append their id. Reset before each side runs. */
+static int g_sx_log[512];
+static int g_sx_nlog;
+static void sx_log(int id)
+{
+    if (g_sx_nlog < (int)(sizeof g_sx_log / sizeof g_sx_log[0]))
+        g_sx_log[g_sx_nlog] = id;
+    g_sx_nlog++;
+}
+
+/* What a re-registering callback registers into: the side and table running. */
+static sx_side g_sx_cur;
+static sx_onexit_table *g_sx_cur_table;
+static int g_sx_rereg_ret;
+
+#define SX_CB(n) static int __cdecl sx_cb##n(void) { sx_log(n); return 0; }
+#define SX_CB8(a) SX_CB(a##0) SX_CB(a##1) SX_CB(a##2) SX_CB(a##3) SX_CB(a##4) SX_CB(a##5) SX_CB(a##6) SX_CB(a##7)
+SX_CB8(1) SX_CB8(2) SX_CB8(3) SX_CB8(4) SX_CB8(5) SX_CB8(6) SX_CB8(7) SX_CB8(8) SX_CB8(9)
+#define SX_P8(a) sx_cb##a##0, sx_cb##a##1, sx_cb##a##2, sx_cb##a##3, sx_cb##a##4, sx_cb##a##5, sx_cb##a##6, sx_cb##a##7
+/* 72 distinct callbacks (ids 10..17, 20..27, ..., 90..97). */
+static const sx_onexit_t g_sx_cbs[] = { SX_P8(1), SX_P8(2), SX_P8(3), SX_P8(4), SX_P8(5),
+                                         SX_P8(6), SX_P8(7), SX_P8(8), SX_P8(9) };
+#define SX_NCBS ((int)(sizeof g_sx_cbs / sizeof g_sx_cbs[0]))
+
+/* Runs next after itself: registered by sx_cb_rereg DURING execution. */
+static int __cdecl sx_cb_late(void) { sx_log(1000); return 0; }
+static int __cdecl sx_cb_rereg(void)
+{
+    sx_log(2000);
+    g_sx_rereg_ret = g_sx_cur.reg(g_sx_cur_table, sx_cb_late);
+    return 0;
+}
+
+/* Decoded shape of an initialized table, relative to that side's cookie. */
+typedef struct sx_shape {
+    long long count, capacity;
+    long long first_null; /* decoded first == NULL */
+    long long slots_ok;   /* every used slot decodes to what was registered */
+    long long spare_ok;   /* every spare slot holds the ENCODED null */
+} sx_shape;
+
+static sx_shape sx_shape_of(const sx_onexit_table *t, uintptr_t cookie, const sx_onexit_t *expect, int nexpect)
+{
+    sx_shape s;
+    uintptr_t first = (uintptr_t)t->first ^ cookie;
+    uintptr_t last = (uintptr_t)t->last ^ cookie;
+    uintptr_t end = (uintptr_t)t->end ^ cookie;
+    s.count = (long long)((last - first) / sizeof(void *));
+    s.capacity = (long long)((end - first) / sizeof(void *));
+    s.first_null = first == 0;
+    s.slots_ok = 1;
+    s.spare_ok = 1;
+    /* Bounded: a broken side must produce a DIFF, not a walk off the heap. */
+    if (first && s.count == nexpect && s.capacity >= s.count && s.capacity <= 4096) {
+        for (int i = 0; i < nexpect; i++)
+            if (((uintptr_t)((void **)first)[i] ^ cookie) != (uintptr_t)expect[i])
+                s.slots_ok = 0;
+        for (long long i = s.count; i < s.capacity; i++)
+            if ((uintptr_t)((void **)first)[i] != cookie)
+                s.spare_ok = 0;
+    } else if (first) {
+        s.slots_ok = 0;
+    }
+    return s;
+}
+
+#define SX_GRADE_SHAPE(fam, lbl, a, b) do {                                  \
+        grade2(fam ".count", lbl, (a).count, (b).count);                    \
+        grade2(fam ".capacity", lbl, (a).capacity, (b).capacity);           \
+        grade2(fam ".firstnull", lbl, (a).first_null, (b).first_null);      \
+        grade2(fam ".slots", lbl, (a).slots_ok, (b).slots_ok);              \
+        grade2(fam ".spare", lbl, (a).spare_ok, (b).spare_ok);              \
+    } while (0)
+
+/* A call's (return, errno, iph) triple, errno/iph cleared before the call. */
+typedef struct sx_rc { long long ret, err, iph; } sx_rc;
+#define SX_CALL(side, expr) (*(side).err() = 0, *(side).iph = 0,               \
+        sx_tmp_ret = (long long)(expr),                                      \
+        sx_tmp.ret = sx_tmp_ret, sx_tmp.err = *(side).err(), sx_tmp.iph = *(side).iph, sx_tmp)
+#define SX_GRADE_RC(fam, lbl, a, b) do {                                     \
+        grade2(fam, lbl, (a).ret, (b).ret);                                  \
+        grade2(fam ".errno", lbl, (a).err, (b).err);                         \
+        grade2(fam ".iph", lbl, (a).iph, (b).iph);                           \
+    } while (0)
+
+/* -- _initialize_onexit_table ------------------------------------------- */
+typedef struct sx_init_result {
+    sx_rc null_rc, zero_rc, again_rc, busy_rc, halfinit_rc;
+    long long zero_uniform;  /* first == last == end after init */
+    long long zero_nonzero;  /* the encoded null is not 0 (cookie present) */
+    long long again_same;    /* re-init of an initialized table changes nothing */
+    long long busy_hash;     /* first != end: table left byte-for-byte alone */
+    long long halfinit_uniform, halfinit_changed;
+} sx_init_result;
+
+static sx_init_result sx_init_scenario(sx_side side)
+{
+    sx_init_result r;
+    sx_rc sx_tmp;
+    long long sx_tmp_ret;
+    sx_onexit_table t = { 0, 0, 0 }, snap;
+
+    r.null_rc = SX_CALL(side, side.init((sx_onexit_table *)0));
+
+    r.zero_rc = SX_CALL(side, side.init(&t));
+    r.zero_uniform = t.first == t.last && t.last == t.end;
+    r.zero_nonzero = t.first != 0;
+
+    snap = t;
+    r.again_rc = SX_CALL(side, side.init(&t));
+    r.again_same = snap.first == t.first && snap.last == t.last && snap.end == t.end;
+
+    /* first != end: treated as already initialized, whatever the fields hold. */
+    sx_onexit_table busy = { (void **)(uintptr_t)0x11111110u, (void **)(uintptr_t)0x22222220u,
+                             (void **)(uintptr_t)0x33333330u };
+    r.busy_rc = SX_CALL(side, side.init(&busy));
+    r.busy_hash = fnv(&busy, sizeof busy);
+
+    /* first == end but last differs: still "uninitialized" -> all three reset. */
+    sx_onexit_table half = { (void **)(uintptr_t)0x44444440u, (void **)(uintptr_t)0x55555550u,
+                             (void **)(uintptr_t)0x44444440u };
+    r.halfinit_rc = SX_CALL(side, side.init(&half));
+    r.halfinit_uniform = half.first == half.last && half.last == half.end;
+    r.halfinit_changed = half.last != (void **)(uintptr_t)0x55555550u;
+    return r;
+}
+
+static void run_startup__initialize_onexit_table(void)
+{
+    install_counting_iph();
+    sx_init_result a = sx_init_scenario(sx_dll_side());
+    sx_init_result b = sx_init_scenario(sx_ref_side());
+    SX_GRADE_RC("_initialize_onexit_table", "NULL", a.null_rc, b.null_rc);
+    SX_GRADE_RC("_initialize_onexit_table", "zero", a.zero_rc, b.zero_rc);
+    grade2("_initialize_onexit_table.uniform", "zero", a.zero_uniform, b.zero_uniform);
+    grade2("_initialize_onexit_table.nonzero", "zero", a.zero_nonzero, b.zero_nonzero);
+    SX_GRADE_RC("_initialize_onexit_table", "again", a.again_rc, b.again_rc);
+    grade2("_initialize_onexit_table.same", "again", a.again_same, b.again_same);
+    SX_GRADE_RC("_initialize_onexit_table", "first!=end", a.busy_rc, b.busy_rc);
+    grade2("_initialize_onexit_table.untouched", "first!=end", a.busy_hash, b.busy_hash);
+    SX_GRADE_RC("_initialize_onexit_table", "first==end,last!=", a.halfinit_rc, b.halfinit_rc);
+    grade2("_initialize_onexit_table.uniform", "first==end,last!=", a.halfinit_uniform, b.halfinit_uniform);
+    grade2("_initialize_onexit_table.changed", "first==end,last!=", a.halfinit_changed, b.halfinit_changed);
+}
+
+/* -- _register_onexit_function ------------------------------------------ */
+/* Checkpoints straddle the growth policy: 0 -> 32, then doubling (+<=512),
+ * so 32 -> 64 at the 33rd registration and 64 -> 128 at the 65th. */
+static const int g_sx_checkpoints[] = { 1, 2, 31, 32, 33, 34, 63, 64, 65, 72 };
+#define SX_NCHECK ((int)(sizeof g_sx_checkpoints / sizeof g_sx_checkpoints[0]))
+
+typedef struct sx_reg_result {
+    sx_rc null_rc;
+    sx_rc rc[SX_NCBS];
+    sx_shape shape[SX_NCHECK];
+    sx_rc nullfn_rc;
+    sx_shape nullfn_shape;
+    sx_rc drain_rc;
+    long long drain_hash, drain_n;
+    long long after_uniform, after_is_cookie;
+} sx_reg_result;
+
+static void sx_reg_scenario(sx_side side, sx_reg_result *r)
+{
+    sx_rc sx_tmp;
+    long long sx_tmp_ret;
+    sx_onexit_table t = { 0, 0, 0 };
+    sx_onexit_t expect[SX_NCBS + 1];
+
+    r->null_rc = SX_CALL(side, side.reg((sx_onexit_table *)0, g_sx_cbs[0]));
+
+    side.init(&t);
+    uintptr_t cookie = (uintptr_t)t.first;
+    int k = 0;
+    for (int i = 0; i < SX_NCBS; i++) {
+        r->rc[i] = SX_CALL(side, side.reg(&t, g_sx_cbs[i]));
+        expect[i] = g_sx_cbs[i];
+        if (k < SX_NCHECK && g_sx_checkpoints[k] == i + 1) {
+            r->shape[k] = sx_shape_of(&t, cookie, expect, i + 1);
+            k++;
+        }
+    }
+
+    /* A NULL function is accepted: it encodes to the encoded null, which is
+     * exactly what execution skips. */
+    r->nullfn_rc = SX_CALL(side, side.reg(&t, (sx_onexit_t)0));
+    expect[SX_NCBS] = 0;
+    r->nullfn_shape = sx_shape_of(&t, cookie, expect, SX_NCBS + 1);
+
+    g_sx_nlog = 0;
+    r->drain_rc = SX_CALL(side, side.exec(&t));
+    r->drain_hash = fnv(g_sx_log, sizeof g_sx_log[0] * (size_t)(g_sx_nlog < 512 ? g_sx_nlog : 512));
+    r->drain_n = g_sx_nlog;
+    r->after_uniform = t.first == t.last && t.last == t.end;
+    r->after_is_cookie = (uintptr_t)t.first == cookie;
+}
+
+static void run_startup__register_onexit_function(void)
+{
+    static sx_reg_result a, b;
+    install_counting_iph();
+    sx_reg_scenario(sx_dll_side(), &a);
+    sx_reg_scenario(sx_ref_side(), &b);
+    SX_GRADE_RC("_register_onexit_function", "NULL-table", a.null_rc, b.null_rc);
+    for (int i = 0; i < SX_NCBS; i++)
+        SX_GRADE_RC("_register_onexit_function", label_idx((size_t)i), a.rc[i], b.rc[i]);
+    for (int k = 0; k < SX_NCHECK; k++)
+        SX_GRADE_SHAPE("_register_onexit_function", label_idx((size_t)g_sx_checkpoints[k]), a.shape[k], b.shape[k]);
+    SX_GRADE_RC("_register_onexit_function", "NULL-fn", a.nullfn_rc, b.nullfn_rc);
+    SX_GRADE_SHAPE("_register_onexit_function", "NULL-fn", a.nullfn_shape, b.nullfn_shape);
+    SX_GRADE_RC("_register_onexit_function.drain", "72+NULL", a.drain_rc, b.drain_rc);
+    grade2("_register_onexit_function.drainlog", "72+NULL", a.drain_hash, b.drain_hash);
+    grade2("_register_onexit_function.drainn", "72+NULL", a.drain_n, b.drain_n);
+    grade2("_register_onexit_function.reset", "72+NULL", a.after_uniform, b.after_uniform);
+    grade2("_register_onexit_function.cookie", "72+NULL", a.after_is_cookie, b.after_is_cookie);
+}
+
+/* -- _execute_onexit_table ------------------------------------------------ */
+#define SX_NSCEN 6
+typedef struct sx_exec_result {
+    sx_rc null_rc;
+    sx_rc rc[SX_NSCEN];
+    sx_rc second_rc[SX_NSCEN];
+    long long hash[SX_NSCEN], n[SX_NSCEN];
+    long long reset[SX_NSCEN], rereg[SX_NSCEN];
+} sx_exec_result;
+
+/* Scenario table: which callbacks to register, in order. -1 = sx_cb_rereg,
+ * -2 = NULL. */
+static int sx_scenario_item(int scen, int i, int *count)
+{
+    switch (scen) {
+    case 0: *count = 0; return 0;                               /* empty */
+    case 1: *count = 5; return i;                                /* LIFO */
+    case 2: *count = 5; return i == 2 ? -2 : i;                  /* NULL in the middle */
+    case 3: *count = 3; return i == 1 ? -1 : i;                  /* re-register mid-run */
+    case 4: *count = 32; return i == 31 ? -1 : i;                /* full table, re-register => grow */
+    default: *count = 40; return i == 0 ? -1 : i;                /* re-register from the LAST run */
+    }
+}
+
+static void sx_exec_scenario(sx_side side, sx_exec_result *r)
+{
+    sx_rc sx_tmp;
+    long long sx_tmp_ret;
+
+    r->null_rc = SX_CALL(side, side.exec((sx_onexit_table *)0));
+
+    for (int s = 0; s < SX_NSCEN; s++) {
+        sx_onexit_table t = { 0, 0, 0 };
+        int count = 0;
+        side.init(&t);
+        uintptr_t cookie = (uintptr_t)t.first;
+        sx_scenario_item(s, 0, &count);
+        for (int i = 0; i < count; i++) {
+            int item = sx_scenario_item(s, i, &count);
+            sx_onexit_t f = item == -1 ? sx_cb_rereg : item == -2 ? (sx_onexit_t)0 : g_sx_cbs[item];
+            side.reg(&t, f);
+        }
+        g_sx_cur = side;
+        g_sx_cur_table = &t;
+        g_sx_rereg_ret = 12345;
+        g_sx_nlog = 0;
+        r->rc[s] = SX_CALL(side, side.exec(&t));
+        r->hash[s] = fnv(g_sx_log, sizeof g_sx_log[0] * (size_t)(g_sx_nlog < 512 ? g_sx_nlog : 512));
+        r->n[s] = g_sx_nlog;
+        r->rereg[s] = g_sx_rereg_ret;
+        r->reset[s] = (uintptr_t)t.first == cookie && t.first == t.last && t.last == t.end;
+        /* Executed again: decoded first is NULL now -> 0, nothing runs. */
+        g_sx_nlog = 0;
+        r->second_rc[s] = SX_CALL(side, side.exec(&t));
+        r->second_rc[s].ret = r->second_rc[s].ret * 1000 + g_sx_nlog;
+    }
+}
+
+static void run_startup__execute_onexit_table(void)
+{
+    static sx_exec_result a, b;
+    static const char *const lbl[SX_NSCEN] = { "empty", "lifo5", "null-mid", "rereg-mid", "rereg-grow",
+                                               "rereg-last" };
+    install_counting_iph();
+    sx_exec_scenario(sx_dll_side(), &a);
+    sx_exec_scenario(sx_ref_side(), &b);
+    SX_GRADE_RC("_execute_onexit_table", "NULL", a.null_rc, b.null_rc);
+    for (int s = 0; s < SX_NSCEN; s++) {
+        SX_GRADE_RC("_execute_onexit_table", lbl[s], a.rc[s], b.rc[s]);
+        grade2("_execute_onexit_table.log", lbl[s], a.hash[s], b.hash[s]);
+        grade2("_execute_onexit_table.n", lbl[s], a.n[s], b.n[s]);
+        grade2("_execute_onexit_table.reset", lbl[s], a.reset[s], b.reset[s]);
+        grade2("_execute_onexit_table.rereg", lbl[s], a.rereg[s], b.rereg[s]);
+        SX_GRADE_RC("_execute_onexit_table.again", lbl[s], a.second_rc[s], b.second_rc[s]);
+    }
+}
+
+#endif /* UCRTDIFF_REF_HAS__initialize_onexit_table */
+
+/* ======================================================================
+ * abort.cpp
+ * ====================================================================== */
+#if UCRTDIFF_REF_HAS__set_abort_behavior
+
+unsigned int __cdecl ref__set_abort_behavior(unsigned int, unsigned int);
+extern unsigned int(__cdecl *const ud__set_abort_behavior)(unsigned int, unsigned int) __asm__(UD_IMP(_set_abort_behavior));
+
+/* (flags, mask) rows; each returns the old word, then a (0,0) query reads the new. */
+static const unsigned int g_sx_ab_rows[][2] = {
+    { 0, 0 }, { 1, 1 }, { 0, 1 }, { 0xFFFFFFFFu, 0 }, { 0xFFFFFFFFu, 0xFFFFFFFFu },
+    { 0, 0xFFFFFFFFu }, { 2, 3 }, { 5, 6 }, { 0x80000000u, 0x80000001u }, { 3, 2 },
+};
+
+static void run_startup__set_abort_behavior(void)
+{
+    install_counting_iph();
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    /* Each side's own original word, restored at the end with mask ~0. */
+    unsigned int save_d = ud__set_abort_behavior(0, 0);
+    unsigned int save_r = ref__set_abort_behavior(0, 0);
+    grade2("_set_abort_behavior", "initial", save_d, save_r);
+    for (size_t i = 0; i < sizeof g_sx_ab_rows / sizeof g_sx_ab_rows[0]; i++) {
+        unsigned int f = g_sx_ab_rows[i][0], m = g_sx_ab_rows[i][1];
+        unsigned int o1 = ud__set_abort_behavior(f, m);
+        unsigned int n1 = ud__set_abort_behavior(0, 0);
+        unsigned int o2 = ref__set_abort_behavior(f, m);
+        unsigned int n2 = ref__set_abort_behavior(0, 0);
+        grade2("_set_abort_behavior.old", label_idx(i), o1, o2);
+        grade2("_set_abort_behavior.new", label_idx(i), n1, n2);
+    }
+    unsigned int r1 = ud__set_abort_behavior(save_d, 0xFFFFFFFFu);
+    unsigned int r2 = ref__set_abort_behavior(save_r, 0xFFFFFFFFu);
+    grade2("_set_abort_behavior.old", "restore", r1, r2);
+    grade2("_set_abort_behavior.restored", "-", ud__set_abort_behavior(0, 0), ref__set_abort_behavior(0, 0));
+    grade2("_set_abort_behavior.errno", "-", *_errno(), *ref__errno());
+    grade2("_set_abort_behavior.iph", "-", g_iph_dll, g_iph_ref);
+}
+
+#endif /* UCRTDIFF_REF_HAS__set_abort_behavior */
+
+/* ======================================================================
+ * thread.cpp
+ * ====================================================================== */
+#if UCRTDIFF_REF_HAS__beginthreadex
+
+typedef unsigned(__stdcall *sx_threadex_proc)(void *);
+typedef void(__cdecl *sx_thread_proc)(void *);
+
+uintptr_t __cdecl ref__beginthread(sx_thread_proc, unsigned, void *);
+uintptr_t __cdecl ref__beginthreadex(void *, unsigned, sx_threadex_proc, void *, unsigned, unsigned *);
+void __cdecl ref__endthread(void);
+void __cdecl ref__endthreadex(unsigned);
+extern uintptr_t(__cdecl *const ud__beginthread)(sx_thread_proc, unsigned, void *) __asm__(UD_IMP(_beginthread));
+extern uintptr_t(__cdecl *const ud__beginthreadex)(void *, unsigned, sx_threadex_proc, void *, unsigned, unsigned *) __asm__(UD_IMP(_beginthreadex));
+extern void(__cdecl *const ud__endthread)(void) __asm__(UD_IMP(_endthread));
+extern void(__cdecl *const ud__endthreadex)(unsigned) __asm__(UD_IMP(_endthreadex));
+
+#define SX_WAIT_MS 3000
+
+/* Per-thread context: filled by the spawned thread, read back after a wait. */
+typedef struct sx_tctx {
+    volatile LONG ran;
+    volatile LONG after_end;    /* set only if _endthread(ex) RETURNED */
+    volatile DWORD tid;         /* GetCurrentThreadId() inside */
+    unsigned exit_value;        /* what the ex proc returns / passes */
+    HANDLE self;                /* duplicated real handle to the thread itself */
+    HANDLE started;             /* signalled once `self` is set */
+    void(__cdecl *endthread)(void);
+    void(__cdecl *endthreadex)(unsigned);
+} sx_tctx;
+
+static void sx_ctx_init(sx_tctx *c, unsigned exit_value)
+{
+    c->ran = 0;
+    c->after_end = 0;
+    c->tid = 0;
+    c->exit_value = exit_value;
+    c->self = NULL;
+    c->started = CreateEventW(NULL, TRUE, FALSE, NULL);
+    c->endthread = 0;
+    c->endthreadex = 0;
+}
+
+static void sx_ctx_publish_self(sx_tctx *c)
+{
+    DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &c->self,
+                    SYNCHRONIZE | THREAD_QUERY_INFORMATION, FALSE, 0);
+    c->tid = GetCurrentThreadId();
+    InterlockedExchange(&c->ran, 1);
+    SetEvent(c->started);
+}
+
+/* Wait for the thread behind c->self to END; returns its exit code, or a
+ * distinct marker when it did not start (-2) / did not end (-3). */
+static long long sx_ctx_join(sx_tctx *c)
+{
+    DWORD code = 0;
+    long long r;
+    if (WaitForSingleObject(c->started, SX_WAIT_MS) != WAIT_OBJECT_0 || !c->self)
+        r = -2;
+    else if (WaitForSingleObject(c->self, SX_WAIT_MS) != WAIT_OBJECT_0)
+        r = -3;
+    else
+        r = GetExitCodeThread(c->self, &code) ? (long long)code : -4;
+    if (c->self)
+        CloseHandle(c->self);
+    CloseHandle(c->started);
+    return r;
+}
+
+static unsigned __stdcall sx_proc_ex_return(void *p)
+{
+    sx_tctx *c = (sx_tctx *)p;
+    sx_ctx_publish_self(c);
+    return c->exit_value;
+}
+
+static unsigned __stdcall sx_proc_ex_endthreadex(void *p)
+{
+    sx_tctx *c = (sx_tctx *)p;
+    sx_ctx_publish_self(c);
+    c->endthreadex(c->exit_value);
+    InterlockedExchange(&c->after_end, 1);
+    return 0xDEAD;
+}
+
+static void __cdecl sx_proc_return(void *p)
+{
+    sx_ctx_publish_self((sx_tctx *)p);
+}
+
+static void __cdecl sx_proc_endthread(void *p)
+{
+    sx_tctx *c = (sx_tctx *)p;
+    sx_ctx_publish_self(c);
+    c->endthread();
+    InterlockedExchange(&c->after_end, 1);
+}
+
+/* Raw CreateThread start: a thread the CRT did NOT start calls _endthreadex. */
+static DWORD WINAPI sx_raw_endthreadex(LPVOID p)
+{
+    sx_tctx *c = (sx_tctx *)p;
+    sx_ctx_publish_self(c);
+    c->endthreadex(c->exit_value);
+    InterlockedExchange(&c->after_end, 1);
+    return 0xBEEF;
+}
+
+/* -- _beginthreadex --------------------------------------------------------- */
+typedef struct sx_bx_row {
+    long long ok;      /* handle nonzero */
+    long long err, iph;
+    long long tid_set; /* *thread_id_result written, and == the thread's id */
+    long long waited;  /* WaitForSingleObject(handle) result */
+    long long code;    /* GetExitCodeThread */
+    long long suspended_ran; /* CREATE_SUSPENDED: ran before ResumeThread? */
+    long long resume;  /* ResumeThread's previous suspend count */
+} sx_bx_row;
+
+static sx_bx_row sx_bx_one(uintptr_t(__cdecl *begin)(void *, unsigned, sx_threadex_proc, void *, unsigned, unsigned *),
+                           int *(*err)(void), volatile long *iph, unsigned stack, unsigned flags,
+                           int want_tid, unsigned exit_value)
+{
+    sx_bx_row r = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    sx_tctx c;
+    unsigned tid = 0xA5A5A5A5u;
+    sx_ctx_init(&c, exit_value);
+    *err() = 0;
+    *iph = 0;
+    uintptr_t h = begin(NULL, stack, sx_proc_ex_return, &c, flags, want_tid ? &tid : NULL);
+    r.err = *err();
+    r.iph = *iph;
+    r.ok = h != 0;
+    if (h) {
+        if (flags & CREATE_SUSPENDED) {
+            Sleep(20);
+            r.suspended_ran = c.ran;
+            r.resume = (long long)ResumeThread((HANDLE)h);
+        }
+        r.waited = WaitForSingleObject((HANDLE)h, SX_WAIT_MS);
+        DWORD code = 0;
+        r.code = GetExitCodeThread((HANDLE)h, &code) ? (long long)code : -4;
+        r.tid_set = want_tid ? (tid != 0xA5A5A5A5u) + 2 * (tid == c.tid) : (long long)(tid == 0xA5A5A5A5u);
+        CloseHandle((HANDLE)h);
+    }
+    if (c.self)
+        CloseHandle(c.self);
+    CloseHandle(c.started);
+    return r;
+}
+
+#define SX_GRADE_BX(lbl, a, b) do {                                          \
+        grade2("_beginthreadex", lbl, (a).ok, (b).ok);                        \
+        grade2("_beginthreadex.errno", lbl, (a).err, (b).err);                \
+        grade2("_beginthreadex.iph", lbl, (a).iph, (b).iph);                  \
+        grade2("_beginthreadex.tid", lbl, (a).tid_set, (b).tid_set);          \
+        grade2("_beginthreadex.wait", lbl, (a).waited, (b).waited);           \
+        grade2("_beginthreadex.code", lbl, (a).code, (b).code);               \
+        grade2("_beginthreadex.suspended", lbl, (a).suspended_ran, (b).suspended_ran); \
+        grade2("_beginthreadex.resume", lbl, (a).resume, (b).resume);         \
+    } while (0)
+
+static int *sx_errno_dll(void) { return _errno(); }
+static int *sx_errno_ref(void) { return ref__errno(); }
+
+static void run_startup__beginthreadex(void)
+{
+    install_counting_iph();
+    /* NULL procedure: EINVAL + handler, 0, and *thread_id_result untouched. */
+    {
+        unsigned t1 = 0x5A5A5A5Au, t2 = 0x5A5A5A5Au;
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        uintptr_t h1 = ud__beginthreadex(NULL, 0, (sx_threadex_proc)0, NULL, 0, &t1);
+        long long e1 = *_errno(), i1 = g_iph_dll;
+        uintptr_t h2 = ref__beginthreadex(NULL, 0, (sx_threadex_proc)0, NULL, 0, &t2);
+        long long e2 = *ref__errno(), i2 = g_iph_ref;
+        grade2("_beginthreadex", "NULL-proc", (long long)h1, (long long)h2);
+        grade2("_beginthreadex.errno", "NULL-proc", e1, e2);
+        grade2("_beginthreadex.iph", "NULL-proc", i1, i2);
+        grade2("_beginthreadex.tid", "NULL-proc", t1, t2);
+    }
+    static const struct { const char *lbl; unsigned stack, flags; int want_tid; unsigned code; } rows[] = {
+        { "plain", 0, 0, 1, 7 },
+        { "no-tid", 0, 0, 0, 0 },
+        { "stack64k", 65536, 0, 1, 0x7FFFFFFFu },
+        { "suspended", 0, CREATE_SUSPENDED, 1, 0xFFFFFFF0u },
+        { "stack-reserve", 1u << 20, STACK_SIZE_PARAM_IS_A_RESERVATION, 1, 42 },
+    };
+    for (size_t i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+        sx_bx_row a = sx_bx_one(ud__beginthreadex, sx_errno_dll, &g_iph_dll, rows[i].stack, rows[i].flags,
+                                rows[i].want_tid, rows[i].code);
+        sx_bx_row b = sx_bx_one(ref__beginthreadex, sx_errno_ref, &g_iph_ref, rows[i].stack, rows[i].flags,
+                                rows[i].want_tid, rows[i].code);
+        SX_GRADE_BX(rows[i].lbl, a, b);
+    }
+}
+
+/* -- _endthreadex ------------------------------------------------------------ */
+static void sx_endex_one(uintptr_t(__cdecl *begin)(void *, unsigned, sx_threadex_proc, void *, unsigned, unsigned *),
+                         void(__cdecl *endex)(unsigned), unsigned code, long long out[3])
+{
+    sx_tctx c;
+    sx_ctx_init(&c, code);
+    c.endthreadex = endex;
+    uintptr_t h = begin(NULL, 0, sx_proc_ex_endthreadex, &c, 0, NULL);
+    if (h)
+        CloseHandle((HANDLE)h);
+    out[0] = h != 0;
+    out[1] = sx_ctx_join(&c);
+    out[2] = c.after_end;
+}
+
+static void sx_endex_raw(void(__cdecl *endex)(unsigned), unsigned code, long long out[3])
+{
+    sx_tctx c;
+    sx_ctx_init(&c, code);
+    c.endthreadex = endex;
+    HANDLE h = CreateThread(NULL, 0, sx_raw_endthreadex, &c, 0, NULL);
+    if (h)
+        CloseHandle(h);
+    out[0] = h != NULL;
+    out[1] = sx_ctx_join(&c);
+    out[2] = c.after_end;
+}
+
+static void run_startup__endthreadex(void)
+{
+    static const unsigned codes[] = { 0, 77, 0x80000001u };
+    long long a[3], b[3];
+    install_counting_iph();
+    for (size_t i = 0; i < sizeof codes / sizeof codes[0]; i++) {
+        sx_endex_one(ud__beginthreadex, ud__endthreadex, codes[i], a);
+        sx_endex_one(ref__beginthreadex, ref__endthreadex, codes[i], b);
+        grade2("_endthreadex.started", label_idx(i), a[0], b[0]);
+        grade2("_endthreadex.code", label_idx(i), a[1], b[1]);
+        grade2("_endthreadex.returned", label_idx(i), a[2], b[2]);
+    }
+    /* A thread the CRT did not start: no _beginthread_context -> ExitThread. */
+    sx_endex_raw(ud__endthreadex, 55, a);
+    sx_endex_raw(ref__endthreadex, 55, b);
+    grade2("_endthreadex.started", "raw-thread", a[0], b[0]);
+    grade2("_endthreadex.code", "raw-thread", a[1], b[1]);
+    grade2("_endthreadex.returned", "raw-thread", a[2], b[2]);
+}
+
+/* -- _beginthread / _endthread ---------------------------------------------- */
+static void sx_bt_one(uintptr_t(__cdecl *begin)(sx_thread_proc, unsigned, void *), int *(*err)(void),
+                      volatile long *iph, sx_thread_proc proc, void(__cdecl *endthread)(void), unsigned stack,
+                      long long out[6])
+{
+    sx_tctx c;
+    sx_ctx_init(&c, 0);
+    c.endthread = endthread;
+    *err() = 0;
+    *iph = 0;
+    uintptr_t h = begin(proc, stack, &c);
+    out[0] = h == (uintptr_t)-1 ? -1 : h == 0 ? 0 : 1; /* the handle itself is the thread's to close */
+    out[1] = *err();
+    out[2] = *iph;
+    out[3] = h != (uintptr_t)-1 ? sx_ctx_join(&c) : (CloseHandle(c.started), -5);
+    out[4] = c.after_end;
+    out[5] = c.ran;
+}
+
+#define SX_GRADE_BT(fam, lbl, a, b) do {                                     \
+        grade2(fam, lbl, (a)[0], (b)[0]);                                    \
+        grade2(fam ".errno", lbl, (a)[1], (b)[1]);                           \
+        grade2(fam ".iph", lbl, (a)[2], (b)[2]);                             \
+        grade2(fam ".code", lbl, (a)[3], (b)[3]);                            \
+        grade2(fam ".returned", lbl, (a)[4], (b)[4]);                        \
+        grade2(fam ".ran", lbl, (a)[5], (b)[5]);                             \
+    } while (0)
+
+static void run_startup__beginthread(void)
+{
+    long long a[6], b[6];
+    install_counting_iph();
+    /* NULL procedure: EINVAL + handler, (uintptr_t)-1. */
+    *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+    uintptr_t h1 = ud__beginthread((sx_thread_proc)0, 0, NULL);
+    long long e1 = *_errno(), i1 = g_iph_dll;
+    uintptr_t h2 = ref__beginthread((sx_thread_proc)0, 0, NULL);
+    long long e2 = *ref__errno(), i2 = g_iph_ref;
+    grade2("_beginthread", "NULL-proc", (long long)(intptr_t)h1, (long long)(intptr_t)h2);
+    grade2("_beginthread.errno", "NULL-proc", e1, e2);
+    grade2("_beginthread.iph", "NULL-proc", i1, i2);
+    /* Returning from the procedure ends the thread with code 0. */
+    sx_bt_one(ud__beginthread, sx_errno_dll, &g_iph_dll, sx_proc_return, 0, 0, a);
+    sx_bt_one(ref__beginthread, sx_errno_ref, &g_iph_ref, sx_proc_return, 0, 0, b);
+    SX_GRADE_BT("_beginthread", "return", a, b);
+    sx_bt_one(ud__beginthread, sx_errno_dll, &g_iph_dll, sx_proc_return, 0, 65536, a);
+    sx_bt_one(ref__beginthread, sx_errno_ref, &g_iph_ref, sx_proc_return, 0, 65536, b);
+    SX_GRADE_BT("_beginthread", "stack64k", a, b);
+}
+
+static void run_startup__endthread(void)
+{
+    long long a[6], b[6];
+    install_counting_iph();
+    sx_bt_one(ud__beginthread, sx_errno_dll, &g_iph_dll, sx_proc_endthread, ud__endthread, 0, a);
+    sx_bt_one(ref__beginthread, sx_errno_ref, &g_iph_ref, sx_proc_endthread, ref__endthread, 0, b);
+    SX_GRADE_BT("_endthread", "from-beginthread", a, b);
+}
+
+#endif /* UCRTDIFF_REF_HAS__beginthreadex */
+
+/* ---- registry macro: paste STARTUP_HAND_ENTRIES into run_legacy()'s table ---- */
+#if UCRTDIFF_REF_HAS__initialize_onexit_table
+#define STARTUP_HAND_ENTRIES_ONEXIT                                            \
+    { "_initialize_onexit_table", run_startup__initialize_onexit_table },      \
+    { "_register_onexit_function", run_startup__register_onexit_function },    \
+    { "_execute_onexit_table", run_startup__execute_onexit_table },
+#else
+#define STARTUP_HAND_ENTRIES_ONEXIT                                            \
+    { "_initialize_onexit_table", 0 }, { "_register_onexit_function", 0 },     \
+    { "_execute_onexit_table", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__set_abort_behavior
+#define STARTUP_HAND_ENTRIES_ABORT { "_set_abort_behavior", run_startup__set_abort_behavior },
+#else
+#define STARTUP_HAND_ENTRIES_ABORT { "_set_abort_behavior", 0 },
+#endif
+
+#if UCRTDIFF_REF_HAS__beginthreadex
+#define STARTUP_HAND_ENTRIES_THREAD                                            \
+    { "_beginthreadex", run_startup__beginthreadex },                          \
+    { "_endthreadex", run_startup__endthreadex },                              \
+    { "_beginthread", run_startup__beginthread },                              \
+    { "_endthread", run_startup__endthread },
+#else
+#define STARTUP_HAND_ENTRIES_THREAD                                            \
+    { "_beginthreadex", 0 }, { "_endthreadex", 0 }, { "_beginthread", 0 },     \
+    { "_endthread", 0 },
+#endif
+
+#define STARTUP_HAND_ENTRIES \
+    STARTUP_HAND_ENTRIES_ONEXIT STARTUP_HAND_ENTRIES_ABORT STARTUP_HAND_ENTRIES_THREAD
+
+
+/* ---- argv: inlined from staging/argv.c ---- */
+/*
+ * staging/argv.c -- guest grader for the `argv-errors` batch
+ * (sdk/lib/rust/ucrt-rust/src/argv/): command-line parsing + wildcard
+ * expansion, the WinMain command-line tail, and the app type.
+ *
+ * Included verbatim into ucrtdiff.c just before `run_legacy`; every helper used
+ * here (grade2, install_counting_iph, label_idx, fnv, g_iph_dll/g_iph_ref,
+ * _errno, ref__errno, UD_IMP/UD_STR) is already in scope there.
+ *
+ * Guards, one per C file that has an export:
+ *   UCRTDIFF_REF_HAS__configure_narrow_argv           -- startup/argv_parsing.cpp
+ *       (also grades startup/argv_wildcards.cpp, which has NO export: its two
+ *        internals are reachable only through _configure_*_argv's expanded mode)
+ *   UCRTDIFF_REF_HAS__get_narrow_winmain_command_line -- startup/argv_winmain.cpp
+ *   UCRTDIFF_REF_HAS__query_app_type                  -- internal/report_runtime_error.cpp
+ * internal/win_policies.cpp, internal/peb_access.cpp and misc/crtmbox.cpp have
+ * no export at all (not in ucrtbase.spec, so no ud_ side exists) and are not
+ * graded here; crtmbox would show a message box anyway.
+ *
+ * WHOSE GLOBALS. `_configure_*_argv` and `_get_*_winmain_command_line` read the
+ * PROCESS command line from `_acmdln`/`_wcmdln` and write `__argc`, `__argv`,
+ * `__wargv`, `_pgmptr`, `_wpgmptr`. None of those is a DATA export of
+ * ucrtbase.spec, so:
+ *   - the DLL side's copies are reached through its `__p__*` accessor exports
+ *     (import pointers, below);
+ *   - the reference side's copies are the exe-local definitions
+ *     tools/ucrt_tier2_refset.py links in plain-named for Microsoft's objects
+ *     (internals Microsoft's C references by name keep that name), so the
+ *     harness binds to them by their plain assembler names.
+ * Each runner saves all seven on BOTH sides, points `_acmdln`/`_wcmdln` at a
+ * crafted, NUL-padded line, calls, grades, frees the argv block the call made
+ * (DLL: `free`; reference: `ref_free` when the heap C is still there, else it
+ * is leaked -- a few hundred bytes), and restores all seven. So the parser is
+ * graded on arbitrary strings although both entry points take no string.
+ *
+ * The expanded mode runs FindFirstFileExW over a private temp directory
+ * (`ucrtdiff_argv_wc` under GetTempPath) that the runner creates and removes.
+ * The single-allocation layout is graded directly: every argv[i] is compared
+ * as an OFFSET from the block's base, which pins "pointer array, then the
+ * characters" on both sides.
+ */
+
+#if UCRTDIFF_REF_HAS__configure_narrow_argv || UCRTDIFF_REF_HAS__get_narrow_winmain_command_line
+/* DLL-side accessors (import pointers, never plain names). */
+extern int *(__cdecl *const av_ud___p___argc)(void) __asm__(UD_IMP(__p___argc));
+extern char ***(__cdecl *const av_ud___p___argv)(void) __asm__(UD_IMP(__p___argv));
+extern wchar_t ***(__cdecl *const av_ud___p___wargv)(void) __asm__(UD_IMP(__p___wargv));
+extern char **(__cdecl *const av_ud___p__pgmptr)(void) __asm__(UD_IMP(__p__pgmptr));
+extern wchar_t **(__cdecl *const av_ud___p__wpgmptr)(void) __asm__(UD_IMP(__p__wpgmptr));
+extern char **(__cdecl *const av_ud___p__acmdln)(void) __asm__(UD_IMP(__p__acmdln));
+extern wchar_t **(__cdecl *const av_ud___p__wcmdln)(void) __asm__(UD_IMP(__p__wcmdln));
+/* Reference-side globals, by plain name (see the file comment). */
+extern int av_ref_argc __asm__(UD_STR(__USER_LABEL_PREFIX__) "__argc");
+extern char **av_ref_argv __asm__(UD_STR(__USER_LABEL_PREFIX__) "__argv");
+extern wchar_t **av_ref_wargv __asm__(UD_STR(__USER_LABEL_PREFIX__) "__wargv");
+extern char *av_ref_pgmptr __asm__(UD_STR(__USER_LABEL_PREFIX__) "_pgmptr");
+extern wchar_t *av_ref_wpgmptr __asm__(UD_STR(__USER_LABEL_PREFIX__) "_wpgmptr");
+extern char *av_ref_acmdln __asm__(UD_STR(__USER_LABEL_PREFIX__) "_acmdln");
+extern wchar_t *av_ref_wcmdln __asm__(UD_STR(__USER_LABEL_PREFIX__) "_wcmdln");
+
+/* One side's seven globals, by address. */
+struct av_side {
+    int *argc;
+    char ***argv;
+    wchar_t ***wargv;
+    char **pgmptr;
+    wchar_t **wpgmptr;
+    char **acmdln;
+    wchar_t **wcmdln;
+};
+struct av_saved {
+    int argc;
+    char **argv;
+    wchar_t **wargv;
+    char *pgmptr;
+    wchar_t *wpgmptr;
+    char *acmdln;
+    wchar_t *wcmdln;
+};
+
+static struct av_side av_side_of(int ref)
+{
+    struct av_side s;
+    if (ref) {
+        s.argc = &av_ref_argc; s.argv = &av_ref_argv; s.wargv = &av_ref_wargv;
+        s.pgmptr = &av_ref_pgmptr; s.wpgmptr = &av_ref_wpgmptr;
+        s.acmdln = &av_ref_acmdln; s.wcmdln = &av_ref_wcmdln;
+    } else {
+        s.argc = av_ud___p___argc(); s.argv = av_ud___p___argv(); s.wargv = av_ud___p___wargv();
+        s.pgmptr = av_ud___p__pgmptr(); s.wpgmptr = av_ud___p__wpgmptr();
+        s.acmdln = av_ud___p__acmdln(); s.wcmdln = av_ud___p__wcmdln();
+    }
+    return s;
+}
+static struct av_saved av_save(struct av_side s)
+{
+    struct av_saved v;
+    v.argc = *s.argc; v.argv = *s.argv; v.wargv = *s.wargv; v.pgmptr = *s.pgmptr;
+    v.wpgmptr = *s.wpgmptr; v.acmdln = *s.acmdln; v.wcmdln = *s.wcmdln;
+    return v;
+}
+static void av_restore(struct av_side s, struct av_saved v)
+{
+    *s.argc = v.argc; *s.argv = v.argv; *s.wargv = v.wargv; *s.pgmptr = v.pgmptr;
+    *s.wpgmptr = v.wpgmptr; *s.acmdln = v.acmdln; *s.wcmdln = v.wcmdln;
+}
+
+/* A crafted line, NUL-padded so any reader that steps one past the terminator
+ * (the C does, after a DBCS lead byte) still reads a NUL. */
+static char g_av_line[1024];
+static wchar_t g_av_wline[1024];
+static void av_set_line(const char *s)
+{
+    size_t n = strlen(s);
+    if (n > sizeof(g_av_line) - 8) n = sizeof(g_av_line) - 8;
+    memset(g_av_line, 0, sizeof(g_av_line));
+    memcpy(g_av_line, s, n);
+}
+static void av_set_wline(const wchar_t *s)
+{
+    size_t n = wcslen(s);
+    if (n > 1024 - 8) n = 1024 - 8;
+    memset(g_av_wline, 0, sizeof(g_av_wline));
+    memcpy(g_av_wline, s, n * sizeof(wchar_t));
+}
+/* ASCII/latin-1 widening, byte for byte. */
+static void av_widen(wchar_t *dst, size_t cap, const char *s)
+{
+    size_t k = 0;
+    for (; s[k] && k + 1 < cap; k++) dst[k] = (unsigned char)s[k];
+    dst[k] = 0;
+}
+#endif
+
+/* ==== startup/argv_parsing.cpp (+ argv_wildcards.cpp) ================== */
+#if UCRTDIFF_REF_HAS__configure_narrow_argv
+int __cdecl ref__configure_narrow_argv(int);
+int __cdecl ref__configure_wide_argv(int);
+#if UCRTDIFF_REF_HAS_free
+void __cdecl ref_free(void *);
+#endif
+extern int(__cdecl *const av_ud__configure_narrow_argv)(int) __asm__(UD_IMP(_configure_narrow_argv));
+extern int(__cdecl *const av_ud__configure_wide_argv)(int) __asm__(UD_IMP(_configure_wide_argv));
+
+/* Parser corpus: program-name quoting, the 2N / 2N+1 backslash rules, the ""
+ * inside-quotes quirk, unterminated quotes, empty args, whitespace runs, a line
+ * that STARTS with whitespace (argv[0] is ""), and high bytes. Index 0 is the
+ * empty line and the NULL line is its own row: both parse the module name. */
+static const char *const g_av_lines[] = {
+    "",
+    "prog",
+    "prog a b c",
+    "\"C:\\Program Files\\x.exe\" arg1 \"arg 2\"",
+    "prog a\\\\\"b c\" d",
+    "prog a\\\\\\\"b c",
+    "prog \"a\"\"b\" c",
+    "prog \"\"\"\" x",
+    "prog \"\" \"\" x",
+    "prog \\\\server\\share\\ x\\ y\\\\",
+    "prog  \t  lead \t trail   ",
+    "\"unterminated prog name",
+    "pro\"g na\"me rest",
+    "prog \"unterminated arg",
+    "prog a\"b\"c \"d\"e\"f\"",
+    "  leading space",
+    "\"\"",
+    "\"\" x",
+    "prog a\tb\nc\x01 d",
+    "prog \x80\xe9 \xff\xa0",
+    "prog \\\"x\\\" \\\\\\\\\"y\"",
+    "prog \"in \\\"quote\\\" still\" out",
+    "prog \"a b\"\"c d\" e",
+    "p\"\"rog x",
+};
+#define AV_LINES_N (sizeof(g_av_lines) / sizeof(g_av_lines[0]))
+
+/* Hash an argv block: entry count up to NULL (capped), each entry's OFFSET from
+ * the block base and its characters with terminator. */
+static long long av_hash_narrow(char **argv, int *count)
+{
+    long long h = 1469598103934665603LL;
+    int n = 0;
+    if (!argv) { *count = -1; return 0; }
+    while (argv[n] && n < 256) {
+        long long off = (long long)((char *)argv[n] - (char *)argv);
+        h = (h * 1099511628211LL) ^ off;
+        h = (h * 1099511628211LL) ^ fnv(argv[n], strlen(argv[n]) + 1);
+        n++;
+    }
+    *count = n;
+    return h;
+}
+static long long av_hash_wide(wchar_t **argv, int *count)
+{
+    long long h = 1469598103934665603LL;
+    int n = 0;
+    if (!argv) { *count = -1; return 0; }
+    while (argv[n] && n < 256) {
+        long long off = (long long)((char *)argv[n] - (char *)argv);
+        h = (h * 1099511628211LL) ^ off;
+        h = (h * 1099511628211LL) ^ fnv(argv[n], (wcslen(argv[n]) + 1) * sizeof(wchar_t));
+        n++;
+    }
+    *count = n;
+    return h;
+}
+
+/* One observation of one side. */
+struct av_obs {
+    long long rc, err, argc, changed, count, hash, pgm_set, pgm_hash;
+};
+
+static char *g_av_dummy_n[1];
+static wchar_t *g_av_dummy_w[1];
+
+static void av_free_block(int ref, void *p)
+{
+    if (!ref) { free(p); return; }
+#if UCRTDIFF_REF_HAS_free
+    ref_free(p);
+#else
+    (void)p; /* leaked: the reference heap's free is gone */
+#endif
+}
+
+/* Run _configure_{narrow,wide}_argv(mode) on one side over the current crafted
+ * line (or a NULL/empty line when `line_mode` says so). */
+static struct av_obs av_run(int ref, int wide, int mode, int null_line)
+{
+    struct av_obs o;
+    struct av_side s = av_side_of(ref);
+    struct av_saved saved = av_save(s);
+    memset(&o, 0, sizeof(o));
+
+    if (wide) *s.wcmdln = null_line ? 0 : g_av_wline;
+    else *s.acmdln = null_line ? 0 : g_av_line;
+    *s.argc = -7;
+    *s.argv = g_av_dummy_n;
+    *s.wargv = g_av_dummy_w;
+    *s.pgmptr = 0;
+    *s.wpgmptr = 0;
+
+    if (ref) {
+        *ref__errno() = 0;
+        o.rc = wide ? ref__configure_wide_argv(mode) : ref__configure_narrow_argv(mode);
+        o.err = *ref__errno();
+    } else {
+        *_errno() = 0;
+        o.rc = wide ? av_ud__configure_wide_argv(mode) : av_ud__configure_narrow_argv(mode);
+        o.err = *_errno();
+    }
+
+    o.argc = *s.argc;
+    if (wide) {
+        int n = 0;
+        o.changed = *s.wargv != g_av_dummy_w;
+        if (o.changed) {
+            o.hash = av_hash_wide(*s.wargv, &n);
+            o.count = n;
+            av_free_block(ref, *s.wargv);
+        }
+        o.pgm_set = *s.wpgmptr != 0;
+        if (*s.wpgmptr) o.pgm_hash = fnv(*s.wpgmptr, (wcslen(*s.wpgmptr) + 1) * sizeof(wchar_t));
+        o.changed |= (long long)(*s.argv != g_av_dummy_n) << 1; /* must stay 0 */
+    } else {
+        int n = 0;
+        o.changed = *s.argv != g_av_dummy_n;
+        if (o.changed) {
+            o.hash = av_hash_narrow(*s.argv, &n);
+            o.count = n;
+            av_free_block(ref, *s.argv);
+        }
+        o.pgm_set = *s.pgmptr != 0;
+        if (*s.pgmptr) o.pgm_hash = fnv(*s.pgmptr, strlen(*s.pgmptr) + 1);
+        o.changed |= (long long)(*s.wargv != g_av_dummy_w) << 1; /* must stay 0 */
+    }
+
+    av_restore(s, saved);
+    return o;
+}
+
+static void av_grade(const char *fam, const char *lbl, struct av_obs d, struct av_obs r)
+{
+    char f[64];
+    size_t n = strlen(fam);
+    if (n > 40) n = 40;
+#define AV_G(field)                                                  \
+    do {                                                             \
+        memcpy(f, fam, n);                                           \
+        memcpy(f + n, "." #field, sizeof("." #field));               \
+        grade2(f, lbl, d.field, r.field);                            \
+    } while (0)
+    AV_G(rc); AV_G(err); AV_G(argc); AV_G(changed); AV_G(count); AV_G(hash);
+    AV_G(pgm_set); AV_G(pgm_hash);
+#undef AV_G
+}
+
+static void av_case(const char *fam, const char *lbl, int wide, int mode, int null_line)
+{
+    struct av_obs d, r;
+    g_iph_dll = g_iph_ref = 0;
+    d = av_run(0, wide, mode, null_line);
+    r = av_run(1, wide, mode, null_line);
+    av_grade(fam, lbl, d, r);
+    {
+        char f[64];
+        size_t n = strlen(fam);
+        if (n > 40) n = 40;
+        memcpy(f, fam, n);
+        memcpy(f + n, ".iph", sizeof(".iph"));
+        grade2(f, lbl, g_iph_dll, g_iph_ref);
+    }
+}
+
+/* ---- the wildcard fixture ---- */
+static char g_av_wc_dir[MAX_PATH + 64];
+static const char *const g_av_wc_files[] = {
+    "b.txt", "a.txt", "c.txt", "d.dat", "e.dat", "zz.TXT",
+    "f00.q", "f07.q", "f03.q", "f11.q", "f01.q", "f09.q",
+    "f02.q", "f10.q", "f04.q", "f08.q", "f05.q", "f06.q",
+};
+#define AV_WC_FILES_N (sizeof(g_av_wc_files) / sizeof(g_av_wc_files[0]))
+
+static int av_wc_setup(void)
+{
+    DWORD n = GetTempPathA(MAX_PATH, g_av_wc_dir);
+    if (!n || n >= MAX_PATH) lstrcpyA(g_av_wc_dir, "C:\\");
+    lstrcatA(g_av_wc_dir, "ucrtdiff_argv_wc");
+    CreateDirectoryA(g_av_wc_dir, 0);
+    for (unsigned i = 0; i < AV_WC_FILES_N; i++) {
+        char p[MAX_PATH + 96];
+        lstrcpyA(p, g_av_wc_dir);
+        lstrcatA(p, "\\");
+        lstrcatA(p, g_av_wc_files[i]);
+        HANDLE h = CreateFileA(p, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+        if (h == INVALID_HANDLE_VALUE) return 0;
+        CloseHandle(h);
+    }
+    {
+        char p[MAX_PATH + 96];
+        lstrcpyA(p, g_av_wc_dir);
+        lstrcatA(p, "\\subdir");
+        CreateDirectoryA(p, 0);
+    }
+    return 1;
+}
+static void av_wc_teardown(void)
+{
+    for (unsigned i = 0; i < AV_WC_FILES_N; i++) {
+        char p[MAX_PATH + 96];
+        lstrcpyA(p, g_av_wc_dir);
+        lstrcatA(p, "\\");
+        lstrcatA(p, g_av_wc_files[i]);
+        DeleteFileA(p);
+    }
+    {
+        char p[MAX_PATH + 96];
+        lstrcpyA(p, g_av_wc_dir);
+        lstrcatA(p, "\\subdir");
+        RemoveDirectoryA(p);
+    }
+    RemoveDirectoryA(g_av_wc_dir);
+}
+
+/* Expanded-mode lines: `%s` is the fixture directory. Covers: several matches
+ * (the "sort" is by slot address), >8 matches (qsort's partitioning path),
+ * `*` (skips . and .., lists the subdirectory), no match (kept verbatim), a
+ * forward-slash directory separator, a colon that cannot be a drive (kept
+ * verbatim), and a plain argument. */
+static const char *const g_av_wc_fmt[] = {
+    "prog \"%s\\*.txt\"",
+    "prog \"%s\\f*.q\" tail",
+    "prog \"%s\\*\"",
+    "prog \"%s\\nomatch*.zz\" \"%s\\?.dat\"",
+    "prog \"%s/?.txt\"",
+    "prog a:b* plain x?",
+    "prog \"%s\\f0?.q\" \"%s\\*.dat\"",
+    "p*g",
+};
+#define AV_WC_N (sizeof(g_av_wc_fmt) / sizeof(g_av_wc_fmt[0]))
+
+static void av_wc_line(char *out, size_t cap, const char *fmt)
+{
+    size_t k = 0;
+    for (const char *f = fmt; *f && k + 1 < cap; f++) {
+        if (f[0] == '%' && f[1] == 's') {
+            for (const char *d = g_av_wc_dir; *d && k + 1 < cap; d++) out[k++] = *d;
+            f++;
+        } else {
+            out[k++] = *f;
+        }
+    }
+    out[k] = 0;
+}
+
+static void av_configure(int wide)
+{
+    const char *fam = wide ? "_configure_wide_argv" : "_configure_narrow_argv";
+    char fam_x[48];
+    wchar_t wbuf[1024];
+
+    install_counting_iph();
+
+    /* Modes other than 1 over an ordinary line: 0 = no-op success, 3 and -1 =
+     * EINVAL through the handler. */
+    av_set_line("prog a b");
+    av_widen(wbuf, 1024, "prog a b");
+    av_set_wline(wbuf);
+    av_case(fam, "mode=0", wide, 0, 0);
+    av_case(fam, "mode=3", wide, 3, 0);
+    av_case(fam, "mode=-1", wide, -1, 0);
+
+    /* The parser, unexpanded. */
+    for (unsigned i = 0; i < AV_LINES_N; i++) {
+        av_set_line(g_av_lines[i]);
+        av_widen(wbuf, 1024, g_av_lines[i]);
+        av_set_wline(wbuf);
+        av_case(fam, label_idx(i), wide, 1, 0);
+    }
+    av_case(fam, "NULL-line", wide, 1, 1);
+
+    /* Wide only: characters no narrow line can carry. */
+    if (wide) {
+        av_set_wline(L"prog \x00e9t\x00e9 \x4e2d\x6587 \"\x3000q\" \xd83d\xde00");
+        av_case(fam, "non-ascii", wide, 1, 0);
+    }
+
+    /* Expanded (wildcards), in a private directory. */
+    memcpy(fam_x, fam, strlen(fam));
+    memcpy(fam_x + strlen(fam), ".wc", sizeof(".wc"));
+    if (!av_wc_setup()) {
+        grade2(fam_x, "setup", 0, 1); /* a fixture failure must not read as a MATCH */
+        av_wc_teardown();
+        return;
+    }
+    for (unsigned i = 0; i < AV_WC_N; i++) {
+        char line[1024];
+        av_wc_line(line, sizeof(line), g_av_wc_fmt[i]);
+        av_set_line(line);
+        av_widen(wbuf, 1024, line);
+        av_set_wline(wbuf);
+        av_case(fam_x, label_idx(i), wide, 2, 0);
+    }
+    /* Expanded mode over a wildcard-free line is the plain parse, re-packed. */
+    av_set_line(g_av_lines[3]);
+    av_widen(wbuf, 1024, g_av_lines[3]);
+    av_set_wline(wbuf);
+    av_case(fam_x, "no-wildcard", wide, 2, 0);
+    av_wc_teardown();
+}
+
+static void run_argv__configure_narrow_argv(void) { av_configure(0); }
+static void run_argv__configure_wide_argv(void) { av_configure(1); }
+#endif /* UCRTDIFF_REF_HAS__configure_narrow_argv */
+
+/* ==== startup/argv_winmain.cpp ========================================== */
+#if UCRTDIFF_REF_HAS__get_narrow_winmain_command_line
+char *__cdecl ref__get_narrow_winmain_command_line(void);
+wchar_t *__cdecl ref__get_wide_winmain_command_line(void);
+extern char *(__cdecl *const av_ud__get_narrow_winmain_command_line)(void)
+    __asm__(UD_IMP(_get_narrow_winmain_command_line));
+extern wchar_t *(__cdecl *const av_ud__get_wide_winmain_command_line)(void)
+    __asm__(UD_IMP(_get_wide_winmain_command_line));
+
+/* The tail skip: quoted program names (terminated or not), control characters
+ * (<= ' ' is whitespace), 0xA0/0xFF (> ' ' UNSIGNED, so NOT whitespace), an
+ * empty line and a line that is all whitespace. */
+static const char *const g_av_wm_lines[] = {
+    "",
+    "prog",
+    "prog  args here",
+    "\"quoted prog\" x y",
+    "\"unterminated prog x",
+    "pro\"g x\" y z",
+    "prog\x01\x02\x1f tail",
+    "prog \xa0x",
+    "\xff\xfe prog",
+    "   lead",
+    " \t \x7f",
+    "prog\t\t",
+    "\"\"\"x y\" z",
+};
+#define AV_WM_N (sizeof(g_av_wm_lines) / sizeof(g_av_wm_lines[0]))
+
+/* The result as an offset into the crafted line; -2 = somewhere else (the
+ * static empty string), in which case its first character is graded too. */
+static long long av_wm_off(const void *base, const void *p, size_t width)
+{
+    const char *b = (const char *)base, *q = (const char *)p;
+    if (!p) return -1;
+    if (q < b || q >= b + 1024 * width) return -2;
+    return (long long)((q - b) / (long long)width);
+}
+
+static void av_winmain(int wide)
+{
+    const char *fam = wide ? "_get_wide_winmain_command_line" : "_get_narrow_winmain_command_line";
+    wchar_t wbuf[1024];
+    install_counting_iph();
+    for (unsigned i = 0; i <= AV_WM_N; i++) {
+        int null_line = i == AV_WM_N;
+        long long o[2], c[2];
+        const char *lbl = null_line ? "NULL-line" : label_idx(i);
+        if (!null_line) {
+            av_set_line(g_av_wm_lines[i]);
+            av_widen(wbuf, 1024, g_av_wm_lines[i]);
+            av_set_wline(wbuf);
+        }
+        g_iph_dll = g_iph_ref = 0;
+        for (int ref = 0; ref < 2; ref++) {
+            struct av_side s = av_side_of(ref);
+            struct av_saved saved = av_save(s);
+            if (wide) {
+                wchar_t *r;
+                *s.wcmdln = null_line ? 0 : g_av_wline;
+                r = ref ? ref__get_wide_winmain_command_line() : av_ud__get_wide_winmain_command_line();
+                o[ref] = av_wm_off(g_av_wline, r, sizeof(wchar_t));
+                c[ref] = r ? (long long)*r : -1;
+            } else {
+                char *r;
+                *s.acmdln = null_line ? 0 : g_av_line;
+                r = ref ? ref__get_narrow_winmain_command_line() : av_ud__get_narrow_winmain_command_line();
+                o[ref] = av_wm_off(g_av_line, r, 1);
+                c[ref] = r ? (long long)(unsigned char)*r : -1;
+            }
+            av_restore(s, saved);
+        }
+        grade2(fam, lbl, o[0], o[1]);
+        {
+            char f[64];
+            size_t n = strlen(fam);
+            memcpy(f, fam, n);
+            memcpy(f + n, ".ch", sizeof(".ch"));
+            grade2(f, lbl, c[0], c[1]);
+            memcpy(f + n, ".iph", sizeof(".iph"));
+            grade2(f, lbl, g_iph_dll, g_iph_ref);
+        }
+    }
+    if (wide) {
+        /* A non-ASCII program name and tail. */
+        long long o[2];
+        av_set_wline(L"\x00e9x\x4e2d \x3000 \x00e9t\x00e9");
+        for (int ref = 0; ref < 2; ref++) {
+            struct av_side s = av_side_of(ref);
+            struct av_saved saved = av_save(s);
+            wchar_t *r;
+            *s.wcmdln = g_av_wline;
+            r = ref ? ref__get_wide_winmain_command_line() : av_ud__get_wide_winmain_command_line();
+            o[ref] = av_wm_off(g_av_wline, r, sizeof(wchar_t));
+            av_restore(s, saved);
+        }
+        grade2(fam, "non-ascii", o[0], o[1]);
+    }
+}
+
+static void run_argv__get_narrow_winmain_command_line(void) { av_winmain(0); }
+static void run_argv__get_wide_winmain_command_line(void) { av_winmain(1); }
+#endif /* UCRTDIFF_REF_HAS__get_narrow_winmain_command_line */
+
+/* ==== internal/report_runtime_error.cpp ================================= */
+#if UCRTDIFF_REF_HAS__query_app_type
+void __cdecl ref__set_app_type(int);
+int __cdecl ref__query_app_type(void);
+extern void(__cdecl *const av_ud__set_app_type)(int) __asm__(UD_IMP(_set_app_type));
+extern int(__cdecl *const av_ud__query_app_type)(void) __asm__(UD_IMP(_query_app_type));
+
+/* The default: nothing in this bare-entry process has set either side's app
+ * type (an EXE's own CRT startup would), so both must read the same value. */
+static void run_argv__query_app_type(void)
+{
+    install_counting_iph();
+    g_iph_dll = g_iph_ref = 0;
+    grade2("_query_app_type", "initial", av_ud__query_app_type(), ref__query_app_type());
+    grade2("_query_app_type.iph", "initial", g_iph_dll, g_iph_ref);
+}
+
+/* Round trip, including values outside the enum (stored unchecked), then the
+ * original is put back on both sides. */
+static void run_argv__set_app_type(void)
+{
+    static const int vals[] = { 0, 1, 2, 3, -1, 0x7fffffff, 1 };
+    int orig_d, orig_r;
+    install_counting_iph();
+    orig_d = av_ud__query_app_type();
+    orig_r = ref__query_app_type();
+    for (unsigned i = 0; i < sizeof(vals) / sizeof(vals[0]); i++) {
+        g_iph_dll = g_iph_ref = 0;
+        *_errno() = 0; *ref__errno() = 0;
+        av_ud__set_app_type(vals[i]);
+        ref__set_app_type(vals[i]);
+        grade2("_set_app_type", label_idx(i), av_ud__query_app_type(), ref__query_app_type());
+        grade2("_set_app_type.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("_set_app_type.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+    av_ud__set_app_type(orig_d);
+    ref__set_app_type(orig_r);
+}
+#endif /* UCRTDIFF_REF_HAS__query_app_type */
+
+/* ==== registry ============================================================
+ * Paste ARGV_HAND_ENTRIES into run_legacy()'s `legacy[]` table. Each row is
+ * `{ name, 0 }` when its guard reads 0, so the table always compiles. */
+#if UCRTDIFF_REF_HAS__configure_narrow_argv
+#define ARGV_PARSE_HAND(name) { #name, run_argv_##name },
+#else
+#define ARGV_PARSE_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__get_narrow_winmain_command_line
+#define ARGV_WINMAIN_HAND(name) { #name, run_argv_##name },
+#else
+#define ARGV_WINMAIN_HAND(name) { #name, 0 },
+#endif
+#if UCRTDIFF_REF_HAS__query_app_type
+#define ARGV_APPTYPE_HAND(name) { #name, run_argv_##name },
+#else
+#define ARGV_APPTYPE_HAND(name) { #name, 0 },
+#endif
+
+#define ARGV_HAND_ENTRIES                                                      \
+    ARGV_PARSE_HAND(_configure_narrow_argv)                                    \
+    ARGV_PARSE_HAND(_configure_wide_argv)                                      \
+    ARGV_WINMAIN_HAND(_get_narrow_winmain_command_line)                        \
+    ARGV_WINMAIN_HAND(_get_wide_winmain_command_line)                          \
+    ARGV_APPTYPE_HAND(_query_app_type)                                         \
+    ARGV_APPTYPE_HAND(_set_app_type)
+
+
+/* ---- thunkcvt: inlined from staging/thunkcvt.c ---- */
+/*
+ * ==========================================================================
+ * THUNKCVT -- the float formatting engine (convert/cvt.cpp, cfout.cpp,
+ * _fptostr.cpp), convert/wctype.cpp, convert/fp_flags.cpp, and
+ * internal/winapi_thunks.cpp + the six narrow internal/<Api>A.cpp wrappers.
+ *
+ * WHAT IS GRADED, AND THROUGH WHICH PATH
+ *
+ *   wctype             -- an export: ud_wctype vs ref_wctype directly.
+ *
+ *   the cvt engine     -- __acrt_fp_format / __acrt_fltout /
+ *                         __acrt_fp_strflt_to_string are INTERNALS: ucrtbase.dll
+ *                         exports none of them, so the DLL side cannot be called
+ *                         by name. They are graded through the exports whose
+ *                         bodies are the SAME Rust on both sides and call them:
+ *
+ *       ud_X   -> the shipping DLL's Rust X        -> OUR Rust engine
+ *       ref_X  -> alias of ours_X (libucrt_ours.refalias; the same Rust X,
+ *                 renamed, in the reference instance)
+ *              -> Microsoft's __acrt_* (plain names, still defined by
+ *                 libucrt_ref.a -- the internals set DEFERS to them)
+ *
+ *     so a DIFF can only come from the engine. Row -> C files exercised:
+ *       _ecvt_s, _fcvt_s             cfout.cpp + _fptostr.cpp (legacy rounding)
+ *       _gcvt_s                      cfout.cpp + cvt.cpp + _fptostr.cpp
+ *       __stdio_common_vsprintf      cvt.cpp + cfout.cpp + _fptostr.cpp
+ *                                    (%a %e %f %g, both roundings, the option
+ *                                    bits LEGACY_MSVCRT_COMPATIBILITY and
+ *                                    LEGACY_THREE_DIGIT_EXPONENTS, INF/NAN)
+ *     Each engine block needs Microsoft's copy of EVERY file its rows cross.
+ *
+ *   fp_flags.cpp       -- __fastflag/__setfflag are not exported: nothing graded.
+ *   winapi_thunks.cpp and the six narrow wrappers -- none is exported
+ *                      (ucrtbase.spec names no __acrt_*), so there is no DLL-side
+ *                      entry to call: nothing graded here. They are covered by
+ *                      boot smoke (every CRT start runs __acrt_initialize_winapi_thunks,
+ *                      the Fls* thunks and the locale thunks) and by the graded
+ *                      exports that call them (setlocale, _wchdir/_chdir,
+ *                      _putenv, _popen, spawn*, _tempnam ...).
+ *
+ * WHAT CANNOT BE GRADED IN THE GUEST, and was graded on the host instead:
+ *   directed rounding. ucrtbase's fegetround/fesetround/fegetenv/feholdexcept/
+ *   fesetenv are `-stub` exports (a DbgPrint and `return 0`), so both engines
+ *   always see FE_TONEAREST here. The Rust engine was run against Microsoft's
+ *   cvt.cpp/cfout.cpp/_fptostr.cpp compiled for the host with all four
+ *   rounding modes, DN_FLUSH, every format/option and tiny buffers:
+ *   21,194,818 cases, 0 differences.
+ *
+ * GUARDS -- one per C file, each 1 while libucrt_ref.a still defines the
+ * file's Microsoft body:
+ *   UCRTDIFF_REF_HAS_wctype                      -- wctype.cpp (ref_wctype)
+ *   UCRTDIFF_REF_HAS___acrt_fp_format            -- cvt.cpp
+ *   UCRTDIFF_REF_HAS___acrt_fltout               -- cfout.cpp
+ *   UCRTDIFF_REF_HAS___acrt_fp_strflt_to_string  -- _fptostr.cpp
+ * The last three are INTERNAL names: the reference set keeps them PLAIN (never
+ * renamed ref_*), so gen_ucrt_tier2_cases.py's HAND_GRADED test (a `ref_`
+ * prefix) cannot compute them. They default to 0 below until the generator
+ * emits them from a plain-name lookup in libucrt_ref.a.
+ *
+ * PROCESS STATE: the DN_FLUSH rows set _DN_FLUSH through the DLL's
+ * _controlfp_s (the hardware control register both instances read) and put the
+ * saved _MCW_DN bits back before returning. Nothing else is changed.
+ */
+#include <stdarg.h>
+#include <stdio.h>
+#include <float.h>
+
+#ifndef UCRTDIFF_REF_HAS_wctype
+#define UCRTDIFF_REF_HAS_wctype 0
+#endif
+#ifndef UCRTDIFF_REF_HAS___acrt_fp_format
+#define UCRTDIFF_REF_HAS___acrt_fp_format 0
+#endif
+#ifndef UCRTDIFF_REF_HAS___acrt_fltout
+#define UCRTDIFF_REF_HAS___acrt_fltout 0
+#endif
+#ifndef UCRTDIFF_REF_HAS___acrt_fp_strflt_to_string
+#define UCRTDIFF_REF_HAS___acrt_fp_strflt_to_string 0
+#endif
+
+#define THUNKCVT_HAS_ECVT (UCRTDIFF_REF_HAS___acrt_fltout && UCRTDIFF_REF_HAS___acrt_fp_strflt_to_string)
+#define THUNKCVT_HAS_FMT                                                        \
+    (UCRTDIFF_REF_HAS___acrt_fp_format && UCRTDIFF_REF_HAS___acrt_fltout &&    \
+     UCRTDIFF_REF_HAS___acrt_fp_strflt_to_string)
+
+/* ---- wctype.cpp ------------------------------------------------------- */
+#if UCRTDIFF_REF_HAS_wctype
+unsigned short __cdecl ref_wctype(const char *);
+extern unsigned short(__cdecl *const ud_wctype)(const char *) __asm__(UD_IMP(wctype));
+
+static void run_thunkcvt_wctype(void)
+{
+    static const char *const names[] = {
+        "alnum", "alpha", "cntrl", "digit", "graph", "lower", "print", "punct",
+        "blank", "space", "upper", "xdigit",
+        /* near misses: case, prefix, suffix, padding, empty, non-ASCII */
+        "", "Alpha", "ALPHA", "alph", "alphax", "xdigit ", " space", "digits",
+        "wctype", "\xe9", "print\n",
+    };
+    install_counting_iph();
+    for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        unsigned short r1 = ud_wctype(names[i]);
+        unsigned short r2 = ref_wctype(names[i]);
+        grade2("wctype", label_idx(i), r1, r2);
+        grade2("wctype.errno", label_idx(i), *_errno(), *ref__errno());
+        grade2("wctype.iph", label_idx(i), g_iph_dll, g_iph_ref);
+    }
+}
+#endif /* UCRTDIFF_REF_HAS_wctype */
+
+/* ---- the engine: shared corpus ---------------------------------------- */
+#if THUNKCVT_HAS_ECVT || THUNKCVT_HAS_FMT
+
+/* Bit patterns, not literals: every row names the exact double. */
+static const unsigned long long g_tc_bits[] = {
+    0x0000000000000000ULL, /* 0 */
+    0x8000000000000000ULL, /* -0 */
+    0x3ff0000000000000ULL, /* 1 */
+    0xbff0000000000000ULL, /* -1 */
+    0x3fe0000000000000ULL, /* 0.5 */
+    0x3ff8000000000000ULL, /* 1.5 */
+    0x4004000000000000ULL, /* 2.5 */
+    0x3fc0000000000000ULL, /* 0.125 */
+    0x3fb999999999999aULL, /* 0.1 */
+    0x3fd5555555555555ULL, /* 1/3 */
+    0x3fe5555555555555ULL, /* 2/3 */
+    0x405edd2f1a9fbe77ULL, /* 123.456 */
+    0xc05edd2f1a9fbe77ULL, /* -123.456 */
+    0x4023000000000000ULL, /* 9.5 */
+    0x4058e00000000000ULL, /* 99.5 */
+    0x3fa999999999999aULL, /* 0.05 */
+    0x3fc3333333333333ULL, /* 0.15 */
+    0x3fd0000000000000ULL, /* 0.25 */
+    0x3fd6666666666666ULL, /* 0.35 */
+    0x4023fff972474539ULL, /* 9.9999 */
+    0x412e847f00000000ULL, /* 999999.5 */
+    0x44b52d02c7e14af6ULL, /* 1e22 */
+    0x44b52d02c7e14af7ULL, /* 1e23 (nearest) */
+    0x4340000000000000ULL, /* 2^53 */
+    0x43f0000000000000ULL, /* 2^64 */
+    0x7fefffffffffffffULL, /* DBL_MAX */
+    0xffefffffffffffffULL, /* -DBL_MAX */
+    0x0010000000000000ULL, /* DBL_MIN */
+    0x0000000000000001ULL, /* smallest denormal */
+    0x000fffffffffffffULL, /* largest denormal */
+    0x00001cc2ae3b1f0cULL, /* ~1e-310 */
+    0x430c6bf526340000ULL, /* 1e15 */
+    0x4341c37937e08000ULL, /* 1e16 */
+    0x3ee4f8b588e368f1ULL, /* 1e-5 */
+    0x3f201f31f46ed246ULL, /* 0.000123 */
+    0x400921fb54442d18ULL, /* pi */
+    0x4005bf0a8b145769ULL, /* e */
+    0x7e37e43c8800759cULL, /* 1e300 */
+    0x01a56e1fc2f8f359ULL, /* 1e-300 */
+    0x3feffffde7210be9ULL, /* 0.9999995 (approx) */
+    0x4021000000000000ULL, /* 8.5 */
+    0x3ff0000000000008ULL, /* 1 + 8ulp: a %a tie */
+    0x3ff0000000000018ULL, /* 1 + 24ulp: a %a tie, odd neighbour */
+    0x3fffffffffffffffULL, /* 1.999..: %a carries into the leading digit */
+    0x3ff0800000000000ULL, /* 1.03125 */
+};
+#define TC_NBITS (sizeof g_tc_bits / sizeof g_tc_bits[0])
+
+/* inf, nan and friends: the INF/NAN spelling tables */
+static const unsigned long long g_tc_special[] = {
+    0x7ff0000000000000ULL, /* +inf */
+    0xfff0000000000000ULL, /* -inf */
+    0x7ff8000000000000ULL, /* qnan */
+    0xfff8000000000000ULL, /* indeterminate (-qnan, no payload) */
+    0x7ff0000000000001ULL, /* snan */
+    0xfff0000000000001ULL, /* -snan */
+    0x7ff8000000000123ULL, /* qnan with payload */
+    0xfff8000000000001ULL, /* -qnan with payload: NOT indeterminate */
+};
+#define TC_NSPECIAL (sizeof g_tc_special / sizeof g_tc_special[0])
+
+static double tc_d(unsigned long long b)
+{
+    double d;
+    memcpy(&d, &b, sizeof d);
+    return d;
+}
+
+/* "vNNpNNNoNN" -- value index, precision (+100 so -1 prints), option bits. */
+static const char *tc_label(size_t v, int p, unsigned o)
+{
+    static char buf[24];
+    unsigned pp = (unsigned)(p + 100);
+    buf[0] = 'v';
+    buf[1] = (char)('0' + (v / 100) % 10);
+    buf[2] = (char)('0' + (v / 10) % 10);
+    buf[3] = (char)('0' + v % 10);
+    buf[4] = 'p';
+    buf[5] = (char)('0' + (pp / 100) % 10);
+    buf[6] = (char)('0' + (pp / 10) % 10);
+    buf[7] = (char)('0' + pp % 10);
+    buf[8] = 'o';
+    buf[9] = "0123456789abcdef"[(o >> 4) & 15];
+    buf[10] = "0123456789abcdef"[o & 15];
+    buf[11] = 0;
+    return buf;
+}
+#endif /* engine corpus */
+
+/* ---- cfout.cpp + _fptostr.cpp, through _ecvt_s / _fcvt_s --------------- */
+#if THUNKCVT_HAS_ECVT
+errno_t __cdecl ref__ecvt_s(char *, size_t, double, int, int *, int *);
+errno_t __cdecl ref__fcvt_s(char *, size_t, double, int, int *, int *);
+extern errno_t(__cdecl *const ud__ecvt_s)(char *, size_t, double, int, int *, int *) __asm__(UD_IMP(_ecvt_s));
+extern errno_t(__cdecl *const ud__fcvt_s)(char *, size_t, double, int, int *, int *) __asm__(UD_IMP(_fcvt_s));
+
+typedef errno_t(__cdecl *tc_cvt_s_fn)(char *, size_t, double, int, int *, int *);
+
+static void tc_cvt_s_rows(const char *fam, tc_cvt_s_fn dll, tc_cvt_s_fn ref)
+{
+    static const int digits[] = { 0, 1, 2, 3, 6, 10, 15, 17, 20, 30, 40, -1 };
+    char fe[40], fd[40], fs[40], fn_[40];
+    size_t k = 0;
+    for (; fam[k] && k < 30; k++) fe[k] = fd[k] = fs[k] = fn_[k] = fam[k];
+    memcpy(fe + k, ".errno", 7); memcpy(fd + k, ".decpt", 7); memcpy(fs + k, ".sign", 6); memcpy(fn_ + k, ".str", 5);
+
+    install_counting_iph();
+    for (size_t v = 0; v < TC_NBITS + TC_NSPECIAL; v++) {
+        double x = tc_d(v < TC_NBITS ? g_tc_bits[v] : g_tc_special[v - TC_NBITS]);
+        for (size_t d = 0; d < sizeof digits / sizeof digits[0]; d++) {
+            /* specials only at a couple of widths: they never reach the digit loop */
+            if (v >= TC_NBITS && d > 2) continue;
+            char b1[512], b2[512];
+            int dp1 = -999, dp2 = -999, sg1 = -999, sg2 = -999;
+            const char *lbl = tc_label(v, digits[d], 0);
+            memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+            *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+            errno_t e1 = dll(b1, sizeof b1, x, digits[d], &dp1, &sg1);
+            int n1 = *_errno();
+            errno_t e2 = ref(b2, sizeof b2, x, digits[d], &dp2, &sg2);
+            grade2(fam, lbl, e1, e2);
+            grade2(fn_, lbl, fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+            grade2(fd, lbl, dp1, dp2);
+            grade2(fs, lbl, sg1, sg2);
+            grade2(fe, lbl, n1, *ref__errno());
+        }
+    }
+    /* Too small for the digits asked: the engine's own ERANGE check. */
+    for (int n = 1; n <= 6; n++) {
+        char b1[8], b2[8];
+        int dp1 = 0, dp2 = 0, sg1 = 0, sg2 = 0;
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t e1 = dll(b1, (size_t)n, 123.456, 6, &dp1, &sg1);
+        int n1 = *_errno(), i1 = g_iph_dll;
+        errno_t e2 = ref(b2, (size_t)n, 123.456, 6, &dp2, &sg2);
+        grade2(fam, label_idx(900 + n), e1, e2);
+        grade2(fn_, label_idx(900 + n), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        grade2(fe, label_idx(900 + n), n1, *ref__errno());
+        grade2(fam, label_idx(950 + n), i1, g_iph_ref);
+    }
+}
+
+static void run_thunkcvt__ecvt_s(void) { tc_cvt_s_rows("_ecvt_s", ud__ecvt_s, ref__ecvt_s); }
+static void run_thunkcvt__fcvt_s(void) { tc_cvt_s_rows("_fcvt_s", ud__fcvt_s, ref__fcvt_s); }
+#endif /* THUNKCVT_HAS_ECVT */
+
+/* ---- cvt.cpp (+ cfout, _fptostr), through _gcvt_s and vsprintf ---------- */
+#if THUNKCVT_HAS_FMT
+errno_t __cdecl ref__gcvt_s(char *, size_t, double, int);
+extern errno_t(__cdecl *const ud__gcvt_s)(char *, size_t, double, int) __asm__(UD_IMP(_gcvt_s));
+int __cdecl ref___stdio_common_vsprintf(unsigned long long, char *, size_t, const char *, _locale_t, va_list);
+extern int(__cdecl *const ud___stdio_common_vsprintf)(unsigned long long, char *, size_t, const char *, _locale_t, va_list) __asm__(UD_IMP(__stdio_common_vsprintf));
+extern errno_t(__cdecl *const ud__controlfp_s)(unsigned int *, unsigned int, unsigned int) __asm__(UD_IMP(_controlfp_s));
+
+static void run_thunkcvt__gcvt_s(void)
+{
+    static const int digits[] = { 0, 1, 2, 6, 10, 15, 17, 20, 30 };
+    install_counting_iph();
+    for (size_t v = 0; v < TC_NBITS + TC_NSPECIAL; v++) {
+        double x = tc_d(v < TC_NBITS ? g_tc_bits[v] : g_tc_special[v - TC_NBITS]);
+        for (size_t d = 0; d < sizeof digits / sizeof digits[0]; d++) {
+            if (v >= TC_NBITS && d > 2) continue;
+            char b1[512], b2[512];
+            const char *lbl = tc_label(v, digits[d], 0);
+            memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+            *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+            errno_t e1 = ud__gcvt_s(b1, sizeof b1, x, digits[d]);
+            int n1 = *_errno();
+            errno_t e2 = ref__gcvt_s(b2, sizeof b2, x, digits[d]);
+            grade2("_gcvt_s", lbl, e1, e2);
+            grade2("_gcvt_s.str", lbl, fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+            grade2("_gcvt_s.errno", lbl, n1, *ref__errno());
+        }
+    }
+    /* Buffers too small for the %e form: __acrt_fp_format's own ERANGE. */
+    for (int n = 1; n <= 12; n++) {
+        char b1[16], b2[16];
+        memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+        *_errno() = 0; *ref__errno() = 0; g_iph_dll = g_iph_ref = 0;
+        errno_t e1 = ud__gcvt_s(b1, (size_t)n, 1.5e300, 6);
+        int n1 = *_errno(), i1 = g_iph_dll;
+        errno_t e2 = ref__gcvt_s(b2, (size_t)n, 1.5e300, 6);
+        grade2("_gcvt_s.small", label_idx((size_t)n), e1, e2);
+        grade2("_gcvt_s.small.str", label_idx((size_t)n), fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+        grade2("_gcvt_s.small.errno", label_idx((size_t)n), n1, *ref__errno());
+        grade2("_gcvt_s.small.iph", label_idx((size_t)n), i1, g_iph_ref);
+    }
+}
+
+/* Two varargs trampolines: the only way to hand each side a genuine va_list. */
+static int tc_vsd(unsigned long long o, char *b, size_t n, const char *f, ...)
+{
+    va_list ap; va_start(ap, f);
+    int r = ud___stdio_common_vsprintf(o, b, n, f, NULL, ap);
+    va_end(ap); return r;
+}
+static int tc_vsr(unsigned long long o, char *b, size_t n, const char *f, ...)
+{
+    va_list ap; va_start(ap, f);
+    int r = ref___stdio_common_vsprintf(o, b, n, f, NULL, ap);
+    va_end(ap); return r;
+}
+
+#define TC_OPT_LEGACY_MSVCRT 0x08u   /* _CRT_INTERNAL_PRINTF_LEGACY_MSVCRT_COMPATIBILITY */
+#define TC_OPT_THREE_DIGIT   0x10u   /* _CRT_INTERNAL_PRINTF_LEGACY_THREE_DIGIT_EXPONENTS */
+#define TC_OPT_STANDARD_RND  0x20u   /* _CRT_INTERNAL_PRINTF_STANDARD_ROUNDING */
+
+/* One printf call per side on a precision-taking format; grades the count, the
+ * whole sentinel-filled buffer and errno. `prec` < 0 selects the format's
+ * default precision (the format then has no `.*`). */
+static void tc_pf_row(const char *fam, const char *fmt_star, const char *fmt_plain, unsigned opt,
+                      size_t v, int prec, double x)
+{
+    char b1[1024], b2[1024];
+    char fe[48], fh[48];
+    size_t k = 0;
+    const char *lbl = tc_label(v, prec, opt);
+    for (; fam[k] && k < 36; k++) fe[k] = fh[k] = fam[k];
+    memcpy(fe + k, ".errno", 7); memcpy(fh + k, ".str", 5);
+    memset(b1, 'X', sizeof b1); memset(b2, 'X', sizeof b2);
+    *_errno() = 0x5eed; *ref__errno() = 0x5eed; g_iph_dll = g_iph_ref = 0;
+    int r1, r2, n1;
+    if (prec >= 0) {
+        r1 = tc_vsd(opt, b1, sizeof b1, fmt_star, prec, x);
+        n1 = *_errno();
+        r2 = tc_vsr(opt, b2, sizeof b2, fmt_star, prec, x);
+    } else {
+        r1 = tc_vsd(opt, b1, sizeof b1, fmt_plain, x);
+        n1 = *_errno();
+        r2 = tc_vsr(opt, b2, sizeof b2, fmt_plain, x);
+    }
+    grade2(fam, lbl, r1, r2);
+    grade2(fh, lbl, fnv(b1, sizeof b1), fnv(b2, sizeof b2));
+    grade2(fe, lbl, n1, *ref__errno());
+}
+
+/* The precisions each value is taken to (-1: the format's default). */
+static const int g_tc_prec[] = { -1, 0, 1, 3, 6, 13, 17, 30, 40 };
+#define TC_NPREC (sizeof g_tc_prec / sizeof g_tc_prec[0])
+
+static void tc_pf_family(const char *fam, const char *fmt_star, const char *fmt_plain, unsigned opt)
+{
+    install_counting_iph();
+    for (size_t v = 0; v < TC_NBITS; v++)
+        for (size_t p = 0; p < TC_NPREC; p++)
+            tc_pf_row(fam, fmt_star, fmt_plain, opt, v, g_tc_prec[p], tc_d(g_tc_bits[v]));
+}
+
+/* One runner per letter and rounding (legacy: options 0; standard: the
+ * STANDARD_ROUNDING bit), so each stays well inside the per-export timeout --
+ * every engine call also DbgPrints ucrtbase's fegetenv/fegetround stub warnings. */
+static void run_thunkcvt_vsprintf_e(void)     { tc_pf_family("vsprintf%e", "%.*e", "%e", 0); }
+static void run_thunkcvt_vsprintf_e_std(void) { tc_pf_family("vsprintf%e.std", "%.*e", "%e", TC_OPT_STANDARD_RND); }
+static void run_thunkcvt_vsprintf_f(void)     { tc_pf_family("vsprintf%f", "%.*f", "%f", 0); }
+static void run_thunkcvt_vsprintf_f_std(void) { tc_pf_family("vsprintf%f.std", "%.*f", "%f", TC_OPT_STANDARD_RND); }
+static void run_thunkcvt_vsprintf_g(void)     { tc_pf_family("vsprintf%g", "%.*g", "%g", 0); }
+static void run_thunkcvt_vsprintf_g_std(void) { tc_pf_family("vsprintf%g.std", "%.*g", "%g", TC_OPT_STANDARD_RND); }
+static void run_thunkcvt_vsprintf_a(void)     { tc_pf_family("vsprintf%a", "%.*a", "%a", 0); }
+static void run_thunkcvt_vsprintf_a_std(void) { tc_pf_family("vsprintf%a.std", "%.*a", "%a", TC_OPT_STANDARD_RND); }
+
+/* Capitals, '#', three-digit exponents, and the legacy-msvcrt option (under
+ * which INF/NAN reach the digit engine and come back as 1#INF-style strings,
+ * and %a's special-value path rewrites %e's output). */
+static void run_thunkcvt_vsprintf_misc(void)
+{
+    static const struct { const char *fam, *star, *plain; } fm[] = {
+        { "vsprintf%E", "%.*E", "%E" }, { "vsprintf%F", "%.*F", "%F" },
+        { "vsprintf%G", "%.*G", "%G" }, { "vsprintf%A", "%.*A", "%A" },
+        { "vsprintf%#g", "%#.*g", "%#g" }, { "vsprintf%+e", "%+.*e", "%+e" },
+    };
+    static const unsigned opts[] = { TC_OPT_THREE_DIGIT, TC_OPT_THREE_DIGIT | TC_OPT_STANDARD_RND };
+    static const int precs[] = { -1, 0, 2, 17 };
+    install_counting_iph();
+    for (size_t f = 0; f < sizeof fm / sizeof fm[0]; f++)
+        for (size_t v = 0; v < TC_NBITS; v += 3)
+            for (size_t p = 0; p < sizeof precs / sizeof precs[0]; p++)
+                for (size_t o = 0; o < sizeof opts / sizeof opts[0]; o++)
+                    tc_pf_row(fm[f].fam, fm[f].star, fm[f].plain, opts[o], v, precs[p], tc_d(g_tc_bits[v]));
+}
+
+static void run_thunkcvt_vsprintf_special(void)
+{
+    static const struct { const char *fam, *star, *plain; } fm[] = {
+        { "vsprintf%e.special", "%.*e", "%e" }, { "vsprintf%E.special", "%.*E", "%E" },
+        { "vsprintf%f.special", "%.*f", "%f" }, { "vsprintf%F.special", "%.*F", "%F" },
+        { "vsprintf%g.special", "%.*g", "%g" }, { "vsprintf%G.special", "%.*G", "%G" },
+        { "vsprintf%a.special", "%.*a", "%a" }, { "vsprintf%A.special", "%.*A", "%A" },
+    };
+    static const unsigned opts[] = {
+        0, TC_OPT_LEGACY_MSVCRT, TC_OPT_LEGACY_MSVCRT | TC_OPT_STANDARD_RND | TC_OPT_THREE_DIGIT,
+    };
+    static const int precs[] = { -1, 0, 12 };
+    install_counting_iph();
+    for (size_t f = 0; f < sizeof fm / sizeof fm[0]; f++)
+        for (size_t v = 0; v < TC_NSPECIAL; v++)
+            for (size_t p = 0; p < sizeof precs / sizeof precs[0]; p++)
+                for (size_t o = 0; o < sizeof opts / sizeof opts[0]; o++)
+                    tc_pf_row(fm[f].fam, fm[f].star, fm[f].plain, opts[o], TC_NBITS + v, precs[p],
+                              tc_d(g_tc_special[v]));
+    /* Width-limited INF/NAN: the short spelling when the long one does not fit
+     * is decided by __acrt_fp_format's result count, which printf sizes itself;
+     * a narrow field still exercises the padding around it. */
+    for (size_t v = 0; v < TC_NSPECIAL; v++)
+        tc_pf_row("vsprintf%3.1e.special", "%3.*e", "%3e", 0, TC_NBITS + v, 1, tc_d(g_tc_special[v]));
+}
+
+/* _DN_FLUSH: a denormal is formatted as zero. The flag lives in the hardware
+ * control register both instances read; the saved _MCW_DN bits go back. */
+#define TC_MCW_DN   0x03000000u
+#define TC_DN_FLUSH 0x01000000u
+static void run_thunkcvt_vsprintf_dnflush(void)
+{
+    static const unsigned long long den[] = {
+        0x0000000000000001ULL, 0x000fffffffffffffULL, 0x00001cc2ae3b1f0cULL, 0x8008000000000000ULL,
+        0x0010000000000000ULL, /* DBL_MIN: normal, must still print */
+    };
+    static const struct { const char *fam, *star, *plain; } fm[] = {
+        { "vsprintf%e.dnflush", "%.*e", "%e" }, { "vsprintf%f.dnflush", "%.*f", "%f" },
+        { "vsprintf%g.dnflush", "%.*g", "%g" }, { "vsprintf%a.dnflush", "%.*a", "%a" },
+    };
+    unsigned int saved = 0, tmp = 0;
+    install_counting_iph();
+    ud__controlfp_s(&saved, 0, 0);
+    ud__controlfp_s(&tmp, TC_DN_FLUSH, TC_MCW_DN);
+    for (size_t f = 0; f < sizeof fm / sizeof fm[0]; f++)
+        for (size_t v = 0; v < sizeof den / sizeof den[0]; v++) {
+            tc_pf_row(fm[f].fam, fm[f].star, fm[f].plain, TC_OPT_STANDARD_RND, 800 + v, 6, tc_d(den[v]));
+            tc_pf_row(fm[f].fam, fm[f].star, fm[f].plain, 0, 800 + v, 20, tc_d(den[v]));
+        }
+    ud__controlfp_s(&tmp, saved & TC_MCW_DN, TC_MCW_DN);
+}
+
+/* Powers of ten and their neighbours: where the log10 estimate of the decimal
+ * exponent is off by one and the trial digit has to correct it. */
+static void run_thunkcvt_vsprintf_pow10(void)
+{
+    static const struct { const char *fam, *star; } fm[] = {
+        { "vsprintf%e.pow10", "%.*e" }, { "vsprintf%f.pow10", "%.*f" }, { "vsprintf%g.pow10", "%.*g" },
+    };
+    install_counting_iph();
+    double p = 1e-320;
+    for (int k = -320; k <= 300; k += 20, p *= 1e20) {
+        unsigned long long b;
+        memcpy(&b, &p, sizeof b);
+        for (int n = -1; n <= 1; n++) {
+            double x = tc_d(b + (unsigned long long)(long long)n);
+            size_t lbl = (size_t)((k + 320) / 20) * 3 + (size_t)(n + 1);
+            for (size_t f = 0; f < sizeof fm / sizeof fm[0]; f++)
+                tc_pf_row(fm[f].fam, fm[f].star, fm[f].star, TC_OPT_STANDARD_RND, lbl, 16, x);
+        }
+    }
+}
+#endif /* THUNKCVT_HAS_FMT */
+
+/*
+ * ==== registry ============================================================
+ * Paste THUNKCVT_HAND_ENTRIES into run_legacy()'s `legacy[]` table. Each group
+ * expands to `{ name, 0 }` rows when its guards are 0, so the table always
+ * compiles.
+ */
+#if UCRTDIFF_REF_HAS_wctype
+#define THUNKCVT_WCTYPE_HAND { "wctype", run_thunkcvt_wctype },
+#else
+#define THUNKCVT_WCTYPE_HAND { "wctype", 0 },
+#endif
+#if THUNKCVT_HAS_ECVT
+#define THUNKCVT_ECVT_HAND { "cvt:_ecvt_s", run_thunkcvt__ecvt_s }, { "cvt:_fcvt_s", run_thunkcvt__fcvt_s },
+#else
+#define THUNKCVT_ECVT_HAND { "cvt:_ecvt_s", 0 }, { "cvt:_fcvt_s", 0 },
+#endif
+#if THUNKCVT_HAS_FMT
+#define THUNKCVT_FMT_HAND                                                       \
+    { "cvt:_gcvt_s", run_thunkcvt__gcvt_s },                                    \
+    { "cvt:vsprintf%e", run_thunkcvt_vsprintf_e },                              \
+    { "cvt:vsprintf%e.std", run_thunkcvt_vsprintf_e_std },                      \
+    { "cvt:vsprintf%f", run_thunkcvt_vsprintf_f },                              \
+    { "cvt:vsprintf%f.std", run_thunkcvt_vsprintf_f_std },                      \
+    { "cvt:vsprintf%g", run_thunkcvt_vsprintf_g },                              \
+    { "cvt:vsprintf%g.std", run_thunkcvt_vsprintf_g_std },                      \
+    { "cvt:vsprintf%a", run_thunkcvt_vsprintf_a },                              \
+    { "cvt:vsprintf%a.std", run_thunkcvt_vsprintf_a_std },                      \
+    { "cvt:vsprintf.misc", run_thunkcvt_vsprintf_misc },                        \
+    { "cvt:vsprintf.special", run_thunkcvt_vsprintf_special },                  \
+    { "cvt:vsprintf.dnflush", run_thunkcvt_vsprintf_dnflush },                  \
+    { "cvt:vsprintf.pow10", run_thunkcvt_vsprintf_pow10 },
+#else
+#define THUNKCVT_FMT_HAND                                                       \
+    { "cvt:_gcvt_s", 0 }, { "cvt:vsprintf%e", 0 }, { "cvt:vsprintf%e.std", 0 }, \
+    { "cvt:vsprintf%f", 0 }, { "cvt:vsprintf%f.std", 0 }, { "cvt:vsprintf%g", 0 }, \
+    { "cvt:vsprintf%g.std", 0 }, { "cvt:vsprintf%a", 0 }, { "cvt:vsprintf%a.std", 0 }, \
+    { "cvt:vsprintf.misc", 0 },                                                 \
+    { "cvt:vsprintf.special", 0 }, { "cvt:vsprintf.dnflush", 0 },               \
+    { "cvt:vsprintf.pow10", 0 },
+#endif
+
+#define THUNKCVT_HAND_ENTRIES THUNKCVT_WCTYPE_HAND THUNKCVT_ECVT_HAND THUNKCVT_FMT_HAND
+
+
 static void run_legacy(void)
 {
     static const struct {
@@ -23563,6 +25496,9 @@ static void run_legacy(void)
         CONIO_HAND_ENTRIES
         ENV_HAND_ENTRIES
         EXEC_REST_HAND_ENTRIES
+        STARTUP_HAND_ENTRIES
+        ARGV_HAND_ENTRIES
+        THUNKCVT_HAND_ENTRIES
     };
     size_t i;
     for (i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {

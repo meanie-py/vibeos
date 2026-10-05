@@ -13,11 +13,34 @@ from tests.qemu.vm import QemuVM
 
 # Tests compiled into ntoskrnl when REACTOS_TEST_KERNEL=ON
 KERNEL_TESTS = [
-    "MmPool", "ObHandle", "KeEvent",
-    "Dpc", "Timer", "Vmem", "Registry", "WorkItem", "Irql",
-    "Thread", "Mutex", "Semaphore", "MultiWait", "ObRef", "RtlStr", "SList",
-    "Mdl", "FileIo", "Lookaside", "FastMutex", "Bitmap", "Capture",
-    "MemOps", "SysTime", "ProcInfo", "ObjDir", "SymLink", "InterlockedList",
+    "MmPool",
+    "ObHandle",
+    "KeEvent",
+    "Dpc",
+    "Timer",
+    "Vmem",
+    "Registry",
+    "WorkItem",
+    "Irql",
+    "Thread",
+    "Mutex",
+    "Semaphore",
+    "MultiWait",
+    "ObRef",
+    "RtlStr",
+    "SList",
+    "Mdl",
+    "FileIo",
+    "Lookaside",
+    "FastMutex",
+    "Bitmap",
+    "Capture",
+    "MemOps",
+    "SysTime",
+    "ProcInfo",
+    "ObjDir",
+    "SymLink",
+    "InterlockedList",
 ]
 
 
@@ -42,26 +65,23 @@ def run_kernel_test(vm: QemuVM, name: str, timeout: float = 30.0) -> str:
             min_bytes=len(f"[TEST START] {name}"),
         )
     except TimeoutError:
-        pytest.fail(
-            f"Kernel test {name!r} timed out after {timeout}s. "
-            f"Captured output:\n{buf}"
-        )
+        pytest.fail(f"Kernel test {name!r} timed out after {timeout}s. Captured output:\n{buf}")
 
     if pass_marker in buf:
         return buf
     if fail_marker in buf:
         pytest.fail(f"Kernel test {name!r} failed. Output:\n{buf}")
 
-    pytest.fail(
-        f"Kernel test {name!r}: no result marker found. Output:\n{buf}"
-    )
+    pytest.fail(f"Kernel test {name!r}: no result marker found. Output:\n{buf}")
 
 
 def test_kernel_list(vm: QemuVM) -> None:
     """Verify LIST command returns all registered tests."""
     vm.serial.send(b"LIST\n")
     output = vm.serial.read_until_idle(
-        idle_seconds=2.0, timeout=10.0, min_bytes=10,
+        idle_seconds=2.0,
+        timeout=10.0,
+        min_bytes=10,
     )
     assert "[TEST LIST]" in output, f"LIST response missing marker. Got: {output!r}"
     for name in KERNEL_TESTS:

@@ -304,6 +304,9 @@ pub unsafe extern "system" fn PciDebugCmResourceTypeToText(Type: u8) -> PCHAR {
         CmResourceTypePcCardConfig => {
             b"CmResourceTypePcCardConfig\0".as_ptr() as *const i8 as PCHAR
         }
+        crate::glue::CmResourceTypeMemoryLarge => {
+            b"CmResourceTypeMemoryLarge\0".as_ptr() as *const i8 as PCHAR
+        }
         _ => b"*** INVALID RESOURCE TYPE ***\0".as_ptr() as *const i8 as PCHAR,
     }
 }

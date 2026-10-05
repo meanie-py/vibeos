@@ -8,6 +8,7 @@ use ntkrnl_sys::ddk::{CONTEXT, EXCEPTION_RECORD, PCONTEXT, PCSTR, PEXCEPTION_POI
 use core::ffi::c_void;
 
 extern "system" {
+    fn RtlPcToFileHeader(PcValue: *mut c_void, BaseOfImage: *mut *mut c_void) -> *mut c_void;
     fn RtlEncodePointer(Ptr: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
 }
 
@@ -43,11 +44,28 @@ pub unsafe extern "system" fn RtlRaiseException(ExceptionRecord: PEXCEPTION_RECO
 
 // exception.c guards this `#if !defined(_M_IX86)`: i386 provides RtlRaiseStatus
 // in i386/except.c. Rust = amd64 + arm64.
+/// Raises logged so far this boot. Every raise used to print five lines; with Rust's
+/// kernel SEH most raises are CAUGHT (an FS driver's raise model, an in-page error), and
+/// Wine's storage32 test_locking drove ~4000 of them -- 24k serial lines that alone ran
+/// the test past its timeout under TCG. The first RAISE_LOG_FULL are logged in full (the
+/// unhandled one that matters is almost always among the first), then 1 in
+/// RAISE_LOG_SAMPLE with the running count, so a storm stays visible without drowning
+/// the log.
+#[cfg(not(target_arch = "x86"))]
+static RAISE_LOG_COUNT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+#[cfg(not(target_arch = "x86"))]
+const RAISE_LOG_FULL: u32 = 64;
+#[cfg(not(target_arch = "x86"))]
+const RAISE_LOG_SAMPLE: u32 = 256;
+
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlRaiseStatus(mut Status: NTSTATUS) {
     let mut ExceptionRecord: EXCEPTION_RECORD = core::mem::zeroed();
     let mut Context: CONTEXT = core::mem::zeroed();
+    let raise_no =
+        RAISE_LOG_COUNT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    let verbose = raise_no < RAISE_LOG_FULL || raise_no % RAISE_LOG_SAMPLE == 0;
 
     // _ReturnAddress(): kernel targets build with frame-pointer=always, so the
     // return address is recoverable per-arch. Capture FIRST, before any call.
@@ -87,7 +105,7 @@ pub unsafe extern "system" fn RtlRaiseStatus(mut Status: NTSTATUS) {
                 if found == 0 {
                     found = v;
                 }
-                {
+                if verbose {
                     DbgPrint(
                         b"[RAISE]   stack[+0x%03lX] = %p\n\0".as_ptr() as PCSTR,
                         (i * 8) as u32,
@@ -109,11 +127,46 @@ pub unsafe extern "system" fn RtlRaiseStatus(mut Status: NTSTATUS) {
 
     // With DUMMY_PSEH every kernel-mode software raise is fatal (dead except
     // handlers) — name the raiser BEFORE the inevitable 0x1E.
-    DbgPrint(
-        b"[RAISE] RtlRaiseStatus(0x%08lX) from %p\n\0".as_ptr() as PCSTR,
-        Status as u32,
-        return_address as *const core::ffi::c_void,
-    );
+    if verbose {
+        DbgPrint(
+            b"[RAISE] RtlRaiseStatus(0x%08lX) from %p (raise #%lu)\n\0".as_ptr() as PCSTR,
+            Status as u32,
+            return_address as *const core::ffi::c_void,
+            raise_no + 1,
+        );
+    }
+
+    // The stack-scan guess above names a stack or data address as often as code (a
+    // storage32 FILE_CORRUPT storm reported `KiP0BootStackData`). A real unwind is
+    // exact; KeBugCheck already walks this way, so it is safe here. Verbose raises only.
+    #[cfg(target_arch = "x86_64")]
+    if verbose {
+        let mut frames: [*mut core::ffi::c_void; 6] = [core::ptr::null_mut(); 6];
+        let n = RtlCaptureStackBackTrace(1, 6, frames.as_mut_ptr(), core::ptr::null_mut());
+        let mut k = 0usize;
+        while k < n as usize {
+            // Image base + RVA + SizeOfImage: the boot log names no driver load bases, and
+            // the image size is what identifies WHICH .sys a frame is in.
+            let mut base: *mut c_void = core::ptr::null_mut();
+            RtlPcToFileHeader(frames[k], &mut base);
+            let mut size: u32 = 0;
+            if !base.is_null() {
+                let nt = ntkrnl_sys::ddk::RtlImageNtHeader(base);
+                if !nt.is_null() {
+                    size = (*nt).OptionalHeader.SizeOfImage;
+                }
+            }
+            DbgPrint(
+                b"[RAISE]   frame %lu = %p (image %p +0x%lX, size 0x%lX)\n\0".as_ptr() as PCSTR,
+                k as u32,
+                frames[k],
+                base,
+                (frames[k] as usize).wrapping_sub(base as usize) as u32,
+                size,
+            );
+            k += 1;
+        }
+    }
 
     RtlCaptureContext(&mut Context);
 

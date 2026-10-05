@@ -707,7 +707,23 @@ def test_no_arch_config_smuggles_in_a_host_path_we_cannot_pin(config, tmp_path):
     args = _demoted(config, _real_arch_args(config, tmp_path / "work"))
     if args is None:
         pytest.skip(f"{config} media not present in this worktree")
-    _out, media = rr.transform(args, mode="record", trace_dir=tmp_path / "t", stage=True)
+    # The land gate runs this beside the three builds, and the arm64 build rewrites
+    # qemu/boot.img while qemu-img is reading it as a backing file (held the queue
+    # twice, 2026-10-04). A rebuild in flight is not an rr defect: retry, then skip.
+    for attempt in range(3):
+        try:
+            _out, media = rr.transform(
+                args, mode="record", trace_dir=tmp_path / f"t{attempt}", stage=True
+            )
+            break
+        except subprocess.CalledProcessError as exc:
+            if attempt == 2:
+                # The cause is not established (the atomic mkramdisk did not end it, and the
+                # gate's smokes boot a per-run copy, not this file): carry qemu-img's own
+                # words so the next occurrence names itself.
+                err = (exc.stderr or b"").decode(errors="replace").strip()
+                pytest.skip(f"{config}: qemu-img kept failing on the backing image: {err}")
+            time.sleep(5)
     for name, info in media.items():
         if info["copied"]:
             continue
@@ -1070,6 +1086,19 @@ def test_a_recording_is_never_a_gate_boot(tmp_path):
         assert cmd[1] in ("conformance", "smoke")
 
 
+def test_a_smoke_recording_never_runs_the_net_stage(tmp_path):
+    """amd64's smoke runs a second boot for its net suite. Under the rr env that boot
+    re-staged fresh overlays over the trace's media after the recording ended, and the
+    replay then failed with "Snapshot 'init' does not exist" -- the first x86 trace was
+    destroyed by its own recorder."""
+    from .rrcmd import _boot_cmd
+
+    for arch in ("amd64", "i386", "arm64"):
+        cmd = _boot_cmd(tmp_path, arch, "none", 1, False, 600)
+        assert cmd[1] == "smoke"
+        assert "--no-net" in cmd
+
+
 def test_a_trace_from_before_the_finalisation_fix_is_refused(tmp_path):
     """Traces recorded before `rr record` waited for the trace to stop growing are
     TRUNCATED and look identical from the outside — same manifest, media, pristine,
@@ -1401,3 +1430,78 @@ def test_report_replay_break_says_whether_it_fired(tmp_path, monkeypatch):
 
     vm.qmp.events.append({"event": "STOP"})
     assert vm.report_replay_break() == "[rr] replay-break FIRED: guest stopped at icount 200"
+
+
+def test_a_vm_with_no_break_armed_reports_nothing(tmp_path, monkeypatch):
+    """smoke's triage calls report_replay_break() on every hang. It must be silent
+    for ordinary boots, which is what lets it sit on the shared path."""
+    from tests.qemu.vm import QemuVM
+
+    monkeypatch.delenv(rr.BREAK_ENV_VAR, raising=False)
+    vm = QemuVM.__new__(QemuVM)
+    vm.on_qmp_ready = None
+    assert vm.report_replay_break() == ""
+
+
+# --- reading a wedge: which event did the replay stop on -------------------
+
+
+def test_walk_events_reports_offset_event_and_running_icount(tmp_path):
+    """The walker is what every trace question is built on, so its records have to
+    carry all three facts: where the event starts, what it is, and the icount it
+    leaves the guest at. A record missing the offset cannot answer a wedge."""
+    body = _insn(10) + struct.pack(">BII", 22, 1, 2) + _insn(7)
+    evs = list(rr.walk_events(_replay_log(tmp_path, body)))
+    assert [(e.offset, e.eid, e.icount) for e in evs] == [
+        (12, 0, 10),  # right after the 12-byte header
+        (17, 22, 10),  # a non-instruction event does not move the icount
+        (26, 0, 17),
+    ]
+    assert evs[1].name == "EVENT_CHAR_WRITE"
+
+
+def test_boundaries_still_come_from_the_shared_walker(tmp_path):
+    """instruction_boundaries is now a consumer of walk_events rather than its own
+    decoder. Same answer, or the refactor changed behaviour."""
+    body = _insn(100) + struct.pack(">BII", 22, 1, 2) + _insn(50)
+    trace = _replay_log(tmp_path, body)
+    assert rr.instruction_boundaries(trace) == [100, 150]
+    assert [e.icount for e in rr.walk_events(trace) if e.eid == 0] == [100, 150]
+
+
+def test_events_around_offset_splits_at_the_read_position(tmp_path):
+    body = _insn(1) + _insn(2) + _insn(3) + _insn(4) + _insn(5)
+    trace = _replay_log(tmp_path, body)
+    # events start at 12, 17, 22, 27, 32; ask about a position inside the third
+    before, after = rr.events_around_offset(trace, 24, before=2, after=2)
+    assert [e.offset for e in before] == [17, 22]
+    assert [e.offset for e in after] == [27, 32]
+
+
+def test_events_around_offset_keeps_the_events_NEAREST_the_offset(tmp_path):
+    """The window has to be the last N before, not the first N of the file —
+    a wedge report built from the head of a 10MB log says nothing."""
+    trace = _replay_log(tmp_path, b"".join(_insn(i) for i in range(1, 11)))
+    before, _ = rr.events_around_offset(trace, 10_000, before=3, after=3)
+    assert [e.icount for e in before] == [36, 45, 55]
+
+
+def test_events_around_offset_handles_an_offset_past_the_end(tmp_path):
+    """QEMU's read position is a buffered kernel offset, so it can legitimately
+    sit at EOF while the replay is still working. That is not an error."""
+    trace = _replay_log(tmp_path, _insn(1) + _insn(2))
+    before, after = rr.events_around_offset(trace, 10_000)
+    assert [e.icount for e in before] == [1, 3]
+    assert after == []
+
+
+def test_event_name_refuses_to_invent_a_name_it_does_not_know(tmp_path):
+    """Only the ids whose meaning this decoder actually relies on get names. A
+    plausible label on a merely-width-known event would read as evidence in a
+    wedge report."""
+    assert rr.event_name(0) == "EVENT_INSTRUCTION"
+    assert rr.event_name(5).startswith("EVENT_ASYNC")
+    assert rr.event_name(14).startswith("EVENT_SHUTDOWN")
+    assert rr.event_name(33).startswith("EVENT_CHECKPOINT")
+    assert rr.event_name(26) == "id 26"
+    assert rr.event_name(29) == "id 29"

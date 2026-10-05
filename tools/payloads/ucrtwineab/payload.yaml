@@ -1,0 +1,38 @@
+# ucrtwineab — the B side of ../ucrtwine: the same suites against the
+# PRE-TAKEOVER ucrtbase.dll (Microsoft's C, 24089de2c88, the commit before
+# ucrt-rust existed), staged beside the tests in bin/ so the loader picks it
+# over system32's. A failure both sides share is not a Rust regression.
+#   git worktree add --detach ../vibeos-ucrt-baseline 24089de2c88
+#   (cd ../vibeos-ucrt-baseline && ./vibeos-cli build --arch i386)
+#   cp ../vibeos-ucrt-baseline/build-i386/dll/win32/ucrtbase/ucrtbase.dll \
+#      tools/payloads/ucrtwine/ucrtbase-baseline-i386.dll
+#   tools/payloads/ucrtwine/build.sh i386
+#   VIBEOS_PAYLOAD=ucrtwineab ./vibeos-cli build --arch i386
+#   ./vibeos-cli smoke --arch i386 --payload ucrtwineab
+name: ucrtwineab
+description: ucrtwine against the pre-takeover (Microsoft C) ucrtbase.dll, staged beside the tests
+
+build_hint: "tools/payloads/ucrtwine/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/ucrtwine/sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/ucrtwine/suites.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/ucrtwine/skip.txt
+    dest: bin/apitest-skip.txt
+  # Children start on the writable FAT scratch disk: X: is the CDFS boot image.
+  - src: tools/payloads/ucrtwine/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: tools/payloads/ucrtwine/ucrtbase_winetest.exe
+    dest: bin/ucrtbase_winetest.exe
+  - src: tools/payloads/ucrtwine/ucrtbase_apitest.exe
+    dest: bin/ucrtbase_apitest.exe
+  - src: tools/payloads/ucrtwine/ucrtbase-baseline-{arch}.dll
+    dest: bin/ucrtbase.dll
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 1800
+  launch_idle_secs: 600

@@ -46,6 +46,7 @@ csrlib_only = []
 smlib_only  = []
 
 [dependencies]
+win32macros-rust = { path = "../win32macros-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 ntprintf = { path = "../ntprintf" }

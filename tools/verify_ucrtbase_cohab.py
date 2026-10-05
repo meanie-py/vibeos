@@ -78,7 +78,7 @@ def _spec_exports(spec: Path, arch: str) -> set[str]:
 TAKEOVER = REPO / "tools" / "ucrt-takeover.yaml"
 
 
-def declared_takeovers() -> dict[str, str]:
+def declared_takeovers(arch: str | None = None) -> dict[str, str]:
     """Genuine UCRT exports we have DELIBERATELY replaced -> the family that did it.
 
     Displacing a ucrt body is the exact shape of the accident this file exists to
@@ -86,6 +86,9 @@ def declared_takeovers() -> dict[str, str]:
     named an oracle. `tools/ucrt-takeover.yaml` is that declaration, and it is read
     both ways -- an undeclared displacement fails, and so does a declaration the
     archive no longer backs, because a stale entry is how a list stops being read.
+
+    A family may name `arches:` (fpctrl_arm64 exists only where sdk/lib/crt has no
+    body); with `arch` given, a family not built there declares nothing for it.
     """
     if not TAKEOVER.is_file():
         return {}
@@ -94,6 +97,8 @@ def declared_takeovers() -> dict[str, str]:
     doc = yaml.safe_load(TAKEOVER.read_text(encoding="utf-8")) or {}
     out: dict[str, str] = {}
     for fam, body in (doc.get("families") or {}).items():
+        if arch is not None and arch not in (body.get("arches") or (arch,)):
+            continue
         for sym in body.get("exports") or []:
             out[sym] = fam
     return out
@@ -182,8 +187,10 @@ def _deps_of(crate_dir: Path) -> set[str]:
             continue
         if not in_deps or not stripped or stripped.startswith("#"):
             continue
-        m = re.match(r"^([A-Za-z0-9_-]+)\s*=", stripped)
-        if m:
+        m = re.match(r"^([A-Za-z0-9_-]+)\s*=(.*)$", stripped)
+        # A registry crate (`libm = { version = ... }`) is not one: Cargo.lock pins it
+        # and nothing in this tree can edit it, so it cannot ship a stale archive.
+        if m and re.search(r"\bpath\s*=", m.group(2)):
             out.add(m.group(1))
     return out
 
@@ -298,42 +305,43 @@ def _closure(root: str, ws: Path | None = None) -> set[str]:
     return set(seen)
 
 
-#: Each Rust staticlib a CRT DLL links: (its CMakeLists, the `set(...)` naming the
-#: crates whose sources trigger its rebuild, the crate cargo builds).
+#: Each Rust staticlib a CRT DLL links: (its CMakeLists, the variable holding its rebuild
+#: inputs, the crate cargo builds).
 REBUILD_LISTS = (
-    ("dll/win32/ucrtbase/CMakeLists.txt", "UCRT_SHARED_RUST_CRATES", "crt-shared-cargo"),
-    ("dll/win32/msvcrt/CMakeLists.txt", "MSVCRT_CRT_RUST_CRATES", "msvcrt-crt-cargo"),
+    ("dll/win32/ucrtbase/CMakeLists.txt", "UCRT_SHARED_RUST_SOURCES", "crt-shared-cargo"),
+    ("dll/win32/msvcrt/CMakeLists.txt", "MSVCRT_CRT_RUST_SOURCES", "msvcrt-crt-cargo"),
 )
 
 
 def check_rebuild_lists(repo: Path | None = None, ws: Path | None = None) -> list[str]:
-    """Each archive's CMake rebuild list must name its whole crate closure.
+    """Each archive's rebuild inputs must be DERIVED from its crate's closure.
 
     A crate compiled INTO an archive but missing from the custom command's DEPENDS
     never triggers a rebuild: edit it and the build ships the stale archive, green,
-    with no error anywhere. ucrtbase's list named two of its seven crates -- the
-    ucrt-rust takeover families and cnt-rust's math were invisible to it -- and
-    msvcrt's lacked crt-portable-rust the day the string family moved there.
+    with no error anywhere. Both CRT archives used to name their crates in hand-kept
+    lists, and those drifted three times (ucrtbase's to two of seven crates; msvcrt's
+    lacked crt-portable-rust, then varargs-rust). They now call
+    `rust_crate_sources(<var> <workspace> <root>)`, which walks the manifests; this
+    check holds them to it, so a hand list cannot come back.
     """
     repo = REPO if repo is None else repo
+    del ws  # the closure is CMake's to compute now; kept for the callers' signature
     findings = []
     for cmake, var, root in REBUILD_LISTS:
         text = (repo / cmake).read_text(errors="replace")
-        m = re.search(rf"set\(\s*{var}\s+([^)]*)\)", text)
-        if not m:
-            findings.append(f"{cmake}: no `set({var} ...)` -- the rebuild list is missing")
-            continue
-        listed = set(m.group(1).split())
-        want = _closure(root, ws)
-        for crate in sorted(want - listed):
+        call = re.search(rf"rust_crate_sources\(\s*{var}\s+\S+\s+(\S+)\s*\)", text)
+        if not call:
             findings.append(
-                f"{cmake}: {var} omits `{crate}`, which is compiled into {root}'s archive -- "
-                f"an edit to it would ship a STALE archive. fix: add it to {var}"
+                f"{cmake}: {var} is not derived by `rust_crate_sources({var} <ws> {root})` -- "
+                f"a hand-kept list drifts and ships a STALE archive. fix: derive it"
             )
-        for crate in sorted(listed - want):
+        elif call.group(1) != root:
             findings.append(
-                f"{cmake}: {var} names `{crate}`, which {root} no longer depends on. fix: remove it"
+                f"{cmake}: {var} walks `{call.group(1)}`, but cargo builds `{root}`. "
+                f"fix: rust_crate_sources({var} <ws> {root})"
             )
+        if re.search(r"set\(\s*\w+_RUST_CRATES\b", text):
+            findings.append(f"{cmake}: a hand-kept `*_RUST_CRATES` list is back. fix: remove it")
     return findings
 
 
@@ -434,7 +442,7 @@ def burndown_stale(arch: str) -> str | None:
         return "nm cannot read the archive"
     if arch == "i386":
         defined = {d[1:] if d.startswith("_") else d for d in defined}
-    missing = sorted(set(declared_takeovers()) - defined)
+    missing = sorted(set(declared_takeovers(arch)) - defined)
     if missing:
         return (
             f"the archive lacks {len(missing)} export(s) this tree declares taken over "
@@ -657,7 +665,7 @@ def check_archive() -> list[str]:
 
         # A DECLARED takeover is not shadowing -- it is the quest. Compared on the
         # stripped name so one declaration covers all three arches' decoration.
-        declared = declared_takeovers()
+        declared = declared_takeovers(arch)
         declared_norm = {k.lstrip("_"): v for k, v in declared.items()}
         rust_norm = {strip(s).lstrip("_") for s in rust_syms}
         gone = sorted(k for k in declared_norm if k not in rust_norm)
@@ -877,10 +885,6 @@ EXPORT_IMPORT_ALLOWED = {
         ),
         "ntdll.dll",
     ),
-    # OWED, arm64 only: the x87/SSE control-word family has no arm64 body in this
-    # tree (sdk/lib/crt builds them for i386/amd64 only), so arm64's resolve to
-    # msvcrt.dll's. Tracked in the roadmap's known-bugs registry.
-    **dict.fromkeys(("_clearfp", "_control87", "_controlfp", "_statusfp"), "msvcrt.dll"),
 }
 
 

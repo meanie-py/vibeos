@@ -88,7 +88,9 @@ extern "system" {
 }
 extern "system" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
-    fn KeExpandKernelStackAndCalloutEx( Callout: extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), Context: *mut FAT_CALLOUT_PARAMETERS, StackSize: u32, Wait: i32, Reserved: *mut core::ffi::c_void, ) -> NTSTATUS;
+    // SIZE_T and BOOLEAN, as rust_cohab_fat.c defines it: a u32 Size left the upper half of
+    // the 64-bit argument register undefined on amd64/arm64.
+    fn KeExpandKernelStackAndCalloutEx( Callout: extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), Context: *mut FAT_CALLOUT_PARAMETERS, StackSize: SIZE_T, Wait: BOOLEAN, Reserved: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB) -> u8;
     fn FatCheckFileAccess(IrpContext: *mut IRP_CONTEXT, DirentFatFlags: u8, DesiredAccess: *mut ACCESS_MASK) -> u32;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB);
@@ -334,8 +336,8 @@ pub unsafe extern "system" fn FatCommonCreateOnNewStack(
     status = KeExpandKernelStackAndCalloutEx(
         core::mem::transmute::<unsafe extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), extern "system" fn(*mut FAT_CALLOUT_PARAMETERS)>(FatCommonCreateCallout),
         &mut CalloutParameters as *mut FAT_CALLOUT_PARAMETERS,
-        KERNEL_STACK_SIZE,
-        0i32,
+        KERNEL_STACK_SIZE as SIZE_T,
+        0, // FALSE
         core::ptr::null_mut(),
     );
 
@@ -1432,7 +1434,10 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
             break 'try_body_dcb; // try_return Iosb
         }
 
-        // Check oplock key (Win8+)
+        // Check oplock key -- NTDDI >= WIN8 only (create.c 2857-2876). Pre-WIN8 a DCB has no
+        // oplock, and FatGetFcbOplock(Dcb) lands in its free-dirent bitmap.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
         Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
             FatGetFcbOplock(Dcb),
             (*IrpContext).OriginatingIrp,
@@ -1443,6 +1448,7 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
         );
         if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
             break 'try_body_dcb; // try_return NOTHING
+        }
         }
 
         // NoEaKnowledge check
@@ -1481,6 +1487,12 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
                 DesiredAccess,
                 ShareAccess as ULONG,
             );
+            // Pre-WIN8 (create.c 2945-3010's #else) a failed share check just returns it.
+            #[cfg(not(ntddi_ge_ntddi_win8))]
+            if Iosb.__bindgen_anon_1.Status < 0 {
+                break 'try_body_dcb; // try_return Iosb
+            }
+            #[cfg(ntddi_ge_ntddi_win8)]
             if Iosb.__bindgen_anon_1.Status < 0 {
                 let mut OplockBreakStatus: NTSTATUS = STATUS_SUCCESS;
                 if Iosb.__bindgen_anon_1.Status == STATUS_SHARING_VIOLATION
@@ -1511,7 +1523,10 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
             }
         }
 
-        // Oplock checks (Win8)
+        // Oplock checks -- NTDDI >= WIN8 only (create.c 3017-3073): they ran on every reopen
+        // of a directory that still had a handle, reading its dirent bitmap as an oplock.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
         if (*Dcb).UncleanCount != 0 {
             Iosb.__bindgen_anon_1.Status = FsRtlCheckOplock(
                 FatGetFcbOplock(Dcb),
@@ -1534,6 +1549,7 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
         }
         if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS && Iosb.__bindgen_anon_1.Status != STATUS_OPLOCK_BREAK_IN_PROGRESS {
             break 'try_body_dcb;
+        }
         }
 
         // Update share access
@@ -1916,6 +1932,9 @@ pub unsafe extern "system" fn FatOpenExistingDirectory(
         *Dcb = UnwindDcb;
 
         // Win8+: store any caller oplock key and honor atomic create-with-oplock.
+        // NTDDI >= WIN8 only: a pre-WIN8 DCB has no oplock (see FatCreateNewDirectory).
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
         Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
             FatGetFcbOplock(*Dcb),
             (*IrpContext).OriginatingIrp,
@@ -1934,6 +1953,7 @@ pub unsafe extern "system" fn FatOpenExistingDirectory(
         // Raise to trigger cleanup of the new Dcb if either oplock call failed.
         if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
             FatRaiseStatus(IrpContext, Iosb.__bindgen_anon_1.Status);
+        }
         }
 
         // Set up our share access.
@@ -3003,8 +3023,11 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
             if CreateLfn != 0 { UnicodeName } else { core::ptr::null_mut() },
         );
 
-        // Windows 8+ oplock handling (always true for modern targets)
-        if true {
+        // NTDDI >= WIN8 only (create.c 5178-5237, FatCreateNewDirectory). Pre-WIN8 a directory
+        // has no oplock: FatGetFcbOplock(Dcb) is Specific.Fcb.Oplock, which for a DCB is a
+        // word of its in-union free-dirent bitmap.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
             Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
                 FatGetFcbOplock(Dcb as PFCB),
                 (*IrpContext).OriginatingIrp,
@@ -3452,6 +3475,11 @@ pub unsafe extern "system" fn FatCreateNewFile(
         );
         UnwindFcb = Fcb;
         UnwindDirent = core::ptr::null_mut();
+        // NTDDI >= WIN8 only (create.c 6021-6049, FatCreateNewFile; it also holds the WIN7 key
+        // check). Its parent-directory check read the DCB's free-dirent bitmap as an oplock
+        // pointer: once enough dirents were in use, a run of file creates bugchecked 0x23.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
         Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
             FatGetFcbOplock(Fcb),
             (*IrpContext).OriginatingIrp,
@@ -3479,6 +3507,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
         }
         if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
             FatRaiseStatus(IrpContext, Iosb.__bindgen_anon_1.Status);
+        }
         }
         if TemporaryFile != 0 {
             SetFlag(&mut (*Fcb).FcbState, FCB_STATE_TEMPORARY);
@@ -3756,8 +3785,10 @@ pub unsafe extern "system" fn FatSupersedeOrOverwriteFile(
             ea_change = 1;
         }
 
-        // Break parent directory oplock (advisory)
-        let mut oplock_status = FsRtlCheckOplockEx(
+        // Break parent directory oplock -- NTDDI >= WIN8 only; a pre-WIN8 DCB has none.
+        #[cfg(ntddi_ge_ntddi_win8)]
+        {
+        let oplock_status = FsRtlCheckOplockEx(
             FatGetFcbOplock((*fcb).ParentDcb as *mut FCB),
             (*irp_context).OriginatingIrp,
             OPLOCK_FLAG_PARENT_OBJECT,
@@ -3767,6 +3798,7 @@ pub unsafe extern "system" fn FatSupersedeOrOverwriteFile(
         );
         if oplock_status != STATUS_SUCCESS as i32 {
             FatRaiseStatus(irp_context, oplock_status);
+        }
         }
 
         // Acquire paging IO resource and zero file size

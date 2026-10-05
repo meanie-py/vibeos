@@ -30,7 +30,7 @@ the `halacpi.rs` saturating fix that the proposal names. Item 6's device-path wa
 status block now go through `IopWriteUserIosb` (`safe_copy_raw`), as the C's `_SEH2_TRY`
 does.
 
-**Still owed:** 13, dormant until a BIOS loader exists.
+**Ported 2026-09-30:** 13 too (both BIOS-only halves), so nothing from this review is owed.
 
 ## Summary
 

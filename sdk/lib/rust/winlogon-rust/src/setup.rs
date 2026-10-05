@@ -151,13 +151,6 @@ unsafe fn RunSetupThreadProcImpl(lpParameter: LPVOID) -> u32 {
         &mut ProcessInformation,
     );
     if Result == 0 {
-        // On arm64 the shortcut boot path has no GINA/winlogon UI to fall back
-        // to — the shell (explorer) is the active-input desktop's owner. Leaving
-        // the input desktop on "Winlogon" here (async, racing winlogon.rs's
-        // post-explorer switch to Default) strands win32k's paint retrieval on
-        // the wrong desktop tree and freezes every window repaint (§9.21). Keep
-        // the input desktop on Default on arm64.
-        #[cfg(not(target_arch = "aarch64"))]
         SwitchDesktop((*WLSession).WinlogonDesktop);
         return 0;
     }

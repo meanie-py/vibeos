@@ -32,7 +32,11 @@ _PYRIGHT = str(_VBIN / "pyright")
 # tools/fex was outside every lint root, which is how an unused import and an
 # unlinted closure walker sat there unnoticed. A tool the merge train depends on
 # belongs under the same standard as the rest of our python.
-_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli", "tools/fex"]
+# tests/qemu was linted only below cli/, so the harness core -- vm.py, backend.py and
+# test_smoke.py itself -- carried 29 findings, including two `assert False` in the
+# north-star test that `python -O` strips. The whole tree is ruff- and format-checked;
+# pyright still covers cli/ only (typing the harness core is its own job).
+_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu", "tools/fex"]
 _PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
@@ -53,6 +57,7 @@ _PYTEST_SUITES = [
     # resolved when it is blind — neither shows up in review or in its own output.
     (".", ".", "tools/test_verify_c_signatures.py"),
     (".", ".", "tools/test_scan_wide_literals.py"),
+    (".", ".", "tools/test_scan_unaligned_wide.py"),
     # The apitest sweep's parser. Its failure mode is FALSE GREEN, not a crash --
     # it shipped scoring `afd_apitest send` OK on the boot whose BUGCHECK that
     # subtest caused, because the subtest printed a clean summary before taking
@@ -91,9 +96,14 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    (".", ".", "tools/test_scan_hresult_literals.py"),
+    (".", ".", "tools/test_scan_dowhile_continue.py"),
+    (".", ".", "tools/test_scan_byteptr_stride.py"),
+    (".", ".", "tools/test_scan_gmem_flags.py"),
     (".", ".", "tools/test_scan_res_named_types.py"),
     (".", ".", "tools/test_scan_bindgen_padding_index.py"),
-    (".", ".", "tools/test_ramdisk_apps.py"),
+    (".", ".", "tools/test_scan_extern_static_width.py"),
+    (".", ".", "tools/test_ramdisk_tree.py"),
     (".", ".", "tools/test_scan_const_vs_island.py"),
     (".", ".", "tools/test_scan_raw_uart_writes.py"),
     (".", ".", "tools/test_lint_facts.py"),
@@ -140,6 +150,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
     (".", ".", "tools/test_kernel_probe.py"),
+    (".", ".", "tools/test_link_guard.py"),
     (".", ".", "tools/test_scan_orphan_modules.py"),
     (".", ".", "tools/test_cohab_census.py"),
     (".", ".", "tools/test_build_invalidation.py"),
@@ -150,7 +161,9 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_retarget_cargo_depfile.py"),
     (".", ".", "tools/test_rust_module_tree.py"),
     (".", ".", "tools/test_scan_self_recursive.py"),
+    (".", ".", "tools/test_scan_export_thunks.py"),
     (".", ".", "tools/test_scan_dropped_asserts.py"),
+    (".", ".", "tools/test_strip_msvc_cmake.py"),
     # The substrate half of scan_extern_decl_drift has no other oracle: its
     # findings are about declarations of symbols NOTHING in the tree defines, so
     # neither rustc nor the linker nor a same-crate definition can adjudicate one.

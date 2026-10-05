@@ -68,9 +68,11 @@ pub unsafe extern "system" fn Device_SaveCurrentSettings(Context: PPCI_CONFIGURA
                 BarMask = PCI_ADDRESS_IO_ADDRESS_MASK;
             } else {
                 /* It's a RAM BAR, use the right mask to get the base address */
-                if (*CmDescriptor).Type as u32 != CmResourceTypeMemory {
+                if (*CmDescriptor).Type as u32 != CmResourceTypeMemory
+                    && (*CmDescriptor).Type as u32 != CmResourceTypeMemoryLarge
+                {
                     RtlAssert(
-                        b"CmDescriptor->Type == CmResourceTypeMemory\0".as_ptr() as *const i8 as PVOID,
+                        b"(CmDescriptor->Type == CmResourceTypeMemory) || (CmDescriptor->Type == CmResourceTypeMemoryLarge)\0".as_ptr() as *const i8 as PVOID,
                         b"drivers/bus/pcix/device.c\0".as_ptr() as *const i8 as PVOID,
                         65u32,
                         core::ptr::null_mut::<i8>(),
@@ -221,9 +223,17 @@ pub unsafe extern "system" fn Device_SaveLimits(Context: PPCI_CONFIGURATOR_CONTE
     Limit = core::ptr::addr_of_mut!((*(*PdoExtension).Resources).Limit) as PIO_RESOURCE_DESCRIPTOR;
     i = 0u32;
     while i < PCI_TYPE0_ADDRESSES {
+        /* And build them based on the BARs, the last one has no BAR after it for a high half */
+        let NextBar: ULONG = if i.wrapping_add(1) < PCI_TYPE0_ADDRESSES {
+            *BarArray.add(i as usize + 1)
+        } else {
+            0
+        };
+
         if PciCreateIoDescriptorFromBarLimit(
             Limit.add(i as usize) as PIO_RESOURCE_DESCRIPTOR,
-            BarArray.add(i as usize) as PULONG,
+            *BarArray.add(i as usize),
+            NextBar,
             0u8,
         ) != 0
         {
@@ -243,7 +253,8 @@ pub unsafe extern "system" fn Device_SaveLimits(Context: PPCI_CONFIGURATOR_CONTE
 
     PciCreateIoDescriptorFromBarLimit(
         Limit.add(i as usize) as PIO_RESOURCE_DESCRIPTOR,
-        &raw mut (*PciData).u.type0.ROMBaseAddress,
+        (*PciData).u.type0.ROMBaseAddress,
+        0,
         1u8,
     );
 }
@@ -314,14 +325,63 @@ pub unsafe extern "system" fn Device_ChangeResourceSettings(
     PdoExtension: PPCI_PDO_EXTENSION,
     PciData: PPCI_COMMON_HEADER,
 ) {
-    // UNREFERENCED_PARAMETER: not used
-    // UNIMPLEMENTED_DBGBREAK
-    DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"Device_ChangeResourceSettings\0".as_ptr() as *const ::core::ffi::c_char,
-        b"drivers/bus/pcix/device.c\0".as_ptr() as *const ::core::ffi::c_char,
-        289 as ::core::ffi::c_int,
-    );
-    DbgPrint(b"\0".as_ptr() as PCSTR);
-    DbgBreakPoint();
+    let Resources = (*PdoExtension).Resources;
+    if Resources.is_null() {
+        return;
+    }
+
+    /* Write each BAR back with the address that was arbitrated for it */
+    let BarArray: PULONG = core::ptr::addr_of_mut!((*PciData).u.type0.BaseAddresses) as PULONG;
+    let mut i: ULONG = 0;
+    while i <= PCI_TYPE0_ADDRESSES {
+        let CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR =
+            core::ptr::addr_of_mut!((*Resources).Current[i as usize]);
+
+        if i < PCI_TYPE0_ADDRESSES {
+            /* A BAR the function does not implement reads back as zero */
+            let Bar: ULONG = *BarArray.add(i as usize);
+            if (Bar & !PCI_ADDRESS_IO_SPACE) == 0 {
+                i += 1;
+                continue;
+            }
+
+            /* Work out which bits of this BAR are the address */
+            let mut BarMask: ULONG;
+            if (Bar & PCI_ADDRESS_IO_SPACE) != 0 {
+                BarMask = PCI_ADDRESS_IO_ADDRESS_MASK;
+            } else {
+                BarMask = PCI_ADDRESS_MEMORY_ADDRESS_MASK;
+
+                /* A legacy BAR only decodes the low 20 bits of the address */
+                if (Bar & PCI_ADDRESS_MEMORY_TYPE_MASK) == PCI_TYPE_20BIT {
+                    BarMask = 0xFFFF0;
+                }
+            }
+
+            *BarArray.add(i as usize) = (Bar & !BarMask)
+                | ((*CmDescriptor).u.Memory.Start.__bindgen_anon_1.LowPart & BarMask);
+
+            /* A 64-bit BAR keeps the high half of its address in the next one */
+            if (Bar & PCI_ADDRESS_IO_SPACE) == 0
+                && (Bar & PCI_ADDRESS_MEMORY_TYPE_MASK) == PCI_TYPE_64BIT
+            {
+                ntkrnl_sys::ASSERT!((i + 1) < PCI_TYPE0_ADDRESSES);
+                *BarArray.add(i as usize + 1) =
+                    (*CmDescriptor).u.Memory.Start.__bindgen_anon_1.HighPart as ULONG;
+                i += 1;
+            }
+        } else {
+            /* The ROM BAR decodes only while its enable bit is set */
+            let Bar: ULONG = (*PciData).u.type0.ROMBaseAddress;
+            if (*CmDescriptor).Type as u32 == CmResourceTypeNull {
+                (*PciData).u.type0.ROMBaseAddress = Bar & !PCI_ROMADDRESS_ENABLED;
+            } else {
+                (*PciData).u.type0.ROMBaseAddress = (Bar & !PCI_ADDRESS_ROM_ADDRESS_MASK)
+                    | ((*CmDescriptor).u.Memory.Start.__bindgen_anon_1.LowPart
+                        & PCI_ADDRESS_ROM_ADDRESS_MASK)
+                    | PCI_ROMADDRESS_ENABLED;
+            }
+        }
+        i += 1;
+    }
 }

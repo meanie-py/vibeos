@@ -294,7 +294,10 @@ pub unsafe extern "system" fn PciFdoWaitWake(
         b"drivers/bus/pcix/power.c\0".as_ptr() as *const u8 as *const i8,
         214i32,
     );
-    loop {}
+    // power.c follows UNIMPLEMENTED with `while (TRUE);` and then the
+    // `return STATUS_NOT_SUPPORTED;` it can never reach. Return it: an FDO power IRP
+    // should fail, not spin the CPU that delivered it.
+    STATUS_NOT_SUPPORTED
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciFdoSetPowerState(
@@ -309,7 +312,10 @@ pub unsafe extern "system" fn PciFdoSetPowerState(
             as *const ::core::ffi::c_char,
         229 as ::core::ffi::c_int,
     );
-    loop {}
+    // power.c follows UNIMPLEMENTED with `while (TRUE);` and then the
+    // `return STATUS_NOT_SUPPORTED;` it can never reach. Return it: an FDO power IRP
+    // should fail, not spin the CPU that delivered it.
+    STATUS_NOT_SUPPORTED
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciFdoIrpQueryPower(
@@ -323,5 +329,8 @@ pub unsafe extern "system" fn PciFdoIrpQueryPower(
         b"power.c\0".as_ptr() as *const i8,
         244i32,
     );
-    loop {}
+    // power.c follows UNIMPLEMENTED with `while (TRUE);` and then the
+    // `return STATUS_NOT_SUPPORTED;` it can never reach. Return it: an FDO power IRP
+    // should fail, not spin the CPU that delivered it.
+    STATUS_NOT_SUPPORTED
 }

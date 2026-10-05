@@ -399,202 +399,6 @@ trees:
       library. `crtmath` also compiles our own C beside it (stubs.c, fdivbug.c, machfpcw.c
       and the sdk/lib/crt/float control-word set), and those remain translation targets.
 
-  - path: sdk/lib/crt/math/ieee754
-    name: FDLIBM (Sun Microsystems freely-distributable libm)
-    translate: planned
-    upstream: https://github.com/NetBSD/src (lib/libm/src) — FDLIBM-derived; ancestral source https://www.netlib.org/fdlibm/
-    license: "FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)"
-    license_ref: sdk/lib/crt/math/ieee754/j0_y0.c
-    modified: yes
-    version:
-      file: sdk/lib/crt/math/ieee754/j0_y0.c
-      pattern: '\$NetBSD: e_j0\.c,v ([0-9.]+)'
-    reason: >
-      `__ieee754_j0/y0/j1/y1/jn/yn` -- the Bessel functions of the first and second kind,
-      which the C standard does not have and which almost nobody reimplements. 1,346 lines
-      across three files, every one carrying Sun's 1993 SunPro header and a NetBSD RCS id,
-      reached through this tree via NetBSD's libm. FDLIBM is the reference implementation
-      the whole Unix world's libm descends from; it is a real upstream that could be pulled
-      in at build time rather than carried, which is the test for this file.
-
-      Registered 2026-09-06, for exactly the reason the AMD entry above was: they are the
-      three largest files left in crtmath's "ours" column, so counting them as translation
-      debt made the remaining work look ~40% bigger than it is. Sitting under a directory
-      named `ieee754/` rather than `3rdparty/` is the only thing that hid them.
-
-      Note the boundary is this DIRECTORY. The thin `math/{j0_y0,j1_y1,jn_yn}.c` wrappers
-      one level up ARE ours -- 102 lines that set `errno = EDOM` on a non-finite argument
-      and then call the `__ieee754_*` body -- and they stay translation targets.
-    review: >
-      DIFFED 2026-09-20, AND THE RECORDED UPSTREAM WAS WRONG. This entry pointed at
-      netlib.org/fdlibm, but that is the ancestor, not our base. netlib FDLIBM 5.3 ships
-      e_jn.c marked "@(#)e_jn.c 1.4 95/01/18" and "Developed at SunSoft"; ours says "5.1
-      93/09/24" and "Developed at SunPro", which is what NetBSD's lib/libm/src carries. The
-      real base is NETBSD's libm, itself FDLIBM-derived. `upstream:` now says so.
-
-      Confirmed by content, not just by the banner: our files use NetBSD libm conventions
-      that netlib FDLIBM does not have — int32_t rather than int, the GET_HIGH_WORD macro
-      rather than __HI, and calls to __sincos and __ieee754_sqrt.
-
-      THE EXACT BASE REVISION IS IDENTIFIED BUT NOT RETRIEVABLE. The files name it
-      themselves in their RCS ids: e_j0.c 1.8 and e_j1.c 1.8 (both 1995/05/10), e_jn.c 1.9.
-      cvsweb.netbsd.org answers HTTP 503 from here, so those 1995 revisions could not be
-      fetched and there is therefore NO patch file — an honest dead end, like dxtn, not an
-      oversight. Anyone who can reach NetBSD CVS can finish this in ten minutes.
-
-      What the delta consists of, measured against the two retrievable candidates (neither
-      is the true base, so treat these as bounds): vs netlib FDLIBM 5.3, normalized 159 /
-      137 / 71 lines for j0_y0.c / j1_y1.c / jn_yn.c; vs NetBSD trunk, 266 / 246 / 71. The
-      trunk numbers are LARGER because trunk is thirty years newer — its jn_yn.c delta is
-      almost entirely NetBSD's own modernization (dropping the K&R `#ifdef __STDC__` arms,
-      adding __sincos), which our 1995-era copy predates. Read that as evidence our copy is
-      close to pristine-for-its-revision, not as evidence of local editing.
-
-      Three things are ours. (1) The 1997 Naohiko Shimizu (Tokai University) performance
-      patch, which turns the R0x/S0x scalar coefficients into R[]/S[] arrays and adds
-      r1/r2/s1/s2/z2/z4 temporaries for pipelined processors. VERIFIED present in j0_y0.c
-      and j1_y1.c and ABSENT from jn_yn.c — the earlier review claimed this and the marker
-      count (1/1/0) confirms it. (2) Include retargeting: `#include "fdlibm.h"` becomes
-      `#include "math.h"` plus `"ieee754.h"`. (3) Nothing else — there is no __REACTOS__
-      marker anywhere in the directory.
-
-      Still true and still owed from the earlier pass: math/s_modf.c and math/modf.c carry
-      the same Sun header while sitting outside this directory, and are deliberately not
-      claimed by this path-based entry.
-  - path: sdk/lib/ucrt
-    name: Microsoft UCRT
-    translate: planned
-    upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
-    license: Microsoft (see the Windows SDK licence terms)
-    license_note: >
-      THIS TREE CARRIES NO LICENCE GRANT. Its source headers bear only
-      "Copyright (c) Microsoft Corporation. All rights reserved." with no permission
-      statement of any kind, and there is no LICENSE, COPYING or README in either
-      sdk/lib/ucrt or sdk/include/ucrt. The recorded licence is therefore a POINTER
-      to the Windows SDK licence terms under which Microsoft distributes the ucrt
-      sources, not something reproducible from this repository — and those terms are
-      an SDK EULA, not an open-source licence.
-
-      This is the largest unresolved provenance question in the tree (~78K lines) and
-      the reason the entry says the SDK version is unknown: without the version we
-      cannot even name which EULA applies. It is recorded here rather than rounded
-      off so that generated notices state the gap instead of hiding it. Resolving it
-      means establishing the SDK version and its terms, or replacing the tree — see
-      the ucrtbase work item in the roadmap.
-    modified: yes
-    headers:
-      - sdk/include/ucrt
-    unwelcome: >
-      The largest unlicensed-Microsoft exposure left in the tree, and the only
-      one that is still the LIVE implementation rather than inert source: ~78K
-      lines carrying "Copyright (c) Microsoft Corporation. All rights reserved."
-      with no permission statement anywhere, under Windows SDK EULA terms we
-      cannot even name because the SDK version was never established. The same
-      judgement that deleted the atapi and uniata C applies here; it has not
-      been acted on only because ucrtbase is 999 live exports rather than a
-      file nobody links.
-
-      THE EXIT, and it is already underway. Take the exports over family by
-      family into sdk/lib/rust/ucrt-rust, declaring each in
-      tools/ucrt-takeover.yaml and grading it against the genuine C in
-      sdk/lib/rust/ucrt-difftest BEFORE deleting that C -- the reference is
-      destroyed by its own replacement, so the grading has to happen first.
-      Progress is a command: `python3 tools/ucrt_burndown.py --arch i386`.
-      Done so far: bits (9 exports), ismbbyte (24), three source files gone,
-      1,032 -> 999.
-
-      The headers in sdk/include/ucrt go LAST and that ordering is forced, not
-      chosen: Microsoft's .c include Microsoft's headers, so the headers cannot
-      leave while any body remains. Their replacement is already identified --
-      current mingw-w64, public domain, the same lineage sdk/include/crt
-      already is.
-
-      NOT a gate, by the field's own design: shipping something unwelcome is a
-      decision, not a defect, and a red gate would only teach the next person
-      to delete this text. If pressure is wanted, the honest lever is a
-      burn-down threshold in check() that ratchets the Microsoft export count
-      downward, never a hard fail on the tree existing.
-    reason: >
-      Microsoft's Universal CRT source as vendored by upstream ReactOS long before
-      this fork (oldest commit touching it here is 5213cf717cf, upstream, predating
-      the ARM64 port). It is built against its own corecrt_internal.h substrate and
-      shares nothing with the Wine-derived msvcrt code we translate, so it is a
-      distinct bring-up rather than an extension of the msvcrt lane.
-
-      This is the entry that motivated the registry. ucrtbase.dll is vendored ucrt
-      plus OUR msvcrt_shared (dll/win32/msvcrt: cpp.c, except.c, undname.c,
-      except_<arch>.c, reactos/ucrt_tls_sup.c) plus 132 lines of ucrtbase's own C
-      (dll/win32/ucrtbase/printf.c + stubs.c; ucrtbase_stubs.c is GENERATED, and the
-      2,676-line .spec is a definition file, not a body). Counting ucrt as translation debt
-      makes ucrtbase read as permanently ~8% reachable; excluding it makes the goal
-      sayable — everything in ucrtbase that is ours is Rust. See task #55.
-    review: >
-      MIT FILES REMOVED 2026-09-19. Five ReactOS ADDITIONS carrying `SPDX MIT` and
-      `Copyright (c) 2024 Timo Kreuzer` used to sit in this Microsoft drop
-      (math/matherr.cpp, inc/corecrt_internal_state_isolation.h,
-      locale/{MultiByteToWideChar,WideCharToMultiByte,GetStringTypeW}.c). They are now
-      sdk/lib/ucrt_reactos/, outside the vendored boundary, so this tree is Microsoft's
-      alone. ONE TIE REMAINS AND CANNOT BE MOVED: corecrt_internal.h:2119 — a Microsoft
-      file — does `#include <corecrt_internal_state_isolation.h>`, so the drop reaches
-      into our header, which is now supplied via an include path. That #include is itself
-      one of the adaptation sites below, and for any future upstream-alignment work it is
-      the shape that has to become a patch rather than an in-place edit.
-
-      No version probe: there is no version macro, no stamp, and no manifest anywhere
-      in sdk/lib/ucrt or sdk/include/ucrt, so nobody can say which SDK this came from.
-      Re-searched 2026-09-13 and the absence is total: no `10.0.NNNNN` string, no build
-      number, no .rc, no README, no manifest, in either tree. Identifying the SDK
-      version is still owed and cannot be done from this tree alone — it needs a real
-      SDK drop to diff against.
-
-      What the tree DOES date: `_M_ARM64EC` appears in 7 files, headers and sources
-      both (corecrt.h, corecrt_math.h, corecrt_internal_simd.h, strnlen.cpp,
-      string/arm64/{strlen,wcslen}.s, startup/abort.cpp). ARM64EC arrived with the
-      Windows 11 SDK, so that is an evidence-backed FLOOR of 10.0.22000. `AVX512`
-      appears nowhere, `_CRT_HAS_CXX17` does. Treat these as brackets, not an answer.
-
-      `modified:` WAS `unknown`, on the argument that `grep -rl ReactOS sdk/lib/ucrt`
-      is empty across all 459 TUs. That argument is wrong, and the field is now `yes`:
-      the drop carries 23 clang/GCC adaptation sites across 8 files, none of which
-      Microsoft would ship. `string/strnlen-sse2.cpp:9` and `strnlen-avx2.cpp:9` are
-      `#pragma GCC target(...)`, which MSVC does not have at all; corecrt_internal_simd.h
-      gives `_UCRT_ENABLE_SSE2`/`_UCRT_ENABLE_AVX2` separate clang and GCC spellings;
-      and `strnlen.cpp:90` turns `common_strnlen_simd` from a DEFINITION into a bare
-      DECLARATION under clang, which is a behavioural change, not a portability shim.
-      The others are inc/corecrt_internal_{stdio_output,traits}.h,
-      internal/winapi_thunks.cpp and misc/invalid_parameter.cpp.
-
-      The lesson generalises past this entry: ABSENCE OF A `__REACTOS__` MARKER IS NOT
-      EVIDENCE OF AN UNMODIFIED DROP. These edits carry no marker of any kind. So a
-      re-vendor here is a MERGE, not a copy — the same trap the FDLIBM entry above
-      records for its 1997 Shimizu patch, and the reason `modified` is worth getting
-      right rather than leaving at `unknown`.
-
-      RE-AUDITED 2026-09-20 and this entry is now AT ITS ACHIEVABLE MAXIMUM — the remaining
-      gap is not work anyone skipped. There is no patch file because there is no upstream
-      artifact to diff against: Microsoft ships ucrt source only inside the Windows SDK, so
-      without a real SDK drop no diff and therefore no patch is possible. A dead end like
-      FDLIBM's unreachable NetBSD revisions and dxtn's vanished distribution, not an
-      oversight.
-
-      CORRECTING THE COUNT ABOVE: the "23 clang/GCC adaptation sites across 8 files" figure
-      covered only sdk/lib/ucrt. Including sdk/include/ucrt — which is half of this
-      registered tree — it is 33 SITES ACROSS 12 FILES: the eight already named plus
-      corecrt.h (7 sites), corecrt_stdio_config.h, malloc.h and stddef.h (1 each). Same
-      shape as the STLport finding from the same pass: a split tree where only the source
-      half got measured.
-
-      Independently re-verified rather than inherited: `#pragma GCC target(...)` really is
-      in strnlen-sse2.cpp and strnlen-avx2.cpp (MSVC has no such pragma); strnlen.cpp really
-      does turn common_strnlen_simd from a DEFINITION into a bare DECLARATION under
-      `(__GNUC__ || __clang__) && !_UCRT_BUILD_SSE2 && !_UCRT_BUILD_AVX2`, which is
-      behavioural rather than cosmetic; and _M_ARM64EC really does appear in exactly 7
-      files, holding the 10.0.22000 dating floor. `grep -rli reactos` over both halves
-      matches only CMakeLists.txt, math.cmake and locale.cmake — no source file — which is
-      exactly why the marker-absence lesson above is worth keeping.
-
-  # ── x86 emulation for wow64 / arm64ec ───────────────────────────────────
-
   - path: vendor/fex
     name: FEX-Emu
     translate: keep
@@ -1362,88 +1166,6 @@ trees:
       launch.
     reason: iconv shim over the Win32 codepage APIs; upstream-tracked.
 
-  - path: vendor/stlport
-    name: STLport
-    translate: keep
-    translate_note: >
-      Owner, 2026-09-26: DEAD CODE. A C++ standard library wired up only for MSVC builds
-      (sdk/cmake/msvc.cmake's cppstl), and MSVC is not a supported toolchain here -- the
-      clang/llvm-mingw build uses the toolchain's libstdc++ and compiles none of this.
-      A STATIC lib, so nothing outside the tree could depend on it either. Deletion
-      proposed; not a translation target either way.
-    upstream: http://www.stlport.org/
-    license: STLport licence (permissive)
-    license_file: vendor/stlport/README
-    modified: yes  # 30 semantic files across BOTH halves; see patch
-    patch: vendor-patches/stlport.patch
-    # Both halves of the drop now live here in upstream's own layout: the library
-    # sources at the top and the 326-file include tree at vendor/stlport/stlport
-    # (was vendor/stlport/stlport, and missing from this entry until 2026-09-20).
-    version:
-      file: vendor/stlport/stlport/stl/_stlport_version.h
-      patterns:
-        - '#define _STLPORT_MAJOR\s+(\d+)'
-        - '#define _STLPORT_MINOR\s+(\d+)'
-        - '#define _STLPORT_PATCHLEVEL\s+(\d+)'
-      join: '.'
-    review: >
-      DIFFED AGAINST PRISTINE UPSTREAM 2026-09-20 (STLport-5.2.1.tar.bz2 from SourceForge,
-      sha256 755b007b982c4545086c43affc8ed32c0acd577ee206eb1f6967e250c3546fc9). The entry
-      said `modified: yes` with no patch, no review and no version.
-
-      VERSION IS 5.2.1 and now probed, from vendor/stlport/stlport/stl/_stlport_version.h
-      (_STLPORT_VERSION 0x521), corroborated by etc/ChangeLog's final entry "2008-12-10 ...
-      STLport release 5.2.1". The README says "STLport 5.0" and is simply stale — don't
-      believe it. 5.2.1 is the FINAL STLport release ever made, so there is no upstream left
-      to track and no bump to owe.
-
-      THE TREE IS SPLIT AND HALF OF IT WAS UNREGISTERED. vendor/stlport holds the
-      library sources; vendor/stlport/stlport holds 326 files that are upstream's top-level
-      stlport/ include tree. The second directory was not in this entry at all, so every
-      earlier pass over STLport silently covered only half the drop. Now recorded under
-      `headers:`. Same class of gap as libjpeg's split tree.
-
-      WE CARRY TWO GENUINE UPSTREAM BUG FIXES, and a naive re-vendor would REGRESS both.
-      src/locale.cpp:211 — upstream writes strcmp(name1, name1), comparing a string to
-      itself, which makes the locale-name equality test documented directly above it always
-      true; ours compares name1 to name2. stl/_fstream.c:87 — upstream writes `__ok == __ok
-      && this->_M_unshift();`, an == where = was meant, so the result including the
-      _M_unshift() outcome is computed and discarded; ours assigns. Upstream gets the same
-      line right at 710. Both verified directly against the pristine tarball.
-
-      The one architectural change is that the fstream backend is switched from native Win32
-      I/O to C stdio, via three coordinated edits (host.h uncomments _STLP_USE_STDIO_IO and
-      _STLP_USE_STATIC_LIB; _windows.h wraps its _STLP_USE_WIN32_IO define in `#if 0`),
-      carried by a 35-line _Filebuf_base::_M_open(FILE*, openmode) added to
-      details/fstream_stdio.cpp plus matching declarations in _fstream.h. That is a CRT-
-      interop addition, not a macro toggle, so it cannot reduce to a -D.
-      details/fstream_win32io.cpp is vendored but dead.
-
-      Counts: 30 files differ semantically (14 in the library half, 16 in the include half)
-      plus one added file, stl/config/_reactos.h — a compiler-config header in STLport's own
-      style dispatched from _system.h under #if __REACTOS__. A further 50 files differ ONLY
-      by CRLF/trailing whitespace and are deliberately excluded from the patch, so pristine
-      + patch does NOT reproduce the tree byte-for-byte; the patch header says so and gives
-      the one-line normalized-diff command to re-check.
-
-      ONE CLUSTER COULD MOVE INTO THE BUILD and is left as a follow-up: user_config.h
-      activates _STLP_NEW_PLATFORM_SDK, _STLP_USING_PLATFORM_SDK_COMPILER and
-      _STLP_DONT_USE_AUTO_LINK, which are presence-only macros with no structural coupling —
-      exactly the shape that belongs in target_compile_definitions rather than an edited
-      header. Not done here because it changes the build rather than the record.
-
-      ODDITY, flagged not fixed: stlport/errno.h carries a stray `#define errno foo` the
-      tarball does not, sitting immediately before an `#error` so it can never take effect —
-      apparently an example that leaked out of the comment above it. Harmless, but combined
-      with the two bug fixes it suggests this tree was synced from a post-tag SVN revision
-      rather than from the 5.2.1 tarball, which would mean our copy is not a strict subset
-      of the tagged release in either direction. Unresolved; STLport's SVN history was not
-      consulted.
-    reason: >
-      C++ standard library used by the C++ substrate. Upstream is long dead, but it
-      is still a foreign STL implementation rather than ReactOS code; translating an
-      STL to Rust is not a goal of this project.
-
   - path: vendor/ac97
     name: AC'97 audio sample driver
     translate: planned
@@ -2149,15 +1871,15 @@ trees:
 # to be classified before it can land.
 # ─────────────────────────────────────────────────────────────────────────────
   # ── vkd3d (Wine's bundled Direct3D 12 / shader-compiler library) ─────────
-  - path: sdk/lib/vkd3d
+  - path: vendor/vkd3d
     name: vkd3d
     translate: keep
     upstream: https://gitlab.winehq.org/wine/vkd3d
     license: LGPL-2.1-or-later
-    license_file: sdk/lib/vkd3d/COPYING
-    modified: unknown  # not yet diffed against a pristine 1.14 tarball -- owed
+    license_file: vendor/vkd3d/COPYING
+    modified: yes
     version:
-      file: sdk/lib/vkd3d/config.h
+      file: vendor/vkd3d/config.h
       pattern: '#define PACKAGE_VERSION "([^"]+)"'
     reason: >
       Separately released WineHQ library (Direct3D 12 on Vulkan + the HLSL/SPIR-V shader
@@ -2165,7 +1887,9 @@ trees:
       releases, not translated.
     review: >
       ADDED 2026-09-30 by the 97-commit upstream merge (upstream e98fa71fdcc, "pass at
-      building Wine-10.0"), flagged UNCLASSIFIED by `--suspects`.
+      building Wine-10.0") at sdk/lib/vkd3d, flagged UNCLASSIFIED by `--suspects`; moved to
+      vendor/vkd3d 2026-10-03. media/doc/WINESYNC.txt still names the upstream path, as
+      upstream ledgers do -- never rewrite it.
 
       `trees:`, not `ours:`, and NOT on the strength of the copyright lines: Wine itself
       does not fork vkd3d. It is a separately released WineHQ project that Wine bundles
@@ -2174,8 +1898,41 @@ trees:
       opposite case and are filed under `ours:`.
 
       The version probe reads config.h, which in a vendored tree is usually OUR file
-      and can be laundered (see libmpg123). It is used until this tree is compared with
-      the pristine 1.14 tarball, which is also what settles `modified:`.
+      and can be laundered (see libmpg123). The version is settled independently:
+  - path: sdk/lib/rust/musl-math/ref
+    name: musl libc math (exp/exp2/log/log2/pow and f32 forms; ARM optimized-routines)
+    translate: keep
+    upstream: https://git.musl-libc.org/cgit/musl/tree/src/math
+    license: MIT
+    license_file: sdk/lib/rust/musl-math/ref/COPYRIGHT
+    modified: no
+    version:
+      literal: musl master, src/math, fetched 2026-10-03
+    reason: >
+      The pristine C that sdk/lib/rust/musl-math ports to Rust -- musl's exp, exp2, log,
+      log2, pow, expf, exp2f, logf, log2f and powf with their coefficient tables and the
+      __math_* helpers, i.e. ARM's optimized-routines (Copyright (c) 2017-2018 Arm Limited,
+      MIT) as musl ships them. It is a TEST ORACLE, never linked into the product:
+      musl-math-difftest compiles it for the host (shim/ stands in for <math.h>, whose
+      glibc internals collide with musl's libm.h) and requires the Rust port to match it
+      bit for bit. The port exists because the `libm` crate still carries FreeBSD msun's
+      older pow/exp/log, which miss the nearest double in ~10% of pow(10, n); msvcrt's x87
+      pow and Windows' do not. shim/ is ours (two small headers); everything else is musl.
+
+
+      DIFFED 2026-09-30 against the pristine release, dl.winehq.org vkd3d-1.14.tar.xz
+      (sha256 c94015d59ebe8ae72c4d802af5ca1517d9744548842a4e776534612a8d905485). 33 files
+      are byte-identical and 15 differ, all by import adaptation with no functional
+      change:
+      - Wine's own: `list.h`/`rbtree.h` become `wine/...`, `vkd3d_*.h` become the SDK
+        headers, `vulkan/vulkan.h` becomes `wine/vulkan.h`, `VKD3D_DEBUG_ENV_NAME` is
+        dropped, VKD3D_IMPORT/EXPORT are blank, and the Makefile.in is Wine's.
+      - ReactOS MSVC compat (`__REACTOS__`/`_MSC_VER`): noreturn/unreachable macros, a
+        `__MINGW32__` popcount guard, the descriptor-heap alignment, and two
+        `return NULL` -> `return false` in bool functions.
+      Ours-only: CMakeLists.txt, config.h, VENDORED, and the generated or imported
+      headers (vkd3d_version.h, vkd3d_debug.h, vulkan/spirv.h, vulkan/GLSL.std.450.h).
+      So 1.14 is confirmed, and `modified: yes` means these patches only.
 
 ours:
   - paths:

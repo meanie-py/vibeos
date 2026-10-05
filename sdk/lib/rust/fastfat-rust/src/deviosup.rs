@@ -462,7 +462,7 @@ pub unsafe extern "system" fn FatSingleNonAlignedSync(
     );
 
     if FatDiskAccountingEnabled != 0 {
-        #[cfg(ntddi_ge_win8)]
+        #[cfg(ntddi_ge_ntddi_win8)]
         {
             FsRtlUpdateDiskCounters(
                 if is_a_write { 0 } else { byte_count as u64 },

@@ -489,6 +489,13 @@ Interrupt Line/Pin from config space).
 
 ### M11 — Real-NIC support via an NDIS protocol shim
 
+**Owed by M11 (2026-10-03): put the miniport INFs back.** While netstack drives the NIC
+itself, `vendor/netkvm/CMakeLists.txt` does not stage netkvm.inf and
+`drivers/network/dd/e1000/nete1000.inf` has its 100E/100F models commented out. With them on the
+media, setup bound the NDIS miniport to the same device under netstack and the arm64 boot
+wedged in netstack's TX wait (field manual, "Completing the media wakes up code that a missing
+file was holding back"). When netstack moves above NDIS, restore both.
+
 **Status (2026-06-21) — 🟡 SCAFFOLD LANDED (compile-verified ×3, behind `feature = "ndis"`, OFF by
 default); runtime bring-up is the remaining sub-task.** The swappable backend the architecture
 promised is now built and integrated:
@@ -639,6 +646,36 @@ Remaining open:
   - **OPEN (proper kernel fix):** wire a periodic arm64 clock interrupt → `KeUpdateSystemTime` so
     `InterruptTime`/`delay_ms`/all timer-based kernel paths work on arm64 (currently only the
     cntvct perf counter advances). Benefits all arm64 work, not just netstack.
+- **✅ FIXED (2026-10-04) — user-mode name lookup and HTTPS to the real internet.** rapps'
+  "Updating Database" failed on arm64. `tools/payloads/netprobe` walks the client path one layer
+  at a time, and found six independent breaks:
+  1. **No DNS servers for user mode.** iphlpapi's `GetNetworkParams` reads
+     `Tcpip\Parameters\Interfaces\*\{NameServer,DhcpNameServer}`; netstack kept DHCP's servers
+     to itself. `netcfg::publish_dns_servers` writes `DhcpNameServer` under
+     `Interfaces\netstack` on every lease.
+  2. **ARP starvation.** smoltcp 0.13 keeps ONE `silent_until` for the whole interface (1 s;
+     still global in 0.14): an ARP for host A silences the lookup for host B, so a DNS query
+     queued behind the router's ARP never went out. netstack now sends its own ARP requests for
+     the router and the on-link DNS servers on each lease, and every 30 s after
+     (`engine::warm_neighbors`), so the cache is full before anyone asks. **Owed:** a
+     per-address limit in smoltcp itself (a vendor patch, deferred by the user).
+  3. **No SYN timeout.** smoltcp sockets never give up on SYN-SENT. A TDI connect is now aborted
+     after 21 s and completes `STATUS_IO_TIMEOUT`, which msafd maps to `WSAETIMEDOUT`.
+  4. **UDP datagrams came back with no source.** `TDI_RECEIVE_DATAGRAM`'s
+     `ReturnDatagramInformation` was never filled, so `recvfrom` reported no sender address.
+  5. **AFD select never reported a ready socket.** `UpdatePollWithFCB` wrote the poll status
+     into AFD's locked copy (`AFD_HANDLES()` / `PollReq->Exclusive`) instead of the IRP's
+     system buffer, and `CopyBackStatus` copies from the latter.
+  6. **gethostbyname got no hostent.** ws2_32's `getxyDataEnt` dropped the C's
+     `LUP_RETURN_BLOB` for non-hostname lookups, so the NSP returned no blob.
+  Past the network, https still failed `ERROR_INTERNET_INVALID_CA` (12045): bcrypt's ECDSA was a
+  stub and Let's Encrypt's chain is ECDSA (YR2 → Root YR → ISRG Root X1). Upstream bcrypt is
+  restored over mbedTLS 3.6 (`dll/win32/bcrypt`, `vendor/mbedtls` with `MBEDTLS_DSA_C`).
+  **A probe trap:** the livecd's boot-time `setup -mini` registers rsaenh only after it has
+  started Dnscache, minutes after the desktop on arm64 TCG. A crypt32 that opens the ROOT store
+  before then has no CSP and imports nothing (`rootstore.c: Failed to import system certs into
+  registry, 00000057`, from `CryptCreateHash(0, ...)`), and caches that result for the process.
+  Wait for `setup.exe` to exit first, as appstorm and netprobe do.
 - **Later (v1+):** see the **Post-Parity Roadmap (M8+)** section above — server-side TCP
   (TDI_LISTEN/ACCEPT), the management plane (iphlpapi/ipconfig/ping), interrupt-driven RX,
   NDIS real-NIC support, then completeness/perf (IPv6, multicast, zero-copy, offloads).

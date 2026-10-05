@@ -1,0 +1,4 @@
+# Wine's msvcrt conformance suite and ReactOS's msvcrt apitest -- the rostests that
+# exercise msvcrt.dll, graded across the 2026-10-03 i386 SSE2 switch.
+msvcrt_winetest.exe
+msvcrt_apitest.exe

@@ -1178,6 +1178,49 @@ unsafe fn UefiSetupBlockDevices() {
     TRACE(b"Found %lu root block devices\n\0".as_ptr() as PCHAR, (PcBiosDiskCount) as usize);
 }
 
+/// Whether the device behind `BlockIo` carries an ISO9660 volume: the primary volume
+/// descriptor's "CD001" at byte 0x8001 (sector 16 of 2048-byte sectors), read in
+/// whatever block size the device reports.
+///
+/// This is the question UefiSetBootpath actually needs answered. The C asks
+/// `RemovableMedia && BlockSize == 2048` instead, which is true of an ATAPI drive and
+/// false of the SAME image served over usb-storage or virtio-blk (512-byte blocks).
+/// Those took the hard-disk arm and booted `rdisk(N)partition(M)`, where RunLoader
+/// found no FAT volume and returned with no boot configuration -- the x86 non-ATAPI
+/// boot that went silent after "Switching stack...".
+unsafe fn UefiMediumIsIso9660(BlockIo: *mut EFI_BLOCK_IO) -> bool {
+    const PVD_OFFSET: u64 = 16 * 2048;
+    if BlockIo.is_null() || (*(*BlockIo).Media).MediaPresent == 0 {
+        return false;
+    }
+    let BlockSize = (*(*BlockIo).Media).BlockSize as u64;
+    if BlockSize == 0 || BlockSize > 2048 || 2048 % BlockSize != 0 {
+        return false;
+    }
+    if UefiEnsureDiskReadBufferAligned((*(*BlockIo).Media).IoAlign) == 0
+        || DiskReadBuffer.is_null()
+        || DiskReadBufferSize < 2048
+    {
+        return false;
+    }
+    // A probe: a device with no ReadBlocks is simply not an ISO9660 boot medium.
+    let Some(ReadBlocks) = (*BlockIo).ReadBlocks else {
+        return false;
+    };
+    let Status = ReadBlocks(
+        BlockIo,
+        (*(*BlockIo).Media).MediaId,
+        PVD_OFFSET / BlockSize,
+        2048,
+        DiskReadBuffer,
+    );
+    if EFI_ERROR(Status) != 0 {
+        return false;
+    }
+    let pvd = DiskReadBuffer as *const u8;
+    *pvd == 1 && core::slice::from_raw_parts(pvd.add(1), 5) == b"CD001"
+}
+
 unsafe fn UefiSetBootpath() -> BOOLEAN {
     let mut BootBlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
     let mut RootBlockIo: *mut EFI_BLOCK_IO = core::ptr::null_mut();
@@ -1221,7 +1264,11 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
 
     FrldrBootDrive = (FIRST_BIOS_DISK + ((ArcDriveIndex) as u8)) as UCHAR;
 
-    if (*(*BootBlockIo).Media).RemovableMedia == 1u8 && (*(*BootBlockIo).Media).BlockSize == 2048 {
+    // Divergence from the C, which tests only the device model: an ISO9660 volume is
+    // a CD boot however the device presents it (see UefiMediumIsIso9660).
+    if ((*(*BootBlockIo).Media).RemovableMedia == 1u8 && (*(*BootBlockIo).Media).BlockSize == 2048)
+        || UefiMediumIsIso9660(RootBlockIo)
+    {
         FrldrBootPartition = 0xFF;
         RtlStringCbPrintfA(
             FrLdrBootPath.as_mut_ptr() as PCHAR,
@@ -1230,6 +1277,9 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
             ArcDriveIndex,
         );
         TRACE(b"Boot path set to CD-ROM: %s\n\0".as_ptr() as PCHAR, (FrLdrBootPath.as_ptr()) as usize);
+        // Which ARC branch the boot handle took -- one line, and it is the first
+        // thing worth knowing when a boot device behaves unexpectedly.
+        crate::uefildr::fldr_conout(crate::wide!("[FLDR] arc branch = CDROM\r\n\0"));
     } else {
         let mut BootPartition: ULONG = 0;
         let mut PartitionEntry: PARTITION_TABLE_ENTRY = core::mem::zeroed();
@@ -1282,6 +1332,9 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
             ) == 0
             {
                 ERR(b"Failed to get boot partition entry\n\0".as_ptr() as PCHAR);
+                crate::uefildr::fldr_conout(
+                    crate::wide!("[FLDR] UefiGetBootPartitionEntry FAILED\r\n\0"),
+                );
                 return 0u8;
             }
         }
@@ -1295,6 +1348,9 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
         );
         TRACE(
             b"Boot path set to hard disk: %s\n\0".as_ptr() as PCHAR, (FrLdrBootPath.as_ptr()) as usize,
+        );
+        crate::uefildr::fldr_conout(
+            crate::wide!("[FLDR] arc branch = HARDDISK+partition\r\n\0"),
         );
     }
 
@@ -1356,8 +1412,24 @@ pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
         return 0u8;
     }
 
-    if (*(*BlockIo).Media).RemovableMedia == 1u8 && (*(*BlockIo).Media).BlockSize == 2048 {
-        if MachDiskReadLogicalSectors(FrldrBootDrive, 16u64, 1, DiskReadBuffer) == 0 {
+    // Register the CD device whenever UefiSetBootpath chose the CD path (it alone sets
+    // partition 0xFF), not on a second copy of its old device-model test: an ISO served
+    // with 512-byte blocks was given `cdrom(N)` as its boot path and then never
+    // registered under that name, so RunLoader could not open it. The checksum block is
+    // the ISO's sector 16 -- byte 0x8000, 2048 bytes -- in the device's own block units.
+    if FrldrBootPartition == 0xFF {
+        let BlockSize = (*(*BlockIo).Media).BlockSize;
+        if BlockSize == 0 || BlockSize > 2048 || 2048 % BlockSize != 0 {
+            ERR(b"CD boot device has unusable block size %lu\n\0".as_ptr() as PCHAR, BlockSize as usize);
+            return 0u8;
+        }
+        if MachDiskReadLogicalSectors(
+            FrldrBootDrive,
+            (16 * 2048 / BlockSize) as u64,
+            2048 / BlockSize,
+            DiskReadBuffer,
+        ) == 0
+        {
             ERR(b"Reading MBR from CD-ROM failed\n\0".as_ptr() as PCHAR);
             return 0u8;
         }

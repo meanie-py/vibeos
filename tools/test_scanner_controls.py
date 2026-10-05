@@ -662,6 +662,22 @@ pub static EXIT: unsafe extern "C" fn(i32) =
     unsafe { core::mem::transmute::<unsafe extern "C" fn(i32) -> !, _>(cexit) };
 """
 
+# scan_unaligned_wide. Seeded from ws2_32's L"LibraryPath" (2026-10-04): a UTF-16 literal
+# spelled as a byte string and cast to a wide pointer, alignment 1, which landed on an odd
+# address and failed the kernel's ProbeForRead. GOOD has the aligned macro form and a narrow
+# C string that must not be mistaken for a wide one.
+_UNALIGNED_WIDE_BAD = """\
+pub unsafe fn f() {
+    RegQueryValueExW(key, b"L\\0i\\0b\\0\\0\\0".as_ptr() as LPCWSTR, 0 as _);
+}
+"""
+_UNALIGNED_WIDE_GOOD = """\
+pub unsafe fn f() {
+    RegQueryValueExW(key, win32macros_rust::wide_bytes!(b"L\\0i\\0b\\0\\0\\0") as LPCWSTR, 0 as _);
+    OutputDebugStringA(b"text\\0".as_ptr() as PCSTR);
+}
+"""
+
 # scan_wide_byte_copy. Seeded from fastfat's FatQueryDirectory (2026-09-23): the
 # C's RtlCopyMemory byte count kept as the element count of a u16 copy. GOOD has
 # the fixed byte copy, a count already in WCHARs (/ size_of), and an ANSI copy
@@ -1439,6 +1455,20 @@ pub unsafe fn NtSetValueKey(Data: PVOID, DataSize: ULONG) -> NTSTATUS {
 //     _SEH2_TRY { ProbeForRead(Data, DataSize, 1); } _SEH2_END;
 //     RtlCopyMemory(DataCopy, Data, DataSize);
 // }
+// The write-side substrate counts too: IopCreateFile's ProbeForWriteHandle became
+// probe_write_generic (2026-10-04), and the scanner first reported it as dropped.
+pub unsafe fn NtOpenSection(SectionHandle: *mut HANDLE) -> NTSTATUS {
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(SectionHandle, 1, PreviousMode) {
+        return status;
+    }
+    *SectionHandle = Handle;
+    STATUS_SUCCESS
+}
+// NTSTATUS NtOpenSection(PHANDLE SectionHandle)
+// {
+//     _SEH2_TRY { ProbeForWriteHandle(SectionHandle); } _SEH2_END;
+//     *SectionHandle = Handle;
+// }
 """
 
 # scan_dropped_asserts. Seeded from task #39, 2026-09-06: MI_MAKE_HARDWARE_PTE_USER
@@ -1663,7 +1693,106 @@ pub unsafe extern "system" fn KeGetPcr() -> usize { 0 }
 }
 
 
+# dhcpcsvc, 2026-10-04: `(*ip).name` is a `[c_char; 256]`, passed by value to a variadic
+# logger. i386 pushes the bytes, so `%s` dereferenced "nets". The good side keeps the
+# `.as_ptr()` fix and a same-named POINTER field, which a name-only match would flag.
+_VARIADIC_ARRAY_BAD = """\
+pub struct interface_info { pub next: *mut interface_info, pub name: [c_char; 256] }
+extern "C" { pub fn note(format: *const c_char, ...) -> c_int; }
+unsafe fn send_discover(ipp: *mut c_void) {
+    let ip = ipp as *mut interface_info;
+    note(b"DHCPDISCOVER on %s\\0".as_ptr() as *const i8, (*ip).name);
+}
+"""
+_VARIADIC_ARRAY_GOOD = """\
+pub struct interface_info { pub next: *mut interface_info, pub name: [c_char; 256] }
+pub struct universe { pub name: *const c_char }
+extern "C" { pub fn note(format: *const c_char, ...) -> c_int; }
+unsafe fn send_discover(ipp: *mut c_void, u: *mut universe) {
+    let ip = ipp as *mut interface_info;
+    note(b"DHCPDISCOVER on %s\\0".as_ptr() as *const i8, (*ip).name.as_ptr());
+    note(b"%s\\0".as_ptr() as *const i8, (*u).name);
+}
+"""
+
+# scan_byteptr_stride. Seeded from oleaut32 IRecordInfoImpl_RecordCopy (2026-10-04): the C's
+# `((BYTE*)src_rec) + offset` translated through `*mut PBYTE`, an 8x stride.
+_BYTEPTR_BAD = """\
+unsafe fn copy(src_rec: *mut c_void, off: isize) -> *mut c_void {
+    (src_rec as *mut PBYTE)
+        .offset(off) as *mut c_void
+}
+"""
+_BYTEPTR_GOOD = """\
+unsafe fn copy(src_rec: *mut c_void, off: isize) -> *mut c_void {
+    (src_rec as *mut BYTE).offset(off) as *mut c_void
+}
+"""
+
+# scan_gmem_flags. Seeded from oleaut32 create_stream (2026-10-04): the C's GMEM_FIXED came
+# out as HEAP_ZERO_MEMORY, which GlobalAlloc rejects.
+_GMEM_BAD = """\
+unsafe fn load(n: u32) -> HGLOBAL {
+    GlobalAlloc(HEAP_ZERO_MEMORY, n as SIZE_T)
+}
+"""
+_GMEM_GOOD = """\
+unsafe fn load(n: u32) -> HGLOBAL {
+    GlobalAlloc(GMEM_FIXED, n as SIZE_T)
+}
+"""
+
+# scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
+# do-while's `continue` re-ran the same INF line forever once translated to `loop`.
+_DOWHILE_BAD = """\
+unsafe fn register(ctx: *mut Ctx) {
+    loop {
+        if read_line(ctx) == 0 {
+            continue;
+        }
+        if next_line(ctx) == 0 {
+            break;
+        }
+    }
+}
+"""
+_DOWHILE_GOOD = """\
+unsafe fn register(ctx: *mut Ctx) {
+    loop {
+        'next: {
+            if read_line(ctx) == 0 {
+                break 'next;
+            }
+        }
+        if next_line(ctx) == 0 {
+            break;
+        }
+    }
+}
+"""
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_byteptr_stride",
+        script="tools/scan_byteptr_stride.py",
+        argv=["--lint"],
+        bad={"recinfo.rs": _BYTEPTR_BAD},
+        good={"recinfo.rs": _BYTEPTR_GOOD},
+    ),
+    Control(
+        name="scan_gmem_flags",
+        script="tools/scan_gmem_flags.py",
+        argv=["--lint"],
+        bad={"olepicture.rs": _GMEM_BAD},
+        good={"olepicture.rs": _GMEM_GOOD},
+    ),
+    Control(
+        name="scan_dowhile_continue",
+        script="tools/scan_dowhile_continue.py",
+        argv=["--lint"],
+        bad={"install.rs": _DOWHILE_BAD},
+        good={"install.rs": _DOWHILE_GOOD},
+    ),
     Control(
         name="scan_dropped_asserts",
         script="tools/scan_dropped_asserts.py",
@@ -1718,6 +1847,15 @@ CONTROLS: list[Control] = [
             "ntoskrnl/lpc/reply.c": _SEHPAIR_C,
             "sdk/lib/rust/lpc-rust/src/reply.rs": _SEHPAIR_GOOD_RS,
         },
+    ),
+    Control(
+        name="strip_msvc_cmake",
+        script="tools/strip_msvc_cmake.py",
+        argv=["--check"],
+        bad={"CMakeLists.txt": "if(MSVC OR X)\n    a()\nendif()\n"},
+        good={"CMakeLists.txt": 'if(CMAKE_C_COMPILER_ID STREQUAL "Clang")\n    a()\nendif()\n'},
+        pass_files=True,
+        file_suffix="CMakeLists.txt",
     ),
     Control(
         name="scan_dropped_probes",
@@ -1885,6 +2023,13 @@ CONTROLS: list[Control] = [
         good={"good.rs": _BITWISE_NOT_GOOD},
     ),
     Control(
+        name="scan_variadic_array_arg",
+        script="tools/scan_variadic_array_arg.py",
+        argv=["--lint"],
+        bad={"bad.rs": _VARIADIC_ARRAY_BAD},
+        good={"good.rs": _VARIADIC_ARRAY_GOOD},
+    ),
+    Control(
         name="scan_magic_offsets",
         script="tools/scan_magic_offsets.py",
         argv=["--lint"],
@@ -1942,6 +2087,13 @@ CONTROLS: list[Control] = [
         good={"bridge.c": _CDECL_ALIAS_GOOD},
     ),
     Control(
+        name="scan_unaligned_wide",
+        script="tools/scan_unaligned_wide.py",
+        argv=["--lint"],
+        bad={"bad.rs": _UNALIGNED_WIDE_BAD},
+        good={"good.rs": _UNALIGNED_WIDE_GOOD},
+    ),
+    Control(
         name="scan_wide_byte_copy",
         script="tools/scan_wide_byte_copy.py",
         argv=["--lint"],
@@ -1997,6 +2149,14 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_hresult_literals": (
+        "its oracle is the C module scan_invented_constants.c_dirs_for() finds for a crate in "
+        "the real tree, so a fixture directory has no crate to map. The decision is "
+        "scan_files(rs_files, c_dirs, names), driven directly in "
+        "tools/test_scan_hresult_literals.py with an explicit C dir: it must flag ole32's "
+        "STG_E_TOOMANYOPENFILES-for-READFAULT shape and must not flag a value the C function "
+        "returns, a named const, a nolint line, an extern declaration, or an NTSTATUS function."
+    ),
     # Already have dedicated suites (the prototypes this harness generalizes).
     "scan_wide_literals": "covered by tools/test_scan_wide_literals.py (20 tests)",
     "verify_c_signatures": "covered by tools/test_verify_c_signatures.py (9 tests)",
@@ -2103,6 +2263,13 @@ UNCOVERED: dict[str, str] = {
         "restate its unit tests. tools/test_scan_bindgen_padding_index.py drives scan_text "
         "with the user32 wnd_pti read as the positive control and address-of/offset_of "
         "uses (layout-stable) as negatives, and asserts the real tree is clean."
+    ),
+    "scan_extern_static_width": (
+        "pairs the whole tree's C __asm__ definitions with its Rust extern statics, so a "
+        "fixture dir would only restate its unit tests. tools/test_scan_extern_static_width.py "
+        "drives c_definitions/scan_rust with fastfat's MAX_LFN_CHARACTERS over-read as the "
+        "positive control, equal/narrower/unknown widths as negatives, and asserts the real "
+        "tree is clean."
     ),
     "scan_res_named_types": (
         "reads COMMITTED binary resource objects (git ls-files '*.res'), not Rust source, so "

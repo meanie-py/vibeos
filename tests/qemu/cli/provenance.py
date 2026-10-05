@@ -79,18 +79,41 @@ def git_head(repo: Path) -> str:
 
 def git_fingerprint(repo: Path, paths: list[str] | None = None) -> str:
     """Content-true fingerprint of the (optionally path-scoped) source state:
-    HEAD + working-tree diff + untracked. Immune to mtime churn from git ops.
+    committed content + working-tree diff + untracked. Immune to mtime churn
+    from git ops.
 
-    Raises ProvenanceError if any of its three git calls fails — see _run."""
+    **Scoped calls must not fold in the HEAD SHA, and this is the whole reason
+    the scoped and unscoped branches differ.** A commit sha names the whole
+    tree, so hashing it defeats every exclusion in the pathspec: a docs-only
+    commit moves HEAD, the fingerprint moves, and `build_src_hash` reports
+    build-relevant change for a file it was explicitly told to ignore. Every
+    exclusion in NON_BUILD_PATHSPEC was added to stop a false STALE_MEDIA, and
+    every one of them worked only while the change sat UNCOMMITTED — committing
+    it brought the false positive straight back. Measured on this repo: a
+    docs-only commit leaves `git diff --name-only HEAD~1 HEAD -- <scope>` empty
+    and still moved the fingerprint, which is how it was found; the oracle's own
+    explanation string had been saying "HEAD MOVED SINCE THE BUILD ... NOT a
+    stale artifact" the entire time.
+
+    So a scoped call hashes the INDEX ENTRIES in scope (`ls-files -s` gives mode
+    + blob sha per path) instead. That is content-true, respects exclusions, and
+    never mentions a commit. 21ms for 38,845 files here. The unscoped call keeps
+    the HEAD sha: it is the coarse tier-1 "did anything at all change" gate, for
+    which whole-tree identity is exactly the right question, and it is cheap.
+
+    Raises ProvenanceError if any of its git calls fails — see _run."""
     scope = paths or []
-    head = git_head(repo)
     # Hash the RAW bytes: a lossy decode would map distinct non-UTF-8 contents
     # onto the same U+FFFD run, i.e. two different working trees onto one
     # fingerprint — a false GREEN in the staleness net.
+    if scope:
+        committed = _run_bytes(["git", "ls-files", "-s", "--", *scope], repo)
+    else:
+        committed = git_head(repo).encode()
     diff = _run_bytes(["git", "diff", "HEAD", "--", *scope], repo)
     untracked = _run_bytes(["git", "status", "--porcelain", "--", *scope], repo)
     h = hashlib.sha256()
-    h.update(head.encode())
+    h.update(committed)
     h.update(b"\0")
     h.update(diff)
     h.update(b"\0")
@@ -356,16 +379,22 @@ def _depinfo_rs_mtime(repo: Path, cargo_out: Path, crate: Path) -> float | None:
 
 
 def mkramdisk_required_rels(repo: Path) -> list[str]:
-    """Build-relative paths of the arm64 ramdisk boot set, parsed from
-    mkramdisk.sh's REQUIRED_FILES array (`"$BUILD_DIR/<rel>"`). This is the
-    AUTHORITATIVE staged set — a superset of archcfg.staged_bins_rel (the
-    advapi32 false-green was staged HERE but absent from archcfg) — and it is
-    self-maintaining: a driver added to mkramdisk auto-joins the freshness net."""
+    """Build-relative paths of the arm64 ramdisk boot set: every livecd-list source
+    under build-arm64/ (mkramdisk.sh lays that list out, tools/ramdisk_tree.py). It is
+    the AUTHORITATIVE staged set and self-maintaining -- an add_cd_file(FOR livecd)
+    joins the freshness net with no edit here. Empty before the first configure."""
+    lst = repo / "build-arm64" / "boot" / "livecd.Debug.lst"
     try:
-        text = (repo / "qemu" / "mkramdisk.sh").read_text(errors="ignore")
+        text = lst.read_text(errors="ignore")
     except OSError:
         return []
-    return re.findall(r'"\$BUILD_DIR/([^"]+)"', text)
+    rels = []
+    for line in text.splitlines():
+        src = line.split("=", 1)[-1]
+        for root in ("/tmp/vibeos/build-arm64/", f"{repo}/build-arm64/"):
+            if src.startswith(root):
+                rels.append(src[len(root) :])
+    return list(dict.fromkeys(rels))
 
 
 def boot_set_cohab_rels(repo: Path, arch: str) -> list[str]:
@@ -382,7 +411,19 @@ def boot_set_cohab_rels(repo: Path, arch: str) -> list[str]:
     if not cfg.needs_mkramdisk:
         return []
     boot_set = set(mkramdisk_required_rels(repo)) | set(cfg.staged_bins_rel)
-    return sorted(rel for rel in boot_set if _crate_for_stem(repo, Path(rel).stem) is not None)
+    # Only linked images: the livecd list also carries acpi.inf, cdrom.inf ... whose
+    # stems match a cohab crate but which no staticlib ever feeds.
+    return sorted(
+        rel
+        for rel in boot_set
+        if Path(rel).suffix.lower() in _PE_SUFFIXES
+        and _crate_for_stem(repo, Path(rel).stem) is not None
+    )
+
+
+_PE_SUFFIXES = frozenset(
+    {".exe", ".dll", ".sys", ".drv", ".cpl", ".ocx", ".efi", ".acm", ".ax", ".tlb", ".mui", ".scr"}
+)
 
 
 def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
@@ -861,13 +902,17 @@ def _src_delta(repo: Path, stamp: Stamp) -> str:
     explaining a failure would be worse than the failure."""
     try:
         now_head = git_head(repo)
-        if stamp.head_sha and now_head != stamp.head_sha:
-            return (
-                f" — HEAD MOVED SINCE THE BUILD: {stamp.head_sha[:12]} -> {now_head[:12]} "
-                "(a merge, fetch or local commit — NOT a stale artifact)"
-            )
+        moved = bool(stamp.head_sha) and now_head != stamp.head_sha
+        # Diff against the STAMP'S commit, not HEAD, whenever we have it: the
+        # question is what changed since the build, and after a commit "vs HEAD"
+        # reports nothing while the build is genuinely out of date. This used to
+        # return early on a moved HEAD and never list a path at all, which made
+        # a real in-scope change and a false positive print the SAME line --
+        # measured cost: one run where "HEAD MOVED ... NOT a stale artifact" was
+        # the whole explanation and the actual culprit was an edited .py.
+        base = stamp.head_sha if moved else "HEAD"
         names = _run(
-            ["git", "diff", "--name-only", "HEAD", "--", ".", *NON_BUILD_PATHSPEC], repo
+            ["git", "diff", "--name-only", base, "--", ".", *NON_BUILD_PATHSPEC], repo
         ).split()
         dirty = [
             ln[3:]
@@ -876,14 +921,23 @@ def _src_delta(repo: Path, stamp: Stamp) -> str:
             ).splitlines()
         ]
         changed = sorted(set(names) | set(dirty))
+        head_note = f" (HEAD also moved: {stamp.head_sha[:12]} -> {now_head[:12]})" if moved else ""
         if not changed:
+            if moved:
+                # The case the scoped-fingerprint fix exists for. If this still
+                # fires, the stamp predates that fix and a rebuild re-stamps it.
+                return (
+                    f" — but NO build-relevant path differs from the build's commit"
+                    f"{head_note}. Nothing in scope changed, so this is a STALE STAMP, "
+                    "not stale media: rebuild once to re-stamp."
+                )
             return (
                 " — but NOTHING is currently modified vs HEAD, and HEAD did not move. "
                 "The fingerprint moved without a source change: suspect the oracle, "
                 "not the tree (see ProvenanceError / _run)"
             )
         return (
-            f" — {len(changed)} path(s): "
+            f" — {len(changed)} path(s) vs the build's commit{head_note}: "
             + ", ".join(changed[:6])
             + (" …" if len(changed) > 6 else "")
         )

@@ -29,6 +29,8 @@ extern "system" {
 
 // Imported from sibling DLLs (kernel32 / rpcrt4) — WINAPI/RPC_ENTRY = stdcall.
 extern "system" {
+    /// rpcrt4: the C's `RpcExcept` handlers map a caught RPC exception through it.
+    pub fn I_RpcMapWin32Status(Status: RPC_STATUS) -> NTSTATUS;
     pub fn SetLastError(dwErrCode: ULONG);
     pub fn GetLastError() -> ULONG;
     pub fn LoadLibraryW(lpLibFileName: *const u16) -> HMODULE;

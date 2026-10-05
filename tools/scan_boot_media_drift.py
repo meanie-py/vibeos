@@ -1,25 +1,21 @@
 #!/usr/bin/env python3
-"""Registry hives staged onto the livecd but NOT into the arm64 ramdisk.
+"""Registry hives the livecd stages, and whether the arm64 ramdisk still gets them.
 
-The two boot media are built by completely separate machinery: x86 boots the
-`livecd.iso` that cmake's add_cd_file() assembles, arm64 boots a ramdisk that
-`qemu/mkramdisk.sh` assembles by hand. Nothing makes the two agree, and the
-same five hives are spelled out in SIX independent hand-maintained lists
-(mkhive's -h: argument, add_custom_command OUTPUT, add_custom_target DEPENDS,
-add_cd_file FILE, and mkramdisk.sh's copy list + REQUIRED_FILES).
+A hive missing from the media is not a build error and does not announce itself
+at boot: CmpLoadHiveThread fails to open the file, sets Allocate, and
+CmpLinkHiveToMaster conjures an empty volatile hive whose root key takes
+CmpHiveRootSecurityDescriptor(). So \\REGISTRY\\MACHINE\\SAM exists, opens fine,
+and holds no accounts. `sam` and `security` were absent from the arm64 ramdisk
+for a long time this way, and it surfaced only because arm64 then SCORED BETTER
+than x86 on the CmSecurity kmtest. See the field manual, "A file MISSING from the
+arm64 ramdisk is fabricated by the kernel".
 
-Drifting apart is not a build error and does not announce itself at boot. A
-hive missing from the ramdisk is FABRICATED by the kernel: CmpLoadHiveThread
-fails to open the file, sets Allocate, and CmpLinkHiveToMaster conjures an
-empty volatile hive whose root key takes CmpHiveRootSecurityDescriptor(). So
-\\REGISTRY\\MACHINE\\SAM exists, opens fine, and holds no accounts.
-
-That is exactly what happened: `sam` and `security` were absent from the
-ramdisk for a long time, so arm64 booted with an empty SAM on every boot. It
-surfaced only because arm64 then SCORED BETTER than x86 on the CmSecurity
-kmtest -- the fabricated descriptor happens to be the one the test expects --
-which pointed the investigation at the wrong arch entirely. See the field
-manual, "A file MISSING from the arm64 ramdisk is fabricated by the kernel".
+Two checks:
+  * mkhive's -h: list against the OUTPUTs cmake declares for it: an undeclared
+    output is never a dependency, so it goes stale silently.
+  * qemu/mkramdisk.sh builds the ramdisk FROM the livecd list (tools/ramdisk_tree.py,
+    which hard-fails a missing source). Since 2026-10-03 that is how every livecd
+    hive reaches arm64; a ramdisk script that stops reading the list is the drift.
 
 Exit 1 on any finding, so this gates.
 """
@@ -164,39 +160,20 @@ def main():
         )
         return 1
 
-    # --- and what the arm64 ramdisk stages ------------------------------------
-    staged = set(re.findall(r"^\s*RMC\s+\"[^\"]*/boot/bootdata/([A-Za-z0-9_.]+)\"", ramdisk, re.M))
-
-    req_m = re.search(r"^REQUIRED_FILES=\((.*?)^\)", ramdisk, re.M | re.S)
-    required = set()
-    if req_m:
-        required = set(re.findall(r"/boot/bootdata/([A-Za-z0-9_.]+)", req_m.group(1)))
-    else:
+    # --- and whether the arm64 ramdisk is built from that list --------------------
+    lays_out_list = re.search(r"livecd\.\w+\.lst", ramdisk) and "ramdisk_tree.py" in ramdisk
+    if not lays_out_list:
         print(
-            f"{MKRAMDISK}:1: [NO_REQUIRED_FILES] no REQUIRED_FILES=( ... ) array — "
-            f"without it a missing hive is not caught before boot"
+            f"{MKRAMDISK}:1: [RAMDISK_NOT_FROM_LIVECD] the ramdisk is not built from the "
+            f"livecd list (no livecd.<config>.lst laid out by tools/ramdisk_tree.py), so "
+            f"nothing makes it carry the {len(livecd)} hive(s) the livecd stages "
+            f"({', '.join(sorted(livecd))}); a missing one is FABRICATED empty at boot"
         )
         findings += 1
 
-    for name, cd_line in sorted(livecd.items()):
-        if name not in staged:
-            print(
-                f"{MKRAMDISK}:1: [RAMDISK_MISSING] hive '{name}' is staged onto the livecd "
-                f"({CMAKE}:{cd_line}) but never copied into the arm64 ramdisk — the kernel "
-                f"will FABRICATE an empty volatile hive for it and boot without complaint"
-            )
-            findings += 1
-        elif name not in required:
-            print(
-                f"{MKRAMDISK}:1: [RAMDISK_UNGUARDED] hive '{name}' is copied into the ramdisk "
-                f"but is not in REQUIRED_FILES — if the build ever stops producing it the copy "
-                f"silently stages nothing and the kernel fabricates it instead of failing"
-            )
-            findings += 1
-
     print(
         f"\nSUMMARY: generated={len(generated)}  livecd={len(livecd)}  "
-        f"ramdisk={len(staged)}  guarded={len(required)}  findings={findings}"
+        f"ramdisk_from_livecd={'yes' if lays_out_list else 'NO'}  findings={findings}"
     )
     return 1 if findings else 0
 

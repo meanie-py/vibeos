@@ -16,6 +16,20 @@
 #   10-line explanatory comment added above them in IoInterrupt.c shifted every
 #   identity below it. Editing any kmtest file invalidates the assert identities
 #   beneath the edit -- check for that before reading one as a regression.
+# 2026-10-03, by HAND: arm64 now boots the livecd file set like x86 (/MININT, setup
+#   -mini, DHCP and the netsvcs services all running). Three rows moved with it:
+#   NtSystemDebugControl 36/6 -> 22/20 (+ :165): /MININT sets InitIsWinPEMode, which
+#     routes SysDbg commands 7-20 to KdSystemDebugControl. The row is now amd64's,
+#     byte for byte -- parity, not a regression.
+#   MmMdl 575 -> 569: TestMmAllocatePagesForMdl allocates MDLs until memory runs out,
+#     so its assert count tracks free pages, and more is running now. A master batch
+#     had already shown 569 once.
+#   ExFastMutex floor 209 -> 204, :283-:315 bistable: every one of them is
+#     TestFastMutexConcurrent's race -- a freshly created thread must reach the mutex
+#     and block inside StartThread's 50 ms timeout, or Count/Contention lag one
+#     waiter behind. :298/:304 were already banked failures on master; with more
+#     running in the guest, WHICH step loses the race now varies from sweep to sweep
+#     (six full-media sweeps: 204-208, a different subset each time).
 CmSecurity OK pass=1048 fail=1 skip=1 exit=0
     assert CmSecurity.c:44
 ExCallback OK pass=13 fail=0 skip=1 exit=0
@@ -36,11 +50,14 @@ ExDoubleList OK pass=130 fail=16 skip=0 exit=0
     assert ExDoubleList.c:90
     assert ExDoubleList.c:91
     assert ExDoubleList.c:99
-ExFastMutex OK pass=209 fail=10 skip=2 exit=0
+ExFastMutex OK pass=204 fail=10 skip=2 exit=0
     assert ExFastMutex.c:133
-    assert ExFastMutex.c:283
-    assert ExFastMutex.c:298
-    assert ExFastMutex.c:304
+    assert? ExFastMutex.c:283
+    assert? ExFastMutex.c:294
+    assert? ExFastMutex.c:298
+    assert? ExFastMutex.c:304
+    assert? ExFastMutex.c:310
+    assert? ExFastMutex.c:315
     assert ExFastMutex.c:57
     assert ExFastMutex.c:59
     assert ExFastMutex.c:76
@@ -117,7 +134,7 @@ KeIrql OK pass=128 fail=0 skip=0 exit=0
 KeMutex OK pass=1122 fail=0 skip=0 exit=0
 KeSpinLock OK pass=323 fail=0 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
-MmMdl OK pass=575 fail=0 skip=0 exit=0
+MmMdl OK pass=569 fail=0 skip=0 exit=0
 MmSection OK pass=292 fail=39 skip=12 exit=0
     assert MmSection.c:277
     assert MmSection.c:302
@@ -393,8 +410,9 @@ NtCreateSection OK pass=81 fail=48 skip=0 exit=0
     assert NtCreateSection_user.c:95
     assert NtCreateSection_user.c:97
     assert NtCreateSection_user.c:99
-NtSystemDebugControl OK pass=36 fail=6 skip=0 exit=0
+NtSystemDebugControl OK pass=22 fail=20 skip=0 exit=0
     assert NtSystemDebugControl.c:118
+    assert NtSystemDebugControl.c:165
 PoIrp OK pass=57 fail=0 skip=0 exit=0
 RtlAvlTree OK pass=139 fail=0 skip=0 exit=0
 RtlException OK pass=33 fail=1 skip=0 exit=0

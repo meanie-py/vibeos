@@ -159,8 +159,31 @@ pub unsafe extern "C" fn chkesp_fail() {
     DebugBreak();
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn _chkesp() {}
+// misc.c's `__ASM_GLOBAL_FUNC(_chkesp, ...)` (commented in full below), i386 only. This
+// was an empty `fn`, which silently dropped the check: MSVC debug code calls `_chkesp`
+// with ZF from comparing esp before and after a call, and only the asm can read ZF.
+#[cfg(all(target_arch = "x86", target_os = "windows"))]
+core::arch::global_asm!(
+    ".text",
+    ".globl __chkesp",
+    "__chkesp:",
+    "jnz 1f",
+    "ret",
+    "1:",
+    "pushl %ebp",
+    "movl %esp, %ebp",
+    "subl $12, %esp",
+    "pushl %eax",
+    "pushl %ecx",
+    "pushl %edx",
+    "call _chkesp_fail",
+    "popl %edx",
+    "popl %ecx",
+    "popl %eax",
+    "leave",
+    "ret",
+    options(att_syntax)
+);
 unsafe extern "C" fn swap(mut l: *mut core::ffi::c_char, mut r: *mut core::ffi::c_char, mut size: usize) {
     while size != 0 {
         size -= 1;

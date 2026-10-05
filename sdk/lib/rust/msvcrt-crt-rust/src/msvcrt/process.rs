@@ -139,7 +139,7 @@ unsafe extern "C" fn msvcrt_search_executable(name: *const wchar_t, fullname: *m
     // not NUL-terminated for you, so `b"P\0A\0T\0H\0\0"` gives `_wgetenv` a key whose final
     // code unit is half read from the next object in rodata — PATH search then silently
     // matches nothing.
-    env = _wgetenv(b"P\0A\0T\0H\0\0\0".as_ptr() as *const wchar_t);
+    env = _wgetenv(win32macros_rust::wide_bytes!(b"P\0A\0T\0H\0\0\0") as *const wchar_t);
     if env.is_null() {
         return;
     }
@@ -446,14 +446,14 @@ unsafe extern "C" fn msvcrt_get_comspec() -> *mut wchar_t {
     let mut ret: *mut wchar_t;
     let mut len: u32;
 
-    len = GetEnvironmentVariableW(b"C\0O\0M\0S\0P\0E\0C\0\0\0".as_ptr() as *const wchar_t, core::ptr::null_mut(), 0);
+    len = GetEnvironmentVariableW(win32macros_rust::wide_bytes!(b"C\0O\0M\0S\0P\0E\0C\0\0\0") as *const wchar_t, core::ptr::null_mut(), 0);
     if len == 0 {
         len = 4;
     }
     ret = HeapAlloc(GetProcessHeap(), 0, ((len as usize) * core::mem::size_of::<wchar_t>()) as SIZE_T) as *mut wchar_t;
     if !ret.is_null() {
-        if GetEnvironmentVariableW(b"C\0O\0M\0S\0P\0E\0C\0\0\0".as_ptr() as *const wchar_t, ret, len) == 0 {
-            wcscpy(ret, b"c\0m\0d\0\0\0".as_ptr() as *const wchar_t);
+        if GetEnvironmentVariableW(win32macros_rust::wide_bytes!(b"C\0O\0M\0S\0P\0E\0C\0\0\0") as *const wchar_t, ret, len) == 0 {
+            wcscpy(ret, win32macros_rust::wide_bytes!(b"c\0m\0d\0\0\0") as *const wchar_t);
         }
     }
     ret
@@ -1100,7 +1100,7 @@ pub unsafe extern "C" fn _wpopen(command: *const wchar_t, mode: *const wchar_t) 
         // NOT the buggy pattern `_wsystem` (this file, below) used to have: plain ASCII
         // bytes cast to `*const wchar_t` pairs ' ' with '/' into one garbage code unit and
         // never actually NUL-terminates before running off the array.
-        wcscat(fullcmd, b" \0/\0c\0 \0\0\0".as_ptr() as *const wchar_t);
+        wcscat(fullcmd, win32macros_rust::wide_bytes!(b" \0/\0c\0 \0\0\0") as *const wchar_t);
         wcscat(fullcmd, command);
         msvcrt_search_executable(comspec, fullname.as_mut_ptr(), 1);
 
@@ -1250,7 +1250,7 @@ pub unsafe extern "C" fn _wsystem(cmd: *const wchar_t) -> i32 {
     wcscpy(fullcmd, comspec);
     // `L" /c "` is UTF-16, so every character needs its interleaved zero byte. The plain
     // ASCII form cast to `*const wchar_t` pairs ' ' with '/' into one garbage code unit.
-    wcscat(fullcmd, b" \0/\0c\0 \0\0\0".as_ptr() as *const wchar_t);
+    wcscat(fullcmd, win32macros_rust::wide_bytes!(b" \0/\0c\0 \0\0\0") as *const wchar_t);
     wcscat(fullcmd, cmd);
 
     res = msvcrt_spawn(_P_WAIT, comspec, fullcmd, core::ptr::null_mut(), 1);

@@ -1164,14 +1164,27 @@ pub unsafe extern "system" fn TransferPktComplete(
 
     completionTime = ClasspGetCurrentTime();
 
-    // Snapshot and update LastIoCompletionTime
-    lastIoCompletionTime = core::ptr::read_volatile(
-        &raw mut (*fdoData).LastIoCompletionTime.QuadPart as *mut ULONG64,
-    );
-    core::ptr::write_volatile(
-        &raw mut (*fdoData).LastIoCompletionTime.QuadPart as *mut ULONG64,
-        completionTime.QuadPart as ULONG64,
-    );
+    // Snapshot and update LastIoCompletionTime. _WIN64 (__REACTOS__): a plain
+    // volatile 64-bit read + write. 32-bit: InterlockedExchangeNoFence64 -- two
+    // plain 32-bit halves there could pair the high word of one completion time
+    // with the low word of another.
+    #[cfg(target_pointer_width = "64")]
+    {
+        lastIoCompletionTime = core::ptr::read_volatile(
+            &raw mut (*fdoData).LastIoCompletionTime.QuadPart as *mut ULONG64,
+        );
+        core::ptr::write_volatile(
+            &raw mut (*fdoData).LastIoCompletionTime.QuadPart as *mut ULONG64,
+            completionTime.QuadPart as ULONG64,
+        );
+    }
+    #[cfg(not(target_pointer_width = "64"))]
+    {
+        let last = &*(&raw mut (*fdoData).LastIoCompletionTime.QuadPart
+            as *const core::sync::atomic::AtomicI64);
+        lastIoCompletionTime =
+            last.swap(completionTime.QuadPart as i64, core::sync::atomic::Ordering::Relaxed) as ULONG64;
+    }
 
     if (*fdoData).IdlePrioritySupported == 1u8 {
         idleRequest = ClasspIsIdleRequest((*pkt).OriginalIrp);

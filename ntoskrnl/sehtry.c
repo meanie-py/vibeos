@@ -29,6 +29,11 @@
  *
  * Headerless on purpose, like seh_poc.c: pseh2.h's DUMMY macro layer must not be
  * able to turn __try back into a no-op.
+ *
+ * ntdll compiles this same file with -DSEHTRY_USER_MODE and exports both names, for
+ * the user-mode Rust that dropped the C's RpcTryExcept (ntdll_sys::seh). User mode
+ * skips the interrupt-mask restore: `msr daifclr` traps at EL0 and `sti` faults at
+ * ring 3, and neither is needed there because user code always runs unmasked.
  */
 
 typedef void (__cdecl *SEH_BODY)(void *Context);
@@ -42,7 +47,7 @@ unsigned char __cdecl
 RtlSehTryExcept(SEH_BODY Body, void *BodyContext, SEH_FILTER Filter, void *FilterContext,
                 long *ExceptionCode)
 {
-#if defined(__aarch64__)
+#if defined(__aarch64__) && !defined(SEHTRY_USER_MODE)
     /* arm64 dispatches a kernel fault with IRQs masked (the sync-exception path keeps
      * DAIF as the exception entry left it), and the except block resumes on a CONTEXT
      * captured during that dispatch, so it would carry on masked: a synchronously
@@ -55,7 +60,7 @@ RtlSehTryExcept(SEH_BODY Body, void *BodyContext, SEH_FILTER Filter, void *Filte
     __try {
         Body(BodyContext);
     } __except (Filter ? Filter(FilterContext, _exception_info()) : 1) {
-#if defined(__aarch64__)
+#if defined(__aarch64__) && !defined(SEHTRY_USER_MODE)
         if (!(Daif & 0x80 /* PSTATE.I */))
             __asm__ __volatile__("msr daifclr, #2" ::: "memory");
 #endif
@@ -198,8 +203,10 @@ RtlSehTryExcept(SEH_BODY Body, void *BodyContext, SEH_FILTER Filter, void *Filte
     Frame.Next = SehGetList();
     if (__builtin_setjmp((void **)Frame.JmpBuf)) {
         /* The handler already unlinked Frame. */
+#if !defined(SEHTRY_USER_MODE)
         if (EFlags & 0x200 /* EFLAGS_INTERRUPT_MASK */)
             __asm__ __volatile__("sti" ::: "memory");
+#endif
         if (ExceptionCode)
             *ExceptionCode = Frame.Code;
         return 1;

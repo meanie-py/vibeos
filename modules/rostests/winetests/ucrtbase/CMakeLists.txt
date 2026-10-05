@@ -11,30 +11,23 @@ add_library(threaddll SHARED
     threaddll.def
 )
 set_entrypoint(threaddll DllMain 12)
-if(MSVC)
-    target_link_libraries(threaddll runtmchk)
-endif()
 add_importlibs(threaddll ucrtbase kernel32)
 
-# Hacks to make it work with MSVC IDE / MSBUILD
-if(MSVC_IDE)
-    if(DBG)
-        set(THREADDLL_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/Debug)
-    else()
-        set(THREADDLL_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/Release)
-    endif()
-    message(STATUS "threaddll.dll output directory: ${THREADDLL_OUTPUT_DIR}")
+# Wine's own CRT headers (dll/win32/msvcrt/include), the set Wine builds these
+# tests against: under _UCRT they declare the UCRT surface the tests exercise
+# (_isblank_l, _sopen_dispatch, the __stdio_common_* family, corecrt_io.h, ...)
+# that the msvcrt-flavoured sdk/include/crt does not. include/ shadows Wine's
+# intrin.h with ReactOS's.
+# Two calls: each BEFORE prepends, so include/ must come second to end up first.
+include_directories(BEFORE ${REACTOS_SOURCE_DIR}/dll/win32/msvcrt/include)
+include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-    set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} /I${THREADDLL_OUTPUT_DIR}")
-endif()
-
-# Hack to replace the old CRT include directory with the UCRT include directory
-get_property(INCLUDE_DIRS DIRECTORY . PROPERTY INCLUDE_DIRECTORIES)
-list(REMOVE_ITEM INCLUDE_DIRS "${REACTOS_SOURCE_DIR}/sdk/include/crt")
-set_property(DIRECTORY . PROPERTY INCLUDE_DIRECTORIES ${INCLUDE_DIRS})
-include_directories(${REACTOS_SOURCE_DIR}/sdk/include/ucrt)
+# The file test includes <corecrt_io.h>, whose Microsoft version declared the
+# POSIX names (close, access); Wine's keeps those in io.h.
+set_source_files_properties(file.c PROPERTIES COMPILE_OPTIONS "-include;io.h")
 
 add_definitions(
+    -D_UCRT
     -DUSE_WINE_TODOS
     -D_USE_MATH_DEFINES
     -DWINETEST_USE_DBGSTR_LONGLONG
@@ -57,10 +50,8 @@ list(APPEND SOURCE
 set_source_files_properties(ucrtbase_winetest.rc OBJECT_DEPENDS threaddll)
 
 add_executable(ucrtbase_winetest ${SOURCE})
-if(NOT MSVC)
-    #set_target_properties(ucrtbase_winetest PROPERTIES LINK_FLAGS "-Wl,--major-os-version,6")
-    target_compile_options(ucrtbase_winetest PRIVATE -Wno-format)
-endif()
+#set_target_properties(ucrtbase_winetest PROPERTIES LINK_FLAGS "-Wl,--major-os-version,6")
+target_compile_options(ucrtbase_winetest PRIVATE -Wno-format)
 set_module_type(ucrtbase_winetest win32cui)
 
 target_link_libraries(ucrtbase_winetest wine oldnames ${PSEH_LIB} chkstk)

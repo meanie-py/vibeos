@@ -21,32 +21,43 @@ set(IDL_FLAGS ${OLD_IDL_FLAGS})
 list(APPEND SOURCE
     cproxy.c
     cpsf.c
-    cstub.c
     ndr_clientserver.c
     ndr_contexthandle.c
     ndr_es.c
     ndr_fullpointer.c
     ndr_marshall.c
     ndr_ole.c
-    ndr_stubless.c
     ros_extra.c
     rpc_assoc.c
     rpc_async.c
     rpc_binding.c
-    rpc_epmap.c
     rpc_message.c
     rpcrt4_main.c
-    rpc_server.c
     rpc_transport.c
     thunks.c
     unix_func.c
     ${CMAKE_CURRENT_BINARY_DIR}/epm_c.c)
 
-if(MSVC)
-    add_asm_files(rpcrt4_asm msvc.S thunks-msvc.s)
+# Native SEH for the TUs whose __TRY/__EXCEPT is the RPC error contract
+# (dummy-pseh-verdict.md, "Consequence for RPC clients"). Under the global DUMMY_PSEH
+# mode none of these handlers runs: a failed COM/RPC call's RpcRaiseException is
+# resumed by the dispatcher, RaiseException returns, and RpcRaiseException ends in
+# ExitProcess(1), so any client of a dead or refusing server died (Wine's ole32
+# marshal test: a proxy called from the wrong apartment). Every try body here is
+# call-shaped (the raise lands in a callee), the same contract as the advapi32
+# EventLog shim. They skip the PCH, which would otherwise pin pseh2.h to DUMMY.
+# i386 keeps DUMMY: clang i386 native SEH is unreliable.
+set(RPCRT4_SEH_SOURCE
+    cstub.c
+    ndr_stubless.c
+    rpc_epmap.c
+    rpc_server.c)
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    set_source_files_properties(${RPCRT4_SEH_SOURCE} PROPERTIES COMPILE_DEFINITIONS _USE_NATIVE_SEH)
 endif()
 
 list(APPEND PCH_SKIP_SOURCE
+    ${RPCRT4_SEH_SOURCE}
     ndr_typelib.c
     thunks.c
     ${CMAKE_CURRENT_BINARY_DIR}/ndr_types_p.c
@@ -59,11 +70,6 @@ add_library(rpcrt4 MODULE
     ${PCH_SKIP_SOURCE}
     rpcrt4.rc
     ${CMAKE_CURRENT_BINARY_DIR}/rpcrt4.def)
-
-if(MSVC)
-    # Disable warning C4267: '=': conversion from 'size_t' to 'short', possible loss of data
-    target_compile_options(rpcrt4 PRIVATE /wd4267)
-endif()
 
 set_module_type(rpcrt4 win32dll)
 target_link_libraries(rpcrt4 wine wine_dll_register uuid ${PSEH_LIB} oldnames)

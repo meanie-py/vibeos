@@ -70,11 +70,24 @@ def compiled_in(src: str, off_refs: set[str]) -> str:
     # (this branch live, is a REF guard, some earlier branch of this chain was live)
     stack: list[tuple[bool, bool, bool]] = []
     # A guard continued with `\` is one directive (the spawn block's four-way `||`).
-    for line in re.sub(r"\\\n", " ", src).splitlines():
+    joined = re.sub(r"\\\n", " ", src)
+    # Object-like macros whose bodies are themselves REF guard expressions
+    # (`#define LW_ANY (UCRTDIFF_REF_HAS__write || ...)`), expanded into the `#if`s
+    # that use them. Unexpanded, `#if LW_ANY` read as "some other #if" and so as
+    # live, and a whole compiled-out block demanded imports for what it declares.
+    guard_macros: dict[str, str] = {}
+    for m in re.finditer(r"^\s*#\s*define\s+(\w+)\s+(.+)$", joined, re.M):
+        if "UCRTDIFF_REF_" in m.group(2) and _guard_value(m.group(2), off_refs) is not None:
+            guard_macros[m.group(1)] = f"({m.group(2)})"
+
+    def expand(expr: str) -> str:
+        return re.sub(r"\b(\w+)\b", lambda t: guard_macros.get(t.group(1), t.group(1)), expr)
+
+    for line in joined.splitlines():
         d = line.strip()
         m = re.match(r"#\s*if\s+(.*)$", d)
         if m and not re.match(r"#\s*if(n?def)\b", d):
-            v = _guard_value(m.group(1), off_refs)
+            v = _guard_value(expand(m.group(1)), off_refs)
             stack.append((True, False, True) if v is None else (v, True, v))
             continue
         if re.match(r"#\s*if(n?def)?\b", d):
@@ -83,7 +96,7 @@ def compiled_in(src: str, off_refs: set[str]) -> str:
         m = re.match(r"#\s*elif\s+(.*)$", d)
         if m and stack:
             _, guard, taken = stack[-1]
-            v = _guard_value(m.group(1), off_refs) if guard else None
+            v = _guard_value(expand(m.group(1)), off_refs) if guard else None
             if v is None:
                 stack[-1] = (True, False, True)
             else:
@@ -98,6 +111,14 @@ def compiled_in(src: str, off_refs: set[str]) -> str:
             continue
         if all(live for live, _, _ in stack):
             kept.append(line)
+            # `#if X` / `#define LW_ANY 1` / `#else` / `#define LW_ANY 0`: the value
+            # the LIVE branch gives a flag macro, for the `#if LW_ANY` that follows.
+            dm = re.match(r"#\s*define\s+(\w+)\s+([01])\s*$", d)
+            # Never the REF guards themselves: the harness's `#ifndef X / #define X 1`
+            # fallbacks sit in `#ifndef` branches this pass keeps, and recording them
+            # overrode the generated header's 0s.
+            if dm and not dm.group(1).startswith("UCRTDIFF_REF_"):
+                guard_macros[dm.group(1)] = dm.group(2)
     return "\n".join(kept)
 
 

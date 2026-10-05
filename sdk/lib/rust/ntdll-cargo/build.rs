@@ -134,6 +134,10 @@ fn main() {
             "sdk/lib/crt/math/i386/aullrem_asm.s",
             "sdk/lib/crt/math/i386/aullshr_asm.s",
             "sdk/lib/crt/math/i386/ftol_asm.s",
+            // x87 pow/fmod (ntdll exports pow): this cell's cnt-rust-lib is the builtin
+            // no-SSE i686 build, which leaves them to the asm (cnt-rust/src/cabi/math.rs).
+            "sdk/lib/crt/math/i386/pow_asm.s",
+            "sdk/lib/crt/math/i386/fmod_asm.s",
             "sdk/lib/crt/except/i386/chkstk_asm.s",
         ]
     } else {
@@ -186,8 +190,14 @@ fn main() {
     //     verified symbol+disasm-identical vs the cmake object). i386 = ci*.c +
     //     fltused; amd64 = ehandler.c + fltused; arm64 = none (no _CIxxx/SEH/
     //     _fltused floor — see cntpr_residue).
-    let mut ndll_shims: Vec<&str> =
-        vec!["sdk/lib/pseh/dummy.c", "sdk/lib/rtl/dbgprint_variadic.c"];
+    // sehtry.c: the kernel's __try/__except trampolines, built for user mode
+    // (-DSEHTRY_USER_MODE) and exported as RtlSehTryExcept/RtlSehTryFinally, so
+    // user-mode Rust can catch an RPC exception (ntdll_sys::seh).
+    let mut ndll_shims: Vec<&str> = vec![
+        "sdk/lib/pseh/dummy.c",
+        "sdk/lib/rtl/dbgprint_variadic.c",
+        "ntoskrnl/sehtry.c",
+    ];
     match arch.as_str() {
         "x86" => ndll_shims.extend_from_slice(&[
             "sdk/lib/crt/math/i386/cicos.c",
@@ -248,7 +258,7 @@ fn main() {
         // _sxprintf.c / _vscwprintf.c (harmless to the other shims).
         // -fms-extensions: real clang __try/__except in seh_poc_user.c (arm64);
         // benign for the printf shells and dummy.c.
-        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS", "-fms-extensions"])
+        .c_shim_flags(&["-DCRT_PRINTF_HEADERLESS", "-fms-extensions", "-DSEHTRY_USER_MODE"])
         .asm(&asm_refs, AsmDefineSet::Kernel)
         // ntdllsys (Nt*/Zw* syscall stubs) as an in-group archive, replacing
         // the cmake libntdllsys.a — preserves the cmake archive link layout.

@@ -61,11 +61,14 @@ list(APPEND SOURCE
     # usrmarshal.c — replaced by Rust (ole32-rust ring/usrmarshal.rs — the NDR *_User{Size,Marshal,Unmarshal,Free} helpers)
     )
 
-if(MSVC AND (ARCH STREQUAL "i386"))
-    list(APPEND SOURCE msvc-thiscall.c)
+# The stub manager's guarded object release (see the file header): a real __try on
+# amd64/arm64; i386 keeps the DUMMY pass-through.
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+    set_source_files_properties(stubmanager_seh.c PROPERTIES COMPILE_DEFINITIONS _USE_NATIVE_SEH)
 endif()
 
 list(APPEND PCH_SKIP_SOURCE
+    stubmanager_seh.c
     guid.c
     ${CMAKE_CURRENT_BINARY_DIR}/dcom_p.c
     ${CMAKE_CURRENT_BINARY_DIR}/ole32_objidl_p.c
@@ -122,13 +125,6 @@ add_library(ole32 MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/irot_c.c
     ${CMAKE_CURRENT_BINARY_DIR}/ole32.def)
 
-if(MSVC)
-    # Disable warning C4090: '=': different 'const' qualifiers
-    # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    # Disable warning C4133: 'function': incompatible types - from 'UINT *' to 'MSIINSTALLCONTEXT *'
-    target_compile_options(ole32 PRIVATE /wd4090 /wd4146 /wd4133)
-endif()
-
 set_module_type(ole32 win32dll)
 # The proxy/stub registration (every Interface\{iid}\ProxyStubClsid32 that CoGetPSClsid reads)
 # is generated from the IDL: upstream 7675017f60d deleted the hand-written .rgs resources from
@@ -138,6 +134,20 @@ add_idl_reg_scripts(ole32 registry dcom.idl ole32_objidl.idl ole32_oleidl.idl ol
 # OLE32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
 target_link_libraries(ole32 ${OLE32_RUST_LIB} wine uuid ${PSEH_LIB} oldnames)
 target_link_options(ole32 PRIVATE LINKER:--allow-multiple-definition)
+# oleaut32's delay-import lib is ONE object holding a thunk for every oleaut32 export,
+# including the three it forwards back to us (`-import` in oleaut32.spec). It gets
+# loaded for SysAllocString long before the .def exports are resolved, so its thunks
+# took Get/Set/CreateErrorInfo and the Rust errorinfo bodies were never linked: ole32
+# exported jumps into oleaut32, which jumped straight back -- an endless tail-call
+# loop for any caller. Make them undefined up front so the Rust archive, read first,
+# supplies them. `-u` will not do: lld's MinGW driver maps it to -includeoptional,
+# resolved too late to matter; --require-defined is a real -include.
+# (--allow-multiple-definition is why the clash was silent.)
+if(ARCH STREQUAL "i386")
+    target_link_options(ole32 PRIVATE "LINKER:--require-defined=_CreateErrorInfo@4,--require-defined=_GetErrorInfo@8,--require-defined=_SetErrorInfo@8")
+else()
+    target_link_options(ole32 PRIVATE "LINKER:--require-defined=CreateErrorInfo,--require-defined=GetErrorInfo,--require-defined=SetErrorInfo")
+endif()
 add_delay_importlibs(ole32 oleaut32)
 add_importlibs(ole32 advapi32 user32 gdi32 rpcrt4 msvcrt kernel32 kernel32_vista ntdll)
 add_dependencies(ole32 ole32idl rust_ole32)

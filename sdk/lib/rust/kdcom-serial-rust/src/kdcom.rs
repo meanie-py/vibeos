@@ -145,6 +145,7 @@ pub unsafe extern "system" fn KdDebuggerInitialize0(
 ) -> NTSTATUS {
 
     let mut ComPortNumber: ULONG = DEFAULT_DEBUG_PORT;
+    let mut ComPortAddress: ULONG = 0;
     let mut ComPortBaudRate: ULONG = DEFAULT_DEBUG_BAUD_RATE;
 
     let CommandLine: PCHAR;
@@ -168,19 +169,34 @@ pub unsafe extern "system" fn KdDebuggerInitialize0(
             while *PortString == b' ' as i8 {
                 PortString = PortString.add(1);
             }
-            PortString = PortString.add(1);
+            /* Skip the equals sign, but never the terminator: a command line
+             * ending in a bare "DEBUGPORT" would read past its end (upstream
+             * 956d9f7973f) */
+            if *PortString != 0 {
+                PortString = PortString.add(1);
+            }
 
             if strncmp(PortString, b"COM\0".as_ptr() as PCHAR, 3) != 0 {
                 return STATUS_INVALID_PARAMETER;
             }
 
             PortString = PortString.add(3);
-            Value = atol(PortString) as ULONG;
-            if Value >= (core::mem::size_of_val(&BaseArray) / core::mem::size_of::<ULONG>()) as ULONG {
-                return STATUS_INVALID_PARAMETER;
-            }
+            if *PortString == b':' as i8 {
+                // COM:0x<port> - a UART at an I/O port no COM number names (an
+                // ACPI SPCR console the loader found; kd-rust's KdpGetDebugMode
+                // takes the same form). atol would read it as COM0, base 0.
+                ComPortAddress = hex_port(PortString.add(1));
+                if ComPortAddress == 0 {
+                    return STATUS_INVALID_PARAMETER;
+                }
+            } else {
+                Value = atol(PortString) as ULONG;
+                if Value >= (core::mem::size_of_val(&BaseArray) / core::mem::size_of::<ULONG>()) as ULONG {
+                    return STATUS_INVALID_PARAMETER;
+                }
 
-            ComPortNumber = Value;
+                ComPortNumber = Value;
+            }
         }
 
         if !BaudString.is_null() {
@@ -230,7 +246,40 @@ pub unsafe extern "system" fn KdDebuggerInitialize0(
 
     KDDBGPRINT!(b"KdDebuggerInitialize0\n\0".as_ptr() as PCHAR);
 
+    if ComPortAddress != 0 {
+        return KdpPortInitializeAt(ComPortAddress, ComPortBaudRate);
+    }
     KdpPortInitialize(ComPortNumber, ComPortBaudRate)
+}
+
+/// `0x5000` / `0X5000` / `5000` (upper-cased by _strupr) as a hex port; 0 if empty.
+unsafe fn hex_port(mut p: PCHAR) -> ULONG {
+    if *p == b'0' as i8 && (*p.add(1) == b'X' as i8 || *p.add(1) == b'x' as i8) {
+        p = p.add(2);
+    }
+    let mut v: ULONG = 0;
+    loop {
+        let c = *p as u8;
+        let d = match c {
+            b'0'..=b'9' => c - b'0',
+            b'A'..=b'F' => c - b'A' + 10,
+            b'a'..=b'f' => c - b'a' + 10,
+            _ => break,
+        };
+        v = v.wrapping_mul(16).wrapping_add(d as ULONG);
+        p = p.add(1);
+    }
+    v
+}
+
+unsafe fn KdpPortInitializeAt(Address: ULONG, ComPortBaudRate: ULONG) -> NTSTATUS {
+    let Status = CpInitialize(core::ptr::addr_of_mut!(KdComPort), UlongToPtr(Address), ComPortBaudRate);
+    if !NT_SUCCESS(Status) {
+        STATUS_INVALID_PARAMETER
+    } else {
+        KdComPortInUse = KdComPort.Address;
+        STATUS_SUCCESS
+    }
 }
 
 // KdpPortInitialize is defined in kdcom.c (NTAPI). The C body was preserved in
