@@ -825,8 +825,10 @@ NON_BUILD_PATHSPEC = (
     # tools/pi4/ drives a physical Raspberry Pi bench (serial, TFTP, power) from
     # the host. Nothing in it is compiled or staged into media, and editing a
     # bench script while an arm64 build ran made that build's smoke STALE_MEDIA
-    # twice in a row.
+    # twice in a row. tools/pi5/ is the same for the Pi 5 (its card templates
+    # made the first `pi5 boot` refuse a fresh build as STALE_MEDIA).
     ":(exclude)tools/pi4",
+    ":(exclude)tools/pi5",
 )
 
 

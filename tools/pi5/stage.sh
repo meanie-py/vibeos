@@ -43,8 +43,8 @@ mkdir -p "$work/EFI/BOOT"
 cp "$efi" "$work/EFI/BOOT/BOOTAA64.EFI"
 cp "$img" "$work/ramdisk.img"
 freeldr_ini > "$work/freeldr.ini"
-cp "$HERE/card/config.txt" "$work/config.txt"
-files=(EFI/BOOT/BOOTAA64.EFI freeldr.ini ramdisk.img config.txt)
+cp "$HERE/card/config.txt" "$HERE/card/tryboot.txt" "$work/"
+files=(EFI/BOOT/BOOTAA64.EFI freeldr.ini ramdisk.img config.txt tryboot.txt)
 (cd "$work" && sha256sum "${files[@]}") > "$work/SHA256SUMS"
 
 pi5_ssh true || { log "no SSH to $PI5_SSH_TARGET - is the board up in its Linux stager? (vibeos-cli pi5 doctor)"; exit 1; }
@@ -54,7 +54,7 @@ pi5_ssh 'rm -rf /tmp/vibeos-stage && mkdir -p /tmp/vibeos-stage/EFI/BOOT'
 # Verify the staged copy, install, then verify what is on the card itself.
 pi5_ssh 'set -e
 cd /tmp/vibeos-stage && sha256sum -c --quiet SHA256SUMS
-for f in EFI/BOOT/BOOTAA64.EFI freeldr.ini ramdisk.img config.txt; do
+for f in EFI/BOOT/BOOTAA64.EFI freeldr.ini ramdisk.img config.txt tryboot.txt; do
     sudo install -D -m 0755 "$f" "/boot/firmware/$f"
 done
 sync
@@ -73,7 +73,7 @@ PY
 log "staged $commit${dirty:+ (dirty tree)}; card verified"
 
 [ "${1:-}" = --no-reboot ] && exit 0
-# `reboot '0 tryboot'` applies config.txt's [tryboot] section for one boot. The
+# `reboot '0 tryboot'` boots tryboot.txt instead of config.txt, once. The
 # SSH session dies with the reboot, so its exit status means nothing here.
 log "rebooting into UEFI + VibeOS (tryboot)"
 pi5_ssh "sudo systemd-run --on-active=1 /usr/sbin/reboot '0 tryboot'" >/dev/null 2>&1 || true

@@ -1,24 +1,13 @@
-# VibeOS Raspberry Pi 5 bench card. Deployed by tools/pi5/stage.sh on every boot,
-# so edit it here, never on the card.
+# VibeOS Raspberry Pi 5 bench card: the normal boot. Deployed by tools/pi5/stage.sh
+# on every `pi5 boot`, so edit it here, never on the card.
 #
 # A normal boot starts Raspberry Pi OS: the remote stager. It owns the board's
 # Ethernet, which UEFI has no driver for, so `vibeos-cli pi5 boot` SSHes in, copies
 # this tree's loader and ramdisk onto this partition, and runs `reboot '0 tryboot'`.
-# The firmware then applies the [tryboot] section below for ONE boot: UEFI (the
-# archived worproject rpi5-uefi v0.3) and VibeOS. Any later reset is Linux again.
+# For that ONE boot the firmware reads tryboot.txt INSTEAD of this file (a
+# [tryboot] section here is never consulted: that filter is for autoboot.txt).
+# Any later reset is Linux again.
 arm_64bit=1
 auto_initramfs=1
 disable_overscan=1
 enable_uart=1
-
-[tryboot]
-# UEFI as the armstub. Its own device tree, since the Linux one above is newer.
-armstub=RPI_EFI.fd
-device_tree=rpi5-uefi.dtb
-device_tree_address=0x1f0000
-device_tree_end=0x210000
-framebuffer_depth=32
-usb_max_current_enable=1
-force_turbo=1
-# The firmware would otherwise load Linux's initramfs into RAM UEFI then reuses.
-auto_initramfs=0

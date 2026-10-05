@@ -5,7 +5,7 @@
 #
 # The card is an existing Raspberry Pi OS install (its ext4 root, partition 2, is
 # kept). This builds the FAT partition that boots it as the bench's Linux stager
-# and, under tryboot, UEFI + VibeOS: see card/config.txt. Copy the result onto the
+# and, under tryboot, UEFI + VibeOS: see card/config.txt and card/tryboot.txt. Copy the result onto the
 # card with tools/pi5/Deploy-Card.ps1. After that, `vibeos-cli pi5 boot` keeps the
 # VibeOS files current over SSH and the card never has to leave the board.
 #
@@ -62,7 +62,7 @@ unzip -oq "$CACHE/rpi5-uefi-v0.3.zip" RPI_EFI.fd bcm2712-rpi-5-b.dtb -d "$work/u
 cp "$work/uefi/RPI_EFI.fd" "$OUT/"
 cp "$work/uefi/bcm2712-rpi-5-b.dtb" "$OUT/rpi5-uefi.dtb"
 
-cp "$HERE/card/config.txt" "$HERE/card/meta-data" "$HERE/card/network-config" "$OUT/"
+cp "$HERE/card/config.txt" "$HERE/card/tryboot.txt" "$HERE/card/meta-data" "$HERE/card/network-config" "$OUT/"
 sed "s/@PARTUUID@/$PARTUUID/" "$HERE/card/cmdline.txt" > "$OUT/cmdline.txt"
 pub=$(cat "$KEY")
 sed "s|@SSH_PUBKEY@|$pub|" "$HERE/card/user-data.in" > "$OUT/user-data"

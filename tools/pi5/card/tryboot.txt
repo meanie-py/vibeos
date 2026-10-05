@@ -1,0 +1,14 @@
+# VibeOS Raspberry Pi 5 bench card: the one-shot boot. `reboot '0 tryboot'` makes
+# the firmware read this file instead of config.txt, for one boot: UEFI (the
+# archived worproject rpi5-uefi v0.3) as the armstub, then VibeOS from
+# EFI\BOOT\BOOTAA64.EFI. Deployed by tools/pi5/stage.sh; edit it here.
+arm_64bit=1
+armstub=RPI_EFI.fd
+# UEFI's own device tree: the Linux one (bcm2712-rpi-5-b.dtb) is newer.
+device_tree=rpi5-uefi.dtb
+device_tree_address=0x1f0000
+device_tree_end=0x210000
+framebuffer_depth=32
+disable_overscan=1
+usb_max_current_enable=1
+force_turbo=1
