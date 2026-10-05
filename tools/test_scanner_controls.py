@@ -1423,6 +1423,37 @@ pub unsafe extern "system" fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LU
 }
 """
 
+# The MDL half of the same class: MmProbeAndLockPages raises, and a path-qualified
+# call is still a call (win32k shipped `ntkrnl_sys::ddk::MmProbeAndLockPages(..)`).
+# GOOD pins both ways out: the status form, and a call inside a real SEH frame.
+_RAISINGMDL_BAD = """
+pub unsafe extern "C" fn HackSecureVirtualMemory(pmdl: PMDL) -> NTSTATUS {
+    ntkrnl_sys::ddk::MmProbeAndLockPages(pmdl, 1i8, 0);
+    STATUS_SUCCESS
+}
+"""
+_RAISINGMDL_GOOD = """
+extern "system" {
+    fn MmProbeAndLockPages(Mdl: PMDL, AccessMode: i8, Operation: u32);
+}
+pub unsafe extern "C" fn HackSecureVirtualMemory(pmdl: PMDL) -> NTSTATUS {
+    let status = ntkrnl_sys::probe::MmTryProbeAndLockPages(pmdl, 1i8, 0);
+    if status < 0 {
+        return status;
+    }
+    match ntkrnl_sys::seh::try_except(
+        &mut (),
+        |_| {
+            MmProbeAndLockPages(pmdl, 0i8, 1);
+        },
+        |_, _| 1,
+    ) {
+        Ok(()) => STATUS_SUCCESS,
+        Err(code) => code,
+    }
+}
+"""
+
 
 # scan_dropped_seh_pairs. The LPC shape: the C is cohab-flipped OUT of the build
 # (commented in the CMake source list) and a separate .rs took over under
@@ -1937,6 +1968,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"sdk/lib/rust/ex-rust/src/uuid.rs": _RAISINGPROBE_BAD},
         good={"sdk/lib/rust/ex-rust/src/uuid.rs": _RAISINGPROBE_GOOD},
+    ),
+    Control(
+        name="scan_raising_probes_mdl",
+        script="tools/scan_raising_probes.py",
+        argv=["--lint"],
+        bad={"sdk/lib/rust/win32k-rust/src/mem.rs": _RAISINGMDL_BAD},
+        good={"sdk/lib/rust/win32k-rust/src/mem.rs": _RAISINGMDL_GOOD},
     ),
     Control(
         name="strip_msvc_cmake",

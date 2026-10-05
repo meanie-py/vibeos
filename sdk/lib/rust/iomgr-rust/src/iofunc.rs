@@ -48,7 +48,6 @@ use ntkrnl_sys::ddk::{
     KeInitializeEvent, KeAcquireQueuedSpinLock, KeReleaseQueuedSpinLock,
     ExGetPreviousMode,
     ObReferenceObjectByHandle, ObCloseHandle, ObReferenceObjectByName,
-    MmProbeAndLockPages,
     IoCreateFile, IoCreateFileSpecifyDeviceObjectHint,
     IoSetIoCompletion, IoReportTargetDeviceChange, IoGetRelatedTargetDevice,
     ObReferenceFileObjectForWrite,
@@ -844,7 +843,7 @@ unsafe fn IopDeviceFsIoControl(
                         return Err(STATUS_INSUFFICIENT_RESOURCES);
                     }
                     (*Irp).MdlAddress = mdl;
-                    MmProbeAndLockPages(
+                    let st = ntkrnl_sys::probe::MmTryProbeAndLockPages(
                         mdl,
                         PreviousMode,
                         if AccessType == METHOD_IN_DIRECT {
@@ -853,6 +852,9 @@ unsafe fn IopDeviceFsIoControl(
                             IoWriteAccess
                         },
                     );
+                    if st < 0 {
+                        return Err(st);
+                    }
                 }
                 Ok(())
             })();
@@ -2292,7 +2294,10 @@ pub unsafe extern "system" fn NtQueryDirectoryFile(
             if mdl.is_null() {
                 return Err(STATUS_INSUFFICIENT_RESOURCES);
             }
-            MmProbeAndLockPages(mdl, PreviousMode, IoWriteAccess);
+            let st = ntkrnl_sys::probe::MmTryProbeAndLockPages(mdl, PreviousMode, IoWriteAccess);
+            if st < 0 {
+                return Err(st);
+            }
             Ok(())
         })();
         if let Err(e) = alloc_result {
@@ -2961,7 +2966,10 @@ pub unsafe extern "system" fn NtReadFile(
                 if mdl.is_null() {
                     return Err(STATUS_INSUFFICIENT_RESOURCES);
                 }
-                MmProbeAndLockPages(mdl, PreviousMode, IoWriteAccess);
+                let st = ntkrnl_sys::probe::MmTryProbeAndLockPages(mdl, PreviousMode, IoWriteAccess);
+                if st < 0 {
+                    return Err(st);
+                }
                 Ok(())
             })();
             if let Err(e) = alloc_result {
@@ -3796,11 +3804,19 @@ pub unsafe extern "system" fn NtWriteFile(
         }
     } else if (*DeviceObject).Flags & DO_DIRECT_IO != 0 {
         if Length != 0 {
+            // C: both the allocation failure (an explicit ExRaiseStatus) and the
+            // probe raise into a handler that runs IopCleanupAfterException and
+            // returns the code. Without SEH either raise was a bugcheck.
             Mdl = IoAllocateMdl(Buffer, Length, 0u8, 1u8, Irp);
-            if Mdl.is_null() {
-                ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+            let st = if Mdl.is_null() {
+                STATUS_INSUFFICIENT_RESOURCES
+            } else {
+                ntkrnl_sys::probe::MmTryProbeAndLockPages(Mdl, PreviousMode, IoReadAccess)
+            };
+            if st < 0 {
+                IopCleanupAfterException(FileObject, Irp, EventObject, core::ptr::null_mut());
+                return st;
             }
-            MmProbeAndLockPages(Mdl, PreviousMode, IoReadAccess);
         }
         (*Irp).Flags = 0;
     } else {

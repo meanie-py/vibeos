@@ -402,6 +402,18 @@ extern "C" {
     ) -> i32;
 }
 
+// ntoskrnl-rust ARM3/mdlsup.rs: MmProbeAndLockPages returning its failure status
+// instead of raising it. The raising NT export is a bugcheck wherever no SEH frame
+// catches it, which is every Rust caller; `scan_raising_probes` gates the raising
+// name. Exported by ntoskrnl.spec, so drivers outside the kernel image link it too.
+extern "system" {
+    pub fn MmTryProbeAndLockPages(
+        Mdl: crate::ddk::PMDL,
+        AccessMode: KPROCESSOR_MODE,
+        Operation: crate::ddk::_LOCK_OPERATION,
+    ) -> NTSTATUS;
+}
+
 /// Copy `length` bytes, returning `Err(STATUS_ACCESS_VIOLATION)` instead of
 /// BUGCHECKing when the source or destination faults.
 ///

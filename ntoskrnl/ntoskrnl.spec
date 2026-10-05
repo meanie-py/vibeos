@@ -752,6 +752,11 @@
 # (spec2def.c:750), so win32k.sys would fail to link against it.
 @ cdecl KmProtectedCopyMemory(ptr ptr long)
 @ cdecl KmProtectedInterlockedAdd(ptr long ptr)
+# vibeos-internal: MmProbeAndLockPages returning its status instead of raising it.
+# Without kernel SEH a raise from the NT export is a bugcheck, so every Rust caller
+# uses this; it is exported for the drivers that are separate PEs (mup, ks, afd,
+# cdfs, cdrom, win32k). Not `-private`, for the same import-lib reason as above.
+@ stdcall MmTryProbeAndLockPages(ptr long long)
 @ cdecl RtlSehTryExcept(ptr ptr ptr ptr ptr)
 @ cdecl RtlSehTryFinally(ptr ptr ptr ptr)
 @ stdcall LdrAccessResource(ptr ptr ptr ptr)

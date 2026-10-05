@@ -2191,7 +2191,12 @@ pub unsafe extern "system" fn NtCreateSection(
         &mut handle,
     );
     if status >= 0 {
-        *section_handle = handle;
+        // C: _SEH2_TRY { *SectionHandle = Handle; } _SEH2_EXCEPT { /* Nothing here */ }
+        let _ = ntkrnl_sys::probe::safe_copy_raw(
+            section_handle as PVOID,
+            &handle as *const HANDLE as *const core::ffi::c_void,
+            core::mem::size_of::<HANDLE>(),
+        );
     }
     status
 }
@@ -2222,7 +2227,12 @@ pub unsafe extern "system" fn NtOpenSection(
         core::ptr::null_mut(),
         &mut handle,
     );
-    *section_handle = handle;
+    // C: _SEH2_TRY { *SectionHandle = Handle; } _SEH2_EXCEPT { /* Nothing here */ }
+    let _ = ntkrnl_sys::probe::safe_copy_raw(
+        section_handle as PVOID,
+        &handle as *const HANDLE as *const core::ffi::c_void,
+        core::mem::size_of::<HANDLE>(),
+    );
     status
 }
 
