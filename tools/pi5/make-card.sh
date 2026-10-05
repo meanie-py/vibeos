@@ -55,15 +55,19 @@ trap 'rm -rf "$work"' EXIT
 xz -dc "$CACHE/pios.img.xz" > "$work/pios.img"
 # The boot partition is the first MBR entry; mtools reads it in place.
 start=$(python3 -c "import struct,sys; d=open(sys.argv[1],'rb').read(512); print(struct.unpack('<I', d[454:458])[0] * 512)" "$work/pios.img")
+# The stager lives in linux/ (config.txt: os_prefix=linux/); the partition root is
+# a UEFI-only card, which is what tryboot.txt boots.
+mkdir -p "$OUT/linux"
 for f in kernel_2712.img initramfs_2712 bcm2712-rpi-5-b.dtb; do
-    MTOOLS_SKIP_CHECK=1 mcopy -n -i "$work/pios.img@@$start" "::/$f" "$OUT/$f"
+    MTOOLS_SKIP_CHECK=1 mcopy -n -i "$work/pios.img@@$start" "::/$f" "$OUT/linux/$f"
 done
 unzip -oq "$CACHE/rpi5-uefi-v0.3.zip" RPI_EFI.fd bcm2712-rpi-5-b.dtb -d "$work/uefi"
-cp "$work/uefi/RPI_EFI.fd" "$OUT/"
-cp "$work/uefi/bcm2712-rpi-5-b.dtb" "$OUT/rpi5-uefi.dtb"
+cp "$work/uefi/RPI_EFI.fd" "$work/uefi/bcm2712-rpi-5-b.dtb" "$OUT/"
 
 cp "$HERE/card/config.txt" "$HERE/card/tryboot.txt" "$HERE/card/meta-data" "$HERE/card/network-config" "$OUT/"
-sed "s/@PARTUUID@/$PARTUUID/" "$HERE/card/cmdline.txt" > "$OUT/cmdline.txt"
+# Both places: os_prefix covers cmdline.txt, and the root copy is the fallback.
+sed "s/@PARTUUID@/$PARTUUID/" "$HERE/card/cmdline.txt" > "$OUT/linux/cmdline.txt"
+cp "$OUT/linux/cmdline.txt" "$OUT/cmdline.txt"
 pub=$(cat "$KEY")
 sed "s|@SSH_PUBKEY@|$pub|" "$HERE/card/user-data.in" > "$OUT/user-data"
 

@@ -7,6 +7,10 @@
 # For that ONE boot the firmware reads tryboot.txt INSTEAD of this file (a
 # [tryboot] section here is never consulted: that filter is for autoboot.txt).
 # Any later reset is Linux again.
+#
+# Linux's kernel, initramfs, device tree and cmdline.txt live in linux/, so the
+# partition root is exactly a UEFI-only card for the tryboot boot.
+os_prefix=linux/
 arm_64bit=1
 auto_initramfs=1
 disable_overscan=1

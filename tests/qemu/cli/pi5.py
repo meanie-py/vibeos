@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -303,13 +304,22 @@ def _boot(run: Run, args, repo: Path) -> int:
 
     # No serial console: HDMI is the only witness. Weaker than the marker (it sees
     # a desktop, not that the shell finished), so it can pass only as a warning.
+    # Every frame is kept (hdmi-000.png, ...): without serial, the sequence - did
+    # the firmware hand over, did UEFI draw its logo, did the loader list files -
+    # is the only record of how far a failed boot got.
     shot = run.dir / "hdmi.png"
+    frames = run.dir / "hdmi-frames"
+    frames.mkdir(exist_ok=True)
     deadline = time.monotonic() + args.timeout
     share = None
+    n = 0
     while time.monotonic() < deadline:
         time.sleep(10)
-        rc, _ = pi4._quick([*_script(repo, "hdmi.sh"), str(shot)], timeout=60)
+        frame = frames / f"hdmi-{n:03d}.png"
+        rc, _ = pi4._quick([*_script(repo, "hdmi.sh"), str(frame)], timeout=60)
         if rc == 0:
+            n += 1
+            shutil.copyfile(frame, shot)
             run.extra["screenshot"] = str(shot)
             share = desktop_share(shot)
             if share is not None and share >= DESKTOP_SHARE:

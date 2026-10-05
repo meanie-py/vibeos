@@ -2,13 +2,24 @@
 # the firmware read this file instead of config.txt, for one boot: UEFI (the
 # archived worproject rpi5-uefi v0.3) as the armstub, then VibeOS from
 # EFI\BOOT\BOOTAA64.EFI. Deployed by tools/pi5/stage.sh; edit it here.
-arm_64bit=1
+#
+# Below is the release's own config.txt, unmodified. The root of the partition is
+# what a UEFI-only card holds (the release's bcm2712-rpi-5-b.dtb, no kernel): the
+# stager's files are under linux/. Variations on this - a renamed device tree, the
+# stager's kernel in the root, then kernel= pointed away from it - booted to an
+# all-black HDMI frame with no UEFI logo, twice.
 armstub=RPI_EFI.fd
-# UEFI's own device tree: the Linux one (bcm2712-rpi-5-b.dtb) is newer.
-device_tree=rpi5-uefi.dtb
 device_tree_address=0x1f0000
 device_tree_end=0x210000
+
+# Force 32 bpp framebuffer allocation.
 framebuffer_depth=32
+
+# Disable compensation for displays with overscan.
 disable_overscan=1
+
+# Force maximum USB power regardless of the power supply.
 usb_max_current_enable=1
+
+# Force maximum CPU speed.
 force_turbo=1
