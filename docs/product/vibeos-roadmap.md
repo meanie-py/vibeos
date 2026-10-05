@@ -75,6 +75,12 @@ Every class below is already **0-NEW-gated** by `vibeos-cli check`; the *stock* 
 - **`scan_silent_failures` (2086)** — bare `loop{}` spins, `unwrap`/`expect`, swallowed `Err` in kernel/driver code.
 - **`scan_cc_mismatch` (316)** + **`verify_ffi` (161)** — ABI-decl drift; **largely retired for free by the Tier-2 trampoline refactor.**
 - **`lint_kernel` (1473 `write_volatile`)** — **likely mostly obsolete**: the captures(none) miscompile it defends against is toolchain-fixed on LLVM ≥ 21 (rustc 1.92 / LLVM 21.1.3). Decision owed: retire-and-revert the defensive laundering vs keep as belt-and-suspenders (`tools/scan_captures.py` is the post-toolchain-bump tripwire).
+- **Duplicate-symbol cleanup after the link guard (2026-10-04)** — in this order:
+  (1) the ~160 kernel probe sites that bugcheck or never check (bug registry, "Kernel
+  user-pointer probes"); (2) delete the 37 per-module `--allow-multiple-definition`
+  copies `gcc.cmake` made redundant; (3) **one Rust crate graph per binary**, so the Rust
+  panic runtime stops being an allowed duplicate. Scope, inventory and tiers:
+  [`../engineering/one-rust-graph-plan.md`](../engineering/one-rust-graph-plan.md).
 - **IRQL/spinlock RAII (130 candidates)** — 0 leaks today; adopt hand-verified as files are touched (block-scope discipline — the "trivial" labels are ~50% wrong).
 
 ---
