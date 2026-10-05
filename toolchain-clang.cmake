@@ -45,7 +45,11 @@ set(CMAKE_RC_COMPILER ${GCC_TOOLCHAIN_PREFIX}windres)
 # This allows to have CMake test the compiler without linking
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
-set(CMAKE_C_CREATE_STATIC_LIBRARY "<CMAKE_AR> crT <TARGET> <LINK_FLAGS> <OBJECTS>")
+# Delete the archive first. `ar r` replaces or inserts members and never removes one, so
+# without this an object dropped from a library's source list keeps linking from the stale
+# .obj a warm build dir still holds: vcruntime's setjmp objects did, after setjmp-rust took
+# their place (2026-10-04). CMake's own default rule removes the target; overriding it lost that.
+set(CMAKE_C_CREATE_STATIC_LIBRARY "${CMAKE_COMMAND} -E rm -f <TARGET>" "<CMAKE_AR> crT <TARGET> <LINK_FLAGS> <OBJECTS>")
 set(CMAKE_CXX_CREATE_STATIC_LIBRARY ${CMAKE_C_CREATE_STATIC_LIBRARY})
 set(CMAKE_ASM_CREATE_STATIC_LIBRARY ${CMAKE_C_CREATE_STATIC_LIBRARY})
 

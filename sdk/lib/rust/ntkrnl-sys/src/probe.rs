@@ -27,6 +27,29 @@ extern "C" {
     static MmUserProbeAddress: ULONG_PTR;
 }
 
+/// The range test every typed probe.h macro makes before it touches `Ptr`:
+///
+/// ```c
+/// if ((ULONG_PTR)(Ptr) + sizeof(Type) - 1 < (ULONG_PTR)(Ptr) ||
+///     (ULONG_PTR)(Ptr) + sizeof(Type) - 1 >= (ULONG_PTR)MmUserProbeAddress)
+///     ExRaiseAccessViolation();
+/// ```
+///
+/// The inline::common and macros.rs Probe* helpers shipped without it, so a
+/// user-mode caller could hand a syscall a KERNEL address and have the kernel
+/// read or write it. That stayed hidden partly because C shims
+/// (io_rust_shims.c) carried the check and won the amd64/arm64 link by order for
+/// two of the exported names; tools/link_guard.py surfaced it.
+/// No alignment check: the typed macros have none.
+#[inline]
+pub unsafe fn probe_user_range<T>(ptr: *const T) {
+    let first = ptr as ULONG_PTR;
+    let last = first.wrapping_add(core::mem::size_of::<T>() - 1);
+    if last < first || last >= MmUserProbeAddress {
+        crate::ddk::ExRaiseAccessViolation();
+    }
+}
+
 // ============================================================================
 // Core probe functions
 // ============================================================================

@@ -19,7 +19,6 @@ void TRACE(const char *f, ...) { (void)f; }
 void WARN(const char *f, ...)  { (void)f; }
 void FIXME(const char *f, ...) { (void)f; }
 
-/* debugstr_a/an/w/wn: mlang-rust debug_shims.rs (cdecl, as every Rust decl). */
 const char *__stdcall debugstr_guid(const void *g) { (void)g; return ""; }
 const char *__stdcall wine_dbgstr_w(const unsigned short *s) { (void)s; return ""; }
 
@@ -52,7 +51,9 @@ void __stdcall list_add_tail(struct cohab_list *l, struct cohab_list *e)
     l->prev = e;
 }
 
-/* __wine_(un)register_resources: mlang-rust debug_shims.rs (no-op, S_OK). */
+/* debugstr_a/an/w/wn and __wine_(un)register_resources are mlang-rust's
+ * (debug_shims.rs). Copies here were duplicate symbols kept by link order;
+ * tools/link_guard.py refuses those. */
 
 /* InterlockedIncrement/Decrement: on i386 these come from kernel32 as _X@4, but
  * on amd64/arm64 they are compiler intrinsics the import lib does not export as

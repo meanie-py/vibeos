@@ -1,0 +1,5 @@
+# The sdk delay-import apitests: delay-loaded winmm/version/dbghelp/shlwapi/sfc_os/imagehlp
+# with no hooks, with hooks assigned at global scope, and with hooks assigned at runtime.
+delayimp_nohook_apitest.exe
+delayimp_globalhook_apitest.exe
+delayimp_runtimehook_apitest.exe

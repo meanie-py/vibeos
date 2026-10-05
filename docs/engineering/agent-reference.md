@@ -493,22 +493,13 @@ Each bug class it finds becomes a gated `check` scanner over every body. The fir
 
 `scan_duplicate_symbols` (also EMPTY-baselined) is the link-level one. Every PE links with
 `--allow-multiple-definition`, so two definitions of one symbol resolve by archive order and
-nothing fails. It models what each binary links (`tools/rust_link_model.py`: the crates a
+nothing warns. It models what each binary links (`tools/rust_link_model.py`: the crates a
 `*-cargo/build.rs` names, their path-dep closure, Cargo feature resolution, `if arch == …`
 blocks, every definition's full cfg, and `global_asm!` `.globl` labels) and reports a name
 defined twice on one arch. i386 decoration counts: cdecl `_X`, stdcall `_X@N` and fastcall
-`@X@N` are different symbols. To check a finding against the bytes, `llvm-nm --defined-only`
-the archives under `sdk/lib/rust/target/<binary>-<crate>-rustlib/<triple>/release/`.
-
-Its post-link twin `scan_link_duplicates` (a binary lint run by `build`) covers what a source
-model cannot: C shims, `.s` objects and import libraries in the same link. COFF lld still WARNS
-`duplicate symbol` under `--allow-multiple-definition`, naming both definers with file:line and
-only for archive members it actually pulled. Every `*-cargo/Cargo.toml` sets
-`[lints.rust] linker_messages = "warn"` so rustc stops swallowing that, and the tool reads it
-back from cargo's cache (`target/<pe>-<arch>-cargo-link/<triple>/release/.fingerprint/*/output-bin-*`),
-so a warm build that relinked nothing still answers. A new `*-cargo` crate needs the same
-`[lints.rust]` entry or its link is invisible to it. CMake links fail on a duplicate already,
-except explorer and umpnpmgr, which pass the flag themselves.
+`@X@N` are different symbols. C objects are out of its scope. To check a finding against the
+bytes, `llvm-nm --defined-only` the archives under
+`sdk/lib/rust/target/<binary>-<crate>-rustlib/<triple>/release/`.
 
 The first, third and fourth read the C twin by function NAME through `tools/c_twin.py`. Its index
 of which file defines which function is cached in `tools/.cache/c_twin_defs.json`: a 12 s

@@ -1667,8 +1667,25 @@ fn StorageBaseImpl_Stat(
 }
 }
 
+/// OleConvertIStorageToOLESTREAMEx (wine-10: still a FIXME stub upstream).
 #[no_mangle]
-pub unsafe extern "system" fn SetConvertStg(storage: *mut IStorage, convert: BOOLEAN) -> HRESULT {
+pub unsafe extern "system" fn OleConvertIStorageToOLESTREAMEx(
+    stg: LPSTORAGE,
+    cf: CLIPFORMAT,
+    width: LONG,
+    height: LONG,
+    size: DWORD,
+    medium: LPSTGMEDIUM,
+    olestream: LPOLESTREAM,
+) -> HRESULT {
+    FIXME(b"%p, %x, %ld, %ld, %ld, %p, %p: stub\n\0".as_ptr() as LPCSTR);
+
+    E_NOTIMPL
+}
+
+// C: `BOOL convert`. Was `BOOLEAN`, which reads only the low byte: 0x100 was FALSE.
+#[no_mangle]
+pub unsafe extern "system" fn SetConvertStg(storage: *mut IStorage, convert: BOOL) -> HRESULT {
     static stream_1oleW: [u16; 5] = [1, 'O' as u16, 'l' as u16, 'e' as u16, 0];
     let flags: DWORD = if convert != 0 { 0x00000004 } else { 0 };
     let mut stream: *mut IStream = core::ptr::null_mut();

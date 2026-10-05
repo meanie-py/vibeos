@@ -519,6 +519,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "delayimp-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+]
+
+[[package]]
 name = "desk-rust"
 version = "0.1.0"
 dependencies = [
@@ -543,6 +550,7 @@ dependencies = [
  "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -614,6 +622,7 @@ version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
  "ntkrnl-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -687,6 +696,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -908,6 +918,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1214,6 +1225,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "samsrv-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1391,6 +1403,8 @@ dependencies = [
  "crt-portable-rust",
  "crt-shared-rust",
  "msvcrt-sys",
+ "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1729,6 +1743,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1751,6 +1766,7 @@ version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
  "ntkrnl-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2116,6 +2132,7 @@ name = "rtl-threadpool"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2213,6 +2230,7 @@ version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
  "ntkrnl-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2254,6 +2272,7 @@ name = "services-rust"
 version = "0.1.0"
 dependencies = [
  "panic-common",
+ "win32macros-rust",
  "winsrv-sys",
 ]
 
@@ -2283,6 +2302,7 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "va-slots-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2344,6 +2364,7 @@ dependencies = [
  "ntdll-sys",
  "ntprintf",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2735,6 +2756,14 @@ version = "0.1.0"
 dependencies = [
  "panic-common",
  "win32k-sys",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "user32-wsprintf-rust"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
 ]
 
 [[package]]
@@ -2744,6 +2773,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2845,6 +2875,7 @@ dependencies = [
  "ntprintf",
  "ntprintf_w",
  "win32k-sys",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2990,6 +3021,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]

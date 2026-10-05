@@ -1033,12 +1033,118 @@ pub unsafe extern "system" fn KxSwitchKdProcessor(ProcessorIndex: ULONG) -> KCON
     ntkrnl_sys::globals::ContinueSuccess
 }
 
+// The freeze protocol, as on amd64/i386: the owner stages every other PRCB's IpiFrozen
+// to TARGET_FREEZE, sends IPI_FREEZE, and waits for each to report FROZEN; the target
+// side is KiArm64FreezeHandler, called from KiIpiServiceRoutine. These were empty
+// stubs, so an arm64 bugcheck never stopped the other CPUs: they kept running threads,
+// writing memory and printing to serial while the dump was being taken (an arm64
+// -smp 4 registry 0x50 kept on through network self-tests and thread exits after the
+// BUGCHECK line).
+#[cfg(feature = "smp")]
+static mut KiFreezeOwner: PKPRCB = core::ptr::null_mut();
+
+/// arm64 has no NMI, so a CPU spinning with IRQs masked cannot take the SGI. A bugcheck
+/// must never hang on the freeze it exists to take, so the owner waits a bounded number
+/// of polls per target and then proceeds without it, naming the CPU that did not stop.
+#[cfg(feature = "smp")]
+const KI_FREEZE_SPIN_LIMIT: u64 = 50_000_000;
+
 #[no_mangle]
 pub unsafe extern "system" fn KxFreezeExecution() {
+    #[cfg(feature = "smp")]
+    {
+        use core::sync::atomic::{AtomicPtr, Ordering};
+        let CurrentPrcb = KeGetCurrentPrcb();
+        let owner = AtomicPtr::from_ptr(core::ptr::addr_of_mut!(KiFreezeOwner));
+        if owner.load(Ordering::SeqCst) == CurrentPrcb {
+            return;
+        }
+        while owner
+            .compare_exchange(core::ptr::null_mut(), CurrentPrcb, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            core::hint::spin_loop();
+        }
+
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*CurrentPrcb).IpiFrozen),
+            (IPI_FROZEN_STATE_OWNER | IPI_FROZEN_FLAG_ACTIVE) as _,
+        );
+        let mut targets: ntkrnl_sys::ddk::KAFFINITY = 0;
+        for i in 0..KeNumberProcessors as usize {
+            let Target = *(core::ptr::addr_of!(KiProcessorBlock) as *const PKPRCB).add(i);
+            if !Target.is_null() && Target != CurrentPrcb {
+                core::ptr::write_volatile(
+                    core::ptr::addr_of_mut!((*Target).IpiFrozen),
+                    IPI_FROZEN_STATE_TARGET_FREEZE as _,
+                );
+                targets |= (*Target).SetMember;
+            }
+        }
+        core::sync::atomic::fence(Ordering::SeqCst);
+        crate::ke::ipi::KiIpiSend(targets, IPI_FREEZE);
+
+        for i in 0..KeNumberProcessors as usize {
+            let Target = *(core::ptr::addr_of!(KiProcessorBlock) as *const PKPRCB).add(i);
+            if Target.is_null() || Target == CurrentPrcb {
+                continue;
+            }
+            let mut spins: u64 = 0;
+            while core::ptr::read_volatile(core::ptr::addr_of!((*Target).IpiFrozen))
+                != IPI_FROZEN_STATE_FROZEN as _
+            {
+                spins += 1;
+                if spins > KI_FREEZE_SPIN_LIMIT {
+                    crate::dbg_print!(
+                        b"[FREEZE] CPU %u did not freeze (IRQs masked?) -- continuing without it\n\0",
+                        (*Target).Number as u32,
+                    );
+                    break;
+                }
+                core::hint::spin_loop();
+            }
+        }
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KxThawExecution() {
+    #[cfg(feature = "smp")]
+    {
+        let CurrentPrcb = KeGetCurrentPrcb();
+        for i in 0..KeNumberProcessors as usize {
+            let Target = *(core::ptr::addr_of!(KiProcessorBlock) as *const PKPRCB).add(i);
+            if !Target.is_null() && Target != CurrentPrcb {
+                core::ptr::write_volatile(
+                    core::ptr::addr_of_mut!((*Target).IpiFrozen),
+                    IPI_FROZEN_STATE_THAW as _,
+                );
+            }
+        }
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*CurrentPrcb).IpiFrozen),
+            IPI_FROZEN_STATE_RUNNING as _,
+        );
+        core::sync::atomic::AtomicPtr::from_ptr(core::ptr::addr_of_mut!(KiFreezeOwner))
+            .store(core::ptr::null_mut(), core::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Target side of KxFreezeExecution, from KiIpiServiceRoutine: park until thawed.
+/// No KiSaveProcessorState / KdReportProcessorChange -- those serve the kernel
+/// debugger's processor switch, which arm64 does not have.
+#[cfg(feature = "smp")]
+pub(crate) unsafe fn KiArm64FreezeHandler() {
+    let Prcb = KeGetCurrentPrcb();
+    let state = core::ptr::addr_of_mut!((*Prcb).IpiFrozen);
+    if core::ptr::read_volatile(state) != IPI_FROZEN_STATE_TARGET_FREEZE as _ {
+        return;
+    }
+    core::ptr::write_volatile(state, IPI_FROZEN_STATE_FROZEN as _);
+    while core::ptr::read_volatile(state) != IPI_FROZEN_STATE_THAW as _ {
+        core::hint::spin_loop();
+    }
+    core::ptr::write_volatile(state, IPI_FROZEN_STATE_RUNNING as _);
 }
 
 #[no_mangle]

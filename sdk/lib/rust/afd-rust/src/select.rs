@@ -266,9 +266,13 @@ pub unsafe extern "system" fn AfdSelect(
         PrintEvents((*AFD_HANDLES(PollReq).add(i)).Events);
         AFD_DbgPrint!(MID_TRACE, b"\n\0".as_ptr() as PCHAR);
 
-        (*AFD_HANDLES(PollReq).add(i)).Status =
-            ((*AFD_HANDLES(PollReq).add(i)).Events & (*FCB).PollState) as NTSTATUS;
-        if (*AFD_HANDLES(PollReq).add(i)).Status != 0 {
+        // Events and Status live in the CALLER's array (PollReq->Handles, copied back
+        // to user mode by CopyBackStatus); AFD_HANDLES() is AFD's locked copy and is
+        // only for the FILE_OBJECT. Writing Status there, as this did, left every
+        // handle's result 0, so select() reported nothing ready.
+        let Out = (*PollReq).Handles.as_mut_ptr().add(i);
+        (*Out).Status = ((*Out).Events & (*FCB).PollState) as NTSTATUS;
+        if (*Out).Status != 0 {
             AFD_DbgPrint!(
                 MID_TRACE,
                 b"Signalling %p with %x\n\0".as_ptr() as PCHAR,
@@ -475,7 +479,11 @@ unsafe fn UpdatePollWithFCB(Poll: PAFD_ACTIVE_POLL, _FileObject: PFILE_OBJECT) -
     let mut i: UINT;
     let mut FCB: PAFD_FCB;
     let mut Signalled: UINT = 0;
-    let PollReq: PAFD_POLL_INFO = (*Poll).Irp as *mut _ as PAFD_POLL_INFO;
+    // The poll request is the IRP's SYSTEM BUFFER, as in the C. This used to cast the
+    // IRP itself, so HandleCount and the handle array were read out of the IRP header:
+    // a socket that became ready while select() was already waiting never woke it
+    // (a UDP reply AFD had queued sat there until the select timed out).
+    let PollReq: PAFD_POLL_INFO = (*(*Poll).Irp).AssociatedIrp.SystemBuffer as PAFD_POLL_INFO;
 
     i = 0;
     while i < (*PollReq).HandleCount {
@@ -487,10 +495,11 @@ unsafe fn UpdatePollWithFCB(Poll: PAFD_ACTIVE_POLL, _FileObject: PFILE_OBJECT) -
         let FileObject = (*(AFD_HANDLES(PollReq).offset(i as isize))).Handle as PFILE_OBJECT;
         FCB = (*FileObject).FsContext as PAFD_FCB;
 
-        (*AFD_HANDLES(PollReq).add(i as usize)).Status =
-            ((*AFD_HANDLES(PollReq).add(i as usize)).Events & (*FCB).PollState) as NTSTATUS;
+        // The caller's array, as in AfdSelect (see there).
+        let Out = (*PollReq).Handles.as_mut_ptr().add(i as usize);
+        (*Out).Status = ((*Out).Events & (*FCB).PollState) as NTSTATUS;
 
-        if (*AFD_HANDLES(PollReq).add(i as usize)).Status != 0 {
+        if (*Out).Status != 0 {
             AFD_DbgPrint!(
                 MID_TRACE,
                 b"Signalling %p with %x\n\0".as_ptr() as PCHAR,

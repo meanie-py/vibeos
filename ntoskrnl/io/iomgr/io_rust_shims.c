@@ -13,8 +13,6 @@
  *     the format is fixed so we open-code the concat to drop the
  *     dependency. (Rust can't safely cross the `va_arg` boundary on
  *     stable, so the shim itself stays — the symbol is what matters.)
- *   (`ProbeForWriteHandle` / `ProbeForReadLargeInteger` lived here until
- *     ntkrnl-sys's typed probes got probe.h's `MmUserProbeAddress` check.)
  *
  * Header-free since the cargo-driven build PoC: no `<ntoskrnl.h>`, no
  * `<ntstrsafe.h>`, no `<debug.h>`, no `<internal/io_i.h>`. Local
@@ -64,6 +62,13 @@ typedef struct _UNICODE_STRING
     USHORT MaximumLength;
     PWCHAR Buffer;
 } UNICODE_STRING, *PUNICODE_STRING;
+
+/*
+ * ProbeForWriteHandle / ProbeForReadLargeInteger are ntoskrnl-rust's
+ * (common_inlines.rs over ntkrnl-sys inline::common, which carries probe.h's
+ * MmUserProbeAddress check). Copies here were duplicate symbols that won the
+ * amd64/arm64 link by order; tools/link_guard.py refuses those.
+ */
 
 /*
  * RtlUnicodeStringPrintf_4wZ — open-coded "%wZ%wZ#%wZ%wZ" concat for

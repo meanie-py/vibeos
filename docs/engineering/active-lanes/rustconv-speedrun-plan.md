@@ -172,22 +172,12 @@ every translated body. **Owed, in order:**
      demand-zero on every arch; a probe saw no residual Start/End/Verifier bits in
      3 arm64 boots once the free-descriptor restore landed (8f82e3e57ace).
    - DONE 2026-10-04: 35 identical `cfg(P)` / `cfg(not(P))` twins merged (28 win32k).
-   - DONE 2026-10-04, tooling: `scan_link_duplicates` (post-link) reads lld's own
-     duplicate-symbol warnings from cargo's cache, so C/asm/import-lib twins are
-     covered. First run, after filtering the runtime and same-source twins:
-     - the typed `Probe*` helpers in ntkrnl-sys `inline/common.rs` had NO
-       `MmUserProbeAddress` check (probe.h has one). `ProbeForWritePointer`/
-       `Ulong`/`Boolean`/`LangId` and `ProbeForReadUchar`/`Ushort` resolved to them
-       on every arch, so NtProtectVirtualMemory, NtAllocateVirtualMemory, the
-       config/po/dbgk syscalls etc. wrote through user-supplied kernel pointers.
-       All eight now do probe.h's check; io_rust_shims.c's two checked copies,
-       which won amd64/arm64 by link order, are gone.
-     - i386 `RtlFillMemoryUlong`: shim_exports.rs export vs rtlmem.s, won by
-       asm_archive order (ntkrnlmp took the asm, ntoskrnl the Rust); the export is gone.
-     - mlang's C cohab stub `debugstr_*`/`__wine_*_resources` and winsrv's 64-bit C
-       `_Interlocked*`/`IsListEmpty` duplicated the Rust shims; C copies removed.
-     - Deliberate, nolint'd: crt-dllmain's default `DllMain` (mlang's wins, checked
-       in the binary), i386 `KeRaiseIrqlToSynchLevel` (C thunk through hal's IAT).
+   - ~~Owed: `scan_duplicate_symbols` for C/asm objects~~ superseded by link-guard
+     (5cabdbde74a, another session): `tools/link_guard.py` fronts ld.lld and FAILS a
+     link on a non-runtime duplicate, CMake and cargo alike. It fixed every finding
+     my parallel post-link scanner had (the unchecked Rust `Probe*` helpers,
+     i386 `RtlFillMemoryUlong`, mlang, winsrv, crt-dllmain), so the scanner was
+     dropped unlanded rather than kept as a second, weaker check.
    - DONE, tooling: scan_cfg_vs_c now has a UP/SMP axis (C `CONFIG_SMP` = Rust
      `feature = "smp"`). First find: KeBugCheckWithTf's CPU freeze was gated on x86/x86_64
      (C: `#ifdef CONFIG_SMP`) — ran in UP kernels, never on arm64 SMP. Now

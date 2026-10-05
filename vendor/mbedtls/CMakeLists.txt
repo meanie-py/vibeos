@@ -47,6 +47,7 @@ list(APPEND SOURCE
     debug.c
     des.c
     dhm.c
+    dsa.c
     ecdh.c
     ecdsa.c
     ecjpake.c

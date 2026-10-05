@@ -1327,7 +1327,8 @@ unsafe fn get_tymed_from_nonole_cf(cf: UINT) -> DWORD {
     }
 
     match cf {
-        CF_TEXT | CF_OEMTEXT | CF_UNICODETEXT => TYMED_ISTREAM | TYMED_HGLOBAL,
+        // wine-10 adds CF_HDROP (dropped files are an HGLOBAL DROPFILES).
+        CF_TEXT | CF_OEMTEXT | CF_UNICODETEXT | CF_HDROP => TYMED_ISTREAM | TYMED_HGLOBAL,
         CF_ENHMETAFILE => TYMED_ENHMF,
         CF_METAFILEPICT => TYMED_MFPICT,
         CF_BITMAP => TYMED_GDI,

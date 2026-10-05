@@ -55,26 +55,48 @@ elseif(ARCH STREQUAL "amd64")
         except/amd64/chkstk_ms.s)
 endif()
 
-set_source_files_properties(${MSVCRTEX_ASM_SOURCE} PROPERTIES COMPILE_DEFINITIONS "_DLL;_MSVCRTEX_")
-add_asm_files(msvcrtex_asm ${MSVCRTEX_ASM_SOURCE})
+# msvcrtex is Rust (2026-10-04): crt-startup-rust + crt0-rust + crt-dllmain-rust, the
+# translation cargo modules already linked through reactos-link's .msvcrtex_crt(). The C
+# lists above stay as the record of what it replaced; nothing compiles them.
+#
+# The C archive held every personality at once (crtexe.o, wcrtexe.o, crtdll.o, crt0_c.o,
+# dllmain.o, ...) and the linker pulled whichever the entry point reached. The Rust crate
+# picks ONE by cargo feature, so it is built once per personality and each consumer links
+# the one matching its entry point: set_entrypoint (gcc.cmake) records REACTOS_CRT_KIND
+# (dll / exe / wexe / bare), and the generator expressions below read it on the CONSUMING
+# target. crt0-rust (default main -> WinMain bridge) and crt-dllmain-rust (default DllMain)
+# are separate archives after the module's own objects, so a module's own definition wins.
+#
+set(MSVCRTEX_RUST_WORKSPACE "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+rust_staticlib_variant(msvcrtex_dll crt-startup-rust "crtdll" FALSE)
+rust_staticlib_variant(msvcrtex_exe crt-startup-rust "crtexe" FALSE)
+rust_staticlib_variant(msvcrtex_wexe crt-startup-rust "wcrtexe" FALSE)
+rust_staticlib_variant(msvcrtex_bare crt-startup-rust "" FALSE)
+rust_staticlib_variant(msvcrtex_dllmain crt-dllmain-rust "" TRUE)
+rust_staticlib_variant(msvcrtex_crt0 crt0-rust "ansi" FALSE)
+rust_staticlib_variant(msvcrtex_wcrt0 crt0-rust "wide" FALSE)
 
-add_library(msvcrtex STATIC ${MSVCRTEX_SOURCE} ${msvcrtex_asm})
-target_compile_definitions(msvcrtex PRIVATE _DLL _MSVCRTEX_)
+add_library(msvcrtex INTERFACE)
+add_dependencies(msvcrtex rust_msvcrtex_dll rust_msvcrtex_exe rust_msvcrtex_wexe rust_msvcrtex_bare
+    rust_msvcrtex_dllmain rust_msvcrtex_crt0 rust_msvcrtex_wcrt0)
+set(_kind "$<TARGET_PROPERTY:REACTOS_CRT_KIND>")
+target_link_libraries(msvcrtex INTERFACE
+    "$<$<STREQUAL:${_kind},dll>:${msvcrtex_dll_LIB}>"
+    "$<$<STREQUAL:${_kind},dll>:${msvcrtex_dllmain_LIB}>"
+    "$<$<STREQUAL:${_kind},exe>:${msvcrtex_exe_LIB}>"
+    "$<$<STREQUAL:${_kind},exe>:${msvcrtex_crt0_LIB}>"
+    "$<$<STREQUAL:${_kind},wexe>:${msvcrtex_wexe_LIB}>"
+    "$<$<STREQUAL:${_kind},wexe>:${msvcrtex_wcrt0_LIB}>"
+    "$<$<NOT:$<IN_LIST:${_kind},dll;exe;wexe>>:${msvcrtex_bare_LIB}>")
+
+# MSVCRTEX_ASM_SOURCE (the stack probes, i386 _alldiv/_aulldiv, i386 ceilf/floorf) is
+# crt-startup-rust's `intrinsics` module (global_asm!), in every variant above; no
+# msvcrtex_asm library is built.
 
 # msvcrtex depends on msvcrt and kernel32
-target_link_libraries(msvcrtex INTERFACE libmsvcrt libkernel32)
-
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    target_compile_options(msvcrtex PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wno-main>)
-    if(LTCG)
-        target_compile_options(msvcrtex PRIVATE -fno-lto)
-    endif()
-endif()
-
-set_source_files_properties(startup/crtdll.c PROPERTIES COMPILE_DEFINITIONS CRTDLL)
-set_source_files_properties(startup/crtexe.c
-                            startup/wcrtexe.c PROPERTIES COMPILE_DEFINITIONS _M_CEE_PURE)
-
+# + ntdll: crt-startup-rust's panic path (panic-common) imports DbgPrint,
+# NtTerminateProcess and RtlWalkFrameChain, which the C archive never referenced.
+target_link_libraries(msvcrtex INTERFACE libmsvcrt libkernel32 libntdll)
 target_link_libraries(msvcrtex INTERFACE oldnames)
 
 # For clang/llvm-mingw, link compiler-rt builtins for i386 64-bit division
@@ -82,5 +104,3 @@ target_link_libraries(msvcrtex INTERFACE oldnames)
 if(USE_LLVM_MINGW AND TARGET libclang_rt_builtins)
     target_link_libraries(msvcrtex INTERFACE libclang_rt_builtins)
 endif()
-
-add_dependencies(msvcrtex psdk asm)

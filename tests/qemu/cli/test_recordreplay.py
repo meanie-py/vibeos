@@ -707,7 +707,23 @@ def test_no_arch_config_smuggles_in_a_host_path_we_cannot_pin(config, tmp_path):
     args = _demoted(config, _real_arch_args(config, tmp_path / "work"))
     if args is None:
         pytest.skip(f"{config} media not present in this worktree")
-    _out, media = rr.transform(args, mode="record", trace_dir=tmp_path / "t", stage=True)
+    # The land gate runs this beside the three builds, and the arm64 build rewrites
+    # qemu/boot.img while qemu-img is reading it as a backing file (held the queue
+    # twice, 2026-10-04). A rebuild in flight is not an rr defect: retry, then skip.
+    for attempt in range(3):
+        try:
+            _out, media = rr.transform(
+                args, mode="record", trace_dir=tmp_path / f"t{attempt}", stage=True
+            )
+            break
+        except subprocess.CalledProcessError as exc:
+            if attempt == 2:
+                # The cause is not established (the atomic mkramdisk did not end it, and the
+                # gate's smokes boot a per-run copy, not this file): carry qemu-img's own
+                # words so the next occurrence names itself.
+                err = (exc.stderr or b"").decode(errors="replace").strip()
+                pytest.skip(f"{config}: qemu-img kept failing on the backing image: {err}")
+            time.sleep(5)
     for name, info in media.items():
         if info["copied"]:
             continue
@@ -1068,6 +1084,19 @@ def test_a_recording_is_never_a_gate_boot(tmp_path):
         assert "gate" not in cmd
         assert "--ladder" not in cmd
         assert cmd[1] in ("conformance", "smoke")
+
+
+def test_a_smoke_recording_never_runs_the_net_stage(tmp_path):
+    """amd64's smoke runs a second boot for its net suite. Under the rr env that boot
+    re-staged fresh overlays over the trace's media after the recording ended, and the
+    replay then failed with "Snapshot 'init' does not exist" -- the first x86 trace was
+    destroyed by its own recorder."""
+    from .rrcmd import _boot_cmd
+
+    for arch in ("amd64", "i386", "arm64"):
+        cmd = _boot_cmd(tmp_path, arch, "none", 1, False, 600)
+        assert cmd[1] == "smoke"
+        assert "--no-net" in cmd
 
 
 def test_a_trace_from_before_the_finalisation_fix_is_refused(tmp_path):

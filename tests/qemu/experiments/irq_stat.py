@@ -55,8 +55,11 @@ def main() -> None:
     # LAPIC timer is internal to the vCPU (not an `info irq` line). If it is
     # periodic with a tiny initial count, it IS the idle-storm: it wakes the
     # `hlt` every iteration. Parse LVT Timer mode + DCR (divide) + ICT (init).
-    lvt = re.search(r"(?im)^.*timer.*?(0x[0-9a-f]+).*?(periodic|one[- ]?shot|tsc).*?"
-                    r"(masked)?.*vec\s*[:=]?\s*(\d+)", lapic)
+    lvt = re.search(
+        r"(?im)^.*timer.*?(0x[0-9a-f]+).*?(periodic|one[- ]?shot|tsc).*?"
+        r"(masked)?.*vec\s*[:=]?\s*(\d+)",
+        lapic,
+    )
     ict = re.search(r"(?i)(?:timer\s*)?ICT\s*[:=]?\s*(0x[0-9a-f]+|\d+)", lapic)
     dcr = re.search(r"(?i)(?:timer\s*)?DCR\s*[:=]?\s*(0x[0-9a-f]+|\d+)", lapic)
     cct = re.search(r"(?i)(?:timer\s*)?CCT\s*[:=]?\s*(0x[0-9a-f]+|\d+)", lapic)
@@ -70,19 +73,23 @@ def main() -> None:
         periodic = bool(lvt and re.search(r"periodic", lvt.group(0), re.I))
         masked = bool(lvt and re.search(r"masked", lvt.group(0), re.I))
         if not masked and periodic and 0 < ictv < 100000:
-            print(f"\nVERDICT: LAPIC TIMER STORM — periodic, unmasked, "
-                  f"initial-count={ictv} (tiny). This wakes the idle `hlt` "
-                  f"every iteration ⇒ ~88% host CPU. Root cause = HAL (Rust) "
-                  f"APIC timer programming: initial-count/divide set far too "
-                  f"small (or periodic where it should be one-shot).")
+            print(
+                f"\nVERDICT: LAPIC TIMER STORM — periodic, unmasked, "
+                f"initial-count={ictv} (tiny). This wakes the idle `hlt` "
+                f"every iteration ⇒ ~88% host CPU. Root cause = HAL (Rust) "
+                f"APIC timer programming: initial-count/divide set far too "
+                f"small (or periodic where it should be one-shot)."
+            )
         else:
-            print(f"\nLAPIC timer: periodic={periodic} masked={masked} "
-                  f"ict={ictv} — inspect raw dump above for the real driver.")
+            print(
+                f"\nLAPIC timer: periodic={periodic} masked={masked} "
+                f"ict={ictv} — inspect raw dump above for the real driver."
+            )
 
     # Three 1s windows for stability.
     windows = []
     prev = _irq_counts(q)
-    for w in range(3):
+    for _ in range(3):
         time.sleep(1.0)
         cur = _irq_counts(q)
         delta = {k: cur.get(k, 0) - prev.get(k, 0) for k in cur}
@@ -104,14 +111,19 @@ def main() -> None:
     if top is not None and rates[top] > 1000:
         hint = {
             0: "PIT/system timer (IRQ0) — HAL clock programming: PIT divisor "
-               "too small, or HalpClockInterrupt not re-arming/acking correctly",
+            "too small, or HalpClockInterrupt not re-arming/acking correctly",
             8: "RTC (IRQ8) — RTC periodic rate misprogrammed in HAL",
-        }.get(top, f"device on IRQ{top} — its handler likely never EOIs/masks, "
-                   f"so the line re-asserts immediately (level-triggered storm)")
+        }.get(
+            top,
+            f"device on IRQ{top} — its handler likely never EOIs/masks, "
+            f"so the line re-asserts immediately (level-triggered storm)",
+        )
         print(f"\nVERDICT: runaway IRQ{top} @ ~{rates[top]:.0f}/s — {hint}")
     else:
-        print("\nVERDICT: no single IRQ > 1000/s — storm may be NMI/IPI/exception, "
-              "not a maskable line; re-check with bt at a non-idle sample.")
+        print(
+            "\nVERDICT: no single IRQ > 1000/s — storm may be NMI/IPI/exception, "
+            "not a maskable line; re-check with bt at a non-idle sample."
+        )
 
     q.close()
 

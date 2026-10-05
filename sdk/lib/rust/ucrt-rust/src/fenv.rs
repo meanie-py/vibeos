@@ -82,7 +82,7 @@ pub struct FenvT {
 /// `fexcept_t`: `unsigned long`.
 pub type FexceptT = u32;
 
-// sdk/lib/crt's on amd64, fpctrl_arm64's on arm64; i386 defines its own below.
+// fpctrl_amd64's on amd64, fpctrl_arm64's on arm64; i386 defines its own below.
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn _control87(newval: u32, mask: u32) -> u32;
@@ -552,6 +552,34 @@ pub unsafe extern "C" fn _control87(newval: u32, mask: u32) -> u32 {
 #[inline(never)]
 pub unsafe extern "C" fn _controlfp(newval: u32, mask: u32) -> u32 {
     _control87(newval, mask & !_EM_DENORMAL)
+}
+
+/// `_controlfp_s` -- crtmath float/_controlfp_s.c: a mask/value pair touching bits
+/// outside the documented control fields is an invalid parameter (errno EINVAL, the
+/// handler, and the current word still reported); otherwise `_controlfp`.
+#[no_mangle]
+pub unsafe extern "C" fn _controlfp_s(cur: *mut u32, newval: u32, mask: u32) -> c_int {
+    // !(_MCW_EM | _MCW_IC | _MCW_RC | _MCW_PC | _MCW_DN), spelled out because this file
+    // defines _MCW_IC/_MCW_PC/_MCW_DN for x86 only. The C's `#ifdef _M_ARM` (32-bit ARM)
+    // narrowing applies to no target here, so arm64 uses the full mask too, as it did.
+    const INVALID_MASK: u32 = !(0x8_001f | 0x4_0000 | 0x300 | 0x3_0000 | 0x300_0000);
+    extern "C" {
+        fn _errno() -> *mut c_int;
+        fn _invalid_parameter_noinfo();
+    }
+    if newval & mask & INVALID_MASK != 0 {
+        *_errno() = 22; // EINVAL
+        _invalid_parameter_noinfo();
+        if !cur.is_null() {
+            *cur = _controlfp(0, 0);
+        }
+        return 22;
+    }
+    let val = _controlfp(newval, mask);
+    if !cur.is_null() {
+        *cur = val;
+    }
+    0
 }
 
 /// `_statusfp`: the x87 and SSE status words OR'd (Windows defines no "ambiguous"

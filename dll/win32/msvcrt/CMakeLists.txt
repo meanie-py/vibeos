@@ -52,11 +52,8 @@ if(ARCH STREQUAL "i386")
     list(APPEND SHARED_SOURCE
         except_i386.c
     )
-    list(APPEND SHARED_ASM_SOURCE
-        i386/__wine_RtlUnwind.s
-        i386/exception_ptr.s
-        i386/inout.s
-    )
+    # i386/__wine_RtlUnwind.s, i386/exception_ptr.s, i386/inout.s -- replaced by Rust
+    # (crt-shared-rust src/asm_i386.rs, global_asm!).
 elseif(ARCH STREQUAL "amd64")
     list(APPEND SHARED_SOURCE
         except_x86_64.c
@@ -136,48 +133,12 @@ add_dependencies(msvcrt_static psdk asm)
 
 spec2def(msvcrt.dll msvcrt.spec ADD_IMPORTLIB)
 
-# The `...` entry-point shells over the Rust engines, built ONCE with this directory's
-# flags and linked by every CRT DLL that takes the Rust cohab (msvcrt, msvcrt20,
-# msvcrt40, crtdll -- see msvcrt_rust_cohab.cmake). An OBJECT library, so its
-# objects are module objects in each consumer and win first-match over
-# msvcrt_static's archive members, exactly as when they were msvcrt's own sources.
-add_library(msvcrt_rust_shims OBJECT
-    # The printf `...` shells, as va_start trampolines over the Rust engine.
-    # In the MODULE and not in msvcrt_static ON PURPOSE: module objects are
-    # resolved before any archive member, so these win first-match over
-    # wcs.o's copies. Inside msvcrt_static the winner would depend on member
-    # order within one archive. See the file's own header for why the shells
-    # cannot be Rust (no va_start on stable) and cannot stay in wcs.c
-    # (clang inlines the C engine into its housemates).
-    rust_varargs_shim.c
-    # The scanf `...` shells, same story and same placement as the printf ones
-    # above: 40 va_start trampolines over the Rust engine in scanf.rs, in the
-    # MODULE so they win first-match over scanf.o's copies. There is a second
-    # reason here — scanf.c's 16 engines are `static`, so a Rust engine cannot
-    # replace them by first-match at all; the only way in is to define the
-    # trampolines somewhere the linker prefers, which is exactly this target.
-    rust_scanf_shim.c
-    # file.c's 20 `...` entry points — the 16 fprintf/printf/fwprintf/wprintf
-    # shells plus the four _open/_sopen ones, whose `...` carries an optional
-    # pmode rather than a format. Same reason and same placement as the two
-    # above: no va_start on stable, and left in file.c they would keep calling
-    # file.c's own C bodies. Their delegates are all external (the `v*` twins
-    # and `_sopen_dispatch`/`_wsopen_dispatch` are Rust in file.rs, and unlike
-    # scanf.c's engines they are not `static`), so first-match reaches Rust.
-    rust_file_varargs_shim.c
-    # process.c's 16 `_exec*`/`_spawn*` WINAPIV `...` entry points. Same reason and same
-    # placement as the three above: no va_start on stable, and left in process.c they
-    # would keep calling process.c's own C bodies. Their `_v*`-prefixed twins are Rust in
-    # process.rs and are not `static`, so first-match reaches Rust.
-    rust_process_varargs_shim.c
-    # console.c's 4 `_cprintf`/`_cwprintf` WINAPIV `...` entry points. Same reason and same
-    # placement as the four above. Their va_list twins needed no invention — `_vcprintf`,
-    # `_vcprintf_l`, `_vcwprintf` and `_vcwprintf_l` are console.c's own exports, and are
-    # Rust in console.rs.
-    rust_console_varargs_shim.c
-)
-target_compile_definitions(msvcrt_rust_shims PRIVATE _MSVCR_VER=0)
-add_dependencies(msvcrt_rust_shims psdk)
+# The `...` entry-point shells over the Rust engines were the C OBJECT library
+# msvcrt_rust_shims (rust_varargs_shim.c, rust_scanf_shim.c, rust_file_varargs_shim.c,
+# rust_process_varargs_shim.c, rust_console_varargs_shim.c), C only because stable Rust
+# cannot write va_start. They are msvcrt-crt-rust src/va_entries.rs now: varargs-rust's
+# va_entry! thunks, in the cohab archive every CRT DLL links whole ahead of msvcrt_static,
+# so they win first-match over scanf.c/wcs.c/file.c's copies as the module objects did.
 
 add_library(msvcrt MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/msvcrt_stubs.c
@@ -233,21 +194,13 @@ endif()
 
 include(msvcrt_rust_cohab.cmake)
 set(MSVCRT_CRT_RUST_LIB "${MSVCRT_RUST_COHAB_LIB}")
-# Every crate whose code lands in libmsvcrt_crt_cargo.a -- the path-dependency
-# closure of msvcrt-crt-cargo. A crate missing here compiles into the archive but
-# never triggers its rebuild (a stale archive, no error); crt-portable-rust was
-# missing the day the string family moved into it. verify_ucrtbase_cohab.py
-# derives the closure from the manifests and fails if this list and it disagree.
-set(MSVCRT_CRT_RUST_CRATES
-    msvcrt-crt-cargo cnt-rust musl-math crt-portable-rust crt-shared-rust msvcrt-crt-rust
-    msvcrt-sys panic-common)
-set(MSVCRT_CRT_RUST_GLOBS)
-set(MSVCRT_CRT_RUST_MANIFESTS)
-foreach(crate ${MSVCRT_CRT_RUST_CRATES})
-    list(APPEND MSVCRT_CRT_RUST_GLOBS ${MSVCRT_RUST_WORKSPACE_DIR}/${crate}/src/*.rs)
-    list(APPEND MSVCRT_CRT_RUST_MANIFESTS ${MSVCRT_RUST_WORKSPACE_DIR}/${crate}/Cargo.toml)
-endforeach()
-file(GLOB_RECURSE MSVCRT_CRT_RUST_SOURCES CONFIGURE_DEPENDS ${MSVCRT_CRT_RUST_GLOBS})
+# Every source compiled into libmsvcrt_crt_cargo.a: msvcrt-crt-cargo's path-dependency
+# closure, walked from the manifests (sources, Cargo.toml and build.rs of each crate). A
+# crate missing here compiles into the archive but never triggers its rebuild -- a stale
+# archive, no error. This was a hand-kept crate list, and it drifted three times (most
+# recently it lacked varargs-rust, so a varargs-rust edit left msvcrt.dll stale while
+# ucrtbase rebuilt); verify_ucrtbase_cohab.py fails if the derivation is replaced again.
+rust_crate_sources(MSVCRT_CRT_RUST_SOURCES "${MSVCRT_RUST_WORKSPACE_DIR}" msvcrt-crt-cargo)
 add_custom_command(
     OUTPUT ${MSVCRT_CRT_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -260,7 +213,6 @@ add_custom_command(
         ${MSVCRT_CRT_RUST_LIB}
     DEPENDS
             ${MSVCRT_CRT_RUST_SOURCES}
-            ${MSVCRT_CRT_RUST_MANIFESTS}
             ${MSVCRT_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust msvcrt CRT-body cohab (${MSVCRT_RUST_TARGET})"
 )
@@ -273,7 +225,12 @@ add_custom_target(rust_msvcrt_crt DEPENDS ${MSVCRT_CRT_RUST_LIB})
 # first-match. --whole-archive forces the Rust defs in first; the C copies then
 # become the ignored duplicates (--allow-multiple-definition). See lane plan §1b.
 link_msvcrt_rust_cohab(msvcrt)
-target_link_libraries(msvcrt msvcrt_static crtmath dbgrpt vcruntime wine chkstk ${PSEH_LIB})
+# ${PSEH_USER_LIB} and ${VCRT_SETJMP_LIB} first, by path (gcc.cmake): the SEH runtime and
+# setjmp/longjmp resolve from Rust before any of these libraries' own ${PSEH_LIB} and before
+# ntdll's import library, which exports _setjmp/longjmp and would otherwise answer them.
+# No `dbgrpt` (sdk/lib/crt/misc/dbgrpt.cpp): the _CrtDbgReport family is msvcrt-crt-rust's
+# dbgrpt.rs.
+target_link_libraries(msvcrt ${PSEH_USER_LIB} ${VCRT_SETJMP_LIB} msvcrt_static crtmath vcruntime wine chkstk)
 if(ARCH STREQUAL "i386")
     target_link_libraries(msvcrt chkesp)
 endif()

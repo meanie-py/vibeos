@@ -416,8 +416,8 @@ unsafe extern "system" fn IsAltTabWindow(hwnd: HWND) -> BOOL {
     }
 
     if GetClassNameW(hwnd, szClass.as_mut_ptr(), szClass.len() as _) == 0
-        || wcscmp(szClass.as_ptr(), b"S\0h\0e\0l\0l\0_\0T\0r\0a\0y\0W\0n\0d\0\0\0".as_ptr() as *const WCHAR) == 0
-        || wcscmp(szClass.as_ptr(), b"P\0r\0o\0g\0m\0a\0n\0\0\0".as_ptr() as *const WCHAR) == 0
+        || wcscmp(szClass.as_ptr(), win32macros_rust::wide_bytes!(b"S\0h\0e\0l\0l\0_\0T\0r\0a\0y\0W\0n\0d\0\0\0") as *const WCHAR) == 0
+        || wcscmp(szClass.as_ptr(), win32macros_rust::wide_bytes!(b"P\0r\0o\0g\0m\0a\0n\0\0\0") as *const WCHAR) == 0
     {
         return 1;
     }

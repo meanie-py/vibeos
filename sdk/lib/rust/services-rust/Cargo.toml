@@ -13,6 +13,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+win32macros-rust = { path = "../win32macros-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 # winsrv-sys is the user-mode FFI substrate (kernel32 Heap + error constants +
 # Win32 base types, over ntdll-sys). The services-private structs (START_LOCK)

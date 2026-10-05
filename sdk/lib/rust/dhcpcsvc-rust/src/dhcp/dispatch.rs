@@ -299,14 +299,14 @@ pub unsafe extern "C" fn got_one(l: *mut protocol) {
     if result == -1 {
         warning(
             b"receive_packet failed on %s: %d\0".as_ptr() as *const i8,
-            (*ip).name,
+            (*ip).name.as_ptr(),
             WSAGetLastError(),
         );
         (*ip).errors += 1;
         if (*ip).errors > 20 {
             warning(
                 b"Interface %s no longer appears valid.\0".as_ptr() as *const i8,
-                (*ip).name,
+                (*ip).name.as_ptr(),
             );
             (*ip).dead = 1;
             closesocket(((*l).fd) as usize);

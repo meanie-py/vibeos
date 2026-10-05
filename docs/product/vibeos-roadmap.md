@@ -568,6 +568,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **amd64: a user-mode Rust panic report can bugcheck the kernel (0x1E in the debug print
+  path)** (OPEN, 2026-10-04; kd lane). A panic in explorer's shell32 printed a stack walk that
+  ran into garbage, and the kernel faulted (C0000005) at `ntoskrnl+0xC64C0` reading it, which
+  symbolizes to the first line of kd-rust `KdIoPrintf` (`kdio.rs:822`), so the exact faulting
+  function is not confirmed. User mode must not be able to take the kernel down through a
+  debug print: the copy from the caller's buffer needs a probe under SEH. Repro: runs
+  `20261004-080222-cpyv4l2x` / `20261004-080920-w43f482z` (smoke-amd64, msvcrt-homebrew,
+  before the DllEntryPoint fix that removed the panic).
 - **fastfat: the free-dirent bitmap goes stale, then every create in that directory raises
   STATUS_FILE_CORRUPT_ERROR** (OPEN, 2026-10-04). Wine's ole32 `storage32` test (olewinetest
   payload, amd64) drives about 100,000 raises in 120 s. They are caught, so the test times out
@@ -646,6 +654,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   owed: the rest of cnt-rust's C89 set (trig, sqrt, ldexp, _logb, ...) onto libm with the
   same contract, and the ieee754 Bessel C onto libm. Still `-stub`: the `_d*`/`_fd*` internal helpers
   (`_dexp`, `_dnorm`, `_dpoly`, ...) and `_except1`. Owner: ucrt-rust.
+- **Delay-loaded imports are not delay-loaded** (OPEN, 2026-10-04; all arches). `VIBEOS_ENABLE_DELAYLOAD`
+  is ON, yet no module carries a delay-import directory (`DelayImportDescriptorRVA` 0 in shell32,
+  comdlg32, setup's reactos.exe on i386 and amd64): every `add_delay_importlibs` DLL is bound as
+  a regular import, and the delay-load runtime (`__delayLoadHelper2`, Rust since 2026-10-04 in
+  `sdk/lib/rust/delayimp-rust`) is linked everywhere and called nowhere. The sdk apitests say so
+  themselves -- `tools/payloads/delayimp` (i386): all three skip with "No
+  IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT found", nohook exits 0 and globalhook/runtimehook exit 128,
+  identically against the C and the Rust runtime (A/B). Owed: find where the `_delayed`
+  import libraries stop producing delay thunks (gcc.cmake `add_delay_importlibs`,
+  docs/engineering/archive/delay-import-llvm-mingw-design.md), then grade the helper for real.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
   `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs
@@ -666,7 +684,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (string.c:831/835) -- ROOT-CAUSED, expected: kernel32 exports `IsValidLocaleName` only at
   `-version=0x600+` and this build is NT 5.2, so ucrtbase takes its downlevel locale path,
   where ".UTF-8" is not a code page and `en_US.UTF-8` resolves by LCID to ANSI 1252 (UCRT
-  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` dies on an invalid handle (0xC0000008).
+  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` dies on an invalid handle (0xC0000008). `misc` now runs to the end (198,593 checks, 2026-10-04) with 3 failures, identical with and without that day's vcstartup/TLS move (A/B on one tree): misc.c:1126/1127 (a `_mbstowcs`-class codepage conversion, `ret = 4`, `"a?"` for `"\x96\xd8"`) and misc.c:1355 (`clock()` ~3 s below its window measured from the process creation time, both runs; TCG start-up latency or the clock base, not yet split).
   `environ`, `printf` (1,950), `scanf` and `thread` (60) are clean on both. `thread` was
   an AV at EIP 0 until two fixes the same day: kernel32's `FindResourceA` asked for
   language 4 (LANG_CHINESE) instead of LANG_NEUTRAL, so EVERY ANSI resource lookup in the
@@ -696,14 +714,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`NextVbo` reset per iteration; Marlett never loaded); ks pin lists, fltmgr context
   terminator, pcix power/IPI spins. appstorm arm64: 40/43, cpl-appwiz and cpl-ncpa now pass.
   OPEN:
-  - **rapps on arm64**: its database download fails ("Check Internet Connection"), and the
-    OK-only error box then ignores WM_CLOSE (sndvol32's expected box did the same once in two
-    runs). Probably the user-mode network path now that setup starts Dhcp/Dnscache; netstack
-    logs a `TDI open: ControlChannel` every few seconds since. Owner: shell32-com lane.
+  - **rapps on arm64**: database download FIXED 2026-10-04 (netprobe payload: DNS, TCP and
+    wininet https to rapps.reactos.org, 2.4 MB rappmgr2.cab, VERDICT=PASS). Four layers were
+    broken: netstack never published its DHCP DNS servers to `Tcpip\Parameters\Interfaces`
+    (iphlpapi found none), smoltcp's single interface-wide ARP silence starved later lookups
+    (netstack now warms the router and on-link DNS servers), AFD select wrote poll status
+    into the IRP's copy rather than the caller's buffer, ws2_32 dropped `LUP_RETURN_BLOB` so
+    gethostbyname got no hostent; and bcrypt's ECDSA was a stub, so Let's Encrypt's chain never
+    verified (upstream bcrypt restored over mbedTLS 3.6). Still OPEN: rapps itself not
+    re-run under appstorm since; the OK-only error box ignoring WM_CLOSE; `recvfrom` ignores
+    SO_RCVTIMEO (a 3s timeout blocked 9 minutes); smoltcp's ARP silence is still global
+    (a per-address limit is a vendor patch, deferred).
   - **cpl-joy / cpl-appwiz intermittently open no window within 37s** (one each in two runs).
-  - **The dropped RpcTryExcept class**: the user-mode Rust RPC clients (advapi32
-    scm/eventlog/lsa, dnsapi, netapi32, samlib, ...) call their stubs with the C's RpcTryExcept
-    dropped ("DUMMY_PSEH -- execute directly"), so an unavailable RPC server kills the caller.
+  - **The dropped RpcTryExcept class**: FIXED 2026-10-04 for the user-mode RPC clients.
+    ntdll now exports the kernel's SEH trampolines (`RtlSehTryExcept`, sehtry.c built
+    `-DSEHTRY_USER_MODE`) and `ntdll_sys::seh::rpc_try` restores each C handler. 245 stub
+    calls go through it: dnsapi's 6 by hand, the rest in advapi32 (scm, sctrl, eventlog,
+    lsa), netapi32, samlib and wlanapi rewritten by `tools/rpc_try_wrap.py` from the C's own
+    `RpcExcept` bodies. netprobe's
+    rpc-raise step: OpenSCManagerW/OpenEventLogW on a missing host return 1722. Other
+    user-mode crates with DUMMY_PSEH-dropped handlers (non-RPC) are not yet audited.
   - **Safe boot is missing from the Rust kernel on every arch**: ex-rust neither parses
     `SAFEBOOT:` nor creates `CONTROL\SAFEBOOT\Option` (init.c Phase1InitializationDiscard).
   - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are
@@ -789,6 +819,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
   entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
   smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
+- **Kernel user-pointer probes: a bad pointer bugchecks, and some never check — OPEN**
+  (2026-10-04). The C syscalls probe inside `_SEH2_TRY` and return the exception code;
+  this kernel has no SEH, so a raising probe is an unhandled exception (BUGCHECK 0x1E)
+  wherever the C would have returned `STATUS_ACCESS_VIOLATION`. The link-guard work
+  found the typed `ntkrnl-sys` Probe* helpers (`inline/common.rs`, `macros.rs`) doing NO
+  `MmUserProbeAddress` check at all, so a user caller could make the kernel read or write
+  a kernel address; it added the check and moved all 26 call sites of those helpers to
+  `probe.rs`'s `Result` probes with the C handler's cleanup. Still owed, ~160 sites:
+  the raising `ProbeForRead`/`ProbeForWrite` exports (82 calls; a bad user buffer
+  bugchecks), `ProbeAndCapture*` (37), and the still-UNCHECKED typed helpers in
+  `inline/mm.rs` and friends (`ProbeForWriteIoStatusBlock`, `ProbeForWriteSize_t`,
+  `ProbeForReadUnicodeString`, … ~40 calls, the same kernel-address hole). Biggest
+  users: win32k-rust 46, ntoskrnl-rust 46, iomgr-rust 19, ex-rust 14, ks-rust 13. Fix
+  shape: per site, `probe_read_generic`/`probe_write_generic` + the C except handler.
 - **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
   `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
   cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
@@ -1064,6 +1108,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   consume), and the drainer appends the same text to `_buf` that it tees to the file.
   So the in-memory stream and the tee diverge somewhere not yet found. Until it is, a
   payload's verdict must be read from its serial log, not from the smoke exit code.
+- **Pyright does not cover the harness core -- OWED (2026-10-04).** `tests/qemu/cli/tooling.py`
+  now ruff- and format-checks all of `tests/qemu`, but `_PYRIGHT_ROOTS` still stops at
+  `tests/qemu/cli`, so `vm.py`, `backend.py` and the test modules have no type checking. The
+  lint widening found two `assert False` in `test_smoke.py` that `python -O` would strip;
+  types are the next layer of the same blind spot. Expect a real first-pass count before
+  gating it.
 - **`test_bindgen_generation` fails under PARALLEL check-tooling and passes alone — it
   blocked a land. OPEN** (2026-09-25). Five of its eleven cases failed inside
   `./vibeos-cli check-tooling` with
@@ -1385,13 +1435,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     commits/decommits that page). Run with `VIBEOS_QEMU_SMP=N ./vibeos-cli smoke --arch X
     --payload rpmprobe` and read `[RPMPROBE] ... race` in the serial.
     i386 `-smp 4`: PASS (46,273 copies ok, 686,336 clean errors, 0 silent, no bugcheck).
-    arm64 `-smp 2`: the fixed-address probes pass, then the box WEDGES in the race phase
-    (serial silent right after the race threads start). Not localized; attach gdb during
-    the race. arm64's TB flush is a broadcast `tlbi vmalle1is`, so it is not the IPI path.
-    arm64 also prints `ASSERT FAILED: KeGetCurrentIrql() == SYNCH_LEVEL at ke/ipi.rs:312` on
-    every MP boot, from the `KeIpiGenericCall` self-test. Upstream never implemented
-    `KiIpiSendPacket`; our assert names a level its only caller does not raise to (it calls at
-    DISPATCH), and it went live with `c4d82e425fc`. Non-fatal; decide the contract.
+    arm64 `-smp 2`: the 2026-09-25 race-phase wedge is GONE (re-run 2026-10-04: PASS, 84,671
+    copies, 0 silent; presumably fixed by the 09-26 KNODE/affinity/spinlock work). arm64
+    `-smp 4`: PASS 3 of 4 (59,153 / 63,700 / 902 copies, 0 silent). The fourth died BEFORE the
+    probe ran, in first-boot setup: `BUGCHECK 0x50` on `0xfffffa800041d560`, faulting in
+    `CmpFindSubKeyByName` entry (`cmlib-rust/src/cmindex.rs:1201`) under setupapi's install
+    work, i.e. a key-node pointer that was no longer mapped. OPEN, 1 in 8 arm64 `-smp 4`
+    boots that ran past setup, never seen at `-smp 1` or `-smp 2` in today's runs; the shape
+    fits a registry-lock hole (a cell pointer held across another CPU's bin change), not yet
+    shown. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
+    The `ke/ipi.rs` `== SYNCH_LEVEL` assert was already re-contracted to `>= DISPATCH_LEVEL`
+    and no longer prints.
     amd64 `-smp 2` and `-smp 4`: FIXED 2026-10-04. The boot death seen 2026-09-25 was
     intermittent (2/8 and 9/16 `-smp 2` boots reached the desktop), with five unrelated-looking
     faces: csrss `0xC000001D` twice at the same basesrv address, `0x6B`/`0xC0000032`, a kernel
@@ -1882,6 +1936,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   A boot at 2026-09-21 00:45 ran the same guests 11/11, so it is recent; the amd64 media
   changed only by winlogon.exe between the two, which is suspicious but unproven —
   nothing in that diff runs before marshal32.
+  **Rate (2026-10-04):** 1 miss in 25 queue-batch gates (04:11-15:09, `smoke-amd64-a1`
+  serial, `[WINLOGON] marshal32.exe exit =` present or not). The miss (gate
+  `20261004-145947-0qwjkolk`) held master as LADDER_FAIL beside a real DIFFTEST_FAIL; a
+  lone LADDER_FAIL with this signature is this entry, not the batch under test.
 
 - **Wine's conformance suites now run under WoW64, and the first two subtests found
   four separate bugs. OPEN** (2026-09-21). `user32:wsprintf` passes clean (46 tests, 0
@@ -5371,6 +5429,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   early boot, and several of the 14 sites sit in PFN-lock/high-IRQL context — so a naive swap
   risks a deadlock in the subsystem these guards exist to watch. Needs a per-site context audit
   plus a 3-arch smoke, which is why it is not bundled with the #19 closure.
+
+  **RESOLVED on every arch (2026-10-03/04).** `mm_guard_trip!` went portable (11 sites,
+  `DbgPrint` on x86) on 10-03; the three spinlock-held sites use `mm_guard_trip_atomic!`, which
+  now writes through `raw_trace_hex` -- the arm64 UART tracer, or on x86 a polled COM1 write
+  that takes no lock and is safe at any IRQL. Verified on the binaries: `MMGUARD` strings in
+  `ntkrnlmp.exe` are now **amd64 42, i386 42** (from 0 on 10-03). All 14 sites report on all
+  three arches, so x86 silence at them now means something.
 
   Related and also owed: `MmInsertRmap`'s two early returns (`mm/rmap.rs:453`, `:476`) still
   `return` where the C `KeBugCheck(MEMORY_MANAGEMENT)`s (`ntoskrnl/mm/rmap.c:363`, `:380`), and

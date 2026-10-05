@@ -140,7 +140,6 @@ extern "C" {
 }
 // NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
 extern "system" {
-    fn ProbeForWriteUlong(address: *mut ULONG);
 }
 
 extern "system" {
@@ -1172,8 +1171,11 @@ pub unsafe extern "system" fn NtSetThreadExecutionState(
         return STATUS_INVALID_PARAMETER;
     }
 
+    // C: inside _SEH2_TRY, handler returns the exception code. No SEH here.
     if PreviousMode != KernelMode {
-        ProbeForWriteUlong(PreviousFlags as *mut ULONG);
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(PreviousFlags as *mut ULONG, 1, PreviousMode) {
+            return status;
+        }
     }
 
     #[cfg(target_arch = "x86")]

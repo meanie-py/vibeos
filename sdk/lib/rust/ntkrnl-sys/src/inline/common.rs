@@ -26,6 +26,8 @@ extern "system" {
     fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 
+use crate::probe::probe_user_range;
+
 // ============================================================================
 // ICIF flags for DefaultQueryInfoBufferCheck / DefaultSetInfoBufferCheck
 // ============================================================================
@@ -87,82 +89,44 @@ pub unsafe fn PspClearCrossThreadFlag(thread: ddk::PETHREAD, flag: ULONG) {
 // ============================================================================
 // Probe macros (from sdk/include/reactos/probe.h)
 // ============================================================================
-//
-// Every typed probe is `ProbeForReadGenericType` / `ProbeForWriteGenericType`:
-// raise an access violation unless the whole object lies below
-// `MmUserProbeAddress` (and the span does not wrap), then touch it. These used to
-// be bare volatile accesses with NO range check, so every syscall whose probe
-// resolved here (NtProtectVirtualMemory's OldAccessProtection, the config/po/dbgk
-// out-params, ...) wrote through a kernel pointer handed in from user mode.
 
-extern "system" {
-    // ex-rust's definition returns `()`; don't trust a `-> !` it doesn't promise.
-    #[link_name = "ExRaiseAccessViolation"]
-    fn probe_raise_access_violation();
-}
-
-extern "C" {
-    static MmUserProbeAddress: ULONG_PTR;
-}
-
-/// probe.h's test: `Ptr + sizeof(Type) - 1` wraps or reaches `MmUserProbeAddress`.
-#[inline]
-unsafe fn probe_outside_user<T>(ptr: *const T) -> bool {
-    let first = ptr as ULONG_PTR;
-    let last = first.wrapping_add(core::mem::size_of::<T>() - 1);
-    last < first || last >= MmUserProbeAddress
-}
-
-/// `ProbeForReadGenericType(Ptr, T, Default)`; `Default` is all-zero for every user.
-#[inline]
-unsafe fn probe_read_generic_type<T: Copy>(ptr: *const T) -> T {
-    if probe_outside_user(ptr) {
-        probe_raise_access_violation();
-        return core::mem::zeroed();
-    }
-    core::ptr::read_volatile(ptr)
-}
-
-/// `ProbeForWriteGenericType(Ptr, T)`: the touch writes the value back unchanged.
-#[inline]
-unsafe fn probe_write_generic_type<T: Copy>(ptr: *mut T) {
-    if probe_outside_user(ptr) {
-        probe_raise_access_violation();
-        return;
-    }
-    core::ptr::write_volatile(ptr, core::ptr::read_volatile(ptr));
-}
-
-/// ProbeForReadLargeInteger — probe.h `ProbeForReadGenericType(.., LARGE_INTEGER, ..)`.
+/// ProbeForReadLargeInteger — volatile read of a LARGE_INTEGER from user-mode.
 #[inline]
 pub unsafe fn ProbeForReadLargeInteger(
     addr: *const ddk::_LARGE_INTEGER,
 ) -> ddk::_LARGE_INTEGER {
-    probe_read_generic_type(addr)
+    probe_user_range(addr);
+    core::ptr::read_volatile(addr)
 }
 
-/// ProbeForReadUchar — probe.h `ProbeForReadGenericType(Ptr, UCHAR, 0)`.
+/// ProbeForReadUchar — volatile read of a UCHAR from user-mode.
 #[inline]
 pub unsafe fn ProbeForReadUchar(addr: *const u8) -> u8 {
-    probe_read_generic_type(addr)
+    probe_user_range(addr);
+    core::ptr::read_volatile(addr)
 }
 
-/// ProbeForReadUshort — probe.h `ProbeForReadGenericType(Ptr, USHORT, 0)`.
+/// ProbeForReadUshort — volatile read of a USHORT from user-mode.
 #[inline]
 pub unsafe fn ProbeForReadUshort(addr: *const u16) -> u16 {
-    probe_read_generic_type(addr)
+    probe_user_range(addr);
+    core::ptr::read_volatile(addr)
 }
 
-/// ProbeForWriteHandle — probe.h `ProbeForWriteGenericType(Ptr, HANDLE)`.
+/// ProbeForWriteHandle — volatile read/write to validate user-mode handle ptr.
 #[inline]
 pub unsafe fn ProbeForWriteHandle(ptr: *mut ddk::HANDLE) {
-    probe_write_generic_type(ptr)
+    probe_user_range(ptr);
+    let val = core::ptr::read_volatile(ptr);
+    core::ptr::write_volatile(ptr, val);
 }
 
-/// ProbeForWriteUlong — probe.h `ProbeForWriteGenericType(Ptr, ULONG)`.
+/// ProbeForWriteUlong — volatile read/write to validate user-mode ULONG ptr.
 #[inline]
 pub unsafe fn ProbeForWriteUlong(ptr: *mut ULONG) {
-    probe_write_generic_type(ptr)
+    probe_user_range(ptr);
+    let val = core::ptr::read_volatile(ptr);
+    core::ptr::write_volatile(ptr, val);
 }
 
 // ============================================================================
@@ -490,10 +454,12 @@ pub unsafe fn RtlLongLongAdd(
 // ProbeForWritePointer (macro from probe.h)
 // ============================================================================
 
-/// ProbeForWritePointer — probe.h `ProbeForWriteGenericType(Ptr, PVOID)`.
+/// ProbeForWritePointer — volatile read/write to validate user-mode pointer-sized ptr.
 #[inline]
 pub unsafe fn ProbeForWritePointer(ptr: *mut PVOID) {
-    probe_write_generic_type(ptr)
+    probe_user_range(ptr);
+    let val = core::ptr::read_volatile(ptr);
+    core::ptr::write_volatile(ptr, val);
 }
 
 // ============================================================================
@@ -589,20 +555,24 @@ pub unsafe fn ExceptionRecord32To64(
 // ProbeForWriteBoolean (probe.h macro wrapping ProbeForWriteGenericType)
 // ============================================================================
 
-/// ProbeForWriteBoolean — probe.h `ProbeForWriteGenericType(Ptr, BOOLEAN)`.
+/// ProbeForWriteBoolean — volatile read/write to validate user-mode BOOLEAN ptr.
 #[inline]
 pub unsafe fn ProbeForWriteBoolean(ptr: *mut BOOLEAN) {
-    probe_write_generic_type(ptr)
+    probe_user_range(ptr);
+    let val = core::ptr::read_volatile(ptr);
+    core::ptr::write_volatile(ptr, val);
 }
 
 // ============================================================================
 // ProbeForWriteLangId (probe.h macro wrapping ProbeForWriteGenericType)
 // ============================================================================
 
-/// ProbeForWriteLangId — probe.h `ProbeForWriteGenericType(Ptr, LANGID)`.
+/// ProbeForWriteLangId — volatile read/write to validate user-mode LANGID ptr.
 #[inline]
 pub unsafe fn ProbeForWriteLangId(ptr: *mut u16) {
-    probe_write_generic_type(ptr)
+    probe_user_range(ptr);
+    let val = core::ptr::read_volatile(ptr);
+    core::ptr::write_volatile(ptr, val);
 }
 
 // ============================================================================

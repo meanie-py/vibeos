@@ -40,9 +40,11 @@ typedef struct _UNICODE_STRING {
 #define STATUS_BUFFER_OVERFLOW    ((NTSTATUS)0x80000005L)
 #define STATUS_INVALID_PARAMETER  ((NTSTATUS)0xC000000DL)
 
-/* `_InterlockedIncrement` / `_InterlockedDecrement` / `IsListEmpty` for the
- * consrv Rust members: winsrv-rust consrv/shim.rs, on every arch. (A 64-bit C
- * copy lived here and won the link by order alone.) */
+/*
+ * _InterlockedIncrement/_InterlockedDecrement/IsListEmpty for the consrv Rust
+ * members are winsrv-rust's own (consrv/shim.rs). 64-bit copies here were
+ * duplicate symbols that won the link by order; tools/link_guard.py refuses those.
+ */
 
 /* libcntpr — wide vsnprintf; writes at most `count` wchars (incl. NUL on
  * success), returns the number written, or a negative value on truncation. */

@@ -218,7 +218,11 @@ pub unsafe extern "system" fn getxyDataEnt(
         / core::mem::size_of::<AFPROTOCOLS>()) as DWORD;
     (*WsaQuery).lpafpProtocols = core::ptr::addr_of_mut!(afp) as *mut AFPROTOCOLS;
 
-    if !!IsEqualGUID(Type, core::ptr::addr_of!(HostnameGuid)) {
+    // C: `if (!IsEqualGUID(Type, &HostnameGuid))`. This read `!!IsEqualGUID(..)`, a
+    // double negation, so the condition was inverted: gethostbyname never asked for
+    // the hostent blob it then requires, and every lookup failed WSANO_DATA with the
+    // address already resolved.
+    if !IsEqualGUID(Type, core::ptr::addr_of!(HostnameGuid)) {
         dwControlFlags |= LUP_RETURN_BLOB;
     }
 

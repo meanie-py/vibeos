@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -170,7 +171,7 @@ pub unsafe extern "system" fn SamAddMemberToAlias(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrAddMemberToAlias(AliasHandle as SAMPR_HANDLE, MemberId as PRPC_SID);
+    Status = rpc_try(|| SamrAddMemberToAlias(AliasHandle as SAMPR_HANDLE, MemberId as PRPC_SID)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -183,7 +184,7 @@ pub unsafe extern "system" fn SamAddMemberToGroup(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrAddMemberToGroup(GroupHandle as SAMPR_HANDLE, MemberId, Attributes);
+    Status = rpc_try(|| SamrAddMemberToGroup(GroupHandle as SAMPR_HANDLE, MemberId, Attributes)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     return Status;
 }
@@ -204,7 +205,7 @@ pub unsafe extern "system" fn SamAddMultipleMembersToAlias(
     Buffer.Count = MemberCount;
     Buffer.Sids = MemberIds as PSAMPR_SID_INFORMATION;
 
-    Status = SamrAddMultipleMembersToAlias(AliasHandle as SAMPR_HANDLE, &mut Buffer);
+    Status = rpc_try(|| SamrAddMultipleMembersToAlias(AliasHandle as SAMPR_HANDLE, &mut Buffer)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -329,7 +330,7 @@ pub unsafe extern "system" fn SamChangePasswordUser(
         return Status;
     }
 
-    Status = SamrChangePasswordUser(
+    Status = rpc_try(|| SamrChangePasswordUser(
         UserHandle as SAMPR_HANDLE,
         (OldLmPasswordPresent != 0 && NewLmPasswordPresent != 0) as u8,
         pOldLmEncryptedWithNewLm,
@@ -341,7 +342,7 @@ pub unsafe extern "system" fn SamChangePasswordUser(
         core::ptr::null_mut(),
         (FALSE) as u8,
         core::ptr::null_mut(),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     // C: this is the body of RpcExcept(EXCEPTION_EXECUTE_HANDLER). We build with
     // -D_USE_DUMMY_PSEH=1, so it is compiled but NEVER entered. The translation
     // emitted it as straight-line code, which unconditionally clobbered the real
@@ -379,7 +380,7 @@ pub unsafe extern "system" fn SamChangePasswordUser3(
 pub unsafe extern "system" fn SamCloseHandle(mut SamHandle: SAM_HANDLE) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrCloseHandle(core::ptr::addr_of_mut!(SamHandle) as *mut SAMPR_HANDLE);
+    Status = rpc_try(|| SamrCloseHandle(core::ptr::addr_of_mut!(SamHandle) as *mut SAMPR_HANDLE)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     return Status;
 }
@@ -397,13 +398,13 @@ pub unsafe extern "system" fn SamCreateAliasInDomain(
     *AliasHandle = core::ptr::null_mut();
     *RelativeId = 0;
 
-    Status = SamrCreateAliasInDomain(
+    Status = rpc_try(|| SamrCreateAliasInDomain(
         DomainHandle as SAMPR_HANDLE,
         AccountName as PRPC_UNICODE_STRING,
         DesiredAccess,
         AliasHandle as *mut SAMPR_HANDLE,
         RelativeId,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -421,13 +422,13 @@ pub unsafe extern "system" fn SamCreateGroupInDomain(
     *GroupHandle = core::ptr::null_mut();
     *RelativeId = 0;
 
-    Status = SamrCreateGroupInDomain(
+    Status = rpc_try(|| SamrCreateGroupInDomain(
         DomainHandle as SAMPR_HANDLE,
         AccountName as PRPC_UNICODE_STRING,
         DesiredAccess,
         GroupHandle as *mut SAMPR_HANDLE,
         RelativeId,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -447,7 +448,7 @@ pub unsafe extern "system" fn SamCreateUser2InDomain(
     *UserHandle = core::ptr::null_mut();
     *RelativeId = 0;
 
-    Status = SamrCreateUser2InDomain(
+    Status = rpc_try(|| SamrCreateUser2InDomain(
         DomainHandle as SAMPR_HANDLE,
         AccountName as PRPC_UNICODE_STRING,
         AccountType,
@@ -455,7 +456,7 @@ pub unsafe extern "system" fn SamCreateUser2InDomain(
         UserHandle as *mut SAMPR_HANDLE,
         GrantedAccess,
         RelativeId,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -473,13 +474,13 @@ pub unsafe extern "system" fn SamCreateUserInDomain(
     *UserHandle = core::ptr::null_mut();
     *RelativeId = 0;
 
-    Status = SamrCreateUserInDomain(
+    Status = rpc_try(|| SamrCreateUserInDomain(
         DomainHandle as SAMPR_HANDLE,
         AccountName as PRPC_UNICODE_STRING,
         DesiredAccess,
         UserHandle as *mut SAMPR_HANDLE,
         RelativeId,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -495,7 +496,7 @@ pub unsafe extern "system" fn SamDeleteAlias(AliasHandle: SAM_HANDLE) -> NTSTATU
         return STATUS_INVALID_HANDLE;
     }
 
-    Status = SamrDeleteAlias(core::ptr::addr_of_mut!(LocalAliasHandle));
+    Status = rpc_try(|| SamrDeleteAlias(core::ptr::addr_of_mut!(LocalAliasHandle))).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -511,7 +512,7 @@ pub unsafe extern "system" fn SamDeleteGroup(GroupHandle: SAM_HANDLE) -> NTSTATU
         return STATUS_INVALID_HANDLE;
     }
 
-    Status = SamrDeleteGroup(core::ptr::addr_of_mut!(LocalGroupHandle));
+    Status = rpc_try(|| SamrDeleteGroup(core::ptr::addr_of_mut!(LocalGroupHandle))).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -527,7 +528,7 @@ pub unsafe extern "system" fn SamDeleteUser(UserHandle: SAM_HANDLE) -> NTSTATUS 
         return STATUS_INVALID_HANDLE;
     }
 
-    Status = SamrDeleteUser(core::ptr::addr_of_mut!(LocalUserHandle));
+    Status = rpc_try(|| SamrDeleteUser(core::ptr::addr_of_mut!(LocalUserHandle))).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -549,13 +550,13 @@ pub unsafe extern "system" fn SamEnumerateAliasesInDomain(
 
     *Buffer = core::ptr::null_mut();
 
-    Status = SamrEnumerateAliasesInDomain(
+    Status = rpc_try(|| SamrEnumerateAliasesInDomain(
         DomainHandle as SAMPR_HANDLE,
         EnumerationContext,
         core::ptr::addr_of_mut!(EnumBuffer),
         PreferedMaximumLength,
         CountReturned,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if !EnumBuffer.is_null() {
         if !(*EnumBuffer).Buffer.is_null() {
@@ -587,13 +588,13 @@ pub unsafe extern "system" fn SamEnumerateDomainsInSamServer(
 
     *Buffer = core::ptr::null_mut();
 
-    Status = SamrEnumerateDomainsInSamServer(
+    Status = rpc_try(|| SamrEnumerateDomainsInSamServer(
         ServerHandle as SAMPR_HANDLE,
         EnumerationContext,
         core::ptr::addr_of_mut!(EnumBuffer),
         PreferedMaximumLength,
         CountReturned,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if !EnumBuffer.is_null() {
         if !(*EnumBuffer).Buffer.is_null() {
@@ -625,13 +626,13 @@ pub unsafe extern "system" fn SamEnumerateGroupsInDomain(
 
     *Buffer = core::ptr::null_mut();
 
-    Status = SamrEnumerateGroupsInDomain(
+    Status = rpc_try(|| SamrEnumerateGroupsInDomain(
         DomainHandle as SAMPR_HANDLE,
         EnumerationContext,
         core::ptr::addr_of_mut!(EnumBuffer),
         PreferedMaximumLength,
         CountReturned,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if !EnumBuffer.is_null() {
         if !(*EnumBuffer).Buffer.is_null() {
             *Buffer = (*EnumBuffer).Buffer as PVOID;
@@ -663,14 +664,14 @@ pub unsafe extern "system" fn SamEnumerateUsersInDomain(
 
     *Buffer = core::ptr::null_mut();
 
-    Status = SamrEnumerateUsersInDomain(
+    Status = rpc_try(|| SamrEnumerateUsersInDomain(
         DomainHandle as SAMPR_HANDLE,
         EnumerationContext,
         UserAccountControl,
         &mut EnumBuffer,
         PreferedMaximumLength,
         CountReturned,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if !EnumBuffer.is_null() {
         if !(*EnumBuffer).Buffer.is_null() {
             *Buffer = (*EnumBuffer).Buffer as PVOID;
@@ -714,11 +715,11 @@ pub unsafe extern "system" fn SamGetAliasMembership(
     SidArray.Count = PassedCount;
     SidArray.Sids = Sids as PSAMPR_SID_INFORMATION;
 
-    Status = SamrGetAliasMembership(
+    Status = rpc_try(|| SamrGetAliasMembership(
         DomainHandle as SAMPR_HANDLE,
         &mut SidArray,
         &mut Membership,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if NT_SUCCESS(Status) {
         *MembershipCount = Membership.Count;
         *Aliases = Membership.Element;
@@ -758,12 +759,12 @@ pub unsafe extern "system" fn SamGetDisplayEnumerationIndex(
         return STATUS_INVALID_PARAMETER;
     }
 
-    Status = SamrGetDisplayEnumerationIndex2(
+    Status = rpc_try(|| SamrGetDisplayEnumerationIndex2(
         DomainHandle as SAMPR_HANDLE,
         DisplayInformation,
         Prefix as PRPC_UNICODE_STRING,
         Index,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -777,7 +778,7 @@ pub unsafe extern "system" fn SamGetGroupsForUser(
     let mut GroupsBuffer: PSAMPR_GET_GROUPS_BUFFER = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
-    Status = SamrGetGroupsForUser(UserHandle as SAMPR_HANDLE, &mut GroupsBuffer);
+    Status = rpc_try(|| SamrGetGroupsForUser(UserHandle as SAMPR_HANDLE, &mut GroupsBuffer)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if NT_SUCCESS(Status) {
         *Groups = (*GroupsBuffer).Groups;
         *MembershipCount = (*GroupsBuffer).MembershipCount;
@@ -814,10 +815,10 @@ pub unsafe extern "system" fn SamGetMembersInAlias(
 
     SidArray.Sids = core::ptr::null_mut();
 
-    Status = SamrGetMembersInAlias(
+    Status = rpc_try(|| SamrGetMembersInAlias(
         AliasHandle as SAMPR_HANDLE,
         &mut SidArray,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if NT_SUCCESS(Status) {
         *MemberCount = SidArray.Count;
         *MemberIds = SidArray.Sids as *mut PSID;
@@ -842,7 +843,7 @@ pub unsafe extern "system" fn SamGetMembersInGroup(
     let mut MembersBuffer: PSAMPR_GET_MEMBERS_BUFFER = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
-    Status = SamrGetMembersInGroup(GroupHandle as SAMPR_HANDLE, &mut MembersBuffer);
+    Status = rpc_try(|| SamrGetMembersInGroup(GroupHandle as SAMPR_HANDLE, &mut MembersBuffer)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if NT_SUCCESS(Status) {
         *MemberIds = (*MembersBuffer).Members;
         *Attributes = (*MembersBuffer).Attributes;
@@ -874,11 +875,11 @@ pub unsafe extern "system" fn SamLookupDomainInSamServer(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrLookupDomainInSamServer(
+    Status = rpc_try(|| SamrLookupDomainInSamServer(
         ServerHandle as SAMPR_HANDLE,
         Name as PRPC_UNICODE_STRING,
         DomainId as *mut PRPC_SID,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -912,13 +913,13 @@ pub unsafe extern "system" fn SamLookupIdsInDomain(
         *Use = core::ptr::null_mut();
     }
 
-    Status = SamrLookupIdsInDomain(
+    Status = rpc_try(|| SamrLookupIdsInDomain(
         DomainHandle as SAMPR_HANDLE,
         Count,
         RelativeIds,
         core::ptr::addr_of_mut!(NamesBuffer),
         core::ptr::addr_of_mut!(UseBuffer),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if NT_SUCCESS(Status) {
         *Names = (MIDL_user_allocate((Count as usize * core::mem::size_of::<RPC_UNICODE_STRING>()) as SIZE_T) as *mut RPC_UNICODE_STRING).cast();
@@ -1108,13 +1109,13 @@ pub unsafe extern "system" fn SamLookupNamesInDomain(
     *RelativeIds = core::ptr::null_mut();
     *Use = core::ptr::null_mut();
 
-    Status = SamrLookupNamesInDomain(
+    Status = rpc_try(|| SamrLookupNamesInDomain(
         DomainHandle as SAMPR_HANDLE,
         Count,
         Names as PRPC_UNICODE_STRING,
         core::ptr::addr_of_mut!(RidBuffer),
         core::ptr::addr_of_mut!(UseBuffer),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if NT_SUCCESS(Status) {
         *RelativeIds = MIDL_user_allocate((Count as usize * core::mem::size_of::<ULONG>()) as SIZE_T) as PULONG;
@@ -1168,12 +1169,12 @@ pub unsafe extern "system" fn SamOpenAlias(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrOpenAlias(
+    Status = rpc_try(|| SamrOpenAlias(
         DomainHandle as SAMPR_HANDLE,
         DesiredAccess,
         AliasId,
         AliasHandle as *mut SAMPR_HANDLE,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     return Status;
 }
@@ -1187,12 +1188,12 @@ pub unsafe extern "system" fn SamOpenDomain(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrOpenDomain(
+    Status = rpc_try(|| SamrOpenDomain(
         ServerHandle as SAMPR_HANDLE,
         DesiredAccess,
         DomainId as PRPC_SID,
         DomainHandle as *mut SAMPR_HANDLE,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1206,12 +1207,12 @@ pub unsafe extern "system" fn SamOpenGroup(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrOpenGroup(
+    Status = rpc_try(|| SamrOpenGroup(
         DomainHandle as SAMPR_HANDLE,
         DesiredAccess,
         GroupId,
         GroupHandle as *mut SAMPR_HANDLE,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1225,12 +1226,12 @@ pub unsafe extern "system" fn SamOpenUser(
 ) -> NTSTATUS {
     let Status: NTSTATUS;
 
-    Status = SamrOpenUser(
+    Status = rpc_try(|| SamrOpenUser(
         DomainHandle as SAMPR_HANDLE,
         DesiredAccess,
         UserId,
         UserHandle as *mut SAMPR_HANDLE,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1254,7 +1255,7 @@ pub unsafe extern "system" fn SamQueryDisplayInformation(
         return STATUS_INVALID_PARAMETER;
     }
 
-    Status = SamrQueryDisplayInformation3(
+    Status = rpc_try(|| SamrQueryDisplayInformation3(
         DomainHandle as SAMPR_HANDLE,
         DisplayInformation,
         Index,
@@ -1263,7 +1264,7 @@ pub unsafe extern "system" fn SamQueryDisplayInformation(
         TotalAvailable,
         TotalReturned,
         &mut LocalBuffer,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if NT_SUCCESS(Status) {
         match DisplayInformation {
@@ -1306,11 +1307,11 @@ pub unsafe extern "system" fn SamQueryInformationAlias(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrQueryInformationAlias(
+    Status = rpc_try(|| SamrQueryInformationAlias(
         AliasHandle as SAMPR_HANDLE,
         AliasInformationClass,
         Buffer as *mut PSAMPR_ALIAS_INFO_BUFFER,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1323,11 +1324,11 @@ pub unsafe extern "system" fn SamQueryInformationDomain(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrQueryInformationDomain(
+    Status = rpc_try(|| SamrQueryInformationDomain(
         DomainHandle as SAMPR_HANDLE,
         DomainInformationClass,
         Buffer as *mut PSAMPR_DOMAIN_INFO_BUFFER,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1340,11 +1341,11 @@ pub unsafe extern "system" fn SamQueryInformationGroup(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrQueryInformationGroup(
+    Status = rpc_try(|| SamrQueryInformationGroup(
         GroupHandle as SAMPR_HANDLE,
         GroupInformationClass,
         Buffer as *mut PSAMPR_GROUP_INFO_BUFFER,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1357,11 +1358,11 @@ pub unsafe extern "system" fn SamQueryInformationUser(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrQueryInformationUser(
+    Status = rpc_try(|| SamrQueryInformationUser(
         UserHandle as SAMPR_HANDLE,
         UserInformationClass,
         Buffer as *mut PSAMPR_USER_INFO_BUFFER,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1377,11 +1378,11 @@ pub unsafe extern "system" fn SamQuerySecurityObject(
 
     *SecurityDescriptor = core::ptr::null_mut();
 
-    Status = SamrQuerySecurityObject(
+    Status = rpc_try(|| SamrQuerySecurityObject(
         ObjectHandle as SAMPR_HANDLE,
         SecurityInformation,
         &mut SamSecurityDescriptor,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if !SamSecurityDescriptor.is_null() {
         *SecurityDescriptor = ((*SamSecurityDescriptor).SecurityDescriptor).cast();
@@ -1399,7 +1400,7 @@ pub unsafe extern "system" fn SamRemoveMemberFromAlias(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrRemoveMemberFromAlias(AliasHandle as SAMPR_HANDLE, (MemberId).cast());
+    Status = rpc_try(|| SamrRemoveMemberFromAlias(AliasHandle as SAMPR_HANDLE, (MemberId).cast())).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1411,7 +1412,7 @@ pub unsafe extern "system" fn SamRemoveMemberFromForeignDomain(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrRemoveMemberFromForeignDomain(DomainHandle as SAMPR_HANDLE, (MemberId).cast());
+    Status = rpc_try(|| SamrRemoveMemberFromForeignDomain(DomainHandle as SAMPR_HANDLE, (MemberId).cast())).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1423,7 +1424,7 @@ pub unsafe extern "system" fn SamRemoveMemberFromGroup(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrRemoveMemberFromGroup(GroupHandle as SAMPR_HANDLE, MemberId);
+    Status = rpc_try(|| SamrRemoveMemberFromGroup(GroupHandle as SAMPR_HANDLE, MemberId)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1444,7 +1445,7 @@ pub unsafe extern "system" fn SamRemoveMultipleMembersFromAlias(
     Buffer.Count = MemberCount;
     Buffer.Sids = MemberIds as PSAMPR_SID_INFORMATION;
 
-    Status = SamrRemoveMultipleMembersFromAlias(AliasHandle as SAMPR_HANDLE, &mut Buffer);
+    Status = rpc_try(|| SamrRemoveMultipleMembersFromAlias(AliasHandle as SAMPR_HANDLE, &mut Buffer)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1467,11 +1468,11 @@ pub unsafe extern "system" fn SamSetInformationAlias(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrSetInformationAlias(
+    Status = rpc_try(|| SamrSetInformationAlias(
         AliasHandle as SAMPR_HANDLE,
         AliasInformationClass,
         (Buffer).cast(),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1484,11 +1485,11 @@ pub unsafe extern "system" fn SamSetInformationDomain(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrSetInformationDomain(
+    Status = rpc_try(|| SamrSetInformationDomain(
         DomainHandle as SAMPR_HANDLE,
         DomainInformationClass,
         (Buffer).cast(),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1501,11 +1502,11 @@ pub unsafe extern "system" fn SamSetInformationGroup(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrSetInformationGroup(
+    Status = rpc_try(|| SamrSetInformationGroup(
         GroupHandle as SAMPR_HANDLE,
         GroupInformationClass,
         (Buffer).cast(),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1566,11 +1567,11 @@ pub unsafe extern "system" fn SamSetInformationUser(
 
         Internal1Buffer.PasswordExpired = (*PasswordBuffer).PasswordExpired;
 
-        Status = SamrSetInformationUser(
+        Status = rpc_try(|| SamrSetInformationUser(
             UserHandle as SAMPR_HANDLE,
             UserInternal1Information,
             (core::ptr::addr_of_mut!(Internal1Buffer) as PVOID).cast(),
-        );
+        )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
         // C: this is the body of RpcExcept(EXCEPTION_EXECUTE_HANDLER). We build with
         // -D_USE_DUMMY_PSEH=1, so it is compiled but NEVER entered. The translation
         // emitted it as straight-line code, which unconditionally clobbered the real
@@ -1658,11 +1659,11 @@ pub unsafe extern "system" fn SamSetInformationUser(
             }
         }
 
-        Status = SamrSetInformationUser(
+        Status = rpc_try(|| SamrSetInformationUser(
             UserHandle as SAMPR_HANDLE,
             UserAllInformation,
             (core::ptr::addr_of_mut!(InternalAllBuffer) as PVOID).cast(),
-        );
+        )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
         // C: this is the body of RpcExcept(EXCEPTION_EXECUTE_HANDLER). We build with
         // -D_USE_DUMMY_PSEH=1, so it is compiled but NEVER entered. The translation
         // emitted it as straight-line code, which unconditionally clobbered the real
@@ -1686,7 +1687,7 @@ pub unsafe extern "system" fn SamSetMemberAttributesOfGroup(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrSetMemberAttributesOfGroup(GroupHandle as SAMPR_HANDLE, MemberId, Attributes);
+    Status = rpc_try(|| SamrSetMemberAttributesOfGroup(GroupHandle as SAMPR_HANDLE, MemberId, Attributes)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1729,11 +1730,11 @@ pub unsafe extern "system" fn SamSetSecurityObject(
         return Status;
     }
 
-    Status = SamrSetSecurityObject(
+    Status = rpc_try(|| SamrSetSecurityObject(
         ObjectHandle as SAMPR_HANDLE,
         SecurityInformation,
         core::ptr::addr_of_mut!(DescriptorToPass),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if !DescriptorToPass.SecurityDescriptor.is_null() {
         MIDL_user_free((DescriptorToPass.SecurityDescriptor).cast());
@@ -1746,7 +1747,7 @@ pub unsafe extern "system" fn SamSetSecurityObject(
 pub unsafe extern "system" fn SamShutdownSamServer(ServerHandle: SAM_HANDLE) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = SamrShutdownSamServer(ServerHandle as SAMPR_HANDLE);
+    Status = rpc_try(|| SamrShutdownSamServer(ServerHandle as SAMPR_HANDLE)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -4140,11 +4141,11 @@ pub unsafe extern "system" fn SamConnect(
             UNICODE_NULL;
     }
 
-    Status = SamrConnect(
+    Status = rpc_try(|| SamrConnect(
         pServerName,
         ServerHandle as *mut SAMPR_HANDLE,
         DesiredAccess,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if !pServerName.is_null() {
         MIDL_user_free(pServerName as *mut core::ffi::c_void);

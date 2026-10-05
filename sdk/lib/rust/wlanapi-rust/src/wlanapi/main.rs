@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // L"ncalrpc"
@@ -96,11 +97,11 @@ pub unsafe extern "system" fn WlanConnect(
         return ERROR_INVALID_PARAMETER;
     }
 
-    dwResult = _RpcConnect(
+    dwResult = rpc_try(|| _RpcConnect(
         hClientHandle,
         pInterfaceGuid,
         core::ptr::addr_of!(pConnectionParameters),
-    );
+    )).unwrap_or_else(|code| WlanRpcStatusToWinError(code as _) as _);
 
     return dwResult;
 }
@@ -117,7 +118,7 @@ pub unsafe extern "system" fn WlanDisconnect(
         return ERROR_INVALID_PARAMETER;
     }
 
-    dwResult = _RpcDisconnect(hClientHandle, pInterfaceGuid);
+    dwResult = rpc_try(|| _RpcDisconnect(hClientHandle, pInterfaceGuid)).unwrap_or_else(|code| WlanRpcStatusToWinError(code as _) as _);
 
     dwResult
 }
@@ -139,7 +140,7 @@ pub unsafe extern "system" fn WlanOpenHandle(
         return ERROR_INVALID_PARAMETER;
     }
 
-    dwResult = _RpcOpenHandle(
+    dwResult = rpc_try(|| _RpcOpenHandle(
         szDummy.as_mut_ptr(),
         dwClientVersion,
         pdwNegotiatedVersion,
@@ -147,7 +148,7 @@ pub unsafe extern "system" fn WlanOpenHandle(
         // parameter and relies on the implicit `void*` conversion to land it. Rust has no
         // such conversion, so the cast has to name the parameter type outright.
         phClientHandle as *mut WLANSVC_RPC_HANDLE,
-    );
+    )).unwrap_or_else(|code| WlanRpcStatusToWinError(code as _) as _);
 
     dwResult
 }
@@ -164,7 +165,7 @@ pub unsafe extern "system" fn WlanCloseHandle(
     }
 
     let mut hClientHandle_copy = hClientHandle;
-    dwResult = _RpcCloseHandle(core::ptr::addr_of_mut!(hClientHandle_copy));
+    dwResult = rpc_try(|| _RpcCloseHandle(core::ptr::addr_of_mut!(hClientHandle_copy))).unwrap_or_else(|code| WlanRpcStatusToWinError(code as _) as _);
 
     dwResult
 }
@@ -181,7 +182,7 @@ pub unsafe extern "system" fn WlanEnumInterfaces(
         return ERROR_INVALID_PARAMETER;
     }
 
-    dwResult = _RpcEnumInterfaces(hClientHandle, ppInterfaceList);
+    dwResult = rpc_try(|| _RpcEnumInterfaces(hClientHandle, ppInterfaceList)).unwrap_or_else(|code| WlanRpcStatusToWinError(code as _) as _);
 
     return dwResult;
 }
@@ -200,7 +201,7 @@ pub unsafe extern "system" fn WlanScan(
         return ERROR_INVALID_PARAMETER;
     }
 
-    dwResult = _RpcScan(hClientHandle, pInterfaceGuid, pDot11Ssid, pIeData);
+    dwResult = rpc_try(|| _RpcScan(hClientHandle, pInterfaceGuid, pDot11Ssid, pIeData)).unwrap_or_else(|code| WlanRpcStatusToWinError(code as _) as _);
 
     dwResult
 }
@@ -307,7 +308,7 @@ pub unsafe extern "system" fn WlanSetSecuritySettings(
         return ERROR_INVALID_PARAMETER;
     }
 
-    dwResult = _RpcSetSecuritySettings(hClientHandle, SecurableObject, strModifiedSDDL);
+    dwResult = rpc_try(|| _RpcSetSecuritySettings(hClientHandle, SecurableObject, strModifiedSDDL)).unwrap_or_else(|code| WlanRpcStatusToWinError(code as _) as _);
 
     return dwResult;
 }

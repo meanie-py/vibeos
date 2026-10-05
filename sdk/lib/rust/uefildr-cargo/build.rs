@@ -203,7 +203,8 @@ fn main() {
     // `float`. build_rust_crate's cnt-rust-lib special case supplies the exact
     // per-arch RUSTFLAGS (i386 -sse,-sse2 -C no-prepopulate-passes; else
     // -C no-prepopulate-passes). Same .rust_lib() path ntdll-cargo uses.
-    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+    // `freeldr`: the loader's own iswctype (freeldr-rust) is the only one.
+    let cnt_feats: &[&str] = if arch == "x86" { &["freeldr"] } else { &["float", "freeldr"] };
 
     let mut linker = Linker::new(target_json)
         // freeldr-rust body built DIRECTLY by reactos-link (was the cmake

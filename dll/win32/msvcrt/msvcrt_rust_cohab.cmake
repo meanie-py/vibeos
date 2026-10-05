@@ -21,7 +21,8 @@ set(MSVCRT_RUST_COHAB_LIB "${CMAKE_BINARY_DIR}/dll/win32/msvcrt/libmsvcrt_crt_ca
 
 function(link_msvcrt_rust_cohab target)
     add_dependencies(${target} rust_msvcrt_crt)
+    # The `...` entry points are in the archive too (msvcrt-crt-rust src/va_entries.rs,
+    # varargs-rust va_entry! thunks); the C msvcrt_rust_shims they replace is not built.
     target_link_libraries(${target}
-        msvcrt_rust_shims
         -Wl,--whole-archive ${MSVCRT_RUST_COHAB_LIB} -Wl,--no-whole-archive)
 endfunction()

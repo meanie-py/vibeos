@@ -208,8 +208,7 @@ unsafe extern "system" fn DispatcherThread(pParameter: *mut core::ffi::c_void) -
     // event — shares reliably across processes; ScConnectControlPipe (advapi32)
     // now polls for it, so we proceed to the connect regardless of this event.
     // Open the SCM's object if present, else create our own to wait on briefly.
-    let event_name = b"S\0E\0C\0U\0R\0I\0T\0Y\0_\0S\0E\0R\0V\0I\0C\0E\0S\0_\0S\0T\0A\0R\0T\0E\0D\0\0\0"
-        .as_ptr() as *const u16;
+    let event_name = win32macros_rust::wide_bytes!(b"S\0E\0C\0U\0R\0I\0T\0Y\0_\0S\0E\0R\0V\0I\0C\0E\0S\0_\0S\0T\0A\0R\0T\0E\0D\0\0\0") as *const u16;
     hEvent = OpenEventW(SYNCHRONIZE, 0i32, event_name);
     if hEvent.is_null() {
         hEvent = CreateEventW(

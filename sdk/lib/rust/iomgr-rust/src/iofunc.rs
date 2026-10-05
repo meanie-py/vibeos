@@ -3381,9 +3381,25 @@ pub unsafe extern "system" fn NtUnlockFile(
             return STATUS_ACCESS_DENIED;
         }
 
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
-        CapturedByteOffset = ProbeForReadLargeInteger(ByteOffset);
-        CapturedLength = ProbeForReadLargeInteger(Length);
+        // C: _SEH2_TRY around these, except handler dereferences FileObject and
+        // returns the exception code. No SEH here, so Result probes instead.
+        let probed = (|| -> Result<(LARGE_INTEGER, LARGE_INTEGER), NTSTATUS> {
+            ntkrnl_sys::probe::probe_write_generic(IoStatusBlock, 1, PreviousMode)?;
+            Ok((
+                ntkrnl_sys::probe::probe_read_generic(ByteOffset as *const LARGE_INTEGER, 1, PreviousMode)?,
+                ntkrnl_sys::probe::probe_read_generic(Length as *const LARGE_INTEGER, 1, PreviousMode)?,
+            ))
+        })();
+        match probed {
+            Ok((offset, length)) => {
+                CapturedByteOffset = offset;
+                CapturedLength = length;
+            }
+            Err(status) => {
+                ObDereferenceObject(FileObject as PVOID);
+                return status;
+            }
+        }
     } else {
         CapturedByteOffset = *ByteOffset;
         CapturedLength = *Length;
@@ -3560,7 +3576,15 @@ pub unsafe extern "system" fn NtWriteFile(
         ProbeForRead(Buffer, Length as ULONG_PTR, 1);
 
         if !ByteOffset.is_null() {
-            CapturedByteOffset = ProbeForReadLargeInteger(ByteOffset);
+            // C: inside _SEH2_TRY; the handler dereferences FileObject and
+            // returns the exception code.
+            match ntkrnl_sys::probe::probe_read_generic(ByteOffset as *const LARGE_INTEGER, 1, PreviousMode) {
+                Ok(offset) => CapturedByteOffset = offset,
+                Err(status) => {
+                    ObDereferenceObject(FileObject as PVOID);
+                    return status;
+                }
+            }
         }
 
         if !(*FileObject).CompletionContext.is_null() && ApcRoutine.is_some() {

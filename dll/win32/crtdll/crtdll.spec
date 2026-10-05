@@ -19,7 +19,7 @@
 @ cdecl _CIsqrt()
 @ cdecl _CItan()
 @ cdecl _CItanh()
-@ extern _HUGE_dll _HUGE
+@ extern _HUGE_dll MSVCRT__HUGE
 @ cdecl _XcptFilter()
 @ cdecl __GetMainArgs(ptr ptr ptr long)
 @ extern __argc_dll MSVCRT___argc
