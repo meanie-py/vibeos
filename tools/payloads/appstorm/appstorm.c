@@ -725,8 +725,12 @@ int main(void)
         /* Wait for a REAL window, not just the first new one: an applet's rundll32 shows its
          * hidden 166x24 host window at -32000,-32000 long before the dialog when the machine is
          * busy, and stopping there failed desk/sysdm/intl on amd64 with the dialog on its way. */
-        while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000)
+        /* grow_family on every poll: with no window yet nothing else does, and appwiz's
+         * rundll32 exits within seconds, orphaning the rapps it started. */
+        while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000) {
+            grow_family();
             Sleep(250);
+        }
         Sleep(3000);
         /* After the settle: rapps titles its dialog only once it has been created. */
         if (a->wait_past && progress_showing(&before, a->wait_past)) {

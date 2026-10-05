@@ -220,6 +220,10 @@ static DWORD RunChild(void)
      * parent must not inject: a target whose loader has not finished is the
      * INITIAL-thread case, a different path entirely, and racing the two would
      * make this guest test whichever one won. */
+    /* Done first, before Ready: the parent sets it and the child must already hold a
+     * reference, or a parent that sets and closes it first leaves the child creating a
+     * fresh, unsignalled event and timing out (rung4 "child did not exit", 2026-10-04). */
+    Done = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_DONE);
     Ready = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_READY);
     Go = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_GO);
     if (!Ready || !Go) {
@@ -239,7 +243,6 @@ static DWORD RunChild(void)
      * exit code -- see S32_EVENT_DONE. A timeout here is not a failure of the
      * thing under test, so it still exits CHILD_MAGIC and lets the parent's
      * own rungs decide. */
-    Done = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_DONE);
     if (Done) {
         WaitForSingleObject(Done, CHILD_WAIT_MS);
         CloseHandle(Done);
@@ -342,13 +345,15 @@ static DWORD RunParent(void)
     CloseHandle(hRemote);
 
     /* Release the child now that rung 7 has its answer. */
+    /* Keep the handle until the child is gone: closing it here destroyed the named event
+     * whenever the child had not opened it yet. */
     hDone = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_DONE);
-    if (hDone) {
+    if (hDone)
         SetEvent(hDone);
-        CloseHandle(hDone);
-    }
 
     waited = WaitForSingleObject(pi.hProcess, CHILD_WAIT_MS);
+    if (hDone)
+        CloseHandle(hDone);
     if (waited != WAIT_OBJECT_0) {
         SayHex("[spawn32] rung4 child did not exit, wait", waited);
         TerminateProcess(pi.hProcess, 1);
