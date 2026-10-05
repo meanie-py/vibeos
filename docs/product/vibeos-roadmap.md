@@ -654,6 +654,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   owed: the rest of cnt-rust's C89 set (trig, sqrt, ldexp, _logb, ...) onto libm with the
   same contract, and the ieee754 Bessel C onto libm. Still `-stub`: the `_d*`/`_fd*` internal helpers
   (`_dexp`, `_dnorm`, `_dpoly`, ...) and `_except1`. Owner: ucrt-rust.
+- **spec2def's generated `*_stubs.c` are the last C in the CRT DLLs** (DEFERRED, 2026-10-04).
+  msvcrt.dll and ucrtbase.dll link no hand-written C or assembly on any arch; each one's only C
+  object is its spec2def-generated stubs TU (msvcrt 24 stub bodies, ucrtbase ~120, msvcrt20/40
+  ~440 each, crtdll 9). Retiring them means spec2def emitting Rust (or asm) stubs, which changes
+  every DLL in the tree, not just the CRT -- a tooling project of its own, parked here by choice.
 - **Delay-loaded imports are not delay-loaded** (OPEN, 2026-10-04; all arches). `VIBEOS_ENABLE_DELAYLOAD`
   is ON, yet no module carries a delay-import directory (`DelayImportDescriptorRVA` 0 in shell32,
   comdlg32, setup's reactos.exe on i386 and amd64): every `add_delay_importlibs` DLL is bound as
