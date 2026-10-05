@@ -326,7 +326,10 @@ unsafe fn fail_dead(cmd: Cmd) {
         | Cmd::Associate { .. }
         | Cmd::SetDefaultRoute { .. }
         | Cmd::CloseConn { .. }
-        | Cmd::CloseAddr { .. } => 0,
+        | Cmd::CloseAddr { .. }
+        // The cancel routine already completed this IRP; completing it again would
+        // be a double completion (and `complete` would refuse the unclaimed IRP).
+        | Cmd::Cancel { .. } => 0,
     };
     complete(irp, STATUS_NETWORK_UNREACHABLE, 0);
 }
