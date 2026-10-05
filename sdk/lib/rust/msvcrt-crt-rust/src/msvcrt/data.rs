@@ -431,9 +431,17 @@ pub unsafe extern "C" fn msvcrt_init_args() {
     MSVCRT__osver = osvi.dwBuildNumber;
     MSVCRT__osplatform = osvi.dwPlatformId;
 
-    #[cfg(feature = "_CRTDLL")]
+    // `#ifdef _CRTDLL` in the C. One archive serves every x86 CRT DLL, so this runs in all
+    // of them; only crtdll exports the words (they live in legacy.rs). It was a cfg on a
+    // feature that never existed, so crtdll reported a base version of 0.
+    #[cfg(all(feature = "dllmain", target_arch = "x86"))]
     {
-        CRTDLL__baseversion_dll = (GetVersion() >> 16);
+        use crate::legacy::{CRTDLL__basemajor_dll, CRTDLL__baseminor_dll, CRTDLL__baseversion_dll};
+        // kernel32's; the msvcrt-sys island does not carry it.
+        extern "system" {
+            fn GetVersion() -> u32;
+        }
+        CRTDLL__baseversion_dll = GetVersion() >> 16;
         CRTDLL__basemajor_dll = CRTDLL__baseversion_dll >> 8;
         CRTDLL__baseminor_dll = CRTDLL__baseversion_dll & 0xff;
     }

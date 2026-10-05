@@ -659,6 +659,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   object is its spec2def-generated stubs TU (msvcrt 24 stub bodies, ucrtbase ~120, msvcrt20/40
   ~440 each, crtdll 9). Retiring them means spec2def emitting Rust (or asm) stubs, which changes
   every DLL in the tree, not just the CRT -- a tooling project of its own, parked here by choice.
+- **ucrtbase's arm64 `_local_unwind` export is a dangling forward** (OPEN, 2026-10-04; arm64).
+  ucrtbase.spec has `@ cdecl -arch=win64 _local_unwind(ptr ptr) ntdll._local_unwind`, but ntdll
+  exports `_local_unwind` for x86_64 only, so on arm64 the forward names nothing. msvcrt.dll had
+  the same hole one hop longer (kernel32's import library, itself a forward to ntdll) and now
+  defines it in crt-shared-rust `except_arm64.rs` (`RtlUnwind(frame, target, NULL, NULL)`, as
+  amd64). For ucrtbase that body is a ucrt takeover: verify_ucrtbase_cohab refuses it from the
+  shared archive, so it belongs in ucrt-rust with a `tools/ucrt-takeover.yaml` entry and an
+  oracle, and the arm64 spec line stops forwarding. Found by `tools/msvcrt_export_coverage.py`,
+  which now fails on any export an import library answers.
 - **Delay-loaded imports are not delay-loaded** (OPEN, 2026-10-04; all arches). `VIBEOS_ENABLE_DELAYLOAD`
   is ON, yet no module carries a delay-import directory (`DelayImportDescriptorRVA` 0 in shell32,
   comdlg32, setup's reactos.exe on i386 and amd64): every `add_delay_importlibs` DLL is bound as
