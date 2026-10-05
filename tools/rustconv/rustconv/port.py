@@ -223,6 +223,7 @@ def stage_translate(
     thinking: str = "on",
     escalate: bool = False,
     rebuy_fn: list[str] | None = None,
+    replay_only: bool = False,
 ) -> tuple[float, list[str]]:
     """Run translate per TU; return (USD spent, file names of the TUs it ran)."""
     state = load_state(stem)
@@ -234,7 +235,7 @@ def stage_translate(
     # too (their other functions replay for $0).
     todo = (
         picked
-        if escalate or rebuy_fn
+        if escalate or rebuy_fn or replay_only
         else [t for t in picked if not _has_body(_tu_output(state, t))]
     )
     spent = 0.0
@@ -280,6 +281,9 @@ def stage_translate(
         )
         if escalate:
             cmd += ["--rebuy-rejected", "--reassemble"]
+        if replay_only:
+            # Reassemble from the bank after a stitcher/postprocess fix: never a purchase.
+            cmd += ["--replay-only", "--reassemble"]
         # Only the names THIS TU defines: translate reports a name its worklist never
         # missed, and every other TU's names would be exactly that.
         c_text = (REPO / tu).read_text(errors="replace")
@@ -446,8 +450,7 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     prelude = crate / "src" / "prelude.rs"
     workspace = REPO / "sdk" / "lib" / "rust"
     pending = _c_defined_names([REPO / t for t in state["tus"]])
-    if prelude_resolve.refresh_shared_macros(prelude, workspace / "win32macros-rust" / "src"):
-        print("resolve: refreshed the win32macros-rust re-export list")
+    shared = set().union(*prelude_resolve.shared_provides(workspace).values())
     # A name that is a function-like MACRO to this module's own preprocessor is never an
     # extern fn, whatever another crate declared: winsrv's `fn RTL_FIELD_SIZE(t: usize, f:
     # usize)` was copied by consensus and shadowed the real macro. Dropped, including copies
@@ -460,10 +463,13 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
             c_macros |= function_like_macros(REPO, (REPO / tu).resolve())
         except Exception as e:  # reported, then judged without it
             print(f"resolve: no macro authority for {tu}: {str(e).splitlines()[0][:120]}")
+    # ...and a name a shared crate provides is imported from it, never copied: tree consensus
+    # had copied `extern` declarations of ntstrsafe's RtlString* family, which are header
+    # inlines no DLL exports -- they compile, then fail at link.
     copied = {
         k: v
         for k, v in prelude_resolve.existing_block(prelude).items()
-        if not (v.kind == "fn" and k in c_macros)
+        if not (v.kind == "fn" and k in c_macros) and k not in shared
     }
     siblings = prelude_resolve.existing_siblings(prelude)
     modules_dir = crate / "src" / stem
@@ -490,7 +496,7 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
             prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
         names -= set(found_here)
         res.pending = sorted(names & pending)
-        todo = names - pending - set(copied) - c_macros
+        todo = names - pending - set(copied) - c_macros - shared
         aliases = prelude_resolve.island_enum_aliases(todo, crate / "src")
         copied.update(aliases)
         todo -= set(aliases)
@@ -515,10 +521,17 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         if not new and not wired:
             break
         prelude_resolve.write_block(prelude, prelude_resolve.render(copied))
+    # Every wired name stays `pub`, every run: a $0 reassembly (`--replay-only`) rewrites
+    # the modules from the bank and drops the promotion an earlier run made (E0603).
+    for name, mod in sorted(siblings.items()):
+        path = modules_dir / f"{mod}.rs"
+        if path.is_file():
+            prelude_resolve.promote_pub(path, name)
     # Unconditionally: a pass that finds nothing new still has to drop the stale copies
     # filtered above, and the shared-macro list is judged against the cleaned prelude.
     prelude_resolve.write_block(prelude, prelude_resolve.render(copied))
-    prelude_resolve.refresh_shared_macros(prelude, workspace / "win32macros-rust" / "src")
+    for path in prelude_resolve.refresh_shared_crates(crate, workspace):
+        print(f"resolve: refreshed the `{path}` re-export list")
     res.copied = copied
     _record(
         state,
@@ -793,6 +806,7 @@ def main(args) -> int:
                 concurrency=args.concurrency,
                 thinking="off" if args.escalate else args.thinking,
                 rebuy_fn=args.rebuy_fn,
+                replay_only=args.replay_only,
             )
             if args.escalate and not args.dry_run:
                 # One cap for the whole invocation, and the escalation revisits only what
@@ -882,4 +896,9 @@ def add_parser(sub) -> None:
         default=[],
         metavar="NAME",
         help="accepted bodies to buy again (passed to translate --rebuy-fn); revisits their TUs",
+    )
+    q.add_argument(
+        "--replay-only",
+        action="store_true",
+        help="reassemble every TU from banked bodies only ($0; a missing body is an error)",
     )
