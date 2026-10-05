@@ -182,7 +182,7 @@ pub unsafe extern "C" fn _chkesp_failed() {
 
 /// `_local_unwind` on arm64. ucrtbase.spec forwarded it to `ntdll._local_unwind` for all of
 /// win64, but ntdll exports that name on x86_64 only, so the arm64 export named nothing
-/// (GetProcAddress returned NULL). The body is Wine's x86_64 one, as msvcrt.dll's arm64
+/// (arm64 ntdll's export table has no `_local_unwind`). The body is Wine's x86_64 one, as msvcrt.dll's arm64
 /// `_local_unwind` (crt-shared-rust except_arm64.rs); amd64 keeps the forward.
 #[cfg(all(target_arch = "aarch64", target_os = "windows"))]
 #[no_mangle]
