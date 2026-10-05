@@ -62,13 +62,6 @@ unsafe extern "system" {
 
 static mut ExPushLockSpinCount: ULONG = 0;
 
-#[cfg(target_pointer_width = "64")]
-unsafe fn InterlockedAndPointer(ptr: *mut PVOID, val: usize) -> usize {
-    core::sync::atomic::AtomicUsize::from_ptr(ptr as *mut usize)
-        .fetch_and(val, core::sync::atomic::Ordering::SeqCst)
-}
-
-#[cfg(not(target_pointer_width = "64"))]
 unsafe fn InterlockedAndPointer(ptr: *mut PVOID, val: usize) -> usize {
     core::sync::atomic::AtomicUsize::from_ptr(ptr as *mut usize)
         .fetch_and(val, core::sync::atomic::Ordering::SeqCst)

@@ -901,6 +901,56 @@ pub unsafe extern "C" fn MsafdWaitForAlert(hObject: HANDLE) {
         }
     }
 }
+
+/// Wait for a synchronous send/receive, honouring SO_SNDTIMEO/SO_RCVTIMEO.
+///
+/// Upstream waits forever ("FIXME: Shouldn't wait infinitely for receive..."), so a 3s
+/// SO_RCVTIMEO blocked a recvfrom for 9 minutes. Windows instead cancels the request when
+/// the timeout expires and fails the call with WSAETIMEDOUT. 0 and INFINITE both mean "no
+/// timeout". If the request completes in the window between the timeout and the cancel, its
+/// real result wins. Returns the request's final status.
+pub unsafe fn MsafdWaitForIo(
+    Handle: HANDLE,
+    hObject: HANDLE,
+    IOSB: PIO_STATUS_BLOCK,
+    Timeout: DWORD,
+) -> NTSTATUS {
+    const WAIT_TIMEOUT: DWORD = 0x102;
+    const STATUS_IO_TIMEOUT: NTSTATUS = 0xC00000B5u32 as NTSTATUS;
+
+    if Timeout == 0 || Timeout == INFINITE {
+        MsafdWaitForAlert(hObject);
+        return (*IOSB).__bindgen_anon_1.Status;
+    }
+
+    let Start = GetTickCount();
+    loop {
+        // An APC (WAIT_IO_COMPLETION) restarts the wait with what is left of the timeout.
+        let Elapsed = GetTickCount().wrapping_sub(Start);
+        let Result = if Elapsed >= Timeout {
+            WAIT_TIMEOUT
+        } else {
+            WaitForSingleObjectEx(hObject, Timeout - Elapsed, 1)
+        };
+        if Result == WAIT_IO_COMPLETION {
+            continue;
+        }
+        if Result != WAIT_TIMEOUT {
+            return (*IOSB).__bindgen_anon_1.Status;
+        }
+        break;
+    }
+
+    let mut CancelIosb: IO_STATUS_BLOCK = core::mem::zeroed();
+    NtCancelIoFile(Handle, &mut CancelIosb);
+    MsafdWaitForAlert(hObject);
+    let Status = (*IOSB).__bindgen_anon_1.Status;
+    if Status == STATUS_CANCELLED {
+        STATUS_IO_TIMEOUT
+    } else {
+        Status
+    }
+}
 #[no_mangle]
 pub unsafe extern "system" fn WSPCloseSocket(
     Handle: SOCKET,

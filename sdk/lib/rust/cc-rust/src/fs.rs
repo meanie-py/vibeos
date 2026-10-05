@@ -27,7 +27,7 @@ extern "C" {
 
 const VACB_MAPPING_GRANULARITY: i64 = 262144;
 const MAXLONGLONG: i64 = 0x7FFFFFFFFFFFFFFF;
-const FO_TEMPORARY_FILE: u32 = 0x8000;
+pub(crate) const FO_TEMPORARY_FILE: u32 = 0x8000;
 const IO_NO_INCREMENT: LONG = 0;
 // KSPIN_LOCK_QUEUE_NUMBER values. Spelled out because the translation shipped bare
 // integer literals here and they were the WRONG ones: 17 (LockQueueTimerTableLock)
@@ -84,8 +84,12 @@ pub unsafe extern "system" fn CcInitializeCacheMap(
         LazyWriterContext,
     );
     if status < 0 {
-        // DUMMY_PSEH: CcInitializeCacheMap returns void, just return on failure
-        return;
+        // The C raises here. Returning quietly let the file system carry on caching
+        // through a FileObject that holds no OpenCount on the shared map, so another
+        // handle's close could delete the map -- and unmap its views -- under a reader.
+        extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
+        DbgPrint(b"CcInitializeCacheMap: CcRosInitializeFileCache failed 0x%08x, raising\n\0".as_ptr() as _, status);
+        ExRaiseStatus(status);
     }
 }
 

@@ -686,6 +686,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   owed: the rest of cnt-rust's C89 set (trig, sqrt, ldexp, _logb, ...) onto libm with the
   same contract, and the ieee754 Bessel C onto libm. Still `-stub`: the `_d*`/`_fd*` internal helpers
   (`_dexp`, `_dnorm`, `_dpoly`, ...) and `_except1`. Owner: ucrt-rust.
+- **spec2def's generated `*_stubs.c` are the last C in the CRT DLLs** (DEFERRED, 2026-10-04).
+  msvcrt.dll and ucrtbase.dll link no hand-written C or assembly on any arch; each one's only C
+  object is its spec2def-generated stubs TU (msvcrt 24 stub bodies, ucrtbase ~120, msvcrt20/40
+  ~440 each, crtdll 9). Retiring them means spec2def emitting Rust (or asm) stubs, which changes
+  every DLL in the tree, not just the CRT -- a tooling project of its own, parked here by choice.
+- **ucrtbase's arm64 `_local_unwind` export is a dangling forward** (OPEN, 2026-10-04; arm64).
+  ucrtbase.spec has `@ cdecl -arch=win64 _local_unwind(ptr ptr) ntdll._local_unwind`, but ntdll
+  exports `_local_unwind` for x86_64 only, so on arm64 the forward names nothing. msvcrt.dll had
+  the same hole one hop longer (kernel32's import library, itself a forward to ntdll) and now
+  defines it in crt-shared-rust `except_arm64.rs` (`RtlUnwind(frame, target, NULL, NULL)`, as
+  amd64). For ucrtbase that body is a ucrt takeover: verify_ucrtbase_cohab refuses it from the
+  shared archive, so it belongs in ucrt-rust with a `tools/ucrt-takeover.yaml` entry and an
+  oracle, and the arm64 spec line stops forwarding. Found by `tools/msvcrt_export_coverage.py`,
+  which now fails on any export an import library answers.
 - **Delay-loaded imports are not delay-loaded** (OPEN, 2026-10-04; all arches). `VIBEOS_ENABLE_DELAYLOAD`
   is ON, yet no module carries a delay-import directory (`DelayImportDescriptorRVA` 0 in shell32,
   comdlg32, setup's reactos.exe on i386 and amd64): every `add_delay_importlibs` DLL is bound as
@@ -753,11 +767,56 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     (netstack now warms the router and on-link DNS servers), AFD select wrote poll status
     into the IRP's copy rather than the caller's buffer, ws2_32 dropped `LUP_RETURN_BLOB` so
     gethostbyname got no hostent; and bcrypt's ECDSA was a stub, so Let's Encrypt's chain never
-    verified (upstream bcrypt restored over mbedTLS 3.6). Still OPEN: rapps itself not
-    re-run under appstorm since; the OK-only error box ignoring WM_CLOSE; `recvfrom` ignores
-    SO_RCVTIMEO (a 3s timeout blocked 9 minutes); smoltcp's ARP silence is still global
+    verified (upstream bcrypt restored over mbedTLS 3.6). SO_RCVTIMEO/SO_SNDTIMEO FIXED 2026-10-04: msafd
+    waited forever (upstream's own FIXME; a 3s timeout blocked 9 minutes), and now cancels the
+    request and fails with WSAETIMEDOUT (netprobe `rcvtimeo`: 2010ms on all arches). Still
+    OPEN: the OK-only error box ignoring WM_CLOSE; smoltcp's ARP silence is still global
     (a per-address limit is a vendor patch, deferred).
-  - **cpl-joy / cpl-appwiz intermittently open no window within 37s** (one each in two runs).
+  - **arm64 appstorm, 2026-10-04 (after the network fixes; 5 soak boots).** rapps now really
+    downloads, which exposed and fixed a netstack bug (TDI IRPs could not be cancelled: BUGCHECK
+    0x1E when a socket closed mid-connect, see smoltcp-netstack-design.md). What is left:
+    - **rapps "close timeout" while "Updating Database"**: FIXED 2026-10-04, two bugs. (1)
+      appstorm judged the startup download dialog; closing it makes rapps start the download
+      again from its main window (upstream gui.cpp CheckAvailable), so it never closed in 10s.
+      appstorm now waits past that dialog (`wait_past`, ~45s on arm64 TCG) and judges the main
+      window. (2) The extraction that then runs crashed: cabinet-rust's `FDINOTIFICATION` lacked
+      fdi.h's `pshpack4`, so on 64-bit rapps' fnNotify read `pv` as NULL/garbage. Packed and
+      offset-asserted; arm64 rapps now opens "ReactOS Applications Manager" and closes OK.
+      Two pre-fix boots hung on the old close path, unexplained: 20261004-161901-c5mgnl_5 went
+      silent right after "shot rapps" (likely the garbage-`pv` extraction, unproven), and
+      20261004-163220-whatl493 stopped inside appstorm's close-timeout thread dump, after the
+      UI thread and before the download thread (blocked in an ntdll syscall), with no
+      FAULTLOOP report. Inference, not shown: GetThreadContext waiting on a thread whose
+      kernel wait blocks the suspend APC.
+    - **cpl-appwiz then opens no window** (OPEN): rapps /appwiz stays alive with no window.
+      Failed again 2026-10-04 (20261004-173345-lbmi6pz6) after passing 5 boots; not mutex
+      abandonment. appstorm's no-window dump missed it (rundll32 exits and orphans rapps before
+      the family is grown); fixed, so the next failure dumps rapps' threads.
+    - **OWED: hand-declared user-mode FFI structs have no layout gate.** `verify_offsets.py`
+      covers ntkrnl-sys only; a struct a crate declares by hand (cabinet's FDI types, the
+      `IMAGE_*`/`DROPFILES`/`SHFILEINFO` copies in shell32/version/crt-startup) is checked by
+      nothing unless someone wrote an `offset_of!` assert. Wanted: the verify_offsets recipe
+      (clang offsets with the module's flags -> generated rustc asserts) for user-mode crates.
+    - cpl-joy passed every run today.
+  - **arm64 `-smp 2`: BUGCHECK 0x1E in `CmpCreateKeyControlBlock`** (config-rust
+    cmkcbncb.rs:759), on CPU 1, loading through a garbage KCB pointer (FAR 0x0014...3A) while
+    walking the KCB hash chain. New with smp-bringup (18d1d4a3517): first seen 2026-10-04 in
+    the queue's base gate (farm 20261004-185704-eff80o8u), then 0/4 on a clean master
+    checkout, so a race, not a deterministic break. Smells like the KCB cache's locking
+    with two CPUs live; owner: the SMP lane.
+  - **arm64 FAULTLOOP was the detector, not a loop** (RESOLVED 2026-10-04). The report
+    fingerprinted a fault as (VA, PC, TTBR0); a stream of DISTINCT faults sharing those --
+    Cc reading many small files (rapps' cab extraction), each new VACB recycled onto the same
+    view VA and taking one first-touch soft fault in memcpy, or the heap re-committing one
+    page -- counted as "the pager succeeded 64 times on the same fault". Measured before the
+    fix: every round entered with AT(VA) faulting and left it valid (a fresh view, not a
+    stale TLB or a lying walker), the reader's VACB was live and correct each time, the PFN
+    differed per round, and MM freed/recreated the area between rounds with no reader
+    registered. The fingerprint now includes a hash of the faulting registers: a real loop
+    re-faults with identical state, churn does not. Two appstorm boots after: zero reports.
+    The probes stay: AT on entry/report, faulting args, frames named module+offset, and an
+    unmap tripwire armed only while a loop is live. Whether the DFSC 0x06 Thread32Next case
+    was a real hang is not settled -- the two silent appstorm hangs today printed no report.
   - **The dropped RpcTryExcept class**: FIXED 2026-10-04 for the user-mode RPC clients.
     ntdll now exports the kernel's SEH trampolines (`RtlSehTryExcept`, sehtry.c built
     `-DSEHTRY_USER_MODE`) and `ntdll_sys::seh::rpc_try` restores each C handler. 245 stub

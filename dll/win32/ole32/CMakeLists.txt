@@ -16,6 +16,8 @@ spec2def(ole32.dll ole32.spec ADD_IMPORTLIB NO_PRIVATE_WARNINGS)
 generate_idl_iids(dcom.idl)
 add_idl_headers(ole32idl dcom.idl irot.idl)
 add_rpc_files(client irot.idl)
+# CoGetCurrentProcess asks rpcss for a machine-wide thread sequence id (wine-10 combase).
+add_rpc_files(client ${REACTOS_SOURCE_DIR}/sdk/include/wine/irpcss.idl)
 
 add_rpcproxy_files(
     dcom.idl
@@ -61,14 +63,16 @@ list(APPEND SOURCE
     # usrmarshal.c — replaced by Rust (ole32-rust ring/usrmarshal.rs — the NDR *_User{Size,Marshal,Unmarshal,Free} helpers)
     )
 
-# The stub manager's guarded object release (see the file header): a real __try on
-# amd64/arm64; i386 keeps the DUMMY pass-through.
+# The stub manager's guarded object release and the guarded irpcss calls (see each
+# file's header): a real __try on amd64/arm64; i386 keeps the DUMMY pass-through.
 if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
     set_source_files_properties(stubmanager_seh.c PROPERTIES COMPILE_DEFINITIONS _USE_NATIVE_SEH)
+    set_source_files_properties(rpcss_seh.c PROPERTIES COMPILE_DEFINITIONS _USE_NATIVE_SEH)
 endif()
 
 list(APPEND PCH_SKIP_SOURCE
     stubmanager_seh.c
+    rpcss_seh.c
     guid.c
     ${CMAKE_CURRENT_BINARY_DIR}/dcom_p.c
     ${CMAKE_CURRENT_BINARY_DIR}/ole32_objidl_p.c
@@ -123,6 +127,7 @@ add_library(ole32 MODULE
     ole32res.rc
     ${CMAKE_CURRENT_BINARY_DIR}/dcom_i.c
     ${CMAKE_CURRENT_BINARY_DIR}/irot_c.c
+    ${CMAKE_CURRENT_BINARY_DIR}/irpcss_c.c
     ${CMAKE_CURRENT_BINARY_DIR}/ole32.def)
 
 set_module_type(ole32 win32dll)

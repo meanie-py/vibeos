@@ -145,7 +145,6 @@ unsafe fn EngCreateSectionHack(
 
     pSection as *mut core::ffi::c_void
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn EngMapSection(
     pvSection: PVOID,
@@ -157,60 +156,6 @@ pub unsafe extern "system" fn EngMapSection(
     let pSection = pvSection as PENGSECTION;
     let mut pepProcess: ntkrnl_sys::ddk::PEPROCESS = core::ptr::null_mut();
     // Cast view size through ntkrnl_sys's SIZE_T (layout-identical).
-    let mut viewSize: ntkrnl_sys::ddk::SIZE_T = (*pSection).cjViewSize as _;
-
-    Status = ObReferenceObjectByHandle(
-        hProcess,
-        PROCESS_VM_OPERATION,
-        core::ptr::null_mut(),
-        0i32 as i8,
-        &mut pepProcess as *mut _ as *mut PVOID,
-        core::ptr::null_mut(),
-    );
-    if !NT_SUCCESS(Status) {
-        ObDereferenceObject(pepProcess as PVOID);
-        *pvBaseAddress = (*pSection).pvMappedBase;
-        return 0i32;
-    }
-
-    if bMap != 0 {
-        Status = MmMapViewOfSection(
-            (*pSection).pvSectionObject,
-            pepProcess,
-            &mut (*pSection).pvMappedBase,
-            0,
-            viewSize,
-            core::ptr::null_mut(),
-            &mut viewSize,
-            ViewUnmap as ntkrnl_sys::ddk::SECTION_INHERIT,
-            0,
-            PAGE_READWRITE,
-        );
-        (*pSection).cjViewSize = viewSize as SIZE_T;
-    } else {
-        Status = MmUnmapViewOfSection(pepProcess, (*pSection).pvMappedBase);
-        if NT_SUCCESS(Status) {
-            (*pSection).pvMappedBase = core::ptr::null_mut();
-        }
-    }
-
-    ObDereferenceObject(pepProcess as PVOID);
-
-    *pvBaseAddress = (*pSection).pvMappedBase;
-    if NT_SUCCESS(Status) { 1i32 } else { 0i32 }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "system" fn EngMapSection(
-    pvSection: PVOID,
-    bMap: BOOL,
-    hProcess: HANDLE,
-    pvBaseAddress: *mut PVOID,
-) -> BOOL {
-    let mut Status: NTSTATUS;
-    let pSection = pvSection as PENGSECTION;
-    let mut pepProcess: ntkrnl_sys::ddk::PEPROCESS = core::ptr::null_mut();
     let mut viewSize: ntkrnl_sys::ddk::SIZE_T = (*pSection).cjViewSize as _;
 
     Status = ObReferenceObjectByHandle(
@@ -313,7 +258,6 @@ pub unsafe extern "system" fn EngAllocSectionMem(
     *ppvSection = pSection as *mut core::ffi::c_void;
     (*pSection).pvMappedBase
 }
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn EngLoadModuleEx(
     pwsz: LPWSTR,
@@ -385,105 +329,6 @@ pub unsafe extern "system" fn EngLoadModuleEx(
     if NT_SUCCESS(Status) {
         // LastWriteTime: win32k_sys::LARGE_INTEGER and ntkrnl_sys::LARGE_INTEGER are
         // layout-identical bindgen unions; reinterpret bytes through transmute_copy.
-        (*pFileView).LastWriteTime = core::mem::transmute_copy(&FileInformation.LastWriteTime);
-    }
-
-    liSize.QuadPart = cjSizeOfModule as i64;
-    let Status = MmCreateSection(
-        core::ptr::addr_of_mut!((*pFileView).pSection),
-        0x000F0000 | 0x000F0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0001,
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(liSize),
-        if (fl & FVF_READONLY) != 0 { PAGE_EXECUTE_READ } else { PAGE_EXECUTE_READWRITE },
-        SEC_COMMIT,
-        hFile,
-        core::ptr::null_mut(),
-    );
-
-    ZwClose(hFile);
-
-    if !NT_SUCCESS(Status) {
-        EngFreeMem(pFileView as *mut core::ffi::c_void);
-        return core::ptr::null_mut();
-    }
-
-    (*pFileView).pvKView = core::ptr::null_mut();
-    (*pFileView).pvViewFD = core::ptr::null_mut();
-    (*pFileView).cjView = 0;
-
-    pFileView
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "system" fn EngLoadModuleEx(
-    pwsz: LPWSTR,
-    cjSizeOfModule: u32,
-    fl: FLONG,
-) -> PFILEVIEW {
-    let mut pFileView: PFILEVIEW = core::ptr::null_mut();
-    let mut ObjectAttributes: ntkrnl_sys::ddk::_OBJECT_ATTRIBUTES = core::mem::zeroed();
-    let hRootDir: *mut core::ffi::c_void;
-    let mut ustrFileName: ntkrnl_sys::ddk::_UNICODE_STRING = core::mem::zeroed();
-    let mut IoStatusBlock: ntkrnl_sys::ddk::_IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut FileInformation: ntkrnl_sys::ddk::_FILE_BASIC_INFORMATION = core::mem::zeroed();
-    let mut hFile: *mut core::ffi::c_void = core::ptr::null_mut();
-    let Status: i32;
-    let mut liSize: ntkrnl_sys::ddk::_LARGE_INTEGER = core::mem::zeroed();
-
-    if (fl & FVF_FONTFILE) != 0 {
-        pFileView = EngAllocMem(0, core::mem::size_of::<FONTFILEVIEW>() as u32, 0x76666647) as PFILEVIEW;
-    } else {
-        pFileView = EngAllocMem(0, core::mem::size_of::<FILEVIEW>() as u32, 0x6c496667) as PFILEVIEW;
-    }
-
-    if pFileView.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    if (fl & FVF_SYSTEMROOT) != 0 {
-        hRootDir = ghSystem32Directory;
-    } else {
-        hRootDir = ghRootDirectory;
-    }
-
-    RtlInitUnicodeString(core::ptr::addr_of_mut!(ustrFileName), pwsz);
-
-    ObjectAttributes.Length = core::mem::size_of::<ntkrnl_sys::ddk::_OBJECT_ATTRIBUTES>() as u32;
-    ObjectAttributes.RootDirectory = hRootDir;
-    ObjectAttributes.ObjectName = core::ptr::addr_of_mut!(ustrFileName);
-    ObjectAttributes.Attributes = OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE;
-    ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
-    ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
-
-    let Status = ZwCreateFile(
-        core::ptr::addr_of_mut!(hFile),
-        FILE_READ_DATA,
-        core::ptr::addr_of_mut!(ObjectAttributes),
-        core::ptr::addr_of_mut!(IoStatusBlock),
-        core::ptr::null_mut(),
-        FILE_ATTRIBUTE_NORMAL,
-        0,
-        FILE_OPEN,
-        FILE_NON_DIRECTORY_FILE,
-        core::ptr::null_mut(),
-        0,
-    );
-
-    if !NT_SUCCESS(Status) {
-        EngFreeMem(pFileView as *mut core::ffi::c_void);
-        return core::ptr::null_mut();
-    }
-
-    let Status = ZwQueryInformationFile(
-        hFile,
-        core::ptr::addr_of_mut!(IoStatusBlock),
-        core::ptr::addr_of_mut!(FileInformation) as *mut core::ffi::c_void,
-        core::mem::size_of::<ntkrnl_sys::ddk::_FILE_BASIC_INFORMATION>() as u32,
-        FileBasicInformation as ntkrnl_sys::ddk::FILE_INFORMATION_CLASS,
-    );
-
-    if NT_SUCCESS(Status) {
         (*pFileView).LastWriteTime = core::mem::transmute_copy(&FileInformation.LastWriteTime);
     }
 

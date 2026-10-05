@@ -1483,6 +1483,14 @@ struct. Audit a module by listing every struct inside a `pshpack`/`poppack` pair
 checking the Rust `repr` (a ten-line script; ole32/oleaut32's other twenty were fine). This is
 the mirror image of the packed-`TDI_ADDRESS_IP` bullet above: wrong in either direction, and
 only a size assert catches it.
+**The pack can live in a PUBLIC header, where the module's own C never shows it.** cabinet's
+hand-declared `FDINOTIFICATION` was plain `repr(C)`, but `fdi.h` wraps it in `pshpack4`: on
+64-bit `pv` is at 0x1c, not 0x20, so every C client's `pfdin->pv` read half of `psz3` and half
+of `pv`. i386 was right by accident (pointers are 4 bytes, so pack 4 changes nothing), which is
+why the bug only surfaced on amd64/arm64 -- rapps crashed extracting its database. A
+module-local audit misses this; measure the header with the module's real flags (borrow its
+line from `compile_commands.json`, add `-fsyntax-only` and a `char (*x)[offsetof(T,f)+1000] = 1;`
+probe, read the numbers off the diagnostics) and pin the result with `offset_of!` asserts.
 
 ### A macro translated from the wrong side of an `#ifdef`
 **Symptom.** Values built through one helper are corrupt in a way that looks like two fields
@@ -12146,6 +12154,15 @@ introduced at any heap exit — it is an external stray write.**
   each PC — a `wfi` is idle, a `b .` is a park, and an unfetchable page is the loop. If a FROZEN
   verdict ever comes with an odd sample out in `KiTrapReturn`, that is the loop caught mid-eret,
   not a dead clock; read the trap handler's retry decision for that abort, not the timers.
+- **A "same fault, pager succeeded N times" report is only a loop if the REGISTERS repeat.**
+  arm64's `[FAULTLOOP]` report keyed a fault on (VA, PC, TTBR0) and fired in every arm64 boot;
+  a day went into stale TLBs and page-table walkers before the measurements said otherwise.
+  The tells: the PTE's PFN differs between reports, `AT S1E1R` on the VA faults on every
+  ENTRY and succeeds after the pager, and the faulting args (dest, length) differ. That is a
+  stream of distinct first-touch faults sharing an address -- Cc's per-file VACBs recycled onto
+  one view VA by the lookaside, memcpy taking one soft fault on each -- not one instruction
+  stuck. The fingerprint now hashes the faulting registers; check the report's churn count
+  before reading anything into it.
 - **A wedge whose vCPU keeps stopping at EL0 is a user-mode spin; find its process from EL1.**
   arm64 appstorm went silent mid-run three times (2026-10-03) and first read as "the guest got
   slow". Every gdb stop landed at `kernel32!ExitThread+0x5c`: the `loop {}` after

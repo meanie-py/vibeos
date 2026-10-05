@@ -163,17 +163,19 @@ pub struct oletls {
     pub state: *mut IUnknown,         // see CoSetState
     pub spies: list,                  // Spies installed with CoRegisterInitializeSpy
     pub spies_lock: DWORD,
+    pub cancelcount: DWORD,           // Co{Enable,Disable}CallCancellation nesting
 }
 
 // The ABI anchors (combase_private.h comments), and the marshal module's copy must agree.
 const _: () = {
-    use core::mem::offset_of;
+    use core::mem::{offset_of, size_of};
     const P: usize = core::mem::size_of::<usize>();
     assert!(offset_of!(oletls, flags) == 2 * P + 4);
     assert!(P != 4 || offset_of!(oletls, context_token) == 0x38);
     assert!(P != 4 || offset_of!(oletls, cancel_object) == 0xF8);
     assert!(offset_of!(oletls, state) == offset_of!(crate::marshal::types::oletls, state));
     assert!(offset_of!(oletls, spies) == offset_of!(crate::marshal::types::oletls, spies));
+    assert!(size_of::<oletls>() == size_of::<crate::marshal::types::oletls>());
 };
 
 /// combase_private.h `enum tlsdata_flags`

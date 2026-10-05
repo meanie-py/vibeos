@@ -240,10 +240,6 @@ pub unsafe extern "system" fn DC_vRestoreDC(
 
         if (*pdc).dclevel.lSaveDepth == iSaveLevel
         {
-            #[cfg(target_arch = "x86")]
-            DC_vCopyState(pdcSave, pdc, 0);
-            
-            #[cfg(not(target_arch = "x86"))]
             DC_vCopyState(pdcSave, pdc, 0);
 
             if (*pdc).dctype == DCTYPE_MEMORY
@@ -320,9 +316,6 @@ pub unsafe extern "system" fn NtGdiSaveDC(hDC: HDC) -> INT {
 
     GDIOBJ_vSetObjectOwner(core::ptr::addr_of_mut!((*pdcSave).BaseObject), GDI_OBJ_HMGR_PUBLIC);
 
-    #[cfg(target_arch = "x86")]
-    DC_vCopyState(pdc, pdcSave, 0);
-    #[cfg(not(target_arch = "x86"))]
     DC_vCopyState(pdc, pdcSave, 0);
 
     if (*pdc).dctype == DCTYPE_MEMORY {

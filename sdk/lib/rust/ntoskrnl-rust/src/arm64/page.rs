@@ -769,6 +769,11 @@ pub unsafe extern "system" fn MmDeleteVirtualMapping(
     WasDirty: *mut BOOLEAN,
     Page: PPFN_NUMBER,
 ) -> BOOLEAN {
+    // Our caller, read before this function makes any call of its own: the fault-loop
+    // tripwire names whoever unmaps a page the pager keeps restoring.
+    let caller: u64;
+    core::arch::asm!("mov {}, x30", out(reg) caller, options(nomem, nostack, preserves_flags));
+    crate::ke::arm64::trap::KiFaultLoopUnmapCheck(Address as u64, caller);
     let Process = opaque_ptr(Process);
     let Address = opaque_ptr(Address);
     let WasDirty = opaque_ptr(WasDirty);
@@ -782,6 +787,11 @@ pub unsafe extern "system" fn MmDeletePhysicalMapping(
     WasDirty: *mut BOOLEAN,
     Page: PPFN_NUMBER,
 ) -> BOOLEAN {
+    // Our caller, read before this function makes any call of its own: the fault-loop
+    // tripwire names whoever unmaps a page the pager keeps restoring.
+    let caller: u64;
+    core::arch::asm!("mov {}, x30", out(reg) caller, options(nomem, nostack, preserves_flags));
+    crate::ke::arm64::trap::KiFaultLoopUnmapCheck(Address as u64, caller);
     let Process = opaque_ptr(Process);
     let Address = opaque_ptr(Address);
     let WasDirty = opaque_ptr(WasDirty);
