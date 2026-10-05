@@ -109,6 +109,11 @@ target_link_libraries(ucrtbase
     -Wl,--whole-archive ${UCRT_SHARED_RUST_LIB} -Wl,--no-whole-archive
 )
 link_strict(ucrtbase)
+# Build-order only, nothing is linked: verify_ucrtbase_cohab and ucrt_burndown read these
+# libraries' OBJECTS as the reference surface (OURS_REFERENCE), and a build only makes what
+# `livecd` depends on. Off the link line, nothing else would build them in a fresh tree --
+# exactly how msvcrt_static's absence turned master red (DIFFTEST_STALE_ORACLE, 2026-10-04).
+add_dependencies(ucrtbase msvcrt_shared crtmath vcruntime vcstartup chkstk wine setjmp pseh)
 
 # Implicitly link to vcstartup
 target_link_libraries(libucrtbase INTERFACE vcstartup)
