@@ -35,9 +35,8 @@ _PYRIGHT = str(_VBIN / "pyright")
 # tests/qemu was linted only below cli/, so the harness core -- vm.py, backend.py and
 # test_smoke.py itself -- carried 29 findings, including two `assert False` in the
 # north-star test that `python -O` strips. The whole tree is ruff- and format-checked;
-# pyright still covers cli/ only (typing the harness core is its own job).
 _RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu", "tools/fex"]
-_PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
+_PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu"]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
@@ -68,6 +67,7 @@ _PYTEST_SUITES = [
     # forbidden imports). It replaced `objdump | grep -q` pipes that passed and failed
     # at random under pipefail, so it must not become a new untested oracle.
     (".", ".", "tools/payloads/test_pecheck.py"),
+    (".", ".", "tools/payloads/olewinetest/test_classify_failures.py"),
     # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
     # being named and documented as seconds, so a chatty payload spent a declared
     # 7200s in 12-28 minutes. Nothing could see it: the boot still "worked", it
@@ -125,6 +125,7 @@ _PYTEST_SUITES = [
     # guarded by test_cli_units, so a new tools/test_*.py cannot go quiet again.
     (".", ".", "tools/test_conformance_probe.py"),
     (".", ".", "tools/test_export_census.py"),
+    (".", ".", "tools/test_link_pulls.py"),
     (".", ".", "tools/test_gen_ctype_tables.py"),
     (".", ".", "tools/test_verify_lost_exports.py"),
     (".", ".", "tools/test_verify_translation_literals.py"),

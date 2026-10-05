@@ -94,7 +94,9 @@ pub const S_OK: i32 = 0;
 pub const TKIND_INTERFACE: u32 = 3;
 pub const UI1_MAX: u32 = 255;
 pub const UI2_MAX: u32 = 65535;
-pub const UI4_MAX: i32 = 0xFFFFFFFFu32 as i32;
+// u32, never i32: as i32 it is -1, and `UI4_MAX as u64` then sign-extends to
+// u64::MAX, so every value "fit" VT_UI4 (VarUI4FromStr("4294967296") gave 0, S_OK).
+pub const UI4_MAX: u32 = 0xFFFF_FFFF;
 // UI8_MAX removed: overflowed i64; the correct u64 version lives in winemacros.rs.
 pub const VARCMP_EQ: i32 = 1;
 pub const VARCMP_GT: i32 = 2;

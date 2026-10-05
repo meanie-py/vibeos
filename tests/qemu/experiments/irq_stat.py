@@ -107,7 +107,7 @@ def main() -> None:
         flag = "  <-- STORM" if avg > 1000 else ("  (normal tick)" if 50 <= avg <= 250 else "")
         print(f"  IRQ {irq:2d}: {vals}  avg={avg:8.1f}/s{flag}")
 
-    top = max(rates, key=rates.get) if rates else None
+    top = max(rates, key=lambda k: rates[k]) if rates else None
     if top is not None and rates[top] > 1000:
         hint = {
             0: "PIT/system timer (IRQ0) — HAL clock programming: PIT divisor "

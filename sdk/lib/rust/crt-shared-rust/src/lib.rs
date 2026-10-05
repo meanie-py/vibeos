@@ -109,3 +109,6 @@ pub mod seh_i386;
 pub mod except_x86_64;
 #[cfg(all(feature = "cpp", target_arch = "aarch64"))]
 pub mod except_arm64;
+// The arm64 stack probe both CRT DLLs need now that they link without clang_rt.
+#[cfg(all(target_arch = "aarch64", target_os = "windows"))]
+mod chkstk_arm64;

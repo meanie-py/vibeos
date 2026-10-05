@@ -76,10 +76,9 @@ target_compile_definitions(cdrom PRIVATE DEBUG_USE_KDPRINT
 target_link_libraries(cdrom ntoskrnl_vista libcntpr ${PSEH_LIB})
 add_dependencies(cdrom rust_cdrom)
 # --whole-archive: cdrom-rust is one big staticlib with dense cross-module refs; lazy archive
-# pull leaves transiently-undefined symbols, so force all objects in. --allow-multiple-definition:
-# the rust staticlib bundles compiler-builtins (memcpy/__udivti3/...) that also live in libcntpr.
+# pull leaves transiently-undefined symbols, so force all objects in. The staticlib bundles
+# compiler-builtins (memcpy/__udivti3/...) that also live in libcntpr; link_guard allows that.
 target_link_libraries(cdrom -Wl,--whole-archive ${CDROM_RUST_LIB} -Wl,--no-whole-archive)
-target_link_options(cdrom PRIVATE -Wl,--allow-multiple-definition)
 add_importlibs(cdrom wdfldr ntoskrnl hal)
 # add_pch(cdrom cdrom.h SOURCE)
 add_cd_file(TARGET cdrom DESTINATION reactos/system32/drivers NO_CAB FOR all)

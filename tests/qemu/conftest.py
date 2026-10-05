@@ -64,7 +64,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def arch(request: pytest.FixtureRequest) -> str:
     if request.config.getoption("--test-kernel"):
         return "arm64-test"
-    return request.config.getoption("--arch")
+    arch = request.config.getoption("--arch")
+    assert isinstance(arch, str), "--arch is required"
+    return arch
 
 
 # base-arch mapping (smoke variant → build tree) lives in archcfg — the single

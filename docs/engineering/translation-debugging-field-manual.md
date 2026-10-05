@@ -1483,6 +1483,14 @@ struct. Audit a module by listing every struct inside a `pshpack`/`poppack` pair
 checking the Rust `repr` (a ten-line script; ole32/oleaut32's other twenty were fine). This is
 the mirror image of the packed-`TDI_ADDRESS_IP` bullet above: wrong in either direction, and
 only a size assert catches it.
+**The pack can live in a PUBLIC header, where the module's own C never shows it.** cabinet's
+hand-declared `FDINOTIFICATION` was plain `repr(C)`, but `fdi.h` wraps it in `pshpack4`: on
+64-bit `pv` is at 0x1c, not 0x20, so every C client's `pfdin->pv` read half of `psz3` and half
+of `pv`. i386 was right by accident (pointers are 4 bytes, so pack 4 changes nothing), which is
+why the bug only surfaced on amd64/arm64 -- rapps crashed extracting its database. A
+module-local audit misses this; measure the header with the module's real flags (borrow its
+line from `compile_commands.json`, add `-fsyntax-only` and a `char (*x)[offsetof(T,f)+1000] = 1;`
+probe, read the numbers off the diagnostics) and pin the result with `offset_of!` asserts.
 
 ### A macro translated from the wrong side of an `#ifdef`
 **Symptom.** Values built through one helper are corrupt in a way that looks like two fields
@@ -5096,7 +5104,8 @@ _SEH2_GetExceptionCode(); }` (`virtual.c:876`), and only the body survived trans
 `ProbeForWrite` raises via `ExRaiseAccessViolation()`, nothing catches it, and a syscall
 whose contract is to RETURN `STATUS_ACCESS_VIOLATION` instead takes **BUGCHECK 0x1E**. A
 present probe is therefore not evidence the validation works — it is evidence only that the
-probe is present.
+probe is present. `tools/scan_raising_probes.py` (`vibeos-cli check`, gated at zero since
+2026-10-04) now fails any unqualified call to a raising probe in Rust.
 
 **The tell, and it needs no C beside it: an error path that nothing can reach any more.**
 The shape here is a flag raised around the probe and tested long after:
@@ -5196,10 +5205,11 @@ INTO ntoskrnl (config-rust, ex-rust, ntoskrnl-rust). Reach for it from a standal
 and the whole build dies at the link with
 `ld.lld: error: undefined symbol: _MmUserProbeAddress` — ks.sys did exactly this. A DATA
 import needs the per-arch import form: i386/arm64 `raw-dylib` `+verbatim` (the symbol IS the
-value), amd64 binds `__imp_MmUserProbeAddress` and dereferences. Copy the shape from
-`win32k-rust/src/safe_user_io.rs`; `ks-rust/src/property.rs` now carries it too. Note the
-failure is at LINK, not at `cargo check` — nothing links during a crate check, so this class
-sails through every check you would run first.
+value), amd64 binds `__imp_MmUserProbeAddress` and dereferences. **Fix:** enable ntkrnl-sys
+feature `import_mm_user_probe_address` in the driver's Cargo.toml (ks, npfs and mup do);
+`probe.rs` then binds the import form. Never turn it on for a crate linked INTO ntoskrnl.
+Note the failure is at LINK, not at `cargo check` — nothing links during a crate check, so
+this class sails through every check you would run first.
 
 **Use the right validator for the crate.** win32k has its own `SafeProbeForRead`/`SafeProbeForWrite`
 (`win32k-rust/src/safe_user_io.rs`): same range and alignment arithmetic as the DDK macros, but
@@ -6608,6 +6618,14 @@ stays in `CMakeFiles/<target>.dir/` forever. `verify_ucrtbase_cohab` read those 
 "our C defines this", so a lane passed with `_chkesp.s` gone (its stale `.obj` still defined
 `__chkesp`) and master went red on the fresh integration build. A tool asking what the build
 produces must ask the build graph (`build <obj>:` lines in `build.ninja`), not the directory.
+The mirror image: a library you keep "compiled, unlinked, as a reference" is NOT compiled once
+nothing links it, because `vibeos-cli build` makes what `livecd` depends on, not ALL. Every
+existing build dir still holds its objects from before the unlink, so it passes locally and
+goes red only on a fresh tree: `msvcrt_static` came off msvcrt's link line and the gate's
+difftest failed `DIFFTEST_STALE_ORACLE` (its oracle objects were never built; master red,
+2026-10-04). **Fix:** `add_dependencies(<module> <reference-lib>)`, which builds it without
+linking it (msvcrt → msvcrt_static; ucrtbase → its reference libraries). Prove it in a FRESH
+worktree, not by checking that the objects exist in yours.
 
 **The most expensive class in this file**, because the failure mode is a green that means
 nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → pl011 → gdi32 →
@@ -12146,6 +12164,15 @@ introduced at any heap exit — it is an external stray write.**
   each PC — a `wfi` is idle, a `b .` is a park, and an unfetchable page is the loop. If a FROZEN
   verdict ever comes with an odd sample out in `KiTrapReturn`, that is the loop caught mid-eret,
   not a dead clock; read the trap handler's retry decision for that abort, not the timers.
+- **A "same fault, pager succeeded N times" report is only a loop if the REGISTERS repeat.**
+  arm64's `[FAULTLOOP]` report keyed a fault on (VA, PC, TTBR0) and fired in every arm64 boot;
+  a day went into stale TLBs and page-table walkers before the measurements said otherwise.
+  The tells: the PTE's PFN differs between reports, `AT S1E1R` on the VA faults on every
+  ENTRY and succeeds after the pager, and the faulting args (dest, length) differ. That is a
+  stream of distinct first-touch faults sharing an address -- Cc's per-file VACBs recycled onto
+  one view VA by the lookaside, memcpy taking one soft fault on each -- not one instruction
+  stuck. The fingerprint now hashes the faulting registers; check the report's churn count
+  before reading anything into it.
 - **A wedge whose vCPU keeps stopping at EL0 is a user-mode spin; find its process from EL1.**
   arm64 appstorm went silent mid-run three times (2026-10-03) and first read as "the guest got
   slow". Every gdb stop landed at `kernel32!ExitThread+0x5c`: the `loop {}` after

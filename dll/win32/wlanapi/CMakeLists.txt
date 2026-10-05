@@ -54,9 +54,6 @@ set_module_type(wlanapi win32dll)
 # libwlanapi_rust.a FIRST so its #[no_mangle] symbols win; wlansvc_c.c provides the MIDL
 # client stubs the Rust imports.
 target_link_libraries(wlanapi ${WLANAPI_RUST_LIB} wine ${PSEH_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(wlanapi PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(wlanapi rust_wlanapi)
 add_importlibs(wlanapi rpcrt4 msvcrt kernel32 ntdll)
 add_cd_file(TARGET wlanapi DESTINATION reactos/system32 FOR all)

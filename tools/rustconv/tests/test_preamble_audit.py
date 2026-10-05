@@ -20,14 +20,10 @@ from rustconv.config import REACTOS_ROOT
 from rustconv.preamble_audit import audit_preamble, preamble_decls
 
 STORAGE32_C = REACTOS_ROOT / "dll" / "win32" / "ole32" / "storage32.c"
-PAID_PREAMBLE = (
-    REACTOS_ROOT
-    / "tools"
-    / "rustconv"
-    / ".responses"
-    / "20260712-175910-storage32.c"
-    / "00_preamble.rs"
-)
+# The preamble a paid storage32.c translation returned (2026-07-12), kept as a
+# committed fixture: the .responses/ bank entry it came from was deleted once ole32
+# was fully integrated, and the bank is gitignored, so it never reached CI anyway.
+PAID_PREAMBLE = Path(__file__).parent / "fixtures" / "storage32_paid_preamble.rs"
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +90,7 @@ class TestPreambleDecls:
 
 
 @pytest.mark.skipif(
-    not PAID_PREAMBLE.is_file(), reason="paid .responses/ artifact not present in this tree"
+    not PAID_PREAMBLE.is_file(), reason="storage32 preamble fixture missing"
 )
 class TestAgainstTheRealPaidPreamble:
     RUST = PAID_PREAMBLE.read_text(encoding="utf-8") if PAID_PREAMBLE.is_file() else ""

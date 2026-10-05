@@ -1640,6 +1640,7 @@ sdk/lib/crt/libcntpr.cmake	1	# the portable math/sqrt.c fast-invsqrt approximati
 sdk/lib/crt/libcntpr.cmake	1	# tiny scanf_trampoline.c — Rust can't DEFINE variadics on stable. It
 sdk/lib/crt/libcntpr.cmake	1	# uses *_asm.s, so REMOVE_ITEM is a harmless no-op there); mem/memccpy.c
 sdk/lib/crt/libcntpr.cmake	1	# which the no-SSE kernel cell cannot compile), exp2f.c (f32
+sdk/lib/crt/math/math.cmake	1	# math/i386/atan2_asm.s, amd64 AMD libm_sse2 atan2.c with _handle_error/_invoke_matherr/
 sdk/lib/crt/math/math.cmake	1	# math/i386/fabs_asm.s # FIXME
 sdk/lib/crt/math/math.cmake	1	# math/j0_y0.c
 sdk/lib/crt/math/math.cmake	1	# math/j1_y1.c
@@ -1679,7 +1680,7 @@ sdk/lib/evtlib/CMakeLists.txt	1	# ── kernel: drop evtlib.c, link libevtlib_r
 sdk/lib/libwine/CMakeLists.txt	1	# string.c implements _stricmp, already shipped with crt
 sdk/lib/lsalib/CMakeLists.txt	1	# add_library(ntlsalib lsa.c) + _NTSYSTEM_ # body replaced by Rust; kept on disk
 sdk/lib/lsalib/CMakeLists.txt	1	# lsa.c is translated to Rust (lsalib-rust, kept on disk per the never-delete
-sdk/lib/pseh/CMakeLists.txt	1	# pseh-rust in its user-mode build (seh.s's SEH runtime + dummy.c's volatile symbols, the
+sdk/lib/pseh/CMakeLists.txt	1	# The user-mode SEH runtime (seh.s's, + dummy.c's volatile symbols) is pseh-rt, the same Rust
 sdk/lib/rtl/CMakeLists.txt	1	# The asm stub's _LdrpAccessResource@16 callee lived in res.c.obj (now Rust); keeping
 sdk/lib/rtl/CMakeLists.txt	1	# access.c — replaced by Rust implementation (sdk/lib/rust/access/)
 sdk/lib/rtl/CMakeLists.txt	1	# acl.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ACL)

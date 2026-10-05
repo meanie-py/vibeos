@@ -54,9 +54,6 @@ add_library(netid MODULE ${SOURCE})
 set_module_type(netid win32dll UNICODE)
 # libnetid_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(netid ${NETID_RUST_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(netid PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(netid rust_netid)
 add_importlibs(netid user32 gdi32 comctl32 advapi32 netapi32 dnsapi msvcrt kernel32 ntdll)
 add_cd_file(TARGET netid DESTINATION reactos/system32 FOR all)

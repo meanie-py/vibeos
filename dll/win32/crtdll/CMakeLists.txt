@@ -17,7 +17,8 @@ add_library(crtdll MODULE ${SOURCE})
 set_module_type(crtdll win32dll ENTRYPOINT DllMain 12)
 include(${REACTOS_SOURCE_DIR}/dll/win32/msvcrt/msvcrt_rust_cohab.cmake)
 link_msvcrt_rust_cohab(crtdll)
-target_link_libraries(crtdll ${PSEH_USER_LIB} ${VCRT_SETJMP_LIB})
+# The whole DLL is msvcrt-crt-rust (pseh-rt/setjmp-rt inside); one Rust graph, so no duplicate.
+link_strict(crtdll)
 add_dependencies(crtdll psdk)
 
 add_importlibs(crtdll kernel32 kernel32_vista ntdll)

@@ -1389,6 +1389,41 @@ _VENDOR_GOOD_YAML = (
 """
 )
 
+# scan_raising_probes. Seeded from ex-rust NtAllocateLocallyUniqueId (2026-10-04): the
+# probe was kept, but it was the raising export, so a bad pointer from user mode was
+# an unhandled exception. GOOD is the Result probe, plus the two spellings that must
+# NOT fire: a qualified call (the raising C-ABI re-export) and an extern declaration.
+_RAISINGPROBE_BAD = """
+extern "system" {
+    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: usize);
+}
+pub unsafe extern "system" fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LUID) -> NTSTATUS {
+    if ExGetPreviousMode() != 0 {
+        ProbeForWrite(LocallyUniqueId as PVOID, core::mem::size_of::<LUID>(), 4);
+    }
+    STATUS_SUCCESS
+}
+"""
+_RAISINGPROBE_GOOD = """
+extern "system" {
+    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: usize);
+}
+pub unsafe extern "C" fn ProbeForWriteUlong(address: *mut ULONG) {
+    ntkrnl_sys::inline::common::ProbeForWriteUlong(address)
+}
+pub unsafe extern "system" fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LUID) -> NTSTATUS {
+    if ExGetPreviousMode() != 0 {
+        // ProbeForWrite(LocallyUniqueId, sizeof(LUID), sizeof(ULONG));
+        let probed = ntkrnl_sys::probe::probe_user_buffer(LocallyUniqueId as PVOID, 8, 4, 1);
+        if let Err(status) = probed {
+            return status;
+        }
+    }
+    STATUS_SUCCESS
+}
+"""
+
+
 # scan_dropped_seh_pairs. The LPC shape: the C is cohab-flipped OUT of the build
 # (commented in the CMake source list) and a separate .rs took over under
 # #[no_mangle], so the two files are never in the same place and the inline
@@ -1895,6 +1930,13 @@ CONTROLS: list[Control] = [
             "ntoskrnl/lpc/reply.c": _SEHPAIR_C,
             "sdk/lib/rust/lpc-rust/src/reply.rs": _SEHPAIR_GOOD_RS,
         },
+    ),
+    Control(
+        name="scan_raising_probes",
+        script="tools/scan_raising_probes.py",
+        argv=["--lint"],
+        bad={"sdk/lib/rust/ex-rust/src/uuid.rs": _RAISINGPROBE_BAD},
+        good={"sdk/lib/rust/ex-rust/src/uuid.rs": _RAISINGPROBE_GOOD},
     ),
     Control(
         name="strip_msvc_cmake",

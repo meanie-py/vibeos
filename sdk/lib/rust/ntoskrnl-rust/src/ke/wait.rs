@@ -20,9 +20,6 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "C" {
-    fn ProbeForReadLargeInteger(Address: PLARGE_INTEGER) -> _LARGE_INTEGER;
-}
-extern "C" {
     fn KxRemoveTreeTimer(Timer: PKTIMER);
     fn KxSingleThreadWait(
         Object: PVOID,

@@ -337,7 +337,7 @@ pub unsafe extern "system" fn KeRosCaptureUserStackBackTrace(
     i as USHORT
 }
 
-unsafe fn KeRosDumpStackFrameArray(Frames: PULONG_PTR, FrameCount: ULONG) {
+pub(crate) unsafe fn KeRosDumpStackFrameArray(Frames: PULONG_PTR, FrameCount: ULONG) {
     let mut i: ULONG;
     let mut Addr: ULONG_PTR;
     let mut InSystem: BOOLEAN = 0;

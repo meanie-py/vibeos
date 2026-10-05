@@ -81,11 +81,8 @@ endif()
 # transcribed (global_asm! with offset_of! operands; instruction-identical to these
 # objects). The C `setjmp` library above stays for its non-CRT consumers (ftfd,
 # static_crt_apitest); vcruntime no longer embeds its objects.
+# (The CRT DLLs carry setjmp-rt inside their own Rust archive instead.)
 rust_staticlib_variant(vcrt_setjmp_rust setjmp-rust "user" FALSE)
-# The CRT DLLs also name it by path, ${VCRT_SETJMP_LIB} (gcc.cmake).
-if(NOT vcrt_setjmp_rust_LIB STREQUAL VCRT_SETJMP_LIB)
-    message(FATAL_ERROR "VCRT_SETJMP_LIB (${VCRT_SETJMP_LIB}) is not setjmp-rust's archive (${vcrt_setjmp_rust_LIB})")
-endif()
 
 # Runtime library (linked into ucrtbase)
 add_library(vcruntime ${VCRUNTIME_SOURCES})

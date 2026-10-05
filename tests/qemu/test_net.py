@@ -34,7 +34,21 @@ import time
 
 import pytest
 
-from tests.qemu.vm import QemuVM
+from tests.qemu.vm import (
+    Amd64UefiNetConfig,
+    Arm64NetConfig,
+    I386UefiNetConfig,
+    QemuVM,
+)
+
+_NET_CONFIG_TYPES = (Amd64UefiNetConfig, I386UefiNetConfig, Arm64NetConfig)
+
+
+def _net_config(vm: QemuVM) -> Amd64UefiNetConfig | I386UefiNetConfig | Arm64NetConfig:
+    """vm.config as the net config it must be: only those forward the guest ports."""
+    cfg = vm.config
+    assert isinstance(cfg, _NET_CONFIG_TYPES), f"{type(cfg).__name__} forwards no guest ports"
+    return cfg
 
 
 def _wait_for_marker(vm: QemuVM, marker: str, timeout: float = 90.0) -> bool:
@@ -146,7 +160,9 @@ def test_tcp_echo_roundtrip(vm: QemuVM) -> None:
     payload = b"vibeos-netstack-echo-probe\n"
     # net_host is 127.0.0.1 on native; on the windows-host backend it's the WSL
     # default-gateway IP (the Windows QEMU's 0.0.0.0 hostfwd isn't on WSL's loopback).
-    with socket.create_connection((vm.net_host, vm.config.echo_hostfwd_port), timeout=10.0) as s:
+    with socket.create_connection(
+        (vm.net_host, _net_config(vm).echo_hostfwd_port), timeout=10.0
+    ) as s:
         s.settimeout(10.0)
         s.sendall(payload)
         got = b""
@@ -372,7 +388,9 @@ def test_tdi_server_listen_accept(vm: QemuVM) -> None:
         "(M8 TDI_LISTEN dispatch / bind path)"
     )
     payload = b"vibeos-tdi-server-probe\n"
-    with socket.create_connection((vm.net_host, vm.config.tdi_srv_hostfwd_port), timeout=10.0) as s:
+    with socket.create_connection(
+        (vm.net_host, _net_config(vm).tdi_srv_hostfwd_port), timeout=10.0
+    ) as s:
         s.settimeout(15.0)
         s.sendall(payload)
         got = b""

@@ -57,7 +57,7 @@ def _delta_pct(a: Path, b: Path) -> float:
     ia = Image.open(a).convert("RGB")
     ib = Image.open(b).convert("RGB")
     d = ImageChops.difference(ia, ib).convert("L")
-    moved = sum(1 for px in d.getdata() if px > 16)
+    moved = sum(d.histogram()[17:])  # pixels with a delta > 16
     return moved / (ia.width * ia.height) * 100.0
 
 

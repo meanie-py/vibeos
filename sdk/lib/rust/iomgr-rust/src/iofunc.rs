@@ -93,16 +93,11 @@ extern "system" {
     fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExAllocatePoolWithQuotaTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
-    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 
 // These are defined as extern "C" in shim_exports.rs — must match.
 extern "C" {
     fn ObReferenceObject(Object: PVOID);
-    fn ProbeForWriteIoStatusBlock(Ptr: PIO_STATUS_BLOCK);
-    fn ProbeForWriteHandle(Ptr: *mut HANDLE);
-    fn ProbeForReadLargeInteger(Ptr: *const LARGE_INTEGER) -> LARGE_INTEGER;
     fn InterlockedCompareExchangePointer(Destination: *mut PVOID, Exchange: PVOID, Comparand: PVOID) -> PVOID;
 }
 unsafe extern "system" {
@@ -3073,9 +3068,19 @@ pub unsafe extern "system" fn NtSetInformationFile(
     }
 
     if PreviousMode != 0i8 {
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
+        // C: under _SEH2_TRY, whose handler returns the exception code.
+        if let Err(status) = probe_user_buffer(
+            IoStatusBlock as *const core::ffi::c_void,
+            core::mem::size_of::<_IO_STATUS_BLOCK>(),
+            1,
+            PreviousMode,
+        ) {
+            return status;
+        }
         let align = if Length == core::mem::size_of::<BOOLEAN>() as ULONG { 1 } else { 4 };
-        ProbeForRead(FileInformation, Length as ULONG_PTR, align);
+        if let Err(status) = probe_user_buffer(FileInformation as *const core::ffi::c_void, Length as usize, align, PreviousMode) {
+            return status;
+        }
     }
 
     Status = ObReferenceObjectByHandle(
@@ -3570,10 +3575,19 @@ pub unsafe extern "system" fn NtWriteFile(
                 ObDereferenceObject(FileObject as PVOID);
                 return e;
             }
-        } else {
-            ProbeForWriteIoStatusBlock(IoStatusBlock);
+        } else if let Err(status) = probe_user_buffer(
+            IoStatusBlock as *const core::ffi::c_void,
+            core::mem::size_of::<_IO_STATUS_BLOCK>(),
+            1,
+            PreviousMode,
+        ) {
+            ObDereferenceObject(FileObject as PVOID);
+            return status;
         }
-        ProbeForRead(Buffer, Length as ULONG_PTR, 1);
+        if let Err(status) = probe_user_buffer(Buffer as *const core::ffi::c_void, Length as usize, 1, PreviousMode) {
+            ObDereferenceObject(FileObject as PVOID);
+            return status;
+        }
 
         if !ByteOffset.is_null() {
             // C: inside _SEH2_TRY; the handler dereferences FileObject and
@@ -3866,8 +3880,18 @@ pub unsafe extern "system" fn NtQueryVolumeInformationFile(
             return STATUS_INFO_LENGTH_MISMATCH;
         }
 
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
-        ProbeForWrite(FsInformation, Length as ULONG_PTR, 4);
+        // C: under _SEH2_TRY, whose handler returns the exception code.
+        if let Err(status) = probe_user_buffer(
+            IoStatusBlock as *const core::ffi::c_void,
+            core::mem::size_of::<_IO_STATUS_BLOCK>(),
+            1,
+            PreviousMode,
+        ) {
+            return status;
+        }
+        if let Err(status) = probe_user_buffer(FsInformation as *const core::ffi::c_void, Length as usize, 4, PreviousMode) {
+            return status;
+        }
     }
 
     Status = ObReferenceObjectByHandle(
@@ -4061,8 +4085,18 @@ pub unsafe extern "system" fn NtSetVolumeInformationFile(
             return STATUS_INFO_LENGTH_MISMATCH;
         }
 
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
-        ProbeForRead(FsInformation, Length as ULONG_PTR, 4);
+        // C: under _SEH2_TRY, whose handler returns the exception code.
+        if let Err(status) = probe_user_buffer(
+            IoStatusBlock as *const core::ffi::c_void,
+            core::mem::size_of::<_IO_STATUS_BLOCK>(),
+            1,
+            PreviousMode,
+        ) {
+            return status;
+        }
+        if let Err(status) = probe_user_buffer(FsInformation as *const core::ffi::c_void, Length as usize, 4, PreviousMode) {
+            return status;
+        }
     }
 
     Status = ObReferenceObjectByHandle(

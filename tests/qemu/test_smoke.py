@@ -878,6 +878,7 @@ def test_idle_cpu_not_spinning(vm: QemuVM, arch: str) -> None:
             "runs TCG not KVM — host-CPU%% is not a valid idle signal"
         )
 
+    assert vm._proc is not None
     pct = process_cpu_pct(vm._proc.pid, window=3.0)
     print(
         f"\n[idle-cpu] steady-state qemu host CPU = {pct}% "

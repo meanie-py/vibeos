@@ -888,6 +888,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The KEPT-probe half: the probe is still there, but it is the RAISING one. The C
+    # catches it in a _SEH2_EXCEPT; with DUMMY_PSEH nothing does, so one bad pointer
+    # from user mode is BUGCHECK 0x1E. About 160 such calls (ProbeForRead/Write and the
+    # typed probe.h helpers) were converted to ntkrnl_sys::probe's Result probes on
+    # 2026-10-04. Gated at ZERO for the same reason as the pairs scanner above.
+    srp = repo / "tools" / "scan_raising_probes.py"
+    specs.append(
+        (
+            "scan_raising_probes",
+            [py, str(srp), "--lint"] if srp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
     # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
     # covers the names that emit nothing and were therefore outside every scanner here.

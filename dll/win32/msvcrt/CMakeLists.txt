@@ -220,12 +220,19 @@ add_custom_command(
 add_custom_target(rust_msvcrt_crt DEPENDS ${MSVCRT_CRT_RUST_LIB})
 
 link_msvcrt_rust_cohab(msvcrt)
-# ${PSEH_USER_LIB} and ${VCRT_SETJMP_LIB} by path (gcc.cmake): the SEH runtime and
-# setjmp/longjmp resolve from Rust before ntdll's import library, which exports
-# _setjmp/longjmp and would otherwise answer them. Nothing else: msvcrt_static, crtmath,
-# vcruntime, wine, chkstk and chkesp contributed no object to any arch's link (link maps,
-# 2026-10-04), and dbgrpt is msvcrt-crt-rust's dbgrpt.rs.
-target_link_libraries(msvcrt ${PSEH_USER_LIB} ${VCRT_SETJMP_LIB})
+# Build-order only, nothing is linked: msvcrt_static is no longer on any link line, but the
+# host difftests (msvcrt-difftest, msvcrt-scanf-difftest) and gen_ctype_tables.py /
+# gen_msvcrt_ref_protos.py / verify_cohab_coverage.py read its OBJECTS as their oracle, and
+# a build only makes what `livecd` depends on. Without this a fresh tree never compiled it
+# and the gate's difftest failed DIFFTEST_STALE_ORACLE (master red, 2026-10-04), while every
+# existing build dir still held the objects from before the unlink.
+add_dependencies(msvcrt msvcrt_static)
+# Nothing else. The SEH runtime and setjmp/longjmp are pseh-rt/setjmp-rt inside the archive
+# (whole-archived, so defined before ntdll's import library, which exports _setjmp/longjmp,
+# is consulted); msvcrt_static, crtmath, vcruntime, wine, chkstk and chkesp contributed no
+# object to any arch's link (tools/link_pulls.py, 2026-10-04); dbgrpt is dbgrpt.rs. One Rust
+# graph and no C library, so the link tolerates no duplicate symbol at all (gcc.cmake).
+link_strict(msvcrt)
 add_importlibs(msvcrt kernel32 kernel32_vista ntdll)
 add_delay_importlibs(msvcrt user32 advapi32)
 

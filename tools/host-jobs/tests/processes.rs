@@ -406,11 +406,33 @@ fn more_than_128_waiters_work_with_low_file_descriptor_limit() {
             }
         }
     }
+    // What 144 runner starts cost on this host RIGHT NOW, uncontended: each one
+    // spawns, admits at once and runs `true`, which is exactly the work one
+    // contended handoff below does. A fixed 5 s budget measured the host instead
+    // of the scheduler: under a merge-queue gate plus four fleet builds it failed
+    // at 127/144 and rejected lanes that had not touched host-jobs (2026-10-04).
+    let baseline = {
+        let solo = Fixture::new();
+        let t0 = Instant::now();
+        for _ in 0..48 {
+            let status = solo
+                .command()
+                .env("VIBEOS_HOST_JOB_SLOTS", "1")
+                .args(["--kind", "compile", "--", "true"])
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+        t0.elapsed() * 3
+    };
     f.release("blocker", &mut blocker);
     // A normal completion must wake the next cohort immediately. The former
-    // wake-all/full-scan convoy took over 12 seconds here; one-second timeout
-    // driven handoffs would take minutes. Allow ample scheduler noise.
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // wake-all/full-scan convoy took over 12 seconds here (against a baseline of
+    // about 1 s), and one-second timeout driven handoffs would take minutes; both
+    // stay far outside three baselines plus slack, while scheduler noise scales
+    // with the baseline it inflates.
+    let budget = (baseline * 3 + Duration::from_secs(2)).max(Duration::from_secs(5));
+    let deadline = Instant::now() + budget;
     loop {
         let mut finished = 0;
         for child in &mut waiters.0 {
@@ -422,7 +444,11 @@ fn more_than_128_waiters_work_with_low_file_descriptor_limit() {
         if finished == 144 {
             break;
         }
-        assert!(Instant::now() < deadline, "only {finished}/144 normal handoffs completed; possible admission convoy or missed wake");
+        assert!(
+            Instant::now() < deadline,
+            "only {finished}/144 normal handoffs completed in {budget:?} (uncontended baseline \
+             {baseline:?}); possible admission convoy or missed wake"
+        );
         thread::sleep(Duration::from_millis(10));
     }
 }

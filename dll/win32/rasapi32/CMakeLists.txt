@@ -47,9 +47,6 @@ add_library(rasapi32 MODULE ${SOURCE})
 set_module_type(rasapi32 win32dll)
 # librasapi32_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(rasapi32 ${RASAPI32_RUST_LIB} wine)
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the
-# 64-bit division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(rasapi32 PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(rasapi32 rust_rasapi32)
 add_importlibs(rasapi32 msvcrt kernel32 ntdll)
 add_cd_file(TARGET rasapi32 DESTINATION reactos/system32 FOR all)
