@@ -28,7 +28,9 @@ HOST_IP=${PI4_HOST_IP:-192.168.1.183}
 # RFC 7440 window: blocks sent per ACK. 1 = classic lockstep TFTP.
 TFTP_WINDOW=${PI4_TFTP_WINDOW:-32}
 TFTP_BLKSIZE=${PI4_TFTP_BLKSIZE:-1468}
-SEND="$(dirname "$0")/serial-send.sh"
+# Siblings run through bash: tools/pi4/*.sh are committed 100644 (core.fileMode=false), so
+# exec-ing one directly is "Permission denied" in any checkout nobody chmod-ed by hand.
+SEND=(bash "$(dirname "$0")/serial-send.sh")
 LAUNCH=1
 POWER=1
 RAMDISK=0
@@ -94,7 +96,7 @@ size() { stat -c %s "$F" 2>/dev/null || echo 0; }
 start=$(size)
 if [ "$POWER" -eq 1 ]; then
     log "power-cycling the board"
-    "$(dirname "$0")/power.sh" cycle 5 >/dev/null || exit 1
+    bash "$(dirname "$0")/power.sh" cycle 5 >/dev/null || exit 1
 else
     log "waiting for the firmware splash (power-cycle the Pi now)"
 fi
@@ -106,7 +108,7 @@ fi
 # F1 = UEFI Shell. VT100 PF1; the firmware's terminal maps ESC O P.
 log "splash seen, requesting the UEFI Shell"
 mark=$(size)
-"$SEND" --raw $'\033OP'
+"${SEND[@]}" --raw $'\033OP'
 if ! wait_for 'Shell>' "$mark" 90; then
     log "never reached the Shell prompt"
     exit 1
@@ -147,10 +149,10 @@ fi
 
 log "in the Shell, bringing up DHCP on eth0"
 mark=$(size)
-"$SEND" 'ifconfig -s eth0 dhcp'
+"${SEND[@]}" 'ifconfig -s eth0 dhcp'
 sleep 15
 mark=$(size)
-"$SEND" 'ifconfig -l eth0'
+"${SEND[@]}" 'ifconfig -l eth0'
 if ! wait_for '192.168.' "$mark" 30; then
     log "eth0 did not get a DHCP address"
     exit 1
@@ -160,7 +162,7 @@ fi
 tftp_to_card() {
     local mark
     mark=$(size)
-    "$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP $1 $2"
+    "${SEND[@]}" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP $1 $2"
     if ! wait_for 'Shell>' "$mark" "${3:-120}"; then
         log "TFTP of $1 did not finish"
         exit 1
@@ -179,9 +181,9 @@ if [ "$PICO_FLASH" -eq 1 ]; then
     tftp_to_card pico.uf2 "$CARD:\\pico.uf2"
     tftp_to_card picoflash.nsh "$CARD:\\picoflash.nsh"
     log "starting the copy script, then rebooting the Pico into BOOTSEL"
-    "$SEND" "$CARD:\\picoflash.nsh"
+    "${SEND[@]}" "$CARD:\\picoflash.nsh"
     sleep 2
-    "$(dirname "$0")/pico.sh" bootsel >/dev/null || { log "the Pico refused bootsel"; exit 1; }
+    bash "$(dirname "$0")/pico.sh" bootsel >/dev/null || { log "the Pico refused bootsel"; exit 1; }
     exit 0
 fi
 
@@ -191,20 +193,20 @@ if [ "$SANBOOT" -eq 1 ]; then
     tftp_to_card autoexec.ipxe "$CARD:\\autoexec.ipxe"
     log "launching iPXE (sanboot http://$HOST_IP:${PI4_HTTP_PORT:-8069}/boot.img)"
     mark=$(size)
-    "$SEND" "$CARD:\\ipxe.efi"
+    "${SEND[@]}" "$CARD:\\ipxe.efi"
     if ! wait_for 'Switching stack' "$mark" 300; then
         log "loader never started - see the capture for iPXE's error (HTTP rule? bench.sh http?)"
         exit 1
     fi
     log "loader at its menu; selecting the default entry"
-    "$SEND" --raw $'\r'
+    "${SEND[@]}" --raw $'\r'
     log "booting - watch the capture for [FLDR]/[KERNEL] output"
     exit 0
 fi
 
 log "TFTP: BOOTAA64.EFI from $HOST_IP onto the card"
 mark=$(size)
-"$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP EFI/BOOT/BOOTAA64.EFI $CARD:\\EFI\\BOOT\\BOOTAA64.EFI"
+"${SEND[@]}" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP EFI/BOOT/BOOTAA64.EFI $CARD:\\EFI\\BOOT\\BOOTAA64.EFI"
 if ! wait_for 'Shell>' "$mark" 120; then
     log "TFTP did not finish"
     exit 1
@@ -217,7 +219,7 @@ fi
 if [ "$RAMDISK" -eq 1 ]; then
     log "TFTP: ramdisk.img (140 MB, ~13.5 min - the SD card write is the limit)"
     mark=$(size)
-    "$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP ramdisk.img $CARD:\\ramdisk.img"
+    "${SEND[@]}" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP ramdisk.img $CARD:\\ramdisk.img"
     if ! wait_for 'Shell>' "$mark" 900; then
         log "ramdisk TFTP did not finish"
         exit 1
@@ -235,7 +237,7 @@ fi
 
 log "launching the loader"
 mark=$(size)
-"$SEND" "$CARD:\\EFI\\BOOT\\BOOTAA64.EFI"
+"${SEND[@]}" "$CARD:\\EFI\\BOOT\\BOOTAA64.EFI"
 if ! wait_for 'Switching stack' "$mark" 120; then
     log "loader did not reach its menu"
     exit 1
@@ -243,5 +245,5 @@ fi
 
 # freeldr.ini on this card uses TimeOut=-1, so the menu waits for a key.
 log "loader at its menu; selecting the default entry"
-"$SEND" --raw $'\r'
+"${SEND[@]}" --raw $'\r'
 log "booting - watch the capture for [FLDR]/[KERNEL] output"

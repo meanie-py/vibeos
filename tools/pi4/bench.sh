@@ -73,7 +73,7 @@ except Exception as e:
 PY
     printf 'tftp server     : %s\n' "${t:-down}"
     printf 'http server     : %s\n' "$(pids 'serve_http.py' | xargs)"
-    printf 'power           : %s\n' "$("$HERE/power.sh" status 2>&1)"
+    printf 'power           : %s\n' "$(bash "$HERE/power.sh" status 2>&1)"
 }
 
 up() {
