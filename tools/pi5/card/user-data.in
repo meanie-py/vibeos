@@ -11,7 +11,38 @@ users:
     lock_passwd: true
     ssh_authorized_keys:
       - "@SSH_PUBKEY@"
+write_files:
+  # The stager owns the network and nothing else. A reused card can carry an old
+  # setup's connections: the first bench card shared its Ethernet port (a DHCP
+  # server on 10.42.0.1, on the bench LAN) for a Tor box. Keep only the wired DHCP
+  # client cloud-init writes from network-config, and stop the services that
+  # setup ran.
+  - path: /usr/local/sbin/vibeos-bench-net
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      set -x
+      # cloud-init renders network-config as cloud-init-* connections (or as
+      # netplan's 50-cloud-init.yaml); everything else is the old setup's.
+      for f in /etc/NetworkManager/system-connections/*; do
+          case "$f" in *cloud-init*) ;; *) rm -f "$f" ;; esac
+      done
+      for f in /etc/netplan/*.yaml; do
+          case "$f" in */50-cloud-init.yaml) ;; *) rm -f "$f" ;; esac
+      done
+      for s in tor tor@default hostapd dnsmasq; do
+          systemctl disable --now "$s" 2>/dev/null
+      done
+      command -v netplan >/dev/null && netplan apply
+      nmcli connection reload
+      # Whatever rendered it, end with exactly a DHCP client on the wired port.
+      if ! nmcli -t -f DEVICE,STATE device | grep -qx 'eth0:connected'; then
+          nmcli connection add type ethernet ifname eth0 con-name bench-eth0 \
+              ipv4.method auto ipv6.method auto connection.autoconnect yes
+          nmcli connection up bench-eth0
+      fi
 runcmd:
+  - [/usr/local/sbin/vibeos-bench-net]
   - [systemctl, enable, --now, ssh]
   # A newer EEPROM is what breaks the archived UEFI's display (worproject's
   # end-of-support note). Keep the board on the bootloader it shipped with.
