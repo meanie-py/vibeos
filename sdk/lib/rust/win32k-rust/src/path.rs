@@ -2429,7 +2429,7 @@ unsafe fn IntGdiWidenPath_impl(
                     let mut alpha: f64;
                     let theta: f64;
                     let miterWidth: f64;
-                    let mut _joint: DWORD = joint;
+                    let mut _joint: DWORD = joint; // nolint: let-shadow (the C declares its own _joint here)
                     let mut pt: POINT = core::mem::zeroed();
                     let pInsidePath: PPATH;
                     let pOutsidePath: PPATH;

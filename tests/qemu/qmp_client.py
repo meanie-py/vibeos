@@ -146,7 +146,7 @@ class QmpClient:
             nl = self._buf.find(b"\n")
             if nl >= 0:
                 line = self._buf[:nl]
-                self._buf = self._buf[nl + 1:]
+                self._buf = self._buf[nl + 1 :]
                 if line.strip():
                     return json.loads(line)
                 continue

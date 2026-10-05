@@ -65,6 +65,8 @@ extern "system" {
 static mut VIBE_SELFTEST: u8 = 0;
 /// CSWITCH_SELFTEST=1 armed via fw_cfg (consumed by `KiStartSyncCensus`).
 pub static mut CSWITCH_SELFTEST_ARMED: bool = false;
+/// FREEZE_SELFTEST=1: see `ke::census::freeze_selftest`. Destructive.
+pub static mut FREEZE_SELFTEST_ARMED: bool = false;
 
 const TRIPWIRE_FILE: &[u8] = b"opt/org.vibeos.tripwire";
 const CFG_MAX: usize = 256;
@@ -258,6 +260,15 @@ unsafe fn apply_token(tok: &[u8]) {
                 b"[TRIPWIRE] ERROR: CSWITCH_SELFTEST armed but cswitchdep NOT built in (need --cswitchdep)\n\0"
                     .as_ptr(),
             );
+        }
+    } else if let Some(val) = token_val(tok, b"FREEZE_SELFTEST") {
+        // Prove a bugcheck stops the OTHER CPUs: once the system is up, a thread on
+        // the last CPU prints ticks while this one bugchecks. Pass = ticks stop at the
+        // *** BUGCHECK banner (which prints before the freeze, on purpose: a hung freeze
+        // still leaves the crash code). Destructive by design -- the boot dies (0xE2).
+        if val == b"1" {
+            FREEZE_SELFTEST_ARMED = true;
+            DbgPrint(b"[TRIPWIRE] freeze selftest armed\n\0".as_ptr());
         }
     } else if let Some(val) = token_val(tok, b"RUSTPANIC_SELFTEST") {
         // crash-value lane: prove the shared panic handler barks — deliberate

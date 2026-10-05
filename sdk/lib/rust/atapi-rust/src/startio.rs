@@ -224,11 +224,11 @@ pub unsafe extern "system" fn AtapiInterrupt(HwDeviceExtension: PVOID) -> BOOLEA
         if (*deviceExtension).InterruptMode == LevelSensitive {
             if !(*deviceExtension).BaseIoAddress1[0].is_null() {
                 let bia1 = (*deviceExtension).BaseIoAddress1[0] as PATAPI_REGISTERS_1;
-                let _statusByte = GetBaseStatus(bia1 as PIDE_REGISTERS_1);
+                let _statusByte = GetBaseStatus(bia1 as PIDE_REGISTERS_1); // nolint: let-shadow (dummy status read to clear the interrupt)
             }
             if !(*deviceExtension).BaseIoAddress1[1].is_null() {
                 let bia1 = (*deviceExtension).BaseIoAddress1[1] as PATAPI_REGISTERS_1;
-                let _statusByte = GetBaseStatus(bia1 as PIDE_REGISTERS_1);
+                let _statusByte = GetBaseStatus(bia1 as PIDE_REGISTERS_1); // nolint: let-shadow (dummy status read to clear the interrupt)
             }
         }
         return 0; // FALSE

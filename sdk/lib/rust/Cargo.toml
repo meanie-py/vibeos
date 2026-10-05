@@ -212,6 +212,7 @@ members = [
     "guids-rust",
     "setjmp-rust",
     "pseh-rust",
+    "delayimp-rust",
     "arbiter-rust",
     "lsass-sys",
     "lsalib-rust",

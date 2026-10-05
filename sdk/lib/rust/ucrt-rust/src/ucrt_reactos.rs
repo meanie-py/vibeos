@@ -137,7 +137,6 @@ pub unsafe extern "C" fn __acrt_GetStringTypeW(info_type: u32, src: *const u16, 
 // esp before and after a call; a mismatch tail-jumps to `_chkesp_failed`.
 #[cfg(all(target_arch = "x86", target_os = "windows"))]
 core::arch::global_asm!(
-    ".intel_syntax noprefix",
     ".text",
     ".globl __chkesp",
     "__chkesp:",
@@ -145,5 +144,38 @@ core::arch::global_asm!(
     "    ret",
     ".Lchkesp_failed:",
     "    jmp __chkesp_failed",
-    ".att_syntax prefix",
 );
+
+// dll/win32/ucrtbase/stubs.c, the rest of it (`__acrt_initialize_sse2` is internal/init.rs).
+
+/// `atexit`: libsupc++ (linked into ucrtbase for `__cxa_guard_*`) calls it; UCRT's own
+/// headers inline it over `_crt_atexit`, so ucrtbase defines no export by this name.
+#[cfg(feature = "startup")]
+#[no_mangle]
+pub unsafe extern "C" fn atexit(function: Option<unsafe extern "C" fn()>) -> core::ffi::c_int {
+    crate::startup::onexit::_crt_atexit(function)
+}
+
+extern "C" {
+    fn malloc(size: usize) -> *mut core::ffi::c_void;
+    fn free(mem: *mut core::ffi::c_void);
+}
+
+/// `operator_new` / `operator_delete`: the C names Wine's cpp.c (msvcrt_shared) allocates
+/// exception objects through.
+#[no_mangle]
+pub unsafe extern "C" fn operator_new(size: usize) -> *mut core::ffi::c_void {
+    malloc(size)
+}
+#[no_mangle]
+pub unsafe extern "C" fn operator_delete(mem: *mut core::ffi::c_void) {
+    free(mem)
+}
+
+/// `_chkesp_failed` (i386): the `_chkesp` mismatch path above jumps here; break into the
+/// debugger, as stubs.c's `__debugbreak()` did.
+#[cfg(all(target_arch = "x86", target_os = "windows"))]
+#[no_mangle]
+pub unsafe extern "C" fn _chkesp_failed() {
+    core::arch::asm!("int3", options(nomem, nostack));
+}

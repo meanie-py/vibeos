@@ -575,6 +575,9 @@ pub unsafe extern "system" fn KiStartSyncCensus() {
         super::cswitchdep::cswitch_selftest();
     }
     crate::debugblock::debug_block_stamp();
+    if crate::tripwire::FREEZE_SELFTEST_ARMED {
+        freeze_selftest();
+    }
 
     let mut handle: HANDLE = core::ptr::null_mut();
     let status = PsCreateSystemThread(
@@ -600,4 +603,68 @@ pub unsafe extern "system" fn KiStartSyncCensus() {
     crate::dbg_print!(
         b"[CENSUS] sync watchdog up (10s cadence, gate waits + all parked waits w/ reason)\n\0"
     );
+}
+
+
+// ---------------------------------------------------------------------------
+// FREEZE_SELFTEST=1 (tripwire): does a bugcheck stop the other processors?
+//
+// A ticker thread pinned to the LAST processor prints a numbered tick in a tight
+// loop; this one waits until ticks are flowing, then bugchecks. With a working
+// freeze no tick appears after the *** BUGCHECK line. arm64's KxFreezeExecution was
+// an empty stub and the bugcheck froze nothing, so other CPUs ran on through the
+// dump; nothing could show that without a deliberate crash on a busy MP machine.
+// ---------------------------------------------------------------------------
+
+static FREEZE_TICKS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+unsafe extern "system" fn FreezeSelftestTicker(_ctx: PVOID) {
+    let last = (ntkrnl_sys::globals::KeNumberProcessors as u32).saturating_sub(1);
+    ntkrnl_sys::ddk::KeSetSystemAffinityThread(1 << last);
+    loop {
+        let n = FREEZE_TICKS.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        crate::dbg_print!(
+            b"[FREEZE-SELFTEST] tick %u cpu=%u\n\0",
+            n,
+            ntkrnl_sys::ddk::KeGetCurrentProcessorNumber() as u32,
+        );
+        ntkrnl_sys::ddk::KeStallExecutionProcessor(2000);
+    }
+}
+
+unsafe fn freeze_selftest() {
+    let cpus = ntkrnl_sys::globals::KeNumberProcessors as u32;
+    if cpus < 2 {
+        crate::dbg_print!(
+            b"[FREEZE-SELFTEST] ERROR: needs >= 2 CPUs (have %u) -- boot with --smp 2+\n\0",
+            cpus,
+        );
+        return;
+    }
+    let mut handle: HANDLE = core::ptr::null_mut();
+    let status = PsCreateSystemThread(
+        &mut handle,
+        THREAD_ALL_ACCESS,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::mem::transmute(FreezeSelftestTicker as usize),
+        core::ptr::null_mut(),
+    );
+    if status < 0 {
+        crate::dbg_print!(b"[FREEZE-SELFTEST] ERROR: ticker thread failed: %x\n\0", status as u32);
+        return;
+    }
+    ZwClose(handle);
+    // Stall, not KeDelayExecutionThread: this runs inside Phase-1 init, where a timed
+    // wait did not return (the ticker ran 249k ticks and the bugcheck never came).
+    while FREEZE_TICKS.load(core::sync::atomic::Ordering::SeqCst) < 20 {
+        ntkrnl_sys::ddk::KeStallExecutionProcessor(1000);
+    }
+    crate::dbg_print!(
+        b"[FREEZE-SELFTEST] ticks flowing on cpu %u; bugchecking from cpu %u -- PASS iff ticks stop within one line of the BUGCHECK banner (it prints before the freeze, on purpose)\n\0",
+        cpus - 1,
+        ntkrnl_sys::ddk::KeGetCurrentProcessorNumber() as u32,
+    );
+    ntkrnl_sys::ddk::KeBugCheckEx(0xE2 /* MANUALLY_INITIATED_CRASH */, 0xF2EE2E, 0, 0, 0);
 }

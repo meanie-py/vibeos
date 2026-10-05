@@ -225,28 +225,15 @@ def main() -> int:
 
     i386 = args.arch == "i386"
     rust = defined(archive, i386)
-    # The `...` entry points: C trampolines in the MODULE target over Rust `_v*` twins.
-    # They are part of the flip — stable Rust cannot define a C-variadic function — so an
-    # export they carry is Rust-backed even though the symbol lives in a .c.obj.
     # Every object comes from the DLL's REAL link line, never a directory glob: ninja
-    # leaves objects behind when a source moves, and the shims did move (out of
-    # msvcrt.dir into the msvcrt_rust_shims object library). Globbing counted those
-    # stale copies as the DLL's own C and knocked msvcrt's figure down.
+    # leaves objects behind when a source moves. The `...` entry points used to be C
+    # trampolines in a separate object library (msvcrt_rust_shims) and were counted from
+    # there; since f1658ab724d they are va_entry! thunks inside the Rust archive itself,
+    # so `rust` above already holds them.
     import ucrt_tier2_refset as refset
 
     link = refset.link_line(REPO / f"build-{args.arch}", args.dll).split()
     objs = [REPO / f"build-{args.arch}" / t for t in link if t.endswith(".obj")]
-    # The `...` shells: C trampolines over Rust `_v*` twins, part of the flip because
-    # stable Rust cannot define a C-variadic function.
-    shims = [o for o in objs if "msvcrt_rust_shims.dir" in str(o)]
-    if not shims:
-        sys.exit(
-            f"FAIL: {args.dll}'s link line carries no msvcrt_rust_shims objects -- without "
-            f"them every `...` export reads as still-C.\nfix: ./vibeos-cli build --arch "
-            + args.arch
-        )
-    for obj in shims:
-        rust |= defined(obj, i386)
 
     # A DLL's OWN module objects (crtdll's dllmain.c, msvcrt20.c) come first on its link
     # line and win first-match over the archive, so a name they define is answered by
@@ -268,7 +255,7 @@ def main() -> int:
     backed = [e for e, i in impls if is_rust(e, i)]
     missing = sorted(e for e, i in impls if not is_rust(e, i))
 
-    print(f"{args.dll}.dll export coverage ({args.arch}, {len(shims)} varargs shim TUs)")
+    print(f"{args.dll}.dll export coverage ({args.arch})")
     print(
         f"  {len(backed)} of {len(impls)} implemented C exports Rust-backed "
         f"— {100 * len(backed) // len(impls)}%"

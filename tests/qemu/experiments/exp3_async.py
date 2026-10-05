@@ -87,27 +87,37 @@ def main() -> None:
         print(f"  qcow2 node-name = {node}")
 
         save_s, save_err, save_probe = _job(
-            vm, "snapshot-save", **{
-                "job-id": "asave", "tag": "asnap",
-                "vmstate": node, "devices": [node]})
+            vm,
+            "snapshot-save",
+            **{"job-id": "asave", "tag": "asnap", "vmstate": node, "devices": [node]},
+        )
         res["snapshot_save"] = {
-            "seconds": save_s, "error": save_err,
-            "concurrent_qmp_probe_ms": save_probe}
-        print(f"  snapshot-save: {save_s}s  err={save_err}  "
-              f"concurrent-QMP-probe={save_probe}ms")
+            "seconds": save_s,
+            "error": save_err,
+            "concurrent_qmp_probe_ms": save_probe,
+        }
+        print(f"  snapshot-save: {save_s}s  err={save_err}  concurrent-QMP-probe={save_probe}ms")
 
         if not save_err:
             load_s, load_err, load_probe = _job(
-                vm, "snapshot-load", **{
-                    "job-id": "aload", "tag": "asnap",
-                    "vmstate": node, "devices": [node]})
+                vm,
+                "snapshot-load",
+                **{"job-id": "aload", "tag": "asnap", "vmstate": node, "devices": [node]},
+            )
             res["snapshot_load"] = {
-                "seconds": load_s, "error": load_err,
-                "concurrent_qmp_probe_ms": load_probe}
-            print(f"  snapshot-load: {load_s}s  err={load_err}  "
-                  f"concurrent-QMP-probe={load_probe}ms")
-            _job(vm, "snapshot-delete", timeout=30, **{
-                "job-id": "adel", "tag": "asnap", "devices": [node]})
+                "seconds": load_s,
+                "error": load_err,
+                "concurrent_qmp_probe_ms": load_probe,
+            }
+            print(
+                f"  snapshot-load: {load_s}s  err={load_err}  concurrent-QMP-probe={load_probe}ms"
+            )
+            _job(
+                vm,
+                "snapshot-delete",
+                timeout=30,
+                **{"job-id": "adel", "tag": "asnap", "devices": [node]},
+            )
 
         # Direct comparison: blocking HMP savevm/loadvm on the same VM
         t = time.monotonic()
@@ -116,11 +126,13 @@ def main() -> None:
         t = time.monotonic()
         vm.qmp.hmp("loadvm hmpcmp")
         res["hmp_loadvm_seconds"] = round(time.monotonic() - t, 3)
-        print(f"  HMP savevm {res['hmp_savevm_seconds']}s / "
-              f"loadvm {res['hmp_loadvm_seconds']}s (blocking)")
+        print(
+            f"  HMP savevm {res['hmp_savevm_seconds']}s / "
+            f"loadvm {res['hmp_loadvm_seconds']}s (blocking)"
+        )
         res["conclusion"] = (
             "async QMP job latency ~= HMP, BUT a concurrent query-status "
-            f"returned in {res.get('snapshot_save',{}).get('concurrent_qmp_probe_ms')}ms "
+            f"returned in {res.get('snapshot_save', {}).get('concurrent_qmp_probe_ms')}ms "
             "while the save ran => non-blocking; host test prep can overlap restore."
         )
     finally:

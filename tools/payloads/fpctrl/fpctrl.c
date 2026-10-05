@@ -1,10 +1,11 @@
-/* fpctrl — arm64 ucrtbase's FP control/status family against msvcrt.dll's.
+/* fpctrl — ucrtbase's FP control/status family against msvcrt.dll's (arm64, amd64).
  *
  * Until 2026-10-03 arm64 ucrtbase had no body for _clearfp/_control87/_controlfp/
  * _statusfp and shipped forwards into msvcrt.dll; ucrt-rust's fpctrl_arm64.rs replaced
  * them. msvcrt.dll's bodies -- the ones the forward reached -- are the oracle: both DLLs
  * are loaded here and every case runs once through each, from the same FPCR/FPSR state,
- * with the results and the hardware state afterwards compared.
+ * with the results and the hardware state afterwards compared. amd64 runs the same cases
+ * since ucrtbase's MXCSR family moved from sdk/lib/crt's C into ucrt-rust (fpctrl_amd64.rs).
  *
  * The hardware is shared, so each side's effect is read back through the OTHER DLL's
  * _control87(0, 0) as well as its own return value; a body that wrote a different FPCR

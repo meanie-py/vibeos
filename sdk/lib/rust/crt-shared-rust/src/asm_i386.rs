@@ -4,7 +4,6 @@
 //! an `@16` suffix is a symbol version, not stdcall decoration.
 
 core::arch::global_asm!(
-    ".intel_syntax noprefix",
     ".text",
     // void WINAPI __wine_RtlUnwind(PVOID TargetFrame, PVOID TargetIp,
     //                              PEXCEPTION_RECORD ExceptionRecord, PVOID ReturnValue)

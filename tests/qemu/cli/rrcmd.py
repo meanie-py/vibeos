@@ -55,6 +55,9 @@ _PINNED_ENV = (
     "VIBEOS_QEMU_EXTRA_ARGS",
     "VIBEOS_TRIPWIRE",
     "VIBEOS_UP_DEFAULT_BOOT",
+    # x86 records over usb-storage: blkreplay refuses the ATAPI ide-cd the default boot
+    # uses, and the recorded device set must be the replayed one.
+    "VIBEOS_QEMU_BOOT_TRANSPORT",
 )
 
 
@@ -104,7 +107,12 @@ def _boot_cmd(repo: Path, arch: str, payload: str, smp: int, build: bool, timeou
         if not build:
             cmd.append("--no-build")
         return cmd
-    return [cli, "smoke", "--arch", arch, "--smp", str(smp)]
+    # --no-net: amd64's smoke runs a SECOND boot for its net suite. Under the rr env that
+    # boot re-staged fresh overlays over the trace's media after the recording ended,
+    # wiping the `init` snapshot (replay: "Snapshot 'init' does not exist"). Recording a
+    # network is unsupported anyway (recordreplay.py), and arm64 has no net stage, which
+    # is why no arm64 trace was ever hit.
+    return [cli, "smoke", "--arch", arch, "--smp", str(smp), "--no-net"]
 
 
 # --------------------------------------------------------------------------
@@ -650,10 +658,18 @@ def cmd_wedge(args, repo: Path) -> int:
     """
     trace = _resolve_trace(args)
     offset = args.at
-    live = False
+    src = "--at"
+    icount = getattr(args, "icount", None)
+    if icount is not None:
+        # Exact, unlike a read offset: the first event at or past the instruction count
+        # QEMU reports for a stalled replay (`info replay` on a monitor).
+        offset = next((ev.offset for ev in rr.walk_events(trace) if ev.icount >= icount), None)
+        if offset is None:
+            print(f"icount {icount} is past the last event in {trace}", file=sys.stderr)
+            return 1
+        src = f"--icount {icount}"
     if offset is None:
         offset = rr.trace_read_position(trace)
-        live = True
         if offset is None:
             print(
                 f"nobody has {trace}/replay.bin open, so there is no read position to "
@@ -661,11 +677,11 @@ def cmd_wedge(args, repo: Path) -> int:
                 file=sys.stderr,
             )
             return 1
+        src = "live reader"
 
     size = (trace / "replay.bin").stat().st_size
     before, after = rr.events_around_offset(trace, offset, args.count, args.count)
     pct = 100.0 * offset / size if size else 0.0
-    src = "live reader" if live else "--at"
     print(f"trace:  {trace}")
     print(f"offset: {offset} of {size} ({pct:.2f}%, from {src})")
     if not before and not after:

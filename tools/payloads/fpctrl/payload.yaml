@@ -1,12 +1,12 @@
-# fpctrl — does arm64 ucrtbase's own FP control family answer as msvcrt.dll's does?
-#   tools/payloads/fpctrl/build.sh arm64
+# fpctrl — does ucrtbase's own FP control family answer as msvcrt.dll's does?
+#   tools/payloads/fpctrl/build.sh {arm64|amd64}
 #   VIBEOS_PAYLOAD=fpctrl ./vibeos-cli build --arch arm64
 #   ./vibeos-cli smoke --arch arm64 --payload fpctrl
-# arm64 ONLY: until 2026-10-03 arm64 ucrtbase forwarded _clearfp/_control87/_controlfp/
-# _statusfp into msvcrt.dll; ucrt-rust's fpctrl_arm64.rs replaced the forward, and
-# msvcrt.dll's bodies (the ones it forwarded to) are the oracle.
+# arm64 and amd64: until 2026-10-03 arm64 ucrtbase forwarded _clearfp/_control87/_controlfp/
+# _statusfp into msvcrt.dll (ucrt-rust's fpctrl_arm64.rs replaced the forward); amd64's came
+# from sdk/lib/crt's MXCSR C until fpctrl_amd64.rs. msvcrt.dll's bodies are the oracle.
 name: fpctrl
-description: arm64 ucrtbase FP control/status family vs msvcrt.dll's, on the same FPCR/FPSR
+description: ucrtbase FP control/status family vs msvcrt.dll's on the same FP unit (arm64, amd64)
 
 build_hint: "tools/payloads/fpctrl/build.sh {arch}"
 

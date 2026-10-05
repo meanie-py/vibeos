@@ -77,13 +77,10 @@ MODULES = {
     "msvcrt": {
         "spec": "dll/win32/msvcrt/msvcrt.spec",
         "dll": "dll/win32/msvcrt/msvcrt.dll",
-        # The module's own objects AND the shim object library it links (split out in
-        # 89fe4906dfc). Scanning only msvcrt.dir missed every shim-backed export on a freshly
-        # configured tree and misattributed it to the next provider in link order.
-        "obj_dirs": (
-            "dll/win32/msvcrt/CMakeFiles/msvcrt.dir",
-            "dll/win32/msvcrt/CMakeFiles/msvcrt_rust_shims.dir",
-        ),
+        # The module's own objects. (The `...` entry points' object library,
+        # msvcrt_rust_shims, is gone since f1658ab724d: they are va_entry! thunks in the
+        # Rust archive, which "rust" below already covers.)
+        "obj_dirs": ("dll/win32/msvcrt/CMakeFiles/msvcrt.dir",),
         "own_c": "libmsvcrt_static.a",
         "rust": "libmsvcrt_crt_cargo.a",
         # spec2def generates this TU and puts NOTHING but stub bodies in it. An export
