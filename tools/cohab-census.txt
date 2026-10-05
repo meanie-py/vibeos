@@ -512,6 +512,7 @@ dll/win32/msv1_0/CMakeLists.txt	1	# user.c
 dll/win32/msv1_0/CMakeLists.txt	1	# user.c → src/msv1_0/user.rs
 dll/win32/msv1_0/CMakeLists.txt	1	# usercontext.c → src/msv1_0/usercontext.rs
 dll/win32/msv1_0/CMakeLists.txt	1	# usercontext.c)
+dll/win32/msvcrt/CMakeLists.txt	1	# No `dbgrpt` (sdk/lib/crt/misc/dbgrpt.cpp): the _CrtDbgReport family is msvcrt-crt-rust's
 dll/win32/msvcrt/CMakeLists.txt	1	# copies (string.c etc.) go dead (--allow-multiple-definition, MODULE-link
 dll/win32/msvcrt/CMakeLists.txt	1	# i386/__wine_RtlUnwind.s, i386/exception_ptr.s, i386/inout.s -- replaced by Rust
 dll/win32/msvcrt/CMakeLists.txt	1	# msvcrt_rust_shims (rust_varargs_shim.c, rust_scanf_shim.c, rust_file_varargs_shim.c,
@@ -835,6 +836,7 @@ dll/win32/syssetup/CMakeLists.txt	1	# wizard.c
 dll/win32/syssetup/CMakeLists.txt	1	#addons.c
 dll/win32/ucrtbase/CMakeLists.txt	1	# Silence warnings in ucrtbase_stubs.c
 dll/win32/ucrtbase/CMakeLists.txt	1	# printf.c (sprintf/_vsnprintf) and ucrt_varargs_shim.c (the `...` entry points as
+dll/win32/ucrtbase/CMakeLists.txt	1	# stubs.c (atexit, operator_new/delete, _chkesp_failed, __acrt_initialize_sse2) is
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c — replaced by Rust (userenv-rust src/userenv/desktop.rs — GetAllUsers/DefaultUserProfileDirectory)
 dll/win32/userenv/CMakeLists.txt	1	# directory.c
@@ -1657,6 +1659,8 @@ sdk/lib/crt/msvcrtex.cmake	1	# recalloc.c is NEW upstream (CORE-20596): it defin
 sdk/lib/crt/msvcrtex.cmake	1	# sec_mgr.c started calling it in this merge.
 sdk/lib/crt/printf/printf.cmake	1	# instead deleted swprintf.c and renamed vswprintf.c to _vswprintf.c; we keep ours,
 sdk/lib/crt/printf/printf.cmake	1	# swprintf. We took that change. But swprintf.c / vswprintf.c ARE the non-conforming
+sdk/lib/delayimp/CMakeLists.txt	1	# __pfnDliNotifyHook2/__pfnDliFailureHook2 hook variables, from delayimp.c,
+sdk/lib/delayimp/CMakeLists.txt	1	# pfnDliNotifyHook2.c and pfnDliFailureHook2.c (kept on disk as the record). `delayimp` stays
 sdk/lib/dnslib/CMakeLists.txt	1	# addr.c dnsaddr.c flatbuf.c hostent.c memory.c sablob.c straddr.c string.c
 sdk/lib/dnslib/CMakeLists.txt	1	# debug.c dnsutil.c ip6.c name.c print.c record.c rrprint.c table.c utf8.c
 sdk/lib/dnslib/CMakeLists.txt	1	# disk per the never-delete rule. dnslib_rust_stub.c is the anchor TU

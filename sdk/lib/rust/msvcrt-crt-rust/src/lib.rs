@@ -4172,3 +4172,5 @@ pub mod string_l;
 pub mod scanf;
 // The C `...` entry points (were the rust_*_shim.c files), as va_entry! thunks.
 mod va_entries;
+// sdk/lib/crt/misc/dbgrpt.cpp: the _CrtDbgReport family (was the `dbgrpt` C++ library).
+mod dbgrpt;

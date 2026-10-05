@@ -173,7 +173,6 @@ core::arch::global_asm!(
 // ============================================================================
 
 core::arch::global_asm!(
-    ".intel_syntax noprefix",
     ".text",
     ".globl ___libm_sse2_acos",
     "___libm_sse2_acos:",
@@ -485,5 +484,4 @@ core::arch::global_asm!(
     "    movsd xmm0, qword ptr [esp]",
     "    add esp, 16",
     "    ret",
-    ".att_syntax prefix",
 );

@@ -522,6 +522,30 @@ def _nm_defined(path: Path | list[Path]) -> set[str] | None:
     return None
 
 
+def _graph_objects(build: Path) -> set[Path] | None:
+    """Every object file the CURRENT build graph produces (`build <obj>: ...` in build.ninja).
+
+    An object directory also holds whatever an earlier configure produced: delete a source
+    from CMake and its .obj stays behind, forever. Counted as C authority, such a leftover
+    vouches for a symbol nothing compiles any more -- it greened a lane whose
+    vcruntime/i386/_chkesp.s was gone (its stale .obj still defined __chkesp) while the
+    fresh integration build, which never had the file, went red on master (2026-10-04).
+    None when there is no build.ninja to ask; the caller then keeps the directory glob.
+    """
+    ninja = build / "build.ninja"
+    if not ninja.is_file():
+        return None
+    out: set[Path] = set()
+    with ninja.open(errors="replace") as fh:
+        for line in fh:
+            if not line.startswith("build "):
+                continue
+            target = line[6:].split(":", 1)[0].split(" | ", 1)[0].strip()
+            if target.endswith((".obj", ".o")):
+                out.add(build / target.replace("$ ", " "))
+    return out
+
+
 def check_archive() -> list[str]:
     """Built archive's symbols must be a subset of what OUR libs on the link line define.
 
@@ -568,9 +592,12 @@ def check_archive() -> list[str]:
 
         objs: list[Path] = []
         missing: list[str] = []
+        live = _graph_objects(build)
         for target, obj_dir in OURS_C_AUTHORITY.items():
             d = build / obj_dir
             found = sorted(d.rglob("*.obj")) + sorted(d.rglob("*.o"))
+            if live is not None:
+                found = [o for o in found if o in live]
             if found:
                 objs += found
             else:

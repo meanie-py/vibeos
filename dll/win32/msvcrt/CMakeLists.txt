@@ -228,7 +228,9 @@ link_msvcrt_rust_cohab(msvcrt)
 # ${PSEH_USER_LIB} and ${VCRT_SETJMP_LIB} first, by path (gcc.cmake): the SEH runtime and
 # setjmp/longjmp resolve from Rust before any of these libraries' own ${PSEH_LIB} and before
 # ntdll's import library, which exports _setjmp/longjmp and would otherwise answer them.
-target_link_libraries(msvcrt ${PSEH_USER_LIB} ${VCRT_SETJMP_LIB} msvcrt_static crtmath dbgrpt vcruntime wine chkstk)
+# No `dbgrpt` (sdk/lib/crt/misc/dbgrpt.cpp): the _CrtDbgReport family is msvcrt-crt-rust's
+# dbgrpt.rs.
+target_link_libraries(msvcrt ${PSEH_USER_LIB} ${VCRT_SETJMP_LIB} msvcrt_static crtmath vcruntime wine chkstk)
 if(ARCH STREQUAL "i386")
     target_link_libraries(msvcrt chkesp)
 endif()

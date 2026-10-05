@@ -203,10 +203,93 @@ static void probe(const char *dll)
     SAY("%s: %d checks, %d failed\n", dll, g_checks - n0, g_fail - f0);
 }
 
+/* _CrtDbgReport[W] (msvcrt only): `...` exports too, and the whole report family is Rust
+ * (msvcrt-crt-rust dbgrpt.rs, was sdk/lib/crt/misc/dbgrpt.cpp). File mode only -- the
+ * window mode would block on a message box. Expected text is the C's formatting. */
+typedef int(__cdecl *crtdbgreport_t)(int, const char *, int, const char *, const char *, ...);
+typedef int(__cdecl *crtdbgreportw_t)(int, const wchar_t *, int, const wchar_t *, const wchar_t *, ...);
+typedef int(__cdecl *setmode_t)(int, int);
+typedef HANDLE(__cdecl *setfile_t)(int, HANDLE);
+
+static void read_back(const char *path, char *buf, DWORD cap, DWORD *got)
+{
+    HANDLE fh = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    *got = 0;
+    memset(buf, 0, cap);
+    if (fh != INVALID_HANDLE_VALUE) {
+        ReadFile(fh, buf, cap - 2, got, NULL);
+        CloseHandle(fh);
+    }
+}
+
+static void probe_dbgrpt(void)
+{
+    HMODULE h = LoadLibraryA("msvcrt.dll");
+    crtdbgreport_t rep = GET(crtdbgreport_t, "_CrtDbgReport");
+    crtdbgreportw_t repw = GET(crtdbgreportw_t, "_CrtDbgReportW");
+    setmode_t setmode = GET(setmode_t, "_CrtSetReportMode");
+    setfile_t setfile = GET(setfile_t, "_CrtSetReportFile");
+    const char *d = "msvcrt.dll";
+    char path[MAX_PATH], buf[256];
+    DWORD got;
+    int n0 = g_checks, f0 = g_fail;
+
+    if (!rep || !repw || !setmode || !setfile) {
+        check(d, "_CrtDbgReport family exported", 0);
+        return;
+    }
+    tmpname(path, "dbgrpt");
+    HANDLE fh = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, 0, NULL);
+    check(d, "report file", fh != INVALID_HANDLE_VALUE);
+    if (fh == INVALID_HANDLE_VALUE)
+        return;
+
+    /* _CRT_WARN 0, _CRT_ERROR 1, _CRT_ASSERT 2; _CRTDBG_MODE_FILE 1, _CRTDBG_MODE_DEBUG 2 */
+    int old_warn = setmode(0, 1);
+    check(d, "_CrtSetReportMode(WARN) old = DEBUG", old_warn == 2);
+    check(d, "_CrtSetReportMode(WARN, REPORT_MODE) reads FILE", setmode(0, -1) == 1);
+    HANDLE old_file = setfile(0, fh);
+    check(d, "_CrtSetReportFile(WARN) old = INVALID", old_file == (HANDLE)(intptr_t)-1);
+    check(d, "_CrtSetReportFile(WARN, REPORT_FILE) reads it back", setfile(0, (HANDLE)(intptr_t)-6) == fh);
+    check(d, "_CrtSetReportMode(bad type) = 0", setmode(3, 1) == 0);
+
+    int r = rep(0, "f.c", 12, NULL, "hello %d %s %.1f", 42, "x", 2.5);
+    read_back(path, buf, sizeof buf, &got);
+    check(d, "_CrtDbgReport(WARN) returns 0", r == 0);
+    check(d, "_CrtDbgReport(WARN) text", !strcmp(buf, "f.c(12) : hello 42 x 2.5"));
+    if (strcmp(buf, "f.c(12) : hello 42 x 2.5"))
+        SAY("dbgrpt warn got \"%s\"\n", buf);
+
+    setmode(2, 1);
+    setfile(2, fh);
+    r = rep(2, NULL, 0, NULL, "boom %d", 7);
+    read_back(path, buf, sizeof buf, &got);
+    check(d, "_CrtDbgReport(ASSERT) text", !strcmp(buf, "f.c(12) : hello 42 x 2.5Assertion failed: boom 7\r\n"));
+    if (strcmp(buf, "f.c(12) : hello 42 x 2.5Assertion failed: boom 7\r\n"))
+        SAY("dbgrpt assert got \"%s\"\n", buf);
+
+    setmode(1, 1);
+    setfile(1, fh);
+    SetFilePointer(fh, 0, NULL, FILE_BEGIN);
+    SetEndOfFile(fh);
+    r = repw(1, L"w.c", 3, NULL, L"%d-%d", 1, 2);
+    read_back(path, buf, sizeof buf, &got);
+    check(d, "_CrtDbgReportW(ERROR) text", got == 24 && !memcmp(buf, L"w.c(3) : 1-2", 24));
+
+    setmode(0, old_warn);
+    setfile(0, old_file);
+    setmode(1, 4);
+    setmode(2, 4);
+    CloseHandle(fh);
+    DeleteFileA(path);
+    SAY("%s dbgrpt: %d checks, %d failed\n", d, g_checks - n0, g_fail - f0);
+}
+
 int __cdecl main(void)
 {
     probe("msvcrt.dll");
     probe("ucrtbase.dll");
+    probe_dbgrpt();
     SAY("%d checks, %d failed\n", g_checks, g_fail);
     SAY("done %s\n", g_fail ? "FAIL" : "PASS");
     return 0;

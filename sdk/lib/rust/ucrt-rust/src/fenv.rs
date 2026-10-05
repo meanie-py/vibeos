@@ -82,7 +82,7 @@ pub struct FenvT {
 /// `fexcept_t`: `unsigned long`.
 pub type FexceptT = u32;
 
-// sdk/lib/crt's on amd64, fpctrl_arm64's on arm64; i386 defines its own below.
+// fpctrl_amd64's on amd64, fpctrl_arm64's on arm64; i386 defines its own below.
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn _control87(newval: u32, mask: u32) -> u32;
