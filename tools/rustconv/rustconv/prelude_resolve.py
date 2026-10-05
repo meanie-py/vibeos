@@ -263,6 +263,93 @@ def refresh_shared_macros(prelude: Path, macro_src: Path) -> bool:
     return True
 
 
+#: Shared crates a usermode prelude re-exports BY NAME (a glob would also pull their type
+#: aliases next to the island's: E0659). Each entry: Rust ident, crate dir, and per module
+#: path ("" = crate root) the pattern whose groups name what it provides.
+SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
+    (
+        "win32macros_rust",
+        "win32macros-rust",
+        (("", r"macro_rules!\s+([A-Za-z_]\w*)|^pub const ([A-Za-z_]\w*)"),),
+    ),
+    (
+        "strsafe_rust",
+        "strsafe-rust",
+        (
+            (
+                "",
+                r"macro_rules!\s+([A-Za-z_]\w*)"
+                r'|^pub unsafe (?:extern "\w+" )?fn (String[A-Za-z]+)\b',
+            ),
+            ("ntstrsafe", r"^pub unsafe fn (RtlString[A-Za-z]+)\b"),
+        ),
+    ),
+)
+
+
+def shared_provides(workspace: Path) -> dict[tuple[str, str], set[str]]:
+    """`{(crate ident, module path): names}` the shared crates export, read from their source."""
+    out: dict[tuple[str, str], set[str]] = {}
+    for ident, dirname, paths in SHARED_CRATES:
+        src = workspace / dirname / "src"
+        files = sorted(src.glob("*.rs")) if src.is_dir() else []
+        for module, pattern in paths:
+            names = out.setdefault((ident, module), set())
+            for f in files:
+                if module and f.stem != module:
+                    continue
+                for groups in re.findall(pattern, f.read_text(), re.M):
+                    names.update(
+                        g for g in (groups if isinstance(groups, tuple) else (groups,)) if g
+                    )
+    return out
+
+
+def refresh_shared_crates(crate_dir: Path, workspace: Path) -> list[str]:
+    """Write one `pub use <crate>[::module]::{...};` per shared path into the prelude.
+
+    Re-lists what each shared crate provides NOW (a crate scaffolded before a macro was added
+    would never see it), inserts a missing line, and adds the Cargo dependency it needs.
+    A name the prelude defines itself is left out: a named import beside a definition is
+    E0255. Returns the lines changed.
+    """
+    prelude = crate_dir / "src" / "prelude.rs"
+    text = prelude.read_text()
+    own = set(
+        re.findall(r"^\s*(?:pub\s+)?(?:const|static|fn|type)\s+([A-Za-z_]\w*)", text, re.M)
+    ) | set(re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", text))
+    changed: list[str] = []
+    for (ident, module), names in shared_provides(workspace).items():
+        keep = sorted(names - own)
+        path = f"{ident}::{module}" if module else ident
+        line_re = re.compile(rf"^pub use {re.escape(path)}::\{{[^}}]*\}};$", re.M)
+        m = line_re.search(text)
+        if not keep:
+            continue
+        line = f"pub use {path}::{{{', '.join(keep)}}};"
+        if m:
+            if m.group(0) == line:
+                continue
+            text = text[: m.start()] + line + text[m.end() :]
+        else:
+            text = text.rstrip("\n") + "\n" + line + "\n"
+        changed.append(path)
+        _ensure_dependency(crate_dir / "Cargo.toml", ident.replace("_", "-"))
+    if changed:
+        prelude.write_text(text)
+    return changed
+
+
+def _ensure_dependency(manifest: Path, dep: str) -> None:
+    text = manifest.read_text()
+    if re.search(rf"^{re.escape(dep)}\s*=", text, re.M):
+        return
+    m = re.search(r"^\[dependencies\]\s*\n", text, re.M)
+    if m is None:
+        return
+    manifest.write_text(text[: m.end()] + f'{dep} = {{ path = "../{dep}" }}\n' + text[m.end() :])
+
+
 SIBLING_BEGIN = "// ==== port resolve: cross-TU definitions (generated) ===="
 SIBLING_END = "// ==== end cross-TU definitions ===="
 _DEF = re.compile(

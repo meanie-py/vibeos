@@ -345,6 +345,32 @@ macro_rules! RtlZeroMemory {
     }};
 }
 
+/// `ntdef.h` — `#define RtlCopyMemory(D, S, L) memcpy((D), (S), (L))`. The core intrinsic
+/// lowers to the imported `memcpy`; that is only a hazard INSIDE a memcpy implementation.
+#[macro_export]
+macro_rules! RtlCopyMemory {
+    ($dst:expr, $src:expr, $len:expr $(,)?) => {{
+        core::ptr::copy_nonoverlapping($src as *const u8, $dst as *mut u8, $len as usize);
+    }};
+}
+
+/// `ntdef.h` — `#define RtlMoveMemory(D, S, L) memmove((D), (S), (L))`: overlap allowed.
+#[macro_export]
+macro_rules! RtlMoveMemory {
+    ($dst:expr, $src:expr, $len:expr $(,)?) => {{
+        core::ptr::copy($src as *const u8, $dst as *mut u8, $len as usize);
+    }};
+}
+
+/// `ntdef.h` — `#define RtlFillMemory(D, L, F) memset((D), (F), (L))`. NB the argument order:
+/// LENGTH before FILL, unlike memset.
+#[macro_export]
+macro_rules! RtlFillMemory {
+    ($dst:expr, $len:expr, $fill:expr $(,)?) => {{
+        core::ptr::write_bytes($dst as *mut u8, ($fill) as u8, $len as usize);
+    }};
+}
+
 /// MSVC's `_countof(a)` — `(sizeof(a)/sizeof(a[0]))`.
 ///
 /// Result is `u32`, not `usize`. C's is `size_t`, but this is the spelling the four crates it
@@ -373,12 +399,12 @@ macro_rules! ARRAYSIZE {
 /// No instance is read: the field's address is formed in an uninitialised slot, never a null.
 #[macro_export]
 macro_rules! RTL_NUMBER_OF_FIELD {
-    ($t:ty, $f:ident $(,)?) => {{
+    ($t:ty, $($f:tt)+) => {{
         const fn __len<T, const N: usize>(_: *const [T; N]) -> usize {
             N
         }
         let slot = core::mem::MaybeUninit::<$t>::uninit();
-        __len(unsafe { core::ptr::addr_of!((*slot.as_ptr()).$f) })
+        __len(unsafe { core::ptr::addr_of!((*slot.as_ptr()).$($f)+) })
     }};
 }
 
@@ -395,12 +421,12 @@ macro_rules! FIELD_OFFSET {
 /// `size_t`. Const-evaluable; the field's address is formed in an uninitialised slot.
 #[macro_export]
 macro_rules! RTL_FIELD_SIZE {
-    ($t:ty, $f:ident $(,)?) => {{
+    ($t:ty, $($f:tt)+) => {{
         const fn __size<T>(_: *const T) -> usize {
             core::mem::size_of::<T>()
         }
         let slot = core::mem::MaybeUninit::<$t>::uninit();
-        __size(unsafe { core::ptr::addr_of!((*slot.as_ptr()).$f) })
+        __size(unsafe { core::ptr::addr_of!((*slot.as_ptr()).$($f)+) })
     }};
 }
 
@@ -408,8 +434,8 @@ macro_rules! RTL_FIELD_SIZE {
 /// size_t` is a `size_t` in C, so this is `usize`.
 #[macro_export]
 macro_rules! RTL_SIZEOF_THROUGH_FIELD {
-    ($t:ty, $f:ident $(,)?) => {
-        (core::mem::offset_of!($t, $f) + $crate::RTL_FIELD_SIZE!($t, $f))
+    ($t:ty, $($f:tt)+) => {
+        (core::mem::offset_of!($t, $($f)+) + $crate::RTL_FIELD_SIZE!($t, $($f)+))
     };
 }
 
@@ -463,7 +489,17 @@ macro_rules! IsRecognizedPartition {
         $crate::IsFTPartition!(t)
             || matches!(
                 t,
-                0x01 | 0x04 | 0x06 | 0x07 | 0x0B | 0x0C | 0x0E | 0x83 | 0x43 | 0x96 | 0xA5 | 0xA6
+                0x01 | 0x04
+                    | 0x06
+                    | 0x07
+                    | 0x0B
+                    | 0x0C
+                    | 0x0E
+                    | 0x83
+                    | 0x43
+                    | 0x96
+                    | 0xA5
+                    | 0xA6
                     | 0xA9
             )
     }};
@@ -677,15 +713,51 @@ mod tests {
         assert_eq!(FIELD_OFFSET!(Opts, options), (8 + p) as i32);
         assert_eq!(RTL_FIELD_SIZE!(Opts, signature), 8);
         assert_eq!(RTL_SIZEOF_THROUGH_FIELD!(Opts, path), 8 + p);
+        // A field PATH, as C's `field` may be (the anon-union rule writes `__bindgen_anon_1.Mbr`)
+        #[allow(dead_code)]
+        struct Outer {
+            tag: u32,
+            inner: Opts,
+        }
+        assert_eq!(RTL_FIELD_SIZE!(Outer, inner.signature), 8);
+        assert_eq!(
+            RTL_SIZEOF_THROUGH_FIELD!(Outer, inner.signature),
+            core::mem::offset_of!(Outer, inner) + 8
+        );
+        assert_eq!(
+            FIELD_OFFSET!(Outer, inner.path),
+            (core::mem::offset_of!(Outer, inner) + 8) as i32
+        );
         let unused = 3;
         UNREFERENCED_PARAMETER!(unused);
     }
 
     #[test]
+    fn copy_move_fill_follow_the_ntdef_argument_order() {
+        let src = [1u8, 2, 3, 4];
+        let mut dst = [0u8; 4];
+        unsafe {
+            RtlCopyMemory!(dst.as_mut_ptr(), src.as_ptr(), 3);
+        }
+        assert_eq!(dst, [1, 2, 3, 0]);
+        unsafe {
+            RtlMoveMemory!(dst.as_mut_ptr().add(1), dst.as_ptr(), 3);
+            RtlFillMemory!(dst.as_mut_ptr(), 1, 0xAA);
+        }
+        assert_eq!(dst, [0xAA, 1, 2, 3]);
+    }
+
+    #[test]
     fn partition_type_predicates_match_ntdddisk() {
-        assert!(IsContainerPartition!(0x05u8) && IsContainerPartition!(0x0F) && !IsContainerPartition!(0x07));
+        assert!(
+            IsContainerPartition!(0x05u8)
+                && IsContainerPartition!(0x0F)
+                && !IsContainerPartition!(0x07)
+        );
         assert!(IsFTPartition!(0x86u8) && IsFTPartition!(0xC7u8) && !IsFTPartition!(0x81u8));
-        for t in [0x01u8, 0x04, 0x06, 0x07, 0x0B, 0x0C, 0x0E, 0x83, 0x43, 0x96, 0xA5, 0xA6, 0xA9, 0x86] {
+        for t in [
+            0x01u8, 0x04, 0x06, 0x07, 0x0B, 0x0C, 0x0E, 0x83, 0x43, 0x96, 0xA5, 0xA6, 0xA9, 0x86,
+        ] {
             assert!(IsRecognizedPartition!(t), "{t:#x}");
         }
         for t in [0x00u8, 0x05, 0x0F, 0x81, 0x84, 0xEE] {
