@@ -335,6 +335,8 @@ dll/win32/authz/CMakeLists.txt	1	# authz.c clictx.c resman.c → authz-rust
 dll/win32/authz/CMakeLists.txt	1	# clictx.c
 dll/win32/authz/CMakeLists.txt	1	# resman.c
 dll/win32/cabinet/CMakeLists.txt	1	# (reactos-link, ModuleKind::Win32Dll) compiles rust_cohab_stub.c (wine debug
+dll/win32/crtdll/CMakeLists.txt	1	# advapi32: the shared CRT's rand_s calls SystemFunction036 (RtlGenRandom). dllmain.c used to
+dll/win32/crtdll/CMakeLists.txt	1	# dllmain.c is msvcrt-crt-rust src/legacy.rs (CRTDLL_* names, which crtdll.spec maps).
 dll/win32/dbghelp/CMakeLists.txt	1	# elf_module.c
 dll/win32/dbghelp/CMakeLists.txt	1	# macho_module.c
 dll/win32/dnsapi/CMakeLists.txt	1	# adns.c
@@ -512,13 +514,12 @@ dll/win32/msv1_0/CMakeLists.txt	1	# user.c
 dll/win32/msv1_0/CMakeLists.txt	1	# user.c → src/msv1_0/user.rs
 dll/win32/msv1_0/CMakeLists.txt	1	# usercontext.c → src/msv1_0/usercontext.rs
 dll/win32/msv1_0/CMakeLists.txt	1	# usercontext.c)
-dll/win32/msvcrt/CMakeLists.txt	1	# No `dbgrpt` (sdk/lib/crt/misc/dbgrpt.cpp): the _CrtDbgReport family is msvcrt-crt-rust's
-dll/win32/msvcrt/CMakeLists.txt	1	# copies (string.c etc.) go dead (--allow-multiple-definition, MODULE-link
+dll/win32/msvcrt/CMakeLists.txt	1	# gen_ctype_tables.py checks the Rust ctype tables against ctype.c.obj's .data,
 dll/win32/msvcrt/CMakeLists.txt	1	# i386/__wine_RtlUnwind.s, i386/exception_ptr.s, i386/inout.s -- replaced by Rust
 dll/win32/msvcrt/CMakeLists.txt	1	# msvcrt_rust_shims (rust_varargs_shim.c, rust_scanf_shim.c, rust_file_varargs_shim.c,
 dll/win32/msvcrt/CMakeLists.txt	1	# rust_process_varargs_shim.c, rust_console_varargs_shim.c), C only because stable Rust
-dll/win32/msvcrt/CMakeLists.txt	1	# so they win first-match over scanf.c/wcs.c/file.c's copies as the module objects did.
-dll/win32/msvcrt/CMakeLists.txt	1	# the C monolith (string.c.obj) is pulled. Plain link-order is NOT enough: the
+dll/win32/msvcrt/msvcrt_rust_cohab.cmake	1	# The legacy DLLs' own overrides (crtdll's dllmain.c, msvcrt20.c) are in the archive too,
+dll/win32/msvcrt20/CMakeLists.txt	1	# msvcrt20.c is msvcrt-crt-rust src/legacy.rs (MSVCRT20__getmainargs/__wgetmainargs).
 dll/win32/mswsock/CMakeLists.txt	1	# extensions.c
 dll/win32/mswsock/CMakeLists.txt	1	# extensions.c — replaced by Rust (mswsock-rust src/mswsock/extensions.rs — AcceptEx/TransmitFile/GetAcceptExSockaddrs)
 dll/win32/mswsock/CMakeLists.txt	1	# mswhelper.c

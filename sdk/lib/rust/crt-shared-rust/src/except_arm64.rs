@@ -105,6 +105,17 @@ pub unsafe extern "C" fn call_unwind_handler(
         (*dispatch).NonVolatileRegisters,
     )
 }
+/// msvcrt.spec exports `_local_unwind` for win64, and except_arm64.c never defined it, so on
+/// arm64 the name fell through to kernel32's import library -- a forwarder to
+/// `ntdll._local_unwind`, which ntdll exports for x86_64 only. The export was a dangling
+/// forward chain. Same body as except_x86_64's (Wine's `_local_unwind`); arm64's ntdll has
+/// RtlUnwind. Not under `ucrtsupport`: ucrtbase.spec forwards the name (the same dangling
+/// forward, on the roadmap) and a body here would be an undeclared ucrt takeover.
+#[cfg(not(feature = "ucrtsupport"))]
+#[no_mangle]
+pub unsafe extern "C" fn _local_unwind(frame: *mut c_void, target: *mut c_void) {
+    RtlUnwind(frame, target, core::ptr::null_mut(), core::ptr::null_mut());
+}
 #[no_mangle]
 pub unsafe extern "C" fn get_exception_pc(dispatch: *mut DISPATCHER_CONTEXT) -> ULONG_PTR {
     let mut pc: ULONG_PTR = (*dispatch).ControlPc;

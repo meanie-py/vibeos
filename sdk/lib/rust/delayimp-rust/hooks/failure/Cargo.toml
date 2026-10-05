@@ -1,0 +1,8 @@
+# __pfnDliFailureHook2 alone, as pfnDliFailureHook2.c was: see src/lib.rs.
+[package]
+name = "delayimp-failure-hook"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"

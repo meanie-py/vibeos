@@ -519,9 +519,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "delayimp-failure-hook"
+version = "0.1.0"
+
+[[package]]
+name = "delayimp-notify-hook"
+version = "0.1.0"
+
+[[package]]
 name = "delayimp-rust"
 version = "0.1.0"
 dependencies = [
+ "delayimp-failure-hook",
+ "delayimp-notify-hook",
  "panic-common",
 ]
 

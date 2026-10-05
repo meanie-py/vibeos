@@ -857,7 +857,7 @@
 @ cdecl _stat(str ptr)
 @ cdecl _stati64(str ptr)
 @ cdecl _statusfp()
-@ cdecl _strcmpi(str str)
+@ cdecl _strcmpi(str str) _stricmp
 @ cdecl _strdate(ptr)
 @ cdecl _strdup(str)
 @ cdecl _strerror(long)

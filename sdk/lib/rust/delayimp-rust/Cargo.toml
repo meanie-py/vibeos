@@ -12,3 +12,5 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 panic-common = { path = "../panic-common", features = ["user"] }
+delayimp-notify-hook = { path = "hooks/notify" }
+delayimp-failure-hook = { path = "hooks/failure" }
