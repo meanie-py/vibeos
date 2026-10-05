@@ -86,7 +86,12 @@ class Attempt:
                 "elapsed_ms": round((time.monotonic() - self.started) * 1000),
                 "candidate_sha256": digest(result.rust_code),
                 "cost_usd": (
-                    cost_usd(result.model, result.input_tokens, result.output_tokens)
+                    cost_usd(
+                        result.model,
+                        result.input_tokens,
+                        result.output_tokens,
+                        result.cache_read_tokens,
+                    )
                     if result.usage_known
                     else None
                 ),

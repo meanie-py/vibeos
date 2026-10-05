@@ -235,6 +235,15 @@ re-bought with thinking: 26,407 out, $0.115/call. Cheap-then-escalate came to ~$
 function, ~2.7x cheaper than always-on. The cost is not the rejects but the TU each one voids:
 4 of 11 TUs assembled NOTHING after the cheap pass because one function stayed rejected.
 Quality (errors/function after the deterministic pipeline) is the comparison still owed.
+**CORRECTION (same day): every dollar figure above is a CEILING, about 2x the bill.** rustconv
+priced all input at DeepSeek's PEAK cache-MISS rate; the dashboard billed $3.73 for
+2026-10-05 (EDT) where rustconv summed $7.81. Two discounts were invisible to it: the
+re-sent file context is mostly a cache HIT ($0.044/M vs $1.32/M), and 16:00-21:00 UTC is
+off-peak (half price; peak is 01-04 and 06-10 UTC on weekdays). The DeepSeek path now
+records `prompt_cache_hit_tokens` and `config.cost_usd` prices hit/miss/output by UTC band;
+the budget guard alone keeps the ceiling. The off-vs-on RATIO likely understates the
+saving: once input is cheap, output dominates, and thinking-on is the output-heavy mode.
+Re-measure it from new runs, which now carry the cache split.
 
 **What the second setuplib round fixed (2026-10-05 day).** c2rust: attached `-isystem/path`
 was dropped, so every arm64 c2rust run lost the CRT include dir under `-nostdinc` and silently

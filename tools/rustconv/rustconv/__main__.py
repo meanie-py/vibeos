@@ -1522,9 +1522,9 @@ def cmd_submit(args):
             result.output_tokens,
             attempt_id=result.attempt_id,
         )
+        usd = cost_usd(model, result.input_tokens, result.output_tokens, result.cache_read_tokens)
         print(
-            f"Cost: ${cost_usd(model, result.input_tokens, result.output_tokens):.2f}  "
-            f"| archived: {archive.dir}",
+            f"Cost: ${usd:.2f}  | archived: {archive.dir}",
             file=sys.stderr,
         )
 
@@ -2802,7 +2802,12 @@ def cmd_translate(args):
                 "output_tokens": result.output_tokens,
                 "cache_read_tokens": result.cache_read_tokens,
                 "cache_write_tokens": result.cache_write_tokens,
-                "cost_usd": round(cost_usd(model, result.input_tokens, result.output_tokens), 8),
+                "cost_usd": round(
+                    cost_usd(
+                        model, result.input_tokens, result.output_tokens, result.cache_read_tokens
+                    ),
+                    8,
+                ),
                 "elapsed_ms": elapsed_ms,
                 "attempt_id": getattr(result, "attempt_id", None),
             }
@@ -3846,7 +3851,9 @@ def cmd_translate(args):
                                 r.output_tokens,
                                 attempt_id=r.attempt_id,
                             )
-                            running_cost += cost_usd(model, r.input_tokens, r.output_tokens)
+                            running_cost += cost_usd(
+                                model, r.input_tokens, r.output_tokens, r.cache_read_tokens
+                            )
                         _record_outcome(
                             dp,
                             "generated",
@@ -4072,7 +4079,12 @@ def cmd_translate(args):
                     total_in += result.input_tokens
                     total_out += result.output_tokens
                     if archive is not None:
-                        running_cost += cost_usd(model, result.input_tokens, result.output_tokens)
+                        running_cost += cost_usd(
+                            model,
+                            result.input_tokens,
+                            result.output_tokens,
+                            result.cache_read_tokens,
+                        )
 
             if result.success:
                 try:
@@ -4117,7 +4129,9 @@ def cmd_translate(args):
                         result.output_tokens,
                         attempt_id=result.attempt_id,
                     )
-                    running_cost += cost_usd(model, result.input_tokens, result.output_tokens)
+                    running_cost += cost_usd(
+                        model, result.input_tokens, result.output_tokens, result.cache_read_tokens
+                    )
                     print(
                         f"OK ({result.input_tokens} in / {result.output_tokens} out)"
                         f"  [running ${running_cost:.2f}]",
@@ -4303,7 +4317,12 @@ def cmd_translate(args):
                         pre_res.output_tokens,
                         attempt_id=pre_res.attempt_id,
                     )
-                    running_cost += cost_usd(model, pre_res.input_tokens, pre_res.output_tokens)
+                    running_cost += cost_usd(
+                        model,
+                        pre_res.input_tokens,
+                        pre_res.output_tokens,
+                        pre_res.cache_read_tokens,
+                    )
                 _record_preamble(
                     preamble_src,
                     "generated",
