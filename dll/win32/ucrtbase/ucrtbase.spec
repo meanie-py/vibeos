@@ -615,7 +615,8 @@
 @ cdecl -arch=i386 -norelay _libm_sse2_sqrt_precise()
 @ cdecl -arch=i386 -norelay _libm_sse2_tan_precise()
 @ cdecl _loaddll(str)
-@ cdecl -arch=win64 _local_unwind(ptr ptr) ntdll._local_unwind
+@ cdecl -arch=x86_64 _local_unwind(ptr ptr) ntdll._local_unwind
+@ cdecl -arch=arm64 _local_unwind(ptr ptr)
 @ cdecl -arch=i386 _local_unwind2(ptr long)
 @ cdecl -arch=i386 _local_unwind4(ptr ptr long)
 @ cdecl _localtime32(ptr)

@@ -16,7 +16,8 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 panic-common = { path = "../panic-common" }
-ntkrnl-sys = { path = "../ntkrnl-sys" }
+# The code (see ../setjmp-rt/Cargo.toml); this crate adds the panic runtime.
+setjmp-rt = { path = "../setjmp-rt" }
 
 [features]
 # The panic personality: the amd64 kernel links the default; the CRT's vcruntime builds

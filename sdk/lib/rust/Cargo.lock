@@ -99,6 +99,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "atan2-rust"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "panic-common",
+]
+
+[[package]]
 name = "atapi-rust"
 version = "0.1.0"
 dependencies = [
@@ -406,6 +414,8 @@ dependencies = [
  "cnt-rust",
  "crt-shared-rust",
  "panic-common",
+ "pseh-rt",
+ "setjmp-rt",
  "ucrt-rust",
 ]
 
@@ -527,11 +537,18 @@ name = "delayimp-notify-hook"
 version = "0.1.0"
 
 [[package]]
-name = "delayimp-rust"
+name = "delayimp-rt"
 version = "0.1.0"
 dependencies = [
  "delayimp-failure-hook",
  "delayimp-notify-hook",
+]
+
+[[package]]
+name = "delayimp-rust"
+version = "0.1.0"
+dependencies = [
+ "delayimp-rt",
  "panic-common",
 ]
 
@@ -1401,8 +1418,11 @@ name = "msvcrt-crt-cargo"
 version = "0.1.0"
 dependencies = [
  "cnt-rust",
+ "delayimp-rt",
  "msvcrt-crt-rust",
  "panic-common",
+ "pseh-rt",
+ "setjmp-rt",
 ]
 
 [[package]]
@@ -1863,10 +1883,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pseh-rt"
+version = "0.1.0"
+
+[[package]]
 name = "pseh-rust"
 version = "0.1.0"
 dependencies = [
  "panic-common",
+ "pseh-rt",
 ]
 
 [[package]]
@@ -2287,11 +2312,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "setjmp-rt"
+version = "0.1.0"
+
+[[package]]
 name = "setjmp-rust"
 version = "0.1.0"
 dependencies = [
- "ntkrnl-sys",
  "panic-common",
+ "setjmp-rt",
 ]
 
 [[package]]

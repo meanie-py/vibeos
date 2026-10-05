@@ -114,12 +114,14 @@ FORBIDDEN_CRATE = "msvcrt-crt-rust"
 # honours and a grep for `extern crate` cannot see.
 EXTERN_CRATE_EXEMPT = {"panic-common"}
 
-# OUR static libraries on ucrtbase's link line (dll/win32/ucrtbase/CMakeLists.txt), mapped to
-# where CMake puts their objects. The Rust archive is whole-archived ahead of all of them, so
-# a Rust body replacing one of theirs is ordinary cohab -- these are jointly the authority on
-# what we are allowed to define. `ucrt` itself is deliberately absent: it is the vendored
-# Microsoft library, and displacing one of ITS bodies is precisely the defect.
-OURS_ON_LINK_LINE = {
+# OUR static libraries that ucrtbase linked behind its Rust (dll/win32/ucrtbase/CMakeLists.txt),
+# mapped to where CMake puts their objects. Since 2026-10-04 none is on the link line any more
+# (none contributed an object; tools/link_pulls.py), but they are still compiled, and this is
+# why: their C is the REFERENCE surface. A Rust body replacing one of theirs is ordinary
+# cohab -- these are jointly the authority on what we are allowed to define. `ucrt` itself is
+# deliberately absent: it was the vendored Microsoft library, and displacing one of ITS bodies
+# is precisely the defect.
+OURS_REFERENCE = {
     "msvcrt_shared": Path("dll/win32/msvcrt/CMakeFiles/msvcrt_shared.dir"),
     "crtmath": Path("sdk/lib/crt/CMakeFiles/crtmath.dir"),
     "vcruntime": Path("sdk/lib/vcruntime/CMakeFiles/vcruntime.dir"),
@@ -129,10 +131,16 @@ OURS_ON_LINK_LINE = {
     "vcstartup": Path("sdk/lib/vcstartup/CMakeFiles/vcstartup.dir"),
     "chkstk": Path("sdk/lib/crt/CMakeFiles/chkstk.dir"),
     "wine": Path("sdk/lib/libwine/CMakeFiles/wine.dir"),
+    # setjmp/longjmp and the i386 SEH runtime: setjmp-rt and pseh-rt, inside the ucrtbase
+    # archive since it went link_strict (2026-10-04). Before that they were their own Rust
+    # archives on the link line, outside this check's view. Their C originals are these two
+    # libraries, still compiled for their non-CRT consumers (ftfd, static_crt_apitest, hal).
+    "setjmp": Path("sdk/lib/vcruntime/CMakeFiles/setjmp.dir"),
+    "pseh": Path("sdk/lib/pseh/CMakeFiles/pseh.dir"),
 }
 
 #: ucrtbase's OWN C -- printf.c, stubs.c and the generated ucrtbase_stubs.c. Kept
-#: SEPARATE from OURS_ON_LINK_LINE because that set must stay exactly ucrtbase's
+#: SEPARATE from OURS_REFERENCE because that set must stay exactly ucrtbase's
 #: link libraries (test_the_authority_set_is_the_whole_link_line_except_ucrt pins
 #: it against the CMake, so drift is caught); the DLL's own translation units are
 #: not a library and would break that invariant.
@@ -153,7 +161,7 @@ OURS_OWN_TUS = {
 
 #: Everything of OURS that contributes symbols to ucrtbase.dll, which is what the
 #: subset assertion must be taken against.
-OURS_C_AUTHORITY = {**OURS_ON_LINK_LINE, **OURS_OWN_TUS}
+OURS_C_AUTHORITY = {**OURS_REFERENCE, **OURS_OWN_TUS}
 
 ARCHES = {
     "i386": "i686-pc-windows-gnu",
@@ -719,7 +727,7 @@ def check_archive() -> list[str]:
             findings.append(
                 f"build-{arch}: libcrt_shared_cargo.a defines {len(extra)} symbol(s) that "
                 f"ucrtbase EXPORTS but none of our own static libs on its link line "
-                f"({', '.join(OURS_ON_LINK_LINE)}) defines, so each one "
+                f"({', '.join(OURS_REFERENCE)}) defines, so each one "
                 f"silently replaces the genuine Microsoft UCRT body callers expect "
                 f"(--allow-multiple-definition raises nothing): {shown}. fix: move the body "
                 f"back to msvcrt-crt-rust; or, if this is a DELIBERATE takeover of the "
