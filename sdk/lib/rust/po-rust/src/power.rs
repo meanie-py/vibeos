@@ -95,8 +95,6 @@ extern "system" {
 
     fn KeGetCurrentThread() -> PKTHREAD;
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
-    fn ProbeForRead(address: PVOID, length: SIZE_T, alignment: ULONG);
-    fn ProbeForWrite(address: PVOID, length: SIZE_T, alignment: ULONG);
     fn SeSinglePrivilegeCheck(privilege: LUID, previous_mode: KPROCESSOR_MODE) -> BOOLEAN;
     fn ZwOpenFile(
         file_handle: *mut HANDLE,
@@ -1053,8 +1051,20 @@ pub unsafe extern "system" fn NtPowerInformation(
     let PreviousMode: KPROCESSOR_MODE = KeGetPreviousMode();
 
     if PreviousMode != KernelMode {
-        ProbeForRead(InputBuffer, InputBufferLength as SIZE_T, 1);
-        ProbeForWrite(OutputBuffer, OutputBufferLength as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+        // C: _SEH2_TRY { both probes } whose handler returns the exception code.
+        if let Err(status) =
+            ntkrnl_sys::probe::probe_user_buffer(InputBuffer, InputBufferLength as usize, 1, PreviousMode)
+        {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            OutputBuffer,
+            OutputBufferLength as usize,
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return status;
+        }
     }
 
     match PowerInformationLevel {

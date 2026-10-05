@@ -63,7 +63,6 @@ add_library(secur32 MODULE
 set_module_type(secur32 win32dll UNICODE)
 # SECUR32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
 target_link_libraries(secur32 ${SECUR32_RUST_LIB} lsalib wine)
-target_link_options(secur32 PRIVATE LINKER:--allow-multiple-definition)
 add_importlibs(secur32 advapi32 netapi32 msvcrt kernel32 ntdll)
 add_pch(secur32 precomp.h SOURCE)
 add_dependencies(secur32 rust_secur32)

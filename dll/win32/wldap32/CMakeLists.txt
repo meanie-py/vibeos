@@ -87,9 +87,6 @@ add_library(wldap32 MODULE
 set_module_type(wldap32 win32dll)
 # libwldap32_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(wldap32 ${WLDAP32_RUST_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the
-# 64-bit division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(wldap32 PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(wldap32 rust_wldap32)
 add_importlibs(wldap32 user32 msvcrt kernel32 ntdll)
 # add_pch dropped with precomp.h: the only C left is rust_varargs_shim.c (stdarg.h only) and

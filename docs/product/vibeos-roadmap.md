@@ -76,9 +76,9 @@ Every class below is already **0-NEW-gated** by `vibeos-cli check`; the *stock* 
 - **`scan_cc_mismatch` (316)** + **`verify_ffi` (161)** — ABI-decl drift; **largely retired for free by the Tier-2 trampoline refactor.**
 - **`lint_kernel` (1473 `write_volatile`)** — **likely mostly obsolete**: the captures(none) miscompile it defends against is toolchain-fixed on LLVM ≥ 21 (rustc 1.92 / LLVM 21.1.3). Decision owed: retire-and-revert the defensive laundering vs keep as belt-and-suspenders (`tools/scan_captures.py` is the post-toolchain-bump tripwire).
 - **Duplicate-symbol cleanup after the link guard (2026-10-04)** — in this order:
-  (1) the ~160 kernel probe sites that bugcheck or never check (bug registry, "Kernel
-  user-pointer probes"); (2) delete the 37 per-module `--allow-multiple-definition`
-  copies `gcc.cmake` made redundant; (3) **one Rust crate graph per binary**, so the Rust
+  (1) ~~the ~160 kernel probe sites~~ DONE (bug registry, "Kernel user-pointer probes");
+  (2) ~~delete the per-module `--allow-multiple-definition` copies~~ DONE (35 removed;
+  browseui's upstream LTCG-only one stays); (3) **one Rust crate graph per binary**, so the Rust
   panic runtime stops being an allowed duplicate. Scope, inventory and tiers:
   [`../engineering/one-rust-graph-plan.md`](../engineering/one-rust-graph-plan.md).
 - **IRQL/spinlock RAII (130 candidates)** — 0 leaks today; adopt hand-verified as files are touched (block-scope discipline — the "trivial" labels are ~50% wrong).
@@ -891,20 +891,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   later create that searches for deleted slots (`RtlFindClearBits`) could be handed a live
   entry and overwrite another file's dirent. arm64's system volume is fastfat. Restored;
   smoke 2/2 on all three arches, ASSERT gone, no FILE_CORRUPT raises.
-- **Kernel user-pointer probes: a bad pointer bugchecks, and some never check — OPEN**
+- **Kernel user-pointer probes: a bad pointer bugchecks, and some never check — FIXED**
   (2026-10-04). The C syscalls probe inside `_SEH2_TRY` and return the exception code;
-  this kernel has no SEH, so a raising probe is an unhandled exception (BUGCHECK 0x1E)
-  wherever the C would have returned `STATUS_ACCESS_VIOLATION`. The link-guard work
-  found the typed `ntkrnl-sys` Probe* helpers (`inline/common.rs`, `macros.rs`) doing NO
-  `MmUserProbeAddress` check at all, so a user caller could make the kernel read or write
-  a kernel address; it added the check and moved all 26 call sites of those helpers to
-  `probe.rs`'s `Result` probes with the C handler's cleanup. Still owed, ~160 sites:
-  the raising `ProbeForRead`/`ProbeForWrite` exports (82 calls; a bad user buffer
-  bugchecks), `ProbeAndCapture*` (37), and the still-UNCHECKED typed helpers in
-  `inline/mm.rs` and friends (`ProbeForWriteIoStatusBlock`, `ProbeForWriteSize_t`,
-  `ProbeForReadUnicodeString`, … ~40 calls, the same kernel-address hole). Biggest
-  users: win32k-rust 46, ntoskrnl-rust 46, iomgr-rust 19, ex-rust 14, ks-rust 13. Fix
-  shape: per site, `probe_read_generic`/`probe_write_generic` + the C except handler.
+  this kernel has no SEH, so a raising probe was an unhandled exception (BUGCHECK 0x1E)
+  wherever the C returns `STATUS_ACCESS_VIOLATION`, and several hand-ported helpers did
+  no `MmUserProbeAddress` check at all (a user caller could make the kernel read or
+  write a kernel address). Every raising `ProbeForRead`/`ProbeForWrite`/typed-probe call
+  in Rust (~160, 20 crates) now uses `ntkrnl_sys::probe`'s `Result` probes with the C
+  handler's cleanup; `ProbeAndCaptureUnicodeString` and `DefaultQueryInfoBufferCheck`
+  were fixed centrally. `scan_raising_probes` gates the class at zero. Found on the way:
+  open-coded 32-bit range tests (`ptr < 0x80000000 { check }`, i.e. no check for a kernel
+  pointer; `0x7FFFFFFF` rejecting valid 64-bit user pointers) in config-rust and
+  `ExQueueWorkItem`; WMI's capture writing a kernel stack address into the caller's user
+  struct (a C bug); `KsSetInformationFile` probing its own pool buffer (a C bug: every
+  call failed). Drivers outside ntoskrnl that use the probes need ntkrnl-sys feature
+  `import_mm_user_probe_address`. **Still owed (separate class):** user memory read or
+  written AFTER the probe without a fault-tolerant copy (e.g. NtQuerySystemInformation's
+  query handlers, win32k `IntGetAtomFromStringOrAtom`/`UserDrawCaption`,
+  `MmProbeAndLockPages` in mup) — a bad page there still bugchecks.
 - **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
   `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
   cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail

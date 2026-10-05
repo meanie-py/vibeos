@@ -536,6 +536,10 @@ pub unsafe extern "system" fn ExSwapinWorkerThreads(AllowSwap: BOOLEAN) {
     ExReleaseFastMutex(&raw mut ExpWorkerSwapinMutex);
 }
 
+extern "C" {
+    static MmUserProbeAddress: ULONG_PTR;
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn ExQueueWorkItem(
     WorkItem: PWORK_QUEUE_ITEM,
@@ -543,7 +547,11 @@ pub unsafe extern "system" fn ExQueueWorkItem(
 ) {
     let WorkQueue = &mut ExWorkerQueue[QueueType as usize];
 
-    if ((*WorkItem).WorkerRoutine.unwrap() as ULONG_PTR) < 0x7FFF0000 {
+    // C compares against MmUserProbeAddress. The literal 0x7FFF0000 was its
+    // i386 value, so on 64-bit a user-space routine above 2 GB slipped past.
+    if ((*WorkItem).WorkerRoutine.unwrap() as ULONG_PTR)
+        < MmUserProbeAddress
+    {
         KeBugCheckEx(
             ntkrnl_sys::bugcodes::WORKER_INVALID,
             1,

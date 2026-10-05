@@ -62,7 +62,6 @@ extern "C" {
 }
 
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
     fn IoQueryVolumeInformation(
         FileObject: ntkrnl_sys::ddk::PFILE_OBJECT,
         FsInformationClass: ULONG,
@@ -451,13 +450,21 @@ pub unsafe extern "system" fn NtCreatePagingFile(
             return STATUS_PRIVILEGE_NOT_HELD;
         }
 
-        ProbeForRead(MinimumSize as PVOID, core::mem::size_of::<LARGE_INTEGER>() as ULONG_PTR, core::mem::align_of::<LARGE_INTEGER>() as ULONG);
-        ProbeForRead(MaximumSize as PVOID, core::mem::size_of::<LARGE_INTEGER>() as ULONG_PTR, core::mem::align_of::<LARGE_INTEGER>() as ULONG);
-        ProbeForRead(FileName as PVOID, core::mem::size_of::<_UNICODE_STRING>() as ULONG_PTR, core::mem::align_of::<_UNICODE_STRING>() as ULONG);
-
-        let safe_min = *MinimumSize;
-        let safe_max = *MaximumSize;
-        let page_fn = *FileName;
+        // C: ProbeForReadLargeInteger x2 + ProbeForReadUnicodeString inside one
+        // _SEH2_TRY whose handler returns the exception code. Those typed macros
+        // check range only (no alignment), hence alignment 1.
+        let safe_min = match ntkrnl_sys::probe::probe_read_generic(MinimumSize as *const LARGE_INTEGER, 1, previous_mode) {
+            Ok(v) => v,
+            Err(status) => return status,
+        };
+        let safe_max = match ntkrnl_sys::probe::probe_read_generic(MaximumSize as *const LARGE_INTEGER, 1, previous_mode) {
+            Ok(v) => v,
+            Err(status) => return status,
+        };
+        let page_fn = match ntkrnl_sys::probe::probe_read_generic(FileName as *const _UNICODE_STRING, 1, previous_mode) {
+            Ok(v) => v,
+            Err(status) => return status,
+        };
 
         (safe_min, safe_max, page_fn)
     } else {
@@ -487,12 +494,18 @@ pub unsafe extern "system" fn NtCreatePagingFile(
     }
 
     if previous_mode != 0 {
-        ProbeForRead(page_file_name.Buffer as PVOID, page_file_name.Length as ULONG_PTR, core::mem::size_of::<u16>() as ULONG);
-        core::ptr::copy_nonoverlapping(
-            page_file_name.Buffer as *const u8,
-            buffer as *mut u8,
+        // C: probe + copy in _SEH2_TRY; the handler frees the buffer and returns
+        // the exception code.
+        if let Err(status) = ntkrnl_sys::probe::safe_copy_from_user(
+            buffer,
+            page_file_name.Buffer as *const core::ffi::c_void,
             page_file_name.Length as usize,
-        );
+            core::mem::size_of::<u16>(),
+            previous_mode,
+        ) {
+            ExFreePoolWithTag(buffer, TAG_MM);
+            return status;
+        }
     } else {
         core::ptr::copy_nonoverlapping(
             page_file_name.Buffer as *const u8,

@@ -5104,7 +5104,8 @@ _SEH2_GetExceptionCode(); }` (`virtual.c:876`), and only the body survived trans
 `ProbeForWrite` raises via `ExRaiseAccessViolation()`, nothing catches it, and a syscall
 whose contract is to RETURN `STATUS_ACCESS_VIOLATION` instead takes **BUGCHECK 0x1E**. A
 present probe is therefore not evidence the validation works — it is evidence only that the
-probe is present.
+probe is present. `tools/scan_raising_probes.py` (`vibeos-cli check`, gated at zero since
+2026-10-04) now fails any unqualified call to a raising probe in Rust.
 
 **The tell, and it needs no C beside it: an error path that nothing can reach any more.**
 The shape here is a flag raised around the probe and tested long after:
@@ -5204,10 +5205,11 @@ INTO ntoskrnl (config-rust, ex-rust, ntoskrnl-rust). Reach for it from a standal
 and the whole build dies at the link with
 `ld.lld: error: undefined symbol: _MmUserProbeAddress` — ks.sys did exactly this. A DATA
 import needs the per-arch import form: i386/arm64 `raw-dylib` `+verbatim` (the symbol IS the
-value), amd64 binds `__imp_MmUserProbeAddress` and dereferences. Copy the shape from
-`win32k-rust/src/safe_user_io.rs`; `ks-rust/src/property.rs` now carries it too. Note the
-failure is at LINK, not at `cargo check` — nothing links during a crate check, so this class
-sails through every check you would run first.
+value), amd64 binds `__imp_MmUserProbeAddress` and dereferences. **Fix:** enable ntkrnl-sys
+feature `import_mm_user_probe_address` in the driver's Cargo.toml (ks, npfs and mup do);
+`probe.rs` then binds the import form. Never turn it on for a crate linked INTO ntoskrnl.
+Note the failure is at LINK, not at `cargo check` — nothing links during a crate check, so
+this class sails through every check you would run first.
 
 **Use the right validator for the crate.** win32k has its own `SafeProbeForRead`/`SafeProbeForWrite`
 (`win32k-rust/src/safe_user_io.rs`): same range and alignment arithmetic as the DDK macros, but

@@ -58,8 +58,6 @@ target_link_libraries(usbaudio
 set_module_type(usbaudio kernelmodedriver)
 add_importlibs(usbaudio ntoskrnl hal usbd ks)
 add_dependencies(usbaudio rust_usbaudio)
-# C-cohab object(s) and the Rust rlib can both supply transiently-shared helper symbols.
-target_link_options(usbaudio PRIVATE -Wl,--allow-multiple-definition)
 target_link_libraries(usbaudio ${USBAUDIO_RUST_LIB})
 
 add_cd_file(TARGET usbaudio DESTINATION reactos/system32/drivers NO_CAB FOR all)

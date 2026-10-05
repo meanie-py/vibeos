@@ -1,9 +1,9 @@
 use ntkrnl_sys::driver_ddk::*;
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, PsGetCurrentProcessSessionId, PsGetCurrentThreadWin32Thread, RtlAllocateHeap, RtlFreeHeap, RtlSizeHeap, RtlCopyUnicodeString, RtlInitUnicodeString};
+use ntkrnl_sys::ddk::{ExFreePoolWithTag, PsGetCurrentProcessSessionId, PsGetCurrentThreadWin32Thread, RtlAllocateHeap, RtlFreeHeap, RtlSizeHeap, RtlCopyUnicodeString, RtlInitUnicodeString};
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
-use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES};
+use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use core::ffi::c_void;
 
 // Not in ntkrnl_sys::base; declared per-file, as the rest of the crate does.
@@ -295,61 +295,16 @@ unsafe fn MmCopyFromCaller(dst: *mut core::ffi::c_void, src: *const core::ffi::c
     _MmCopyFromCaller(dst, src, len as UINT)
 }
 
-// ProbeForRead (Mm NTAPI, stdcall `_ProbeForRead@12`) — real export.
-extern "system" {
-    fn ProbeForRead(Address: *const c_void, Length: SIZE_T, Alignment: ULONG);
-}
-// ProbeForReadUnicodeString(Ptr) — capture a UNICODE_STRING by value (probe.h).
-#[inline(always)]
-unsafe fn ProbeForReadUnicodeString(ptr: *const _UNICODE_STRING) -> _UNICODE_STRING {
-    ProbeForRead(ptr as *const c_void, core::mem::size_of::<_UNICODE_STRING>() as SIZE_T,
-                 core::mem::size_of::<usize>() as ULONG);
-    *ptr
-}
 // ProbeAndCaptureUnicodeString (probe.h static __inline) — probe + deep-copy.
+// Delegates to the one SEH-faithful implementation: the old local copy used the
+// RAISING ProbeForRead (unhandled here = BUGCHECK 0x1E) and an unprotected copy.
 #[inline(always)]
 unsafe fn ProbeAndCaptureUnicodeString(
     Dest: PUNICODE_STRING,
     CurrentMode: u8,
     UnsafeSrc: *const _UNICODE_STRING,
 ) -> NTSTATUS {
-    if CurrentMode != 0 {
-        *Dest = ProbeForReadUnicodeString(UnsafeSrc);
-        if !(*Dest).Buffer.is_null() {
-            if (*Dest).Length != 0 {
-                ProbeForRead((*Dest).Buffer as *const c_void, (*Dest).Length as SIZE_T,
-                             core::mem::size_of::<u16>() as ULONG);
-                let Buffer = ExAllocatePoolWithTag(
-                    PagedPool,
-                    ((*Dest).Length as SIZE_T) + core::mem::size_of::<u16>() as SIZE_T,
-                    u32::from_le_bytes(*b"RTSU"),
-                ) as PWSTR;
-                if Buffer.is_null() {
-                    return STATUS_INSUFFICIENT_RESOURCES as NTSTATUS;
-                }
-                RtlCopyMemory(Buffer as *mut c_void, (*Dest).Buffer as *const c_void, (*Dest).Length as SIZE_T);
-                *Buffer.add(((*Dest).Length / 2) as usize) = 0;
-                (*Dest).Buffer = Buffer;
-                if (*Dest).Length % 2 != 0 {
-                    (*Dest).Length -= 1;
-                }
-                if (*Dest).Length as u32 >= 0xFFFE {
-                    (*Dest).MaximumLength = (*Dest).Length;
-                } else {
-                    (*Dest).MaximumLength = (*Dest).Length + 2;
-                }
-            } else {
-                (*Dest).MaximumLength = 0;
-                (*Dest).Buffer = core::ptr::null_mut();
-            }
-        } else {
-            (*Dest).Length = 0;
-            (*Dest).MaximumLength = 0;
-        }
-    } else {
-        *Dest = *UnsafeSrc;
-    }
-    STATUS_SUCCESS as NTSTATUS
+    crate::safe_user_io::probe_and_capture_unicode_string(Dest, CurrentMode as i8, UnsafeSrc)
 }
 // ReleaseCapturedUnicodeString (probe.h) — free a user-mode captured buffer.
 #[inline(always)]
