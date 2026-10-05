@@ -472,6 +472,25 @@ it" on 2026-10-03.
 
 ---
 
+## 12. Final bosses: Windows 10 drivers, real GPUs, latest Chrome — Size: XXL
+
+The point where vibeos runs **today's Windows binaries unchanged** on real hardware.
+Full plan, oracles and safety rules:
+[`../engineering/modern-windows-compat-roadmap.md`](../engineering/modern-windows-compat-roadmap.md)
+(owner discussion, 2026-10-05). Test bench: the homelab OptiPlex 7010 (NVMe, Libreboot).
+
+| # | Boss | First rung | Size | Status (2026-10-05) |
+|---|------|-----------|------|--------|
+| 12a | **Windows 10 kernel export surface**, shared by everything below | An import-gap census tool: missing exports across real Windows 10 drivers and apps, ranked | L | proposed |
+| 12b | **Modern hardware drivers**: KMDF (built, 1.17) on real drivers, NVMe (missing), NDIS 6, Vista audio stack, Wi-Fi, HID-over-I²C | NVMe StorPort miniport on the 7010 | XL | proposed |
+| 12c | **Real GPU**: XP x64 driver (XDDM), then WDDM 1.1, then WDDM 2.x (dxgkrnl + a CDD-style adapter so win32k keeps its interface) | Radeon HD 5450 on AMD's XP x64 driver | XXL | proposed |
+| 12d | **Latest Google Chrome**: Windows 10 user-mode surface (mostly Wine), then the sandbox's four kernel primitives (syscall filter, integrity levels, job limits, namespace isolation) plus Windows-exact ntdll stubs | `chrome --headless --no-sandbox --dump-dom` as a smoke ladder rung | XL | proposed |
+
+**Blocked by:** amd64 booting on real hardware at all (the 7010, via firmware graphics),
+§10. Chrome rungs 1–3 are not blocked by any of the kernel work.
+
+---
+
 ## Check-back ledger — owed items from closed docs/lanes (opened 2026-07-10)
 
 When a plan/quest/handoff doc closes, its *outstanding* items land here (one line + a
@@ -6153,3 +6172,4 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
 | 14 | Futex primitives (6c) | XL | Lock-free work | Architecture |
 | 15 | Wine DLL re-implementation (7b) | XXL | Pipeline + Rosetta | Full Rust userland (the §0 T3 Wine bucket) |
 | 16 | Linux-origin subsystem refresh (7c) | XL | Pipeline maturity | Remove stale ports |
+| 17 | Final bosses: Windows 10 drivers, GPUs, Chrome (12) | XXL | Real-hardware boot (10) | Runs today's Windows binaries unchanged |
