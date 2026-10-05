@@ -505,8 +505,8 @@ def submit_single(
             if result.usage_known:
                 # The budget stays a CEILING: every prompt token at the peak miss rate,
                 # cache hits included. The reported cost (config.cost_usd) is the bill.
-                prompt = result.input_tokens + result.cache_read_tokens
-                actual = (prompt * pin + result.output_tokens * pout) / 1000000
+                prompt_tokens = result.input_tokens + result.cache_read_tokens
+                actual = (prompt_tokens * pin + result.output_tokens * pout) / 1000000
             budget.settle(attempt.id, actual)
             durable_json(
                 attempt.path / "accounting.json",
