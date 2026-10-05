@@ -2560,16 +2560,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `sqlite32` — with no bugcheck. The one miss is `marshal32`, which hangs in a loopback
   `sendto()` that is a board-side networking bug, not FEX (registry: "Pi 4 (real hardware): a
   loopback UDP `sendto()` never returns"). Run `/tmp/vibeos-cli/20261004-202912-qddv97oj-pi4-boot-arm64`.
-  - **Real hardware enforces what QEMU does not: unaligned store-release faults.** FEX emits
+  - **FEX takes ~1,200 alignment faults per ladder boot, on the board AND in QEMU.** FEX emits
     `STLR`/`LDAR` for x86-TSO ordering; on ARMv8.0 (the A72 has no LSE2) an unaligned one takes
     an alignment fault (`ESR=0x92000061`, raised as `STATUS_DATATYPE_MISALIGNMENT`, e.g. opcode
-    `0x889FFE9F` = `STLR wzr,[x20]`). QEMU's cortex-a72 does not fault, so this path had never
-    run. FEX handles it: 1,229 faults this boot, mostly once per site, every one recovered.
-  - **Each of those faults costs serial time on the board.** `ke/arm64/trap.rs`'s `[ALIGN]`
-    diagnostic and the `[UEXC]` dispatch dump write ~1 KB per fault byte-by-byte to the PL011 at
-    115200 baud, inside the trap. Free in QEMU, about 90 ms per fault on the Pi — roughly
-    minutes over a ladder. Nothing failed because of it, but it is the first thing to gate
-    before timing anything FEX-heavy on hardware.
+    `0x889FFE9F` = `STLR wzr,[x20]`), and FEX recovers it. 1,229 on the Pi; 1,190 in a QEMU
+    boot of the same tree (`20261004-204131-hsbqj3g1`), so TCG enforces it too. (This entry
+    first said QEMU does not fault and the path "had never run" — an inference from the board
+    log alone, refuted by counting the QEMU log.)
+  - **What differs on the board is what each fault COSTS.** `ke/arm64/trap.rs`'s `[ALIGN]` decode
+    and the `[UEXC]` dispatch dump wrote ~1 KB per fault byte-by-byte to the PL011 inside the
+    trap: instant on QEMU's virtual UART, ~90 ms at 115200 baud (computed from the line rate,
+    not measured). Now capped: those two codes print in full for their first 32, then as a
+    count at each power of two; tripwire `UEXCVERBOSE` restores everything (`133142f2ff9`).
+  - **Timed on the board (`pi4 boot --ladder`, `20261004-210344-k4a1c7i7-pi4-boot-arm64`):**
+    every guest runs in **1–5 s** launch-to-verdict — `lua32` 2.6 s, `sqlite32` 2.6 s, `gui32`
+    4.5 s — and the whole ladder takes 121.6 s, 67.6 s of which is winlogon waiting out the
+    hung `marshal32`. Power-on to desktop was 347 s; most of it is sanbooting the 564 MB FEX
+    image (a plain arm64 image reached the desktop in ~100 s on 2026-09-26), unmeasured split.
   - QEMU on the same tree: the ladder was red on `spawn32` (0xBAE4) — a lost-wakeup race in the
     guest itself (it closed the named DONE event before the child opened it), fixed in
     `509f9d7939f`; green UP and `-smp 4` after.
