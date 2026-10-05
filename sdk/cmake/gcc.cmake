@@ -449,7 +449,21 @@ set(CMAKE_RC_CREATE_SHARED_MODULE ${CMAKE_RC_CREATE_SHARED_LIBRARY})
 # Rust staticlib carries its own panic runtime; compiler_builtins overlaps
 # libclang_rt.builtins). Before the guard it silently let C glue beat translated
 # Rust by link order: cdrom, fastfat, disk, crtdll, ucrtbase.
-set(_vibeos_dup_policy "-Wl,--allow-multiple-definition --ld-path=${REACTOS_SOURCE_DIR}/tools/link_guard/ld.lld")
+set(_vibeos_dup_policy "--ld-path=${REACTOS_SOURCE_DIR}/tools/link_guard/ld.lld")
+# ... and the flag itself is per target: a module with the VIBEOS_STRICT_LINK property
+# (link_strict(), below) links without it, so lld rejects ANY duplicate, toolchain runtime
+# included. Such a module must be one Rust graph (one core / panic runtime /
+# compiler_builtins) and also drops clang's libclang_rt.builtins (see the
+# -print-libgcc-file-name block): lld fetches it for intrinsics that Rust's whole-archived
+# compiler_builtins defines too, whenever a Rust member referencing one is parsed before the
+# member defining it. As generator expressions because the property is set after
+# set_module_type, and an unset property keeps every other module's link exactly as it was.
+add_link_options("$<$<NOT:$<BOOL:$<TARGET_PROPERTY:VIBEOS_STRICT_LINK>>>:-Wl,--allow-multiple-definition>")
+
+# link_strict(<target>): link <target> with no duplicate symbol tolerated (see above).
+function(link_strict target)
+    set_target_properties(${target} PROPERTIES VIBEOS_STRICT_LINK ON)
+endfunction()
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--gc-sections ${_vibeos_dup_policy}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup ${_vibeos_dup_policy}")
 set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup ${_vibeos_dup_policy}")
@@ -459,7 +473,14 @@ set(CMAKE_C_COMPILE_OBJECT "<CMAKE_C_COMPILER> <DEFINES> ${_compress_debug_secti
 set(CMAKE_CXX_COMPILE_OBJECT "<CMAKE_CXX_COMPILER> <DEFINES> <INCLUDES> <FLAGS> -o <OBJECT> -c <SOURCE>")
 set(CMAKE_ASM_COMPILE_OBJECT "<CMAKE_ASM_COMPILER> ${_compress_debug_sections_flag} -x assembler-with-cpp -o <OBJECT> -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm <INCLUDES> <FLAGS> <DEFINES> -D__ASM__ -c <SOURCE>")
 
-set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
+# --codepage=65001: llvm-rc IGNORES `#pragma code_page`, so without a default every
+# UTF-8 resource script was decoded as cp1252 -- "fran\xc3\xa7ais" for "français" in
+# every translated string table, and kernel32's French LOCALE_STHOUSAND came out as
+# U+00C2 U+00A0, which VarParseNumFromStr then took as the separator. The tree's
+# resource scripts are all UTF-8 (the six that declare 1251/1252/932 are pure ASCII),
+# so UTF-8 is the one right default, and llvm-rc rejects invalid UTF-8 loudly.
+set(RC_CODEPAGE_FLAG "--codepage=65001")
+set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff ${RC_CODEPAGE_FLAG} <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
 
 # use_gnu_rc() — compile THIS DIRECTORY's .rc files with GNU windres instead of
 # llvm-mingw's (which is llvm-rc in a trench coat). Only for the handful of
@@ -488,7 +509,7 @@ function(use_gnu_rc)
         return()
     endif()
     set(CMAKE_RC_COMPILE_OBJECT
-        "${GNU_RC_COMPILER} -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>"
+        "${GNU_RC_COMPILER} -O coff ${RC_CODEPAGE_FLAG} <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>"
         PARENT_SCOPE)
 endfunction()
 
@@ -1206,15 +1227,16 @@ endmacro()
 # PSEH lib, needed with mingw
 set(PSEH_LIB "pseh")
 
-# Rust archives the user-mode CRT DLLs name BY PATH on their link lines: a path is placed
-# exactly where it is written (an INTERFACE wrapper's library lands after the direct items,
-# behind import libraries -- ntdll's exports longjmp on amd64 and answered ucrtbase's own),
-# and Ninja still orders the link after the custom command that produces it. Spelled here,
-# not exported from the producing directory, because dll/ is configured BEFORE sdk/lib/:
-# a variable set there is empty when the DLLs read it on a fresh configure. The producers
-# (sdk/lib/pseh, sdk/lib/vcruntime) FATAL_ERROR if their rust_staticlib_variant disagrees.
-set(PSEH_USER_LIB "${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh_user_rust_a.a")
-set(VCRT_SETJMP_LIB "${CMAKE_BINARY_DIR}/sdk/lib/vcruntime/libvcrt_setjmp_rust.a")
+# A Rust archive a module names BY PATH on its link line: a path is placed exactly where it
+# is written (an INTERFACE wrapper's library lands after the direct items, behind import
+# libraries), and Ninja still orders the link after the custom command that produces it.
+# Spelled here, not exported from the producing directory, because dll/ and win32ss/ are
+# configured BEFORE sdk/lib/: a variable set there is empty when they read it on a fresh
+# configure; sdk/lib/crt FATAL_ERRORs if its rust_staticlib_variant disagrees. gdi32's: as the
+# `atan2` INTERFACE target it landed behind ntdll's import library, which exports atan2 on
+# arm64, and gdi32 imported ntdll's. (The CRT DLLs' pseh/setjmp archives were named this way
+# too until they moved inside the CRTs' own Rust graphs.)
+set(ATAN2_LIB "${CMAKE_BINARY_DIR}/sdk/lib/crt/libatan2_rust.a")
 
 function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_address)
     set(_object_file ${_binary_file}.o)
@@ -1384,8 +1406,10 @@ else()
             add_library(libclang_rt_builtins STATIC IMPORTED)
             set_target_properties(libclang_rt_builtins PROPERTIES IMPORTED_LOCATION "${_clang_rt_builtins}")
             target_link_libraries(libgcc INTERFACE libclang_rt_builtins)
-            # Also add to global link flags so kernel-mode drivers get it too
-            add_link_options("${_clang_rt_builtins}")
+            # Also add to global link flags so kernel-mode drivers get it too -- except a
+            # link_strict() module, whose Rust compiler_builtins supplies these (see
+            # _vibeos_dup_policy).
+            add_link_options("$<$<NOT:$<BOOL:$<TARGET_PROPERTY:VIBEOS_STRICT_LINK>>>:${_clang_rt_builtins}>")
             message(STATUS "Using compiler-rt builtins: ${_clang_rt_builtins}")
         endif()
     endif()

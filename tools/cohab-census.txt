@@ -335,6 +335,8 @@ dll/win32/authz/CMakeLists.txt	1	# authz.c clictx.c resman.c → authz-rust
 dll/win32/authz/CMakeLists.txt	1	# clictx.c
 dll/win32/authz/CMakeLists.txt	1	# resman.c
 dll/win32/cabinet/CMakeLists.txt	1	# (reactos-link, ModuleKind::Win32Dll) compiles rust_cohab_stub.c (wine debug
+dll/win32/crtdll/CMakeLists.txt	1	# advapi32: the shared CRT's rand_s calls SystemFunction036 (RtlGenRandom). dllmain.c used to
+dll/win32/crtdll/CMakeLists.txt	1	# dllmain.c is msvcrt-crt-rust src/legacy.rs (CRTDLL_* names, which crtdll.spec maps).
 dll/win32/dbghelp/CMakeLists.txt	1	# elf_module.c
 dll/win32/dbghelp/CMakeLists.txt	1	# macho_module.c
 dll/win32/dnsapi/CMakeLists.txt	1	# adns.c
@@ -512,12 +514,12 @@ dll/win32/msv1_0/CMakeLists.txt	1	# user.c
 dll/win32/msv1_0/CMakeLists.txt	1	# user.c → src/msv1_0/user.rs
 dll/win32/msv1_0/CMakeLists.txt	1	# usercontext.c → src/msv1_0/usercontext.rs
 dll/win32/msv1_0/CMakeLists.txt	1	# usercontext.c)
-dll/win32/msvcrt/CMakeLists.txt	1	# copies (string.c etc.) go dead (--allow-multiple-definition, MODULE-link
+dll/win32/msvcrt/CMakeLists.txt	1	# gen_ctype_tables.py checks the Rust ctype tables against ctype.c.obj's .data,
 dll/win32/msvcrt/CMakeLists.txt	1	# i386/__wine_RtlUnwind.s, i386/exception_ptr.s, i386/inout.s -- replaced by Rust
 dll/win32/msvcrt/CMakeLists.txt	1	# msvcrt_rust_shims (rust_varargs_shim.c, rust_scanf_shim.c, rust_file_varargs_shim.c,
 dll/win32/msvcrt/CMakeLists.txt	1	# rust_process_varargs_shim.c, rust_console_varargs_shim.c), C only because stable Rust
-dll/win32/msvcrt/CMakeLists.txt	1	# so they win first-match over scanf.c/wcs.c/file.c's copies as the module objects did.
-dll/win32/msvcrt/CMakeLists.txt	1	# the C monolith (string.c.obj) is pulled. Plain link-order is NOT enough: the
+dll/win32/msvcrt/msvcrt_rust_cohab.cmake	1	# The legacy DLLs' own overrides (crtdll's dllmain.c, msvcrt20.c) are in the archive too,
+dll/win32/msvcrt20/CMakeLists.txt	1	# msvcrt20.c is msvcrt-crt-rust src/legacy.rs (MSVCRT20__getmainargs/__wgetmainargs).
 dll/win32/mswsock/CMakeLists.txt	1	# extensions.c
 dll/win32/mswsock/CMakeLists.txt	1	# extensions.c — replaced by Rust (mswsock-rust src/mswsock/extensions.rs — AcceptEx/TransmitFile/GetAcceptExSockaddrs)
 dll/win32/mswsock/CMakeLists.txt	1	# mswhelper.c
@@ -835,6 +837,7 @@ dll/win32/syssetup/CMakeLists.txt	1	# wizard.c
 dll/win32/syssetup/CMakeLists.txt	1	#addons.c
 dll/win32/ucrtbase/CMakeLists.txt	1	# Silence warnings in ucrtbase_stubs.c
 dll/win32/ucrtbase/CMakeLists.txt	1	# printf.c (sprintf/_vsnprintf) and ucrt_varargs_shim.c (the `...` entry points as
+dll/win32/ucrtbase/CMakeLists.txt	1	# stubs.c (atexit, operator_new/delete, _chkesp_failed, __acrt_initialize_sse2) is
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c — replaced by Rust (userenv-rust src/userenv/desktop.rs — GetAllUsers/DefaultUserProfileDirectory)
 dll/win32/userenv/CMakeLists.txt	1	# directory.c
@@ -1637,6 +1640,7 @@ sdk/lib/crt/libcntpr.cmake	1	# the portable math/sqrt.c fast-invsqrt approximati
 sdk/lib/crt/libcntpr.cmake	1	# tiny scanf_trampoline.c — Rust can't DEFINE variadics on stable. It
 sdk/lib/crt/libcntpr.cmake	1	# uses *_asm.s, so REMOVE_ITEM is a harmless no-op there); mem/memccpy.c
 sdk/lib/crt/libcntpr.cmake	1	# which the no-SSE kernel cell cannot compile), exp2f.c (f32
+sdk/lib/crt/math/math.cmake	1	# math/i386/atan2_asm.s, amd64 AMD libm_sse2 atan2.c with _handle_error/_invoke_matherr/
 sdk/lib/crt/math/math.cmake	1	# math/i386/fabs_asm.s # FIXME
 sdk/lib/crt/math/math.cmake	1	# math/j0_y0.c
 sdk/lib/crt/math/math.cmake	1	# math/j1_y1.c
@@ -1657,6 +1661,8 @@ sdk/lib/crt/msvcrtex.cmake	1	# recalloc.c is NEW upstream (CORE-20596): it defin
 sdk/lib/crt/msvcrtex.cmake	1	# sec_mgr.c started calling it in this merge.
 sdk/lib/crt/printf/printf.cmake	1	# instead deleted swprintf.c and renamed vswprintf.c to _vswprintf.c; we keep ours,
 sdk/lib/crt/printf/printf.cmake	1	# swprintf. We took that change. But swprintf.c / vswprintf.c ARE the non-conforming
+sdk/lib/delayimp/CMakeLists.txt	1	# __pfnDliNotifyHook2/__pfnDliFailureHook2 hook variables, from delayimp.c,
+sdk/lib/delayimp/CMakeLists.txt	1	# pfnDliNotifyHook2.c and pfnDliFailureHook2.c (kept on disk as the record). `delayimp` stays
 sdk/lib/dnslib/CMakeLists.txt	1	# addr.c dnsaddr.c flatbuf.c hostent.c memory.c sablob.c straddr.c string.c
 sdk/lib/dnslib/CMakeLists.txt	1	# debug.c dnsutil.c ip6.c name.c print.c record.c rrprint.c table.c utf8.c
 sdk/lib/dnslib/CMakeLists.txt	1	# disk per the never-delete rule. dnslib_rust_stub.c is the anchor TU
@@ -1674,7 +1680,7 @@ sdk/lib/evtlib/CMakeLists.txt	1	# ── kernel: drop evtlib.c, link libevtlib_r
 sdk/lib/libwine/CMakeLists.txt	1	# string.c implements _stricmp, already shipped with crt
 sdk/lib/lsalib/CMakeLists.txt	1	# add_library(ntlsalib lsa.c) + _NTSYSTEM_ # body replaced by Rust; kept on disk
 sdk/lib/lsalib/CMakeLists.txt	1	# lsa.c is translated to Rust (lsalib-rust, kept on disk per the never-delete
-sdk/lib/pseh/CMakeLists.txt	1	# pseh-rust in its user-mode build (seh.s's SEH runtime + dummy.c's volatile symbols, the
+sdk/lib/pseh/CMakeLists.txt	1	# The user-mode SEH runtime (seh.s's, + dummy.c's volatile symbols) is pseh-rt, the same Rust
 sdk/lib/rtl/CMakeLists.txt	1	# The asm stub's _LdrpAccessResource@16 callee lived in res.c.obj (now Rust); keeping
 sdk/lib/rtl/CMakeLists.txt	1	# access.c — replaced by Rust implementation (sdk/lib/rust/access/)
 sdk/lib/rtl/CMakeLists.txt	1	# acl.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ACL)

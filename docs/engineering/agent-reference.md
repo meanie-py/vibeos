@@ -471,6 +471,15 @@ Each bug class it finds becomes a gated `check` scanner over every body. The fir
   246-site review queue.
 - `scan_dropped_null_guard`: the C null-tests an out-param, and the Rust stores through
   it unconditionally.
+- `scan_constant_placement`: the C's constants are all present but in each other's places
+  (`a = 10; b = 20;` came back `a = 20; b = 10;`). The fact seal checks a closed SET, which
+  a permutation satisfies; rustconv `translate` now rejects these too
+  (`rustconv/placement_audit.py`). Each constant gets a slot (callee + argument index,
+  assignment target, comparison/bitwise operand, `return` keyed by its `if`, `case` keyed
+  by its arm), and only a CYCLE of constants each in a slot where the C never puts it is
+  reported. Measured 2026-10-05: 0 findings over 73,524 shipped functions; 38.8% of seeded
+  swaps caught. Not caught: two constants sharing one slot (`ret = A` / `ret = B` in
+  different branches) and slots the translation renamed.
 - `scan_store_on_failure`: the C writes an out-param only after its last failure `return`
   (compress.c's `out:` label), and the Rust writes it and then returns a status that can
   fail. A store dominated by a success test, and a `*pp = NULL` (COM's rule), stay quiet.
@@ -719,6 +728,7 @@ python3 tools/port_audit.py --json         # same rows, machine-readable
 python3 tools/port_audit.py --check        # ratchet: every compiled source is classified
 python3 tools/port_audit.py --detail "Win32 DLLs"   # live directories in one surface
 python3 tools/port_audit.py --rust         # lines of Rust: translation / generated / harness
+python3 tools/port_audit.py --write-doc    # refresh the ledger block in rust-port-status.md
 ```
 
 Answers "where are we at on the core OS" from the **ninja build graph of this worktree's
@@ -905,7 +915,7 @@ if (u) { while (*msg) *u = (ULONG)*msg++; }
 
 All development and CI happens in **QEMU**: `virt` machine (ARM64), `q35` (amd64), or standard PC (i386).
 
-**Acceleration / backend (this misled people — read it):** the default smoke backend is **`windows-host`** — the harness launches the **Windows** `qemu-system-*.exe` on the host via WSL interop (media staged to `/mnt/c/temp/vibeos-qemu`), running **TCG (pure emulation) on all three arches**. This deliberately escapes WSL2 nested-virt: host TCG beats nested KVM, and there's no single-virt-slot contention, so the beast host can run all arches in parallel. **We are *not* on `/dev/kvm`** despite it being present in WSL2. Two alternates exist: `VIBEOS_QEMU_BACKEND=native` (local Linux qemu + Unix sockets + KVM for x86 — the old path, still used by the kernel-debug toolkit's GDB flow), and **WHPX** (Windows Hypervisor Platform, real x86 hardware virt in `qemu-system-x86_64.exe`, `accel: "whpx"`) — **works since 2026-07-10: both x86 arches boot to desktop in ~52s** (`VIBEOS_QEMU_WINDOWS_ACCEL=whpx`; the boot CD rides an ich9-ahci controller under whpx so OVMF DMAs it instead of ~5min of PIO VM-exits — see `docs/engineering/windows-host-qemu-whpx-spike.md` + field manual §9.46 for the six guest-side bugs that bring-up flushed out). Still opt-in (default stays TCG) until whpx accumulates reliability history; same-arch whpx boots serialize (hardware-virt contention, like KVM). arm64 is always TCG (WHPX is x86-only). Config + per-arch resolution: `tests/qemu/cli/config.py` (`qemu.backend`/`qemu.windows.accel`) + `tests/qemu/backend.py` (`resolve_accel`). Real hardware: a **Raspberry Pi 4B** bench boots arm64 VibeOS to the desktop (UP kernel, 2026-09-25). Boot your tree on it with `./vibeos-cli pi4 boot` (lease + doctor + desktop verdict, ~2 min). Bench wiring and the hands-free netboot loop: `docs/engineering/pi4-bench.md`; findings: `docs/engineering/active-lanes/pi4-bringup.md`.
+**Acceleration / backend (this misled people — read it):** the default smoke backend is **`windows-host`** — the harness launches the **Windows** `qemu-system-*.exe` on the host via WSL interop (media staged to `/mnt/c/temp/vibeos-qemu`), running **TCG (pure emulation) on all three arches**. This deliberately escapes WSL2 nested-virt: host TCG beats nested KVM, and there's no single-virt-slot contention, so the beast host can run all arches in parallel. **We are *not* on `/dev/kvm`** despite it being present in WSL2. Two alternates exist: `VIBEOS_QEMU_BACKEND=native` (local Linux qemu + Unix sockets + KVM for x86 — the old path, still used by the kernel-debug toolkit's GDB flow), and **WHPX** (Windows Hypervisor Platform, real x86 hardware virt in `qemu-system-x86_64.exe`, `accel: "whpx"`) — **works since 2026-07-10: both x86 arches boot to desktop in ~52s** (`VIBEOS_QEMU_WINDOWS_ACCEL=whpx`; the boot CD rides an ich9-ahci controller under whpx so OVMF DMAs it instead of ~5min of PIO VM-exits — see `docs/engineering/windows-host-qemu-whpx-spike.md` + field manual §9.46 for the six guest-side bugs that bring-up flushed out). Still opt-in (default stays TCG) until whpx accumulates reliability history; same-arch whpx boots serialize (hardware-virt contention, like KVM). arm64 is always TCG (WHPX is x86-only). Config + per-arch resolution: `tests/qemu/cli/config.py` (`qemu.backend`/`qemu.windows.accel`) + `tests/qemu/backend.py` (`resolve_accel`). Real hardware: a **Raspberry Pi 4B** bench boots arm64 VibeOS to the desktop (UP kernel, 2026-09-25). Boot your tree on it with `./vibeos-cli pi4 boot` (lease + doctor + desktop verdict, ~2 min). Bench wiring and the hands-free netboot loop: `docs/engineering/pi4-bench.md`; findings: `docs/engineering/active-lanes/pi4-bringup.md`. A **Raspberry Pi 5** reaches the desktop too (2026-10-04): `./vibeos-cli pi5 boot` stages over SSH to the card's Linux and tryboots VibeOS; `docs/engineering/pi5-bench.md`.
 
 ## rustconv — model shortcuts, HAL mode, and pipeline stages
 

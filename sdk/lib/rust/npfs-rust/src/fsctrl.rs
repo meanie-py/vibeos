@@ -537,10 +537,14 @@ pub unsafe extern "system" fn NpTransceive(
     OutBuffer = (*Irp).UserBuffer;
 
     if (*Irp).RequestorMode == UserMode {
-        // _SEH2_TRY { ProbeForRead/ProbeForWrite } _SEH2_EXCEPT { return code } _SEH2_END;
-        // Under USE_DUMMY_PSEH the EXCEPT handler is dropped; the probes still run.
-        ProbeForRead(InBuffer, InLength as usize, core::mem::size_of::<i8>() as u32);
-        ProbeForWrite(OutBuffer, OutLength as usize, core::mem::size_of::<i8>() as u32);
+        // C: _SEH2_TRY { ProbeForRead/ProbeForWrite } _SEH2_EXCEPT { return code }.
+        // No SEH here, so the Result probes return the code instead of raising.
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(InBuffer, InLength as usize, 1, 1) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(OutBuffer, OutLength as usize, 1, 1) {
+            return status;
+        }
     }
 
     NodeTypeCode = NpDecodeFileObject((*IoStack).FileObject, null_mut(), &mut Ccb, &mut NamedPipeEnd);
@@ -954,6 +958,4 @@ pub unsafe extern "system" fn NpFsdFileSystemControl(
 // ntkrnl-sys::inline::common); redeclare them here as mup-rust does. ULONG_PTR == usize,
 // ULONG == u32 on all three targets.
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: u32);
-    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: u32);
 }

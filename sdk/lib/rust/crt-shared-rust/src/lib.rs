@@ -86,6 +86,10 @@ pub mod except;
 #[cfg(all(feature = "cpp", target_arch = "x86"))]
 pub mod except_i386;
 
+// ucrtbase's thread_data_t slot (was dll/win32/msvcrt/reactos/ucrt_tls_sup.c).
+#[cfg(all(feature = "ucrtsupport", target_os = "windows"))]
+mod ucrt_tls;
+
 // msvcrt_shared's i386 .s files (RtlUnwind wrapper, exception_ptr thunks, port I/O).
 #[cfg(all(target_arch = "x86", target_os = "windows"))]
 mod asm_i386;
@@ -105,3 +109,6 @@ pub mod seh_i386;
 pub mod except_x86_64;
 #[cfg(all(feature = "cpp", target_arch = "aarch64"))]
 pub mod except_arm64;
+// The arm64 stack probe both CRT DLLs need now that they link without clang_rt.
+#[cfg(all(target_arch = "aarch64", target_os = "windows"))]
+mod chkstk_arm64;

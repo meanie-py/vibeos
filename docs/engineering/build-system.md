@@ -153,3 +153,18 @@ re-emits). **Killing it categorically is a parked lane** (`kill-allow-multiple-d
 branch): a validated `objcopy --redefine-sym` runtime-rename quarantine replaces the flag
 for the structural dups, leaving a small genuine-dup tail to fix in source. Resume state +
 the flag-off censuses are on that branch; ratchet tool is `tools/scan_duplicate_symbols.py`.
+
+**Per module, it is off where the module is ready (`link_strict(<target>)`, gcc.cmake).**
+The flag is a generator expression on the target's `VIBEOS_STRICT_LINK` property, and a
+strict module also drops `libclang_rt.builtins`. lld fetches clang_rt for an intrinsic
+whenever a Rust member that references it is parsed before the whole-archived
+`compiler_builtins` member that defines it, which is a duplicate of a symbol Rust already has.
+A module qualifies when it is one Rust graph with no C library: one `core`, one panic runtime,
+one `compiler_builtins`. Code that used to come from separate Rust staticlibs goes into that
+graph as an rlib. pseh-rust, setjmp-rust and delayimp-rust are split so that is possible:
+`*-rt` holds the code, and the `*-rust` facade is the standalone staticlib that adds the panic
+runtime. Strict since 2026-10-04: msvcrt, msvcrt20, msvcrt40, crtdll, ucrtbase. Anything the
+graph lacks becomes visible: arm64 `__chkstk` (compiler_builtins has none) went to ntdll's
+import library until crt-shared-rust grew one. So diff the import table before and after
+flipping a module, and use `tools/link_pulls.py --arch A --target T` (lld's own record of
+which archive member it loaded, and for which symbol) to see what a link really pulls.

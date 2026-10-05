@@ -33,7 +33,6 @@ unsafe fn IoCompleteRequest(Irp: PIRP, PriorityBoost: i8) {
 }
 
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
     fn WmipOpenGuidObjectByName(
         ObjectAttributes: POBJECT_ATTRIBUTES,
         DesiredAccess: ACCESS_MASK,
@@ -208,37 +207,47 @@ pub unsafe extern "system" fn WmipCaptureGuidObjectAttributes(
     let ObjectNameBuffer = opaque_ptr(ObjectNameBuffer);
     ntkrnl_sys::ASSERT!(AccessMode != 0);
 
-    ProbeForRead(
-        GuidObjectAttributes as PVOID,
-        core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
-        core::mem::size_of::<PVOID>() as ULONG,
-    );
-    *CapturedObjectAttributes = *GuidObjectAttributes;
+    // C: the whole capture is one _SEH2_TRY whose handler returns the exception
+    // code; each probe + copy here is the Result form of that.
+    match ntkrnl_sys::probe::probe_read_generic(
+        GuidObjectAttributes as *const _OBJECT_ATTRIBUTES,
+        core::mem::size_of::<PVOID>(),
+        AccessMode,
+    ) {
+        Ok(attributes) => *CapturedObjectAttributes = attributes,
+        Err(status) => return status,
+    }
 
-    ProbeForRead(
-        (*CapturedObjectAttributes).ObjectName as PVOID,
-        core::mem::size_of::<_UNICODE_STRING>(),
-        core::mem::size_of::<PVOID>() as ULONG,
-    );
-    *CapturedObjectName = *(*CapturedObjectAttributes).ObjectName;
+    match ntkrnl_sys::probe::probe_read_generic(
+        (*CapturedObjectAttributes).ObjectName as *const _UNICODE_STRING,
+        core::mem::size_of::<PVOID>(),
+        AccessMode,
+    ) {
+        Ok(name) => *CapturedObjectName = name,
+        Err(status) => return status,
+    }
 
     if (*CapturedObjectName).Length != 45 * core::mem::size_of::<u16>() as u16 {
         return STATUS_INVALID_PARAMETER;
     }
 
-    ProbeForRead(
-        (*CapturedObjectName).Buffer as PVOID,
+    if let Err(status) = ntkrnl_sys::probe::safe_copy_from_user(
+        ObjectNameBuffer.cast(),
+        (*CapturedObjectName).Buffer as *const core::ffi::c_void,
         (*CapturedObjectName).Length as usize,
-        core::mem::size_of::<u16>() as ULONG,
-    );
-    core::ptr::copy_nonoverlapping(
-        (*CapturedObjectName).Buffer as *const u8,
-        ObjectNameBuffer as *mut u8,
-        (*CapturedObjectName).Length as usize,
-    );
+        core::mem::size_of::<u16>(),
+        AccessMode,
+    ) {
+        return status;
+    }
 
     (*CapturedObjectName).Buffer = ObjectNameBuffer;
-    (*GuidObjectAttributes).ObjectName = CapturedObjectName;
+    // Divergence: the C writes `GuidObjectAttributes->ObjectName` — the CALLER'S
+    // user-mode struct — under a "Fix pointers" comment. That hands user mode a
+    // kernel stack address and leaves the captured attributes pointing at the
+    // user's UNICODE_STRING, which WmipOpenGuidObjectByName then re-reads. The
+    // captured copy is the one meant.
+    (*CapturedObjectAttributes).ObjectName = CapturedObjectName;
 
     STATUS_SUCCESS
 }

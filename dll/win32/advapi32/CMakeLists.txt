@@ -111,7 +111,6 @@ add_pch(advapi32 advapi32.h "${PCH_SKIP_SOURCE}")
 set_module_type(advapi32 win32dll UNICODE ENTRYPOINT DllMain 12)
 # ADVAPI32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
 target_link_libraries(advapi32 ${ADVAPI32_RUST_LIB} cryptlib wine ${PSEH_LIB})
-target_link_options(advapi32 PRIVATE LINKER:--allow-multiple-definition)
 if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
     target_link_libraries(advapi32 etwtrace)
 endif()

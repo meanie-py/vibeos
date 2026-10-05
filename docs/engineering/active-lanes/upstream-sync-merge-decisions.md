@@ -869,9 +869,27 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
         - safearray 11563/1, tmarshal 754/20 [hung], typelib 7628/47
         - usrmarshal 711/12, varformat 876/3, vartest 1033273/40
         - vartype 2517705/9 [crashed]
-    - **Still owed:** `GetNextFreeBigBlock`'s `neededAddNumBlocks` (performance only). The
-      remaining failures above are ordinary conformance work. First is vartest's fr-FR
-      parsing: the Rust already has wine-10's `cDigitSeparator2` logic, and `fra.nls`
-      already stores U+00A0 (compiled under `#pragma code_page(65001)`), so the next
-      step is a runtime probe of what `GetLocaleInfoW(0x40c, LOCALE_STHOUSAND |
-      LOCALE_NOUSEROVERRIDE)` actually returns.
+    - **Since (2026-10-04, evening):** vartest 40 → 0 (the resource code page, then
+      VarNot(VT_UI2)); varformat 3 → 0; vartype 9 → 0 (VarCyFromR8 now does the x87's
+      exact arithmetic in integers, bit-identical to a real x87 on 116k values;
+      oleaut32's `UI4_MAX` was `-1i32`); compobj 40 → 14 (call cancellation, the
+      thread sequence id from rpcss, CLSCTX_APPCONTAINER, IGlobalOptions::Query);
+      moniker 127 → 42 (FileMoniker Enum(NULL) is E_INVALIDARG on Windows).
+      `GetNextFreeBigBlock`'s `neededAddNumBlocks` is ported.
+    - **Triage tool:** `tools/payloads/olewinetest/classify_failures.py <serial.log>`
+      splits failures into `todo_wine` (upstream Wine fails them too; checked against
+      Wine master for moniker) and REAL. Chase REAL first. At this point compobj has 0
+      real, moniker 2, marshal 2, tmarshal 2.
+    - **Still owed, with the cause traced as far as the source goes:**
+      - storage32, 41 real: every `LockOne` range's first byte reads unlocked through a
+        second handle (storage32.c:3515). ole32's lock path matches Wine's
+        (LockRegion, RANGELOCK constants, `locks_supported` from Stat) and FsRtl's
+        conflict check ignores process/handle, so the next step is a VM probe of
+        which filesystem holds the test file and what its lock control returns.
+      - typelib, ~30 real, all `win32:` on amd64: a SYS_WIN32 typelib built on x64
+        resolves IUnknown from the 64-bit stdole2 (sizes 24/8 for 12/4). Likely the
+        missing `TypeLib\{00020430-...}\2.0\0\win32` key, which on Windows comes
+        from the SysWOW64 oleaut32 registering itself. Unverified.
+      - compobj 2999/3001 (CoWaitForMultipleHandles, a cross-thread SendMessage not
+        delivered during the wait) failed at 09:53 and not at 21:24: flake or fixed
+        by something else, not yet known.

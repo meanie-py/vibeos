@@ -563,7 +563,7 @@ pub unsafe extern "system" fn SmpCreatePagingFileOnFixedDrive(
             SmpCheckForCrashDump(core::ptr::addr_of_mut!((*Descriptor).Name));
 
             /* Update how much free space we have now that we extracted a dump */
-            let _Status = SmpGetVolumeFreeSpace(Volume);
+            let _Status = SmpGetVolumeFreeSpace(Volume); // nolint: let-shadow (Status overwritten before any read, as in the C)
 
             /* Don't process crashdump on this volume anymore */
             (*Descriptor).Flags |= SMP_PAGEFILE_DUMP_PROCESSED;

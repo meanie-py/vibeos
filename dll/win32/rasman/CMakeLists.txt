@@ -47,9 +47,6 @@ add_library(rasman MODULE ${SOURCE})
 set_module_type(rasman win32dll)
 # librasman_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(rasman ${RASMAN_RUST_LIB} wine uuid)
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the
-# 64-bit division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(rasman PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(rasman rust_rasman)
 add_importlibs(rasman msvcrt kernel32 ntdll)
 add_cd_file(TARGET rasman DESTINATION reactos/system32 FOR all)

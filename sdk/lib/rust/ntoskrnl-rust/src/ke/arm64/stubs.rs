@@ -1001,14 +1001,27 @@ pub unsafe extern "system" fn KiInitializeUserApc(
         Arm64DumpPte(b"[APC] StackPage=\0".as_ptr() as PCSTR, Stack as PVOID);
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
-    ProbeForWrite(Stack as PVOID, core::mem::size_of::<_CONTEXT>(), 16);
-
-    core::ptr::copy_nonoverlapping(
-        core::ptr::addr_of!(Context) as *const u8,
-        Stack as *mut u8,
+    // C: probe + copy inside _SEH2_TRY; the handler skips this APC (plain
+    // return). No SEH here: Result probe + fault-tolerant copy. (The probe was a
+    // raising ProbeForWrite under cfg(not(aarch64)) in this aarch64-only module,
+    // i.e. never compiled, and the copy was a raw memcpy.)
+    if ntkrnl_sys::probe::probe_user_buffer(
+        Stack as *const core::ffi::c_void,
         core::mem::size_of::<_CONTEXT>(),
-    );
+        16,
+        1,
+    )
+    .and_then(|()| ntkrnl_sys::probe::safe_copy_to_user(
+        Stack as *mut core::ffi::c_void,
+        core::ptr::addr_of!(Context) as *const core::ffi::c_void,
+        core::mem::size_of::<_CONTEXT>(),
+        16,
+        1,
+    ))
+    .is_err()
+    {
+        return;
+    }
 
     (*TrapFrame).__bindgen_anon_3.X[0] = NormalContext as u64;
     (*TrapFrame).__bindgen_anon_3.X[1] = SystemArgument1 as u64;

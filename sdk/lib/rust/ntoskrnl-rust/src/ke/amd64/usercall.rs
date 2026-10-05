@@ -22,7 +22,6 @@ extern "C" {
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
-    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG);
     fn KiUserCallbackExit(TrapFrame: PKTRAP_FRAME) -> !;
     static mut KeGdiFlushUserBatch: PGDI_BATCHFLUSH_ROUTINE;
 }
@@ -325,17 +324,31 @@ pub unsafe extern "system" fn KeUserModeCallback(
     UserStackPointer = KiGetUserModeStackAddress();
     OldStack = *UserStackPointer as ULONG_PTR;
 
-    let Status = 'seh: {
+    let Status = {
         UserArguments = (((OldStack - ArgumentLength as ULONG_PTR) & !15) - 8) as *mut u8;
         CalloutFrame = UserArguments.sub(core::mem::size_of::<UCALLOUT_FRAME>()) as PUCALLOUT_FRAME;
 
-        ProbeForWrite(
+        // C: inside the _SEH2_TRY whose handler returns the exception code. No SEH
+        // here: Result probe + fault-tolerant copy onto the user stack. (The C
+        // probes sizeof(PUCALLOUT_FRAME) — a pointer — the port the whole frame.)
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
             CalloutFrame as PVOID,
             core::mem::size_of::<UCALLOUT_FRAME>() + ArgumentLength as usize,
-            core::mem::size_of::<PVOID>() as ULONG,
-        );
+            core::mem::size_of::<PVOID>(),
+            1,
+        ) {
+            return status;
+        }
 
-        core::ptr::copy_nonoverlapping(Argument as *const u8, UserArguments, ArgumentLength as usize);
+        if let Err(status) = ntkrnl_sys::probe::safe_copy_to_user(
+            UserArguments as *mut core::ffi::c_void,
+            Argument as *const core::ffi::c_void,
+            ArgumentLength as usize,
+            1,
+            1,
+        ) {
+            return status;
+        }
 
         KiSetupUserCalloutFrame(
             CalloutFrame,

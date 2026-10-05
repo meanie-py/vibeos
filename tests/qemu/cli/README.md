@@ -177,6 +177,17 @@ all included), then auto-triage on failure.
 
   All of them, plus `VIBEOS_QEMU_SMP=4`, boot green as of 2026-10-03. Opt-in, not
   in the gate. `vibeos-cli gdb start amd64` honours the same knob.
+
+  arm64 takes the same variable, with the ways a Raspberry Pi differs from
+  QEMU's default virt (`all` applies them too):
+  - `a76`: `-cpu cortex-a76`, the Pi 5's core (ARMv8.2: PAN and friends enforced).
+  - `el2`: firmware hands off at EL2, as both Pis' UEFI do, so the loader's drop
+    to EL1 runs.
+  - `mem`: 6 GiB. This is what caught the 4 GiB Pi 5's silent hang (nonpaged
+    pool sizing underflow).
+
+  `a76,el2,mem` boots green on arm64 as of 2026-10-04. amd64 `mem` sees only
+  4 GiB until the roadmap's "amd64 RAM above 4 GiB" bug is fixed.
 - `--tripwire "SPECIALPOOL=Gla5"` arms per-boot kernel debug knobs via QEMU
   fw_cfg (no media rebuild; kernel side `ntoskrnl-rust/src/tripwire.rs`) —
   special pool turns silent pool corruption into an immediate symbolicated
@@ -330,7 +341,12 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   hit it (mainline failed to compile `fltmgr-rust` for i386) and, without this
   check, rejected a docs-only change for a build failure it could not have
   caused. The base gate is lazy and memoized per drain, so a green batch never
-  pays for it.
+  pays for it. A base that fails **only** timing-sensitive stages (smoke,
+  conformance) gets one warm re-gate before it can hold the line: on 2026-10-04 a
+  spawn32 race and an arm64 BUGCHECK each held every lane on a master that later
+  gated green. If the re-gate
+  passes, the line is not held. A lone submission red only on the stages the base
+  flaked on stays queued (`FlakyBase`), neither rejected nor landed.
 - **A batch is never presumed green from its parts.** Two individually-green
   lanes can be red *together*; the queue catches that before master, where today
   the second lane lands on the first without ever gating the combination.
@@ -683,6 +699,12 @@ QMP `replay-break` landing part-way through a chunk aborts the whole replay with
 `Playback shouldn't have to iowait`. Chunk sizes span 1 to 2^28 instructions in a
 single boot, so there is no rounding rule — `--near <icount>` snaps a target to
 the next legal one and says how far into a chunk the unsnapped value sat.
+
+`rr record --sample SECS` fingerprints the guest (registers + per-MiB RAM hashes,
+the bytes kept deduplicated in the trace) every SECS of wall time; `rr diverge
+<trace>` replays it, breaks at each fingerprint, and reports the last icount where
+replay and recording agreed and the first that differs, down to the byte. A wedge is
+where a divergence becomes visible; this finds where it happened.
 
 Design, gdb recipe and the divergence log: `docs/engineering/qemu-record-replay.md`.
 

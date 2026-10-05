@@ -35,11 +35,6 @@ extern "system" {
     fn SafeProbeForWrite(a: *mut core::ffi::c_void, l: usize, al: u32) -> i32;
     fn SafeProbeForRead(a: *const core::ffi::c_void, l: usize, al: u32) -> i32;
 }
-// ProbeForRead/Write (Mm, NTAPI) — raise on bad user pointer (DUMMY_PSEH: validate-then-deref).
-extern "system" {
-    fn ProbeForRead(a: *const core::ffi::c_void, l: usize, al: u32);
-    fn ProbeForWrite(a: *mut core::ffi::c_void, l: usize, al: u32);
-}
 // DIB_CreateDIBSection (dib.h) — HBITMAP APIENTRY; still-C dibobj.c symbol.
 extern "system" {
     fn DIB_CreateDIBSection(dc: PDC, bmi: *const BITMAPINFO, usage: UINT, bits: *mut LPVOID, section: HANDLE, offset: DWORD, ovr_pitch: DWORD) -> HBITMAP;
@@ -640,16 +635,21 @@ pub unsafe extern "system" fn NtGdiGetBitmapDimension(
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "fastcall" fn UnsafeGetBitmapBits(psurf: PSURFACE, mut Bytes: u32, pvBits: PBYTE) -> i32 {
-    UnsafeGetBitmapBits_impl(psurf, Bytes, pvBits)
+unsafe extern "fastcall" fn UnsafeGetBitmapBits(psurf: PSURFACE, Bytes: u32, pvBits: PBYTE) -> i32 {
+    // A fault on the user buffer is the C caller's _SEH2_EXCEPT { ret = 0; }.
+    UnsafeGetBitmapBits_impl(psurf, Bytes, pvBits).unwrap_or(0)
 }
 
 #[cfg(not(target_arch = "x86"))]
 unsafe extern "C" fn UnsafeGetBitmapBits(psurf: PSURFACE, Bytes: u32, pvBits: PBYTE) -> i32 {
-    UnsafeGetBitmapBits_impl(psurf, Bytes, pvBits)
+    // A fault on the user buffer is the C caller's _SEH2_EXCEPT { ret = 0; }.
+    UnsafeGetBitmapBits_impl(psurf, Bytes, pvBits).unwrap_or(0)
 }
 
-unsafe fn UnsafeGetBitmapBits_impl(psurf: PSURFACE, mut Bytes: u32, pvBits: PBYTE) -> i32 {
+// pvBits is the caller's user buffer (the only caller is NtGdiGetBitmapBits),
+// written inside the C's _SEH2_TRY, so each row copy is fault-tolerant and a
+// fault returns Err instead of bugchecking.
+unsafe fn UnsafeGetBitmapBits_impl(psurf: PSURFACE, mut Bytes: u32, pvBits: PBYTE) -> Result<i32, NTSTATUS> {
 
     let nWidth: u32 = (*psurf).SurfObj.sizlBitmap.cx as u32;
     let nHeight: u32 = (*psurf).SurfObj.sizlBitmap.cy as u32;
@@ -673,12 +673,12 @@ unsafe fn UnsafeGetBitmapBits_impl(psurf: PSURFACE, mut Bytes: u32, pvBits: PBYT
             let a = cbSrc - iSrc;
             let b = Bytes - iDst;
             let lDelta: i32 = (if a < b { a } else { b }) as i32;
-            RtlCopyMemory(pjDst as *mut _, pjSrc as *const _, lDelta as usize);
+            ntkrnl_sys::probe::safe_copy_raw(pjDst as *mut _, pjSrc as *const _, lDelta as usize)?;
             iDst += lDelta as u32;
             break;
         }
 
-        RtlCopyMemory(pjDst as *mut _, pjSrc as *const _, lDeltaDst as usize);
+        ntkrnl_sys::probe::safe_copy_raw(pjDst as *mut _, pjSrc as *const _, lDeltaDst as usize)?;
         pjSrc = pjSrc.offset(lDeltaSrc as isize);
         pjDst = pjDst.offset(lDeltaDst as isize);
         iSrc += lDeltaSrcAbs as u32;
@@ -686,7 +686,7 @@ unsafe fn UnsafeGetBitmapBits_impl(psurf: PSURFACE, mut Bytes: u32, pvBits: PBYT
         Y += 1;
     }
 
-    iDst as i32
+    Ok(iDst as i32)
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiGetBitmapBits(
@@ -723,8 +723,13 @@ pub unsafe extern "system" fn NtGdiGetBitmapBits(
         cjBuffer = cjSize;
     }
 
-    ProbeForWrite(pUnsafeBits as *mut core::ffi::c_void, cjBuffer as usize, 1);
-    ret = UnsafeGetBitmapBits(psurf, cjBuffer, pUnsafeBits);
+    // C: _SEH2_TRY { ProbeForWrite(pUnsafeBits, cjBuffer, 1);
+    //                ret = UnsafeGetBitmapBits(..); }
+    //      _SEH2_EXCEPT { ret = 0; } -- then unlock either way.
+    ret = match crate::safe_user_io::probe_for_write(pUnsafeBits as *mut core::ffi::c_void, cjBuffer as usize, 1) {
+        Ok(()) => UnsafeGetBitmapBits(psurf, cjBuffer, pUnsafeBits),
+        Err(_) => 0,
+    };
 
     SURFACE_ShareUnlockSurface(psurf);
 

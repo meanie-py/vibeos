@@ -21,6 +21,7 @@ from . import (
     hostlock,
     maintenance,
     pi4,
+    pi5,
     symbolize,
     tooling,
 )
@@ -60,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     checkpoint.add_parser(sub)
     host_clock.add_parser(sub)
     pi4.add_parser(sub)
+    pi5.add_parser(sub)
 
     def arch_arg(sp, required=True):
         sp.add_argument(
@@ -747,6 +749,13 @@ def build_parser() -> argparse.ArgumentParser:
         "LARGE a value makes a healthy guest time out. Lower = faster virtual "
         f"CPU, bigger trace (default {rr_mod.rr.DEFAULT_ICOUNT_SHIFT})",
     )
+    rrec.add_argument(
+        "--sample",
+        type=float,
+        metavar="SECS",
+        help="pause every SECS of wall time and fingerprint the guest (registers + RAM "
+        "hashes) so `rr diverge` can find where a replay first departs from it",
+    )
     rrec.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
     rrec.set_defaults(fn=rr_mod.rr_cmd, rr_verb="record")
 
@@ -839,6 +848,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--count", type=int, default=8, help="events either side of the offset (default 8)"
     )
     rwg.set_defaults(fn=rr_mod.rr_cmd, rr_verb="wedge")
+
+    rdv = rrsub.add_parser(
+        "diverge",
+        help="replay a --sample'd trace and report the first icount where its guest "
+        "state differs from the recording's",
+    )
+    rdv.add_argument("trace", help="trace name, path, or `latest`")
+    rdv.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rdv.set_defaults(fn=rr_mod.rr_cmd, rr_verb="diverge")
 
     kl = sub.add_parser(
         "kill",

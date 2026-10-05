@@ -31,6 +31,8 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 panic-common = { path = "../panic-common" }
+# The code (see ../pseh-rt/Cargo.toml); this crate adds the panic runtime.
+pseh-rt = { path = "../pseh-rt" }
 
 [features]
 # The panic personality: the kernel links the default; msvcrt.dll and ucrtbase.dll link

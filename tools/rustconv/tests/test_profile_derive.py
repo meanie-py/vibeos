@@ -131,6 +131,36 @@ def test_dead_source_is_excluded_and_reported(tmp_path):
     assert any(f.code == "DEAD_SOURCE" for f in m.findings)
 
 
+CMAKE_STATIC_SIBLING = """\
+list(APPEND SOURCE helper.c orphan_is_live.c)
+add_library(widget_static STATIC ${SOURCE})
+add_library(widget MODULE main.c widget.rc)
+target_link_libraries(widget widget_static)
+set_module_type(widget nativedll)
+"""
+
+
+def test_sibling_target_sources_are_live_not_dead(tmp_path):
+    """setuplib's shape: the .c live in a STATIC sibling linked into the module. Judged
+    against the module alone they read as dead, and DEAD_SOURCE says do not pay for them."""
+    root = _basic_module(tmp_path, cmake=CMAKE_STATIC_SIBLING)
+    _write(_mod(tmp_path) / "orphan_is_live.c", "int live(void) { return 1; }\n")
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root, target="widget")
+    assert [p.name for p in m.dead_sources] == ["orphan.c"]
+    sib = [f for f in m.findings if f.code == "SIBLING_TARGET"]
+    assert len(sib) == 1 and "--target widget_static" in sib[0].detail
+    assert "orphan_is_live.c" in sib[0].detail and "helper.c" in sib[0].detail
+
+
+def test_static_library_inherits_its_consumers_mode(tmp_path):
+    root = _basic_module(tmp_path, cmake=CMAKE_STATIC_SIBLING)
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root, target="widget_static")
+    assert m.is_usermode
+    assert any(f.code == "MODULE_TYPE_INHERITED" for f in m.findings)
+    # one consumer: the crate belongs to it (widget-rust, `widget)` arm), not widget_static
+    assert m.crate_stem == "widget"
+
+
 def test_generated_sources_are_kept_separate_from_translatable_ones(tmp_path):
     root = _basic_module(tmp_path)
     m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)

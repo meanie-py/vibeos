@@ -159,8 +159,6 @@ extern "C" {
 }
 
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG);
     fn RtlMoveMemory(Destination: PVOID, Source: PVOID, Length: usize);
     static mut HandleTableListHead: LIST_ENTRY;
     static mut HandleTableListLock: EX_PUSH_LOCK;
@@ -1871,18 +1869,21 @@ unsafe extern "C" fn SSI_SystemExtendServiceTableInformation(Buffer: PVOID, Size
         if SeSinglePrivilegeCheck(SeLoadDriverPrivilege, PreviousMode) == 0u8 {
             return STATUS_PRIVILEGE_NOT_HELD;
         }
-        let mut ImageName: _UNICODE_STRING = core::mem::zeroed();
-        ProbeForRead(Buffer, core::mem::size_of::<_UNICODE_STRING>(), 1);
-        core::ptr::copy_nonoverlapping(
-            Buffer as *const _UNICODE_STRING,
-            &mut ImageName,
-            1,
-        );
-        ProbeForRead(
-            ImageName.Buffer as PVOID,
+        // C: probe + capture + probe the string buffer under _SEH2_TRY, whose
+        // handler returns the exception code.
+        let ImageName: _UNICODE_STRING =
+            match ntkrnl_sys::probe::probe_read_generic(Buffer as *const _UNICODE_STRING, 1, 1) {
+                Ok(name) => name,
+                Err(status) => return status,
+            };
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            ImageName.Buffer as *const core::ffi::c_void,
             ImageName.Length as usize,
-            core::mem::size_of::<u16>() as ULONG,
-        );
+            core::mem::size_of::<u16>(),
+            1,
+        ) {
+            return status;
+        }
         if RtlEqualUnicodeString(
             &ImageName as *const _UNICODE_STRING,
             &Win32kName as *const _UNICODE_STRING,
@@ -2518,20 +2519,41 @@ pub unsafe extern "system" fn NtQuerySystemInformation(
         if SystemInformationClass == SystemKernelDebuggerInformation {
             Alignment = core::mem::align_of::<BOOLEAN>() as ULONG;
         }
-        ProbeForWrite(SystemInformation, SystemInformationLength as usize, Alignment);
+        // C: the whole body is one _SEH2_TRY whose handler sets Status to the
+        // exception code; nothing after a fault runs, so returning it is the same.
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            SystemInformation,
+            SystemInformationLength as usize,
+            Alignment as usize,
+            1,
+        ) {
+            return status;
+        }
         if !ReturnLength.is_null() {
-            ProbeForWrite(ReturnLength as PVOID, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>() as ULONG);
+            // ProbeForWriteUlong: range-only, like the other typed probe.h macros.
+            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+                ReturnLength as PVOID,
+                core::mem::size_of::<ULONG>(),
+                1,
+                1,
+            ) {
+                return status;
+            }
         }
     }
 
     if !ReturnLength.is_null() {
-        *ReturnLength = 0;
+        if let Err(status) = ntkrnl_sys::probe::write_user(ReturnLength, 0, 0) {
+            return status;
+        }
     }
 
     if let Some(query) = CALL_QS[SystemInformationClass as usize].Query {
         Status = query(SystemInformation, SystemInformationLength, &mut CapturedResultLength);
         if !ReturnLength.is_null() {
-            *ReturnLength = CapturedResultLength;
+            if let Err(status) = ntkrnl_sys::probe::write_user(ReturnLength, CapturedResultLength, 0) {
+                return status;
+            }
         }
     }
 
@@ -2549,7 +2571,15 @@ pub unsafe extern "system" fn NtSetSystemInformation(
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0 {
-        ProbeForRead(SystemInformation, SystemInformationLength as usize, core::mem::align_of::<ULONG>() as ULONG);
+        // C: under _SEH2_TRY, whose handler returns the exception code as Status.
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            SystemInformation,
+            SystemInformationLength as usize,
+            core::mem::size_of::<ULONG>(),
+            1,
+        ) {
+            return status;
+        }
     }
 
     if SystemInformationClass < MAX_SYSTEM_INFO_CLASS {

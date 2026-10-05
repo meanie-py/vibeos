@@ -73,7 +73,6 @@ unsafe fn gpsi_per_user() -> *mut _PERUSERSERVERINFO {
     base.add(core::mem::offset_of!(tagSERVERINFO, __bindgen_padding_0)) as *mut _PERUSERSERVERINFO
 }
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn EngSetPointerTag(
     _hdev: HDEV,
@@ -83,18 +82,6 @@ pub unsafe extern "system" fn EngSetPointerTag(
     _fl: FLONG,
 ) -> BOOL {
     // Obsolete since Windows 2000 — always returns FALSE.
-    0
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "system" fn EngSetPointerTag(
-    _hdev: HDEV,
-    _psoMask: *mut SURFOBJ,
-    _psoColor: *mut SURFOBJ,
-    _pxlo: *mut XLATEOBJ,
-    _fl: FLONG,
-) -> BOOL {
     0
 }
 

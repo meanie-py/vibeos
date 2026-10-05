@@ -6,6 +6,7 @@
 #   tools/pi4/bench.sh down
 #   tools/pi4/bench.sh stage    # copy the current arm64 build into the TFTP payload
 #   tools/pi4/bench.sh http     # just the sanboot HTTP server (needs the TCP 8069 rule)
+#   tools/pi4/bench.sh serial-restart  # replace a listener whose capture has stalled
 #
 # The serial listener is PI4_SERIAL=pico (default): pico_serial.py in WSL, talking
 # to the Pico 2 W's GPIO UART bridge over Wi-Fi. PI4_SERIAL=com runs the old
@@ -25,6 +26,8 @@ BENCH=${PI4_BENCH:-/mnt/d/home/vibeos-rpi4-setup}
 PORT=${PI4_COM:-COM5}
 SERIAL=${PI4_SERIAL:-pico}
 PICO_PY=${PICO_PY:-$HOME/.venvs/picousb/bin/python}
+# The Pico wired to THIS Pi (pico.sh reads the same variable). picousb is on the Pi 5.
+PICO_HOST=${PI4_PICO_HOST:-picousb5}
 PICO_PID="$BENCH/pico-serial.pid"
 PS=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
 HTTP_PORT=${PI4_HTTP_PORT:-8069}
@@ -87,9 +90,13 @@ up() {
         if [ -n "$live" ] && ! grep -q "\"pid\": $live," "$BENCH/serial-current.json" 2>/dev/null; then
             kill "$live" && echo "restarting pico_serial.py ($live): serial-current.json names another listener"
             sleep 2
+        elif [ -n "$live" ] && ! tr '\0' '\n' <"/proc/$live/cmdline" | grep -qx "$PICO_HOST"; then
+            # A listener on the other bench's Pico records THAT board's console here.
+            kill "$live" && echo "restarting pico_serial.py ($live): it is not reading $PICO_HOST"
+            sleep 2
         fi
         if [ -z "$(pico_serial_pid)" ]; then
-            setsid nohup "$PICO_PY" -u "$HERE/pico_serial.py" "$BENCH" \
+            setsid nohup "$PICO_PY" -u "$HERE/pico_serial.py" "$BENCH" "$PICO_HOST" \
                 >"$BENCH/pico-serial.log" 2>&1 </dev/null &
             echo $! > "$PICO_PID"
             sleep 3
@@ -208,7 +215,19 @@ PY
 }
 
 . "$HERE/lease.sh"
-case "${1:-status}" in stage|down) pi4_lease ;; esac
+case "${1:-status}" in stage|down|serial-restart) pi4_lease ;; esac
+
+# A pico_serial.py whose stream has stalled still reports LISTENING/connected, and `up`
+# keeps a live listener, so it needs replacing explicitly (netboot names this command).
+serial_restart() {
+    local p
+    p=$(pico_serial_pid)
+    if [ -n "$p" ]; then
+        kill "$p" && echo "stopped pico_serial.py ($p)"
+        for _ in 1 2 3 4 5; do [ -z "$(pico_serial_pid)" ] && break; sleep 1; done
+    fi
+    up
+}
 
 case "${1:-status}" in
     status) status ;;
@@ -216,5 +235,6 @@ case "${1:-status}" in
     down) down ;;
     stage) stage ;;
     http) http ;;
-    *) echo "usage: $0 status|up|down|stage|http" >&2; exit 2 ;;
+    serial-restart) serial_restart ;;
+    *) echo "usage: $0 status|up|down|stage|http|serial-restart" >&2; exit 2 ;;
 esac

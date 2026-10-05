@@ -49,9 +49,11 @@ def main() -> None:
     t0 = time.monotonic()
     vm.start()
     vm.wait_for_boot()
+    assert vm._proc is not None
     pid = vm._proc.pid
     print(f"  booted {time.monotonic() - t0:.0f}s; pid={pid}")
-    print(f"  cmdline: {' '.join(vm._proc.args)}\n")
+    args = vm._proc.args
+    print(f"  cmdline: {' '.join(map(str, args)) if isinstance(args, list) else args}\n")
 
     try:
         vcpu = vm.qmp.execute("query-cpus-fast")["return"][0]["thread-id"]

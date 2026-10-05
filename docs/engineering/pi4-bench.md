@@ -26,6 +26,10 @@ to stop being black, because the display lags the marker by a few seconds.
   the Pi's USB and not on another host), the serial listener, TFTP, HTTP, the
   capture card and the staged payload. Each failure prints the command that fixes
   it.
+- **`tools/pi4/bench.sh serial-restart`** replaces a serial listener whose capture has
+  stalled. pico_serial.py can keep reporting `LISTENING, connected` for hours after its stream
+  stops, and the doctor passes it; the symptom is a boot that fails `NETBOOT_FAIL` with "serial
+  capture did not grow at all" while HDMI shows the firmware splash timing out to PXE.
 - **`./vibeos-cli pi4 status`** is the one-screen view: lease, power, Pico, serial
   and payload.
 - **`./vibeos-cli pi4 lease take --minutes 60 --why "..."`** holds the board
@@ -225,7 +229,10 @@ the card".
 ## USB input: the Pico
 
 A Pico 2 W running the picousb firmware (`D:\home\Projects\picousb`) sits in a
-Pi USB port. It presents a boot keyboard, boot mouse, mass storage and an
+Pi USB port. The bench has two: **`picousb5` is wired to the Pi 4** (USB and UART)
+and `picousb` to the Pi 5. Every Pi 4 script reads `PI4_PICO_HOST` (default
+`picousb5`), and `bench.sh up` restarts a serial listener that is reading the
+other Pico. It presents a boot keyboard, boot mouse, mass storage and an
 absolute pointer, is controlled over Wi-Fi, and reports what the Pi's USB host
 did to it. `tools/pi4/pico.sh` wraps its CLI (address, token file, venv; setup
 in the script header):

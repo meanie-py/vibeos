@@ -28,9 +28,10 @@ HOST_IP=${PI4_HOST_IP:-192.168.1.183}
 # RFC 7440 window: blocks sent per ACK. 1 = classic lockstep TFTP.
 TFTP_WINDOW=${PI4_TFTP_WINDOW:-32}
 TFTP_BLKSIZE=${PI4_TFTP_BLKSIZE:-1468}
-# Siblings run through bash: tools/pi4/*.sh are committed 100644 (core.fileMode=false), so
-# exec-ing one directly is "Permission denied" in any checkout nobody chmod-ed by hand.
-SEND=(bash "$(dirname "$0")/serial-send.sh")
+# Siblings run through bash: tools/pi4/*.sh are committed non-executable (as canon-run.sh
+# is), so a direct exec works only in a checkout someone chmodded, and fails "Permission
+# denied" in a fresh worktree.
+SEND="$(dirname "$0")/serial-send.sh"
 LAUNCH=1
 POWER=1
 RAMDISK=0
@@ -101,6 +102,14 @@ else
     log "waiting for the firmware splash (power-cycle the Pi now)"
 fi
 if ! wait_for 'ENTER (boot)' "$start" "${PI4_SPLASH_TIMEOUT:-180}"; then
+    if [ "$(size)" -eq "$start" ]; then
+        # Not one byte across a power cycle: the board printed its splash (HDMI shows it)
+        # but the capture is dead. pico_serial.py can stay "LISTENING, connected" for hours
+        # after its stream stalls -- 17h on 2026-10-04 -- so the doctor passes it.
+        log "serial capture did not grow at all ($F): the listener is stale, not the Pi"
+        log "restart it: tools/pi4/bench.sh serial-restart"
+        exit 1
+    fi
     log "no splash seen in ${PI4_SPLASH_TIMEOUT:-180}s - is the Pi powered on?"
     exit 1
 fi
@@ -108,7 +117,7 @@ fi
 # F1 = UEFI Shell. VT100 PF1; the firmware's terminal maps ESC O P.
 log "splash seen, requesting the UEFI Shell"
 mark=$(size)
-"${SEND[@]}" --raw $'\033OP'
+bash "$SEND" --raw $'\033OP'
 if ! wait_for 'Shell>' "$mark" 90; then
     log "never reached the Shell prompt"
     exit 1
@@ -149,10 +158,10 @@ fi
 
 log "in the Shell, bringing up DHCP on eth0"
 mark=$(size)
-"${SEND[@]}" 'ifconfig -s eth0 dhcp'
+bash "$SEND" 'ifconfig -s eth0 dhcp'
 sleep 15
 mark=$(size)
-"${SEND[@]}" 'ifconfig -l eth0'
+bash "$SEND" 'ifconfig -l eth0'
 if ! wait_for '192.168.' "$mark" 30; then
     log "eth0 did not get a DHCP address"
     exit 1
@@ -162,7 +171,7 @@ fi
 tftp_to_card() {
     local mark
     mark=$(size)
-    "${SEND[@]}" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP $1 $2"
+    bash "$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP $1 $2"
     if ! wait_for 'Shell>' "$mark" "${3:-120}"; then
         log "TFTP of $1 did not finish"
         exit 1
@@ -181,7 +190,7 @@ if [ "$PICO_FLASH" -eq 1 ]; then
     tftp_to_card pico.uf2 "$CARD:\\pico.uf2"
     tftp_to_card picoflash.nsh "$CARD:\\picoflash.nsh"
     log "starting the copy script, then rebooting the Pico into BOOTSEL"
-    "${SEND[@]}" "$CARD:\\picoflash.nsh"
+    bash "$SEND" "$CARD:\\picoflash.nsh"
     sleep 2
     bash "$(dirname "$0")/pico.sh" bootsel >/dev/null || { log "the Pico refused bootsel"; exit 1; }
     exit 0
@@ -193,20 +202,20 @@ if [ "$SANBOOT" -eq 1 ]; then
     tftp_to_card autoexec.ipxe "$CARD:\\autoexec.ipxe"
     log "launching iPXE (sanboot http://$HOST_IP:${PI4_HTTP_PORT:-8069}/boot.img)"
     mark=$(size)
-    "${SEND[@]}" "$CARD:\\ipxe.efi"
+    bash "$SEND" "$CARD:\\ipxe.efi"
     if ! wait_for 'Switching stack' "$mark" 300; then
         log "loader never started - see the capture for iPXE's error (HTTP rule? bench.sh http?)"
         exit 1
     fi
     log "loader at its menu; selecting the default entry"
-    "${SEND[@]}" --raw $'\r'
+    bash "$SEND" --raw $'\r'
     log "booting - watch the capture for [FLDR]/[KERNEL] output"
     exit 0
 fi
 
 log "TFTP: BOOTAA64.EFI from $HOST_IP onto the card"
 mark=$(size)
-"${SEND[@]}" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP EFI/BOOT/BOOTAA64.EFI $CARD:\\EFI\\BOOT\\BOOTAA64.EFI"
+bash "$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP EFI/BOOT/BOOTAA64.EFI $CARD:\\EFI\\BOOT\\BOOTAA64.EFI"
 if ! wait_for 'Shell>' "$mark" 120; then
     log "TFTP did not finish"
     exit 1
@@ -219,7 +228,7 @@ fi
 if [ "$RAMDISK" -eq 1 ]; then
     log "TFTP: ramdisk.img (140 MB, ~13.5 min - the SD card write is the limit)"
     mark=$(size)
-    "${SEND[@]}" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP ramdisk.img $CARD:\\ramdisk.img"
+    bash "$SEND" "tftp -s $TFTP_BLKSIZE -w $TFTP_WINDOW $HOST_IP ramdisk.img $CARD:\\ramdisk.img"
     if ! wait_for 'Shell>' "$mark" 900; then
         log "ramdisk TFTP did not finish"
         exit 1
@@ -237,7 +246,7 @@ fi
 
 log "launching the loader"
 mark=$(size)
-"${SEND[@]}" "$CARD:\\EFI\\BOOT\\BOOTAA64.EFI"
+bash "$SEND" "$CARD:\\EFI\\BOOT\\BOOTAA64.EFI"
 if ! wait_for 'Switching stack' "$mark" 120; then
     log "loader did not reach its menu"
     exit 1
@@ -245,5 +254,5 @@ fi
 
 # freeldr.ini on this card uses TimeOut=-1, so the menu waits for a key.
 log "loader at its menu; selecting the default entry"
-"${SEND[@]}" --raw $'\r'
+bash "$SEND" --raw $'\r'
 log "booting - watch the capture for [FLDR]/[KERNEL] output"

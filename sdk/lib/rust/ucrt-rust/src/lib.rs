@@ -124,8 +124,16 @@ pub mod cvt;
 pub mod winapi_thunks;
 #[cfg(feature = "ucrt-reactos")]
 pub mod ucrt_reactos;
+// sdk/lib/vcstartup + sdk/lib/vcruntime's C as ucrtbase linked it (startup, TLS, cookie).
+#[cfg(all(feature = "startup", target_os = "windows"))]
+pub mod vcstartup;
 #[cfg(all(feature = "fpctrl", target_arch = "aarch64"))]
 pub mod fpctrl_arm64;
+#[cfg(all(feature = "fpctrl", target_arch = "x86_64"))]
+pub mod fpctrl_amd64;
+// _set_FMA3_enable / __acrt_initialize_fma3 (win64; was crtmath's fma3_available.c).
+#[cfg(all(feature = "fpctrl", any(target_arch = "x86_64", target_arch = "aarch64")))]
+pub mod fma3;
 #[cfg(feature = "fenv")]
 pub mod fenv;
 #[cfg(feature = "c99math")]

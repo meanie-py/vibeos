@@ -34,8 +34,6 @@ use crate::types::{
 
 // ProbeForRead/ProbeForWrite are real ntoskrnl exports (not in the bindgen layer).
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG);
 }
 
 // KS #defines used only here (header-sourced: sdk/include/psdk/ks.h, xdk/iotypes.h)
@@ -157,13 +155,9 @@ pub unsafe extern "system" fn KsReadFile(
     }
 
     if RequestorMode == 1i8 {
-        let mut Status: NTSTATUS;
-        {
-            ProbeForWrite(Buffer, Length as usize, core::mem::size_of::<UCHAR>() as ULONG);
-            Status = STATUS_SUCCESS;
-        }
-        if !NT_SUCCESS(Status) {
-            return Status;
+        // C: _SEH2_TRY { ProbeForWrite } whose handler returns the exception code.
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(Buffer, Length as usize, 1, 1) {
+            return status;
         }
     }
 
@@ -250,13 +244,9 @@ pub unsafe extern "system" fn KsWriteFile(
     }
 
     if RequestorMode == 1i8 {
-        let probe_status: NTSTATUS;
-        {
-            ProbeForRead(Buffer, Length as usize, core::mem::size_of::<UCHAR>() as ULONG);
-            probe_status = STATUS_SUCCESS;
-        }
-        if !NT_SUCCESS(probe_status) {
-            return probe_status;
+        // C: _SEH2_TRY { ProbeForRead } whose handler returns the exception code.
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(Buffer, Length as usize, 1, 1) {
+            return status;
         }
     }
 
@@ -425,9 +415,15 @@ pub unsafe extern "system" fn KsSetInformationFile(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    ProbeForRead(Buffer, Length as usize, core::mem::size_of::<UCHAR>() as ULONG);
-    core::ptr::copy_nonoverlapping(FileInformation as *const u8, Buffer as *mut u8, Length as usize);
-    Status = STATUS_SUCCESS;
+    // Divergence: the C runs `ProbeForRead(Buffer, ...)` on the pool buffer it
+    // just allocated, not on FileInformation. A kernel address always fails that
+    // probe, so the C returned STATUS_ACCESS_VIOLATION for every non-empty call.
+    // What it meant is a guarded capture of the caller's data; its _SEH2_EXCEPT
+    // stores the code, and the failure path below frees the buffer.
+    Status = match ntkrnl_sys::probe::safe_copy_raw(Buffer, FileInformation, Length as usize) {
+        Ok(()) => STATUS_SUCCESS,
+        Err(status) => status,
+    };
 
     if !NT_SUCCESS(Status) {
         FreeItem(Buffer);
@@ -627,24 +623,22 @@ pub unsafe extern "system" fn KsProbeStreamIrp(
         /* mark irp as buffered so that changes the stream headers are propagated back */
         (*Irp).Flags = IRP_DEALLOCATE_BUFFER | IRP_BUFFERED_IO;
 
-        if (ProbeFlags & KSPROBE_STREAMWRITE) != 0 {
-            if (ProbeFlags & KSPROBE_MODIFY) != 0 {
-                ProbeForWrite((*Irp).UserBuffer, Length as usize, 1);
-            } else {
-                ProbeForRead((*Irp).UserBuffer, Length as usize, 1);
-            }
-        } else {
+        // C: the probes and the copy are one _SEH2_TRY whose handler stores the
+        // exception code; failure returns it. ProbeForRead and ProbeForWrite make
+        // the same range check, so one Result probe covers each branch.
+        if let Err(status) = ntkrnl_sys::probe::safe_copy_from_user(
+            (*Irp).AssociatedIrp.SystemBuffer,
+            (*Irp).UserBuffer,
+            Length as usize,
+            1,
+            1,
+        ) {
+            return status;
+        }
+        if (ProbeFlags & KSPROBE_STREAMWRITE) == 0 {
             /* stream reads means writing */
-            ProbeForWrite((*Irp).UserBuffer, Length as usize, 1);
             (*Irp).Flags |= IRP_INPUT_OPERATION;
         }
-
-        /* copy stream buffer (RtlMoveMemory) */
-        core::ptr::copy(
-            (*Irp).UserBuffer as *const u8,
-            (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
-            Length as usize,
-        );
 
         if (ProbeFlags & KSPROBE_ALLOCATEMDL) == 0 {
             /* validate the captured headers; with no MDL requested there is

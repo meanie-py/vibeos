@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .cpp_core import _cpp_literal_spans
@@ -124,6 +125,10 @@ class SealedWide:
     #: This occurrence sits in code the build never executes — permitted to be omitted,
     #: never demanded. See dead_regions.py.
     dead: bool = False
+    #: `(arch, units)` per built arch when a folded macro expands differently per arch
+    #: (`L"AddReg.NT" INF_ARCH`); `pointer` kind only, rendered as `#[cfg]` statics.
+    #: Empty for every literal whose value is the same everywhere.
+    arch_units: tuple[tuple[str, tuple[int, ...]], ...] = ()
 
     @property
     def rust_type(self) -> str:
@@ -271,6 +276,61 @@ def _literal_body(token: str) -> str:
 def _static_name(units: tuple[int, ...]) -> str:
     payload = b"".join(unit.to_bytes(2, "little") for unit in units)
     return _STATIC_PREFIX + hashlib.sha256(payload).hexdigest()[:12].upper()
+
+
+#: Built arches and the `target_arch` each one is.
+ARCH_CFG = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}
+
+
+def _arch_static_name(arch_units: tuple[tuple[str, tuple[int, ...]], ...]) -> str:
+    payload = b"".join(
+        arch.encode() + b":" + b"".join(u.to_bytes(2, "little") for u in units) + b";"
+        for arch, units in arch_units
+    )
+    return _STATIC_PREFIX + hashlib.sha256(payload).hexdigest()[:12].upper()
+
+
+_NEXT_PIECE = re.compile(r'\s*(L?"(?:[^"\\\n]|\\.)*"|[A-Za-z_]\w*)')
+
+
+def _fold_with_macros(
+    text: str, start: int, end: int, string_macros: Mapping[str, Mapping[str, str]]
+) -> tuple[int, int, dict[str, tuple[int, ...]]] | None:
+    """Extend a literal run across adjacent string-literal MACROS: (start, end, units/arch).
+
+    None unless at least one macro joined the run and every piece has a value on every
+    built arch -- a macro the preprocessor did not report is not ours to guess.
+    """
+    pieces: list[tuple[bool, str]] = [(False, text[start:end])]
+    pos = end
+    while (m := _NEXT_PIECE.match(text, pos)) is not None:
+        token = m.group(1)
+        if token.startswith(('"', 'L"')):
+            pieces.append((False, token))
+        elif token in string_macros:
+            pieces.append((True, token))
+        else:
+            break
+        pos = m.end()
+    first = start
+    while (m := _IDENTIFIER_TAIL.search(text[:first].rstrip())) and m.group(0) in string_macros:
+        pieces.insert(0, (True, m.group(0)))
+        first = m.start()
+    if not any(is_macro for is_macro, _ in pieces):
+        return None
+    per_arch: dict[str, tuple[int, ...]] = {}
+    for arch in ARCH_CFG:
+        units: list[int] = []
+        for is_macro, value in pieces:
+            literal = string_macros[value].get(arch) if is_macro else value
+            if literal is None:
+                return None
+            try:
+                units.extend(_run_units(literal, 0, len(literal)))
+            except _UndecodableWide:
+                return None
+        per_arch[arch] = tuple(units)
+    return first, pos, per_arch
 
 
 # ── position classification ─────────────────────────────────────────────────────────
@@ -530,8 +590,14 @@ def _brace_string_spans(
     return spans, skipped
 
 
-def seal_wide_literals(text: str) -> SealedWides:
-    """Replace each wide-literal occurrence with a unique opaque identifier."""
+def seal_wide_literals(
+    text: str, string_macros: Mapping[str, Mapping[str, str]] | None = None
+) -> SealedWides:
+    """Replace each wide-literal occurrence with a unique opaque identifier.
+
+    `string_macros` (macro_authority.string_literal_macros: name -> arch -> literal text)
+    lets a run pasted against such a macro be folded instead of skipped.
+    """
     directive = directive_spans(text)
     comment = comment_spans(text)
     masked = mask_code(text)
@@ -556,8 +622,11 @@ def seal_wide_literals(text: str) -> SealedWides:
         if is_wide
     ]
     candidates.sort()
+    folded_to = -1  # a fold across a macro may swallow the next run (`L"a" M L"b"`)
 
     for start, end, source, brace_units in candidates:
+        if start < folded_to:
+            continue
         if brace_units is not None:
             placeholder = f"__RUSTCONV_WIDE_{len(wides):04d}__"
             wides.append(
@@ -580,9 +649,46 @@ def seal_wide_literals(text: str) -> SealedWides:
             continue
         is_char = text[start:end].startswith("L'")
         if not is_char and _pasted_against_identifier(masked, directive, start, end):
-            skipped.append(
-                UnsealedWide(source, "pasted against a macro — the run cannot be folded", start)
+            folded = _fold_with_macros(text, start, end, string_macros) if string_macros else None
+            if folded is None:
+                skipped.append(
+                    UnsealedWide(source, "pasted against a macro — the run cannot be folded", start)
+                )
+                continue
+            start, end, per_arch = folded
+            source = text[start:end]
+            if any(directive[start:end]):
+                continue
+            kind, reason = _classify(masked, start)
+            variants = {arch: (*units, 0) for arch, units in per_arch.items()}
+            distinct = set(variants.values())
+            if reason is None and len(distinct) > 1 and kind != KIND_POINTER:
+                reason = "the macro's value differs per arch, outside a pointer position"
+            if reason is not None:
+                skipped.append(UnsealedWide(source, reason, start))
+                continue
+            arch_units: tuple[tuple[str, tuple[int, ...]], ...] = ()
+            if len(distinct) == 1:
+                units = distinct.pop()
+                static_name = _static_name(units) if kind == KIND_POINTER else None
+            else:
+                arch_units = tuple(sorted(variants.items()))
+                units = variants["amd64"]
+                static_name = _arch_static_name(arch_units)
+            placeholder = f"__RUSTCONV_WIDE_{len(wides):04d}__"
+            wides.append(
+                SealedWide(
+                    placeholder=placeholder,
+                    kind=kind,
+                    units=units,
+                    static_name=static_name,
+                    source=source,
+                    dead=in_dead_region(dead_spans, start, end),
+                    arch_units=arch_units,
+                )
             )
+            edits.append((start, end, placeholder))
+            folded_to = end
             continue
         try:
             units = _run_units(text, start, end)
@@ -746,11 +852,11 @@ def render_wide_statics(sealed: list[SealedWides], referenced_in: str) -> str:
     used = set(_STATIC_NAME_RE.findall(referenced_in))
     if not used:
         return ""
-    by_name: dict[str, tuple[int, ...]] = {}
+    by_name: dict[str, SealedWide] = {}
     for group in sealed:
         for wide in group.wides:
             if wide.static_name is not None and wide.static_name in used:
-                by_name[wide.static_name] = wide.units
+                by_name[wide.static_name] = wide
     orphans = used - set(by_name)
     if orphans:
         raise WideSealError(
@@ -760,6 +866,8 @@ def render_wide_statics(sealed: list[SealedWides], referenced_in: str) -> str:
         "// Deterministic UTF-16 literals, generated from the C by rustconv "
         "(--seal-wide); the model never saw the bytes."
     ]
-    for name, units in sorted(by_name.items()):
-        lines.append(f"pub static {name}: [u16; {len(units)}] = {_render_units(units)};")
+    for name, wide in sorted(by_name.items()):
+        for arch, units in wide.arch_units or (("", wide.units),):
+            cfg = f'#[cfg(target_arch = "{ARCH_CFG[arch]}")]\n' if arch else ""
+            lines.append(f"{cfg}pub static {name}: [u16; {len(units)}] = {_render_units(units)};")
     return "\n".join(lines)

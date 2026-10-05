@@ -1,0 +1,34 @@
+# delayimp — Wine's ucrtbase conformance suite (and the ucrtbase apitest) in the
+# guest, against ucrtbase.dll as built: all ucrt-rust since 2026-10-03.
+#   tools/payloads/delayimp/build.sh i386
+#   VIBEOS_PAYLOAD=delayimp ./vibeos-cli build --arch i386
+#   ./vibeos-cli smoke --arch i386 --payload delayimp
+# Rides the apitest sweep runner (one process per subtest, stdout piped to the
+# serial as [APITEST:<suite>] lines); see ../apitest/sweep.c.
+name: delayimp
+description: sdk delay-import apitests (nohook/globalhook/runtimehook) against the Rust delay-load runtime (i386)
+
+build_hint: "tools/payloads/delayimp/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/delayimp/sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/delayimp/suites.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/delayimp/skip.txt
+    dest: bin/apitest-skip.txt
+  # Children start on the writable FAT scratch disk: X: is the CDFS boot image.
+  - src: tools/payloads/delayimp/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: tools/payloads/delayimp/delayimp_nohook_apitest.exe
+    dest: bin/delayimp_nohook_apitest.exe
+  - src: tools/payloads/delayimp/delayimp_globalhook_apitest.exe
+    dest: bin/delayimp_globalhook_apitest.exe
+  - src: tools/payloads/delayimp/delayimp_runtimehook_apitest.exe
+    dest: bin/delayimp_runtimehook_apitest.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 1800
+  launch_idle_secs: 600

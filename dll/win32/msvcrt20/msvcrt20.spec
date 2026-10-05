@@ -790,7 +790,7 @@
 @ cdecl _splitpath(str ptr ptr ptr ptr)
 @ cdecl _stat(str ptr)
 @ cdecl _statusfp()
-@ cdecl _strcmpi(str str)
+@ cdecl _strcmpi(str str) _stricmp
 @ cdecl _strdate(ptr)
 @ cdecl _strdup(str)
 @ cdecl _strerror(long)

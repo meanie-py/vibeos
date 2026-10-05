@@ -22,8 +22,6 @@ const STATUS_RETRY: NTSTATUS = 0xC000022Du32 as NTSTATUS;
 
 extern "system" {
     fn RtlEqualLuid(L1: *const LUID, L2: *const LUID) -> BOOLEAN;
-    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: usize);
-    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: usize);
 }
 extern "C" {
     fn InterlockedExchangeAdd64(Addend: *mut i64, Value: i64) -> i64;
@@ -349,22 +347,14 @@ pub unsafe extern "system" fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LU
     let LocallyUniqueId = opaque_ptr(LocallyUniqueId);
     let PreviousMode = ExGetPreviousMode();
     if PreviousMode != 0 {
-        let Status = 'seh: {
-            let mut __exception_code: NTSTATUS = 0;
-            let result = (|| {
-                ProbeForWrite(
-                    LocallyUniqueId as PVOID,
-                    core::mem::size_of::<LUID>(),
-                    core::mem::align_of::<ULONG>(),
-                );
-            })();
-            if __exception_code != 0 {
-                break 'seh __exception_code;
-            }
-            STATUS_SUCCESS
-        };
-        if Status < 0 {
-            return Status;
+        // C: _SEH2_TRY { ProbeForWrite } whose handler returns the exception code.
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            LocallyUniqueId as PVOID,
+            core::mem::size_of::<LUID>(),
+            core::mem::align_of::<ULONG>(),
+            1,
+        ) {
+            return status;
         }
     }
 
@@ -445,37 +435,17 @@ pub unsafe extern "system" fn NtAllocateUuids(
 
     let PreviousMode = ExGetPreviousMode();
     if PreviousMode != 0 {
-        let Status = 'seh: {
-            let mut __exception_code: NTSTATUS = 0;
-            let result = (|| {
-                ProbeForWrite(
-                    Time as PVOID,
-                    core::mem::size_of::<ULARGE_INTEGER>(),
-                    core::mem::align_of::<ULONG>(),
-                );
-                ProbeForWrite(
-                    Range as PVOID,
-                    core::mem::size_of::<ULONG>(),
-                    core::mem::align_of::<ULONG>(),
-                );
-                ProbeForWrite(
-                    Sequence as PVOID,
-                    core::mem::size_of::<ULONG>(),
-                    core::mem::align_of::<ULONG>(),
-                );
-                ProbeForWrite(
-                    Seed as PVOID,
-                    SEED_BUFFER_SIZE,
-                    core::mem::align_of::<u8>(),
-                );
-            })();
-            if __exception_code != 0 {
-                break 'seh __exception_code;
+        // C: _SEH2_TRY { four ProbeForWrites } whose handler returns the code.
+        let probes: [(PVOID, usize, usize); 4] = [
+            (Time as PVOID, core::mem::size_of::<ULARGE_INTEGER>(), core::mem::align_of::<ULONG>()),
+            (Range as PVOID, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>()),
+            (Sequence as PVOID, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>()),
+            (Seed as PVOID, SEED_BUFFER_SIZE, core::mem::align_of::<u8>()),
+        ];
+        for (address, length, alignment) in probes {
+            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(address, length, alignment, 1) {
+                return status;
             }
-            STATUS_SUCCESS
-        };
-        if Status < 0 {
-            return Status;
         }
     }
 
@@ -494,26 +464,23 @@ pub unsafe extern "system" fn NtAllocateUuids(
     ExpUuidSaveSequenceNumberIf();
     ExReleaseFastMutex(core::ptr::addr_of_mut!(ExpUuidLock));
 
-    let Status = 'seh: {
-        let mut __exception_code: NTSTATUS = 0;
-        let result = (|| {
-            (*Time).QuadPart = IntTime.QuadPart;
-            *Range = IntRange;
-            *Sequence = IntSequence;
-
-            core::ptr::copy_nonoverlapping(
-                (*(&raw const ExpUuidCachedValues)).NodeId().as_ptr(),
-                Seed,
-                SEED_BUFFER_SIZE,
-            );
-        })();
-        if __exception_code != 0 {
-            break 'seh __exception_code;
-        }
-        STATUS_SUCCESS
+    // C: the write-back is under _SEH2_TRY, whose handler returns the code. The
+    // pointers were probed above (user mode) or are trusted (kernel mode); the
+    // writes themselves are fault-tolerant.
+    let write_back = || -> Result<(), NTSTATUS> {
+        ntkrnl_sys::probe::write_user(core::ptr::addr_of_mut!((*Time).QuadPart), IntTime.QuadPart, 0)?;
+        ntkrnl_sys::probe::write_user(Range, IntRange, 0)?;
+        ntkrnl_sys::probe::write_user(Sequence, IntSequence, 0)?;
+        ntkrnl_sys::probe::safe_copy_raw(
+            Seed.cast(),
+            (*(&raw const ExpUuidCachedValues)).NodeId().as_ptr().cast(),
+            SEED_BUFFER_SIZE,
+        )
     };
-
-    Status
+    match write_back() {
+        Ok(()) => STATUS_SUCCESS,
+        Err(status) => status,
+    }
 }
 
 #[no_mangle]
@@ -523,44 +490,44 @@ pub unsafe extern "system" fn NtSetUuidSeed(Seed: *const u8) -> NTSTATUS {
     let mut CallerLuid: LUID = core::mem::zeroed();
     let SystemLuid = LUID { LowPart: 0x3e7, HighPart: 0 };
 
-    let Status = 'seh: {
-        let mut __exception_code: NTSTATUS = 0;
-        let result = (|| -> Result<(), NTSTATUS> {
-            SeCaptureSubjectContext(core::ptr::addr_of_mut!(SubjectContext));
-            GotContext = 1;
+    // C: one _SEH2_TRY whose handler stores the exception code in Status. Its
+    // RtlRaiseStatus calls are how it reaches that handler; with no SEH they are
+    // `Err` returns (raising would be an unhandled exception).
+    let result = (|| -> Result<(), NTSTATUS> {
+        SeCaptureSubjectContext(core::ptr::addr_of_mut!(SubjectContext));
+        GotContext = 1;
 
-            let Token = SeQuerySubjectContextToken(core::ptr::addr_of_mut!(SubjectContext));
-            let Status = SeQueryAuthenticationIdToken(Token, core::ptr::addr_of_mut!(CallerLuid));
-            if Status < 0 {
-                RtlRaiseStatus(Status);
-            }
-
-            if RtlEqualLuid(
-                core::ptr::addr_of!(CallerLuid),
-                core::ptr::addr_of!(SystemLuid),
-            ) == 0
-            {
-                RtlRaiseStatus(STATUS_ACCESS_DENIED);
-            }
-
-            ProbeForRead(Seed as PVOID, SEED_BUFFER_SIZE, core::mem::align_of::<u8>());
-            core::ptr::copy_nonoverlapping(
-                Seed,
-                (*(&raw mut ExpUuidCachedValues)).NodeId_mut().as_mut_ptr(),
-                SEED_BUFFER_SIZE,
-            );
-
-            ExpUuidCacheValid = (!((*Seed >> 7) & 1)) & 1;
-
-            Ok(())
-        })();
-        if __exception_code != 0 {
-            break 'seh __exception_code;
+        let Token = SeQuerySubjectContextToken(core::ptr::addr_of_mut!(SubjectContext));
+        let Status = SeQueryAuthenticationIdToken(Token, core::ptr::addr_of_mut!(CallerLuid));
+        if Status < 0 {
+            return Err(Status);
         }
-        if let Err(e) = result {
-            break 'seh e;
+
+        if RtlEqualLuid(
+            core::ptr::addr_of!(CallerLuid),
+            core::ptr::addr_of!(SystemLuid),
+        ) == 0
+        {
+            return Err(STATUS_ACCESS_DENIED);
         }
-        STATUS_SUCCESS
+
+        let node_id = (*(&raw mut ExpUuidCachedValues)).NodeId_mut().as_mut_ptr();
+        ntkrnl_sys::probe::safe_copy_from_user(
+            node_id.cast(),
+            Seed.cast(),
+            SEED_BUFFER_SIZE,
+            core::mem::align_of::<u8>(),
+            1,
+        )?;
+
+        // The C re-reads *Seed here; the byte just captured is the same one.
+        ExpUuidCacheValid = (!((*node_id >> 7) & 1)) & 1;
+
+        Ok(())
+    })();
+    let Status = match result {
+        Ok(()) => STATUS_SUCCESS,
+        Err(status) => status,
     };
 
     if GotContext != 0 {
