@@ -125,6 +125,7 @@ _PYTEST_SUITES = [
     # guarded by test_cli_units, so a new tools/test_*.py cannot go quiet again.
     (".", ".", "tools/test_conformance_probe.py"),
     (".", ".", "tools/test_export_census.py"),
+    (".", ".", "tools/test_link_pulls.py"),
     (".", ".", "tools/test_gen_ctype_tables.py"),
     (".", ".", "tools/test_verify_lost_exports.py"),
     (".", ".", "tools/test_verify_translation_literals.py"),
