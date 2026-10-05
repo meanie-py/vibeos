@@ -179,3 +179,16 @@ pub unsafe extern "C" fn operator_delete(mem: *mut core::ffi::c_void) {
 pub unsafe extern "C" fn _chkesp_failed() {
     core::arch::asm!("int3", options(nomem, nostack));
 }
+
+/// `_local_unwind` on arm64. ucrtbase.spec forwarded it to `ntdll._local_unwind` for all of
+/// win64, but ntdll exports that name on x86_64 only, so the arm64 export named nothing
+/// (GetProcAddress returned NULL). The body is Wine's x86_64 one, as msvcrt.dll's arm64
+/// `_local_unwind` (crt-shared-rust except_arm64.rs); amd64 keeps the forward.
+#[cfg(all(target_arch = "aarch64", target_os = "windows"))]
+#[no_mangle]
+pub unsafe extern "C" fn _local_unwind(frame: *mut c_void, target: *mut c_void) {
+    extern "system" {
+        fn RtlUnwind(frame: *mut c_void, target: *mut c_void, rec: *mut c_void, retval: *mut c_void);
+    }
+    RtlUnwind(frame, target, core::ptr::null_mut(), core::ptr::null_mut());
+}

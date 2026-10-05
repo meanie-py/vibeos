@@ -344,6 +344,14 @@ trees:
     version:
       literal: git commit 6121d02
     reason: >
+      NO LONGER SHIPPED (2026-10-04): no module links any of it. msvcrt.dll and ucrtbase.dll
+      dropped `crtmath` once their link maps showed no object pulled from it, and gdi32's
+      `atan2` (the last user, on amd64) is atan2-rust. It stays in the tree as a REFERENCE:
+      cnt-difftest grades cnt-rust's sin/cos/tan/exp2/tanh/... ports bit-exact against these
+      files, and verify_ucrtbase_cohab reads crtmath's objects as part of the C surface the
+      ucrtbase Rust may define. Deleting it means re-anchoring those oracles first (as the
+      FDLIBM deletion moved Bessel onto libm).
+
       AMD's optimised libm, carried under sdk/lib/crt/math and linked into the `crtmath`
       static library that msvcrt.dll, ucrtbase.dll and the static CRT consumers all share.
       66 files, ~12.9K lines, every one carrying AMD's MIT header; the tree is a drop, not

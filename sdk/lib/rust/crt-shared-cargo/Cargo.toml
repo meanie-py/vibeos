@@ -58,3 +58,13 @@ cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-m
 # crate) reaches msvcrt-crt-rust -- the one thing this crate exists to keep out.
 # That is asserted by check_structure, not assumed.
 ucrt-rust = { path = "../ucrt-rust", features = ["bits", "ismbbyte", "portable-string", "ctype", "ismbc", "tocase", "strtox", "atox", "xtoa", "findfile", "output", "strtod", "stat", "locale-data", "locale-init", "mbctype", "qualified-locale", "setlocale", "exec", "atof", "ctime", "timeset", "argv-data", "align", "invalid-parameter", "lowio-open", "mbstring", "string-ops", "time", "stdio-bufio", "stdio-files", "stdio-input", "convert-rest", "misc", "filesystem", "lowio", "internal-core", "heap", "stdlib", "conio", "env", "exec-rest", "startup", "argv-errors", "cvt", "winapi-thunks", "ucrt-reactos", "fpctrl", "fenv", "c99math"] }
+# The SEH runtime and setjmp/longjmp (pseh-rt, setjmp-rt; no delayimp-rt: ucrtbase has no
+# delay imports, and the helper's LoadLibraryA would be a new import for nothing), in THIS graph rather than as
+# their own staticlibs on the DLL's link line, so the DLL has one Rust runtime (one core, one
+# panic handler, one compiler_builtins) and links without --allow-multiple-definition. As
+# separate archives each carried its own copy of those, and pseh/setjmp had to be named by
+# path ahead of ntdll's import library; whole-archived here, they are defined before any
+# import library is consulted. The -rt crates are the code without a panic runtime;
+# this crate's lib.rs is the one runtime.
+pseh-rt = { path = "../pseh-rt" }
+setjmp-rt = { path = "../setjmp-rt" }

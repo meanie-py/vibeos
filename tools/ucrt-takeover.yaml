@@ -2056,6 +2056,21 @@ families:
       object directories, not the archives the link actually uses.
     exports:
       - _chkesp
+  local_unwind_arm64:
+    provenance: wine-port
+    arches: [arm64]
+    replaces:
+      - arm64 only -- ucrtbase.spec's `_local_unwind ... ntdll._local_unwind` forward, which named an export ntdll has on x86_64 only, so the arm64 export resolved to nothing
+    oracle: >
+      tools/payloads/vaentry (arm64 guest): GetProcAddress(ucrtbase, "_local_unwind") is non-NULL
+      (it was NULL: the loader cannot resolve a forward to a missing export), and the same for
+      msvcrt.dll, which had the same hole one hop longer. The body is one RtlUnwind(frame,
+      target, NULL, NULL) call, Wine's x86_64 `_local_unwind`, identical to msvcrt.dll's.
+    note: >
+      src/ucrt_reactos.rs, aarch64 only. Found by tools/msvcrt_export_coverage.py, which fails
+      on any export another DLL's import library answers.
+    exports:
+      - _local_unwind
   va_entries:
     provenance: reactos-port
     replaces:

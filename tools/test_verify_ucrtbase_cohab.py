@@ -139,22 +139,24 @@ def _ucrtbase_link_libraries() -> list[str]:
     return names
 
 
-def test_the_authority_set_is_the_whole_link_line():
-    """The archive check is only correct if its model IS the link line.
+def test_every_library_on_the_link_line_is_in_the_authority_set():
+    """A C library on ucrtbase's link line must be in OURS_REFERENCE.
 
     This is the assertion that actually rotted once: the tool modelled the authority as
     `msvcrt_shared` alone, and the ucrtbase math flip -- a correct change, every symbol of it
     a crtmath body we own and had graded -- came back as 60 findings. A gate that is red on a
-    correct change is one somebody switches off, so the set has to track the CMake rather than
-    be remembered. `ucrt` used to be the one deliberate exclusion (the vendored Microsoft
-    library); since 2026-10-03 it is deleted, and its return to the link line would mean
-    Microsoft's C had come back.
+    correct change is one somebody switches off. Since 2026-10-04 ucrtbase links no C library
+    at all (link_strict; the set is the libraries the Rust replaced, kept compiled as the
+    reference), so the live rule is the subset: a library put back on the line without an
+    entry would make every symbol it defines look like ours shadowing UCRT. `ucrt` (the
+    vendored Microsoft library, deleted 2026-10-03) on the line would mean Microsoft's C came
+    back.
     """
     linked = _ucrtbase_link_libraries()
     assert "ucrt" not in linked, "Microsoft's ucrt is back on ucrtbase's link line"
-    assert set(linked) == set(vuc.OURS_ON_LINK_LINE), (
-        "ucrtbase's link line and OURS_ON_LINK_LINE disagree -- a library added there without "
-        "a matching entry makes every symbol it defines look like ours shadowing genuine UCRT"
+    assert set(linked) <= set(vuc.OURS_REFERENCE), (
+        "on ucrtbase's link line but not in OURS_REFERENCE: "
+        f"{sorted(set(linked) - set(vuc.OURS_REFERENCE))}"
     )
 
 
@@ -215,11 +217,11 @@ def test_every_modelled_target_has_a_real_object_directory():
     # fails on one (arch, target) at a time, so a model change that predates all three
     # build dirs is discovered three times: research rebuilt i386, hit amd64, rebuilt
     # that, hit arm64 -- three warm rebuilds and three queue round trips for one cause.
-    # `wine` entering OURS_ON_LINK_LINE in c474d932eb7 did exactly that.
+    # `wine` entering OURS_REFERENCE in c474d932eb7 did exactly that.
     missing = [
         (build.name, target, build / obj_dir)
         for build in builds
-        for target, obj_dir in vuc.OURS_ON_LINK_LINE.items()
+        for target, obj_dir in vuc.OURS_REFERENCE.items()
         if not (build / obj_dir).is_dir()
     ]
     if missing:
@@ -228,7 +230,7 @@ def test_every_modelled_target_has_a_real_object_directory():
             "modelled target(s) have no object directory:\n  "
             + "\n  ".join(f"{name}: {target} -> {path}" for name, target, path in missing)
             + "\n\nA COMPLETION STAMP PROVES A BUILD FINISHED, NOT THAT IT BUILT "
-            "EVERYTHING: a build dir predating a new entry in OURS_ON_LINK_LINE is stamped "
+            "EVERYTHING: a build dir predating a new entry in OURS_REFERENCE is stamped "
             "and still lacks it. If this names a target that was recently added to the "
             "model, the tree is stale rather than the model wrong.\n"
             + "fix: "
@@ -464,7 +466,7 @@ def test_a_real_local_edit_IS_stale(tmp_path: Path, monkeypatch):
 def test_the_authority_includes_ucrtbases_own_C_not_just_its_libraries():
     """The subset assertion is against OUR C — and ucrtbase's own TUs are ours.
 
-    OURS_ON_LINK_LINE must stay exactly the link LIBRARIES (the test above pins it
+    OURS_REFERENCE must stay exactly the link LIBRARIES (the test above pins it
     against the CMake). But ucrtbase.dll also gets symbols from its own 132 lines —
     printf.c and stubs.c — and six of those are EXPORTED: the intrinsic placeholders
     spec2def cannot stub. Left out of the authority, a Rust twin of any of them reads
@@ -472,8 +474,8 @@ def test_the_authority_includes_ucrtbases_own_C_not_just_its_libraries():
     own. That is the defect the link-line test's docstring records (a correct ucrtbase
     math flip coming back as 60 findings), one target over.
     """
-    assert set(vuc.OURS_C_AUTHORITY) == set(vuc.OURS_ON_LINK_LINE) | set(vuc.OURS_OWN_TUS)
-    assert set(vuc.OURS_ON_LINK_LINE) & set(vuc.OURS_OWN_TUS) == set(), "the two must be disjoint"
+    assert set(vuc.OURS_C_AUTHORITY) == set(vuc.OURS_REFERENCE) | set(vuc.OURS_OWN_TUS)
+    assert set(vuc.OURS_REFERENCE) & set(vuc.OURS_OWN_TUS) == set(), "the two must be disjoint"
     # The six symbols that motivated this (fma/fmaf, log2/log2f, lrint/lrintf) moved to
     # ucrt-rust's c99math (2026-10-03) and are declared takeovers there, so they must be
     # GONE from stubs.c -- two definitions would be the silent first-match this file

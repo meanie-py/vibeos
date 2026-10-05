@@ -12,5 +12,5 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 panic-common = { path = "../panic-common", features = ["user"] }
-delayimp-notify-hook = { path = "hooks/notify" }
-delayimp-failure-hook = { path = "hooks/failure" }
+# The code (see ../delayimp-rt/Cargo.toml); this crate adds the panic runtime.
+delayimp-rt = { path = "../delayimp-rt" }
