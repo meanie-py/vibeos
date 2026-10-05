@@ -42,7 +42,6 @@ use ntkrnl_sys::ddk::{
     MmIsAddressValid,
     PsGetCurrentProcessId,
     RtlDispatchException,
-    RtlRaiseException,
     KeBugCheckWithTf,
 };
 
@@ -73,7 +72,6 @@ extern "system" {
     fn __writeeflags(Value: ULONG);
     fn _disable();
     fn ExpInterlockedPopEntrySListFault();
-    fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
 }
 extern "C" {
     fn KeGetPcr() -> *mut KPCR;
@@ -894,6 +892,19 @@ pub unsafe extern "system" fn KiDispatchException(
             }
 
             loop {
+                // C: this block is a _SEH2_TRY whose filter copies the raised
+                // exception record into LocalExceptRecord; the handler retries on
+                // STATUS_STACK_OVERFLOW and otherwise falls through to the second
+                // chance. No SEH here, so each raise/fault site records the code
+                // the C filter would have captured and breaks with nonzero.
+                macro_rules! seh_fail {
+                    ($lbl:lifetime, $status:expr) => {{
+                        local_except_record.ExceptionCode = $status;
+                        local_except_record.ExceptionFlags = 1; // EXCEPTION_NONCONTINUABLE (ExRaiseStatus)
+                        local_except_record.NumberParameters = 0;
+                        break $lbl 1;
+                    }};
+                }
                 let dispatch_result = 'dispatch: {
                     let size = (core::mem::size_of::<CONTEXT>() + 3) & !3;
                     let stack = (context.Esp & !3).wrapping_sub(size as u32);
@@ -901,18 +912,32 @@ pub unsafe extern "system" fn KiDispatchException(
                     if ((*TrapFrame).HardwareSegSs != (KGDT_R3_DATA | RPL_MASK))
                         || ((*TrapFrame).EFlags & EFLAGS_V86_MASK) != 0
                     {
+                        // C: RtlRaiseException(&LocalExceptRecord) caught by this
+                        // same handler — the filter copies that record back.
                         local_except_record.ExceptionCode = STATUS_ACCESS_VIOLATION;
                         local_except_record.ExceptionFlags = 0;
                         local_except_record.NumberParameters = 0;
-                        RtlRaiseException(core::ptr::addr_of_mut!(local_except_record));
+                        break 'dispatch 1;
                     }
 
-                    ProbeForWrite(stack as PVOID, size as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
-                    core::ptr::copy_nonoverlapping(
-                        core::ptr::addr_of!(context) as *const u8,
-                        stack as *mut u8,
+                    // C ProbeForWrite checks unconditionally: UserMode (1).
+                    if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+                        stack as PVOID,
+                        size,
+                        core::mem::size_of::<ULONG>(),
+                        1,
+                    ) {
+                        seh_fail!('dispatch, status);
+                    }
+                    if let Err(status) = ntkrnl_sys::probe::safe_copy_to_user(
+                        stack as PVOID,
+                        core::ptr::addr_of!(context) as *const core::ffi::c_void,
                         core::mem::size_of::<CONTEXT>(),
-                    );
+                        1,
+                        1,
+                    ) {
+                        seh_fail!('dispatch, status);
+                    }
 
                     let except_size = (core::mem::size_of::<EXCEPTION_RECORD>()
                         - (15 - (*ExceptionRecord).NumberParameters as usize) * core::mem::size_of::<ULONG>()
@@ -920,19 +945,38 @@ pub unsafe extern "system" fn KiDispatchException(
                         & !3;
                     let new_stack = stack.wrapping_sub(except_size as u32);
 
-                    ProbeForWrite(
+                    if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
                         new_stack.wrapping_sub(2 * core::mem::size_of::<ULONG_PTR>() as u32) as PVOID,
-                        (except_size + 2 * core::mem::size_of::<ULONG_PTR>()) as SIZE_T,
-                        core::mem::size_of::<ULONG>() as ULONG,
-                    );
-                    core::ptr::copy_nonoverlapping(
-                        ExceptionRecord as *const u8,
-                        new_stack as *mut u8,
+                        except_size + 2 * core::mem::size_of::<ULONG_PTR>(),
+                        core::mem::size_of::<ULONG>(),
+                        1,
+                    ) {
+                        seh_fail!('dispatch, status);
+                    }
+                    if let Err(status) = ntkrnl_sys::probe::safe_copy_to_user(
+                        new_stack as PVOID,
+                        ExceptionRecord as *const core::ffi::c_void,
                         except_size,
-                    );
+                        1,
+                        1,
+                    ) {
+                        seh_fail!('dispatch, status);
+                    }
 
-                    *(new_stack.wrapping_sub(1 * core::mem::size_of::<ULONG_PTR>() as u32) as *mut ULONG_PTR) = stack as ULONG_PTR;
-                    *(new_stack.wrapping_sub(2 * core::mem::size_of::<ULONG_PTR>() as u32) as *mut ULONG_PTR) = new_stack as ULONG_PTR;
+                    if let Err(status) = ntkrnl_sys::probe::write_user(
+                        new_stack.wrapping_sub(1 * core::mem::size_of::<ULONG_PTR>() as u32) as *mut ULONG_PTR,
+                        stack as ULONG_PTR,
+                        1,
+                    ) {
+                        seh_fail!('dispatch, status);
+                    }
+                    if let Err(status) = ntkrnl_sys::probe::write_user(
+                        new_stack.wrapping_sub(2 * core::mem::size_of::<ULONG_PTR>() as u32) as *mut ULONG_PTR,
+                        new_stack as ULONG_PTR,
+                        1,
+                    ) {
+                        seh_fail!('dispatch, status);
+                    }
 
                     KiSsToTrapFrame(TrapFrame, KGDT_R3_DATA);
                     KiEspToTrapFrame(TrapFrame, new_stack.wrapping_sub(2 * core::mem::size_of::<ULONG_PTR>() as u32));

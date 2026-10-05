@@ -8,8 +8,6 @@ use crate::session::gAtomTable;
 
 extern "system" {
     fn PsGetCurrentThreadWin32Thread() -> PTHREADINFO;
-    fn ProbeForRead(a: *const core::ffi::c_void, l: usize, al: u32);
-    fn ProbeForWrite(a: *mut core::ffi::c_void, l: usize, al: u32);
 }
 // SetLastNtError is FASTCALL on i386, cdecl elsewhere.
 #[cfg(target_arch = "x86")]
@@ -128,32 +126,48 @@ pub unsafe extern "system" fn NtUserGetAtomName(atom: ATOM, pustrName: PUNICODE_
         core::mem::size_of_val(&awcBuffer) as ULONG,
     );
     if cjLength != 0 {
-        // DUMMY_PSEH: the _SEH2_EXCEPT path is dead; translate the _TRY body.
-        ProbeForRead(pustrName as *const core::ffi::c_void, core::mem::size_of::<UNICODE_STRING>(), 1);
-        ProbeForWrite(
-            (*pustrName).Buffer as *mut core::ffi::c_void,
-            (*pustrName).MaximumLength as usize,
-            1,
-        );
+        // C: _SEH2_TRY { ProbeForRead(pustrName, ..); ProbeForWrite(Buffer, MaximumLength, 1);
+        //                copy + NUL-terminate }
+        //    _SEH2_EXCEPT { SetLastNtError(code); cjLength = 0; }
+        // The header is captured once (the C re-reads it from user memory).
+        let r: Result<ULONG, NTSTATUS> = (|| {
+            let ustr: UNICODE_STRING = crate::safe_user_io::capture_user(pustrName as *const UNICODE_STRING)?;
+            crate::safe_user_io::probe_for_write(
+                ustr.Buffer as *mut core::ffi::c_void,
+                ustr.MaximumLength as usize,
+                1,
+            )?;
 
-        // sizeof(UNICODE_NULL) == 2 (a WCHAR).
-        if (*pustrName).MaximumLength as ULONG >= 2 {
-            /* Limit the length to the buffer size */
-            cjLength = core::cmp::min((*pustrName).MaximumLength as ULONG - 2, cjLength);
+            // sizeof(UNICODE_NULL) == 2 (a WCHAR).
+            if ustr.MaximumLength as ULONG >= 2 {
+                /* Limit the length to the buffer size */
+                let len = core::cmp::min(ustr.MaximumLength as ULONG - 2, cjLength);
 
-            /* Copy the string (cjLength is a BYTE count) and NUL-terminate */
-            core::ptr::copy_nonoverlapping(
-                awcBuffer.as_ptr() as *const u8,
-                (*pustrName).Buffer as *mut u8,
-                cjLength as usize,
-            );
-            core::ptr::write_volatile(
-                (*pustrName).Buffer.add(cjLength as usize / core::mem::size_of::<WCHAR>()),
-                0u16,
-            );
-        } else {
-            cjLength = 0;
-        }
+                /* Copy the string (len is a BYTE count) and NUL-terminate */
+                ntkrnl_sys::probe::safe_copy_raw(
+                    ustr.Buffer as *mut core::ffi::c_void,
+                    awcBuffer.as_ptr() as *const core::ffi::c_void,
+                    len as usize,
+                )?;
+                let nul: WCHAR = 0;
+                ntkrnl_sys::probe::safe_copy_raw(
+                    ustr.Buffer.add(len as usize / core::mem::size_of::<WCHAR>()) as *mut core::ffi::c_void,
+                    core::ptr::addr_of!(nul) as *const core::ffi::c_void,
+                    core::mem::size_of::<WCHAR>(),
+                )?;
+                Ok(len)
+            } else {
+                Ok(0)
+            }
+        })();
+        cjLength = match r {
+            Ok(len) => len,
+            Err(st) => {
+                /* On exception, set last error and fail */
+                SetLastNtError(st);
+                0
+            }
+        };
     }
 
     /* Return the length in characters */

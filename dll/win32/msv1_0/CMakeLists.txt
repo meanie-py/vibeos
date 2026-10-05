@@ -69,9 +69,6 @@ add_library(msv1_0 MODULE ${SOURCE} msv1_0.rc)
 set_module_type(msv1_0 win32dll UNICODE ENTRYPOINT 0)
 # libmsv1_0_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(msv1_0 ${MSV1_0_RUST_LIB} ${PSEH_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(msv1_0 PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(msv1_0 rust_msv1_0)
 add_delay_importlibs(msv1_0 samsrv lsasrv)
 add_importlibs(msv1_0 advapi32 kernel32 ntdll)

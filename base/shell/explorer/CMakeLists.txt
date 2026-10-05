@@ -95,7 +95,6 @@ add_rc_deps(explorer.rc ${explorer_rc_deps})
 add_executable(explorer ${SOURCE} explorer.rc)
 # EXPLORER_RUST_LIB first so its #[no_mangle] bodies win over any lingering C++.
 target_link_libraries(explorer ${EXPLORER_RUST_LIB} uuid wine cpprt atl_classes)
-target_link_options(explorer PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(explorer rust_explorer)
 set_module_type(explorer win32gui UNICODE)
 add_importlibs(explorer setupapi advapi32 gdi32 user32 comctl32 ole32 oleaut32 shell32 browseui shlwapi shdocvw version uxtheme msvcrt kernel32 ntdll)

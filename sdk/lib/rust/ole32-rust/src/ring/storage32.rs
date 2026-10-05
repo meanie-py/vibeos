@@ -4311,7 +4311,7 @@ unsafe fn deleteStreamContents(
     S_OK
 }
 
-unsafe fn StorageImpl_GetNextFreeBigBlock(This: *mut StorageImpl) -> ULONG {
+unsafe fn StorageImpl_GetNextFreeBigBlock(This: *mut StorageImpl, neededAddNumBlocks: ULONG) -> ULONG {
     let mut depotBlockIndexPos: ULONG;
     let mut depotBuffer: [BYTE; MAX_BIG_BLOCK_SIZE as usize] = [0; MAX_BIG_BLOCK_SIZE as usize];
     let mut depotBlockOffset: ULONG;
@@ -4392,7 +4392,10 @@ unsafe fn StorageImpl_GetNextFreeBigBlock(This: *mut StorageImpl) -> ULONG {
         depotBlockOffset = 0;
     }
 
-    neededSize.QuadPart = StorageImpl_GetBigBlockOffset(This, freeBlock) + (*This).bigBlockSize as u64;
+    // wine-10: grow the file once for every block the caller is about to add, not
+    // once per block. u64 product: Wine's ULONG * ULONG could wrap.
+    neededSize.QuadPart = StorageImpl_GetBigBlockOffset(This, freeBlock)
+        + (*This).bigBlockSize as u64 * neededAddNumBlocks as u64;
 
     ILockBytes_Stat((*This).lockBytes, &mut statstg, STATFLAG_NONAME);
 
@@ -6609,7 +6612,7 @@ unsafe fn BlockChainStream_Enlarge(
     blockIndex = BlockChainStream_GetHeadOfChain(This);
 
     if blockIndex == BLOCK_END_OF_CHAIN {
-        blockIndex = StorageImpl_GetNextFreeBigBlock((*This).parentStorage);
+        blockIndex = StorageImpl_GetNextFreeBigBlock((*This).parentStorage, 1);
         StorageImpl_SetNextBlockInChain(
             (*This).parentStorage,
             blockIndex,
@@ -6671,7 +6674,7 @@ unsafe fn BlockChainStream_Enlarge(
 
     if oldNumBlocks < newNumBlocks {
         while oldNumBlocks < newNumBlocks {
-            blockIndex = StorageImpl_GetNextFreeBigBlock((*This).parentStorage);
+            blockIndex = StorageImpl_GetNextFreeBigBlock((*This).parentStorage, newNumBlocks - oldNumBlocks);
 
             StorageImpl_SetNextBlockInChain(
                 (*This).parentStorage,

@@ -25,8 +25,6 @@ use ntkrnl_sys::ddk::{
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: ULONG, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: ULONG, Alignment: ULONG);
     static mut KdPrintCircularBuffer: PCHAR;
     static mut KdPrintBufferSize: ULONG;
     static mut KdPrintWritePointer: PCHAR;
@@ -369,15 +367,31 @@ pub unsafe extern "system" fn KdpPrompt(
     let maximum_response_length = min(MaximumResponseLength as usize, safe_response_buffer.len()) as USHORT;
 
     if PreviousMode != 0 {
-        ProbeForRead(PromptString as PVOID, prompt_length as ULONG, 1);
-        KdpMoveMemory(
-            captured_prompt.as_mut_ptr() as PVOID,
-            PromptString as PVOID,
+        // C: probe + capture the prompt and probe the response buffer under
+        // _SEH2_TRY, whose handler bails out with `return 0`.
+        if ntkrnl_sys::probe::safe_copy_from_user(
+            captured_prompt.as_mut_ptr().cast(),
+            PromptString as *const core::ffi::c_void,
             prompt_length as usize,
-        );
+            1,
+            1,
+        )
+        .is_err()
+        {
+            return 0;
+        }
         let prompt_string_local = captured_prompt.as_mut_ptr();
 
-        ProbeForWrite(ResponseString as PVOID, maximum_response_length as ULONG, 1);
+        if ntkrnl_sys::probe::probe_user_buffer(
+            ResponseString as *const core::ffi::c_void,
+            maximum_response_length as usize,
+            1,
+            1,
+        )
+        .is_err()
+        {
+            return 0;
+        }
         safe_response_string = safe_response_buffer.as_mut_ptr();
 
         prompt_buffer.Buffer = prompt_string_local;
@@ -400,11 +414,16 @@ pub unsafe extern "system" fn KdpPrompt(
 
         KdExitDebugger(enable);
 
-        KdpMoveMemory(
+        // C: the copy-back is under _SEH2_TRY; "string became invalid", return 0.
+        if ntkrnl_sys::probe::safe_copy_raw(
             ResponseString as PVOID,
-            response_buffer.Buffer as PVOID,
+            response_buffer.Buffer as *const core::ffi::c_void,
             response_buffer.Length as usize,
-        );
+        )
+        .is_err()
+        {
+            return 0;
+        }
 
         response_buffer.Length
     } else {
@@ -446,12 +465,16 @@ unsafe fn KdpPrintFromUser(
 ) -> NTSTATUS {
     let mut captured_string: [i8; KD_PRINT_MAX_BYTES] = [0; KD_PRINT_MAX_BYTES];
 
-    ProbeForRead(String as PVOID, Length as ULONG, 1);
-    KdpMoveMemory(
-        captured_string.as_mut_ptr() as PVOID,
-        String as PVOID,
+    // C: probe + capture under _SEH2_TRY; a bad pointer returns STATUS_ACCESS_VIOLATION.
+    if let Err(status) = ntkrnl_sys::probe::safe_copy_from_user(
+        captured_string.as_mut_ptr().cast(),
+        String as *const core::ffi::c_void,
         Length as usize,
-    );
+        1,
+        1,
+    ) {
+        return status;
+    }
     let string_local = captured_string.as_mut_ptr();
 
     KdpPrint(

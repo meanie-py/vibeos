@@ -109,12 +109,13 @@ macro_rules! UNIMPLEMENTED_ONCE {
     () => {};
 }
 
-// Local helper: replicate ProbeForReadUnicodeString macro from probe.h.
-// With DUMMY_PSEH, alignment + range checks are skipped (the C macro depends on
-// SEH + ProbeForRead). This is just a volatile read.
+// probe.h's ProbeForReadUnicodeString: range-check and capture the header. The C
+// raises inside the caller's _SEH2_TRY; here the caller gets the code back. (This
+// was a bare volatile read with no range check, so a user caller could make the
+// kernel read a kernel address.) Callers are all user-mode-only paths.
 #[inline]
-unsafe fn ProbeForReadUnicodeString(ptr: PUNICODE_STRING) -> _UNICODE_STRING {
-    core::ptr::read_volatile(ptr as *const _UNICODE_STRING)
+unsafe fn ProbeForReadUnicodeString(ptr: PUNICODE_STRING) -> Result<_UNICODE_STRING, NTSTATUS> {
+    ntkrnl_sys::probe::probe_read_generic(ptr as *const _UNICODE_STRING, 1, 1)
 }
 
 // Probe shims (defined as `extern "C"` in shim_exports.rs)
@@ -251,13 +252,23 @@ pub unsafe extern "system" fn ProbeAndCaptureObjectAttributes(
     core::ptr::write_bytes(CapturedObjectAttributes, 0, 1);
 
     if !ObjectAttributes.is_null() {
-        if AccessMode != 0 {
-            if (ObjectAttributes as usize) < 0x10000 ||
-               (ObjectAttributes as usize).wrapping_add(core::mem::size_of::<_OBJECT_ATTRIBUTES>()) > 0x7FFFFFFF {
+        // C: ProbeForRead(ObjectAttributes, sizeof, sizeof(ULONG)) in user mode, then
+        // field reads, all under _SEH2_TRY whose handler releases and returns the
+        // code. One fault-tolerant capture does both. (This replaced an open-coded
+        // `< 0x10000 || end > 0x7FFFFFFF` test: a 32-bit user range, so on 64-bit it
+        // rejected valid user pointers above 2 GB.)
+        let captured_attributes = match ntkrnl_sys::probe::probe_read_generic(
+            ObjectAttributes as *const _OBJECT_ATTRIBUTES,
+            core::mem::size_of::<ULONG>(),
+            AccessMode,
+        ) {
+            Ok(attributes) => attributes,
+            Err(status) => {
                 ReleaseCapturedObjectAttributes(CapturedObjectAttributes, AccessMode);
-                return STATUS_ACCESS_VIOLATION;
+                return status;
             }
-        }
+        };
+        let ObjectAttributes: *const _OBJECT_ATTRIBUTES = &captured_attributes;
 
         if (*ObjectAttributes).Length != core::mem::size_of::<_OBJECT_ATTRIBUTES>() as u32 ||
            // 0x12F2 was open-coded here for the C's ~OBJ_VALID_KERNEL_ATTRIBUTES
@@ -381,27 +392,37 @@ pub unsafe extern "system" fn NtCreateKey(
     // every key open funnels through instead of at each Nt* entry.
 
     if PreviousMode != 0i8 {
+        // C: all of this is inside _SEH2_TRY, whose handler returns the exception
+        // code. No SEH here, so the Result probes return it instead of raising
+        // unhandled.
         if !Class.is_null() {
-            ParseContext.Class = ProbeForReadUnicodeString(Class);
-            if ParseContext.Class.Length > 0 {
-                let _ = core::slice::from_raw_parts(
-                    ParseContext.Class.Buffer,
-                    (ParseContext.Class.Length as usize) / core::mem::size_of::<WCHAR>(),
-                );
+            ParseContext.Class = match ProbeForReadUnicodeString(Class) {
+                Ok(class) => class,
+                Err(status) => return status,
+            };
+            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+                ParseContext.Class.Buffer as *const core::ffi::c_void,
+                ParseContext.Class.Length as usize,
+                core::mem::size_of::<WCHAR>(),
+                PreviousMode,
+            ) {
+                return status;
             }
         }
 
-        // C: inside _SEH2_TRY, whose handler returns the exception code. No SEH
-        // here, so the Result probe returns it instead of raising unhandled.
         if let Err(status) = ntkrnl_sys::probe::probe_write_generic(KeyHandle, 1, PreviousMode) {
             return status;
         }
         *KeyHandle = core::ptr::null_mut();
 
-        let _ = core::slice::from_raw_parts(
-            ObjectAttributes as *const u8,
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            ObjectAttributes as *const core::ffi::c_void,
             core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
-        );
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return status;
+        }
 
         if !Disposition.is_null() {
             if let Err(status) = ntkrnl_sys::probe::probe_write_generic(Disposition, 1, PreviousMode) {
@@ -1863,22 +1884,30 @@ pub unsafe extern "system" fn NtUnloadKey2(
     }
 
     if PreviousMode != 0 {
-        if (TargetKey as usize) < 0x80000000 {
-            if (TargetKey as usize).wrapping_add(core::mem::size_of::<_OBJECT_ATTRIBUTES>()) > 0x80000000 
-                || (TargetKey as usize).wrapping_add(core::mem::size_of::<_OBJECT_ATTRIBUTES>()) < (TargetKey as usize) {
-                return STATUS_ACCESS_VIOLATION;
-            }
-        }
+        // C: ProbeForRead + capture + ProbeForReadUnicodeString + ProbeForRead of
+        // the name buffer, under _SEH2_TRY whose handler returns the exception
+        // code. This replaced an open-coded `if ptr < 0x80000000 { range test }`
+        // that skipped the test entirely for a kernel address.
+        CapturedTargetKey = match ntkrnl_sys::probe::probe_read_generic(
+            TargetKey as *const _OBJECT_ATTRIBUTES,
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            Ok(attributes) => attributes,
+            Err(status) => return status,
+        };
 
-        CapturedTargetKey = *TargetKey;
-
-        ObjectName = ProbeForReadUnicodeString(CapturedTargetKey.ObjectName);
-        
-        if (ObjectName.Buffer as usize) < 0x80000000 {
-            if (ObjectName.Buffer as usize).wrapping_add(ObjectName.Length as usize) > 0x80000000 
-                || (ObjectName.Buffer as usize).wrapping_add(ObjectName.Length as usize) < (ObjectName.Buffer as usize) {
-                return STATUS_ACCESS_VIOLATION;
-            }
+        ObjectName = match ProbeForReadUnicodeString(CapturedTargetKey.ObjectName) {
+            Ok(name) => name,
+            Err(status) => return status,
+        };
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            ObjectName.Buffer as *const core::ffi::c_void,
+            ObjectName.Length as usize,
+            core::mem::size_of::<WCHAR>(),
+            PreviousMode,
+        ) {
+            return status;
         }
 
         CapturedTargetKey.ObjectName = core::ptr::addr_of_mut!(ObjectName);

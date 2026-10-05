@@ -2110,7 +2110,6 @@ extern "system" {
     fn MmFreeMemoryArea(AddressSpace: PVOID, MemoryArea: PMEMORY_AREA, FreePage: Option<unsafe extern "C" fn(PVOID, PMEMORY_AREA, PVOID, PFN_NUMBER, ULONG_PTR, BOOLEAN)>, FreePageContext: PVOID) -> NTSTATUS;
     fn MmIsAddressRangeFree(AddressSpace: PVOID, BaseAddress: PVOID, Length: usize) -> BOOLEAN;
     fn MmFindGap(AddressSpace: PVOID, Length: usize, Alignment: usize, TopDown: BOOLEAN) -> PVOID;
-    fn ProbeForWrite(Address: PVOID, Length: ULONG, Alignment: ULONG);
 }
 
 // MmDeleteVirtualMapping is NTAPI/stdcall on i386 (extern "system"), NOT cdecl — the no-NTAPI
@@ -3415,9 +3414,25 @@ pub unsafe extern "system" fn NtQuerySection(
 
     PreviousMode = ExGetPreviousMode();
     if PreviousMode != 0i8 {
-        ProbeForWrite(SectionInformation, SectionInformationLength as ULONG, 4);
+        // C: inside _SEH2_TRY; the handler returns the exception code. (The old
+        // raising extern also truncated the SIZE_T length to ULONG.)
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            SectionInformation,
+            SectionInformationLength as usize,
+            core::mem::align_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return status;
+        }
         if !ResultLength.is_null() {
-            ProbeForWrite(ResultLength as PVOID, core::mem::size_of::<SIZE_T>() as ULONG, core::mem::align_of::<SIZE_T>() as ULONG);
+            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+                ResultLength as PVOID,
+                core::mem::size_of::<SIZE_T>(),
+                core::mem::align_of::<SIZE_T>(),
+                PreviousMode,
+            ) {
+                return status;
+            }
         }
     }
 

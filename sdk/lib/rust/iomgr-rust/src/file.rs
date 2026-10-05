@@ -151,8 +151,6 @@ extern "system" {
     static mut SeRestorePrivilege: _LUID;
     static mut IoFileObjectType: *mut _OBJECT_TYPE;
     static mut IopFileMapping: _GENERIC_MAPPING;
-    fn ProbeForRead(Address: *const core::ffi::c_void, Length: usize, Alignment: usize);
-    fn ProbeForWrite(Address: *mut core::ffi::c_void, Length: usize, Alignment: usize);
     fn RtlMapGenericMask(AccessMask: *mut ACCESS_MASK, GenericMapping: PGENERIC_MAPPING);
     fn RtlRaiseStatus(Status: NTSTATUS);
     fn RtlCopyUnicodeString(DestinationString: PUNICODE_STRING, SourceString: *const _UNICODE_STRING);
@@ -2144,7 +2142,12 @@ unsafe fn IopQueryAttributesFile(
     let AccessMode = KeGetPreviousMode();
 
     if AccessMode != 0i8 {
-        ProbeForWrite(FileInformation, FileInformationSize as usize, 4);
+        // C: _SEH2_TRY { ProbeForWrite } whose handler returns the exception code.
+        if let Err(status) =
+            ntkrnl_sys::probe::probe_user_buffer(FileInformation, FileInformationSize as usize, 4, AccessMode)
+        {
+            return status;
+        }
     }
 
     let IsBasic = FileInformationSize == size_of::<_FILE_BASIC_INFORMATION>() as u32;
@@ -2192,11 +2195,14 @@ unsafe fn IopQueryAttributesFile(
     Status = OpenPacket.FinalStatus;
 
     if Status >= 0 && AccessMode != 0i8 && !IsBasic {
-        copy_nonoverlapping(
-            &NetworkOpenInfo as *const _ as *const u8,
-            FileInformation as *mut u8,
+        // C: RtlCopyMemory under _SEH2_TRY, whose handler sets Status to the code.
+        if let Err(status) = ntkrnl_sys::probe::safe_copy_raw(
+            FileInformation,
+            &NetworkOpenInfo as *const _ as *const core::ffi::c_void,
             FileInformationSize as usize,
-        );
+        ) {
+            Status = status;
+        }
     }
 
     Status
@@ -2446,21 +2452,49 @@ unsafe fn IopCreateFile(
         }
 
         if !EaBuffer.is_null() && EaLength != 0 {
-            ProbeForRead(EaBuffer, EaLength as usize, 4);
+            // C: under _SEH2_TRY, whose handler frees the EA copy and the open
+            // packet and returns the exception code; the RtlRaiseStatus for an
+            // invalid buffer is how it reaches that handler.
+            unsafe fn fail(packet: POPEN_PACKET, status: NTSTATUS) -> NTSTATUS {
+                if !(*packet).EaBuffer.is_null() {
+                    ExFreePool((*packet).EaBuffer);
+                }
+                ExFreePool(packet as PVOID);
+                status
+            }
+            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(EaBuffer, EaLength as usize, 4, AccessMode) {
+                return fail(OpenPacket as POPEN_PACKET, status);
+            }
             (*OpenPacket).EaBuffer = ExAllocatePoolWithTag(NonPagedPool as u32, EaLength as usize, TAG_EA);
+            if (*OpenPacket).EaBuffer.is_null() {
+                // The C copies into the NULL and the handler returns the access
+                // violation; report what actually went wrong instead.
+                return fail(OpenPacket as POPEN_PACKET, STATUS_INSUFFICIENT_RESOURCES);
+            }
             (*OpenPacket).EaLength = EaLength;
-            copy_nonoverlapping(EaBuffer as *const u8, (*OpenPacket).EaBuffer as *mut u8, EaLength as usize);
+            if let Err(status) = ntkrnl_sys::probe::safe_copy_raw((*OpenPacket).EaBuffer, EaBuffer, EaLength as usize) {
+                return fail(OpenPacket as POPEN_PACKET, status);
+            }
 
             let mut EaErrorOffset: ULONG = 0;
             Status = IoCheckEaBufferValidity((*OpenPacket).EaBuffer, EaLength, &mut EaErrorOffset);
             if Status < 0 {
-                (*IoStatusBlock).__bindgen_anon_1.Status = Status;
-                (*IoStatusBlock).Information = EaErrorOffset as _;
-                if !(*OpenPacket).EaBuffer.is_null() {
-                    ExFreePool((*OpenPacket).EaBuffer);
+                let written = ntkrnl_sys::probe::write_user(
+                    core::ptr::addr_of_mut!((*IoStatusBlock).__bindgen_anon_1.Status),
+                    Status,
+                    0,
+                )
+                .and_then(|()| {
+                    ntkrnl_sys::probe::write_user(
+                        core::ptr::addr_of_mut!((*IoStatusBlock).Information),
+                        EaErrorOffset as _,
+                        0,
+                    )
+                });
+                if let Err(status) = written {
+                    return fail(OpenPacket as POPEN_PACKET, status);
                 }
-                ExFreePool(OpenPacket as PVOID);
-                return Status;
+                return fail(OpenPacket as POPEN_PACKET, Status);
             }
         }
     } else {

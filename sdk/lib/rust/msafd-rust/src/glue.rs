@@ -175,6 +175,7 @@ extern "system" {
     pub fn GetProcessHeap() -> HANDLE;
     pub fn SetLastError(dwErrCode: DWORD);
     pub fn SleepEx(dwMilliseconds: DWORD, bAlertable: BOOL) -> DWORD;
+    pub fn GetTickCount() -> DWORD;
     pub fn GetOverlappedResult(hFile: HANDLE, lpOverlapped: LPOVERLAPPED,
         lpNumberOfBytesTransferred: LPDWORD, bWait: BOOL) -> BOOL;
 }
@@ -233,7 +234,7 @@ pub use crate::misc::dllmain::{
 // Re-exported so callers in every module see them by bare name via `use crate::glue::*`
 // (the C shared them through msafd.h prototypes; MsafdReturnWithErrno was a header inline).
 pub use crate::misc::dllmain::{
-    MsafdReturnWithErrno, TranslateNtStatusError, GetSocketStructure, MsafdWaitForAlert,
+    MsafdReturnWithErrno, TranslateNtStatusError, GetSocketStructure, MsafdWaitForAlert, MsafdWaitForIo,
     SetSocketInformation, SockCreateOrReferenceAsyncThread, SockGetAsyncSelectHelperAfdHandle,
     SockProcessQueuedAsyncSelect,
 };

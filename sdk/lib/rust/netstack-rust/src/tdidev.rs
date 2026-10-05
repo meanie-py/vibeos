@@ -691,15 +691,17 @@ unsafe fn handle_icmp_echo(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
         dst[0], dst[1], dst[2], dst[3], data_size, timeout_ms
     );
     IoMarkIrpPending(irp);
-    tditrans::post(tditrans::Cmd::IcmpEcho {
-        irp: irp as usize,
-        sysbuf: sysbuf as usize,
-        out_len,
-        user_buffer,
-        dst,
-        timeout_ms,
-        data,
-    });
+    if tditrans::pend(irp) {
+        tditrans::post(tditrans::Cmd::IcmpEcho {
+            irp: irp as usize,
+            sysbuf: sysbuf as usize,
+            out_len,
+            user_buffer,
+            dst,
+            timeout_ms,
+            data,
+        });
+    }
     STATUS_PENDING
 }
 
@@ -769,7 +771,9 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
                     id, ip[0], ip[1], ip[2], ip[3], port
                 );
                 IoMarkIrpPending(irp);
-                tditrans::post(tditrans::Cmd::Connect { conn_id: id, ip, port, irp: irp as usize });
+                if tditrans::pend(irp) {
+                    tditrans::post(tditrans::Cmd::Connect { conn_id: id, ip, port, irp: irp as usize });
+                }
                 STATUS_PENDING
             } else {
                 complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
@@ -784,7 +788,9 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
             let ret_info = (*p).ReturnConnectionInformation as usize;
             nsprint!("[NETSTACK] TDI LISTEN conn {}\n", id);
             IoMarkIrpPending(irp);
-            tditrans::post(tditrans::Cmd::Listen { conn_id: id, irp: irp as usize, ret_info });
+            if tditrans::pend(irp) {
+                tditrans::post(tditrans::Cmd::Listen { conn_id: id, irp: irp as usize, ret_info });
+            }
             STATUS_PENDING
         }
         tdi::TDI_ACCEPT => {
@@ -806,9 +812,11 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
                     return STATUS_INVALID_PARAMETER;
                 }
                 IoMarkIrpPending(irp);
-                tditrans::post(tditrans::Cmd::QueryAddress {
-                    id, irp: irp as usize, out: va, out_len: mdl_len(irp),
-                });
+                if tditrans::pend(irp) {
+                    tditrans::post(tditrans::Cmd::QueryAddress {
+                        id, irp: irp as usize, out: va, out_len: mdl_len(irp),
+                    });
+                }
                 STATUS_PENDING
             } else {
                 nsprint!("[NETSTACK] TDI QUERY_INFORMATION type {} unhandled\n", (*p).QueryType);
@@ -825,7 +833,9 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
                 return STATUS_NOT_IMPLEMENTED;
             }
             IoMarkIrpPending(irp);
-            tditrans::post(tditrans::Cmd::Send { conn_id: id, irp: irp as usize, data: va, len });
+            if tditrans::pend(irp) {
+                tditrans::post(tditrans::Cmd::Send { conn_id: id, irp: irp as usize, data: va, len });
+            }
             STATUS_PENDING
         }
         tdi::TDI_RECEIVE => {
@@ -837,12 +847,16 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
                 return STATUS_NOT_IMPLEMENTED;
             }
             IoMarkIrpPending(irp);
-            tditrans::post(tditrans::Cmd::Receive { conn_id: id, irp: irp as usize, buf: va, len });
+            if tditrans::pend(irp) {
+                tditrans::post(tditrans::Cmd::Receive { conn_id: id, irp: irp as usize, buf: va, len });
+            }
             STATUS_PENDING
         }
         tdi::TDI_DISCONNECT => {
             IoMarkIrpPending(irp);
-            tditrans::post(tditrans::Cmd::Disconnect { conn_id: id, irp: irp as usize });
+            if tditrans::pend(irp) {
+                tditrans::post(tditrans::Cmd::Disconnect { conn_id: id, irp: irp as usize });
+            }
             STATUS_PENDING
         }
         tdi::TDI_SEND_DATAGRAM => {
@@ -861,9 +875,11 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
                     id, ip[0], ip[1], ip[2], ip[3], port, len
                 );
                 IoMarkIrpPending(irp);
-                tditrans::post(tditrans::Cmd::SendDatagram {
-                    addr_id: id, irp: irp as usize, data: va, len, ip, port,
-                });
+                if tditrans::pend(irp) {
+                    tditrans::post(tditrans::Cmd::SendDatagram {
+                        addr_id: id, irp: irp as usize, data: va, len, ip, port,
+                    });
+                }
                 STATUS_PENDING
             } else {
                 complete_now(irp, STATUS_NOT_IMPLEMENTED, 0);
@@ -879,10 +895,12 @@ unsafe fn handle_tdi(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
                 return STATUS_NOT_IMPLEMENTED;
             }
             IoMarkIrpPending(irp);
-            tditrans::post(tditrans::Cmd::ReceiveDatagram {
-                addr_id: id, irp: irp as usize, buf: va, len,
-                ret_info: (*p).ReturnDatagramInformation as usize,
-            });
+            if tditrans::pend(irp) {
+                tditrans::post(tditrans::Cmd::ReceiveDatagram {
+                    addr_id: id, irp: irp as usize, buf: va, len,
+                    ret_info: (*p).ReturnDatagramInformation as usize,
+                });
+            }
             STATUS_PENDING
         }
         _ => {

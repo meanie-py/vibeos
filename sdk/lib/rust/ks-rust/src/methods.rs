@@ -11,7 +11,6 @@ use core::ffi::c_void;
 // (sibling modules api.rs/irp.rs do the same). KSMETHOD/PKSMETHOD, KSMETHOD_SET/
 // PKSMETHOD_SET, KSFASTMETHOD_ITEM and PFNKSFASTHANDLER come from crate::types.
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 
 // guiddef.h IsEqualGUIDAligned (private per-module helper; int/BOOLEAN form — all
@@ -242,14 +241,18 @@ pub unsafe extern "system" fn KsFastMethodHandler(
             core::mem::size_of::<KSMETHOD>(),
         );
     } else {
-        // SEH2_TRY body executed directly
-        ProbeForRead(Method as PVOID, core::mem::size_of::<KSPROPERTY>() as ULONG_PTR, core::mem::size_of::<u8>() as ULONG);
-        core::ptr::copy_nonoverlapping(
-            Method as *const u8,
-            &mut MethodRequest as *mut KSMETHOD as *mut u8,
+        // C: probe + copy under _SEH2_TRY, whose handler stores the exception
+        // code; failure returns FALSE. (The C probes sizeof(KSPROPERTY) and
+        // copies sizeof(KSMETHOD): both are a KSIDENTIFIER.)
+        if let Err(status) = ntkrnl_sys::probe::safe_copy_from_user(
+            &mut MethodRequest as *mut KSMETHOD as PVOID,
+            Method as *const core::ffi::c_void,
             core::mem::size_of::<KSMETHOD>(),
-        );
-        // SEH2_EXCEPT handler omitted per rules (dead code)
+            1,
+            1,
+        ) {
+            Status = status;
+        }
 
         if !NT_SUCCESS(Status) {
             return 0u8;

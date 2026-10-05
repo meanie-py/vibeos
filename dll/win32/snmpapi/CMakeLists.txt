@@ -52,9 +52,6 @@ add_library(snmpapi MODULE ${SOURCE} snmpapi.rc)
 set_module_type(snmpapi win32dll)
 # libsnmpapi_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(snmpapi ${SNMPAPI_RUST_LIB} wine)
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(snmpapi PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(snmpapi rust_snmpapi)
 add_importlibs(snmpapi msvcrt kernel32_vista kernel32 ntdll)
 add_cd_file(TARGET snmpapi DESTINATION reactos/system32 FOR all)
