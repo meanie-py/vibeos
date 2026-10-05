@@ -37,7 +37,7 @@ BEGIN = "// ==== port resolve: tree consensus (generated -- re-run `rustconv por
 END = "// ==== end port resolve ===="
 
 _MISSING = re.compile(
-    r"^cannot find (?:function|value|type|constant|function, tuple struct or tuple variant)"
+    r"^cannot find (?:function|value|type|constant|macro|function, tuple struct or tuple variant)"
     r"(?: or [a-z ]+)? `([A-Za-z_][A-Za-z0-9_]*)` in this scope"
 )
 
@@ -190,6 +190,145 @@ def _most_common(items: list[Item]) -> Item:
         counts[(i.text, i.abi)] = counts.get((i.text, i.abi), 0) + 1
     best = max(counts.items(), key=lambda kv: (kv[1], -len(kv[0][0])))[0]
     return next(i for i in items if (i.text, i.abi) == best)
+
+
+def island_enum_aliases(names: set[str], src: Path) -> dict[str, Item]:
+    """`FreeLdr` -> `pub const FreeLdr: _BOOT_STORE_TYPE = _BOOT_STORE_TYPE_FreeLdr;`.
+
+    bindgen prefixes every enumerator with its enum's name, while C code -- and so the
+    sealed translation -- spells it bare. netid, samlib and others carried these aliases by
+    hand. The island is the authority, so this is exact: a name gets an alias only when
+    every arch's island has exactly one `<E>_<name>: <E>` constant, and the same E.
+    """
+    islands = sorted(src.glob("types_*.rs"))
+    if not islands or not names:
+        return {}
+    texts = [p.read_text(errors="replace") for p in islands]
+    out: dict[str, Item] = {}
+    for name in sorted(names):
+        pat = re.compile(
+            rf"^pub const (_?[A-Za-z][A-Za-z0-9_]*)_{re.escape(name)}\s*:\s*([A-Za-z_]\w*)\s*=",
+            re.M,
+        )
+        enums: set[str] = set()
+        ok = True
+        for text in texts:
+            hits = {m.group(1) for m in pat.finditer(text) if m.group(1) == m.group(2)}
+            if len(hits) != 1:
+                ok = False
+                break
+            enums |= hits
+        if ok and len(enums) == 1:
+            e = enums.pop()
+            out[name] = Item("const", f"const {name}: {e} = {e}_{name};", None, "island enum")
+    return out
+
+
+_WIN32MACROS_USE = re.compile(r"^pub use win32macros_rust::\{[^}]*\};$", re.M)
+
+
+def refresh_shared_macros(prelude: Path, macro_src: Path) -> bool:
+    """Re-list win32macros-rust's macros in a prelude's by-name re-export.
+
+    Scaffold writes the list once; a macro added to the shared crate later (setuplib's port
+    added RTL_NUMBER_OF_FIELD and InitializeObjectAttributes) would otherwise stay invisible
+    to every crate scaffolded before it.
+    """
+    text = prelude.read_text()
+    m = _WIN32MACROS_USE.search(text)
+    # Its folded CONSTANTS too (INVALID_HANDLE_VALUE, UNICODE_NULL): setuplib called
+    # INVALID_HANDLE_VALUE five times and the tree has no literal definition of it. A name the
+    # prelude defines itself is left out -- a named import beside a definition is E0255.
+    own = set(
+        re.findall(r"^\s*(?:pub\s+)?(?:const|static|fn|type)\s+([A-Za-z_]\w*)", text, re.M)
+    ) | set(re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", text))
+    names = sorted(
+        {
+            n
+            for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
+            for n in re.findall(
+                r"macro_rules!\s+([A-Za-z_]\w*)|^pub const ([A-Za-z_]\w*)", f.read_text(), re.M
+            )
+            for n in n
+            if n
+        }
+        - own
+    )
+    if not m or not names:
+        return False
+    line = f"pub use win32macros_rust::{{{', '.join(names)}}};"
+    if m.group(0) == line:
+        return False
+    prelude.write_text(text[: m.start()] + line + text[m.end() :])
+    return True
+
+
+SIBLING_BEGIN = "// ==== port resolve: cross-TU definitions (generated) ===="
+SIBLING_END = "// ==== end cross-TU definitions ===="
+_DEF = re.compile(
+    r"^(?P<pub>pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
+    r"(?P<kind>fn|static(?:\s+mut)?|const)\s+(?P<name>[A-Za-z_]\w*)\b",
+    re.M,
+)
+
+
+def sibling_definitions(names: set[str], modules_dir: Path) -> dict[str, list[tuple[str, bool]]]:
+    """`{name: [(module, is_pub), ...]}` for each name a translated module DEFINES at top level.
+
+    C has one namespace across TUs: `INF_GetData` is declared in infsupp.h and defined in
+    infsupp.c, and every other TU just calls it. The translation keeps the call and nothing
+    imports the definition -- setuplib had ~100 such errors once every TU was translated.
+    Only column-0 items count (an `extern { fn X(); }` declaration is indented).
+    """
+    out: dict[str, list[tuple[str, bool]]] = {}
+    for rs in sorted(modules_dir.glob("*.rs")):
+        text = rs.read_text(errors="replace")
+        for m in _DEF.finditer(text):
+            if m.group("name") in names:
+                out.setdefault(m.group("name"), []).append((rs.stem, bool(m.group("pub"))))
+    return out
+
+
+def promote_pub(path: Path, name: str) -> bool:
+    """Make a top-level definition of `name` in `path` `pub`. True if it changed."""
+    text = path.read_text()
+    pat = re.compile(
+        r"^(?!pub)((?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?(?:fn|static(?:\s+mut)?|const)\s+"
+        + re.escape(name)
+        + r"\b)",
+        re.M,
+    )
+    new, n = pat.subn(r"pub \1", text, count=1)
+    if n:
+        path.write_text(new)
+    return bool(n)
+
+
+def render_siblings(uses: dict[str, str], stem: str) -> str:
+    lines = [SIBLING_BEGIN]
+    for name in sorted(uses):
+        lines.append(f"pub use crate::{stem}::{uses[name]}::{name};")
+    lines.append(SIBLING_END)
+    return "\n".join(lines) + "\n"
+
+
+def existing_siblings(prelude: Path) -> dict[str, str]:
+    m = re.search(
+        re.escape(SIBLING_BEGIN) + r"(.*?)" + re.escape(SIBLING_END), prelude.read_text(), re.S
+    )
+    if not m:
+        return {}
+    return {name: mod for mod, name in re.findall(r"pub use crate::\w+::(\w+)::(\w+);", m.group(1))}
+
+
+def write_siblings(prelude: Path, block: str) -> bool:
+    text = prelude.read_text()
+    m = re.search(re.escape(SIBLING_BEGIN) + r".*?" + re.escape(SIBLING_END) + r"\n?", text, re.S)
+    new = text[: m.start()] + block + text[m.end() :] if m else text.rstrip("\n") + "\n\n" + block
+    if new == text:
+        return False
+    prelude.write_text(new)
+    return True
 
 
 def render(copied: dict[str, Item]) -> str:

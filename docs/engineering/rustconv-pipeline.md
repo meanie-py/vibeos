@@ -275,6 +275,62 @@ and before `crate-repair`: it is what makes the crate compile at all, and the ca
   (`SIZE_T`) in any FFI signature the guarded code calls, or the repair pass is forced to bake
   `as u32` on i386 and `as u64` on amd64/arm64 for one expression and correctly withholds both.
 
+## `rustconv port`: one module, stage by stage (2026-10-05)
+
+`rustconv port <stage> …` drives one plain-C module through the loop above and records every
+stage's time and spend in `~/vibeos-rust-staging/port/<stem>/state.json` (`port status <stem>`
+prints it). Stages, in order: `derive <module-dir> [--target T]` (profile → the
+`gen_driver_types.sh` arm), `island`, `scaffold`, `translate --cost-cap $`, `integrate`,
+`resolve`, `macros`, `check`. Every stage is idempotent; re-run any of them after a fix.
+
+- **`translate --escalate`** buys with DeepSeek thinking OFF (~1/40 of the output tokens on
+  small functions), then re-buys with thinking ON only the bodies a deterministic check
+  rejected. One `--cost-cap` covers both passes, and the second revisits only the TUs the first
+  ran. `--dry-run` prints the functions each TU would buy.
+- **`resolve`** fills the prelude between generated markers from what the tree already
+  agrees on: bare enumerators aliased to the island's prefixed constant (`FreeLdr` →
+  `_BOOT_STORE_TYPE_FreeLdr`, exact, all three islands must agree), constants that agree by
+  VALUE, extern fns that agree by ABI class. Types are never copied (allowlist the header).
+  It also refreshes the prelude's `pub use win32macros_rust::{…}` list from the shared crate.
+- **`macros`** ports the module's OWN function-like C macros the crate calls (filesup.h's
+  `DoesFileExist`, ntverrsrc.c's `VersionInfo32_*`) plus the local macros their bodies use,
+  in one thinking-off call, banked by a hash of the definitions. The reply must be exactly
+  the requested `macro_rules!`. Then `integrate` turns each `NAME(` call site into `NAME!(`.
+  SDK header macros go in `win32macros-rust` instead, once, for every crate.
+- **`check`** counts errors per arch, separates modules not yet translated, and warns
+  `UNDERCOUNT` when a failed GLOB import is present: rustc stops reporting unresolved names
+  once one fails (an invented `use ntdll_sys::nt::tier1::*;` took setuplib from 40-odd E0425
+  to zero while fixing nothing).
+
+Acceptance and seal fixes from the same run:
+
+- **A body must PARSE.** `c_body_checks.parse_findings` runs rustc's own parser (rustfmt) on
+  every paid body and rejects one that fails — one unparseable body hides every resolution
+  and type error in the crate (setuplib read "94 errors" over ~1,800). Banked bodies are
+  re-judged on replay, so `port translate --escalate` re-buys exactly the old ones that fail.
+- **`L"AddReg.NT" INF_ARCH` is sealed.** A wide literal pasted against a macro used to be
+  skipped, and the model copied the C concatenation verbatim. `macro_authority.
+  string_literal_macros` reads each arch's `-dM`; a macro that is string literals on every
+  built arch is folded into the run, and one whose value differs per arch (INF_ARCH is
+  `L"x86"`/`L"amd64"`/`L"arm64"`) becomes one name with a `#[cfg(target_arch)]` static per
+  arch (pointer positions only). 318 such sites in the tree's C.
+- **`--rebuy-fn NAME`** (translate and `port translate`): a banked body that stopped replaying
+  because a seal got stricter is refused (the guard against silent re-buys), and the refusal
+  now names this flag. It re-buys only the named bodies. A body whose C itself CHANGED (the
+  SEH scanner fix) is re-bought without it, and says so.
+- **`port macros` runs with thinking ON**: macros get none of the per-function audits, and the
+  thinking-off reply compiled `VersionInfo32_Children` as a struct-scaled pointer add.
+
+c2rust anchoring fixes the setuplib run forced, all in `c2rust_anchor.py`:
+`--preserve-unused-functions` (c2rust prunes an unused `static`, and liveness is per arch —
+`IsAcpiComputer` is only called under `#ifndef _M_AMD64`); a body missing from the requested
+arch is anchored from another, and one NO built arch's preprocessor keeps is dropped from the
+bill as compiled out (`DumpPartitionTable`); attached `-isystem/path` flags are kept (dropping
+arm64's CRT dir under `-nostdinc` was what made every arm64 c2rust run "panic"); and a
+file-scope `L"…"` in a table, which c2rust spells as a pointer into a transmuted temporary
+(rejected as a dangling pointer in a static), is hoisted into a named `RUSTCONV_C2R_WSTR_*`
+static.
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it
