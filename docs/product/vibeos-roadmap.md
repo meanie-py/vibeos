@@ -568,6 +568,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Pi 4 (real hardware): a loopback UDP `sendto()` never returns** (OPEN, 2026-10-04; owed to
+  the Pi networking work, which is in progress). `marshal32`'s sendto rung (`AF_INET` datagram
+  to `127.0.0.1:9` on an unbound socket, which forces AFD's null-transport-address path) hangs
+  on the board, and winlogon reads `exit = 0x103` (still alive). The same media passes that rung
+  in QEMU both UP and `-smp 4`, so it is neither FEX nor plain SMP. Loopback never touches the
+  NIC, so suspect tcpip/AFD state that depends on what adapters the board did or did not bring
+  up. Not yet tested natively (no arm64-native loopback-sendto probe exists), so FEX is
+  excluded only by the QEMU pass. Run: `/tmp/vibeos-cli/20261004-202912-qddv97oj-pi4-boot-arm64`
+  (its `serial.log` stops at the desktop marker; the guests are in the bench capture after the
+  run's `serial_offset`).
+
 - **amd64: a user-mode Rust panic report can bugcheck the kernel (0x1E in the debug print
   path)** (OPEN, 2026-10-04; kd lane). A panic in explorer's shell32 printed a stack walk that
   ran into garbage, and the kernel faulted (C0000005) at `ntoskrnl+0xC64C0` reading it, which
@@ -2542,6 +2553,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   claim, not a test of mine. Whoever bumps
   the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
   it is a one-command check.
+
+- **2026-10-04: x86 guests run under FEX on a real Raspberry Pi 4.** The FEX arm64 media
+  (`VIBEOS_FEX=1`, MP kernel, Cortex-A72 x4) netbooted to the desktop and ran the whole ladder:
+  **13 of 14 x86 guests pass** plus `fexprobe` — including both stress guests, `lua32` and
+  `sqlite32` — with no bugcheck. The one miss is `marshal32`, which hangs in a loopback
+  `sendto()` that is a board-side networking bug, not FEX (registry: "Pi 4 (real hardware): a
+  loopback UDP `sendto()` never returns"). Run `/tmp/vibeos-cli/20261004-202912-qddv97oj-pi4-boot-arm64`.
+  - **Real hardware enforces what QEMU does not: unaligned store-release faults.** FEX emits
+    `STLR`/`LDAR` for x86-TSO ordering; on ARMv8.0 (the A72 has no LSE2) an unaligned one takes
+    an alignment fault (`ESR=0x92000061`, raised as `STATUS_DATATYPE_MISALIGNMENT`, e.g. opcode
+    `0x889FFE9F` = `STLR wzr,[x20]`). QEMU's cortex-a72 does not fault, so this path had never
+    run. FEX handles it: 1,229 faults this boot, mostly once per site, every one recovered.
+  - **Each of those faults costs serial time on the board.** `ke/arm64/trap.rs`'s `[ALIGN]`
+    diagnostic and the `[UEXC]` dispatch dump write ~1 KB per fault byte-by-byte to the PL011 at
+    115200 baud, inside the trap. Free in QEMU, about 90 ms per fault on the Pi — roughly
+    minutes over a ladder. Nothing failed because of it, but it is the first thing to gate
+    before timing anything FEX-heavy on hardware.
+  - QEMU on the same tree: the ladder was red on `spawn32` (0xBAE4) — a lost-wakeup race in the
+    guest itself (it closed the named DONE event before the child opened it), fixed in
+    `509f9d7939f`; green UP and `-smp 4` after.
 
 - **RETRACTED 2026-10-03: "arm64 WoW64 guests fault INSIDE FEX's code cache" was never a bug.**
   Settled by rebuilding the tree it was measured on (`c3bacfab2d4`, worktree
