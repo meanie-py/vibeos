@@ -41,6 +41,7 @@ from . import (
     typedefs,
     user_lock_inventory,
 )
+from . import port as port_mod
 from .argument_facts import require_argument_facts
 from .assembler import AssemblyClobberError, assemble_file, generate_lib_rs, generate_mod_rs
 from .attempts import CHECKER_FINGERPRINT, digest, record_validation
@@ -217,6 +218,19 @@ def resolve_target(args, path):
     if name:
         if name in TARGETS:
             return TARGETS[name]
+        if ":" in name:
+            # `setuplib:base/setup/lib` — a module outside dll/ and sdk/lib, named for its
+            # crate (setuplib-rust) and located by its directory. `rustconv port` passes it.
+            name, rel = name.split(":", 1)
+            src = (REACTOS_ROOT / rel).resolve()
+            if not (src / "CMakeLists.txt").is_file():
+                raise SystemExit(f"--target {name}:{rel}: no CMakeLists.txt in {src}")
+            return make_user_dll_target(
+                name,
+                src,
+                output_crate=getattr(args, "output_crate", None),
+                sys_crate=getattr(args, "sys_crate", None),
+            )
         src = REACTOS_ROOT / "dll" / "win32" / name
         if not src.exists():
             src = REACTOS_ROOT / "dll" / name
@@ -491,6 +505,22 @@ def _scan_cpp_class_fragment(header: Path, class_name: str):
         return scan_file(Path(temp.name), force_cpp=True)
 
 
+_HEADER_SWITCHES = frozenset(
+    {
+        "NDEBUG",
+        "YDEBUG",
+        "WIN32_NO_STATUS",
+        "NTOS_MODE_USER",
+        "WIN32_LEAN_AND_MEAN",
+        "COM_NO_WINDOWS_H",
+        "_INC_WINDOWS",
+        "NONAMELESSUNION",
+        "NONAMELESSSTRUCT",
+        "COBJMACROS",
+    }
+)
+
+
 def _preamble_has_translatable_content(preamble_src: str) -> bool:
     """True when a file-scope preamble holds anything a translation must carry over.
 
@@ -526,6 +556,14 @@ def _preamble_has_translatable_content(preamble_src: str) -> bool:
         # empty-output hard-fail), the next invents a __wine_debug_channel static that collides
         # with the prelude's. wkssvc domain.c and rpcserver.c took one branch each, same input.
         if re.match(r"^WINE_(DEFAULT|DECLARE)_DEBUG_CHANNEL\s*\(", stripped):
+            continue
+        # A value-less switch that only steers how the INCLUDED headers expand (`#define
+        # NDEBUG` before `<debug.h>`): no per-file Rust rendering, like the includes it
+        # configures. setuplib's genlist.c preamble was exactly that, and the model's correct
+        # empty answer hit the hard-fail after 10/10 paid functions. INITGUID is NOT here: it
+        # changes which GUIDs this TU emits.
+        m = re.match(r"^#\s*(?:define|undef)\s+([A-Za-z_]\w*)\s*$", stripped)
+        if m and m.group(1) in _HEADER_SWITCHES:
             continue
         return True  # any surviving token => real content
     return False
@@ -5756,6 +5794,8 @@ def main():
     p = sub.add_parser("trace-catalog", help="Generate debugcon trace catalog from Rust source")
     p.add_argument("--arch", default="i386", choices=["i386", "amd64", "arm64"])
 
+    port_mod.add_parser(sub)
+
     args = parser.parse_args()
 
     commands = {
@@ -5798,6 +5838,7 @@ def main():
         "body-audit": cmd_body_audit,
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
+        "port": lambda a: sys.exit(port_mod.main(a)),
     }
 
     try:

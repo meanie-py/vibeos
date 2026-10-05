@@ -73,3 +73,13 @@ def test_type_positions_are_not_values():
     c = "void f(void) { a = 3; b = 4; memset(&v, 0, sizeof(VIEW)); }"
     rust = "fn f() { let s: [u8; 4] = [0; 3]; a = 3; b = 4; write_bytes(&mut v, 0, size_of::<VIEW>()); }"
     assert placement_findings(c, rust) == []
+
+
+def test_restored_integers_are_rust_with_the_c_value():
+    from rustconv.fact_seal import rust_integer_spelling as r
+
+    assert r("8192ULL") == "8192"
+    assert r("0x10UL") == "0x10"
+    assert r("0644") == "0o644"  # C octal; verbatim it would be decimal 644
+    assert r("0") == "0" and r("10") == "10"
+    assert r("0o17") == "0o17"
