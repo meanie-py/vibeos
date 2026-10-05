@@ -43,8 +43,13 @@ mkdir -p "$work/EFI/BOOT"
 cp "$efi" "$work/EFI/BOOT/BOOTAA64.EFI"
 cp "$img" "$work/ramdisk.img"
 freeldr_ini > "$work/freeldr.ini"
-cp "$HERE/card/config.txt" "$work/config.txt"
-files=(EFI/BOOT/BOOTAA64.EFI freeldr.ini ramdisk.img config.txt)
+cp "$HERE/card/config.txt" "$HERE/card/tryboot.txt" "$work/"
+# UEFI's device tree goes in the partition root under the default name, as on a
+# UEFI-only card; the stager's own lives in linux/ (config.txt's os_prefix).
+uefi_zip=$PI4_BENCH/cache/rpi5-uefi-v0.3.zip
+[ -f "$uefi_zip" ] || { log "missing $uefi_zip - run tools/pi5/make-card.sh once"; exit 1; }
+unzip -p "$uefi_zip" bcm2712-rpi-5-b.dtb > "$work/bcm2712-rpi-5-b.dtb"
+files=(EFI/BOOT/BOOTAA64.EFI freeldr.ini ramdisk.img config.txt tryboot.txt bcm2712-rpi-5-b.dtb)
 (cd "$work" && sha256sum "${files[@]}") > "$work/SHA256SUMS"
 
 pi5_ssh true || { log "no SSH to $PI5_SSH_TARGET - is the board up in its Linux stager? (vibeos-cli pi5 doctor)"; exit 1; }
@@ -54,7 +59,24 @@ pi5_ssh 'rm -rf /tmp/vibeos-stage && mkdir -p /tmp/vibeos-stage/EFI/BOOT'
 # Verify the staged copy, install, then verify what is on the card itself.
 pi5_ssh 'set -e
 cd /tmp/vibeos-stage && sha256sum -c --quiet SHA256SUMS
-for f in EFI/BOOT/BOOTAA64.EFI freeldr.ini ramdisk.img config.txt; do
+cd /boot/firmware
+# One-time move of the stager into linux/ (cards built before the os_prefix
+# layout carry it in the root). The kernel still in the root is what says so.
+if [ -f kernel_2712.img ]; then
+    sudo mkdir -p linux
+    sudo mv -f kernel_2712.img linux/
+    [ -f initramfs_2712 ] && sudo mv -f initramfs_2712 linux/
+    sudo mv -f bcm2712-rpi-5-b.dtb linux/
+    sudo cp cmdline.txt linux/cmdline.txt
+    sudo rm -f rpi5-uefi.dtb
+fi
+# config.txt sends the next normal boot to linux/: never install it unless the
+# stager is complete there.
+for f in kernel_2712.img initramfs_2712 bcm2712-rpi-5-b.dtb cmdline.txt; do
+    [ -s "linux/$f" ] || { echo "linux/$f missing: not installing config.txt" >&2; exit 1; }
+done
+cd /tmp/vibeos-stage
+for f in EFI/BOOT/BOOTAA64.EFI freeldr.ini ramdisk.img tryboot.txt bcm2712-rpi-5-b.dtb config.txt; do
     sudo install -D -m 0755 "$f" "/boot/firmware/$f"
 done
 sync
@@ -73,7 +95,7 @@ PY
 log "staged $commit${dirty:+ (dirty tree)}; card verified"
 
 [ "${1:-}" = --no-reboot ] && exit 0
-# `reboot '0 tryboot'` applies config.txt's [tryboot] section for one boot. The
+# `reboot '0 tryboot'` boots tryboot.txt instead of config.txt, once. The
 # SSH session dies with the reboot, so its exit status means nothing here.
 log "rebooting into UEFI + VibeOS (tryboot)"
 pi5_ssh "sudo systemd-run --on-active=1 /usr/sbin/reboot '0 tryboot'" >/dev/null 2>&1 || true
