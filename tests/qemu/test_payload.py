@@ -94,7 +94,7 @@ def _frame_delta(vm: QemuVM, gap: float) -> float:
     vm.screendump(b_p)
     a = Image.open(a_p).convert("RGB")
     b = Image.open(b_p).convert("RGB")
-    diff = ImageChops.difference(a, b).convert("L").point(lambda v: 255 if v > 8 else 0)
+    diff = ImageChops.difference(a, b).convert("L").point([255 if v > 8 else 0 for v in range(256)])
     hist = diff.histogram()
     changed = sum(hist[1:])
     return changed / float(a.size[0] * a.size[1])

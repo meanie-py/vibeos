@@ -25,13 +25,55 @@ def test_requested_arch_does_not_fall_back_to_another_build(tmp_path, monkeypatc
 def test_strict_rejects_empty_extracted_map(monkeypatch):
     monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub static X: i32 = 0;")
     with pytest.raises(anchor.C2RustError, match="no extracted function"):
-        anchor.build_anchor_map(Path("pilot.c"), strict=True)
+        anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names={"Expected"})
+
+
+def test_a_data_only_tu_needs_no_function_anchors(monkeypatch):
+    # setuplib fileqsup.c: one file-scope global, no functions -- only a preamble to translate
+    monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub static X: i32 = 0;")
+    assert anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names=set()) == {}
+
+
+def _elsewhere(found, failures):
+    def fake(c_file, names, timeout):
+        anchor._ANCHOR_FAILURES[c_file] = failures
+        return dict(found), names - set(found)
+
+    return fake
 
 
 def test_strict_rejects_partial_map(monkeypatch):
+    # Another arch could not settle the name (its c2rust and preprocessor both failed).
     monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub unsafe fn Kept() {}")
-    with pytest.raises(anchor.C2RustError, match="Lost"):
+    monkeypatch.setattr(anchor, "_anchor_elsewhere", _elsewhere({}, ["build-i386: panic"]))
+    with pytest.raises(anchor.C2RustError, match="Lost") as e:
         anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names={"Kept", "Lost"})
+    assert not isinstance(e.value, anchor.CompiledOut)
+
+
+def test_a_body_only_another_arch_compiles_is_anchored_from_it(monkeypatch):
+    # setuplib IsAcpiComputer: called only under `#ifndef _M_AMD64`
+    monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub unsafe fn Kept() {}")
+    monkeypatch.setattr(anchor, "_anchor_elsewhere", _elsewhere({"Acpi": "{ x }"}, []))
+    got = anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names={"Kept", "Acpi"})
+    assert got["Acpi"] == "{ x }"
+
+
+def test_a_body_no_arch_compiles_is_reported_compiled_out(monkeypatch):
+    # partlist.c DumpPartitionTable under `#ifdef DUMP_PARTITION_TABLE`, defined nowhere
+    monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub unsafe fn Kept() {}")
+    monkeypatch.setattr(anchor, "_anchor_elsewhere", _elsewhere({}, []))
+    with pytest.raises(anchor.CompiledOut) as e:
+        anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names={"Kept", "Dump"})
+    assert e.value.names == {"Dump"}
+
+
+def test_attached_isystem_is_kept():
+    # the arm64 db spells `-isystem/…/crt` under -nostdinc
+    flags = anchor._extract_clang_flags(
+        {"arguments": ["cc", "-nostdinc", "-isystem/inc/crt", "-c", "x.c"]}
+    )
+    assert "-isystem/inc/crt" in flags
 
 
 def test_complete_map_is_accepted(monkeypatch):
@@ -149,3 +191,18 @@ def test_pseh_variants_are_tried_labelled_first():
         assert names == {"-D_SEH2_TRY", "-D_SEH2_FINALLY", "-D_SEH2_EXCEPT(...)", "-D_SEH2_END"}
         # _SEH2_LEAVE is deliberately NOT overridden — it must fail loudly, never quietly.
         assert not any(d.startswith("-D_SEH2_LEAVE") for d in variant)
+
+
+def test_wide_temporaries_in_a_static_are_hoisted_to_named_statics():
+    # setuplib mui.c: `{ L"Arial,186" }` in a file-scope table
+    pre = (
+        "pub static mut T: [S; 1] = unsafe { [S { F: ::core::mem::transmute::<\n"
+        "    [u8; 6],\n    [::core::ffi::c_ushort; 3],\n"
+        '>(*b"A\\0,\\0\\0\\0")\n    .as_ptr() as PCWSTR }] };'
+    )
+    out = anchor.hoist_wide_temporaries(pre)
+    assert "transmute" not in out and ".as_ptr() as PCWSTR" in out
+    name = out.split("pub static ")[1].split(":")[0]
+    assert name.startswith("RUSTCONV_C2R_WSTR_")
+    assert "[0x0041u16, 0x002C, 0x0000]" in out
+    assert anchor.hoist_wide_temporaries(pre + "\n" + pre).count("pub static RUSTCONV") == 1

@@ -504,44 +504,8 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
 
         // DBG: after TLB flush
 
-        #[cfg(target_arch = "aarch64")]
         {
-            // ARM64: Eagerly commit physical pages for paged pool
-            let mut temp_pte = ValidKernelPte;
-            let mut pointer_pte = MiAddressToPte(base_va);
-            let end_pte = pointer_pte.add(size_in_pages as usize);
-            let old_irql = MiAcquirePfnLock();
-            while pointer_pte < end_pte {
-                MI_SET_USAGE(MI_USAGE_PAGED_POOL);
-                MI_SET_PROCESS2("Kernel");
-                let page_frame_number = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
-                temp_pte.set_page_frame_number(page_frame_number);
-                MI_WRITE_VALID_PTE(pointer_pte, temp_pte);
-
-                let pfn1 = MI_PFN_ELEMENT(page_frame_number);
-                (*pfn1).set_entire_frame(0);
-                (*pfn1).set_reference_count(1);
-                (*pfn1).set_share_count(1);
-                (*pfn1).set_pte_address(pointer_pte);
-                (*pfn1).set_page_location(ActiveAndValid);
-                (*pfn1).set_cache_attribute(MiCached);
-                (*pfn1).set_pte_frame(PFN_FROM_PTE(MiAddressToPte(pointer_pte as PVOID)));
-
-                // Increment containing page table's share count
-                let pfn2 = MI_PFN_ELEMENT((*pfn1).pte_frame());
-                (*pfn2).set_share_count((*pfn2).share_count() + 1);
-
-                pointer_pte = pointer_pte.add(1);
-            }
-            MiReleasePfnLock(old_irql);
-
-            RtlZeroMemory(base_va, (size_in_pages as usize) << PAGE_SHIFT);
-            return base_va;
-        }
-
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            // Other arches: demand-zero writable PTEs
+            // Demand-zero writable PTEs
             let mut temp_pte = MMPTE { Long: 0 };
             MI_MAKE_SOFTWARE_PTE(&mut temp_pte, MM_READWRITE);
 
@@ -630,13 +594,6 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
                 let pointer_pte = MiAddressToPte(base_va);
                 let pfn1 = MiGetPfnEntry(PFN_FROM_PTE(pointer_pte));
 
-                #[cfg(target_arch = "aarch64")]
-                {
-                    // ARM64: Clear residual allocation tracking bits
-                    (*pfn1).set_start_of_allocation(false);
-                    (*pfn1).set_end_of_allocation(false);
-                    (*pfn1).set_verifier_allocation(false);
-                }
 
                 (*pfn1).set_start_of_allocation(true);
 
@@ -649,16 +606,8 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
                     let end_pte = pointer_pte.add(size_in_pages as usize - 1);
                     let pfn_end = MiGetPfnEntry((*end_pte).page_frame_number());
 
-                    #[cfg(target_arch = "aarch64")]
-                    {
-                        (*pfn_end).set_end_of_allocation(false);
-                    }
                     (*pfn_end).set_end_of_allocation(true);
                 } else {
-                    #[cfg(target_arch = "aarch64")]
-                    {
-                        (*pfn1).set_end_of_allocation(false);
-                    }
                     (*pfn1).set_end_of_allocation(true);
                 }
 

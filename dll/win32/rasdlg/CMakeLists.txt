@@ -47,9 +47,6 @@ add_library(rasdlg MODULE ${SOURCE})
 set_module_type(rasdlg win32dll)
 # librasdlg_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(rasdlg ${RASDLG_RUST_LIB} wine uuid)
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the
-# 64-bit division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(rasdlg PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(rasdlg rust_rasdlg)
 add_importlibs(rasdlg msvcrt kernel32 ntdll)
 add_cd_file(TARGET rasdlg DESTINATION reactos/system32 FOR all)

@@ -33,6 +33,7 @@ from pathlib import Path
 
 from .config import REACTOS_ROOT
 from .function_coverage import rust_definition_bodies
+from .wide_seal import _render_units
 
 # Library preference when no arch is specified. The CLI always pins its requested arch.
 _DB_BUILD_DIRS = ["build-amd64", "build-arm64", "build-i386"]
@@ -267,6 +268,11 @@ def _extract_clang_flags(entry: dict) -> list[str]:
                 "-D",
                 "-U",
                 "-I",
+                # Attached forms too: the arm64 db spells `-isystem/…/sdk/include/crt`, and
+                # dropping it under `-nostdinc` left <stdio.h> unresolvable on that arch.
+                "-isystem",
+                "-idirafter",
+                "-iquote",
                 "--target=",
                 "--sysroot=",
                 "-std=",
@@ -303,6 +309,20 @@ class C2RustError(RuntimeError):
     an anchor transpilation. Raised instead of silently degrading to a pure-LLM
     translation: a requested-but-failed compiler anchor is a hard error, never a
     dumb fallback (see AGENTS.md — "Fail loud, never silently degrade")."""
+
+
+class CompiledOut(C2RustError):
+    """Required functions that NO built arch's preprocessor keeps.
+
+    Not a c2rust failure: c2rust ran and, with unused functions preserved, lists every
+    definition the compiler saw. A name absent on every arch sits under a condition the
+    build never sets -- partlist.c's `DumpPartitionTable` under `#ifdef
+    DUMP_PARTITION_TABLE`, which only diskpart.h mentions, commented out. The caller drops
+    these from the worklist (they are in no object we link) and says so."""
+
+    def __init__(self, c_file: Path, names: set[str]):
+        self.names = names
+        super().__init__(f"{c_file}: compiled out on every built arch: " + ", ".join(sorted(names)))
 
 
 # Transpile is the slow step (~seconds); a file's anchors AND preamble both need it.
@@ -466,6 +486,11 @@ def _transpile_attempt(
             "--output-dir",
             str(out_dir),
             str(c_file.resolve()),
+            # c2rust prunes a `static` function nothing calls. Liveness is per ARCH:
+            # setuplib's IsAcpiComputer is called only under `#ifndef _M_AMD64`, so the amd64
+            # anchor lacked a body the i386 and arm64 builds compile. Every definition the
+            # preprocessor kept is a body we translate, so keep them all.
+            "--preserve-unused-functions",
             "--",
             # BEFORE the db flags, so a -D of the same name in the db still wins.
             *_ATTR_NEUTRALIZERS,
@@ -514,9 +539,24 @@ def build_anchor_map(
     if text is None:
         return {}
     fns = _parse_functions(text)
-    if strict and not fns:
+    # Only an error when functions were EXPECTED: a TU of file-scope data alone (setuplib's
+    # fileqsup.c) correctly transpiles to no functions, and has only a preamble to translate.
+    if strict and not fns and required_names:
         raise C2RustError(f"{c_file}: c2rust output contains no extracted function definitions")
     missing = (required_names or set()) - set(fns)
+    if strict and missing:
+        found, absent = _anchor_elsewhere(c_file, missing, timeout)
+        for name, body in found.items():
+            fns[name] = body
+        if verbose and found:
+            print(
+                f"  [c2rust] {c_file.name}: {len(found)} anchor(s) from another arch, where "
+                f"the requested one does not compile them: {', '.join(sorted(found))}",
+                file=sys.stderr,
+            )
+        if absent == missing - set(found) and absent and not _ANCHOR_FAILURES.get(c_file):
+            raise CompiledOut(c_file, absent)
+        missing = missing - set(found)
     if strict and missing:
         raise C2RustError(
             f"{c_file}: missing required function anchors: " + ", ".join(sorted(missing))
@@ -524,6 +564,62 @@ def build_anchor_map(
     if verbose:
         print(f"  [c2rust] anchors: {len(fns)} fn(s) from {c_file.name}", file=sys.stderr)
     return fns
+
+
+_ANCHOR_FAILURES: dict[Path, list[str]] = {}
+
+
+def _anchor_elsewhere(
+    c_file: Path, names: set[str], timeout: int
+) -> tuple[dict[str, str], set[str]]:
+    """Look for `names` in every built arch's transpile: (bodies found, names in none).
+
+    A name is reported absent only when every db settles it. A db whose c2rust run fails
+    (arm64 panics on setuplib's partlist.c) is asked the narrower question directly: does
+    the identifier survive its PREPROCESSOR at all? Anything unsettled is recorded in
+    _ANCHOR_FAILURES and the caller keeps the hard error.
+    """
+    found: dict[str, str] = {}
+    failures: list[str] = []
+    for entry, build_dir in _find_db_entries(c_file):
+        attempts: list[str] = []
+        text = _transpile_one(c_file, entry, build_dir, timeout, attempts, strict=True)
+        if text is None:
+            kept = _preprocessor_keeps(c_file, entry, build_dir, names, timeout)
+            if kept is None or kept - set(found):
+                failures.extend(attempts)
+            continue
+        fns = _parse_functions(text)
+        for n in names - set(found):
+            if n in fns:
+                found[n] = fns[n]
+    _ANCHOR_FAILURES[c_file] = failures
+    return found, names - set(found)
+
+
+def _preprocessor_keeps(
+    c_file: Path, entry: dict, build_dir: Path, names: set[str], timeout: int
+) -> set[str] | None:
+    """The subset of `names` still spelled anywhere after `clang -E`, or None if it failed."""
+    flags = _extract_clang_flags(entry)
+    extra = [] if _targets_i386(flags) else ["-D__thiscall="]
+    # The db's OWN compiler: arm64 is llvm-mingw, whose CRT headers come with the driver
+    # rather than from an -I, so a system clang cannot even find <stdio.h> there.
+    toks = entry.get("arguments") or shlex.split(entry.get("command", ""))
+    cc = _decanon(toks[0]) if toks else "clang"
+    try:
+        proc = subprocess.run(
+            [cc, "-E", "-P", *_ATTR_NEUTRALIZERS, *extra, *flags, str(c_file.resolve())],
+            cwd=str(build_dir),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return {n for n in names if re.search(rf"\b{re.escape(n)}\b", proc.stdout)}
 
 
 # File-scope DATA tables c2rust transcribes compiler-exact: the lookup tables / S-boxes /
@@ -578,4 +674,63 @@ def build_preamble(
         i += 1
     if verbose:
         print(f"  [c2rust] preamble: {len(out)} data item(s) from {c_file.name}", file=sys.stderr)
-    return "\n\n".join(out)
+    return hoist_wide_temporaries("\n\n".join(out))
+
+
+# c2rust spells a file-scope `L"Arial,186"` as `transmute::<[u8; 20], [c_ushort; 10]>(*b"A\0r\0…")
+# .as_ptr()`: a pointer into a TEMPORARY, which const-eval rejects in a static's final value
+# ("encountered dangling pointer"). setuplib's mui.c font tables were 22 such errors.
+_WIDE_TEMP_RE = re.compile(
+    r"::core::mem::transmute::<\s*\[u8;\s*(\d+)\]\s*,\s*\[::core::ffi::c_ushort;\s*(\d+)\]\s*,?\s*>"
+    r"\(\s*\*b\"((?:[^\"\\]|\\.)*)\"\s*,?\s*\)\s*\.as_ptr\(\)"
+)
+_C2R_WSTR_PREFIX = "RUSTCONV_C2R_WSTR_"
+
+
+def _byte_string(body: str) -> bytes:
+    r"""Decode a Rust `b"..."` body (c2rust emits \0, \xNN, \n, \t, \r, \\, \", \')."""
+    out = bytearray()
+    i = 0
+    simple = {"0": 0, "n": 10, "t": 9, "r": 13, "\\": 92, '"': 34, "'": 39}
+    while i < len(body):
+        c = body[i]
+        if c != "\\":
+            out += c.encode()
+            i += 1
+            continue
+        e = body[i + 1]
+        if e == "x":
+            out.append(int(body[i + 2 : i + 4], 16))
+            i += 4
+        elif e in simple:
+            out.append(simple[e])
+            i += 2
+        else:
+            raise C2RustError(f"unhandled byte-string escape \\{e} in c2rust output")
+    return bytes(out)
+
+
+def hoist_wide_temporaries(text: str) -> str:
+    """Give each transmuted wide temporary a named `[u16; N]` static, pointed to by name.
+
+    The static is named by content hash, so a string used twice is emitted once; the prefix
+    differs from wide_seal's `RUSTCONV_WSTR_` so the two generators can never define one
+    name twice in a module.
+    """
+    import hashlib
+
+    statics: dict[str, str] = {}
+
+    def repl(m: re.Match[str]) -> str:
+        raw = _byte_string(m.group(3))
+        if len(raw) != int(m.group(1)) or len(raw) != 2 * int(m.group(2)):
+            raise C2RustError(f"c2rust wide literal length mismatch: {m.group(0)[:120]}")
+        units = tuple(int.from_bytes(raw[k : k + 2], "little") for k in range(0, len(raw), 2))
+        name = _C2R_WSTR_PREFIX + hashlib.sha256(raw).hexdigest()[:12].upper()
+        statics[name] = f"pub static {name}: [u16; {len(units)}] = {_render_units(units)};"
+        return f"{name}.as_ptr()"
+
+    body = _WIDE_TEMP_RE.sub(repl, text)
+    if not statics:
+        return text
+    return "\n".join(statics[k] for k in sorted(statics)) + "\n\n" + body

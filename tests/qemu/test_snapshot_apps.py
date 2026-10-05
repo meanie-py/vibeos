@@ -141,7 +141,7 @@ def _changed_fraction(ppm_a, ppm_b) -> float:
     b = Image.open(ppm_b).convert("RGB")
     diff = ImageChops.difference(a, b).convert("L")
     # Threshold out codec/dither noise; count pixels that really moved.
-    moved = sum(1 for px in diff.getdata() if px > 16)
+    moved = sum(diff.histogram()[17:])  # pixels with a delta > 16
     return moved / (a.width * a.height)
 
 
@@ -181,14 +181,13 @@ def pristine_ref(vm: QemuVM):
     # amd64 showed an 88% KiUnwaitThread storm here; this surfaces whether
     # i386's desktop is the clean idle baseline (and is the owed smoke-TODO).
     try:
+        assert vm._proc is not None
         idle = cpu_pct(vm._proc.pid, 2.0)
-        vm._idle_cpu_pct = idle
         print(
             f"\n[snap] steady-state qemu CPU = {idle}% "
             f"({'CLEAN idle' if idle < 15 else 'SPINNING — not idle'})"
         )
     except Exception as e:
-        vm._idle_cpu_pct = None
         print(f"\n[snap] idle CPU probe failed: {e}")
     ref = vm.work_dir / "pristine_ref.ppm"
     vm.screendump(ref)

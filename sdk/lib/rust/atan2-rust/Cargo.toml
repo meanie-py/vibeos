@@ -1,0 +1,16 @@
+# atan2-rust — the `atan2` static library gdi32 links (sdk/lib/crt/math/math.cmake): the one
+# libm function gdi32's Wine EMF driver calls (emfdrv.c, enhmfdrv/graphics.c, arc angles).
+# gdi32 imports no CRT, so it carries its own. Built by math.cmake as
+# rust_staticlib_variant(atan2_rust ...), SSE2 on i386 like msvcrt-crt-rust (libm's f64 code
+# needs it).
+[package]
+name = "atan2-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+libm = "0.2.16"

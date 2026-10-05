@@ -11,6 +11,12 @@
 //! mechanism.
 #![no_std]
 
+// Linked for their #[no_mangle] exports (see Cargo.toml): an unreferenced dependency would
+// not reach the archive.
+extern crate delayimp_rt;
+extern crate pseh_rt;
+extern crate setjmp_rt;
+
 // Force the rlib's objects (the #[no_mangle] CRT bodies) into the archive.
 extern crate msvcrt_crt_rust;
 

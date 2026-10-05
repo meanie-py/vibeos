@@ -188,7 +188,9 @@ def _extract_extern_blocks(code: str) -> tuple[list[str], str]:
         stripped = line.strip()
 
         # Detect start of extern block
-        if re.match(r'extern\s+"[^"]*"\s*\{', stripped):
+        # `unsafe extern "X" {` is the Rust 2024 spelling the model increasingly writes;
+        # missing it left the block (or, after a later strip, a bare `unsafe` line) behind.
+        if re.match(r'(?:unsafe\s+)?extern\s+"[^"]*"\s*\{', stripped):
             block_lines = [line]
             brace_count = stripped.count("{") - stripped.count("}")
             i += 1
@@ -409,6 +411,12 @@ def _build_globals_section(scan: ScanResult, all_resolves: dict[str, ResolveResu
     return ""
 
 
+_FN_START = re.compile(
+    r"#\[no_mangle\]|#\[cfg\("
+    r"|(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?fn\s"
+)
+
+
 def stitch_file(
     functions: dict[str, str],
     deps: list[FunctionDep],
@@ -462,11 +470,13 @@ def stitch_file(
         fn_lines = code_no_externs.splitlines()
         fn_start_idx = None
         for i, line in enumerate(fn_lines):
-            stripped = line.strip()
-            # Detect function definition start
-            if re.match(
-                r"(#\[no_mangle\]|#\[cfg\(|pub\s+unsafe|unsafe\s+fn|pub\s+fn)", stripped
-            ) or re.match(r"// CODE_SEG", stripped):
+            # Detect function definition start -- at COLUMN 0 only. This used to match the
+            # STRIPPED line and missed `unsafe extern "C" fn` (no `pub`), so in setuplib's
+            # UpdateDiskLayout the first hit was an INDENTED `#[cfg(feature = ..)]` statement
+            # deep in the body: the whole function above it was hoisted as a "standalone
+            # item" and its last statement and `}` were emitted 2,700 lines later, nesting
+            # 20 functions inside it. Compiles; the functions vanish from the module.
+            if _FN_START.match(line) or line.startswith("// CODE_SEG"):
                 fn_start_idx = i
                 break
 

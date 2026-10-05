@@ -762,6 +762,47 @@ def test_repair_crate_reverts_a_pass_that_raises_the_error_count(tmp_path: Path)
     assert (crate_dir / "src" / "a.rs").read_bytes() == source
 
 
+def test_repair_crate_reverts_a_pass_that_adds_a_halting_error(tmp_path: Path):
+    """A pass that adds an expansion error makes the TOTAL fall (typeck never runs) -- revert."""
+    crate_dir = tmp_path / "demo-rust"
+    (crate_dir / "src").mkdir(parents=True)
+    source = _ARG_SRC
+    (crate_dir / "src" / "a.rs").write_bytes(source)
+    file_name = "demo-rust/src/a.rs"
+    start = source.index(b"v.len()", 40)
+    mismatch = _diag(
+        "mismatched types",
+        spans=[
+            _span(
+                file_name,
+                start,
+                start + 7,
+                is_primary=True,
+                label="expected `u16`, found `usize`",
+                line=3,
+            )
+        ],
+    )
+    halting = {"level": "error", "message": "no rules expected `.`", "code": None, "spans": []}
+    calls = {"n": 0}
+
+    def fake_check(target: str) -> CargoCheckRun:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return CargoCheckRun(target, (mismatch,) * 5, 5, 101)
+        return CargoCheckRun(target, (halting,), 1, 101)  # "5 -> 1", but only one is real
+
+    session = repair_crate(
+        "demo-rust",
+        root=tmp_path,
+        targets=["amd64"],
+        rules=[RULE_NUMERIC_CAST],
+        check_runner=fake_check,
+    )
+    assert session.status == "regressed" and "parse/expansion" in session.detail
+    assert (crate_dir / "src" / "a.rs").read_bytes() == source
+
+
 def test_repair_crate_reaches_a_fixpoint_and_ledgers_every_edit(tmp_path: Path):
     crate_dir = tmp_path / "demo-rust"
     (crate_dir / "src").mkdir(parents=True)
@@ -961,11 +1002,12 @@ def test_anon_union_rule_reads_through_a_raw_pointer_type():
     assert [e.replacement for e in plan.edits] == ["__bindgen_anon_1.hIcon"]
 
 
-def test_anon_union_rule_declines_a_struct_literal_field():
+def test_anon_union_rule_rewrites_a_struct_literal_field_without_illegal_syntax():
     """E0560 looks like the same mistake but `S { a.b: v }` is not legal Rust.
 
-    Regression guard: the hand-rolled version of this pass rewrote E0560 sites and every one
-    came back a parse error on the next pass.
+    Regression guard: the hand-rolled version of this pass rewrote E0560 sites INTO that
+    form and every one came back a parse error on the next pass. The rewrite is a zeroed
+    value plus field stores, which must parse.
     """
     src = b"pub fn f() -> _PROPSHEETHEADERW {\n    _PROPSHEETHEADERW { nStartPage: 0 }\n}\n"
     at = (src.index(b"nStartPage"), src.index(b"nStartPage") + len(b"nStartPage"))
@@ -982,10 +1024,13 @@ def test_anon_union_rule_declines_a_struct_literal_field():
         rules=[RULE_ANON_UNION],
         anon_unions=harvest_anon_unions({"types_i386.rs": _PSH_ISLAND}),
     )
-    assert not plan.edits
-    assert [item.reason for item in plan.skipped] == ["struct_literal_field"]
-    # Declining is not claiming: the diagnostic still has to show up as RED for a human.
-    assert [item.code for item in plan.red] == ["E0560"]
+    (edit,) = plan.edits
+    assert edit.replacement.startswith("{ let mut __lit: _PROPSHEETHEADERW = core::mem::zeroed();")
+    assert "__bindgen_anon_" in edit.replacement and "{ nStartPage" not in edit.replacement
+    fixed = src[: edit.byte_start] + edit.replacement.encode() + src[edit.byte_end :]
+    from rustconv.c_body_checks import parse_findings
+
+    assert parse_findings(fixed.decode()) == []
 
 
 def test_anon_union_map_never_shadows_an_outer_field():
@@ -1385,3 +1430,215 @@ def test_size_of_val_wrapper_is_swallowed_whole():
     assert [e.replacement for e in plan.edits] == ["core::mem::size_of::<NONCLIENTMETRICS>()"]
     edit = plan.edits[0]
     assert src[edit.byte_start : edit.byte_end] == b"core::mem::size_of_val(&NONCLIENTMETRICS)"
+
+
+def test_a_macro_type_argument_is_not_a_lost_sizeof():
+    """setuplib: `RTL_NUMBER_OF_FIELD(VOLINFO, DeviceName)` became `size_of::<VOLINFO>()`."""
+    for call in (
+        b"RTL_NUMBER_OF_FIELD(VOLINFO, DeviceName)",
+        b"RTL_NUMBER_OF_FIELD!(VOLINFO, DeviceName)",
+    ):
+        src = b"pub fn f() -> usize {\n    " + call + b" + 1\n}\n"
+        plan = propose_edits(
+            [_found_type_diag(b"VOLINFO", src)],
+            _reader({"src/a.rs": src}),
+            target="i386",
+            rules=[RULE_SIZEOF_TYPE],
+        )
+        assert not plan.edits
+        assert [s.reason for s in plan.skipped] == ["macro_type_argument"]
+
+
+def _mismatch(src: bytes, piece: bytes, expected: str, found: str) -> dict:
+    at = src.index(piece)
+    return _diag(
+        "mismatched types",
+        code="E0308",
+        spans=[
+            _span(
+                "src/a.rs",
+                at,
+                at + len(piece),
+                is_primary=True,
+                line=2,
+                label=f"expected `{expected}`, found `{found}`",
+            )
+        ],
+    )
+
+
+def test_c_truthiness_both_directions():
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = (
+        b"fn f() -> u8 {\n    if !Ok(a, b) { return 0; }\n    if Done() { return 1; }\n"
+        b"    if !(x & 4) { return 2; }\n    let r: u8 = x == 2;\n    r\n}\n"
+    )
+    diags = [
+        _mismatch(src, b"!Ok(a, b)", "bool", "u8"),
+        _mismatch(src, b"Done()", "bool", "u8"),
+        _mismatch(src, b"!(x & 4)", "bool", "u32"),
+        _mismatch(src, b"x == 2", "u8", "bool"),
+    ]
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS]
+    )
+    assert sorted(e.replacement for e in plan.edits) == sorted(
+        ["((Ok(a, b)) == 0)", "((Done()) != 0)", "(((x & 4)) == 0)", "(x == 2) as u8"]
+    )
+
+
+def test_c_truthiness_never_bakes_a_pointer_width():
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = b"fn f() {\n    let n: usize = a == b;\n}\n"
+    plan = propose_edits(
+        [_mismatch(src, b"a == b", "usize", "bool")],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_C_TRUTHINESS],
+    )
+    assert not plan.edits
+
+
+def test_a_call_through_an_option_fn_unwraps_the_callee():
+    from rustconv.crate_repair import RULE_OPTION_FN_CALL
+
+    src = b"fn f(s: &S) -> u32 {\n    (s.Hook)(1) + g(2)\n}\n"
+    diags = []
+    for callee in (b"(s.Hook)", b"g"):
+        at = src.index(callee + b"(") if callee == b"g" else src.index(callee)
+        diags.append(
+            _diag(
+                'expected function, found `Option<unsafe extern "C" fn(u32) -> u32>`',
+                code="E0618",
+                spans=[_span("src/a.rs", at, at + len(callee), is_primary=True, line=2)],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OPTION_FN_CALL]
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "((s.Hook).unwrap_unchecked())",
+        "(g.unwrap_unchecked())",
+    ]
+
+
+def test_an_uninitialised_c_local_is_zeroed_at_its_declaration():
+    from rustconv.crate_repair import RULE_UNINIT_LOCAL
+
+    src = b"unsafe fn f() {\n    let mut buf: [u8; 4];\n    let mut io: IO_STATUS_BLOCK;\n    let n;\n}\n"
+    diags = []
+    for name in (b"mut buf", b"mut io", b"n;"):
+        at = src.index(name)
+        n = len(name.rstrip(b";"))
+        diags.append(
+            _diag(
+                "used binding isn't initialized",
+                code="E0381",
+                spans=[
+                    _span(
+                        "src/a.rs", at, at + n, label="binding declared here but left uninitialized"
+                    ),
+                ],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_UNINIT_LOCAL]
+    )
+    out = src
+    for e in sorted(plan.edits, key=lambda e: e.byte_start, reverse=True):
+        out = out[: e.byte_start] + e.replacement.encode() + out[e.byte_end :]
+    assert b"let mut buf: [u8; 4] = core::mem::zeroed();" in out
+    assert b"let mut io: IO_STATUS_BLOCK = core::mem::zeroed();" in out
+    assert b"let n;" in out  # no type: left RED
+
+
+def test_a_zero_literal_compared_with_a_bool_call_becomes_false():
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = b"fn f() {\n    while IsListEmpty(h) == 0 {}\n    if Flag() != 1 {}\n}\n"
+    diags = []
+    for lit in (b"== 0", b"!= 1"):
+        at = src.index(lit) + 3
+        diags.append(
+            _diag(
+                "mismatched types",
+                code="E0308",
+                spans=[
+                    _span(
+                        "src/a.rs",
+                        at,
+                        at + 1,
+                        is_primary=True,
+                        label="expected `bool`, found integer",
+                    )
+                ],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS]
+    )
+    assert sorted(e.replacement for e in plan.edits) == ["false", "true"]
+
+
+def test_rustc_mut_suggestion_is_applied_once_per_binding():
+    from rustconv.crate_repair import RULE_MUT_BINDING
+
+    src = b"fn f(x: u32) {\n    x = 1;\n    x = 2;\n}\n"
+    at = src.index(b"x: u32")
+    child = {
+        "message": "consider making this binding mutable",
+        "spans": [
+            {
+                **_span("src/a.rs", at, at),
+                "suggested_replacement": "mut ",
+                "suggestion_applicability": "MachineApplicable",
+            }
+        ],
+        "children": [],
+    }
+    diags = [
+        {
+            **_diag("cannot assign to immutable argument `x`", code="E0384", spans=[]),
+            "children": [child],
+        }
+        for _ in range(2)
+    ]
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_MUT_BINDING]
+    )
+    assert [(e.byte_start, e.replacement) for e in plan.edits] == [(at, "mut ")]
+
+
+def test_an_anon_union_struct_literal_becomes_zeroed_plus_stores():
+    from rustconv.crate_repair import RULE_ANON_UNION
+
+    src = b"unsafe fn f() {\n    let mut io: IO_STATUS_BLOCK = IO_STATUS_BLOCK { Status: 0, Information };\n}\n"
+    at = src.index(b"Status:")
+    diag = _diag(
+        "struct `ntdll_sys::nt::_IO_STATUS_BLOCK` has no field named `Status`",
+        code="E0560",
+        spans=[_span("src/a.rs", at, at + 6, is_primary=True, line=2)],
+    )
+    plan = propose_edits(
+        [diag],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_ANON_UNION],
+        anon_unions={("_IO_STATUS_BLOCK", "Status"): "__bindgen_anon_1.Status"},
+    )
+    assert [e.replacement for e in plan.edits] == [
+        "{ let mut __lit: IO_STATUS_BLOCK = core::mem::zeroed(); "
+        "__lit.__bindgen_anon_1.Status = 0; __lit.Information = Information; __lit }"
+    ]
+    # functional update is not ours to expand
+    src2 = src.replace(b"Information }", b"..base }")
+    plan = propose_edits(
+        [diag],
+        _reader({"src/a.rs": src2}),
+        target="amd64",
+        rules=[RULE_ANON_UNION],
+        anon_unions={("_IO_STATUS_BLOCK", "Status"): "__bindgen_anon_1.Status"},
+    )
+    assert not plan.edits

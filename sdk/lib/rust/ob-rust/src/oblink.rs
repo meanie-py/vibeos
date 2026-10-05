@@ -80,10 +80,15 @@ use ntkrnl_sys::inline::ke::KeQuerySystemTime;
 // Inline probe helpers (C macros in probe.h)
 // ============================================================================
 
+/// probe.h's ProbeForWriteUnicodeString: range-check, then read the struct and
+/// write it back to prove the page writable. The C raises into the caller's
+/// _SEH2_TRY; this returns the code. (It was a bare read/write with no range
+/// check, so a user caller could have the kernel rewrite a kernel address.)
 #[inline]
-unsafe fn ProbeForWriteUnicodeString(ptr: *mut _UNICODE_STRING) {
-    let val = core::ptr::read_volatile(ptr);
-    core::ptr::write_volatile(ptr, val);
+unsafe fn ProbeForWriteUnicodeString(ptr: *mut _UNICODE_STRING) -> Result<_UNICODE_STRING, NTSTATUS> {
+    let val = ntkrnl_sys::probe::probe_read_generic(ptr as *const _UNICODE_STRING, 1, 1)?;
+    ntkrnl_sys::probe::write_user(ptr, val, 0)?;
+    Ok(val)
 }
 
 #[no_mangle]
@@ -735,9 +740,11 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0 {
-        ProbeForWriteUnicodeString(LinkTarget as *mut _UNICODE_STRING);
-
-        SafeLinkTarget = *(LinkTarget as *const _UNICODE_STRING);
+        // C: under _SEH2_TRY, whose handler returns the exception code.
+        SafeLinkTarget = match ProbeForWriteUnicodeString(LinkTarget as *mut _UNICODE_STRING) {
+            Ok(target) => target,
+            Err(status) => return status,
+        };
         if let Err(s) = probe_user_buffer(
             SafeLinkTarget.Buffer as _,
             SafeLinkTarget.MaximumLength as usize,

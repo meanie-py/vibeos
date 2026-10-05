@@ -297,6 +297,15 @@ class CMakeModule:
     # (msvcrt_static, feeding msvcrt.dll/msvcrt20.dll/msvcrt40.dll) never calls it,
     # and it is exactly such a target that owns the C in a cohab module.
     usermode_override: bool | None = None
+    # What the Rust side is NAMED after, when that is not the CMake target: a static library
+    # with exactly one consumer (setuplib_static -> setuplib) belongs to that module, so its
+    # crate is setuplib-rust and its gen_driver_types.sh arm is `setuplib)`. The compile-db
+    # lookup still keys on `name`, the real target.
+    stem: str | None = None
+
+    @property
+    def crate_stem(self) -> str:
+        return self.stem or self.name
 
     @property
     def compiled_tus(self) -> list[Path]:
@@ -464,7 +473,7 @@ class DerivedProfile:
 
     @property
     def crate_name(self) -> str:
-        return f"{self.module.name}-rust"
+        return f"{self.module.crate_stem}-rust"
 
     @property
     def errors(self) -> list[Finding]:
@@ -985,21 +994,35 @@ def parse_cmakelists(
     if target not in targets:
         raise ProfileDeriveError(f"{cmake}: no target {target!r} (have: {', '.join(targets)})")
 
-    target_kind, src_args = targets[target]
-    entries: list[SourceEntry] = []
-    seen: set[str] = set()
-    for a in src_args:
-        m = re.fullmatch(r"\$\{(\w+)\}", a)
-        expanded_entries = (
-            entries_by_var.get(m.group(1), []) if m else [_classify_entry(a, module_dir, None)]
-        )
-        if m and m.group(1) not in entries_by_var and m.group(1) in vars_:
-            expanded_entries = [_classify_entry(v, module_dir, None) for v in vars_[m.group(1)]]
-        for e in expanded_entries:
-            if e.raw in seen:
-                continue
-            seen.add(e.raw)
-            entries.append(e)
+    def target_entries(name: str) -> list[SourceEntry]:
+        out: list[SourceEntry] = []
+        seen: set[str] = set()
+        for a in targets[name][1]:
+            m = re.fullmatch(r"\$\{(\w+)\}", a)
+            expanded_entries = (
+                entries_by_var.get(m.group(1), []) if m else [_classify_entry(a, module_dir, None)]
+            )
+            if m and m.group(1) not in entries_by_var and m.group(1) in vars_:
+                expanded_entries = [_classify_entry(v, module_dir, None) for v in vars_[m.group(1)]]
+            for e in expanded_entries:
+                if e.raw in seen:
+                    continue
+                seen.add(e.raw)
+                out.append(e)
+        return out
+
+    target_kind, _ = targets[target]
+    entries = target_entries(target)
+    # TUs a SIBLING target in this same CMakeLists compiles. setuplib's 24 .c are built by
+    # `setuplib_static` and linked into `setuplib`; judged against `setuplib` alone they read
+    # as dead source, and the finding said "do not pay to translate them" about live code.
+    sibling_tus: dict[Path, str] = {}
+    for other in targets:
+        if other == target:
+            continue
+        for e in target_entries(other):
+            if e.kind == "tu" and e.path is not None:
+                sibling_tus.setdefault(e.path.resolve(), other)
 
     definitions.extend(per_target_defs.get(target, []))
     # A linked library's `target_include_directories(<lib> INTERFACE dir)` is on this target's
@@ -1025,6 +1048,26 @@ def parse_cmakelists(
         rpc_interfaces=rpc,
         findings=findings,
     )
+    if module.module_type is None:
+        # A static library has no set_module_type(); it runs in whatever image links it.
+        # When every consumer in this CMakeLists agrees on the mode, inherit it rather than
+        # make every caller remember --usermode (setuplib_static -> setuplib, a nativedll).
+        consumers = sorted(t for t, deps in link_deps.items() if target in deps)
+        kinds = {module_types[c][0] for c in consumers if c in module_types}
+        modes = {k in KERNEL_MODULE_TYPES for k in kinds}
+        if consumers and len(modes) == 1 and all(c in module_types for c in consumers):
+            module.module_type = sorted(kinds)[0]
+            if len(consumers) == 1:
+                module.stem = consumers[0]
+            findings.append(
+                Finding(
+                    "info",
+                    "MODULE_TYPE_INHERITED",
+                    f"{target!r} has no set_module_type(); it links into "
+                    f"{', '.join(consumers)} ({', '.join(sorted(kinds))}), so it is "
+                    f"{'kernel' if modes == {True} else 'usermode'} like them.",
+                )
+            )
     if restored_sources:
         findings.append(
             Finding(
@@ -1040,11 +1083,27 @@ def parse_cmakelists(
     # Dead source: on disk, absent from the compiled list. Translating one of these
     # is paid-for work that nobody links (it happened last batch).
     compiled = {p.resolve() for p in module.compiled_tus}
+    by_sibling: dict[str, list[Path]] = {}
     for cand in sorted(module_dir.rglob("*.c")) + sorted(module_dir.rglob("*.cpp")):
         if any(part in {"tests", "test", "build", ".git"} for part in cand.parts):
             continue
-        if cand.resolve() not in compiled:
+        if cand.resolve() in compiled:
+            continue
+        owner = sibling_tus.get(cand.resolve())
+        if owner is not None:
+            by_sibling.setdefault(owner, []).append(cand)
+        else:
             module.dead_sources.append(cand)
+    for owner, files in sorted(by_sibling.items()):
+        findings.append(
+            Finding(
+                "warn",
+                "SIBLING_TARGET",
+                f"{len(files)} .c are compiled by sibling target {owner!r}, not {target!r}: "
+                f"they are LIVE. To derive the island for them, pass --target {owner}: "
+                + ", ".join(_rel(p, repo_root) for p in files[:6]),
+            )
+        )
     if module.dead_sources:
         findings.append(
             Finding(
@@ -1107,7 +1166,11 @@ def build_include_env(
     search.append((module.module_dir, "module"))
     if (module.module_dir / "include").is_dir():
         search.append((module.module_dir / "include", "module"))
-    search.extend((d if d.is_absolute() else repo_root / d, "idl") for d in module.include_dirs)
+    # CMake resolves a relative include_directories() entry against the CMakeLists' own
+    # directory, not the repo root (setuplib: `include_directories(spapisup utils)`).
+    search.extend(
+        (d if d.is_absolute() else module.module_dir / d, "idl") for d in module.include_dirs
+    )
     search.extend((repo_root / p, "sdk") for p in _SDK_SEARCH)
     if build_dir is not None:
         search.extend((build_dir / p, "generated") for p in _BUILD_SEARCH)
@@ -2960,7 +3023,7 @@ def derive(
                 ],
                 reason="TU group with a mutually-legal include set",
                 wrapper_inc=_wrapper_for(group),
-                label=module.name if i == 0 else f"{module.name}-{stem}",
+                label=module.crate_stem if i == 0 else f"{module.crate_stem}-{stem}",
             )
             for i, (stem, group) in enumerate(groups)
         ]
@@ -2990,7 +3053,7 @@ def derive(
                 allow_files,
                 "one mutually-legal include set",
                 wrapper_inc=wrapper,
-                label=module.name,
+                label=module.crate_stem,
             )
         ]
 
@@ -3001,7 +3064,7 @@ def derive(
     if env.build_dir is not None:
         extra_inc.append(f'-I"${{SRC}}/build-{arch}/{module.module_dir.relative_to(repo_root)}"')
     for d in module.include_dirs:
-        p = d if d.is_absolute() else repo_root / d
+        p = (d if d.is_absolute() else module.module_dir / d).resolve()
         if p.is_dir() and _is_within(p, repo_root):
             extra_inc.append(f'-I"${{SRC}}/{p.relative_to(repo_root)}"')
     late_inc: list[str] = []
@@ -3146,7 +3209,7 @@ def emit_profile(dp: DerivedProfile) -> str:
     # Multi-island profiles use the netapi32 shape: ONE case arm matching every island label,
     # branching WRAPPER_INC/ALLOW_FILES on $DRIVER, with OUT_CRATE_DIR pinned so all islands
     # land in the same crate. TYPES_STEM comes from the env at invocation.
-    labels = "|".join(i.label for i in dp.islands) if multi else m.name
+    labels = "|".join(i.label for i in dp.islands) if multi else m.crate_stem
     out.append(f"  {labels})")
     out.append(
         f"    # AUTO-DERIVED by rustconv.profile_derive on {date.today().isoformat()} from "
@@ -3446,7 +3509,7 @@ def scaffold_crate(
                 f"(pass force=True):\n  {listing}"
             )
         src.mkdir(parents=True, exist_ok=True)
-        (src / m.name).mkdir(exist_ok=True)
+        (src / m.crate_stem).mkdir(exist_ok=True)
         for path, text in planned:
             if path in soft and path.exists() and not force:
                 if kept is not None:
@@ -3458,10 +3521,29 @@ def scaffold_crate(
     deps = (
         'panic-common = { path = "../panic-common", features = ["user"] }\n'
         'ntdll-sys = { path = "../ntdll-sys" }\n'
+        'win32macros-rust = { path = "../win32macros-rust" }\n'
         if m.is_usermode
         else 'panic-common = { path = "../panic-common", features = ["kernel"] }\n'
         'ntkrnl-sys = { path = "../ntkrnl-sys" }\n'
     )
+    win32_reexport = ""
+    if m.is_usermode:
+        # The MACROS only, by name: a glob would also pull win32macros' type aliases
+        # (HANDLE, WCHAR) into the prelude next to the island's, and every use of either
+        # becomes E0659 ambiguous.
+        macro_src = dp.env.repo_root / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
+        names = sorted(
+            {
+                n
+                for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
+                for n in re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", f.read_text())
+            }
+        )
+        if names:
+            win32_reexport = (
+                "// The Win32 header macros, ported once in win32macros-rust, not per module.\n"
+                f"pub use win32macros_rust::{{{', '.join(names)}}};\n"
+            )
     write(
         out_dir / "Cargo.toml",
         f"""# {crate} — see src/lib.rs for the module map.
@@ -3485,7 +3567,7 @@ crate-type = ["staticlib"]
         mods.append(f"    pub mod {tu.stem};")
     write(
         src / "lib.rs",
-        f"""//! {m.name} — Rust translation of {m.module_dir.relative_to(dp.env.repo_root)}.
+        f"""//! {m.crate_stem} — Rust translation of {m.module_dir.relative_to(dp.env.repo_root)}.
 //! staticlib → lib{lib}.a, cohab-linked into the cmake-built {m.name}
 //! ({"usermode" if m.is_usermode else "kernel-mode"} module type `{m.module_type}`).
 //!
@@ -3498,12 +3580,12 @@ crate-type = ["staticlib"]
 #![allow(unused_assignments, static_mut_refs)]
 #![allow(clippy::all)]
 
-pub mod types; // bindgen island, per arch (gen_driver_types.sh {m.name})
+pub mod types; // bindgen island, per arch (gen_driver_types.sh {m.crate_stem})
 #[macro_use]
 pub mod prelude; // the ONE import surface: types glob + debug macros + CRT externs
 
 #[allow(clippy::module_inception)]
-pub mod {m.name} {{
+pub mod {m.crate_stem} {{
 {chr(10).join(mods)}
 }}
 
@@ -3532,11 +3614,14 @@ pub extern "C" fn rust_eh_personality() {{}}
 #[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
 pub use crate::{ERR, FIXME, TRACE, WARN};"""
         if uses_wine
-        else """// reactos/debug.h DPRINT/DPRINT1 — no-op MACROS, never out-of-line fns
-// (field manual §9.65: an out-of-line no-op is an optimization barrier).
+        else """// reactos/debug.h DPRINT/DPRINT1/UNIMPLEMENTED — no-op MACROS, never out-of-line
+// fns (field manual §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py
+// rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
 #[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! DPRINT1 { ($($arg:tt)*) => {{}}; }
-pub use crate::{DPRINT, DPRINT1};"""
+#[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
+pub use crate::{DPRINT, DPRINT1, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};"""
     )
     write(
         src / "prelude.rs",
@@ -3547,6 +3632,8 @@ pub use crate::{DPRINT, DPRINT1};"""
 
 pub use crate::types::*;
 pub use core::ffi::{{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c_void}};
+// C's `size_t`: bindgen spells it `usize` inline, so no island carries the name the C uses.
+pub type size_t = usize;
 pub use core::ptr::{{addr_of, addr_of_mut}};
 
 // ================= debug ======================================================================
@@ -3568,7 +3655,17 @@ pub const NULL: *mut c_void = core::ptr::null_mut();
 pub fn NT_SUCCESS(s: NTSTATUS) -> bool {{
     s >= 0
 }}
-
+// Translations reach for the C MACRO forms too (`NT_SUCCESS!(st)`, `CONTAINING_RECORD!(p, T, f)`)
+// and a fresh crate otherwise starts with `cannot find macro` in every module that walks a list.
+// Address arithmetic, so neither needs an `unsafe` context of its own.
+#[macro_export] macro_rules! NT_SUCCESS {{ ($s:expr) => {{ (($s) as i32) >= 0 }}; }}
+#[macro_export] macro_rules! CONTAINING_RECORD {{
+    ($addr:expr, $ty:ty, $field:ident) => {{
+        (($addr) as usize - core::mem::offset_of!($ty, $field)) as *mut $ty
+    }};
+}}
+pub use crate::{{CONTAINING_RECORD, NT_SUCCESS}};
+{win32_reexport}
 // The island re-exports the base {"NT" if m.is_usermode else "kernel"} identity: {reexport}
 """,
     )
@@ -3592,7 +3689,7 @@ pub use types_arch::*;
 // island become silent catch-all match arms (field manual §9.112). So this fails the build
 // loudly instead of compiling as an empty module.
 compile_error!(
-    "types_{arch}.rs is a placeholder: run tools/rustconv/gen_driver_types.sh {m.name} \\
+    "types_{arch}.rs is a placeholder: run tools/rustconv/gen_driver_types.sh {m.crate_stem} \\
      (add the derived profile first) to generate the real island."
 );
 """,

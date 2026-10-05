@@ -116,8 +116,6 @@ const FILE_SYNCHRONOUS_IO_NONALERT: ULONG = 0x00000020;
 const PORT_MAXIMUM_MESSAGE_LENGTH: usize = 512;
 
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG);
     fn DbgkpSuspendProcess() -> BOOLEAN;
     fn DbgkpResumeProcess();
     fn DbgkpSectionToFileHandle(section: PVOID) -> HANDLE;
@@ -536,28 +534,35 @@ pub unsafe extern "system" fn DbgkpPostFakeModuleMessages(
         return STATUS_SUCCESS;
     }
 
-    ProbeForRead(peb as PVOID, core::mem::size_of::<_PEB>(), 1);
-    ldr_data = (*peb).Ldr;
-    ProbeForRead(
-        ldr_data as PVOID,
-        core::mem::size_of::<_PEB_LDR_DATA>(),
-        1,
-    );
+    // C: the whole walk is one _SEH2_TRY whose handler is NOTHING, then
+    // `return STATUS_SUCCESS` — a bad user pointer just ends the walk. With no SEH,
+    // each probe and each read of user memory is a Result, and Err ends the walk.
+    macro_rules! probe_or_done {
+        ($ptr:expr, $len:expr) => {
+            if ntkrnl_sys::probe::probe_user_buffer($ptr as *const core::ffi::c_void, $len, 1, 1).is_err() {
+                return STATUS_SUCCESS;
+            }
+        };
+    }
+    macro_rules! read_or_done {
+        ($ptr:expr) => {
+            match ntkrnl_sys::probe::probe_read_generic($ptr, 1, 0) {
+                Ok(value) => value,
+                Err(_) => return STATUS_SUCCESS,
+            }
+        };
+    }
+
+    probe_or_done!(peb, core::mem::size_of::<_PEB>());
+    ldr_data = read_or_done!(core::ptr::addr_of!((*peb).Ldr));
+    probe_or_done!(ldr_data, core::mem::size_of::<_PEB_LDR_DATA>());
     list_head = core::ptr::addr_of_mut!((*ldr_data).InLoadOrderModuleList);
-    ProbeForRead(
-        list_head as PVOID,
-        core::mem::size_of::<LIST_ENTRY>(),
-        1,
-    );
-    next_entry = (*list_head).Flink;
+    probe_or_done!(list_head, core::mem::size_of::<LIST_ENTRY>());
+    next_entry = read_or_done!(core::ptr::addr_of!((*list_head).Flink));
 
     i = 0;
     while next_entry != list_head && i < 500 {
-        ProbeForRead(
-            next_entry as PVOID,
-            core::mem::size_of::<LIST_ENTRY>(),
-            1,
-        );
+        probe_or_done!(next_entry, core::mem::size_of::<LIST_ENTRY>());
 
         if i != 0 {
             ldr_entry = CONTAINING_RECORD(
@@ -565,11 +570,7 @@ pub unsafe extern "system" fn DbgkpPostFakeModuleMessages(
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
             ) as PLDR_DATA_TABLE_ENTRY;
-            ProbeForRead(
-                ldr_entry as PVOID,
-                core::mem::size_of::<_LDR_DATA_TABLE_ENTRY>(),
-                1,
-            );
+            probe_or_done!(ldr_entry, core::mem::size_of::<_LDR_DATA_TABLE_ENTRY>());
 
             RtlZeroMemory(
                 &mut api_message as *mut _ as PVOID,
@@ -577,7 +578,7 @@ pub unsafe extern "system" fn DbgkpPostFakeModuleMessages(
             );
             api_message.ApiNumber = DbgKmLoadDllApi;
 
-            api_message.__bindgen_anon_1.LoadDll.BaseOfDll = (*ldr_entry).DllBase;
+            api_message.__bindgen_anon_1.LoadDll.BaseOfDll = read_or_done!(core::ptr::addr_of!((*ldr_entry).DllBase));
             api_message.__bindgen_anon_1.LoadDll.NamePointer = core::ptr::null_mut();
 
             nt_header = RtlImageNtHeader(api_message.__bindgen_anon_1.LoadDll.BaseOfDll);
@@ -587,12 +588,8 @@ pub unsafe extern "system" fn DbgkpPostFakeModuleMessages(
                 api_message.__bindgen_anon_1.LoadDll.DebugInfoSize = (*nt_header).FileHeader.NumberOfSymbols;
             }
 
-            full_dll_name = (*ldr_entry).FullDllName;
-            ProbeForRead(
-                full_dll_name.Buffer as PVOID,
-                full_dll_name.MaximumLength as usize,
-                1,
-            );
+            full_dll_name = read_or_done!(core::ptr::addr_of!((*ldr_entry).FullDllName));
+            probe_or_done!(full_dll_name.Buffer, full_dll_name.MaximumLength as usize);
 
             status = MmGetFileNameForAddress(nt_header as PVOID, &mut module_name);
             if status >= 0 {
@@ -632,7 +629,7 @@ pub unsafe extern "system" fn DbgkpPostFakeModuleMessages(
             }
         }
 
-        next_entry = (*next_entry).Flink;
+        next_entry = read_or_done!(core::ptr::addr_of!((*next_entry).Flink));
         i += 1;
     }
 
@@ -1531,12 +1528,15 @@ pub unsafe extern "system" fn NtDebugContinue(
     let mut client_id: _CLIENT_ID = core::mem::zeroed();
 
     if previous_mode != 0i8 {
-        ProbeForRead(
-            app_client_id as PVOID,
-            core::mem::size_of::<_CLIENT_ID>(),
-            core::mem::size_of::<ULONG>() as ULONG,
-        );
-        client_id = *app_client_id;
+        // C: probe + capture under _SEH2_TRY, whose handler returns the code.
+        client_id = match ntkrnl_sys::probe::probe_read_generic(
+            app_client_id as *const _CLIENT_ID,
+            core::mem::size_of::<ULONG>(),
+            previous_mode,
+        ) {
+            Ok(id) => id,
+            Err(status) => return status,
+        };
     } else {
         client_id = *app_client_id;
     }
@@ -1821,11 +1821,14 @@ pub unsafe extern "system" fn NtWaitForDebugEvent(
             }
         }
 
-        ProbeForWrite(
-            state_change as PVOID,
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            state_change as *const core::ffi::c_void,
             core::mem::size_of::<_DBGUI_WAIT_STATE_CHANGE>(),
-            core::mem::size_of::<ULONG>() as ULONG,
-        );
+            core::mem::size_of::<ULONG>(),
+            previous_mode,
+        ) {
+            return status;
+        }
     } else {
         if !timeout.is_null() {
             local_time_out = *timeout;

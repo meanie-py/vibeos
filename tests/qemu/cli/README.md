@@ -341,7 +341,12 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   hit it (mainline failed to compile `fltmgr-rust` for i386) and, without this
   check, rejected a docs-only change for a build failure it could not have
   caused. The base gate is lazy and memoized per drain, so a green batch never
-  pays for it.
+  pays for it. A base that fails **only** timing-sensitive stages (smoke,
+  conformance) gets one warm re-gate before it can hold the line: on 2026-10-04 a
+  spawn32 race and an arm64 BUGCHECK each held every lane on a master that later
+  gated green. If the re-gate
+  passes, the line is not held. A lone submission red only on the stages the base
+  flaked on stays queued (`FlakyBase`), neither rejected nor landed.
 - **A batch is never presumed green from its parts.** Two individually-green
   lanes can be red *together*; the queue catches that before master, where today
   the second lane lands on the first without ever gating the combination.
@@ -694,6 +699,12 @@ QMP `replay-break` landing part-way through a chunk aborts the whole replay with
 `Playback shouldn't have to iowait`. Chunk sizes span 1 to 2^28 instructions in a
 single boot, so there is no rounding rule — `--near <icount>` snaps a target to
 the next legal one and says how far into a chunk the unsnapped value sat.
+
+`rr record --sample SECS` fingerprints the guest (registers + per-MiB RAM hashes,
+the bytes kept deduplicated in the trace) every SECS of wall time; `rr diverge
+<trace>` replays it, breaks at each fingerprint, and reports the last icount where
+replay and recording agreed and the first that differs, down to the byte. A wedge is
+where a divergence becomes visible; this finds where it happened.
 
 Design, gdb recipe and the divergence log: `docs/engineering/qemu-record-replay.md`.
 

@@ -48,6 +48,46 @@ static void step_rpc_raise(void)
     if (log) CloseEventLog(log);
 }
 
+/* rapps holds a named mutex across its database download; appstorm kills it there, and the
+ * next rapps (/appwiz) waits on that mutex for up to ten minutes. A dead owner's mutex must
+ * come back WAIT_ABANDONED at once. The child is this exe run with "mutex-holder". */
+static void step_mutex_abandon(void)
+{
+    WCHAR exe[MAX_PATH], cmd[MAX_PATH + 32];
+    STARTUPINFOW si = { sizeof si };
+    PROCESS_INFORMATION pi;
+    HANDLE m;
+    DWORD w, i;
+
+    SAY("step mutex-abandon\n");
+    GetModuleFileNameW(NULL, exe, MAX_PATH);
+    wsprintfW(cmd, L"\"%s\" mutex-holder", exe);
+    if (!CreateProcessW(exe, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        CHECK(0, "mutex-abandon: CreateProcess err=%lu\n", GetLastError());
+        return;
+    }
+    /* Wait until the child owns it. */
+    for (i = 0; i < 100; i++) {
+        m = OpenMutexW(SYNCHRONIZE, FALSE, L"vibeos-netprobe-abandon");
+        if (m) break;
+        Sleep(100);
+    }
+    CHECK(m != NULL, "mutex-abandon: child never created the mutex\n");
+    if (m) {
+        Sleep(500);
+        TerminateProcess(pi.hProcess, 1);
+        w = WaitForSingleObject(pi.hProcess, 10000);
+        SAY("mutex-abandon: child exit wait=%lu\n", w);
+        w = WaitForSingleObject(m, 5000);
+        SAY("mutex-abandon: wait on dead owner's mutex=%#lx (0x80 = abandoned)\n", w);
+        CHECK(w == WAIT_ABANDONED, "mutex-abandon: got %#lx, want WAIT_ABANDONED\n", w);
+        if (w == WAIT_ABANDONED || w == WAIT_OBJECT_0) ReleaseMutex(m);
+        CloseHandle(m);
+    }
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+}
+
 static void wait_dnscache(void)
 {
     SERVICE_STATUS st;
@@ -72,6 +112,36 @@ static void wait_dnscache(void)
 
 /* A DNS query for HOST built by hand and sent over a plain UDP socket: separates
  * "no reply reaches a socket" (netstack/slirp) from dnsapi/dnsrslvr's own logic. */
+/* SO_RCVTIMEO: a recvfrom nobody answers must fail with WSAETIMEDOUT near the timeout
+ * (upstream msafd waited forever; a 3s timeout once blocked for 9 minutes). */
+static void step_rcvtimeo(void)
+{
+    SOCKET s;
+    struct sockaddr_in me;
+    DWORD tmo = 2000, t0, dt;
+    char buf[16];
+    int got, err;
+
+    SAY("step rcvtimeo\n");
+    s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    CHECK(s != INVALID_SOCKET, "rcvtimeo: socket wsa=%d\n", WSAGetLastError());
+    if (s == INVALID_SOCKET) return;
+    ZeroMemory(&me, sizeof me);
+    me.sin_family = AF_INET;
+    me.sin_addr.s_addr = htonl(INADDR_ANY);
+    CHECK(bind(s, (struct sockaddr *)&me, sizeof me) == 0, "rcvtimeo: bind wsa=%d\n", WSAGetLastError());
+    CHECK(setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tmo, sizeof tmo) == 0,
+          "rcvtimeo: setsockopt wsa=%d\n", WSAGetLastError());
+    t0 = GetTickCount();
+    got = recv(s, buf, sizeof buf, 0);
+    err = WSAGetLastError();
+    dt = GetTickCount() - t0;
+    SAY("rcvtimeo: recv=%d wsa=%d after %lums\n", got, err, dt);
+    CHECK(got == SOCKET_ERROR && err == WSAETIMEDOUT && dt >= 1500 && dt < 15000,
+          "rcvtimeo: recv=%d wsa=%d after %lums (want WSAETIMEDOUT after ~2000ms)\n", got, err, dt);
+    closesocket(s);
+}
+
 static void step_raw_udp(const char *server)
 {
     unsigned char q[64], r[512];
@@ -104,8 +174,7 @@ static void step_raw_udp(const char *server)
     CHECK(sendto(s, (const char *)q, n, 0, (struct sockaddr *)&to, sizeof to) == n,
           "sendto %s wsa=%d\n", server, WSAGetLastError());
     {
-        /* select, not SO_RCVTIMEO: the receive timeout is not honoured (a recvfrom with
-         * a 3s SO_RCVTIMEO blocked for 9 minutes), which is its own finding. */
+        /* select bounds this step on its own; step_rcvtimeo covers SO_RCVTIMEO. */
         fd_set rd;
         struct timeval tv = { 3, 0 };
         FD_ZERO(&rd);
@@ -307,16 +376,24 @@ static void step_url(HINTERNET hOpen, const WCHAR *url)
     InternetCloseHandle(h);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     WSADATA wsa;
     HINTERNET hOpen;
     ULONG addr;
 
+    if (argc > 1 && !strcmp(argv[1], "mutex-holder")) {
+        HANDLE m = CreateMutexW(NULL, TRUE, L"vibeos-netprobe-abandon");
+        (void)m;
+        Sleep(INFINITE);
+        return 0;
+    }
     SAY("start\n");
     CHECK(WSAStartup(MAKEWORD(2, 2), &wsa) == 0, "WSAStartup\n");
     step_rpc_raise();
+    step_mutex_abandon();
     wait_dnscache();
+    step_rcvtimeo();
     step_raw_udp("10.0.2.3");
     step_raw_udp("8.8.8.8");
     SAY("step tcp-by-ip\n");

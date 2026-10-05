@@ -94,10 +94,12 @@ target_link_libraries(gdi32
     wine
     win32ksys
     dxguid
-    atan2
+    ${ATAN2_LIB}
     ${PSEH_LIB}
     ${GDI32_RUST_LIB})
 
+# atan2-rust, by path ahead of the import libraries (gcc.cmake ATAN2_LIB).
+add_dependencies(gdi32 rust_atan2_rust)
 add_importlibs(gdi32 user32 advapi32 kernel32 ntdll)
 add_pch(gdi32 include/precomp.h SOURCE)
 add_dependencies(gdi32 psdk rust_gdi32)

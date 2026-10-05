@@ -2079,8 +2079,36 @@ class QemuVM:
         # comparison trivially passes. (It did. The oracle reported VERIFIED on
         # a replay that had hung at a fifth of the recording's output.)
         rr.note_run(trace_dir, mode=mode, serial_log=str(self.live_log_path))
+        new_cmd = self._arm_rr_sampler(mode, trace_dir, new_cmd)
         print(f"[QemuVM] record/replay: {mode} -> {trace_dir}")
         return new_cmd
+
+    def _arm_rr_sampler(self, mode: str, trace_dir, cmd: list[str]) -> list[str]:
+        """`rr record --sample` / `rr diverge`: fingerprint the guest over a second QMP.
+
+        Added AFTER the manifest is written and the replay shape asserted: a monitor
+        is not guest-visible and is not part of what a trace pins. See rrsample.py.
+        """
+        from .cli import rrsample
+
+        want = rrsample.env_sample()
+        if want is None:
+            return cmd
+        if (mode == "replay") != (want == "check"):
+            raise RuntimeError(
+                f"{rrsample.SAMPLE_ENV_VAR}={want!r} does not fit a {mode}: "
+                "a recording takes a period in seconds, a replay takes `check`"
+            )
+        sock = self._sock_dir / "rrsample.sock"
+        prev = self.on_qmp_ready
+
+        def _ready(qmp):
+            if prev is not None:
+                prev(qmp)
+            rrsample.start(mode, want, trace_dir, cmd, sock, self._sock_dir)
+
+        self.on_qmp_ready = _ready
+        return [*cmd, *rrsample.qmp_args(sock)]
 
     def _prepare_staging(self) -> Path:
         """Register a PID-owned directory under the cleanup lock, then release it.

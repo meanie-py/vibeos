@@ -81,9 +81,6 @@ add_library(netcfgx MODULE
 set_module_type(netcfgx win32dll UNICODE)
 # libnetcfgx_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(netcfgx ${NETCFGX_RUST_LIB} uuid wine)
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(netcfgx PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(netcfgx rust_netcfgx)
 add_importlibs(netcfgx rpcrt4 setupapi advapi32 iphlpapi dhcpcsvc ole32 user32 comctl32 ws2_32 msvcrt kernel32 ntdll)
 # add_pch dropped with the C: the only TU left is the generated netcfgx_stubs.c, which does not

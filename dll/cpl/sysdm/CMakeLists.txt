@@ -81,9 +81,6 @@ add_pch(sysdm precomp.h SOURCE)
 set_module_type(sysdm cpl UNICODE)
 # libsysdm_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(sysdm ${SYSDM_RUST_LIB} udmihelp uuid)
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(sysdm PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(sysdm rust_sysdm)
 add_importlibs(sysdm advapi32 setupapi user32 gdi32 comctl32 comdlg32 msimg32 shell32 shlwapi ole32 powrprof msvcrt kernel32 ntdll)
 add_cd_file(TARGET sysdm DESTINATION reactos/system32 FOR all)

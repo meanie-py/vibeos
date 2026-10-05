@@ -339,6 +339,35 @@ def _sibling_in(
     return None
 
 
+_STRING_MACRO = re.compile(
+    r'^#define[ \t]+([A-Za-z_]\w*)[ \t]+((?:L?"(?:[^"\\\n]|\\.)*"[ \t]*)+)$', re.M
+)
+
+
+@lru_cache(maxsize=64)
+def string_literal_macros(repo_root: Path, source: Path) -> dict[str, dict[str, str]]:
+    """`{NAME: {arch: literal text}}` for every object-like macro whose whole value is
+    string literal(s), per built arch, from the TU's OWN compile command.
+
+    The wide seal folds `L"AddReg.NT" INF_ARCH` with these: C concatenates the literal
+    with the macro's expansion, and spapisup.h defines INF_ARCH differently per arch, so
+    only the real preprocessor of each build can say what the string is. Empty when the
+    TU has no command of its own; the seal then skips the run as it always did (reported).
+    """
+    out: dict[str, dict[str, str]] = {}
+    for arch in _ARCHES:
+        argv = _compile_entry(repo_root, arch, source)
+        if argv is None:
+            continue
+        try:
+            dump = _preprocess_defines(argv)
+        except MacroAuthorityError:
+            continue
+        for m in _STRING_MACRO.finditer(dump):
+            out.setdefault(m.group(1), {})[arch] = m.group(2).strip()
+    return out
+
+
 @lru_cache(maxsize=64)
 def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
     """Every `#define NAME(...)` visible to ``source``, unioned over built arches.

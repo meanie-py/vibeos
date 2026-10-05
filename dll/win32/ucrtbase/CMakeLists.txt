@@ -12,7 +12,8 @@ add_library(ucrtbase SHARED
     # va_start trampolines, plus varargs-rust's va_arg pullers) are ucrt-rust's
     # va_entries.rs and varargs-rust's `rust-pullers`: va_entry! thunks in the Rust
     # archive linked whole below, so they still win first-match over any archive copy.
-    stubs.c
+    # stubs.c (atexit, operator_new/delete, _chkesp_failed, __acrt_initialize_sse2) is
+    # ucrt-rust's ucrt_reactos.rs and internal/init.rs.
     ucrtbase_stubs.c
     ucrtbase.def
 )
@@ -96,30 +97,26 @@ add_custom_command(
 add_custom_target(rust_ucrt_shared DEPENDS ${UCRT_SHARED_RUST_LIB})
 add_dependencies(ucrtbase rust_ucrt_shared)
 
-# --whole-archive for the same reason msvcrt.dll needs it: plain link order is not enough,
-# because msvcrt_shared still gets pulled for the symbols Rust does NOT define and drags in
-# its own copies of the ones it does, which would then win first-match. Forcing the Rust
-# defs in first makes the C copies the ignored duplicates.
-# ${PSEH_USER_LIB} and ${VCRT_SETJMP_LIB}: the SEH runtime and setjmp/longjmp from
-# Rust, by path so they sit HERE -- ahead of libpseh and of ntdll's import library, which
-# exports longjmp on amd64 and would otherwise answer ucrtbase's own longjmp export.
+# The Rust archive is the whole DLL: one graph, with the SEH runtime and setjmp/longjmp as
+# pseh-rt/setjmp-rt inside it (whole-archived, so defined before ntdll's import library,
+# which exports longjmp on amd64, is consulted). So the link tolerates no duplicate symbol at
+# all (link_strict, gcc.cmake). No C library: msvcrt_shared, crtmath, vcruntime, vcstartup, chkstk, wine and libsupc++ (once
+# for __cxa_guard_*) contributed no object on any arch (tools/link_pulls.py, 2026-10-04), so
+# they came off the line as msvcrt.dll's did; a symbol the Rust lacks is now an undefined-
+# symbol error rather than a silent C fallback. msvcrt_shared is still compiled: the cohab
+# checks read its objects as the reference surface (tools/verify_ucrtbase_cohab.py).
 target_link_libraries(ucrtbase
     -Wl,--whole-archive ${UCRT_SHARED_RUST_LIB} -Wl,--no-whole-archive
-    ${PSEH_USER_LIB}
-    ${VCRT_SETJMP_LIB}
-    msvcrt_shared
-    crtmath
-    vcruntime
-    vcstartup
-    chkstk
-    wine
 )
+link_strict(ucrtbase)
+# Build-order only, nothing is linked: verify_ucrtbase_cohab and ucrt_burndown read these
+# libraries' OBJECTS as the reference surface (OURS_REFERENCE), and a build only makes what
+# `livecd` depends on. Off the link line, nothing else would build them in a fresh tree --
+# exactly how msvcrt_static's absence turned master red (DIFFTEST_STALE_ORACLE, 2026-10-04).
+add_dependencies(ucrtbase msvcrt_shared crtmath vcruntime vcstartup chkstk wine setjmp pseh)
 
 # Implicitly link to vcstartup
 target_link_libraries(libucrtbase INTERFACE vcstartup)
-
-# For __cxa_guard_acquire / __cxa_guard_release
-target_link_libraries(ucrtbase libsupc++)
 
 add_importlibs(ucrtbase kernel32 ntdll)
 

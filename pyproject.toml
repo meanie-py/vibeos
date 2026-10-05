@@ -51,7 +51,7 @@ ignore = [
 ]
 
 [tool.pyright]
-include = ["tests/qemu/cli"]
+include = ["tests/qemu"]
 exclude = ["**/node_modules", "**/__pycache__"]
 # `tools/` is not a package and is not on sys.path at import time -- land.py reaches
 # `docs_only` through a sys.path.insert, because the pre-push HOOK has to import the same

@@ -44,7 +44,4 @@ add_custom_target(rust_cardlib DEPENDS ${CARDLIB_RUST_LIB})
 add_library(cardlib INTERFACE)
 target_include_directories(cardlib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(cardlib INTERFACE ${CARDLIB_RUST_LIB})
-# lld takes the first match: compiler_builtins in the Rust staticlib and libgcc
-# both carry the 64-bit division helpers. Same code, two copies.
-target_link_options(cardlib INTERFACE LINKER:--allow-multiple-definition)
 add_dependencies(cardlib rust_cardlib psdk)

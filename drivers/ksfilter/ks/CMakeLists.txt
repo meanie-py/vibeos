@@ -68,7 +68,5 @@ set_module_type(ks kernelmodedriver ENTRYPOINT 0)
 target_link_libraries(ks ${PSEH_LIB})
 add_importlibs(ks ntoskrnl hal)
 add_dependencies(ks psdk rust_ks)
-# C-cohab object(s) and the Rust rlib can both supply transiently-shared helper symbols.
-target_link_options(ks PRIVATE -Wl,--allow-multiple-definition)
 target_link_libraries(ks ${KS_RUST_LIB})
 add_cd_file(TARGET ks DESTINATION reactos/system32/drivers FOR all)

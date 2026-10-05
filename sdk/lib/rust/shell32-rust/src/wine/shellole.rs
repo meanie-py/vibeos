@@ -895,7 +895,7 @@ pub unsafe extern "system" fn SHPropStgReadMultiple(
         }
 
         // uCodePage = ret.u.iVal;  (local, unused beyond this point)
-        let _uCodePage = ret.u.iVal as UINT;
+        let _uCodePage = ret.u.iVal as UINT; // nolint: let-shadow (C never reads uCodePage after this)
     }
 
     let hres = ((*(*pps).lpVtbl).Stat)(pps, &mut stat);

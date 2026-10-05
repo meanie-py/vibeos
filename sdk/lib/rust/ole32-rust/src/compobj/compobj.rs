@@ -3286,7 +3286,9 @@ pub unsafe extern "system" fn CoGetClassObject(
      * First, try and see if we can't match the class ID with one of the
      * registered classes.
      */
-    if S_OK == COM_GetRegisteredClassObject(apt, rclsid, dwClsContext, &raw mut regClassObject) {
+    if (dwClsContext & CLSCTX_APPCONTAINER) == 0
+        && S_OK == COM_GetRegisteredClassObject(apt, rclsid, dwClsContext, &raw mut regClassObject)
+    {
         /* Get the required interface from the retrieved pointer. */
         hres = IUnknown_QueryInterface(regClassObject, iid, ppv);
 
@@ -3518,39 +3520,15 @@ pub unsafe extern "system" fn CoCreateInstanceEx(
 
     init_multi_qi(cmq, pResults, E_NOINTERFACE);
 
-    let mut hres = CoGetTreatAsClass(rclsid, &raw mut clsid);
-    if FAILED(hres) {
-        clsid = *rclsid;
+    // wine-10.0: no TreatAs for an app-container activation, and no GIT /
+    // ManualResetEvent shortcuts here -- CoGetClassObject serves both in-proc, and
+    // only it knows that CLSCTX_APPCONTAINER refuses ManualResetEvent.
+    clsid = *rclsid;
+    if (dwClsContext & CLSCTX_APPCONTAINER) == 0 {
+        CoGetTreatAsClass(rclsid, &raw mut clsid);
     }
 
-    let apt = apartment_get_current_or_mta();
-    if apt.is_null() {
-        ERR!("apartment not initialised");
-        return CO_E_NOTINITIALIZED;
-    }
-    apartment_release(apt);
-
-    /*
-     * The Standard Global Interface Table (GIT) object is a process-wide singleton.
-     */
-    if guid_eq(&clsid, &CLSID_StdGlobalInterfaceTable) {
-        let git = get_std_git();
-        TRACE!();
-        return return_multi_qi(git as *mut IUnknown, cmq, pResults, FALSE);
-    }
-
-    if guid_eq(&clsid, &CLSID_ManualResetEvent) {
-        hres = ManualResetEvent_Construct(
-            pUnkOuter,
-            (*pResults).pIID,
-            &raw mut unk as *mut *mut c_void,
-        );
-        if FAILED(hres) {
-            return hres;
-        }
-        return return_multi_qi(unk, cmq, pResults, TRUE);
-    }
-
+    let mut hres: HRESULT;
     /*
      * Get a class factory to construct the object we want.
      */
@@ -4022,7 +4000,35 @@ pub unsafe extern "system" fn CoGetTreatAsClass(clsidOld: REFCLSID, clsidNew: *m
  */
 #[no_mangle]
 pub unsafe extern "system" fn CoGetCurrentProcess() -> DWORD {
-    GetCurrentProcessId()
+    // wine-10.0 combase: not the process id but a per-THREAD sequence number, unique
+    // on the machine, handed out once by rpcss and cached in the TLS block.
+    let info = COM_CurrentInfo();
+    if info.is_null() {
+        return 0;
+    }
+    if (*info).thread_seqid == 0 {
+        rpcss_get_next_seqid(&raw mut (*info).thread_seqid);
+    }
+    (*info).thread_seqid
+}
+
+extern "C" {
+    /// dll/win32/ole32/rpcss_seh.c: irpcss_get_thread_seq_id under rpc_filter.
+    fn ole32_rpcss_get_next_seqid(id: *mut DWORD) -> HRESULT;
+}
+
+/// combase rpc.c `rpcss_get_next_seqid`, with its RPCSS_CALL_END retry: start rpcss
+/// once if it is not running yet.
+unsafe fn rpcss_get_next_seqid(id: *mut DWORD) -> HRESULT {
+    loop {
+        let hr = ole32_rpcss_get_next_seqid(id);
+        if hr == HRESULT_FROM_WIN32(crate::win_consts::RPC_S_SERVER_UNAVAILABLE)
+            && crate::ring::moniker::start_rpcss() != 0
+        {
+            continue;
+        }
+        return hr;
+    }
 }
 
 /***********************************************************************
@@ -5236,9 +5242,19 @@ pub unsafe extern "system" fn CoCreateInstanceFromApp(
  */
 #[no_mangle]
 pub unsafe extern "system" fn CoDisableCallCancellation(reserved: PVOID) -> HRESULT {
-    FIXME!("({:p}): stub", reserved);
+    TRACE!("{:p}", reserved);
 
-    E_NOTIMPL
+    // wine-10.0 combase: a per-thread nesting count, independent of CoInitialize.
+    let info = COM_CurrentInfo();
+    if info.is_null() {
+        return E_OUTOFMEMORY;
+    }
+    if (*info).cancelcount == 0 {
+        return crate::hresults::CO_E_CANCEL_DISABLED;
+    }
+    (*info).cancelcount -= 1;
+
+    S_OK
 }
 
 /***********************************************************************
@@ -5246,9 +5262,15 @@ pub unsafe extern "system" fn CoDisableCallCancellation(reserved: PVOID) -> HRES
  */
 #[no_mangle]
 pub unsafe extern "system" fn CoEnableCallCancellation(reserved: PVOID) -> HRESULT {
-    FIXME!("({:p}): stub", reserved);
+    TRACE!("{:p}", reserved);
 
-    E_NOTIMPL
+    let info = COM_CurrentInfo();
+    if info.is_null() {
+        return E_OUTOFMEMORY;
+    }
+    (*info).cancelcount += 1;
+
+    S_OK
 }
 
 /***********************************************************************
@@ -5337,9 +5359,22 @@ unsafe extern "system" fn GlobalOptions_Query(
     property: GLOBALOPT_PROPERTIES,
     value: *mut ULONG_PTR,
 ) -> HRESULT {
-    let This = impl_from_IGlobalOptions(iface);
-    FIXME!("({:p})->({} {:p})", This, property, value);
-    E_NOTIMPL
+    TRACE!("{:p}, {}, {:p}", iface, property, value);
+
+    // wine-10.0 combase: every property reads back from one zero-initialised table
+    // (Set is still a FIXME that stores nothing, as in Wine).
+    const COMGLB_EXCEPTION_HANDLING: u32 = 1;
+    const COMGLB_PROPERTIES_RESERVED3: u32 = 8;
+    static GLOBAL_OPTIONS: [ULONG_PTR; COMGLB_PROPERTIES_RESERVED3 as usize + 1] =
+        [0; COMGLB_PROPERTIES_RESERVED3 as usize + 1];
+
+    let property = property as u32;
+    if !(COMGLB_EXCEPTION_HANDLING..=COMGLB_PROPERTIES_RESERVED3).contains(&property) {
+        return E_INVALIDARG;
+    }
+    *value = GLOBAL_OPTIONS[property as usize];
+
+    S_OK
 }
 
 static GlobalOptionsVtbl: IGlobalOptionsVtbl = IGlobalOptionsVtbl {

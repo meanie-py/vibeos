@@ -68,9 +68,6 @@ add_library(umpnpmgr MODULE
 
 # libumpnpmgr_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(umpnpmgr ${UMPNPMGR_RUST_LIB} wdmguid ${PSEH_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(umpnpmgr PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(umpnpmgr rust_umpnpmgr)
 set_module_type(umpnpmgr win32dll UNICODE)
 add_importlibs(umpnpmgr advapi32 rpcrt4 userenv shlwapi msvcrt user32 kernel32 ntdll)

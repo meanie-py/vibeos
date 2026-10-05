@@ -3565,7 +3565,7 @@ pub unsafe extern "system" fn VarDiv(left: LPVARIANT, right: LPVARIANT, result: 
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn VarSub(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
+pub unsafe extern "system" fn VarSub(mut left: LPVARIANT, mut right: LPVARIANT, result: LPVARIANT) -> HRESULT {
     let mut hres: HRESULT = S_OK;
     let mut resvt: VARTYPE = VT_EMPTY;
     let leftvt: VARTYPE;
@@ -3609,7 +3609,7 @@ pub unsafe extern "system" fn VarSub(left: LPVARIANT, right: LPVARIANT, result: 
             }
             hres = VARIANT_FetchDispatchValue(left, &mut tempLeft);
             if FAILED(hres) { break 'end; }
-            let _left = &mut tempLeft;
+            left = &mut tempLeft; // C re-points the operand at the fetched value
         }
         if ((*V_VT_ref(right)) & VT_TYPEMASK) == VT_DISPATCH &&
             ((*V_VT_ref(right)) & (!VT_TYPEMASK)) == 0 &&
@@ -3634,7 +3634,7 @@ pub unsafe extern "system" fn VarSub(left: LPVARIANT, right: LPVARIANT, result: 
             }
             hres = VARIANT_FetchDispatchValue(right, &mut tempRight);
             if FAILED(hres) { break 'end; }
-            let _right = &mut tempRight;
+            right = &mut tempRight;
         }
 
         leftvt = (*V_VT_ref(left)) & VT_TYPEMASK;
@@ -5026,7 +5026,8 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             (*V_I2_ref(pVarOut)) = !(*V_I2_ref(pVarIn));
         }
         VT_UI2 => {
-            (*V_I4_ref(pVarOut)) = !(*V_UI2_ref(pVarIn)) as i32;
+            // C promotes the USHORT to int before `~`: ~0 is -1, not 0xFFFF
+            (*V_I4_ref(pVarOut)) = !(*V_UI2_ref(pVarIn) as i32);
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
         VT_DECIMAL => {

@@ -1,0 +1,12 @@
+# The code, as a plain rlib with no panic runtime, so that a CRT DLL's own archive
+# (msvcrt-crt-cargo, crt-shared-cargo) can carry it in ITS single Rust graph: one core,
+# one panic handler, one compiler_builtins per DLL, which is what lets those DLLs link
+# without --allow-multiple-definition. `setjmp-rust` is the standalone staticlib over it
+# (the kernel's .rust_lib, the sdk/lib/* variants), adding only the runtime.
+[package]
+name = "setjmp-rt"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"

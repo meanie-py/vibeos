@@ -1082,7 +1082,7 @@ def inert_only_batch(wt: Path) -> list[str]:
     return [p for p in paths if not is_inert(p)]
 
 
-def gate_batch(wt: Path, log, *, retries: int = 2) -> GateVerdict:
+def gate_batch(wt: Path, log, *, retries: int = 2, clean: bool = True) -> GateVerdict:
     """Run the FULL gate in the integration tree. This is the only place a batch is judged —
     no batch is ever presumed green.
 
@@ -1113,7 +1113,10 @@ def gate_batch(wt: Path, log, *, retries: int = 2) -> GateVerdict:
     # `--keep-going` (ninja -k0) is the other half: the three breaks were found ONE PER BUILD
     # because ninja halts at the first failing edge. A verdict build wants the whole failure set
     # in one pass. VIBEOS_QUEUE_CLEAN=0 opts out if a batch ever needs to be fast over sure.
-    if os.environ.get("VIBEOS_QUEUE_CLEAN", "1").lower() not in ("0", "false", "no"):
+    # `clean=False` is for re-gating a tree this drain has ALREADY built cold (the base
+    # check's confirming run): the cold build already proved it, and repeating it would buy
+    # nothing but time.
+    if clean and os.environ.get("VIBEOS_QUEUE_CLEAN", "1").lower() not in ("0", "false", "no"):
         cmd += ["--clean", "--keep-going"]
     cp = subprocess.run(
         cmd,
@@ -1159,6 +1162,19 @@ class BaseRed(NoVerdict):
 
 class Inconclusive(NoVerdict):
     """The gate failed for a reason that is not evidence about the code: the environment."""
+
+
+class FlakyBase(NoVerdict):
+    """A lone submission failed only stages that the base itself just failed and then passed
+    on a re-run. Its red is indistinguishable from the base's flake, so it is neither
+    rejected nor landed: it stays QUEUED for a later drain. No hold — master is not red."""
+
+
+def _timing_only(v: GateVerdict) -> bool:
+    """Did this red gate fail ONLY timing-sensitive stages? False when there is no per-stage
+    evidence: an unparsed summary proves nothing either way."""
+    failed = [name for name, status in v.stages.items() if status == "fail"]
+    return bool(failed) and not any(_is_deterministic(name) for name in failed)
 
 
 # A red gate with one of these classifications says nothing about the submission — the host
@@ -1219,6 +1235,9 @@ class BaseCheck:
         self.classification = ""
         self.salient = ""
         self.stages: Mapping[str, str] = _NO_STAGES
+        # Stages the base failed once and then passed on the confirming re-gate. A lone
+        # submission red on these alone cannot be told apart from the base's own flake.
+        self.flaked: frozenset[str] = frozenset()
         self.landed: list[str] = []  # lanes landed EARLIER in this same drain
 
     def is_green(self, repo: Path, wt: Path, log, *, retries: int) -> bool:
@@ -1229,14 +1248,48 @@ class BaseCheck:
         git(wt, "reset", "--hard", "origin/master")
         scrub_build_state(repo, wt)
         v = gate_batch(wt, log, retries=retries)
+        if not v.ok and _timing_only(v):
+            # CONFIRM BEFORE HOLDING THE LINE. A base red is the most expensive verdict the
+            # queue renders: it auto-holds every lane until master moves. On 2026-10-04 it
+            # was rendered twice on ONE run of a timing-sensitive stage -- a spawn32 race in
+            # the test itself (0xBAE4), then an arm64 BUGCHECK -- and each time master was
+            # not broken; four lanes sat behind the first hold and nothing queued could
+            # move master to lift it. The confirming run is WARM: this tree was just built
+            # cold, so it costs boots, not builds.
+            #
+            # This retries no regression INTO master: the base is already master. It only
+            # decides whether to stop everyone else. A bug that reproduces still holds.
+            failed = sorted(n for n, st in v.stages.items() if st == "fail")
+            log(
+                f"queue: base failed only timing-sensitive stages ({', '.join(failed)}) — "
+                "re-gating it once, warm, before holding the line"
+            )
+            again = gate_batch(wt, log, retries=retries, clean=False)
+            if again.ok:
+                self.flaked = frozenset(failed)
+                v = again
+            else:
+                v = again._replace(
+                    salient=f"{again.salient or v.salient} (red on a confirming re-gate too; "
+                    f"first run: {v.artifact or '(none)'})"
+                )
         self.verdict, self.classification = v.ok, v.classification
         self.artifact, self.salient, self.stages = v.artifact, v.salient, v.stages
-        log(
-            "queue: BASE is GREEN — the submission really is the culprit"
-            if v.ok
-            else f"queue: BASE ITSELF IS RED ({v.classification}) — mainline is broken"
-        )
+        if v.ok and self.flaked:
+            flaked = ", ".join(sorted(self.flaked))
+            log(f"queue: BASE is GREEN on a re-gate — it flaked on {flaked}; not holding the line")
+        else:
+            log(
+                "queue: BASE is GREEN — the submission really is the culprit"
+                if v.ok
+                else f"queue: BASE ITSELF IS RED ({v.classification}) — mainline is broken"
+            )
         return v.ok
+
+    def explains(self, stages: Mapping[str, str]) -> bool:
+        """Is every stage this submission failed one the base itself flaked on?"""
+        failed = {name for name, status in stages.items() if status == "fail"}
+        return bool(failed) and failed <= self.flaked
 
     def own_faults(self, stages: Mapping[str, str]) -> list[str]:
         """The DETERMINISTIC stages this submission fails that the base RAN AND PASSED.
@@ -1464,6 +1517,17 @@ def judge_car(
                 )
                 + f"The train is halted: nothing can land on a red base. "
                 f"Artifact: {base.artifact or '(none)'}"
+            )
+        if base.explains(verdict.stages):
+            # Rejecting here would convict the lane for the base's own flake; landing would
+            # retry a possible regression away. Neither: it goes again in a later drain.
+            stages = ", ".join(sorted(n for n, st in verdict.stages.items() if st == "fail"))
+            log(f"queue: {sub.lane} {sub.tip[:12]} failed only {stages}, as the base did once")
+            raise FlakyBase(
+                f"{sub.lane} failed only {stages}, and origin/master failed the same and then "
+                f"passed on a re-gate, so this red says nothing about the lane. It stays "
+                f"QUEUED; nothing was rejected and the line is not held. "
+                f"Artifact: {artifact or '(none)'}"
             )
         log(f"queue: REJECTED {sub.lane} {sub.tip[:12]} — {classification or 'gate red'}")
         # Say what it was gated AGAINST. "red on this submission alone" is misleading when an

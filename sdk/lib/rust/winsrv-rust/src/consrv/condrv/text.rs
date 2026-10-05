@@ -793,7 +793,7 @@ pub(crate) unsafe fn IntReadConsoleOutputStringChars(
     let mut ReadBuffer: LPBYTE = StringBuffer as LPBYTE;
     let mut X: i16;
     let mut Y: i16;
-    let XStart: i16 = (*ReadCoord).X;
+    let mut XStart: i16 = (*ReadCoord).X;
     let mut nNumChars: u32 = 0;
     let mut Ptr: PCHAR_INFO;
     let bCJK: u8 = (*Console).IsCJK;
@@ -854,7 +854,8 @@ pub(crate) unsafe fn IntReadConsoleOutputStringChars(
             X += 1;
         }
 
-        let _XStart = 0i16;
+        // Restart at the beginning of the next line
+        XStart = 0;
         Y += 1;
     }
 
@@ -997,7 +998,7 @@ pub(crate) unsafe fn IntWriteConsoleOutputStringChars(
     let Length: u32;
     let mut X: i16;
     let mut Y: i16;
-    let XStart: i16 = (*WriteCoord).X;
+    let mut XStart: i16 = (*WriteCoord).X;
     let mut nNumChars: u32 = 0;
     let mut Ptr: PCHAR_INFO;
     let bCJK: u8 = (*Console).IsCJK;
@@ -1066,6 +1067,8 @@ pub(crate) unsafe fn IntWriteConsoleOutputStringChars(
                 nNumChars += 1;
                 X += 1;
             }
+            // Restart at the beginning of the next line (C: `XStart = 0;`)
+            XStart = 0;
             Y += 1;
         }
     }

@@ -96,9 +96,6 @@ add_library(desk MODULE
 set_module_type(desk cpl UNICODE)
 # libdesk_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(desk ${DESK_RUST_LIB} uuid)
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(desk PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(desk rust_desk)
 add_importlibs(desk user32 advapi32 gdi32 comctl32 comdlg32 ole32 setupapi shell32 shlwapi uxtheme gdiplus msvcrt kernel32 ntdll)
 add_pch(desk desk.h "${PCH_SKIP_SOURCE}")

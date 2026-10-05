@@ -68,7 +68,9 @@ DEFINED_FN_RE = re.compile(
 
 # `extern "<abi>" {` — the `{` must follow the ABI string, which is what distinguishes a
 # block from a *type* (`x as unsafe extern "C" fn(..) -> HRESULT`) or a definition.
-EXTERN_BLOCK_RE = re.compile(rf"extern\s+({ABI})\s*\{{")
+# `unsafe` is INSIDE the match so a dropped block takes it along: matched from `extern`, a
+# removed `unsafe extern "C" {...}` left a bare `unsafe` line, and a rewritten one doubled it.
+EXTERN_BLOCK_RE = re.compile(rf"(?:unsafe\s+)?extern\s+({ABI})\s*\{{")
 
 # Substrate globs rustconv emits (the generic sys-crate surface), to be swapped for the
 # crate prelude. `ntdll_sys::nt`, `ntkrnl_sys::ddk`, `win32k_sys::*`, …
@@ -449,6 +451,96 @@ def prelude_macros(crate: Path) -> set[str]:
 _C_SOURCE_BANNER = "\n// ORIGINAL C SOURCE"
 
 
+_C_ENUM = re.compile(
+    r"(?P<attrs>(?:^[ \t]*#\[[^\]]*\][ \t]*\n)*)^(?P<indent>[ \t]*)pub enum (?P<name>[A-Za-z_]\w*)"
+    r"\s*\{(?P<body>[^{}]*)\}[ \t]*\n?",
+    re.M,
+)
+_VARIANT = re.compile(r"^\s*([A-Za-z_]\w*)\s*(?:=\s*(.+?))?\s*$", re.S)
+
+
+def lower_c_enums(src: str) -> tuple[str, list[str]]:
+    """A translated C `enum` -> bindgen's shape: `pub type E = c_uint;` + one const each.
+
+    The preamble pass renders `typedef enum _ADAPTER_TYPE { EisaAdapter, .. }` as a Rust
+    `pub enum`, but the C bodies -- and so the translations -- spell the enumerators bare
+    (`AdapterTypeMax`) and do integer arithmetic on them, and a Rust enum holding a value
+    that is not one of its variants is undefined behaviour. The bindgen islands already use
+    `c_uint` + consts (`c_int` when an enumerator is negative), so translated code does too.
+    Only FIELDLESS enums are touched; `E::Variant` paths are rewritten to the bare name.
+    """
+    lowered: list[str] = []
+
+    def repl(m: re.Match[str]) -> str:
+        parts = [p for p in _split_top_commas(m.group("body")) if p.strip()]
+        variants = []
+        for part in parts:
+            code = re.sub(r"//[^\n]*|/\*.*?\*/", "", part, flags=re.S)
+            if not code.strip():
+                continue
+            v = _VARIANT.match(code)
+            if v is None:
+                return m.group(0)  # a data-carrying variant: a real Rust enum, not C's
+            variants.append((v.group(1), v.group(2)))
+        name, indent = m.group("name"), m.group("indent")
+        negative = any(val is not None and val.strip().startswith("-") for _, val in variants)
+        ctype = "::core::ffi::c_int" if negative else "::core::ffi::c_uint"
+        out = [f"{indent}pub type {name} = {ctype};"]
+        prev = None
+        for vname, val in variants:
+            expr = val.strip() if val is not None else ("0" if prev is None else f"{prev} + 1")
+            out.append(f"{indent}pub const {vname}: {name} = {expr};")
+            prev = vname
+        lowered.append(name)
+        return "\n".join(out) + "\n"
+
+    src = _C_ENUM.sub(repl, src)
+    if lowered:
+        aliases = set(lowered)
+        for m in re.finditer(r"pub type (\w+) = (\w+);", src):
+            if m.group(2) in aliases:
+                aliases.add(m.group(1))
+        src = re.sub(rf"\b(?:{'|'.join(map(re.escape, sorted(aliases)))})::(\w+)\b", r"\1", src)
+    return src, lowered
+
+
+def drop_self_imports(src: str, module: str) -> tuple[str, list[str]]:
+    """`use crate::setuplib::arcname::X;` inside arcname.rs -> gone.
+
+    The assembler writes a `use` for every sibling-module name a body calls, and a name the
+    file defines ITSELF lands there too; beside the definition that is E0255. setuplib had
+    12 (arcname's tables, bldrsup's NtosBootLoaders, registry's hive tables).
+    """
+    if not module:
+        return src, []
+    dropped: list[str] = []
+
+    def repl(m: re.Match[str]) -> str:
+        dropped.append(m.group(1))
+        return ""
+
+    src = re.sub(
+        rf"^use crate::(?:\w+::)*{re.escape(module)}::(\w+);[ \t]*\n", repl, src, flags=re.M
+    )
+    return src, dropped
+
+
+def _split_top_commas(body: str) -> list[str]:
+    parts, depth, cur = [], 0, []
+    for ch in body:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur))
+    return parts
+
+
 def fix_macro_calls(src: str, macros: set[str], defined: set[str]) -> tuple[str, list[str]]:
     """Turn `NAME(args)` into `NAME!(args)` for every prelude macro. Returns (src, fixed).
 
@@ -470,7 +562,15 @@ def fix_macro_calls(src: str, macros: set[str], defined: set[str]) -> tuple[str,
         # preceding `!` too would silently skip `if !NAME(x)`, which is how C spells a
         # boolean test and is 17 of mbcs.c's 42 `MSVCRT_CHECK_PMT` sites.
         pattern = re.compile(rf"(?<!\w){re.escape(name)}(?!\s*!)\s*\(")
-        src, count = pattern.subn(f"{name}!(", src)
+
+        def bang(m: re.Match[str], name: str = name) -> str:
+            # `fn NAME(` is a DECLARATION (an extern decl of what the prelude has as a
+            # macro): `fn DPRINT1!(` is not Rust. integrate() drops such decls as provided.
+            if re.search(r"\bfn\s+$", m.string[max(0, m.start() - 16) : m.start()]):
+                return m.group(0)
+            return f"{name}!("
+
+        src, count = pattern.subn(bang, src)
         if count:
             fixed.append(f"{name}×{count}")
     return src, fixed
@@ -491,6 +591,7 @@ class Report:
     prelude_added: bool = False
     dropped_provided: list[str] = field(default_factory=list)  # prelude already has it
     dropped_self: list[str] = field(default_factory=list)  # this file defines it
+    enums_lowered: list[str] = field(default_factory=list)  # C enum -> c_uint + consts
     kept_unprovided: list[str] = field(default_factory=list)  # REPORT: verify each
     kept_statics: list[str] = field(default_factory=list)  # e.g. IID_* link symbols
     promoted_pub: list[str] = field(default_factory=list)
@@ -581,6 +682,8 @@ def integrate(
         provided = provided_names(crate)
 
     src = _swap_substrate(src, report)
+    src, report.enums_lowered = lower_c_enums(src)
+    src, _self_imports = drop_self_imports(src, module)
 
     # Cross-TU helper promotion: a name that some OTHER module in the crate declares extern
     # must be `pub` where it's defined. Exclude anything the prelude already provides —
@@ -604,7 +707,8 @@ def integrate(
 
     # A prelude macro is spelled as a plain call in the C, so it comes back as a plain call.
     # Which names are macros is a fact about the PRELUDE, not about the C — see prelude_macros.
-    src, report.macro_calls_fixed = fix_macro_calls(src, prelude_macros(crate), defined)
+    macros = prelude_macros(crate)
+    src, report.macro_calls_fixed = fix_macro_calls(src, macros, defined)
 
     out, pos = [], 0
     for start, end, body, abi in extern_block_spans(src):
@@ -624,7 +728,7 @@ def integrate(
             name = m.group(1)
             if name in defined:
                 report.dropped_self.append(name)
-            elif name in provided:
+            elif name in provided or name in macros:
                 report.dropped_provided.append(name)
             elif sm:
                 # A data static (IID_*/CLSID_*, …) the prelude doesn't have: a genuine

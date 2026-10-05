@@ -162,8 +162,14 @@ loader fix, three kernel layers and three harness fixes, each found by the one b
   `-d exec` (not one translation block), and a backtrace of QEMU run under gdb
   (`ptrace_scope` refuses an attach). arm64 still loads the snapshot.
 
-virtio-blk does not boot yet: the virtio ISO disk is not enumerated when ArcNames
-are made, so only the empty scratch disk is scanned.
+virtio-blk does not boot, and it is not a timing problem: **the x86 kernel has no
+virtio-blk driver at all** (2026-10-05). freeldr reads the ISO through the firmware's
+own virtio BlockIo and loads every boot driver from it; the boot-driver list it loads
+(uniata, scsiport, buslogic, usbstor, disk, cdrom, ...) has nothing that binds a
+virtio-blk PCI function, so from the kernel's side the ISO does not exist and the
+boot ends in `0x6B`. The one disk `IopCreateArcNames` did see was the IDE `tempdisk`,
+not the virtio scratch disk, which is unused by the x86 kernel too. Booting from it is
+a new storage driver, not a fix; usb-storage covers what rr needs.
 
 One refusal the transform does NOT make is x86's default accelerator. `amd64`
 and `i386` boot `-accel kvm -cpu host`, which would fail the first row of that
@@ -379,6 +385,54 @@ would leave the caller believing a break was armed when it was not, and that
 presents as "the break never fired" — indistinguishable from a break landing at
 an illegal icount, which is a real and separate failure.
 
+## Finding where a replay diverged: `rr record --sample` + `rr diverge`
+
+A wedge is where a divergence becomes VISIBLE: QEMU only notices when the diverged
+guest takes an exception the log does not contain. To find where it HAPPENED you need
+the guest's state from both sides at the same icount, and the recording is the only
+chance to capture its half.
+
+```
+./vibeos-cli rr record --arch arm64 --payload kmtest --name t --sample 10
+./vibeos-cli rr diverge t
+```
+
+`--sample SECS` pauses the recording every SECS of wall time over a second, private
+QMP socket and writes a fingerprint to `samples.jsonl`: the exact icount
+(`query-replay`), `info registers -a`, and a hash per MiB of guest RAM (`pmemsave`
+through a fifo, so nothing lands on disk but the store below). Every distinct MiB is
+also kept zlib'd in `ram/<hash>.z`, deduplicated across samples: ~2,500 MiB / 370 MB
+for an arm64 kmtest boot. Pausing costs the guest nothing, since under icount its
+clock is the instruction counter. `rr diverge` replays with a `replay-break` at each
+sampled icount, takes the same fingerprint, and stops at the first mismatch, naming
+the register lines and the physical byte runs that differ (`diverge.json` has all of
+it). A replay that wedges first is caught by its icount freezing, and the verdict is
+then "between the last match and the wedge".
+
+**Measured properties (QEMU 8.2.2, arm64):**
+
+* A recording pause does NOT end an instruction chunk; 17 of 31 and 20 of 30 samples
+  happened to land on one, all of them in event-dense stretches. `resume after a
+  replay-break` works: 16 consecutive break/fingerprint/`cont` cycles in one replay.
+* **A pause that drains I/O is not comparable.** QMP `stop` drains block I/O, so the
+  recording's fingerprint can already include a request completed AT the pause, which
+  the trace logs as an `EVENT_ASYNC` at exactly that icount; the replay's break lands
+  before that completion is applied. Seen 10 times per firmware-phase run, always the
+  same two MiB (a virtqueue index one ahead, a flag byte). `diverge` lists such samples
+  as `inconclusive` and keeps going; it never calls them a match.
+* **So is a pause at an interrupt.** An interrupt logged at exactly the sampled icount is
+  taken without executing an instruction, and whether the fingerprint lands before or
+  after entry is not stable: the same trace had one such sample match and the next show
+  the replay at the IRQ vector (`PC=..5a80`, `PSTATE=3c5`) with the recording still in
+  ordinary code, every other register equal and RAM identical. Also `inconclusive`, and
+  only in exactly that shape — any other register, or any RAM, differing is reported as
+  real. Both rules live in `rrsample.artifact`, with tests.
+* The first sample is usually skipped: the replay is already past it when the checker
+  connects.
+* Whether 8.2.2 can break MID-chunk is still unmeasured — every off-boundary sample so
+  far fell after the wedge. (9.0.2 aborted with `Playback shouldn't have to iowait`;
+  8.2.2's binary does not contain that message.)
+
 ## Superseded: the earlier conclusion that a replay cannot be stopped
 
 **Read this before planning any debugging session on a replay.** Measured on
@@ -554,6 +608,44 @@ record and replay would be different machines.
 
 Divergence on replay is a **finding about our own system**, not an obstruction.
 Record it here and keep going; only chase one when it looks load-bearing.
+
+- **The arm64 wedge is QEMU refusing an exception the recording does not have --
+  i.e. a divergence that happened EARLIER, silently (2026-10-04).** Measured on a
+  fresh kmtest trace (`a64-km-1`, 35 MB, sweep 93/93), by hand with a monitor:
+  `info replay` froze at **icount 19,803,007,807** on two runs (deterministic), 13.7%
+  of the serial. `rr wedge --icount` puts that **22,902 instructions into a recorded
+  chunk that ran 1,249,999 instructions to its next timer interrupt** with no
+  exception event in it. `info registers` at the freeze: **EL0, PC = the `ret` after
+  an `svc #0`** in an ntdll syscall stub -- the replayed guest is making a system call
+  the recorded guest never made there. QEMU's replay only takes an exception when the
+  log's next event is that exception; otherwise the vCPU waits, forever. So the
+  wedge offset is where an earlier divergence first becomes VISIBLE, not where
+  anything goes wrong -- which is why it was roughly absolute per (QEMU, guest) and
+  tight within a pair, and why no event "at" the offset ever looked guilty.
+  Not the x86 cause: replaying this trace from power-on (disks reverted to `init`,
+  no snapshot load) stalls at icount 0 -- arm64 needs the snapshot, x86 cannot use it.
+  **Narrowed with `rr diverge` (2026-10-05)** on three sampled recordings
+  (`a64-samp-1..3`, 10s / 10s / 2s): registers and every MiB of RAM match the
+  recording through the firmware and the whole kernel boot, up to **18,853,259,727**;
+  the plain replay wedges at **18,953,239,940**, 100M instructions later. In that
+  window the recording logs no block I/O at all (the arm64 boot runs from a ramdisk;
+  the last async event is at 14.7G), only serial writes, 680 exceptions, 82
+  interrupts and one host-clock read. The replayed serial is a byte-exact prefix
+  of the recorded one up to `PspUserThreadStartup: returning` — the first user
+  thread leaving the kernel — and the wedge PC is
+  `ntdll!LdrOpenImageFileOptionsKey+0x30` at EL0. So the divergence is in the first
+  user process's loader, and it is in state the fingerprint does not cover (system
+  registers, the exclusive monitor, device state such as the GIC and timers),
+  since RAM and GPRs still matched.
+
+  Two plain replays of the same trace stall at the identical read offset
+  (1,040,384), so replay is deterministic; but one `diverge` run, which pauses the
+  replay at each fingerprint, got PAST that point (matching the recording at
+  18,971,127,479) and wedged at 18,985,805,350 in the same function instead. A
+  replay-side pause can therefore change the outcome — evidence that the missing
+  input is something a stop/cont cycle touches. **Next:** extend the fingerprint
+  past RAM and GPRs (system registers via the gdbstub, device vmstate) so the
+  first differing state is named rather than inferred.
 
 - **`blkreplay` cannot drive an ATAPI CD, which is why x86 cannot be recorded
   (2026-09-13). MEASURED, root-caused, and now refused up front.**
