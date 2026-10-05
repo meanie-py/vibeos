@@ -24,6 +24,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CELL_DATA, CmpAllocate, CmpFree, CmpLazyFlush, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, HV_HIVE_CELL_PAIR, PHV_TRACK_CELL_REF, HV_TRACK_CELL_REF, RtlSetBits, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE};
 use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, HvGetCellBlock, PAGED_CODE, HCELL_NIL, HBLOCK_SIZE};
 use core::ffi::c_void;
+use crate::hivelock::{HvpLockHiveExclusive, HvpLockHiveShared};
 
 // Pointer-width integer matching ULONG_PTR/SIZE_T on all arches
 #[cfg(target_pointer_width = "32")]
@@ -60,6 +61,8 @@ unsafe fn HvpGetCellHeader(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX) -> 
         let CellType = HvGetCellType(CellIndex);
         let CellBlock = HvGetCellBlock(CellIndex);
         let CellOffset = CellIndex & HCELL_OFFSET_MASK; // HCELL_OFFSET_SHIFT = 0
+        // A concurrent HvpAddBin may swap and free BlockList; hold it while indexing.
+        let _map = HvpLockHiveShared(RegistryHive);
         let entry = (*RegistryHive).Storage[CellType as usize]
             .BlockList
             .add(CellBlock as usize);
@@ -106,6 +109,7 @@ pub unsafe extern "system" fn HvIsCellAllocated(
     if Block >= (*RegistryHive).Storage[Type as usize].Length {
         return 0;
     }
+    let _map = HvpLockHiveShared(RegistryHive);
     let entry = (*RegistryHive).Storage[Type as usize].BlockList.add(Block as usize);
     if (*entry).BlockAddress != 0 {
         1
@@ -129,6 +133,8 @@ pub unsafe extern "system" fn HvMarkCellDirty(
     let CellBlock = HvGetCellBlock(CellIndex);
     let CellLastBlock = HvGetCellBlock(CellIndex + HBLOCK_SIZE - 1);
 
+    // RtlSetBits is a read-modify-write of a vector HvpAddBin may reallocate.
+    let _hive = HvpLockHiveExclusive(RegistryHive);
     RtlSetBits(
         core::ptr::addr_of_mut!((*RegistryHive).DirtyVector),
         CellBlock,
@@ -158,6 +164,7 @@ pub unsafe extern "system" fn HvIsCellDirty(Hive: *mut HHIVE, Cell: HCELL_INDEX)
     if HvGetCellType(Cell) == Volatile {
         return 1;
     }
+    let _hive = HvpLockHiveShared(Hive);
     if rtl_check_bit(
         core::ptr::addr_of!((*Hive).DirtyVector),
         Cell / HBLOCK_SIZE,
@@ -280,6 +287,9 @@ pub unsafe extern "system" fn HvAllocateCell(
     // ASSERT(RegistryHive->ReadOnly == FALSE);
     ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
 
+    // Free lists, HvpAddBin's map swap and the dirty vector: one writer per hive.
+    let _hive = HvpLockHiveExclusive(RegistryHive);
+
     // Size = ROUND_UP(Size + sizeof(HCELL), 16);
     Size = ROUND_UP(Size as usize + core::mem::size_of::<HCELL>(), 16) as u32;
 
@@ -336,6 +346,7 @@ pub unsafe extern "system" fn HvReallocateCell(RegistryHive: *mut _HHIVE, CellIn
 
     ntkrnl_sys::ASSERT!(CellIndex != HCELL_NIL);
 
+    let _hive = HvpLockHiveExclusive(RegistryHive);
     Storage = HvGetCellType(CellIndex);
 
     OldCell = HvGetCell(RegistryHive, CellIndex);
@@ -365,6 +376,7 @@ pub unsafe extern "system" fn HvFreeCell(RegistryHive: *mut HHIVE, CellIndex: HC
 
     ntkrnl_sys::ASSERT!((*RegistryHive).ReadOnly == 0);
 
+    let _hive = HvpLockHiveExclusive(RegistryHive);
     let Free: *mut HCELL = HvpGetCellHeader(RegistryHive, CellIndex);
     ntkrnl_sys::ASSERT!((*Free).Size < 0);
     (*Free).Size = -((*Free).Size);
