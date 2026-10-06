@@ -55,13 +55,22 @@ static FDO: AtomicPtr<ntkrnl_sys::ddk::DEVICE_OBJECT> = AtomicPtr::new(null_mut(
 static LOWER: AtomicPtr<ntkrnl_sys::ddk::DEVICE_OBJECT> = AtomicPtr::new(null_mut());
 static MMIO: AtomicU64 = AtomicU64::new(0);
 static MMIO_LEN: AtomicU64 = AtomicU64::new(0);
-/// Signalled once START_DEVICE has recorded the resources.
+/// Signalled when AddDevice attaches, and when START_DEVICE has recorded the
+/// resources.
+static mut ATTACHED: KEVENT = unsafe { core::mem::zeroed() };
 static mut STARTED: KEVENT = unsafe { core::mem::zeroed() };
+/// A board with a platform NIC loads netstack FOR it, so AddDevice follows
+/// DriverEntry within moments; the PnP manager starts the device right after.
+/// Without one (any PCI-NIC or NIC-less machine), the engine gives up after
+/// ATTACH_WAIT_MS, and TDI requests fail fast instead of pending meanwhile.
+const ATTACH_WAIT_MS: i64 = 1_000;
+const START_WAIT_MS: i64 = 10_000;
 
 /// Hook netstack into PnP. Called from DriverEntry before anything can send us
 /// an IRP; tdidev::init then installs the dispatcher that routes PnP and power
 /// IRPs for our FDO to `dispatch`.
 pub unsafe fn init(driver: *mut DRIVER_OBJECT) {
+    KeInitializeEvent(&raw mut ATTACHED, NOTIFICATION_EVENT as _, 0);
     KeInitializeEvent(&raw mut STARTED, NOTIFICATION_EVENT as _, 0);
     (*(*driver).DriverExtension).AddDevice = Some(core::mem::transmute::<_, _>(add_device as *const ()));
 }
@@ -71,15 +80,19 @@ pub fn owns(device: PDEVICE_OBJECT) -> bool {
     !device.is_null() && device == FDO.load(Ordering::Acquire)
 }
 
-/// Wait up to `ms` for a platform NIC to start. The PnP manager loads netstack
-/// for the device and starts it right after DriverEntry, so on a board that has
-/// one this returns within moments; on one that does not, it times out.
-pub fn wait(ms: i64) -> Option<PlatformNic> {
-    let mut timeout: LARGE_INTEGER = unsafe { core::mem::zeroed() };
-    timeout.QuadPart = -(ms * 10_000);
-    // Executive (0), KernelMode (0), not alertable.
-    let status = unsafe { KeWaitForSingleObject((&raw mut STARTED).cast(), 0, 0, 0, &mut timeout) };
-    if status == STATUS_TIMEOUT {
+/// Wait for a platform NIC to attach and start (see ATTACH_WAIT_MS).
+pub fn wait() -> Option<PlatformNic> {
+    unsafe fn wait_for(event: *mut KEVENT, ms: i64) -> bool {
+        let mut timeout: LARGE_INTEGER = core::mem::zeroed();
+        timeout.QuadPart = -(ms * 10_000);
+        // Executive (0), KernelMode (0), not alertable.
+        KeWaitForSingleObject(event.cast(), 0, 0, 0, &mut timeout) != STATUS_TIMEOUT
+    }
+    if !unsafe { wait_for(&raw mut ATTACHED, ATTACH_WAIT_MS) } {
+        return None;
+    }
+    if !unsafe { wait_for(&raw mut STARTED, START_WAIT_MS) } {
+        nsprint!("[NETSTACK] PnP: the platform NIC attached but was never started\n");
         return None;
     }
     let mmio = MMIO.load(Ordering::Acquire);
@@ -123,6 +136,7 @@ unsafe extern "system" fn add_device(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT
     FDO.store(fdo, Ordering::Release);
     (*fdo).Flags &= !DO_DEVICE_INITIALIZING;
     nsprint!("[NETSTACK] PnP: platform NIC attached\n");
+    KeSetEvent(&raw mut ATTACHED, 0, 0);
     STATUS_SUCCESS
 }
 

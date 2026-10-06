@@ -76,8 +76,6 @@ const DNS_NAME: &str = "example.com";
 const DNS_MAX_ATTEMPTS: u32 = 20;
 const ICMP_IDENT: u16 = 0x022b;
 const THREAD_ALL_ACCESS: u32 = 0x001F_03FF;
-/// How long the worker waits for a platform NIC when there is no PCI NIC.
-const PLATFORM_NIC_WAIT_MS: i64 = 10_000;
 
 /// Spawn the netstack poll-loop worker thread. Returns immediately; the engine
 /// runs for the life of the system.
@@ -101,6 +99,8 @@ pub fn start() {
     };
     if status < 0 {
         nsprint!("[NETSTACK] FAIL: PsCreateSystemThread {:#010x}\n", status as u32);
+        // No worker will ever drain the TDI inbox.
+        crate::tditrans::mark_engine_dead();
     }
 }
 
@@ -220,10 +220,11 @@ unsafe extern "system" fn worker(_context: PVOID) {
             Some(d) => AnyPhy::E1000(crate::e1000::E1000Phy::new(d)),
             // No PCI NIC: a platform NIC (pnp.rs) starts moments after
             // DriverEntry when the machine has one.
-            None => match crate::pnp::wait(PLATFORM_NIC_WAIT_MS).and_then(crate::genet::bringup) {
+            None => match crate::pnp::wait().and_then(crate::genet::bringup) {
                 Some(d) => AnyPhy::Genet(crate::genet::GenetPhy::new(d)),
                 None => {
                     nsprint!("[NETSTACK] FAIL: M2 device bringup\n");
+                    crate::tditrans::mark_engine_dead();
                     return;
                 }
             },
@@ -234,6 +235,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         Some(p) => p,
         None => {
             nsprint!("[NETSTACK] FAIL: M11 NDIS adapter bringup\n");
+            crate::tditrans::mark_engine_dead();
             return;
         }
     };

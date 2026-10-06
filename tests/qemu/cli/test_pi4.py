@@ -88,3 +88,21 @@ def test_wait_for_desktop_reads_only_this_boot(tmp_path: Path) -> None:
     serial.write_bytes(b"shell ready from before\n")
     text, reached = pi4.wait_for_desktop(serial, serial.stat().st_size, timeout=0.1)
     assert not reached and text == ""
+
+
+def test_serial_tail_reads_from_offset_and_stamps_split_lines(tmp_path: Path) -> None:
+    cap = tmp_path / "serial.bin"
+    cap.write_bytes(b"OLD BOOT hello32.exe exit = 0x600d\n")
+    start = cap.stat().st_size
+    tail = pi4.SerialTail(cap, start, time.monotonic())
+    assert tail.read_available(0) == ""  # the previous boot's verdict is not this boot's
+    with open(cap, "ab") as f:
+        f.write(b"[WINLOGON] hello32.exe (i386 guest) created - waiting\n[WINLOGON] hello32.e")
+    first = tail.read_available(0)
+    assert "hello32 launch" in tail.times and "hello32 exit" not in tail.times
+    with open(cap, "ab") as f:
+        f.write(b"xe exit = 0x600d (0x600D = PASS)\n")  # the verdict straddles two reads
+    second = tail.read_available(0)
+    assert "hello32 exit" in tail.times
+    assert pi4.ladder.verdicts(first + second) == {"hello32": 0x600D}
+    assert tail.durations()["hello32"] >= 0

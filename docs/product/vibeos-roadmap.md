@@ -594,6 +594,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Pi 4 (real hardware): a loopback UDP `sendto()` never returned** (FIXED 2026-10-04,
+  `e0674df2c66`). With no NIC netstack drives, the engine worker exited while TDI kept pending
+  IRPs into its dead inbox. They now fail fast with STATUS_NETWORK_UNREACHABLE. QEMU never showed
+  it because every smoke boot has QEMU's default NIC. **Still owed:** loopback with no NIC fails
+  rather than WORKS (Windows always has a loopback interface). That wants a smoltcp loopback
+  device in the engine, worth doing alongside the Pi's GENET driver.
 - **amd64 RAM above 4 GiB: the kernel cannot use it yet** (OPEN, 2026-10-04). The loader's
   `MM_MAX_PAGE` (freeldr-rust `frldr.rs`) cuts amd64's memory map at 4 GiB, as the Rust has
   always done; mm.h's 8 GiB would expose the rest. With it raised, `VIBEOS_QEMU_HOSTILE=mem`
@@ -2643,7 +2649,163 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
   it is a one-command check.
 
-- **arm64 WoW64 guests fault INSIDE FEX's code cache — OPEN, and it is the best candidate
+- **2026-10-04: x86 guests run under FEX on a real Raspberry Pi 4.** The FEX arm64 media
+  (`VIBEOS_FEX=1`, MP kernel, Cortex-A72 x4) netbooted to the desktop and ran the whole ladder:
+**13 of 14 x86 guests pass** plus `fexprobe` — including both stress guests, `lua32` and
+  `sqlite32` — with no bugcheck. The one miss is `marshal32`, which hangs in a loopback
+  `sendto()` that is a board-side networking bug, not FEX (registry: "Pi 4 (real hardware): a
+  loopback UDP `sendto()` never returns"). Run `/tmp/vibeos-cli/20261004-202912-qddv97oj-pi4-boot-arm64`.
+  - **FEX takes ~1,200 alignment faults per ladder boot, on the board AND in QEMU.** FEX emits
+    `STLR`/`LDAR` for x86-TSO ordering; on ARMv8.0 (the A72 has no LSE2) an unaligned one takes
+    an alignment fault (`ESR=0x92000061`, raised as `STATUS_DATATYPE_MISALIGNMENT`, e.g. opcode
+    `0x889FFE9F` = `STLR wzr,[x20]`), and FEX recovers it. 1,229 on the Pi; 1,190 in a QEMU
+    boot of the same tree (`20261004-204131-hsbqj3g1`), so TCG enforces it too. (This entry
+    first said QEMU does not fault and the path "had never run" — an inference from the board
+    log alone, refuted by counting the QEMU log.)
+  - **What differs on the board is what each fault COSTS.** `ke/arm64/trap.rs`'s `[ALIGN]` decode
+    and the `[UEXC]` dispatch dump wrote ~1 KB per fault byte-by-byte to the PL011 inside the
+    trap: instant on QEMU's virtual UART, ~90 ms at 115200 baud (computed from the line rate,
+    not measured). Now capped: those two codes print in full for their first 32, then as a
+    count at each power of two; tripwire `UEXCVERBOSE` restores everything (`133142f2ff9`).
+  - **Timed on the board (`pi4 boot --ladder`, `20261004-210344-k4a1c7i7-pi4-boot-arm64`):**
+    every guest runs in **1–5 s** launch-to-verdict — `lua32` 2.6 s, `sqlite32` 2.6 s, `gui32`
+    4.5 s — and the whole ladder takes 121.6 s, 67.6 s of which is winlogon waiting out the
+    hung `marshal32`. Power-on to desktop was 347 s; most of it is sanbooting the 564 MB FEX
+    image (a plain arm64 image reached the desktop in ~100 s on 2026-09-26), unmeasured split.
+  - **Then 11/11 + all four non-parity guests, fully green, on the board** once netstack stopped
+    pending TDI IRPs into a dead engine (`e0674df2c66`):
+    `/tmp/vibeos-cli/20261004-221515-_d97sb6p-pi4-boot-arm64`, ladder drained in 61 s.
+  - QEMU on the same tree: the ladder was red on `spawn32` (0xBAE4) — a lost-wakeup race in the
+    guest itself (it closed the named DONE event before the child opened it), fixed in
+    `509f9d7939f`; green UP and `-smp 4` after.
+
+- **RETRACTED 2026-10-03: "arm64 WoW64 guests fault INSIDE FEX's code cache" was never a bug.**
+  Settled by rebuilding the tree it was measured on (`c3bacfab2d4`, worktree
+  `vibeos-fex-sept`, same `lua32.exe` by sha256) and booting it. Demonstrated:
+
+  1. **`lua32` passes on the September tree** — all six rungs, `exit = 0x600d` — once the boot
+     is not cut short (`smoke --until "sqlite32.exe exit"`; twice, artifacts
+     `20261003-205955-c25w6b__` and `20261003-210513-ias8s8nj`).
+  2. **The September "death" was the ladder harness.** That tree's `watch()` computes
+     in-flight optional guests from the serial drained *since the call*, so it breaks the
+     moment the last parity guest reports if `lua32`'s launch line has not arrived yet — and
+     winlogon only launches `lua32` after the last parity guest exits. Reproduced with
+     `--ladder` on the September tree (`20261003-205536-fvua4odz`): drain stopped at 73.7s of a
+     420s ceiling, `LADDER_FAIL: lua32.exe never reported`, while the serial after the stop
+     shows `lua32` still alive, making syscalls. Fixed `8756f3fbe4a` (2026-09-26, "ladder drain
+     stops racing launches") — after the September measurement, before the October farm.
+  3. **The symbolicated `[UEXC]` records are the normal path.** The September tree logs 3
+     LookupCache AVs in *every* FEX process, including the nine that pass, at the same RVAs and
+     the same first address `0x7FFFBEFB7858` the September entry quoted as the crash. They are
+     FEX's designed overcommit emulation (below) and they recover.
+  4. **`sqlite32`'s failure is real but is a KERNEL bug, not FEX:** `BUGCHECK 0x1E`
+     (`0xC0000098`, `STATUS_FILE_INVALID`) raised via `RtlRaiseStatus` on sqlite32's own thread,
+     raising frames outside ntoskrnl's symbol table (a driver; fastfat is the obvious suspect for
+     an on-disk database, unproven). **`2252abfbb61` — the fastfat dirent-bitmap fix — is NOT
+     the cure:** cherry-picked onto the September tree it removes the `FatDeleteDirent` ASSERT
+     (3 hits → 0) but `sqlite32` still bugchecks identically. Something else between 09-13 and
+     10-03 fixed it; `sqlite32` passes 10/10 at HEAD. Owed to the fastfat/IO lane as a
+     bisect, not to FEX.
+
+  Inferred (consistent with all of the above, not separately tested): the "size correlation"
+  was a coincidence of which guests were OPTIONAL — `lua32` and `sqlite32` were the only two
+  subject to the drain race, and both happen to be big; the size-matched control was optional
+  too. None of the four arm64 exception-path fixes is needed to explain anything. The
+  overcommit analysis and the 10-boot farm below remain accurate as descriptions of FEX's
+  behaviour; they are no longer evidence of a bug.
+
+  **History, kept because the retraction is only as good as the record it corrects.**
+
+- **arm64 WoW64 guests fault INSIDE FEX's code cache — DOES NOT REPRODUCE at
+  `87944d5e281`+ (2026-10-03), and the measurement CONFIRMS the overcommit mechanism rather
+  than clearing it.** One `smoke --arch arm64 --ladder` run, artifact
+  `/tmp/vibeos-cli/20261003-100335-xc8cw6oq-smoke-arm64`: **all 11 parity guests PASS, and both
+  stress guests PASS** — `lua32.exe exit = 0x600d` with all six rungs (parse/GC/4000 longjmp
+  unwinds/400-deep recursion/500 coroutine switches/format round-trip), `sqlite32.exe exit =
+  0x600d` with all five. In September these two were the only reds and `lua32` died *before*
+  printing `[lua32] start`.
+
+  **The faults did NOT go away — they are now RECOVERED, which is the point.** The same run
+  logged **55 access violations inside `libwow64fex`, at exactly two RVAs**:
+
+        30x  RVA 0x10740  DFSC 0x7 (translation fault, L3)
+        25x  RVA 0x0FB88  DFSC 0x6/0x7 (translation fault, L2/L3)
+
+  Symbolicated **against the binary that actually ran** (`sha256
+  2ea16e3c702120611e35bf9d1e979d3e9dfa2c9e62198f573ef808d2e5092edb`, ImageBase `0x180000000`,
+  built 2026-10-03 — NOT the September binary, per the warning below), using the nearest
+  preceding `T` symbol from `llvm-nm`:
+
+        0x0FB88 +0x20   FEXCore::LookupCache::FindBlock(InternalThreadState*, unsigned long long)
+        0x10740 +0x158  FEXCore::LookupCache::AddBlockMapping(InternalThreadState*, ...)
+
+  Four processes loaded the plugin at four different bases (`0x410000`, `0x480000`, `0x4D0000`,
+  `0x510000`) and every AV resolves to one of those two RVAs against *its own* base. So: the
+  read side and the write side of the lookup structure still take translation faults on cold
+  pages, at the same rate and the same two sites as when the guests were dying — **and the
+  guests now pass.** That is precisely what the designed overcommit emulation predicts (see the
+  mechanism section below): the AV is step one, `OvercommitTracker::HandleAccessViolation`
+  commits 64K and returns `true`, the instruction retries. September's bug was never "a fault
+  happened"; it was that the recovery did not complete.
+
+  **10-boot farm, 2026-10-03: 0/10 failures, and 539 recovered faults.**
+  `smoke --arch arm64 --ladder --repeat 10` (sequential, one boot slot — artifact
+  `/tmp/vibeos-cli/20261003-200522-wtpis3_x-smoke-arm64`, 21m09s). Every boot: **14 guests
+  pass**, `lua32` and `sqlite32` both `0x600d`. **140/140 guest verdicts green.** Per boot the
+  same two sites still fault and still recover:
+
+        LookupCache AVs/boot   51-56   (total 539: FindBlock 239, AddBlockMapping 300)
+        other AVs/boot         ~200    (total 1998, also recovered)
+        alignment fixups/boot  ~1192   (total 11920, x86-on-arm64, expected)
+
+  The narrow spread (range 5 over 10 boots) says this is **not a rare race** — it is a
+  deterministic function of how many cold pages the cache touches, firing ~54x per boot and
+  recovering every time. 539 demand-commits, 539 recoveries, 0 deaths.
+
+  **The commit-and-retry chain is verified end to end — from logs we already had, no new
+  instrumentation.** The kernel's `[UEXC]` dump carries `P1` = `ExceptionInformation[1]`, the
+  fault address. Attributing each AV to its process by load base, across all 10 boots:
+  **538 LookupCache AVs, 0 repeat faults on the same page, 0 faults inside a 64K window an
+  earlier fault would have committed.** Every AV is the first touch of a fresh region, and
+  that process's next fault always lands outside the 64K `HandleAccessViolation` commits — so
+  handler reached, commit succeeded, instruction retried, 538/538. Reads 238 / writes 300,
+  matching `FindBlock` (reads) and `AddBlockMapping` (writes). The first fault in a process is
+  at `0x7FFFBEFB7858`, **byte-identical to the September address above** — `MEM_TOP_DOWN`
+  places the reservation identically every time, so the two measurements are directly
+  comparable.
+
+  **What that says about September.** A failed *commit* would show as a repeat fault at the
+  same address — a retry loop, i.e. a hang. September's guests instead **died with
+  `c0000005`**, which means the AV went *unhandled*: either `Query.Enclosed` was false (the
+  address was not in a registered overcommit interval) or the plugin's handler was never
+  reached. No September serial survives the disk failure to tell those apart, so the only way
+  forward is to reproduce it: build the 2026-09-13 tree and boot it.
+
+  **What 0/10 does and does not bound.** It is strong evidence against the JULY rate and weak
+  evidence against a low one: at July's 3/6 (50%) a 10/10 green run is p=0.001; the 95%
+  confidence upper bound from 0/10 is only ~26%. **And the farm was deliberately polite** —
+  sequential, one slot, so as not to disturb other lanes. July's 3/6 came from a 6-VM soak and
+  its mechanism is described as hitting "whichever guest is mid-actctx when starved", i.e. it
+  is host-contention-sensitive. A sequential farm is the condition LEAST likely to reproduce
+  it, so this result rules out a frequent contention-free failure and says little about the
+  contended case. **The remaining experiment is a deliberately-contended soak**, run when it
+  will not collide with other lanes — not more sequential boots, which buy more of the same.
+
+  **What this does NOT establish.** One green run does not retire a nondeterministic bug — this
+  one was always intermittent (`file32` faulted once and passed later), so a single pass is
+  weak evidence on its own and the honest status is "not reproducing", not "fixed". Nor does it
+  identify a fix: four arm64 exception-path changes landed between the September measurement
+  and this one (NEON through `NtContinue` `501f350f3d0`, PSTATE.I on a Rust SEH catch
+  `1a06337252d`, `brk #0xF000` dispatch `1406ebb8d77`, VA 0-64K unmap `a828512ac9b`) and any,
+  none, or a combination could be responsible. **Owed: a `farm` soak for a rate**, which is the
+  only thing that can distinguish "fixed" from "got lucky", plus a bisect if it stays green.
+  Note also 200 further AVs outside any FEX image, 181 of them at a single PC
+  `0x7FFFDFFA02B0` — unidentified, also recovered, probably another designed-AV mechanism
+  (FEX's `CallRetStack` grows on fault the same way); not investigated.
+
+  **The September evidence, kept because it is what the above is measured against.**
+
+- **arm64 WoW64 guests faulted INSIDE FEX's code cache — the 2026-09-13 measurement, and it is the best candidate
   yet for the "unstable class" below** (2026-09-13). Found by `lua32.exe`, the second
   third-party stress guest (`tools/stress/lua/build.sh`), on its first arm64 ladder run.
   Two different guests in the SAME boot died with `c0000005`, and both faulting PCs resolve
@@ -2676,6 +2838,171 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   problem and not a lua32 defect -- lua32 merely reached it first and made it legible. It also
   means a red `file32` on arm64 should be read as a suspected code-cache fault before anything
   file-related.
+
+  **DISCRIMINATED 2026-09-13: it is NOT translated-code volume. The hypothesis below is
+  FALSIFIED, and the prediction was committed before the run.** A size-matched control was
+  built — the same Lua 5.4 objects linked in, 505,344 bytes against the real guest's 508,928
+  (0.7% apart), but with `main()` returning the PASS code immediately so that not one Lua opcode
+  ever executes. Staged via `VIBEOS_LUA32_EXE` and verified by hash that the control, not the
+  real guest, reached the media. Result: **the control faults identically**, at the same PC, in
+  the same function, while all nine parity guests PASS in the same boot:
+
+        control  PC=0x0048FB88  base=0x480000  RVA 0xFB88  -> FEXCore::LookupCache::FindBlock
+        control  PC=0x00490740  base=0x480000  RVA 0x10740 -> FEXCore::LookupCache::AddBlockMapping
+
+  So a guest that runs essentially no guest code fails the same way as one that runs six rungs of
+  interpreter, GC and coroutine switching. Code volume, `setjmp`/`longjmp`, the block cache being
+  *invalidated* — none of it is the trigger. The naive image/address-range reading is what
+  survives.
+
+  **The mechanism this points at, and it is on OUR side of the contract.**
+  `FEXCore/Source/Interface/Core/LookupCache.cpp:27` sizes one large allocation as
+  `VirtualMemSize / PAGE_SIZE * 8 + CODE_SIZE + MAX_L1_SIZE` and indexes it by GUEST ADDRESS:
+  the header comment is `PageMemoryMap[VirtualMemoryRegion >> 12]`. Its own comment notes "at
+  64GB of virtual memory this will allocate 128MB of virtual memory space" — i.e. it is a large
+  SPARSE reservation, and `CTX->SyscallHandler->MarkOvercommitRange(PagePointer, TotalCacheSize)`
+  says out loud that FEX expects Linux-style overcommit: reserve big, touch lazily, fault pages in
+  on demand. Both faulting functions are the read side and the write side of exactly that
+  structure, and the fault is ESR `0x92000006` — a translation fault, i.e. touching a page that
+  is not backed.
+  **INFERENCE, not yet observed:** if our MM does not demand-commit that sparse range the way
+  FEX assumes, then a guest whose code spans more pages indexes further into the map and reaches
+  an unbacked page, while a tiny guest never does. That fits every datum — the size correlation,
+  the two fault sites, the nondeterminism, and `file32` (8K) faulting once and passing later.
+  It is testable directly: dump the region's `MEM_COMMIT`/`MEM_RESERVE` state around
+  `PagePointer` at the moment of the fault.
+
+  **READ THE CODE 2026-10-03, and it reframes the question: the fault is step one of a
+  DESIGNED mechanism, so the bug is that the recovery does not complete.** FEX does not assume
+  the OS overcommits. It *emulates* overcommit on Windows, explicitly, in three parts:
+
+  1. `LookupCache.cpp:40` calls `FEXCore::Allocator::VirtualAlloc(TotalCacheSize, false, false)`
+     — the third argument is `Commit`, and it is **false**. `AllocatorHooks.h:49` turns that into
+     `MEM_RESERVE | MEM_TOP_DOWN` with **no `MEM_COMMIT`**, `PAGE_READWRITE`.
+  2. `LookupCache.cpp:49` registers the range: `MarkOvercommitRange(PagePointer, TotalCacheSize)`
+     → `OvercommitTracker::MarkRange` (`Source/Windows/Common/OvercommitTracker.h`), whose class
+     comment is literally *"Emulates memory overcommit of reserved regions with exceptions"*.
+  3. The first touch of a reserved page raises `EXCEPTION_ACCESS_VIOLATION`.
+     `BTCpuResetToConsistentStateImpl` (`WOW64/Module.cpp:893`, and :879 on the pre-thread path)
+     calls `OvercommitTracker::HandleAccessViolation(FaultAddress)`, which commits and returns
+     `true` so the faulting instruction is retried.
+
+  So **an AV inside `LookupCache` is expected, by design, on every cold page.** `FindBlock` and
+  `AddBlockMapping` are the read and write side of that structure and are exactly where the
+  first touch of a new region happens — which is why both faulting PCs land there, and why a
+  never-executed control faults identically: it is page-count, not code, that decides how far
+  into the map you reach. What our evidence shows is not "FEX touched an unbacked page" (normal)
+  but **"the page was still unbacked when the instruction retried"** — the handler did not run,
+  or ran and failed, or ran and succeeded but we resumed wrong.
+
+  **Three candidate break points, and the non-Wine path is the demanding one:**
+
+        if (IsWine)  -> commit the WHOLE allocation from Info.AllocationBase
+        else         -> VirtualAlloc(AlignedFaultAddress, min(Query.Size, 64KB),
+                                     MEM_COMMIT, PAGE_READWRITE)
+
+  We are not Wine, so we take the `else`: **repeated partial `MEM_COMMIT` at an arbitrary
+  page-aligned offset inside an existing `MEM_RESERVE`, 64K at a time.** That is a specific MM
+  capability, and it is the first thing to check — does our `NtAllocateVirtualMemory` support
+  committing a sub-range of a reservation at a non-base address? The other two: does our arm64
+  exception dispatch deliver a user-mode data abort on a reserved page to the plugin's handler
+  at all, and do we resume correctly when it returns `true`? Note the `IsWine` split means
+  upstream has *two* tested paths and we exercise the one Wine never does.
+
+  **Candidate (b) is already WEAKENED by reading our side (2026-10-03).** `NtAllocateVirtualMemory`
+  is Rust (`sdk/lib/rust/ntoskrnl-rust/src/ARM3/virtual.rs`) and its "MEM_COMMIT on top of an
+  existing reservation" path (from :2552) does implement the private demand-zero case properly:
+  it page-aligns the caller's range, requires only that it *fit inside* the found VAD rather
+  than start at its base, charges commit, then walks `MiAddressToPte(Starting)..Last` calling
+  `MiMakePdeExistAndMakeValid` on the first PDE and at every PDE boundary, writing a demand-zero
+  invalid PTE per page. A 64K commit at an arbitrary page-aligned offset is exactly what that
+  loop handles. So the MM capability FEX needs appears present; that pushes suspicion onto (a)
+  delivery and (c) resume — the same arm64 exception machinery that has taken four fixes since
+  these faults were measured (NEON through `NtContinue` `501f350f3d0`, PSTATE.I on a Rust SEH
+  catch `1a06337252d`, `brk #0xF000` dispatch `1406ebb8d77`, and the VA 0-64K unmap
+  `a828512ac9b`). Reading further is lower value than one boot: **re-measure before theorising.**
+
+  This supersedes "dump `MEM_COMMIT`/`MEM_RESERVE` at fault time" as the next experiment — that
+  would confirm the page is uncommitted, which the design already predicts. **Instrument
+  `HandleAccessViolation` instead**: whether it is reached, what `Query.Enclosed` says, and what
+  the `VirtualAlloc` returns. A probe outside the vendored tree can do it (see
+  `docs/engineering/wow64-x64-guest-design.md`), or the kernel side can log reserved-page AVs in
+  a WoW64 process.
+
+  **The `TPIDRRO_EL0` lead is FALSIFIED as an explanation of this fault — but it uncovered a
+  real, separate bug (checked 2026-10-03).** The lead was: `WOW64/Module.cpp:527` computes
+  `IsWine = !!GetProcAddress(NtDll, "wine_get_version")`, `CPUFeatures.cpp:84` sets
+  `HostFeatures.SupportsCPUIndexInTPIDRRO = !IsWine`, so FEX takes the real-Windows path and
+  assumes our kernel publishes a CPU index in `TPIDRRO_EL0`; I reasoned that a garbage index
+  into a per-CPU L1 structure "lands exactly in `LookupCache`". **It does not.** `LookupCache`
+  has no CPU-index dependency whatsoever — `grep -niE 'processorid|cpuindex|tpidr|percpu|CPUID'`
+  over both `LookupCache.cpp` and `LookupCache.h` returns NOTHING. The feature bit has exactly
+  three consumers, and none is the block cache:
+
+        FEXCore/Source/Interface/Core/JIT/MiscOps.cpp:233  DEF_OP(ProcessorID) -> mrs TPIDRRO_EL0
+        FEXCore/Source/Interface/Core/CPUID.cpp:1354       GetCPUID = GetCPUID_TPIDRRO
+        FEXCore/Source/Interface/Core/CPUID.cpp:1029       SUPPORTS_RDTSCP = SupportsCPUIndexInTPIDRRO
+
+  So it cannot explain a translation fault in the code cache, and the entry no longer claims it
+  can. I wrote "a garbage index ... lands exactly in `LookupCache`" without reading either file;
+  the disconfirming grep took one command. (AGENTS.md, "a confident prediction about directly
+  observable behaviour, made by someone who did not observe it".)
+
+  **What IS true, and is its own bug: our arm64 kernel never writes `TPIDRRO_EL0`.** An
+  exhaustive search of our source (excluding `vendor/`, bindgen islands and offset checks) finds
+  the name in exactly one place — the `ULONG64 Tpidrro_El0` field of `KSPECIAL_REGISTERS` in
+  `sdk/include/ndk/arm64/ketypes.h:266`. A declaration, never an `msr`. For contrast we DO write
+  `TPIDR_EL1` (the PCR pointer: `ntoskrnl/ke/arm64/kiinit.c:198`, read by `ctxswitch.S`,
+  `KeGetPcr`, `ARM3/helpers.rs`). Consequences, both guest-visible and neither yet observed in a
+  boot: FEX **advertises RDTSCP to the guest** in CPUID on the strength of that bit, and lowers
+  the guest's processor-ID op to a bare `mrs TPIDRRO_EL0` — so a 32-bit guest calling RDTSCP or
+  reading its CPU index gets whatever the firmware left in a register we never initialise or
+  context-switch, uniform across threads and architecturally UNKNOWN at reset. Note FEX's own
+  comment at `MiscOps.cpp:239`: on Windows without this feature it is `ERROR_AND_DIE_FMT`, i.e.
+  upstream treats "Windows host that does not publish the CPU index" as a programming error.
+  Worth a guest rung of its own; it is not what kills lua32.
+
+  **NOT corroborated after all — the July analysis names two mechanisms that do not operate in
+  our build (checked 2026-10-03). See `m14-startup-flake/README.md` for the full working.**
+  Short version: `GuardSignalDeferringSection` is `#else`-branched to a bare lock with no
+  deferred-signal refcount on `_WIN32` (`SignalScopeGuards.h:259`), so `CompileBlock` defers
+  nothing and a fault inside it reaches the VEH normally; and `MmWorkingSetManager`
+  (`ARM3/wslist.rs:504`) has no live caller — `ke/balmgr.rs` has its calls commented out under
+  "NO WS Management Yet!" — so nothing trims a working set and no page can be "evicted between
+  the prefault and `RtlCreateActivationContext`". The empirical numbers may still be real; the
+  explanation is refuted, and **this entry previously cited it as independent corroboration on
+  the strength of its prose alone.** Kept below as the historical record.
+
+  **Recovered July work, which reached A mechanism FIRST and appeared to explain the
+  size correlation.** `docs/engineering/active-lanes/m14-startup-flake/` holds three patches
+  recovered from a stale subagent worktree (`fex-arm-m4`, last touched 2026-07-17) before it was
+  removed. Their analysis, arrived at independently and two months earlier: FEX's block compiler
+  reads guest code at a call target **inside a signal-deferring section** (`CompileBlock` →
+  `GuardSignalDeferringSection`); if that target page is **not yet resident**, the compile yields
+  an empty block whose entrypoint is 0 and `ExitFunctionLink` branches straight to it. Measured
+  then: **~3 of 6 guests died under a 6-VM soak**, victims varying (gui32/file32/hello32/doom)
+  "because it hits whichever guest is mid-actctx when starved" — every WoW64 process's
+  `LdrInitializeThunk` runs `RtlCreateActivationContext`, which calls `__alloca` /
+  `get_manifest_in_module` on ntdll32 pages *other* than the caller's, so the demand-fault loses
+  the race under host contention.
+
+  **That is what makes the control experiment's result make sense.** The never-executed 505K
+  control failing identically says the trigger is PAGES MAPPED AND RESIDENT, not code executed —
+  a bigger image spans more pages, so more of them can be non-resident when `CompileBlock` reads
+  them, and the control has the same page count as the real guest. It also states the
+  Linux-vs-Windows assumption from the other direction: *"Upstream FEX assumes CompileBlock never
+  fails for a mapped RIP (true on Linux, where the frontend read faults the page in); the
+  Windows/WOW64 compile path can observe the transient."* Note the July fault signature is host
+  `PC=0` via a null block, while 2026-09 sees faults *inside* `LookupCache` — related family,
+  possibly the same root at different stages; **do not assume they are identical without
+  evidence.** All of it predates the disk failure and none has been re-verified on this box.
+
+  **Both leads say the same thing about provenance**: the fault executes inside vendored FEXCore,
+  but the suspicious inputs are ours — our memory manager's handling of a large sparse
+  reservation, and a CPU register our kernel may not set. "Unmodified locates the faulting code,
+  not the cause."
+
+  **Superseded hypothesis, kept because the prediction was on the record before the test.**
 
   **Size correlation, and it reframes the hypothesis.** lua32 was added expecting its
   `setjmp`/`longjmp` rungs to stress the block cache -- but it faults BEFORE printing
