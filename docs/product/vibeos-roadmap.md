@@ -594,6 +594,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **x86-64 guests under FEX on arm64: the owed WoW64 features landed** (2026-10-06, wowx64
+  lane). User-mode APCs into guest code, per-thread CPU-layer cleanup on thread exit, an
+  `NtCreateThreadEx` build guard, and an x86-64 guest spawning a 32-bit child all work and are
+  graded by the new x86-64-only `apc64.exe` (APCs + thread cleanup) and `spawn64` rung 9 (the
+  32-bit child). Fixing chained APCs turned up a real **kernel** bug, now fixed: arm64
+  `NtContinue(TestAlert=TRUE)` exited through `KiExceptionExit` without delivering a user APC
+  that `KeTestAlertThread` had just marked pending, so an alertable wait drained only one APC
+  (field manual, "A user thread returns to a small integer" → sibling note). Still owed:
+  CreateRemoteThread into a running non-x86-64 process (refused), and a native kernel32 still
+  loading in a guest (root cause found — ntdll's `_errno`/`atan2`/`tan` forwarders to msvcrt;
+  the local-export fix aliased libwow64fex's rpmalloc thread-heap slot and was backed out;
+  harmless, parked). See `../engineering/wow64-x64-guest-design.md`.
 - **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
   lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
   captured mid-body of itself, so `ZwContinue` after a vectored handler's

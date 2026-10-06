@@ -154,6 +154,7 @@ STAGED_LADDER: dict[str, int] = {
         "selfmod64",
         "reg64",
         "spawn64",
+        "apc64",
     )
 }
 # Where the x86-64 guests are staged on both arches: an x86-64 exe is not a
@@ -295,6 +296,7 @@ GUEST_SOURCE: dict[str, str] = {
     "selfmod64": "tools/fex/hello-compute/Selfmod32.c",
     "reg64": "tools/fex/hello-compute/Reg32.c",
     "spawn64": "tools/fex/hello-compute/Spawn32.c",
+    "apc64": "tools/fex/hello-compute/Apc64.c",
 }
 
 # The script carries the link lines, so a change to it (a new flag, a different
