@@ -9,22 +9,15 @@ const ACCESS_OBJECT_GUID: u16 = 0;
 const ACCESS_MAX_LEVEL: u16 = 4;
 const TAG_SEPA: ULONG = 0x61506553;
 
-unsafe fn SepValidateObjectTypeList(
+/// Validates a list the caller has already copied out of user memory (the C walks the
+/// user array in place, then re-reads it to build the internal list). The GUIDs are
+/// still user pointers and are probed here, as in the C.
+unsafe fn SepValidateObjectTypeList( // nolint: dropped-probe (SeCaptureObjectTypeList copies the list into pool first)
     ObjectTypeList: POBJECT_TYPE_LIST,
     ObjectTypeListLength: ULONG,
 ) -> NTSTATUS {
     let mut Level: USHORT;
     let mut PrevLevel: USHORT = 0;
-    let Size: SIZE_T;
-
-    Size = (ObjectTypeListLength as SIZE_T) * (core::mem::size_of::<OBJECT_TYPE_LIST>() as SIZE_T);
-    if Size == 0 {
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    if let Err(s) = probe_user_buffer(ObjectTypeList as _, Size as usize, core::mem::size_of::<ULONG>(), 1i8) {
-        return s;
-    }
 
     for ObjectTypeIndex in 0..ObjectTypeListLength {
         Level = (*ObjectTypeList.offset(ObjectTypeIndex as isize)).Level;
@@ -130,6 +123,23 @@ pub unsafe extern "C" fn SeCaptureObjectTypeList(
         return STATUS_INVALID_PARAMETER;
     }
 
+    // Copy the user array once, then validate and build from the copy. The C reads
+    // it twice under _SEH2_TRY, so a caller could change a Level between validation
+    // and capture.
+    let ListSize = match (ObjectTypeListLength as usize).checked_mul(core::mem::size_of::<OBJECT_TYPE_LIST>()) {
+        Some(size) => size,
+        None => return STATUS_INVALID_PARAMETER,
+    };
+    let ListCopy = ExAllocatePoolWithTag(PagedPool, ListSize as SIZE_T, TAG_SEPA) as POBJECT_TYPE_LIST;
+    if ListCopy.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    let _list_guard = PoolAllocGuard::new(ListCopy as PVOID, TAG_SEPA);
+    if let Err(s) = safe_copy_from_user(ListCopy as PVOID, ObjectTypeList as _, ListSize, core::mem::size_of::<ULONG>(), PreviousMode) {
+        return s;
+    }
+    let ObjectTypeList = ListCopy;
+
     let status = SepValidateObjectTypeList(ObjectTypeList, ObjectTypeListLength);
     if status < 0 {
         return status;
@@ -145,7 +155,11 @@ pub unsafe extern "C" fn SeCaptureObjectTypeList(
 
     for ObjectTypeIndex in 0..ObjectTypeListLength {
         ObjectTypeGuid = (*ObjectTypeList.offset(ObjectTypeIndex as isize)).ObjectType;
-        (*InternalTypeList.offset(ObjectTypeIndex as isize)).ObjectTypeGuid = *ObjectTypeGuid;
+        (*InternalTypeList.offset(ObjectTypeIndex as isize)).ObjectTypeGuid =
+            match probe_read_generic(ObjectTypeGuid as *const GUID, core::mem::size_of::<ULONG>(), PreviousMode) {
+                Ok(guid) => guid,
+                Err(s) => return s,
+            };
 
         (*InternalTypeList.offset(ObjectTypeIndex as isize)).Level = (*ObjectTypeList.offset(ObjectTypeIndex as isize)).Level;
 

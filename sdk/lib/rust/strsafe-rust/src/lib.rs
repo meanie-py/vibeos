@@ -45,6 +45,9 @@ pub type DWORD = u32;
 
 use core::ffi::{c_int, c_void};
 
+/// ntstrsafe.h's `RtlString*` (NTSTATUS) family, the kernel/native twin of this crate.
+pub mod ntstrsafe;
+
 extern "C" {
     /// msvcrt's `_vsnwprintf`. Variadic only in its `va_list` argument, so — unlike the `...`
     /// entry points — this IS expressible in stable Rust.
@@ -251,8 +254,16 @@ unsafe fn StringVPrintfExWorkerW(
     pszFormat: *const WCHAR,
     ap: *mut c_void,
 ) -> HRESULT {
-    printf_ex_worker(pszDest, cchDest, cbDest, ppszDestEnd, pcchRemaining, dwFlags, pszFormat,
-        |d, n, f| _vsnwprintf(d, n, f, ap))
+    printf_ex_worker(
+        pszDest,
+        cchDest,
+        cbDest,
+        ppszDestEnd,
+        pcchRemaining,
+        dwFlags,
+        pszFormat,
+        |d, n, f| _vsnwprintf(d, n, f, ap),
+    )
 }
 
 /// `StringVPrintfExWorkerW` with its one `_vsnwprintf` call handed in as `print(dest, cchMax,
@@ -612,7 +623,12 @@ pub unsafe extern "C" fn StringCbPrintfW_v(
     pszFormat: *const WCHAR,
     app: *mut c_void,
 ) -> HRESULT {
-    StringCchPrintfW_v(pszDest, cbDest / core::mem::size_of::<WCHAR>(), pszFormat, app)
+    StringCchPrintfW_v(
+        pszDest,
+        cbDest / core::mem::size_of::<WCHAR>(),
+        pszFormat,
+        app,
+    )
 }
 
 /// strsafe.h `StringCchVPrintfW` — NOT variadic in C either (it takes the `va_list`), so this

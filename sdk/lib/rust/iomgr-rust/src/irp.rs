@@ -21,7 +21,7 @@ use ntkrnl_sys::ddk::{
     KPROCESSOR_MODE, HANDLE, PKNORMAL_ROUTINE, PDRIVER_CANCEL, PIO_COMPLETION_ROUTINE,
     IoAllocateErrorLogEntry, IoWriteErrorLogEntry, IoFreeMdl,
     KeReadStateEvent, KeDelayExecutionThread, KeWaitForSingleObject,
-    KeInitializeApc, KeInsertQueueApc, MmUnlockPages, MmProbeAndLockPages,
+    KeInitializeApc, KeInsertQueueApc, MmUnlockPages,
     MmGetSessionId, IoAllocateMdl, IopDoNameTransmogrify,
     ObDereferenceObjectDeferDelete,
     KeInitializeEvent,
@@ -994,7 +994,9 @@ pub unsafe extern "system" fn IoBuildAsynchronousFsdRequest(
                 return null_mut();
             }
 
-            MmProbeAndLockPages(
+            // C: _SEH2_TRY { MmProbeAndLockPages } _SEH2_EXCEPT { free the MDL and
+            // the IRP; return NULL }.
+            if ntkrnl_sys::probe::MmTryProbeAndLockPages(
                 (*Irp).MdlAddress,
                 0i8,
                 if MajorFunction == IRP_MJ_READ {
@@ -1002,7 +1004,12 @@ pub unsafe extern "system" fn IoBuildAsynchronousFsdRequest(
                 } else {
                     IoReadAccess
                 },
-            );
+            ) < 0
+            {
+                IoFreeMdl((*Irp).MdlAddress);
+                IoFreeIrp(Irp);
+                return null_mut();
+            }
         } else {
             (*Irp).UserBuffer = Buffer;
         }
@@ -1121,7 +1128,9 @@ pub unsafe extern "system" fn IoBuildDeviceIoControlRequest(
                     return null_mut();
                 }
 
-                MmProbeAndLockPages(
+                // C: _SEH2_TRY { MmProbeAndLockPages } _SEH2_EXCEPT { free the MDL,
+                // the input copy and the IRP; return NULL }.
+                if ntkrnl_sys::probe::MmTryProbeAndLockPages(
                     (*Irp).MdlAddress,
                     0i8,
                     if IO_METHOD_FROM_CTL_CODE(IoControlCode) == METHOD_IN_DIRECT {
@@ -1129,7 +1138,15 @@ pub unsafe extern "system" fn IoBuildDeviceIoControlRequest(
                     } else {
                         IoWriteAccess
                     },
-                );
+                ) < 0
+                {
+                    IoFreeMdl((*Irp).MdlAddress);
+                    if !InputBuffer.is_null() {
+                        ExFreePool((*Irp).AssociatedIrp.SystemBuffer);
+                    }
+                    IoFreeIrp(Irp);
+                    return null_mut();
+                }
             }
         }
         METHOD_NEITHER | _ => {

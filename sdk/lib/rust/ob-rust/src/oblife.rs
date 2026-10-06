@@ -1144,6 +1144,14 @@ pub unsafe extern "system" fn NtQueryObject(
         }
     }
 
+    // The C fills ObjectInformation in place under _SEH2_TRY. A user-mode caller's
+    // buffer is a pool copy here (OutputBounce), copied back once at the end.
+    let bounce = match OutputBounce::new(ObjectInformation, Length as usize, PreviousMode) {
+        Ok(b) => b,
+        Err(s) => return s,
+    };
+    let ObjectInformation = bounce.buffer();
+
     if ObjectInformationClass != _OBJECT_INFORMATION_CLASS_ObjectTypesInformation {
         Status = ObReferenceObjectByHandle(
             ObjectHandle,
@@ -1262,8 +1270,32 @@ pub unsafe extern "system" fn NtQueryObject(
         }
     }
 
+    // The name and type classes return a UNICODE_STRING whose Buffer points just
+    // past it, inside the output buffer.
+    if NT_SUCCESS(Status) {
+        if ObjectInformationClass == _OBJECT_INFORMATION_CLASS_ObjectNameInformation
+            && bounce.contains(ObjectInformation, core::mem::size_of::<_OBJECT_NAME_INFORMATION>())
+        {
+            bounce.rebase(core::ptr::addr_of_mut!((*(ObjectInformation as POBJECT_NAME_INFORMATION)).Name.Buffer));
+        } else if ObjectInformationClass == _OBJECT_INFORMATION_CLASS_ObjectTypeInformation
+            && bounce.contains(ObjectInformation, core::mem::size_of::<_OBJECT_TYPE_INFORMATION>())
+        {
+            bounce.rebase(core::ptr::addr_of_mut!((*(ObjectInformation as POBJECT_TYPE_INFORMATION)).TypeName.Buffer));
+        }
+    }
+    if let Err(s) = bounce.finish() {
+        Status = s;
+    }
+
+    // C: inside the same _SEH2_TRY.
     if !ResultLength.is_null() {
-        *ResultLength = InfoLength;
+        if let Err(s) = safe_copy_raw(
+            ResultLength as PVOID,
+            &InfoLength as *const ULONG as *const core::ffi::c_void,
+            core::mem::size_of::<ULONG>(),
+        ) {
+            Status = s;
+        }
     }
 
     if !Object.is_null() {

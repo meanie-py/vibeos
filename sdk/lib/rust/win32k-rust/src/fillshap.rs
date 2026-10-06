@@ -1101,20 +1101,10 @@ pub unsafe extern "system" fn NtGdiRectangle(
         DestCoords[2].y = BottomRect;
         DestCoords[3].y = BottomRect;
 
-        #[cfg(target_arch = "x86")]
-        {
-            ret = IntGdiPolyPolygon(dc, DestCoords.as_mut_ptr() as *mut POINT, core::ptr::addr_of_mut!(PolyCounts), 1);
-        }
-        #[cfg(not(target_arch = "x86"))]
         {
             ret = IntGdiPolyPolygon(dc, DestCoords.as_mut_ptr() as *mut POINT, core::ptr::addr_of_mut!(PolyCounts), 1);
         }
     } else {
-        #[cfg(target_arch = "x86")]
-        {
-            ret = IntRectangle(dc, LeftRect, TopRect, RightRect, BottomRect);
-        }
-        #[cfg(not(target_arch = "x86"))]
         {
             ret = IntRectangle(dc, LeftRect, TopRect, RightRect, BottomRect);
         }

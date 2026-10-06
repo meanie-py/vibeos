@@ -264,7 +264,7 @@ unsafe fn get_irot_handle() -> IrotHandle {
     irot_handle
 }
 
-unsafe fn start_rpcss() -> BOOL {
+pub(crate) unsafe fn start_rpcss() -> BOOL {
     const RPCSSW: [u16; 6] = [
         b'R' as u16,
         b'p' as u16,

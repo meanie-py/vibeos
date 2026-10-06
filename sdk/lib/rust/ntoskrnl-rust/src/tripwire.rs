@@ -67,6 +67,8 @@ static mut VIBE_SELFTEST: u8 = 0;
 pub static mut CSWITCH_SELFTEST_ARMED: bool = false;
 /// FREEZE_SELFTEST=1: see `ke::census::freeze_selftest`. Destructive.
 pub static mut FREEZE_SELFTEST_ARMED: bool = false;
+/// `UEXCVERBOSE`: no cap on the arm64 first-chance user-exception records.
+pub static mut UEXC_VERBOSE: bool = false;
 
 const TRIPWIRE_FILE: &[u8] = b"opt/org.vibeos.tripwire";
 const CFG_MAX: usize = 256;
@@ -297,6 +299,11 @@ unsafe fn apply_token(tok: &[u8]) {
         // KD=COM2 is consumed directly by kd64 KdInitSystem (via
         // VibeTripwireHasToken, long before this Mm-phase parse). Recognized
         // here only so it doesn't trip the unknown-token error below.
+    } else if tok == b"UEXCVERBOSE" {
+        // Print EVERY first-chance user exception in full, lifting the per-code
+        // cap in ke/arm64/stubs.rs `uexc_should_print` (which exists because
+        // FEX takes access violations and alignment faults by design).
+        UEXC_VERBOSE = true;
     } else if tok == b"QUIET" {
         // For user mode, not the kernel: winlogon reads it back through
         // VibeTripwireRead's registry copy. Recognized here only so it doesn't

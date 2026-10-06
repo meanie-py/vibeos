@@ -531,6 +531,57 @@ pub unsafe extern "system" fn SeQueryInformationToken(
     status
 }
 
+/// The token classes that return SIDs or ACLs store pointers to them, and those point
+/// INTO the output buffer (`TOKEN_USER.User.Sid`, `TOKEN_GROUPS.Groups[i].Sid`, ...),
+/// so a bounced query moves them to the caller's buffer before it is copied out.
+unsafe fn rebase_token_information(bounce: &OutputBounce, class: ULONG) {
+    let info = bounce.buffer();
+    let rebase_groups = |groups: PSID_AND_ATTRIBUTES, count: ULONG| {
+        for i in 0..count as usize {
+            let entry = groups.add(i);
+            if !bounce.contains(entry as *const _, core::mem::size_of::<SID_AND_ATTRIBUTES>()) {
+                break;
+            }
+            bounce.rebase(core::ptr::addr_of_mut!((*entry).Sid));
+        }
+    };
+    let fits = |size: usize| bounce.contains(info, size);
+    match class {
+        // TokenUser
+        1 if fits(core::mem::size_of::<TOKEN_USER>()) => {
+            bounce.rebase(core::ptr::addr_of_mut!((*(info as PTOKEN_USER)).User.Sid));
+        }
+        // TokenGroups, TokenRestrictedSids
+        2 | 11 if fits(core::mem::size_of::<TOKEN_GROUPS>()) => {
+            let tg = info as PTOKEN_GROUPS;
+            rebase_groups(core::ptr::addr_of_mut!((*tg).Groups) as PSID_AND_ATTRIBUTES, (*tg).GroupCount);
+        }
+        // TokenOwner
+        4 if fits(core::mem::size_of::<TOKEN_OWNER>()) => {
+            bounce.rebase(core::ptr::addr_of_mut!((*(info as PTOKEN_OWNER)).Owner));
+        }
+        // TokenPrimaryGroup
+        5 if fits(core::mem::size_of::<TOKEN_PRIMARY_GROUP>()) => {
+            bounce.rebase(core::ptr::addr_of_mut!((*(info as PTOKEN_PRIMARY_GROUP)).PrimaryGroup));
+        }
+        // TokenDefaultDacl
+        6 if fits(core::mem::size_of::<TOKEN_DEFAULT_DACL>()) => {
+            bounce.rebase(core::ptr::addr_of_mut!((*(info as PTOKEN_DEFAULT_DACL)).DefaultDacl));
+        }
+        // TokenGroupsAndPrivileges: three arrays in the buffer, two of them of SIDs.
+        // The entries are rebased before the array pointers that locate them.
+        13 if fits(core::mem::size_of::<TOKEN_GROUPS_AND_PRIVILEGES>()) => {
+            let gp = info as PTOKEN_GROUPS_AND_PRIVILEGES;
+            rebase_groups((*gp).Sids, (*gp).SidCount);
+            rebase_groups((*gp).RestrictedSids, (*gp).RestrictedSidCount);
+            bounce.rebase(core::ptr::addr_of_mut!((*gp).Sids));
+            bounce.rebase(core::ptr::addr_of_mut!((*gp).RestrictedSids));
+            bounce.rebase(core::ptr::addr_of_mut!((*gp).Privileges));
+        }
+        _ => {}
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn NtQueryInformationToken(
     TokenHandle: HANDLE,
@@ -565,6 +616,16 @@ pub unsafe extern "system" fn NtQueryInformationToken(
     if status < 0 {
         return status;
     }
+
+    // The C fills TokenInformation in place under _SEH2_TRY, much of it while holding
+    // the token lock. A user-mode caller's buffer is replaced by a pool copy here, and
+    // copied back with the fault-tolerant copy.
+    let bounce = match OutputBounce::new(TokenInformation, TokenInformationLength as usize, previous_mode) {
+        Ok(b) => b,
+        Err(s) => return s,
+    };
+    let TokenInformation = bounce.buffer();
+    let info_mode = bounce.mode(previous_mode);
 
     status = ObReferenceObjectByHandle(
         TokenHandle,
@@ -738,7 +799,7 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                 required_length = core::mem::size_of::<TOKEN_SOURCE>() as ULONG;
 
                 if TokenInformationLength >= required_length {
-                    if let Err(s) = probe_write_user(ts, (*token).TokenSource, previous_mode) {
+                    if let Err(s) = probe_write_user(ts, (*token).TokenSource, info_mode) {
                         return s;
                     }
                 } else {
@@ -757,7 +818,7 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                 required_length = core::mem::size_of::<TOKEN_TYPE>() as ULONG;
 
                 if TokenInformationLength >= required_length {
-                    if let Err(s) = probe_write_user(tt, (*token).TokenType, previous_mode) {
+                    if let Err(s) = probe_write_user(tt, (*token).TokenType, info_mode) {
                         return s;
                     }
                 } else {
@@ -779,7 +840,7 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                     required_length = core::mem::size_of::<SECURITY_IMPERSONATION_LEVEL>() as ULONG;
 
                     if TokenInformationLength >= required_length {
-                        if let Err(s) = probe_write_user(sil, (*token).ImpersonationLevel, previous_mode) {
+                        if let Err(s) = probe_write_user(sil, (*token).ImpersonationLevel, info_mode) {
                             return s;
                         }
                     } else {
@@ -829,7 +890,7 @@ pub unsafe extern "system" fn NtQueryInformationToken(
                 required_length = core::mem::size_of::<TOKEN_ORIGIN>() as ULONG;
 
                 if TokenInformationLength >= required_length {
-                    if let Err(s) = probe_write_user(to, TOKEN_ORIGIN { OriginatingLogonSession: (*token).AuthenticationId }, previous_mode) {
+                    if let Err(s) = probe_write_user(to, TOKEN_ORIGIN { OriginatingLogonSession: (*token).AuthenticationId }, info_mode) {
                         return s;
                     }
                 } else {
@@ -955,7 +1016,7 @@ pub unsafe extern "system" fn NtQueryInformationToken(
             15 => {
                 required_length = core::mem::size_of::<ULONG>() as ULONG;
                 let is_token_sandbox_inert = SeTokenIsInert(token) as ULONG;
-                if let Err(s) = probe_write_user(TokenInformation as PULONG, is_token_sandbox_inert, previous_mode) {
+                if let Err(s) = probe_write_user(TokenInformation as PULONG, is_token_sandbox_inert, info_mode) {
                     status = s;
                 }
                 if let Err(s) = probe_write_user::<ULONG>(ReturnLength, required_length, previous_mode) {
@@ -969,7 +1030,7 @@ pub unsafe extern "system" fn NtQueryInformationToken(
 
                 status = SeQuerySessionIdToken(token, core::ptr::addr_of_mut!(session_id));
                 if status >= 0 {
-                    if let Err(s) = probe_write_user(TokenInformation as PULONG, session_id, previous_mode) {
+                    if let Err(s) = probe_write_user(TokenInformation as PULONG, session_id, info_mode) {
                         status = s;
                     }
                 }
@@ -988,6 +1049,12 @@ pub unsafe extern "system" fn NtQueryInformationToken(
         ObDereferenceObject(token as PVOID);
     }
 
+    if status >= 0 {
+        rebase_token_information(&bounce, TokenInformationClass as ULONG);
+    }
+    if let Err(s) = bounce.finish() {
+        status = s;
+    }
     status
 }
 

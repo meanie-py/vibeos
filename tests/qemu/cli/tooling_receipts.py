@@ -52,6 +52,7 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_hostdisk.py",
     "pytest:tools/test_kernel_probe.py",
     "pytest:tools/test_link_guard.py",
+    "pytest:tools/test_link_pulls.py",
     "pytest:tools/test_lint_facts.py",
     "pytest:tools/test_migrate_debug_assert.py",
     "pytest:tools/test_retarget_cargo_depfile.py",

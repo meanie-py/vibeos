@@ -1453,25 +1453,10 @@ pub unsafe fn StorageUtl_ReadGUID(buffer: *const BYTE, offset: ULONG, value: *mu
 
 unsafe fn StorageImpl_SaveFileHeader(This: *mut StorageImpl) {
     let mut headerBigBlock: [BYTE; HEADER_SIZE as usize] = [0; HEADER_SIZE as usize];
-    let mut hr: HRESULT;
-    let mut offset: ULARGE_INTEGER = core::mem::zeroed();
-    let mut bytes_read: DWORD = 0;
+    let offset: ULARGE_INTEGER = core::mem::zeroed();
     let mut bytes_written: DWORD = 0;
     let major_version: DWORD;
     let dirsectorcount: DWORD;
-
-    offset.u.HighPart = 0;
-    offset.u.LowPart = 0;
-    hr = StorageImpl_ReadAt(
-        This,
-        offset,
-        headerBigBlock.as_mut_ptr() as *mut core::ffi::c_void,
-        HEADER_SIZE,
-        &mut bytes_read,
-    );
-    if SUCCEEDED(hr) && bytes_read != HEADER_SIZE {
-        hr = STG_E_FILENOTFOUND;
-    }
 
     if (*This).bigBlockSizeBits == 0x9 {
         major_version = 3;
@@ -1482,14 +1467,14 @@ unsafe fn StorageImpl_SaveFileHeader(This: *mut StorageImpl) {
         major_version = 4;
     }
 
-    if FAILED(hr) {
-        core::ptr::write_bytes(headerBigBlock.as_mut_ptr(), 0, HEADER_SIZE as usize);
-        core::ptr::copy_nonoverlapping(
-            STORAGE_magic.as_ptr(),
-            headerBigBlock.as_mut_ptr(),
-            STORAGE_magic.len(),
-        );
-    }
+    // wine-10 builds the header from scratch. The older read-modify-write kept
+    // whatever the medium held, so a commit over an ILockBytes whose header bytes had
+    // been overwritten never restored the D0 CF 11 E0 signature.
+    core::ptr::copy_nonoverlapping(
+        STORAGE_magic.as_ptr(),
+        headerBigBlock.as_mut_ptr(),
+        STORAGE_magic.len(),
+    );
 
     StorageUtl_WriteWord(headerBigBlock.as_mut_ptr(), OFFSET_MINORVERSION, 0x3e);
 
@@ -1734,7 +1719,9 @@ pub unsafe extern "system" fn SetConvertStg(storage: *mut IStorage, convert: BOO
         }
 
         pos.QuadPart = core::mem::size_of::<DWORD>() as i64;
-        hr = IStream_Seek(stream, pos, 1, core::ptr::null_mut());
+        // STREAM_SEEK_SET, as the C: this was 1 (CUR), which after the 8-byte header
+        // read wrote the convert flag into DWORD 3 of the \1Ole stream.
+        hr = IStream_Seek(stream, pos, crate::consts::STREAM_SEEK_SET, core::ptr::null_mut());
         if FAILED(hr) {
             IStream_Release(stream);
             return hr;
@@ -4311,7 +4298,7 @@ unsafe fn deleteStreamContents(
     S_OK
 }
 
-unsafe fn StorageImpl_GetNextFreeBigBlock(This: *mut StorageImpl) -> ULONG {
+unsafe fn StorageImpl_GetNextFreeBigBlock(This: *mut StorageImpl, neededAddNumBlocks: ULONG) -> ULONG {
     let mut depotBlockIndexPos: ULONG;
     let mut depotBuffer: [BYTE; MAX_BIG_BLOCK_SIZE as usize] = [0; MAX_BIG_BLOCK_SIZE as usize];
     let mut depotBlockOffset: ULONG;
@@ -4392,7 +4379,10 @@ unsafe fn StorageImpl_GetNextFreeBigBlock(This: *mut StorageImpl) -> ULONG {
         depotBlockOffset = 0;
     }
 
-    neededSize.QuadPart = StorageImpl_GetBigBlockOffset(This, freeBlock) + (*This).bigBlockSize as u64;
+    // wine-10: grow the file once for every block the caller is about to add, not
+    // once per block. u64 product: Wine's ULONG * ULONG could wrap.
+    neededSize.QuadPart = StorageImpl_GetBigBlockOffset(This, freeBlock)
+        + (*This).bigBlockSize as u64 * neededAddNumBlocks as u64;
 
     ILockBytes_Stat((*This).lockBytes, &mut statstg, STATFLAG_NONAME);
 
@@ -6176,7 +6166,7 @@ unsafe fn TransactedSnapshotImpl_Construct(
 
         hr = StgCreateDocfile(
             core::ptr::null(),
-            0x00001012u32,
+            STGM_READWRITE | STGM_SHARE_EXCLUSIVE | STGM_CREATE | STGM_DELETEONRELEASE,
             0,
             core::ptr::addr_of_mut!(scratch),
         );
@@ -6609,7 +6599,7 @@ unsafe fn BlockChainStream_Enlarge(
     blockIndex = BlockChainStream_GetHeadOfChain(This);
 
     if blockIndex == BLOCK_END_OF_CHAIN {
-        blockIndex = StorageImpl_GetNextFreeBigBlock((*This).parentStorage);
+        blockIndex = StorageImpl_GetNextFreeBigBlock((*This).parentStorage, 1);
         StorageImpl_SetNextBlockInChain(
             (*This).parentStorage,
             blockIndex,
@@ -6671,7 +6661,7 @@ unsafe fn BlockChainStream_Enlarge(
 
     if oldNumBlocks < newNumBlocks {
         while oldNumBlocks < newNumBlocks {
-            blockIndex = StorageImpl_GetNextFreeBigBlock((*This).parentStorage);
+            blockIndex = StorageImpl_GetNextFreeBigBlock((*This).parentStorage, newNumBlocks - oldNumBlocks);
 
             StorageImpl_SetNextBlockInChain(
                 (*This).parentStorage,
@@ -9939,7 +9929,7 @@ pub unsafe extern "system" fn GetConvertStg(stg: *mut IStorage) -> HRESULT {
         stg,
         stream_1oleW.as_ptr(),
         core::ptr::null_mut(),
-        0x00000000 | 0x00000040,
+        STGM_READ | STGM_SHARE_EXCLUSIVE,
         0,
         &mut stream,
     );

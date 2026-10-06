@@ -26,6 +26,11 @@ hal_bindgen = []
 # that only need DDK declarations opt out so their staticlibs cannot perturb
 # early KE symbol selection under --allow-multiple-definition.
 inline_exports = []
+# probe.rs reads MmUserProbeAddress, a DATA export of ntoskrnl. Inside ntoskrnl a
+# plain extern binds the local definition; a separate driver (ks, npfs, mup) must
+# import it instead, or the link fails (i386/arm64: undefined symbol). Drivers that
+# use the Result probes turn this on.
+import_mm_user_probe_address = []
 # sync-instrumentation §4 Tier-2 lockdep: light up the pushlock-inline
 # acquire/release taps (they call ntoskrnl-rust's VibeosLockdep* by link name).
 # Off by default = zero cost; enabled transitively by ntoskrnl-rust/lockdep.

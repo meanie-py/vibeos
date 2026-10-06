@@ -105,6 +105,10 @@ provenance stamp.
 the same `QemuVM` the pytest harness uses (slots, reaper, lifetime cap, live-log
 all included), then auto-triage on failure.
 
+- **`--arch amd64-bios`** boots the same amd64 media through SeaBIOS (legacy BIOS,
+  `freeldr.sys`) instead of OVMF. Every gate that includes amd64 runs it as the
+  `smoke:amd64-bios` lane. See `docs/engineering/bios-boot.md`.
+
 - **Net suite (amd64) runs by default** and folds into the verdict — a netstack
   regression turns the smoke red like any other, never hidden. It is a *second
   full UEFI boot* (the virtio-net config), kept separate from the plain boot so
@@ -341,7 +345,12 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   hit it (mainline failed to compile `fltmgr-rust` for i386) and, without this
   check, rejected a docs-only change for a build failure it could not have
   caused. The base gate is lazy and memoized per drain, so a green batch never
-  pays for it.
+  pays for it. A base that fails **only** timing-sensitive stages (smoke,
+  conformance) gets one warm re-gate before it can hold the line: on 2026-10-04 a
+  spawn32 race and an arm64 BUGCHECK each held every lane on a master that later
+  gated green. If the re-gate
+  passes, the line is not held. A lone submission red only on the stages the base
+  flaked on stays queued (`FlakyBase`), neither rejected nor landed.
 - **A batch is never presumed green from its parts.** Two individually-green
   lanes can be red *together*; the queue catches that before master, where today
   the second lane lands on the first without ever gating the combination.

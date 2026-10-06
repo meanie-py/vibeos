@@ -1,9 +1,17 @@
 # Running x86-64 guests on arm64: ARM64EC vs. our own BTCpu64 contract
 
-**Status: SCOPING ONLY. Nothing here is built, and this deliberately stops short of
-recommending which fork to take.** Written 2026-09-13 at the owner's request, after an audit
-established that FEX's x64 support is real and every blocker is on our side
-(`docs/product/vibeos-roadmap.md`, and the audit summary below).
+**Status: DECIDED 2026-10-06 — Fork B first; nothing built yet.** Written 2026-09-13 at the
+owner's request as scoping, after an audit established that FEX's x64 support is real and every
+blocker is on our side (`docs/product/vibeos-roadmap.md`, and the audit summary below).
+
+**The decision (owner, 2026-10-06): build Fork B (our own BTCpu64-shaped contract) first.** Most
+of what B needs, A needs too — a 64-bit FEX plugin, x64 CONTEXT conversion, the guest
+exception and syscall path — and B runs x64 apps on the amd64 system DLLs we already build,
+fully emulated, the same shape as today's 32-bit path. Fork A (ARM64EC) stays the later
+speed-up: it runs system DLL code natively, but only once our userland is compiled ARM64EC /
+ARM64X. (Not "ARM64EC is opt-in on Windows": on Windows 11 ARM every x64 app runs in an
+ARM64EC process. What is opt-in there is a developer porting their OWN code to ARM64EC.)
+First milestone: a `hello64` guest that enters FEX in 64-bit mode and makes one syscall.
 
 The question this answers is not "can FEX run x64" — it can, and does, and the recompiler is
 already compiled into the `libwow64fex.dll` we ship today. The question is **which OS-side
@@ -81,11 +89,19 @@ guest must be kept inside the low 4GB, so the marshaller forces
 `ZeroBits = WOW64_ZEROBITS_BELOW_2G` on `NtAllocateVirtualMemory` and `NtMapViewOfSection`,
 clamps to `WOW64_USER_CEILING32`, and checks that csrss's shared section, `StaticServerData` and
 heap pointers actually landed below 4GB — one of which asserted and dereferenced NULL when they
-did not. Measured in `wow64_manual.c`: **4 enforcement statements** (2 forced-`ZeroBits`, 2
-ceiling clamps) against **~25 references** across code and the comments explaining them. A
-64-bit guest has the host's own address space and none of this applies. (Credit to the research
-lane for spotting this class; they put it at 36 sites, I count ~25 references / 4 enforcement
-statements — same substantive point, and I am quoting the number I can defend from the file.)
+did not. Measured in `wow64_manual.c`: **14 distinct guarded confinement sites** — 11 `if` tests on a
+confinement condition (`ZeroBits == 0`, `Max > WOW64_USER_CEILING32`, `>> 32` guest-addressability
+checks, the `> 0xFFFFFFFFULL` client-info test) plus 3 assignments forcing a ceiling. A 64-bit
+guest has the host's own address space and none of it applies.
+
+The number took three tries across two lanes, and the history is worth one line because the
+failure mode is generic: the research lane (who spotted the class — it is theirs) first reported
+36 from `grep -c "4GB\|ZeroBits"`, of which 22 hits are comments and `DbgPrint` strings; I then
+reported ~25 textual references, which was the same mistake with a wider pattern, and 4
+"enforcement statements", which was too NARROW because it counted only the forced assignments and
+missed the 11 guarded tests. **All three numbers were produced by grepping for a token instead of
+deciding what a "site" is.** 14 is what you get once the method is stated first, and it is
+verified here against the file.
 
 What remains on the marshaller side is genuinely smaller and uniform:
 
@@ -159,7 +175,7 @@ Note that upstream is already partly thinking this way: `libarm64ecfex.def` expo
 `BTCpu64FlushInstructionCache`, `BTCpu64IsProcessorFeaturePresent`, `BTCpu64NotifyMemoryDirty`
 and `BTCpu64NotifyReadFile` — BTCpu-shaped names, alongside the EC-shaped DATA exports.
 
-**The blocking constraint, and it is the thing to resolve first:** `external/fex` is VENDORED and
+**The blocking constraint, and it is the thing to resolve first:** `vendor/fex` is VENDORED and
 must stay unmodified (AGENTS.md). Fork B needs a Windows plugin that is neither `wow64fex` nor
 `arm64ecfex`, so it cannot simply be a patch to `Source/Windows/`. Three sub-options, in
 increasing order of how much they cost us:
@@ -169,7 +185,7 @@ increasing order of how much they cost us:
    the option to price first.
 2. **Upstream a third plugin to FEX-Emu.** Cleanest long-term, slowest, and puts us on someone
    else's schedule.
-3. **Carry a patch series against `external/fex`.** Violates the vendoring rule as written; would
+3. **Carry a patch series against `vendor/fex`.** Violates the vendoring rule as written; would
    need an explicit owner decision to change that rule, not a quiet exception.
 
 **Cost:** unknown until sub-option 1 is priced — that is the single highest-value next
@@ -210,7 +226,7 @@ entangled and is the part to scope properly. **That is materially cheaper than "
 has to produce an x86-64 CONTEXT from an AArch64 one" sounds** — that someone already did, for
 the x64 case, in the plugin we are not building.
 
-### The category question is ANSWERED: yes, with `external/fex` untouched
+### The category question is ANSWERED: yes, with `vendor/fex` untouched
 
 This was the one yes/no that could have taken Fork B off the table. It does not. **Measured
 2026-09-13** by building a probe module outside the vendored tree:
@@ -218,7 +234,7 @@ This was the one yes/no that could have taken Fork B off the table. It does not.
     forkbfex.dll   4,320,768 bytes
     exports:       ForkBProbeInit
     FEXCore symbols linked in: 3,715
-    git status --porcelain external/fex:  (empty -- UNMODIFIED)
+    git status --porcelain vendor/fex:  (empty -- the build DIRTIED NOTHING)
 
 The probe calls the same entry points both real plugins use —
 `FEXCore::Config::Set(CONFIG_IS64BIT_MODE, "1")`, `Context::CreateNewContext(HostFeatures)` —
@@ -227,6 +243,15 @@ standalone `tools/fex/build-fex.sh` already produces (`libFEXCore.a`, `libFEXCor
 `libCommonWindows.a`, `libCommonWindowsRuntime.a`, `libCommon.a`, `libCommonTools.a`,
 `libwow64_ex.a`, `libntdll_ex.a`, plus the External deps and compiler-rt builtins). 3,715 FEXCore
 symbols is the real recompiler, not an empty shell.
+
+**Correction 2026-10-03 — that `git status` line proved less than it was read as proving.** It
+shows the build left no *uncommitted* change, which is the relevant fact here and the conclusion
+above stands: a Fork B probe links the real recompiler without the build touching the vendored
+tree. But it is NOT evidence that the tree matches upstream, and it was later cited that way. It
+does not: `6afc128553f` (2026-07-14) carries a committed NULL-thread guard in
+`Source/Windows/WOW64/Module.cpp`, and `git status` is clean for a committed patch. The oracle
+for divergence from upstream is `vendor-patches/fex.md` and `git log -- 'vendor/fex/*'`; the
+record itself claimed "Unmodified" for nearly three months and is now fixed.
 
 **Four practical constraints found while doing it**, all surmountable, all worth knowing before
 anyone wires this into our CMake for real:
@@ -264,13 +289,13 @@ Listed because a scoping doc that reads as confident is worse than useless:
   unmeasured work.
 - **Sub-option B1's real cost.** First-pass priced above for the CONTEXT and exception surface.
   The UNPRICED part is now narrower and sharper: whether our CMake can link vendored FEXCore and
-  reuse `Source/Windows/Common/` without modifying `external/fex`. Nobody has tried it, and it is
+  reuse `Source/Windows/Common/` without modifying `vendor/fex`. Nobody has tried it, and it is
   the one question that could change Fork B's cost by category rather than degree.
-- **Anything about performance.** A 64-bit guest recompiles more code, and our current 32-bit
-  path already faults inside FEX's code cache on images >500K (roadmap: `LookupCache::FindBlock`).
-  That bug is bitness-independent and would follow us to either fork. **Fix it before pricing
-  either route on a benchmark.**
-
+- **Anything about performance.** A 64-bit guest recompiles more code. (This bullet used to
+  say the 32-bit path faults inside FEX's code cache on images >500K and must be fixed first.
+  That bug was RETRACTED 2026-10-03 — a harness drain race plus FEX's by-design overcommit
+  faults misread as crashes; see the roadmap. The 32-bit ladder is 11/11 on QEMU and on a
+  real Pi 4.)
 ## Sequencing
 
 The two cheap items — the arm64ec-triple configure and the llvm-mingw pin bump — serve **Fork A

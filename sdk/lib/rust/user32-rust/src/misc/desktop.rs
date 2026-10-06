@@ -68,10 +68,7 @@ fn CSR_CREATE_API_NUMBER(ServerId: u32, ApiId: u32) -> CSR_API_NUMBER {
 unsafe fn GetWin32ClientInfo() -> PCLIENTINFO {
     core::ptr::addr_of_mut!((*NtCurrentTeb()).Win32ClientInfo) as *mut _ as PCLIENTINFO
 }
-#[inline]
-unsafe fn GetW32ThreadInfo() -> PTHREADINFO {
-    (*NtCurrentTeb()).Win32ThreadInfo as PTHREADINFO
-}
+use crate::windows::message::GetW32ThreadInfo;
 #[inline]
 unsafe fn GetThreadDesktopInfo() -> PDESKTOPINFO {
     let ti = GetW32ThreadInfo();

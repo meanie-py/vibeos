@@ -13,6 +13,8 @@ mod ddk {
     pub unsafe fn ExRaiseAccessViolation() -> ! {
         panic!("ExRaiseAccessViolation");
     }
+    pub type PMDL = *mut core::ffi::c_void;
+    pub type _LOCK_OPERATION = u32;
 }
 #[path = "../../sdk/lib/rust/ntkrnl-sys/src/base.rs"]
 mod base;
@@ -71,6 +73,83 @@ static DEREFERENCES: AtomicU32 = AtomicU32::new(0);
 unsafe extern "system" fn ObfDereferenceObject(_: *mut c_void) -> u32 {
     DEREFERENCES.fetch_add(1, Ordering::SeqCst);
     0
+}
+
+extern "C" {
+    fn malloc(size: usize) -> *mut c_void;
+    fn free(p: *mut c_void);
+}
+#[no_mangle]
+unsafe extern "system" fn ExAllocatePoolWithTag(_pool: i32, size: usize, _tag: u32) -> *mut c_void {
+    malloc(size)
+}
+#[no_mangle]
+unsafe extern "system" fn ExFreePoolWithTag(p: *mut c_void, _tag: u32) {
+    free(p)
+}
+
+#[test]
+fn write_back_stores_and_survives_a_bad_page() {
+    unsafe {
+        let mut value = 0u32;
+        assert_eq!(write_back(&mut value, 7), Ok(()));
+        assert_eq!(value, 7);
+        assert_eq!(write_back(0x1000usize as *mut u32, 7), Err(STATUS_ACCESS_VIOLATION));
+    }
+}
+
+#[test]
+fn output_bounce_copies_in_rebases_and_copies_out() {
+    unsafe {
+        let mut user = [0u8; 64];
+        user[60] = 0xAA;
+        let user_ptr = user.as_mut_ptr();
+        let bounce = OutputBounce::new(user_ptr.cast(), user.len(), 1).unwrap();
+        let pool = bounce.buffer() as *mut u8;
+        assert_ne!(pool, user_ptr);
+        assert_eq!(bounce.mode(1), 0);
+        // Copied in: bytes the query leaves alone come back unchanged.
+        assert_eq!(*pool.add(60), 0xAA);
+        // A pointer INTO the pool copy moves to the same offset in the caller's buffer;
+        // a pointer elsewhere is left alone.
+        let inside = pool as *mut *mut u8;
+        inside.write_unaligned(pool.add(16));
+        bounce.rebase(inside);
+        let outside = pool.add(8) as *mut *mut u8;
+        outside.write_unaligned(0x1234usize as *mut u8);
+        bounce.rebase(outside);
+        assert_eq!(bounce.finish(), Ok(()));
+        assert_eq!((user_ptr as *const *mut u8).read_unaligned(), user_ptr.add(16));
+        assert_eq!((user_ptr.add(8) as *const usize).read_unaligned(), 0x1234);
+        assert_eq!(user[60], 0xAA);
+    }
+}
+
+#[test]
+fn output_bounce_passes_kernel_callers_through() {
+    unsafe {
+        let mut buffer = [0u8; 16];
+        let bounce = OutputBounce::new(buffer.as_mut_ptr().cast(), buffer.len(), 0).unwrap();
+        assert_eq!(bounce.buffer(), buffer.as_mut_ptr().cast());
+        assert_eq!(bounce.mode(0), 0);
+        assert_eq!(bounce.finish(), Ok(()));
+    }
+}
+
+#[test]
+fn output_bounce_reports_a_bad_page_instead_of_faulting() {
+    unsafe {
+        assert!(matches!(
+            OutputBounce::new(0x1000usize as *mut c_void, 64, 1),
+            Err(STATUS_ACCESS_VIOLATION)
+        ));
+        // PROT_READ: the copy in succeeds, the copy out is the fault.
+        let page = mmap(core::ptr::null_mut(), 4096, 1, 2 | 0x20, -1, 0);
+        assert_ne!(page as usize, usize::MAX);
+        let bounce = OutputBounce::new(page, 64, 1).unwrap();
+        assert_eq!(bounce.finish(), Err(STATUS_ACCESS_VIOLATION));
+        assert_eq!(munmap(page, 4096), 0);
+    }
 }
 
 #[test]

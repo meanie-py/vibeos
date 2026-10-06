@@ -390,11 +390,6 @@ unsafe fn UserGetMenuObject(hMenu: HMENU) -> PMENU {
 unsafe fn RECTL_bIsEmptyRect(prcl: *const RECTL) -> BOOL {
     (((*prcl).left >= (*prcl).right) || ((*prcl).top >= (*prcl).bottom)) as BOOL
 }
-// ProbeForReadUnicodeString / ProbeForReadLargeString (probe.h macros) — validate-only copy.
-#[inline(always)]
-unsafe fn ProbeForReadUnicodeString(ptr: PUNICODE_STRING) -> UNICODE_STRING { core::ptr::read_volatile(ptr) }
-#[inline(always)]
-unsafe fn ProbeForReadLargeString(ptr: PLARGE_STRING) -> LARGE_STRING { core::ptr::read_volatile(ptr) }
 // MmCopyToCaller(x,y,z) macro -> _MmCopyToCaller (mmcopy.h).
 #[inline(always)]
 unsafe fn MmCopyToCaller(Destination: *mut core::ffi::c_void, Source: *mut core::ffi::c_void, Length: usize) -> NTSTATUS {
@@ -4387,16 +4382,31 @@ pub unsafe extern "system" fn NtUserFindWindowEx(
     let mut Ret: HWND = core::ptr::null_mut();
     let mut DoMessageWnd: u8 = 0u8;
     let mut ClassAtom: RTL_ATOM = 0 as RTL_ATOM;
+    let mut window_name_guard: Option<ntkrnl_sys::probe::PoolAllocGuard> = None;
 
     UserEnterShared();
 
     'exit: {
         if !ucClassName.is_null() || !ucWindowName.is_null() {
             'try_block: {
+                // _SEH2_EXCEPT { SetLastNtError(code); goto Exit; } -- Ret is still NULL.
                 if !ucClassName.is_null() {
-                    ClassName = ProbeForReadUnicodeString(ucClassName);
+                    ClassName = match crate::safe_user_io::capture_user(ucClassName as *const _UNICODE_STRING) {
+                        Ok(v) => v,
+                        Err(st) => {
+                            SetLastNtError(st);
+                            break 'exit;
+                        }
+                    };
                     if ClassName.Length != 0 {
-                        // ProbeForRead is a no-op in this translation
+                        if let Err(st) = crate::safe_user_io::probe_for_read(
+                            ClassName.Buffer as *const core::ffi::c_void,
+                            ClassName.Length as usize,
+                            core::mem::size_of::<WCHAR>() as u32,
+                        ) {
+                            SetLastNtError(st);
+                            break 'exit;
+                        }
                     } else if IS_ATOM!(ClassName.Buffer) == 0 {
                         EngSetLastError(ERROR_INVALID_PARAMETER);
                         break 'try_block;
@@ -4413,9 +4423,25 @@ pub unsafe extern "system" fn NtUserFindWindowEx(
                 }
 
                 if !ucWindowName.is_null() {
-                    WindowName = ProbeForReadUnicodeString(ucWindowName);
-                    if WindowName.Length != 0 {
-                        // ProbeForRead is a no-op in this translation
+                    WindowName = match crate::safe_user_io::capture_user(ucWindowName as *const _UNICODE_STRING) {
+                        Ok(v) => v,
+                        Err(st) => {
+                            SetLastNtError(st);
+                            break 'exit;
+                        }
+                    };
+                    // The C probes the name here and then compares it IN PLACE all
+                    // through the window walk below, outside its _SEH2_TRY (a C bug:
+                    // a page freed meanwhile faults there). Compare a pool copy.
+                    match crate::safe_user_io::capture_string_buffer(
+                        &mut WindowName,
+                        u32::from_le_bytes(*b"Usfw"),
+                    ) {
+                        Ok(guard) => window_name_guard = guard,
+                        Err(st) => {
+                            SetLastNtError(st);
+                            break 'exit;
+                        }
                     }
                 }
             }
@@ -4542,6 +4568,7 @@ pub unsafe extern "system" fn NtUserFindWindowEx(
     }
 
     UserLeave();
+    drop(window_name_guard);
     Ret
 }
 
@@ -5534,6 +5561,58 @@ unsafe extern "system" fn DefSetText(Wnd: PWND, WindowText: PCWSTR) -> BOOL {
     }
     Ret
 }
+/// The C's `_SEH2_TRY { ProbeForRead(SafeText.Buffer, SafeText.Length, align);
+/// RtlLargeStringToUnicodeString(..); }`, with the read made fault-tolerant.
+///
+/// `RtlLargeStringToUnicodeString` reads its source in place, so handing it the
+/// caller's buffer would bugcheck on a bad page now that there is no SEH to catch it.
+/// This copies the `Length` bytes into pool first. Two divergences from the C, both
+/// deliberate:
+/// - The translated callers never ran the probe, so a kernel address in `Buffer` used
+///   to be copied into the window title, where the caller could read it back.
+/// - The copy is NUL-terminated at `Length`. The C stops at whatever terminator follows
+///   in user memory (`RtlInitAnsiString`/`RtlCreateUnicodeString` scan for one), which
+///   can run past the probed range.
+///
+/// On a fault this sets the last error, as the C handler does, and returns FALSE.
+unsafe fn large_string_from_user_to_unicode(
+    dest: PUNICODE_STRING,
+    safe_text: &LARGE_STRING,
+) -> BOOL {
+    let ansi = safe_text.bAnsi() != 0;
+    let unit = if ansi { 1usize } else { core::mem::size_of::<WCHAR>() };
+    let length = safe_text.Length as usize;
+    if let Err(st) = crate::safe_user_io::probe_for_read(
+        safe_text.Buffer as *const c_void,
+        length,
+        unit as u32,
+    ) {
+        SetLastNtError(st);
+        return 0;
+    }
+    let tag = u32::from_le_bytes(*b"Usdt");
+    let buffer = ExAllocatePoolWithTag(PagedPool as _, (length + unit) as _, tag) as *mut u8;
+    if buffer.is_null() {
+        SetLastNtError(STATUS_INSUFFICIENT_RESOURCES);
+        return 0;
+    }
+    if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+        buffer as *mut c_void,
+        safe_text.Buffer as *const c_void,
+        length,
+    ) {
+        ExFreePoolWithTag(buffer as _, tag);
+        SetLastNtError(st);
+        return 0;
+    }
+    core::ptr::write_bytes(buffer.add(length), 0, unit);
+    let mut captured = *safe_text;
+    captured.Buffer = buffer as _;
+    let ret = RtlLargeStringToUnicodeString(dest, &mut captured) as BOOL;
+    ExFreePoolWithTag(buffer as _, tag);
+    ret
+}
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_STRING) -> BOOL {
@@ -5543,7 +5622,15 @@ pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_ST
     let mut Ret: BOOL = 1;
 
     if WindowText != core::ptr::null_mut() {
-        SafeText = ProbeForReadLargeString(WindowText);
+        // C: _SEH2_TRY { SafeText = ProbeForReadLargeString(WindowText); }
+        //    _SEH2_EXCEPT { Ret = FALSE; SetLastNtError(code); }
+        match crate::safe_user_io::capture_user(WindowText as *const LARGE_STRING) {
+            Ok(v) => SafeText = v,
+            Err(st) => {
+                Ret = 0;
+                SetLastNtError(st);
+            }
+        }
 
         if Ret == 0 {
             return 0;
@@ -5564,7 +5651,7 @@ pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_ST
 
     'exit: {
         if !SafeText.Buffer.is_null() {
-            Ret = RtlLargeStringToUnicodeString(&mut UnicodeString, &mut SafeText);
+            Ret = large_string_from_user_to_unicode(&mut UnicodeString, &SafeText);
             if Ret == 0 {
                 break 'exit;
             }
@@ -5647,7 +5734,15 @@ pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_ST
     let mut Ret: BOOL = 1;
 
     if WindowText != core::ptr::null_mut() {
-        SafeText = ProbeForReadLargeString(WindowText);
+        // C: _SEH2_TRY { SafeText = ProbeForReadLargeString(WindowText); }
+        //    _SEH2_EXCEPT { Ret = FALSE; SetLastNtError(code); }
+        match crate::safe_user_io::capture_user(WindowText as *const LARGE_STRING) {
+            Ok(v) => SafeText = v,
+            Err(st) => {
+                Ret = 0;
+                SetLastNtError(st);
+            }
+        }
 
         if Ret == 0 {
             return 0;
@@ -5668,7 +5763,7 @@ pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_ST
 
     'exit: {
         if !SafeText.Buffer.is_null() {
-            Ret = RtlLargeStringToUnicodeString(&mut UnicodeString, &mut SafeText);
+            Ret = large_string_from_user_to_unicode(&mut UnicodeString, &SafeText);
             if Ret == 0 {
                 break 'exit;
             }

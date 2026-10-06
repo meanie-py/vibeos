@@ -368,8 +368,7 @@ pub unsafe extern "system" fn WSPRecv(
     );
 
     if lpOverlapped.is_null() && Status == STATUS_PENDING {
-        MsafdWaitForAlert(SockEvent);
-        Status = (*IOSB).__bindgen_anon_1.Status;
+        Status = MsafdWaitForIo(Handle as HANDLE, SockEvent, IOSB, (*(*Socket).SharedData).RecvTimeout);
     }
 
     NtClose(SockEvent);
@@ -580,8 +579,7 @@ pub unsafe extern "system" fn WSPRecvFrom(
     );
 
     if lpOverlapped.is_null() && Status == STATUS_PENDING {
-        MsafdWaitForAlert(SockEvent);
-        Status = (*IOSB).__bindgen_anon_1.Status;
+        Status = MsafdWaitForIo(Handle as HANDLE, SockEvent, IOSB, (*(*Socket).SharedData).RecvTimeout);
     }
 
     if !ReceiveFlags.is_null() {
@@ -767,8 +765,7 @@ pub unsafe extern "system" fn WSPSend(
     );
 
     if lpOverlapped.is_null() && Status == STATUS_PENDING {
-        MsafdWaitForAlert(SockEvent);
-        Status = (*IOSB).__bindgen_anon_1.Status;
+        Status = MsafdWaitForIo(Handle as HANDLE, SockEvent, IOSB, (*(*Socket).SharedData).SendTimeout);
     }
 
     NtClose(SockEvent);
@@ -958,8 +955,7 @@ pub unsafe extern "system" fn WSPSendTo(
     );
 
     if lpOverlapped.is_null() && Status == STATUS_PENDING {
-        MsafdWaitForAlert(SockEvent);
-        Status = (*IOSB).__bindgen_anon_1.Status;
+        Status = MsafdWaitForIo(Handle as HANDLE, SockEvent, IOSB, (*(*Socket).SharedData).SendTimeout);
     }
 
     NtClose(SockEvent);

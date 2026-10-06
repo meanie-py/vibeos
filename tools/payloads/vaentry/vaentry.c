@@ -200,6 +200,12 @@ static void probe(const char *dll)
     } else
         check(dll, "_spawnl exported", 0);
 
+#if defined(_WIN64)
+    /* Exported for win64 by both specs. On arm64 it used to be a forward into
+     * ntdll._local_unwind, which ntdll exports for x86_64 only, so it resolved to NULL. */
+    check(dll, "_local_unwind resolves", GetProcAddress(h, "_local_unwind") != NULL);
+#endif
+
     SAY("%s: %d checks, %d failed\n", dll, g_checks - n0, g_fail - f0);
 }
 

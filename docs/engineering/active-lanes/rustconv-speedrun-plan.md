@@ -167,13 +167,122 @@ every translated body. **Owed, in order:**
        TickCount / KeTickCount are 0 at that point (3 boots), so it lacks amd64's
        stale-base hang. (Both loaders zero the page, so who dirties it on amd64 is
        still unexplained.)
-   - Owed, seen while there: ex-rust `pool.rs` arm64 eagerly commits PAGED pool
-     (other arches demand-zero), and its arm64 "clear residual allocation bits"
-     blocks are clear-then-set no-ops.
+   - DONE 2026-10-04: ex-rust `pool.rs` (and the dead pool.c) arm64 eager paged-pool
+     commit and "clear residual allocation bits" blocks removed. Paged pool is
+     demand-zero on every arch; a probe saw no residual Start/End/Verifier bits in
+     3 arm64 boots once the free-descriptor restore landed (8f82e3e57ace).
+   - DONE 2026-10-04: 35 identical `cfg(P)` / `cfg(not(P))` twins merged (28 win32k).
+   - ~~Owed: `scan_duplicate_symbols` for C/asm objects~~ superseded by link-guard
+     (5cabdbde74a, another session): `tools/link_guard.py` fronts ld.lld and FAILS a
+     link on a non-runtime duplicate, CMake and cargo alike. It fixed every finding
+     my parallel post-link scanner had (the unchecked Rust `Probe*` helpers,
+     i386 `RtlFillMemoryUlong`, mlang, winsrv, crt-dllmain), so the scanner was
+     dropped unlanded rather than kept as a second, weaker check.
    - DONE, tooling: scan_cfg_vs_c now has a UP/SMP axis (C `CONFIG_SMP` = Rust
      `feature = "smp"`). First find: KeBugCheckWithTf's CPU freeze was gated on x86/x86_64
      (C: `#ifdef CONFIG_SMP`) — ran in UP kernels, never on arm64 SMP. Now
      `feature = "smp"`; arm64's KxFreezeExecution is still an empty stub (owed).
+
+**2026-10-05: defect 2 (permuted constants) has a placement check.** The fact seal
+verifies a closed SET, so `a = 10; b = 20;` returned as `a = 20; b = 10;` passed.
+`rustconv/placement_audit.py` gives every constant occurrence a slot (callee + argument
+index, assignment target, comparison/bitwise operand, `return` keyed by its `if`, `case`
+keyed by its arm) and reports only a CYCLE of constants each sitting in a slot where the
+C never puts it. `translate` rejects such a body (last attempt: accepted and listed under
+UNVERIFIED CONSTANTS), and `scan_constant_placement` gates the tree (empty baseline).
+Measured, not assumed: 0 findings over 73,524 shipped functions with a C twin (the false-
+positive rate a reject costs), and 38.8% of 1,500 seeded swaps of real constants caught
+(it was 4.9% with statement-word contexts, which is why slots replaced them). Known
+residue: two constants that share one slot in different branches, and slots a translation
+renamed beyond case/underscore. Next, in the owner's order: measure per-module agent time
+from git history, build `rustconv port`, then Setup and the driver fleet ($10 DeepSeek).
+
+**2026-10-05 overnight: `rustconv port`, first module through it (setuplib).** `port
+derive | island | scaffold | translate | integrate | resolve | check | status` drives one
+plain-C module, recording each stage's time in `~/vibeos-rust-staging/port/<stem>/`.
+setuplib (base/setup/lib, 23 TUs, 21K lines) is the test module, kept LOCAL (crate +
+workspace member + gen_driver_types arm) until green -- 12 of 23 TUs translated, $2.42 of
+the $10 spent. Every error-count drop came from a tool fix, not a hand edit: 60 -> 19 per
+arch over the first 6 TUs. What the module exposed, each fixed where it lives:
+- profile_derive: sibling static target's TUs reported DEAD ("do not pay"); relative
+  include dirs resolved against the repo root; a static lib's mode/crate name not
+  inherited from its one consumer; scaffold prelude lacked NT_SUCCESS!/CONTAINING_RECORD!
+  and win32macros (by name -- a glob made HANDLE/WCHAR ambiguous).
+- translate: `--target name:path` for modules outside dll/ and sdk/lib; `#define NDEBUG`
+  preambles hard-failed after all paid functions; C integer suffixes (`8192ULL`) and C
+  octal restored verbatim by the fact seal; `unsafe extern` blocks mis-handled by the
+  stitcher and crate_integrate (bare/doubled `unsafe`); a data-only TU skipped; an
+  `#ifndef NDEBUG` body demanded a c2rust anchor; parallel rejects never retried.
+- crate-repair: `c_integer_suffix`, `null_fn_pointer` (`null_mut()` into `Option<fn>`).
+- `port resolve`: unresolved names filled from TREE CONSENSUS (consts agree by value,
+  extern fns by ABI class, never types) -- `_wcsicmp` has 16 hand declarations in the tree.
+- Lexer/parse errors hide every name-resolution error in the crate; early counts were
+  falsely low. Treat a parse error as "count unknown".
+
+**Thinking OFF vs ON (DeepSeek v4-pro), indicative, not controlled (different TUs):**
+~300 vs ~13,900 output tokens per call on small functions, i.e. ~1/40th the cost; the
+cheap bodies carried C `goto`/labels over literally in 2 of 6 TUs. Now a deterministic
+acceptance check (c_body_checks) rejects those, banked bodies are re-audited on replay,
+and `port translate --escalate` takes the cheap pass then re-buys only rejects with
+thinking on (mui/osdetect: 3 bodies, $0.35). Next measurement owed: errors per function
+after the full deterministic pipeline, escalate vs always-on, on the remaining 11 TUs.
+
+**Thinking OFF vs ON, MEASURED (2026-10-05 day, per-call `meta.json` in `.responses/`).** The
+~1/40 above was output tokens on small functions; input dominates the bill. setuplib's last 11
+TUs (221 calls) with thinking off: 5,524 in / 689 out per call, **$0.010/call**. Overnight
+thinking-on calls (71): 4,696 in / 7,041 out, **$0.034/call**. The 6 bodies the escalation pass
+re-bought with thinking: 26,407 out, $0.115/call. Cheap-then-escalate came to ~$0.013 per
+function, ~2.7x cheaper than always-on. The cost is not the rejects but the TU each one voids:
+4 of 11 TUs assembled NOTHING after the cheap pass because one function stayed rejected.
+Quality (errors/function after the deterministic pipeline) is the comparison still owed.
+**CORRECTION (same day): every dollar figure above is a CEILING, about 2x the bill.** rustconv
+priced all input at DeepSeek's PEAK cache-MISS rate; the dashboard billed $3.73 for
+2026-10-05 (EDT) where rustconv summed $7.81. Two discounts were invisible to it: the
+re-sent file context is mostly a cache HIT ($0.044/M vs $1.32/M), and 16:00-21:00 UTC is
+off-peak (half price; peak is 01-04 and 06-10 UTC on weekdays). The DeepSeek path now
+records `prompt_cache_hit_tokens` and `config.cost_usd` prices hit/miss/output by UTC band;
+the budget guard alone keeps the ceiling. The off-vs-on RATIO likely understates the
+saving: once input is cheap, output dominates, and thinking-on is the output-heavy mode.
+Re-measure it from new runs, which now carry the cache split.
+
+**What the second setuplib round fixed (2026-10-05 day).** c2rust: attached `-isystem/path`
+was dropped, so every arm64 c2rust run lost the CRT include dir under `-nostdinc` and silently
+anchored from amd64; `--preserve-unused-functions` (liveness is per arch); a body only another
+arch compiles is anchored from it, one no arch compiles is dropped from the bill; file-scope
+`L"…"` temporaries hoisted to named statics (mui's 22 dangling-pointer errors). Scanner:
+**tree-sitter ended 174 of the tree's 827 PSEH functions at the `_SEH2_TRY` block**, sending
+the FINALLY/EXCEPT tail to the model as stray "preamble"; the scanner now parses a
+same-length SEH-masked copy (174 -> 8). Shipped twins of those 174 were checked for the
+lost tail's calls: most survived (c2rust anchor or recall), EXCEPT-only losses are inert
+under dummy PSEH, and the residue is a review queue in
+`~/vibeos-rust-staging/port/seh-truncation-suspects.json` (owed). Also owed: a `{` opened
+inside `#if` and closed after `#endif` (virtual.c MiDeletePte, rxce RxRemoveNameNetFcb)
+still defeats the scanner either way. `port`: enum aliases and the win32macros list in
+`resolve`, a `macros` stage, `check` warns when a failed glob import hides resolution
+errors, per-pass logs with token totals, one cap across both escalate passes (the cap stops
+NEW TUs; one in flight can overshoot -- $3.18 on a $3 cap). crate-repair's width rule now
+reads ntdll-sys signatures through the island's public glob (23 -> 3 `callee_not_local`).
+
+**2026-10-05, owner's direction for the next round.** Order: correctness (done above),
+measurement, `rustconv port`, then ReactOS-native Setup and the driver-fleet residue
+before any Wine module. On those, TOOLING BEATS VELOCITY: each translation is a test of
+the pipeline for the Wine climb, so a module is worth porting when it exercises or proves
+a tool change. Budget: $10 of DeepSeek before the owner tops up.
+
+**Where agent time goes (measured 2026-10-05, $0).** Tool calls in the three translation
+lanes' session transcripts, each charged until the next event (gaps capped at 15 min),
+~280 active hours: smoke/gate/land 18-28%, check/tests 16-20%, build 8-12%, reading 17-24%,
+model text 12-18% -- and the paid translate calls 1-6%. Verification and integration, not
+translation, is the cost; `rustconv port` aims there. A desk-sized module (19 TUs) went
+translate -> lint fixes -> island allowlist -> hand-written prelude -> cargo grind on 3
+arches -> CMake flip (~40 lines of per-module cargo plumbing) in ~6 hours.
+
+**profile_derive fixes found by the first `port` probe (setuplib).** (1) With
+`--target setuplib`, the 23 TUs its STATIC sibling `setuplib_static` compiles were reported
+DEAD_SOURCE, "do not pay to translate them" -- live code. They are now SIBLING_TARGET,
+naming the `--target` to pass. (2) A static library with no set_module_type() inherits its
+consumers' mode when they agree (MODULE_TYPE_INHERITED) instead of demanding
+`--usermode`.
 
 ## TASK 0, AND DO NOT SKIP IT: measure where the money and the time actually go
 

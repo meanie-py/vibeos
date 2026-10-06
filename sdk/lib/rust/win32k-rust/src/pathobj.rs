@@ -42,42 +42,11 @@ pub const PATHTYPE_KEEPME: u32 = 0x00000001;
 
 // ---- EngCreatePath (was dropped by rustconv) ----
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn EngCreatePath() -> *mut PATHOBJ {
     // PATH_AllocPathWithHandle() — §6 macro:
     //   GDIOBJ_AllocObjWithHandle(GDI_OBJECT_TYPE_PATH, sizeof(PATH)) as PPATH
     // (win32ss/gdi/ntgdi/path.h:69)
-    let pPath: PPATH = GDIOBJ_AllocObjWithHandle(
-        GDI_OBJECT_TYPE_PATH,
-        core::mem::size_of::<PATH>() as ULONG,
-    ) as PPATH;
-    if pPath.is_null() {
-        return core::ptr::null_mut();
-    }
-
-    let size: ULONG = core::mem::size_of::<EPATHOBJ>() as ULONG;
-    let pPathObj: PEPATHOBJ = ExAllocatePoolWithTag(
-        _POOL_TYPE_PagedPool,
-        size as _,
-        GDITAG_PATHOBJ,
-    ) as PEPATHOBJ;
-    if pPathObj.is_null() {
-        return core::ptr::null_mut();
-    }
-    RtlZeroMemory(pPathObj as *mut core::ffi::c_void, size as _);
-
-    (*pPathObj).pPath = pPath;
-
-    (*pPath).flType = PATHTYPE_KEEPME as FLONG;
-    (*pPath).epo = pPathObj;
-
-    core::ptr::addr_of_mut!((*pPathObj).po)
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "system" fn EngCreatePath() -> *mut PATHOBJ {
     let pPath: PPATH = GDIOBJ_AllocObjWithHandle(
         GDI_OBJECT_TYPE_PATH,
         core::mem::size_of::<PATH>() as ULONG,
@@ -460,7 +429,6 @@ pub unsafe extern "system" fn PATHOBJ_vEnumStartClipLines(
 
 // ---- PATHOBJ_bEnumClipLines ----
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn PATHOBJ_bEnumClipLines(
     _ppo: *mut PATHOBJ,
@@ -471,19 +439,8 @@ pub unsafe extern "system" fn PATHOBJ_bEnumClipLines(
     0
 }
 
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "system" fn PATHOBJ_bEnumClipLines(
-    _ppo: *mut PATHOBJ,
-    _cb: ULONG,
-    _pcl: *mut CLIPLINE,
-) -> BOOL {
-    0
-}
-
 // ---- PATHOBJ_vGetBounds ----
 
-#[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn PATHOBJ_vGetBounds(
     ppo: *mut PATHOBJ,
@@ -508,50 +465,6 @@ pub unsafe extern "system" fn PATHOBJ_vGetBounds(
         while i < (*ppd).pd.count {
             // pd.pptfx is a `*mut POINTFIX` (pointer, not array). Use
             // pointer arithmetic, NOT `[i]` indexing.
-            let pptfx: PPOINTFIX = (*ppd).pd.pptfx.add(i as usize);
-            if (*pptfx).x < xLeft  { xLeft  = (*pptfx).x; }
-            if (*pptfx).x > xRight { xRight = (*pptfx).x; }
-            if (*pptfx).y < yTop   { yTop   = (*pptfx).y; }
-            if (*pptfx).y > yBottom{ yBottom= (*pptfx).y; }
-            i += 1;
-        }
-        ppd = ppdNext;
-    }
-
-    if xLeft <= xRight && yTop <= yBottom {
-        (*prectfx).xLeft = xLeft;
-        (*prectfx).yTop = yTop;
-        (*prectfx).xRight = xRight + 1;
-        (*prectfx).yBottom = yBottom + 1;
-    } else {
-        RtlZeroMemory(
-            prectfx as *mut core::ffi::c_void,
-            core::mem::size_of::<_RECTFX>() as _,
-        );
-    }
-}
-
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub unsafe extern "system" fn PATHOBJ_vGetBounds(
-    ppo: *mut PATHOBJ,
-    prectfx: PRECTFX,
-) {
-    let pPathObj: PEPATHOBJ = ppo as PEPATHOBJ;
-    if pPathObj.is_null() || (*pPathObj).pPath.is_null() || prectfx.is_null() {
-        return;
-    }
-
-    let mut yTop: FIX = i32::MAX;
-    let mut xLeft: FIX = i32::MAX;
-    let mut yBottom: FIX = i32::MIN;
-    let mut xRight: FIX = i32::MIN;
-
-    let mut ppd: PEXTPATHDATA = (*(*pPathObj).pPath).ppdFirst;
-    while !ppd.is_null() {
-        let ppdNext: PEXTPATHDATA = (*ppd).ppdNext;
-        let mut i: ULONG = 0;
-        while i < (*ppd).pd.count {
             let pptfx: PPOINTFIX = (*ppd).pd.pptfx.add(i as usize);
             if (*pptfx).x < xLeft  { xLeft  = (*pptfx).x; }
             if (*pptfx).x > xRight { xRight = (*pptfx).x; }

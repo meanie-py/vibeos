@@ -56,6 +56,55 @@ extern "C" {
     fn Arm64DumpPte(prefix: PCSTR, address: PVOID);
 }
 
+/// Full first-chance records printed per noisy exception code before going quiet.
+const UEXC_FULL_RECORDS: u32 = 32;
+static UEXC_AV_SEEN: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+static UEXC_MISALIGN_SEEN: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+static ALIGN_TRAP_SEEN: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+/// Count one occurrence; true while it is within the first UEXC_FULL_RECORDS.
+/// Past that, prints one `<tag> N` line at every power of two, so the total
+/// stays readable to within 2x without a record per fault.
+unsafe fn uexc_count(counter: &core::sync::atomic::AtomicU32, tag: &[u8]) -> bool {
+    let n = counter.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+    if n <= UEXC_FULL_RECORDS || crate::tripwire::UEXC_VERBOSE {
+        return true;
+    }
+    if n & (n - 1) == 0 {
+        ARM64_UART_TRACE_HEX(tag.as_ptr() as PCSTR, n as ULONG_PTR);
+    }
+    false
+}
+
+/// Whether to dump a first-chance user exception record in full.
+///
+/// FEX takes access violations (overcommit commits, its own probes) and
+/// alignment faults (unaligned LDAR/STLR from x86-TSO on cores without LSE2)
+/// BY DESIGN, and recovers them. Each full record is ~1 KB written byte by byte
+/// to the UART inside the trap: free in QEMU, ~90 ms at 115200 baud on a real
+/// Pi 4, where one ladder boot took 1,229 alignment faults. So those two codes
+/// print in full only for their first UEXC_FULL_RECORDS, then as a running
+/// count. Every other code always prints, and the second-chance `[UEXC-KILL]`
+/// dump is never capped. Tripwire `UEXCVERBOSE` lifts the cap.
+pub(crate) unsafe fn uexc_should_print(code: NTSTATUS) -> bool {
+    match code as u32 {
+        0xC000_0005 => uexc_count(
+            &UEXC_AV_SEEN,
+            b"[UEXC] quiet (UEXCVERBOSE for all): first-chance C0000005 count=\0",
+        ),
+        0x8000_0002 => uexc_count(
+            &UEXC_MISALIGN_SEEN,
+            b"[UEXC] quiet (UEXCVERBOSE for all): first-chance 80000002 count=\0",
+        ),
+        _ => true,
+    }
+}
+
+/// Same cap for trap.rs's `[ALIGN]` decode of each DFSC 0x21 alignment fault.
+pub(crate) unsafe fn align_trap_should_print() -> bool {
+    uexc_count(&ALIGN_TRAP_SEEN, b"[ALIGN] quiet (UEXCVERBOSE for all): count=\0")
+}
+
 #[cfg(target_arch = "aarch64")]
 unsafe fn Arm64TraceImageName(prefix: PCSTR, image_name: *const i8, len: usize) {
     let mut buf = [0u8; 32];
@@ -952,14 +1001,27 @@ pub unsafe extern "system" fn KiInitializeUserApc(
         Arm64DumpPte(b"[APC] StackPage=\0".as_ptr() as PCSTR, Stack as PVOID);
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
-    ProbeForWrite(Stack as PVOID, core::mem::size_of::<_CONTEXT>(), 16);
-
-    core::ptr::copy_nonoverlapping(
-        core::ptr::addr_of!(Context) as *const u8,
-        Stack as *mut u8,
+    // C: probe + copy inside _SEH2_TRY; the handler skips this APC (plain
+    // return). No SEH here: Result probe + fault-tolerant copy. (The probe was a
+    // raising ProbeForWrite under cfg(not(aarch64)) in this aarch64-only module,
+    // i.e. never compiled, and the copy was a raw memcpy.)
+    if ntkrnl_sys::probe::probe_user_buffer(
+        Stack as *const core::ffi::c_void,
         core::mem::size_of::<_CONTEXT>(),
-    );
+        16,
+        1,
+    )
+    .and_then(|()| ntkrnl_sys::probe::safe_copy_to_user(
+        Stack as *mut core::ffi::c_void,
+        core::ptr::addr_of!(Context) as *const core::ffi::c_void,
+        core::mem::size_of::<_CONTEXT>(),
+        16,
+        1,
+    ))
+    .is_err()
+    {
+        return;
+    }
 
     (*TrapFrame).__bindgen_anon_3.X[0] = NormalContext as u64;
     (*TrapFrame).__bindgen_anon_3.X[1] = SystemArgument1 as u64;
@@ -1435,8 +1497,9 @@ pub unsafe extern "system" fn KiDispatchException(
             0,
         );
     } else {
+        let PrintRecord = uexc_should_print((*ExceptionRecord).ExceptionCode);
         #[cfg(target_arch = "aarch64")]
-        {
+        if PrintRecord {
             ARM64_UART_TRACE_HEX(
                 b"[UEXC] Code=\0".as_ptr() as PCSTR,
                 (*ExceptionRecord).ExceptionCode as ULONG_PTR,
@@ -1545,7 +1608,7 @@ pub unsafe extern "system" fn KiDispatchException(
             (*TrapFrame).Spsr &= !0xF;
 
             #[cfg(target_arch = "aarch64")]
-            {
+            if PrintRecord {
                 ARM64_UART_TRACE_HEX(
                     b"[UEXC-DISPATCH] PC=\0".as_ptr() as PCSTR,
                     (*TrapFrame).Pc as ULONG_PTR,

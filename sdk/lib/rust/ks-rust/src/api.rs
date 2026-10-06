@@ -17,7 +17,6 @@ use ntkrnl_sys::inline::common::InitializeObjectAttributes;
 // ProbeForRead is a real ntoskrnl export but is declared non-pub in
 // ntkrnl_sys::inline::common; declare it locally so this module can link to it.
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 // _wcsicmp: CRT case-insensitive wide compare (sibling swenum.rs declares it the
 // same way). Local extern decl — no global symbol conflict.
@@ -97,13 +96,15 @@ pub unsafe extern "system" fn KsAcquireResetValue(
     }
 
     if (*Irp).RequestorMode == 1i8 {
-        ProbeForRead(
-            (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer,
-            core::mem::size_of::<KSRESET>() as ULONG_PTR,
-            core::mem::size_of::<u8>() as ULONG,
-        );
-        let Value = (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const KSRESET;
-        *ResetValue = *Value;
+        // C: probe + read under _SEH2_TRY, whose handler stores the exception code.
+        match ntkrnl_sys::probe::probe_read_generic(
+            (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const KSRESET,
+            1,
+            1,
+        ) {
+            Ok(value) => *ResetValue = value,
+            Err(status) => Status = status,
+        }
     } else {
         let Value = (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const KSRESET;
         *ResetValue = *Value;

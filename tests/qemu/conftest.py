@@ -31,6 +31,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
             "i386-uefi-net",
             "amd64-uefi",
             "amd64-uefi-net",
+            "amd64-bios",
         ],
         help="Target architecture (default: arm64)",
     )

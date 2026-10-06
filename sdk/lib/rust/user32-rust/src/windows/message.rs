@@ -279,12 +279,20 @@ fn HOOKID_TO_FLAG(HookId: UINT) -> ULONG {
 unsafe fn GetWin32ClientInfo() -> PCLIENTINFO {
     core::ptr::addr_of_mut!((*NtCurrentTeb()).Win32ClientInfo) as *mut _ as PCLIENTINFO
 }
-/// user_x.h inline `GetW32ThreadInfo()` — `(PTHREADINFO)GetWin32ClientInfo()->pClientThreadInfo`'s
-/// owning ti; in the C it is `(PTHREADINFO)(NtCurrentTeb()->Win32ThreadInfo)`.
-#[inline]
+/// misc.c `GetW32ThreadInfo()` — NOT a plain TEB read: a thread that has not yet touched
+/// win32k has no THREADINFO, and this is what creates it. It was re-ported per module as the
+/// bare read, so in a fresh thread GetThreadDesktopInfo() was NULL and GetDesktopWindow()
+/// returned NULL (ole32's clipboard test opens the clipboard with it from a new thread).
+/// The one definition: every other module calls this.
 #[no_mangle]
 pub unsafe extern "C" fn GetW32ThreadInfo() -> PTHREADINFO {
-    (*NtCurrentTeb()).Win32ThreadInfo as PTHREADINFO
+    let mut ti = (*NtCurrentTeb()).Win32ThreadInfo as PTHREADINFO;
+    if ti.is_null() {
+        // create the THREADINFO structure
+        NtUserGetThreadState(THREADSTATE_GETTHREADINFO as DWORD);
+        ti = (*NtCurrentTeb()).Win32ThreadInfo as PTHREADINFO;
+    }
+    ti
 }
 /// user_x.h inline `DesktopPtrToUser(p)` — server→client desktop heap mapping.
 /// In the C it offsets by `GetWin32ClientInfo()->pDeskInfo->pvDesktopBase` delta.

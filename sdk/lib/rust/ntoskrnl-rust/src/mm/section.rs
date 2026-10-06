@@ -2110,7 +2110,6 @@ extern "system" {
     fn MmFreeMemoryArea(AddressSpace: PVOID, MemoryArea: PMEMORY_AREA, FreePage: Option<unsafe extern "C" fn(PVOID, PMEMORY_AREA, PVOID, PFN_NUMBER, ULONG_PTR, BOOLEAN)>, FreePageContext: PVOID) -> NTSTATUS;
     fn MmIsAddressRangeFree(AddressSpace: PVOID, BaseAddress: PVOID, Length: usize) -> BOOLEAN;
     fn MmFindGap(AddressSpace: PVOID, Length: usize, Alignment: usize, TopDown: BOOLEAN) -> PVOID;
-    fn ProbeForWrite(Address: PVOID, Length: ULONG, Alignment: ULONG);
 }
 
 // MmDeleteVirtualMapping is NTAPI/stdcall on i386 (extern "system"), NOT cdecl — the no-NTAPI
@@ -3415,9 +3414,25 @@ pub unsafe extern "system" fn NtQuerySection(
 
     PreviousMode = ExGetPreviousMode();
     if PreviousMode != 0i8 {
-        ProbeForWrite(SectionInformation, SectionInformationLength as ULONG, 4);
+        // C: inside _SEH2_TRY; the handler returns the exception code. (The old
+        // raising extern also truncated the SIZE_T length to ULONG.)
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            SectionInformation,
+            SectionInformationLength as usize,
+            core::mem::align_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return status;
+        }
         if !ResultLength.is_null() {
-            ProbeForWrite(ResultLength as PVOID, core::mem::size_of::<SIZE_T>() as ULONG, core::mem::align_of::<SIZE_T>() as ULONG);
+            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+                ResultLength as PVOID,
+                core::mem::size_of::<SIZE_T>(),
+                core::mem::align_of::<SIZE_T>(),
+                PreviousMode,
+            ) {
+                return status;
+            }
         }
     }
 
@@ -3449,6 +3464,16 @@ pub unsafe extern "system" fn NtQuerySection(
 
     ObDereferenceObject(Section as PVOID);
     Status
+}
+
+/// The C writes the result inside `_SEH2_TRY` and its handler returns the code. The
+/// pointers were range-probed on entry, so write through the fault-tolerant copy.
+unsafe fn write_section_result<T>(dst: PVOID, value: &T) -> Result<(), NTSTATUS> {
+    ntkrnl_sys::probe::safe_copy_raw(
+        dst,
+        value as *const T as *const core::ffi::c_void,
+        core::mem::size_of::<T>(),
+    )
 }
 
 // Helper for NtQuerySection match branches
@@ -3484,9 +3509,14 @@ pub unsafe fn handle_query_section_match(
             Sbi.Attributes |= SEC_BASED;
         }
 
-        *(SectionInformation as *mut _SECTION_BASIC_INFORMATION) = Sbi;
+        if let Err(status) = write_section_result(SectionInformation, &Sbi) {
+            return status;
+        }
         if !ResultLength.is_null() {
-            *ResultLength = core::mem::size_of::<_SECTION_BASIC_INFORMATION>();
+            let length = core::mem::size_of::<_SECTION_BASIC_INFORMATION>();
+            if let Err(status) = write_section_result(ResultLength as PVOID, &length) {
+                return status;
+            }
         }
         STATUS_SUCCESS
     } else if SectionInformationClass == SectionImageInformation {
@@ -3494,10 +3524,16 @@ pub unsafe fn handle_query_section_match(
             STATUS_SECTION_NOT_IMAGE
         } else if MiIsRosSectionObject(Section) != 0 {
             let ImageSectionObject = (*Section).Segment as PMM_IMAGE_SECTION_OBJECT;
-            let Sii = SectionInformation as *mut SECTION_IMAGE_INFORMATION;
-            *Sii = (*ImageSectionObject).ImageInformation;
+            if let Err(status) =
+                write_section_result(SectionInformation, &(*ImageSectionObject).ImageInformation)
+            {
+                return status;
+            }
             if !ResultLength.is_null() {
-                *ResultLength = core::mem::size_of::<SECTION_IMAGE_INFORMATION>();
+                let length = core::mem::size_of::<SECTION_IMAGE_INFORMATION>();
+                if let Err(status) = write_section_result(ResultLength as PVOID, &length) {
+                    return status;
+                }
             }
             STATUS_SUCCESS
         } else {

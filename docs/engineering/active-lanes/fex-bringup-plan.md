@@ -191,7 +191,7 @@ fix + kernel SEH PoC — field manual §9.27):
 
 ### Rung 1 progress (2026-07-08)
 
-- Upstream **FEX-2607** (`1cc4b93e7a71`) vendored PRUNED at `external/fex/`
+- Upstream **FEX-2607** (`1cc4b93e7a71`) vendored PRUNED at `vendor/fex/`
   (~58MB vs 1.4GB full — test corpora + gated-off externals dropped; prune list
   + provenance: `external/README-fex-vendor.md`). Tree is byte-identical to
   upstream — no vibeos patches. NB upstream's own `CLAUDE.md` forbids

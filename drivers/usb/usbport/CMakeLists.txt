@@ -53,8 +53,6 @@ target_compile_definitions(usbport
 
 set_module_type(usbport kernelmodedriver)
 add_dependencies(usbport rust_usbport)
-# C-cohab objects and the Rust rlib can both supply transiently-shared helper symbols.
-target_link_options(usbport PRIVATE -Wl,--allow-multiple-definition)
 target_link_libraries(usbport ${USBPORT_RUST_LIB} ${PSEH_LIB})
 add_importlibs(usbport ntoskrnl hal)
 add_cd_file(TARGET usbport DESTINATION reactos/system32/drivers NO_CAB FOR all)

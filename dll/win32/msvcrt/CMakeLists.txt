@@ -76,7 +76,12 @@ target_compile_definitions(msvcrt_shared PRIVATE _MSVCR_VER=0 __UCRTSUPPORT__)
 add_dependencies(msvcrt_shared psdk asm)
 
 ###############################################################################
-# A static library shared between msvcrt.dll msvcrt20.dll and msvcrt40.dll
+# The Wine C of msvcrt.dll, as an unlinked REFERENCE library
+#
+# No DLL links it: msvcrt.dll, msvcrt20, msvcrt40 and crtdll are msvcrt-crt-rust alone (see
+# msvcrt_rust_cohab.cmake). It is still built because tools read its objects as an oracle:
+# gen_ctype_tables.py checks the Rust ctype tables against ctype.c.obj's .data,
+# gen_msvcrt_ref_protos.py reads prototypes, verify_cohab_coverage.py the C surface.
 ###############################################################################
 
 list(APPEND MSVCRT_SOURCE
@@ -137,8 +142,7 @@ spec2def(msvcrt.dll msvcrt.spec ADD_IMPORTLIB)
 # msvcrt_rust_shims (rust_varargs_shim.c, rust_scanf_shim.c, rust_file_varargs_shim.c,
 # rust_process_varargs_shim.c, rust_console_varargs_shim.c), C only because stable Rust
 # cannot write va_start. They are msvcrt-crt-rust src/va_entries.rs now: varargs-rust's
-# va_entry! thunks, in the cohab archive every CRT DLL links whole ahead of msvcrt_static,
-# so they win first-match over scanf.c/wcs.c/file.c's copies as the module objects did.
+# va_entry! thunks in the archive every CRT DLL links.
 
 add_library(msvcrt MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/msvcrt_stubs.c
@@ -149,13 +153,10 @@ add_library(msvcrt MODULE
 target_compile_definitions(msvcrt PRIVATE _MSVCR_VER=0)
 set_module_type(msvcrt win32dll ENTRYPOINT DllMain 12)
 
-# ── Rust CRT-body cohab: msvcrt-crt-rust → msvcrt.dll ────────────────
-# Scoped user-mode cohab: msvcrt-crt-rust re-exports a growing set of pure
-# CRT-body symbols over cnt-rust's difftest-pinned `core_rs`. Linked BEFORE
-# msvcrt_static so lld first-match selects the Rust symbols; the C monolith
-# copies (string.c etc.) go dead (--allow-multiple-definition, MODULE-link
-# default). Mirrors libcntpr.cmake's cnt-rust swap but with USER-MODE codegen
-# (i386 is SSE2 since 2026-10-03 -- see the RUSTFLAGS below). See
+# ── msvcrt-crt-rust → msvcrt.dll ─────────────────────────────────────
+# The whole CRT body, user-mode codegen (i386 is SSE2 since 2026-10-03 -- see the
+# RUSTFLAGS below). It began as a cohab ahead of msvcrt_static and replaced it one
+# family at a time; no C is linked now (msvcrt_rust_cohab.cmake). See
 # docs/engineering/active-lanes/msvcrt-from-pieces-plan.md.
 # NOTE: `-C no-prepopulate-passes` (the captures(none) class-guard, field manual
 # §1253) is deliberately NOT set here. It disables rustc's optimization pipeline
@@ -218,22 +219,20 @@ add_custom_command(
 )
 add_custom_target(rust_msvcrt_crt DEPENDS ${MSVCRT_CRT_RUST_LIB})
 
-# msvcrt_crt_rust under --whole-archive so ALL its symbols are DEFINED before
-# the C monolith (string.c.obj) is pulled. Plain link-order is NOT enough: the
-# C monolith still gets pulled for its ~100 un-flipped symbols (strlen, …) and
-# drags in its own copy of the flipped functions, which would otherwise win
-# first-match. --whole-archive forces the Rust defs in first; the C copies then
-# become the ignored duplicates (--allow-multiple-definition). See lane plan §1b.
 link_msvcrt_rust_cohab(msvcrt)
-# ${PSEH_USER_LIB} and ${VCRT_SETJMP_LIB} first, by path (gcc.cmake): the SEH runtime and
-# setjmp/longjmp resolve from Rust before any of these libraries' own ${PSEH_LIB} and before
-# ntdll's import library, which exports _setjmp/longjmp and would otherwise answer them.
-# No `dbgrpt` (sdk/lib/crt/misc/dbgrpt.cpp): the _CrtDbgReport family is msvcrt-crt-rust's
-# dbgrpt.rs.
-target_link_libraries(msvcrt ${PSEH_USER_LIB} ${VCRT_SETJMP_LIB} msvcrt_static crtmath vcruntime wine chkstk)
-if(ARCH STREQUAL "i386")
-    target_link_libraries(msvcrt chkesp)
-endif()
+# Build-order only, nothing is linked: msvcrt_static is no longer on any link line, but the
+# host difftests (msvcrt-difftest, msvcrt-scanf-difftest) and gen_ctype_tables.py /
+# gen_msvcrt_ref_protos.py / verify_cohab_coverage.py read its OBJECTS as their oracle, and
+# a build only makes what `livecd` depends on. Without this a fresh tree never compiled it
+# and the gate's difftest failed DIFFTEST_STALE_ORACLE (master red, 2026-10-04), while every
+# existing build dir still held the objects from before the unlink.
+add_dependencies(msvcrt msvcrt_static)
+# Nothing else. The SEH runtime and setjmp/longjmp are pseh-rt/setjmp-rt inside the archive
+# (whole-archived, so defined before ntdll's import library, which exports _setjmp/longjmp,
+# is consulted); msvcrt_static, crtmath, vcruntime, wine, chkstk and chkesp contributed no
+# object to any arch's link (tools/link_pulls.py, 2026-10-04); dbgrpt is dbgrpt.rs. One Rust
+# graph and no C library, so the link tolerates no duplicate symbol at all (gcc.cmake).
+link_strict(msvcrt)
 add_importlibs(msvcrt kernel32 kernel32_vista ntdll)
 add_delay_importlibs(msvcrt user32 advapi32)
 

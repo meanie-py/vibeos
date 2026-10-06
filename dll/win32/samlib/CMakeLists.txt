@@ -66,9 +66,6 @@ set_module_type(samlib win32dll UNICODE)
 # libsamlib_rust.a FIRST so its #[no_mangle] symbols win; sam_c.c provides the MIDL client
 # stubs the Rust imports.
 target_link_libraries(samlib ${SAMLIB_RUST_LIB} wine ${PSEH_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(samlib PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(samlib rust_samlib)
 add_importlibs(samlib rpcrt4 advapi32 msvcrt kernel32 ntdll)
 # add_pch dropped with precomp.h: the only remaining C is generated (sam_c.c, samlib_stubs.c)

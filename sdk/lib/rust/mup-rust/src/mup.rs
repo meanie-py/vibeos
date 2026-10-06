@@ -43,7 +43,6 @@ use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
 // ProbeForRead is a private extern in ntkrnl-sys::inline::common; redeclare it here (it's
 // a real ntoskrnl export). ULONG_PTR == usize, ULONG == u32 on all three targets.
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: u32);
 }
 
 use crate::dfs::*;
@@ -604,8 +603,9 @@ pub unsafe fn BuildAndSubmitIrp(Irp: PIRP, Ccb: PMUP_CCB, MasterIoContext: PMUP_
             (*Stack).Flags = SL_WRITE_THROUGH as u8;
         }
 
-        // _SEH2_TRY (except handler dead under DUMMY_PSEH)
-        {
+        // C: _SEH2_TRY whose handler sets Status to the exception code and falls
+        // through to the cleanup below. Each raise in it is a `break 'seh` here.
+        'seh: {
             if (*DeviceObject).Flags & DO_BUFFERED_IO != 0 {
                 (*LowerIrp).AssociatedIrp.SystemBuffer = null_mut();
 
@@ -613,11 +613,15 @@ pub unsafe fn BuildAndSubmitIrp(Irp: PIRP, Ccb: PMUP_CCB, MasterIoContext: PMUP_
                     (*LowerIrp).Flags = IRP_BUFFERED_IO;
                 } else {
                     if (*Irp).RequestorMode == UserMode {
-                        ProbeForRead(
+                        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
                             (*Irp).UserBuffer,
                             (*Stack).Parameters.Write.Length as usize,
-                            core::mem::size_of::<u8>() as u32,
-                        );
+                            1,
+                            1,
+                        ) {
+                            Status = status;
+                            break 'seh;
+                        }
                     }
 
                     (*LowerIrp).AssociatedIrp.SystemBuffer = ExAllocatePoolWithQuotaTag(
@@ -626,14 +630,18 @@ pub unsafe fn BuildAndSubmitIrp(Irp: PIRP, Ccb: PMUP_CCB, MasterIoContext: PMUP_
                         TAG_MUP,
                     );
                     if (*LowerIrp).AssociatedIrp.SystemBuffer.is_null() {
-                        ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+                        Status = STATUS_INSUFFICIENT_RESOURCES;
+                        break 'seh;
                     }
 
-                    RtlMoveMemory(
+                    if let Err(status) = ntkrnl_sys::probe::safe_copy_raw(
                         (*LowerIrp).AssociatedIrp.SystemBuffer,
                         (*Irp).UserBuffer,
-                        (*Stack).Parameters.Write.Length as SIZE_T,
-                    );
+                        (*Stack).Parameters.Write.Length as usize,
+                    ) {
+                        Status = status;
+                        break 'seh;
+                    }
                     (*LowerIrp).Flags = IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
                 }
             } else if (*DeviceObject).Flags & DO_DIRECT_IO == 0 {
@@ -647,9 +655,19 @@ pub unsafe fn BuildAndSubmitIrp(Irp: PIRP, Ccb: PMUP_CCB, MasterIoContext: PMUP_
                     LowerIrp,
                 );
                 if Mdl.is_null() {
-                    ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    break 'seh;
                 }
-                MmProbeAndLockPages(Mdl, (*Irp).RequestorMode, _LOCK_OPERATION_IoReadAccess);
+                // The C raises here into the _SEH2_EXCEPT below; the status form
+                // reaches the same cleanup.
+                Status = ntkrnl_sys::probe::MmTryProbeAndLockPages(
+                    Mdl,
+                    (*Irp).RequestorMode,
+                    _LOCK_OPERATION_IoReadAccess,
+                );
+                if !NT_SUCCESS(Status) {
+                    break 'seh;
+                }
             }
 
             if (*(*Ccb).FileObject).Flags & FO_NO_INTERMEDIATE_BUFFERING != 0 {
@@ -686,7 +704,10 @@ pub unsafe fn BuildAndSubmitIrp(Irp: PIRP, Ccb: PMUP_CCB, MasterIoContext: PMUP_
         }
 
         if !LowerIrp.is_null() {
-            if (*LowerIrp).AssociatedIrp.SystemBuffer.is_null() {
+            // The C tests `SystemBuffer == NULL` here, so it frees NULL and leaks the
+            // buffered-write copy (IRP_DEALLOCATE_BUFFER is only honoured by
+            // IoCompleteRequest, never by IoFreeIrp). Free it when it exists.
+            if !(*LowerIrp).AssociatedIrp.SystemBuffer.is_null() {
                 ExFreePoolWithTag((*LowerIrp).AssociatedIrp.SystemBuffer, TAG_MUP);
             }
             IoFreeIrp(LowerIrp);
@@ -1409,7 +1430,17 @@ pub unsafe fn MupBuildIoControlRequest(
             }
             (*Irp).AssociatedIrp.SystemBuffer = InputBuffer;
             (*Irp).Flags = IRP_BUFFERED_IO;
-            MmProbeAndLockPages((*Irp).MdlAddress, KernelMode, _LOCK_OPERATION_IoReadAccess);
+            // The C raises on a bad buffer with nothing to catch it. Fail the build
+            // the way the IoAllocateMdl failure above does instead.
+            if !NT_SUCCESS(ntkrnl_sys::probe::MmTryProbeAndLockPages(
+                (*Irp).MdlAddress,
+                KernelMode,
+                _LOCK_OPERATION_IoReadAccess,
+            )) {
+                IoFreeMdl((*Irp).MdlAddress);
+                IoFreeIrp(Irp);
+                return null_mut();
+            }
         }
         x if x == METHOD_NEITHER => {
             (*Irp).UserBuffer = OutputBuffer;

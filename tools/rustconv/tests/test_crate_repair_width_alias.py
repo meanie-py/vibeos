@@ -185,10 +185,13 @@ def test_local_authorities_sees_glob_reachable_names(tmp_path):
 
 def test_comparison_promotes_descriptor_byte_instead_of_truncating_resource_type():
     from rustconv.crate_repair import RULE_COMPARISON
+
     src = b"fn f() { if descriptor.Type == Type { found(); } }"
     # Locate the RHS, not the same-spelled field on the LHS.
     start = src.index(b"== Type") + 3
-    diag = _diag([_span("src/a.rs", start, start + 4, label="expected `u8`, found `i32`", primary=True)])
+    diag = _diag(
+        [_span("src/a.rs", start, start + 4, label="expected `u8`, found `i32`", primary=True)]
+    )
     plan = _plan(src, [diag])
     assert len(plan.edits) == 1
     assert plan.edits[0].rule == RULE_COMPARISON
@@ -201,3 +204,26 @@ def test_unknown_comparison_width_never_uses_assignment_truncation():
     plan = _plan(src, [_site(src, b"b", "u8", "usize")])
     assert not plan.edits
     assert any(s.reason == "promotion_not_proven" for s in plan.skipped)
+
+
+def test_a_public_ntdll_glob_lends_ntdll_sys_signatures(tmp_path):
+    # setuplib: `RtlAllocateHeap(.., Size: SIZE_T)` lives in ntdll-sys, reached through the
+    # island's `pub use ntdll_sys::nt::*;` -- the same chain that carries SIZE_T.
+    crate, sys = tmp_path / "x-rust", tmp_path / "ntdll-sys"
+    (crate / "src").mkdir(parents=True)
+    (sys / "src").mkdir(parents=True)
+    (sys / "src" / "bindgen_amd64.rs").write_text(
+        "pub type SIZE_T = u64;\n"
+        'extern "C" { pub fn RtlAllocateHeap(HeapHandle: PVOID, Flags: ULONG, Size: SIZE_T)'
+        " -> PVOID; pub fn Local(a: ULONG); }\n"
+    )
+    (crate / "src" / "types_amd64.rs").write_text(
+        'pub use ntdll_sys::nt::*;\nunsafe extern "C" { pub fn Local(a: DWORD); }\n'
+    )
+    sigs, names = _local_authorities(crate)
+    assert sigs["RtlAllocateHeap"] == ["PVOID", "ULONG", "SIZE_T"]
+    assert sigs["Local"] == ["DWORD"]  # the crate's own declaration wins
+    assert "SIZE_T" in names
+    # A private (kernel-style) glob is not followed.
+    (crate / "src" / "types_amd64.rs").write_text("use ntdll_sys::nt::*;\n")
+    assert "RtlAllocateHeap" not in _local_authorities(crate)[0]

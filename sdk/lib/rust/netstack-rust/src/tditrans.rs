@@ -11,14 +11,18 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use smoltcp::iface::{Interface, SocketHandle, SocketSet};
 use smoltcp::phy::ChecksumCapabilities;
 use smoltcp::socket::{icmp, tcp, udp};
 use smoltcp::wire::{Icmpv4Packet, Icmpv4Repr, IpAddress, Ipv4Address};
 
-use ntkrnl_sys::ddk::{IofCompleteRequest, NTSTATUS, PIRP};
+use ntkrnl_sys::ddk::{
+    IoAcquireCancelSpinLock, IoReleaseCancelSpinLock, IofCompleteRequest, KIRQL, NTSTATUS,
+    PDEVICE_OBJECT, PIRP,
+};
+use ntkrnl_sys::inline::tier1::IoSetCancelRoutine;
 use ntkrnl_sys::guards::{IrqlGuard, SpinLockGuard};
 use ntkrnl_sys::ke::KSPIN_LOCK;
 
@@ -32,13 +36,18 @@ const STATUS_IO_TIMEOUT: NTSTATUS = 0xC000_00B5u32 as NTSTATUS;
 /// Windows' default connect timeout: the initial SYN plus two retries (3s, 6s, 12s).
 const CONNECT_TIMEOUT_MS: i64 = 21_000;
 const STATUS_CONNECTION_RESET: NTSTATUS = 0xC000_020Du32 as NTSTATUS;
+/// What a request gets once there is no engine to carry it (WSAENETUNREACH).
+const STATUS_NETWORK_UNREACHABLE: NTSTATUS = 0xC000_023Cu32 as NTSTATUS;
 
 /// Identifier the management ICMP socket binds to (distinct from the boot
 /// self-test's 0x022b) — replies are correlated back to pending pings by seq.
 const MGMT_ICMP_IDENT: u16 = 0x4944;
 
-/// Worker→IRP completion. Safe to call at PASSIVE with no engine lock held.
-unsafe fn complete(irp: usize, status: NTSTATUS, info: usize) {
+const STATUS_CANCELLED: NTSTATUS = 0xC000_0120u32 as NTSTATUS;
+
+/// Complete an IRP nobody else can claim: the receive IRP an AFD event handler hands
+/// back, which was never pended here.
+unsafe fn complete_unregistered(irp: usize, status: NTSTATUS, info: usize) {
     if irp == 0 {
         return;
     }
@@ -46,6 +55,115 @@ unsafe fn complete(irp: usize, status: NTSTATUS, info: usize) {
     (*irp).IoStatus.__bindgen_anon_1.Status = status;
     (*irp).IoStatus.Information = info as _;
     IofCompleteRequest(irp, 0);
+}
+
+/// Worker→IRP completion of a pended IRP. Safe to call at PASSIVE with no engine lock
+/// held. A no-op if the cancel routine claimed the IRP first: it has completed it, and
+/// it may already be freed, so it must not be touched.
+unsafe fn complete(irp: usize, status: NTSTATUS, info: usize) {
+    if irp == 0 || !claim(irp) {
+        return;
+    }
+    if IoSetCancelRoutine(irp as PIRP, None).is_none() {
+        // IoCancelIrp has already called the routine, which lost the claim to us. It
+        // holds the cancel spinlock until its first statement has read CancelIrql;
+        // wait for that before the IRP can be freed under it.
+        let mut irql: KIRQL = 0;
+        IoAcquireCancelSpinLock(&mut irql);
+        IoReleaseCancelSpinLock(irql);
+    }
+    complete_unregistered(irp, status, info);
+}
+
+// --------------------------------------------------------------------------- #
+// Cancellation. AFD closes a socket by IoCancelIrp-ing its in-flight TDI requests
+// and then freeing the FCB those requests' completion routines point at, so a cancel
+// must complete the IRP INSIDE the cancel routine, as tcpip's DispCancelRequest does.
+// Completing it later from the worker ran AFD's StreamSocketConnectComplete on a freed
+// FCB and called TdiReceive on a freed connection object (arm64 BUGCHECK 0x1E in
+// IoGetRelatedDeviceObject, rapps closed mid-download, 2026-10-04).
+//
+// Every pended IRP sits in PENDING until exactly one side claims it: the cancel
+// routine (completes STATUS_CANCELLED) or the worker (`complete`). The worker touches
+// a pended IRP's buffer only through `with_pending`, under the same lock, so a
+// cancelled IRP's memory is never written after its completion.
+// --------------------------------------------------------------------------- #
+
+struct Pending {
+    lock: UnsafeCell<KSPIN_LOCK>,
+    irps: UnsafeCell<Vec<usize>>,
+}
+unsafe impl Sync for Pending {}
+
+static PENDING: Pending = Pending {
+    lock: UnsafeCell::new(0),
+    irps: UnsafeCell::new(Vec::new()),
+};
+
+/// Take ownership of a pended IRP: true if it was still registered.
+fn claim(irp: usize) -> bool {
+    unsafe {
+        let _lock = SpinLockGuard::acquire(PENDING.lock.get());
+        let irps = &mut *PENDING.irps.get();
+        match irps.iter().position(|&i| i == irp) {
+            Some(pos) => {
+                irps.swap_remove(pos);
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+fn is_pending(irp: usize) -> bool {
+    unsafe {
+        let _lock = SpinLockGuard::acquire(PENDING.lock.get());
+        (*PENDING.irps.get()).contains(&irp)
+    }
+}
+
+/// Run `f` on a pended IRP's buffers while no cancel can complete it underneath;
+/// None if it has been cancelled (drop the entry). Runs at DISPATCH_LEVEL under the
+/// lock, so `f` must only copy (smoltcp's slice copies are fine) and must not
+/// complete anything.
+fn with_pending<R>(irp: usize, f: impl FnOnce() -> R) -> Option<R> {
+    unsafe {
+        let _lock = SpinLockGuard::acquire(PENDING.lock.get());
+        if (*PENDING.irps.get()).contains(&irp) {
+            Some(f())
+        } else {
+            None
+        }
+    }
+}
+
+unsafe extern "system" fn cancel_routine(_dev: PDEVICE_OBJECT, irp: PIRP) {
+    IoReleaseCancelSpinLock((*irp).CancelIrql);
+    if claim(irp as usize) {
+        complete_unregistered(irp as usize, STATUS_CANCELLED, 0);
+        // The worker drops its references (and aborts a pending connect). It compares
+        // the pointer only; the IRP may be gone by the time it looks.
+        post(Cmd::Cancel { irp: irp as usize });
+    }
+}
+
+/// Register an IRP the dispatch is about to pend (already IoMarkIrpPending'd).
+/// False if it was cancelled before the cancel routine was in place: it has been
+/// completed STATUS_CANCELLED here, and the caller must not post it to the worker.
+pub unsafe fn pend(irp: PIRP) -> bool {
+    {
+        let _lock = SpinLockGuard::acquire(PENDING.lock.get());
+        (*PENDING.irps.get()).push(irp as usize);
+    }
+    IoSetCancelRoutine(irp, Some(cancel_routine));
+    if (*irp).Cancel != 0 && IoSetCancelRoutine(irp, None).is_some() {
+        // IoCancelIrp ran before the routine existed and found nothing to call.
+        if claim(irp as usize) {
+            complete_unregistered(irp as usize, STATUS_CANCELLED, 0);
+        }
+        return false;
+    }
+    true
 }
 
 // --------------------------------------------------------------------------- #
@@ -76,6 +194,8 @@ pub enum Cmd {
     ReceiveDatagram { addr_id: u64, irp: usize, buf: usize, len: usize, ret_info: usize },
     CloseConn { id: u64 },
     CloseAddr { id: u64 },
+    /// The cancel routine completed this IRP: forget every reference to it.
+    Cancel { irp: usize },
     /// ICMP echo (ping): emit an echo request on the management ICMP socket and
     /// complete the IRP with the ICMP_ECHO_REPLY once a reply arrives (or on
     /// timeout). `sysbuf` is the METHOD_BUFFERED SystemBuffer (kernel, written by
@@ -133,12 +253,85 @@ pub fn alloc_id() -> u64 {
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
+/// Set (under the inbox lock) when the worker has exited for good. Nothing drains
+/// the inbox after that, so a command posted then would never be seen.
+static ENGINE_DEAD: AtomicBool = AtomicBool::new(false);
+
 /// Post a command from the TDI dispatch (any thread).
 pub fn post(cmd: Cmd) {
     unsafe {
-        let _lock = SpinLockGuard::acquire(INBOX.lock.get());
-        (*INBOX.queue.get()).push(cmd);
+        {
+            let _lock = SpinLockGuard::acquire(INBOX.lock.get());
+            if !ENGINE_DEAD.load(Ordering::Relaxed) {
+                (*INBOX.queue.get()).push(cmd);
+                return;
+            }
+        }
+        fail_dead(cmd); // outside the lock: completion runs the caller's routine
     }
+}
+
+/// The worker is exiting and will never poll again (no network device: the Pi 4's
+/// GENET, or any NIC netstack does not drive). Fail everything already queued, and
+/// make `post` fail everything after.
+///
+/// Without this every IRP the dispatch had marked pending waited forever on an
+/// inbox nobody drained: a loopback `sendto(127.0.0.1:9)` hung its caller for good
+/// on the board (marshal32's sendto rung, winlogon reading `exit = 0x103`), and
+/// QEMU never showed it only because QEMU attaches a default NIC to every smoke
+/// boot. Reproduce with `VIBEOS_QEMU_EXTRA_ARGS="-nic user,model=rtl8139"`.
+/// Loopback with no NIC at all still does not WORK, it now fails fast.
+pub fn mark_engine_dead() {
+    let mut queued = Vec::new();
+    unsafe {
+        let _lock = SpinLockGuard::acquire(INBOX.lock.get());
+        ENGINE_DEAD.store(true, Ordering::Relaxed);
+        core::mem::swap(&mut queued, &mut *INBOX.queue.get());
+    }
+    for cmd in queued {
+        unsafe { fail_dead(cmd) };
+    }
+}
+
+/// Complete a command's IRP, if it carries one, with STATUS_NETWORK_UNREACHABLE.
+/// The IRP-less commands (create/associate/close/route/event) only update worker
+/// state that no longer exists, so dropping them is the whole of their effect.
+unsafe fn fail_dead(cmd: Cmd) {
+    let irp = match cmd {
+        // getsockname is local: an address object is bound whether or not a NIC
+        // exists (AFD's implicit bind is to a NULL address, port 0 by
+        // construction). Answer as the worker does for an id it has no
+        // endpoint for -- unspecified IP, port 0 -- instead of failing a
+        // query that has nothing to do with the network.
+        Cmd::QueryAddress { irp, out, out_len, .. } => {
+            let info = crate::tdi::TdiAddressInfo::new([0; 4], 0);
+            let need = core::mem::size_of::<crate::tdi::TdiAddressInfo>();
+            if out != 0 && out_len >= need {
+                core::ptr::copy_nonoverlapping(&info as *const _ as *const u8, out as *mut u8, need);
+            }
+            complete(irp, STATUS_SUCCESS, need);
+            return;
+        }
+        Cmd::Connect { irp, .. }
+        | Cmd::Listen { irp, .. }
+        | Cmd::Send { irp, .. }
+        | Cmd::Receive { irp, .. }
+        | Cmd::Disconnect { irp, .. }
+        | Cmd::SendDatagram { irp, .. }
+        | Cmd::ReceiveDatagram { irp, .. }
+        | Cmd::IcmpEcho { irp, .. } => irp,
+        Cmd::CreateAddr { .. }
+        | Cmd::CreateConn { .. }
+        | Cmd::SetEvent { .. }
+        | Cmd::Associate { .. }
+        | Cmd::SetDefaultRoute { .. }
+        | Cmd::CloseConn { .. }
+        | Cmd::CloseAddr { .. }
+        // The cancel routine already completed this IRP; completing it again would
+        // be a double completion (and `complete` would refuse the unclaimed IRP).
+        | Cmd::Cancel { .. } => 0,
+    };
+    complete(irp, STATUS_NETWORK_UNREACHABLE, 0);
 }
 
 fn drain_into(out: &mut Vec<Cmd>) {
@@ -415,13 +608,13 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
             let info = crate::tdi::TdiAddressInfo::new(ip, port);
             let need = core::mem::size_of::<crate::tdi::TdiAddressInfo>();
             if out != 0 && out_len >= need {
-                unsafe {
+                with_pending(irp, || unsafe {
                     core::ptr::copy_nonoverlapping(
                         &info as *const _ as *const u8,
                         out as *mut u8,
                         need,
                     );
-                }
+                });
             }
             unsafe { complete(irp, STATUS_SUCCESS, need) };
         }
@@ -489,6 +682,31 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
             } else {
                 unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) };
             }
+        }
+        Cmd::Cancel { irp } => {
+            // Already completed by the cancel routine. If the same address is pended
+            // again, that is a NEW request reusing a freed IRP's memory: leave it.
+            if is_pending(irp) {
+                return;
+            }
+            for c in state.conns.iter_mut() {
+                if c.connect_irp == irp {
+                    c.connect_irp = 0;
+                    if let Some(h) = c.handle {
+                        sockets.get_mut::<tcp::Socket>(h).abort();
+                    }
+                }
+                if c.listen_irp == irp {
+                    c.listen_irp = 0;
+                    c.listen_port = 0;
+                }
+                c.recv.retain(|e| e.0 != irp);
+                c.send_q.retain(|e| e.0 != irp);
+            }
+            for a in state.addrs.iter_mut() {
+                a.recv_dg.retain(|e| e.0 != irp);
+            }
+            state.pings.retain(|p| p.irp != irp);
         }
         Cmd::CloseConn { id } => {
             if let Some(pos) = state.conns.iter().position(|c| c.id == id) {
@@ -658,38 +876,43 @@ fn pump_icmp(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
 unsafe fn complete_ping_success(p: &PendingPing, octets: [u8; 4], data: &[u8], rtt_ms: u32) {
     use crate::tdi::{IcmpEchoReply, IpOptionInformation, IP_SUCCESS};
     let reply_sz = core::mem::size_of::<IcmpEchoReply>();
-    // Zero the header region (the tail data area is filled below; the gap between
-    // is irrelevant — only `Data`/`DataSize` bytes are read by the caller).
-    core::ptr::write_bytes(p.sysbuf as *mut u8, 0, reply_sz);
+    // Written only while no cancel can complete the IRP underneath.
+    let written = with_pending(p.irp, || {
+        // Zero the header region (the tail data area is filled below; the gap between
+        // is irrelevant — only `Data`/`DataSize` bytes are read by the caller).
+        core::ptr::write_bytes(p.sysbuf as *mut u8, 0, reply_sz);
 
-    let reply = p.sysbuf as *mut IcmpEchoReply;
-    (*reply).address = u32::from_ne_bytes(octets);
-    (*reply).status = IP_SUCCESS;
-    (*reply).round_trip_time = rtt_ms;
-    (*reply).reserved = 1; // nReplies — IcmpParseReplies returns this
-    (*reply).options = IpOptionInformation {
-        // smoltcp's ICMP socket doesn't surface the reply's IP TTL; report a
-        // plausible default (cosmetic — ping's TTL column only).
-        ttl: 128,
-        tos: 0,
-        flags: 0,
-        options_size: 0,
-        options_data: core::ptr::null_mut(),
-    };
+        let reply = p.sysbuf as *mut IcmpEchoReply;
+        (*reply).address = u32::from_ne_bytes(octets);
+        (*reply).status = IP_SUCCESS;
+        (*reply).round_trip_time = rtt_ms;
+        (*reply).reserved = 1; // nReplies — IcmpParseReplies returns this
+        (*reply).options = IpOptionInformation {
+            // smoltcp's ICMP socket doesn't surface the reply's IP TTL; report a
+            // plausible default (cosmetic — ping's TTL column only).
+            ttl: 128,
+            tos: 0,
+            flags: 0,
+            options_size: 0,
+            options_data: core::ptr::null_mut(),
+        };
 
-    let remaining = p.out_len - reply_sz;
-    let dsize = remaining.min(data.len());
-    if dsize > 0 {
-        // data sits at the very end of the buffer (out_len - dsize >= reply_sz).
-        let dst = (p.sysbuf + p.out_len - dsize) as *mut u8;
-        core::ptr::copy_nonoverlapping(data.as_ptr(), dst, dsize);
-        (*reply).data = (p.user_buffer + p.out_len - dsize) as *mut u8;
-    } else {
-        (*reply).data = core::ptr::null_mut();
+        let remaining = p.out_len - reply_sz;
+        let dsize = remaining.min(data.len());
+        if dsize > 0 {
+            // data sits at the very end of the buffer (out_len - dsize >= reply_sz).
+            let dst = (p.sysbuf + p.out_len - dsize) as *mut u8;
+            core::ptr::copy_nonoverlapping(data.as_ptr(), dst, dsize);
+            (*reply).data = (p.user_buffer + p.out_len - dsize) as *mut u8;
+        } else {
+            (*reply).data = core::ptr::null_mut();
+        }
+        (*reply).data_size = dsize as u16;
+
+    });
+    if written.is_some() {
+        complete(p.irp, STATUS_SUCCESS, p.out_len);
     }
-    (*reply).data_size = dsize as u16;
-
-    complete(p.irp, STATUS_SUCCESS, p.out_len);
 }
 
 /// Complete a timed-out ping: a zeroed ICMP_ECHO_REPLY with Status = IP_REQ_TIMED_OUT
@@ -697,9 +920,13 @@ unsafe fn complete_ping_success(p: &PendingPing, octets: [u8; 4], data: &[u8], r
 unsafe fn complete_ping_timeout(p: &PendingPing) {
     use crate::tdi::{IcmpEchoReply, IP_REQ_TIMED_OUT};
     let reply_sz = core::mem::size_of::<IcmpEchoReply>();
-    core::ptr::write_bytes(p.sysbuf as *mut u8, 0, reply_sz);
-    (*(p.sysbuf as *mut IcmpEchoReply)).status = IP_REQ_TIMED_OUT;
-    complete(p.irp, STATUS_TIMEOUT, reply_sz);
+    let written = with_pending(p.irp, || {
+        core::ptr::write_bytes(p.sysbuf as *mut u8, 0, reply_sz);
+        (*(p.sysbuf as *mut IcmpEchoReply)).status = IP_REQ_TIMED_OUT;
+    });
+    if written.is_some() {
+        complete(p.irp, STATUS_TIMEOUT, reply_sz);
+    }
 }
 
 /// Lazily create + bind the UDP socket backing an address object (connectionless
@@ -857,7 +1084,8 @@ fn indicate_datagram(handler: usize, context: usize, payload: &[u8], octets: [u8
 fn deliver_datagrams_irp(s: &mut udp::Socket, recv_dg: &mut Vec<(usize, usize, usize, usize)>) {
     while !recv_dg.is_empty() && s.can_recv() {
         let (irp, buf, len, ret_info) = recv_dg.remove(0);
-        match s.recv() {
+        // A cancelled IRP leaves the datagram queued for the next one.
+        let got = with_pending(irp, || match s.recv() {
             Ok((payload, meta)) => {
                 let n = payload.len().min(len);
                 let dst = unsafe { core::slice::from_raw_parts_mut(buf as *mut u8, n) };
@@ -866,9 +1094,14 @@ fn deliver_datagrams_irp(s: &mut udp::Socket, recv_dg: &mut Vec<(usize, usize, u
                     let (octets, port) = ep_to_v4(meta.endpoint);
                     unsafe { fill_remote_address(ret_info, octets, port) };
                 }
-                unsafe { complete(irp, STATUS_SUCCESS, n) };
+                Ok(n)
             }
-            Err(_) => unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) },
+            Err(_) => Err(()),
+        });
+        match got {
+            Some(Ok(n)) => unsafe { complete(irp, STATUS_SUCCESS, n) },
+            Some(Err(())) => unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) },
+            None => {}
         }
     }
 }
@@ -992,7 +1225,7 @@ fn bridge_listen_backlog(sockets: &mut SocketSet<'static>, state: &mut TdiState)
         if ret_info != 0 {
             if let Some(ep) = sockets.get::<tcp::Socket>(h).remote_endpoint() {
                 let (octets, port) = ep_to_v4(ep);
-                unsafe { fill_remote_address(ret_info, octets, port) };
+                with_pending(irp, || unsafe { fill_remote_address(ret_info, octets, port) });
             }
         }
         nsprint!("[NETSTACK] TDI LISTEN accepted (conn {})\n", state.conns[ci].id);
@@ -1077,9 +1310,14 @@ fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
                 }
             }
             let (irp, data, len, off) = state.conns[ci].send_q[0];
-            let remainder =
-                unsafe { core::slice::from_raw_parts((data + off) as *const u8, len - off) };
-            let n = if s.can_send() { s.send_slice(remainder).unwrap_or(0) } else { 0 };
+            let Some(n) = with_pending(irp, || {
+                let remainder =
+                    unsafe { core::slice::from_raw_parts((data + off) as *const u8, len - off) };
+                if s.can_send() { s.send_slice(remainder).unwrap_or(0) } else { 0 }
+            }) else {
+                state.conns[ci].send_q.remove(0); // cancelled
+                continue;
+            };
             if off + n == len {
                 state.conns[ci].send_q.remove(0);
                 unsafe { complete(irp, STATUS_SUCCESS, len) };
@@ -1097,10 +1335,14 @@ fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
             // Legacy IRP-receive model (kernel self-test before the event path).
             while !state.conns[ci].recv.is_empty() && s.can_recv() {
                 let (irp, buf, len) = state.conns[ci].recv.remove(0);
-                let dst = unsafe { core::slice::from_raw_parts_mut(buf as *mut u8, len) };
-                match s.recv_slice(dst) {
-                    Ok(n) => unsafe { complete(irp, STATUS_SUCCESS, n) },
-                    Err(_) => unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) },
+                let got = with_pending(irp, || {
+                    let dst = unsafe { core::slice::from_raw_parts_mut(buf as *mut u8, len) };
+                    s.recv_slice(dst)
+                });
+                match got {
+                    Some(Ok(n)) => unsafe { complete(irp, STATUS_SUCCESS, n) },
+                    Some(Err(_)) => unsafe { complete(irp, STATUS_CONNECTION_REFUSED, 0) },
+                    None => {} // cancelled
                 }
             }
         }
@@ -1116,15 +1358,18 @@ fn bridge(sockets: &mut SocketSet<'static>, state: &mut TdiState) {
             }
         } else {
             while !a.local_dg.is_empty() && !a.recv_dg.is_empty() {
-                let (payload, ip, port) = a.local_dg.remove(0);
                 let (irp, buf, len, ret_info) = a.recv_dg.remove(0);
+                let (payload, ip, port) = &a.local_dg[0];
                 let n = payload.len().min(len);
-                unsafe {
+                let copied = with_pending(irp, || unsafe {
                     core::ptr::copy_nonoverlapping(payload.as_ptr(), buf as *mut u8, n);
                     if ret_info != 0 {
-                        fill_remote_address(ret_info, ip, port);
+                        fill_remote_address(ret_info, *ip, *port);
                     }
-                    complete(irp, STATUS_SUCCESS, n);
+                });
+                if copied.is_some() {
+                    a.local_dg.remove(0);
+                    unsafe { complete(irp, STATUS_SUCCESS, n) };
                 }
             }
         }
@@ -1204,6 +1449,6 @@ unsafe fn complete_indication_irp(irp: PIRP, data: &[u8]) -> usize {
             core::ptr::copy_nonoverlapping(data.as_ptr(), va as *mut u8, n);
         }
     }
-    complete(irp as usize, STATUS_SUCCESS, n);
+    complete_unregistered(irp as usize, STATUS_SUCCESS, n);
     n
 }

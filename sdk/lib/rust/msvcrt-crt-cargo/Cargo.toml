@@ -35,3 +35,13 @@ msvcrt-crt-rust = { path = "../msvcrt-crt-rust" }
 # crtmath compiles.
 cnt-rust = { path = "../cnt-rust", default-features = false, features = ["cabi-math", "cabi-intdiv", "crt-math-errors"] }
 panic-common = { path = "../panic-common", features = ["user"] }
+# The SEH runtime, setjmp/longjmp and the delay-load helper (pseh-rt, setjmp-rt, delayimp-rt), in THIS graph rather than as
+# their own staticlibs on the DLL's link line, so the DLL has one Rust runtime (one core, one
+# panic handler, one compiler_builtins) and links without --allow-multiple-definition. As
+# separate archives each carried its own copy of those, and pseh/setjmp had to be named by
+# path ahead of ntdll's import library; whole-archived here, they are defined before any
+# import library is consulted. The -rt crates are the code without a panic runtime;
+# this crate's lib.rs is the one runtime.
+pseh-rt = { path = "../pseh-rt" }
+setjmp-rt = { path = "../setjmp-rt" }
+delayimp-rt = { path = "../delayimp-rt" }

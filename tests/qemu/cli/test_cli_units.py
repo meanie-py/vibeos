@@ -3972,7 +3972,8 @@ def _fake_smoke(mapping):
     calls: dict[str, int] = {}
 
     def fake(repo, arch, root, extra):
-        seq = mapping[arch]
+        # Lanes a test does not name (amd64-bios rides along whenever amd64 gates) are green.
+        seq = mapping.get(arch, ["OK"])
         name = root.name  # smoke-<arch>-a1 / smoke-<arch>-r1 ...
         if name.endswith("-a1"):
             idx = 0
@@ -4019,6 +4020,24 @@ def test_gate_all_green_no_retries(tmp_path, monkeypatch):
     assert rc == 0
     # no retry dirs requested
     assert not any("-r" in k for k in fake.calls), fake.calls
+
+
+def test_gate_boots_the_amd64_media_under_bios_too(tmp_path, monkeypatch):
+    """BIOS boot was pruned in May and stayed dead because nothing booted it. An amd64
+    gate now also boots the same media through SeaBIOS, and a red there is a red gate."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"amd64-bios": ["BUGCHECK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    assert gate_mod.gate(_gate_args(), tmp_path) != 0
+    assert any(k.startswith("amd64-bios:smoke-amd64-bios-a1") for k in fake.calls), fake.calls
+
+
+def test_a_gate_without_amd64_does_not_boot_bios(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    assert gate_mod.gate(_gate_args(arches="arm64"), tmp_path) == 0
+    assert not any(k.startswith("amd64-bios:") for k in fake.calls), fake.calls
 
 
 def test_gate_flake_recovers_on_retry(tmp_path, monkeypatch):
@@ -6537,7 +6556,7 @@ def _stamp_scenario(repo, monkeypatch, *, lanes=("a", "b"), dirt="", stages=None
     monkeypatch.setattr(
         q_mod,
         "gate_batch",
-        lambda w, log, retries=2: (
+        lambda w, log, retries=2, **k: (
             gates.append(1),
             q_mod.GateVerdict(True, "", "/tmp/art", "", stages or {}),
         )[1],
@@ -6711,7 +6730,7 @@ def test_queue_green_batch_lands_everything_in_one_gate(queue_repo, monkeypatch)
     monkeypatch.setattr(
         q_mod,
         "gate_batch",
-        lambda w, log, retries=2: (gates.append(1), q_mod.GateVerdict(True, "", "", ""))[1],
+        lambda w, log, retries=2, **k: (gates.append(1), q_mod.GateVerdict(True, "", "", ""))[1],
     )
     monkeypatch.setattr(q_mod, "git", lambda *a, **k: "")
     monkeypatch.setattr(q_mod, "git_ok", lambda *a, **k: True)
@@ -7194,7 +7213,7 @@ def test_queue_red_base_rejects_nobody_and_halts_the_train(queue_repo, monkeypat
     monkeypatch.setattr(
         q_mod,
         "gate_batch",
-        lambda w, log, retries=2: q_mod.GateVerdict(False, "BUILD_FAIL", "/tmp/a", "ninja"),
+        lambda w, log, retries=2, **k: q_mod.GateVerdict(False, "BUILD_FAIL", "/tmp/a", "ninja"),
     )
     with pytest.raises(q_mod.BaseRed) as ei:
         q_mod.land_subset(repo, repo, subs, lambda m: None)
@@ -7222,7 +7241,7 @@ def test_queue_red_base_still_convicts_a_fault_the_base_passes(queue_repo, monke
     )
     seen = []
 
-    def gate(w, log, retries=2):
+    def gate(w, log, retries=2, **k):
         seen.append(1)
         # The base gate is whichever run follows a lone-submission red; it fails ONLY on net.
         if len(seen) > 2:
@@ -7267,7 +7286,7 @@ def test_queue_red_base_does_not_convict_a_SMOKE_fault_it_happens_to_pass(queue_
     )
     seen = []
 
-    def gate(w, log, retries=2):
+    def gate(w, log, retries=2, **k):
         seen.append(1)
         if len(seen) > 2:
             return q_mod.GateVerdict(
@@ -7302,7 +7321,7 @@ def test_queue_red_base_does_not_convict_a_stage_the_base_never_ran(queue_repo, 
     )
     seen = []
 
-    def gate(w, log, retries=2):
+    def gate(w, log, retries=2, **k):
         seen.append(1)
         if len(seen) > 2:
             # base died in the build — `lint:i386` has no result at all
@@ -7332,7 +7351,7 @@ def test_queue_red_batch_with_green_base_rejects_the_guilty(queue_repo, monkeypa
     monkeypatch.setattr(
         q_mod,
         "gate_batch",
-        lambda w, log, retries=2: q_mod.GateVerdict(False, "BUGCHECK", "/tmp/a", "boom"),
+        lambda w, log, retries=2, **k: q_mod.GateVerdict(False, "BUGCHECK", "/tmp/a", "boom"),
     )
     monkeypatch.setattr(q_mod.BaseCheck, "is_green", lambda *a, **k: True)
     q_mod.land_subset(repo, repo, subs, lambda m: None)
@@ -7350,12 +7369,127 @@ def test_queue_base_check_is_memoized(queue_repo, monkeypatch):
     monkeypatch.setattr(
         q_mod,
         "gate_batch",
-        lambda w, log, retries=2: (calls.append(1), q_mod.GateVerdict(True, "", "", ""))[1],
+        lambda w, log, retries=2, **k: (calls.append(1), q_mod.GateVerdict(True, "", "", ""))[1],
     )
     base = q_mod.BaseCheck()
     assert base.is_green(repo, repo, lambda m: None, retries=0) is True
     assert base.is_green(repo, repo, lambda m: None, retries=0) is True
     assert len(calls) == 1, f"base gated {len(calls)}x"
+
+
+def _base_flakes_then(second: q_mod.GateVerdict, lone_stages: dict, calls: list):
+    """A gate fake for one lone submission: the car fails `lone_stages`, the base gate fails
+    smoke:amd64 only, and the base's confirming re-gate returns `second`."""
+
+    def gate(w, log, retries=2, **k):
+        calls.append(k.get("clean", True))
+        if len(calls) == 1:
+            return q_mod.GateVerdict(False, "LADDER_FAIL", "/tmp/car", "car", lone_stages)
+        if len(calls) == 2:
+            return q_mod.GateVerdict(
+                False,
+                "LADDER_FAIL",
+                "/tmp/base",
+                "smoke:amd64: spawn32 0xbae4",
+                {"lint:i386": "ok", "smoke:amd64": "fail", "smoke:arm64": "ok"},
+            )
+        return second
+
+    return gate
+
+
+_GREEN = q_mod.GateVerdict(True, "", "/tmp/base2", "", {"lint:i386": "ok", "smoke:amd64": "ok"})
+
+
+def _one_lone(repo, monkeypatch, tag):
+    sub = _two_queued(repo, tag)[:1]
+    _safe_git(monkeypatch)
+    monkeypatch.setattr(
+        q_mod,
+        "build_batch",
+        lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="7" * 40, merged=list(b)),
+    )
+    return sub
+
+
+def test_a_base_red_only_on_smoke_is_confirmed_warm_before_it_holds_the_line(
+    queue_repo, monkeypatch
+):
+    """2026-10-04: one spawn32 race (0xBAE4, a bug in the test) on the base check auto-held
+    every lane on a master that was fine. A timing-only base red now gets ONE warm re-gate;
+    a red that reproduces still holds, exactly as before."""
+    repo, _ = queue_repo
+    subs = _one_lone(repo, monkeypatch, "cf")
+    calls: list = []
+    red = q_mod.GateVerdict(False, "LADDER_FAIL", "/tmp/base2", "again", {"smoke:amd64": "fail"})
+    monkeypatch.setattr(q_mod, "gate_batch", _base_flakes_then(red, {"smoke:amd64": "fail"}, calls))
+    with pytest.raises(q_mod.BaseRed) as ei:
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert calls == [True, True, False], "the confirming base gate must be the one warm run"
+    assert "confirming re-gate" in str(ei.value)
+    assert q_mod.results(repo, limit=20) == []
+
+
+def test_a_deterministic_base_red_is_not_re_gated(queue_repo, monkeypatch):
+    """A build or lint red is a function of the tree; running it again proves nothing."""
+    repo, _ = queue_repo
+    subs = _one_lone(repo, monkeypatch, "dr")
+    calls: list = []
+
+    def gate(w, log, retries=2, **k):
+        calls.append(1)
+        return q_mod.GateVerdict(False, "BUILD_FAIL", "/tmp/x", "ninja", {"build:i386": "fail"})
+
+    monkeypatch.setattr(q_mod, "gate_batch", gate)
+    with pytest.raises(q_mod.BaseRed):
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert len(calls) == 2, "car + base, no confirming run"
+
+
+def test_a_flaky_base_does_not_halt_the_line_and_the_culprit_is_still_rejected(
+    queue_repo, monkeypatch
+):
+    """The 17:38 halt, replayed: the lone submission had its OWN lint fault, the base failed
+    only a smoke race. The base passes its re-gate, so the culprit is rejected and nothing is
+    held -- the rest of the line goes on."""
+    repo, _ = queue_repo
+    subs = _one_lone(repo, monkeypatch, "fl")
+    calls: list = []
+    car = {"lint:i386": "fail", "smoke:amd64": "fail"}
+    monkeypatch.setattr(q_mod, "gate_batch", _base_flakes_then(_GREEN, car, calls))
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    recs = q_mod.results(repo, limit=20)
+    assert [r["outcome"] for r in recs] == ["rejected"], recs
+    assert q_mod.read_hold(repo) is None
+
+
+def test_a_red_only_where_the_base_flaked_is_neither_rejected_nor_landed(queue_repo, monkeypatch):
+    """The car failed only the stage the base itself just failed and then passed. Rejecting
+    would convict the lane for master's flake; landing would retry a possible regression
+    away. It stays QUEUED, nobody is blamed, and the line is not held."""
+    repo, _ = queue_repo
+    subs = _one_lone(repo, monkeypatch, "fs")
+    calls: list = []
+    monkeypatch.setattr(
+        q_mod, "gate_batch", _base_flakes_then(_GREEN, {"smoke:amd64": "fail"}, calls)
+    )
+    with pytest.raises(q_mod.FlakyBase) as ei:
+        q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert not isinstance(ei.value, q_mod.BaseRed), "a flaky base must not auto-hold"
+    assert q_mod.results(repo, limit=20) == []
+    assert len(q_mod.pending(repo)) == 2
+
+
+def test_a_red_on_a_stage_the_base_did_not_flake_on_still_convicts(queue_repo, monkeypatch):
+    """The base flaking on amd64 is no alibi for an arm64 BUGCHECK it passed both times."""
+    repo, _ = queue_repo
+    subs = _one_lone(repo, monkeypatch, "fo")
+    calls: list = []
+    monkeypatch.setattr(
+        q_mod, "gate_batch", _base_flakes_then(_GREEN, {"smoke:arm64": "fail"}, calls)
+    )
+    q_mod.land_subset(repo, repo, subs, lambda m: None)
+    assert [r["outcome"] for r in q_mod.results(repo, limit=20)] == ["rejected"]
 
 
 def test_queue_inconclusive_gate_requeues_instead_of_rejecting(queue_repo, monkeypatch):
@@ -7374,7 +7508,7 @@ def test_queue_inconclusive_gate_requeues_instead_of_rejecting(queue_repo, monke
     monkeypatch.setattr(
         q_mod,
         "gate_batch",
-        lambda w, log, retries=2: (
+        lambda w, log, retries=2, **k: (
             gates.append(1),
             q_mod.GateVerdict(False, "HOST_STARVED", "/tmp/a", "queued"),
         )[1],
@@ -7397,7 +7531,7 @@ def test_queue_empty_classification_is_inconclusive(queue_repo, monkeypatch):
         lambda r, w, b, log, **k: q_mod.BatchResult(ok=False, tip="b" * 40, merged=list(b)),
     )
     monkeypatch.setattr(
-        q_mod, "gate_batch", lambda w, log, retries=2: q_mod.GateVerdict(False, "", "", "")
+        q_mod, "gate_batch", lambda w, log, retries=2, **k: q_mod.GateVerdict(False, "", "", "")
     )
     with pytest.raises(q_mod.Inconclusive):
         q_mod.land_subset(repo, repo, subs, lambda m: None)
@@ -7419,7 +7553,7 @@ def test_queue_rejection_names_what_it_was_gated_against(queue_repo, monkeypatch
     # full batch red; first half green (lands); second half red (genuinely rejected)
     seen = []
 
-    def gate(w, log, retries=2):
+    def gate(w, log, retries=2, **k):
         seen.append(1)
         ok = len(seen) == 2  # 1st = full batch (red), 2nd = first half (green), 3rd = second half
         return (
@@ -10389,7 +10523,7 @@ def test_the_base_check_scrubs_before_gating(queue_repo, monkeypatch):
     monkeypatch.setattr(
         q_mod,
         "gate_batch",
-        lambda w, log, retries=2: calls.append("GATE") or q_mod.GateVerdict(True, "", "", ""),
+        lambda w, log, retries=2, **k: calls.append("GATE") or q_mod.GateVerdict(True, "", "", ""),
     )
     assert q_mod.BaseCheck().is_green(repo, repo, lambda m: None, retries=0)
     assert calls.index("reset") < calls.index("SCRUB") < calls.index("GATE")
@@ -10550,6 +10684,86 @@ def test_an_end_marker_cut_in_two_by_a_kernel_print_still_counts():
     broken = log.replace("rror pass=30 fail=0 skip=0]", "rror pass=30 fail=0")
     results, _, _ = P.parse(broken)
     assert results[0]["status"] == "NO-END"
+
+
+def test_markers_cut_anywhere_by_an_interleaved_print_still_parse():
+    """i386 conformance went red on 27 of 427 archived sweeps (2026-10-05 A/B)
+    because a kernel or Wine print landed inside a sweep marker. Each shape below
+    is verbatim from one of those logs, and each read as NO-END or "never
+    launched" before the repair."""
+    P = _parser()
+    log = (
+        "[+   94.422] [KMTEST-SWEEP] launch err:ole:compobj apartment not initialised\n"
+        "[+   94.440] ExPushLock\n"
+        "[+   94.688] [KMTEST:BEGIN ExPushLock]\n"
+        "[+   98.300] [KMTEST:END ExPushLock pass=(drivers/storage/po"
+        "rt/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
+        "[+   98.302] 19 fail=0 skip=0]\n"
+        "[+   98.361] [KMTEST-SWEEP] exit ExPushLock code=0\n"
+        "[+  100.000] [KMTEST-SWEEP] lau(drivers/storage/port/scsipor"
+        "t/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
+        "[+  100.003] nch FsRtlExpression\n"
+        "[+  100.100] [KMTEST:BEGIN FsRtlExpression]\n"
+        "[+  100.629] [KMTEST:END FsRterr:ole:compobj apartment not initialised\n"
+        "[+  100.631] lExpression pass=57 fail=0 skip=0]\n"
+        "[+  100.700] [KMTEST-SWEEP] exit FsRtlExpression code=0\n"
+        "[+  125.864] [K(drivers/storage/port/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
+        "[+  125.867] MTEST-SWEEP] launch KeFloatPointState\n"
+        "[+  126.085] KMTEST:END KeFloatPointState pass=6 fail=0 skip=0]\n"
+        "[+  126.119] [KMTEST-SWEEP] exit KeFloatPointState code=0\n"
+        "[+  148.450] [KMTEST-SWEEP] launch RtlIntSafe(drivers/storag"
+        "e/port/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
+        "[+  148.600] [KMTEST:END zipfldr.cpp:75: (\\dll\\shellext\\z"
+        "ipfldr\\zipfldr.cpp:75) CreateEmptyFile('X:\\x')\n"
+        "[+  148.601] RtlIntSafe pass=40 fail=2 skip=0]\n"
+        "[+  148.663] [KMTEST-SWEEP] exit RtlIntSafe code=0\n"
+        "[+  150.000] [KMTEST-SWEEP] done total=4\n"
+    )
+    results, done, _ = P.parse(log)
+    got = {r["name"]: (r["status"], r["pass"], r["fail"]) for r in results if r["name"] != "err"}
+    assert got == {
+        "ExPushLock": ("OK", 19, 0),
+        "FsRtlExpression": ("OK", 57, 0),
+        "KeFloatPointState": ("OK", 6, 0),
+        "RtlIntSafe": ("OK", 40, 2),
+    }
+    assert done == "total=4"
+    # A tail that spells some OTHER test is not spliced onto this one.
+    wrong = log.replace("lExpression pass=57", "lLegal pass=57")
+    results, _, _ = P.parse(wrong)
+    assert {r["name"]: r["status"] for r in results}["FsRtlExpression"] == "NO-END"
+
+
+def test_an_identity_cut_short_by_an_interleaved_print_is_the_floor_identity():
+    """`Exam(drivers/.../ioctl.c:609) unknown ioctl...` then `ple.c:20: Test
+    failed` (i386, verbatim) read as NEW identity `ple.c:20` against a floor
+    listing `Example.c:20`. A proper suffix of a known identity is that
+    identity; an unrelated one is still new."""
+    P = _parser()
+    base = {
+        "Example": {
+            "status": "OK",
+            "pass": 31,
+            "fail": 15,
+            "asserts": {"Example.c:20", "Example.c:21"},
+        }
+    }
+
+    def run(*asserts):
+        r = {
+            "name": "Example",
+            "status": "OK",
+            "pass": 31,
+            "fail": 15,
+            "skip": 0,
+            "exit": 0,
+            "errors": 0,
+        }
+        return P.compare([dict(r, asserts=set(asserts))], base)
+
+    assert run("ple.c:20", "Example.c:21") == []
+    assert run("ple.c:22") == ["Example: NEW failing assertion ple.c:22"]
+    assert run("Other.c:20") == ["Example: NEW failing assertion Other.c:20"]
 
 
 def test_polite_farm_waits_for_the_fleet_then_boots(monkeypatch):

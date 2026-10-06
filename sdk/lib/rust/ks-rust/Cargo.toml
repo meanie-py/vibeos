@@ -17,7 +17,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 panic-common = { path = "../panic-common", features = ["kernel"] }
-ntkrnl-sys = { path = "../ntkrnl-sys" }
+ntkrnl-sys = { path = "../ntkrnl-sys", features = ["import_mm_user_probe_address"] }
 # Lock-free SList: provides #[no_mangle] RtlInterlockedPush/PopEntrySList (per-arch decoration)
 # that ntkrnl-sys references but ntoskrnl only exports under fastcall/Exp* aliases.
 slist = { path = "../slist" }

@@ -24,4 +24,4 @@ crate-type = ["staticlib"]
 
 [dependencies]
 panic-common = { path = "../panic-common", features = ["kernel"] }
-ntkrnl-sys = { path = "../ntkrnl-sys" }
+ntkrnl-sys = { path = "../ntkrnl-sys", features = ["import_mm_user_probe_address"] }

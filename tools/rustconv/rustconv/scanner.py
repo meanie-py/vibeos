@@ -1483,6 +1483,96 @@ def _resolve_pp_conditionals(path: Path, text: str) -> str:
     return "\n".join(out)
 
 
+_SEH_BLANK = re.compile(rb"\b(?:_SEH2_END|_SEH2_LEAVE|_SEH2_VOLATILE|_SEH2_Volatile)\b")
+_SEH_YIELD = re.compile(rb"\b_SEH2_YIELD\s*\(")
+
+
+def mask_seh_for_parse(source: bytes) -> bytes:
+    """PSEH macros rewritten to SAME-LENGTH valid C, for tree-sitter only.
+
+    `_SEH2_TRY { A } _SEH2_FINALLY { B } _SEH2_END;` is not C until the preprocessor runs,
+    and tree-sitter's error recovery decides by LAYOUT alone where the function ends: the
+    same function parses whole on one indentation and is cut at the TRY block's `}` on
+    another. 174 of the tree's 827 PSEH functions were cut that way (2026-10-05), and the
+    tail -- the FINALLY cleanup and the final `return` -- was sent to the model as stray
+    file-scope "preamble" (setuplib SetupMoveFile lost its `NtClose` and `return Status`).
+    Masked: TRY -> `if(1)`, FINALLY -> `else`, EXCEPT(f) -> `else if(f)`, YIELD(s) ->
+    `s` (`#define _SEH2_YIELD(STMT_) STMT_`; the `;` follows the `)`), END/LEAVE -> blanks.
+    Same length, so every byte and line offset is unchanged.
+    """
+
+    def pad(word: bytes, n: int) -> bytes:
+        return word + b" " * (n - len(word))
+
+    out = re.sub(rb"\b_SEH2_TRY\b", lambda m: pad(b"if(1)", len(m.group())), source)
+    out = re.sub(rb"\b_SEH2_FINALLY\b", lambda m: pad(b"else", len(m.group())), out)
+    out = re.sub(rb"\b_SEH2_EXCEPT\b", lambda m: pad(b"else if", len(m.group())), out)
+    out = _SEH_BLANK.sub(lambda m: b" " * len(m.group()), out)
+    buf = bytearray(out)
+    for m in _SEH_YIELD.finditer(out):
+        depth, i = 0, m.end() - 1
+        while i < len(buf):
+            c = buf[i]
+            if c == ord("("):
+                depth += 1
+            elif c == ord(")"):
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        if i >= len(buf):
+            continue
+        buf[m.start() : m.end()] = b" " * (m.end() - m.start())
+        buf[i] = ord(" ")
+    assert len(buf) == len(source)
+    return bytes(buf)
+
+
+class _Root:
+    """A translation unit's top-level nodes, possibly drawn from two parses of one text."""
+
+    type = "translation_unit"
+
+    def __init__(self, children: list):
+        self.children = children
+
+
+def _merged_root(parser, source: bytes) -> _Root:
+    """Top-level nodes of the SEH-masked parse, falling back to the raw parse where it fuses.
+
+    Masking fixes the PSEH class outright (see :func:`mask_seh_for_parse`). But a file that is
+    unparseable for ANOTHER reason -- virtual.c's `MiDeletePte` opens a `{` inside `#if
+    (_MI_PAGING_LEVELS == 2)` and closes it after the `#endif` -- recovers wherever
+    tree-sitter's error recovery happens to land, and the mask can move that landing: the
+    masked parse of virtual.c is ONE 5,400-line "function" where the raw parse finds 39.
+    So wherever one masked function spans the starts of two or more raw functions, the raw
+    nodes for that span are used instead. Both parses are of byte-identical-length text, so
+    every node slices `source` the same way.
+    """
+    masked = parser.parse(mask_seh_for_parse(source)).root_node.children
+    if b"_SEH2_" not in source:
+        return _Root(list(masked))
+    raw = parser.parse(source).root_node.children
+    # Only column-0 starts count: raw recovery also mints phantom "functions" from inside a
+    # PSEH body (`_SEH2_TRY`, `if`), always indented, which would fool this test.
+    raw_fn_starts = [
+        c.start_byte for c in raw if c.type == "function_definition" and c.start_point[1] == 0
+    ]
+    out: list = []
+    for node in masked:
+        if node.type == "function_definition":
+            inside = [b for b in raw_fn_starts if node.start_byte <= b < node.end_byte]
+            if len(inside) >= 2:
+                out.extend(
+                    r
+                    for r in raw
+                    if node.start_byte <= r.start_byte and r.end_byte <= node.end_byte
+                )
+                continue
+        out.append(node)
+    return _Root(out)
+
+
 def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
     """Parse a C/C++ source file and extract structural information."""
     raw = _expand_split_includes(path, path.read_text(errors="replace"))
@@ -1527,7 +1617,8 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
     source = source_text.encode("utf-8")
 
     parser = Parser(CPP_LANG if is_cpp else C_LANG)
-    tree = parser.parse(source)
+    # Parse a SEH-masked copy; every slice below still reads `source`, byte for byte.
+    root = _merged_root(parser, source)
 
     result = ScanResult(path=path, raw_source=source_text)
 
@@ -1554,7 +1645,6 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
                 result.arch_ifdefs.append(macro)
 
     # Walk the AST
-    cursor = tree.walk()
 
     def walk(node):
         if node.type == "function_definition":
@@ -1611,7 +1701,7 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
         for child in node.children:
             walk(child)
 
-    walk(cursor.node)
+    walk(root)
 
     # Derive the file-scope preamble: every top-level construct that is NOT
     # a function body and NOT an #include (imports are the resolver's job).
@@ -1645,8 +1735,7 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
                 continue
             preamble_parts.append(_extract_text(child, source))
 
-    if cursor.node is not None:
-        _collect_preamble(cursor.node.children)
+    _collect_preamble(root.children)
     result.preamble_text = "\n".join(preamble_parts).strip()
 
     # Parse globals from the globals section text using simple regex

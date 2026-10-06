@@ -977,6 +977,7 @@ pub struct oletls {
     pub state: *mut IUnknown, // see CoSetState
     pub spies: list, // Spies installed with CoRegisterInitializeSpy
     pub spies_lock: DWORD,
+    pub cancelcount: DWORD,
 }
 
 /// compobj_private.h static inline apartment_getoxid()

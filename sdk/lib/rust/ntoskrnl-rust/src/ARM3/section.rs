@@ -367,8 +367,6 @@ struct _MEMORY_SECTION_NAME {
 }
 
 extern "system" {
-    pub fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
-    pub fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     fn MmSetPageEntrySectionSegment(
         Segment: PVOID, Offset: *const u64, Entry: ULONG_PTR,
     ) -> NTSTATUS;
@@ -2146,17 +2144,15 @@ pub unsafe extern "system" fn NtCreateSection(
     safe_maximum_size.QuadPart = 0;
     if previous_mode != 0i8 {
         // Faithful to the C's ProbeForReadLargeInteger(MaximumSize) — validate the
-        // user pointer (range + ULONG alignment) BEFORE dereferencing it, so a bad
-        // pointer raises a catchable STATUS_ACCESS_VIOLATION instead of a raw kernel
-        // read fault (BUGCHECK 0x50). The port had dropped this probe. (conformance:
-        // kmtest NtCreateSection deliberately passes a bad MaximumSize.)
+        // user pointer (range only: the typed macro checks no alignment) and capture
+        // it fault-tolerantly. C: inside _SEH2_TRY, handler returns the exception
+        // code. (conformance: kmtest NtCreateSection deliberately passes a bad
+        // MaximumSize.)
         if !maximum_size.is_null() {
-            ProbeForRead(
-                maximum_size as PVOID,
-                core::mem::size_of::<_LARGE_INTEGER>() as SIZE_T,
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
-            safe_maximum_size = *maximum_size;
+            safe_maximum_size = match ntkrnl_sys::probe::probe_read_generic(maximum_size as *const _LARGE_INTEGER, 1, previous_mode) {
+                Ok(v) => v,
+                Err(status) => return status,
+            };
         }
         // C: inside _SEH2_TRY, handler returns the exception code. No SEH here, so the
         // Result probe returns it instead of raising unhandled.
@@ -2195,7 +2191,12 @@ pub unsafe extern "system" fn NtCreateSection(
         &mut handle,
     );
     if status >= 0 {
-        *section_handle = handle;
+        // C: _SEH2_TRY { *SectionHandle = Handle; } _SEH2_EXCEPT { /* Nothing here */ }
+        let _ = ntkrnl_sys::probe::safe_copy_raw(
+            section_handle as PVOID,
+            &handle as *const HANDLE as *const core::ffi::c_void,
+            core::mem::size_of::<HANDLE>(),
+        );
     }
     status
 }
@@ -2226,7 +2227,12 @@ pub unsafe extern "system" fn NtOpenSection(
         core::ptr::null_mut(),
         &mut handle,
     );
-    *section_handle = handle;
+    // C: _SEH2_TRY { *SectionHandle = Handle; } _SEH2_EXCEPT { /* Nothing here */ }
+    let _ = ntkrnl_sys::probe::safe_copy_raw(
+        section_handle as PVOID,
+        &handle as *const HANDLE as *const core::ffi::c_void,
+        core::mem::size_of::<HANDLE>(),
+    );
     status
 }
 
@@ -2249,14 +2255,7 @@ pub unsafe extern "system" fn NtMapViewOfSection(
     let section_offset = opaque_ptr(section_offset);
     let view_size = opaque_ptr(view_size);
     extern "C" {
-        fn ProbeForWritePointer(Address: *mut PVOID);
-        fn ProbeForWriteSize_t(Address: *mut SIZE_T);
         static mut MmHighestPhysicalPage: PFN_NUMBER;
-    }
-    // ProbeForWrite's provider is Rust `extern "system"` (ex/exintrin.rs) — an
-    // extern "C" decl here would reference the wrong i386 decoration (_Name vs _Name@12).
-    extern "system" {
-        fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     }
 
     let previous_mode = ExGetPreviousMode();
@@ -2301,22 +2300,31 @@ pub unsafe extern "system" fn NtMapViewOfSection(
         }
     }
 
-    // Check if a section offset was given
+    // Check if a section offset was given. C: this and the captures below are in
+    // the same _SEH2_TRY (for every mode), handler returns the exception code.
     if !section_offset.is_null() {
         // Check for unsafe parameters and capture section offset
+        // (ProbeForWriteLargeInteger: range only, no alignment).
         if previous_mode != 0i8 {
-            ProbeForWrite(
-                section_offset as PVOID,
-                core::mem::size_of::<_LARGE_INTEGER>(),
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
+            if let Err(status) = ntkrnl_sys::probe::probe_write_generic(section_offset, 1, previous_mode) {
+                return status;
+            }
         }
-        safe_section_offset = *section_offset;
+        safe_section_offset = match ntkrnl_sys::probe::probe_read_generic(section_offset as *const _LARGE_INTEGER, 1, previous_mode) {
+            Ok(v) => v,
+            Err(status) => return status,
+        };
     }
 
     // Capture the other parameters
-    let safe_base_address = *base_address;
-    let safe_view_size = *view_size;
+    let safe_base_address = match ntkrnl_sys::probe::probe_read_generic(base_address as *const PVOID, 1, previous_mode) {
+        Ok(v) => v,
+        Err(status) => return status,
+    };
+    let safe_view_size = match ntkrnl_sys::probe::probe_read_generic(view_size as *const SIZE_T, 1, previous_mode) {
+        Ok(v) => v,
+        Err(status) => return status,
+    };
 
     // Check for kernel-mode address
     if safe_base_address > MM_HIGHEST_VAD_ADDRESS as PVOID {

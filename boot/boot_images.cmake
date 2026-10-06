@@ -33,14 +33,43 @@ set(ISO_EFI_BOOT_PARAMS)
 # arbitrary empty directories to the ISO image using mkisofs.
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/empty)
 
-# Retrieve the full path to the generated 'efisys' target file. The legacy BIOS
-# bootsector files (isombr/isoboot/isobtrt) were removed with the BIOS prune.
+# x86 ISOs boot from BOTH firmwares: a BIOS El Torito entry (isoboot.bin, which
+# loads freeldr.sys) is the primary, and the EFI entry (efisys.bin, uefildr.efi) is
+# the alternate. arm64 is UEFI-only, so its EFI entry is the primary and must NOT
+# carry -eltorito-alt-boot (that flag separates a second entry from a first).
+# BIOS boot was pruned 2026-05-29 and restored 2026-10-05 for Libreboot/SeaBIOS
+# machines; see docs/engineering/bios-boot.md.
+set(ISO_BIOS_BOOT_PARAMS)
+set(ISO_BIOS_REGTEST_BOOT_PARAMS)
+set(_iso_bios FALSE)
+if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
+    set(_iso_bios TRUE)
+    set(_isombr_file  ${CMAKE_CURRENT_BINARY_DIR}/freeldr/bootsect/isombr.bin)
+    set(_isoboot_file ${CMAKE_CURRENT_BINARY_DIR}/freeldr/bootsect/isoboot.bin)
+    set(_isobtrt_file ${CMAKE_CURRENT_BINARY_DIR}/freeldr/bootsect/isobtrt.bin)
+    set(ISO_BIOS_BOOT_PARAMS -eltorito-boot loader/isoboot.bin -no-emul-boot -boot-load-size 4)
+    set(ISO_BIOS_REGTEST_BOOT_PARAMS -eltorito-boot loader/isobtrt.bin -no-emul-boot -boot-load-size 4)
+endif()
 if(DEFINED EFI_PLATFORM_ID)
     set(_efisys_file  ${CMAKE_CURRENT_BINARY_DIR}/efisys.bin) # get_target_property(_efisys_file  efisys  LOCATION)
-    # UEFI-only boot: the EFI entry is now the PRIMARY (and only) El Torito boot
-    # entry, so it must NOT be prefixed with -eltorito-alt-boot (that flag only
-    # separates a secondary entry from a preceding BIOS primary, which is gone).
+    if(_iso_bios)
+        list(APPEND ISO_EFI_BOOT_PARAMS -eltorito-alt-boot)
+    endif()
     list(APPEND ISO_EFI_BOOT_PARAMS -eltorito-platform efi -eltorito-boot loader/efisys.bin -no-emul-boot)
+endif()
+
+# isohybrid: an MBR in front of the ISO so a BIOS boots it from a USB stick. Spliced
+# into each image target as `${ISO_HYBRID_<name>}`; empty where there is no BIOS boot.
+foreach(_img bootcd bootcdregtest livecd hybridcd)
+    set(ISO_HYBRID_${_img})
+    if(_iso_bios)
+        set(ISO_HYBRID_${_img}
+            COMMAND native-isohybrid -b ${_isombr_file} -t 0x96 ${REACTOS_BINARY_DIR}/${_img}.iso)
+    endif()
+endforeach()
+set(ISO_HYBRID_DEPENDS)
+if(_iso_bios)
+    set(ISO_HYBRID_DEPENDS isombr native-isohybrid)
 endif()
 
 # Create a mkisofs sort file to specify an explicit ordering for the boot files
@@ -61,6 +90,9 @@ endif()
 set(ISO_SORT_FILE_DATA "\
 ${CMAKE_CURRENT_BINARY_DIR}/empty/boot.catalog 4
 ")
+if(_iso_bios)
+    string(APPEND ISO_SORT_FILE_DATA "${_isoboot_file} 3\n${_isobtrt_file} 2\n")
+endif()
 if(DEFINED EFI_PLATFORM_ID)
     string(APPEND ISO_SORT_FILE_DATA "${_efisys_file} 1\n")
 endif()
@@ -120,10 +152,11 @@ add_custom_target(bootcd
         --objcopy ${CMAKE_OBJCOPY}
     COMMAND native-mkisofs -quiet -o ${REACTOS_BINARY_DIR}/bootcd.iso -iso-level 4
         -publisher ${ISO_MANUFACTURER} -preparer ${ISO_MANUFACTURER} -volid ${ISO_VOLNAME} -volset ${ISO_VOLNAME}
-        ${ISO_EFI_BOOT_PARAMS} -hide boot.catalog
+        ${ISO_BIOS_BOOT_PARAMS} ${ISO_EFI_BOOT_PARAMS} -hide boot.catalog
         -sort ${CMAKE_CURRENT_BINARY_DIR}/bootfiles.sort
         -no-cache-inodes -graft-points -path-list ${CMAKE_CURRENT_BINARY_DIR}/bootcd.stripped.lst
-    DEPENDS native-mkisofs
+    ${ISO_HYBRID_bootcd}
+    DEPENDS native-mkisofs ${ISO_HYBRID_DEPENDS}
     VERBATIM)
 
 ## BootCDRegTest
@@ -139,10 +172,11 @@ add_custom_target(bootcdregtest
         --objcopy ${CMAKE_OBJCOPY}
     COMMAND native-mkisofs -quiet -o ${REACTOS_BINARY_DIR}/bootcdregtest.iso -iso-level 4
         -publisher ${ISO_MANUFACTURER} -preparer ${ISO_MANUFACTURER} -volid ${ISO_VOLNAME} -volset ${ISO_VOLNAME}
-        ${ISO_EFI_BOOT_PARAMS} -hide boot.catalog
+        ${ISO_BIOS_REGTEST_BOOT_PARAMS} ${ISO_EFI_BOOT_PARAMS} -hide boot.catalog
         -sort ${CMAKE_CURRENT_BINARY_DIR}/bootfiles.sort
         -no-cache-inodes -graft-points -path-list ${CMAKE_CURRENT_BINARY_DIR}/bootcdregtest.stripped.lst
-    DEPENDS native-mkisofs
+    ${ISO_HYBRID_bootcdregtest}
+    DEPENDS native-mkisofs ${ISO_HYBRID_DEPENDS}
     VERBATIM)
 
 ## LiveCD
@@ -176,10 +210,11 @@ else()
             --objcopy ${CMAKE_OBJCOPY}
         COMMAND native-mkisofs -quiet -o ${REACTOS_BINARY_DIR}/livecd.iso -iso-level 4
             -publisher ${ISO_MANUFACTURER} -preparer ${ISO_MANUFACTURER} -volid ${ISO_VOLNAME} -volset ${ISO_VOLNAME}
-            ${ISO_EFI_BOOT_PARAMS} -hide boot.catalog
+            ${ISO_BIOS_BOOT_PARAMS} ${ISO_EFI_BOOT_PARAMS} -hide boot.catalog
             -sort ${CMAKE_CURRENT_BINARY_DIR}/bootfiles.sort
             -no-cache-inodes -graft-points -path-list ${CMAKE_CURRENT_BINARY_DIR}/livecd.stripped.lst
-        DEPENDS native-mkisofs
+        ${ISO_HYBRID_livecd}
+        DEPENDS native-mkisofs ${ISO_HYBRID_DEPENDS}
         VERBATIM)
 endif()
 
@@ -195,10 +230,11 @@ add_user_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/hybridcd.cmake.lst "livecd/Pro
 add_custom_target(hybridcd
     COMMAND native-mkisofs -quiet -o ${REACTOS_BINARY_DIR}/hybridcd.iso -iso-level 4
         -publisher ${ISO_MANUFACTURER} -preparer ${ISO_MANUFACTURER} -volid ${ISO_VOLNAME} -volset ${ISO_VOLNAME}
-        ${ISO_EFI_BOOT_PARAMS} -hide boot.catalog
+        ${ISO_BIOS_BOOT_PARAMS} ${ISO_EFI_BOOT_PARAMS} -hide boot.catalog
         -sort ${CMAKE_CURRENT_BINARY_DIR}/bootfiles.sort
         -duplicates-once -no-cache-inodes -graft-points -path-list ${CMAKE_CURRENT_BINARY_DIR}/hybridcd.$<CONFIG>.lst
-    DEPENDS bootcd livecd
+    ${ISO_HYBRID_hybridcd}
+    DEPENDS bootcd livecd ${ISO_HYBRID_DEPENDS}
     VERBATIM)
 
 if(DEFINED EFI_PLATFORM_ID)

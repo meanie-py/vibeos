@@ -177,6 +177,23 @@ shim (`NdisSend` / `ProtocolReceivePacket`, `NDIS_PACKET` ↔ bytes), reviving t
 existing miniports (netkvm/e1000/rtl8139) for real-NIC / non-virtio breadth. Same upward
 code; only the `Device` swaps. Out of scope for v1, kept architecturally open.
 
+**Direct hardware backends (as built).** Besides virtio-net, the engine drives two real
+NICs itself, with no NDIS miniport: `E1000Phy` (QEMU's 8254x, PCI) and `GenetPhy`
+(the Raspberry Pi 4's GENET v5, verified on the board 2026-10-05: 1000 Mb/s link,
+DHCP lease from the LAN router, ping and the TCP echo from the host, 1 MiB echoed
+intact). The engine tries virtio, then e1000, then waits up to 10 s for a platform NIC.
+- **Platform NICs come through PnP.** GENET has no PCI header to scan. The arm64 HAL's
+  PnP root reads it from the DSDT (`_HID BCM6E4E`) and publishes `ACPI\BCM6E4E` with
+  its register window. The critical device database names `netstack` as its service, so
+  netstack is that device's function driver (`pnp.rs`): AddDevice checks the hardware
+  ID, START_DEVICE hands the window to the engine. Removal is not supported.
+- **GENET specifics** (`genet.rs`): descriptors live in the MAC's register file, so only
+  packet buffers are DMA memory, and that memory is not cache-coherent (`_CCA 0`): TX
+  buffers are cleaned before hand-off, RX frames invalidated before reading. The MAC
+  address is the one the firmware left in UMAC_MAC0/1. Polled, interrupts masked.
+- **smoltcp's `auto-icmp-echo-reply` is a default feature.** `default-features = false`
+  had silently dropped it, so the stack answered no pings on any arch; slirp never asked.
+
 ---
 
 ## Crate integration
@@ -676,6 +693,18 @@ Remaining open:
   before then has no CSP and imports nothing (`rootstore.c: Failed to import system certs into
   registry, 00000057`, from `CryptCreateHash(0, ...)`), and caches that result for the process.
   Wait for `setup.exe` to exit first, as appstorm and netprobe do.
+- **✅ FIXED (2026-10-04) — pended TDI IRPs could not be cancelled.** No netstack IRP had a
+  cancel routine, so `IoCancelIrp` was a no-op. AFD closes a socket by cancelling its in-flight
+  TDI requests and then freeing the FCB their completion routines point at; the worker later
+  completed the connect anyway, into a freed FCB, and `MakeSocketIntoConnection` called
+  `TdiReceive` on a freed connection object (arm64 BUGCHECK 0x1E in `IoGetRelatedDeviceObject`
+  when appstorm closed rapps mid-download; and a thread blocked on such an IRP could not exit).
+  Now every pended IRP is registered in `tditrans::PENDING`; exactly one side claims it: the cancel
+  routine (completes `STATUS_CANCELLED` synchronously, as tcpip's `DispCancelRequest` does, then
+  tells the worker to drop references and abort a pending connect) or the worker's `complete`.
+  The worker touches a pended IRP's buffer only inside `with_pending`, under the same lock.
+  Cancels are routine once they work: AFD cancels its in-flight DNS datagram receives on every
+  socket close.
 - **Later (v1+):** see the **Post-Parity Roadmap (M8+)** section above — server-side TCP
   (TDI_LISTEN/ACCEPT), the management plane (iphlpapi/ipconfig/ping), interrupt-driven RX,
   NDIS real-NIC support, then completeness/perf (IPv6, multicast, zero-copy, offloads).

@@ -107,10 +107,9 @@ add_library(samsrv MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/samsrv.def)
 
 set_module_type(samsrv win32dll UNICODE)
-# --allow-multiple-definition: sam-stub is a no_std staticlib carrying its own
-# panic_handler/eh_personality (lld first-match wins; the stub never panics).
+# sam-stub is a no_std staticlib carrying its own panic_handler/eh_personality;
+# link_guard allows that panic-runtime twin (the stub never panics).
 target_link_libraries(samsrv ${SAMSRV_RUST_LIB} ${SAM_STUB_LIB} wine ${PSEH_LIB})
-target_link_options(samsrv PRIVATE LINKER:--allow-multiple-definition)
 add_importlibs(samsrv rpcrt4 advapi32 msvcrt kernel32 ntdll)
 add_pch(samsrv samsrv.h SOURCE)
 add_dependencies(samsrv rust_sam_stub rust_samsrv)
