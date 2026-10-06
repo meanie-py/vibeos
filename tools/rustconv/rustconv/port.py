@@ -1613,7 +1613,41 @@ def _module(arg: str) -> Path:
     return p if p.is_absolute() or p.exists() else REPO / p
 
 
+def _hold(name: str):
+    """One `port` run per module at a time, across shells and sessions.
+
+    Two replays of setuplib once ran at once -- a background launch that looked dead was not --
+    and each rewrote the modules, the hand bank and the fix splices under the other. An
+    exclusive flock on the module's state dir; the second run fails at once and says so.
+    """
+    import fcntl
+
+    path = STATE_ROOT / name / ".lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    f = path.open("a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        f.close()
+        raise PortError(
+            f"another `rustconv port` run holds {name} ({path}); let it finish"
+        ) from None
+    return f
+
+
 def main(args) -> int:
+    try:
+        held = _hold(getattr(args, "stem", None) or _module(args.module).resolve().name)
+    except PortError as e:
+        print(f"port: {e}", file=sys.stderr)
+        return 1
+    try:
+        return _main(args)
+    finally:
+        held.close()
+
+
+def _main(args) -> int:
     try:
         if args.port_stage == "derive":
             stage_derive(_module(args.module), args.target)

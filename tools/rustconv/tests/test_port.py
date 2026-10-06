@@ -129,7 +129,9 @@ def test_a_defined_callback_gets_the_c_calling_convention(tmp_path, monkeypatch)
         '#[no_mangle]\npub unsafe extern "C" fn Helper(t: unsafe extern "C" fn(u32)) {}\n'
     )
     monkeypatch.setattr(
-        sdk_facts, "function_abis", lambda repo, tu, names: {"QueryRoutine": "system", "Helper": "C"}
+        sdk_facts,
+        "function_abis",
+        lambda repo, tu, names: {"QueryRoutine": "system", "Helper": "C"},
     )
     state = {"stem": "m", "crate": "m-rust", "tus": ["x/a.c"]}
     assert port.align_definition_abis(state) == {"a.rs": ["QueryRoutine"]}
@@ -163,3 +165,12 @@ def test_a_replay_reassembles_every_tu_and_never_buys(tmp_path, monkeypatch):
     )
     assert len(runs) == 2, "every TU is reassembled even at cost cap 0"
     assert all("--replay-only" in c and "--rebuy-rejected" not in c for c in runs)
+
+
+def test_a_second_port_run_on_one_module_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path)
+    first = port._hold("m")
+    with pytest.raises(port.PortError, match="another `rustconv port` run holds m"):
+        port._hold("m")
+    first.close()
+    port._hold("m").close()
