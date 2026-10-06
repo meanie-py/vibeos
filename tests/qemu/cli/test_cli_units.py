@@ -5434,6 +5434,21 @@ def test_staleness_lint_baseline_change_is_not_stale(staleness_repo: Path):
     assert v.fresh and not v.stale, v.reasons
 
 
+def test_staleness_cohab_census_rerecord_is_not_stale(staleness_repo: Path):
+    """`cohab_census --write` after a build must not void that build's media."""
+    census = staleness_repo / "tools" / "cohab-census.txt"
+    census.parent.mkdir(parents=True, exist_ok=True)
+    census.write_text("ntoskrnl/lpc/reply.c\n")
+    _git(staleness_repo, "add", "-A")
+    _git(staleness_repo, "commit", "-qm", "census")
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    census.write_text("ntoskrnl/lpc/reply.c\nntoskrnl/lpc/send.c\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.fresh and not v.stale, v.reasons
+
+
 def test_staleness_other_tools_source_still_stale(staleness_repo: Path):
     """tools/ at large stays in the fingerprint -- it carries compiled sources."""
     t = staleness_repo / "tools" / "libschily"
