@@ -1098,6 +1098,17 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   `KeSetContextReturnRegister`, so the caller got its service code back (1). Every `DPRINT1` in
   user mode then read "failed" and printed a second `(file:line) DbgPrint() failed!` line,
   doubling serial debug output. `KdpTrap` always set it; with no debugger a print succeeded.
+- **`ptr & 0xFFFF0000` is not "pointer > 0xFFFF" on 64-bit.** It tests bits 16-31 only, so a
+  real pointer at `...0000_xxxx` passes as a MAKEINTATOM/MAKEINTRESOURCE value. ReactOS'
+  `RtlpCheckIntegerAtom` did this: whenever NtAddAtom/NtFindAtom captured a name into a pool
+  block at such an address, every name became integer atom `xxxx` for the rest of the boot.
+  Unrelated window properties then collided (uxtheme read shell32's `CPLFlags` value 1 as its
+  WND_DATA pointer), and arm64 applets died with no window, one boot in two. Write the test as
+  `p & !0xFFFF == 0` (Windows' `IS_INTRESOURCE`). The tell: atoms below 0xC000 that the atom
+  table never created, with the same value across processes and a different one each boot.
+  The resource walker's `find_entry_by_name` had the same test (name looked up as an id).
+  `IsCallProcHandle`'s `== 0xFFFF0000` form is the same shape but was left alone: a handle
+  that crossed a 32-bit LONG arrives sign-extended, and the loose test is what accepts it.
 - **LLM appends `as u64` to every SIZE_T/ULONG_PTR** → ~50 i386-only E0308s. Use `as _` or
   `usize`; never hardcode a width for an arch-width field.
 - **amd64 `cpuid` 32-bit `xchg ebx` dance zero-extends and wipes the upper 32 bits of rbx**,

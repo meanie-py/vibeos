@@ -733,7 +733,11 @@ pub unsafe extern "C" fn RtlpCreateAtomHandle(AtomTable: PRTL_ATOM_TABLE, Entry:
 
     HandleIndex = ((Handle as ULONG_PTR) >> 2) as USHORT;
 
-    if HandleIndex >= 0xC000 {
+    // Exceeds the C, which bounds the index at 0xC000: the atom is 0xC000 +
+    // index in a USHORT, so any index from 0x4000 up wrapped to an integer
+    // atom below 0xC000 that RtlpGetAtomEntry can never find again. Atoms
+    // 0xC000-0xFFFF give exactly 0x4000 slots; test the untruncated index.
+    if ((Handle as ULONG_PTR) >> 2) >= 0x4000 {
         ExDestroyHandle((*AtomTable).__bindgen_anon_2.ExHandleTable, Handle, core::ptr::null_mut());
         return 0u8;
     }

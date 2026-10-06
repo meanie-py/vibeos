@@ -64,6 +64,7 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_scan_import_cc.py",
     "pytest:tools/test_scan_invented_constants.py",
     "pytest:tools/test_scan_octal_literals.py",
+    "pytest:tools/test_scan_ptr_highword_mask.py",
     "pytest:tools/test_scan_raw_uart_writes.py",
     "pytest:tools/test_scan_res_named_types.py",
     "pytest:tools/test_scan_bindgen_padding_index.py",
