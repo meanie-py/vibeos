@@ -2570,6 +2570,13 @@ severity, same facility, plausible magnitude, so nothing looks wrong. **`tools/s
 same-named C function uses**; it finds none of a value's names there → finding. Its one blind
 spot: a wrong member that the same function ALSO returns correctly elsewhere
 (`STG_E_INVALIDFLAG` for `STG_E_INVALIDFUNCTION` passed it). Prefer the name when you touch one.
+**A NAMED wrong code needs no C oracle:** oleaut32's `olesys.rs` had
+`TYPE_E_CANTLOADLIBRARY` holding `TYPE_E_AMBIGUOUSNAME`'s value, so `LoadTypeLib` on a PE with no
+typelib said "ambiguous name". `tools/scan_winerror_consts.py` (in `vibeos-cli check`) holds every
+`const` named after a `winerror.h` code to the header. Its first run checked 4742 and found 6, all real.
+Flag *bit sets* spelled as numbers drift the same way: `0x00001012` lost `STGM_DELETEONRELEASE`
+from the transacted scratch file (a temp file leaked per open), `0x40` stood in for
+`STGM_SHARE_EXCLUSIVE`, and an `IStream_Seek` origin of `1` (CUR) stood in for SET.
 
 ### A file-format OFFSET spelled as a number reads the neighbouring field
 `StorageImpl_LoadFileHeader` read the compound-file header with literal offsets, and one of
@@ -2608,6 +2615,8 @@ self-consistent**. One 2026-07-04 sweep found 41:
   the wrong type wakes ONE waiter instead of ALL: a lost-wakeup landmine.
 - The LPC message-type window shifted (live validation on the csrss CreateProcess reply path);
   `MEMORY_PRIORITY_FOREGROUND` writer(0)/reader(2) disagreement killed the foreground boost.
+- oleaut32's `PARSE_PATH_FROM_URL = 2` (urlmon.idl: **9**; 2 is `PARSE_FRIENDLY`, which urlmon
+  does not implement) sent every `file:` path through `OleLoadPicturePath` to E_NOTIMPL.
 - **A guess can also come from the WRONG ARCH's `#ifdef`.** ex-rust re-declared
   `INTERLOCKED_RESULT` as a sign in `{-1, 0, 1}`. `exfuncs.h` does define a tidy `0/1/2` — but
   under `#ifndef _M_IX86`; on x86, `xdk/x86/ke.h` overrides it with the encoding the assembly
@@ -3982,6 +3991,21 @@ one, and the leading underscore suppresses the unused warning that would have ex
 flags a nested `let _x` while `x` is in scope in the same function; a `_x` the C really
 declares is marked `// nolint: let-shadow (why)`. It cannot see an assignment dropped
 outright (consrv's `IntWriteConsoleOutputStringChars` lost `XStart = 0;` with no `let`).
+
+### A dropped owner filter in a "release all of MINE" loop releases everyone's
+
+**Symptom:** byte-range locks vanish. A second handle can lock a range that storage holds,
+and closing any handle to a file drops every lock on it. Wine's storage32 lock test failed on
+41 ranges, and DOCFILE share modes enforced nothing.
+**Cause:** `FsRtlFastUnlockAll`'s exclusive-lock loop lost the C's
+`if (ProcessId != Process) continue;`, and the loop compiles and runs fine without it.
+Underneath was a C gap the fix had to close too: neither unlock path checked the FILE
+OBJECT, but Windows owns a lock by (file object, process, key). So `UnlockFileEx` through one
+handle released a lock taken through another in the same process.
+**Fix:** filter on every owner field the API names, in both the single and the all-unlock
+paths. Shared ranges got a `FileObject` field for this. When a loop's job is "release what
+X owns", diff its `continue` conditions against the C first: a missing one is silent until two
+owners coexist.
 
 ### A dropped `#if DBG` acquires a lock the release build marked as never-initialized
 
@@ -6632,6 +6656,88 @@ nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → 
 user32 → advapi32). Rule: **`vibeos-cli smoke` hard-fails on stale media — never bypass it, and
 judge a build by artifact existence, not a reported exit code.**
 
+### A file that EXISTS is not a file that is INTACT — and a checker that cannot report is not a checker that found nothing
+
+**Symptom.** A restore, backup, sync or archiver "succeeds". Every existence check passes.
+Then things fail at *use*, far from the damage, with errors that name the wrong subsystem:
+`Exec format error` rather than `not found`; a build that fails as if the source were wrong; a
+tree reported clean that is missing 500 files.
+
+**Cause.** Existence and integrity are different properties, and most of our checks only test
+the first. One WSL rebuild (2026-09-13/14) produced all three degrees at once:
+
+| damage | size on disk | defeats | caught by |
+|---|---|---|---|
+| hollow clang — 200 zero-byte binaries, no symlinks survived | 0 | `test -x`, `which`, `ls` | running it (`Exec format error`) |
+| a corrupt git index — present, wrong size, written during the failure | wrong | `ls`, `git log` | `git status` (which then *errored*) |
+| a field manual of 768,346 NUL bytes | **correct** | `ls` AND a size check | `git diff` → "Binary files differ" |
+
+The third is the one that matters for the rule: **a size check is not enough**, because a
+corruption that preserves length defeats it. Hash or content comparison is the only check that
+survives all three.
+
+**Fix — verify against a known-good HASH or the content itself, never against existence.** In a
+git tree you already have the oracle: compare each file to its blob. This cleared 551 restored
+files in seconds with 0 mismatches:
+
+```bash
+git ls-files --deleted                     # tracked files missing from the working tree
+git status --porcelain | grep '^ D'        # same, with the modified files visible alongside
+# integrity, not existence — disk size vs the blob git says should be there:
+for f in $(git ls-files); do
+  [ -f "$f" ] || continue
+  [ "$(stat -c %s "$f")" = "$(git cat-file -s "$(git rev-parse HEAD:"$f")")" ] || echo "MISMATCH $f"
+done
+```
+
+For a *zero-byte* finding, compare against git before calling it damage: `vendor/fex` has 8
+zero-byte files and all 8 are zero in git too (`WORKSPACE`, `.buckconfig`, honggfuzz corpus), and
+git records 0 symlinks there, so 0 on disk is correct. **The question is never "is this file
+empty", it is "is this file what git says it should be".**
+
+**This does NOT contradict "judge a build by artifact existence"** (this section's own rule, and
+AGENTS.md's). That rule answers *did the step actually run*, against a lying exit code — and it
+still holds, because it never consults `rc`. This entry answers a different question: *is the
+artifact it produced intact*. Existence beats exit-code for the first and is worthless for the
+second. Ask both.
+
+**Corollary, and it is where the real damage came from: distinguish "reported healthy" from
+"failed to report".** The sweep that was supposed to find this ran `git status` over every
+worktree, merged stderr into stdout, and never checked the exit code — so a worktree whose index
+was corrupt *errored*, and the summariser rendered that error as "clean". The tool that would
+have shown 551 missing files was itself the damaged thing, and the check could not tell "nothing
+wrong" from "couldn't look". It reported that tree clean twice. **Whenever the checker itself can
+be a casualty, capture its exit code separately from its output, and treat a non-zero rc as
+UNKNOWN rather than as a pass.** Same shape as the hollow binary one level up: a checker that
+cannot run still returns something that reads like an answer.
+
+**Related, for preserving work across a restore:** `git diff` without `--binary` records only
+"Binary files differ" and none of the bytes, so a preserve-patch generated without it silently
+cannot restore anything binary-ish. Pass `--binary` when the patch is the only copy.
+
+### Inspecting a binary with `objcopy --dump-section` REWRITES it in place
+
+**Symptom.** A build output changes size and hash after it was linked, with no build having
+run — `libwow64fex.dll` went 4,562,944 → 4,542,464 bytes in three separate build dirs, each
+time seconds after someone "only looked at" its `.text`. Media staged from it afterwards
+carries the altered binary, so a reproduction built on it is not of the thing you built, and
+any symbolication recorded against the original hash no longer matches the file on disk.
+
+**Cause.** `objcopy [options] <input> [<output>]` — when `<output>` is omitted, objcopy writes
+its result back over `<input>`. `--dump-section NAME=FILE` extracts a section *and still emits
+the object*, re-serialized: for a PE, llvm-objcopy re-lays the sections and drops padding,
+hence the 20,480-byte shrink. The dumped section bytes are the original ones, so the
+comparison you were running looks correct; the damage is to the file you inspected. The
+mtime moves to the instant of the inspection, which on a file linked a minute earlier is easy
+to misread as the link.
+
+**Fix.** Give objcopy an explicit throwaway output, or never point it at a build output:
+`llvm-objcopy --dump-section .text=/tmp/x.text in.dll /dev/null` (or copy the file first).
+Prefer read-only tools for inspection — `llvm-readobj --sections`, `llvm-objdump -h`, `-s -j
+.text`. If it has already happened, restore from a staged copy whose hash you recorded (the
+ramdisk/ISO is a faithful archive of what was built), or force a relink by deleting the output
+— an mtime-newer-than-inputs file will not relink on its own.
+
 ### A correct staleness oracle and a build graph that cannot act on it
 
 **Symptom:** `build` fails `BUILD_INCOMPLETE` naming a stale binary — e.g.
@@ -9066,6 +9172,55 @@ not the final classification. The printed value, not the assertion name. The exa
 not the directory count. Every instance below is a case where the answer was *sound about the
 artifact consulted* and the artifact was one step off the one that governs.
 
+**A GITIGNORED prebuilt artifact ages against source that keeps moving, and only a FOREIGN tree
+can see it.** The WoW64 ladder guests live in `build-fex-hello/`, which `.gitignore:3` excludes
+as `build-fex-*`, and `vibeos-cli build --arch amd64` does not rebuild them. So the ladder's
+verdict depends on three inputs of which exactly ONE is versioned: git state,
+`build-fex-hello/*.exe`, and the `build-i386` closure. Two lanes at the *same commit* legitimately
+run different guests and get opposite results — which is exactly how a green ladder and a dead
+ladder coexisted for an hour, both honestly reported.
+
+The instance: `marshal32.exe` built 2026-09-06 21:37 hung forever at
+`[marshal32] select: calling WSAStartup`, taking the four guests after it down with it (silently
+— they simply never report). The socket-rung fix `cfd112c933b` landed at 22:12:46 the same
+evening, **35 minutes later**. The binary was six days stale against a fix to the exact rung it
+hung in.
+
+Three things make this the sharpest instance in this section:
+
+- **The stale artifact was mine and so was the fix.** Nothing about it was another lane's
+  mistake; I built a guest, fixed its bug 35 minutes later, and never rebuilt.
+- **Self-checking could not have found it.** Every input I could see was internally consistent:
+  the source had the fix, the build was warm and green, the media staged cleanly, the harness
+  reported honestly. Detection required a *foreign tree* running the same named test and
+  disagreeing. Treat "another lane reports the opposite result from the same commit" as evidence
+  about UNVERSIONED inputs before it is evidence about the commit.
+- **The symptom named the wrong subsystem.** It hung *in* `WSAStartup`, and `ws2_32.dll` was
+  byte-identical across both trees (`1a8194b5a194010e5ec350a6402c99ed`) — so the DLL it died in
+  was never the variable. Hours of winsock debugging were one mtime comparison away.
+
+**Ask a disagreeing lane for its HASHES, not its diff.** (Research lane's corollary, and it is
+the actionable form of the rule above.) When two lanes report opposite results for the same named
+test, the instinct is to compare commits — but here the diffs were identical and the *binaries*
+were not, so a diff comparison could only ever have come back "no difference" and sent both
+parties looking at the tree. Hashes separate the versioned inputs from the unversioned ones in a
+single round trip, and they are cheap to send.
+
+**Corollary to the corollary: hash comparison only means something once builds are reproducible.**
+See the note at the end of this entry — before `5a322b1c9be` these PEs stamped wall-clock into the
+header, so identical source gave different bytes and the comparison would have been noise.
+
+**Detect it by source-vs-binary mtime, never by absolute age.** A six-day-old binary passes any
+"is it older than N hours" threshold loose enough to not be annoying; what makes it detectably
+wrong is that `Marshal32.c` is NEWER than `marshal32.exe`. And prefer a loud SKIP to a RED: a
+stale guest that reds costs every guest after it its verdict, and accuses innocent code.
+
+**Corollary — cross-tree hash comparison only works once builds are reproducible.** Before
+`5a322b1c9be`, these PEs stamped wall-clock into the header, so identical source produced
+different bytes and comparing hashes between lanes was meaningless. After it, two independent
+trees rebuilt `marshal32.exe` to the same `b5b648d135ba412a7dda9cca3ea7d29f` — which makes the
+hash a usable cross-lane check. Verify reproducibility before you reach for it as evidence.
+
 **Why it needs its own entry rather than folding into the verification rules above: it is the
 failure shape that does not announce itself.** A wrong denominator or a stale inherited fact
 decays loudly — someone recounts, or the number stops agreeing with itself, and it surfaces
@@ -10848,6 +11003,20 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
 - **I/D cache incoherence.** Code paged in by `IoPageRead` (or relocated by the loader) sits in
   the D-cache; the I-side fetches stale RAM (zeros decode as `UDF`, ESR EC=0). Clean to PoU and
   invalidate the I-cache after writing code (`KeSweepICache`). TCG has no caches.
+- **Every QEMU smoke boot has a NIC; the board may not.** QEMU attaches a default NIC when the
+  command line names none, and no smoke config passes `-nic none`, so plain smoke has always
+  had virtio-net (arm64) or e1000 (x86), whatever a docstring says. So a "no adapter" path never
+  runs in QEMU. On the Pi 4 (GENET, which netstack does not drive) the engine worker exited
+  while TDI kept pending IRPs into its dead inbox, and a loopback `sendto` hung forever.
+  Reproduce NIC-less in QEMU with `VIBEOS_QEMU_EXTRA_ARGS="-nic user,model=rtl8139"` (a NIC
+  nothing drives). Not `-nic none`: that renumbers PCI, the efivars boot entry then names the
+  wrong device, and the firmware drops to the Shell.
+- **A UART print inside a trap costs ~90 ms per KB at 115200 baud.** QEMU's UART is instant, so
+  per-fault diagnostics are free there. FEX takes ~1,200 alignment faults per ladder boot by
+  design (unaligned `STLR`/`LDAR` on an A72, which has no LSE2; QEMU raises them too), and the
+  ~1 KB `[UEXC]`+`[ALIGN]` record per fault was minutes of serial time on the board. Those
+  codes are now capped after 32 records (tripwire `UEXCVERBOSE` restores all). Before timing
+  anything on hardware, count what the trap path prints.
 
 ### arm64 bring-up bugs worth recognising again
 - **`0xE3 RESOURCE_NOT_OWNED` (#43) was a fastfat shim testing the wrong WAIT bit.**
@@ -11462,6 +11631,35 @@ sit out the whole 420s ceiling waiting for WoW64 guests that do not exist there.
 **Also the general rule for fixtures:** when the environment cannot support a rung's *fixture*
 (not its subject), skip it loudly with the errno and keep the remaining rungs running, rather
 than failing the whole guest. The arch where the fixture works keeps full coverage of that rung.
+
+### On a JIT host a `[UEXC]` record is not a crash — FEX takes access violations BY DESIGN
+
+**Symptom.** A WoW64 guest on arm64 fails to report, and its serial holds `[UEXC]
+Code=0xC0000005` records whose PCs symbolicate cleanly into FEXCore — `LookupCache::FindBlock`,
+`LookupCache::AddBlockMapping` — with a translation-fault ESR (`0x92000006/7`) at a plausible
+high address (`0x7FFFBEFB7858`). It reads as a crash in FEX's code cache, the symbolication is
+correct, and a "size-matched control" fails the same way. This was filed as an open FEX bug for
+three weeks.
+
+**Cause.** The kernel prints `[UEXC]` for every user exception it *dispatches*, handled or not.
+FEX on Windows emulates Linux-style overcommit with exceptions: `LookupCache` reserves its map
+with `Commit=false`, registers it with `OvercommitTracker`, and the plugin's exception handler
+commits 64K on each first touch and resumes. So every FEX process takes a handful of these on
+cold pages (3/process on 2026-09-13's tree, ~54/boot on 2026-10-03's) — including every guest
+that passes. Add ~1,200 alignment fixups and ~200 other recovered AVs per boot. The record is
+the normal path. What actually failed in that case was two unrelated things: the ladder drain
+quit before an optional guest's launch line arrived (fixed `8756f3fbe4a`), so `lua32` was cut
+off while still alive; and `sqlite32` hit a real kernel bugcheck (`0x1E`,
+`STATUS_FILE_INVALID`). The "control" was optional too, so it hit the same drain race.
+
+**Fix.** Before treating a `[UEXC]` as the failure, establish that the process *died of it*:
+look for the guest's `exit = 0x…` line, a `[UEXC-KILL]` banner, or a repeat fault at the same
+`P1` (a recovery that does not complete re-faults at the same address — a retry loop, not a
+death). Then compare against a guest that PASSED in the same boot: if it carries the same
+records at the same RVAs, they are not your bug. `P1` is `ExceptionInformation[1]`, the fault
+address, so "no page faults twice in a process" is a free end-to-end check of the recovery.
+And when a guest "never reports", read the serial *after* the harness stopped draining — a
+guest still making syscalls was cut off, not killed.
 
 ### A stock binary flushes out what a hand-written guest never can `[§9.67]`
 Every guest through M10 was written by us — a hidden bias, because a guest you author can only
@@ -12762,6 +12960,12 @@ derived. `rustconv cpp-com` derives the class COM map from the defining C++ head
 generates the vtable from the C initializer plus bindgen. The three things the translator
 silently omits are the vtable layout, the aggregation/delegation wiring, and the registration
 data. **Avoid the shell32-com C++ substrate for new work** until that lane lands.
+
+**Porting from wine-10: storage moved.** `CreateILockBytesOnHGlobal`, `memlockbytes.c` and a
+second `storage32.c` live in `dlls/coml2/`, and the free-threaded marshaler, `hglobalstream.c`
+and the stub manager live in `dlls/combase/`. `dlls/ole32/memlockbytes.c` 404s at the
+wine-10.0 tag. Reading only `dlls/ole32` diffs you against pre-move code. Our memlockbytes
+`SetSize` still passed the old `0` flags, so shrinking to 0 failed.
 
 ### A "not the COM path" flag turned off the LANGUAGE layer too `[§9.131]`
 `--free-functions` exists because a TU's classless functions need no COM scaffold — no vtable, no

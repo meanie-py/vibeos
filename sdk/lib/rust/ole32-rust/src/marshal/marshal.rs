@@ -1496,11 +1496,12 @@ unsafe fn unmarshal_object(
 }
 
 unsafe fn std_unmarshal_interface(
-    dest_context: MSHCTX,
-    dest_context_data: *mut c_void,
+    mut dest_context: MSHCTX,
+    mut dest_context_data: *mut c_void,
     pStm: *mut IStream,
     riid: REFIID,
     ppv: *mut *mut c_void,
+    dest_context_known: BOOL,
 ) -> HRESULT {
     let mut stubmgr: *mut stub_manager = core::ptr::null_mut();
     let mut obj: OR_STANDARD = core::mem::zeroed();
@@ -1577,6 +1578,13 @@ unsafe fn std_unmarshal_interface(
             if stub_manager_notify_unmarshal(stubmgr, core::ptr::addr_of!(obj.std.ipid)) == FALSE {
                 hres = CO_E_OBJNOTCONNECTED;
             }
+            if SUCCEEDED(hres) && dest_context_known == FALSE {
+                hres = super::stubmanager::ipid_get_dest_context(
+                    core::ptr::addr_of!(obj.std.ipid),
+                    &mut dest_context,
+                    &mut dest_context_data,
+                );
+            }
         } else {
             WARN!("Couldn't find object for OXID %s, OID %s, assuming disconnected\n");
             hres = CO_E_OBJNOTCONNECTED;
@@ -1648,7 +1656,7 @@ unsafe extern "system" fn StdMarshalImpl_UnmarshalInterface(
         return E_NOTIMPL;
     }
 
-    std_unmarshal_interface((*This).dest_context, (*This).dest_context_data, pStm, riid, ppv)
+    std_unmarshal_interface((*This).dest_context, (*This).dest_context_data, pStm, riid, ppv, TRUE)
 }
 
 unsafe fn std_release_marshal_data(pStm: *mut IStream) -> HRESULT {
@@ -2098,6 +2106,7 @@ pub unsafe extern "system" fn CoUnmarshalInterface(
             pStream,
             &iid,
             core::ptr::addr_of_mut!(object) as *mut *mut c_void,
+            FALSE,
         );
         if hr != S_OK {
             ERR!("StdMarshal UnmarshalInterface failed, 0x%08x\n");

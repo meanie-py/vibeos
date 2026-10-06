@@ -361,10 +361,13 @@ fn HGLOBALLockBytesImpl_SetSize(
     /*
      * Re allocate the HGlobal to fit the new size of the stream.
      */
+    // wine-10 (coml2) passes GMEM_MOVEABLE. With 0, GlobalReAlloc refuses size 0 for a
+    // live block, so StgCreateDocfileOnILockBytes never truncated the array and the
+    // header write kept the caller's old bytes: an INVALIDHEADER docfile.
     let supportHandle = GlobalReAlloc(
         (*This).supportHandle,
         libNewSize.u.LowPart as SIZE_T,
-        0,
+        GMEM_MOVEABLE,
     );
 
     if supportHandle.is_null() {
