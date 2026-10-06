@@ -1793,3 +1793,82 @@ def test_a_function_cast_to_a_fn_pointer_is_left_to_coerce():
     (edit,) = plan.edits
     out = src[: edit.byte_start] + edit.replacement + src[edit.byte_end :]
     assert "Some(\n    VfatFormat,\n) }" in out
+
+
+def _apply_plan(src: str, diag: dict, target: str = "x86_64-pc-windows-gnu") -> str:
+    plan = propose_edits([diag], {"a.rs": src.encode()}.get, target=target)
+    out = src.encode()
+    for edit in sorted(plan.edits, key=lambda e: -e.byte_start):
+        out = out[: edit.byte_start] + edit.replacement.encode() + out[edit.byte_end :]
+    return out.decode()
+
+
+def test_a_narrow_variadic_argument_takes_rustcs_promotion():
+    src = "fn f(p: *mut P) { DbgPrint(fmt, (*p).PartitionType); }\n"
+    at = src.index("(*p).PartitionType")
+    end = at + len("(*p).PartitionType")
+    child = {
+        "message": "cast the value to `c_uint`",
+        "level": "help",
+        "spans": [
+            _span("a.rs", end, end, replacement=" as c_uint", applicability="MachineApplicable")
+        ],
+        "children": [],
+    }
+    diag = _diag(
+        "can't pass `u8` to variadic function",
+        code="E0617",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+        children=[child],
+    )
+    assert "(*p).PartitionType as core::ffi::c_uint);" in _apply_plan(src, diag)
+
+
+def test_a_c_local_static_with_a_pointer_becomes_static_mut():
+    src = "fn f() {\n    static DeviceFloppy: _UNICODE_STRING = X;\n}\n"
+    at = src.index("_UNICODE_STRING")
+    diag = _diag(
+        "`*mut u16` cannot be shared between threads safely",
+        code="E0277",
+        spans=[_span("a.rs", at, at + len("_UNICODE_STRING"), is_primary=True)],
+        children=[
+            {
+                "message": "shared static variables must have a type that implements `Sync`",
+                "level": "note",
+                "spans": [],
+                "children": [],
+            }
+        ],
+    )
+    assert "    static mut DeviceFloppy: _UNICODE_STRING = X;" in _apply_plan(src, diag)
+
+
+def test_pointer_double_negation_is_a_null_test():
+    src = "fn f() { Success = !!FindSubStrI(a, b); }\n"
+    at = src.index("!FindSubStrI")
+    end = src.index(";")
+    diag = _diag(
+        "cannot apply unary operator `!` to type `*const u16`",
+        code="E0600",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+    )
+    assert "Success = (!(FindSubStrI(a, b)).is_null());" in _apply_plan(src, diag)
+
+
+def test_default_on_a_union_struct_is_zeroed():
+    src = "fn f() { let mut q: Q = Default::default(); }\n"
+    at = src.index("Default::default()")
+    diag = _diag(
+        "the trait bound `Q: Default` is not satisfied",
+        code="E0277",
+        spans=[
+            _span(
+                "a.rs",
+                at,
+                at + len("Default::default()"),
+                is_primary=True,
+                label="the trait `Default` is not implemented for `Q`",
+            )
+        ],
+    )
+    assert "let mut q: Q = core::mem::zeroed();" in _apply_plan(src, diag)

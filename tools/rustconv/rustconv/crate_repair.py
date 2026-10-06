@@ -73,6 +73,10 @@ RULE_OPTION_IS_NULL = "option_fn_is_null"
 RULE_SHADOWED_CONST = "local_shadows_constant"
 RULE_SIZEOF_CONST = "sizeof_constant"
 RULE_FN_ITEM_CAST = "fn_item_cast"
+RULE_VARIADIC_PROMOTION = "variadic_promotion"
+RULE_LOCAL_STATIC_MUT = "c_local_static_mut"
+RULE_POINTER_NOT_NOT = "pointer_double_negation"
+RULE_ZEROED_DEFAULT = "zeroed_not_default"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -106,6 +110,10 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_SHADOWED_CONST,
     RULE_SIZEOF_CONST,
     RULE_FN_ITEM_CAST,
+    RULE_VARIADIC_PROMOTION,
+    RULE_LOCAL_STATIC_MUT,
+    RULE_POINTER_NOT_NOT,
+    RULE_ZEROED_DEFAULT,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -3029,6 +3037,189 @@ def _fn_item_cast_rule(
     )
 
 
+def _simple_edit(rule, file_name, data, start, end, replacement, authority, span, ctx) -> Edit:
+    return Edit(
+        file_name=file_name,
+        byte_start=start,
+        byte_end=end,
+        replacement=replacement,
+        rule=rule,
+        authority=authority,
+        original=data[start:end].decode("utf-8", "replace"),
+        line=int(span.get("line_start") or 0),
+        column=int(span.get("column_start") or 0),
+        targets=(ctx.target,),
+    )
+
+
+def _primary_bytes(diagnostic, load):
+    span = _primary(diagnostic)
+    file_name = str((span or {}).get("file_name") or "")
+    data = load(file_name) if span else None
+    if span is None or data is None:
+        return None
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return None
+    return span, file_name, data, masked, start, end
+
+
+def _variadic_promotion_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0617: an integer narrower than `int` passed to a C `...`: rustc's own `as c_int` /
+    `as c_uint` (MachineApplicable) is C's default argument promotion, value for value."""
+    if (diagnostic.get("code") or {}).get("code") != "E0617":
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, _start, _end = got
+    for child in diagnostic.get("children") or []:
+        for sp in child.get("spans") or []:
+            rep = sp.get("suggested_replacement")
+            if (
+                rep in (" as c_int", " as c_uint", " as c_double")
+                and sp.get("suggestion_applicability") == "MachineApplicable"
+                and sp.get("file_name") == file_name
+            ):
+                at = int(sp["byte_start"])
+                return (
+                    [
+                        _simple_edit(
+                            RULE_VARIADIC_PROMOTION,
+                            file_name,
+                            data,
+                            at,
+                            at,
+                            rep.replace(" as c_", " as core::ffi::c_"),
+                            "rustc E0617: C promotes a narrow integer / float passed to `...`",
+                            span,
+                            ctx,
+                        )
+                    ],
+                    [],
+                    True,
+                )
+    return [], [], False
+
+
+def _local_static_mut_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0277 `Sync` on a `static` holding raw pointers: C's `static` is plain mutable storage,
+    and only `static mut` can hold a pointer (setuplib's `static UNICODE_STRING DeviceFloppy =
+    RTL_CONSTANT_STRING(..)` and a `static PCSTR FormatStateNames[]`)."""
+    if (diagnostic.get("code") or {}).get("code") != "E0277":
+        return [], [], False
+    text = json.dumps(diagnostic.get("children") or [])
+    if "cannot be shared between threads safely" not in str(diagnostic.get("message") or ""):
+        return [], [], False
+    if "shared static variables must have a type that implements `Sync`" not in text and (
+        "static" not in text
+    ):
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, masked, start, _end = got
+    line_start = masked.rfind(b"\n", 0, start) + 1
+    head = re.match(rb"\s*(?:pub(?:\([^)]*\))?\s+)?static\s+(?!mut\b)", masked[line_start:start])
+    if head is None:
+        return [], [], False
+    at = line_start + head.end()
+    return (
+        [
+            _simple_edit(
+                RULE_LOCAL_STATIC_MUT,
+                file_name,
+                data,
+                at,
+                at,
+                "mut ",
+                "rustc E0277: a C static holding a pointer is mutable storage (`static mut`)",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _pointer_not_not_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0600 `!!p` on a pointer: C's normalise-to-boolean is `!p.is_null()`."""
+    if (diagnostic.get("code") or {}).get("code") != "E0600":
+        return [], [], False
+    if not re.search(r"`!` to type `\*(?:const|mut) ", str(diagnostic.get("message") or "")):
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, masked, start, end = got
+    inner = data[start:end].decode("utf-8", "replace")
+    if not inner.startswith("!") or not _balanced(masked[start + 1 : end]):
+        return [], [], False
+    lo = start - 1 if data[start - 1 : start] == b"!" else None
+    if lo is None:
+        return [], [], False
+    return (
+        [
+            _simple_edit(
+                RULE_POINTER_NOT_NOT,
+                file_name,
+                data,
+                lo,
+                end,
+                f"(!({inner[1:]}).is_null())",
+                "rustc E0600: C's `!!p` on a pointer is `p != NULL`",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _zeroed_default_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0277 `Default` not implemented (a bindgen union-bearing struct): the C was a `{0}`
+    zero initialiser, which is `core::mem::zeroed()`."""
+    if (diagnostic.get("code") or {}).get("code") != "E0277":
+        return [], [], False
+    if "the trait `Default` is not implemented" not in json.dumps(diagnostic):
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    text = data[start:end].decode("utf-8", "replace")
+    if not re.fullmatch(r"(?:core::default::)?Default::default\(\)", text):
+        return [], [], False
+    return (
+        [
+            _simple_edit(
+                RULE_ZEROED_DEFAULT,
+                file_name,
+                data,
+                start,
+                end,
+                "core::mem::zeroed()",
+                "rustc E0277: no Default; C's `{0}` is all-bits-zero",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
@@ -3055,6 +3246,10 @@ _RULE_TABLE: dict[
     RULE_SHADOWED_CONST: _shadowed_const_rule,
     RULE_SIZEOF_CONST: _sizeof_const_rule,
     RULE_FN_ITEM_CAST: _fn_item_cast_rule,
+    RULE_VARIADIC_PROMOTION: _variadic_promotion_rule,
+    RULE_LOCAL_STATIC_MUT: _local_static_mut_rule,
+    RULE_POINTER_NOT_NOT: _pointer_not_not_rule,
+    RULE_ZEROED_DEFAULT: _zeroed_default_rule,
 }
 
 
@@ -4196,6 +4391,15 @@ def repair_crate(
         current.skipped.extend(failed)
         session.passes.append(current)
         session.final_red = list(merged.red)
+        if not applied:
+            # Every proposal was refused at write time (outside the crate, or stale): the next
+            # pass sees the same diagnostics and proposes the same edits. setuplib spent five
+            # passes (~30 s each, three cargo checks) re-proposing them.
+            session.status = "fixpoint"
+            session.detail = (
+                f"{len(failed)} proposed edit(s) refused at write; {total} errors remain"
+            )
+            return session
         previous_total = total
         previous_halting = halting
     session.status = "max_passes"
