@@ -280,8 +280,17 @@ static DWORD RunParent(void)
     Say("[spawn32] rung1 CreateProcessW OK\n");
     SayHex("[spawn32] child pid", pi.dwProcessId);
 
+#ifdef _WIN64
+    /* spawn64.exe: the child is this same x86-64 image, so it must NOT be a
+     * WoW64 process -- an x86-64 process is not one, on Windows ARM64 any more
+     * than on amd64. Under FEX this checks that the guest's CreateProcess made
+     * an x86-64 process (wowx64), not a 32-bit one. */
+    if (!IsWow64Process(pi.hProcess, &isWow) || isWow) {
+        Say("[spawn32] rung2 x86-64 child reports as a WoW64 process\n");
+#else
     if (!IsWow64Process(pi.hProcess, &isWow) || !isWow) {
         Say("[spawn32] rung2 child is NOT a WoW64 process\n");
+#endif
         TerminateProcess(pi.hProcess, 1);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
@@ -386,7 +395,7 @@ static DWORD RunParent(void)
     return S32_PASS;
 }
 
-int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
+int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) */
 {
     DWORD verdict = IsChildInvocation() ? RunChild() : RunParent();
     SayHex("[spawn32] verdict", verdict);

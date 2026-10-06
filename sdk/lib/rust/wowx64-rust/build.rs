@@ -23,6 +23,7 @@ const INTERCEPTED: &[&str] = &[
     "NtSetContextThread",
     "NtFlushInstructionCache",
     "NtCreateThread",
+    "NtCallbackReturn",
 ];
 
 fn main() {

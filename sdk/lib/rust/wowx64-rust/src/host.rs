@@ -265,6 +265,10 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
         crate::image::FindExport(&Ntdll, b"KiUserExceptionDispatcher\0")
             .unwrap_or_else(|| die(b"guest ntdll.dll has no KiUserExceptionDispatcher\0")),
     );
+    crate::callback::Install(
+        crate::image::FindExport(&Ntdll, b"KiUserCallbackDispatcher\0")
+            .unwrap_or_else(|| die(b"guest ntdll.dll has no KiUserCallbackDispatcher\0")),
+    );
 
     // The TEB now describes the guest stack (thread.rs says why), so the
     // native one this code runs on must never need guard-page growth again.

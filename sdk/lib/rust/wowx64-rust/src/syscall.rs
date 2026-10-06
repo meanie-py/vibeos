@@ -14,6 +14,9 @@
 //!     native DLLs, so the guest loader must not find them.
 //!   * threads (`NtCreateThread`): its CONTEXT is x86-64 too, and the new
 //!     thread must start in wowx64.dll, not at a guest address (`thread.rs`).
+//!   * `NtCallbackReturn`: the end of a win32k callback run in the guest
+//!     (`callback.rs`), which must restore the guest state the callback
+//!     interrupted before the kernel unwinds the callout.
 //!   * address-space changes (`Nt{Allocate,Protect,Free}VirtualMemory`,
 //!     `Nt{Map,Unmap}ViewOfSection`, `NtFlushInstructionCache`): reported to
 //!     the CPU layer so its code cache and image tracking stay true.
@@ -95,7 +98,10 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
                 Args[2] as u8 != 0,
             );
         }
-        SVC_NtCreateThread if IsSelf(Args[3]) => {
+        SVC_NtCallbackReturn => {
+            return crate::callback::CallbackReturn(Args);
+        }
+        SVC_NtCreateThread => {
             return crate::thread::CreateThread(Args);
         }
         SVC_NtGetContextThread | SVC_NtSetContextThread => {

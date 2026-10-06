@@ -43,6 +43,8 @@ pub(crate) use trace;
 mod contract;
 
 #[cfg(target_arch = "aarch64")]
+mod callback;
+#[cfg(target_arch = "aarch64")]
 mod except;
 #[cfg(target_arch = "aarch64")]
 mod host;
