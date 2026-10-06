@@ -152,11 +152,22 @@ pub unsafe fn DumpGuest(Ctx: &WowX64Context) {
     );
 }
 
-/// Is the guest stopped just past `int 2d` of the amd64 `DebugService`
-/// (`int 2d; int 3`)? FEX reports that interrupt as a breakpoint with rip
-/// already past it, i.e. on the trailing `int 3`.
-unsafe fn AtDebugService(Rip: u64) -> bool {
-    Rip >= 2 && *(Rip as *const u8) == 0xCC && *((Rip - 2) as *const u8) == 0xCD && *((Rip - 1) as *const u8) == 0x2D
+/// If the guest is stopped in the amd64 `DebugService` (`int 2d; int 3`),
+/// where it resumes once the service is done. FEX reports that interrupt as a
+/// breakpoint and has ALREADY stepped rip past both bytes of the pair, as the
+/// amd64 kernel's debug-service trap does, so rip is on the instruction after
+/// the `int 3`. (Measured: rip = DebugService+0x13, the `ret`.) The variant
+/// with rip ON the `int 3` is accepted too, so a CPU layer that stops one byte
+/// earlier still cannot turn a debug print into a guest breakpoint.
+unsafe fn DebugServiceResume(Rip: u64) -> Option<u64> {
+    let At = |o: u64| *((Rip - o) as *const u8);
+    if Rip >= 3 && At(3) == 0xCD && At(2) == 0x2D && At(1) == 0xCC {
+        return Some(Rip);
+    }
+    if Rip >= 2 && At(2) == 0xCD && At(1) == 0x2D && *(Rip as *const u8) == 0xCC {
+        return Some(Rip + 1);
+    }
+    None
 }
 
 /// Every native exception, first. The CPU layer resolves its own (overcommit,
@@ -206,7 +217,8 @@ pub unsafe extern "system" fn WowX64Veh(Info: *mut _EXCEPTION_POINTERS) -> LONG 
         crate::host::die(b"guest fault on a thread with no guest state\0");
     }
 
-    if (*Rec).ExceptionCode as u32 == STATUS_BREAKPOINT && AtDebugService(Ctx.Rip) {
+    let Resume = if (*Rec).ExceptionCode as u32 == STATUS_BREAKPOINT { DebugServiceResume(Ctx.Rip) } else { None };
+    if let Some(Resume) = Resume {
         // The guest's DbgPrint channel (its loader's diagnostics among
         // others): print it the way the amd64 kernel's debug service would,
         // and resume past the `int 3` with STATUS_SUCCESS in eax.
@@ -218,7 +230,7 @@ pub unsafe extern "system" fn WowX64Veh(Info: *mut _EXCEPTION_POINTERS) -> LONG 
             DbgPrint(b"[GUEST64] %.*s\0".as_ptr() as PCSTR, Ctx.Rdx as i32, Ctx.Rcx as *const i8);
             (*Teb).InDbgPrint = Saved;
         }
-        Ctx.Rip += 1;
+        Ctx.Rip = Resume;
         Ctx.Rax = 0;
         (Cpu.SetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), &Ctx);
         return EXCEPTION_CONTINUE_EXECUTION;
