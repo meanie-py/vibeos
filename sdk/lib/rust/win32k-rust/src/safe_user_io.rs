@@ -316,3 +316,16 @@ pub(crate) unsafe fn probe_and_capture_unicode_string(
     *Dest = src;
     STATUS_SUCCESS
 }
+
+/// True when an NtGdiEng* syscall came from user mode and must be refused.
+///
+/// Those entry points take SURFOBJ/CLIPOBJ/XLATEOBJ/BRUSHOBJ pointers that win32k
+/// dereferences and draws through: `psoDest->pvBits` is a store address. Windows
+/// honours them only for user-mode printer-driver threads, through proxy objects
+/// it translates; the ReactOS C passes the caller's pointers straight in, which
+/// makes each one an arbitrary kernel write that no probe can fix. vibeos has no
+/// user-mode printer drivers and nothing in the tree calls them from user mode,
+/// so they fail there instead. Display drivers call the Eng* functions directly.
+pub unsafe fn umpd_call_refused() -> bool {
+    ntkrnl_sys::ddk::ExGetPreviousMode() != 0
+}

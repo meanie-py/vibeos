@@ -298,6 +298,9 @@ pub unsafe extern "system" fn NtGdiEngAlphaBlend(
     upSourceRect: PRECTL,
     BlendObj: *mut BLENDOBJ,
 ) -> u32 {
+    if crate::safe_user_io::umpd_call_refused() {
+        return 0;
+    }
 
     let mut DestRect: RECTL = core::mem::zeroed();
     let mut SourceRect: RECTL = core::mem::zeroed();
@@ -323,7 +326,7 @@ pub unsafe extern "system" fn NtGdiEngAlphaBlend(
         return 0;
     }
 
-    return EngAlphaBlend(psoDest, psoSource, ClipRegion, ColorTranslation, core::ptr::addr_of_mut!(DestRect), core::ptr::addr_of_mut!(SourceRect), BlendObj);
+    return EngAlphaBlend(psoDest, psoSource, ClipRegion, ColorTranslation, core::ptr::addr_of_mut!(DestRect), core::ptr::addr_of_mut!(SourceRect), BlendObj); // nolint: raw-user-access (umpd_call_refused: kernel-mode callers only)
 }
 
 

@@ -109,6 +109,9 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_ramdisk_tree.py"),
     (".", ".", "tools/test_scan_const_vs_island.py"),
     (".", ".", "tools/test_scan_raw_uart_writes.py"),
+    # The callee pass of the user-pointer lint: its quieting rules (kernel arm,
+    # early return, scoped rebind, null guard) each hid or invented rows once.
+    (".", ".", "tools/test_scan_raw_user_access.py"),
     (".", ".", "tools/test_lint_facts.py"),
     (".", ".", "tools/test_cargo_link_context.py"),
     (".", ".", "tools/test_rust_storage.py"),

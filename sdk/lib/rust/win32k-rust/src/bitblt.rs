@@ -455,6 +455,9 @@ pub unsafe extern "system" fn NtGdiEngBitBlt(
     pptlBrush: *mut POINTL,
     Rop4: ROP4,
 ) -> i32 {
+    if crate::safe_user_io::umpd_call_refused() {
+        return 0;
+    }
     let mut rclTrg: RECTL = core::mem::zeroed();
     let mut ptlSrc: POINTL = core::mem::zeroed();
     let mut ptlMask: POINTL = core::mem::zeroed();

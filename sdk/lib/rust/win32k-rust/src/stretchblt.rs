@@ -813,6 +813,9 @@ pub unsafe extern "system" fn NtGdiEngStretchBlt(
     MaskOrigin: *mut POINTL,
     Mode: u32,
 ) -> u32 {
+    if crate::safe_user_io::umpd_call_refused() {
+        return 0;
+    }
 
     let mut ca: COLORADJUSTMENT = core::mem::zeroed();
     let mut lBrushOrigin: POINTL = core::mem::zeroed();
@@ -888,7 +891,7 @@ pub unsafe extern "system" fn NtGdiEngStretchBlt(
         pca_local = core::ptr::null_mut();
     }
 
-    EngStretchBlt(psoDest, psoSource, Mask, ClipRegion, ColorTranslation, pca_local, &mut lBrushOrigin, &mut rclDest, &mut rclSrc, &mut lMaskOrigin, Mode) as u32
+    EngStretchBlt(psoDest, psoSource, Mask, ClipRegion, ColorTranslation, pca_local, &mut lBrushOrigin, &mut rclDest, &mut rclSrc, &mut lMaskOrigin, Mode) as u32 // nolint: raw-user-access (umpd_call_refused: kernel-mode callers only)
 }
 
 
