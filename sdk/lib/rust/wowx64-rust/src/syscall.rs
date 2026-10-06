@@ -41,7 +41,7 @@ const MEM_IMAGE: u32 = 0x0100_0000;
 /// guest (thousands of syscalls) cannot flood the UART — whose cost on real
 /// hardware is ~90ms/KB inside the trap path — yet the first ones, which are
 /// where a bring-up breaks, are always visible.
-const TRACED_SYSCALLS: u32 = 16;
+const TRACED_SYSCALLS: u32 = 48;
 static SyscallCount: AtomicU32 = AtomicU32::new(0);
 
 /// `WOWX64_HOST_SERVICES::SystemService`: one guest `syscall`. The CPU layer
@@ -56,7 +56,7 @@ pub unsafe extern "C" fn WowX64SystemService(Service: u32, GuestArgs: *const u64
     let N = SyscallCount.fetch_add(1, Ordering::Relaxed);
     if N < TRACED_SYSCALLS {
         crate::trace!(
-            "guest syscall #%u: service %u (%p, %p, %p, %p) -> %p",
+            "guest syscall #%u: service %u (%p, %p, %p, %p) -> %p [veh %u]",
             N + 1,
             Service,
             Args[0] as *const c_void,
@@ -64,6 +64,7 @@ pub unsafe extern "C" fn WowX64SystemService(Service: u32, GuestArgs: *const u64
             Args[2] as *const c_void,
             Args[3] as *const c_void,
             Ret as *const c_void,
+            crate::except::VehCount.load(Ordering::Relaxed),
         );
         if N + 1 == TRACED_SYSCALLS {
             crate::trace!("(syscall trace capped at %u)", TRACED_SYSCALLS);

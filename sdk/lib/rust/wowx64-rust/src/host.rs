@@ -136,24 +136,6 @@ fn InitialContext() -> WowX64Context {
     Ctx
 }
 
-/// Bring-up probe: raise a continuable software exception and say whether the
-/// VEH saw it (it records the last code it was handed).
-unsafe fn ProbeVeh(When: &[u8]) {
-    let mut Rec: EXCEPTION_RECORD = core::mem::zeroed();
-    Rec.ExceptionCode = 0x4000_7E57;
-    crate::except::LastVehCode.store(0, core::sync::atomic::Ordering::Relaxed);
-    RtlRaiseException(&mut Rec);
-    trace!(
-        "VEH probe %s: the VEH %s it",
-        When.as_ptr(),
-        if crate::except::LastVehCode.load(core::sync::atomic::Ordering::Relaxed) == 0x4000_7E57 {
-            b"saw\0".as_ptr()
-        } else {
-            b"DID NOT see\0".as_ptr()
-        },
-    );
-}
-
 /// This thread's CPU-layer state. Every guest thread, before its first guest
 /// instruction.
 pub unsafe fn ThreadInit() {
@@ -263,7 +245,6 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
     if RtlAddVectoredExceptionHandler(1, Some(crate::except::WowX64Veh)).is_null() {
         die(b"VEH registration\0");
     }
-    ProbeVeh(b"after registration\0");
 
     let Status = ProcessInit(&HOST_SERVICES);
     if Status < 0 {
@@ -315,7 +296,6 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
         Stack,
         StackSize as *const c_void,
     );
-    ProbeVeh(b"before entering the guest\0");
     // SystemArgument1 = the guest ntdll's base: its LdrpInitializeProcess
     // builds ntdll's own loader entry from it, as on amd64.
     EnterGuest(&Run, Ntdll.Base as u64);
