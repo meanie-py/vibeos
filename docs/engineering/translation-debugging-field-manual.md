@@ -11352,24 +11352,6 @@ returns (`NtTestAlert`, `NtSetInformationThread`).
 **Generalize.** A user-mode crash at a PC equal to a byte count is a status block written late.
 Check that every path back to user mode delivers kernel APCs.
 
-### arm64 `RtlRaiseException` resumed INSIDE itself when a handler continued — an infinite dispatch loop
-
-**Symptom.** A vectored handler returns `EXCEPTION_CONTINUE_EXECUTION` for a software raise and
-the thread never comes back: `RtlRaiseException` dispatches the same exception again, forever
-(no trap, no `[UEXC]`, a 30s timeout). Found by a probe in an x86-64 guest process.
-
-**Cause.** The arm64 Rust `RtlRaiseException` (rtl-diag) captured its own context with
-`RtlCaptureContext` and handed THAT to the dispatcher; `ZwContinue` of it resumes just after the
-capture — inside `RtlRaiseException` — which dispatches again. amd64's asm version rewrites
-Rip/Rsp to the caller by hand; Windows ARM64 does one `RtlVirtualUnwind`. `ExceptionAddress`
-was also left NULL. Invisible under DUMMY_PSEH because nothing ever continued a raise.
-
-**Fix.** Capture, then virtually unwind one frame (`RtlLookupFunctionEntry` +
-`RtlVirtualUnwind`), so the context is the caller's at the return address, with the caller's
-nonvolatile registers; that return address is also `ExceptionAddress`. Standing tripwire:
-`seh_poc_user.c` probe 3 (smss, every arm64 boot) — a second firing says FAIL and declines, so a
-regression is a loud smss death, not a hung boot.
-
 ## WoW64 / FEX: 32↔64 divergences
 
 Every entry here is one shape: **a size, offset or index that differs between guest and host.**

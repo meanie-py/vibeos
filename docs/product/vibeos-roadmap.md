@@ -594,6 +594,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
+  lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
+  captured mid-body of itself, so `ZwContinue` after a vectored handler's
+  `EXCEPTION_CONTINUE_EXECUTION` resumes inside `RtlRaiseException` and dispatches again,
+  forever (found when a VEH probe hung an x86-64 guest process's thread for 30 s; amd64's asm
+  version rewrites Rip/Rsp to the caller and does not have it). `ExceptionAddress` is also NULL.
+  Masked today because, under DUMMY_PSEH, nothing continues a raise. **Two fixes were tried and
+  both reverted**, because each made smss's `seh_poc_user.c` probe 1 (a raise caught by
+  `__except`) print `CORRUPT x21: 00007FFFFFFEF000 -> 000000000012FAE8` on an otherwise green
+  boot: (1) one `RtlVirtualUnwind` of our own frame after the capture; (2) an asm
+  `RtlRaiseException` that captures before touching any nonvolatile register and patches
+  fp/lr/sp/pc to the caller's, as amd64 does (run `20261006-021810-kpujl93s-smoke-arm64`). Since
+  (2) hands the dispatcher exactly the caller's state, the x21 corruption is downstream:
+  probably the arm64 `RtlUnwindEx` / `__C_specific_handler` path when the dispatch context's
+  first frame is the `__try` function itself rather than `RtlRaiseException` (the old shape
+  always had one extra frame to unwind first). Start there, with (2) and a probe that continues
+  a raise (`fired == 1 && returned`).
 - **Pi 4 (real hardware): a loopback UDP `sendto()` never returned** (FIXED 2026-10-04,
   `e0674df2c66`). With no NIC netstack drives, the engine worker exited while TDI kept pending
   IRPs into its dead inbox. They now fail fast with STATUS_NETWORK_UNREACHABLE. QEMU never showed
@@ -2703,12 +2720,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   run on the guest's OWN amd64 ntdll, loader and system DLLs (staged into `sysamd64`), so this
   is real Win32: windows with callbacks and paint, GDI, files and overlapped I/O, IOCP, the
   registry's 64-bit view, sockets, guest SEH through `.pdata`, threads, runtime codegen, and
-  process creation. Four real bugs fell out on the way, none of them in FEX:
+  process creation. Real bugs fell out on the way, none of them in FEX:
   rtl-heap's arm64 `HEAP_ENTRY` field order (never heap.h's; invisible until two ntdlls shared
-  one process heap), arm64 `RtlRaiseException` resuming inside itself when a handler continued
-  (now unwinds to the caller; smss tripwire probe 3), `wow64-closure.py` choosing stripped
-  twins by bare name (it shipped an i386 kernel32 into the amd64 set), and the x64 ladder
-  launching on winlogon's desktop. Graded where the media carries them (`STAGED_LADDER`).
+  one process heap), `wow64-closure.py` choosing stripped twins by bare name (it shipped an
+  i386 kernel32 into the amd64 set), and the x64 ladder launching on winlogon's desktop -- all
+  fixed -- plus arm64 `RtlRaiseException` resuming inside itself when a handler continues,
+  registered OPEN below (two fixes each tripped an smss SEH probe and were reverted). Graded where the media carries them (`STAGED_LADDER`).
   What is still owed is in the design doc's "Status" section (APCs into a guest thread,
   `NtCreateThreadEx`, thread exit cleanup).
 
