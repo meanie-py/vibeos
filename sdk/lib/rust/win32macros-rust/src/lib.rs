@@ -486,7 +486,7 @@ macro_rules! IsContainerPartition {
 macro_rules! IsRecognizedPartition {
     ($t:expr $(,)?) => {{
         let t = ($t) as u8;
-        $crate::IsFTPartition!(t)
+        ($crate::IsFTPartition!(t)
             || matches!(
                 t,
                 0x01 | 0x04
@@ -501,7 +501,7 @@ macro_rules! IsRecognizedPartition {
                     | 0xA5
                     | 0xA6
                     | 0xA9
-            )
+            )) as u8
     }};
 }
 
@@ -522,6 +522,110 @@ macro_rules! InitializeObjectAttributes {
         (*p).SecurityDescriptor = $s;
         (*p).SecurityQualityOfService = core::ptr::null_mut();
     }};
+}
+
+// ================= ntdef.h / debug.h — assertions, strings, pointer and page helpers ==========
+
+/// `debug.h` — `ASSERT(exp)`. Inert, matching the release (`!DBG`) build where the header
+/// defines it to `((VOID)0)`: the expression is TYPE-CHECKED but never evaluated, so a body
+/// that asserts on a name it never defines still fails to compile, and no side effect of the
+/// expression runs. Any scalar C would accept is accepted (`ASSERT(FALSE)`, `ASSERT(p)`), which
+/// `debug_assert!` (bool only) would not. A `macro_rules!`, never an out-of-line no-op `fn`
+/// (AGENTS.md: a no-op call is an optimisation barrier that uncloaks ABI mismatches).
+#[macro_export]
+macro_rules! ASSERT {
+    ($e:expr $(,)?) => {{
+        if false {
+            let _ = &$e;
+        }
+    }};
+}
+
+/// `ntdef.h` — `C_ASSERT(e)`: a compile-time assertion, usable as a statement in a body.
+#[macro_export]
+macro_rules! C_ASSERT {
+    ($e:expr $(,)?) => {
+        const _: () = assert!($e);
+    };
+}
+
+/// A wide string `RTL_CONSTANT_STRING!` can measure: a `[u16; N]` array (C's `sizeof`, NULs
+/// included, exactly) or a NUL-terminated pointer (walked to its NUL — what `sizeof` of the
+/// literal it points at gives, for a literal with no embedded NUL).
+pub trait WideSource {
+    fn wide_ptr(&self) -> *mut u16;
+    /// Bytes C's `sizeof(s)` reports: the terminator included.
+    fn wide_bytes(&self) -> usize;
+}
+
+impl<const N: usize> WideSource for [u16; N] {
+    fn wide_ptr(&self) -> *mut u16 {
+        self.as_ptr() as *mut u16
+    }
+    fn wide_bytes(&self) -> usize {
+        core::mem::size_of_val(self)
+    }
+}
+
+impl WideSource for *const u16 {
+    fn wide_ptr(&self) -> *mut u16 {
+        *self as *mut u16
+    }
+    fn wide_bytes(&self) -> usize {
+        let mut n = 0usize;
+        // SAFETY: RTL_CONSTANT_STRING is only ever applied to a NUL-terminated literal.
+        unsafe {
+            while *self.add(n) != 0 {
+                n += 1;
+            }
+        }
+        (n + 1) * core::mem::size_of::<u16>()
+    }
+}
+
+impl WideSource for *mut u16 {
+    fn wide_ptr(&self) -> *mut u16 {
+        *self
+    }
+    fn wide_bytes(&self) -> usize {
+        (*self as *const u16).wide_bytes()
+    }
+}
+
+/// `ntdef.h` — `RTL_CONSTANT_STRING(s)` = `{ sizeof(s) - sizeof((s)[0]), sizeof(s), (PWSTR)(s) }`.
+/// `Length` excludes the terminator and `MaximumLength` includes it: a hand-inlined copy in
+/// setuplib counted the NUL in both. Builds the CALLER's `_UNICODE_STRING` (bindgen's struct
+/// tag, emitted into every island) — the one type this crate cannot share, see "The boundary".
+#[macro_export]
+macro_rules! RTL_CONSTANT_STRING {
+    ($s:expr $(,)?) => {{
+        // BORROW the place: `let src = $s;` would copy an array argument, and Buffer would
+        // point at that stack copy (the known-answer test below caught exactly that).
+        let src = &$s;
+        let bytes = $crate::WideSource::wide_bytes(src);
+        _UNICODE_STRING {
+            Length: (bytes - core::mem::size_of::<u16>()) as u16,
+            MaximumLength: bytes as u16,
+            Buffer: $crate::WideSource::wide_ptr(src) as _,
+        }
+    }};
+}
+
+/// `basetsd.h` — `UlongToPtr(ul)` = `(PVOID)(ULONG_PTR)(ul)`: zero-extended, never sign-extended.
+#[macro_export]
+macro_rules! UlongToPtr {
+    ($ul:expr $(,)?) => {
+        (($ul) as u32 as usize as *mut core::ffi::c_void)
+    };
+}
+
+/// `ndk/mmtypes.h` — `PAGE_ROUND_UP(x)` = `(((ULONG_PTR)(x) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))`.
+/// The arithmetic is `ULONG_PTR` (`usize`) and so is the result; `PAGE_SIZE` is the caller's.
+#[macro_export]
+macro_rules! PAGE_ROUND_UP {
+    ($x:expr $(,)?) => {
+        ((($x) as usize).wrapping_add(PAGE_SIZE as usize - 1) & !(PAGE_SIZE as usize - 1))
+    };
 }
 
 // ================= constants bindgen folds away ===============================================
@@ -553,6 +657,50 @@ mod tests {
     //! way the implementation does proves nothing.
 
     use crate::{DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, INVALID_HANDLE_VALUE, UNICODE_NULL};
+
+    #[allow(non_camel_case_types, non_snake_case)]
+    #[derive(Debug, PartialEq)]
+    struct _UNICODE_STRING {
+        Length: u16,
+        MaximumLength: u16,
+        Buffer: *mut u16,
+    }
+
+    #[test]
+    fn rtl_constant_string_excludes_the_nul_from_length_only() {
+        // L"ab" is 3 WCHARs: sizeof = 6, Length = 6 - 2 = 4.
+        static W: [u16; 3] = [b'a' as u16, b'b' as u16, 0];
+        let a = RTL_CONSTANT_STRING!(W);
+        assert_eq!((a.Length, a.MaximumLength), (4, 6));
+        assert_eq!(a.Buffer as *const u16, W.as_ptr());
+        // The pointer form the translations pass (`X.as_ptr()`) measures the same.
+        let p = RTL_CONSTANT_STRING!(W.as_ptr());
+        assert_eq!((p.Length, p.MaximumLength), (4, 6));
+    }
+
+    #[test]
+    fn assert_type_checks_but_never_evaluates() {
+        let mut hits = 0;
+        let mut bump = || {
+            hits += 1;
+            0
+        };
+        ASSERT!(bump() == 1);
+        ASSERT!(0);
+        assert_eq!(hits, 0);
+        C_ASSERT!(core::mem::size_of::<u16>() == 2);
+    }
+
+    #[test]
+    fn page_round_up_and_ulong_to_ptr() {
+        const PAGE_SIZE: u32 = 0x1000;
+        assert_eq!(PAGE_ROUND_UP!(0u32), 0);
+        assert_eq!(PAGE_ROUND_UP!(1u32), 0x1000);
+        assert_eq!(PAGE_ROUND_UP!(0x1000u32), 0x1000);
+        assert_eq!(PAGE_ROUND_UP!(0x1001u32), 0x2000);
+        // Zero-extended: ULONG 0xFFFFFFFF is never a sign-extended -1 pointer.
+        assert_eq!(UlongToPtr!(0xFFFF_FFFFu32) as usize, 0xFFFF_FFFFusize);
+    }
 
     #[test]
     fn word_and_byte_extraction_selects_the_documented_bits() {
