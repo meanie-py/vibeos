@@ -1612,6 +1612,16 @@ Three kinds of divergence hide in that, and they are not equally serious:
   `SWITCH_CONST_ENUM_PREFIXED` and prescribes the alias; take that finding literally and do not
   re-declare the value. Detection without the tool: for any constant you are about to declare by
   hand, grep the island for `_<NAME>$` before concluding it is absent.
+- **Not a macro at all, and the copy dropped its side effect.** user32's `GetW32ThreadInfo()` is
+  an out-of-line function in misc.c that *creates* the THREADINFO
+  (`NtUserGetThreadState(THREADSTATE_GETTHREADINFO)`) when the TEB slot is still NULL. user32-rust
+  had five copies, four of them commented "user_x.h inline" and reduced to the bare TEB read —
+  including the `#[no_mangle]` one that window.rs links. In a thread that had not yet called into
+  win32k, `GetDesktopWindow()` returned NULL, so `OpenClipboard(GetDesktopWindow())` opened with
+  no window. That left no clipboard owner, so the next `EmptyClipboard` had nobody to send
+  `WM_DESTROYCLIPBOARD` to, and a pending `WM_DRAWCLIPBOARD` was delivered late (ole32 clipboard
+  test 1066/1134). Before trusting a copy's "it's just X" comment, find the C *definition*, not
+  the call sites, and check whether it writes anything.
 
 **Fix.** Port it once into a shared crate, transcribed from the header rather than from the
 copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32macros-rust`
