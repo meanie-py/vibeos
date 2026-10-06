@@ -6648,6 +6648,11 @@ stays in `CMakeFiles/<target>.dir/` forever. `verify_ucrtbase_cohab` read those 
 "our C defines this", so a lane passed with `_chkesp.s` gone (its stale `.obj` still defined
 `__chkesp`) and master went red on the fresh integration build. A tool asking what the build
 produces must ask the build graph (`build <obj>:` lines in `build.ninja`), not the directory.
+Since 2026-10-05 `vibeos-cli build` runs `ninja -t cleandead` after the manifest regenerates,
+so a lane's build dir no longer holds outputs the graph has dropped (the first run on an old
+tree removed 3017/1039/103 files on i386/amd64/arm64). Hand-run `ninja` does not; and
+cleandead cannot touch an edge that is still declared but no longer built, which is the
+case below.
 The mirror image: a library you keep "compiled, unlinked, as a reference" is NOT compiled once
 nothing links it, because `vibeos-cli build` makes what `livecd` depends on, not ALL. Every
 existing build dir still holds its objects from before the unlink, so it passes locally and
