@@ -651,3 +651,13 @@ reading the next silent layer:
    context; usbhub's first hub-descriptor request uses wValue 0.
 
 Field manual entries cover 3-6.
+
+## Session 7 (2026-10-05) — Ethernet in VibeOS
+
+The board's GENET Ethernet works under VibeOS: the HAL publishes `ACPI\BCM6E4E`
+from the DSDT, netstack binds to it through the critical device database and drives
+it as `GenetPhy`. First boot: PHY BCM54213PE at MDIO 1, link 1000 Mb/s full duplex,
+DHCP lease 192.168.1.216 from the LAN router; the host pings it and its TCP echo
+(port 7777) returned 1 MiB intact. Polled, so latency is the engine's poll cadence
+and the echo runs at ~60 KiB/s. Next: GENET interrupts (GIC SPI 189/190), larger
+socket buffers. Design notes: `smoltcp-netstack-design.md`, "Direct hardware backends".
