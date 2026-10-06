@@ -647,6 +647,20 @@ function(add_delay_importlibs _module)
             target_link_libraries(${_module} lib${_basename}_delayed)
         endif()
     endforeach()
+    # lld leaves the DELAY_IMPORT data directory empty for gen-delaylib's descriptors;
+    # point it at their table (gen-delaylib.py brackets it) once the module is linked.
+    if(CMAKE_DLLTOOL_MACHINE AND VIBEOS_ENABLE_DELAYLOAD AND NOT VIBEOS_NO_DELAYLOAD)
+        get_target_property(_has_fixup ${_module} VIBEOS_DELAYIMPORT_FIXUP)
+        if(NOT _has_fixup)
+            set_target_properties(${_module} PROPERTIES VIBEOS_DELAYIMPORT_FIXUP TRUE)
+            add_custom_command(TARGET ${_module} POST_BUILD
+                COMMAND native-pefixup --delayimport "$<TARGET_FILE:${_module}>"
+                COMMENT "Setting the DELAY_IMPORT directory of ${_module}"
+                VERBATIM)
+            set_property(TARGET ${_module} APPEND PROPERTY
+                LINK_DEPENDS $<TARGET_PROPERTY:native-pefixup,IMPORTED_LOCATION>)
+        endif()
+    endif()
     # Link the delay-load runtime unconditionally — not just when delay-loading.
     # Modules may reference the __pfnDli*Hook2 variables directly (delayimp.h
     # declares them; dbghelp_apitest's pdb.c assigns the failure hook), and those
