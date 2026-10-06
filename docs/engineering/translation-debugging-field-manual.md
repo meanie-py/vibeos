@@ -10262,6 +10262,10 @@ vs `tools/lint-baseline/`**, and several hold an EMPTY baseline (strict).
   violation it prints `[WAITDEP] VIOLATION <kind>` plus a bounded dump naming which invariant
   broke. Always-on rather than opt-in because the flake it hunts fires ~1/4 arm64 boots and a
   reproduction attempt perturbs it.
+- **`[IO-STRANDED]`** — `IofCallDriver`, always on: when a driver returns a final status but
+  the IRP's `IopCompleteRequest` APC is still queued to this thread, the caller is about to
+  return without waiting and the APC will write into its dead frame. Prints the driver, major
+  function, IOCTL and the thread's APC-disable state. One read when no kernel APC is queued.
 - Others: `scan_ud2`, `scan_ir_mismatch`, `scan_cc_mismatch`, `scan_magic_offsets`
   (`TYPED_PTR_HEX_ARITH`), `scan_wide_literals`, `scan_assert_to_ub`, `scan_bugcheck_codes`,
   `scan_const_contradictions`, `scan_nightly_surface`, `scan_silent_failures`,
@@ -11351,6 +11355,33 @@ returns (`NtTestAlert`, `NtSetInformationThread`).
 
 **Generalize.** A user-mode crash at a PC equal to a byte count is a status block written late.
 Check that every path back to user mode delivers kernel APCs.
+
+### A kernel return address holds a DISK_GEOMETRY: the completion APC ran after its caller returned
+**Symptom.** Pi 4, once the SD card became writable: a bugcheck in stortest's thread, either 0x1E
+with `PC=LR=0` and `FP=0x0000_0200_0000_003F` (`SectorsPerTrack=63, BytesPerSector=512`, the tail
+of a DISK_GEOMETRY), or 0x109 from `[WAITDEP] unwait of thread=fffffa0000000000` inside a later
+`KeSetEvent`. Both are an IRP's completion landing in a stack frame that had already returned.
+
+**Cause.** A synchronous IRP's output reaches the caller's buffer, IO_STATUS_BLOCK and event
+only when `IopCompleteRequest` runs, a special kernel APC queued to the issuing thread. A caller
+that gets a final status from `IoCallDriver` does not wait, so that APC must have run already.
+The arm64 HAL drained APCs under the same per-CPU `soft_int_in_progress` flag as the DISPATCH
+drain, and `KiDeliverApc` runs normal kernel APC routines at PASSIVE, which can block and switch
+threads with the flag still set. Every thread that ran next on that CPU had its APC delivery
+skipped (a probe in the drain showed it for the very thread whose IRPs stranded, with no
+special-APC disable anywhere), so its synchronous completions stayed queued until some later
+IRQL drop. The SD driver's worker thread changed the scheduling enough to make one land on a
+saved FP/LR; before the fix `[IO-STRANDED]` counted ~25 per Pi boot (RamDisk flushes, fastfat,
+partmgr, mountmgr, netstack), mostly landing in frames that happened to still be live.
+
+**Fix.** Only the DISPATCH half of `HalpDispatchSoftwareInterrupts` takes the flag (it never
+blocks; a thread it readies is swapped in at the `KfLowerIrql` preemption point). APC delivery
+runs outside it, with nesting bounded by `KiDeliverApc` itself, as on NT: `KernelApcInProgress`
+keeps a second normal APC out, while special APCs still run inside a normal routine.
+
+**Generalize.** A per-CPU "in progress" flag around code that can block is per-thread state
+stored in the wrong place. `[IO-STRANDED]` (iomgr `IofCallDriver`) now names any driver whose
+final status leaves its own completion APC queued.
 
 ## WoW64 / FEX: 32↔64 divergences
 

@@ -116,24 +116,31 @@ CHARDEV_CONNECT_ERROR = "Failed to connect to '"
 BIND_RACE_ERRORS = (HOSTFWD_BIND_ERROR, GDB_BIND_ERROR, CHARDEV_CONNECT_ERROR)
 HOSTFWD_LAUNCH_RETRIES = int(os.environ.get("VIBEOS_HOSTFWD_LAUNCH_RETRIES", "4"))
 
-# The usbstor rig's stick (VIBEOS_QEMU_USB_DISK=1): an MBR disk, one FAT16
-# partition at 1 MiB labelled USB_STICK_LABEL, holding USB_STICK_FILE.
+# The usbstor rig's stick (VIBEOS_QEMU_USB_DISK=1): an MBR disk, one FAT
+# partition at 1 MiB labelled USB_STICK_LABEL, holding USB_STICK_FILE. FAT16 by
+# default; the rig's second stick is FAT32, the format of real cards and sticks.
 USB_STICK_LABEL = "VIBESTICK"
 USB_STICK_FILE = "VIBEOS.TXT"
 USB_STICK_TEXT = b"hello from the usb stick\r\n"
 _USB_STICK_MIB = 64
 
 
-def make_usb_stick_image(path: Path) -> None:
-    """Build the usbstor rig's stick image at `path`, as qcow2 (host sfdisk + mkfs.fat + mcopy)."""
+def make_usb_stick_image(path: Path, fat: int = 16) -> None:
+    """Build the usbstor rig's stick image at `path`, as qcow2 (host sfdisk + mkfs.fat + mcopy).
+
+    `fat` is 16 or 32. A FAT32 volume this small needs one-sector clusters to
+    reach FAT32's 65525-cluster minimum, so mkfs.fat is told `-s 1`.
+    """
     part_offset = 1 << 20
     part_bytes = (_USB_STICK_MIB << 20) - part_offset
     with tempfile.TemporaryDirectory() as td:
         part = Path(td) / "part.img"
         payload = Path(td) / USB_STICK_FILE
         payload.write_bytes(USB_STICK_TEXT)
+        cluster = ["-s", "1"] if fat == 32 else []
+        mkfs = ["mkfs.fat", "-F", str(fat), *cluster, "-n", USB_STICK_LABEL, "-C", str(part)]
         subprocess.run(
-            ["mkfs.fat", "-F", "16", "-n", USB_STICK_LABEL, "-C", str(part), str(part_bytes >> 10)],
+            [*mkfs, str(part_bytes >> 10)],
             check=True,
             capture_output=True,
         )
@@ -149,7 +156,7 @@ def make_usb_stick_image(path: Path) -> None:
             f.write(part.read_bytes())
         subprocess.run(
             ["sfdisk", "--no-reread", "--no-tell-kernel", str(tmp)],
-            input=b"label: dos\nstart=2048, type=06\n",
+            input=b"label: dos\nstart=2048, type=%s\n" % (b"0c" if fat == 32 else b"06"),
             check=True,
             capture_output=True,
         )
@@ -1906,8 +1913,8 @@ class QemuVM:
         """VIBEOS_QEMU_USB_DISK=1 attaches usb-storage sticks (usbstor bring-up rig):
         with VIBEOS_QEMU_XHCI=1 two on the xHCI controller, one behind a hub and one
         SuperSpeed (the devices themselves are added by _xhci_args), otherwise one
-        on its own EHCI controller. The stick is a
-        64M MBR disk with one FAT16 partition holding USB_STICK_FILE, so a guest
+        on its own EHCI controller. A stick is a 64M MBR disk with one FAT
+        partition (the SuperSpeed one FAT32) holding USB_STICK_FILE, so a guest
         that mounts it has something known to read back. The image lives beside
         scratch_path so the windows-host backend stages it like any other media."""
         if not self._usb_disk_enabled():
@@ -1919,7 +1926,7 @@ class QemuVM:
         if self._xhci_enabled():
             ss_disk = self.scratch_path.parent / "usbdisk-ss.qcow2"
             if not ss_disk.exists():
-                make_usb_stick_image(ss_disk)
+                make_usb_stick_image(ss_disk, fat=32)
             return [*drive, "-drive", f"file={ss_disk},format=qcow2,if=none,id=usbstor1"]
         return [
             "-device",
