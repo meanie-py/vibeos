@@ -11352,6 +11352,24 @@ returns (`NtTestAlert`, `NtSetInformationThread`).
 **Generalize.** A user-mode crash at a PC equal to a byte count is a status block written late.
 Check that every path back to user mode delivers kernel APCs.
 
+### arm64 `RtlRaiseException` resumed INSIDE itself when a handler continued — an infinite dispatch loop
+
+**Symptom.** A vectored handler returns `EXCEPTION_CONTINUE_EXECUTION` for a software raise and
+the thread never comes back: `RtlRaiseException` dispatches the same exception again, forever
+(no trap, no `[UEXC]`, a 30s timeout). Found by a probe in an x86-64 guest process.
+
+**Cause.** The arm64 Rust `RtlRaiseException` (rtl-diag) captured its own context with
+`RtlCaptureContext` and handed THAT to the dispatcher; `ZwContinue` of it resumes just after the
+capture — inside `RtlRaiseException` — which dispatches again. amd64's asm version rewrites
+Rip/Rsp to the caller by hand; Windows ARM64 does one `RtlVirtualUnwind`. `ExceptionAddress`
+was also left NULL. Invisible under DUMMY_PSEH because nothing ever continued a raise.
+
+**Fix.** Capture, then virtually unwind one frame (`RtlLookupFunctionEntry` +
+`RtlVirtualUnwind`), so the context is the caller's at the return address, with the caller's
+nonvolatile registers; that return address is also `ExceptionAddress`. Standing tripwire:
+`seh_poc_user.c` probe 3 (smss, every arm64 boot) — a second firing says FAIL and declines, so a
+regression is a loud smss death, not a hung boot.
+
 ## WoW64 / FEX: 32↔64 divergences
 
 Every entry here is one shape: **a size, offset or index that differs between guest and host.**
@@ -12116,6 +12134,49 @@ the exporter. Arch-gated spec **forwarders to msvcrt** cost zero code. Trap with
 ntdll ships via the CARGO link, so the usual rebuild path doesn't apply.
 
 ---
+
+### In an x86-64 guest process, two ntdlls share ONE PEB and TEB — every per-arch layout and every flag in them is now shared state
+
+**Symptom.** Under wowx64 (x86-64 guest on arm64) the guest dies in its OWN amd64 ntdll at
+`rtl_heap::heap::RtlpRemoveFreeBlock`, indexing a free list with `0xFFFFFFFF` (fault address
+`0x8_004Dxxxx` = heap base + 0x7FFFFFFF8): the block's `Size` field reads 0. Natively on amd64
+the same guest passes. In the same process, every native `DbgPrint` from the VEH printed
+NOTHING, while the syscall path's traces printed fine.
+
+**Cause.** Unlike WoW64 (separate PEB32/TEB32), an x86-64 guest shares the thread's TEB and the
+process's PEB with the native arm64 ntdll — deliberately, because kernel-written fields
+(`Win32ClientInfo`, last-error) then just work. So any structure either side reaches through
+them is touched by BOTH architectures' builds of the same Rust source:
+- `PEB->ProcessHeap`: the native side allocated in the guest's heap with arm64 heap code, and
+  rtl-heap's aarch64 `HEAP_ENTRY` had its OWN field order (`Size` at +0, `PreviousSize` at +8)
+  that heap.h never had (`_WIN64` puts `PreviousBlockPrivateData` first, for ARM64 too).
+- `TEB->InDbgPrint`: the guest's DbgPrint sets it and then executes `int 2d`, which arrives in
+  the native VEH as an exception, where the native DbgPrint sees the flag and returns silently.
+- `PEB->Ldr` / `PEB->LoaderLock`: the guest publishes its own at process init; a native
+  loader that reads the PEB walks the wrong architecture's modules.
+
+**Fix.** A struct layout that differs per arch is a cross-ARCH layout bug the moment two arches
+share the memory: give every 64-bit target one layout (rtl-heap now uses heap.h's `_WIN64` one
+everywhere). A flag in the shared TEB is the guest's; native code steps around it
+(`wowx64-rust` `trace!` saves/clears/restores `InDbgPrint`). Loader state is read from the
+loader's OWN globals (`ntdll-rust` `LdrpLdrData()`), never through the PEB. When adding
+anything to the wowx64 path, ask of every PEB/TEB field it touches: whose is it?
+
+### A closure built from `boot/stripped/` must pick each module's OWN stripped twin, by PATH
+
+**Symptom.** The x86-64 guest's loader fails binding kernel32:
+`LDR: SNAP FAIL import RtlExtendedLargeIntegerDivide from kernel32.dll (importer=ntdll.dll)` —
+an import only the i386 kernel32 has. `sysamd64\kernel32.dll` on the image is machine `0x14C`.
+
+**Cause.** `build-amd64/boot/stripped/` holds BOTH an amd64 and an i386 `<hash>-kernel32.dll`
+(amd64 also ships the i386 SysWOW64 set), and three same-named `fusion.dll` modules besides.
+`wow64-closure.py` keyed stripped twins by bare file name, so whichever `iterdir()` listed last
+won.
+
+**Fix.** The twin's name is `sha1(<canonical source path>)[:12]-<name>` and
+`strip-manifest.json` lists the source paths (canonical `/tmp/vibeos/<build dir>/...`), so the
+tool now maps each fat module to its twin by path. Anything that resolves a module by name
+alone in a tree that holds two architectures has this bug waiting.
 
 ## win32k, GDI, input & desktop
 

@@ -2696,6 +2696,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
   it is a one-command check.
 
+- **2026-10-06: x86-64 apps run on arm64 — the x64 ladder is at parity with the x86 one
+  (BTCpu64 M2).** All ten 32-bit ladder sources, rebuilt for x86-64, plus `hello64`, exit
+  `0x600D` under FEX on arm64 (`/tmp/vibeos-cli/20261006-020111-v3xu401s-smoke-arm64`, 24
+  guests at 0x600D on one boot with the 32-bit ladder) AND natively on amd64, the oracle. They
+  run on the guest's OWN amd64 ntdll, loader and system DLLs (staged into `sysamd64`), so this
+  is real Win32: windows with callbacks and paint, GDI, files and overlapped I/O, IOCP, the
+  registry's 64-bit view, sockets, guest SEH through `.pdata`, threads, runtime codegen, and
+  process creation. Four real bugs fell out on the way, none of them in FEX:
+  rtl-heap's arm64 `HEAP_ENTRY` field order (never heap.h's; invisible until two ntdlls shared
+  one process heap), arm64 `RtlRaiseException` resuming inside itself when a handler continued
+  (now unwinds to the caller; smss tripwire probe 3), `wow64-closure.py` choosing stripped
+  twins by bare name (it shipped an i386 kernel32 into the amd64 set), and the x64 ladder
+  launching on winlogon's desktop. Graded where the media carries them (`STAGED_LADDER`).
+  What is still owed is in the design doc's "Status" section (APCs into a guest thread,
+  `NtCreateThreadEx`, thread exit cleanup).
+
 - **2026-10-05: x86-64 code runs on arm64 (BTCpu64 M1).** `hello64.exe`, a plain amd64 PE,
   exits `0x600D` on arm64 under FEX in 64-bit mode
   (`/tmp/vibeos-cli/20261005-223205-ztl4mr2p-smoke-arm64`) AND natively on amd64

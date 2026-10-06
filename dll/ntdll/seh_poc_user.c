@@ -188,6 +188,55 @@ static void SehPocUserVehTest(void)
              (g_veh_fired == 1 && reached_after == 1) ? "PASS" : "FAIL");
 }
 
+/* ---- probe 3: a VEH CONTINUES a software raise ----
+ * RtlRaiseException must hand the handler a context that resumes the CALLER,
+ * at the return address. arm64's used to be its own mid-body capture, so a
+ * continued raise resumed inside RtlRaiseException and dispatched again,
+ * forever (found 2026-10-06: an x86-64 guest process's VEH hung its thread).
+ * A second firing IS that loop: say FAIL and decline, so the regression is a
+ * loud smss death rather than a hung boot. */
+#define SEH_POC_U_CONTINUE_CODE 0xE0C0FFEE
+static volatile int g_cont_fired = 0;
+
+static LONG SehPocUserContinueVeh(EXCEPTION_POINTERS *Info)
+{
+    if (Info && Info->ExceptionRecord
+        && Info->ExceptionRecord->ExceptionCode == SEH_POC_U_CONTINUE_CODE) {
+        if (++g_cont_fired > 1) {
+            DbgPrint("[SEH-POC-U] continued raise RE-DISPATCHED (fired=%d): FAIL\n", g_cont_fired);
+            return EXCEPTION_CONTINUE_SEARCH;
+        }
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void SehPocUserContinueTest(void)
+{
+    EXCEPTION_RECORD rec;
+    PVOID handle;
+    volatile int reached_after = 0;
+
+    g_cont_fired = 0;
+    handle = RtlAddVectoredExceptionHandler(1 /* first */, (PVOID)SehPocUserContinueVeh);
+    if (!handle) {
+        DbgPrint("[SEH-POC-U] VEH register FAILED (continue probe)\n");
+        return;
+    }
+    rec.ExceptionCode = SEH_POC_U_CONTINUE_CODE;
+    rec.ExceptionFlags = 0;              /* continuable */
+    rec.ExceptionRecord = 0;
+    rec.ExceptionAddress = 0;
+    rec.NumberParameters = 0;
+    RtlRaiseException(&rec);
+    reached_after = 1;
+    RtlRemoveVectoredExceptionHandler(handle);
+
+    DbgPrint("[SEH-POC-U] VEH continues a software raise: fired=%d returned=%d address=%p (%s)\n",
+             g_cont_fired, reached_after, rec.ExceptionAddress,
+             (g_cont_fired == 1 && reached_after == 1 && rec.ExceptionAddress) ? "PASS" : "FAIL");
+}
+
 /*
  * Both probes are ARMED as permanent arm64 boot tripwires (2026-07-08, both
  * PASS + boot green to desktop). History of the two wedges they caught:
@@ -220,5 +269,6 @@ void SehPocUserRun(void)
     (void)SehPocUserVehTest;
     DbgPrint("[SEH-POC-U] VEH-on-hardware-AV probe DISABLED (kernel KEXCEPTION_FRAME wedge; see fex-bringup-plan.md)\n");
 #endif
+    SehPocUserContinueTest();
     DbgPrint("[SEH-POC-U] end\n");
 }

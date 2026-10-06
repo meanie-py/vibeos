@@ -23,9 +23,52 @@ pub unsafe extern "system" fn RtlRaiseException(ExceptionRecord: PEXCEPTION_RECO
     let mut Context: CONTEXT = core::mem::zeroed();
     let Status: NTSTATUS;
 
+    extern "system" {
+        fn RtlLookupFunctionEntry(ControlPc: u64, ImageBase: *mut u64, HistoryTable: *mut c_void) -> *mut c_void;
+        fn RtlVirtualUnwind(
+            HandlerType: ULONG,
+            ImageBase: u64,
+            ControlPc: u64,
+            FunctionEntry: *mut c_void,
+            Context: PCONTEXT,
+            HandlerData: *mut *mut c_void,
+            EstablisherFrame: *mut u64,
+            ContextPointers: *mut c_void,
+        ) -> *mut c_void;
+    }
+
     RtlCaptureContext(&mut Context);
 
-    (*ExceptionRecord).ExceptionAddress = core::ptr::null_mut(); // _ReturnAddress() N/A in stable Rust (matches ntoskrnl-rust)
+    // The captured context is THIS function's, mid-body: resuming it (the
+    // ZwContinue below, when a handler continues the exception) re-enters
+    // RtlDispatchException forever -- measured, a VEH that returned
+    // EXCEPTION_CONTINUE_EXECUTION hung its thread here. What a continued
+    // raise must resume is the CALLER, at the return address, with the
+    // caller's nonvolatile registers: one virtual unwind of this frame, which
+    // is what Windows ARM64 does (and what amd64's asm version does by hand).
+    // That return address is also the exception's address (_ReturnAddress()).
+    let mut ImageBase: u64 = 0;
+    let Entry = RtlLookupFunctionEntry(Context.Pc, &mut ImageBase, core::ptr::null_mut());
+    if !Entry.is_null() {
+        let mut HandlerData: *mut c_void = core::ptr::null_mut();
+        let mut EstablisherFrame: u64 = 0;
+        RtlVirtualUnwind(
+            0, // UNW_FLAG_NHANDLER
+            ImageBase,
+            Context.Pc,
+            Entry,
+            &mut Context,
+            &mut HandlerData,
+            &mut EstablisherFrame,
+            core::ptr::null_mut(),
+        );
+        (*ExceptionRecord).ExceptionAddress = Context.Pc as *mut c_void;
+    } else {
+        // No unwind data for our own frame cannot happen in a linked image;
+        // if it ever does, the old behaviour (no address, a context that must
+        // not be continued) is what remains.
+        (*ExceptionRecord).ExceptionAddress = core::ptr::null_mut();
+    }
 
     Context.ContextFlags = CONTEXT_FULL;
 

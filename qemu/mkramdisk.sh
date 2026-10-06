@@ -230,15 +230,6 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         else
             echo "[!] VIBEOS_FEX=1: hello64.exe not built ($HELLO64) — x86-64 guest skipped"
         fi
-        # M2: the rest of the x86-64 ladder (the 32-bit ladder's sources rebuilt
-        # for x86-64), same directory, same staged-if-built rule.
-        for G in gui64 win64 file64 async64 marshal64 fault64 thread64 selfmod64 reg64 spawn64; do
-            if [ -f "$PROJECT_DIR/build-fex-hello/$G.exe" ]; then
-                mcopy -o -i "$RAMDISK_IMG" "$PROJECT_DIR/build-fex-hello/$G.exe" "::/reactos/system32/$G.exe"
-            else
-                echo "[!] VIBEOS_FEX=1: $G.exe not built — that x86-64 rung will no-op"
-            fi
-        done
         # BTCpu64 M2: the x86-64 guest's own system DLLs — amd64 ntdll and the
         # whole import closure of a stock amd64 GUI app, out of build-amd64,
         # into sysamd64. wowx64.dll maps the guest ntdll from here and
@@ -264,6 +255,18 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
                 mcopy -o -i "$RAMDISK_IMG" "$path" "::/reactos/sysamd64/$name"
             done
             echo "[*]   staged $(echo "$CLOSURE64" | wc -l) sysamd64 modules"
+            # The rest of the x86-64 ladder (the 32-bit ladder's sources rebuilt
+            # for x86-64) -- HERE and nowhere else: each imports DLLs that live
+            # only in sysamd64, and the ladder grades whatever the media carries
+            # (ladder.py STAGED_LADDER), so a guest staged without its DLL set
+            # would be graded on a run that could only fail.
+            for G in gui64 win64 file64 async64 marshal64 fault64 thread64 selfmod64 reg64 spawn64; do
+                if [ -f "$PROJECT_DIR/build-fex-hello/$G.exe" ]; then
+                    mcopy -o -i "$RAMDISK_IMG" "$PROJECT_DIR/build-fex-hello/$G.exe" "::/reactos/system32/$G.exe"
+                else
+                    echo "[!] VIBEOS_FEX=1: $G.exe not built — that x86-64 rung will no-op"
+                fi
+            done
         else
             echo "[!] VIBEOS_FEX=1: no build-amd64 ($TESTGUI64) — x86-64 guests that import"
             echo "[!]   anything (all but hello64) will fail at their first DLL. Build amd64 first."

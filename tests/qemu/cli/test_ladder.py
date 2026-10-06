@@ -56,6 +56,23 @@ def test_gui32_wants_its_own_verdict_code():
     assert ladder.check(_all_pass()) is None
 
 
+def test_x64_guests_are_owed_only_where_the_media_carries_them():
+    """STAGED_LADDER: graded when staged. Absent from the media, absent from
+    the serial, and the ladder is green -- an arm64-only tree builds none of
+    them. Staged and silent is a hang, and red."""
+    assert ladder.check(_all_pass()) is None
+    got = ladder.check(_all_pass(), optional_staged=["file64"])
+    assert got is not None and any("file64" in s for s in got["salient"])
+    assert ladder.check(_all_pass() + _serial(file64=0x600D), optional_staged=["file64"]) is None
+
+
+def test_a_red_x64_guest_is_red_even_unasked():
+    """A verdict on the serial is graded whether or not the media read found it:
+    the guest ran, so its answer counts."""
+    got = ladder.check(_all_pass() + _serial(reg64=0xBAD3))
+    assert got is not None and any("reg64" in s and "0xbad3" in s for s in got["salient"])
+
+
 def test_one_guest_silent_is_a_fail_not_a_staging_report():
     """Partial silence is a regression: the others proved the media was staged."""
     text = "".join(line + "\n" for line in _all_pass().splitlines() if "selfmod32" not in line)

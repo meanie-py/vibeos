@@ -41,7 +41,7 @@ const MEM_IMAGE: u32 = 0x0100_0000;
 /// guest (thousands of syscalls) cannot flood the UART — whose cost on real
 /// hardware is ~90ms/KB inside the trap path — yet the first ones, which are
 /// where a bring-up breaks, are always visible.
-const TRACED_SYSCALLS: u32 = 48;
+const TRACED_SYSCALLS: u32 = 16;
 static SyscallCount: AtomicU32 = AtomicU32::new(0);
 
 /// Most arguments any service takes: `NtAccessCheckByTypeResultListAndAudit
@@ -78,7 +78,7 @@ pub unsafe extern "C" fn WowX64SystemService(Service: u32, RegisterArgs: *const 
     let N = SyscallCount.fetch_add(1, Ordering::Relaxed);
     if N < TRACED_SYSCALLS {
         crate::trace!(
-            "guest syscall #%u: service %u (%p, %p, %p, %p) -> %p [veh %u]",
+            "guest syscall #%u: service %u (%p, %p, %p, %p) -> %p",
             N + 1,
             Service,
             Args[0] as *const c_void,
@@ -86,7 +86,6 @@ pub unsafe extern "C" fn WowX64SystemService(Service: u32, RegisterArgs: *const 
             Args[2] as *const c_void,
             Args[3] as *const c_void,
             Ret as *const c_void,
-            crate::except::VehCount.load(Ordering::Relaxed),
         );
         if N + 1 == TRACED_SYSCALLS {
             crate::trace!("(syscall trace capped at %u)", TRACED_SYSCALLS);
@@ -158,7 +157,6 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
         }
         SVC_NtOpenFile | SVC_NtCreateFile | SVC_NtOpenDirectoryObject => {
             let Oa = Args[2] as *const OBJECT_ATTRIBUTES;
-            TracePath(Service, Oa);
             if Service == SVC_NtOpenDirectoryObject {
                 if IsKnownDlls(Oa) {
                     return STATUS_OBJECT_NAME_NOT_FOUND;
@@ -168,7 +166,6 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
             }
         }
         SVC_NtQueryAttributesFile | SVC_NtQueryFullAttributesFile => {
-            TracePath(Service, Args[0] as *const OBJECT_ATTRIBUTES);
             if Redirect(Args[0] as *const OBJECT_ATTRIBUTES, &mut Shadow) {
                 Args[0] = &Shadow.Oa as *const _ as u64;
             }
@@ -249,22 +246,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
     NativeSyscall(Service, Args.as_ptr())
 }
 
-/// The first object names the guest opens, as it named them (bring-up aid:
-/// the loader's search is where a wrong-architecture DLL gets picked).
-static PathCount: AtomicU32 = AtomicU32::new(0);
 static FallbackCount: AtomicU32 = AtomicU32::new(0);
-unsafe fn TracePath(Service: u32, Oa: *const OBJECT_ATTRIBUTES) {
-    if PathCount.fetch_add(1, Ordering::Relaxed) >= 40 || Oa.is_null() || (*Oa).ObjectName.is_null() {
-        return;
-    }
-    crate::trace!(
-        "guest open (service %u, root %p): %wZ",
-        Service,
-        (*Oa).RootDirectory,
-        (*Oa).ObjectName,
-    );
-}
-
 /// Is the file `Oa` names a PE image for a machine other than x86-64? Read
 /// from its headers; anything unreadable or not a PE is not.
 unsafe fn ForeignImage(Oa: *const OBJECT_ATTRIBUTES) -> bool {
@@ -422,7 +404,7 @@ unsafe fn Redirect(Oa: *const OBJECT_ATTRIBUTES, Shadow: &mut Shadow) -> bool {
     // Redirecting to the absent sysamd64 copy gives the guest "not found",
     // which is what WoW64 gives a 32-bit process in the same spot.
     let Foreign = ForeignImage(Oa);
-    if FallbackCount.fetch_add(1, Ordering::Relaxed) < 32 {
+    if FallbackCount.fetch_add(1, Ordering::Relaxed) < 8 {
         crate::trace!(
             "not in sysamd64: %wZ -> %s",
             (*Oa).ObjectName,

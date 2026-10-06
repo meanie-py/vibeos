@@ -5,26 +5,37 @@
 //! imports against arm64 DLLs and jumping into it natively, loads this DLL and
 //! calls [`WowX64LdrpInitialize`], which never returns. From there:
 //!
-//!   1. load the CPU layer `libwowx64fex.dll` (FEXCore in 64-bit mode) and
-//!      install a VEH that gives it first refusal on every native fault;
-//!   2. give the guest a stack and an initial x86-64 context at the image entry;
-//!   3. `BTCpu64Simulate` — the guest runs until it terminates the process.
+//!   1. map the GUEST's own amd64 ntdll out of `<SystemRoot>\sysamd64`
+//!      (`image.rs`), load the CPU layer `libwowx64fex.dll` (FEXCore in 64-bit
+//!      mode), and install a VEH that gives it first refusal on every fault;
+//!   2. enter the guest the way an amd64 thread starts: in its ntdll's
+//!      `KiUserApcDispatcher`, on an APC frame naming `LdrInitializeThunk`. The
+//!      guest's own loader then does its process init -- kernel32, the image's
+//!      import closure, DLL init routines -- and NtContinues to the image entry.
 //!
-//! Guest system calls come back here through [`WowX64SystemService`], and are
-//! forwarded by register shuffle alone: amd64 and arm64 share one service
-//! table (`ntoskrnl/sysfuncs.lst` is arch-independent) and are both LLP64, so
-//! the guest's service number IS the native one and every argument already has
-//! the right width. That is the whole reason a 64-bit guest needs none of the
-//! 13,678-line thunking surface the 32-bit wow64.dll carries.
+//! The guest and the native ntdll share one PEB and one TEB (that is what makes
+//! kernel-written fields like `Win32ClientInfo` just work). What each side must
+//! keep to itself is called out where it bites: the loader's module list and
+//! lock (ntdll-rust `LdrpLdrData`), the TEB stack bounds (`thread.rs`), the
+//! `InDbgPrint` flag (`trace!` below), and the heap block layout (rtl-heap's
+//! one 64-bit `HEAP_ENTRY`).
 //!
-//! Milestone M1 (this file): a no-import guest (`hello64.exe`) enters FEX and
-//! round-trips a syscall. NOT yet here, all owed to later milestones and
-//! called out where they bite: the guest's own amd64 ntdll + loader, guest
-//! exception dispatch (a guest fault is reported and the process terminated),
-//! kernel->user callbacks and APCs into the guest, memory-change notifications
-//! to the CPU layer (needed for SMC correctness and for images mapped after
-//! startup), more than one thread, and TEB stack bounds that describe the guest
-//! stack.
+//! Guest system calls come back here (`syscall.rs`) and are forwarded by
+//! register shuffle: amd64 and arm64 share one service table
+//! (`ntoskrnl/sysfuncs.lst` and win32k's `w32ksvc64.h` are arch-independent)
+//! and are both LLP64, so the guest's service number IS the native one and
+//! every argument already has the right width. That is the whole reason a
+//! 64-bit guest needs none of the 13,678-line thunking surface the 32-bit
+//! wow64.dll carries. The exceptions -- CONTEXT carriers, the system32 ->
+//! sysamd64 redirect, thread creation, callback return, and the address-space
+//! changes the CPU layer must hear about -- are listed in `syscall.rs`. Guest
+//! exceptions are delivered to the guest's own `KiUserExceptionDispatcher`
+//! (`except.rs`), win32k callbacks run in the guest (`callback.rs`), and
+//! guest-created threads become guest threads (`thread.rs`).
+//!
+//! Still owed (the design doc keeps the list): user-mode APCs queued to a guest
+//! thread, `NtCreateThreadEx`, thread creation into a non-x86-64 process, and
+//! the CPU layer's per-thread state on thread exit.
 
 #![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]

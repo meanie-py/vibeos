@@ -123,19 +123,34 @@ OPTIONAL: dict[str, int] = {
 # budget, and one guest that hangs has cost four later ones their verdicts
 # before now (marshal32, six days stale, ate 420s). spawn32 caps its own wait
 # at 30s for that reason.
-# It was empty for a while after spawn32's promotion, and that was a good state
-# rather than an unused mechanism: the machinery below is what let spawn32
-# measure an open gap for a day without reddening any lane's gate.
+# Empty, and that is a good state rather than an unused mechanism: the machinery
+# below is what let spawn32 measure an open gap for a day without reddening any
+# lane's gate, and the x86-64 ladder went through it on the way to STAGED_LADDER.
+DIAGNOSTIC: dict[str, int] = {}
+
 # The x86-64 ladder (BTCpu64 M2, docs/engineering/wow64-x64-guest-design.md):
-# the 32-bit ladder's own sources rebuilt for x86-64, run under FEX on arm64 and
-# natively on amd64. Diagnostic while the guest-side gaps they measure are open
-# (guest SEH, threads, callbacks); each moves up to LADDER the day it passes on
-# both arches, exactly as spawn32 did.
-X64_LADDER: tuple[str, ...] = (
-    "gui64", "win64", "file64", "async64", "marshal64", "fault64",
-    "thread64", "selfmod64", "reg64", "spawn64",
-)
-DIAGNOSTIC: dict[str, int] = {g: 0x600D for g in X64_LADDER}
+# the 32-bit ladder's own sources rebuilt for x86-64, run under FEX on arm64
+# and natively on amd64. GRADED WHEN STAGED: a guest the media carries must
+# report PASS, exactly like a LADDER guest; one it does not carry is not owed.
+#
+# Not in LADDER itself, because LADDER is owed by EVERY image that runs the
+# ladder, and these need a whole second build to exist at all: their import
+# libraries and their guest DLL set (arm64's sysamd64) come from build-amd64.
+# An arm64-only tree builds hello64 (no imports) and none of these, and
+# mkramdisk.sh stages none of them unless it staged sysamd64 first -- so
+# "present on the media" already means "runnable", and grading by media is
+# the whole guarantee. All ten passed under FEX on arm64 and natively on amd64
+# on 2026-10-06 (the run dirs are in the design doc).
+STAGED_LADDER: dict[str, int] = {
+    g: 0x600D
+    for g in (
+        "gui64", "win64", "file64", "async64", "marshal64", "fault64",
+        "thread64", "selfmod64", "reg64", "spawn64",
+    )
+}
+# Where the x86-64 guests are staged on both arches: an x86-64 exe is not a
+# WoW64 guest, so system32, not syswow64.
+X64_STAGED_DIR = "system32"
 
 # A diagnostic guest that can BUGCHECK must be kept off the media entirely, not
 # merely left ungraded, and spawn32 is where that was learned. For one day it
@@ -341,7 +356,7 @@ def stale_guests(repo: Path) -> list[str]:
     # normal state and must not read as a hole -- but a built one is compared
     # exactly like a parity guest, because it lives in build-fex-hello/ and
     # goes stale the same way.
-    for guest in DIAGNOSTIC:
+    for guest in [*DIAGNOSTIC, *STAGED_LADDER]:
         exe = repo / "build-fex-hello" / f"{guest}.exe"
         if not exe.is_file():
             continue
@@ -381,7 +396,7 @@ def guests_to_refresh(repo: Path) -> list[str]:
     """
     out: list[str] = []
     stale = stale_guests(repo)
-    for guest in [*LADDER, *DIAGNOSTIC]:
+    for guest in [*LADDER, *DIAGNOSTIC, *STAGED_LADDER]:
         exe = repo / "build-fex-hello" / f"{guest}.exe"
         if guest in LADDER and not exe.is_file():
             out.append(f"{guest} (absent)")
@@ -596,10 +611,13 @@ def media_optional_staged(repo: Path, arch: str) -> list[str]:
     so this inherits the ramdisk path and the generator-expression fix instead of
     carrying a second reader with its own blind spots.
     """
-    found = _read_media(repo, arch, STAGED_DIR, {f"{g}.exe" for g in OPTIONAL})
-    if not found:
-        return []
-    return sorted(g for g in OPTIONAL if f"{g}.exe".lower() in found)
+    found = _read_media(repo, arch, STAGED_DIR, {f"{g}.exe" for g in OPTIONAL}) or set()
+    staged = sorted(g for g in OPTIONAL if f"{g}.exe".lower() in found)
+    # The x86-64 set is graded by the same rule -- present means owed -- and
+    # read the same way, from its own directory.
+    x64 = _read_media(repo, arch, X64_STAGED_DIR, {f"{g}.exe" for g in STAGED_LADDER}) or set()
+    staged += sorted(g for g in STAGED_LADDER if f"{g}.exe".lower() in x64)
+    return staged
 
 
 def gate_decision(repo: Path, arch: str) -> tuple[list[str], bool, str]:
@@ -924,6 +942,7 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     # reason to build one is to find out whether it passes, so a red one that
     # got staged must not be silently tolerated.
     wrong += [(g, seen[g], want) for g, want in OPTIONAL.items() if g in seen and seen[g] != want]
+    wrong += [(g, seen[g], want) for g, want in STAGED_LADDER.items() if g in seen and seen[g] != want]
     # Staged but never reported is NOT the same as absent, and the serial cannot
     # settle it: an optional guest runs after the parity set, so the drain can
     # end before its launch line appears. Ask the media instead. (The in-flight
@@ -968,7 +987,9 @@ def summary(text: str) -> str:
     """One-line roll-up for the stage detail."""
     seen = verdicts(text)
     ok = sum(1 for g, want in LADDER.items() if g in seen and verdict_ok(g, seen[g], want))
-    extra = [g for g in seen if g not in LADDER and g not in DIAGNOSTIC]
+    extra = [g for g in seen if g not in LADDER and g not in DIAGNOSTIC and g not in STAGED_LADDER]
+    x64 = [g for g in STAGED_LADDER if g in seen]
+    x64_ok = sum(1 for g in x64 if seen[g] == STAGED_LADDER[g])
     tail = f" (+{len(extra)} non-parity: {', '.join(sorted(extra))})" if extra else ""
     wt = {f"{k}={v}" for k, v in winetests(text).items()}
     wt |= {f"{k}=CRASH({v})" for k, v in winetests_crashed(text).items()}
@@ -978,7 +999,8 @@ def summary(text: str) -> str:
         # Reported, never gated — see winetests_lost() for why the failure
         # count is information and not a verdict.
         wt_tail = "; winetests " + ", ".join(sorted(wt))
-    return f"{ok}/{len(LADDER)} guests PASS{tail}{_diagnostic_tail(seen)}{wt_tail}"
+    x64_tail = f"; x86-64 ladder {x64_ok}/{len(x64)} PASS" if x64 else ""
+    return f"{ok}/{len(LADDER)} guests PASS{x64_tail}{tail}{_diagnostic_tail(seen)}{wt_tail}"
 
 
 def _diagnostic_tail(seen: dict[str, int]) -> str:
