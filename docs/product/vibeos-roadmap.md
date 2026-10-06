@@ -921,10 +921,36 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `ExQueueWorkItem`; WMI's capture writing a kernel stack address into the caller's user
   struct (a C bug); `KsSetInformationFile` probing its own pool buffer (a C bug: every
   call failed). Drivers outside ntoskrnl that use the probes need ntkrnl-sys feature
-  `import_mm_user_probe_address`. **Still owed (separate class):** user memory read or
-  written AFTER the probe without a fault-tolerant copy (e.g. NtQuerySystemInformation's
-  query handlers, win32k `IntGetAtomFromStringOrAtom`/`UserDrawCaption`,
-  `MmProbeAndLockPages` in mup) — a bad page there still bugchecks.
+  `import_mm_user_probe_address`.
+- **Post-probe user access: the probe passes, the access bugchecks — PARTLY FIXED, OWED**
+  (2026-10-05). A probe proves where a buffer is, never that it stays mapped; the C
+  touches it inside `_SEH2_TRY`, Rust touched it with plain loads and stores.
+  `MmProbeAndLockPages` raises the same way. Done: `MmTryProbeAndLockPages` exported and
+  used by every Rust caller outside a real `seh::` frame (`scan_raising_probes` now gates
+  that name too); the query syscalls run against a pool copy of the caller's buffer
+  (`ntkrnl_sys::probe::OutputBounce`, rebasing the pointers that point into it):
+  NtQuerySystemInformation, NtQueryInformationToken/Process/Thread, NtQueryObject,
+  NtQueryVirtualMemory, NtQueryInformationAtom, the Cm query/enumerate calls; the se
+  captures (SID, SID array, ACL, LUID array, security descriptor, object type list) copy
+  fault-tolerantly and pin the count/size they were sized by, so a racing caller cannot
+  grow a SID or ACL past its allocation; win32k's captured strings
+  (`safe_user_io::capture_string_buffer`); `ntkrnl_sys::probe::write_back` for the
+  `IoStatusBlock`/handle/length write-backs. Real bugs found on the way:
+  **NtQueryValueKey** "probed" by raw-storing into its output pointers with no range
+  check, then had CmQueryValueKey write the value there — a user-chosen KERNEL address
+  received registry data; **NtUserDefSetText** never probed the text buffer (kernel
+  memory became the window title); **NtQuerySystemEnvironmentValue** had lost its whole
+  probe block; NtAdjustPrivilegesToken/NtAdjustGroupsToken leaked a token reference per
+  call; SeCaptureSidAndAttributesArray leaked its validation array per call and returned
+  a freed array on failure; SeCaptureLuidAndAttributesArray never copied into a
+  caller-supplied buffer and left `*Dest` dangling (a double free from NtFilterToken;
+  the dangling pointer is the C's too). **Owed:** `tools/scan_raw_user_access.py` lists
+  every Nt* syscall that still loads or stores through a pointer argument raw; its
+  baseline (`tools/lint-baseline/scan_raw_user_access.txt`, 114 rows at filing) is the
+  burndown list. Some rows are kernel-mode-only branches (read them, then `nolint`);
+  most are real, led by win32k NtGdi*/NtUser*, NtSetInformationProcess/Thread reading
+  their input in place, LPC's captures, and NtAllocateVirtualMemory/NtMapViewOfSection's
+  write-backs. Callees are not covered by that scanner.
 - **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
   `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
   cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail

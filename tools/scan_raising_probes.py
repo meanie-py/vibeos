@@ -27,6 +27,15 @@ A local helper that shadows a typed name and returns a `Result` (`fn
 ProbeForReadUnicodeString(..) -> Result<..>`) is fine and is not flagged: its name
 is not in RAISING unless the crate imports the raising one.
 
+`MmProbeAndLockPages` raises the same way and is flagged however it is spelled,
+qualified or not (`ntkrnl_sys::ddk::MmProbeAndLockPages(..)` is a real call, not a
+re-export). Use `ntkrnl_sys::probe::MmTryProbeAndLockPages`, which returns the
+status. A call inside a `seh::try_except(..)` or `seh::try_finally(..)` body is not
+flagged: those are real SEH frames (`ntkrnl_sys::seh`, the C trampolines in
+ntoskrnl/sehtry.c). A `try_except` catches the raise; a `try_finally` runs its
+cleanup and lets the raise reach the caller's `try_except`, which is how the FSDs
+(cdfs, fastfat) are written in the C too.
+
 Suppress a reviewed site with `// nolint: raising-probe <reason>` on the line.
 
 Usage:
@@ -65,8 +74,15 @@ RAISING = (
     "ProbeForReadUshort",
 )
 
-CALL_RE = re.compile(r"(?<![\w:])(" + "|".join(RAISING) + r")\s*\(")
-DECL_RE = re.compile(r"\bfn\s+(" + "|".join(RAISING) + r")\b")
+# Raising names with no qualified re-export to spare, so any spelling is a call.
+RAISING_ANY_PATH = ("MmProbeAndLockPages",)
+
+CALL_RE = re.compile(
+    r"(?<![\w:])(" + "|".join(RAISING) + r")\s*\("
+    r"|(?<!\w)(" + "|".join(RAISING_ANY_PATH) + r")\s*\("
+)
+DECL_RE = re.compile(r"\bfn\s+(" + "|".join(RAISING + RAISING_ANY_PATH) + r")\b")
+TRY_EXCEPT_RE = re.compile(r"\btry_(?:except|finally)\s*\(")
 
 # Files that define the raising primitives themselves.
 EXEMPT_FILES = (
@@ -126,6 +142,30 @@ def _strip_comments(text: str) -> list[tuple[str, str]]:
     return out
 
 
+def _try_except_lines(lines: list[str]) -> set[int]:
+    """1-based line numbers inside the argument list of a `try_except(`/`try_finally(` call."""
+    inside: set[int] = set()
+    for start, code in enumerate(lines):
+        for m in TRY_EXCEPT_RE.finditer(code):
+            depth = 0
+            row, col = start, m.end() - 1
+            while row < len(lines):
+                line = lines[row]
+                while col < len(line):
+                    if line[col] == "(":
+                        depth += 1
+                    elif line[col] == ")":
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    col += 1
+                inside.add(row + 1)
+                if depth == 0 and col < len(line):
+                    break
+                row, col = row + 1, 0
+    return inside
+
+
 def scan_file(path: Path) -> list[str]:
     rel = path.as_posix()
     if any(rel.endswith(e) for e in EXEMPT_FILES):
@@ -137,13 +177,16 @@ def scan_file(path: Path) -> list[str]:
     if not CALL_RE.search(text):
         return []
     findings = []
-    for lineno, (code, raw) in enumerate(_strip_comments(text), 1):
-        if DECL_RE.search(code) or NOLINT_RE.search(raw):
+    stripped = _strip_comments(text)
+    guarded = _try_except_lines([code for code, _ in stripped])
+    for lineno, (code, raw) in enumerate(stripped, 1):
+        if DECL_RE.search(code) or NOLINT_RE.search(raw) or lineno in guarded:
             continue
         m = CALL_RE.search(code)
         if m:
+            name = m.group(1) or m.group(2)
             findings.append(
-                f"{rel}:{lineno}: raising {m.group(1)}() — no SEH here; use ntkrnl_sys::probe"
+                f"{rel}:{lineno}: raising {name}() — no SEH here; use ntkrnl_sys::probe"
             )
     return findings
 

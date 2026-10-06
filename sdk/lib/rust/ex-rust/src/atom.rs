@@ -242,8 +242,6 @@ pub unsafe extern "system" fn NtQueryInformationAtom(
     let ReturnLength = opaque_ptr(ReturnLength);
     let inner = || -> Result<NTSTATUS, NTSTATUS> {
         let AtomTable = ExpGetGlobalAtomTable();
-        let BasicInformation = AtomInformation as *mut _ATOM_BASIC_INFORMATION;
-        let TableInformation = AtomInformation as *mut _ATOM_TABLE_INFORMATION;
         let mut Status = STATUS_SUCCESS;
         let mut Flags: ULONG = 0;
         let mut UsageCount: ULONG = 0;
@@ -274,6 +272,13 @@ pub unsafe extern "system" fn NtQueryInformationAtom(
                 )?;
             }
         }
+
+        // The C fills AtomInformation in place under _SEH2_TRY, and the Rtl atom
+        // routines write it while holding the table lock. A user-mode caller's buffer
+        // is a pool copy here, copied back once below (OutputBounce).
+        let bounce = OutputBounce::new(AtomInformation, AtomInformationLength as usize, PreviousMode)?;
+        let BasicInformation = bounce.buffer() as *mut _ATOM_BASIC_INFORMATION;
+        let TableInformation = bounce.buffer() as *mut _ATOM_TABLE_INFORMATION;
 
         match AtomInformationClass {
             AtomBasicInformation => {
@@ -323,6 +328,8 @@ pub unsafe extern "system" fn NtQueryInformationAtom(
                 Status = STATUS_INVALID_INFO_CLASS;
             }
         }
+
+        bounce.finish()?;
 
         if !ReturnLength.is_null() {
             write_user(ReturnLength, RequiredLength, PreviousMode)?;
