@@ -17,69 +17,72 @@ pub static mut RtlpUnhandledExceptionFilter: PRTLP_UNHANDLED_EXCEPTION_FILTER = 
 
 // exception.c guards this `#if !defined(_M_IX86) && !defined(_M_AMD64)`:
 // i386 + amd64 provide RtlRaiseException in arch asm/except.c; Rust = arm64.
+//
+// In asm, like amd64's (sdk/lib/rtl/amd64/except_asm.S), because the context it
+// hands the dispatcher must be the CALLER's: the state at the return address,
+// with the caller's nonvolatile registers. A context captured mid-body of a
+// compiled function is not that -- resuming it (ZwContinue, when a handler
+// continues the exception) re-entered this function and dispatched again
+// forever, which is how the C-shaped translation behaved. A virtual unwind of
+// our own frame to fix it up was tried and corrupted the caller's x21 through
+// the later RtlUnwindEx (seh_poc_user probe 1). So: capture BEFORE touching any
+// nonvolatile register -- x19-x28 are then exactly the caller's -- and patch
+// fp/lr/sp/pc to the caller's from our own frame record. The unwind codes
+// describe that frame for the dispatcher's walk through it.
+//
+// CONTEXT (arm64) offsets: X0 at 0x08, Fp 0xF0, Lr 0xF8, Sp 0x100, Pc 0x108;
+// sizeof = 0x390.
+#[cfg(target_arch = "aarch64")]
+core::arch::global_asm!(
+    ".text",
+    ".globl RtlRaiseException",
+    ".p2align 2",
+    ".def RtlRaiseException",
+    ".scl 2",
+    ".type 32",
+    ".endef",
+    ".seh_proc RtlRaiseException",
+    "RtlRaiseException:",
+    "    stp x29, x30, [sp, #-16]!",
+    "    .seh_save_fplr_x 16",
+    "    mov x29, sp",
+    "    .seh_set_fp",
+    "    sub sp, sp, #0x3A0",
+    "    .seh_stackalloc 0x3A0",
+    "    .seh_endprologue",
+    "    str x0, [sp, #0x390]",
+    "    mov x0, sp",
+    "    bl RtlCaptureContext",
+    "    ldp x9, x10, [x29]",
+    "    add x11, x29, #16",
+    "    str x9, [sp, #0xF0]",
+    "    str x10, [sp, #0xF8]",
+    "    str x11, [sp, #0x100]",
+    "    str x10, [sp, #0x108]",
+    "    ldr x0, [sp, #0x390]",
+    "    mov x1, sp",
+    "    bl RtlpRaiseExceptionTail",
+    "    brk #0xF003",
+    ".seh_endproc",
+);
+
+/// The body of `RtlRaiseException` once the asm has captured the caller's
+/// context. Ends in ZwContinue, ZwRaiseException or RtlRaiseStatus.
 #[cfg(target_arch = "aarch64")]
 #[no_mangle]
-pub unsafe extern "system" fn RtlRaiseException(ExceptionRecord: PEXCEPTION_RECORD) {
-    let mut Context: CONTEXT = core::mem::zeroed();
+pub unsafe extern "system" fn RtlpRaiseExceptionTail(ExceptionRecord: PEXCEPTION_RECORD, Context: PCONTEXT) {
     let Status: NTSTATUS;
 
-    extern "system" {
-        fn RtlLookupFunctionEntry(ControlPc: u64, ImageBase: *mut u64, HistoryTable: *mut c_void) -> *mut c_void;
-        fn RtlVirtualUnwind(
-            HandlerType: ULONG,
-            ImageBase: u64,
-            ControlPc: u64,
-            FunctionEntry: *mut c_void,
-            Context: PCONTEXT,
-            HandlerData: *mut *mut c_void,
-            EstablisherFrame: *mut u64,
-            ContextPointers: *mut c_void,
-        ) -> *mut c_void;
-    }
-
-    RtlCaptureContext(&mut Context);
-
-    // The captured context is THIS function's, mid-body: resuming it (the
-    // ZwContinue below, when a handler continues the exception) re-enters
-    // RtlDispatchException forever -- measured, a VEH that returned
-    // EXCEPTION_CONTINUE_EXECUTION hung its thread here. What a continued
-    // raise must resume is the CALLER, at the return address, with the
-    // caller's nonvolatile registers: one virtual unwind of this frame, which
-    // is what Windows ARM64 does (and what amd64's asm version does by hand).
-    // That return address is also the exception's address (_ReturnAddress()).
-    let mut ImageBase: u64 = 0;
-    let Entry = RtlLookupFunctionEntry(Context.Pc, &mut ImageBase, core::ptr::null_mut());
-    if !Entry.is_null() {
-        let mut HandlerData: *mut c_void = core::ptr::null_mut();
-        let mut EstablisherFrame: u64 = 0;
-        RtlVirtualUnwind(
-            0, // UNW_FLAG_NHANDLER
-            ImageBase,
-            Context.Pc,
-            Entry,
-            &mut Context,
-            &mut HandlerData,
-            &mut EstablisherFrame,
-            core::ptr::null_mut(),
-        );
-        (*ExceptionRecord).ExceptionAddress = Context.Pc as *mut c_void;
-    } else {
-        // No unwind data for our own frame cannot happen in a linked image;
-        // if it ever does, the old behaviour (no address, a context that must
-        // not be continued) is what remains.
-        (*ExceptionRecord).ExceptionAddress = core::ptr::null_mut();
-    }
-
-    Context.ContextFlags = CONTEXT_FULL;
+    // _ReturnAddress(): the caller's resume point.
+    (*ExceptionRecord).ExceptionAddress = (*Context).Pc as *mut c_void;
+    (*Context).ContextFlags = CONTEXT_FULL;
 
     if RtlpCheckForActiveDebugger() != 0 {
-        Status = ZwRaiseException(ExceptionRecord, &mut Context, 1u8);
+        Status = ZwRaiseException(ExceptionRecord, Context, 1u8);
+    } else if RtlDispatchException(ExceptionRecord, Context) == 0 {
+        Status = ZwRaiseException(ExceptionRecord, Context, 0u8);
     } else {
-        if RtlDispatchException(ExceptionRecord, &mut Context) == 0 {
-            Status = ZwRaiseException(ExceptionRecord, &mut Context, 0u8);
-        } else {
-            Status = ZwContinue(&mut Context, 0u8);
-        }
+        Status = ZwContinue(Context, 0u8);
     }
 
     RtlRaiseStatus(Status);
