@@ -30,12 +30,10 @@ use crate::host::{elapsed_us, now_us, Host, SECTOR};
 use crate::print::sdprint;
 use crate::scsi::{self, Ident, Srb};
 
-/// Windows may write to the card. Off for now: with it on, the first file
-/// write to the card's FAT32 volume blocks before any I/O reaches this driver
-/// (open, roadmap 10b). Off, scsi.rs reports write protection and refuses
-/// WRITEs; the self-test proves the write path either way, outside every
-/// partition.
-pub const WRITE_ENABLED: bool = false;
+/// Windows may write to the card. Off, scsi.rs reports write protection and
+/// refuses WRITEs (fastfat then mounts the volume read-only); the self-test
+/// proves the write path either way, outside every partition.
+pub const WRITE_ENABLED: bool = true;
 
 /// Log every request the disk PDO receives and completes (opcode, LBA, count,
 /// requesting thread, status). Off: it is several lines per sector run.
@@ -597,7 +595,14 @@ unsafe fn disk_pnp(device: PDEVICE_OBJECT, irp: PIRP, io: PIO_STACK_LOCATION) ->
 
 unsafe extern "system" fn worker(_context: PVOID) {
     loop {
-        KeWaitForSingleObject((&raw mut QUEUE_EVENT).cast(), 0, 0, 0, null_mut());
+        // A timed wait, so an io: window still open when the card goes quiet
+        // is reported then, not left until the next request.
+        let mut idle: ntkrnl_sys::ddk::LARGE_INTEGER = core::mem::zeroed();
+        idle.QuadPart = -(IDLE_FLUSH_MS * 10_000);
+        if KeWaitForSingleObject((&raw mut QUEUE_EVENT).cast(), 0, 0, 0, &mut idle) == STATUS_TIMEOUT {
+            io_flush(now_us());
+            continue;
+        }
         loop {
             let entry = {
                 let _g = ntkrnl_sys::guards::SpinLockGuard::acquire(&raw mut QUEUE_LOCK);
@@ -656,6 +661,8 @@ unsafe fn execute(irp: PIRP) {
 /// requests, sectors and the mean request size, so a slow volume operation
 /// shows as a rate rather than as a silent hang. Called only from the worker.
 const IO_RATE_US: u64 = 5_000_000;
+const IDLE_FLUSH_MS: i64 = 1_000;
+const STATUS_TIMEOUT: NTSTATUS = 0x0000_0102;
 static mut IO_WINDOW: (u64, u64, u64, u64) = (0, 0, 0, 0); // start, requests, read, written
 
 unsafe fn io_rate(srb: &Srb, bytes: usize) {
@@ -670,16 +677,23 @@ unsafe fn io_rate(srb: &Srb, bytes: usize) {
         _ => return,
     }
     w.1 += 1;
-    let span = now.wrapping_sub(w.0);
-    if span >= IO_RATE_US {
+    if now.wrapping_sub(w.0) >= IO_RATE_US {
+        io_flush(now);
+    }
+}
+
+/// Report and close the io: window, if anything happened in it.
+unsafe fn io_flush(now: u64) {
+    let w = &mut *(&raw mut IO_WINDOW);
+    if w.1 != 0 {
         sdprint!(
             "io: {} requests in {} ms, {} sectors read, {} written ({} sectors per request)\n",
             w.1,
-            span / 1000,
+            now.wrapping_sub(w.0) / 1000,
             w.2,
             w.3,
-            (w.2 + w.3) / w.1.max(1)
+            (w.2 + w.3) / w.1
         );
-        *w = (now, 0, 0, 0);
     }
+    *w = (0, 0, 0, 0);
 }

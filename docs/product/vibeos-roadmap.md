@@ -421,7 +421,7 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | # | Quest | Doc | Size | Status (2026-07-10) |
 |---|-------|-----|------|-----------|
 | 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
-| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — 🔓 **UNBLOCKED**: the shared USB host stack is proven live | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md) | M | **Pi 4 storage reads** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, read-only to Windows for now, ~10.7 MB/s polled). Next: let Windows write the card, then boot from it instead of the RAM disk |
+| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — 🔓 **UNBLOCKED**: the shared USB host stack is proven live | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md) | M | **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). Next: boot from the card instead of the RAM disk |
 | 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
 | 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). Next: its interrupts, then GEM and I217 |
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
@@ -601,11 +601,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (0x1E with a DISK_GEOMETRY in FP, 0x109 from WAITDEP). `[IO-STRANDED]` now reports any
   recurrence. Field manual: "A kernel return address holds a DISK_GEOMETRY". It may account
   for other arm64 dispatcher flakes in this registry; re-check them against it.
-- **Pi 4 SD card: the first file write to its FAT32 volume blocks** (OPEN, 2026-10-06).
-  With `sdhc-rust` `WRITE_ENABLED` on, `echo > F:\x.txt` never returns and no I/O reaches the
-  card; the kernel stays up. Same on the UP and MP kernels. The start-time sector write test
-  passes, so the block is above the driver (mount or fastfat). Writes stay off until it is
-  found.
+- **arm64: `cmd` output redirection never returns** (OPEN, 2026-10-06). `echo hi > F:\x.txt`
+  typed into cmd on the Pi 4 leaves cmd parked in `NtRequestWaitReplyPort` (WrLpcReply, the
+  census backtrace) waiting on csrss, and no file is created, on the SD card or on a USB stick
+  alike. The storage path is fine: stortest's create/write/flush/readback on the same volume
+  passes and the firmware reads its file back. This was first logged here as "the SD card's
+  first write blocks" (`9208546a69b0`); that was a misdiagnosis, corrected by the census
+  backtrace. `cmd /c copy` (no redirection) works.
 - **xHCI rig: the stick behind the hub never becomes a volume** (OPEN, observed 2026-10-06).
   `test_usb_stick_read_and_write` fails with `COPY.TXT on (hub, SuperSpeed): [None, ...]`;
   stortest sees only one stick volume (`next-letter Harddisk2 failed (error 3)`). Seen before
