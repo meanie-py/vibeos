@@ -1964,11 +1964,13 @@ constants that are pure bit positions, where an invented value demangles with th
 options rather than failing.
 
 ### Driver fleet detail
-Essentially the entire boot/smoke driver fleet is Rust. **Two drivers are from-scratch
-Rust with zero C: `netstack.sys` (replacing the legacy NDIS/tcpip stack) and `usbxhci.sys`
+Essentially the entire boot/smoke driver fleet is Rust. **Three drivers are from-scratch
+Rust with zero C: `netstack.sys` (replacing the legacy NDIS/tcpip stack), `usbxhci.sys`
 (the USB 3 xHCI miniport under usbport, written against the xHCI 1.2 spec, 2026-09-26; it
 drives the Raspberry Pi 4's VL805;
-`docs/engineering/usbxhci-design.md`).** USB mass storage on arm64 (usbstor → classpnp/disk
+`docs/engineering/usbxhci-design.md`) and `sdhc.sys` (arm64, 2026-10-05: the Pi 4's SD
+card slot, an SDHCI 3.0 host, presented to disk.sys as a SCSI disk with no port driver
+underneath; `sdhc-rust/src/lib.rs`).** USB mass storage on arm64 (usbstor → classpnp/disk
 → partmgr → mountmgr → fastfat, all Rust bodies) is first boot-exercised by the xHCI rig's
 stick test, 2026-09-26; before that none of those five was staged on arm64.
 Everything else is a cohab flip (body in a `*-rust` crate, thin C residue —
