@@ -11,13 +11,14 @@ import pytest
 
 from tests.qemu.cli.provenance import check_staleness
 from tests.qemu.test_smoke import _FATAL_MARKERS
-from tests.qemu.test_xhci import _QCODE, _stick_file, _tap
+from tests.qemu.test_xhci import _stick_file, _tap, _type
 from tests.qemu.vm import PROJECT_DIR, USB_STICK_FILE, USB_STICK_TEXT, QemuVM
 
-# The guest command looks for the file on every likely drive letter, since
-# which one the namespace gets depends on what else the arch attaches.
-_KEYS = {**_QCODE, "%": ["shift", "5"], "(": ["shift", "9"], ")": ["shift", "0"]}
 _COPY = "COPY.TXT"
+# Which letter the namespace gets depends on what else the arch attaches (on
+# amd64 it is C:, ahead of the IDE temp disk), so the guest copies on each
+# likely one; the drives without the file just print an error.
+_LETTERS = "CDEFG"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -27,22 +28,18 @@ def nvme_preflight(arch: str) -> None:
     media_arch = {"i386-uefi": "i386", "amd64-uefi": "amd64"}.get(arch, arch)
     freshness = check_staleness(PROJECT_DIR, media_arch)
     assert freshness.fresh, f"Rebuild {media_arch} media: {freshness.reasons}"
+    # A quiet boot: without it winlogon spends minutes after the desktop launching
+    # its test ladder's applets (osk, magnify, ...), and each one takes the focus
+    # the Run dialog's keystrokes need.
+    tripwire = os.environ.get("VIBEOS_TRIPWIRE", "")
+    if "QUIET" not in tripwire.replace(";", " ").split():
+        os.environ["VIBEOS_TRIPWIRE"] = f"{tripwire} QUIET".strip()
 
 
 @pytest.fixture(scope="session")
 def vm(nvme_preflight: None, vm: QemuVM) -> QemuVM:
     # Explicit dependency: check media before the parent fixture starts QEMU.
     return vm
-
-
-def _type(vm: QemuVM, text: str) -> None:
-    for ch in text:
-        if ch in _KEYS:
-            _tap(vm, _KEYS[ch])
-        elif ch.isupper():
-            _tap(vm, ["shift", ch.lower()])
-        else:
-            _tap(vm, [ch])
 
 
 def test_nvme_controller_and_namespace(vm: QemuVM) -> None:
@@ -64,7 +61,7 @@ def test_nvme_read_and_write_from_the_desktop(vm: QemuVM) -> None:
     serial = vm._boot_output + vm.serial_output(timeout=1)
     _tap(vm, ["meta_l", "r"])
     time.sleep(3)
-    _type(vm, f"cmd /c for %d in (C D E F G H) do copy %d:\\{USB_STICK_FILE} %d:\\{_COPY}")
+    _type(vm, "cmd /c " + " & ".join(f"copy {d}:\\{USB_STICK_FILE} {d}:\\{_COPY}" for d in _LETTERS))
     _tap(vm, ["ret"])
     copied = None
     deadline = time.monotonic() + 90
