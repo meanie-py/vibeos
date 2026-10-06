@@ -866,10 +866,12 @@ class I386UefiConfig(I386Config):
         ]
 
 
-def boot_media_device_args(iso, ide_bus: str | None = None) -> list[str]:
-    """How the UEFI boot ISO is attached — `ide-cd` unless told otherwise.
+def boot_media_device_args(
+    iso, ide_bus: str | None = None, default_transport: str = "ide-cd"
+) -> list[str]:
+    """How the boot ISO is attached — `default_transport` unless told otherwise.
 
-    `VIBEOS_QEMU_BOOT_TRANSPORT=usb-storage|virtio-blk` swaps the device model,
+    `VIBEOS_QEMU_BOOT_TRANSPORT=usb-storage|usb-ehci|virtio-blk` swaps the device model,
     which exists because two things need a NON-ATAPI boot device and neither
     could get one without hand-rolling a QEMU command line:
 
@@ -885,9 +887,9 @@ def boot_media_device_args(iso, ide_bus: str | None = None) -> list[str]:
 
     A remembered recipe is a missing mechanism, so this is the mechanism.
     """
-    transport = os.environ.get("VIBEOS_QEMU_BOOT_TRANSPORT", "").strip()
+    transport = os.environ.get("VIBEOS_QEMU_BOOT_TRANSPORT", "").strip() or default_transport
     drive = ["-drive", f"id=cd0,if=none,format=raw,file={iso},readonly=on"]
-    if not transport or transport == "ide-cd":
+    if transport == "ide-cd":
         # `ide_bus` pins the port (q35's AHCI holds one device per port).
         bus = f",bus={ide_bus}" if ide_bus else ""
         return [*drive, "-device", f"ide-cd,drive=cd0,bootindex=0{bus}"]
@@ -905,8 +907,19 @@ def boot_media_device_args(iso, ide_bus: str | None = None) -> list[str]:
             "-device",
             "usb-storage,bus=xhci.0,drive=cd0,bootindex=0,removable=on",
         ]
+    if transport == "usb-ehci":
+        # The same stick behind EHCI: an Intel 8-series board (the OptiPlex 9020)
+        # routes its ports to EHCI until the OS flips XUSB2PR, which usbxhci does not.
+        return [
+            *drive,
+            "-device",
+            "usb-ehci,id=ehci",
+            "-device",
+            "usb-storage,bus=ehci.0,drive=cd0,bootindex=0,removable=on",
+        ]
     raise ValueError(
-        f"VIBEOS_QEMU_BOOT_TRANSPORT={transport!r} is not one of ide-cd, virtio-blk, usb-storage"
+        f"VIBEOS_QEMU_BOOT_TRANSPORT={transport!r} is not one of "
+        "ide-cd, virtio-blk, usb-storage, usb-ehci"
     )
 
 
@@ -1105,9 +1118,11 @@ class Amd64UefiConfig(Amd64Config):
 @dataclass
 class Amd64BiosConfig(Amd64Config):
     """amd64 booted by legacy BIOS (SeaBIOS, QEMU's default firmware) from the same
-    hybrid livecd ISO, through its BIOS El Torito entry: isoboot.bin -> freeldr.sys ->
-    rosload.exe -> the kernel. Boot media and boot timing are those of amd64-uefi;
-    only the firmware and the loader differ.
+    hybrid livecd ISO written to a USB stick: isombr.bin -> isoboot.bin -> freeldr.sys
+    -> rosload.exe -> the kernel, which finds its boot volume through usbstor. That is
+    how the ISO reaches a Libreboot machine with no optical drive, and it covers more
+    than the CD entry does (the hybrid MBR, freeldr's hard-disk path, usbstor as a boot
+    driver). `VIBEOS_QEMU_BOOT_TRANSPORT=ide-cd` boots the El Torito CD entry instead.
 
     The display is a VBE linear framebuffer the BIOS loader chooses and hands over in
     the same form as UEFI's GOP, so `-vga std` (the Bochs VBE adapter), not cirrus.
@@ -1125,7 +1140,7 @@ class Amd64BiosConfig(Amd64Config):
             *self.machine_args,
             "-m",
             self.memory,
-            *boot_media_device_args(iso),
+            *boot_media_device_args(iso, default_transport="usb-storage"),
             "-vga",
             "std",
             "-display",

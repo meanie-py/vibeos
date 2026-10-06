@@ -12,8 +12,8 @@ nothing noticed when the code it depended on moved on. It is now a gate lane
 ## The chain
 
 ```
-SeaBIOS ─▶ isoboot.bin (El Torito, no-emulation) ─▶ freeldr.sys ─▶ rosload.exe ─▶ ntoskrnl
-            boot/freeldr/bootsect/isoboot.S          │
+SeaBIOS ─▶ [USB stick: isombr.bin ─▶] isoboot.bin ─▶ freeldr.sys ─▶ rosload.exe ─▶ ntoskrnl
+            [CD: El Torito, no-emulation]            │
                                                      ├─ frldr16.bin  16-bit stub at 0xF800 (arch/realmode/amd64.S)
                                                      └─ freeldr_pe   long-mode loader body at 0x10000
 ```
@@ -22,6 +22,14 @@ SeaBIOS ─▶ isoboot.bin (El Torito, no-emulation) ─▶ freeldr.sys ─▶ r
   (`efisys.bin`, alternate), plus an isohybrid MBR (`isombr.bin`), so the same file
   boots on either firmware from CD, or `dd`'d to a USB stick
   (`boot/boot_images.cmake`). arm64 stays UEFI-only.
+- **From a USB stick** SeaBIOS runs the isohybrid MBR, which reads isoboot from the
+  stick and enters it at its hybrid entry point. freeldr then sees a hard disk and
+  boots `multi(0)disk(0)rdisk(0)partition(1)`: the MBR's one partition (type `0x96`)
+  starts at sector 0 and covers the whole ISO. In the kernel, `usbstor.sys` is a boot
+  driver and cdfs mounts the ISO9660 volume on `\Device\Harddisk0\Partition1`.
+  Nothing in that chain was written for it: it is upstream's isohybrid design meeting
+  the record/replay lane's disk-held-ISO kernel fixes (`qemu-record-replay.md`). UEFI
+  boots the same stick through `cdrom(0)` instead.
 - **`freeldr_pe` is all Rust:** `freeldr-rust` built *without* the `uefi`
   feature, which selects the PC-AT machine (`machpc`, `pcmem`, `pcdisk`,
   `pcvideo`, `pcvesa`, `hwacpi`…) and `BootMain`. Like `uefildr.efi` and
@@ -60,8 +68,9 @@ SeaBIOS ─▶ isoboot.bin (El Torito, no-emulation) ─▶ freeldr.sys ─▶ r
     `CreateFramebufferDisplayKey`).
   - It switches into the mode only in `PcVideoPrepareForReactOS`, so the loader's
     text UI keeps working until the kernel takes over.
-- **isoboot prefers an installed OS.** If the first hard disk (drive 80h) has a valid
-  MBR, isoboot prints "Press any key to boot from the ReactOS medium" and, after five
+- **isoboot prefers an installed OS, when booted as a CD.** (From a stick, the stick
+  is drive 80h and the hybrid entry boots it directly.) If the first hard disk (drive
+  80h) has a valid MBR, isoboot prints "Press any key to boot from the ReactOS medium" and, after five
   seconds with no key, boots the hard disk. That is upstream's intended behaviour for
   a person, and it is what the 9020 will do if its disk is bootable: press a key. The
   BIOS smoke therefore attaches no MBR temp disk (`vm.py` `temp_disk_args`). The
@@ -76,8 +85,14 @@ SeaBIOS ─▶ isoboot.bin (El Torito, no-emulation) ─▶ freeldr.sys ─▶ r
 
 ```bash
 ./vibeos-cli build --arch amd64
-./vibeos-cli smoke --arch amd64-bios     # SeaBIOS, same media as amd64
+./vibeos-cli smoke --arch amd64-bios     # SeaBIOS, same media as amd64, on a USB stick
+VIBEOS_QEMU_BOOT_TRANSPORT=usb-ehci ./vibeos-cli smoke --arch amd64-bios   # stick behind EHCI
+VIBEOS_QEMU_BOOT_TRANSPORT=ide-cd   ./vibeos-cli smoke --arch amd64-bios   # El Torito CD
 ```
+
+All three reach the desktop (2026-10-05). The gate lane boots the xHCI stick because
+that is how the OptiPlex gets the ISO, and it covers more than the CD: the hybrid MBR,
+freeldr's hard-disk path, and usbstor as a boot driver. The CD entry is not gated.
 
 Every gate that includes amd64 also boots the media under SeaBIOS
 (`gate.py` `BIOS_LANE`). The QEMU config is `Amd64BiosConfig` in `tests/qemu/vm.py`.
@@ -89,8 +104,10 @@ QEMU's SeaBIOS is the oracle here. A real machine adds its own VGA option ROM, i
 own EBDA size, and USB or SATA boot media. Expected first problems on the 9020:
 
 - whether its Intel VBE ROM offers a 32-bpp linear mode in the preferred list
-- USB-stick boot through the isohybrid MBR, which then needs USB mass storage in the
-  kernel (roadmap 10b)
+- which controller serves the stick. Intel 8-series chipsets route their ports to EHCI
+  until the OS sets `XUSB2PR`/`USB3_PSSEN` (Linux's `usb_enable_intel_xhci_ports`), and
+  `usbxhci` does not, so expect the stick on EHCI unless coreboot already routed the
+  ports. Both controllers boot the stick in QEMU.
 
 `docs/engineering/modern-windows-compat-roadmap.md` describes the bench setup
 (remote power, serial console, network boot) that makes the box agent-friendly.
