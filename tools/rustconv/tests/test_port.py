@@ -206,3 +206,16 @@ def test_item_spans_find_types_statics_and_macros():
     ):
         ((lo, hi),) = port.item_spans(text, name)
         assert text[lo:hi].startswith(starts) and text[lo:hi].endswith(ends), name
+
+
+def test_a_macro_name_inside_a_string_is_not_a_call():
+    from rustconv.crate_integrate import fix_macro_calls
+
+    src = (
+        'fn f() {\n    if SpInfFindFirstLine(a, b) == 0 {\n'
+        '        DPRINT1(b"SpInfFindFirstLine(\\"x\\") failed\\n\\0");\n'
+        "    } // SpInfFindFirstLine(old)\n}\n"
+    )
+    out, fixed = fix_macro_calls(src, {"SpInfFindFirstLine", "DPRINT1"}, set())
+    assert "if SpInfFindFirstLine!(a, b)" in out and "DPRINT1!(" in out
+    assert 'b"SpInfFindFirstLine(\\"x\\")' in out and "// SpInfFindFirstLine(old)" in out

@@ -396,6 +396,7 @@ members = [
     # builds and no boot can regress. Membership only puts it in every lane's `cargo check`,
     # which is what stops the rot.
     "recyclebin-rust",
+    "setuplib-rust",
 ]
 resolver = "2"
 

@@ -4398,6 +4398,10 @@ def cmd_translate(args):
                         )
                         if m and m.group(1) in names:
                             dropping, drop_depth = True, 0
+                            # Its attributes go with it: an orphaned `#[no_mangle]` would
+                            # attach itself to whatever item comes next.
+                            while kept and re.match(r"\s*#\[", kept[-1]):
+                                kept.pop()
                         else:
                             kept.append(ln)
                     if dropping:
