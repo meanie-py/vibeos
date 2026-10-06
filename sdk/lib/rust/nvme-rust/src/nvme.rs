@@ -1,23 +1,32 @@
-//! One NVMe controller, polled: the admin queue, one I/O queue pair, and a
-//! DMA bounce buffer, all in one physically contiguous allocation.
+//! One NVMe controller: the admin queue, one I/O queue pair, and a DMA bounce
+//! buffer, all in one physically contiguous allocation.
 //!
-//! Every command is submitted and then polled to completion before the next
-//! (the worker in pnp.rs serializes them), so a queue never holds more than
-//! one entry and there is no command-ID bookkeeping beyond a check. Data moves
-//! through the bounce buffer: its PRP list is built once, at start, so a
-//! transfer never walks an MDL for physical pages and the device only ever
-//! sees memory this driver owns. Interrupts are masked (INTMS, and the I/O
-//! completion queue is created with interrupts off), so an unconnected INTx
-//! line can never be left asserted on a pin another device shares.
+//! Every command is submitted and waited for before the next (the worker in
+//! pnp.rs serializes them), so a queue never holds more than one entry and
+//! there is no command-ID bookkeeping beyond a check. Data moves through the
+//! bounce buffer: its PRP list is built once, at start, so a transfer never
+//! walks an MDL for physical pages and the device only ever sees memory this
+//! driver owns.
+//!
+//! Completions arrive by interrupt once pnp.rs has connected the controller's
+//! pin-based (INTx) vector ([`Irq`]): the worker sleeps until the DPC wakes it.
+//! Until then, and on a machine whose interrupt never arrives, it polls: the
+//! bring-up commands at start, and a 10 ms poll behind every interrupt wait,
+//! which says so on the debug port the first time it is the one that finds a
+//! completion. Both completion queues raise vector 0, which stays masked
+//! (INTMS) whenever nothing is connected to it, so the line can never be left
+//! asserted on a pin another device shares.
 //!
 //! Register and command layouts are from the NVM Express Base Specification
 //! (2.0); the section numbers below are that document's.
 
-use core::ptr::{read_volatile, write_volatile};
+use core::ptr::{null, null_mut, read_volatile, write_volatile};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use ntkrnl_sys::ddk::{
-    KeDelayExecutionThread, KeQueryPerformanceCounter, KeStallExecutionProcessor, MmAllocateContiguousMemorySpecifyCache,
-    MmGetPhysicalAddress, _MEMORY_CACHING_TYPE_MmCached, LARGE_INTEGER, PHYSICAL_ADDRESS,
+    KeDelayExecutionThread, KeInsertQueueDpc, KeQueryPerformanceCounter, KeSetEvent, KeStallExecutionProcessor,
+    KeWaitForSingleObject, MmAllocateContiguousMemorySpecifyCache, MmGetPhysicalAddress, _MEMORY_CACHING_TYPE_MmCached,
+    BOOLEAN, KDPC, KEVENT, LARGE_INTEGER, PHYSICAL_ADDRESS, PKINTERRUPT, PVOID,
 };
 
 use crate::print::nvprint;
@@ -32,11 +41,14 @@ const CQE: usize = 16;
 const COMMAND_TIMEOUT_US: u64 = 30_000_000;
 /// Spin this long for a completion before sleeping between polls.
 const SPIN_US: u64 = 2_000;
+/// With interrupts on: how long to sleep for one before looking anyway.
+const INTERRUPT_POLL_MS: i64 = 10;
 
 // Controller registers (3.1).
 const REG_CAP: usize = 0x00;
 const REG_VS: usize = 0x08;
 const REG_INTMS: usize = 0x0C;
+const REG_INTMC: usize = 0x10;
 const REG_CC: usize = 0x14;
 const REG_CSTS: usize = 0x1C;
 const REG_AQA: usize = 0x24;
@@ -164,11 +176,93 @@ pub struct Controller {
     next_cid: u16,
     pub max_transfer: usize,
     pub identity: Identity,
+    /// Null until [`Controller::use_interrupts`]; then the worker sleeps on it.
+    irq: *mut Irq,
+    /// The controller's number, for the debug port.
+    number: u32,
+    /// Completions found right after an interrupt, and by the poll behind it.
+    pub by_interrupt: u32,
+    pub by_poll: u32,
 }
 
 // The controller lives in the FDO's extension and is used only by its worker
 // thread (and by START before that thread exists).
 unsafe impl Send for Controller {}
+
+/// Pin-based interrupt vector 0, the one both completion queues raise.
+const VECTOR_0: u32 = 1;
+
+/// What the interrupt path shares with the worker. Lives in the FDO's
+/// extension, so its address is stable for the ISR and the DPC.
+pub struct Irq {
+    regs: *mut u8,
+    /// Admin and I/O completion queues, and for each the slot the next
+    /// completion will land in and the phase it will carry (`head | phase << 16`),
+    /// published by the worker every time it consumes one.
+    cqs: [*const u8; 2],
+    next: [AtomicU32; 2],
+    /// Set once the interrupt is connected and the state above is valid.
+    armed: AtomicBool,
+    event: KEVENT,
+    dpc: KDPC,
+    pub interrupt: PKINTERRUPT,
+    /// Interrupts claimed by the ISR.
+    pub claimed: AtomicU32,
+}
+
+impl Irq {
+    pub const fn new() -> Self {
+        Irq {
+            regs: null_mut(),
+            cqs: [null(); 2],
+            next: [AtomicU32::new(0), AtomicU32::new(0)],
+            armed: AtomicBool::new(false),
+            event: unsafe { core::mem::zeroed() },
+            dpc: unsafe { core::mem::zeroed() },
+            interrupt: null_mut(),
+            claimed: AtomicU32::new(0),
+        }
+    }
+
+    pub fn event(&mut self) -> *mut KEVENT {
+        &raw mut self.event
+    }
+
+    pub fn dpc(&mut self) -> *mut KDPC {
+        &raw mut self.dpc
+    }
+
+    /// Does either completion queue hold an entry the worker has not consumed?
+    fn pending(&self) -> bool {
+        (0..2).any(|i| {
+            let next = self.next[i].load(Ordering::Acquire);
+            let (head, phase) = ((next & 0xFFFF) as usize, next >> 16);
+            let dw3 = unsafe { read_volatile(self.cqs[i].add(head * CQE + 12).cast::<u32>()) };
+            dw3 >> 16 & 1 == phase
+        })
+    }
+}
+
+/// The interrupt service routine (`ServiceContext` is the [`Irq`]). The line may
+/// be shared and is level-triggered, so it claims the interrupt only when a
+/// completion queue has news, and then masks vector 0 so the line drops until
+/// the worker has consumed the completion and unmasked it.
+pub unsafe extern "system" fn isr(_interrupt: PKINTERRUPT, context: PVOID) -> BOOLEAN {
+    let irq = &*(context as *const Irq);
+    if !irq.armed.load(Ordering::Acquire) || !irq.pending() {
+        return 0;
+    }
+    write_volatile(irq.regs.add(REG_INTMS).cast::<u32>(), VECTOR_0);
+    irq.claimed.fetch_add(1, Ordering::Relaxed);
+    KeInsertQueueDpc(&irq.dpc as *const KDPC as *mut KDPC, null_mut(), null_mut());
+    1
+}
+
+/// The DPC: wake the worker (`DeferredContext` is the [`Irq`]).
+pub unsafe extern "system" fn dpc(_dpc: *mut KDPC, context: PVOID, _a: PVOID, _b: PVOID) {
+    let irq = context as *mut Irq;
+    KeSetEvent(&raw mut (*irq).event, 0, 0);
+}
 
 /// The command's 16 dwords (4.2).
 #[derive(Clone, Copy, Default)]
@@ -280,6 +374,10 @@ impl Controller {
             next_cid: 0,
             max_transfer: BOUNCE,
             identity: core::mem::zeroed(),
+            irq: null_mut(),
+            number: 0,
+            by_interrupt: 0,
+            by_poll: 0,
         };
         // The PRP list (4.1.1): entry i is the bounce buffer's page i + 1, since
         // PRP1 always names page 0. The pages are physically contiguous.
@@ -293,7 +391,7 @@ impl Controller {
             c.wr(REG_CC, c.rd(REG_CC) & !CC_EN);
         }
         c.wait_ready(false)?;
-        // Mask every pin-based/MSI vector: nothing here takes interrupts.
+        // Mask every pin-based vector until an interrupt is connected to it.
         c.wr(REG_INTMS, u32::MAX);
         c.wr(REG_AQA, ((entries as u32 - 1) << 16) | (entries as u32 - 1));
         c.wr64(REG_ASQ, c.admin.sq_phys);
@@ -310,11 +408,12 @@ impl Controller {
 
         // One I/O queue pair; the count is a request the controller may round.
         let _ = c.admin_command("set features (queues)", Command::new(ADMIN_SET_FEATURES, 0).dw(10, FEATURE_NUMBER_OF_QUEUES));
-        // Completion queue first: physically contiguous, interrupts off.
+        // Completion queue first: physically contiguous, interrupts enabled on
+        // vector 0 (IV 0 in 31:16), which INTMS masks until one is connected.
         let cq = Command::new(ADMIN_CREATE_CQ, 0)
             .prp(c.io.cq_phys, 0)
             .dw(10, ((entries as u32 - 1) << 16) | 1)
-            .dw(11, 1);
+            .dw(11, 1 << 1 | 1);
         c.admin_command("create I/O completion queue", cq)?;
         let sq = Command::new(ADMIN_CREATE_SQ, 0)
             .prp(c.io.sq_phys, 0)
@@ -332,6 +431,32 @@ impl Controller {
             }
         }
         Ok(c)
+    }
+
+    /// Take completions by interrupt from now on. `irq` must already be
+    /// connected (its ISR may run as soon as vector 0 is unmasked) and must
+    /// outlive the controller.
+    ///
+    /// # Safety
+    /// `irq` must point to a live [`Irq`] whose interrupt is connected with it as context.
+    pub unsafe fn use_interrupts(&mut self, irq: *mut Irq, number: u32) {
+        self.number = number;
+        (*irq).regs = self.regs;
+        (*irq).cqs = [self.admin.cq, self.io.cq];
+        self.irq = irq;
+        self.publish(false);
+        self.publish(true);
+        (*irq).armed.store(true, Ordering::Release);
+        self.wr(REG_INTMC, VECTOR_0);
+    }
+
+    /// Tell the ISR where queue `io`'s next completion will land.
+    fn publish(&self, io: bool) {
+        if self.irq.is_null() {
+            return;
+        }
+        let q = if io { &self.io } else { &self.admin };
+        unsafe { (*self.irq).next[io as usize].store(q.head as u32 | q.phase << 16, Ordering::Release) };
     }
 
     fn wait_ready(&self, ready: bool) -> Result<(), Error> {
@@ -472,39 +597,43 @@ impl Controller {
         self.submit(true, what, cmd)
     }
 
-    /// Submit `cmd` and poll its completion. Returns completion dword 0.
+    /// Submit `cmd` and wait for its completion. Returns completion dword 0.
     fn submit(&mut self, io: bool, what: &'static str, mut cmd: Command) -> Result<u32, Error> {
         let cid = self.next_cid;
         self.next_cid = self.next_cid.wrapping_add(1);
         cmd.0[0] |= (cid as u32) << 16;
         let stride = self.doorbell_stride;
         let regs = self.regs;
-        let q = if io { &mut self.io } else { &mut self.admin };
-        unsafe {
-            let slot = q.sq.add(q.tail as usize * SQE).cast::<u32>();
-            for (i, &dw) in cmd.0.iter().enumerate() {
-                write_volatile(slot.add(i), dw);
+        {
+            let q = if io { &mut self.io } else { &mut self.admin };
+            unsafe {
+                let slot = q.sq.add(q.tail as usize * SQE).cast::<u32>();
+                for (i, &dw) in cmd.0.iter().enumerate() {
+                    write_volatile(slot.add(i), dw);
+                }
             }
+            q.tail = (q.tail + 1) % QUEUE_ENTRIES;
+            wmb();
+            // Submission queue y tail doorbell: 0x1000 + (2y) * stride (3.1.24).
+            unsafe { write_volatile(regs.add(DOORBELLS + 2 * q.id as usize * stride).cast::<u32>(), q.tail as u32) };
         }
-        q.tail = (q.tail + 1) % QUEUE_ENTRIES;
-        wmb();
-        // Submission queue y tail doorbell: 0x1000 + (2y) * stride (3.1.24).
-        unsafe { write_volatile(regs.add(DOORBELLS + 2 * q.id as usize * stride).cast::<u32>(), q.tail as u32) };
 
         let t0 = now_us();
+        let mut woken = false;
         loop {
-            let entry = unsafe { q.cq.add(q.head as usize * CQE).cast::<u32>() };
-            let dw3 = unsafe { read_volatile(entry.add(3)) };
-            if dw3 >> 16 & 1 == q.phase {
-                rmb();
-                let dw0 = unsafe { read_volatile(entry) };
-                q.head += 1;
-                if q.head == QUEUE_ENTRIES {
-                    q.head = 0;
-                    q.phase ^= 1;
-                }
-                // Completion queue y head doorbell: 0x1000 + (2y + 1) * stride.
-                unsafe { write_volatile(regs.add(DOORBELLS + (2 * q.id as usize + 1) * stride).cast::<u32>(), q.head as u32) };
+            if !self.irq.is_null() {
+                // Sleep until the DPC says a completion queue has news, or the
+                // poll interval runs out. Always sleep first: the completion
+                // could already be there, but then its interrupt has fired too,
+                // and finding it straight away would hide whether it did.
+                let mut interval: LARGE_INTEGER = unsafe { core::mem::zeroed() };
+                interval.QuadPart = -10_000 * INTERRUPT_POLL_MS;
+                woken = unsafe {
+                    KeWaitForSingleObject((&raw mut (*self.irq).event).cast(), 0, 0, 0, &mut interval)
+                } == 0;
+            }
+            if let Some((dw0, dw3)) = self.reap(io) {
+                self.count(woken, what);
                 let returned = dw3 as u16;
                 if returned != cid {
                     nvprint!("{}: completion for command {} while {} was outstanding\n", what, returned, cid);
@@ -521,10 +650,68 @@ impl Controller {
                 let csts = unsafe { read_volatile(regs.add(REG_CSTS).cast::<u32>()) };
                 return Err(if csts & CSTS_CFS != 0 { Error::Fatal } else { Error::Timeout(what) });
             }
-            if elapsed < SPIN_US {
-                unsafe { KeStallExecutionProcessor(1) };
-            } else {
-                sleep_ms(1);
+            if self.irq.is_null() {
+                if elapsed < SPIN_US {
+                    unsafe { KeStallExecutionProcessor(1) };
+                } else {
+                    sleep_ms(1);
+                }
+            }
+        }
+    }
+
+    /// Consume the completion at queue `io`'s head, if it has arrived: ring the
+    /// head doorbell, tell the ISR, and unmask the vector it masked. Returns
+    /// completion dwords 0 and 3.
+    fn reap(&mut self, io: bool) -> Option<(u32, u32)> {
+        let stride = self.doorbell_stride;
+        let regs = self.regs;
+        let q = if io { &mut self.io } else { &mut self.admin };
+        let entry = unsafe { q.cq.add(q.head as usize * CQE).cast::<u32>() };
+        let dw3 = unsafe { read_volatile(entry.add(3)) };
+        if dw3 >> 16 & 1 != q.phase {
+            return None;
+        }
+        rmb();
+        let dw0 = unsafe { read_volatile(entry) };
+        q.head += 1;
+        if q.head == QUEUE_ENTRIES {
+            q.head = 0;
+            q.phase ^= 1;
+        }
+        // Completion queue y head doorbell: 0x1000 + (2y + 1) * stride.
+        unsafe { write_volatile(regs.add(DOORBELLS + (2 * q.id as usize + 1) * stride).cast::<u32>(), q.head as u32) };
+        self.publish(io);
+        if !self.irq.is_null() {
+            self.wr(REG_INTMC, VECTOR_0);
+        }
+        Some((dw0, dw3))
+    }
+
+    /// Keep score of how completions were found, and say on the debug port
+    /// the first time each way happens: the first by interrupt proves the
+    /// line works; the first by the poll means an interrupt went missing.
+    fn count(&mut self, woken: bool, what: &str) {
+        if self.irq.is_null() {
+            return;
+        }
+        if woken {
+            self.by_interrupt += 1;
+            if self.by_interrupt == 1 {
+                nvprint!("controller {}: interrupts working (first completion by interrupt: {})\n", self.number, what);
+            }
+        } else {
+            self.by_poll += 1;
+            if self.by_poll == 1 {
+                let claimed = unsafe { (*self.irq).claimed.load(Ordering::Relaxed) };
+                nvprint!(
+                    "controller {}: a completion ({}) came without its interrupt; the {} ms poll found it ({} by interrupt so far, {} claimed)\n",
+                    self.number,
+                    what,
+                    INTERRUPT_POLL_MS,
+                    self.by_interrupt,
+                    claimed
+                );
             }
         }
     }

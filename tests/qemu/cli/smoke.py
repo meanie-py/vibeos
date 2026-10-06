@@ -798,23 +798,42 @@ def nvme_requested() -> bool:
     return os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "1"
 
 
+# ...and this once a completion arrived by interrupt (nvme-rust nvme.rs `count`).
+_NVME_INTERRUPTS = "[NVME] controller 0: interrupts working"
+
+
 def _nvme_check(text: str) -> dict | None:
-    """Prove an `--nvme` boot brought the controller up. A desktop alone proves
-    nothing: the boot never needs the NVMe disk, so a driver that never loaded
-    would look identical."""
-    if not nvme_requested() or _NVME_PUBLISHED in text:
+    """Prove an `--nvme` boot brought the controller up, on interrupts. A desktop
+    alone proves nothing: the boot never needs the NVMe disk, so a driver that
+    never loaded would look identical. And a driver whose interrupt never arrives
+    still works, through its 10 ms poll, so it would quietly regress to polling."""
+    if not nvme_requested():
         return None
     lines = [ln.strip() for ln in text.splitlines() if "[NVME]" in ln][-6:]
-    return {
-        "classification": "NVME_NOT_ENGAGED",
-        "salient": [
-            f"--nvme boot reached the desktop but nvme.sys never printed `{_NVME_PUBLISHED}`",
-            *(
-                lines
-                or ["no [NVME] line at all: nvme.sys never loaded (PCI#CC_010802 in hivesys.inf?)"]
-            ),
-        ],
-    }
+    if _NVME_PUBLISHED not in text:
+        return {
+            "classification": "NVME_NOT_ENGAGED",
+            "salient": [
+                f"--nvme boot reached the desktop but nvme.sys never printed `{_NVME_PUBLISHED}`",
+                *(
+                    lines
+                    or [
+                        "no [NVME] line at all: nvme.sys never loaded "
+                        "(PCI#CC_010802 in hivesys.inf?)"
+                    ]
+                ),
+            ],
+        }
+    if _NVME_INTERRUPTS not in text:
+        return {
+            "classification": "NVME_POLLING",
+            "salient": [
+                f"the namespace was published but nvme.sys never printed `{_NVME_INTERRUPTS}`: "
+                "no completion arrived by interrupt, so the driver ran on its poll",
+                *lines,
+            ],
+        }
+    return None
 
 
 def smoke(args, repo: Path) -> int:

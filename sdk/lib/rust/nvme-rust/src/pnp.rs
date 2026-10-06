@@ -15,7 +15,8 @@ use core::ptr::null_mut;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use ntkrnl_sys::ddk::{
-    ExAllocatePoolWithTag, ExFreePoolWithTag, IoCreateDevice, IoForwardIrpSynchronously, KeInitializeEvent, KeSetEvent,
+    ExAllocatePoolWithTag, ExFreePoolWithTag, IoConnectInterrupt, IoCreateDevice, IoForwardIrpSynchronously, KeInitializeDpc,
+    KeInitializeEvent, KeSetEvent, _KINTERRUPT_MODE_Latched, _KINTERRUPT_MODE_LevelSensitive,
     KeWaitForSingleObject, MmMapIoSpace, PsCreateSystemThread, ZwClose, _MEMORY_CACHING_TYPE_MmNonCached, HANDLE, IRP,
     KEVENT, LIST_ENTRY, NTSTATUS, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIRP,
     PIO_STACK_LOCATION, PVOID, ULONG,
@@ -26,7 +27,7 @@ use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, 
 use ntkrnl_sys::{InitializeListHead, InsertTailList, IsListEmpty, RemoveHeadList};
 use scsidisk::{Disk, Request, Srb};
 
-use crate::nvme::{now_us, Controller, Identity, Namespace};
+use crate::nvme::{now_us, Controller, Identity, Irq, Namespace};
 use crate::print::nvprint;
 
 const IRP_MJ_CREATE: u8 = 0x00;
@@ -84,7 +85,10 @@ const STATUS_INVALID_DEVICE_REQUEST: NTSTATUS = 0xC000_0010u32 as NTSTATUS;
 const STATUS_DEVICE_CONFIGURATION_ERROR: NTSTATUS = 0xC000_0182u32 as NTSTATUS;
 const STATUS_ADAPTER_HARDWARE_ERROR: NTSTATUS = 0xC000_00C2u32 as NTSTATUS;
 
+const CM_RESOURCE_TYPE_INTERRUPT: u8 = 2;
 const CM_RESOURCE_TYPE_MEMORY: u8 = 3;
+const CM_RESOURCE_INTERRUPT_LATCHED: u16 = 1;
+const CM_RESOURCE_SHARE_SHARED: u8 = 3;
 const CM_RESOURCE_TYPE_MEMORY_LARGE: u8 = 7;
 const CM_RESOURCE_MEMORY_LARGE_40: u16 = 0x0200;
 const CM_RESOURCE_MEMORY_LARGE_48: u16 = 0x0400;
@@ -111,6 +115,8 @@ struct Fdo {
     lower: PDEVICE_OBJECT,
     /// Set in START before any disk is published; then the worker's alone.
     controller: Option<Controller>,
+    /// The connected interrupt, shared by the ISR, the DPC and the worker.
+    irq: Irq,
     /// SRB IRPs waiting for the worker, linked through Irp->Tail.Overlay.ListEntry.
     queue: LIST_ENTRY,
     lock: ntkrnl_sys::ke::KSPIN_LOCK,
@@ -172,6 +178,7 @@ pub unsafe extern "system" fn add_device(driver: PDRIVER_OBJECT, pdo: PDEVICE_OB
         device,
         lower,
         controller: None,
+        irq: Irq::new(),
         queue: core::mem::zeroed(),
         lock: 0,
         event: core::mem::zeroed(),
@@ -290,6 +297,65 @@ unsafe fn registers(io: PIO_STACK_LOCATION) -> Option<(u64, u64)> {
     })
 }
 
+/// The interrupt START assigned: (vector, level, affinity, latched, shared).
+unsafe fn interrupt(io: PIO_STACK_LOCATION) -> Option<(ULONG, u8, usize, bool, bool)> {
+    let list = (*io).Parameters.StartDevice.AllocatedResourcesTranslated;
+    if list.is_null() || (*list).Count == 0 {
+        return None;
+    }
+    let partial = &(*(*list).List.as_ptr()).PartialResourceList;
+    let descs = core::slice::from_raw_parts(partial.PartialDescriptors.as_ptr(), partial.Count as usize);
+    descs.iter().find(|d| d.Type == CM_RESOURCE_TYPE_INTERRUPT).map(|d| {
+        let i = d.u.Interrupt;
+        (
+            i.Vector,
+            i.Level as u8,
+            i.Affinity as usize,
+            d.Flags & CM_RESOURCE_INTERRUPT_LATCHED != 0,
+            d.ShareDisposition == CM_RESOURCE_SHARE_SHARED,
+        )
+    })
+}
+
+/// Connect the controller's pin-based interrupt and switch it over to it.
+/// Without one (no resource, or the connect fails) it keeps polling, and says so.
+unsafe fn connect(fdo: &mut Fdo, io: PIO_STACK_LOCATION, c: &mut Controller) {
+    let n = fdo.number;
+    let Some((vector, level, affinity, latched, shared)) = interrupt(io) else {
+        nvprint!("controller {}: START_DEVICE carried no interrupt; polling\n", n);
+        return;
+    };
+    let irq = &raw mut fdo.irq;
+    KeInitializeEvent((*irq).event(), SYNCHRONIZATION_EVENT as _, 0);
+    KeInitializeDpc((*irq).dpc(), Some(crate::nvme::dpc), irq.cast());
+    let status = IoConnectInterrupt(
+        &raw mut (*irq).interrupt,
+        Some(crate::nvme::isr),
+        irq.cast(),
+        null_mut(),
+        vector,
+        level,
+        level,
+        if latched { _KINTERRUPT_MODE_Latched } else { _KINTERRUPT_MODE_LevelSensitive },
+        shared as u8,
+        affinity as _,
+        0,
+    );
+    if status < 0 {
+        nvprint!("controller {}: IoConnectInterrupt (vector {}, level {}) failed {:#010x}; polling\n", n, vector, level, status as u32);
+        return;
+    }
+    c.use_interrupts(irq, n);
+    nvprint!(
+        "controller {}: interrupt connected: vector {}, level {}, {}, {}\n",
+        n,
+        vector,
+        level,
+        if latched { "latched" } else { "level-sensitive" },
+        if shared { "shared" } else { "exclusive" }
+    );
+}
+
 /// Map the registers, bring the controller up, and publish its namespaces.
 unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
     fdo.number = NEXT_CONTROLLER.fetch_add(1, Ordering::Relaxed);
@@ -329,6 +395,7 @@ unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
         if id.volatile_cache { "present (disabled)" } else { "none" },
         (now_us() - t0) / 1000
     );
+    connect(fdo, io, &mut c);
 
     let mut ids = [0u32; NAMESPACES_PER_CONTROLLER];
     let active = c.active_namespaces(&mut ids);
@@ -474,7 +541,15 @@ unsafe fn self_test(n: u32, c: &mut Controller, ns: &Namespace) {
     }
     let us = (now_us() - t0).max(1);
     let kib = (total << ns.block_shift) / 1024;
-    nvprint!("controller {}: self-test: read {} KiB in {} ms ({} KiB/s)\n", n, kib, us / 1000, kib * 1_000_000 / us);
+    nvprint!(
+        "controller {}: self-test: read {} KiB in {} ms ({} KiB/s); completions so far: {} by interrupt, {} by poll\n",
+        n,
+        kib,
+        us / 1000,
+        kib * 1_000_000 / us,
+        c.by_interrupt,
+        c.by_poll
+    );
 }
 
 // ---------------------------------------------------------------------------

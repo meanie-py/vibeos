@@ -54,6 +54,7 @@ def test_nvme_controller_and_namespace(vm: QemuVM) -> None:
         "[NVME] controller 0: namespace 1: 131072 blocks of 512 B (64 MiB)",
         "[NVME] controller 0: self-test: partition 1 type 0x06 at block 2048",
         "[NVME] controller 0: namespace 1 published as a disk",
+        "[NVME] controller 0: interrupts working",
     ):
         assert line in serial, f"missing {line!r}:\n{serial[-6000:]}"
     assert "self-test: read 1024 KiB" in serial, serial[-6000:]

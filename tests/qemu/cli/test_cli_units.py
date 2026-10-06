@@ -9565,7 +9565,10 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     failed = '[NVME] controller 0: bring-up failed: Timeout("enable")\n'
     bad = smoke_mod._nvme_check(failed)
     assert bad and any("bring-up failed" in s for s in bad["salient"])
-    real = "[NVME] controller 0: namespace 1 published as a disk\n"
+    polled = "[NVME] controller 0: namespace 1 published as a disk\n"
+    bad = smoke_mod._nvme_check(polled)
+    assert bad and bad["classification"] == "NVME_POLLING"
+    real = polled + "[NVME] controller 0: interrupts working (first completion by interrupt: x)\n"
     assert smoke_mod._nvme_check(real) is None
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
     assert smoke_mod._nvme_check(never_loaded) is None
