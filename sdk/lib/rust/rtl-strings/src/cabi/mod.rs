@@ -8459,6 +8459,12 @@ pub unsafe extern "system" fn RtlAddAtomToAtomTable(
         if !atom.is_null() {
             *atom = (*entry).atom;
         }
+        // TEMP diagnostic (atom wrap hunt)
+        if (*entry).atom < 0xC000 {
+            extern "C" { fn DbgPrint(f: *const u8, ...) -> u32; }
+            DbgPrint(b"[ATOMBAD] table=%p entry=%p atom=%x index=%x refs=%x\n\0".as_ptr(),
+                atom_table, entry, (*entry).atom as u32, (*entry).handle_index as u32, (*entry).reference_count as u32);
+        }
     } else if !hash_link.is_null() {
         let atom_name_len = wcslen(atom_name) as u32;
         if !atom_::atom_name_len_ok(atom_name_len) {
