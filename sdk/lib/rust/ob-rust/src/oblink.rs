@@ -720,10 +720,9 @@ pub unsafe extern "system" fn NtOpenSymbolicLinkObject(
         &mut hLink,
     );
 
-    if Status >= 0 {
-        if let Err(s) = ntkrnl_sys::probe::write_back(LinkHandle, hLink) {
-            Status = s;
-        }
+    // C: unconditional, so a failed open hands the caller back NULL.
+    if let Err(s) = ntkrnl_sys::probe::write_back(LinkHandle, hLink) {
+        Status = s;
     }
 
     Status
