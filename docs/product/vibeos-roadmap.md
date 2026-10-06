@@ -421,7 +421,7 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | # | Quest | Doc | Size | Status (2026-07-10) |
 |---|-------|-----|------|-----------|
 | 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
-| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, read-only to Windows for now, ~10.7 MB/s polled). Next: let Windows write the card, then boot from it instead of the RAM disk |
+| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). Next: boot from the card instead of the RAM disk |
 | 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
 | 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). Next: its interrupts, then GEM and I217 |
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
@@ -604,6 +604,42 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the first leave arm64input at all. Row 10a's migration to USB HID input would retire the
   path; until then a person typing into an arm64 QEMU window likely hits the same wall.
 
+- **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
+  lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
+  captured mid-body of itself, so `ZwContinue` after a vectored handler's
+  `EXCEPTION_CONTINUE_EXECUTION` resumes inside `RtlRaiseException` and dispatches again,
+  forever (found when a VEH probe hung an x86-64 guest process's thread for 30 s; amd64's asm
+  version rewrites Rip/Rsp to the caller and does not have it). `ExceptionAddress` is also NULL.
+  Masked today because, under DUMMY_PSEH, nothing continues a raise. **Two fixes were tried and
+  both reverted**, because each made smss's `seh_poc_user.c` probe 1 (a raise caught by
+  `__except`) print `CORRUPT x21: 00007FFFFFFEF000 -> 000000000012FAE8` on an otherwise green
+  boot: (1) one `RtlVirtualUnwind` of our own frame after the capture; (2) an asm
+  `RtlRaiseException` that captures before touching any nonvolatile register and patches
+  fp/lr/sp/pc to the caller's, as amd64 does (run `20261006-021810-kpujl93s-smoke-arm64`). Since
+  (2) hands the dispatcher exactly the caller's state, the x21 corruption is downstream:
+  probably the arm64 `RtlUnwindEx` / `__C_specific_handler` path when the dispatch context's
+  first frame is the `__try` function itself rather than `RtlRaiseException` (the old shape
+  always had one extra frame to unwind first). Start there, with (2) and a probe that continues
+  a raise (`fired == 1 && returned`).
+- **arm64: synchronous IRP completions ran late, into dead stack frames** (FIXED 2026-10-06).
+  The HAL drained APCs under a per-CPU flag that stayed set across a thread switch inside a
+  normal kernel APC, so other threads' `IopCompleteRequest` APCs waited for a later IRQL drop
+  and wrote into frames their callers had left. Found when the Pi 4 SD card went writable
+  (0x1E with a DISK_GEOMETRY in FP, 0x109 from WAITDEP). `[IO-STRANDED]` now reports any
+  recurrence. Field manual: "A kernel return address holds a DISK_GEOMETRY". It may account
+  for other arm64 dispatcher flakes in this registry; re-check them against it.
+- **arm64: `cmd` output redirection never returns** (OPEN, 2026-10-06). `echo hi > F:\x.txt`
+  typed into cmd on the Pi 4 leaves cmd parked in `NtRequestWaitReplyPort` (WrLpcReply, the
+  census backtrace) waiting on csrss, and no file is created, on the SD card or on a USB stick
+  alike. The storage path is fine: stortest's create/write/flush/readback on the same volume
+  passes and the firmware reads its file back. This was first logged here as "the SD card's
+  first write blocks" (`9208546a69b0`); that was a misdiagnosis, corrected by the census
+  backtrace. `cmd /c copy` (no redirection) works.
+- **xHCI rig: the stick behind the hub never becomes a volume** (OPEN, observed 2026-10-06).
+  `test_usb_stick_read_and_write` fails with `COPY.TXT on (hub, SuperSpeed): [None, ...]`;
+  stortest sees only one stick volume (`next-letter Harddisk2 failed (error 3)`). Seen before
+  and after the HAL APC fix, and with both sticks FAT16, so not those changes; not yet checked
+  on a clean master.
 - **Pi 4 (real hardware): a loopback UDP `sendto()` never returned** (FIXED 2026-10-04,
   `e0674df2c66`). With no NIC netstack drives, the engine worker exited while TDI kept pending
   IRPs into its dead inbox. They now fail fast with STATUS_NETWORK_UNREACHABLE. QEMU never showed
@@ -617,14 +653,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   start. Repro: runs `20261004-194815-lrtpx0w2` and `20261004-194452-8j2swl96` (smoke-amd64,
   graviton lane). Raise the cap once both are green. arm64 already describes all RAM: its
   pool-sizing underflow was the 4 GiB Pi 5's silent hang (fixed in `arm/init.rs`).
-- **amd64: a user-mode Rust panic report can bugcheck the kernel (0x1E in the debug print
-  path)** (OPEN, 2026-10-04; kd lane). A panic in explorer's shell32 printed a stack walk that
-  ran into garbage, and the kernel faulted (C0000005) at `ntoskrnl+0xC64C0` reading it, which
-  symbolizes to the first line of kd-rust `KdIoPrintf` (`kdio.rs:822`), so the exact faulting
-  function is not confirmed. User mode must not be able to take the kernel down through a
-  debug print: the copy from the caller's buffer needs a probe under SEH. Repro: runs
-  `20261004-080222-cpyv4l2x` / `20261004-080920-w43f482z` (smoke-amd64, msvcrt-homebrew,
-  before the DllEntryPoint fix that removed the panic).
+- **amd64: a user-mode debug print with a bad buffer bugchecked the kernel** (FIXED 2026-10-06;
+  was "a user-mode Rust panic report can bugcheck the kernel"). Not `KdIoPrintf`, as first
+  logged: against the run's own kernel the PC is `KdpStub` (kd64-rust `kdtrap.rs`). With no
+  debugger attached, KdpStub echoes `BREAKPOINT_PRINT` to the console UART, an addition the C
+  does not have, and it read the caller's buffer in place. It now captures the buffer the way
+  `KdpPrint` does and fails the print with STATUS_ACCESS_VIOLATION. `sehtest`'s
+  `bad-print-buffer` probe (amd64) prints from a kernel address on every boot. Before the fix it
+  bugchecked 0x50 in KdpStub; after it, it prints PASS.
 - **fastfat: the free-dirent bitmap goes stale, then every create in that directory raises
   STATUS_FILE_CORRUPT_ERROR** (OPEN, 2026-10-04). Wine's ole32 `storage32` test (olewinetest
   payload, amd64) drives about 100,000 raises in 120 s. They are caught, so the test times out
@@ -796,7 +832,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
       UI thread and before the download thread (blocked in an ntdll syscall), with no
       FAULTLOOP report. Inference, not shown: GetThreadContext waiting on a thread whose
       kernel wait blocks the suspend APC.
+    - **Applets open no window: uxtheme reads another property as its WND_DATA** (FIXED
+      2026-10-05). `RtlpCheckIntegerAtom` took any name pointer with bits 16-31 clear for an
+      integer atom, so once NtAddAtom/NtFindAtom captured names into a pool block at
+      `...0000_xxxx`, every new global atom in the boot was `xxxx`. uxtheme's `ux_WndContext`
+      then equalled shell32's `CPLFlags` and rundll32 faulted in `OnPostWinPosChanged`
+      (cpl-timedate/-access/-inetcpl/-powercfg, dxdiag; about half of arm64 appstorm boots,
+      20261005-214751-gc94fnsa and -214756-ypxnsi6z). Fixed in rtl-strings' atom test.
     - **cpl-appwiz then opens no window** (OPEN): rapps /appwiz stays alive with no window.
+      Possibly the atom bug above (it breaks Control_DoLaunch's first-instance search too);
+      unconfirmed, as no failure since printed the no-window dump.
       Failed again 2026-10-04 (20261004-173345-lbmi6pz6) after passing 5 boots; not mutex
       abandonment. appstorm's no-window dump missed it (rundll32 exits and orphans rapps before
       the family is grown); fixed, so the next failure dumps rapps' threads.
@@ -952,7 +997,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   struct (a C bug); `KsSetInformationFile` probing its own pool buffer (a C bug: every
   call failed). Drivers outside ntoskrnl that use the probes need ntkrnl-sys feature
   `import_mm_user_probe_address`.
-- **Post-probe user access: the probe passes, the access bugchecks — PARTLY FIXED, OWED**
+- **Post-probe user access: the probe passes, the access bugchecks — FIXED (syscall bodies); callees OWED**
   (2026-10-05). A probe proves where a buffer is, never that it stays mapped; the C
   touches it inside `_SEH2_TRY`, Rust touched it with plain loads and stores.
   `MmProbeAndLockPages` raises the same way. Done: `MmTryProbeAndLockPages` exported and
@@ -974,13 +1019,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   call; SeCaptureSidAndAttributesArray leaked its validation array per call and returned
   a freed array on failure; SeCaptureLuidAndAttributesArray never copied into a
   caller-supplied buffer and left `*Dest` dangling (a double free from NtFilterToken;
-  the dangling pointer is the C's too). **Owed:** `tools/scan_raw_user_access.py` lists
-  every Nt* syscall that still loads or stores through a pointer argument raw; its
-  baseline (`tools/lint-baseline/scan_raw_user_access.txt`, 114 rows at filing) is the
-  burndown list. Some rows are kernel-mode-only branches (read them, then `nolint`);
-  most are real, led by win32k NtGdi*/NtUser*, NtSetInformationProcess/Thread reading
-  their input in place, LPC's captures, and NtAllocateVirtualMemory/NtMapViewOfSection's
-  write-backs. Callees are not covered by that scanner.
+  the dangling pointer is the C's too). Part 2 burned the scanner's baseline from 114 rows to ZERO: every Nt* syscall body now loads and stores a pointer argument through `read_back`/`write_back`/`safe_copy_raw`/`copy_from_user` (`ntkrnl_sys::probe::read_back` is the new load-side twin of `write_back`), and the empty baseline makes any new raw access a `vibeos-cli check` failure. More real bugs: **NtWriteFile** read `Key` unprobed; **NtLoadKeyEx** "probed" each OBJECT_ATTRIBUTES with a one-byte touch (no range check); **NtGdiOpenDCW** had dropped the C's clear of `pUMdhpdev` (arbitrary-address handle store) and allocated a caller-sized DEVMODE it then wrote as a full DEVMODEW (pool overflow, the C's too); **NtUserRegisterClassExWOW** copied a whole WNDCLASSEXW after range-checking only `cbSize`; **NtGdiPolyDraw**'s `ProbeArrayForRead` was an empty fn; **NtUserSetCursorIconData**, d3dkmt Create/DestroyDCFromMemory, `NtUserBuildHwndList`'s `pcHwndNeeded` and `NtUserGetIconInfo`'s `lpModule` had no probe at all; NtOpenObjectAuditAlarm and NtPrivilegedServiceAuditAlarm re-read `PrivilegeCount` after it sized the buffer (double fetch, the C's too — the copy is pinned now); NtCreateToken and NtImpersonateClientOfPort probed with a stricter alignment than the C. **Owed:** the scanner reads only the syscall body, so a user pointer passed straight into a callee (e.g. `lpmii` into `UserInsertMenuItem`) is unaudited.
 - **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
   `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
   cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
@@ -2705,6 +2744,36 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   claim, not a test of mine. Whoever bumps
   the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
   it is a one-command check.
+
+- **2026-10-06: x86-64 apps run on arm64 — the x64 ladder is at parity with the x86 one
+  (BTCpu64 M2).** All ten 32-bit ladder sources, rebuilt for x86-64, plus `hello64`, exit
+  `0x600D` under FEX on arm64 (`/tmp/vibeos-cli/20261006-020111-v3xu401s-smoke-arm64`, 24
+  guests at 0x600D on one boot with the 32-bit ladder) AND natively on amd64, the oracle. They
+  run on the guest's OWN amd64 ntdll, loader and system DLLs (staged into `sysamd64`), so this
+  is real Win32: windows with callbacks and paint, GDI, files and overlapped I/O, IOCP, the
+  registry's 64-bit view, sockets, guest SEH through `.pdata`, threads, runtime codegen, and
+  process creation. Real bugs fell out on the way, none of them in FEX:
+  rtl-heap's arm64 `HEAP_ENTRY` field order (never heap.h's; invisible until two ntdlls shared
+  one process heap), `wow64-closure.py` choosing stripped twins by bare name (it shipped an
+  i386 kernel32 into the amd64 set), and the x64 ladder launching on winlogon's desktop -- all
+  fixed -- plus arm64 `RtlRaiseException` resuming inside itself when a handler continues,
+  registered OPEN below (two fixes each tripped an smss SEH probe and were reverted). Graded where the media carries them (`STAGED_LADDER`).
+  What is still owed is in the design doc's "Status" section (APCs into a guest thread,
+  `NtCreateThreadEx`, thread exit cleanup).
+
+- **2026-10-05: x86-64 code runs on arm64 (BTCpu64 M1).** `hello64.exe`, a plain amd64 PE,
+  exits `0x600D` on arm64 under FEX in 64-bit mode
+  (`/tmp/vibeos-cli/20261005-223205-ztl4mr2p-smoke-arm64`) AND natively on amd64
+  (`/tmp/vibeos-cli/20261005-224925-gh3n_tri-smoke-amd64`), the same binary graded on a JIT
+  host and a native one. It proves long mode, GS = the shared native TEB, the PEB, and a raw
+  `syscall` (`NtClose(NULL)` -> `STATUS_INVALID_HANDLE`) forwarded to the arm64 kernel by
+  register shuffle alone. This is Fork B of `docs/engineering/wow64-x64-guest-design.md`: ntdll
+  diverts an amd64 main image to `wowx64.dll` (new, Rust), which drives `libwowx64fex.dll`
+  (new, `tools/fex/wowx64fex`: FEXCore linked out of tree, `vendor/fex` untouched) through our
+  own BTCpu64 contract (`sdk/include/reactos/wowx64/btcpu64.h`). `hello64` is in the graded
+  ladder (`tests/qemu/cli/ladder.py`), so `pi4 --ladder` grades it on the A72 too. The 32-bit
+  ladder stayed green on both arches. **Next (M2):** the guest's own amd64 ntdll and loader, so
+  a guest with imports runs. Owed list: the design doc's "M1 status" section.
 
 - **2026-10-04: x86 guests run under FEX on a real Raspberry Pi 4.** The FEX arm64 media
   (`VIBEOS_FEX=1`, MP kernel, Cortex-A72 x4) netbooted to the desktop and ran the whole ladder:

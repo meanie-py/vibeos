@@ -75,7 +75,16 @@ pub struct HEAP_ENTRY {
     pub UnusedBytes: UCHAR,   // @7
 }
 
-#[cfg(target_arch = "x86_64")]
+// Every 64-bit target, as heap.h's `#ifdef _WIN64` has it: the private-data
+// pointer FIRST. aarch64 used to have its own order here (Size at +0,
+// PreviousSize at +8) that the C never had. That was invisible while each
+// process ran one architecture's heap code, and it is not now: an x86-64 guest
+// process on arm64 holds the guest's amd64 ntdll and the native arm64 one in a
+// single PEB, both reaching the process heap through PEB->ProcessHeap, so the
+// two builds must agree on what a heap block IS. They did not -- the guest's
+// RtlpRemoveFreeBlock read a free block whose Size the native side had written
+// at +0, found 0 at +8, and indexed its free list with 0xFFFFFFFF.
+#[cfg(target_pointer_width = "64")]
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct HEAP_ENTRY {
@@ -88,19 +97,6 @@ pub struct HEAP_ENTRY {
     pub UnusedBytes: UCHAR,              // @15
 }
 
-#[cfg(target_arch = "aarch64")]
-#[repr(C, align(8))]
-#[derive(Clone, Copy)]
-pub struct HEAP_ENTRY {
-    pub Size: USHORT,         // @0
-    pub Flags: UCHAR,         // @2
-    pub SmallTagIndex: UCHAR, // @3
-    _pad0: u32,               // @4..8 (rest of SubSegmentCode)
-    pub PreviousSize: USHORT, // @8
-    pub SegmentOffset: UCHAR, // @10
-    pub UnusedBytes: UCHAR,   // @11
-    _pad1: u32,               // @12..16
-}
 pub type PHEAP_ENTRY = *mut HEAP_ENTRY;
 
 // ── HEAP_FREE_ENTRY = common entry + FreeList (flattened) ────────────
@@ -120,7 +116,7 @@ pub struct HEAP_FREE_ENTRY {
     pub FreeList: LIST_ENTRY,
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(target_pointer_width = "64")]
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct HEAP_FREE_ENTRY {
@@ -134,20 +130,6 @@ pub struct HEAP_FREE_ENTRY {
     pub FreeList: LIST_ENTRY,
 }
 
-#[cfg(target_arch = "aarch64")]
-#[repr(C, align(8))]
-#[derive(Clone, Copy)]
-pub struct HEAP_FREE_ENTRY {
-    pub Size: USHORT,
-    pub Flags: UCHAR,
-    pub SmallTagIndex: UCHAR,
-    _pad0: u32,
-    pub PreviousSize: USHORT,
-    pub SegmentOffset: UCHAR,
-    pub UnusedBytes: UCHAR,
-    _pad1: u32,
-    pub FreeList: LIST_ENTRY,
-}
 pub type PHEAP_FREE_ENTRY = *mut HEAP_FREE_ENTRY;
 
 // ── tag / counter / tuning structs ──────────────────────────────────

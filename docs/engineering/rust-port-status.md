@@ -1964,16 +1964,19 @@ constants that are pure bit positions, where an invented value demangles with th
 options rather than failing.
 
 ### Driver fleet detail
-Essentially the entire boot/smoke driver fleet is Rust. **Four drivers are from-scratch
+Essentially the entire boot/smoke driver fleet is Rust. **Five drivers are from-scratch
 Rust with zero C: `netstack.sys` (replacing the legacy NDIS/tcpip stack), `usbxhci.sys`
 (the USB 3 xHCI miniport under usbport, written against the xHCI 1.2 spec, 2026-09-26; it
 drives the Raspberry Pi 4's VL805;
-`docs/engineering/usbxhci-design.md`) and `sdhc.sys` (arm64, 2026-10-05: the Pi 4's SD
+`docs/engineering/usbxhci-design.md`), `sdhc.sys` (arm64, 2026-10-05: the Pi 4's SD
 card slot, an SDHCI 3.0 host, presented to disk.sys as a SCSI disk with no port driver
-underneath; `sdhc-rust/src/lib.rs`) and `nvme.sys` (all three arches, 2026-10-06: NVM
-Express controllers, each namespace presented to disk.sys the same way; polled, one
-command at a time; `nvme-rust/src/lib.rs`, on the shared `scsidisk-rust` SCSI layer).**
-USB mass storage on arm64 (usbstor → classpnp/disk
+underneath; `sdhc-rust/src/lib.rs`), `vioblk.sys` (a virtio-blk SCSIPORT miniport
+over the `virtio-drivers` crate, 2026-10-05: one SCSI disk per virtio-blk PCI function,
+polled; x86 boots its ISO over virtio-blk with it, which it could not before — the kernel
+had no virtio-blk driver at all) and `nvme.sys` (all three arches, 2026-10-06: NVM
+Express controllers, each namespace presented to disk.sys with no port driver
+underneath; polled, one command at a time; `nvme-rust/src/lib.rs`, on the shared
+`scsidisk-rust` SCSI layer).** USB mass storage on arm64 (usbstor → classpnp/disk
 → partmgr → mountmgr → fastfat, all Rust bodies) is first boot-exercised by the xHCI rig's
 stick test, 2026-09-26; before that none of those five was staged on arm64.
 Everything else is a cohab flip (body in a `*-rust` crate, thin C residue —
@@ -1993,15 +1996,18 @@ that isn't just a port — capabilities and correctness properties that go past 
 ReactOS, made tractable because the kernel is now our Rust in one workspace. Landed-vs-in-
 flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
 
-- **x86-on-ARM64 — a homegrown Rosetta (WoW64 + FEX).** 32-bit x86 PE binaries launch as a
-  **WoW64 process on the ARM64 NT kernel** — Phase B complete + Phase C M1 landed (real
-  i386 PE runs through the full WoW64 stack: `wow64.dll`/`wow64cpu`/`wow64win`, generated
-  syscall thunks). M3b (ntdll32 loader → `RtlCreateActivationContext`) is in flight on
-  `fex-arm`, currently blocked on a foundational arm64 unaligned-access fault. The x86→arm64
-  execution engine is **FEX-emu** (vendored FEX-2607, `wow64fex`/`FEXOfflineCompiler` link
-  with zero patches; `fexprobe` executes an x86 guest blob) — the "run real x86 Windows
-  binaries on an ARM64 Rust kernel" thesis. Docs: `active-lanes/wow64-plan.md`,
-  `active-lanes/fex-bringup-plan.md`.
+- **x86-on-ARM64 — a homegrown Rosetta (WoW64 + FEX).** 32-bit x86 PE binaries run as
+  **WoW64 processes on the ARM64 NT kernel**: `wow64.dll` + generated syscall thunks over
+  **FEX-emu** (vendored FEX-2607; one recorded patch, `vendor-patches/fex.md`). The graded
+  guest ladder is green in QEMU and on a **real Raspberry Pi 4** (roadmap, 2026-10-04 entry),
+  and amd64 runs the same ladder natively through `wow64cpu`. **x86-64 on ARM64** started
+  2026-10-05 (BTCpu64, Fork B of `wow64-x64-guest-design.md`): our own CPU-layer contract,
+  `wowx64.dll` (Rust, no C counterpart) driving `libwowx64fex.dll` (FEXCore in 64-bit mode,
+  linked out of tree). M2 (2026-10-06): the x64 ladder (`hello64` + the ten 32-bit guest
+  sources rebuilt for x86-64) passes under FEX on arm64 and natively on amd64, on the guest's
+  own amd64 ntdll, loader and system DLLs. Docs: `active-lanes/wow64-plan.md`,
+  `active-lanes/fex-bringup-plan.md` (32-bit), `wow64-x64-guest-design.md` (x86-64: status
+  and the owed list).
 - **SMP / multi-processor bring-up.** The `CONFIG_SMP` kernel (`ntkrnlmp.exe`) **links on
   all three arches and boots `-smp 1` to desktop (amd64)** — landed. The **first amd64 AP
   starts and runs `KiSystemStartup`** (CPU 1 parks) on the `smp-bringup` lane; M2 is pinned

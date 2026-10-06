@@ -116,40 +116,46 @@ CHARDEV_CONNECT_ERROR = "Failed to connect to '"
 BIND_RACE_ERRORS = (HOSTFWD_BIND_ERROR, GDB_BIND_ERROR, CHARDEV_CONNECT_ERROR)
 HOSTFWD_LAUNCH_RETRIES = int(os.environ.get("VIBEOS_HOSTFWD_LAUNCH_RETRIES", "4"))
 
-# The usbstor rig's stick (VIBEOS_QEMU_USB_DISK=1): an MBR disk, one FAT16
-# partition at 1 MiB labelled USB_STICK_LABEL, holding USB_STICK_FILE.
+# The usbstor rig's stick (VIBEOS_QEMU_USB_DISK=1): an MBR disk, one FAT
+# partition at 1 MiB labelled USB_STICK_LABEL, holding USB_STICK_FILE. FAT16 by
+# default; the rig's second stick is FAT32, the format of real cards and sticks.
 USB_STICK_LABEL = "VIBESTICK"
 USB_STICK_FILE = "VIBEOS.TXT"
 USB_STICK_TEXT = b"hello from the usb stick\r\n"
 _USB_STICK_MIB = 64
 
 
-def make_usb_stick_image(path: Path) -> None:
-    """Build the usbstor rig's stick image at `path`, as qcow2 (host sfdisk + mkfs.fat + mcopy)."""
+def make_usb_stick_image(path: Path, fat: int = 16, mib: int = _USB_STICK_MIB) -> None:
+    """Build the usbstor rig's stick image at `path`, as qcow2 (host sfdisk + mkfs.fat + mcopy).
+
+    `fat` is 16 or 32; `mib` the stick's size. The file system is made in place
+    on a sparse disk image, so a multi-GiB stick costs no memory or disk. A
+    FAT32 volume of the default 64 MiB needs one-sector clusters to reach
+    FAT32's 65525-cluster minimum, so mkfs.fat is told `-s 1` below 512 MiB.
+    """
     part_offset = 1 << 20
-    part_bytes = (_USB_STICK_MIB << 20) - part_offset
+    part_bytes = (mib << 20) - part_offset
     with tempfile.TemporaryDirectory() as td:
-        part = Path(td) / "part.img"
         payload = Path(td) / USB_STICK_FILE
         payload.write_bytes(USB_STICK_TEXT)
-        subprocess.run(
-            ["mkfs.fat", "-F", "16", "-n", USB_STICK_LABEL, "-C", str(part), str(part_bytes >> 10)],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["mcopy", "-i", str(part), str(payload), f"::/{USB_STICK_FILE}"],
-            check=True,
-            capture_output=True,
-        )
         tmp = path.with_suffix(".tmp")
         with tmp.open("wb") as f:
-            f.truncate(_USB_STICK_MIB << 20)
-            f.seek(part_offset)
-            f.write(part.read_bytes())
+            f.truncate(mib << 20)
         subprocess.run(
             ["sfdisk", "--no-reread", "--no-tell-kernel", str(tmp)],
-            input=b"label: dos\nstart=2048, type=06\n",
+            input=b"label: dos\nstart=2048, type=%s\n" % (b"0c" if fat == 32 else b"06"),
+            check=True,
+            capture_output=True,
+        )
+        cluster = ["-s", "1"] if fat == 32 and mib < 512 else []
+        mkfs = ["mkfs.fat", "-F", str(fat), *cluster, "-n", USB_STICK_LABEL]
+        subprocess.run(
+            [*mkfs, "--offset", str(part_offset >> 9), str(tmp), str(part_bytes >> 10)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["mcopy", "-i", f"{tmp}@@{part_offset}", str(payload), f"::/{USB_STICK_FILE}"],
             check=True,
             capture_output=True,
         )
@@ -1962,8 +1968,8 @@ class QemuVM:
         """VIBEOS_QEMU_USB_DISK=1 attaches usb-storage sticks (usbstor bring-up rig):
         with VIBEOS_QEMU_XHCI=1 two on the xHCI controller, one behind a hub and one
         SuperSpeed (the devices themselves are added by _xhci_args), otherwise one
-        on its own EHCI controller. The stick is a
-        64M MBR disk with one FAT16 partition holding USB_STICK_FILE, so a guest
+        on its own EHCI controller. A stick is a 64M MBR disk with one FAT
+        partition (the SuperSpeed one FAT32) holding USB_STICK_FILE, so a guest
         that mounts it has something known to read back. The image lives beside
         scratch_path so the windows-host backend stages it like any other media."""
         if not self._usb_disk_enabled():
@@ -1975,7 +1981,9 @@ class QemuVM:
         if self._xhci_enabled():
             ss_disk = self.scratch_path.parent / "usbdisk-ss.qcow2"
             if not ss_disk.exists():
-                make_usb_stick_image(ss_disk)
+                # VIBEOS_QEMU_USB_STICK_SS_MIB sizes it, e.g. 4096 for a card-sized FAT32.
+                mib = int(os.environ.get("VIBEOS_QEMU_USB_STICK_SS_MIB", _USB_STICK_MIB))
+                make_usb_stick_image(ss_disk, fat=32, mib=mib)
             return [*drive, "-drive", f"file={ss_disk},format=qcow2,if=none,id=usbstor1"]
         return [
             "-device",
@@ -2851,7 +2859,61 @@ class QemuVM:
             except Exception as exc:
                 body = f"<unavailable: {exc!r}>"
             chunks.append(f"=== CPU#{idx} stack {cmd} ===\n{body}")
+        # The frame-pointer chain: the backtrace. A fixed stack window shows
+        # only the innermost frame or two -- a 2026-10-05 amd64 deadlock had
+        # CPU1 spinning on MmPfnLock with interrupts DISABLED, and the window
+        # ended before the frame that had disabled them, which is the bug.
+        try:
+            from .cli.triage import cpu_fps
+
+            fps = cpu_fps("\n".join(chunks))
+        except Exception:
+            fps = []
+        for idx, fp in fps:
+            walk = self._walk_frames(idx, fp)
+            chunks.append(f"=== CPU#{idx} frames (frame-pointer chain) ===\n{walk}")
         return "\n\n".join(chunks) + "\n"
+
+    def _walk_frames(self, cpu: int, fp_hex: str, limit: int = 32) -> str:
+        """Follow saved-fp/return-address pairs from `fp_hex` through `cpu`'s own
+        translation. Stops at a null or non-ascending link (the chain's end, or
+        a trap frame that does not continue it) and says why. Never raises."""
+        wide = len(fp_hex) > 8
+        unit = "g" if wide else "w"
+        lines = []
+        try:
+            self.qmp.hmp(f"cpu {cpu}")
+        except Exception:
+            pass
+        fp = int(fp_hex, 16)
+        try:
+            for depth in range(limit):
+                try:
+                    body = self.qmp.hmp(f"x /2{unit}x 0x{fp:x}").strip()
+                except Exception as exc:
+                    lines.append(f"  (end: <unavailable: {exc!r}>)")
+                    break
+                words = re.findall(r"0x([0-9a-fA-F]+)", body.split(":", 1)[-1])
+                if len(words) < 2:
+                    lines.append(f"  (end: unreadable at 0x{fp:x}: {body[:80]})")
+                    break
+                nxt, ret = int(words[0], 16), int(words[1], 16)
+                lines.append(f"  #{depth} fp={fp:x} ret={ret:x}")
+                if nxt == 0:
+                    lines.append("  (end: null frame pointer)")
+                    break
+                if nxt <= fp or nxt - fp > 0x100000:
+                    lines.append(f"  (end: next fp {nxt:x} does not ascend)")
+                    break
+                fp = nxt
+            else:
+                lines.append(f"  (stopped at {limit} frames)")
+        finally:
+            try:
+                self.qmp.hmp("cpu 0")
+            except Exception:
+                pass
+        return "\n".join(lines) or "  (no frames)"
 
     def save_hang_state(self, phase: str) -> str:
         """Capture where every vCPU is parked and persist it where it survives.

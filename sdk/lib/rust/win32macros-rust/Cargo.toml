@@ -18,3 +18,7 @@ crate-type = ["rlib"]
 # consumer's WORD/BYTE/COLORREF are transparent aliases for u16/u8/u32 in every island in the
 # tree, which is what lets one crate be shared by consumers with twelve different islands.
 [dependencies]
+
+[package.metadata.difftest]
+# Run the known-answer #[test]s in `vibeos-cli difftest` (and so in the gate).
+host-tests = true

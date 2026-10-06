@@ -42,6 +42,16 @@ pub unsafe extern "system" fn KiRaiseUserExceptionDispatcher() {
     RtlRaiseException(addr_of_mut!(ExceptionRecord));
 }
 
+/// Set by wowx64.dll in an x86-64 guest process (and nowhere else): every
+/// win32k callback is then the GUEST's, because PEB->KernelCallbackTable is
+/// the guest user32's table of x86-64 code, which must not be called natively.
+/// The hook runs it in the guest and returns its status. Exported as data
+/// (ntdll.spec) so wowx64.dll can fill it without a private interface.
+#[no_mangle]
+pub static mut WowX64UserCallbackHook: Option<
+    unsafe extern "system" fn(Index: ULONG, Argument: *mut c_void, ArgumentLength: ULONG) -> NTSTATUS,
+> = None;
+
 /// `KiUserCallbackDispatcher` — the kernel transfers here (via
 /// `KeUserModeCallback`) to invoke a win32k user-mode callback by table index,
 /// then returns the result to the kernel via `ZwCallbackReturn` (which does not
@@ -54,6 +64,10 @@ pub unsafe extern "system" fn KiUserCallbackDispatcher(
 ) {
     if Index >= USER32_CALLBACK_COUNT {
         ZwCallbackReturn(null_mut(), 0, STATUS_INVALID_PARAMETER);
+    }
+
+    if let Some(Hook) = *core::ptr::addr_of!(WowX64UserCallbackHook) {
+        ZwCallbackReturn(null_mut(), 0, Hook(Index, Argument, ArgumentLength));
     }
 
     // PEB->KernelCallbackTable is an array of USER_CALL function pointers.

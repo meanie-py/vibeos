@@ -505,6 +505,22 @@ pub unsafe fn write_back<T: Copy>(dst: *mut T, value: T) -> Result<(), NTSTATUS>
     )
 }
 
+/// Load one value through a caller's pointer that was range-probed earlier: the
+/// C's `_SEH2_TRY { Value = *Ptr; } _SEH2_EXCEPT { Status = code; }`. The mirror
+/// of `write_back`: no probe and no alignment check, but the load survives a page
+/// another thread unmapped after the probe. Each call is ONE fetch, so a value
+/// that sizes or validates something must be read once and the copy used after.
+#[inline]
+pub unsafe fn read_back<T: Copy>(src: *const T) -> Result<T, NTSTATUS> {
+    let mut value = core::mem::MaybeUninit::<T>::uninit();
+    safe_copy_raw(
+        value.as_mut_ptr().cast(),
+        src.cast(),
+        core::mem::size_of::<T>(),
+    )?;
+    Ok(value.assume_init())
+}
+
 /// Validate a user-mode source buffer, then fault-tolerantly copy `length` bytes
 /// to a kernel buffer.
 ///

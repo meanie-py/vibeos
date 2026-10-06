@@ -2919,6 +2919,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "vioblk-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "vioblk-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+ "virtio-drivers",
+]
+
+[[package]]
 name = "virtio-drivers"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3095,6 +3112,22 @@ dependencies = [
 name = "wmilib-rust"
 version = "0.1.0"
 dependencies = [
+ "panic-common",
+]
+
+[[package]]
+name = "wowx64-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "wowx64-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
  "panic-common",
 ]
 

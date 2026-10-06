@@ -78,6 +78,42 @@ const MAX_WAIT_REASON: usize = 37;
 /// Per-thread lines emitted per scan for the wide (non-gate) class. The
 /// histogram carries the totals, so this only has to name a few examples.
 const MAX_WIDE_LINES: u32 = 8;
+/// The parked thread's kernel call chain, from the frame KiSwapContext saved
+/// (ctxswitch.S: KernelStack -> [ApcBypass, lr], then x19..x28, x29, x30) and
+/// the frame-pointer chain above it. Bounded to the thread's own stack.
+#[cfg(target_arch = "aarch64")]
+unsafe fn report_stack(kthread: *mut _KTHREAD) {
+    let ks = (*kthread).KernelStack as usize;
+    let (lo, hi) = ((*kthread).StackLimit as usize, (*kthread).InitialStack as usize);
+    let inside = |a: usize| a >= lo && a.wrapping_add(16) <= hi && a & 7 == 0;
+    if !inside(ks) || !inside(ks + 16 + 96) {
+        return;
+    }
+    let rd = |a: usize| core::ptr::read_volatile(a as *const usize);
+    let mut lr = [0usize; 12];
+    lr[0] = rd(ks + 8);
+    lr[1] = rd(ks + 16 + 88);
+    let mut fp = rd(ks + 16 + 80);
+    let mut n = 2;
+    while n < lr.len() && inside(fp) {
+        lr[n] = rd(fp + 8);
+        n += 1;
+        let next = rd(fp);
+        if next <= fp {
+            break;
+        }
+        fp = next;
+    }
+    crate::dbg_print!(
+        b"[CENSUS]   bt %p %p %p %p %p %p %p %p %p %p %p %p\n\0",
+        lr[0] as *const (), lr[1] as *const (), lr[2] as *const (), lr[3] as *const (),
+        lr[4] as *const (), lr[5] as *const (), lr[6] as *const (), lr[7] as *const (),
+        lr[8] as *const (), lr[9] as *const (), lr[10] as *const (), lr[11] as *const (),
+    );
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+unsafe fn report_stack(_kthread: *mut _KTHREAD) {}
 /// Lifetime cap on histogram prints — a stall lasting hours must not bury the
 /// serial log the histogram exists to inform.
 const MAX_HIST_PRINTS: u32 = 200;
@@ -300,6 +336,7 @@ unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
                             if wide_lines < MAX_WIDE_LINES {
                                 wide_lines += 1;
                                 report_wide(eproc, kthread, state, reason, s.wait_time);
+                                report_stack(kthread);
                             }
                         }
                     }

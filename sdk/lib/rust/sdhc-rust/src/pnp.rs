@@ -30,11 +30,14 @@ use crate::host::{elapsed_us, now_us, Host, SECTOR};
 use crate::print::sdprint;
 use crate::scsi::{self, Ident, Srb};
 
-/// Windows may write to the card. Off: the Pi's slot holds the bench's boot
-/// card (firmware, loader, config.txt), and fastfat has never written a FAT
-/// volume on real hardware here. scsi.rs reports write protection and refuses
-/// WRITEs; the self-test still proves the write path, outside every partition.
-pub const WRITE_ENABLED: bool = false;
+/// Windows may write to the card. Off, scsi.rs reports write protection and
+/// refuses WRITEs (fastfat then mounts the volume read-only); the self-test
+/// proves the write path either way, outside every partition.
+pub const WRITE_ENABLED: bool = true;
+
+/// Log every request the disk PDO receives and completes (opcode, LBA, count,
+/// requesting thread, status). Off: it is several lines per sector run.
+const TRACE: bool = false;
 
 const IRP_MJ_CREATE: u8 = 0x00;
 const IRP_MJ_CLOSE: u8 = 0x02;
@@ -406,6 +409,20 @@ unsafe fn disk_dispatch(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
             let srb = (*io).Parameters.Scsi.Srb as *mut Srb;
             match (*srb).Function {
                 scsi::SRB_FUNCTION_EXECUTE_SCSI => {
+                    if TRACE {
+                        let c = (*srb).Cdb;
+                        sdprint!(
+                            "trace: srb {:p} op {:#04x} cdb {:02x?} len {} flags {:#x} tid {:p} mdl {:p} buf {:p}\n",
+                            srb,
+                            c[0],
+                            &c[..(*srb).CdbLength.min(16) as usize],
+                            (*srb).DataTransferLength,
+                            (*srb).SrbFlags,
+                            ntkrnl_sys::ddk::PsGetCurrentThreadId(),
+                            (*irp).MdlAddress,
+                            (*srb).DataBuffer
+                        );
+                    }
                     IoMarkIrpPending(irp);
                     (*srb).SrbStatus = scsi::SRB_STATUS_PENDING;
                     {
@@ -449,6 +466,9 @@ unsafe fn disk_dispatch(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
         }
         IRP_MJ_DEVICE_CONTROL => {
             let p = (*io).Parameters.DeviceIoControl;
+            if TRACE {
+                sdprint!("trace: ioctl {:#010x} out {} tid {:p}\n", p.IoControlCode, p.OutputBufferLength, ntkrnl_sys::ddk::PsGetCurrentThreadId());
+            }
             let (status, n) = scsi::device_control(
                 &*(&raw const IDENT),
                 irp,
@@ -575,7 +595,14 @@ unsafe fn disk_pnp(device: PDEVICE_OBJECT, irp: PIRP, io: PIO_STACK_LOCATION) ->
 
 unsafe extern "system" fn worker(_context: PVOID) {
     loop {
-        KeWaitForSingleObject((&raw mut QUEUE_EVENT).cast(), 0, 0, 0, null_mut());
+        // A timed wait, so an io: window still open when the card goes quiet
+        // is reported then, not left until the next request.
+        let mut idle: ntkrnl_sys::ddk::LARGE_INTEGER = core::mem::zeroed();
+        idle.QuadPart = -(IDLE_FLUSH_MS * 10_000);
+        if KeWaitForSingleObject((&raw mut QUEUE_EVENT).cast(), 0, 0, 0, &mut idle) == STATUS_TIMEOUT {
+            io_flush(now_us());
+            continue;
+        }
         loop {
             let entry = {
                 let _g = ntkrnl_sys::guards::SpinLockGuard::acquire(&raw mut QUEUE_LOCK);
@@ -617,7 +644,56 @@ unsafe fn execute(irp: PIRP) {
     };
     let status = scsi::execute(host, &*(&raw const IDENT), WRITE_ENABLED, srb, data);
     let n = if status >= 0 { (*srb).DataTransferLength as usize } else { 0 };
+    io_rate(&*srb, n);
+    if TRACE {
+        sdprint!("trace: done srb {:p} op {:#04x} srb {:#04x} status {:#010x} n {}\n", srb, (*srb).Cdb[0], (*srb).SrbStatus, status as u32, n);
+    }
     (*irp).IoStatus.__bindgen_anon_1.Status = status;
     (*irp).IoStatus.Information = n as _;
+    // Complete at DISPATCH_LEVEL, the context a port driver completes SRBs in
+    // (from its DPC), so classpnp's completion routines see what they would
+    // under storport or usbstor.
+    let _dpc = ntkrnl_sys::guards::IrqlGuard::raise_to_dpc();
     IoCompleteRequest(irp, 1); // IO_DISK_INCREMENT
+}
+
+/// One `[SDHC] io:` line at most every IO_RATE_US while the card is busy:
+/// requests, sectors and the mean request size, so a slow volume operation
+/// shows as a rate rather than as a silent hang. Called only from the worker.
+const IO_RATE_US: u64 = 5_000_000;
+const IDLE_FLUSH_MS: i64 = 1_000;
+const STATUS_TIMEOUT: NTSTATUS = 0x0000_0102;
+static mut IO_WINDOW: (u64, u64, u64, u64) = (0, 0, 0, 0); // start, requests, read, written
+
+unsafe fn io_rate(srb: &Srb, bytes: usize) {
+    let w = &mut *(&raw mut IO_WINDOW);
+    let now = now_us();
+    if w.0 == 0 {
+        w.0 = now;
+    }
+    match srb.Cdb[0] {
+        0x08 | 0x28 | 0xA8 | 0x88 => w.2 += (bytes / SECTOR) as u64,
+        0x0A | 0x2A | 0xAA | 0x8A => w.3 += (bytes / SECTOR) as u64,
+        _ => return,
+    }
+    w.1 += 1;
+    if now.wrapping_sub(w.0) >= IO_RATE_US {
+        io_flush(now);
+    }
+}
+
+/// Report and close the io: window, if anything happened in it.
+unsafe fn io_flush(now: u64) {
+    let w = &mut *(&raw mut IO_WINDOW);
+    if w.1 != 0 {
+        sdprint!(
+            "io: {} requests in {} ms, {} sectors read, {} written ({} sectors per request)\n",
+            w.1,
+            now.wrapping_sub(w.0) / 1000,
+            w.2,
+            w.3,
+            (w.2 + w.3) / w.1
+        );
+    }
+    *w = (0, 0, 0, 0);
 }

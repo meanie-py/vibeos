@@ -1,5 +1,7 @@
 """rustconv port: the hand-offs it automates are idempotent and land where they should."""
 
+import json
+
 import pytest
 
 from rustconv import port
@@ -81,3 +83,108 @@ def test_a_failed_glob_import_is_reported_as_masking():
 def test_tokens_reads_both_log_formats():
     log = "  [3] A OK (6118/16287)  [running $0.07]\n  [4/9] B... OK (6736 in / 1312 out)\n"
     assert port._tokens(log) == (2, 12854, 17599)
+
+
+def test_type_defined_in_finds_typedef_shapes():
+    from rustconv.port import _type_defined_in
+
+    hdr = (
+        "typedef struct _MOUNTDEV_NAME {\n  USHORT NameLength;\n  WCHAR Name[1];\n"
+        "} MOUNTDEV_NAME, *PMOUNTDEV_NAME;\ntypedef ULONG FOO_ID;\n"
+        "struct BAR { int x; };\nVOID Use(MOUNTDEV_NAME *p);\n"
+    )
+    assert _type_defined_in(hdr, "MOUNTDEV_NAME") and _type_defined_in(hdr, "PMOUNTDEV_NAME")
+    assert _type_defined_in(hdr, "FOO_ID") and _type_defined_in(hdr, "BAR")
+    assert not _type_defined_in("VOID Use(MOUNTDEV_NAME *p);", "MOUNTDEV_NAME")
+
+
+def test_a_banked_hand_function_survives_a_replay(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    state = {"stem": "m", "crate": "m-rust", "stages": []}
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    mods = tmp_path / "sdk" / "lib" / "rust" / "m-rust" / "src" / "m"
+    mods.mkdir(parents=True)
+    bought = 'fn A() {\n    x();\n}\n\npub unsafe extern "C" fn V(a: u32, args: ...) {}\n'
+    hand = 'pub unsafe extern "C" fn V_body(a: u32, ap: *mut c_void) {\n    y();\n}'
+    (mods / "f.rs").write_text(
+        bought.replace('pub unsafe extern "C" fn V(a: u32, args: ...) {}', hand)
+    )
+    port.stage_hand("m", ["f.rs:V_body=V"])
+    (mods / "f.rs").write_text(bought)  # a replay rebuilt the module from the bank
+    assert port.apply_hand("m") == 1
+    assert "fn V_body(a: u32, ap: *mut c_void)" in (mods / "f.rs").read_text()
+    assert "args: ..." not in (mods / "f.rs").read_text()
+
+
+def test_a_defined_callback_gets_the_c_calling_convention(tmp_path, monkeypatch):
+    from rustconv import sdk_facts
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    mods = tmp_path / "sdk" / "lib" / "rust" / "m-rust" / "src" / "m"
+    mods.mkdir(parents=True)
+    (mods / "a.rs").write_text(
+        'unsafe extern "C" fn QueryRoutine(a: u32) -> i32 { 0 }\n'
+        '#[no_mangle]\npub unsafe extern "C" fn Helper(t: unsafe extern "C" fn(u32)) {}\n'
+    )
+    monkeypatch.setattr(
+        sdk_facts,
+        "function_abis",
+        lambda repo, tu, names: {"QueryRoutine": "system", "Helper": "C"},
+    )
+    state = {"stem": "m", "crate": "m-rust", "tus": ["x/a.c"]}
+    assert port.align_definition_abis(state) == {"a.rs": ["QueryRoutine"]}
+    text = (mods / "a.rs").read_text()
+    assert 'unsafe extern "system" fn QueryRoutine(' in text
+    assert 'pub unsafe extern "C" fn Helper(t: unsafe extern "C" fn(u32))' in text
+
+
+def test_a_replay_reassembles_every_tu_and_never_buys(tmp_path, monkeypatch):
+    import subprocess
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    tus = ["m/a.c", "m/b.c"]
+    for tu in tus:
+        (tmp_path / tu).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / tu).write_text("int f(void) { return 0; }\n")
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    state = {"stem": "m", "crate": "m-rust", "module_dir": "m", "tus": tus, "stages": []}
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    runs: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        runs.append(cmd)
+        out = "parallel translation completed with rejected bodies\n"
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(port.subprocess, "run", fake_run)
+    port.stage_translate(
+        "m", model="deepseek", cost_cap=0.0, only=[], dry_run=False, replay_only=True
+    )
+    assert len(runs) == 2, "every TU is reassembled even at cost cap 0"
+    assert all("--replay-only" in c and "--rebuy-rejected" not in c for c in runs)
+
+
+def test_a_second_port_run_on_one_module_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path)
+    first = port._hold("m")
+    with pytest.raises(port.PortError, match="another `rustconv port` run holds m"):
+        port._hold("m")
+    first.close()
+    port._hold("m").close()
+
+
+def test_the_models_type_twin_gives_way_to_c2rusts(tmp_path):
+    mods = tmp_path / "m"
+    mods.mkdir()
+    (mods / "registry.rs").write_text(
+        "use crate::prelude::*;\n#[repr(C)]\npub struct HIVE_LIST_ENTRY {\n    pub a: u32,\n}\n"
+        "pub type PHIVE_LIST_ENTRY = *mut HIVE_LIST_ENTRY;\nfn f() {}\n"
+    )
+    dropped = port.drop_model_type_twins(mods, {"HIVE_LIST_ENTRY", "_HIVE_LIST_ENTRY"})
+    assert dropped == {"HIVE_LIST_ENTRY": ["registry.rs"]}
+    text = (mods / "registry.rs").read_text()
+    assert "struct HIVE_LIST_ENTRY" not in text and "pub type PHIVE_LIST_ENTRY" in text
+    assert "fn f() {}" in text

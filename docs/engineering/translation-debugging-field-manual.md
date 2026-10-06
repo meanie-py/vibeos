@@ -731,6 +731,13 @@ reported **3,790** phantom findings against a true count of 15, and the identica
 Rust, assume `->` is there to ruin it.
 
 ### A `transmute` at a callback-install site erases the CALLING CONVENTION
+**The same bug without a transmute: a callback DEFINED `extern "C"` and cast into its slot.**
+setuplib's `RtlQueryRegistryValues` query routines, boot-store enumerators and INF entry
+processors are NTAPI in the C; the translations defined all seven `extern "C"` and cast each
+at the install site (`F as unsafe extern "C" fn(..)`), which compiles on 64-bit. `rustconv
+port resolve` now sets every crate-defined function's convention from clang's own type of it
+on i386 (`port.align_definition_abis`), and crate-repair drops a fn-item cast rather than
+keep one that names a convention.
 Rust will not unify `extern "system" fn` with a literal `extern "stdcall" fn` (i386) or
 `extern "C" fn` (amd64/arm64) in a function-POINTER type, even though the ABI is identical on
 that arch. bindgen writes the literal, translations write the portable `system`, so assigning
@@ -1098,6 +1105,17 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   `KeSetContextReturnRegister`, so the caller got its service code back (1). Every `DPRINT1` in
   user mode then read "failed" and printed a second `(file:line) DbgPrint() failed!` line,
   doubling serial debug output. `KdpTrap` always set it; with no debugger a print succeeded.
+- **`ptr & 0xFFFF0000` is not "pointer > 0xFFFF" on 64-bit.** It tests bits 16-31 only, so a
+  real pointer at `...0000_xxxx` passes as a MAKEINTATOM/MAKEINTRESOURCE value. ReactOS'
+  `RtlpCheckIntegerAtom` did this: whenever NtAddAtom/NtFindAtom captured a name into a pool
+  block at such an address, every name became integer atom `xxxx` for the rest of the boot.
+  Unrelated window properties then collided (uxtheme read shell32's `CPLFlags` value 1 as its
+  WND_DATA pointer), and arm64 applets died with no window, one boot in two. Write the test as
+  `p & !0xFFFF == 0` (Windows' `IS_INTRESOURCE`). The tell: atoms below 0xC000 that the atom
+  table never created, with the same value across processes and a different one each boot.
+  The resource walker's `find_entry_by_name` had the same test (name looked up as an id).
+  `IsCallProcHandle`'s `== 0xFFFF0000` form is the same shape but was left alone: a handle
+  that crossed a 32-bit LONG arrives sign-extended, and the loose test is what accepts it.
 - **LLM appends `as u64` to every SIZE_T/ULONG_PTR** → ~50 i386-only E0308s. Use `as _` or
   `usize`; never hardcode a width for an arch-width field.
 - **amd64 `cpuid` 32-bit `xchg ebx` dance zero-extends and wipes the upper 32 bits of rbx**,
@@ -1491,6 +1509,14 @@ why the bug only surfaced on amd64/arm64 -- rapps crashed extracting its databas
 module-local audit misses this; measure the header with the module's real flags (borrow its
 line from `compile_commands.json`, add `-fsyntax-only` and a `char (*x)[offsetof(T,f)+1000] = 1;`
 probe, read the numbers off the diagnostics) and pin the result with `offset_of!` asserts.
+**The other direction, at island scale: a pack PUSH copied into a bindgen wrapper.**
+profile_derive mirrors each TU's include prologue into the module's merged `WRAPPER_INC`, and
+partlist.c's prologue ENDS with `#include <pshpack1.h>` -- its `poppack.h` comes after two
+typedefs. Every header after it in setuplib's wrapper was bindgen'd under pack(1): 62 structs
+`#[repr(C, packed)]` that C lays out naturally, `USETUP_DATA` and the `STORAGE_*` IOCTL buffers
+among them. The tell was rustc E0793 ("reference to packed field") on a struct nobody packs.
+`scan_preamble` now never carries a packing include or `#pragma pack` into a wrapper; count
+`repr(C, packed)` in a fresh island against the C's own pshpack regions.
 
 ### A macro translated from the wrong side of an `#ifdef`
 **Symptom.** Values built through one helper are corrupt in a way that looks like two fields
@@ -2494,6 +2520,13 @@ just a label.
 - **Fix deterministically:** `ntkrnl_sys::bugcodes::NAME` from `tools/gen_bugcodes.py`;
   `tools/rustconv/rustconv/verify_constants.py` (`--enums`, `--fix`) against a header catalog;
   `tools/scan_bugcheck_codes.py` (empty baseline, gate-wired).
+- **An invented SUCCESS on a failure path, where no seal looks.** setuplib's
+  `InstallBootManagerAndBootEntries` returns `Status`, which the C sets only from calls and two
+  failure codes; on GetFileSystemName() failure the translation wrote `Status = 0; // keep as in
+  C` and returned success for a volume it could not read. Small literals are never sealed and
+  nothing was dropped. `c_body_checks.invented_flag_assignments` refuses a `X = 0`/`X = 1` the
+  C function never spells for `X` (at purchase, and in `port fix` replies): 1 false positive
+  in 1,054 functions of seven flipped modules, an inlined `RtlEqualLuid`.
 - **`tools/scan_const_contradictions.py` is oracle-free and the cheapest detector** — it asks
   only whether the tree contradicts *itself*, so it needs no catalog.
 - **NEGATIVE result worth keeping:** do **not** auto-sweep all 2216 headers. It yields noise.
@@ -5133,7 +5166,18 @@ mapped. Every touch after the probe therefore goes through a fault-tolerant prim
 rebase any pointer INTO the buffer, copy out once). A capture that sizes a SID/ACL from a count
 in user memory must pin that count in the copy, or a racing caller grows it past the
 allocation. `tools/scan_raw_user_access.py` lists the Nt* syscalls that still touch a pointer
-argument raw (baseline gate; a new row fails `vibeos-cli check`).
+argument raw; its baseline is EMPTY, so any new row fails `vibeos-cli check`. Use
+`read_back` (load) / `write_back` (store) for a single value; read a value that sizes or
+validates something ONCE and use the copy, never `(*p).Length` then `*p`.
+
+**Syscalls are not the only door, and the scanner only watches syscalls.** `int 2d` hands the
+kernel a user pointer in a register, which arrives as `ExceptionInformation[1]`. KdpStub's
+debugger-less echo of `BREAKPOINT_PRINT` to the UART, which is our addition with no C to drop
+a probe from, read that pointer in place. A user-mode panic whose report ran into garbage
+bugchecked the box (0x1E/0x50 in `KdpStub`). Capture it as `KdpPrint` does
+(`safe_copy_from_user` into a bounded local, passing PreviousMode). Any trap-path handler that
+reads an exception record's parameters is in this class. `sehtest`'s `bad-print-buffer` probe
+covers this one on every amd64 boot.
 
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
 HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
@@ -6660,9 +6704,10 @@ stays in `CMakeFiles/<target>.dir/` forever. `verify_ucrtbase_cohab` read those 
 produces must ask the build graph (`build <obj>:` lines in `build.ninja`), not the directory.
 Since 2026-10-05 `vibeos-cli build` runs `ninja -t cleandead` after the manifest regenerates,
 so a lane's build dir no longer holds outputs the graph has dropped (the first run on an old
-tree removed 3017/1039/103 files on i386/amd64/arm64). Hand-run `ninja` does not; and
-cleandead cannot touch an edge that is still declared but no longer built, which is the
-case below.
+tree removed 3017/1039/103 files on i386/amd64/arm64). Hand-run `ninja` does not.
+cleandead cannot touch an edge that is still declared but no longer built (the case below), so
+`build` also prunes every ninja-logged output outside the closure of the targets it built
+(`tools/ninja_closure_prune.py`, stage `closure-prune`; first run on a warm i386 tree: 630).
 The mirror image: a library you keep "compiled, unlinked, as a reference" is NOT compiled once
 nothing links it, because `vibeos-cli build` makes what `livecd` depends on, not ALL. Every
 existing build dir still holds its objects from before the unlink, so it passes locally and
@@ -6670,7 +6715,8 @@ goes red only on a fresh tree: `msvcrt_static` came off msvcrt's link line and t
 difftest failed `DIFFTEST_STALE_ORACLE` (its oracle objects were never built; master red,
 2026-10-04). **Fix:** `add_dependencies(<module> <reference-lib>)`, which builds it without
 linking it (msvcrt → msvcrt_static; ucrtbase → its reference libraries). Prove it in a FRESH
-worktree, not by checking that the objects exist in yours.
+worktree, not by checking that the objects exist in yours -- or let `vibeos-cli build`'s
+closure prune remove them from yours, which it now does.
 
 **The most expensive class in this file**, because the failure mode is a green that means
 nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → pl011 → gdi32 →
@@ -10262,6 +10308,10 @@ vs `tools/lint-baseline/`**, and several hold an EMPTY baseline (strict).
   violation it prints `[WAITDEP] VIOLATION <kind>` plus a bounded dump naming which invariant
   broke. Always-on rather than opt-in because the flake it hunts fires ~1/4 arm64 boots and a
   reproduction attempt perturbs it.
+- **`[IO-STRANDED]`** — `IofCallDriver`, always on: when a driver returns a final status but
+  the IRP's `IopCompleteRequest` APC is still queued to this thread, the caller is about to
+  return without waiting and the APC will write into its dead frame. Prints the driver, major
+  function, IOCTL and the thread's APC-disable state. One read when no kernel APC is queued.
 - Others: `scan_ud2`, `scan_ir_mismatch`, `scan_cc_mismatch`, `scan_magic_offsets`
   (`TYPED_PTR_HEX_ARITH`), `scan_wide_literals`, `scan_assert_to_ub`, `scan_bugcheck_codes`,
   `scan_const_contradictions`, `scan_nightly_surface`, `scan_silent_failures`,
@@ -10756,6 +10806,25 @@ function in the DDK whose entire contract *is* mutual exclusion against a driver
 the SMP kernel it delivered exactly nothing; on UP the IRQL raise happened to be enough, which
 is why it survived. When a per-arch port of a synchronisation primitive is shorter than its
 siblings, the missing lines are the primitive.
+
+### A dropped interrupt RESTORE: one CPU spins IF=0 on a lock while the holder waits for its TB ack
+**Symptom:** amd64 `-smp 2` `HANG_TIMEOUT`, serial silent after `[user32] DllMain PROCESS_ATTACH`
+(the WoW64 guest starting alongside). `hang-cpustate.txt`: CPU0 in `ki_tb_shootdown` waiting on
+`KiTbFlushWaitCount`; CPU1 in `KxAcquireSpinLock` on `MmPfnLock` (via `MiMapViewOfDataSection`)
+with `RFL=00000002` -- **IF clear**, so the shootdown IPI can never land. Two gates in 30 minutes
+on 2026-10-05, then ten clean farm boots: timing-dependent, but not rare under gate load.
+**Cause:** `KiSwitchKernelStack` (amd64 `stubs.rs`) translated the C's
+`Eflags = __readeflags(); _disable(); ... __writeeflags(Eflags);` as a bare `cli`. It runs when a
+thread first calls win32k (`KiConvertToGuiThread` swaps in a large stack), so every GUI
+conversion ran `MmDeleteKernelStack` and all of `PsConvertToGuiThread` -- desktop-heap mapping,
+PFN lock -- with interrupts off. Harmless on UP, which has no IPI to miss; latent since the
+2026-02 KE translation. NT spins for the PFN lock with interrupts ON precisely so a TB flush from
+the holder gets through. **Fix:** `KeDisableInterrupts()` / `KeRestoreInterrupts()` around the
+stack swap, with a compiler fence (the restore's `sti` is a `nomem` asm). **Proved
+deterministically, not by soak:** a `gdb probe` with a hardware breakpoint at
+`PsConvertToGuiThread` read IF=0 on 6/6 entries before and IF=1 on 6/6 after. When a C body
+brackets a region with a save/restore of flags or IRQL, diff the Rust for BOTH halves -- a sweep
+of every Rust fn that disables interrupts without restoring found this one only.
 
 ### A lock the C declares and never takes is a race the C never hit
 **Symptom:** arm64 `-smp 2`, 1 boot in 5: BUGCHECK 0x1E in `CmpCreateKeyControlBlock` reading
@@ -11351,6 +11420,33 @@ returns (`NtTestAlert`, `NtSetInformationThread`).
 
 **Generalize.** A user-mode crash at a PC equal to a byte count is a status block written late.
 Check that every path back to user mode delivers kernel APCs.
+
+### A kernel return address holds a DISK_GEOMETRY: the completion APC ran after its caller returned
+**Symptom.** Pi 4, once the SD card became writable: a bugcheck in stortest's thread, either 0x1E
+with `PC=LR=0` and `FP=0x0000_0200_0000_003F` (`SectorsPerTrack=63, BytesPerSector=512`, the tail
+of a DISK_GEOMETRY), or 0x109 from `[WAITDEP] unwait of thread=fffffa0000000000` inside a later
+`KeSetEvent`. Both are an IRP's completion landing in a stack frame that had already returned.
+
+**Cause.** A synchronous IRP's output reaches the caller's buffer, IO_STATUS_BLOCK and event
+only when `IopCompleteRequest` runs, a special kernel APC queued to the issuing thread. A caller
+that gets a final status from `IoCallDriver` does not wait, so that APC must have run already.
+The arm64 HAL drained APCs under the same per-CPU `soft_int_in_progress` flag as the DISPATCH
+drain, and `KiDeliverApc` runs normal kernel APC routines at PASSIVE, which can block and switch
+threads with the flag still set. Every thread that ran next on that CPU had its APC delivery
+skipped (a probe in the drain showed it for the very thread whose IRPs stranded, with no
+special-APC disable anywhere), so its synchronous completions stayed queued until some later
+IRQL drop. The SD driver's worker thread changed the scheduling enough to make one land on a
+saved FP/LR; before the fix `[IO-STRANDED]` counted ~25 per Pi boot (RamDisk flushes, fastfat,
+partmgr, mountmgr, netstack), mostly landing in frames that happened to still be live.
+
+**Fix.** Only the DISPATCH half of `HalpDispatchSoftwareInterrupts` takes the flag (it never
+blocks; a thread it readies is swapped in at the `KfLowerIrql` preemption point). APC delivery
+runs outside it, with nesting bounded by `KiDeliverApc` itself, as on NT: `KernelApcInProgress`
+keeps a second normal APC out, while special APCs still run inside a normal routine.
+
+**Generalize.** A per-CPU "in progress" flag around code that can block is per-thread state
+stored in the wrong place. `[IO-STRANDED]` (iomgr `IofCallDriver`) now names any driver whose
+final status leaves its own completion APC queued.
 
 ## WoW64 / FEX: 32↔64 divergences
 
@@ -12117,6 +12213,49 @@ ntdll ships via the CARGO link, so the usual rebuild path doesn't apply.
 
 ---
 
+### In an x86-64 guest process, two ntdlls share ONE PEB and TEB — every per-arch layout and every flag in them is now shared state
+
+**Symptom.** Under wowx64 (x86-64 guest on arm64) the guest dies in its OWN amd64 ntdll at
+`rtl_heap::heap::RtlpRemoveFreeBlock`, indexing a free list with `0xFFFFFFFF` (fault address
+`0x8_004Dxxxx` = heap base + 0x7FFFFFFF8): the block's `Size` field reads 0. Natively on amd64
+the same guest passes. In the same process, every native `DbgPrint` from the VEH printed
+NOTHING, while the syscall path's traces printed fine.
+
+**Cause.** Unlike WoW64 (separate PEB32/TEB32), an x86-64 guest shares the thread's TEB and the
+process's PEB with the native arm64 ntdll — deliberately, because kernel-written fields
+(`Win32ClientInfo`, last-error) then just work. So any structure either side reaches through
+them is touched by BOTH architectures' builds of the same Rust source:
+- `PEB->ProcessHeap`: the native side allocated in the guest's heap with arm64 heap code, and
+  rtl-heap's aarch64 `HEAP_ENTRY` had its OWN field order (`Size` at +0, `PreviousSize` at +8)
+  that heap.h never had (`_WIN64` puts `PreviousBlockPrivateData` first, for ARM64 too).
+- `TEB->InDbgPrint`: the guest's DbgPrint sets it and then executes `int 2d`, which arrives in
+  the native VEH as an exception, where the native DbgPrint sees the flag and returns silently.
+- `PEB->Ldr` / `PEB->LoaderLock`: the guest publishes its own at process init; a native
+  loader that reads the PEB walks the wrong architecture's modules.
+
+**Fix.** A struct layout that differs per arch is a cross-ARCH layout bug the moment two arches
+share the memory: give every 64-bit target one layout (rtl-heap now uses heap.h's `_WIN64` one
+everywhere). A flag in the shared TEB is the guest's; native code steps around it
+(`wowx64-rust` `trace!` saves/clears/restores `InDbgPrint`). Loader state is read from the
+loader's OWN globals (`ntdll-rust` `LdrpLdrData()`), never through the PEB. When adding
+anything to the wowx64 path, ask of every PEB/TEB field it touches: whose is it?
+
+### A closure built from `boot/stripped/` must pick each module's OWN stripped twin, by PATH
+
+**Symptom.** The x86-64 guest's loader fails binding kernel32:
+`LDR: SNAP FAIL import RtlExtendedLargeIntegerDivide from kernel32.dll (importer=ntdll.dll)` —
+an import only the i386 kernel32 has. `sysamd64\kernel32.dll` on the image is machine `0x14C`.
+
+**Cause.** `build-amd64/boot/stripped/` holds BOTH an amd64 and an i386 `<hash>-kernel32.dll`
+(amd64 also ships the i386 SysWOW64 set), and three same-named `fusion.dll` modules besides.
+`wow64-closure.py` keyed stripped twins by bare file name, so whichever `iterdir()` listed last
+won.
+
+**Fix.** The twin's name is `sha1(<canonical source path>)[:12]-<name>` and
+`strip-manifest.json` lists the source paths (canonical `/tmp/vibeos/<build dir>/...`), so the
+tool now maps each fat module to its twin by path. Anything that resolves a module by name
+alone in a tree that holds two architectures has this bug waiting.
+
 ## win32k, GDI, input & desktop
 
 ### The systemic win32k flip failures
@@ -12515,11 +12654,33 @@ introduced at any heap exit — it is an external stray write.**
      connects the interrupt, calls the miniport's StartController, and only *then* sets
      the flags its ISR wrapper checks. A StartController that enables controller
      interrupts and issues a command gets its completion interrupt declined.
+  3. **A polled driver answered "not mine" without reading the device's status.** On x86
+     the symptom is scsiport's `[SCSIPORT] Isr entry count=100000` and a silent hang
+     (vioblk, 2026-10-05). A virtio INTx stays asserted until the ISR status register is
+     READ; an HwInterrupt that returns FALSE never drops it. Masking INTx in the PCI
+     command register at find-adapter time does not hold either: pci.sys rewrites the
+     register when PnP starts the device. A driver that polls still has to acknowledge.
 - **Fix:** quiesce before connect, and poll until the gate opens. pci.sys masks INTx (PCI
   COMMAND bit 10) on xHCI controllers at enumeration and usbxhci unmasks it after its reset,
   the same job Linux's `quirk_usb_handoff_xhci` does. usbxhci starts with USBCMD.INTE and
   IMAN.IE off and lets usbport's EnableInterrupts turn them on, as EHCI does. For any new
   device family, ask "can this line be asserted before my ISR says yes?"
+
+### A new SCSIPORT miniport loads, and no disk appears
+- **Symptom:** the `.sys` is loaded and its service is bound by the CriticalDeviceDatabase,
+  but no `Found device of type 0` line follows, `IopCreateArcNames` sees no disk, and a boot
+  from it ends in `0x6B`. Each cause below was hit once bringing up vioblk (2026-10-05).
+- **Cause:**
+  1. **No `HwInterrupt`.** `ScsiPortInitialize` returns `STATUS_REVISION_MISMATCH` (as the
+     C does) for a NULL HwInterrupt, even in a polled driver, and prints nothing at all.
+  2. **`MaximumNumberOfLogicalUnits` left at 0.** `FdoScanAdapter` skips every LUN at or
+     above it, and neither the C nor the Rust scsiport sets a default, so the scan sends no
+     INQUIRY and finds nothing. buslogic and atapi set it themselves.
+  3. **`*Again = FALSE` on a PCI miniport with several functions.** The legacy scan stops
+     after the first adapter, so only the first device of the type appears.
+- **Fix:** set all three in the miniport. scsiport's own `[SCSIPORT] resources:` diagnostic
+  also dereferenced `AccessRanges[0]` unconditionally and crashed (0x1E) for a miniport
+  declaring no access ranges; it is guarded now.
 
 ### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
 - **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,

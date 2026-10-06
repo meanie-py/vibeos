@@ -2275,8 +2275,8 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
             return status;
         }
     }
-    PBaseAddress = *UBaseAddress;
-    PRegionSize = *URegionSize as ULONG_PTR;
+    PBaseAddress = match ntkrnl_sys::probe::read_back(UBaseAddress) { Ok(v) => v, Err(s) => return s };
+    PRegionSize = match ntkrnl_sys::probe::read_back(URegionSize) { Ok(v) => v as ULONG_PTR, Err(s) => return s };
 
     /* Make sure the allocation isn't past the VAD area */
     if (PBaseAddress as ULONG_PTR) > MM_HIGHEST_VAD_ADDRESS {
@@ -2537,8 +2537,8 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
         }
 
         /* Write back base + size (DUMMY_PSEH: no SEH wrap; ignore failure) */
-        *URegionSize = PRegionSize as SIZE_T;
-        *UBaseAddress = StartingAddress as PVOID;
+        let _ = ntkrnl_sys::probe::write_back(URegionSize, PRegionSize as SIZE_T);
+        let _ = ntkrnl_sys::probe::write_back(UBaseAddress, StartingAddress as PVOID);
         return STATUS_SUCCESS;
     }
 
@@ -2706,8 +2706,8 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
             ObDereferenceObject(Process as PVOID);
         }
         if NT_SUCCESS(Status) {
-            *URegionSize = PRegionSize as SIZE_T;
-            *UBaseAddress = StartingAddress as PVOID;
+            let _ = ntkrnl_sys::probe::write_back(URegionSize, PRegionSize as SIZE_T);
+            let _ = ntkrnl_sys::probe::write_back(UBaseAddress, StartingAddress as PVOID);
         }
         return Status;
     }
@@ -2793,8 +2793,8 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
     }
 
     if NT_SUCCESS(Status) {
-        *URegionSize = PRegionSize as SIZE_T;
-        *UBaseAddress = StartingAddress as PVOID;
+        let _ = ntkrnl_sys::probe::write_back(URegionSize, PRegionSize as SIZE_T);
+        let _ = ntkrnl_sys::probe::write_back(UBaseAddress, StartingAddress as PVOID);
     } else if QuotaCharged != 0 {
         PsReturnProcessNonPagedPoolQuota(
             Process,
@@ -2850,8 +2850,8 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
             return status;
         }
     }
-    PBaseAddress = *UBaseAddress;
-    PRegionSize = *URegionSize;
+    PBaseAddress = match ntkrnl_sys::probe::read_back(UBaseAddress) { Ok(v) => v, Err(s) => return s };
+    PRegionSize = match ntkrnl_sys::probe::read_back(URegionSize) { Ok(v) => v, Err(s) => return s };
 
     /* Ensure base + size sit inside user space */
     if (PBaseAddress as ULONG_PTR) >= MM_HIGHEST_USER_ADDRESS {
@@ -3085,8 +3085,8 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
         if ProcessHandle != NtCurrentProcess() as HANDLE {
             ObDereferenceObject(Process as PVOID);
         }
-        *URegionSize = PRegionSize;
-        *UBaseAddress = StartingAddress as PVOID;
+        let _ = ntkrnl_sys::probe::write_back(URegionSize, PRegionSize);
+        let _ = ntkrnl_sys::probe::write_back(UBaseAddress, StartingAddress as PVOID);
         return Status;
     }
 
@@ -3135,8 +3135,8 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
     if ProcessHandle != NtCurrentProcess() as HANDLE {
         ObDereferenceObject(Process as PVOID);
     }
-    *URegionSize = PRegionSize;
-    *UBaseAddress = StartingAddress as PVOID;
+    let _ = ntkrnl_sys::probe::write_back(URegionSize, PRegionSize);
+    let _ = ntkrnl_sys::probe::write_back(UBaseAddress, StartingAddress as PVOID);
     Status
 }
 
@@ -3434,11 +3434,11 @@ pub unsafe extern "system" fn NtProtectVirtualMemory(
             return status;
         }
 
-        BaseAddress = *UnsafeBaseAddress;
-        NumberOfBytesToProtect = *UnsafeNumberOfBytesToProtect;
+        BaseAddress = match ntkrnl_sys::probe::read_back(UnsafeBaseAddress) { Ok(v) => v, Err(s) => return s };
+        NumberOfBytesToProtect = match ntkrnl_sys::probe::read_back(UnsafeNumberOfBytesToProtect) { Ok(v) => v, Err(s) => return s };
     } else {
-        BaseAddress = *UnsafeBaseAddress;
-        NumberOfBytesToProtect = *UnsafeNumberOfBytesToProtect;
+        BaseAddress = match ntkrnl_sys::probe::read_back(UnsafeBaseAddress) { Ok(v) => v, Err(s) => return s };
+        NumberOfBytesToProtect = match ntkrnl_sys::probe::read_back(UnsafeNumberOfBytesToProtect) { Ok(v) => v, Err(s) => return s };
     }
 
     if BaseAddress > MM_HIGHEST_USER_ADDRESS as PVOID {
@@ -3487,9 +3487,9 @@ pub unsafe extern "system" fn NtProtectVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *UnsafeOldAccessProtection = OldAccessProtection;
-    *UnsafeBaseAddress = BaseAddress;
-    *UnsafeNumberOfBytesToProtect = NumberOfBytesToProtect;
+    let _ = ntkrnl_sys::probe::write_back(UnsafeOldAccessProtection, OldAccessProtection);
+    let _ = ntkrnl_sys::probe::write_back(UnsafeBaseAddress, BaseAddress);
+    let _ = ntkrnl_sys::probe::write_back(UnsafeNumberOfBytesToProtect, NumberOfBytesToProtect);
 
     Status
 }
@@ -3749,8 +3749,8 @@ pub unsafe extern "system" fn NtLockVirtualMemory(
         return status;
     }
 
-    CapturedBaseAddress = *BaseAddress;
-    CapturedBytesToLock = *NumberOfBytesToLock;
+    CapturedBaseAddress = match ntkrnl_sys::probe::read_back(BaseAddress) { Ok(v) => v, Err(s) => return s };
+    CapturedBytesToLock = match ntkrnl_sys::probe::read_back(NumberOfBytesToLock) { Ok(v) => v, Err(s) => return s };
 
     if CapturedBaseAddress > MM_HIGHEST_USER_ADDRESS as PVOID {
         return STATUS_INVALID_PARAMETER;
@@ -3803,8 +3803,8 @@ pub unsafe extern "system" fn NtLockVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *BaseAddress = CapturedBaseAddress;
-    *NumberOfBytesToLock = CapturedBytesToLock;
+    if let Err(s) = ntkrnl_sys::probe::write_back(BaseAddress, CapturedBaseAddress) { return s; }
+    if let Err(s) = ntkrnl_sys::probe::write_back(NumberOfBytesToLock, CapturedBytesToLock) { return s; }
 
     Status
 }
@@ -4013,8 +4013,8 @@ pub unsafe extern "system" fn NtUnlockVirtualMemory(
         return status;
     }
 
-    CapturedBaseAddress = *BaseAddress;
-    CapturedBytesToUnlock = *NumberOfBytesToUnlock;
+    CapturedBaseAddress = match ntkrnl_sys::probe::read_back(BaseAddress) { Ok(v) => v, Err(s) => return s };
+    CapturedBytesToUnlock = match ntkrnl_sys::probe::read_back(NumberOfBytesToUnlock) { Ok(v) => v, Err(s) => return s };
 
     if CapturedBaseAddress > MM_HIGHEST_USER_ADDRESS as PVOID {
         return STATUS_INVALID_PARAMETER;
@@ -4067,8 +4067,8 @@ pub unsafe extern "system" fn NtUnlockVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *BaseAddress = CapturedBaseAddress;
-    *NumberOfBytesToUnlock = CapturedBytesToUnlock;
+    if let Err(s) = ntkrnl_sys::probe::write_back(BaseAddress, CapturedBaseAddress) { return s; }
+    if let Err(s) = ntkrnl_sys::probe::write_back(NumberOfBytesToUnlock, CapturedBytesToUnlock) { return s; }
 
     STATUS_SUCCESS
 }
@@ -4104,11 +4104,11 @@ pub unsafe extern "system" fn NtFlushVirtualMemory(
             return status;
         }
 
-        CapturedBaseAddress = *BaseAddress;
-        CapturedBytesToFlush = *NumberOfBytesToFlush;
+        CapturedBaseAddress = match ntkrnl_sys::probe::read_back(BaseAddress) { Ok(v) => v, Err(s) => return s };
+        CapturedBytesToFlush = match ntkrnl_sys::probe::read_back(NumberOfBytesToFlush) { Ok(v) => v, Err(s) => return s };
     } else {
-        CapturedBaseAddress = *BaseAddress;
-        CapturedBytesToFlush = *NumberOfBytesToFlush;
+        CapturedBaseAddress = match ntkrnl_sys::probe::read_back(BaseAddress) { Ok(v) => v, Err(s) => return s };
+        CapturedBytesToFlush = match ntkrnl_sys::probe::read_back(NumberOfBytesToFlush) { Ok(v) => v, Err(s) => return s };
     }
 
     if CapturedBaseAddress > MM_HIGHEST_USER_ADDRESS as PVOID {
@@ -4210,7 +4210,7 @@ pub unsafe extern "system" fn NtGetWriteWatch(
             return status;
         }
     } else {
-        CapturedEntryCount = *EntriesInUserAddressArray;
+        CapturedEntryCount = match ntkrnl_sys::probe::read_back(EntriesInUserAddressArray) { Ok(v) => v, Err(s) => return s };
         ntkrnl_sys::ASSERT!(CapturedEntryCount != 0);
     }
 

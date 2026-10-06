@@ -35,12 +35,22 @@ pub enum IntegerAtom {
     NotPacked,
 }
 
-/// The high-half test from `RtlpCheckIntegerAtom`: a pointer whose top
-/// bits are clear is an integer atom packed into the low 16 bits.
+/// The high-half test from `RtlpCheckIntegerAtom`: a pointer whose bits
+/// above the low 16 are all clear is an integer atom packed into them.
 /// `ptr_bits` is `(ULONG_PTR)AtomName`.
+///
+/// Exceeds the C, which tests `AtomName & 0xFFFF0000` and so looks only at
+/// bits 16-31. On a 64-bit kernel every real pointer whose bits 16-31 happen
+/// to be zero passed as an integer atom: NtAddAtom/NtFindAtom capture the
+/// caller's name into a pool block, and when that block sat at
+/// 0xFFFF....0000xxxx, EVERY name captured there "was" atom 0xxxxx and the
+/// table was never consulted. Unrelated names then shared one atom, so
+/// uxtheme's ux_WndContext answered to shell32's CPLFlags property (data 1)
+/// and control-panel applets faulted in OnPostWinPosChanged with no window.
+/// Windows' own test is MAKEINTATOM's: the whole pointer is at most 0xFFFF.
 #[inline]
 pub fn check_packed_integer_atom(ptr_bits: usize) -> IntegerAtom {
-    if (ptr_bits & 0xFFFF_0000) == 0 {
+    if ptr_bits & !0xFFFF == 0 {
         let lo = (ptr_bits & 0xFFFF) as u16;
         // C: "if (LoValue == 0) LoValue = 0xC000;"
         IntegerAtom::Packed(if lo == 0 { 0xC000 } else { lo })
@@ -94,6 +104,14 @@ mod tests {
     fn real_pointer_not_packed() {
         assert_eq!(check_packed_integer_atom(0x1_0000), IntegerAtom::NotPacked);
         assert_eq!(check_packed_integer_atom(0xDEAD_BEEF), IntegerAtom::NotPacked);
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn pointer_with_zero_bits_16_to_31_is_not_packed() {
+        // A paged-pool name buffer at ...0000_7480 is a string, not atom 0x7480.
+        assert_eq!(check_packed_integer_atom(0xFFFF_FA00_0000_7480), IntegerAtom::NotPacked);
+        assert_eq!(check_packed_integer_atom(0x0000_0001_0000_0000), IntegerAtom::NotPacked);
     }
 
     #[test]

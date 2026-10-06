@@ -52,5 +52,9 @@ Products land in `<builddir>/Bin/`:
 - `FEXOfflineCompiler.exe` — standalone JIT driver (imports KERNEL32/ADVAPI32 +
   UCRT api-sets → needs `ucrtbase.dll` + apiset resolution on vibeos)
 
+A second consumer links these archives without touching this tree:
+`libwowx64fex.dll`, our x86-64-guest CPU layer (`tools/fex/wowx64fex`, built by
+`tools/fex/build-hello-compute.sh`). A re-vendor must re-prove that link too.
+
 To re-vendor a newer tag: shallow-clone upstream with submodules, re-apply the
 prune list above, re-run the build proof, update this file.

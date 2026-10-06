@@ -685,3 +685,19 @@ Windows sees the disk as **write-protected** (`pnp::WRITE_ENABLED`): this card i
 bench's boot card, and fastfat has not yet written a FAT volume on real hardware. Next:
 enable writes (on a spare card first), high-speed mode (50 MHz), DMA and the interrupt,
 then booting from the card instead of the RAM disk.
+
+Session 8, continued (2026-10-06): with Windows writes enabled, the card's first mount
+crashed the board (0x1E with a DISK_GEOMETRY over a saved frame pointer, or 0x109 from
+WAITDEP). The cause was a HAL bug, not the driver: APC delivery shared the DISPATCH drain's
+per-CPU flag, which leaked across a thread switch, so synchronous IRP completions ran after
+their callers returned (field manual, "A kernel return address holds a DISK_GEOMETRY"). Fixed,
+and `[IO-STRANDED]` now names any recurrence. Writes then hang above the driver on the first
+file create (roadmap bug registry), so `WRITE_ENABLED` stays off.
+
+Correction, same day: writes work. The "hang" was cmd's output redirection (`echo > file`
+leaves cmd waiting on csrss in `NtRequestWaitReplyPort`, on a USB stick too), which the
+census's new per-thread backtraces showed. stortest now also accepts the Pi's boot card
+(label VIBEOS_RPI4) and passes create, write, flush and read-back on it; the UEFI Shell then
+`type`s the file it wrote. `WRITE_ENABLED` is on. The driver also completes
+SRBs at DISPATCH_LEVEL now, answers MODE SENSE underruns as success (classpnp failed the
+mismatch), and logs `[SDHC] io:` rates while the card is busy.

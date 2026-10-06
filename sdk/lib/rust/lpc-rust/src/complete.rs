@@ -233,18 +233,33 @@ pub unsafe extern "system" fn NtAcceptConnectPort(
             }
         }
     } else {
-        captured_reply_message = *reply_message;
+        // Kernel-mode caller: no probe, but every load is still one
+        // fault-tolerant fetch, and each Length is validated on the captured
+        // copy (the old code read server_view->Length, then re-read the whole
+        // struct -- a double fetch).
+        captured_reply_message = match ntkrnl_sys::probe::read_back(reply_message as *const PORT_MESSAGE) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
         connection_info_length = captured_reply_message.u1.s1.DataLength as ULONG;
 
         if !server_view.is_null() {
-            if (*server_view).Length != core::mem::size_of::<PORT_VIEW>() as ULONG {
+            captured_server_view = match ntkrnl_sys::probe::read_back(server_view as *const PORT_VIEW) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
+            if captured_server_view.Length != core::mem::size_of::<PORT_VIEW>() as ULONG {
                 return STATUS_INVALID_PARAMETER;
             }
-            captured_server_view = *server_view;
         }
 
         if !client_view.is_null() {
-            if (*client_view).Length != core::mem::size_of::<REMOTE_PORT_VIEW>() as ULONG {
+            let captured_client_view: REMOTE_PORT_VIEW =
+                match ntkrnl_sys::probe::read_back(client_view as *const REMOTE_PORT_VIEW) {
+                    Ok(v) => v,
+                    Err(s) => return s,
+                };
+            if captured_client_view.Length != core::mem::size_of::<REMOTE_PORT_VIEW>() as ULONG {
                 return STATUS_INVALID_PARAMETER;
             }
         }
