@@ -60,6 +60,12 @@ SeaBIOS ─▶ isoboot.bin (El Torito, no-emulation) ─▶ freeldr.sys ─▶ r
     `CreateFramebufferDisplayKey`).
   - It switches into the mode only in `PcVideoPrepareForReactOS`, so the loader's
     text UI keeps working until the kernel takes over.
+- **isoboot prefers an installed OS.** If the first hard disk (drive 80h) has a valid
+  MBR, isoboot prints "Press any key to boot from the ReactOS medium" and, after five
+  seconds with no key, boots the hard disk. That is upstream's intended behaviour for
+  a person, and it is what the 9020 will do if its disk is bootable: press a key. The
+  BIOS smoke therefore attaches no MBR temp disk (`vm.py` `temp_disk_args`). The
+  disk path is covered by `amd64-uefi`, which boots the same media with that disk.
 - **`freeldr.sys` is not a PE.** It is the stub with the PE appended, so the
   post-link scanners judge `freeldr_pe.exe` instead (`tools/binary_corpus.py`
   `CONTAINERS`).

@@ -1102,6 +1102,7 @@ class Amd64UefiConfig(Amd64Config):
         return ["-acpitable", f"file={spcr}"]
 
 
+@dataclass
 class Amd64BiosConfig(Amd64Config):
     """amd64 booted by legacy BIOS (SeaBIOS, QEMU's default firmware) from the same
     hybrid livecd ISO, through its BIOS El Torito entry: isoboot.bin -> freeldr.sys ->
@@ -1257,6 +1258,14 @@ def temp_disk_args(arch: str, out_dir: Path) -> list[str]:
     reproduce the one crash that only happens with it attached.
     """
     if not arch.startswith(("i386", "amd64")):
+        return []
+    # Not under BIOS. This disk carries an MBR, and ReactOS's El Torito boot sector
+    # (isoboot.S) sees a valid MBR on drive 80h, prints "Press any key to boot from
+    # the ReactOS medium", and after 5 s boots the HARD DISK instead: a smoke with no
+    # one at the keyboard hangs in that empty disk's boot code. That prompt is right
+    # for a person with an OS installed; the disk path itself is covered by
+    # amd64-uefi, which boots the same media with this disk attached.
+    if arch == "amd64-bios":
         return []
     # Default ON: it is also the only hard disk any x86 smoke attaches, and the
     # disk path stayed broken for months without a single red because nothing
