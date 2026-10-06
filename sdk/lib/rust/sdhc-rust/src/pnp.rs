@@ -30,11 +30,16 @@ use crate::host::{elapsed_us, now_us, Host, SECTOR};
 use crate::print::sdprint;
 use crate::scsi::{self, Ident, Srb};
 
-/// Windows may write to the card. Off: the Pi's slot holds the bench's boot
-/// card (firmware, loader, config.txt), and fastfat has never written a FAT
-/// volume on real hardware here. scsi.rs reports write protection and refuses
-/// WRITEs; the self-test still proves the write path, outside every partition.
+/// Windows may write to the card. Off for now: with it on, the first file
+/// write to the card's FAT32 volume blocks before any I/O reaches this driver
+/// (open, roadmap 10b). Off, scsi.rs reports write protection and refuses
+/// WRITEs; the self-test proves the write path either way, outside every
+/// partition.
 pub const WRITE_ENABLED: bool = false;
+
+/// Log every request the disk PDO receives and completes (opcode, LBA, count,
+/// requesting thread, status). Off: it is several lines per sector run.
+const TRACE: bool = false;
 
 const IRP_MJ_CREATE: u8 = 0x00;
 const IRP_MJ_CLOSE: u8 = 0x02;
@@ -406,6 +411,20 @@ unsafe fn disk_dispatch(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
             let srb = (*io).Parameters.Scsi.Srb as *mut Srb;
             match (*srb).Function {
                 scsi::SRB_FUNCTION_EXECUTE_SCSI => {
+                    if TRACE {
+                        let c = (*srb).Cdb;
+                        sdprint!(
+                            "trace: srb {:p} op {:#04x} cdb {:02x?} len {} flags {:#x} tid {:p} mdl {:p} buf {:p}\n",
+                            srb,
+                            c[0],
+                            &c[..(*srb).CdbLength.min(16) as usize],
+                            (*srb).DataTransferLength,
+                            (*srb).SrbFlags,
+                            ntkrnl_sys::ddk::PsGetCurrentThreadId(),
+                            (*irp).MdlAddress,
+                            (*srb).DataBuffer
+                        );
+                    }
                     IoMarkIrpPending(irp);
                     (*srb).SrbStatus = scsi::SRB_STATUS_PENDING;
                     {
@@ -449,6 +468,9 @@ unsafe fn disk_dispatch(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
         }
         IRP_MJ_DEVICE_CONTROL => {
             let p = (*io).Parameters.DeviceIoControl;
+            if TRACE {
+                sdprint!("trace: ioctl {:#010x} out {} tid {:p}\n", p.IoControlCode, p.OutputBufferLength, ntkrnl_sys::ddk::PsGetCurrentThreadId());
+            }
             let (status, n) = scsi::device_control(
                 &*(&raw const IDENT),
                 irp,
@@ -617,7 +639,47 @@ unsafe fn execute(irp: PIRP) {
     };
     let status = scsi::execute(host, &*(&raw const IDENT), WRITE_ENABLED, srb, data);
     let n = if status >= 0 { (*srb).DataTransferLength as usize } else { 0 };
+    io_rate(&*srb, n);
+    if TRACE {
+        sdprint!("trace: done srb {:p} op {:#04x} srb {:#04x} status {:#010x} n {}\n", srb, (*srb).Cdb[0], (*srb).SrbStatus, status as u32, n);
+    }
     (*irp).IoStatus.__bindgen_anon_1.Status = status;
     (*irp).IoStatus.Information = n as _;
+    // Complete at DISPATCH_LEVEL, the context a port driver completes SRBs in
+    // (from its DPC), so classpnp's completion routines see what they would
+    // under storport or usbstor.
+    let _dpc = ntkrnl_sys::guards::IrqlGuard::raise_to_dpc();
     IoCompleteRequest(irp, 1); // IO_DISK_INCREMENT
+}
+
+/// One `[SDHC] io:` line at most every IO_RATE_US while the card is busy:
+/// requests, sectors and the mean request size, so a slow volume operation
+/// shows as a rate rather than as a silent hang. Called only from the worker.
+const IO_RATE_US: u64 = 5_000_000;
+static mut IO_WINDOW: (u64, u64, u64, u64) = (0, 0, 0, 0); // start, requests, read, written
+
+unsafe fn io_rate(srb: &Srb, bytes: usize) {
+    let w = &mut *(&raw mut IO_WINDOW);
+    let now = now_us();
+    if w.0 == 0 {
+        w.0 = now;
+    }
+    match srb.Cdb[0] {
+        0x08 | 0x28 | 0xA8 | 0x88 => w.2 += (bytes / SECTOR) as u64,
+        0x0A | 0x2A | 0xAA | 0x8A => w.3 += (bytes / SECTOR) as u64,
+        _ => return,
+    }
+    w.1 += 1;
+    let span = now.wrapping_sub(w.0);
+    if span >= IO_RATE_US {
+        sdprint!(
+            "io: {} requests in {} ms, {} sectors read, {} written ({} sectors per request)\n",
+            w.1,
+            span / 1000,
+            w.2,
+            w.3,
+            (w.2 + w.3) / w.1.max(1)
+        );
+        *w = (now, 0, 0, 0);
+    }
 }

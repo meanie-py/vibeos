@@ -594,6 +594,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64: synchronous IRP completions ran late, into dead stack frames** (FIXED 2026-10-06).
+  The HAL drained APCs under a per-CPU flag that stayed set across a thread switch inside a
+  normal kernel APC, so other threads' `IopCompleteRequest` APCs waited for a later IRQL drop
+  and wrote into frames their callers had left. Found when the Pi 4 SD card went writable
+  (0x1E with a DISK_GEOMETRY in FP, 0x109 from WAITDEP). `[IO-STRANDED]` now reports any
+  recurrence. Field manual: "A kernel return address holds a DISK_GEOMETRY". It may account
+  for other arm64 dispatcher flakes in this registry; re-check them against it.
+- **Pi 4 SD card: the first file write to its FAT32 volume blocks** (OPEN, 2026-10-06).
+  With `sdhc-rust` `WRITE_ENABLED` on, `echo > F:\x.txt` never returns and no I/O reaches the
+  card; the kernel stays up. Same on the UP and MP kernels. The start-time sector write test
+  passes, so the block is above the driver (mount or fastfat). Writes stay off until it is
+  found.
+- **xHCI rig: the stick behind the hub never becomes a volume** (OPEN, observed 2026-10-06).
+  `test_usb_stick_read_and_write` fails with `COPY.TXT on (hub, SuperSpeed): [None, ...]`;
+  stortest sees only one stick volume (`next-letter Harddisk2 failed (error 3)`). Seen before
+  and after the HAL APC fix, and with both sticks FAT16, so not those changes; not yet checked
+  on a clean master.
 - **Pi 4 (real hardware): a loopback UDP `sendto()` never returned** (FIXED 2026-10-04,
   `e0674df2c66`). With no NIC netstack drives, the engine worker exited while TDI kept pending
   IRPs into its dead inbox. They now fail fast with STATUS_NETWORK_UNREACHABLE. QEMU never showed

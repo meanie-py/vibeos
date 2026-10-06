@@ -4,11 +4,8 @@
 //! stick (drivers/usb/usbstor/disk.c), since that is the path proven to give a
 //! drive in Explorer on this board.
 //!
-//! The disk is READ-ONLY to Windows for now (`pnp::WRITE_ENABLED`): the card in
-//! the Pi's slot is the bench's boot card, carrying the firmware, so MODE SENSE
-//! reports write protection (fastfat then mounts read-only) and a WRITE is
-//! refused with DATA PROTECT. The write path itself is exercised at start by
-//! pnp.rs's self-test, on sectors outside every partition.
+//! With `pnp::WRITE_ENABLED` off, MODE SENSE reports write protection (fastfat
+//! then mounts read-only) and a WRITE is refused with DATA PROTECT.
 
 use core::ffi::c_void;
 use core::mem::size_of;
@@ -62,7 +59,6 @@ pub const SRB_STATUS_SUCCESS: u8 = 0x01;
 pub const SRB_STATUS_BUSY: u8 = 0x05;
 pub const SRB_STATUS_ERROR: u8 = 0x04;
 pub const SRB_STATUS_INVALID_REQUEST: u8 = 0x06;
-const SRB_STATUS_DATA_OVERRUN: u8 = 0x12;
 const SRB_STATUS_AUTOSENSE_VALID: u8 = 0x80;
 const SRB_FLAGS_DISABLE_AUTOSENSE: u32 = 0x20;
 const SCSISTAT_GOOD: u8 = 0x00;
@@ -231,12 +227,11 @@ pub unsafe fn execute(host: &Host, ident: &Ident, write_enabled: bool, srb: *mut
     match result {
         Ok(n) => {
             (*srb).ScsiStatus = SCSISTAT_GOOD;
-            (*srb).SrbStatus = if n < len {
-                (*srb).DataTransferLength = n as u32;
-                SRB_STATUS_DATA_OVERRUN // an underrun: classpnp takes the shorter length
-            } else {
-                SRB_STATUS_SUCCESS
-            };
+            // A short reply (MODE SENSE with no pages) is a success with the
+            // shorter length. SRB_STATUS_DATA_OVERRUN with a successful IRP is
+            // what classpnp calls "SRB and IRP status don't match", and fails.
+            (*srb).DataTransferLength = n as u32;
+            (*srb).SrbStatus = SRB_STATUS_SUCCESS;
             STATUS_SUCCESS
         }
         Err(Sense(key, asc)) => {
