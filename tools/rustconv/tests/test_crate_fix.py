@@ -229,3 +229,23 @@ def test_cfg_twins_are_separate_functions(tmp_path: Path):
 
     with pytest.raises(RuntimeError):
         cf._replace_named(tmp_path, "a.rs", "Cb#2", "x", second)  # no longer there as `second`
+
+
+def test_a_fix_may_not_invent_a_success_value():
+    span = cf.function_spans(RUST)[1]
+    src = RUST[span.start : span.end]
+    c_fn = "{\n    Status = Call(p);\n    if (!x) Status = STATUS_X;\n    return Status;\n}"
+    fixed = src.replace("STATUS_SUCCESS\n}", "Status = 0;\n    STATUS_SUCCESS\n}")
+    found = cf.reply_findings(src, fixed, {"error[E0308]": {"amd64"}}, lambda _: [], c_fn=c_fn)
+    assert any("Status = 0" in f for f in found)
+
+
+def test_a_banked_fix_follows_its_function_to_new_text():
+    original = "fn A() {\n    let x: u32 = f();\n    g(x as u8);\n    h(1);\n}\n"
+    fixed = original.replace("g(x as u8);", "g(x as u16);")
+    # A deterministic stage later rewrote another line of the same function.
+    current = original.replace("h(1);", "h(1 as i32);")
+    merged = cf.merge_banked(current, [{"original": original, "fixed": fixed}])
+    assert merged == "fn A() {\n    let x: u32 = f();\n    g(x as u16);\n    h(1 as i32);\n}\n"
+    conflicting = original.replace("g(x as u8);", "g(x as u32);")
+    assert cf.merge_banked(conflicting, [{"original": original, "fixed": fixed}]) is None

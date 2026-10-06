@@ -2520,6 +2520,13 @@ just a label.
 - **Fix deterministically:** `ntkrnl_sys::bugcodes::NAME` from `tools/gen_bugcodes.py`;
   `tools/rustconv/rustconv/verify_constants.py` (`--enums`, `--fix`) against a header catalog;
   `tools/scan_bugcheck_codes.py` (empty baseline, gate-wired).
+- **An invented SUCCESS on a failure path, where no seal looks.** setuplib's
+  `InstallBootManagerAndBootEntries` returns `Status`, which the C sets only from calls and two
+  failure codes; on GetFileSystemName() failure the translation wrote `Status = 0; // keep as in
+  C` and returned success for a volume it could not read. Small literals are never sealed and
+  nothing was dropped. `c_body_checks.invented_flag_assignments` refuses a `X = 0`/`X = 1` the
+  C function never spells for `X` (at purchase, and in `port fix` replies): 1 false positive
+  in 1,054 functions of seven flipped modules, an inlined `RtlEqualLuid`.
 - **`tools/scan_const_contradictions.py` is oracle-free and the cheapest detector** — it asks
   only whether the tree contradicts *itself*, so it needs no catalog.
 - **NEGATIVE result worth keeping:** do **not** auto-sweep all 2216 headers. It yields noise.

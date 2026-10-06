@@ -440,11 +440,26 @@ went into a deterministic stage rather than a re-buy. Every one is general:
   `.CRT$XIB` constructor; the preamble kept the zeros and dropped the constructor, so two
   UNICODE_STRINGs shipped empty. `fold_static_initializers` moves each `NAME = EXPR;` into
   NAME's initialiser (Rust evaluates it at compile time) and refuses any other store.
-- **crate-repair rules:** `option_fn_is_null` (`.is_null()` on an `Option<fn>` is `.is_none()`),
-  `local_shadows_constant` (C lets a local shadow an enumerator, E0530; the local is renamed
-  for the rest of its block), `sizeof_constant` (`size_of::<CONST>()` -> `size_of_val(&CONST)`),
-  `fn_item_cast` (drop c2rust's `f as extern "C" fn(..)` and let the function coerce), and
-  `packed_field_ptr` also answers `size_of_val(&packed.field)` without forming a reference.
+- **crate-repair rules**, each C's own semantics: `option_fn_is_null` (`.is_null()` on an
+  `Option<fn>` is `.is_none()`), `local_shadows_constant` (C lets a local shadow an enumerator,
+  E0530; the local is renamed for the rest of its block), `sizeof_constant` (`size_of::<CONST>()`
+  -> `size_of_val(&CONST)`), `fn_item_cast` (drop c2rust's `f as extern "C" fn(..)` and let the
+  function coerce), `some_fn_item` (a function into an `Option<fn>` slot is `Some(f)`),
+  `option_fn_as_pointer` (an `Option<fn>` passed as PVOID maps None to NULL),
+  `variadic_promotion` (rustc's `as c_int`/`as c_uint` for a narrow argument to `...`),
+  `c_local_static_mut` (a C `static` holding a pointer), `pointer_double_negation` (`!!p`),
+  `zeroed_not_default` (`{0}` on a union struct), `raw_pointer_field` (C's `p->f` written `p.f`,
+  receiver found by hand because rustc's suggestion points into `CONTAINING_RECORD!`),
+  `unsigned_negative_literal` (`(ULONG)-1`), and `packed_field_ptr` also answers
+  `size_of_val(&packed.field)` without forming a reference. `option_fn_call` no longer needs
+  `fn(` in the message: rustc abbreviates long types to `Option<...>`. A repair pass that
+  applies nothing (every edit refused at write) now ends the session.
+- **resolve: c2rust's local types replace the model's twins.** The model collapses `typedef
+  struct _X {..} X;` into one `struct X` while c2rust's tables spell `_X`; the module's copy
+  shadowed the prelude's and they never unified. Resolve drops a module's definition of every
+  name it takes from c2rust, and fetches the typedef `X` with a tag `_X`.
+- **An invented success value is refused:** `c_body_checks.invented_flag_assignments` (purchase
+  and `port fix`) -- see the field manual's invented-values entry.
 - **CRT function-like macros** (`iswspace`..., `min`, `max`) are functions in win32macros-rust;
   resolve skips function-like macros as externs, so nothing supplied them.
 - **`port fix` and dead C.** The fix model sees only the lines the build compiles, and a name
