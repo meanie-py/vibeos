@@ -299,6 +299,13 @@ def build_parser() -> argparse.ArgumentParser:
         "(AHCI_NOT_ENGAGED) unless uniata reports finding the controller",
     )
     s.add_argument(
+        "--nvme",
+        action="store_true",
+        help="attach an NVMe controller with one 64M FAT namespace (VIBEOS_QEMU_NVME=1, "
+        "every arch). The boot FAILS (NVME_NOT_ENGAGED) unless nvme.sys publishes the "
+        "namespace as a disk; tests/qemu/test_nvme.py then drives it from the desktop",
+    )
+    s.add_argument(
         "--no-net",
         action="store_true",
         help="skip the amd64 netstack net-suite (default-on; escape hatch for fast iteration)",

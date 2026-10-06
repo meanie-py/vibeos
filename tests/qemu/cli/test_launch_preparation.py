@@ -208,3 +208,19 @@ def test_the_bios_smoke_boots_the_iso_from_a_usb_stick(monkeypatch):
     monkeypatch.setenv("VIBEOS_QEMU_BOOT_TRANSPORT", "ide-cd")
     cd = vm.boot_media_device_args("x.iso", default_transport="usb-storage")
     assert any(a.startswith("ide-cd,") for a in cd), cd
+
+
+@pytest.mark.parametrize("config", [vm.Amd64UefiConfig, vm.I386UefiConfig, vm.Arm64Config])
+def test_the_nvme_rig_attaches_one_controller_on_every_arch(config, tmp_path, monkeypatch):
+    """VIBEOS_QEMU_NVME=1 is the nvme.sys rig on all three arches. The namespace
+    must never get a bootindex: firmware would then try it ahead of the CD."""
+    made = []
+    monkeypatch.setattr(vm, "make_usb_stick_image", lambda p: made.append(p))
+    monkeypatch.delenv("VIBEOS_QEMU_NVME", raising=False)
+    machine = vm.QemuVM(config(), tmp_path)
+    assert machine._nvme_args() == [] and made == []
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    args = machine._nvme_args()
+    assert any(a.startswith("nvme,") and "drive=nvme0" in a for a in args), args
+    assert not any("bootindex" in a for a in args)
+    assert made == [machine.scratch_path.parent / "nvmedisk.qcow2"]

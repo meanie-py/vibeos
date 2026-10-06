@@ -91,6 +91,7 @@ nmidebug.sys = 1,,,,,,x,4,,,,1,4
 sacdrv.sys   = 1,,,,,,x,4,,,,1,4
 uniata.sys   = 1,,,,,,x,4,,,,1,4
 buslogic.sys = 1,,,,,,x,4,,,,1,4
+nvme.sys     = 1,,,,,,x,4,,,,1,4
 blue.sys     = 1,,,,,,x,4,,,,1,4
 vgafonts.cab = 1,,,,,,,1,,,,1,1
 bootvid.dll  = 1,,,,,,,2,,,,1,2
@@ -162,6 +163,7 @@ PCI\CC_0104 = uniata
 PCI\CC_0105 = uniata
 PCI\CC_0106 = uniata
 ;PCI\CC_0106 = storahci
+PCI\CC_010802 = nvme
 *PNP0600 = uniata
 USB\CLASS_09 = usbhub
 USB\ROOT_HUB = usbhub
@@ -205,6 +207,7 @@ pciide = pciide.sys
 [SCSI.Load]
 uniata = uniata.sys
 buslogic = buslogic.sys
+nvme = nvme.sys
 storahci = storahci.sys
 disk = disk.sys
 

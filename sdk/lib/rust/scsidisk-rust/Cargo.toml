@@ -1,0 +1,15 @@
+# scsidisk-rust: a block device as the SCSI direct-access disk that disk.sys and
+# classpnp speak to: SRB/CDB decoding, sense data, and the storage
+# property/address IOCTLs. Pure no_std logic with no kernel imports, so the
+# whole translation is unit-tested on the host (`cargo test -p scsidisk-rust`).
+# Used by nvme-rust. sdhc-rust/src/scsi.rs is the older, card-specific copy of
+# the same layer and should move onto this crate.
+
+[package]
+name = "scsidisk-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "scsidisk"
+path = "src/lib.rs"
