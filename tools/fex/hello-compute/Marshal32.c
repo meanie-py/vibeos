@@ -172,12 +172,15 @@ static void ReportWide(const char *label, const WCHAR *s, ULONG chars)
 
 /* --- check 1: NtQueryInformationThread(ThreadBasicInformation) ----------- */
 
+/* THREAD_BASIC_INFORMATION at the CALLER's width (ULONG_PTR: 4 bytes in
+ * marshal32, 8 in marshal64), spelled out so the i386 field offsets are
+ * visible rather than inherited from a header. */
 typedef struct _M32_TBI32 {
     ULONG ExitStatus;
-    ULONG TebBaseAddress;
-    ULONG UniqueProcess;
-    ULONG UniqueThread;
-    ULONG AffinityMask;
+    ULONG_PTR TebBaseAddress;
+    ULONG_PTR UniqueProcess;
+    ULONG_PTR UniqueThread;
+    ULONG_PTR AffinityMask;
     LONG  Priority;
     LONG  BasePriority;
 } M32_TBI32;
@@ -203,7 +206,7 @@ static int CheckThreadBasicInformation(void)
         Report("[marshal32] FAIL: NtQueryInformationThread(TBI) errored\n");
         return M32_FAIL_QIT_CALL;
     }
-    if (Tbi.TebBaseAddress != (ULONG)(ULONG_PTR)NtCurrentTeb())
+    if (Tbi.TebBaseAddress != (ULONG_PTR)NtCurrentTeb())
     {
         Report("[marshal32] FAIL: TBI.TebBaseAddress != own TEB32\n");
         return M32_FAIL_QIT_TEB;
@@ -1287,7 +1290,7 @@ static int CheckSocketSendTo(void)
     return 0;
 }
 
-int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
+int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) */
 {
     int rc;
 

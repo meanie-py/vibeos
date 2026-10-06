@@ -26,9 +26,13 @@
                                      * generated (M9 win32k paint-invalidation) */
 #define W32_PASS             0x600D /* window created, WM_PAINT painted magenta */
 
-/* Soft cap on pump iterations: WM_PAINT delivery for a WoW64 window is the M9
- * frontier; until then the window+callback capability (M8) is the PASS line. */
-#define W32_PUMP_LIMIT       200
+/* How long the pump waits for WM_PAINT. It used to be 200 back-to-back
+ * PeekMessage calls with no wait at all, i.e. a race against win32k: a guest
+ * slow enough (WoW64 under emulation) always lost it gracefully to a posted
+ * paint, and the same source built for x86-64 and run NATIVELY drained all 200
+ * peeks before the paint was generated and reported "no WM_PAINT". A bound in
+ * TIME is the property actually meant. */
+#define W32_PUMP_MS          5000
 
 static void Report(const char *msg)
 {
@@ -83,12 +87,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     return DefWindowProcA(hwnd, msg, wp, lp);
 }
 
-int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
+int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) */
 {
     WNDCLASSA wc;
     HWND hwnd;
     MSG m;
     int pumped = 0;
+    DWORD start;
 
     Report("[win32] start: RegisterClassA\n");
     /* no CRT: no memset — field-init the class explicitly */
@@ -129,14 +134,19 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
      * GetMessage would hang with no WM_QUIT). WM_PAINT is the goal; if it never
      * arrives within the cap, window+callback capability (M8) still passed as a
      * soft-warn rung, like gui32's GetPixel readback. */
-    while (pumped < W32_PUMP_LIMIT && !g_SawPaint)
+    start = GetTickCount();
+    while (!g_SawPaint && GetTickCount() - start < W32_PUMP_MS)
     {
         if (PeekMessageA(&m, NULL, 0, 0, PM_REMOVE))
         {
             TranslateMessage(&m);
             DispatchMessageA(&m);
+            pumped++;
         }
-        pumped++;
+        else
+        {
+            Sleep(10);
+        }
     }
 
     if (!g_SawPaint)

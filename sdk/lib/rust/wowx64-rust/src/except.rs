@@ -76,6 +76,16 @@ pub unsafe fn Deliver(Rec: &GuestExceptionRecord, Ctx: &WowX64Context) {
     if KiUserExceptionDispatcher == 0 {
         crate::host::die(b"guest exception before the guest ntdll was resolved\0");
     }
+    // Rare by nature (each one is an exception in guest code), so always said:
+    // a guest that dies of a handled-then-rethrown fault is otherwise silent.
+    crate::trace!(
+        "guest exception %08lx at %p (rsp %p, info %p %p) -> guest dispatcher",
+        Rec.ExceptionCode,
+        Rec.ExceptionAddress as *const c_void,
+        Ctx.Rsp as *const c_void,
+        Rec.ExceptionInformation[0] as *const c_void,
+        Rec.ExceptionInformation[1] as *const c_void,
+    );
     let Frame = ((Ctx.Rsp - core::mem::size_of::<UserExceptionStack>() as u64) & !15) as *mut UserExceptionStack;
     core::ptr::write_bytes(Frame as *mut u8, 0, core::mem::size_of::<UserExceptionStack>());
     (*Frame).Context = *Ctx;

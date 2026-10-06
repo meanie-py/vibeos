@@ -98,6 +98,18 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
                 Args[2] as u8 != 0,
             );
         }
+        SVC_NtTerminateProcess if Args[0] as HANDLE == CURRENT_PROCESS || Args[0] == 0 => {
+            // The guest's own verdict, said once from our side too, with the
+            // guest rip it came from: a guest that ends itself on an error path
+            // is otherwise indistinguishable from one that crashed.
+            let mut Ctx: WowX64Context = core::mem::zeroed();
+            (Cpu.GetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), &mut Ctx);
+            crate::trace!(
+                "guest NtTerminateProcess(%08lx) from rip %p",
+                Args[1] as u32,
+                Ctx.Rip as *const c_void,
+            );
+        }
         SVC_NtCallbackReturn => {
             return crate::callback::CallbackReturn(Args);
         }
