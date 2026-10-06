@@ -2694,6 +2694,13 @@ pub unsafe fn CMenuBand__MenuItemSelect_body(this: *mut CMenuBand, changeType: D
         MPOS_EXECUTE => {
             let tb: *mut CMenuToolbarBase = (*this).m_hotBar;
             let item: INT = (*this).m_hotItem;
+            // Divergence from the C++, which calls through m_hotBar unchecked: Enter
+            // in a menu with nothing hot (Ctrl+Esc opens the Start menu without an
+            // initial selection) dereferenced NULL and killed explorer. Windows
+            // ignores that Enter, and so do we.
+            if tb.is_null() {
+                return S_FALSE;
+            }
             CMenuToolbarBase_PrepareExecuteItem_RustBridge(tb, item);
             if !(*this).m_subMenuParent.is_null() {
                 let p = (*this).m_subMenuParent;

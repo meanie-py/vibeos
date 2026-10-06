@@ -1742,6 +1742,14 @@ Three faces, all seen live:
   `netapi32` `MIB_IPADDRTABLE.table`. Deterministic on the flipping tree but the gate
   classifies it `NET_FLAKE`; the differential tell is that **only** the flipping worktree fails
   net. The inconsistency is intra-file — sibling functions already used pointer arithmetic.
+- **ntdll's CSR capture buffer — the console app that "hangs".** `CsrAllocateMessagePointer`
+  wrote `PointerOffsetsArray[PointerCount]`, so every CSR call capturing two or more pointers
+  panicked on the second. An interactive cmd died on its first `echo x > file`, but its
+  console window lives in csrss and stayed up, so it looked like a hang. A census showing a
+  `WrLpcReply` thread sent two diagnoses the wrong way. **When a console app freezes, grep
+  serial for `RUST PANIC` and `PROC-TERM` before reading wait states:** a dead process
+  leaves its window behind. `tools/scan_flex_array_panic.py` could not see it, because it
+  never reads cargo-linked modules (ntdll and the rest of the boot path).
 - **A CORRECTLY-sized array whose guard is a runtime variable — caught at build time by
   `scan_ud2`, not at runtime.** Same panic, different reason: nothing is over-allocated and no
   index is ever out of range, but the *guard* the C relies on is a `static mut` the optimiser

@@ -618,18 +618,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (0x1E with a DISK_GEOMETRY in FP, 0x109 from WAITDEP). `[IO-STRANDED]` now reports any
   recurrence. Field manual: "A kernel return address holds a DISK_GEOMETRY". It may account
   for other arm64 dispatcher flakes in this registry; re-check them against it.
-- **arm64: `cmd` output redirection never returns** (OPEN, 2026-10-06). `echo hi > F:\x.txt`
-  typed into cmd on the Pi 4 leaves cmd parked in `NtRequestWaitReplyPort` (WrLpcReply, the
-  census backtrace) waiting on csrss, and no file is created, on the SD card or on a USB stick
-  alike. The storage path is fine: stortest's create/write/flush/readback on the same volume
-  passes and the firmware reads its file back. This was first logged here as "the SD card's
-  first write blocks" (`9208546a69b0`); that was a misdiagnosis, corrected by the census
-  backtrace. `cmd /c copy` (no redirection) works.
-- **xHCI rig: the stick behind the hub never becomes a volume** (OPEN, observed 2026-10-06).
-  `test_usb_stick_read_and_write` fails with `COPY.TXT on (hub, SuperSpeed): [None, ...]`;
-  stortest sees only one stick volume (`next-letter Harddisk2 failed (error 3)`). Seen before
-  and after the HAL APC fix, and with both sticks FAT16, so not those changes; not yet checked
-  on a clean master.
+- **Interactive `cmd` died on its first redirection** (FIXED 2026-10-06). `echo hi > F:\x.txt`
+  typed at a cmd prompt killed cmd with a Rust panic in ntdll's
+  `CsrAllocateMessagePointer` (`smss-csrss-rust/src/csrlib/capture.rs`): it indexed the
+  capture buffer's `PointerOffsetsArray`, a C `[ANYSIZE_ARRAY]` that bindgen makes `[_; 1]`,
+  so every CSR call capturing two or more pointers panicked on the second. The console
+  window lives in csrss, so it stayed up and looked like a hang. Not arm64-specific and
+  not storage: `cmd /c` takes a path that never makes such a call, and `copy` works. This
+  was first logged as "the SD card's first write blocks" (`9208546a69b0`), then as a CSR
+  wait; both were wrong, and the serial log had the panic all along. Regression:
+  `test_xhci.py::test_usb_stick_cmd_redirection`. **Still owed:**
+  `tools/scan_flex_array_panic.py` would have caught this, but it reports 99 of 218 crates
+  "NOT BUILT", among them smss-csrss-rust, ntoskrnl, win32k and hal. Cargo-linked
+  modules build in `sdk/lib/rust/target/<crate>-<arch>-cargo-link/`, which it never
+  reads, so the boot path has no coverage.
+- **Explorer crashed on Enter in a Start menu with nothing selected** (FIXED 2026-10-06,
+  an upstream ReactOS defect). Ctrl+Esc opens the menu with no hot item, and
+  `CMenuBand::_MenuItemSelect(MPOS_EXECUTE)` calls through a NULL `m_hotBar`; the Rust now
+  ignores that Enter, as Windows does. **Still a gap:** letter mnemonics (R for Run…) do
+  nothing in the Start menu. The C++ never handled them either.
+- **xHCI rig: the stick behind the hub "never became a volume"** (FIXED 2026-10-06, a
+  test bug). It was C: all along. A MININT boot puts the ramdisk at X:, and fstub gives C:
+  to the first hard disk, but `test_usb_stick_read_and_write` assumed the ramdisk was C:
+  and copied only on D: and E:. The stick tests now try C:, D: and E:.
 - **Pi 4 (real hardware): a loopback UDP `sendto()` never returned** (FIXED 2026-10-04,
   `e0674df2c66`). With no NIC netstack drives, the engine worker exited while TDI kept pending
   IRPs into its dead inbox. They now fail fast with STATUS_NETWORK_UNREACHABLE. QEMU never showed

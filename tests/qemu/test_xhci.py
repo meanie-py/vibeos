@@ -100,7 +100,13 @@ _QCODE = {
     ".": ["dot"],
     "/": ["slash"],
     "&": ["shift", "7"],
+    ">": ["shift", "dot"],
 }
+
+
+# Every letter a stick can be given: two sticks plus the ramdisk if it ever
+# takes one of these instead of X:.
+_STICK_LETTERS = "CDE"
 
 
 def _tap(vm: QemuVM, keys: list[str]) -> None:
@@ -147,15 +153,18 @@ def test_usb_stick_read_and_write(vm: QemuVM) -> None:
     serial = vm._boot_output + vm.serial_output(timeout=1)
     assert "(drv \\Driver\\usbstor)" in serial, serial[-6000:]
     # Two sticks (vm.py): one behind a full-speed hub, one SuperSpeed on a USB3
-    # root port. They are the volumes after the boot ramdisk (C:), in whichever
-    # order they arrive, so copy on both D: and E: and expect a copy on each.
+    # root port, lettered in whichever order they arrive. The boot ramdisk is NOT
+    # C: -- a MININT boot puts it at X: and fstub hands C: to the first hard disk
+    # -- so try every letter a stick can get (_STICK_LETTERS); the ramdisk has no
+    # source file, so a copy there fails harmlessly.
     assert "speed 4" in serial, "no SuperSpeed device was addressed:\n" + serial[-6000:]
     images = [vm.scratch_path.parent / "usbdisk.qcow2", vm.scratch_path.parent / "usbdisk-ss.qcow2"]
     _tap(vm, ["meta_l", "r"])
     time.sleep(3)
     _type(
         vm,
-        f"cmd /c copy D:\\{USB_STICK_FILE} D:\\COPY.TXT & copy E:\\{USB_STICK_FILE} E:\\COPY.TXT",
+        "cmd /c "
+        + " & ".join(f"copy {d}:\\{USB_STICK_FILE} {d}:\\COPY.TXT" for d in _STICK_LETTERS),
     )
     _tap(vm, ["ret"])
     copied: list[bytes | None] = [None, None]
@@ -168,4 +177,37 @@ def test_usb_stick_read_and_write(vm: QemuVM) -> None:
     assert copied == [USB_STICK_TEXT, USB_STICK_TEXT], (
         f"COPY.TXT on (hub, SuperSpeed): {copied!r}\n{serial[-6000:]}"
     )
+    assert vm.qmp.execute("query-status")["return"]["status"] == "running"
+
+
+def test_usb_stick_cmd_redirection(vm: QemuVM) -> None:
+    """An interactive cmd's `>` lands a file on the stick and cmd takes the next
+    line. On arm64 (the Pi 4) `echo hi > F:\\x.txt` typed at the prompt once left
+    cmd parked in NtRequestWaitReplyPort with no file created, while `copy` to
+    the same volume worked: redirection, not storage."""
+    if os.environ.get("VIBEOS_QEMU_USB_DISK") != "1":
+        pytest.skip("requires VIBEOS_QEMU_USB_DISK=1 (the stick)")
+    serial = vm._boot_output + vm.serial_output(timeout=1)
+    images = [vm.scratch_path.parent / "usbdisk.qcow2", vm.scratch_path.parent / "usbdisk-ss.qcow2"]
+    _tap(vm, ["meta_l", "r"])
+    time.sleep(3)
+    _type(vm, "cmd")
+    _tap(vm, ["ret"])
+    time.sleep(5)
+    # Each stick must get both files. The second round is typed only after the
+    # first redirections, so it proves cmd came back to its prompt.
+    for name in ("REDIR.TXT", "AGAIN.TXT"):
+        for letter in _STICK_LETTERS:
+            _type(vm, f"echo REDIR>{letter}:\\{name}")
+            _tap(vm, ["ret"])
+            time.sleep(1)
+    want = [b"REDIR\r\n"] * 2
+    got: list[list[bytes | None]] = [[None, None], [None, None]]
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline and got != [want, want]:
+        serial += vm.serial_output(timeout=2)
+        assert not any(marker in serial for marker in _FATAL_MARKERS), serial[-4000:]
+        got = [[_stick_file(image, n) for n in ("REDIR.TXT", "AGAIN.TXT")] for image in images]
+    vm.screendump(vm.work_dir / "xhci-redirect.ppm")
+    assert got == [want, want], f"(REDIR, AGAIN) on (hub, SuperSpeed): {got!r}\n{serial[-6000:]}"
     assert vm.qmp.execute("query-status")["return"]["status"] == "running"
