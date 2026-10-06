@@ -1893,3 +1893,27 @@ def test_a_field_through_a_raw_pointer_is_dereferenced():
             spans=[_span("a.rs", at, at + len(field), is_primary=True)],
         )
         assert want in _apply_plan(src, diag)
+
+
+def test_an_unsigned_negative_literal_wraps_like_c():
+    src = "fn f() { if Count1 == (-1) as ULONG {} }\n"
+    at = src.index("(-1)")
+    diag = _diag(
+        "cannot apply unary operator `-` to type `u32`",
+        code="E0600",
+        spans=[_span("a.rs", at, at + 4, is_primary=True)],
+    )
+    assert "if Count1 == (1 as u32).wrapping_neg() as ULONG {}" in _apply_plan(src, diag)
+
+
+def test_an_option_fn_passed_as_a_pointer_maps_none_to_null():
+    src = "fn f() { g(Callback as *mut core::ffi::c_void); }\n"
+    at = src.index("Callback")
+    end = src.index(");")
+    diag = _diag(
+        'non-primitive cast: `Option<unsafe extern "system" fn(u32) -> u8>` as `*mut c_void`',
+        code="E0605",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+    )
+    out = _apply_plan(src, diag)
+    assert "g((Callback).map_or(core::ptr::null_mut(), |f| f as *mut core::ffi::c_void));" in out

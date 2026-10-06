@@ -78,6 +78,8 @@ RULE_LOCAL_STATIC_MUT = "c_local_static_mut"
 RULE_POINTER_NOT_NOT = "pointer_double_negation"
 RULE_ZEROED_DEFAULT = "zeroed_not_default"
 RULE_ARROW_FIELD = "raw_pointer_field"
+RULE_UNSIGNED_NEGATE = "unsigned_negative_literal"
+RULE_OPTION_FN_AS_PTR = "option_fn_as_pointer"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -116,6 +118,8 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_POINTER_NOT_NOT,
     RULE_ZEROED_DEFAULT,
     RULE_ARROW_FIELD,
+    RULE_UNSIGNED_NEGATE,
+    RULE_OPTION_FN_AS_PTR,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -1839,7 +1843,9 @@ def _option_fn_call_rule(
     if (diagnostic.get("code") or {}).get("code") != "E0618":
         return [], [], False
     message = str(diagnostic.get("message") or "")
-    if "found `Option<" not in message or "fn(" not in message:
+    # rustc abbreviates a long type to `Option<...>`, so `fn(` is often NOT in the message;
+    # calling an Option of anything but a fn is an error the unwrap_unchecked leaves visible.
+    if "found `Option<" not in message:
         return [], [], False
     span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
     if span is None:
@@ -3313,6 +3319,84 @@ def _arrow_field_rule(
     )
 
 
+def _unsigned_negate_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0600 unary `-` on an unsigned type: C's `(ULONG)-1` is the negated value in that
+    type, which is `(1 as u32).wrapping_neg()` -- u32::MAX for -1, and right for any N."""
+    if (diagnostic.get("code") or {}).get("code") != "E0600":
+        return [], [], False
+    m = re.search(
+        r"unary operator `-` to type `(u8|u16|u32|u64|usize)`", str(diagnostic.get("message") or "")
+    )
+    got = _primary_bytes(diagnostic, load) if m else None
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    lit = re.fullmatch(
+        r"\(?\s*-\s*(\d+|0[xX][0-9a-fA-F]+)\s*\)?", data[start:end].decode("utf-8", "replace")
+    )
+    if lit is None:
+        return [], [], False
+    return (
+        [
+            _simple_edit(
+                RULE_UNSIGNED_NEGATE,
+                file_name,
+                data,
+                start,
+                end,
+                f"({lit.group(1)} as {m.group(1)}).wrapping_neg()",
+                "rustc E0600: C negates in the unsigned type, wrapping",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _option_fn_as_ptr_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0605 `f as *mut c_void` where `f` is an `Option<fn>`: C passes the function pointer as
+    a PVOID; `None` is NULL. `f.map_or(null_mut(), |p| p as *mut _)`."""
+    if (diagnostic.get("code") or {}).get("code") != "E0605":
+        return [], [], False
+    m = re.match(
+        r"non-primitive cast: `Option<[^`]*fn\([^`]*` as `\*(mut|const) ",
+        str(diagnostic.get("message") or ""),
+    )
+    got = _primary_bytes(diagnostic, load) if m else None
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    text = data[start:end].decode("utf-8", "replace")
+    cast = re.fullmatch(r"(?s)(?P<e>.+?)\s+as\s+(?P<t>\*(?:mut|const)\s+[\w:]+)", text)
+    if cast is None or not _balanced(cast.group("e").encode()):
+        return [], [], False
+    null = "core::ptr::null_mut()" if m.group(1) == "mut" else "core::ptr::null()"
+    rep = f"({cast.group('e')}).map_or({null}, |f| f as {cast.group('t')})"
+    return (
+        [
+            _simple_edit(
+                RULE_OPTION_FN_AS_PTR,
+                file_name,
+                data,
+                start,
+                end,
+                rep,
+                "rustc E0605: an Option<fn> as a pointer; C's NULL is None",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
@@ -3344,6 +3428,8 @@ _RULE_TABLE: dict[
     RULE_POINTER_NOT_NOT: _pointer_not_not_rule,
     RULE_ZEROED_DEFAULT: _zeroed_default_rule,
     RULE_ARROW_FIELD: _arrow_field_rule,
+    RULE_UNSIGNED_NEGATE: _unsigned_negate_rule,
+    RULE_OPTION_FN_AS_PTR: _option_fn_as_ptr_rule,
 }
 
 
