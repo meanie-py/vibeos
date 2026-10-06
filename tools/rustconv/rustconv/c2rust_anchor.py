@@ -734,3 +734,119 @@ def hoist_wide_temporaries(text: str) -> str:
     if not statics:
         return text
     return "\n".join(statics[k] for k in sorted(statics)) + "\n\n" + body
+
+
+# --------------------------------------------------------------------------------------
+# types a TU defines for itself
+# --------------------------------------------------------------------------------------
+
+_TYPE_ITEM_RE = re.compile(r"(?m)^((?:#\[[^\n]*\]\n)*)pub (struct|union|type) ([A-Za-z_]\w*)\b")
+
+
+def _type_items(text: str) -> dict[str, str]:
+    """Every top-level `pub struct|union|type` in c2rust output, attributes included."""
+    out: dict[str, str] = {}
+    for m in _TYPE_ITEM_RE.finditer(text):
+        kind, name = m.group(2), m.group(3)
+        if kind == "type":
+            end = text.find(";", m.end())
+        else:
+            open_idx = text.find("{", m.end())
+            semi = text.find(";", m.end())
+            if open_idx < 0 or (0 <= semi < open_idx):
+                end = semi
+            else:
+                depth, end = 0, open_idx
+                while end < len(text):
+                    depth += {"{": 1, "}": -1}.get(text[end], 0)
+                    if depth == 0:
+                        break
+                    end += 1
+        if end < 0:
+            continue
+        out.setdefault(name, text[m.start() : end + 1])
+    return out
+
+
+def local_types(
+    c_file: Path, names: set[str], arches: tuple[str, ...] = ("i386", "amd64", "arm64")
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Exact Rust for types the C FILE ITSELF defines (a `typedef struct` in the .c, or one
+    declared inside a function body), from c2rust's translation of that file.
+
+    The bindgen island only sees headers, so partinfo.c's `MBR_PARTITION_TYPE` and bootsup.c's
+    function-local `DISK_GEOMETRY_EX_INTERNAL` were defined nowhere, and the per-function
+    translation cannot define a type it only uses. c2rust lays them out with the C compiler
+    and keeps C's typedef names (`UCHAR`, `PCSTR`), which the island defines identically.
+
+    A requested name is taken only if the C file's own text mentions it, plus the struct a
+    requested typedef aliases (`MBR_PARTITION_TYPE = _MBR_PARTITION_TYPE`). Each arch is
+    transpiled; an item whose text differs across arches is returned per arch in the second
+    dict as `name -> "arch:text\\0arch:text..."` -- never one arch's layout for all three.
+    Returns (agreed items, arch-dependent items).
+    """
+    c_text = c_file.read_text(errors="replace")
+    wanted = {n for n in names if re.search(rf"\b{re.escape(n)}\b", c_text)}
+    if not wanted:
+        return {}, {}
+    per_arch: dict[str, dict[str, str]] = {}
+    for arch in arches:
+        text = _transpile_text(c_file, verbose=False, arch=arch)
+        if text is None:
+            continue
+        items = _type_items(text)
+        picked: dict[str, str] = {}
+        for name in wanted:
+            item = items.get(name)
+            if item is None:
+                continue
+            picked[name] = item
+            alias = re.fullmatch(r"(?s).*pub type \w+ = (\w+);", item)
+            target = alias.group(1) if alias else None
+            if target and target in items and re.search(rf"\b{re.escape(target)}\b", c_text):
+                picked.setdefault(target, items[target])
+        per_arch[arch] = picked
+    agreed: dict[str, str] = {}
+    differs: dict[str, str] = {}
+    for name in sorted(set().union(*(p.keys() for p in per_arch.values())) if per_arch else ()):
+        texts = {a: p[name] for a, p in per_arch.items() if name in p}
+        if len(set(texts.values())) == 1 and len(texts) == len(per_arch):
+            agreed[name] = next(iter(texts.values()))
+        else:
+            differs[name] = "\0".join(f"{a}:{t}" for a, t in sorted(texts.items()))
+    return agreed, differs
+
+
+_EXTERN_FN_RE = re.compile(r"(?m)^    (?:pub )?fn ([A-Za-z_]\w*)\(")
+
+
+def extern_signatures(
+    c_file: Path, names: set[str], arches: tuple[str, ...] = ("i386", "amd64", "arm64")
+) -> dict[str, str]:
+    """`fn NAME(..) -> T;` for C functions the file DECLARES (a header outside the island),
+    from c2rust's `extern` block, when every arch's text agrees.
+
+    The calling convention is NOT taken from here: c2rust writes `extern "C"` even for a
+    stdcall function on i386. `sdk_facts.function_abis` supplies it.
+    """
+    per_arch: dict[str, dict[str, str]] = {}
+    for arch in arches:
+        text = _transpile_text(c_file, verbose=False, arch=arch)
+        if text is None:
+            continue
+        found: dict[str, str] = {}
+        for m in _EXTERN_FN_RE.finditer(text):
+            if m.group(1) not in names:
+                continue
+            end = text.find(";\n", m.end())
+            if end < 0:
+                continue
+            sig = text[m.start() : end + 1].strip()
+            found[m.group(1)] = re.sub(r"^(?:pub )?fn ", "fn ", sig)
+        per_arch[arch] = found
+    out: dict[str, str] = {}
+    for name in names:
+        texts = {p.get(name) for p in per_arch.values()}
+        if len(texts) == 1 and None not in texts and per_arch:
+            out[name] = texts.pop()  # type: ignore[assignment]
+    return out

@@ -100,6 +100,9 @@ struct LOCK_SHARED_RANGE {
     End: LARGE_INTEGER,
     Key: ULONG,
     ProcessId: PVOID,
+    // Not in the C: Windows owns a byte-range lock by (file object, process, key),
+    // so unlocking through another handle must not release it.
+    FileObject: PFILE_OBJECT,
 }
 
 type PLOCK_SHARED_RANGE = *mut LOCK_SHARED_RANGE;
@@ -501,6 +504,7 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
             (*NewSharedRange).End.QuadPart = (*FileOffset).QuadPart + (*Length).QuadPart;
             (*NewSharedRange).Key = Key;
             (*NewSharedRange).ProcessId = ToInsert.Exclusive.FileLock.ProcessId;
+            (*NewSharedRange).FileObject = FileObject;
             InsertTailList(
                 core::ptr::addr_of_mut!((*LockInfo).SharedLocks) as PLIST_ENTRY,
                 core::ptr::addr_of_mut!((*NewSharedRange).Entry) as PLIST_ENTRY,
@@ -553,6 +557,7 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
             (*NewSharedRange).End.QuadPart = (*FileOffset).QuadPart + (*Length).QuadPart;
             (*NewSharedRange).Key = Key;
             (*NewSharedRange).ProcessId = Process as PVOID;
+            (*NewSharedRange).FileObject = FileObject;
             InsertTailList(
                 core::ptr::addr_of_mut!((*LockInfo).SharedLocks) as PLIST_ENTRY,
                 core::ptr::addr_of_mut!((*NewSharedRange).Entry) as PLIST_ENTRY,
@@ -742,8 +747,11 @@ pub unsafe extern "system" fn FsRtlFastUnlockSingle(
     }
 
     if (*Entry).Exclusive.FileLock.ExclusiveLock != 0 {
+        // The C omits the file object; Windows requires it (the olewinetest storage
+        // probe unlocks every byte through its own handle and released ole32's locks).
         if (*Entry).Exclusive.FileLock.Key != Key
             || (*Entry).Exclusive.FileLock.ProcessId != Process as PVOID
+            || (*Entry).Exclusive.FileLock.FileObject != FileObject
             || (*Entry).Exclusive.FileLock.StartingByte.QuadPart != (*FileOffset).QuadPart
             || (*Entry).Exclusive.FileLock.EndingByte.QuadPart != (*FileOffset).QuadPart + (*Length).QuadPart
         {
@@ -760,6 +768,7 @@ pub unsafe extern "system" fn FsRtlFastUnlockSingle(
                 && (*SharedRange).End.QuadPart == (*FileOffset).QuadPart + (*Length).QuadPart
                 && (*SharedRange).Key == Key
                 && (*SharedRange).ProcessId == Process as PVOID
+                && (*SharedRange).FileObject == FileObject
             {
                 FoundShared = 1u8;
                 break;
@@ -821,6 +830,51 @@ pub unsafe extern "system" fn FsRtlFastUnlockSingle(
     STATUS_SUCCESS
 }
 
+/// Release every exclusive lock owned by (`FileObject`, `Process`[, `Key`]).
+///
+/// The C walked the whole table: FsRtlFastUnlockAll's translation had also lost its
+/// `ProcessId != Process` filter, so closing ANY handle to a file dropped every
+/// lock on it, and neither version checked the file object Windows owns locks by.
+/// A delete invalidates the enumeration cursor, so the walk restarts after each one.
+unsafe fn FsRtlpUnlockOwnedExclusive(
+    FileLock: PFILE_LOCK,
+    InternalInfo: PLOCK_INFORMATION,
+    FileObject: PFILE_OBJECT,
+    Process: PEPROCESS,
+    Key: Option<ULONG>,
+    Context: PVOID,
+) {
+    let Table = core::ptr::addr_of_mut!((*InternalInfo).RangeTable);
+    let mut Entry = RtlEnumerateGenericTable(Table, 1u8) as PCOMBINED_LOCK_ELEMENT;
+    while !Entry.is_null() {
+        let Lock = core::ptr::addr_of_mut!((*Entry).Exclusive.FileLock);
+        let Owned = (*Lock).ExclusiveLock != 0
+            && (*Lock).ProcessId == Process as PVOID
+            && (*Lock).FileObject == FileObject
+            && Key.is_none_or(|k| (*Lock).Key == k);
+        if Owned {
+            let mut Start = (*Lock).StartingByte;
+            let mut Length: LARGE_INTEGER = core::mem::zeroed();
+            Length.QuadPart = (*Lock).EndingByte.QuadPart - Start.QuadPart;
+            let Status = FsRtlFastUnlockSingle(
+                FileLock,
+                FileObject,
+                &mut Start,
+                &mut Length,
+                Process,
+                (*Lock).Key,
+                Context,
+                1u8,
+            );
+            if Status >= 0 {
+                Entry = RtlEnumerateGenericTable(Table, 1u8) as PCOMBINED_LOCK_ELEMENT;
+                continue;
+            }
+        }
+        Entry = RtlEnumerateGenericTable(Table, 0u8) as PCOMBINED_LOCK_ELEMENT;
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlFastUnlockAll(
     FileLock: PFILE_LOCK,
@@ -832,7 +886,6 @@ pub unsafe extern "system" fn FsRtlFastUnlockAll(
     let Process = opaque_ptr(Process);
     let Context = opaque_ptr(Context);
     let mut ListEntry: PLIST_ENTRY;
-    let mut Entry: PCOMBINED_LOCK_ELEMENT;
     let InternalInfo = (*FileLock).LockInformation as PLOCK_INFORMATION;
 
     if (*FileLock).LockInformation.is_null() {
@@ -845,7 +898,7 @@ pub unsafe extern "system" fn FsRtlFastUnlockAll(
         let Range = CONTAINING_RECORD(ListEntry as PVOID, core::mem::size_of::<LOCK_SHARED_RANGE>(), range_offset) as PLOCK_SHARED_RANGE;
         Length.QuadPart = (*Range).End.QuadPart - (*Range).Start.QuadPart;
         ListEntry = (*ListEntry).Flink;
-        if (*Range).ProcessId != Process as PVOID {
+        if (*Range).ProcessId != Process as PVOID || (*Range).FileObject != FileObject {
             continue;
         }
         FsRtlFastUnlockSingle(
@@ -859,22 +912,7 @@ pub unsafe extern "system" fn FsRtlFastUnlockAll(
             1u8,
         );
     }
-    Entry = RtlEnumerateGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), 1u8) as PCOMBINED_LOCK_ELEMENT;
-    while !Entry.is_null() {
-        let mut Length: LARGE_INTEGER = core::mem::zeroed();
-        Length.QuadPart = (*Entry).Exclusive.FileLock.EndingByte.QuadPart - (*Entry).Exclusive.FileLock.StartingByte.QuadPart;
-        FsRtlFastUnlockSingle(
-            FileLock,
-            (*Entry).Exclusive.FileLock.FileObject,
-            core::ptr::addr_of_mut!((*Entry).Exclusive.FileLock.StartingByte),
-            &mut Length as PLARGE_INTEGER,
-            (*Entry).Exclusive.FileLock.ProcessId as PEPROCESS,
-            (*Entry).Exclusive.FileLock.Key,
-            Context,
-            1u8,
-        );
-        Entry = RtlEnumerateGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), 0u8) as PCOMBINED_LOCK_ELEMENT;
-    }
+    FsRtlpUnlockOwnedExclusive(FileLock, InternalInfo, FileObject, Process, None, Context);
     STATUS_SUCCESS
 }
 
@@ -890,7 +928,6 @@ pub unsafe extern "system" fn FsRtlFastUnlockAllByKey(
     let Process = opaque_ptr(Process);
     let Context = opaque_ptr(Context);
     let mut ListEntry: PLIST_ENTRY;
-    let mut Entry: PCOMBINED_LOCK_ELEMENT;
     let InternalInfo = (*FileLock).LockInformation as PLOCK_INFORMATION;
 
     if (*FileLock).LockInformation.is_null() {
@@ -903,7 +940,10 @@ pub unsafe extern "system" fn FsRtlFastUnlockAllByKey(
         let mut Length: LARGE_INTEGER = core::mem::zeroed();
         Length.QuadPart = (*Range).End.QuadPart - (*Range).Start.QuadPart;
         ListEntry = (*ListEntry).Flink;
-        if (*Range).ProcessId != Process as PVOID || (*Range).Key != Key {
+        if (*Range).ProcessId != Process as PVOID
+            || (*Range).Key != Key
+            || (*Range).FileObject != FileObject
+        {
             continue;
         }
         FsRtlFastUnlockSingle(
@@ -917,24 +957,7 @@ pub unsafe extern "system" fn FsRtlFastUnlockAllByKey(
             1u8,
         );
     }
-    Entry = RtlEnumerateGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), 1u8) as PCOMBINED_LOCK_ELEMENT;
-    while !Entry.is_null() {
-        let mut Length: LARGE_INTEGER = core::mem::zeroed();
-        Length.QuadPart = (*Entry).Exclusive.FileLock.EndingByte.QuadPart - (*Entry).Exclusive.FileLock.StartingByte.QuadPart;
-        if (*Entry).Exclusive.FileLock.Key == Key && (*Entry).Exclusive.FileLock.ProcessId == Process as PVOID {
-            FsRtlFastUnlockSingle(
-                FileLock,
-                (*Entry).Exclusive.FileLock.FileObject,
-                core::ptr::addr_of_mut!((*Entry).Exclusive.FileLock.StartingByte),
-                &mut Length as PLARGE_INTEGER,
-                (*Entry).Exclusive.FileLock.ProcessId as PEPROCESS,
-                (*Entry).Exclusive.FileLock.Key,
-                Context,
-                1u8,
-            );
-        }
-        Entry = RtlEnumerateGenericTable(core::ptr::addr_of_mut!((*InternalInfo).RangeTable), 0u8) as PCOMBINED_LOCK_ELEMENT;
-    }
+    FsRtlpUnlockOwnedExclusive(FileLock, InternalInfo, FileObject, Process, Some(Key), Context);
 
     STATUS_SUCCESS
 }
@@ -2465,12 +2488,14 @@ const _LAYOUT_CHECKS_64: () = {
     assert!(core::mem::offset_of!(LOCK_INFORMATION, BelongsTo) == 160);
     assert!(core::mem::offset_of!(LOCK_INFORMATION, SharedLocks) == 168);
     assert!(core::mem::offset_of!(LOCK_INFORMATION, Generation) == 184);
-    assert!(core::mem::size_of::<LOCK_SHARED_RANGE>() == 48);
+    // LOCK_SHARED_RANGE is private to this file; FileObject is our addition to the C.
+    assert!(core::mem::size_of::<LOCK_SHARED_RANGE>() == 56);
     assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, Entry) == 0);
     assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, Start) == 16);
     assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, End) == 24);
     assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, Key) == 32);
     assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, ProcessId) == 40);
+    assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, FileObject) == 48);
 };
 #[cfg(target_pointer_width = "32")]
 const _LAYOUT_CHECKS_32: () = {
@@ -2482,11 +2507,12 @@ const _LAYOUT_CHECKS_32: () = {
     assert!(core::mem::offset_of!(LOCK_INFORMATION, BelongsTo) == 84);
     assert!(core::mem::offset_of!(LOCK_INFORMATION, SharedLocks) == 88);
     assert!(core::mem::offset_of!(LOCK_INFORMATION, Generation) == 96);
-    assert!(core::mem::size_of::<LOCK_SHARED_RANGE>() == 32);
+    assert!(core::mem::size_of::<LOCK_SHARED_RANGE>() == 40);
     assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, Entry) == 0);
     assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, Start) == 8);
     assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, End) == 16);
     assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, Key) == 24);
     assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, ProcessId) == 28);
+    assert!(core::mem::offset_of!(LOCK_SHARED_RANGE, FileObject) == 32);
 };
 // END OFFSET CHECKS

@@ -4382,6 +4382,7 @@ pub unsafe extern "system" fn NtUserFindWindowEx(
     let mut Ret: HWND = core::ptr::null_mut();
     let mut DoMessageWnd: u8 = 0u8;
     let mut ClassAtom: RTL_ATOM = 0 as RTL_ATOM;
+    let mut window_name_guard: Option<ntkrnl_sys::probe::PoolAllocGuard> = None;
 
     UserEnterShared();
 
@@ -4429,12 +4430,15 @@ pub unsafe extern "system" fn NtUserFindWindowEx(
                             break 'exit;
                         }
                     };
-                    if WindowName.Length != 0 {
-                        if let Err(st) = crate::safe_user_io::probe_for_read(
-                            WindowName.Buffer as *const core::ffi::c_void,
-                            WindowName.Length as usize,
-                            core::mem::size_of::<WCHAR>() as u32,
-                        ) {
+                    // The C probes the name here and then compares it IN PLACE all
+                    // through the window walk below, outside its _SEH2_TRY (a C bug:
+                    // a page freed meanwhile faults there). Compare a pool copy.
+                    match crate::safe_user_io::capture_string_buffer(
+                        &mut WindowName,
+                        u32::from_le_bytes(*b"Usfw"),
+                    ) {
+                        Ok(guard) => window_name_guard = guard,
+                        Err(st) => {
                             SetLastNtError(st);
                             break 'exit;
                         }
@@ -4564,6 +4568,7 @@ pub unsafe extern "system" fn NtUserFindWindowEx(
     }
 
     UserLeave();
+    drop(window_name_guard);
     Ret
 }
 
@@ -5556,6 +5561,58 @@ unsafe extern "system" fn DefSetText(Wnd: PWND, WindowText: PCWSTR) -> BOOL {
     }
     Ret
 }
+/// The C's `_SEH2_TRY { ProbeForRead(SafeText.Buffer, SafeText.Length, align);
+/// RtlLargeStringToUnicodeString(..); }`, with the read made fault-tolerant.
+///
+/// `RtlLargeStringToUnicodeString` reads its source in place, so handing it the
+/// caller's buffer would bugcheck on a bad page now that there is no SEH to catch it.
+/// This copies the `Length` bytes into pool first. Two divergences from the C, both
+/// deliberate:
+/// - The translated callers never ran the probe, so a kernel address in `Buffer` used
+///   to be copied into the window title, where the caller could read it back.
+/// - The copy is NUL-terminated at `Length`. The C stops at whatever terminator follows
+///   in user memory (`RtlInitAnsiString`/`RtlCreateUnicodeString` scan for one), which
+///   can run past the probed range.
+///
+/// On a fault this sets the last error, as the C handler does, and returns FALSE.
+unsafe fn large_string_from_user_to_unicode(
+    dest: PUNICODE_STRING,
+    safe_text: &LARGE_STRING,
+) -> BOOL {
+    let ansi = safe_text.bAnsi() != 0;
+    let unit = if ansi { 1usize } else { core::mem::size_of::<WCHAR>() };
+    let length = safe_text.Length as usize;
+    if let Err(st) = crate::safe_user_io::probe_for_read(
+        safe_text.Buffer as *const c_void,
+        length,
+        unit as u32,
+    ) {
+        SetLastNtError(st);
+        return 0;
+    }
+    let tag = u32::from_le_bytes(*b"Usdt");
+    let buffer = ExAllocatePoolWithTag(PagedPool as _, (length + unit) as _, tag) as *mut u8;
+    if buffer.is_null() {
+        SetLastNtError(STATUS_INSUFFICIENT_RESOURCES);
+        return 0;
+    }
+    if let Err(st) = ntkrnl_sys::probe::safe_copy_raw(
+        buffer as *mut c_void,
+        safe_text.Buffer as *const c_void,
+        length,
+    ) {
+        ExFreePoolWithTag(buffer as _, tag);
+        SetLastNtError(st);
+        return 0;
+    }
+    core::ptr::write_bytes(buffer.add(length), 0, unit);
+    let mut captured = *safe_text;
+    captured.Buffer = buffer as _;
+    let ret = RtlLargeStringToUnicodeString(dest, &mut captured) as BOOL;
+    ExFreePoolWithTag(buffer as _, tag);
+    ret
+}
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_STRING) -> BOOL {
@@ -5594,7 +5651,7 @@ pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_ST
 
     'exit: {
         if !SafeText.Buffer.is_null() {
-            Ret = RtlLargeStringToUnicodeString(&mut UnicodeString, &mut SafeText);
+            Ret = large_string_from_user_to_unicode(&mut UnicodeString, &SafeText);
             if Ret == 0 {
                 break 'exit;
             }
@@ -5706,7 +5763,7 @@ pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_ST
 
     'exit: {
         if !SafeText.Buffer.is_null() {
-            Ret = RtlLargeStringToUnicodeString(&mut UnicodeString, &mut SafeText);
+            Ret = large_string_from_user_to_unicode(&mut UnicodeString, &SafeText);
             if Ret == 0 {
                 break 'exit;
             }

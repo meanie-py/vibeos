@@ -85,7 +85,9 @@ def _settle_watch(
     return buf, (milestone in buf) if milestone else True
 
 
-def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
+def _screenshot(
+    vm: QemuVM, work: Path, repo: Path, arch: str, boot_arch: str | None = None
+) -> str | None:
     """Capture a PNG screenshot, pass OR fail, while the VM is still alive.
 
     Screendumps a PPM then converts via PIL — NOT ImageMagick `convert`, which
@@ -109,7 +111,7 @@ def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
     except Exception:
         return str(ppm) if ppm.exists() else None
     try:
-        canon = repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke.png"
+        canon = repo / "qemu" / f"{boot_arch or archcfg.vm_arch(arch)}_smoke.png"
         img.save(canon, "PNG")
     except Exception:
         pass
@@ -285,11 +287,14 @@ def _boot_vm(
     total: int,
     want_ladder: bool = False,
     timings: dict[str, float] | None = None,
+    boot_arch: str | None = None,
 ) -> dict:
     """A single independent boot. Returns {ok, outcome, classification, ...}.
     `arch` is the base arch (i386/amd64/arm64); the boot config is the vm_arch
     (i386 → i386-uefi) since x86 boots UEFI now."""
-    config = get_arch_config(archcfg.vm_arch(arch))
+    # `boot_arch` names a firmware variant of the same build (amd64-bios); the
+    # base arch alone always resolves to the default UEFI config.
+    config = get_arch_config(boot_arch or archcfg.vm_arch(arch))
     marker = until or config.boot_marker
     work = run.dir / f"boot{idx}"
     work.mkdir(exist_ok=True)
@@ -408,7 +413,7 @@ def _boot_vm(
                 text += ladder_txt
                 run.log(ladder_txt[-8000:], header=f"{label} ladder serial")
         # Always capture a PNG screenshot (pass or fail), while the VM is alive.
-        shot = _screenshot(vm, work, repo, arch)
+        shot = _screenshot(vm, work, repo, arch, boot_arch)
         dbg_raw = ""
         try:
             dbg_raw = vm.read_debugcon().decode("ascii", errors="replace")
@@ -762,8 +767,12 @@ def _ahci_check(text: str) -> dict | None:
 
 
 def smoke(args, repo: Path) -> int:
-    arch = archcfg.base_arch(args.arch)  # base for staleness/build dir; boot resolves vm_arch
-    run = Run("smoke", arch)
+    arch = archcfg.base_arch(args.arch)  # base for staleness/build dir
+    # The boot config. A firmware variant (amd64-bios) shares the base build but must
+    # not collapse back to the default UEFI config, and its runs are labelled as
+    # themselves so flake history never mixes BIOS and UEFI boots.
+    boot_arch = archcfg.vm_arch(args.arch)
+    run = Run("smoke", boot_arch if boot_arch == "amd64-bios" else arch)
 
     # --timing: stamp the live serial log with elapsed seconds so the boot can
     # be decomposed into phases afterwards. The env var is read by the
@@ -890,6 +899,7 @@ def smoke(args, repo: Path) -> int:
             idx=i,
             total=total,
             want_ladder=bool(getattr(args, "ladder", False)),
+            boot_arch=boot_arch,
         )
         results.append(r)
         status = "ok" if r["ok"] else "fail"
@@ -964,7 +974,8 @@ def smoke(args, repo: Path) -> int:
     # isolation is the reason for the extra boot, not an accident. Only runs when
     # the boot itself is green. `--no-net` skips it for fast local boot-only
     # iteration (a dev escape hatch, not the gate default).
-    if arch == "amd64" and npass == total and not getattr(args, "no_net", False):
+    # The net suite boots its own UEFI config; a BIOS smoke does not repeat it.
+    if boot_arch == "amd64-uefi" and npass == total and not getattr(args, "no_net", False):
         _net_stage(run, repo, arch)
 
     # Opt-in payload gate (--payload / legacy --doom alias): its own boot via
@@ -1019,7 +1030,8 @@ def boot(args, repo: Path) -> int:
     (machine/KVM/vga/media/debugcon) so the fast path can't diverge from smoke
     (smss-csrss #3: q35-vs-pc misdiagnosis). Writes artifacts, decodes debugcon."""
     arch = archcfg.base_arch(args.arch)
-    run = Run("boot", arch)
+    boot_arch = archcfg.vm_arch(args.arch)
+    run = Run("boot", boot_arch if boot_arch == "amd64-bios" else arch)
     r = _one_boot(
         run,
         repo,
@@ -1028,6 +1040,7 @@ def boot(args, repo: Path) -> int:
         fail_on=getattr(args, "fail_on", None),
         idx=0,
         total=1,
+        boot_arch=boot_arch,
     )
     run.add(
         Stage(

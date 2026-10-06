@@ -740,13 +740,14 @@ fastcall_export! {
                         ExfWakePushLock(PushLock, WakeValue);
                         return;
                     }
-
-                    // The CMPXCHG returned the CURRENT lock value. Retrying without adopting it
-                    // re-compares against a stale OldValue every time, so a contended release can
-                    // spin forever. Upstream-Commit: f42ee0e23bb
-                    OldValue = NewValue;
-                    continue;
                 }
+
+                // The failed CMPXCHG returned the CURRENT lock value; adopt it in BOTH branches.
+                // The port had this only in the not-Waking arm, so a release that found another
+                // thread already waking re-compared a stale OldValue forever: a CPU spinning in
+                // ExfReleasePushLock[Shared] with interrupts on, the rest of the box idle.
+                // Upstream-Commit: f42ee0e23bb
+                OldValue = NewValue;
             }
         }
     }
@@ -842,13 +843,14 @@ fastcall_export! {
                 ExfWakePushLock(PushLock, WakeValue);
                 return;
             }
-
-            // The CMPXCHG returned the CURRENT lock value. Retrying without adopting it
-            // re-compares against a stale OldValue every time, so a contended release can
-            // spin forever. Upstream-Commit: f42ee0e23bb
-            OldValue = NewValue;
-            continue;
         }
+
+        // The failed CMPXCHG returned the CURRENT lock value; adopt it in BOTH branches.
+        // The port had this only in the not-Waking arm, so a release that found another
+        // thread already waking re-compared a stale OldValue forever: a CPU spinning in
+        // ExfReleasePushLock[Shared] with interrupts on, the rest of the box idle.
+        // Upstream-Commit: f42ee0e23bb
+        OldValue = NewValue;
     }
     }
 }

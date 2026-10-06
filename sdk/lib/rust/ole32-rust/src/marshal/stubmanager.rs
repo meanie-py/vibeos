@@ -588,6 +588,35 @@ unsafe fn ipid_to_stub_manager(
     ipid_to_ifstub(ipid, stub_apt, stub, &mut ifstub_p)
 }
 
+/// wine-10 combase: the destination context of the channel serving `ipid`. A proxy
+/// unmarshaled in the object's own process inherits it, so its channel reports
+/// MSHCTX_INPROC instead of the MSHCTX_LOCAL default.
+pub(crate) unsafe fn ipid_get_dest_context(
+    ipid: *const IPID,
+    dest_context: *mut MSHCTX,
+    dest_context_data: *mut *mut c_void,
+) -> HRESULT {
+    let mut apt: *mut apartment = core::ptr::null_mut();
+    let mut stubmgr: *mut stub_manager = core::ptr::null_mut();
+    let mut ifstub_p: *mut ifstub = core::ptr::null_mut();
+    let mut ctx: DWORD = 0;
+    let mut data: *mut c_void = core::ptr::null_mut();
+
+    if ipid_to_ifstub(ipid, &mut apt, &mut stubmgr, &mut ifstub_p) != S_OK {
+        return RPC_E_DISCONNECTED;
+    }
+
+    let hr = (*ifstub_p).chan.GetDestCtx(&mut ctx, &mut data);
+    if SUCCEEDED(hr) {
+        *dest_context = ctx as MSHCTX;
+        *dest_context_data = data;
+    }
+
+    stub_manager_int_release(stubmgr);
+    apartment_release(apt);
+    hr
+}
+
 /// gets the apartment, stub and channel of an object. the caller must
 /// release the references to all objects (except iface) if the function
 /// returned success, otherwise no references are returned.

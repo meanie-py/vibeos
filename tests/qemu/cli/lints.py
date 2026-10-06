@@ -783,6 +783,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A const named after a winerror.h code whose value is another code's. oleaut32's
+    # TYPE_E_CANTLOADLIBRARY held TYPE_E_AMBIGUOUSNAME's value; nothing else judges a
+    # const whose comment does not admit a guess.
+    swc = repo / "tools" / "scan_winerror_consts.py"
+    specs.append(
+        (
+            "scan_winerror_consts",
+            [py, str(swc), "--lint"] if swc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sdc = repo / "tools" / "scan_dowhile_continue.py"
     specs.append(
         (
@@ -898,6 +909,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_raising_probes",
             [py, str(srp), "--lint"] if srp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # The access AFTER the probe: an Nt* syscall that loads or stores through its
+    # caller's pointer with a plain deref or copy. The probe proves where the buffer
+    # is, never that it stays mapped, and without SEH a fault there is a bugcheck any
+    # process can trigger. Gated against a BASELINE, not zero: the scanner cannot tell
+    # a kernel-mode-only branch from a user one, and the inherited rows are owed work
+    # (vibeos-roadmap "Kernel user-pointer probes"). A NEW row fails.
+    srua = repo / "tools" / "scan_raw_user_access.py"
+    specs.append(
+        (
+            "scan_raw_user_access",
+            [py, str(srua), "--lint"] if srua.is_file() else ["MISSING"],
             "stdout",
         )
     )

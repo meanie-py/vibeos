@@ -183,3 +183,16 @@ def test_gdb_launches_share_the_smoke_disk_policy(arch, tmp_path, monkeypatch):
     monkeypatch.delenv("VIBEOS_QEMU_TEMP_DISK", raising=False)
     monkeypatch.setattr(vm, "make_temp_disk", lambda p: None)
     assert "ide-hd,drive=tempdisk" in vm.temp_disk_args(arch, tmp_path)
+
+
+def test_the_bios_smoke_attaches_no_mbr_disk(tmp_path):
+    """isoboot boots drive 80h after a 5 s prompt when it carries a valid MBR, so with
+    the temp disk attached an unattended BIOS smoke never reached freeldr (2026-10-05)."""
+    assert vm.temp_disk_args("amd64-bios", tmp_path) == []
+
+
+def test_the_bios_config_knows_its_own_name():
+    """The arch configs are dataclasses: a subclass without its own @dataclass keeps
+    the PARENT's field default, so Amd64BiosConfig().arch was "amd64" and every
+    per-arch decision keyed on the name (the temp disk above) silently missed it."""
+    assert vm.get_arch_config("amd64-bios").arch == "amd64-bios"

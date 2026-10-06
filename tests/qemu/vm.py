@@ -1102,6 +1102,38 @@ class Amd64UefiConfig(Amd64Config):
         return ["-acpitable", f"file={spcr}"]
 
 
+@dataclass
+class Amd64BiosConfig(Amd64Config):
+    """amd64 booted by legacy BIOS (SeaBIOS, QEMU's default firmware) from the same
+    hybrid livecd ISO, through its BIOS El Torito entry: isoboot.bin -> freeldr.sys ->
+    rosload.exe -> the kernel. Boot media and boot timing are those of amd64-uefi;
+    only the firmware and the loader differ.
+
+    The display is a VBE linear framebuffer the BIOS loader chooses and hands over in
+    the same form as UEFI's GOP, so `-vga std` (the Bochs VBE adapter), not cirrus.
+
+    BIOS boot was pruned 2026-05-29 and silently stayed dead because nothing booted it;
+    restored 2026-10-05 for Libreboot/SeaBIOS machines and smoked in every gate so it
+    cannot rot again. docs/engineering/bios-boot.md.
+    """
+
+    arch: str = "amd64-bios"
+
+    def qemu_args(self, work_dir: Path) -> list[str]:
+        iso = _maybe_smp_iso(PROJECT_DIR / "build-amd64" / "livecd.iso", work_dir)
+        return [
+            *self.machine_args,
+            "-m",
+            self.memory,
+            *boot_media_device_args(iso),
+            "-vga",
+            "std",
+            "-display",
+            "none",
+            "-no-reboot",
+        ]
+
+
 def _start_echo_server(label: str = "gf") -> socketserver.ThreadingTCPServer:
     """A tiny threaded TCP echo server bound to 0.0.0.0:<ephemeral>. Backs ONE slirp
     guestfwd on the windows-host backend: the guest's outbound connection (guest ->
@@ -1226,6 +1258,14 @@ def temp_disk_args(arch: str, out_dir: Path) -> list[str]:
     reproduce the one crash that only happens with it attached.
     """
     if not arch.startswith(("i386", "amd64")):
+        return []
+    # Not under BIOS. This disk carries an MBR, and ReactOS's El Torito boot sector
+    # (isoboot.S) sees a valid MBR on drive 80h, prints "Press any key to boot from
+    # the ReactOS medium", and after 5 s boots the HARD DISK instead: a smoke with no
+    # one at the keyboard hangs in that empty disk's boot code. That prompt is right
+    # for a person with an OS installed; the disk path itself is covered by
+    # amd64-uefi, which boots the same media with this disk attached.
+    if arch == "amd64-bios":
         return []
     # Default ON: it is also the only hard disk any x86 smoke attaches, and the
     # disk path stayed broken for months without a single red because nothing
@@ -1475,8 +1515,12 @@ class Arm64NetConfig(Arm64Config):
     works on amd64 enumerates here. Same slirp mini-internet + hostfwd/guestfwd
     contract as Amd64UefiNetConfig — see that class for the slirp topology.
 
-    Deliberately NOT the default arm64 smoke config: boot smoke keeps its
-    meaning (no NIC), net is its own signal (tests/qemu/test_net.py).
+    Deliberately NOT the default arm64 smoke config: net is its own signal
+    (tests/qemu/test_net.py). Plain smoke is NOT NIC-less, though: QEMU adds a
+    default NIC (virtio-net-pci on `virt`) when the command line names none, and
+    Arm64Config passes no `-nic none`. For a NIC-less boot use
+    VIBEOS_QEMU_EXTRA_ARGS="-nic user,model=rtl8139" (a NIC netstack does not
+    drive); `-nic none` renumbers PCI and the firmware loses the boot disk.
     """
 
     arch: str = "arm64-net"
@@ -1521,9 +1565,9 @@ class Arm64NetConfig(Arm64Config):
         ]
 
 
-# x86 is UEFI-only after the BIOS prune. I386Config / Amd64Config remain only as
-# the (non-selectable) base classes that hold shared defaults for the -uefi
-# variants; their legacy BIOS -cdrom qemu_args are no longer reachable.
+# x86 boots UEFI by default; amd64 also boots legacy BIOS as `amd64-bios`.
+# I386Config / Amd64Config are the (non-selectable) base classes that hold shared
+# defaults; their own -cdrom qemu_args are not reachable.
 ARCH_CONFIGS: dict[str, Callable[[], ArchConfig]] = {
     "arm64": Arm64Config,
     "arm64-test": Arm64TestKernelConfig,
@@ -1532,6 +1576,7 @@ ARCH_CONFIGS: dict[str, Callable[[], ArchConfig]] = {
     "i386-uefi-net": I386UefiNetConfig,
     "amd64-uefi": Amd64UefiConfig,
     "amd64-uefi-net": Amd64UefiNetConfig,
+    "amd64-bios": Amd64BiosConfig,
 }
 
 
@@ -2154,14 +2199,26 @@ class QemuVM:
 
     def _build_native_cmd(self) -> list[str]:
         """Attach prepared media and select ports under the handshake lock."""
-        self.serial.listen(str(self.serial_path))
+        if os.environ.get("VIBEOS_QEMU_RR", "").strip():
+            # Record/replay: the guest's serial goes to a regular file, which never
+            # refuses a write. A socket can, and x86's UART retries a refused byte
+            # from a host watch the replay log cannot pin. See
+            # SerialClient.follow_file.
+            serial_out = self._sock_dir / "serial.out"
+            self.serial.follow_file(
+                str(serial_out), alive=lambda: self._proc is not None and self._proc.poll() is None
+            )
+            serial_chardev = f"file,id=ser0,path={serial_out}"
+        else:
+            self.serial.listen(str(self.serial_path))
+            serial_chardev = f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1"
         self._set_live_tee()
         return [
             self.config.qemu_bin,
             "-qmp",
             f"unix:{self.qmp_path},server,nowait",
             "-chardev",
-            f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1",
+            serial_chardev,
             *self._serial_args(),
             *self._prepared_disk_args,
             *self._tripwire_args(),

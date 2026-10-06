@@ -22,8 +22,11 @@ Predecessor: `fex-bringup-plan.md` (rungs 0–3; this doc was its rung 4+).
 
 ## Ground rules
 
-- FEX vendor tree stays unmodified (`external/fex/CLAUDE.md` forbids AI-authored
-  contributions upstream; we consume its binary contract only).
+- FEX vendor tree stays unmodified (`vendor/fex/CLAUDE.md` forbids AI-authored
+  contributions upstream; we consume its binary contract only). One exception has
+  been taken since: `6afc128553f`, recorded in `vendor-patches/fex.md` and marked
+  in-source with a `VIBEOS PATCH` comment. That is the bar — a patch here is
+  allowed only if it is both places.
 - wow64.dll / wow64cpu.dll / ntdll changes are vibeos code.
 - Every phase lands behind the existing gates: all three arches stay green; x86
   arches stay untouched by arch-gated exports (§9.43 ordinal discipline).
@@ -314,7 +317,7 @@ picture is above; durable, reusable lessons are cross-referenced into
 ## The model (Win10+ BTCpu architecture)
 
 Modern WOW64 splits into three layers; we adopt it because FEX's wow64 module
-(`external/fex/Source/Windows/WOW64/`, prebuilt as `libwow64fex.dll`) already
+(`vendor/fex/Source/Windows/WOW64/`, prebuilt as `libwow64fex.dll`) already
 implements the bottom layer's exact contract:
 
 1. **Kernel + 64-bit loader**: creates the WoW64 process (PEB32/TEB32 beside

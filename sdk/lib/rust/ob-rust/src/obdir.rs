@@ -287,7 +287,10 @@ pub unsafe extern "system" fn NtOpenDirectoryObject(
         core::ptr::addr_of_mut!(Directory),
     );
     if Status >= 0 {
-        *DirectoryHandle = Directory;
+        // C: _SEH2_TRY { *DirectoryHandle = Directory; } _SEH2_EXCEPT { Status = code; }
+        if let Err(s) = write_back(DirectoryHandle, Directory) {
+            Status = s;
+        }
     }
 
     Status
@@ -483,17 +486,22 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
             i -= 1;
         }
 
-        *Context = CurrentEntry;
+        // The C stores this outside its _SEH2_TRY; Context is a probed user
+        // pointer all the same.
+        if let Err(s) = write_back(Context, CurrentEntry) {
+            Status = s;
+        }
     }
 
-    core::ptr::copy_nonoverlapping(
-        LocalBuffer as *const u8,
-        Buffer as *mut u8,
+    // C: _SEH2_TRY { copy the buffer; write ReturnLength } _SEH2_EXCEPT { Status = code; }
+    let copied = safe_copy_raw(
+        Buffer,
+        LocalBuffer as *const core::ffi::c_void,
         if TotalLength <= BufferLength { TotalLength } else { BufferLength } as usize,
-    );
-
-    if !ReturnLength.is_null() {
-        *ReturnLength = TotalLength;
+    )
+    .and_then(|()| if ReturnLength.is_null() { Ok(()) } else { write_back(ReturnLength, TotalLength) });
+    if let Err(s) = copied {
+        Status = s;
     }
 
     ObpReleaseDirectoryLock(Directory, core::ptr::addr_of_mut!(LookupContext));
@@ -551,7 +559,10 @@ pub unsafe extern "system" fn NtCreateDirectoryObject(
         core::ptr::addr_of_mut!(NewHandle),
     );
 
-    *DirectoryHandle = NewHandle;
+    // C: _SEH2_TRY { *DirectoryHandle = NewHandle; } _SEH2_EXCEPT { Status = code; }
+    if let Err(s) = write_back(DirectoryHandle, NewHandle) {
+        Status = s;
+    }
 
     Status
 }

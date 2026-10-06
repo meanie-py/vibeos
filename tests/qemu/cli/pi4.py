@@ -23,7 +23,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import pi4lease, provenance, triage
+from . import ladder, pi4lease, provenance, triage
 from .artifacts import Run, Stage
 
 MARKER = "shell ready"
@@ -352,11 +352,68 @@ def wait_for_desktop(serial: Path, start: int, timeout: float) -> tuple[str, boo
         time.sleep(2)
 
 
+class SerialTail:
+    """The bench capture file, read the way `ladder.watch` reads a VM's serial
+    (`vm.serial.read_available`), so the board's ladder is drained and graded
+    by the SAME code as smoke's instead of a second copy of its rules.
+
+    It also timestamps each guest's launch and verdict line as it arrives. The
+    capture is raw bytes with no clock, so arrival time is the only timing the
+    bench can give: good to the poll interval, which is plenty against guests
+    that run for seconds."""
+
+    def __init__(self, path: Path, offset: int, t0: float) -> None:
+        self.path, self.pos, self.t0 = path, offset, t0
+        self.times: dict[str, float] = {}
+        self._tail = ""
+
+    @property
+    def serial(self) -> SerialTail:
+        return self
+
+    def read_available(self, timeout: float = 0.5) -> str:
+        time.sleep(timeout)
+        try:
+            with open(self.path, "rb") as f:
+                f.seek(self.pos)
+                raw = f.read()
+        except OSError:
+            return ""
+        self.pos += len(raw)
+        text = raw.decode("utf-8", errors="replace")
+        self._stamp(text)
+        return text
+
+    def _stamp(self, text: str) -> None:
+        # Search the previous chunk's tail too: a line can straddle two reads.
+        window = self._tail + text
+        now = round(time.monotonic() - self.t0, 1)
+        for g in (*ladder.LADDER, *ladder.OPTIONAL):
+            for event, needle in (("launch", f"{g}.exe ("), ("exit", f"{g}.exe exit = ")):
+                key = f"{g} {event}"
+                if key not in self.times and needle in window:
+                    self.times[key] = now
+        if "program_done" not in self.times and ladder.PROGRAM_DONE in window:
+            self.times["program_done"] = now
+        self._tail = text[-200:]
+
+    def durations(self) -> dict[str, float]:
+        """Seconds from each guest's launch line to its verdict line."""
+        out = {}
+        for g in (*ladder.LADDER, *ladder.OPTIONAL):
+            a, b = self.times.get(f"{g} launch"), self.times.get(f"{g} exit")
+            if a is not None and b is not None:
+                out[g] = round(b - a, 1)
+        return out
+
+
 def cmd_boot(args, repo: Path) -> int:
     run = Run("pi4-boot", "arm64")
     owner = pi4lease.owner_of(repo)
     held_before = pi4lease.current().get("owner") == owner
-    ok, lease = pi4lease.take(owner, max(30, args.timeout / 60 + 20), "vibeos-cli pi4 boot")
+    # --ladder adds the drain: its 420s ceiling plus an extension per optional guest.
+    minutes = max(30, args.timeout / 60 + 20) + (30 if getattr(args, "ladder", False) else 0)
+    ok, lease = pi4lease.take(owner, minutes, "vibeos-cli pi4 boot")
     if not ok:
         run.classification = "BENCH_BUSY"
         run.add(Stage("lease", status="fail", detail="busy", salient=[pi4lease.describe(lease)]))
@@ -428,6 +485,7 @@ def _boot(run: Run, args, repo: Path) -> int:
     run.extra["live_serial"] = str(serial)
     run.extra["serial_offset"] = start
 
+    t_netboot = time.monotonic()
     cp = run.run(_script(repo, "netboot.sh"), cwd=repo, env=env, stage="netboot", timeout=600)
     lines = (cp.stdout + cp.stderr).strip().splitlines()
     if cp.returncode:
@@ -443,7 +501,11 @@ def _boot(run: Run, args, repo: Path) -> int:
     _save_serial(run, text)
     verdict = triage.classify(text, reached=reached, fail_marker=None, debugcon=None)
     if reached:
+        run.extra["desktop_s"] = round(time.monotonic() - t_netboot, 1)
         run.add(Stage("desktop", detail=MARKER))
+        if getattr(args, "ladder", False):
+            text = _ladder(run, repo, serial, start, text)
+            _save_serial(run, text)
     else:
         run.classification = verdict["classification"]
         salient = list(verdict.get("salient", []))
@@ -454,6 +516,31 @@ def _boot(run: Run, args, repo: Path) -> int:
         run.add(Stage("desktop", status="fail", detail=verdict["classification"], salient=salient))
     _screenshot(run, repo)
     return run.finalize(repo)
+
+
+def _ladder(run: Run, repo: Path, serial: Path, start: int, text: str) -> str:
+    """Drain and grade the WoW64 ladder after the desktop, as `smoke --ladder`
+    does. Returns the boot's whole serial text, ladder included."""
+    t0 = time.monotonic()
+    tail = SerialTail(serial, start, t0)
+    seen = tail.read_available(0)  # everything since this boot's offset, so far
+    staged = ladder.media_optional_staged(repo, "arm64")
+    # program_done_expected: staleness was checked before staging, so the
+    # board runs this tree's winlogon, which prints PROGRAM_DONE.
+    text = seen + ladder.watch(tail, seen=seen, optional_staged=staged, program_done_expected=True)
+    run.extra["ladder_drain_s"] = round(time.monotonic() - t0, 1)
+    run.extra["ladder_times"] = tail.times
+    run.extra["ladder_durations"] = tail.durations()
+    run.extra["ladder_verdicts"] = ladder.verdicts(text)
+    lad = ladder.check(text, optional_staged=staged)
+    if lad:
+        run.classification = lad["classification"]
+        run.add(
+            Stage("ladder", status="fail", detail=lad["classification"], salient=lad["salient"])
+        )
+    else:
+        run.add(Stage("ladder", detail=ladder.summary(text)))
+    return text
 
 
 def _slice(serial: Path, start: int) -> str:
@@ -529,6 +616,12 @@ def add_parser(sub) -> None:
         type=float,
         default=DEFAULT_DESKTOP_TIMEOUT,
         help="seconds from loader start to `shell ready`",
+    )
+    boot.add_argument(
+        "--ladder",
+        action="store_true",
+        help="after the desktop, drain and grade the WoW64 ladder as `smoke --ladder` does "
+        "(needs VIBEOS_FEX=1 media); records per-guest timings in summary.json",
     )
     boot.add_argument("--allow-stale", action="store_true")
     boot.add_argument("--skip-doctor", action="store_true")

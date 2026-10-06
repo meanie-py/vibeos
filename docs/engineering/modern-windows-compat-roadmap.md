@@ -260,9 +260,9 @@ too: Chrome on a Pi.
 
 - Has an **NVMe drive on a PCIe adapter**, booted through **Libreboot** (owner flashed
   it). So the NVMe miniport gets real hardware from day one.
-- *(unverified)* Libreboot's payload is usually SeaBIOS or GRUB, not UEFI. Our amd64 smoke
-  boots only through UEFI. Either freeldr's legacy-BIOS path on amd64 or a UEFI payload is
-  needed before the first boot.
+- Libreboot's payload is SeaBIOS, not UEFI. **amd64 boots from legacy BIOS again**
+  (restored 2026-10-05, gated as `smoke:amd64-bios`; see `bios-boot.md`). That was
+  built for the owner's OptiPlex 9020, which runs Libreboot with SeaBIOS.
 - First milestone: amd64 boots on it at all, using the integrated Intel graphics through a
   firmware framebuffer. We have only ever booted x86 in QEMU.
 - To make it an agent bench like the Pi 4 (`pi4-bench.md`): **remote power** (a smart

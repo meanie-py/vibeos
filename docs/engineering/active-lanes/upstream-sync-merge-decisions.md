@@ -880,16 +880,48 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
       splits failures into `todo_wine` (upstream Wine fails them too; checked against
       Wine master for moniker) and REAL. Chase REAL first. At this point compobj has 0
       real, moniker 2, marshal 2, tmarshal 2.
-    - **Still owed, with the cause traced as far as the source goes:**
-      - storage32, 41 real: every `LockOne` range's first byte reads unlocked through a
-        second handle (storage32.c:3515). ole32's lock path matches Wine's
-        (LockRegion, RANGELOCK constants, `locks_supported` from Stat) and FsRtl's
-        conflict check ignores process/handle, so the next step is a VM probe of
-        which filesystem holds the test file and what its lock control returns.
-      - typelib, ~30 real, all `win32:` on amd64: a SYS_WIN32 typelib built on x64
-        resolves IUnknown from the 64-bit stdole2 (sizes 24/8 for 12/4). Likely the
-        missing `TypeLib\{00020430-...}\2.0\0\win32` key, which on Windows comes
-        from the SysWOW64 oleaut32 registering itself. Unverified.
-      - compobj 2999/3001 (CoWaitForMultipleHandles, a cross-thread SendMessage not
-        delivered during the wait) failed at 09:53 and not at 21:24: flake or fixed
-        by something else, not yet known.
+    - **2026-10-05: 24 subtests, 0 crashes, 0 timeouts; 8 REAL failures left in
+      both DLLs** (run `20261005-192430-nfx00idd-smoke-amd64`). Fixed:
+      - storage32 47 → 6, all todo_wine. The cause was the KERNEL, not ole32: the
+        translated `FsRtlFastUnlockAll` had dropped the C's `ProcessId != Process`
+        filter, so closing any handle released every lock on the file. Neither the C
+        nor the Rust checked the file object either, so the test's own
+        `UnlockFileEx` through a second handle also released ole32's lock. Both
+        unlock paths now match on file object, process and key, as Windows does.
+        In ole32 itself: memlockbytes `SetSize` passed flags `0` (wine-10, now in
+        coml2, passes `GMEM_MOVEABLE`), so truncating to 0 failed. `SaveFileHeader` is
+        now wine-10's build-from-scratch. `GetConvertStg` passed share flag `0x40`,
+        and `SetConvertStg` seeked CUR instead of SET. The transacted scratch file had
+        lost `STGM_DELETEONRELEASE`.
+      - typelib: the "~30 real" were `todo_wine_if(sys != native_sys)`, which Wine
+        fails too. The classifier now has a `todo_if` column, so the stdole2 guess
+        above is withdrawn. Three real ones were `olesys.rs` constants holding a
+        neighbour's value (`TYPE_E_CANTLOADLIBRARY` = AMBIGUOUSNAME's). The new
+        `tools/scan_winerror_consts.py` gate found those and two in secur32.
+      - olepicture 4 → 0: `PARSE_PATH_FROM_URL` was 2 (PARSE_FRIENDLY), not 9.
+      - marshal 2 → 0: the free-threaded marshaler's size is wine-10's 28 bytes, and
+        a process-local unmarshal takes the stub channel's destination context
+        (`ipid_get_dest_context`).
+      - ole2 2 → 0: the same `SetConvertStg` seek.
+      - tmarshal 1 → 0: wine-10's `dispinterface_create_stub`. A DIID_ stub is built by
+        hand from rpcrt4's exported `CStdStubBuffer_*` methods and the oaidl proxy
+        file's IDispatch stub vtbl, so the object is QI'd for the DIID, never IDispatch.
+      - clipboard 5 → 0 (the fixes were in user32/win32k, not ole32):
+        - 992/1010: user32 now caches the local handle per format, keyed by the win32k
+          handle, as wine-10 win32u does. The owner gets back the handle it passed to
+          `SetClipboardData`, and a repeat `GetClipboardData` no longer leaks a fresh copy.
+        - 1066/1134: user32-rust's exported `GetW32ThreadInfo` was a bare TEB read. The
+          C *creates* the THREADINFO, so `GetDesktopWindow()` was NULL in a fresh thread.
+          Four copies were folded into the one correct definition.
+        - 1197: `SetClipboardData` never bumped `GetClipboardSequenceNumber`, because user32
+          passed `fIncSerialNumber` FALSE. win32k now skips the bump only during a
+          WM_RENDERFORMAT render, as wine-10's server does.
+      - olefont 1 → 0: the GDI font mapper waived the charset penalty for an ANSI request
+        even when the candidate was a SYMBOL_CHARSET face, so "Marlett" plus ANSI kept
+        Marlett.
+      - compobj:3036 is a timing flake, not ole32. It passed 4 of 5 runs (10-04 full
+        sweep, then 3/3 compobj-only on 10-05); the one failure was the 10-05 sweep under
+        gate load. The check races the 100 ms CoWait against the sender thread's
+        `PostMessage`.
+    - **Still owed:** no REAL failures remain in the 24 amd64 subtests. Everything left
+      is `todo_wine`/`todo_wine_if`, which Wine fails too.

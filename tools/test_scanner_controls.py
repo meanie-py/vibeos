@@ -1423,6 +1423,58 @@ pub unsafe extern "system" fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LU
 }
 """
 
+# The MDL half of the same class: MmProbeAndLockPages raises, and a path-qualified
+# call is still a call (win32k shipped `ntkrnl_sys::ddk::MmProbeAndLockPages(..)`).
+# GOOD pins both ways out: the status form, and a call inside a real SEH frame.
+_RAISINGMDL_BAD = """
+pub unsafe extern "C" fn HackSecureVirtualMemory(pmdl: PMDL) -> NTSTATUS {
+    ntkrnl_sys::ddk::MmProbeAndLockPages(pmdl, 1i8, 0);
+    STATUS_SUCCESS
+}
+"""
+_RAISINGMDL_GOOD = """
+extern "system" {
+    fn MmProbeAndLockPages(Mdl: PMDL, AccessMode: i8, Operation: u32);
+}
+pub unsafe extern "C" fn HackSecureVirtualMemory(pmdl: PMDL) -> NTSTATUS {
+    let status = ntkrnl_sys::probe::MmTryProbeAndLockPages(pmdl, 1i8, 0);
+    if status < 0 {
+        return status;
+    }
+    match ntkrnl_sys::seh::try_except(
+        &mut (),
+        |_| {
+            MmProbeAndLockPages(pmdl, 0i8, 1);
+        },
+        |_, _| 1,
+    ) {
+        Ok(()) => STATUS_SUCCESS,
+        Err(code) => code,
+    }
+}
+"""
+
+# scan_raw_user_access: the store after the probe. BAD writes the caller's handle with
+# a plain deref; GOOD does the same through write_back, and computing a field's
+# address (addr_of_mut!) is not an access.
+_RAWUSER_BAD = """
+pub unsafe extern "system" fn NtOpenKeyedEvent(OutHandle: PHANDLE, Access: ULONG) -> NTSTATUS {
+    let OutHandle = opaque_ptr(OutHandle);
+    probe_write_generic(OutHandle, 1, 1)?;
+    *OutHandle = core::ptr::null_mut();
+    STATUS_SUCCESS
+}
+"""
+_RAWUSER_GOOD = """
+pub unsafe extern "system" fn NtOpenKeyedEvent(OutHandle: PHANDLE, Info: PIO_STATUS) -> NTSTATUS {
+    let OutHandle = opaque_ptr(OutHandle);
+    probe_write_generic(OutHandle, 1, 1)?;
+    let _ = write_back(OutHandle, core::ptr::null_mut());
+    let _ = write_back(core::ptr::addr_of_mut!((*Info).Information), 0);
+    STATUS_SUCCESS
+}
+"""
+
 
 # scan_dropped_seh_pairs. The LPC shape: the C is cohab-flipped OUT of the build
 # (commented in the CMake source list) and a separate .rs took over under
@@ -1818,6 +1870,15 @@ unsafe fn enumerate() -> u8 {
 }
 """
 
+# scan_winerror_consts. Seeded from oleaut32 olesys.rs (2026-10-05): the typelib error
+# table held neighbours' values, so LoadTypeLib reported TYPE_E_AMBIGUOUSNAME.
+_WINERR_BAD = """\
+pub const TYPE_E_CANTLOADLIBRARY: HRESULT = 0x8002_802Cu32 as HRESULT;
+"""
+_WINERR_GOOD = """\
+pub const TYPE_E_CANTLOADLIBRARY: HRESULT = 0x8002_9C4Au32 as HRESULT;
+"""
+
 # scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
 # do-while's `continue` re-ran the same INF line forever once translated to `loop`.
 _DOWHILE_BAD = """\
@@ -1868,6 +1929,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"hwdisk.rs": _SHADOW_BAD},
         good={"hwdisk.rs": _SHADOW_GOOD},
+    ),
+    Control(
+        name="scan_winerror_consts",
+        script="tools/scan_winerror_consts.py",
+        argv=["--lint"],
+        bad={"olesys.rs": _WINERR_BAD},
+        good={"olesys.rs": _WINERR_GOOD},
     ),
     Control(
         name="scan_dowhile_continue",
@@ -1937,6 +2005,20 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"sdk/lib/rust/ex-rust/src/uuid.rs": _RAISINGPROBE_BAD},
         good={"sdk/lib/rust/ex-rust/src/uuid.rs": _RAISINGPROBE_GOOD},
+    ),
+    Control(
+        name="scan_raising_probes",
+        script="tools/scan_raising_probes.py",
+        argv=["--lint"],
+        bad={"sdk/lib/rust/win32k-rust/src/mem.rs": _RAISINGMDL_BAD},
+        good={"sdk/lib/rust/win32k-rust/src/mem.rs": _RAISINGMDL_GOOD},
+    ),
+    Control(
+        name="scan_raw_user_access",
+        script="tools/scan_raw_user_access.py",
+        argv=[],
+        bad={"sdk/lib/rust/ex-rust/src/keyedevt.rs": _RAWUSER_BAD},
+        good={"sdk/lib/rust/ex-rust/src/keyedevt.rs": _RAWUSER_GOOD},
     ),
     Control(
         name="strip_msvc_cmake",
