@@ -10581,6 +10581,25 @@ the SMP kernel it delivered exactly nothing; on UP the IRQL raise happened to be
 is why it survived. When a per-arch port of a synchronisation primitive is shorter than its
 siblings, the missing lines are the primitive.
 
+### A lock the C declares and never takes is a race the C never hit
+**Symptom:** arm64 `-smp 2`, 1 boot in 5: BUGCHECK 0x1E in `CmpCreateKeyControlBlock` reading
+a garbage `CM_KEY_NODE`, while the other CPU loops in `HvFreeCell` on a NULL bin.
+**Cause:** registry writers on different keys hold the registry lock only shared, so two CPUs
+ran `HvAllocateCell` on one hive; `HvpAddBin` swapped and freed the flat `BlockList` under every
+reader. `CMHIVE.HiveLock`/`HiveLockOwner`, the lock Windows uses for exactly this, are declared
+and initialized in ReactOS and never acquired. Upstream is mostly run on one CPU, where this is
+invisible.
+**Fix:** take the declared lock (cmlib-rust `hivelock.rs`). Prove it with a stressor that
+drives the two sides together and an A/B with the lock compiled out: `regstress` turned a
+1-in-5 boot flake into 2/2 crashes in seconds without the lock, 0 failures with it. A grep for a
+struct's lock fields with no acquirer is a cheap sweep for more of these.
+
+**Corollary — a stressor finds the next lock bug too.** The same run hung on a push-lock release
+(`ExfReleasePushLock[Shared]` adopted a failed CMPXCHG's value in only one of its two arms; a
+port of an upstream fix that missed half of it) — a livelock no smoke boot had shown except as
+an unexplained HANG_TIMEOUT. A new hot lock exercises the lock primitive's slow paths far more
+than boot ever did.
+
 ### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
 **Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial
 log shows the boot still *talking* — arm64 `-smp 2` conformance reached
