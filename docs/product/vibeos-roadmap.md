@@ -643,14 +643,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   start. Repro: runs `20261004-194815-lrtpx0w2` and `20261004-194452-8j2swl96` (smoke-amd64,
   graviton lane). Raise the cap once both are green. arm64 already describes all RAM: its
   pool-sizing underflow was the 4 GiB Pi 5's silent hang (fixed in `arm/init.rs`).
-- **amd64: a user-mode Rust panic report can bugcheck the kernel (0x1E in the debug print
-  path)** (OPEN, 2026-10-04; kd lane). A panic in explorer's shell32 printed a stack walk that
-  ran into garbage, and the kernel faulted (C0000005) at `ntoskrnl+0xC64C0` reading it, which
-  symbolizes to the first line of kd-rust `KdIoPrintf` (`kdio.rs:822`), so the exact faulting
-  function is not confirmed. User mode must not be able to take the kernel down through a
-  debug print: the copy from the caller's buffer needs a probe under SEH. Repro: runs
-  `20261004-080222-cpyv4l2x` / `20261004-080920-w43f482z` (smoke-amd64, msvcrt-homebrew,
-  before the DllEntryPoint fix that removed the panic).
+- **amd64: a user-mode debug print with a bad buffer bugchecked the kernel** (FIXED 2026-10-06;
+  was "a user-mode Rust panic report can bugcheck the kernel"). Not `KdIoPrintf`, as first
+  logged: against the run's own kernel the PC is `KdpStub` (kd64-rust `kdtrap.rs`). With no
+  debugger attached, KdpStub echoes `BREAKPOINT_PRINT` to the console UART, an addition the C
+  does not have, and it read the caller's buffer in place. It now captures the buffer the way
+  `KdpPrint` does and fails the print with STATUS_ACCESS_VIOLATION. `sehtest`'s
+  `bad-print-buffer` probe (amd64) prints from a kernel address on every boot. Before the fix it
+  bugchecked 0x50 in KdpStub; after it, it prints PASS.
 - **fastfat: the free-dirent bitmap goes stale, then every create in that directory raises
   STATUS_FILE_CORRUPT_ERROR** (OPEN, 2026-10-04). Wine's ole32 `storage32` test (olewinetest
   payload, amd64) drives about 100,000 raises in 120 s. They are caught, so the test times out
