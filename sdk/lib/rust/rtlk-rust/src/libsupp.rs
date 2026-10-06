@@ -733,17 +733,11 @@ pub unsafe extern "C" fn RtlpCreateAtomHandle(AtomTable: PRTL_ATOM_TABLE, Entry:
 
     HandleIndex = ((Handle as ULONG_PTR) >> 2) as USHORT;
 
-    // TEMP diagnostic (atom wrap hunt)
-    if HandleIndex >= 0x4000 || (HandleIndex >= 0x40 && (HandleIndex & (HandleIndex - 1)) == 0) {
-        extern "C" { fn DbgPrint(f: *const u8, ...) -> ULONG; }
-        let n = core::ptr::addr_of!((*Entry).Name) as *const u16;
-        DbgPrint(b"[ATOMIDX] table=%p handle=%p index=%x firstfree=%x name=%04x %04x %04x %04x %04x\n\0".as_ptr(),
-            AtomTable, Handle, HandleIndex as ULONG,
-            (*(*AtomTable).__bindgen_anon_2.ExHandleTable).FirstFree as ULONG,
-            *n as ULONG, *n.add(1) as ULONG, *n.add(2) as ULONG, *n.add(3) as ULONG, *n.add(4) as ULONG);
-    }
-
-    if HandleIndex >= 0xC000 {
+    // Exceeds the C, which bounds the index at 0xC000: the atom is 0xC000 +
+    // index in a USHORT, so any index from 0x4000 up wrapped to an integer
+    // atom below 0xC000 that RtlpGetAtomEntry can never find again. Atoms
+    // 0xC000-0xFFFF give exactly 0x4000 slots; test the untruncated index.
+    if ((Handle as ULONG_PTR) >> 2) >= 0x4000 {
         ExDestroyHandle((*AtomTable).__bindgen_anon_2.ExHandleTable, Handle, core::ptr::null_mut());
         return 0u8;
     }
