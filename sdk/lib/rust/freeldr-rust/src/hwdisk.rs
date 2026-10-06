@@ -59,7 +59,17 @@ static DiskVtbl: DEVVTBL = DEVVTBL {
 
 // pcmem.c global (defined #[no_mangle] in crate::pcmem); machpc.h extern decl.
 // freeldr.c / uefidisk.c globals (external C linkage).
+// The disk bounce buffer. hwdisk.c owned it in C (pcmem places it after the image);
+// the UEFI build's owner is uefidisk.rs, so it is defined here only for BIOS.
+#[cfg(not(feature = "uefi"))]
+#[no_mangle]
+pub static mut DiskReadBuffer: PVOID = core::ptr::null_mut();
+#[cfg(not(feature = "uefi"))]
+#[no_mangle]
+pub static mut DiskReadBufferSize: SIZE_T = 0;
+
 extern "C" {
+    #[cfg(feature = "uefi")]
     static mut DiskReadBufferSize: SIZE_T;
     static mut FrLdrBootPath: [CHAR; MAX_PATH];
     static FrldrBootDrive: UCHAR;

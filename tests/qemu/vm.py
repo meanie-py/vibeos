@@ -1102,6 +1102,37 @@ class Amd64UefiConfig(Amd64Config):
         return ["-acpitable", f"file={spcr}"]
 
 
+class Amd64BiosConfig(Amd64Config):
+    """amd64 booted by legacy BIOS (SeaBIOS, QEMU's default firmware) from the same
+    hybrid livecd ISO, through its BIOS El Torito entry: isoboot.bin -> freeldr.sys ->
+    rosload.exe -> the kernel. Boot media and boot timing are those of amd64-uefi;
+    only the firmware and the loader differ.
+
+    The display is a VBE linear framebuffer the BIOS loader chooses and hands over in
+    the same form as UEFI's GOP, so `-vga std` (the Bochs VBE adapter), not cirrus.
+
+    BIOS boot was pruned 2026-05-29 and silently stayed dead because nothing booted it;
+    restored 2026-10-05 for Libreboot/SeaBIOS machines and smoked in every gate so it
+    cannot rot again. docs/engineering/bios-boot.md.
+    """
+
+    arch: str = "amd64-bios"
+
+    def qemu_args(self, work_dir: Path) -> list[str]:
+        iso = _maybe_smp_iso(PROJECT_DIR / "build-amd64" / "livecd.iso", work_dir)
+        return [
+            *self.machine_args,
+            "-m",
+            self.memory,
+            *boot_media_device_args(iso),
+            "-vga",
+            "std",
+            "-display",
+            "none",
+            "-no-reboot",
+        ]
+
+
 def _start_echo_server(label: str = "gf") -> socketserver.ThreadingTCPServer:
     """A tiny threaded TCP echo server bound to 0.0.0.0:<ephemeral>. Backs ONE slirp
     guestfwd on the windows-host backend: the guest's outbound connection (guest ->
@@ -1521,9 +1552,9 @@ class Arm64NetConfig(Arm64Config):
         ]
 
 
-# x86 is UEFI-only after the BIOS prune. I386Config / Amd64Config remain only as
-# the (non-selectable) base classes that hold shared defaults for the -uefi
-# variants; their legacy BIOS -cdrom qemu_args are no longer reachable.
+# x86 boots UEFI by default; amd64 also boots legacy BIOS as `amd64-bios`.
+# I386Config / Amd64Config are the (non-selectable) base classes that hold shared
+# defaults; their own -cdrom qemu_args are not reachable.
 ARCH_CONFIGS: dict[str, Callable[[], ArchConfig]] = {
     "arm64": Arm64Config,
     "arm64-test": Arm64TestKernelConfig,
@@ -1532,6 +1563,7 @@ ARCH_CONFIGS: dict[str, Callable[[], ArchConfig]] = {
     "i386-uefi-net": I386UefiNetConfig,
     "amd64-uefi": Amd64UefiConfig,
     "amd64-uefi-net": Amd64UefiNetConfig,
+    "amd64-bios": Amd64BiosConfig,
 }
 
 

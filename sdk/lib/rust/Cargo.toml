@@ -276,6 +276,7 @@ members = [
     "ntkrnlmp-cargo",
     "ntoskrnl-vista-rust",
     "uefildr-cargo",
+    "freeldr-cargo",
     "rosload-cargo",
     "ntdll-cargo",
     "ntdll_vista-cargo",

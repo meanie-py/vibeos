@@ -178,9 +178,9 @@ pub mod hwacpi;
 pub mod hwide;
 
 // 🟢 sweep — uefi-hw unit (arch/uefi/{uefidisk,uefimem,uefivid,ueficon,uefihw}.c).
-// Gated off for `rosload` (UEFI hardware, not relevant; also avoid pulling
-// UEFI type deps into the BIOS-or-rosload archive variants).
-#[cfg(not(feature = "rosload"))]
+// UEFI-only: the BIOS loader reads disks through pcdisk (INT 13h), and
+// uefidisk calls into uefildr, which only the `uefi` build has.
+#[cfg(feature = "uefi")]
 pub mod uefidisk;
 #[cfg(not(feature = "rosload"))]
 pub mod uefimem;
