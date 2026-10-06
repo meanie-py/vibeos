@@ -5168,7 +5168,11 @@ in user memory must pin that count in the copy, or a racing caller grows it past
 allocation. `tools/scan_raw_user_access.py` lists the Nt* syscalls that still touch a pointer
 argument raw; its baseline is EMPTY, so any new row fails `vibeos-cli check`. Use
 `read_back` (load) / `write_back` (store) for a single value; read a value that sizes or
-validates something ONCE and use the copy, never `(*p).Length` then `*p`.
+validates something ONCE and use the copy, never `(*p).Length` then `*p`. The scanner follows
+the pointer into callees (a bare, cast or `opaque_ptr` argument), so a helper shared with
+kernel callers needs its user arm spelled `if mode != KernelMode { .. } else { .. }` (or an
+early return from the user arm) — anything subtler is a row. It cannot see a pointer read OUT
+of a user structure: an embedded buffer or `UNICODE_STRING.Buffer` is user memory too.
 
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
 HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
