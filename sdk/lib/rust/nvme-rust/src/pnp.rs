@@ -542,12 +542,13 @@ unsafe fn self_test(n: u32, c: &mut Controller, ns: &Namespace) {
     let us = (now_us() - t0).max(1);
     let kib = (total << ns.block_shift) / 1024;
     nvprint!(
-        "controller {}: self-test: read {} KiB in {} ms ({} KiB/s); completions so far: {} by interrupt, {} by poll\n",
+        "controller {}: self-test: read {} KiB in {} ms ({} KiB/s); completions so far: {} by interrupt ({} woken late), {} with none\n",
         n,
         kib,
         us / 1000,
         kib * 1_000_000 / us,
         c.by_interrupt,
+        c.late,
         c.by_poll
     );
 }

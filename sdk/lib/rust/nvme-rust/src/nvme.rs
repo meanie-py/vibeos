@@ -180,8 +180,11 @@ pub struct Controller {
     irq: *mut Irq,
     /// The controller's number, for the debug port.
     number: u32,
-    /// Completions found right after an interrupt, and by the poll behind it.
+    /// Completions whose interrupt arrived (some of them `late`: the ISR
+    /// claimed it but the poll interval ran out before the DPC woke the
+    /// worker), and those that came with no interrupt at all.
     pub by_interrupt: u32,
+    pub late: u32,
     pub by_poll: u32,
 }
 
@@ -377,6 +380,7 @@ impl Controller {
             irq: null_mut(),
             number: 0,
             by_interrupt: 0,
+            late: 0,
             by_poll: 0,
         };
         // The PRP list (4.1.1): entry i is the bounce buffer's page i + 1, since
@@ -604,6 +608,7 @@ impl Controller {
         cmd.0[0] |= (cid as u32) << 16;
         let stride = self.doorbell_stride;
         let regs = self.regs;
+        let claimed = self.claimed();
         {
             let q = if io { &mut self.io } else { &mut self.admin };
             unsafe {
@@ -633,7 +638,8 @@ impl Controller {
                 } == 0;
             }
             if let Some((dw0, dw3)) = self.reap(io) {
-                self.count(woken, what);
+                let claimed_since = self.claimed().wrapping_sub(claimed);
+                self.count(woken, claimed_since, what);
                 let returned = dw3 as u16;
                 if returned != cid {
                     nvprint!("{}: completion for command {} while {} was outstanding\n", what, returned, cid);
@@ -688,29 +694,35 @@ impl Controller {
         Some((dw0, dw3))
     }
 
+    fn claimed(&self) -> u32 {
+        if self.irq.is_null() {
+            return 0;
+        }
+        unsafe { (*self.irq).claimed.load(Ordering::Relaxed) }
+    }
+
     /// Keep score of how completions were found, and say on the debug port
     /// the first time each way happens: the first by interrupt proves the
-    /// line works; the first by the poll means an interrupt went missing.
-    fn count(&mut self, woken: bool, what: &str) {
+    /// line works; the first with no interrupt at all means one went missing.
+    fn count(&mut self, woken: bool, claimed_since: u32, what: &str) {
         if self.irq.is_null() {
             return;
         }
-        if woken {
+        if woken || claimed_since > 0 {
             self.by_interrupt += 1;
+            self.late += !woken as u32;
             if self.by_interrupt == 1 {
                 nvprint!("controller {}: interrupts working (first completion by interrupt: {})\n", self.number, what);
             }
         } else {
             self.by_poll += 1;
             if self.by_poll == 1 {
-                let claimed = unsafe { (*self.irq).claimed.load(Ordering::Relaxed) };
                 nvprint!(
-                    "controller {}: a completion ({}) came without its interrupt; the {} ms poll found it ({} by interrupt so far, {} claimed)\n",
+                    "controller {}: a completion ({}) came with no interrupt; the {} ms poll found it ({} by interrupt so far)\n",
                     self.number,
                     what,
                     INTERRUPT_POLL_MS,
-                    self.by_interrupt,
-                    claimed
+                    self.by_interrupt
                 );
             }
         }
