@@ -10677,10 +10677,12 @@ def test_markers_cut_anywhere_by_an_interleaved_print_still_parse():
         "[+   94.422] [KMTEST-SWEEP] launch err:ole:compobj apartment not initialised\n"
         "[+   94.440] ExPushLock\n"
         "[+   94.688] [KMTEST:BEGIN ExPushLock]\n"
-        "[+   98.300] [KMTEST:END ExPushLock pass=(drivers/storage/port/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
+        "[+   98.300] [KMTEST:END ExPushLock pass=(drivers/storage/po"
+        "rt/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
         "[+   98.302] 19 fail=0 skip=0]\n"
         "[+   98.361] [KMTEST-SWEEP] exit ExPushLock code=0\n"
-        "[+  100.000] [KMTEST-SWEEP] lau(drivers/storage/port/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
+        "[+  100.000] [KMTEST-SWEEP] lau(drivers/storage/port/scsipor"
+        "t/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
         "[+  100.003] nch FsRtlExpression\n"
         "[+  100.100] [KMTEST:BEGIN FsRtlExpression]\n"
         "[+  100.629] [KMTEST:END FsRterr:ole:compobj apartment not initialised\n"
@@ -10690,8 +10692,10 @@ def test_markers_cut_anywhere_by_an_interleaved_print_still_parse():
         "[+  125.867] MTEST-SWEEP] launch KeFloatPointState\n"
         "[+  126.085] KMTEST:END KeFloatPointState pass=6 fail=0 skip=0]\n"
         "[+  126.119] [KMTEST-SWEEP] exit KeFloatPointState code=0\n"
-        "[+  148.450] [KMTEST-SWEEP] launch RtlIntSafe(drivers/storage/port/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
-        "[+  148.600] [KMTEST:END zipfldr.cpp:75: (\\dll\\shellext\\zipfldr\\zipfldr.cpp:75) CreateEmptyFile('X:\\x')\n"
+        "[+  148.450] [KMTEST-SWEEP] launch RtlIntSafe(drivers/storag"
+        "e/port/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
+        "[+  148.600] [KMTEST:END zipfldr.cpp:75: (\\dll\\shellext\\z"
+        "ipfldr\\zipfldr.cpp:75) CreateEmptyFile('X:\\x')\n"
         "[+  148.601] RtlIntSafe pass=40 fail=2 skip=0]\n"
         "[+  148.663] [KMTEST-SWEEP] exit RtlIntSafe code=0\n"
         "[+  150.000] [KMTEST-SWEEP] done total=4\n"
@@ -10717,10 +10721,25 @@ def test_an_identity_cut_short_by_an_interleaved_print_is_the_floor_identity():
     listing `Example.c:20`. A proper suffix of a known identity is that
     identity; an unrelated one is still new."""
     P = _parser()
-    base = {"Example": {"status": "OK", "pass": 31, "fail": 15, "asserts": {"Example.c:20", "Example.c:21"}}}
+    base = {
+        "Example": {
+            "status": "OK",
+            "pass": 31,
+            "fail": 15,
+            "asserts": {"Example.c:20", "Example.c:21"},
+        }
+    }
 
     def run(*asserts):
-        r = {"name": "Example", "status": "OK", "pass": 31, "fail": 15, "skip": 0, "exit": 0, "errors": 0}
+        r = {
+            "name": "Example",
+            "status": "OK",
+            "pass": 31,
+            "fail": 15,
+            "skip": 0,
+            "exit": 0,
+            "errors": 0,
+        }
         return P.compare([dict(r, asserts=set(asserts))], base)
 
     assert run("ple.c:20", "Example.c:21") == []
