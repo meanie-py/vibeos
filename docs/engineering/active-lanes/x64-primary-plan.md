@@ -111,7 +111,10 @@ that would make it an artifact: the processes loaded `libwow64fex.dll` at differ
 read from that process's own load line, and `file32` is a parity guest that normally passes.
 **One boot, two guests — a strong lead, NOT a repro**, and a second sample was running when this
 was relayed; it is recorded here with that caveat attached and must not be quoted without it.
-`external/fex` is vendored unmodified — but note that "unmodified" locates the
+`vendor/fex` is vendored near-unmodified (one recorded vibeos patch,
+`6afc128553f`; see `vendor-patches/fex.md` — and note the record itself claimed
+"Unmodified" until 2026-10-03, so do not take that word from a doc without
+checking `git log -- 'vendor/fex/*'`) — but note that even unmodified locates the
 faulting CODE, not the CAUSE: how we configure, build and wire FEXCore is ours, so an upstream
 source file faulting under our workload does not establish an upstream defect. That inference
 is the same one being unwound over the x64 question below, and it should not be made twice. Consequence for this plan: nothing in it leans on arm64 WoW64
@@ -690,7 +693,7 @@ child open until the parent has collected rung 7.
    high — the staging debate was conducted against a cost that turns out to be one
    minute and a rounding error of disk, per worktree, once.
 
-   What was already known: FEX source is **vendored in-tree** (`external/fex`, 58M),
+   What was already known: FEX source is **vendored in-tree** (`vendor/fex`, 58M),
    so this is not a fetch, licensing or availability problem — it is a per-worktree
    *build* cost. **Correction:** this said "exactly one worktree carries a
    `build-fex-arm64` today", meaning the fex lane's. Measured across the fleet

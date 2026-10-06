@@ -1,0 +1,35 @@
+diff --git a/vendor/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/vendor/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp
+index b9c1aefcd81..7daf27dc133 100644
+--- a/vendor/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp
++++ b/vendor/fex/FEXCore/Source/Interface/Core/JIT/JIT.cpp
+@@ -550,11 +550,29 @@ uint64_t Arm64JITCore::ExitFunctionLink(FEXCore::Core::CpuStateFrame* Frame, FEX
+       auto CodeBuffer = static_cast<Arm64JITCore*>(Thread->CPUBackend.get())->CurrentCodeBuffer;
+       HostCode = static_cast<Context::ContextImpl*>(Thread->CTX)->CompileBlock(Frame, GuestRip, 0);
+       if (Thread->LookupCache->Shared != CodeBuffer->LookupCache.get()) {
+-        return HostCode;
++        return HostCode ? HostCode : Frame->Pointers.DispatcherLoopTop;
+       }
+     }
+   }
+ 
++  // vibeos-local (M14 WoW64/FEX startup flake): never hand the dispatcher a null
++  // host block. The ExitFunctionLinker thunk does `br x0` on our return value
++  // unconditionally (Dispatcher.cpp), so a 0 here becomes `br 0` -> host PC=0 ->
++  // the kernel kills the WoW64 process at startup. Under multi-VM host
++  // contention a guest's __alloca/_chkstk `ret` transiently resolves a 0 branch
++  // target for GuestRip whose stack slot actually holds the real (valid) return
++  // address (kernel [UEXC-KILL] dump: Stk+0 = correct return addr while the JIT
++  // read 0), so CompileBlock legitimately fails to produce a block. The guest
++  // RIP is valid, so re-entering the dispatcher loop re-reads State.rip and
++  // recompiles cleanly once the transient clears — the same recovery the TF
++  // path above already uses (`return DispatcherLoopTop`). Upstream FEX assumes
++  // CompileBlock never fails for a mapped RIP (true on Linux, where the frontend
++  // read faults the page in); the Windows/WOW64 compile path can observe the
++  // transient. Local fix, not for upstream (vendor/fex is vendored).
++  if (!HostCode) {
++    return Frame->Pointers.DispatcherLoopTop;
++  }
++
+   // See ExitFunction in BranchOps.cpp for an assembly level view of the handled cases.
+   uintptr_t JumpThunkStartAddress = reinterpret_cast<uintptr_t>(Record) - 0x10;
+   uintptr_t CallerAddress = JumpThunkStartAddress + Record->CallerOffset;

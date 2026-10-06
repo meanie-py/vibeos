@@ -1818,6 +1818,15 @@ unsafe fn enumerate() -> u8 {
 }
 """
 
+# scan_winerror_consts. Seeded from oleaut32 olesys.rs (2026-10-05): the typelib error
+# table held neighbours' values, so LoadTypeLib reported TYPE_E_AMBIGUOUSNAME.
+_WINERR_BAD = """\
+pub const TYPE_E_CANTLOADLIBRARY: HRESULT = 0x8002_802Cu32 as HRESULT;
+"""
+_WINERR_GOOD = """\
+pub const TYPE_E_CANTLOADLIBRARY: HRESULT = 0x8002_9C4Au32 as HRESULT;
+"""
+
 # scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
 # do-while's `continue` re-ran the same INF line forever once translated to `loop`.
 _DOWHILE_BAD = """\
@@ -1868,6 +1877,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"hwdisk.rs": _SHADOW_BAD},
         good={"hwdisk.rs": _SHADOW_GOOD},
+    ),
+    Control(
+        name="scan_winerror_consts",
+        script="tools/scan_winerror_consts.py",
+        argv=["--lint"],
+        bad={"olesys.rs": _WINERR_BAD},
+        good={"olesys.rs": _WINERR_GOOD},
     ),
     Control(
         name="scan_dowhile_continue",

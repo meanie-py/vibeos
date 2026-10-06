@@ -1230,10 +1230,10 @@ static int CheckSocketSendTo(void)
     }
 
     /* A send that the TRANSPORT declined is not a marshalling failure, and this
-     * rung must not turn one into a red ladder. The plain amd64/arm64 smoke
-     * boots carry no NIC — the NIC lives in the separate net config — and the
-     * netstack has no loopback path, so "no route" is the EXPECTED environment
-     * here rather than a defect. The datagram leaving the box was never the
+     * rung must not turn one into a red ladder. A board without a NIC netstack
+     * drives (the Pi 4) gets WSAENETUNREACH, and the netstack has no loopback
+     * path, so "no route" is an EXPECTED environment here rather than a defect.
+     * (QEMU smoke always has QEMU's default NIC, so there the send succeeds.) The datagram leaving the box was never the
      * claim; what is being tested is whether AFD could read the payload we
      * widened. So the error is reported and execution continues to the bind
      * check, which is the assertion that actually distinguishes the two. */
