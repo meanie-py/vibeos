@@ -1992,7 +1992,9 @@ class QemuVM:
         """VIBEOS_QEMU_NVME=1 attaches an NVMe controller (nvme.sys bring-up rig, every
         arch): one namespace holding the same 64M MBR + FAT16 image as the USB stick,
         so the desktop has a known file to read back and copy. No bootindex: firmware
-        must keep booting the CD."""
+        must keep booting the CD. Pinned to PCI slot 9 for the reason xHCI is pinned to
+        8: auto-assigned, it takes slot 2 from arm64's boot disk, whose `Pci(0x2,0x0)`
+        path is saved in efivars, and UEFI falls through to PXE."""
         if not self._nvme_enabled():
             return []
         disk = self.scratch_path.parent / "nvmedisk.qcow2"
@@ -2002,7 +2004,7 @@ class QemuVM:
             "-drive",
             f"file={disk},format=qcow2,if=none,id=nvme0",
             "-device",
-            "nvme,serial=VIBEOSNVME0,drive=nvme0",
+            "nvme,serial=VIBEOSNVME0,drive=nvme0,addr=0x9",
         ]
 
     def _set_live_tee(self) -> None:

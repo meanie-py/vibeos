@@ -221,6 +221,6 @@ def test_the_nvme_rig_attaches_one_controller_on_every_arch(config, tmp_path, mo
     assert machine._nvme_args() == [] and made == []
     monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
     args = machine._nvme_args()
-    assert any(a.startswith("nvme,") and "drive=nvme0" in a for a in args), args
+    assert any(a.startswith("nvme,") and "drive=nvme0" in a and "addr=0x9" in a for a in args), args
     assert not any("bootindex" in a for a in args)
     assert made == [machine.scratch_path.parent / "nvmedisk.qcow2"]
