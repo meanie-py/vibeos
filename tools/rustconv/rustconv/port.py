@@ -1448,8 +1448,11 @@ def stage_fix(
             f"kept {len(applied) - len(worse)}, reverted {len(worse)}, spent ${spent:.4f}"
         )
         diags = after
-        if spent >= cost_cap:
-            print(f"fix: --cost-cap ${cost_cap:.2f} reached")
+        # The cap blocks PURCHASES (failed:cost-cap); banked replies are free. So keep going
+        # while a round still keeps something -- at cap $0, `port replay` stopped after round
+        # 1 and never replayed the replies rounds 2 and 3 had bought (165 -> 111, not -> ~56).
+        if spent >= cost_cap and len(applied) - len(worse) == 0:
+            print(f"fix: --cost-cap ${cost_cap:.2f} reached and the bank has nothing more")
             break
     _record(
         state,
