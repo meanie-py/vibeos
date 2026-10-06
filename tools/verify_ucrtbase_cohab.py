@@ -139,24 +139,22 @@ OURS_REFERENCE = {
     "pseh": Path("sdk/lib/pseh/CMakeFiles/pseh.dir"),
 }
 
-#: ucrtbase's OWN C -- printf.c, stubs.c and the generated ucrtbase_stubs.c. Kept
-#: SEPARATE from OURS_REFERENCE because that set must stay exactly ucrtbase's
-#: link libraries (test_the_authority_set_is_the_whole_link_line_except_ucrt pins
-#: it against the CMake, so drift is caught); the DLL's own translation units are
-#: not a library and would break that invariant.
+#: ucrtbase's OWN object: since 2026-10-04 that is only spec2def's generated stubs,
+#: and since 2026-10-06 those are Rust (`ucrtbase_stubs.rs.obj`, compiled outside
+#: CMakeFiles, hence a FILE entry where the libraries are directories). Kept SEPARATE
+#: from OURS_REFERENCE because that set must stay exactly ucrtbase's link libraries
+#: (test_the_authority_set_is_the_whole_link_line_except_ucrt pins it against the
+#: CMake, so drift is caught); the DLL's own objects are not a library and would break
+#: that invariant.
 #:
-#: But they ARE ours, and the assertion is "the Rust surface is a subset of OUR C's
-#: surface", so leaving them out under-models the C. They define 12 symbols and
-#: ucrtbase EXPORTS six: fma, fmaf, log2, log2f, lrint, lrintf -- stubs.c's
-#: placeholders for things spec2def cannot stub because they are intrinsics. Omitted,
-#: a Rust twin of any of those six reads as displacing a genuine Microsoft UCRT body
-#: when it would be displacing ReactOS's own.
-#:
-#: This is the same defect the link-line test's docstring records, one target over:
+#: But they ARE ours, and the assertion is "the Rust surface is a subset of OUR
+#: surface", so leaving them out under-models it: a Rust twin of a stubbed export would
+#: read as displacing a genuine Microsoft UCRT body when it displaces ReactOS's own
+#: stub. The same defect the link-line test's docstring records, one target over:
 #: modelling the authority as too small turned a correct ucrtbase math flip into 60
-#: findings. Found by asking what blocks translating those 132 lines.
+#: findings.
 OURS_OWN_TUS = {
-    "ucrtbase-own": Path("dll/win32/ucrtbase/CMakeFiles/ucrtbase.dir"),
+    "ucrtbase-own": Path("dll/win32/ucrtbase/ucrtbase_stubs.rs.obj"),
 }
 
 #: Everything of OURS that contributes symbols to ucrtbase.dll, which is what the
@@ -603,7 +601,10 @@ def check_archive() -> list[str]:
         live = _graph_objects(build)
         for target, obj_dir in OURS_C_AUTHORITY.items():
             d = build / obj_dir
-            found = sorted(d.rglob("*.obj")) + sorted(d.rglob("*.o"))
+            if d.suffix == ".obj":
+                found = [d] if d.is_file() else []
+            else:
+                found = sorted(d.rglob("*.obj")) + sorted(d.rglob("*.o"))
             if live is not None:
                 found = [o for o in found if o in live]
             if found:

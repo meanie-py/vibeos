@@ -279,6 +279,7 @@ x64_guest thread64.exe Thread32.c "$K64"
 x64_guest selfmod64.exe Selfmod32.c "$K64"
 x64_guest reg64.exe Reg32.c "$(x64_lib dll/win32/advapi32 advapi32)" "$K64"
 x64_guest spawn64.exe Spawn32.c "$K64"
+x64_guest apc64.exe Apc64.c "$K64"
 x64_guest marshal64.exe Marshal32.c "$U64" "$K64" "$(x64_lib dll/ntdll ntdll)" \
     "$(x64_lib dll/win32/ws2_32 ws2_32)"
 

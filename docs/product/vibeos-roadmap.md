@@ -604,6 +604,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the first leave arm64input at all. Row 10a's migration to USB HID input would retire the
   path; until then a person typing into an arm64 QEMU window likely hits the same wall.
 
+- **x86-64 guests under FEX on arm64: the owed WoW64 features landed** (2026-10-06, wowx64
+  lane). User-mode APCs into guest code, per-thread CPU-layer cleanup on thread exit, an
+  `NtCreateThreadEx` build guard, and an x86-64 guest spawning a 32-bit child all work and are
+  graded by the new x86-64-only `apc64.exe` (APCs + thread cleanup) and `spawn64` rung 9 (the
+  32-bit child). Fixing chained APCs turned up a real **kernel** bug, now fixed: arm64
+  `NtContinue(TestAlert=TRUE)` exited through `KiExceptionExit` without delivering a user APC
+  that `KeTestAlertThread` had just marked pending, so an alertable wait drained only one APC
+  (field manual, "A user thread returns to a small integer" → sibling note). Still owed:
+  CreateRemoteThread into a running non-x86-64 process (refused), and a native kernel32 still
+  loading in a guest (root cause found — ntdll's `_errno`/`atan2`/`tan` forwarders to msvcrt;
+  the local-export fix aliased libwow64fex's rpmalloc thread-heap slot and was backed out;
+  harmless, parked). See `../engineering/wow64-x64-guest-design.md`.
 - **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
   lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
   captured mid-body of itself, so `ZwContinue` after a vectored handler's
@@ -739,11 +751,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   owed: the rest of cnt-rust's C89 set (trig, sqrt, ldexp, _logb, ...) onto libm with the
   same contract, and the ieee754 Bessel C onto libm. Still `-stub`: the `_d*`/`_fd*` internal helpers
   (`_dexp`, `_dnorm`, `_dpoly`, ...) and `_except1`. Owner: ucrt-rust.
-- **spec2def's generated `*_stubs.c` are the last C in the CRT DLLs** (DEFERRED, 2026-10-04).
-  msvcrt.dll and ucrtbase.dll link no hand-written C or assembly on any arch; each one's only C
-  object is its spec2def-generated stubs TU (msvcrt 24 stub bodies, ucrtbase ~120, msvcrt20/40
-  ~440 each, crtdll 9). Retiring them means spec2def emitting Rust (or asm) stubs, which changes
-  every DLL in the tree, not just the CRT -- a tooling project of its own, parked here by choice.
+- **spec2def's generated `*_stubs.c` were the last C in the CRT DLLs** (FIXED 2026-10-06).
+  spec2def now emits `*_stubs.rs` for every spec module (515, about 190 with stub bodies), each
+  compiled by a single `rustc --emit=obj`; build-system.md, "spec2def stubs". Each arch's Rust
+  objects define exactly the symbols the C ones did (checked object by object). `sehtest`'s
+  `spec-stub` probe calls msvcrt's `_CrtCheckMemory` and checks the EXCEPTION_WINE_STUB record
+  on every amd64/arm64 boot.
 - **Delay-loaded imports are not delay-loaded** (OPEN, 2026-10-04; all arches). `VIBEOS_ENABLE_DELAYLOAD`
   is ON, yet no module carries a delay-import directory (`DelayImportDescriptorRVA` 0 in shell32,
   comdlg32, setup's reactos.exe on i386 and amd64): every `add_delay_importlibs` DLL is bound as

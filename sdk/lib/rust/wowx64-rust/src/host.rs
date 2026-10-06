@@ -35,6 +35,7 @@ pub struct CpuLayer {
     pub NotifyMemoryDirty: unsafe extern "system" fn(PVOID, SIZE_T),
     pub NotifyReadFile: unsafe extern "system" fn(HANDLE, PVOID, SIZE_T, BOOL, NTSTATUS),
     pub ThreadInit: unsafe extern "system" fn() -> NTSTATUS,
+    pub ThreadTerm: unsafe extern "system" fn(HANDLE, NTSTATUS),
     pub Simulate: unsafe extern "system" fn(),
 }
 
@@ -110,6 +111,34 @@ pub unsafe extern "C" fn NativeSyscall(Service: u32, Args: *const u64) -> u64 {
         "ldp x29, x30, [sp], #16",
         "ret",
     );
+}
+
+/// The address of an export of the NATIVE ntdll (a hook slot). Dies if it is
+/// missing: each slot is how guest code avoids being called as arm64 code.
+pub unsafe fn NativeNtdllExport(Name: &[u8]) -> PVOID {
+    let mut Dll: UNICODE_STRING = core::mem::zeroed();
+    let Wide: [u16; 10] = [
+        b'n' as u16, b't' as u16, b'd' as u16, b'l' as u16, b'l' as u16, b'.' as u16, b'd' as u16,
+        b'l' as u16, b'l' as u16, 0,
+    ];
+    RtlInitUnicodeString(&mut Dll, Wide.as_ptr());
+    let mut Ntdll: PVOID = null_mut();
+    let mut Ansi: ANSI_STRING = core::mem::zeroed();
+    RtlInitAnsiString(&mut Ansi, Name.as_ptr() as PCSZ);
+    let mut Slot: PVOID = null_mut();
+    if LdrGetDllHandle(null_mut(), null_mut(), &mut Dll, &mut Ntdll) < 0
+        || LdrGetProcedureAddress(Ntdll, &mut Ansi, 0, &mut Slot) < 0
+        || Slot.is_null()
+    {
+        trace!("FAIL: native ntdll.dll has no %s", Name.as_ptr());
+        die(b"native ntdll.dll is missing a wowx64 hook slot\0");
+    }
+    Slot
+}
+
+/// The guest ntdll's `KiUserApcDispatcher`.
+pub unsafe fn GuestApcDispatcher() -> u64 {
+    (*addr_of!(GUEST)).ApcDispatcher
 }
 
 unsafe fn Resolve(Module: PVOID, Name: &[u8]) -> PVOID {
@@ -242,6 +271,7 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
         NotifyMemoryDirty: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyMemoryDirty\0")),
         NotifyReadFile: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyReadFile\0")),
         ThreadInit: core::mem::transmute(Resolve(Fex, b"BTCpu64ThreadInit\0")),
+        ThreadTerm: core::mem::transmute(Resolve(Fex, b"BTCpu64ThreadTerm\0")),
         Simulate: core::mem::transmute(Resolve(Fex, b"BTCpu64Simulate\0")),
     });
     let Cpu = Cpu();
@@ -259,6 +289,7 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
         NtTerminateProcess(CURRENT_PROCESS, WOWX64_LAUNCH_FAILED);
     }
     ThreadInit();
+    crate::thread::InitialThreadRecord();
     // ProcessInit registered the main image itself; the guest ntdll was mapped
     // by us, not through a guest syscall, so nothing has told FEX it is code.
     (Cpu.NotifyMapViewOfSection)(null_mut(), Ntdll.Base as PVOID, null_mut(), Ntdll.Size as SIZE_T, 0, 0x20);
@@ -276,6 +307,7 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
         crate::image::FindExport(&Ntdll, b"KiUserCallbackDispatcher\0")
             .unwrap_or_else(|| die(b"guest ntdll.dll has no KiUserCallbackDispatcher\0")),
     );
+    crate::apc::Install();
 
     // The TEB now describes the guest stack (thread.rs says why), so the
     // native one this code runs on must never need guard-page growth again.

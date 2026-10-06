@@ -1,0 +1,22 @@
+# The i386 `core` that spec2def's Rust stub objects compile against.
+#
+# Those stubs are one `rustc --emit=obj` per module, not a cargo build: amd64 and
+# arm64 use the builtin triples' prebuilt core on stable. i386 has no builtin triple
+# that keeps SSE out of the object (stable i686 warns that disabling sse2 breaks its
+# ABI, a future hard error), so it uses the user-mode cells' pentium/x86-softfloat
+# json, whose core only exists by `-Z build-std`. This crate is that build-std run;
+# sysroot.cmake then lays its rlibs out as a sysroot rustc can be pointed at.
+[package]
+name = "spec-stubs-core"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[profile.release]
+panic = "abort"
+
+# Standalone: not a member of sdk/lib/rust's workspace.
+[workspace]

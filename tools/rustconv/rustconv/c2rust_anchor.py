@@ -664,6 +664,11 @@ def build_preamble(
                 if depth <= 0 and lines[j].rstrip().endswith(";"):
                     break
                 j += 1
+            # c2rust marks a C global with external linkage `#[no_mangle]`; dropping that line
+            # left setuplib's SpInfExports / SpFileExports / ProcessHeap mangled, and the C
+            # (main.c) and the island's `extern` declarations could not link to them.
+            while start > 0 and lines[start - 1].strip() == "#[no_mangle]":
+                start -= 1
             block = "\n".join(lines[start : j + 1])
             # keep `static*` always; keep `const` ONLY if it carries an aggregate (table/struct),
             # never a bare scalar enum-variant const.

@@ -75,11 +75,11 @@ unsafe fn PreferredBase(Base: *const u8) -> u64 {
     (*NtHeaders(Base)).OptionalHeader.ImageBase
 }
 
-/// Map `<SystemRoot>\sysamd64\ntdll.dll` as an image. Dies on any failure: no
-/// guest process can start without it, and the stage that should have put it
-/// there is the thing to go fix.
-pub unsafe fn MapGuestNtdll() -> GuestImage {
-    // "\??\" + SystemRoot (KUSER_SHARED_DATA+0x30) + "\sysamd64\ntdll.dll"
+/// Map `<SystemRoot><Dir><File>` (Dir with its slashes, e.g. `\system32\`)
+/// as an image view in this process, through native calls the guest never
+/// sees. The view, its size, and whether it is at its preferred base.
+unsafe fn MapSystemImage(Dir: &[u8], File: &[u8]) -> Result<(GuestImage, NTSTATUS), NTSTATUS> {
+    // "\??\" + SystemRoot (KUSER_SHARED_DATA+0x30) + Dir + File
     let mut Path = [0u16; 300];
     let mut n = 0usize;
     for &c in b"\\??\\" {
@@ -93,7 +93,10 @@ pub unsafe fn MapGuestNtdll() -> GuestImage {
         n += 1;
         i += 1;
     }
-    for &c in GUEST_SYSDIR.iter().chain(b"ntdll.dll".iter()) {
+    for &c in Dir.iter().chain(File.iter()) {
+        if n >= Path.len() - 1 {
+            return Err(0xC000_0106u32 as NTSTATUS); // STATUS_NAME_TOO_LONG
+        }
         Path[n] = c as u16;
         n += 1;
     }
@@ -106,9 +109,9 @@ pub unsafe fn MapGuestNtdll() -> GuestImage {
     Oa.ObjectName = &mut Name;
     Oa.Attributes = OBJ_CASE_INSENSITIVE;
     let mut Iosb: IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut File: HANDLE = null_mut();
+    let mut Handle: HANDLE = null_mut();
     let Status = NtOpenFile(
-        &mut File,
+        &mut Handle,
         GENERIC_READ | GENERIC_EXECUTE | SYNCHRONIZE,
         &mut Oa,
         &mut Iosb,
@@ -116,8 +119,8 @@ pub unsafe fn MapGuestNtdll() -> GuestImage {
         FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
     );
     if Status < 0 {
-        crate::trace!("open %wZ: %08lx — is the amd64 guest DLL set staged?", &Name as *const UNICODE_STRING, Status);
-        die(b"guest ntdll.dll open\0");
+        crate::trace!("open %wZ: %08lx", &Name as *const UNICODE_STRING, Status);
+        return Err(Status);
     }
 
     let mut Section: HANDLE = null_mut();
@@ -128,12 +131,12 @@ pub unsafe fn MapGuestNtdll() -> GuestImage {
         null_mut(),
         PAGE_EXECUTE,
         SEC_IMAGE,
-        File,
+        Handle,
     );
-    NtClose(File);
+    NtClose(Handle);
     if Status < 0 {
-        crate::trace!("NtCreateSection(guest ntdll) %08lx", Status);
-        die(b"guest ntdll.dll section\0");
+        crate::trace!("NtCreateSection(%wZ) %08lx", &Name as *const UNICODE_STRING, Status);
+        return Err(Status);
     }
 
     let mut Base: PVOID = null_mut();
@@ -152,11 +155,21 @@ pub unsafe fn MapGuestNtdll() -> GuestImage {
     );
     NtClose(Section);
     if Status < 0 {
-        crate::trace!("NtMapViewOfSection(guest ntdll) %08lx", Status);
-        die(b"guest ntdll.dll map\0");
+        crate::trace!("NtMapViewOfSection(%wZ) %08lx", &Name as *const UNICODE_STRING, Status);
+        return Err(Status);
     }
+    Ok((GuestImage { Base: Base as *mut u8, Size: ViewSize as usize }, Status))
+}
 
-    let Image = GuestImage { Base: Base as *mut u8, Size: ViewSize as usize };
+/// Map `<SystemRoot>\sysamd64\ntdll.dll` as an image. Dies on any failure: no
+/// guest process can start without it, and the stage that should have put it
+/// there is the thing to go fix.
+pub unsafe fn MapGuestNtdll() -> GuestImage {
+    let (Image, Status) = match MapSystemImage(GUEST_SYSDIR, b"ntdll.dll") {
+        Ok(v) => v,
+        Err(_) => die(b"guest ntdll.dll map (is the amd64 guest DLL set staged?)\0"),
+    };
+    let (Base, ViewSize) = (Image.Base as PVOID, Image.Size);
     // The guest ntdll's preferred base is the native one's (both are linked at
     // the same address), so it essentially never lands there, and nothing else
     // will rebase it: its own loader assumes the kernel put it at its base, as

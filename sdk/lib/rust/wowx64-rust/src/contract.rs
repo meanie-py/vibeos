@@ -4,7 +4,7 @@
 //! the bottom so a one-sided edit fails the build instead of a boot. Change
 //! both together and bump `WOWX64_CONTRACT_VERSION`.
 
-pub const WOWX64_CONTRACT_VERSION: u32 = 2;
+pub const WOWX64_CONTRACT_VERSION: u32 = 3;
 
 /// Register arguments of a guest system service (r10, rdx, r8, r9).
 pub const WOWX64_REGISTER_ARGS: usize = 4;

@@ -95,6 +95,47 @@ static int TestFinally(void)
     return ran_finally == 1 && caught == 1;
 }
 
+/* spec2def's stubs are generated Rust. An export with no implementation must
+ * raise EXCEPTION_WINE_STUB carrying the module and function names, as the C
+ * stubs did; msvcrt's _CrtCheckMemory is a bare `@ stub`. */
+#define EXCEPTION_WINE_STUB 0x80000100L
+int _CrtCheckMemory(void);
+typedef struct { unsigned long Code, Flags; void *Record, *Address;
+                 unsigned long Count; unsigned long long Info[15]; } SEH_RECORD;
+typedef struct { SEH_RECORD *Record; void *Context; } SEH_POINTERS;
+static volatile int StubNamesMatch;
+
+static int StubFilter(SEH_POINTERS *p)
+{
+    const char *module = (const char *)p->Record->Info[0];
+    const char *function = (const char *)p->Record->Info[1];
+    const char *want_m = "msvcrt.dll", *want_f = "_CrtCheckMemory";
+    int i;
+
+    if (p->Record->Code != EXCEPTION_WINE_STUB || p->Record->Count != 2)
+        return 0;
+    for (i = 0; want_m[i] && module[i] == want_m[i]; i++);
+    StubNamesMatch = !want_m[i] && !module[i];
+    for (i = 0; want_f[i] && function[i] == want_f[i]; i++);
+    StubNamesMatch &= !want_f[i] && !function[i];
+    return 1;
+}
+
+static int TestUnimplementedStub(void)
+{
+    volatile int caught = 0;
+
+    __try {
+        _CrtCheckMemory();
+    } __except (StubFilter((SEH_POINTERS *)_exception_info())) {
+        caught = 1;
+    }
+
+    DbgPrint("[SEH-USER] spec-stub: caught=%d names=%d (%s)\n", caught, StubNamesMatch,
+             (caught && StubNamesMatch) ? "PASS" : "FAIL");
+    return caught && StubNamesMatch;
+}
+
 #ifdef __x86_64__
 /* A debug print whose buffer the caller does not own. With no debugger
  * attached the kernel's KdpStub echoes BREAKPOINT_PRINT to the console UART,
@@ -131,6 +172,7 @@ int main(void)
     pass &= TestSoftwareRaise();   /* least demanding first */
     pass &= TestFinally();
     pass &= TestHardwareFault();   /* the real hardware→userland roundtrip */
+    pass &= TestUnimplementedStub();
 #ifdef __x86_64__
     pass &= TestBadPrintBuffer();
 #endif

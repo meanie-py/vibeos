@@ -8,8 +8,8 @@ spec2def(umpnpmgr.dll umpnpmgr.spec ADD_IMPORTLIB)
 # clients. It owns device enumeration and installation — the PNP_* RPC surface, the kernel PnP
 # event pump (NtGetPlugPlayEvent), and the device-install worker thread.
 #
-# pnp_s.c and umpnpmgr_stubs.c stay C: both are GENERATED (MIDL server stubs and spec2def), so
-# there is nothing to translate — they are build products, not source.
+# pnp_s.c stays C: it is GENERATED (the MIDL server stubs), so there is nothing to translate —
+# a build product, not source. spec2def's stubs are Rust (umpnpmgr_stubs.rs, gcc.cmake).
 #
 # Three profile decisions (gen_driver_types.sh), all load-bearing:
 #   * BLOCKLIST_FUNCS_FROM_CRATE — a thin service over cfgmgr32/setupapi/advapi32/userenv/rpcrt4.

@@ -21,6 +21,15 @@
 //! TEB describes the guest stack, as above. The native loader's thread init
 //! runs first (native DLL thread-attach); then the guest's, entered exactly as
 //! the initial thread enters it (see `host::EnterGuest`).
+//!
+//! THREAD EXIT. What a guest thread owns beyond its guest stack — the CPU
+//! layer's state for it and the native stack we allocated — is ours to free,
+//! and the place to do it is the guest's `NtTerminateThread` ([`TerminateThread`]).
+//! The native stack is freed the way the kernel already frees a thread's stack:
+//! the TEB's `DeallocationStack` + `FreeStackOnTermination`, which kernel32's
+//! thread start sets for the guest stack. A thread ending itself frees the
+//! guest stack on the spot (nothing of the guest runs again) and hands the
+//! kernel the native one instead.
 
 use core::ffi::c_void;
 use core::ptr::null_mut;
@@ -28,7 +37,7 @@ use core::ptr::null_mut;
 use ntdll_sys::nt::*;
 
 use crate::contract::*;
-use crate::host::{die, CURRENT_PROCESS};
+use crate::host::{die, Cpu, CURRENT_PROCESS};
 
 const MEM_COMMIT: ULONG = 0x1000;
 const MEM_RESERVE: ULONG = 0x2000;
@@ -62,6 +71,41 @@ pub unsafe fn PublishGuestStack(Bottom: u64, Top: u64) {
     (*Teb).DeallocationStack = Bottom as PVOID;
 }
 
+/// Per-thread wowx64 state, found through the TEB's `DeallocationBStore` (an
+/// IA-64 register-stack field nothing on amd64 or arm64 reads). For a thread
+/// we created it sits at the top of the native stack we allocated; the initial
+/// thread's is static.
+#[repr(C)]
+pub struct ThreadRecord {
+    /// The chain of active win32k callbacks (callback.rs).
+    pub Callouts: *mut c_void,
+    /// The chain of active guest APCs (apc.rs).
+    pub Apcs: *mut c_void,
+    /// Allocation base of the native stack, if we allocated it; 0 for the
+    /// initial thread, whose native stack is the process's own.
+    pub NativeStack: u64,
+}
+
+static mut INITIAL_THREAD: ThreadRecord = ThreadRecord { Callouts: null_mut(), Apcs: null_mut(), NativeStack: 0 };
+
+unsafe fn SetRecord(R: *mut ThreadRecord) {
+    (*NtCurrentTeb()).DeallocationBStore = R as PVOID;
+}
+
+/// The initial thread's record, before its first guest instruction.
+pub unsafe fn InitialThreadRecord() {
+    SetRecord(core::ptr::addr_of_mut!(INITIAL_THREAD));
+}
+
+/// This thread's record. Every guest thread has one before it runs guest code.
+pub unsafe fn Record() -> *mut ThreadRecord {
+    let R = (*NtCurrentTeb()).DeallocationBStore as *mut ThreadRecord;
+    if R.is_null() {
+        die(b"guest thread with no wowx64 thread record\0");
+    }
+    R
+}
+
 /// What a new guest thread starts from, parked between the guest's
 /// NtCreateThread and the thread's first native instruction.
 #[repr(C, align(16))]
@@ -71,6 +115,7 @@ struct ThreadStart {
 
 const STATUS_NOT_SUPPORTED: u64 = 0xC000_00BB;
 const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
+const IMAGE_FILE_MACHINE_I386: u16 = 0x014C;
 
 /// What we can learn about a thread's target process from outside it: the
 /// machine of its main image, and whether its loader has run yet (PEB->Ldr).
@@ -110,7 +155,7 @@ unsafe fn Free(Process: HANDLE, Base: PVOID) {
 /// The guest's `NtCreateThread(Handle, Access, ObjectAttributes, Process,
 /// ClientId, Context, InitialTeb, CreateSuspended)`.
 ///
-/// Three cases, by target:
+/// By target:
 ///   * this process, or a RUNNING x86-64 guest (CreateRemoteThread): park the
 ///     guest CONTEXT in the target and start the thread in the target's
 ///     [`WowX64GuestThreadStart`] on a native stack allocated there. wowx64.dll
@@ -122,8 +167,12 @@ unsafe fn Free(Process: HANDLE, Base: PVOID) {
 ///     context — the native loader diverts to WowX64LdrpInitialize, which
 ///     enters the image entry itself — so the kernel gets a native context that
 ///     could only run if that divert ever returned, and then exits the thread.
-///   * anything else (a native arm64 or a 32-bit child): would need that
-///     machine's start context, which the guest cannot name. Refused, loudly.
+///   * a NEW 32-bit child: the same, for the same reason (its wow64.dll
+///     starts it from its image).
+///   * a native arm64 child: unreachable — the x86-64 guest's redirected
+///     system32 cannot name an arm64 exe to spawn (image.rs).
+///   * a RUNNING 32-bit process: needs that process's wow64.dll to set up the
+///     guest side of the thread. Refused, loudly.
 pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]) -> u64 {
     let GuestContext = Args[5] as *const WowX64Context;
     let Process = Args[3] as HANDLE;
@@ -145,8 +194,27 @@ pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]
                 Args[5] = &Native as *const CONTEXT as u64;
                 return crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCreateThread, Args.as_ptr());
             }
+            Some((IMAGE_FILE_MACHINE_I386, false)) => {
+                // A NEW 32-bit (WoW64) child: like a new x86-64 one, its
+                // initial context is never used — its native loader diverts to
+                // wow64.dll, which takes the entry from the image itself. A
+                // 64-bit parent's process parameters are exactly what that
+                // path reads (winlogon starts every 32-bit ladder guest so).
+                Native.Pc = RtlExitUserThread as usize as u64;
+                Native.__bindgen_anon_1.X[0] = 0xC000_007B; // STATUS_INVALID_IMAGE_FORMAT
+                Native.Sp = ((*GuestContext).Rsp & !15).wrapping_sub(0x100);
+                Args[5] = &Native as *const CONTEXT as u64;
+                return crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCreateThread, Args.as_ptr());
+            }
             Some((Machine, _)) => {
-                crate::trace!("guest NtCreateThread into a machine-%04x process: not supported yet", Machine as u32);
+                // A native arm64 child (any state) or a RUNNING 32-bit one. The
+                // native-arm64 case an x86-64 guest cannot even reach: its
+                // system32 is redirected to sysamd64 and an arm64 image there
+                // reads back as not-found (image.rs / syscall.rs), so it cannot
+                // name an arm64 exe to spawn — WoW64's own-machine view. A
+                // running 32-bit target needs that process's wow64.dll to set
+                // up the guest side from a 32-bit start the caller cannot name.
+                crate::trace!("guest NtCreateThread into a machine-%04x process: not supported", Machine as u32);
                 return STATUS_NOT_SUPPORTED;
             }
             None => {
@@ -181,9 +249,12 @@ pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]
         return STATUS_NO_MEMORY;
     }
 
+    let Top = Stack as u64 + StackSize as u64;
+    let Rec = (Top - core::mem::size_of::<ThreadRecord>() as u64) & !15;
     Native.Pc = WowX64GuestThreadStart as usize as u64;
-    Native.Sp = (Stack as u64 + StackSize as u64) & !15;
+    Native.Sp = Rec;
     Native.__bindgen_anon_1.X[0] = Page as u64;
+    Native.__bindgen_anon_1.X[1] = Rec;
     Args[5] = &Native as *const CONTEXT as u64;
     let Status = crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCreateThread, Args.as_ptr());
     if (Status as NTSTATUS) < 0 {
@@ -196,10 +267,26 @@ pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]
 /// A guest-created thread's first native frame, after the native loader's
 /// thread init. Never returns: the guest exits the thread with
 /// NtTerminateThread.
-unsafe extern "C" fn WowX64GuestThreadStart(Start: *mut ThreadStart) -> ! {
+unsafe extern "C" fn WowX64GuestThreadStart(Start: *mut ThreadStart, Rec: *mut ThreadRecord) -> ! {
     let Context = (*Start).Context;
     let (mut B, mut S) = (Start as PVOID, 0 as SIZE_T);
     NtFreeVirtualMemory(CURRENT_PROCESS, &mut B, &mut S, MEM_RELEASE);
+
+    // The record: just above the first native frame, where CreateThread left room.
+    let mut Info: MEMORY_BASIC_INFORMATION = core::mem::zeroed();
+    if NtQueryVirtualMemory(
+        CURRENT_PROCESS,
+        Rec as PVOID,
+        MemoryBasicInformation,
+        &mut Info as *mut _ as PVOID,
+        core::mem::size_of::<MEMORY_BASIC_INFORMATION>() as SIZE_T,
+        null_mut(),
+    ) < 0
+    {
+        die(b"guest thread: its native stack is not mapped\0");
+    }
+    Rec.write(ThreadRecord { Callouts: null_mut(), Apcs: null_mut(), NativeStack: Info.AllocationBase as u64 });
+    SetRecord(Rec);
 
     let Teb = NtCurrentTeb();
     crate::trace!(
@@ -213,4 +300,107 @@ unsafe extern "C" fn WowX64GuestThreadStart(Start: *mut ThreadStart) -> ! {
     crate::host::ThreadInit();
     // Not the initial thread: SystemArgument1 is the ntdll base only for that one.
     crate::host::EnterGuest(&Context, 0);
+}
+
+const THREAD_AM_I_LAST_THREAD: THREADINFOCLASS = 12;
+const SYNCHRONIZE: ACCESS_MASK = 0x0010_0000;
+const DUPLICATE_SAME_ATTRIBUTES: ULONG = 0x4;
+
+/// Which thread `Handle` names: (process id, thread id, TEB).
+unsafe fn ThreadIdentity(Handle: HANDLE) -> Option<(u64, u64, *mut TEB)> {
+    let mut Info: THREAD_BASIC_INFORMATION = core::mem::zeroed();
+    if NtQueryInformationThread(
+        Handle,
+        ThreadBasicInformation,
+        &mut Info as *mut _ as PVOID,
+        core::mem::size_of::<THREAD_BASIC_INFORMATION>() as ULONG,
+        null_mut(),
+    ) < 0
+    {
+        return None;
+    }
+    Some((Info.ClientId.UniqueProcess as u64, Info.ClientId.UniqueThread as u64, Info.TebBaseAddress as *mut TEB))
+}
+
+/// The guest's `NtTerminateThread(Thread, ExitStatus)`.
+pub unsafe fn TerminateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]) -> u64 {
+    let Handle = Args[0] as HANDLE;
+    let Me = &(*NtCurrentTeb()).ClientId;
+    let Target = if Handle.is_null() || Handle == crate::host::CURRENT_THREAD {
+        Some((Me.UniqueProcess as u64, Me.UniqueThread as u64, NtCurrentTeb()))
+    } else {
+        ThreadIdentity(Handle)
+    };
+    let Forward = |Args: &[u64; crate::syscall::WOWX64_SERVICE_ARGS]| {
+        crate::host::NativeSyscall(crate::syscall::svc::SVC_NtTerminateThread, Args.as_ptr())
+    };
+    let (Pid, Tid, Teb) = match Target {
+        Some(t) => t,
+        None => return Forward(Args), // a bad handle: the kernel says so
+    };
+    if Pid != Me.UniqueProcess as u64 {
+        // A thread of another process. Its wowx64 cannot see this, so if that
+        // process is an x86-64 guest its CPU-layer state for the thread and
+        // native stack stay until that process exits.
+        return Forward(Args);
+    }
+
+    if Tid == Me.UniqueThread as u64 {
+        let mut Last: ULONG = 0;
+        NtQueryInformationThread(
+            crate::host::CURRENT_THREAD,
+            THREAD_AM_I_LAST_THREAD,
+            &mut Last as *mut _ as PVOID,
+            core::mem::size_of::<ULONG>() as ULONG,
+            null_mut(),
+        );
+        if Last != 0 {
+            // The process ends with it, and takes everything along.
+            return Forward(Args);
+        }
+        let Rec = Record();
+        (Cpu().ThreadTerm)(crate::host::CURRENT_THREAD, Args[1] as NTSTATUS);
+        if (*Rec).NativeStack != 0 {
+            let Teb = NtCurrentTeb();
+            if (*Teb).FreeStackOnTermination != 0 {
+                Free(CURRENT_PROCESS, (*Teb).DeallocationStack);
+            }
+            (*Teb).DeallocationStack = (*Rec).NativeStack as PVOID;
+            (*Teb).FreeStackOnTermination = 1;
+        }
+        let Status = Forward(Args);
+        crate::trace!("NtTerminateThread(self) returned %08lx after its state was freed", Status as u32);
+        die(b"NtTerminateThread(self) returned\0");
+    }
+
+    // Another thread of this process. Its record is in its TEB, which dies
+    // with it, so read what we need first; free its state only once it is
+    // gone (BTCpu64ThreadTerm's contract).
+    let Rec = (*Teb).DeallocationBStore as *const ThreadRecord;
+    let NativeStack = if Rec.is_null() { 0 } else { (*Rec).NativeStack };
+    let Status = Forward(Args);
+    if (Status as NTSTATUS) < 0 || Rec.is_null() {
+        return Status;
+    }
+    let mut Waitable: HANDLE = null_mut();
+    if NtDuplicateObject(CURRENT_PROCESS, Handle, CURRENT_PROCESS, &mut Waitable, SYNCHRONIZE, 0, DUPLICATE_SAME_ATTRIBUTES) < 0 {
+        crate::trace!("terminated guest thread %p: cannot wait for it, its CPU state stays", Tid as *const c_void);
+        return Status;
+    }
+    let mut Timeout: LARGE_INTEGER = core::mem::zeroed();
+    Timeout.QuadPart = -5 * 10_000_000; // 5 s, relative
+    let Waited = NtWaitForSingleObject(Waitable, 0, &mut Timeout);
+    if Waited == 0 {
+        // ThreadTerm (its NtQueryInformationThread) needs query rights; the
+        // guest's own handle has them and still resolves a dead thread's id,
+        // whereas `Waitable` is SYNCHRONIZE-only.
+        (Cpu().ThreadTerm)(Handle, Args[1] as NTSTATUS);
+        if NativeStack != 0 {
+            Free(CURRENT_PROCESS, NativeStack as PVOID);
+        }
+    } else {
+        crate::trace!("terminated guest thread %p did not exit (%08lx): its CPU state stays", Tid as *const c_void, Waited);
+    }
+    NtClose(Waitable);
+    Status
 }

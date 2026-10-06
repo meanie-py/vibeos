@@ -1153,7 +1153,6 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
     function `Name` from `src/<stem>/file.rs` and puts it back over `Name` on replay;
     `file.rs:New=Old` captures `New` and puts it over the BOUGHT function `Old`.
     """
-    from . import crate_fix as cf
 
     state = load_state(stem)
     started = time.time()
@@ -1170,13 +1169,53 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
             print(f"hand: dropped {spec}")
             continue
         text = (modules / fname).read_text()
-        spans = [sp for sp in cf.function_spans(text) if sp.name == name]
+        spans = item_spans(text, name)
         if len(spans) != 1:
-            raise PortError(f"hand: {spec}: {len(spans)} functions named {name} in {fname}")
-        body = text[spans[0].start : spans[0].end]
+            raise PortError(f"hand: {spec}: {len(spans)} items named {name} in {fname}")
+        body = text[spans[0][0] : spans[0][1]]
         entry.write_text(json.dumps({"file": fname, "name": replaces, "text": body}, indent=1))
         print(f"hand: banked {spec} ({len(body.splitlines())} lines)")
     _record(state, "hand", started, specs=specs, drop=drop)
+
+
+_ITEM_HEAD = (
+    r"(?m)^(?:[ \t]*#\[[^\n]*\]\n)*[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?"
+    r"(?:(?:type|struct|union|enum|const|static(?:[ \t]+mut)?)[ \t]+{n}\b|macro_rules![ \t]*{n}\b)"
+)
+
+
+def item_spans(text: str, name: str) -> list[tuple[int, int]]:
+    """Spans of every function, or top-level type/struct/union/enum/const/static/macro_rules,
+    named `name` -- attributes included. A hand fix is not always a function: setuplib's
+    boot-store fn-pointer typedefs needed `extern "C"`, and two prelude macros a `BOOLEAN`."""
+    from . import crate_fix as cf
+
+    out = [(sp.start, sp.end) for sp in cf.function_spans(text) if sp.name == name]
+    for m in re.finditer(_ITEM_HEAD.format(n=re.escape(name)), text):
+        i, depth = m.end(), 0
+        while i < len(text):
+            c = text[i]
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+                if depth == 0 and c == "}" and "macro_rules!" in m.group(0):
+                    i += 1
+                    break
+                if (
+                    depth == 0
+                    and c == "}"
+                    and re.search(r"\b(?:struct|union|enum)\b", m.group(0))
+                    and not re.match(r"\s*;", text[i + 1 :])
+                ):
+                    i += 1
+                    break
+            elif c == ";" and depth == 0:
+                i += 1
+                break
+            i += 1
+        out.append((m.start(), i))
+    return sorted(set(out))
 
 
 def hand_names(stem: str) -> set[tuple[str, str]]:
@@ -1193,7 +1232,6 @@ def hand_names(stem: str) -> set[tuple[str, str]]:
 
 def apply_hand(stem: str) -> int:
     """Put every banked hand function back over whatever the replay produced for it."""
-    from . import crate_fix as cf
 
     state = load_state(stem)
     modules = _crate_dir(state) / "src" / stem
@@ -1205,16 +1243,16 @@ def apply_hand(stem: str) -> int:
         if h["text"] in text:  # already applied (replay runs this before and after fix)
             applied += 1
             continue
-        spans = [sp for sp in cf.function_spans(text) if sp.name == h["name"]]
+        spans = item_spans(text, h["name"])
         if len(spans) != 1:
             # Loud: the function moved or was renamed upstream of the bank; never skip quietly.
             raise PortError(
                 f"hand: {h['file']}:{h['name']} is banked but the replayed file has "
-                f"{len(spans)} function(s) of that name -- re-capture or drop it"
+                f"{len(spans)} item(s) of that name -- re-capture or drop it"
             )
-        sp = spans[0]
-        if text[sp.start : sp.end] != h["text"]:
-            path.write_text(text[: sp.start] + h["text"] + text[sp.end :])
+        lo, hi = spans[0]
+        if text[lo:hi] != h["text"]:
+            path.write_text(text[:lo] + h["text"] + text[hi:])
         applied += 1
     if applied:
         print(f"hand: {applied} hand-written function(s) applied")

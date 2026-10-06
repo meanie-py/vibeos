@@ -1,0 +1,3 @@
+  MISMATCH: sdk/lib/rust/setuplib-rust/src/setuplib/arcname.rs:105: EisaAdapter: Rust=0x00000000 → C=0x00000008
+  MISMATCH: sdk/lib/rust/setuplib-rust/src/setuplib/arcname.rs:106: ScsiAdapter: Rust=0x00000001 → C=0x0000000A
+  MISMATCH: sdk/lib/rust/setuplib-rust/src/setuplib/arcname.rs:115: DiskController: Rust=0x00000000 → C=0x0000000D
