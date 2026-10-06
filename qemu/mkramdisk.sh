@@ -148,6 +148,19 @@ else
     echo "    support at all. Build it with: tools/fex/build-fex.sh"
 fi
 
+# The x86-64 CPU layer (BTCpu64, docs/engineering/wow64-x64-guest-design.md
+# Fork B) rides the same rule for the same reason: free until an x64 process
+# starts, and loud when absent. Its OS half, wowx64.dll, is an ordinary cmake
+# target staged through the livecd list like any system DLL.
+WOWX64FEX_DEFAULT="${VIBEOS_WOWX64FEX_DLL:-$PROJECT_DIR/build-fex-hello/wowx64fex/libwowx64fex.dll}"
+if [ -f "$WOWX64FEX_DEFAULT" ]; then
+    echo "[*] staging libwowx64fex.dll into system32 (x86-64 CPU layer, default-on)"
+    echo "reactos/system32/libwowx64fex.dll=$WOWX64FEX_DEFAULT" >> "$OVERLAY_LST"
+else
+    echo "[!] x86-64 CPU layer MISSING ($WOWX64FEX_DEFAULT) — this image cannot run"
+    echo "    x64 apps. Build it with: tools/fex/build-fex.sh && tools/fex/build-hello-compute.sh"
+fi
+
 # --- Payloads (opt-in, VIBEOS_PAYLOAD=name[,name...]) -----------------------
 # Declarative test/demo app staging — docs/engineering/payload-harness-design.md.
 # OFF by default: with no payloads selected the compiler prints nothing and the
@@ -206,6 +219,15 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         # WOW64 Phase B (docs/engineering/wow64-plan.md): wow64probe.exe drives
         # the BTCpu contract; it maps the i386 ntdll staged into syswow64
         # (Phase C's SysWOW64 set starts here).
+        # BTCpu64 M1: the first x86-64 guest, beside the arm64 probes in
+        # system32 (an x64 exe is not a WoW64 guest; there is no SysX64 dir).
+        HELLO64="${VIBEOS_HELLO64_EXE:-$PROJECT_DIR/build-fex-hello/hello64.exe}"
+        if [ -f "$HELLO64" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging hello64.exe (x86-64 guest, BTCpu64 M1)"
+            mcopy -o -i "$RAMDISK_IMG" "$HELLO64" ::/reactos/system32/hello64.exe
+        else
+            echo "[!] VIBEOS_FEX=1: hello64.exe not built ($HELLO64) — x86-64 guest skipped"
+        fi
         WOW64PROBE="${VIBEOS_WOW64PROBE_EXE:-$PROJECT_DIR/build-fex-hello/wow64probe.exe}"
         NTDLL32="${VIBEOS_NTDLL32:-$PROJECT_DIR/build-i386/dll/ntdll/ntdll.dll}"
         if [ -f "$WOW64PROBE" ] && [ -f "$NTDLL32" ]; then

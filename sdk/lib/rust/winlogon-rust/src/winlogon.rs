@@ -726,6 +726,78 @@ unsafe fn TryStartWow64Hello() {
     }
 }
 
+/* BTCpu64 M1 (docs/engineering/wow64-x64-guest-design.md, Fork B): launch an
+ * x86-64 PE (hello64.exe) through the normal CreateProcessW front door. On
+ * arm64 that is an x86-64 GUEST process — kernel32 admits the machine, ntdll's
+ * process init diverts to wowx64!WowX64LdrpInitialize, and the FEX CPU layer
+ * libwowx64fex.dll runs it. On amd64 the very same binary runs natively, which
+ * is the oracle that the guest itself is right. Verdict = its exit code
+ * (0x600D = PASS, 0xBAD0+N names the failed rung) + [WOWX64] serial lines.
+ * Silent no-op unless staged, and on arm64 unless the CPU layer is too (the
+ * same rule as Wow64SupportStaged: a guest without its support layer would run
+ * half-initialized). */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartX64Hello() {
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    #[cfg(target_arch = "aarch64")]
+    {
+        if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+            return;
+        }
+        wcscat(Path.as_mut_ptr(), wstr!("\\system32\\libwowx64fex.dll").as_ptr());
+        if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+            return; // no x86-64 CPU layer staged — don't spawn a guest that can't run
+        }
+        Path = [0; MAX_PATH as usize];
+    }
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\hello64.exe").as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 12] = wstr_arr!("hello64.exe");
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] hello64.exe (x86-64 guest) created (PID %lu) - waiting\n\0".as_ptr()
+                as *const i8,
+            Pi.dwProcessId,
+        );
+        WaitForSingleObject(Pi.hProcess, 30_000);
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] hello64.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(hello64.exe) FAILED (error %lu)\n\0".as_ptr()
+                as *const i8,
+            GetLastError(),
+        );
+    }
+}
+
 /* M10 file-I/O probe: an i386 guest that reads, writes and enumerates real
  * files. It is the oracle for the IO_STATUS_BLOCK 32<->64 marshalling — the
  * byte count ReadFile hands back IS IoStatusBlock.Information, which is 4 bytes
@@ -3211,6 +3283,10 @@ pub unsafe extern "system" fn WinMain(
              * (no-op unless syswow64\hello32.exe staged). */
             TryStartWow64Hello();
 
+            /* BTCpu64 M1: an x86-64 PE — a guest under FEX on arm64, native
+             * on amd64 (no-op unless system32\hello64.exe staged). */
+            TryStartX64Hello();
+
             /* wow64win probe (M4): i386 GUI guest drawing through the win32k
              * thunk table (no-op unless syswow64\gui32.exe staged). */
             TryStartWow64Gui();
@@ -3361,6 +3437,9 @@ pub unsafe extern "system" fn WinMain(
          * guest is staged): loader → GDI → window/callbacks → file I/O →
          * overlapped I/O → marshaller self-verify. */
         TryStartWow64Hello();
+        /* BTCpu64 M1's guest, run NATIVELY here: the oracle that hello64 is
+         * right independently of FEX (it is the arm64 ladder's x86-64 guest). */
+        TryStartX64Hello();
         TryStartWow64Gui();
         TryStartWow64Win32();
         TryStartWow64File();

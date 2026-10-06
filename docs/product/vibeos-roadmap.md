@@ -2696,6 +2696,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
   it is a one-command check.
 
+- **2026-10-05: x86-64 code runs on arm64 (BTCpu64 M1).** `hello64.exe`, a plain amd64 PE,
+  exits `0x600D` on arm64 under FEX in 64-bit mode
+  (`/tmp/vibeos-cli/20261005-223205-ztl4mr2p-smoke-arm64`) AND natively on amd64
+  (`/tmp/vibeos-cli/20261005-224925-gh3n_tri-smoke-amd64`), the same binary graded on a JIT
+  host and a native one. It proves long mode, GS = the shared native TEB, the PEB, and a raw
+  `syscall` (`NtClose(NULL)` -> `STATUS_INVALID_HANDLE`) forwarded to the arm64 kernel by
+  register shuffle alone. This is Fork B of `docs/engineering/wow64-x64-guest-design.md`: ntdll
+  diverts an amd64 main image to `wowx64.dll` (new, Rust), which drives `libwowx64fex.dll`
+  (new, `tools/fex/wowx64fex`: FEXCore linked out of tree, `vendor/fex` untouched) through our
+  own BTCpu64 contract (`sdk/include/reactos/wowx64/btcpu64.h`). `hello64` is in the graded
+  ladder (`tests/qemu/cli/ladder.py`), so `pi4 --ladder` grades it on the A72 too. The 32-bit
+  ladder stayed green on both arches. **Next (M2):** the guest's own amd64 ntdll and loader, so
+  a guest with imports runs. Owed list: the design doc's "M1 status" section.
+
 - **2026-10-04: x86 guests run under FEX on a real Raspberry Pi 4.** The FEX arm64 media
   (`VIBEOS_FEX=1`, MP kernel, Cortex-A72 x4) netbooted to the desktop and ran the whole ladder:
 **13 of 14 x86 guests pass** plus `fexprobe` — including both stress guests, `lua32` and

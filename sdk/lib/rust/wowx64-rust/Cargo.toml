@@ -1,0 +1,13 @@
+[package]
+name = "wowx64-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# Standalone staticlib -> wowx64.dll (arm64 only; see dll/win32/wowx64).
+# Provides its own panic_handler + eh_personality.
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }

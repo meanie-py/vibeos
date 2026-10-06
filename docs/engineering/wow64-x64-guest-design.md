@@ -1,10 +1,10 @@
 # Running x86-64 guests on arm64: ARM64EC vs. our own BTCpu64 contract
 
-**Status: DECIDED 2026-10-06 — Fork B first; nothing built yet.** Written 2026-09-13 at the
+**Status: DECIDED 2026-10-05 — Fork B first. M1 DONE 2026-10-05 (see "M1 status" below).** Written 2026-09-13 at the
 owner's request as scoping, after an audit established that FEX's x64 support is real and every
 blocker is on our side (`docs/product/vibeos-roadmap.md`, and the audit summary below).
 
-**The decision (owner, 2026-10-06): build Fork B (our own BTCpu64-shaped contract) first.** Most
+**The decision (owner, 2026-10-05): build Fork B (our own BTCpu64-shaped contract) first.** Most
 of what B needs, A needs too — a 64-bit FEX plugin, x64 CONTEXT conversion, the guest
 exception and syscall path — and B runs x64 apps on the amd64 system DLLs we already build,
 fully emulated, the same shape as today's 32-bit path. Fork A (ARM64EC) stays the later
@@ -19,6 +19,47 @@ contract we implement to reach it**, because we have inherited Microsoft's answe
 deciding to.
 
 ---
+
+## M1 status — what exists, and what is owed
+
+**M1 passes:** `hello64.exe` (no CRT, no imports, raw syscalls) exits `0x600D` under FEX on
+arm64 and natively on amd64, and is in the graded ladder. The pieces:
+
+| piece | where | what |
+|---|---|---|
+| contract | `sdk/include/reactos/wowx64/btcpu64.h` (+ Rust mirror `wowx64-rust/src/contract.rs`) | BTCpu-shaped verbs, an x86-64 `CONTEXT` named `WOWX64_CONTEXT`, and a host-services table the CPU layer calls back through (so the plugin imports ntdll alone) |
+| CPU layer | `tools/fex/wowx64fex/` -> `libwowx64fex.dll` | upstream `WOW64/Module.cpp`'s shape, five differences listed in its header; built by `build-hello-compute.sh` from the prebuilt FEX archives (sub-option B1; `vendor/fex` untouched) |
+| OS layer | `sdk/lib/rust/wowx64-rust` -> `wowx64.dll` (arm64 only) | loads the CPU layer, VEH -> `BTCpu64ResetToConsistentState`, guest stack + entry context, the syscall forwarder |
+| divert | `ntdll-rust/src/ldr/ldrinit.rs` (`IsX64GuestProcess`, `LdrpEnterGuestLayer`) | an amd64 main image on arm64 skips the native import walk and hands off after init routines, as WoW64 does |
+| TLS guard | `ldrutils.rs` `LdrpIsForeignMachineImage` | the native loader skips a guest module's TLS directory and callbacks. The old check was PE32-only and would have run an x64 exe's TLS callbacks natively |
+| guest | `tools/fex/hello-compute/Hello64.c` | four value-checked rungs; syscall numbers read from `sysfuncs.lst` at build time |
+
+**The syscall path is a register shuffle, and that is measured, not assumed:** the guest's
+`syscall` reaches `WowX64SystemService` with `r10, rdx, r8, r9, [rsp+0x28..]`, which become
+`x0-x7` + 7 stack words + `x8` = service number. No per-service code exists. That rests on
+`ntoskrnl/sysfuncs.lst` being one arch-independent list, and hello64's build reads its numbers
+from it, so it is checked on every boot.
+
+**Owed, in roughly the order a real x64 app will hit them** (each named where it bites in
+`wowx64-rust/src/lib.rs`):
+
+1. **M2: the guest's own amd64 ntdll + loader.** Stage the amd64 system DLLs somewhere the guest
+   finds them (there is no SysX64 dir yet), map amd64 ntdll, and enter its `LdrInitializeThunk`
+   under emulation, as wow64.dll does for ntdll32. This is the next milestone.
+2. **TEB stack bounds** for the guest stack. Any CRT-linked guest probes or unwinds against
+   `NtTib.StackBase/StackLimit`, which still describe the native stack.
+3. **Guest exception dispatch.** Today a guest fault is reported and the process terminated with
+   the exception code. x64 needs `.pdata`-driven dispatch into the guest's
+   `KiUserExceptionDispatcher`; this is the 267-line EC-entangled part priced above.
+4. **Memory notifications** from the syscall path to the CPU layer (`NotifyMemoryAlloc/Protect/
+   Free/MapViewOfSection`, already exported). Needed for SMC correctness and for any image
+   mapped after `BTCpu64ProcessInit`.
+5. **Kernel->user callbacks and APCs** into the guest (win32k), **threads** (BTCpu64 is current-
+   thread-only and says so with `STATUS_NOT_IMPLEMENTED`), and `NtContinue`/`Get/SetContext`
+   from guest code.
+6. **The native kernel32 in the guest process.** ntdll still loads arm64 kernel32 for a GUI/CUI
+   image before the divert (WoW64 needs it for libwow64fex). An x64 guest's user mode is the
+   guest's, so check whether this is needed or just baggage.
 
 ## The audit result, in one paragraph
 
