@@ -362,18 +362,17 @@ public:
   static uint64_t HandleSyscallImpl(FEXCore::Core::CpuStateFrame* Frame, FEXCore::HLE::SyscallArguments*) {
     auto& State = Frame->State;
 
-    // amd64 ntdll's stubs are `mov r10, rcx; mov eax, N; syscall; ret`, called
-    // by a `call`: [rsp] is the stub's return address, [rsp+8..0x28) the
-    // caller's shadow space, and argument 5 onward starts at [rsp+0x28].
-    uint64_t Args[WOWX64_SERVICE_ARGS];
+    // amd64 ntdll's stubs are `mov r10, rcx; mov eax, N; syscall; ret`: the
+    // first four arguments are in r10/rdx/r8/r9, the rest on the stack from
+    // rsp+0x28. The stack ones are the OS side's to read -- it knows how many
+    // each service takes, and reading a fixed count runs off the top of a
+    // guest stack (contract version 2).
+    uint64_t Args[WOWX64_REGISTER_ARGS];
     Args[0] = State.gregs[FEXCore::X86State::REG_R10];
     Args[1] = State.gregs[FEXCore::X86State::REG_RDX];
     Args[2] = State.gregs[FEXCore::X86State::REG_R8];
     Args[3] = State.gregs[FEXCore::X86State::REG_R9];
-    const auto* StackArgs = reinterpret_cast<const uint64_t*>(State.gregs[FEXCore::X86State::REG_RSP] + 0x28);
-    for (size_t i = 4; i < WOWX64_SERVICE_ARGS; i++) {
-      Args[i] = StackArgs[i - 4];
-    }
+    const uint64_t GuestRsp = State.gregs[FEXCore::X86State::REG_RSP];
 
     // The JIT parks rip ON the syscall instruction and has already put the
     // return rip in RCX and RFLAGS in R11, as the instruction architecturally
@@ -384,7 +383,7 @@ public:
 
     auto* TD = GetThreadData();
     Context::UnlockJITContext(TD);
-    const uint64_t Ret = Host.SystemService(Service, Args);
+    const uint64_t Ret = Host.SystemService(Service, Args, GuestRsp);
     Context::LockJITContext(TD);
 
     if (State.rip == SyscallRip) {

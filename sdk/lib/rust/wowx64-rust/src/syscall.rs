@@ -44,12 +44,34 @@ const MEM_IMAGE: u32 = 0x0100_0000;
 const TRACED_SYSCALLS: u32 = 48;
 static SyscallCount: AtomicU32 = AtomicU32::new(0);
 
-/// `WOWX64_HOST_SERVICES::SystemService`: one guest `syscall`. The CPU layer
-/// has gathered the arguments in guest order (r10, rdx, r8, r9, then
-/// [rsp+0x28...]).
-pub unsafe extern "C" fn WowX64SystemService(Service: u32, GuestArgs: *const u64) -> u64 {
+/// Most arguments any service takes: `NtAccessCheckByTypeResultListAndAudit
+/// AlarmByHandle` has 17. `NativeSyscall` passes all of them (8 registers + 9
+/// stack words).
+pub const WOWX64_SERVICE_ARGS: usize = 17;
+
+/// How many arguments guest service `Service` takes, or None for a number in
+/// neither table (forwarded with its register arguments only; the kernel
+/// rejects it).
+fn ArgCount(Service: u32) -> Option<usize> {
+    let Index = (Service & 0xFFF) as usize;
+    match Service >> 12 {
+        0 => SERVICE_ARGC_NT.get(Index).map(|&n| n as usize),
+        1 => SERVICE_ARGC_W32K.get(Index).map(|&n| n as usize),
+        _ => None,
+    }
+}
+
+/// `WOWX64_HOST_SERVICES::SystemService`: one guest `syscall`. The register
+/// arguments come from the CPU layer; the stack ones are read here, exactly as
+/// many as the service takes, from the guest stack at rsp+0x28 (the stub's
+/// return address at [rsp], then the caller's 32-byte home area).
+pub unsafe extern "C" fn WowX64SystemService(Service: u32, RegisterArgs: *const u64, GuestRsp: u64) -> u64 {
     let mut Args = [0u64; WOWX64_SERVICE_ARGS];
-    core::ptr::copy_nonoverlapping(GuestArgs, Args.as_mut_ptr(), WOWX64_SERVICE_ARGS);
+    core::ptr::copy_nonoverlapping(RegisterArgs, Args.as_mut_ptr(), WOWX64_REGISTER_ARGS);
+    let Count = ArgCount(Service).unwrap_or(0).min(WOWX64_SERVICE_ARGS);
+    for i in WOWX64_REGISTER_ARGS..Count {
+        Args[i] = *((GuestRsp + 0x28 + 8 * (i - WOWX64_REGISTER_ARGS) as u64) as *const u64);
+    }
 
     let Ret = Dispatch(Service, &mut Args);
 

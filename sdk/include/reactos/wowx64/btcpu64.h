@@ -31,11 +31,12 @@
 
 #include <stdint.h>
 
-#define WOWX64_CONTRACT_VERSION 1
+#define WOWX64_CONTRACT_VERSION 2
 
-/* Ceiling on syscall arguments, matching the arm64 kernel's KiSvcDispatch
- * (8 in x0-x7 + 7 from the caller's stack). */
-#define WOWX64_SERVICE_ARGS 15
+/* Register arguments of a guest system service: r10 (the stub's copy of rcx),
+ * rdx, r8, r9. The rest are on the guest stack at rsp+0x28 and are read by the
+ * OS side, which knows how many each service takes. */
+#define WOWX64_REGISTER_ARGS 4
 
 /* x86-64 CONTEXT, laid out exactly as on amd64 Windows (0x4D0 bytes). The
  * plugin is compiled for arm64, where CONTEXT is the ARM64 one, so the guest's
@@ -107,10 +108,15 @@ _Static_assert(__builtin_offsetof(WOWX64_CONTEXT, FltSave) == 0x100, "x64 CONTEX
 typedef struct _WOWX64_HOST_SERVICES {
     uint32_t Size;    /* sizeof(WOWX64_HOST_SERVICES) */
     uint32_t Version; /* WOWX64_CONTRACT_VERSION */
-    /* Run guest system service `ServiceNumber` with Args[0..WOWX64_SERVICE_ARGS)
-     * in guest argument order (rcx/r10, rdx, r8, r9, then the stack args). The
-     * return value goes to guest RAX unchanged. */
-    uint64_t (*SystemService)(uint32_t ServiceNumber, const uint64_t *Args);
+    /* Run guest system service `ServiceNumber`. RegisterArgs holds the
+     * WOWX64_REGISTER_ARGS register arguments in guest order; GuestRsp is the
+     * guest rsp AT the syscall (the stub's return address on top), from which
+     * the OS side reads stack arguments 5..N at rsp+0x28 -- exactly N, per the
+     * service's own argument count, as the amd64 kernel does. (Version 1 had
+     * the CPU layer copy a fixed 11 stack words, which read past the top of a
+     * guest stack whenever a syscall was made within 0x80 bytes of it -- a
+     * fresh thread's first NtContinue.) The return value goes to guest RAX. */
+    uint64_t (*SystemService)(uint32_t ServiceNumber, const uint64_t *RegisterArgs, uint64_t GuestRsp);
 } WOWX64_HOST_SERVICES;
 
 /* ---- CPU-layer exports (libwowx64fex.dll) --------------------------------

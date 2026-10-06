@@ -124,7 +124,7 @@ unsafe fn Free(Process: HANDLE, Base: PVOID) {
 ///     could only run if that divert ever returned, and then exits the thread.
 ///   * anything else (a native arm64 or a 32-bit child): would need that
 ///     machine's start context, which the guest cannot name. Refused, loudly.
-pub unsafe fn CreateThread(Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
+pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]) -> u64 {
     let GuestContext = Args[5] as *const WowX64Context;
     let Process = Args[3] as HANDLE;
     if GuestContext.is_null() {

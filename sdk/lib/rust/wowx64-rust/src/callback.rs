@@ -115,7 +115,7 @@ unsafe extern "system" fn WowX64UserCallback(Index: ULONG, Argument: *mut c_void
 }
 
 /// The guest's `NtCallbackReturn(Result, ResultLength, Status)`.
-pub unsafe fn CallbackReturn(Args: &[u64; WOWX64_SERVICE_ARGS]) -> u64 {
+pub unsafe fn CallbackReturn(Args: &[u64; crate::syscall::WOWX64_SERVICE_ARGS]) -> u64 {
     let C = *Head();
     if C.is_null() {
         // Not inside a callback we started: let the kernel say so.

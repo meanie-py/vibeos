@@ -73,19 +73,20 @@ pub unsafe fn die(Why: &[u8]) -> ! {
     panic!("wowx64: NtTerminateProcess(self) returned {:#x}", Status);
 }
 
-/// Issue native system service `Service` with `Args[0..15)`: x0-x7 from the
-/// first eight, the remaining seven on the stack where `KiSvcDispatch` reads
+/// Issue native system service `Service` with `Args[0..17)`: x0-x7 from the
+/// first eight, the remaining nine on the stack where `KiSvcDispatch` reads
 /// them (`TrapFrame->Sp`), service number in x8.
 ///
-/// The slot count is baked into the asm below (8 registers + 7 stack words at
-/// offsets 64..120), so pin the contract constant to it.
-const _: () = assert!(WOWX64_SERVICE_ARGS == 15);
+/// The slot count is baked into the asm below (8 registers + 9 stack words at
+/// offsets 64..136, in an 80-byte area to keep sp 16-aligned), so pin the
+/// constant to it.
+const _: () = assert!(crate::syscall::WOWX64_SERVICE_ARGS == 17);
 #[unsafe(naked)]
 pub unsafe extern "C" fn NativeSyscall(Service: u32, Args: *const u64) -> u64 {
     core::arch::naked_asm!(
         "stp x29, x30, [sp, #-16]!",
         "mov x29, sp",
-        "sub sp, sp, #64",
+        "sub sp, sp, #80",
         "mov w8, w0",
         "mov x9, x1",
         "ldp x10, x11, [x9, #64]",
@@ -94,8 +95,10 @@ pub unsafe extern "C" fn NativeSyscall(Service: u32, Args: *const u64) -> u64 {
         "stp x10, x11, [sp, #16]",
         "ldp x10, x11, [x9, #96]",
         "stp x10, x11, [sp, #32]",
-        "ldr x10, [x9, #112]",
-        "str x10, [sp, #48]",
+        "ldp x10, x11, [x9, #112]",
+        "stp x10, x11, [sp, #48]",
+        "ldr x10, [x9, #128]",
+        "str x10, [sp, #64]",
         "ldp x0, x1, [x9, #0]",
         "ldp x2, x3, [x9, #16]",
         "ldp x4, x5, [x9, #32]",

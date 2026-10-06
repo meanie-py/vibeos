@@ -4,11 +4,10 @@
 //! the bottom so a one-sided edit fails the build instead of a boot. Change
 //! both together and bump `WOWX64_CONTRACT_VERSION`.
 
-pub const WOWX64_CONTRACT_VERSION: u32 = 1;
+pub const WOWX64_CONTRACT_VERSION: u32 = 2;
 
-/// Syscall argument ceiling: the arm64 kernel's `KiSvcDispatch` takes 8 in
-/// x0-x7 plus 7 from the caller's stack.
-pub const WOWX64_SERVICE_ARGS: usize = 15;
+/// Register arguments of a guest system service (r10, rdx, r8, r9).
+pub const WOWX64_REGISTER_ARGS: usize = 4;
 
 pub const WOWX64_CONTEXT_AMD64: u32 = 0x0010_0000;
 pub const WOWX64_CONTEXT_CONTROL: u32 = WOWX64_CONTEXT_AMD64 | 0x01;
@@ -111,9 +110,12 @@ pub struct WowX64Context {
 pub struct WowX64HostServices {
     pub Size: u32,
     pub Version: u32,
-    /// Run guest service `ServiceNumber` with `Args[0..WOWX64_SERVICE_ARGS)` in
-    /// guest argument order; the result goes to guest RAX unchanged.
-    pub SystemService: unsafe extern "C" fn(ServiceNumber: u32, Args: *const u64) -> u64,
+    /// Run guest service `ServiceNumber`: its register arguments in guest
+    /// order, and the guest rsp at the syscall, from which the OS side reads
+    /// the stack arguments the service actually takes. The result goes to guest
+    /// RAX unchanged.
+    pub SystemService:
+        unsafe extern "C" fn(ServiceNumber: u32, RegisterArgs: *const u64, GuestRsp: u64) -> u64,
 }
 
 const _: () = assert!(core::mem::size_of::<WowX64XsaveFormat>() == 0x200);
