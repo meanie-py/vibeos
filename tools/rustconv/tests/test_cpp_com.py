@@ -55,9 +55,28 @@ SHELL32 = REACTOS_ROOT / "dll" / "win32" / "shell32"
 # a code defect — so gate those cases explicitly instead of leaving `check-tooling` red for
 # everyone who hasn't built i386 here yet.
 GENERATED_PSDK_I386 = REACTOS_ROOT / "build-i386" / "sdk" / "include" / "psdk"
+
+
+def _generated_psdk_ready(psdk: Path) -> bool:
+    """The generated shell headers are there and COMPLETE, not merely the directory.
+
+    The gate's `--clean` builds run concurrently with check-tooling: configure recreates
+    build-<arch>/sdk/include/psdk long before widl writes shobjidl.h into it, so a
+    directory check let these tests read a half-built tree (master's own gate went red
+    TOOLING_FAIL on 2026-10-05 with "no flattened vtable definition found"). widl ends
+    every header with its include guard's #endif, so that line proves the write finished.
+    """
+    header = psdk / "shobjidl.h"
+    try:
+        text = header.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return text.rstrip().endswith("#endif /* __shobjidl_h__ */")
+
+
 needs_generated_psdk_i386 = pytest.mark.skipif(
-    not GENERATED_PSDK_I386.is_dir(),
-    reason=f"needs widl-generated headers in {GENERATED_PSDK_I386} (build i386 first)",
+    not _generated_psdk_ready(GENERATED_PSDK_I386),
+    reason=f"needs complete widl-generated headers in {GENERATED_PSDK_I386} (build i386 first)",
 )
 
 # Same rule, amd64. This one was missing and it cost a bogus merge-train rejection
@@ -69,8 +88,8 @@ needs_generated_psdk_i386 = pytest.mark.skipif(
 # builds would serialize the gate; declaring the dependency is the cheap half.
 GENERATED_PSDK_AMD64 = REACTOS_ROOT / "build-amd64" / "sdk" / "include" / "psdk"
 needs_generated_psdk_amd64 = pytest.mark.skipif(
-    not GENERATED_PSDK_AMD64.is_dir(),
-    reason=f"needs widl-generated headers in {GENERATED_PSDK_AMD64} (build amd64 first)",
+    not _generated_psdk_ready(GENERATED_PSDK_AMD64),
+    reason=f"needs complete widl-generated headers in {GENERATED_PSDK_AMD64} (build amd64 first)",
 )
 
 WIDL_HEADER = r"""
