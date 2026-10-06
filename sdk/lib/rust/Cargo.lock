@@ -2898,6 +2898,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vioblk-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "vioblk-rust"
 version = "0.1.0"
 dependencies = [
