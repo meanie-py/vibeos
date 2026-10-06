@@ -692,6 +692,65 @@ def bank_write(bank: Path, key: str, record: dict) -> None:
     tmp.replace(bank / f"{key}.json")
 
 
+def bank_index(bank: Path) -> dict[tuple[str, str], list[dict]]:
+    """(module file name, function name) -> banked replies that carry their original, newest
+    first."""
+    out: dict[tuple[str, str], list[tuple[float, dict]]] = {}
+    for p in bank.glob("*.json"):
+        try:
+            rec = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        if not rec.get("original") or not rec.get("fixed") or rec["original"] == rec["fixed"]:
+            continue
+        key = (Path(str(rec.get("file", ""))).name, fn_name(str(rec.get("name", ""))))
+        out.setdefault(key, []).append((p.stat().st_mtime, rec))
+    return {k: [r for _, r in sorted(v, key=lambda t: -t[0])] for k, v in out.items()}
+
+
+def merge_banked(current: str, records: list[dict]) -> str | None:
+    """A banked reply for this function, carried onto its CURRENT text by a three-way merge.
+
+    The bank is keyed by the function's exact text, so every deterministic stage that runs
+    before fix (a new crate-repair rule, a resolve fix) changes the key and orphans the paid
+    reply: setuplib's replay went 41 -> 66 errors on the day four rules were added. The edit
+    from the banked original to the current text is merged into the banked fix, line by line;
+    only a clean merge counts, and the result is then judged like any replay.
+    """
+    for rec in records:
+        merged = three_way(rec["original"], current, rec["fixed"])
+        if merged is not None and merged != current:
+            return merged
+    return None
+
+
+def three_way(base: str, ours: str, theirs: str) -> str | None:
+    """Both sides' line edits against `base`, or None if any two edits overlap.
+
+    Unlike `git merge-file`, edits on ADJACENT lines do not conflict: a crate-repair cast on
+    one line and a fix on the next are independent, and that is the common case here.
+    """
+    import difflib
+    import itertools
+
+    b = base.splitlines(keepends=True)
+
+    def edits(side: str) -> list[tuple[int, int, list[str]]]:
+        s = side.splitlines(keepends=True)
+        ops = difflib.SequenceMatcher(None, b, s, autojunk=False).get_opcodes()
+        return [(i1, i2, s[j1:j2]) for tag, i1, i2, j1, j2 in ops if tag != "equal"]
+
+    changes = sorted({(i1, i2, tuple(lines)) for i1, i2, lines in edits(ours) + edits(theirs)})
+    for (a1, a2, _), (b1, b2, _) in itertools.pairwise(changes):
+        if b1 < a2 or (a1 == a2 == b1 == b2):  # overlapping, or two inserts at one point
+            return None
+    out, at = [], 0
+    for i1, i2, lines in changes:
+        out += b[at:i1] + list(lines)
+        at = i2
+    return "".join(out + b[at:])
+
+
 # --------------------------------------------------------------------------------------
 # the loop
 # --------------------------------------------------------------------------------------

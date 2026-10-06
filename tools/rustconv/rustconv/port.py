@@ -1294,6 +1294,8 @@ def stage_fix(
     # A function whose reply was refused goes back next round WITH the refusal (thinking
     # off); `--thinking escalate` also turns thinking on for it.
     stuck: dict[tuple[str, str], str] = {}
+    bank_by_fn = cf.bank_index(bank)
+    merge_tried: set[tuple[str, str]] = set()
     for rnd in range(1, rounds + 1):
         before_counts = {a: cr.count_errors(d) for a, d in diags.items()}
         halting_before = max(cr.count_halting_errors(d) for d in diags.values())
@@ -1331,6 +1333,15 @@ def stage_fix(
                 if "original" not in banked:
                     cf.bank_write(bank, key, {**banked, "original": original})
                 continue
+            # A reply bought for an EARLIER text of this function, merged onto this one ($0).
+            # Once only: a merge that was refused or reverted goes to a purchase next round.
+            ident = (Path(fname).name, cf.fn_name(name))
+            if ident not in merge_tried:
+                merge_tried.add(ident)
+                merged = cf.merge_banked(original, bank_by_fn.get(ident, []))
+                if merged is not None:
+                    att.fixed, att.status = merged, "merged"
+                    continue
             modes[len(attempts) - 1] = mode
             c_fn = c_function_text_for(tu_by_stem, Path(fname).stem, cf.fn_name(name), c_cache, cf)
             facts = cf.declarations(cf.mentioned_names(fe.errors), fact_sources)
