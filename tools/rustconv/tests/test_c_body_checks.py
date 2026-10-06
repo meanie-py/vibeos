@@ -45,3 +45,38 @@ def test_an_invented_goto_shim_is_refused():
     c = "BOOL f(void) { if (x) goto NoSystemPartition; return TRUE; NoSystemPartition: return FALSE; }"
     for rust in ("fn f() { if x { goto_NoSystemPartition!(); } }", "fn f() { fn goto_Quit() {} }"):
         assert any("shim" in f for f in control_flow_findings(c, rust))
+
+
+_DO_C = """{
+    do {
+        p = Next(p);
+        if (Skip(p)) continue;
+        Use(p);
+        for (i = 0; i < 3; i++) { if (i) continue; }
+    } while (p != NULL);
+}"""
+
+
+def test_a_continue_that_skips_the_do_while_condition_is_rejected():
+    bad = """fn f() {
+    loop {
+        p = Next(p);
+        if Skip(p) != 0 { continue; }
+        Use(p);
+        if !(p != core::ptr::null_mut()) { break; }
+    }
+}"""
+    good = """fn f() {
+    loop {
+        'body: {
+            p = Next(p);
+            if Skip(p) != 0 { break 'body; }
+            Use(p);
+        }
+        if !(p != core::ptr::null_mut()) { break; }
+    }
+}"""
+    assert any("do-while condition" in f for f in control_flow_findings(_DO_C, bad))
+    assert not any("do-while" in f for f in control_flow_findings(_DO_C, good))
+    only_nested = _DO_C.replace("if (Skip(p)) continue;", "")
+    assert not any("do-while" in f for f in control_flow_findings(only_nested, bad))

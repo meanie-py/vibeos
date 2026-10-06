@@ -168,3 +168,26 @@ def test_transmute_and_intrinsics_are_refused():
     src = RUST[span.start : span.end]
     abi = src.replace("CALL(p", "core::mem::transmute::<usize, usize>(0); CALL(p")
     assert any("forbidden" in f for f in cf.reply_findings(src, abi, {}, lambda _: []))
+
+
+def test_a_call_the_build_never_compiles_may_be_dropped(tmp_path: Path):
+    # osdetect.c: `#define NDEBUG`, then `#ifndef NDEBUG DumpNTOSInstalls(List); #endif`.
+    c = tmp_path / "x.c"
+    c.write_text(
+        "#define NDEBUG\nint Find(int List)\n{\n#ifndef NDEBUG\n    DumpAll(List);\n#endif\n"
+        "    return List;\n}\n"
+    )
+    cache: dict = {}
+    text = cf.c_function_text(c, "Find", cache)
+    assert "DumpAll" not in text and "return List;" in text
+    assert cf.c_dead_names(c, "Find", cache) == frozenset({"DumpAll"})
+    span = cf.function_spans(RUST)[1]
+    src = RUST[span.start : span.end].replace(
+        "STATUS_SUCCESS\n}", "DumpAll(p);\n    STATUS_SUCCESS\n}"
+    )
+    dropped = src.replace("DumpAll(p);\n    ", "")
+    errs = {"error[E0425]": {"amd64"}}
+    assert any("names dropped" in f for f in cf.reply_findings(src, dropped, errs, lambda _: []))
+    assert (
+        cf.reply_findings(src, dropped, errs, lambda _: [], dead_names=frozenset({"DumpAll"})) == []
+    )

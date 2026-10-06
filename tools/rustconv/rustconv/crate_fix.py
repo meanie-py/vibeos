@@ -585,6 +585,7 @@ def reply_findings(
     parse_check,
     type_names: frozenset[str] | set[str] = frozenset(),
     c_fn: str | None = None,
+    dead_names: frozenset[str] = frozenset(),
 ) -> list[str]:
     """Why `fixed` must not replace `original`; empty when it may.
 
@@ -626,6 +627,7 @@ def reply_findings(
         - _renamable(errors)
         - _INLINE_OK
         - set(type_names)
+        - dead_names  # the C has them only on lines the build never compiles
     )
     # By COUNT, not presence: UpdateFreeLoaderIni hand-expanded one `MAKESTRKEY!(..)` and
     # passed because a second call kept the name in the function.
@@ -724,8 +726,40 @@ def c_function_text(c_path: Path, name: str, cache: dict) -> str | None:
             if not prev or prev.endswith((";", "}", "*/")) or prev.startswith(("#", "//")):
                 break
             head = prev_start
-        return text[head : end + 1]
+        return _live_text(c_path, text, head, end + 1, name, cache)
     return None
+
+
+def _live_text(c_path: Path, text: str, start: int, end: int, name: str, cache: dict) -> str:
+    """The function with the lines this build never compiles taken out, and the names that
+    appeared ONLY on those lines recorded for the guard (see :func:`c_dead_names`).
+
+    osdetect.c `#define`s NDEBUG and then calls `DumpNTOSInstalls(List)` under `#ifndef
+    NDEBUG`; the dumper's own body was rightly never translated, but the call was, and the
+    guard then refused every fix that dropped it.
+    """
+    from .dead_regions import never_compiled_lines
+
+    key = ("dead-lines", c_path)
+    if key not in cache:
+        cache[key] = never_compiled_lines(text)
+    dead = cache[key]
+    first = text.count("\n", 0, start) + 1
+    live, gone = [], []
+    for n, line in enumerate(text[start:end].split("\n"), first):
+        (gone if n in dead else live).append(line)
+    if gone:
+        live_words = set(re.findall(r"\b[A-Za-z_]\w*\b", "\n".join(live)))
+        cache[("dead-names", c_path, name)] = frozenset(
+            set(re.findall(r"\b[A-Za-z_]\w*\b", "\n".join(gone))) - live_words
+        )
+    return "\n".join(live)
+
+
+def c_dead_names(c_path: Path, name: str, cache: dict) -> frozenset[str]:
+    """Names the C function mentions only on lines this build never compiles."""
+    c_function_text(c_path, name, cache)
+    return cache.get(("dead-names", c_path, name), frozenset())
 
 
 def _matching_paren(text: str, open_idx: int) -> int | None:

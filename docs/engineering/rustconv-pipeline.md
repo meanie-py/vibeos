@@ -281,7 +281,8 @@ and before `crate-repair`: it is what makes the crate compile at all, and the ca
 stage's time and spend in `~/vibeos-rust-staging/port/<stem>/state.json` (`port status <stem>`
 prints it). Stages, in order: `derive <module-dir> [--target T]` (profile → the
 `gen_driver_types.sh` arm), `island`, `scaffold`, `translate --cost-cap $`, `integrate`,
-`resolve`, `macros`, `fix --cost-cap $`, `check`, and `replay` (all of them from the banks). Every
+`resolve`, `macros`, `fix --cost-cap $`, `check`, and `replay` (all of them from the banks), plus
+`varargs` (the C shim for variadic definitions) and `hand` (bank a hand-written function). Every
 stage is idempotent; re-run any of them after a fix.
 
 - **`translate --escalate`** buys with DeepSeek thinking OFF (~1/40 of the output tokens on
@@ -388,6 +389,9 @@ initializer prints the typedef). `win32macros-rust` gained `ASSERT` (inert, type
 
 **`port replay <stem> [--fix-cap $]`** rebuilds the crate from every bank in order for $0:
 translate, resolve, macros, integrate, crate-repair, resolve AGAIN, crate-repair, fix, check.
+(Until 2026-10-06 it did not: `port replay` passes cap $0 and the translate loop stopped at the
+cap before the first TU, so every replay re-ran the later stages over whatever the files already
+held. A replay-only run now ignores the cap, and never takes the buying retry path.)
 resolve runs twice because rustc reports unresolved names only once nothing halts it: before
 crate-repair setuplib's resolve saw 5, after it 34. The three arches' `cargo check`s now run at
 once in separate target dirs (crate-repair and port alike); cargo locks a build dir whole, so
@@ -413,6 +417,52 @@ The mechanical prompt now spells out both lowerings (a labeled block for a forwa
 shared tail; a state variable plus `loop { match }` for jumps between several labels), and
 `c_body_checks` rejects a `goto_*` macro, call or nested fn at purchase, so the body escalates
 instead of shipping.
+
+### The setuplib residue, closed by tooling (2026-10-06)
+
+After `port fix`, setuplib's errors were a dozen distinct classes, few of them macros, so each
+went into a deterministic stage rather than a re-buy. Every one is general:
+
+- **Island:** a pack PUSH in a TU's prologue (`#include <pshpack1.h>`, popped after its own
+  typedefs) was copied into the merged wrapper and packed every later header -- 62 structs,
+  `USETUP_DATA` among them. `scan_preamble` drops packing includes. A TYPE the C reaches only
+  through an SDK header's own includes (`MOUNTDEV_NAME`, ddk/mountmgr.h via `<mountdev.h>`) is
+  now found by resolve in the include closure, added to the arm (kept in the port state across
+  re-derives as `island_headers`) and the island regenerated.
+- **resolve is namespace-aware.** A missing TYPE was satisfied by a same-named CONSTANT from
+  tree consensus (`FILE_SYSTEM` became bugcodes.h's `0x22`); `prelude_resolve.unresolved`
+  records type vs value, and E0573 "expected type, found constant" counts as a missing type.
+- **Calling conventions of DEFINED functions** come from clang (`align_definition_abis`): seven
+  NTAPI callbacks were defined `extern "C"`, a stack-imbalance on i386 that only showed as a
+  cast error at the install site.
+- **c2rust startup initialisers fold into their statics.** A static C cannot initialise at
+  compile time (`RTL_CONSTANT_STRING`) is zero-filled by c2rust and assigned in a
+  `.CRT$XIB` constructor; the preamble kept the zeros and dropped the constructor, so two
+  UNICODE_STRINGs shipped empty. `fold_static_initializers` moves each `NAME = EXPR;` into
+  NAME's initialiser (Rust evaluates it at compile time) and refuses any other store.
+- **crate-repair rules:** `option_fn_is_null` (`.is_null()` on an `Option<fn>` is `.is_none()`),
+  `local_shadows_constant` (C lets a local shadow an enumerator, E0530; the local is renamed
+  for the rest of its block), `sizeof_constant` (`size_of::<CONST>()` -> `size_of_val(&CONST)`),
+  `fn_item_cast` (drop c2rust's `f as extern "C" fn(..)` and let the function coerce), and
+  `packed_field_ptr` also answers `size_of_val(&packed.field)` without forming a reference.
+- **CRT function-like macros** (`iswspace`..., `min`, `max`) are functions in win32macros-rust;
+  resolve skips function-like macros as externs, so nothing supplied them.
+- **`port fix` and dead C.** The fix model sees only the lines the build compiles, and a name
+  that appears only on never-compiled lines may be dropped (osdetect.c `#define`s NDEBUG and
+  then calls `DumpNTOSInstalls` under `#ifndef NDEBUG`).
+- **do-while + continue** joins goto: a prompt recipe (`loop { 'body: { .. break 'body; .. }
+  if !(c) { break; } }`) and a purchase-time reject using the lint's own detector.
+- **`port varargs <stem>`** writes the module's `rust_varargs_shim.c` from its C-variadic
+  definitions: PART 1 pullers plus a trampoline per function that does `va_start` and hands
+  `&ap` to the Rust `<Name>_body`. It compiles with the TU's real flags on all three arches.
+- **`port hand <stem> file.rs:Name[=Bought]`** banks a hand-written function so `replay` puts
+  it back; replay rebuilds every module from the banks and would otherwise erase the residue
+  a human finished. A banked function whose target vanished fails the replay, loudly.
+
+`vibeos-cli difftest` (and so the gate) now also runs a shared crate's own known-answer tests
+when its manifest sets `[package.metadata.difftest] host-tests = true` (win32macros-rust,
+strsafe-rust): nothing ran them, and the `as u8` crate-repair once wrote into
+`IsRecognizedPartition!` reached master with two of them failing.
 
 c2rust anchoring fixes the setuplib run forced, all in `c2rust_anchor.py`:
 `--preserve-unused-functions` (c2rust prunes an unused `static`, and liveness is per arch —

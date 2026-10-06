@@ -486,7 +486,7 @@ macro_rules! IsContainerPartition {
 macro_rules! IsRecognizedPartition {
     ($t:expr $(,)?) => {{
         let t = ($t) as u8;
-        ($crate::IsFTPartition!(t)
+        $crate::IsFTPartition!(t)
             || matches!(
                 t,
                 0x01 | 0x04
@@ -501,7 +501,7 @@ macro_rules! IsRecognizedPartition {
                     | 0xA5
                     | 0xA6
                     | 0xA9
-            )) as u8
+            )
     }};
 }
 
@@ -635,6 +635,108 @@ pub const UNICODE_NULL: WCHAR = 0;
 
 /// `ndk/extypes.h:77` — `#define INVALID_HANDLE_VALUE (HANDLE)-1`. A pointer literal.
 pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
+
+// ================= CRT function-like macros ===================================================
+//
+// In C these are macros, so no DLL exports them under these names and resolve will not declare
+// them `extern`; a module that calls them got nothing at all. They are functions here, not
+// `macro_rules!`, because the translated C spells them as calls (`iswspace(c)`, `min(a, b)`).
+
+/// `minmax.h` / `stdlib.h` — `#define min(a,b) (((a) < (b)) ? (a) : (b))`. Generic because the
+/// macro is: the result has the CALLER's type, so nothing width-dependent is shared.
+#[inline]
+pub fn min<T: PartialOrd>(a: T, b: T) -> T {
+    if a < b { a } else { b }
+}
+
+/// `minmax.h` / `stdlib.h` — `#define max(a,b) (((a) > (b)) ? (a) : (b))`.
+#[inline]
+pub fn max<T: PartialOrd>(a: T, b: T) -> T {
+    if a > b { a } else { b }
+}
+
+extern "C" {
+    // `int __cdecl iswctype(wint_t, wctype_t)`, exported by both ntdll and msvcrt. Private:
+    // consumers that declare it themselves keep their own declaration.
+    fn iswctype(c: u16, ty: u16) -> i32;
+}
+
+// `ctype.h:65-76` class masks.
+const _UPPER: u16 = 0x1;
+const _LOWER: u16 = 0x2;
+const _DIGIT: u16 = 0x4;
+const _SPACE: u16 = 0x8;
+const _PUNCT: u16 = 0x10;
+const _CONTROL: u16 = 0x20;
+const _BLANK: u16 = 0x40;
+const _HEX: u16 = 0x80;
+const _ALPHA: u16 = 0x0100 | _UPPER | _LOWER;
+
+/// `ctype.h:664` — `#define iswalpha(_c) (iswctype(_c,_ALPHA))`. `wint_t` is `u16`.
+#[inline]
+pub unsafe fn iswalpha(c: u16) -> i32 {
+    unsafe { iswctype(c, _ALPHA) }
+}
+
+/// `ctype.h:665` — `iswctype(_c,_UPPER)`.
+#[inline]
+pub unsafe fn iswupper(c: u16) -> i32 {
+    unsafe { iswctype(c, _UPPER) }
+}
+
+/// `ctype.h:666` — `iswctype(_c,_LOWER)`.
+#[inline]
+pub unsafe fn iswlower(c: u16) -> i32 {
+    unsafe { iswctype(c, _LOWER) }
+}
+
+/// `ctype.h:667` — `iswctype(_c,_DIGIT)`.
+#[inline]
+pub unsafe fn iswdigit(c: u16) -> i32 {
+    unsafe { iswctype(c, _DIGIT) }
+}
+
+/// `ctype.h:668` — `iswctype(_c,_HEX)`.
+#[inline]
+pub unsafe fn iswxdigit(c: u16) -> i32 {
+    unsafe { iswctype(c, _HEX) }
+}
+
+/// `ctype.h:669` — `iswctype(_c,_SPACE)`.
+#[inline]
+pub unsafe fn iswspace(c: u16) -> i32 {
+    unsafe { iswctype(c, _SPACE) }
+}
+
+/// `ctype.h:670` — `iswctype(_c,_PUNCT)`.
+#[inline]
+pub unsafe fn iswpunct(c: u16) -> i32 {
+    unsafe { iswctype(c, _PUNCT) }
+}
+
+/// `ctype.h:671` — `iswctype(_c,_ALPHA|_DIGIT)`.
+#[inline]
+pub unsafe fn iswalnum(c: u16) -> i32 {
+    unsafe { iswctype(c, _ALPHA | _DIGIT) }
+}
+
+/// `ctype.h:672` — `iswctype(_c,_BLANK|_PUNCT|_ALPHA|_DIGIT)`.
+#[inline]
+pub unsafe fn iswprint(c: u16) -> i32 {
+    unsafe { iswctype(c, _BLANK | _PUNCT | _ALPHA | _DIGIT) }
+}
+
+/// `ctype.h:673` — `iswctype(_c,_PUNCT|_ALPHA|_DIGIT)`.
+#[inline]
+pub unsafe fn iswgraph(c: u16) -> i32 {
+    unsafe { iswctype(c, _PUNCT | _ALPHA | _DIGIT) }
+}
+
+/// `ctype.h:674` — `iswctype(_c,_CONTROL)`.
+#[inline]
+pub unsafe fn iswcntrl(c: u16) -> i32 {
+    unsafe { iswctype(c, _CONTROL) }
+}
 
 // HWND_BROADCAST is NOT here: `HWND` is `*mut HWND__`, a nominal opaque struct that bindgen
 // emits into each island separately, so a shared definition cannot unify with a consumer's.

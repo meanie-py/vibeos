@@ -47,6 +47,10 @@ surface.
   next label): one state variable and a dispatch loop —
   `let mut at = 0u8; loop { match at { 0 => { ...; at = 2; continue; } 1 => { ... } 2 => { ... } _ => break } }`
   where each label is one arm and C's fall-through is `at = <next>; continue;`.
+- **A C `do { ... } while (c);` whose body has a `continue`:** C's `continue` jumps to the
+  CONDITION; Rust's jumps to the top and skips it. Lower it as
+  `loop { 'body: { ...; break 'body; ... } if !(c) { break; } }` -- each `continue` of that
+  loop becomes `break 'body`, so the condition still runs.
 - **NO** slices/`&[T]` where C used pointer+length — keep pointer + length.
 - **NO** introducing references (`&`/`&mut`) to replace pointers. Only use `core::ptr::addr_of_mut!`/`addr_of!` where C takes an address (`&x`).
 
