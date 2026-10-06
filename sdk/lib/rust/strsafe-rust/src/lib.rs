@@ -76,12 +76,12 @@ pub const STRSAFE_E_INVALID_PARAMETER: HRESULT = 0x8007_0057u32 as HRESULT;
 
 /// strsafe.h:100 `#define STRSAFE_GET_FILL_PATTERN(dwFlags) ((int)((dwFlags) & 0x000000FF))`
 #[inline(always)]
-fn fill_pattern(dwFlags: DWORD) -> c_int {
+pub(crate) fn fill_pattern(dwFlags: DWORD) -> c_int {
     (dwFlags & 0x0000_00FF) as c_int
 }
 
 /// The empty format `STRSAFE_IGNORE_NULLS` substitutes for a NULL one.
-static EMPTY: [WCHAR; 1] = [0];
+pub(crate) static EMPTY: [WCHAR; 1] = [0];
 // ============================ workers ============================
 // strsafe.h's `*WorkerW` functions, ported verbatim. Not exported: the header does not export
 // them either, and every public entry point below is a thin bound-check plus a worker call.

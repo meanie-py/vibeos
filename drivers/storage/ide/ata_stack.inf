@@ -1,0 +1,21 @@
+; VIBEOS_ATA_STACK=ON (./vibeos-cli build --ata-stack): storage on upstream's new ATA stack
+; (pciide + pciidex + atapi, legide on i386) instead of uniata. Concatenated into
+; registry.inf AFTER boot/bootdata/hivesys.inf (drivers/ is added after boot/ in the
+; top-level CMakeLists), so these values replace hivesys.inf's uniata mappings.
+[AddReg]
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0101","Service",0x00000000,"pciide"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0101","ClassGUID",0x00000000,"{4D36E96A-E325-11CE-BFC1-08002BE10318}"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0104","Service",0x00000000,"pciide"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0104","ClassGUID",0x00000000,"{4D36E96A-E325-11CE-BFC1-08002BE10318}"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0105","Service",0x00000000,"pciide"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0105","ClassGUID",0x00000000,"{4D36E96A-E325-11CE-BFC1-08002BE10318}"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0106","Service",0x00000000,"pciide"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0106","ClassGUID",0x00000000,"{4D36E96A-E325-11CE-BFC1-08002BE10318}"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\*PNP0600","Service",0x00000000,"atapi"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\*PNP0600","ClassGUID",0x00000000,"{4D36E96A-E325-11CE-BFC1-08002BE10318}"
+; pciidex's channel PDOs: hardware ID PCIIDE\IDEChannel, compatible ID Internal_IDE_Channel.
+; Upstream binds them through media/inf/hdc.inf at setup; the LiveCD never runs setup.
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\Internal_IDE_Channel","Service",0x00000000,"atapi"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\Internal_IDE_Channel","ClassGUID",0x00000000,"{4D36E96A-E325-11CE-BFC1-08002BE10318}"
+; uniata is still built and registered; keep it from also starting on the same controllers.
+HKLM,"SYSTEM\CurrentControlSet\Services\uniata","Start",0x00010001,0x00000004

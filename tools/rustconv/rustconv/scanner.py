@@ -43,6 +43,7 @@ RE_SEH_EXCEPT = re.compile(r"_SEH2_EXCEPT")
 
 # CODE_SEG
 RE_CODE_SEG = re.compile(r'CODE_SEG\("(\w+)"\)')
+RE_CODE_SEG_BYTES = re.compile(rb'\bCODE_SEG\(\s*"[^"]*"\s*\)')
 
 # CSR_API(n) is a macro (sdk/include/reactos/subsys/csr/csrsrv.h) that expands to
 #   NTSTATUS NTAPI n(IN OUT PCSR_API_MESSAGE ApiMessage,
@@ -277,7 +278,14 @@ RE_UPPER_CONST = re.compile(r"\bCONST\b")
 # preamble_audit reports its locals as dropped file-scope state. wldap32.h:28
 # (`ULONG map_error( int ) DECLSPEC_HIDDEN;`) is the live case; 168 files in the tree carry
 # the macro. Same no-ABI-meaning, blank-it-before-parsing rule as FAR/NEAR above.
-RE_EMPTY_ATTR = re.compile(r"\bDECLSPEC_HIDDEN\b")
+# Section placement for DATA has no ABI meaning either: `DATA_SEG("PAGECONS")` and the
+# per-driver aliases spelled `<DRIVER>_PAGED_DATA` (pciidex/atapi `#define X_PAGED_DATA
+# DATA_SEG("PAGECONS")`). tree-sitter cannot parse a call-shaped attribute in front of
+# `static const struct {...} T[] = {...}`, so the table read as an unextractable FUNCTION
+# and a function holding such a static local fell out of the plan entirely.
+RE_EMPTY_ATTR = re.compile(
+    r"\bDECLSPEC_HIDDEN\b|\bDATA_SEG\(\s*\"[^\"]*\"\s*\)|\b[A-Z][A-Z0-9]*_PAGED_DATA\b"
+)
 
 # ATL spells in-class COM method definitions as macro declarators:
 #
@@ -564,7 +572,9 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
     # Look at up to 5 preceding lines for CODE_SEG / static
     line_start = max(0, start_line - 5)
     preceding = "\n".join(source_text.splitlines()[line_start : start_line + 1])
-    m = RE_CODE_SEG.search(preceding)
+    # ...or inside the declaration itself, between the return type and the name.
+    header = _extract_text(node, source).split("{", 1)[0]
+    m = RE_CODE_SEG.search(preceding) or RE_CODE_SEG.search(header)
     if m:
         code_seg = m.group(1)
 
@@ -1549,10 +1559,15 @@ def _merged_root(parser, source: bytes) -> _Root:
     nodes for that span are used instead. Both parses are of byte-identical-length text, so
     every node slices `source` the same way.
     """
-    masked = parser.parse(mask_seh_for_parse(source)).root_node.children
+    # CODE_SEG("PAGE") is blanked for the PARSE only (same length, so every slice still
+    # reads `source`, and _parse_function still finds it in the text). Spelled before the
+    # return type it parses by luck; spelled between the return type and the name, as
+    # pciidex's amd.c and atapi's pdo.c do, the function vanished from the plan.
+    parse_src = RE_CODE_SEG_BYTES.sub(lambda m: b" " * len(m.group()), source)
+    masked = parser.parse(mask_seh_for_parse(parse_src)).root_node.children
     if b"_SEH2_" not in source:
         return _Root(list(masked))
-    raw = parser.parse(source).root_node.children
+    raw = parser.parse(parse_src).root_node.children
     # Only column-0 starts count: raw recovery also mints phantom "functions" from inside a
     # PSEH body (`_SEH2_TRY`, `if`), always indented, which would fool this test.
     raw_fn_starts = [

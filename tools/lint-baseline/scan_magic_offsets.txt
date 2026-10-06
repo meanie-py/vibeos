@@ -1,4 +1,4 @@
-[TYPED_PTR_HEX_ARITH] sdk/lib/rust/atapi-rust/src/inlines.rs:223: let alt: PIDE_REGISTERS_2 = (base as PUCHAR).add(0x206) as PIDE_REGISTERS_2;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/atapi-legacy-rust/src/inlines.rs:223: let alt: PIDE_REGISTERS_2 = (base as PUCHAR).add(0x206) as PIDE_REGISTERS_2;
 [TYPED_PTR_HEX_ARITH] sdk/lib/rust/cabinet-rust/src/cabinet/fdi.rs:1224: if *maintree_len.add(0xE8) != 0 { (*lzx).intel_started = 1; }
 [TYPED_PTR_HEX_ARITH] sdk/lib/rust/config-rust/src/i386/cmhardwr.rs:499: HavePae = *SharedUserData.add(0x274 + PF_PAE_ENABLED) as ULONG;
 [TYPED_PTR_HEX_ARITH] sdk/lib/rust/config-rust/src/i386/cmhardwr.rs:833: VideoRomBase = (*((BaseAddress as PULONG).add(0x10)) >> 12) as ULONG_PTR & 0xFFFF0;

@@ -1524,6 +1524,42 @@ def test_a_call_through_an_option_fn_unwraps_the_callee():
     ]
 
 
+def test_widening_never_casts_a_match_arm_pattern():
+    from rustconv.crate_repair import RULE_INFER_WIDEN
+
+    src = b"fn f(t: i32) -> u32 {\n    match t {\n        TYPE_A | TYPE_B => 1,\n        _ => 0,\n    }\n}\n"
+    at = src.index(b"TYPE_A")
+    diag = _mismatch(src, b"TYPE_A", "i32", "u8")
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_INFER_WIDEN]
+    )
+    assert not plan.edits, at
+
+
+def test_keyword_named_fields_take_bindgens_spelling():
+    from rustconv.crate_repair import RULE_KEYWORD_FIELD
+
+    src = b"fn f(c: &C) {\n    let a = c.Self;\n    let b = c.Self_0;\n    let x = c.Nope;\n}\n"
+    diags = []
+    for field in (b"Self;", b"Self_0", b"Nope"):
+        at = src.index(b"c." + field) + 2
+        name = field.rstrip(b";")
+        diags.append(
+            _diag(
+                f"no field `{name.decode()}` on type `_ATAPORT_COMMON_EXTENSION`",
+                code="E0609",
+                spans=[_span("src/a.rs", at, at + len(name), is_primary=True)],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_KEYWORD_FIELD]
+    )
+    assert sorted((e.original, e.replacement) for e in plan.edits) == [
+        ("Self", "Self_"),
+        ("Self_0", "Self_"),
+    ]
+
+
 def test_an_uninitialised_c_local_is_zeroed_at_its_declaration():
     from rustconv.crate_repair import RULE_UNINIT_LOCAL
 

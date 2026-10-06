@@ -104,7 +104,15 @@ def upsert_profile_arm(script: str, arm: str, label: str) -> str:
 
 
 def derive(module_dir: Path, target: str | None, arch: str = "i386") -> pd.DerivedProfile:
-    dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target)
+    try:
+        dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target)
+    except pd.ProfileDeriveError as e:
+        # After the cohab flip the module compiles only its rust_*.c scaffolding; the C the
+        # crate translates is still listed, commented out. Re-deriving (a new island rule,
+        # say) must read THAT list, not refuse.
+        if "already flipped" not in str(e):
+            raise
+        dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target, flipped_sources=True)
     if dp.errors:
         lines = "\n".join(str(f) for f in dp.errors)
         raise PortError(f"profile_derive reports BLOCKING errors -- fix these first:\n{lines}")
@@ -128,7 +136,8 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
         module_dir=str(module_dir.resolve().relative_to(REPO)),
         target=dp.module.name,
         crate=dp.crate_name,
-        tus=[str(p.relative_to(REPO)) for p in dp.module.compiled_tus],
+        # Never the rust_*.c cohab scaffolding a flipped module's re-derive also lists.
+        tus=[str(p.relative_to(REPO)) for p in dp.module.compiled_tus if not pd.is_shim_tu(p)],
         usermode=dp.module.is_usermode,
     )
     _record(
@@ -144,6 +153,58 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
 # --------------------------------------------------------------------------------------
 # island / scaffold
 # --------------------------------------------------------------------------------------
+
+
+def _arch_only_tus(state: dict, tus: list[str]) -> dict[str, str]:
+    """TUs the CMakeLists compiles only on some arches, mapped to one that compiles them.
+
+    translate resolves a TU's CMake owner at its --arch (arm64 by default), and pciidex's
+    `if(ARCH STREQUAL "i386") list(APPEND SOURCE chipset/pata_legacy.c)` has no owner
+    there. Every other TU keeps the default, so nothing already banked changes key.
+    """
+    out: dict[str, str] = {}
+    module_dir = REPO / state["module_dir"]
+    per_arch: dict[str, set[str]] = {}
+    for arch in ("arm64", "amd64", "i386"):
+        try:
+            dp = pd.derive(module_dir, REPO, arch=arch, target=state.get("target"))
+        except Exception:  # an arch that cannot derive owns nothing
+            per_arch[arch] = set()
+            continue
+        per_arch[arch] = {str(p.relative_to(REPO)) for p in dp.module.compiled_tus}
+    for tu in tus:
+        if tu in per_arch["arm64"]:
+            continue
+        owner = next((a for a in ("amd64", "i386") if tu in per_arch[a]), None)
+        if owner:
+            out[tu] = owner
+    return out
+
+
+def _target_args(state: dict) -> list[str]:
+    """translate's --target for this module.
+
+    A user-mode module goes through the `name:dir` form, which builds a user-DLL target on
+    the ntdll-sys substrate. A kernel module must not: that path cannot read ntkrnl-sys
+    (it has two umbrellas, `ddk` and `hal_ddk`) and refused pciidex outright. Kernel
+    modules use their registered TARGETS entry, which carries the kernel conventions.
+    """
+    if state.get("usermode", True):
+        return [
+            "--target",
+            f"{state['stem']}:{state['module_dir']}",
+            "--output-crate",
+            state["crate"],
+        ]
+    from .projects.reactos.targets import TARGETS
+
+    known = TARGETS.get(state["stem"])
+    if known is None or Path(known.output_crate).name != state["crate"]:
+        raise PortError(
+            f"{state['stem']} is a kernel module with no TARGETS entry writing "
+            f"{state['crate']}: register one in projects/reactos/targets.py"
+        )
+    return ["--target", state["stem"]]
 
 
 def _crate_dir(state: dict) -> Path:
@@ -310,11 +371,21 @@ def stage_translate(
     escalate: bool = False,
     rebuy_fn: list[str] | None = None,
     replay_only: bool = False,
+    no_c2rust: list[str] | None = None,
     revisit: list[str] | None = None,
 ) -> tuple[float, list[str]]:
     """Run translate per TU; return (USD spent, file names of the TUs it ran)."""
     state = load_state(stem)
     started = time.time()
+    # STICKY, because the anchor is part of what was bought: a TU translated without one
+    # replays from the bank only when asked for without one again (replay, escalation).
+    if no_c2rust:
+        known = {Path(t).name for t in state["tus"]}
+        unknown = sorted(set(no_c2rust) - known)
+        if unknown:
+            raise PortError(f"--no-c2rust: not a TU of {stem}: {', '.join(unknown)}")
+        state["no_c2rust"] = sorted(set(state.get("no_c2rust", [])) | set(no_c2rust))
+        _record(state, "no-c2rust", started, tus=state["no_c2rust"])
     picked = [t for t in state["tus"] if not only or Path(t).name in only]
     # An escalation pass revisits TUs that already have output: their good bodies replay
     # for $0 and only rejected / audit-failing functions are bought again, with thinking.
@@ -332,6 +403,7 @@ def stage_translate(
     )
     spent = 0.0
     done: list[dict] = []
+    arch_only = _arch_only_tus(state, todo)
     for tu in todo:
         left = cost_cap - spent
         # A replay-only run never buys, so the cap cannot stop it. It used to: `port replay`
@@ -348,12 +420,10 @@ def stage_translate(
             sys.executable,
             "-m",
             "rustconv",
+            *(["--arch", arch_only[tu]] if tu in arch_only else []),
             "translate",
             str(REPO / tu),
-            "--target",
-            f"{stem}:{state['module_dir']}",
-            "--output-crate",
-            state["crate"],
+            *_target_args(state),
             "-m",
             model,
             "--seal-facts",
@@ -375,6 +445,8 @@ def stage_translate(
             cmd += ["--expand-local-macros", state["module_dir"]]
         if dry_run:
             cmd.append("--dry-run")
+        if Path(tu).name in state.get("no_c2rust", []):
+            cmd.append("--no-c2rust")
         env = dict(
             os.environ, RUSTCONV_DEEPSEEK_THINKING="enabled" if thinking == "on" else "disabled"
         )
@@ -464,7 +536,71 @@ def stage_translate(
         f"translate: {len(done)} TU(s), ${spent:.4f}"
         + (f", {sum(d['to_buy'] for d in done)} fn(s) to buy" if dry_run else "")
     )
+    if not dry_run:
+        applied = apply_hand_bodies(_crate_dir(state), state["stem"])
+        if applied:
+            print(f"translate: {len(applied)} hand-ported body(ies) applied: {', '.join(applied)}")
     return spent, [Path(d["tu"]).name for d in done]
+
+
+def _fn_item_span(text: str, name: str) -> tuple[int, int] | None:
+    """(start, end) of the column-0 `... fn NAME(` item, attributes above it included."""
+    m = re.search(rf"^[^\n]*\bfn {re.escape(name)}\s*\(", text, re.M)
+    if m is None:
+        return None
+    start = m.start()
+    while True:  # take the item's own attributes / doc lines with it
+        prev = text.rfind("\n", 0, start - 1) + 1 if start > 0 else 0
+        line = text[prev:start].strip()
+        if start > 0 and (line.startswith("#[") or line.startswith("///")):
+            start = prev
+            continue
+        break
+    brace = text.find("{", m.end())
+    if brace < 0:
+        return None
+    depth, i = 0, brace
+    while i < len(text):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return start, i + 1
+        i += 1
+    return None
+
+
+def apply_hand_bodies(crate: Path, stem: str) -> list[str]:
+    """Overlay `<crate>/hand/<Fn>.rs` onto the reassembled modules. Returns what it applied.
+
+    A body neither the model nor `port fix` can produce is hand-ported ONCE, committed beside
+    the crate, and re-applied after every reassembly -- otherwise a `port replay` restores the
+    banked body and, if that body does not parse, blinds resolve and crate-repair for the
+    whole crate (atapi's AtaCreateIdeDirectory hid 2,100 errors that way). The file holds the
+    complete item; it replaces the item of the same name wherever the module defines it.
+    """
+    hand = crate / "hand"
+    applied: list[str] = []
+    if not hand.is_dir():
+        return applied
+    modules = sorted((crate / "src" / stem).glob("*.rs"))
+    for override in sorted(hand.glob("*.rs")):
+        name = override.stem
+        body = override.read_text().strip("\n") + "\n"
+        for mod in modules:
+            text = mod.read_text()
+            span = _fn_item_span(text, name)
+            if span is None:
+                continue
+            new = text[: span[0]] + body.rstrip("\n") + text[span[1] :]
+            if new != text:
+                mod.write_text(new)
+            applied.append(name)
+            break
+        else:
+            raise PortError(f"hand/{override.name}: no module of {stem} defines `fn {name}`")
+    return applied
 
 
 def _tokens(log: str) -> tuple[int, int, int]:
@@ -566,6 +702,11 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     # ...and a name a shared crate provides is imported from it, never copied: tree consensus
     # had copied `extern` declarations of ntstrsafe's RtlString* family, which are header
     # inlines no DLL exports -- they compile, then fail at link.
+    # ...and never a name the HAND-written part of the prelude already defines (the PnP
+    # constants, the kernel helpers): a consensus copy of it is E0428 -- atapi got bootvid's
+    # `CmResourceTypePort: u32` beside its own `u8`, and advapi32's `FALSE: BOOL`.
+    hand = prelude_resolve.hand_written_names(prelude)
+    shared |= hand
     copied = {
         k: v
         for k, v in prelude_resolve.existing_block(prelude).items()
@@ -839,6 +980,20 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
     # C's `typedef struct _X {..} X;`: fetching the tag without its typedef leaves the model's
     # own `struct X` standing beside c2rust's `_X` (setuplib's HIVE_LIST_ENTRY tables).
     names |= {n[1:] for n in names if n.startswith("_") and len(n) > 1}
+    # Never a type the island already defines. A name reads as unresolved while a sibling
+    # glob makes it AMBIGUOUS (atapi's SCSI_REQUEST_BLOCK, opaque in ntkrnl-sys and whole in
+    # the UNBLOCKed island), and a copy pinned here then collides with the explicit re-export
+    # that settles the ambiguity -- forever, since the block re-extracts what it holds.
+    island: set[str] = set()
+    sys_crate = "ntdll-sys" if state.get("usermode", True) else "ntkrnl-sys"
+    sys_island = REPO / "sdk" / "lib" / "rust" / sys_crate / "src" / "bindgen_amd64.rs"
+    for isl in [*prelude.parent.glob("types_*.rs"), sys_island]:
+        if isl.is_file():
+            island |= set(
+                re.findall(r"^pub (?:struct|union|enum|type) (\w+)", isl.read_text(), re.M)
+            )
+    # ...nor a base type the -sys crate owns (pciidex had ULONG/PVOID/NTSTATUS pinned here).
+    names -= island
     items: dict[str, tuple[str, str]] = {}
     for tu in state["tus"]:
         c_file = REPO / tu
@@ -925,7 +1080,9 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
             unresolved.update({n: "probe failed" for n in names})
             continue
         for f in r.facts:
-            ty = prelude_resolve.fact_rust_type(f.c_type, f.value, known_types)
+            ty = prelude_resolve.fact_rust_type(
+                f.c_type, f.value, known_types, bare_int_unsigned=not state.get("usermode", True)
+            )
             facts[f.name] = (ty, f.value, Path(tu).name)
         unresolved.update(r.unresolved)
     prelude_resolve.write_facts(prelude, prelude_resolve.render_facts(facts))
@@ -1769,6 +1926,7 @@ def _main(args) -> int:
                 thinking="off" if args.escalate else args.thinking,
                 rebuy_fn=args.rebuy_fn,
                 replay_only=args.replay_only,
+                no_c2rust=args.no_c2rust,
             )
             if args.escalate and not args.dry_run:
                 # One cap for the whole invocation, and the escalation revisits only what
@@ -1906,6 +2064,15 @@ def add_parser(sub) -> None:
         default=[],
         metavar="NAME",
         help="accepted bodies to buy again (passed to translate --rebuy-fn); revisits their TUs",
+    )
+    q.add_argument(
+        "--no-c2rust",
+        action="extend",
+        nargs="*",
+        default=[],
+        metavar="TU",
+        help="TU file names to translate without a c2rust anchor, as a deliberate choice "
+        "when c2rust cannot transpile them on any arch (remembered in the port state)",
     )
     q.add_argument(
         "--replay-only",

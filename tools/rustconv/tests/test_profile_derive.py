@@ -463,8 +463,10 @@ def test_unreachable_switch_constant_is_a_loud_finding(tmp_path):
     assert dp.errors, "an unowned switch constant must make the run non-zero"
 
 
-def test_function_like_macro_in_a_case_label_is_an_error(tmp_path):
-    """bindgen emits no constant for a function-like macro, so allowlisting is not enough."""
+def test_function_like_macro_in_a_case_label_is_flagged_not_blocking(tmp_path):
+    """bindgen emits no constant for a function-like macro, so allowlisting is not enough --
+    but a call-shaped pattern cannot become a silent catch-all (rustc rejects it), so it
+    warns rather than blocking the module."""
     root = _basic_module(tmp_path)
     _write(
         _mod(tmp_path) / "helper.c",
@@ -472,7 +474,25 @@ def test_function_like_macro_in_a_case_label_is_an_error(tmp_path):
         "return 0; }\n",
     )
     dp = derive(_mod(tmp_path), root)
-    assert any(f.code == "SWITCH_CONST_NOT_BINDGENABLE" for f in dp.findings)
+    hits = [f for f in dp.findings if f.code == "SWITCH_CONST_NOT_BINDGENABLE"]
+    assert hits and all(f.severity == "warn" for f in hits)
+
+
+def test_sys_crate_consts_carries_bindgen_enum_members_by_bare_name(tmp_path):
+    """bindgen names an enumerator `<type>_<member>`; the bare member the C switches on is
+    still carried (port resolve aliases it), so it must not read as missing."""
+    from rustconv.profile_derive import sys_crate_consts
+
+    src = tmp_path / "sdk/lib/rust/ntkrnl-sys/src"
+    src.mkdir(parents=True)
+    (src / "bindgen_i386.rs").write_text(
+        "pub const _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeHibernation:\n"
+        "    _DEVICE_USAGE_NOTIFICATION_TYPE = 2;\n"
+        "pub const PLAIN: u32 = 1;\n"
+    )
+    got = sys_crate_consts(tmp_path, usermode=False, arch="i386")
+    assert got["DeviceUsageTypeHibernation"] == "bindgen_i386"
+    assert got["PLAIN"] == "bindgen_i386"
 
 
 def test_macro_expression_const_is_flagged_for_verification(tmp_path):
@@ -1235,9 +1255,9 @@ class TestBlocklistFuncsEvidence:
             tmp_path,
             main_extra=(
                 "int use(void)\n{\n"
-                "    WidgetOpen(0);\n"      # declared by a closure header -> a prototype
-                "    SamrConnect(0);\n"     # declared nowhere the closure walked
-                "    return helper();\n"    # defined in this module -> not external
+                "    WidgetOpen(0);\n"  # declared by a closure header -> a prototype
+                "    SamrConnect(0);\n"  # declared nowhere the closure walked
+                "    return helper();\n"  # defined in this module -> not external
                 "}\n"
             ),
         )

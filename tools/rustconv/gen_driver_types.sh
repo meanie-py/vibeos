@@ -280,20 +280,30 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
   pciidex)
-    # The PCI IDE bus extension (drivers/storage/ide/pciidex). Driver-PRIVATE structs
-    # (PCIIDEX_DRIVER_EXTENSION, COMMON_DEVICE_EXTENSION, FDO_DEVICE_EXTENSION,
-    # PDO_DEVICE_EXTENSION) live in the driver's own pciidex.h — allowlist it. pciidex.h
-    # pulls <ide.h> (sdk/include/ddk/ide.h), the shared IDE-miniport header defining
-    # IDE_CONTROLLER_PROPERTIES / IDE_CHANNEL_STATE / PCIIDE_* / the IdeBusData enums the
-    # modules reference; those are NOT in the ntkrnl-sys kernel bindgen, so allowlist
-    # ide.h too (blocklist keeps any shared ddk types on the single identity). No version
-    # macros in the pciidex CMakeLists → NT 5.2 default; NTDDI 0x05020400 (peb_teb trap).
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from drivers/storage/ide/pciidex/CMakeLists.txt
+    # (25 compiled TU(s), 84 headers in the include closure, 74 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
     DRIVER_DIR="${SRC}/drivers/storage/ide/pciidex"
-    WRAPPER_INC=$'#include "pciidex.h"'
-    ALLOW_FILES=( --allowlist-file '.*pciidex[/\\]pciidex\.h' --allowlist-file '.*ddk[/\\]ide\.h' )
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
-               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
-               -DDLL_EXPORT_VERSION=0x502 )
+    WRAPPER_INC=$'#include "pciidex.h"\n#include <acpiioct.h>\n#include <stdarg.h>\n#include <stddef.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]acpiioct\.h' --allowlist-file '.*[/\\]ata\.h'
+                  --allowlist-file '.*[/\\]debug[/\\]driverdbg\.h'
+                  --allowlist-file '.*[/\\]ide\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]ntintsafe\.h'
+                  --allowlist-file '.*[/\\]ntstrsafe\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_shared\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_user\.h'
+                  --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]wdmguid\.h'
+                  --allowlist-file '.*pciidex[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/storage/ide/pciidex" -I"${SRC}/build-i386/drivers/storage/ide/pciidex" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   scsiport)
     # The SCSI port driver (drivers/storage/port/scsiport). Driver-PRIVATE structs
@@ -386,29 +396,43 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
   atapi)
-    # The NT4-DDK ATAPI IDE miniport (drivers/storage/ide/atapi/atapi.c). It is a
-    # SCSIPORT miniport: its private register/IDENTIFY structs (IDE_REGISTERS_1/2/3,
-    # ATAPI_REGISTERS_1/2, IDENTIFY_DATA/IDENTIFY_DATA2, MODE_SENSE_10/MODE_SELECT_10/
-    # MODE_PARAMETER_HEADER_10, BROKEN_/NATIVE_MODE_CONTROLLER_INFORMATION) live in the
-    # driver's own atapi.h — allowlist it. The HW_DEVICE_EXTENSION / HW_LU_EXTENSION are
-    # defined in atapi.c (not a header), so a bindgen-only atapi_devext.h in the crate dir
-    # reproduces them (it embeds IDENTIFY_DATA + SCSI_REQUEST_BLOCK/SENSE_DATA/MECHANICAL_
-    # STATUS_INFORMATION_HEADER by value → those scsi.h/srb.h layouts must be emitted too).
-    # Like scsiport, _SCSI_REQUEST_BLOCK is OPAQUE in the kernel bindgen → UNBLOCK it so
-    # THIS driver's bindgen (which includes scsi.h) emits the full SRB. No version macros
-    # in the atapi CMakeLists → NT 5.2 default; NTDDI 0x05020400 (amd64 peb_teb trap).
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from drivers/storage/ide/atapi/CMakeLists.txt
+    # (16 compiled TU(s), 91 headers in the include closure, 160 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
     DRIVER_DIR="${SRC}/drivers/storage/ide/atapi"
-    WRAPPER_INC=$'#include <ntddk.h>\n#include "atapi.h"\n#include <ntddscsi.h>\n#include <ntdddisk.h>\n#include <ntddstor.h>\n#include "atapi_devext.h"'
-    ALLOW_FILES=( --allowlist-file '.*ide[/\\]atapi[/\\]atapi\.h'
-                  --allowlist-file '.*atapi_devext\.h'
+    WRAPPER_INC=$'#include "atapi.h"\n#include <acpiioct.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]acpiioct\.h' --allowlist-file '.*[/\\]ata\.h'
+                  --allowlist-file '.*[/\\]debug[/\\]driverdbg\.h'
+                  --allowlist-file '.*[/\\]ide\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]ntdddisk\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h'
+                  --allowlist-file '.*[/\\]ntddstor\.h'
+                  --allowlist-file '.*[/\\]ntintsafe\.h'
+                  --allowlist-file '.*[/\\]ntstrsafe\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_shared\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_user\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]identify_funcs\.h'
                   --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]section_attribs\.h'
+                  --allowlist-file '.*[/\\]sptilib\.h'
                   --allowlist-file '.*[/\\]srb\.h'
-                  --allowlist-file '.*[/\\]ntddscsi\.h' )
-    UNBLOCK="_SCSI_REQUEST_BLOCK"
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
-               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
-               -DDLL_EXPORT_VERSION=0x502 )
-    EXTRA_INC=( -I"${SRC}/sdk/lib/rust/atapi-rust" )
+                  --allowlist-file '.*[/\\]wdmguid\.h'
+                  --allowlist-file '.*[/\\]wmidata\.h'
+                  --allowlist-file '.*[/\\]wmilib\.h'
+                  --allowlist-file '.*[/\\]wmistr\.h'
+                  --allowlist-file '.*atapi[/\\].*\.h' )
+    # OPAQUE in ntkrnl-sys ({ _address: u8 }) but defined by an allowlisted header and named by
+    # this module's C, so the island emits the real layout (fields reachable).
+    UNBLOCK="_SCSI_REQUEST_BLOCK SCSI_REQUEST_BLOCK PSCSI_REQUEST_BLOCK"
+    EXTRA_INC=( -I"${SRC}/drivers/storage/ide/atapi" -I"${SRC}/build-i386/drivers/storage/ide/atapi" -I"${SRC}/sdk/lib/drivers/sptilib" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   usbaudio)
     # USB Audio class driver (drivers/usb/usbaudio, 4 .c). A KS/PortCls audio miniport:
@@ -2465,6 +2489,25 @@ case "$DRIVER" in
     # both islands live in the netapi32-rust crate
     OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/netapi32-rust/src}"
     ;;
+  legide)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from drivers/storage/ide/legide/CMakeLists.txt
+    # (2 compiled TU(s), 70 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/storage/ide/legide"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include <ide.h>\n#include <ata.h>\n#include <scsi.h>\n#include <reactos/drivers/ata/ata_shared.h>\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ata\.h' --allowlist-file '.*[/\\]ide\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_shared\.h'
+                  --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*legide[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/storage/ide/legide" -I"${SRC}/build-i386/drivers/storage/ide/legide" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   setuplib)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from base/setup/lib/CMakeLists.txt
     # (23 compiled TU(s), 298 headers in the include closure, 23 switch constant(s)).
@@ -2707,6 +2750,11 @@ open(final, "w").write("".join(out))
     # declaration or unbalance braces, so a silent truncation cannot ship.
     python3 "$(dirname "$0")/bindgen_unions_to_real.py" "$FINAL" >/dev/null
   fi
+  # MS anonymous struct members (`CHANNEL_DATA_COMMON;` as a struct's first member) come out
+  # of bindgen as opaque padding; restore them by name from the driver's own headers. A no-op
+  # for every driver whose headers have none. See the tool.
+  python3 "$(dirname "$0")/bindgen_ms_anon_members.py" "$FINAL" "${DRIVER_DIR}"/*.h \
+    "${SRC}"/sdk/include/reactos/drivers/ata/*.h
   # MACRO_SIGNED post-pass: re-force the genuinely-DWORD/IN_ADDR high-bit consts back to u32.
   # Under --default-macro-constant-type signed these flip to negative i32 (same bits) but are
   # used in u32 contexts (IN_ADDR.s_addr masks, DeviceIoControl ioctl codes, DWORD timeouts) —
