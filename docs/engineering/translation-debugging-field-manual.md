@@ -1612,6 +1612,16 @@ Three kinds of divergence hide in that, and they are not equally serious:
   `SWITCH_CONST_ENUM_PREFIXED` and prescribes the alias; take that finding literally and do not
   re-declare the value. Detection without the tool: for any constant you are about to declare by
   hand, grep the island for `_<NAME>$` before concluding it is absent.
+- **Not a macro at all, and the copy dropped its side effect.** user32's `GetW32ThreadInfo()` is
+  an out-of-line function in misc.c that *creates* the THREADINFO
+  (`NtUserGetThreadState(THREADSTATE_GETTHREADINFO)`) when the TEB slot is still NULL. user32-rust
+  had five copies, four of them commented "user_x.h inline" and reduced to the bare TEB read —
+  including the `#[no_mangle]` one that window.rs links. In a thread that had not yet called into
+  win32k, `GetDesktopWindow()` returned NULL, so `OpenClipboard(GetDesktopWindow())` opened with
+  no window. That left no clipboard owner, so the next `EmptyClipboard` had nobody to send
+  `WM_DESTROYCLIPBOARD` to, and a pending `WM_DRAWCLIPBOARD` was delivered late (ole32 clipboard
+  test 1066/1134). Before trusting a copy's "it's just X" comment, find the C *definition*, not
+  the call sites, and check whether it writes anything.
 
 **Fix.** Port it once into a shared crate, transcribed from the header rather than from the
 copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32macros-rust`
@@ -6648,6 +6658,11 @@ stays in `CMakeFiles/<target>.dir/` forever. `verify_ucrtbase_cohab` read those 
 "our C defines this", so a lane passed with `_chkesp.s` gone (its stale `.obj` still defined
 `__chkesp`) and master went red on the fresh integration build. A tool asking what the build
 produces must ask the build graph (`build <obj>:` lines in `build.ninja`), not the directory.
+Since 2026-10-05 `vibeos-cli build` runs `ninja -t cleandead` after the manifest regenerates,
+so a lane's build dir no longer holds outputs the graph has dropped (the first run on an old
+tree removed 3017/1039/103 files on i386/amd64/arm64). Hand-run `ninja` does not; and
+cleandead cannot touch an edge that is still declared but no longer built, which is the
+case below.
 The mirror image: a library you keep "compiled, unlinked, as a reference" is NOT compiled once
 nothing links it, because `vibeos-cli build` makes what `livecd` depends on, not ALL. Every
 existing build dir still holds its objects from before the unlink, so it passes locally and
@@ -10741,6 +10756,25 @@ function in the DDK whose entire contract *is* mutual exclusion against a driver
 the SMP kernel it delivered exactly nothing; on UP the IRQL raise happened to be enough, which
 is why it survived. When a per-arch port of a synchronisation primitive is shorter than its
 siblings, the missing lines are the primitive.
+
+### A lock the C declares and never takes is a race the C never hit
+**Symptom:** arm64 `-smp 2`, 1 boot in 5: BUGCHECK 0x1E in `CmpCreateKeyControlBlock` reading
+a garbage `CM_KEY_NODE`, while the other CPU loops in `HvFreeCell` on a NULL bin.
+**Cause:** registry writers on different keys hold the registry lock only shared, so two CPUs
+ran `HvAllocateCell` on one hive; `HvpAddBin` swapped and freed the flat `BlockList` under every
+reader. `CMHIVE.HiveLock`/`HiveLockOwner`, the lock Windows uses for exactly this, are declared
+and initialized in ReactOS and never acquired. Upstream is mostly run on one CPU, where this is
+invisible.
+**Fix:** take the declared lock (cmlib-rust `hivelock.rs`). Prove it with a stressor that
+drives the two sides together and an A/B with the lock compiled out: `regstress` turned a
+1-in-5 boot flake into 2/2 crashes in seconds without the lock, 0 failures with it. A grep for a
+struct's lock fields with no acquirer is a cheap sweep for more of these.
+
+**Corollary — a stressor finds the next lock bug too.** The same run hung on a push-lock release
+(`ExfReleasePushLock[Shared]` adopted a failed CMPXCHG's value in only one of its two arms; a
+port of an upstream fix that missed half of it) — a livelock no smoke boot had shown except as
+an unexplained HANG_TIMEOUT. A new hot lock exercises the lock primitive's slow paths far more
+than boot ever did.
 
 ### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
 **Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial

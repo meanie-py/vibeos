@@ -1027,6 +1027,40 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         return run.finalize(repo)
     run.add(Stage("ninja-prime", status="ok", detail="generated headers"))
 
+    # --- delete outputs the current graph no longer declares ---
+    # ninja never removes the output of an edge that has left build.ninja, so a warm
+    # tree keeps every object of a source taken out of a target, every archive of a
+    # removed library -- and anything that reads the build dir (a difftest oracle,
+    # an object-dir glob) goes on seeing it, where a fresh integration tree does not.
+    # Three red masters came from that gap (__chkesp, the shim objects, msvcrt_static).
+    # Runs after ninja-prime, because that pass is what regenerates the manifest; the
+    # first run on an old tree deletes thousands of files, after which it is ~0.
+    # It cannot catch an edge that is still declared but no longer built (an unlinked
+    # library outside the livecd closure) -- only a fresh tree catches that.
+    cp = run.run(
+        wrap(["ninja", "-t", "cleandead"]),
+        cwd=build_dir,
+        env=build_env,
+        stage="ninja-cleandead",
+        timeout=300,
+    )
+    if cp.returncode != 0:
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
+        run.classification = cls
+        run.add(
+            Stage(
+                "cleandead",
+                exit=cp.returncode,
+                status="fail",
+                detail=f"ninja -t cleandead failed ({cls})",
+                salient=salient or ["see full log"],
+            )
+        )
+        return run.finalize(repo)
+    removed = re.search(r"(\d+) files?\.", cp.stdout or "")
+    n = removed.group(1) if removed else "?"
+    run.add(Stage("cleandead", status="ok", detail=f"{n} dead output(s) removed"))
+
     # --- ninja the boot target(s) ---
     # Every arch builds its `livecd` DAG, which is the whole boot set. The cohab rels are
     # forced on top because a cargo-LINKED module's link only re-runs when its declared

@@ -64,13 +64,18 @@ def test_to_buy_sums_the_resume_cache_lines():
     assert port._to_buy("Resumed 8 unit(s) from cache") == 0
 
 
-def test_a_failed_glob_import_is_reported_as_masking(tmp_path):
-    (tmp_path / "a.rs").write_text("use x::*;\nuse crate::y::Z;\n")
-    err = (
-        "a.rs:1:5: error[E0432]: unresolved import `x`: could not find `x`\n"
-        "a.rs:2:5: error[E0432]: unresolved import `crate::y::Z`: no `Z`\n"
-    )
-    assert port._masking_glob(err, tmp_path) == ["a.rs:1"]
+def test_a_failed_glob_import_is_reported_as_masking():
+    def e0432(line: int, text: str) -> dict:
+        span = {
+            "is_primary": True,
+            "file_name": "a.rs",
+            "line_start": line,
+            "text": [{"text": text}],
+        }
+        return {"level": "error", "code": {"code": "E0432"}, "spans": [span]}
+
+    diags = [e0432(1, "use x::*;"), e0432(2, "use crate::y::Z;")]
+    assert port._masking_glob(diags) == ["a.rs:1"]
 
 
 def test_tokens_reads_both_log_formats():

@@ -66,6 +66,7 @@ mod cmname;
 // cargo-check green via deepdrive before correctness review.
 mod cmvalue;
 mod hivecell;
+mod hivelock;
 mod hivewrt;
 mod cmheal;
 mod hiveinit;
