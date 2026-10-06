@@ -220,6 +220,27 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
             (Cpu.NotifyUnmapViewOfSection)(Base, 1, Status as u32);
             return Status;
         }
+        // Kernel-side writes into guest memory: FEX's SMC tracking sees only
+        // the guest's own stores, so code translated from a buffer the KERNEL
+        // fills must be dropped (selfmod's ReadFile-into-code rung).
+        SVC_NtReadFile => {
+            let (File, Buffer, Length) = (Args[0] as HANDLE, Args[5] as PVOID, Args[6] as SIZE_T);
+            (Cpu.NotifyReadFile)(File, Buffer, Length, 0, 0);
+            let Status = NativeSyscall(Service, Args.as_ptr());
+            (Cpu.NotifyReadFile)(File, Buffer, Length, 1, Status as NTSTATUS);
+            return Status;
+        }
+        SVC_NtWriteVirtualMemory if IsSelf(Args[0]) => {
+            let Status = NativeSyscall(Service, Args.as_ptr());
+            (Cpu.NotifyMemoryDirty)(Args[1] as PVOID, Args[3] as SIZE_T);
+            return Status;
+        }
+        SVC_NtReadVirtualMemory => {
+            // The destination is always in THIS process, whichever is read.
+            let Status = NativeSyscall(Service, Args.as_ptr());
+            (Cpu.NotifyMemoryDirty)(Args[2] as PVOID, Args[3] as SIZE_T);
+            return Status;
+        }
         SVC_NtFlushInstructionCache if IsSelf(Args[0]) => {
             (Cpu.FlushInstructionCache2)(Args[1] as *const c_void, Args[2] as SIZE_T);
         }
@@ -303,7 +324,16 @@ unsafe fn IsKnownDlls(Oa: *const OBJECT_ATTRIBUTES) -> bool {
 }
 
 /// `\system32\` -> `\sysamd64\` (same length) into `Shadow`, which the caller
-/// passes to the kernel instead. Guest memory is never written.
+/// passes to the kernel instead -- when the name EXISTS in sysamd64. Guest
+/// memory is never written.
+///
+/// Conditional on purpose, where WoW64 redirects system32 wholesale: an x86-64
+/// process is not a WoW64 process (Windows on ARM does not redirect it at
+/// all), and system32 holds things that are the guest's as much as anyone's --
+/// its own exe (spawn64 relaunching itself found nothing), configuration,
+/// drivers\etc. What must NOT resolve to system32 is an arm64 module where the
+/// guest expects its own, and every module the guest can load is in sysamd64
+/// (mkramdisk stages the whole closure), so existence there is the test.
 unsafe fn Redirect(Oa: *const OBJECT_ATTRIBUTES, Shadow: &mut Shadow) -> bool {
     const SYS32: &[u8; 10] = b"\\system32\\";
     let Name = match ObjectName(Oa) {
@@ -328,5 +358,12 @@ unsafe fn Redirect(Oa: *const OBJECT_ATTRIBUTES, Shadow: &mut Shadow) -> bool {
     Shadow.Name = *(*Oa).ObjectName;
     Shadow.Name.Buffer = Shadow.Buffer.as_mut_ptr();
     Shadow.Oa.ObjectName = &mut Shadow.Name;
-    true
+
+    // The bare directory stays system32: it is where the guest's own exe lives
+    // and what its current directory names.
+    if Name.len() == Hit + 10 {
+        return false;
+    }
+    let mut Info: FILE_BASIC_INFORMATION = core::mem::zeroed();
+    NtQueryAttributesFile(&mut Shadow.Oa, &mut Info) >= 0
 }

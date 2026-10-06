@@ -32,6 +32,8 @@ pub struct CpuLayer {
     pub NotifyMapViewOfSection: unsafe extern "system" fn(PVOID, PVOID, PVOID, SIZE_T, ULONG, ULONG) -> NTSTATUS,
     pub NotifyUnmapViewOfSection: unsafe extern "system" fn(PVOID, BOOL, ULONG),
     pub FlushInstructionCache2: unsafe extern "system" fn(*const c_void, SIZE_T),
+    pub NotifyMemoryDirty: unsafe extern "system" fn(PVOID, SIZE_T),
+    pub NotifyReadFile: unsafe extern "system" fn(HANDLE, PVOID, SIZE_T, BOOL, NTSTATUS),
     pub ThreadInit: unsafe extern "system" fn() -> NTSTATUS,
     pub Simulate: unsafe extern "system" fn(),
 }
@@ -237,6 +239,8 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
         NotifyMapViewOfSection: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyMapViewOfSection\0")),
         NotifyUnmapViewOfSection: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyUnmapViewOfSection\0")),
         FlushInstructionCache2: core::mem::transmute(Resolve(Fex, b"BTCpu64FlushInstructionCache2\0")),
+        NotifyMemoryDirty: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyMemoryDirty\0")),
+        NotifyReadFile: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyReadFile\0")),
         ThreadInit: core::mem::transmute(Resolve(Fex, b"BTCpu64ThreadInit\0")),
         Simulate: core::mem::transmute(Resolve(Fex, b"BTCpu64Simulate\0")),
     });

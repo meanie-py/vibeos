@@ -86,6 +86,8 @@ void STDMETHODCALLTYPE BTCpu64NotifyMemoryAlloc(void* Address, SIZE_T Size, ULON
 void STDMETHODCALLTYPE BTCpu64NotifyMemoryProtect(void* Address, SIZE_T Size, ULONG NewProt, BOOL After, ULONG Status);
 void STDMETHODCALLTYPE BTCpu64NotifyMemoryFree(void* Address, SIZE_T Size, ULONG FreeType, BOOL After, ULONG Status);
 void STDMETHODCALLTYPE BTCpu64FlushInstructionCache2(const void* Address, SIZE_T Size);
+void STDMETHODCALLTYPE BTCpu64NotifyMemoryDirty(void* Address, SIZE_T Size);
+void STDMETHODCALLTYPE BTCpu64NotifyReadFile(HANDLE Handle, void* Address, SIZE_T Size, BOOL After, NTSTATUS Status);
 }
 
 namespace ControlBits {
@@ -663,6 +665,42 @@ NTSTATUS BTCpu64ResetToConsistentState(EXCEPTION_POINTERS* Ptrs) {
 void BTCpu64FlushInstructionCache2(const void* Address, SIZE_T Size) {
   std::scoped_lock Lock(ThreadCreationMutex);
   InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), false);
+}
+
+// A kernel-side write into guest memory (NtWriteVirtualMemory): FEX never saw
+// the store, so drop any code translated from the range. WOW64/Module.cpp's
+// BTCpuNotifyMemoryDirty.
+void BTCpu64NotifyMemoryDirty(void* Address, SIZE_T Size) {
+  std::scoped_lock Lock(ThreadCreationMutex);
+  InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), false);
+}
+
+// NtReadFile into guest memory, bracketed: the kernel writes the buffer with
+// FEX's SMC write-protection lifted and code invalidated for the range.
+// WOW64/Module.cpp's BTCpuNotifyReadFile, with the per-thread flag reached
+// through this module's ThreadData.
+void BTCpu64NotifyReadFile(HANDLE Handle, void* Address, SIZE_T Size, BOOL After, NTSTATUS Status) {
+  auto* TD = GetThreadData();
+  if (!TD) {
+    return;
+  }
+  auto& InLockedRWXRead = static_cast<FrontendThreadData*>(TD->ThreadState->FrontendPtr)->InLockedRWXRead;
+  if (!After) {
+    ThreadCreationMutex.lock();
+    CTX->GetCodeInvalidationMutex().lock();
+    if (InvalidationTracker->BeginUntrackedWriteLocked(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size))) {
+      InLockedRWXRead = true;
+    } else {
+      CTX->GetCodeInvalidationMutex().unlock();
+      ThreadCreationMutex.unlock();
+    }
+  } else {
+    if (InLockedRWXRead) {
+      InLockedRWXRead = false;
+      CTX->GetCodeInvalidationMutex().unlock();
+      ThreadCreationMutex.unlock();
+    }
+  }
 }
 
 void BTCpu64NotifyMemoryAlloc(void* Address, SIZE_T Size, ULONG Type, ULONG Prot, BOOL After, ULONG Status) {

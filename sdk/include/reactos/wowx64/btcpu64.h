@@ -144,4 +144,6 @@ typedef struct _WOWX64_HOST_SERVICES {
  *   void    BTCpu64NotifyMemoryProtect(void *Address, size_t Size, uint32_t NewProt, int After, int32_t Status);
  *   void    BTCpu64NotifyMemoryFree(void *Address, size_t Size, uint32_t FreeType, int After, int32_t Status);
  *   void    BTCpu64FlushInstructionCache2(const void *Address, size_t Size);
+ *   void    BTCpu64NotifyMemoryDirty(void *Address, size_t Size);
+ *   void    BTCpu64NotifyReadFile(HANDLE File, void *Address, size_t Size, int After, int32_t Status);
  */

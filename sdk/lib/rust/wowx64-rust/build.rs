@@ -28,6 +28,9 @@ const INTERCEPTED: &[&str] = &[
     "NtCreateThread",
     "NtCallbackReturn",
     "NtTerminateProcess",
+    "NtReadFile",
+    "NtWriteVirtualMemory",
+    "NtReadVirtualMemory",
 ];
 
 fn main() {
