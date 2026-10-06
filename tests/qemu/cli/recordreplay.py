@@ -747,7 +747,7 @@ def assert_same_shape(trace_dir: Path, argv: list[str]) -> None:
 # id.  Only the LENGTH matters here — we are skipping, not interpreting — so the
 # table carries no names and no semantics beyond "how many bytes follow".
 #
-# Ids absent from the table are zero-payload events.  EVENT_ASYNC (3..10) and
+# Ids absent from the table are zero-payload events.  EVENT_ASYNC (3..9) and
 # EVENT_RANDOM (27) are variable-length and handled in the walk itself.
 _V12_PAYLOAD = {
     0: 4,  # EVENT_INSTRUCTION: u32 instruction delta
@@ -756,18 +756,69 @@ _V12_PAYLOAD = {
     28: 8,  # EVENT_CLOCK_HOST
     29: 8,  # EVENT_CLOCK_VIRTUAL_RT
 }
-_V12_ASYNC_IDS = frozenset(range(3, 11))
+# EVENT_ASYNC + kind, for the seven ReplayAsyncEventKind values (replay-internal.h,
+# identical in 8.2.2 and 9.0.2): BH, BH_ONESHOT, INPUT, INPUT_SYNC, CHAR_READ, BLOCK,
+# NET. Id 10 is the first SHUTDOWN, not an async event.
+_V12_ASYNC_IDS = frozenset(range(3, 10))
 
 # v12 shutdown event ids: EVENT_SHUTDOWN through EVENT_SHUTDOWN___MAX. A log that
 # ends on one of these ended because the machine stopped, not because the writer
 # was killed.
-_V12_SHUTDOWN_IDS = frozenset(range(11, 22))
+_V12_SHUTDOWN_IDS = frozenset(range(10, 22))
 _V12_RANDOM_ID = 27
-# REPLAY_ASYNC_EVENT_BH carries a u64 step id; the other async kinds we have
-# never seen in an arm64 trace, and guessing their width would silently
-# desynchronise the whole walk, so they stop it instead.
-_V12_ASYNC_PAYLOAD = {0: 8}
 _SUPPORTED_REPLAY_VERSION = 0xE0200C
+
+
+def _u32(fh) -> int | None:
+    raw = fh.read(4)
+    return struct.unpack(">I", raw)[0] if len(raw) == 4 else None
+
+
+def _skip(fh, n: int) -> bool:
+    return len(fh.read(n)) == n
+
+
+def _skip_async_payload(fh, eid: int, path: Path) -> bool:
+    """Consume one async event's payload; False if the log ends inside it.
+
+    Sizes come from QEMU's writers, read off the 8.2.2 source (replay-events.c
+    replay_save_event and the per-kind savers it calls). The event byte IS
+    EVENT_ASYNC + kind; nothing else precedes the payload. An earlier version of
+    this decoder read a "kind" and a "checkpoint" byte that QEMU never writes, and
+    survived only because the BLOCK events it met were followed by exactly two
+    one-byte checkpoints for it to swallow — the network events filter-replay
+    adds broke that luck.
+    """
+    kind = eid - 3
+    if kind in (0, 1, 5):  # BH, BH_ONESHOT, BLOCK: u64 id
+        return _skip(fh, 8)
+    if kind == 3:  # INPUT_SYNC
+        return True
+    if kind == 4:  # CHAR_READ: u8 id, u32 len, bytes
+        if not _skip(fh, 1):
+            return False
+        n = _u32(fh)
+        return n is not None and _skip(fh, n)
+    if kind == 6:  # NET: u8 id, u32 flags, u32 len, bytes
+        if not _skip(fh, 5):
+            return False
+        n = _u32(fh)
+        return n is not None and _skip(fh, n)
+    # kind 2, INPUT: u32 InputEventKind, then per kind (replay-input.c)
+    t = _u32(fh)
+    if t is None:
+        return False
+    if t == 0:  # KEY: u32 KeyValueKind; NUMBER u64 / QCODE u32; u8 down
+        kt = _u32(fh)
+        if kt is None:
+            return False
+        if kt not in (0, 1):
+            raise RecordReplayError(f"{path}: input key kind {kt} unknown at {fh.tell()}")
+        return _skip(fh, (8 if kt == 0 else 4) + 1)
+    widths = {1: 4 + 1, 2: 4 + 8, 3: 4 + 8, 4: 4 + 8 + 8 + 4 + 8}  # BTN, REL, ABS, MTT
+    if t not in widths:
+        raise RecordReplayError(f"{path}: input event kind {t} unknown at {fh.tell()}")
+    return _skip(fh, widths[t])
 
 
 # Event names this decoder is SURE of, taken from the sizes it already relies on
@@ -845,18 +896,8 @@ def walk_events(trace_dir: Path) -> Iterator[ReplayEvent]:
                 yield ReplayEvent(at, eid, total)
                 continue
             if eid in _V12_ASYNC_IDS:
-                kind = fh.read(1)
-                fh.read(1)  # checkpoint id, only used to cross-check
-                if not kind:
-                    break
-                width = _V12_ASYNC_PAYLOAD.get(kind[0])
-                if width is None:
-                    raise RecordReplayError(
-                        f"{path}: async event kind {kind[0]} at offset {fh.tell()} has "
-                        "no known payload width, so the rest of the log cannot be "
-                        "walked. Boundary list would be silently short."
-                    )
-                fh.read(width)
+                if not _skip_async_payload(fh, eid, path):
+                    break  # trailing partial event
                 yield ReplayEvent(at, eid, total)
                 continue
             if eid == _V12_RANDOM_ID:
@@ -983,11 +1024,7 @@ def trace_is_provably_complete(trace_dir: Path) -> bool:
                     if len(fh.read(4)) < 4:
                         return False
                 elif eid in _V12_ASYNC_IDS:
-                    k = fh.read(1)
-                    if not k or len(fh.read(1)) < 1:
-                        return False
-                    width = _V12_ASYNC_PAYLOAD.get(k[0])
-                    if width is None or len(fh.read(width)) < width:
+                    if not _skip_async_payload(fh, eid, path):
                         return False
                 elif eid == _V12_RANDOM_ID:
                     if len(fh.read(4)) < 4:

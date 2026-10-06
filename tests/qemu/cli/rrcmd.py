@@ -333,6 +333,12 @@ def _serial_divergence(a: list[str], b: list[str]) -> tuple[int, str] | None:
         # be truncated at its front on either side. That is capture, not the guest.
         if n == 1 and (x.endswith(y) or y.endswith(x)):
             continue
+        # Likewise the LAST line of the shorter transcript: the harness quits QEMU
+        # the moment it has its verdict, mid-print. A whole-kmtest replay agreed for
+        # 18,286 lines and was reported DIVERGED on the 18,287th, which was "[".
+        last = n == min(len(a), len(b))
+        if last and (x.startswith(y) or y.startswith(x)):
+            continue
         if x != y:
             return n, f"record: {x[:160]}\nreplay: {y[:160]}"
     return None
