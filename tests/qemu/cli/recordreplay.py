@@ -56,8 +56,10 @@ CONSTRAINTS (we FAIL rather than silently produce a non-deterministic trace)
 * One vCPU.  This is not as limiting as it sounds for us: `--smp 1` on the MP
   kernel is precisely the UP:=smp1 collapse experiment, and the arm64 PC=0
   fault reproduces there.
-* No network.  Recording a slirp/tap backend needs replay net filters we do not
-  have wired; arm64 conformance has no NIC, so we refuse instead of guessing.
+* No EXPLICIT network.  A caller's own -netdev/-nic/-net is refused. The machine's
+  implicit default NIC is made explicit and recorded through filter-replay (see
+  transform) — it used to be missed, and its unrecorded packets were the arm64 replay
+  divergence.
 * Native backend only.  The windows-host backend stages media into a Windows
   path and runs QEMU.exe; the trace dir would be half on each side.
 
@@ -393,12 +395,46 @@ def transform(
     #   Assertion `first_elem || !n_elems || !size' failed.
     # A/B'd on one trace with nothing else changed. See the divergence log.
     x86 = is_x86_argv(argv)
-    # x86's MC146818 RTC ticks on QEMU_CLOCK_HOST by default, so its timers land in
-    # the log as host-clock checkpoints (five before the first instruction alone).
-    # clock=vm puts it on the virtual clock: recordings came out ~3x faster and ~5x
-    # smaller. Its base date is still one recorded host-clock read.
-    if x86 and "-rtc" not in argv:
+    # Every arch's RTC ticks on QEMU_CLOCK_HOST by default, and every read of that
+    # clock is a logged replay event. x86's MC146818 put its timers in the log as
+    # host-clock checkpoints (five before the first instruction alone); clock=vm
+    # made x86 recordings ~3x faster and ~5x smaller. arm64's PL031 also reads the
+    # host clock from its vmstate pre_save, i.e. out of band whenever its state is
+    # saved. The base date is still one recorded read.
+    if "-rtc" not in argv:
         out += ["-rtc", "clock=vm"]
+    # A machine given no network flag still gets one: QEMU adds its DEFAULT NIC (arm64
+    # virt: virtio-net-pci; x86 pc: e1000) on user-mode networking. The refusal above
+    # only sees explicit -netdev/-nic/-net, so that NIC walked past it, and its
+    # packets — answered by slirp at host time and DMA'd into guest RAM — reached the
+    # guest unrecorded. That was the arm64 kmtest divergence: the replayed serial is a
+    # byte-exact prefix of the recording up to the netstack self-test probing
+    # virtio-net, and the wedge always fell in that phase. `-nic user` with no model
+    # builds the same default NIC through the same machine path (same model, slot and
+    # MAC), and filter-replay puts its traffic in the log.
+    #
+    # filter-replay pins RECEIVED packets. virtio-net's transmit side was still loose:
+    # its default `tx=bh` completes transmits from a plain bottom half, which runs
+    # at host time and writes the used ring into guest RAM wherever the guest
+    # happens to be. With receive recorded, the arm64 replay got through DHCP and
+    # DNS and then wedged at the first ICMP echo. `tx=timer` runs the same flush on
+    # a QEMU_CLOCK_VIRTUAL timer, which under icount is the instruction counter.
+    # `-global` reaches the default NIC, which takes no device properties.
+    out += [
+        "-nic",
+        "user,id=rrnet0",
+        "-object",
+        "filter-replay,id=rrnetreplay0,netdev=rrnet0",
+        "-global",
+        "virtio-net-pci.tx=timer",
+    ]
+    # Every virtio queue notify is the same shape of leak. With ioeventfd on (the
+    # default, and NOT gated on KVM: virtio-mmio/virtio-pci enable it by flag under
+    # TCG too), the guest's notify write only signals an eventfd, and the main loop
+    # runs the device's queue handler later at host time — outside any instruction
+    # the log can pin. Off, the handler runs synchronously inside the vCPU's MMIO
+    # write, at a deterministic icount. Covers virtio-blk, -net and -input alike.
+    out += ["-global", "virtio-mmio.ioeventfd=off", "-global", "virtio-pci.ioeventfd=off"]
     # x86 REPLAY does not load the `init` snapshot. Loading it re-arms a virtual-clock
     # timer due at time zero (a device post-load hook), which in replay may only run at
     # a recorded CHECKPOINT_CLOCK_VIRTUAL -- and the recording has none before its first

@@ -641,11 +641,44 @@ Record it here and keep going; only chase one when it looks load-bearing.
   Two plain replays of the same trace stall at the identical read offset
   (1,040,384), so replay is deterministic; but one `diverge` run, which pauses the
   replay at each fingerprint, got PAST that point (matching the recording at
-  18,971,127,479) and wedged at 18,985,805,350 in the same function instead. A
-  replay-side pause can therefore change the outcome — evidence that the missing
-  input is something a stop/cont cycle touches. **Next:** extend the fingerprint
-  past RAM and GPRs (system registers via the gdbstub, device vmstate) so the
-  first differing state is named rather than inferred.
+  18,971,127,479) and wedged at 18,985,805,350 in the same function instead. So
+  the replay was taking a host-timed input; that read as "a pause changes the
+  outcome" until the input turned out to be the network below, whose arrival times
+  any change in replay pacing shifts.
+
+  **Cause found (2026-10-05): an UNRECORDED NETWORK.** With the timestamp-blind
+  `rr verify` fixed (below), the replayed serial was a byte-exact prefix of the
+  recording up to `[NETSTACK] ... probing for virtio-net` / `mac 52:54:00:12:34:56`.
+  The guest had a NIC nobody asked for: given no network flag, QEMU adds the
+  machine's DEFAULT NIC (arm64 virt: virtio-net-pci; x86 pc: e1000) on slirp, and
+  the transform's network refusal only looked for explicit `-netdev/-nic/-net`, so
+  it walked past. Its packets were answered at host time and DMA'd into guest RAM
+  unlogged. Fixed in three steps, each measured by how far a plain replay of a
+  fresh kmtest recording gets (trace bytes consumed, serial lines agreeing):
+
+  | change | replay reached |
+  |---|---|
+  | before | 3.0% (918 lines), wedge in the first user process's loader |
+  | `-rtc clock=vm` (ruled out: no change) | 2.7% |
+  | default NIC made explicit, `filter-replay` on it | 3.0%, now past DHCP + DNS, wedged at the first ICMP echo |
+  | + `-global virtio-net-pci.tx=timer` | 25.4%, first divergence at line 3,957 |
+  | + `-global virtio-{mmio,pci}.ioeventfd=off` | 34.8%, first divergence at line 3,982 |
+
+  `tx=timer` moves virtio-net's transmit flush off a host-scheduled bottom half
+  onto a QEMU_CLOCK_VIRTUAL timer. `ioeventfd=off` makes every virtio queue notify
+  run its handler inside the vCPU's MMIO write instead of later from the main
+  loop; under TCG it is NOT gated on KVM. The remaining divergence (two threads'
+  serial prints interleaving differently around the first `[APC]` of a later
+  process) is still open and being narrowed with `rr diverge`.
+
+  **Device-state fingerprints are impossible under record on 8.2.2.** QMP
+  `migrate` aborts a recording QEMU: `migration.c:3305` reads QEMU_CLOCK_HOST in the
+  migration thread at setup, a logged read made without the replay mutex
+  (`replay_save_clock: assertion failed: (replay_mutex_locked())`). That is the
+  core migration path, not a device, so no flag avoids it. `rr diverge` therefore
+  compares registers and RAM only. (Migrating to a file outside rr works and QEMU's
+  `scripts/analyze-migration.py` parses it — ~270 system registers, the exclusive
+  monitor, GIC and timer state — if a later QEMU lifts this.)
 
 - **`blkreplay` cannot drive an ATAPI CD, which is why x86 cannot be recorded
   (2026-09-13). MEASURED, root-caused, and now refused up front.**

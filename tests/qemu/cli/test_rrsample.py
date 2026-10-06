@@ -78,3 +78,23 @@ def test_irq_entry_never_excuses_a_general_register_difference() -> None:
 def test_io_at_pause_excuses_ram_only_never_registers() -> None:
     assert rrsample.artifact({"mem_mib": ["0x0"]}, True, False, REC, REC) is not None
     assert rrsample.artifact({"regs": ["x"], "mem_mib": ["0x0"]}, True, False, REC, REP) is None
+
+
+def test_verify_ignores_the_harness_host_time_stamps(tmp_path: Path) -> None:
+    from tests.qemu.cli import rrcmd
+
+    a = tmp_path / "a.log"
+    b = tmp_path / "b.log"
+    a.write_text("# banner\n[+    0.000] Error: x[+    0.000] \n[+    0.030] Error: y\n")
+    b.write_text(
+        "# banner\n[+    0.000] Error: x[+    0.004] \n[+    0.034] Error: y[+    0.037] \n"
+    )
+    assert rrcmd._serial_divergence(rrcmd._guest_lines(a), rrcmd._guest_lines(b)) is None
+
+
+def test_verify_tolerates_a_first_line_captured_late() -> None:
+    from tests.qemu.cli import rrcmd
+
+    rec = ["UEFI firmware (version x)", "next"]
+    assert rrcmd._serial_divergence(rec, ["FI firmware (version x)", "next"]) is None
+    assert rrcmd._serial_divergence(rec, ["FI firmware (version x)", "other"]) is not None
