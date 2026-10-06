@@ -4608,6 +4608,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     rounds with 0 misses, against 10 loud rounds with misses in 8. Field manual: "A kmtest
     count drift on a UP guest is the boot-time ladder, not the scheduler". MmMdl's amd64 drift
     was a separate thing, already settled by `c8228e5` (the count depends on free system VA).
+    **`KeEvent` RECURRED after the fix (found 2026-10-05):** 7 count drops (6 or 8 fails, once
+    1) in sweeps whose serial log carries `QUIET`, so the ladder is not the whole cause. i386:
+    `20261003-225707-54bluib3`, `20261004-092328-21kqrgdc`, `20261004-111018-zzsx3q0o`,
+    `20261004-165018-vyz3y237`, `20261005-193425-lqtlcoq8` (a queue gate attempt); amd64:
+    `20261004-073303-11khe67v`, `20261004-171841-f8gc6gdx`. Failing asserts are the
+    timeout/thread ones (`KeEvent.c:201/205/207/223`). Counted with the 2026-10-05 parser,
+    which no longer mistakes serial interleaving for regressions.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`.

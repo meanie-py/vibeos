@@ -181,7 +181,7 @@ const SHADOW_1C_GTXCLK_EN: u16 = 0x0200;
 const BUF_SIZE: usize = 2048;
 /// RX buffer length programmed into the ring (the firmware's GENET_MAX_PACKET_SIZE).
 const RX_BUF_LEN: u32 = 1536;
-const FRAME_MAX: usize = 1518;
+const ETH_MAX_FRAME: usize = 1518;
 /// The bus can address only the low 3 GiB (the firmware caps RAM there too).
 const DMA_LIMIT: u64 = 0xBFFF_FFFF;
 const LINK_WAIT_MS: i64 = 5000;
@@ -521,7 +521,7 @@ impl Genet {
         let len = ((status & DESC_BUFLEN_MASK) >> DESC_BUFLEN_SHIFT) as usize;
         let good = status & (DESC_SOP | DESC_EOP | RX_DESC_ERROR) == DESC_SOP | DESC_EOP;
         // The frame follows the 2-byte pad RBUF_ALIGN_2B inserts; the length counts it.
-        let out = if good && len > 2 + 14 && len - 2 <= FRAME_MAX {
+        let out = if good && len > 2 + 14 && len - 2 <= ETH_MAX_FRAME {
             unsafe {
                 let buf = self.rx_va.add(idx * BUF_SIZE);
                 dma_invalidate(buf, len);
@@ -545,7 +545,7 @@ impl Genet {
     }
 
     pub fn send(&mut self, frame: &[u8]) {
-        if frame.len() > FRAME_MAX {
+        if frame.len() > ETH_MAX_FRAME {
             return;
         }
         let idx = self.tx_prod as usize % DESC_COUNT;
