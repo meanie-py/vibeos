@@ -26,5 +26,7 @@ ndis = []
 [dependencies]
 panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
-smoltcp = { version = "0.13.1", default-features = false, features = ["medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "socket-icmp", "socket-raw", "socket-dhcpv4", "socket-dns", "alloc"] }
+# auto-icmp-echo-reply is a smoltcp DEFAULT feature, so default-features = false
+# dropped it and the stack never answered a ping (unseen until a real LAN).
+smoltcp = { version = "0.13.1", default-features = false, features = ["medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "socket-icmp", "socket-raw", "socket-dhcpv4", "socket-dns", "auto-icmp-echo-reply", "alloc"] }
 virtio-drivers = { version = "0.13.0", default-features = false, features = ["alloc"] }

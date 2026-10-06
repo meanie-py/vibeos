@@ -74,6 +74,23 @@ def load_baseline(path):
     return base
 
 
+def truncated_identity(ident, known):
+    """Is `ident` a floor identity with its head cut off by an interleaved print?
+
+    The sweep's failure lines share the serial port with every other print, and
+    one can land inside the file name (i386, verbatim):
+
+        [+  118.919] Exam(drivers/storage/port/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8
+        [+  118.931] ple.c:20: Test failed: IRQL is 31, expected 2
+
+    which reads as `ple.c:20`, a NEW identity, where the floor lists
+    `Example.c:20`. A proper suffix of a known identity in the same test's row
+    (so the same line number and the same end of the file name) is that
+    identity; anything else is still new.
+    """
+    return any(k != ident and k.endswith(ident) for k in known)
+
+
 # ENUM-TIMEOUT: the suite never enumerated its subtests, so NONE of them ran.
 # It has to be BAD or a suite that reports nothing at all reads as clean.
 BAD = {"CRASH", "TIMEOUT", "FAILSTART", "NO-END", "INCOMPLETE", "ENUM-TIMEOUT"}
@@ -109,7 +126,8 @@ def compare(results, base):
                 # that grew without a new identity is a loop running longer, not
                 # a regression.
                 for a in sorted(set(r.get("asserts") or ()) - known):
-                    regressions.append(f"{r['name']}: NEW failing assertion {a}")
+                    if not truncated_identity(a, known):
+                        regressions.append(f"{r['name']}: NEW failing assertion {a}")
     ran = {r["name"] for r in results}
     for name, b in base.items():
         if name not in ran:

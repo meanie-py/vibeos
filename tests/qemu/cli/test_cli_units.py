@@ -10667,6 +10667,86 @@ def test_an_end_marker_cut_in_two_by_a_kernel_print_still_counts():
     assert results[0]["status"] == "NO-END"
 
 
+def test_markers_cut_anywhere_by_an_interleaved_print_still_parse():
+    """i386 conformance went red on 27 of 427 archived sweeps (2026-10-05 A/B)
+    because a kernel or Wine print landed inside a sweep marker. Each shape below
+    is verbatim from one of those logs, and each read as NO-END or "never
+    launched" before the repair."""
+    P = _parser()
+    log = (
+        "[+   94.422] [KMTEST-SWEEP] launch err:ole:compobj apartment not initialised\n"
+        "[+   94.440] ExPushLock\n"
+        "[+   94.688] [KMTEST:BEGIN ExPushLock]\n"
+        "[+   98.300] [KMTEST:END ExPushLock pass=(drivers/storage/po"
+        "rt/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
+        "[+   98.302] 19 fail=0 skip=0]\n"
+        "[+   98.361] [KMTEST-SWEEP] exit ExPushLock code=0\n"
+        "[+  100.000] [KMTEST-SWEEP] lau(drivers/storage/port/scsipor"
+        "t/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
+        "[+  100.003] nch FsRtlExpression\n"
+        "[+  100.100] [KMTEST:BEGIN FsRtlExpression]\n"
+        "[+  100.629] [KMTEST:END FsRterr:ole:compobj apartment not initialised\n"
+        "[+  100.631] lExpression pass=57 fail=0 skip=0]\n"
+        "[+  100.700] [KMTEST-SWEEP] exit FsRtlExpression code=0\n"
+        "[+  125.864] [K(drivers/storage/port/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
+        "[+  125.867] MTEST-SWEEP] launch KeFloatPointState\n"
+        "[+  126.085] KMTEST:END KeFloatPointState pass=6 fail=0 skip=0]\n"
+        "[+  126.119] [KMTEST-SWEEP] exit KeFloatPointState code=0\n"
+        "[+  148.450] [KMTEST-SWEEP] launch RtlIntSafe(drivers/storag"
+        "e/port/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8\n"
+        "[+  148.600] [KMTEST:END zipfldr.cpp:75: (\\dll\\shellext\\z"
+        "ipfldr\\zipfldr.cpp:75) CreateEmptyFile('X:\\x')\n"
+        "[+  148.601] RtlIntSafe pass=40 fail=2 skip=0]\n"
+        "[+  148.663] [KMTEST-SWEEP] exit RtlIntSafe code=0\n"
+        "[+  150.000] [KMTEST-SWEEP] done total=4\n"
+    )
+    results, done, _ = P.parse(log)
+    got = {r["name"]: (r["status"], r["pass"], r["fail"]) for r in results if r["name"] != "err"}
+    assert got == {
+        "ExPushLock": ("OK", 19, 0),
+        "FsRtlExpression": ("OK", 57, 0),
+        "KeFloatPointState": ("OK", 6, 0),
+        "RtlIntSafe": ("OK", 40, 2),
+    }
+    assert done == "total=4"
+    # A tail that spells some OTHER test is not spliced onto this one.
+    wrong = log.replace("lExpression pass=57", "lLegal pass=57")
+    results, _, _ = P.parse(wrong)
+    assert {r["name"]: r["status"] for r in results}["FsRtlExpression"] == "NO-END"
+
+
+def test_an_identity_cut_short_by_an_interleaved_print_is_the_floor_identity():
+    """`Exam(drivers/.../ioctl.c:609) unknown ioctl...` then `ple.c:20: Test
+    failed` (i386, verbatim) read as NEW identity `ple.c:20` against a floor
+    listing `Example.c:20`. A proper suffix of a known identity is that
+    identity; an unrelated one is still new."""
+    P = _parser()
+    base = {
+        "Example": {
+            "status": "OK",
+            "pass": 31,
+            "fail": 15,
+            "asserts": {"Example.c:20", "Example.c:21"},
+        }
+    }
+
+    def run(*asserts):
+        r = {
+            "name": "Example",
+            "status": "OK",
+            "pass": 31,
+            "fail": 15,
+            "skip": 0,
+            "exit": 0,
+            "errors": 0,
+        }
+        return P.compare([dict(r, asserts=set(asserts))], base)
+
+    assert run("ple.c:20", "Example.c:21") == []
+    assert run("ple.c:22") == ["Example: NEW failing assertion ple.c:22"]
+    assert run("Other.c:20") == ["Example: NEW failing assertion Other.c:20"]
+
+
 def test_polite_farm_waits_for_the_fleet_then_boots(monkeypatch):
     """`farm --polite` must not start a boot while a land gates or another agent
     boots, and must start one as soon as the host is quiet."""

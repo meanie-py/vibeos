@@ -64,13 +64,24 @@ import re
 import sys
 from pathlib import Path
 
-LAUNCH = re.compile(r"\[KMTEST-SWEEP\] launch (?!FAILED)(\S+)")
-FAILSTART = re.compile(r"\[KMTEST-SWEEP\] launch FAILED (\S+)")
-END = re.compile(r"\[KMTEST:END (\S+) pass=(\d+) fail=(\d+) skip=(\d+)\]")
+# The sweep's own markers are matched from `SWEEP] ` on: another print can land
+# inside their head and carry it off, `[K(drivers/.../ioctl.c:609) unknown ...`
+# then `MTEST-SWEEP] launch KeFloatPointState` on the next line (i386, verbatim),
+# and a launch read as missing makes the test "in baseline but never launched".
+# Test names are identifiers: a print glued straight onto one,
+# `launch RtlIntSafe(drivers/...)`, must not become part of the name.
+LAUNCH = re.compile(r"SWEEP\] launch (?!FAILED)([A-Za-z0-9_]+)")
+FAILSTART = re.compile(r"SWEEP\] launch FAILED ([A-Za-z0-9_]+)")
+# The test's own first line, from inside kmtest: the second witness of a launch
+# when the sweep's marker was cut too deep to read (`[KMTEST-SWEEP] lau` + a
+# kernel print, then `nch KeEvent`).
+BEGIN = re.compile(r"KMTEST:BEGIN ([A-Za-z0-9_]+)\]")
+# Likewise END from `KMTEST:END` on: its own `[` can be the byte carried off.
+END = re.compile(r"KMTEST:END (\S+) pass=(\d+) fail=(\d+) skip=(\d+)\]")
 ERROR = re.compile(r"\[KMTEST:ERROR\]")
-EXIT = re.compile(r"\[KMTEST-SWEEP\] exit (\S+) code=(\d+)")
-TIMEOUT = re.compile(r"\[KMTEST-SWEEP\] TIMEOUT (\S+)")
-DONE = re.compile(r"\[KMTEST-SWEEP\] done (.*)")
+EXIT = re.compile(r"SWEEP\] exit ([A-Za-z0-9_]+) code=(\d+)")
+TIMEOUT = re.compile(r"SWEEP\] TIMEOUT ([A-Za-z0-9_]+)")
+DONE = re.compile(r"SWEEP\] done (.*)")
 BUGCHECK = re.compile(r"\*\*\* BUGCHECK: (0x[0-9A-Fa-f]+)")
 # kmt_test.h's KmtVOk emits one of these per FAILING assertion (successes are not
 # logged — `if (0/*KmtReportSuccess*/)`). `<file>:<line>` is the assertion's identity;
@@ -96,36 +107,63 @@ ASSERT_FAIL = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*\.c:\d+): Test
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ratchet import BAD, compare, fmt, load_baseline  # noqa: E402
 
-END_PREFIX = "[KMTEST:END "
+END_PREFIX = "KMTEST:END "
+# The conformance harness stamps every serial line `[+  128.268] `; a spliced
+# tail is matched after it.
+TIMESTAMP = re.compile(r"^\[\+\s*\d+(?:\.\d+)?\]\s?")
 
 
 def splice_split_end_markers(lines):
     """Rejoin an END marker that another print cut in two.
 
     The END line comes from the user-mode sweep and the kernel prints on the same
-    serial port, so a kernel line can land in the MIDDLE of it:
+    serial port, so another line can land anywhere in the MIDDLE of it, carrying
+    the rest of the marker to the start of a later line (i386, verbatim):
 
         [KMTEST:END ExHardE[EXIT-THR] image=SERVICES.EXE exit_status=0x0 crit=0
         rror pass=30 fail=0 skip=0]
 
-    Unrepaired, that test (30 passes, 0 failures) reads as NO-END, which the ratchet
-    calls a regression. The repair is narrow on purpose: the fragment before the
-    intruding `[` plus the start of one of the next three lines must form a
-    COMPLETE END marker, or nothing changes. The rejoined marker goes in as its own
-    line where its tail was; the intruding text is left where it was.
+        [+  100.629] [KMTEST:END FsRterr:ole:compobj apartment not initialised
+        [+  100.631] lExpression pass=57 fail=0 skip=0]
+
+        [+  136.864] [KMTEST:END ObQuery pass=(drivers/storage/port/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8
+        [+  136.866] 19 fail=0 skip=0]
+
+    Unrepaired, such a test reads as NO-END, which the ratchet calls a regression.
+    The repair is narrow on purpose: some prefix of the marker fragment, plus the
+    start of one of the next three lines (after its timestamp), must form a
+    COMPLETE END marker naming the test that was launched. With no launch seen,
+    only the cut at the intruder's `[` is tried. Otherwise nothing changes. The
+    rejoined marker goes in as its own line where its tail was; the intruding
+    text is left where it was.
     """
     out = list(lines)
+    launched = None
     for i, line in enumerate(out):
+        m = LAUNCH.search(line) or BEGIN.search(line)
+        if m:
+            launched = m.group(1)
         at = line.find(END_PREFIX)
         if at < 0 or END.search(line):
             continue
-        cut = line.find("[", at + 1)
-        head = line[at:cut] if cut > 0 else line[at:]
+        frag = line[at:]
+        if launched:
+            cuts = range(len(frag), len(END_PREFIX) - 1, -1)
+        else:
+            bracket = frag.find("[")
+            cuts = (bracket if bracket > 0 else len(frag),)
         for k in range(i + 1, min(i + 4, len(out))):
-            m = END.match(head + out[k])
-            if m:
-                rest = out[k][len(m.group(0)) - len(head) :]
-                out[k : k + 1] = [m.group(0)] + ([rest] if rest.strip() else [])
+            body = TIMESTAMP.sub("", out[k], count=1)
+            hit = None
+            for c in cuts:
+                m = END.match(frag[:c] + body)
+                # The tail must finish the marker, and spell the launched test.
+                if m and m.end() > c and launched in (None, m.group(1)):
+                    hit = (m.group(0), body[m.end() - c :])
+                    break
+            if hit:
+                marker, rest = hit
+                out[k : k + 1] = [marker] + ([rest] if rest.strip() else [])
                 break
     return out
 
@@ -138,6 +176,14 @@ def parse(log_text):
     bugcheck = None
     for line in splice_split_end_markers(log_text.splitlines()):
         m = LAUNCH.search(line)
+        if not m:
+            b = BEGIN.search(line)
+            if b and (current is None or current["name"] != b.group(1)):
+                # The launch marker was lost. A record still open here lost its
+                # exit marker too, and is not guessed to have passed.
+                if current and current["status"] is None:
+                    current["status"] = "INCOMPLETE"
+                m = b
         if m:
             current = {
                 "name": m.group(1),
