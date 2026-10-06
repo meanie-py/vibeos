@@ -903,11 +903,10 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
         a process-local unmarshal takes the stub channel's destination context
         (`ipid_get_dest_context`).
       - ole2 2 → 0: the same `SetConvertStg` seek.
+      - tmarshal 1 → 0: wine-10's `dispinterface_create_stub`. A DIID_ stub is built by
+        hand from rpcrt4's exported `CStdStubBuffer_*` methods and the oaidl proxy
+        file's IDispatch stub vtbl, so the object is QI'd for the DIID, never IDispatch.
     - **Still owed:**
-      - tmarshal:411: wine-10's `dispinterface_create_stub` hand-builds a
-        `CStdStubBuffer` from rpcrt4's exported `CStdStubBuffer_*` methods and the
-        IDispatch entry of `oleaut32_oaidl_ProxyFileInfo`, so a DIID_ object is never
-        QI'd for IID_IDispatch. Ours still routes through `CreateStub(IID_IDispatch)`.
       - compobj:3036, `PeekMessageA failed` after CoWaitForMultipleHandles. Its
         sibling 2999/3001 failed on 10-04 09:53 and passed at 21:24. Not yet known
         whether this is the same flake.
