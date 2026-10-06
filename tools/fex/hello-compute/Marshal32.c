@@ -759,6 +759,8 @@ static int CheckSelfDescribingSizes(void)
     if (sent != 1)
     {
         ReportHex("[marshal32] cbSize: SendInput accepted events =", sent);
+        /* Meaningful at x86-64 (one TEB); at i386 see the note above. */
+        ReportHex("[marshal32] cbSize: SendInput GetLastError =", GetLastError());
         return M32_FAIL_SENDINPUT;
     }
 

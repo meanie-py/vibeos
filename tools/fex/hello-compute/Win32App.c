@@ -128,6 +128,14 @@ int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) *
     }
 
     Report("[win32] window up; pumping messages\n");
+    {
+        /* Why a paint would or would not come: a window that is not visible,
+         * or has nothing to update, is never sent one. */
+        RECT u;
+        BOOL dirty = GetUpdateRect(hwnd, &u, FALSE);
+        Report(IsWindowVisible(hwnd) ? "[win32] window is visible\n" : "[win32] window is NOT visible\n");
+        Report(dirty ? "[win32] update region is non-empty\n" : "[win32] update region is EMPTY\n");
+    }
     UpdateWindow(hwnd); /* request a synchronous first WM_PAINT */
 
     /* PeekMessage pump so it self-terminates when the queue drains (a blocking
