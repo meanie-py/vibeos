@@ -1166,6 +1166,9 @@ def apply_hand(stem: str) -> int:
         h = json.loads(entry.read_text())
         path = modules / h["file"]
         text = path.read_text()
+        if h["text"] in text:  # already applied (replay runs this before and after fix)
+            applied += 1
+            continue
         spans = [sp for sp in cf.function_spans(text) if sp.name == h["name"]]
         if len(spans) != 1:
             # Loud: the function moved or was renamed upstream of the bank; never skip quietly.
@@ -1260,10 +1263,12 @@ def stage_fix(
         halting_before = max(cr.count_halting_errors(d) for d in diags.values())
         groups, outside = cf.group_by_function(diags, root, is_error=cr.is_error_diagnostic)
         if only:
-            groups = {k: v for k, v in groups.items() if k[1] in only}
+            groups = {k: v for k, v in groups.items() if cf.fn_name(k[1]) in only}
         # A hand-banked function is finished by a person; never buy a fix for it.
         hand = hand_names(stem)
-        groups = {k: v for k, v in groups.items() if (Path(k[0]).name, k[1]) not in hand}
+        groups = {
+            k: v for k, v in groups.items() if (Path(k[0]).name, cf.fn_name(k[1])) not in hand
+        }
         print(
             f"fix round {rnd}: errors {before_counts}, "
             f"{len(groups)} function(s) to fix, {outside['amd64']} error(s) outside functions"
@@ -1291,7 +1296,7 @@ def stage_fix(
                     cf.bank_write(bank, key, {**banked, "original": original})
                 continue
             modes[len(attempts) - 1] = mode
-            c_fn = c_function_text_for(tu_by_stem, Path(fname).stem, name, c_cache, cf)
+            c_fn = c_function_text_for(tu_by_stem, Path(fname).stem, cf.fn_name(name), c_cache, cf)
             facts = cf.declarations(cf.mentioned_names(fe.errors), fact_sources)
             prompts[len(attempts) - 1] = cf.build_prompt(
                 original, fe.errors, c_fn, facts, arches, refused
@@ -1357,8 +1362,8 @@ def stage_fix(
                 groups[(att.file, att.name)].errors,
                 parse_findings,
                 type_names,
-                c_function_text_for(tu_by_stem, Path(att.file).stem, att.name, c_cache, cf),
-                c_dead_names_for(tu_by_stem, Path(att.file).stem, att.name, c_cache, cf),
+                c_function_text_for(tu_by_stem, Path(att.file).stem, att.fn, c_cache, cf),
+                c_dead_names_for(tu_by_stem, Path(att.file).stem, att.fn, c_cache, cf),
             )
             if why:
                 att.status = "rejected:" + "; ".join(why)
@@ -1392,7 +1397,7 @@ def stage_fix(
             # A parse / expansion error hides the rest of the crate's errors: a falling total
             # here is not progress. Put back the whole round, then retry one at a time.
             for a in applied:
-                cf._replace_named(root, a.file, a.name, a.original)
+                cf._replace_named(root, a.file, a.name, a.original, a.fixed)
             print(
                 f"fix: round raised halting errors {halting_before}->{halting_after}; reverted "
                 "the round, trying each fix alone"
@@ -1409,7 +1414,7 @@ def stage_fix(
             # More errors in the function on some arch. Usually a fix that exposed later
             # type checking (an unresolved name hid it) -- but we cannot tell that from a
             # real regression here, so the original stays and the bank keeps the reply.
-            cf._replace_named(root, a.file, a.name, a.original)
+            cf._replace_named(root, a.file, a.name, a.original, a.fixed)
             a.status = "reverted:more errors"
         if worse:
             after = _check_json(stem, state["crate"])
@@ -1420,7 +1425,7 @@ def stage_fix(
         kept_now = [a for a in applied if a not in worse]
         if any(cr.count_errors(after[x]) > before_counts[x] for x in arches) and kept_now:
             for a in kept_now:
-                cf._replace_named(root, a.file, a.name, a.original)
+                cf._replace_named(root, a.file, a.name, a.original, a.fixed)
             print(f"fix: round raised the total ({before_counts}); bisecting {len(kept_now)}")
             kept_now, after = _bisect(
                 stem,
@@ -1481,7 +1486,8 @@ def _bisect(stem: str, crate: str, applied: list, bad, verdict: str):
 
     def put(fixes, fixed: bool) -> None:
         for a in fixes:
-            cf._replace_named(root, a.file, a.name, a.fixed if fixed else a.original)
+            new, old = (a.fixed, a.original) if fixed else (a.original, a.fixed)
+            cf._replace_named(root, a.file, a.name, new, old)
 
     kept: list = []
 

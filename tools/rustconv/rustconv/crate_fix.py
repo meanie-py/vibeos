@@ -223,11 +223,26 @@ def group_by_function(
             if sp is None:
                 outside[arch] += 1
                 continue
-            key = (fname, sp.name)
+            key = (fname, span_key(spans_cache[fname], sp))
             fe = out.setdefault(key, FnErrors(fname, sp))
             rendered = _strip_location(d.get("rendered") or d.get("message") or "")
             fe.errors.setdefault(rendered, set()).add(arch)
     return out, outside
+
+
+def span_key(spans: list[FnSpan], sp: FnSpan) -> str:
+    """The function's name, or `name#k` for the k-th of several same-named `#[cfg]` twins.
+
+    A translator writes per-arch twins (`#[cfg(target_arch = "x86")]` stdcall beside a
+    `not(x86)` one). Keyed by name alone, setuplib's seven twins merged their errors, and a
+    revert by name put one twin's text over the other: both ended up `not(x86)`.
+    """
+    same = [x for x in spans if x.name == sp.name]
+    return sp.name if len(same) == 1 else f"{sp.name}#{same.index(sp) + 1}"
+
+
+def fn_name(key: str) -> str:
+    return key.split("#", 1)[0]
 
 
 def _in_crate_call_site(span: dict, root: Path) -> dict:
@@ -685,6 +700,11 @@ class Attempt:
     status: str = ""  # replayed / bought / rejected:<why> / failed:<why>
     usd: float = 0.0
 
+    @property
+    def fn(self) -> str:
+        """The Rust function's name (`name` is a group key: `X#2` for a cfg twin)."""
+        return fn_name(self.name)
+
 
 @dataclass
 class RoundReport:
@@ -800,15 +820,22 @@ def _apply(root: Path, replacements: dict[str, list[tuple[FnSpan, str, str]]]) -
     forget_file_cache()
 
 
-def _replace_named(root: Path, fname: str, name: str, new_text: str) -> bool:
+def _replace_named(root: Path, fname: str, name: str, new_text: str, old_text: str) -> None:
+    """Swap `old_text` -- the function `name` exactly as it stands now -- for `new_text`.
+
+    By TEXT, not by name: with `#[cfg]` twins the first span of a name is not necessarily the
+    one being swapped (see span_key). A function that is not in the file as `old_text` is a
+    bookkeeping bug, so it raises rather than editing the wrong span.
+    """
     p = root / fname
     text = p.read_bytes().decode("utf-8")
+    want = old_text.rstrip("\n")
     for sp in function_spans(text):
-        if sp.name == name:
+        if sp.name == fn_name(name) and text[sp.start : sp.end] == want:
             text = text[: sp.start] + new_text.rstrip("\n") + text[sp.end :]
             tmp = p.with_suffix(".rs.fixtmp")
             tmp.write_bytes(text.encode("utf-8"))
             tmp.replace(p)
             forget_file_cache()
-            return True
-    return False
+            return
+    raise RuntimeError(f"crate_fix: {fname}:{name} is not in the file as expected")

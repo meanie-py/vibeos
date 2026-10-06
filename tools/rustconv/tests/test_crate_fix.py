@@ -200,3 +200,32 @@ def test_a_null_fn_pointer_may_become_none():
     )
     fixed = src.replace("core::ptr::null_mut()", "None")
     assert cf.reply_findings(src, fixed, {"error[E0308]": {"amd64"}}, lambda _: []) == []
+
+
+TWINS = """#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn Cb(a: u32) -> u32 {
+    a
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn Cb(a: u32) -> u32 {
+    a
+}
+"""
+
+
+def test_cfg_twins_are_separate_functions(tmp_path: Path):
+    # setuplib: seven NTAPI callbacks written as x86 / not(x86) twins. Keyed by name, a revert
+    # put the not(x86) text over the x86 twin and both ended up not(x86).
+    spans = cf.function_spans(TWINS)
+    assert [cf.span_key(spans, sp) for sp in spans] == ["Cb#1", "Cb#2"]
+    (tmp_path / "a.rs").write_text(TWINS)
+    second = TWINS[spans[1].start : spans[1].end]
+    cf._replace_named(tmp_path, "a.rs", "Cb#2", second.replace("a\n}", "a + 0\n}"), second)
+    out = (tmp_path / "a.rs").read_text()
+    assert 'cfg(target_arch = "x86")]\nunsafe extern "stdcall" fn Cb(a: u32) -> u32 {\n    a\n}' in out
+    assert "a + 0" in out
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        cf._replace_named(tmp_path, "a.rs", "Cb#2", "x", second)  # no longer there as `second`
