@@ -143,3 +143,27 @@ def test_shared_constants_are_reexported_unless_the_prelude_defines_them(tmp_pat
     p.write_text("pub use win32macros_rust::{LOWORD};\npub const UNICODE_NULL: u16 = 0;\n")
     assert pr.refresh_shared_macros(p, src)
     assert "pub use win32macros_rust::{INVALID_HANDLE_VALUE, LOWORD};" in p.read_text()
+
+
+def test_shared_crates_are_reexported_by_path_and_depended_on(tmp_path):
+    ws = tmp_path
+    (ws / "win32macros-rust" / "src").mkdir(parents=True)
+    (ws / "win32macros-rust" / "src" / "lib.rs").write_text("macro_rules! LOWORD {}\n")
+    (ws / "strsafe-rust" / "src").mkdir(parents=True)
+    (ws / "strsafe-rust" / "src" / "lib.rs").write_text(
+        'macro_rules! StringCchPrintfW {}\npub unsafe extern "system" fn StringCchCopyW() {}\n'
+    )
+    (ws / "strsafe-rust" / "src" / "ntstrsafe.rs").write_text(
+        "pub unsafe fn RtlStringCchCopyW() {}\nmacro_rules! RtlStringCchPrintfW {}\n"
+    )
+    crate = ws / "x-rust"
+    (crate / "src").mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[package]\nname = "x"\n\n[dependencies]\nfoo = "1"\n')
+    (crate / "src" / "prelude.rs").write_text("pub use win32macros_rust::{LOWORD};\n")
+    changed = pr.refresh_shared_crates(crate, ws)
+    text = (crate / "src" / "prelude.rs").read_text()
+    assert "pub use strsafe_rust::{RtlStringCchPrintfW, StringCchCopyW, StringCchPrintfW};" in text
+    assert "pub use strsafe_rust::ntstrsafe::{RtlStringCchCopyW};" in text
+    assert set(changed) == {"strsafe_rust", "strsafe_rust::ntstrsafe"}
+    assert 'strsafe-rust = { path = "../strsafe-rust" }' in (crate / "Cargo.toml").read_text()
+    assert pr.refresh_shared_crates(crate, ws) == []

@@ -63,6 +63,10 @@ RULE_SIZEOF_TYPE = "sizeof_type_name"
 RULE_ARRAY_DECAY = "array_decay"
 RULE_C_INT_SUFFIX = "c_integer_suffix"
 RULE_NULL_FN_POINTER = "null_fn_pointer"
+RULE_C_TRUTHINESS = "c_truthiness"
+RULE_OPTION_FN_CALL = "option_fn_call"
+RULE_UNINIT_LOCAL = "uninit_c_local"
+RULE_MUT_BINDING = "c_mutable_binding"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -85,6 +89,10 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_SIZEOF_TYPE,
     RULE_C_INT_SUFFIX,
     RULE_NULL_FN_POINTER,
+    RULE_C_TRUTHINESS,
+    RULE_OPTION_FN_CALL,
+    RULE_UNINIT_LOCAL,
+    RULE_MUT_BINDING,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -739,6 +747,19 @@ def is_error_diagnostic(diagnostic: Mapping[str, Any]) -> bool:
 
 def count_errors(diagnostics: Sequence[Mapping[str, Any]]) -> int:
     return sum(1 for diagnostic in diagnostics if is_error_diagnostic(diagnostic))
+
+
+def count_halting_errors(diagnostics: Sequence[Mapping[str, Any]]) -> int:
+    """Errors with NO error code: parse and macro-expansion failures.
+
+    rustc stops before type checking once one exists, so every later error vanishes from
+    the count. A pass that adds one makes the TOTAL fall, and "the count did not rise" then
+    accepts it: setuplib went 546 -> 16 on a pass whose only fault was three
+    `no rules expected .` expansions. These must not rise either.
+    """
+    return sum(
+        1 for d in diagnostics if is_error_diagnostic(d) and not (d.get("code") or {}).get("code")
+    )
 
 
 def pointer_width(target: str) -> int:
@@ -1646,6 +1667,370 @@ def _null_fn_pointer_rule(
     return edits, skipped, claimed
 
 
+#: C integer types whose Rust primitive is the same on every target, so `bool as T` bakes no
+#: pointer width (BOOLEAN, UCHAR, USHORT, ULONG, LONG, BOOL).
+_FIXED_C_INTS = frozenset({"u8", "i8", "u16", "i16", "u32", "i32"})
+
+
+def _c_truthiness_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """C truthiness, both directions, as C defines it.
+
+    An integer where Rust wants `bool` is `x != 0`, and C's `!x` on an integer is `x == 0` --
+    in Rust `!x` on a `u8` is a BITWISE not that still has type `u8`, so `if !Foo()` is a
+    type error rather than a silent bug, and rustc blames the whole `!Foo()` (verified on
+    1.92). setuplib had 37 such sites, all `BOOLEAN`/`BOOL` results used as conditions. The
+    reverse, a comparison stored into a `BOOLEAN`, is `(cond) as u8`: C's 0/1. Only to
+    fixed-width C integers, so no target's pointer width is baked in.
+    """
+    edits: list[Edit] = []
+    skipped: list[Skipped] = []
+    claimed = False
+    sites = list(_mismatch_sites(diagnostic))
+    # An unsuffixed literal is labelled WITHOUT backticks ("expected `bool`, found integer"),
+    # which `_mismatch_sites` does not parse. The usual shape is the C idiom of comparing a
+    # BOOLEAN-returning call with 0 where the Rust callee already returns `bool`
+    # (`IsListEmpty(..) == 0`): rustc blames the literal, and `0` is `false`.
+    for span in diagnostic.get("spans") or []:
+        if str(span.get("label") or "") == "expected `bool`, found integer":
+            sites.append((dict(span), "bool", "integer-literal"))
+    for span, expected, found in sites:
+        if found == "integer-literal":
+            claimed = True
+            file_name = str(span.get("file_name") or "")
+            start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+            data = load(file_name)
+            text = data[start:end].decode("utf-8", "replace").strip() if data else ""
+            lit = re.fullmatch(r"(0[xX][0-9a-fA-F_]+|[0-9][0-9_]*)", text)
+            if lit is None:
+                continue
+            value = (
+                int(lit.group(1).replace("_", ""), 0)
+                if text.startswith(("0x", "0X"))
+                else int(lit.group(1).replace("_", ""))
+            )
+            edits.append(
+                Edit(
+                    file_name=file_name,
+                    byte_start=start,
+                    byte_end=end,
+                    replacement="true" if value else "false",
+                    rule=RULE_C_TRUTHINESS,
+                    authority="rustc: an integer literal where `bool` is expected; C's 0 is false",
+                    original=text,
+                    line=int(span.get("line_start") or 0),
+                    column=int(span.get("column_start") or 0),
+                    targets=(ctx.target,),
+                )
+            )
+            continue
+        # "integer" is rustc's word for an unsuffixed literal (`while 1`, `x = 0` into a flag).
+        to_bool = expected == "bool" and (found in INT_PRIMITIVES or found == "integer")
+        from_bool = found == "bool" and expected in _FIXED_C_INTS
+        if not (to_bool or from_bool):
+            continue
+        claimed = True
+        file_name = str(span.get("file_name") or "")
+        line = int(span.get("line_start") or 0)
+        start = int(span.get("byte_start") or 0)
+        end = int(span.get("byte_end") or 0)
+        data = load(file_name)
+        if data is None or end <= start:
+            continue
+        masked = _mask_lexical(data)
+        if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
+            skipped.append(Skipped(RULE_C_TRUTHINESS, "macro_or_unbalanced", file_name, line))
+            continue
+        text = data[start:end].decode("utf-8", "replace")
+        if from_bool:
+            replacement = f"({text}) as {expected}"
+        elif text.startswith("!") and not text.startswith("!="):
+            inner = text[1:].strip()
+            replacement = f"(({inner}) == 0)"
+        else:
+            replacement = f"(({text}) != 0)"
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=replacement,
+                rule=RULE_C_TRUTHINESS,
+                authority=(
+                    f"rustc: expected `{expected}`, found `{found}`; C converts an integer to a "
+                    "condition as `!= 0` (and `!x` as `== 0`), and a condition to 0/1"
+                ),
+                original=text,
+                line=line,
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        )
+    return edits, skipped, claimed
+
+
+def _option_fn_call_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """C's call through a function pointer, where bindgen types the pointer `Option<fn>`.
+
+    rustc E0618 "expected function, found `Option<.. fn ..>`" blames the CALLEE alone (verified
+    on 1.92, both `g(2)` and `(s.f)(1)`), so it becomes `(callee.unwrap_unchecked())`. NOT
+    `.unwrap()`: `assert_faithful` refuses any panic, and rightly -- calling a NULL function
+    pointer is undefined in C, and `unwrap_unchecked` on `None` is undefined in Rust, the same
+    contract with no new failure path.
+    setuplib: 35 sites, SpInfExports' INF hooks and the USETUP progress callbacks.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0618":
+        return [], [], False
+    message = str(diagnostic.get("message") or "")
+    if "found `Option<" not in message or "fn(" not in message:
+        return [], [], False
+    span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    data = load(file_name)
+    if data is None or end <= start:
+        return [], [], False
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
+        return [], [], False
+    text = data[start:end].decode("utf-8", "replace")
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"({text}.unwrap_unchecked())",
+                rule=RULE_OPTION_FN_CALL,
+                authority="rustc E0618: the callee is an Option<fn>; C calls the pointer directly",
+                original=text,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _uninit_local_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A C local declared without an initialiser: `let x: T;` -> `= core::mem::zeroed();`.
+
+    C lets a local be read, or filled field by field (`InitializeObjectAttributes`, an
+    `IO_STATUS_BLOCK` handed to a syscall to fill), without ever being initialised; rustc's
+    E0381 refuses. Reading it in C is undefined, so a defined zero is no change to any
+    defined behaviour. The declaration comes from rustc's own secondary span ("binding
+    declared here but left uninitialized"); one without a TYPE is left RED, because
+    `zeroed()` needs one. setuplib: 27 sites.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0381":
+        return [], [], False
+    decl = next(
+        (
+            s
+            for s in diagnostic.get("spans") or []
+            if "declared here but left uninitialized" in str(s.get("label") or "")
+        ),
+        None,
+    )
+    if decl is None:
+        return [], [], False
+    file_name = str(decl.get("file_name") or "")
+    line = int(decl.get("line_start") or 0)
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    masked = _mask_lexical(data)
+    i, depth = int(decl.get("byte_end") or 0), 0
+    colon = -1
+    while i < len(masked):
+        c = masked[i : i + 1]
+        if c in b"([{":
+            depth += 1
+        elif c in b")]}":
+            depth -= 1
+        elif depth == 0 and c == b":" and colon < 0:
+            colon = i
+        elif depth == 0 and c in b"=;":
+            break
+        i += 1
+    if i >= len(masked) or masked[i : i + 1] != b";" or colon < 0:
+        return (
+            [],
+            [Skipped(RULE_UNINIT_LOCAL, "untyped_or_initialised", file_name, line)],
+            True,
+        )
+    original = data[i : i + 1].decode()
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=i,
+                byte_end=i + 1,
+                replacement=" = core::mem::zeroed();",
+                rule=RULE_UNINIT_LOCAL,
+                authority="rustc E0381: a C local read or field-filled before any initialiser",
+                original=original,
+                line=line,
+                column=int(decl.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _mut_binding_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """C parameters and locals are assignable; Rust bindings are not unless `mut`.
+
+    rustc's own MachineApplicable child suggestion for E0384 (assign twice / assign to an
+    immutable argument) and E0596 (borrow as mutable) is the zero-width insertion `mut `,
+    which is exactly C's semantics. Several errors share one binding, so each insertion
+    point is claimed once.
+    """
+    code = (diagnostic.get("code") or {}).get("code")
+    if code not in ("E0384", "E0596"):
+        return [], [], False
+    edits: list[Edit] = []
+    for child in diagnostic.get("children") or []:
+        for span in child.get("spans") or []:
+            if span.get("suggested_replacement") != "mut " or (
+                span.get("suggestion_applicability") != "MachineApplicable"
+            ):
+                continue
+            file_name = str(span.get("file_name") or "")
+            at = int(span.get("byte_start") or 0)
+            if int(span.get("byte_end") or 0) != at or (file_name, at, at) in ctx.claimed:
+                continue
+            ctx.claimed.add((file_name, at, at))
+            edits.append(
+                Edit(
+                    file_name=file_name,
+                    byte_start=at,
+                    byte_end=at,
+                    replacement="mut ",
+                    rule=RULE_MUT_BINDING,
+                    authority=f"rustc {code} MachineApplicable: C bindings are assignable",
+                    original="",
+                    line=int(span.get("line_start") or 0),
+                    column=int(span.get("column_start") or 0),
+                    targets=(ctx.target,),
+                )
+            )
+    return edits, [], bool(edits)
+
+
+def _anon_literal_rewrite(
+    span: Mapping[str, Any], load: FileReader, ctx: _Ctx, struct: str
+) -> Edit | None:
+    """`T { Status: a, Information: b }` -> a zeroed `T` with each field stored by its path.
+
+    A Rust struct literal cannot name a field that lives in an anonymous union
+    (`__bindgen_anon_1.Status`), so the literal becomes a block: `{ let mut __lit: T =
+    core::mem::zeroed(); __lit.__bindgen_anon_1.Status = a; __lit.Information = b; __lit }`.
+    That is C's semantics exactly -- an aggregate initialiser zero-fills what it does not
+    name. Declines (None) on anything but plain `field: expr` / shorthand entries, a
+    functional-update `..base`, or an unbalanced span; the earlier hand-rolled rewrite turned
+    every site into a parse error, which `count_halting_errors` now also catches.
+    """
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return None
+    masked = _mask_lexical(data)
+    pos = int(span.get("byte_start") or 0)
+    depth, i = 0, pos - 1
+    while i >= 0:
+        c = masked[i : i + 1]
+        if c in b")]}":
+            depth += 1
+        elif c in b"([{":
+            if depth == 0:
+                break
+            depth -= 1
+        i -= 1
+    if i < 0 or masked[i : i + 1] != b"{":
+        return None
+    open_brace = i
+    head = re.search(rb"([A-Za-z_][\w:]*)\s*$", masked[max(0, open_brace - 200) : open_brace])
+    if head is None:
+        return None
+    ty_start = open_brace - (len(masked[max(0, open_brace - 200) : open_brace]) - head.start())
+    ty = data[ty_start : ty_start + len(head.group(1))].decode()
+    close, depth = None, 0
+    for k in range(open_brace, len(masked)):
+        c = masked[k : k + 1]
+        if c in b"([{":
+            depth += 1
+        elif c in b")]}":
+            depth -= 1
+            if depth == 0:
+                close = k
+                break
+    if close is None or (file_name, ty_start, close + 1) in ctx.claimed:
+        return None
+    body = data[open_brace + 1 : close].decode("utf-8", "replace")
+    stores = []
+    for part in _split_top_level_commas(body):
+        part = part.strip()
+        if not part:
+            continue
+        if part.startswith(".."):
+            return None
+        name, sep, value = part.partition(":")
+        name = name.strip()
+        if not re.fullmatch(r"[A-Za-z_]\w*", name):
+            return None
+        value = value.strip() if sep else name
+        path = ctx.anon_unions.get((struct, name), name)
+        stores.append(f"__lit.{path} = {value};")
+    ctx.claimed.add((file_name, ty_start, close + 1))
+    original = data[ty_start : close + 1].decode("utf-8", "replace")
+    return Edit(
+        file_name=file_name,
+        byte_start=ty_start,
+        byte_end=close + 1,
+        replacement="{ let mut __lit: "
+        + ty
+        + " = core::mem::zeroed(); "
+        + " ".join(stores)
+        + " __lit }",
+        rule=RULE_ANON_UNION,
+        authority=f"`{struct}` literal names an anonymous-union field; C zero-fills the rest",
+        original=original,
+        line=int(span.get("line_start") or 0),
+        column=int(span.get("column_start") or 0),
+        targets=(ctx.target,),
+    )
+
+
+def _split_top_level_commas(text: str) -> list[str]:
+    parts, depth, cur = [], 0, []
+    for ch in text:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur))
+    return parts
+
+
 def _no_std_path_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -1821,7 +2206,9 @@ def _match_scrutinee_rule(
 _RE_NO_FIELD = re.compile(r"no field `(?P<field>\w+)` on type `(?P<ty>[&*\w \n]+?)`", re.S)
 #: E0560 ``struct `Y` has no field named `X` `` — a struct-LITERAL field, which is not fixable
 #: by the same substitution (see the rule).
-_RE_NO_LITERAL_FIELD = re.compile(r"struct `(?P<ty>\w+)` has no field named `(?P<field>\w+)`")
+_RE_NO_LITERAL_FIELD = re.compile(
+    r"(?:struct|union) `(?P<ty>[\w:]+)` has no field named `(?P<field>\w+)`"
+)
 
 
 def _anon_union_rule(
@@ -1857,8 +2244,12 @@ def _anon_union_rule(
             (item for item in diagnostic.get("spans") or [] if item.get("is_primary")), None
         )
         struct, field_name = literal.group("ty"), literal.group("field")
+        struct = struct.split("::")[-1]  # `ntdll_sys::nt::_IO_STATUS_BLOCK`
         if (struct, field_name) not in ctx.anon_unions:
             return [], [], False
+        rewrite = _anon_literal_rewrite(span or {}, load, ctx, struct)
+        if rewrite is not None:
+            return [rewrite], [], True
         return (
             [],
             [
@@ -2264,6 +2655,10 @@ _RULE_TABLE: dict[
     RULE_SIZEOF_TYPE: _sizeof_type_rule,
     RULE_C_INT_SUFFIX: _c_int_suffix_rule,
     RULE_NULL_FN_POINTER: _null_fn_pointer_rule,
+    RULE_C_TRUTHINESS: _c_truthiness_rule,
+    RULE_OPTION_FN_CALL: _option_fn_call_rule,
+    RULE_UNINIT_LOCAL: _uninit_local_rule,
+    RULE_MUT_BINDING: _mut_binding_rule,
 }
 
 
@@ -3109,7 +3504,18 @@ def _local_anon_unions(crate_dir: Path) -> dict[tuple[str, str], str]:
     sources = {
         path.as_posix(): path.read_bytes() for path in sorted((crate_dir / "src").rglob("*.rs"))
     }
-    return harvest_anon_unions(sources)
+    unions = harvest_anon_unions(sources)
+    # The same one-link extension as `_local_authorities`: a usermode island's PUBLIC
+    # `pub use ntdll_sys::nt::*;` is the path `_IO_STATUS_BLOCK`/`_LARGE_INTEGER`/
+    # `_DISK_PARTITION_INFO` reach the caller by, so their anonymous unions route the same
+    # way there. setuplib had ~50 `.Status`/`.LowPart`/`.Mbr` errors on ntdll-sys types.
+    islands = [d for p, d in sources.items() if re.search(r"/types_[a-z0-9]+\.rs$", p)]
+    if any(re.search(rb"^pub use ntdll_sys::nt::\*;", d, re.M) for d in islands):
+        sys_src = crate_dir.parent / "ntdll-sys" / "src"
+        sys_sources = {p.as_posix(): p.read_bytes() for p in sorted(sys_src.glob("bindgen_*.rs"))}
+        for key, path in harvest_anon_unions(sys_sources).items():
+            unions.setdefault(key, path)
+    return unions
 
 
 def _local_authorities(crate_dir: Path) -> tuple[dict[str, list[str]], frozenset[str]]:
@@ -3274,11 +3680,23 @@ def repair_crate(
     )
     snapshot: dict[str, bytes] = {}
     previous_total: int | None = None
+    previous_halting: int | None = None
     for index in range(1, max_passes + 1):
         runs = {target: check(target) for target in targets}
         counts = {target: run.error_count for target, run in runs.items()}
         total = sum(counts.values())
+        halting = sum(count_halting_errors(run.diagnostics) for run in runs.values())
         current = RepairPass(index=index, error_counts=counts)
+        if previous_halting is not None and halting > previous_halting:
+            restore_snapshot(snapshot, root)
+            session.passes.append(current)
+            session.status = "regressed"
+            session.detail = (
+                f"pass {index - 1} added parse/expansion errors ({previous_halting} -> "
+                f"{halting}), which hide every later error -- its total of {total} is not a "
+                "real count. Its edits were REVERTED; fix the rule (or the macro it fed)."
+            )
+            return session
         if previous_total is not None and total > previous_total:
             restore_snapshot(snapshot, root)
             session.passes.append(current)
@@ -3345,6 +3763,7 @@ def repair_crate(
         session.passes.append(current)
         session.final_red = list(merged.red)
         previous_total = total
+        previous_halting = halting
     session.status = "max_passes"
     session.detail = f"stopped after {max_passes} passes without reaching a fixpoint"
     return session

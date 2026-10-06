@@ -321,6 +321,31 @@ Acceptance and seal fixes from the same run:
 - **`port macros` runs with thinking ON**: macros get none of the per-function audits, and the
   thinking-off reply compiled `VersionInfo32_Children` as a struct-scaled pointer add.
 
+crate-repair rules the setuplib residue added (each is C's own semantics, nothing guessed):
+`c_truthiness` (an integer in a condition is `!= 0`, C's `!x` is `== 0`, a `0` compared
+with a bool-returning call is `false`, a condition stored into BOOLEAN is `as u8`),
+`option_fn_call` (a call through a bindgen `Option<fn>` is `.unwrap_unchecked()` — calling
+NULL is undefined in both languages; `.unwrap()` stays forbidden), `uninit_c_local` (`let x:
+T;` read or field-filled first gets `= core::mem::zeroed()`), `c_mutable_binding` (rustc's
+own `mut ` suggestion: C bindings are assignable), and `anon_union_field` now rewrites a
+struct LITERAL naming an anonymous-union field into a zeroed value plus field stores. The
+width and anon-union authorities read ntdll-sys through the island's public glob. And the
+pass loop now also reverts a pass that adds a parse/expansion error, because one of those
+stops type checking and makes the total FALL (546 -> 16 on a pass that broke 3 macros).
+
+The stitcher bug that one found: `stitch_file` located a function's start by matching
+STRIPPED lines and did not know `unsafe extern "C" fn` without `pub`, so an indented
+`#[cfg(..)]` inside the body was taken as the start; everything above it was hoisted as a
+"standalone item" and 20 partlist functions ended up nested in `UpdateDiskLayout`. Only
+column-0 lines count now. `port translate --replay-only` reassembles every TU from the bank
+for $0 after a fix like that.
+
+ntstrsafe.h's `RtlString*` family (NTSTATUS twins of strsafe, `static __inline`, exported by
+nothing) now lives in `strsafe-rust::ntstrsafe`, transcribed rather than aliased — the
+oversized-destination and overflow behaviour differ from the HRESULT family. `port resolve`
+re-exports win32macros-rust and strsafe-rust by name through a registry, adding the Cargo
+dependency, and never copies a tree-consensus `extern` for a name a shared crate provides.
+
 c2rust anchoring fixes the setuplib run forced, all in `c2rust_anchor.py`:
 `--preserve-unused-functions` (c2rust prunes an unused `static`, and liveness is per arch —
 `IsAcpiComputer` is only called under `#ifndef _M_AMD64`); a body missing from the requested
