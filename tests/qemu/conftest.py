@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -259,6 +260,20 @@ def vm(
         )
     print(f"\n[pytest] Boot complete ({len(boot_output)} bytes of serial output)")
 
+    if os.environ.get("VIBEOS_QEMU_RR", "").strip():
+        # Record/replay: a trace is ONE continuous execution. The per-test
+        # `loadvm ready` below would rewind the whole machine at a moment the
+        # harness picks by host time, which no log can reproduce — the replay's
+        # loadvm lands at a different instruction than the recording's and swaps
+        # the entire state. That was the arm64 kmtest divergence after the network
+        # was recorded: `rr diverge` matched the recording through the desktop and
+        # then met a STOP no break had asked for. Tests run sequentially in one VM,
+        # the same isolation WHPX gets.
+        print("[pytest] record/replay: no `ready` snapshot; tests share one live VM")
+        yield vm
+        vm.stop()
+        return
+
     try:
         vm.save_snapshot("ready")
     except RuntimeError as e:
@@ -285,6 +300,11 @@ def vm(
 @pytest.fixture(autouse=True)
 def restore_vm(vm: QemuVM) -> Iterator[None]:
     """Restore to 'ready' snapshot before each test."""
+    if os.environ.get("VIBEOS_QEMU_RR", "").strip():
+        # No snapshot under record/replay (see the vm fixture), and HMP loadvm
+        # stops and restarts the VM before it finds that out.
+        yield
+        return
     try:
         vm.restore_snapshot("ready")
     except (RuntimeError, BrokenPipeError, ConnectionError, OSError):

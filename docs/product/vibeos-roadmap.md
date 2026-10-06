@@ -4940,9 +4940,11 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     special-kernel APC, and in the wrong process context the same user VA can be mapped and
     writable, so the write silently lands in another address space rather than faulting.
     **One datum separates them**: `IoStatus.Information` and the current process at the moment
-    of the copy. Neither a record/replay capture (replay is wedged, so a trace is a capture and
-    not a session) nor the serial log can supply it; a breakpoint at `irp.rs:568` on a live
+    of the copy. The serial log cannot supply it; a breakpoint at `irp.rs:568` on a live
     soak can, at the observed ~1-in-9 rate — once `0280df67353` lands, per the trap below.
+    **Record/replay can now too (2026-10-05):** an arm64 kmtest recording replays the whole
+    sweep deterministically (docs/engineering/qemu-record-replay.md), so a recording that
+    catches the bad round is a session: `rr replay --break-at` near it and read the IRP.
     **Two traps for whoever picks this up, both of them absences that mean nothing.** First,
     `Example_drv.c:227`'s `IRP!` trace does NOT print for these device-control IRPs in either
     round, so its absence is not evidence the IOCTL never arrived — the clean round looks
