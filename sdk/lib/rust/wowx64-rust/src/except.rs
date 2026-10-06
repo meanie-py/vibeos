@@ -64,6 +64,7 @@ const _: () = assert!(core::mem::size_of::<MachineFrame>() == 0x28);
 const _: () = assert!(core::mem::offset_of!(UserExceptionStack, ExceptionRecord) == 0x4D0);
 
 static mut KiUserExceptionDispatcher: u64 = 0;
+static VehCount: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 pub unsafe fn SetGuestDispatcher(Address: u64) {
     KiUserExceptionDispatcher = Address;
@@ -171,6 +172,20 @@ pub unsafe extern "system" fn WowX64Veh(Info: *mut _EXCEPTION_POINTERS) -> LONG 
     };
     let HostPc = (*(*Info).ContextRecord).Pc;
     let HostSp = (*(*Info).ContextRecord).Sp;
+    // Every exception, for the first few: the CPU layer resolves most of them
+    // (overcommit, unaligned atomics, SMC) by NtContinue from inside Reset, so
+    // the ones that END a guest are otherwise preceded by nothing at all.
+    let N = VehCount.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    if N < 64 {
+        crate::trace!(
+            "veh #%u: %08lx at pc %p lr %p (address %p)",
+            N + 1,
+            (*(*Info).ExceptionRecord).ExceptionCode,
+            HostPc as *const c_void,
+            (*(*Info).ContextRecord).__bindgen_anon_1.X[30] as *const c_void,
+            (*(*Info).ExceptionRecord).ExceptionInformation[1] as *const c_void,
+        );
+    }
     (Cpu.ResetToConsistentState)(Info);
     if (*(*Info).ContextRecord).Pc == HostPc && (*(*Info).ContextRecord).Sp == HostSp {
         // A host fault: passed on, and said, because in a guest process a host
