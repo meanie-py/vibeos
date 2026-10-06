@@ -65,7 +65,5 @@ def test_comment_quoting_the_c_does_not_fire():
 
 
 def test_tree_is_clean():
-    proc = subprocess.run(
-        [sys.executable, str(TOOL)], capture_output=True, text=True, check=True
-    )
+    proc = subprocess.run([sys.executable, str(TOOL)], capture_output=True, text=True, check=True)
     assert proc.stdout == ""

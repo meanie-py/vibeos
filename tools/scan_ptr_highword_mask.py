@@ -89,7 +89,9 @@ def scan_text(text: str) -> list[tuple[int, str]]:
         ident = BARE_IDENT.match(operand)
         return bool(
             ident
-            and re.search(r"\b" + re.escape(ident.group(1)) + r"\s*:\s*" + PTR_TYPES + r"\b", stripped)
+            and re.search(
+                r"\b" + re.escape(ident.group(1)) + r"\s*:\s*" + PTR_TYPES + r"\b", stripped
+            )
         )
 
     for lineno, line in enumerate(stripped.split("\n"), 1):
