@@ -3066,14 +3066,10 @@ pub unsafe extern "system" fn ReleaseCapture() -> BOOL {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn RealGetQueueStatus(mut flags: UINT) -> DWORD {
+pub unsafe extern "system" fn RealGetQueueStatus(flags: UINT) -> DWORD {
     if flags & !(QS_ALLINPUT | QS_ALLPOSTMESSAGE | QS_SMRESULT) != 0 {
         SetLastError(ERROR_INVALID_FLAGS);
         return 0;
-    }
-    if flags & QS_RAWINPUT != 0 {
-        SetLastError(ERROR_INVALID_FLAGS);
-        flags &= !QS_RAWINPUT;
     }
     NtUserxGetQueueStatus(flags)
 }

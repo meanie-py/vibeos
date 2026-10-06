@@ -3,7 +3,7 @@
  * LICENSE:     GPL - See COPYING in the top level directory
  * FILE:        drivers/input/i8042prt/pnp.c
  * PURPOSE:     IRP_MJ_PNP operations
- * PROGRAMMERS: Copyright 2006-2007 Herv� Poussineau (hpoussin@reactos.org)
+ * PROGRAMMERS: Copyright 2006-2007 Hervé Poussineau (hpoussin@reactos.org)
  *              Copyright 2008 Colin Finck (mail@colinfinck.de)
  */
 
@@ -301,10 +301,6 @@ i8042ConnectKeyboardInterrupt(
         PortDeviceExtension->KeyboardInterrupt.Vector, PortDeviceExtension->KeyboardInterrupt.Dirql, DirqlMax,
         PortDeviceExtension->KeyboardInterrupt.InterruptMode, PortDeviceExtension->KeyboardInterrupt.ShareInterrupt,
         PortDeviceExtension->KeyboardInterrupt.Affinity, FALSE);
-    DPRINT1("[[I8K]] KBD IoConnectInterrupt -> 0x%08x (Vec=%lu Dirql=%u Obj=%p)\n",
-        Status, PortDeviceExtension->KeyboardInterrupt.Vector,
-        PortDeviceExtension->KeyboardInterrupt.Dirql,
-        PortDeviceExtension->KeyboardInterrupt.Object);
     if (!NT_SUCCESS(Status))
     {
         WARN_(I8042PRT, "IoConnectInterrupt() failed with status 0x%08x\n", Status);
@@ -355,10 +351,6 @@ i8042ConnectMouseInterrupt(
         PortDeviceExtension->MouseInterrupt.Vector, PortDeviceExtension->MouseInterrupt.Dirql, DirqlMax,
         PortDeviceExtension->MouseInterrupt.InterruptMode, PortDeviceExtension->MouseInterrupt.ShareInterrupt,
         PortDeviceExtension->MouseInterrupt.Affinity, FALSE);
-    DPRINT1("[[I8K]] MOU IoConnectInterrupt -> 0x%08x (Vec=%lu Dirql=%u Obj=%p)\n",
-        Status, PortDeviceExtension->MouseInterrupt.Vector,
-        PortDeviceExtension->MouseInterrupt.Dirql,
-        PortDeviceExtension->MouseInterrupt.Object);
     if (!NT_SUCCESS(Status))
     {
         WARN_(I8042PRT, "IoConnectInterrupt() failed with status 0x%08x\n", Status);
@@ -517,11 +509,12 @@ i8042PnpStartDevice(
     BOOLEAN FoundDataPort = FALSE;
     BOOLEAN FoundControlPort = FALSE;
     BOOLEAN FoundIrq = FALSE;
+    PUCHAR DataPort = NULL;
+    PUCHAR ControlPort = NULL;
     ULONG i;
     NTSTATUS Status;
 
     TRACE_(I8042PRT, "i8042PnpStartDevice(%p)\n", DeviceObject);
-    DPRINT1("[[I8K]] StartDevice ENTER Dev=%p AllocRes=%p\n", DeviceObject, AllocatedResources);
     DeviceExtension = (PFDO_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
     PortDeviceExtension = DeviceExtension->PortDeviceExtension;
 
@@ -567,14 +560,14 @@ i8042PnpStartDevice(
                      */
                     if (!FoundDataPort)
                     {
-                        PortDeviceExtension->DataPort = ULongToPtr(ResourceDescriptor->u.Port.Start.u.LowPart);
-                        INFO_(I8042PRT, "Found data port: %p\n", PortDeviceExtension->DataPort);
+                        DataPort = ULongToPtr(ResourceDescriptor->u.Port.Start.u.LowPart);
+                        INFO_(I8042PRT, "Found data port: %p\n", DataPort);
                         FoundDataPort = TRUE;
                     }
                     else if (!FoundControlPort)
                     {
-                        PortDeviceExtension->ControlPort = ULongToPtr(ResourceDescriptor->u.Port.Start.u.LowPart);
-                        INFO_(I8042PRT, "Found control port: %p\n", PortDeviceExtension->ControlPort);
+                        ControlPort = ULongToPtr(ResourceDescriptor->u.Port.Start.u.LowPart);
+                        INFO_(I8042PRT, "Found control port: %p\n", ControlPort);
                         FoundControlPort = TRUE;
                     }
                     else
@@ -608,10 +601,6 @@ i8042PnpStartDevice(
         }
     }
 
-    DPRINT1("[[I8K]] StartDevice res: Type=%d FoundIrq=%d Vec=%lu Dirql=%u Data=%d Ctrl=%d\n",
-        DeviceExtension->Type, FoundIrq, InterruptData.Vector, InterruptData.Dirql,
-        FoundDataPort, FoundControlPort);
-
     if (!FoundIrq)
     {
         WARN_(I8042PRT, "Interrupt resource was not found in allocated resources list\n");
@@ -622,10 +611,18 @@ i8042PnpStartDevice(
         WARN_(I8042PRT, "Some required resources were not found in allocated resources list\n");
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    else if (DeviceExtension->Type == Mouse && (FoundDataPort || FoundControlPort))
+    else if (DeviceExtension->Type == Mouse && FoundDataPort != FoundControlPort)
     {
-        WARN_(I8042PRT, "Too much resources were provided in allocated resources list\n");
+        WARN_(I8042PRT, "Mouse was given only one of the controller ports\n");
         return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Firmware gives the controller ports to the mouse when it reports no keyboard */
+    if (FoundDataPort && FoundControlPort &&
+        (DeviceExtension->Type == Keyboard || PortDeviceExtension->DataPort == NULL))
+    {
+        PortDeviceExtension->DataPort = DataPort;
+        PortDeviceExtension->ControlPort = ControlPort;
     }
 
     switch (DeviceExtension->Type)
@@ -706,7 +703,6 @@ i8042Pnp(
         case IRP_MN_START_DEVICE: /* 0x00 */
         {
             TRACE_(I8042PRT, "IRP_MJ_PNP / IRP_MN_START_DEVICE\n");
-            DPRINT1("[[I8K]] Pnp START_DEVICE DeviceType=%d\n", DeviceType);
 
             /* Call lower driver (if any) */
             if (DeviceType != PhysicalDeviceObject)

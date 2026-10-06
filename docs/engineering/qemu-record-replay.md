@@ -411,6 +411,18 @@ then "between the last match and the wedge".
 
 **Measured properties (QEMU 8.2.2, arm64):**
 
+* A STOP is not proof that a break fired: anything that pauses the VM emits one
+  (the kmtest rig's `savevm`/`loadvm` did). `diverge` compares only when the
+  guest is at exactly the requested icount, and otherwise reports where it
+  stopped and `query-status`. In 8.2.2 a break fires only on exact equality, with
+  the vCPU's budget clamped to land there (`replay_get_instructions`).
+* **The log decoder had async events wrong** until filter-replay's network
+  packets exposed it: QEMU writes `EVENT_ASYNC + kind` then the kind's payload,
+  with no separate kind or checkpoint byte (identical in 8.2.2 and 9.0.2), and
+  async ids are 3..9, shutdown 10..21. The old decoder survived only because the
+  block events it met were each followed by exactly two one-byte checkpoints for
+  it to swallow.
+
 * A recording pause does NOT end an instruction chunk; 17 of 31 and 20 of 30 samples
   happened to land on one, all of them in event-dense stretches. `resume after a
   replay-break` works: 16 consecutive break/fingerprint/`cont` cycles in one replay.
@@ -641,11 +653,87 @@ Record it here and keep going; only chase one when it looks load-bearing.
   Two plain replays of the same trace stall at the identical read offset
   (1,040,384), so replay is deterministic; but one `diverge` run, which pauses the
   replay at each fingerprint, got PAST that point (matching the recording at
-  18,971,127,479) and wedged at 18,985,805,350 in the same function instead. A
-  replay-side pause can therefore change the outcome — evidence that the missing
-  input is something a stop/cont cycle touches. **Next:** extend the fingerprint
-  past RAM and GPRs (system registers via the gdbstub, device vmstate) so the
-  first differing state is named rather than inferred.
+  18,971,127,479) and wedged at 18,985,805,350 in the same function instead. So
+  the replay was taking a host-timed input; that read as "a pause changes the
+  outcome" until the input turned out to be the network below, whose arrival times
+  any change in replay pacing shifts.
+
+  **SOLVED (2026-10-05): an unrecorded network, then the harness's own snapshots.
+  A kmtest recording now replays the whole sweep** — 98.8% of the trace, 18,286
+  serial lines identical through `[KMTEST-SWEEP] done total=93 launched=93`, the
+  rest being the harness quitting QEMU mid-print once it has its verdict.
+
+  Part one, the network. With the timestamp-blind
+  `rr verify` fixed (below), the replayed serial was a byte-exact prefix of the
+  recording up to `[NETSTACK] ... probing for virtio-net` / `mac 52:54:00:12:34:56`.
+  The guest had a NIC nobody asked for: given no network flag, QEMU adds the
+  machine's DEFAULT NIC (arm64 virt: virtio-net-pci; x86 pc: e1000) on slirp, and
+  the transform's network refusal only looked for explicit `-netdev/-nic/-net`, so
+  it walked past. Its packets were answered at host time and DMA'd into guest RAM
+  unlogged. Fixed in three steps, each measured by how far a plain replay of a
+  fresh kmtest recording gets (trace bytes consumed, serial lines agreeing):
+
+  | change | replay reached |
+  |---|---|
+  | before | 3.0% (918 lines), wedge in the first user process's loader |
+  | `-rtc clock=vm` (ruled out: no change) | 2.7% |
+  | default NIC made explicit, `filter-replay` on it | 3.0%, now past DHCP + DNS, wedged at the first ICMP echo |
+  | + `-global virtio-net-pci.tx=timer` | 25.4%, first divergence at line 3,957 |
+  | + `-global virtio-{mmio,pci}.ioeventfd=off` | 34.8%, first divergence at line 3,982 |
+  | + no per-test `savevm`/`loadvm` under rr (`conftest.py`) | **98.8%, the whole sweep** |
+
+  `tx=timer` moves virtio-net's transmit flush off a host-scheduled bottom half
+  onto a QEMU_CLOCK_VIRTUAL timer. `ioeventfd=off` makes every virtio queue notify
+  run its handler inside the vCPU's MMIO write instead of later from the main
+  loop; under TCG it is NOT gated on KVM.
+
+  Part two, found by `rr diverge`: with the network recorded it matched the
+  recording through the desktop (icount 22.5G) and then met a STOP that no break
+  had asked for. The kmtest rig takes `savevm ready` at boot-complete and
+  `loadvm ready` before EVERY test (`conftest.py`'s `vm` / `restore_vm`
+  fixtures), at moments the harness picks by host time — and a `loadvm` swaps the
+  entire machine state, at a different instruction in the replay than in the
+  recording. Under rr both fixtures now skip the snapshot (one continuous
+  execution, the isolation WHPX already gets).
+
+  Note the kmtest VERDICT under rr is 89/93, not 93/93: `ExFastMutex` loses two
+  checks and `ExPools` times out, identically with and without the snapshot change
+  — timing-sensitive tests under the icount clock, not a determinism problem.
+
+  **Device-state fingerprints are impossible under record on 8.2.2.** QMP
+  `migrate` aborts a recording QEMU: `migration.c:3305` reads QEMU_CLOCK_HOST in the
+  migration thread at setup, a logged read made without the replay mutex
+  (`replay_save_clock: assertion failed: (replay_mutex_locked())`). That is the
+  core migration path, not a device, so no flag avoids it. `rr diverge` therefore
+  compares registers and RAM only. (Migrating to a file outside rr works and QEMU's
+  `scripts/analyze-migration.py` parses it — ~270 system registers, the exclusive
+  monitor, GIC and timer state — if a later QEMU lifts this.)
+
+- **x86 replays died at a random serial write — the harness's serial SOCKET
+  refused bytes during recording (2026-10-05, fixed).** Symptom: `qemu-system-x86_64:
+  Missing character write event in the replay log`, at a different point on every
+  recording (1.70G, 2.25G, 82%). Each logged char write carries its result, and
+  every failing trace had writes logged with `res = -1`, the first one at exactly
+  the write the replay died on; the clean traces had none:
+
+  | trace | writes refused | replay |
+  |---|---|---|
+  | x86-net-1 | 302, first at 1,698,369,770 | died at that write |
+  | x86-ab-nonic | 8, first at 2.25G | died there |
+  | x86-samp-1 | 0 | clean |
+  | x86-usb-6 | 131, first at 9.47G | "clean" — the harness quit at the desktop first |
+  | arm64 traces | 0 | (the PL011 uses blocking `write_all`) |
+
+  Cause: x86's 16550 writes with non-blocking `qemu_chr_fe_write`, and when the
+  chardev refuses a byte it retries from a host G_IO_OUT watch — at a host-chosen
+  icount. The socket refuses whenever the harness's reader lags even briefly:
+  AF_UNIX stream charges each one-byte write a whole skb against the send buffer.
+  Fix: under rr the harness gives the guest's serial a regular FILE (`-chardev
+  file`, `SerialClient.follow_file`), which never refuses a write; a fresh x86
+  recording then logged 117,271 writes, all successful, and its replay agreed for
+  every line through the desktop. Serial INPUT is unavailable under rr as a result.
+  Two A/Bs run before this was found — dropping the recorded NIC, dropping
+  `ioeventfd=off` — each "failed", and both were measuring this instead.
 
 - **`blkreplay` cannot drive an ATAPI CD, which is why x86 cannot be recorded
   (2026-09-13). MEASURED, root-caused, and now refused up front.**

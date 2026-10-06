@@ -421,7 +421,7 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | # | Quest | Doc | Size | Status (2026-07-10) |
 |---|-------|-----|------|-----------|
 | 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
-| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — 🔓 **UNBLOCKED**: the shared USB host stack is proven live | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md) | M | ready to start |
+| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — 🔓 **UNBLOCKED**: the shared USB host stack is proven live | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md) | M | **Pi 4 storage reads** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, read-only to Windows for now, ~10.7 MB/s polled). Next: let Windows write the card, then boot from it instead of the RAM disk |
 | 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
 | 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). Next: its interrupts, then GEM and I217 |
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
@@ -2690,6 +2690,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
   it is a one-command check.
 
+- **2026-10-05: x86-64 code runs on arm64 (BTCpu64 M1).** `hello64.exe`, a plain amd64 PE,
+  exits `0x600D` on arm64 under FEX in 64-bit mode
+  (`/tmp/vibeos-cli/20261005-223205-ztl4mr2p-smoke-arm64`) AND natively on amd64
+  (`/tmp/vibeos-cli/20261005-224925-gh3n_tri-smoke-amd64`), the same binary graded on a JIT
+  host and a native one. It proves long mode, GS = the shared native TEB, the PEB, and a raw
+  `syscall` (`NtClose(NULL)` -> `STATUS_INVALID_HANDLE`) forwarded to the arm64 kernel by
+  register shuffle alone. This is Fork B of `docs/engineering/wow64-x64-guest-design.md`: ntdll
+  diverts an amd64 main image to `wowx64.dll` (new, Rust), which drives `libwowx64fex.dll`
+  (new, `tools/fex/wowx64fex`: FEXCore linked out of tree, `vendor/fex` untouched) through our
+  own BTCpu64 contract (`sdk/include/reactos/wowx64/btcpu64.h`). `hello64` is in the graded
+  ladder (`tests/qemu/cli/ladder.py`), so `pi4 --ladder` grades it on the A72 too. The 32-bit
+  ladder stayed green on both arches. **Next (M2):** the guest's own amd64 ntdll and loader, so
+  a guest with imports runs. Owed list: the design doc's "M1 status" section.
+
 - **2026-10-04: x86 guests run under FEX on a real Raspberry Pi 4.** The FEX arm64 media
   (`VIBEOS_FEX=1`, MP kernel, Cortex-A72 x4) netbooted to the desktop and ran the whole ladder:
 **13 of 14 x86 guests pass** plus `fexprobe` — including both stress guests, `lua32` and
@@ -4934,9 +4948,11 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     special-kernel APC, and in the wrong process context the same user VA can be mapped and
     writable, so the write silently lands in another address space rather than faulting.
     **One datum separates them**: `IoStatus.Information` and the current process at the moment
-    of the copy. Neither a record/replay capture (replay is wedged, so a trace is a capture and
-    not a session) nor the serial log can supply it; a breakpoint at `irp.rs:568` on a live
+    of the copy. The serial log cannot supply it; a breakpoint at `irp.rs:568` on a live
     soak can, at the observed ~1-in-9 rate — once `0280df67353` lands, per the trap below.
+    **Record/replay can now too (2026-10-05):** an arm64 kmtest recording replays the whole
+    sweep deterministically (docs/engineering/qemu-record-replay.md), so a recording that
+    catches the bad round is a session: `rr replay --break-at` near it and read the IRP.
     **Two traps for whoever picks this up, both of them absences that mean nothing.** First,
     `Example_drv.c:227`'s `IRP!` trace does NOT print for these device-control IRPs in either
     round, so its absence is not evidence the IOCTL never arrived — the clean round looks

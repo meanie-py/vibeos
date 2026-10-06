@@ -154,11 +154,11 @@ pub unsafe fn CDrivesFolderEnum_CreateInstance(
 
 // Deterministic C++ support closure selected from source identifiers.
 
-pub const CMDID_DISCONNECT: UINT = 3;
+pub const CMDID_DISCONNECT: UINT = 2;
 
-pub const CMDID_EJECT: UINT = 2;
+pub const CMDID_EJECT: UINT = 1;
 
-pub const CMDID_FORMAT: UINT = 1;
+pub const CMDID_FORMAT: UINT = 0;
 
 pub const IDI_SHELL_3_14_FLOPPY: UINT = 7;
 

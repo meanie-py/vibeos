@@ -2267,6 +2267,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdhc-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "sdhc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "se-rust"
 version = "0.1.0"
 dependencies = [
@@ -3058,6 +3074,22 @@ dependencies = [
 name = "wmilib-rust"
 version = "0.1.0"
 dependencies = [
+ "panic-common",
+]
+
+[[package]]
+name = "wowx64-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "wowx64-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
  "panic-common",
 ]
 

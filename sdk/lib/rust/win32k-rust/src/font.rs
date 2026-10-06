@@ -1832,6 +1832,42 @@ pub unsafe extern "system" fn NtGdiGetRealizationInfo(
     Ret
 }
 
+// The three NT6 font-file syscalls dwrite probes (upstream ab1aefbabb3, appended to
+// w32ksvc32/64.h). Stubs upstream as well: "Does not appear necessary for the main
+// functionality".
+#[no_mangle]
+pub unsafe extern "system" fn NtGdiGetFontFileData(
+    uFileCollectionID: UINT,
+    uFileIndex: UINT,
+    pullFileOffset: PULONGLONG,
+    pvBuf: PVOID,
+    cjBuf: SIZE_T,
+) -> DWORD {
+    let _ = (uFileCollectionID, uFileIndex, pullFileOffset, pvBuf, cjBuf);
+    DPRINT1!("WARNING: NtGdiGetFontFileData is UNIMPLEMENTED!\n");
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtGdiGetFontFileInfo(
+    uFileCollectionID: UINT,
+    uFileIndex: UINT,
+    pffi: PFONT_FILE_INFO,
+    cjSize: SIZE_T,
+    pcjActualSize: PSIZE_T,
+) -> DWORD {
+    let _ = (uFileCollectionID, uFileIndex, pffi, cjSize, pcjActualSize);
+    DPRINT1!("WARNING: NtGdiGetFontFileInfo is UNIMPLEMENTED!\n");
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtGdiGetFontRealizationInfo(hdc: HDC, info: PFONT_REALIZATION_INFO) -> BOOL {
+    let _ = (hdc, info);
+    DPRINT1!("WARNING: NtGdiGetFontRealizationInfo is UNIMPLEMENTED!\n");
+    FALSE as BOOL
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn HfontCreate(
     pelfw: *const ENUMLOGFONTEXDVW,

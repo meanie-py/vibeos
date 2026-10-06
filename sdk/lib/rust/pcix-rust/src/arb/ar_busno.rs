@@ -9,8 +9,24 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ARBITER_INTERFACE, PINTERFACE};
 use ntkrnl_sys::ddk::{ARBITER_INSTANCE, CM_RESOURCE_TYPE, RtlAssert};
+use ntkrnl_sys::ddk::{PARBITER_INSTANCE, PARB_TRANSLATE_ORDERING, PDEVICE_OBJECT};
 use ntkrnl_sys::driver_ddk::DbgPrint;
 use core::ffi::c_void;
+
+// The shipping arbiter library (arbiter-rust) still exports the pre-rewrite
+// ArbInitializeArbiterInstance. Upstream's arbiter.h now only declares the renamed
+// ArbiterLibInitializeInstance (#9502, not ported yet), so the regenerated types island
+// no longer carries this prototype; declare the one we actually link against.
+extern "system" {
+    fn ArbInitializeArbiterInstance(
+        Arbiter: PARBITER_INSTANCE,
+        BusDeviceObject: PDEVICE_OBJECT,
+        ResourceType: CM_RESOURCE_TYPE,
+        ArbiterName: PCWSTR,
+        OrderName: PCWSTR,
+        TranslateOrderingFunction: PARB_TRANSLATE_ORDERING,
+    ) -> NTSTATUS;
+}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)

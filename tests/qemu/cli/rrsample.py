@@ -35,6 +35,7 @@ import re
 import sys
 import threading
 import time
+import traceback
 import zlib
 from pathlib import Path
 
@@ -381,6 +382,20 @@ def replay_loop(fp: _Fingerprinter, trace: Path) -> None:
                 # to let it take an exception at.
                 verdict["wedge_regs"] = fp.qmp.hmp("info registers -a")
                 break
+            # A STOP is not proof the break fired: anything that pauses the VM emits
+            # one. One run compared a state 583M instructions short of its target
+            # and reported it as the first mismatch. Compare only at the target,
+            # and say what QEMU says stopped it otherwise.
+            at = fp.icount()
+            if at != ic:
+                status = fp.qmp.execute("query-status")["return"].get("status")
+                verdict["error"] = (
+                    f"the VM stopped at icount {at} (status {status!r}), short of the "
+                    f"break at {ic} — not by rr diverge, so that state is not comparable"
+                )
+                verdict["stopped_at"] = at
+                verdict["stop_regs"] = fp.qmp.hmp("info registers -a")
+                break
             r = fp.fingerprint()
             verdict["compared"] += 1
             verdict.setdefault("mid_chunk_ok", 0)
@@ -417,11 +432,40 @@ def replay_loop(fp: _Fingerprinter, trace: Path) -> None:
 def start(mode: str, value: str, trace: Path, argv: list[str], sock_path: Path, work: Path):
     """Start the sampler/checker thread for this VM. Returns the thread."""
     fp = _Fingerprinter(sock_path, ram_ranges(argv), work, trace / RAM_STORE)
-    if mode == "record":
-        target, args = record_loop, (fp, float(value), trace / SAMPLES_FILE)
-    else:
-        target, args = replay_loop, (fp, trace)
-    t = threading.Thread(target=target, args=args, name=f"rr-sample-{mode}", daemon=True)
+
+    def target() -> None:
+        if mode == "record":
+            record_loop(fp, float(value), trace / SAMPLES_FILE)
+        else:
+            replay_loop(fp, trace)
+
+    def _run() -> None:
+        try:
+            target()
+        except BaseException as exc:
+            # A thread's exception otherwise surfaces only as a pytest warning in the
+            # boot's own log, and `rr diverge` can say nothing but "no verdict".
+            # It lost a whole replay to an undecodable event that way.
+            msg = "".join(traceback.format_exception(exc))
+            print(f"[rr-sample] {mode} checker died:\n{msg}", file=sys.stderr)
+            if mode == "replay":
+                (trace / VERDICT_FILE).write_text(
+                    json.dumps(
+                        {
+                            "samples": 0,
+                            "compared": 0,
+                            "skipped": [],
+                            "inconclusive": [],
+                            "last_match": None,
+                            "error": f"checker died: {exc!r}",
+                        },
+                        indent=2,
+                    )
+                    + "\n"
+                )
+            raise
+
+    t = threading.Thread(target=_run, name=f"rr-sample-{mode}", daemon=True)
     t.start()
     return t
 

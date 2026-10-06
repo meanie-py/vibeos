@@ -1,4 +1,5 @@
 
+
 include_directories(libm_sse2)
 
 list(APPEND LIBCNTPR_MATH_SOURCE
@@ -266,6 +267,8 @@ list(APPEND CRT_MATH_SOURCE
     math/ldiv.c
     math/logf.c
     math/powf.c
+    math/trunc.c
+    math/truncf.c
 )
 
 list(APPEND CRT_MATH_ASM_SOURCE

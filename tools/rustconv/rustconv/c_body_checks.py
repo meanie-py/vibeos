@@ -20,6 +20,7 @@ import subprocess
 from .placement_audit import placement_findings
 
 _GOTO = re.compile(r"\bgoto\s+[A-Za-z_]\w*\s*;")
+_GOTO_SHIM = re.compile(r"\bgoto_\w+\s*!?\s*\(|\bfn\s+goto_\w+")
 _C_LABEL = re.compile(r"(?m)^[ \t]*([A-Za-z_]\w*)[ \t]*:(?!:)")
 _NOT_LABELS = frozenset({"default", "case", "public", "private", "protected"})
 _RS_COMMENT_OR_STRING = re.compile(
@@ -34,6 +35,15 @@ def control_flow_findings(c_body: str, rust: str) -> list[str]:
         out.append(
             "C `goto` survived into the Rust; restructure it (a labeled block with "
             "`break 'label`, or a loop) as the c2rust anchor does"
+        )
+    # The dodge: told "no goto", a thinking-on reply for setuplib's FindSupportedSystemPartition
+    # invented `goto_NoSystemPartition!()` (and elsewhere `fn goto_Quit()`) -- a shim named
+    # after the C label, which no parse check sees and which rustc reports as a missing macro.
+    shim = _GOTO_SHIM.search(code)
+    if shim:
+        out.append(
+            f"C `goto` lowered to an invented shim `{shim.group(0).strip()}`; use a labeled "
+            "block (`break 'label`) or a state-variable dispatch loop"
         )
     labels = {m.group(1) for m in _C_LABEL.finditer(c_body)} - _NOT_LABELS
     for label in sorted(labels):

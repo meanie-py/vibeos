@@ -502,12 +502,43 @@ pub unsafe extern "system" fn LdrpUpdateLoadCount2(
     LdrpUpdateLoadCount3(LdrEntry, Flags, &mut UpdateString);
 }
 
+/// True when the image at `Base` was built for another machine than this
+/// ntdll: an i386 module in a WoW64 process, or an amd64 one in an x86-64
+/// guest process on arm64 (wowx64). Such a module sits in this loader's
+/// module list — the process image of a guest process IS one — but its code,
+/// and on i386 even its header layout, belongs to the guest's own loader
+/// running under emulation. The native loader must never run its callbacks
+/// or parse its TLS directory.
+///
+/// Keyed on the MACHINE rather than on PE32 vs PE32+, which is what the
+/// 32-bit-only check it replaced used: an amd64 guest is PE32+ exactly like
+/// the native arm64 modules, so the optional-header magic cannot tell them
+/// apart, and that check would have run an x64 exe's TLS callbacks natively.
+pub unsafe fn LdrpIsForeignMachineImage(Base: PVOID) -> bool {
+    #[cfg(target_arch = "aarch64")]
+    const NATIVE_MACHINE: u16 = 0xAA64; /* IMAGE_FILE_MACHINE_ARM64 */
+    #[cfg(target_arch = "x86_64")]
+    const NATIVE_MACHINE: u16 = 0x8664; /* IMAGE_FILE_MACHINE_AMD64 */
+    #[cfg(target_arch = "x86")]
+    const NATIVE_MACHINE: u16 = 0x014C; /* IMAGE_FILE_MACHINE_I386 */
+
+    let NtHeaders: PIMAGE_NT_HEADERS = RtlImageNtHeader(Base);
+    !NtHeaders.is_null() && (*NtHeaders).FileHeader.Machine != NATIVE_MACHINE
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn LdrpCallTlsInitializers(
     LdrEntry: PLDR_DATA_TABLE_ENTRY,
     Reason: ULONG,
 ) {
     let mut Size: ULONG = 0;
+
+    /* A guest module's callbacks are guest machine code (an x86-64 exe in an
+     * arm64 process): calling one natively executes x86 bytes as arm64. They
+     * belong to the guest's own loader, under emulation. */
+    if LdrpIsForeignMachineImage((*LdrEntry).DllBase) {
+        return;
+    }
 
     let TlsDirectory: PIMAGE_TLS_DIRECTORY = RtlImageDirectoryEntryToData(
         (*LdrEntry).DllBase,

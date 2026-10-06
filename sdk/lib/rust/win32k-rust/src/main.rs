@@ -964,6 +964,8 @@ pub unsafe extern "system" fn DriverEntry(
     if !NT_SUCCESS(Status) { return Status; }
     Status = InitKeyboardImpl();
     if !NT_SUCCESS(Status) { return Status; }
+    Status = crate::rawinput::InitRawInputImpl();
+    if !NT_SUCCESS(Status) { return Status; }
     Status = MsqInitializeImpl();
     if !NT_SUCCESS(Status) { return Status; }
     Status = InitTimerImpl();
