@@ -5393,6 +5393,17 @@ arch-conditional in the C you did not carry**, and the C comment usually names t
 Carrying it is `#[cfg(target_arch = "aarch64")]`, keeping BOTH arms and the comment, so whoever
 fixes the underlying win32k dispatch can find and delete it.
 
+**Variant: an `#ifdef _M_IX86` around x86 port I/O, dropped, faults on arm64 — but only when
+the code first runs there.** scsiport's ISR writes QEMU debugcon markers
+(`WRITE_PORT_UCHAR((PUCHAR)0xE9, '#')`) under `#ifdef _M_IX86`; the Rust wrote them on every
+arch. arm64 has no I/O ports, so the HAL's `WRITE_PORT_UCHAR` is a store to virtual address
+0xE9: six access violations per interrupt, at DIRQL. It sat latent for months because no
+SCSIPORT adapter had ever interrupted on arm64; vioblk's first one (2026-10-06) produced
+`[IRQL] VIOLATION: raise-DOWN 8 -> 2` once per disk read — the exception dispatch takes a
+DISPATCH-level spinlock in `RtlPcToFileHeader` — and then `BUGCHECK 0xB8`. The tell is
+`kernel-fault-pc` in the flight recorder landing in `WRITE_PORT_*`. Carry the guard as
+`#[cfg(target_arch = "x86")]` (`_M_IX86` is i386 only, not amd64).
+
 Three things that bite:
 - **Guards are plural.** wldap32 branches on EIGHT (`HAVE_LDAP`, `HAVE_LDAP_H`, and six
   per-entry-point probes like `HAVE_LDAP_PARSE_SORT_CONTROL`), each `#undef`'d independently.
@@ -12681,6 +12692,14 @@ introduced at any heap exit — it is an external stray write.**
 - **Fix:** set all three in the miniport. scsiport's own `[SCSIPORT] resources:` diagnostic
   also dereferenced `AccessRanges[0]` unconditionally and crashed (0x1E) for a miniport
   declaring no access ranges; it is guarded now.
+- **arm64: `DriverEntry` fails with `STATUS_DEVICE_DOES_NOT_EXIST` and no `[SCSIPORT] pci scan`
+  line.** Three platform gaps a PCIBus miniport hits in order, none of them the miniport's:
+  the hardware tree had no PCI bus (scsiport asks `IoQueryDeviceDescription(PCIBus)` before
+  scanning), `HalAssignSlotResources` was a `STATUS_NOT_IMPLEMENTED` stub, and firmware leaves
+  every `InterruptLine` at 0, which scsiport reads as "no interrupt" and skips the adapter.
+  Now the UEFI loader reports the bus from the ACPI MCFG and programs `InterruptLine` with
+  the GIC INTID from QEMU virt's INTx swizzle (`uefihw.rs`), and the arm64 HAL assigns slot
+  resources over ECAM. The arm64 HAL treats a PCI interrupt level as the INTID.
 
 ### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
 - **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,
