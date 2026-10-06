@@ -93,8 +93,8 @@ extern "C" {
 // NTAPI (stdcall on i386, cdecl elsewhere) win32k functions → extern "system".
 extern "system" {
     fn UserInitKeyboard(hKeyboardDevice: HANDLE);
-    fn UserProcessKeyboardInput(pKeyInput: *mut KEYBOARD_INPUT_DATA);
-    fn UserProcessMouseInput(pMouseInputData: *mut MOUSE_INPUT_DATA);
+    fn UserProcessKeyboardInput(pDeviceInfo: PINPUT_DEVICE_INFO, pKeyInput: *mut KEYBOARD_INPUT_DATA);
+    fn UserProcessMouseInput(pDeviceInfo: PINPUT_DEVICE_INFO, pMouseInputData: *mut MOUSE_INPUT_DATA);
     fn UserSendKeyboardInput(pKbdInput: *mut KEYBDINPUT, bInjected: BOOL) -> BOOL;
     fn UserSendMouseInput(pMouseInput: *mut MOUSEINPUT, bInjected: BOOL) -> BOOL;
     // EngSetLastError — APIENTRY (stdcall) per eng.h.
@@ -433,6 +433,7 @@ pub unsafe extern "system" fn RawInputThreadMain() {
             );
             if NT_SUCCESS(Status) {
                 cMaxWaitObjects += 1;
+                Mouse.Handle = ghMouseDevice;
                 Mouse.pNextDeviceInfo = gpInputDeviceInfo;
                 gpInputDeviceInfo = &mut Mouse;
                 DbgPrint(b"[WIN32K] RIT opened \\Device\\PointerClass0 (driver %wZ)\n\0".as_ptr(),
@@ -456,6 +457,7 @@ pub unsafe extern "system" fn RawInputThreadMain() {
                 DbgPrint(b"[WIN32K] RIT opened \\Device\\KeyboardClass0 (driver %wZ)\n\0".as_ptr(),
                     &(*(*(*pKbdDevice).DeviceObject).DriverObject).DriverName as *const _);
                 cMaxWaitObjects += 1;
+                Keyboard.Handle = ghKeyboardDevice;
                 Keyboard.pNextDeviceInfo = gpInputDeviceInfo;
                 gpInputDeviceInfo = &mut Keyboard;
                 UserInitKeyboard(ghKeyboardDevice);
@@ -562,7 +564,7 @@ pub unsafe extern "system" fn RawInputThreadMain() {
             IntLastInputTick(1);
 
             UserEnterExclusive();
-            UserProcessMouseInput(&mut MouseInput);
+            UserProcessMouseInput(&mut Mouse, &mut MouseInput);
             UserLeave();
         } else if MouStatus != STATUS_PENDING {
             // ERR
@@ -577,7 +579,7 @@ pub unsafe extern "system" fn RawInputThreadMain() {
             IntLastInputTick(1);
 
             UserEnterExclusive();
-            UserProcessKeyboardInput(&mut KeyInput);
+            UserProcessKeyboardInput(&mut Keyboard, &mut KeyInput);
             UserLeave();
         } else if KbdStatus != STATUS_PENDING {
             // Read failed — without a print this drops keys silently forever

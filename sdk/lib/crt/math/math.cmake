@@ -1,8 +1,4 @@
 
-if (MSVC)
-    # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    add_compile_options(/wd4146)
-endif()
 
 include_directories(libm_sse2)
 

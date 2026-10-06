@@ -40,6 +40,16 @@ extern "C" {
     fn SetLastNtError(Status: NTSTATUS);
 }
 
+// MsqPostMessage — FASTCALL (msgqueue.h).
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR) -> BOOL;
+}
+#[cfg(not(target_arch = "x86"))]
+extern "C" {
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR) -> BOOL;
+}
+
 // EngGetTickCount32() = (ULONG)EngGetTickCount().  (eng.h)
 #[inline(always)]
 unsafe fn EngGetTickCount32() -> ULONG {
@@ -156,8 +166,83 @@ unsafe fn UserGetMouseButtonsState_impl() -> WORD {
 
     wRet
 }
+/// UserRawInputMouseProcess — the WM_INPUT half of a mouse packet (upstream #8819).
+unsafe fn UserRawInputMouseProcess(pDeviceInfo: PINPUT_DEVICE_INFO, mid: PMOUSE_INPUT_DATA) {
+    let mut pti: PTHREADINFO = core::ptr::null_mut();
+    let mut hwndTarget: HWND = core::ptr::null_mut();
+    let mut wParam: WPARAM = 0;
+    let mut rm: RAWMOUSE = core::mem::zeroed();
+    let mut Msg: MSG = core::mem::zeroed();
+
+    if crate::rawinput::UserGetRawInputTarget(RIM_TYPEMOUSE, &mut pti, &mut hwndTarget, &mut wParam) == 0 {
+        return;
+    }
+
+    if (*mid).LastX != 0 || (*mid).LastY != 0 {
+        rm.usFlags |= MOUSE_MOVE_RELATIVE as USHORT;
+    }
+
+    /* Flags for absolute move */
+    if (*mid).Flags as u32 & MOUSE_MOVE_ABSOLUTE != 0 {
+        rm.usFlags |= MOUSE_MOVE_ABSOLUTE as USHORT;
+    }
+    if (*mid).Flags as u32 & MOUSE_VIRTUAL_DESKTOP != 0 {
+        rm.usFlags |= MOUSE_VIRTUAL_DESKTOP as USHORT;
+    }
+
+    let ButtonFlags = (*mid).__bindgen_anon_1.__bindgen_anon_1.ButtonFlags as u32;
+    let mut usButtonFlags: u32 = 0;
+    /* Left button */
+    if ButtonFlags & MOUSE_LEFT_BUTTON_DOWN != 0 {
+        usButtonFlags |= RI_MOUSE_LEFT_BUTTON_DOWN;
+    }
+    if ButtonFlags & MOUSE_LEFT_BUTTON_UP != 0 {
+        usButtonFlags |= RI_MOUSE_LEFT_BUTTON_UP;
+    }
+    /* Middle button */
+    if ButtonFlags & MOUSE_MIDDLE_BUTTON_DOWN != 0 {
+        usButtonFlags |= RI_MOUSE_MIDDLE_BUTTON_DOWN;
+    }
+    if ButtonFlags & MOUSE_MIDDLE_BUTTON_UP != 0 {
+        usButtonFlags |= RI_MOUSE_MIDDLE_BUTTON_UP;
+    }
+    /* Right button */
+    if ButtonFlags & MOUSE_RIGHT_BUTTON_DOWN != 0 {
+        usButtonFlags |= RI_MOUSE_RIGHT_BUTTON_DOWN;
+    }
+    if ButtonFlags & MOUSE_RIGHT_BUTTON_UP != 0 {
+        usButtonFlags |= RI_MOUSE_RIGHT_BUTTON_UP;
+    }
+    rm.__bindgen_anon_1.__bindgen_anon_1.usButtonFlags = usButtonFlags as USHORT;
+    rm.lLastX = (*mid).LastX;
+    rm.lLastY = (*mid).LastY;
+
+    let hRawInput = crate::rawinput::UserCreateRawInput(
+        pti,
+        RIM_TYPEMOUSE,
+        pDeviceInfo as HANDLE,
+        wParam,
+        &rm as *const RAWMOUSE as *const c_void,
+        core::mem::size_of::<RAWMOUSE>() as UINT,
+    );
+    if hRawInput.is_null() {
+        return;
+    }
+
+    Msg.hwnd = hwndTarget;
+    Msg.message = WM_INPUT;
+    Msg.wParam = wParam;
+    Msg.lParam = hRawInput as LPARAM;
+    Msg.time = EngGetTickCount32();
+    Msg.pt = (*gpsi_per_user()).ptCursor;
+
+    if MsqPostMessage(pti, &mut Msg, 1, QS_RAWINPUT, 0, 0) == 0 {
+        crate::rawinput::UserFreeRawInput((*pti).MessageQueue, hRawInput);
+    }
+}
+
 #[no_mangle]
-pub unsafe extern "system" fn UserProcessMouseInput(mid: PMOUSE_INPUT_DATA) {
+pub unsafe extern "system" fn UserProcessMouseInput(pDeviceInfo: PINPUT_DEVICE_INFO, mid: PMOUSE_INPUT_DATA) {
     let mut mi: MOUSEINPUT = core::mem::zeroed();
 
     mi.dx = (*mid).LastX;
@@ -166,6 +251,10 @@ pub unsafe extern "system" fn UserProcessMouseInput(mid: PMOUSE_INPUT_DATA) {
     mi.dwFlags = 0;
     mi.time = 0;
     mi.dwExtraInfo = (*mid).ExtraInformation as ULONG_PTR;
+
+    if crate::rawinput::RawInputEnabled == TRUE as BOOLEAN {
+        UserRawInputMouseProcess(pDeviceInfo, mid);
+    }
 
     if mi.dx != 0 || mi.dy != 0 {
         mi.dwFlags |= MOUSEEVENTF_MOVE;

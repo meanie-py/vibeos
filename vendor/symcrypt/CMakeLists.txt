@@ -158,8 +158,8 @@ endif()
 #add_asm_files(symcrypt_asm ${ASM_SOURCE}) # Disabled for now, only works on GCC
 add_library(symcrypt ${SOURCE})
 target_compile_definitions(symcrypt PUBLIC __WINESRC__ SYMCRYPT_PLATFORM_WINE)
-target_include_directories(symcrypt PUBLIC ${REACTOS_SOURCE_DIR}/sdk/lib/3rdparty/symcrypt/inc)
-target_include_directories(symcrypt PUBLIC ${REACTOS_SOURCE_DIR}/sdk/lib/3rdparty/symcrypt/lib)
+target_include_directories(symcrypt PUBLIC ${REACTOS_SOURCE_DIR}/vendor/symcrypt/inc)
+target_include_directories(symcrypt PUBLIC ${REACTOS_SOURCE_DIR}/vendor/symcrypt/lib)
 
 if(MSVC)
 	# warning C4068: unknown pragma 'GCC'

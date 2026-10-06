@@ -1,5 +1,6 @@
 //! Locale APIs — LocaleNameToLCID.c, LCIDToLocaleName.c,
-//! GetUserDefaultLocaleName.c, IsValidLocaleName.c, GetLocaleInfoEx.c.
+//! GetUserDefaultLocaleName.c, GetSystemDefaultLocaleName.c, IsValidLocaleName.c,
+//! GetLocaleInfoEx.c.
 
 use crate::common::*;
 use crate::localenametolcid_table::neutral_lcid_remap;
@@ -103,6 +104,13 @@ pub unsafe extern "system" fn LCIDToLocaleName(
 
     /* Return the length including the terminating null */
     (LocaleNameString.Length as c_int / core::mem::size_of::<WCHAR>() as c_int) + 1
+}
+
+/// GetSystemDefaultLocaleName.c (upstream ab1aefbabb3, for dwrite).
+#[no_mangle]
+pub unsafe extern "system" fn GetSystemDefaultLocaleName(localename: LPWSTR, len: INT) -> INT {
+    let lcid: LCID = GetSystemDefaultLCID();
+    LCIDToLocaleName(lcid, localename, len, 0)
 }
 
 /// GetUserDefaultLocaleName.c

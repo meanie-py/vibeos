@@ -29,12 +29,6 @@ add_library(d2d1 MODULE
     ${CMAKE_CURRENT_BINARY_DIR}/d2d1_stubs.c
     ${CMAKE_CURRENT_BINARY_DIR}/d2d1.def)
 
-if(MSVC)
-    # C5286: implicit conversion between enum types
-	# Disable warning C4267: 'initializing': conversion from 'size_t' to 'UINT16', possible loss of data
-    target_compile_options(d2d1 PRIVATE /wd5286 /wd4267)
-endif()
-
 set_module_type(d2d1 win32dll UNICODE ENTRYPOINT 0)
 add_delay_importlibs(d2d1 dwrite xmllite ole32)
 target_link_libraries(d2d1 wine dxguid dx10guid uuid oldnames chkstk)
