@@ -1872,3 +1872,24 @@ def test_default_on_a_union_struct_is_zeroed():
         ],
     )
     assert "let mut q: Q = core::mem::zeroed();" in _apply_plan(src, diag)
+
+
+def test_a_field_through_a_raw_pointer_is_dereferenced():
+    for src, want in (
+        (
+            "fn f() { x = (*DiskEntry).LayoutBuffer.PartitionEntry.as_mut_ptr(); }\n",
+            "x = (*(*DiskEntry).LayoutBuffer).PartitionEntry.as_mut_ptr();",
+        ),
+        (
+            "fn f() { if CONTAINING_RECORD!(cur, DISKENTRY, ListEntry).DiskNumber >= n {} }\n",
+            "if (*CONTAINING_RECORD!(cur, DISKENTRY, ListEntry)).DiskNumber >= n {}",
+        ),
+    ):
+        field = "PartitionEntry" if "PartitionEntry" in src else "DiskNumber"
+        at = src.index(field)
+        diag = _diag(
+            f"no field `{field}` on type `*mut _T`",
+            code="E0609",
+            spans=[_span("a.rs", at, at + len(field), is_primary=True)],
+        )
+        assert want in _apply_plan(src, diag)

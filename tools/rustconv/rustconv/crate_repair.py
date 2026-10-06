@@ -77,6 +77,7 @@ RULE_VARIADIC_PROMOTION = "variadic_promotion"
 RULE_LOCAL_STATIC_MUT = "c_local_static_mut"
 RULE_POINTER_NOT_NOT = "pointer_double_negation"
 RULE_ZEROED_DEFAULT = "zeroed_not_default"
+RULE_ARROW_FIELD = "raw_pointer_field"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -114,6 +115,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_LOCAL_STATIC_MUT,
     RULE_POINTER_NOT_NOT,
     RULE_ZEROED_DEFAULT,
+    RULE_ARROW_FIELD,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -3220,6 +3222,97 @@ def _zeroed_default_rule(
     )
 
 
+def _receiver_start(masked: bytes, dot: int) -> int | None:
+    """Start of the postfix expression ending just before `masked[dot]` (a `.`): a path, a
+    call or macro call `f(..)` / `m!(..)`, an index `[..]`, chained by `.`, or a `(..)`."""
+    i = dot
+    while True:
+        j = i - 1
+        while j >= 0 and masked[j : j + 1] in (b" ", b"\t"):
+            j -= 1
+        if j < 0:
+            return None
+        ch = masked[j : j + 1]
+        if ch in (b")", b"]"):
+            opener = b"(" if ch == b")" else b"["
+            depth, k = 0, j
+            while k >= 0:
+                c = masked[k : k + 1]
+                if c in (b")", b"]"):
+                    depth += 1
+                elif c in (b"(", b"["):
+                    depth -= 1
+                    if depth == 0:
+                        break
+                k -= 1
+            if k < 0 or masked[k : k + 1] != opener:
+                return None
+            i = k
+            m = re.search(rb"[A-Za-z_][\w:]*!?$", masked[max(0, k - 80) : k])
+            if m is not None:
+                i = k - (len(masked[max(0, k - 80) : k]) - m.start())
+        else:
+            m = re.search(rb"[A-Za-z_][\w:]*$", masked[max(0, j - 80) : j + 1])
+            if m is None:
+                return None
+            i = j + 1 - (len(masked[max(0, j - 80) : j + 1]) - m.start())
+        before = i - 1
+        while before >= 0 and masked[before : before + 1] in (b" ", b"\t"):
+            before -= 1
+        if (
+            before >= 0
+            and masked[before : before + 1] == b"."
+            and masked[before - 1 : before] != b"."
+        ):
+            i = before
+            continue
+        return i
+
+
+def _arrow_field_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0609 `no field F on type *mut T`: C's `p->F`, written `p.F`. The receiver -- however
+    it is spelled, including a `CONTAINING_RECORD!(..)` call whose own suggestion points into
+    the macro -- becomes `(*receiver)`."""
+    if (diagnostic.get("code") or {}).get("code") != "E0609":
+        return [], [], False
+    if not re.match(
+        r"no field `\w+` on type `\*(?:mut|const) ", str(diagnostic.get("message") or "")
+    ):
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, masked, start, _end = got
+    dot = start - 1
+    while dot >= 0 and masked[dot : dot + 1] in (b" ", b"\t", b"\n"):
+        dot -= 1
+    if masked[dot : dot + 1] != b".":
+        return [], [], False
+    lo = _receiver_start(masked, dot)
+    if lo is None:
+        return [], [], False
+    recv = data[lo:dot].decode("utf-8", "replace").rstrip()
+    return (
+        [
+            _simple_edit(
+                RULE_ARROW_FIELD,
+                file_name,
+                data,
+                lo,
+                dot,
+                f"(*{recv})",
+                "rustc E0609: the receiver is a raw pointer; C's `p->f` is `(*p).f`",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
@@ -3250,6 +3343,7 @@ _RULE_TABLE: dict[
     RULE_LOCAL_STATIC_MUT: _local_static_mut_rule,
     RULE_POINTER_NOT_NOT: _pointer_not_not_rule,
     RULE_ZEROED_DEFAULT: _zeroed_default_rule,
+    RULE_ARROW_FIELD: _arrow_field_rule,
 }
 
 
