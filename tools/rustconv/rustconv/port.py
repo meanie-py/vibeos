@@ -1152,6 +1152,7 @@ def hand_names(stem: str) -> set[tuple[str, str]]:
     for entry in _hand_dir(stem).glob("*.json"):
         h = json.loads(entry.read_text())
         out |= {(h["file"], sp.name) for sp in cf.function_spans(h["text"])}
+        out.add((h["file"], h["name"]))  # the bought name too: a macro-defined fn has no span
     return out
 
 
