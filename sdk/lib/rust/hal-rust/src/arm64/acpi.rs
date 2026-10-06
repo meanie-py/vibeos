@@ -100,8 +100,20 @@ pub(crate) unsafe fn for_each_table(xsdt_pa: u64, mut f: impl FnMut(&[u8; 4], *c
 // device's config space.
 // ---------------------------------------------------------------------------
 
+// ETH0: the Raspberry Pi 4's GENET Ethernet MAC (BCM2711), also ACPI-only:
+//
+//   Device (ETH0) { _HID "BCM6E4E"  _CCA 0
+//     Method (_CRS) { RBUF: Memory32Fixed(ReadWrite, 0xFD580000, 0x10000)
+//                           Interrupt(Level, ActiveHigh) { 189, 190 }
+//                     Return RBUF }
+//     _DSD { "brcm,max-dma-burst-size" 8, "phy-mode" "rgmii-rxid" } }
+//
+// No MAC address in the table: the firmware's GENET driver leaves it in the
+// controller's UMAC_MAC0/1 registers, where the OS driver reads it.
+// ---------------------------------------------------------------------------
+
 #[derive(Clone, Copy, Default)]
-pub(crate) struct AcpiXhci {
+pub(crate) struct AcpiDevice {
     pub mmio: u64,
     pub mmio_len: u64,
     /// GSIV; on arm64 that is the GIC INTID, which is also our vector.
@@ -112,9 +124,10 @@ pub(crate) struct AcpiXhci {
     pub cfg: u64,
 }
 
-const HID_STRING: &[u8] = b"_HID\x0DPNP0D10\x00";
+const XHCI_HID_STRING: &[u8] = b"_HID\x0DPNP0D10\x00";
 /// EISAID("PNP0D10") as the DWordConst form of _HID.
-const HID_EISAID: &[u8] = b"_HID\x0C\x41\xD0\x0D\x10";
+const XHCI_HID_EISAID: &[u8] = b"_HID\x0C\x41\xD0\x0D\x10";
+const GENET_HID_STRING: &[u8] = b"_HID\x0DBCM6E4E\x00";
 /// An xHCI register file is never smaller than this, and it is what the Pi's
 /// _CRS method computes (Len 1 + 0xFFF) from its placeholder template.
 const XHCI_MIN_WINDOW: u64 = 0x1000;
@@ -167,7 +180,7 @@ fn u32_at(b: &[u8], p: usize) -> Option<u32> {
 
 /// Walk a resource template (the bytes of a Buffer), taking the first memory
 /// range and the first interrupt.
-fn parse_resources(t: &[u8], x: &mut AcpiXhci) {
+fn parse_resources(t: &[u8], x: &mut AcpiDevice) {
     let mut p = 0;
     while p < t.len() {
         let tag = t[p];
@@ -207,16 +220,17 @@ fn parse_resources(t: &[u8], x: &mut AcpiXhci) {
     }
 }
 
-/// Find PNP0D10 in one definition block (DSDT/SSDT body).
-fn find_xhci_in(aml: &[u8]) -> Option<AcpiXhci> {
-    let hid = find(aml, HID_STRING).or_else(|| find(aml, HID_EISAID))?;
+/// Find the device whose _HID is one of `hids` in one definition block
+/// (DSDT/SSDT body).
+fn find_device_in(aml: &[u8], hids: &[&[u8]]) -> Option<AcpiDevice> {
+    let hid = hids.iter().find_map(|h| find(aml, h))?;
     // Bound the search to the enclosing Device(): its DeviceOp (5B 82) is
     // PkgLength + 4-byte name before the _HID's NameOp.
     let dev = (hid.saturating_sub(12)..hid).rev().find(|&i| aml[i] == 0x5B && aml.get(i + 1) == Some(&0x82))?;
     let (len, _) = pkg_length(aml, dev + 2)?;
     let body = &aml[hid..(dev + 2 + len).min(aml.len())];
 
-    let mut x = AcpiXhci::default();
+    let mut x = AcpiDevice::default();
     // _CRS: the first Buffer after the name is the resource template, whether
     // _CRS is a Name or a Method building one.
     if let Some(crs) = find(body, b"_CRS") {
@@ -241,19 +255,30 @@ fn find_xhci_in(aml: &[u8]) -> Option<AcpiXhci> {
     if x.mmio == 0 || x.gsiv == 0 {
         return None;
     }
+    Some(x)
+}
+
+/// Search the DSDT and every SSDT for an ACPI-only xHCI controller.
+pub(crate) unsafe fn find_xhci() -> Option<AcpiDevice> {
+    let mut x = find_device(&[XHCI_HID_STRING, XHCI_HID_EISAID])?;
     if x.mmio_len < XHCI_MIN_WINDOW {
         x.mmio_len = XHCI_MIN_WINDOW;
     }
     Some(x)
 }
 
-/// Search the DSDT and every SSDT for an ACPI-only xHCI controller.
-pub(crate) unsafe fn find_xhci() -> Option<AcpiXhci> {
+/// Search the DSDT and every SSDT for the Raspberry Pi 4's GENET Ethernet MAC.
+pub(crate) unsafe fn find_genet() -> Option<AcpiDevice> {
+    find_device(&[GENET_HID_STRING])
+}
+
+/// Search the SSDTs, then the DSDT, for the first device with one of `hids`.
+unsafe fn find_device(hids: &[&[u8]]) -> Option<AcpiDevice> {
     let xsdt = XSDT_PA.load(Ordering::Relaxed);
     if xsdt == 0 {
         return None;
     }
-    let mut found: Option<AcpiXhci> = None;
+    let mut found: Option<AcpiDevice> = None;
     let mut dsdt_pa = 0u64;
     for_each_table(xsdt, |sig, t, len| {
         if sig == b"FACP" && len >= 148 {
@@ -263,7 +288,7 @@ pub(crate) unsafe fn find_xhci() -> Option<AcpiXhci> {
                 dsdt_pa = rd::<u32>(t, 40) as u64;
             }
         } else if sig == b"SSDT" && found.is_none() {
-            found = find_xhci_in(core::slice::from_raw_parts(t.add(36), len - 36));
+            found = find_device_in(core::slice::from_raw_parts(t.add(36), len - 36), hids);
         }
     });
     if found.is_none() && dsdt_pa != 0 {
@@ -274,7 +299,7 @@ pub(crate) unsafe fn find_xhci() -> Option<AcpiXhci> {
             if len > 36 {
                 let t = map_table(dsdt_pa, len);
                 if !t.is_null() {
-                    found = find_xhci_in(core::slice::from_raw_parts(t.add(36), len - 36));
+                    found = find_device_in(core::slice::from_raw_parts(t.add(36), len - 36), hids);
                     unmap_table(t, len);
                 }
             }

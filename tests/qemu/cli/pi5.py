@@ -50,8 +50,10 @@ def ssh_up(repo: Path) -> bool:
     return rc == 0
 
 
-def plug_configured() -> bool:
-    return bool(os.environ.get("PI5_PLUG"))
+def plug_configured(repo: Path) -> bool:
+    """Whether env.sh names a plug. It holds the default, so PI5_PLUG need not be set."""
+    rc, out = pi4._quick(_env_sh(repo, 'printf %s "$PI4_PLUG"'), timeout=10)
+    return rc == 0 and bool(out.strip())
 
 
 def payload_manifest() -> dict:
@@ -78,14 +80,15 @@ def desktop_share(path: Path) -> float | None:
 
 def doctor_stages(repo: Path) -> list[Stage]:
     stages: list[Stage] = []
-    if not plug_configured():
+    if not plug_configured(repo):
         stages.append(
             Stage(
                 "plug",
                 status="warn",
-                detail="PI5_PLUG unset",
+                detail="no plug named",
                 salient=[
-                    "set PI5_PLUG to the Pi 5's Shelly plug; until then a hung board needs hands"
+                    "name the Pi 5's Shelly plug in tools/pi5/env.sh (or PI5_PLUG);"
+                    " until then a hung board needs hands"
                 ],
             )
         )
@@ -160,11 +163,11 @@ def doctor_stages(repo: Path) -> list[Stage]:
 
 def cmd_status(args, repo: Path) -> int:
     print(f"lease  : {pi4lease.describe(pi4lease.current())}")
-    if plug_configured():
+    if plug_configured(repo):
         rc, out = pi4._quick([*_script(repo, "power.sh"), "status"])
         print(f"power  : {out if rc == 0 else 'unreachable'}")
     else:
-        print("power  : PI5_PLUG unset")
+        print("power  : no plug named (tools/pi5/env.sh)")
     rc, out = pi4._quick([*_script(repo, "pico.sh"), "usb"])
     print(f"pico   : {out.splitlines()[-1] if out else 'no answer'}")
     state = pi4.listener_state(bench_dir())
@@ -238,13 +241,13 @@ def _boot(run: Run, args, repo: Path) -> int:
     # The stager is whatever a plain reset boots, so a board left in VibeOS (or
     # hung) is one power cycle from it.
     if not ssh_up(repo):
-        if not plug_configured():
+        if not plug_configured(repo):
             run.classification = "BENCH_UNHEALTHY"
             run.add(
                 Stage(
                     "stager",
                     status="fail",
-                    detail="no SSH, no PI5_PLUG",
+                    detail="no SSH, no plug named",
                     salient=["power-cycle the Pi 5 by hand, or set PI5_PLUG"],
                 )
             )

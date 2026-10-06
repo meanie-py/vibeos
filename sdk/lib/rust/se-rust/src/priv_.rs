@@ -330,15 +330,18 @@ pub unsafe extern "system" fn SeCaptureLuidAndAttributesArray(
         if (*dest).is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        
-        let _guard = PoolAllocGuard::new(*dest as PVOID, TAG_LUID);
-        
-        // Copy from user-mode buffer to kernel-mode allocation
-        if let Err(s) = safe_copy_from_user(*dest as PVOID, src as _, buffer_size as usize, core::mem::size_of::<ULONG>(), previous_mode) {
-            return s;
+    }
+
+    // The C copies into either buffer under _SEH2_TRY (the previous translation
+    // skipped the copy into a caller-supplied buffer entirely). On a fault it frees
+    // its own allocation; it also leaves *Dest pointing at the freed block, which
+    // NtFilterToken's error path then releases again. Clear it here.
+    if let Err(s) = safe_copy_from_user(*dest as PVOID, src as _, buffer_size as usize, core::mem::size_of::<ULONG>(), previous_mode) {
+        status = s;
+        if allocated_mem.is_null() {
+            ExFreePoolWithTag(*dest as PVOID, TAG_LUID);
         }
-        
-        _guard.disarm();
+        core::ptr::write_volatile(dest, core::ptr::null_mut());
     }
 
     status

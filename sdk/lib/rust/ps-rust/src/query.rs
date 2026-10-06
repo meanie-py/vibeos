@@ -285,6 +285,17 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
         return STATUS_INVALID_PARAMETER;
     }
 
+    // The C fills ProcessInformation in place under _SEH2_TRY. A user-mode caller's
+    // buffer is replaced by a pool copy and copied back once, at the end, with the
+    // fault-tolerant copy; that also makes the write-failure `return`s below
+    // unreachable for user callers, which skipped the ObDereferenceObject.
+    let bounce = match OutputBounce::new(ProcessInformation, ProcessInformationLength as usize, PreviousMode) {
+        Ok(b) => b,
+        Err(s) => return s,
+    };
+    let ProcessInformation = bounce.buffer();
+    let InfoMode = bounce.mode(PreviousMode);
+
     match ProcessInformationClass {
         ProcessBasicInformation => {
             let ProcessBasicInfo = ProcessInformation as PPROCESS_BASIC_INFORMATION;
@@ -372,7 +383,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                         QuotaLimits.CpuRateLimit.RateData = 0;
                     }
 
-                    if let Err(s) = safe_copy_to_user(ProcessInformation, &QuotaLimits as *const _ as PVOID, Length as usize, core::mem::align_of::<ULONG>(), PreviousMode) {
+                    if let Err(s) = safe_copy_to_user(ProcessInformation, &QuotaLimits as *const _ as PVOID, Length as usize, core::mem::align_of::<ULONG>(), InfoMode) {
                         return s;
                     }
 
@@ -410,7 +421,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                         &ProcessValues.IoInfo as *const _ as PVOID,
                         core::mem::size_of::<IO_COUNTERS>(),
                         core::mem::align_of::<ULONG>(),
-                        PreviousMode,
+                        InfoMode,
                     ) {
                         return s;
                     }
@@ -474,7 +485,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                     } else {
                         core::ptr::null_mut()
                     };
-                    if let Err(s) = probe_write_user::<PVOID>(ProcessInformation as *mut PVOID, debug_handle as PVOID, PreviousMode) {
+                    if let Err(s) = probe_write_user::<PVOID>(ProcessInformation as *mut PVOID, debug_handle as PVOID, InfoMode) {
                         return s;
                     }
 
@@ -502,7 +513,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 if Status >= 0 {
                     HandleCount = ObGetProcessHandleCount(Process);
 
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, HandleCount, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, HandleCount, InfoMode) {
                         return s;
                     }
 
@@ -588,7 +599,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 );
                 if Status >= 0 {
                     let process = Process as *mut _EPROCESS;
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).DefaultHardErrorProcessing, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).DefaultHardErrorProcessing, InfoMode) {
                         return s;
                     }
 
@@ -614,7 +625,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 if Status >= 0 {
                     let process = Process as *mut _EPROCESS;
                     let boost_val = if (*process).Pcb.__bindgen_anon_1.__bindgen_anon_1.DisableBoost() != 0 { 1u32 } else { 0u32 };
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, boost_val, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, boost_val, InfoMode) {
                         return s;
                     }
 
@@ -716,7 +727,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                     Length = (*ImageName).MaximumLength as ULONG + core::mem::size_of::<OBJECT_NAME_INFORMATION>() as ULONG;
 
                     if Length <= ProcessInformationLength {
-                        if let Err(s) = safe_copy_to_user(ProcessInformation, ImageName as PVOID, Length as usize, core::mem::align_of::<ULONG>(), PreviousMode) {
+                        if let Err(s) = safe_copy_to_user(ProcessInformation, ImageName as PVOID, Length as usize, core::mem::align_of::<ULONG>(), InfoMode) {
                             return s;
                         }
 
@@ -763,7 +774,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                                     (*ObjectNameInfo).Name.Buffer as PVOID,
                                     (*ObjectNameInfo).Name.MaximumLength as usize,
                                     core::mem::align_of::<ULONG>(),
-                                    PreviousMode,
+                                    InfoMode,
                                 ) {
                                     return s;
                                 }
@@ -796,7 +807,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 if Status >= 0 {
                     let process = Process as *mut _EPROCESS;
                     let debug_val = if (*process).__bindgen_anon_2.__bindgen_anon_1.NoDebugInherit() != 0 { 0u32 } else { 1u32 };
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, debug_val, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, debug_val, InfoMode) {
                         return s;
                     }
 
@@ -821,7 +832,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 );
                 if Status >= 0 {
                     let process = Process as *mut _EPROCESS;
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).__bindgen_anon_2.__bindgen_anon_1.BreakOnTermination(), PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).__bindgen_anon_2.__bindgen_anon_1.BreakOnTermination(), InfoMode) {
                         return s;
                     }
 
@@ -863,7 +874,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = STATUS_SUCCESS;
 
-                if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, Cookie, PreviousMode) {
+                if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, Cookie, InfoMode) {
                     return s;
                 }
             }
@@ -903,7 +914,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                     ObDereferenceObject(Process as PVOID);
 
                     if Status >= 0 {
-                        if let Err(s) = probe_write_user::<PVOID>(ProcessInformation as *mut PVOID, DebugPort as PVOID, PreviousMode) {
+                        if let Err(s) = probe_write_user::<PVOID>(ProcessInformation as *mut PVOID, DebugPort as PVOID, InfoMode) {
                             return s;
                         }
                     } else if !DebugPort.is_null() {
@@ -925,7 +936,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = STATUS_SUCCESS;
 
-                if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, ObIsLUIDDeviceMapsEnabled(), PreviousMode) {
+                if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, ObIsLUIDDeviceMapsEnabled(), InfoMode) {
                     return s;
                 }
             }
@@ -947,7 +958,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 );
                 if Status >= 0 {
                     let process = Process as *mut _EPROCESS;
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).__bindgen_anon_2.__bindgen_anon_1.VdmAllowed(), PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).__bindgen_anon_2.__bindgen_anon_1.VdmAllowed(), InfoMode) {
                         return s;
                     }
 
@@ -985,7 +996,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                     ObDereferenceObject(Process as PVOID);
 
-                    if let Err(s) = probe_write_user::<ULONG_PTR>(ProcessInformation as *mut ULONG_PTR, Wow64, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG_PTR>(ProcessInformation as *mut ULONG_PTR, Wow64, InfoMode) {
                         return s;
                     }
                 }
@@ -1005,7 +1016,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 } else {
                     Status = MmGetExecuteOptions(&mut ExecuteOptions);
                     if Status >= 0 {
-                        if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, ExecuteOptions, PreviousMode) {
+                        if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, ExecuteOptions, InfoMode) {
                             return s;
                         }
                     }
@@ -1020,6 +1031,19 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
         _ => {
             Status = STATUS_INVALID_INFO_CLASS;
         }
+    }
+
+    // ProcessImageFileName(Win32) return a UNICODE_STRING whose Buffer points just
+    // past it, inside the output buffer.
+    if Status >= 0
+        && (ProcessInformationClass == ProcessImageFileName
+            || ProcessInformationClass == ProcessImageFileNameWin32)
+        && bounce.contains(ProcessInformation, core::mem::size_of::<UNICODE_STRING>())
+    {
+        bounce.rebase(core::ptr::addr_of_mut!((*(ProcessInformation as PUNICODE_STRING)).Buffer));
+    }
+    if let Err(s) = bounce.finish() {
+        return s;
     }
 
     if !ReturnLength.is_null() && Length != 0 {
@@ -1942,8 +1966,6 @@ pub unsafe extern "system" fn NtQueryInformationThread(
     let mut Status: NTSTATUS;
     let Access: ULONG;
     let mut Length: ULONG = 0;
-    let ThreadBasicInfo = ThreadInformation as PTHREAD_BASIC_INFORMATION;
-    let ThreadTime = ThreadInformation as PKERNEL_USER_TIMES;
     let mut OldIrql: KIRQL = 0;
     let mut ThreadTerminated: ULONG;
 
@@ -1963,6 +1985,17 @@ pub unsafe extern "system" fn NtQueryInformationThread(
     }
 
     Access = THREAD_QUERY_INFORMATION;
+
+    // The C fills ThreadInformation in place under _SEH2_TRY; a user-mode caller's
+    // buffer is a pool copy here, copied back once at the end (OutputBounce).
+    let bounce = match OutputBounce::new(ThreadInformation, ThreadInformationLength as usize, PreviousMode) {
+        Ok(b) => b,
+        Err(s) => return s,
+    };
+    let ThreadInformation = bounce.buffer();
+    let InfoMode = bounce.mode(PreviousMode);
+    let ThreadBasicInfo = ThreadInformation as PTHREAD_BASIC_INFORMATION;
+    let ThreadTime = ThreadInformation as PKERNEL_USER_TIMES;
 
     match ThreadInformationClass {
         ThreadBasicInformation => {
@@ -2175,7 +2208,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
                 );
                 if Status >= 0 {
                     let boost_val = if kthread_disable_boost(Thread as *mut _ETHREAD) != 0 { 1u32 } else { 0u32 };
-                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, boost_val, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, boost_val, InfoMode) {
                         return s;
                     }
 
@@ -2199,7 +2232,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
                     core::ptr::null_mut(),
                 );
                 if Status >= 0 {
-                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.BreakOnTermination(), PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.BreakOnTermination(), InfoMode) {
                         return s;
                     }
 
@@ -2226,7 +2259,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
                     ThreadTerminated = PsIsThreadTerminating(Thread) as ULONG;
 
                     let term_val = if ThreadTerminated != 0 { 1u32 } else { 0u32 };
-                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, term_val, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, term_val, InfoMode) {
                         return s;
                     }
 
@@ -2238,6 +2271,10 @@ pub unsafe extern "system" fn NtQueryInformationThread(
         _ => {
             Status = STATUS_NOT_IMPLEMENTED;
         }
+    }
+
+    if let Err(s) = bounce.finish() {
+        return s;
     }
 
     if !ReturnLength.is_null() {

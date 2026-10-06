@@ -912,6 +912,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The access AFTER the probe: an Nt* syscall that loads or stores through its
+    # caller's pointer with a plain deref or copy. The probe proves where the buffer
+    # is, never that it stays mapped, and without SEH a fault there is a bugcheck any
+    # process can trigger. Gated against a BASELINE, not zero: the scanner cannot tell
+    # a kernel-mode-only branch from a user one, and the inherited rows are owed work
+    # (vibeos-roadmap "Kernel user-pointer probes"). A NEW row fails.
+    srua = repo / "tools" / "scan_raw_user_access.py"
+    specs.append(
+        (
+            "scan_raw_user_access",
+            [py, str(srua), "--lint"] if srua.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
     # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
     # covers the names that emit nothing and were therefore outside every scanner here.

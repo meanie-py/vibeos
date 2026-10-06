@@ -134,7 +134,12 @@ unsafe fn complete_now(irp: PIRP, status: NTSTATUS, info: usize) {
     IofCompleteRequest(irp, 0);
 }
 
-unsafe extern "system" fn dispatch(_device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
+unsafe extern "system" fn dispatch(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
+    // The platform NIC's FDO shares this driver object; its PnP and power IRPs
+    // are not TDI requests.
+    if crate::pnp::owns(device) {
+        return crate::pnp::dispatch(device, irp);
+    }
     let stack = IoGetCurrentIrpStackLocation(irp);
     match (*stack).MajorFunction {
         IRP_MJ_CREATE => {

@@ -39,6 +39,13 @@ STAGING_DIRS = (
 )
 
 
+# Files that carry a PE suffix but are NOT a PE image. The BIOS loader freeldr.sys
+# is the 16-bit real-mode stub (frldr16.bin) with the PE body (freeldr_pe.exe)
+# appended, so no PE tool can read it; the body is in the corpus under its own
+# name. Paths are build-dir-relative.
+CONTAINERS = ("boot/freeldr/freeldr/freeldr.sys",)
+
+
 @dataclass(frozen=True)
 class Corpus:
     """The binaries a scanner may judge, and the provenance of that list."""
@@ -76,8 +83,11 @@ def _pruned_walk(
             )
         ]
         for name in filenames:
-            if os.path.splitext(name)[1].lower() in suffixes:
-                out.append(Path(dirpath) / name)
+            if os.path.splitext(name)[1].lower() not in suffixes:
+                continue
+            if os.path.normpath(os.path.join(rel, name)).replace(os.sep, "/") in CONTAINERS:
+                continue
+            out.append(Path(dirpath) / name)
     return sorted(out)
 
 

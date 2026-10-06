@@ -1735,6 +1735,59 @@ unsafe fn DetectBusMouse(
     }
 }
 
+/// The DisplayController node for a VBE linear framebuffer: one memory range
+/// plus CM_FRAMEBUF_DEVICE_DATA, byte-for-byte the layout uefihw.rs builds for GOP.
+unsafe fn CreateFramebufferDisplayKey(
+    BusKey: PCONFIGURATION_COMPONENT_DATA,
+    Fb: &crate::pcvideo::PcVbeFramebuffer,
+) {
+    const CmResourceTypeMemory: u8 = 3;
+    const CM_RESOURCE_MEMORY_READ_WRITE: USHORT = 0x0000;
+    let mut ControllerKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
+    let Size: u32 = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[2])
+        + core::mem::size_of::<CM_FRAMEBUF_DEVICE_DATA>() as u32;
+    let PartialResourceList =
+        FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
+    if PartialResourceList.is_null() {
+        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCSTR);
+        return;
+    }
+    core::ptr::write_bytes(PartialResourceList as *mut u8, 0, Size as usize);
+    (*PartialResourceList).Version = 1;
+    (*PartialResourceList).Revision = 2;
+    (*PartialResourceList).Count = 2;
+
+    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR =
+        core::ptr::addr_of_mut!((*PartialResourceList).PartialDescriptors[0]);
+    (*PartialDescriptor).Type = CmResourceTypeMemory;
+    (*PartialDescriptor).ShareDisposition = CmResourceShareDeviceExclusive as u8;
+    (*PartialDescriptor).Flags = CM_RESOURCE_MEMORY_READ_WRITE;
+    (*PartialDescriptor).u.Memory.Start.QuadPart = Fb.Base as i64;
+    (*PartialDescriptor).u.Memory.Length = Fb.Size;
+
+    // flex array: element [1] is past the [1]-sized field — pointer-step it.
+    PartialDescriptor = PartialDescriptor.add(1);
+    (*PartialDescriptor).Type = CmResourceTypeDeviceSpecific;
+    (*PartialDescriptor).ShareDisposition = CmResourceShareUndetermined as u8;
+    (*PartialDescriptor).Flags = 0;
+    (*PartialDescriptor).u.DeviceSpecificData.DataSize =
+        core::mem::size_of::<CM_FRAMEBUF_DEVICE_DATA>() as u32;
+    core::ptr::write_unaligned(PartialDescriptor.add(1) as *mut CM_FRAMEBUF_DEVICE_DATA, Fb.Data);
+
+    FldrCreateComponentKey(
+        BusKey,
+        ControllerClass,
+        DisplayController,
+        (Output | ((ConsoleOut) as i32)) as u32,
+        0,
+        0xFFFFFFFF,
+        b"VBE Framebuffer\0".as_ptr() as PCSTR,
+        PartialResourceList,
+        Size,
+        core::ptr::addr_of_mut!(ControllerKey),
+    );
+}
+
 unsafe fn DetectDisplayController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
     let Identifier: PCSTR;
     let mut ControllerKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
@@ -1747,6 +1800,13 @@ unsafe fn DetectDisplayController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
         );
     } else {
         TRACE(b"VESA not supported\n\0".as_ptr() as PCSTR);
+    }
+
+    // A VBE linear framebuffer, described the way the UEFI loader describes GOP
+    // (uefihw.rs), is what the kernel's framebuffer display path needs.
+    if let Some(fb) = crate::pcvideo::PcVideoSelectVbeFramebuffer(VesaVersion) {
+        CreateFramebufferDisplayKey(BusKey, &fb);
+        return;
     }
 
     if VesaVersion >= 0x0200 {

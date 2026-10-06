@@ -360,31 +360,34 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
         return STATUS_SUCCESS;
     }
 
-    if CurrentMode != 0 {
-        if let Err(s) = probe_user_buffer(
-            OriginalDescriptor as _,
-            core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>(),
-            core::mem::size_of::<ULONG>(),
-            CurrentMode,
-        ) {
-            return s;
-        }
+    // From here the descriptor may be user memory, which the C reads inside
+    // _SEH2_TRY. Capture the header once into a local, take the component pointers
+    // from that copy, and read every component through the fault-tolerant copy.
+    // The previous translation read the header, ran RtlValidSid/RtlValidAcl and
+    // copied the components IN PLACE: a bad page bugchecked, and a caller could
+    // change a SID or ACL between its validation and its copy.
+    let mut Header: _SECURITY_DESCRIPTOR = core::mem::zeroed();
+    let relative_size = core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>();
+    if let Err(s) = safe_copy_from_user(
+        core::ptr::addr_of_mut!(Header) as PVOID,
+        OriginalDescriptor as _,
+        relative_size,
+        core::mem::size_of::<ULONG>(),
+        CurrentMode,
+    ) {
+        return s;
     }
 
-    if (*OriginalDescriptor).Revision != SECURITY_DESCRIPTOR_REVISION1 as u8 {
+    if Header.Revision != SECURITY_DESCRIPTOR_REVISION1 as u8 {
         return STATUS_UNKNOWN_REVISION;
     }
 
-    if CurrentMode != 0 {
-        DescriptorSize = if (*OriginalDescriptor).Control & SE_SELF_RELATIVE != 0 {
-            core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG
-        } else {
-            core::mem::size_of::<_SECURITY_DESCRIPTOR>() as ULONG
-        };
-
-        if let Err(s) = probe_user_buffer(
+    if Header.Control & SE_SELF_RELATIVE == 0 {
+        // Absolute: the header is the larger struct of pointers.
+        if let Err(s) = safe_copy_from_user(
+            core::ptr::addr_of_mut!(Header) as PVOID,
             OriginalDescriptor as _,
-            DescriptorSize as usize,
+            core::mem::size_of::<_SECURITY_DESCRIPTOR>(),
             core::mem::size_of::<ULONG>(),
             CurrentMode,
         ) {
@@ -392,13 +395,25 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
         }
     }
 
-    DescriptorCopy.Revision = (*OriginalDescriptor).Revision;
-    DescriptorCopy.Sbz1 = (*OriginalDescriptor).Sbz1;
-    DescriptorCopy.Control = (*OriginalDescriptor).Control & !SE_SELF_RELATIVE;
-    DescriptorCopy.Owner = SepGetOwnerFromDescriptor(OriginalDescriptor);
-    DescriptorCopy.Group = SepGetGroupFromDescriptor(OriginalDescriptor);
-    DescriptorCopy.Sacl = SepGetSaclFromDescriptor(OriginalDescriptor);
-    DescriptorCopy.Dacl = SepGetDaclFromDescriptor(OriginalDescriptor);
+    // The getters resolve self-relative offsets against the descriptor they are
+    // given; move those results from the local copy onto the caller's descriptor.
+    let header_base = core::ptr::addr_of_mut!(Header) as usize;
+    let self_relative = Header.Control & SE_SELF_RELATIVE != 0;
+    let rebase = move |p: usize| -> usize {
+        if p == 0 || !self_relative {
+            p
+        } else {
+            (OriginalDescriptor as usize).wrapping_add(p - header_base)
+        }
+    };
+    let header_ptr = core::ptr::addr_of_mut!(Header) as PISECURITY_DESCRIPTOR;
+    DescriptorCopy.Revision = Header.Revision;
+    DescriptorCopy.Sbz1 = Header.Sbz1;
+    DescriptorCopy.Control = Header.Control & !SE_SELF_RELATIVE;
+    DescriptorCopy.Owner = rebase(SepGetOwnerFromDescriptor(header_ptr) as usize) as PSID;
+    DescriptorCopy.Group = rebase(SepGetGroupFromDescriptor(header_ptr) as usize) as PSID;
+    DescriptorCopy.Sacl = rebase(SepGetSaclFromDescriptor(header_ptr) as usize) as PACL;
+    DescriptorCopy.Dacl = rebase(SepGetDaclFromDescriptor(header_ptr) as usize) as PACL;
     DescriptorSize = core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG;
 
     OwnerSize = match DetermineSIDSize(DescriptorCopy.Owner as PISID, &mut OwnerSAC, CurrentMode) {
@@ -438,55 +453,59 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
 
     Offset = core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG;
 
+    // Copy one component, then pin the count or size it was measured by (the
+    // caller can change it in between) and validate the COPY.
+    let copy_component = move |src: PVOID, size: ULONG, at: ULONG| -> Result<PVOID, NTSTATUS> {
+        let dst = (NewDescriptor as *mut u8).add(at as usize) as PVOID;
+        safe_copy_from_user(dst, src as _, size as usize, 1, CurrentMode)?;
+        Ok(dst)
+    };
+
     if !DescriptorCopy.Owner.is_null() {
-        if RtlValidSid(DescriptorCopy.Owner) == 0 {
+        let owner = match copy_component(DescriptorCopy.Owner, OwnerSize, Offset) {
+            Ok(p) => p as PISID, Err(s) => return s,
+        };
+        (*owner).SubAuthorityCount = OwnerSAC as UCHAR;
+        if RtlValidSid(owner as PSID) == 0 {
             return STATUS_INVALID_SID;
         }
         (*NewDescriptor).Owner = Offset;
-        core::ptr::copy_nonoverlapping(
-            DescriptorCopy.Owner as *const u8,
-            (NewDescriptor as *mut u8).add(Offset as usize),
-            OwnerSize as usize,
-        );
         Offset += (OwnerSize + 3) & !3 ;
     }
 
     if !DescriptorCopy.Group.is_null() {
-        if RtlValidSid(DescriptorCopy.Group) == 0 {
+        let group = match copy_component(DescriptorCopy.Group, GroupSize, Offset) {
+            Ok(p) => p as PISID, Err(s) => return s,
+        };
+        (*group).SubAuthorityCount = GroupSAC as UCHAR;
+        if RtlValidSid(group as PSID) == 0 {
             return STATUS_INVALID_SID;
         }
         (*NewDescriptor).Group = Offset;
-        core::ptr::copy_nonoverlapping(
-            DescriptorCopy.Group as *const u8,
-            (NewDescriptor as *mut u8).add(Offset as usize),
-            GroupSize as usize,
-        );
         Offset += (GroupSize + 3) & !3 ;
     }
 
     if !DescriptorCopy.Sacl.is_null() {
-        if RtlValidAcl(DescriptorCopy.Sacl) == 0 {
+        let sacl = match copy_component(DescriptorCopy.Sacl as PVOID, SaclSize, Offset) {
+            Ok(p) => p as PACL, Err(s) => return s,
+        };
+        (*sacl).AclSize = SaclSize as USHORT;
+        if RtlValidAcl(sacl) == 0 {
             return STATUS_INVALID_ACL;
         }
         (*NewDescriptor).Sacl = Offset;
-        core::ptr::copy_nonoverlapping(
-            DescriptorCopy.Sacl as *const u8,
-            (NewDescriptor as *mut u8).add(Offset as usize),
-            SaclSize as usize,
-        );
         Offset += (SaclSize + 3) & !3 ;
     }
 
     if !DescriptorCopy.Dacl.is_null() {
-        if RtlValidAcl(DescriptorCopy.Dacl) == 0 {
+        let dacl = match copy_component(DescriptorCopy.Dacl as PVOID, DaclSize, Offset) {
+            Ok(p) => p as PACL, Err(s) => return s,
+        };
+        (*dacl).AclSize = DaclSize as USHORT;
+        if RtlValidAcl(dacl) == 0 {
             return STATUS_INVALID_ACL;
         }
         (*NewDescriptor).Dacl = Offset;
-        core::ptr::copy_nonoverlapping(
-            DescriptorCopy.Dacl as *const u8,
-            (NewDescriptor as *mut u8).add(Offset as usize),
-            DaclSize as usize,
-        );
         Offset += (DaclSize + 3) & !3 ;
     }
 
@@ -528,8 +547,16 @@ pub unsafe extern "system" fn SeQuerySecurityDescriptorInfo(
         }
 
         *Length = core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>() as ULONG;
-        RtlCreateSecurityDescriptorRelative(RelSD, SECURITY_DESCRIPTOR_REVISION);
-        return STATUS_SUCCESS;
+        let mut Empty: _SECURITY_DESCRIPTOR_RELATIVE = core::mem::zeroed();
+        RtlCreateSecurityDescriptorRelative(&mut Empty, SECURITY_DESCRIPTOR_REVISION);
+        return match safe_copy_raw(
+            RelSD as PVOID,
+            &Empty as *const _ as *const core::ffi::c_void,
+            core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>(),
+        ) {
+            Ok(()) => STATUS_SUCCESS,
+            Err(s) => s,
+        };
     }
 
     ObjectSd = *ObjectsSecurityDescriptor as PISECURITY_DESCRIPTOR;
@@ -580,33 +607,47 @@ pub unsafe extern "system" fn SeQuerySecurityDescriptorInfo(
         return STATUS_BUFFER_TOO_SMALL;
     }
 
-    RtlCreateSecurityDescriptorRelative(RelSD, SECURITY_DESCRIPTOR_REVISION);
-    (*RelSD).Control = Control;
+    // NtQuerySecurityObject hands us the caller's buffer, which the C fills inside
+    // its _SEH2_TRY. Build the descriptor in pool (it is self-relative, so where it
+    // is built does not matter) and copy it out once with the fault-tolerant copy.
+    let Built = ExAllocatePoolWithTag(PagedPool, SdLength as SIZE_T, TAG_SD) as PISECURITY_DESCRIPTOR_RELATIVE;
+    if Built.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    let _built_guard = PoolAllocGuard::new(Built as PVOID, TAG_SD);
+    let BuiltBase = Built as usize;
 
-    Current = (RelSD as usize) + core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>();
+    RtlCreateSecurityDescriptorRelative(Built, SECURITY_DESCRIPTOR_REVISION);
+    (*Built).Control = Control;
+
+    Current = BuiltBase + core::mem::size_of::<_SECURITY_DESCRIPTOR_RELATIVE>();
 
     if OwnerLength != 0 {
         core::ptr::copy_nonoverlapping(Owner as *const u8, Current as *mut u8, OwnerLength as usize);
-        (*RelSD).Owner = (Current - SecurityDescriptor as usize) as ULONG;
+        (*Built).Owner = (Current - BuiltBase) as ULONG;
         Current += OwnerLength as usize;
     }
 
     if GroupLength != 0 {
         core::ptr::copy_nonoverlapping(Group as *const u8, Current as *mut u8, GroupLength as usize);
-        (*RelSD).Group = (Current - SecurityDescriptor as usize) as ULONG;
+        (*Built).Group = (Current - BuiltBase) as ULONG;
         Current += GroupLength as usize;
     }
 
     if DaclLength != 0 {
         core::ptr::copy_nonoverlapping(Dacl as *const u8, Current as *mut u8, DaclLength as usize);
-        (*RelSD).Dacl = (Current - SecurityDescriptor as usize) as ULONG;
+        (*Built).Dacl = (Current - BuiltBase) as ULONG;
         Current += DaclLength as usize;
     }
 
     if SaclLength != 0 {
         core::ptr::copy_nonoverlapping(Sacl as *const u8, Current as *mut u8, SaclLength as usize);
-        (*RelSD).Sacl = (Current - SecurityDescriptor as usize) as ULONG;
+        (*Built).Sacl = (Current - BuiltBase) as ULONG;
         Current += SaclLength as usize;
+    }
+
+    if let Err(s) = safe_copy_raw(RelSD as PVOID, Built as *const core::ffi::c_void, SdLength as usize) {
+        return s;
     }
 
     *Length = SdLength;

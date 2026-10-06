@@ -181,6 +181,39 @@ pub(crate) unsafe fn capture_user<T: Copy>(ptr: *const T) -> Result<T, NTSTATUS>
     Ok(out.assume_init())
 }
 
+/// For a `UNICODE_STRING` header already captured from user mode, whose `Buffer`
+/// the C then uses IN PLACE after its `_SEH2_TRY` has ended: probe the buffer, copy
+/// it into pool with a terminating NUL, and point `s` at the copy. The returned guard
+/// frees it, so keep it alive for as long as `s` is used.
+///
+/// An empty string is left alone: `Buffer` may be an atom or NULL there, and nothing
+/// reads through it. Unlike `probe_and_capture_unicode_string` this does not
+/// sanitize, because callers tell an empty name from no name by `Buffer`.
+pub(crate) unsafe fn capture_string_buffer(
+    s: &mut _UNICODE_STRING,
+    tag: ULONG,
+) -> Result<Option<ntkrnl_sys::probe::PoolAllocGuard>, NTSTATUS> {
+    if s.Length == 0 {
+        return Ok(None);
+    }
+    let length = s.Length as usize;
+    probe_for_read(s.Buffer as *const c_void, length, core::mem::size_of::<u16>() as u32)?;
+    let copy = ntkrnl_sys::ddk::ExAllocatePoolWithTag(
+        PagedPool as _,
+        (length + core::mem::size_of::<u16>()) as _,
+        tag,
+    ) as *mut u8;
+    if copy.is_null() {
+        return Err(STATUS_INSUFFICIENT_RESOURCES);
+    }
+    let guard = ntkrnl_sys::probe::PoolAllocGuard::new(copy as _, tag);
+    ntkrnl_sys::probe::safe_copy_raw(copy as *mut c_void, s.Buffer as *const c_void, length)?;
+    (copy.add(length) as *mut u16).write_unaligned(0);
+    s.Buffer = copy as _;
+    s.MaximumLength = s.Length + core::mem::size_of::<u16>() as u16;
+    Ok(Some(guard))
+}
+
 /// `ProbeAndCaptureUnicodeString` (sdk/include/reactos/probe.h, static
 /// __inline) with its `_SEH2_TRY`/`_SEH2_EXCEPT` made real: a bad header or
 /// buffer pointer returns the fault status with `*Dest` zeroed and nothing

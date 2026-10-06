@@ -565,6 +565,39 @@ pub unsafe extern "system" fn NtDeleteKey(KeyHandle: HANDLE) -> NTSTATUS {
     Status
 }
 
+/// The Cm query routines fill the caller's buffer and ResultLength in place; in the
+/// C each wraps that in its own _SEH2_TRY returning the exception code. For a
+/// user-mode caller, hand them a pool copy (OutputBounce) and a kernel length, and
+/// copy both out with the fault-tolerant copy. The registry callbacks around the call
+/// still see the caller's own pointers, as on Windows.
+unsafe fn cm_query_through_bounce(
+    information: PVOID,
+    length: ULONG,
+    result_length: PULONG,
+    previous_mode: KPROCESSOR_MODE,
+    query: impl FnOnce(PVOID, PULONG) -> NTSTATUS,
+) -> NTSTATUS {
+    if previous_mode == 0 {
+        return query(information, result_length);
+    }
+    let bounce = match ntkrnl_sys::probe::OutputBounce::new(information, length as usize, previous_mode) {
+        Ok(b) => b,
+        Err(e) => return e,
+    };
+    const UNSET: ULONG = ULONG::MAX;
+    let mut kernel_length: ULONG = UNSET;
+    let status = query(bounce.buffer(), &mut kernel_length);
+    if let Err(e) = bounce.finish() {
+        return e;
+    }
+    if kernel_length != UNSET && !result_length.is_null() {
+        if let Err(e) = ntkrnl_sys::probe::write_user(result_length, kernel_length, 0) {
+            return e;
+        }
+    }
+    status
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn NtEnumerateKey(
     KeyHandle: HANDLE,
@@ -640,14 +673,16 @@ pub unsafe extern "system" fn NtEnumerateKey(
     EnumerateKeyInfo.Object = KeyObject as PVOID;
     Status = CmiCallRegisteredCallbacks(RegNtPreEnumerateKey, &mut EnumerateKeyInfo as *mut _ as PVOID);
     if NT_SUCCESS(Status) {
-        Status = CmEnumerateKey(
-            (*KeyObject).KeyControlBlock,
-            Index,
-            KeyInformationClass,
-            KeyInformation,
-            Length,
-            ResultLength,
-        );
+        Status = cm_query_through_bounce(KeyInformation, Length, ResultLength, PreviousMode, |info, result_length| {
+            CmEnumerateKey(
+                (*KeyObject).KeyControlBlock,
+                Index,
+                KeyInformationClass,
+                info,
+                Length,
+                result_length,
+            )
+        });
 
         PostOperationInfo.Status = Status;
         CmiCallRegisteredCallbacks(RegNtPostEnumerateKey, &mut PostOperationInfo as *mut _ as PVOID);
@@ -739,14 +774,16 @@ pub unsafe extern "system" fn NtEnumerateValueKey(
         &mut EnumerateValueKeyInfo as *mut _ as PVOID,
     );
     if NT_SUCCESS(Status) {
-        Status = CmEnumerateValueKey(
-            (*KeyObject).KeyControlBlock,
-            Index,
-            KeyValueInformationClass,
-            KeyValueInformation,
-            Length,
-            ResultLength,
-        );
+        Status = cm_query_through_bounce(KeyValueInformation, Length, ResultLength, PreviousMode, |info, result_length| {
+            CmEnumerateValueKey(
+                (*KeyObject).KeyControlBlock,
+                Index,
+                KeyValueInformationClass,
+                info,
+                Length,
+                result_length,
+            )
+        });
 
         PostOperationInfo.Status = Status;
         CmiCallRegisteredCallbacks(
@@ -865,13 +902,15 @@ pub unsafe extern "system" fn NtQueryKey(
 
     Status = CmiCallRegisteredCallbacks(RegNtPreQueryKey, &mut QueryKeyInfo as *mut _ as PVOID);
     if NT_SUCCESS(Status) {
-        Status = CmQueryKey(
-            (*KeyObject).KeyControlBlock,
-            KeyInformationClass,
-            KeyInformation,
-            Length,
-            ResultLength,
-        );
+        Status = cm_query_through_bounce(KeyInformation, Length, ResultLength, PreviousMode, |info, result_length| {
+            CmQueryKey(
+                (*KeyObject).KeyControlBlock,
+                KeyInformationClass,
+                info,
+                Length,
+                result_length,
+            )
+        });
 
         PostOperationInfo.Status = Status;
         CmiCallRegisteredCallbacks(RegNtPostQueryKey, &mut PostOperationInfo as *mut _ as PVOID);
@@ -924,11 +963,28 @@ pub unsafe extern "system" fn NtQueryValueKey(
     }
 
     if PreviousMode != _MODE_KernelMode {
-        if !ResultLength.is_null() {
-            core::ptr::write_volatile(ResultLength, core::ptr::read_volatile(ResultLength));
+        // C: ProbeForWriteUlong(ResultLength); ProbeForWrite(KeyValueInformation,
+        // Length, sizeof(ULONG)) in a _SEH2_TRY that dereferences the key and returns
+        // the code. What stood here touch-tested both pointers with raw stores and NO
+        // range check: a kernel address passed as KeyValueInformation had a byte
+        // zeroed and then received the whole value from CmQueryValueKey.
+        if let Err(e) = probe_user_buffer(
+            ResultLength as *const core::ffi::c_void,
+            core::mem::size_of::<ULONG>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            ObDereferenceObject(KeyObject as PVOID);
+            return e;
         }
-        if !KeyValueInformation.is_null() && Length > 0 {
-            core::ptr::write_bytes(KeyValueInformation as *mut u8, 0, 1);
+        if let Err(e) = probe_user_buffer(
+            KeyValueInformation as *const core::ffi::c_void,
+            Length as usize,
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            ObDereferenceObject(KeyObject as PVOID);
+            return e;
         }
     }
 
@@ -964,14 +1020,16 @@ pub unsafe extern "system" fn NtQueryValueKey(
         &mut QueryValueKeyInfo as *mut _ as PVOID,
     );
     if NT_SUCCESS(Status) {
-        Status = CmQueryValueKey(
-            (*KeyObject).KeyControlBlock,
-            ValueNameCopy,
-            KeyValueInformationClass,
-            KeyValueInformation,
-            Length,
-            ResultLength,
-        );
+        Status = cm_query_through_bounce(KeyValueInformation, Length, ResultLength, PreviousMode, |info, result_length| {
+            CmQueryValueKey(
+                (*KeyObject).KeyControlBlock,
+                ValueNameCopy,
+                KeyValueInformationClass,
+                info,
+                Length,
+                result_length,
+            )
+        });
 
         PostOperationInfo.Status = Status;
         CmiCallRegisteredCallbacks(
@@ -1043,9 +1101,9 @@ pub unsafe extern "system" fn NtSetValueKey(
         // with NtQueryValueKey.
         //
         // Validate-first per docs/engineering/dummy-pseh-verdict.md. Alignment 1
-        // matches the C. Note what this does NOT restore: the C's second SEH also
-        // covered the window between probe and copy, and validate-first cannot —
-        // a range check proves where the buffer is, never that it stays mapped.
+        // matches the C. The range check proves where the buffer is, never that it
+        // stays mapped, so the copy below is the fault-tolerant one: that is what
+        // the C's second SEH covered.
         if let Err(e) =
             probe_user_buffer(Data as *const c_void, DataSize as usize, 1, PreviousMode)
         {
@@ -1059,7 +1117,11 @@ pub unsafe extern "system" fn NtSetValueKey(
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        core::ptr::copy_nonoverlapping(Data as *const u8, DataCopy as *mut u8, DataSize as usize);
+        if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(DataCopy, Data as *const c_void, DataSize as usize) {
+            ExFreePoolWithTag(DataCopy, TAG_CM);
+            ObDereferenceObject(KeyObject as PVOID);
+            return e;
+        }
         Data = DataCopy;
     }
 
@@ -1634,7 +1696,10 @@ pub unsafe extern "system" fn NtQueryOpenSubKeys(
 
         CmpUnlockRegistry();
 
-        *HandleCount = SubKeys;
+        // C: _SEH2_TRY { *HandleCount = SubKeys; } _SEH2_EXCEPT { Status = code; }
+        if let Err(e) = ntkrnl_sys::probe::write_user(HandleCount, SubKeys, 0) {
+            Status = e;
+        }
 
         ObDereferenceObject(KeyBody as *mut core::ffi::c_void);
     }

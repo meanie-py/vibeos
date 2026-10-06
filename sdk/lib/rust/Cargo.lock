@@ -709,6 +709,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "freeldr-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "freeldr-rust"
 version = "0.1.0"
 dependencies = [

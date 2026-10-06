@@ -2657,6 +2657,7 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
     let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
     let mut SafeRect: RECTL = core::mem::zeroed();
     let mut Ret: BOOL;
+    let mut caption_guard: Option<ntkrnl_sys::probe::PoolAllocGuard> = None;
 
     UserEnterExclusive();
 
@@ -2698,12 +2699,14 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
                     break 'seh;
                 }
             };
-            if SafeStr.Length != 0 {
-                if let Err(st) = crate::safe_user_io::probe_for_read(
-                    SafeStr.Buffer as *const core::ffi::c_void,
-                    SafeStr.Length as usize,
-                    core::mem::size_of::<WCHAR>() as u32,
-                ) {
+            // The C probes the text here and UserDrawCaption then draws it IN
+            // PLACE, outside the _SEH2_TRY. Draw a pool copy instead.
+            match crate::safe_user_io::capture_string_buffer(
+                &mut SafeStr,
+                u32::from_le_bytes(*b"Usdc"),
+            ) {
+                Ok(guard) => caption_guard = guard,
+                Err(st) => {
                     Status = st;
                     break 'seh;
                 }
@@ -2779,6 +2782,7 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
     let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
     let mut SafeRect: RECTL = core::mem::zeroed();
     let mut Ret: BOOL;
+    let mut caption_guard: Option<ntkrnl_sys::probe::PoolAllocGuard> = None;
 
     UserEnterExclusive();
 
@@ -2820,12 +2824,14 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
                     break 'seh;
                 }
             };
-            if SafeStr.Length != 0 {
-                if let Err(st) = crate::safe_user_io::probe_for_read(
-                    SafeStr.Buffer as *const core::ffi::c_void,
-                    SafeStr.Length as usize,
-                    core::mem::size_of::<WCHAR>() as u32,
-                ) {
+            // The C probes the text here and UserDrawCaption then draws it IN
+            // PLACE, outside the _SEH2_TRY. Draw a pool copy instead.
+            match crate::safe_user_io::capture_string_buffer(
+                &mut SafeStr,
+                u32::from_le_bytes(*b"Usdc"),
+            ) {
+                Ok(guard) => caption_guard = guard,
+                Err(st) => {
                     Status = st;
                     break 'seh;
                 }

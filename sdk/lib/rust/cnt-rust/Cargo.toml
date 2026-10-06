@@ -30,6 +30,12 @@ default = ["float"]
 # Does NOT imply `float`: the i386 kernel links cabi WITHOUT float
 # (no-SSE — see below). cnt-difftest gets float via `default`.
 cabi = []
+# The boot loaders link the CRT for printf/strtoul/... and never set an
+# environment, but getenv/_putenv stay reachable through the C runtime, so the
+# environment table is always linked. At full size it is ~111 KB of .bss, which
+# alone pushed the BIOS loader past the conventional-memory ceiling it must fit
+# under (x86common.h MAX_FREELDR_PE_SIZE). Implied by cnt-rust-lib's `freeldr`.
+small-env = []
 # ONLY cabi/math.rs's 66 #[no_mangle] libm exports (sin/cos/exp/pow/…),
 # none of the other ~200 shims. For msvcrt-crt-cargo: msvcrt.dll's math
 # exports bind to the same plain engine names crtmath defines, so the
