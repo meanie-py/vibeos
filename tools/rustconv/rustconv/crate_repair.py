@@ -3331,7 +3331,9 @@ def _unsigned_negate_rule(
     m = re.search(
         r"unary operator `-` to type `(u8|u16|u32|u64|usize)`", str(diagnostic.get("message") or "")
     )
-    got = _primary_bytes(diagnostic, load) if m else None
+    if m is None:
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
     if got is None:
         return [], [], False
     span, file_name, data, _masked, start, end = got
@@ -3370,7 +3372,9 @@ def _option_fn_as_ptr_rule(
         r"non-primitive cast: `Option<[^`]*fn\([^`]*` as `\*(mut|const) ",
         str(diagnostic.get("message") or ""),
     )
-    got = _primary_bytes(diagnostic, load) if m else None
+    if m is None:
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
     if got is None:
         return [], [], False
     span, file_name, data, _masked, start, end = got
