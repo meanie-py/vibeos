@@ -1990,15 +1990,17 @@ that isn't just a port — capabilities and correctness properties that go past 
 ReactOS, made tractable because the kernel is now our Rust in one workspace. Landed-vs-in-
 flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
 
-- **x86-on-ARM64 — a homegrown Rosetta (WoW64 + FEX).** 32-bit x86 PE binaries launch as a
-  **WoW64 process on the ARM64 NT kernel** — Phase B complete + Phase C M1 landed (real
-  i386 PE runs through the full WoW64 stack: `wow64.dll`/`wow64cpu`/`wow64win`, generated
-  syscall thunks). M3b (ntdll32 loader → `RtlCreateActivationContext`) is in flight on
-  `fex-arm`, currently blocked on a foundational arm64 unaligned-access fault. The x86→arm64
-  execution engine is **FEX-emu** (vendored FEX-2607, `wow64fex`/`FEXOfflineCompiler` link
-  with zero patches; `fexprobe` executes an x86 guest blob) — the "run real x86 Windows
-  binaries on an ARM64 Rust kernel" thesis. Docs: `active-lanes/wow64-plan.md`,
-  `active-lanes/fex-bringup-plan.md`.
+- **x86-on-ARM64 — a homegrown Rosetta (WoW64 + FEX).** 32-bit x86 PE binaries run as
+  **WoW64 processes on the ARM64 NT kernel**: `wow64.dll` + generated syscall thunks over
+  **FEX-emu** (vendored FEX-2607; one recorded patch, `vendor-patches/fex.md`). The graded
+  guest ladder is green in QEMU and on a **real Raspberry Pi 4** (roadmap, 2026-10-04 entry),
+  and amd64 runs the same ladder natively through `wow64cpu`. **x86-64 on ARM64** started
+  2026-10-05 (BTCpu64, Fork B of `wow64-x64-guest-design.md`): our own CPU-layer contract,
+  `wowx64.dll` (Rust, no C counterpart) driving `libwowx64fex.dll` (FEXCore in 64-bit mode,
+  linked out of tree). M1 runs `hello64.exe`, the same binary graded natively on amd64; M2
+  (the guest's amd64 ntdll + loader) is next. Docs: `active-lanes/wow64-plan.md`,
+  `active-lanes/fex-bringup-plan.md` (32-bit), `wow64-x64-guest-design.md` (x86-64: status
+  and the owed list).
 - **SMP / multi-processor bring-up.** The `CONFIG_SMP` kernel (`ntkrnlmp.exe`) **links on
   all three arches and boots `-smp 1` to desktop (amd64)** — landed. The **first amd64 AP
   starts and runs `KiSystemStartup`** (CPU 1 parks) on the `smp-bringup` lane; M2 is pinned

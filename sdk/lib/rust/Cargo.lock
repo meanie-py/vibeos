@@ -3078,6 +3078,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "wowx64-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "wowx64-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "ws2_32-rust"
 version = "0.1.0"
 dependencies = [

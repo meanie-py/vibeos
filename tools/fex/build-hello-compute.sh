@@ -35,6 +35,19 @@ if [ -f "$FEX_BUILD/FEXCore/Source/libFEXCore.a" ]; then
         -DFEX_BUILD="$FEX_BUILD"
 
     ninja -C "$HARNESS_BUILD" fexprobe wow64probe
+
+    # libwowx64fex.dll — the BTCpu64 CPU layer for x86-64 guests (Fork B of
+    # docs/engineering/wow64-x64-guest-design.md). A shipping DLL rather than a
+    # probe, but it links the same prebuilt FEX archives, so it builds where
+    # they are. Its own project: it is a DLL with FEX's private CRT, not an exe.
+    cmake -S "$REPO_ROOT/tools/fex/wowx64fex" -B "$HARNESS_BUILD/wowx64fex" -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="$FEX_SRC/Data/CMake/toolchain_mingw.cmake" \
+        -DMINGW_TRIPLE=aarch64-w64-mingw32 \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DFEX_SRC="$FEX_SRC" \
+        -DFEX_BUILD="$FEX_BUILD" \
+        -DVIBEOS_SRC="$REPO_ROOT"
+    ninja -C "$HARNESS_BUILD/wowx64fex"
 else
     echo "[!] fexprobe/wow64probe skipped: FEX not built at $FEX_BUILD"
     echo "    (run tools/fex/build-fex.sh if you need the arm64 probes)"
@@ -213,6 +226,24 @@ else
     echo "[!] marshal32.exe skipped: build-i386 importlibs missing ($I386_BUILD)"
 fi
 
+# hello64.exe — the first x86-64 guest (Fork B milestone M1): no CRT, no
+# imports, raw syscalls. Their numbers are read out of ntoskrnl/sysfuncs.lst
+# here — the list is arch-independent, so the guest's number IS the arm64
+# kernel's, which is what lets wowx64.dll forward a syscall by register
+# shuffle alone. Same binary runs natively on amd64 as the oracle.
+SYSFUNCS="$REPO_ROOT/ntoskrnl/sysfuncs.lst"
+svc_index() {
+    local n
+    n="$(awk -v f="$1" '$1==f {print NR-1; exit}' "$SYSFUNCS")"
+    [ -n "$n" ] || { echo "FATAL: $1 not in $SYSFUNCS" >&2; exit 1; }
+    echo "$n"
+}
+"$LLVM_MINGW/x86_64-w64-mingw32-clang" -O1 -nostdlib -ffreestanding -fno-stack-protector \
+    -Wl,-e,start -Wl,--subsystem,windows:5.2 -Wl,--no-insert-timestamp \
+    -DSVC_NTCLOSE="$(svc_index NtClose)" \
+    -DSVC_NTTERMINATEPROCESS="$(svc_index NtTerminateProcess)" \
+    -o "$HARNESS_BUILD/hello64.exe" "$HARNESS_SRC/Hello64.c"
+
 echo
 echo "Built:"
-ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe "$HARNESS_BUILD"/gui32.exe "$HARNESS_BUILD"/win32.exe "$HARNESS_BUILD"/file32.exe "$HARNESS_BUILD"/marshal32.exe 2>/dev/null || true
+ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe "$HARNESS_BUILD"/gui32.exe "$HARNESS_BUILD"/win32.exe "$HARNESS_BUILD"/file32.exe "$HARNESS_BUILD"/marshal32.exe "$HARNESS_BUILD"/hello64.exe "$HARNESS_BUILD"/wowx64fex/libwowx64fex.dll 2>/dev/null || true

@@ -87,6 +87,13 @@ LADDER: dict[str, int] = {
     # diagnostic guest that starts passing has finished its job, and leaving it
     # ungraded would mean a regression in the thing it proved could go unnoticed.
     "spawn32": 0x600D,
+    # The first x86-64 guest (BTCpu64 M1, docs/engineering/wow64-x64-guest-design.md
+    # Fork B). Parity in the sense this table means, one width up: the SAME binary
+    # runs under FEX in 64-bit mode on arm64 and natively on amd64. Not a WoW64
+    # guest, so it stages to system32 rather than syswow64 -- every check here is
+    # keyed by name, and media_has_guests needs only SOME guest found, so the
+    # different directory costs nothing.
+    "hello64": 0x600D,
 }
 
 # Optional guests: reported when seen, never required. This table is the PARITY
@@ -246,6 +253,7 @@ GUEST_SOURCE: dict[str, str] = {
     "selfmod32": "tools/fex/hello-compute/Selfmod32.c",
     "reg32": "tools/fex/hello-compute/Reg32.c",
     "spawn32": "tools/fex/hello-compute/Spawn32.c",
+    "hello64": "tools/fex/hello-compute/Hello64.c",
 }
 
 # The script carries the link lines, so a change to it (a new flag, a different

@@ -398,6 +398,11 @@ members = [
     # builds and no boot can regress. Membership only puts it in every lane's `cargo check`,
     # which is what stops the rot.
     "recyclebin-rust",
+    # wowx64.dll, the OS side of BTCpu64 (x86-64 guests on arm64). The link cell
+    # builds on arm64 only; the body crate checks everywhere (its host half is
+    # cfg(aarch64), the rest is the arch-neutral contract types).
+    "wowx64-rust",
+    "wowx64-cargo",
 ]
 resolver = "2"
 
