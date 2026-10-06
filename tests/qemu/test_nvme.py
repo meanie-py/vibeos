@@ -34,6 +34,11 @@ def nvme_preflight(arch: str) -> None:
     tripwire = os.environ.get("VIBEOS_TRIPWIRE", "")
     if "QUIET" not in tripwire.replace(";", " ").split():
         os.environ["VIBEOS_TRIPWIRE"] = f"{tripwire} QUIET".strip()
+    # arm64 types through the xHCI rig's USB keyboard. Through the default virtio
+    # keyboard the Run dialog never opened (2026-10-06: win32k saw the first key,
+    # and nothing after it reached a window).
+    if media_arch == "arm64":
+        os.environ["VIBEOS_QEMU_XHCI"] = "1"
 
 
 @pytest.fixture(scope="session")
