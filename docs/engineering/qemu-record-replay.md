@@ -162,14 +162,11 @@ loader fix, three kernel layers and three harness fixes, each found by the one b
   `-d exec` (not one translation block), and a backtrace of QEMU run under gdb
   (`ptrace_scope` refuses an attach). arm64 still loads the snapshot.
 
-virtio-blk does not boot, and it is not a timing problem: **the x86 kernel has no
-virtio-blk driver at all** (2026-10-05). freeldr reads the ISO through the firmware's
-own virtio BlockIo and loads every boot driver from it; the boot-driver list it loads
-(uniata, scsiport, buslogic, usbstor, disk, cdrom, ...) has nothing that binds a
-virtio-blk PCI function, so from the kernel's side the ISO does not exist and the
-boot ends in `0x6B`. The one disk `IopCreateArcNames` did see was the IDE `tempdisk`,
-not the virtio scratch disk, which is unused by the x86 kernel too. Booting from it is
-a new storage driver, not a fix; usb-storage covers what rr needs.
+virtio-blk boots too, since 2026-10-05: the x86 kernel had **no virtio-blk driver at
+all** (freeldr read the ISO through the firmware's own BlockIo, then the kernel could
+not see it and the boot ended in `0x6B`), and `vioblk.sys` — a Rust SCSIPORT miniport
+over `virtio-drivers` — now presents each virtio-blk function as a SCSI disk, so the
+boot ArcName finds the ISO on it (`VIBEOS_QEMU_BOOT_TRANSPORT=virtio-blk`).
 
 One refusal the transform does NOT make is x86's default accelerator. `amd64`
 and `i386` boot `-accel kvm -cpu host`, which would fail the first row of that

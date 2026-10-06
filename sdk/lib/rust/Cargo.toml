@@ -316,6 +316,7 @@ members = [
     "scsiport-rust",
     "atapi-rust",
     "buslogic-rust",
+    "vioblk-rust",
     "usbaudio-rust",
     "ks-rust",
     "mup-rust",

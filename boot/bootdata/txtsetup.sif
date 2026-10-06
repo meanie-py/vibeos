@@ -91,6 +91,7 @@ nmidebug.sys = 1,,,,,,x,4,,,,1,4
 sacdrv.sys   = 1,,,,,,x,4,,,,1,4
 uniata.sys   = 1,,,,,,x,4,,,,1,4
 buslogic.sys = 1,,,,,,x,4,,,,1,4
+vioblk.sys   = 1,,,,,,x,4,,,,1,4
 blue.sys     = 1,,,,,,x,4,,,,1,4
 vgafonts.cab = 1,,,,,,,1,,,,1,1
 bootvid.dll  = 1,,,,,,,2,,,,1,2
@@ -157,6 +158,8 @@ acpi.sys     = 1,,,,,,x,4,,,,1,4
 PCI\CC_0601 = isapnp
 PCI\CC_0604 = pci
 PCI\VEN_104B&CC_0100 = buslogic
+PCI\VEN_1AF4&DEV_1001 = vioblk
+PCI\VEN_1AF4&DEV_1042 = vioblk
 PCI\CC_0101 = pciide
 PCI\CC_0104 = uniata
 PCI\CC_0105 = uniata
@@ -205,6 +208,7 @@ pciide = pciide.sys
 [SCSI.Load]
 uniata = uniata.sys
 buslogic = buslogic.sys
+vioblk = vioblk.sys
 storahci = storahci.sys
 disk = disk.sys
 
