@@ -96,6 +96,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    (".", ".", "tools/test_scan_ptr_highword_mask.py"),
     (".", ".", "tools/test_scan_hresult_literals.py"),
     (".", ".", "tools/test_scan_dowhile_continue.py"),
     (".", ".", "tools/test_scan_byteptr_stride.py"),

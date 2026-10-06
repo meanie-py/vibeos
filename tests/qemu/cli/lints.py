@@ -1154,6 +1154,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # `ptr & 0xFFFF0000 == 0` as "the pointer is at most 0xFFFF" tests bits 16-31 only on
+    # 64-bit. RtlpCheckIntegerAtom did that, so a pool-captured atom name at ...0000_xxxx
+    # became integer atom xxxx for every name in the boot, window properties collided, and
+    # arm64 applets died with no window. Baseline is EMPTY.
+    phm = repo / "tools" / "scan_ptr_highword_mask.py"
+    specs.append(
+        (
+            "scan_ptr_highword_mask",
+            [py, str(phm)] if phm.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A `++`/`--` inside a CALL ARGUMENT whose effect a later operand of the same expression
     # observes. Rust has no `++`, so the translation must split it, and where the second
     # statement lands is the whole meaning — msvcrt's demangler hoisted one out of an `if`
