@@ -395,6 +395,25 @@ sharing one serialised them. And crate-repair refuses an edit outside the crate 
 truthiness rule followed a span into win32macros-rust and rewrote `IsRecognizedPartition` to
 suit setuplib.
 
+**Expand the module's own macros in the C, don't port them** (`port translate --only X.c
+--expand-macros`, recorded per TU in the port state; `translate --expand-local-macros DIR`).
+A C macro is untyped text; a `macro_rules!` body has one typing for every caller, and C's
+silent promotions differ per call site (`GetPartEntryOffsetInBytes` is `i64 * u32`). rustc then
+reports the error inside the macro body, away from the function that could fix it. Expanding
+before the seals means the model translates what the compiler sees, and crate-repair and
+`port fix` see each use in its context. Function-like macros and object-like aliases of a
+member or function expand; constants stay names for the seal. On partlist.c every macro-body
+error went away (11 -> 8, the rest being an island header and fn-pointer ABIs). Ten bodies
+re-bought, $0.20 with escalation. The C rule that matters: a macro is not re-expanded inside its
+own expansion (`#define SpInfFindFirstLine (SpInfExports.SpInfFindFirstLine)`).
+
+**`goto` has two sanctioned lowerings, and the dodge is refused.** Told "no goto", a
+thinking-on reply invented `goto_NoSystemPartition!()` shims, which nothing parsed or checked.
+The mechanical prompt now spells out both lowerings (a labeled block for a forward jump to a
+shared tail; a state variable plus `loop { match }` for jumps between several labels), and
+`c_body_checks` rejects a `goto_*` macro, call or nested fn at purchase, so the body escalates
+instead of shipping.
+
 c2rust anchoring fixes the setuplib run forced, all in `c2rust_anchor.py`:
 `--preserve-unused-functions` (c2rust prunes an unused `static`, and liveness is per arch —
 `IsAcpiComputer` is only called under `#ifndef _M_AMD64`); a body missing from the requested

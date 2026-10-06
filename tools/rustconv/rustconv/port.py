@@ -214,6 +214,18 @@ def _has_body(path: Path) -> bool:
     return bool(re.search(r"\b(?:fn|static|const)\s+\w+", text))
 
 
+def set_expand_macros(stem: str, tus: list[str]) -> list[str]:
+    """Record that these TUs translate with the module's own macros expanded in the C."""
+    state = load_state(stem)
+    known = {Path(t).name for t in state["tus"]}
+    bad = sorted(set(tus) - known)
+    if bad:
+        raise PortError(f"not TUs of {stem}: {', '.join(bad)}")
+    state["expand_macros"] = sorted(set(state.get("expand_macros", [])) | set(tus))
+    _record(state, "expand-macros", time.time(), tus=state["expand_macros"])
+    return state["expand_macros"]
+
+
 def stage_translate(
     stem: str,
     *,
@@ -227,6 +239,7 @@ def stage_translate(
     escalate: bool = False,
     rebuy_fn: list[str] | None = None,
     replay_only: bool = False,
+    revisit: list[str] | None = None,
 ) -> tuple[float, list[str]]:
     """Run translate per TU; return (USD spent, file names of the TUs it ran)."""
     state = load_state(stem)
@@ -239,7 +252,12 @@ def stage_translate(
     todo = (
         picked
         if escalate or rebuy_fn or replay_only
-        else [t for t in picked if not _has_body(_tu_output(state, t))]
+        # A TU just switched to expanded macros has output, but its question changed.
+        else [
+            t
+            for t in picked
+            if not _has_body(_tu_output(state, t)) or Path(t).name in (revisit or [])
+        ]
     )
     spent = 0.0
     done: list[dict] = []
@@ -277,6 +295,9 @@ def stage_translate(
             "--concurrency",
             str(concurrency),
         ]
+        # Per TU, recorded in the state so `port replay` asks the bank the same question.
+        if Path(tu).name in state.get("expand_macros", []):
+            cmd += ["--expand-local-macros", state["module_dir"]]
         if dry_run:
             cmd.append("--dry-run")
         env = dict(
@@ -1319,8 +1340,13 @@ def main(args) -> int:
         elif args.port_stage == "scaffold":
             stage_scaffold(_module(args.module), args.target)
         elif args.port_stage == "translate":
+            if args.expand_macros:
+                tus = args.only or [Path(t).name for t in load_state(args.stem)["tus"]]
+                on = set_expand_macros(args.stem, tus)
+                print(f"translate: macros expanded in the C for {', '.join(on)}")
             spent, ran = stage_translate(
                 args.stem,
+                revisit=(args.only or None) if args.expand_macros else None,
                 model=args.model,
                 cost_cap=args.cost_cap,
                 only=args.only or [],
@@ -1427,6 +1453,12 @@ def add_parser(sub) -> None:
         ),
     )
     q.add_argument("--only", nargs="*", help="TU file names to limit the run to")
+    q.add_argument(
+        "--expand-macros",
+        action="store_true",
+        help="from now on, expand the module's own macros in the C of these TUs (--only, or "
+        "all); recorded in the state so replay keeps asking the bank the same question",
+    )
     q.add_argument("--dry-run", action="store_true")
     # mechanical: a faithful transliteration (C control flow and pointers kept), which is
     # what the placement and difftest oracles compare against -- and the only mode
