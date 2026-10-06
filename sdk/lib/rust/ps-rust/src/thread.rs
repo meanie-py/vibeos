@@ -960,9 +960,9 @@ pub unsafe extern "system" fn NtCreateThread(
         ) {
             return s;
         }
-        SafeInitialTeb = *InitialTeb;
+        SafeInitialTeb = match ntkrnl_sys::probe::read_back(InitialTeb) { Ok(v) => v, Err(s) => return s };
     } else {
-        SafeInitialTeb = *InitialTeb;
+        SafeInitialTeb = match ntkrnl_sys::probe::read_back(InitialTeb) { Ok(v) => v, Err(s) => return s };
     }
 
     PspCreateThread(
@@ -1020,7 +1020,7 @@ pub unsafe extern "system" fn NtOpenThread(
             ) {
                 return s;
             }
-            SafeClientId = *ClientId;
+            SafeClientId = match ntkrnl_sys::probe::read_back(ClientId) { Ok(v) => v, Err(s) => return s };
             ClientId = &mut SafeClientId;
         }
 
@@ -1032,13 +1032,13 @@ pub unsafe extern "system" fn NtOpenThread(
         ) {
             return s;
         }
-        HasObjectName = if !(*ObjectAttributes).ObjectName.is_null() { 1u8 } else { 0u8 };
+        HasObjectName = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*ObjectAttributes).ObjectName)) { Ok(n) => (!n.is_null()) as u8, Err(s) => return s };
 
-        Attributes = ObpValidateAttributes((*ObjectAttributes).Attributes, PreviousMode);
+        Attributes = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*ObjectAttributes).Attributes)) { Ok(a) => ObpValidateAttributes(a, PreviousMode), Err(s) => return s };
     } else {
-        HasObjectName = if !(*ObjectAttributes).ObjectName.is_null() { 1u8 } else { 0u8 };
+        HasObjectName = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*ObjectAttributes).ObjectName)) { Ok(n) => (!n.is_null()) as u8, Err(s) => return s };
 
-        Attributes = ObpValidateAttributes((*ObjectAttributes).Attributes, PreviousMode);
+        Attributes = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*ObjectAttributes).Attributes)) { Ok(a) => ObpValidateAttributes(a, PreviousMode), Err(s) => return s };
     }
 
     if HasObjectName != 0 && !ClientId.is_null() {

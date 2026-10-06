@@ -672,9 +672,75 @@ def build_preamble(
             i = j + 1
             continue
         i += 1
+    out = fold_static_initializers(text, out)
     if verbose:
         print(f"  [c2rust] preamble: {len(out)} data item(s) from {c_file.name}", file=sys.stderr)
     return hoist_wide_temporaries("\n\n".join(out))
+
+
+_INIT_FN_RE = re.compile(r'(?m)^unsafe extern "C" fn run_static_initializers\(\) \{$')
+_INIT_ARRAY_RE = re.compile(r"\s*(?:pub\s+)?static\s+INIT_ARRAY\s*:")
+
+
+def _top_level_statements(body: str) -> list[str]:
+    """Split a block body at depth-0 `;`, skipping string and byte-string literals."""
+    out, depth, start, i = [], 0, 0, 0
+    while i < len(body):
+        c = body[i]
+        if c == '"':
+            i += 1
+            while i < len(body) and body[i] != '"':
+                i += 2 if body[i] == "\\" else 1
+        elif c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == ";" and depth == 0:
+            out.append(body[start:i].strip())
+            start = i + 1
+        i += 1
+    if body[start:].strip():
+        out.append(body[start:].strip())
+    return out
+
+
+def fold_static_initializers(text: str, blocks: list[str]) -> list[str]:
+    """Move c2rust's `run_static_initializers` assignments into the statics they initialise.
+
+    A C static whose initialiser is not a constant expression TO CLANG -- setuplib's
+    `static UNICODE_STRING X = RTL_CONSTANT_STRING(L"...")`, whose Length is a sizeof and whose
+    Buffer is an address -- c2rust zero-fills and assigns at startup from an `.init_array` /
+    `.CRT$XIB` constructor. Our preamble kept the zero-filled static and dropped that function,
+    so the module compiled with an EMPTY string in it. Rust evaluates the same expression at
+    compile time, so each `NAME = EXPR;` becomes NAME's initialiser and INIT_ARRAY goes.
+    Anything else in the constructor (a field or element store, a call) has no static
+    spelling: refused, never dropped.
+    """
+    blocks = [b for b in blocks if not _INIT_ARRAY_RE.match(b)]
+    m = _INIT_FN_RE.search(text)
+    if m is None:
+        return blocks
+    depth, end = 0, m.end() - 1
+    while end < len(text):
+        depth += {"{": 1, "}": -1}.get(text[end], 0)
+        if depth == 0:
+            break
+        end += 1
+    for stmt in _top_level_statements(text[m.end() : end]):
+        a = re.match(r"([A-Za-z_]\w*)\s*=(?!=)\s*(.*)\Z", stmt, re.S)
+        sig = None
+        if a is not None:
+            sig = re.compile(rf"^(\s*(?:pub\s+)?static(?:\s+mut)?\s+{a.group(1)}\s*:[^=]*=)")
+        hit = [k for k, b in enumerate(blocks) if sig is not None and sig.match(b)]
+        if a is None or len(hit) != 1:
+            raise C2RustError(
+                "c2rust initialises a static at startup in a shape with no static spelling: "
+                f"`{stmt[:120]}` -- hand-port this initialiser"
+            )
+        k = hit[0]
+        head = sig.match(blocks[k]).group(1)  # type: ignore[union-attr]
+        blocks[k] = f"{head} {a.group(2).strip()};"
+    return blocks
 
 
 # c2rust spells a file-scope `L"Arial,186"` as `transmute::<[u8; 20], [c_ushort; 10]>(*b"A\0r\0…")
@@ -683,6 +749,13 @@ def build_preamble(
 _WIDE_TEMP_RE = re.compile(
     r"::core::mem::transmute::<\s*\[u8;\s*(\d+)\]\s*,\s*\[::core::ffi::c_ushort;\s*(\d+)\]\s*,?\s*>"
     r"\(\s*\*b\"((?:[^\"\\]|\\.)*)\"\s*,?\s*\)\s*\.as_ptr\(\)"
+)
+# ...and, in a `run_static_initializers` body, as `&raw const transmute::<..>(*b"..") as *const
+# c_ushort` (regutil.c's SymbolicLinkValueName).
+_WIDE_RAW_RE = re.compile(
+    r"&raw const\s+::core::mem::transmute::<\s*\[u8;\s*(\d+)\]\s*,\s*\[::core::ffi::c_ushort;"
+    r"\s*(\d+)\]\s*,?\s*>\(\s*\*b\"((?:[^\"\\]|\\.)*)\"\s*,?\s*\)\s*as\s+\*const\s+"
+    r"::core::ffi::c_ushort"
 )
 _C2R_WSTR_PREFIX = "RUSTCONV_C2R_WSTR_"
 
@@ -730,7 +803,123 @@ def hoist_wide_temporaries(text: str) -> str:
         statics[name] = f"pub static {name}: [u16; {len(units)}] = {_render_units(units)};"
         return f"{name}.as_ptr()"
 
-    body = _WIDE_TEMP_RE.sub(repl, text)
+    body = _WIDE_RAW_RE.sub(repl, _WIDE_TEMP_RE.sub(repl, text))
     if not statics:
         return text
     return "\n".join(statics[k] for k in sorted(statics)) + "\n\n" + body
+
+
+# --------------------------------------------------------------------------------------
+# types a TU defines for itself
+# --------------------------------------------------------------------------------------
+
+_TYPE_ITEM_RE = re.compile(r"(?m)^((?:#\[[^\n]*\]\n)*)pub (struct|union|type) ([A-Za-z_]\w*)\b")
+
+
+def _type_items(text: str) -> dict[str, str]:
+    """Every top-level `pub struct|union|type` in c2rust output, attributes included."""
+    out: dict[str, str] = {}
+    for m in _TYPE_ITEM_RE.finditer(text):
+        kind, name = m.group(2), m.group(3)
+        if kind == "type":
+            end = text.find(";", m.end())
+        else:
+            open_idx = text.find("{", m.end())
+            semi = text.find(";", m.end())
+            if open_idx < 0 or (0 <= semi < open_idx):
+                end = semi
+            else:
+                depth, end = 0, open_idx
+                while end < len(text):
+                    depth += {"{": 1, "}": -1}.get(text[end], 0)
+                    if depth == 0:
+                        break
+                    end += 1
+        if end < 0:
+            continue
+        out.setdefault(name, text[m.start() : end + 1])
+    return out
+
+
+def local_types(
+    c_file: Path, names: set[str], arches: tuple[str, ...] = ("i386", "amd64", "arm64")
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Exact Rust for types the C FILE ITSELF defines (a `typedef struct` in the .c, or one
+    declared inside a function body), from c2rust's translation of that file.
+
+    The bindgen island only sees headers, so partinfo.c's `MBR_PARTITION_TYPE` and bootsup.c's
+    function-local `DISK_GEOMETRY_EX_INTERNAL` were defined nowhere, and the per-function
+    translation cannot define a type it only uses. c2rust lays them out with the C compiler
+    and keeps C's typedef names (`UCHAR`, `PCSTR`), which the island defines identically.
+
+    A requested name is taken only if the C file's own text mentions it, plus the struct a
+    requested typedef aliases (`MBR_PARTITION_TYPE = _MBR_PARTITION_TYPE`). Each arch is
+    transpiled; an item whose text differs across arches is returned per arch in the second
+    dict as `name -> "arch:text\\0arch:text..."` -- never one arch's layout for all three.
+    Returns (agreed items, arch-dependent items).
+    """
+    c_text = c_file.read_text(errors="replace")
+    wanted = {n for n in names if re.search(rf"\b{re.escape(n)}\b", c_text)}
+    if not wanted:
+        return {}, {}
+    per_arch: dict[str, dict[str, str]] = {}
+    for arch in arches:
+        text = _transpile_text(c_file, verbose=False, arch=arch)
+        if text is None:
+            continue
+        items = _type_items(text)
+        picked: dict[str, str] = {}
+        for name in wanted:
+            item = items.get(name)
+            if item is None:
+                continue
+            picked[name] = item
+            alias = re.fullmatch(r"(?s).*pub type \w+ = (\w+);", item)
+            target = alias.group(1) if alias else None
+            if target and target in items and re.search(rf"\b{re.escape(target)}\b", c_text):
+                picked.setdefault(target, items[target])
+        per_arch[arch] = picked
+    agreed: dict[str, str] = {}
+    differs: dict[str, str] = {}
+    for name in sorted(set().union(*(p.keys() for p in per_arch.values())) if per_arch else ()):
+        texts = {a: p[name] for a, p in per_arch.items() if name in p}
+        if len(set(texts.values())) == 1 and len(texts) == len(per_arch):
+            agreed[name] = next(iter(texts.values()))
+        else:
+            differs[name] = "\0".join(f"{a}:{t}" for a, t in sorted(texts.items()))
+    return agreed, differs
+
+
+_EXTERN_FN_RE = re.compile(r"(?m)^    (?:pub )?fn ([A-Za-z_]\w*)\(")
+
+
+def extern_signatures(
+    c_file: Path, names: set[str], arches: tuple[str, ...] = ("i386", "amd64", "arm64")
+) -> dict[str, str]:
+    """`fn NAME(..) -> T;` for C functions the file DECLARES (a header outside the island),
+    from c2rust's `extern` block, when every arch's text agrees.
+
+    The calling convention is NOT taken from here: c2rust writes `extern "C"` even for a
+    stdcall function on i386. `sdk_facts.function_abis` supplies it.
+    """
+    per_arch: dict[str, dict[str, str]] = {}
+    for arch in arches:
+        text = _transpile_text(c_file, verbose=False, arch=arch)
+        if text is None:
+            continue
+        found: dict[str, str] = {}
+        for m in _EXTERN_FN_RE.finditer(text):
+            if m.group(1) not in names:
+                continue
+            end = text.find(";\n", m.end())
+            if end < 0:
+                continue
+            sig = text[m.start() : end + 1].strip()
+            found[m.group(1)] = re.sub(r"^(?:pub )?fn ", "fn ", sig)
+        per_arch[arch] = found
+    out: dict[str, str] = {}
+    for name in names:
+        texts = {p.get(name) for p in per_arch.values()}
+        if len(texts) == 1 and None not in texts and per_arch:
+            out[name] = texts.pop()  # type: ignore[assignment]
+    return out

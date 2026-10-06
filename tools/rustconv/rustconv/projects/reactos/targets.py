@@ -1485,7 +1485,11 @@ def _detect_concrete_stdcall_slots(crate: Path) -> bool:
         return True
     # A NON-recursive glob on the two stems, not a tree walk: every island in the tree sits
     # directly in `<crate>/src`, and this runs at import for every target.
-    islands = sorted(src.glob("island_*.rs")) + sorted(src.glob("bindgen_*.rs"))
+    # `types_<arch>.rs` is gen_driver_types.sh's island (the driver fleet, and every crate
+    # `rustconv port` scaffolds). Unlisted, setuplib had "no island", got the conservative
+    # answer, and seven NTAPI callbacks came back as stdcall / "C" twins that match neither
+    # of its `extern "system"` slots.
+    islands = sorted([*src.glob("island_*.rs"), *src.glob("bindgen_*.rs"), *src.glob("types_*.rs")])
     if not islands:
         return True
     from ...crate_integrate import _without_comments

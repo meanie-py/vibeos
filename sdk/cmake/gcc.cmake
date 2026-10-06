@@ -961,8 +961,9 @@ function(add_cargo_module _target _crate _output)
             set(_postlink COMMAND ${CMAKE_COMMAND} -E env python3
                 ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
         endif()
-    elseif(_acm_KIND STREQUAL "efi")
-        # Strip rossym + all (matches uefi.cmake's uefildr POST_BUILD).
+    elseif(_acm_KIND STREQUAL "efi" OR _acm_KIND STREQUAL "biosloader")
+        # Strip rossym + all (matches uefi.cmake's uefildr POST_BUILD, and the
+        # old pcat.cmake freeldr_pe POST_BUILD for the BIOS loader).
         set(_postlink
             COMMAND ${CMAKE_STRIP} --remove-section=.rossym ${_out}
             COMMAND ${CMAKE_STRIP} --strip-all ${_out})

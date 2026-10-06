@@ -381,32 +381,6 @@ pub unsafe extern "system" fn NtUserYieldTask() -> DWORD {
     0
 }
 #[no_mangle]
-pub unsafe extern "system" fn NtUserGetRawInputBuffer(
-    pData: PRAWINPUT,
-    pcbSize: PUINT,
-    cbSizeHeader: UINT,
-) -> DWORD {
-    0
-}
-#[no_mangle]
-pub unsafe extern "system" fn NtUserGetRawInputData(
-    hRawInput: HRAWINPUT,
-    uiCommand: UINT,
-    pData: LPVOID,
-    pcbSize: PUINT,
-    cbSizeHeader: UINT,
-) -> DWORD {
-    0
-}
-#[no_mangle]
-pub unsafe extern "system" fn NtUserGetRegisteredRawInputDevices(
-    pRawInputDevices: PRAWINPUTDEVICE,
-    puiNumDevices: PUINT,
-    cbSize: UINT,
-) -> DWORD {
-    0
-}
-#[no_mangle]
 pub unsafe extern "system" fn NtUserHardErrorControl(
     dwUnknown1: DWORD,
     dwUnknown2: DWORD,
@@ -569,14 +543,6 @@ pub unsafe extern "system" fn NtUserRealInternalGetMessage(
 pub unsafe extern "system" fn NtUserRealWaitMessageEx(
     dwWakeMask: DWORD,
     uTimeout: UINT,
-) -> BOOL {
-    0
-}
-#[no_mangle]
-pub unsafe extern "system" fn NtUserRegisterRawInputDevices(
-    pRawInputDevices: PCRAWINPUTDEVICE,
-    uiNumDevices: UINT,
-    cbSize: UINT,
 ) -> BOOL {
     0
 }

@@ -378,7 +378,7 @@ pub unsafe extern "system" fn NtSetSystemTime(
             }
         }
     } else {
-        NewSystemTime = *SystemTime;
+        NewSystemTime = match ntkrnl_sys::probe::read_back(SystemTime) { Ok(v) => v, Err(s) => return s };
     }
 
     if SeSinglePrivilegeCheck(SeSystemtimePrivilege, PreviousMode) == 0 {
@@ -521,9 +521,9 @@ pub unsafe extern "system" fn NtQueryTimerResolution(
             return status;
         }
     } else {
-        *MinimumResolution = KeMaximumIncrement;
-        *MaximumResolution = KeMinimumIncrement;
-        *ActualResolution = KeTimeIncrement;
+        if let Err(s) = ntkrnl_sys::probe::write_back(MinimumResolution, KeMaximumIncrement) { return s; }
+        if let Err(s) = ntkrnl_sys::probe::write_back(MaximumResolution, KeMinimumIncrement) { return s; }
+        if let Err(s) = ntkrnl_sys::probe::write_back(ActualResolution, KeTimeIncrement) { return s; }
     }
 
     STATUS_SUCCESS
@@ -559,7 +559,7 @@ pub unsafe extern "system" fn NtSetTimerResolution(
             return status;
         }
     } else {
-        *CurrentResolution = NewResolution;
+        if let Err(s) = ntkrnl_sys::probe::write_back(CurrentResolution, NewResolution) { return s; }
     }
 
     if SetResolution != 0 || (*Process).__bindgen_anon_2.__bindgen_anon_1.SetTimerResolution() != 0 {

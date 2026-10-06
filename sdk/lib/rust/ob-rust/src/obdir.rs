@@ -338,7 +338,7 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
             return s;
         }
         if RestartScan == 0 {
-            SkipEntries = *Context;
+            SkipEntries = match ntkrnl_sys::probe::read_back(Context) { Ok(v) => v, Err(s) => return s };
         }
         if !ReturnLength.is_null() {
             if let Err(s) = probe_user_buffer(ReturnLength as _, core::mem::size_of::<ULONG>(), core::mem::align_of::<ULONG>(), PreviousMode) {
@@ -346,7 +346,7 @@ pub unsafe extern "system" fn NtQueryDirectoryObject(
             }
         }
     } else if RestartScan == 0 {
-        SkipEntries = *Context;
+        SkipEntries = match ntkrnl_sys::probe::read_back(Context) { Ok(v) => v, Err(s) => return s };
     }
 
     LocalBuffer = ExAllocatePoolWithTag(

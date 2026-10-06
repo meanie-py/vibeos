@@ -167,3 +167,84 @@ def test_shared_crates_are_reexported_by_path_and_depended_on(tmp_path):
     assert set(changed) == {"strsafe_rust", "strsafe_rust::ntstrsafe"}
     assert 'strsafe-rust = { path = "../strsafe-rust" }' in (crate / "Cargo.toml").read_text()
     assert pr.refresh_shared_crates(crate, ws) == []
+
+
+def test_facts_block_round_trips_and_types_by_typedef(tmp_path):
+    facts = {
+        "STATUS_PARTITION_FAILURE": ("NTSTATUS", -1073741454, "fsutil.c"),
+        "MAX_PATH": ("i32", 260, "x.c"),
+        "ONE": ("u32", 1, "x.c"),
+    }
+    prelude = tmp_path / "prelude.rs"
+    prelude.write_text("use crate::types::*;\n")
+    assert pr.write_facts(prelude, pr.render_facts(facts))
+    text = prelude.read_text()
+    assert "pub const STATUS_PARTITION_FAILURE: NTSTATUS = 0xC0000172_u32 as NTSTATUS;" in text
+    assert pr.existing_facts(prelude) == facts
+    assert not pr.write_facts(prelude, pr.render_facts(facts))
+    known = {"NTSTATUS"}
+    assert pr.fact_rust_type("NTSTATUS|long", -1, known) == "NTSTATUS"
+    # Unknown typedef: its LLP64 canonical type -- C long is 32-bit on Windows.
+    assert pr.fact_rust_type("ULONG|unsigned long", 1, set()) == "u32"
+    assert pr.fact_rust_type("int", 1, set()) == "i32"
+    assert pr.looks_constant("STATUS_X") and not pr.looks_constant("Foo")
+
+
+def test_local_types_block_round_trips(tmp_path):
+    prelude = tmp_path / "prelude.rs"
+    prelude.write_text("use crate::types::*;\n")
+    item = "#[repr(C)]\npub struct _T {\n    pub a: UCHAR,\n}"
+    assert pr.write_local_types(prelude, {"_T": (item, "x.c"), "T": ("pub type T = _T;", "x.c")})
+    assert pr.existing_local_types(prelude) == {"_T", "T"}
+    assert not pr.write_local_types(
+        prelude, {"_T": (item, "x.c"), "T": ("pub type T = _T;", "x.c")}
+    )
+
+
+def test_externs_block_groups_by_abi_and_keeps_aliases(tmp_path):
+    sigs = {
+        "VfatFormat": (
+            "system",
+            "fn VfatFormat(\n        A: ULONG,\n    ) -> BOOLEAN;",
+            "fsutil.c",
+        ),
+        "iswspace": ("C", "fn iswspace(c: wint_t) -> c_int;", "arcname.c"),
+        "InstallFat12BootCode": (
+            "use",
+            "pub use crate::m::fsutil::InstallFatBootCode as InstallFat12BootCode;",
+            "fsutil.h",
+        ),
+    }
+    text = pr.render_externs(sigs)
+    assert 'extern "system" {\n    pub fn VfatFormat(\n        A: ULONG,\n    ) -> BOOLEAN;' in text
+    assert 'extern "C" {\n    pub fn iswspace(c: wint_t) -> c_int; // arcname.c\n}' in text
+    assert "pub use crate::m::fsutil::InstallFatBootCode as InstallFat12BootCode;" in text
+    prelude = tmp_path / "prelude.rs"
+    prelude.write_text("")
+    assert pr.write_externs(prelude, text)
+    assert pr.existing_externs(prelude) == {"VfatFormat", "iswspace", "InstallFat12BootCode"}
+
+
+def test_unresolved_keeps_the_namespace(monkeypatch, tmp_path):
+    import json as _json
+    import subprocess as _sp
+
+    msgs = [
+        "cannot find type `FILE_SYSTEM` in this scope",
+        "expected type, found constant `PFOO`",
+        "cannot find value `STATUS_X` in this scope",
+        "cannot find struct, variant or union type `_ROOT_KEY` in this scope",
+    ]
+    out = "\n".join(
+        _json.dumps({"reason": "compiler-message", "message": {"message": m}}) for m in msgs
+    )
+    monkeypatch.setattr(
+        _sp, "run", lambda *a, **k: _sp.CompletedProcess(a, 101, stdout=out, stderr="")
+    )
+    got = pr.unresolved("c", "t", tmp_path, tmp_path)
+    assert got == {
+        "FILE_SYSTEM": {"type"},
+        "PFOO": {"type"},
+        "STATUS_X": {"value"},
+        "_ROOT_KEY": {"type"},
+    }

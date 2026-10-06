@@ -1642,3 +1642,154 @@ def test_an_anon_union_struct_literal_becomes_zeroed_plus_stores():
         anon_unions={("_IO_STATUS_BLOCK", "Status"): "__bindgen_anon_1.Status"},
     )
     assert not plan.edits
+
+
+def test_a_bool_from_a_macro_is_cast_at_the_invocation():
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = b"fn f() {\n    p.Recognized = IsRecognizedPartition!(t);\n}\n"
+    call = b"IsRecognizedPartition!(t)"
+    at = src.index(call)
+    inner = _span(
+        "/rustc/core/src/macros/mod.rs",
+        10,
+        20,
+        is_primary=True,
+        label="expected `u8`, found `bool`",
+    )
+    inner["expansion"] = {
+        "span": _span("src/a.rs", at, at + len(call), line=2),
+        "macro_decl_name": "matches!",
+    }
+    diag = _diag("mismatched types", code="E0308", spans=[inner])
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS]
+    )
+    assert [(e.file_name, e.replacement) for e in plan.edits] == [
+        ("src/a.rs", "(IsRecognizedPartition!(t)) as u8")
+    ]
+
+
+def test_a_widening_is_inferred_and_a_narrowing_is_not():
+    from rustconv.crate_repair import RULE_INFER_WIDEN
+
+    src = b"fn f() {\n    if io.Information == FILE_CREATED {}\n    let n: u16 = big;\n}\n"
+    widen = _mismatch(src, b"FILE_CREATED", "u64", "u32")
+    narrow = _mismatch(src, b"big", "u16", "u32")
+    plan = propose_edits(
+        [widen, narrow], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_INFER_WIDEN]
+    )
+    assert [e.replacement for e in plan.edits] == ["(FILE_CREATED) as _"]
+
+
+def test_truthiness_fixes_our_macro_body_and_never_stacks():
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = b"macro_rules! M { ($c:expr) => { isalnum($c) || $c == 1 }; }\nfn f() {\n    if ((M!(x)) != 0) {}\n}\n"
+    inner_at = src.index(b"isalnum($c)")
+    inner = _span(
+        "src/a.rs",
+        inner_at,
+        inner_at + len(b"isalnum($c)"),
+        is_primary=True,
+        label="expected `bool`, found `i32`",
+    )
+    call = b"((M!(x)) != 0)"
+    at = src.index(call)
+    inner["expansion"] = {"span": _span("src/a.rs", at, at + len(call)), "macro_decl_name": "M!"}
+    wrapped = _mismatch(src, call, "bool", "i32")
+    plan = propose_edits(
+        [_diag("mismatched types", code="E0308", spans=[inner]), wrapped],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_C_TRUTHINESS],
+    )
+    # the macro body is fixed in place; the already-converted call site is left alone
+    assert [e.replacement for e in plan.edits] == ["((isalnum($c)) != 0)"]
+
+
+def test_an_edit_outside_the_repaired_crate_is_refused(tmp_path):
+    # rustc points INTO a shared crate's macro body when the misuse is at the call site; the
+    # truthiness rule once rewrote win32macros-rust to suit setuplib.
+    (tmp_path / "mine" / "src").mkdir(parents=True)
+    (tmp_path / "shared" / "src").mkdir(parents=True)
+    (tmp_path / "shared" / "src" / "lib.rs").write_text("let x = a;\n")
+    edit = Edit("shared/src/lib.rs", 8, 9, "b", RULE_NUMERIC_CAST, "auth", original="a")
+    applied, _, failed = apply_edits([edit], tmp_path, within=tmp_path / "mine")
+    assert applied == [] and failed[0].reason == "outside_crate"
+    assert (tmp_path / "shared" / "src" / "lib.rs").read_text() == "let x = a;\n"
+
+
+def _one_site(src: str, needle: str, message: str, code: str, nth: int = 0):
+    at = -1
+    for _ in range(nth + 1):
+        at = src.index(needle, at + 1)
+    diag = _diag(message, code=code, spans=[_span("a.rs", at, at + len(needle), is_primary=True)])
+    plan = propose_edits([diag], {"a.rs": src.encode()}.get, target="x86_64-pc-windows-gnu")
+    out = src.encode()
+    for edit in sorted(plan.edits, key=lambda e: -e.byte_start):
+        out = out[: edit.byte_start] + edit.replacement.encode() + out[edit.byte_end :]
+    return plan, out.decode()
+
+
+def test_option_fn_is_null_becomes_is_none():
+    src = "fn f(d: &D) { if !d.ErrorRoutine.is_null() { g(); } }\n"
+    _, out = _one_site(
+        src,
+        "is_null",
+        "no method named `is_null` found for enum `Option<T>` in the current scope",
+        "E0599",
+    )
+    assert "!d.ErrorRoutine.is_none()" in out
+
+
+def test_a_local_shadowing_a_constant_is_renamed_for_its_block():
+    src = (
+        "fn f(p: *mut S) {\n"
+        "    let a = AdapterType;\n"
+        "    {\n"
+        "        let mut AdapterType: ADAPTER_TYPE = AdapterTypeMax;\n"
+        "        (*p).AdapterType = AdapterType;\n"
+        "        let s = S { AdapterType: AdapterType, b: E::AdapterType };\n"
+        "        g(AdapterType);\n"
+        "    }\n"
+        "    h(AdapterType);\n"
+        "}\n"
+    )
+    _, out = _one_site(src, "AdapterType", "let bindings cannot shadow constants", "E0530", nth=1)
+    assert "let a = AdapterType;" in out
+    assert "let mut AdapterType_local: ADAPTER_TYPE = AdapterTypeMax;" in out
+    assert "(*p).AdapterType = AdapterType_local;" in out
+    assert "S { AdapterType: AdapterType_local, b: E::AdapterType }" in out
+    assert "g(AdapterType_local);" in out and "h(AdapterType);" in out
+
+
+def test_sizeof_of_a_constant_is_the_size_of_its_value():
+    src = "fn f() -> bool { n < core::mem::size_of::<UNICODE_NULL>() as u16 }\n"
+    _, out = _one_site(src, "UNICODE_NULL", "constant provided when a type was expected", "E0747")
+    assert "n < core::mem::size_of_val(&UNICODE_NULL) as u16" in out
+
+
+def test_sizeof_of_a_packed_field_never_forms_a_reference():
+    src = "fn f(p: *mut D) -> usize { core::mem::size_of_val(&(*p).Dir) / 2 }\n"
+    _, out = _one_site(src, "(*p).Dir", "reference to packed field is unaligned", "E0793")
+    assert "pointee_size(core::ptr::addr_of!((*p).Dir)) } / 2" in out
+    assert "size_of_val" not in out
+
+
+def test_a_function_cast_to_a_fn_pointer_is_left_to_coerce():
+    src = (
+        'static T: [S; 1] = [S { F: Some(\n    VfatFormat\n        as unsafe extern "C" fn(\n'
+        "            PUNICODE_STRING,\n        ) -> BOOLEAN,\n) }];\n"
+    )
+    start = src.index("VfatFormat")
+    end = src.index(") -> BOOLEAN,") + len(") -> BOOLEAN")
+    msg = (
+        'non-primitive cast: `unsafe extern "system" fn(*mut _UNICODE_STRING) -> u8 '
+        '{prelude::VfatFormat}` as `unsafe extern "C" fn(*mut _UNICODE_STRING) -> u8`'
+    )
+    diag = _diag(msg, code="E0605", spans=[_span("a.rs", start, end, is_primary=True)])
+    plan = propose_edits([diag], {"a.rs": src.encode()}.get, target="i686-pc-windows-gnu")
+    (edit,) = plan.edits
+    out = src[: edit.byte_start] + edit.replacement + src[edit.byte_end :]
+    assert "Some(\n    VfatFormat,\n) }" in out

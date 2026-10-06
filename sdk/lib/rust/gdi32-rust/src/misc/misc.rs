@@ -1199,6 +1199,33 @@ pub unsafe extern "system" fn GdiRealizationInfo(hdc: HDC, pri: PREALIZATION_INF
     NtGdiGetRealizationInfo(hdc, pri, core::ptr::null_mut())
 }
 
+#[no_mangle]
+pub unsafe extern "system" fn GetFontFileData(
+    uFileCollectionID: DWORD,
+    uFileIndex: DWORD,
+    mut pullFileOffset: UINT64,
+    pvBuf: PVOID,
+    cjBuf: SIZE_T,
+) -> BOOL {
+    NtGdiGetFontFileData(uFileCollectionID, uFileIndex, &mut pullFileOffset, pvBuf, cjBuf) as BOOL
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetFontFileInfo(
+    uFileCollectionID: DWORD,
+    uFileIndex: DWORD,
+    pffi: PFONT_FILE_INFO,
+    cjSize: SIZE_T,
+    pcjActualSize: PSIZE_T,
+) -> BOOL {
+    NtGdiGetFontFileInfo(uFileCollectionID, uFileIndex, pffi, cjSize, pcjActualSize) as BOOL
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetFontRealizationInfo(hdc: HDC, info: PFONT_REALIZATION_INFO) -> BOOL {
+    NtGdiGetFontRealizationInfo(hdc, info)
+}
+
 /*
  * @halfplemented
  */

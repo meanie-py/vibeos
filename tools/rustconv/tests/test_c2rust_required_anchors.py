@@ -106,8 +106,8 @@ def test_anchor_flags_preserve_preprocessor_order_and_quoted_paths():
 
 
 def test_nested_sal_does_not_erase_cdfs_functions():
-    from rustconv.scanner import scan_file, _strip_sal
     from rustconv.function_coverage import require_c_plan
+    from rustconv.scanner import _strip_sal, scan_file
 
     source = Path(__file__).resolve().parents[3] / "drivers/filesystems/cdfs/filobsup.c"
     scan = scan_file(source)
@@ -206,3 +206,55 @@ def test_wide_temporaries_in_a_static_are_hoisted_to_named_statics():
     assert name.startswith("RUSTCONV_C2R_WSTR_")
     assert "[0x0041u16, 0x002C, 0x0000]" in out
     assert anchor.hoist_wide_temporaries(pre + "\n" + pre).count("pub static RUSTCONV") == 1
+
+
+def test_type_items_reads_structs_and_aliases_from_c2rust_text():
+    text = (
+        "pub type UCHAR = ::core::ffi::c_uchar;\n"
+        "#[derive(Copy, Clone)]\n#[repr(C)]\npub struct _MBR_PARTITION_TYPE {\n"
+        "    pub Type: UCHAR,\n    pub Description: PCSTR,\n}\n"
+        "pub type MBR_PARTITION_TYPE = _MBR_PARTITION_TYPE;\n"
+    )
+    items = anchor._type_items(text)
+    assert items["MBR_PARTITION_TYPE"] == "pub type MBR_PARTITION_TYPE = _MBR_PARTITION_TYPE;"
+    assert items["_MBR_PARTITION_TYPE"].startswith("#[derive(Copy, Clone)]\n#[repr(C)]\npub struct")
+    assert items["_MBR_PARTITION_TYPE"].endswith("pub Description: PCSTR,\n}")
+
+
+_C2R_INIT = """static mut Name: UNICODE_STRING = _UNICODE_STRING {
+    Length: 0,
+    MaximumLength: 0,
+    Buffer: ::core::ptr::null_mut::<WCHAR>(),
+};
+unsafe extern "C" fn run_static_initializers() {
+    Name = _UNICODE_STRING {
+        Length: 2 as USHORT,
+        MaximumLength: 4 as USHORT,
+        Buffer: &raw const ::core::mem::transmute::<[u8; 4], [::core::ffi::c_ushort; 2]>(
+            *b"A\\0\\0\\0",
+        ) as *const ::core::ffi::c_ushort as PWSTR,
+    };
+}
+#[used]
+static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];
+"""
+
+
+def test_startup_initialisers_fold_into_their_statics():
+    # setuplib's `static UNICODE_STRING X = RTL_CONSTANT_STRING(L"...")` shipped EMPTY: the
+    # zero-filled static was kept and c2rust's constructor that filled it was dropped.
+    blocks = [_C2R_INIT.split("unsafe extern")[0].strip(), "static INIT_ARRAY: [x; 1] = [y];"]
+    out = anchor.fold_static_initializers(_C2R_INIT, blocks)
+    assert len(out) == 1 and "Length: 2 as USHORT" in out[0] and "null_mut" not in out[0]
+    hoisted = anchor.hoist_wide_temporaries(out[0])
+    assert "Buffer: RUSTCONV_C2R_WSTR_" in hoisted and ".as_ptr() as PWSTR" in hoisted
+    assert ": [u16; 2] = [0x0041u16, 0x0000];" in hoisted
+
+
+def test_a_startup_store_with_no_static_spelling_is_refused():
+    text = _C2R_INIT.replace(
+        "    Name = _UNICODE_STRING {", "    Name.Length = 2;\n    Name = _UNICODE_STRING {"
+    )
+    blocks = [_C2R_INIT.split("unsafe extern")[0].strip()]
+    with pytest.raises(anchor.C2RustError, match="hand-port"):
+        anchor.fold_static_initializers(text, blocks)

@@ -767,8 +767,22 @@ pub unsafe extern "system" fn NtGdiAddFontMemResourceEx(
         return core::ptr::null_mut();
     }
 
-    Buffer = ExAllocatePoolWithQuotaTag(PagedPool, (cjBuffer as usize as _), TAG_FONT);
-    RtlCopyMemory(Buffer, pvBuffer as PVOID, cjBuffer as usize);
+    // C: _SEH2_TRY { ProbeForRead(pvBuffer, cjBuffer, 1); Buffer = ExAllocatePoolWithQuotaTag(..);
+    // RtlCopyMemory(Buffer, pvBuffer, cjBuffer); } _SEH2_EXCEPT { free Buffer; return NULL; }
+    // The quota allocation RAISES on failure in the C (caught by that handler);
+    // without SEH ask it to fail instead, and copy fault-tolerantly.
+    Buffer = ExAllocatePoolWithQuotaTag(
+        (PagedPool as u32 | POOL_QUOTA_FAIL_INSTEAD_OF_RAISE) as _,
+        cjBuffer as usize as _,
+        TAG_FONT,
+    );
+    if Buffer.is_null() {
+        return core::ptr::null_mut();
+    }
+    if crate::safe_user_io::copy_from_user(Buffer, pvBuffer, cjBuffer as usize, 1).is_err() {
+        ExFreePoolWithTag(Buffer, TAG_FONT);
+        return core::ptr::null_mut();
+    }
 
     Ret = IntGdiAddFontMemResource(Buffer, cjBuffer, &mut NumFonts);
     ExFreePoolWithTag(Buffer, TAG_FONT);
@@ -814,8 +828,22 @@ pub unsafe extern "system" fn NtGdiAddFontMemResourceEx(
         return core::ptr::null_mut();
     }
 
-    Buffer = ExAllocatePoolWithQuotaTag(PagedPool, cjBuffer as usize as _ , TAG_FONT);
-    RtlCopyMemory(Buffer, pvBuffer as PVOID, cjBuffer as usize);
+    // C: _SEH2_TRY { ProbeForRead(pvBuffer, cjBuffer, 1); Buffer = ExAllocatePoolWithQuotaTag(..);
+    // RtlCopyMemory(Buffer, pvBuffer, cjBuffer); } _SEH2_EXCEPT { free Buffer; return NULL; }
+    // The quota allocation RAISES on failure in the C (caught by that handler);
+    // without SEH ask it to fail instead, and copy fault-tolerantly.
+    Buffer = ExAllocatePoolWithQuotaTag(
+        (PagedPool as u32 | POOL_QUOTA_FAIL_INSTEAD_OF_RAISE) as _,
+        cjBuffer as usize as _,
+        TAG_FONT,
+    );
+    if Buffer.is_null() {
+        return core::ptr::null_mut();
+    }
+    if crate::safe_user_io::copy_from_user(Buffer, pvBuffer, cjBuffer as usize, 1).is_err() {
+        ExFreePoolWithTag(Buffer, TAG_FONT);
+        return core::ptr::null_mut();
+    }
 
     Ret = IntGdiAddFontMemResource(Buffer, cjBuffer, &mut NumFonts);
     ExFreePoolWithTag(Buffer, TAG_FONT);
@@ -1802,6 +1830,42 @@ pub unsafe extern "system" fn NtGdiGetRealizationInfo(
         }
     }
     Ret
+}
+
+// The three NT6 font-file syscalls dwrite probes (upstream ab1aefbabb3, appended to
+// w32ksvc32/64.h). Stubs upstream as well: "Does not appear necessary for the main
+// functionality".
+#[no_mangle]
+pub unsafe extern "system" fn NtGdiGetFontFileData(
+    uFileCollectionID: UINT,
+    uFileIndex: UINT,
+    pullFileOffset: PULONGLONG,
+    pvBuf: PVOID,
+    cjBuf: SIZE_T,
+) -> DWORD {
+    let _ = (uFileCollectionID, uFileIndex, pullFileOffset, pvBuf, cjBuf);
+    DPRINT1!("WARNING: NtGdiGetFontFileData is UNIMPLEMENTED!\n");
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtGdiGetFontFileInfo(
+    uFileCollectionID: UINT,
+    uFileIndex: UINT,
+    pffi: PFONT_FILE_INFO,
+    cjSize: SIZE_T,
+    pcjActualSize: PSIZE_T,
+) -> DWORD {
+    let _ = (uFileCollectionID, uFileIndex, pffi, cjSize, pcjActualSize);
+    DPRINT1!("WARNING: NtGdiGetFontFileInfo is UNIMPLEMENTED!\n");
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn NtGdiGetFontRealizationInfo(hdc: HDC, info: PFONT_REALIZATION_INFO) -> BOOL {
+    let _ = (hdc, info);
+    DPRINT1!("WARNING: NtGdiGetFontRealizationInfo is UNIMPLEMENTED!\n");
+    FALSE as BOOL
 }
 
 #[no_mangle]

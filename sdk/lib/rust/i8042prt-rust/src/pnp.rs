@@ -413,6 +413,8 @@ unsafe fn i8042PnpStartDevice(
     let mut FoundDataPort: BOOLEAN = 0u8;
     let mut FoundControlPort: BOOLEAN = 0u8;
     let mut FoundIrq: BOOLEAN = 0u8;
+    let mut DataPort: *mut u8 = core::ptr::null_mut();
+    let mut ControlPort: *mut u8 = core::ptr::null_mut();
     let mut i: ULONG;
     let Status: NTSTATUS;
 
@@ -454,12 +456,10 @@ unsafe fn i8042PnpStartDevice(
             CmResourceTypePort => {
                 if (*ResourceDescriptor).u.Port.Length == 1 {
                     if FoundDataPort == 0 {
-                        (*PortDeviceExtension).DataPort =
-                            ULongToPtr((*ResourceDescriptor).u.Port.Start.u.LowPart) as _;
+                        DataPort = ULongToPtr((*ResourceDescriptor).u.Port.Start.u.LowPart) as _;
                         FoundDataPort = 1u8;
                     } else if FoundControlPort == 0 {
-                        (*PortDeviceExtension).ControlPort =
-                            ULongToPtr((*ResourceDescriptor).u.Port.Start.u.LowPart) as _;
+                        ControlPort = ULongToPtr((*ResourceDescriptor).u.Port.Start.u.LowPart) as _;
                         FoundControlPort = 1u8;
                     } else {
                         // FIXME: implement PS/2 Active Multiplexing
@@ -497,10 +497,18 @@ unsafe fn i8042PnpStartDevice(
         && (FoundDataPort == 0 || FoundControlPort == 0)
     {
         return STATUS_INSUFFICIENT_RESOURCES;
-    } else if (*DeviceExtension).Type == Mouse
-        && (FoundDataPort != 0 || FoundControlPort != 0)
-    {
+    } else if (*DeviceExtension).Type == Mouse && FoundDataPort != FoundControlPort {
+        // Mouse was given only one of the controller ports
         return STATUS_INVALID_PARAMETER;
+    }
+
+    /* Firmware gives the controller ports to the mouse when it reports no keyboard */
+    if FoundDataPort != 0
+        && FoundControlPort != 0
+        && ((*DeviceExtension).Type == Keyboard || (*PortDeviceExtension).DataPort.is_null())
+    {
+        (*PortDeviceExtension).DataPort = DataPort;
+        (*PortDeviceExtension).ControlPort = ControlPort;
     }
 
     match (*DeviceExtension).Type {

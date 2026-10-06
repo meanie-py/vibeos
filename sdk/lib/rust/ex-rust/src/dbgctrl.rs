@@ -322,8 +322,13 @@ pub unsafe extern "system" fn NtSystemDebugControl(
                 } else if KdPitchDebugger != 0u8 {
                     STATUS_ACCESS_DENIED
                 } else {
-                    KdAutoEnableOnEvent = *(InputBuffer as *const BOOLEAN);
-                    STATUS_SUCCESS
+                    match ntkrnl_sys::probe::read_back(InputBuffer as *const BOOLEAN) {
+                        Ok(v) => {
+                            KdAutoEnableOnEvent = v;
+                            STATUS_SUCCESS
+                        }
+                        Err(s) => s,
+                    }
                 }
             }
 
@@ -369,9 +374,13 @@ pub unsafe extern "system" fn NtSystemDebugControl(
                 } else if KdPitchDebugger != 0u8 {
                     STATUS_ACCESS_DENIED
                 } else {
-                    let input_val = *(InputBuffer as *const BOOLEAN);
-                    KdIgnoreUmExceptions = if input_val != 0u8 { 0u8 } else { 1u8 };
-                    STATUS_SUCCESS
+                    match ntkrnl_sys::probe::read_back(InputBuffer as *const BOOLEAN) {
+                        Ok(input_val) => {
+                            KdIgnoreUmExceptions = if input_val != 0u8 { 0u8 } else { 1u8 };
+                            STATUS_SUCCESS
+                        }
+                        Err(s) => s,
+                    }
                 }
             }
 

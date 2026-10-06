@@ -627,7 +627,9 @@ pub unsafe extern "C" fn RtlpCreateAtomHandle(AtomTable: PRTL_ATOM_TABLE, Entry:
     if !RtlHandle.is_null() {
         let AtomHandle: *mut _RTL_ATOM_HANDLE = RtlHandle as *mut _RTL_ATOM_HANDLE;
         
-        if HandleIndex < 0xC000 {
+        // Exceeds the C (bound 0xC000): the atom is 0xC000 + index in a
+        // USHORT, so an index from 0x4000 up wrapped below 0xC000.
+        if HandleIndex < 0x4000 {
             (*Entry).HandleIndex = HandleIndex as u16;
             (*Entry).Atom = 0xC000 + HandleIndex as u16;
             

@@ -36,8 +36,11 @@ from .crate_integrate import extern_block_spans, split_decls
 BEGIN = "// ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ===="
 END = "// ==== end port resolve ===="
 
+# E0422 ("cannot find struct, variant or union type") is a struct LITERAL's type: registry.c's
+# file-local `_ROOT_KEY` / `_HIVE_LIST_ENTRY` tables reach rustc only in that spelling.
 _MISSING = re.compile(
-    r"^cannot find (?:function|value|type|constant|macro|function, tuple struct or tuple variant)"
+    r"^cannot find (?:function|value|type|constant|macro|function, tuple struct or tuple variant"
+    r"|struct, variant or union type)"
     r"(?: or [a-z ]+)? `([A-Za-z_][A-Za-z0-9_]*)` in this scope"
 )
 
@@ -58,7 +61,22 @@ class Resolution:
     pending: list[str] = field(default_factory=list)
 
 
+#: rustc found a VALUE where the code names a type: setuplib's `FILE_SYSTEM` typedef, after
+#: tree consensus had copied bugcodes.h's `FILE_SYSTEM: ULONG = 0x22` for the missing name.
+_VALUE_FOR_TYPE = re.compile(r"^expected type, found (?:constant|static|function) `(\w+)`")
+_TYPE_WORDS = ("cannot find type ", "cannot find struct, variant or union type ")
+
+
 def unresolved_names(crate: str, triple: str, workspace: Path, target_dir: Path) -> set[str]:
+    return set(unresolved(crate, triple, workspace, target_dir))
+
+
+def unresolved(crate: str, triple: str, workspace: Path, target_dir: Path) -> dict[str, set[str]]:
+    """Each name rustc cannot find -> the namespaces it was wanted in ("type" / "value").
+
+    The namespace matters: a missing TYPE is never satisfied by a constant that happens to
+    share its name, which is what name-only resolution did to `FILE_SYSTEM`.
+    """
     proc = subprocess.run(
         ["cargo", "check", "-p", crate, "--target", triple, "--message-format=json"],
         cwd=workspace,
@@ -66,7 +84,7 @@ def unresolved_names(crate: str, triple: str, workspace: Path, target_dir: Path)
         capture_output=True,
         text=True,
     )
-    names: set[str] = set()
+    names: dict[str, set[str]] = {}
     for line in proc.stdout.splitlines():
         try:
             msg = json.loads(line)
@@ -74,9 +92,14 @@ def unresolved_names(crate: str, triple: str, workspace: Path, target_dir: Path)
             continue
         if msg.get("reason") != "compiler-message":
             continue
-        m = _MISSING.match(str((msg.get("message") or {}).get("message") or ""))
+        text = str((msg.get("message") or {}).get("message") or "")
+        m = _MISSING.match(text)
         if m:
-            names.add(m.group(1))
+            ns = "type" if text.startswith(_TYPE_WORDS) else "value"
+            names.setdefault(m.group(1), set()).add(ns)
+        m = _VALUE_FOR_TYPE.match(text)
+        if m:
+            names.setdefault(m.group(1), set()).add("type")
     return names
 
 
@@ -270,7 +293,13 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
     (
         "win32macros_rust",
         "win32macros-rust",
-        (("", r"macro_rules!\s+([A-Za-z_]\w*)|^pub const ([A-Za-z_]\w*)"),),
+        (
+            (
+                "",
+                r"macro_rules!\s+([A-Za-z_]\w*)|^pub const ([A-Za-z_]\w*)"
+                r"|^pub (?:unsafe )?fn ([A-Za-z_]\w*)",
+            ),
+        ),
     ),
     (
         "strsafe_rust",
@@ -471,3 +500,176 @@ def existing_block(prelude: Path) -> dict[str, Item]:
             kind = "fn" if body.startswith("fn") else body.split()[0]
             out[n.group(1)] = Item(kind, body, abi, src)
     return out
+
+
+# --------------------------------------------------------------------------------------
+# constants the C headers define and no Rust in the tree does
+# --------------------------------------------------------------------------------------
+
+FACTS_BEGIN = (
+    "// ==== port facts: constants evaluated by clang from the C headers "
+    "(generated -- `rustconv port resolve`) ===="
+)
+FACTS_END = "// ==== end port facts ===="
+
+_CONSTANT_NAME = re.compile(r"^_*[A-Z][A-Z0-9_]*$")
+# Windows is LLP64: C `long` is 32-bit on every target we build.
+_C_PRIMITIVE = {
+    "int": "i32",
+    "unsigned int": "u32",
+    "long": "i32",
+    "unsigned long": "u32",
+    "long long": "i64",
+    "unsigned long long": "u64",
+    "short": "i16",
+    "unsigned short": "u16",
+    "char": "i8",
+    "signed char": "i8",
+    "unsigned char": "u8",
+    "_Bool": "u8",
+}
+
+
+def looks_constant(name: str) -> bool:
+    return bool(_CONSTANT_NAME.match(name))
+
+
+def fact_rust_type(c_type: str | None, value: int, known_types: set[str]) -> str:
+    """The Rust spelling of a constant's C type: its typedef when the crate has it
+    (`NTSTATUS`), else the LLP64 primitive, else (unprobed) the narrowest by value."""
+    if c_type:
+        sugar, _, canonical = c_type.partition("|")
+        canonical = (canonical or sugar).removeprefix("const ").strip()
+        if re.fullmatch(r"[A-Za-z_]\w*", sugar) and sugar in known_types:
+            return sugar
+        if canonical in _C_PRIMITIVE:
+            return _C_PRIMITIVE[canonical]
+    if value < 0:
+        return "i32" if value >= -(2**31) else "i64"
+    return "u32" if value < 2**32 else "u64"
+
+
+def render_facts(facts: dict[str, tuple[str, int, str]]) -> str:
+    """name -> (rust type, value, source TU)."""
+    out = [FACTS_BEGIN]
+    for name, (ty, value, src) in sorted(facts.items()):
+        literal = str(value)
+        if value < 0 and ty in ("i32", "NTSTATUS", "LONG", "HRESULT"):
+            literal = f"0x{value & 0xFFFFFFFF:08X}_u32 as {ty}"
+        elif value >= 10:
+            literal = f"0x{value:X}"
+        out.append(f"pub const {name}: {ty} = {literal}; // clang, {src}")
+    out.append(FACTS_END)
+    return "\n".join(out) + "\n"
+
+
+def existing_facts(prelude: Path) -> dict[str, tuple[str, int, str]]:
+    text = prelude.read_text()
+    m = re.search(re.escape(FACTS_BEGIN) + r"(.*?)" + re.escape(FACTS_END), text, re.S)
+    if not m:
+        return {}
+    out = {}
+    for line in m.group(1).splitlines():
+        f = re.match(
+            r"^pub const (\w+): (\w+) = (0x[0-9A-F]+)?(?:_u32 as \w+)?(-?\d+)?; // clang, (\S+)",
+            line.strip(),
+        )
+        if not f:
+            continue
+        name, ty, hexv, decv, src = f.groups()
+        value = int(hexv, 16) if hexv else int(decv)
+        if hexv and line.find("_u32 as") > 0 and value >= 2**31:
+            value -= 2**32
+        out[name] = (ty, value, src)
+    return out
+
+
+def write_facts(prelude: Path, block: str) -> bool:
+    text = prelude.read_text()
+    m = re.search(re.escape(FACTS_BEGIN) + r".*?" + re.escape(FACTS_END) + r"\n?", text, re.S)
+    new = text[: m.start()] + block + text[m.end() :] if m else text.rstrip("\n") + "\n\n" + block
+    if new == text:
+        return False
+    prelude.write_text(new)
+    return True
+
+
+LOCAL_TYPES_BEGIN = (
+    "// ==== port local types: types the module's .c files define, laid out by c2rust "
+    "(generated -- `rustconv port resolve`) ===="
+)
+LOCAL_TYPES_END = "// ==== end port local types ===="
+
+
+def existing_local_types(prelude: Path) -> set[str]:
+    text = prelude.read_text()
+    m = re.search(re.escape(LOCAL_TYPES_BEGIN) + r"(.*?)" + re.escape(LOCAL_TYPES_END), text, re.S)
+    if not m:
+        return set()
+    return set(re.findall(r"(?m)^pub (?:struct|union|type) (\w+)", m.group(1)))
+
+
+def write_local_types(prelude: Path, items: dict[str, tuple[str, str]]) -> bool:
+    """name -> (rust text, source TU)."""
+    out = [LOCAL_TYPES_BEGIN]
+    for name, (text, src) in sorted(items.items()):
+        out.append(f"// {name}: c2rust, {src}")
+        out.append(text)
+    out.append(LOCAL_TYPES_END)
+    block = "\n".join(out) + "\n"
+    text = prelude.read_text()
+    m = re.search(
+        re.escape(LOCAL_TYPES_BEGIN) + r".*?" + re.escape(LOCAL_TYPES_END) + r"\n?", text, re.S
+    )
+    new = text[: m.start()] + block + text[m.end() :] if m else text.rstrip("\n") + "\n\n" + block
+    if new == text:
+        return False
+    prelude.write_text(new)
+    return True
+
+
+EXTERNS_BEGIN = (
+    "// ==== port externs: C functions declared outside the island -- c2rust signature, "
+    "clang calling convention (generated -- `rustconv port resolve`) ===="
+)
+EXTERNS_END = "// ==== end port externs ===="
+
+
+def existing_externs(prelude: Path) -> set[str]:
+    text = prelude.read_text()
+    m = re.search(re.escape(EXTERNS_BEGIN) + r"(.*?)" + re.escape(EXTERNS_END), text, re.S)
+    if not m:
+        return set()
+    # Both kinds, or a re-run drops the aliases its own first pass wrote.
+    return set(re.findall(r"\bpub fn (\w+)\(", m.group(1))) | set(
+        re.findall(r"\bpub use \S+ as (\w+);", m.group(1))
+    )
+
+
+def render_externs(sigs: dict[str, tuple[str, str, str]]) -> str:
+    """name -> (abi, `fn ...;` signature, source TU); grouped by ABI. Aliases are `pub use`."""
+    out = [EXTERNS_BEGIN]
+    by_abi: dict[str, list[tuple[str, str, str]]] = {}
+    for name, (abi, sig, src) in sorted(sigs.items()):
+        by_abi.setdefault(abi, []).append((name, sig, src))
+    for abi, items in sorted(by_abi.items()):
+        if abi == "use":
+            out += [f"{sig} // {src}" for _, sig, src in items]
+            continue
+        out.append(f'extern "{abi}" {{')
+        for _, sig, src in items:
+            # c2rust's text is already indented for an extern block (params at 8).
+            out.append(f"    pub {sig} // {src}")
+        out.append("}")
+    out.append(EXTERNS_END)
+    return "\n".join(out) + "\n"
+
+
+def write_externs(prelude: Path, block: str) -> bool:
+    text = prelude.read_text()
+    m = re.search(re.escape(EXTERNS_BEGIN) + r".*?" + re.escape(EXTERNS_END) + r"\n?", text, re.S)
+    new = text[: m.start()] + block + text[m.end() :] if m else text.rstrip("\n") + "\n\n" + block
+    if new == text:
+        return False
+    prelude.write_text(new)
+    return True

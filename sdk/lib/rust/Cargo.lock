@@ -709,6 +709,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "freeldr-cargo"
+version = "0.1.0"
+dependencies = [
+ "reactos-link",
+]
+
+[[package]]
 name = "freeldr-rust"
 version = "0.1.0"
 dependencies = [
@@ -2260,6 +2267,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdhc-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "sdhc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "se-rust"
 version = "0.1.0"
 dependencies = [
@@ -2872,6 +2895,23 @@ name = "vf-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "vioblk-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "vioblk-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+ "virtio-drivers",
 ]
 
 [[package]]

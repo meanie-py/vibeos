@@ -146,6 +146,8 @@ its own `__readx18`/`__writex18` family.
   **Superseded 2026-10-03: declined, see "Whole upstream changes DECLINED" — uniata-rust already does AHCI.**
 - **pcix**: upstream added `pci/ecam.c` + `pci/express.c` (PCIe ECAM config space). No Rust
   twin; left out of the build. Real feature gap, not a bug.
+  **Ported 2026-10-05** as `pcix-rust/src/pci/{ecam,express}.rs`, because the 10-05 sync's
+  resizable-BAR code reads extended capabilities through them.
 - `drivers/base/CMakeLists.txt`: our GDB-flag mutual exclusion between kdcom and kdgdb is
   mandatory — both build a cargo target named `kdcom`, so upstream's parallel ARCH-based
   `add_subdirectory` would have collided.
@@ -754,6 +756,41 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
 `RtlCaptureContextUM`) are byte-identical to the baseline — pre-existing, not new.
 
 
+## The 2026-10-05 sync: 39 commits, nearly all of them into Rust
+
+Merge `b0246913310` takes upstream from `f06eace89e1` to `171e1de21a4`. Of the 39 commits,
+the bulk (SymCrypt from Wine-11.16, rsaenh to Wine-11.19, mmc_new, three keyboard layouts,
+Japanese translations) merged as C. Almost every behavioural change landed on code that is
+Rust here, so the sync was mostly porting:
+
+| Upstream | Rust |
+|---|---|
+| `7a922dc4127` raw input (WM_INPUT) | `win32k-rust` `rawinput.rs` + keyboard/ntmouse/msgqueue/message/misc/main/input; user32 `RealGetQueueStatus` |
+| `ab1aefbabb3` dwrite/d2d1 syscalls | `NtGdiGetFontFileData/FileInfo/RealizationInfo` stubs (font.rs), gdi32 wrappers, `GetSystemDefaultLocaleName` (kernel32-vista-rust) |
+| `4b3f691a7ba` PCIX resizable BAR + hot-plug | `pcix-rust` `pci/rbar.rs`, plus `pci/ecam.rs` + `pci/express.rs` that rbar needs (owed item 7) |
+| `966c83d8eb4` early-Xeon input | usbehci, usbhub, usbport, i8042prt crates |
+| `b8c54b1abc3` / `ae1e07be910` | netcfgx-rust FindComponent + ComponentId from MatchingDeviceId |
+| `62519e131a7` DFM_MAPCOMMANDNAME | shell32-rust CDefaultContextMenu + CDrivesFolder |
+
+**The win32k island was regenerated** (`win32k-sys/generate_bindings.sh`, run under
+`canon-run.sh` because build.ninja's include paths are canonical): THREADINFO gained
+`hPrevRawInput` mid-struct and USER_MESSAGE_QUEUE gained the raw-input list. It also caught up
+the DirectX headers from the 09-30 merge, which nobody had regenerated for.
+
+**Divergences, each commented at the site:**
+- Upstream's `NtUserGetRawInputBuffer`/`GetRawInputData`/`RegisterRawInputDevices` touch user
+  pointers with no probe and no SEH. The Rust probes and copies fault-tolerantly, and takes the
+  user lock that the RIT holds when it inserts packets.
+- Upstream's `CDrivesFolder` verb map has no NULL terminator, which
+  `SHELL_MapContextMenuVerbToCmdId` walks to. Ours is terminated.
+
+**Silent revert found:** `842b5458588` (the 09-20 build-fix commit) had reverted
+`kmtests/rtl/RtlRangeList.c` to its pre-merge text, dropping the 371-line oracle the
+rangelist port is graded against. Restored from upstream.
+
+SymCrypt moved to `vendor/symcrypt` (registered in vendor.yaml, not yet diffed against pristine
+upstream).
+
 ## Owed, in rough priority order
 
 1. ~~`RtlIsProcessorFeaturePresent` / `RtlGetCurrentProcessorNumberEx` unimplemented.~~ **Done
@@ -804,9 +841,11 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
    `NtUserGetRawInputDeviceInfo`/`List`, and `user32-rust/src/misc/stubs.rs` has upstream's
    `GetRawInputBuffer` and `GetRawInputDeviceInfoA`. The latter fixes stubs.c's always-true
    `Ret >= 0` on a UINT.
-7. **PCIe ECAM.** `drivers/bus/pcix/pci/ecam.c` + `express.c`, new upstream, no Rust twin.
-   (The rest of upstream's pcix fixes and `memres.c` were ported 2026-10-03; see the userdrv
-   review.)
+7. ~~PCIe ECAM.~~ **Done 2026-10-05** with the second sync (below): `ecam.rs`, `express.rs`,
+   and the bus-interface read/write path in `PciReadWriteConfigSpace` (upstream
+   `81f04b39ba4`). Still owed from `81f04b39ba4`: the busintrf/pmeintf/pdo half, and
+   upstream's arbiter rewrite (`023d8af5566`), for which `arb/ar_busno.rs` declares the old
+   `ArbInitializeArbiterInstance` name that the shipping arbiter-rust still exports.
 8. ~~`drivers/bus/acpi/osl.c` fast path~~ **Moot (checked 2026-10-03):** `osl.c` is commented
    out, and the OSL is `acpi-rust` (`osl.rs` `AcpiOsGetRootPointer`). That runs the legacy BIOS
    scan FIRST and only then synthesizes an RSDP from the loader-registered "ACPI BIOS"
