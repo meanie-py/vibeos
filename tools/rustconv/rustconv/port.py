@@ -1116,8 +1116,7 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
     family), and `port replay` rebuilds every module from the banks -- so without this a hand
     edit lasts until the next replay and is then gone, silently. `file.rs:Name` captures the
     function `Name` from `src/<stem>/file.rs` and puts it back over `Name` on replay;
-    `file.rs:New=Old` captures `New` and puts it over the BOUGHT function `Old` (the variadic
-    `CombinePaths` becomes `CombinePaths_body`).
+    `file.rs:New=Old` captures `New` and puts it over the BOUGHT function `Old`.
     """
     from . import crate_fix as cf
 
@@ -1143,29 +1142,6 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
         entry.write_text(json.dumps({"file": fname, "name": replaces, "text": body}, indent=1))
         print(f"hand: banked {spec} ({len(body.splitlines())} lines)")
     _record(state, "hand", started, specs=specs, drop=drop)
-
-
-def stage_varargs(stem: str) -> None:
-    """Write the module's rust_varargs_shim.c from its C-variadic definitions (varargs_shim)."""
-    from . import varargs_shim
-
-    state = load_state(stem)
-    started = time.time()
-    module_dir = REPO / state["module_dir"]
-    made = varargs_shim.shim_for([REPO / t for t in state["tus"]], REPO, stem)
-    if made is None:
-        print("varargs: no C-variadic definitions; nothing to write")
-        return
-    text, defs = made
-    out = module_dir / "rust_varargs_shim.c"
-    out.write_text(text)
-    _record(state, "varargs", started, shim=str(out.relative_to(REPO)), defs=[d.name for d in defs])
-    print(f"varargs: wrote {out.relative_to(REPO)} ({len(defs)} trampoline(s)); add it to the")
-    print("  module's CMake sources at the flip. The Rust defines, per function:")
-    for d in defs:
-        print(f'    #[no_mangle] pub unsafe extern "C" fn {varargs_shim.rust_signature(d)}')
-    print('  and declares each variadic `extern "C" { fn Name(<fixed>, ...) -> R; }` for its')
-    print("  Rust callers; bank the rewrites with `port hand <stem> file.rs:Name_body=Name`.")
 
 
 def hand_names(stem: str) -> set[tuple[str, str]]:
@@ -1692,8 +1668,6 @@ def main(args) -> int:
                 only=args.only,
                 dry_run=args.dry_run,
             )
-        elif args.port_stage == "varargs":
-            stage_varargs(args.stem)
         elif args.port_stage == "hand":
             if args.apply:
                 apply_hand(args.stem)
@@ -1720,7 +1694,7 @@ def add_parser(sub) -> None:
         q = stages.add_parser(name)
         q.add_argument("module", help="module directory (holding CMakeLists.txt)")
         q.add_argument("--target", default=None, help="CMake target, when there are several")
-    for name in ("island", "integrate", "resolve", "check", "status", "varargs"):
+    for name in ("island", "integrate", "resolve", "check", "status"):
         stages.add_parser(name).add_argument("stem")
     q = stages.add_parser("hand", help="bank hand-written functions so replays keep them")
     q.add_argument("stem")

@@ -282,7 +282,7 @@ stage's time and spend in `~/vibeos-rust-staging/port/<stem>/state.json` (`port 
 prints it). Stages, in order: `derive <module-dir> [--target T]` (profile → the
 `gen_driver_types.sh` arm), `island`, `scaffold`, `translate --cost-cap $`, `integrate`,
 `resolve`, `macros`, `fix --cost-cap $`, `check`, and `replay` (all of them from the banks), plus
-`varargs` (the C shim for variadic definitions) and `hand` (bank a hand-written function). Every
+`hand` (bank a hand-written function). Every
 stage is idempotent; re-run any of them after a fix.
 
 - **`translate --escalate`** buys with DeepSeek thinking OFF (~1/40 of the output tokens on
@@ -452,12 +452,14 @@ went into a deterministic stage rather than a re-buy. Every one is general:
   then calls `DumpNTOSInstalls` under `#ifndef NDEBUG`).
 - **do-while + continue** joins goto: a prompt recipe (`loop { 'body: { .. break 'body; .. }
   if !(c) { break; } }`) and a purchase-time reject using the lint's own detector.
-- **`port varargs <stem>`** writes the module's `rust_varargs_shim.c` from its C-variadic
-  definitions: PART 1 pullers plus a trampoline per function that does `va_start` and hands
-  `&ap` to the Rust `<Name>_body`. It compiles with the TU's real flags on all three arches.
+- **C-variadic definitions** have no deterministic stage yet; finish them by hand with
+  varargs-rust's `va_entry!` (a naked thunk defines the `...` export, no C file) and the
+  `rust-pullers` feature for `va_arg`, and bank them with `port hand`. The C-shim template is
+  the older pattern (syssetup retired its shim for this one).
 - **`port hand <stem> file.rs:Name[=Bought]`** banks a hand-written function so `replay` puts
   it back; replay rebuilds every module from the banks and would otherwise erase the residue
-  a human finished. A banked function whose target vanished fails the replay, loudly.
+  a human finished. A banked function whose target vanished fails the replay, loudly, and fix
+never buys for a banked function.
 
 `vibeos-cli difftest` (and so the gate) now also runs a shared crate's own known-answer tests
 when its manifest sets `[package.metadata.difftest] host-tests = true` (win32macros-rust,
