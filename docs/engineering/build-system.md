@@ -144,6 +144,26 @@ image (`function-sections: true`) and *shrinks*: hal −85%, csrss −80%, ntosk
 `-Z function-sections` is nightly-only, so amd64's coarse granularity is not fixable on
 stable — accepted.
 
+## spec2def stubs
+
+`spec2def()` (gcc.cmake) writes each module's stubs as `${file}_stubs.rs`, a `#![no_std]`
+file that one `rustc --emit=obj` compiles to `${file}_stubs.rs.obj`. There is no cargo
+involved, and the bodies are the C emitter's: print the call, raise EXCEPTION_WINE_STUB for a
+bare `@ stub`, return 0. Modules still list `${file}_stubs.c` in their sources; a
+`cmake_language(DEFER)` at the end of the calling directory swaps it for the object, and gives
+a stub-only DLL `LINKER_LANGUAGE C`. A module in another directory naming the `.c` fails at
+generate time.
+- **amd64/arm64**: pinned stable, builtin triple, prebuilt core.
+- **i386**: stable `i686` cannot be used, because it requires sse2 (disabling it warns of a
+  future hard error) and the C is `-march=pentium`. The stubs use the pinned nightly and
+  ntdll-cargo's user-mode `i686-kernel.json`, compiled against a sysroot that
+  `tools/spec-stubs-core` builds once per build dir with `-Z build-std`. A float argument is
+  printed as its bit pattern there, because the f32→f64 promotion would call
+  compiler-builtins' `__extendsfdf2`, which a stub object cannot link.
+- `WITH_RELAY` modules keep the C emitter: relay-tracing thunks have no Rust form, and
+  `spec2def --with-tracing -s=x.rs` refuses. No module uses `WITH_RELAY` today.
+- msvc.cmake's `spec2def()` is untouched.
+
 ## The `--allow-multiple-definition` link flag
 
 The kernel/driver/DLL link still passes `-Wl,--allow-multiple-definition` (lld first-match
