@@ -421,7 +421,7 @@ def _boot_vm(
             pass
         if outcome == "reached":
             # A green desktop does not prove an `--smp N` run actually got SMP.
-            smp_fail = _smp_check(text, arch) or _ahci_check(text)
+            smp_fail = _smp_check(text, arch) or _ahci_check(text) or _nvme_check(text)
             if smp_fail is not None:
                 return {
                     "ok": False,
@@ -569,7 +569,7 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
             capture_output=True,
             text=True,
             timeout=1200,
-            env={**os.environ, "VIBEOS_ARTIFACT_DIR": str(run.dir / "net")},
+            env=_net_suite_env(run.dir / "net"),
         )
     except subprocess.TimeoutExpired:
         run.add(
@@ -766,6 +766,76 @@ def _ahci_check(text: str) -> dict | None:
     }
 
 
+def _net_suite_env(artifact_dir: Path) -> dict[str, str]:
+    """The net suite's environment: ours, minus the NVMe rig. The suite snapshots
+    its VM (savevm), and QEMU's nvme device refuses migration ("State blocked by
+    non-migratable device"), so an `--nvme` smoke that leaked the knob errored
+    every net test at setup. The NVMe controller belongs to the boot under test."""
+    env = {k: v for k, v in os.environ.items() if k != "VIBEOS_QEMU_NVME"}
+    env["VIBEOS_ARTIFACT_DIR"] = str(artifact_dir)
+    return env
+
+
+# nvme-rust prints this once a namespace's disk PDO exists; disk.sys binds it
+# from there. The rig's controller is the only one, so it is controller 0.
+_NVME_PUBLISHED = "[NVME] controller 0: namespace 1 published as a disk"
+
+
+def nvme_default_on(args) -> bool:
+    """`--nvme`, or the amd64-bios lane, which IS the OptiPlex 9020 (Libreboot):
+    the ISO on a USB stick and an NVMe drive in the box. So every gate boots
+    nvme.sys under SeaBIOS, beside a second BIOS disk, and the driver cannot rot
+    unseen. `VIBEOS_QEMU_NVME=0` opts the lane out."""
+    if getattr(args, "nvme", False):
+        return True
+    if os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "0":
+        return False
+    return getattr(args, "arch", "") == "amd64-bios"
+
+
+def nvme_requested() -> bool:
+    """`--nvme` (VIBEOS_QEMU_NVME=1): an NVMe controller is attached (vm.py _nvme_args)."""
+    return os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "1"
+
+
+# ...and this once a completion arrived by interrupt (nvme-rust nvme.rs `count`).
+_NVME_INTERRUPTS = "[NVME] controller 0: interrupts working"
+
+
+def _nvme_check(text: str) -> dict | None:
+    """Prove an `--nvme` boot brought the controller up, on interrupts. A desktop
+    alone proves nothing: the boot never needs the NVMe disk, so a driver that
+    never loaded would look identical. And a driver whose interrupt never arrives
+    still works, through its 10 ms poll, so it would quietly regress to polling."""
+    if not nvme_requested():
+        return None
+    lines = [ln.strip() for ln in text.splitlines() if "[NVME]" in ln][-6:]
+    if _NVME_PUBLISHED not in text:
+        return {
+            "classification": "NVME_NOT_ENGAGED",
+            "salient": [
+                f"--nvme boot reached the desktop but nvme.sys never printed `{_NVME_PUBLISHED}`",
+                *(
+                    lines
+                    or [
+                        "no [NVME] line at all: nvme.sys never loaded "
+                        "(PCI#CC_010802 in hivesys.inf?)"
+                    ]
+                ),
+            ],
+        }
+    if _NVME_INTERRUPTS not in text:
+        return {
+            "classification": "NVME_POLLING",
+            "salient": [
+                f"the namespace was published but nvme.sys never printed `{_NVME_INTERRUPTS}`: "
+                "no completion arrived by interrupt, so the driver ran on its poll",
+                *lines,
+            ],
+        }
+    return None
+
+
 def smoke(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # base for staleness/build dir
     # The boot config. A firmware variant (amd64-bios) shares the base build but must
@@ -887,6 +957,12 @@ def smoke(args, repo: Path) -> int:
             return run.finalize(repo)
         os.environ["VIBEOS_AHCI_CD"] = "1"
         run.add(Stage("ahci", status="warn", detail="boot CD on ich9-ahci"))
+
+    # NVMe channel: a controller attached on every arch (vm.py _nvme_args), and
+    # every boot must then show nvme.sys publishing its namespace (_nvme_check).
+    if nvme_default_on(args):
+        os.environ["VIBEOS_QEMU_NVME"] = "1"
+        run.add(Stage("nvme", status="warn", detail="NVMe controller attached"))
 
     results = []
     for i in range(total):

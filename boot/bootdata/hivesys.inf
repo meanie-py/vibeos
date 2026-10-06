@@ -64,6 +64,12 @@ HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BCM6E4E","Cla
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BRCME88C","Service",0x00000000,"sdhc"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BRCME88C","ClassGUID",0x00000000,"{4D36E97B-E325-11CE-BFC1-08002BE10318}"
 
+; NVM Express controllers (PCI class 01/08/02) on every architecture: the
+; OptiPlex's drive, QEMU's nvme device, a Graviton's EBS volumes. nvme.sys
+; presents each namespace to disk.sys; see nvme-rust/src/lib.rs.
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_010802","Service",0x00000000,"nvme"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_010802","ClassGUID",0x00000000,"{4D36E97B-E325-11CE-BFC1-08002BE10318}"
+
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\USB#Class_08&SubClass_06&Prot_50","Service",0x00000000,"usbstor"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\USB#Class_08&SubClass_06&Prot_50","ClassGUID",0x00000000,"{36FC9E60-C465-11CF-8056-444553540000}"
 
@@ -1891,6 +1897,13 @@ HKLM,"SYSTEM\CurrentControlSet\Services\sdhc","Group",0x00000000,"SCSI miniport"
 HKLM,"SYSTEM\CurrentControlSet\Services\sdhc","ImagePath",0x00020000,"system32\drivers\sdhc.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\sdhc","Start",0x00010001,0x00000003
 HKLM,"SYSTEM\CurrentControlSet\Services\sdhc","Type",0x00010001,0x00000001
+
+; NVM Express driver. Boot-start, so an NVMe drive can hold the system volume.
+HKLM,"SYSTEM\CurrentControlSet\Services\nvme","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\nvme","Group",0x00000000,"SCSI miniport"
+HKLM,"SYSTEM\CurrentControlSet\Services\nvme","ImagePath",0x00020000,"system32\drivers\nvme.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\nvme","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\nvme","Type",0x00010001,0x00000001
 
 ; USB storage driver
 HKLM,"SYSTEM\CurrentControlSet\Services\usbstor","ErrorControl",0x00010001,0x00000001

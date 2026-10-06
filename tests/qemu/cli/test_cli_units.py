@@ -9551,6 +9551,54 @@ def test_ahci_check_is_silent_on_a_plain_boot(monkeypatch):
     assert smoke_mod._ahci_check("[EXPLORER] _tWinMain entered\n") is None
 
 
+def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
+    """The boot never needs the NVMe disk, so an --nvme boot where nvme.sys never
+    loaded, or brought the controller up and found nothing, reaches the desktop
+    looking exactly like a real one."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    never_loaded = "[EXPLORER] _tWinMain entered\n"
+    bad = smoke_mod._nvme_check(never_loaded)
+    assert bad and bad["classification"] == "NVME_NOT_ENGAGED"
+    assert any("never loaded" in s for s in bad["salient"])
+    failed = '[NVME] controller 0: bring-up failed: Timeout("enable")\n'
+    bad = smoke_mod._nvme_check(failed)
+    assert bad and any("bring-up failed" in s for s in bad["salient"])
+    polled = "[NVME] controller 0: namespace 1 published as a disk\n"
+    bad = smoke_mod._nvme_check(polled)
+    assert bad and bad["classification"] == "NVME_POLLING"
+    real = polled + "[NVME] controller 0: interrupts working (first completion by interrupt: x)\n"
+    assert smoke_mod._nvme_check(real) is None
+    monkeypatch.delenv("VIBEOS_QEMU_NVME")
+    assert smoke_mod._nvme_check(never_loaded) is None
+
+
+def test_the_bios_lane_boots_with_an_nvme_drive(monkeypatch):
+    """amd64-bios is the OptiPlex 9020's configuration: USB stick + NVMe drive."""
+    from types import SimpleNamespace
+
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_NVME", raising=False)
+    assert smoke_mod.nvme_default_on(SimpleNamespace(arch="amd64-bios", nvme=False))
+    assert not smoke_mod.nvme_default_on(SimpleNamespace(arch="amd64", nvme=False))
+    assert smoke_mod.nvme_default_on(SimpleNamespace(arch="arm64", nvme=True))
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "0")
+    assert not smoke_mod.nvme_default_on(SimpleNamespace(arch="amd64-bios", nvme=False))
+
+
+def test_the_net_suite_never_inherits_the_nvme_rig(monkeypatch, tmp_path):
+    """QEMU's nvme device blocks savevm, which the net suite takes, so `smoke
+    --nvme` once errored all 16 net tests at setup."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    env = smoke_mod._net_suite_env(tmp_path)
+    assert "VIBEOS_QEMU_NVME" not in env
+    assert env["VIBEOS_ARTIFACT_DIR"] == str(tmp_path)
+
+
 def test_the_up_kernel_is_opt_in_only_and_nothing_automated_opts_in():
     """UP is a dead branch: no automated path may select it.
 

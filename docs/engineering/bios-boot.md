@@ -98,6 +98,11 @@ Every gate that includes amd64 also boots the media under SeaBIOS
 (`gate.py` `BIOS_LANE`). The QEMU config is `Amd64BiosConfig` in `tests/qemu/vm.py`.
 It uses `-vga std` (Bochs VBE), not cirrus.
 
+The lane also has an NVMe drive in the box, as the OptiPlex does (`smoke` turns
+`--nvme` on for `amd64-bios`; `VIBEOS_QEMU_NVME=0` opts out). SeaBIOS then sees two
+hard disks, the stick stays BIOS drive 80h (`rdisk(0)`) because it boots first, freeldr
+loads `nvme.sys` as a boot driver, and the boot fails unless the namespace is published.
+
 ## Real hardware
 
 QEMU's SeaBIOS is the oracle here. A real machine adds its own VGA option ROM, its

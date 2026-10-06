@@ -1994,6 +1994,28 @@ class QemuVM:
             "usb-storage,bus=xehci.0,drive=usbstor0",
         ]
 
+    def _nvme_enabled(self) -> bool:
+        return os.environ.get("VIBEOS_QEMU_NVME", "").strip() in ("1", "true", "yes")
+
+    def _nvme_args(self) -> list[str]:
+        """VIBEOS_QEMU_NVME=1 attaches an NVMe controller (nvme.sys bring-up rig, every
+        arch): one namespace holding the same 64M MBR + FAT16 image as the USB stick,
+        so the desktop has a known file to read back and copy. No bootindex: firmware
+        must keep booting the CD. Pinned to PCI slot 9 for the reason xHCI is pinned to
+        8: auto-assigned, it takes slot 2 from arm64's boot disk, whose `Pci(0x2,0x0)`
+        path is saved in efivars, and UEFI falls through to PXE."""
+        if not self._nvme_enabled():
+            return []
+        disk = self.scratch_path.parent / "nvmedisk.qcow2"
+        if not disk.exists():
+            make_usb_stick_image(disk)
+        return [
+            "-drive",
+            f"file={disk},format=qcow2,if=none,id=nvme0",
+            "-device",
+            "nvme,serial=VIBEOSNVME0,drive=nvme0,addr=0x9",
+        ]
+
     def _set_live_tee(self) -> None:
         """Tee to the caller's owned log, or the legacy per-arch live path."""
         # ASCII-only header: the tee file is latin-1 (byte-faithful to the serial stream).
@@ -2215,7 +2237,12 @@ class QemuVM:
             capture_output=True,
         )
         arch = self._without_virtio_input(self.config.prepare_args(self.work_dir))
-        disks = [*self._scratch_device_args(), *self._usb_disk_args(), *self._temp_disk_args()]
+        disks = [
+            *self._scratch_device_args(),
+            *self._usb_disk_args(),
+            *self._nvme_args(),
+            *self._temp_disk_args(),
+        ]
         self._prepared_arch_args = (
             _acpitable_relative(be.stage_media_paths(arch, staging)) if windows else arch
         )

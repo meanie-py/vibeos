@@ -274,6 +274,17 @@ def vm(
         vm.stop()
         return
 
+    if vm._nvme_enabled():
+        # QEMU's nvme device registers a migration blocker, so `savevm` fails with
+        # "State blocked by non-migratable device". The NVMe rig's tests are written
+        # to run in order in one live VM (read-only checks first, then the write).
+        print(
+            "[pytest] NVMe rig: no `ready` snapshot (nvme blocks savevm); tests share one live VM"
+        )
+        yield vm
+        vm.stop()
+        return
+
     try:
         vm.save_snapshot("ready")
     except RuntimeError as e:
@@ -300,9 +311,9 @@ def vm(
 @pytest.fixture(autouse=True)
 def restore_vm(vm: QemuVM) -> Iterator[None]:
     """Restore to 'ready' snapshot before each test."""
-    if os.environ.get("VIBEOS_QEMU_RR", "").strip():
-        # No snapshot under record/replay (see the vm fixture), and HMP loadvm
-        # stops and restarts the VM before it finds that out.
+    if os.environ.get("VIBEOS_QEMU_RR", "").strip() or vm._nvme_enabled():
+        # No snapshot under record/replay or the NVMe rig (see the vm fixture), and
+        # HMP loadvm stops and restarts the VM before it finds that out.
         yield
         return
     try:
