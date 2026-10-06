@@ -820,13 +820,17 @@ def _apply(root: Path, replacements: dict[str, list[tuple[FnSpan, str, str]]]) -
     forget_file_cache()
 
 
-def _replace_named(root: Path, fname: str, name: str, new_text: str, old_text: str) -> None:
+def _replace_named(
+    root: Path, fname: str, name: str, new_text: str | None, old_text: str | None
+) -> None:
     """Swap `old_text` -- the function `name` exactly as it stands now -- for `new_text`.
 
     By TEXT, not by name: with `#[cfg]` twins the first span of a name is not necessarily the
     one being swapped (see span_key). A function that is not in the file as `old_text` is a
     bookkeeping bug, so it raises rather than editing the wrong span.
     """
+    if new_text is None or old_text is None:
+        raise RuntimeError(f"crate_fix: {fname}:{name}: a swap with no text on one side")
     p = root / fname
     text = p.read_bytes().decode("utf-8")
     want = old_text.rstrip("\n")
