@@ -188,3 +188,21 @@ def test_the_models_type_twin_gives_way_to_c2rusts(tmp_path):
     text = (mods / "registry.rs").read_text()
     assert "struct HIVE_LIST_ENTRY" not in text and "pub type PHIVE_LIST_ENTRY" in text
     assert "fn f() {}" in text
+
+
+def test_item_spans_find_types_statics_and_macros():
+    text = (
+        "pub type POPEN = Option<unsafe extern \"system\" fn(a: u32)>;\n"
+        "#[macro_export]\nmacro_rules! DoesFileExist {\n    ($a:expr) => { f($a, TRUE) };\n}\n"
+        "#[repr(C)]\npub struct S {\n    pub a: u32,\n}\n"
+        "static mut T: [u32; 2] = [1, 2];\nfn g() {}\n"
+    )
+    for name, starts, ends in (
+        ("POPEN", "pub type POPEN", "fn(a: u32)>;"),
+        ("DoesFileExist", "#[macro_export]", "TRUE) };\n}"),
+        ("S", "#[repr(C)]", "pub a: u32,\n}"),
+        ("T", "static mut T", "[1, 2];"),
+        ("g", "fn g", "fn g() {}"),
+    ):
+        ((lo, hi),) = port.item_spans(text, name)
+        assert text[lo:hi].startswith(starts) and text[lo:hi].endswith(ends), name
