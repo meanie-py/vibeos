@@ -2,6 +2,7 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePool, ExFreePoolWithTag, ExInitializePagedLookasideList, KeInitializeEvent, KeSetEvent, KeSetKernelStackSwapEnable, KeWaitForMultipleObjects, KeWaitForSingleObject, PsGetCurrentThreadWin32Thread, PsGetThreadFreezeCount, ZwYieldExecution};
 use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
+use crate::rawinput::{UserCleanupRawInput, UserFreeRawInput};
 
 // ExAllocate/FreeToPagedLookasideList are real NTAPI ntoskrnl exports; the
 // exfuncs.h inline IS this code, and calling the export avoids the i386
@@ -1964,7 +1965,7 @@ pub unsafe extern "fastcall" fn MsqPostMessage(
     MessageBits: DWORD,
     dwQEvent: DWORD,
     ExtraInfo: LONG_PTR,
-) {
+) -> BOOL {
     MsqPostMessage_impl(pti, Msg, HardwareMessage, MessageBits, dwQEvent, ExtraInfo)
 }
 
@@ -1977,7 +1978,7 @@ pub unsafe extern "C" fn MsqPostMessage(
     MessageBits: DWORD,
     dwQEvent: DWORD,
     ExtraInfo: LONG_PTR,
-) {
+) -> BOOL {
     MsqPostMessage_impl(pti, Msg, HardwareMessage, MessageBits, dwQEvent, ExtraInfo)
 }
 
@@ -1988,7 +1989,7 @@ unsafe fn MsqPostMessage_impl(
     mut MessageBits: DWORD,
     dwQEvent: DWORD,
     ExtraInfo: LONG_PTR,
-) {
+) -> BOOL {
     let Message: PUSER_MESSAGE;
     let MessageQueue: PUSER_MESSAGE_QUEUE;
 
@@ -1998,12 +1999,12 @@ unsafe fn MsqPostMessage_impl(
         || ((*MessageQueue).QF_flags & QF_INDESTROY != 0)
     {
         ERR!("Post Msg; Thread or Q is Dead!\n");
-        return;
+        return FALSE as BOOL;
     }
 
     Message = MsqCreateMessage(Msg);
     if Message.is_null() {
-        return;
+        return FALSE as BOOL;
     }
 
     if (*Msg).message == WM_HOTKEY {
@@ -2029,6 +2030,7 @@ unsafe fn MsqPostMessage_impl(
 
     MsqWakeQueue(pti, MessageBits, 1 as BOOL);
     TRACE!(b"Post Message %d\n\0".as_ptr() as *const i8, PostMsgCount);
+    TRUE as BOOL
 }
 
 #[cfg(target_arch = "x86")]
@@ -2612,7 +2614,7 @@ unsafe extern "fastcall" fn filter_contains_hw_range(first: UINT, mut last: UINT
     if last < WM_NCMOUSEFIRST {
         return 0;
     }
-    if first > WM_NCMOUSELAST && last < WM_KEYFIRST {
+    if first > WM_NCMOUSELAST && last < WM_INPUT {
         return 0;
     }
     if first > WM_KEYLAST && last < WM_MOUSEFIRST {
@@ -2632,7 +2634,7 @@ unsafe extern "C" fn filter_contains_hw_range(first: UINT, mut last: UINT) -> IN
     if last < WM_NCMOUSEFIRST {
         return 0;
     }
-    if first > WM_NCMOUSELAST && last < WM_KEYFIRST {
+    if first > WM_NCMOUSELAST && last < WM_INPUT {
         return 0;
     }
     if first > WM_KEYLAST && last < WM_MOUSEFIRST {
@@ -2972,6 +2974,8 @@ unsafe fn MsqInitializeMessageQueue_impl(
     MessageQueue: PUSER_MESSAGE_QUEUE,
 ) -> u8 {
     InitializeListHead(core::ptr::addr_of_mut!((*MessageQueue).HardwareMessagesListHead));
+    InitializeListHead(core::ptr::addr_of_mut!((*MessageQueue).RawInputListHead));
+    (*MessageQueue).cRawInput = 0;
     (*MessageQueue).spwndFocus = core::ptr::null_mut();
     (*MessageQueue).iCursorLevel = 0;
     (*MessageQueue).CursorObject = SYSTEMCUR(ROCR_WAIT);
@@ -3109,6 +3113,11 @@ unsafe fn MsqCleanupMessageQueueImpl(pti: PTHREADINFO) {
     let MessageQueue: PUSER_MESSAGE_QUEUE = (*pti).MessageQueue;
     (*MessageQueue).cThreads -= 1;
 
+    if !(*pti).hPrevRawInput.is_null() {
+        UserFreeRawInput(MessageQueue, (*pti).hPrevRawInput);
+        (*pti).hPrevRawInput = core::ptr::null_mut();
+    }
+
     if (*MessageQueue).cThreads != 0 {
         if (*MessageQueue).ptiSysLock == pti {
             (*MessageQueue).ptiSysLock = core::ptr::null_mut();
@@ -3123,6 +3132,8 @@ unsafe fn MsqCleanupMessageQueueImpl(pti: PTHREADINFO) {
                 as PUSER_MESSAGE;
             MsqDestroyMessage(CurrentMessage);
         }
+
+        UserCleanupRawInput(MessageQueue);
     }
 
     if !(*MessageQueue).CursorObject.is_null() {

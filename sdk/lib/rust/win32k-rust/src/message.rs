@@ -309,7 +309,7 @@ static L_ENVIRONMENT: [u16; 12] = [
 ];
 
 // ---- file-scope preamble (translated) ----
-pub const PM_BADMSGFLAGS: u32 = !((QS_RAWINPUT << 16) | PM_QS_SENDMESSAGE | PM_QS_PAINT | PM_QS_POSTMESSAGE | PM_QS_INPUT | PM_NOYIELD | PM_REMOVE);
+pub const PM_BADMSGFLAGS: u32 = !(PM_QS_SENDMESSAGE | PM_QS_PAINT | PM_QS_POSTMESSAGE | PM_QS_INPUT | PM_NOYIELD | PM_REMOVE);
 
 pub static mut StrUserKernel: [[u16; 20]; 3] = [
     [b'i' as u16, b'n' as u16, b't' as u16, b'l' as u16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -1506,6 +1506,18 @@ unsafe fn IntDispatchMessage_impl(pMsg: PMSG) -> LRESULT {
     retval
 }
 
+/// The C's `GotMessage:` label, which every successful path of co_IntPeekMessage jumps to:
+/// update the last queue-access time and, for a removing peek, retire the previous WM_INPUT's
+/// raw input packet (and remember this one if it is WM_INPUT).
+#[inline(always)]
+unsafe fn GotMessage(pti: PTHREADINFO, Msg: PMSG, RemoveMessages: BOOL) -> BOOL {
+    (*(*pti).pcti).timeLastRead = EngGetTickCount32();
+    if RemoveMessages != 0 {
+        crate::rawinput::UserUpdatePrevRawInput(pti, Msg);
+    }
+    1
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn co_IntPeekMessage(
     Msg: PMSG,
@@ -1572,8 +1584,7 @@ pub unsafe extern "system" fn co_IntPeekMessage(
                 Msg,
             ) != 0
         {
-            (*(*pti).pcti).timeLastRead = EngGetTickCount32();
-            return 1;
+            return GotMessage(pti, Msg, RemoveMessages);
         }
 
         if ProcessMask & QS_POSTMESSAGE != 0 && (*pti).QuitPosted != 0 {
@@ -1587,11 +1598,10 @@ pub unsafe extern "system" fn co_IntPeekMessage(
                 (*(*pti).pcti).fsWakeBits &= !(QS_ALLPOSTMESSAGE as u16);
                 (*(*pti).pcti).fsChangeBits &= !(QS_ALLPOSTMESSAGE as u16);
             }
-            (*(*pti).pcti).timeLastRead = EngGetTickCount32();
-            return 1;
+            return GotMessage(pti, Msg, RemoveMessages);
         }
 
-        if (ProcessMask & QS_INPUT) != 0
+        if ((ProcessMask & QS_INPUT) != 0 || (ProcessMask & QS_RAWINPUT) != 0)
             && co_MsqPeekHardwareMessage(
                 pti,
                 RemoveMessages,
@@ -1602,8 +1612,7 @@ pub unsafe extern "system" fn co_IntPeekMessage(
                 Msg,
             ) != 0
         {
-            (*(*pti).pcti).timeLastRead = EngGetTickCount32();
-            return 1;
+            return GotMessage(pti, Msg, RemoveMessages);
         }
 
         {
@@ -1647,8 +1656,7 @@ pub unsafe extern "system" fn co_IntPeekMessage(
                 RemoveMessages,
             ) != 0
         {
-            (*(*pti).pcti).timeLastRead = EngGetTickCount32();
-            return 1;
+            return GotMessage(pti, Msg, RemoveMessages);
         }
 
         /* Reconcile a stale QS_PAINT: with cPaintsReady == 0 nothing above can
@@ -5069,10 +5077,10 @@ extern "system" {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn SetLastNtError(Status: NTSTATUS);
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn SetLastNtError(Status: NTSTATUS);
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,) -> BOOL;
 }
