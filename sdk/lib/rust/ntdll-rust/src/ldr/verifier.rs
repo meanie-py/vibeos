@@ -530,7 +530,7 @@ pub unsafe extern "system" fn AVrfPageHeapDllNotification(_LdrEntry: PLDR_DATA_T
 }
 
 unsafe fn AVrfpResnapInitialModules() {
-    let list_head = addr_of_mut!((*(*NtCurrentPeb()).Ldr).InLoadOrderModuleList);
+    let list_head = addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InLoadOrderModuleList);
     let mut list_entry = (*list_head).Flink;
 
     while list_head != list_entry {

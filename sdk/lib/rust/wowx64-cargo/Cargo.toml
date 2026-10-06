@@ -1,0 +1,17 @@
+# Cargo-driven `wowx64.dll` link (arm64 only). User-mode win32 DLL, the OS side
+# of BTCpu64 (x86-64 guests on arm64; docs/engineering/wow64-x64-guest-design.md).
+# The Rust body (wowx64-rust) IS the DLL; reactos-link drives the final PE link.
+
+[package]
+name = "wowx64-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "wowx64"
+path = "src/main.rs"
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

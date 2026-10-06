@@ -8019,7 +8019,22 @@ pub unsafe extern "system" fn NtUserThunkedMenuItemInfo(
             break 'cleanup;
         }
 
-        if !lpszCaption.is_null() && !(*lpszCaption).Buffer.is_null() {
+        // The C tests `lpszCaption->Buffer` before any probe and outside SEH (a C
+        // bug: an unmapped or kernel pointer faults/reads there). Capture the
+        // header fault-tolerantly first; ProbeAndCaptureUnicodeString then does
+        // the real capture.
+        let CaptionHeader: Option<_UNICODE_STRING> = if lpszCaption.is_null() {
+            None
+        } else {
+            match crate::safe_user_io::capture_user(lpszCaption as *const _UNICODE_STRING) {
+                Ok(v) => Some(v),
+                Err(st) => {
+                    SetLastNtError(st);
+                    break 'cleanup;
+                }
+            }
+        };
+        if CaptionHeader.map_or(false, |h| !h.Buffer.is_null()) {
             Status = ProbeAndCaptureUnicodeString(
                 core::ptr::addr_of_mut!(lstrCaption),
                 (1i32 as KPROCESSOR_MODE as u8),
@@ -8083,7 +8098,22 @@ pub unsafe extern "system" fn NtUserThunkedMenuItemInfo(
             break 'cleanup;
         }
 
-        if !lpszCaption.is_null() && !(*lpszCaption).Buffer.is_null() {
+        // The C tests `lpszCaption->Buffer` before any probe and outside SEH (a C
+        // bug: an unmapped or kernel pointer faults/reads there). Capture the
+        // header fault-tolerantly first; ProbeAndCaptureUnicodeString then does
+        // the real capture.
+        let CaptionHeader: Option<_UNICODE_STRING> = if lpszCaption.is_null() {
+            None
+        } else {
+            match crate::safe_user_io::capture_user(lpszCaption as *const _UNICODE_STRING) {
+                Ok(v) => Some(v),
+                Err(st) => {
+                    SetLastNtError(st);
+                    break 'cleanup;
+                }
+            }
+        };
+        if CaptionHeader.map_or(false, |h| !h.Buffer.is_null()) {
             Status = ProbeAndCaptureUnicodeString(
                 core::ptr::addr_of_mut!(lstrCaption),
                 1u8,

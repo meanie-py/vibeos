@@ -2414,6 +2414,13 @@ UNCOVERED: dict[str, str] = {
         "cases pin the nearest-binding rule that keeps an unrelated `u` from being "
         "reported, plus comments, strings and comparisons."
     ),
+    "scan_ptr_highword_mask": (
+        "main() walks the real tree, but the decision is scan_text(), a pure function over a "
+        "string, driven directly in tools/test_scan_ptr_highword_mask.py. Its fire cases are "
+        "the two shapes that shipped (a declared-usize identifier, an `as usize` cast); its "
+        "must-not cases pin the u32 rop, the version DWORD, the call-proc `== 0xFFFF0000` "
+        "form, the fixed `& !0xFFFF` form and C quoted in a comment."
+    ),
     "scan_octal_literals": (
         "main() walks the real tree, but the matcher and the comment/literal tokenizer are "
         "pure functions over a string — scan_text()/strip_noise() — and are driven directly "

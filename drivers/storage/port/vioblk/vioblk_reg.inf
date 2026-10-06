@@ -1,0 +1,8 @@
+; VirtIO block SCSI miniport (vioblk.sys) — boot-start, so a virtio-blk disk (or an ISO
+; served over virtio-blk) exists before the boot volume is opened.
+[AddReg]
+HKLM,"SYSTEM\CurrentControlSet\Services\vioblk","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\vioblk","Group",0x00000000,"SCSI Miniport"
+HKLM,"SYSTEM\CurrentControlSet\Services\vioblk","ImagePath",0x00020000,"system32\drivers\vioblk.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\vioblk","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\vioblk","Type",0x00010001,0x00000001

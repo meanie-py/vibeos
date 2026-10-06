@@ -413,7 +413,9 @@ pub unsafe extern "system" fn NtCreateKey(
         if let Err(status) = ntkrnl_sys::probe::probe_write_generic(KeyHandle, 1, PreviousMode) {
             return status;
         }
-        *KeyHandle = core::ptr::null_mut();
+        if let Err(status) = ntkrnl_sys::probe::write_back(KeyHandle, core::ptr::null_mut()) {
+            return status;
+        }
 
         if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
             ObjectAttributes as *const core::ffi::c_void,
@@ -431,7 +433,10 @@ pub unsafe extern "system" fn NtCreateKey(
         }
     } else {
         if !Class.is_null() {
-            ParseContext.Class = *Class;
+            ParseContext.Class = match ntkrnl_sys::probe::read_back(Class) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
         }
     }
 
@@ -448,11 +453,19 @@ pub unsafe extern "system" fn NtCreateKey(
         core::ptr::addr_of_mut!(Handle),
     );
 
+    // C: one _SEH2_TRY around both stores, the handler sets Status. Disposition is
+    // written whether or not the open succeeded, unless the handle store faulted.
+    let mut faulted = false;
     if NT_SUCCESS(Status) {
-        *KeyHandle = Handle;
+        if let Err(s) = ntkrnl_sys::probe::write_back(KeyHandle, Handle) {
+            Status = s;
+            faulted = true;
+        }
     }
-    if !Disposition.is_null() {
-        *Disposition = ParseContext.Disposition;
+    if !Disposition.is_null() && !faulted {
+        if let Err(s) = ntkrnl_sys::probe::write_back(Disposition, ParseContext.Disposition) {
+            Status = s;
+        }
     }
 
     Status
@@ -1351,8 +1364,27 @@ pub unsafe extern "system" fn NtLoadKeyEx(
     KeEnterCriticalRegion();
 
     if PreviousMode != 0i8 {
-        core::ptr::read_volatile(TargetKey as *const u8);
-        core::ptr::read_volatile(SourceFile as *const u8);
+        // C: ProbeForRead of both OBJECT_ATTRIBUTES; the handler leaves the critical
+        // region and returns the code. A one-byte touch was neither a range check
+        // (a kernel address passed it) nor fault-tolerant.
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            TargetKey as *const core::ffi::c_void,
+            core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            KeLeaveCriticalRegion();
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            SourceFile as *const core::ffi::c_void,
+            core::mem::size_of::<_OBJECT_ATTRIBUTES>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            KeLeaveCriticalRegion();
+            return status;
+        }
     }
 
     Status = ProbeAndCaptureObjectAttributes(
@@ -1558,7 +1590,9 @@ pub unsafe extern "system" fn NtLockProductActivationKeys(
                 return status;
             }
         }
-        *pPrivateVer = PRODUCT_ACTIVATION_VERSION;
+        if let Err(status) = ntkrnl_sys::probe::write_back(pPrivateVer, PRODUCT_ACTIVATION_VERSION) {
+            return status;
+        }
     }
 
     if !pSafeMode.is_null() {
@@ -1567,7 +1601,9 @@ pub unsafe extern "system" fn NtLockProductActivationKeys(
                 return status;
             }
         }
-        *pSafeMode = InitSafeBootMode;
+        if let Err(status) = ntkrnl_sys::probe::write_back(pSafeMode, InitSafeBootMode) {
+            return status;
+        }
     }
 
     STATUS_SUCCESS
@@ -1977,7 +2013,10 @@ pub unsafe extern "system" fn NtUnloadKey2(
 
         CapturedTargetKey.ObjectName = core::ptr::addr_of_mut!(ObjectName);
     } else {
-        CapturedTargetKey = *TargetKey;
+        CapturedTargetKey = match ntkrnl_sys::probe::read_back(TargetKey) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
     }
 
     Status = CmpConvertHandleToKernelHandle(

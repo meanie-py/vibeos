@@ -1338,9 +1338,9 @@ pub unsafe extern "system" fn NtSetInformationObject(
                 ) {
                     return s;
                 }
-                Context.Information = *(ObjectInformation as POBJECT_HANDLE_FLAG_INFORMATION);
+                Context.Information = match ntkrnl_sys::probe::read_back(ObjectInformation as POBJECT_HANDLE_FLAG_INFORMATION) { Ok(v) => v, Err(s) => return s };
             } else {
-                Context.Information = *(ObjectInformation as POBJECT_HANDLE_FLAG_INFORMATION);
+                Context.Information = match ntkrnl_sys::probe::read_back(ObjectInformation as POBJECT_HANDLE_FLAG_INFORMATION) { Ok(v) => v, Err(s) => return s };
             }
 
             let mut handle = ObjectHandle;

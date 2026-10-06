@@ -303,20 +303,6 @@ verdict = "owed"
 note = "upstream 023d8af5566 'Implement the PCIX Arbiters' (#9502, ~500 lines) + d0e71de116a arbiter ordering lib (#9393) landed after the flip; Rust arbiters are the old stubs. Owner upstream-sync"
 
 [[reviewed]]
-module = "drivers/bus/pcix"
-function = "PciAddDevice"
-callees = ["PciInitializeEcam"]
-verdict = "owed"
-note = "upstream e51b1c1dbfc 'basic ECAM support' (#9542: new pci/ecam.c ~410 lines + hooks in fdo.c/config.c) landed after the flip. Owner upstream-sync"
-
-[[reviewed]]
-module = "drivers/bus/pcix"
-function = "PciReadWriteConfigSpace"
-callees = ["PciEcamReadWriteConfig"]
-verdict = "owed"
-note = "upstream e51b1c1dbfc 'basic ECAM support' (#9542: new pci/ecam.c ~410 lines + hooks in fdo.c/config.c) landed after the flip. Owner upstream-sync"
-
-[[reviewed]]
 module = "drivers/bus/acpi"
 function = "Bus_AddDevice"
 callees = ["ExAllocatePoolWithTag(->ExAllocatePoolWithTag)", "ExFreePoolWithTag", "IoGetDeviceProperty"]
@@ -3830,13 +3816,6 @@ function = "armem_Constructor"
 callees = ["PciArbiterConstructor"]
 verdict = "owed"
 note = "owed: upstream 023d8af5566 \"[PCIX] Implement the PCIX Arbiters\" (#9502, ~500 lines) not ported; upstream-sync lane"
-
-[[reviewed]]
-module = "drivers/bus/pcix"
-function = "PciGetEnhancedCapabilities"
-callees = ["PciGetExpressCapabilities"]
-verdict = "owed"
-note = "owed: upstream 7baff0a9338 PCI Express capability discovery (#9543, ~170 lines, new express.c) not ported; upstream-sync lane"
 
 [[reviewed]]
 module = "drivers/bus/pcix"

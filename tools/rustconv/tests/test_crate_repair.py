@@ -1650,11 +1650,24 @@ def test_a_bool_from_a_macro_is_cast_at_the_invocation():
     src = b"fn f() {\n    p.Recognized = IsRecognizedPartition!(t);\n}\n"
     call = b"IsRecognizedPartition!(t)"
     at = src.index(call)
-    inner = _span("/rustc/core/src/macros/mod.rs", 10, 20, is_primary=True, label="expected `u8`, found `bool`")
-    inner["expansion"] = {"span": _span("src/a.rs", at, at + len(call), line=2), "macro_decl_name": "matches!"}
+    inner = _span(
+        "/rustc/core/src/macros/mod.rs",
+        10,
+        20,
+        is_primary=True,
+        label="expected `u8`, found `bool`",
+    )
+    inner["expansion"] = {
+        "span": _span("src/a.rs", at, at + len(call), line=2),
+        "macro_decl_name": "matches!",
+    }
     diag = _diag("mismatched types", code="E0308", spans=[inner])
-    plan = propose_edits([diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS])
-    assert [(e.file_name, e.replacement) for e in plan.edits] == [("src/a.rs", "(IsRecognizedPartition!(t)) as u8")]
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS]
+    )
+    assert [(e.file_name, e.replacement) for e in plan.edits] == [
+        ("src/a.rs", "(IsRecognizedPartition!(t)) as u8")
+    ]
 
 
 def test_a_widening_is_inferred_and_a_narrowing_is_not():
@@ -1663,7 +1676,9 @@ def test_a_widening_is_inferred_and_a_narrowing_is_not():
     src = b"fn f() {\n    if io.Information == FILE_CREATED {}\n    let n: u16 = big;\n}\n"
     widen = _mismatch(src, b"FILE_CREATED", "u64", "u32")
     narrow = _mismatch(src, b"big", "u16", "u32")
-    plan = propose_edits([widen, narrow], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_INFER_WIDEN])
+    plan = propose_edits(
+        [widen, narrow], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_INFER_WIDEN]
+    )
     assert [e.replacement for e in plan.edits] == ["(FILE_CREATED) as _"]
 
 
@@ -1672,14 +1687,22 @@ def test_truthiness_fixes_our_macro_body_and_never_stacks():
 
     src = b"macro_rules! M { ($c:expr) => { isalnum($c) || $c == 1 }; }\nfn f() {\n    if ((M!(x)) != 0) {}\n}\n"
     inner_at = src.index(b"isalnum($c)")
-    inner = _span("src/a.rs", inner_at, inner_at + len(b"isalnum($c)"), is_primary=True, label="expected `bool`, found `i32`")
+    inner = _span(
+        "src/a.rs",
+        inner_at,
+        inner_at + len(b"isalnum($c)"),
+        is_primary=True,
+        label="expected `bool`, found `i32`",
+    )
     call = b"((M!(x)) != 0)"
     at = src.index(call)
     inner["expansion"] = {"span": _span("src/a.rs", at, at + len(call)), "macro_decl_name": "M!"}
     wrapped = _mismatch(src, call, "bool", "i32")
     plan = propose_edits(
         [_diag("mismatched types", code="E0308", spans=[inner]), wrapped],
-        _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_C_TRUTHINESS],
     )
     # the macro body is fixed in place; the already-converted call site is left alone
     assert [e.replacement for e in plan.edits] == ["((isalnum($c)) != 0)"]
@@ -1695,3 +1718,238 @@ def test_an_edit_outside_the_repaired_crate_is_refused(tmp_path):
     applied, _, failed = apply_edits([edit], tmp_path, within=tmp_path / "mine")
     assert applied == [] and failed[0].reason == "outside_crate"
     assert (tmp_path / "shared" / "src" / "lib.rs").read_text() == "let x = a;\n"
+
+
+def _one_site(src: str, needle: str, message: str, code: str, nth: int = 0):
+    at = -1
+    for _ in range(nth + 1):
+        at = src.index(needle, at + 1)
+    diag = _diag(message, code=code, spans=[_span("a.rs", at, at + len(needle), is_primary=True)])
+    plan = propose_edits([diag], {"a.rs": src.encode()}.get, target="x86_64-pc-windows-gnu")
+    out = src.encode()
+    for edit in sorted(plan.edits, key=lambda e: -e.byte_start):
+        out = out[: edit.byte_start] + edit.replacement.encode() + out[edit.byte_end :]
+    return plan, out.decode()
+
+
+def test_option_fn_is_null_becomes_is_none():
+    src = "fn f(d: &D) { if !d.ErrorRoutine.is_null() { g(); } }\n"
+    _, out = _one_site(
+        src,
+        "is_null",
+        "no method named `is_null` found for enum `Option<T>` in the current scope",
+        "E0599",
+    )
+    assert "!d.ErrorRoutine.is_none()" in out
+
+
+def test_a_local_shadowing_a_constant_is_renamed_for_its_block():
+    src = (
+        "fn f(p: *mut S) {\n"
+        "    let a = AdapterType;\n"
+        "    {\n"
+        "        let mut AdapterType: ADAPTER_TYPE = AdapterTypeMax;\n"
+        "        (*p).AdapterType = AdapterType;\n"
+        "        let s = S { AdapterType: AdapterType, b: E::AdapterType };\n"
+        "        g(AdapterType);\n"
+        "    }\n"
+        "    h(AdapterType);\n"
+        "}\n"
+    )
+    _, out = _one_site(src, "AdapterType", "let bindings cannot shadow constants", "E0530", nth=1)
+    assert "let a = AdapterType;" in out
+    assert "let mut AdapterType_local: ADAPTER_TYPE = AdapterTypeMax;" in out
+    assert "(*p).AdapterType = AdapterType_local;" in out
+    assert "S { AdapterType: AdapterType_local, b: E::AdapterType }" in out
+    assert "g(AdapterType_local);" in out and "h(AdapterType);" in out
+
+
+def test_sizeof_of_a_constant_is_the_size_of_its_value():
+    src = "fn f() -> bool { n < core::mem::size_of::<UNICODE_NULL>() as u16 }\n"
+    _, out = _one_site(src, "UNICODE_NULL", "constant provided when a type was expected", "E0747")
+    assert "n < core::mem::size_of_val(&UNICODE_NULL) as u16" in out
+
+
+def test_sizeof_of_a_packed_field_never_forms_a_reference():
+    src = "fn f(p: *mut D) -> usize { core::mem::size_of_val(&(*p).Dir) / 2 }\n"
+    _, out = _one_site(src, "(*p).Dir", "reference to packed field is unaligned", "E0793")
+    assert "pointee_size(core::ptr::addr_of!((*p).Dir)) } / 2" in out
+    assert "size_of_val" not in out
+
+
+def test_a_function_cast_to_a_fn_pointer_is_left_to_coerce():
+    src = (
+        'static T: [S; 1] = [S { F: Some(\n    VfatFormat\n        as unsafe extern "C" fn(\n'
+        "            PUNICODE_STRING,\n        ) -> BOOLEAN,\n) }];\n"
+    )
+    start = src.index("VfatFormat")
+    end = src.index(") -> BOOLEAN,") + len(") -> BOOLEAN")
+    msg = (
+        'non-primitive cast: `unsafe extern "system" fn(*mut _UNICODE_STRING) -> u8 '
+        '{prelude::VfatFormat}` as `unsafe extern "C" fn(*mut _UNICODE_STRING) -> u8`'
+    )
+    diag = _diag(msg, code="E0605", spans=[_span("a.rs", start, end, is_primary=True)])
+    plan = propose_edits([diag], {"a.rs": src.encode()}.get, target="i686-pc-windows-gnu")
+    (edit,) = plan.edits
+    out = src[: edit.byte_start] + edit.replacement + src[edit.byte_end :]
+    assert "Some(\n    VfatFormat,\n) }" in out
+
+
+def _apply_plan(src: str, diag: dict, target: str = "x86_64-pc-windows-gnu") -> str:
+    plan = propose_edits([diag], {"a.rs": src.encode()}.get, target=target)
+    out = src.encode()
+    for edit in sorted(plan.edits, key=lambda e: -e.byte_start):
+        out = out[: edit.byte_start] + edit.replacement.encode() + out[edit.byte_end :]
+    return out.decode()
+
+
+def test_a_narrow_variadic_argument_takes_rustcs_promotion():
+    src = "fn f(p: *mut P) { DbgPrint(fmt, (*p).PartitionType); }\n"
+    at = src.index("(*p).PartitionType")
+    end = at + len("(*p).PartitionType")
+    child = {
+        "message": "cast the value to `c_uint`",
+        "level": "help",
+        "spans": [
+            _span("a.rs", end, end, replacement=" as c_uint", applicability="MachineApplicable")
+        ],
+        "children": [],
+    }
+    diag = _diag(
+        "can't pass `u8` to variadic function",
+        code="E0617",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+        children=[child],
+    )
+    assert "(*p).PartitionType as core::ffi::c_uint);" in _apply_plan(src, diag)
+
+
+def test_a_c_local_static_with_a_pointer_becomes_static_mut():
+    src = "fn f() {\n    static DeviceFloppy: _UNICODE_STRING = X;\n}\n"
+    at = src.index("_UNICODE_STRING")
+    diag = _diag(
+        "`*mut u16` cannot be shared between threads safely",
+        code="E0277",
+        spans=[_span("a.rs", at, at + len("_UNICODE_STRING"), is_primary=True)],
+        children=[
+            {
+                "message": "shared static variables must have a type that implements `Sync`",
+                "level": "note",
+                "spans": [],
+                "children": [],
+            }
+        ],
+    )
+    assert "    static mut DeviceFloppy: _UNICODE_STRING = X;" in _apply_plan(src, diag)
+
+
+def test_pointer_double_negation_is_a_null_test():
+    src = "fn f() { Success = !!FindSubStrI(a, b); }\n"
+    at = src.index("!FindSubStrI")
+    end = src.index(";")
+    diag = _diag(
+        "cannot apply unary operator `!` to type `*const u16`",
+        code="E0600",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+    )
+    assert "Success = (!(FindSubStrI(a, b)).is_null());" in _apply_plan(src, diag)
+
+
+def test_default_on_a_union_struct_is_zeroed():
+    src = "fn f() { let mut q: Q = Default::default(); }\n"
+    at = src.index("Default::default()")
+    diag = _diag(
+        "the trait bound `Q: Default` is not satisfied",
+        code="E0277",
+        spans=[
+            _span(
+                "a.rs",
+                at,
+                at + len("Default::default()"),
+                is_primary=True,
+                label="the trait `Default` is not implemented for `Q`",
+            )
+        ],
+    )
+    assert "let mut q: Q = core::mem::zeroed();" in _apply_plan(src, diag)
+
+
+def test_a_field_through_a_raw_pointer_is_dereferenced():
+    for src, want in (
+        (
+            "fn f() { x = (*DiskEntry).LayoutBuffer.PartitionEntry.as_mut_ptr(); }\n",
+            "x = (*(*DiskEntry).LayoutBuffer).PartitionEntry.as_mut_ptr();",
+        ),
+        (
+            "fn f() { if CONTAINING_RECORD!(cur, DISKENTRY, ListEntry).DiskNumber >= n {} }\n",
+            "if (*CONTAINING_RECORD!(cur, DISKENTRY, ListEntry)).DiskNumber >= n {}",
+        ),
+    ):
+        field = "PartitionEntry" if "PartitionEntry" in src else "DiskNumber"
+        at = src.index(field)
+        diag = _diag(
+            f"no field `{field}` on type `*mut _T`",
+            code="E0609",
+            spans=[_span("a.rs", at, at + len(field), is_primary=True)],
+        )
+        assert want in _apply_plan(src, diag)
+
+
+def test_an_unsigned_negative_literal_wraps_like_c():
+    src = "fn f() { if Count1 == (-1) as ULONG {} }\n"
+    at = src.index("(-1)")
+    diag = _diag(
+        "cannot apply unary operator `-` to type `u32`",
+        code="E0600",
+        spans=[_span("a.rs", at, at + 4, is_primary=True)],
+    )
+    assert "if Count1 == (1 as u32).wrapping_neg() as ULONG {}" in _apply_plan(src, diag)
+
+
+def test_an_option_fn_passed_as_a_pointer_maps_none_to_null():
+    src = "fn f() { g(Callback as *mut core::ffi::c_void); }\n"
+    at = src.index("Callback")
+    end = src.index(");")
+    diag = _diag(
+        'non-primitive cast: `Option<unsafe extern "system" fn(u32) -> u8>` as `*mut c_void`',
+        code="E0605",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+    )
+    out = _apply_plan(src, diag)
+    assert "g((Callback).map_or(core::ptr::null_mut(), |f| f as *mut core::ffi::c_void));" in out
+
+
+def test_a_function_into_an_option_fn_slot_is_some():
+    src = "fn f() { EnumerateBootStoreEntries(h, EnumerateInstallations, d); }\n"
+    lo = src.index("EnumerateInstallations")
+    hi = lo + len("EnumerateInstallations")
+    child = {
+        "message": "try wrapping the expression in `core::prelude::v1::Some`",
+        "level": "help",
+        "spans": [
+            _span(
+                "a.rs",
+                lo,
+                lo,
+                replacement="core::prelude::v1::Some(",
+                applicability="MaybeIncorrect",
+            ),
+            _span("a.rs", hi, hi, replacement=")", applicability="MaybeIncorrect"),
+        ],
+        "children": [],
+    }
+    note = {
+        "message": "expected `Option<...>`, found fn item",
+        "level": "note",
+        "spans": [],
+        "children": [],
+    }
+    diag = _diag(
+        "mismatched types",
+        code="E0308",
+        spans=[_span("a.rs", lo, hi, is_primary=True)],
+        children=[note, child],
+    )
+    assert "EnumerateBootStoreEntries(h, Some(EnumerateInstallations), d);" in _apply_plan(
+        src, diag
+    )

@@ -98,7 +98,6 @@ base/system/smss/CMakeLists.txt	1	# smss_rust_stub.c was an empty TU (archive-ex
 base/system/winlogon/CMakeLists.txt	1	# (winlogon_rust_stub.c + the generated winreg_s.c) into compile_commands.json
 base/system/winlogon/CMakeLists.txt	1	# server (rpcserver.c) and the generated winreg_s.c RPC stub stay C. So this is
 base/system/winlogon/CMakeLists.txt	1	# the GINA core (wlx.c), SAS state machine (sas.c), main (winlogon.c), RPC
-boot/freeldr/bootsect/CMakeLists.txt	1	# experimental FATY.S generator were pruned — nothing executes a legacy MBR/VBR
 boot/freeldr/freeldr/CMakeLists.txt	1	# ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
 boot/freeldr/freeldr/CMakeLists.txt	1	# AddMemoryDescriptor symbols heap.c/meminit.c also provided are now
 boot/freeldr/freeldr/CMakeLists.txt	1	# Crown jewel: peloader.c (and the rest of freeldr) is translated to Rust. The
@@ -159,6 +158,8 @@ boot/freeldr/freeldr/CMakeLists.txt	1	# ui/tui.c # replaced by Rust (freeldr-rus
 boot/freeldr/freeldr/CMakeLists.txt	1	# ui/tuimenu.c # replaced by Rust (freeldr-rust/src/tuimenu.rs)
 boot/freeldr/freeldr/CMakeLists.txt	1	# ui/ui.c # replaced by Rust (freeldr-rust/src/ui.rs)
 boot/freeldr/freeldr/CMakeLists.txt	1	# ui/video.c # replaced by Rust (freeldr-rust/src/video.rs)
+boot/freeldr/freeldr/pcat.cmake	1	# misc.S and linux.S were flipped to Rust global_asm! (loader_asm.rs).
+boot/freeldr/freeldr/pcat.cmake	1	# multiboot.S carries the multiboot header and owns `cmdline`, which entry.S
 boot/freeldr/freeldr/rosload.cmake	1	# ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
 boot/freeldr/freeldr/rosload.cmake	1	# (linux.S + amd64 misc.S were flipped to Rust global_asm! in freeldr-rust,
 boot/freeldr/freeldr/rosload.cmake	1	# (rosload-cargo .asm()); it needs only asm.inc + pcbios.h (REGS_*).
@@ -1015,7 +1016,7 @@ drivers/bus/pci/CMakeLists.txt	1	# pci.c/fdo.c/pdo.c are translated to Rust (sdk
 drivers/bus/pcix/CMakeLists.txt	1	# debug.c device.c dispatch.c enum.c fdo.c hookhal.c init.c pcivrify.c pdo.c power.c utils.c
 drivers/bus/pcix/CMakeLists.txt	1	# guid.c (GUID data) + the 4 empty stub TUs stay C:
 drivers/bus/pcix/CMakeLists.txt	1	# pcix-rust builds on PLAIN STABLE rustc. pci/id.rs faithfully translates id.c's C-variadic
-drivers/bus/pcix/CMakeLists.txt	1	# rule). 28 .c bodies are replaced by libpcix_rust.a; guid.c (GUID data instantiation,
+drivers/bus/pcix/CMakeLists.txt	1	# rule). 31 .c bodies are replaced by libpcix_rust.a; guid.c (GUID data instantiation,
 drivers/bus/pcix/CMakeLists.txt	1	# trampolines in rust_varargs_shim.c below, calling the fixed-arity `*_v` twins in
 drivers/filesystems/cdfs/CMakeLists.txt	1	# Two .c stay C (never translated -> no .rs counterpart): cdprocssrc.c (forces
 drivers/filesystems/cdfs/CMakeLists.txt	1	# create.c devctrl.c deviosup.c dirctrl.c dirsup.c fileinfo.c fsctrl.c fspdisp.c

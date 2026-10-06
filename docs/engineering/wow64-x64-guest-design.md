@@ -1,9 +1,18 @@
 # Running x86-64 guests on arm64: ARM64EC vs. our own BTCpu64 contract
 
-**Status: SCOPING ONLY. Nothing here is built, and this deliberately stops short of
-recommending which fork to take.** Written 2026-09-13 at the owner's request, after an audit
-established that FEX's x64 support is real and every blocker is on our side
-(`docs/product/vibeos-roadmap.md`, and the audit summary below).
+**Status: DECIDED 2026-10-05 — Fork B first. M1 DONE 2026-10-05; M2 DONE 2026-10-06 — the x86-64
+ladder is at parity with the 32-bit one (see "Status" below).** Written 2026-09-13 at the
+owner's request as scoping, after an audit established that FEX's x64 support is real and every
+blocker is on our side (`docs/product/vibeos-roadmap.md`, and the audit summary below).
+
+**The decision (owner, 2026-10-05): build Fork B (our own BTCpu64-shaped contract) first.** Most
+of what B needs, A needs too — a 64-bit FEX plugin, x64 CONTEXT conversion, the guest
+exception and syscall path — and B runs x64 apps on the amd64 system DLLs we already build,
+fully emulated, the same shape as today's 32-bit path. Fork A (ARM64EC) stays the later
+speed-up: it runs system DLL code natively, but only once our userland is compiled ARM64EC /
+ARM64X. (Not "ARM64EC is opt-in on Windows": on Windows 11 ARM every x64 app runs in an
+ARM64EC process. What is opt-in there is a developer porting their OWN code to ARM64EC.)
+First milestone: a `hello64` guest that enters FEX in 64-bit mode and makes one syscall.
 
 The question this answers is not "can FEX run x64" — it can, and does, and the recompiler is
 already compiled into the `libwow64fex.dll` we ship today. The question is **which OS-side
@@ -11,6 +20,74 @@ contract we implement to reach it**, because we have inherited Microsoft's answe
 deciding to.
 
 ---
+
+## Status — what exists, and what is owed
+
+**M2 (2026-10-06): parity with x86-on-arm64.** The 32-bit ladder's ten guest sources, rebuilt
+for x86-64 (`gui64 win64 file64 async64 marshal64 fault64 thread64 selfmod64 reg64 spawn64`,
+plus M1's `hello64`), all exit `0x600D` under FEX on arm64 AND natively on amd64, with the
+32-bit ladder green on the same boots: arm64 `/tmp/vibeos-cli/20261006-020111-v3xu401s-smoke-arm64`
+(24 guests at 0x600D, gui32 at its graded 0x600E), amd64 run dirs in the commit messages. They
+run through the guest's OWN amd64 ntdll, loader, kernel32/user32/gdi32/advapi32/ws2_32 — real
+Win32, not raw syscalls — so this covers: process init, the import closure, file and overlapped
+I/O, IOCP, the registry (incl. the 64-bit view), win32k drawing, window creation with
+callbacks into the guest and WM_PAINT, guest SEH through `.pdata` (hardware fault, software
+raise, debug print, Get/SetThreadContext), threads (TLS, per-thread SEH, 4 concurrent), runtime
+code generation incl. kernel-side writes into code, and process creation incl.
+CreateRemoteThread into a running x86-64 child.
+
+They are graded where the media carries them (`tests/qemu/cli/ladder.py` `STAGED_LADDER`): they
+need build-amd64 to exist at all, so an arm64-only tree does not owe them. `hello64` (no
+imports) stays in the always-owed `LADDER`.
+
+| piece | where | what |
+|---|---|---|
+| contract (v2) | `sdk/include/reactos/wowx64/btcpu64.h` (+ `wowx64-rust/src/contract.rs`) | BTCpu-shaped verbs, x86-64 `WOWX64_CONTEXT`, a host-services table. v2: the CPU layer passes the 4 register args + guest rsp; the OS side reads exactly each service's stack args (v1 copied a fixed 11 words and read off the top of a fresh thread's stack) |
+| CPU layer | `tools/fex/wowx64fex/` -> `libwowx64fex.dll` | upstream `WOW64/Module.cpp`'s shape; adds the ReadFile/MemoryDirty notifications for kernel-side writes |
+| OS layer | `sdk/lib/rust/wowx64-rust` -> `wowx64.dll` | `host.rs` entry + guest-entry path; `image.rs` maps/rebases the guest ntdll; `syscall.rs` the forwarder and its exceptions; `except.rs` guest exception delivery; `callback.rs` win32k callbacks; `thread.rs` thread creation + stack ownership |
+| guest DLL set | `qemu/mkramdisk.sh` -> `<SystemRoot>\sysamd64` | build-amd64's full import closure of a stock GUI app (`wow64-closure.py --include-prestaged`) + `lpk.dll` |
+| native ntdll | `ntdll-rust` `LdrpLdrData`, `dispatch/mod.rs` `WowX64UserCallbackHook` | the loader reads its OWN module list/lock (two ntdlls share one PEB); a callback hook slot |
+| guests | `tools/fex/hello-compute/*32.c` built twice by `build-hello-compute.sh` | the width-specific parts (`fs:[0]` SEH vs `.pdata`, WoW64-view expectations) are `#ifdef _WIN64`; the i386 builds are byte-identical to before |
+
+**The design, in the places it is not obvious:**
+
+- **Shared PEB and TEB.** The guest's TEB is the thread's TEB; its PEB is the process's. That is
+  what makes every kernel-written per-thread field (win32k's `Win32ClientInfo`, last-error) just
+  work, and what WoW64 cannot have. The cost is a short list of things each side must keep to
+  itself, each found the hard way: the loader's module list and lock (native unwinding looked up
+  FEX's `.pdata` in the guest's list), the TEB stack bounds (below), the `InDbgPrint` flag (a
+  guest DbgPrint silenced every native trace from the VEH), and the heap block layout (below).
+- **One heap format for every 64-bit target.** Both ntdlls reach the process heap through
+  `PEB->ProcessHeap`, so their heap code must agree on what a block is. rtl-heap's aarch64
+  `HEAP_ENTRY` had its own field order that heap.h never had; it now uses heap.h's `_WIN64`
+  layout, as x86_64 always did.
+- **TEB stack bounds describe the GUEST stack.** The guest's amd64 `RtlDispatchException` rejects
+  any frame outside them; the native stack the CPU layer runs on is fully committed instead,
+  so it never needs guard-page growth (which checks those bounds).
+- **The system32 redirect is conditional.** A name that exists in `sysamd64` is redirected there;
+  any other name stays in system32 (the guest's own exe, data files) — unless system32 holds an
+  image for another machine there, which the guest gets as "not found", as WoW64 would give it.
+  (Unconditional, `spawn64` could not relaunch itself; with no foreign-image check, gdi32's
+  `LoadLibrary("lpk.dll")` mapped the arm64 one.)
+- **Threads** (`NtCreateThread`): the guest CONTEXT is parked in the target and the kernel gets a
+  native one starting `WowX64GuestThreadStart`; that works into a running x86-64 child too
+  (wowx64.dll sits at the same base in every guest process). The initial thread of a NEW x86-64
+  process needs no context at all — its native loader diverts to wowx64.
+
+**Owed:**
+
+1. **User-mode APCs into a guest thread** (`NtQueueApcThread` with a guest routine) — the native
+   `KiUserApcDispatcher` would call x86-64 code. Nothing in the ladder queues one.
+2. **`NtCreateThreadEx`** is not in our service table, so a guest that calls it gets
+   `STATUS_INVALID_SYSTEM_SERVICE`; it needs the same treatment as `NtCreateThread` when it lands.
+3. **Thread creation into a non-x86-64 process** (an x86-64 guest starting a NATIVE arm64 or
+   32-bit child) is refused with `STATUS_NOT_SUPPORTED`: the guest's CONTEXT names a start
+   routine for the wrong machine, and we cannot name the right one from here.
+4. **Per-thread CPU-layer state on thread exit** (FEX's `Threads` map, the parked frames) is
+   not freed.
+5. **A native kernel32 still loads** in an x86-64 guest process (something in the CPU layer's
+   init LoadLibrary's it; libwowx64fex.dll's own imports are ntdll alone). Harmless today; worth
+   knowing what wants it.
 
 ## The audit result, in one paragraph
 
@@ -283,11 +360,11 @@ Listed because a scoping doc that reads as confident is worse than useless:
   The UNPRICED part is now narrower and sharper: whether our CMake can link vendored FEXCore and
   reuse `Source/Windows/Common/` without modifying `vendor/fex`. Nobody has tried it, and it is
   the one question that could change Fork B's cost by category rather than degree.
-- **Anything about performance.** A 64-bit guest recompiles more code, and our current 32-bit
-  path already faults inside FEX's code cache on images >500K (roadmap: `LookupCache::FindBlock`).
-  That bug is bitness-independent and would follow us to either fork. **Fix it before pricing
-  either route on a benchmark.**
-
+- **Anything about performance.** A 64-bit guest recompiles more code. (This bullet used to
+  say the 32-bit path faults inside FEX's code cache on images >500K and must be fixed first.
+  That bug was RETRACTED 2026-10-03 — a harness drain race plus FEX's by-design overcommit
+  faults misread as crashes; see the roadmap. The 32-bit ladder is 11/11 on QEMU and on a
+  real Pi 4.)
 ## Sequencing
 
 The two cheap items — the arm64ec-triple configure and the llvm-mingw pin bump — serve **Fork A

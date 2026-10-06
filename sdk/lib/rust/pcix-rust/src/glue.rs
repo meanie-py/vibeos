@@ -144,3 +144,20 @@ pub const REG_FULL_RESOURCE_DESCRIPTOR: u32 = 9;
 pub const REG_OPTION_VOLATILE: u32 = 1;
 pub const RTL_RANGE_LIST_ADD_IF_CONFLICT: u32 = 0x00000001;
 pub const VER_SUITE_DATACENTER: u32 = 0x00000080;
+
+// Hand-added for upstream's ECAM (#9542), Express (#9543), resizable BAR and hot-plug
+// (#9592) work. hal_ddk carries these only on x86/x64 and pcix builds for arm64 too;
+// values checked against xdk/iotypes.h, xdk/ntbasedef.h, psdk/winnt.h, ntstatus.h and
+// sdk/include/reactos/drivers/pci/pci.h.
+pub const MAXUCHAR: u32 = 0xff;
+pub const PCI_EXTENDED_CONFIG_LENGTH: u32 = 0x1000;
+pub const PCI_MAX_BRIDGE_NUMBER: u32 = 0xFF;
+pub const PCI_CAPABILITY_ID_PCI_EXPRESS: u32 = 0x10;
+pub const PCI_DEVICE_TYPE: u32 = 0x00;
+pub const PCI_ENABLE_PARITY: u32 = 0x0040;
+pub const PCI_ENABLE_SERR: u32 = 0x0100;
+pub const PCI_HACK_NO_EXPRESS_CAP: u64 = 0x0000000000080000;
+pub const IO_RESOURCE_PREFERRED: u32 = 0x01;
+pub const IO_RESOURCE_ALTERNATIVE: u32 = 0x08;
+pub const REG_RESOURCE_REQUIREMENTS_LIST: u32 = 10;
+pub const STATUS_DEVICE_CONFIGURATION_ERROR: i32 = 0xC0000182u32 as i32;

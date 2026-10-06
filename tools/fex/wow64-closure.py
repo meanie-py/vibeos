@@ -57,6 +57,8 @@ a silently-omitted DLL is precisely the landmine we're defusing.
 """
 
 import argparse
+import hashlib
+import json
 import re
 import subprocess
 import sys
@@ -168,12 +170,28 @@ def index_build(build_dir: Path, no_strip: bool = False) -> dict:
     is ~2x smaller in aggregate; the ramdisk has finite room, so prefer it.
     With no_strip, keep the fat paths (stable across rebuilds).
     """
-    stripped = {}
+    # The stripped twin of a module is named after ITS OWN source path:
+    # strip_cd_media.py writes `sha1(<path>)[:12]-<name>` and records each path
+    # in strip-manifest.json. So the twin is looked up by path, never by name.
+    # Keying by name alone was a real bug: the amd64 tree ALSO ships the i386
+    # SysWOW64 set, stripped into the same directory, so build-amd64 holds both
+    # an amd64 and an i386 `<hash>-kernel32.dll` (and three same-named
+    # fusion.dll modules besides), and whichever iterdir() listed last won. The
+    # amd64 guest DLL set (sysamd64) shipped an i386 kernel32 that way, and the
+    # x86-64 guest's loader failed to bind it on an import only i386 has.
+    # Manifest paths are the build's canonical mount (/tmp/vibeos/<build dir>/
+    # ...), so they are matched on the part below the build directory's name.
+    twins: dict[str, Path] = {}
     stripped_dir = build_dir / "boot/stripped"
-    if not no_strip and stripped_dir.is_dir():
-        for p in stripped_dir.iterdir():
-            if p.suffix.lower() in PE_SUFFIXES and "-" in p.name:
-                stripped[p.name.split("-", 1)[1].lower()] = p
+    manifest = stripped_dir / "strip-manifest.json"
+    if not no_strip and manifest.is_file():
+        marker = f"/{build_dir.name}/"
+        for key in json.loads(manifest.read_text()):
+            if marker not in key:
+                continue
+            twin = stripped_dir / f"{hashlib.sha1(key.encode()).hexdigest()[:12]}-{Path(key).name}"
+            if twin.is_file():
+                twins[key.split(marker, 1)[1]] = twin
 
     index = {}
     for p in build_dir.rglob("*"):
@@ -194,10 +212,11 @@ def index_build(build_dir: Path, no_strip: bool = False) -> dict:
             continue
         index.setdefault(p.name.lower(), p)
 
-    # Overlay the stripped copies over the fat ones.
-    for name, p in stripped.items():
-        if name in index:
-            index[name] = p
+    # Overlay each module's own stripped twin over it.
+    for name, fat in index.items():
+        twin = twins.get(fat.relative_to(build_dir).as_posix())
+        if twin is not None:
+            index[name] = twin
     return index
 
 

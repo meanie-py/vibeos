@@ -1,0 +1,17 @@
+LIBRARY libwowx64fex.dll
+
+EXPORTS
+  BTCpu64ProcessInit
+  BTCpu64ThreadInit
+  BTCpu64GetContext
+  BTCpu64SetContext
+  BTCpu64Simulate
+  BTCpu64ResetToConsistentState
+  BTCpu64FlushInstructionCache2
+  BTCpu64NotifyMemoryAlloc
+  BTCpu64NotifyMemoryProtect
+  BTCpu64NotifyMemoryFree
+  BTCpu64NotifyMapViewOfSection
+  BTCpu64NotifyUnmapViewOfSection
+  BTCpu64NotifyMemoryDirty
+  BTCpu64NotifyReadFile

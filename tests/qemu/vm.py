@@ -872,10 +872,12 @@ class I386UefiConfig(I386Config):
         ]
 
 
-def boot_media_device_args(iso, ide_bus: str | None = None) -> list[str]:
-    """How the UEFI boot ISO is attached — `ide-cd` unless told otherwise.
+def boot_media_device_args(
+    iso, ide_bus: str | None = None, default_transport: str = "ide-cd"
+) -> list[str]:
+    """How the boot ISO is attached — `default_transport` unless told otherwise.
 
-    `VIBEOS_QEMU_BOOT_TRANSPORT=usb-storage|virtio-blk` swaps the device model,
+    `VIBEOS_QEMU_BOOT_TRANSPORT=usb-storage|usb-ehci|virtio-blk` swaps the device model,
     which exists because two things need a NON-ATAPI boot device and neither
     could get one without hand-rolling a QEMU command line:
 
@@ -891,9 +893,9 @@ def boot_media_device_args(iso, ide_bus: str | None = None) -> list[str]:
 
     A remembered recipe is a missing mechanism, so this is the mechanism.
     """
-    transport = os.environ.get("VIBEOS_QEMU_BOOT_TRANSPORT", "").strip()
+    transport = os.environ.get("VIBEOS_QEMU_BOOT_TRANSPORT", "").strip() or default_transport
     drive = ["-drive", f"id=cd0,if=none,format=raw,file={iso},readonly=on"]
-    if not transport or transport == "ide-cd":
+    if transport == "ide-cd":
         # `ide_bus` pins the port (q35's AHCI holds one device per port).
         bus = f",bus={ide_bus}" if ide_bus else ""
         return [*drive, "-device", f"ide-cd,drive=cd0,bootindex=0{bus}"]
@@ -911,8 +913,19 @@ def boot_media_device_args(iso, ide_bus: str | None = None) -> list[str]:
             "-device",
             "usb-storage,bus=xhci.0,drive=cd0,bootindex=0,removable=on",
         ]
+    if transport == "usb-ehci":
+        # The same stick behind EHCI: an Intel 8-series board (the OptiPlex 9020)
+        # routes its ports to EHCI until the OS flips XUSB2PR, which usbxhci does not.
+        return [
+            *drive,
+            "-device",
+            "usb-ehci,id=ehci",
+            "-device",
+            "usb-storage,bus=ehci.0,drive=cd0,bootindex=0,removable=on",
+        ]
     raise ValueError(
-        f"VIBEOS_QEMU_BOOT_TRANSPORT={transport!r} is not one of ide-cd, virtio-blk, usb-storage"
+        f"VIBEOS_QEMU_BOOT_TRANSPORT={transport!r} is not one of "
+        "ide-cd, virtio-blk, usb-storage, usb-ehci"
     )
 
 
@@ -1108,6 +1121,40 @@ class Amd64UefiConfig(Amd64Config):
         return ["-acpitable", f"file={spcr}"]
 
 
+@dataclass
+class Amd64BiosConfig(Amd64Config):
+    """amd64 booted by legacy BIOS (SeaBIOS, QEMU's default firmware) from the same
+    hybrid livecd ISO written to a USB stick: isombr.bin -> isoboot.bin -> freeldr.sys
+    -> rosload.exe -> the kernel, which finds its boot volume through usbstor. That is
+    how the ISO reaches a Libreboot machine with no optical drive, and it covers more
+    than the CD entry does (the hybrid MBR, freeldr's hard-disk path, usbstor as a boot
+    driver). `VIBEOS_QEMU_BOOT_TRANSPORT=ide-cd` boots the El Torito CD entry instead.
+
+    The display is a VBE linear framebuffer the BIOS loader chooses and hands over in
+    the same form as UEFI's GOP, so `-vga std` (the Bochs VBE adapter), not cirrus.
+
+    BIOS boot was pruned 2026-05-29 and silently stayed dead because nothing booted it;
+    restored 2026-10-05 for Libreboot/SeaBIOS machines and smoked in every gate so it
+    cannot rot again. docs/engineering/bios-boot.md.
+    """
+
+    arch: str = "amd64-bios"
+
+    def qemu_args(self, work_dir: Path) -> list[str]:
+        iso = _maybe_smp_iso(PROJECT_DIR / "build-amd64" / "livecd.iso", work_dir)
+        return [
+            *self.machine_args,
+            "-m",
+            self.memory,
+            *boot_media_device_args(iso, default_transport="usb-storage"),
+            "-vga",
+            "std",
+            "-display",
+            "none",
+            "-no-reboot",
+        ]
+
+
 def _start_echo_server(label: str = "gf") -> socketserver.ThreadingTCPServer:
     """A tiny threaded TCP echo server bound to 0.0.0.0:<ephemeral>. Backs ONE slirp
     guestfwd on the windows-host backend: the guest's outbound connection (guest ->
@@ -1232,6 +1279,14 @@ def temp_disk_args(arch: str, out_dir: Path) -> list[str]:
     reproduce the one crash that only happens with it attached.
     """
     if not arch.startswith(("i386", "amd64")):
+        return []
+    # Not under BIOS. This disk carries an MBR, and ReactOS's El Torito boot sector
+    # (isoboot.S) sees a valid MBR on drive 80h, prints "Press any key to boot from
+    # the ReactOS medium", and after 5 s boots the HARD DISK instead: a smoke with no
+    # one at the keyboard hangs in that empty disk's boot code. That prompt is right
+    # for a person with an OS installed; the disk path itself is covered by
+    # amd64-uefi, which boots the same media with this disk attached.
+    if arch == "amd64-bios":
         return []
     # Default ON: it is also the only hard disk any x86 smoke attaches, and the
     # disk path stayed broken for months without a single red because nothing
@@ -1531,9 +1586,9 @@ class Arm64NetConfig(Arm64Config):
         ]
 
 
-# x86 is UEFI-only after the BIOS prune. I386Config / Amd64Config remain only as
-# the (non-selectable) base classes that hold shared defaults for the -uefi
-# variants; their legacy BIOS -cdrom qemu_args are no longer reachable.
+# x86 boots UEFI by default; amd64 also boots legacy BIOS as `amd64-bios`.
+# I386Config / Amd64Config are the (non-selectable) base classes that hold shared
+# defaults; their own -cdrom qemu_args are not reachable.
 ARCH_CONFIGS: dict[str, Callable[[], ArchConfig]] = {
     "arm64": Arm64Config,
     "arm64-test": Arm64TestKernelConfig,
@@ -1542,6 +1597,7 @@ ARCH_CONFIGS: dict[str, Callable[[], ArchConfig]] = {
     "i386-uefi-net": I386UefiNetConfig,
     "amd64-uefi": Amd64UefiConfig,
     "amd64-uefi-net": Amd64UefiNetConfig,
+    "amd64-bios": Amd64BiosConfig,
 }
 
 
@@ -2166,14 +2222,26 @@ class QemuVM:
 
     def _build_native_cmd(self) -> list[str]:
         """Attach prepared media and select ports under the handshake lock."""
-        self.serial.listen(str(self.serial_path))
+        if os.environ.get("VIBEOS_QEMU_RR", "").strip():
+            # Record/replay: the guest's serial goes to a regular file, which never
+            # refuses a write. A socket can, and x86's UART retries a refused byte
+            # from a host watch the replay log cannot pin. See
+            # SerialClient.follow_file.
+            serial_out = self._sock_dir / "serial.out"
+            self.serial.follow_file(
+                str(serial_out), alive=lambda: self._proc is not None and self._proc.poll() is None
+            )
+            serial_chardev = f"file,id=ser0,path={serial_out}"
+        else:
+            self.serial.listen(str(self.serial_path))
+            serial_chardev = f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1"
         self._set_live_tee()
         return [
             self.config.qemu_bin,
             "-qmp",
             f"unix:{self.qmp_path},server,nowait",
             "-chardev",
-            f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1",
+            serial_chardev,
             *self._serial_args(),
             *self._prepared_disk_args,
             *self._tripwire_args(),
@@ -2764,7 +2832,61 @@ class QemuVM:
             except Exception as exc:
                 body = f"<unavailable: {exc!r}>"
             chunks.append(f"=== CPU#{idx} stack {cmd} ===\n{body}")
+        # The frame-pointer chain: the backtrace. A fixed stack window shows
+        # only the innermost frame or two -- a 2026-10-05 amd64 deadlock had
+        # CPU1 spinning on MmPfnLock with interrupts DISABLED, and the window
+        # ended before the frame that had disabled them, which is the bug.
+        try:
+            from .cli.triage import cpu_fps
+
+            fps = cpu_fps("\n".join(chunks))
+        except Exception:
+            fps = []
+        for idx, fp in fps:
+            walk = self._walk_frames(idx, fp)
+            chunks.append(f"=== CPU#{idx} frames (frame-pointer chain) ===\n{walk}")
         return "\n\n".join(chunks) + "\n"
+
+    def _walk_frames(self, cpu: int, fp_hex: str, limit: int = 32) -> str:
+        """Follow saved-fp/return-address pairs from `fp_hex` through `cpu`'s own
+        translation. Stops at a null or non-ascending link (the chain's end, or
+        a trap frame that does not continue it) and says why. Never raises."""
+        wide = len(fp_hex) > 8
+        unit = "g" if wide else "w"
+        lines = []
+        try:
+            self.qmp.hmp(f"cpu {cpu}")
+        except Exception:
+            pass
+        fp = int(fp_hex, 16)
+        try:
+            for depth in range(limit):
+                try:
+                    body = self.qmp.hmp(f"x /2{unit}x 0x{fp:x}").strip()
+                except Exception as exc:
+                    lines.append(f"  (end: <unavailable: {exc!r}>)")
+                    break
+                words = re.findall(r"0x([0-9a-fA-F]+)", body.split(":", 1)[-1])
+                if len(words) < 2:
+                    lines.append(f"  (end: unreadable at 0x{fp:x}: {body[:80]})")
+                    break
+                nxt, ret = int(words[0], 16), int(words[1], 16)
+                lines.append(f"  #{depth} fp={fp:x} ret={ret:x}")
+                if nxt == 0:
+                    lines.append("  (end: null frame pointer)")
+                    break
+                if nxt <= fp or nxt - fp > 0x100000:
+                    lines.append(f"  (end: next fp {nxt:x} does not ascend)")
+                    break
+                fp = nxt
+            else:
+                lines.append(f"  (stopped at {limit} frames)")
+        finally:
+            try:
+                self.qmp.hmp("cpu 0")
+            except Exception:
+                pass
+        return "\n".join(lines) or "  (no frames)"
 
     def save_hang_state(self, phase: str) -> str:
         """Capture where every vCPU is parked and persist it where it survives.

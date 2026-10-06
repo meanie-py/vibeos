@@ -227,3 +227,7 @@ if(NOT ARCH STREQUAL "arm64")
     include(rosload.cmake)
 endif()
 include(uefi.cmake)
+# The legacy BIOS loader, freeldr.sys (restored 2026-10-05; amd64 only).
+if(ARCH STREQUAL "amd64")
+    include(pcat.cmake)
+endif()

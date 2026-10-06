@@ -114,14 +114,14 @@ unsafe fn pfn_as_lparam(pfn: TIMERPROC) -> LPARAM {
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn ClearMsgBitsMask(pti: PTHREADINFO, MessageBits: UINT);
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR) -> BOOL;
     fn MsqGetDownKeyState(MessageQueue: PUSER_MESSAGE_QUEUE) -> WPARAM;
     fn MsqWakeQueue(pti: PTHREADINFO, MessageBits: DWORD, KeyEvent: BOOL);
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn ClearMsgBitsMask(pti: PTHREADINFO, MessageBits: UINT);
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR) -> BOOL;
     fn MsqGetDownKeyState(MessageQueue: PUSER_MESSAGE_QUEUE) -> WPARAM;
     fn MsqWakeQueue(pti: PTHREADINFO, MessageBits: DWORD, KeyEvent: BOOL);
 }

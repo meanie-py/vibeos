@@ -105,6 +105,12 @@ provenance stamp.
 the same `QemuVM` the pytest harness uses (slots, reaper, lifetime cap, live-log
 all included), then auto-triage on failure.
 
+- **`--arch amd64-bios`** boots the same amd64 media through SeaBIOS (legacy BIOS,
+  `freeldr.sys`) instead of OVMF, with the ISO on a USB stick (xHCI) as a Libreboot
+  machine would boot it. Every gate that includes amd64 runs it as the
+  `smoke:amd64-bios` lane. `VIBEOS_QEMU_BOOT_TRANSPORT=usb-ehci|ide-cd|usb-storage`
+  picks the boot device on any x86 arch. See `docs/engineering/bios-boot.md`.
+
 - **Net suite (amd64) runs by default** and folds into the verdict — a netstack
   regression turns the smoke red like any other, never hidden. It is a *second
   full UEFI boot* (the virtio-net config), kept separate from the plain boot so

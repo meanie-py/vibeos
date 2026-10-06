@@ -685,14 +685,62 @@ pub unsafe extern "system" fn PciGetHotPlugParameters(FdoExtension: PPCI_FDO_EXT
             ));
         }
     } else if (*OutputBuffer).Count == 4u32 as u32 {
-        DbgPrint(
-            (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR).cast(),
-            b"PciGetHotPlugParameters\0".as_ptr() as PCSTR,
-            b"drivers/bus/pcix/fdo.c\0".as_ptr() as PCSTR,
-            424 as i32,
-        );
-        DbgPrint((b"\0".as_ptr() as PCSTR).cast());
-        DbgBreakPoint();
+        'hpp: {
+            /* Every one of them has to be an integer for the set to mean anything */
+            let Argument: PACPI_METHOD_ARGUMENT =
+                core::ptr::addr_of_mut!((*OutputBuffer).Argument) as PACPI_METHOD_ARGUMENT;
+            let mut i: ULONG = 0;
+            while i < 4 {
+                if (*Argument.add(i as usize)).Type as u32 != ACPI_METHOD_ARGUMENT_INTEGER {
+                    break;
+                }
+                i += 1;
+            }
+            if i != 4 {
+                DbgPrint(
+                    (b"(%s:%d) PCI - _HPP returned something other than four integers\n\0".as_ptr() as PCSTR).cast(),
+                    b"drivers/bus/pcix/fdo.c\0".as_ptr() as PCSTR,
+                    433 as i32,
+                );
+                break 'hpp;
+            }
+
+            /* Cache line size and latency timer are byte registers, SERR and PERR are flags */
+            if (*Argument.add(0)).c2rust_unnamed.Argument > MAXUCHAR
+                || (*Argument.add(1)).c2rust_unnamed.Argument > MAXUCHAR
+                || (*Argument.add(2)).c2rust_unnamed.Argument > 1
+                || (*Argument.add(3)).c2rust_unnamed.Argument > 1
+            {
+                DbgPrint(
+                    (b"(%s:%d) PCI - _HPP returned values out of range, ignoring them\n\0".as_ptr() as PCSTR).cast(),
+                    b"drivers/bus/pcix/fdo.c\0".as_ptr() as PCSTR,
+                    444 as i32,
+                );
+                break 'hpp;
+            }
+
+            /* Settings for devices that later appear in a hot plug slot on this bus */
+            (*FdoExtension).HotPlugParameters.CacheLineSize =
+                (*Argument.add(0)).c2rust_unnamed.Argument as UCHAR;
+            (*FdoExtension).HotPlugParameters.LatencyTimer =
+                (*Argument.add(1)).c2rust_unnamed.Argument as UCHAR;
+            (*FdoExtension).HotPlugParameters.EnableSERR =
+                (*Argument.add(2)).c2rust_unnamed.Argument as BOOLEAN;
+            (*FdoExtension).HotPlugParameters.EnablePERR =
+                (*Argument.add(3)).c2rust_unnamed.Argument as BOOLEAN;
+            (*FdoExtension).HotPlugParameters.Acquired = 1u8;
+
+            DbgPrint(
+                (b"(%s:%d) PCI - _HPP for FDO ext 0x%p: cache line %u, latency %u, SERR %u, PERR %u\n\0".as_ptr() as PCSTR).cast(),
+                b"drivers/bus/pcix/fdo.c\0".as_ptr() as PCSTR,
+                454 as i32,
+                FdoExtension,
+                (*FdoExtension).HotPlugParameters.CacheLineSize as u32,
+                (*FdoExtension).HotPlugParameters.LatencyTimer as u32,
+                (*FdoExtension).HotPlugParameters.EnableSERR as u32,
+                (*FdoExtension).HotPlugParameters.EnablePERR as u32,
+            );
+        }
     }
 
     ExFreePoolWithTag(OutputBuffer as PVOID, 0 as ULONG);
@@ -985,6 +1033,9 @@ pub unsafe extern "system" fn PciAddDevice(
                 }
                 Status = PciGetConfigHandlers(FdoExtension);
                 if Status >= 0i32 {
+                    /* Map this bus for extended configuration space access */
+                    PciInitializeEcam(FdoExtension);
+
                     Status = PciInitializeArbiters(FdoExtension);
                     if Status >= 0i32 {
                         (*FdoExtension).Fake = 0u8;
