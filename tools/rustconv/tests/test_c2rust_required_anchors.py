@@ -206,3 +206,16 @@ def test_wide_temporaries_in_a_static_are_hoisted_to_named_statics():
     assert name.startswith("RUSTCONV_C2R_WSTR_")
     assert "[0x0041u16, 0x002C, 0x0000]" in out
     assert anchor.hoist_wide_temporaries(pre + "\n" + pre).count("pub static RUSTCONV") == 1
+
+
+def test_type_items_reads_structs_and_aliases_from_c2rust_text():
+    text = (
+        "pub type UCHAR = ::core::ffi::c_uchar;\n"
+        "#[derive(Copy, Clone)]\n#[repr(C)]\npub struct _MBR_PARTITION_TYPE {\n"
+        "    pub Type: UCHAR,\n    pub Description: PCSTR,\n}\n"
+        "pub type MBR_PARTITION_TYPE = _MBR_PARTITION_TYPE;\n"
+    )
+    items = anchor._type_items(text)
+    assert items["MBR_PARTITION_TYPE"] == "pub type MBR_PARTITION_TYPE = _MBR_PARTITION_TYPE;"
+    assert items["_MBR_PARTITION_TYPE"].startswith("#[derive(Copy, Clone)]\n#[repr(C)]\npub struct")
+    assert items["_MBR_PARTITION_TYPE"].endswith("pub Description: PCSTR,\n}")

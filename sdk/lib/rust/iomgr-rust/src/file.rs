@@ -2520,8 +2520,11 @@ unsafe fn IopCreateFile(
             Status = IoCheckEaBufferValidity((*OpenPacket).EaBuffer, EaLength, &mut EaErrorOffset);
             if Status < 0 {
                 ExFreePool((*OpenPacket).EaBuffer);
-                (*IoStatusBlock).__bindgen_anon_1.Status = Status;
-                (*IoStatusBlock).Information = EaErrorOffset as _;
+                // C: under _SEH2_TRY; the status being returned is already an error.
+                let _ = write_back(IoStatusBlock, _IO_STATUS_BLOCK {
+                    __bindgen_anon_1: ntkrnl_sys::ddk::_IO_STATUS_BLOCK__bindgen_ty_1 { Status },
+                    Information: EaErrorOffset as _,
+                });
                 ExFreePool(OpenPacket as PVOID);
                 return Status;
             }
@@ -2569,8 +2572,13 @@ unsafe fn IopCreateFile(
         if (*OpenPacket).FinalStatus < 0 {
             Status = (*OpenPacket).FinalStatus;
             if ((Status as u32) >> 30) == 2 {  // NT_WARNING
-                (*IoStatusBlock).Information = (*OpenPacket).Information;
-                (*IoStatusBlock).__bindgen_anon_1.Status = (*OpenPacket).FinalStatus;
+                // C: _SEH2_TRY { IoStatusBlock->... } _SEH2_EXCEPT { Status = code; }
+                if let Err(e) = write_back(IoStatusBlock, _IO_STATUS_BLOCK {
+                    __bindgen_anon_1: ntkrnl_sys::ddk::_IO_STATUS_BLOCK__bindgen_ty_1 { Status: (*OpenPacket).FinalStatus },
+                    Information: (*OpenPacket).Information,
+                }) {
+                    Status = e;
+                }
             }
         } else if !(*OpenPacket).FileObject.is_null() && (*OpenPacket).ParseCheck == 0 {
             if (*(*OpenPacket).FileObject).FileName.Length != 0 {
@@ -2581,10 +2589,18 @@ unsafe fn IopCreateFile(
         }
     } else {
         (*(*OpenPacket).FileObject).Flags |= FO_HANDLE_CREATED;
-        *FileHandle = LocalHandle;
-        (*IoStatusBlock).Information = (*OpenPacket).Information;
-        (*IoStatusBlock).__bindgen_anon_1.Status = (*OpenPacket).FinalStatus;
+        // C: _SEH2_TRY { *FileHandle = ...; IoStatusBlock->... } _SEH2_EXCEPT
+        // { Status = code; }
         Status = (*OpenPacket).FinalStatus;
+        let written = write_back(FileHandle, LocalHandle).and_then(|()| {
+            write_back(IoStatusBlock, _IO_STATUS_BLOCK {
+                __bindgen_anon_1: ntkrnl_sys::ddk::_IO_STATUS_BLOCK__bindgen_ty_1 { Status: (*OpenPacket).FinalStatus },
+                Information: (*OpenPacket).Information,
+            })
+        });
+        if let Err(e) = written {
+            Status = e;
+        }
     }
 
     if (*OpenPacket).ParseCheck != 0 && !(*OpenPacket).FileObject.is_null() {
@@ -3471,11 +3487,17 @@ pub unsafe extern "system" fn NtCancelIoFile(
         }
     }
 
-    (*IoStatusBlock).__bindgen_anon_1.Status = STATUS_SUCCESS;
-    (*IoStatusBlock).Information = 0;
+    // C: _SEH2_TRY { IoStatusBlock->... } _SEH2_EXCEPT { Status = code; }
+    let Status = match write_back(IoStatusBlock, _IO_STATUS_BLOCK {
+        __bindgen_anon_1: ntkrnl_sys::ddk::_IO_STATUS_BLOCK__bindgen_ty_1 { Status: STATUS_SUCCESS },
+        Information: 0,
+    }) {
+        Ok(()) => STATUS_SUCCESS,
+        Err(e) => e,
+    };
 
     ObDereferenceObject(FileObject as PVOID);
-    STATUS_SUCCESS
+    Status
 }
 
 #[no_mangle]

@@ -44,9 +44,8 @@ pub unsafe extern "system" fn PspQueryDescriptorThread(
         return STATUS_INFO_LENGTH_MISMATCH;
     }
 
-    // SEH wrapper in C is dead under DUMMY_PSEH; translate as a direct read.
-    // The upstream NtQueryInformationThread path validates the buffer via
-    // DefaultQueryInfoBufferCheck before calling here.
+    // ThreadInformation is a pool copy by the time NtQueryInformationThread calls
+    // this (its OutputBounce); ReturnLength is still the caller's pointer.
     let DescriptorEntry: DESCRIPTOR_TABLE_ENTRY =
         core::ptr::read_unaligned(ThreadInformation as *const DESCRIPTOR_TABLE_ENTRY);
 
@@ -68,7 +67,15 @@ pub unsafe extern "system" fn PspQueryDescriptorThread(
             Descriptor,
         );
         if !ReturnLength.is_null() {
-            core::ptr::write_unaligned(ReturnLength, core::mem::size_of::<LDT_ENTRY>() as ULONG);
+            // C: inside the caller's _SEH2_TRY, whose handler returns the code.
+            let length = core::mem::size_of::<LDT_ENTRY>() as ULONG;
+            if let Err(s) = ntkrnl_sys::probe::safe_copy_raw(
+                ReturnLength as PVOID,
+                &length as *const ULONG as *const core::ffi::c_void,
+                core::mem::size_of::<ULONG>(),
+            ) {
+                return s;
+            }
         }
 
         STATUS_SUCCESS

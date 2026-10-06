@@ -34,6 +34,7 @@ acceptance can be audited from the ledger without re-reading a compiler scratch 
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -67,12 +68,16 @@ RULE_C_TRUTHINESS = "c_truthiness"
 RULE_OPTION_FN_CALL = "option_fn_call"
 RULE_UNINIT_LOCAL = "uninit_c_local"
 RULE_MUT_BINDING = "c_mutable_binding"
+RULE_INFER_WIDEN = "c_integer_widen"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
 #: answer wherever it is available, so it claims the span and the numeric rule stands down.
 DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_WIDTH_ALIAS,
+    # Before the comparison and numeric-cast rules: a WIDENING has a portable answer
+    # (`as _`), so it should not be withheld as a per-target width.
+    RULE_INFER_WIDEN,
     RULE_COMPARISON,
     RULE_NUMERIC_CAST,
     RULE_MATCH_SCRUTINEE,
@@ -1672,6 +1677,15 @@ def _null_fn_pointer_rule(
 _FIXED_C_INTS = frozenset({"u8", "i8", "u16", "i16", "u32", "i32"})
 
 
+def _outermost_call_site(span: Mapping[str, Any]) -> dict[str, Any]:
+    """Follow rustc's macro-expansion chain to the invocation in the user's source."""
+    seen = 0
+    while span.get("expansion") and seen < 16:
+        span = span["expansion"].get("span") or span
+        seen += 1
+    return dict(span)
+
+
 def _c_truthiness_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -1730,6 +1744,20 @@ def _c_truthiness_rule(
         from_bool = found == "bool" and expected in _FIXED_C_INTS
         if not (to_bool or from_bool):
             continue
+        # A value a MACRO produced is blamed inside the macro's definition (core's
+        # `matches!` for `IsRecognizedPartition!`); the edit belongs at the outermost call --
+        # but only when that definition is not ours to fix. A span inside one of OUR
+        # `macro_rules!` (setuplib's IS_VALID_INSTALL_PATH_CHAR: `isalnum(c) || ..`) is an
+        # error in the macro body; wrapping the call site cannot fix it, and the next pass
+        # wrapped it again: `((((x) != 0)) != false) != false ..` six deep.
+        in_own_macro = False
+        if span.get("expansion"):
+            own = load(str(span.get("file_name") or ""))
+            in_own_macro = own is not None and _in_macro_definition(
+                _mask_lexical(own), int(span.get("byte_start") or 0)
+            )
+            if not in_own_macro:
+                span = _outermost_call_site(span)
         claimed = True
         file_name = str(span.get("file_name") or "")
         line = int(span.get("line_start") or 0)
@@ -1739,10 +1767,18 @@ def _c_truthiness_rule(
         if data is None or end <= start:
             continue
         masked = _mask_lexical(data)
-        if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
+        # Inside one of OUR macro bodies the conversion is written there (it is the macro's
+        # C semantics, e.g. `isalnum($c)` -> `!= 0`), never at a call site; any other macro
+        # definition is not ours to touch.
+        if (_in_macro_definition(masked, start) and not in_own_macro) or not _balanced(
+            masked[start:end]
+        ):
             skipped.append(Skipped(RULE_C_TRUTHINESS, "macro_or_unbalanced", file_name, line))
             continue
         text = data[start:end].decode("utf-8", "replace")
+        # Idempotent: never wrap a conversion this rule already wrote.
+        if re.fullmatch(r"\(\(.*\) (?:!=|==) 0\)|\(.*\) as (?:u8|i8|u16|i16|u32|i32)", text, re.S):
+            continue
         if from_bool:
             replacement = f"({text}) as {expected}"
         elif text.startswith("!") and not text.startswith("!="):
@@ -2029,6 +2065,66 @@ def _split_top_level_commas(text: str) -> list[str]:
             cur.append(ch)
     parts.append("".join(cur))
     return parts
+
+
+def _int_width(ty: str, pointer: int) -> int:
+    return pointer if ty in POINTER_SIZED else INT_WIDTH[ty]
+
+
+def _infer_widen_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """An integer WIDENED into its context -> `(x) as _`, which each target infers for itself.
+
+    `IoStatusBlock.Information == FILE_CREATED` (ULONG_PTR vs a u32 constant), `SIZE_T n =
+    wcslen(..)`: the context's type is pointer-width, so it differs per arch, and a site that
+    errors on amd64 compiles on i386. A width-baked `as u64` is rightly withheld for that
+    reason. But when the value only WIDENS -- same signedness and no wider than the context,
+    or unsigned into a strictly wider signed type -- the conversion is exactly C's integer
+    promotion on every target, and `as _` lets rustc pick each target's type. A narrowing
+    or sign change stays with the other rules (that is C truncation, and it needs a name).
+    """
+    edits: list[Edit] = []
+    for span, expected, found in _mismatch_sites(diagnostic):
+        if expected not in INT_PRIMITIVES or found not in INT_PRIMITIVES or expected == found:
+            continue
+        we, wf = _int_width(expected, ctx.width), _int_width(found, ctx.width)
+        se, sf = not expected.startswith("u"), not found.startswith("u")
+        widen = (se == sf and wf <= we) or (not sf and se and wf < we)
+        if not widen:
+            continue
+        file_name = str(span.get("file_name") or "")
+        start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+        if (file_name, start, end) in ctx.claimed or end <= start:
+            continue
+        data = load(file_name)
+        if data is None:
+            continue
+        masked = _mask_lexical(data)
+        if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
+            continue
+        if _next_code_byte(masked, end) == b"(":
+            continue  # a callee, not a value
+        text = data[start:end].decode("utf-8", "replace")
+        ctx.claimed.add((file_name, start, end))
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"({text}) as _",
+                rule=RULE_INFER_WIDEN,
+                authority=(
+                    f"rustc: `{found}` into `{expected}` on {ctx.target} only widens; `as _` is "
+                    "C's promotion on every target, with no width baked in"
+                ),
+                original=text,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        )
+    return edits, [], bool(edits)
 
 
 def _no_std_path_rule(
@@ -2659,6 +2755,7 @@ _RULE_TABLE: dict[
     RULE_OPTION_FN_CALL: _option_fn_call_rule,
     RULE_UNINIT_LOCAL: _uninit_local_rule,
     RULE_MUT_BINDING: _mut_binding_rule,
+    RULE_INFER_WIDEN: _infer_widen_rule,
 }
 
 
@@ -3021,11 +3118,15 @@ def assert_faithful(edit: Edit) -> None:
 
 
 def apply_edits(
-    edits: Sequence[Edit], root: Path
+    edits: Sequence[Edit], root: Path, within: Path | None = None
 ) -> tuple[list[Edit], dict[str, bytes], list[Skipped]]:
     """Splice edits back-to-front so byte offsets stay valid. Returns (applied, snapshot, failed).
 
     ``snapshot`` holds each touched file's ORIGINAL bytes so a caller can undo the whole pass.
+    ``within``: the crate being repaired. An edit whose file lies outside it is refused --
+    rustc reports a span INSIDE a shared crate's macro when the misuse is at the call site,
+    and the truthiness rule once rewrote win32macros-rust's IsRecognizedPartition to fit
+    setuplib, breaking it for every other consumer.
     """
     by_file: dict[str, list[Edit]] = {}
     for edit in edits:
@@ -3035,6 +3136,12 @@ def apply_edits(
     failed: list[Skipped] = []
     for file_name, group in sorted(by_file.items()):
         path = root / file_name
+        if within is not None and not path.resolve().is_relative_to(within.resolve()):
+            failed.extend(
+                Skipped(edit.rule, "outside_crate", file_name, edit.line, str(path))
+                for edit in group
+            )
+            continue
         if not path.is_file():
             failed.extend(
                 Skipped(edit.rule, "missing_file", file_name, edit.line, str(path))
@@ -3085,8 +3192,13 @@ def run_cargo_check(
     root: Path,
     timeout: int = 1800,
     extra_args: Sequence[str] = (),
+    target_dir: Path | None = None,
 ) -> CargoCheckRun:
-    """Shell out to ``cargo check -p <crate> --target <triple> --message-format=json``."""
+    """Shell out to ``cargo check -p <crate> --target <triple> --message-format=json``.
+
+    ``target_dir``: a CARGO_TARGET_DIR of this arch's own. cargo locks a build directory as a
+    whole, so three arches sharing one run one after another however they are launched.
+    """
     command = [
         "cargo",
         "check",
@@ -3098,8 +3210,17 @@ def run_cargo_check(
         *extra_args,
     ]
     try:
+        env = None
+        if target_dir is not None:
+            env = {**os.environ, "CARGO_TARGET_DIR": str(target_dir)}
         process = subprocess.run(
-            command, cwd=str(root), capture_output=True, text=True, timeout=timeout, check=False
+            command,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            env=env,
         )
     except FileNotFoundError as error:
         raise RepairError("crate_repair: `cargo` not found on PATH") from error
@@ -3595,6 +3716,7 @@ def repair_crate(
     dry_run: bool = False,
     timeout: int = 1800,
     check_runner: Callable[[str], CargoCheckRun] | None = None,
+    target_dirs: Mapping[str, Path] | None = None,
 ) -> RepairSession:
     """Iterate propose/apply to a fixpoint, never leaving the tree worse than we found it.
 
@@ -3676,13 +3798,26 @@ def repair_crate(
             )
     diagnostic_rules = [name for name in rules if name in DIAGNOSTIC_RULES]
     check = check_runner or (
-        lambda target: run_cargo_check(crate, target, root=root, timeout=timeout)
+        lambda target: run_cargo_check(
+            crate,
+            target,
+            root=root,
+            timeout=timeout,
+            target_dir=(target_dirs or {}).get(target),
+        )
     )
     snapshot: dict[str, bytes] = {}
     previous_total: int | None = None
     previous_halting: int | None = None
     for index in range(1, max_passes + 1):
-        runs = {target: check(target) for target in targets}
+        if target_dirs and all(t in target_dirs for t in targets):
+            # Separate build dirs: the arches really run at once (3x on every pass).
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=len(targets)) as pool:
+                runs = dict(zip(targets, pool.map(check, targets), strict=True))
+        else:
+            runs = {target: check(target) for target in targets}
         counts = {target: run.error_count for target, run in runs.items()}
         total = sum(counts.values())
         halting = sum(count_halting_errors(run.diagnostics) for run in runs.values())
@@ -3757,7 +3892,7 @@ def repair_crate(
             session.detail = f"{len(selected)} edits proposed, nothing written"
             session.final_red = list(merged.red)
             return session
-        applied, snapshot, failed = apply_edits(selected, root)
+        applied, snapshot, failed = apply_edits(selected, root, within=resolved_dir)
         current.applied.extend(applied)
         current.skipped.extend(failed)
         session.passes.append(current)

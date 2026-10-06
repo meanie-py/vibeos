@@ -4140,9 +4140,10 @@ pub unsafe extern "system" fn NtFlushVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *BaseAddress = PAGE_ALIGN(CapturedBaseAddress as usize) as PVOID;
-    *NumberOfBytesToFlush = 0;
-    *IoStatusBlock = LocalStatusBlock;
+    // C: one _SEH2_TRY with an empty handler; a fault stops the remaining stores.
+    let _ = ntkrnl_sys::probe::write_back(BaseAddress, PAGE_ALIGN(CapturedBaseAddress as usize) as PVOID)
+        .and_then(|()| ntkrnl_sys::probe::write_back(NumberOfBytesToFlush, 0))
+        .and_then(|()| ntkrnl_sys::probe::write_back(IoStatusBlock as *mut _IO_STATUS_BLOCK, LocalStatusBlock));
 
     Status
 }
@@ -4341,6 +4342,24 @@ pub unsafe extern "system" fn NtQueryVirtualMemory(
         }
     }
 
+    // The C's MiQuery* helpers store into MemoryInformation and ReturnLength inside
+    // _SEH2_TRY. Hand them a pool copy (OutputBounce) and a kernel length instead;
+    // both reach the caller once, below, through the fault-tolerant copy.
+    let bounce = match ntkrnl_sys::probe::OutputBounce::new(MemoryInformation, MemoryInformationLength, PreviousMode) {
+        Ok(b) => b,
+        Err(s) => return s,
+    };
+    let UserReturnLength = ReturnLength;
+    let mut KernelReturnLength: SIZE_T = SIZE_T::MAX;
+    let MemoryInformation = bounce.buffer();
+    let ReturnLength: PSIZE_T = if UserReturnLength.is_null() {
+        core::ptr::null_mut()
+    } else if PreviousMode != 0 {
+        &mut KernelReturnLength
+    } else {
+        UserReturnLength
+    };
+
     match MemoryInformationClass {
         MemoryBasicInformation => {
             if MemoryInformationLength < core::mem::size_of::<MEMORY_BASIC_INFORMATION>() {
@@ -4367,6 +4386,22 @@ pub unsafe extern "system" fn NtQueryVirtualMemory(
             );
         }
         _ => {}
+    }
+
+    // MEMORY_SECTION_NAME's string Buffer points just past it, inside the buffer.
+    if Status >= 0
+        && MemoryInformationClass == MemorySectionName
+        && bounce.contains(MemoryInformation, core::mem::size_of::<MEMORY_SECTION_NAME_T>())
+    {
+        bounce.rebase(core::ptr::addr_of_mut!((*(MemoryInformation as *mut _MEMORY_SECTION_NAME)).SectionFileName.Buffer));
+    }
+    if let Err(s) = bounce.finish() {
+        return s;
+    }
+    if PreviousMode != 0 && !UserReturnLength.is_null() && KernelReturnLength != SIZE_T::MAX {
+        if let Err(s) = ntkrnl_sys::probe::write_user(UserReturnLength, KernelReturnLength, 0) {
+            return s;
+        }
     }
 
     Status

@@ -1,5 +1,5 @@
 use win32k_sys::win32k::*;
-use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
+use ntkrnl_sys::base::NT_SUCCESS;
 
 // ---------------------------------------------------------------------------
 // Real exported kernel symbols, re-declared against win32k-sys nominal types.
@@ -105,10 +105,8 @@ pub unsafe extern "system" fn EngFreeUserMem(pvBaseAddress: PVOID) {
 // All MDL APIs cross the win32k↔ntoskrnl boundary, so we use the
 // `ntkrnl_sys::ddk` PMDL type directly (NOT the win32k-sys re-bindgen) to
 // match the function signatures. The C source wraps MmProbeAndLockPages in
-// SEH (the only genuine FAULT_RECOVER probe in this file); under DUMMY_PSEH
-// that handler is dead, so we mirror the C "success path" — if the probe
-// faults the kernel crashes uncaught, which is the same observable as
-// today's C build (per win32k_translation_prompt.md §4 `c FAULT_RECOVER`).
+// SEH (the only genuine FAULT_RECOVER probe in this file), whose handler takes
+// the status and frees the MDL; the status-returning probe gives that same path.
 #[no_mangle]
 pub unsafe extern "C" fn HackSecureVirtualMemory(
     Address: PVOID,
@@ -116,7 +114,7 @@ pub unsafe extern "C" fn HackSecureVirtualMemory(
     ProbeMode: ULONG,
     SafeAddress: *mut PVOID,
 ) -> PVOID {
-    let Status: NTSTATUS = STATUS_SUCCESS;
+    let Status: NTSTATUS;
     let pmdl: ntkrnl_sys::ddk::PMDL;
     let Operation: ntkrnl_sys::ddk::LOCK_OPERATION;
 
@@ -140,7 +138,7 @@ pub unsafe extern "C" fn HackSecureVirtualMemory(
     }
 
     // UserMode = 1 (KPROCESSOR_MODE = i8).
-    ntkrnl_sys::ddk::MmProbeAndLockPages(pmdl, 1i8, Operation);
+    Status = ntkrnl_sys::probe::MmTryProbeAndLockPages(pmdl, 1i8, Operation);
 
     if !NT_SUCCESS(Status) {
         ntkrnl_sys::ddk::IoFreeMdl(pmdl);

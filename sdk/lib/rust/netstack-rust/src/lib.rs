@@ -19,6 +19,10 @@ pub mod hal;
 pub mod pci;
 pub mod device;
 pub mod e1000;
+// A NIC only ACPI describes (the Pi 4's GENET): netstack binds to it as its PnP
+// function driver (pnp.rs) and drives it directly (genet.rs).
+pub mod pnp;
+pub mod genet;
 // M10: interrupt-driven RX (virtio INTx -> ISR -> DPC -> event). x86 (i386 +
 // amd64) — both share the working x86 HAL HalGetInterruptVector + IOAPIC routing.
 // arm64's HalGetInterruptVector is a stub returning 0, so it stays on polling.
@@ -104,6 +108,9 @@ pub unsafe extern "system" fn DriverEntry(
     // it — see publish_nic_presence). Done first, before the self-test/engine
     // touch the device, so the flag is committed regardless of what follows.
     publish_nic_presence();
+    // A platform NIC arrives as a PnP device after DriverEntry returns; register
+    // AddDevice before anything can send us one.
+    pnp::init(DriverObject);
     // M1: blocking ARP round-trip self-test (creates + drops its own device).
     // virtio-only — with an e1000 (or no NIC) it would just print a FAIL that
     // trips serial grep patterns; the engine below proves e1000 RX/TX instead.

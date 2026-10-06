@@ -12,7 +12,7 @@ from rustconv import sdk_facts
 
 
 def _stub(monkeypatch, per_arch):
-    def fake(repo_root, arch, tu, names):
+    def fake(repo_root, arch, tu, names, types=None):
         values = per_arch.get(arch, {})
         return values, {n: "not an integer constant expression" for n in names if n not in values}
 
@@ -50,7 +50,7 @@ def test_agreement_is_over_the_arches_that_answered(monkeypatch):
 
 
 def test_no_architecture_probed_is_a_hard_failure(monkeypatch):
-    def boom(repo_root, arch, tu, names):
+    def boom(repo_root, arch, tu, names, types=None):
         raise sdk_facts.MacroAuthorityError("no compile_commands.json")
 
     monkeypatch.setattr(sdk_facts, "_resolve_one_arch", boom)
@@ -85,3 +85,27 @@ def test_syntax_argv_drops_output_flags_and_forces_full_diagnostics():
     assert "-DFOO" in out and "-Iinc" in out
     # the default 20-error cap would silently truncate a several-hundred-name batch
     assert "-ferror-limit=0" in out and "-fsyntax-only" in out
+
+
+def test_c_probe_reads_value_and_typedef_from_clang_text():
+    # A plain-C TU is probed as C: a duplicated case label carries the value, an
+    # incompatible struct initializer the type (typedef sugar first).
+    names = ["STATUS_PARTITION_FAILURE", "ERROR_LAST_ERROR_CODE"]
+    src = sdk_facts._probe_source_c(Path("/t/fsutil.c"), names).splitlines()
+    first = sdk_facts._C_FIRST_NAME_LINE
+    assert "case 0 + (long long)(STATUS_PARTITION_FAILURE)" in src[first - 1]
+    assert "struct rcv_t t0 = (STATUS_PARTITION_FAILURE)" in src[first]
+    assert "(ERROR_LAST_ERROR_CODE)" in src[first + 1]
+    stderr = (
+        f"/x/probe.c:{first}:9: error: duplicate case value '-1073741454'\n"
+        f"/x/probe.c:{first + 1}:9: error: initializing 'struct rcv_t' with an expression of "
+        "incompatible type 'NTSTATUS' (aka 'long')\n"
+        f"/x/probe.c:{first + 2}:9: error: duplicate case value: 'A' and 'B' both equal '44'\n"
+    )
+    vals = {}
+    for m in sdk_facts._C_SHOW_RE.finditer(stderr):
+        index, _odd = divmod(int(m.group(1)) - first, 2)
+        vals[names[index]] = int(m.group(2) or m.group(3))
+    assert vals == {"STATUS_PARTITION_FAILURE": -1073741454, "ERROR_LAST_ERROR_CODE": 44}
+    t = next(sdk_facts._C_TYPE_RE.finditer(stderr))
+    assert (t.group(2), t.group(3)) == ("NTSTATUS", "long")

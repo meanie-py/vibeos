@@ -423,8 +423,9 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
 | 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — 🔓 **UNBLOCKED**: the shared USB host stack is proven live | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md) | M | ready to start |
 | 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
-| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | parked; 10c landing opened the arm64 path |
+| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). Next: its interrupts, then GEM and I217 |
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
+| 10f | **Maybe: bring legacy BIOS boot back (loader only)** for i386 and amd64. The BIOS prune (`85102c111a3`..`5ca4d482d32`, 2026-05-29) assumed BIOS no longer mattered. That holds for amd64 PCs from about 2012 on, but almost every real 32-bit PC is BIOS-only, so without it i386 boots on no physical hardware; SeaBIOS is also the default in plain QEMU and Proxmox, and on coreboot/Libreboot machines such as the owner's OptiPlex 9020 (a candidate x64 bench: COM1, NVMe boot through SeaBIOS). **Scope: the loader, not the emulator.** The PC-AT machine layer survives in `freeldr-rust` (`machpc`, `pcmem`, `pcdisk`, `pcvesa`, `pchw`, `pxe`); restore the real-mode entry (`arch/realmode/*`) and `pcat.cmake` from git, wire `freeldr.sys` into the cargo-driven loader link (`ab763550984`), and repair four months of drift in the BIOS-only paths. The loader hands the kernel a VESA framebuffer like UEFI's GOP one, so fast486, HAL x86bios and videoprt INT10 stay retired. **Add a SeaBIOS smoke cell for i386 and amd64**, or it rots again. Quick experiment first: OpenCore's OpenDuet (UEFI loaded from disk by a legacy BIOS) runs today's `uefildr.efi` with no OS change. | — | M | considered 2026-10-05 |
 
 Not trash, leave alone: the GOP linear-framebuffer display driver (`arm64vid`, shared all
 arches) and the PL011 UART (a real ARM peripheral).
@@ -795,12 +796,31 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
       nothing unless someone wrote an `offset_of!` assert. Wanted: the verify_offsets recipe
       (clang offsets with the module's flags -> generated rustc asserts) for user-mode crates.
     - cpl-joy passed every run today.
-  - **arm64 `-smp 2`: BUGCHECK 0x1E in `CmpCreateKeyControlBlock`** (config-rust
-    cmkcbncb.rs:759), on CPU 1, loading through a garbage KCB pointer (FAR 0x0014...3A) while
-    walking the KCB hash chain. New with smp-bringup (18d1d4a3517): first seen 2026-10-04 in
-    the queue's base gate (farm 20261004-185704-eff80o8u), then 0/4 on a clean master
-    checkout, so a race, not a deterministic break. Smells like the KCB cache's locking
-    with two CPUs live; owner: the SMP lane.
+  - **arm64 `-smp 2`: BUGCHECK 0x1E in `CmpCreateKeyControlBlock`** (FIXED 2026-10-05). Two
+    threads setting values under different keys of one hive hold the registry lock only
+    shared, so `HvAllocateCell` ran on both CPUs at once: both edited the free lists and both
+    could `HvpAddBin`, which reallocates `BlockList`, frees the old one and publishes its own.
+    The 0x1E read a garbage `CM_KEY_NODE` (0x0014000000000026; not the KCB hash chain, as first
+    written here) while the other CPU looped in `HvFreeCell` on a NULL `BinAddress`. Windows
+    serializes this under `CMHIVE.HiveLock`, which ReactOS declares and never takes; cmlib-rust
+    now takes it (`hivelock.rs`). Proven with the new `regstress` payload (4 writers resizing
+    values and subkeys in one hive, 2 readers verifying self-describing contents): with the lock
+    compiled out, 2/2 `-smp 2` boots trip `ASSERT (*Free).Size < 0` and bugcheck 0x50 in
+    `HvpAddBin`'s copy of a freed `BlockList`; with it, 0 failures (50,764 writes at `-smp 1`,
+    19,733 at `-smp 2`). Artifacts: `~/vibeos-flake-farm/fails/regstress-smp2-20261005/`.
+  - **arm64 `-smp 2`: push-lock release livelock** (FIXED 2026-10-05). The port of upstream
+    f42ee0e23bb adopted the failed CMPXCHG's value only in the not-Waking arm of
+    `ExfReleasePushLock[Shared]`, so a release that found another thread already waking spun
+    forever on a stale value. It was the unexplained HANG_TIMEOUT 20261005-002201-1b2o74m7
+    (CPU1 in `ExfReleasePushLock+308`) and hung every regstress `-smp 2` boot until fixed.
+  - **arm64 `-smp 2` under regstress: timed waits stop expiring** (OPEN, SMP lane, 2/2 boots
+    with both fixes above). After ~15 s of clean stress, regstress's own `Sleep` heartbeat and
+    the CENSUS thread both go silent; the hang capture shows both vCPUs FROZEN in `KiIdleLoop`'s
+    `wfi`, i.e. no tick wakes either CPU. Not the registry (0 failures up to the stall). Next
+    step: read each CPU's GICC_PMR / CNTV_CTL_EL0 from a wedged guest over the gdbstub. One
+    debug-VM boot instead died BUGCHECK 0x19 (BAD_POOL_HEADER, P1=3, `ExFreePoolWithTag`) during
+    regstress thread startup, no caller stack. Repro: `VIBEOS_PAYLOAD=regstress ./vibeos-cli build
+    --arch arm64 && ./vibeos-cli smoke --arch arm64 --payload regstress --smp 2`.
   - **arm64 FAULTLOOP was the detector, not a loop** (RESOLVED 2026-10-04). The report
     fingerprinted a fault as (VA, PC, TTBR0); a stream of DISTINCT faults sharing those --
     Cc reading many small files (rapps' cab extraction), each new VACB recycled onto the same
@@ -830,7 +850,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - Remaining arm64 divergences: winlogon still creates `\Windows\WindowStations` and csrsrv
     skips CsrConnectToUser on arm64; the csrss stack-commit patch in mkramdisk's overlay;
     shell32 CDefView skips SHChangeNotifyRegister on arm64; winlogon's arm64-only notepad and
-    cmd spawns. On i386 `cpl-appwiz` opens no window.
+    cmd spawns. (i386 `cpl-appwiz` opens "Add/Remove Programs" again: appstorm 20261005-184453.)
 - **Posted messages to other threads' windows were dropped** (FIXED 2026-09-27). The
   win32k-sys regeneration (c53b7807aad) turned THRDESKHEAD's `[u64; 3]` padding into
   `[u8; 24]`; user32 read `head.pti` as `__bindgen_padding_0[2]`, so IntCallMessageProc saw a
@@ -921,10 +941,36 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `ExQueueWorkItem`; WMI's capture writing a kernel stack address into the caller's user
   struct (a C bug); `KsSetInformationFile` probing its own pool buffer (a C bug: every
   call failed). Drivers outside ntoskrnl that use the probes need ntkrnl-sys feature
-  `import_mm_user_probe_address`. **Still owed (separate class):** user memory read or
-  written AFTER the probe without a fault-tolerant copy (e.g. NtQuerySystemInformation's
-  query handlers, win32k `IntGetAtomFromStringOrAtom`/`UserDrawCaption`,
-  `MmProbeAndLockPages` in mup) — a bad page there still bugchecks.
+  `import_mm_user_probe_address`.
+- **Post-probe user access: the probe passes, the access bugchecks — PARTLY FIXED, OWED**
+  (2026-10-05). A probe proves where a buffer is, never that it stays mapped; the C
+  touches it inside `_SEH2_TRY`, Rust touched it with plain loads and stores.
+  `MmProbeAndLockPages` raises the same way. Done: `MmTryProbeAndLockPages` exported and
+  used by every Rust caller outside a real `seh::` frame (`scan_raising_probes` now gates
+  that name too); the query syscalls run against a pool copy of the caller's buffer
+  (`ntkrnl_sys::probe::OutputBounce`, rebasing the pointers that point into it):
+  NtQuerySystemInformation, NtQueryInformationToken/Process/Thread, NtQueryObject,
+  NtQueryVirtualMemory, NtQueryInformationAtom, the Cm query/enumerate calls; the se
+  captures (SID, SID array, ACL, LUID array, security descriptor, object type list) copy
+  fault-tolerantly and pin the count/size they were sized by, so a racing caller cannot
+  grow a SID or ACL past its allocation; win32k's captured strings
+  (`safe_user_io::capture_string_buffer`); `ntkrnl_sys::probe::write_back` for the
+  `IoStatusBlock`/handle/length write-backs. Real bugs found on the way:
+  **NtQueryValueKey** "probed" by raw-storing into its output pointers with no range
+  check, then had CmQueryValueKey write the value there — a user-chosen KERNEL address
+  received registry data; **NtUserDefSetText** never probed the text buffer (kernel
+  memory became the window title); **NtQuerySystemEnvironmentValue** had lost its whole
+  probe block; NtAdjustPrivilegesToken/NtAdjustGroupsToken leaked a token reference per
+  call; SeCaptureSidAndAttributesArray leaked its validation array per call and returned
+  a freed array on failure; SeCaptureLuidAndAttributesArray never copied into a
+  caller-supplied buffer and left `*Dest` dangling (a double free from NtFilterToken;
+  the dangling pointer is the C's too). **Owed:** `tools/scan_raw_user_access.py` lists
+  every Nt* syscall that still loads or stores through a pointer argument raw; its
+  baseline (`tools/lint-baseline/scan_raw_user_access.txt`, 114 rows at filing) is the
+  burndown list. Some rows are kernel-mode-only branches (read them, then `nolint`);
+  most are real, led by win32k NtGdi*/NtUser*, NtSetInformationProcess/Thread reading
+  their input in place, LPC's captures, and NtAllocateVirtualMemory/NtMapViewOfSection's
+  write-backs. Callees are not covered by that scanner.
 - **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
   `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
   cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
@@ -1534,7 +1580,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     work, i.e. a key-node pointer that was no longer mapped. OPEN, 1 in 8 arm64 `-smp 4`
     boots that ran past setup, never seen at `-smp 1` or `-smp 2` in today's runs; the shape
     fits a registry-lock hole (a cell pointer held across another CPU's bin change), not yet
-    shown. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
+    shown. 2026-10-05: the hive cell-map race (HvpAddBin freeing a `BlockList` other CPUs
+    still index) was found and fixed under `-smp 2` and matches this shape; not re-run at
+    `-smp 4`, so this stays OPEN until it is. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
     The `ke/ipi.rs` `== SYNCH_LEVEL` assert was already re-contracted to `>= DISPATCH_LEVEL`
     and no longer prints.
     amd64 `-smp 2` and `-smp 4`: FIXED 2026-10-04. The boot death seen 2026-09-25 was
@@ -4934,6 +4982,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     rounds with 0 misses, against 10 loud rounds with misses in 8. Field manual: "A kmtest
     count drift on a UP guest is the boot-time ladder, not the scheduler". MmMdl's amd64 drift
     was a separate thing, already settled by `c8228e5` (the count depends on free system VA).
+    **`KeEvent` RECURRED after the fix (found 2026-10-05):** 7 count drops (6 or 8 fails, once
+    1) in sweeps whose serial log carries `QUIET`, so the ladder is not the whole cause. i386:
+    `20261003-225707-54bluib3`, `20261004-092328-21kqrgdc`, `20261004-111018-zzsx3q0o`,
+    `20261004-165018-vyz3y237`, `20261005-193425-lqtlcoq8` (a queue gate attempt); amd64:
+    `20261004-073303-11khe67v`, `20261004-171841-f8gc6gdx`. Failing asserts are the
+    timeout/thread ones (`KeEvent.c:201/205/207/223`). Counted with the 2026-10-05 parser,
+    which no longer mistakes serial interleaving for regressions.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`.

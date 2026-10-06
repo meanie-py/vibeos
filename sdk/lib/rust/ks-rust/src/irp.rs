@@ -8,7 +8,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{ExGetPreviousMode, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IRP, IoAcquireCancelSpinLock, IoBuildSynchronousFsdRequest, IoGetCurrentIrpStackLocation, IoGetFileObjectGenericMapping, IoGetNextIrpStackLocation, IoGetRelatedDeviceObject, IoReleaseCancelSpinLock, IoSetCancelRoutine, IoSetCompletionRoutine, KEVENT, KPROCESSOR_MODE, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, LPWSTR, MmMapLockedPages, MmProbeAndLockPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDRIVER_CANCEL, PDRIVER_DISPATCH, PDRIVER_OBJECT, PFAST_IO_DISPATCH, PFILE_BASIC_INFORMATION, PFILE_OBJECT, PFILE_STANDARD_INFORMATION, PGENERIC_MAPPING, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL, PSECURITY_DESCRIPTOR, PUNICODE_STRING, RtlCompareUnicodeString, SeQuerySecurityDescriptorInfo, SeSetSecurityDescriptorInfo};
+use ntkrnl_sys::ddk::{ExGetPreviousMode, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IRP, IoAcquireCancelSpinLock, IoBuildSynchronousFsdRequest, IoGetCurrentIrpStackLocation, IoGetFileObjectGenericMapping, IoGetNextIrpStackLocation, IoGetRelatedDeviceObject, IoReleaseCancelSpinLock, IoSetCancelRoutine, IoSetCompletionRoutine, KEVENT, KPROCESSOR_MODE, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, LPWSTR, MmMapLockedPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDRIVER_CANCEL, PDRIVER_DISPATCH, PDRIVER_OBJECT, PFAST_IO_DISPATCH, PFILE_BASIC_INFORMATION, PFILE_OBJECT, PFILE_STANDARD_INFORMATION, PGENERIC_MAPPING, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL, PSECURITY_DESCRIPTOR, PUNICODE_STRING, RtlCompareUnicodeString, SeQuerySecurityDescriptorInfo, SeSetSecurityDescriptorInfo};
 use core::ffi::c_void;
 
 // ---- cross-module helpers + bindgen-name aliases (used only in this module) ----
@@ -697,7 +697,11 @@ pub unsafe extern "system" fn KsProbeStreamIrp(
                 Operation = IoReadAccess;
             }
             loop {
-                MmProbeAndLockPages(Mdl, (*Irp).RequestorMode, Operation);
+                /* the C's handler around this loop returns the raised code */
+                Status = ntkrnl_sys::probe::MmTryProbeAndLockPages(Mdl, (*Irp).RequestorMode, Operation as _);
+                if !NT_SUCCESS(Status) {
+                    return Status;
+                }
                 if (ProbeFlags & KSPROBE_SYSTEMADDRESS) != 0 {
                     (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL as i16;
                     if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {

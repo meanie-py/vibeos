@@ -75,8 +75,8 @@ use ntkrnl_sys::ddk::{
     _LUID,
     LIST_ENTRY,
     LPGUID,
+    IoFreeMdl,
     MmLoadSystemImage,
-    MmProbeAndLockPages,
     MmUnloadSystemImage,
     MmUnlockPages,
     PEPROCESS,
@@ -780,8 +780,12 @@ pub unsafe extern "system" fn ExLockUserBuffer(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    // DUMMY_PSEH: no SEH, just call directly
-    MmProbeAndLockPages(Mdl, AccessMode, Operation);
+    // C: _SEH2_EXCEPT { IoFreeMdl(Mdl); return the code }.
+    let Status = ntkrnl_sys::probe::MmTryProbeAndLockPages(Mdl as _, AccessMode, Operation as _);
+    if Status < 0 {
+        IoFreeMdl(Mdl);
+        return Status;
+    }
 
     let MdlPvoid: PMDL = Mdl as _;
     *MappedSystemVa = MmGetSystemAddressForMdlSafe(MdlPvoid, NormalPagePriority);
@@ -811,6 +815,32 @@ pub unsafe extern "system" fn NtQuerySystemEnvironmentValue(
 
     let PreviousMode = ExGetPreviousMode();
 
+    // The translation had dropped the C's probe block, so ValueBuffer and
+    // ReturnLength were written unprobed: a kernel address there was written to.
+    if PreviousMode != 0 {
+        if let Err(s) = ntkrnl_sys::probe::probe_user_buffer(
+            VariableName as PVOID,
+            core::mem::size_of::<_UNICODE_STRING>(),
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return s;
+        }
+        if let Err(s) = ntkrnl_sys::probe::probe_user_buffer(
+            ValueBuffer as PVOID,
+            ValueBufferLength as usize,
+            core::mem::size_of::<WCHAR>(),
+            PreviousMode,
+        ) {
+            return s;
+        }
+        if !ReturnLength.is_null() {
+            if let Err(s) = ntkrnl_sys::probe::probe_write_generic(ReturnLength, 1, PreviousMode) {
+                return s;
+            }
+        }
+    }
+
     if SeSinglePrivilegeCheck(SeSystemEnvironmentPrivilege, PreviousMode) == 0u8 {
         return STATUS_PRIVILEGE_NOT_HELD;
     }
@@ -836,12 +866,24 @@ pub unsafe extern "system" fn NtQuerySystemEnvironmentValue(
     RtlFreeAnsiString(&mut AName);
 
     if Result == ESUCCESS {
-        RtlInitAnsiString(&mut AValue, AnsiValueBuffer);
-        RtlInitEmptyUnicodeString(&mut WValue, ValueBuffer, ValueBufferLength as USHORT);
-        Status = RtlAnsiStringToUnicodeString(&mut WValue, &AValue, 0u8);
-        if !ReturnLength.is_null() {
-            *ReturnLength = WValue.Length as ULONG;
-        }
+        // C: the conversion into ValueBuffer and the ReturnLength store sit in one
+        // _SEH2_TRY. Convert into a pool copy and copy it out fault-tolerantly.
+        Status = match ntkrnl_sys::probe::OutputBounce::new(ValueBuffer as PVOID, ValueBufferLength as usize, PreviousMode) {
+            Ok(bounce) => {
+                RtlInitAnsiString(&mut AValue, AnsiValueBuffer);
+                RtlInitEmptyUnicodeString(&mut WValue, bounce.buffer() as PWSTR, ValueBufferLength as USHORT);
+                let mut status = RtlAnsiStringToUnicodeString(&mut WValue, &AValue, 0u8);
+                if let Err(s) = bounce.finish() {
+                    status = s;
+                } else if !ReturnLength.is_null() {
+                    if let Err(s) = ntkrnl_sys::probe::write_user(ReturnLength, WValue.Length as ULONG, 0) {
+                        status = s;
+                    }
+                }
+                status
+            }
+            Err(s) => s,
+        };
     } else {
         Status = STATUS_UNSUCCESSFUL;
     }
@@ -2497,6 +2539,68 @@ unsafe impl Sync for QssiCalls {}
 // Public NtQuerySystemInformation / NtSetSystemInformation
 // =============================================================================
 
+const TAG_QSI_BOUNCE: ULONG = u32::from_le_bytes(*b"ExQs");
+
+/// Runs a user-mode query against a pool copy of the caller's buffer, then copies the
+/// result back with a fault-tolerant copy.
+///
+/// The C runs every handler in place under one `_SEH2_TRY`, so a user page that goes
+/// bad mid-query becomes `STATUS_ACCESS_VIOLATION`. Without SEH the same fault in a
+/// handler bugchecks, and the handlers write the buffer with plain stores, some of them
+/// under a push lock. Bouncing covers every class at once instead of re-plumbing ~40
+/// handlers. The result is the same: the buffer is copied in first, so bytes a handler
+/// leaves alone come back unchanged, and the input header the firmware-table class reads
+/// is there.
+///
+/// Returns `Err` only for a fault on the user buffer, which is the C handler's status.
+unsafe fn query_through_bounce(
+    query: QsiFn,
+    class: ULONG,
+    user_buffer: PVOID,
+    length: ULONG,
+    req_size: *mut ULONG,
+) -> Result<NTSTATUS, NTSTATUS> {
+    if length == 0 {
+        // Nothing to bounce, and no handler writes past a zero size.
+        return Ok(query(user_buffer, 0, req_size));
+    }
+    let kbuf = ExAllocatePoolWithTag(1 /* PagedPool */, length as usize, TAG_QSI_BOUNCE);
+    if kbuf.is_null() {
+        return Err(STATUS_INSUFFICIENT_RESOURCES);
+    }
+    let _guard = ntkrnl_sys::probe::PoolAllocGuard::new(kbuf, TAG_QSI_BOUNCE);
+    ntkrnl_sys::probe::safe_copy_raw(kbuf, user_buffer, length as usize)?;
+    let status = query(kbuf, length, req_size);
+    if class == SystemProcessInformation {
+        rebase_process_image_names(kbuf, user_buffer, length);
+    }
+    ntkrnl_sys::probe::safe_copy_raw(user_buffer, kbuf, length as usize)?;
+    Ok(status)
+}
+
+/// SystemProcessInformation is the one class that stores a pointer INTO the buffer
+/// (`ImageName.Buffer` points at the name it appends after each entry), so a bounced
+/// query has to move those pointers from the pool copy to the caller's buffer.
+unsafe fn rebase_process_image_names(kbuf: PVOID, user_buffer: PVOID, length: ULONG) {
+    let base = kbuf as usize;
+    let end = base + length as usize;
+    let delta = (user_buffer as usize).wrapping_sub(base);
+    let entry_size = core::mem::size_of::<_SYSTEM_PROCESS_INFORMATION>();
+    let mut offset = 0usize;
+    while offset + entry_size <= length as usize {
+        let entry = (base + offset) as PSYSTEM_PROCESS_INFORMATION;
+        let name = (*entry).ImageName.Buffer as usize;
+        if name >= base && name < end {
+            (*entry).ImageName.Buffer = name.wrapping_add(delta) as *mut u16;
+        }
+        let next = (*entry).NextEntryOffset as usize;
+        if next == 0 {
+            break;
+        }
+        offset += next;
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn NtQuerySystemInformation(
     SystemInformationClass: ULONG,
@@ -2549,7 +2653,20 @@ pub unsafe extern "system" fn NtQuerySystemInformation(
     }
 
     if let Some(query) = CALL_QS[SystemInformationClass as usize].Query {
-        Status = query(SystemInformation, SystemInformationLength, &mut CapturedResultLength);
+        Status = if PreviousMode != 0 {
+            match query_through_bounce(
+                query,
+                SystemInformationClass,
+                SystemInformation,
+                SystemInformationLength,
+                &mut CapturedResultLength,
+            ) {
+                Ok(status) => status,
+                Err(status) => return status,
+            }
+        } else {
+            query(SystemInformation, SystemInformationLength, &mut CapturedResultLength)
+        };
         if !ReturnLength.is_null() {
             if let Err(status) = ntkrnl_sys::probe::write_user(ReturnLength, CapturedResultLength, 0) {
                 return status;

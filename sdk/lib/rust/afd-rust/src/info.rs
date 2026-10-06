@@ -5,7 +5,7 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{IoAllocateMdl, IoFreeMdl, MmProbeAndLockPages, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PMDL};
+use ntkrnl_sys::ddk::{IoAllocateMdl, IoFreeMdl, PDEVICE_OBJECT, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PMDL};
 
 #[no_mangle]
 pub unsafe extern "system" fn AfdGetInfo(
@@ -248,7 +248,7 @@ pub unsafe extern "system" fn AfdGetSockName(
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut Mdl: PMDL = core::ptr::null_mut();
@@ -270,7 +270,8 @@ pub unsafe extern "system" fn AfdGetSockName(
     );
 
     if Mdl != core::ptr::null_mut() {
-        MmProbeAndLockPages(Mdl, (*Irp).RequestorMode, 2 /* IoModifyAccess */);
+        // C: _SEH2_TRY { MmProbeAndLockPages } _SEH2_EXCEPT { Status = code; }
+        Status = ntkrnl_sys::probe::MmTryProbeAndLockPages(Mdl, (*Irp).RequestorMode, 2 /* IoModifyAccess */);
 
         if NT_SUCCESS(Status) {
             Status = TdiQueryInformation(

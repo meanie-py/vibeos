@@ -399,9 +399,6 @@ pub unsafe extern "C" fn CompareStorageDuids(
 
 // ============================ mechanical DDK/CRT macro + intrinsic glue ============================
 const STATUS_INTEGER_OVERFLOW_: NTSTATUS = 0xC0000095u32 as NTSTATUS;
-extern "system" {
-    fn MmProbeAndLockPages(MemoryDescriptorList: PMDL, AccessMode: i8, Operation: i32);
-}
 #[no_mangle] pub unsafe extern "C" fn REVERSE_BYTES(dest: *mut u32, src: *const u8) {
     *dest = u32::from_be_bytes([*src, *src.add(1), *src.add(2), *src.add(3)]);
 }
@@ -453,13 +450,14 @@ extern "system" {
     matches!(Status as u32, 0xC000009A|0xC0000010|0xC0000013|0xC0000022|0xC000000E|0xC0000056|0xC0000288|0xC000020C) as BOOLEAN
 }
 #[no_mangle] pub unsafe extern "system" fn __SEH2_ProbeAndLockPages(mdl: *mut MDL, mode: u32, access: u32) -> i32 {
-    MmProbeAndLockPages(mdl, mode as i8, access as i32);
     // Returns the SEH "exception code": callers do `if status != 0 { break }`, i.e. 0 = success,
-    // non-zero = exception. Under DUMMY_PSEH a probe fault bugchecks (no frame to catch) so the
-    // exception path is unreachable — return STATUS_SUCCESS (0). Returning 1 made DeviceSendSrbSynchronously
+    // non-zero = the code the C's _SEH2_EXCEPT would have caught. The status form of the probe
+    // gives that code without a raise (which nothing here could catch).
+    // Never return a success status other than 0: a returned 1 made DeviceSendSrbSynchronously
     // treat a successful MDL lock as an exception and bail before sending the SRB (st=1, SrbStatus
     // PENDING, DataTransferLength 0 → INQUIRY STATUS_DEVICE_PROTOCOL_ERROR → no SCSI commands ever run).
-    0 // STATUS_SUCCESS
+    let status = ntkrnl_sys::probe::MmTryProbeAndLockPages(mdl as _, mode as i8, access as _);
+    if status < 0 { status } else { 0 }
 }
 // CLASSP_REG_* registry key/value names (wide strings). TODO confirm exact strings vs classpnp.
 #[no_mangle] pub static CLASSP_REG_SUBKEY_NAME: [u16; 6] = [b'C' as u16, b'd' as u16, b'R' as u16, b'o' as u16, b'm' as u16, 0];

@@ -658,8 +658,16 @@ pub unsafe fn BuildAndSubmitIrp(Irp: PIRP, Ccb: PMUP_CCB, MasterIoContext: PMUP_
                     Status = STATUS_INSUFFICIENT_RESOURCES;
                     break 'seh;
                 }
-                // Still raises on a bad buffer: MmProbeAndLockPages has no Result form.
-                MmProbeAndLockPages(Mdl, (*Irp).RequestorMode, _LOCK_OPERATION_IoReadAccess);
+                // The C raises here into the _SEH2_EXCEPT below; the status form
+                // reaches the same cleanup.
+                Status = ntkrnl_sys::probe::MmTryProbeAndLockPages(
+                    Mdl,
+                    (*Irp).RequestorMode,
+                    _LOCK_OPERATION_IoReadAccess,
+                );
+                if !NT_SUCCESS(Status) {
+                    break 'seh;
+                }
             }
 
             if (*(*Ccb).FileObject).Flags & FO_NO_INTERMEDIATE_BUFFERING != 0 {
@@ -696,7 +704,10 @@ pub unsafe fn BuildAndSubmitIrp(Irp: PIRP, Ccb: PMUP_CCB, MasterIoContext: PMUP_
         }
 
         if !LowerIrp.is_null() {
-            if (*LowerIrp).AssociatedIrp.SystemBuffer.is_null() {
+            // The C tests `SystemBuffer == NULL` here, so it frees NULL and leaks the
+            // buffered-write copy (IRP_DEALLOCATE_BUFFER is only honoured by
+            // IoCompleteRequest, never by IoFreeIrp). Free it when it exists.
+            if !(*LowerIrp).AssociatedIrp.SystemBuffer.is_null() {
                 ExFreePoolWithTag((*LowerIrp).AssociatedIrp.SystemBuffer, TAG_MUP);
             }
             IoFreeIrp(LowerIrp);
@@ -1419,7 +1430,17 @@ pub unsafe fn MupBuildIoControlRequest(
             }
             (*Irp).AssociatedIrp.SystemBuffer = InputBuffer;
             (*Irp).Flags = IRP_BUFFERED_IO;
-            MmProbeAndLockPages((*Irp).MdlAddress, KernelMode, _LOCK_OPERATION_IoReadAccess);
+            // The C raises on a bad buffer with nothing to catch it. Fail the build
+            // the way the IoAllocateMdl failure above does instead.
+            if !NT_SUCCESS(ntkrnl_sys::probe::MmTryProbeAndLockPages(
+                (*Irp).MdlAddress,
+                KernelMode,
+                _LOCK_OPERATION_IoReadAccess,
+            )) {
+                IoFreeMdl((*Irp).MdlAddress);
+                IoFreeIrp(Irp);
+                return null_mut();
+            }
         }
         x if x == METHOD_NEITHER => {
             (*Irp).UserBuffer = OutputBuffer;
