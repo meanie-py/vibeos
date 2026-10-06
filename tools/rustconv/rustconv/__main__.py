@@ -211,6 +211,14 @@ def _strip_vtbl_statics(rust: str) -> str:
     return "\n".join(out)
 
 
+def _preamble_is_function_macros_only(src: str) -> bool:
+    """True when every logical line of a preamble is a function-like `#define`."""
+    text = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
+    text = re.sub(r"//[^\n]*", "", text)
+    logical = [ln.strip() for ln in re.sub(r"\\\n", " ", text).splitlines() if ln.strip()]
+    return bool(logical) and all(re.match(r"#\s*define\s+\w+\(", ln) for ln in logical)
+
+
 def resolve_target(args, path):
     """Pick the rustconv Target: an explicit --target wins (a known TARGETS key, or a
     standalone dll/win32/<name> crate name), else auto-detect from the path. Auto-detect
@@ -4257,6 +4265,16 @@ def cmd_translate(args):
             print("  [preamble] CACHED ($0)", file=sys.stderr)
         elif preamble_src and deterministic_only:
             print("  [preamble] SKIPPED (--deterministic-only)", file=sys.stderr)
+        elif preamble_src and _preamble_is_function_macros_only(preamble_src):
+            # Nothing for the preamble pass to emit: function-like macros are ported by
+            # `port macros` (or the prelude), never as preamble items. The model agrees and
+            # replies with nothing, which the empty-output guard below then read as a
+            # failure -- atapi's ioctl.c, whose file scope is two AtaVerify*Buffer macros.
+            _record_preamble(preamble_src, "macros_only")
+            print(
+                "  [preamble] function-like macros only — nothing to translate ($0)",
+                file=sys.stderr,
+            )
         elif preamble_src and not capped:
             print(
                 f"  [preamble] {len(preamble_src)} C chars...", file=sys.stderr, end=" ", flush=True

@@ -2063,6 +2063,16 @@ pub unsafe fn KxUnwaitThreadForEvent(
 // Ready queue functions (ke_x.h)
 // ============================================================================
 
+/// BitScanForward — find the lowest set bit; FALSE (index untouched) when `mask` is 0.
+#[inline]
+pub unsafe fn BitScanForward(index: *mut ULONG, mask: ULONG) -> BOOLEAN {
+    if mask == 0 {
+        return 0; // FALSE
+    }
+    *index = mask.trailing_zeros();
+    1 // TRUE
+}
+
 /// BitScanReverse — find highest set bit (needed by KiSelectReadyThread).
 #[inline]
 pub unsafe fn BitScanReverse(index: *mut ULONG, mask: ULONG) -> BOOLEAN {

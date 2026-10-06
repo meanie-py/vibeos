@@ -1524,6 +1524,79 @@ def test_a_call_through_an_option_fn_unwraps_the_callee():
     ]
 
 
+def test_widening_never_casts_a_match_arm_pattern():
+    from rustconv.crate_repair import RULE_INFER_WIDEN
+
+    src = b"fn f(t: i32) -> u32 {\n    match t {\n        TYPE_A | TYPE_B => 1,\n        _ => 0,\n    }\n}\n"
+    at = src.index(b"TYPE_A")
+    diag = _mismatch(src, b"TYPE_A", "i32", "u8")
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_INFER_WIDEN]
+    )
+    assert not plan.edits, at
+
+
+def test_a_field_through_a_raw_pointer_derefs_its_postfix_receiver():
+    from rustconv.crate_repair import RULE_RAW_PTR_FIELD
+
+    src = (
+        b"unsafe fn f(d: *mut D) {\n    d.Device = 1;\n    (*a).b.Device = 2;\n"
+        b"    let p = &x.Device;\n}\n"
+    )
+    diags = []
+    for needle in (b"d.Device", b"b.Device", b"x.Device"):
+        at = src.index(needle) + len(needle) - len(b"Device")
+        diags.append(
+            _diag(
+                "no field `Device` on type `*mut types_arch::_ATAPORT_DEVICE_EXTENSION`",
+                code="E0609",
+                spans=[_span("src/a.rs", at, at + len(b"Device"), is_primary=True, line=2)],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_RAW_PTR_FIELD]
+    )
+    # `&x.Device` is RED: the `&` makes the receiver's extent uncertain from bytes.
+    assert sorted((e.original, e.replacement) for e in plan.edits) == [
+        ("(*a).b", "(*(*a).b)"),
+        ("d", "(*d)"),
+    ]
+
+
+def test_keyword_named_fields_take_bindgens_spelling():
+    from rustconv.crate_repair import RULE_KEYWORD_FIELD
+
+    src = b"fn f(c: &C) {\n    let a = c.Self;\n    let b = c.Self_0;\n    let x = c.Nope;\n}\n"
+    diags = []
+    for field in (b"Self;", b"Self_0", b"Nope"):
+        at = src.index(b"c." + field) + 2
+        name = field.rstrip(b";")
+        diags.append(
+            _diag(
+                f"no field `{name.decode()}` on type `_ATAPORT_COMMON_EXTENSION`",
+                code="E0609",
+                spans=[_span("src/a.rs", at, at + len(name), is_primary=True)],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_KEYWORD_FIELD]
+    )
+    assert sorted((e.original, e.replacement) for e in plan.edits) == [
+        ("Self", "Self_"),
+        ("Self_0", "Self_"),
+    ]
+
+
+def test_a_fn_item_stored_in_an_option_slot_is_wrapped_in_some():
+    from rustconv.crate_repair import RULE_SOME_FN
+
+    src = b"unsafe fn f(e: *mut E) {\n    (*e).Callback = Worker;\n}\n"
+    diag = _mismatch(src, b"Worker", 'Option<unsafe extern "C" fn(*mut c_void)>', "fn item")
+    diag["spans"][0]["label"] = "expected `Option<...>`, found fn item"
+    plan = propose_edits([diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_SOME_FN])
+    assert [e.replacement for e in plan.edits] == ["Some(Worker)"]
+
+
 def test_an_uninitialised_c_local_is_zeroed_at_its_declaration():
     from rustconv.crate_repair import RULE_UNINIT_LOCAL
 
@@ -1650,11 +1723,24 @@ def test_a_bool_from_a_macro_is_cast_at_the_invocation():
     src = b"fn f() {\n    p.Recognized = IsRecognizedPartition!(t);\n}\n"
     call = b"IsRecognizedPartition!(t)"
     at = src.index(call)
-    inner = _span("/rustc/core/src/macros/mod.rs", 10, 20, is_primary=True, label="expected `u8`, found `bool`")
-    inner["expansion"] = {"span": _span("src/a.rs", at, at + len(call), line=2), "macro_decl_name": "matches!"}
+    inner = _span(
+        "/rustc/core/src/macros/mod.rs",
+        10,
+        20,
+        is_primary=True,
+        label="expected `u8`, found `bool`",
+    )
+    inner["expansion"] = {
+        "span": _span("src/a.rs", at, at + len(call), line=2),
+        "macro_decl_name": "matches!",
+    }
     diag = _diag("mismatched types", code="E0308", spans=[inner])
-    plan = propose_edits([diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS])
-    assert [(e.file_name, e.replacement) for e in plan.edits] == [("src/a.rs", "(IsRecognizedPartition!(t)) as u8")]
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS]
+    )
+    assert [(e.file_name, e.replacement) for e in plan.edits] == [
+        ("src/a.rs", "(IsRecognizedPartition!(t)) as u8")
+    ]
 
 
 def test_a_widening_is_inferred_and_a_narrowing_is_not():
@@ -1663,7 +1749,9 @@ def test_a_widening_is_inferred_and_a_narrowing_is_not():
     src = b"fn f() {\n    if io.Information == FILE_CREATED {}\n    let n: u16 = big;\n}\n"
     widen = _mismatch(src, b"FILE_CREATED", "u64", "u32")
     narrow = _mismatch(src, b"big", "u16", "u32")
-    plan = propose_edits([widen, narrow], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_INFER_WIDEN])
+    plan = propose_edits(
+        [widen, narrow], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_INFER_WIDEN]
+    )
     assert [e.replacement for e in plan.edits] == ["(FILE_CREATED) as _"]
 
 
@@ -1672,14 +1760,22 @@ def test_truthiness_fixes_our_macro_body_and_never_stacks():
 
     src = b"macro_rules! M { ($c:expr) => { isalnum($c) || $c == 1 }; }\nfn f() {\n    if ((M!(x)) != 0) {}\n}\n"
     inner_at = src.index(b"isalnum($c)")
-    inner = _span("src/a.rs", inner_at, inner_at + len(b"isalnum($c)"), is_primary=True, label="expected `bool`, found `i32`")
+    inner = _span(
+        "src/a.rs",
+        inner_at,
+        inner_at + len(b"isalnum($c)"),
+        is_primary=True,
+        label="expected `bool`, found `i32`",
+    )
     call = b"((M!(x)) != 0)"
     at = src.index(call)
     inner["expansion"] = {"span": _span("src/a.rs", at, at + len(call)), "macro_decl_name": "M!"}
     wrapped = _mismatch(src, call, "bool", "i32")
     plan = propose_edits(
         [_diag("mismatched types", code="E0308", spans=[inner]), wrapped],
-        _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_C_TRUTHINESS],
     )
     # the macro body is fixed in place; the already-converted call site is left alone
     assert [e.replacement for e in plan.edits] == ["((isalnum($c)) != 0)"]

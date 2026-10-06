@@ -55,7 +55,24 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .macro_authority import CANONICAL_BUILD_ROOT, MacroAuthorityError, _compile_entry
+from .macro_authority import (
+    CANONICAL_BUILD_ROOT,
+    MacroAuthorityError,
+    _compile_entry,
+    _sibling_target_entry,
+)
+
+
+def _probe_entry(repo_root: Path, arch: str, tu: Path) -> list[str] | None:
+    """The TU's own compile command, else a same-module sibling's with the TU substituted.
+
+    The second half is the same fallback the c2rust anchor uses. A module that was never
+    compiled in this tree (upstream's new pciidex/atapi, unbuilt since the merge) or one a
+    cohab flip took out of the build has no entry of its own, and the probe used to fail for
+    EVERY TU -- which left its hundreds of header constants for the model to guess.
+    """
+    return _compile_entry(repo_root, arch, tu) or _sibling_target_entry(repo_root, arch, tu)
+
 
 _ARCHES = ("i386", "amd64", "arm64")
 # clang prints the evaluated argument back in the diagnostic, attributed to its line.
@@ -167,7 +184,7 @@ def _syntax_argv(argv: list[str], probe: Path) -> list[str]:
 def _resolve_one_arch(
     repo_root: Path, arch: str, tu: Path, names: list[str], types: dict[str, str] | None = None
 ) -> tuple[dict[str, int], dict[str, str]]:
-    argv = _compile_entry(repo_root, arch, tu)
+    argv = _probe_entry(repo_root, arch, tu)
     if argv is None:
         raise MacroAuthorityError(
             f"no compile_commands.json entry for {tu.name} on {arch}\n"
@@ -290,7 +307,7 @@ def function_abis(repo_root: Path, tu: Path, names: list[str]) -> dict[str, str]
     reported by the caller, never guessed.
     """
     names = sorted(dict.fromkeys(names))
-    argv = _compile_entry(repo_root, "i386", tu)
+    argv = _probe_entry(repo_root, "i386", tu)
     if argv is None:
         raise MacroAuthorityError(
             f"no compile_commands.json entry for {tu.name} on i386\n"

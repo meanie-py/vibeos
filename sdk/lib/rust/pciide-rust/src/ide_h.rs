@@ -74,6 +74,12 @@ pub const UDMA_MODE1: ULONG = 1 << 12;
 pub const UDMA_MODE2: ULONG = 1 << 13;
 pub const UDMA_MODE3: ULONG = 1 << 14;
 pub const UDMA_MODE4: ULONG = 1 << 15;
+pub const UDMA_MODE5: ULONG = 1 << 16;
+pub const UDMA_MODE6: ULONG = 1 << 17;
+
+// pci.h: PCI_COMMON_HEADER.Command lives at offset 4; bit 2 enables bus mastering.
+pub const PCI_COMMAND_OFFSET: ULONG = 4;
+pub const PCI_ENABLE_BUS_MASTER: u16 = 0x0004;
 
 // typedef struct _PCIIDE_TRANSFER_MODE_SELECT { ... }
 #[repr(C)]

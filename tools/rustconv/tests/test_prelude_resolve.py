@@ -187,6 +187,9 @@ def test_facts_block_round_trips_and_types_by_typedef(tmp_path):
     # Unknown typedef: its LLP64 canonical type -- C long is 32-bit on Windows.
     assert pr.fact_rust_type("ULONG|unsigned long", 1, set()) == "u32"
     assert pr.fact_rust_type("int", 1, set()) == "i32"
+    # Kernel crates spell a bare non-negative `int` macro the way bindgen does.
+    assert pr.fact_rust_type("int", 1, set(), bare_int_unsigned=True) == "u32"
+    assert pr.fact_rust_type("int", -1, set(), bare_int_unsigned=True) == "i32"
     assert pr.looks_constant("STATUS_X") and not pr.looks_constant("Foo")
 
 
@@ -203,7 +206,11 @@ def test_local_types_block_round_trips(tmp_path):
 
 def test_externs_block_groups_by_abi_and_keeps_aliases(tmp_path):
     sigs = {
-        "VfatFormat": ("system", "fn VfatFormat(\n        A: ULONG,\n    ) -> BOOLEAN;", "fsutil.c"),
+        "VfatFormat": (
+            "system",
+            "fn VfatFormat(\n        A: ULONG,\n    ) -> BOOLEAN;",
+            "fsutil.c",
+        ),
         "iswspace": ("C", "fn iswspace(c: wint_t) -> c_int;", "arcname.c"),
         "InstallFat12BootCode": (
             "use",

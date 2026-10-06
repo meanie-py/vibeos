@@ -209,6 +209,14 @@ def build_parser() -> argparse.ArgumentParser:
         "LAPIC/IOAPIC/TPR APIC HAL (-DVIBEOS_PIC_HAL=ON). i386 only (amd64 hal "
         "is always APIC); a plain build is the APIC HAL",
     )
+    b.add_argument(
+        "--ata-stack",
+        action="store_true",
+        help="boot storage on upstream's new ATA stack (pciide + pciidex + atapi, and "
+        "legide on i386) instead of uniata (-DVIBEOS_ATA_STACK=ON): re-points the "
+        "CriticalDeviceDatabase for PCI IDE/RAID/AHCI and *PNP0600. RECONCILED, not "
+        "sticky: a plain build is uniata again",
+    )
     b.add_argument("--strict", action="store_true")
     b.add_argument(
         "--cache",

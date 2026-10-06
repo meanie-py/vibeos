@@ -405,6 +405,51 @@ file-scope `L"…"` in a table, which c2rust spells as a pointer into a transmut
 (rejected as a dangling pointer in a static), is hoisted into a named `RUSTCONV_C2R_WSTR_*`
 static.
 
+### `port` on a kernel driver (2026-10-06)
+
+`port` was built on setuplib, a user-mode module. Upstream's new ATA stack (pciidex 23 TUs,
+atapi 15, legide 1) was its first kernel run, and nothing about a WDM driver had been
+exercised. What changed, each a class rather than a site:
+
+- **Target.** A kernel module translates through its registered `TARGETS` entry (`--target
+  pciidex`); the `name:dir` form builds a user-DLL target and cannot read ntkrnl-sys. A
+  kernel module with no entry is refused, naming the file to add it to.
+- **Prelude.** A kernel island's `use ntkrnl_sys::ddk::*;` is PRIVATE, so the scaffold
+  prelude now globs it itself; the old comment said "the island re-exports" for both kinds,
+  and the first resolve reported IRP and LIST_ENTRY as defined nowhere. Kernel scaffolds also
+  get `KERNEL_PRELUDE_EXTRAS`: the PnP `IRP_MN_*` and `CmResourceType*` constants the `ddk`
+  glob lacks, the ke/inline/interlocked wrappers re-exported BY NAME (C's `_Interlocked*`,
+  `_BitScan*` spellings included), the remove-lock wrappers, `PAGED_CODE!`/`NT_VERIFY!`/
+  `UNREACHABLE!`, `TRUE`/`FALSE` as BOOLEAN, `min`/`max`, and `ntkrnl_sys::portio`.
+- **Island.** Derived kernel arms get `REAL_UNIONS=1` (crate-repair routes `x.Field` through
+  `__bindgen_anon_N`, which only typechecks against a real union), and `UNBLOCK` for any type
+  ntkrnl-sys leaves opaque that the module's C names (`_SCSI_REQUEST_BLOCK`).
+  `bindgen_ms_anon_members.py` restores MS anonymous struct members (`CHANNEL_DATA_COMMON;`
+  as a first member), which bindgen emits as padding: every common-channel field had vanished.
+  `__IncompleteArrayField` is made Copy so real unions compile around flexible arrays.
+- **Facts.** The clang probe borrows a sibling TU's flags when the file has no compile command
+  of its own (never built, or flipped), and a kernel crate spells a bare non-negative `int`
+  macro `u32`, as bindgen does; the C type put atapi at 190 `u32 & i32` errors.
+- **Translate.** The scanner blanks `DATA_SEG`/`*_PAGED_DATA` and parses past a `CODE_SEG`
+  between the return type and the name (both dropped functions or tables from the plan);
+  c2rust's intrinsic renames take a private prefix so a direct `_InterlockedOr` call cannot
+  cycle back to the builtin; the data harvest keeps only items the `.c` names (initguid put
+  416 GUIDs in every module) and never a function-typed forward declaration; a preamble of
+  function-like macros is not sent to the model; an arch-only TU (`pata_legacy.c`) translates
+  under an arch that compiles it; `--no-c2rust <TU>` is a sticky, deliberate opt-out.
+- **Integrate.** C multi-char constants fold to their value (`'PedI'` was a parse error);
+  explicit `use ntkrnl_sys::ddk::{..}` lists lose names the crate does not define (one bad
+  enumerator failed the whole `use`); `offset_of!` with an index routes through `FIELD_OFFSET!`;
+  the provided-name set now follows `#[path]` dispatchers and inline `pub mod ddk {}`
+  re-exports, without which no kernel crate's redefinitions were ever dropped.
+- **crate-repair.** `raw_pointer_field` (`p.f` -> `(*p).f`), `bindgen_keyword_field`
+  (`.Self` -> `.Self_`), `some_fn_item` (`Some(f)` into an `Option<fn>` slot); the
+  anon-union rule now matches a module-qualified type; `c_integer_widen` no longer casts a
+  match-arm pattern.
+- **Hand bodies.** `<crate>/hand/<Fn>.rs` is re-applied after every reassembly. Without it a
+  `port replay` restores the banked body, and one that does not parse hides every type error
+  in the crate: atapi's `AtaCreateIdeDirectory` hid 2,100.
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it

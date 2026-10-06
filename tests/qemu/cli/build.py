@@ -832,6 +832,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # build so a plain build reverts to the APIC HAL. i386 only — amd64
             # hal is always APIC.
             "VIBEOS_PIC_HAL": bool(getattr(args, "hal_pic", False)),
+            # Storage on upstream's new ATA stack instead of uniata (`--ata-stack`).
+            # Reconciled: it changes which driver owns the boot CD, so it must never
+            # outlive the build that asked for it.
+            "VIBEOS_ATA_STACK": bool(getattr(args, "ata_stack", False)),
             # The full winetest corpus (`--rostests`). RECONCILED, not sticky,
             # which is the opposite call from ENABLE_ROSTESTS_KMTESTS below and
             # for a reason: kmtests are cheap to keep and something (conformance)

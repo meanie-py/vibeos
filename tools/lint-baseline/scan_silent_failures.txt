@@ -1197,13 +1197,13 @@ sdk/lib/rust/ob-rust/src/obsecure.rs:557: [UNWRAP] .unwrap() — panics on Err/N
 sdk/lib/rust/ob-rust/src/obsecure.rs:605: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/ob-rust/src/obsecure.rs:660: [UNWRAP] .unwrap() — panics on Err/None in kernel code
 sdk/lib/rust/pci-rust/src/pdo.rs:1574: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/pciidex-rust/src/inlines.rs:40: [UNWRAP] .expect() — panics on Err/None in kernel code
-sdk/lib/rust/pciidex-rust/src/miniport.rs:804: [UNWRAP] .expect() — panics on Err/None in kernel code
-sdk/lib/rust/pciidex-rust/src/miniport.rs:840: [UNWRAP] .expect() — panics on Err/None in kernel code
-sdk/lib/rust/pciidex-rust/src/miniport.rs:879: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/pciidex-rust/src/miniport.rs:930: [UNWRAP] .unwrap() — panics on Err/None in kernel code
-sdk/lib/rust/pciidex-rust/src/pciidex.rs:902: [UNWRAP] .expect() — panics on Err/None in kernel code
-sdk/lib/rust/pciidex-rust/src/pciidex.rs:903: [UNWRAP] .expect() — panics on Err/None in kernel code
+sdk/lib/rust/pciidex-legacy-rust/src/inlines.rs:40: [UNWRAP] .expect() — panics on Err/None in kernel code
+sdk/lib/rust/pciidex-legacy-rust/src/miniport.rs:804: [UNWRAP] .expect() — panics on Err/None in kernel code
+sdk/lib/rust/pciidex-legacy-rust/src/miniport.rs:840: [UNWRAP] .expect() — panics on Err/None in kernel code
+sdk/lib/rust/pciidex-legacy-rust/src/miniport.rs:879: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/pciidex-legacy-rust/src/miniport.rs:930: [UNWRAP] .unwrap() — panics on Err/None in kernel code
+sdk/lib/rust/pciidex-legacy-rust/src/pciidex.rs:902: [UNWRAP] .expect() — panics on Err/None in kernel code
+sdk/lib/rust/pciidex-legacy-rust/src/pciidex.rs:903: [UNWRAP] .expect() — panics on Err/None in kernel code
 sdk/lib/rust/pcix-rust/src/arb/ar_busno.rs:140: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/pcix-rust/src/arb/ar_memio.rs:147: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first
 sdk/lib/rust/pcix-rust/src/arb/ar_memio.rs:205: [SILENT_LOOP] empty `loop {}` — silent busy-spin; print a self-report first

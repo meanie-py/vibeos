@@ -392,6 +392,16 @@ macro_rules! ARRAYSIZE {
     };
 }
 
+/// `ntbasedef.h` — `#define RTL_NUMBER_OF(A) (sizeof(A)/sizeof((A)[0]))` (`RTL_NUMBER_OF_V1`).
+/// The kernel's spelling of [`ARRAYSIZE`], and `u32` for the same reason as [`_countof`]: the
+/// kernel call sites compare it against `ULONG` indices (pciidex's chipset tables: 14 sites).
+#[macro_export]
+macro_rules! RTL_NUMBER_OF {
+    ($a:expr $(,)?) => {
+        ($a).len() as u32
+    };
+}
+
 /// `ntbasedef.h:715` — `#define RTL_NUMBER_OF_FIELD(type, field)
 /// (RTL_NUMBER_OF(RTL_FIELD_TYPE(type, field)))`: the element count of an array FIELD, taken
 /// from the type alone. C uses it as an array bound (setup's `WCHAR PathBuffer[
@@ -412,9 +422,29 @@ macro_rules! RTL_NUMBER_OF_FIELD {
 /// Field))`. `LONG` is `i32` on every target (LLP64), so the result type is fixed.
 #[macro_export]
 macro_rules! FIELD_OFFSET {
-    ($t:ty, $($f:tt)+) => {
-        (core::mem::offset_of!($t, $($f)+) as i32)
+    // `FIELD_OFFSET(DEVICE_RELATIONS, Objects[Count])` -- the size of a variable-length
+    // struct holding `Count` elements. `offset_of!` refuses an index, so add the element
+    // stride by hand: offsetof(field) + index * sizeof(element), as clang folds it.
+    ($t:ty, $($f:ident).+ [ $idx:expr ]) => {{
+        const fn __elem<T, const N: usize>(_: *const [T; N]) -> usize {
+            core::mem::size_of::<T>()
+        }
+        let slot = core::mem::MaybeUninit::<$t>::uninit();
+        let stride = __elem(unsafe { core::ptr::addr_of!((*slot.as_ptr()).$($f).+) });
+        ((core::mem::offset_of!($t, $($f).+) + ($idx) as usize * stride) as i32)
+    }};
+    ($t:ty, $($f:ident).+ $(,)?) => {
+        (core::mem::offset_of!($t, $($f).+) as i32)
     };
+    // An index INSIDE the path (`List[0].PartialResourceList.PartialDescriptors`):
+    // offset_of! refuses it, so take the member's address in an uninitialised slot and
+    // subtract the base. No reference is formed and nothing is read.
+    ($t:ty, $($f:tt)+) => {{
+        let slot = core::mem::MaybeUninit::<$t>::uninit();
+        let base = slot.as_ptr();
+        let field = unsafe { core::ptr::addr_of!((*base).$($f)+) };
+        ((field as *const u8 as usize) - (base as *const u8 as usize)) as i32
+    }};
 }
 
 /// `ntbasedef.h:682` — `#define RTL_FIELD_SIZE(type, field) (sizeof(((type *)0)->field))`, a
@@ -434,8 +464,9 @@ macro_rules! RTL_FIELD_SIZE {
 /// size_t` is a `size_t` in C, so this is `usize`.
 #[macro_export]
 macro_rules! RTL_SIZEOF_THROUGH_FIELD {
+    // Through FIELD_OFFSET!, which also takes a path with an index in it.
     ($t:ty, $($f:tt)+) => {
-        (core::mem::offset_of!($t, $($f)+) + $crate::RTL_FIELD_SIZE!($t, $($f)+))
+        ($crate::FIELD_OFFSET!($t, $($f)+) as usize + $crate::RTL_FIELD_SIZE!($t, $($f)+))
     };
 }
 
@@ -881,6 +912,33 @@ mod tests {
     }
 
     #[test]
+    fn field_offset_takes_an_index_where_c_does() {
+        #[repr(C)]
+        #[allow(dead_code)]
+        struct Desc {
+            kind: u8,
+            data: [u32; 3],
+        }
+        #[repr(C)]
+        #[allow(dead_code)]
+        struct List {
+            count: u32,
+            list: [Desc; 1],
+        }
+        let d = core::mem::size_of::<Desc>();
+        let base = core::mem::offset_of!(List, list);
+        // A trailing index past the declared length: DEVICE_RELATIONS' Objects[Count].
+        assert_eq!(FIELD_OFFSET!(List, list[3]), (base + 3 * d) as i32);
+        let table = [0u16; 7];
+        assert_eq!(RTL_NUMBER_OF!(table), 7u32);
+        // An index inside the path: CM_RESOURCE_LIST's List[0].PartialResourceList....
+        assert_eq!(
+            FIELD_OFFSET!(List, list[0].data),
+            (base + core::mem::offset_of!(Desc, data)) as i32
+        );
+    }
+
+    #[test]
     fn copy_move_fill_follow_the_ntdef_argument_order() {
         let src = [1u8, 2, 3, 4];
         let mut dst = [0u8; 4];
@@ -906,10 +964,10 @@ mod tests {
         for t in [
             0x01u8, 0x04, 0x06, 0x07, 0x0B, 0x0C, 0x0E, 0x83, 0x43, 0x96, 0xA5, 0xA6, 0xA9, 0x86,
         ] {
-            assert!(IsRecognizedPartition!(t), "{t:#x}");
+            assert!(IsRecognizedPartition!(t) != 0, "{t:#x}");
         }
         for t in [0x00u8, 0x05, 0x0F, 0x81, 0x84, 0xEE] {
-            assert!(!IsRecognizedPartition!(t), "{t:#x}");
+            assert!(IsRecognizedPartition!(t) == 0, "{t:#x}");
         }
     }
 

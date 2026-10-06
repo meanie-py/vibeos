@@ -69,6 +69,9 @@ RULE_OPTION_FN_CALL = "option_fn_call"
 RULE_UNINIT_LOCAL = "uninit_c_local"
 RULE_MUT_BINDING = "c_mutable_binding"
 RULE_INFER_WIDEN = "c_integer_widen"
+RULE_RAW_PTR_FIELD = "raw_pointer_field"
+RULE_KEYWORD_FIELD = "bindgen_keyword_field"
+RULE_SOME_FN = "some_fn_item"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -98,6 +101,9 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_OPTION_FN_CALL,
     RULE_UNINIT_LOCAL,
     RULE_MUT_BINDING,
+    RULE_RAW_PTR_FIELD,
+    RULE_KEYWORD_FIELD,
+    RULE_SOME_FN,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -1855,6 +1861,228 @@ def _option_fn_call_rule(
     )
 
 
+_RE_RAW_PTR_FIELD = re.compile(r"no field `(?P<field>\w+)` on type `\*(?:mut|const) ")
+
+
+def _postfix_chain_start(masked: bytes, end: int) -> int | None:
+    """Start of the postfix-expression chain ending just before ``end`` (a `.`)."""
+    i = end
+    while i > 0:
+        ch = masked[i - 1 : i]
+        if ch.isalnum() or ch == b"_":
+            i -= 1
+            continue
+        if (
+            ch == b"."
+            and i - 1 > 0
+            and (masked[i - 2 : i - 1].isalnum() or masked[i - 2 : i - 1] in (b"_", b")", b"]"))
+        ):
+            i -= 1
+            continue
+        if ch in (b")", b"]"):
+            open_ = b"(" if ch == b")" else b"["
+            depth, j = 0, i - 1
+            while j >= 0:
+                c = masked[j : j + 1]
+                if c in (b")", b"]"):
+                    depth += 1
+                elif c in (b"(", b"["):
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j -= 1
+            if j < 0 or masked[j : j + 1] != open_:
+                return None
+            i = j
+            continue
+        break
+    return i
+
+
+def _raw_ptr_field_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """C's `p->f` written `p.f` on a raw pointer: `p.f` -> `(*p).f`.
+
+    rustc E0609 "no field `f` on type `*mut T`": Rust never auto-derefs a raw pointer, and
+    `->` has no Rust spelling. The receiver is the postfix chain ending at the `.`:
+    identifiers, `.`, and balanced `(...)`/`[...]` groups, so `(*Req).DevExt.Device` becomes
+    `(*(*Req).DevExt).Device`. A receiver behind a prefix operator (`&x.f`, `*x.f`) or a
+    path (`a::b.f`) stays RED: its extent is not certain from bytes. atapi: ~70 sites.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0609":
+        return [], [], False
+    if _RE_RAW_PTR_FIELD.search(str(diagnostic.get("message") or "")) is None:
+        return [], [], False
+    span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    start = int(span.get("byte_start") or 0)
+    data = load(file_name)
+    if data is None or start < 2 or data[start - 1 : start] != b".":
+        return [], [], False
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return [], [], False
+    end = start - 1  # the `.`
+    begin = _postfix_chain_start(masked, end)
+    if begin is None:
+        return [], [], False
+    receiver = data[begin:end].decode("utf-8", "replace")
+    before = masked[begin - 1 : begin] if begin > 0 else b" "
+    if (
+        not receiver
+        or receiver[0].isdigit()
+        or before in (b":", b"'", b"&", b"*")
+        or not _balanced(masked[begin:end])
+    ):
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=begin,
+                byte_end=end,
+                replacement=f"(*{receiver})",
+                rule=RULE_RAW_PTR_FIELD,
+                authority="rustc E0609: the receiver is a raw pointer; C's `->` derefs it",
+                original=receiver,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+#: Rust keywords bindgen renames with a trailing `_` when they name a C field.
+_BINDGEN_KEYWORDS = frozenset(
+    {
+        "Self",
+        "self",
+        "type",
+        "match",
+        "fn",
+        "impl",
+        "mod",
+        "move",
+        "mut",
+        "ref",
+        "return",
+        "static",
+        "struct",
+        "trait",
+        "use",
+        "where",
+        "loop",
+        "crate",
+        "super",
+        "box",
+        "in",
+        "as",
+        "async",
+        "await",
+        "dyn",
+    }
+)
+_RE_NO_FIELD_NAME = re.compile(r"no field `(?P<field>\w+)` on type")
+
+
+def _keyword_field_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A C field named like a Rust keyword: `.Self` (or c2rust's `.Self_0`) -> bindgen's `.Self_`.
+
+    atapi's ATAPORT_COMMON_EXTENSION has a `PDEVICE_OBJECT Self;`, which bindgen emits as
+    `Self_`; the model spelled the C name (26 sites) or c2rust's (5). Only a keyword is renamed,
+    and to bindgen's one spelling, so a field that really is missing stays an error.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0609":
+        return [], [], False
+    m = _RE_NO_FIELD_NAME.search(str(diagnostic.get("message") or ""))
+    if m is None:
+        return [], [], False
+    field_name = m.group("field")
+    base = field_name[:-2] if field_name.endswith("_0") else field_name
+    if base not in _BINDGEN_KEYWORDS:
+        return [], [], False
+    span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    data = load(file_name)
+    if data is None or data[start:end].decode("utf-8", "replace") != field_name:
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"{base}_",
+                rule=RULE_KEYWORD_FIELD,
+                authority="bindgen renames a keyword-named C field with a trailing underscore",
+                original=field_name,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _some_fn_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A function stored where bindgen types the slot `Option<fn>`: `f` -> `Some(f)`.
+
+    C assigns a routine to a callback pointer (`Ext->Worker.Callback = AtaPortWorker;`);
+    bindgen makes every function-pointer type `Option<..>`. rustc's E0308 label is "expected
+    `Option<...>`, found fn item". The NULL case is null_fn_pointer's; this is its twin.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0308":
+        return [], [], False
+    span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    label = str(span.get("label") or "")
+    if not re.search(r"expected `Option<[^`]*>`, found fn item", label):
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    data = load(file_name)
+    if data is None or end <= start:
+        return [], [], False
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
+        return [], [], False
+    text = data[start:end].decode("utf-8", "replace")
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"Some({text})",
+                rule=RULE_SOME_FN,
+                authority="rustc E0308: a fn item where bindgen's slot is Option<fn>",
+                original=text,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
 def _uninit_local_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -2103,6 +2331,10 @@ def _infer_widen_rule(
         masked = _mask_lexical(data)
         if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
             continue
+        # A match-arm PATTERN cannot hold `(X) as _`: pciidex's intel.rs lost every arm of a
+        # `match (*Info).Type` to this rule, and the parse errors reverted the whole pass.
+        if _in_match_pattern(masked, end):
+            continue
         if _next_code_byte(masked, end) == b"(":
             continue  # a callee, not a value
         text = data[start:end].decode("utf-8", "replace")
@@ -2299,7 +2531,7 @@ def _match_scrutinee_rule(
 
 
 #: E0609 ``no field `X` on type `Y` `` — ``Y`` may arrive as a raw pointer or a reference.
-_RE_NO_FIELD = re.compile(r"no field `(?P<field>\w+)` on type `(?P<ty>[&*\w \n]+?)`", re.S)
+_RE_NO_FIELD = re.compile(r"no field `(?P<field>\w+)` on type `(?P<ty>[&*\w: \n]+?)`", re.S)
 #: E0560 ``struct `Y` has no field named `X` `` — a struct-LITERAL field, which is not fixable
 #: by the same substitution (see the rule).
 _RE_NO_LITERAL_FIELD = re.compile(
@@ -2371,6 +2603,9 @@ def _anon_union_rule(
     for prefix in ("mut ", "const "):
         if struct.startswith(prefix):
             struct = struct[len(prefix) :].strip()
+    # rustc names a per-arch island's type by its module path (`types_arch::_IDE_REGISTERS`),
+    # and the map is keyed by the bare name, as the struct-literal branch above already knows.
+    struct = struct.split("::")[-1]
     path = ctx.anon_unions.get((struct, field_name))
     if path is None:
         return [], [], False
@@ -2756,6 +2991,9 @@ _RULE_TABLE: dict[
     RULE_UNINIT_LOCAL: _uninit_local_rule,
     RULE_MUT_BINDING: _mut_binding_rule,
     RULE_INFER_WIDEN: _infer_widen_rule,
+    RULE_RAW_PTR_FIELD: _raw_ptr_field_rule,
+    RULE_KEYWORD_FIELD: _keyword_field_rule,
+    RULE_SOME_FN: _some_fn_rule,
 }
 
 
@@ -3633,6 +3871,14 @@ def _local_anon_unions(crate_dir: Path) -> dict[tuple[str, str], str]:
     islands = [d for p, d in sources.items() if re.search(r"/types_[a-z0-9]+\.rs$", p)]
     if any(re.search(rb"^pub use ntdll_sys::nt::\*;", d, re.M) for d in islands):
         sys_src = crate_dir.parent / "ntdll-sys" / "src"
+        sys_sources = {p.as_posix(): p.read_bytes() for p in sorted(sys_src.glob("bindgen_*.rs"))}
+        for key, path in harvest_anon_unions(sys_sources).items():
+            unions.setdefault(key, path)
+    # A kernel island's `use ntkrnl_sys::ddk::*;` is private; the crate PRELUDE re-exports it
+    # (`rustconv port` crates), which is the same one link for `_LARGE_INTEGER.LowPart` & co.
+    prelude = sources.get((crate_dir / "src" / "prelude.rs").as_posix(), b"")
+    if re.search(rb"^pub use ntkrnl_sys::ddk::\*;", prelude, re.M):
+        sys_src = crate_dir.parent / "ntkrnl-sys" / "src"
         sys_sources = {p.as_posix(): p.read_bytes() for p in sorted(sys_src.glob("bindgen_*.rs"))}
         for key, path in harvest_anon_unions(sys_sources).items():
             unions.setdefault(key, path)

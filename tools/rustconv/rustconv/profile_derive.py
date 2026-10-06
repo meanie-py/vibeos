@@ -2276,9 +2276,35 @@ def sys_crate_consts(
     for f in files:
         if f.stem.endswith(other_arches):
             continue  # another arch's island
-        for name in re.findall(r"pub const (\w+)", _read(f)):
+        text = _read(f)
+        for name in re.findall(r"pub const (\w+)", text):
             out.setdefault(name, f.stem)
+        # bindgen spells a C enumerator `<enum type>_<member>` (`_DEVICE_USAGE_NOTIFICATION_
+        # TYPE_DeviceUsageTypePaging`), so the bare member the C switches on never appears
+        # as a `pub const` of its own. It IS carried -- `port resolve` aliases the bare
+        # name to the prefixed one -- and reporting it as missing made every PnP driver's
+        # DeviceUsageType*/DeviceText* cases a blocking error.
+        for _ty, member in re.findall(r"pub const (\w+?)_(\w+):\s*\1\s*=", text):
+            out.setdefault(member, f.stem)
     return out
+
+
+def prelude_provided_names(prelude: Path | None, text: str | None = None) -> set[str]:
+    """Names a crate prelude defines (`pub const X`) or re-exports by name
+    (`pub use a::b::X;`, `pub use a::{X, Y as Z};` -- the alias is what callers see)."""
+    if text is None:
+        if prelude is None or not prelude.is_file():
+            return set()
+        text = _read(prelude)
+    names = set(re.findall(r"^\s*pub const (\w+)", text, re.M))
+    for body in re.findall(r"^\s*pub use [\w:]+::\{([^}]*)\}\s*;", text, re.M):
+        for item in body.split(","):
+            words = item.split()
+            if words:
+                names.add(words[-1])
+    names.update(re.findall(r"^\s*pub use [\w:]+::(\w+)\s*;", text, re.M))
+    names.update(re.findall(r"^\s*pub use [\w:]+ as (\w+)\s*;", text, re.M))
+    return names
 
 
 def own_constants(
@@ -2780,6 +2806,13 @@ def derive(
         repo_root, module.name, module.is_usermode
     )
     sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch, sys_crate)
+    # A name the output crate's prelude already provides is resolved for every module of
+    # the crate, which is exactly the fix SWITCH_CONST_IN_BASE_HEADER asks for -- so a
+    # re-derive after transcribing must stop reporting it.
+    for name in prelude_provided_names(
+        repo_root / "sdk/lib/rust" / f"{module.crate_stem}-rust" / "src" / "prelude.rs"
+    ):
+        sys_consts[name] = "prelude"  # overrides a secondary-island hit: the prelude fixed it
     owners = own_constants(switch_consts, closure, tus, sys_consts)
 
     # ---- BLOCKLIST_FUNCS evidence (never a decision) ----
@@ -2850,7 +2883,7 @@ def derive(
             # already a const in ntdll-sys/ntkrnl-sys: it resolves through the crate glob,
             # so its (often huge) owning header does NOT need to be allowlisted.
             o.allowlisted = True
-            if o.sys_source not in (f"bindgen_{arch}", "bindgen_common"):
+            if o.sys_source not in (f"bindgen_{arch}", "bindgen_common", "prelude"):
                 findings.append(
                     Finding(
                         "warn",
@@ -2897,13 +2930,19 @@ def derive(
             )
         o.allowlisted = True
         if o.macro_kind == "function-like":
+            # A warning, not a blocking error: the case label is `NAME(args)`, and a
+            # call-shaped pattern cannot bind everything the way an unresolved bare name
+            # does -- rustc rejects it ("expected tuple struct or tuple variant, found
+            # function"), so the failure is loud by construction. pciidex's
+            # `case PIO_MODE(0):` blocked the whole module on a hazard it cannot have.
             findings.append(
                 Finding(
-                    "error",
+                    "warn",
                     "SWITCH_CONST_NOT_BINDGENABLE",
                     f"`{o.ident}` ({ref.name}) is a FUNCTION-LIKE macro: bindgen emits no "
-                    "constant for it, so the match arm will still be a catch-all binding — "
-                    "transcribe it into the prelude by hand",
+                    "constant for it — fold the case label to its value or port the macro "
+                    "(`macro_rules!` is legal in pattern position); rustc rejects the "
+                    "call-shaped pattern until you do",
                 )
             )
         elif o.macro_kind == "expression":
@@ -3196,6 +3235,42 @@ def _hdr_regex_dir(dirname: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+_OPAQUE_RE = re.compile(r"pub struct (\w+) \{\s*pub _address: u8,\s*\}")
+
+
+def opaque_types_to_unblock(dp: DerivedProfile, arch: str = "amd64") -> list[str]:
+    """Struct tags the kernel -sys crate leaves opaque that this module needs WHOLE.
+
+    ntkrnl-sys emits `_SCSI_REQUEST_BLOCK { _address: u8 }`, and the island blocklists every
+    -sys type, so `Srb->SrbStatus` resolved to the opaque one: atapi's first check had 22
+    `no field SrbStatus` and 22 `no field Cdb`. A tag is unblocked (with its plain and `P`
+    typedefs) when an allowlisted closure header defines it and the module's own code names it.
+    """
+    root = dp.env.repo_root
+    sys_src = root / "sdk/lib/rust/ntkrnl-sys/src" / f"bindgen_{arch}.rs"
+    if not sys_src.is_file():
+        return []
+    opaque = set(_OPAQUE_RE.findall(_read(sys_src)))
+    allow = [re.compile(a) for a in dp.allow_files]
+    defined: set[str] = set()
+    for path, ref in dp.closure.headers.items():
+        posix = path.as_posix()
+        if ref.kind != "module" and not any(a.fullmatch(posix) or a.search(posix) for a in allow):
+            continue
+        for tag in re.findall(r"\bstruct\s+(\w+)\s*\{", _read(path)):
+            if tag in opaque:
+                defined.add(tag)
+    own = "\n".join(_read(p) for p in dp.module.compiled_tus)
+    own += "\n".join(_read(p) for p, r in dp.closure.headers.items() if r.kind == "module")
+    out: list[str] = []
+    for tag in sorted(defined):
+        plain = tag[1:] if tag.startswith("_") else tag
+        names = [tag, plain, f"P{plain}"]
+        if any(re.search(rf"\b{re.escape(n)}\b", own) for n in names):
+            out.extend(dict.fromkeys(names))
+    return out
+
+
 def emit_profile(dp: DerivedProfile) -> str:
     """The ready-to-paste ``case`` arm for ``gen_driver_types.sh``.
 
@@ -3225,6 +3300,13 @@ def emit_profile(dp: DerivedProfile) -> str:
     )
     out.append("    # that exact sequence is bindgen-able). Review the WHY notes in the report.")
     out.append(f"    USERMODE={1 if m.is_usermode else 0}")
+    if not m.is_usermode:
+        # Real Rust unions, not `__BindgenUnionField<T>`: a translation of C reaches an
+        # anonymous union member as a plain field (`Regs.Control`), and crate-repair routes
+        # that to `__bindgen_anon_N.Control` -- which only typechecks against a real union.
+        # Kernel only, and only because no derived kernel arm predates it: flipping it for a
+        # usermode arm someone already compiles against would rewrite that crate's island.
+        out.append("    REAL_UNIONS=1")
     if m.is_usermode:
         # Emitted as 1 always, and the measurement goes NEXT TO IT rather than into it. A
         # count that nearly separates twelve samples is a count that will pick wrong on the
@@ -3263,6 +3345,14 @@ def emit_profile(dp: DerivedProfile) -> str:
             out.extend("    " + line for line in _allow_files_lines(isl.allow_files))
             out.append("        ;;")
         out.append("    esac")
+    unblock = opaque_types_to_unblock(dp) if not m.is_usermode else []
+    if unblock:
+        out.append(
+            "    # OPAQUE in ntkrnl-sys ({ _address: u8 }) but defined by an allowlisted header "
+            "and named by"
+        )
+        out.append("    # this module's C, so the island emits the real layout (fields reachable).")
+        out.append('    UNBLOCK="' + " ".join(unblock) + '"')
     out.append("    EXTRA_INC=( " + " ".join(dp.extra_inc) + " )")
     if dp.late_inc:
         out.append(
@@ -3461,6 +3551,204 @@ def to_json(dp: DerivedProfile) -> dict:
 # ---------------------------------------------------------------------------
 
 
+_RUST_KEYWORDS = frozenset(
+    {
+        "as",
+        "async",
+        "await",
+        "break",
+        "const",
+        "continue",
+        "crate",
+        "dyn",
+        "else",
+        "enum",
+        "extern",
+        "false",
+        "fn",
+        "for",
+        "if",
+        "impl",
+        "in",
+        "let",
+        "loop",
+        "match",
+        "mod",
+        "move",
+        "mut",
+        "pub",
+        "ref",
+        "return",
+        "self",
+        "static",
+        "struct",
+        "super",
+        "trait",
+        "true",
+        "type",
+        "unsafe",
+        "use",
+        "where",
+        "while",
+        "abstract",
+        "become",
+        "box",
+        "do",
+        "final",
+        "gen",
+        "macro",
+        "override",
+        "priv",
+        "try",
+        "typeof",
+        "unsized",
+        "virtual",
+        "yield",
+    }
+)
+
+
+def _rust_mod_ident(stem: str) -> str:
+    return f"r#{stem}" if stem in _RUST_KEYWORDS else stem
+
+
+#: Appended to a KERNEL crate's scaffold prelude: what every port of a WDM driver needs and
+#: the -sys `ddk` glob does not carry (see the comments inside). Written once for
+#: pciidex/atapi/legide on 2026-10-06; every later kernel port starts from it.
+KERNEL_PRELUDE_EXTRAS = r"""
+// ================= PnP / resource constants the -sys glob does not carry ===================
+// The C switches on these. ntkrnl-sys has them only in `driver_ddk` (hand-written, every
+// arch) and, on x86, `hal_ddk` -- neither is reached by the `ddk` glob the island
+// re-exports, so a bare name in a match arm would bind everything (§9.112). Values: wdm.h.
+pub use ntkrnl_sys::driver_ddk::{
+    IRP_MN_CANCEL_REMOVE_DEVICE, IRP_MN_CANCEL_STOP_DEVICE, IRP_MN_DEVICE_USAGE_NOTIFICATION,
+    IRP_MN_QUERY_CAPABILITIES, IRP_MN_QUERY_DEVICE_RELATIONS, IRP_MN_QUERY_DEVICE_TEXT,
+    IRP_MN_QUERY_ID, IRP_MN_QUERY_INTERFACE, IRP_MN_QUERY_PNP_DEVICE_STATE, IRP_MN_QUERY_POWER,
+    IRP_MN_QUERY_REMOVE_DEVICE, IRP_MN_QUERY_RESOURCES, IRP_MN_QUERY_RESOURCE_REQUIREMENTS,
+    IRP_MN_QUERY_STOP_DEVICE, IRP_MN_REMOVE_DEVICE, IRP_MN_SET_POWER, IRP_MN_START_DEVICE,
+    IRP_MN_STOP_DEVICE, IRP_MN_SURPRISE_REMOVAL,
+};
+// CM_PARTIAL_RESOURCE_DESCRIPTOR.Type is a UCHAR.
+pub const CmResourceTypePort: u8 = 1;
+pub const CmResourceTypeInterrupt: u8 = 2;
+pub const CmResourceTypeMemory: u8 = 3;
+
+// ================= kernel header helpers ======================================================
+// wdm.h/ntddk.h MACROS and MSVC intrinsics the C calls as functions. ntkrnl-sys has portable
+// wrappers for them outside the `ddk` glob (ke, inline::tier1, inline::ke, interlocked), so
+// they are re-exported here BY NAME -- the C's `_`-prefixed intrinsic spellings included.
+pub use ntkrnl_sys::ke::{
+    KeAcquireSpinLock, KeAcquireSpinLockAtDpcLevel, KeReleaseSpinLock,
+    KeReleaseSpinLockFromDpcLevel,
+};
+pub use ntkrnl_sys::inline::tier1::{
+    IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation,
+    IoMarkIrpPending, IoSetCancelRoutine, IoSetCompletionRoutine, IoSetNextIrpStackLocation,
+    IoSkipCurrentIrpStackLocation,
+};
+// KeRaiseIrql/KeLowerIrql are wdm.h MACROS over KfRaiseIrql/KfLowerIrql: x86 has wrappers in
+// inline::tier1; amd64 writes CR8 inline (inline::mm); arm64 calls the HAL exports.
+#[cfg(target_arch = "x86")]
+pub use ntkrnl_sys::inline::tier1::{KeLowerIrql, KeRaiseIrql};
+#[cfg(target_arch = "x86_64")]
+#[inline]
+pub unsafe fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL) {
+    *OldIrql = ntkrnl_sys::inline::mm::KfRaiseIrql(NewIrql);
+}
+#[cfg(target_arch = "x86_64")]
+#[inline]
+pub unsafe fn KeLowerIrql(NewIrql: KIRQL) {
+    ntkrnl_sys::inline::mm::KfLowerIrql(NewIrql);
+}
+#[cfg(target_arch = "aarch64")]
+extern "C" {
+    fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
+    fn KfLowerIrql(NewIrql: KIRQL);
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+pub unsafe fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL) {
+    *OldIrql = KfRaiseIrql(NewIrql);
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+pub unsafe fn KeLowerIrql(NewIrql: KIRQL) {
+    KfLowerIrql(NewIrql);
+}
+// ntbasedef.h: `__assume(e)` is an optimiser promise; `RTL_BITS_OF(t)` is sizeof(t) * 8.
+#[inline(always)]
+pub unsafe fn __assume(cond: bool) {
+    core::hint::assert_unchecked(cond)
+}
+#[macro_export] macro_rules! RTL_BITS_OF { ($t:ty $(,)?) => { (core::mem::size_of::<$t>() * 8) }; }
+pub use crate::RTL_BITS_OF;
+pub use ntkrnl_sys::inline::common::InterlockedCompareExchange;
+pub use ntkrnl_sys::inline::common::InterlockedCompareExchange as _InterlockedCompareExchange;
+pub use ntkrnl_sys::inline::ke::{BitScanForward, BitScanReverse};
+pub use ntkrnl_sys::inline::ke::{
+    BitScanForward as _BitScanForward, BitScanReverse as _BitScanReverse,
+};
+pub use ntkrnl_sys::interlocked::{
+    InterlockedAnd, InterlockedCompareExchangePointer, InterlockedDecrement, InterlockedExchangeAdd,
+    InterlockedExchangePointer, InterlockedIncrement, InterlockedOr, InterlockedXor,
+};
+pub use ntkrnl_sys::interlocked::{
+    InterlockedAnd as _InterlockedAnd, InterlockedDecrement as _InterlockedDecrement,
+    InterlockedExchangeAdd as _InterlockedExchangeAdd,
+    InterlockedIncrement as _InterlockedIncrement,
+    InterlockedOr as _InterlockedOr, InterlockedXor as _InterlockedXor,
+};
+
+/// wdm.h: `IoAcquireRemoveLockEx(RemoveLock, Tag, __FILE__, __LINE__, sizeof(IO_REMOVE_LOCK))`.
+#[inline]
+pub unsafe fn IoAcquireRemoveLock(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID) -> NTSTATUS {
+    IoAcquireRemoveLockEx(
+        RemoveLock,
+        Tag,
+        concat!(file!(), "\0").as_ptr() as PCSTR,
+        line!(),
+        core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG,
+    )
+}
+/// wdm.h: `IoReleaseRemoveLockEx(RemoveLock, Tag, sizeof(IO_REMOVE_LOCK))`.
+#[inline]
+pub unsafe fn IoReleaseRemoveLock(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID) {
+    IoReleaseRemoveLockEx(RemoveLock, Tag, core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG)
+}
+/// wdm.h: `IoReleaseRemoveLockAndWaitEx(RemoveLock, Tag, sizeof(IO_REMOVE_LOCK))`.
+#[inline]
+pub unsafe fn IoReleaseRemoveLockAndWait(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID) {
+    IoReleaseRemoveLockAndWaitEx(RemoveLock, Tag, core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG)
+}
+
+// PAGED_CODE() asserts IRQL < DISPATCH_LEVEL in checked builds and is empty otherwise.
+#[macro_export] macro_rules! PAGED_CODE { () => {{}}; }
+// NT_VERIFY(exp) is `((exp) ? TRUE : FALSE)` in a free build: the expression is evaluated.
+#[macro_export] macro_rules! NT_VERIFY { ($e:expr $(,)?) => { ($e) }; }
+// ntbasedef.h: UNREACHABLE is `__builtin_unreachable()`, so reaching it is UB in C too.
+#[macro_export] macro_rules! UNREACHABLE { () => { core::hint::unreachable_unchecked() }; }
+pub use crate::{NT_VERIFY, PAGED_CODE, UNREACHABLE};
+
+// HAL port/register I/O (hal.dll exports on i386/arm64, inline on amd64).
+pub use ntkrnl_sys::portio::*;
+// C's TRUE/FALSE are ints; in kernel code they land in BOOLEAN (UCHAR) far more than BOOL.
+pub const TRUE: BOOLEAN = 1;
+pub const FALSE: BOOLEAN = 0;
+
+// C's min()/max() macros (`((a) < (b) ? (a) : (b))`): both operands already share a type in
+// a translation that compiles, and the C evaluates the winner twice, which no caller here
+// relies on.
+#[inline]
+pub fn min<T: PartialOrd>(a: T, b: T) -> T {
+    if a < b { a } else { b }
+}
+#[inline]
+pub fn max<T: PartialOrd>(a: T, b: T) -> T {
+    if a > b { a } else { b }
+}
+"""
+
+
 def scaffold_crate(
     dp: DerivedProfile,
     out_dir: Path,
@@ -3564,7 +3852,8 @@ crate-type = ["staticlib"]
 
     mods = []
     for tu in m.compiled_tus:
-        mods.append(f"    pub mod {tu.stem};")
+        # `enum.c` (atapi) is a Rust keyword: a raw identifier still names enum.rs.
+        mods.append(f"    pub mod {_rust_mod_ident(tu.stem)};")
     write(
         src / "lib.rs",
         f"""//! {m.crate_stem} — Rust translation of {m.module_dir.relative_to(dp.env.repo_root)}.
@@ -3602,7 +3891,16 @@ pub extern "C" fn rust_eh_personality() {{}}
 """,
     )
 
-    reexport = "pub use ntdll_sys::nt::*;" if m.is_usermode else "use ntkrnl_sys::ddk::*;"
+    # A usermode island re-exports ntdll_sys::nt publicly; a KERNEL island's
+    # `use ntkrnl_sys::ddk::*;` is private, so the prelude must glob the kernel types itself.
+    # It said "the island re-exports" for both, and atapi's first resolve reported IRP,
+    # LIST_ENTRY and IO_STACK_LOCATION as "defined nowhere".
+    kernel_glob = (
+        "// The island re-exports the base NT identity: pub use ntdll_sys::nt::*;"
+        if m.is_usermode
+        else "// A kernel island's `use ntkrnl_sys::ddk::*;` is private: glob it here.\n"
+        "pub use ntkrnl_sys::ddk::*;"
+    )
     uses_wine = any("wine/debug.h" in w for w in dp.wrapper_inc)
     debug_block = (
         """// The wine/debug.h channel (TRACE/ERR/WARN/FIXME). Kept as no-op MACROS, never
@@ -3660,14 +3958,28 @@ pub fn NT_SUCCESS(s: NTSTATUS) -> bool {{
 // Address arithmetic, so neither needs an `unsafe` context of its own.
 #[macro_export] macro_rules! NT_SUCCESS {{ ($s:expr) => {{ (($s) as i32) >= 0 }}; }}
 #[macro_export] macro_rules! CONTAINING_RECORD {{
-    ($addr:expr, $ty:ty, $field:ident) => {{
-        (($addr) as usize - core::mem::offset_of!($ty, $field)) as *mut $ty
+    // An indexed member (`Tail.Overlay.DriverContext[0]`): offsetof the array plus the
+    // element stride, as clang folds it -- offset_of! refuses an index.
+    ($addr:expr, $ty:ty, $($field:ident).+ [ $idx:expr ] $(,)?) => {{{{
+        const fn __elem<T, const N: usize>(_: *const [T; N]) -> usize {{
+            core::mem::size_of::<T>()
+        }}
+        let slot = core::mem::MaybeUninit::<$ty>::uninit();
+        let stride = __elem(unsafe {{ core::ptr::addr_of!((*slot.as_ptr()).$($field).+) }});
+        (($addr) as usize - (core::mem::offset_of!($ty, $($field).+) + ($idx) as usize * stride))
+            as *mut $ty
+    }}}};
+    // C's field argument is a member PATH (`Tail.Overlay.ListEntry`), and the model
+    // often leaves a trailing comma after a multi-line call.
+    ($addr:expr, $ty:ty, $($field:ident).+ $(,)?) => {{
+        (($addr) as usize - core::mem::offset_of!($ty, $($field).+)) as *mut $ty
     }};
 }}
 pub use crate::{{CONTAINING_RECORD, NT_SUCCESS}};
 {win32_reexport}
-// The island re-exports the base {"NT" if m.is_usermode else "kernel"} identity: {reexport}
-""",
+{kernel_glob}
+"""
+        + ("" if m.is_usermode else KERNEL_PRELUDE_EXTRAS),
     )
 
     write_unless_generated(
