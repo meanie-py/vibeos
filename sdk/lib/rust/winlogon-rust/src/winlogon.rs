@@ -776,6 +776,14 @@ unsafe fn TryStartX64Guest(Name: &[u16], Ascii: &[u8]) {
     let mut Si: STARTUPINFOW = zeroed();
     let mut Pi: PROCESS_INFORMATION = zeroed();
     Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    /* On the INPUT desktop, as every 32-bit ladder launch already is: winlogon's
+     * own threads are on the Winlogon desktop, and a child that inherits it
+     * gets windows that are never visible (no WM_PAINT: win64 0x600E) and
+     * input that is refused as off the active desktop (SendInput
+     * ERROR_ACCESS_DENIED: marshal64 0xBAF4) -- on native amd64 exactly as
+     * under FEX, which is how it was told apart from an emulation bug. */
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
     let ok = CreateProcessW(
         Path.as_ptr(),
         Line.as_mut_ptr(),
