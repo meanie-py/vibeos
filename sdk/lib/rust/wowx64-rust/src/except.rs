@@ -173,6 +173,15 @@ pub unsafe extern "system" fn WowX64Veh(Info: *mut _EXCEPTION_POINTERS) -> LONG 
     let HostSp = (*(*Info).ContextRecord).Sp;
     (Cpu.ResetToConsistentState)(Info);
     if (*(*Info).ContextRecord).Pc == HostPc && (*(*Info).ContextRecord).Sp == HostSp {
+        // A host fault: passed on, and said, because in a guest process a host
+        // fault the CPU layer did not claim is about to end it.
+        crate::trace!(
+            "host exception %08lx at pc %p (address %p), CPU-layer thread state %p — not the guest's",
+            (*(*Info).ExceptionRecord).ExceptionCode,
+            HostPc as *const c_void,
+            (*(*Info).ExceptionRecord).ExceptionInformation[1] as *const c_void,
+            (*NtCurrentTeb()).WOW32Reserved,
+        );
         return EXCEPTION_CONTINUE_SEARCH;
     }
 
