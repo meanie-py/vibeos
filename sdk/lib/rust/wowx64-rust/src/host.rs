@@ -67,7 +67,7 @@ static HOST_SERVICES: WowX64HostServices = WowX64HostServices {
 };
 
 pub unsafe fn die(Why: &[u8]) -> ! {
-    DbgPrint(b"[WOWX64] FAIL: %s\n\0".as_ptr() as PCSTR, Why.as_ptr());
+    trace!("FAIL: %s", Why.as_ptr());
     let Status = NtTerminateProcess(CURRENT_PROCESS, WOWX64_LAUNCH_FAILED);
     // Terminating the current process does not return; if it ever does, say so.
     panic!("wowx64: NtTerminateProcess(self) returned {:#x}", Status);

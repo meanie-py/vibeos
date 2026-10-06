@@ -31,11 +31,21 @@
 // Off arm64 the crate is only its contract types, with nothing to use them.
 #![cfg_attr(not(target_arch = "aarch64"), allow(dead_code))]
 
+/// DbgPrint for the OS side. The TEB is SHARED with the guest, and so is its
+/// `InDbgPrint` re-entrancy flag: a guest DbgPrint sets it and then executes
+/// `int 2d`, which arrives here as an exception, and a plain DbgPrint would
+/// then see the flag and silently print nothing — every line this layer says
+/// from its VEH (the guest's own message included) was lost that way. So the
+/// flag is the guest's to keep, and ours to step around.
 #[cfg(target_arch = "aarch64")]
 macro_rules! trace {
-    ($fmt:literal $(, $arg:expr)* $(,)?) => {
-        ntdll_sys::nt::DbgPrint(concat!("[WOWX64] ", $fmt, "\n\0").as_ptr() as ntdll_sys::nt::PCSTR $(, $arg)*)
-    };
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {{
+        let Teb = ntdll_sys::nt::NtCurrentTeb();
+        let Saved = (*Teb).InDbgPrint;
+        (*Teb).InDbgPrint = 0;
+        ntdll_sys::nt::DbgPrint(concat!("[WOWX64] ", $fmt, "\n\0").as_ptr() as ntdll_sys::nt::PCSTR $(, $arg)*);
+        (*Teb).InDbgPrint = Saved;
+    }};
 }
 #[cfg(target_arch = "aarch64")]
 pub(crate) use trace;

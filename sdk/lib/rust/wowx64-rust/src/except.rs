@@ -211,7 +211,12 @@ pub unsafe extern "system" fn WowX64Veh(Info: *mut _EXCEPTION_POINTERS) -> LONG 
         // others): print it the way the amd64 kernel's debug service would,
         // and resume past the `int 3` with STATUS_SUCCESS in eax.
         if Ctx.Rax == BREAKPOINT_PRINT && Ctx.Rcx != 0 && Ctx.Rdx < 0x1000 {
+            // The guest's DbgPrint set the shared InDbgPrint flag (lib.rs, trace!).
+            let Teb = NtCurrentTeb();
+            let Saved = (*Teb).InDbgPrint;
+            (*Teb).InDbgPrint = 0;
             DbgPrint(b"[GUEST64] %.*s\0".as_ptr() as PCSTR, Ctx.Rdx as i32, Ctx.Rcx as *const i8);
+            (*Teb).InDbgPrint = Saved;
         }
         Ctx.Rip += 1;
         Ctx.Rax = 0;
