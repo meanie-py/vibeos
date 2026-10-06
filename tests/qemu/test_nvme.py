@@ -66,7 +66,9 @@ def test_nvme_read_and_write_from_the_desktop(vm: QemuVM) -> None:
     serial = vm._boot_output + vm.serial_output(timeout=1)
     _tap(vm, ["meta_l", "r"])
     time.sleep(3)
-    _type(vm, "cmd /c " + " & ".join(f"copy {d}:\\{USB_STICK_FILE} {d}:\\{_COPY}" for d in _LETTERS))
+    _type(
+        vm, "cmd /c " + " & ".join(f"copy {d}:\\{USB_STICK_FILE} {d}:\\{_COPY}" for d in _LETTERS)
+    )
     _tap(vm, ["ret"])
     copied = None
     deadline = time.monotonic() + 90

@@ -34,14 +34,14 @@ const COMMAND_TIMEOUT_US: u64 = 30_000_000;
 const SPIN_US: u64 = 2_000;
 
 // Controller registers (3.1).
-const CAP: usize = 0x00;
-const VS: usize = 0x08;
-const INTMS: usize = 0x0C;
-const CC: usize = 0x14;
-const CSTS: usize = 0x1C;
-const AQA: usize = 0x24;
-const ASQ: usize = 0x28;
-const ACQ: usize = 0x30;
+const REG_CAP: usize = 0x00;
+const REG_VS: usize = 0x08;
+const REG_INTMS: usize = 0x0C;
+const REG_CC: usize = 0x14;
+const REG_CSTS: usize = 0x1C;
+const REG_AQA: usize = 0x24;
+const REG_ASQ: usize = 0x28;
+const REG_ACQ: usize = 0x30;
 const DOORBELLS: usize = 0x1000;
 
 const CC_EN: u32 = 1;
@@ -214,8 +214,8 @@ impl Controller {
     /// # Safety
     /// `regs` must map the controller's registers for `len` bytes.
     pub unsafe fn start(regs: *mut u8, len: usize) -> Result<Controller, Error> {
-        let cap = read_volatile(regs.add(CAP).cast::<u32>()) as u64 | (read_volatile(regs.add(CAP + 4).cast::<u32>()) as u64) << 32;
-        let version = read_volatile(regs.add(VS).cast::<u32>());
+        let cap = read_volatile(regs.add(REG_CAP).cast::<u32>()) as u64 | (read_volatile(regs.add(REG_CAP + 4).cast::<u32>()) as u64) << 32;
+        let version = read_volatile(regs.add(REG_VS).cast::<u32>());
         if cap == u64::MAX || version >> 16 == 0 || version == u32::MAX {
             return Err(Error::NotNvme(version));
         }
@@ -289,16 +289,16 @@ impl Controller {
 
         // Disable (firmware may have left it running), then program the admin
         // queue and enable (3.5.1).
-        if c.rd(CC) & CC_EN != 0 {
-            c.wr(CC, c.rd(CC) & !CC_EN);
+        if c.rd(REG_CC) & CC_EN != 0 {
+            c.wr(REG_CC, c.rd(REG_CC) & !CC_EN);
         }
         c.wait_ready(false)?;
         // Mask every pin-based/MSI vector: nothing here takes interrupts.
-        c.wr(INTMS, u32::MAX);
-        c.wr(AQA, ((entries as u32 - 1) << 16) | (entries as u32 - 1));
-        c.wr64(ASQ, c.admin.sq_phys);
-        c.wr64(ACQ, c.admin.cq_phys);
-        c.wr(CC, CC_IOSQES_IOCQES | CC_EN); // NVM command set, 4 KiB pages, round robin
+        c.wr(REG_INTMS, u32::MAX);
+        c.wr(REG_AQA, ((entries as u32 - 1) << 16) | (entries as u32 - 1));
+        c.wr64(REG_ASQ, c.admin.sq_phys);
+        c.wr64(REG_ACQ, c.admin.cq_phys);
+        c.wr(REG_CC, CC_IOSQES_IOCQES | CC_EN); // NVM command set, 4 KiB pages, round robin
         c.wait_ready(true)?;
 
         c.identity = c.identify_controller()?;
@@ -337,7 +337,7 @@ impl Controller {
     fn wait_ready(&self, ready: bool) -> Result<(), Error> {
         let t0 = now_us();
         loop {
-            let csts = self.rd(CSTS);
+            let csts = self.rd(REG_CSTS);
             if csts == u32::MAX {
                 return Err(Error::NotNvme(csts));
             }
@@ -518,7 +518,7 @@ impl Controller {
             }
             let elapsed = now_us() - t0;
             if elapsed > COMMAND_TIMEOUT_US {
-                let csts = unsafe { read_volatile(regs.add(CSTS).cast::<u32>()) };
+                let csts = unsafe { read_volatile(regs.add(REG_CSTS).cast::<u32>()) };
                 return Err(if csts & CSTS_CFS != 0 { Error::Fatal } else { Error::Timeout(what) });
             }
             if elapsed < SPIN_US {

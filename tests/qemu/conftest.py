@@ -278,7 +278,9 @@ def vm(
         # QEMU's nvme device registers a migration blocker, so `savevm` fails with
         # "State blocked by non-migratable device". The NVMe rig's tests are written
         # to run in order in one live VM (read-only checks first, then the write).
-        print("[pytest] NVMe rig: no `ready` snapshot (nvme blocks savevm); tests share one live VM")
+        print(
+            "[pytest] NVMe rig: no `ready` snapshot (nvme blocks savevm); tests share one live VM"
+        )
         yield vm
         vm.stop()
         return

@@ -94,7 +94,7 @@ const CM_RESOURCE_MEMORY_LARGE_64: u16 = 0x0800;
 const MAX_REGISTER_MAP: u64 = 1 << 20;
 
 /// More namespaces than this on one controller are left unpublished.
-const MAX_NAMESPACES: usize = 16;
+const NAMESPACES_PER_CONTROLLER: usize = 16;
 
 const FDO_KIND: u32 = u32::from_le_bytes(*b"NvmC");
 const DISK_KIND: u32 = u32::from_le_bytes(*b"NvmD");
@@ -115,7 +115,7 @@ struct Fdo {
     queue: LIST_ENTRY,
     lock: ntkrnl_sys::ke::KSPIN_LOCK,
     event: KEVENT,
-    disks: [PDEVICE_OBJECT; MAX_NAMESPACES],
+    disks: [PDEVICE_OBJECT; NAMESPACES_PER_CONTROLLER],
     disk_count: usize,
 }
 
@@ -175,7 +175,7 @@ pub unsafe extern "system" fn add_device(driver: PDRIVER_OBJECT, pdo: PDEVICE_OB
         queue: core::mem::zeroed(),
         lock: 0,
         event: core::mem::zeroed(),
-        disks: [null_mut(); MAX_NAMESPACES],
+        disks: [null_mut(); NAMESPACES_PER_CONTROLLER],
         disk_count: 0,
     });
     InitializeListHead(&raw mut (*fdo).queue);
@@ -330,9 +330,9 @@ unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
         (now_us() - t0) / 1000
     );
 
-    let mut ids = [0u32; MAX_NAMESPACES];
+    let mut ids = [0u32; NAMESPACES_PER_CONTROLLER];
     let active = c.active_namespaces(&mut ids);
-    let mut found: [Option<Namespace>; MAX_NAMESPACES] = [None; MAX_NAMESPACES];
+    let mut found: [Option<Namespace>; NAMESPACES_PER_CONTROLLER] = [None; NAMESPACES_PER_CONTROLLER];
     for (slot, &nsid) in found.iter_mut().zip(&ids[..active]) {
         match c.namespace(nsid) {
             Ok(Some(ns)) => {

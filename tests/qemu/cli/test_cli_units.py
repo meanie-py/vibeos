@@ -9562,7 +9562,7 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     bad = smoke_mod._nvme_check(never_loaded)
     assert bad and bad["classification"] == "NVME_NOT_ENGAGED"
     assert any("never loaded" in s for s in bad["salient"])
-    failed = "[NVME] controller 0: bring-up failed: Timeout(\"enable\")\n"
+    failed = '[NVME] controller 0: bring-up failed: Timeout("enable")\n'
     bad = smoke_mod._nvme_check(failed)
     assert bad and any("bring-up failed" in s for s in bad["salient"])
     real = "[NVME] controller 0: namespace 1 published as a disk\n"

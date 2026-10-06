@@ -809,7 +809,10 @@ def _nvme_check(text: str) -> dict | None:
         "classification": "NVME_NOT_ENGAGED",
         "salient": [
             f"--nvme boot reached the desktop but nvme.sys never printed `{_NVME_PUBLISHED}`",
-            *(lines or ["no [NVME] line at all: nvme.sys never loaded (PCI#CC_010802 in hivesys.inf?)"]),
+            *(
+                lines
+                or ["no [NVME] line at all: nvme.sys never loaded (PCI#CC_010802 in hivesys.inf?)"]
+            ),
         ],
     }
 
