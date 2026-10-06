@@ -1047,6 +1047,14 @@ def _repair(stem: str, crate: str) -> str:
         max_passes=10,
         target_dirs=_target_dirs(stem),
     )
+    # Per pass: a run that ends at max_passes while still applying edits is converging
+    # slowly; one applying the same rules every pass with flat counts is oscillating.
+    for ps in session.passes:
+        rules: dict[str, int] = {}
+        for e in ps.applied:
+            rules[e.rule] = rules.get(e.rule, 0) + 1
+        top = ", ".join(f"{r} {n}" for r, n in sorted(rules.items(), key=lambda kv: -kv[1])[:4])
+        print(f"  repair pass {ps.index}: {ps.error_counts} applied {len(ps.applied)} ({top})")
     return session.status
 
 
@@ -1077,6 +1085,8 @@ def stage_replay(stem: str, *, fix_cap: float = 0.0, fix_rounds: int = 1) -> Non
     print(f"replay: crate-repair {_repair(stem, state['crate'])}")
     stage_resolve(stem)
     print(f"replay: crate-repair {_repair(stem, state['crate'])}")
+    # Before fix, so fix never pays to repair a function the hand bank replaces.
+    apply_hand(stem)
     stage_fix(
         stem,
         model="deepseek",
@@ -1156,6 +1166,17 @@ def stage_varargs(stem: str) -> None:
         print(f'    #[no_mangle] pub unsafe extern "C" fn {varargs_shim.rust_signature(d)}')
     print('  and declares each variadic `extern "C" { fn Name(<fixed>, ...) -> R; }` for its')
     print("  Rust callers; bank the rewrites with `port hand <stem> file.rs:Name_body=Name`.")
+
+
+def hand_names(stem: str) -> set[tuple[str, str]]:
+    """(module file, function) of every function the hand bank writes, in its final names."""
+    from . import crate_fix as cf
+
+    out: set[tuple[str, str]] = set()
+    for entry in _hand_dir(stem).glob("*.json"):
+        h = json.loads(entry.read_text())
+        out |= {(h["file"], sp.name) for sp in cf.function_spans(h["text"])}
+    return out
 
 
 def apply_hand(stem: str) -> int:
@@ -1264,6 +1285,9 @@ def stage_fix(
         groups, outside = cf.group_by_function(diags, root, is_error=cr.is_error_diagnostic)
         if only:
             groups = {k: v for k, v in groups.items() if k[1] in only}
+        # A hand-banked function is finished by a person; never buy a fix for it.
+        hand = hand_names(stem)
+        groups = {k: v for k, v in groups.items() if (Path(k[0]).name, k[1]) not in hand}
         print(
             f"fix round {rnd}: errors {before_counts}, "
             f"{len(groups)} function(s) to fix, {outside['amd64']} error(s) outside functions"
@@ -1413,6 +1437,23 @@ def stage_fix(
             a.status = "reverted:more errors"
         if worse:
             after = _check_json(stem, state["crate"])
+        # A fix can add errors OUTSIDE its own function (a caller, a static, a macro use
+        # elsewhere); the per-function test above cannot see that. setuplib round 3 kept 9
+        # fixes and went 71 -> 80. Any arch above where the round started: take the kept
+        # fixes back out and keep only the subset that does not raise any arch.
+        kept_now = [a for a in applied if a not in worse]
+        if any(cr.count_errors(after[x]) > before_counts[x] for x in arches) and kept_now:
+            for a in kept_now:
+                cf._replace_named(root, a.file, a.name, a.original)
+            print(f"fix: round raised the total ({before_counts}); bisecting {len(kept_now)}")
+            kept_now, after = _bisect(
+                stem,
+                state["crate"],
+                kept_now,
+                lambda d, b=before_counts: any(cr.count_errors(d[x]) > b[x] for x in arches),
+                "reverted:more errors elsewhere",
+            )
+            worse += [a for a in applied if a not in worse and a not in kept_now]
         after_counts = {x: cr.count_errors(d) for x, d in after.items()}
         stuck = {
             (a.file, a.name): a.status.split(":", 1)[1]
@@ -1439,13 +1480,26 @@ def stage_fix(
 
 
 def _without_halting(stem: str, crate: str, applied: list, halting_before: int):
-    """Bisect the round's fixes for the ones that add a halting (parse / expansion) error.
+    """Bisect the round's fixes for the ones that add a halting (parse / expansion) error."""
+    from . import crate_repair as cr
 
-    One cargo check per fix took most of a 23-minute replay; halving finds a lone culprit in
-    log2(n) checks. Returns (kept fixes, diagnostics with them applied).
+    return _bisect(
+        stem,
+        crate,
+        applied,
+        lambda diags: max(cr.count_halting_errors(d) for d in diags.values()) > halting_before,
+        "rejected:adds a parse/macro-expansion error",
+    )
+
+
+def _bisect(stem: str, crate: str, applied: list, bad, verdict: str):
+    """Keep the largest set of the round's fixes for which `bad(diags)` is false.
+
+    The fixes are already out of the tree. One cargo check per fix took most of a 23-minute
+    replay; halving finds a lone culprit in log2(n) checks. Returns (kept fixes, diagnostics
+    with them applied).
     """
     from . import crate_fix as cf
-    from . import crate_repair as cr
 
     root = REPO / "sdk" / "lib" / "rust"
 
@@ -1453,20 +1507,18 @@ def _without_halting(stem: str, crate: str, applied: list, halting_before: int):
         for a in fixes:
             cf._replace_named(root, a.file, a.name, a.fixed if fixed else a.original)
 
-    def halts(diags) -> bool:
-        return max(cr.count_halting_errors(d) for d in diags.values()) > halting_before
-
     kept: list = []
 
     def search(fixes: list) -> None:
+        if not fixes:
+            return
         put(fixes, True)
-        diags = _check_json(stem, crate)
-        if not halts(diags):
+        if not bad(_check_json(stem, crate)):
             kept.extend(fixes)
             return
         put(fixes, False)
         if len(fixes) == 1:
-            fixes[0].status = "rejected:adds a parse/macro-expansion error"
+            fixes[0].status = verdict
             return
         mid = len(fixes) // 2
         search(fixes[:mid])

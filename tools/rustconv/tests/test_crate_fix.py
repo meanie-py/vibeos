@@ -191,3 +191,12 @@ def test_a_call_the_build_never_compiles_may_be_dropped(tmp_path: Path):
     assert (
         cf.reply_findings(src, dropped, errs, lambda _: [], dead_names=frozenset({"DumpAll"})) == []
     )
+
+
+def test_a_null_fn_pointer_may_become_none():
+    span = cf.function_spans(RUST)[1]
+    src = RUST[span.start : span.end].replace(
+        "STATUS_SUCCESS\n}", "Set(core::ptr::null_mut());\n    STATUS_SUCCESS\n}"
+    )
+    fixed = src.replace("core::ptr::null_mut()", "None")
+    assert cf.reply_findings(src, fixed, {"error[E0308]": {"amd64"}}, lambda _: []) == []

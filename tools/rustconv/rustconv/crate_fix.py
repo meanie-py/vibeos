@@ -299,6 +299,9 @@ Rules:
 7. C truthiness is explicit in Rust: `x != 0`, `!p.is_null()`, `b != FALSE as BOOLEAN`.
 8. Fields of a #[repr(packed)] struct must not be borrowed: read them by value or use
    `core::ptr::addr_of!` / `&raw const`.
+9. A C function pointer is `Option<unsafe extern ".." fn(..)>`: NULL is `None`, a NULL test
+   is `.is_none()` / `.is_some()`, and a call through it is `(f.unwrap_unchecked())(args)` --
+   calling NULL is undefined in C as well, so this adds no failure path.
 """
 
 
@@ -543,6 +546,9 @@ _REPLACED_BY = {
     "_SEH2_TRY": re.compile(r"'\w+\s*:\s*\{"),
     "_SEH2_FINALLY": re.compile(r""),
     "DEFAULT_UNREACHABLE": re.compile(r"\bunreachable(?:_unchecked)?\b"),
+    # A NULL function pointer in an `Option<fn>` slot is `None` (six setuplib refusals).
+    "null_mut": re.compile(r"\bNone\b"),
+    "null": re.compile(r"\bNone\b"),
 }
 
 
