@@ -20,11 +20,6 @@ add_library(ucrtbase SHARED
 
 target_compile_options(ucrtbase PRIVATE -Wno-builtin-declaration-mismatch)
 
-if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    # Silence warnings in ucrtbase_stubs.c
-    target_compile_options(ucrtbase PRIVATE -Wno-incompatible-library-redeclaration)
-endif()
-
 set_entrypoint(ucrtbase __acrt_DllMain 12)
 
 

@@ -1174,6 +1174,86 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
     add_dependencies(${_libname}_delayed ${_libname}_delayed_implib_target)
 endfunction()
 
+# spec2def's stubs are Rust: one `rustc --emit=obj` per module, no cargo. amd64 and
+# arm64 compile on pinned stable against the builtin triples' prebuilt core. i386
+# compiles on the pinned nightly against the user-mode cells' pentium/x86-softfloat
+# json, whose core comes from one `-Z build-std` run (tools/spec-stubs-core) shared
+# by every module. Stable i686 cannot stand in: it requires sse2 and the C here is
+# -march=pentium.
+set(SPEC_STUBS_RUSTC_FLAGS
+    --edition 2021 --crate-type=lib --emit=obj
+    -C opt-level=2 -C panic=abort -C force-frame-pointers=yes)
+set(SPEC_STUBS_RUSTC_ENV)
+set(SPEC_STUBS_RUSTC_DEPENDS)
+if(ARCH STREQUAL "i386")
+    file(STRINGS "${REACTOS_SOURCE_DIR}/.rust-nightly" _spec_stubs_nightly LIMIT_COUNT 1)
+    set(_spec_stubs_json "${REACTOS_SOURCE_DIR}/sdk/lib/rust/ntdll-cargo/i686-kernel.json")
+    set(_spec_stubs_target_dir "${CMAKE_BINARY_DIR}/spec-stubs-core/${_spec_stubs_nightly}")
+    set(_spec_stubs_sysroot "${CMAKE_BINARY_DIR}/spec-stubs-core/sysroot")
+    set(_spec_stubs_stamp "${_spec_stubs_sysroot}.stamp")
+    add_custom_command(
+        OUTPUT ${_spec_stubs_stamp}
+        COMMAND ${CMAKE_COMMAND} -E env RUSTUP_TOOLCHAIN=${_spec_stubs_nightly}
+            CARGO_TARGET_DIR=${_spec_stubs_target_dir}
+            cargo build --release --locked --target ${_spec_stubs_json} -Z build-std=core
+                --manifest-path ${REACTOS_SOURCE_DIR}/tools/spec-stubs-core/Cargo.toml
+        COMMAND ${CMAKE_COMMAND}
+            -DDEPS=${_spec_stubs_target_dir}/i686-kernel/release/deps
+            -DSYSROOT=${_spec_stubs_sysroot} -DTARGET=i686-kernel
+            -P ${REACTOS_SOURCE_DIR}/tools/spec-stubs-core/sysroot.cmake
+        COMMAND ${CMAKE_COMMAND} -E touch ${_spec_stubs_stamp}
+        DEPENDS ${REACTOS_SOURCE_DIR}/tools/spec-stubs-core/Cargo.toml
+            ${REACTOS_SOURCE_DIR}/tools/spec-stubs-core/src/lib.rs
+            ${REACTOS_SOURCE_DIR}/tools/spec-stubs-core/sysroot.cmake
+            ${_spec_stubs_json} ${REACTOS_SOURCE_DIR}/.rust-nightly
+        WORKING_DIRECTORY ${REACTOS_SOURCE_DIR}
+        COMMENT "Building core for spec2def's i386 Rust stubs"
+        VERBATIM)
+    add_custom_target(spec-stubs-core DEPENDS ${_spec_stubs_stamp})
+    list(APPEND SPEC_STUBS_RUSTC_FLAGS
+        --target ${_spec_stubs_json} -Z unstable-options --sysroot ${_spec_stubs_sysroot})
+    set(SPEC_STUBS_RUSTC_ENV RUSTUP_TOOLCHAIN=${_spec_stubs_nightly})
+    set(SPEC_STUBS_RUSTC_DEPENDS spec-stubs-core ${_spec_stubs_stamp})
+elseif(ARCH STREQUAL "amd64")
+    list(APPEND SPEC_STUBS_RUSTC_FLAGS --target x86_64-pc-windows-gnu)
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND SPEC_STUBS_RUSTC_FLAGS --target aarch64-pc-windows-gnullvm)
+else()
+    message(FATAL_ERROR "spec2def Rust stubs: no rustc target for ARCH ${ARCH}")
+endif()
+
+# Deferred to the end of the directory that called spec2def(): every module there
+# lists ${file}_stubs.c among its sources, and this swaps it for the Rust object, so
+# no module's CMakeLists has to change. A module in ANOTHER directory naming the .c
+# would fail at generate time ("Cannot find source file"), which is the loud outcome.
+function(_spec2def_use_rust_stubs _c_stub _rs_obj)
+    get_property(_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_t IN LISTS _targets)
+        get_target_property(_srcs ${_t} SOURCES)
+        if(NOT _srcs)
+            continue()
+        endif()
+        # A module names the generated stub by its absolute binary-dir path or by its
+        # bare name, which CMake resolves against the binary dir at generate time.
+        get_filename_component(_c_name "${_c_stub}" NAME)
+        list(FIND _srcs "${_c_stub}" _at)
+        if(_at EQUAL -1)
+            list(FIND _srcs "${_c_name}" _at)
+        endif()
+        if(_at GREATER -1)
+            list(REMOVE_AT _srcs ${_at})
+            list(INSERT _srcs ${_at} "${_rs_obj}")
+            set_property(TARGET ${_t} PROPERTY SOURCES ${_srcs})
+            # A DLL that is nothing but stubs now has no C source for CMake to infer
+            # the linker language from; it links through the C toolchain as before.
+            get_target_property(_lang ${_t} LINKER_LANGUAGE)
+            if(NOT _lang)
+                set_property(TARGET ${_t} PROPERTY LINKER_LANGUAGE C)
+            endif()
+        endif()
+    endforeach()
+endfunction()
+
 function(spec2def _dllname _spec_file)
 
     cmake_parse_arguments(__spec2def "ADD_IMPORTLIB;NO_PRIVATE_WARNINGS;WITH_RELAY;WITH_DBG;NO_DBG" "VERSION" "" ${ARGN})
@@ -1200,14 +1280,35 @@ function(spec2def _dllname _spec_file)
         set(__dbg_arg "--dbg")
     endif()
 
-    # Generate exports def and C stubs file for the DLL
+    # Generate the exports def and the stubs for the DLL. Relay-tracing thunks have
+    # no Rust form, so a WITH_RELAY module keeps spec2def's C emitter.
+    if(__spec2def_WITH_RELAY)
+        set(_stubs_src ${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.c)
+    else()
+        set(_stubs_src ${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.rs)
+    endif()
     add_custom_command(
-        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_file}.def ${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.c
-        COMMAND native-spec2def -n=${_dllname} -a=${ARCH2} -d=${CMAKE_CURRENT_BINARY_DIR}/${_file}.def -s=${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.c ${__with_relay_arg} ${__version_arg} ${__dbg_arg} ${CMAKE_CURRENT_SOURCE_DIR}/${_spec_file}
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_file}.def ${_stubs_src}
+        COMMAND native-spec2def -n=${_dllname} -a=${ARCH2} -d=${CMAKE_CURRENT_BINARY_DIR}/${_file}.def -s=${_stubs_src} ${__with_relay_arg} ${__version_arg} ${__dbg_arg} ${CMAKE_CURRENT_SOURCE_DIR}/${_spec_file}
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${_spec_file} native-spec2def)
 
-    # Do not use precompiled headers for the stub file
-    set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+    if(__spec2def_WITH_RELAY)
+        # Do not use precompiled headers for the stub file
+        set_source_files_properties(${_stubs_src} PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+    else()
+        set(_stubs_obj ${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.rs.obj)
+        add_custom_command(
+            OUTPUT ${_stubs_obj}
+            COMMAND ${CMAKE_COMMAND} -E env ${SPEC_STUBS_RUSTC_ENV}
+                rustc ${SPEC_STUBS_RUSTC_FLAGS} ${_stubs_src} -o ${_stubs_obj}
+            DEPENDS ${_stubs_src} ${SPEC_STUBS_RUSTC_DEPENDS}
+            WORKING_DIRECTORY ${REACTOS_SOURCE_DIR}
+            COMMENT "Compiling ${_file}_stubs.rs"
+            VERBATIM)
+        # DEFER CALL evaluates its arguments when the call RUNS, after this function's
+        # locals are gone; EVAL CODE bakes the two paths in now.
+        cmake_language(EVAL CODE "cmake_language(DEFER CALL _spec2def_use_rust_stubs [[${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.c]] [[${_stubs_obj}]])")
+    endif()
 
     if(__spec2def_ADD_IMPORTLIB)
         set(_extraflags)
