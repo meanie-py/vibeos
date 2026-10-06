@@ -202,7 +202,7 @@ extern "fastcall" {
     fn co_IntSendMessage(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> isize;
     fn ValidateHwndNoErr(hwnd: HWND) -> PWND;
     fn VerifyWnd(Window: PWND) -> PWND;
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, Hardware: u8, dwQEvent: DWORD, MessageBits: DWORD, ExtraInfo: isize);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, Hardware: u8, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: isize) -> BOOL;
     fn co_WinPosSetWindowPos(Wnd: PWND, WndInsertAfter: HWND, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> BOOL;
     fn co_WinPosActivateOtherWindow(Wnd: PWND);
     fn ActivateOtherWindowMin(Wnd: PWND) -> BOOL;
@@ -219,7 +219,7 @@ extern "C" {
     fn co_IntSendMessage(hWnd: HWND, Msg: u32, wParam: WPARAM, lParam: LPARAM) -> isize;
     fn ValidateHwndNoErr(hwnd: HWND) -> PWND;
     fn VerifyWnd(Window: PWND) -> PWND;
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, Hardware: u8, dwQEvent: DWORD, MessageBits: DWORD, ExtraInfo: isize);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, Hardware: u8, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: isize) -> BOOL;
     fn co_WinPosSetWindowPos(Wnd: PWND, WndInsertAfter: HWND, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> BOOL;
     fn co_WinPosActivateOtherWindow(Wnd: PWND);
     fn ActivateOtherWindowMin(Wnd: PWND) -> BOOL;

@@ -1964,11 +1964,13 @@ constants that are pure bit positions, where an invented value demangles with th
 options rather than failing.
 
 ### Driver fleet detail
-Essentially the entire boot/smoke driver fleet is Rust. **Three drivers are from-scratch
+Essentially the entire boot/smoke driver fleet is Rust. **Four drivers are from-scratch
 Rust with zero C: `netstack.sys` (replacing the legacy NDIS/tcpip stack), `usbxhci.sys`
 (the USB 3 xHCI miniport under usbport, written against the xHCI 1.2 spec, 2026-09-26; it
 drives the Raspberry Pi 4's VL805;
-`docs/engineering/usbxhci-design.md`), and `vioblk.sys` (a virtio-blk SCSIPORT miniport
+`docs/engineering/usbxhci-design.md`), `sdhc.sys` (arm64, 2026-10-05: the Pi 4's SD
+card slot, an SDHCI 3.0 host, presented to disk.sys as a SCSI disk with no port driver
+underneath; `sdhc-rust/src/lib.rs`), and `vioblk.sys` (a virtio-blk SCSIPORT miniport
 over the `virtio-drivers` crate, 2026-10-05: one SCSI disk per virtio-blk PCI function,
 polled; x86 boots its ISO over virtio-blk with it, which it could not before — the kernel
 had no virtio-blk driver at all).** USB mass storage on arm64 (usbstor → classpnp/disk

@@ -1283,6 +1283,31 @@ pub unsafe extern "system" fn USBPORT_OpenPipe(
     }
 
     if !Endpoint.is_null() {
+        /* A timed out endpoint is still queued for the ISR DPC and opened in the miniport */
+        KeAcquireSpinLock(
+            (core::ptr::addr_of_mut!((*FdoExtension).EpStateChangeSpinLock) as *mut usize),
+            core::ptr::addr_of_mut!(OldIrql),
+        );
+
+        if !(*Endpoint).StateChangeLink.Flink.is_null() && !(*Endpoint).StateChangeLink.Blink.is_null()
+        {
+            RemoveEntryList(core::ptr::addr_of_mut!((*Endpoint).StateChangeLink));
+        }
+
+        (*Endpoint).StateChangeLink.Flink = core::ptr::null_mut();
+        (*Endpoint).StateChangeLink.Blink = core::ptr::null_mut();
+
+        KeReleaseSpinLock(
+            (core::ptr::addr_of_mut!((*FdoExtension).EpStateChangeSpinLock) as *mut usize),
+            OldIrql,
+        );
+
+        MiniportCloseEndpoint(FdoDevice, Endpoint);
+
+        if !(*Endpoint).HeaderBuffer.is_null() {
+            USBPORT_FreeCommonBuffer(FdoDevice, (((*Endpoint).HeaderBuffer as *mut c_void)) as _);
+        }
+
         if IsAllocatedBandwidth != 0 {
             if (*Packet).MiniPortFlags as u32 & USB_MINIPORT_FLAGS_USB2 != 0 {
                 USBPORT_FreeBandwidthUSB2(FdoDevice, Endpoint);

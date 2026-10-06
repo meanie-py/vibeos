@@ -10202,14 +10202,13 @@ pub const D3DFVF_TEXTUREFORMAT2: u32 = 0;
 pub const D3DFVF_TEXTUREFORMAT1: u32 = 3;
 pub const D3DFVF_TEXTUREFORMAT3: u32 = 1;
 pub const D3DFVF_TEXTUREFORMAT4: u32 = 2;
-pub const DIRECT3D_VERSION: u32 = 1792;
-pub const D3DTRANSFORMCAPS_CLIP: u32 = 1;
 pub const D3DLIGHTINGMODEL_RGB: u32 = 1;
 pub const D3DLIGHTINGMODEL_MONO: u32 = 2;
 pub const D3DLIGHTCAPS_POINT: u32 = 1;
 pub const D3DLIGHTCAPS_SPOT: u32 = 2;
 pub const D3DLIGHTCAPS_DIRECTIONAL: u32 = 4;
 pub const D3DLIGHTCAPS_PARALLELPOINT: u32 = 8;
+pub const D3DLIGHTCAPS_GLSPOT: u32 = 16;
 pub const D3DPMISCCAPS_MASKPLANES: u32 = 1;
 pub const D3DPMISCCAPS_MASKZ: u32 = 2;
 pub const D3DPMISCCAPS_LINEPATTERNREP: u32 = 4;
@@ -10227,6 +10226,18 @@ pub const D3DPRASTERCAPS_SUBPIXELX: u32 = 64;
 pub const D3DPRASTERCAPS_FOGVERTEX: u32 = 128;
 pub const D3DPRASTERCAPS_FOGTABLE: u32 = 256;
 pub const D3DPRASTERCAPS_STIPPLE: u32 = 512;
+pub const D3DPRASTERCAPS_ANTIALIASSORTDEPENDENT: u32 = 1024;
+pub const D3DPRASTERCAPS_ANTIALIASSORTINDEPENDENT: u32 = 2048;
+pub const D3DPRASTERCAPS_ANTIALIASEDGES: u32 = 4096;
+pub const D3DPRASTERCAPS_MIPMAPLODBIAS: u32 = 8192;
+pub const D3DPRASTERCAPS_ZBIAS: u32 = 16384;
+pub const D3DPRASTERCAPS_ZBUFFERLESSHSR: u32 = 32768;
+pub const D3DPRASTERCAPS_FOGRANGE: u32 = 65536;
+pub const D3DPRASTERCAPS_ANISOTROPY: u32 = 131072;
+pub const D3DPRASTERCAPS_WBUFFER: u32 = 262144;
+pub const D3DPRASTERCAPS_TRANSLUCENTSORTINDEPENDENT: u32 = 524288;
+pub const D3DPRASTERCAPS_WFOG: u32 = 1048576;
+pub const D3DPRASTERCAPS_ZFOG: u32 = 2097152;
 pub const D3DPCMPCAPS_NEVER: u32 = 1;
 pub const D3DPCMPCAPS_LESS: u32 = 2;
 pub const D3DPCMPCAPS_EQUAL: u32 = 4;
@@ -10275,12 +10286,27 @@ pub const D3DPTEXTURECAPS_ALPHA: u32 = 4;
 pub const D3DPTEXTURECAPS_TRANSPARENCY: u32 = 8;
 pub const D3DPTEXTURECAPS_BORDER: u32 = 16;
 pub const D3DPTEXTURECAPS_SQUAREONLY: u32 = 32;
+pub const D3DPTEXTURECAPS_TEXREPEATNOTSCALEDBYSIZE: u32 = 64;
+pub const D3DPTEXTURECAPS_ALPHAPALETTE: u32 = 128;
+pub const D3DPTEXTURECAPS_PROJECTED: u32 = 1024;
+pub const D3DPTEXTURECAPS_CUBEMAP: u32 = 2048;
+pub const D3DPTEXTURECAPS_COLORKEYBLEND: u32 = 4096;
 pub const D3DPTFILTERCAPS_NEAREST: u32 = 1;
 pub const D3DPTFILTERCAPS_LINEAR: u32 = 2;
 pub const D3DPTFILTERCAPS_MIPNEAREST: u32 = 4;
 pub const D3DPTFILTERCAPS_MIPLINEAR: u32 = 8;
 pub const D3DPTFILTERCAPS_LINEARMIPNEAREST: u32 = 16;
 pub const D3DPTFILTERCAPS_LINEARMIPLINEAR: u32 = 32;
+pub const D3DPTFILTERCAPS_MINFPOINT: u32 = 256;
+pub const D3DPTFILTERCAPS_MINFLINEAR: u32 = 512;
+pub const D3DPTFILTERCAPS_MINFANISOTROPIC: u32 = 1024;
+pub const D3DPTFILTERCAPS_MIPFPOINT: u32 = 65536;
+pub const D3DPTFILTERCAPS_MIPFLINEAR: u32 = 131072;
+pub const D3DPTFILTERCAPS_MAGFPOINT: u32 = 16777216;
+pub const D3DPTFILTERCAPS_MAGFLINEAR: u32 = 33554432;
+pub const D3DPTFILTERCAPS_MAGFANISOTROPIC: u32 = 67108864;
+pub const D3DPTFILTERCAPS_MAGFAFLATCUBIC: u32 = 134217728;
+pub const D3DPTFILTERCAPS_MAGFGAUSSIANCUBIC: u32 = 268435456;
 pub const D3DPTBLENDCAPS_DECAL: u32 = 1;
 pub const D3DPTBLENDCAPS_MODULATE: u32 = 2;
 pub const D3DPTBLENDCAPS_DECALALPHA: u32 = 4;
@@ -10288,9 +10314,12 @@ pub const D3DPTBLENDCAPS_MODULATEALPHA: u32 = 8;
 pub const D3DPTBLENDCAPS_DECALMASK: u32 = 16;
 pub const D3DPTBLENDCAPS_MODULATEMASK: u32 = 32;
 pub const D3DPTBLENDCAPS_COPY: u32 = 64;
+pub const D3DPTBLENDCAPS_ADD: u32 = 128;
 pub const D3DPTADDRESSCAPS_WRAP: u32 = 1;
 pub const D3DPTADDRESSCAPS_MIRROR: u32 = 2;
 pub const D3DPTADDRESSCAPS_CLAMP: u32 = 4;
+pub const D3DPTADDRESSCAPS_BORDER: u32 = 8;
+pub const D3DPTADDRESSCAPS_INDEPENDENTUV: u32 = 16;
 pub const D3DDD_COLORMODEL: u32 = 1;
 pub const D3DDD_DEVCAPS: u32 = 2;
 pub const D3DDD_TRANSFORMCAPS: u32 = 4;
@@ -10312,59 +10341,15 @@ pub const D3DDEVCAPS_TLVERTEXSYSTEMMEMORY: u32 = 64;
 pub const D3DDEVCAPS_TLVERTEXVIDEOMEMORY: u32 = 128;
 pub const D3DDEVCAPS_TEXTURESYSTEMMEMORY: u32 = 256;
 pub const D3DDEVCAPS_TEXTUREVIDEOMEMORY: u32 = 512;
-pub const D3DFDS_COLORMODEL: u32 = 1;
-pub const D3DFDS_GUID: u32 = 2;
-pub const D3DFDS_HARDWARE: u32 = 4;
-pub const D3DFDS_TRIANGLES: u32 = 8;
-pub const D3DFDS_LINES: u32 = 16;
-pub const D3DFDS_MISCCAPS: u32 = 32;
-pub const D3DFDS_RASTERCAPS: u32 = 64;
-pub const D3DFDS_ZCMPCAPS: u32 = 128;
-pub const D3DFDS_ALPHACMPCAPS: u32 = 256;
-pub const D3DFDS_SRCBLENDCAPS: u32 = 512;
-pub const D3DFDS_DSTBLENDCAPS: u32 = 1024;
-pub const D3DFDS_SHADECAPS: u32 = 2048;
-pub const D3DFDS_TEXTURECAPS: u32 = 4096;
-pub const D3DFDS_TEXTUREFILTERCAPS: u32 = 8192;
-pub const D3DFDS_TEXTUREBLENDCAPS: u32 = 16384;
-pub const D3DFDS_TEXTUREADDRESSCAPS: u32 = 32768;
-pub const D3DDEB_BUFSIZE: u32 = 1;
-pub const D3DDEB_CAPS: u32 = 2;
-pub const D3DDEB_LPDATA: u32 = 4;
-pub const D3DDEBCAPS_SYSTEMMEMORY: u32 = 1;
-pub const D3DDEBCAPS_VIDEOMEMORY: u32 = 2;
-pub const D3DDEBCAPS_MEM: u32 = 3;
-pub const D3DPRASTERCAPS_ANTIALIASSORTDEPENDENT: u32 = 1024;
-pub const D3DPRASTERCAPS_ANTIALIASSORTINDEPENDENT: u32 = 2048;
-pub const D3DPRASTERCAPS_ANTIALIASEDGES: u32 = 4096;
-pub const D3DPRASTERCAPS_MIPMAPLODBIAS: u32 = 8192;
-pub const D3DPRASTERCAPS_ZBIAS: u32 = 16384;
-pub const D3DPRASTERCAPS_ZBUFFERLESSHSR: u32 = 32768;
-pub const D3DPRASTERCAPS_FOGRANGE: u32 = 65536;
-pub const D3DPRASTERCAPS_ANISOTROPY: u32 = 131072;
-pub const D3DPTBLENDCAPS_ADD: u32 = 128;
-pub const D3DPTADDRESSCAPS_BORDER: u32 = 8;
-pub const D3DPTADDRESSCAPS_INDEPENDENTUV: u32 = 16;
 pub const D3DDEVCAPS_DRAWPRIMTLVERTEX: u32 = 1024;
 pub const D3DDEVCAPS_CANRENDERAFTERFLIP: u32 = 2048;
 pub const D3DDEVCAPS_TEXTURENONLOCALVIDMEM: u32 = 4096;
-pub const D3DPRASTERCAPS_WBUFFER: u32 = 262144;
-pub const D3DPRASTERCAPS_TRANSLUCENTSORTINDEPENDENT: u32 = 524288;
-pub const D3DPRASTERCAPS_WFOG: u32 = 1048576;
-pub const D3DPRASTERCAPS_ZFOG: u32 = 2097152;
-pub const D3DPTEXTURECAPS_TEXREPEATNOTSCALEDBYSIZE: u32 = 64;
-pub const D3DPTEXTURECAPS_ALPHAPALETTE: u32 = 128;
-pub const D3DPTEXTURECAPS_NONPOW2CONDITIONAL: u32 = 256;
-pub const D3DPTFILTERCAPS_MINFPOINT: u32 = 256;
-pub const D3DPTFILTERCAPS_MINFLINEAR: u32 = 512;
-pub const D3DPTFILTERCAPS_MINFANISOTROPIC: u32 = 1024;
-pub const D3DPTFILTERCAPS_MIPFPOINT: u32 = 65536;
-pub const D3DPTFILTERCAPS_MIPFLINEAR: u32 = 131072;
-pub const D3DPTFILTERCAPS_MAGFPOINT: u32 = 16777216;
-pub const D3DPTFILTERCAPS_MAGFLINEAR: u32 = 33554432;
-pub const D3DPTFILTERCAPS_MAGFANISOTROPIC: u32 = 67108864;
-pub const D3DPTFILTERCAPS_MAGFAFLATCUBIC: u32 = 134217728;
-pub const D3DPTFILTERCAPS_MAGFGAUSSIANCUBIC: u32 = 268435456;
+pub const D3DDEVCAPS_DRAWPRIMITIVES2: u32 = 8192;
+pub const D3DDEVCAPS_SEPARATETEXTUREMEMORIES: u32 = 16384;
+pub const D3DDEVCAPS_DRAWPRIMITIVES2EX: u32 = 32768;
+pub const D3DDEVCAPS_HWTRANSFORMANDLIGHT: u32 = 65536;
+pub const D3DDEVCAPS_CANBLTSYSTONONLOCAL: u32 = 131072;
+pub const D3DDEVCAPS_HWRASTERIZATION: u32 = 524288;
 pub const D3DSTENCILCAPS_KEEP: u32 = 1;
 pub const D3DSTENCILCAPS_ZERO: u32 = 2;
 pub const D3DSTENCILCAPS_REPLACE: u32 = 4;
@@ -10373,7 +10358,6 @@ pub const D3DSTENCILCAPS_DECRSAT: u32 = 16;
 pub const D3DSTENCILCAPS_INVERT: u32 = 32;
 pub const D3DSTENCILCAPS_INCR: u32 = 64;
 pub const D3DSTENCILCAPS_DECR: u32 = 128;
-pub const D3DSTENCILCAPS_TWOSIDED: u32 = 256;
 pub const D3DTEXOPCAPS_DISABLE: u32 = 1;
 pub const D3DTEXOPCAPS_SELECTARG1: u32 = 2;
 pub const D3DTEXOPCAPS_SELECTARG2: u32 = 4;
@@ -10400,21 +10384,34 @@ pub const D3DTEXOPCAPS_BUMPENVMAPLUMINANCE: u32 = 4194304;
 pub const D3DTEXOPCAPS_DOTPRODUCT3: u32 = 8388608;
 pub const D3DFVFCAPS_TEXCOORDCOUNTMASK: u32 = 65535;
 pub const D3DFVFCAPS_DONOTSTRIPELEMENTS: u32 = 524288;
-pub const D3DDEVCAPS_DRAWPRIMITIVES2: u32 = 8192;
-pub const D3DDEVCAPS_SEPARATETEXTUREMEMORIES: u32 = 16384;
-pub const D3DDEVCAPS_DRAWPRIMITIVES2EX: u32 = 32768;
-pub const D3DPTEXTURECAPS_PROJECTED: u32 = 1024;
-pub const D3DPTEXTURECAPS_CUBEMAP: u32 = 2048;
-pub const D3DPTEXTURECAPS_COLORKEYBLEND: u32 = 4096;
-pub const D3DDEVCAPS_HWTRANSFORMANDLIGHT: u32 = 65536;
-pub const D3DDEVCAPS_CANBLTSYSTONONLOCAL: u32 = 131072;
-pub const D3DDEVCAPS_HWRASTERIZATION: u32 = 524288;
 pub const D3DVTXPCAPS_TEXGEN: u32 = 1;
 pub const D3DVTXPCAPS_MATERIALSOURCE7: u32 = 2;
 pub const D3DVTXPCAPS_VERTEXFOG: u32 = 4;
 pub const D3DVTXPCAPS_DIRECTIONALLIGHTS: u32 = 8;
 pub const D3DVTXPCAPS_POSITIONALLIGHTS: u32 = 16;
 pub const D3DVTXPCAPS_LOCALVIEWER: u32 = 32;
+pub const D3DFDS_COLORMODEL: u32 = 1;
+pub const D3DFDS_GUID: u32 = 2;
+pub const D3DFDS_HARDWARE: u32 = 4;
+pub const D3DFDS_TRIANGLES: u32 = 8;
+pub const D3DFDS_LINES: u32 = 16;
+pub const D3DFDS_MISCCAPS: u32 = 32;
+pub const D3DFDS_RASTERCAPS: u32 = 64;
+pub const D3DFDS_ZCMPCAPS: u32 = 128;
+pub const D3DFDS_ALPHACMPCAPS: u32 = 256;
+pub const D3DFDS_SRCBLENDCAPS: u32 = 512;
+pub const D3DFDS_DSTBLENDCAPS: u32 = 1024;
+pub const D3DFDS_SHADECAPS: u32 = 2048;
+pub const D3DFDS_TEXTURECAPS: u32 = 4096;
+pub const D3DFDS_TEXTUREFILTERCAPS: u32 = 8192;
+pub const D3DFDS_TEXTUREBLENDCAPS: u32 = 16384;
+pub const D3DFDS_TEXTUREADDRESSCAPS: u32 = 32768;
+pub const D3DDEB_BUFSIZE: u32 = 1;
+pub const D3DDEB_CAPS: u32 = 2;
+pub const D3DDEB_LPDATA: u32 = 4;
+pub const D3DDEBCAPS_SYSTEMMEMORY: u32 = 1;
+pub const D3DDEBCAPS_VIDEOMEMORY: u32 = 2;
+pub const D3DDEBCAPS_MEM: u32 = 3;
 pub const D3DKMT_MAX_PRESENT_HISTORY_RECTS: u32 = 16;
 pub const FLIPEX_TIMEOUT_USER: u32 = 2000;
 pub const FLIPEX_TIMEOUT_KERNEL: u32 = 20000000;
@@ -16045,6 +16042,42 @@ pub const SCANCODE_LSHIFT: u32 = 42;
 pub const SCANCODE_RSHIFT: u32 = 54;
 pub const SCANCODE_CTRL: u32 = 29;
 pub const SCANCODE_ALT: u32 = 56;
+pub const KBDTABLE_MULTI_MAX: u32 = 8;
+pub const KBDNLS_TYPE_NULL: u32 = 0;
+pub const KBDNLS_TYPE_NORMAL: u32 = 1;
+pub const KBDNLS_TYPE_TOGGLE: u32 = 2;
+pub const KBDNLS_INDEX_NORMAL: u32 = 1;
+pub const KBDNLS_INDEX_ALT: u32 = 2;
+pub const KBDNLS_NULL: u32 = 0;
+pub const KBDNLS_NOEVENT: u32 = 1;
+pub const KBDNLS_SEND_BASE_VK: u32 = 2;
+pub const KBDNLS_SEND_PARAM_VK: u32 = 3;
+pub const KBDNLS_KANALOCK: u32 = 4;
+pub const KBDNLS_ALPHANUM: u32 = 5;
+pub const KBDNLS_HIRAGANA: u32 = 6;
+pub const KBDNLS_KATAKANA: u32 = 7;
+pub const KBDNLS_SBCSDBCS: u32 = 8;
+pub const KBDNLS_ROMAN: u32 = 9;
+pub const KBDNLS_CODEINPUT: u32 = 10;
+pub const KBDNLS_HELP_OR_END: u32 = 11;
+pub const KBDNLS_HOME_OR_CLEAR: u32 = 12;
+pub const KBDNLS_NUMPAD: u32 = 13;
+pub const KBDNLS_KANAEVENT: u32 = 14;
+pub const KBDNLS_CONV_OR_NONCONV: u32 = 15;
+pub const VK_DBE_ALPHANUMERIC: u32 = 240;
+pub const VK_DBE_KATAKANA: u32 = 241;
+pub const VK_DBE_HIRAGANA: u32 = 242;
+pub const VK_DBE_SBCSCHAR: u32 = 243;
+pub const VK_DBE_DBCSCHAR: u32 = 244;
+pub const VK_DBE_ROMAN: u32 = 245;
+pub const VK_DBE_NOROMAN: u32 = 246;
+pub const VK_DBE_ENTERWORDREGISTERMODE: u32 = 247;
+pub const VK_DBE_ENTERIMECONFIGMODE: u32 = 248;
+pub const VK_DBE_FLUSHSTRING: u32 = 249;
+pub const VK_DBE_CODEINPUT: u32 = 250;
+pub const VK_DBE_NOCODEINPUT: u32 = 251;
+pub const VK_DBE_DETERMINESTRING: u32 = 252;
+pub const VK_DBE_ENTERDLGCONVERSIONMODE: u32 = 253;
 pub const HID_REVISION: u32 = 1;
 pub const GUID_CLASS_INPUT_STR: &[u8; 37] = b"4D1E55B2-F16F-11CF-88CB-001111000030\0";
 pub const KS_DOWN_BIT: u32 = 128;
@@ -74368,7 +74401,7 @@ pub type D3DLIGHTINGCAPS = _D3DLIGHTINGCAPS;
 pub type LPD3DLIGHTINGCAPS = *mut _D3DLIGHTINGCAPS;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
-pub struct _D3DPrimCaps {
+pub struct _D3dPrimCaps {
     pub dwSize: DWORD,
     pub dwMiscCaps: DWORD,
     pub dwRasterCaps: DWORD,
@@ -74384,54 +74417,8 @@ pub struct _D3DPrimCaps {
     pub dwStippleWidth: DWORD,
     pub dwStippleHeight: DWORD,
 }
-pub type D3DPRIMCAPS = _D3DPrimCaps;
-pub type LPD3DPRIMCAPS = *mut _D3DPrimCaps;
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _D3DDeviceDesc1 {
-    pub dwSize: DWORD,
-    pub dwFlags: DWORD,
-    pub dcmColorModel: D3DCOLORMODEL,
-    pub dwDevCaps: DWORD,
-    pub dtcTransformCaps: D3DTRANSFORMCAPS,
-    pub bClipping: BOOL,
-    pub dlcLightingCaps: D3DLIGHTINGCAPS,
-    pub dpcLineCaps: D3DPRIMCAPS,
-    pub dpcTriCaps: D3DPRIMCAPS,
-    pub dwDeviceRenderBitDepth: DWORD,
-    pub dwDeviceZBufferBitDepth: DWORD,
-    pub dwMaxBufferSize: DWORD,
-    pub dwMaxVertexCount: DWORD,
-}
-pub type D3DDEVICEDESC1 = _D3DDeviceDesc1;
-pub type LPD3DDEVICEDESC1 = *mut _D3DDeviceDesc1;
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _D3DDeviceDesc2 {
-    pub dwSize: DWORD,
-    pub dwFlags: DWORD,
-    pub dcmColorModel: D3DCOLORMODEL,
-    pub dwDevCaps: DWORD,
-    pub dtcTransformCaps: D3DTRANSFORMCAPS,
-    pub bClipping: BOOL,
-    pub dlcLightingCaps: D3DLIGHTINGCAPS,
-    pub dpcLineCaps: D3DPRIMCAPS,
-    pub dpcTriCaps: D3DPRIMCAPS,
-    pub dwDeviceRenderBitDepth: DWORD,
-    pub dwDeviceZBufferBitDepth: DWORD,
-    pub dwMaxBufferSize: DWORD,
-    pub dwMaxVertexCount: DWORD,
-    pub dwMinTextureWidth: DWORD,
-    pub dwMinTextureHeight: DWORD,
-    pub dwMaxTextureWidth: DWORD,
-    pub dwMaxTextureHeight: DWORD,
-    pub dwMinStippleWidth: DWORD,
-    pub dwMaxStippleWidth: DWORD,
-    pub dwMinStippleHeight: DWORD,
-    pub dwMaxStippleHeight: DWORD,
-}
-pub type D3DDEVICEDESC2 = _D3DDeviceDesc2;
-pub type LPD3DDEVICEDESC2 = *mut _D3DDeviceDesc2;
+pub type D3DPRIMCAPS = _D3dPrimCaps;
+pub type LPD3DPRIMCAPS = *mut _D3dPrimCaps;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _D3DDeviceDesc {
@@ -74510,6 +74497,24 @@ pub struct _D3DDeviceDesc7 {
 }
 pub type D3DDEVICEDESC7 = _D3DDeviceDesc7;
 pub type LPD3DDEVICEDESC7 = *mut _D3DDeviceDesc7;
+pub type LPD3DENUMDEVICESCALLBACK = ::core::option::Option<
+    unsafe extern "system" fn(
+        guid: *mut GUID,
+        description: *mut ::core::ffi::c_char,
+        name: *mut ::core::ffi::c_char,
+        hal_desc: *mut D3DDEVICEDESC,
+        hel_desc: *mut D3DDEVICEDESC,
+        ctx: *mut ::core::ffi::c_void,
+    ) -> HRESULT,
+>;
+pub type LPD3DENUMDEVICESCALLBACK7 = ::core::option::Option<
+    unsafe extern "system" fn(
+        description: *mut ::core::ffi::c_char,
+        name: *mut ::core::ffi::c_char,
+        desc: *mut D3DDEVICEDESC7,
+        ctx: *mut ::core::ffi::c_void,
+    ) -> HRESULT,
+>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _D3DFINDDEVICESEARCH {
@@ -74523,26 +74528,6 @@ pub struct _D3DFINDDEVICESEARCH {
 }
 pub type D3DFINDDEVICESEARCH = _D3DFINDDEVICESEARCH;
 pub type LPD3DFINDDEVICESEARCH = *mut _D3DFINDDEVICESEARCH;
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _D3DFINDDEVICERESULT1 {
-    pub dwSize: DWORD,
-    pub guid: GUID,
-    pub ddHwDesc: D3DDEVICEDESC1,
-    pub ddSwDesc: D3DDEVICEDESC1,
-}
-pub type D3DFINDDEVICERESULT1 = _D3DFINDDEVICERESULT1;
-pub type LPD3DFINDDEVICERESULT1 = *mut _D3DFINDDEVICERESULT1;
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _D3DFINDDEVICERESULT2 {
-    pub dwSize: DWORD,
-    pub guid: GUID,
-    pub ddHwDesc: D3DDEVICEDESC2,
-    pub ddSwDesc: D3DDEVICEDESC2,
-}
-pub type D3DFINDDEVICERESULT2 = _D3DFINDDEVICERESULT2;
-pub type LPD3DFINDDEVICERESULT2 = *mut _D3DFINDDEVICERESULT2;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _D3DFINDDEVICERESULT {
@@ -74560,7 +74545,7 @@ pub struct _D3DExecuteBufferDesc {
     pub dwFlags: DWORD,
     pub dwCaps: DWORD,
     pub dwBufferSize: DWORD,
-    pub lpData: LPVOID,
+    pub lpData: *mut ::core::ffi::c_void,
 }
 pub type D3DEXECUTEBUFFERDESC = _D3DExecuteBufferDesc;
 pub type LPD3DEXECUTEBUFFERDESC = *mut _D3DExecuteBufferDesc;
@@ -74597,24 +74582,6 @@ pub struct _D3DDEVINFO_TEXTURING {
 }
 pub type D3DDEVINFO_TEXTURING = _D3DDEVINFO_TEXTURING;
 pub type LPD3DDEVINFO_TEXTURING = *mut _D3DDEVINFO_TEXTURING;
-pub type LPD3DENUMDEVICESCALLBACK = ::core::option::Option<
-    unsafe extern "system" fn(
-        lpGuid: *mut GUID,
-        lpDeviceDescription: LPSTR,
-        lpDeviceName: LPSTR,
-        arg1: LPD3DDEVICEDESC,
-        arg2: LPD3DDEVICEDESC,
-        arg3: LPVOID,
-    ) -> HRESULT,
->;
-pub type LPD3DENUMDEVICESCALLBACK7 = ::core::option::Option<
-    unsafe extern "system" fn(
-        lpDeviceDescription: LPSTR,
-        lpDeviceName: LPSTR,
-        arg1: LPD3DDEVICEDESC7,
-        arg2: LPVOID,
-    ) -> HRESULT,
->;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _D3DKMT_CREATEDEVICEFLAGS {
@@ -111955,6 +111922,28 @@ pub struct _DRIVER_INFO_2W {
     _unused: [u8; 0],
 }
 pub type DRIVER_INFO_2W = _DRIVER_INFO_2W;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _FONT_REALIZATION_INFO {
+    pub size: DWORD,
+    pub flags: DWORD,
+    pub cache_num: DWORD,
+    pub instance_id: DWORD,
+    pub file_count: DWORD,
+    pub face_index: WORD,
+    pub simulations: WORD,
+}
+pub type FONT_REALIZATION_INFO = _FONT_REALIZATION_INFO;
+pub type PFONT_REALIZATION_INFO = *mut _FONT_REALIZATION_INFO;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _FONT_FILE_INFO {
+    pub writetime: FILETIME,
+    pub size: LARGE_INTEGER,
+    pub path: [WCHAR; 1usize],
+}
+pub type FONT_FILE_INFO = _FONT_FILE_INFO;
+pub type PFONT_FILE_INFO = *mut _FONT_FILE_INFO;
 unsafe extern "system" {
     pub fn NtGdiInit() -> BOOL;
 }
@@ -113098,6 +113087,18 @@ unsafe extern "system" {
         pvBuf: PVOID,
         cjBuf: SIZE_T,
     ) -> DWORD;
+}
+unsafe extern "system" {
+    pub fn NtGdiGetFontFileInfo(
+        uFileCollectionID: UINT,
+        uFileIndex: UINT,
+        pffi: PFONT_FILE_INFO,
+        cjSize: SIZE_T,
+        pcjActualSize: PSIZE_T,
+    ) -> DWORD;
+}
+unsafe extern "system" {
+    pub fn NtGdiGetFontRealizationInfo(hdc: HDC, info: PFONT_REALIZATION_INFO) -> BOOL;
 }
 unsafe extern "system" {
     pub fn NtGdiGetGlyphOutline(
@@ -124385,6 +124386,7 @@ pub struct _THREADINFO {
     pub aphkStart: [LIST_ENTRY; 16usize],
     pub cti: CLIENTTHREADINFO,
     pub nCntsQBits: [DWORD; 7usize],
+    pub hPrevRawInput: HRAWINPUT,
     pub WindowListHead: LIST_ENTRY,
     pub W32CallbackListHead: LIST_ENTRY,
     pub ReferencesList: SINGLE_LIST_ENTRY,
@@ -125119,6 +125121,8 @@ pub struct _USER_MESSAGE_QUEUE {
     pub ptiMouse: PTHREADINFO,
     pub ptiKeyboard: PTHREADINFO,
     pub HardwareMessagesListHead: LIST_ENTRY,
+    pub RawInputListHead: LIST_ENTRY,
+    pub cRawInput: ULONG,
     pub msgDblClk: MSG,
     pub spwndCapture: PWND,
     pub spwndFocus: PWND,
@@ -125834,6 +125838,64 @@ pub struct _KBDTABLES {
 }
 pub type KBDTABLES = _KBDTABLES;
 pub type PKBDTABLES = *mut _KBDTABLES;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagKBDTABLE_DESC {
+    pub wszDllName: [WCHAR; 32usize],
+    pub dwType: DWORD,
+    pub dwSubType: DWORD,
+}
+pub type KBDTABLE_DESC = tagKBDTABLE_DESC;
+pub type PKBDTABLE_DESC = *mut tagKBDTABLE_DESC;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagKBDTABLE_MULTI {
+    pub nTables: UINT,
+    pub aKbdTables: [KBDTABLE_DESC; 8usize],
+}
+pub type KBDTABLE_MULTI = tagKBDTABLE_MULTI;
+pub type PKBDTABLE_MULTI = *mut tagKBDTABLE_MULTI;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _VK_FUNCTION_PARAM {
+    pub NLSFEProcIndex: BYTE,
+    pub NLSFEProcParam: ULONG,
+}
+pub type VK_FPARAM = _VK_FUNCTION_PARAM;
+pub type PVK_FPARAM = *mut _VK_FUNCTION_PARAM;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _VK_TO_FUNCTION_TABLE {
+    pub Vk: BYTE,
+    pub NLSFEProcType: BYTE,
+    pub NLSFEProcCurrent: BYTE,
+    pub NLSFEProcSwitch: BYTE,
+    pub NLSFEProc: [VK_FPARAM; 8usize],
+    pub NLSFEProcAlt: [VK_FPARAM; 8usize],
+}
+pub type VK_F = _VK_TO_FUNCTION_TABLE;
+pub type PVK_F = *mut _VK_TO_FUNCTION_TABLE;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagKbdNlsLayer {
+    pub OEMIdentifier: USHORT,
+    pub LayoutInformation: USHORT,
+    pub NumOfVkToF: ULONG,
+    pub pVkToF: PVK_F,
+    pub NumOfMouseVKey: INT,
+    pub pusMouseVKey: PUSHORT,
+}
+pub type KBDNLSTABLES = tagKbdNlsLayer;
+pub type PKBDNLSTABLES = *mut tagKbdNlsLayer;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct tagKBDTABLES_FE {
+    pub Base: KBDTABLES,
+    pub dwType: DWORD,
+    pub dwSubType: DWORD,
+}
+pub type KBDTABLES_FE = tagKBDTABLES_FE;
+pub type PKBDTABLES_FE = *mut tagKBDTABLES_FE;
 pub type USAGE = USHORT;
 pub type PUSAGE = *mut USHORT;
 pub type PHIDP_REPORT_DESCRIPTOR = PUCHAR;
@@ -126821,57 +126883,6 @@ pub type PATTACHINFO = *mut _ATTACHINFO;
 unsafe extern "C" {
     pub static mut gpai: PATTACHINFO;
 }
-unsafe extern "fastcall" {
-    pub fn IntBlockInput(W32Thread: PTHREADINFO, BlockIt: BOOL) -> BOOL;
-}
-unsafe extern "fastcall" {
-    pub fn UserAttachThreadInput(arg1: PTHREADINFO, arg2: PTHREADINFO, arg3: BOOL) -> NTSTATUS;
-}
-unsafe extern "system" {
-    pub fn UserInitKeyboard(hKeyboardDevice: HANDLE);
-}
-unsafe extern "system" {
-    pub fn UserProcessKeyboardInput(pKeyInput: PKEYBOARD_INPUT_DATA);
-}
-unsafe extern "system" {
-    pub fn UserSendKeyboardInput(pKbdInput: *mut KEYBDINPUT, bInjected: BOOL) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn UserHklToKbl(hKl: HKL) -> PKL;
-}
-unsafe extern "system" {
-    pub fn UserSetDefaultInputLang(hKl: HKL) -> BOOL;
-}
-unsafe extern "C" {
-    pub static mut gdwLanguageToggleKey: DWORD;
-}
-unsafe extern "C" {
-    pub static mut gdwLayoutToggleKey: DWORD;
-}
-unsafe extern "C" {
-    pub static mut gbEnableHexNumpad: BOOL;
-}
-unsafe extern "fastcall" {
-    pub fn UserGetMouseButtonsState() -> WORD;
-}
-unsafe extern "system" {
-    pub fn UserProcessMouseInput(pMouseInputData: PMOUSE_INPUT_DATA);
-}
-unsafe extern "system" {
-    pub fn UserSendMouseInput(pMouseInput: *mut MOUSEINPUT, bInjected: BOOL) -> BOOL;
-}
-unsafe extern "fastcall" {
-    pub fn IntImmProcessKey(
-        MessageQueue: PUSER_MESSAGE_QUEUE,
-        pWnd: PWND,
-        uMsg: UINT,
-        wParam: WPARAM,
-        lParam: LPARAM,
-    ) -> UINT;
-}
-unsafe extern "fastcall" {
-    pub fn IntFreeImeHotKeys();
-}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct _MOUSE_DEVICE_INFO {
@@ -126917,6 +126928,93 @@ pub union _INPUT_DEVICE_INFO__bindgen_ty_1 {
 }
 pub type INPUT_DEVICE_INFO = _INPUT_DEVICE_INFO;
 pub type PINPUT_DEVICE_INFO = *mut _INPUT_DEVICE_INFO;
+unsafe extern "fastcall" {
+    pub fn IntBlockInput(W32Thread: PTHREADINFO, BlockIt: BOOL) -> BOOL;
+}
+unsafe extern "fastcall" {
+    pub fn UserAttachThreadInput(arg1: PTHREADINFO, arg2: PTHREADINFO, arg3: BOOL) -> NTSTATUS;
+}
+unsafe extern "system" {
+    pub fn UserInitKeyboard(hKeyboardDevice: HANDLE);
+}
+unsafe extern "system" {
+    pub fn UserProcessKeyboardInput(
+        pDeviceInfo: PINPUT_DEVICE_INFO,
+        pKeyInput: PKEYBOARD_INPUT_DATA,
+    );
+}
+unsafe extern "system" {
+    pub fn UserSendKeyboardInput(pKbdInput: *mut KEYBDINPUT, bInjected: BOOL) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn UserHklToKbl(hKl: HKL) -> PKL;
+}
+unsafe extern "system" {
+    pub fn UserSetDefaultInputLang(hKl: HKL) -> BOOL;
+}
+unsafe extern "C" {
+    pub static mut gdwLanguageToggleKey: DWORD;
+}
+unsafe extern "C" {
+    pub static mut gdwLayoutToggleKey: DWORD;
+}
+unsafe extern "C" {
+    pub static mut gbEnableHexNumpad: BOOL;
+}
+unsafe extern "fastcall" {
+    pub fn UserGetMouseButtonsState() -> WORD;
+}
+unsafe extern "system" {
+    pub fn UserProcessMouseInput(
+        pDeviceInfo: PINPUT_DEVICE_INFO,
+        pMouseInputData: PMOUSE_INPUT_DATA,
+    );
+}
+unsafe extern "system" {
+    pub fn UserSendMouseInput(pMouseInput: *mut MOUSEINPUT, bInjected: BOOL) -> BOOL;
+}
+unsafe extern "C" {
+    pub static mut RawInputEnabled: BOOLEAN;
+}
+unsafe extern "fastcall" {
+    pub fn UserCreateRawInput(
+        pti: PTHREADINFO,
+        dwType: DWORD,
+        hDevice: HANDLE,
+        wParam: WPARAM,
+        pData: *const ::core::ffi::c_void,
+        cbData: UINT,
+    ) -> HRAWINPUT;
+}
+unsafe extern "fastcall" {
+    pub fn UserGetRawInputTarget(
+        dwType: DWORD,
+        ppti: *mut PTHREADINFO,
+        phwndTarget: *mut HWND,
+        pwParam: *mut WPARAM,
+    ) -> BOOL;
+}
+unsafe extern "fastcall" {
+    pub fn UserFreeRawInput(MessageQueue: PUSER_MESSAGE_QUEUE, hRawInput: HRAWINPUT) -> BOOL;
+}
+unsafe extern "fastcall" {
+    pub fn UserUpdatePrevRawInput(pti: PTHREADINFO, pMsg: *const MSG);
+}
+unsafe extern "fastcall" {
+    pub fn UserCleanupRawInput(MessageQueue: PUSER_MESSAGE_QUEUE);
+}
+unsafe extern "fastcall" {
+    pub fn IntImmProcessKey(
+        MessageQueue: PUSER_MESSAGE_QUEUE,
+        pWnd: PWND,
+        uMsg: UINT,
+        wParam: WPARAM,
+        lParam: LPARAM,
+    ) -> UINT;
+}
+unsafe extern "fastcall" {
+    pub fn IntFreeImeHotKeys();
+}
 unsafe extern "C" {
     pub static mut gSystemFS: DWORD;
 }
@@ -130547,11 +130645,6 @@ pub struct _ACTIVATION_CONTEXT_DATA {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _ASSEMBLY_STORAGE_MAP {
-    pub _address: u8,
-}
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct _VK_TO_FUNCTION_TABLE {
     pub _address: u8,
 }
 

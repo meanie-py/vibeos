@@ -2,7 +2,7 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-37 vendored C/C++ components:
+38 vendored C/C++ components:
 
 - [AC'97 audio sample driver](#ac97-audio-sample-driver) — unknown — MIT
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
@@ -34,6 +34,7 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [rdesktop (rosapps tsclient)](#rdesktop-rosapps-tsclient) — 1.8.3 — GPL-3.0-or-later
 - [Schily Tools (mkisofs)](#schily-tools-mkisofs) — schily-2017-09-07 — CDDL-1.0
 - [SGI GLU (OpenGL Utility Library)](#sgi-glu-opengl-utility-library) — glu-9.0.1 (Mesa git tag, not a release tarball) — SGI-B-2.0
+- [SymCrypt](#symcrypt) — 103.11.0 — MIT
 - [TreeList control](#treelist-control) — ??? (Imported on 2018.11.06: 2fdfb41 (0.4.11-dev-668)) — GPL-3.0-or-later
 - [VirtIO driver library](#virtio-driver-library) — unknown — BSD-3-Clause
 - [VirtIO NetKVM guest driver (NDIS 5)](#virtio-netkvm-guest-driver-ndis-5) — git commit 5e01b36 — BSD-3-Clause
@@ -5182,6 +5183,38 @@ Except as contained in this notice, the name of Silicon Graphics, Inc.
 shall not be used in advertising or otherwise to promote the sale, use or
 other dealings in this Software without prior written authorization from
 Silicon Graphics, Inc.
+```
+
+## SymCrypt
+
+- Upstream: https://github.com/microsoft/SymCrypt
+- Version: 103.11.0
+- In this tree: `vendor/symcrypt`
+- Licence: MIT
+- Grant reproduced from: `vendor/symcrypt/LICENSE.txt`
+
+```
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## TreeList control

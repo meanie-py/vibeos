@@ -697,6 +697,34 @@ trees:
       Font rasteriser, ~208K lines and the single largest vendored tree. win32k
       consumes it through a stable C API; upstream tracking beats ownership.
 
+  - path: vendor/symcrypt
+    name: SymCrypt
+    translate: keep
+    reason: >
+      Microsoft's crypto core, which rsaenh links since upstream synced it to Wine-11.19
+      (57a100c0ed3). Upstream imported Wine-11.16's copy as sdk/lib/3rdparty/symcrypt
+      (de5efac7a58); it moved here with the 2026-10-05 sync, as every vendored tree does.
+      Constant-time crypto is the last thing to re-derive by translation.
+    upstream: https://github.com/microsoft/SymCrypt
+    license: MIT
+    license_file: vendor/symcrypt/LICENSE.txt
+    modified: yes  # Wine's import, plus upstream 8a48856c39b; see review
+    version:
+      file: vendor/symcrypt/inc/symcrypt_internal_shared.inc
+      patterns:
+        - '#define SYMCRYPT_CODE_VERSION_API\s+(\d+)'
+        - '#define SYMCRYPT_CODE_VERSION_MINOR\s+(\d+)'
+        - '#define SYMCRYPT_CODE_VERSION_PATCH\s+(\d+)'
+      join: "."
+    review: >
+      NOT YET DIFFED AGAINST PRISTINE UPSTREAM. What is known: the tree is Wine's
+      libs/symcrypt (Makefile.in and make_symcrypt are Wine's), and ReactOS
+      8a48856c39b then disabled SymCrypt's magic-value checking (symcrypt_internal.h)
+      because Wine's RSAENH_CPDuplicateKey copies key structures by memcpy, and a
+      pointer-alignment check in sc_lib.h that failed under GCC. Both weaken internal
+      consistency checks, not the algorithms. The asm sources are not built
+      (add_asm_files is commented out), so every arch runs the generic C paths.
+
   - path: vendor/zlib
     name: zlib
     translate: keep

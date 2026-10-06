@@ -162,7 +162,7 @@ extern "fastcall" {
     fn MsqPostQuitMessage(pti: PTHREADINFO, ExitCode: ULONG_PTR);
     fn MsqSetMessageExtraInfo(lData: LPARAM) -> LPARAM;
     fn MsqSetStateWindow(pti: PTHREADINFO, Type: ULONG, hWnd: HWND) -> HWND;
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR) -> BOOL;
     fn SetLastNtError(Status: NTSTATUS);
     fn UserDereferenceObject(obj: PVOID) -> BOOL;
 }
@@ -171,7 +171,7 @@ extern "C" {
     fn MsqPostQuitMessage(pti: PTHREADINFO, ExitCode: ULONG_PTR);
     fn MsqSetMessageExtraInfo(lData: LPARAM) -> LPARAM;
     fn MsqSetStateWindow(pti: PTHREADINFO, Type: ULONG, hWnd: HWND) -> HWND;
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *const MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR) -> BOOL;
     fn SetLastNtError(Status: NTSTATUS);
     fn UserDereferenceObject(obj: PVOID) -> BOOL;
 }

@@ -297,6 +297,17 @@ pub unsafe extern "system" fn PcipUpdateHardware(
             | PCI_ENABLE_BUS_MASTER
             | PCI_ENABLE_WRITE_AND_INVALIDATE) as u16);
         (*PciData).Command &= mask;
+
+        /* A BAR size can only change with the decodes off, before the BAR gets its address */
+        if (*PdoExtension).ResizableBarState.CapabilityPtr != 0 {
+            PciWriteDeviceConfig(
+                PdoExtension,
+                core::ptr::addr_of_mut!((*PciData).Command) as _,
+                core::mem::offset_of!(PCI_COMMON_HEADER, Command) as ULONG,
+                core::mem::size_of::<USHORT>() as ULONG,
+            );
+            PciApplyResizableBarSizes(PdoExtension);
+        }
     }
 
     // Update device configuration
@@ -619,9 +630,18 @@ pub unsafe extern "system" fn PciBuildRequirementsList(
     Count = 0;
     if !Resources.is_null() {
         for i in 0..(PCI_TYPE0_ADDRESSES as usize + 1) {
-            if (*Resources).Limit[i].Type != CmResourceTypeNull as u8 {
-                Count += 1;
+            if (*Resources).Limit[i].Type == CmResourceTypeNull as u8 {
+                continue;
             }
+
+            /* A resizable BAR also asks for the larger sizes it can decode */
+            Count += 1;
+            Count += PciAddResizableBarRequirements(
+                PdoExtension,
+                i as ULONG,
+                core::ptr::addr_of_mut!((*Resources).Limit[i]),
+                core::ptr::null_mut(),
+            );
         }
     }
 
@@ -677,9 +697,21 @@ pub unsafe extern "system" fn PciBuildRequirementsList(
                 continue;
             }
 
+            /* The larger sizes of a resizable BAR come first, its default size is the fallback */
+            let Resized = PciAddResizableBarRequirements(
+                PdoExtension,
+                i as ULONG,
+                core::ptr::addr_of_mut!((*Resources).Limit[i]),
+                Descriptor,
+            );
+            Descriptor = Descriptor.add(Resized as usize);
+
             /* A BAR decodes for one function only, so it cannot be shared */
             *Descriptor = (*Resources).Limit[i];
             (*Descriptor).ShareDisposition = CmResourceShareDeviceExclusive;
+            if Resized != 0 {
+                (*Descriptor).Option = IO_RESOURCE_ALTERNATIVE as UCHAR;
+            }
             Descriptor = Descriptor.add(1);
         }
     }
@@ -1231,6 +1263,12 @@ pub unsafe extern "system" fn PciGetEnhancedCapabilities(
             }
         }
     }
+    /* Now find out whether this is an Express function, and what kind */
+    PciGetExpressCapabilities(PdoExtension);
+
+    /* And whether any of its BARs can be resized */
+    PciGetResizableBarCapability(PdoExtension);
+
     if ((*PdoExtension).HackFlags & (PCI_HACK_NO_PM_CAPS as u64)) != 0 {
         (*PdoExtension).PowerState.CurrentDeviceState = if ((*PciData).Command
             & ((PCI_ENABLE_IO_SPACE | PCI_ENABLE_MEMORY_SPACE | PCI_ENABLE_BUS_MASTER) as u16))
@@ -1964,7 +2002,45 @@ pub unsafe extern "system" fn PciSetResources(
     if (*PdoExtension).NeedsHotPlugConfiguration != 0
         && (*fdo_extension).HotPlugParameters.Acquired != 0
     {
-        UNIMPLEMENTED_DBGBREAK();
+        let mut cache_line_read_back: UCHAR = 0;
+
+        /* The firmware never configured this device, so use what _HPP asks for */
+        (*PdoExtension).SavedLatencyTimer = (*fdo_extension).HotPlugParameters.LatencyTimer;
+        (*PdoExtension).SavedCacheLineSize = (*fdo_extension).HotPlugParameters.CacheLineSize;
+
+        (*PdoExtension).CommandEnables &= !((PCI_ENABLE_PARITY | PCI_ENABLE_SERR) as u16);
+        if (*fdo_extension).HotPlugParameters.EnablePERR != 0 {
+            (*PdoExtension).CommandEnables |= PCI_ENABLE_PARITY as u16;
+        }
+
+        if (*fdo_extension).HotPlugParameters.EnableSERR != 0 {
+            (*PdoExtension).CommandEnables |= PCI_ENABLE_SERR as u16;
+        }
+
+        /* Only turn on memory write and invalidate if the device keeps the cache line size */
+        PciWriteDeviceConfig(
+            PdoExtension,
+            core::ptr::addr_of_mut!((*PdoExtension).SavedCacheLineSize) as _,
+            core::mem::offset_of!(PCI_COMMON_HEADER, CacheLineSize) as ULONG,
+            core::mem::size_of::<UCHAR>() as ULONG,
+        );
+        PciReadDeviceConfig(
+            PdoExtension,
+            core::ptr::addr_of_mut!(cache_line_read_back) as _,
+            core::mem::offset_of!(PCI_COMMON_HEADER, CacheLineSize) as ULONG,
+            core::mem::size_of::<UCHAR>() as ULONG,
+        );
+        if cache_line_read_back != 0 && cache_line_read_back == (*PdoExtension).SavedCacheLineSize {
+            (*PdoExtension).CommandEnables |= PCI_ENABLE_WRITE_AND_INVALIDATE as u16;
+        } else {
+            DbgPrint(
+                b"(%s:%d) PCI (pdox %p) cache line size %02x rejected, MWI stays off\n\0".as_ptr() as *const i8,
+                b"drivers/bus/pcix/enum.c\0".as_ptr() as *const i8,
+                2358,
+                PdoExtension,
+                (*PdoExtension).SavedCacheLineSize as u32,
+            );
+        }
     }
 
     let header_type = (*PdoExtension).HeaderType;
