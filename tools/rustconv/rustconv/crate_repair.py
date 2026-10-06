@@ -69,6 +69,10 @@ RULE_OPTION_FN_CALL = "option_fn_call"
 RULE_UNINIT_LOCAL = "uninit_c_local"
 RULE_MUT_BINDING = "c_mutable_binding"
 RULE_INFER_WIDEN = "c_integer_widen"
+RULE_OPTION_IS_NULL = "option_fn_is_null"
+RULE_SHADOWED_CONST = "local_shadows_constant"
+RULE_SIZEOF_CONST = "sizeof_constant"
+RULE_FN_ITEM_CAST = "fn_item_cast"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -98,6 +102,10 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_OPTION_FN_CALL,
     RULE_UNINIT_LOCAL,
     RULE_MUT_BINDING,
+    RULE_OPTION_IS_NULL,
+    RULE_SHADOWED_CONST,
+    RULE_SIZEOF_CONST,
+    RULE_FN_ITEM_CAST,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -2458,6 +2466,39 @@ def _packed_field_ptr_rule(
     # The span covers the PLACE expression; the offending `.as_ptr()` follows it.
     tail = _RE_AS_PTR.match(data[end : end + 16].decode("utf-8", "replace"))
     place = data[start:end].decode("utf-8", "replace")
+    # C's `sizeof(p->Field)` came across as `size_of_val(&p.Field)`: the size of the field's
+    # TYPE, read off a raw place pointer, never a reference.
+    wrap = re.search(
+        rb"(?:(?:core|std)::mem::)?size_of_val\s*\(\s*&\s*$", masked[max(0, start - 48) : start]
+    )
+    if wrap is not None and _next_code_byte(masked, end) == b")" and _balanced(masked[start:end]):
+        lo = start - (len(masked[max(0, start - 48) : start]) - wrap.start())
+        hi = masked.index(b")", end) + 1
+        return (
+            [
+                Edit(
+                    file_name=file_name,
+                    byte_start=lo,
+                    byte_end=hi,
+                    replacement=(
+                        "{ const fn pointee_size<T>(_: *const T) -> usize { "
+                        "core::mem::size_of::<T>() } "
+                        f"pointee_size(core::ptr::addr_of!({place})) }}"
+                    ),
+                    rule=RULE_PACKED_FIELD_PTR,
+                    authority=(
+                        f"rustc E0793: `{place[:40]}` is a packed field; its size is its type's, "
+                        "taken through addr_of! so no reference is formed"
+                    ),
+                    original=data[lo:hi].decode("utf-8", "replace"),
+                    line=int(span.get("line_start") or 0),
+                    column=int(span.get("column_start") or 0),
+                    targets=(ctx.target,),
+                )
+            ],
+            [],
+            True,
+        )
     if tail is None or not _balanced(masked[start:end]):
         return (
             [],
@@ -2734,6 +2775,260 @@ def _sizeof_type_rule(
     )
 
 
+def _primary(diagnostic: Mapping[str, Any]) -> dict[str, Any] | None:
+    return next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+
+
+def _option_is_null_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """C's `if (pfn != NULL)` on a function pointer bindgen types `Option<fn>`: `is_none()`.
+
+    rustc E0599 puts the primary span on the method NAME, so the edit is that one word and the
+    receiver is untouched. setuplib: six `pSetupData->ErrorRoutine` tests in install.c.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0599":
+        return [], [], False
+    message = str(diagnostic.get("message") or "")
+    if not message.startswith("no method named `is_null` found for enum `Option<"):
+        return [], [], False
+    span = _primary(diagnostic)
+    file_name = str((span or {}).get("file_name") or "")
+    data = load(file_name) if span else None
+    if span is None or data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    if data[start:end] != b"is_null" or _in_macro_definition(_mask_lexical(data), start):
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement="is_none",
+                rule=RULE_OPTION_IS_NULL,
+                authority="rustc E0599: the pointer is an Option<fn>, whose NULL is None",
+                original="is_null",
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _enclosing_brace(masked: bytes, pos: int) -> int | None:
+    depth = 0
+    for i in range(pos - 1, -1, -1):
+        char = masked[i : i + 1]
+        if char == b"}":
+            depth += 1
+        elif char == b"{":
+            if depth == 0:
+                return i
+            depth -= 1
+    return None
+
+
+def _brace_closer(masked: bytes, opening: int) -> int | None:
+    depth = 0
+    for pos in range(opening, len(masked)):
+        char = masked[pos : pos + 1]
+        if char == b"{":
+            depth += 1
+        elif char == b"}":
+            depth -= 1
+            if depth == 0:
+                return pos
+    return None
+
+
+def _shadowed_const_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A C local named like a constant: rename the LOCAL for the rest of its block.
+
+    C lets `ADAPTER_TYPE AdapterType;` shadow the `AdapterType` enumerator of
+    CONFIGURATION_TYPE, and every later mention in that block is the local. Rust forbids a
+    `let` binding a constant's name (E0530) -- it would parse as a refutable pattern -- so the
+    faithful repair is C's own scoping, spelled as a rename: every mention from the `let` to the
+    end of the enclosing block becomes `<name>_local`. Field accesses (`.Name`), paths
+    (`::Name`, `Name::`) and struct-literal keys (`{ Name: ..`) are other namespaces and stay.
+    Mentions BEFORE the `let` are still the constant, as in C. setuplib: arcname, filesup.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0530":
+        return [], [], False
+    if "cannot shadow constants" not in str(diagnostic.get("message") or ""):
+        return [], [], False
+    span = _primary(diagnostic)
+    file_name = str((span or {}).get("file_name") or "")
+    data = load(file_name) if span else None
+    if span is None or data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    name = data[start:end].decode("utf-8", "replace")
+    masked = _mask_lexical(data)
+    if not re.fullmatch(r"[A-Za-z_]\w*", name) or _in_macro_definition(masked, start):
+        return [], [], False
+    head = masked[max(0, start - 24) : start]
+    if not re.search(rb"\blet\s+(?:mut\s+)?$", head):
+        return (
+            [],
+            [Skipped(RULE_SHADOWED_CONST, "not_a_let", file_name, int(span["line_start"]), name)],
+            False,
+        )
+    opening = _enclosing_brace(masked, start)
+    closer = _brace_closer(masked, opening) if opening is not None else None
+    fresh = f"{name}_local"
+    if closer is None or re.search(rb"\b" + fresh.encode() + rb"\b", masked):
+        return [], [], False
+    edits = []
+    for m in re.finditer(rb"\b" + re.escape(name.encode()) + rb"\b", masked[start:closer]):
+        at = start + m.start()
+        before = masked[:at].rstrip()
+        after = masked[at + len(name) :].lstrip()
+        if before.endswith((b".", b"::")) or after.startswith(b"::"):
+            continue
+        if after.startswith(b":") and before.endswith((b"{", b",")):
+            continue  # struct-literal key
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=at,
+                byte_end=at + len(name),
+                replacement=fresh,
+                rule=RULE_SHADOWED_CONST,
+                authority=(
+                    f"rustc E0530: local `{name}` shadows a constant; C scoping makes every "
+                    "later mention in this block the local, so the local is renamed"
+                ),
+                original=name,
+                line=_line_of(data, at),
+                targets=(ctx.target,),
+            )
+        )
+    return edits, [], True
+
+
+def _sizeof_const_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """C ``sizeof(CONSTANT)`` that came across as ``size_of::<CONSTANT>()``: the size of a VALUE.
+
+    E0747 puts the constant in type position. ``size_of_val(&CONSTANT)`` is C's meaning
+    provided the constant carries C's type, which both of its sources do: hand-written
+    substrate spells the C cast (``UNICODE_NULL: WCHAR``), and bindgen sizes an integer
+    macro as C would type the literal (int -> 4, a 64-bit value -> 8).
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0747":
+        return [], [], False
+    if "constant provided when a type was expected" not in str(diagnostic.get("message") or ""):
+        return [], [], False
+    span = _primary(diagnostic)
+    file_name = str((span or {}).get("file_name") or "")
+    data = load(file_name) if span else None
+    if span is None or data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    name = data[start:end].decode("utf-8", "replace")
+    masked = _mask_lexical(data)
+    if not re.fullmatch(r"[A-Za-z_]\w*", name) or _in_macro_definition(masked, start):
+        return [], [], False
+    pre = re.search(
+        rb"(?:(?:core|std)::mem::)?size_of\s*::\s*<\s*$", masked[max(0, start - 40) : start]
+    )
+    post = re.match(rb"\s*>\s*\(\s*\)", masked[end : end + 16])
+    if pre is None or post is None:
+        return (
+            [],
+            [Skipped(RULE_SIZEOF_CONST, "not_size_of", file_name, int(span["line_start"]), name)],
+            False,
+        )
+    lo = start - (len(masked[max(0, start - 40) : start]) - pre.start())
+    hi = end + post.end()
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=lo,
+                byte_end=hi,
+                replacement=f"core::mem::size_of_val(&{name})",
+                rule=RULE_SIZEOF_CONST,
+                authority=f"rustc E0747: `{name}` is a constant, so C's sizeof is of its value",
+                original=data[lo:hi].decode("utf-8", "replace"),
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+#: E0605 on a fn ITEM (rustc prints its type with the item's path in braces: `... {VfatFormat}`).
+_RE_FN_ITEM_CAST = re.compile(
+    r"^non-primitive cast: `[^`]*\bfn\([^`]*\{(?P<item>[\w:]+)\}` as `[^`]*\bfn\("
+)
+
+
+def _fn_item_cast_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`f as unsafe extern "C" fn(..) -> R` where `f` is a function: drop the cast.
+
+    It is c2rust's spelling of C's implicit function-to-pointer conversion, and c2rust writes
+    `extern "C"` for every function pointer -- including NTAPI (stdcall) ones, so on i386 it
+    is a different type from the function and rustc refuses (E0605; setuplib's
+    RegisteredFileSystems table: VfatFormat/VfatChkdsk). Without the cast the function item
+    coerces to whatever slot it is stored in -- `Some(f)` into an `Option<fn>` field, a call
+    argument -- and if THAT slot's ABI differs, rustc says so as a plain type mismatch, which
+    is the real finding the wrong-ABI cast was hiding.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0605":
+        return [], [], False
+    m = _RE_FN_ITEM_CAST.match(str(diagnostic.get("message") or ""))
+    span = _primary(diagnostic)
+    if m is None or span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return [], [], False
+    item = m.group("item").split("::")[-1]
+    head = re.match(rb"\s*(" + re.escape(item.encode()) + rb")\s+as\s", masked[start:end])
+    if head is None:
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=item,
+                rule=RULE_FN_ITEM_CAST,
+                authority=(
+                    f"rustc E0605: `{item}` is a function; C converts it to the pointer "
+                    "implicitly, and Rust coerces it to the slot's own fn-pointer type"
+                ),
+                original=data[start:end].decode("utf-8", "replace"),
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
@@ -2756,6 +3051,10 @@ _RULE_TABLE: dict[
     RULE_UNINIT_LOCAL: _uninit_local_rule,
     RULE_MUT_BINDING: _mut_binding_rule,
     RULE_INFER_WIDEN: _infer_widen_rule,
+    RULE_OPTION_IS_NULL: _option_is_null_rule,
+    RULE_SHADOWED_CONST: _shadowed_const_rule,
+    RULE_SIZEOF_CONST: _sizeof_const_rule,
+    RULE_FN_ITEM_CAST: _fn_item_cast_rule,
 }
 
 

@@ -495,3 +495,16 @@ def test_the_shell32_island_is_system_spelled_so_shell32_takes_the_single_form()
     from rustconv.projects.reactos.targets import TARGETS
 
     assert TARGETS["shell32"].concrete_stdcall_slots is False
+
+
+def test_a_gen_driver_types_island_counts_as_an_island(tmp_path):
+    # setuplib (scaffolded by `rustconv port`) names its islands types_<arch>.rs; unlisted,
+    # it had "no island" and its NTAPI callbacks came back as stdcall/"C" twins.
+    from rustconv.projects.reactos.targets import _detect_concrete_stdcall_slots
+
+    crate = tmp_path / "c"
+    (crate / "src").mkdir(parents=True)
+    (crate / "src" / "types_i386.rs").write_text(
+        'pub type CB = Option<unsafe extern "system" fn()>;\n'
+    )
+    assert _detect_concrete_stdcall_slots(crate) is False

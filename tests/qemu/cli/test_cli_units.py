@@ -8009,6 +8009,24 @@ def test_difftest_discovers_a_newly_added_harness(tmp_path: Path):
     assert difftest_mod.discover(tmp_path) == ["shell32-difftest"]
 
 
+def test_difftest_runs_a_shared_crates_own_tests_when_it_opts_in(tmp_path: Path):
+    """win32macros-rust's known-answer tests sat red on master: nothing ran them."""
+    from . import difftest as difftest_mod
+
+    ws = tmp_path / "sdk" / "lib" / "rust"
+    for crate, meta in (
+        ("win32macros-rust", "[package.metadata.difftest]\nhost-tests = true\n"),
+        ("ntdll-sys", ""),
+        ("odd-rust", "[package.metadata.difftest]\nhost-tests = false\n"),
+    ):
+        (ws / crate).mkdir(parents=True)
+        (ws / crate / "Cargo.toml").write_text(f'[package]\nname = "{crate}"\n\n{meta}')
+    (ws / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["win32macros-rust", "ntdll-sys", "odd-rust", "rtl-difftest"]\n'
+    )
+    assert difftest_mod.discover(tmp_path) == ["rtl-difftest", "win32macros-rust"]
+
+
 def test_difftest_discovers_every_generated_refstub_artifact(tmp_path: Path):
     """The set has grown from three artifacts to seven in two months, once per
     reference TU. `refstub/msvcrt_<stem>_protos.h` IS the registration, so a new

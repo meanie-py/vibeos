@@ -731,6 +731,13 @@ reported **3,790** phantom findings against a true count of 15, and the identica
 Rust, assume `->` is there to ruin it.
 
 ### A `transmute` at a callback-install site erases the CALLING CONVENTION
+**The same bug without a transmute: a callback DEFINED `extern "C"` and cast into its slot.**
+setuplib's `RtlQueryRegistryValues` query routines, boot-store enumerators and INF entry
+processors are NTAPI in the C; the translations defined all seven `extern "C"` and cast each
+at the install site (`F as unsafe extern "C" fn(..)`), which compiles on 64-bit. `rustconv
+port resolve` now sets every crate-defined function's convention from clang's own type of it
+on i386 (`port.align_definition_abis`), and crate-repair drops a fn-item cast rather than
+keep one that names a convention.
 Rust will not unify `extern "system" fn` with a literal `extern "stdcall" fn` (i386) or
 `extern "C" fn` (amd64/arm64) in a function-POINTER type, even though the ABI is identical on
 that arch. bindgen writes the literal, translations write the portable `system`, so assigning
@@ -1502,6 +1509,14 @@ why the bug only surfaced on amd64/arm64 -- rapps crashed extracting its databas
 module-local audit misses this; measure the header with the module's real flags (borrow its
 line from `compile_commands.json`, add `-fsyntax-only` and a `char (*x)[offsetof(T,f)+1000] = 1;`
 probe, read the numbers off the diagnostics) and pin the result with `offset_of!` asserts.
+**The other direction, at island scale: a pack PUSH copied into a bindgen wrapper.**
+profile_derive mirrors each TU's include prologue into the module's merged `WRAPPER_INC`, and
+partlist.c's prologue ENDS with `#include <pshpack1.h>` -- its `poppack.h` comes after two
+typedefs. Every header after it in setuplib's wrapper was bindgen'd under pack(1): 62 structs
+`#[repr(C, packed)]` that C lays out naturally, `USETUP_DATA` and the `STORAGE_*` IOCTL buffers
+among them. The tell was rustc E0793 ("reference to packed field") on a struct nobody packs.
+`scan_preamble` now never carries a packing include or `#pragma pack` into a wrapper; count
+`repr(C, packed)` in a fresh island against the C's own pshpack regions.
 
 ### A macro translated from the wrong side of an `#ifdef`
 **Symptom.** Values built through one helper are corrupt in a way that looks like two fields

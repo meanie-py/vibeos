@@ -168,3 +168,64 @@ def test_transmute_and_intrinsics_are_refused():
     src = RUST[span.start : span.end]
     abi = src.replace("CALL(p", "core::mem::transmute::<usize, usize>(0); CALL(p")
     assert any("forbidden" in f for f in cf.reply_findings(src, abi, {}, lambda _: []))
+
+
+def test_a_call_the_build_never_compiles_may_be_dropped(tmp_path: Path):
+    # osdetect.c: `#define NDEBUG`, then `#ifndef NDEBUG DumpNTOSInstalls(List); #endif`.
+    c = tmp_path / "x.c"
+    c.write_text(
+        "#define NDEBUG\nint Find(int List)\n{\n#ifndef NDEBUG\n    DumpAll(List);\n#endif\n"
+        "    return List;\n}\n"
+    )
+    cache: dict = {}
+    text = cf.c_function_text(c, "Find", cache)
+    assert "DumpAll" not in text and "return List;" in text
+    assert cf.c_dead_names(c, "Find", cache) == frozenset({"DumpAll"})
+    span = cf.function_spans(RUST)[1]
+    src = RUST[span.start : span.end].replace(
+        "STATUS_SUCCESS\n}", "DumpAll(p);\n    STATUS_SUCCESS\n}"
+    )
+    dropped = src.replace("DumpAll(p);\n    ", "")
+    errs = {"error[E0425]": {"amd64"}}
+    assert any("names dropped" in f for f in cf.reply_findings(src, dropped, errs, lambda _: []))
+    assert (
+        cf.reply_findings(src, dropped, errs, lambda _: [], dead_names=frozenset({"DumpAll"})) == []
+    )
+
+
+def test_a_null_fn_pointer_may_become_none():
+    span = cf.function_spans(RUST)[1]
+    src = RUST[span.start : span.end].replace(
+        "STATUS_SUCCESS\n}", "Set(core::ptr::null_mut());\n    STATUS_SUCCESS\n}"
+    )
+    fixed = src.replace("core::ptr::null_mut()", "None")
+    assert cf.reply_findings(src, fixed, {"error[E0308]": {"amd64"}}, lambda _: []) == []
+
+
+TWINS = """#[cfg(target_arch = "x86")]
+unsafe extern "stdcall" fn Cb(a: u32) -> u32 {
+    a
+}
+
+#[cfg(not(target_arch = "x86"))]
+unsafe extern "C" fn Cb(a: u32) -> u32 {
+    a
+}
+"""
+
+
+def test_cfg_twins_are_separate_functions(tmp_path: Path):
+    # setuplib: seven NTAPI callbacks written as x86 / not(x86) twins. Keyed by name, a revert
+    # put the not(x86) text over the x86 twin and both ended up not(x86).
+    spans = cf.function_spans(TWINS)
+    assert [cf.span_key(spans, sp) for sp in spans] == ["Cb#1", "Cb#2"]
+    (tmp_path / "a.rs").write_text(TWINS)
+    second = TWINS[spans[1].start : spans[1].end]
+    cf._replace_named(tmp_path, "a.rs", "Cb#2", second.replace("a\n}", "a + 0\n}"), second)
+    out = (tmp_path / "a.rs").read_text()
+    assert 'cfg(target_arch = "x86")]\nunsafe extern "stdcall" fn Cb(a: u32) -> u32 {\n    a\n}' in out
+    assert "a + 0" in out
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        cf._replace_named(tmp_path, "a.rs", "Cb#2", "x", second)  # no longer there as `second`

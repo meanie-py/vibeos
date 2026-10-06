@@ -223,11 +223,26 @@ def group_by_function(
             if sp is None:
                 outside[arch] += 1
                 continue
-            key = (fname, sp.name)
+            key = (fname, span_key(spans_cache[fname], sp))
             fe = out.setdefault(key, FnErrors(fname, sp))
             rendered = _strip_location(d.get("rendered") or d.get("message") or "")
             fe.errors.setdefault(rendered, set()).add(arch)
     return out, outside
+
+
+def span_key(spans: list[FnSpan], sp: FnSpan) -> str:
+    """The function's name, or `name#k` for the k-th of several same-named `#[cfg]` twins.
+
+    A translator writes per-arch twins (`#[cfg(target_arch = "x86")]` stdcall beside a
+    `not(x86)` one). Keyed by name alone, setuplib's seven twins merged their errors, and a
+    revert by name put one twin's text over the other: both ended up `not(x86)`.
+    """
+    same = [x for x in spans if x.name == sp.name]
+    return sp.name if len(same) == 1 else f"{sp.name}#{same.index(sp) + 1}"
+
+
+def fn_name(key: str) -> str:
+    return key.split("#", 1)[0]
 
 
 def _in_crate_call_site(span: dict, root: Path) -> dict:
@@ -299,6 +314,9 @@ Rules:
 7. C truthiness is explicit in Rust: `x != 0`, `!p.is_null()`, `b != FALSE as BOOLEAN`.
 8. Fields of a #[repr(packed)] struct must not be borrowed: read them by value or use
    `core::ptr::addr_of!` / `&raw const`.
+9. A C function pointer is `Option<unsafe extern ".." fn(..)>`: NULL is `None`, a NULL test
+   is `.is_none()` / `.is_some()`, and a call through it is `(f.unwrap_unchecked())(args)` --
+   calling NULL is undefined in C as well, so this adds no failure path.
 """
 
 
@@ -543,6 +561,9 @@ _REPLACED_BY = {
     "_SEH2_TRY": re.compile(r"'\w+\s*:\s*\{"),
     "_SEH2_FINALLY": re.compile(r""),
     "DEFAULT_UNREACHABLE": re.compile(r"\bunreachable(?:_unchecked)?\b"),
+    # A NULL function pointer in an `Option<fn>` slot is `None` (six setuplib refusals).
+    "null_mut": re.compile(r"\bNone\b"),
+    "null": re.compile(r"\bNone\b"),
 }
 
 
@@ -585,6 +606,7 @@ def reply_findings(
     parse_check,
     type_names: frozenset[str] | set[str] = frozenset(),
     c_fn: str | None = None,
+    dead_names: frozenset[str] = frozenset(),
 ) -> list[str]:
     """Why `fixed` must not replace `original`; empty when it may.
 
@@ -626,6 +648,7 @@ def reply_findings(
         - _renamable(errors)
         - _INLINE_OK
         - set(type_names)
+        - dead_names  # the C has them only on lines the build never compiles
     )
     # By COUNT, not presence: UpdateFreeLoaderIni hand-expanded one `MAKESTRKEY!(..)` and
     # passed because a second call kept the name in the function.
@@ -677,6 +700,11 @@ class Attempt:
     status: str = ""  # replayed / bought / rejected:<why> / failed:<why>
     usd: float = 0.0
 
+    @property
+    def fn(self) -> str:
+        """The Rust function's name (`name` is a group key: `X#2` for a cfg twin)."""
+        return fn_name(self.name)
+
 
 @dataclass
 class RoundReport:
@@ -724,8 +752,40 @@ def c_function_text(c_path: Path, name: str, cache: dict) -> str | None:
             if not prev or prev.endswith((";", "}", "*/")) or prev.startswith(("#", "//")):
                 break
             head = prev_start
-        return text[head : end + 1]
+        return _live_text(c_path, text, head, end + 1, name, cache)
     return None
+
+
+def _live_text(c_path: Path, text: str, start: int, end: int, name: str, cache: dict) -> str:
+    """The function with the lines this build never compiles taken out, and the names that
+    appeared ONLY on those lines recorded for the guard (see :func:`c_dead_names`).
+
+    osdetect.c `#define`s NDEBUG and then calls `DumpNTOSInstalls(List)` under `#ifndef
+    NDEBUG`; the dumper's own body was rightly never translated, but the call was, and the
+    guard then refused every fix that dropped it.
+    """
+    from .dead_regions import never_compiled_lines
+
+    key = ("dead-lines", c_path)
+    if key not in cache:
+        cache[key] = never_compiled_lines(text)
+    dead = cache[key]
+    first = text.count("\n", 0, start) + 1
+    live, gone = [], []
+    for n, line in enumerate(text[start:end].split("\n"), first):
+        (gone if n in dead else live).append(line)
+    if gone:
+        live_words = set(re.findall(r"\b[A-Za-z_]\w*\b", "\n".join(live)))
+        cache[("dead-names", c_path, name)] = frozenset(
+            set(re.findall(r"\b[A-Za-z_]\w*\b", "\n".join(gone))) - live_words
+        )
+    return "\n".join(live)
+
+
+def c_dead_names(c_path: Path, name: str, cache: dict) -> frozenset[str]:
+    """Names the C function mentions only on lines this build never compiles."""
+    c_function_text(c_path, name, cache)
+    return cache.get(("dead-names", c_path, name), frozenset())
 
 
 def _matching_paren(text: str, open_idx: int) -> int | None:
@@ -760,15 +820,26 @@ def _apply(root: Path, replacements: dict[str, list[tuple[FnSpan, str, str]]]) -
     forget_file_cache()
 
 
-def _replace_named(root: Path, fname: str, name: str, new_text: str) -> bool:
+def _replace_named(
+    root: Path, fname: str, name: str, new_text: str | None, old_text: str | None
+) -> None:
+    """Swap `old_text` -- the function `name` exactly as it stands now -- for `new_text`.
+
+    By TEXT, not by name: with `#[cfg]` twins the first span of a name is not necessarily the
+    one being swapped (see span_key). A function that is not in the file as `old_text` is a
+    bookkeeping bug, so it raises rather than editing the wrong span.
+    """
+    if new_text is None or old_text is None:
+        raise RuntimeError(f"crate_fix: {fname}:{name}: a swap with no text on one side")
     p = root / fname
     text = p.read_bytes().decode("utf-8")
+    want = old_text.rstrip("\n")
     for sp in function_spans(text):
-        if sp.name == name:
+        if sp.name == fn_name(name) and text[sp.start : sp.end] == want:
             text = text[: sp.start] + new_text.rstrip("\n") + text[sp.end :]
             tmp = p.with_suffix(".rs.fixtmp")
             tmp.write_bytes(text.encode("utf-8"))
             tmp.replace(p)
             forget_file_cache()
-            return True
-    return False
+            return
+    raise RuntimeError(f"crate_fix: {fname}:{name} is not in the file as expected")

@@ -2465,6 +2465,35 @@ case "$DRIVER" in
     # both islands live in the netapi32-rust crate
     OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/netapi32-rust/src}"
     ;;
+  setuplib)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from base/setup/lib/CMakeLists.txt
+    # (23 compiled TU(s), 298 headers in the include closure, 23 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    # BLOCKLIST_FUNCS, MEASURED: 77 external prototype(s) declared by the include closure, 30 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/setup/lib"
+    WRAPPER_INC=$'#include "precomp.h"\n#include "fileqsup.h"\n#define NDEBUG\n#include <debug.h>\n#include "infsupp.h"\n#include "filesup.h"\n#include "partlist.h"\n#include "arcname.h"\n#include "bldrsup.h"\n#include "inicache.h"\n#include "devutils.h"\n#include <pseh/pseh2.h>\n#include <ndk/umfuncs.h> // Ldr* functions\n#include "fsrec.h"\n#include "genlist.h"\n#include <ndk/ldrtypes.h>\n#include <ndk/ldrfuncs.h>\n#include "ntverrsrc.h"\n#include "osdetect.h"\n#include "partinfo.h"\n#include <ntddscsi.h>\n#include <mountdev.h> // For IOCTL_MOUNTDEV_QUERY_DEVICE_NAME\n#include "volutil.h"\n#include "fsrec.h" // For FileSystemToMBRPartitionType()\n#include "registry.h"\n#include "regutil.h"\n#include "bootcode.h"\n#include <ntddstor.h> // For STORAGE_DEVICE_NUMBER\n#include "fsutil.h"\n#include "setuplib.h"\n#include <fslib/vfatlib.h>\n#include "setuplib.h" // HACK for USETUP_DATA\n#include "install.h"\n#include "mui.h"\n#include "muifonts.h"\n#include "muilanguages.h"\n#include "substset.h"\n#include "settings.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]fmifs[/\\]fmifs\.h' --allowlist-file '.*[/\\]fslib[/\\]vfatlib\.h'
+                  --allowlist-file '.*[/\\]ldrtypes\.h'
+                  --allowlist-file '.*[/\\]mountdev\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h'
+                  --allowlist-file '.*[/\\]ntddstor\.h'
+                  --allowlist-file '.*[/\\]ntstrsafe\.h'
+                  --allowlist-file '.*[/\\]pseh[/\\]pseh2\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]rosioctl\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*lib[/\\].*\.h'
+                  --allowlist-file '.*[/\\]mountmgr\.h' )
+    EXTRA_INC=( -I"${SRC}/base/setup/lib" -I"${SRC}/build-i386/base/setup/lib" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/base/setup/lib/spapisup" -I"${SRC}/base/setup/lib/utils" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_WINKD_ -D_SETUPLIB_ -DLANGUAGE_AF_ZA -DLANGUAGE_AR_AE -DLANGUAGE_AR_BH -DLANGUAGE_AR_DZ -DLANGUAGE_AR_EG -DLANGUAGE_AR_IQ -DLANGUAGE_AR_JO -DLANGUAGE_AR_KW -DLANGUAGE_AR_LB -DLANGUAGE_AR_LY -DLANGUAGE_AR_MA -DLANGUAGE_AR_OM -DLANGUAGE_AR_QA -DLANGUAGE_AR_SA -DLANGUAGE_AR_SY -DLANGUAGE_AR_TN -DLANGUAGE_AR_YE -DLANGUAGE_AZ_AZ -DLANGUAGE_BE_BY -DLANGUAGE_BG_BG -DLANGUAGE_BN_BD -DLANGUAGE_BN_IN -DLANGUAGE_CA_ES -DLANGUAGE_CS_CZ -DLANGUAGE_DA_DK -DLANGUAGE_DE_AT -DLANGUAGE_DE_CH -DLANGUAGE_DE_DE -DLANGUAGE_DE_LI -DLANGUAGE_DE_LU -DLANGUAGE_DV_MV -DLANGUAGE_EL_GR -DLANGUAGE_EN_AU -DLANGUAGE_EN_BZ -DLANGUAGE_EN_CA -DLANGUAGE_EN_CB -DLANGUAGE_EN_GB -DLANGUAGE_EN_IE -DLANGUAGE_EN_JM -DLANGUAGE_EN_NZ -DLANGUAGE_EN_PH -DLANGUAGE_EN_TT -DLANGUAGE_EN_US -DLANGUAGE_EN_ZA -DLANGUAGE_EN_ZW -DLANGUAGE_EO_AA -DLANGUAGE_ES_AR -DLANGUAGE_ES_BO -DLANGUAGE_ES_CL -DLANGUAGE_ES_CO -DLANGUAGE_ES_CR -DLANGUAGE_ES_DO -DLANGUAGE_ES_EC -DLANGUAGE_ES_ES -DLANGUAGE_ES_GT -DLANGUAGE_ES_HN -DLANGUAGE_ES_MX -DLANGUAGE_ES_NI -DLANGUAGE_ES_PA -DLANGUAGE_ES_PE -DLANGUAGE_ES_PR -DLANGUAGE_ES_PY -DLANGUAGE_ES_SV -DLANGUAGE_ES_UY -DLANGUAGE_ES_VE -DLANGUAGE_ET_EE -DLANGUAGE_EU_ES -DLANGUAGE_FA_IR -DLANGUAGE_FI_FI -DLANGUAGE_FO_FO -DLANGUAGE_FR_BE -DLANGUAGE_FR_CA -DLANGUAGE_FR_CH -DLANGUAGE_FR_FR -DLANGUAGE_FR_LU -DLANGUAGE_FR_MC -DLANGUAGE_GL_ES -DLANGUAGE_GU_IN -DLANGUAGE_HE_IL -DLANGUAGE_HI_IN -DLANGUAGE_HR_HR -DLANGUAGE_HU_HU -DLANGUAGE_HY_AM -DLANGUAGE_ID_ID -DLANGUAGE_IS_IS -DLANGUAGE_IT_CH -DLANGUAGE_IT_IT -DLANGUAGE_JA_JP -DLANGUAGE_KA_GE -DLANGUAGE_KK_KZ -DLANGUAGE_KN_IN -DLANGUAGE_KOK_IN -DLANGUAGE_KO_KR -DLANGUAGE_KY_KG -DLANGUAGE_LT_LT -DLANGUAGE_LV_LV -DLANGUAGE_MK_MK -DLANGUAGE_MN_MN -DLANGUAGE_MR_IN -DLANGUAGE_MS_BN -DLANGUAGE_MS_MY -DLANGUAGE_MY_MM -DLANGUAGE_NL_BE -DLANGUAGE_NL_NL -DLANGUAGE_NN_NO -DLANGUAGE_PA_IN -DLANGUAGE_PL_PL -DLANGUAGE_PT_BR -DLANGUAGE_PT_PT -DLANGUAGE_RM_CH -DLANGUAGE_RO_RO -DLANGUAGE_RU_RU -DLANGUAGE_SA_IN -DLANGUAGE_SK_SK -DLANGUAGE_SL_SI -DLANGUAGE_SQ_AL -DLANGUAGE_SR_SP -DLANGUAGE_SV_FI -DLANGUAGE_SV_SE -DLANGUAGE_SW_KE -DLANGUAGE_SYR_SY -DLANGUAGE_TA_IN -DLANGUAGE_TE_IN -DLANGUAGE_TH_TH -DLANGUAGE_TR_TR -DLANGUAGE_TT_TA -DLANGUAGE_UK_UA -DLANGUAGE_UR_PK -DLANGUAGE_UZ_UZ -DLANGUAGE_VI_VN -DLANGUAGE_WA_BE -DLANGUAGE_ZH_CN -DLANGUAGE_ZH_HK -DLANGUAGE_ZH_MO -DLANGUAGE_ZH_SG -DLANGUAGE_ZH_TW -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
