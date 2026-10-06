@@ -483,7 +483,7 @@ Full plan, oracles and safety rules:
 | # | Boss | First rung | Size | Status (2026-10-05) |
 |---|------|-----------|------|--------|
 | 12a | **Windows 10 kernel export surface**, shared by everything below | An import-gap census tool: missing exports across real Windows 10 drivers and apps, ranked | L | proposed |
-| 12b | **Modern hardware drivers**: KMDF (built, 1.17) on real drivers, NVMe (missing), NDIS 6, Vista audio stack, Wi-Fi, HID-over-I²C | NVMe StorPort miniport on the 7010 | XL | proposed |
+| 12b | **Modern hardware drivers**: KMDF (built, 1.17) on real drivers, NVMe (`nvme.sys` works polled on all three arches, 2026-10-06; interrupts and queue depth next), NDIS 6, Vista audio stack, Wi-Fi, HID-over-I²C | NVMe StorPort miniport on the 7010 | XL | proposed |
 | 12c | **Real GPU**: XP x64 driver (XDDM), then WDDM 1.1, then WDDM 2.x (dxgkrnl + a CDD-style adapter so win32k keeps its interface) | Radeon HD 5450 on AMD's XP x64 driver | XXL | proposed |
 | 12d | **Latest Google Chrome**: Windows 10 user-mode surface (mostly Wine), then the sandbox's four kernel primitives (syscall filter, integrity levels, job limits, namespace isolation) plus Windows-exact ntdll stubs | `chrome --headless --no-sandbox --dump-dom` as a smoke ladder rung | XL | proposed |
 
@@ -593,6 +593,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `ddk::KeGetPcr` copies are unsafe in switch context — dedup to the single TPIDR-backed path.
 
 ## Known bugs & flakes (live registry)
+
+- **arm64: keystrokes sent through QMP to the default virtio keyboard do not reach the
+  desktop's windows** (OPEN, 2026-10-06, seen while gating nvme.sys). On a quiet arm64 boot,
+  Win+R opened no Run dialog and typed text never appeared in the focused Notepad, while
+  `[ARM64INPUT] KBD-DELIVERED` (a one-shot oracle, so it proves only the first key) and
+  `[WIN32K] RIT first keyboard input` both fired. The same keystrokes through the xHCI rig's
+  USB keyboard (`VIBEOS_QEMU_XHCI=1`, which drops the virtio devices) work, so
+  `tests/qemu/test_nvme.py` types that way on arm64. Not yet narrowed: whether keys after
+  the first leave arm64input at all. Row 10a's migration to USB HID input would retire the
+  path; until then a person typing into an arm64 QEMU window likely hits the same wall.
 
 - **Pi 4 (real hardware): a loopback UDP `sendto()` never returned** (FIXED 2026-10-04,
   `e0674df2c66`). With no NIC netstack drives, the engine worker exited while TDI kept pending

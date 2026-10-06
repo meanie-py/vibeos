@@ -781,6 +781,18 @@ def _net_suite_env(artifact_dir: Path) -> dict[str, str]:
 _NVME_PUBLISHED = "[NVME] controller 0: namespace 1 published as a disk"
 
 
+def nvme_default_on(args) -> bool:
+    """`--nvme`, or the amd64-bios lane, which IS the OptiPlex 9020 (Libreboot):
+    the ISO on a USB stick and an NVMe drive in the box. So every gate boots
+    nvme.sys under SeaBIOS, beside a second BIOS disk, and the driver cannot rot
+    unseen. `VIBEOS_QEMU_NVME=0` opts the lane out."""
+    if getattr(args, "nvme", False):
+        return True
+    if os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "0":
+        return False
+    return getattr(args, "arch", "") == "amd64-bios"
+
+
 def nvme_requested() -> bool:
     """`--nvme` (VIBEOS_QEMU_NVME=1): an NVMe controller is attached (vm.py _nvme_args)."""
     return os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "1"
@@ -926,7 +938,7 @@ def smoke(args, repo: Path) -> int:
 
     # NVMe channel: a controller attached on every arch (vm.py _nvme_args), and
     # every boot must then show nvme.sys publishing its namespace (_nvme_check).
-    if getattr(args, "nvme", False):
+    if nvme_default_on(args):
         os.environ["VIBEOS_QEMU_NVME"] = "1"
         run.add(Stage("nvme", status="warn", detail="NVMe controller attached"))
 

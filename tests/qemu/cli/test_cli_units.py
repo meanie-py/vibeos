@@ -9518,6 +9518,20 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     assert smoke_mod._nvme_check(never_loaded) is None
 
 
+def test_the_bios_lane_boots_with_an_nvme_drive(monkeypatch):
+    """amd64-bios is the OptiPlex 9020's configuration: USB stick + NVMe drive."""
+    from types import SimpleNamespace
+
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_NVME", raising=False)
+    assert smoke_mod.nvme_default_on(SimpleNamespace(arch="amd64-bios", nvme=False))
+    assert not smoke_mod.nvme_default_on(SimpleNamespace(arch="amd64", nvme=False))
+    assert smoke_mod.nvme_default_on(SimpleNamespace(arch="arm64", nvme=True))
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "0")
+    assert not smoke_mod.nvme_default_on(SimpleNamespace(arch="amd64-bios", nvme=False))
+
+
 def test_the_net_suite_never_inherits_the_nvme_rig(monkeypatch, tmp_path):
     """QEMU's nvme device blocks savevm, which the net suite takes, so `smoke
     --nvme` once errored all 16 net tests at setup."""

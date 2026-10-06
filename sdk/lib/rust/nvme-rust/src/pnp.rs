@@ -73,6 +73,7 @@ const POWER_DEVICE_D0: i32 = 1;
 const POWER_DEVICE_D3: i32 = 4;
 const POWER_SYSTEM_WORKING: usize = 1;
 const IO_DISK_INCREMENT: i8 = 1;
+const SRB_FUNCTION_IO_CONTROL: u8 = 0x02;
 
 const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_PENDING: NTSTATUS = 0x0000_0103;
@@ -523,6 +524,12 @@ unsafe fn disk_dispatch(device: PDEVICE_OBJECT, ext: &DiskExt, irp: PIRP) -> NTS
                 | scsidisk::SRB_FUNCTION_UNLOCK_QUEUE => {
                     (*srb).SrbStatus = scsidisk::SRB_STATUS_SUCCESS;
                     complete(irp, STATUS_SUCCESS, 0)
+                }
+                // Miniport IOCTLs (SMART and the like): nothing to answer, and
+                // classpnp asks on every disk, so not worth a line each time.
+                SRB_FUNCTION_IO_CONTROL => {
+                    (*srb).SrbStatus = scsidisk::SRB_STATUS_INVALID_REQUEST;
+                    complete(irp, scsidisk::STATUS_NOT_SUPPORTED, 0)
                 }
                 f => {
                     nvprint!("SRB function {:#04x} not supported\n", f);

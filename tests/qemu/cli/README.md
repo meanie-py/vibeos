@@ -111,9 +111,11 @@ all included), then auto-triage on failure.
   `smoke:amd64-bios` lane. `VIBEOS_QEMU_BOOT_TRANSPORT=usb-ehci|ide-cd|usb-storage`
   picks the boot device on any x86 arch. See `docs/engineering/bios-boot.md`.
 
-- **`--nvme`** (any arch) attaches a QEMU `nvme` controller with one 64M MBR+FAT16
-  namespace (`VIBEOS_QEMU_NVME=1`) and FAILS the boot (`NVME_NOT_ENGAGED`) unless
-  nvme.sys prints `[NVME] controller 0: namespace 1 published as a disk`. The net
+- **`--nvme`** (any arch; the default for `amd64-bios`, which is the OptiPlex 9020's
+  stick + NVMe drive, opt out with `VIBEOS_QEMU_NVME=0`) attaches a QEMU `nvme`
+  controller with one 64M MBR+FAT16 namespace (`VIBEOS_QEMU_NVME=1`) and FAILS the
+  boot (`NVME_NOT_ENGAGED`) unless nvme.sys prints
+  `[NVME] controller 0: namespace 1 published as a disk`. The net
   suite never inherits the knob: QEMU's nvme device blocks the `savevm` it takes.
   `VIBEOS_QEMU_NVME=1 pytest tests/qemu/test_nvme.py --arch <a>` goes further: the
   desktop copies the namespace's file and the host reads the copy back.
