@@ -358,7 +358,14 @@ pub unsafe extern "system" fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LU
         }
     }
 
-    ExAllocateLocallyUniqueId(LocallyUniqueId);
+    // Divergence from the C, which hands the user pointer straight to
+    // ExAllocateLocallyUniqueId and stores OUTSIDE its __try: an unmap after the
+    // probe would fault there. Allocate into a local and copy it out fault-tolerantly.
+    let mut luid: LUID = core::mem::zeroed();
+    ExAllocateLocallyUniqueId(&mut luid);
+    if let Err(status) = ntkrnl_sys::probe::write_back(LocallyUniqueId, luid) {
+        return status;
+    }
     STATUS_SUCCESS
 }
 

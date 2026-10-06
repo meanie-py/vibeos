@@ -10908,3 +10908,65 @@ def test_polite_farm_gives_up_at_the_deadline(monkeypatch):
     monkeypatch.setattr(farm_mod.hostlock, "land_holder", lambda: {"kind": "land"})
     monkeypatch.setattr(farm_mod.hostlock, "foreign_boot_holders", lambda _pid: [])
     assert not farm_mod._wait_for_quiet_host("amd64", farm_mod.time.monotonic() - 1)
+
+
+def test_build_classifier_reads_the_FAILED_edge_not_the_whole_log():
+    """2026-10-05: a concurrent i386 --clean deleted kernel32.dll under the amd64
+    mkisofs edge, and the summary said CARGO_CHECK_FAIL with three `'error: {`
+    lines quoted from an unrelated cargo warning. Verbatim shape, trimmed."""
+    log = (
+        "[200/370] Building ntdll-rust\n"
+        "warning: unused variable\n"
+        "146 |             'error: {\n"
+        "   Compiling ntkrnlmp-cargo v0.1.0\n"
+        "[370/370] cd /tmp/vibeos/build-amd64/boot && mkisofs ...\n"
+        "FAILED: boot/CMakeFiles/livecd /tmp/vibeos/build-amd64/boot/CMakeFiles/livecd \n"
+        "cd /tmp/vibeos/build-amd64/boot && mkisofs ...\n"
+        "mkisofs: No such file or directory. Invalid node - "
+        "'/tmp/vibeos/build-i386/dll/win32/kernel32/kernel32.dll'.\n"
+        "ninja: build stopped: subcommand failed.\n"
+    )
+    cls, salient = build_mod._classify_build_failure(log, "", 1)
+    assert cls == "BUILD_FAIL"
+    assert salient[0].startswith("FAILED: boot/CMakeFiles/livecd")
+    assert any("kernel32.dll" in s for s in salient), salient
+    # a failed CARGO edge still classifies by its own output
+    cargo = (
+        "warning: `ld.lld: error` quoted in a doc\n"
+        "FAILED: ntoskrnl/ntoskrnl.exe\n"
+        "cargo build ...\n"
+        "error[E0308]: mismatched types\n"
+        "ninja: build stopped: subcommand failed.\n"
+    )
+    assert build_mod._classify_build_failure(cargo, "", 1)[0] == "CARGO_CHECK_FAIL"
+
+
+def test_staging_amd64_build_holds_build_i386_still(tmp_path, monkeypatch):
+    """amd64 media is partly made of build-i386 (closure at configure, mkisofs at
+    the last edge), so a staging amd64 build holds the i386 directory lock; a
+    deferred one (the gate's --no-wow64-stage) and other arches do not."""
+    (tmp_path / "build-i386").mkdir()
+    taken: list[str] = []
+    released: list[int] = []
+    monkeypatch.setattr(
+        build_mod.hostlock,
+        "acquire_build_dir",
+        lambda d, **kw: taken.append(Path(d).name) or 7,
+    )
+    monkeypatch.setattr(build_mod.hostlock, "release", released.append)
+
+    def held(arch: str, **flags) -> bool:
+        run = build_mod.Run("build", arch)
+        with contextlib.ExitStack() as reads:
+            ok = build_mod._hold_wow64_source(
+                run, tmp_path, arch, types.SimpleNamespace(**flags), reads
+            )
+            assert ok
+        return bool(taken)
+
+    assert held("amd64", no_wow64_stage=False)
+    assert taken == ["build-i386"] and released == [7]
+    taken.clear()
+    assert not held("amd64", no_wow64_stage=True)
+    assert not held("i386", no_wow64_stage=False)
+    assert not held("arm64", no_wow64_stage=False)

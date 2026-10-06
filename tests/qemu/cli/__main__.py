@@ -194,11 +194,11 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument(
         "--no-wow64-stage",
         action="store_true",
-        help="amd64: build the media WITHOUT the SysWOW64 set. The staging "
-        "snapshots build-i386 at configure time, so an amd64 build running "
-        "beside a cold i386 one reads a half-cleaned tree and fails its import "
-        "closure. `gate` passes this when it builds both, then restages amd64 "
-        "once i386 is done. RECONCILED, not sticky",
+        help="amd64: build the media WITHOUT the SysWOW64 set. A staging amd64 "
+        "build reads build-i386 from configure to its last (mkisofs) edge, so it "
+        "holds build-i386's directory lock throughout and waits out any i386 "
+        "build in this worktree; pass this to run beside one instead. `gate` "
+        "does, then restages amd64 once i386 is done. RECONCILED, not sticky",
     )
     b.add_argument(
         "--hal-pic",

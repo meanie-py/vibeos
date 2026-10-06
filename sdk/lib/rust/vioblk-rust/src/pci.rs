@@ -62,17 +62,18 @@ impl ConfigurationAccess for HalPciAccess {
     }
 }
 
-/// Enable memory decoding and bus mastering, and ask for legacy INTx off (pci.sys turns
-/// it back on when PnP starts the device; HwInterrupt acknowledges what gets through).
+/// Enable memory decoding, bus mastering and legacy INTx — the interrupt that
+/// completes every transfer.
 ///
 /// virtio-drivers' `PciTransport::new` does not enable bus mastering, and the device
-/// cannot DMA without it. INTx goes off because this driver polls: a virtio-blk
-/// function shares its INTx line with whatever else the chipset routed there, and an
-/// interrupt nobody claims on a level-triggered shared line is a storm.
-pub fn enable_polled_dma(df: DeviceFunction) {
+/// cannot DMA without it. INTx is cleared explicitly rather than left to pci.sys: on x86
+/// PnP start does clear it, but nothing guarantees the function is started before
+/// SCSIPORT's legacy scan reaches it, and a masked INTx would leave every request to
+/// time out.
+pub fn enable_device(df: DeviceFunction) {
     let mut access = HalPciAccess;
     let cmd_status = access.read_word(df, 0x04);
     // bit1 MEMORY_SPACE, bit2 BUS_MASTER, bit10 INTERRUPT_DISABLE. The status half of
     // the dword is write-1-to-clear, so write zeros there.
-    access.write_word(df, 0x04, (cmd_status & 0xFFFF) | 0x0406);
+    access.write_word(df, 0x04, ((cmd_status & 0xFFFF) | 0x0006) & !0x0400);
 }

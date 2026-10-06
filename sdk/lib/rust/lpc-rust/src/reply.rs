@@ -230,8 +230,15 @@ pub unsafe extern "system" fn LpcpMoveMessageChecked(
     MessageType: ULONG,
     ClientId: PCLIENT_ID,
 ) -> NTSTATUS {
-    LpcpMoveMessageHeader(Destination, Origin, MessageType, ClientId);
-    let aligned_length = lpcp_move_message_aligned_len(Destination);
+    if let Err(st) = lpcp_store_message_header(Destination, Origin, MessageType, ClientId) {
+        return st;
+    }
+    // Sized from Origin, the value just stored -- never read back out of
+    // Destination. That is the caller's buffer: another thread could rewrite
+    // DataLength between the store and the read and size this copy out of the
+    // kernel's message buffer. (The C reads it back; it trusts the store.)
+    let data_length = (*Origin).u1.s1.DataLength as usize;
+    let aligned_length = (data_length + core::mem::size_of::<ULONG>() - 1) & !(core::mem::size_of::<ULONG>() - 1);
     match ntkrnl_sys::probe::safe_copy_raw(
         (Destination as usize + core::mem::size_of::<PORT_MESSAGE>()) as *mut core::ffi::c_void,
         Data as *const core::ffi::c_void,
@@ -240,6 +247,29 @@ pub unsafe extern "system" fn LpcpMoveMessageChecked(
         Ok(()) => STATUS_SUCCESS,
         Err(st) => st,
     }
+}
+
+/// `LpcpMoveMessageHeader` into a caller's buffer: the same fields, each stored
+/// fault-tolerantly, because the C's __try covers the header as well as the payload.
+unsafe fn lpcp_store_message_header(
+    Destination: PPORT_MESSAGE,
+    Origin: PPORT_MESSAGE,
+    MessageType: ULONG,
+    ClientId: PCLIENT_ID,
+) -> Result<(), NTSTATUS> {
+    use core::ptr::addr_of_mut;
+    use ntkrnl_sys::probe::write_back;
+    let ClientId = opaque_ptr(ClientId);
+    write_back(addr_of_mut!((*Destination).u1.Length), (*Origin).u1.Length)?;
+    let ty = if MessageType == 0 { (*Origin).u2.s2.Type } else { (MessageType & 0xFFFF) as i16 };
+    write_back(addr_of_mut!((*Destination).u2.s2.Type), ty)?;
+    let cid = if !ClientId.is_null() { *ClientId } else { (*Origin).__bindgen_anon_1.ClientId };
+    write_back(addr_of_mut!((*Destination).__bindgen_anon_1.ClientId), cid)?;
+    write_back(addr_of_mut!((*Destination).MessageId), (*Origin).MessageId)?;
+    write_back(
+        addr_of_mut!((*Destination).__bindgen_anon_2.ClientViewSize),
+        (*Origin).__bindgen_anon_2.ClientViewSize,
+    )
 }
 
 unsafe fn LpcpMoveMessageHeader(
