@@ -747,16 +747,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   objects define exactly the symbols the C ones did (checked object by object). `sehtest`'s
   `spec-stub` probe calls msvcrt's `_CrtCheckMemory` and checks the EXCEPTION_WINE_STUB record
   on every amd64/arm64 boot.
-- **Delay-loaded imports are not delay-loaded** (OPEN, 2026-10-04; all arches). `VIBEOS_ENABLE_DELAYLOAD`
-  is ON, yet no module carries a delay-import directory (`DelayImportDescriptorRVA` 0 in shell32,
-  comdlg32, setup's reactos.exe on i386 and amd64): every `add_delay_importlibs` DLL is bound as
-  a regular import, and the delay-load runtime (`__delayLoadHelper2`, Rust since 2026-10-04 in
-  `sdk/lib/rust/delayimp-rust`) is linked everywhere and called nowhere. The sdk apitests say so
-  themselves -- `tools/payloads/delayimp` (i386): all three skip with "No
-  IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT found", nohook exits 0 and globalhook/runtimehook exit 128,
-  identically against the C and the Rust runtime (A/B). Owed: find where the `_delayed`
-  import libraries stop producing delay thunks (gcc.cmake `add_delay_importlibs`,
-  docs/engineering/archive/delay-import-llvm-mingw-design.md), then grade the helper for real.
+- **The delay-import data directory was empty** (FIXED 2026-10-06; logged 2026-10-04 as "delay-loaded
+  imports are not delay-loaded", which was a misdiagnosis). Delay loading always worked. No
+  `add_delay_importlibs` DLL appears in any module's regular import table (shell32's 16, on
+  i386/amd64/arm64): the calls go through gen-delaylib's thunks to `__delayLoadHelper2`. What was
+  missing is data directory 13, which lld fills only for its own `/delayload`. gen-delaylib now
+  brackets each module's descriptors in `.CRT$VBDLYIMPA/B/C`; lld's MinGW mode sorts only `.CRT$`
+  and `.tls$` groups, and `.rdata$` came out unsorted. `pefixup --delayimport` then sets the
+  directory after every link that delay-imports. `llvm-readobj --coff-imports` now lists
+  shell32's 14 linked delay DLLs. With the directory present, sdk's delayimp_nohook apitest
+  finally runs instead of skipping: 18 tests, 0 failures, i386 (`tools/payloads/delayimp`;
+  the sweep now streams a single-test binary's output instead of only its first line).
+- **delayimp apitests: the hook variants die with exit 128** (OPEN, 2026-10-06, i386).
+  `delayimp_globalhook` and `delayimp_runtimehook` print the directory trace line, then exit
+  128 with no summary and no failure line, so the process dies inside the first hooked delay
+  load (`mmGetCurrentTask`). It happens identically with the C and the Rust runtime (A/B,
+  2026-10-04), so the cause is shared: the generated thunks, or the hooks' contract
+  (`DliHook` rewrites `szDll`/`szProcName` in place and returns fake HMODULEs). delayimp-rt's
+  hook type is `extern "system"`, which is right. Next step: run it under the debug toolkit and
+  break in `DliHook`.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
   `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs
