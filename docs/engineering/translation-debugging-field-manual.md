@@ -11412,6 +11412,19 @@ returns (`NtTestAlert`, `NtSetInformationThread`).
 **Generalize.** A user-mode crash at a PC equal to a byte count is a status block written late.
 Check that every path back to user mode delivers kernel APCs.
 
+**Sibling (USER APCs, same root shape).** `NtContinue(ctx, TestAlert=TRUE)` is the loop by which
+`KiUserApcDispatcher` drains more than one user APC queued at a single alertable wait: the first
+APC's dispatcher ends in it, and the TestAlert must deliver the next before `ctx` resumes. arm64
+`NtContinue` calls `KeTestAlertThread` (which sets `UserApcPending`) and then exits through
+`KiExceptionExit` — a bare `eret`, NOT the SVC-dispatch tail — so the just-marked user APC was
+never delivered and the second `QueueUserAPC` ran only at the thread's next trap. `SleepEx`
+returned `WAIT_IO_COMPLETION` after one APC instead of both (first seen draining chained APCs for
+an x86-64 FEX guest, apc64 rung 2). **Fix:** `NtContinue` (ke/except.rs), arm64 only, delivers the
+pending user APC itself after `KeTestAlertThread` — `KiDeliverApc(UserMode, …)` at `APC_LEVEL`
+when returning to EL0 with `UserApcPending` set, mirroring `KiDeliverUserApcArm64`. amd64's trap
+return already checks this; arm64's `KiExceptionExit` asm does not, so any shortcut return that
+bypasses the SVC tail owes the check.
+
 ### A kernel return address holds a DISK_GEOMETRY: the completion APC ran after its caller returned
 **Symptom.** Pi 4, once the SD card became writable: a bugcheck in stortest's thread, either 0x1E
 with `PC=LR=0` and `FP=0x0000_0200_0000_003F` (`SectorsPerTrack=63, BytesPerSector=512`, the tail

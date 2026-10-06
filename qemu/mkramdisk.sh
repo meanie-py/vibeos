@@ -260,7 +260,7 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             # only in sysamd64, and the ladder grades whatever the media carries
             # (ladder.py STAGED_LADDER), so a guest staged without its DLL set
             # would be graded on a run that could only fail.
-            for G in gui64 win64 file64 async64 marshal64 fault64 thread64 selfmod64 reg64 spawn64; do
+            for G in gui64 win64 file64 async64 marshal64 fault64 thread64 selfmod64 reg64 spawn64 apc64; do
                 if [ -f "$PROJECT_DIR/build-fex-hello/$G.exe" ]; then
                     mcopy -o -i "$RAMDISK_IMG" "$PROJECT_DIR/build-fex-hello/$G.exe" "::/reactos/system32/$G.exe"
                 else

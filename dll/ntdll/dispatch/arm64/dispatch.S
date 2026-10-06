@@ -28,6 +28,21 @@ LdrInitializeThunk:
  */
 .globl KiUserApcDispatcher
 KiUserApcDispatcher:
+    /* In an x86-64 guest process wowx64.dll fills WowX64UserApcHook
+     * (dispatch/mod.rs): the routine may be guest x86-64 code, which it runs
+     * itself and never comes back from. It returns only for a native routine,
+     * so the four APC registers are kept across it and the call below is
+     * exactly the hookless one. */
+    adrp x10, WowX64UserApcHook
+    ldr x10, [x10, :lo12:WowX64UserApcHook]
+    cbz x10, 1f
+    stp x0, x1, [sp, #-32]!
+    stp x2, x3, [sp, #16]
+    add x4, sp, #32     /* CONTEXT */
+    blr x10
+    ldp x2, x3, [sp, #16]
+    ldp x0, x1, [sp], #32
+1:
     /* Save CONTEXT pointer for NormalRoutine (e.g., LdrInitializeThunk reads x9) */
     mov x9, sp
 
