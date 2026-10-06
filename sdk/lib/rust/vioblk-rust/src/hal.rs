@@ -118,6 +118,11 @@ fn crosses_page(addr: usize, len: usize) -> bool {
     (addr & (PAGE_SIZE - 1)) + len > PAGE_SIZE
 }
 
+/// Set when a BAR could not be mapped; HwFindAdapter checks and declines the adapter.
+pub static MAP_FAILED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+const DUMMY_BAR_LEN: usize = PAGE_SIZE;
+static mut DUMMY_BAR: [u8; DUMMY_BAR_LEN] = [0; DUMMY_BAR_LEN];
+
 pub struct VioHal;
 
 unsafe impl Hal for VioHal {
@@ -135,8 +140,19 @@ unsafe impl Hal for VioHal {
     }
 
     unsafe fn mmio_phys_to_virt(paddr: PhysAddr, size: usize) -> NonNull<u8> {
-        let v = MmMapIoSpace(phys(paddr), size as _, MM_NON_CACHED as _);
-        NonNull::new(v as *mut u8).expect("MmMapIoSpace failed for a virtio-blk BAR")
+        let v = MmMapIoSpace(phys(paddr), size as _, MM_NON_CACHED as _) as *mut u8;
+        match NonNull::new(v) {
+            Some(nn) => nn,
+            None => {
+                // The trait cannot return an error. Hand back a zeroed page instead (the
+                // regions virtio-blk maps are capability windows well under a page):
+                // virtio-drivers then reads a queue size of 0 and fails its own init,
+                // and HwFindAdapter sees MAP_FAILED and declines the adapter — one
+                // missing disk, not a dead kernel.
+                MAP_FAILED.store(true, Ordering::Release);
+                NonNull::new((&raw mut DUMMY_BAR).cast::<u8>()).unwrap_or(NonNull::dangling())
+            }
+        }
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, direction: BufferDirection) -> PhysAddr {
@@ -151,10 +167,20 @@ unsafe impl Hal for VioHal {
         assert!(len <= SLOT, "vioblk: {len}-byte page-straddling buffer outside the arena");
         let pool = POOL_VA.load(Ordering::Acquire);
         assert!(pool != 0, "vioblk: bounce pool not initialised");
-        let _lock = SpinLockGuard::acquire(&raw mut BOUNCE_LOCK);
-        let owners = &mut *(&raw mut POOL_OWNER);
-        let i = owners.iter().position(|&o| o == 0).expect("vioblk: bounce pool exhausted");
-        owners[i] = addr;
+        // A slot is only ever briefly taken: requests are serialized per adapter, at
+        // most two buffers each are bounced, and SLOTS (64) exceeds two per adapter for
+        // every adapter the arena table admits. So a full pool means another CPU is
+        // mid-request; wait for it rather than fail.
+        let i = loop {
+            let _lock = SpinLockGuard::acquire(&raw mut BOUNCE_LOCK);
+            let owners = &mut *(&raw mut POOL_OWNER);
+            if let Some(i) = owners.iter().position(|&o| o == 0) {
+                owners[i] = addr;
+                break i;
+            }
+            drop(_lock);
+            core::hint::spin_loop();
+        };
         let va = (pool + i * SLOT) as *mut u8;
         if direction != BufferDirection::DeviceToDriver {
             ptr::copy_nonoverlapping(addr as *const u8, va, len);

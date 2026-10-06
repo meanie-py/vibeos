@@ -156,6 +156,8 @@ unsafe extern "system" fn hw_find_adapter(
         return SP_RETURN_ERROR;
     }
     enable_polled_dma(df);
+    // Adapters are found one at a time at init, so a per-adapter reset is race-free.
+    crate::hal::MAP_FAILED.store(false, core::sync::atomic::Ordering::Release);
     let mut root = PciRoot::new(HalPciAccess);
     let transport = match PciTransport::new::<VioHal, _>(&mut root, df) {
         Ok(t) => t,
@@ -164,6 +166,10 @@ unsafe extern "system" fn hw_find_adapter(
             return SP_RETURN_ERROR;
         }
     };
+    if crate::hal::MAP_FAILED.load(core::sync::atomic::Ordering::Acquire) {
+        vlog!("{:02x}:{:02x}.{}: a BAR could not be mapped (MmMapIoSpace)", df.bus, df.device, df.function);
+        return SP_RETURN_ERROR;
+    }
     let mut blk = match VirtIOBlk::<VioHal, _>::new(transport) {
         Ok(b) => b,
         Err(e) => {
