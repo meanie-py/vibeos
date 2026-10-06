@@ -160,9 +160,17 @@ int main(void)
 
     for (int i = 0; i < WRITERS; i++) th[i] = CreateThread(NULL, 0, writer, (void *)(ULONG_PTR)i, 0, NULL);
     for (int i = 0; i < READERS; i++) th[WRITERS + i] = CreateThread(NULL, 0, reader, NULL, 0, NULL);
-    Sleep(RUN_MS);
+    /* Heartbeat: a stall shows WHICH side stopped -- the workers (counts freeze) or
+     * the whole process (the beat itself stops). */
+    for (DWORD t0 = GetTickCount(), now; (now = GetTickCount()) - t0 < RUN_MS;) {
+        Sleep(5000);
+        SAY("beat t=%lums writes=%ld reads=%ld subkeys=%ld failures=%ld\n",
+            GetTickCount() - t0, g_writes, g_reads, g_subkeys, g_fail);
+    }
     g_stop = 1;
-    WaitForMultipleObjects(WRITERS + READERS, th, TRUE, 60000);
+    if (WaitForMultipleObjects(WRITERS + READERS, th, TRUE, 60000) != WAIT_OBJECT_0)
+        fail("workers did not stop within 60s", 0, -1, -1);
+    SAY("workers joined\n");
 
     /* Every value still present must read back whole after the storm. */
     for (int w = 0; w < WRITERS; w++) {
