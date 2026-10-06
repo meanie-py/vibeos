@@ -252,6 +252,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
 /// The first object names the guest opens, as it named them (bring-up aid:
 /// the loader's search is where a wrong-architecture DLL gets picked).
 static PathCount: AtomicU32 = AtomicU32::new(0);
+static FallbackCount: AtomicU32 = AtomicU32::new(0);
 unsafe fn TracePath(Service: u32, Oa: *const OBJECT_ATTRIBUTES) {
     if PathCount.fetch_add(1, Ordering::Relaxed) >= 40 || Oa.is_null() || (*Oa).ObjectName.is_null() {
         return;
@@ -365,5 +366,9 @@ unsafe fn Redirect(Oa: *const OBJECT_ATTRIBUTES, Shadow: &mut Shadow) -> bool {
         return false;
     }
     let mut Info: FILE_BASIC_INFORMATION = core::mem::zeroed();
-    NtQueryAttributesFile(&mut Shadow.Oa, &mut Info) >= 0
+    let Status = NtQueryAttributesFile(&mut Shadow.Oa, &mut Info);
+    if Status < 0 && FallbackCount.fetch_add(1, Ordering::Relaxed) < 32 {
+        crate::trace!("not in sysamd64 (%08lx), left in system32: %wZ", Status, (*Oa).ObjectName);
+    }
+    Status >= 0
 }
