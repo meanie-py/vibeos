@@ -128,7 +128,7 @@ pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]
     let GuestContext = Args[5] as *const WowX64Context;
     let Process = Args[3] as HANDLE;
     if GuestContext.is_null() {
-        return crate::host::NativeSyscall(crate::syscall::SVC_NtCreateThread, Args.as_ptr());
+        return crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCreateThread, Args.as_ptr());
     }
 
     let mut Native: CONTEXT = core::mem::zeroed();
@@ -143,7 +143,7 @@ pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]
                 Native.__bindgen_anon_1.X[0] = 0xC000_007B; // STATUS_INVALID_IMAGE_FORMAT
                 Native.Sp = ((*GuestContext).Rsp & !15).wrapping_sub(0x100);
                 Args[5] = &Native as *const CONTEXT as u64;
-                return crate::host::NativeSyscall(crate::syscall::SVC_NtCreateThread, Args.as_ptr());
+                return crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCreateThread, Args.as_ptr());
             }
             Some((Machine, _)) => {
                 crate::trace!("guest NtCreateThread into a machine-%04x process: not supported yet", Machine as u32);
@@ -185,7 +185,7 @@ pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]
     Native.Sp = (Stack as u64 + StackSize as u64) & !15;
     Native.__bindgen_anon_1.X[0] = Page as u64;
     Args[5] = &Native as *const CONTEXT as u64;
-    let Status = crate::host::NativeSyscall(crate::syscall::SVC_NtCreateThread, Args.as_ptr());
+    let Status = crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCreateThread, Args.as_ptr());
     if (Status as NTSTATUS) < 0 {
         Free(Process, Page);
         Free(Process, Stack);

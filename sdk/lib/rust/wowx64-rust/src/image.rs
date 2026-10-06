@@ -52,7 +52,7 @@ unsafe fn rd32(p: *const u8) -> u32 {
 /// Offset of the optional header's data directory `Index` (RVA, size), or None
 /// past `NumberOfRvaAndSizes`.
 unsafe fn DataDirectory(Base: *const u8, Index: usize) -> Option<(u32, u32)> {
-    let Nt = Base.add(rd32(Base.add(0x3C)) as usize);
+    let Nt = Base.byte_add(rd32(Base.byte_add(0x3C)) as usize);
     let Opt = Nt.add(24);
     if rd16(Opt) != 0x20B {
         return None; // not PE32+
@@ -66,7 +66,7 @@ unsafe fn DataDirectory(Base: *const u8, Index: usize) -> Option<(u32, u32)> {
 
 /// The image's preferred base (`OptionalHeader.ImageBase`, PE32+).
 unsafe fn PreferredBase(Base: *const u8) -> u64 {
-    let Nt = Base.add(rd32(Base.add(0x3C)) as usize);
+    let Nt = Base.byte_add(rd32(Base.byte_add(0x3C)) as usize);
     core::ptr::read_unaligned(Nt.add(24 + 24) as *const u64)
 }
 

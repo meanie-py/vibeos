@@ -144,8 +144,16 @@ DIAGNOSTIC: dict[str, int] = {}
 STAGED_LADDER: dict[str, int] = {
     g: 0x600D
     for g in (
-        "gui64", "win64", "file64", "async64", "marshal64", "fault64",
-        "thread64", "selfmod64", "reg64", "spawn64",
+        "gui64",
+        "win64",
+        "file64",
+        "async64",
+        "marshal64",
+        "fault64",
+        "thread64",
+        "selfmod64",
+        "reg64",
+        "spawn64",
     )
 }
 # Where the x86-64 guests are staged on both arches: an x86-64 exe is not a
@@ -942,7 +950,9 @@ def check(text: str, optional_staged: list[str] | None = None) -> dict | None:
     # reason to build one is to find out whether it passes, so a red one that
     # got staged must not be silently tolerated.
     wrong += [(g, seen[g], want) for g, want in OPTIONAL.items() if g in seen and seen[g] != want]
-    wrong += [(g, seen[g], want) for g, want in STAGED_LADDER.items() if g in seen and seen[g] != want]
+    wrong += [
+        (g, seen[g], want) for g, want in STAGED_LADDER.items() if g in seen and seen[g] != want
+    ]
     # Staged but never reported is NOT the same as absent, and the serial cannot
     # settle it: an optional guest runs after the parity set, so the drain can
     # end before its launch line appears. Ask the media instead. (The in-flight

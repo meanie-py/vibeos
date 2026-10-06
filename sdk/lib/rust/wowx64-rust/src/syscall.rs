@@ -31,7 +31,13 @@ use crate::contract::*;
 use crate::host::{Cpu, NativeSyscall, CURRENT_PROCESS, CURRENT_THREAD};
 use crate::image::GUEST_SYSDIR;
 
-include!(concat!(env!("OUT_DIR"), "/services.rs"));
+/// Generated from sysfuncs.lst / w32ksvc64.h (build.rs). Matched on by PATH
+/// (`svc::SVC_...`) below, never by bare name: an undefined bare constant in a
+/// match pattern is a catch-all binding, and a path cannot be one.
+pub mod svc {
+    include!(concat!(env!("OUT_DIR"), "/services.rs"));
+}
+use svc::{SERVICE_ARGC_NT, SERVICE_ARGC_W32K};
 
 const STATUS_OBJECT_NAME_NOT_FOUND: u64 = 0xC000_0034;
 const STATUS_NOT_IMPLEMENTED: u64 = 0xC000_0002;
@@ -106,21 +112,21 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
     let mut Shadow: Shadow = core::mem::zeroed();
 
     match Service {
-        SVC_NtContinue => {
+        svc::SVC_NtContinue => {
             // The guest's KiUserApcDispatcher / exception dispatcher resuming a
             // saved x86-64 context. The CPU layer installs it; the handler sees
             // rip changed and does not overwrite it with this call's return.
             let Status = (Cpu.SetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), Args[0] as *const WowX64Context);
             return Status as u32 as u64;
         }
-        SVC_NtRaiseException => {
+        svc::SVC_NtRaiseException => {
             return crate::except::RaiseException(
                 Args[0] as *const crate::except::GuestExceptionRecord,
                 Args[1] as *const WowX64Context,
                 Args[2] as u8 != 0,
             );
         }
-        SVC_NtTerminateProcess if Args[0] as HANDLE == CURRENT_PROCESS || Args[0] == 0 => {
+        svc::SVC_NtTerminateProcess if Args[0] as HANDLE == CURRENT_PROCESS || Args[0] == 0 => {
             // The guest's own verdict, said once from our side too, with the
             // guest rip it came from: a guest that ends itself on an error path
             // is otherwise indistinguishable from one that crashed.
@@ -132,32 +138,32 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
                 Ctx.Rip as *const c_void,
             );
         }
-        SVC_NtCallbackReturn => {
+        svc::SVC_NtCallbackReturn => {
             return crate::callback::CallbackReturn(Args);
         }
-        SVC_NtCreateThread => {
+        svc::SVC_NtCreateThread => {
             return crate::thread::CreateThread(Args);
         }
-        SVC_NtGetContextThread | SVC_NtSetContextThread => {
+        svc::SVC_NtGetContextThread | svc::SVC_NtSetContextThread => {
             if !IsCurrentThread(Args[0] as HANDLE) {
                 // Forwarding would have the kernel read or write an ARM64
                 // CONTEXT through the guest's x86-64 one. Another thread's
                 // guest state lives in that thread's CPU layer (owed: threads).
                 crate::trace!("Nt%sContextThread on another thread: not supported yet",
-                    if Service == SVC_NtGetContextThread { b"Get\0".as_ptr() } else { b"Set\0".as_ptr() });
+                    if Service == svc::SVC_NtGetContextThread { b"Get\0".as_ptr() } else { b"Set\0".as_ptr() });
                 return STATUS_NOT_IMPLEMENTED;
             }
             let Ctx = Args[1] as *mut WowX64Context;
-            let Status = if Service == SVC_NtGetContextThread {
+            let Status = if Service == svc::SVC_NtGetContextThread {
                 (Cpu.GetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), Ctx)
             } else {
                 (Cpu.SetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), Ctx)
             };
             return Status as u32 as u64;
         }
-        SVC_NtOpenFile | SVC_NtCreateFile | SVC_NtOpenDirectoryObject => {
+        svc::SVC_NtOpenFile | svc::SVC_NtCreateFile | svc::SVC_NtOpenDirectoryObject => {
             let Oa = Args[2] as *const OBJECT_ATTRIBUTES;
-            if Service == SVC_NtOpenDirectoryObject {
+            if Service == svc::SVC_NtOpenDirectoryObject {
                 if IsKnownDlls(Oa) {
                     return STATUS_OBJECT_NAME_NOT_FOUND;
                 }
@@ -165,12 +171,12 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
                 Args[2] = &Shadow.Oa as *const _ as u64;
             }
         }
-        SVC_NtQueryAttributesFile | SVC_NtQueryFullAttributesFile => {
+        svc::SVC_NtQueryAttributesFile | svc::SVC_NtQueryFullAttributesFile => {
             if Redirect(Args[0] as *const OBJECT_ATTRIBUTES, &mut Shadow) {
                 Args[0] = &Shadow.Oa as *const _ as u64;
             }
         }
-        SVC_NtAllocateVirtualMemory if IsSelf(Args[0]) => {
+        svc::SVC_NtAllocateVirtualMemory if IsSelf(Args[0]) => {
             let Base = Args[1] as *mut PVOID;
             let Size = Args[3] as *mut SIZE_T;
             let (Type, Prot) = (Args[4] as ULONG, Args[5] as ULONG);
@@ -179,7 +185,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
             (Cpu.NotifyMemoryAlloc)(*Base, *Size, Type, Prot, 1, Status as u32);
             return Status;
         }
-        SVC_NtProtectVirtualMemory if IsSelf(Args[0]) => {
+        svc::SVC_NtProtectVirtualMemory if IsSelf(Args[0]) => {
             let Base = Args[1] as *mut PVOID;
             let Size = Args[2] as *mut SIZE_T;
             let Prot = Args[3] as ULONG;
@@ -188,7 +194,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
             (Cpu.NotifyMemoryProtect)(*Base, *Size, Prot, 1, Status as u32);
             return Status;
         }
-        SVC_NtFreeVirtualMemory if IsSelf(Args[0]) => {
+        svc::SVC_NtFreeVirtualMemory if IsSelf(Args[0]) => {
             let Base = Args[1] as *mut PVOID;
             let Size = Args[2] as *mut SIZE_T;
             let Type = Args[3] as ULONG;
@@ -197,7 +203,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
             (Cpu.NotifyMemoryFree)(*Base, *Size, Type, 1, Status as u32);
             return Status;
         }
-        SVC_NtMapViewOfSection if IsSelf(Args[1]) => {
+        svc::SVC_NtMapViewOfSection if IsSelf(Args[1]) => {
             let Status = NativeSyscall(Service, Args.as_ptr());
             if (Status as NTSTATUS) >= 0 {
                 let Base = *(Args[2] as *const PVOID);
@@ -210,7 +216,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
             }
             return Status;
         }
-        SVC_NtUnmapViewOfSection if IsSelf(Args[0]) => {
+        svc::SVC_NtUnmapViewOfSection if IsSelf(Args[0]) => {
             let Base = Args[1] as PVOID;
             (Cpu.NotifyUnmapViewOfSection)(Base, 0, 0);
             let Status = NativeSyscall(Service, Args.as_ptr());
@@ -220,25 +226,25 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
         // Kernel-side writes into guest memory: FEX's SMC tracking sees only
         // the guest's own stores, so code translated from a buffer the KERNEL
         // fills must be dropped (selfmod's ReadFile-into-code rung).
-        SVC_NtReadFile => {
+        svc::SVC_NtReadFile => {
             let (File, Buffer, Length) = (Args[0] as HANDLE, Args[5] as PVOID, Args[6] as SIZE_T);
             (Cpu.NotifyReadFile)(File, Buffer, Length, 0, 0);
             let Status = NativeSyscall(Service, Args.as_ptr());
             (Cpu.NotifyReadFile)(File, Buffer, Length, 1, Status as NTSTATUS);
             return Status;
         }
-        SVC_NtWriteVirtualMemory if IsSelf(Args[0]) => {
+        svc::SVC_NtWriteVirtualMemory if IsSelf(Args[0]) => {
             let Status = NativeSyscall(Service, Args.as_ptr());
             (Cpu.NotifyMemoryDirty)(Args[1] as PVOID, Args[3] as SIZE_T);
             return Status;
         }
-        SVC_NtReadVirtualMemory => {
+        svc::SVC_NtReadVirtualMemory => {
             // The destination is always in THIS process, whichever is read.
             let Status = NativeSyscall(Service, Args.as_ptr());
             (Cpu.NotifyMemoryDirty)(Args[2] as PVOID, Args[3] as SIZE_T);
             return Status;
         }
-        SVC_NtFlushInstructionCache if IsSelf(Args[0]) => {
+        svc::SVC_NtFlushInstructionCache if IsSelf(Args[0]) => {
             (Cpu.FlushInstructionCache2)(Args[1] as *const c_void, Args[2] as SIZE_T);
         }
         _ => {}

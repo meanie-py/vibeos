@@ -119,11 +119,11 @@ pub unsafe fn CallbackReturn(Args: &[u64; crate::syscall::WOWX64_SERVICE_ARGS]) 
     let C = *Head();
     if C.is_null() {
         // Not inside a callback we started: let the kernel say so.
-        return crate::host::NativeSyscall(crate::syscall::SVC_NtCallbackReturn, Args.as_ptr());
+        return crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCallbackReturn, Args.as_ptr());
     }
     *Head() = (*C).Prev;
     (Cpu().SetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), &(*C).Saved);
-    let Status = crate::host::NativeSyscall(crate::syscall::SVC_NtCallbackReturn, Args.as_ptr());
+    let Status = crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCallbackReturn, Args.as_ptr());
     // Only an error comes back. The guest is now parked on the OUTER syscall,
     // so this status is that syscall's result, which is as good an outcome as
     // exists for a callback return the kernel refused.
