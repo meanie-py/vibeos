@@ -244,6 +244,44 @@ svc_index() {
     -DSVC_NTTERMINATEPROCESS="$(svc_index NtTerminateProcess)" \
     -o "$HARNESS_BUILD/hello64.exe" "$HARNESS_SRC/Hello64.c"
 
+# The x86-64 ladder (BTCpu64 M2): the 32-bit ladder's own sources, rebuilt for
+# x86-64 against build-amd64's import libraries. One source per rung on purpose
+# -- the same checks at both widths is what makes the two ladders comparable;
+# the few width-specific bits (guest SEH has no fs:[0] chain on x64) are
+# #ifdef _WIN64 inside the source. They run under FEX on arm64 and natively on
+# amd64, the native run being the oracle that the guest itself is right.
+AMD64_BUILD="${VIBEOS_AMD64_BUILD:-$REPO_ROOT/build-amd64}"
+x64_lib() { # x64_lib <dir under build-amd64> <name>
+    echo "$AMD64_BUILD/$1/CMakeFiles/lib$2.dir/lib$2.a"
+}
+x64_guest() { # x64_guest <out.exe> <source> <importlib...>
+    local out="$1" src="$2" lib
+    shift 2
+    for lib in "$@"; do
+        if [ ! -f "$lib" ]; then
+            echo "[!] $out skipped: build-amd64 importlib missing ($lib)"
+            return 0
+        fi
+    done
+    "$LLVM_MINGW/x86_64-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,start \
+        -Wl,--subsystem,windows:5.2 -Wl,--no-insert-timestamp \
+        -o "$HARNESS_BUILD/$out" "$HARNESS_SRC/$src" "$@"
+}
+K64="$(x64_lib dll/win32/kernel32 kernel32)"
+G64="$(x64_lib win32ss/gdi/gdi32 gdi32)"
+U64="$(x64_lib win32ss/user/user32 user32)"
+x64_guest gui64.exe Gui32.c "$G64" "$K64"
+x64_guest win64.exe Win32App.c "$U64" "$G64" "$K64"
+x64_guest file64.exe File32.c "$K64"
+x64_guest async64.exe Async32.c "$K64"
+x64_guest fault64.exe Fault32.c "$K64"
+x64_guest thread64.exe Thread32.c "$K64"
+x64_guest selfmod64.exe Selfmod32.c "$K64"
+x64_guest reg64.exe Reg32.c "$(x64_lib dll/win32/advapi32 advapi32)" "$K64"
+x64_guest spawn64.exe Spawn32.c "$K64"
+x64_guest marshal64.exe Marshal32.c "$U64" "$K64" "$(x64_lib dll/ntdll ntdll)" \
+    "$(x64_lib dll/win32/ws2_32 ws2_32)"
+
 echo
 echo "Built:"
 ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe "$HARNESS_BUILD"/gui32.exe "$HARNESS_BUILD"/win32.exe "$HARNESS_BUILD"/file32.exe "$HARNESS_BUILD"/marshal32.exe "$HARNESS_BUILD"/hello64.exe "$HARNESS_BUILD"/wowx64fex/libwowx64fex.dll 2>/dev/null || true

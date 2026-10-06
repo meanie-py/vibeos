@@ -123,11 +123,19 @@ OPTIONAL: dict[str, int] = {
 # budget, and one guest that hangs has cost four later ones their verdicts
 # before now (marshal32, six days stale, ate 420s). spawn32 caps its own wait
 # at 30s for that reason.
-# Empty today, and that is a good state rather than an unused mechanism: the
-# machinery below is what let spawn32 measure an open gap for a day without
-# reddening any lane's gate, and it is the right home for the next guest
-# written against a hole we already have a task for.
-DIAGNOSTIC: dict[str, int] = {}
+# It was empty for a while after spawn32's promotion, and that was a good state
+# rather than an unused mechanism: the machinery below is what let spawn32
+# measure an open gap for a day without reddening any lane's gate.
+# The x86-64 ladder (BTCpu64 M2, docs/engineering/wow64-x64-guest-design.md):
+# the 32-bit ladder's own sources rebuilt for x86-64, run under FEX on arm64 and
+# natively on amd64. Diagnostic while the guest-side gaps they measure are open
+# (guest SEH, threads, callbacks); each moves up to LADDER the day it passes on
+# both arches, exactly as spawn32 did.
+X64_LADDER: tuple[str, ...] = (
+    "gui64", "win64", "file64", "async64", "marshal64", "fault64",
+    "thread64", "selfmod64", "reg64", "spawn64",
+)
+DIAGNOSTIC: dict[str, int] = {g: 0x600D for g in X64_LADDER}
 
 # A diagnostic guest that can BUGCHECK must be kept off the media entirely, not
 # merely left ungraded, and spawn32 is where that was learned. For one day it
@@ -254,6 +262,16 @@ GUEST_SOURCE: dict[str, str] = {
     "reg32": "tools/fex/hello-compute/Reg32.c",
     "spawn32": "tools/fex/hello-compute/Spawn32.c",
     "hello64": "tools/fex/hello-compute/Hello64.c",
+    "gui64": "tools/fex/hello-compute/Gui32.c",
+    "win64": "tools/fex/hello-compute/Win32App.c",
+    "file64": "tools/fex/hello-compute/File32.c",
+    "async64": "tools/fex/hello-compute/Async32.c",
+    "marshal64": "tools/fex/hello-compute/Marshal32.c",
+    "thread64": "tools/fex/hello-compute/Thread32.c",
+    "fault64": "tools/fex/hello-compute/Fault32.c",
+    "selfmod64": "tools/fex/hello-compute/Selfmod32.c",
+    "reg64": "tools/fex/hello-compute/Reg32.c",
+    "spawn64": "tools/fex/hello-compute/Spawn32.c",
 }
 
 # The script carries the link lines, so a change to it (a new flag, a different

@@ -31,10 +31,27 @@
 // Off arm64 the crate is only its contract types, with nothing to use them.
 #![cfg_attr(not(target_arch = "aarch64"), allow(dead_code))]
 
+#[cfg(target_arch = "aarch64")]
+macro_rules! trace {
+    ($fmt:literal $(, $arg:expr)* $(,)?) => {
+        ntdll_sys::nt::DbgPrint(concat!("[WOWX64] ", $fmt, "\n\0").as_ptr() as ntdll_sys::nt::PCSTR $(, $arg)*)
+    };
+}
+#[cfg(target_arch = "aarch64")]
+pub(crate) use trace;
+
 mod contract;
 
 #[cfg(target_arch = "aarch64")]
+mod except;
+#[cfg(target_arch = "aarch64")]
 mod host;
+#[cfg(target_arch = "aarch64")]
+mod image;
+#[cfg(target_arch = "aarch64")]
+mod syscall;
+#[cfg(target_arch = "aarch64")]
+mod thread;
 
 // no_std staticlib needs its own panic handler + EH personality.
 #[panic_handler]

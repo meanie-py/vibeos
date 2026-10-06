@@ -3,59 +3,70 @@
 //! types, so the workspace still `cargo check`s on every target).
 
 use core::ffi::c_void;
-use core::ptr::{addr_of_mut, null_mut};
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::ptr::{addr_of, addr_of_mut, null_mut};
 
 use ntdll_sys::nt::*;
 
 use crate::contract::*;
 
-const CURRENT_PROCESS: HANDLE = -1isize as HANDLE;
-const CURRENT_THREAD: HANDLE = -2isize as HANDLE;
+pub const CURRENT_PROCESS: HANDLE = -1isize as HANDLE;
+pub const CURRENT_THREAD: HANDLE = -2isize as HANDLE;
 
 const MEM_COMMIT: ULONG = 0x1000;
 const MEM_RESERVE: ULONG = 0x2000;
 const PAGE_READWRITE: ULONG = 0x04;
-const EXCEPTION_CONTINUE_SEARCH: LONG = 0;
 
 /// Exit status when the guest cannot even be started. Distinct from any
 /// guest-chosen code and from an exception code, so a launch failure is never
 /// mistaken for the guest's own verdict.
 const WOWX64_LAUNCH_FAILED: NTSTATUS = 0xBAD0_0064u32 as NTSTATUS;
 
-/// Guest syscalls traced to serial before going quiet. Bounded so a real
-/// guest (thousands of syscalls) cannot flood the UART — whose cost on real
-/// hardware is ~90ms/KB inside the trap path — yet the first ones, which are
-/// where a bring-up breaks, are always visible.
-const TRACED_SYSCALLS: u32 = 16;
+/// The CPU layer's verbs, resolved once at process init.
+pub struct CpuLayer {
+    pub GetContext: unsafe extern "system" fn(HANDLE, HANDLE, *mut c_void, *mut WowX64Context) -> NTSTATUS,
+    pub SetContext: unsafe extern "system" fn(HANDLE, HANDLE, *mut c_void, *const WowX64Context) -> NTSTATUS,
+    pub ResetToConsistentState: unsafe extern "system" fn(*mut _EXCEPTION_POINTERS) -> NTSTATUS,
+    pub NotifyMemoryAlloc: unsafe extern "system" fn(PVOID, SIZE_T, ULONG, ULONG, BOOL, ULONG),
+    pub NotifyMemoryProtect: unsafe extern "system" fn(PVOID, SIZE_T, ULONG, BOOL, ULONG),
+    pub NotifyMemoryFree: unsafe extern "system" fn(PVOID, SIZE_T, ULONG, BOOL, ULONG),
+    pub NotifyMapViewOfSection: unsafe extern "system" fn(PVOID, PVOID, PVOID, SIZE_T, ULONG, ULONG) -> NTSTATUS,
+    pub NotifyUnmapViewOfSection: unsafe extern "system" fn(PVOID, BOOL, ULONG),
+    pub FlushInstructionCache2: unsafe extern "system" fn(*const c_void, SIZE_T),
+    pub ThreadInit: unsafe extern "system" fn() -> NTSTATUS,
+    pub Simulate: unsafe extern "system" fn(),
+}
+
+/// The guest ntdll's entry points every guest thread starts through.
+struct GuestEntry {
+    ApcDispatcher: u64,
+    LdrInitializeThunk: u64,
+}
+static mut GUEST: GuestEntry = GuestEntry { ApcDispatcher: 0, LdrInitializeThunk: 0 };
+
+static mut CPU: Option<CpuLayer> = None;
+
+/// The CPU layer. Only reachable once it is loaded: every caller is a guest
+/// syscall or a fault taken after `WowX64LdrpInitialize` resolved it.
+pub unsafe fn CpuIfLoaded() -> Option<&'static CpuLayer> {
+    (*addr_of!(CPU)).as_ref()
+}
+
+pub unsafe fn Cpu() -> &'static CpuLayer {
+    match &*addr_of!(CPU) {
+        Some(c) => c,
+        None => die(b"CPU layer used before it was loaded\0"),
+    }
+}
 
 type BTCpu64ProcessInitFn = unsafe extern "system" fn(*const WowX64HostServices) -> NTSTATUS;
-type BTCpu64ThreadInitFn = unsafe extern "system" fn() -> NTSTATUS;
-type BTCpu64GetContextFn =
-    unsafe extern "system" fn(HANDLE, HANDLE, *mut c_void, *mut WowX64Context) -> NTSTATUS;
-type BTCpu64SetContextFn =
-    unsafe extern "system" fn(HANDLE, HANDLE, *mut c_void, *const WowX64Context) -> NTSTATUS;
-type BTCpu64SimulateFn = unsafe extern "system" fn();
-type BTCpu64ResetToConsistentStateFn = unsafe extern "system" fn(*mut _EXCEPTION_POINTERS) -> NTSTATUS;
-
-static mut GetContext: Option<BTCpu64GetContextFn> = None;
-static mut ResetToConsistentState: Option<BTCpu64ResetToConsistentStateFn> = None;
-
-static SyscallCount: AtomicU32 = AtomicU32::new(0);
 
 static HOST_SERVICES: WowX64HostServices = WowX64HostServices {
     Size: core::mem::size_of::<WowX64HostServices>() as u32,
     Version: WOWX64_CONTRACT_VERSION,
-    SystemService: WowX64SystemService,
+    SystemService: crate::syscall::WowX64SystemService,
 };
 
-macro_rules! trace {
-    ($fmt:literal $(, $arg:expr)* $(,)?) => {
-        DbgPrint(concat!("[WOWX64] ", $fmt, "\n\0").as_ptr() as PCSTR $(, $arg)*)
-    };
-}
-
-unsafe fn die(Why: &[u8]) -> ! {
+pub unsafe fn die(Why: &[u8]) -> ! {
     DbgPrint(b"[WOWX64] FAIL: %s\n\0".as_ptr() as PCSTR, Why.as_ptr());
     let Status = NtTerminateProcess(CURRENT_PROCESS, WOWX64_LAUNCH_FAILED);
     // Terminating the current process does not return; if it ever does, say so.
@@ -70,7 +81,7 @@ unsafe fn die(Why: &[u8]) -> ! {
 /// offsets 64..120), so pin the contract constant to it.
 const _: () = assert!(WOWX64_SERVICE_ARGS == 15);
 #[unsafe(naked)]
-unsafe extern "C" fn NativeSyscall(Service: u32, Args: *const u64) -> u64 {
+pub unsafe extern "C" fn NativeSyscall(Service: u32, Args: *const u64) -> u64 {
     core::arch::naked_asm!(
         "stp x29, x30, [sp, #-16]!",
         "mov x29, sp",
@@ -96,78 +107,6 @@ unsafe extern "C" fn NativeSyscall(Service: u32, Args: *const u64) -> u64 {
     );
 }
 
-/// `WOWX64_HOST_SERVICES::SystemService`: one guest `syscall`. The CPU layer
-/// has already gathered the arguments in guest order (r10, rdx, r8, r9, then
-/// [rsp+0x28...]), so this is the register shuffle and nothing else — no
-/// per-service code exists, and none is needed (see the module docs).
-unsafe extern "C" fn WowX64SystemService(Service: u32, Args: *const u64) -> u64 {
-    let Ret = NativeSyscall(Service, Args);
-    let N = SyscallCount.fetch_add(1, Ordering::Relaxed);
-    if N < TRACED_SYSCALLS {
-        trace!(
-            "guest syscall #%u: service %u (%p, %p, %p, %p) -> %p",
-            N + 1,
-            Service,
-            *Args.add(0) as *const c_void,
-            *Args.add(1) as *const c_void,
-            *Args.add(2) as *const c_void,
-            *Args.add(3) as *const c_void,
-            Ret as *const c_void,
-        );
-        if N + 1 == TRACED_SYSCALLS {
-            trace!("(syscall trace capped at %u)", TRACED_SYSCALLS);
-        }
-    }
-    Ret
-}
-
-/// Every native exception, first. The CPU layer resolves its own (overcommit,
-/// SMC, unaligned atomics) and NtContinues without returning. What comes back
-/// is either a host fault — passed on untouched — or a GUEST fault, restated in
-/// guest terms with `ExceptionAddress` = the guest RIP. M1 has no guest
-/// exception dispatch, so a guest fault is reported and the process ended with
-/// the exception code: loud, and exactly what an unhandled exception does.
-unsafe extern "system" fn WowX64Veh(Info: *mut _EXCEPTION_POINTERS) -> LONG {
-    let Reset = match ResetToConsistentState {
-        Some(f) => f,
-        None => return EXCEPTION_CONTINUE_SEARCH,
-    };
-    Reset(Info);
-
-    let Rec = (*Info).ExceptionRecord;
-    let Get = match GetContext {
-        Some(f) => f,
-        None => return EXCEPTION_CONTINUE_SEARCH,
-    };
-    let mut Ctx: WowX64Context = core::mem::zeroed();
-    if Get(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), &mut Ctx) < 0
-        || (*Rec).ExceptionAddress as u64 != Ctx.Rip
-    {
-        return EXCEPTION_CONTINUE_SEARCH; // a host fault — not ours
-    }
-
-    trace!(
-        "guest fault %08lx at rip=%p rsp=%p (info %p %p) — no guest SEH yet (M1), terminating",
-        (*Rec).ExceptionCode,
-        Ctx.Rip as *const c_void,
-        Ctx.Rsp as *const c_void,
-        (*Rec).ExceptionInformation[0] as *const c_void,
-        (*Rec).ExceptionInformation[1] as *const c_void,
-    );
-    trace!(
-        "  rax=%p rcx=%p rdx=%p rbx=%p rsi=%p rdi=%p rbp=%p",
-        Ctx.Rax as *const c_void,
-        Ctx.Rcx as *const c_void,
-        Ctx.Rdx as *const c_void,
-        Ctx.Rbx as *const c_void,
-        Ctx.Rsi as *const c_void,
-        Ctx.Rdi as *const c_void,
-        Ctx.Rbp as *const c_void,
-    );
-    NtTerminateProcess(CURRENT_PROCESS, (*Rec).ExceptionCode as NTSTATUS);
-    EXCEPTION_CONTINUE_SEARCH
-}
-
 unsafe fn Resolve(Module: PVOID, Name: &[u8]) -> PVOID {
     let mut Ansi: ANSI_STRING = core::mem::zeroed();
     RtlInitAnsiString(&mut Ansi, Name.as_ptr() as PCSZ);
@@ -179,9 +118,70 @@ unsafe fn Resolve(Module: PVOID, Name: &[u8]) -> PVOID {
     Addr
 }
 
+/// An x86-64 user context with the flat long-mode selectors and the reset
+/// FPU/SSE state, ready for `Rip`/`Rsp`/argument registers to be filled in.
+fn InitialContext() -> WowX64Context {
+    let mut Ctx: WowX64Context = unsafe { core::mem::zeroed() };
+    Ctx.ContextFlags = WOWX64_CONTEXT_ALL;
+    Ctx.EFlags = 0x202; // IF | the always-one bit
+    Ctx.SegCs = WOWX64_SEG_CS;
+    Ctx.SegDs = WOWX64_SEG_DS;
+    Ctx.SegEs = WOWX64_SEG_DS;
+    Ctx.SegSs = WOWX64_SEG_DS;
+    Ctx.SegGs = WOWX64_SEG_DS;
+    Ctx.SegFs = WOWX64_SEG_FS;
+    Ctx.MxCsr = 0x1F80;
+    Ctx.FltSave.ControlWord = 0x27F;
+    Ctx.FltSave.MxCsr = 0x1F80;
+    Ctx
+}
+
+/// This thread's CPU-layer state. Every guest thread, before its first guest
+/// instruction.
+pub unsafe fn ThreadInit() {
+    let Status = (Cpu().ThreadInit)();
+    if Status < 0 {
+        DbgPrint(b"[WOWX64] FAIL: BTCpu64ThreadInit %08lx\n\0".as_ptr() as PCSTR, Status);
+        NtTerminateProcess(CURRENT_PROCESS, WOWX64_LAUNCH_FAILED);
+    }
+}
+
+/// Start the current thread in the guest the way an amd64 thread starts on
+/// amd64: in the guest ntdll's `KiUserApcDispatcher`, on an APC frame naming
+/// `LdrInitializeThunk`. That runs the guest loader's process or thread init
+/// and ends in `NtContinue` of the frame's CONTEXT — `Run` — which
+/// `syscall.rs` hands to the CPU layer. Never returns.
+pub unsafe fn EnterGuest(Run: &WowX64Context, SystemArgument1: u64) -> ! {
+    let Guest = &*addr_of!(GUEST);
+    // The frame: an x86-64 CONTEXT whose P1-P4 homes are KiUserApcDispatcher's
+    // arguments, just below where `Run` will resume. The loader's own frames
+    // go below it; all of it is dead once the loader NtContinues to `Run`.
+    let Frame = (Run.Rsp - core::mem::size_of::<WowX64Context>() as u64 - 0x40) & !0xF;
+    let mut F = *Run;
+    F.ContextFlags = WOWX64_CONTEXT_ALL;
+    F.P1Home = 0; // NormalContext
+    F.P2Home = SystemArgument1;
+    F.P3Home = 0; // SystemArgument2
+    F.P4Home = Guest.LdrInitializeThunk; // NormalRoutine
+    core::ptr::write(Frame as *mut WowX64Context, F);
+
+    let mut Start = InitialContext();
+    Start.Rip = Guest.ApcDispatcher;
+    Start.Rsp = Frame;
+    let Status = (Cpu().SetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), &Start);
+    if Status < 0 {
+        DbgPrint(b"[WOWX64] FAIL: BTCpu64SetContext %08lx\n\0".as_ptr() as PCSTR, Status);
+        NtTerminateProcess(CURRENT_PROCESS, WOWX64_LAUNCH_FAILED);
+    }
+    (Cpu().Simulate)();
+    die(b"BTCpu64Simulate returned\0");
+}
+
 /// ntdll's divert target for an x86-64 process on arm64 (ldrinit.rs, the
 /// `IsX64GuestProcess` handoff). Runs after the native loader finished its own
-/// process init; never returns — the guest owns the thread from here.
+/// process init; never returns — the guest owns the thread from here. The
+/// guest's own amd64 loader then does ITS process init: the image's import
+/// closure out of `sysamd64`, DLL init routines, and the jump to the entry.
 #[no_mangle]
 pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
     let Peb = NtCurrentPeb();
@@ -193,16 +193,13 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
     let Entry = ImageBase as u64 + (*Nt).OptionalHeader.AddressOfEntryPoint as u64;
     trace!("x86-64 guest process: image %p entry %p", ImageBase, Entry as *const c_void);
 
-    // The guest's stack, the size its image asked for (clamped). Allocated
-    // BEFORE BTCpu64ProcessInit, which is when FEX takes its picture of the
-    // address space; regions made later are invisible to it until the memory
-    // notifications are wired (owed, see module docs). Committed outright,
-    // where Windows reserves and grows a guard page: no growth path needed, and
-    // it cannot fault where the real thing would have grown.
+    // Everything the guest owns is set up BEFORE BTCpu64ProcessInit, which is
+    // when FEX takes its picture of the address space; later changes reach it
+    // only through the notifications `syscall.rs` sends.
     //
-    // NOT published as the TEB's stack bounds — those still describe the
-    // native stack this code runs on. A guest that probes or unwinds against
-    // NtTib.StackBase/StackLimit (any CRT-linked one) needs that fixed first.
+    // The stack: the size the image asked for (clamped), committed outright
+    // where Windows reserves and grows a guard page — no growth path needed,
+    // and it cannot fault where the real thing would have grown.
     let mut StackSize = (*Nt).OptionalHeader.SizeOfStackReserve as SIZE_T;
     StackSize = StackSize.clamp(0x10000, 0x100_0000);
     StackSize = (StackSize + 0xFFFF) & !0xFFFF;
@@ -210,6 +207,7 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
     if NtAllocateVirtualMemory(CURRENT_PROCESS, &mut Stack, 0, &mut StackSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE) < 0 {
         die(b"guest stack allocation\0");
     }
+    let Ntdll = crate::image::MapGuestNtdll();
 
     // The CPU layer.
     let mut Name: UNICODE_STRING = core::mem::zeroed();
@@ -219,24 +217,32 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
         b'l' as u16, b'l' as u16, 0,
     ];
     RtlInitUnicodeString(&mut Name, Wide.as_ptr());
-    let mut Cpu: PVOID = null_mut();
-    let Status = LdrLoadDll(null_mut(), null_mut(), &mut Name, &mut Cpu);
-    if Status < 0 || Cpu.is_null() {
+    let mut Fex: PVOID = null_mut();
+    let Status = LdrLoadDll(null_mut(), null_mut(), &mut Name, &mut Fex);
+    if Status < 0 || Fex.is_null() {
         DbgPrint(b"[WOWX64] FAIL: libwowx64fex.dll load %08lx\n\0".as_ptr() as PCSTR, Status);
         NtTerminateProcess(CURRENT_PROCESS, WOWX64_LAUNCH_FAILED);
     }
-    let ProcessInit: BTCpu64ProcessInitFn = core::mem::transmute(Resolve(Cpu, b"BTCpu64ProcessInit\0"));
-    let ThreadInit: BTCpu64ThreadInitFn = core::mem::transmute(Resolve(Cpu, b"BTCpu64ThreadInit\0"));
-    let SetContext: BTCpu64SetContextFn = core::mem::transmute(Resolve(Cpu, b"BTCpu64SetContext\0"));
-    let Simulate: BTCpu64SimulateFn = core::mem::transmute(Resolve(Cpu, b"BTCpu64Simulate\0"));
-    *addr_of_mut!(GetContext) = Some(core::mem::transmute(Resolve(Cpu, b"BTCpu64GetContext\0")));
-    *addr_of_mut!(ResetToConsistentState) =
-        Some(core::mem::transmute(Resolve(Cpu, b"BTCpu64ResetToConsistentState\0")));
-    trace!("CPU layer libwowx64fex.dll @ %p", Cpu);
+    let ProcessInit: BTCpu64ProcessInitFn = core::mem::transmute(Resolve(Fex, b"BTCpu64ProcessInit\0"));
+    *addr_of_mut!(CPU) = Some(CpuLayer {
+        GetContext: core::mem::transmute(Resolve(Fex, b"BTCpu64GetContext\0")),
+        SetContext: core::mem::transmute(Resolve(Fex, b"BTCpu64SetContext\0")),
+        ResetToConsistentState: core::mem::transmute(Resolve(Fex, b"BTCpu64ResetToConsistentState\0")),
+        NotifyMemoryAlloc: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyMemoryAlloc\0")),
+        NotifyMemoryProtect: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyMemoryProtect\0")),
+        NotifyMemoryFree: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyMemoryFree\0")),
+        NotifyMapViewOfSection: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyMapViewOfSection\0")),
+        NotifyUnmapViewOfSection: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyUnmapViewOfSection\0")),
+        FlushInstructionCache2: core::mem::transmute(Resolve(Fex, b"BTCpu64FlushInstructionCache2\0")),
+        ThreadInit: core::mem::transmute(Resolve(Fex, b"BTCpu64ThreadInit\0")),
+        Simulate: core::mem::transmute(Resolve(Fex, b"BTCpu64Simulate\0")),
+    });
+    let Cpu = Cpu();
+    trace!("CPU layer libwowx64fex.dll @ %p", Fex);
 
     // First refusal on every native fault, before FEX can take one: InitCore
     // already relies on on-demand commit of its reserved caches.
-    if RtlAddVectoredExceptionHandler(1, Some(WowX64Veh)).is_null() {
+    if RtlAddVectoredExceptionHandler(1, Some(crate::except::WowX64Veh)).is_null() {
         die(b"VEH registration\0");
     }
 
@@ -245,50 +251,50 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
         DbgPrint(b"[WOWX64] FAIL: BTCpu64ProcessInit %08lx\n\0".as_ptr() as PCSTR, Status);
         NtTerminateProcess(CURRENT_PROCESS, WOWX64_LAUNCH_FAILED);
     }
-    let Status = ThreadInit();
-    if Status < 0 {
-        DbgPrint(b"[WOWX64] FAIL: BTCpu64ThreadInit %08lx\n\0".as_ptr() as PCSTR, Status);
-        NtTerminateProcess(CURRENT_PROCESS, WOWX64_LAUNCH_FAILED);
-    }
+    ThreadInit();
+    // ProcessInit registered the main image itself; the guest ntdll was mapped
+    // by us, not through a guest syscall, so nothing has told FEX it is code.
+    (Cpu.NotifyMapViewOfSection)(null_mut(), Ntdll.Base as PVOID, null_mut(), Ntdll.Size as SIZE_T, 0, 0x20);
 
-    // The initial context: the image entry, entered as if CALLed (rsp = 8 mod
-    // 16, a zero return address — returning from the entry is a loud fault at
-    // 0, not a silent wander), with the PEB in rcx as amd64 hands it to an
-    // exe's entry point.
-    let Top = Stack as u64 + StackSize as u64 - 0x100;
-    let Rsp = Top - 8;
-    *(Rsp as *mut u64) = 0;
+    let Guest = &mut *addr_of_mut!(GUEST);
+    Guest.ApcDispatcher = crate::image::FindExport(&Ntdll, b"KiUserApcDispatcher\0")
+        .unwrap_or_else(|| die(b"guest ntdll.dll has no KiUserApcDispatcher\0"));
+    Guest.LdrInitializeThunk = crate::image::FindExport(&Ntdll, b"LdrInitializeThunk\0")
+        .unwrap_or_else(|| die(b"guest ntdll.dll has no LdrInitializeThunk\0"));
+    crate::except::SetGuestDispatcher(
+        crate::image::FindExport(&Ntdll, b"KiUserExceptionDispatcher\0")
+            .unwrap_or_else(|| die(b"guest ntdll.dll has no KiUserExceptionDispatcher\0")),
+    );
 
-    let mut Ctx: WowX64Context = core::mem::zeroed();
-    Ctx.ContextFlags = WOWX64_CONTEXT_ALL;
-    Ctx.Rip = Entry;
-    Ctx.Rsp = Rsp;
-    Ctx.Rcx = Peb as u64;
-    Ctx.EFlags = 0x202; // IF | the always-one bit
-    Ctx.SegCs = WOWX64_SEG_CS;
-    Ctx.SegDs = WOWX64_SEG_DS;
-    Ctx.SegEs = WOWX64_SEG_DS;
-    Ctx.SegSs = WOWX64_SEG_DS;
-    Ctx.SegGs = WOWX64_SEG_DS;
-    Ctx.SegFs = WOWX64_SEG_FS;
-    Ctx.MxCsr = 0x1F80;
-    Ctx.FltSave.ControlWord = 0x27F;
-    Ctx.FltSave.MxCsr = 0x1F80;
-    let Status = SetContext(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), &Ctx);
-    if Status < 0 {
-        DbgPrint(b"[WOWX64] FAIL: BTCpu64SetContext %08lx\n\0".as_ptr() as PCSTR, Status);
-        NtTerminateProcess(CURRENT_PROCESS, WOWX64_LAUNCH_FAILED);
-    }
+    // The TEB now describes the guest stack (thread.rs says why), so the
+    // native one this code runs on must never need guard-page growth again.
+    let Teb = NtCurrentTeb();
+    crate::thread::CommitWholeStack((*Teb).DeallocationStack as u64, (*Teb).NtTib.StackBase as u64);
+    let Top = Stack as u64 + StackSize as u64;
+    crate::thread::PublishGuestStack(Stack as u64, Top);
+
+    // What the guest loader resumes when it is done: the image entry, entered
+    // as if CALLed (rsp = 8 mod 16) with a zero return address — returning from
+    // the entry is a loud fault at 0, not a silent wander — and the PEB in rcx
+    // as amd64 hands it to an exe.
+    let RunRsp = ((Top - 0x100) & !0xF) - 8;
+    *(RunRsp as *mut u64) = 0;
+    let mut Run = InitialContext();
+    Run.Rip = Entry;
+    Run.Rsp = RunRsp;
+    Run.Rcx = Peb as u64;
 
     trace!(
-        "entering BTCpu64Simulate (rip=%p rsp=%p, stack %p+%p)",
+        "entering the guest loader: KiUserApcDispatcher %p -> LdrInitializeThunk %p, then entry %p (stack %p+%p)",
+        Guest.ApcDispatcher as *const c_void,
+        Guest.LdrInitializeThunk as *const c_void,
         Entry as *const c_void,
-        Rsp as *const c_void,
         Stack,
         StackSize as *const c_void,
     );
-    Simulate();
-    die(b"BTCpu64Simulate returned\0");
+    // SystemArgument1 = the guest ntdll's base: its LdrpInitializeProcess
+    // builds ntdll's own loader entry from it, as on amd64.
+    EnterGuest(&Run, Ntdll.Base as u64);
 }
 
 #[no_mangle]

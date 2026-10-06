@@ -726,39 +726,53 @@ unsafe fn TryStartWow64Hello() {
     }
 }
 
-/* BTCpu64 M1 (docs/engineering/wow64-x64-guest-design.md, Fork B): launch an
- * x86-64 PE (hello64.exe) through the normal CreateProcessW front door. On
- * arm64 that is an x86-64 GUEST process — kernel32 admits the machine, ntdll's
- * process init diverts to wowx64!WowX64LdrpInitialize, and the FEX CPU layer
- * libwowx64fex.dll runs it. On amd64 the very same binary runs natively, which
- * is the oracle that the guest itself is right. Verdict = its exit code
- * (0x600D = PASS, 0xBAD0+N names the failed rung) + [WOWX64] serial lines.
- * Silent no-op unless staged, and on arm64 unless the CPU layer is too (the
- * same rule as Wow64SupportStaged: a guest without its support layer would run
- * half-initialized). */
+/* x86-64 guests (docs/engineering/wow64-x64-guest-design.md, Fork B). Each is
+ * launched through the normal CreateProcessW front door. On arm64 that makes an
+ * x86-64 GUEST process — ntdll's process init diverts to
+ * wowx64!WowX64LdrpInitialize, the FEX CPU layer libwowx64fex.dll runs it, and
+ * its imports come from the amd64 DLL set in sysamd64. On amd64 the very same
+ * binary runs natively, which is the oracle that the guest itself is right.
+ * Verdict = its exit code (0x600D = PASS; the guest's source names the failure
+ * codes) + [WOWX64] serial lines. Silent no-op per guest unless staged, and on
+ * arm64 unless the CPU layer is too (the same rule as Wow64SupportStaged: a
+ * guest without its support layer would run half-initialized).
+ *
+ * hello64 is the import-free M1 guest and runs early with the WoW64 hello; the
+ * rest are the 32-bit ladder's sources rebuilt for x86-64 and run as one block
+ * AFTER the graded 32-bit guests, so a hanging x64 guest costs only its own
+ * 30s, never a 32-bit verdict. */
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-unsafe fn TryStartX64Hello() {
-    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+unsafe fn X64SupportStaged() -> bool {
     #[cfg(target_arch = "aarch64")]
     {
+        let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
         if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
-            return;
+            return false;
         }
         wcscat(Path.as_mut_ptr(), wstr!("\\system32\\libwowx64fex.dll").as_ptr());
         if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
-            return; // no x86-64 CPU layer staged — don't spawn a guest that can't run
+            return false;
         }
-        Path = [0; MAX_PATH as usize];
     }
-    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+    true
+}
+
+/* Launch system32\<Name>, wait up to 30s, report its exit code. `Name` is a
+ * NUL-terminated wide exe name; `Ascii` the same name for the serial lines. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartX64Guest(Name: &[u16], Ascii: &[u8]) {
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 48) == 0 {
         return;
     }
-    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\hello64.exe").as_ptr());
+    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\").as_ptr());
+    wcscat(Path.as_mut_ptr(), Name.as_ptr());
     if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
         return; // not staged — silent no-op
     }
 
-    let mut Line: [u16; 12] = wstr_arr!("hello64.exe");
+    let mut Line: [u16; 32] = [0; 32];
+    wcscat(Line.as_mut_ptr(), Name.as_ptr());
     let mut Si: STARTUPINFOW = zeroed();
     let mut Pi: PROCESS_INFORMATION = zeroed();
     Si.cb = size_of::<STARTUPINFOW>() as DWORD;
@@ -776,26 +790,58 @@ unsafe fn TryStartX64Hello() {
     );
     if ok != 0 {
         DbgPrint(
-            b"[WINLOGON] hello64.exe (x86-64 guest) created (PID %lu) - waiting\n\0".as_ptr()
-                as *const i8,
+            b"[WINLOGON] %s (x86-64 guest) created (PID %lu) - waiting\n\0".as_ptr() as *const i8,
+            Ascii.as_ptr(),
             Pi.dwProcessId,
         );
-        WaitForSingleObject(Pi.hProcess, 30_000);
+        if WaitForSingleObject(Pi.hProcess, 30_000) != 0 {
+            // Say so, and end it: a hung guest left running would keep its
+            // window and its CPU through every later rung.
+            DbgPrint(b"[WINLOGON] %s TIMED OUT after 30s - terminating\n\0".as_ptr() as *const i8, Ascii.as_ptr());
+            TerminateProcess(Pi.hProcess, 0xDEAD_0030);
+            WaitForSingleObject(Pi.hProcess, 5_000);
+        }
         let mut ExitCode: DWORD = 0xDEAD;
         GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
         DbgPrint(
-            b"[WINLOGON] hello64.exe exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            b"[WINLOGON] %s exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            Ascii.as_ptr(),
             ExitCode,
         );
         CloseHandle(Pi.hThread);
         CloseHandle(Pi.hProcess);
     } else {
         DbgPrint(
-            b"[WINLOGON] CreateProcessW(hello64.exe) FAILED (error %lu)\n\0".as_ptr()
-                as *const i8,
+            b"[WINLOGON] CreateProcessW(%s) FAILED (error %lu)\n\0".as_ptr() as *const i8,
+            Ascii.as_ptr(),
             GetLastError(),
         );
     }
+}
+
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartX64Hello() {
+    if X64SupportStaged() {
+        TryStartX64Guest(&wstr_arr!("hello64.exe"), b"hello64.exe\0");
+    }
+}
+
+/* The 32-bit ladder, one width up — same sources, same order, same verdicts. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartX64Ladder() {
+    if !X64SupportStaged() {
+        return;
+    }
+    TryStartX64Guest(&wstr_arr!("gui64.exe"), b"gui64.exe\0");
+    TryStartX64Guest(&wstr_arr!("win64.exe"), b"win64.exe\0");
+    TryStartX64Guest(&wstr_arr!("file64.exe"), b"file64.exe\0");
+    TryStartX64Guest(&wstr_arr!("async64.exe"), b"async64.exe\0");
+    TryStartX64Guest(&wstr_arr!("marshal64.exe"), b"marshal64.exe\0");
+    TryStartX64Guest(&wstr_arr!("fault64.exe"), b"fault64.exe\0");
+    TryStartX64Guest(&wstr_arr!("thread64.exe"), b"thread64.exe\0");
+    TryStartX64Guest(&wstr_arr!("selfmod64.exe"), b"selfmod64.exe\0");
+    TryStartX64Guest(&wstr_arr!("reg64.exe"), b"reg64.exe\0");
+    TryStartX64Guest(&wstr_arr!("spawn64.exe"), b"spawn64.exe\0");
 }
 
 /* M10 file-I/O probe: an i386 guest that reads, writes and enumerates real
@@ -3330,6 +3376,11 @@ pub unsafe extern "system" fn WinMain(
              * above describes happening to lua32. */
             TryStartWow64Spawn();
 
+            /* The x86-64 ladder under FEX: the 32-bit ladder's sources rebuilt
+             * for x86-64. After every graded 32-bit guest, so a hung x64 guest
+             * costs only its own 30s. */
+            TryStartX64Ladder();
+
             /* Third-party stress: real SQLite on the storage + allocator axis.
              * LAST, after every parity guest: it is slow third-party code under
              * emulation, and running it earlier delays the parity set past the
@@ -3465,6 +3516,8 @@ pub unsafe extern "system" fn WinMain(
          * silently costs spawn32 its verdict, which is exactly what the rule
          * above describes happening to lua32. */
         TryStartWow64Spawn();
+        /* The x86-64 ladder: native here, the oracle for the arm64 run. */
+        TryStartX64Ladder();
         /* Third-party stress: real SQLite, last — see the note at the other
          * call site on why it must not precede the parity guests. */
         /* Third-party stress #2: real Lua, setjmp/longjmp-heavy. BEFORE

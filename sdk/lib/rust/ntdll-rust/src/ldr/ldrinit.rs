@@ -393,6 +393,27 @@ pub static mut LdrpDefaultPath: _UNICODE_STRING = _UNICODE_STRING {
 };
 #[no_mangle]
 pub static mut PebLdr: PEB_LDR_DATA = unsafe { core::mem::zeroed() };
+
+/// THIS ntdll's module database: `&PebLdr` once process init has built it,
+/// NULL before (exactly what `PEB->Ldr` reads in an ordinary process, where
+/// the two are the same pointer). The loader reads its own data through here
+/// and never through `PEB->Ldr`/`PEB->LoaderLock`, because in an x86-64 guest
+/// process on arm64 two ntdlls share one PEB: the native arm64 one and the
+/// guest's amd64 one, run under emulation by wowx64.dll. Each publishes its
+/// list into the PEB at its own process init, the guest's last — so a loader
+/// that read the PEB would walk the OTHER architecture's modules (native
+/// unwinding would look up libwowx64fex.dll's .pdata in the guest's list and
+/// find nothing; the guest's LdrpInit would see a non-NULL `PEB->Ldr` and
+/// skip process init entirely). Same for the loader lock: use
+/// `LdrpLoaderLock` directly.
+#[inline(always)]
+pub unsafe fn LdrpLdrData() -> PPEB_LDR_DATA {
+    if PebLdr.Initialized == 0 {
+        core::ptr::null_mut()
+    } else {
+        core::ptr::addr_of_mut!(PebLdr)
+    }
+}
 #[no_mangle]
 pub static mut LdrpLoaderLockDebug: RTL_CRITICAL_SECTION_DEBUG = unsafe { core::mem::zeroed() };
 #[no_mangle]
@@ -786,7 +807,7 @@ pub unsafe extern "system" fn LdrpInitializeThread(_Context: PCONTEXT) {
 
         LdrpAllocateTls();
 
-        ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InMemoryOrderModuleList);
+        ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InMemoryOrderModuleList);
         NextEntry = (*ListHead).Flink;
         while NextEntry != ListHead {
             LdrEntry = (NextEntry as usize
@@ -902,7 +923,7 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
         LdrRootEntry = core::ptr::null_mut();
     }
 
-    ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList);
+    ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList);
     NextEntry = (*ListHead).Flink;
     i = 0;
     while NextEntry != ListHead {
@@ -1025,7 +1046,7 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
             }
         }
 
-        ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList);
+        ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList);
         NextEntry = (*NextEntry).Flink;
         while NextEntry != ListHead {
             LdrEntry = (NextEntry as usize
@@ -1098,7 +1119,7 @@ pub unsafe extern "system" fn LdrShutdownProcess() -> NTSTATUS {
         // FIXME
     }
 
-    ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList);
+    ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList);
     NextEntry = (*ListHead).Blink;
     while NextEntry != ListHead {
         LdrEntry = (NextEntry as usize
@@ -1177,7 +1198,7 @@ pub unsafe extern "system" fn LdrShutdownThread() -> NTSTATUS {
 
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(LdrpLoaderLock));
 
-    ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList);
+    ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList);
     NextEntry = (*ListHead).Blink;
     while NextEntry != ListHead {
         LdrEntry = (NextEntry as *mut u8).offset(
@@ -1306,8 +1327,7 @@ pub unsafe extern "system" fn LdrpInitializeTls() -> NTSTATUS {
 
     InitializeListHead(core::ptr::addr_of_mut!(LdrpTlsList));
 
-    let Peb = (*NtCurrentTeb()).ProcessEnvironmentBlock;
-    let LdrData = (*Peb).Ldr;
+    let LdrData = crate::ldr::ldrinit::LdrpLdrData();
     let ListHead: PLIST_ENTRY = core::ptr::addr_of_mut!((*LdrData).InLoadOrderModuleList);
     NextEntry = (*ListHead).Flink;
 
@@ -2385,7 +2405,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
 
     /* Link the Init Order List */
     InsertHeadList(
-        core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList),
+        core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList),
         core::ptr::addr_of_mut!((*LdrpNtDllDataTableEntry).InInitializationOrderLinks),
     );
 
@@ -2470,8 +2490,20 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     let IsX64GuestProcess =
         (*NtHeader).FileHeader.Machine == 0x8664 /* IMAGE_FILE_MACHINE_AMD64 */;
 
-    if (*NtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI as USHORT
-        || (*NtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI as USHORT
+    /* An x86-64 guest's Win32 layer is the GUEST's amd64 kernel32, loaded by
+     * its own loader under emulation. The native one would be pure baggage
+     * (wowx64.dll and its CPU layer import ntdll alone) and worse than
+     * baggage: its DllMain registers the process with csrss and writes the
+     * shared PEB, both of which the guest kernel32 then does again. WoW64
+     * still needs it — libwow64fex imports kernel32. */
+    #[cfg(target_arch = "aarch64")]
+    let NeedNativeKernel32 = !IsX64GuestProcess;
+    #[cfg(not(target_arch = "aarch64"))]
+    let NeedNativeKernel32 = true;
+
+    if NeedNativeKernel32
+        && ((*NtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI as USHORT
+            || (*NtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI as USHORT)
     {
         let mut Kernel32BaseAddress: PVOID = core::ptr::null_mut();
         let mut FunctionAddress: PVOID = core::ptr::null_mut();
@@ -2572,7 +2604,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     }
 
     /* Lock the DLLs */
-    ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InLoadOrderModuleList);
+    ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InLoadOrderModuleList);
     NextEntry = (*ListHead).Flink;
     while ListHead != NextEntry {
         NtLdrEntry = (NextEntry as usize
@@ -2798,7 +2830,7 @@ pub unsafe extern "system" fn LdrpInit(
         }
     }
 
-    if (*Peb).Ldr.is_null() {
+    if crate::ldr::ldrinit::LdrpLdrData().is_null() {
         (*Peb).LoaderLock = core::ptr::addr_of_mut!(LdrpLoaderLock);
 
         LdrpInLdrInit = 1u8;
