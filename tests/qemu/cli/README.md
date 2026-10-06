@@ -100,7 +100,7 @@ provenance stamp.
 - arm64 automatically re-stages into `ramdisk.img`/`boot.img` (the trap that
   silently boots a stale kernel otherwise).
 
-### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--timing] [--no-net] [--ladder]`
+### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--timing] [--no-net] [--nvme] [--ladder]`
 **The verdict front door.** Staleness preflight, then boot the real media via
 the same `QemuVM` the pytest harness uses (slots, reaper, lifetime cap, live-log
 all included), then auto-triage on failure.
@@ -110,6 +110,13 @@ all included), then auto-triage on failure.
   machine would boot it. Every gate that includes amd64 runs it as the
   `smoke:amd64-bios` lane. `VIBEOS_QEMU_BOOT_TRANSPORT=usb-ehci|ide-cd|usb-storage`
   picks the boot device on any x86 arch. See `docs/engineering/bios-boot.md`.
+
+- **`--nvme`** (any arch) attaches a QEMU `nvme` controller with one 64M MBR+FAT16
+  namespace (`VIBEOS_QEMU_NVME=1`) and FAILS the boot (`NVME_NOT_ENGAGED`) unless
+  nvme.sys prints `[NVME] controller 0: namespace 1 published as a disk`. The net
+  suite never inherits the knob: QEMU's nvme device blocks the `savevm` it takes.
+  `VIBEOS_QEMU_NVME=1 pytest tests/qemu/test_nvme.py --arch <a>` goes further: the
+  desktop copies the namespace's file and the host reads the copy back.
 
 - **Net suite (amd64) runs by default** and folds into the verdict — a netstack
   regression turns the smoke red like any other, never hidden. It is a *second
