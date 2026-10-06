@@ -594,6 +594,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
+  lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
+  captured mid-body of itself, so `ZwContinue` after a vectored handler's
+  `EXCEPTION_CONTINUE_EXECUTION` resumes inside `RtlRaiseException` and dispatches again,
+  forever (found when a VEH probe hung an x86-64 guest process's thread for 30 s; amd64's asm
+  version rewrites Rip/Rsp to the caller and does not have it). `ExceptionAddress` is also NULL.
+  Masked today because, under DUMMY_PSEH, nothing continues a raise. **Two fixes were tried and
+  both reverted**, because each made smss's `seh_poc_user.c` probe 1 (a raise caught by
+  `__except`) print `CORRUPT x21: 00007FFFFFFEF000 -> 000000000012FAE8` on an otherwise green
+  boot: (1) one `RtlVirtualUnwind` of our own frame after the capture; (2) an asm
+  `RtlRaiseException` that captures before touching any nonvolatile register and patches
+  fp/lr/sp/pc to the caller's, as amd64 does (run `20261006-021810-kpujl93s-smoke-arm64`). Since
+  (2) hands the dispatcher exactly the caller's state, the x21 corruption is downstream:
+  probably the arm64 `RtlUnwindEx` / `__C_specific_handler` path when the dispatch context's
+  first frame is the `__try` function itself rather than `RtlRaiseException` (the old shape
+  always had one extra frame to unwind first). Start there, with (2) and a probe that continues
+  a raise (`fired == 1 && returned`).
 - **arm64: synchronous IRP completions ran late, into dead stack frames** (FIXED 2026-10-06).
   The HAL drained APCs under a per-CPU flag that stayed set across a thread switch inside a
   normal kernel APC, so other threads' `IopCompleteRequest` APCs waited for a later IRQL drop
@@ -2715,6 +2732,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   claim, not a test of mine. Whoever bumps
   the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
   it is a one-command check.
+
+- **2026-10-06: x86-64 apps run on arm64 — the x64 ladder is at parity with the x86 one
+  (BTCpu64 M2).** All ten 32-bit ladder sources, rebuilt for x86-64, plus `hello64`, exit
+  `0x600D` under FEX on arm64 (`/tmp/vibeos-cli/20261006-020111-v3xu401s-smoke-arm64`, 24
+  guests at 0x600D on one boot with the 32-bit ladder) AND natively on amd64, the oracle. They
+  run on the guest's OWN amd64 ntdll, loader and system DLLs (staged into `sysamd64`), so this
+  is real Win32: windows with callbacks and paint, GDI, files and overlapped I/O, IOCP, the
+  registry's 64-bit view, sockets, guest SEH through `.pdata`, threads, runtime codegen, and
+  process creation. Real bugs fell out on the way, none of them in FEX:
+  rtl-heap's arm64 `HEAP_ENTRY` field order (never heap.h's; invisible until two ntdlls shared
+  one process heap), `wow64-closure.py` choosing stripped twins by bare name (it shipped an
+  i386 kernel32 into the amd64 set), and the x64 ladder launching on winlogon's desktop -- all
+  fixed -- plus arm64 `RtlRaiseException` resuming inside itself when a handler continues,
+  registered OPEN below (two fixes each tripped an smss SEH probe and were reverted). Graded where the media carries them (`STAGED_LADDER`).
+  What is still owed is in the design doc's "Status" section (APCs into a guest thread,
+  `NtCreateThreadEx`, thread exit cleanup).
 
 - **2026-10-05: x86-64 code runs on arm64 (BTCpu64 M1).** `hello64.exe`, a plain amd64 PE,
   exits `0x600D` on arm64 under FEX in 64-bit mode

@@ -2000,8 +2000,9 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
   and amd64 runs the same ladder natively through `wow64cpu`. **x86-64 on ARM64** started
   2026-10-05 (BTCpu64, Fork B of `wow64-x64-guest-design.md`): our own CPU-layer contract,
   `wowx64.dll` (Rust, no C counterpart) driving `libwowx64fex.dll` (FEXCore in 64-bit mode,
-  linked out of tree). M1 runs `hello64.exe`, the same binary graded natively on amd64; M2
-  (the guest's amd64 ntdll + loader) is next. Docs: `active-lanes/wow64-plan.md`,
+  linked out of tree). M2 (2026-10-06): the x64 ladder (`hello64` + the ten 32-bit guest
+  sources rebuilt for x86-64) passes under FEX on arm64 and natively on amd64, on the guest's
+  own amd64 ntdll, loader and system DLLs. Docs: `active-lanes/wow64-plan.md`,
   `active-lanes/fex-bringup-plan.md` (32-bit), `wow64-x64-guest-design.md` (x86-64: status
   and the owed list).
 - **SMP / multi-processor bring-up.** The `CONFIG_SMP` kernel (`ntkrnlmp.exe`) **links on

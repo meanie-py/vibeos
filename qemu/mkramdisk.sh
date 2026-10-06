@@ -189,6 +189,8 @@ TREE_BYTES=$(python3 "$PROJECT_DIR/tools/ramdisk_tree.py" --out "$STAGE_DIR" \
 # %TEMP%, logs). The FEX guest set below is copied after the tree and needs its own.
 HEADROOM_MB=64
 [ "${VIBEOS_FEX:-0}" = "1" ] && HEADROOM_MB=$((HEADROOM_MB + 192))
+# ...plus the amd64 guest set (sysamd64, ~40MB stripped) when there is one.
+[ "${VIBEOS_FEX:-0}" = "1" ] && [ -d "$PROJECT_DIR/build-amd64" ] && HEADROOM_MB=$((HEADROOM_MB + 64))
 RAMDISK_SIZE_MB=$(( TREE_BYTES * 105 / 100 / 1048576 + HEADROOM_MB ))
 
 echo "[*] Creating ramdisk.img (${RAMDISK_SIZE_MB}MB FAT32, $((TREE_BYTES / 1048576))MB of files)..."
@@ -220,13 +222,54 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         # the BTCpu contract; it maps the i386 ntdll staged into syswow64
         # (Phase C's SysWOW64 set starts here).
         # BTCpu64 M1: the first x86-64 guest, beside the arm64 probes in
-        # system32 (an x64 exe is not a WoW64 guest; there is no SysX64 dir).
+        # system32 (an x64 exe is not a WoW64 guest; its DLLs are in sysamd64).
         HELLO64="${VIBEOS_HELLO64_EXE:-$PROJECT_DIR/build-fex-hello/hello64.exe}"
         if [ -f "$HELLO64" ]; then
             echo "[*] VIBEOS_FEX=1 — staging hello64.exe (x86-64 guest, BTCpu64 M1)"
             mcopy -o -i "$RAMDISK_IMG" "$HELLO64" ::/reactos/system32/hello64.exe
         else
             echo "[!] VIBEOS_FEX=1: hello64.exe not built ($HELLO64) — x86-64 guest skipped"
+        fi
+        # BTCpu64 M2: the x86-64 guest's own system DLLs — amd64 ntdll and the
+        # whole import closure of a stock amd64 GUI app, out of build-amd64,
+        # into sysamd64. wowx64.dll maps the guest ntdll from here and
+        # redirects the guest's every system32 open here, as WoW64 does with
+        # syswow64. Complete closure or nothing, for the reason the SysWOW64
+        # block below spells out: a half-bound module crashes at first call.
+        TESTGUI64="${VIBEOS_TESTGUI64_EXE:-$PROJECT_DIR/build-amd64/base/applications/testgui/testgui.exe}"
+        if [ -f "$TESTGUI64" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging the sysamd64 DLL closure (amd64 guest system DLLs)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/sysamd64 2>/dev/null || true
+            # lpk.dll as a root of its own: gdi32/user32 LoadLibrary it, so no
+            # import walk finds it, and a guest that cannot get it falls back
+            # to drawing without it rather than failing loudly.
+            CLOSURE64=$(python3 "$PROJECT_DIR/tools/fex/wow64-closure.py" --include-prestaged \
+                          --build-dir "$PROJECT_DIR/build-amd64" "$TESTGUI64" \
+                          "$PROJECT_DIR/build-amd64/dll/win32/lpk/lpk.dll") || {
+                echo "[!] VIBEOS_FEX=1: sysamd64 import closure is INCOMPLETE (see above)."
+                echo "[!]   Refusing to stage a partial set. Build build-amd64 first."
+                exit 1
+            }
+            echo "$CLOSURE64" | while IFS=$'\t' read -r name path; do
+                [ -n "$name" ] || continue
+                mcopy -o -i "$RAMDISK_IMG" "$path" "::/reactos/sysamd64/$name"
+            done
+            echo "[*]   staged $(echo "$CLOSURE64" | wc -l) sysamd64 modules"
+            # The rest of the x86-64 ladder (the 32-bit ladder's sources rebuilt
+            # for x86-64) -- HERE and nowhere else: each imports DLLs that live
+            # only in sysamd64, and the ladder grades whatever the media carries
+            # (ladder.py STAGED_LADDER), so a guest staged without its DLL set
+            # would be graded on a run that could only fail.
+            for G in gui64 win64 file64 async64 marshal64 fault64 thread64 selfmod64 reg64 spawn64; do
+                if [ -f "$PROJECT_DIR/build-fex-hello/$G.exe" ]; then
+                    mcopy -o -i "$RAMDISK_IMG" "$PROJECT_DIR/build-fex-hello/$G.exe" "::/reactos/system32/$G.exe"
+                else
+                    echo "[!] VIBEOS_FEX=1: $G.exe not built — that x86-64 rung will no-op"
+                fi
+            done
+        else
+            echo "[!] VIBEOS_FEX=1: no build-amd64 ($TESTGUI64) — x86-64 guests that import"
+            echo "[!]   anything (all but hello64) will fail at their first DLL. Build amd64 first."
         fi
         WOW64PROBE="${VIBEOS_WOW64PROBE_EXE:-$PROJECT_DIR/build-fex-hello/wow64probe.exe}"
         NTDLL32="${VIBEOS_NTDLL32:-$PROJECT_DIR/build-i386/dll/ntdll/ntdll.dll}"

@@ -13,3 +13,5 @@ EXPORTS
   BTCpu64NotifyMemoryFree
   BTCpu64NotifyMapViewOfSection
   BTCpu64NotifyUnmapViewOfSection
+  BTCpu64NotifyMemoryDirty
+  BTCpu64NotifyReadFile
