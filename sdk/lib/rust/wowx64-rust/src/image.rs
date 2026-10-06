@@ -49,25 +49,30 @@ unsafe fn rd32(p: *const u8) -> u32 {
     core::ptr::read_unaligned(p as *const u32)
 }
 
-/// Offset of the optional header's data directory `Index` (RVA, size), or None
-/// past `NumberOfRvaAndSizes`.
+/// The image's NT headers. PE32+ on both architectures, so the host's 64-bit
+/// header types describe the guest's image exactly.
+unsafe fn NtHeaders(Base: *const u8) -> *const _IMAGE_NT_HEADERS64 {
+    let Dos = Base as *const _IMAGE_DOS_HEADER;
+    Base.add((*Dos).e_lfanew as usize) as *const _IMAGE_NT_HEADERS64
+}
+
+/// Data directory `Index` (RVA, size), or None for a non-PE32+ image or an
+/// index past `NumberOfRvaAndSizes`.
 unsafe fn DataDirectory(Base: *const u8, Index: usize) -> Option<(u32, u32)> {
-    let Nt = Base.byte_add(rd32(Base.byte_add(0x3C)) as usize);
-    let Opt = Nt.add(24);
-    if rd16(Opt) != 0x20B {
-        return None; // not PE32+
+    let Opt = &(*NtHeaders(Base)).OptionalHeader;
+    if Opt.Magic != 0x20B {
+        return None; // IMAGE_NT_OPTIONAL_HDR64_MAGIC
     }
-    if Index as u32 >= rd32(Opt.add(108)) {
+    if Index as u32 >= Opt.NumberOfRvaAndSizes || Index >= Opt.DataDirectory.len() {
         return None;
     }
-    let Dir = Opt.add(112 + Index * 8);
-    Some((rd32(Dir), rd32(Dir.add(4))))
+    let Dir = &Opt.DataDirectory[Index];
+    Some((Dir.VirtualAddress, Dir.Size))
 }
 
 /// The image's preferred base (`OptionalHeader.ImageBase`, PE32+).
 unsafe fn PreferredBase(Base: *const u8) -> u64 {
-    let Nt = Base.byte_add(rd32(Base.byte_add(0x3C)) as usize);
-    core::ptr::read_unaligned(Nt.add(24 + 24) as *const u64)
+    (*NtHeaders(Base)).OptionalHeader.ImageBase
 }
 
 /// Map `<SystemRoot>\sysamd64\ntdll.dll` as an image. Dies on any failure: no
@@ -220,15 +225,15 @@ unsafe fn Relocate(Image: &GuestImage, Delta: u64) {
 pub unsafe fn FindExport(Image: &GuestImage, Name: &[u8]) -> Option<u64> {
     let (Rva, _) = DataDirectory(Image.Base, IMAGE_DIRECTORY_ENTRY_EXPORT)?;
     let Size = Image.Size;
-    if Rva == 0 || Rva as usize + 40 > Size {
+    if Rva == 0 || Rva as usize + core::mem::size_of::<_IMAGE_EXPORT_DIRECTORY>() > Size {
         return None;
     }
-    let Exp = Image.Base.add(Rva as usize);
-    let NumberOfFunctions = rd32(Exp.add(20)) as usize;
-    let NumberOfNames = rd32(Exp.add(24)) as usize;
-    let Functions = rd32(Exp.add(28)) as usize;
-    let Names = rd32(Exp.add(32)) as usize;
-    let Ordinals = rd32(Exp.add(36)) as usize;
+    let Exp = Image.Base.add(Rva as usize) as *const _IMAGE_EXPORT_DIRECTORY;
+    let NumberOfFunctions = (*Exp).NumberOfFunctions as usize;
+    let NumberOfNames = (*Exp).NumberOfNames as usize;
+    let Functions = (*Exp).AddressOfFunctions as usize;
+    let Names = (*Exp).AddressOfNames as usize;
+    let Ordinals = (*Exp).AddressOfNameOrdinals as usize;
     if Names + NumberOfNames * 4 > Size || Ordinals + NumberOfNames * 2 > Size || Functions + NumberOfFunctions * 4 > Size {
         return None;
     }
