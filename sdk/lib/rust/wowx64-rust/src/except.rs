@@ -65,6 +65,7 @@ const _: () = assert!(core::mem::offset_of!(UserExceptionStack, ExceptionRecord)
 
 static mut KiUserExceptionDispatcher: u64 = 0;
 static VehCount: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+pub static LastVehCode: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 pub unsafe fn SetGuestDispatcher(Address: u64) {
     KiUserExceptionDispatcher = Address;
@@ -166,6 +167,10 @@ unsafe fn AtDebugService(Rip: u64) -> bool {
 /// context captured at Simulate entry, so resuming re-enters the guest from
 /// whatever guest state we leave. Otherwise it is a host fault — not ours.
 pub unsafe extern "system" fn WowX64Veh(Info: *mut _EXCEPTION_POINTERS) -> LONG {
+    LastVehCode.store((*(*Info).ExceptionRecord).ExceptionCode as u32, core::sync::atomic::Ordering::Relaxed);
+    if (*(*Info).ExceptionRecord).ExceptionCode as u32 == 0x4000_7E57 {
+        return EXCEPTION_CONTINUE_EXECUTION; // host::ProbeVeh
+    }
     let Cpu = match crate::host::CpuIfLoaded() {
         Some(c) => c,
         None => return EXCEPTION_CONTINUE_SEARCH,
