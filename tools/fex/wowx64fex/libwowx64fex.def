@@ -3,6 +3,7 @@ LIBRARY libwowx64fex.dll
 EXPORTS
   BTCpu64ProcessInit
   BTCpu64ThreadInit
+  BTCpu64ThreadTerm
   BTCpu64GetContext
   BTCpu64SetContext
   BTCpu64Simulate

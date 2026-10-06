@@ -1315,6 +1315,9 @@
 # wowx64.dll fills it in an x86-64 guest process, whose callback table is the
 # guest user32's x86-64 code. Data export; arm64 only.
 @ extern -arch=arm64 WowX64UserCallbackHook
+# Its user-APC twin (dispatch.S, KiUserApcDispatcher): an APC routine there
+# may be the guest's x86-64 code. Data export; arm64 only.
+@ extern -arch=arm64 WowX64UserApcHook
 # E5: the KiUserExceptionDispatcher hook slot (dispatch.S). wow64.dll writes its
 # guest-SEH dispatch handler here so hardware faults in 32-bit guest code reach
 # the guest's own exception dispatcher. Data export; amd64 native WoW64 only.

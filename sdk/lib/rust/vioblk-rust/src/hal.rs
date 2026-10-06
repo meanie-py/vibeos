@@ -8,8 +8,9 @@
 //! contiguous buffer in the rare case one straddles a page (one physical address per
 //! descriptor, so a straddling buffer would DMA half into the wrong page).
 //!
-//! x86 DMA is cache-coherent and QEMU has no IOMMU by default, so cached memory and
-//! physical addresses are correct as they are.
+//! Cached memory and plain physical addresses are correct as they are: x86 DMA is
+//! cache-coherent, QEMU's `virt` PCIe host bridge is DMA-coherent on arm64, and QEMU
+//! has no IOMMU by default.
 
 use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicUsize, Ordering};

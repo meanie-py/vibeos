@@ -997,7 +997,7 @@ unsafe fn IopGetDeviceProperty(
 
     if Status >= 0 {
         if let Err(e) = safe_copy_to_user(
-            (*PropertyData).Buffer as *mut core::ffi::c_void,
+            prop_data.Buffer as *mut core::ffi::c_void, // the captured copy, not a raw re-read
             Buffer,
             BufferSize as usize,
             1,
@@ -1111,7 +1111,7 @@ unsafe fn IopGetRelatedDevice(
     }
 
     if let Err(e) = safe_copy_to_user(
-        (*RelatedDeviceData).RelatedDeviceInstance as *mut core::ffi::c_void,
+        rel_data.RelatedDeviceInstance as *mut core::ffi::c_void, // the captured copy, not a raw re-read
         (*RelatedDeviceNode).InstancePath.Buffer as *const core::ffi::c_void,
         (*RelatedDeviceNode).InstancePath.Length as usize,
         1,
@@ -1564,17 +1564,49 @@ unsafe fn PiControlQueryRemoveDevice(
 unsafe fn PiControlGetInterfaceDeviceAlias(
     ControlData: PPLUGPLAY_CONTROL_INTERFACE_ALIAS_DATA,
 ) -> NTSTATUS {
-    let mut AliasSymbolicLinkName: _UNICODE_STRING = core::mem::zeroed();
-
-    AliasSymbolicLinkName.Length = 0;
-    AliasSymbolicLinkName.MaximumLength = (*ControlData).AliasSymbolicLinkNameLength as u16;
-    AliasSymbolicLinkName.Buffer = (*ControlData).AliasSymbolicLinkName;
-    
-    IoGetDeviceInterfaceAlias(
+    // ControlData is the caller's buffer and the C hands its string and GUID
+    // straight to IoGetDeviceInterfaceAlias, which reads both with no __try.
+    // Capture them, as the other PiControl helpers here do.
+    let mode = KeGetPreviousMode();
+    let cd = match probe_read_user::<_PLUGPLAY_CONTROL_INTERFACE_ALIAS_DATA>(ControlData, mode) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let mut guid: GUID = core::mem::zeroed();
+    if !cd.AliasInterfaceClassGuid.is_null() {
+        guid = match probe_read_user::<GUID>(cd.AliasInterfaceClassGuid, mode) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+    }
+    let mut SymbolicLinkName: _UNICODE_STRING = core::mem::zeroed();
+    let Status = IopCaptureUnicodeString(
+        &mut SymbolicLinkName,
         core::ptr::addr_of_mut!((*ControlData).SymbolicLinkName) as PUNICODE_STRING,
-        (*ControlData).AliasInterfaceClassGuid,
+    );
+    if Status < 0 {
+        return Status;
+    }
+
+    let mut AliasSymbolicLinkName: _UNICODE_STRING = core::mem::zeroed();
+    AliasSymbolicLinkName.MaximumLength = cd.AliasSymbolicLinkNameLength as u16;
+    AliasSymbolicLinkName.Buffer = cd.AliasSymbolicLinkName;
+    let Status = IoGetDeviceInterfaceAlias(
+        &mut SymbolicLinkName as *mut _ as PUNICODE_STRING,
+        if cd.AliasInterfaceClassGuid.is_null() { core::ptr::null() } else { &guid },
         &mut AliasSymbolicLinkName,
-    )
+    );
+    // IoGetDeviceInterfaceAlias REPLACES the string with its own pool copy, so the
+    // C never writes the caller's AliasSymbolicLinkName and leaks that copy. The
+    // leak is closed here; the unreturned alias is a functional gap kept as the C
+    // has it (vibeos-roadmap "Known bugs").
+    if Status >= 0 && AliasSymbolicLinkName.Buffer != cd.AliasSymbolicLinkName {
+        ExFreePool(AliasSymbolicLinkName.Buffer as PVOID);
+    }
+    if !SymbolicLinkName.Buffer.is_null() {
+        ExFreePool(SymbolicLinkName.Buffer as PVOID);
+    }
+    Status
 }
 
 unsafe fn PiControlDeviceClassAssociation(
@@ -1584,49 +1616,94 @@ unsafe fn PiControlDeviceClassAssociation(
     let mut SymbolicLink: _UNICODE_STRING = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
-    if (*ControlData).Register != 0 {
-        if (*ControlData).DeviceInstance.Buffer.is_null()
-            || (*ControlData).DeviceInstance.Length == 0
-        {
+    // ControlData is the caller's buffer, and the C reads and writes it in place
+    // with no __try: its strings and GUID go straight into IoRegisterDeviceInterface.
+    // Work from captured copies and store results back fault-tolerantly.
+    let mode = KeGetPreviousMode();
+    let cd = match probe_read_user::<_PLUGPLAY_CONTROL_CLASS_ASSOCIATION_DATA>(ControlData, mode) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+
+    if cd.Register != 0 {
+        if cd.DeviceInstance.Buffer.is_null() || cd.DeviceInstance.Length == 0 {
             return STATUS_INVALID_PARAMETER;
         }
 
-        if (*ControlData).InterfaceGuid.is_null() {
+        if cd.InterfaceGuid.is_null() {
             return STATUS_INVALID_PARAMETER;
         }
-
-        DeviceObject = IopGetDeviceObjectFromDeviceInstance(
+        let guid = match probe_read_user::<GUID>(cd.InterfaceGuid, mode) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        let mut DeviceInstance: _UNICODE_STRING = core::mem::zeroed();
+        Status = IopCaptureUnicodeString(
+            &mut DeviceInstance,
             core::ptr::addr_of_mut!((*ControlData).DeviceInstance) as PUNICODE_STRING,
         );
-        if DeviceObject.is_null() {
-            return STATUS_NO_SUCH_DEVICE;
+        if Status < 0 {
+            return Status;
+        }
+        let mut Reference: _UNICODE_STRING = core::mem::zeroed();
+        Status = IopCaptureUnicodeString(
+            &mut Reference,
+            core::ptr::addr_of_mut!((*ControlData).Reference) as PUNICODE_STRING,
+        );
+        if Status < 0 {
+            ExFreePool(DeviceInstance.Buffer as PVOID);
+            return Status;
         }
 
-        Status = IoRegisterDeviceInterface(
-            DeviceObject,
-            (*ControlData).InterfaceGuid,
-            core::ptr::addr_of_mut!((*ControlData).Reference) as PUNICODE_STRING,
-            &mut SymbolicLink,
-        );
-        
-        if Status >= 0 {
-            if (SymbolicLink.Length as ULONG + core::mem::size_of::<u16>() as ULONG) <= (*ControlData).SymbolicLinkNameLength {
-                core::ptr::copy_nonoverlapping(
-                    SymbolicLink.Buffer as *const u8,
-                    (*ControlData).SymbolicLinkName as *mut u8,
-                    SymbolicLink.Length as usize,
-                );
-                *(*ControlData).SymbolicLinkName.add((SymbolicLink.Length / core::mem::size_of::<u16>() as u16) as usize) = 0;
-                (*ControlData).SymbolicLinkNameLength = SymbolicLink.Length as ULONG + core::mem::size_of::<u16>() as ULONG;
-            } else {
-                (*ControlData).SymbolicLinkNameLength = SymbolicLink.Length as ULONG + core::mem::size_of::<u16>() as ULONG;
-                Status = STATUS_BUFFER_TOO_SMALL;
+        DeviceObject = IopGetDeviceObjectFromDeviceInstance(&mut DeviceInstance as *mut _ as PUNICODE_STRING);
+        if DeviceObject.is_null() {
+            Status = STATUS_NO_SUCH_DEVICE;
+        } else {
+            Status = IoRegisterDeviceInterface(
+                DeviceObject,
+                &guid,
+                &mut Reference as *mut _ as PUNICODE_STRING,
+                &mut SymbolicLink,
+            );
+
+            if Status >= 0 {
+                let needed = SymbolicLink.Length as ULONG + core::mem::size_of::<u16>() as ULONG;
+                if needed <= cd.SymbolicLinkNameLength {
+                    let out = cd.SymbolicLinkName;
+                    if let Err(e) = safe_copy_to_user(
+                        out as *mut core::ffi::c_void,
+                        SymbolicLink.Buffer as *const core::ffi::c_void,
+                        SymbolicLink.Length as usize,
+                        1,
+                        mode,
+                    ) {
+                        Status = e;
+                    } else if let Err(e) = write_user(
+                        out.add((SymbolicLink.Length / core::mem::size_of::<u16>() as u16) as usize),
+                        0u16,
+                        mode,
+                    ) {
+                        Status = e;
+                    }
+                } else {
+                    Status = STATUS_BUFFER_TOO_SMALL;
+                }
+                // Both branches report the needed size, as the C does.
+                if let Err(e) = write_user(core::ptr::addr_of_mut!((*ControlData).SymbolicLinkNameLength), needed, mode) {
+                    Status = e;
+                }
+
+                ExFreePool(SymbolicLink.Buffer as PVOID);
             }
 
-            ExFreePool(SymbolicLink.Buffer as PVOID);
+            ObDereferenceObject(DeviceObject as PVOID);
         }
-
-        ObDereferenceObject(DeviceObject as PVOID);
+        if !DeviceInstance.Buffer.is_null() {
+            ExFreePool(DeviceInstance.Buffer as PVOID);
+        }
+        if !Reference.Buffer.is_null() {
+            ExFreePool(Reference.Buffer as PVOID);
+        }
     } else {
         Status = STATUS_NOT_IMPLEMENTED;
     }

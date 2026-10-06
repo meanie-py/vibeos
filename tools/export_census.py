@@ -81,11 +81,12 @@ MODULES = {
         # rather than misfiled as some other archive.
         "own_c": "libmsvcrt_static.a",
         "rust": "libmsvcrt_crt_cargo.a",
-        # spec2def generates this TU and puts NOTHING but stub bodies in it. An export
-        # backed by it is a stub whatever its spec line says — msvcrt's `_cprintf_p`
+        # spec2def generates this object (Rust since 2026-10-06) and puts NOTHING but
+        # stub bodies in it. An export backed by it is a stub whatever its spec line
+        # says — msvcrt's `_cprintf_p`
         # family reaches it through `@ stub _cprintf_p(str)`, whose argument list makes
         # the directive scan below see a normal entry.
-        "stubs_obj": "msvcrt_stubs.c.obj",
+        "stubs_obj": "msvcrt_stubs.rs.obj",
     },
 }
 # The i386-only legacy CRTs link the same archive (msvcrt_rust_cohab.cmake); their own
@@ -95,7 +96,7 @@ for _legacy in ("msvcrt20", "msvcrt40", "crtdll"):
         **MODULES["msvcrt"],
         "spec": f"dll/win32/{_legacy}/{_legacy}.spec",
         "dll": f"dll/win32/{_legacy}/{_legacy}.dll",
-        "stubs_obj": f"{_legacy}_stubs.c.obj",
+        "stubs_obj": f"{_legacy}_stubs.rs.obj",
     }
 
 # The arches a `-arch=` spec filter can name, and which build each one belongs to. spec2def

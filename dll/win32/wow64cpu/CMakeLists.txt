@@ -247,7 +247,7 @@ endif()
 # The rest of the x86-64 ladder (M2) rides the same rule: the 32-bit ladder's
 # sources rebuilt for x86-64 by build-hello-compute.sh, each staged if built.
 foreach(_x64_guest hello64 gui64 win64 file64 async64 marshal64 fault64 thread64
-                   selfmod64 reg64 spawn64)
+                   selfmod64 reg64 spawn64 apc64)
     set(_x64_exe ${REACTOS_SOURCE_DIR}/build-fex-hello/${_x64_guest}.exe)
     set(_dep ${_x64_exe})
     while(NOT EXISTS ${_dep})
