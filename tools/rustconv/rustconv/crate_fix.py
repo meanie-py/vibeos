@@ -658,6 +658,13 @@ def reply_findings(
     lost = {n for n in lost if not (n in _REPLACED_BY and _REPLACED_BY[n].search(new_code))}
     if lost:
         out.append("names dropped: " + ", ".join(sorted(lost)[:8]))
+    if c_fn:
+        from .c_body_checks import invented_flag_assignments
+
+        added_flags = set(invented_flag_assignments(c_fn, new_code)) - set(
+            invented_flag_assignments(c_fn, old_code)
+        )
+        out += sorted(added_flags)
     magic = {v for v in _literal_values(new_code) - _literal_values(old_code) if v >= 0x100}
     if magic:
         out.append("new numeric literals: " + ", ".join(hex(v) for v in sorted(magic)[:6]))

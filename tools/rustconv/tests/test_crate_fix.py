@@ -229,3 +229,12 @@ def test_cfg_twins_are_separate_functions(tmp_path: Path):
 
     with pytest.raises(RuntimeError):
         cf._replace_named(tmp_path, "a.rs", "Cb#2", "x", second)  # no longer there as `second`
+
+
+def test_a_fix_may_not_invent_a_success_value():
+    span = cf.function_spans(RUST)[1]
+    src = RUST[span.start : span.end]
+    c_fn = "{\n    Status = Call(p);\n    if (!x) Status = STATUS_X;\n    return Status;\n}"
+    fixed = src.replace("STATUS_SUCCESS\n}", "Status = 0;\n    STATUS_SUCCESS\n}")
+    found = cf.reply_findings(src, fixed, {"error[E0308]": {"amd64"}}, lambda _: [], c_fn=c_fn)
+    assert any("Status = 0" in f for f in found)
