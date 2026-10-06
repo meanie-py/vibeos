@@ -249,8 +249,12 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
         if [ -f "$TESTGUI64" ]; then
             echo "[*] VIBEOS_FEX=1 — staging the sysamd64 DLL closure (amd64 guest system DLLs)"
             mmd -i "$RAMDISK_IMG" ::/reactos/sysamd64 2>/dev/null || true
+            # lpk.dll as a root of its own: gdi32/user32 LoadLibrary it, so no
+            # import walk finds it, and a guest that cannot get it falls back
+            # to drawing without it rather than failing loudly.
             CLOSURE64=$(python3 "$PROJECT_DIR/tools/fex/wow64-closure.py" --include-prestaged \
-                          --build-dir "$PROJECT_DIR/build-amd64" "$TESTGUI64") || {
+                          --build-dir "$PROJECT_DIR/build-amd64" "$TESTGUI64" \
+                          "$PROJECT_DIR/build-amd64/dll/win32/lpk/lpk.dll") || {
                 echo "[!] VIBEOS_FEX=1: sysamd64 import closure is INCOMPLETE (see above)."
                 echo "[!]   Refusing to stage a partial set. Build build-amd64 first."
                 exit 1

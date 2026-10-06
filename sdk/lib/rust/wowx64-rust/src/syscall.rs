@@ -265,6 +265,51 @@ unsafe fn TracePath(Service: u32, Oa: *const OBJECT_ATTRIBUTES) {
     );
 }
 
+/// Is the file `Oa` names a PE image for a machine other than x86-64? Read
+/// from its headers; anything unreadable or not a PE is not.
+unsafe fn ForeignImage(Oa: *const OBJECT_ATTRIBUTES) -> bool {
+    const GENERIC_READ: ULONG = 0x8000_0000;
+    const SYNCHRONIZE: ULONG = 0x0010_0000;
+    const FILE_SHARE_READ_WRITE: ULONG = 3;
+    const FILE_SYNCHRONOUS_IO_NONALERT: ULONG = 0x20;
+    const FILE_NON_DIRECTORY_FILE: ULONG = 0x40;
+    let mut Open = *Oa;
+    let mut File: HANDLE = null_mut();
+    let mut Iosb: IO_STATUS_BLOCK = core::mem::zeroed();
+    if NtOpenFile(
+        &mut File,
+        GENERIC_READ | SYNCHRONIZE,
+        &mut Open,
+        &mut Iosb,
+        FILE_SHARE_READ_WRITE,
+        FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE,
+    ) < 0
+    {
+        return false;
+    }
+    let mut Head = [0u8; 1024];
+    let Read = NtReadFile(
+        File,
+        null_mut(),
+        None,
+        null_mut(),
+        &mut Iosb,
+        Head.as_mut_ptr() as PVOID,
+        Head.len() as ULONG,
+        null_mut(),
+        null_mut(),
+    );
+    NtClose(File);
+    if Read < 0 || Head[0] != b'M' || Head[1] != b'Z' {
+        return false;
+    }
+    let Pe = u32::from_le_bytes([Head[0x3C], Head[0x3D], Head[0x3E], Head[0x3F]]) as usize;
+    if Pe + 6 > Head.len() || &Head[Pe..Pe + 4] != b"PE\0\0" {
+        return false;
+    }
+    u16::from_le_bytes([Head[Pe + 4], Head[Pe + 5]]) != 0x8664
+}
+
 fn IsSelf(Process: u64) -> bool {
     Process as HANDLE == CURRENT_PROCESS
 }
@@ -366,9 +411,23 @@ unsafe fn Redirect(Oa: *const OBJECT_ATTRIBUTES, Shadow: &mut Shadow) -> bool {
         return false;
     }
     let mut Info: FILE_BASIC_INFORMATION = core::mem::zeroed();
-    let Status = NtQueryAttributesFile(&mut Shadow.Oa, &mut Info);
-    if Status < 0 && FallbackCount.fetch_add(1, Ordering::Relaxed) < 32 {
-        crate::trace!("not in sysamd64 (%08lx), left in system32: %wZ", Status, (*Oa).ObjectName);
+    if NtQueryAttributesFile(&mut Shadow.Oa, &mut Info) >= 0 {
+        return true;
     }
-    Status >= 0
+    // Not in sysamd64. Leave it in system32 -- unless what system32 holds
+    // under that name is an image for ANOTHER machine, which the guest must
+    // never be handed: a module loaded at run time (gdi32's LoadLibrary of
+    // lpk.dll) is outside the staged closure, and falling back to the native
+    // arm64 copy had the guest loader map it and call arm64 code as x86-64.
+    // Redirecting to the absent sysamd64 copy gives the guest "not found",
+    // which is what WoW64 gives a 32-bit process in the same spot.
+    let Foreign = ForeignImage(Oa);
+    if FallbackCount.fetch_add(1, Ordering::Relaxed) < 32 {
+        crate::trace!(
+            "not in sysamd64: %wZ -> %s",
+            (*Oa).ObjectName,
+            if Foreign { b"a foreign-machine image in system32: NOT FOUND\0".as_ptr() } else { b"left in system32\0".as_ptr() },
+        );
+    }
+    Foreign
 }
