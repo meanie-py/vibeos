@@ -1016,7 +1016,7 @@ drivers/bus/pci/CMakeLists.txt	1	# pci.c/fdo.c/pdo.c are translated to Rust (sdk
 drivers/bus/pcix/CMakeLists.txt	1	# debug.c device.c dispatch.c enum.c fdo.c hookhal.c init.c pcivrify.c pdo.c power.c utils.c
 drivers/bus/pcix/CMakeLists.txt	1	# guid.c (GUID data) + the 4 empty stub TUs stay C:
 drivers/bus/pcix/CMakeLists.txt	1	# pcix-rust builds on PLAIN STABLE rustc. pci/id.rs faithfully translates id.c's C-variadic
-drivers/bus/pcix/CMakeLists.txt	1	# rule). 28 .c bodies are replaced by libpcix_rust.a; guid.c (GUID data instantiation,
+drivers/bus/pcix/CMakeLists.txt	1	# rule). 31 .c bodies are replaced by libpcix_rust.a; guid.c (GUID data instantiation,
 drivers/bus/pcix/CMakeLists.txt	1	# trampolines in rust_varargs_shim.c below, calling the fixed-arity `*_v` twins in
 drivers/filesystems/cdfs/CMakeLists.txt	1	# Two .c stay C (never translated -> no .rs counterpart): cdprocssrc.c (forces
 drivers/filesystems/cdfs/CMakeLists.txt	1	# create.c devctrl.c deviosup.c dirctrl.c dirsup.c fileinfo.c fsctrl.c fspdisp.c

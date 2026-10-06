@@ -2214,14 +2214,26 @@ class QemuVM:
 
     def _build_native_cmd(self) -> list[str]:
         """Attach prepared media and select ports under the handshake lock."""
-        self.serial.listen(str(self.serial_path))
+        if os.environ.get("VIBEOS_QEMU_RR", "").strip():
+            # Record/replay: the guest's serial goes to a regular file, which never
+            # refuses a write. A socket can, and x86's UART retries a refused byte
+            # from a host watch the replay log cannot pin. See
+            # SerialClient.follow_file.
+            serial_out = self._sock_dir / "serial.out"
+            self.serial.follow_file(
+                str(serial_out), alive=lambda: self._proc is not None and self._proc.poll() is None
+            )
+            serial_chardev = f"file,id=ser0,path={serial_out}"
+        else:
+            self.serial.listen(str(self.serial_path))
+            serial_chardev = f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1"
         self._set_live_tee()
         return [
             self.config.qemu_bin,
             "-qmp",
             f"unix:{self.qmp_path},server,nowait",
             "-chardev",
-            f"socket,id=ser0,path={self.serial_path},server=off,reconnect=1",
+            serial_chardev,
             *self._serial_args(),
             *self._prepared_disk_args,
             *self._tripwire_args(),

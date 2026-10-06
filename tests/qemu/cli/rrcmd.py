@@ -33,6 +33,7 @@ import bisect
 import itertools
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -296,6 +297,9 @@ def _keep_serial(trace: Path, name: str, *, expect_mode: str) -> Path | None:
     return dst
 
 
+_HOST_STAMP = re.compile(r"\[\+\s*\d+\.\d+\] ?")
+
+
 def _guest_lines(p: Path) -> list[str]:
     """The guest's own serial output, with the harness's banner dropped.
 
@@ -309,7 +313,14 @@ def _guest_lines(p: Path) -> list[str]:
     i = 0
     while i < len(lines) and (not lines[i].strip() or lines[i].startswith("#")):
         i += 1
-    return lines[i:]
+    # The tee also stamps `[+ secs]` host time onto the stream, at host-timed chunk
+    # arrivals, so both the stamps and where they fall differ on every run. Diffing
+    # them made `verify` report "DIVERGED at serial line 2" on every arm64 trace —
+    # the same self-inflicted false positive as the banner, arriving later. Strip
+    # them and compare the guest's own bytes. A stamp that lands between a `\r` and
+    # its `\n` leaves an empty line on one side only, so blank lines are dropped too.
+    text = _HOST_STAMP.sub("", "\n".join(lines[i:])).replace("\r", "\n")
+    return [ln for ln in text.splitlines() if ln.strip()]
 
 
 def _serial_divergence(a: list[str], b: list[str]) -> tuple[int, str] | None:
@@ -317,6 +328,17 @@ def _serial_divergence(a: list[str], b: list[str]) -> tuple[int, str] | None:
     other. A prefix is not a divergence: a replay that was stopped early, or a
     record whose tail was still being flushed, both produce one."""
     for n, (x, y) in enumerate(zip(a, b, strict=False), 1):
+        # The harness's serial socket can connect a few bytes into the guest's
+        # output ("UEFI firmware" captured as "FI firmware"), so the FIRST line may
+        # be truncated at its front on either side. That is capture, not the guest.
+        if n == 1 and (x.endswith(y) or y.endswith(x)):
+            continue
+        # Likewise the LAST line of the shorter transcript: the harness quits QEMU
+        # the moment it has its verdict, mid-print. A whole-kmtest replay agreed for
+        # 18,286 lines and was reported DIVERGED on the 18,287th, which was "[".
+        last = n == min(len(a), len(b))
+        if last and (x.startswith(y) or y.startswith(x)):
+            continue
         if x != y:
             return n, f"record: {x[:160]}\nreplay: {y[:160]}"
     return None

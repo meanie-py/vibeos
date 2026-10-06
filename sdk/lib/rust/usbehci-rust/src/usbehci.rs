@@ -4064,22 +4064,18 @@ pub unsafe extern "system" fn EHCI_CheckController(ehciExtension: PVOID) {
 #[no_mangle]
 pub unsafe extern "system" fn EHCI_Get32BitFrameNumber(ehciExtension: PVOID) -> ULONG {
     let EhciExtension: PEHCI_EXTENSION = ehciExtension as PEHCI_EXTENSION;
-    let FrameIdx: ULONG;
-    let FrameIndex: ULONG;
-    let mut FrameNumber: ULONG;
+    let HighPart: ULONG;
+    let mut Frame: ULONG;
 
-    FrameIdx = (*EhciExtension).FrameIndex;
-    FrameIndex = READ_REGISTER_ULONG(
+    HighPart = (*EhciExtension).FrameHighPart;
+    Frame = READ_REGISTER_ULONG(
         core::ptr::addr_of_mut!((*(*EhciExtension).OperationalRegs).FrameIndex) as *mut ULONG,
-    );
+    ) / EHCI_MICROFRAMES;
+    Frame &= EHCI_FRINDEX_FRAME_MASK;
 
-    FrameNumber = (FrameIdx as USHORT as ULONG)
-        ^ ((FrameIndex / EHCI_MICROFRAMES) & EHCI_FRINDEX_FRAME_MASK);
-    FrameNumber &= EHCI_FRAME_LIST_MAX_ENTRIES;
-    FrameNumber = FrameNumber
-        .wrapping_add(FrameIndex | ((FrameIndex / EHCI_MICROFRAMES) & EHCI_FRINDEX_INDEX_MASK));
-
-    return FrameNumber;
+    /* The ISR keeps bit 10 of HighPart in step with the frame list half */
+    return ((Frame & EHCI_FRINDEX_INDEX_MASK) | HighPart)
+        .wrapping_add((Frame ^ HighPart) & EHCI_FRAME_LIST_MAX_ENTRIES);
 }
 
 #[no_mangle]

@@ -12,12 +12,12 @@ const INVALID_HANDLE_VALUE: isize = -1; // (HANDLE)-1
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
     fn UserReferenceObject(obj: PVOID);
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
     fn UserReferenceObject(obj: PVOID);
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,) -> BOOL;
 }
 
 // PtrToUint(p) = (UINT)(ULONG_PTR)(p)
