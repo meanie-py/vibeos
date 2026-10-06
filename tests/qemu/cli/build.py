@@ -76,6 +76,10 @@ def source_date_epoch(repo: Path) -> str | None:
 NINJA_TIMEOUT_ENV = "VIBEOS_BUILD_TIMEOUT"
 
 
+#: Generated-header / host-tool barrier targets built before the boot set (ninja-prime).
+_PRIME_TARGETS = ("host-tools", "asm", "psdk", "xdk", "bugcodes", "errcodes")
+
+
 def _ninja_timeout() -> int:
     """The ninja stage's wall-clock budget in seconds (default one hour), overridable with
     VIBEOS_BUILD_TIMEOUT for a deliberately cold rebuild (a regenerated -sys crate)."""
@@ -1006,7 +1010,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     # dirs masked (winnt.h always pre-existed). Prime the generator targets as an
     # explicit barrier; warm trees no-op in ~1s.
     cp = run.run(
-        wrap(["ninja", *_ninja_jobs(), "host-tools", "asm", "psdk", "xdk", "bugcodes", "errcodes"]),
+        wrap(["ninja", *_ninja_jobs(), *_PRIME_TARGETS]),
         cwd=build_dir,
         env=build_env,
         stage="ninja-prime",
@@ -1194,6 +1198,49 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
                 if relinked
                 else "no-op — optional passes invalidated nothing"
             ),
+        )
+    )
+
+    # --- prune what the requested targets no longer depend on ---
+    # cleandead's blind spot: an edge still DECLARED that nothing we build depends
+    # on (a library unlinked but kept "as a reference"). Its outputs live on in a
+    # warm tree and never exist in a fresh one -- msvcrt_static, 2026-10-04: every
+    # lane green, the fresh integration tree red. After this a warm build dir holds
+    # what a fresh build of the same targets would. Only files ninja logged
+    # building are candidates (tools/ninja_closure_prune.py).
+    _spec = importlib.util.spec_from_file_location(
+        "ninja_closure_prune", repo / "tools" / "ninja_closure_prune.py"
+    )
+    assert _spec is not None and _spec.loader is not None
+    _prune = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_prune)
+    roots = ["build.ninja", *_PRIME_TARGETS, *targets, *cohab, *cfg.ninja_targets_optional]
+    try:
+        victims, unknown = _prune.plan(build_dir, roots, canon.canon_path() + f"/{build_dir.name}")
+    except OSError as exc:
+        victims, unknown = [], [f"<{exc}>"]
+    # An optional target absent from this graph is a normal skip above; anything
+    # else unresolvable means the walk cannot be trusted, so delete nothing.
+    unknown = [u for u in unknown if u not in cfg.ninja_targets_optional]
+    if unknown:
+        run.classification = "BUILD_FAIL"
+        run.add(
+            Stage(
+                "closure-prune",
+                status="fail",
+                detail=f"cannot resolve root(s) in build.ninja: {' '.join(unknown)[:200]}",
+            )
+        )
+        return run.finalize(repo)
+    for rel in victims:
+        (build_dir / rel).unlink(missing_ok=True)
+    if victims:
+        run.log("\n".join(victims), header="closure-prune")
+    run.add(
+        Stage(
+            "closure-prune",
+            status="ok",
+            detail=f"{len(victims)} output(s) outside the closure removed",
         )
     )
 

@@ -126,6 +126,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_conformance_probe.py"),
     (".", ".", "tools/test_export_census.py"),
     (".", ".", "tools/test_link_pulls.py"),
+    (".", ".", "tools/test_ninja_closure_prune.py"),
     (".", ".", "tools/test_gen_ctype_tables.py"),
     (".", ".", "tools/test_verify_lost_exports.py"),
     (".", ".", "tools/test_verify_translation_literals.py"),

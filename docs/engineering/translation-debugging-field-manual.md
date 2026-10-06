@@ -6620,9 +6620,10 @@ stays in `CMakeFiles/<target>.dir/` forever. `verify_ucrtbase_cohab` read those 
 produces must ask the build graph (`build <obj>:` lines in `build.ninja`), not the directory.
 Since 2026-10-05 `vibeos-cli build` runs `ninja -t cleandead` after the manifest regenerates,
 so a lane's build dir no longer holds outputs the graph has dropped (the first run on an old
-tree removed 3017/1039/103 files on i386/amd64/arm64). Hand-run `ninja` does not; and
-cleandead cannot touch an edge that is still declared but no longer built, which is the
-case below.
+tree removed 3017/1039/103 files on i386/amd64/arm64). Hand-run `ninja` does not.
+cleandead cannot touch an edge that is still declared but no longer built (the case below), so
+`build` also prunes every ninja-logged output outside the closure of the targets it built
+(`tools/ninja_closure_prune.py`, stage `closure-prune`; first run on a warm i386 tree: 630).
 The mirror image: a library you keep "compiled, unlinked, as a reference" is NOT compiled once
 nothing links it, because `vibeos-cli build` makes what `livecd` depends on, not ALL. Every
 existing build dir still holds its objects from before the unlink, so it passes locally and
@@ -6630,7 +6631,8 @@ goes red only on a fresh tree: `msvcrt_static` came off msvcrt's link line and t
 difftest failed `DIFFTEST_STALE_ORACLE` (its oracle objects were never built; master red,
 2026-10-04). **Fix:** `add_dependencies(<module> <reference-lib>)`, which builds it without
 linking it (msvcrt → msvcrt_static; ucrtbase → its reference libraries). Prove it in a FRESH
-worktree, not by checking that the objects exist in yours.
+worktree, not by checking that the objects exist in yours -- or let `vibeos-cli build`'s
+closure prune remove them from yours, which it now does.
 
 **The most expensive class in this file**, because the failure mode is a green that means
 nothing. It has false-greened arm64 six times in a row (fastfat → ramdisk → pl011 → gdi32 →
@@ -10585,6 +10587,25 @@ function in the DDK whose entire contract *is* mutual exclusion against a driver
 the SMP kernel it delivered exactly nothing; on UP the IRQL raise happened to be enough, which
 is why it survived. When a per-arch port of a synchronisation primitive is shorter than its
 siblings, the missing lines are the primitive.
+
+### A dropped interrupt RESTORE: one CPU spins IF=0 on a lock while the holder waits for its TB ack
+**Symptom:** amd64 `-smp 2` `HANG_TIMEOUT`, serial silent after `[user32] DllMain PROCESS_ATTACH`
+(the WoW64 guest starting alongside). `hang-cpustate.txt`: CPU0 in `ki_tb_shootdown` waiting on
+`KiTbFlushWaitCount`; CPU1 in `KxAcquireSpinLock` on `MmPfnLock` (via `MiMapViewOfDataSection`)
+with `RFL=00000002` -- **IF clear**, so the shootdown IPI can never land. Two gates in 30 minutes
+on 2026-10-05, then ten clean farm boots: timing-dependent, but not rare under gate load.
+**Cause:** `KiSwitchKernelStack` (amd64 `stubs.rs`) translated the C's
+`Eflags = __readeflags(); _disable(); ... __writeeflags(Eflags);` as a bare `cli`. It runs when a
+thread first calls win32k (`KiConvertToGuiThread` swaps in a large stack), so every GUI
+conversion ran `MmDeleteKernelStack` and all of `PsConvertToGuiThread` -- desktop-heap mapping,
+PFN lock -- with interrupts off. Harmless on UP, which has no IPI to miss; latent since the
+2026-02 KE translation. NT spins for the PFN lock with interrupts ON precisely so a TB flush from
+the holder gets through. **Fix:** `KeDisableInterrupts()` / `KeRestoreInterrupts()` around the
+stack swap, with a compiler fence (the restore's `sti` is a `nomem` asm). **Proved
+deterministically, not by soak:** a `gdb probe` with a hardware breakpoint at
+`PsConvertToGuiThread` read IF=0 on 6/6 entries before and IF=1 on 6/6 after. When a C body
+brackets a region with a save/restore of flags or IRQL, diff the Rust for BOTH halves -- a sweep
+of every Rust fn that disables interrupts without restoring found this one only.
 
 ### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
 **Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial
