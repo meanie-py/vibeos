@@ -1066,10 +1066,10 @@ mod tests {
         for t in [
             0x01u8, 0x04, 0x06, 0x07, 0x0B, 0x0C, 0x0E, 0x83, 0x43, 0x96, 0xA5, 0xA6, 0xA9, 0x86,
         ] {
-            assert!(IsRecognizedPartition!(t) != 0, "{t:#x}");
+            assert!(IsRecognizedPartition!(t), "{t:#x}");
         }
         for t in [0x00u8, 0x05, 0x0F, 0x81, 0x84, 0xEE] {
-            assert!(IsRecognizedPartition!(t) == 0, "{t:#x}");
+            assert!(!IsRecognizedPartition!(t), "{t:#x}");
         }
     }
 
