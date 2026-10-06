@@ -2570,6 +2570,13 @@ severity, same facility, plausible magnitude, so nothing looks wrong. **`tools/s
 same-named C function uses**; it finds none of a value's names there → finding. Its one blind
 spot: a wrong member that the same function ALSO returns correctly elsewhere
 (`STG_E_INVALIDFLAG` for `STG_E_INVALIDFUNCTION` passed it). Prefer the name when you touch one.
+**A NAMED wrong code needs no C oracle:** oleaut32's `olesys.rs` had
+`TYPE_E_CANTLOADLIBRARY` holding `TYPE_E_AMBIGUOUSNAME`'s value, so `LoadTypeLib` on a PE with no
+typelib said "ambiguous name". `tools/scan_winerror_consts.py` (in `vibeos-cli check`) holds every
+`const` named after a `winerror.h` code to the header. Its first run checked 4742 and found 6, all real.
+Flag *bit sets* spelled as numbers drift the same way: `0x00001012` lost `STGM_DELETEONRELEASE`
+from the transacted scratch file (a temp file leaked per open), `0x40` stood in for
+`STGM_SHARE_EXCLUSIVE`, and an `IStream_Seek` origin of `1` (CUR) stood in for SET.
 
 ### A file-format OFFSET spelled as a number reads the neighbouring field
 `StorageImpl_LoadFileHeader` read the compound-file header with literal offsets, and one of
@@ -2608,6 +2615,8 @@ self-consistent**. One 2026-07-04 sweep found 41:
   the wrong type wakes ONE waiter instead of ALL: a lost-wakeup landmine.
 - The LPC message-type window shifted (live validation on the csrss CreateProcess reply path);
   `MEMORY_PRIORITY_FOREGROUND` writer(0)/reader(2) disagreement killed the foreground boost.
+- oleaut32's `PARSE_PATH_FROM_URL = 2` (urlmon.idl: **9**; 2 is `PARSE_FRIENDLY`, which urlmon
+  does not implement) sent every `file:` path through `OleLoadPicturePath` to E_NOTIMPL.
 - **A guess can also come from the WRONG ARCH's `#ifdef`.** ex-rust re-declared
   `INTERLOCKED_RESULT` as a sign in `{-1, 0, 1}`. `exfuncs.h` does define a tidy `0/1/2` — but
   under `#ifndef _M_IX86`; on x86, `xdk/x86/ke.h` overrides it with the encoding the assembly
@@ -3982,6 +3991,21 @@ one, and the leading underscore suppresses the unused warning that would have ex
 flags a nested `let _x` while `x` is in scope in the same function; a `_x` the C really
 declares is marked `// nolint: let-shadow (why)`. It cannot see an assignment dropped
 outright (consrv's `IntWriteConsoleOutputStringChars` lost `XStart = 0;` with no `let`).
+
+### A dropped owner filter in a "release all of MINE" loop releases everyone's
+
+**Symptom:** byte-range locks vanish. A second handle can lock a range that storage holds,
+and closing any handle to a file drops every lock on it. Wine's storage32 lock test failed on
+41 ranges, and DOCFILE share modes enforced nothing.
+**Cause:** `FsRtlFastUnlockAll`'s exclusive-lock loop lost the C's
+`if (ProcessId != Process) continue;`, and the loop compiles and runs fine without it.
+Underneath was a C gap the fix had to close too: neither unlock path checked the FILE
+OBJECT, but Windows owns a lock by (file object, process, key). So `UnlockFileEx` through one
+handle released a lock taken through another in the same process.
+**Fix:** filter on every owner field the API names, in both the single and the all-unlock
+paths. Shared ranges got a `FileObject` field for this. When a loop's job is "release what
+X owns", diff its `continue` conditions against the C first: a missing one is silent until two
+owners coexist.
 
 ### A dropped `#if DBG` acquires a lock the release build marked as never-initialized
 
@@ -12762,6 +12786,12 @@ derived. `rustconv cpp-com` derives the class COM map from the defining C++ head
 generates the vtable from the C initializer plus bindgen. The three things the translator
 silently omits are the vtable layout, the aggregation/delegation wiring, and the registration
 data. **Avoid the shell32-com C++ substrate for new work** until that lane lands.
+
+**Porting from wine-10: storage moved.** `CreateILockBytesOnHGlobal`, `memlockbytes.c` and a
+second `storage32.c` live in `dlls/coml2/`, and the free-threaded marshaler, `hglobalstream.c`
+and the stub manager live in `dlls/combase/`. `dlls/ole32/memlockbytes.c` 404s at the
+wine-10.0 tag. Reading only `dlls/ole32` diffs you against pre-move code. Our memlockbytes
+`SetSize` still passed the old `0` flags, so shrinking to 0 failed.
 
 ### A "not the COM path" flag turned off the LANGUAGE layer too `[§9.131]`
 `--free-functions` exists because a TU's classless functions need no COM scaffold — no vtable, no
