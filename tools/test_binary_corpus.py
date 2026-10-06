@@ -112,3 +112,13 @@ def test_staging_dirs_are_pruned_during_the_walk_not_after(tmp_path, monkeypatch
     # empty list" is true for the wrong reason.
     assert seen, "os.walk was never called — this assertion would pass vacuously"
     assert not any("livecd" in s for s in seen), "descended into a pruned directory"
+
+
+def test_the_bios_loader_container_is_not_a_pe_but_its_body_is(tmp_path):
+    """freeldr.sys is the 16-bit stub with the PE body appended: llvm-objdump cannot
+    read it, and every post-link scanner reported SCANNER_ERROR on it the day BIOS
+    boot came back. The body, freeldr_pe.exe, is the PE and stays in the corpus."""
+    loader = "boot/freeldr/freeldr/"
+    repo, build = _repo(tmp_path, "amd64", [loader + "freeldr.sys", loader + "freeldr_pe.exe"])
+    rels = {str(p.relative_to(build)) for p in governed_binaries(build, repo).paths}
+    assert rels == {loader + "freeldr_pe.exe"}

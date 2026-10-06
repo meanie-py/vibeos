@@ -3972,7 +3972,8 @@ def _fake_smoke(mapping):
     calls: dict[str, int] = {}
 
     def fake(repo, arch, root, extra):
-        seq = mapping[arch]
+        # Lanes a test does not name (amd64-bios rides along whenever amd64 gates) are green.
+        seq = mapping.get(arch, ["OK"])
         name = root.name  # smoke-<arch>-a1 / smoke-<arch>-r1 ...
         if name.endswith("-a1"):
             idx = 0
@@ -4019,6 +4020,24 @@ def test_gate_all_green_no_retries(tmp_path, monkeypatch):
     assert rc == 0
     # no retry dirs requested
     assert not any("-r" in k for k in fake.calls), fake.calls
+
+
+def test_gate_boots_the_amd64_media_under_bios_too(tmp_path, monkeypatch):
+    """BIOS boot was pruned in May and stayed dead because nothing booted it. An amd64
+    gate now also boots the same media through SeaBIOS, and a red there is a red gate."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"amd64-bios": ["BUGCHECK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    assert gate_mod.gate(_gate_args(), tmp_path) != 0
+    assert any(k.startswith("amd64-bios:smoke-amd64-bios-a1") for k in fake.calls), fake.calls
+
+
+def test_a_gate_without_amd64_does_not_boot_bios(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"arm64": ["OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    assert gate_mod.gate(_gate_args(arches="arm64"), tmp_path) == 0
+    assert not any(k.startswith("amd64-bios:") for k in fake.calls), fake.calls
 
 
 def test_gate_flake_recovers_on_retry(tmp_path, monkeypatch):
