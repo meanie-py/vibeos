@@ -328,8 +328,9 @@ pub unsafe extern "system" fn NtCreateKeyedEvent(
             ObCloseHandle(KeyedEventHandle, PreviousMode);
             return e;
         }
-    } else {
-        *OutHandle = KeyedEventHandle;
+    } else if let Err(e) = ntkrnl_sys::probe::write_back(OutHandle, KeyedEventHandle) {
+        ObCloseHandle(KeyedEventHandle, PreviousMode);
+        return e;
     }
 
     Status
@@ -365,8 +366,9 @@ pub unsafe extern "system" fn NtOpenKeyedEvent(
             ObCloseHandle(KeyedEventHandle, PreviousMode);
             return e;
         }
-    } else {
-        *OutHandle = KeyedEventHandle;
+    } else if let Err(e) = ntkrnl_sys::probe::write_back(OutHandle, KeyedEventHandle) {
+        ObCloseHandle(KeyedEventHandle, PreviousMode);
+        return e;
     }
 
     Status

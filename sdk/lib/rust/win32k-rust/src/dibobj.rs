@@ -581,7 +581,9 @@ pub unsafe extern "system" fn NtGdiSetDIBitsToDeviceInternal(
             ret = 0;
             break 'exit;
         }
-        bmi = pbmiSafe;
+        // Shadow, don't assign: from here on the name `bmi` can only mean the kernel
+        // copy, so no later read can reach the caller's page.
+        let bmi: LPBITMAPINFO = pbmiSafe;
 
         // `Bits` was probed above, but the probe only validates. Both consumers below
         // read it directly out of the caller's page -- GreCreateBitmapEx as the pixel

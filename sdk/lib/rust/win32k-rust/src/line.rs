@@ -1190,13 +1190,32 @@ pub unsafe extern "system" fn NtGdiPolyDraw(
     pptSafe = pjBuffer as PPOINT;
     pjSafe = pjBuffer.add(cjSizePt);
 
-    ProbeArrayForRead(ppt as *const core::ffi::c_void, core::mem::size_of::<POINT>(), cpt, core::mem::size_of::<u32>());
-    ProbeArrayForRead(pjAttr as *const core::ffi::c_void, core::mem::size_of::<u8>(), cpt, core::mem::size_of::<u8>());
+    // C: _SEH2_TRY { ProbeArrayForRead(ppt, sizeof(POINT), cpt, sizeof(LONG));
+    // ProbeArrayForRead(pjAttr, sizeof(BYTE), cpt, sizeof(BYTE)); RtlCopyMemory x2; }
+    // _SEH2_EXCEPT { SetLastNtError(code); bResult = FALSE; goto Cleanup; }
+    // (cpt * sizeof(POINT) cannot overflow: bounded above.)
+    let captured = crate::safe_user_io::copy_from_user(
+        pptSafe as *mut core::ffi::c_void,
+        ppt as *const core::ffi::c_void,
+        cjSizePt,
+        core::mem::size_of::<i32>() as u32,
+    )
+    .and_then(|()| {
+        crate::safe_user_io::copy_from_user(
+            pjSafe as *mut core::ffi::c_void,
+            pjAttr as *const core::ffi::c_void,
+            cpt as usize,
+            1,
+        )
+    });
 
-    core::ptr::copy_nonoverlapping(ppt as *const u8, pptSafe as *mut u8, cjSizePt);
-    core::ptr::copy_nonoverlapping(pjAttr as *const u8, pjSafe as *mut u8, cpt as usize);
-
-    bResult = GdiPolyDraw(hdc, pptSafe, pjSafe, cpt);
+    bResult = match captured {
+        Ok(()) => GdiPolyDraw(hdc, pptSafe, pjSafe, cpt),
+        Err(st) => {
+            SetLastNtError(st);
+            0
+        }
+    };
 
     ExFreePoolWithTag(pjBuffer as *mut core::ffi::c_void, TAG_SHAPE);
 

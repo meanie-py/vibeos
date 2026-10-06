@@ -1124,12 +1124,12 @@ pub unsafe extern "system" fn NtSetInformationProcess(
 
     let process = Process as *mut _EPROCESS;
 
-    match ProcessInformationClass {
+    'class: { match ProcessInformationClass {
         ProcessWx86Information => {
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                VdmPower = *(ProcessInformation as PULONG);
+                VdmPower = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if SeSinglePrivilegeCheck(SeTcbPrivilege, PreviousMode) == 0 {
                     Status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1147,7 +1147,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<HANDLE>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                PortHandle = *(ProcessInformation as PHANDLE);
+                PortHandle = match ntkrnl_sys::probe::read_back(ProcessInformation as PHANDLE) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if SeSinglePrivilegeCheck(SeTcbPrivilege, PreviousMode) == 0 {
                     Status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1178,7 +1178,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<PROCESS_ACCESS_TOKEN>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                TokenHandle = (*(ProcessInformation as *const PROCESS_ACCESS_TOKEN)).Token;
+                TokenHandle = match ntkrnl_sys::probe::read_back(ProcessInformation as *const PROCESS_ACCESS_TOKEN) { Ok(v) => v.Token, Err(s) => { Status = s; break 'class; } };
 
                 Status = PspSetPrimaryToken(Process, TokenHandle, core::ptr::null_mut());
             }
@@ -1188,7 +1188,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DefaultHardErrorMode = *(ProcessInformation as PULONG);
+                DefaultHardErrorMode = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 (*process).DefaultHardErrorProcessing = DefaultHardErrorMode;
 
@@ -1205,7 +1205,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<PROCESS_SESSION_INFORMATION>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                SessionInfo = *(ProcessInformation as PPROCESS_SESSION_INFORMATION);
+                SessionInfo = match ntkrnl_sys::probe::read_back(ProcessInformation as PPROCESS_SESSION_INFORMATION) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if SeSinglePrivilegeCheck(SeTcbPrivilege, PreviousMode) == 0 {
                     Status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1223,7 +1223,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<PROCESS_PRIORITY_CLASS>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                PriorityClass = *(ProcessInformation as PPROCESS_PRIORITY_CLASS);
+                PriorityClass = match ntkrnl_sys::probe::read_back(ProcessInformation as PPROCESS_PRIORITY_CLASS) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if PriorityClass.PriorityClass > PROCESS_PRIORITY_CLASS_ABOVE_NORMAL as u8 {
                     Status = STATUS_INVALID_PARAMETER;
@@ -1265,7 +1265,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<PROCESS_FOREGROUND_BACKGROUND>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Foreground = *(ProcessInformation as PPROCESS_FOREGROUND_BACKGROUND);
+                Foreground = match ntkrnl_sys::probe::read_back(ProcessInformation as PPROCESS_FOREGROUND_BACKGROUND) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 PsSetProcessPriorityByClass(
                     Process,
@@ -1283,7 +1283,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<KPRIORITY>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                BasePriority = *(ProcessInformation as *const KPRIORITY);
+                BasePriority = match ntkrnl_sys::probe::read_back(ProcessInformation as *const KPRIORITY) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if (BasePriority & 0x80000000u32 as KPRIORITY) != 0 {
                     MemoryPriority = MEMORY_PRIORITY_FOREGROUND as UCHAR;
@@ -1321,7 +1321,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Boost = *(ProcessInformation as PULONG);
+                Boost = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if ExAcquireRundownProtection(core::ptr::addr_of_mut!((*process).RundownProtect)) != 0 {
                     KeEnterCriticalRegion();
@@ -1349,7 +1349,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Break = *(ProcessInformation as PULONG);
+                Break = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if SeSinglePrivilegeCheck(SeDebugPrivilege, PreviousMode) == 0 {
                     Status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1367,7 +1367,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<KAFFINITY>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Affinity = *(ProcessInformation as *const KAFFINITY);
+                Affinity = match ntkrnl_sys::probe::read_back(ProcessInformation as *const KAFFINITY) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 ValidAffinity = Affinity & KeActiveProcessors;
                 if (Affinity == 0) || (ValidAffinity != Affinity) {
@@ -1397,7 +1397,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DisableBoost = *(ProcessInformation as *const BOOLEAN);
+                DisableBoost = match ntkrnl_sys::probe::read_back(ProcessInformation as *const BOOLEAN) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if ExAcquireRundownProtection(core::ptr::addr_of_mut!((*process).RundownProtect)) != 0 {
                     KeEnterCriticalRegion();
@@ -1427,7 +1427,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DebugFlags = *(ProcessInformation as PULONG);
+                DebugFlags = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if (DebugFlags & !1) != 0 {
                     Status = STATUS_INVALID_PARAMETER;
@@ -1446,7 +1446,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<BOOLEAN>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                EnableFixup = *(ProcessInformation as PULONG);
+                EnableFixup = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if EnableFixup != 0 {
                     (*process).DefaultHardErrorProcessing |= SEM_NOALIGNMENTFAULTEXCEPT;
@@ -1488,7 +1488,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             } else if ProcessHandle != NtCurrentProcess() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
-                NoExecute = *(ProcessInformation as PULONG);
+                NoExecute = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 Status = MmSetExecuteOptions(NoExecute);
             }
@@ -1498,7 +1498,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<HANDLE>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DirectoryHandle = *(ProcessInformation as PHANDLE);
+                DirectoryHandle = match ntkrnl_sys::probe::read_back(ProcessInformation as PHANDLE) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObSetDeviceMap(Process, DirectoryHandle);
             }
@@ -1525,7 +1525,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
         _ => {
             Status = STATUS_INVALID_INFO_CLASS;
         }
-    }
+    } }
 
     ObDereferenceObject(Process as PVOID);
     Status
@@ -1570,12 +1570,12 @@ pub unsafe extern "system" fn NtSetInformationThread(
         return Status;
     }
 
-    match ThreadInformationClass {
+    'class: { match ThreadInformationClass {
         ThreadPriority => {
             if ThreadInformationLength != core::mem::size_of::<KPRIORITY>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Priority = *(ThreadInformation as *const LONG);
+                Priority = match ntkrnl_sys::probe::read_back(ThreadInformation as *const LONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if (Priority > HIGH_PRIORITY as LONG) || (Priority <= LOW_PRIORITY as LONG) {
                     Status = STATUS_INVALID_PARAMETER;
@@ -1613,7 +1613,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<LONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Priority = *(ThreadInformation as *const LONG);
+                Priority = match ntkrnl_sys::probe::read_back(ThreadInformation as *const LONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if (Priority > THREAD_BASE_PRIORITY_MAX) || (Priority < THREAD_BASE_PRIORITY_MIN) {
                     if (Priority != THREAD_BASE_PRIORITY_LOWRT + 1) &&
@@ -1672,7 +1672,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Affinity = *(ThreadInformation as *const ULONG_PTR);
+                Affinity = match ntkrnl_sys::probe::read_back(ThreadInformation as *const ULONG_PTR) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if Affinity == 0 {
                     Status = STATUS_INVALID_PARAMETER;
@@ -1716,7 +1716,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<HANDLE>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                TokenHandle = *(ThreadInformation as PHANDLE);
+                TokenHandle = match ntkrnl_sys::probe::read_back(ThreadInformation as PHANDLE) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
@@ -1738,7 +1738,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Address = *(ThreadInformation as *mut PVOID);
+                Address = match ntkrnl_sys::probe::read_back(ThreadInformation as *mut PVOID) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
@@ -1760,7 +1760,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                IdealProcessor = *(ThreadInformation as *const ULONG_PTR);
+                IdealProcessor = match ntkrnl_sys::probe::read_back(ThreadInformation as *const ULONG_PTR) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if IdealProcessor > MAXIMUM_PROCESSORS as ULONG_PTR {
                     Status = STATUS_INVALID_PARAMETER;
@@ -1796,7 +1796,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DisableBoost = *(ThreadInformation as *const ULONG_PTR);
+                DisableBoost = match ntkrnl_sys::probe::read_back(ThreadInformation as *const ULONG_PTR) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
@@ -1818,7 +1818,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                TlsIndex = *(ThreadInformation as PULONG) as ULONG_PTR;
+                TlsIndex = match ntkrnl_sys::probe::read_back(ThreadInformation as PULONG) { Ok(v) => v as ULONG_PTR, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
@@ -1896,7 +1896,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Break = *(ThreadInformation as PULONG) as ULONG_PTR;
+                Break = match ntkrnl_sys::probe::read_back(ThreadInformation as PULONG) { Ok(v) => v as ULONG_PTR, Err(s) => { Status = s; break 'class; } };
 
                 if SeSinglePrivilegeCheck(SeDebugPrivilege, PreviousMode) == 0 {
                     Status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1945,7 +1945,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
         _ => {
             Status = STATUS_NOT_IMPLEMENTED;
         }
-    }
+    } }
 
     Status
 }

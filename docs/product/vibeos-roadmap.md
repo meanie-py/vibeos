@@ -942,7 +942,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   struct (a C bug); `KsSetInformationFile` probing its own pool buffer (a C bug: every
   call failed). Drivers outside ntoskrnl that use the probes need ntkrnl-sys feature
   `import_mm_user_probe_address`.
-- **Post-probe user access: the probe passes, the access bugchecks — PARTLY FIXED, OWED**
+- **Post-probe user access: the probe passes, the access bugchecks — FIXED (syscall bodies); callees OWED**
   (2026-10-05). A probe proves where a buffer is, never that it stays mapped; the C
   touches it inside `_SEH2_TRY`, Rust touched it with plain loads and stores.
   `MmProbeAndLockPages` raises the same way. Done: `MmTryProbeAndLockPages` exported and
@@ -964,13 +964,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   call; SeCaptureSidAndAttributesArray leaked its validation array per call and returned
   a freed array on failure; SeCaptureLuidAndAttributesArray never copied into a
   caller-supplied buffer and left `*Dest` dangling (a double free from NtFilterToken;
-  the dangling pointer is the C's too). **Owed:** `tools/scan_raw_user_access.py` lists
-  every Nt* syscall that still loads or stores through a pointer argument raw; its
-  baseline (`tools/lint-baseline/scan_raw_user_access.txt`, 114 rows at filing) is the
-  burndown list. Some rows are kernel-mode-only branches (read them, then `nolint`);
-  most are real, led by win32k NtGdi*/NtUser*, NtSetInformationProcess/Thread reading
-  their input in place, LPC's captures, and NtAllocateVirtualMemory/NtMapViewOfSection's
-  write-backs. Callees are not covered by that scanner.
+  the dangling pointer is the C's too). Part 2 burned the scanner's baseline from 114 rows to ZERO: every Nt* syscall body now loads and stores a pointer argument through `read_back`/`write_back`/`safe_copy_raw`/`copy_from_user` (`ntkrnl_sys::probe::read_back` is the new load-side twin of `write_back`), and the empty baseline makes any new raw access a `vibeos-cli check` failure. More real bugs: **NtWriteFile** read `Key` unprobed; **NtLoadKeyEx** "probed" each OBJECT_ATTRIBUTES with a one-byte touch (no range check); **NtGdiOpenDCW** had dropped the C's clear of `pUMdhpdev` (arbitrary-address handle store) and allocated a caller-sized DEVMODE it then wrote as a full DEVMODEW (pool overflow, the C's too); **NtUserRegisterClassExWOW** copied a whole WNDCLASSEXW after range-checking only `cbSize`; **NtGdiPolyDraw**'s `ProbeArrayForRead` was an empty fn; **NtUserSetCursorIconData**, d3dkmt Create/DestroyDCFromMemory, `NtUserBuildHwndList`'s `pcHwndNeeded` and `NtUserGetIconInfo`'s `lpModule` had no probe at all; NtOpenObjectAuditAlarm and NtPrivilegedServiceAuditAlarm re-read `PrivilegeCount` after it sized the buffer (double fetch, the C's too — the copy is pinned now); NtCreateToken and NtImpersonateClientOfPort probed with a stricter alignment than the C. **Owed:** the scanner reads only the syscall body, so a user pointer passed straight into a callee (e.g. `lpmii` into `UserInsertMenuItem`) is unaudited.
 - **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
   `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
   cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail

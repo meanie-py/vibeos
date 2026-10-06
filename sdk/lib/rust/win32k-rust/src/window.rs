@@ -2513,8 +2513,22 @@ pub unsafe extern "system" fn NtUserBuildHwndList(
                             } < cHwnd
                                 && !phwndList.is_null()
                             {
-                                *phwndList = UserHMGetHandle(Window as PVOID);
-                                phwndList = phwndList.add(1);
+                                // _SEH2_TRY { ProbeForWrite(phwndList, sizeof(HWND), 1);
+                                // *phwndList = ..; phwndList++; } _SEH2_EXCEPT { Status = code; }
+                                Status = match crate::safe_user_io::probe_for_write(
+                                    phwndList as *mut c_void,
+                                    core::mem::size_of::<HWND>(),
+                                    1,
+                                )
+                                .and_then(move |()| {
+                                    ntkrnl_sys::probe::write_back(phwndList, UserHMGetHandle(Window as PVOID) as HWND)
+                                }) {
+                                    Ok(()) => {
+                                        phwndList = phwndList.add(1);
+                                        STATUS_SUCCESS
+                                    }
+                                    Err(st) => st,
+                                };
                                 if !NT_SUCCESS(Status) {
                                     break;
                                 }
@@ -2565,8 +2579,21 @@ pub unsafe extern "system" fn NtUserBuildHwndList(
                     let Window = ValidateHwndNoErr(*List.offset(i));
                     if !Window.is_null() && HEAD_pti(core::ptr::addr_of!((*Window).head)) == W32Thread {
                         if dwCount < cHwnd && !phwndList.is_null() {
-                            *phwndList = UserHMGetHandle(Window as PVOID);
-                            phwndList = phwndList.add(1);
+                            // Same _SEH2_TRY { ProbeForWrite; store; ++ } as above.
+                            Status = match crate::safe_user_io::probe_for_write(
+                                phwndList as *mut c_void,
+                                core::mem::size_of::<HWND>(),
+                                1,
+                            )
+                            .and_then(move |()| {
+                                ntkrnl_sys::probe::write_back(phwndList, UserHMGetHandle(Window as PVOID) as HWND)
+                            }) {
+                                Ok(()) => {
+                                    phwndList = phwndList.add(1);
+                                    STATUS_SUCCESS
+                                }
+                                Err(st) => st,
+                            };
                             if !NT_SUCCESS(Status) {
                                 ERR!("Failure to build window list!\n");
                                 break;
@@ -2582,7 +2609,18 @@ pub unsafe extern "system" fn NtUserBuildHwndList(
             ObDereferenceObject(Thread as *mut _);
         }
 
-        *pcHwndNeeded = dwCount;
+        // The C stores this with no probe and outside SEH (a C bug: any address
+        // the caller names is written). Probe it and store fault-tolerantly.
+        if let Err(st) = crate::safe_user_io::probe_for_write(
+            pcHwndNeeded as *mut c_void,
+            core::mem::size_of::<ULONG>(),
+            1,
+        )
+        .and_then(|()| ntkrnl_sys::probe::write_back(pcHwndNeeded, dwCount))
+        {
+            Status = st;
+            break 'quit;
+        }
         Status = STATUS_SUCCESS;
     }
 
@@ -3929,7 +3967,10 @@ pub unsafe extern "system" fn NtUserCreateWindowEx(
             return core::ptr::null_mut();
         }
 
-        plstrWindowName = core::ptr::addr_of_mut!(lstrWindowName);
+        // Shadow, don't assign: from here on `plstrWindowName` can only name the
+        // kernel capture, so `(*plstrWindowName).Buffer` below never reaches the
+        // caller's page.
+        let plstrWindowName: PLARGE_STRING = core::ptr::addr_of_mut!(lstrWindowName);
 
         if IS_ATOM!(plstrClassName) != 0 {
             ustrClassName.Buffer = plstrClassName as PVOID as *mut _;

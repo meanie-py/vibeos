@@ -594,7 +594,7 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
         if let Err(s) = probe_user_buffer(LinkTarget as _, core::mem::size_of::<_UNICODE_STRING>(), core::mem::size_of::<ULONG>(), PreviousMode) {
             return s;
         }
-        CapturedLinkTarget = core::ptr::read_volatile(LinkTarget);
+        CapturedLinkTarget = match ntkrnl_sys::probe::read_back(LinkTarget) { Ok(v) => v, Err(s) => return s };
         
         if let Err(s) = probe_user_buffer(
             CapturedLinkTarget.Buffer as _,
@@ -609,7 +609,7 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
             return s;
         }
     } else {
-        CapturedLinkTarget = *LinkTarget;
+        CapturedLinkTarget = match ntkrnl_sys::probe::read_back(LinkTarget) { Ok(v) => v, Err(s) => return s };
     }
 
     if CapturedLinkTarget.MaximumLength % core::mem::size_of::<WCHAR>() as USHORT != 0 {
@@ -683,7 +683,9 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
             &mut hLink,
         );
         if Status >= 0 {
-            *LinkHandle = hLink;
+            if let Err(s) = ntkrnl_sys::probe::write_back(LinkHandle, hLink) {
+                Status = s;
+            }
         }
     }
 
@@ -718,7 +720,11 @@ pub unsafe extern "system" fn NtOpenSymbolicLinkObject(
         &mut hLink,
     );
 
-    *LinkHandle = hLink;
+    if Status >= 0 {
+        if let Err(s) = ntkrnl_sys::probe::write_back(LinkHandle, hLink) {
+            Status = s;
+        }
+    }
 
     Status
 }
@@ -760,7 +766,7 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
             }
         }
     } else {
-        SafeLinkTarget = *(LinkTarget as *const _UNICODE_STRING);
+        SafeLinkTarget = match ntkrnl_sys::probe::read_back(LinkTarget as *const _UNICODE_STRING) { Ok(v) => v, Err(s) => return s };
     }
 
     Status = ObReferenceObjectByHandle(
