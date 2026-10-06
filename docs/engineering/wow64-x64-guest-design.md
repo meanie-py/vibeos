@@ -1,9 +1,17 @@
 # Running x86-64 guests on arm64: ARM64EC vs. our own BTCpu64 contract
 
-**Status: SCOPING ONLY. Nothing here is built, and this deliberately stops short of
-recommending which fork to take.** Written 2026-09-13 at the owner's request, after an audit
-established that FEX's x64 support is real and every blocker is on our side
-(`docs/product/vibeos-roadmap.md`, and the audit summary below).
+**Status: DECIDED 2026-10-06 — Fork B first; nothing built yet.** Written 2026-09-13 at the
+owner's request as scoping, after an audit established that FEX's x64 support is real and every
+blocker is on our side (`docs/product/vibeos-roadmap.md`, and the audit summary below).
+
+**The decision (owner, 2026-10-06): build Fork B (our own BTCpu64-shaped contract) first.** Most
+of what B needs, A needs too — a 64-bit FEX plugin, x64 CONTEXT conversion, the guest
+exception and syscall path — and B runs x64 apps on the amd64 system DLLs we already build,
+fully emulated, the same shape as today's 32-bit path. Fork A (ARM64EC) stays the later
+speed-up: it runs system DLL code natively, but only once our userland is compiled ARM64EC /
+ARM64X. (Not "ARM64EC is opt-in on Windows": on Windows 11 ARM every x64 app runs in an
+ARM64EC process. What is opt-in there is a developer porting their OWN code to ARM64EC.)
+First milestone: a `hello64` guest that enters FEX in 64-bit mode and makes one syscall.
 
 The question this answers is not "can FEX run x64" — it can, and does, and the recompiler is
 already compiled into the `libwow64fex.dll` we ship today. The question is **which OS-side
@@ -283,11 +291,11 @@ Listed because a scoping doc that reads as confident is worse than useless:
   The UNPRICED part is now narrower and sharper: whether our CMake can link vendored FEXCore and
   reuse `Source/Windows/Common/` without modifying `vendor/fex`. Nobody has tried it, and it is
   the one question that could change Fork B's cost by category rather than degree.
-- **Anything about performance.** A 64-bit guest recompiles more code, and our current 32-bit
-  path already faults inside FEX's code cache on images >500K (roadmap: `LookupCache::FindBlock`).
-  That bug is bitness-independent and would follow us to either fork. **Fix it before pricing
-  either route on a benchmark.**
-
+- **Anything about performance.** A 64-bit guest recompiles more code. (This bullet used to
+  say the 32-bit path faults inside FEX's code cache on images >500K and must be fixed first.
+  That bug was RETRACTED 2026-10-03 — a harness drain race plus FEX's by-design overcommit
+  faults misread as crashes; see the roadmap. The 32-bit ladder is 11/11 on QEMU and on a
+  real Pi 4.)
 ## Sequencing
 
 The two cheap items — the arm64ec-triple configure and the llvm-mingw pin bump — serve **Fork A
