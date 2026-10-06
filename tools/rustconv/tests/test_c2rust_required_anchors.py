@@ -258,3 +258,16 @@ def test_a_startup_store_with_no_static_spelling_is_refused():
     blocks = [_C2R_INIT.split("unsafe extern")[0].strip()]
     with pytest.raises(anchor.C2RustError, match="hand-port"):
         anchor.fold_static_initializers(text, blocks)
+
+
+def test_an_extern_linkage_global_keeps_no_mangle(monkeypatch):
+    # setuplib: SpInfExports / SpFileExports / ProcessHeap lost `#[no_mangle]` and the DLL
+    # failed to link against main.c and the island's extern declarations.
+    text = (
+        "fn helper() {}\n#[no_mangle]\npub static mut SpInfExports: SPINF_EXPORTS = _SPINF_EXPORTS {\n"
+        "    SpInfCloseInfFile: None,\n};\nstatic mut Local: u32 = 0;\n"
+    )
+    monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **k: text)
+    out = anchor.build_preamble(Path("x.c"), verbose=False)
+    assert "#[no_mangle]\npub static mut SpInfExports" in out
+    assert "#[no_mangle]\nstatic mut Local" not in out

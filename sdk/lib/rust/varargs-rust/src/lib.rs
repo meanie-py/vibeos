@@ -351,6 +351,10 @@ mod pullers {
     pub unsafe extern "C" fn vibeos_va_arg_u64(app: *mut c_void) -> u64 {
         pull(app)
     }
+    // Not on i386: user code there builds -sse,-sse2, where an f64 cannot cross a function
+    // boundary at all. A module that pulls a double on i386 then fails to LINK, loudly,
+    // instead of every rust-pullers user failing to compile (setuplib pulls none).
+    #[cfg(not(target_arch = "x86"))]
     #[no_mangle]
     pub unsafe extern "C" fn vibeos_va_arg_f64(app: *mut c_void) -> f64 {
         pull(app)

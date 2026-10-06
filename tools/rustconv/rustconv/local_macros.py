@@ -257,7 +257,21 @@ def parse_reply(text: str, want: set[str]) -> dict[str, str]:
     if set(out) != want:
         missing, extra = sorted(want - set(out)), sorted(set(out) - want)
         raise ValueError(f"reply does not match the request: missing {missing}, extra {extra}")
+    # A C call through a function-pointer table (`SpInfExports.SpInfFindFirstLine(..)`) came
+    # back as `(T.f.unwrap())(..)` in all 18 of setuplib's table macros: a panic where C just
+    # calls. Calling NULL is undefined in both, so the faithful spelling is unwrap_unchecked.
+    out = {n: re.sub(r"\.unwrap\(\)\)\s*\(", ".unwrap_unchecked())(", t) for n, t in out.items()}
+    for n, t in out.items():
+        bad = _PANICKING.search(t)
+        if bad:
+            raise ValueError(f"macro {n} uses `{bad.group(0)}`: C has no panic path here")
     return out
+
+
+_PANICKING = re.compile(
+    r"\.unwrap\(\)|\.expect\(|\btry_into\b|\btry_from\b|\bpanic!|\btodo!|\bunimplemented!|"
+    r"\btransmute\b"
+)
 
 
 def key(macros: dict[str, CMacro], thinking: str = "on") -> str:
