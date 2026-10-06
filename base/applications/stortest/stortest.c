@@ -9,6 +9,9 @@
  * The write is also verifiable from the HOST after shutdown (mdir/mcopy on the
  * disk image), giving an end-to-end oracle that bytes really hit the medium.
  *
+ * On a Raspberry Pi 4 the boot SD card (label VIBEOS_RPI4, through sdhc.sys)
+ * stands in for the stick: no marker file, the write+readback test only.
+ *
  * Spawned by winlogon (same pattern as nettest.exe), gated on the presence of
  * HKLM\SYSTEM\CurrentControlSet\Enum\USBSTOR so plain smoke boots never pay
  * the process-creation race against explorer's csrss/win32k handoff. Emits
@@ -40,7 +43,11 @@ static void markf(const char *fmt, ...)
     OutputDebugStringA(buf);
 }
 
-/* Scan D:..Z: for a mounted volume labeled VIBEUSB. Returns the letter or 0. */
+/* The volume found is the Pi 4's boot card, not the rig's stick. */
+static int found_pi_card;
+
+/* Scan C:..Z: for a mounted volume labeled VIBEUSB (or the Pi's VIBEOS_RPI4).
+ * Returns the letter or 0. */
 static char find_vibeusb(void)
 {
     char root[8];
@@ -54,8 +61,10 @@ static char find_vibeusb(void)
     {
         sprintf(root, "%c:\\", letter);
         label[0] = 0;
-        if (GetVolumeInformationA(root, label, sizeof(label), NULL, NULL, NULL, NULL, 0) &&
-            _stricmp(label, "VIBEUSB") == 0)
+        if (!GetVolumeInformationA(root, label, sizeof(label), NULL, NULL, NULL, NULL, 0))
+            continue;
+        found_pi_card = _stricmp(label, "VIBEOS_RPI4") == 0;
+        if (_stricmp(label, "VIBEUSB") == 0 || found_pi_card)
         {
             return letter;
         }
@@ -282,9 +291,10 @@ int main(void)
         mark("[STORTEST] FAIL: no VIBEUSB volume found after 120s\n");
         return 1;
     }
-    markf("[STORTEST] found VIBEUSB at %c:\n", letter);
+    markf("[STORTEST] found %s at %c:\n", found_pi_card ? "VIBEOS_RPI4 (Pi 4 boot card)" : "VIBEUSB", letter);
 
-    ok &= test_read_marker(letter);
+    if (!found_pi_card)
+        ok &= test_read_marker(letter);
     ok &= test_write_readback(letter);
 
     if (ok)

@@ -125,38 +125,37 @@ USB_STICK_TEXT = b"hello from the usb stick\r\n"
 _USB_STICK_MIB = 64
 
 
-def make_usb_stick_image(path: Path, fat: int = 16) -> None:
+def make_usb_stick_image(path: Path, fat: int = 16, mib: int = _USB_STICK_MIB) -> None:
     """Build the usbstor rig's stick image at `path`, as qcow2 (host sfdisk + mkfs.fat + mcopy).
 
-    `fat` is 16 or 32. A FAT32 volume this small needs one-sector clusters to
-    reach FAT32's 65525-cluster minimum, so mkfs.fat is told `-s 1`.
+    `fat` is 16 or 32; `mib` the stick's size. The file system is made in place
+    on a sparse disk image, so a multi-GiB stick costs no memory or disk. A
+    FAT32 volume of the default 64 MiB needs one-sector clusters to reach
+    FAT32's 65525-cluster minimum, so mkfs.fat is told `-s 1` below 512 MiB.
     """
     part_offset = 1 << 20
-    part_bytes = (_USB_STICK_MIB << 20) - part_offset
+    part_bytes = (mib << 20) - part_offset
     with tempfile.TemporaryDirectory() as td:
-        part = Path(td) / "part.img"
         payload = Path(td) / USB_STICK_FILE
         payload.write_bytes(USB_STICK_TEXT)
-        cluster = ["-s", "1"] if fat == 32 else []
-        mkfs = ["mkfs.fat", "-F", str(fat), *cluster, "-n", USB_STICK_LABEL, "-C", str(part)]
-        subprocess.run(
-            [*mkfs, str(part_bytes >> 10)],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["mcopy", "-i", str(part), str(payload), f"::/{USB_STICK_FILE}"],
-            check=True,
-            capture_output=True,
-        )
         tmp = path.with_suffix(".tmp")
         with tmp.open("wb") as f:
-            f.truncate(_USB_STICK_MIB << 20)
-            f.seek(part_offset)
-            f.write(part.read_bytes())
+            f.truncate(mib << 20)
         subprocess.run(
             ["sfdisk", "--no-reread", "--no-tell-kernel", str(tmp)],
             input=b"label: dos\nstart=2048, type=%s\n" % (b"0c" if fat == 32 else b"06"),
+            check=True,
+            capture_output=True,
+        )
+        cluster = ["-s", "1"] if fat == 32 and mib < 512 else []
+        mkfs = ["mkfs.fat", "-F", str(fat), *cluster, "-n", USB_STICK_LABEL]
+        subprocess.run(
+            [*mkfs, "--offset", str(part_offset >> 9), str(tmp), str(part_bytes >> 10)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["mcopy", "-i", f"{tmp}@@{part_offset}", str(payload), f"::/{USB_STICK_FILE}"],
             check=True,
             capture_output=True,
         )
@@ -1982,7 +1981,9 @@ class QemuVM:
         if self._xhci_enabled():
             ss_disk = self.scratch_path.parent / "usbdisk-ss.qcow2"
             if not ss_disk.exists():
-                make_usb_stick_image(ss_disk, fat=32)
+                # VIBEOS_QEMU_USB_STICK_SS_MIB sizes it, e.g. 4096 for a card-sized FAT32.
+                mib = int(os.environ.get("VIBEOS_QEMU_USB_STICK_SS_MIB", _USB_STICK_MIB))
+                make_usb_stick_image(ss_disk, fat=32, mib=mib)
             return [*drive, "-drive", f"file={ss_disk},format=qcow2,if=none,id=usbstor1"]
         return [
             "-device",

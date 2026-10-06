@@ -692,6 +692,12 @@ WAITDEP). The cause was a HAL bug, not the driver: APC delivery shared the DISPA
 per-CPU flag, which leaked across a thread switch, so synchronous IRP completions ran after
 their callers returned (field manual, "A kernel return address holds a DISK_GEOMETRY"). Fixed,
 and `[IO-STRANDED]` now names any recurrence. Writes then hang above the driver on the first
-file create (roadmap bug registry), so `WRITE_ENABLED` stays off. The driver also completes
+file create (roadmap bug registry), so `WRITE_ENABLED` stays off.
+
+Correction, same day: writes work. The "hang" was cmd's output redirection (`echo > file`
+leaves cmd waiting on csrss in `NtRequestWaitReplyPort`, on a USB stick too), which the
+census's new per-thread backtraces showed. stortest now also accepts the Pi's boot card
+(label VIBEOS_RPI4) and passes create, write, flush and read-back on it; the UEFI Shell then
+`type`s the file it wrote. `WRITE_ENABLED` is on. The driver also completes
 SRBs at DISPATCH_LEVEL now, answers MODE SENSE underruns as success (classpnp failed the
 mismatch), and logs `[SDHC] io:` rates while the card is busy.
