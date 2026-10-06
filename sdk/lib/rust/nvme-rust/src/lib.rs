@@ -9,9 +9,10 @@
 //! storport never completed an SRB, and scsiport finds PCI adapters by its
 //! own legacy bus scan, which has no slot resources to assign on arm64.
 //!
-//! The first version is polled, one command at a time, through a bounce
-//! buffer: the simplest controller that works on QEMU, the OptiPlex's drive
-//! and a Graviton's EBS volumes alike. Interrupts (INTx, then MSI-X) and
+//! One command at a time, through a bounce buffer, completed by the
+//! controller's pin-based (INTx) interrupt with a 10 ms poll behind it (see
+//! nvme.rs): the simplest controller that works on QEMU, the OptiPlex's drive
+//! and a Graviton's EBS volumes alike. MSI-X (which Graviton will want) and
 //! deeper queues come next.
 //!
 //! There is no C original. Windows' equivalent is stornvme.sys, a storport
