@@ -1642,3 +1642,56 @@ def test_an_anon_union_struct_literal_becomes_zeroed_plus_stores():
         anon_unions={("_IO_STATUS_BLOCK", "Status"): "__bindgen_anon_1.Status"},
     )
     assert not plan.edits
+
+
+def test_a_bool_from_a_macro_is_cast_at_the_invocation():
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = b"fn f() {\n    p.Recognized = IsRecognizedPartition!(t);\n}\n"
+    call = b"IsRecognizedPartition!(t)"
+    at = src.index(call)
+    inner = _span("/rustc/core/src/macros/mod.rs", 10, 20, is_primary=True, label="expected `u8`, found `bool`")
+    inner["expansion"] = {"span": _span("src/a.rs", at, at + len(call), line=2), "macro_decl_name": "matches!"}
+    diag = _diag("mismatched types", code="E0308", spans=[inner])
+    plan = propose_edits([diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS])
+    assert [(e.file_name, e.replacement) for e in plan.edits] == [("src/a.rs", "(IsRecognizedPartition!(t)) as u8")]
+
+
+def test_a_widening_is_inferred_and_a_narrowing_is_not():
+    from rustconv.crate_repair import RULE_INFER_WIDEN
+
+    src = b"fn f() {\n    if io.Information == FILE_CREATED {}\n    let n: u16 = big;\n}\n"
+    widen = _mismatch(src, b"FILE_CREATED", "u64", "u32")
+    narrow = _mismatch(src, b"big", "u16", "u32")
+    plan = propose_edits([widen, narrow], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_INFER_WIDEN])
+    assert [e.replacement for e in plan.edits] == ["(FILE_CREATED) as _"]
+
+
+def test_truthiness_fixes_our_macro_body_and_never_stacks():
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = b"macro_rules! M { ($c:expr) => { isalnum($c) || $c == 1 }; }\nfn f() {\n    if ((M!(x)) != 0) {}\n}\n"
+    inner_at = src.index(b"isalnum($c)")
+    inner = _span("src/a.rs", inner_at, inner_at + len(b"isalnum($c)"), is_primary=True, label="expected `bool`, found `i32`")
+    call = b"((M!(x)) != 0)"
+    at = src.index(call)
+    inner["expansion"] = {"span": _span("src/a.rs", at, at + len(call)), "macro_decl_name": "M!"}
+    wrapped = _mismatch(src, call, "bool", "i32")
+    plan = propose_edits(
+        [_diag("mismatched types", code="E0308", spans=[inner]), wrapped],
+        _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS],
+    )
+    # the macro body is fixed in place; the already-converted call site is left alone
+    assert [e.replacement for e in plan.edits] == ["((isalnum($c)) != 0)"]
+
+
+def test_an_edit_outside_the_repaired_crate_is_refused(tmp_path):
+    # rustc points INTO a shared crate's macro body when the misuse is at the call site; the
+    # truthiness rule once rewrote win32macros-rust to suit setuplib.
+    (tmp_path / "mine" / "src").mkdir(parents=True)
+    (tmp_path / "shared" / "src").mkdir(parents=True)
+    (tmp_path / "shared" / "src" / "lib.rs").write_text("let x = a;\n")
+    edit = Edit("shared/src/lib.rs", 8, 9, "b", RULE_NUMERIC_CAST, "auth", original="a")
+    applied, _, failed = apply_edits([edit], tmp_path, within=tmp_path / "mine")
+    assert applied == [] and failed[0].reason == "outside_crate"
+    assert (tmp_path / "shared" / "src" / "lib.rs").read_text() == "let x = a;\n"

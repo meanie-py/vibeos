@@ -281,7 +281,8 @@ and before `crate-repair`: it is what makes the crate compile at all, and the ca
 stage's time and spend in `~/vibeos-rust-staging/port/<stem>/state.json` (`port status <stem>`
 prints it). Stages, in order: `derive <module-dir> [--target T]` (profile → the
 `gen_driver_types.sh` arm), `island`, `scaffold`, `translate --cost-cap $`, `integrate`,
-`resolve`, `macros`, `check`. Every stage is idempotent; re-run any of them after a fix.
+`resolve`, `macros`, `fix --cost-cap $`, `check`, and `replay` (all of them from the banks). Every
+stage is idempotent; re-run any of them after a fix.
 
 - **`translate --escalate`** buys with DeepSeek thinking OFF (~1/40 of the output tokens on
   small functions), then re-buys with thinking ON only the bodies a deterministic check
@@ -345,6 +346,54 @@ nothing) now lives in `strsafe-rust::ntstrsafe`, transcribed rather than aliased
 oversized-destination and overflow behaviour differ from the HRESULT family. `port resolve`
 re-exports win32macros-rust and strsafe-rust by name through a registry, adding the Cargo
 dependency, and never copies a tree-consensus `extern` for a name a shared crate provides.
+
+### `port fix`: the compiler in the loop (2026-10-05)
+
+Per-function translation is bought blind -- the model never sees rustc -- and crate-repair then
+needs one hand-written rule per error class. On setuplib that plateaued near 300 errors per
+arch: the last four repair passes moved the count by 11. `port fix` closes the loop the way an
+agent with `cargo check` does: every function rustc still rejects goes back to the model with
+its own rendered errors (tagged by arch, so a width error says "only on i386"), the C it came
+from, and the crate's declarations of every name the errors mention. Thinking off, ~$0.002 a
+function. Its first round on setuplib took 295 to 131 errors per arch for $0.33.
+
+That round also shipped semantic bugs, which is what the guards are for. Names rustc could not
+find had been exempt from "keep every constant and call", and the model filled them in itself:
+`ERROR_SYSTEM_PARTITION_NOT_FOUND` became `ERROR_SYSTEM_DEVICE_NOT_FOUND`,
+`STATUS_NOT_SAME_DEVICE` the Win32 `ERROR_NOT_SAME_DEVICE`, two NTSTATUS names became WRONG hex
+(`0xC000017D` for `0xC0000172`), `InstallFat12BootCode` became `InstallFat32BootCode`, three
+`_SEH2_LEAVE`s were deleted, `ASSERT(c)` became `if !c { return … }`, and a hand-inlined
+`RTL_CONSTANT_STRING` counted the NUL in `Length`. So (`crate_fix.reply_findings`):
+
+- **Every capitalised name and every lowercase callee in the input must survive.** A rename is
+  allowed only for a TYPE or FIELD that rustc itself suggests (E0412/E0422/E0573/E0609...);
+  never for a value or function (E0425) -- rustc's "similar name" for `iswspace` is `isspace`.
+  Method names, `min`/`max` and type names in casts may change.
+- **No new integer literal >= 0x100**, no added item (unless the C function defines that type
+  locally), no `.unwrap()`/`try_into`, signature unchanged, and the reply must parse.
+- **Verdicts are never banked**: replies are re-judged on every replay, so fixing a wrong guard
+  recovers every reply it refused for $0 (the key salt is not a prompt version).
+- A fix leaving its function with more errors on any arch is reverted; a round that adds a
+  parse/expansion error is bisected for the culprit (one check per fix took most of a run).
+- **A refused function's retry carries the refusal**, thinking off. Escalating to thinking ON
+  bought the same wrong answer at ~10x the price (Fat12->Fat32 and iswspace->isspace, twice
+  each); `--thinking escalate` still exists.
+
+What a fix may not invent, resolve now supplies. `resolve` evaluates every still-undefined
+ALL_CAPS name with clang through `sdk_facts` -- per arch, agreement required, the C TYPE kept
+(`STATUS_PARTITION_FAILURE: NTSTATUS`, not `i32`) -- into a `port facts` prelude block. A C TU is
+probed in C (a duplicated `case 0 + (long long)(X)` prints the value, an incompatible struct
+initializer prints the typedef). `win32macros-rust` gained `ASSERT` (inert, type-checked),
+`C_ASSERT`, `RTL_CONSTANT_STRING`, `UlongToPtr` and `PAGE_ROUND_UP`.
+
+**`port replay <stem> [--fix-cap $]`** rebuilds the crate from every bank in order for $0:
+translate, resolve, macros, integrate, crate-repair, resolve AGAIN, crate-repair, fix, check.
+resolve runs twice because rustc reports unresolved names only once nothing halts it: before
+crate-repair setuplib's resolve saw 5, after it 34. The three arches' `cargo check`s now run at
+once in separate target dirs (crate-repair and port alike); cargo locks a build dir whole, so
+sharing one serialised them. And crate-repair refuses an edit outside the crate it repairs: the
+truthiness rule followed a span into win32macros-rust and rewrote `IsRecognizedPartition` to
+suit setuplib.
 
 c2rust anchoring fixes the setuplib run forced, all in `c2rust_anchor.py`:
 `--preserve-unused-functions` (c2rust prunes an unused `static`, and liveness is per arch —

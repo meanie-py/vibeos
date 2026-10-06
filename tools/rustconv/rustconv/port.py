@@ -18,7 +18,10 @@ STAGES (each re-runnable; state in ~/vibeos-rust-staging/port/<stem>/state.json)
   translate  sealed DeepSeek translation of each TU that has no body yet, under --cost-cap.
   integrate  move each translated file onto the crate prelude (crate_integrate).
   resolve    fill the prelude from what the tree already agrees on (prelude_resolve).
+  fix        compiler-in-the-loop: each function rustc still rejects goes back to the
+             model with its errors attached; guarded, banked, reverted if worse.
   check      cargo check on all three targets; error counts per file.
+  replay     all of the above from the banks, in order, for $0 (resolve twice: see there).
 
 It never touches CMake, the workspace members or the build: the flip is a separate,
 deliberate step once `check` is green on every arch.
@@ -532,6 +535,14 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     prelude_resolve.write_block(prelude, prelude_resolve.render(copied))
     for path in prelude_resolve.refresh_shared_crates(crate, workspace):
         print(f"resolve: refreshed the `{path}` re-export list")
+    res.undefined = _resolve_facts(state, prelude, res.undefined)
+    type_gaps = set(res.undefined) | {
+        n for n, why in res.conflicting.items() if why.startswith("a type")
+    }
+    found = _resolve_local_types(state, prelude, type_gaps)
+    found |= _resolve_externs(state, prelude, set(res.undefined) - found)
+    res.undefined = [n for n in res.undefined if n not in found]
+    res.conflicting = {k: v for k, v in res.conflicting.items() if k not in found}
     res.copied = copied
     _record(
         state,
@@ -563,6 +574,166 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         print("resolve: not copied (the tree disagrees, or it is not ours to copy):")
         for name, why in sorted(res.conflicting.items()):
             print(f"    {name}: {why}")
+
+
+def _known_types(state: dict) -> set[str]:
+    """Type names the crate can spell: its own, and those of every -sys crate it globs in
+    (setuplib's NTSTATUS arrives through `pub use ntdll_sys::nt::*;`)."""
+    if str(REPO) not in sys.path:
+        sys.path.insert(0, str(REPO))
+    from tools.source_walk import source_files
+
+    crate_src = _crate_dir(state) / "src"
+    sources = list(source_files(crate_src))
+    workspace = REPO / "sdk" / "lib" / "rust"
+    text = "".join(p.read_text(errors="replace") for p in crate_src.glob("*.rs"))
+    for sys_crate in sorted(set(re.findall(r"\buse (\w+_sys)::", text))):
+        sources += source_files(workspace / sys_crate.replace("_", "-") / "src")
+    out: set[str] = set()
+    for src in sources:
+        out |= set(
+            re.findall(
+                r"(?m)^\s*pub (?:type|struct|union|enum) (\w+)", src.read_text(errors="replace")
+            )
+        )
+    return out
+
+
+def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
+    """Functions the module's C calls and no Rust declares, two ways, both exact:
+
+    * `#define InstallFat12BootCode InstallFatBootCode` -- an object-like macro naming a
+      function the crate defines: `pub use` the function under the macro's name;
+    * a prototype in a header the island does not cover (`vfatlib.h`'s VfatFormat, the CRT's
+      iswspace): c2rust's signature, agreed on every arch, with the calling convention clang
+      reports on i386 -- c2rust writes `extern "C"` even for a stdcall (NTAPI) function.
+    """
+    from . import c2rust_anchor, sdk_facts
+    from .macro_authority import MacroAuthorityError
+
+    names = set(names) | prelude_resolve.existing_externs(prelude)
+    sigs: dict[str, tuple[str, str, str]] = {}
+    module_dir = REPO / state["module_dir"]
+    files = sorted([*module_dir.rglob("*.h"), *module_dir.rglob("*.c")])
+    defs, _ambiguous = local_macros.module_macros(files, REPO)
+    stem = state["stem"]
+    modules_dir = _crate_dir(state) / "src" / stem
+    aliases: dict[str, str] = {}
+    for name in sorted(names):
+        m = defs.get(name)
+        if m is None or m.params is not None or m.kind != "macro":
+            continue
+        target = m.body.strip().strip("()").strip()
+        if re.fullmatch(r"[A-Za-z_]\w*", target):
+            aliases[name] = target
+    where = prelude_resolve.sibling_definitions(set(aliases.values()), modules_dir)
+    for name, target in aliases.items():
+        mods = sorted({mod for mod, _ in where.get(target, [])})
+        if len(mods) != 1:
+            continue
+        prelude_resolve.promote_pub(modules_dir / f"{mods[0]}.rs", target)
+        sigs[name] = (
+            "use",
+            f"pub use crate::{stem}::{mods[0]}::{target} as {name};",
+            defs[name].where,
+        )
+    todo = names - set(sigs)
+    for tu in state["tus"]:
+        if not todo:
+            break
+        c_file = REPO / tu
+        try:
+            found = c2rust_anchor.extern_signatures(c_file, todo)
+            abis = sdk_facts.function_abis(REPO, c_file, sorted(found)) if found else {}
+        except (c2rust_anchor.C2RustError, MacroAuthorityError) as e:
+            print(f"resolve: externs of {tu}: {str(e).splitlines()[0][:120]}")
+            continue
+        for name, sig in found.items():
+            if name not in abis:
+                print(f"resolve: {name}: clang reported no plain cdecl/stdcall type; hand-port it")
+                continue
+            abi = "C" if "..." in sig else abis[name]
+            sigs[name] = (abi, sig, Path(tu).name)
+            todo.discard(name)
+    prelude_resolve.write_externs(prelude, prelude_resolve.render_externs(sigs))
+    if sigs:
+        print(f"resolve: {len(sigs)} extern/alias declaration(s): {', '.join(sorted(sigs))}")
+    return set(sigs)
+
+
+def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str]:
+    """Types a .c file defines for itself (c2rust_anchor.local_types), into the prelude.
+
+    Re-extracts what the block already holds, so the block never goes stale. Returns every
+    name the block now defines.
+    """
+    from . import c2rust_anchor
+
+    names = set(names) | prelude_resolve.existing_local_types(prelude)
+    items: dict[str, tuple[str, str]] = {}
+    for tu in state["tus"]:
+        c_file = REPO / tu
+        todo = {n for n in names if n not in items}
+        if not todo:
+            break
+        try:
+            agreed, differs = c2rust_anchor.local_types(c_file, todo)
+        except c2rust_anchor.C2RustError as e:
+            print(f"resolve: local types of {tu}: {str(e).splitlines()[0][:120]}")
+            continue
+        for name, text in agreed.items():
+            items.setdefault(name, (text, Path(tu).name))
+        for name in differs:
+            print(f"resolve: local type {name} differs across arches in {tu}; hand-port it")
+    prelude_resolve.write_local_types(prelude, items)
+    if items:
+        print(f"resolve: {len(items)} local type item(s) from c2rust: {', '.join(sorted(items))}")
+    return set(items)
+
+
+def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str]:
+    """Constants the module's C sees and no Rust in the tree defines: clang evaluates them.
+
+    setuplib had STATUS_PARTITION_FAILURE (ntstatus.h) and its own setuplib.h
+    ERROR_SYSTEM_PARTITION_NOT_FOUND defined nowhere in Rust; asked to fix the functions
+    using them, the model wrote 0xC000017D (it is 0xC0000172) and a different ERROR_ name.
+    The value comes from the target compiler, per arch, agreed on all three (sdk_facts).
+    Returns the names still undefined.
+    """
+    from . import sdk_facts
+    from .macro_authority import MacroAuthorityError
+
+    facts = prelude_resolve.existing_facts(prelude)
+    wanted = sorted(n for n in undefined if prelude_resolve.looks_constant(n) and n not in facts)
+    if not wanted:
+        prelude_resolve.write_facts(prelude, prelude_resolve.render_facts(facts))
+        return undefined
+    known_types = _known_types(state)
+    # Each name is probed in a TU that mentions it, so the TU's own headers are in scope.
+    by_tu: dict[str, list[str]] = {}
+    texts = {t: (REPO / t).read_text(errors="replace") for t in state["tus"]}
+    for name in wanted:
+        tu = next((t for t, x in texts.items() if re.search(rf"\b{name}\b", x)), state["tus"][0])
+        by_tu.setdefault(tu, []).append(name)
+    unresolved: dict[str, str] = {}
+    for tu, names in sorted(by_tu.items()):
+        try:
+            r = sdk_facts.resolve(REPO, REPO / tu, names)
+        except MacroAuthorityError as e:
+            print(f"resolve: facts probe failed for {tu}: {str(e).splitlines()[0]}")
+            unresolved.update({n: "probe failed" for n in names})
+            continue
+        for f in r.facts:
+            ty = prelude_resolve.fact_rust_type(f.c_type, f.value, known_types)
+            facts[f.name] = (ty, f.value, Path(tu).name)
+        unresolved.update(r.unresolved)
+    prelude_resolve.write_facts(prelude, prelude_resolve.render_facts(facts))
+    got = [n for n in wanted if n in facts]
+    if got:
+        print(f"resolve: {len(got)} constant(s) evaluated by clang: {', '.join(got)}")
+    for name, why in sorted(unresolved.items()):
+        print(f"resolve: not evaluated: {name}: {why}")
+    return [n for n in undefined if n not in facts]
 
 
 # --------------------------------------------------------------------------------------
@@ -696,55 +867,411 @@ def stage_macros(
 
 
 # --------------------------------------------------------------------------------------
+# replay
+# --------------------------------------------------------------------------------------
+
+
+def _repair(stem: str, crate: str) -> str:
+    from . import crate_repair as cr
+
+    session = cr.repair_crate(
+        crate,
+        root=REPO / "sdk" / "lib" / "rust",
+        targets=list(RUST_TARGETS),
+        max_passes=10,
+        target_dirs=_target_dirs(stem),
+    )
+    return session.status
+
+
+def stage_replay(stem: str, *, fix_cap: float = 0.0, fix_rounds: int = 1) -> None:
+    """Rebuild the crate from everything already bought, in order, for $0.
+
+    translate (bank) -> resolve -> macros (bank) -> integrate -> crate-repair -> resolve ->
+    crate-repair -> fix (bank, plus `--fix-cap` of new purchases) -> check.
+
+    resolve runs TWICE because rustc reports unresolved names only once nothing halts it:
+    before crate-repair setuplib's resolve saw 5 unresolved names, after it 46 -- the
+    constants among them reached `port fix` unresolved, and the model invented values.
+    """
+    started = time.time()
+    stage_translate(
+        stem,
+        model="deepseek",
+        cost_cap=0.0,
+        only=[],
+        dry_run=False,
+        thinking="off",
+        replay_only=True,
+    )
+    stage_resolve(stem)
+    stage_macros(stem, model="deepseek", cost_cap=0.0, dry_run=False)
+    stage_integrate(stem)
+    state = load_state(stem)
+    print(f"replay: crate-repair {_repair(stem, state['crate'])}")
+    stage_resolve(stem)
+    print(f"replay: crate-repair {_repair(stem, state['crate'])}")
+    stage_fix(
+        stem,
+        model="deepseek",
+        cost_cap=fix_cap,
+        rounds=fix_rounds,
+        thinking="off",
+        concurrency=8,
+    )
+    stage_check(stem)
+    print(f"replay: {(time.time() - started) / 60:.1f} min")
+
+
+# --------------------------------------------------------------------------------------
+# fix
+# --------------------------------------------------------------------------------------
+
+
+def _target_dirs(stem: str) -> dict[str, Path]:
+    return {arch: STATE_ROOT / stem / f"target-{arch}" for arch in RUST_TARGETS}
+
+
+def _check_json(stem: str, crate: str) -> dict[str, list[dict]]:
+    """All three arches at once, each in its own build dir."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from . import crate_repair as cr
+
+    dirs = _target_dirs(stem)
+
+    def one(arch: str) -> list[dict]:
+        run = cr.run_cargo_check(
+            crate, arch, root=REPO / "sdk" / "lib" / "rust", target_dir=dirs[arch]
+        )
+        return list(run.diagnostics)
+
+    with ThreadPoolExecutor(max_workers=len(RUST_TARGETS)) as pool:
+        return dict(zip(RUST_TARGETS, pool.map(one, RUST_TARGETS), strict=True))
+
+
+def stage_fix(
+    stem: str,
+    *,
+    model: str,
+    cost_cap: float,
+    rounds: int,
+    thinking: str,
+    concurrency: int,
+    only: list[str] | None = None,
+    dry_run: bool = False,
+) -> float:
+    """Compiler-in-the-loop repair of the functions rustc still rejects (crate_fix.py)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from . import crate_fix as cf
+    from . import crate_repair as cr
+    from .c_body_checks import parse_findings
+    from .config import MODEL_PRICING, cost_usd
+
+    state = load_state(stem)
+    started = time.time()
+    crate_dir = _crate_dir(state)
+    root = REPO / "sdk" / "lib" / "rust"
+    bank = STATE_ROOT / stem / "fix"
+    tu_by_stem = {Path(t).stem: REPO / t for t in state["tus"]}
+    c_cache: dict = {}
+    fact_sources = [
+        crate_dir / "src" / "prelude.rs",
+        crate_dir / "src" / "types_amd64.rs",
+        crate_dir / "src" / "types.rs",
+        *sorted((crate_dir / "src" / stem).glob("*.rs")),
+    ]
+    arches = list(RUST_TARGETS)
+    type_names = _known_types(state)
+    spent = 0.0
+    api_model = model
+    if not dry_run:
+        from .__main__ import MODEL_ALIASES
+
+        api_model = MODEL_ALIASES.get(model, model)
+    pin, pout = MODEL_PRICING.get(api_model, (0.0, 0.0))[:2]
+
+    diags = _check_json(stem, state["crate"])
+    # A function whose reply was refused goes back next round WITH the refusal (thinking
+    # off); `--thinking escalate` also turns thinking on for it.
+    stuck: dict[tuple[str, str], str] = {}
+    for rnd in range(1, rounds + 1):
+        before_counts = {a: cr.count_errors(d) for a, d in diags.items()}
+        halting_before = max(cr.count_halting_errors(d) for d in diags.values())
+        groups, outside = cf.group_by_function(diags, root, is_error=cr.is_error_diagnostic)
+        if only:
+            groups = {k: v for k, v in groups.items() if k[1] in only}
+        print(
+            f"fix round {rnd}: errors {before_counts}, "
+            f"{len(groups)} function(s) to fix, {outside['amd64']} error(s) outside functions"
+        )
+        if not groups:
+            break
+        attempts: list[cf.Attempt] = []
+        prompts: dict[int, str] = {}
+        modes: dict[int, str] = {}
+        for (fname, name), fe in sorted(groups.items()):
+            text = (root / fname).read_bytes().decode("utf-8")
+            original = text[fe.span.start : fe.span.end]
+            on = thinking == "on" or (thinking == "escalate" and (fname, name) in stuck)
+            mode = "on" if on else "off"
+            refused = stuck.get((fname, name), "")
+            key = cf.bank_key(original, fe.errors, mode, refused)
+            att = cf.Attempt(fname, name, key, original)
+            attempts.append(att)
+            banked = cf.bank_read(bank, key)
+            if banked is not None:
+                # The guards run again on a replay: a verdict is never banked, so fixing a
+                # wrong guard recovers every reply it refused, for $0.
+                att.fixed, att.status = banked.get("fixed"), "replayed"
+                if "original" not in banked:
+                    cf.bank_write(bank, key, {**banked, "original": original})
+                continue
+            modes[len(attempts) - 1] = mode
+            c_fn = c_function_text_for(tu_by_stem, Path(fname).stem, name, c_cache, cf)
+            facts = cf.declarations(cf.mentioned_names(fe.errors), fact_sources)
+            prompts[len(attempts) - 1] = cf.build_prompt(
+                original, fe.errors, c_fn, facts, arches, refused
+            )
+        if dry_run:
+            for i, pr in list(prompts.items())[:3]:
+                print(f"===== {attempts[i].name}\n{pr}")
+            print(f"fix: {len(prompts)} to buy, {len(attempts) - len(prompts)} banked")
+            return 0.0
+
+        def buy(i: int, attempts=attempts, prompts=prompts, modes=modes) -> None:
+            nonlocal spent
+            from .batch_runner import submit_single
+
+            att, pr, mode = attempts[i], prompts[i], modes[i]
+            # Expected (not worst-case) price: thinking off answers ~700 output tokens a
+            # call, on ~7,000 (setuplib, 2026-10-05). The cap stops NEW calls only.
+            expect_out = 7000 if mode == "on" else 1500
+            guess = (len(pr) / 3.5 * pin + expect_out * pout) / 1e6
+            if spent + guess > cost_cap:
+                att.status = "failed:cost-cap"
+                return
+            spent += guess
+            res = submit_single(pr, model=api_model, system_prompt=cf.SYSTEM)
+            usd = cost_usd(api_model, res.input_tokens, res.output_tokens, res.cache_read_tokens)
+            spent += usd - guess
+            att.usd = usd
+            if not res.success:
+                att.status = f"failed:{res.error}"
+                return
+            att.fixed = cf.extract_reply(res.rust_code)
+            att.status = "bought"
+            cf.bank_write(
+                bank,
+                att.key,
+                {
+                    "file": att.file,
+                    "name": att.name,
+                    "original": att.original,
+                    "reply": res.rust_code,
+                    "fixed": att.fixed,
+                    "usd": usd,
+                    "thinking": mode,
+                },
+            )
+
+        # submit_single reads the thinking mode from the environment, so one pool per mode.
+        for mode in ("off", "on"):
+            batch = sorted(i for i in prompts if modes[i] == mode)
+            if not batch:
+                continue
+            os.environ["RUSTCONV_DEEPSEEK_THINKING"] = "enabled" if mode == "on" else "disabled"
+            with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                list(pool.map(buy, batch))
+
+        replacements: dict[str, list] = {}
+        for att in attempts:
+            if att.fixed is None or att.status.startswith(("failed", "rejected")):
+                continue
+            why = cf.reply_findings(
+                att.original,
+                att.fixed,
+                groups[(att.file, att.name)].errors,
+                parse_findings,
+                type_names,
+                c_function_text_for(tu_by_stem, Path(att.file).stem, att.name, c_cache, cf),
+            )
+            if why:
+                att.status = "rejected:" + "; ".join(why)
+                continue
+            if att.fixed.strip() == att.original.strip():
+                att.status = "rejected:unchanged"
+                continue
+            span = groups[(att.file, att.name)].span
+            replacements.setdefault(att.file, []).append((span, att.original, att.fixed))
+        applied = [
+            a
+            for a in attempts
+            if a.file in replacements and any(r[1] == a.original for r in replacements[a.file])
+        ]
+        if not applied:
+            print("fix: no reply survived the guards this round")
+            _report_attempts(attempts)
+            stuck_now = {
+                (a.file, a.name): a.status.split(":", 1)[1]
+                for a in attempts
+                if a.status.startswith("rejected:") and a.status != "rejected:unchanged"
+            }
+            if any(stuck.get(k) != v for k, v in stuck_now.items()):
+                stuck = stuck_now
+                continue  # the refused ones go again, told why
+            break
+        cf._apply(root, replacements)
+        after = _check_json(stem, state["crate"])
+        halting_after = max(cr.count_halting_errors(d) for d in after.values())
+        if halting_after > halting_before:
+            # A parse / expansion error hides the rest of the crate's errors: a falling total
+            # here is not progress. Put back the whole round, then retry one at a time.
+            for a in applied:
+                cf._replace_named(root, a.file, a.name, a.original)
+            print(
+                f"fix: round raised halting errors {halting_before}->{halting_after}; reverted "
+                "the round, trying each fix alone"
+            )
+            applied, after = _without_halting(stem, state["crate"], applied, halting_before)
+        after_groups, _ = cf.group_by_function(after, root, is_error=cr.is_error_diagnostic)
+        worse = []
+        for a in applied:
+            old = groups[(a.file, a.name)]
+            new = after_groups.get((a.file, a.name))
+            if new is not None and any(new.count(x) > old.count(x) for x in arches):
+                worse.append(a)
+        for a in worse:
+            # More errors in the function on some arch. Usually a fix that exposed later
+            # type checking (an unresolved name hid it) -- but we cannot tell that from a
+            # real regression here, so the original stays and the bank keeps the reply.
+            cf._replace_named(root, a.file, a.name, a.original)
+            a.status = "reverted:more errors"
+        if worse:
+            after = _check_json(stem, state["crate"])
+        after_counts = {x: cr.count_errors(d) for x, d in after.items()}
+        stuck = {
+            (a.file, a.name): a.status.split(":", 1)[1]
+            for a in attempts
+            if a.status.startswith(("rejected:", "reverted:")) and a.status != "rejected:unchanged"
+        }
+        _report_attempts(attempts)
+        print(
+            f"fix round {rnd}: errors {before_counts} -> {after_counts}, "
+            f"kept {len(applied) - len(worse)}, reverted {len(worse)}, spent ${spent:.4f}"
+        )
+        diags = after
+        if spent >= cost_cap:
+            print(f"fix: --cost-cap ${cost_cap:.2f} reached")
+            break
+    _record(
+        state,
+        "fix",
+        started,
+        usd=round(spent, 4),
+        errors={a: cr.count_errors(d) for a, d in diags.items()},
+    )
+    return spent
+
+
+def _without_halting(stem: str, crate: str, applied: list, halting_before: int):
+    """Bisect the round's fixes for the ones that add a halting (parse / expansion) error.
+
+    One cargo check per fix took most of a 23-minute replay; halving finds a lone culprit in
+    log2(n) checks. Returns (kept fixes, diagnostics with them applied).
+    """
+    from . import crate_fix as cf
+    from . import crate_repair as cr
+
+    root = REPO / "sdk" / "lib" / "rust"
+
+    def put(fixes, fixed: bool) -> None:
+        for a in fixes:
+            cf._replace_named(root, a.file, a.name, a.fixed if fixed else a.original)
+
+    def halts(diags) -> bool:
+        return max(cr.count_halting_errors(d) for d in diags.values()) > halting_before
+
+    kept: list = []
+
+    def search(fixes: list) -> None:
+        put(fixes, True)
+        diags = _check_json(stem, crate)
+        if not halts(diags):
+            kept.extend(fixes)
+            return
+        put(fixes, False)
+        if len(fixes) == 1:
+            fixes[0].status = "rejected:adds a parse/macro-expansion error"
+            return
+        mid = len(fixes) // 2
+        search(fixes[:mid])
+        search(fixes[mid:])
+
+    search(list(applied))
+    return kept, _check_json(stem, crate)
+
+
+def c_function_text_for(tu_by_stem: dict, rs_stem: str, name: str, cache: dict, cf) -> str | None:
+    c_path = tu_by_stem.get(rs_stem)
+    return cf.c_function_text(c_path, name, cache) if c_path else None
+
+
+def _report_attempts(attempts) -> None:
+    from collections import Counter
+
+    tally = Counter(a.status.split(":", 1)[0] for a in attempts)
+    print("fix: " + ", ".join(f"{k} {v}" for k, v in sorted(tally.items())))
+    for a in attempts:
+        if a.status.startswith(("rejected", "failed")) and a.status != "rejected:unchanged":
+            print(f"  {a.name}: {a.status[:160]}")
+
+
+# --------------------------------------------------------------------------------------
 # check
 # --------------------------------------------------------------------------------------
 
 
 def stage_check(stem: str) -> dict:
+    """Error counts per arch and per file, from the same JSON diagnostics `fix` and
+    crate-repair count (the old short-format scrape disagreed with them by ~17)."""
+    from . import crate_repair as cr
+
     state = load_state(stem)
     started = time.time()
-    crate = state["crate"]
     result: dict[str, dict] = {}
-    for arch, triple in RUST_TARGETS.items():
-        target_dir = STATE_ROOT / stem / f"target-{arch}"
-        proc = subprocess.run(
-            ["cargo", "check", "-p", crate, "--target", triple, "--message-format", "short"],
-            cwd=REPO / "sdk" / "lib" / "rust",
-            env=dict(os.environ, CARGO_TARGET_DIR=str(target_dir)),
-            capture_output=True,
-            text=True,
-        )
+    for arch, diags in _check_json(stem, state["crate"]).items():
         per_file: dict[str, int] = {}
         untranslated = 0
-        masked = _masking_glob(proc.stderr, REPO / "sdk" / "lib" / "rust")
-        for line in proc.stderr.splitlines():
-            m = re.match(r"^(\S+\.rs):\d+:\d+: error", line)
-            if not m:
+        for d in diags:
+            if not cr.is_error_diagnostic(d):
                 continue
+            primary = next((sp for sp in d.get("spans") or [] if sp.get("is_primary")), None)
+            where = primary["file_name"] if primary else "<no span>"
             # A module the scaffold declares but no translation has written yet is a TO-DO,
             # not a defect of the translated code; counting it as an error buried the signal.
-            if "file not found for module" in line:
+            if "file not found for module" in str(d.get("message")):
                 untranslated += 1
                 continue
-            per_file[m.group(1)] = per_file.get(m.group(1), 0) + 1
+            per_file[where] = per_file.get(where, 0) + 1
+        globs = _masking_glob(diags)
+        errors = sum(per_file.values())
         result[arch] = {
-            "rc": proc.returncode,
-            "errors": sum(per_file.values()),
+            "rc": 101 if errors or untranslated else 0,
+            "errors": errors,
             "untranslated": untranslated,
             "by_file": per_file,
-            "masked_by": masked,
+            "masked_by": globs,
         }
-        print(
-            f"check {arch}: rc={proc.returncode} errors={sum(per_file.values())} "
-            f"(+{untranslated} module(s) not translated yet)"
-        )
-        if masked:
+        print(f"check {arch}: errors={errors} (+{untranslated} module(s) not translated yet)")
+        if globs:
             # rustc stops reporting unresolved names once a glob import fails: the name might
             # have come from that glob. inicache's invented `use ntdll_sys::nt::tier1::*;`
             # took setuplib from 40-odd E0425 to ZERO while fixing nothing.
             print(
                 f"check {arch}: UNDERCOUNT -- a failed glob import hides every unresolved-name "
-                f"error; fix it first (`port integrate` swaps substrate globs): {', '.join(masked)}"
+                f"error; fix it first (`port integrate` swaps substrate globs): {', '.join(globs)}"
             )
     _record(
         state,
@@ -755,20 +1282,16 @@ def stage_check(stem: str) -> dict:
     return result
 
 
-def _masking_glob(stderr: str, root: Path) -> list[str]:
-    """`file:line` of each failed GLOB import (E0432 whose `use` ends in `::*`).
-
-    The short message format names only the path prefix, so the source line decides.
-    """
+def _masking_glob(diags: list[dict]) -> list[str]:
+    """`file:line` of each failed GLOB import (E0432 whose `use` ends in `::*`)."""
     out = []
-    for m in re.finditer(r"^(\S+\.rs):(\d+):\d+: error\[E0432\]", stderr, re.M):
-        try:
-            text = (root / m.group(1)).read_text(errors="replace").splitlines()
-            src = text[int(m.group(2)) - 1]
-        except (OSError, IndexError):
+    for d in diags:
+        if (d.get("code") or {}).get("code") != "E0432":
             continue
-        if re.search(r"::\s*\*\s*;", src):
-            out.append(f"{m.group(1)}:{m.group(2)}")
+        primary = next((sp for sp in d.get("spans") or [] if sp.get("is_primary")), None)
+        src = ((primary or {}).get("text") or [{}])[0].get("text", "")
+        if primary and re.search(r"::\s*\*\s*;", src):
+            out.append(f"{primary['file_name']}:{primary['line_start']}")
     return out
 
 
@@ -831,6 +1354,19 @@ def main(args) -> int:
                 dry_run=args.dry_run,
                 thinking=args.thinking,
             )
+        elif args.port_stage == "replay":
+            stage_replay(args.stem, fix_cap=args.fix_cap, fix_rounds=args.fix_rounds)
+        elif args.port_stage == "fix":
+            stage_fix(
+                args.stem,
+                model=args.model,
+                cost_cap=args.cost_cap,
+                rounds=args.rounds,
+                thinking=args.thinking,
+                concurrency=args.concurrency,
+                only=args.only,
+                dry_run=args.dry_run,
+            )
         elif args.port_stage == "integrate":
             stage_integrate(args.stem)
         elif args.port_stage == "resolve":
@@ -860,6 +1396,23 @@ def add_parser(sub) -> None:
     q.add_argument("--cost-cap", type=float, default=0.30)
     q.add_argument("--dry-run", action="store_true")
     q.add_argument("--thinking", choices=("on", "off"), default="on")
+    q = stages.add_parser("replay", help="rebuild the crate from the banks, in order, for $0")
+    q.add_argument("stem")
+    q.add_argument("--fix-cap", type=float, default=0.0, help="USD of NEW fix purchases")
+    q.add_argument("--fix-rounds", type=int, default=1)
+    q = stages.add_parser(
+        "fix", help="send each function rustc still rejects back to the model, errors attached"
+    )
+    q.add_argument("stem")
+    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("--cost-cap", type=float, required=True)
+    q.add_argument("--rounds", type=int, default=3)
+    # off: retries carry the refusal reason instead (escalating bought the same wrong
+    # answers at ~10x on setuplib). escalate: thinking on for refused functions too.
+    q.add_argument("--thinking", choices=("off", "on", "escalate"), default="off")
+    q.add_argument("--concurrency", type=int, default=8)
+    q.add_argument("--only", nargs="*", help="function names to limit the run to")
+    q.add_argument("--dry-run", action="store_true")
     q = stages.add_parser("translate")
     q.add_argument("stem")
     q.add_argument("-m", "--model", default="deepseek")
