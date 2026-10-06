@@ -174,3 +174,17 @@ def test_a_second_port_run_on_one_module_is_refused(tmp_path, monkeypatch):
         port._hold("m")
     first.close()
     port._hold("m").close()
+
+
+def test_the_models_type_twin_gives_way_to_c2rusts(tmp_path):
+    mods = tmp_path / "m"
+    mods.mkdir()
+    (mods / "registry.rs").write_text(
+        "use crate::prelude::*;\n#[repr(C)]\npub struct HIVE_LIST_ENTRY {\n    pub a: u32,\n}\n"
+        "pub type PHIVE_LIST_ENTRY = *mut HIVE_LIST_ENTRY;\nfn f() {}\n"
+    )
+    dropped = port.drop_model_type_twins(mods, {"HIVE_LIST_ENTRY", "_HIVE_LIST_ENTRY"})
+    assert dropped == {"HIVE_LIST_ENTRY": ["registry.rs"]}
+    text = (mods / "registry.rs").read_text()
+    assert "struct HIVE_LIST_ENTRY" not in text and "pub type PHIVE_LIST_ENTRY" in text
+    assert "fn f() {}" in text

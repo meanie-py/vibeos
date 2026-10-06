@@ -836,6 +836,9 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
     from . import c2rust_anchor
 
     names = set(names) | prelude_resolve.existing_local_types(prelude)
+    # C's `typedef struct _X {..} X;`: fetching the tag without its typedef leaves the model's
+    # own `struct X` standing beside c2rust's `_X` (setuplib's HIVE_LIST_ENTRY tables).
+    names |= {n[1:] for n in names if n.startswith("_") and len(n) > 1}
     items: dict[str, tuple[str, str]] = {}
     for tu in state["tus"]:
         c_file = REPO / tu
@@ -854,7 +857,39 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
     prelude_resolve.write_local_types(prelude, items)
     if items:
         print(f"resolve: {len(items)} local type item(s) from c2rust: {', '.join(sorted(items))}")
+        dropped = drop_model_type_twins(_crate_dir(state) / "src" / state["stem"], set(items))
+        for name, mods in sorted(dropped.items()):
+            print(f"resolve: {name}: the model's own definition dropped from {', '.join(mods)}")
     return set(items)
+
+
+def drop_model_type_twins(modules: Path, names: set[str]) -> dict[str, list[str]]:
+    """Remove a translated module's own `struct`/`union`/`type` for a name the prelude now
+    takes from c2rust -- the compiler-exact layout wins, as it already does for statics.
+
+    The model collapses C's `typedef struct _HIVE_LIST_ENTRY {..} HIVE_LIST_ENTRY;` into one
+    `struct HIVE_LIST_ENTRY`, while c2rust's data tables (and the prelude) spell the tag
+    `_HIVE_LIST_ENTRY`: the module's definition shadows the prelude's and the two types never
+    unify (setuplib: registry's hive tables, partinfo's partition-type tables, fsutil's
+    file-system table).
+    """
+    from .c2rust_anchor import _type_items
+
+    out: dict[str, list[str]] = {}
+    for path in sorted(modules.glob("*.rs")):
+        text = path.read_text()
+        items = {n: t for n, t in _type_items(text).items() if n in names}
+        if not items:
+            continue
+        for name, item in items.items():
+            text = (
+                text.replace(item + "\n", "", 1)
+                if item + "\n" in text
+                else text.replace(item, "", 1)
+            )
+            out.setdefault(name, []).append(path.name)
+        path.write_text(text)
+    return out
 
 
 def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str]:
