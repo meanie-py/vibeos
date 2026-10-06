@@ -1208,7 +1208,7 @@ pub unsafe extern "system" fn NtSetThreadExecutionState(
         }
     }
 
-    *PreviousFlags = PreviousState;
+    if let Err(s) = ntkrnl_sys::probe::write_back(PreviousFlags, PreviousState) { return s; }
 
     STATUS_SUCCESS
 }

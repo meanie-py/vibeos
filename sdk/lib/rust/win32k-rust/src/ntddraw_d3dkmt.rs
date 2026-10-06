@@ -43,7 +43,17 @@ pub unsafe extern "system" fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CRE
         return STATUS_INVALID_PARAMETER as u32;
     }
 
-    if (*desc).pMemory.is_null() {
+    // The C dereferences `desc` field by field with no probe and no SEH (a C
+    // bug: any process can hand it a kernel or unmapped address). Capture the
+    // descriptor ONCE -- Width/Height/Pitch are validated and then used to size
+    // the surface, so they must not be re-fetched -- and write the two output
+    // handles back fault-tolerantly at the end.
+    let d: D3DKMT_CREATEDCFROMMEMORY = match crate::safe_user_io::capture_user(desc as *const D3DKMT_CREATEDCFROMMEMORY) {
+        Ok(v) => v,
+        Err(st) => return st as u32,
+    };
+
+    if d.pMemory.is_null() {
         return STATUS_INVALID_PARAMETER as u32;
     }
 
@@ -51,7 +61,7 @@ pub unsafe extern "system" fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CRE
 
     let mut i: u32 = 0;
     while (i as usize) < format_info.len() {
-        if format_info[i as usize].format == (*desc).Format {
+        if format_info[i as usize].format == d.Format {
             format = &format_info[i as usize];
             break;
         }
@@ -62,39 +72,45 @@ pub unsafe extern "system" fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CRE
         return STATUS_INVALID_PARAMETER as u32;
     }
 
-    if (*desc).Width > (UINT_MAX & !3) / ((*format).bit_count / 8)
-        || (*desc).Pitch == 0
-        || (*desc).Pitch < ((((*desc).Width * (*format).bit_count + 31) >> 3) & !3)
-        || (*desc).Height == 0
-        || (*desc).Height > UINT_MAX / (*desc).Pitch
+    // `Width * bit_count` wraps in the C's unsigned arithmetic; keep that rather
+    // than panic on overflow.
+    if d.Width > (UINT_MAX & !3) / ((*format).bit_count / 8)
+        || d.Pitch == 0
+        || d.Pitch < (((d.Width.wrapping_mul((*format).bit_count)).wrapping_add(31) >> 3) & !3)
+        || d.Height == 0
+        || d.Height > UINT_MAX / d.Pitch
     {
         return STATUS_INVALID_PARAMETER as u32;
     }
 
     let hDC: HDC;
-    if (*desc).hDeviceDc.is_null() {
+    if d.hDeviceDc.is_null() {
         return STATUS_INVALID_PARAMETER as u32;
     }
-    hDC = NtGdiCreateCompatibleDC((*desc).hDeviceDc);
+    hDC = NtGdiCreateCompatibleDC(d.hDeviceDc);
     if hDC.is_null() {
         return STATUS_INVALID_PARAMETER as u32;
     }
 
     let psurf: PSURFACE = SURFACE_AllocSurface(
         STYPE_BITMAP as u16,
-        (*desc).Width,
-        (*desc).Height,
+        d.Width,
+        d.Height,
         BitmapFormat((*format).bit_count, (*format).compression),
         (BMF_TOPDOWN | BMF_NOZEROINIT) as u32,
-        (*desc).Pitch,
+        d.Pitch,
         0,
-        (*desc).pMemory,
+        d.pMemory,
     );
+    // Divergence: the C dereferences psurf unchecked. Fail like Wine's original.
+    if psurf.is_null() {
+        NtGdiDeleteObjectApp(hDC as _);
+        return 0xC0000017_u32; // STATUS_NO_MEMORY
+    }
 
     (*psurf).flags |= (DDB_SURFACE | API_BITMAP) as u32;
 
-    (*desc).hDc = hDC;
-    (*desc).hBitmap = (*psurf).SurfObj.hsurf as HANDLE;
+    let hBitmap: HANDLE = (*psurf).SurfObj.hsurf as HANDLE;
 
     if (*format).bit_count <= 8 {
         let palette: PPALETTE = PALETTE_AllocPalette(
@@ -113,7 +129,17 @@ pub unsafe extern "system" fn NtGdiDdDDICreateDCFromMemory(desc: *mut D3DKMT_CRE
 
     SURFACE_UnlockSurface(psurf);
 
-    NtGdiSelectBitmap((*desc).hDc, (*desc).hBitmap as HBITMAP);
+    NtGdiSelectBitmap(hDC, hBitmap as HBITMAP);
+
+    // desc->hDc = hDC; desc->hBitmap = psurf->SurfObj.hsurf;
+    let published = ntkrnl_sys::probe::write_back(core::ptr::addr_of_mut!((*desc).hDc), hDC)
+        .and_then(|()| ntkrnl_sys::probe::write_back(core::ptr::addr_of_mut!((*desc).hBitmap), hBitmap));
+    if let Err(st) = published {
+        // The caller can never learn these handles; don't leak them.
+        NtGdiDeleteObjectApp(hDC as _);
+        NtGdiDeleteObjectApp(hBitmap as _);
+        return st as u32;
+    }
 
     STATUS_SUCCESS as u32
 }
@@ -125,14 +151,21 @@ pub unsafe extern "system" fn NtGdiDdDDIDestroyDCFromMemory(
         return STATUS_INVALID_PARAMETER as u32;
     }
 
-    if GDI_HANDLE_GET_TYPE((*desc).hDc as HGDIOBJ) != GDI_OBJECT_TYPE_DC as _
-        || GDI_HANDLE_GET_TYPE((*desc).hBitmap) != GDI_OBJECT_TYPE_BITMAP as _
+    // Captured once (the C reads each handle twice, unprobed and outside SEH):
+    // the type check must be about the same handles that get deleted.
+    let d: D3DKMT_DESTROYDCFROMMEMORY = match crate::safe_user_io::capture_user(desc) {
+        Ok(v) => v,
+        Err(st) => return st as u32,
+    };
+
+    if GDI_HANDLE_GET_TYPE(d.hDc as HGDIOBJ) != GDI_OBJECT_TYPE_DC as _
+        || GDI_HANDLE_GET_TYPE(d.hBitmap) != GDI_OBJECT_TYPE_BITMAP as _
     {
         return STATUS_INVALID_PARAMETER as u32;
     }
 
-    NtGdiDeleteObjectApp((*desc).hBitmap as _);
-    NtGdiDeleteObjectApp((*desc).hDc as _);
+    NtGdiDeleteObjectApp(d.hBitmap as _);
+    NtGdiDeleteObjectApp(d.hDc as _);
 
     STATUS_SUCCESS as u32
 }

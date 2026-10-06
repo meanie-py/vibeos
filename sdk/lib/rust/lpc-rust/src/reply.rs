@@ -333,7 +333,11 @@ pub unsafe extern "system" fn NtReplyPort(
                 Err(st) => return st,
             };
     } else {
-        captured_reply_message = *ReplyMessage;
+        // Kernel-mode caller: no probe, but still one fault-tolerant fetch.
+        captured_reply_message = match ntkrnl_sys::probe::read_back(ReplyMessage as *const PORT_MESSAGE) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
     }
 
     if (captured_reply_message.u1.s1.DataLength as ULONG
@@ -539,7 +543,11 @@ pub unsafe extern "system" fn NtReplyWaitReceivePortEx(
         }
 
         if !ReplyMessage.is_null() {
-            captured_reply_message = *ReplyMessage;
+            // Kernel-mode caller: no probe, but still one fault-tolerant fetch.
+            captured_reply_message = match ntkrnl_sys::probe::read_back(ReplyMessage as *const PORT_MESSAGE) {
+                Ok(v) => v,
+                Err(st) => return st,
+            };
         }
     }
 

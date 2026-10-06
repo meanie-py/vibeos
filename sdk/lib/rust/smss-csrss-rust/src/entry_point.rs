@@ -68,7 +68,7 @@ pub unsafe extern "system" fn NtProcessStartup(peb: PPEB) {
     let mut argc: i32 = 0;
 
     // Normalize and get the Process Parameters.
-    let process_parameters = RtlNormalizeProcessParams((*peb).ProcessParameters);
+    let process_parameters = RtlNormalizeProcessParams((*peb).ProcessParameters);  // nolint: raw-user-access (user-mode process entry, not a syscall: the PEB is its own)
 
     // Argument list: enough for 512 tokens (matches the C; FIXME upstream too).
     let argument_list = RtlAllocateHeap(

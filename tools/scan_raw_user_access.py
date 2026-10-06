@@ -146,7 +146,7 @@ def _access_patterns(name: str) -> list[re.Pattern[str]]:
         re.compile(rf"(?<![\w.])\*\s*{n}\b\s*(\.add\([^)]*\)\s*)?=(?!=)"),  # *P = / *P.add(i) =
         re.compile(rf"\(\*{n}\)\s*\."),  # (*P).f
         re.compile(rf"\*\(\s*{n}\s+as\b"),  # *(P as T)
-        re.compile(rf"=\s*\*\s*{n}\b(?!\s*as\b)"),  # = *P
+        re.compile(rf"=\s*\*\s*{n}\b"),  # = *P, = *P as T
         re.compile(rf"(?<![\w:])(?:core::ptr::|ptr::)?(?:{prims})\s*\((?:[^;]*?[(,\s])?{n}\b"),
     ]
 

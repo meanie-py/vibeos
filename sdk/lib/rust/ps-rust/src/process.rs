@@ -1480,7 +1480,7 @@ pub unsafe extern "system" fn NtOpenProcess(
             if let Err(s) = probe_user_buffer(client_id as _, core::mem::size_of::<_CLIENT_ID>(), core::mem::size_of::<ULONG>(), previous_mode) {
                 return s;
             }
-            safe_client_id = *client_id;
+            safe_client_id = match ntkrnl_sys::probe::read_back(client_id) { Ok(v) => v, Err(s) => return s };
             cid_ptr = core::ptr::addr_of_mut!(safe_client_id);
         } else {
             cid_ptr = core::ptr::null_mut();
@@ -1494,12 +1494,12 @@ pub unsafe extern "system" fn NtOpenProcess(
         ) {
             return s;
         }
-        has_object_name = if (*object_attributes).ObjectName.is_null() { 0u8 } else { 1u8 };
+        has_object_name = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*object_attributes).ObjectName)) { Ok(n) => (!n.is_null()) as u8, Err(s) => return s };
 
-        attributes = ObpValidateAttributes((*object_attributes).Attributes, previous_mode);
+        attributes = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*object_attributes).Attributes)) { Ok(a) => ObpValidateAttributes(a, previous_mode), Err(s) => return s };
     } else {
-        has_object_name = if (*object_attributes).ObjectName.is_null() { 0u8 } else { 1u8 };
-        attributes = ObpValidateAttributes((*object_attributes).Attributes, previous_mode);
+        has_object_name = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*object_attributes).ObjectName)) { Ok(n) => (!n.is_null()) as u8, Err(s) => return s };
+        attributes = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*object_attributes).Attributes)) { Ok(a) => ObpValidateAttributes(a, previous_mode), Err(s) => return s };
         cid_ptr = client_id;
     }
 

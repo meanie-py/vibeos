@@ -270,7 +270,11 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
         }
     } else {
         if DisableAllPrivileges == 0 {
-            CapturedCount = (*NewState).PrivilegeCount;
+            // Kernel-mode caller: no probe, but the load is still fault-tolerant.
+            CapturedCount = match read_back(core::ptr::addr_of!((*NewState).PrivilegeCount)) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
         }
     }
 
@@ -435,7 +439,11 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
         }
     } else {
         if ResetToDefault == 0 {
-            CapturedCount = (*NewState).GroupCount;
+            // Kernel-mode caller: no probe, but the load is still fault-tolerant.
+            CapturedCount = match read_back(core::ptr::addr_of!((*NewState).GroupCount)) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
         }
     }
 

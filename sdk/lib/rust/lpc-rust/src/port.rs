@@ -244,15 +244,28 @@ pub unsafe extern "system" fn NtImpersonateClientOfPort(
         // change MessageId after ClientId had been read. The probe covered
         // sizeof(PORT_MESSAGE) either way, so this reads no more than the C did.
         let captured: PORT_MESSAGE =
-            match ntkrnl_sys::probe::probe_read_user(ClientMessage as *const PORT_MESSAGE, PreviousMode) {
+            // port.c:144 probes with sizeof(PVOID). probe_read_user would demand
+            // align_of::<PORT_MESSAGE>(), which the `double DoNotUseThisField`
+            // union member makes 8 on i386 -- rejecting addresses the C accepts.
+            match ntkrnl_sys::probe::probe_read_generic(
+                ClientMessage as *const PORT_MESSAGE,
+                core::mem::size_of::<PVOID>(),
+                PreviousMode,
+            ) {
                 Ok(v) => v,
                 Err(st) => return st,
             };
         ClientId = captured.__bindgen_anon_1.ClientId;
         MessageId = captured.MessageId;
     } else {
-        ClientId = (*ClientMessage).__bindgen_anon_1.ClientId;
-        MessageId = (*ClientMessage).MessageId;
+        // Kernel-mode caller: no probe, but one fault-tolerant fetch of the
+        // whole message rather than two raw field reads.
+        let captured: PORT_MESSAGE = match ntkrnl_sys::probe::read_back(ClientMessage as *const PORT_MESSAGE) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
+        ClientId = captured.__bindgen_anon_1.ClientId;
+        MessageId = captured.MessageId;
     }
 
     Status = ObReferenceObjectByHandle(

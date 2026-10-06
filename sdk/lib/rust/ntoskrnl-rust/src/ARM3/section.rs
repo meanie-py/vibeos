@@ -2161,7 +2161,7 @@ pub unsafe extern "system" fn NtCreateSection(
         }
     } else {
         if !maximum_size.is_null() {
-            safe_maximum_size = *maximum_size;
+            safe_maximum_size = match ntkrnl_sys::probe::read_back(maximum_size) { Ok(v) => v, Err(s) => return s };
         }
     }
     if (file_handle == core::ptr::null_mut()) && (safe_maximum_size.QuadPart == 0) {
@@ -2451,10 +2451,10 @@ pub unsafe extern "system" fn NtMapViewOfSection(
         }
 
         // Return parameters to user
-        *base_address = safe_base_address;
-        *view_size = safe_view_size;
+        let _ = ntkrnl_sys::probe::write_back(base_address, safe_base_address);
+        let _ = ntkrnl_sys::probe::write_back(view_size, safe_view_size);
         if !section_offset.is_null() {
-            *section_offset = safe_section_offset;
+            let _ = ntkrnl_sys::probe::write_back(section_offset, safe_section_offset);
         }
     }
 

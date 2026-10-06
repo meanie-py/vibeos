@@ -5144,7 +5144,9 @@ mapped. Every touch after the probe therefore goes through a fault-tolerant prim
 rebase any pointer INTO the buffer, copy out once). A capture that sizes a SID/ACL from a count
 in user memory must pin that count in the copy, or a racing caller grows it past the
 allocation. `tools/scan_raw_user_access.py` lists the Nt* syscalls that still touch a pointer
-argument raw (baseline gate; a new row fails `vibeos-cli check`).
+argument raw; its baseline is EMPTY, so any new row fails `vibeos-cli check`. Use
+`read_back` (load) / `write_back` (store) for a single value; read a value that sizes or
+validates something ONCE and use the copy, never `(*p).Length` then `*p`.
 
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
 HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
