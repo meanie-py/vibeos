@@ -136,6 +136,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
         }
         SVC_NtOpenFile | SVC_NtCreateFile | SVC_NtOpenDirectoryObject => {
             let Oa = Args[2] as *const OBJECT_ATTRIBUTES;
+            TracePath(Service, Oa);
             if Service == SVC_NtOpenDirectoryObject {
                 if IsKnownDlls(Oa) {
                     return STATUS_OBJECT_NAME_NOT_FOUND;
@@ -145,6 +146,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
             }
         }
         SVC_NtQueryAttributesFile | SVC_NtQueryFullAttributesFile => {
+            TracePath(Service, Args[0] as *const OBJECT_ATTRIBUTES);
             if Redirect(Args[0] as *const OBJECT_ATTRIBUTES, &mut Shadow) {
                 Args[0] = &Shadow.Oa as *const _ as u64;
             }
@@ -202,6 +204,21 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
         _ => {}
     }
     NativeSyscall(Service, Args.as_ptr())
+}
+
+/// The first object names the guest opens, as it named them (bring-up aid:
+/// the loader's search is where a wrong-architecture DLL gets picked).
+static PathCount: AtomicU32 = AtomicU32::new(0);
+unsafe fn TracePath(Service: u32, Oa: *const OBJECT_ATTRIBUTES) {
+    if PathCount.fetch_add(1, Ordering::Relaxed) >= 40 || Oa.is_null() || (*Oa).ObjectName.is_null() {
+        return;
+    }
+    crate::trace!(
+        "guest open (service %u, root %p): %wZ",
+        Service,
+        (*Oa).RootDirectory,
+        (*Oa).ObjectName,
+    );
 }
 
 fn IsSelf(Process: u64) -> bool {
