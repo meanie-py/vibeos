@@ -130,3 +130,42 @@ def test_header_inline_functions_round_trip(tmp_path):
     lm.write_block(p, lm.render(got, fns))
     assert lm.existing(p) == {"INF_FreeData"}
     assert "pub(crate) use INF_FreeData" not in p.read_text()
+
+
+def test_expand_follows_c_rules():
+    from rustconv.local_macros import CMacro, expand
+
+    defs = {
+        "SpInfFindFirstLine": CMacro(
+            "SpInfFindFirstLine", None, "(SpInfExports.SpInfFindFirstLine)", "h:1"
+        ),
+        "Size": CMacro("Size", ("P",), "((P)->Count * (P)->Bytes)", "h:2"),
+        "Twice": CMacro("Twice", ("X",), "(Size(X) * 2)", "h:3"),
+        "MAX_X": CMacro("MAX_X", None, "(BASE + 1)", "h:4"),
+        "STR": CMacro("STR", ("x",), "#x", "h:5"),
+    }
+    src = 'SpInfFindFirstLine(a); n = Twice(e); m = MAX_X; s = STR(q); t = "Size(z)"; /* Size(z) */'
+    out, used = expand(src, defs)
+    # A macro is not re-expanded inside its own expansion.
+    assert "(SpInfExports.SpInfFindFirstLine)(a)" in out
+    # Nested, arguments substituted as whole tokens.
+    assert "n = (((e)->Count * (e)->Bytes) * 2)" in out
+    # Constants stay names (the seal needs them); # bodies, strings and comments untouched.
+    assert "m = MAX_X" in out and "s = STR(q)" in out
+    assert '"Size(z)"' in out and "/* Size(z) */" in out
+    assert used == {"SpInfFindFirstLine", "Twice", "Size"}
+
+
+def test_a_table_call_never_panics():
+    from rustconv.local_macros import parse_reply
+
+    reply = (
+        "macro_rules! SpInfFindFirstLine {\n    ($($a:expr),*) => {\n"
+        "        ((SpInfExports.SpInfFindFirstLine.unwrap())($($a),*))\n    };\n}\n"
+    )
+    out = parse_reply(reply, {"SpInfFindFirstLine"})
+    assert ".unwrap_unchecked())($($a),*)" in out["SpInfFindFirstLine"]
+    import pytest
+
+    with pytest.raises(ValueError, match="panic path"):
+        parse_reply(reply.replace("SpInfFindFirstLine.unwrap())", "X.expect(\"y\"))"), {"SpInfFindFirstLine"})

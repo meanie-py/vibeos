@@ -676,7 +676,7 @@ PARAM_RANK = {"FLAT": 0, "IDENTICAL": 0, "SCALAR_WIDEN": 1, "WIDENING": 2, "SEMA
 
 # (tu_suffix used to look up flags in compile_commands.json, TU source)
 WIN32K_TUS = [
-    ("user32_stubs.c", "#include <user32.h>\n"),
+    ("user32_layout_probe.c", "#include <user32.h>\n"),
     ("gdi32/wine/emfdc.c", "#include <precomp.h>\n"),
 ]
 # ndk umbrella for the ntdll surface. This MIRRORS dll/ntdll/include/ntdll.h's
@@ -1829,7 +1829,7 @@ def main() -> int:
     rp = sub.add_parser("report")
     rp.add_argument("--build-dir", default="build-arm64")
     rp.add_argument("--build-dir32", default="build-i386")
-    rp.add_argument("--tu-suffix", default="user32_stubs.c")
+    rp.add_argument("--tu-suffix", default="user32_layout_probe.c")
     rp.add_argument(
         "--headers",
         default="win32ss/include/ntuser.h,sdk/include/psdk/ntgdi.h,win32ss/include/ntgdibad.h",

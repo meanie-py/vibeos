@@ -726,8 +726,9 @@ def build_preamble(
     if text is None:
         return ""
     lines = text.splitlines()
-    c_text = c_file.read_text(errors="replace")
-    own_fns = set(re.findall(r"^([A-Za-z_]\w*)\s*\(", c_text, re.M))
+    # No source to consult (a caller that stubs the transpile): keep every item, as before.
+    c_text = c_file.read_text(errors="replace") if c_file.is_file() else None
+    own_fns = set(re.findall(r"^([A-Za-z_]\w*)\s*\(", c_text, re.M)) if c_text else set()
     out: list[str] = []
     i, n = 0, len(lines)
     while i < n:
@@ -744,23 +745,94 @@ def build_preamble(
                 if depth <= 0 and lines[j].rstrip().endswith(";"):
                     break
                 j += 1
+            # c2rust marks a C global with external linkage `#[no_mangle]`; dropping that line
+            # left setuplib's SpInfExports / SpFileExports / ProcessHeap mangled, and the C
+            # (main.c) and the island's `extern` declarations could not link to them.
+            while start > 0 and lines[start - 1].strip() == "#[no_mangle]":
+                start -= 1
             block = "\n".join(lines[start : j + 1])
             # keep `static*` always; keep `const` ONLY if it carries an aggregate (table/struct),
             # never a bare scalar enum-variant const.
-            named = _DATA_NAME.match(lines[start])
+            named = _DATA_NAME.match(lines[i])  # the item line, not a #[no_mangle] above it
             if (
                 named is not None
                 and (m.group(1).startswith("static") or ("[" in block or "{" in block))
-                and _is_own_data(named.group(1), c_text, own_fns)
+                and (c_text is None or _is_own_data(named.group(1), c_text, own_fns))
             ):
                 out.append(block)
             i = j + 1
             continue
         i += 1
+    out = fold_static_initializers(text, out)
     out = _with_anonymous_types(text, out)
     if verbose:
         print(f"  [c2rust] preamble: {len(out)} data item(s) from {c_file.name}", file=sys.stderr)
     return hoist_wide_temporaries("\n\n".join(out))
+
+
+_INIT_FN_RE = re.compile(r'(?m)^unsafe extern "C" fn run_static_initializers\(\) \{$')
+_INIT_ARRAY_RE = re.compile(r"\s*(?:pub\s+)?static\s+INIT_ARRAY\s*:")
+
+
+def _top_level_statements(body: str) -> list[str]:
+    """Split a block body at depth-0 `;`, skipping string and byte-string literals."""
+    out, depth, start, i = [], 0, 0, 0
+    while i < len(body):
+        c = body[i]
+        if c == '"':
+            i += 1
+            while i < len(body) and body[i] != '"':
+                i += 2 if body[i] == "\\" else 1
+        elif c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == ";" and depth == 0:
+            out.append(body[start:i].strip())
+            start = i + 1
+        i += 1
+    if body[start:].strip():
+        out.append(body[start:].strip())
+    return out
+
+
+def fold_static_initializers(text: str, blocks: list[str]) -> list[str]:
+    """Move c2rust's `run_static_initializers` assignments into the statics they initialise.
+
+    A C static whose initialiser is not a constant expression TO CLANG -- setuplib's
+    `static UNICODE_STRING X = RTL_CONSTANT_STRING(L"...")`, whose Length is a sizeof and whose
+    Buffer is an address -- c2rust zero-fills and assigns at startup from an `.init_array` /
+    `.CRT$XIB` constructor. Our preamble kept the zero-filled static and dropped that function,
+    so the module compiled with an EMPTY string in it. Rust evaluates the same expression at
+    compile time, so each `NAME = EXPR;` becomes NAME's initialiser and INIT_ARRAY goes.
+    Anything else in the constructor (a field or element store, a call) has no static
+    spelling: refused, never dropped.
+    """
+    blocks = [b for b in blocks if not _INIT_ARRAY_RE.match(b)]
+    m = _INIT_FN_RE.search(text)
+    if m is None:
+        return blocks
+    depth, end = 0, m.end() - 1
+    while end < len(text):
+        depth += {"{": 1, "}": -1}.get(text[end], 0)
+        if depth == 0:
+            break
+        end += 1
+    for stmt in _top_level_statements(text[m.end() : end]):
+        a = re.match(r"([A-Za-z_]\w*)\s*=(?!=)\s*(.*)\Z", stmt, re.S)
+        sig = None
+        if a is not None:
+            sig = re.compile(rf"^(\s*(?:pub\s+)?static(?:\s+mut)?\s+{a.group(1)}\s*:[^=]*=)")
+        hit = [k for k, b in enumerate(blocks) if sig is not None and sig.match(b)]
+        if a is None or len(hit) != 1:
+            raise C2RustError(
+                "c2rust initialises a static at startup in a shape with no static spelling: "
+                f"`{stmt[:120]}` -- hand-port this initialiser"
+            )
+        k = hit[0]
+        head = sig.match(blocks[k]).group(1)  # type: ignore[union-attr]
+        blocks[k] = f"{head} {a.group(2).strip()};"
+    return blocks
 
 
 # c2rust spells a file-scope `L"Arial,186"` as `transmute::<[u8; 20], [c_ushort; 10]>(*b"A\0r\0…")
@@ -769,6 +841,13 @@ def build_preamble(
 _WIDE_TEMP_RE = re.compile(
     r"::core::mem::transmute::<\s*\[u8;\s*(\d+)\]\s*,\s*\[::core::ffi::c_ushort;\s*(\d+)\]\s*,?\s*>"
     r"\(\s*\*b\"((?:[^\"\\]|\\.)*)\"\s*,?\s*\)\s*\.as_ptr\(\)"
+)
+# ...and, in a `run_static_initializers` body, as `&raw const transmute::<..>(*b"..") as *const
+# c_ushort` (regutil.c's SymbolicLinkValueName).
+_WIDE_RAW_RE = re.compile(
+    r"&raw const\s+::core::mem::transmute::<\s*\[u8;\s*(\d+)\]\s*,\s*\[::core::ffi::c_ushort;"
+    r"\s*(\d+)\]\s*,?\s*>\(\s*\*b\"((?:[^\"\\]|\\.)*)\"\s*,?\s*\)\s*as\s+\*const\s+"
+    r"::core::ffi::c_ushort"
 )
 _C2R_WSTR_PREFIX = "RUSTCONV_C2R_WSTR_"
 
@@ -816,7 +895,7 @@ def hoist_wide_temporaries(text: str) -> str:
         statics[name] = f"pub static {name}: [u16; {len(units)}] = {_render_units(units)};"
         return f"{name}.as_ptr()"
 
-    body = _WIDE_TEMP_RE.sub(repl, text)
+    body = _WIDE_RAW_RE.sub(repl, _WIDE_TEMP_RE.sub(repl, text))
     if not statics:
         return text
     return "\n".join(statics[k] for k in sorted(statics)) + "\n\n" + body

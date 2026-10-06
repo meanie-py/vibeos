@@ -457,6 +457,112 @@ pub unsafe extern "C" fn UefiFindPciBios(BusData: crate::hwpci::PPCI_REGISTRY_IN
     1u8
 }
 
+// arm64 PCI: configuration space is the ECAM window the ACPI MCFG describes, read
+// directly while firmware's identity map is still in place. Without this the
+// hardware tree has no PCI bus, and SCSIPORT's PCI scan (IoQueryDeviceDescription
+// for PCIBus) stops before it starts: vioblk's DriverEntry failed with
+// STATUS_DEVICE_DOES_NOT_EXIST and the virtio-blk disk was never offered.
+#[cfg(target_arch = "aarch64")]
+static mut ECAM_BASE: u64 = 0;
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn ecam_ptr(bus: u32, dev: u32, func: u32, off: u32) -> *mut u8 {
+    (ECAM_BASE + (((bus << 20) | (dev << 15) | (func << 12) | off) as u64)) as *mut u8
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe fn ecam_read32(bus: u32, dev: u32, func: u32, off: u32) -> u32 {
+    core::ptr::read_volatile(ecam_ptr(bus, dev, func, off & !3) as *const u32)
+}
+
+// QEMU `virt` wires the PCIe host bridge's INTA..INTD to GIC SPIs 3..6 (INTIDs 35..38)
+// and swizzles a bus-0 device's pin onto them as (slot + pin - 1) % 4 (hw/arm/virt.c
+// create_pcie, VIRT_PCIE = SPI 3; the GPEX host uses pci_swizzle_map_irq_fn). Firmware
+// describes that only in the DSDT's _PRT and leaves every InterruptLine at 0, which
+// NT's legacy PCI paths read as "no interrupt": SCSIPORT then skips the adapter
+// (BusInterruptLevel == 0), the same failure the x86 fixup above exists for. The arm64
+// HAL takes a PCI interrupt level as the GIC INTID, so the INTID is what goes in the
+// register. Only when 00:00.0 is QEMU's GPEX host bridge (1b36:0008); devices behind
+// bridges are left alone.
+#[cfg(target_arch = "aarch64")]
+unsafe fn pci_fixup_interrupt_lines() {
+    const GPEX_HOST: u32 = 0x0008_1B36;
+    const INTA_INTID: u32 = 35;
+    if ecam_read32(0, 0, 0, 0) != GPEX_HOST {
+        return;
+    }
+    for dev in 0..32u32 {
+        for func in 0..8u32 {
+            let id = ecam_read32(0, dev, func, 0);
+            if id & 0xFFFF == 0xFFFF {
+                if func == 0 {
+                    break;
+                }
+                continue;
+            }
+            let reg = ecam_read32(0, dev, func, 0x3C);
+            let (line, pin) = (reg & 0xFF, (reg >> 8) & 0xFF);
+            if (1..=4).contains(&pin) && (line == 0 || line == 0xFF) {
+                let intid = INTA_INTID + (dev + pin - 1) % 4;
+                core::ptr::write_volatile(ecam_ptr(0, dev, func, 0x3C), intid as u8);
+                TRACE(
+                    b"PCI 00:%02x.%x pin %u -> INTID %u\n\0".as_ptr() as *const i8,
+                    dev as usize,
+                    func as usize,
+                    pin as usize,
+                    intid as usize,
+                );
+            }
+            // Single-function device: functions 1..7 are not there.
+            let header_type = (ecam_read32(0, dev, func, 0x0C) >> 16) & 0xFF;
+            if func == 0 && header_type & 0x80 == 0 {
+                break;
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub unsafe extern "C" fn UefiFindPciBios(BusData: crate::hwpci::PPCI_REGISTRY_INFO) -> BOOLEAN {
+    let rsdp = FindAcpiBios();
+    if rsdp.is_null() {
+        return 0u8;
+    }
+    let rsdp = core::ptr::read_unaligned(rsdp);
+    if rsdp.revision < 2 {
+        return 0u8;
+    }
+    let Some((base, first, last)) = crate::arm64_serial_acpi::mcfg_from_xsdt(rsdp.xsdt_physical_address)
+    else {
+        TRACE(b"No ACPI MCFG: no PCI\n\0".as_ptr() as *const i8);
+        return 0u8;
+    };
+    ECAM_BASE = base;
+
+    let mut max_bus: u32 = first as u32;
+    for bus in first as u32..=last as u32 {
+        if (0..32).any(|dev| ecam_read32(bus, dev, 0, 0) & 0xFFFF != 0xFFFF) {
+            max_bus = bus;
+        }
+    }
+    (*BusData).MajorRevision = 2;
+    (*BusData).MinorRevision = 0x10;
+    (*BusData).NoBuses = (max_bus + 1) as UCHAR;
+    // The field names an x86 config mechanism (CF8/CFC); there is none here, and the
+    // arm64 HAL reads ECAM itself without consulting it.
+    (*BusData).HardwareMechanism = 0;
+    TRACE(
+        b"UefiFindPciBios: ECAM %p, NoBuses %u\n\0".as_ptr() as *const i8,
+        base as usize,
+        (max_bus + 1) as usize,
+    );
+
+    pci_fixup_interrupt_lines();
+    1u8
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn UefiHwDetect(
     _Options: PCSTR,
@@ -480,7 +586,6 @@ pub unsafe extern "C" fn UefiHwDetect(
 
     DetectInternal(SystemKey, core::ptr::addr_of_mut!(BusNumber));
     // was `// TODO: DetectPciBios` — see UefiFindPciBios above.
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         crate::hwpci::FindPciBios = UefiFindPciBios as *mut core::ffi::c_void;
         crate::hwpci::DetectPciBios(SystemKey, core::ptr::addr_of_mut!(BusNumber));

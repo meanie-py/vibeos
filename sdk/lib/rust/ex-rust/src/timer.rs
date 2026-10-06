@@ -626,7 +626,7 @@ pub unsafe extern "system" fn NtSetTimer(
             return e;
         }
     } else {
-        TimerDueTime = *DueTime;
+        TimerDueTime = match ntkrnl_sys::probe::read_back(DueTime) { Ok(v) => v, Err(s) => return s };
     }
 
     Status = ObReferenceObjectByHandle(

@@ -1329,15 +1329,16 @@ pub unsafe extern "system" fn NtGdiGetDeviceCapsAll(
 
     DC_UnlockDc(pdc);
 
-    Status = SafeProbeForWrite(pDevCaps as *mut core::ffi::c_void, core::mem::size_of::<DEVCAPS>() as SIZE_T, 1);
-    if !NT_SUCCESS(Status)
-    {
-        SetLastNtError(Status);
+    // C: _SEH2_TRY { ProbeForWrite(pDevCaps, sizeof(DEVCAPS), 1); RtlCopyMemory(..); }
+    // _SEH2_EXCEPT { SetLastNtError(code); return FALSE; } -- probe + fault-tolerant copy.
+    if let Err(st) = crate::safe_user_io::copy_to_user(
+        pDevCaps as *mut core::ffi::c_void,
+        core::ptr::addr_of!(devcaps) as *const core::ffi::c_void,
+        core::mem::size_of::<DEVCAPS>(),
+        1,
+    ) {
+        SetLastNtError(st);
         bResult = 0;
-    }
-    else
-    {
-        RtlCopyMemory(pDevCaps as *mut core::ffi::c_void, core::ptr::addr_of!(devcaps) as *const core::ffi::c_void, core::mem::size_of::<DEVCAPS>());
     }
 
     return bResult;

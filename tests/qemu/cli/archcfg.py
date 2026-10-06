@@ -13,9 +13,9 @@ from dataclasses import dataclass
 
 ARCHES = ("i386", "amd64", "arm64")  # base arches (build side)
 
-# CLI --arch choices. BIOS x86 is dead; smoke registers only the -uefi configs,
-# so plain i386/amd64 are accepted as ALIASES that resolve to the UEFI config.
-ACCEPTED_ARCHES = ("i386", "i386-uefi", "amd64", "amd64-uefi", "arm64")
+# CLI --arch choices. Plain i386/amd64 are ALIASES that resolve to the UEFI config;
+# amd64-bios is the legacy-BIOS boot of the same build (restored 2026-10-05).
+ACCEPTED_ARCHES = ("i386", "i386-uefi", "amd64", "amd64-uefi", "amd64-bios", "arm64")
 
 
 def base_arch(arch: str) -> str:
@@ -24,12 +24,15 @@ def base_arch(arch: str) -> str:
     e.g. 'amd64-uefi-net' → 'amd64'. Strip '-net' before '-uefi' so the compound
     'amd64-uefi-net' doesn't leave a stray '-net'. This is THE base-arch mapping;
     conftest imports it rather than keeping a private copy (T2 one-source dedup)."""
-    return arch.replace("-net", "").replace("-uefi", "").replace("-test", "")
+    return arch.replace("-net", "").replace("-uefi", "").replace("-bios", "").replace("-test", "")
 
 
 def vm_arch(arch: str) -> str:
     """Runtime/boot config name as registered in vm.py:ARCH_CONFIGS. x86 boots
-    UEFI now, so i386/amd64 resolve to i386-uefi/amd64-uefi (BIOS deregistered)."""
+    UEFI by default, so i386/amd64 resolve to i386-uefi/amd64-uefi; the legacy-BIOS
+    boot is asked for by name."""
+    if arch == "amd64-bios":
+        return arch
     return {"i386": "i386-uefi", "amd64": "amd64-uefi", "arm64": "arm64"}[base_arch(arch)]
 
 

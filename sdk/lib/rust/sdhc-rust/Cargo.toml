@@ -1,0 +1,16 @@
+# sdhc-rust: the SD host controller driver body (arm64: the Raspberry Pi 4's
+# EMMC2 card slot). crate-type=staticlib -> libsdhc_rust.a, linked into
+# sdhc.sys by sdhc-cargo (reactos-link, ModuleKind::KernelDll). Written in
+# Rust from the start: there is no C original.
+
+[package]
+name = "sdhc-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+ntkrnl-sys = { path = "../ntkrnl-sys" }

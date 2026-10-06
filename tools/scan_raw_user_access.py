@@ -19,15 +19,27 @@ access through one of its pointer-typed parameters:
     primitives with P as an argument
 
 `addr_of!((*P).f)` is address arithmetic, not an access, and is not flagged. A
-parameter re-bound to something other than `opaque_ptr(P)` (a capture, a pool
-bounce) stops being tracked from that line on.
+parameter re-bound or re-assigned to something other than `opaque_ptr(P)` (a
+capture, a pool bounce) stops being tracked from that line on, and so does the
+kernel-mode arm of an explicit `if <mode> != KernelMode { .. } else { .. }` (or the
+`==` form): the C trusts a kernel caller's pointers.
+
+CALLEES. A tracked pointer passed straight on as a call argument (bare, cast with
+`as`, `.cast()`, or `opaque_ptr(..)`) is followed into the callee's matching
+parameter, transitively, and a raw access there is reported against the syscall
+with the chain that reached it (`NtFoo P -> helper(q) -> inner(r)`). The callee is
+resolved by name: a function in the same crate first, then a name defined exactly
+once in the tree (the `#[no_mangle]` exports crates call each other through).
+Method calls and ambiguous names are not followed.
 
 WHAT IT CANNOT SEE. Whether the access sits in a kernel-mode-only branch (where the
-pointer is trusted), and accesses made by callees. Both are why this gates against
-a BASELINE (`tools/lint-baseline/scan_raw_user_access.txt`) and not at zero: rows in
-the baseline were read and are either kernel-mode branches or owed. A NEW row fails
+pointer is trusted), a pointer that reaches a callee through a struct or a derived
+expression, and method calls. That is why this gates against a BASELINE
+(`tools/lint-baseline/scan_raw_user_access.txt`) and not at zero: rows in the
+baseline were read and are either kernel-mode branches or owed. A NEW row fails
 `vibeos-cli check`. Suppress a reviewed site with `// nolint: raw-user-access
-<reason>` on the line.
+<reason>` on the line; in a callee shared with kernel callers, say which branch
+makes it safe.
 
 Usage:
     python3 tools/scan_raw_user_access.py            # rows: path: NtFoo Param
@@ -74,6 +86,9 @@ def _strip(text: str) -> list[str]:
     out: list[str] = []
     in_block = False
     for raw in text.splitlines():
+        if not in_block and '"' not in raw and "/" not in raw:
+            out.append(raw)  # nothing to blank; the per-char walk is the cost
+            continue
         code: list[str] = []
         i = 0
         in_str = False
@@ -114,7 +129,7 @@ def _strip(text: str) -> list[str]:
 
 
 def _split_params(sig: str) -> list[tuple[str, str]]:
-    params: list[tuple[str, str]] = []
+    params: list[str] = []
     depth = 0
     cur = ""
     for ch in sig:
@@ -146,7 +161,7 @@ def _access_patterns(name: str) -> list[re.Pattern[str]]:
         re.compile(rf"(?<![\w.])\*\s*{n}\b\s*(\.add\([^)]*\)\s*)?=(?!=)"),  # *P = / *P.add(i) =
         re.compile(rf"\(\*{n}\)\s*\."),  # (*P).f
         re.compile(rf"\*\(\s*{n}\s+as\b"),  # *(P as T)
-        re.compile(rf"=\s*\*\s*{n}\b(?!\s*as\b)"),  # = *P
+        re.compile(rf"=\s*\*\s*{n}\b"),  # = *P, = *P as T
         re.compile(rf"(?<![\w:])(?:core::ptr::|ptr::)?(?:{prims})\s*\((?:[^;]*?[(,\s])?{n}\b"),
     ]
 
@@ -189,69 +204,356 @@ def _body_end(lines: list[str], start: int) -> int:
     return len(lines) - 1
 
 
-def scan_file(path: Path, rel: str) -> list[tuple[str, str, int, str]]:
+FN_RE = re.compile(
+    r"^\s*(?:pub(?:\([\w:]+\))?\s+)?(?:const\s+)?(?:unsafe\s+)?"
+    r'(?:extern\s+"[^"]+"\s+)?fn\s+(\w+)\s*(?:<[^(]*>)?\s*\('
+)
+CALL_RE = re.compile(r"(?<![\w.!])((?:\w+::)*)(\w+)\s*(?:::<[^(]*>)?\s*$")
+KEYWORDS = frozenset({"if", "while", "match", "for", "return", "loop", "Some", "Ok", "Err"})
+
+
+class FnDef:
+    """One function with a body: where its signature ends and its body does."""
+
+    def __init__(self, path: Path, rel: str, name: str, params, body0: int, end: int, raw, lines):
+        self.path, self.rel, self.name = path, rel, name
+        self.params: list[tuple[str, str]] = params
+        self.body0, self.end = body0, end
+        self.raw_lines, self.lines = raw, lines
+        self.crate = rel.split("/src/", 1)[0]
+
+
+def _signature(raw_lines: list[str], lines: list[str], i: int, col: int) -> tuple[str, int]:
+    """Text between the '(' at (i, col) and its match, and the line after it closes."""
+    sig = ""
+    depth = 0
+    j = i
+    done = False
+    while j < len(lines) and not done:
+        seg = raw_lines[j][col:] if j == i else lines[j]
+        for ch in seg:
+            if ch == "(":
+                depth += 1
+                if depth == 1:
+                    continue
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    done = True
+                    break
+            sig += ch
+        sig += " "
+        j += 1
+    return sig, j
+
+
+def parse_file(path: Path, rel: str) -> list[FnDef]:
     try:
         text = path.read_text(errors="replace")
     except OSError:
         return []
-    if 'extern "system" fn Nt' not in text:
-        return []
     raw_lines = text.splitlines()
     lines = _strip(text)
-    hits: list[tuple[str, str, int, str]] = []
+    fns: list[FnDef] = []
     i = 0
     while i < len(lines):
-        # Signature detection reads the raw line: _strip blanks string contents, and
-        # the ABI string is what identifies the syscall.
-        m = SYSCALL_RE.search(raw_lines[i]) if i < len(raw_lines) else None
+        # Signature detection reads the raw line for the ABI string (_strip blanks it).
+        m = FN_RE.match(raw_lines[i]) if i < len(raw_lines) else None
         if not m or raw_lines[i].lstrip().startswith("//"):
             i += 1
             continue
-        fn = m.group(1)
-        # Signature: from the '(' to its matching ')'.
-        sig = ""
+        sig, j = _signature(raw_lines, lines, i, m.end() - 1)
+        # A declaration (extern block, trait item) ends in ';' before any '{'.
+        k = j - 1
+        tail = lines[k][lines[k].find(")") + 1 :] if k == i else lines[k]
+        while k < len(lines) and "{" not in tail and ";" not in tail:
+            k += 1
+            tail = lines[k] if k < len(lines) else "{"
+        if ";" in tail.split("{", 1)[0]:
+            i = k + 1
+            continue
+        end = _body_end(lines, j - 1)
+        fns.append(FnDef(path, rel, m.group(1), _split_params(sig), j - 1, end, raw_lines, lines))
+        i = j
+    return fns
+
+
+def _forwarded_arg(text: str, name: str) -> bool:
+    """`name` IS the argument, not something computed from it."""
+    n = re.escape(name)
+    return bool(
+        re.fullmatch(
+            rf"\s*(?:{n}(?:\s+as\s+[^,]+)?|{n}\s*\.\s*cast(?:_mut|_const)?(?:::<[^>]*>)?\(\)"
+            rf"|(?:\w+::)*opaque_ptr(?:_const)?\(\s*{n}\s*\))\s*",
+            text,
+            re.S,
+        )
+    )
+
+
+def _call_sites(body: str, name: str) -> list[tuple[str, int, int]]:
+    """(callee, argument index, offset) for each call taking `name` as an argument."""
+    out = []
+    for m in re.finditer(rf"(?<![\w.]){re.escape(name)}\b", body):
+        # The innermost unclosed '(' before the token.
         depth = 0
-        j = i
-        col = raw_lines[i].index("(", m.start())
-        done = False
-        while j < len(lines) and not done:
-            seg = raw_lines[j][col:] if j == i else lines[j]
-            for ch in seg:
-                if ch == "(":
+        k = m.start() - 1
+        while k >= 0:
+            c = body[k]
+            if c in ")]}":
+                depth += 1
+            elif c in "([{":
+                if depth == 0:
+                    break
+                depth -= 1
+            k -= 1
+        if k < 0 or body[k] != "(":
+            continue
+        call = CALL_RE.search(body[max(0, k - 160) : k])  # end-anchored: a window, not the prefix
+        if not call or call.group(2) in KEYWORDS:
+            continue
+        # Split the argument list at top-level commas up to its ')'.
+        args, cur, depth, q = [], "", 0, k + 1
+        idx = None
+        while q < len(body):
+            c = body[q]
+            if q == m.start():
+                idx = len(args)
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                if depth == 0:
+                    break
+                depth -= 1
+            if c == "," and depth == 0:
+                args.append(cur)
+                cur = ""
+            else:
+                cur += c
+            q += 1
+        args.append(cur)
+        if idx is not None and idx < len(args) and _forwarded_arg(args[idx], name):
+            out.append((call.group(2), idx, m.start()))
+    return out
+
+
+# `if <mode> != KernelMode { user } else { kernel }` and the `==` form. Only an
+# explicit comparison against kernel mode counts; anything subtler stays flagged.
+KERNEL_IF_RE = re.compile(
+    r"\bif\s+\(?\s*(\w*(?:mode|Mode)\w*)\s*(==|!=)\s*"
+    r"(?:0(?:i8|u8)?|KernelMode|KPROCESSOR_MODE::KernelMode)(?:\s+as\s+\w+)?\s*\)?\s*\{"
+)
+
+
+def _block_end(text: str, open_at: int) -> int:
+    depth = 0
+    for k in range(open_at, len(text)):
+        if text[k] == "{":
+            depth += 1
+        elif text[k] == "}":
+            depth -= 1
+            if depth == 0:
+                return k
+    return len(text) - 1
+
+
+def _kernel_only_spans(text: str) -> list[tuple[int, int]]:
+    """Character spans of `text` that run only for a kernel-mode caller, whose
+    pointers the C trusts without probing."""
+    spans = []
+    for m in KERNEL_IF_RE.finditer(text):
+        then_open = m.end() - 1
+        then_close = _block_end(text, then_open)
+        if m.group(2) == "==":
+            spans.append((then_open, then_close))
+            continue
+        e = re.match(r"\s*else\s*\{", text[then_close + 1 :])
+        if e:
+            else_open = then_close + e.end()
+            spans.append((else_open, _block_end(text, else_open)))
+        elif re.search(r"\breturn\b[^;{}]*;\s*$", text[then_open + 1 : then_close]):
+            # `if user { ..; return ..; }` with no else: what follows is the kernel arm.
+            depth = 0
+            for k in range(then_close + 1, len(text)):
+                if text[k] == "{":
                     depth += 1
-                    if depth == 1:
-                        continue
-                elif ch == ")":
-                    depth -= 1
+                elif text[k] == "}":
                     if depth == 0:
-                        done = True
+                        spans.append((then_close, k))
                         break
-                sig += ch
-            sig += " "
-            j += 1
-        params = {
-            n: _access_patterns(n) for n, ty in _split_params(sig) if POINTER_TYPE_RE.search(ty)
-        }
-        end = _body_end(lines, i)
-        body = _blank_addr_of(lines, j - 1, end)
-        tracked = dict(params)
-        for k in range(j - 1, end + 1):
-            code = body[k - (j - 1)]
-            rebind = re.match(r"\s*let\s+(?:mut\s+)?(\w+)\s*(?::[^=]*)?=\s*(.*)", code)
-            if rebind and rebind.group(1) in tracked:
-                rhs = rebind.group(2)
-                if not re.match(
-                    rf"\s*opaque_ptr(_const)?\(\s*{re.escape(rebind.group(1))}\s*\)", rhs
-                ):
-                    del tracked[rebind.group(1)]
-                    continue
-            if NOLINT_RE.search(raw_lines[k]):
+                    depth -= 1
+    return spans
+
+
+def _walk(fn: FnDef, names: set[str]):
+    """Direct raw accesses through `names` in fn's body, and the calls that pass one on.
+    Yields ("hit", name, line, text) and ("call", name, line, (callee, argidx))."""
+    body = _blank_addr_of(fn.lines, fn.body0, fn.end)
+    text = "\n".join(body)
+    starts = [0]
+    for ln in body[:-1]:
+        starts.append(starts[-1] + len(ln) + 1)
+    kernel_lines: set[int] = set()
+    for a, b in _kernel_only_spans(text):
+        first, last = text.count("\n", 0, a), text.count("\n", 0, b)
+        # The lines strictly inside the braces; the `} else {` line is shared.
+        kernel_lines.update(range(fn.body0 + first + 1, fn.body0 + last))
+
+    def scope_end(k: int, name: str) -> int:
+        """Last line of the block enclosing line k -- or of the block around THAT,
+        when this one is `if !name.is_null() { .. }`: past it, the name is either
+        null or what it was re-pointed at, so the capture covers the rest."""
+        pos = starts[k - fn.body0]
+        depth = 0
+        open_at = -1
+        for i in range(pos - 1, -1, -1):
+            if text[i] == "}":
+                depth += 1
+            elif text[i] == "{":
+                if depth == 0:
+                    open_at = i
+                    break
+                depth -= 1
+        n = re.escape(name)
+        guard = re.search(
+            rf"\bif\s+(?:!\s*{n}\s*\.is_null\(\)|{n}\s*!=\s*(?:(?:core::)?ptr::)?null(?:_mut)?\(\))\s*$",
+            text[:open_at],
+        )
+        if open_at >= 0 and guard:
+            pos = open_at
+        depth = 0
+        for i in range(pos + (1 if pos == open_at else 0), len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                if depth == 0:
+                    if pos == open_at:  # skip our own block's close, then the outer one
+                        pos, open_at = -1, -2
+                        continue
+                    return fn.body0 + text.count("\n", 0, i)
+                depth -= 1
+        return fn.end
+
+    # A rebind -- `let P = ..` or a plain `P = ..`, e.g. `prcl = addr_of_mut!(local)`
+    # after capturing into it -- ends tracking only until its enclosing block
+    # closes. Function-wide, one reassignment in one `match` arm (IntDefWindowProc's
+    # `lParam = ..` for WM_CONTEXTMENU) hid every other arm's raw access.
+    dead: dict[str, list[tuple[int, int]]] = {n: [] for n in names}
+    patterns = {n: _access_patterns(n) for n in names}
+    for k in range(fn.body0, fn.end + 1):
+        code = body[k - fn.body0]
+        rebind = re.match(r"\s*(?:let\s+(?:mut\s+)?)?(\w+)\s*(?::[^=]*)?=(?!=)\s*(.*)", code)
+        if rebind and rebind.group(1) in names:
+            n = rebind.group(1)
+            if not re.match(rf"\s*opaque_ptr(_const)?\(\s*{re.escape(n)}\s*\)", rebind.group(2)):
+                dead[n].append((k, scope_end(k, n)))
                 continue
-            for name, pats in tracked.items():
-                if any(p.search(code) for p in pats):
-                    hits.append((fn, name, k + 1, raw_lines[k].strip()))
-        i = end + 1
-    return hits
+        if NOLINT_RE.search(fn.raw_lines[k]) or k in kernel_lines:
+            continue
+        for name, pats in patterns.items():
+            if any(a <= k <= b for a, b in dead[name]):
+                continue
+            if any(p.search(code) for p in pats):
+                yield ("hit", name, k + 1, fn.raw_lines[k].strip())
+    for name in names:
+        for callee, idx, off in _call_sites(text, name):
+            line = fn.body0 + text.count("\n", 0, off)
+            if line in kernel_lines or any(a <= line <= b for a, b in dead[name]):
+                continue
+            if NOLINT_RE.search(fn.raw_lines[line]):
+                continue
+            yield ("call", name, line + 1, (callee, idx))
+
+
+FN_NAME_RE = re.compile(r"\bfn\s+(\w+)[^;{]*\{")
+
+
+class Index:
+    """Name -> candidate files from a cheap regex, parsed only when a call needs one.
+    Parsing every file in the tree costs ~45s; the calls a user pointer reaches name
+    a few dozen functions."""
+
+    def __init__(self, files: list[tuple[Path, str]], texts: dict[Path, str]):
+        self.files_for: dict[str, list[tuple[Path, str]]] = {}
+        for path, rel in files:
+            for name in set(FN_NAME_RE.findall(texts[path])):
+                self.files_for.setdefault(name, []).append((path, rel))
+        self.parsed: dict[Path, list[FnDef]] = {}
+
+    def defs(self, path: Path, rel: str) -> list[FnDef]:
+        if path not in self.parsed:
+            self.parsed[path] = parse_file(path, rel)
+        return self.parsed[path]
+
+    def resolve(self, caller: FnDef, name: str) -> FnDef | None:
+        """The one definition in the caller's crate, else the one in the tree. Narrowed
+        on the regex index before parsing: helpers every crate defines its own copy of
+        would otherwise parse most of the tree."""
+        where = self.files_for.get(name, [])
+        mine = [(p, r) for p, r in where if r.split("/src/", 1)[0] == caller.crate]
+        if not mine and len(where) != 1:
+            return None
+        cands = [f for p, r in (mine or where) for f in self.defs(p, r) if f.name == name]
+        return cands[0] if len(cands) == 1 else None
+
+
+MAX_DEPTH = 6
+
+
+def scan_syscall(fn: FnDef, index: Index) -> list[tuple[str, str, int, str, str]]:
+    """(param, chain, line, text, rel) rows for one syscall, its callees included."""
+    params = [n for n, ty in fn.params if POINTER_TYPE_RE.search(ty)]
+    rows = []
+    seen: set[tuple[str, str, str]] = set()
+    # (function, its tracked param, the syscall param it came from, chain so far)
+    work = [(fn, p, p, "") for p in params]
+    while work:
+        cur, name, origin, chain = work.pop()
+        key = (cur.rel, cur.name, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        for kind, _name, line, extra in _walk(cur, {name}):
+            if kind == "hit":
+                rows.append((origin, chain, line, extra, cur.rel))
+            elif chain.count("->") < MAX_DEPTH:
+                callee = index.resolve(cur, extra[0])
+                if callee is None or callee is fn or extra[1] >= len(callee.params):
+                    continue
+                pname, pty = callee.params[extra[1]]
+                if not POINTER_TYPE_RE.search(pty):
+                    continue
+                work.append((callee, pname, origin, f"{chain} -> {callee.name}({pname})"))
+    return rows
+
+
+def scan_tree(files: list[tuple[Path, str]]) -> dict[str, list[tuple[int, str]]]:
+    texts: dict[Path, str] = {}
+    for path, _ in files:
+        try:
+            texts[path] = path.read_text(errors="replace")
+        except OSError:
+            texts[path] = ""
+    index = Index(files, texts)
+    rows: dict[str, list[tuple[int, str]]] = {}
+    for path, rel in files:
+        if 'extern "system" fn Nt' not in texts[path]:
+            continue
+        for f in index.defs(path, rel):
+            if not f.name.startswith("Nt") or not _is_syscall(f):
+                continue
+            for param, chain, line, text, where in scan_syscall(f, index):
+                tail = "" if not chain else f" {chain} @{where}"
+                rows.setdefault(f"{f.rel}: {f.name} {param}{tail}", []).append((line, text))
+    return rows
+
+
+def _is_syscall(f: FnDef) -> bool:
+    for k in range(max(0, f.body0 - 40), f.body0 + 1):
+        m = SYSCALL_RE.search(f.raw_lines[k])
+        if m and m.group(1) == f.name and not f.raw_lines[k].lstrip().startswith("//"):
+            return True
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -269,7 +571,7 @@ def main(argv: list[str] | None = None) -> int:
             files.extend(sorted(source_files(p)))
         elif p.suffix == ".rs":
             files.append(p)
-    rows: dict[str, list[tuple[int, str]]] = {}
+    picked: list[tuple[Path, str]] = []
     for f in files:
         try:
             rel = f.resolve().relative_to(REPO).as_posix()
@@ -277,8 +579,8 @@ def main(argv: list[str] | None = None) -> int:
             rel = f.as_posix()
         if any(part in rel for part in SKIP_DIR_PARTS) or "bindgen" in f.name:
             continue
-        for fn, name, line, text in scan_file(f, rel):
-            rows.setdefault(f"{rel}: {fn} {name}", []).append((line, text))
+        picked.append((f, rel))
+    rows = scan_tree(picked)
     for row in sorted(rows):
         print(row)
         if args.lines and not args.lint:

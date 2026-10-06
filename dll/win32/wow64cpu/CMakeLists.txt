@@ -237,4 +237,28 @@ if(_wow64_guest_ok)
     endif()
 endif()
 
+# hello64.exe — the BTCpu64 M1 guest (docs/engineering/wow64-x64-guest-design.md,
+# Fork B). On arm64 it runs under FEX; HERE it runs natively, and that is the
+# point: the same binary passing on real x86-64 hardware semantics is the oracle
+# that the guest is right, independently of the emulator. An x64 exe is not a
+# WoW64 guest, so system32, and it needs no i386 closure — hence outside both
+# the ladder set and _wow64_guest_ok. Same configure-time EXISTS caveat as above,
+# with the same nearest-existing-ancestor dependency fix.
+# The rest of the x86-64 ladder (M2) rides the same rule: the 32-bit ladder's
+# sources rebuilt for x86-64 by build-hello-compute.sh, each staged if built.
+foreach(_x64_guest hello64 gui64 win64 file64 async64 marshal64 fault64 thread64
+                   selfmod64 reg64 spawn64 apc64)
+    set(_x64_exe ${REACTOS_SOURCE_DIR}/build-fex-hello/${_x64_guest}.exe)
+    set(_dep ${_x64_exe})
+    while(NOT EXISTS ${_dep})
+        get_filename_component(_dep ${_dep} DIRECTORY)
+    endwhile()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_dep})
+    if(EXISTS ${_x64_exe} AND NOT VIBEOS_WOW64_NO_STAGE)
+        add_cd_file(FILE ${_x64_exe} DESTINATION reactos/system32 FOR livecd)
+    else()
+        message(STATUS "BTCpu64: ${_x64_exe} not staged — ${_x64_guest} will no-op")
+    endif()
+endforeach()
+
 endif()

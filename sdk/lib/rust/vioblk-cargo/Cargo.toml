@@ -1,0 +1,20 @@
+# Cargo-driven `vioblk.sys` link (i386 + amd64 + arm64): the virtio-blk SCSIPORT miniport.
+# build.rs is a manifest for the shared `reactos-link` engine; the Rust body is the
+# `vioblk-rust` staticlib, whose `DriverEntry` is the PE entry point. Cargo-driven rather
+# than a cmake staticlib link for the same reason as netstack: `virtio-drivers` pulls in
+# `zerocopy`, whose f32/f64-by-value functions are an ABI error on i686 without SSE — the
+# i386 leg needs the build-std soft-float kernel target (i686-kernel.json).
+
+[package]
+name = "vioblk-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "vioblk"
+path = "src/main.rs"
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

@@ -64,6 +64,78 @@ static volatile ULONG g_NParams;
 static volatile ULONG g_P0, g_P1;
 static volatile ULONG g_Ebx, g_Esi, g_Edi;
 
+#ifdef _WIN64
+/* fault64.exe: the same rungs one width up. x64 has no fs:[0] chain — a frame
+ * handler is named by the function's unwind info (.pdata/.xdata) and found by
+ * the guest's RtlDispatchException walking those tables. So FaultTarget is a
+ * real SEH function whose handler is Fault32Handler, and rung 1 additionally
+ * proves the guest dispatcher unwinds .pdata correctly. rbx/rsi/rdi are
+ * nonvolatile in the x64 ABI too, so the marker check carries over as is. */
+EXCEPTION_DISPOSITION Fault32Handler(EXCEPTION_RECORD *, void *, CONTEXT *, void *);
+ULONG FaultTarget(void);
+void FaultRecover(void);
+__asm__(
+    ".text\n"
+    ".globl FaultTarget\n"
+    ".def FaultTarget; .scl 2; .type 32; .endef\n"
+    ".seh_proc FaultTarget\n"
+    "FaultTarget:\n"
+    "    pushq %rbx\n"
+    "    .seh_pushreg %rbx\n"
+    "    pushq %rsi\n"
+    "    .seh_pushreg %rsi\n"
+    "    pushq %rdi\n"
+    "    .seh_pushreg %rdi\n"
+    "    subq $32, %rsp\n"
+    "    .seh_stackalloc 32\n"
+    "    .seh_endprologue\n"
+    "    .seh_handler Fault32Handler, @except\n"
+    "    movl $0xF00D0001, %ebx\n"
+    "    movl $0xF00D0002, %esi\n"
+    "    movl $0xF00D0003, %edi\n"
+    "    movl 0x0, %eax\n"         /* AV: read absolute address 0 */
+    "    xorl %eax, %eax\n"        /* reached only if resumed WITHOUT fixup */
+    "    jmp 1f\n"
+    ".globl FaultRecover\n"
+    "FaultRecover:\n"
+    "    movl $0x1234, %eax\n"
+    "1:\n"
+    "    addq $32, %rsp\n"
+    "    popq %rdi\n"
+    "    popq %rsi\n"
+    "    popq %rbx\n"
+    "    ret\n"
+    ".seh_endproc\n"
+    /* CallInFrame(Fn, a1, a2, a3, a4) = Fn(a1, a2, a3, a4) with Fault32Handler
+     * as the frame handler — what the i386 build gets from the fs:[0] record
+     * spanning start(). Rungs 2-3 call through it, so a raise or a debug print
+     * has OUR handler on the stack exactly as it does on i386. */
+    ".globl CallInFrame\n"
+    ".def CallInFrame; .scl 2; .type 32; .endef\n"
+    ".seh_proc CallInFrame\n"
+    "CallInFrame:\n"
+    "    subq $40, %rsp\n"
+    "    .seh_stackalloc 40\n"
+    "    .seh_endprologue\n"
+    "    .seh_handler Fault32Handler, @except\n"
+    "    movq %rcx, %r10\n"
+    "    movq %rdx, %rcx\n"
+    "    movq %r8, %rdx\n"
+    "    movq %r9, %r8\n"
+    "    movq 80(%rsp), %r9\n"     /* a4: 40 (ours) + 8 (ret) + 32 (home) */
+    "    callq *%r10\n"
+    "    nop\n"                    /* keep the return address inside the frame */
+    "    addq $40, %rsp\n"
+    "    ret\n"
+    ".seh_endproc\n");
+ULONG_PTR CallInFrame(void *Fn, ULONG_PTR A1, ULONG_PTR A2, ULONG_PTR A3, ULONG_PTR A4);
+#define CTX_PC(c) ((c)->Rip)
+#define CTX_SP(c) ((c)->Rsp)
+#define CTX_BX(c) ((c)->Rbx)
+#define CTX_SI(c) ((c)->Rsi)
+#define CTX_DI(c) ((c)->Rdi)
+#define GUEST_PC_LIMIT 0x00007FFFFFFF0000ull
+#else
 /* Fault + recovery stubs: exact instruction bytes under our control so the
  * handler can retarget Eip without decoding lengths. FaultTarget returns the
  * recovery stub's eax (0x1234) only if the handler redirected Eip there. */
@@ -93,9 +165,20 @@ __asm__(
     "    popl %ebx\n"
     "    ret\n");
 
+#define CTX_PC(c) ((c)->Eip)
+#define CTX_SP(c) ((c)->Esp)
+#define CTX_BX(c) ((c)->Ebx)
+#define CTX_SI(c) ((c)->Esi)
+#define CTX_DI(c) ((c)->Edi)
+#define GUEST_PC_LIMIT 0x80000000u
+#endif
+
 /* i386 SEH handler ABI: cdecl(ExceptionRecord, EstablisherFrame, Context,
  * DispatcherContext) -> EXCEPTION_DISPOSITION. */
-static EXCEPTION_DISPOSITION __cdecl
+#ifndef _WIN64
+static
+#endif
+EXCEPTION_DISPOSITION __cdecl
 Fault32Handler(EXCEPTION_RECORD *Rec, void *Frame, CONTEXT *Ctx, void *Disp)
 {
     (void)Frame; (void)Disp;
@@ -105,14 +188,19 @@ Fault32Handler(EXCEPTION_RECORD *Rec, void *Frame, CONTEXT *Ctx, void *Disp)
     g_NParams = Rec->NumberParameters;
     g_P0 = Rec->NumberParameters > 0 ? (ULONG)Rec->ExceptionInformation[0] : 0xEE;
     g_P1 = Rec->NumberParameters > 1 ? (ULONG)Rec->ExceptionInformation[1] : 0xEE;
-    g_Ebx = Ctx->Ebx;
-    g_Esi = Ctx->Esi;
-    g_Edi = Ctx->Edi;
+    g_Ebx = (ULONG)CTX_BX(Ctx);
+    g_Esi = (ULONG)CTX_SI(Ctx);
+    g_Edi = (ULONG)CTX_DI(Ctx);
     if (Rec->ExceptionCode == 0xC0000005)
-        Ctx->Eip = (ULONG)(ULONG_PTR)FaultRecover; /* skip the faulting insn */
+        CTX_PC(Ctx) = (ULONG_PTR)FaultRecover; /* skip the faulting insn */
     return ExceptionContinueExecution;
 }
 
+#ifdef _WIN64
+/* No chain to link: FaultTarget's unwind info names the handler. */
+static void PushFrame(FAULT32_EXCREG *Reg) { (void)Reg; }
+static void PopFrame(FAULT32_EXCREG *Reg) { (void)Reg; }
+#else
 /* NOTE: the registration record must live ON THE THREAD STACK —
  * RtlDispatchException validates fs:[0] entries against the TEB stack
  * limits and skips out-of-stack records. */
@@ -129,6 +217,8 @@ static void PopFrame(FAULT32_EXCREG *Reg)
 {
     __asm__ __volatile__("movl %0, %%fs:0" : : "r"(Reg->Next) : "memory");
 }
+
+#endif
 
 /* Rung 5's landing site. Reached ONLY by SetThreadContext redirecting Eip here,
  * never by a call — so it must not return. Esp on arrival is whatever rung 4's
@@ -154,11 +244,12 @@ typedef struct _FAULT32_CTXBUF
 
 #define FAULT32_CANARY(i) (0xC0DE0000u + (ULONG)(i))
 
-int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
+int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) */
 {
     FAULT32_EXCREG Reg; /* on-stack: see PushFrame note */
     FAULT32_CTXBUF B;
-    ULONG MyEsp, i;
+    ULONG_PTR MyEsp;
+    ULONG i;
     ULONG Ret;
 
     Say("[FAULT32] start\n");
@@ -166,7 +257,11 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 
     /* -- Rung 1: hardware AV -> guest SEH -> resume ----------------------- */
     Ret = 0;
+#ifdef _WIN64
+    Ret = FaultTarget();
+#else
     __asm__ __volatile__("call _FaultTarget" : "=a"(Ret) : : "ecx", "edx", "memory");
+#endif
     if (Ret != 0x1234)
         { PopFrame(&Reg); Say("[FAULT32] rung1 FAIL: no recovery\n"); ExitProcess(0xBAF1); }
     if (g_Hits != 1 || g_Code != 0xC0000005)
@@ -180,14 +275,22 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     /* -- Rung 2: software raise -> guest SEH -> continue ------------------ */
     {
         ULONG_PTR Args[2] = { 0xAB, 0xCD };
+#ifdef _WIN64
+        CallInFrame((void *)RaiseException, 0xE0F00001, 0 /* continuable */, 2, (ULONG_PTR)Args);
+#else
         RaiseException(0xE0F00001, 0 /* continuable */, 2, Args);
+#endif
         if (g_Hits != 2 || g_Code != 0xE0F00001 || g_P0 != 0xAB || g_P1 != 0xCD)
             { PopFrame(&Reg); Say("[FAULT32] rung2 FAIL: raise not seen\n"); ExitProcess(0xBAF4); }
     }
     Say("[FAULT32] rung2 PASS: RaiseException caught + continued\n");
 
     /* -- Rung 3: OutputDebugStringA consumed, NOT dispatched to our SEH --- */
+#ifdef _WIN64
+    CallInFrame((void *)OutputDebugStringA, (ULONG_PTR)"[FAULT32] rung3 ODS text\n", 0, 0, 0);
+#else
     OutputDebugStringA("[FAULT32] rung3 ODS text\n");
+#endif
     if (g_Hits != 2)
         { PopFrame(&Reg); Say("[FAULT32] rung3 FAIL: DBG_PRINTEXCEPTION hit guest SEH\n"); ExitProcess(0xBAF5); }
     Say("[FAULT32] rung3 PASS: ODS consumed\n");
@@ -196,7 +299,11 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     PopFrame(&Reg);
 
     /* -- Rung 4: GetThreadContext(self) -> real guest CONTEXT, no overrun ---- */
+#ifdef _WIN64
+    __asm__ __volatile__("movq %%rsp, %0" : "=r"(MyEsp));
+#else
     __asm__ __volatile__("movl %%esp, %0" : "=r"(MyEsp));
+#endif
     for (i = 0; i < 8; i++)
         B.Canary[i] = FAULT32_CANARY(i);
     B.Ctx.ContextFlags = CONTEXT_FULL; /* control | integer | segments */
@@ -208,9 +315,9 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
     /* Esp must be a real guest stack address just below ours (the syscall is a
      * few frames deeper), and Eip a real guest code address. A host CONTEXT
      * reinterpreted at i386 offsets fails both. */
-    if (B.Ctx.Esp == 0 || B.Ctx.Esp >= MyEsp || (MyEsp - B.Ctx.Esp) > 0x4000)
+    if (CTX_SP(&B.Ctx) == 0 || CTX_SP(&B.Ctx) >= MyEsp || (MyEsp - CTX_SP(&B.Ctx)) > 0x4000)
         { Say("[FAULT32] rung4 FAIL: implausible Esp\n"); ExitProcess(0xBAF7); }
-    if (B.Ctx.Eip == 0 || B.Ctx.Eip >= 0x80000000u)
+    if (CTX_PC(&B.Ctx) == 0 || CTX_PC(&B.Ctx) >= GUEST_PC_LIMIT)
         { Say("[FAULT32] rung4 FAIL: implausible Eip\n"); ExitProcess(0xBAF7); }
     if ((B.Ctx.ContextFlags & CONTEXT_CONTROL) != CONTEXT_CONTROL)
         { Say("[FAULT32] rung4 FAIL: control state not reported\n"); ExitProcess(0xBAF7); }
@@ -218,7 +325,7 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
 
     /* -- Rung 5: SetThreadContext(self) redirects Eip -- never returns -------- */
     B.Ctx.ContextFlags = CONTEXT_CONTROL;
-    B.Ctx.Eip = (ULONG)(ULONG_PTR)&Fault32Landed;
+    CTX_PC(&B.Ctx) = (ULONG_PTR)&Fault32Landed;
     SetThreadContext(GetCurrentThread(), &B.Ctx);
 
     /* Reaching here at all means the redirect did not take effect. */

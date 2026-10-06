@@ -1928,8 +1928,8 @@ pub unsafe extern "system" fn NtLockFile(
             Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; }
         }
     } else {
-        CapturedByteOffset = *ByteOffset;
-        CapturedLength = *Length;
+        CapturedByteOffset = match ntkrnl_sys::probe::read_back(ByteOffset) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
+        CapturedLength = match ntkrnl_sys::probe::read_back(Length) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
     }
 
     if EventHandle != core::ptr::null_mut() {
@@ -2817,10 +2817,10 @@ pub unsafe extern "system" fn NtReadFile(
         }
     } else {
         if !ByteOffset.is_null() {
-            CapturedByteOffset = *ByteOffset;
+            CapturedByteOffset = match ntkrnl_sys::probe::read_back(ByteOffset) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
         }
         if !Key.is_null() {
-            CapturedKey = *Key;
+            CapturedKey = match ntkrnl_sys::probe::read_back(Key) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
         }
     }
 
@@ -3432,8 +3432,8 @@ pub unsafe extern "system" fn NtUnlockFile(
             }
         }
     } else {
-        CapturedByteOffset = *ByteOffset;
-        CapturedLength = *Length;
+        CapturedByteOffset = match ntkrnl_sys::probe::read_back(ByteOffset) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
+        CapturedLength = match ntkrnl_sys::probe::read_back(Length) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
     }
 
     if (*FileObject).Flags & FO_DIRECT_DEVICE_OPEN != 0 {
@@ -3667,14 +3667,18 @@ pub unsafe extern "system" fn NtWriteFile(
         }
 
         if !Key.is_null() {
-            CapturedKey = *Key;
+            // C: ProbeForReadUlong(Key) — the translation read it unprobed.
+            match probe_read_user::<ULONG>(Key, PreviousMode) {
+                Ok(v) => CapturedKey = v,
+                Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; }
+            }
         }
     } else {
         if !ByteOffset.is_null() {
-            CapturedByteOffset = *ByteOffset;
+            CapturedByteOffset = match ntkrnl_sys::probe::read_back(ByteOffset) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
         }
         if !Key.is_null() {
-            CapturedKey = *Key;
+            CapturedKey = match ntkrnl_sys::probe::read_back(Key) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
         }
     }
 

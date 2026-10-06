@@ -152,6 +152,47 @@ static DWORD Run(void)
 
     Cleanup(); /* start from a known-empty hive regardless of a prior boot */
 
+#ifdef _WIN64
+    /* reg64.exe: the same views from the OTHER side. An x86-64 process is not a
+     * WoW64 process -- on Windows ARM64 as much as on amd64 -- so its default
+     * view is the native one, and Wow6432Node is reachable only by asking for
+     * KEY_WOW64_32KEY. Under FEX on arm64 this is the check that the kernel
+     * did NOT mistake an emulated x86-64 process for a 32-bit one. */
+
+    /* ---- rungs 1-2: a default-view create lands in the NATIVE view ------- */
+    rc = MakeKey(PROBE_KEY, 0, MARK_NATIVE);
+    if (rc != ERROR_SUCCESS) {
+        SayHex("[reg64] rung1 create(default view) failed rc", (DWORD)rc);
+        return R32_FAIL_CREATE32;
+    }
+    Say("[reg64] rung1 default-view create OK\n");
+
+    mark = 0;
+    rc = ReadMark(PROBE_KEY, KEY_WOW64_64KEY, &mark);
+    if (rc != ERROR_SUCCESS || mark != MARK_NATIVE) {
+        SayHex("[reg64] rung2 default view was not the native view, rc", (DWORD)rc);
+        return R32_FAIL_NOT_IN_NODE;
+    }
+    Say("[reg64] rung2 default view is native OK\n");
+
+    /* ---- rung 3: and it must NOT have been redirected -------------------- */
+    if (KeyExists(PROBE_IN_NODE, KEY_WOW64_64KEY)) {
+        Say("[reg64] rung3 key landed in Wow6432Node - a 64-bit process was redirected\n");
+        return R32_FAIL_LEAKED_NATIVE;
+    }
+    Say("[reg64] rung3 Wow6432Node clean OK\n");
+
+    /* ---- rung 4: KEY_WOW64_32KEY reaches Wow6432Node from 64-bit code ---- */
+    rc = MakeKey(PROBE_KEY, KEY_WOW64_32KEY, MARK_32);
+    mark = 0;
+    if (rc != ERROR_SUCCESS || ReadMark(PROBE_IN_NODE, KEY_WOW64_64KEY, &mark) != ERROR_SUCCESS ||
+        mark != MARK_32) {
+        SayHex("[reg64] rung4 KEY_WOW64_32KEY create missed Wow6432Node, rc", (DWORD)rc);
+        return R32_FAIL_DOUBLE_SPLICE;
+    }
+    Say("[reg64] rung4 explicit 32-bit view OK\n");
+
+#else
     /* ---- rungs 1-2: a default-view create must land in Wow6432Node ------- */
     rc = MakeKey(PROBE_KEY, 0, MARK_32);
     if (rc != ERROR_SUCCESS) {
@@ -190,6 +231,8 @@ static DWORD Run(void)
         return R32_FAIL_DOUBLE_SPLICE;
     }
     Say("[reg32] rung4 no double-splice OK\n");
+
+#endif
 
     /* ---- rung 5: a 64-bit-only key still reads from the 32-bit view ------
      * NATIVE_ONLY exists only natively (hivesft.inf seeds SOFTWARE\Wow6432Node
@@ -257,7 +300,7 @@ static DWORD Run(void)
     return R32_PASS;
 }
 
-int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
+int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) */
 {
     DWORD verdict = Run();
     SayHex("[reg32] verdict", verdict);

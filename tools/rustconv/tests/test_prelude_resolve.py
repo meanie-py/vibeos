@@ -226,3 +226,28 @@ def test_externs_block_groups_by_abi_and_keeps_aliases(tmp_path):
     prelude.write_text("")
     assert pr.write_externs(prelude, text)
     assert pr.existing_externs(prelude) == {"VfatFormat", "iswspace", "InstallFat12BootCode"}
+
+
+def test_unresolved_keeps_the_namespace(monkeypatch, tmp_path):
+    import json as _json
+    import subprocess as _sp
+
+    msgs = [
+        "cannot find type `FILE_SYSTEM` in this scope",
+        "expected type, found constant `PFOO`",
+        "cannot find value `STATUS_X` in this scope",
+        "cannot find struct, variant or union type `_ROOT_KEY` in this scope",
+    ]
+    out = "\n".join(
+        _json.dumps({"reason": "compiler-message", "message": {"message": m}}) for m in msgs
+    )
+    monkeypatch.setattr(
+        _sp, "run", lambda *a, **k: _sp.CompletedProcess(a, 101, stdout=out, stderr="")
+    )
+    got = pr.unresolved("c", "t", tmp_path, tmp_path)
+    assert got == {
+        "FILE_SYSTEM": {"type"},
+        "PFOO": {"type"},
+        "STATUS_X": {"value"},
+        "_ROOT_KEY": {"type"},
+    }

@@ -1,0 +1,19 @@
+# Cargo-driven link of the BIOS FreeLDR body (`freeldr_pe`, the PE half of
+# `freeldr.sys`). BIOS sibling of `uefildr-cargo`. The 16-bit real-mode stub
+# (`frldr16.bin`) and the loader's entry/BIOS-call asm are assembled by cmake
+# (boot/freeldr/freeldr/pcat.cmake) and linked here; cmake concatenates
+# frldr16.bin + freeldr_pe.exe into freeldr.sys.
+
+[package]
+name = "freeldr-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "freeldr"
+path = "src/main.rs"
+
+[dependencies]
+
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

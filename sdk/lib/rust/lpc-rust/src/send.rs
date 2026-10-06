@@ -450,7 +450,11 @@ pub unsafe extern "system" fn NtRequestPort(
         }
         CapturedLpcRequest = Staging.assume_init();
     } else {
-        CapturedLpcRequest = *LpcRequest;
+        // Kernel-mode caller: no probe, but still one fault-tolerant fetch.
+        CapturedLpcRequest = match ntkrnl_sys::probe::read_back(LpcRequest as *const PORT_MESSAGE) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
     }
 
     // From the CAPTURED copy, as the C does (send.c:481). This used to read
@@ -810,7 +814,11 @@ pub unsafe extern "system" fn NtRequestWaitReplyPort(
             return Status;
         }
     } else {
-        CapturedLpcRequest = *LpcRequest;
+        // Kernel-mode caller: no probe, but still one fault-tolerant fetch.
+        CapturedLpcRequest = match ntkrnl_sys::probe::read_back(LpcRequest as *const PORT_MESSAGE) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
         Status = LpcpVerifyMessageDataInfo(LpcRequest, core::ptr::addr_of_mut!(NumberOfDataEntries));
         if Status < 0 {
             return Status;

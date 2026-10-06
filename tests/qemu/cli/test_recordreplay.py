@@ -1244,17 +1244,27 @@ def test_boundaries_handle_a_variable_length_random_event(tmp_path):
     assert rr.instruction_boundaries(_replay_log(tmp_path, body)) == [3, 7]
 
 
-def test_boundaries_handle_an_async_bh_event(tmp_path):
-    body = _insn(3) + struct.pack(">BBBQ", 8, 0, 1, 999) + _insn(4)
+def test_boundaries_handle_an_async_block_event(tmp_path):
+    # QEMU writes EVENT_ASYNC + kind (BLOCK = 3 + 5) then the u64 id -- nothing else.
+    body = _insn(3) + struct.pack(">BQ", 8, 999) + b"\x1f\x1f" + _insn(4)
     assert rr.instruction_boundaries(_replay_log(tmp_path, body)) == [3, 7]
 
 
-def test_boundaries_refuse_an_unknown_async_kind_rather_than_going_short(tmp_path):
+def test_boundaries_handle_a_recorded_network_packet(tmp_path):
+    """filter-replay's NET event: u8 id, u32 flags, u32 length, the frame. The
+    walk must step over a variable-length packet without losing sync."""
+    frame = bytes.fromhex("ffffffffffff525400123456") + bytes(30)
+    net = struct.pack(">BBII", 3 + 6, 0, 0, len(frame)) + frame
+    body = _insn(3) + net + _insn(4)
+    assert rr.instruction_boundaries(_replay_log(tmp_path, body)) == [3, 7]
+
+
+def test_boundaries_refuse_an_unknown_input_kind_rather_than_going_short(tmp_path):
     """The failure mode this guards is not a crash but a SHORT list: a walk that
     loses sync still returns plausible numbers, and a caller would then snap a
     break to an icount that aborts the replay."""
-    body = _insn(3) + struct.pack(">BBB", 8, 4, 1) + _insn(4)
-    with pytest.raises(rr.RecordReplayError, match="no known payload width"):
+    body = _insn(3) + struct.pack(">BI", 3 + 2, 77) + _insn(4)
+    with pytest.raises(rr.RecordReplayError, match="input event kind 77 unknown"):
         rr.instruction_boundaries(_replay_log(tmp_path, body))
 
 

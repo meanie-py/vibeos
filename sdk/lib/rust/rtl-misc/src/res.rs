@@ -159,7 +159,9 @@ pub unsafe extern "C" fn find_entry_by_name(
     root: *mut core::ffi::c_void,
     want_dir: i32,
 ) -> PIMAGE_RESOURCE_DIRECTORY {
-    if ((name as usize) & 0xFFFF0000) == 0 {
+    // Exceeds the C (`name & 0xFFFF0000`), which on 64-bit tests bits 16-31
+    // only: a name string at ...0000_xxxx was looked up as numeric id xxxx.
+    if (name as usize) & !0xFFFF == 0 {
         return find_entry_by_id(dir, ((name as usize) & 0xFFFF) as u16, root, want_dir);
     }
 

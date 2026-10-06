@@ -1578,9 +1578,19 @@ def scan_preamble(
             continue
         if any(a for a in arms):
             continue  # inside a decidably-dead arm
+        if _PACKING_RE.search(line):
+            # A packing include opens a region that the TU closes AFTER its prologue
+            # (partlist.c: `#include <pshpack1.h>`, two typedefs, `#include <poppack.h>`), so
+            # the prologue holds only the push. Carried into the module's merged wrapper it
+            # packed every header after it: setuplib's island laid out USETUP_DATA,
+            # FILE_SYSTEM and 60-odd more `#[repr(C, packed)]`, which C never does.
+            continue
         if kind in ("include", "define", "undef"):
             keep.append(line.strip())
     return keep, conditional
+
+
+_PACKING_RE = re.compile(r"#\s*include\s*[<\"](?:pshpack\d*|poppack)\.h[>\"]|#\s*pragma\s+pack\b")
 
 
 def resolve_include(inc: Include, includer: Path, env: IncludeEnv) -> Path | None:

@@ -265,7 +265,11 @@ pub unsafe extern "C" fn cnt_vsnwscanf(
 use crate::core_rs::env as cenv;
 use crate::core_rs::mbcp;
 
+#[cfg(not(feature = "small-env"))]
 const MAXE: usize = 48; // max env entries (arena bound; realloc-fail unfuzzed)
+// The boot loaders never set an environment; see cnt-rust's `small-env` feature.
+#[cfg(feature = "small-env")]
+const MAXE: usize = 2;
 const EW: usize = 384; // u16 units per entry incl '=' and NUL
 const EN: usize = 384; // bytes per entry incl '=' and NUL
 

@@ -99,6 +99,18 @@ fn write_back_stores_and_survives_a_bad_page() {
 }
 
 #[test]
+fn read_back_loads_and_survives_a_bad_page() {
+    unsafe {
+        let value = 0x1122_3344_5566_7788u64;
+        assert_eq!(read_back(&value), Ok(value));
+        // Unaligned is fine: the C's raw load under _SEH2_TRY had no alignment rule.
+        let bytes = [0u8, 1, 2, 3, 4];
+        assert_eq!(read_back(bytes.as_ptr().add(1) as *const u32), Ok(u32::from_le_bytes([1, 2, 3, 4])));
+        assert_eq!(read_back(0x1000usize as *const u32), Err(STATUS_ACCESS_VIOLATION));
+    }
+}
+
+#[test]
 fn output_bounce_copies_in_rebases_and_copies_out() {
     unsafe {
         let mut user = [0u8; 64];

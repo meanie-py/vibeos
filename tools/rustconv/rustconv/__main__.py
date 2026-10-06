@@ -133,6 +133,8 @@ from .function_prompt import (
 from .function_resolver import resolve_function
 from .kernel_com import generate_owner
 from .kernel_preamble import derive_kernel_preamble
+from .local_macros import expand as expand_macros
+from .local_macros import module_macros
 from .macro_authority import function_like_macros, string_literal_macros
 from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
@@ -2911,6 +2913,26 @@ def cmd_translate(args):
 
         fact_seal_enabled = bool(getattr(args, "seal_facts", False))
         call_seal_enabled = bool(getattr(args, "seal_calls", False))
+        expand_dir = getattr(args, "expand_local_macros", None)
+        if expand_dir:
+            # BEFORE everything else reads the body: the seals, the audits and the response
+            # cache key all see the expanded C, so an expanded body is a cache miss (bought
+            # once) and never a replay of the unexpanded translation.
+            mdir = Path(expand_dir)
+            mdir = mdir if mdir.is_absolute() else REACTOS_ROOT / mdir
+            mdefs, _ = module_macros(sorted([*mdir.rglob("*.h"), *mdir.rglob("*.c")]), REACTOS_ROOT)
+            expanded_names: set[str] = set()
+            new_deps = []
+            for dep in sorted_deps:
+                text, used = expand_macros(dep.body_text, mdefs)
+                expanded_names |= used
+                new_deps.append(replace(dep, body_text=text) if used else dep)
+            sorted_deps = new_deps
+            if expanded_names:
+                print(
+                    f"  [macros] expanded in the C: {', '.join(sorted(expanded_names))}",
+                    file=sys.stderr,
+                )
         model_bodies = {dep.name: strip_debug_statements(dep.body_text) for dep in sorted_deps}
         # FIRST of the three, so the fact seal sees an identifier where a literal was and
         # never has to reason about string contents, and so a wide literal's own array
@@ -4394,6 +4416,10 @@ def cmd_translate(args):
                         )
                         if m and m.group(1) in names:
                             dropping, drop_depth = True, 0
+                            # Its attributes go with it: an orphaned `#[no_mangle]` would
+                            # attach itself to whatever item comes next.
+                            while kept and re.match(r"\s*#\[", kept[-1]):
+                                kept.pop()
                         else:
                             kept.append(ln)
                     if dropping:
@@ -5708,6 +5734,17 @@ def main():
         "terminator; five modules shipped one of those. Plain C only: shell32 --cpp-com has "
         "its own frozen lowering. 98%% of the tree's literals seal; the rest are reported as "
         "UNSEALED WIDE LITERAL audit findings rather than passed off as protected.",
+    )
+    p.add_argument(
+        "--expand-local-macros",
+        dest="expand_local_macros",
+        metavar="MODULE_DIR",
+        default=None,
+        help="Expand the module's OWN function-like macros (and object-like aliases of a member "
+        "or function) in each C body before it is sealed and sent, so the model translates what "
+        "the compiler sees. A ported macro_rules! body has one typing for every call site, where "
+        "C promotes silently per site; setuplib's macro bodies were ~20 of its last ~100 errors. "
+        "Header constants stay names. Changes the C text, so affected bodies are bought anew.",
     )
     p.add_argument(
         "--retry-rejects",

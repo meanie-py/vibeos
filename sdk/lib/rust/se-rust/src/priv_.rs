@@ -557,8 +557,15 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
             return s;
         }
 
-        privilege_count = (*required_privileges).PrivilegeCount;
-        privilege_control = (*required_privileges).Control;
+        // Each field read ONCE, fault-tolerantly; the C's __except returns the code.
+        privilege_count = match read_back(core::ptr::addr_of!((*required_privileges).PrivilegeCount)) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
+        privilege_control = match read_back(core::ptr::addr_of!((*required_privileges).Control)) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
 
         if (core::mem::size_of::<PRIVILEGE_SET>()
             - core::mem::size_of::<[LUID_AND_ATTRIBUTES; 1]>()
@@ -589,8 +596,15 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
             return s;
         }
     } else {
-        privilege_count = (*required_privileges).PrivilegeCount;
-        privilege_control = (*required_privileges).Control;
+        // Kernel-mode caller: no probe, but the loads are still fault-tolerant.
+        privilege_count = match read_back(core::ptr::addr_of!((*required_privileges).PrivilegeCount)) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
+        privilege_control = match read_back(core::ptr::addr_of!((*required_privileges).Control)) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
     }
 
     status = ObReferenceObjectByHandle(

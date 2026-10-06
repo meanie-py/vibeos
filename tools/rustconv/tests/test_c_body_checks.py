@@ -39,3 +39,68 @@ def test_a_body_that_does_not_parse_is_a_finding():
     bad = 'unsafe fn f() { g(h, L"AddReg.NT" INF_ARCH, 0); }'
     assert parse_findings(bad) and "does not parse" in parse_findings(bad)[0]
     assert parse_findings("fn f() { (*p)->x = 1; }")
+
+
+def test_an_invented_goto_shim_is_refused():
+    c = "BOOL f(void) { if (x) goto NoSystemPartition; return TRUE; NoSystemPartition: return FALSE; }"
+    for rust in ("fn f() { if x { goto_NoSystemPartition!(); } }", "fn f() { fn goto_Quit() {} }"):
+        assert any("shim" in f for f in control_flow_findings(c, rust))
+
+
+_DO_C = """{
+    do {
+        p = Next(p);
+        if (Skip(p)) continue;
+        Use(p);
+        for (i = 0; i < 3; i++) { if (i) continue; }
+    } while (p != NULL);
+}"""
+
+
+def test_a_continue_that_skips_the_do_while_condition_is_rejected():
+    bad = """fn f() {
+    loop {
+        p = Next(p);
+        if Skip(p) != 0 { continue; }
+        Use(p);
+        if !(p != core::ptr::null_mut()) { break; }
+    }
+}"""
+    good = """fn f() {
+    loop {
+        'body: {
+            p = Next(p);
+            if Skip(p) != 0 { break 'body; }
+            Use(p);
+        }
+        if !(p != core::ptr::null_mut()) { break; }
+    }
+}"""
+    assert any("do-while condition" in f for f in control_flow_findings(_DO_C, bad))
+    assert not any("do-while" in f for f in control_flow_findings(_DO_C, good))
+    only_nested = _DO_C.replace("if (Skip(p)) continue;", "")
+    assert not any("do-while" in f for f in control_flow_findings(only_nested, bad))
+
+
+_STATUS_C = """{
+    NTSTATUS Status;
+    Status = GetFileSystemName_UStr(NULL, DeviceHandle, FileSystem, sizeof(FileSystem));
+    if (!NT_SUCCESS(Status))
+        goto Quit;
+    if (!x)
+        Status = STATUS_INVALID_DEVICE_REQUEST;
+    for (i = 0; i < 3; i++) {}
+    n = 0ULL;
+Quit:
+    return Status;
+}"""
+
+
+def test_an_invented_success_assignment_is_refused():
+    # bootsup.c: the translation added `Status = 0; // keep as in C` on a failure path.
+    bad = "fn f() {\n    if x { Status = 0; // keep as in C\n        return Status; }\n}"
+    assert any("Status = 0" in f for f in control_flow_findings(_STATUS_C, bad))
+    ok = "fn f() {\n    let mut Status: NTSTATUS = 0;\n    i = 0;\n    n = 0;\n    (*p).Status = 0;\n}"
+    assert not any("invented" in f for f in control_flow_findings(_STATUS_C, ok))
+    c_with_success = _STATUS_C.replace("STATUS_INVALID_DEVICE_REQUEST", "STATUS_SUCCESS")
+    assert not any("invented" in f for f in control_flow_findings(c_with_success, bad))

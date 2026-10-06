@@ -1,5 +1,5 @@
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{RtlCopyUnicodeString, RtlEqualUnicodeString};
+use ntkrnl_sys::ddk::RtlEqualUnicodeString;
 use core::ffi::c_void;
 type VOID = core::ffi::c_void;
 
@@ -1067,11 +1067,15 @@ pub unsafe extern "system" fn NtGdiOpenDCW(
     let mut awcDevice: [WCHAR; CCHDEVICENAME as usize] = [0; CCHDEVICENAME as usize];
     let mut dhpdev: PVOID = core::ptr::null_mut();
     let mut hdc: HDC;
-    let mut dmSize: WORD;
-    let mut dmDriverExtra: WORD;
-    let mut Size: DWORD;
+    let mut dmSize: WORD = 0;
+    let mut dmDriverExtra: WORD = 0;
+    let mut Size: DWORD = 0;
     let mut pdmAllocated: *mut DEVMODEW = core::ptr::null_mut();
 
+    // The C does all of this in one _SEH2_TRY whose handler frees pdmAllocated,
+    // calls SetLastNtError(code) and returns NULL. Every user read below is a
+    // probe + fault-tolerant copy that fails the same way.
+    let mut pUMdhpdev: PVOID = pUMdhpdev;
     if !pustrDevice.is_null() {
         RtlInitEmptyUnicodeString(
             core::ptr::addr_of_mut!(ustrDevice) as *mut _,
@@ -1079,28 +1083,73 @@ pub unsafe extern "system" fn NtGdiOpenDCW(
             core::mem::size_of_val(&awcDevice) as USHORT,
         );
 
-        RtlCopyUnicodeString(core::ptr::addr_of_mut!(ustrDevice) as *mut _, pustrDevice as *mut _);
+        let captured: Result<(), NTSTATUS> = (|| {
+            /* Probe the UNICODE_STRING and the buffer */
+            // ProbeForRead(pustrDevice, sizeof(UNICODE_STRING), 1); header captured
+            // once so Length cannot change between the probe and the copy.
+            let SrcDevice: _UNICODE_STRING = crate::safe_user_io::capture_user(pustrDevice as *const _UNICODE_STRING)?;
+            crate::safe_user_io::probe_for_read(SrcDevice.Buffer as *const c_void, SrcDevice.Length as usize, 1)?;
 
-        if !pdmInit.is_null() {
-            dmSize = (*pdmInit).dmSize;
-            dmDriverExtra = (*pdmInit).dmDriverExtra;
-            Size = dmSize as DWORD + dmDriverExtra as DWORD;
+            /* Copy the string */
+            // RtlCopyUnicodeString(&ustrDevice, pustrDevice), with the source
+            // read fault-tolerantly: min(Length, MaximumLength) bytes, NUL when it fits.
+            let n = core::cmp::min(SrcDevice.Length, ustrDevice.MaximumLength) as usize & !1;
+            ntkrnl_sys::probe::safe_copy_raw(
+                awcDevice.as_mut_ptr() as *mut c_void,
+                SrcDevice.Buffer as *const c_void,
+                n,
+            )?;
+            ustrDevice.Length = n as USHORT;
+            if n / 2 < awcDevice.len() {
+                awcDevice[n / 2] = 0;
+            }
 
-            pdmAllocated = ExAllocatePoolWithTag(
-                PagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE,
-                Size as SIZE_T,
-                TAG_DC,
-            ) as *mut DEVMODEW;
-            RtlCopyMemory(
-                pdmAllocated as *mut VOID,
-                pdmInit as *const VOID,
-                Size as usize,
-            );
-            (*pdmAllocated).dmSize = dmSize;
-            (*pdmAllocated).dmDriverExtra = dmDriverExtra;
+            /* Allocate and store pdmAllocated if pdmInit is not NULL */
+            if !pdmInit.is_null() {
+                // ProbeForRead(pdmInit, sizeof(DEVMODEW), 1); dmSize/dmDriverExtra
+                // fetched ONCE (they size the allocation and the copy).
+                // Only the two fields are read: a caller's DEVMODE may be shorter
+                // than DEVMODEW (dmSize says how long), and the C's range probe
+                // never touches the rest.
+                crate::safe_user_io::probe_for_read(pdmInit as *const c_void, core::mem::size_of::<DEVMODEW>(), 1)?;
+                dmSize = ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*pdmInit).dmSize))?;
+                dmDriverExtra = ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*pdmInit).dmDriverExtra))?;
+                Size = dmSize as DWORD + dmDriverExtra as DWORD;
+                crate::safe_user_io::probe_for_read(pdmInit as *const c_void, Size as usize, 1)?;
+
+                // Divergence: the C allocates exactly Size bytes (raising on
+                // failure) and then stores dmSize/dmDriverExtra and hands the
+                // block to GreOpenDCW as a full DEVMODEW -- a caller-chosen
+                // Size smaller than DEVMODEW overflows the pool. Allocate at
+                // least a zeroed DEVMODEW, and fail instead of raising.
+                let cbAlloc = core::cmp::max(Size as usize, core::mem::size_of::<DEVMODEW>());
+                pdmAllocated = ExAllocatePoolWithTag(PagedPool, cbAlloc as SIZE_T, TAG_DC) as *mut DEVMODEW;
+                if pdmAllocated.is_null() {
+                    return Err(0xC000009A_u32 as NTSTATUS); // STATUS_INSUFFICIENT_RESOURCES
+                }
+                core::ptr::write_bytes(pdmAllocated as *mut u8, 0, cbAlloc);
+                ntkrnl_sys::probe::safe_copy_raw(pdmAllocated as *mut c_void, pdmInit as *const c_void, Size as usize)?;
+                (*pdmAllocated).dmSize = dmSize;
+                (*pdmAllocated).dmDriverExtra = dmDriverExtra;
+            }
+
+            if !pUMdhpdev.is_null() {
+                crate::safe_user_io::probe_for_write(pUMdhpdev, core::mem::size_of::<HANDLE>(), 1)?;
+            }
+            Ok(())
+        })();
+        if let Err(st) = captured {
+            if !pdmAllocated.is_null() {
+                ExFreePoolWithTag(pdmAllocated as PVOID, TAG_DC);
+            }
+            SetLastNtError(st);
+            return core::ptr::null_mut();
         }
     } else {
         pdmInit = core::ptr::null_mut();
+        // The C also clears pUMdhpdev here; without it the unprobed pointer is
+        // written through below.
+        pUMdhpdev = core::ptr::null_mut();
     }
 
     if !pustrDevice.is_null() {
@@ -1122,7 +1171,9 @@ pub unsafe extern "system" fn NtGdiOpenDCW(
     );
 
     if !hdc.is_null() && !pUMdhpdev.is_null() {
-        *(pUMdhpdev as *mut HANDLE) = dhpdev as HANDLE;
+        /* Pointer was already probed */
+        // _SEH2_TRY { *(HANDLE*)pUMdhpdev = dhpdev; } _SEH2_EXCEPT { /* Ignore error */ }
+        let _ = ntkrnl_sys::probe::write_back(pUMdhpdev as *mut HANDLE, dhpdev as HANDLE);
     }
 
     if !pdmAllocated.is_null() {

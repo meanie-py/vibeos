@@ -16,10 +16,13 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
+from pathlib import Path
 
 from .placement_audit import placement_findings
 
 _GOTO = re.compile(r"\bgoto\s+[A-Za-z_]\w*\s*;")
+_GOTO_SHIM = re.compile(r"\bgoto_\w+\s*!?\s*\(|\bfn\s+goto_\w+")
 _C_LABEL = re.compile(r"(?m)^[ \t]*([A-Za-z_]\w*)[ \t]*:(?!:)")
 _NOT_LABELS = frozenset({"default", "case", "public", "private", "protected"})
 _RS_COMMENT_OR_STRING = re.compile(
@@ -35,11 +38,147 @@ def control_flow_findings(c_body: str, rust: str) -> list[str]:
             "C `goto` survived into the Rust; restructure it (a labeled block with "
             "`break 'label`, or a loop) as the c2rust anchor does"
         )
+    # The dodge: told "no goto", a thinking-on reply for setuplib's FindSupportedSystemPartition
+    # invented `goto_NoSystemPartition!()` (and elsewhere `fn goto_Quit()`) -- a shim named
+    # after the C label, which no parse check sees and which rustc reports as a missing macro.
+    shim = _GOTO_SHIM.search(code)
+    if shim:
+        out.append(
+            f"C `goto` lowered to an invented shim `{shim.group(0).strip()}`; use a labeled "
+            "block (`break 'label`) or a state-variable dispatch loop"
+        )
+    if _c_dowhile_with_continue(c_body):
+        skipped = _rust_skipped_conditions(rust)
+        if skipped:
+            out.append(
+                f"a `continue` skips the do-while condition in {skipped} loop(s): C's "
+                "`continue` runs the condition; use `loop { 'body: { .. break 'body; .. } "
+                "if !(c) { break; } }`"
+            )
+    out += invented_flag_assignments(c_body, code)
     labels = {m.group(1) for m in _C_LABEL.finditer(c_body)} - _NOT_LABELS
     for label in sorted(labels):
         if re.search(rf"(?m)^[ \t]*{re.escape(label)}[ \t]*:[ \t]*$", code):
             out.append(f"C label `{label}:` survived into the Rust")
     return out
+
+
+_C_COMMENT_OR_STRING = re.compile(
+    r"//[^\n]*|/\*.*?\*/|L?\"(?:\\.|[^\"\\])*\"|L?'(?:\\.|[^'\\])'", re.S
+)
+_C_LOOP_OPEN = re.compile(r"\b(?:do\s*\{|for\s*\(|while\s*\()")
+
+
+def _c_loop_body_open(text: str, m: re.Match[str]) -> int:
+    """Index of the `{` opening the loop body `m` starts, or -1 (a braceless body)."""
+    if m.group(0).startswith("do"):
+        return m.end() - 1
+    depth, i = 0, m.end() - 1
+    while i < len(text):
+        depth += {"(": 1, ")": -1}.get(text[i], 0)
+        if depth == 0:
+            break
+        i += 1
+    rest = text[i + 1 :]
+    return i + 1 + (len(rest) - len(rest.lstrip())) if rest.lstrip().startswith("{") else -1
+
+
+def _c_brace_end(text: str, open_idx: int) -> int:
+    depth = 0
+    for i in range(open_idx, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
+
+
+def _c_dowhile_with_continue(c_body: str) -> bool:
+    """A C `do { .. } while` whose OWN `continue` (not a nested loop's) jumps to its condition."""
+    text = _C_COMMENT_OR_STRING.sub(" ", c_body)
+    for m in re.finditer(r"\bdo\s*\{", text):
+        open_idx = m.end() - 1
+        close = _c_brace_end(text, open_idx)
+        if close < 0 or not re.match(r"\s*while\b", text[close + 1 :]):
+            continue
+        body = list(text[open_idx + 1 : close])
+        inner = "".join(body)
+        for n in _C_LOOP_OPEN.finditer(inner):
+            k = _c_loop_body_open(inner, n)
+            e = _c_brace_end(inner, k) if k >= 0 else -1
+            for q in range(k, e + 1 if e >= 0 else k):
+                body[q] = " "
+        if re.search(r"\bcontinue\s*;", "".join(body)):
+            return True
+    return False
+
+
+def _rust_skipped_conditions(rust: str) -> int:
+    """Loops the do-while lint (tools/scan_dowhile_continue.py) would flag, by its own code."""
+    repo = str(Path(__file__).resolve().parents[3])
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    from tools.scan_dowhile_continue import scan_text
+
+    return len(scan_text(rust))
+
+
+#: What a C assignment may spell for the values 0 and 1.
+_C_VALUE_SPELLINGS = {
+    "0": {
+        "FALSE",
+        "NULL",
+        "STATUS_SUCCESS",
+        "ERROR_SUCCESS",
+        "S_OK",
+        "NO_ERROR",
+        "UNICODE_NULL",
+        "ANSI_NULL",
+        "'\\0'",
+        "L'\\0'",
+    },
+    "1": {"TRUE"},
+}
+_RS_FLAG_ASSIGN = re.compile(
+    r"(?m)(?P<lead>(?:^|[;{}])[^\n;{}]*?)(?<![\w.*\])])(?P<name>[A-Za-z_]\w*)\s*=(?!=)\s*\(?\s*"
+    r"(?P<val>[01])(?:[iu](?:8|16|32|64|size))?\s*\)?\s*(?:as\s+[\w:]+\s*)*;"
+)
+_C_ASSIGN = re.compile(r"(?<![\w.>=!<*\])])([A-Za-z_]\w*)\s*=(?!=)\s*([^;]*);")
+
+
+def invented_flag_assignments(c_body: str, rust: str) -> list[str]:
+    """`Status = 0;` where the C function never gives Status a value that is 0 (or 1).
+
+    bootsup.c's InstallBootManagerAndBootEntries assigns Status only from calls and two
+    failure codes; the translation's early return on GetFileSystemName() failure added
+    `Status = 0; // keep as in C` and so reported SUCCESS for a failed mount. No seal sees it:
+    small literals are not sealed, and nothing was dropped. The check fires only where the C
+    does assign the variable (so its values are known) and never with a spelling of that
+    value; a `let` initialiser is exempt (repair gives an uninitialised C local a zero).
+    """
+    c_code = _C_COMMENT_OR_STRING.sub(" ", c_body)
+    c_values: dict[str, set[str]] = {}
+    for m in _C_ASSIGN.finditer(c_code):
+        rhs = re.sub(r"^\(\s*\w+\s*\)\s*", "", m.group(2).strip()).strip("() ")
+        c_values.setdefault(m.group(1), set()).add(rhs)
+    out = []
+    for m in _RS_FLAG_ASSIGN.finditer(rust):
+        if re.search(r"\blet\b", m.group("lead")):
+            continue
+        name, val = m.group("name"), m.group("val")
+        rhs = c_values.get(name)
+        if not rhs:
+            continue
+        literal = {re.sub(r"(?i)^(?:0x)?0*([01])[ul]*$", r"\1", r) for r in rhs}
+        if rhs & _C_VALUE_SPELLINGS[val] or val in literal:
+            continue
+        out.append(
+            f"`{name} = {val}` is not in the C: it assigns {name} only "
+            f"{', '.join(sorted(rhs))[:120]} -- an invented success/flag value"
+        )
+    return sorted(set(out))
 
 
 def parse_findings(rust: str) -> list[str]:

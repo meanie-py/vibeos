@@ -767,8 +767,22 @@ pub unsafe extern "system" fn NtGdiAddFontMemResourceEx(
         return core::ptr::null_mut();
     }
 
-    Buffer = ExAllocatePoolWithQuotaTag(PagedPool, (cjBuffer as usize as _), TAG_FONT);
-    RtlCopyMemory(Buffer, pvBuffer as PVOID, cjBuffer as usize);
+    // C: _SEH2_TRY { ProbeForRead(pvBuffer, cjBuffer, 1); Buffer = ExAllocatePoolWithQuotaTag(..);
+    // RtlCopyMemory(Buffer, pvBuffer, cjBuffer); } _SEH2_EXCEPT { free Buffer; return NULL; }
+    // The quota allocation RAISES on failure in the C (caught by that handler);
+    // without SEH ask it to fail instead, and copy fault-tolerantly.
+    Buffer = ExAllocatePoolWithQuotaTag(
+        (PagedPool as u32 | POOL_QUOTA_FAIL_INSTEAD_OF_RAISE) as _,
+        cjBuffer as usize as _,
+        TAG_FONT,
+    );
+    if Buffer.is_null() {
+        return core::ptr::null_mut();
+    }
+    if crate::safe_user_io::copy_from_user(Buffer, pvBuffer, cjBuffer as usize, 1).is_err() {
+        ExFreePoolWithTag(Buffer, TAG_FONT);
+        return core::ptr::null_mut();
+    }
 
     Ret = IntGdiAddFontMemResource(Buffer, cjBuffer, &mut NumFonts);
     ExFreePoolWithTag(Buffer, TAG_FONT);
@@ -814,8 +828,22 @@ pub unsafe extern "system" fn NtGdiAddFontMemResourceEx(
         return core::ptr::null_mut();
     }
 
-    Buffer = ExAllocatePoolWithQuotaTag(PagedPool, cjBuffer as usize as _ , TAG_FONT);
-    RtlCopyMemory(Buffer, pvBuffer as PVOID, cjBuffer as usize);
+    // C: _SEH2_TRY { ProbeForRead(pvBuffer, cjBuffer, 1); Buffer = ExAllocatePoolWithQuotaTag(..);
+    // RtlCopyMemory(Buffer, pvBuffer, cjBuffer); } _SEH2_EXCEPT { free Buffer; return NULL; }
+    // The quota allocation RAISES on failure in the C (caught by that handler);
+    // without SEH ask it to fail instead, and copy fault-tolerantly.
+    Buffer = ExAllocatePoolWithQuotaTag(
+        (PagedPool as u32 | POOL_QUOTA_FAIL_INSTEAD_OF_RAISE) as _,
+        cjBuffer as usize as _,
+        TAG_FONT,
+    );
+    if Buffer.is_null() {
+        return core::ptr::null_mut();
+    }
+    if crate::safe_user_io::copy_from_user(Buffer, pvBuffer, cjBuffer as usize, 1).is_err() {
+        ExFreePoolWithTag(Buffer, TAG_FONT);
+        return core::ptr::null_mut();
+    }
 
     Ret = IntGdiAddFontMemResource(Buffer, cjBuffer, &mut NumFonts);
     ExFreePoolWithTag(Buffer, TAG_FONT);
