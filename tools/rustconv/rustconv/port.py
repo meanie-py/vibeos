@@ -1606,6 +1606,14 @@ def stage_status(stem: str) -> None:
         extra = {k: v for k, v in s.items() if k not in ("stage", "seconds", "at", "runs")}
         print(f"{s['at']}  {s['stage']:10s} {s['seconds']:8.1f}s  {json.dumps(extra)[:140]}")
     print(f"{len(state['stages'])} stage run(s), {total / 60:.1f} min")
+    # The ledger of record: translate logs are overwritten by every replay, so a spend summed
+    # from them read $0 for runs that cost dollars (setuplib: "~$7" said, $10.10 recorded).
+    usd: dict[str, float] = {}
+    for st in state["stages"]:
+        if isinstance(st.get("usd"), (int, float)):
+            usd[st["stage"]] = usd.get(st["stage"], 0.0) + st["usd"]
+    by_stage = ", ".join(f"{k} ${v:.2f}" for k, v in sorted(usd.items()))
+    print(f"spent ${sum(usd.values()):.2f} ({by_stage or 'nothing'})")
 
 
 def _module(arg: str) -> Path:
@@ -1636,6 +1644,8 @@ def _hold(name: str):
 
 
 def main(args) -> int:
+    if args.port_stage == "status":  # read-only: never waits on, or blocks, a running stage
+        return _main(args)
     try:
         held = _hold(getattr(args, "stem", None) or _module(args.module).resolve().name)
     except PortError as e:
