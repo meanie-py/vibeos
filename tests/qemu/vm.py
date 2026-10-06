@@ -1957,9 +1957,10 @@ class QemuVM:
         case: 0xc0150010 on both sides of the WoW64 A/B). winlogon points the
         winetest children's TEMP here when it finds C:\\TEMP (winlogon.rs).
 
-        IDE, not virtio: x86 has no virtio-blk driver, and uniata already serves
-        the CD. Partitioned, not a superfloppy: FreeLDR crashes on an unpartitioned
-        BIOS-visible disk (see _scratch_device_args), and partmgr expects a table.
+        IDE: uniata already serves the CD's controller, so the disk adds no driver
+        to the default boot (vioblk would serve a virtio-blk one). Partitioned, not
+        a superfloppy: FreeLDR crashes on an unpartitioned BIOS-visible disk (see
+        _scratch_device_args), and partmgr expects a table.
         No bootindex, so OVMF never tries it ahead of the CD. qcow2 so savevm works.
         """
         return temp_disk_args(self.config.arch, self.scratch_path.parent)

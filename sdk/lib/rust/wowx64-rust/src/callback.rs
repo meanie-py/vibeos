@@ -25,9 +25,8 @@ use ntdll_sys::nt::*;
 use crate::contract::*;
 use crate::host::{die, Cpu, CURRENT_PROCESS, CURRENT_THREAD};
 
-/// One active callback on this thread, on the native stack of its hook frame.
-/// Chained through the TEB's `DeallocationBStore`, an IA-64 register-stack
-/// field that nothing on amd64 or arm64 reads.
+/// One active callback on this thread, on the native stack of its hook frame,
+/// chained from the thread's record (thread.rs).
 struct Callout {
     Saved: WowX64Context,
     Prev: *mut Callout,
@@ -59,28 +58,13 @@ static mut KiUserCallbackDispatcher: u64 = 0;
 /// guest window procedure would otherwise be called as arm64 code.
 pub unsafe fn Install(GuestDispatcher: u64) {
     KiUserCallbackDispatcher = GuestDispatcher;
-    let mut Name: UNICODE_STRING = core::mem::zeroed();
-    let Wide: [u16; 10] = [
-        b'n' as u16, b't' as u16, b'd' as u16, b'l' as u16, b'l' as u16, b'.' as u16, b'd' as u16,
-        b'l' as u16, b'l' as u16, 0,
-    ];
-    RtlInitUnicodeString(&mut Name, Wide.as_ptr());
-    let mut Ntdll: PVOID = null_mut();
-    let mut Ansi: ANSI_STRING = core::mem::zeroed();
-    RtlInitAnsiString(&mut Ansi, b"WowX64UserCallbackHook\0".as_ptr() as PCSZ);
-    let mut Slot: PVOID = null_mut();
-    if LdrGetDllHandle(null_mut(), null_mut(), &mut Name, &mut Ntdll) < 0
-        || LdrGetProcedureAddress(Ntdll, &mut Ansi, 0, &mut Slot) < 0
-        || Slot.is_null()
-    {
-        die(b"native ntdll.dll has no WowX64UserCallbackHook\0");
-    }
+    let Slot = crate::host::NativeNtdllExport(b"WowX64UserCallbackHook\0");
     *(Slot as *mut Option<unsafe extern "system" fn(ULONG, *mut c_void, ULONG) -> NTSTATUS>) =
         Some(WowX64UserCallback);
 }
 
 unsafe fn Head() -> *mut *mut Callout {
-    core::ptr::addr_of_mut!((*NtCurrentTeb()).DeallocationBStore) as *mut *mut Callout
+    core::ptr::addr_of_mut!((*crate::thread::Record()).Callouts) as *mut *mut Callout
 }
 
 unsafe extern "system" fn WowX64UserCallback(Index: ULONG, Argument: *mut c_void, Length: ULONG) -> NTSTATUS {

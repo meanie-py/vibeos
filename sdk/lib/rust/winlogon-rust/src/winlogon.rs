@@ -850,6 +850,8 @@ unsafe fn TryStartX64Ladder() {
     TryStartX64Guest(&wstr_arr!("selfmod64.exe"), b"selfmod64.exe\0");
     TryStartX64Guest(&wstr_arr!("reg64.exe"), b"reg64.exe\0");
     TryStartX64Guest(&wstr_arr!("spawn64.exe"), b"spawn64.exe\0");
+    // x86-64 only (no 32-bit source): guest APCs and thread-exit cleanup.
+    TryStartX64Guest(&wstr_arr!("apc64.exe"), b"apc64.exe\0");
 }
 
 /* M10 file-I/O probe: an i386 guest that reads, writes and enumerates real

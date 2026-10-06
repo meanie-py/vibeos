@@ -544,17 +544,15 @@ unsafe fn MsgMemorySizeImpl(
             if lParam == 0 {
                 Size = 0;
             } else {
-                // wcslen walks user memory looking for a NUL -- also inside
-                // the C's _SEH2_TRY, also with no preceding ProbeFor* call.
-                // Unlike the struct-field reads below, it has no fixed
-                // length to hand safe_copy_raw (it scans until NUL), so it
-                // cannot be routed through a fault-protected fixed-size
-                // copy the way the other sites here are. Left AS-IS
-                // (matching pre-existing, non-SEH-related behaviour of this
-                // helper) rather than faked with a no-op wrapper -- a real
-                // fix needs a bounded/probing wcslen variant, which is out
-                // of scope for restoring the dropped SEH shape.
-                Size = ((wcslen(lParam as PWSTR) + 1) * core::mem::size_of::<u16>()) as UINT;
+                // wcslen walks user memory looking for a NUL, inside the C's
+                // _SEH2_TRY; a fault there takes the same Size = 0 exit.
+                match fault_tolerant_wcslen(lParam as *const u16) {
+                    Some(n) => Size = ((n + 1) * core::mem::size_of::<u16>()) as UINT,
+                    None => {
+                        Size = 0;
+                        break 'seh;
+                    }
+                }
             }
         } else if MMS_SIZE_SPECIAL as UINT == (*MsgMemoryEntry).Size {
             match (*MsgMemoryEntry).Message {
@@ -660,6 +658,39 @@ unsafe fn MsgMemorySizeImpl(
     }
 
     Size
+}
+
+/// `_wcsicmp(lParam, L"Environment") == 0` on the caller's string, without reading
+/// it raw. A copy that faults means a string that cannot be "Environment" in full
+/// (it ran into an unmapped page first), which is the same answer.
+unsafe fn user_string_is_environment(s: *const u16) -> bool {
+    let mut local = [0u16; 16];
+    let n = L_ENVIRONMENT.len(); // 12, with its NUL
+    match fault_tolerant_wcslen(s) {
+        Some(len) if len + 1 == n => {}
+        _ => return false,
+    }
+    ntkrnl_sys::probe::safe_copy_raw(local.as_mut_ptr().cast(), s.cast(), n * 2).is_ok()
+        && local[n - 1] == 0
+        && _wcsicmp(local.as_ptr(), L_ENVIRONMENT.as_ptr()) == 0
+}
+
+/// `wcslen` that survives an unmapped page: `None` where the string runs into one.
+/// Reads never cross a page boundary except for the one WCHAR that straddles it,
+/// so a string ending just before an unmapped page is measured, not refused.
+unsafe fn fault_tolerant_wcslen(s: *const u16) -> Option<usize> {
+    let mut buf = [0u16; 64];
+    let mut n = 0usize;
+    loop {
+        let at = s.add(n) as usize;
+        let to_page_end = (PAGE_SIZE as usize - (at & (PAGE_SIZE as usize - 1))) / 2;
+        let take = to_page_end.clamp(1, buf.len());
+        ntkrnl_sys::probe::safe_copy_raw(buf.as_mut_ptr().cast(), at as *const c_void, take * 2).ok()?;
+        if let Some(i) = buf[..take].iter().position(|&c| c == 0) {
+            return Some(n + i);
+        }
+        n += take;
+    }
 }
 
 // lParamMemorySize (msgqueue.h: cdecl `UINT lParamMemorySize(...)`, no NTAPI) → extern "C".
@@ -846,6 +877,7 @@ unsafe fn CopyMsgToKernelMem(
     KernelModeMsg: *mut MSG,
     UserModeMsg: *mut MSG,
     MsgMemoryEntry: PMSGMEMORY,
+    CapturedSize: *mut UINT,
 ) -> NTSTATUS {
     let Status: NTSTATUS;
 
@@ -853,12 +885,18 @@ unsafe fn CopyMsgToKernelMem(
     let Size: UINT;
 
     *KernelModeMsg = *UserModeMsg;
+    *CapturedSize = 0;
 
     if MsgMemoryEntry.is_null() {
         return STATUS_SUCCESS;
     }
 
+    // Measured ONCE, and the measurement travels to CopyMsgToUserMem. The C
+    // measures again on the way back, from user memory: a WM_CREATE string the
+    // caller lengthened in between copied more than this allocated -- kernel pool
+    // read out to user memory.
     Size = MsgMemorySize(MsgMemoryEntry, (*UserModeMsg).wParam, (*UserModeMsg).lParam);
+    *CapturedSize = Size;
 
     if Size != 0 {
         KernelMem = ExAllocatePoolWithTag(PagedPool, (Size as usize).try_into().unwrap(), TAG_MSG);
@@ -926,17 +964,15 @@ fastcall_fn! {
 unsafe fn CopyMsgToUserMem(
     UserModeMsg: *mut MSG,
     KernelModeMsg: *mut MSG,
+    Size: UINT, // what CopyMsgToKernelMem allocated; never re-measured
 ) -> NTSTATUS {
     let Status: NTSTATUS;
     let MsgMemoryEntry: PMSGMEMORY;
-    let Size: UINT;
 
     MsgMemoryEntry = FindMsgMemory((*UserModeMsg).message);
     if MsgMemoryEntry.is_null() {
         return STATUS_SUCCESS;
     }
-
-    Size = MsgMemorySize(MsgMemoryEntry, (*UserModeMsg).wParam, (*UserModeMsg).lParam);
 
     if Size != 0 {
         if ((*MsgMemoryEntry).Flags & MMS_FLAG_WRITE) != 0 {
@@ -2663,6 +2699,7 @@ unsafe fn co_IntDoSendMessage(
     let mut KernelModeMsg: MSG = core::mem::zeroed();
     let MsgMemoryEntry: PMSGMEMORY;
     let ptiSendTo: PTHREADINFO;
+    let mut CapturedSize: UINT = 0;
 
     if hWnd != HWND_BROADCAST && hWnd != HWND_TOPMOST {
         Window = UserGetWindowObject(hWnd);
@@ -2677,13 +2714,22 @@ unsafe fn co_IntDoSendMessage(
 
     ptiSendTo = IntSendTo(Window, gptiCurrent, Msg);
 
-    if Window.is_null() || !ptiSendTo.is_null() {
+    // A same-thread send to a user-mode window procedure must hand it the caller's
+    // own pointer, which is why only cross-thread sends were captured. A SERVER-side
+    // procedure (menu, desktop, message window) runs here in the kernel, and the C
+    // gave it the caller's lParam raw: WM_NCCALCSIZE stored a RECT at any address.
+    // This is only reached from NtUserMessageCall, so lParam is always the caller's.
+    let captured = Window.is_null()
+        || !ptiSendTo.is_null()
+        || ((*Window).state & WNDS_SERVERSIDEWINDOWPROC) != 0;
+
+    if captured {
         UserModeMsg.hwnd = hWnd;
         UserModeMsg.message = Msg;
         UserModeMsg.wParam = wParam;
         UserModeMsg.lParam = lParam;
         MsgMemoryEntry = FindMsgMemory(UserModeMsg.message);
-        Status = CopyMsgToKernelMem(&mut KernelModeMsg, &mut UserModeMsg, MsgMemoryEntry);
+        Status = CopyMsgToKernelMem(&mut KernelModeMsg, &mut UserModeMsg, MsgMemoryEntry, &mut CapturedSize);
         if !NT_SUCCESS(Status) {
             EngSetLastError(ERROR_INVALID_PARAMETER);
             return if !dsm.is_null() { 0 } else { -1 };
@@ -2714,8 +2760,8 @@ unsafe fn co_IntDoSendMessage(
         );
     }
 
-    if Window.is_null() || !ptiSendTo.is_null() {
-        Status = CopyMsgToUserMem(&mut UserModeMsg, &mut KernelModeMsg);
+    if captured {
+        Status = CopyMsgToUserMem(&mut UserModeMsg, &mut KernelModeMsg, CapturedSize);
         if !NT_SUCCESS(Status) {
             EngSetLastError(ERROR_INVALID_PARAMETER);
             return if !dsm.is_null() { 0 } else { -1 };
@@ -3534,26 +3580,55 @@ pub unsafe extern "system" fn NtUserMessageCall(
 
     UserEnterExclusive();
 
+    // These FNIDs call the window procedure right here, and a pointer-carrying
+    // message's lParam is the caller's address. The C hands it on raw:
+    // NC_HandleNCCalcSize stores a RECT through WM_NCCALCSIZE's, which from user
+    // mode means any address. Capture the message memory as co_IntDoSendMessage
+    // does for a cross-thread send, and copy it back after. The broadcast's sends
+    // reach server-side procedures too (the desktop window always); a user-mode
+    // procedure is unaffected, since the send packs lParam from the copy it is given.
+    let direct = matches!(
+        dwType,
+        FNID_SCROLLBAR | FNID_DESKTOP | FNID_MENU | FNID_MESSAGEWND | FNID_DEFWINDOWPROC | FNID_BROADCASTSYSTEMMESSAGE
+    );
+    let mut UserModeMsg: MSG = core::mem::zeroed();
+    let mut KernelModeMsg: MSG = core::mem::zeroed();
+    let mut CapturedSize: UINT = 0;
+    let klParam = if direct {
+        UserModeMsg.hwnd = hWnd;
+        UserModeMsg.message = Msg;
+        UserModeMsg.wParam = wParam;
+        UserModeMsg.lParam = lParam;
+        if !NT_SUCCESS(CopyMsgToKernelMem(&mut KernelModeMsg, &mut UserModeMsg, FindMsgMemory(Msg), &mut CapturedSize)) {
+            UserLeave();
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            return 0;
+        }
+        KernelModeMsg.lParam
+    } else {
+        lParam
+    };
+
     match dwType {
         FNID_SCROLLBAR => {
-            lResult = ScrollBarWndProc(hWnd, Msg, wParam, lParam);
+            lResult = ScrollBarWndProc(hWnd, Msg, wParam, klParam);
         }
         FNID_DESKTOP => {
             Window = UserGetWindowObject(hWnd);
             if !Window.is_null() {
-                Ret = DesktopWindowProc(Window, Msg, wParam, lParam, &mut lResult);
+                Ret = DesktopWindowProc(Window, Msg, wParam, klParam, &mut lResult);
             }
         }
         FNID_MENU => {
             Window = UserGetWindowObject(hWnd);
             if !Window.is_null() {
-                Ret = PopupMenuWndProc(Window, Msg, wParam, lParam, &mut lResult);
+                Ret = PopupMenuWndProc(Window, Msg, wParam, klParam, &mut lResult);
             }
         }
         FNID_MESSAGEWND => {
             Window = UserGetWindowObject(hWnd);
             if !Window.is_null() {
-                Ret = if UserMessageWindowProc(Window, Msg, wParam, lParam, &mut lResult) != 0 {
+                Ret = if UserMessageWindowProc(Window, Msg, wParam, klParam, &mut lResult) != 0 {
                     0
                 } else {
                     1
@@ -3564,12 +3639,15 @@ pub unsafe extern "system" fn NtUserMessageCall(
             if !hWnd.is_null() {
                 Window = UserGetWindowObject(hWnd);
                 if Window.is_null() {
+                    if CapturedSize != 0 {
+                        ExFreePool(KernelModeMsg.lParam as PVOID);
+                    }
                     UserLeave();
                     return 0;
                 }
                 UserRefObjectCo(Window, &mut Ref);
             }
-            lResult = IntDefWindowProc(Window, Msg, wParam, lParam, Ansi);
+            lResult = IntDefWindowProc(Window, Msg, wParam, klParam, Ansi);
             Ret = 1;
             if !hWnd.is_null() {
                 UserDerefObjectCo(Window);
@@ -3643,7 +3721,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                     UserHMGetHandle(pwndDesk),
                                     Msg,
                                     wParam,
-                                    lParam,
+                                    klParam,
                                     fuFlags,
                                     2000,
                                     &mut RetVal,
@@ -3673,7 +3751,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                         *List.add(i as usize),
                                         Msg,
                                         wParam,
-                                        lParam,
+                                        klParam,
                                         fuFlags,
                                         2000,
                                         &mut RetVal,
@@ -3777,10 +3855,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                             }
                             if lParam != 0
                                 && wParam == 0
-                                && _wcsicmp(
-                                    lParam as *const u16,
-                                    L_ENVIRONMENT.as_ptr(),
-                                ) == 0
+                                && user_string_is_environment(lParam as *const u16)
                             {
                                 co_IntDoSendMessage(
                                     HWND_BROADCAST,
@@ -3821,7 +3896,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                 UserHMGetHandle(pwndDesk),
                                 Msg,
                                 wParam,
-                                lParam,
+                                klParam,
                                 fuFlags,
                                 2000,
                                 &mut RetVal,
@@ -3851,7 +3926,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                     *List.add(i as usize),
                                     Msg,
                                     wParam,
-                                    lParam,
+                                    klParam,
                                     fuFlags,
                                     2000,
                                     &mut RetVal,
@@ -3986,7 +4061,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     hWnd,
                     Msg,
                     wParam,
-                    lParam,
+                    lParam, // nolint: raw-user-access (is_pointer_message refused every pointer-carrying Msg above)
                     CallBackInfo.CallBack,
                     CallBackInfo.Context,
                     &mut uResult,
@@ -4191,6 +4266,11 @@ pub unsafe extern "system" fn NtUserMessageCall(
         _ => {}
     }
 
+    if direct && !NT_SUCCESS(CopyMsgToUserMem(&mut UserModeMsg, &mut KernelModeMsg, CapturedSize)) {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        Ret = 0;
+    }
+
     match dwType {
         FNID_DEFWINDOWPROC | FNID_CALLWNDPROC | FNID_CALLWNDPROCRET | FNID_SCROLLBAR
         | FNID_DESKTOP | FNID_MENU => {
@@ -4240,26 +4320,55 @@ pub unsafe extern "system" fn NtUserMessageCall(
 
     UserEnterExclusive();
 
+    // These FNIDs call the window procedure right here, and a pointer-carrying
+    // message's lParam is the caller's address. The C hands it on raw:
+    // NC_HandleNCCalcSize stores a RECT through WM_NCCALCSIZE's, which from user
+    // mode means any address. Capture the message memory as co_IntDoSendMessage
+    // does for a cross-thread send, and copy it back after. The broadcast's sends
+    // reach server-side procedures too (the desktop window always); a user-mode
+    // procedure is unaffected, since the send packs lParam from the copy it is given.
+    let direct = matches!(
+        dwType,
+        FNID_SCROLLBAR | FNID_DESKTOP | FNID_MENU | FNID_MESSAGEWND | FNID_DEFWINDOWPROC | FNID_BROADCASTSYSTEMMESSAGE
+    );
+    let mut UserModeMsg: MSG = core::mem::zeroed();
+    let mut KernelModeMsg: MSG = core::mem::zeroed();
+    let mut CapturedSize: UINT = 0;
+    let klParam = if direct {
+        UserModeMsg.hwnd = hWnd;
+        UserModeMsg.message = Msg;
+        UserModeMsg.wParam = wParam;
+        UserModeMsg.lParam = lParam;
+        if !NT_SUCCESS(CopyMsgToKernelMem(&mut KernelModeMsg, &mut UserModeMsg, FindMsgMemory(Msg), &mut CapturedSize)) {
+            UserLeave();
+            EngSetLastError(ERROR_INVALID_PARAMETER);
+            return 0;
+        }
+        KernelModeMsg.lParam
+    } else {
+        lParam
+    };
+
     match dwType {
         FNID_SCROLLBAR => {
-            lResult = ScrollBarWndProc(hWnd, Msg, wParam, lParam);
+            lResult = ScrollBarWndProc(hWnd, Msg, wParam, klParam);
         }
         FNID_DESKTOP => {
             Window = UserGetWindowObject(hWnd);
             if !Window.is_null() {
-                Ret = DesktopWindowProc(Window, Msg, wParam, lParam, &mut lResult);
+                Ret = DesktopWindowProc(Window, Msg, wParam, klParam, &mut lResult);
             }
         }
         FNID_MENU => {
             Window = UserGetWindowObject(hWnd);
             if !Window.is_null() {
-                Ret = PopupMenuWndProc(Window, Msg, wParam, lParam, &mut lResult);
+                Ret = PopupMenuWndProc(Window, Msg, wParam, klParam, &mut lResult);
             }
         }
         FNID_MESSAGEWND => {
             Window = UserGetWindowObject(hWnd);
             if !Window.is_null() {
-                Ret = if UserMessageWindowProc(Window, Msg, wParam, lParam, &mut lResult) != 0 {
+                Ret = if UserMessageWindowProc(Window, Msg, wParam, klParam, &mut lResult) != 0 {
                     0
                 } else {
                     1
@@ -4270,12 +4379,15 @@ pub unsafe extern "system" fn NtUserMessageCall(
             if !hWnd.is_null() {
                 Window = UserGetWindowObject(hWnd);
                 if Window.is_null() {
+                    if CapturedSize != 0 {
+                        ExFreePool(KernelModeMsg.lParam as PVOID);
+                    }
                     UserLeave();
                     return 0;
                 }
                 UserRefObjectCo(Window, &mut Ref);
             }
-            lResult = IntDefWindowProc(Window, Msg, wParam, lParam, Ansi);
+            lResult = IntDefWindowProc(Window, Msg, wParam, klParam, Ansi);
             Ret = 1;
             if !hWnd.is_null() {
                 UserDerefObjectCo(Window);
@@ -4349,7 +4461,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                     UserHMGetHandle(pwndDesk),
                                     Msg,
                                     wParam,
-                                    lParam,
+                                    klParam,
                                     fuFlags,
                                     2000,
                                     &mut RetVal,
@@ -4379,7 +4491,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                         *List.add(i as usize),
                                         Msg,
                                         wParam,
-                                        lParam,
+                                        klParam,
                                         fuFlags,
                                         2000,
                                         &mut RetVal,
@@ -4483,10 +4595,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                             }
                             if lParam != 0
                                 && wParam == 0
-                                && _wcsicmp(
-                                    lParam as *const u16,
-                                    L_ENVIRONMENT.as_ptr(),
-                                ) == 0
+                                && user_string_is_environment(lParam as *const u16)
                             {
                                 co_IntDoSendMessage(
                                     HWND_BROADCAST,
@@ -4527,7 +4636,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                 UserHMGetHandle(pwndDesk),
                                 Msg,
                                 wParam,
-                                lParam,
+                                klParam,
                                 fuFlags,
                                 2000,
                                 &mut RetVal,
@@ -4557,7 +4666,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                                     *List.add(i as usize),
                                     Msg,
                                     wParam,
-                                    lParam,
+                                    klParam,
                                     fuFlags,
                                     2000,
                                     &mut RetVal,
@@ -4692,7 +4801,7 @@ pub unsafe extern "system" fn NtUserMessageCall(
                     hWnd,
                     Msg,
                     wParam,
-                    lParam,
+                    lParam, // nolint: raw-user-access (is_pointer_message refused every pointer-carrying Msg above)
                     CallBackInfo.CallBack,
                     CallBackInfo.Context,
                     &mut uResult,
@@ -4895,6 +5004,11 @@ pub unsafe extern "system" fn NtUserMessageCall(
             }
         }
         _ => {}
+    }
+
+    if direct && !NT_SUCCESS(CopyMsgToUserMem(&mut UserModeMsg, &mut KernelModeMsg, CapturedSize)) {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        Ret = 0;
     }
 
     match dwType {

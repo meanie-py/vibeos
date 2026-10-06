@@ -443,10 +443,17 @@ unsafe fn ApphelpValidateData(
         ) {
             return s;
         }
-        local_image_name = (*ServiceData).ImageName;
-        if let Err(s) = probe_write_user(ImageHandle, (*ServiceData).ImageHandle, previous_mode) {
-            return s;
-        }
+        // One fault-tolerant capture of the caller's lookup record (the C reads it
+        // field by field inside its __try, whose handler returns the code).
+        let service = match read_back(ServiceData as *const APPHELP_CACHE_SERVICE_LOOKUP) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
+        local_image_name = service.ImageName;
+        // ImageHandle is the caller's KERNEL local. It was stored with
+        // probe_write_user, whose user-range probe rejects a kernel stack address,
+        // so every user-mode lookup returned STATUS_ACCESS_VIOLATION.
+        *ImageHandle = service.ImageHandle;
         if local_image_name.Length != 0 && !local_image_name.Buffer.is_null() {
             if let Err(s) = probe_user_buffer(
                 local_image_name.Buffer as *const core::ffi::c_void,
@@ -456,7 +463,20 @@ unsafe fn ApphelpValidateData(
             ) {
                 return s;
             }
-            ApphelpDuplicateUnicodeString(ImageName, core::ptr::addr_of!(local_image_name));
+            // ApphelpDuplicateUnicodeString copies raw; the source is the caller's.
+            let length = local_image_name.Length;
+            let buffer = ApphelpAlloc(length as ULONG + core::mem::size_of::<u16>() as ULONG) as *mut u16;
+            if buffer.is_null() {
+                return STATUS_NO_MEMORY; // the C's duplicate writes through NULL here
+            }
+            if let Err(s) = safe_copy_raw(buffer.cast(), local_image_name.Buffer as *const _, length as usize) {
+                ApphelpFree(buffer as PVOID);
+                return s;
+            }
+            *buffer.add((length / core::mem::size_of::<u16>() as u16) as usize) = 0;
+            (*ImageName).Length = length;
+            (*ImageName).MaximumLength = length + core::mem::size_of::<u16>() as u16;
+            (*ImageName).Buffer = buffer;
             status = STATUS_SUCCESS;
         }
     }

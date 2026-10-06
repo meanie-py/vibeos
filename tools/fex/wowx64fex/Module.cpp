@@ -76,6 +76,7 @@
 extern "C" {
 NTSTATUS STDMETHODCALLTYPE BTCpu64ProcessInit(const WOWX64_HOST_SERVICES* Host);
 NTSTATUS STDMETHODCALLTYPE BTCpu64ThreadInit();
+void STDMETHODCALLTYPE BTCpu64ThreadTerm(HANDLE Thread, NTSTATUS ExitStatus);
 NTSTATUS STDMETHODCALLTYPE BTCpu64GetContext(HANDLE Thread, HANDLE Process, void* Reserved, WOWX64_CONTEXT* Context);
 NTSTATUS STDMETHODCALLTYPE BTCpu64SetContext(HANDLE Thread, HANDLE Process, void* Reserved, const WOWX64_CONTEXT* Context);
 void STDMETHODCALLTYPE BTCpu64Simulate();
@@ -111,6 +112,9 @@ struct ThreadData {
 
 struct FrontendThreadData {
   bool InLockedRWXRead {};
+  // Reached through the Threads map, so a thread that is already gone (its
+  // TEB, and the WOW32Reserved pointer in it, freed) can still be cleaned up.
+  ThreadData* TD {};
 };
 
 class X64SyscallHandler;
@@ -518,10 +522,52 @@ NTSTATUS BTCpu64ThreadInit() {
   TD->ThreadState = Thread;
   reinterpret_cast<__TEB*>(NtCurrentTeb())->WOW32Reserved = TD;
 
-  Thread->FrontendPtr = new FrontendThreadData();
+  auto* Frontend = new FrontendThreadData();
+  Frontend->TD = TD;
+  Thread->FrontendPtr = Frontend;
 
   Threads.emplace(GetCurrentThreadId(), Thread);
   return STATUS_SUCCESS;
+}
+
+// Upstream WOW64's BTCpuThreadTerm, for the two cases the OS side calls it in
+// (contract version 3): the CALLING thread, just before its own
+// NtTerminateThread, which never returns into the JIT that is freed here; or
+// another thread of this process that has already DIED (the OS side waited
+// for it), so none of its state can be in use and no JIT lock can be held by
+// it. Upstream suspends a live victim first instead; that needs the
+// suspend-at-a-safe-point machinery this layer does not have.
+void BTCpu64ThreadTerm(HANDLE Thread, NTSTATUS ExitStatus) {
+  THREAD_BASIC_INFORMATION Info;
+  if (NtQueryInformationThread(Thread, ThreadBasicInformation, &Info, sizeof(Info), nullptr)) {
+    return;
+  }
+  const auto TID = static_cast<DWORD>(reinterpret_cast<uintptr_t>(Info.ClientId.UniqueThread));
+  const bool Self = TID == GetCurrentThreadId();
+
+  FEXCore::Core::InternalThreadState* ThreadState;
+  {
+    std::scoped_lock Lock(ThreadCreationMutex);
+    auto it = Threads.find(TID);
+    if (it == Threads.end()) {
+      return; // never a guest thread, or already cleaned up
+    }
+    ThreadState = it->second;
+    Threads.erase(it);
+  }
+
+  auto* Frontend = static_cast<FrontendThreadData*>(ThreadState->FrontendPtr);
+  ThreadData* TD = Frontend->TD;
+  delete Frontend;
+  // GDT and LDT are mirrored (ThreadInit), so only one is freed.
+  delete[] ThreadState->CurrentFrame->State.segment_arrays[FEXCore::Core::CPUState::SEGMENT_ARRAY_INDEX_GDT];
+  FEX::Windows::CallRetStack::DestroyThread(ThreadState);
+  CTX->DestroyThread(ThreadState);
+  delete TD;
+  if (Self) {
+    reinterpret_cast<__TEB*>(NtCurrentTeb())->WOW32Reserved = nullptr;
+    FEX::Windows::DeinitCRTThread();
+  }
 }
 
 NTSTATUS BTCpu64GetContext(HANDLE Thread, HANDLE Process, void* Reserved, WOWX64_CONTEXT* Context) {

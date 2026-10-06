@@ -12,6 +12,8 @@ use ntkrnl_sys::ddk::{
     KiExceptionExit, KiRaiseException as KiRaiseExceptionExtern,
     PCONTEXT, PEXCEPTION_RECORD, PKEXCEPTION_FRAME, PKTHREAD, PKTRAP_FRAME,
 };
+#[cfg(target_arch = "aarch64")]
+use ntkrnl_sys::ddk::KiDeliverApc;
 // KeGetPcr: FORCEINLINE on i386 (fs:[0x1c]), extern on amd64/arm64
 // Need a shim for i386 — provide via ke_rust_shims.c
 #[cfg(target_arch = "x86")]
@@ -256,6 +258,23 @@ pub unsafe extern "system" fn NtContinue(
 
     if TestAlert != 0 {
         KeTestAlertThread(*kt_PreviousMode(Thread));
+
+        // arm64: KiExceptionExit (asm) erets straight to the continued context
+        // and, unlike the SVC-dispatch tail (KiDeliverUserApcArm64) and unlike
+        // amd64's trap return, does NOT check UserApcPending. So a user APC
+        // that KeTestAlertThread just marked pending would wait for the NEXT
+        // trap — breaking an alertable NtContinue(TestAlert=TRUE), the loop by
+        // which KiUserApcDispatcher drains more than one user APC at a single
+        // wait. Deliver it here, as KiDeliverUserApcArm64 does on the SVC path:
+        // KiDeliverApc(UserMode) rewrites this trap frame to KiUserApcDispatcher
+        // when UserApcPending is set, and KiExceptionExit then erets to it.
+        #[cfg(target_arch = "aarch64")]
+        if ((*TrapFrame).Spsr & 0xF) == 0 && kt_ApcState(Thread).UserApcPending != 0 {
+            let mut OldIrql = APC_LEVEL;
+            KeRaiseIrql(APC_LEVEL, &mut OldIrql);
+            KiDeliverApc(1i8 /* UserMode */, ExceptionFrame, TrapFrame);
+            KeLowerIrql(OldIrql);
+        }
     }
 
     KiExceptionExit(TrapFrame, ExceptionFrame);

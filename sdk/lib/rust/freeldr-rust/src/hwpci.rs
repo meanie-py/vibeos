@@ -235,6 +235,9 @@ pub unsafe extern "C" fn DetectPciBios(SystemKey: PCONFIGURATION_COMPONENT_DATA,
 
         *BusNumber = (*BusNumber).wrapping_add(1);
 
+        // The $PIR table lives in the x86 BIOS area (0xF0000); arm64 has no such
+        // memory, and its routing comes from the firmware (uefihw's fixup) instead.
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         DetectPciIrqRoutingTable(BiosKey);
 
         i = 0;

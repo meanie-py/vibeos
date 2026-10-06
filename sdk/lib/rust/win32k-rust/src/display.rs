@@ -618,7 +618,8 @@ pub unsafe extern "system" fn NtUserEnumDisplayDevices(
 
     UserEnterShared();
 
-    Status = UserEnumDisplayDevices(pustrDevice, iDevNum, &mut dispdev, dwFlags);
+    // nolint: raw-user-access (both arms above re-point pustrDevice: the captured copy, or NULL)
+    Status = UserEnumDisplayDevices(pustrDevice, iDevNum, &mut dispdev, dwFlags); // nolint: raw-user-access (see above)
 
     UserLeave();
 
