@@ -733,6 +733,13 @@ pub unsafe extern "C" fn RtlpCreateAtomHandle(AtomTable: PRTL_ATOM_TABLE, Entry:
 
     HandleIndex = ((Handle as ULONG_PTR) >> 2) as USHORT;
 
+    // TEMP diagnostic (atom wrap hunt)
+    if HandleIndex >= 0x40 && (HandleIndex & (HandleIndex - 1)) == 0 || HandleIndex >= 0x3FF0 && HandleIndex < 0x4010 {
+        extern "C" { fn DbgPrint(f: *const u8, ...) -> ULONG; }
+        DbgPrint(b"[ATOMIDX] table=%p handle=%p index=%x name=%ws\n\0".as_ptr(),
+            AtomTable, Handle, HandleIndex as ULONG, core::ptr::addr_of!((*Entry).Name) as *const u16);
+    }
+
     if HandleIndex >= 0xC000 {
         ExDestroyHandle((*AtomTable).__bindgen_anon_2.ExHandleTable, Handle, core::ptr::null_mut());
         return 0u8;
