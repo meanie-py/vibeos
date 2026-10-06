@@ -785,7 +785,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
       UI thread and before the download thread (blocked in an ntdll syscall), with no
       FAULTLOOP report. Inference, not shown: GetThreadContext waiting on a thread whose
       kernel wait blocks the suspend APC.
+    - **Applets open no window: uxtheme reads another property as its WND_DATA** (FIXED
+      2026-10-05). `RtlpCheckIntegerAtom` took any name pointer with bits 16-31 clear for an
+      integer atom, so once NtAddAtom/NtFindAtom captured names into a pool block at
+      `...0000_xxxx`, every new global atom in the boot was `xxxx`. uxtheme's `ux_WndContext`
+      then equalled shell32's `CPLFlags` and rundll32 faulted in `OnPostWinPosChanged`
+      (cpl-timedate/-access/-inetcpl/-powercfg, dxdiag; about half of arm64 appstorm boots,
+      20261005-214751-gc94fnsa and -214756-ypxnsi6z). Fixed in rtl-strings' atom test.
     - **cpl-appwiz then opens no window** (OPEN): rapps /appwiz stays alive with no window.
+      Possibly the atom bug above (it breaks Control_DoLaunch's first-instance search too);
+      unconfirmed, as no failure since printed the no-window dump.
       Failed again 2026-10-04 (20261004-173345-lbmi6pz6) after passing 5 boots; not mutex
       abandonment. appstorm's no-window dump missed it (rundll32 exits and orphans rapps before
       the family is grown); fixed, so the next failure dumps rapps' threads.
