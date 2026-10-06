@@ -3373,7 +3373,11 @@ pub unsafe extern "system" fn NtGdiGetMiterLimit(hdc: HDC, pdwOut: PDWORD) -> i3
         SetLastNtError(Status);
         bResult = 0;
     } else {
-        *pdwOut = (*pDc).dclevel.laPath.eMiterLimit as u32;
+        // The probe proves where pdwOut is, not that it stays mapped.
+        if let Err(st) = ntkrnl_sys::probe::write_back(pdwOut, (*pDc).dclevel.laPath.eMiterLimit as u32) {
+            SetLastNtError(st);
+            bResult = 0;
+        }
     }
 
     DC_UnlockDc(pDc);
@@ -3631,7 +3635,11 @@ pub unsafe extern "system" fn NtGdiSetMiterLimit(
             SetLastNtError(Status);
             bResult = 0;
         } else {
-            *pdwOut = worker1.l;
+            // The probe proves where pdwOut is, not that it stays mapped.
+            if let Err(st) = ntkrnl_sys::probe::write_back(pdwOut, worker1.l) {
+                SetLastNtError(st);
+                bResult = 0;
+            }
         }
     }
 
@@ -3672,7 +3680,11 @@ pub unsafe extern "system" fn NtGdiSetMiterLimit(
             SetLastNtError(Status);
             bResult = 0;
         } else {
-            *pdwOut = worker1.l;
+            // The probe proves where pdwOut is, not that it stays mapped.
+            if let Err(st) = ntkrnl_sys::probe::write_back(pdwOut, worker1.l) {
+                SetLastNtError(st);
+                bResult = 0;
+            }
         }
     }
 

@@ -1321,7 +1321,84 @@ unsafe fn IofCallDriverInner(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATU
     set_current_stack_location(Irp, StackPtr);
     (*StackPtr).DeviceObject = DeviceObject;
 
-    ((*DriverObject).MajorFunction[(*StackPtr).MajorFunction as usize].unwrap())(DeviceObject, Irp)
+    // Read before the call: a synchronously completed IRP is freed by then.
+    let major = (*StackPtr).MajorFunction;
+    let code = if major == IRP_MJ_DEVICE_CONTROL as u8 || major == IRP_MJ_INTERNAL_DEVICE_CONTROL as u8 {
+        (*StackPtr).Parameters.DeviceIoControl.IoControlCode
+    } else {
+        0
+    };
+    let status = ((*DriverObject).MajorFunction[major as usize].unwrap())(DeviceObject, Irp);
+    if status != STATUS_PENDING {
+        iop_check_stranded_completion(DriverObject, Irp, major, code, status);
+    }
+    status
+}
+
+/// A driver returned a final status, so the IRP's completion (IopCompleteRequest,
+/// queued as a special kernel APC to this thread) must already have run: that
+/// APC is what copies a buffered IOCTL's output and sets the caller's event,
+/// and a caller that got a final status does not wait. If the APC is still
+/// queued, the caller is about to return and the APC will later write into its
+/// dead stack frame, which is how a DISK_GEOMETRY ended up over a saved frame
+/// pointer on the Pi 4 (field manual: dead-frame completion). Say so, naming the
+/// driver, instead of corrupting silently. Compares addresses only: the IRP may
+/// already be freed.
+#[cold]
+unsafe fn iop_check_stranded_completion(driver: PDRIVER_OBJECT, irp: PIRP, major: u8, code: u32, status: NTSTATUS) {
+    extern "C" {
+        fn DbgPrint(format: *const u8, ...) -> u32;
+    }
+    let apc = (irp as usize + core::mem::offset_of!(ntkrnl_sys::ddk::_IRP, Tail.Apc) + core::mem::offset_of!(ntkrnl_sys::ddk::_KAPC, ApcListEntry))
+        as *mut LIST_ENTRY;
+    let thread = PsGetCurrentThread();
+    if thread.is_null() {
+        return;
+    }
+    let tcb = &mut (*thread).Tcb as *mut _ as *mut ntkrnl_sys::ddk::_KTHREAD;
+    // The healthy case costs one read: no kernel APC queued to this thread.
+    let queued = (*tcb).ApcStatePointer.iter().any(|&st| {
+        !st.is_null() && (*st).ApcListHead[0].Flink != &raw mut (*st).ApcListHead[0]
+    });
+    if !queued {
+        return;
+    }
+    static REPORTS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+    extern "system" {
+        fn KeAreApcsDisabled() -> u8; // in a critical or guarded region
+    }
+    let apcs_disabled = KeAreApcsDisabled();
+    let _lock = ntkrnl_sys::guards::SpinLockGuard::acquire((&raw mut (*tcb).ApcQueueLock).cast());
+    for state in (*tcb).ApcStatePointer {
+        if state.is_null() {
+            continue;
+        }
+        let head = &raw mut (*state).ApcListHead[0];
+        let mut e = (*head).Flink;
+        let mut n = 0;
+        while e != head && !e.is_null() && n < 256 {
+            if e as *mut LIST_ENTRY == apc {
+                if REPORTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) >= 16 {
+                    return;
+                }
+                DbgPrint(
+                    b"[IO-STRANDED] %wZ returned 0x%x for IRP %p (major 0x%x code 0x%x) but its completion APC is still queued: the caller will not wait (irql %u, apcs-disabled %u, in-apc %u, pending %u)\n\0".as_ptr(),
+                    &raw const (*driver).DriverName,
+                    status,
+                    irp,
+                    major as u32,
+                    code,
+                    _lock.previous_irql() as u32,
+                    apcs_disabled as u32,
+                    (*state).KernelApcInProgress as u32,
+                    (*state).KernelApcPending as u32,
+                );
+                return;
+            }
+            e = (*e).Flink;
+            n += 1;
+        }
+    }
 }
 
 #[no_mangle]

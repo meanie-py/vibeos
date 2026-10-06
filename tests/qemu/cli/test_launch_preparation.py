@@ -196,3 +196,15 @@ def test_the_bios_config_knows_its_own_name():
     the PARENT's field default, so Amd64BiosConfig().arch was "amd64" and every
     per-arch decision keyed on the name (the temp disk above) silently missed it."""
     assert vm.get_arch_config("amd64-bios").arch == "amd64-bios"
+
+
+def test_the_bios_smoke_boots_the_iso_from_a_usb_stick(monkeypatch):
+    """The BIOS lane is the Libreboot OptiPlex's configuration: the hybrid ISO written
+    to a USB stick, through isombr and usbstor. Every other x86 lane keeps ide-cd."""
+    monkeypatch.delenv("VIBEOS_QEMU_BOOT_TRANSPORT", raising=False)
+    bios = vm.boot_media_device_args("x.iso", default_transport="usb-storage")
+    assert any(a.startswith("usb-storage,") for a in bios), bios
+    assert any(a.startswith("ide-cd,") for a in vm.boot_media_device_args("x.iso"))
+    monkeypatch.setenv("VIBEOS_QEMU_BOOT_TRANSPORT", "ide-cd")
+    cd = vm.boot_media_device_args("x.iso", default_transport="usb-storage")
+    assert any(a.startswith("ide-cd,") for a in cd), cd

@@ -188,7 +188,7 @@ unsafe extern "C" fn InstallNetDevice(
     let mut dwLength: u32 = 0;
     let mut dwValue: u32;
     let mut pszNameBuffer: PWSTR = core::ptr::null_mut();
-    let mut ptr: PWSTR;
+    let mut dwRegType: u32 = 0;
 
     'cleanup: loop {
         DeviceInstallParams.cbSize = core::mem::size_of::<SP_DEVINSTALL_PARAMS_W>() as u32;
@@ -223,18 +223,6 @@ unsafe extern "C" fn InstallNetDevice(
         if SetupDiGetDeviceInstanceIdW(DeviceInfoSet, DeviceInfoData, InstanceId, dwLength, core::ptr::null_mut()) == 0 {
             rc = GetLastError() as i32;
             break 'cleanup;
-        }
-
-        ComponentId = HeapAlloc(GetProcessHeap(), 0,(dwLength as usize * core::mem::size_of::<u16>()) as SIZE_T) as LPWSTR;
-        if ComponentId.is_null() {
-            rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
-            break 'cleanup;
-        }
-
-        wcscpy(ComponentId, InstanceId);
-        ptr = wcsrchr(ComponentId, '\\' as u16);
-        if !ptr.is_null() {
-            *ptr = UNICODE_NULL;
         }
 
         DeviceName = HeapAlloc(GetProcessHeap(), 0,((wcslen(w!("\\Device\\") as LPCWSTR) + wcslen(UuidString)) * core::mem::size_of::<u16>() + core::mem::size_of_val(&UNICODE_NULL)) as SIZE_T) as LPWSTR;
@@ -304,7 +292,26 @@ unsafe extern "C" fn InstallNetDevice(
             break 'cleanup;
         }
 
-        rc = RegSetValueExW(hKey, w!("ComponentId") as LPCWSTR, 0, (REG_SZ) as u32, ComponentId as *const u8, ((wcslen(ComponentId) + 1) * (core::mem::size_of::<u16>() as u32) as usize) as u32);
+        /* Get ComponentId (from MatchingDeviceId value) */
+        rc = RegQueryValueExW(hKey, w!("MatchingDeviceId") as LPCWSTR, core::ptr::null_mut(), &mut dwRegType, core::ptr::null_mut(), &mut dwLength);
+        if rc != (ERROR_SUCCESS) as i32 {
+            break 'cleanup;
+        }
+        if dwRegType != (REG_SZ) as u32 {
+            rc = (ERROR_GEN_FAILURE) as i32;
+            break 'cleanup;
+        }
+        ComponentId = HeapAlloc(GetProcessHeap(), 0, dwLength as SIZE_T) as LPWSTR;
+        if ComponentId.is_null() {
+            rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
+            break 'cleanup;
+        }
+        rc = RegQueryValueExW(hKey, w!("MatchingDeviceId") as LPCWSTR, core::ptr::null_mut(), &mut dwRegType, ComponentId as *mut BYTE, &mut dwLength);
+        if rc != (ERROR_SUCCESS) as i32 {
+            break 'cleanup;
+        }
+
+        rc = RegSetValueExW(hKey, w!("ComponentId") as LPCWSTR, 0, (REG_SZ) as u32, ComponentId as *const u8, dwLength);
         if rc != (ERROR_SUCCESS) as i32 {
             break 'cleanup;
         }

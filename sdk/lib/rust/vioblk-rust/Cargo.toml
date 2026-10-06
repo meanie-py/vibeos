@@ -1,0 +1,26 @@
+# vioblk-rust — virtio-blk SCSIPORT miniport, written in Rust from scratch (there is no C
+# body: the x86 kernel had no virtio-blk driver at all, so a virtio disk — including an ISO
+# served over virtio-blk — was invisible to it and the boot ended in 0x6B).
+#
+# It presents one SCSI disk per virtio-blk PCI function and turns the SCSI commands
+# disk.sys/classpnp send (INQUIRY, READ CAPACITY, MODE SENSE, READ/WRITE 10/16, flush) into
+# virtio-blk requests through the `virtio-drivers` crate, which the netstack already uses
+# for virtio-net. Polled and synchronous: each request completes inside HwStartIo.
+#
+# Driver-private layouts (HW_INITIALIZATION_DATA, PORT_CONFIGURATION_INFORMATION, the SRB)
+# come from the gen_driver_types.sh substrate (src/types_*.rs, `gen_driver_types.sh vioblk`).
+# crate-type=staticlib → libvioblk_rust.a, linked into drivers/storage/port/vioblk.
+[package]
+name = "vioblk-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "vioblk_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+virtio-drivers = { version = "0.13.0", default-features = false }

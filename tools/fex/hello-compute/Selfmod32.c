@@ -87,7 +87,7 @@ static void PathJoinA(char *dst, const char *dir, const char *rest)
     dst[i] = 0;
 }
 
-int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
+int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) */
 {
     BYTE *code, *base2;
     CODEFN fn;
@@ -297,7 +297,9 @@ rung6:
         HMODULE nt = GetModuleHandleA("ntdll.dll");
         RWVM_FN NtWVM = (RWVM_FN)GetProcAddress(nt, "NtWriteVirtualMemory");
         RWVM_FN NtRVM = (RWVM_FN)GetProcAddress(nt, "NtReadVirtualMemory");
-        volatile DWORD cells[2];
+        /* [0] the count cell, at the caller's SIZE_T width; [1] the canary
+         * right behind it. */
+        volatile SIZE_T cells[2];
         BYTE patch[CODE_LEN];
         BYTE readback[CODE_LEN];   /* never the same buffer as `patch` */
         LONG st;
@@ -314,8 +316,8 @@ rung6:
         st = NtWVM(GetCurrentProcess(), code, patch, CODE_LEN,
                    (SIZE_T *)&cells[0]);
         ReportHex("[selfmod32] rung7 NtWriteVirtualMemory =", (DWORD)st);
-        ReportHex("[selfmod32] rung7 bytes written =", cells[0]);
-        ReportHex("[selfmod32] rung7 canary past the count cell =", cells[1]);
+        ReportHex("[selfmod32] rung7 bytes written =", (DWORD)cells[0]);
+        ReportHex("[selfmod32] rung7 canary past the count cell =", (DWORD)cells[1]);
 
         /* A REFUSED write is a correct answer here, and on a JIT host it is the
          * EXPECTED one. FEX write-protects an RWX page to detect self-modifying
@@ -371,8 +373,8 @@ rung6:
         cells[1] = 0xC0DEFACE;
         st = NtRVM(GetCurrentProcess(), code, readback, CODE_LEN,
                    (SIZE_T *)&cells[0]);
-        ReportHex("[selfmod32] rung7 bytes read =", cells[0]);
-        ReportHex("[selfmod32] rung7 read canary =", cells[1]);
+        ReportHex("[selfmod32] rung7 bytes read =", (DWORD)cells[0]);
+        ReportHex("[selfmod32] rung7 read canary =", (DWORD)cells[1]);
         if (st < 0 || cells[0] != CODE_LEN || cells[1] != 0xC0DEFACE)
         {
             Report("[selfmod32] FAIL: rung7 — *NumberOfBytesRead wrote past the "

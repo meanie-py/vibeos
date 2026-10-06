@@ -12,7 +12,7 @@ use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, HalGetBusDataByOffset, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoGetAttachedDeviceReference, KEVENT, KeInitializeEvent, KeWaitForSingleObject, PBUS_HANDLER, PCI_BUS_INTERFACE_STANDARD, PCI_COMMON_HEADER, PCI_SLOT_NUMBER, PDEVICE_OBJECT, PINTERFACE, PIO_STACK_LOCATION, PIRP, PPCIBUSDATA, PPCI_BUS_INTERFACE_STANDARD, PciReadWriteConfig, _EVENT_TYPE_SynchronizationEvent};
 use ntkrnl_sys::inline::tier1::IoGetNextIrpStackLocation;
-use ntkrnl_sys::ddk::{_BUS_HANDLER, _PCIBUSDATA, _PCI_BUS_INTERFACE_STANDARD, HAL_DISPATCH};
+use ntkrnl_sys::ddk::{_BUS_HANDLER, _PCIBUSDATA, _PCI_BUS_INTERFACE_STANDARD, HAL_DISPATCH, PCI_ROOT_BUS_CAPABILITY};
 use ntkrnl_sys::driver_ddk::DbgPrint;
 use ntkrnl_sys::ddk::_INTERFACE_TYPE_PCIBus as PCIBus;
 use ntkrnl_sys::ddk::_BUS_DATA_TYPE_PCIConfiguration as PCIConfiguration;
@@ -95,17 +95,59 @@ pub unsafe extern "system" fn PciReadWriteConfigSpace(
         );
     }
 
+    /* The legacy mechanism cannot reach extended configuration space */
+    if Offset.wrapping_add(Length) > PCI_LEGACY_CONFIG_LENGTH
+        && PciEcamReadWriteConfig((*DeviceExtension).BaseBus as ULONG, Slot, Buffer, Offset, Length, Read) != 0
+    {
+        return;
+    }
+
     PciInterface = (*(*DeviceExtension).BusRootFdoExtension).PciBusInterface;
     if !PciInterface.is_null() {
-        DbgPrint(
-            b"ERROR:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as PCSTR,
-            b"PciReadWriteConfigSpace\0" as *const u8 as PCSTR,
-            b"drivers/bus/pcix/pci/config.c\0" as *const u8
-                as PCSTR,
-            69,
-        );
-        DbgPrint(b"\0" as *const u8 as PCSTR);
-        DbgBreakPoint();
+        /* Use the PCI interface to access configuration space (upstream 81f04b39ba4) */
+        let LengthProcessed: ULONG = if Read as i32 != 0 {
+            // A NULL slot in the interface is 0 bytes processed: the C would call through it.
+            match (*PciInterface).ReadConfig {
+                Some(f) => f(
+                    (*PciInterface).Context,
+                    (*DeviceExtension).BaseBus as ULONG,
+                    Slot.u.AsULONG,
+                    Buffer,
+                    Offset,
+                    Length,
+                ),
+                None => 0,
+            }
+        } else {
+            // A NULL slot in the interface is 0 bytes processed: the C would call through it.
+            match (*PciInterface).WriteConfig {
+                Some(f) => f(
+                    (*PciInterface).Context,
+                    (*DeviceExtension).BaseBus as ULONG,
+                    Slot.u.AsULONG,
+                    Buffer,
+                    Offset,
+                    Length,
+                ),
+                None => 0,
+            }
+        };
+
+        /* Verify the operation succeeded */
+        if LengthProcessed != Length {
+            DbgPrint(
+                b"(%s:%d) PCI: Config space %s failed - Bus %x, Slot %x, Offset %x, Expected %x bytes, got %x\n\0"
+                    as *const u8 as PCSTR,
+                b"drivers/bus/pcix/pci/config.c\0" as *const u8 as PCSTR,
+                103,
+                if Read as i32 != 0 { b"read\0".as_ptr() } else { b"write\0".as_ptr() } as PCSTR,
+                (*DeviceExtension).BaseBus as ULONG,
+                Slot.u.AsULONG,
+                Offset,
+                Length,
+                LengthProcessed,
+            );
+        }
     } else {
         if (*DeviceExtension).BusHandler.is_null() {
             RtlAssert(
@@ -339,6 +381,30 @@ pub unsafe extern "system" fn PciGetConfigHandlers(FdoExtension: PPCI_FDO_EXTENS
             }
         } else {
             PciAssignBusNumbers = 1u8;
+
+            /* The driver below owns _OSC and reports what the firmware granted */
+            let PciInterface: PPCI_BUS_INTERFACE_STANDARD = (*FdoExtension).PciBusInterface;
+            if (*PciInterface).Size as usize
+                >= core::mem::offset_of!(_PCI_BUS_INTERFACE_STANDARD, RootBusCapability)
+                    + core::mem::size_of::<PCI_ROOT_BUS_CAPABILITY>()
+                && (*PciInterface).RootBusCapability.is_some()
+            {
+                if let Some(RootBusCapability) = (*PciInterface).RootBusCapability {
+                    RootBusCapability(
+                        (*PciInterface).Context,
+                        core::ptr::addr_of_mut!((*FdoExtension).RootBusHardwareCapability),
+                    );
+                }
+
+                DbgPrint(
+                    b"(%s:%d) PCI - Root bus interface %d, _OSC support 0x%08lx, granted 0x%08lx\n\0".as_ptr() as PCSTR,
+                    b"drivers/bus/pcix/pci/config.c\0".as_ptr() as PCSTR,
+                    299,
+                    (*FdoExtension).RootBusHardwareCapability.SecondaryInterface as i32,
+                    (*FdoExtension).RootBusHardwareCapability.OscFeatureSupport.u.AsULONG,
+                    (*FdoExtension).RootBusHardwareCapability.OscControlGranted.u.AsULONG,
+                );
+            }
         }
     } else {
         if !((*(*FdoExtension).BusRootFdoExtension).PciBusInterface).is_null() {

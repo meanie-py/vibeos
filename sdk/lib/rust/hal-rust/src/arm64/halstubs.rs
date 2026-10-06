@@ -894,13 +894,6 @@ extern "system" {
 
 unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQL) {
     let cpu = halp_cpu_state();
-    if cpu
-        .soft_int_in_progress
-        .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return;
-    }
 
     // DISPATCH delivery first (timers + DPCs), then APC — mirrors the NT
     // lowering order (higher software level drains before the lower one).
@@ -917,10 +910,16 @@ unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQ
     // (first attempt BUGCHECKed 0x1E with an EC=0x0E illegal-execution-state
     // return to EL0). HalpEnter/ExitInterruptIrql bracket every exception-
     // context dispatch window, so depth 0 == genuine thread/SVC context.
+    //
+    // Only this half runs under soft_int_in_progress (no re-entry from a lower
+    // inside it). It never blocks: a thread it readies is swapped in later, at
+    // the preemption point in KfLowerIrql. So the flag is always cleared on the
+    // CPU, and by the thread, that set it.
     let dispatch_bit = software_interrupt_bit(DISPATCH_LEVEL);
     if NewIrql < DISPATCH_LEVEL
         && cpu.interrupt_context_depth.load(Ordering::SeqCst) == 0
         && (cpu.soft_int_pending.load(Ordering::SeqCst) & dispatch_bit) != 0
+        && cpu.soft_int_in_progress.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).is_ok()
     {
         cpu.soft_int_pending.fetch_and(!dispatch_bit, Ordering::SeqCst);
         unsafe {
@@ -928,7 +927,18 @@ unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQ
             KiDispatchSoftwareIntArm64();
             halp_set_irql(NewIrql);
         }
+        cpu.soft_int_in_progress.store(0, Ordering::SeqCst);
     }
+
+    // APC delivery is NOT under that flag. KiDeliverApc drops to PASSIVE to run
+    // normal kernel APC routines, which may block and switch threads. With the
+    // per-CPU flag held across such a switch, every thread that ran next on
+    // this CPU had its APC delivery skipped: an IRP completed synchronously left
+    // its IopCompleteRequest APC queued, so the caller saw a final status, did
+    // not wait, returned, and the APC later copied the output (a DISK_GEOMETRY,
+    // on the Pi 4) into its dead frame. Nesting is KiDeliverApc's to bound, as
+    // on NT: KernelApcInProgress keeps a second normal APC out, while special
+    // APCs (I/O completion) still run inside a normal routine.
 
     let apc_bit = software_interrupt_bit(APC_LEVEL);
     if NewIrql < APC_LEVEL && (cpu.soft_int_pending.load(Ordering::SeqCst) & apc_bit) != 0 {
@@ -956,8 +966,6 @@ unsafe fn HalpDispatchSoftwareInterrupts(OldIrql: ddk::KIRQL, NewIrql: ddk::KIRQ
             }
         }
     }
-
-    cpu.soft_int_in_progress.store(0, Ordering::SeqCst);
 }
 
 // --- IRQL-violation tripwire (serial self-reporting) -----------------------
@@ -1045,9 +1053,9 @@ pub unsafe extern "system" fn KfLowerIrql(NewIrql: ddk::KIRQL) {
         // equivalent, so a thread that never blocked held the CPU forever
         // (the zero-page thread stalled every arm64 kmtest round ~95 s). Only
         // in thread context (not inside an IRQ window) and never while our own
-        // softint drain is still running — a switch there would leave
+        // DISPATCH drain is still running — a switch there would leave
         // soft_int_in_progress set under whichever thread runs next, and every
-        // lower on this CPU would skip delivery until we were resumed. The
+        // lower on this CPU would skip DPC delivery until we were resumed. The
         // kernel side declines when IRQs are masked, on the idle thread, and
         // inside a DPC. Re-read the CPU state: after the switch we may resume
         // on another CPU.

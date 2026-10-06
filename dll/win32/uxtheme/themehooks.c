@@ -14,6 +14,29 @@ BYTE gabMSGPmessages[UAHOWP_MAX_SIZE];
 BYTE gabDLGPmessages[UAHOWP_MAX_SIZE];
 BOOL g_bThemeHooksActive = FALSE;
 
+/* Diagnostic (vibeos, 2026-10-05): control-panel applets intermittently got a WND_DATA of
+ * 1 from GetPropW(atWndContext) and faulted in OnPostWinPosChanged, leaving rundll32 with no
+ * window. Name every property on the window when the value cannot be a heap pointer, so the
+ * next occurrence says which property answers to uxtheme's atom. Behaviour is unchanged. */
+static BOOL CALLBACK DumpWndProp(HWND hWnd, LPWSTR lpszString, HANDLE hData, ULONG_PTR lParam)
+{
+    if (IS_INTRESOURCE(lpszString))
+        ERR("  prop atom=%04x data=%p\n", LOWORD((ULONG_PTR)lpszString), hData);
+    else
+        ERR("  prop %s data=%p\n", debugstr_w(lpszString), hData);
+    return TRUE;
+}
+
+static void DumpBogusWndData(HWND hWnd, PWND_DATA pwndData)
+{
+    WCHAR szClass[64] = L"", szAtom[64] = L"";
+    GetClassNameW(hWnd, szClass, ARRAYSIZE(szClass));
+    GlobalGetAtomNameW(atWndContext, szAtom, ARRAYSIZE(szAtom));
+    ERR("bogus WND_DATA %p hwnd=%p class=%s atWndContext=%04x now names %s\n",
+        pwndData, hWnd, debugstr_w(szClass), atWndContext, debugstr_w(szAtom));
+    EnumPropsExW(hWnd, DumpWndProp, 0);
+}
+
 PWND_DATA ThemeGetWndData(HWND hWnd)
 {
     PWND_DATA pwndData;
@@ -44,6 +67,10 @@ PWND_DATA ThemeGetWndData(HWND hWnd)
         }
 
         SetPropW( hWnd, (LPCWSTR)MAKEINTATOM(atWndContext), pwndData);
+    }
+    else if ((ULONG_PTR)pwndData < 0x10000)
+    {
+        DumpBogusWndData(hWnd, pwndData);
     }
 
     return pwndData;

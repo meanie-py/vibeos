@@ -1502,7 +1502,10 @@ pub unsafe extern "system" fn NtCreateDebugObject(
             &mut h_debug,
         );
         if status >= 0 {
-            *debug_handle = h_debug;
+            // C: `*DebugHandle = hDebug` under _SEH2_TRY; the handler takes the code.
+            if let Err(code) = ntkrnl_sys::probe::write_back(debug_handle, h_debug) {
+                status = code;
+            }
         }
     }
 
@@ -1538,7 +1541,12 @@ pub unsafe extern "system" fn NtDebugContinue(
             Err(status) => return status,
         };
     } else {
-        client_id = *app_client_id;
+        // Kernel-mode caller: the pointer is trusted, but the load is still made
+        // fault-tolerant rather than a bugcheck.
+        client_id = match ntkrnl_sys::probe::read_back(app_client_id as *const _CLIENT_ID) {
+            Ok(id) => id,
+            Err(status) => return status,
+        };
     }
 
     if continue_status != DBG_CONTINUE
@@ -1753,7 +1761,12 @@ pub unsafe extern "system" fn NtSetInformationDebugObject(
         if let Err(status) = ntkrnl_sys::probe::probe_write_generic(return_length, 1, 1i8) {
             return status;
         }
-        *return_length = core::mem::size_of::<DEBUG_OBJECT_KILL_PROCESS_ON_EXIT_INFORMATION>() as ULONG;
+        if let Err(status) = ntkrnl_sys::probe::write_back(
+            return_length,
+            core::mem::size_of::<DEBUG_OBJECT_KILL_PROCESS_ON_EXIT_INFORMATION>() as ULONG,
+        ) {
+            return status;
+        }
     }
 
     status = ObReferenceObjectByHandle(
@@ -1831,7 +1844,10 @@ pub unsafe extern "system" fn NtWaitForDebugEvent(
         }
     } else {
         if !timeout.is_null() {
-            local_time_out = *timeout;
+            local_time_out = match ntkrnl_sys::probe::read_back(timeout as *const LARGE_INTEGER) {
+                Ok(value) => value,
+                Err(status) => return status,
+            };
         }
     }
 
@@ -1963,7 +1979,10 @@ pub unsafe extern "system" fn NtWaitForDebugEvent(
 
     ObDereferenceObject(debug_object as PVOID);
 
-    *state_change = wait_state_change;
+    // C: `*StateChange = WaitStateChange` under _SEH2_TRY; the handler takes the code.
+    if let Err(code) = ntkrnl_sys::probe::write_back(state_change, wait_state_change) {
+        status = code;
+    }
 
     status
 }

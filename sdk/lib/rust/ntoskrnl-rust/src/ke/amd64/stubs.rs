@@ -40,9 +40,15 @@ pub unsafe extern "system" fn KiSwitchKernelStack(
         StackSize,
     );
     
-    // Disable interrupts (equivalent to _disable() in C)
-    core::arch::asm!("cli");
-    
+    // Disable interrupts while messing with the stack -- and RESTORE them below, as the
+    // C does (`Eflags = __readeflags(); _disable(); ... __writeeflags(Eflags)`). The
+    // translation kept only the cli, so a thread converting to a GUI thread
+    // (KiConvertToGuiThread -> here) ran all of PsConvertToGuiThread with IF=0. At
+    // -smp 2 it then spun for MmPfnLock (desktop-heap MiMapViewOfDataSection) unable
+    // to take the TB-shootdown IPI from the CPU holding it: both CPUs wedged at
+    // `[user32] DllMain PROCESS_ATTACH` (2026-10-05, two gates).
+    let interrupts_were_enabled = ntkrnl_sys::inline::ke::KeDisableInterrupts();
+
     (*CurrentThread).TrapFrame = ((*CurrentThread).TrapFrame as isize + StackOffset) as PKTRAP_FRAME;
     (*CurrentThread).InitialStack = ((*CurrentThread).InitialStack as isize + StackOffset) as PVOID;
     (*CurrentThread).StateSaveArea = ((*CurrentThread).StateSaveArea as isize + StackOffset) as *mut _XSAVE_FORMAT;
@@ -53,7 +59,12 @@ pub unsafe extern "system" fn KiSwitchKernelStack(
     let Pcr = KeGetPcr() as PKIPCR;
     (*Pcr).Prcb.RspBase = ((*Pcr).Prcb.RspBase as isize + StackOffset) as u64;
     (*(*Pcr).__bindgen_anon_1.__bindgen_anon_1.TssBase).Rsp0 = ((*(*Pcr).__bindgen_anon_1.__bindgen_anon_1.TssBase).Rsp0 as isize + StackOffset) as u64;
-    
+
+    // The restore's `sti` is a `nomem` asm: fence so the Rsp0/RspBase stores above
+    // cannot be sunk past it into the window the cli exists to close.
+    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    ntkrnl_sys::inline::ke::KeRestoreInterrupts(interrupts_were_enabled);
+
     OldStackBase
 }
 

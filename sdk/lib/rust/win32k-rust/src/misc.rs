@@ -581,7 +581,7 @@ pub unsafe extern "system" fn NtUserGetThreadState(Routine: DWORD) -> DWORD_PTR 
         }
         THREADSTATE_GETINPUTSTATE => {
             ret = (LOWORD(IntGetQueueStatus(
-                QS_POSTMESSAGE | QS_TIMER | QS_PAINT | QS_SENDMESSAGE | QS_INPUT,
+                QS_POSTMESSAGE | QS_TIMER | QS_PAINT | QS_SENDMESSAGE | QS_INPUT | QS_RAWINPUT,
             )) as DWORD_PTR)
                 & (QS_KEY | QS_MOUSEBUTTON) as DWORD_PTR;
         }

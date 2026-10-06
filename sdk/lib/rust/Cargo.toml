@@ -245,6 +245,8 @@ members = [
     "fltmgr-rust",
     "ksecdd-rust",
     "usbstor-rust",
+    "sdhc-rust",
+    "sdhc-cargo",
     "usbccgp-rust",
     "usbhub-rust",
     "usbehci-rust",
@@ -316,6 +318,8 @@ members = [
     "scsiport-rust",
     "atapi-rust",
     "buslogic-rust",
+    "vioblk-rust",
+    "vioblk-cargo",
     "usbaudio-rust",
     "ks-rust",
     "mup-rust",
@@ -397,6 +401,11 @@ members = [
     # which is what stops the rot.
     "recyclebin-rust",
     "setuplib-rust",
+    # wowx64.dll, the OS side of BTCpu64 (x86-64 guests on arm64). The link cell
+    # builds on arm64 only; the body crate checks everywhere (its host half is
+    # cfg(aarch64), the rest is the arch-neutral contract types).
+    "wowx64-rust",
+    "wowx64-cargo",
 ]
 resolver = "2"
 

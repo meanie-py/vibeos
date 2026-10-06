@@ -4,12 +4,14 @@
 //! hal/halx86/acpi/halpnpdd.c): IoCreateDriver, IoReportDetectedDevice for a
 //! root-enumerated FDO, then child PDOs through BusRelations. arm64 has no
 //! acpi.sys to hand the rest of the namespace to, so the children here are the
-//! ACPI devices themselves, read by acpi.rs. Today there are two, both on the
+//! ACPI devices themselves, read by acpi.rs. Today there are three, all on the
 //! Raspberry Pi 4, each published with its register window and interrupt as
 //! boot resources:
 //! - an xHCI controller (_HID PNP0D10, the VL805), as ACPI\PNP0D10;
 //! - the GENET Ethernet MAC (_HID BCM6E4E), as ACPI\BCM6E4E. netstack binds to
 //!   it through the critical device database and drives it directly.
+//! - the EMMC2 SD host controller behind the card slot (_HID BRCME88C), as
+//!   ACPI\BRCME88C, which sdhc.sys drives.
 //!
 //! For the xHCI child, usbport treats every miniport's parent as a PCI function: it reads the
 //! config header through BUS_INTERFACE_STANDARD, asks for the bus number and
@@ -22,7 +24,7 @@
 #![cfg(target_arch = "aarch64")]
 #![allow(non_snake_case)]
 
-use super::acpi::{find_genet, find_xhci, AcpiDevice};
+use super::acpi::{find_genet, find_sdhc, find_xhci, AcpiDevice};
 use ntkrnl_sys::ddk;
 use ntkrnl_sys::ddk::{
     BOOLEAN, GUID, NTSTATUS, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PIO_STACK_LOCATION, PUNICODE_STRING, PVOID,
@@ -99,6 +101,7 @@ static DRIVER_NAME: [u16; 17] = wide(b"\\Driver\\ACPI_HAL\0");
 /// Multi-sz: the ACPI enumerator's ID, then the compatible *PNP0D10.
 static XHCI_HARDWARE_IDS: [u16; 23] = wide(b"ACPI\\PNP0D10\0*PNP0D10\0\0");
 static GENET_HARDWARE_IDS: [u16; 23] = wide(b"ACPI\\BCM6E4E\0*BCM6E4E\0\0");
+static SDHC_HARDWARE_IDS: [u16; 25] = wide(b"ACPI\\BRCME88C\0*BRCME88C\0\0");
 static INSTANCE_ZERO: [u16; 2] = wide(b"0\0");
 
 unsafe extern "system" {
@@ -127,6 +130,7 @@ struct FdoExtension {
 enum Child {
     Xhci,
     Genet,
+    Sdhc,
 }
 
 #[repr(C)]
@@ -282,10 +286,11 @@ unsafe fn query_id(child: Child, id_type: u32, out: *mut PVOID) -> NTSTATUS {
     let ids: &[u16] = match child {
         Child::Xhci => &XHCI_HARDWARE_IDS,
         Child::Genet => &GENET_HARDWARE_IDS,
+        Child::Sdhc => &SDHC_HARDWARE_IDS,
     };
     let src: &[u16] = match id_type {
         // The device ID is the first string of the hardware-ID multi-sz.
-        BUS_QUERY_DEVICE_ID => &ids[..13],
+        BUS_QUERY_DEVICE_ID => &ids[..=ids.iter().position(|&c| c == 0).unwrap_or(0)],
         BUS_QUERY_HARDWARE_IDS => ids,
         BUS_QUERY_INSTANCE_ID => &INSTANCE_ZERO,
         _ => return STATUS_NOT_SUPPORTED,
@@ -516,8 +521,9 @@ unsafe fn create_pdo(driver: PDRIVER_OBJECT, child: Child, x: AcpiDevice) -> *mu
     );
     match child {
         Child::Xhci => init_xhci(pdo),
-        Child::Genet => DbgPrint(
-            b"[HAL] ACPI GENET (BCM6E4E): regs %p+0x%x, GSIV %u %s\n\0".as_ptr(),
+        Child::Genet | Child::Sdhc => DbgPrint(
+            b"[HAL] ACPI %s: regs %p+0x%x, GSIV %u %s\n\0".as_ptr(),
+            if child == Child::Genet { b"GENET (BCM6E4E)\0".as_ptr() } else { b"SD host (BRCME88C)\0".as_ptr() },
             x.mmio as PVOID,
             x.mmio_len as u32,
             x.gsiv,
@@ -576,7 +582,7 @@ unsafe extern "system" fn AddDevice(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT)
         ddk::IoDeleteDevice(dev);
         return STATUS_NO_SUCH_DEVICE;
     }
-    for (child, found) in [(Child::Xhci, find_xhci()), (Child::Genet, find_genet())] {
+    for (child, found) in [(Child::Xhci, find_xhci()), (Child::Genet, find_genet()), (Child::Sdhc, find_sdhc())] {
         if let Some(x) = found {
             let pdo = create_pdo(driver, child, x);
             if !pdo.is_null() {

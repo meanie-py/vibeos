@@ -95,6 +95,32 @@ static int TestFinally(void)
     return ran_finally == 1 && caught == 1;
 }
 
+#ifdef __x86_64__
+/* A debug print whose buffer the caller does not own. With no debugger
+ * attached the kernel's KdpStub echoes BREAKPOINT_PRINT to the console UART,
+ * and that echo once read the caller's buffer in place: a user-mode Rust
+ * panic whose backtrace walked into garbage bugchecked the kernel (0x1E in
+ * KdpStub). The print must fail with STATUS_ACCESS_VIOLATION, and the system
+ * must still be up to say so. Same register convention as rtl's amd64
+ * DebugService: eax = service, rcx = buffer, edx = length. */
+#define BREAKPOINT_PRINT 1
+static int TestBadPrintBuffer(void)
+{
+    long status;
+
+    __asm__ volatile("int $0x2d\n\tint3"
+                     : "=a"(status)
+                     : "a"(BREAKPOINT_PRINT),
+                       "c"((void *)0xFFFF800000001000ULL), /* kernel space */
+                       "d"(64)
+                     : "r8", "r9", "memory");
+
+    DbgPrint("[SEH-USER] bad-print-buffer: status=0x%lx (%s)\n", status,
+             status == STATUS_ACCESS_VIOLATION ? "PASS" : "FAIL");
+    return status == STATUS_ACCESS_VIOLATION;
+}
+#endif
+
 int main(void)
 {
     int pass = 1;
@@ -105,6 +131,9 @@ int main(void)
     pass &= TestSoftwareRaise();   /* least demanding first */
     pass &= TestFinally();
     pass &= TestHardwareFault();   /* the real hardware→userland roundtrip */
+#ifdef __x86_64__
+    pass &= TestBadPrintBuffer();
+#endif
 
     DbgPrint("[SEH-USER] RESULT: %s\n", pass ? "PASS" : "FAIL");
     return pass ? 0 : 1;

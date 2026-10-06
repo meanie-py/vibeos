@@ -508,6 +508,13 @@ def _resolve_in_module(repo: Path, arch: str, pc: str, module: str, rva: int) ->
 _CPU_BANNER = re.compile(r"^CPU#(\d+)\b", re.MULTILINE)
 _CPU_PC = re.compile(r"\b(?:PC|RIP|EIP)=([0-9A-Fa-f]{8,16})\b")
 _CPU_SP = re.compile(r"\b(?:SP|RSP|ESP)=([0-9A-Fa-f]{8,16})\b")
+# The frame pointer: X29 on arm64, RBP on amd64, EBP on i386. Every kernel we build
+# keeps frame pointers, so a chain walk from here is the backtrace a stuck vCPU
+# cannot print for itself.
+_CPU_FP = re.compile(r"\b(?:X29|RBP|EBP)=([0-9A-Fa-f]{8,16})\b")
+# One link of the walk as capture_cpu_state() records it.
+_FRAME_LINE = re.compile(r"^  #(\d+) fp=([0-9a-f]+) ret=([0-9a-f]+)$", re.MULTILINE)
+_FRAMES_BANNER = re.compile(r"^=== CPU#(\d+) frames ", re.MULTILINE)
 
 
 def cpu_pcs(state: str) -> list[tuple[int, str]]:
@@ -552,6 +559,32 @@ def cpu_sps(state: str) -> list[tuple[int, str]]:
     return found
 
 
+def cpu_fps(state: str) -> list[tuple[int, str]]:
+    """[(cpu_index, fp_hex)] parsed out of a `capture_cpu_state()` blob, by the
+    same per-vCPU slicing as cpu_pcs."""
+    banners = list(_CPU_BANNER.finditer(state))
+    found = []
+    for i, m in enumerate(banners):
+        end = banners[i + 1].start() if i + 1 < len(banners) else len(state)
+        fp = _CPU_FP.search(state, m.end(), end)
+        if fp:
+            found.append((int(m.group(1)), fp.group(1)))
+    return found
+
+
+def cpu_frames(state: str) -> list[tuple[int, int, str]]:
+    """[(cpu_index, depth, ret_hex)] from the frame walks in a capture."""
+    banners = list(_FRAMES_BANNER.finditer(state))
+    found = []
+    for i, m in enumerate(banners):
+        end = banners[i + 1].start() if i + 1 < len(banners) else len(state)
+        nxt = state.find("\n=== ", m.end())
+        end = min(end, nxt if nxt != -1 else end)
+        for f in _FRAME_LINE.finditer(state, m.end(), end):
+            found.append((int(m.group(1)), int(f.group(1)), f.group(3)))
+    return found
+
+
 def cpu_kernel_at_user_pc(state: str) -> list[tuple[int, str]]:
     """[(cpu_index, pc_hex)] for every arm64 vCPU executing at EL1 with a PC in
     the USER half of the address space.
@@ -590,4 +623,7 @@ def symbolicate_cpu_state(
     for idx, pc in cpu_pcs(state):
         sym = _resolve_addr(repo, arch, f"0x{pc}", mp=mp, reloc=kernel_relocation(arch, serial))
         lines.append(f"CPU#{idx} {sym or f'0x{pc} -> (unresolved)'}")
+    for idx, depth, ret in cpu_frames(state):
+        sym = _resolve_addr(repo, arch, f"0x{ret}", mp=mp, reloc=kernel_relocation(arch, serial))
+        lines.append(f"CPU#{idx}   #{depth} {sym or f'0x{ret} -> (unresolved)'}")
     return lines

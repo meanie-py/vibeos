@@ -1544,6 +1544,41 @@ def test_capture_cpu_state_reads_the_memory_under_every_stack_pointer():
     assert seen.index("info registers -a") < seen.index("x /23gx 0xffff800004a26a00")
 
 
+def test_capture_cpu_state_walks_the_frame_pointer_chain(tmp_path):
+    # The 23-word stack window ended before the frame that had disabled
+    # interrupts in the 2026-10-05 MmPfnLock/TB-shootdown deadlock; the chain walk
+    # is the backtrace. It must read through the vCPU's own translation (`cpu N`
+    # first), follow ascending links, and stop on a null one.
+    v = _hang_vm(tmp_path, None, lambda: "")
+    del v.capture_cpu_state  # the real method, not the stub
+    mem = {
+        0xFFFFF88075571800: (0xFFFFF88075571870, 0xFFFFF80000461A42),
+        0xFFFFF88075571870: (0xFFFFF880755718F0, 0xFFFFF800005D0001),
+        0xFFFFF880755718F0: (0, 0xFFFFF80000600002),
+    }
+    seen = []
+
+    class _Qmp:
+        def hmp(self, cmd):
+            seen.append(cmd)
+            if cmd == "info registers -a":
+                return "CPU#0\nRIP=fffff80000463c52 RSP=fffff880755717c0\nRBP=fffff88075571800\n"
+            if cmd.startswith("x /2gx 0x"):
+                a = int(cmd.split("0x", 1)[1], 16)
+                nxt, ret = mem[a]
+                return f"{a:016x}: 0x{nxt:016x} 0x{ret:016x}"
+            return "ok"
+
+    v.qmp = _Qmp()  # type: ignore[assignment]
+    out = v.capture_cpu_state()
+    assert "=== CPU#0 frames (frame-pointer chain) ===" in out
+    assert "  #0 fp=fffff88075571800 ret=fffff80000461a42" in out
+    assert "  #2 fp=fffff880755718f0 ret=fffff80000600002" in out
+    assert "(end: null frame pointer)" in out
+    assert seen.index("cpu 0") < seen.index("x /2gx 0xfffff88075571800")
+    assert [f for f in triage.cpu_frames(out) if f[1] == 1] == [(0, 1, "fffff800005d0001")]
+
+
 def test_save_hang_state_survives_a_dead_monitor(tmp_path, _no_resample_wait):
     # A diagnostic that raises on an already-failing run destroys the failure it
     # was there to explain, so a dead QMP must degrade to a note in the file —
@@ -5430,6 +5465,21 @@ def test_staleness_lint_baseline_change_is_not_stale(staleness_repo: Path):
         staleness_repo / "build-i386"
     )
     (bl / "some_scanner.txt").write_text("accepted finding A\naccepted finding B\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.fresh and not v.stale, v.reasons
+
+
+def test_staleness_cohab_census_rerecord_is_not_stale(staleness_repo: Path):
+    """`cohab_census --write` after a build must not void that build's media."""
+    census = staleness_repo / "tools" / "cohab-census.txt"
+    census.parent.mkdir(parents=True, exist_ok=True)
+    census.write_text("ntoskrnl/lpc/reply.c\n")
+    _git(staleness_repo, "add", "-A")
+    _git(staleness_repo, "commit", "-qm", "census")
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    census.write_text("ntoskrnl/lpc/reply.c\nntoskrnl/lpc/send.c\n")
     v = provenance.check_staleness(staleness_repo, "i386")
     assert v.fresh and not v.stale, v.reasons
 

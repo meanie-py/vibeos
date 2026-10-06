@@ -324,7 +324,6 @@ pub unsafe extern "system" fn LdrpHandleOneNewFormatImportDescriptor(
     let mut ForwarderLdrEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
     let mut ForwarderEntry: PIMAGE_BOUND_FORWARDER_REF;
     let BoundEntry: PIMAGE_BOUND_IMPORT_DESCRIPTOR;
-    let Peb: PPEB = (*NtCurrentTeb()).ProcessEnvironmentBlock;
     let mut i: ULONG;
     let mut IatSize: ULONG = 0;
 
@@ -350,7 +349,7 @@ pub unsafe extern "system" fn LdrpHandleOneNewFormatImportDescriptor(
 
         if AlreadyLoaded == 0 {
             InsertTailList(
-                core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList),
+                core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList),
                 core::ptr::addr_of_mut!((*DllLdrEntry).InInitializationOrderLinks),
             );
         }
@@ -380,7 +379,7 @@ pub unsafe extern "system" fn LdrpHandleOneNewFormatImportDescriptor(
             if NT_SUCCESS(Status) {
                 if AlreadyLoaded == 0 {
                     InsertTailList(
-                        core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList),
+                        core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList),
                         core::ptr::addr_of_mut!((*ForwarderLdrEntry).InInitializationOrderLinks),
                     );
                 }
@@ -474,7 +473,6 @@ pub unsafe extern "system" fn LdrpHandleOneOldFormatImportDescriptor(
     let mut DllLdrEntry: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
-    let Peb: PPEB = NtCurrentPeb();
 
     let ImportName: LPSTR =
         ((*LdrEntry).DllBase as ULONG_PTR + (**ImportEntry).Name as ULONG_PTR) as LPSTR;
@@ -507,7 +505,7 @@ pub unsafe extern "system" fn LdrpHandleOneOldFormatImportDescriptor(
         LdrpNormalSnap += 1;
         if AlreadyLoaded == 0 {
             InsertTailList(
-                core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList),
+                core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList),
                 core::ptr::addr_of_mut!((*DllLdrEntry).InInitializationOrderLinks),
             );
         }
@@ -1027,7 +1025,6 @@ pub unsafe extern "system" fn LdrpLoadImportModule(
     let mut GotExtension: BOOLEAN;
     let mut c: WCHAR;
     let mut Status: NTSTATUS;
-    let Peb: PPEB = RtlGetCurrentPeb();
     let Teb: PTEB = NtCurrentTeb();
     let mut RedirectedImpDescName: _UNICODE_STRING = core::mem::zeroed();
     let mut RedirectedDll: BOOLEAN = 0u8;
@@ -1124,7 +1121,7 @@ pub unsafe extern "system" fn LdrpLoadImportModule(
         if !NT_SUCCESS(Status) {
             /* Add it to the in-init-order list in case of failure */
             InsertTailList(
-                core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList),
+                core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList),
                 core::ptr::addr_of_mut!((**DataTableEntry).InInitializationOrderLinks),
             );
         }

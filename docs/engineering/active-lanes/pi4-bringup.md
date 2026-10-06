@@ -661,3 +661,43 @@ DHCP lease 192.168.1.216 from the LAN router; the host pings it and its TCP echo
 (port 7777) returned 1 MiB intact. Polled, so latency is the engine's poll cadence
 and the echo runs at ~60 KiB/s. Next: GENET interrupts (GIC SPI 189/190), larger
 socket buffers. Design notes: `smoltcp-netstack-design.md`, "Direct hardware backends".
+
+## Session 8 (2026-10-05) — the SD card in VibeOS
+
+The card slot works under VibeOS: Explorer lists the boot card as `VIBEOS_RPI4 (F:)` and
+Notepad opens its `config.txt`. The controller is EMMC2 (SDHCI 3.00), which the pftf
+firmware describes not in the DSDT (that holds only the Arasan host, `BCM2847`, wired to
+Wi-Fi) but in SSDT `RPI4EMMC`, as `SDC3`, `_HID BRCME88C`, IRQ 158. Its `_CRS` patches
+the template's base at run time (`Store(0xFE340000, RBAS)`), so the HAL's parser now
+follows a `_CRS` method to the `Name` it returns and takes the base from the store.
+
+Measured from the UEFI Shell (`mm`) before any code: caps `0x45EE6432` (100 MHz base
+clock), the card at 3.3 V signalling, and the firmware running it at 25 MHz on a 1-bit
+bus, which goes some way to explain the ~180 KB/s card writes measured in session 4.
+
+`sdhc.sys` (`sdk/lib/rust/sdhc-rust`) resets the host, identifies the card at 400 kHz and
+runs it at 25 MHz, 4-bit, polled PIO, 32-bit register access only. It presents the card to
+disk.sys as a SCSI disk through its own PDO (usbstor's contract, no storport). First boot:
+an SDXC card, 117 GiB, ready in 58 ms; reads at 10.7 MB/s; the start-time self-test wrote,
+read back and restored the card's last 8 sectors, outside every partition.
+
+Windows sees the disk as **write-protected** (`pnp::WRITE_ENABLED`): this card is the
+bench's boot card, and fastfat has not yet written a FAT volume on real hardware. Next:
+enable writes (on a spare card first), high-speed mode (50 MHz), DMA and the interrupt,
+then booting from the card instead of the RAM disk.
+
+Session 8, continued (2026-10-06): with Windows writes enabled, the card's first mount
+crashed the board (0x1E with a DISK_GEOMETRY over a saved frame pointer, or 0x109 from
+WAITDEP). The cause was a HAL bug, not the driver: APC delivery shared the DISPATCH drain's
+per-CPU flag, which leaked across a thread switch, so synchronous IRP completions ran after
+their callers returned (field manual, "A kernel return address holds a DISK_GEOMETRY"). Fixed,
+and `[IO-STRANDED]` now names any recurrence. Writes then hang above the driver on the first
+file create (roadmap bug registry), so `WRITE_ENABLED` stays off.
+
+Correction, same day: writes work. The "hang" was cmd's output redirection (`echo > file`
+leaves cmd waiting on csrss in `NtRequestWaitReplyPort`, on a USB stick too), which the
+census's new per-thread backtraces showed. stortest now also accepts the Pi's boot card
+(label VIBEOS_RPI4) and passes create, write, flush and read-back on it; the UEFI Shell then
+`type`s the file it wrote. `WRITE_ENABLED` is on. The driver also completes
+SRBs at DISPATCH_LEVEL now, answers MODE SENSE underruns as success (classpnp failed the
+mismatch), and logs `[SDHC] io:` rates while the card is busy.

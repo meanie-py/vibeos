@@ -2464,6 +2464,23 @@ pub unsafe fn CDefaultContextMenu_MapVerbToCmdId_body(this: *mut CDefaultContext
             return TRUE;
         }
     }
+
+    // Last, let the folder callback name its own verbs (upstream 62519e131a7):
+    // learn.microsoft.com/en-us/windows/win32/shell/dfm-mapcommandname
+    let mut pszVerbW: PWSTR = Verb as PWSTR;
+    if IsUnicode == 0 {
+        SHAnsiToUnicode(Verb as LPCSTR, UnicodeStr.as_mut_ptr(), MAX_VERB as i32);
+        pszVerbW = UnicodeStr.as_mut_ptr();
+    }
+    let mut i: UINT = UINT::MAX; // i = -1
+    if *pszVerbW != 0
+        && CDefaultContextMenu__DoCallback_body(this, DFM_MAPCOMMANDNAME, &mut i as *mut UINT as WPARAM, pszVerbW as LPVOID) >= 0
+        && HIWORD(i as DWORD) == 0
+    {
+        *idCmd = (*this).m_iIdCBFirst + i;
+        return TRUE;
+    }
+
     return FALSE; // even for "open": no handler means no command
 }
 

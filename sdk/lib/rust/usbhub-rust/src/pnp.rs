@@ -1397,9 +1397,9 @@ pub unsafe extern "system" fn USBH_FdoQueryBusRelations(
                                             core::ptr::addr_of_mut!((*PortData).PortStatus) as PVOID,
                                             core::mem::size_of::<USB_PORT_STATUS_AND_CHANGE>() as ULONG,
                                         );
-                                        UsbPortStatus = core::ptr::read(core::ptr::addr_of!((*PortData).PortStatus.__bindgen_anon_1.as_ref().PortStatus));
                                         if NtStatus >= 0 {
                                             let mut ix: ULONG = 0;
+                                            UsbPortStatus = core::ptr::read(core::ptr::addr_of!((*PortData).PortStatus.__bindgen_anon_1.as_ref().PortStatus));
                                             NtStatus = USBH_CreateDevice(HubExtension, Port, core::ptr::read(core::ptr::addr_of!(UsbPortStatus)), ix);
                                             while !(NtStatus >= 0) {
                                                 USBH_Wait(500);
@@ -1412,6 +1412,16 @@ pub unsafe extern "system" fn USBH_FdoQueryBusRelations(
                                                     (*PortData).ConnectionStatus = NoDeviceConnected;
                                                 }
                                                 USBH_SyncResetPort(HubExtension, Port);
+                                                /* The device can come back at another speed after the reset */
+                                                if USBH_SyncGetPortStatus(
+                                                    HubExtension,
+                                                    Port,
+                                                    core::ptr::addr_of_mut!((*PortData).PortStatus) as PVOID,
+                                                    core::mem::size_of::<USB_PORT_STATUS_AND_CHANGE>() as ULONG,
+                                                ) >= 0
+                                                {
+                                                    UsbPortStatus = core::ptr::read(core::ptr::addr_of!((*PortData).PortStatus.__bindgen_anon_1.as_ref().PortStatus));
+                                                }
                                                 ix = ix.wrapping_add(1);
                                                 NtStatus = USBH_CreateDevice(HubExtension, Port, core::ptr::read(core::ptr::addr_of!(UsbPortStatus)), ix);
                                             }

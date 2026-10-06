@@ -1865,11 +1865,21 @@ unsafe fn SpiGetPciConfigData(
                 PortConfig,
             );
 
+            // AccessRanges is only allocated when the miniport declares ranges; a miniport
+            // that maps its own BARs (vioblk) declares none, and reading [0] here was a
+            // NULL dereference — BUGCHECK 0x1E inside ScsiPortInitialize.
+            let range0 = if (*HwInitializationData).NumberOfAccessRanges > 0
+                && !(*PortConfig).AccessRanges.is_null()
+            {
+                ScsiPortConvertPhysicalAddressToUlong(
+                    (*((*PortConfig).AccessRanges as *mut ACCESS_RANGE)).RangeStart)
+            } else {
+                0
+            };
             DbgPrint(b"[SCSIPORT] resources: irql=%u vec=%u ranges0=%08x\n\0"
                 .as_ptr() as *const i8,
                 (*PortConfig).BusInterruptLevel, (*PortConfig).BusInterruptVector,
-                ScsiPortConvertPhysicalAddressToUlong(
-                    (*((*PortConfig).AccessRanges as *mut ACCESS_RANGE)).RangeStart)); // ahci marker
+                range0); // ahci marker
 
             ExFreePool(ResourceList as *mut core::ffi::c_void);
 
