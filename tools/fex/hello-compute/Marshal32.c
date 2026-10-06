@@ -978,9 +978,24 @@ static int CheckRegistryRedirection(void)
         return M32_FAIL_RDIR_CREATE;
     }
 
-    /* (a) ask the KERNEL where that handle actually points. */
+    /* (a) ask the KERNEL where that handle actually points. marshal64: an
+     * x86-64 process is not a WoW64 one -- under FEX on arm64 as natively on
+     * amd64 -- so its default view must be the native key, NOT Wow6432Node. */
     nameInfo.NameLength = 0;
     st = QueryKey(key, M32_KEY_NAME_INFORMATION, &nameInfo, sizeof(nameInfo), &got);
+#ifdef _WIN64
+    if (st < 0 ||
+        M32WideContains(nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR), NodeName))
+    {
+        CloseHandle(key);
+        ReportHex("[marshal32] redirect: a 64-bit process was redirected into Wow6432Node, status =",
+                  (DWORD)st);
+        if (st >= 0)
+            ReportWide("[marshal32] redirect: the kernel calls that handle ",
+                       nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR));
+        return M32_FAIL_RDIR_NAME;
+    }
+#else
     if (st < 0 ||
         !M32WideContains(nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR), NodeName))
     {
@@ -992,8 +1007,27 @@ static int CheckRegistryRedirection(void)
                        nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR));
         return M32_FAIL_RDIR_NAME;
     }
+#endif
     CloseHandle(key);
 
+#ifdef _WIN64
+    /* (b) and the explicit 64-bit view is that SAME key: the value is there. */
+    key64 = NULL;
+    st = OpenKey(&key64, KEY_READ | M32_KEY_WOW64_64KEY, &oa);
+    if (st >= 0)
+    {
+        got = 0;
+        st = QueryValue(key64, &uVal, 2 /* KeyValuePartialInformation */,
+                        &info, sizeof(info), &got);
+        CloseHandle(key64);
+    }
+    if (st < 0)
+    {
+        ReportHex("[marshal32] redirect: 64-bit view cannot see the default view's value, status =",
+                  (DWORD)st);
+        return M32_FAIL_RDIR_LEAK;
+    }
+#else
     /* (b) the SAME path in the 64-bit view must be a different key, so the
      * value we just wrote must not be visible through it. */
     key64 = NULL;
@@ -1010,6 +1044,7 @@ static int CheckRegistryRedirection(void)
             return M32_FAIL_RDIR_LEAK;
         }
     }
+#endif
     /* NOT finding the key at all is the expected outcome here: nothing created
      * it in the 64-bit hive. Only a successful VALUE read is a failure. */
 
