@@ -1917,3 +1917,39 @@ def test_an_option_fn_passed_as_a_pointer_maps_none_to_null():
     )
     out = _apply_plan(src, diag)
     assert "g((Callback).map_or(core::ptr::null_mut(), |f| f as *mut core::ffi::c_void));" in out
+
+
+def test_a_function_into_an_option_fn_slot_is_some():
+    src = "fn f() { EnumerateBootStoreEntries(h, EnumerateInstallations, d); }\n"
+    lo = src.index("EnumerateInstallations")
+    hi = lo + len("EnumerateInstallations")
+    child = {
+        "message": "try wrapping the expression in `core::prelude::v1::Some`",
+        "level": "help",
+        "spans": [
+            _span(
+                "a.rs",
+                lo,
+                lo,
+                replacement="core::prelude::v1::Some(",
+                applicability="MaybeIncorrect",
+            ),
+            _span("a.rs", hi, hi, replacement=")", applicability="MaybeIncorrect"),
+        ],
+        "children": [],
+    }
+    note = {
+        "message": "expected `Option<...>`, found fn item",
+        "level": "note",
+        "spans": [],
+        "children": [],
+    }
+    diag = _diag(
+        "mismatched types",
+        code="E0308",
+        spans=[_span("a.rs", lo, hi, is_primary=True)],
+        children=[note, child],
+    )
+    assert "EnumerateBootStoreEntries(h, Some(EnumerateInstallations), d);" in _apply_plan(
+        src, diag
+    )

@@ -80,6 +80,7 @@ RULE_ZEROED_DEFAULT = "zeroed_not_default"
 RULE_ARROW_FIELD = "raw_pointer_field"
 RULE_UNSIGNED_NEGATE = "unsigned_negative_literal"
 RULE_OPTION_FN_AS_PTR = "option_fn_as_pointer"
+RULE_SOME_FN_ITEM = "some_fn_item"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -120,6 +121,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_ARROW_FIELD,
     RULE_UNSIGNED_NEGATE,
     RULE_OPTION_FN_AS_PTR,
+    RULE_SOME_FN_ITEM,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -3397,6 +3399,54 @@ def _option_fn_as_ptr_rule(
     )
 
 
+def _some_fn_item_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A function passed where bindgen types the slot `Option<fn>`: C's implicit conversion of
+    a function to its pointer, which is `Some(f)`. rustc's own two-part suggestion, taken only
+    when the found side is a fn ITEM (setuplib: nine EnumerateBootStoreEntries callbacks)."""
+    if (diagnostic.get("code") or {}).get("code") != "E0308":
+        return [], [], False
+    if "found fn item" not in json.dumps(diagnostic):
+        return [], [], False
+    edits: list[Edit] = []
+    for child in diagnostic.get("children") or []:
+        msg = str(child.get("message") or "")
+        if not msg.startswith("try wrapping the expression in ") or not msg.endswith("Some`"):
+            continue
+        parts = [
+            sp for sp in child.get("spans") or [] if sp.get("suggested_replacement") is not None
+        ]
+        if len(parts) != 2:
+            continue
+        open_sp, close_sp = sorted(parts, key=lambda sp: int(sp["byte_start"]))
+        file_name = str(open_sp.get("file_name") or "")
+        data = load(file_name)
+        if data is None or close_sp.get("file_name") != file_name:
+            continue
+        lo, hi = int(open_sp["byte_start"]), int(close_sp["byte_start"])
+        inner = data[lo:hi].decode("utf-8", "replace")
+        if not re.fullmatch(r"\s*[A-Za-z_][\w:]*\s*", inner):
+            continue  # only a bare function name: anything else is not a fn item
+        masked = _mask_lexical(data)
+        if _in_macro_definition(masked, lo):
+            continue
+        edits.append(
+            _simple_edit(
+                RULE_SOME_FN_ITEM,
+                file_name,
+                data,
+                lo,
+                hi,
+                f"Some({inner.strip()})",
+                "rustc E0308: a function into an Option<fn> slot; C's implicit &f is Some(f)",
+                open_sp,
+                ctx,
+            )
+        )
+    return edits, [], bool(edits)
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
@@ -3430,6 +3480,7 @@ _RULE_TABLE: dict[
     RULE_ARROW_FIELD: _arrow_field_rule,
     RULE_UNSIGNED_NEGATE: _unsigned_negate_rule,
     RULE_OPTION_FN_AS_PTR: _option_fn_as_ptr_rule,
+    RULE_SOME_FN_ITEM: _some_fn_item_rule,
 }
 
 
