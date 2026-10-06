@@ -3,9 +3,26 @@
 **Upstream:** https://github.com/FEX-Emu/FEX, tag **FEX-2607**
 (commit `1cc4b93e7a71c883ec021b71359f136394dc1f3c`, snapshot 2026-07-08). **License: MIT** (`LICENSE`).
 
-**Unmodified.** No vibeos patches are applied to this tree — it is a pruned
-byte-identical snapshot of the upstream tag. If a local change ever becomes
-unavoidable, record it here as a diff and mark the touched files.
+**ONE vibeos patch is applied.** This section said "Unmodified. No vibeos patches
+are applied to this tree" from 2026-07-08 until 2026-10-03, and that was false for
+all but the first six days of it: the patch below landed 2026-07-14 and nobody
+updated the record. The claim was then reused downstream as evidence — a design doc
+argued a fault was upstream behaviour because `git status --porcelain external/fex`
+came back empty, which measures *working-tree dirtiness*, not divergence from
+upstream, and is clean for a committed patch. **The oracle for "is this tree
+modified" is `git log -- 'vendor/fex/*'` or this file, never `git status`.**
+
+| commit | file | what |
+|---|---|---|
+| `6afc128553f` (2026-07-14) | `Source/Windows/WOW64/Module.cpp` | NULL-thread guard at the top of `BTCpuResetToConsistentStateImpl`. An exception delivered before `BTCpuThreadInit` populates the THREAD_STATE TLS slot cannot be FEX-owned, but every handler below derefs `Thread`, so with `Thread == nullptr` each attempt AVs, re-enters the VEH and recurses to stack overflow (~1600 frames, `arm64-20260714-181535`). Returns the exception to the next handler — but first still runs `OvercommitTracker::HandleAccessViolation`, which is the one thread-independent handler and must stay reachable or on-demand commit breaks for pre-thread faults. Marked in-source with a `VIBEOS PATCH` comment. |
+
+Everything else is upstream. To verify at any time:
+`grep -rn "VIBEOS PATCH" vendor/fex/` should report exactly the rows above, and
+`git log --oneline -- 'vendor/fex/*' 'external/fex/*'` should show only the vendoring
+commit, the relocation, the vendor-registry stamp, and those rows' commits.
+
+If a local change ever becomes unavoidable, add a row here AND a `VIBEOS PATCH`
+comment at the site, in the same commit.
 
 The one addition is `vendor/fex/VENDORED`, a generated marker written by
 `tools/vendored.py --write-stamps` (see `vendor.yaml`). It adds a file rather than

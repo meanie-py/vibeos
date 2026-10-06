@@ -99,6 +99,8 @@ pub fn start() {
     };
     if status < 0 {
         nsprint!("[NETSTACK] FAIL: PsCreateSystemThread {:#010x}\n", status as u32);
+        // No worker will ever drain the TDI inbox.
+        crate::tditrans::mark_engine_dead();
     }
 }
 
@@ -207,6 +209,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
             Some(d) => AnyPhy::E1000(crate::e1000::E1000Phy::new(d)),
             None => {
                 nsprint!("[NETSTACK] FAIL: M2 device bringup\n");
+                crate::tditrans::mark_engine_dead();
                 return;
             }
         },
@@ -216,6 +219,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         Some(p) => p,
         None => {
             nsprint!("[NETSTACK] FAIL: M11 NDIS adapter bringup\n");
+            crate::tditrans::mark_engine_dead();
             return;
         }
     };

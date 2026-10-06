@@ -504,6 +504,27 @@ def lower_c_enums(src: str) -> tuple[str, list[str]]:
     return src, lowered
 
 
+def drop_self_imports(src: str, module: str) -> tuple[str, list[str]]:
+    """`use crate::setuplib::arcname::X;` inside arcname.rs -> gone.
+
+    The assembler writes a `use` for every sibling-module name a body calls, and a name the
+    file defines ITSELF lands there too; beside the definition that is E0255. setuplib had
+    12 (arcname's tables, bldrsup's NtosBootLoaders, registry's hive tables).
+    """
+    if not module:
+        return src, []
+    dropped: list[str] = []
+
+    def repl(m: re.Match[str]) -> str:
+        dropped.append(m.group(1))
+        return ""
+
+    src = re.sub(
+        rf"^use crate::(?:\w+::)*{re.escape(module)}::(\w+);[ \t]*\n", repl, src, flags=re.M
+    )
+    return src, dropped
+
+
 def _split_top_commas(body: str) -> list[str]:
     parts, depth, cur = [], 0, []
     for ch in body:
@@ -662,6 +683,7 @@ def integrate(
 
     src = _swap_substrate(src, report)
     src, report.enums_lowered = lower_c_enums(src)
+    src, _self_imports = drop_self_imports(src, module)
 
     # Cross-TU helper promotion: a name that some OTHER module in the crate declares extern
     # must be `pub` where it's defined. Exclude anything the prelude already provides —

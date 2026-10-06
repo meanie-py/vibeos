@@ -2921,7 +2921,10 @@ fn HRESULT_FROM_WIN32(x: u32) -> HRESULT {
     }
 }
 
-const PARSE_PATH_FROM_URL: u32 = 2;
+// urlmon.idl PARSEACTION: PARSE_CANONICALIZE = 1 ... PARSE_PATH_FROM_URL is the ninth.
+// It was 2 (PARSE_FRIENDLY), which urlmon does not implement: every `file:` path
+// handed to OleLoadPicturePath came back E_NOTIMPL.
+const PARSE_PATH_FROM_URL: u32 = 9;
 const E_INVALIDARG: HRESULT = 0x80070057u32 as i32;
 const INET_E_RESOURCE_NOT_FOUND: HRESULT = 0x800C0005u32 as i32;
 unsafe extern "C" fn impl_from_IPicture(iface: *mut IPicture) -> *mut OLEPictureImpl {

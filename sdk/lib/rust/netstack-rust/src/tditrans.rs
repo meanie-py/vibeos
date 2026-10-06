@@ -11,7 +11,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use smoltcp::iface::{Interface, SocketHandle, SocketSet};
 use smoltcp::phy::ChecksumCapabilities;
@@ -36,6 +36,8 @@ const STATUS_IO_TIMEOUT: NTSTATUS = 0xC000_00B5u32 as NTSTATUS;
 /// Windows' default connect timeout: the initial SYN plus two retries (3s, 6s, 12s).
 const CONNECT_TIMEOUT_MS: i64 = 21_000;
 const STATUS_CONNECTION_RESET: NTSTATUS = 0xC000_020Du32 as NTSTATUS;
+/// What a request gets once there is no engine to carry it (WSAENETUNREACH).
+const STATUS_NETWORK_UNREACHABLE: NTSTATUS = 0xC000_023Cu32 as NTSTATUS;
 
 /// Identifier the management ICMP socket binds to (distinct from the boot
 /// self-test's 0x022b) — replies are correlated back to pending pings by seq.
@@ -251,12 +253,85 @@ pub fn alloc_id() -> u64 {
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
+/// Set (under the inbox lock) when the worker has exited for good. Nothing drains
+/// the inbox after that, so a command posted then would never be seen.
+static ENGINE_DEAD: AtomicBool = AtomicBool::new(false);
+
 /// Post a command from the TDI dispatch (any thread).
 pub fn post(cmd: Cmd) {
     unsafe {
-        let _lock = SpinLockGuard::acquire(INBOX.lock.get());
-        (*INBOX.queue.get()).push(cmd);
+        {
+            let _lock = SpinLockGuard::acquire(INBOX.lock.get());
+            if !ENGINE_DEAD.load(Ordering::Relaxed) {
+                (*INBOX.queue.get()).push(cmd);
+                return;
+            }
+        }
+        fail_dead(cmd); // outside the lock: completion runs the caller's routine
     }
+}
+
+/// The worker is exiting and will never poll again (no network device: the Pi 4's
+/// GENET, or any NIC netstack does not drive). Fail everything already queued, and
+/// make `post` fail everything after.
+///
+/// Without this every IRP the dispatch had marked pending waited forever on an
+/// inbox nobody drained: a loopback `sendto(127.0.0.1:9)` hung its caller for good
+/// on the board (marshal32's sendto rung, winlogon reading `exit = 0x103`), and
+/// QEMU never showed it only because QEMU attaches a default NIC to every smoke
+/// boot. Reproduce with `VIBEOS_QEMU_EXTRA_ARGS="-nic user,model=rtl8139"`.
+/// Loopback with no NIC at all still does not WORK, it now fails fast.
+pub fn mark_engine_dead() {
+    let mut queued = Vec::new();
+    unsafe {
+        let _lock = SpinLockGuard::acquire(INBOX.lock.get());
+        ENGINE_DEAD.store(true, Ordering::Relaxed);
+        core::mem::swap(&mut queued, &mut *INBOX.queue.get());
+    }
+    for cmd in queued {
+        unsafe { fail_dead(cmd) };
+    }
+}
+
+/// Complete a command's IRP, if it carries one, with STATUS_NETWORK_UNREACHABLE.
+/// The IRP-less commands (create/associate/close/route/event) only update worker
+/// state that no longer exists, so dropping them is the whole of their effect.
+unsafe fn fail_dead(cmd: Cmd) {
+    let irp = match cmd {
+        // getsockname is local: an address object is bound whether or not a NIC
+        // exists (AFD's implicit bind is to a NULL address, port 0 by
+        // construction). Answer as the worker does for an id it has no
+        // endpoint for -- unspecified IP, port 0 -- instead of failing a
+        // query that has nothing to do with the network.
+        Cmd::QueryAddress { irp, out, out_len, .. } => {
+            let info = crate::tdi::TdiAddressInfo::new([0; 4], 0);
+            let need = core::mem::size_of::<crate::tdi::TdiAddressInfo>();
+            if out != 0 && out_len >= need {
+                core::ptr::copy_nonoverlapping(&info as *const _ as *const u8, out as *mut u8, need);
+            }
+            complete(irp, STATUS_SUCCESS, need);
+            return;
+        }
+        Cmd::Connect { irp, .. }
+        | Cmd::Listen { irp, .. }
+        | Cmd::Send { irp, .. }
+        | Cmd::Receive { irp, .. }
+        | Cmd::Disconnect { irp, .. }
+        | Cmd::SendDatagram { irp, .. }
+        | Cmd::ReceiveDatagram { irp, .. }
+        | Cmd::IcmpEcho { irp, .. } => irp,
+        Cmd::CreateAddr { .. }
+        | Cmd::CreateConn { .. }
+        | Cmd::SetEvent { .. }
+        | Cmd::Associate { .. }
+        | Cmd::SetDefaultRoute { .. }
+        | Cmd::CloseConn { .. }
+        | Cmd::CloseAddr { .. }
+        // The cancel routine already completed this IRP; completing it again would
+        // be a double completion (and `complete` would refuse the unclaimed IRP).
+        | Cmd::Cancel { .. } => 0,
+    };
+    complete(irp, STATUS_NETWORK_UNREACHABLE, 0);
 }
 
 fn drain_into(out: &mut Vec<Cmd>) {

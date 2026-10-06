@@ -139,9 +139,11 @@ unsafe extern "system" fn FTMarshalImpl_GetMarshalSizeMax(
     /* if the marshalling happens inside the same process the interface pointer
        is copied between the apartments */
     if dwDestContext == MSHCTX_INPROC || dwDestContext == MSHCTX_CROSSCTX {
+        // wine-10: flags + union { UINT64 value; IUnknown *object; } + GUID = 28 bytes on
+        // every arch, which is what MarshalInterface writes (a 32-bit pointer is padded
+        // by a zero DWORD). Counting pv AND the pad overstated 64-bit as 32.
         *pSize = (core::mem::size_of::<DWORD>()          /* mshlflags */
-            + core::mem::size_of::<*mut c_void>()        /* pv */
-            + core::mem::size_of::<DWORD>()              /* DWORD */
+            + core::mem::size_of::<u64>()                /* union ftmarshaler_data */
             + core::mem::size_of::<GUID>()) as DWORD; /* GUID */
         return S_OK;
     }

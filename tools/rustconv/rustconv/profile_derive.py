@@ -3632,6 +3632,8 @@ pub use crate::{DPRINT, DPRINT1, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};"""
 
 pub use crate::types::*;
 pub use core::ffi::{{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c_void}};
+// C's `size_t`: bindgen spells it `usize` inline, so no island carries the name the C uses.
+pub type size_t = usize;
 pub use core::ptr::{{addr_of, addr_of_mut}};
 
 // ================= debug ======================================================================
