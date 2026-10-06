@@ -783,6 +783,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A const named after a winerror.h code whose value is another code's. oleaut32's
+    # TYPE_E_CANTLOADLIBRARY held TYPE_E_AMBIGUOUSNAME's value; nothing else judges a
+    # const whose comment does not admit a guess.
+    swc = repo / "tools" / "scan_winerror_consts.py"
+    specs.append(
+        (
+            "scan_winerror_consts",
+            [py, str(swc), "--lint"] if swc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sdc = repo / "tools" / "scan_dowhile_continue.py"
     specs.append(
         (

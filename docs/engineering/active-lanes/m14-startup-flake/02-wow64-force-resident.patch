@@ -1,0 +1,93 @@
+diff --git a/dll/win32/wow64/wow64.c b/dll/win32/wow64/wow64.c
+index 85bef6b01d6..a94e66b1ee5 100644
+--- a/dll/win32/wow64/wow64.c
++++ b/dll/win32/wow64/wow64.c
+@@ -80,6 +80,8 @@ PVOID WINAPI RtlAddVectoredExceptionHandler(ULONG First,
+ LONG WINAPI NtAllocateVirtualMemory(HANDLE Process, PVOID *BaseAddress,
+                                     ULONG_PTR ZeroBits, SIZE_T *RegionSize,
+                                     ULONG AllocationType, ULONG Protect);
++LONG WINAPI NtLockVirtualMemory(HANDLE Process, PVOID *BaseAddress,
++                                SIZE_T *NumberOfBytesToLock, ULONG MapType);
+ LONG WINAPI NtOpenFile(HANDLE *FileHandle, ACCESS_MASK DesiredAccess,
+                        WOW64_OBJECT_ATTRIBUTES *ObjectAttributes,
+                        WOW64_IO_STATUS_BLOCK *IoStatusBlock,
+@@ -240,6 +242,56 @@ static PVOID Wow64pAllocBelow2G(SIZE_T Size, ULONG Protect, const char *What)
+     return Base;
+ }
+ 
++/* Force a freshly-mapped guest image fully resident before the guest runs it.
++ *
++ * The M14 residual startup flake (field manual §9.85 cousin; wow64-plan.md M14
++ * OWED) is a FEX JIT `blr` to host 0 (kernel [UEXC-KILL] PC=0, LR in the JIT
++ * buffer). Root: FEX's block compiler reads the guest code at a call target
++ * INSIDE a signal-deferring section (FEXCore Core.cpp CompileBlock →
++ * GuardSignalDeferringSection); if that target page is not yet resident the
++ * compile yields an empty block whose entrypoint is 0, and ExitFunctionLink
++ * (JIT.cpp) branches straight to it. Every WoW64 process's LdrInitializeThunk
++ * runs RtlCreateActivationContext, which `call`s __alloca / get_manifest_in_module
++ * on ntdll32 pages OTHER than the caller's — so under multi-VM host contention
++ * the demand-fault of the target page loses the race and the process dies at
++ * startup (~3/6 guests under a 6-VM soak). The victims varied (gui32/file32/
++ * hello32/doom) because it hits whichever guest is mid-actctx when starved.
++ *
++ * Touching every page here — outside FEX's deferred section, before the guest
++ * executes the image — makes the pages resident up front and closes the window.
++ * One-time, ~1 byte per 4K page; images are file-backed + shared, so cheap. */
++static void Wow64pMakeImageResident(PVOID Base, SIZE_T Size)
++{
++    volatile const BYTE *P = (volatile const BYTE *)Base;
++    PVOID LockBase = Base;
++    SIZE_T LockSize = Size;
++    SIZE_T off;
++    BYTE sink = 0;
++    LONG St;
++
++    if (!Base || !Size)
++        return;
++
++    /* Fault every page in... */
++    for (off = 0; off < Size; off += 0x1000)
++        sink = (BYTE)(sink + P[off]);
++    (void)sink;
++
++    /* ...then LOCK them into the working set. A one-time touch alone got
++     * trimmed under 6-VM in-guest memory pressure (faults dropped 3/6 -> 1/6
++     * but didn't stop) — the pager evicted the ntdll32 code pages between this
++     * prefault and RtlCreateActivationContext, reopening the FEX compile-time
++     * demand-fault window. Locking pins them resident through startup so FEX's
++     * block compiler always reads real code. ntdll32 is prefaulted FIRST (in
++     * Wow64pMapNtdll32, before any guest DLL maps), so it wins the WS quota —
++     * which is exactly where every observed crash lands. A quota failure on a
++     * later, larger image is non-fatal (logged): that image just falls back to
++     * touch-only residency. */
++    St = NtLockVirtualMemory(WOW64_CURRENT_PROCESS, &LockBase, &LockSize, 1 /* MAP_PROCESS */);
++    if (St < 0)
++        DbgPrint("[FEX-WOW64C] lock image %p size=%zx failed %08lx (touch-only)\n", Base, Size, St);
++}
++
+ /* Map the staged 32-bit ntdll (SEC_IMAGE) for LdrSystemDllInitBlock.
+  * Path: \??\<SystemRoot>\syswow64\ntdll.dll from KUSER_SHARED_DATA. */
+ static PVOID Wow64pMapNtdll32(VOID)
+@@ -298,6 +350,10 @@ static PVOID Wow64pMapNtdll32(VOID)
+         return NULL;
+     }
+     DbgPrint("[FEX-WOW64C] ntdll32 mapped at %p size=%zx\n", Base, ViewSize);
++    /* ntdll32 is where every guest's LdrInitializeThunk runs (incl. the
++     * RtlCreateActivationContext cross-page calls the startup flake dies on) —
++     * make it resident up front. See Wow64pMakeImageResident. */
++    Wow64pMakeImageResident(Base, ViewSize);
+     return Base;
+ }
+ 
+@@ -352,6 +408,11 @@ VOID Wow64pPatchTransitionSlot(PVOID Base, SIZE_T Size)
+         Nt->Signature != IMAGE_NT_SIGNATURE)
+         return;
+ 
++    /* Prefault the whole guest image resident before it executes — closes the
++     * FEX compile-time demand-fault race that kills WoW64 processes at startup
++     * under host contention. See Wow64pMakeImageResident. */
++    Wow64pMakeImageResident(Base, Size);
++
+     Slot = (PULONG)Wow64pFindExport32(Base, "Wow64Transition");
+     if (Slot)
+     {

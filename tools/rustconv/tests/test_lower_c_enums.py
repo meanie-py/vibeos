@@ -31,3 +31,12 @@ def test_fieldless_enum_is_lowered_and_paths_rewritten():
 def test_a_negative_enumerator_makes_it_signed():
     out, _ = lower_c_enums("pub enum E {\n    Neg = -1,\n    Zero,\n}\n")
     assert "pub type E = ::core::ffi::c_int;" in out
+
+
+def test_a_module_does_not_import_its_own_names():
+    from rustconv.crate_integrate import drop_self_imports
+
+    src = "use crate::setuplib::arcname::AdapterTypes_A;\nuse crate::setuplib::fsrec::X;\npub static mut AdapterTypes_A: u8 = 0;\n"
+    out, dropped = drop_self_imports(src, "arcname")
+    assert dropped == ["AdapterTypes_A"]
+    assert "use crate::setuplib::fsrec::X;" in out and "arcname::AdapterTypes_A" not in out
