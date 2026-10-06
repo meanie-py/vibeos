@@ -39,3 +39,9 @@ def test_a_body_that_does_not_parse_is_a_finding():
     bad = 'unsafe fn f() { g(h, L"AddReg.NT" INF_ARCH, 0); }'
     assert parse_findings(bad) and "does not parse" in parse_findings(bad)[0]
     assert parse_findings("fn f() { (*p)->x = 1; }")
+
+
+def test_an_invented_goto_shim_is_refused():
+    c = "BOOL f(void) { if (x) goto NoSystemPartition; return TRUE; NoSystemPartition: return FALSE; }"
+    for rust in ("fn f() { if x { goto_NoSystemPartition!(); } }", "fn f() { fn goto_Quit() {} }"):
+        assert any("shim" in f for f in control_flow_findings(c, rust))

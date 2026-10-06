@@ -41,6 +41,12 @@ surface.
 - **NO** `?` operator, no `.is_some()`/`.is_none()` on real pointers — use `.is_null()` / `!p.is_null()`.
 - **NO** iterator chains (`map`/`filter`/`collect`) — keep the explicit `for`/`while` loop.
 - **NO** RAII guards, no `Drop`, no closures-as-cleanup. Keep `goto cleanup;` style as a labeled block or `loop { ... break; }` and the explicit free calls.
+- **`goto` has exactly two lowerings — never a macro, a nested `fn`, or a name like `goto_X`.**
+  A forward jump to a shared tail: `'quit: { ... break 'quit; ... }` followed by the tail.
+  Jumps between SEVERAL labels (including backward, or into code that falls through to the
+  next label): one state variable and a dispatch loop —
+  `let mut at = 0u8; loop { match at { 0 => { ...; at = 2; continue; } 1 => { ... } 2 => { ... } _ => break } }`
+  where each label is one arm and C's fall-through is `at = <next>; continue;`.
 - **NO** slices/`&[T]` where C used pointer+length — keep pointer + length.
 - **NO** introducing references (`&`/`&mut`) to replace pointers. Only use `core::ptr::addr_of_mut!`/`addr_of!` where C takes an address (`&x`).
 
