@@ -795,12 +795,31 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
       nothing unless someone wrote an `offset_of!` assert. Wanted: the verify_offsets recipe
       (clang offsets with the module's flags -> generated rustc asserts) for user-mode crates.
     - cpl-joy passed every run today.
-  - **arm64 `-smp 2`: BUGCHECK 0x1E in `CmpCreateKeyControlBlock`** (config-rust
-    cmkcbncb.rs:759), on CPU 1, loading through a garbage KCB pointer (FAR 0x0014...3A) while
-    walking the KCB hash chain. New with smp-bringup (18d1d4a3517): first seen 2026-10-04 in
-    the queue's base gate (farm 20261004-185704-eff80o8u), then 0/4 on a clean master
-    checkout, so a race, not a deterministic break. Smells like the KCB cache's locking
-    with two CPUs live; owner: the SMP lane.
+  - **arm64 `-smp 2`: BUGCHECK 0x1E in `CmpCreateKeyControlBlock`** (FIXED 2026-10-05). Two
+    threads setting values under different keys of one hive hold the registry lock only
+    shared, so `HvAllocateCell` ran on both CPUs at once: both edited the free lists and both
+    could `HvpAddBin`, which reallocates `BlockList`, frees the old one and publishes its own.
+    The 0x1E read a garbage `CM_KEY_NODE` (0x0014000000000026; not the KCB hash chain, as first
+    written here) while the other CPU looped in `HvFreeCell` on a NULL `BinAddress`. Windows
+    serializes this under `CMHIVE.HiveLock`, which ReactOS declares and never takes; cmlib-rust
+    now takes it (`hivelock.rs`). Proven with the new `regstress` payload (4 writers resizing
+    values and subkeys in one hive, 2 readers verifying self-describing contents): with the lock
+    compiled out, 2/2 `-smp 2` boots trip `ASSERT (*Free).Size < 0` and bugcheck 0x50 in
+    `HvpAddBin`'s copy of a freed `BlockList`; with it, 0 failures (50,764 writes at `-smp 1`,
+    19,733 at `-smp 2`). Artifacts: `~/vibeos-flake-farm/fails/regstress-smp2-20261005/`.
+  - **arm64 `-smp 2`: push-lock release livelock** (FIXED 2026-10-05). The port of upstream
+    f42ee0e23bb adopted the failed CMPXCHG's value only in the not-Waking arm of
+    `ExfReleasePushLock[Shared]`, so a release that found another thread already waking spun
+    forever on a stale value. It was the unexplained HANG_TIMEOUT 20261005-002201-1b2o74m7
+    (CPU1 in `ExfReleasePushLock+308`) and hung every regstress `-smp 2` boot until fixed.
+  - **arm64 `-smp 2` under regstress: timed waits stop expiring** (OPEN, SMP lane, 2/2 boots
+    with both fixes above). After ~15 s of clean stress, regstress's own `Sleep` heartbeat and
+    the CENSUS thread both go silent; the hang capture shows both vCPUs FROZEN in `KiIdleLoop`'s
+    `wfi`, i.e. no tick wakes either CPU. Not the registry (0 failures up to the stall). Next
+    step: read each CPU's GICC_PMR / CNTV_CTL_EL0 from a wedged guest over the gdbstub. One
+    debug-VM boot instead died BUGCHECK 0x19 (BAD_POOL_HEADER, P1=3, `ExFreePoolWithTag`) during
+    regstress thread startup, no caller stack. Repro: `VIBEOS_PAYLOAD=regstress ./vibeos-cli build
+    --arch arm64 && ./vibeos-cli smoke --arch arm64 --payload regstress --smp 2`.
   - **arm64 FAULTLOOP was the detector, not a loop** (RESOLVED 2026-10-04). The report
     fingerprinted a fault as (VA, PC, TTBR0); a stream of DISTINCT faults sharing those --
     Cc reading many small files (rapps' cab extraction), each new VACB recycled onto the same
@@ -830,7 +849,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - Remaining arm64 divergences: winlogon still creates `\Windows\WindowStations` and csrsrv
     skips CsrConnectToUser on arm64; the csrss stack-commit patch in mkramdisk's overlay;
     shell32 CDefView skips SHChangeNotifyRegister on arm64; winlogon's arm64-only notepad and
-    cmd spawns. On i386 `cpl-appwiz` opens no window.
+    cmd spawns. (i386 `cpl-appwiz` opens "Add/Remove Programs" again: appstorm 20261005-184453.)
 - **Posted messages to other threads' windows were dropped** (FIXED 2026-09-27). The
   win32k-sys regeneration (c53b7807aad) turned THRDESKHEAD's `[u64; 3]` padding into
   `[u8; 24]`; user32 read `head.pti` as `__bindgen_padding_0[2]`, so IntCallMessageProc saw a
@@ -1560,7 +1579,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     work, i.e. a key-node pointer that was no longer mapped. OPEN, 1 in 8 arm64 `-smp 4`
     boots that ran past setup, never seen at `-smp 1` or `-smp 2` in today's runs; the shape
     fits a registry-lock hole (a cell pointer held across another CPU's bin change), not yet
-    shown. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
+    shown. 2026-10-05: the hive cell-map race (HvpAddBin freeing a `BlockList` other CPUs
+    still index) was found and fixed under `-smp 2` and matches this shape; not re-run at
+    `-smp 4`, so this stays OPEN until it is. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
     The `ke/ipi.rs` `== SYNCH_LEVEL` assert was already re-contracted to `>= DISPATCH_LEVEL`
     and no longer prints.
     amd64 `-smp 2` and `-smp 4`: FIXED 2026-10-04. The boot death seen 2026-09-25 was
