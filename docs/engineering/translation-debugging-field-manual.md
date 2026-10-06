@@ -5170,6 +5170,15 @@ argument raw; its baseline is EMPTY, so any new row fails `vibeos-cli check`. Us
 `read_back` (load) / `write_back` (store) for a single value; read a value that sizes or
 validates something ONCE and use the copy, never `(*p).Length` then `*p`.
 
+**Syscalls are not the only door, and the scanner only watches syscalls.** `int 2d` hands the
+kernel a user pointer in a register, which arrives as `ExceptionInformation[1]`. KdpStub's
+debugger-less echo of `BREAKPOINT_PRINT` to the UART, which is our addition with no C to drop
+a probe from, read that pointer in place. A user-mode panic whose report ran into garbage
+bugchecked the box (0x1E/0x50 in `KdpStub`). Capture it as `KdpPrint` does
+(`safe_copy_from_user` into a bounded local, passing PreviousMode). Any trap-path handler that
+reads an exception record's parameters is in this class. `sehtest`'s `bad-print-buffer` probe
+covers this one on every amd64 boot.
+
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
 HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
 call `ProbeForWrite` — so "did it dereference a user pointer where its C validated one"
