@@ -137,11 +137,7 @@ unsafe fn GetWin32ClientInfo() -> PCLIENTINFO {
     core::ptr::addr_of_mut!((*crate::internal::NtCurrentTeb()).Win32ClientInfo) as *mut _
         as PCLIENTINFO
 }
-// `GetW32ThreadInfo()` == `(PTHREADINFO)(NtCurrentTeb()->Win32ThreadInfo)`.
-#[inline]
-unsafe fn GetW32ThreadInfo() -> PTHREADINFO {
-    (*crate::internal::NtCurrentTeb()).Win32ThreadInfo as PTHREADINFO
-}
+use crate::windows::message::GetW32ThreadInfo;
 // user_x.h `DesktopPtrToUser` — server→client desktop-heap remapping (fast path
 // subtracts ulClientDelta, slow path calls win32k via NtUserxGetDesktopMapping).
 #[inline]

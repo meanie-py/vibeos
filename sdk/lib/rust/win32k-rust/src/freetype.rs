@@ -6287,7 +6287,13 @@ unsafe fn GetFontPenalty(
     Byte = (*LogFont).lfCharSet;
 
     if Byte != (*TM).tmCharSet {
-        if Byte != DEFAULT_CHARSET as BYTE && Byte != ANSI_CHARSET as BYTE {
+        // The C waives the charset penalty for an ANSI request because a face here carries
+        // ONE tmCharSet, and most non-ANSI faces (CJK, Cyrillic) also cover Latin-1. A
+        // symbol face never does: Windows and Wine map "Marlett" + ANSI_CHARSET to another
+        // face (oleaut32 olefont test_realization), where the C kept Marlett.
+        if (Byte != DEFAULT_CHARSET as BYTE && Byte != ANSI_CHARSET as BYTE)
+            || (Byte == ANSI_CHARSET as BYTE && (*TM).tmCharSet == SYMBOL_CHARSET as BYTE)
+        {
             Penalty += 65000;
         } else {
             if UserCharSet != (*TM).tmCharSet {

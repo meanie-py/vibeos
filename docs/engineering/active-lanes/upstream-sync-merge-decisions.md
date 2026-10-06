@@ -906,11 +906,22 @@ And the three `NO-END` entries in the i386 sweep (`RtlCaptureContextKM`, `RtlSpl
       - tmarshal 1 → 0: wine-10's `dispinterface_create_stub`. A DIID_ stub is built by
         hand from rpcrt4's exported `CStdStubBuffer_*` methods and the oaidl proxy
         file's IDispatch stub vtbl, so the object is QI'd for the DIID, never IDispatch.
-    - **Still owed:**
-      - compobj:3036, `PeekMessageA failed` after CoWaitForMultipleHandles. Its
-        sibling 2999/3001 failed on 10-04 09:53 and passed at 21:24. Not yet known
-        whether this is the same flake.
-      - Not ole: clipboard 992/1010 (`GetClipboardData` returns a different HGLOBAL
-        than `SetClipboardData` stored, user32/win32k) and 1066/1134/1197
-        (WM_DRAWCLIPBOARD order); olefont 1189 (GDI maps Marlett/ANSI_CHARSET to
-        SYMBOL_CHARSET).
+      - clipboard 5 → 0 (the fixes were in user32/win32k, not ole32):
+        - 992/1010: user32 now caches the local handle per format, keyed by the win32k
+          handle, as wine-10 win32u does. The owner gets back the handle it passed to
+          `SetClipboardData`, and a repeat `GetClipboardData` no longer leaks a fresh copy.
+        - 1066/1134: user32-rust's exported `GetW32ThreadInfo` was a bare TEB read. The
+          C *creates* the THREADINFO, so `GetDesktopWindow()` was NULL in a fresh thread.
+          Four copies were folded into the one correct definition.
+        - 1197: `SetClipboardData` never bumped `GetClipboardSequenceNumber`, because user32
+          passed `fIncSerialNumber` FALSE. win32k now skips the bump only during a
+          WM_RENDERFORMAT render, as wine-10's server does.
+      - olefont 1 → 0: the GDI font mapper waived the charset penalty for an ANSI request
+        even when the candidate was a SYMBOL_CHARSET face, so "Marlett" plus ANSI kept
+        Marlett.
+      - compobj:3036 is a timing flake, not ole32. It passed 4 of 5 runs (10-04 full
+        sweep, then 3/3 compobj-only on 10-05); the one failure was the 10-05 sweep under
+        gate load. The check races the 100 ms CoWait against the sender thread's
+        `PostMessage`.
+    - **Still owed:** no REAL failures remain in the 24 amd64 subtests. Everything left
+      is `todo_wine`/`todo_wine_if`, which Wine fails too.

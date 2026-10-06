@@ -1174,13 +1174,18 @@ pub unsafe extern "system" fn UserSetClipboardData(
                 0,
             );
 
-            if (*scd).fIncSerialNumber != 0 {
-                (*pWinStaObj).iClipSequenceNumber += 1;
-            }
-
             (*pWinStaObj).set_fClipboardChanged(1);
         } else {
             IntAddFormatedData(pWinStaObj, fmt, core::ptr::null_mut(), 0, 0);
+        }
+
+        // Every set changes the clipboard, a delayed-render placeholder included, except
+        // the owner answering WM_RENDERFORMAT (wine-10 server set_clipboard_data: `if
+        // (!clipboard->rendering) clipboard->seqno++`). The C bumped only for real data,
+        // and user32 never asked, so OleFlushClipboard rendering every format left the
+        // number unchanged and OleGetClipboard kept handing out the stale snapshot.
+        if (*scd).fIncSerialNumber != 0 && (*pWinStaObj).fInDelayedRendering() == 0 {
+            (*pWinStaObj).iClipSequenceNumber += 1;
         }
 
         hRet = hData;
