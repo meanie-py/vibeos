@@ -861,12 +861,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
       then equalled shell32's `CPLFlags` and rundll32 faulted in `OnPostWinPosChanged`
       (cpl-timedate/-access/-inetcpl/-powercfg, dxdiag; about half of arm64 appstorm boots,
       20261005-214751-gc94fnsa and -214756-ypxnsi6z). Fixed in rtl-strings' atom test.
-    - **cpl-appwiz then opens no window** (OPEN): rapps /appwiz stays alive with no window.
-      Possibly the atom bug above (it breaks Control_DoLaunch's first-instance search too);
-      unconfirmed, as no failure since printed the no-window dump.
-      Failed again 2026-10-04 (20261004-173345-lbmi6pz6) after passing 5 boots; not mutex
-      abandonment. appstorm's no-window dump missed it (rundll32 exits and orphans rapps before
-      the family is grown); fixed, so the next failure dumps rapps' threads.
+    - **cpl-appwiz then opens no window** (NOT REPRODUCING since 2026-10-04): 0 failures in
+      54 consecutive arm64 boots (50 fleet appstorm boots, then 4 runs of `APPSTORM_ONLY=rapps,cpl-appwiz`,
+      20261006-143726-b4mar90g). 9 of its 10 recorded failures came straight after a failed
+      `rapps` (the "Updating Database" close timeout and error box, both fixed 2026-10-04): rapps
+      /appwiz then starts with a broken first instance around. Not the atom bug: at least 5 of
+      those 50 boots showed the atom failures (timedate/access/inetcpl/powercfg/dxdiag) and appwiz
+      passed in all of them. The one standalone failure, 20261004-173345-lbmi6pz6 (rapps passed
+      first; `exit=0x1` is control.exe's, rapps PID 1000 stayed alive with no window), stays
+      unexplained; appstorm now dumps rapps' threads, so a recurrence will say where it waits.
     - **OWED: hand-declared user-mode FFI structs have no layout gate.** `verify_offsets.py`
       covers ntkrnl-sys only; a struct a crate declares by hand (cabinet's FDI types, the
       `IMAGE_*`/`DROPFILES`/`SHFILEINFO` copies in shell32/version/crt-startup) is checked by
@@ -890,14 +893,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `ExfReleasePushLock[Shared]`, so a release that found another thread already waking spun
     forever on a stale value. It was the unexplained HANG_TIMEOUT 20261005-002201-1b2o74m7
     (CPU1 in `ExfReleasePushLock+308`) and hung every regstress `-smp 2` boot until fixed.
-  - **arm64 `-smp 2` under regstress: timed waits stop expiring** (OPEN, SMP lane, 2/2 boots
-    with both fixes above). After ~15 s of clean stress, regstress's own `Sleep` heartbeat and
-    the CENSUS thread both go silent; the hang capture shows both vCPUs FROZEN in `KiIdleLoop`'s
-    `wfi`, i.e. no tick wakes either CPU. Not the registry (0 failures up to the stall). Next
-    step: read each CPU's GICC_PMR / CNTV_CTL_EL0 from a wedged guest over the gdbstub. One
-    debug-VM boot instead died BUGCHECK 0x19 (BAD_POOL_HEADER, P1=3, `ExFreePoolWithTag`) during
-    regstress thread startup, no caller stack. Repro: `VIBEOS_PAYLOAD=regstress ./vibeos-cli build
-    --arch arm64 && ./vibeos-cli smoke --arch arm64 --payload regstress --smp 2`.
+  - **arm64 `-smp 2` under regstress: timed waits stop expiring** (OPEN, about 3 in 11 boots
+    on 2026-10-06; still there after the amd64 `KiSwitchKernelStack` IRQ fix, which arm64 has no
+    counterpart of). regstress's `Sleep` heartbeat and the CENSUS thread go silent mid-run. It
+    is NOT a dead clock: the hang capture now reads KUSER_SHARED_DATA.InterruptTime in both
+    samples, and it advanced 3.25 s across the 5 s gap (20261006-135002-2c9c8anl,
+    verdict `IDLE-BLOCKED`) with both vCPUs on `KiIdleLoop`'s `wfi` and CPU1's tick live. So
+    something readies nothing: either expired timers never wake their waiters or readied
+    threads are lost. The earlier "FROZEN, read GICC_PMR/CNTV_CTL" lead came from identical PCs
+    alone, which an idle box shows anyway. Not the `ready`-snapshot `loadvm` either (one wedge
+    began 10 s before the snapshot). A timer-table watchdog (overdue timers + per-PRCB ready
+    state, printed from CPU0's tick) is on local branch `diag/smp2-timerwd` (6d6e85a5f55); its 4
+    boots all passed, so it has not caught one yet. One debug-VM boot instead died BUGCHECK 0x19
+    (BAD_POOL_HEADER, P1=3, `ExFreePoolWithTag`) during regstress thread startup. Repro:
+    `VIBEOS_PAYLOAD=regstress ./vibeos-cli build --arch arm64 && ./vibeos-cli smoke --arch arm64
+    --payload regstress --smp 2 --repeat 4`.
   - **arm64 FAULTLOOP was the detector, not a loop** (RESOLVED 2026-10-04). The report
     fingerprinted a fault as (VA, PC, TTBR0); a stream of DISTINCT faults sharing those --
     Cc reading many small files (rapps' cab extraction), each new VACB recycled onto the same

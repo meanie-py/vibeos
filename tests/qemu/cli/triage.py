@@ -611,6 +611,20 @@ def cpu_kernel_at_user_pc(state: str) -> list[tuple[int, str]]:
     return found
 
 
+# KUSER_SHARED_DATA's kernel VA (xdk/<arch>/ke.h KI_USER_SHARED_DATA); InterruptTime is
+# the KSYSTEM_TIME at +0x8 (LowPart, High1Time, High2Time). Only CPU0's clock tick advances
+# it, so it is the cheapest proof that ticks are still being delivered.
+KUSER_SHARED_DATA = {"arm64": 0xFFFFF78000000000, "amd64": 0xFFFFF78000000000, "i386": 0xFFDF0000}
+_GUEST_CLOCK = re.compile(r"^InterruptTime=0x([0-9a-f]+)\b", re.MULTILINE)
+
+
+def guest_interrupt_time(state: str) -> int | None:
+    """The InterruptTime (100ns units) a `capture_cpu_state()` blob recorded, or None
+    when the read failed or the blob predates it."""
+    m = _GUEST_CLOCK.search(state)
+    return int(m.group(1), 16) if m else None
+
+
 def symbolicate_cpu_state(
     repo: Path, arch: str, state: str, *, mp: bool = False, serial: str = ""
 ) -> list[str]:

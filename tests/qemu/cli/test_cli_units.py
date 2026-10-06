@@ -1467,6 +1467,55 @@ def test_save_hang_state_separates_a_frozen_box_from_a_blocked_one(tmp_path, _no
     assert "EXECUTING" in (tmp_path / "b" / "hang-cpustate.txt").read_text()
 
 
+def test_save_hang_state_uses_the_guest_clock_when_pcs_match(tmp_path, _no_resample_wait):
+    # An idle box parks every vCPU on its `wfi` between ticks, so identical PCs
+    # are what a HEALTHY idle box looks like too. The 2026-10-06 arm64 -smp 2
+    # wedge read "FROZEN — nothing was scheduled" on PCs alone. The clock decides.
+    def sample(t):
+        return f"CPU#0\nPC=fffff800421ac784\n=== guest clock ===\nInterruptTime=0x{t:x} (x)\n"
+
+    clocks = iter([sample(10_000_000), sample(60_000_000)])
+    idle = _hang_vm(tmp_path / "idle", None, lambda: next(clocks))
+    idle.save_hang_state("payload")
+    body = (tmp_path / "idle" / "hang-cpustate.txt").read_text()
+    assert "IDLE-BLOCKED" in body and "advanced 5000ms" in body
+
+    dead = _hang_vm(tmp_path / "dead", None, lambda: sample(10_000_000))
+    dead.save_hang_state("payload")
+    body = (tmp_path / "dead" / "hang-cpustate.txt").read_text()
+    assert "FROZEN —" in body and "did not advance" in body
+
+    unread = _hang_vm(tmp_path / "unread", None, lambda: "CPU#0\nPC=fffff800421ac784\n")
+    unread.save_hang_state("payload")
+    assert "FROZEN?" in (tmp_path / "unread" / "hang-cpustate.txt").read_text()
+
+
+def test_read_guest_clock_parses_kuser_interrupt_time():
+    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
+    v.config = vm_mod.ArchConfig(
+        arch="arm64", qemu_bin="x", machine_args=[], memory="1G", boot_marker="m"
+    )
+    seen = []
+
+    class _Qmp:
+        def hmp(self, cmd):
+            seen.append(cmd)
+            return "fffff78000000008: 0x9502f900 0x00000002 0x00000002"
+
+    v.qmp = _Qmp()  # type: ignore[assignment]
+    out = v._read_guest_clock()
+    assert seen == ["x /3wx 0xfffff78000000008", "x /1wx 0xfffff78000000320"]
+    assert triage.guest_interrupt_time(out) == 0x2_9502F900
+    assert "TickCount=0x9502f900" in out
+
+    class _Torn:
+        def hmp(self, cmd):
+            return "fffff78000000008: 0x00000010 0x00000003 0x00000002"
+
+    v.qmp = _Torn()  # type: ignore[assignment]
+    assert triage.guest_interrupt_time(v._read_guest_clock()) is None
+
+
 def test_save_hang_state_names_a_kernel_fault_loop_at_a_user_pc(tmp_path, _no_resample_wait):
     # The third reading of "the PC never moved": a same-EL instruction abort
     # the handler keeps resolving as spurious, eret'ing straight back to the

@@ -243,6 +243,12 @@ static DWORD WINAPI Worker(LPVOID Parameter)
 
 static volatile DWORD g_Sum[T32_NTHREAD];
 static volatile ULONG_PTR g_Esp[T32_NTHREAD];
+/* Workers that have recorded their stack pointer. Each waits here until all
+ * have, so every stack is live when rung 9 compares them: a worker that exited
+ * first could otherwise hand its freed stack to the next CreateThread, and the
+ * rung would read a reused stack as a shared one (amd64 thread64, 2026-10-06,
+ * four gate rejections on a correct WoW64). */
+static volatile LONG g_Recorded;
 
 #define T32_ROUNDS 8
 #define T32_ITERS  5000
@@ -276,6 +282,9 @@ static DWORD WINAPI SpinWorker(LPVOID Parameter)
     __asm__ __volatile__("movl %%esp, %0" : "=r"(Esp));
 #endif
     g_Esp[Index] = Esp;
+    InterlockedIncrement(&g_Recorded);
+    while (g_Recorded < T32_NTHREAD)
+        Sleep(0);
 
     /* Yield between rounds: every Sleep(0) is a syscall, i.e. a full
      * 32->64->32 mode switch through THIS thread's CPU area, with three other
@@ -425,7 +434,9 @@ int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) *
         }
         for (j = i + 1; j < T32_NTHREAD; j++)
         {
-            if ((g_Esp[i] & ~0xFFFFu) == (g_Esp[j] & ~0xFFFFu))
+            /* ~(ULONG_PTR)0xFFFF, not ~0xFFFFu: the latter is 0xFFFF0000
+             * zero-extended, which drops bits 32-63 of an x64 stack address. */
+            if ((g_Esp[i] & ~(ULONG_PTR)0xFFFF) == (g_Esp[j] & ~(ULONG_PTR)0xFFFF))
             {
                 SayHex("[THREAD32] FAIL rung9: shared stack, thread", i);
                 SayHex("[THREAD32]        collides with thread", j);
