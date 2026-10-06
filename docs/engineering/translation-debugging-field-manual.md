@@ -12547,11 +12547,33 @@ introduced at any heap exit — it is an external stray write.**
      connects the interrupt, calls the miniport's StartController, and only *then* sets
      the flags its ISR wrapper checks. A StartController that enables controller
      interrupts and issues a command gets its completion interrupt declined.
+  3. **A polled driver answered "not mine" without reading the device's status.** On x86
+     the symptom is scsiport's `[SCSIPORT] Isr entry count=100000` and a silent hang
+     (vioblk, 2026-10-05). A virtio INTx stays asserted until the ISR status register is
+     READ; an HwInterrupt that returns FALSE never drops it. Masking INTx in the PCI
+     command register at find-adapter time does not hold either: pci.sys rewrites the
+     register when PnP starts the device. A driver that polls still has to acknowledge.
 - **Fix:** quiesce before connect, and poll until the gate opens. pci.sys masks INTx (PCI
   COMMAND bit 10) on xHCI controllers at enumeration and usbxhci unmasks it after its reset,
   the same job Linux's `quirk_usb_handoff_xhci` does. usbxhci starts with USBCMD.INTE and
   IMAN.IE off and lets usbport's EnableInterrupts turn them on, as EHCI does. For any new
   device family, ask "can this line be asserted before my ISR says yes?"
+
+### A new SCSIPORT miniport loads, and no disk appears
+- **Symptom:** the `.sys` is loaded and its service is bound by the CriticalDeviceDatabase,
+  but no `Found device of type 0` line follows, `IopCreateArcNames` sees no disk, and a boot
+  from it ends in `0x6B`. Each cause below was hit once bringing up vioblk (2026-10-05).
+- **Cause:**
+  1. **No `HwInterrupt`.** `ScsiPortInitialize` returns `STATUS_REVISION_MISMATCH` (as the
+     C does) for a NULL HwInterrupt, even in a polled driver, and prints nothing at all.
+  2. **`MaximumNumberOfLogicalUnits` left at 0.** `FdoScanAdapter` skips every LUN at or
+     above it, and neither the C nor the Rust scsiport sets a default, so the scan sends no
+     INQUIRY and finds nothing. buslogic and atapi set it themselves.
+  3. **`*Again = FALSE` on a PCI miniport with several functions.** The legacy scan stops
+     after the first adapter, so only the first device of the type appears.
+- **Fix:** set all three in the miniport. scsiport's own `[SCSIPORT] resources:` diagnostic
+  also dereferenced `AccessRanges[0]` unconditionally and crashed (0x1E) for a miniport
+  declaring no access ranges; it is guarded now.
 
 ### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
 - **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,

@@ -31,6 +31,12 @@ HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0101","Clas
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0106","Service",0x00000000,"uniata"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0106","ClassGUID",0x00000000,"{4D36E96A-E325-11CE-BFC1-08002BE10318}"
 
+; virtio-blk (transitional 1AF4:1001, modern 1AF4:1042) -> vioblk, the Rust SCSI miniport.
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1AF4&DEV_1001","Service",0x00000000,"vioblk"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1AF4&DEV_1001","ClassGUID",0x00000000,"{4D36E97B-E325-11CE-BFC1-08002BE10318}"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1AF4&DEV_1042","Service",0x00000000,"vioblk"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#VEN_1AF4&DEV_1042","ClassGUID",0x00000000,"{4D36E97B-E325-11CE-BFC1-08002BE10318}"
+
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\*PNP0C08","Service",0x00000000,"acpi"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\*PNP0C08","ClassGUID",0x00000000,"{4D36E97D-E325-11CE-BFC1-08002BE10318}"
 

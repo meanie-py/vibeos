@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <shell32|acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbxhci|usbport|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <shell32|acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|vioblk|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbxhci|usbport|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -453,6 +453,21 @@ case "$DRIVER" in
                -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 )
     EXTRA_INC=( -I"${SRC}/sdk/lib/rust/ks-rust" )
+    ;;
+  vioblk)
+    # virtio-blk SCSIPORT miniport, written in Rust from scratch (no C body). It needs
+    # only the SCSIPORT miniport surface: HW_INITIALIZATION_DATA / PORT_CONFIGURATION_
+    # INFORMATION / ACCESS_RANGE (srb.h) and the SCSI command layouts (scsi.h). Same
+    # SRB treatment as buslogic: _SCSI_REQUEST_BLOCK is opaque in the kernel ddk
+    # bindgen, so UNBLOCK it here. NT 5.2 defaults, as buslogic.
+    DRIVER_DIR="${SRC}/drivers/storage/port/vioblk"
+    WRAPPER_INC=$'#include "vioblk.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]srb\.h' )
+    UNBLOCK="_SCSI_REQUEST_BLOCK"
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
     ;;
   buslogic)
     # The BusLogic BT-958 SCSI HBA miniport (drivers/storage/port/buslogic/BusLogic958.c,
