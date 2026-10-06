@@ -260,6 +260,13 @@ pub unsafe extern "system" fn HalAllocateCrashDumpRegisters(
     core::ptr::null_mut()
 }
 
+/// The resources of a bus-0 PCI function, for legacy (non-PnP) drivers — SCSIPORT's
+/// PCI scan asks for every adapter it matches, and gave up on arm64 while this was a
+/// stub. The same answer the x86 HAL gives (HalpAssignPCISlotResources): every
+/// implemented BAR where firmware placed it, sized, plus the interrupt InterruptLine
+/// names, which on arm64 is the GIC INTID (the loader programs it from the platform's
+/// INTx wiring; see HalGetInterruptVector). Nothing is moved or arbitrated: firmware's
+/// assignment stands.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalAssignSlotResources(
     RegistryPath: ddk::PUNICODE_STRING,
@@ -271,7 +278,127 @@ pub unsafe extern "system" fn HalAssignSlotResources(
     SlotNumber: ddk::ULONG,
     AllocatedResources: *mut ddk::PCM_RESOURCE_LIST,
 ) -> ddk::NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
+    const PCI_BUS: ddk::INTERFACE_TYPE = 5; // _INTERFACE_TYPE_PCIBus
+    const STATUS_NOT_FOUND: ddk::NTSTATUS = 0xC0000225u32 as ddk::NTSTATUS;
+    const STATUS_NOT_SUPPORTED: ddk::NTSTATUS = 0xC00000BBu32 as ddk::NTSTATUS;
+    const STATUS_INSUFFICIENT_RESOURCES: ddk::NTSTATUS = 0xC000009Au32 as ddk::NTSTATUS;
+    // wdm.h resource types and flags.
+    const TYPE_PORT: u8 = 1;
+    const TYPE_INTERRUPT: u8 = 2;
+    const TYPE_MEMORY: u8 = 3;
+    const SHARE_DEVICE_EXCLUSIVE: u8 = 1;
+    const SHARE_SHARED: u8 = 3;
+    const PORT_IO: u16 = 1;
+    const MEMORY_PREFETCHABLE: u16 = 4;
+    const INTERRUPT_LEVEL_SENSITIVE: u16 = 0;
+
+    if BusType != PCI_BUS {
+        return STATUS_NOT_IMPLEMENTED;
+    }
+    if AllocatedResources.is_null() {
+        return STATUS_NOT_SUPPORTED;
+    }
+    let va = ecam_bus0_va();
+    if va.is_null() || BusNumber != 0 {
+        return STATUS_NOT_FOUND;
+    }
+    let cfg = ecam_fn_ptr(va, SlotNumber);
+    let rd = |off: usize| core::ptr::read_volatile(cfg.add(off) as *const u32);
+    let wr = |off: usize, v: u32| core::ptr::write_volatile(cfg.add(off) as *mut u32, v);
+    if rd(0) & 0xFFFF == 0xFFFF {
+        return STATUS_NOT_FOUND;
+    }
+    // Type-0 headers only: a bridge's windows are not resources of its own.
+    if (rd(0x0C) >> 16) & 0x7F != 0 {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    // (type, flags, start, length) per implemented BAR. Decoding is off while a BAR
+    // holds the all-ones sizing pattern, so it never claims a stray address range.
+    let mut bars: [(u8, u16, u64, u32); 6] = [(0, 0, 0, 0); 6];
+    let mut count = 0usize;
+    let command = rd(0x04) & 0xFFFF;
+    wr(0x04, command & !0x3);
+    let mut i = 0usize;
+    while i < 6 {
+        let off = 0x10 + i * 4;
+        let raw = rd(off);
+        wr(off, 0xFFFF_FFFF);
+        let mask = rd(off);
+        wr(off, raw);
+        if raw & 1 != 0 {
+            let len = (!(mask & !0x3) & 0xFFFF).wrapping_add(1);
+            if mask & !0x3 != 0 && raw & !0x3 != 0 {
+                bars[count] = (TYPE_PORT, PORT_IO, (raw & !0x3) as u64, len);
+                count += 1;
+            }
+            i += 1;
+            continue;
+        }
+        let wide = (raw >> 1) & 0x3 == 0x2 && i < 5;
+        let (mut base, mut size_mask) = ((raw & !0xF) as u64, (mask & !0xF) as u64 | 0xFFFF_FFFF_0000_0000);
+        if wide {
+            let hi_off = off + 4;
+            let hi = rd(hi_off);
+            wr(hi_off, 0xFFFF_FFFF);
+            let hi_mask = rd(hi_off);
+            wr(hi_off, hi);
+            base |= (hi as u64) << 32;
+            size_mask = (size_mask & 0xFFFF_FFFF) | ((hi_mask as u64) << 32);
+        }
+        let len = (!size_mask).wrapping_add(1);
+        // A BAR larger than 4 GiB needs a Memory64 descriptor; none on the devices this
+        // path serves, so such a BAR is left out rather than reported truncated.
+        if size_mask & 0xFFFF_FFF0 != 0 && base != 0 && len <= u32::MAX as u64 {
+            let flags = if raw & 0x8 != 0 { MEMORY_PREFETCHABLE } else { 0 };
+            bars[count] = (TYPE_MEMORY, flags, base, len as u32);
+            count += 1;
+        }
+        i += if wide { 2 } else { 1 };
+    }
+    wr(0x04, command);
+
+    let line_pin = rd(0x3C);
+    let (line, pin) = (line_pin & 0xFF, (line_pin >> 8) & 0xFF);
+    let irq = pin != 0 && line != 0 && line != 0xFF;
+
+    let n = count + irq as usize;
+    let size = core::mem::size_of::<ddk::CM_RESOURCE_LIST>()
+        + n.saturating_sub(1) * core::mem::size_of::<ddk::CM_PARTIAL_RESOURCE_DESCRIPTOR>();
+    let list = ddk::ExAllocatePoolWithTag(ddk::_POOL_TYPE_PagedPool, size as ddk::SIZE_T, u32::from_le_bytes(*b"Hal "))
+        as ddk::PCM_RESOURCE_LIST;
+    if list.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    core::ptr::write_bytes(list as *mut u8, 0, size);
+    (*list).Count = 1;
+    let full = (*list).List.as_mut_ptr();
+    (*full).InterfaceType = PCI_BUS;
+    (*full).BusNumber = BusNumber;
+    let partial = &mut (*full).PartialResourceList;
+    partial.Version = 1;
+    partial.Revision = 1;
+    partial.Count = n as ddk::ULONG;
+    let mut d = partial.PartialDescriptors.as_mut_ptr();
+    for &(kind, flags, start, len) in &bars[..count] {
+        (*d).Type = kind;
+        (*d).ShareDisposition = SHARE_DEVICE_EXCLUSIVE;
+        (*d).Flags = flags;
+        // Port and Memory share one layout: Start, then Length.
+        (*d).u.Memory.Start.QuadPart = start as i64;
+        (*d).u.Memory.Length = len;
+        d = d.add(1);
+    }
+    if irq {
+        (*d).Type = TYPE_INTERRUPT;
+        (*d).ShareDisposition = SHARE_SHARED;
+        (*d).Flags = INTERRUPT_LEVEL_SENSITIVE;
+        (*d).u.Interrupt.Level = line;
+        (*d).u.Interrupt.Vector = line;
+        (*d).u.Interrupt.Affinity = usize::MAX as _;
+    }
+    *AllocatedResources = list;
+    STATUS_SUCCESS
 }
 
 #[unsafe(no_mangle)]
@@ -1006,12 +1133,36 @@ unsafe fn irql_violation(kind: &'static [u8], old: ddk::KIRQL, new: ddk::KIRQL) 
         } else {
             0
         };
+        // `ra` lands in KfRaiseIrql/KfLowerIrql themselves, which names the routine
+        // and never the code that misused it. Walk the frame records (AAPCS64 keeps
+        // x29 chained on Windows targets) for the callers that do: frame 0 is `ra`
+        // again, frame 1 returns into Kf*Irql's caller, frame 2 into its caller. A record that does not
+        // move up the stack ends the walk.
+        let mut callers = [0usize; 4];
+        let mut fp: usize;
+        core::arch::asm!("mov {0}, x29", out(reg) fp, options(nomem, nostack, preserves_flags));
+        for slot in callers.iter_mut() {
+            // 8-aligned, not 16: a frame record may sit mid-frame (KfRaiseIrql: sp+0x18).
+            if fp == 0 || fp & 0x7 != 0 {
+                break;
+            }
+            let next = core::ptr::read_volatile(fp as *const usize);
+            *slot = core::ptr::read_volatile((fp + 8) as *const usize);
+            if next <= fp || next - fp > 0x10000 {
+                break;
+            }
+            fp = next;
+        }
         DbgPrint(
-            b"[IRQL] VIOLATION: %s %u -> %u, caller near %p, last raise-to-HIGH @ %p\n\0".as_ptr(),
+            b"[IRQL] VIOLATION: %s %u -> %u, caller near %p (up: %p %p %p), last raise-to-HIGH @ %p\n\0"
+                .as_ptr(),
             kind.as_ptr(),
             old as u32,
             new as u32,
             ra as usize,
+            callers[1],
+            callers[2],
+            callers[3],
             leaker as usize,
         );
     }
