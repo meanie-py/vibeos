@@ -611,11 +611,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   32-bit child). Fixing chained APCs turned up a real **kernel** bug, now fixed: arm64
   `NtContinue(TestAlert=TRUE)` exited through `KiExceptionExit` without delivering a user APC
   that `KeTestAlertThread` had just marked pending, so an alertable wait drained only one APC
-  (field manual, "A user thread returns to a small integer" → sibling note). Still owed:
-  CreateRemoteThread into a running non-x86-64 process (refused), and a native kernel32 still
-  loading in a guest (root cause found — ntdll's `_errno`/`atan2`/`tan` forwarders to msvcrt;
-  the local-export fix aliased libwow64fex's rpmalloc thread-heap slot and was backed out;
-  harmless, parked). See `../engineering/wow64-x64-guest-design.md`.
+  (field manual, "A user thread returns to a small integer" → sibling note). Since then (spawn64
+  rungs 10-12): CreateRemoteThread from a guest into a running native or 32-bit process works
+  (the CONTEXT is translated to the target's native shape; a WoW64 target's loader hands a
+  32-bit start to wow64.dll — which also fixes a NATIVE 64-bit creator's remote thread into a
+  WoW64 process), and no native kernel32/msvcrt loads in a guest any more (ntdll's own `_errno`
+  in a reserved TLS slot). That last fix exposed a latent WoW64 bug, also fixed: its fixed TLS
+  slots were never reserved, so the first `TlsAlloc` could take slot 1, the CPU area. Still
+  owed: CreateRemoteThread INTO an x86-64 guest from a non-x86-64 process. See
+  `../engineering/wow64-x64-guest-design.md`.
 - **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
   lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
   captured mid-body of itself, so `ZwContinue` after a vectored handler's

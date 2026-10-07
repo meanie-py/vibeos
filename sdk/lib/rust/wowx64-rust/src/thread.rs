@@ -147,6 +147,203 @@ unsafe fn TargetProcess(Process: HANDLE) -> Option<(u16, bool)> {
     Some((Machine, Ldr != 0))
 }
 
+/// `DllBase` of `Name` (lower-case ASCII base name) in `Process`'s 64-bit
+/// loader list, PEB->Ldr: in a native or WoW64 process the native loader's,
+/// in this one the GUEST's (the guest ntdll owns PEB->Ldr; the native loader
+/// keeps its own list, see ntdll-rust `LdrpLdrData`). Offsets as wow64.c's
+/// cross-process walk measured them against the bindgen structs.
+unsafe fn RemoteModuleBase(Process: HANDLE, Name: &[u8]) -> Option<u64> {
+    let mut Info: PROCESS_BASIC_INFORMATION = core::mem::zeroed();
+    if NtQueryInformationProcess(
+        Process,
+        ProcessBasicInformation,
+        &mut Info as *mut _ as PVOID,
+        core::mem::size_of::<PROCESS_BASIC_INFORMATION>() as ULONG,
+        null_mut(),
+    ) < 0
+    {
+        return None;
+    }
+    let Read = |At: u64, Out: *mut c_void, Len: usize| -> bool {
+        NtReadVirtualMemory(Process, At as PVOID, Out, Len as SIZE_T, null_mut()) >= 0
+    };
+    let mut Ldr = 0u64;
+    if !Read(Info.PebBaseAddress as u64 + 0x18, &mut Ldr as *mut _ as _, 8) || Ldr == 0 {
+        return None;
+    }
+    let Head = Ldr + 0x10; // PEB_LDR_DATA.InLoadOrderModuleList
+    let mut Cur = 0u64;
+    if !Read(Head, &mut Cur as *mut _ as _, 8) {
+        return None;
+    }
+    // A corrupt list must not spin forever; no process has this many modules.
+    for _ in 0..512 {
+        if Cur == 0 || Cur == Head {
+            break;
+        }
+        // InLoadOrderLinks sits at offset 0, so the link IS the entry.
+        let (mut DllBase, mut Len, mut Buf) = (0u64, 0u16, 0u64);
+        let mut Wide = [0u16; 32];
+        if Read(Cur + 0x30, &mut DllBase as *mut _ as _, 8)
+            && Read(Cur + 0x58, &mut Len as *mut _ as _, 2)
+            && Read(Cur + 0x60, &mut Buf as *mut _ as _, 8)
+            && Len as usize == Name.len() * 2
+            && Name.len() <= Wide.len()
+            && Read(Buf, Wide.as_mut_ptr() as _, Len as usize)
+            && Wide[..Name.len()]
+                .iter()
+                .zip(Name)
+                .all(|(&W, &C)| W < 0x80 && (W as u8).to_ascii_lowercase() == C)
+        {
+            return Some(DllBase);
+        }
+        if !Read(Cur, &mut Cur as *mut _ as _, 8) {
+            break;
+        }
+    }
+    None
+}
+
+/// The address of export `Name` (no NUL) of the PE32+ image at `Base` in
+/// `Process`. The export directory -- its tables and their name strings, which
+/// the linker emits together -- is read once into a local buffer, and any RVA
+/// pointing outside it (a forwarder, a malformed table) is refused, so this
+/// never dereferences an address it did not bound-check.
+unsafe fn RemoteExport(Process: HANDLE, Base: u64, Name: &[u8]) -> Option<u64> {
+    let Read = |At: u64, Out: *mut c_void, Len: usize| -> bool {
+        NtReadVirtualMemory(Process, At as PVOID, Out, Len as SIZE_T, null_mut()) >= 0
+    };
+    let (mut Lfanew, mut Magic, mut Dir) = (0u32, 0u16, [0u32; 2]);
+    // OptionalHeader at e_lfanew + 24; PE32+ DataDirectory[EXPORT] at +112.
+    if !Read(Base + 0x3C, &mut Lfanew as *mut _ as _, 4)
+        || !Read(Base + Lfanew as u64 + 24, &mut Magic as *mut _ as _, 2)
+        || Magic != 0x20B
+        || !Read(Base + Lfanew as u64 + 24 + 112, Dir.as_mut_ptr() as _, 8)
+    {
+        return None;
+    }
+    let (Rva, Size) = (Dir[0] as usize, Dir[1] as usize);
+    if Rva == 0 || Size < 40 || Size > 0x40_0000 {
+        return None;
+    }
+    let mut Block: PVOID = null_mut();
+    let mut BlockSize = Size as SIZE_T;
+    if NtAllocateVirtualMemory(CURRENT_PROCESS, &mut Block, 0, &mut BlockSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE) < 0 {
+        return None;
+    }
+    let Found = (|| {
+        if !Read(Base + Rva as u64, Block, Size) {
+            return None;
+        }
+        let B = Block as *const u8;
+        // The bytes [At, At+Len) of the image, if they lie inside the block.
+        let At = |R: usize, Len: usize| -> Option<*const u8> {
+            (R >= Rva && R.checked_add(Len)? <= Rva + Size).then(|| B.add(R - Rva))
+        };
+        let U32 = |R: usize| At(R, 4).map(|P| core::ptr::read_unaligned(P as *const u32) as usize);
+        let NumberOfFunctions = U32(Rva + 0x14)?;
+        let NumberOfNames = U32(Rva + 0x18)?;
+        let (Functions, Names, Ordinals) = (U32(Rva + 0x1C)?, U32(Rva + 0x20)?, U32(Rva + 0x24)?);
+        for i in 0..NumberOfNames {
+            let NameRva = U32(Names + i * 4)?;
+            let Candidate = match At(NameRva, Name.len() + 1) {
+                Some(P) => core::slice::from_raw_parts(P, Name.len() + 1),
+                None => continue,
+            };
+            if &Candidate[..Name.len()] != Name || Candidate[Name.len()] != 0 {
+                continue;
+            }
+            let Ord = core::ptr::read_unaligned(At(Ordinals + i * 2, 2)? as *const u16) as usize;
+            if Ord >= NumberOfFunctions {
+                return None;
+            }
+            let FnRva = U32(Functions + Ord * 4)?;
+            // An RVA inside the export directory is a forwarder string.
+            if FnRva == 0 || (FnRva >= Rva && FnRva < Rva + Size) {
+                return None;
+            }
+            return Some(Base + FnRva as u64);
+        }
+        None
+    })();
+    Free(CURRENT_PROCESS, Block);
+    Found
+}
+
+/// The guest kernel32's Win32 thread start (its `BaseThreadStart` export, of
+/// `BaseThreadStartup`): the `rip` of every x86-64 CONTEXT kernel32 builds for
+/// a new thread, with `rcx`/`rdx` = routine/parameter. 0 until the guest has a
+/// kernel32. Cached once found: the guest kernel32 never moves.
+unsafe fn GuestThreadStart() -> u64 {
+    static mut CACHED: u64 = 0;
+    if CACHED == 0 {
+        if let Some(Base) = RemoteModuleBase(CURRENT_PROCESS, b"kernel32.dll") {
+            CACHED = RemoteExport(CURRENT_PROCESS, Base, b"BaseThreadStart").unwrap_or(0);
+        }
+    }
+    CACHED
+}
+
+/// The guest's `NtCreateThread` into a RUNNING process that is not an x86-64
+/// guest -- a native one, or a 32-bit (WoW64) one. Nothing of ours runs over
+/// there, and nothing has to: the thread's routine is already the target's
+/// code, named by an address the caller got from it. All that is x86-64 about
+/// the request is the CONTEXT's shape, so it is translated into the one a
+/// native creator would have built, and the TARGET runs it as its own:
+///
+///   * kernel32's Win32 shape (rip = guest `BaseThreadStart`, rcx/rdx =
+///     routine/parameter) becomes the target's native kernel32
+///     `BaseThreadStart(routine, parameter)`: the thread exits through
+///     ExitThread with the routine's return value, as any CreateThread's does;
+///   * the RtlCreateUserThread shape (rip = routine, rcx = parameter) becomes
+///     routine(parameter), returning into the native `RtlExitUserThread`
+///     (ntdll is at one base in every process).
+///
+/// A native target then just runs it. A WoW64 target's native loader sees a
+/// start that is not native code and hands the thread to its wow64.dll, which
+/// runs it as a 32-bit thread (ntdll-rust `LdrpDivertWow64Thread`) -- the same
+/// path a native creator's CreateRemoteThread into it takes.
+///
+/// The guest kernel32 allocated the thread's stack in the target and the
+/// INITIAL_TEB describes it; it is the thread's native stack as is.
+unsafe fn CreateForeignThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS], Process: HANDLE) -> u64 {
+    let Guest = *(Args[5] as *const WowX64Context);
+    let mut Native: CONTEXT = core::mem::zeroed();
+    Native.ContextFlags = CONTEXT_FULL;
+    Native.Sp = Guest.Rsp & !15;
+
+    let ThreadStart = GuestThreadStart();
+    let TargetThreadStart = if ThreadStart != 0 && Guest.Rip == ThreadStart {
+        RemoteModuleBase(Process, b"kernel32.dll").and_then(|Base| RemoteExport(Process, Base, b"BaseThreadStart"))
+    } else {
+        None
+    };
+    match TargetThreadStart {
+        Some(Entry) => {
+            Native.Pc = Entry;
+            Native.__bindgen_anon_1.X[0] = Guest.Rcx;
+            Native.__bindgen_anon_1.X[1] = Guest.Rdx;
+        }
+        None => {
+            // The Rtl shape, or the Win32 one into a target without a
+            // kernel32 (then routine(parameter) is all that is left of it).
+            let Win32 = ThreadStart != 0 && Guest.Rip == ThreadStart;
+            Native.Pc = if Win32 { Guest.Rcx } else { Guest.Rip };
+            Native.__bindgen_anon_1.X[0] = if Win32 { Guest.Rdx } else { Guest.Rcx };
+            Native.__bindgen_anon_1.X[30] = RtlExitUserThread as usize as u64; // lr
+        }
+    }
+    crate::trace!(
+        "guest NtCreateThread into a foreign process: pc %p x0 %p x1 %p sp %p",
+        Native.Pc as *const c_void,
+        Native.__bindgen_anon_1.X[0] as *const c_void,
+        Native.__bindgen_anon_1.X[1] as *const c_void,
+        Native.Sp as *const c_void,
+    );
+    Args[5] = &Native as *const CONTEXT as u64;
+    crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCreateThread, Args.as_ptr())
+}
+
 unsafe fn Free(Process: HANDLE, Base: PVOID) {
     let (mut B, mut S) = (Base, 0 as SIZE_T);
     NtFreeVirtualMemory(Process, &mut B, &mut S, MEM_RELEASE);
@@ -169,10 +366,9 @@ unsafe fn Free(Process: HANDLE, Base: PVOID) {
 ///     could only run if that divert ever returned, and then exits the thread.
 ///   * a NEW 32-bit child: the same, for the same reason (its wow64.dll
 ///     starts it from its image).
-///   * a native arm64 child: unreachable — the x86-64 guest's redirected
-///     system32 cannot name an arm64 exe to spawn (image.rs).
-///   * a RUNNING 32-bit process: needs that process's wow64.dll to set up the
-///     guest side of the thread. Refused, loudly.
+///   * a RUNNING native or 32-bit process: [`CreateForeignThread`].
+///   * a NEW native arm64 child: unreachable — the x86-64 guest's redirected
+///     system32 cannot name an arm64 exe to spawn (image.rs). Refused.
 pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]) -> u64 {
     let GuestContext = Args[5] as *const WowX64Context;
     let Process = Args[3] as HANDLE;
@@ -206,15 +402,15 @@ pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]
                 Args[5] = &Native as *const CONTEXT as u64;
                 return crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCreateThread, Args.as_ptr());
             }
-            Some((Machine, _)) => {
-                // A native arm64 child (any state) or a RUNNING 32-bit one. The
-                // native-arm64 case an x86-64 guest cannot even reach: its
-                // system32 is redirected to sysamd64 and an arm64 image there
-                // reads back as not-found (image.rs / syscall.rs), so it cannot
-                // name an arm64 exe to spawn — WoW64's own-machine view. A
-                // running 32-bit target needs that process's wow64.dll to set
-                // up the guest side from a 32-bit start the caller cannot name.
-                crate::trace!("guest NtCreateThread into a machine-%04x process: not supported", Machine as u32);
+            // A RUNNING native or 32-bit process (CreateRemoteThread).
+            Some((_, true)) => return CreateForeignThread(Args, Process),
+            Some((Machine, false)) => {
+                // A NEW native arm64 child, whose initial context its loader
+                // DOES run. An x86-64 guest cannot reach this: its system32 is
+                // redirected to sysamd64, where an arm64 image reads back as
+                // not-found (image.rs / syscall.rs), so it cannot name an arm64
+                // exe to spawn -- WoW64's own-machine view.
+                crate::trace!("guest NtCreateThread: initial thread of a new machine-%04x process", Machine as u32);
                 return STATUS_NOT_SUPPORTED;
             }
             None => {

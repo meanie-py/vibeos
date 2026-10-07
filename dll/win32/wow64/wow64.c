@@ -1689,6 +1689,155 @@ LONG Wow64CreateGuestThread(ULONG Eip, ULONG Esp, ULONG Eax, ULONG Ebx,
     return Status;
 }
 
+/* ---- a thread a 64-bit creator started with a 32-bit start ---------------
+ *
+ * CreateRemoteThread into this WoW64 process from a 64-bit one -- a native
+ * process, or an x86-64 guest under wowx64 -- names a 32-bit routine, but the
+ * thread the kernel makes is a native one: it arrives in the native loader
+ * with a native CONTEXT, for the Win32 shape starting the native kernel32's
+ * BaseThreadStartup(Start, Param), for the RtlCreateUserThread shape starting
+ * Start(Param) directly. Run as native code, either one calls 32-bit code as
+ * native and takes the process down. Windows' WoW64 converts such a startup
+ * context to a 32-bit one for every thread it initializes
+ * (ThunkStartupContext64TO32); here the native loader asks first
+ * (ldrinit.rs LdrpDivertWow64Thread) and hands only those threads over.
+ *
+ * The thread keeps its native stack (the creator allocated it) and gets a
+ * 32-bit one of its own below 2GB, fully committed so it never needs guard-page
+ * growth. It then enters the guest through the 32-bit loader exactly as
+ * Wow64pGuestThreadStart does: TLS and DLL_THREAD_ATTACH for the 32-bit DLLs
+ * first, then the start.
+ *
+ * Win32 shape: the 32-bit kernel32's BaseThreadStart(Start, Param) (its export
+ * of BaseThreadStartup), so the thread exits through ExitThread with the
+ * routine's return value and an unhandled exception goes where a 32-bit
+ * CreateThread's would. Rtl shape: Start(Param) returning into the 32-bit
+ * ntdll's RtlExitUserThread. */
+#define WOW64_GUEST_FROM64_STACK  (1024 * 1024)
+#define LDR32_PEB_LDR_OFF         0x0C /* PEB32.Ldr                          */
+#define LDR32_INLOADORDER_OFF     0x0C /* PEB_LDR_DATA32.InLoadOrderModuleList */
+#define LDR32_ENTRY_DLLBASE       0x18 /* LDR_DATA_TABLE_ENTRY32.DllBase     */
+#define LDR32_ENTRY_SIZEOFIMAGE   0x20 /* .SizeOfImage                       */
+#define LDR32_ENTRY_BASENAME      0x2C /* .BaseDllName.Length                */
+#define LDR32_ENTRY_BASENAMEBUF   0x30 /* .BaseDllName.Buffer                */
+#define TEB32_PEB_OFF             0x30 /* TEB32.ProcessEnvironmentBlock      */
+
+static WCHAR Wow64pLowerW(WCHAR c);
+
+/* A 32-bit module of THIS process, by base name, from the 32-bit loader's own
+ * list (offsets per ntkrnl-sys offset_check_i386.rs). NULL if not loaded. */
+static PVOID Wow64pGuestModule32(const WCHAR *Name, SIZE_T *ImgSize)
+{
+    PBYTE Teb32 = Wow64pCurrentTeb32();
+    ULONG Peb32, Ldr, Head, Cur;
+    unsigned Guard, NameLen = 0, i;
+
+    while (Name[NameLen])
+        NameLen++;
+    if (!Teb32)
+        return NULL;
+    Peb32 = *(ULONG *)(Teb32 + TEB32_PEB_OFF);
+    if (!Peb32)
+        return NULL;
+    Ldr = *(ULONG *)(ULONG_PTR)(Peb32 + LDR32_PEB_LDR_OFF);
+    if (!Ldr)
+        return NULL;
+    Head = Ldr + LDR32_INLOADORDER_OFF;
+    for (Cur = *(ULONG *)(ULONG_PTR)Head, Guard = 0;
+         Cur && Cur != Head && Guard < 512;
+         Cur = *(ULONG *)(ULONG_PTR)Cur, Guard++)
+    {
+        USHORT ByteLen = *(USHORT *)(ULONG_PTR)(Cur + LDR32_ENTRY_BASENAME);
+        const WCHAR *Buf = (const WCHAR *)(ULONG_PTR)
+            *(ULONG *)(ULONG_PTR)(Cur + LDR32_ENTRY_BASENAMEBUF);
+        if (!Buf || ByteLen / sizeof(WCHAR) != NameLen)
+            continue;
+        for (i = 0; i < NameLen; i++)
+            if (Wow64pLowerW(Buf[i]) != Wow64pLowerW(Name[i]))
+                break;
+        if (i == NameLen)
+        {
+            *ImgSize = *(ULONG *)(ULONG_PTR)(Cur + LDR32_ENTRY_SIZEOFIMAGE);
+            return (PVOID)(ULONG_PTR)*(ULONG *)(ULONG_PTR)(Cur + LDR32_ENTRY_DLLBASE);
+        }
+    }
+    return NULL;
+}
+
+VOID WINAPI Wow64StartGuestThreadFrom64(ULONG_PTR Start, ULONG_PTR Param,
+                                        BOOLEAN Win32Thread)
+{
+    WOW64_CONTEXT RunCtx, StartCtx;
+    PVOID Module, Entry;
+    SIZE_T ImgSize = 0;
+    PBYTE Stack;
+    ULONG Top, Esp, ApcEsp;
+
+    if (Start > 0xFFFFFFFFu || Param > 0xFFFFFFFFu)
+    {
+        /* LdrpDivertWow64Thread only asks for a start that is not native
+         * code; one that is not 32-bit either is nobody's. */
+        DbgPrint("[FEX-WOW64C] thread from 64-bit: start %p param %p not 32-bit\n",
+                 (PVOID)Start, (PVOID)Param);
+        RtlExitUserThread((LONG)0xC000007BL); /* STATUS_INVALID_IMAGE_FORMAT */
+    }
+    if (!Wow64pBTCpuThreadInit || !Wow64pBTCpuSimulate || !Wow64pLdrInitThunk32)
+    {
+        DbgPrint("[FEX-WOW64C] thread from 64-bit: no CPU layer\n");
+        RtlExitUserThread((LONG)0xC0000001L);
+    }
+
+    Module = Wow64pGuestModule32(Win32Thread ? L"kernel32.dll" : L"ntdll.dll", &ImgSize);
+    Entry = Module ? Wow64pFindExport32(Module, ImgSize,
+                                        Win32Thread ? "BaseThreadStart" : "RtlExitUserThread")
+                   : NULL;
+    if (!Entry)
+    {
+        DbgPrint("[FEX-WOW64C] thread from 64-bit: 32-bit %s has no %s\n",
+                 Win32Thread ? "kernel32" : "ntdll",
+                 Win32Thread ? "BaseThreadStart" : "RtlExitUserThread");
+        RtlExitUserThread((LONG)0xC0000139L); /* STATUS_ENTRYPOINT_NOT_FOUND */
+    }
+
+    Stack = (PBYTE)Wow64pAllocBelow2G(WOW64_GUEST_FROM64_STACK, PAGE_READWRITE,
+                                      "thread from 64-bit: stack");
+    if (!Stack)
+        RtlExitUserThread((LONG)0xC0000017L); /* STATUS_NO_MEMORY */
+    Top = (ULONG)(ULONG_PTR)Stack + WOW64_GUEST_FROM64_STACK;
+
+    /* The routine's frame. stdcall: [esp] return address, then the args. The
+     * loader APC frame goes below it (Wow64pBuildLoaderApcFrame). */
+    if (Win32Thread)
+    {
+        /* BaseThreadStartup(Start, Param) never returns: ExitThread. */
+        Esp = (Top - 0x100) & ~15u;
+        ((ULONG *)(ULONG_PTR)Esp)[0] = 0;
+        ((ULONG *)(ULONG_PTR)Esp)[1] = (ULONG)Start;
+        ((ULONG *)(ULONG_PTR)Esp)[2] = (ULONG)Param;
+        Wow64pInitStartContext(&RunCtx, (ULONG)(ULONG_PTR)Entry, Esp);
+    }
+    else
+    {
+        /* Start(Param), returning its exit code into RtlExitUserThread. */
+        Esp = (Top - 0x100) & ~15u;
+        ((ULONG *)(ULONG_PTR)Esp)[0] = (ULONG)(ULONG_PTR)Entry;
+        ((ULONG *)(ULONG_PTR)Esp)[1] = (ULONG)Param;
+        Wow64pInitStartContext(&RunCtx, (ULONG)Start, Esp);
+    }
+
+    ApcEsp = Wow64pBuildLoaderApcFrame((PBYTE)(ULONG_PTR)(Esp - 16), &RunCtx, NULL);
+    Wow64pInitStartContext(&StartCtx,
+                           (ULONG)(ULONG_PTR)Wow64pKiUserApcDispatcher32, ApcEsp);
+
+    DbgPrint("[FEX-WOW64C] thread from 64-bit: %s start=%08lx param=%08lx stack=%p\n",
+             Win32Thread ? "Win32" : "Rtl", (ULONG)Start, (ULONG)Param, Stack);
+    Wow64pThreadInit(&StartCtx, Top, (ULONG)(ULONG_PTR)Stack,
+                     (ULONG)(ULONG_PTR)Stack, "thread from 64-bit");
+
+    DbgPrint("[FEX-WOW64C] thread from 64-bit: entry failed, exiting thread\n");
+    RtlExitUserThread((LONG)0xC0000001L);
+}
+
 /* ---- cross-process guest thread creation (task #64, second half) --------
  *
  * CreateRemoteThread from a 32-bit guest into ANOTHER running 32-bit process.
