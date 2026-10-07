@@ -581,7 +581,9 @@ pub unsafe extern "system" fn NtGdiSetDIBitsToDeviceInternal(
             ret = 0;
             break 'exit;
         }
-        bmi = pbmiSafe;
+        // Shadow, don't assign: from here on the name `bmi` can only mean the kernel
+        // copy, so no later read can reach the caller's page.
+        let bmi: LPBITMAPINFO = pbmiSafe;
 
         // `Bits` was probed above, but the probe only validates. Both consumers below
         // read it directly out of the caller's page -- GreCreateBitmapEx as the pixel
@@ -603,6 +605,10 @@ pub unsafe extern "system" fn NtGdiSetDIBitsToDeviceInternal(
                 break 'exit;
             }
             Bits = pjBitsSafe as _;
+        } else {
+            // Nothing captured means nothing may be read: never hand the caller's
+            // pointer on (the size check below admits only a zero-byte image here).
+            Bits = core::ptr::null_mut();
         }
 
         if YDest < 0 {
@@ -613,6 +619,25 @@ pub unsafe extern "system" fn NtGdiSetDIBitsToDeviceInternal(
         }
 
         if ScanLines == 0 {
+            ret = 0;
+            break 'exit;
+        }
+
+        // The source bitmap below is built over `Bits` and read for as many bytes as
+        // the HEADER describes -- an aligned row per scan line, or biSizeImage when
+        // compressed -- never cjMaxBits. A shorter buffer was read past its end: past
+        // the pool copy, or with cjMaxBits == 0 through the caller's own pointer, which
+        // nothing probed (the C has both holes). gdi32 sizes cjMaxBits exactly this way
+        // for the same ScanLines, and ScanLines only shrinks above, so it always passes.
+        let need: u64 = match (*bmi).bmiHeader.biCompression {
+            BI_RGB | BI_BITFIELDS => {
+                WIDTH_BYTES_ALIGN32((*bmi).bmiHeader.biWidth.unsigned_abs() as i64, (*bmi).bmiHeader.biBitCount as i64) as u64
+                    * ScanLines as u64
+            }
+            _ => (*bmi).bmiHeader.biSizeImage as u64,
+        };
+        if need > cjMaxBits as u64 {
+            EngSetLastError(ERROR_INVALID_PARAMETER);
             ret = 0;
             break 'exit;
         }
@@ -678,7 +703,7 @@ pub unsafe extern "system" fn NtGdiSetDIBitsToDeviceInternal(
                 (*bmi).bmiHeader.biWidth as u32,
                 ScanLines,
                 (*bmi).bmiHeader.biCompression,
-                Bits,
+                Bits, // nolint: raw-user-access (both arms above re-point Bits: the pool copy, or NULL)
                 cjMaxBits,
             );
             if hMaskBitmap.is_null() {
@@ -1906,6 +1931,17 @@ pub unsafe extern "system" fn NtGdiCreateDIBSection(
     if bmi.is_null() {
         return hbitmap;
     }
+    // `Bits` is the caller's out-pointer and nothing probed it: DIB_CreateDIBSection
+    // stores the section address straight through it, so naming a kernel address
+    // made win32k write there (the C has the same hole). Range-check it here, hand
+    // DIB_CreateDIBSection a local, and copy that out fault-tolerantly below.
+    if !Bits.is_null()
+        && crate::safe_user_io::probe_for_write(Bits.cast(), core::mem::size_of::<PVOID>(), 1).is_err()
+    {
+        SetLastNtError(STATUS_ACCESS_VIOLATION);
+        return core::ptr::null_mut();
+    }
+    let mut kbits: PVOID = core::ptr::null_mut();
 
     // What stood here was the comment "ProbeForRead calls are no-ops in this
     // translation context". They are not no-ops — they are the only bounds check on
@@ -2031,12 +2067,21 @@ pub unsafe extern "system" fn NtGdiCreateDIBSection(
             dc,
             bmi,
             Usage,
-            Bits,
+            if Bits.is_null() { core::ptr::null_mut() } else { &mut kbits },
             hSection,
             dwOffset,
             0,
         );
         DC_UnlockDc(dc);
+        // DIB_CreateDIBSection stores only a non-null address; so does this.
+        if !hbitmap.is_null()
+            && !kbits.is_null()
+            && !crate::copy::write_user(Bits, kbits)
+        {
+            NtGdiDeleteObjectApp(hbitmap as *mut core::ffi::c_void);
+            hbitmap = core::ptr::null_mut();
+            SetLastNtError(STATUS_ACCESS_VIOLATION);
+        }
     } else {
         EngSetLastError(ERROR_INVALID_HANDLE);
     }

@@ -413,7 +413,17 @@ unsafe fn SepAccessCheckAndAuditAlarm(
         return s;
     }
 
-    local_generic_mapping = *generic_mapping;
+    // C: inside the same __try as the probe, whose handler is this cleanup.
+    local_generic_mapping = match read_back(generic_mapping as *const _GENERIC_MAPPING) {
+        Ok(v) => v,
+        Err(s) => {
+            if allocated_result_lists != 0 {
+                ExFreePoolWithTag(safe_granted_access_list as PVOID, TAG_SEPA);
+            }
+            SeReleaseSubjectContext(&mut subject_context);
+            return s;
+        }
+    };
 
     if !client_token_handle.is_null() {
         status = ObReferenceObjectByHandle(
@@ -1039,7 +1049,17 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
             return s;
         }
 
-        privilege_count = (*privilege_set).PrivilegeCount;
+        // Read ONCE, fault-tolerantly; the count sizes the second probe and the copy.
+        privilege_count = match read_back(core::ptr::addr_of!((*privilege_set).PrivilegeCount)) {
+            Ok(v) => v,
+            Err(s) => {
+                if !captured_security_descriptor.is_null() {
+                    SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+                }
+                SeReleaseSubjectContext(&mut subject_context);
+                return s;
+            }
+        };
         if privilege_count > SEP_PRIVILEGE_SET_MAX_COUNT {
             status = STATUS_INVALID_PARAMETER;
             if !captured_security_descriptor.is_null() {
@@ -1094,6 +1114,11 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
             SeReleaseSubjectContext(&mut subject_context);
             return s;
         }
+        // DOUBLE FETCH in the C (audit.c:1746): the copy re-reads PrivilegeCount
+        // from user memory after the first read sized the buffer, so a racing
+        // thread could hand the audit code a count larger than the allocation.
+        // Pin the captured copy to the value that was validated.
+        (*captured_privilege_set).PrivilegeCount = privilege_count;
 
         if !handle_id.is_null() {
             if let Err(s) = probe_user_buffer(
@@ -1108,7 +1133,17 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
                 SeReleaseSubjectContext(&mut subject_context);
                 return s;
             }
-            captured_handle_id = *(handle_id as *const PVOID);
+            // C: `CapturedHandleId = *(PVOID*)HandleId` inside the same _SEH2_TRY as the probe.
+            captured_handle_id = match read_back(handle_id as *const PVOID) {
+                Ok(v) => v,
+                Err(s) => {
+                    if !captured_security_descriptor.is_null() {
+                        SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+                    }
+                    SeReleaseSubjectContext(&mut subject_context);
+                    return s;
+                }
+            };
         }
 
         if let Err(s) = probe_user_buffer(
@@ -1228,7 +1263,17 @@ pub unsafe extern "system" fn NtOpenObjectAuditAlarm(
             SeReleaseSubjectContext(&mut subject_context);
             return s;
         }
-        captured_handle_id = *(handle_id as *const PVOID);
+        // C: `CapturedHandleId = *(PVOID*)HandleId` inside the same _SEH2_TRY as the probe.
+        captured_handle_id = match read_back(handle_id as *const PVOID) {
+            Ok(v) => v,
+            Err(s) => {
+                if !captured_security_descriptor.is_null() {
+                    SeReleaseSecurityDescriptor(captured_security_descriptor, UserMode, 0u8);
+                }
+                SeReleaseSubjectContext(&mut subject_context);
+                return s;
+            }
+        };
     }
 
     if let Err(s) = probe_user_buffer(
@@ -1428,7 +1473,20 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
         return s;
     }
 
-    privilege_count = (*privileges).PrivilegeCount;
+    // Read ONCE, fault-tolerantly; the count sizes the second probe and the copy.
+    privilege_count = match read_back(core::ptr::addr_of!((*privileges).PrivilegeCount)) {
+        Ok(v) => v,
+        Err(s) => {
+            if !captured_service_name.Buffer.is_null() {
+                ReleaseCapturedUnicodeString(&mut captured_service_name, previous_mode);
+            }
+            if !captured_subsystem_name.Buffer.is_null() {
+                ReleaseCapturedUnicodeString(&mut captured_subsystem_name, previous_mode);
+            }
+            SeReleaseSubjectContext(&mut subject_context);
+            return s;
+        }
+    };
     if privilege_count > SEP_PRIVILEGE_SET_MAX_COUNT {
         status = STATUS_INVALID_PARAMETER;
         if !captured_service_name.Buffer.is_null() {
@@ -1495,6 +1553,10 @@ pub unsafe extern "system" fn NtPrivilegedServiceAuditAlarm(
         SeReleaseSubjectContext(&mut subject_context);
         return s;
     }
+    // DOUBLE FETCH in the C (audit.c:1999): the copy re-reads PrivilegeCount
+    // from user memory after the first read sized the buffer. Pin the captured
+    // copy to the value that was validated.
+    (*captured_privileges).PrivilegeCount = privilege_count;
 
     SepAdtPrivilegedServiceAuditAlarm(
         &mut subject_context,

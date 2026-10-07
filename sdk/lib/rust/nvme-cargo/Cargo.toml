@@ -1,0 +1,17 @@
+# Cargo-driven `nvme.sys` link (i386 + amd64 + arm64). build.rs is a manifest for
+# the shared `reactos-link` engine; the body is the `nvme-rust` staticlib, whose
+# `DriverEntry` is the PE entry point.
+
+[package]
+name = "nvme-cargo"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "nvme"
+path = "src/main.rs"
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+[build-dependencies]
+reactos-link = { path = "../reactos-link" }

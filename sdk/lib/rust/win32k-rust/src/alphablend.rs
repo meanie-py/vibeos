@@ -1,5 +1,4 @@
 use win32k_sys::win32k::*;
-use ntkrnl_sys::rtl::RtlCopyMemory;
 
 extern "system" {
     fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: i32, iType: u32, iDirection: u32, cMaxRects: u32,) -> u32;
@@ -299,22 +298,35 @@ pub unsafe extern "system" fn NtGdiEngAlphaBlend(
     upSourceRect: PRECTL,
     BlendObj: *mut BLENDOBJ,
 ) -> u32 {
+    if crate::safe_user_io::umpd_call_refused() {
+        return 0;
+    }
 
     let mut DestRect: RECTL = core::mem::zeroed();
     let mut SourceRect: RECTL = core::mem::zeroed();
 
-    let mut Status = SafeProbeForRead(upDestRect as *const core::ffi::c_void, core::mem::size_of::<RECTL>(), 1);
-    if NT_SUCCESS(Status) {
-        Status = SafeProbeForRead(upSourceRect as *const core::ffi::c_void, core::mem::size_of::<RECTL>(), 1);
-    }
-    if !NT_SUCCESS(Status) {
+    // C: SafeProbeForRead both rects, then RtlCopyMemory each. The probe proves
+    // where the rect is, not that it stays mapped; copy fault-tolerantly so an
+    // unmapped page fails the call (return FALSE) instead of bugchecking.
+    if crate::safe_user_io::copy_from_user(
+        core::ptr::addr_of_mut!(DestRect) as *mut core::ffi::c_void,
+        upDestRect as *const core::ffi::c_void,
+        core::mem::size_of::<RECTL>(),
+        1,
+    )
+    .is_err()
+        || crate::safe_user_io::copy_from_user(
+            core::ptr::addr_of_mut!(SourceRect) as *mut core::ffi::c_void,
+            upSourceRect as *const core::ffi::c_void,
+            core::mem::size_of::<RECTL>(),
+            1,
+        )
+        .is_err()
+    {
         return 0;
-    } else {
-        RtlCopyMemory(core::ptr::addr_of_mut!(DestRect) as *mut core::ffi::c_void, upDestRect as *const core::ffi::c_void, core::mem::size_of::<RECTL>());
-        RtlCopyMemory(core::ptr::addr_of_mut!(SourceRect) as *mut core::ffi::c_void, upSourceRect as *const core::ffi::c_void, core::mem::size_of::<RECTL>());
     }
 
-    return EngAlphaBlend(psoDest, psoSource, ClipRegion, ColorTranslation, core::ptr::addr_of_mut!(DestRect), core::ptr::addr_of_mut!(SourceRect), BlendObj);
+    return EngAlphaBlend(psoDest, psoSource, ClipRegion, ColorTranslation, core::ptr::addr_of_mut!(DestRect), core::ptr::addr_of_mut!(SourceRect), BlendObj); // nolint: raw-user-access (umpd_call_refused: kernel-mode callers only)
 }
 
 

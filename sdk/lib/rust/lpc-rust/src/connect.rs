@@ -396,23 +396,40 @@ pub unsafe extern "system" fn NtSecureConnectPort(
             }
         }
     } else {
-        captured_qos = *security_qos;
+        // Kernel-mode caller: no probe, but each load is one fault-tolerant
+        // fetch and every Length is validated on the captured copy (the old
+        // code checked client_view->Length, then re-read the struct).
+        captured_qos = match ntkrnl_sys::probe::read_back(security_qos as *const SECURITY_QUALITY_OF_SERVICE) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
 
         if !client_view.is_null() {
-            if (*client_view).Length != core::mem::size_of::<PORT_VIEW>() as ULONG {
+            captured_client_view = match ntkrnl_sys::probe::read_back(client_view as *const PORT_VIEW) {
+                Ok(v) => v,
+                Err(st) => return st,
+            };
+            if captured_client_view.Length != core::mem::size_of::<PORT_VIEW>() as ULONG {
                 return STATUS_INVALID_PARAMETER;
             }
-            captured_client_view = *client_view;
         }
 
         if !server_view.is_null() {
-            if (*server_view).Length != core::mem::size_of::<REMOTE_PORT_VIEW>() as ULONG {
+            let captured_server_view: REMOTE_PORT_VIEW =
+                match ntkrnl_sys::probe::read_back(server_view as *const REMOTE_PORT_VIEW) {
+                    Ok(v) => v,
+                    Err(st) => return st,
+                };
+            if captured_server_view.Length != core::mem::size_of::<REMOTE_PORT_VIEW>() as ULONG {
                 return STATUS_INVALID_PARAMETER;
             }
         }
 
         if !connection_information_length.is_null() {
-            connection_info_length = *connection_information_length;
+            connection_info_length = match ntkrnl_sys::probe::read_back(connection_information_length as *const ULONG) {
+                Ok(v) => v,
+                Err(st) => return st,
+            };
         }
 
         captured_server_sid = server_sid;

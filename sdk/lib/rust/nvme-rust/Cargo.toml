@@ -1,0 +1,16 @@
+# nvme-rust: the NVM Express driver body (all three arches). crate-type=staticlib
+# -> libnvme_rust.a, linked into nvme.sys by nvme-cargo (reactos-link,
+# ModuleKind::KernelDll). Written in Rust from the start: there is no C original.
+
+[package]
+name = "nvme-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["kernel"] }
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+scsidisk-rust = { path = "../scsidisk-rust" }

@@ -586,6 +586,12 @@ def _split_top_commas(body: str) -> list[str]:
     return parts
 
 
+_LITERAL_OR_COMMENT = re.compile(
+    r'//[^\n]*|/\*.*?\*/|b?r#*"(?:[^"]|"(?!#))*"#*|b?"(?:\\.|[^"\\])*"|b?\'(?:\\.|[^\'\\])\'',
+    re.S,
+)
+
+
 def fix_macro_calls(src: str, macros: set[str], defined: set[str]) -> tuple[str, list[str]]:
     """Turn `NAME(args)` into `NAME!(args)` for every prelude macro. Returns (src, fixed).
 
@@ -608,14 +614,18 @@ def fix_macro_calls(src: str, macros: set[str], defined: set[str]) -> tuple[str,
         # boolean test and is 17 of mbcs.c's 42 `MSVCRT_CHECK_PMT` sites.
         pattern = re.compile(rf"(?<!\w){re.escape(name)}(?!\s*!)\s*\(")
 
-        def bang(m: re.Match[str], name: str = name) -> str:
+        # Matched on a copy with string literals and comments blanked: install.c's
+        # `DPRINT1("SpInfFindFirstLine(\"SourceDisksNames\", ...) failed")` had its MESSAGE
+        # rewritten to `SpInfFindFirstLine!(`.
+        masked = _LITERAL_OR_COMMENT.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), src)
+        count = 0
+        for m in reversed(list(pattern.finditer(masked))):
             # `fn NAME(` is a DECLARATION (an extern decl of what the prelude has as a
             # macro): `fn DPRINT1!(` is not Rust. integrate() drops such decls as provided.
-            if re.search(r"\bfn\s+$", m.string[max(0, m.start() - 16) : m.start()]):
-                return m.group(0)
-            return f"{name}!("
-
-        src, count = pattern.subn(bang, src)
+            if re.search(r"\bfn\s+$", masked[max(0, m.start() - 16) : m.start()]):
+                continue
+            src = src[: m.start()] + f"{name}!(" + src[m.end() :]
+            count += 1
         if count:
             fixed.append(f"{name}×{count}")
     return src, fixed

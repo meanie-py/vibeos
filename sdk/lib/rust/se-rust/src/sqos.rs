@@ -33,31 +33,28 @@ pub unsafe extern "system" fn SepCaptureSecurityQualityOfService(
             ) {
                 return s;
             }
-            if (*ObjectAttributes).Length == core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG {
-                if !(*ObjectAttributes).SecurityQualityOfService.is_null() {
-                    // ProbeForRead SecurityQualityOfService
-                    if let Err(s) = probe_user_buffer(
-                        (*ObjectAttributes).SecurityQualityOfService as *const core::ffi::c_void,
+            // Capture once: the C reads Length, then SecurityQualityOfService three
+            // times (probe, Length check, copy), each from live user memory. Another
+            // thread could swap the pointer between the probe and the copy.
+            let oa: _OBJECT_ATTRIBUTES = match read_back(ObjectAttributes as *const _OBJECT_ATTRIBUTES) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
+            let user_qos = oa.SecurityQualityOfService as *const core::ffi::c_void;
+            if oa.Length == core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG {
+                if !user_qos.is_null() {
+                    // ProbeForRead + RtlCopyMemory inside _SEH2_TRY. The Length check
+                    // reads the captured copy, which is the value the copy carries.
+                    if let Err(s) = safe_copy_from_user(
+                        core::ptr::addr_of_mut!(safe_qos) as *mut core::ffi::c_void,
+                        user_qos,
                         core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>(),
-                        core::mem::size_of::<ULONG>(),
+                        core::mem::align_of::<ULONG>(),
                         AccessMode,
                     ) {
                         return s;
                     }
-
-                    if (*((*ObjectAttributes).SecurityQualityOfService as PSECURITY_QUALITY_OF_SERVICE)).Length
-                        == core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>() as ULONG
-                    {
-                        // RtlCopyMemory inside _SEH2_TRY: safe_copy_from_user
-                        if let Err(s) = safe_copy_from_user(
-                            core::ptr::addr_of_mut!(safe_qos) as *mut core::ffi::c_void,
-                            (*ObjectAttributes).SecurityQualityOfService as *const core::ffi::c_void,
-                            core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>(),
-                            core::mem::align_of::<ULONG>(),
-                            AccessMode,
-                        ) {
-                            return s;
-                        }
+                    if safe_qos.Length == core::mem::size_of::<SECURITY_QUALITY_OF_SERVICE>() as ULONG {
                         // Present and CapturedSecurityQualityOfService are kernel-mode output pointers — direct write
                         *Present = 1u8;
                     } else {

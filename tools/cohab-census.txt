@@ -47,7 +47,7 @@ base/services/telnetd/CMakeLists.txt	1	# telnetd.c (→ telnetd-rust src/telnetd
 base/services/umpnpmgr/CMakeLists.txt	1	# event.c
 base/services/umpnpmgr/CMakeLists.txt	1	# event.c install.c rpcserver.c umpnpmgr.c → umpnpmgr-rust
 base/services/umpnpmgr/CMakeLists.txt	1	# install.c
-base/services/umpnpmgr/CMakeLists.txt	1	# pnp_s.c and umpnpmgr_stubs.c stay C: both are GENERATED (MIDL server stubs and spec2def), so
+base/services/umpnpmgr/CMakeLists.txt	1	# pnp_s.c stays C: it is GENERATED (the MIDL server stubs), so there is nothing to translate —
 base/services/umpnpmgr/CMakeLists.txt	1	# rpcserver.c
 base/services/umpnpmgr/CMakeLists.txt	1	# umpnpmgr.c
 base/services/wkssvc/CMakeLists.txt	1	# STILL C (correctly): the MIDL product wkssvc_s.c — generated wire marshalling for
@@ -60,6 +60,29 @@ base/services/wlansvc/CMakeLists.txt	1	# MIDL-generated wlansvc_s.c remains, whi
 base/services/wlansvc/CMakeLists.txt	1	# STILL C (correctly): the MIDL product wlansvc_s.c — generated wire marshalling for wlansvc.idl.
 base/services/wlansvc/CMakeLists.txt	1	# rpcserver.c (→ wlansvc-rust src/wlansvc/rpcserver.rs — the Rpc* WLAN entry points)
 base/services/wlansvc/CMakeLists.txt	1	# wlansvc.c (→ wlansvc-rust src/wlansvc/wlansvc.rs — wmain/ServiceMain + control handler)
+base/setup/lib/CMakeLists.txt	1	# bootcode.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/bootcode.rs)
+base/setup/lib/CMakeLists.txt	1	# bootsup.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/bootsup.rs)
+base/setup/lib/CMakeLists.txt	1	# fsutil.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/fsutil.rs)
+base/setup/lib/CMakeLists.txt	1	# install.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/install.rs)
+base/setup/lib/CMakeLists.txt	1	# mui.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/mui.rs)
+base/setup/lib/CMakeLists.txt	1	# registry.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/registry.rs)
+base/setup/lib/CMakeLists.txt	1	# settings.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/settings.rs)
+base/setup/lib/CMakeLists.txt	1	# setuplib.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/setuplib.rs)
+base/setup/lib/CMakeLists.txt	1	# spapisup/fileqsup.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/fileqsup.rs)
+base/setup/lib/CMakeLists.txt	1	# spapisup/infsupp.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/infsupp.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/arcname.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/arcname.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/bldrsup.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/bldrsup.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/devutils.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/devutils.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/filesup.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/filesup.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/fsrec.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/fsrec.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/genlist.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/genlist.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/inicache.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/inicache.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/ntverrsrc.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/ntverrsrc.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/osdetect.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/osdetect.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/partinfo.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/partinfo.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/partlist.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/partlist.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/regutil.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/regutil.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/volutil.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/volutil.rs)
 base/shell/explorer/CMakeLists.txt	1	# TaskbarSettings::Save/Load method entry points forward from settings_shim.cpp.
 base/shell/explorer/CMakeLists.txt	1	# appbar.cpp — replaced by Rust (folded into explorer-rust traywnd.rs);
 base/shell/explorer/CMakeLists.txt	1	# desktop.cpp — replaced by Rust (explorer-rust desktop.rs)
@@ -98,7 +121,6 @@ base/system/smss/CMakeLists.txt	1	# smss_rust_stub.c was an empty TU (archive-ex
 base/system/winlogon/CMakeLists.txt	1	# (winlogon_rust_stub.c + the generated winreg_s.c) into compile_commands.json
 base/system/winlogon/CMakeLists.txt	1	# server (rpcserver.c) and the generated winreg_s.c RPC stub stay C. So this is
 base/system/winlogon/CMakeLists.txt	1	# the GINA core (wlx.c), SAS state machine (sas.c), main (winlogon.c), RPC
-boot/freeldr/bootsect/CMakeLists.txt	1	# experimental FATY.S generator were pruned — nothing executes a legacy MBR/VBR
 boot/freeldr/freeldr/CMakeLists.txt	1	# ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
 boot/freeldr/freeldr/CMakeLists.txt	1	# AddMemoryDescriptor symbols heap.c/meminit.c also provided are now
 boot/freeldr/freeldr/CMakeLists.txt	1	# Crown jewel: peloader.c (and the rest of freeldr) is translated to Rust. The
@@ -159,6 +181,8 @@ boot/freeldr/freeldr/CMakeLists.txt	1	# ui/tui.c # replaced by Rust (freeldr-rus
 boot/freeldr/freeldr/CMakeLists.txt	1	# ui/tuimenu.c # replaced by Rust (freeldr-rust/src/tuimenu.rs)
 boot/freeldr/freeldr/CMakeLists.txt	1	# ui/ui.c # replaced by Rust (freeldr-rust/src/ui.rs)
 boot/freeldr/freeldr/CMakeLists.txt	1	# ui/video.c # replaced by Rust (freeldr-rust/src/video.rs)
+boot/freeldr/freeldr/pcat.cmake	1	# misc.S and linux.S were flipped to Rust global_asm! (loader_asm.rs).
+boot/freeldr/freeldr/pcat.cmake	1	# multiboot.S carries the multiboot header and owns `cmdline`, which entry.S
 boot/freeldr/freeldr/rosload.cmake	1	# ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
 boot/freeldr/freeldr/rosload.cmake	1	# (linux.S + amd64 misc.S were flipped to Rust global_asm! in freeldr-rust,
 boot/freeldr/freeldr/rosload.cmake	1	# (rosload-cargo .asm()); it needs only asm.inc + pcbios.h (REGS_*).
@@ -835,7 +859,6 @@ dll/win32/syssetup/CMakeLists.txt	1	# rust_varargs_shim.c is no longer built (re
 dll/win32/syssetup/CMakeLists.txt	1	# security.c
 dll/win32/syssetup/CMakeLists.txt	1	# wizard.c
 dll/win32/syssetup/CMakeLists.txt	1	#addons.c
-dll/win32/ucrtbase/CMakeLists.txt	1	# Silence warnings in ucrtbase_stubs.c
 dll/win32/ucrtbase/CMakeLists.txt	1	# printf.c (sprintf/_vsnprintf) and ucrt_varargs_shim.c (the `...` entry points as
 dll/win32/ucrtbase/CMakeLists.txt	1	# stubs.c (atexit, operator_new/delete, _chkesp_failed, __acrt_initialize_sse2) is
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c
@@ -1592,6 +1615,7 @@ ntoskrnl/ntos.cmake	2	#list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i3
 ntoskrnl/ntos.cmake	1	#list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/se/debug.c) # replaced by Rust
 sdk/cmake/baseaddress_dwarf.cmake	1	# cohab grows kernel32 past its old 0x440000 slot — proc.c took it to 0x47f000,
 sdk/cmake/gcc.cmake	1	# declares them; dbghelp_apitest's pdb.c assigns the failure hook), and those
+sdk/cmake/gcc.cmake	1	# lists ${file}_stubs.c among its sources, and this swaps it for the Rust object, so
 sdk/lib/cmlib/CMakeLists.txt	1	# Add a placeholder TU (mirrors the HAL lib_hal_*_empty.c pattern); the real
 sdk/lib/conutils/CMakeLists.txt	1	# Rust archive (lsalib-style cohab). instream.c was already not built. 3 arches.
 sdk/lib/conutils/CMakeLists.txt	1	# here (were in outstream.c, no longer built).

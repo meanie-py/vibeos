@@ -5,6 +5,7 @@ comments and string contents never provide an implementation. Callers own explic
 selection (dead configurations, C trampolines, or a selected C++ class).
 """
 
+import re
 from collections.abc import Iterable
 
 import tree_sitter_rust
@@ -44,6 +45,24 @@ def rust_definition_bodies(text: str) -> dict[str, str]:
 
 def rust_definitions(text: str) -> set[str]:
     return set(rust_definition_bodies(text))
+
+
+def restore_requested_name(rust: str, name: str) -> str:
+    """Respell a definition whose name differs from the requested C name only in CASE.
+
+    The model "corrects" a C name it finds oddly capitalized: identify_funcs.h's
+    `AtaDevIsReadLookAHeadEnabled` came back as `AtaDevIsReadLookAheadEnabled`, a correct body
+    the stitcher then refused as missing. Case is the only freedom taken: exactly one
+    definition must match ignoring case, and none exactly. Every other spelling is still the
+    coverage check's to reject.
+    """
+    defs = rust_definitions(rust)
+    if name in defs:
+        return rust
+    twins = [d for d in defs if d.lower() == name.lower()]
+    if len(twins) != 1:
+        return rust
+    return re.sub(rf"\b{re.escape(twins[0])}\b", name, rust)
 
 
 def require_c_plan(source: str, planned: Iterable[str]) -> None:

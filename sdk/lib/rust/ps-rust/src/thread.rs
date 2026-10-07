@@ -588,11 +588,28 @@ unsafe fn PspCreateThread(
     }
 
     if Status >= 0 {
+        // C: both stores share one __try, and its handler kills the thread just
+        // inserted (dead flag, resume, ready, dereference, close the handle) before
+        // returning the code. Returning early left it suspended with a live handle.
+        let mut fault = None;
         if !ClientId.is_null() {
-            *ClientId = (*Thread).Cid;
+            if let Err(s) = write_back(ClientId, (*Thread).Cid) {
+                fault = Some(s);
+            }
         }
-        // Write-back to user-mode pointer (was inside _SEH2_TRY in C)
-        if let Err(s) = probe_write_user(ThreadHandle, hThread, PreviousMode) {
+        if fault.is_none() {
+            if let Err(s) = probe_write_user(ThreadHandle, hThread, PreviousMode) {
+                fault = Some(s);
+            }
+        }
+        if let Some(s) = fault {
+            PspSetCrossThreadFlag(Thread, CT_DEAD_THREAD_BIT);
+            if CreateSuspended != 0 {
+                KeResumeThread(&mut (*Thread).Tcb);
+            }
+            KeReadyThread(&mut (*Thread).Tcb);
+            ObDereferenceObject(Thread as PVOID);
+            ObCloseHandle(hThread, PreviousMode);
             return s;
         }
     } else {
@@ -916,6 +933,7 @@ pub unsafe extern "system" fn NtCreateThread(
     let ProcessHandle = opaque_ptr(ProcessHandle);
     let ClientId = opaque_ptr(ClientId);
     let mut SafeInitialTeb: _INITIAL_TEB = core::mem::zeroed();
+    let mut SafeContext: _CONTEXT = core::mem::zeroed();
     let PreviousMode: KPROCESSOR_MODE = KeGetPreviousMode();
 
     if PreviousMode != 0i8 {
@@ -960,10 +978,18 @@ pub unsafe extern "system" fn NtCreateThread(
         ) {
             return s;
         }
-        SafeInitialTeb = *InitialTeb;
+        SafeInitialTeb = match ntkrnl_sys::probe::read_back(InitialTeb) { Ok(v) => v, Err(s) => return s };
+        // The C passes the caller's CONTEXT on and reads it under KeInitThread's
+        // __try. Capture it once instead: the same values, no fault to survive
+        // later, and no second read that could differ from the first.
+        SafeContext = match ntkrnl_sys::probe::read_back(ThreadContext as *const _CONTEXT) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
     } else {
-        SafeInitialTeb = *InitialTeb;
+        SafeInitialTeb = match ntkrnl_sys::probe::read_back(InitialTeb) { Ok(v) => v, Err(s) => return s };
     }
+    let ThreadContext: PCONTEXT = if PreviousMode != 0i8 { &mut SafeContext } else { ThreadContext };
 
     PspCreateThread(
         ThreadHandle,
@@ -1020,7 +1046,7 @@ pub unsafe extern "system" fn NtOpenThread(
             ) {
                 return s;
             }
-            SafeClientId = *ClientId;
+            SafeClientId = match ntkrnl_sys::probe::read_back(ClientId) { Ok(v) => v, Err(s) => return s };
             ClientId = &mut SafeClientId;
         }
 
@@ -1032,13 +1058,13 @@ pub unsafe extern "system" fn NtOpenThread(
         ) {
             return s;
         }
-        HasObjectName = if !(*ObjectAttributes).ObjectName.is_null() { 1u8 } else { 0u8 };
+        HasObjectName = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*ObjectAttributes).ObjectName)) { Ok(n) => (!n.is_null()) as u8, Err(s) => return s };
 
-        Attributes = ObpValidateAttributes((*ObjectAttributes).Attributes, PreviousMode);
+        Attributes = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*ObjectAttributes).Attributes)) { Ok(a) => ObpValidateAttributes(a, PreviousMode), Err(s) => return s };
     } else {
-        HasObjectName = if !(*ObjectAttributes).ObjectName.is_null() { 1u8 } else { 0u8 };
+        HasObjectName = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*ObjectAttributes).ObjectName)) { Ok(n) => (!n.is_null()) as u8, Err(s) => return s };
 
-        Attributes = ObpValidateAttributes((*ObjectAttributes).Attributes, PreviousMode);
+        Attributes = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*ObjectAttributes).Attributes)) { Ok(a) => ObpValidateAttributes(a, PreviousMode), Err(s) => return s };
     }
 
     if HasObjectName != 0 && !ClientId.is_null() {

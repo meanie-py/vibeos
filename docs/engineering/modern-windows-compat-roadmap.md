@@ -27,7 +27,7 @@ Already in the tree *(tree, 2026-10-05)*:
 | xHCI | **Rust-native** `usbxhci` (~20K lines, written in Rust from the start); SuperSpeed devices work on the Pi 4 |
 | HD Audio / PortCls | `drivers/wdm/audio/hdaudbus`, `portcls` |
 | D3DKMT thunks | `win32k-rust/src/d3dkmt.rs`: the syscall surface exists, but every adapter call returns `STATUS_PROCEDURE_NOT_FOUND` because nothing populates the dxgkrnl table |
-| NVMe | **missing** |
+| NVMe | `nvme.sys` (2026-10-06), Rust from the start, all three arches: INTx interrupts (a 10 ms poll behind them), one queue pair, each namespace a disk.sys disk. MSI-X and queue depth are next |
 | dxgkrnl / WDDM | **missing** |
 
 [`../product/driver-roadmap.md`](../product/driver-roadmap.md) predates the KMDF and xHCI
@@ -78,7 +78,7 @@ unchanged.
 | Order | Area | What it takes | Notes |
 |---|---|---|---|
 | 1 | **KMDF wired up** | KMDF is built. What's left: version negotiation (drivers request specific WDF versions; ours is 1.17) and real drivers loaded on it | The master key: most modern drivers are KMDF |
-| 2 | **NVMe** | A spec-driven StorPort miniport of our own (the spec is public; a few thousand lines). Vendor NVMe and RAID drivers are StorPort miniports too | No modern PC boots without it. The test box has one (below) |
+| 2 | **NVMe** | **First version done** (`nvme.sys`, 2026-10-06): a PnP driver that presents namespaces straight to disk.sys, not a StorPort miniport, because our StorPort never completes an SRB (its PDO handler and bus relations are stubs) and scsiport's legacy PCI scan cannot assign resources on arm64. INTx interrupts since the same day. Owed: MSI-X, queue depth, and finishing StorPort, which vendor NVMe and RAID drivers still need | No modern PC boots without it. The test box has one (below) |
 | 3 | **USB 3** | Our xHCI driver exists and works. The remaining question is compatibility with Windows 8+'s USB stack shape (`usbxhci` + `ucx01000` class extension + `usbhub3`) for vendor USB drivers that bind to it | Much further along than the rest |
 | 4 | **NDIS 6.x, then NetAdapterCx** | Modern Intel/Realtek NIC drivers are NDIS 6; the newest are NetAdapterCx (Windows 10, on KMDF) | Our NDIS is 5-era |
 | 5 | **HD Audio and the Vista audio stack** | Kernel: WaveRT miniports on PortCls (Realtek HDA drivers). User mode: the audio engine (`audiodg`) and WASAPI, which every modern app (Chrome included) talks to | Wine has WASAPI (`mmdevapi`) |
@@ -260,9 +260,9 @@ too: Chrome on a Pi.
 
 - Has an **NVMe drive on a PCIe adapter**, booted through **Libreboot** (owner flashed
   it). So the NVMe miniport gets real hardware from day one.
-- *(unverified)* Libreboot's payload is usually SeaBIOS or GRUB, not UEFI. Our amd64 smoke
-  boots only through UEFI. Either freeldr's legacy-BIOS path on amd64 or a UEFI payload is
-  needed before the first boot.
+- Libreboot's payload is SeaBIOS, not UEFI. **amd64 boots from legacy BIOS again**
+  (restored 2026-10-05, gated as `smoke:amd64-bios`; see `bios-boot.md`). That was
+  built for the owner's OptiPlex 9020, which runs Libreboot with SeaBIOS.
 - First milestone: amd64 boots on it at all, using the integrated Intel graphics through a
   firmware framebuffer. We have only ever booted x86 in QEMU.
 - To make it an agent bench like the Pi 4 (`pi4-bench.md`): **remote power** (a smart

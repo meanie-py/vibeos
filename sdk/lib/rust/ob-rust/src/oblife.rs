@@ -356,7 +356,11 @@ pub unsafe extern "system" fn ObpCaptureObjectName(
         if let Err(s) = probe_user_buffer(ObjectName as _, core::mem::size_of::<_UNICODE_STRING>(), core::mem::size_of::<ULONG>(), AccessMode) {
             return s;
         }
-        LocalName = core::ptr::read_volatile(ObjectName);
+        // C: ProbeForReadUnicodeString's read, inside the __try.
+        LocalName = match read_back(ObjectName as *const _UNICODE_STRING) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
         if let Err(s) = probe_user_buffer(
             LocalName.Buffer as *const u8 as _,
             LocalName.Length as usize,
@@ -379,6 +383,13 @@ pub unsafe extern "system" fn ObpCaptureObjectName(
             StringBuffer = ObpAllocateObjectNameBuffer(StringLength, UseLookaside, CapturedName);
             if StringBuffer.is_null() {
                 Status = STATUS_INSUFFICIENT_RESOURCES;
+            } else if AccessMode != 0 {
+                // The probe proved where the caller's string is, not that it stays
+                // mapped: the C's __except sets Status and frees the buffer below.
+                match safe_copy_raw(StringBuffer.cast(), LocalName.Buffer as *const _, StringLength as usize) {
+                    Ok(()) => *StringBuffer.offset((StringLength / core::mem::size_of::<u16>() as ULONG) as isize) = 0,
+                    Err(s) => Status = s,
+                }
             } else {
                 core::ptr::copy_nonoverlapping(
                     LocalName.Buffer as *const u8,
@@ -430,20 +441,35 @@ pub unsafe extern "system" fn ObpCaptureObjectCreateInformation(
             }
         }
 
-        if (*ObjectAttributes).Length != core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG
-            || ((*ObjectAttributes).Attributes & !OBJ_VALID_KERNEL_ATTRIBUTES) != 0
+        // Capture once. The C reads the live structure field by field inside its
+        // __try; here a raw read of a page another thread unmaps after the probe
+        // is a bugcheck, and a re-read could see another Length than the checked one.
+        let oa: _OBJECT_ATTRIBUTES = if AccessMode != 0 {
+            match read_back(ObjectAttributes as *const _OBJECT_ATTRIBUTES) {
+                Ok(v) => v,
+                Err(s) => {
+                    ObpReleaseObjectCreateInformation(ObjectCreateInfo);
+                    return s;
+                }
+            }
+        } else {
+            *ObjectAttributes
+        };
+
+        if oa.Length != core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG
+            || (oa.Attributes & !OBJ_VALID_KERNEL_ATTRIBUTES) != 0
         {
             return STATUS_INVALID_PARAMETER;
         }
 
-        (*ObjectCreateInfo).RootDirectory = (*ObjectAttributes).RootDirectory;
-        (*ObjectCreateInfo).Attributes = (*ObjectAttributes).Attributes & OBJ_VALID_KERNEL_ATTRIBUTES;
+        (*ObjectCreateInfo).RootDirectory = oa.RootDirectory;
+        (*ObjectCreateInfo).Attributes = oa.Attributes & OBJ_VALID_KERNEL_ATTRIBUTES;
         if CreatorMode != 0 {
             (*ObjectCreateInfo).Attributes &= !OBJ_KERNEL_HANDLE;
         }
-        LocalObjectName = (*ObjectAttributes).ObjectName as PUNICODE_STRING;
-        SecurityDescriptor = (*ObjectAttributes).SecurityDescriptor;
-        SecurityQos = (*ObjectAttributes).SecurityQualityOfService;
+        LocalObjectName = oa.ObjectName as PUNICODE_STRING;
+        SecurityDescriptor = oa.SecurityDescriptor;
+        SecurityQos = oa.SecurityQualityOfService;
 
         if !SecurityDescriptor.is_null() {
             Status = SeCaptureSecurityDescriptor(
@@ -483,7 +509,18 @@ pub unsafe extern "system" fn ObpCaptureObjectCreateInformation(
                 }
             }
 
-            (*ObjectCreateInfo).SecurityQualityOfService = *(SecurityQos as *const _SECURITY_QUALITY_OF_SERVICE);
+            (*ObjectCreateInfo).SecurityQualityOfService = if AccessMode != 0 {
+                match read_back(SecurityQos as *const _SECURITY_QUALITY_OF_SERVICE) {
+                    Ok(v) => v,
+                    Err(s) => {
+                        // C __except: release what was captured (the SD), return the code
+                        ObpReleaseObjectCreateInformation(ObjectCreateInfo);
+                        return s;
+                    }
+                }
+            } else {
+                *(SecurityQos as *const _SECURITY_QUALITY_OF_SERVICE)
+            };
             (*ObjectCreateInfo).SecurityQos = core::ptr::addr_of_mut!((*ObjectCreateInfo).SecurityQualityOfService);
         }
     } else {
@@ -1338,9 +1375,9 @@ pub unsafe extern "system" fn NtSetInformationObject(
                 ) {
                     return s;
                 }
-                Context.Information = *(ObjectInformation as POBJECT_HANDLE_FLAG_INFORMATION);
+                Context.Information = match ntkrnl_sys::probe::read_back(ObjectInformation as POBJECT_HANDLE_FLAG_INFORMATION) { Ok(v) => v, Err(s) => return s };
             } else {
-                Context.Information = *(ObjectInformation as POBJECT_HANDLE_FLAG_INFORMATION);
+                Context.Information = match ntkrnl_sys::probe::read_back(ObjectInformation as POBJECT_HANDLE_FLAG_INFORMATION) { Ok(v) => v, Err(s) => return s };
             }
 
             let mut handle = ObjectHandle;

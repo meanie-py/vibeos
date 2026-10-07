@@ -1446,3 +1446,14 @@ def test_a_backslash_include_resolves_like_the_compiler_does(tmp_path):
     )
     env = IncludeEnv(repo_root=tmp_path, arch="amd64", module_dir=tmp_path, build_dir=None)
     assert resolve_include(inc, tmp_path / "dib" / "dib_new.c", env) == header.resolve()
+
+
+def test_a_packing_push_in_a_prologue_never_reaches_the_wrapper():
+    # partlist.c: its prologue ends in `#include <pshpack1.h>`; the matching poppack comes after
+    # two typedefs. Mirrored into setuplib's merged wrapper it packed every later header.
+    src = (
+        '#include "precomp.h"\n#include "registry.h"\n#include <pshpack1.h>\n'
+        "typedef struct _X { char a; int b; } X;\n#include <poppack.h>\n"
+    )
+    lines, _ = scan_preamble(src)
+    assert lines == ['#include "precomp.h"', '#include "registry.h"']

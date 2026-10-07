@@ -38,6 +38,7 @@
  *   5  its exit code arrives intact                  (the parent can actually collect a result)
  *   6  CreateRemoteThread into the RUNNING child      (the other half of task #64)
  *   7  that injected thread runs to completion        (it was initialised, not just created)
+ *   9  (x86-64 only) a 32-bit child runs to its exit code   (syswow64\hello32)
  *
  * Rung 3 is worth its own code because it is a SECOND cross-process operation
  * on a different syscall (NtResumeThread, not NtCreateThread): if rung 1 is
@@ -61,6 +62,7 @@
 #define S32_FAIL_READY     0xBAE6 /* child never reached its own code */
 #define S32_FAIL_REMOTE    0xBAE7 /* CreateRemoteThread failed */
 #define S32_FAIL_REMOTE_RUN 0xBAE8 /* remote thread created but never ran its body */
+#define S64_FAIL_GUEST32   0xBAEA /* x86-64 only: a 32-bit child did not run to its exit code */
 #define S32_CHILD_MAGIC    0x0C41 /* child saw the remote thread's signal */
 #define S32_CHILD_NOSIGNAL 0x0C42 /* child ran but nothing ever signalled it */
 #define S32_REMOTE_MAGIC   0x0DEF /* what the injected thread returns */
@@ -247,6 +249,53 @@ static DWORD RunChild(void)
     return S32_CHILD_MAGIC;
 }
 
+#ifdef _WIN64
+/* Start <windir><Rel><Args>, wait, and compare its exit code. 0 = as expected. */
+static int RunForeignChild(const WCHAR *Rel, const WCHAR *Args, DWORD Want)
+{
+    WCHAR cmd[MAX_PATH * 2];
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    DWORD code = 0, n, i, j;
+    BYTE *z = (BYTE *)&si;
+
+    for (i = 0; i < sizeof(si); i++)
+        z[i] = 0;
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    n = GetWindowsDirectoryW(cmd, MAX_PATH);
+    if (!n || n >= MAX_PATH)
+        return -1;
+    for (j = 0; Rel[j]; j++)
+        cmd[n++] = Rel[j];
+    for (j = 0; Args[j]; j++)
+        cmd[n++] = Args[j];
+    cmd[n] = 0;
+
+    if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        SayHex("[spawn32] foreign child CreateProcessW FAILED, GetLastError", GetLastError());
+        return -1;
+    }
+    if (WaitForSingleObject(pi.hProcess, CHILD_WAIT_MS) != WAIT_OBJECT_0) {
+        Say("[spawn32] foreign child did not exit\n");
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return -1;
+    }
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    if (code != Want) {
+        SayHex("[spawn32] foreign child exit code", code);
+        return -1;
+    }
+    return 0;
+}
+#endif
+
 static DWORD RunParent(void)
 {
     WCHAR cmdline[560];
@@ -280,8 +329,17 @@ static DWORD RunParent(void)
     Say("[spawn32] rung1 CreateProcessW OK\n");
     SayHex("[spawn32] child pid", pi.dwProcessId);
 
+#ifdef _WIN64
+    /* spawn64.exe: the child is this same x86-64 image, so it must NOT be a
+     * WoW64 process -- an x86-64 process is not one, on Windows ARM64 any more
+     * than on amd64. Under FEX this checks that the guest's CreateProcess made
+     * an x86-64 process (wowx64), not a 32-bit one. */
+    if (!IsWow64Process(pi.hProcess, &isWow) || isWow) {
+        Say("[spawn32] rung2 x86-64 child reports as a WoW64 process\n");
+#else
     if (!IsWow64Process(pi.hProcess, &isWow) || !isWow) {
         Say("[spawn32] rung2 child is NOT a WoW64 process\n");
+#endif
         TerminateProcess(pi.hProcess, 1);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
@@ -383,10 +441,24 @@ static DWORD RunParent(void)
     CloseHandle(pi.hProcess);
     if (hDone)
         CloseHandle(hDone);
+#ifdef _WIN64
+    /* rungs 8-9, x86-64 only: children of the OTHER machines. Under FEX on
+     * arm64 the x86-64 kernel32's initial-thread CONTEXT names its own x86-64
+     * start thunk, which means nothing in either child; natively on amd64 these
+     * are the plain cases and say the rungs themselves are right. */
+    // A native arm64 child is NOT testable from here: the x86-64 guest's
+    // system32 is redirected to sysamd64, where an arm64 cmd.exe reads back as
+    // not-found (WoW64's own-machine view), so CreateProcess cannot name it.
+    // Only a 32-bit child, which lives in the un-redirected syswow64, is
+    // reachable (rung 9).
+    if (RunForeignChild(L"\\syswow64\\hello32.exe", L"", 0x600D) != 0)
+        return S64_FAIL_GUEST32;
+    Say("[spawn32] rung9 32-bit child (hello32) OK\n");
+#endif
     return S32_PASS;
 }
 
-int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
+int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) */
 {
     DWORD verdict = IsChildInvocation() ? RunChild() : RunParent();
     SayHex("[spawn32] verdict", verdict);

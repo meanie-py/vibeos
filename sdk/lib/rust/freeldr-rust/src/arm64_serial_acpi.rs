@@ -313,9 +313,49 @@ pub unsafe fn gic_from_xsdt(address: u64) -> Option<(u64, u64)> {
     None
 }
 
+/// The ECAM window of PCI segment 0 an MCFG describes: (base, first bus, last bus).
+/// The base addresses bus 0 even when the range starts later (PCI Firmware spec 4.1.2).
+/// ACPICA actbl1.h: ACPI_TABLE_MCFG is the header plus 8 reserved bytes, then 16-byte
+/// ACPI_MCFG_ALLOCATION records {u64 Address, u16 PciSegment, u8 StartBusNumber,
+/// u8 EndBusNumber, u32 Reserved}.
+pub fn mcfg_segment0(data: &[u8]) -> Option<(u64, u8, u8)> {
+    if !valid_table(data) || data.get(..4)? != b"MCFG" {
+        return None;
+    }
+    let records = data.get(size_of::<Header>() + 8..)?;
+    records.chunks_exact(16).find_map(|r| {
+        let base = read::<u64>(r, 0)?;
+        let segment = read::<u16>(r, 8)?;
+        let (start, end) = (read::<u8>(r, 10)?, read::<u8>(r, 11)?);
+        (segment == 0 && base != 0 && start <= end).then_some((base, start, end))
+    })
+}
+
+pub unsafe fn mcfg_from_xsdt(address: u64) -> Option<(u64, u8, u8)> {
+    walk_xsdt(address, mcfg_segment0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcfg_segment0_reads_the_allocation() {
+        // QEMU virt with highmem: one allocation, segment 0, buses 0..=255.
+        let mut data = vec![0u8; size_of::<Header>() + 8 + 16];
+        data[..4].copy_from_slice(b"MCFG");
+        let len = data.len() as u32;
+        data[4..8].copy_from_slice(&len.to_le_bytes());
+        let r = size_of::<Header>() + 8;
+        data[r..r + 8].copy_from_slice(&0x40_1000_0000u64.to_le_bytes());
+        data[r + 11] = 0xFF;
+        checksum(&mut data);
+        assert_eq!(mcfg_segment0(&data), Some((0x40_1000_0000, 0, 0xFF)));
+        // Another segment only: nothing for segment 0.
+        data[r + 8] = 1;
+        checksum(&mut data);
+        assert_eq!(mcfg_segment0(&data), None);
+    }
 
     // Exact DBG2 bytes from Pi 4B UEFI v1.53, acpiview over COM5 on
     // 2026-09-20; unlike QEMU's SPCR-only path this catches real layout gaps.

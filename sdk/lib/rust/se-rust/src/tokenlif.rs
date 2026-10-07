@@ -1168,7 +1168,9 @@ pub unsafe extern "system" fn NtCreateToken(
             Ok(v) => v, Err(s) => return s,
         };
 
-        local_expiration_time = match probe_read_user::<LARGE_INTEGER>(expiration_time, previous_mode) {
+        // ProbeForReadLargeInteger is RANGE-ONLY; probe_read_user would demand
+        // align_of::<LARGE_INTEGER>() == 8 and reject addresses the C accepts.
+        local_expiration_time = match probe_read_generic(expiration_time as *const LARGE_INTEGER, 1, previous_mode) {
             Ok(v) => v, Err(s) => return s,
         };
 
@@ -1208,17 +1210,50 @@ pub unsafe extern "system" fn NtCreateToken(
             Ok(v) => v, Err(s) => return s,
         };
     } else {
+        // Kernel-mode caller: no probes (as in the C), but every load is one
+        // fault-tolerant fetch so a bad kernel pointer returns a status instead
+        // of bugchecking. Nothing has been captured yet, so a plain return is
+        // the whole cleanup.
         if !object_attributes.is_null() {
-            local_security_qos = *((*object_attributes).SecurityQualityOfService as *const _SECURITY_QUALITY_OF_SERVICE);
+            let qos_ptr = match read_back(core::ptr::addr_of!((*object_attributes).SecurityQualityOfService)) {
+                Ok(v) => v, Err(s) => return s,
+            };
+            local_security_qos = match read_back(qos_ptr as *const _SECURITY_QUALITY_OF_SERVICE) {
+                Ok(v) => v, Err(s) => return s,
+            };
         }
-        local_authentication_id = *authentication_id;
-        local_expiration_time = *expiration_time;
-        group_count = (*token_groups).GroupCount;
-        privilege_count = (*token_privileges).PrivilegeCount;
-        owner_sid = if !token_owner.is_null() { (*token_owner).Owner } else { core::ptr::null_mut() };
-        primary_group_sid = (*token_primary_group).PrimaryGroup;
-        default_dacl = if !token_default_dacl.is_null() { (*token_default_dacl).DefaultDacl } else { core::ptr::null_mut() };
-        local_token_source = *token_source;
+        local_authentication_id = match read_back(authentication_id as *const LUID) {
+            Ok(v) => v, Err(s) => return s,
+        };
+        local_expiration_time = match read_back(expiration_time as *const LARGE_INTEGER) {
+            Ok(v) => v, Err(s) => return s,
+        };
+        group_count = match read_back(core::ptr::addr_of!((*token_groups).GroupCount)) {
+            Ok(v) => v, Err(s) => return s,
+        };
+        privilege_count = match read_back(core::ptr::addr_of!((*token_privileges).PrivilegeCount)) {
+            Ok(v) => v, Err(s) => return s,
+        };
+        owner_sid = if !token_owner.is_null() {
+            match read_back(core::ptr::addr_of!((*token_owner).Owner)) {
+                Ok(v) => v, Err(s) => return s,
+            }
+        } else {
+            core::ptr::null_mut()
+        };
+        primary_group_sid = match read_back(core::ptr::addr_of!((*token_primary_group).PrimaryGroup)) {
+            Ok(v) => v, Err(s) => return s,
+        };
+        default_dacl = if !token_default_dacl.is_null() {
+            match read_back(core::ptr::addr_of!((*token_default_dacl).DefaultDacl)) {
+                Ok(v) => v, Err(s) => return s,
+            }
+        } else {
+            core::ptr::null_mut()
+        };
+        local_token_source = match read_back(token_source as *const _TOKEN_SOURCE) {
+            Ok(v) => v, Err(s) => return s,
+        };
     }
 
     if token_type < TOKEN_TYPE_TokenPrimary || token_type > TOKEN_TYPE_TokenImpersonation {

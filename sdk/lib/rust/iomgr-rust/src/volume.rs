@@ -634,7 +634,27 @@ pub unsafe extern "system" fn IopMountVolume(
             ExReleaseResourceLite(core::ptr::addr_of_mut!(IopDatabaseResource));
 
             ARM64_UART_TRACE!(b"[MOUNT] IoCallDriver(mount IRP)\r\n");
+            // Which file system was asked, for which device, and what it said:
+            // the trace above alone cannot tell a recognizer pass from a mount.
+            #[cfg(target_arch = "aarch64")]
+            {
+                extern "C" {
+                    fn DbgPrint(format: *const u8, ...) -> u32;
+                }
+                DbgPrint(
+                    b"[MOUNT] -> %wZ for %wZ\n\0".as_ptr(),
+                    &raw const (*(*FsDeviceObject).DriverObject).DriverName,
+                    &raw const (*(*DeviceObject).DriverObject).DriverName,
+                );
+            }
             Status = IoCallDriver(FsDeviceObject, Irp);
+            #[cfg(target_arch = "aarch64")]
+            {
+                extern "C" {
+                    fn DbgPrint(format: *const u8, ...) -> u32;
+                }
+                DbgPrint(b"[MOUNT] <- 0x%x\n\0".as_ptr(), Status);
+            }
             if Status == STATUS_PENDING as i32 {
                 ARM64_UART_TRACE!(b"[MOUNT] Waiting for mount completion...\r\n");
                 KeWaitForSingleObject(

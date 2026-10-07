@@ -57,7 +57,7 @@ KMDF is a library that sits on top of WDM. It calls into the kernel via standard
 |---------|--------|---------------|----------|
 | IDE/PATA | Working | UniATA driver | — |
 | AHCI/SATA | Working | UniATA driver | — |
-| NVMe | Missing | NVMe miniport driver (KMDF-based in Windows) | **Critical** |
+| NVMe | **Working** (INTx interrupts, 2026-10-06) | `nvme.sys`, Rust, all arches; see `docs/engineering/modern-windows-compat-roadmap.md` | **Critical** |
 | USB Mass Storage | Basic | Working for USB 2.0 | — |
 | SD/eMMC | Missing | Class driver needed | Medium |
 | VirtIO-blk | Working (ARM64) | Already ported for QEMU | — |

@@ -4239,7 +4239,22 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
 
             Status = ERROR_INVALID_PARAMETER as i32;
             XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), core::ptr::addr_of_mut!(matrix));
-            ret = EXFORMOBJ_iSetXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), Xform as *mut XFORML);
+            // Xform is the caller's and nothing probed it: iSetXform read its six
+            // floats raw, so a kernel address leaked into the region's transform.
+            // Capture it; a fault takes the DDI_ERROR exit (ERROR_INVALID_PARAMETER).
+            let mut xform_local: XFORML = core::mem::zeroed();
+            ret = if crate::safe_user_io::copy_from_user(
+                core::ptr::addr_of_mut!(xform_local).cast(),
+                Xform as *const core::ffi::c_void,
+                core::mem::size_of::<XFORML>(),
+                1,
+            )
+            .is_ok()
+            {
+                EXFORMOBJ_iSetXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), &mut xform_local)
+            } else {
+                DDI_ERROR
+            };
 
             if ret != DDI_ERROR {
                 if EXFORMOBJ_bApplyXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
@@ -4342,7 +4357,22 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
 
             Status = ERROR_INVALID_PARAMETER as i32;
             XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ , core::ptr::addr_of_mut!(matrix));
-            ret = EXFORMOBJ_iSetXform(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ , Xform as *mut XFORML);
+            // Xform is the caller's and nothing probed it: iSetXform read its six
+            // floats raw, so a kernel address leaked into the region's transform.
+            // Capture it; a fault takes the DDI_ERROR exit (ERROR_INVALID_PARAMETER).
+            let mut xform_local: XFORML = core::mem::zeroed();
+            ret = if crate::safe_user_io::copy_from_user(
+                core::ptr::addr_of_mut!(xform_local).cast(),
+                Xform as *const core::ffi::c_void,
+                core::mem::size_of::<XFORML>(),
+                1,
+            )
+            .is_ok()
+            {
+                EXFORMOBJ_iSetXform(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ, &mut xform_local)
+            } else {
+                DDI_ERROR
+            };
 
             if ret != DDI_ERROR {
                 if EXFORMOBJ_bApplyXform(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ ,

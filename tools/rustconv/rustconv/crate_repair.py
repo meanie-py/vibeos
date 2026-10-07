@@ -69,9 +69,19 @@ RULE_OPTION_FN_CALL = "option_fn_call"
 RULE_UNINIT_LOCAL = "uninit_c_local"
 RULE_MUT_BINDING = "c_mutable_binding"
 RULE_INFER_WIDEN = "c_integer_widen"
-RULE_RAW_PTR_FIELD = "raw_pointer_field"
+RULE_OPTION_IS_NULL = "option_fn_is_null"
+RULE_SHADOWED_CONST = "local_shadows_constant"
+RULE_SIZEOF_CONST = "sizeof_constant"
+RULE_FN_ITEM_CAST = "fn_item_cast"
+RULE_VARIADIC_PROMOTION = "variadic_promotion"
+RULE_LOCAL_STATIC_MUT = "c_local_static_mut"
+RULE_POINTER_NOT_NOT = "pointer_double_negation"
+RULE_ZEROED_DEFAULT = "zeroed_not_default"
+RULE_ARROW_FIELD = "raw_pointer_field"
+RULE_UNSIGNED_NEGATE = "unsigned_negative_literal"
+RULE_OPTION_FN_AS_PTR = "option_fn_as_pointer"
+RULE_SOME_FN_ITEM = "some_fn_item"
 RULE_KEYWORD_FIELD = "bindgen_keyword_field"
-RULE_SOME_FN = "some_fn_item"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -101,9 +111,19 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_OPTION_FN_CALL,
     RULE_UNINIT_LOCAL,
     RULE_MUT_BINDING,
-    RULE_RAW_PTR_FIELD,
+    RULE_OPTION_IS_NULL,
+    RULE_SHADOWED_CONST,
+    RULE_SIZEOF_CONST,
+    RULE_FN_ITEM_CAST,
+    RULE_VARIADIC_PROMOTION,
+    RULE_LOCAL_STATIC_MUT,
+    RULE_POINTER_NOT_NOT,
+    RULE_ZEROED_DEFAULT,
+    RULE_ARROW_FIELD,
+    RULE_UNSIGNED_NEGATE,
+    RULE_OPTION_FN_AS_PTR,
+    RULE_SOME_FN_ITEM,
     RULE_KEYWORD_FIELD,
-    RULE_SOME_FN,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -1827,7 +1847,9 @@ def _option_fn_call_rule(
     if (diagnostic.get("code") or {}).get("code") != "E0618":
         return [], [], False
     message = str(diagnostic.get("message") or "")
-    if "found `Option<" not in message or "fn(" not in message:
+    # rustc abbreviates a long type to `Option<...>`, so `fn(` is often NOT in the message;
+    # calling an Option of anything but a fn is an error the unwrap_unchecked leaves visible.
+    if "found `Option<" not in message:
         return [], [], False
     span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
     if span is None:
@@ -1851,103 +1873,6 @@ def _option_fn_call_rule(
                 rule=RULE_OPTION_FN_CALL,
                 authority="rustc E0618: the callee is an Option<fn>; C calls the pointer directly",
                 original=text,
-                line=int(span.get("line_start") or 0),
-                column=int(span.get("column_start") or 0),
-                targets=(ctx.target,),
-            )
-        ],
-        [],
-        True,
-    )
-
-
-_RE_RAW_PTR_FIELD = re.compile(r"no field `(?P<field>\w+)` on type `\*(?:mut|const) ")
-
-
-def _postfix_chain_start(masked: bytes, end: int) -> int | None:
-    """Start of the postfix-expression chain ending just before ``end`` (a `.`)."""
-    i = end
-    while i > 0:
-        ch = masked[i - 1 : i]
-        if ch.isalnum() or ch == b"_":
-            i -= 1
-            continue
-        if (
-            ch == b"."
-            and i - 1 > 0
-            and (masked[i - 2 : i - 1].isalnum() or masked[i - 2 : i - 1] in (b"_", b")", b"]"))
-        ):
-            i -= 1
-            continue
-        if ch in (b")", b"]"):
-            open_ = b"(" if ch == b")" else b"["
-            depth, j = 0, i - 1
-            while j >= 0:
-                c = masked[j : j + 1]
-                if c in (b")", b"]"):
-                    depth += 1
-                elif c in (b"(", b"["):
-                    depth -= 1
-                    if depth == 0:
-                        break
-                j -= 1
-            if j < 0 or masked[j : j + 1] != open_:
-                return None
-            i = j
-            continue
-        break
-    return i
-
-
-def _raw_ptr_field_rule(
-    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
-) -> tuple[list[Edit], list[Skipped], bool]:
-    """C's `p->f` written `p.f` on a raw pointer: `p.f` -> `(*p).f`.
-
-    rustc E0609 "no field `f` on type `*mut T`": Rust never auto-derefs a raw pointer, and
-    `->` has no Rust spelling. The receiver is the postfix chain ending at the `.`:
-    identifiers, `.`, and balanced `(...)`/`[...]` groups, so `(*Req).DevExt.Device` becomes
-    `(*(*Req).DevExt).Device`. A receiver behind a prefix operator (`&x.f`, `*x.f`) or a
-    path (`a::b.f`) stays RED: its extent is not certain from bytes. atapi: ~70 sites.
-    """
-    if (diagnostic.get("code") or {}).get("code") != "E0609":
-        return [], [], False
-    if _RE_RAW_PTR_FIELD.search(str(diagnostic.get("message") or "")) is None:
-        return [], [], False
-    span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
-    if span is None:
-        return [], [], False
-    file_name = str(span.get("file_name") or "")
-    start = int(span.get("byte_start") or 0)
-    data = load(file_name)
-    if data is None or start < 2 or data[start - 1 : start] != b".":
-        return [], [], False
-    masked = _mask_lexical(data)
-    if _in_macro_definition(masked, start):
-        return [], [], False
-    end = start - 1  # the `.`
-    begin = _postfix_chain_start(masked, end)
-    if begin is None:
-        return [], [], False
-    receiver = data[begin:end].decode("utf-8", "replace")
-    before = masked[begin - 1 : begin] if begin > 0 else b" "
-    if (
-        not receiver
-        or receiver[0].isdigit()
-        or before in (b":", b"'", b"&", b"*")
-        or not _balanced(masked[begin:end])
-    ):
-        return [], [], False
-    return (
-        [
-            Edit(
-                file_name=file_name,
-                byte_start=begin,
-                byte_end=end,
-                replacement=f"(*{receiver})",
-                rule=RULE_RAW_PTR_FIELD,
-                authority="rustc E0609: the receiver is a raw pointer; C's `->` derefs it",
-                original=receiver,
                 line=int(span.get("line_start") or 0),
                 column=int(span.get("column_start") or 0),
                 targets=(ctx.target,),
@@ -2027,52 +1952,6 @@ def _keyword_field_rule(
                 rule=RULE_KEYWORD_FIELD,
                 authority="bindgen renames a keyword-named C field with a trailing underscore",
                 original=field_name,
-                line=int(span.get("line_start") or 0),
-                column=int(span.get("column_start") or 0),
-                targets=(ctx.target,),
-            )
-        ],
-        [],
-        True,
-    )
-
-
-def _some_fn_rule(
-    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
-) -> tuple[list[Edit], list[Skipped], bool]:
-    """A function stored where bindgen types the slot `Option<fn>`: `f` -> `Some(f)`.
-
-    C assigns a routine to a callback pointer (`Ext->Worker.Callback = AtaPortWorker;`);
-    bindgen makes every function-pointer type `Option<..>`. rustc's E0308 label is "expected
-    `Option<...>`, found fn item". The NULL case is null_fn_pointer's; this is its twin.
-    """
-    if (diagnostic.get("code") or {}).get("code") != "E0308":
-        return [], [], False
-    span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
-    if span is None:
-        return [], [], False
-    label = str(span.get("label") or "")
-    if not re.search(r"expected `Option<[^`]*>`, found fn item", label):
-        return [], [], False
-    file_name = str(span.get("file_name") or "")
-    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
-    data = load(file_name)
-    if data is None or end <= start:
-        return [], [], False
-    masked = _mask_lexical(data)
-    if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
-        return [], [], False
-    text = data[start:end].decode("utf-8", "replace")
-    return (
-        [
-            Edit(
-                file_name=file_name,
-                byte_start=start,
-                byte_end=end,
-                replacement=f"Some({text})",
-                rule=RULE_SOME_FN,
-                authority="rustc E0308: a fn item where bindgen's slot is Option<fn>",
-                original=text,
                 line=int(span.get("line_start") or 0),
                 column=int(span.get("column_start") or 0),
                 targets=(ctx.target,),
@@ -2693,6 +2572,39 @@ def _packed_field_ptr_rule(
     # The span covers the PLACE expression; the offending `.as_ptr()` follows it.
     tail = _RE_AS_PTR.match(data[end : end + 16].decode("utf-8", "replace"))
     place = data[start:end].decode("utf-8", "replace")
+    # C's `sizeof(p->Field)` came across as `size_of_val(&p.Field)`: the size of the field's
+    # TYPE, read off a raw place pointer, never a reference.
+    wrap = re.search(
+        rb"(?:(?:core|std)::mem::)?size_of_val\s*\(\s*&\s*$", masked[max(0, start - 48) : start]
+    )
+    if wrap is not None and _next_code_byte(masked, end) == b")" and _balanced(masked[start:end]):
+        lo = start - (len(masked[max(0, start - 48) : start]) - wrap.start())
+        hi = masked.index(b")", end) + 1
+        return (
+            [
+                Edit(
+                    file_name=file_name,
+                    byte_start=lo,
+                    byte_end=hi,
+                    replacement=(
+                        "{ const fn pointee_size<T>(_: *const T) -> usize { "
+                        "core::mem::size_of::<T>() } "
+                        f"pointee_size(core::ptr::addr_of!({place})) }}"
+                    ),
+                    rule=RULE_PACKED_FIELD_PTR,
+                    authority=(
+                        f"rustc E0793: `{place[:40]}` is a packed field; its size is its type's, "
+                        "taken through addr_of! so no reference is formed"
+                    ),
+                    original=data[lo:hi].decode("utf-8", "replace"),
+                    line=int(span.get("line_start") or 0),
+                    column=int(span.get("column_start") or 0),
+                    targets=(ctx.target,),
+                )
+            ],
+            [],
+            True,
+        )
     if tail is None or not _balanced(masked[start:end]):
         return (
             [],
@@ -2969,6 +2881,664 @@ def _sizeof_type_rule(
     )
 
 
+def _primary(diagnostic: Mapping[str, Any]) -> dict[str, Any] | None:
+    return next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+
+
+def _option_is_null_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """C's `if (pfn != NULL)` on a function pointer bindgen types `Option<fn>`: `is_none()`.
+
+    rustc E0599 puts the primary span on the method NAME, so the edit is that one word and the
+    receiver is untouched. setuplib: six `pSetupData->ErrorRoutine` tests in install.c.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0599":
+        return [], [], False
+    message = str(diagnostic.get("message") or "")
+    if not message.startswith("no method named `is_null` found for enum `Option<"):
+        return [], [], False
+    span = _primary(diagnostic)
+    file_name = str((span or {}).get("file_name") or "")
+    data = load(file_name) if span else None
+    if span is None or data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    if data[start:end] != b"is_null" or _in_macro_definition(_mask_lexical(data), start):
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement="is_none",
+                rule=RULE_OPTION_IS_NULL,
+                authority="rustc E0599: the pointer is an Option<fn>, whose NULL is None",
+                original="is_null",
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _enclosing_brace(masked: bytes, pos: int) -> int | None:
+    depth = 0
+    for i in range(pos - 1, -1, -1):
+        char = masked[i : i + 1]
+        if char == b"}":
+            depth += 1
+        elif char == b"{":
+            if depth == 0:
+                return i
+            depth -= 1
+    return None
+
+
+def _brace_closer(masked: bytes, opening: int) -> int | None:
+    depth = 0
+    for pos in range(opening, len(masked)):
+        char = masked[pos : pos + 1]
+        if char == b"{":
+            depth += 1
+        elif char == b"}":
+            depth -= 1
+            if depth == 0:
+                return pos
+    return None
+
+
+def _shadowed_const_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A C local named like a constant: rename the LOCAL for the rest of its block.
+
+    C lets `ADAPTER_TYPE AdapterType;` shadow the `AdapterType` enumerator of
+    CONFIGURATION_TYPE, and every later mention in that block is the local. Rust forbids a
+    `let` binding a constant's name (E0530) -- it would parse as a refutable pattern -- so the
+    faithful repair is C's own scoping, spelled as a rename: every mention from the `let` to the
+    end of the enclosing block becomes `<name>_local`. Field accesses (`.Name`), paths
+    (`::Name`, `Name::`) and struct-literal keys (`{ Name: ..`) are other namespaces and stay.
+    Mentions BEFORE the `let` are still the constant, as in C. setuplib: arcname, filesup.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0530":
+        return [], [], False
+    if "cannot shadow constants" not in str(diagnostic.get("message") or ""):
+        return [], [], False
+    span = _primary(diagnostic)
+    file_name = str((span or {}).get("file_name") or "")
+    data = load(file_name) if span else None
+    if span is None or data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    name = data[start:end].decode("utf-8", "replace")
+    masked = _mask_lexical(data)
+    if not re.fullmatch(r"[A-Za-z_]\w*", name) or _in_macro_definition(masked, start):
+        return [], [], False
+    head = masked[max(0, start - 24) : start]
+    if not re.search(rb"\blet\s+(?:mut\s+)?$", head):
+        return (
+            [],
+            [Skipped(RULE_SHADOWED_CONST, "not_a_let", file_name, int(span["line_start"]), name)],
+            False,
+        )
+    opening = _enclosing_brace(masked, start)
+    closer = _brace_closer(masked, opening) if opening is not None else None
+    fresh = f"{name}_local"
+    if closer is None or re.search(rb"\b" + fresh.encode() + rb"\b", masked):
+        return [], [], False
+    edits = []
+    for m in re.finditer(rb"\b" + re.escape(name.encode()) + rb"\b", masked[start:closer]):
+        at = start + m.start()
+        before = masked[:at].rstrip()
+        after = masked[at + len(name) :].lstrip()
+        if before.endswith((b".", b"::")) or after.startswith(b"::"):
+            continue
+        if after.startswith(b":") and before.endswith((b"{", b",")):
+            continue  # struct-literal key
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=at,
+                byte_end=at + len(name),
+                replacement=fresh,
+                rule=RULE_SHADOWED_CONST,
+                authority=(
+                    f"rustc E0530: local `{name}` shadows a constant; C scoping makes every "
+                    "later mention in this block the local, so the local is renamed"
+                ),
+                original=name,
+                line=_line_of(data, at),
+                targets=(ctx.target,),
+            )
+        )
+    return edits, [], True
+
+
+def _sizeof_const_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """C ``sizeof(CONSTANT)`` that came across as ``size_of::<CONSTANT>()``: the size of a VALUE.
+
+    E0747 puts the constant in type position. ``size_of_val(&CONSTANT)`` is C's meaning
+    provided the constant carries C's type, which both of its sources do: hand-written
+    substrate spells the C cast (``UNICODE_NULL: WCHAR``), and bindgen sizes an integer
+    macro as C would type the literal (int -> 4, a 64-bit value -> 8).
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0747":
+        return [], [], False
+    if "constant provided when a type was expected" not in str(diagnostic.get("message") or ""):
+        return [], [], False
+    span = _primary(diagnostic)
+    file_name = str((span or {}).get("file_name") or "")
+    data = load(file_name) if span else None
+    if span is None or data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    name = data[start:end].decode("utf-8", "replace")
+    masked = _mask_lexical(data)
+    if not re.fullmatch(r"[A-Za-z_]\w*", name) or _in_macro_definition(masked, start):
+        return [], [], False
+    pre = re.search(
+        rb"(?:(?:core|std)::mem::)?size_of\s*::\s*<\s*$", masked[max(0, start - 40) : start]
+    )
+    post = re.match(rb"\s*>\s*\(\s*\)", masked[end : end + 16])
+    if pre is None or post is None:
+        return (
+            [],
+            [Skipped(RULE_SIZEOF_CONST, "not_size_of", file_name, int(span["line_start"]), name)],
+            False,
+        )
+    lo = start - (len(masked[max(0, start - 40) : start]) - pre.start())
+    hi = end + post.end()
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=lo,
+                byte_end=hi,
+                replacement=f"core::mem::size_of_val(&{name})",
+                rule=RULE_SIZEOF_CONST,
+                authority=f"rustc E0747: `{name}` is a constant, so C's sizeof is of its value",
+                original=data[lo:hi].decode("utf-8", "replace"),
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+#: E0605 on a fn ITEM (rustc prints its type with the item's path in braces: `... {VfatFormat}`).
+_RE_FN_ITEM_CAST = re.compile(
+    r"^non-primitive cast: `[^`]*\bfn\([^`]*\{(?P<item>[\w:]+)\}` as `[^`]*\bfn\("
+)
+
+
+def _fn_item_cast_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`f as unsafe extern "C" fn(..) -> R` where `f` is a function: drop the cast.
+
+    It is c2rust's spelling of C's implicit function-to-pointer conversion, and c2rust writes
+    `extern "C"` for every function pointer -- including NTAPI (stdcall) ones, so on i386 it
+    is a different type from the function and rustc refuses (E0605; setuplib's
+    RegisteredFileSystems table: VfatFormat/VfatChkdsk). Without the cast the function item
+    coerces to whatever slot it is stored in -- `Some(f)` into an `Option<fn>` field, a call
+    argument -- and if THAT slot's ABI differs, rustc says so as a plain type mismatch, which
+    is the real finding the wrong-ABI cast was hiding.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0605":
+        return [], [], False
+    m = _RE_FN_ITEM_CAST.match(str(diagnostic.get("message") or ""))
+    span = _primary(diagnostic)
+    if m is None or span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return [], [], False
+    item = m.group("item").split("::")[-1]
+    head = re.match(rb"\s*(" + re.escape(item.encode()) + rb")\s+as\s", masked[start:end])
+    if head is None:
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=item,
+                rule=RULE_FN_ITEM_CAST,
+                authority=(
+                    f"rustc E0605: `{item}` is a function; C converts it to the pointer "
+                    "implicitly, and Rust coerces it to the slot's own fn-pointer type"
+                ),
+                original=data[start:end].decode("utf-8", "replace"),
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _simple_edit(rule, file_name, data, start, end, replacement, authority, span, ctx) -> Edit:
+    return Edit(
+        file_name=file_name,
+        byte_start=start,
+        byte_end=end,
+        replacement=replacement,
+        rule=rule,
+        authority=authority,
+        original=data[start:end].decode("utf-8", "replace"),
+        line=int(span.get("line_start") or 0),
+        column=int(span.get("column_start") or 0),
+        targets=(ctx.target,),
+    )
+
+
+def _primary_bytes(diagnostic, load):
+    span = _primary(diagnostic)
+    file_name = str((span or {}).get("file_name") or "")
+    data = load(file_name) if span else None
+    if span is None or data is None:
+        return None
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return None
+    return span, file_name, data, masked, start, end
+
+
+def _variadic_promotion_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0617: an integer narrower than `int` passed to a C `...`: rustc's own `as c_int` /
+    `as c_uint` (MachineApplicable) is C's default argument promotion, value for value."""
+    if (diagnostic.get("code") or {}).get("code") != "E0617":
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, _start, _end = got
+    for child in diagnostic.get("children") or []:
+        for sp in child.get("spans") or []:
+            rep = sp.get("suggested_replacement")
+            if (
+                rep in (" as c_int", " as c_uint", " as c_double")
+                and sp.get("suggestion_applicability") == "MachineApplicable"
+                and sp.get("file_name") == file_name
+            ):
+                at = int(sp["byte_start"])
+                return (
+                    [
+                        _simple_edit(
+                            RULE_VARIADIC_PROMOTION,
+                            file_name,
+                            data,
+                            at,
+                            at,
+                            rep.replace(" as c_", " as core::ffi::c_"),
+                            "rustc E0617: C promotes a narrow integer / float passed to `...`",
+                            span,
+                            ctx,
+                        )
+                    ],
+                    [],
+                    True,
+                )
+    return [], [], False
+
+
+def _local_static_mut_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0277 `Sync` on a `static` holding raw pointers: C's `static` is plain mutable storage,
+    and only `static mut` can hold a pointer (setuplib's `static UNICODE_STRING DeviceFloppy =
+    RTL_CONSTANT_STRING(..)` and a `static PCSTR FormatStateNames[]`)."""
+    if (diagnostic.get("code") or {}).get("code") != "E0277":
+        return [], [], False
+    text = json.dumps(diagnostic.get("children") or [])
+    if "cannot be shared between threads safely" not in str(diagnostic.get("message") or ""):
+        return [], [], False
+    if "shared static variables must have a type that implements `Sync`" not in text and (
+        "static" not in text
+    ):
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, masked, start, _end = got
+    line_start = masked.rfind(b"\n", 0, start) + 1
+    head = re.match(rb"\s*(?:pub(?:\([^)]*\))?\s+)?static\s+(?!mut\b)", masked[line_start:start])
+    if head is None:
+        return [], [], False
+    at = line_start + head.end()
+    return (
+        [
+            _simple_edit(
+                RULE_LOCAL_STATIC_MUT,
+                file_name,
+                data,
+                at,
+                at,
+                "mut ",
+                "rustc E0277: a C static holding a pointer is mutable storage (`static mut`)",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _pointer_not_not_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0600 `!!p` on a pointer: C's normalise-to-boolean is `!p.is_null()`."""
+    if (diagnostic.get("code") or {}).get("code") != "E0600":
+        return [], [], False
+    if not re.search(r"`!` to type `\*(?:const|mut) ", str(diagnostic.get("message") or "")):
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, masked, start, end = got
+    inner = data[start:end].decode("utf-8", "replace")
+    if not inner.startswith("!") or not _balanced(masked[start + 1 : end]):
+        return [], [], False
+    lo = start - 1 if data[start - 1 : start] == b"!" else None
+    if lo is None:
+        return [], [], False
+    return (
+        [
+            _simple_edit(
+                RULE_POINTER_NOT_NOT,
+                file_name,
+                data,
+                lo,
+                end,
+                f"(!({inner[1:]}).is_null())",
+                "rustc E0600: C's `!!p` on a pointer is `p != NULL`",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _zeroed_default_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0277 `Default` not implemented (a bindgen union-bearing struct): the C was a `{0}`
+    zero initialiser, which is `core::mem::zeroed()`."""
+    if (diagnostic.get("code") or {}).get("code") != "E0277":
+        return [], [], False
+    if "the trait `Default` is not implemented" not in json.dumps(diagnostic):
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    text = data[start:end].decode("utf-8", "replace")
+    if not re.fullmatch(r"(?:core::default::)?Default::default\(\)", text):
+        return [], [], False
+    return (
+        [
+            _simple_edit(
+                RULE_ZEROED_DEFAULT,
+                file_name,
+                data,
+                start,
+                end,
+                "core::mem::zeroed()",
+                "rustc E0277: no Default; C's `{0}` is all-bits-zero",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _receiver_start(masked: bytes, dot: int) -> int | None:
+    """Start of the postfix expression ending just before `masked[dot]` (a `.`): a path, a
+    call or macro call `f(..)` / `m!(..)`, an index `[..]`, chained by `.`, or a `(..)`."""
+    i = dot
+    while True:
+        j = i - 1
+        while j >= 0 and masked[j : j + 1] in (b" ", b"\t"):
+            j -= 1
+        if j < 0:
+            return None
+        ch = masked[j : j + 1]
+        if ch in (b")", b"]"):
+            opener = b"(" if ch == b")" else b"["
+            depth, k = 0, j
+            while k >= 0:
+                c = masked[k : k + 1]
+                if c in (b")", b"]"):
+                    depth += 1
+                elif c in (b"(", b"["):
+                    depth -= 1
+                    if depth == 0:
+                        break
+                k -= 1
+            if k < 0 or masked[k : k + 1] != opener:
+                return None
+            i = k
+            m = re.search(rb"[A-Za-z_][\w:]*!?$", masked[max(0, k - 80) : k])
+            if m is not None:
+                i = k - (len(masked[max(0, k - 80) : k]) - m.start())
+        else:
+            m = re.search(rb"[A-Za-z_][\w:]*$", masked[max(0, j - 80) : j + 1])
+            if m is None:
+                return None
+            i = j + 1 - (len(masked[max(0, j - 80) : j + 1]) - m.start())
+        before = i - 1
+        while before >= 0 and masked[before : before + 1] in (b" ", b"\t"):
+            before -= 1
+        if (
+            before >= 0
+            and masked[before : before + 1] == b"."
+            and masked[before - 1 : before] != b"."
+        ):
+            i = before
+            continue
+        return i
+
+
+def _arrow_field_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0609 `no field F on type *mut T`: C's `p->F`, written `p.F`. The receiver -- however
+    it is spelled, including a `CONTAINING_RECORD!(..)` call whose own suggestion points into
+    the macro -- becomes `(*receiver)`."""
+    if (diagnostic.get("code") or {}).get("code") != "E0609":
+        return [], [], False
+    if not re.match(
+        r"no field `\w+` on type `\*(?:mut|const) ", str(diagnostic.get("message") or "")
+    ):
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, masked, start, _end = got
+    dot = start - 1
+    while dot >= 0 and masked[dot : dot + 1] in (b" ", b"\t", b"\n"):
+        dot -= 1
+    if masked[dot : dot + 1] != b".":
+        return [], [], False
+    lo = _receiver_start(masked, dot)
+    if lo is None:
+        return [], [], False
+    recv = data[lo:dot].decode("utf-8", "replace").rstrip()
+    return (
+        [
+            _simple_edit(
+                RULE_ARROW_FIELD,
+                file_name,
+                data,
+                lo,
+                dot,
+                f"(*{recv})",
+                "rustc E0609: the receiver is a raw pointer; C's `p->f` is `(*p).f`",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _unsigned_negate_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0600 unary `-` on an unsigned type: C's `(ULONG)-1` is the negated value in that
+    type, which is `(1 as u32).wrapping_neg()` -- u32::MAX for -1, and right for any N."""
+    if (diagnostic.get("code") or {}).get("code") != "E0600":
+        return [], [], False
+    m = re.search(
+        r"unary operator `-` to type `(u8|u16|u32|u64|usize)`", str(diagnostic.get("message") or "")
+    )
+    if m is None:
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    lit = re.fullmatch(
+        r"\(?\s*-\s*(\d+|0[xX][0-9a-fA-F]+)\s*\)?", data[start:end].decode("utf-8", "replace")
+    )
+    if lit is None:
+        return [], [], False
+    return (
+        [
+            _simple_edit(
+                RULE_UNSIGNED_NEGATE,
+                file_name,
+                data,
+                start,
+                end,
+                f"({lit.group(1)} as {m.group(1)}).wrapping_neg()",
+                "rustc E0600: C negates in the unsigned type, wrapping",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _option_fn_as_ptr_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0605 `f as *mut c_void` where `f` is an `Option<fn>`: C passes the function pointer as
+    a PVOID; `None` is NULL. `f.map_or(null_mut(), |p| p as *mut _)`."""
+    if (diagnostic.get("code") or {}).get("code") != "E0605":
+        return [], [], False
+    m = re.match(
+        r"non-primitive cast: `Option<[^`]*fn\([^`]*` as `\*(mut|const) ",
+        str(diagnostic.get("message") or ""),
+    )
+    if m is None:
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    text = data[start:end].decode("utf-8", "replace")
+    cast = re.fullmatch(r"(?s)(?P<e>.+?)\s+as\s+(?P<t>\*(?:mut|const)\s+[\w:]+)", text)
+    if cast is None or not _balanced(cast.group("e").encode()):
+        return [], [], False
+    null = "core::ptr::null_mut()" if m.group(1) == "mut" else "core::ptr::null()"
+    rep = f"({cast.group('e')}).map_or({null}, |f| f as {cast.group('t')})"
+    return (
+        [
+            _simple_edit(
+                RULE_OPTION_FN_AS_PTR,
+                file_name,
+                data,
+                start,
+                end,
+                rep,
+                "rustc E0605: an Option<fn> as a pointer; C's NULL is None",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _some_fn_item_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A function passed where bindgen types the slot `Option<fn>`: C's implicit conversion of
+    a function to its pointer, which is `Some(f)`. rustc's own two-part suggestion, taken only
+    when the found side is a fn ITEM (setuplib: nine EnumerateBootStoreEntries callbacks)."""
+    if (diagnostic.get("code") or {}).get("code") != "E0308":
+        return [], [], False
+    if "found fn item" not in json.dumps(diagnostic):
+        return [], [], False
+    edits: list[Edit] = []
+    for child in diagnostic.get("children") or []:
+        msg = str(child.get("message") or "")
+        if not msg.startswith("try wrapping the expression in ") or not msg.endswith("Some`"):
+            continue
+        parts = [
+            sp for sp in child.get("spans") or [] if sp.get("suggested_replacement") is not None
+        ]
+        if len(parts) != 2:
+            continue
+        open_sp, close_sp = sorted(parts, key=lambda sp: int(sp["byte_start"]))
+        file_name = str(open_sp.get("file_name") or "")
+        data = load(file_name)
+        if data is None or close_sp.get("file_name") != file_name:
+            continue
+        lo, hi = int(open_sp["byte_start"]), int(close_sp["byte_start"])
+        inner = data[lo:hi].decode("utf-8", "replace")
+        if not re.fullmatch(r"\s*[A-Za-z_][\w:]*\s*", inner):
+            continue  # only a bare function name: anything else is not a fn item
+        masked = _mask_lexical(data)
+        if _in_macro_definition(masked, lo):
+            continue
+        edits.append(
+            _simple_edit(
+                RULE_SOME_FN_ITEM,
+                file_name,
+                data,
+                lo,
+                hi,
+                f"Some({inner.strip()})",
+                "rustc E0308: a function into an Option<fn> slot; C's implicit &f is Some(f)",
+                open_sp,
+                ctx,
+            )
+        )
+    return edits, [], bool(edits)
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
@@ -2991,9 +3561,19 @@ _RULE_TABLE: dict[
     RULE_UNINIT_LOCAL: _uninit_local_rule,
     RULE_MUT_BINDING: _mut_binding_rule,
     RULE_INFER_WIDEN: _infer_widen_rule,
-    RULE_RAW_PTR_FIELD: _raw_ptr_field_rule,
+    RULE_OPTION_IS_NULL: _option_is_null_rule,
+    RULE_SHADOWED_CONST: _shadowed_const_rule,
+    RULE_SIZEOF_CONST: _sizeof_const_rule,
+    RULE_FN_ITEM_CAST: _fn_item_cast_rule,
+    RULE_VARIADIC_PROMOTION: _variadic_promotion_rule,
+    RULE_LOCAL_STATIC_MUT: _local_static_mut_rule,
+    RULE_POINTER_NOT_NOT: _pointer_not_not_rule,
+    RULE_ZEROED_DEFAULT: _zeroed_default_rule,
+    RULE_ARROW_FIELD: _arrow_field_rule,
+    RULE_UNSIGNED_NEGATE: _unsigned_negate_rule,
+    RULE_OPTION_FN_AS_PTR: _option_fn_as_ptr_rule,
+    RULE_SOME_FN_ITEM: _some_fn_item_rule,
     RULE_KEYWORD_FIELD: _keyword_field_rule,
-    RULE_SOME_FN: _some_fn_rule,
 }
 
 
@@ -4143,6 +4723,15 @@ def repair_crate(
         current.skipped.extend(failed)
         session.passes.append(current)
         session.final_red = list(merged.red)
+        if not applied:
+            # Every proposal was refused at write time (outside the crate, or stale): the next
+            # pass sees the same diagnostics and proposes the same edits. setuplib spent five
+            # passes (~30 s each, three cargo checks) re-proposing them.
+            session.status = "fixpoint"
+            session.detail = (
+                f"{len(failed)} proposed edit(s) refused at write; {total} errors remain"
+            )
+            return session
         previous_total = total
         previous_halting = halting
     session.status = "max_passes"

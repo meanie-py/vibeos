@@ -123,6 +123,7 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
     started = time.time()
     dp = derive(module_dir, target)
     stem = dp.module.crate_stem
+    _add_island_headers(dp, load_state(stem).get("island_headers", {}))
     arm = pd.emit_profile(dp)
     if not arm.lstrip().startswith(f"{stem})") and "|" not in arm.split(")", 1)[0]:
         raise PortError(f"derived arm is not labelled {stem!r}:\n{arm[:200]}")
@@ -210,6 +211,76 @@ def _crate_dir(state: dict) -> Path:
     return REPO / "sdk" / "lib" / "rust" / state["crate"]
 
 
+def _add_island_headers(dp: pd.DerivedProfile, extra: dict[str, str]) -> None:
+    """Headers resolve found a missing TYPE in (state `island_headers`: regex -> why), added
+    to every island's allowlist so a re-derive keeps them."""
+    for rx, why in sorted(extra.items()):
+        if rx not in dp.allow_files:
+            dp.allow_files.append(rx)
+            dp.allow_reasons[rx] = why
+        for isl in dp.islands:
+            if rx not in isl.allow_files:
+                isl.allow_files.append(rx)
+
+
+def _type_defined_in(text: str, name: str) -> bool:
+    n = re.escape(name)
+    return bool(
+        re.search(rf"\}}[^;{{}}]*\b{n}\b[^;{{}}]*;", text)
+        or re.search(rf"\btypedef\b[^;{{}}]*\b{n}\s*[;,\[)]", text)
+        or re.search(rf"\b(?:struct|union|enum)\s+{n}\s*\{{", text)
+    )
+
+
+def _resolve_island_types(state: dict, names: set[str]) -> set[str]:
+    """A TYPE the C sees through an SDK header's own includes -- setuplib's MOUNTDEV_NAME, in
+    ddk/mountmgr.h, reached via <mountdev.h> -- is outside the derived allowlist by design
+    (it follows only the headers the module names). It was a hand step ("add its header to
+    the island allowlist"); now: the one closure header that defines it is added to the
+    module's arm, recorded in the port state so a re-derive keeps it, and the island is
+    regenerated. A name defined in several headers, or in a base platform header the -sys
+    crate owns, is reported instead. Returns the names the new island should now provide.
+    """
+    if not names:
+        return set()
+    dp = derive(REPO / state["module_dir"], state.get("target"))
+    found: dict[str, list[pd.HeaderRef]] = {n: [] for n in names}
+    for ref in dp.closure.headers.values():
+        try:
+            text = ref.path.read_text(errors="replace")
+        except OSError:
+            continue
+        text = re.sub(r"/\*.*?\*/|//[^\n]*", " ", text, flags=re.S)
+        for n in names:
+            if re.search(rf"\b{re.escape(n)}\b", text) and _type_defined_in(text, n):
+                found[n].append(ref)
+    extra = dict(state.get("island_headers", {}))
+    added: set[str] = set()
+    for n, refs in sorted(found.items()):
+        if len(refs) != 1:
+            if refs:
+                where = ", ".join(r.name for r in refs)
+                print(f"resolve: type {n} is defined in several headers ({where}); hand-pick")
+            continue
+        ref = refs[0]
+        if ref.kind in ("crt", "toolchain") or ref.name.startswith(("ndk/", "wine/")):
+            print(f"resolve: type {n} is in {ref.name}, a base header -- the -sys crate's job")
+            continue
+        rx = pd._hdr_regex(ref.name)
+        if rx in dp.allow_files and rx in extra:
+            continue  # already there: the island does not define it for another reason
+        extra[rx] = f"defines {n} (resolve: a type the module reaches via {ref.includers[0]})"
+        added.add(n)
+    if not added:
+        return set()
+    state["island_headers"] = extra
+    _record(state, "island-headers", time.time(), added=sorted(added))
+    print(f"resolve: island allowlist += {len(added)} type(s): {', '.join(sorted(added))}")
+    stage_derive(REPO / state["module_dir"], state.get("target"))
+    stage_island(state["stem"])
+    return added
+
+
 def stage_island(stem: str) -> None:
     state = load_state(stem)
     started = time.time()
@@ -264,8 +335,23 @@ def add_workspace_member(crate: str) -> bool:
 # --------------------------------------------------------------------------------------
 
 
+def _is_header(unit: str) -> bool:
+    return Path(unit).suffix in (".h", ".hpp")
+
+
+def _module_name(unit: str) -> str:
+    """`enum.c` -> `enum`; `identify_funcs.h` -> `identify_funcs_h` (a module may ship both
+    `foo.c` and `foo.h`, and they are different units)."""
+    return f"{Path(unit).stem}_h" if _is_header(unit) else Path(unit).stem
+
+
 def _tu_output(state: dict, tu: str) -> Path:
-    return _crate_dir(state) / "src" / state["stem"] / f"{Path(tu).stem}.rs"
+    return _crate_dir(state) / "src" / state["stem"] / f"{_module_name(tu)}.rs"
+
+
+def _units(state: dict) -> list[str]:
+    """What translate runs: the module's TUs, then the headers `port headers` adopted."""
+    return [*state["tus"], *state.get("header_tus", {})]
 
 
 def _has_body(path: Path) -> bool:
@@ -273,6 +359,18 @@ def _has_body(path: Path) -> bool:
         return False
     text = path.read_text(errors="replace")
     return bool(re.search(r"\b(?:fn|static|const)\s+\w+", text))
+
+
+def set_expand_macros(stem: str, tus: list[str]) -> list[str]:
+    """Record that these TUs translate with the module's own macros expanded in the C."""
+    state = load_state(stem)
+    known = {Path(t).name for t in state["tus"]}
+    bad = sorted(set(tus) - known)
+    if bad:
+        raise PortError(f"not TUs of {stem}: {', '.join(bad)}")
+    state["expand_macros"] = sorted(set(state.get("expand_macros", [])) | set(tus))
+    _record(state, "expand-macros", time.time(), tus=state["expand_macros"])
+    return state["expand_macros"]
 
 
 def stage_translate(
@@ -289,20 +387,26 @@ def stage_translate(
     rebuy_fn: list[str] | None = None,
     replay_only: bool = False,
     no_c2rust: list[str] | None = None,
+    revisit: list[str] | None = None,
+    units_override: dict[str, str] | None = None,
 ) -> tuple[float, list[str]]:
     """Run translate per TU; return (USD spent, file names of the TUs it ran)."""
     state = load_state(stem)
+    recorded_headers = state.get("header_tus")
+    if units_override is not None:  # a dry run of `port headers`: shown, never recorded
+        state["header_tus"] = units_override
     started = time.time()
     # STICKY, because the anchor is part of what was bought: a TU translated without one
     # replays from the bank only when asked for without one again (replay, escalation).
     if no_c2rust:
-        known = {Path(t).name for t in state["tus"]}
+        known = {Path(t).name for t in _units(state)}
         unknown = sorted(set(no_c2rust) - known)
         if unknown:
             raise PortError(f"--no-c2rust: not a TU of {stem}: {', '.join(unknown)}")
         state["no_c2rust"] = sorted(set(state.get("no_c2rust", [])) | set(no_c2rust))
         _record(state, "no-c2rust", started, tus=state["no_c2rust"])
-    picked = [t for t in state["tus"] if not only or Path(t).name in only]
+    picked = [t for t in _units(state) if not only or Path(t).name in only]
+    vias: dict[str, str] = state.get("header_tus", {})
     # An escalation pass revisits TUs that already have output: their good bodies replay
     # for $0 and only rejected / audit-failing functions are bought again, with thinking.
     # `--rebuy-fn` names bodies inside TUs that already have output, so those are revisited
@@ -310,14 +414,24 @@ def stage_translate(
     todo = (
         picked
         if escalate or rebuy_fn or replay_only
-        else [t for t in picked if not _has_body(_tu_output(state, t))]
+        # A TU just switched to expanded macros has output, but its question changed.
+        else [
+            t
+            for t in picked
+            if not _has_body(_tu_output(state, t)) or Path(t).name in (revisit or [])
+        ]
     )
     spent = 0.0
     done: list[dict] = []
-    arch_only = _arch_only_tus(state, todo)
+    arch_only = _arch_only_tus(state, [*todo, *(vias[t] for t in todo if t in vias)])
+    # A header compiles as its via TU does, so it is anchored on that TU's arch.
+    arch_only.update({t: arch_only[vias[t]] for t in todo if vias.get(t) in arch_only})
     for tu in todo:
         left = cost_cap - spent
-        # A replay buys nothing, so a $0 cap must not stop it -- `port replay` passes 0.
+        # A replay-only run never buys, so the cap cannot stop it. It used to: `port replay`
+        # passes cap 0, and every replay ever run broke out here before the first TU and
+        # reassembled nothing -- each "rebuild from the banks" re-ran resolve/repair/fix over
+        # whatever the files already held.
         if left <= 0 and not replay_only:
             print(
                 f"translate: cost cap ${cost_cap:.2f} reached; {len(todo) - len(done)} TU(s) left"
@@ -348,6 +462,11 @@ def stage_translate(
             "--concurrency",
             str(concurrency),
         ]
+        if tu in vias:
+            cmd += ["--via", str(REPO / vias[tu])]
+        # Per TU, recorded in the state so `port replay` asks the bank the same question.
+        if Path(tu).name in state.get("expand_macros", []):
+            cmd += ["--expand-local-macros", state["module_dir"]]
         if dry_run:
             cmd.append("--dry-run")
         if Path(tu).name in state.get("no_c2rust", []):
@@ -374,12 +493,13 @@ def stage_translate(
         )
         # One log per TU per PASS: the escalation pass used to overwrite the cheap pass's
         # log, which destroyed exactly the token counts the cheap-vs-thinking comparison needs.
-        log = STATE_ROOT / stem / f"translate-{Path(tu).stem}-thinking-{thinking}.log"
+        log = STATE_ROOT / stem / f"translate-{_module_name(tu)}-thinking-{thinking}.log"
         log.write_text(proc.stdout + proc.stderr)
         cost = _run_cost(proc.stdout + proc.stderr)
         # Keyed on the run's own report, not on the output file: a TU revisited for
         # --rebuy-fn / --escalate still holds its PREVIOUS output, so "no body" never fired.
-        if not dry_run and "parallel translation completed with rejected" in (
+        # Never on a replay: the retry BUYS (`--rebuy-rejected`, a cap of at least $0.01).
+        if not (dry_run or replay_only) and "parallel translation completed with rejected" in (
             proc.stdout + proc.stderr
         ):
             # The parallel path does not re-roll a rejected worker; the sequential one does,
@@ -423,6 +543,11 @@ def stage_translate(
             f"translate: {Path(tu).name}: rc={proc.returncode} ${cost:.4f} "
             f"{status} ({round(time.time() - t0)}s)"
         )
+    if units_override is not None:
+        if recorded_headers is None:
+            state.pop("header_tus", None)
+        else:
+            state["header_tus"] = recorded_headers
     _record(
         state,
         "translate",
@@ -441,6 +566,9 @@ def stage_translate(
         + (f", {sum(d['to_buy'] for d in done)} fn(s) to buy" if dry_run else "")
     )
     if not dry_run:
+        wired = wire_modules(state)
+        if wired:
+            print(f"translate: module(s) added to lib.rs: {', '.join(wired)}")
         applied = apply_hand_bodies(_crate_dir(state), state["stem"])
         if applied:
             print(f"translate: {len(applied)} hand-ported body(ies) applied: {', '.join(applied)}")
@@ -541,6 +669,147 @@ def _run_cost(log: str) -> float:
 # --------------------------------------------------------------------------------------
 
 
+def wire_modules(state: dict) -> list[str]:
+    """`pub mod X;` in lib.rs's `pub mod <stem> { .. }` for each unit with output and none.
+
+    scaffold writes the module list once, from the TUs; a header unit adopted later (or a
+    TU added to the CMakeLists since) would otherwise be translated and never compiled.
+    """
+    lib = _crate_dir(state) / "src" / "lib.rs"
+    if not lib.is_file():
+        return []
+    text = lib.read_text()
+    block = re.search(rf"(?m)^pub mod {re.escape(state['stem'])} \{{\n(.*?)^\}}", text, re.S)
+    if block is None:
+        return []
+    present = set(re.findall(r"pub mod (?:r#)?(\w+);", block.group(1)))
+    added = [
+        name
+        for unit in _units(state)
+        if (name := _module_name(unit)) not in present and _has_body(_tu_output(state, unit))
+    ]
+    if added:
+        from .profile_derive import _rust_mod_ident
+
+        lines = "".join(f"    pub mod {_rust_mod_ident(n)};\n" for n in added)
+        text = text[: block.end(1)] + lines + text[block.end(1) :]
+        lib.write_text(text)
+    return added
+
+
+# --------------------------------------------------------------------------------------
+# headers
+# --------------------------------------------------------------------------------------
+
+#: Where a header's inline functions are THIS module's to translate. The platform headers
+#: (ddk/psdk/ndk/xdk/crt) are the -sys crates' job: one hand port there serves every module,
+#: where a per-crate copy would be the drift the shared crates exist to prevent.
+_PRIVATE_HEADER_ROOTS = ("sdk/include/reactos",)
+
+
+def discover_header_units(state: dict) -> tuple[dict[str, str], dict[str, str]]:
+    """({header: via TU}, {name: why not}) for the functions the crate still calls, that no
+    translation defines, and that a header in the module's include closure defines inline.
+
+    identify_funcs.h's 44 `AtaDev*` helpers were this: resolve listed them as "defined
+    nowhere in the tree", because they are defined in no .c and no crate, and the macros
+    stage only reads headers inside the module directory. The via TU is the first of the
+    module's TUs whose preprocessor includes the header -- its compile command is exactly
+    what the inline bodies are compiled with in this module. Asked of the preprocessor, not
+    of the CMakeLists, so a flipped (or not-yet-wired) module answers the same.
+    """
+    from .macro_authority import MacroAuthorityError, included_headers
+    from .scanner import scan_file
+
+    resolves = [h for h in state["stages"] if h["stage"] == "resolve"]
+    wanted = set(resolves[-1].get("undefined", [])) if resolves else set()
+    if not wanted:
+        return {}, {}
+    module_dir = (REPO / state["module_dir"]).resolve()
+    called = re.compile(r"\b(" + "|".join(sorted(map(re.escape, wanted))) + r")\s*\(")
+    # header -> the first TU (in the module's own order) whose preprocessor includes it.
+    reached: dict[Path, str] = {}
+    for tu in state["tus"]:
+        try:
+            for header in included_headers(REPO, REPO / tu):
+                reached.setdefault(header, tu)
+        except MacroAuthorityError as e:
+            print(f"headers: {Path(tu).name}: {str(e).splitlines()[0]}")
+    defined_in: dict[str, list[tuple[str, str]]] = {}
+    skipped: dict[str, str] = {}
+    for path, via in sorted(reached.items()):
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        if not called.search(text):
+            continue
+        try:
+            fns = {f.name for f in scan_file(path).functions} & wanted
+        except Exception:  # a header the scanner cannot read defines nothing we can use
+            continue
+        if not fns:
+            continue
+        rel = str(path.relative_to(REPO)) if path.is_relative_to(REPO) else str(path)
+        private = path.is_relative_to(module_dir) or any(
+            path.is_relative_to((REPO / root).resolve()) for root in _PRIVATE_HEADER_ROOTS
+        )
+        if not private:
+            for name in fns:
+                skipped[name] = f"inline in platform header {rel}: the -sys crate's job"
+            continue
+        for name in fns:
+            defined_in.setdefault(name, []).append((rel, via))
+    units: dict[str, str] = {}
+    for name, places in sorted(defined_in.items()):
+        if len({h for h, _ in places}) > 1:
+            skipped[name] = "inline in several headers: " + ", ".join(h for h, _ in places)
+            continue
+        header, via = places[0]
+        units[header] = via
+    return units, skipped
+
+
+def stage_headers(
+    stem: str, *, model: str, cost_cap: float, dry_run: bool, thinking: str = "off"
+) -> float:
+    """Adopt the headers whose inline functions the crate calls, and translate them through
+    a TU that includes them (`translate --via`): sealed and c2rust-anchored like any TU, one
+    module per header (`identify_funcs.h` -> `src/<stem>/identify_funcs_h.rs`). Recorded in
+    the state, so replay and `port fix` treat them as units of the crate from then on."""
+    state = load_state(stem)
+    started = time.time()
+    found, skipped = discover_header_units(state)
+    units = dict(state.get("header_tus", {}))
+    new = {h: v for h, v in found.items() if units.get(h) != v}
+    units.update(found)
+    for name, why in sorted(skipped.items()):
+        print(f"headers: {name}: {why}")
+    for header, via in sorted(new.items()):
+        print(f"headers: {header} (via {via})")
+    if not dry_run:
+        state["header_tus"] = units
+        _record(state, "headers", started, adopted=sorted(new), skipped=skipped)
+    if not units:
+        print("headers: no header defines a function the crate still needs")
+        return 0.0
+    if dry_run:
+        # The adoption is not recorded on a dry run, so translate is shown the units directly.
+        state["header_tus"] = units
+    spent, _ran = stage_translate(
+        stem,
+        model=model,
+        cost_cap=cost_cap,
+        only=[Path(h).name for h in units],
+        dry_run=dry_run,
+        thinking=thinking,
+        units_override=units if dry_run else None,
+    )
+    if not dry_run:
+        stage_integrate(stem)
+    return spent
+
+
 def stage_integrate(stem: str) -> None:
     """Move each translated file onto the crate's prelude (crate_integrate): the per-file
     substrate globs and hand-declared externs a standalone translation carries are WRONG
@@ -620,10 +889,17 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     modules_dir = crate / "src" / stem
     res = prelude_resolve.Resolution()
     ambiguous: dict[str, list[str]] = {}
+    types_only: set[str] = set()
     for n in range(1, max_passes + 1):
-        names = prelude_resolve.unresolved_names(
+        wanted = prelude_resolve.unresolved(
             state["crate"], RUST_TARGETS["amd64"], workspace, STATE_ROOT / stem / "target-amd64"
         )
+        names = set(wanted)
+        types_only = {k for k, ns in wanted.items() if ns == {"type"}}
+        # A copy of the wrong KIND for a name wanted only as a type is what caused the gap.
+        for name in types_only & set(copied):
+            if copied[name].kind != "type":
+                del copied[name]
         # The crate's OWN definitions first: a name one translated module defines is
         # imported from it, never copied from the tree.
         found_here = prelude_resolve.sibling_definitions(names - set(siblings), modules_dir)
@@ -646,6 +922,8 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         copied.update(aliases)
         todo -= set(aliases)
         items = prelude_resolve.workspace_items(todo, workspace, crate)
+        for name in types_only & set(items):
+            items[name] = [i for i in items[name] if i.kind == "type"]
         new = len(aliases)
         res.conflicting, res.undefined = {}, []
         for name in sorted(todo):
@@ -677,11 +955,20 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     prelude_resolve.write_block(prelude, prelude_resolve.render(copied))
     for path in prelude_resolve.refresh_shared_crates(crate, workspace):
         print(f"resolve: refreshed the `{path}` re-export list")
-    res.undefined = _resolve_facts(state, prelude, res.undefined)
+    type_names = [n for n in res.undefined if n in types_only]
+    res.undefined = (
+        _resolve_facts(state, prelude, [n for n in res.undefined if n not in types_only])
+        + type_names
+    )
     type_gaps = set(res.undefined) | {
         n for n, why in res.conflicting.items() if why.startswith("a type")
     }
     found = _resolve_local_types(state, prelude, type_gaps)
+    align_definition_abis(state)
+    island_found = _resolve_island_types(load_state(stem), type_gaps - found)
+    if island_found:
+        state = load_state(stem)  # it recorded island_headers + derive + island
+    found |= island_found
     found |= _resolve_externs(state, prelude, set(res.undefined) - found)
     res.undefined = [n for n in res.undefined if n not in found]
     res.conflicting = {k: v for k, v in res.conflicting.items() if k not in found}
@@ -803,6 +1090,57 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     return set(sigs)
 
 
+_RUST_FN_DEF = re.compile(
+    r"(?m)^(?P<head>[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:unsafe[ \t]+)?extern[ \t]+)"
+    r'"(?P<abi>C|system)"(?P<tail>[ \t]+fn[ \t]+(?P<name>[A-Za-z_]\w*)[ \t]*[<(])'
+)
+
+
+def align_definition_abis(state: dict) -> dict[str, list[str]]:
+    """Give every function the crate DEFINES the calling convention its C declares.
+
+    The model and c2rust both default to `extern "C"`; an NTAPI callback the C hands to
+    `RtlQueryRegistryValues` or `EnumerateBootStoreEntries` is stdcall, so on i386 the
+    callee pops the wrong number of bytes and the stack is off from then on. rustc only
+    notices where the code casts the function to the slot's type (setuplib: E0605 at nine
+    sites); a definition that is merely exported compiles and corrupts. clang answers per C
+    function (sdk_facts.function_abis); a name it cannot type is left alone and reported.
+    Returns {module file: [renamed functions]}.
+    """
+    from . import sdk_facts
+    from .macro_authority import MacroAuthorityError
+
+    modules = _crate_dir(state) / "src" / state["stem"]
+    changed: dict[str, list[str]] = {}
+    for tu in state["tus"]:
+        path = modules / f"{Path(tu).stem}.rs"
+        if not path.is_file():
+            continue
+        text = path.read_text()
+        defs = {m.group("name"): m.group("abi") for m in _RUST_FN_DEF.finditer(text)}
+        if not defs:
+            continue
+        try:
+            abis = sdk_facts.function_abis(REPO, REPO / tu, sorted(defs))
+        except MacroAuthorityError as e:
+            print(f"resolve: ABIs of {tu}: {str(e).splitlines()[0][:120]}")
+            continue
+        wrong = {n for n, abi in defs.items() if n in abis and abis[n] != abi}
+        if not wrong:
+            continue
+
+        def fix(m: re.Match[str], wrong=wrong, abis=abis) -> str:
+            if m.group("name") not in wrong:
+                return m.group(0)
+            return f'{m.group("head")}"{abis[m.group("name")]}"{m.group("tail")}'
+
+        path.write_text(_RUST_FN_DEF.sub(fix, text))
+        changed[path.name] = sorted(wrong)
+    for name, fns in sorted(changed.items()):
+        print(f"resolve: {name}: calling convention set from the C for {', '.join(fns)}")
+    return changed
+
+
 def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str]:
     """Types a .c file defines for itself (c2rust_anchor.local_types), into the prelude.
 
@@ -812,6 +1150,9 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
     from . import c2rust_anchor
 
     names = set(names) | prelude_resolve.existing_local_types(prelude)
+    # C's `typedef struct _X {..} X;`: fetching the tag without its typedef leaves the model's
+    # own `struct X` standing beside c2rust's `_X` (setuplib's HIVE_LIST_ENTRY tables).
+    names |= {n[1:] for n in names if n.startswith("_") and len(n) > 1}
     # Never a type the island already defines. A name reads as unresolved while a sibling
     # glob makes it AMBIGUOUS (atapi's SCSI_REQUEST_BLOCK, opaque in ntkrnl-sys and whole in
     # the UNBLOCKed island), and a copy pinned here then collides with the explicit re-export
@@ -844,7 +1185,39 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
     prelude_resolve.write_local_types(prelude, items)
     if items:
         print(f"resolve: {len(items)} local type item(s) from c2rust: {', '.join(sorted(items))}")
+        dropped = drop_model_type_twins(_crate_dir(state) / "src" / state["stem"], set(items))
+        for name, mods in sorted(dropped.items()):
+            print(f"resolve: {name}: the model's own definition dropped from {', '.join(mods)}")
     return set(items)
+
+
+def drop_model_type_twins(modules: Path, names: set[str]) -> dict[str, list[str]]:
+    """Remove a translated module's own `struct`/`union`/`type` for a name the prelude now
+    takes from c2rust -- the compiler-exact layout wins, as it already does for statics.
+
+    The model collapses C's `typedef struct _HIVE_LIST_ENTRY {..} HIVE_LIST_ENTRY;` into one
+    `struct HIVE_LIST_ENTRY`, while c2rust's data tables (and the prelude) spell the tag
+    `_HIVE_LIST_ENTRY`: the module's definition shadows the prelude's and the two types never
+    unify (setuplib: registry's hive tables, partinfo's partition-type tables, fsutil's
+    file-system table).
+    """
+    from .c2rust_anchor import _type_items
+
+    out: dict[str, list[str]] = {}
+    for path in sorted(modules.glob("*.rs")):
+        text = path.read_text()
+        items = {n: t for n, t in _type_items(text).items() if n in names}
+        if not items:
+            continue
+        for name, item in items.items():
+            text = (
+                text.replace(item + "\n", "", 1)
+                if item + "\n" in text
+                else text.replace(item, "", 1)
+            )
+            out.setdefault(name, []).append(path.name)
+        path.write_text(text)
+    return out
 
 
 def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str]:
@@ -1039,6 +1412,14 @@ def _repair(stem: str, crate: str) -> str:
         max_passes=10,
         target_dirs=_target_dirs(stem),
     )
+    # Per pass: a run that ends at max_passes while still applying edits is converging
+    # slowly; one applying the same rules every pass with flat counts is oscillating.
+    for ps in session.passes:
+        rules: dict[str, int] = {}
+        for e in ps.applied:
+            rules[e.rule] = rules.get(e.rule, 0) + 1
+        top = ", ".join(f"{r} {n}" for r, n in sorted(rules.items(), key=lambda kv: -kv[1])[:4])
+        print(f"  repair pass {ps.index}: {ps.error_counts} applied {len(ps.applied)} ({top})")
     return session.status
 
 
@@ -1069,6 +1450,8 @@ def stage_replay(stem: str, *, fix_cap: float = 0.0, fix_rounds: int = 1) -> Non
     print(f"replay: crate-repair {_repair(stem, state['crate'])}")
     stage_resolve(stem)
     print(f"replay: crate-repair {_repair(stem, state['crate'])}")
+    # Before fix, so fix never pays to repair a function the hand bank replaces.
+    apply_hand(stem)
     stage_fix(
         stem,
         model="deepseek",
@@ -1077,8 +1460,133 @@ def stage_replay(stem: str, *, fix_cap: float = 0.0, fix_rounds: int = 1) -> Non
         thinking="off",
         concurrency=8,
     )
+    apply_hand(stem)
     stage_check(stem)
     print(f"replay: {(time.time() - started) / 60:.1f} min")
+
+
+# --------------------------------------------------------------------------------------
+# hand
+# --------------------------------------------------------------------------------------
+
+
+def _hand_dir(stem: str) -> Path:
+    return STATE_ROOT / stem / "hand"
+
+
+def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
+    """Bank a function as it now stands in the crate, so every replay puts it back.
+
+    A port ends with a residue someone writes by hand (setuplib's C-variadic CombinePaths
+    family), and `port replay` rebuilds every module from the banks -- so without this a hand
+    edit lasts until the next replay and is then gone, silently. `file.rs:Name` captures the
+    function `Name` from `src/<stem>/file.rs` and puts it back over `Name` on replay;
+    `file.rs:New=Old` captures `New` and puts it over the BOUGHT function `Old`.
+    """
+
+    state = load_state(stem)
+    started = time.time()
+    modules = _crate_dir(state) / "src" / stem
+    hand = _hand_dir(stem)
+    hand.mkdir(parents=True, exist_ok=True)
+    for spec in specs:
+        fname, _, names = spec.partition(":")
+        name, _, replaces = names.partition("=")
+        replaces = replaces or name
+        entry = hand / f"{Path(fname).stem}.{replaces}.json"
+        if drop:
+            entry.unlink(missing_ok=True)
+            print(f"hand: dropped {spec}")
+            continue
+        text = (modules / fname).read_text()
+        spans = item_spans(text, name)
+        if len(spans) != 1:
+            raise PortError(f"hand: {spec}: {len(spans)} items named {name} in {fname}")
+        body = text[spans[0][0] : spans[0][1]]
+        entry.write_text(json.dumps({"file": fname, "name": replaces, "text": body}, indent=1))
+        print(f"hand: banked {spec} ({len(body.splitlines())} lines)")
+    _record(state, "hand", started, specs=specs, drop=drop)
+
+
+_ITEM_HEAD = (
+    r"(?m)^(?:[ \t]*#\[[^\n]*\]\n)*[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?"
+    r"(?:(?:type|struct|union|enum|const|static(?:[ \t]+mut)?)[ \t]+{n}\b|macro_rules![ \t]*{n}\b)"
+)
+
+
+def item_spans(text: str, name: str) -> list[tuple[int, int]]:
+    """Spans of every function, or top-level type/struct/union/enum/const/static/macro_rules,
+    named `name` -- attributes included. A hand fix is not always a function: setuplib's
+    boot-store fn-pointer typedefs needed `extern "C"`, and two prelude macros a `BOOLEAN`."""
+    from . import crate_fix as cf
+
+    out = [(sp.start, sp.end) for sp in cf.function_spans(text) if sp.name == name]
+    for m in re.finditer(_ITEM_HEAD.format(n=re.escape(name)), text):
+        i, depth = m.end(), 0
+        while i < len(text):
+            c = text[i]
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+                if depth == 0 and c == "}" and "macro_rules!" in m.group(0):
+                    i += 1
+                    break
+                if (
+                    depth == 0
+                    and c == "}"
+                    and re.search(r"\b(?:struct|union|enum)\b", m.group(0))
+                    and not re.match(r"\s*;", text[i + 1 :])
+                ):
+                    i += 1
+                    break
+            elif c == ";" and depth == 0:
+                i += 1
+                break
+            i += 1
+        out.append((m.start(), i))
+    return sorted(set(out))
+
+
+def hand_names(stem: str) -> set[tuple[str, str]]:
+    """(module file, function) of every function the hand bank writes, in its final names."""
+    from . import crate_fix as cf
+
+    out: set[tuple[str, str]] = set()
+    for entry in _hand_dir(stem).glob("*.json"):
+        h = json.loads(entry.read_text())
+        out |= {(h["file"], sp.name) for sp in cf.function_spans(h["text"])}
+        out.add((h["file"], h["name"]))  # the bought name too: a macro-defined fn has no span
+    return out
+
+
+def apply_hand(stem: str) -> int:
+    """Put every banked hand function back over whatever the replay produced for it."""
+
+    state = load_state(stem)
+    modules = _crate_dir(state) / "src" / stem
+    applied = 0
+    for entry in sorted(_hand_dir(stem).glob("*.json")):
+        h = json.loads(entry.read_text())
+        path = modules / h["file"]
+        text = path.read_text()
+        if h["text"] in text:  # already applied (replay runs this before and after fix)
+            applied += 1
+            continue
+        spans = item_spans(text, h["name"])
+        if len(spans) != 1:
+            # Loud: the function moved or was renamed upstream of the bank; never skip quietly.
+            raise PortError(
+                f"hand: {h['file']}:{h['name']} is banked but the replayed file has "
+                f"{len(spans)} item(s) of that name -- re-capture or drop it"
+            )
+        lo, hi = spans[0]
+        if text[lo:hi] != h["text"]:
+            path.write_text(text[:lo] + h["text"] + text[hi:])
+        applied += 1
+    if applied:
+        print(f"hand: {applied} hand-written function(s) applied")
+    return applied
 
 
 # --------------------------------------------------------------------------------------
@@ -1132,7 +1640,7 @@ def stage_fix(
     crate_dir = _crate_dir(state)
     root = REPO / "sdk" / "lib" / "rust"
     bank = STATE_ROOT / stem / "fix"
-    tu_by_stem = {Path(t).stem: REPO / t for t in state["tus"]}
+    tu_by_stem = {_module_name(t): REPO / t for t in _units(state)}
     c_cache: dict = {}
     fact_sources = [
         crate_dir / "src" / "prelude.rs",
@@ -1154,12 +1662,19 @@ def stage_fix(
     # A function whose reply was refused goes back next round WITH the refusal (thinking
     # off); `--thinking escalate` also turns thinking on for it.
     stuck: dict[tuple[str, str], str] = {}
+    bank_by_fn = cf.bank_index(bank)
+    merge_tried: set[tuple[str, str]] = set()
     for rnd in range(1, rounds + 1):
         before_counts = {a: cr.count_errors(d) for a, d in diags.items()}
         halting_before = max(cr.count_halting_errors(d) for d in diags.values())
         groups, outside = cf.group_by_function(diags, root, is_error=cr.is_error_diagnostic)
         if only:
-            groups = {k: v for k, v in groups.items() if k[1] in only}
+            groups = {k: v for k, v in groups.items() if cf.fn_name(k[1]) in only}
+        # A hand-banked function is finished by a person; never buy a fix for it.
+        hand = hand_names(stem)
+        groups = {
+            k: v for k, v in groups.items() if (Path(k[0]).name, cf.fn_name(k[1])) not in hand
+        }
         print(
             f"fix round {rnd}: errors {before_counts}, "
             f"{len(groups)} function(s) to fix, {outside['amd64']} error(s) outside functions"
@@ -1186,8 +1701,17 @@ def stage_fix(
                 if "original" not in banked:
                     cf.bank_write(bank, key, {**banked, "original": original})
                 continue
+            # A reply bought for an EARLIER text of this function, merged onto this one ($0).
+            # Once only: a merge that was refused or reverted goes to a purchase next round.
+            ident = (Path(fname).name, cf.fn_name(name))
+            if ident not in merge_tried:
+                merge_tried.add(ident)
+                merged = cf.merge_banked(original, bank_by_fn.get(ident, []))
+                if merged is not None:
+                    att.fixed, att.status = merged, "merged"
+                    continue
             modes[len(attempts) - 1] = mode
-            c_fn = c_function_text_for(tu_by_stem, Path(fname).stem, name, c_cache, cf)
+            c_fn = c_function_text_for(tu_by_stem, Path(fname).stem, cf.fn_name(name), c_cache, cf)
             facts = cf.declarations(cf.mentioned_names(fe.errors), fact_sources)
             prompts[len(attempts) - 1] = cf.build_prompt(
                 original, fe.errors, c_fn, facts, arches, refused
@@ -1253,7 +1777,8 @@ def stage_fix(
                 groups[(att.file, att.name)].errors,
                 parse_findings,
                 type_names,
-                c_function_text_for(tu_by_stem, Path(att.file).stem, att.name, c_cache, cf),
+                c_function_text_for(tu_by_stem, Path(att.file).stem, att.fn, c_cache, cf),
+                c_dead_names_for(tu_by_stem, Path(att.file).stem, att.fn, c_cache, cf),
             )
             if why:
                 att.status = "rejected:" + "; ".join(why)
@@ -1287,7 +1812,7 @@ def stage_fix(
             # A parse / expansion error hides the rest of the crate's errors: a falling total
             # here is not progress. Put back the whole round, then retry one at a time.
             for a in applied:
-                cf._replace_named(root, a.file, a.name, a.original)
+                cf._replace_named(root, a.file, a.name, a.original, a.fixed)
             print(
                 f"fix: round raised halting errors {halting_before}->{halting_after}; reverted "
                 "the round, trying each fix alone"
@@ -1304,10 +1829,27 @@ def stage_fix(
             # More errors in the function on some arch. Usually a fix that exposed later
             # type checking (an unresolved name hid it) -- but we cannot tell that from a
             # real regression here, so the original stays and the bank keeps the reply.
-            cf._replace_named(root, a.file, a.name, a.original)
+            cf._replace_named(root, a.file, a.name, a.original, a.fixed)
             a.status = "reverted:more errors"
         if worse:
             after = _check_json(stem, state["crate"])
+        # A fix can add errors OUTSIDE its own function (a caller, a static, a macro use
+        # elsewhere); the per-function test above cannot see that. setuplib round 3 kept 9
+        # fixes and went 71 -> 80. Any arch above where the round started: take the kept
+        # fixes back out and keep only the subset that does not raise any arch.
+        kept_now = [a for a in applied if a not in worse]
+        if any(cr.count_errors(after[x]) > before_counts[x] for x in arches) and kept_now:
+            for a in kept_now:
+                cf._replace_named(root, a.file, a.name, a.original, a.fixed)
+            print(f"fix: round raised the total ({before_counts}); bisecting {len(kept_now)}")
+            kept_now, after = _bisect(
+                stem,
+                state["crate"],
+                kept_now,
+                lambda d, b=before_counts: any(cr.count_errors(d[x]) > b[x] for x in arches),
+                "reverted:more errors elsewhere",
+            )
+            worse += [a for a in applied if a not in worse and a not in kept_now]
         after_counts = {x: cr.count_errors(d) for x, d in after.items()}
         stuck = {
             (a.file, a.name): a.status.split(":", 1)[1]
@@ -1320,8 +1862,11 @@ def stage_fix(
             f"kept {len(applied) - len(worse)}, reverted {len(worse)}, spent ${spent:.4f}"
         )
         diags = after
-        if spent >= cost_cap:
-            print(f"fix: --cost-cap ${cost_cap:.2f} reached")
+        # The cap blocks PURCHASES (failed:cost-cap); banked replies are free. So keep going
+        # while a round still keeps something -- at cap $0, `port replay` stopped after round
+        # 1 and never replayed the replies rounds 2 and 3 had bought (165 -> 111, not -> ~56).
+        if spent >= cost_cap and len(applied) - len(worse) == 0:
+            print(f"fix: --cost-cap ${cost_cap:.2f} reached and the bank has nothing more")
             break
     _record(
         state,
@@ -1334,34 +1879,46 @@ def stage_fix(
 
 
 def _without_halting(stem: str, crate: str, applied: list, halting_before: int):
-    """Bisect the round's fixes for the ones that add a halting (parse / expansion) error.
+    """Bisect the round's fixes for the ones that add a halting (parse / expansion) error."""
+    from . import crate_repair as cr
 
-    One cargo check per fix took most of a 23-minute replay; halving finds a lone culprit in
-    log2(n) checks. Returns (kept fixes, diagnostics with them applied).
+    return _bisect(
+        stem,
+        crate,
+        applied,
+        lambda diags: max(cr.count_halting_errors(d) for d in diags.values()) > halting_before,
+        "rejected:adds a parse/macro-expansion error",
+    )
+
+
+def _bisect(stem: str, crate: str, applied: list, bad, verdict: str):
+    """Keep the largest set of the round's fixes for which `bad(diags)` is false.
+
+    The fixes are already out of the tree. One cargo check per fix took most of a 23-minute
+    replay; halving finds a lone culprit in log2(n) checks. Returns (kept fixes, diagnostics
+    with them applied).
     """
     from . import crate_fix as cf
-    from . import crate_repair as cr
 
     root = REPO / "sdk" / "lib" / "rust"
 
     def put(fixes, fixed: bool) -> None:
         for a in fixes:
-            cf._replace_named(root, a.file, a.name, a.fixed if fixed else a.original)
-
-    def halts(diags) -> bool:
-        return max(cr.count_halting_errors(d) for d in diags.values()) > halting_before
+            new, old = (a.fixed, a.original) if fixed else (a.original, a.fixed)
+            cf._replace_named(root, a.file, a.name, new, old)
 
     kept: list = []
 
     def search(fixes: list) -> None:
+        if not fixes:
+            return
         put(fixes, True)
-        diags = _check_json(stem, crate)
-        if not halts(diags):
+        if not bad(_check_json(stem, crate)):
             kept.extend(fixes)
             return
         put(fixes, False)
         if len(fixes) == 1:
-            fixes[0].status = "rejected:adds a parse/macro-expansion error"
+            fixes[0].status = verdict
             return
         mid = len(fixes) // 2
         search(fixes[:mid])
@@ -1374,6 +1931,11 @@ def _without_halting(stem: str, crate: str, applied: list, halting_before: int):
 def c_function_text_for(tu_by_stem: dict, rs_stem: str, name: str, cache: dict, cf) -> str | None:
     c_path = tu_by_stem.get(rs_stem)
     return cf.c_function_text(c_path, name, cache) if c_path else None
+
+
+def c_dead_names_for(tu_by_stem: dict, rs_stem: str, name: str, cache: dict, cf) -> frozenset:
+    c_path = tu_by_stem.get(rs_stem)
+    return cf.c_dead_names(c_path, name, cache) if c_path else frozenset()
 
 
 def _report_attempts(attempts) -> None:
@@ -1461,6 +2023,14 @@ def stage_status(stem: str) -> None:
         extra = {k: v for k, v in s.items() if k not in ("stage", "seconds", "at", "runs")}
         print(f"{s['at']}  {s['stage']:10s} {s['seconds']:8.1f}s  {json.dumps(extra)[:140]}")
     print(f"{len(state['stages'])} stage run(s), {total / 60:.1f} min")
+    # The ledger of record: translate logs are overwritten by every replay, so a spend summed
+    # from them read $0 for runs that cost dollars (setuplib: "~$7" said, $10.10 recorded).
+    usd: dict[str, float] = {}
+    for st in state["stages"]:
+        if isinstance(st.get("usd"), (int, float)):
+            usd[st["stage"]] = usd.get(st["stage"], 0.0) + st["usd"]
+    by_stage = ", ".join(f"{k} ${v:.2f}" for k, v in sorted(usd.items()))
+    print(f"spent ${sum(usd.values()):.2f} ({by_stage or 'nothing'})")
 
 
 def _module(arg: str) -> Path:
@@ -1468,7 +2038,43 @@ def _module(arg: str) -> Path:
     return p if p.is_absolute() or p.exists() else REPO / p
 
 
+def _hold(name: str):
+    """One `port` run per module at a time, across shells and sessions.
+
+    Two replays of setuplib once ran at once -- a background launch that looked dead was not --
+    and each rewrote the modules, the hand bank and the fix splices under the other. An
+    exclusive flock on the module's state dir; the second run fails at once and says so.
+    """
+    import fcntl
+
+    path = STATE_ROOT / name / ".lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    f = path.open("a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        f.close()
+        raise PortError(
+            f"another `rustconv port` run holds {name} ({path}); let it finish"
+        ) from None
+    return f
+
+
 def main(args) -> int:
+    if args.port_stage == "status":  # read-only: never waits on, or blocks, a running stage
+        return _main(args)
+    try:
+        held = _hold(getattr(args, "stem", None) or _module(args.module).resolve().name)
+    except PortError as e:
+        print(f"port: {e}", file=sys.stderr)
+        return 1
+    try:
+        return _main(args)
+    finally:
+        held.close()
+
+
+def _main(args) -> int:
     try:
         if args.port_stage == "derive":
             stage_derive(_module(args.module), args.target)
@@ -1477,8 +2083,13 @@ def main(args) -> int:
         elif args.port_stage == "scaffold":
             stage_scaffold(_module(args.module), args.target)
         elif args.port_stage == "translate":
+            if args.expand_macros:
+                tus = args.only or [Path(t).name for t in load_state(args.stem)["tus"]]
+                on = set_expand_macros(args.stem, tus)
+                print(f"translate: macros expanded in the C for {', '.join(on)}")
             spent, ran = stage_translate(
                 args.stem,
+                revisit=(args.only or None) if args.expand_macros else None,
                 model=args.model,
                 cost_cap=args.cost_cap,
                 only=args.only or [],
@@ -1505,6 +2116,14 @@ def main(args) -> int:
                     thinking="on",
                     escalate=True,
                 )
+        elif args.port_stage == "headers":
+            stage_headers(
+                args.stem,
+                model=args.model,
+                cost_cap=args.cost_cap,
+                dry_run=args.dry_run,
+                thinking=args.thinking,
+            )
         elif args.port_stage == "macros":
             stage_macros(
                 args.stem,
@@ -1526,6 +2145,11 @@ def main(args) -> int:
                 only=args.only,
                 dry_run=args.dry_run,
             )
+        elif args.port_stage == "hand":
+            if args.apply:
+                apply_hand(args.stem)
+            else:
+                stage_hand(args.stem, args.functions, drop=args.drop)
         elif args.port_stage == "integrate":
             stage_integrate(args.stem)
         elif args.port_stage == "resolve":
@@ -1549,6 +2173,23 @@ def add_parser(sub) -> None:
         q.add_argument("--target", default=None, help="CMake target, when there are several")
     for name in ("island", "integrate", "resolve", "check", "status"):
         stages.add_parser(name).add_argument("stem")
+    q = stages.add_parser("hand", help="bank hand-written functions so replays keep them")
+    q.add_argument("stem")
+    q.add_argument(
+        "functions", nargs="*", help="file.rs:Name, or file.rs:New=Old (from src/<stem>/)"
+    )
+    q.add_argument("--drop", action="store_true", help="forget these banked functions")
+    q.add_argument("--apply", action="store_true", help="re-apply every banked function")
+    q = stages.add_parser(
+        "headers",
+        help="translate the header inline functions the crate calls, through a TU that "
+        "includes each header (after resolve; replay keeps them)",
+    )
+    q.add_argument("stem")
+    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("--cost-cap", type=float, required=True)
+    q.add_argument("--dry-run", action="store_true")
+    q.add_argument("--thinking", choices=("on", "off"), default="off")
     q = stages.add_parser("macros", help="port the module's own C macros the crate calls")
     q.add_argument("stem")
     q.add_argument("-m", "--model", default="deepseek")
@@ -1586,6 +2227,12 @@ def add_parser(sub) -> None:
         ),
     )
     q.add_argument("--only", nargs="*", help="TU file names to limit the run to")
+    q.add_argument(
+        "--expand-macros",
+        action="store_true",
+        help="from now on, expand the module's own macros in the C of these TUs (--only, or "
+        "all); recorded in the state so replay keeps asking the bank the same question",
+    )
     q.add_argument("--dry-run", action="store_true")
     # mechanical: a faithful transliteration (C control flow and pointers kept), which is
     # what the placement and difftest oracles compare against -- and the only mode

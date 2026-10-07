@@ -61,7 +61,22 @@ class Resolution:
     pending: list[str] = field(default_factory=list)
 
 
+#: rustc found a VALUE where the code names a type: setuplib's `FILE_SYSTEM` typedef, after
+#: tree consensus had copied bugcodes.h's `FILE_SYSTEM: ULONG = 0x22` for the missing name.
+_VALUE_FOR_TYPE = re.compile(r"^expected type, found (?:constant|static|function) `(\w+)`")
+_TYPE_WORDS = ("cannot find type ", "cannot find struct, variant or union type ")
+
+
 def unresolved_names(crate: str, triple: str, workspace: Path, target_dir: Path) -> set[str]:
+    return set(unresolved(crate, triple, workspace, target_dir))
+
+
+def unresolved(crate: str, triple: str, workspace: Path, target_dir: Path) -> dict[str, set[str]]:
+    """Each name rustc cannot find -> the namespaces it was wanted in ("type" / "value").
+
+    The namespace matters: a missing TYPE is never satisfied by a constant that happens to
+    share its name, which is what name-only resolution did to `FILE_SYSTEM`.
+    """
     proc = subprocess.run(
         ["cargo", "check", "-p", crate, "--target", triple, "--message-format=json"],
         cwd=workspace,
@@ -69,7 +84,7 @@ def unresolved_names(crate: str, triple: str, workspace: Path, target_dir: Path)
         capture_output=True,
         text=True,
     )
-    names: set[str] = set()
+    names: dict[str, set[str]] = {}
     for line in proc.stdout.splitlines():
         try:
             msg = json.loads(line)
@@ -77,9 +92,14 @@ def unresolved_names(crate: str, triple: str, workspace: Path, target_dir: Path)
             continue
         if msg.get("reason") != "compiler-message":
             continue
-        m = _MISSING.match(str((msg.get("message") or {}).get("message") or ""))
+        text = str((msg.get("message") or {}).get("message") or "")
+        m = _MISSING.match(text)
         if m:
-            names.add(m.group(1))
+            ns = "type" if text.startswith(_TYPE_WORDS) else "value"
+            names.setdefault(m.group(1), set()).add(ns)
+        m = _VALUE_FOR_TYPE.match(text)
+        if m:
+            names.setdefault(m.group(1), set()).add("type")
     return names
 
 
@@ -273,7 +293,13 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
     (
         "win32macros_rust",
         "win32macros-rust",
-        (("", r"macro_rules!\s+([A-Za-z_]\w*)|^pub const ([A-Za-z_]\w*)"),),
+        (
+            (
+                "",
+                r"macro_rules!\s+([A-Za-z_]\w*)|^pub const ([A-Za-z_]\w*)"
+                r"|^pub (?:unsafe )?fn ([A-Za-z_]\w*)",
+            ),
+        ),
     ),
     (
         "strsafe_rust",

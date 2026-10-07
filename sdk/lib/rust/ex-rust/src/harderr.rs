@@ -488,9 +488,10 @@ pub unsafe extern "system" fn NtRaiseHardError(
             ExFreePoolWithTag(SafeParams as PVOID, TAG_ERR);
         }
 
-        *Response = SafeResponse;
-
-        Status
+        match ntkrnl_sys::probe::write_back(Response, SafeResponse) {
+            Ok(()) => Status,
+            Err(s) => s,
+        }
     } else {
         SafeParams = Parameters;
 
@@ -503,9 +504,10 @@ pub unsafe extern "system" fn NtRaiseHardError(
             &mut SafeResponse,
         );
 
-        *Response = SafeResponse;
-
-        Status
+        match ntkrnl_sys::probe::write_back(Response, SafeResponse) {
+            Ok(()) => Status,
+            Err(s) => s,
+        }
     }
 }
 

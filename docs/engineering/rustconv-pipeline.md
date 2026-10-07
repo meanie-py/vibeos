@@ -281,7 +281,8 @@ and before `crate-repair`: it is what makes the crate compile at all, and the ca
 stage's time and spend in `~/vibeos-rust-staging/port/<stem>/state.json` (`port status <stem>`
 prints it). Stages, in order: `derive <module-dir> [--target T]` (profile → the
 `gen_driver_types.sh` arm), `island`, `scaffold`, `translate --cost-cap $`, `integrate`,
-`resolve`, `macros`, `fix --cost-cap $`, `check`, and `replay` (all of them from the banks). Every
+`resolve`, `headers --cost-cap $`, `macros`, `fix --cost-cap $`, `check`, and `replay` (all of
+them from the banks), plus `hand` (bank a hand-written function). Every
 stage is idempotent; re-run any of them after a fix.
 
 - **`translate --escalate`** buys with DeepSeek thinking OFF (~1/40 of the output tokens on
@@ -388,12 +389,97 @@ initializer prints the typedef). `win32macros-rust` gained `ASSERT` (inert, type
 
 **`port replay <stem> [--fix-cap $]`** rebuilds the crate from every bank in order for $0:
 translate, resolve, macros, integrate, crate-repair, resolve AGAIN, crate-repair, fix, check.
+(Until 2026-10-06 it did not: `port replay` passes cap $0 and the translate loop stopped at the
+cap before the first TU, so every replay re-ran the later stages over whatever the files already
+held. A replay-only run now ignores the cap, and never takes the buying retry path.)
 resolve runs twice because rustc reports unresolved names only once nothing halts it: before
 crate-repair setuplib's resolve saw 5, after it 34. The three arches' `cargo check`s now run at
 once in separate target dirs (crate-repair and port alike); cargo locks a build dir whole, so
 sharing one serialised them. And crate-repair refuses an edit outside the crate it repairs: the
 truthiness rule followed a span into win32macros-rust and rewrote `IsRecognizedPartition` to
 suit setuplib.
+
+**Expand the module's own macros in the C, don't port them** (`port translate --only X.c
+--expand-macros`, recorded per TU in the port state; `translate --expand-local-macros DIR`).
+A C macro is untyped text; a `macro_rules!` body has one typing for every caller, and C's
+silent promotions differ per call site (`GetPartEntryOffsetInBytes` is `i64 * u32`). rustc then
+reports the error inside the macro body, away from the function that could fix it. Expanding
+before the seals means the model translates what the compiler sees, and crate-repair and
+`port fix` see each use in its context. Function-like macros and object-like aliases of a
+member or function expand; constants stay names for the seal. On partlist.c every macro-body
+error went away (11 -> 8, the rest being an island header and fn-pointer ABIs). Ten bodies
+re-bought, $0.20 with escalation. The C rule that matters: a macro is not re-expanded inside its
+own expansion (`#define SpInfFindFirstLine (SpInfExports.SpInfFindFirstLine)`).
+
+**`goto` has two sanctioned lowerings, and the dodge is refused.** Told "no goto", a
+thinking-on reply invented `goto_NoSystemPartition!()` shims, which nothing parsed or checked.
+The mechanical prompt now spells out both lowerings (a labeled block for a forward jump to a
+shared tail; a state variable plus `loop { match }` for jumps between several labels), and
+`c_body_checks` rejects a `goto_*` macro, call or nested fn at purchase, so the body escalates
+instead of shipping.
+
+### The setuplib residue, closed by tooling (2026-10-06)
+
+After `port fix`, setuplib's errors were a dozen distinct classes, few of them macros, so each
+went into a deterministic stage rather than a re-buy. Every one is general:
+
+- **Island:** a pack PUSH in a TU's prologue (`#include <pshpack1.h>`, popped after its own
+  typedefs) was copied into the merged wrapper and packed every later header -- 62 structs,
+  `USETUP_DATA` among them. `scan_preamble` drops packing includes. A TYPE the C reaches only
+  through an SDK header's own includes (`MOUNTDEV_NAME`, ddk/mountmgr.h via `<mountdev.h>`) is
+  now found by resolve in the include closure, added to the arm (kept in the port state across
+  re-derives as `island_headers`) and the island regenerated.
+- **resolve is namespace-aware.** A missing TYPE was satisfied by a same-named CONSTANT from
+  tree consensus (`FILE_SYSTEM` became bugcodes.h's `0x22`); `prelude_resolve.unresolved`
+  records type vs value, and E0573 "expected type, found constant" counts as a missing type.
+- **Calling conventions of DEFINED functions** come from clang (`align_definition_abis`): seven
+  NTAPI callbacks were defined `extern "C"`, a stack-imbalance on i386 that only showed as a
+  cast error at the install site.
+- **c2rust startup initialisers fold into their statics.** A static C cannot initialise at
+  compile time (`RTL_CONSTANT_STRING`) is zero-filled by c2rust and assigned in a
+  `.CRT$XIB` constructor; the preamble kept the zeros and dropped the constructor, so two
+  UNICODE_STRINGs shipped empty. `fold_static_initializers` moves each `NAME = EXPR;` into
+  NAME's initialiser (Rust evaluates it at compile time) and refuses any other store.
+- **crate-repair rules**, each C's own semantics: `option_fn_is_null` (`.is_null()` on an
+  `Option<fn>` is `.is_none()`), `local_shadows_constant` (C lets a local shadow an enumerator,
+  E0530; the local is renamed for the rest of its block), `sizeof_constant` (`size_of::<CONST>()`
+  -> `size_of_val(&CONST)`), `fn_item_cast` (drop c2rust's `f as extern "C" fn(..)` and let the
+  function coerce), `some_fn_item` (a function into an `Option<fn>` slot is `Some(f)`),
+  `option_fn_as_pointer` (an `Option<fn>` passed as PVOID maps None to NULL),
+  `variadic_promotion` (rustc's `as c_int`/`as c_uint` for a narrow argument to `...`),
+  `c_local_static_mut` (a C `static` holding a pointer), `pointer_double_negation` (`!!p`),
+  `zeroed_not_default` (`{0}` on a union struct), `raw_pointer_field` (C's `p->f` written `p.f`,
+  receiver found by hand because rustc's suggestion points into `CONTAINING_RECORD!`),
+  `unsigned_negative_literal` (`(ULONG)-1`), and `packed_field_ptr` also answers
+  `size_of_val(&packed.field)` without forming a reference. `option_fn_call` no longer needs
+  `fn(` in the message: rustc abbreviates long types to `Option<...>`. A repair pass that
+  applies nothing (every edit refused at write) now ends the session.
+- **resolve: c2rust's local types replace the model's twins.** The model collapses `typedef
+  struct _X {..} X;` into one `struct X` while c2rust's tables spell `_X`; the module's copy
+  shadowed the prelude's and they never unified. Resolve drops a module's definition of every
+  name it takes from c2rust, and fetches the typedef `X` with a tag `_X`.
+- **An invented success value is refused:** `c_body_checks.invented_flag_assignments` (purchase
+  and `port fix`) -- see the field manual's invented-values entry.
+- **CRT function-like macros** (`iswspace`..., `min`, `max`) are functions in win32macros-rust;
+  resolve skips function-like macros as externs, so nothing supplied them.
+- **`port fix` and dead C.** The fix model sees only the lines the build compiles, and a name
+  that appears only on never-compiled lines may be dropped (osdetect.c `#define`s NDEBUG and
+  then calls `DumpNTOSInstalls` under `#ifndef NDEBUG`).
+- **do-while + continue** joins goto: a prompt recipe (`loop { 'body: { .. break 'body; .. }
+  if !(c) { break; } }`) and a purchase-time reject using the lint's own detector.
+- **C-variadic definitions** have no deterministic stage yet; finish them by hand with
+  varargs-rust's `va_entry!` (a naked thunk defines the `...` export, no C file) and the
+  `rust-pullers` feature for `va_arg`, and bank them with `port hand`. The C-shim template is
+  the older pattern (syssetup retired its shim for this one).
+- **`port hand <stem> file.rs:Name[=Bought]`** banks a hand-written function so `replay` puts
+  it back; replay rebuilds every module from the banks and would otherwise erase the residue
+  a human finished. A banked function whose target vanished fails the replay, loudly, and fix
+never buys for a banked function.
+
+`vibeos-cli difftest` (and so the gate) now also runs a shared crate's own known-answer tests
+when its manifest sets `[package.metadata.difftest] host-tests = true` (win32macros-rust,
+strsafe-rust): nothing ran them, and the `as u8` crate-repair once wrote into
+`IsRecognizedPartition!` reached master with two of them failing.
 
 c2rust anchoring fixes the setuplib run forced, all in `c2rust_anchor.py`:
 `--preserve-unused-functions` (c2rust prunes an unused `static`, and liveness is per arch —
@@ -449,6 +535,43 @@ exercised. What changed, each a class rather than a site:
 - **Hand bodies.** `<crate>/hand/<Fn>.rs` is re-applied after every reassembly. Without it a
   `port replay` restores the banked body, and one that does not parse hides every type error
   in the crate: atapi's `AtaCreateIdeDirectory` hid 2,100.
+
+### `port headers`: header inline functions as units of the crate (2026-10-06)
+
+A function a HEADER defines (`FORCEINLINE`, `static inline`) is compiled privately into every
+includer, so no `.c` defines it and no crate exports it. resolve reports it as "defined nowhere
+in the tree", and the `macros` stage only reads headers inside the module directory. atapi's
+44 `AtaDev*` helpers live in `sdk/include/reactos/drivers/ata/identify_funcs.h` and were the
+largest block of its unresolved names. Now, after `resolve`:
+
+    rustconv port headers <stem> --cost-cap 0.50 [--dry-run]
+
+- **Discovery** asks each TU's own preprocessor (`clang -M`, via the borrowed compile command)
+  which headers it includes, then keeps the headers that define a name resolve still lists.
+  This works even when the CMakeLists does not list the TUs (a flipped or not-yet-wired module).
+  Only module headers and `sdk/include/reactos/**` are adopted. An inline in a platform header
+  (ddk/psdk/ndk) is reported as the `-sys` or shared crate's job, because one port there serves
+  every module. That is how `RtlStringCchPrintfExA` landed in `strsafe-rust`.
+- **`translate <header> --via <tu.c>`** translates the header's functions with every
+  compilation question answered by the via TU: the call seal's `-dM`, the constant probes and
+  the c2rust transpile (`macro_authority.register_via` / `flags_source`). c2rust's transpile
+  of a TU contains every inline function of the headers it includes, so header bodies are
+  anchored like any other.
+- **Output** is one module per header: `identify_funcs.h` becomes `src/<stem>/identify_funcs_h.rs`,
+  added to `lib.rs` (`wire_modules`, which also adds any later unit scaffold never listed).
+  The units are recorded in `state.json` `header_tus`, so `replay` and `fix` treat them as TUs
+  from then on.
+- **Linkage.** The scanner marks every function defined in a C header `static`. A
+  `__forceinline` is gnu_inline `extern __inline__` and emits no out-of-line copy, so the first
+  run's `#[no_mangle]` exports would have become a duplicate symbol once a second crate ported
+  the header. resolve's `promote_pub` makes them crate-visible.
+- **A case-only rename is not a missing body.** The model returned
+  `AtaDevIsReadLookAheadEnabled` for the C's `AtaDevIsReadLookAHeadEnabled`, and the stitcher
+  refused the whole header as "Planned Rust definitions absent". `restore_requested_name`
+  respells a definition that matches the requested C name ignoring case (exactly one, and no
+  exact match) on both fresh replies and bank hits, so the banked body replayed for $0.
+
+Cost: atapi's 44 helpers came to $0.06 on DeepSeek, thinking off.
 
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 

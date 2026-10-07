@@ -451,6 +451,30 @@ static void run_suite(const char *bindir, const char *suite,
          * almost always a loader failure (missing import). */
         DbgPrint("[APITEST-SWEEP] NOSUBTESTS %s (exit %d) first-line=%s\n",
                  suite, rc, ctx.FirstLine[0] ? ctx.FirstLine : "(no output)");
+        /* A binary with ONE test (the sdk delayimp apitests: no testlist, so no
+         * "Valid test names:" banner) does not list anything: it just RUNS, and
+         * the enumeration pass above swallowed every line of its result but the
+         * first. Run it once more with its output on the serial, so its
+         * failures are readable rather than an exit code. A loader failure
+         * printed nothing, and a usage banner is not a run. */
+        if (ctx.FirstLine[0] && strncmp(ctx.FirstLine, "Usage:", 6) != 0)
+        {
+            ZeroMemory(&ctx, sizeof(ctx));
+            ctx.Suite = suite;
+            ctx.Label = "";
+            ++*launched;
+            rc = run_child(bindir, suite, NULL, &ctx, PER_SUBTEST_TIMEOUT_MS);
+            if (rc == -1)
+                ++*failstart;
+            else if (rc == -2)
+            {
+                ++*timeouts;
+                DbgPrint("[APITEST-SWEEP] TIMEOUT %s (single test, %us) - terminated\n",
+                         suite, PER_SUBTEST_TIMEOUT_MS / 1000u);
+            }
+            else
+                DbgPrint("[APITEST-SWEEP] exit %s (single test) code=%d\n", suite, rc);
+        }
         return;
     }
 
