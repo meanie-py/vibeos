@@ -230,7 +230,7 @@ def test_the_models_type_twin_gives_way_to_c2rusts(tmp_path):
 
 def test_item_spans_find_types_statics_and_macros():
     text = (
-        "pub type POPEN = Option<unsafe extern \"system\" fn(a: u32)>;\n"
+        'pub type POPEN = Option<unsafe extern "system" fn(a: u32)>;\n'
         "#[macro_export]\nmacro_rules! DoesFileExist {\n    ($a:expr) => { f($a, TRUE) };\n}\n"
         "#[repr(C)]\npub struct S {\n    pub a: u32,\n}\n"
         "static mut T: [u32; 2] = [1, 2];\nfn g() {}\n"
@@ -250,7 +250,7 @@ def test_a_macro_name_inside_a_string_is_not_a_call():
     from rustconv.crate_integrate import fix_macro_calls
 
     src = (
-        'fn f() {\n    if SpInfFindFirstLine(a, b) == 0 {\n'
+        "fn f() {\n    if SpInfFindFirstLine(a, b) == 0 {\n"
         '        DPRINT1(b"SpInfFindFirstLine(\\"x\\") failed\\n\\0");\n'
         "    } // SpInfFindFirstLine(old)\n}\n"
     )
@@ -285,3 +285,14 @@ def test_an_initguid_tu_is_lowered_from_its_header(tmp_path, monkeypatch):
     assert out is not None and "Data1: 0xC12A7328" in out and "0xC9, 0x3B]" in out
     tu.write_text("#define INITGUID\n#include <diskguid.h>\nint x;\n")
     assert port.initguid_module(tu) is None, "real code goes to translate"
+
+
+def test_split_top_keeps_fn_pointer_types_whole():
+    got = port._split_top(
+        'a: u32, cb: Option<unsafe extern "C" fn(x: i32, y: u8) -> u32>, z: *mut u16'
+    )
+    assert got == [
+        "a: u32",
+        'cb: Option<unsafe extern "C" fn(x: i32, y: u8) -> u32>',
+        "z: *mut u16",
+    ]

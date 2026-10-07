@@ -903,6 +903,16 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     for path in prelude_resolve.refresh_shared_crates(crate, workspace):
         print(f"resolve: refreshed the `{path}` re-export list")
     type_names = [n for n in res.undefined if n in types_only]
+    # A constant the tree defines only as an expression (`CTL_CODE(..)`), or with values that
+    # disagree, is the clang probe's question too: it reads the C's own definition.
+    # usetup's IOCTL_CONSOLE_* were reported "no literal definition" and dropped.
+    const_split = [
+        n
+        for n, why in res.conflicting.items()
+        if why == "no literal definition" or why.endswith("different values")
+    ]
+    evaluated_split = set(const_split) - set(_resolve_facts(state, prelude, const_split))
+    res.conflicting = {k: v for k, v in res.conflicting.items() if k not in evaluated_split}
     res.undefined = (
         _resolve_facts(state, prelude, [n for n in res.undefined if n not in types_only])
         + type_names
@@ -1122,36 +1132,63 @@ def align_definition_abis(state: dict) -> dict[str, list[str]]:
 _PRIMITIVE_RET = re.compile(r"^(?:[iu](?:8|16|32|64|size)|bool|\(\))$")
 
 
+def _split_top(params: str) -> list[str]:
+    out, depth, cur = [], 0, ""
+    for i, ch in enumerate(params):
+        if ch == ">" and i and params[i - 1] == "-":
+            cur += ch  # the `->` of a fn-pointer type, not a closing angle bracket
+            continue
+        depth += {"(": 1, "<": 1, "[": 1, ")": -1, ">": -1, "]": -1}.get(ch, 0)
+        if ch == "," and depth == 0:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        out.append(cur)
+    return [p.strip() for p in out if p.strip()]
+
+
 def align_definition_returns(state: dict) -> dict[str, list[str]]:
-    """Give a crate-defined function the RETURN TYPE its C prototype names.
+    """Give a crate-defined function the signature its C prototype names.
 
     diskpart's command table is `EXIT_CODE (*func)(INT, PWSTR*)` and every `*_main` returns
     EXIT_CODE, an enum bindgen makes `u32`; the model wrote `-> i32` for all of them and the
     table failed 31 times (E0308, fn item vs fn pointer). The prototype is the authority:
     c2rust reads it from a TU that only DECLARES the function (one that defines it gives no
-    prototype). Only a primitive the model chose is replaced, and only by a named C type.
+    prototype). A function only ever CALLED has its primitive return replaced by the named
+    C type; one used as a VALUE (a callback: usetup's GetSettingDescription took `usize`
+    where the slot says ULONG) takes the prototype's parameter and return types whole, since
+    a function pointer must match exactly and only the declaration can say what it is.
     """
     from . import c2rust_anchor
 
     modules = _crate_dir(state) / "src" / state["stem"]
-    rets: dict[str, tuple[Path, str]] = {}
-    for path in sorted(modules.glob("*.rs")):
-        text = path.read_text()
+    texts = {p: p.read_text() for p in sorted(modules.glob("*.rs"))}
+    every = "\n".join(texts.values())
+    defs: dict[str, tuple[Path, str, str | None]] = {}  # name -> (file, params, ret)
+    for path, text in texts.items():
         for m in re.finditer(r"\bfn\s+([A-Za-z_]\w*)\s*\(", text):
             depth, i = 1, m.end()
             while i < len(text) and depth:
                 depth += {"(": 1, ")": -1}.get(text[i], 0)
                 i += 1
-            r = re.match(r"\s*->\s*([^{;]+?)\s*\{", text[i:])
-            if r and _PRIMITIVE_RET.match(r.group(1)):
-                rets[m.group(1)] = (path, r.group(1))
+            r = re.match(r"\s*(?:->\s*([^{;]+?)\s*)?\{", text[i:])
+            if r:
+                defs[m.group(1)] = (path, text[m.end() : i - 1], r.group(1))
+    callbacks = {n for n in defs if re.search(rf"(?<!fn )\b{re.escape(n)}\b(?!\s*[(!:])", every)}
+    wanted = {
+        n
+        for n, (_, _, ret) in defs.items()
+        if n in callbacks or (ret is not None and _PRIMITIVE_RET.match(ret))
+    }
     # Only names a module HEADER declares: a `static` function has no prototype for c2rust
     # to find, and asking every TU about it costs a c2rust run per TU per arch (usetup's
     # replay spent most of an hour here).
     headers = " ".join(
         h.read_text(errors="replace") for h in (REPO / state["module_dir"]).rglob("*.h")
     )
-    todo = {n for n in rets if re.search(rf"\b{re.escape(n)}\s*\(", headers)}
+    todo = {n for n in wanted if re.search(rf"\b{re.escape(n)}\s*\(", headers)}
     proto: dict[str, str] = {}
     for tu in state["tus"]:
         if not todo:
@@ -1166,26 +1203,43 @@ def align_definition_returns(state: dict) -> dict[str, list[str]]:
             found = c2rust_anchor.extern_signatures(REPO / tu, ask)
         except c2rust_anchor.C2RustError:
             continue
-        for name, sig in found.items():
-            r = re.search(r"\)\s*->\s*([A-Za-z_]\w*)\s*;$", sig)
-            if r and not _PRIMITIVE_RET.match(r.group(1)):
-                proto[name] = r.group(1)
+        proto.update(found)
         todo -= set(found)
     changed: dict[str, list[str]] = {}
-    for name, ret in sorted(proto.items()):
-        path, old = rets[name]
-        text = path.read_text()
-        new = re.sub(
-            rf"(\bfn\s+{re.escape(name)}\s*\((?:[^()]|\([^()]*\))*\)\s*->\s*){re.escape(old)}(\s*\{{)",
-            rf"\g<1>{ret}\g<2>",
+    for name, sig in sorted(proto.items()):
+        path, params, ret = defs[name]
+        m = re.match(r"fn\s+\w+\s*\((.*)\)\s*(?:->\s*(.+?))?\s*;$", sig.strip(), re.S)
+        if m is None:
+            continue
+        c_params, c_ret = _split_top(m.group(1)), m.group(2)
+        new_params, new_ret = params, ret
+        if name in callbacks:
+            rust = _split_top(params)
+            if len(rust) == len(c_params) and all(":" in p for p in rust + c_params):
+                new_params = ", ".join(
+                    f"{r.split(':', 1)[0].strip()}: {c.split(':', 1)[1].strip()}"
+                    for r, c in zip(rust, c_params, strict=True)
+                )
+            new_ret = c_ret
+        elif c_ret and re.fullmatch(r"[A-Za-z_]\w*", c_ret) and not _PRIMITIVE_RET.match(c_ret):
+            new_ret = c_ret
+        if (new_params, new_ret) == (params, ret):
+            continue
+        text = texts[path]
+        head = re.search(
+            rf"\bfn\s+{re.escape(name)}\s*\({re.escape(params)}\)\s*(?:->\s*{re.escape(ret)}\s*)?\{{"
+            if ret is not None
+            else rf"\bfn\s+{re.escape(name)}\s*\({re.escape(params)}\)\s*\{{",
             text,
-            count=1,
         )
-        if new != text:
-            path.write_text(new)
-            changed.setdefault(path.name, []).append(name)
+        if head is None:
+            continue
+        tail = f" -> {new_ret} {{" if new_ret else " {"
+        texts[path] = text[: head.start()] + f"fn {name}({new_params}){tail}" + text[head.end() :]
+        path.write_text(texts[path])
+        changed.setdefault(path.name, []).append(name)
     for fname, fns in sorted(changed.items()):
-        print(f"resolve: {fname}: return type set from the C prototype for {', '.join(fns)}")
+        print(f"resolve: {fname}: signature set from the C prototype for {', '.join(fns)}")
     return changed
 
 
