@@ -114,6 +114,11 @@ _CONST = r"^[ \t]*pub[ \t]+const[ \t]+{n}[ \t]*:[^=;]+=[^;]+;"
 _TYPE = r"^[ \t]*pub[ \t]+type[ \t]+{n}[ \t]*=[^;]+;"
 
 
+def is_test_source(rel: str) -> bool:
+    """A test harness file (`tests/`, a `*-difftest` crate): never tree consensus."""
+    return "/tests/" in f"/{rel}" or bool(re.search(r"(?:^|/)[\w-]*-difftest/", rel))
+
+
 def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str, list[Item]]:
     """Every tracked definition of each name: consts, type aliases, extern fn decls."""
     if not names:
@@ -130,11 +135,17 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
         path = workspace / rel
         if exclude in path.parents or "/target/" in rel:
             continue
+        # Test harnesses are not the tree's declarations: diskpart got `_wfopen` and `fgetws`
+        # from msvcrt-difftest/tests/file.rs, typed with that file's private `FILEP`.
+        if is_test_source(rel):
+            continue
         try:
             src = path.read_text(errors="replace")
         except OSError:
             continue
-        present = {n for n in names if re.search(rf"\b{re.escape(n)}\b", src)}
+        # One identifier scan per file, not one regex per name: with 544 unresolved names
+        # over the tree that loop was a 40-minute CPU stall inside `port replay`.
+        present = names & set(re.findall(r"[A-Za-z_]\w*", src))
         for n in present:
             for kind, pat in (("const", _CONST), ("type", _TYPE)):
                 for m in re.finditer(pat.format(n=re.escape(n)), src, re.M):
@@ -144,7 +155,45 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
                 m = re.search(r"\bfn\s+([A-Za-z_]\w*)\s*\(", decl)
                 if m and m.group(1) in present:
                     found[m.group(1)].append(Item("fn", _norm(decl), abi, rel))
+        for name, decl, abi in exported_definitions(src, present):
+            found[name].append(Item("fn", _norm(decl), abi, rel))
     return found
+
+
+_EXPORTED_FN = re.compile(
+    r"#\[no_mangle\]\s*(?:#\[[^\]]*\]\s*)*pub\s+(?:unsafe\s+)?extern\s+\"(\w+)\"\s+fn\s+"
+    r"([A-Za-z_]\w*)\s*\("
+)
+
+
+def exported_definitions(src: str, names: set[str]) -> list[tuple[str, str, str]]:
+    """``(name, extern decl, abi)`` for each ``#[no_mangle]`` Rust DEFINITION of a wanted name.
+
+    A module that links a library already ported to Rust calls functions the tree only
+    DEFINES: usetup imports setuplib.dll, whose 52 exports are bodies in setuplib-rust, and
+    resolve found "no definition" for every one of them (it read only extern blocks). The
+    exported definition is the symbol itself, so its signature and ABI are the declaration.
+    """
+    out = []
+    for m in _EXPORTED_FN.finditer(src):
+        abi, name = m.group(1), m.group(2)
+        if name not in names:
+            continue
+        depth, i = 1, m.end()
+        while i < len(src) and depth:
+            depth += {"(": 1, ")": -1}.get(src[i], 0)
+            i += 1
+        params = src[m.end() : i - 1]
+        ret = re.match(r"\s*(->\s*[^{]+?)\s*(?:where\b[^{]*)?\{", src[i:])
+        if ret is None and not re.match(r"\s*\{", src[i:]):
+            continue
+        # A binding pattern (`mut x: T`) is not allowed in a foreign declaration.
+        params = re.sub(r"(^|,)(\s*)mut\s+(?=[A-Za-z_]\w*\s*:)", r"\1\2", params)
+        tail = f" {ret.group(1).strip()}" if ret else ""
+        # Quoted, as extern_block_spans gives it: render writes `extern {abi} {`, and a bare
+        # `C` there is a parse error that hid every name in diskpart (4,867 errors).
+        out.append((name, f"pub fn {name}({params.strip()}){tail};", f'"{abi}"'))
+    return out
 
 
 _INT = re.compile(
@@ -173,9 +222,12 @@ def _abi_class(abi: str | None) -> str:
 def _placeholder_decl(item: Item) -> bool:
     """`fn NtClose(_: usize);` -- a link-only stub some crates keep. Not evidence of a signature."""
     params = re.search(r"\((.*)\)", item.text)
-    return bool(params) and all(
-        re.fullmatch(r"\s*_\s*:\s*usize\s*", p) for p in params.group(1).split(",") if p.strip()
-    )
+    if params is None:
+        return False
+    parts = [p for p in params.group(1).split(",") if p.strip()]
+    # A function with NO parameters is not a placeholder: `all([])` called usetup's
+    # CreatePartitionList() one, and every zero-argument extern was discarded as "mixed".
+    return bool(parts) and all(re.fullmatch(r"\s*_\s*:\s*usize\s*", p) for p in parts)
 
 
 def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:

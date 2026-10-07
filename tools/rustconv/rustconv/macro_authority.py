@@ -434,6 +434,33 @@ def string_literal_macros(repo_root: Path, source: Path) -> dict[str, dict[str, 
 
 
 @lru_cache(maxsize=64)
+def identifier_aliases(repo_root: Path, source: Path) -> dict[str, str]:
+    """`{NAME: TARGET}` for each object-like macro whose whole value is one identifier,
+    the same on every built arch, from the TU's OWN compile command.
+
+    The SDK's A/W switch: `#define GetModuleHandle GetModuleHandleW` under UNICODE. A
+    translation calls `GetModuleHandle` as the C spells it, and only the preprocessor of the
+    real build knows which function that is (diskpart: 22 calls left unresolved).
+    """
+    per_arch: list[dict[str, str]] = []
+    for arch in _ARCHES:
+        argv = _compile_entry(repo_root, arch, source)
+        if argv is None:
+            continue
+        try:
+            dump = _preprocess_defines(argv)
+        except MacroAuthorityError:
+            continue
+        per_arch.append(dict(re.findall(r"^#define ([A-Za-z_]\w*) ([A-Za-z_]\w*)\s*$", dump, re.M)))
+    if not per_arch:
+        return {}
+    agreed = per_arch[0]
+    for other in per_arch[1:]:
+        agreed = {k: v for k, v in agreed.items() if other.get(k) == v}
+    return agreed
+
+
+@lru_cache(maxsize=64)
 def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
     """Every `#define NAME(...)` visible to ``source``, unioned over built arches.
 

@@ -167,6 +167,44 @@ def test_a_replay_reassembles_every_tu_and_never_buys(tmp_path, monkeypatch):
     assert all("--replay-only" in c and "--rebuy-rejected" not in c for c in runs)
 
 
+def test_a_dry_run_estimates_every_tu_at_cost_cap_zero(tmp_path, monkeypatch):
+    import subprocess
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    monkeypatch.setattr(port, "_arch_only_tus", lambda state, tus: {})
+    tus = ["m/a.c", "m/b.c"]
+    for tu in tus:
+        (tmp_path / tu).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / tu).write_text("int f(void) { return 0; }\n")
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    state = {"stem": "m", "crate": "m-rust", "module_dir": "m", "tus": tus, "stages": []}
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    runs: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        runs.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(port.subprocess, "run", fake_run)
+    port.stage_translate("m", model="deepseek", cost_cap=0.0, only=[], dry_run=True)
+    assert len(runs) == 2 and all("--dry-run" in c for c in runs)
+
+
+def test_base_header_case_constants_are_recorded_not_blocking():
+    from rustconv import profile_derive as pd
+
+    from types import SimpleNamespace
+
+    dp = SimpleNamespace(
+        errors=[
+            pd.Finding("error", "SWITCH_CONST_IN_BASE_HEADER", "`STD_INPUT_HANDLE` is owned"),
+            pd.Finding("error", "SWITCH_CONST_IN_BASE_HEADER", "`STATUS_X` is owned"),
+        ]
+    )
+    assert port.switch_facts(dp) == ["STATUS_X", "STD_INPUT_HANDLE"]  # type: ignore[arg-type]
+
+
 def test_a_second_port_run_on_one_module_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(port, "STATE_ROOT", tmp_path)
     first = port._hold("m")
@@ -192,7 +230,7 @@ def test_the_models_type_twin_gives_way_to_c2rusts(tmp_path):
 
 def test_item_spans_find_types_statics_and_macros():
     text = (
-        "pub type POPEN = Option<unsafe extern \"system\" fn(a: u32)>;\n"
+        'pub type POPEN = Option<unsafe extern "system" fn(a: u32)>;\n'
         "#[macro_export]\nmacro_rules! DoesFileExist {\n    ($a:expr) => { f($a, TRUE) };\n}\n"
         "#[repr(C)]\npub struct S {\n    pub a: u32,\n}\n"
         "static mut T: [u32; 2] = [1, 2];\nfn g() {}\n"
@@ -212,10 +250,73 @@ def test_a_macro_name_inside_a_string_is_not_a_call():
     from rustconv.crate_integrate import fix_macro_calls
 
     src = (
-        'fn f() {\n    if SpInfFindFirstLine(a, b) == 0 {\n'
+        "fn f() {\n    if SpInfFindFirstLine(a, b) == 0 {\n"
         '        DPRINT1(b"SpInfFindFirstLine(\\"x\\") failed\\n\\0");\n'
         "    } // SpInfFindFirstLine(old)\n}\n"
     )
     out, fixed = fix_macro_calls(src, {"SpInfFindFirstLine", "DPRINT1"}, set())
     assert "if SpInfFindFirstLine!(a, b)" in out and "DPRINT1!(" in out
     assert 'b"SpInfFindFirstLine(\\"x\\")' in out and "// SpInfFindFirstLine(old)" in out
+
+
+def test_seeded_switch_facts_already_in_the_prelude_pass(tmp_path, monkeypatch):
+    prelude = tmp_path / "prelude.rs"
+    prelude.write_text("")
+    monkeypatch.setattr(port, "_resolve_facts", lambda state, p, names: names)
+    monkeypatch.setattr(
+        port.prelude_resolve, "existing_facts", lambda p: {"STD_INPUT_HANDLE": ("DWORD", 1, "x")}
+    )
+    port._seed_switch_facts({"switch_facts": ["STD_INPUT_HANDLE"]}, prelude)
+    with pytest.raises(port.PortError):
+        port._seed_switch_facts({"switch_facts": ["STD_INPUT_HANDLE", "MISSING_X"]}, prelude)
+
+
+def test_an_initguid_tu_is_lowered_from_its_header(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    inc = tmp_path / "sdk" / "include" / "psdk"
+    inc.mkdir(parents=True)
+    (inc / "diskguid.h").write_text(
+        "DEFINE_GUID(PARTITION_SYSTEM_GUID, 0xC12A7328, 0xF81F, 0x11D2, 0xBA, 0x4B, 0x00, "
+        "0xA0, 0xC9, 0x3E, 0xC9, 0x3B);    // EFI\n"
+    )
+    tu = tmp_path / "guid.c"
+    tu.write_text("/* x */\n#define INITGUID\n#include <guiddef.h>\n#include <diskguid.h>\n")
+    out = port.initguid_module(tu)
+    assert out is not None and "Data1: 0xC12A7328" in out and "0xC9, 0x3B]" in out
+    tu.write_text("#define INITGUID\n#include <diskguid.h>\nint x;\n")
+    assert port.initguid_module(tu) is None, "real code goes to translate"
+
+
+def test_split_top_keeps_fn_pointer_types_whole():
+    got = port._split_top(
+        'a: u32, cb: Option<unsafe extern "C" fn(x: i32, y: u8) -> u32>, z: *mut u16'
+    )
+    assert got == [
+        "a: u32",
+        'cb: Option<unsafe extern "C" fn(x: i32, y: u8) -> u32>',
+        "z: *mut u16",
+    ]
+
+
+def test_flip_comments_each_tu_and_links_the_archive(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    (tmp_path / "m").mkdir()
+    state = {
+        "stem": "m",
+        "crate": "m-rust",
+        "target": "m",
+        "module_dir": "m",
+        "tus": ["m/a.c", "m/sub/b.c"],
+    }
+    cml = "list(APPEND SOURCE\n    a.c\n    sub/b.c\n    m.h)\n\nadd_executable(m ${SOURCE} m.rc)\nset_module_type(m win32cui)\n"
+    out = port.flip_cmake(cml, state)
+    assert "    # a.c  # replaced by Rust (sdk/lib/rust/m-rust/src/m/a.rs)" in out
+    assert "    # sub/b.c  # replaced by Rust (sdk/lib/rust/m-rust/src/m/b.rs)" in out
+    assert "    rust_cohab_stub.c\n    m.h)" in out
+    assert 'rust_staticlib_variant(m_rust m-rust "" TRUE)\nadd_executable(m' in out
+    assert "m.rc)\nadd_dependencies(m rust_m_rust)\ntarget_link_libraries(m ${m_rust_LIB})\n" in out
+    assert port.flip_cmake(out, state) == out, "idempotent"
+    import pytest as _pytest
+
+    with _pytest.raises(port.PortError):
+        port.flip_cmake(cml.replace("    a.c\n", ""), state)

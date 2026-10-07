@@ -113,10 +113,44 @@ def derive(module_dir: Path, target: str | None, arch: str = "i386") -> pd.Deriv
         if "already flipped" not in str(e):
             raise
         dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target, flipped_sources=True)
-    if dp.errors:
-        lines = "\n".join(str(f) for f in dp.errors)
+    blocking = [f for f in dp.errors if f.code != "SWITCH_CONST_IN_BASE_HEADER"]
+    if blocking:
+        lines = "\n".join(str(f) for f in blocking)
         raise PortError(f"profile_derive reports BLOCKING errors -- fix these first:\n{lines}")
     return dp
+
+
+def switch_facts(dp: pd.DerivedProfile) -> list[str]:
+    """Case-label constants a BASE header owns and the -sys crate lacks.
+
+    The fix profile_derive asks for is transcribing each into the prelude, and that is
+    mechanical: scaffold has clang evaluate them (`_resolve_facts`), so a translated
+    `STD_INPUT_HANDLE =>` arm names a constant instead of binding everything. resolve cannot
+    find these on its own -- an unknown name in a pattern is a binding, not an error.
+    """
+    return sorted(
+        m.group(1)
+        for f in dp.errors
+        if f.code == "SWITCH_CONST_IN_BASE_HEADER"
+        for m in [re.search(r"`(\w+)`", f.detail)]
+        if m
+    )
+
+
+def _seed_switch_facts(state: dict, prelude: Path) -> None:
+    names = state.get("switch_facts", [])
+    if not names or not prelude.is_file():
+        return
+    _resolve_facts(state, prelude, names)
+    # Judged by the facts block itself: `_resolve_facts` hands back its input untouched when
+    # every name is already there, which read as "could not evaluate" on the second run.
+    left = set(names) - set(prelude_resolve.existing_facts(prelude))
+    if left:
+        raise PortError(
+            f"clang could not evaluate case-label constant(s) {', '.join(sorted(left))}: "
+            "an unresolved name in a match arm binds everything -- transcribe them into "
+            f"{prelude} by hand"
+        )
 
 
 def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
@@ -128,6 +162,15 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
     if not arm.lstrip().startswith(f"{stem})") and "|" not in arm.split(")", 1)[0]:
         raise PortError(f"derived arm is not labelled {stem!r}:\n{arm[:200]}")
     script = GEN.read_text()
+    prior = load_state(stem)
+    if "real_unions" not in prior:
+        # Decided ONCE, when port first writes the arm: a crate nothing has compiled against
+        # yet takes real Rust unions. usetup's bodies read `Event.KeyEvent.uChar` as the C
+        # does, and against `__BindgenUnionField` that was 150 of its 422 errors. A crate
+        # whose arm predates port keeps the emulation its translations already call.
+        prior["real_unions"] = not re.search(rf"^  {re.escape(stem)}\)\n", script, re.M)
+    if prior["real_unions"] and "REAL_UNIONS=1" not in arm:
+        arm = re.sub(r"^(    USERMODE=1)$", r"\1\n    REAL_UNIONS=1", arm, count=1, flags=re.M)
     updated = upsert_profile_arm(script, arm, stem)
     if updated != script:
         GEN.write_text(updated)
@@ -139,6 +182,15 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
         # Never the rust_*.c cohab scaffolding a flipped module's re-derive also lists.
         tus=[str(p.relative_to(REPO)) for p in dp.module.compiled_tus if not pd.is_shim_tu(p)],
         usermode=dp.module.is_usermode,
+        switch_facts=switch_facts(dp),
+        switch_enums=sorted(
+            m.group(1)
+            for f in dp.findings
+            if f.code == "SWITCH_CONST_ENUM_PREFIXED"
+            for m in [re.search(r"`(\w+)`", f.detail)]
+            if m
+        ),
+        real_unions=prior["real_unions"],
     )
     _record(
         state, "derive", started, tus=len(dp.module.compiled_tus), arm_changed=updated != script
@@ -308,6 +360,7 @@ def stage_scaffold(module_dir: Path, target: str | None) -> None:
     kept: list[Path] = []
     written = pd.scaffold_crate(dp, _crate_dir(state), force=False, kept=kept)
     member = add_workspace_member(state["crate"])
+    _seed_switch_facts(state, _crate_dir(state) / "src" / "prelude.rs")
     _record(state, "scaffold", started, written=len(written), kept=len(kept), member_added=member)
     print(
         f"scaffold: {len(written)} file(s) written, {len(kept)} kept, into {_crate_dir(state)}"
@@ -373,6 +426,74 @@ def set_expand_macros(stem: str, tus: list[str]) -> list[str]:
     return state["expand_macros"]
 
 
+_DEFINE_GUID_RE = re.compile(
+    r"^\s*DEFINE_GUID\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)\s*,\s*(0x[0-9A-Fa-f]+)\s*,"
+    r"\s*(0x[0-9A-Fa-f]+)\s*,((?:\s*0x[0-9A-Fa-f]+\s*,?){8})\)",
+    re.M,
+)
+
+
+def initguid_module(c_path: Path) -> str | None:
+    """Rust for a TU that only instantiates GUIDs (`#define INITGUID` + includes), else None.
+
+    diskpart's guid.c is three lines -- `#define INITGUID`, `<guiddef.h>`, `<diskguid.h>` --
+    which define storage for every DEFINE_GUID in the headers. There is nothing for a model
+    to translate (translate found 0 functions and left the module missing), and the values
+    are data the header states exactly, so they are lowered here for $0.
+    """
+    text = re.sub(r"/\*.*?\*/|//[^\n]*", "", c_path.read_text(errors="replace"), flags=re.S)
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if "#define INITGUID" not in lines:
+        return None
+    includes = []
+    for ln in lines:
+        m = re.match(r"#\s*include\s*[<\"]([^>\"]+)[>\"]", ln)
+        if m:
+            includes.append(m.group(1))
+        elif ln != "#define INITGUID":
+            return None  # anything else is real code: translate it
+    guids: dict[str, str] = {}
+    for inc in includes:
+        if Path(inc).name == "guiddef.h":
+            continue
+        hits = sorted((REPO / "sdk" / "include").rglob(Path(inc).name))
+        hits = [h for h in hits if "/host/" not in str(h)]
+        if len(hits) != 1:
+            raise PortError(f"{c_path.name}: cannot place <{inc}> ({len(hits)} candidates)")
+        for m in _DEFINE_GUID_RE.finditer(hits[0].read_text(errors="replace")):
+            name, d1, d2, d3, tail = m.groups()
+            d4 = ", ".join(re.findall(r"0x[0-9A-Fa-f]+", tail))
+            # #[no_mangle]: guid.c DEFINES these with external linkage, and the island
+            # declares them `extern` (DEFINE_GUID without INITGUID), so a mangled static
+            # left every reference undefined at link.
+            guids[name] = (
+                f"#[no_mangle]\npub static {name}: GUID = GUID {{ Data1: {d1}, Data2: {d2}, "
+                f"Data3: {d3}, Data4: [{d4}] }};"
+            )
+    if not guids:
+        raise PortError(f"{c_path.name}: INITGUID TU whose headers define no GUID")
+    head = (
+        f"// {c_path.name}: INITGUID storage for {', '.join(includes)}, lowered from the "
+        "headers' DEFINE_GUID lines by `rustconv port translate` ($0).\n"
+        "use crate::prelude::*;\n\n"
+    )
+    return head + "\n".join(guids[n] for n in guids) + "\n"
+
+
+def failing_audit_tus(state: dict) -> list[str]:
+    """TU file names whose latest translate log says a banked body fails the audit."""
+    out = []
+    for tu in state["tus"]:
+        stem = Path(tu).stem
+        logs = sorted(
+            (STATE_ROOT / state["stem"]).glob(f"translate-{stem}-thinking-*.log"),
+            key=lambda p: p.stat().st_mtime,
+        )
+        if logs and "banked body FAILS the current audit" in logs[-1].read_text(errors="replace"):
+            out.append(Path(tu).name)
+    return out
+
+
 def stage_translate(
     stem: str,
     *,
@@ -427,12 +548,21 @@ def stage_translate(
     # A header compiles as its via TU does, so it is anchored on that TU's arch.
     arch_only.update({t: arch_only[vias[t]] for t in todo if vias.get(t) in arch_only})
     for tu in todo:
+        lowered = initguid_module(REPO / tu)
+        if lowered is not None:
+            out = _tu_output(state, tu)
+            if not dry_run:
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_text(lowered)
+            print(f"translate: {Path(tu).name}: INITGUID storage lowered ($0)")
+            continue
         left = cost_cap - spent
         # A replay-only run never buys, so the cap cannot stop it. It used to: `port replay`
         # passes cap 0, and every replay ever run broke out here before the first TU and
         # reassembled nothing -- each "rebuild from the banks" re-ran resolve/repair/fix over
         # whatever the files already held.
-        if left <= 0 and not replay_only:
+        # Nor a dry run: it is how you learn what the cap should BE, and it buys nothing.
+        if left <= 0 and not (replay_only or dry_run):
             print(
                 f"translate: cost cap ${cost_cap:.2f} reached; {len(todo) - len(done)} TU(s) left"
             )
@@ -633,6 +763,98 @@ def apply_hand_bodies(crate: Path, stem: str) -> list[str]:
         else:
             raise PortError(f"hand/{override.name}: no module of {stem} defines `fn {name}`")
     return applied
+
+
+def flip_cmake(cml: str, state: dict) -> str:
+    """The module's CMakeLists with every translated TU replaced by the Rust staticlib.
+
+    The cohab flip, as setuplib, usetup and diskpart all did it by hand: each TU's source line
+    is commented out naming its `.rs` (the C stays on disk), a one-line stub TU keeps the
+    target non-empty, and the target links `rust_staticlib_variant`'s archive. Idempotent; a
+    TU missing from the source list is an error, never a skip.
+    """
+    stem, crate, target = state["stem"], state["crate"], state["target"]
+    module = REPO / state["module_dir"]
+    lines = cml.split("\n")
+    last = None
+    for tu in state["tus"]:
+        rel = str((REPO / tu).relative_to(module))
+        rs = _tu_output(state, tu).relative_to(REPO)
+        pat = re.compile(rf"^(\s*){re.escape(rel)}(\s*\)?)\s*$")
+        hit = next((i for i, ln in enumerate(lines) if pat.match(ln)), None)
+        if hit is None:
+            if any(re.match(rf"^\s*#\s*{re.escape(rel)}\b", ln) for ln in lines):
+                last = max(
+                    last or 0,
+                    next(
+                        i
+                        for i, ln in enumerate(lines)
+                        if re.match(rf"^\s*#\s*{re.escape(rel)}\b", ln)
+                    ),
+                )
+                continue  # already flipped
+            raise PortError(f"flip: {rel} is not in {module}/CMakeLists.txt's source lists")
+        m = pat.match(lines[hit])
+        assert m is not None
+        lines[hit] = f"{m.group(1)}# {rel}  # replaced by Rust ({rs}){m.group(2).rstrip()}"
+        if m.group(2).strip():  # the `)` closing the list rode on this line: keep it live
+            lines[hit] = f"{m.group(1)}# {rel}  # replaced by Rust ({rs})\n{m.group(1)})"
+        last = max(last or 0, hit)
+    text = "\n".join(lines)
+    if "rust_cohab_stub.c" not in text and last is not None:
+        lines = text.split("\n")
+        indent = re.match(r"^(\s*)", lines[last]).group(1)  # type: ignore[union-attr]
+        lines.insert(last + 1, f"{indent}rust_cohab_stub.c")
+        text = "\n".join(lines)
+    variant = f"{stem}_rust"
+    if f"rust_staticlib_variant({variant} " not in text:
+        add = re.search(rf"^add_(?:executable|library)\(\s*{re.escape(target)}\b", text, re.M)
+        if add is None:
+            raise PortError(f"flip: no add_executable/add_library({target}) in the CMakeLists")
+        depth, i = 0, text.index("(", add.start())
+        while i < len(text):
+            depth += {"(": 1, ")": -1}.get(text[i], 0)
+            if depth == 0 and text[i] == ")":
+                break
+            i += 1
+        end = text.index("\n", i) + 1 if "\n" in text[i:] else len(text)
+        head = (
+            f"# Every translation unit is Rust now ({crate}, `rustconv port`); the C stays on\n"
+            f"# disk. The target keeps a stub TU and links the Rust archive.\n"
+            f'rust_staticlib_variant({variant} {crate} "" TRUE)\n'
+        )
+        tail = (
+            f"add_dependencies({target} rust_{variant})\n"
+            f"target_link_libraries({target} ${{{variant}_LIB}})\n"
+        )
+        text = text[: add.start()] + head + text[add.start() : end] + tail + text[end:]
+    return text
+
+
+def stage_flip(stem: str) -> None:
+    started = time.time()
+    state = load_state(stem)
+    module = REPO / state["module_dir"]
+    cml = module / "CMakeLists.txt"
+    new = flip_cmake(cml.read_text(), state)
+    stub = module / "rust_cohab_stub.c"
+    if not stub.exists():
+        stub.write_text(
+            f"/* {stem} is Rust (sdk/lib/rust/{state['crate']}); a CMake target needs one TU. */\n"
+            f"typedef int {stem}_rust_cohab_placeholder;\n"
+        )
+    changed = new != cml.read_text()
+    if changed:
+        cml.write_text(new)
+        # A flip IS a census change (check-tooling's test_cohab_census fails until the
+        # snapshot is re-recorded); record it here rather than leave it to be remembered.
+        subprocess.run(
+            [sys.executable, str(REPO / "tools" / "cohab_census.py"), "--write"],
+            cwd=REPO,
+            check=True,
+        )
+    _record(state, "flip", started, changed=changed)
+    print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
 
 
 def _tokens(log: str) -> tuple[int, int, int]:
@@ -864,12 +1086,18 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     # extern fn, whatever another crate declared: winsrv's `fn RTL_FIELD_SIZE(t: usize, f:
     # usize)` was copied by consensus and shadowed the real macro. Dropped, including copies
     # an earlier run made.
-    from .macro_authority import function_like_macros
+    from .macro_authority import function_like_macros, identifier_aliases
 
     c_macros: set[str] = set()
+    # ...nor a name the module's preprocessor ALIASES to another (`#define snprintf
+    # _snprintf`): the C calls the target, and _resolve_externs declares it and re-exports it
+    # under the alias. usetup got oleaut32-rust's `snprintf` by consensus -- a symbol ntdll
+    # does not export.
+    id_aliases: set[str] = set()
     for tu in state["tus"]:
         try:
             c_macros |= function_like_macros(REPO, (REPO / tu).resolve())
+            id_aliases |= set(identifier_aliases(REPO, (REPO / tu).resolve()))
         except Exception as e:  # reported, then judged without it
             print(f"resolve: no macro authority for {tu}: {str(e).splitlines()[0][:120]}")
     # ...and a name a shared crate provides is imported from it, never copied: tree consensus
@@ -880,21 +1108,48 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     # `CmResourceTypePort: u32` beside its own `u8`, and advapi32's `FALSE: BOOL`.
     hand = prelude_resolve.hand_written_names(prelude)
     shared |= hand
+    # ...and never a FORCEINLINE helper ntdll-sys already implements in Rust (inlines.rs,
+    # re-exported through `ntdll_sys::nt`, which the island globs): diskpart got
+    # winlogon-sys's bindgen `extern` InitializeListHead/IsListEmpty/RemoveEntryList/
+    # RemoveHeadList, which shadow the real ones and fail at link -- no DLL exports them.
+    if state.get("usermode", True):
+        inl = workspace / "ntdll-sys" / "src" / "inlines.rs"
+        if inl.is_file():
+            shared |= set(re.findall(r"^pub (?:unsafe )?fn (\w+)", inl.read_text(), re.M))
     copied = {
         k: v
         for k, v in prelude_resolve.existing_block(prelude).items()
-        if not (v.kind == "fn" and k in c_macros) and k not in shared
+        if not (v.kind == "fn" and (k in c_macros or k in id_aliases))
+        and k not in shared
+        # A copy made before test harnesses stopped counting as consensus.
+        and not prelude_resolve.is_test_source(v.path)
     }
+    # Re-derive every kept copy from the tree as it is NOW: a copy is only as right as the run
+    # that made it. usetup kept 40 setuplib externs under `extern "C"` from a run whose ABI
+    # was written unquoted (unreadable, so read back as C) -- every one undefined at link,
+    # because setuplib's exports are stdcall. A copy nothing defines any more is dropped and
+    # resolved afresh.
+    fresh = prelude_resolve.workspace_items(set(copied), workspace, crate)
+    for name in list(copied):
+        if copied[name].path == "island enum":
+            continue
+        pick, _why = prelude_resolve.consensus(name, fresh.get(name, []))
+        if pick is None:
+            del copied[name]
+        else:
+            copied[name] = pick
     siblings = prelude_resolve.existing_siblings(prelude)
     modules_dir = crate / "src" / stem
     res = prelude_resolve.Resolution()
     ambiguous: dict[str, list[str]] = {}
     types_only: set[str] = set()
+    seen_names: set[str] = set()
     for n in range(1, max_passes + 1):
         wanted = prelude_resolve.unresolved(
             state["crate"], RUST_TARGETS["amd64"], workspace, STATE_ROOT / stem / "target-amd64"
         )
         names = set(wanted)
+        seen_names |= names
         types_only = {k for k, ns in wanted.items() if ns == {"type"}}
         # A copy of the wrong KIND for a name wanted only as a type is what caused the gap.
         for name in types_only & set(copied):
@@ -917,8 +1172,13 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
             prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
         names -= set(found_here)
         res.pending = sorted(names & pending)
-        todo = names - pending - set(copied) - c_macros - shared
-        aliases = prelude_resolve.island_enum_aliases(todo, crate / "src")
+        todo = names - pending - set(copied) - c_macros - shared - id_aliases
+        # Plus every enum member a C `case` label names (derive's SWITCH_CONST_ENUM_PREFIXED):
+        # in a Rust pattern the bare name is a BINDING, never unresolved, so it would never
+        # reach this alias step on its own. diskpart's FormatCallback matched `PROGRESS` and
+        # `DONE` bare, and the first arm caught every command.
+        case_enums = set(load_state(stem).get("switch_enums", [])) - set(copied)
+        aliases = prelude_resolve.island_enum_aliases(todo | case_enums, crate / "src")
         copied.update(aliases)
         todo -= set(aliases)
         items = prelude_resolve.workspace_items(todo, workspace, crate)
@@ -956,20 +1216,40 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     for path in prelude_resolve.refresh_shared_crates(crate, workspace):
         print(f"resolve: refreshed the `{path}` re-export list")
     type_names = [n for n in res.undefined if n in types_only]
+    # A constant the tree defines only as an expression (`CTL_CODE(..)`), or with values that
+    # disagree, is the clang probe's question too: it reads the C's own definition.
+    # usetup's IOCTL_CONSOLE_* were reported "no literal definition" and dropped.
+    const_split = [
+        n
+        for n, why in res.conflicting.items()
+        if why == "no literal definition" or why.endswith("different values")
+    ]
+    evaluated_split = set(const_split) - set(_resolve_facts(state, prelude, const_split))
+    res.conflicting = {k: v for k, v in res.conflicting.items() if k not in evaluated_split}
     res.undefined = (
         _resolve_facts(state, prelude, [n for n in res.undefined if n not in types_only])
         + type_names
     )
+    _seed_switch_facts(state, prelude)
     type_gaps = set(res.undefined) | {
         n for n, why in res.conflicting.items() if why.startswith("a type")
     }
     found = _resolve_local_types(state, prelude, type_gaps)
     align_definition_abis(state)
+    align_definition_returns(state)
     island_found = _resolve_island_types(load_state(stem), type_gaps - found)
     if island_found:
         state = load_state(stem)  # it recorded island_headers + derive + island
     found |= island_found
-    found |= _resolve_externs(state, prelude, set(res.undefined) - found)
+    # A function the tree declares with DIFFERENT ABIs (kernel32's Sleep, RegCloseKey: some
+    # crates say "C", some "system") is settled the same way as one nobody declares -- by
+    # the prototype clang sees and the calling convention it reports. diskpart had eleven
+    # such calls left unresolved.
+    abi_split = {
+        n for n, why in res.conflicting.items() if why.startswith(("ABI disagreement", "mixed"))
+    }
+    abi_split |= id_aliases & seen_names
+    found |= _resolve_externs(state, prelude, (set(res.undefined) | abi_split) - found)
     res.undefined = [n for n in res.undefined if n not in found]
     res.conflicting = {k: v for k, v in res.conflicting.items() if k not in found}
     res.copied = copied
@@ -1038,9 +1318,13 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
       reports on i386 -- c2rust writes `extern "C"` even for a stdcall (NTAPI) function.
     """
     from . import c2rust_anchor, sdk_facts
-    from .macro_authority import MacroAuthorityError
+    from .macro_authority import MacroAuthorityError, function_like_macros, identifier_aliases
 
-    names = set(names) | prelude_resolve.existing_externs(prelude)
+    # Never a name the hand-written prelude declares, including one an earlier run put in
+    # this block before the hand declaration existed (E0428).
+    names = (set(names) | prelude_resolve.existing_externs(prelude)) - (
+        prelude_resolve.hand_written_names(prelude)
+    )
     sigs: dict[str, tuple[str, str, str]] = {}
     module_dir = REPO / state["module_dir"]
     files = sorted([*module_dir.rglob("*.h"), *module_dir.rglob("*.c")])
@@ -1067,6 +1351,27 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             defs[name].where,
         )
     todo = names - set(sigs)
+    # The SDK's A/W aliases (`#define GetModuleHandle GetModuleHandleW`): declare the target
+    # from its prototype below and re-export it under the name the C spells. Only to a
+    # FUNCTION -- an alias of a function-like macro (CopyMemory -> RtlCopyMemory) is a call
+    # site that needs `!`, not a declaration.
+    sdk_alias: dict[str, str] = {}
+    for tu in state["tus"]:
+        pending = {n for n in todo if n not in sdk_alias}
+        if not pending:
+            break
+        try:
+            known = identifier_aliases(REPO, REPO / tu)
+            macros = function_like_macros(REPO, REPO / tu)
+        except MacroAuthorityError:
+            continue
+        for name in pending:
+            target = known.get(name)
+            if target and target not in macros and target != name:
+                sdk_alias[name] = target
+    # A target the hand-written prelude already declares is aliased, not declared again (E0428).
+    hand = prelude_resolve.hand_written_names(prelude)
+    todo = (todo - set(sdk_alias)) | {t for t in sdk_alias.values() if t not in hand}
     for tu in state["tus"]:
         if not todo:
             break
@@ -1084,6 +1389,9 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             abi = "C" if "..." in sig else abis[name]
             sigs[name] = (abi, sig, Path(tu).name)
             todo.discard(name)
+    for name, target in sorted(sdk_alias.items()):
+        if target in sigs or re.search(rf"\bfn {re.escape(target)}\b", prelude.read_text()):
+            sigs[name] = ("use", f"pub use crate::prelude::{target} as {name};", "sdk alias")
     prelude_resolve.write_externs(prelude, prelude_resolve.render_externs(sigs))
     if sigs:
         print(f"resolve: {len(sigs)} extern/alias declaration(s): {', '.join(sorted(sigs))}")
@@ -1141,6 +1449,120 @@ def align_definition_abis(state: dict) -> dict[str, list[str]]:
     return changed
 
 
+_PRIMITIVE_RET = re.compile(r"^(?:[iu](?:8|16|32|64|size)|bool|\(\))$")
+
+
+def _split_top(params: str) -> list[str]:
+    out, depth, cur = [], 0, ""
+    for i, ch in enumerate(params):
+        if ch == ">" and i and params[i - 1] == "-":
+            cur += ch  # the `->` of a fn-pointer type, not a closing angle bracket
+            continue
+        depth += {"(": 1, "<": 1, "[": 1, ")": -1, ">": -1, "]": -1}.get(ch, 0)
+        if ch == "," and depth == 0:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        out.append(cur)
+    return [p.strip() for p in out if p.strip()]
+
+
+def align_definition_returns(state: dict) -> dict[str, list[str]]:
+    """Give a crate-defined function the signature its C prototype names.
+
+    diskpart's command table is `EXIT_CODE (*func)(INT, PWSTR*)` and every `*_main` returns
+    EXIT_CODE, an enum bindgen makes `u32`; the model wrote `-> i32` for all of them and the
+    table failed 31 times (E0308, fn item vs fn pointer). The prototype is the authority:
+    c2rust reads it from a TU that only DECLARES the function (one that defines it gives no
+    prototype). A function only ever CALLED has its primitive return replaced by the named
+    C type; one used as a VALUE (a callback: usetup's GetSettingDescription took `usize`
+    where the slot says ULONG) takes the prototype's parameter and return types whole, since
+    a function pointer must match exactly and only the declaration can say what it is.
+    """
+    from . import c2rust_anchor
+
+    modules = _crate_dir(state) / "src" / state["stem"]
+    texts = {p: p.read_text() for p in sorted(modules.glob("*.rs"))}
+    every = "\n".join(texts.values())
+    defs: dict[str, tuple[Path, str, str | None]] = {}  # name -> (file, params, ret)
+    for path, text in texts.items():
+        for m in re.finditer(r"\bfn\s+([A-Za-z_]\w*)\s*\(", text):
+            depth, i = 1, m.end()
+            while i < len(text) and depth:
+                depth += {"(": 1, ")": -1}.get(text[i], 0)
+                i += 1
+            r = re.match(r"\s*(?:->\s*([^{;]+?)\s*)?\{", text[i:])
+            if r:
+                defs[m.group(1)] = (path, text[m.end() : i - 1], r.group(1))
+    callbacks = {n for n in defs if re.search(rf"(?<!fn )\b{re.escape(n)}\b(?!\s*[(!:])", every)}
+    wanted = {
+        n
+        for n, (_, _, ret) in defs.items()
+        if n in callbacks or (ret is not None and _PRIMITIVE_RET.match(ret))
+    }
+    # Only names a module HEADER declares: a `static` function has no prototype for c2rust
+    # to find, and asking every TU about it costs a c2rust run per TU per arch (usetup's
+    # replay spent most of an hour here).
+    headers = " ".join(
+        h.read_text(errors="replace") for h in (REPO / state["module_dir"]).rglob("*.h")
+    )
+    todo = {n for n in wanted if re.search(rf"\b{re.escape(n)}\s*\(", headers)}
+    proto: dict[str, str] = {}
+    for tu in state["tus"]:
+        if not todo:
+            break
+        own = set(
+            re.findall(r"^\w[^\n;]*?\b(\w+)\s*\(", (REPO / tu).read_text(errors="replace"), re.M)
+        )
+        ask = todo - own
+        if not ask:
+            continue
+        try:
+            found = c2rust_anchor.extern_signatures(REPO / tu, ask)
+        except c2rust_anchor.C2RustError:
+            continue
+        proto.update(found)
+        todo -= set(found)
+    changed: dict[str, list[str]] = {}
+    for name, sig in sorted(proto.items()):
+        path, params, ret = defs[name]
+        m = re.match(r"fn\s+\w+\s*\((.*)\)\s*(?:->\s*(.+?))?\s*;$", sig.strip(), re.S)
+        if m is None:
+            continue
+        c_params, c_ret = _split_top(m.group(1)), m.group(2)
+        new_params, new_ret = params, ret
+        if name in callbacks:
+            rust = _split_top(params)
+            if len(rust) == len(c_params) and all(":" in p for p in rust + c_params):
+                new_params = ", ".join(
+                    f"{r.split(':', 1)[0].strip()}: {c.split(':', 1)[1].strip()}"
+                    for r, c in zip(rust, c_params, strict=True)
+                )
+            new_ret = c_ret
+        elif c_ret and re.fullmatch(r"[A-Za-z_]\w*", c_ret) and not _PRIMITIVE_RET.match(c_ret):
+            new_ret = c_ret
+        if (new_params, new_ret) == (params, ret):
+            continue
+        text = texts[path]
+        head = re.search(
+            rf"\bfn\s+{re.escape(name)}\s*\({re.escape(params)}\)\s*(?:->\s*{re.escape(ret)}\s*)?\{{"
+            if ret is not None
+            else rf"\bfn\s+{re.escape(name)}\s*\({re.escape(params)}\)\s*\{{",
+            text,
+        )
+        if head is None:
+            continue
+        tail = f" -> {new_ret} {{" if new_ret else " {"
+        texts[path] = text[: head.start()] + f"fn {name}({new_params}){tail}" + text[head.end() :]
+        path.write_text(texts[path])
+        changed.setdefault(path.name, []).append(name)
+    for fname, fns in sorted(changed.items()):
+        print(f"resolve: {fname}: signature set from the C prototype for {', '.join(fns)}")
+    return changed
+
+
 def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str]:
     """Types a .c file defines for itself (c2rust_anchor.local_types), into the prelude.
 
@@ -1166,7 +1588,23 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
                 re.findall(r"^pub (?:struct|union|enum|type) (\w+)", isl.read_text(), re.M)
             )
     # ...nor a base type the -sys crate owns (pciidex had ULONG/PVOID/NTSTATUS pinned here).
-    names -= island
+    # Except an OPAQUE island stub (`_unused: [u8; 0]`): a header that only forward-declares
+    # `struct _CFFILE` gives bindgen nothing more, while usetup's cabinet.c defines the whole
+    # struct -- and 50 field accesses failed against the stub. Those, and the island's
+    # pointer aliases to them (PCFFILE would still point at the stub), are taken from the TU
+    # that defines them; a stub no TU defines stays the island's.
+    opaque: set[str] = set()
+    for isl in prelude.parent.glob("types_*.rs"):
+        text = isl.read_text()
+        stubs = set(re.findall(r"^pub struct (\w+) \{\n\s*_unused: \[u8; 0\],\n\}", text, re.M))
+        opaque |= stubs
+        opaque |= {
+            alias
+            for alias, target in re.findall(r"^pub type (\w+) = \*(?:mut|const) (\w+);", text, re.M)
+            if target in stubs
+        }
+    names |= opaque
+    names -= island - opaque
     items: dict[str, tuple[str, str]] = {}
     for tu in state["tus"]:
         c_file = REPO / tu
@@ -1183,6 +1621,26 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
         for name in differs:
             print(f"resolve: local type {name} differs across arches in {tu}; hand-port it")
     prelude_resolve.write_local_types(prelude, items)
+    # The island's OTHER structs still name the stub (usetup's search struct has
+    # `File: PCFFILE` -> the island's `_CFFILE`), so the stub itself must go: it is replaced
+    # by an import of the definition just written. Re-applied on every resolve, since a
+    # regenerated island brings the stub back.
+    real = {
+        n for n in opaque & set(items) if re.search(rf"\bpub struct {re.escape(n)}\b", items[n][0])
+    }
+    for isl in prelude.parent.glob("types_*.rs"):
+        text = isl.read_text()
+        new_text = text
+        for name in sorted(real):
+            stub = rf"^pub struct {re.escape(name)} \{{\n\s*_unused: \[u8; 0\],\n\}}\n"
+            new_text = re.sub(
+                rf"(?:^#\[[^\n]*\]\n)*{stub}",
+                f"use crate::prelude::{name}; // whole in the TU that defines it (port resolve)\n",
+                new_text,
+                flags=re.M,
+            )
+        if new_text != text:
+            isl.write_text(new_text)
     if items:
         print(f"resolve: {len(items)} local type item(s) from c2rust: {', '.join(sorted(items))}")
         dropped = drop_model_type_twins(_crate_dir(state) / "src" / state["stem"], set(items))
@@ -1432,21 +1890,30 @@ def stage_macros(
 def _repair(stem: str, crate: str) -> str:
     from . import crate_repair as cr
 
-    session = cr.repair_crate(
-        crate,
-        root=REPO / "sdk" / "lib" / "rust",
-        targets=list(RUST_TARGETS),
-        max_passes=10,
-        target_dirs=_target_dirs(stem),
-    )
-    # Per pass: a run that ends at max_passes while still applying edits is converging
-    # slowly; one applying the same rules every pass with flat counts is oscillating.
-    for ps in session.passes:
-        rules: dict[str, int] = {}
-        for e in ps.applied:
-            rules[e.rule] = rules.get(e.rule, 0) + 1
-        top = ", ".join(f"{r} {n}" for r, n in sorted(rules.items(), key=lambda kv: -kv[1])[:4])
-        print(f"  repair pass {ps.index}: {ps.error_counts} applied {len(ps.applied)} ({top})")
+    # A session that ends at max_passes while still lowering the count is converging slowly
+    # (a nested cast is fixed one layer per pass), so it gets another, up to four. diskpart's
+    # replay stopped at pass 10 with 26 wide-literal `*const` -> PWSTR sites one session from
+    # done, and read 62 errors where a standalone crate-repair reached 36.
+    best: int | None = None
+    for _ in range(4):
+        session = cr.repair_crate(
+            crate,
+            root=REPO / "sdk" / "lib" / "rust",
+            targets=list(RUST_TARGETS),
+            max_passes=10,
+            target_dirs=_target_dirs(stem),
+        )
+        # One applying the same rules every pass with flat counts is oscillating.
+        for ps in session.passes:
+            rules: dict[str, int] = {}
+            for e in ps.applied:
+                rules[e.rule] = rules.get(e.rule, 0) + 1
+            top = ", ".join(f"{r} {n}" for r, n in sorted(rules.items(), key=lambda kv: -kv[1])[:4])
+            print(f"  repair pass {ps.index}: {ps.error_counts} applied {len(ps.applied)} ({top})")
+        last = sum(session.passes[-1].error_counts.values()) if session.passes else 0
+        if session.status != "max_passes" or (best is not None and last >= best):
+            break
+        best = last
     return session.status
 
 
@@ -1488,6 +1955,11 @@ def stage_replay(stem: str, *, fix_cap: float = 0.0, fix_rounds: int = 1) -> Non
         concurrency=8,
     )
     apply_hand(stem)
+    # Once more, AFTER the hand bank: a hand body is written against the prelude of its day,
+    # and the prelude moves (strsafe-rust began providing RtlStringCchPrintfA as a macro, and
+    # usetup's 12 banked call sites still called it as a function). Repair is deterministic
+    # and idempotent, so a body that needs nothing is left byte-identical.
+    print(f"replay: crate-repair {_repair(stem, state['crate'])}")
     stage_check(stem)
     print(f"replay: {(time.time() - started) / 60:.1f} min")
 
@@ -2132,11 +2604,18 @@ def _main(args) -> int:
                 # One cap for the whole invocation, and the escalation revisits only what
                 # the cheap pass just bought -- not every TU that already had output. With
                 # nothing new (everything already translated) it re-checks what was asked.
+                # Plus every TU holding a banked body the CURRENT audit refuses: usetup's
+                # cabinet.c and cmdcons.c kept literal C `goto`s through an escalation that
+                # never looked at them (they had output), and every replay reassembled them
+                # into parse errors that hid the crate's real type errors.
+                stale = failing_audit_tus(load_state(args.stem))
+                if args.only:
+                    stale = [t for t in stale if t in args.only]
                 stage_translate(
                     args.stem,
                     model=args.model,
                     cost_cap=max(0.0, args.cost_cap - spent),
-                    only=ran or args.only or [],
+                    only=sorted(set(ran) | set(stale)) or args.only or [],
                     dry_run=False,
                     mode=args.mode,
                     concurrency=args.concurrency,
@@ -2183,6 +2662,8 @@ def _main(args) -> int:
             stage_resolve(args.stem)
         elif args.port_stage == "check":
             stage_check(args.stem)
+        elif args.port_stage == "flip":
+            stage_flip(args.stem)
         elif args.port_stage == "status":
             stage_status(args.stem)
     except (PortError, pd.ProfileDeriveError) as e:
@@ -2198,7 +2679,7 @@ def add_parser(sub) -> None:
         q = stages.add_parser(name)
         q.add_argument("module", help="module directory (holding CMakeLists.txt)")
         q.add_argument("--target", default=None, help="CMake target, when there are several")
-    for name in ("island", "integrate", "resolve", "check", "status"):
+    for name in ("island", "integrate", "resolve", "check", "status", "flip"):
         stages.add_parser(name).add_argument("stem")
     q = stages.add_parser("hand", help="bank hand-written functions so replays keep them")
     q.add_argument("stem")

@@ -94,3 +94,49 @@ def test_crate_repair_c_suffix_and_null_fn_rules_are_registered():
     assert cr._NULL_EXPR.match("ptr::null::<u8>()")
     assert cr._NULL_EXPR.match("0 as *mut c_void")
     assert not cr._NULL_EXPR.match("some_ptr")
+
+
+def test_multiline_guards_do_not_read_as_a_swap():
+    # diskpart detail.c IsPartitionInVolume, shape-for-shape.
+    c = """{
+    ULONG i;
+
+    if ((VolumeEntry == NULL) ||
+        (VolumeEntry->pExtents == NULL) ||
+        (PartEntry == NULL))
+        return FALSE;
+
+    for (i = 0; i < VolumeEntry->pExtents->NumberOfDiskExtents; i++)
+    {
+        if (VolumeEntry->pExtents->Extents[i].DiskNumber == PartEntry->DiskEntry->DiskNumber)
+        {
+            if ((VolumeEntry->pExtents->Extents[i].StartingOffset.QuadPart == PartEntry->StartSector.QuadPart * PartEntry->DiskEntry->BytesPerSector) &&
+                (VolumeEntry->pExtents->Extents[i].ExtentLength.QuadPart == PartEntry->SectorCount.QuadPart * PartEntry->DiskEntry->BytesPerSector))
+                return TRUE;
+        }
+    }
+
+    return FALSE;
+}"""
+    rust = """{
+    let mut i: ULONG = 0;
+    if VolumeEntry.is_null() || (*VolumeEntry).pExtents.is_null() || PartEntry.is_null() {
+        return FALSE;
+    }
+    let extents = core::ptr::addr_of_mut!((*(*VolumeEntry).pExtents).Extents) as *mut DISK_EXTENT;
+    i = 0;
+    while i < (*(*VolumeEntry).pExtents).NumberOfDiskExtents {
+        if (*extents.offset(i as isize)).DiskNumber == (*(*PartEntry).DiskEntry).DiskNumber {
+            if (*extents.offset(i as isize)).StartingOffset.QuadPart as ULONGLONG
+                == (*PartEntry).StartSector.QuadPart.wrapping_mul((*(*PartEntry).DiskEntry).BytesPerSector as ULONGLONG)
+                && (*extents.offset(i as isize)).ExtentLength.QuadPart as ULONGLONG
+                    == (*PartEntry).SectorCount.QuadPart.wrapping_mul((*(*PartEntry).DiskEntry).BytesPerSector as ULONGLONG)
+            {
+                return TRUE;
+            }
+        }
+        i = i.wrapping_add(1);
+    }
+    return FALSE;
+}"""
+    assert placement_findings(c, rust) == []

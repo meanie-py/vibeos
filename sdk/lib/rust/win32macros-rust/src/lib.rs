@@ -354,6 +354,22 @@ macro_rules! RtlCopyMemory {
     }};
 }
 
+/// `winbase.h` — `#define CopyMemory RtlCopyMemory`.
+#[macro_export]
+macro_rules! CopyMemory {
+    ($($args:tt)*) => {
+        $crate::RtlCopyMemory!($($args)*)
+    };
+}
+
+/// `winbase.h` — `#define MoveMemory RtlMoveMemory`.
+#[macro_export]
+macro_rules! MoveMemory {
+    ($($args:tt)*) => {
+        $crate::RtlMoveMemory!($($args)*)
+    };
+}
+
 /// `ntdef.h` — `#define RtlMoveMemory(D, S, L) memmove((D), (S), (L))`: overlap allowed.
 #[macro_export]
 macro_rules! RtlMoveMemory {
@@ -409,12 +425,110 @@ macro_rules! RTL_NUMBER_OF {
 /// No instance is read: the field's address is formed in an uninitialised slot, never a null.
 #[macro_export]
 macro_rules! RTL_NUMBER_OF_FIELD {
-    ($t:ty, $($f:tt)+) => {{
+    (@field $t:ty, $($f:tt)+) => {{
         const fn __len<T, const N: usize>(_: *const [T; N]) -> usize {
             N
         }
         let slot = core::mem::MaybeUninit::<$t>::uninit();
         __len(unsafe { core::ptr::addr_of!((*slot.as_ptr()).$($f)+) })
+    }};
+    // One field name, with the trailing comma rustfmt adds to a call it wraps over lines
+    // (usetup's `RTL_NUMBER_OF_FIELD(\n VOLINFO,\n DeviceName,\n)`), which the `tt` arm
+    // below would swallow into the field path.
+    ($t:ty, $f:ident $(,)?) => {
+        $crate::RTL_NUMBER_OF_FIELD!(@field $t, $f)
+    };
+    ($t:ty, $($f:tt)+) => {
+        $crate::RTL_NUMBER_OF_FIELD!(@field $t, $($f)+)
+    };
+}
+
+/// The pieces `DPRINT1!` expands to. Not for direct use.
+#[doc(hidden)]
+pub mod dprint {
+    extern "C" {
+        /// ntdll's `ULONG __cdecl DbgPrint(PCCH Format, ...)`.
+        pub fn DbgPrint(Format: *const core::ffi::c_char, ...) -> u32;
+    }
+
+    /// A DPRINT1 format, NUL-terminated: used in place if it already is, else copied
+    /// (truncated) into the caller's stack buffer. Translations spell the format three ways
+    /// (a str literal, a byte literal, a pointer).
+    pub trait DprintFmt {
+        fn fmt_ptr(self, buf: &mut [u8; 512]) -> *const core::ffi::c_char;
+    }
+    fn terminated(bytes: &[u8], buf: &mut [u8; 512]) -> *const core::ffi::c_char {
+        if bytes.last() == Some(&0) {
+            return bytes.as_ptr() as *const core::ffi::c_char;
+        }
+        let n = bytes.len().min(buf.len() - 1);
+        buf[..n].copy_from_slice(&bytes[..n]);
+        buf[n] = 0;
+        buf.as_ptr() as *const core::ffi::c_char
+    }
+    impl DprintFmt for &'static str {
+        fn fmt_ptr(self, buf: &mut [u8; 512]) -> *const core::ffi::c_char {
+            terminated(self.as_bytes(), buf)
+        }
+    }
+    impl<const N: usize> DprintFmt for &'static [u8; N] {
+        fn fmt_ptr(self, buf: &mut [u8; 512]) -> *const core::ffi::c_char {
+            terminated(self, buf)
+        }
+    }
+    impl DprintFmt for *const i8 {
+        fn fmt_ptr(self, _: &mut [u8; 512]) -> *const core::ffi::c_char {
+            self as *const core::ffi::c_char
+        }
+    }
+    impl DprintFmt for *const u8 {
+        fn fmt_ptr(self, _: &mut [u8; 512]) -> *const core::ffi::c_char {
+            self as *const core::ffi::c_char
+        }
+    }
+    impl DprintFmt for *mut i8 {
+        fn fmt_ptr(self, _: &mut [u8; 512]) -> *const core::ffi::c_char {
+            self as *const core::ffi::c_char
+        }
+    }
+}
+
+/// `reactos/debug.h` `DPRINT1` as this tree builds it (`-DDBG=1`): `if (DbgPrint("(%s:%d) "
+/// fmt, __RELFILE__, __LINE__, ...)) DbgPrint("(%s:%d) DbgPrint() failed!\n", ..)`, the prefix
+/// printed separately because Rust cannot paste it onto a runtime format. The file is the
+/// Rust one. A MACRO, never an out-of-line fn (an out-of-line no-op is an optimization
+/// barrier). setuplib carried this by hand; every crate `rustconv port` scaffolded after it
+/// got a no-op, and the deferred lint (`scan_dropped_prints`) caught two of them.
+#[macro_export]
+macro_rules! DPRINT1 {
+    ($fmt:expr $(, $arg:expr)* $(,)?) => {{
+        let mut __dprint1_buf = [0u8; 512];
+        let __dprint1_fmt = $crate::dprint::DprintFmt::fmt_ptr($fmt, &mut __dprint1_buf);
+        let __dprint1_file = concat!(file!(), "\0").as_ptr() as *const core::ffi::c_char;
+        $crate::dprint::DbgPrint(b"(%s:%d) \0".as_ptr() as *const core::ffi::c_char, __dprint1_file, line!());
+        if $crate::dprint::DbgPrint(__dprint1_fmt $(, $arg)*) != 0 {
+            $crate::dprint::DbgPrint(
+                b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const core::ffi::c_char,
+                __dprint1_file,
+                line!(),
+            );
+        }
+    }};
+}
+
+/// `guiddef.h:147` — `#define IsEqualGUID(rguid1, rguid2) (!memcmp(rguid1, rguid2,
+/// sizeof(GUID)))`, for C callers (C++ gets an inline operator). `GUID` is 16 bytes on every
+/// target, so the shared crate needs no GUID type: each argument may be a reference or a raw
+/// pointer to one. Eight crates had re-ported this by hand, three with different signatures.
+#[macro_export]
+macro_rules! IsEqualGUID {
+    ($a:expr, $b:expr $(,)?) => {{
+        let a = $a as *const _ as *const u8;
+        let b = $b as *const _ as *const u8;
+        #[allow(unused_unsafe)]
+        unsafe {
+            core::slice::from_raw_parts(a, 16) == core::slice::from_raw_parts(b, 16)
+        }
     }};
 }
 
@@ -969,6 +1083,15 @@ mod tests {
     }
 
     #[test]
+    fn is_equal_guid_compares_all_sixteen_bytes() {
+        let a: [u32; 4] = [1, 2, 3, 4];
+        let mut b = a;
+        assert!(IsEqualGUID!(&a, &b));
+        b[3] = 5;
+        assert!(!IsEqualGUID!(&a, core::ptr::addr_of!(b)));
+    }
+
+    #[test]
     fn number_of_field_is_the_array_length_and_usable_as_a_bound() {
         #[allow(dead_code)]
         struct VolInfo {
@@ -978,6 +1101,12 @@ mod tests {
         let buf: [u16; RTL_NUMBER_OF_FIELD!(VolInfo, device_name) + 1] =
             [0; RTL_NUMBER_OF_FIELD!(VolInfo, device_name) + 1];
         assert_eq!(buf.len(), 261);
+        #[rustfmt::skip]
+        let wrapped = RTL_NUMBER_OF_FIELD!(
+            VolInfo,
+            device_name,
+        );
+        assert_eq!(wrapped, 260);
     }
 
     #[test]

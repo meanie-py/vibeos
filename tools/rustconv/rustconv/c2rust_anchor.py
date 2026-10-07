@@ -578,6 +578,23 @@ def build_anchor_map(
     if strict and not fns and required_names:
         raise C2RustError(f"{c_file}: c2rust output contains no extracted function definitions")
     missing = (required_names or set()) - set(fns)
+    if missing:
+        # A definition spelled with an SDK A/W macro (usetup console.c: `WriteConsole(`,
+        # which UNICODE makes `WriteConsoleW`) is in c2rust's output under the expanded name.
+        # Read as absent, it was dropped as a "dead branch": three live functions, never
+        # translated, never billed, reported as working as intended.
+        from .config import REACTOS_ROOT
+        from .macro_authority import MacroAuthorityError, identifier_aliases
+
+        try:
+            aliases = identifier_aliases(REACTOS_ROOT, c_file.resolve())
+        except MacroAuthorityError:
+            aliases = {}
+        for name in sorted(missing):
+            target = aliases.get(name)
+            if target in fns:
+                fns[name] = fns[target]
+        missing = missing - set(fns)
     if strict and missing:
         found, absent = _anchor_elsewhere(c_file, missing, timeout)
         for name, body in found.items():

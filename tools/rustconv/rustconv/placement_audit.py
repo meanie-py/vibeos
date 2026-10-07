@@ -203,10 +203,15 @@ def _first_ident(text: str) -> str:
 def _guard(text: str, stmt_start: int, head: str) -> str:
     """The condition guarding a `return`: in the same statement (C's `if (c) return`)
     or the `if c {` block it opens (either language)."""
-    m = re.search(r"\bif\b(.*)$", head)
+    # DOTALL, and a window wide enough for a real condition: diskpart's IsPartitionInVolume
+    # has a C guard spanning four lines (`if ((VolumeEntry == NULL) ||` ...) and a Rust inner
+    # condition longer than 200 characters. Each fell back to the empty guard, so the
+    # guard's `return FALSE` and the loop's `return TRUE` shared a slot and read as a swap:
+    # a correct body was rejected at purchase and flagged by the deferred lint.
+    m = re.search(r"\bif\b(.*)$", head, re.S)
     if m:
         return _first_ident(m.group(1))
-    prev = text[max(0, stmt_start - 200) : stmt_start]
+    prev = text[max(0, stmt_start - 2000) : stmt_start]
     m = re.search(r"\bif\b([^;{}]*)\{?\s*$", prev)
     return _first_ident(m.group(1)) if m else ""
 

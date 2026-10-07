@@ -222,6 +222,50 @@ def _sealed_ok(stored: list | None, current: frozenset[str] | None) -> bool:
     return current <= set(stored)
 
 
+SOURCE_CLAIM = ".source"
+
+
+def bank_base(subsystem: str, c_file: Path, suffix: str, root: Path) -> str:
+    """The bank namespace for *c_file*: ``<dir>__<stem>``, unless another file owns it.
+
+    The key used to be only the parent directory and stem, and two modules carry their own
+    ``spapisup/fileqsup.c`` (setuplib and usetup): usetup's run bought 19 bodies into
+    setuplib's namespace and was refused setuplib's preamble. Each namespace now records
+    the repo-relative C file that filled it (``.source``). A namespace without a claim is
+    taken as the caller's, so every existing bank stays addressable unchanged; a claimed one
+    belonging to a different file sends the caller to ``<grandparent>__<dir>__<stem>``.
+    """
+    try:
+        mine = c_file.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        mine = c_file.resolve().as_posix()
+    legacy = f"{subsystem}__{c_file.stem}"
+    candidates = [legacy, f"{c_file.resolve().parent.parent.name}__{legacy}"]
+    for base in candidates:
+        claim = RESPONSES_DIR / _safe_filename(base + suffix) / SOURCE_CLAIM
+        owner = claim.read_text().strip() if claim.is_file() else None
+        if owner in (None, mine):
+            return base
+    raise RuntimeError(
+        f"rustconv: no free bank namespace for {mine}: {candidates} are claimed by other "
+        "files. Pass --cache-tag to separate it."
+    )
+
+
+def claim_bank(key: str, c_file: Path, root: Path) -> None:
+    """Record which C file a namespace belongs to (first writer wins; never rewritten)."""
+    d = RESPONSES_DIR / _safe_filename(key)
+    claim = d / SOURCE_CLAIM
+    if claim.exists():
+        return
+    try:
+        mine = c_file.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        mine = c_file.resolve().as_posix()
+    d.mkdir(parents=True, exist_ok=True)
+    claim.write_text(mine + "\n")
+
+
 class ResponseCache:
     """One directory per translated file; one .rs per function + a manifest."""
 
