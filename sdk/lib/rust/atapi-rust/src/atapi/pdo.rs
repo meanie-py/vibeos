@@ -43,7 +43,7 @@ unsafe extern "C" fn AtaPdoStartDevice(
 
         (*PortData)
             .SetDeviceData
-            .expect("non-null function pointer")(
+            .unwrap_unchecked()(
             (*PortData).ChannelContext,
             (*DevExt).Common.Self_,
             &raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData,
@@ -52,7 +52,7 @@ unsafe extern "C" fn AtaPdoStartDevice(
         if (*DevExt).GtfDataBuffer.is_null() {
             (*DevExt).GtfDataBuffer = (*PortData)
                 .GetInitTaskFile
-                .expect("non-null function pointer")(
+                .unwrap_unchecked()(
                 (*PortData).ChannelContext,
                 (*DevExt).Common.Self_,
             );
@@ -563,7 +563,7 @@ unsafe extern "C" fn AtaPdoQueryDeviceText(
 }
 
 unsafe extern "C" fn AtaPdoPnp(
-    DevExt: *mut PATAPORT_DEVICE_EXTENSION,
+    DevExt: PATAPORT_DEVICE_EXTENSION,
     Irp: PIRP,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
@@ -579,7 +579,7 @@ unsafe extern "C" fn AtaPdoPnp(
         GetIRPMinorFunctionString(IoGetCurrentIrpStackLocation(Irp).MinorFunction),
     );
 
-    Status = IoAcquireRemoveLock(&mut (*(*DevExt)).Common.RemoveLock, (Irp).cast());
+    Status = IoAcquireRemoveLock(&mut (*DevExt).Common.RemoveLock, (Irp).cast());
     if !NT_SUCCESS!(Status) {
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
         IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
@@ -612,7 +612,7 @@ unsafe extern "C" fn AtaPdoPnp(
             Status = AtaPdoQueryCapabilities((DevExt).cast(), Irp, IoStack);
         }
         IRP_MN_QUERY_PNP_DEVICE_STATE => {
-            Status = AtaPnpQueryPnpDeviceState(&mut (*(*DevExt)).Common, Irp);
+            Status = AtaPnpQueryPnpDeviceState(&mut (*DevExt).Common, Irp);
         }
         IRP_MN_QUERY_ID => {
             Status = AtaPdoQueryId((DevExt).cast(), Irp, IoStack);
@@ -621,7 +621,7 @@ unsafe extern "C" fn AtaPdoPnp(
             Status = AtaPdoQueryDeviceText((DevExt).cast(), Irp, IoStack);
         }
         IRP_MN_DEVICE_USAGE_NOTIFICATION => {
-            Status = AtaPnpQueryDeviceUsageNotification(&mut (*(*DevExt)).Common, Irp);
+            Status = AtaPnpQueryDeviceUsageNotification(&mut (*DevExt).Common, Irp);
         }
         IRP_MN_QUERY_DEVICE_RELATIONS => {
             if (*IoStack).Parameters.QueryDeviceRelations.Type == (TargetDeviceRelation as DEVICE_RELATION_TYPE) {
@@ -638,7 +638,7 @@ unsafe extern "C" fn AtaPdoPnp(
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
     IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
 
-    IoReleaseRemoveLock(&mut (*(*DevExt)).Common.RemoveLock, (Irp).cast());
+    IoReleaseRemoveLock(&mut (*DevExt).Common.RemoveLock, (Irp).cast());
 
     return Status;
 }
@@ -657,42 +657,42 @@ pub unsafe extern "system" fn AtaDispatchPnp(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaPdoFreeDevice(DevExt: *mut PATAPORT_DEVICE_EXTENSION) {
+pub unsafe extern "C" fn AtaPdoFreeDevice(DevExt: PATAPORT_DEVICE_EXTENSION) {
     PAGED_CODE!();
 
-    if !(*(*DevExt)).Device.PowerIdleCounter.is_null() {
+    if !(*DevExt).Device.PowerIdleCounter.is_null() {
         PoRegisterDeviceForIdleDetection(
-            (*(*DevExt)).Common.Self_,
+            (*DevExt).Common.Self_,
             0,
             0,
             PowerDeviceD3,
         );
     }
 
-    if !(*(*DevExt)).GtfDataBuffer.is_null() {
-        ExFreePoolWithTag((*(*DevExt)).GtfDataBuffer, ATAPORT_TAG);
-        (*(*DevExt)).GtfDataBuffer = core::ptr::null_mut();
+    if !(*DevExt).GtfDataBuffer.is_null() {
+        ExFreePoolWithTag((*DevExt).GtfDataBuffer, ATAPORT_TAG);
+        (*DevExt).GtfDataBuffer = core::ptr::null_mut();
     }
 
-    if !(*(*DevExt)).Device.Requests.is_null() {
-        ExFreePoolWithTag(((*(*DevExt)).Device.Requests).cast(), ATAPORT_TAG);
+    if !(*DevExt).Device.Requests.is_null() {
+        ExFreePoolWithTag(((*DevExt).Device.Requests).cast(), ATAPORT_TAG);
     }
 
-    IoDeleteDevice((*(*DevExt)).Common.Self_);
+    IoDeleteDevice((*DevExt).Common.Self_);
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaPdoCreateDevice(
-    ChanExt: *mut PATAPORT_CHANNEL_EXTENSION,
+    ChanExt: PATAPORT_CHANNEL_EXTENSION,
     AtaScsiAddress: ATA_SCSI_ADDRESS,
-) -> *mut PATAPORT_DEVICE_EXTENSION {
-    let PortData: *mut PATAPORT_PORT_DATA = &mut (*(*ChanExt)).PortData as *mut PATAPORT_PORT_DATA;
+) -> PATAPORT_DEVICE_EXTENSION {
+    let PortData: PATAPORT_PORT_DATA = &mut (*ChanExt).PortData as PATAPORT_PORT_DATA;
     let mut Status: NTSTATUS;
     let mut DeviceName: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
         MaximumLength: 0,
         Buffer: core::ptr::null_mut(),
     };
-    let mut DevExt: *mut PATAPORT_DEVICE_EXTENSION;
+    let mut DevExt: PATAPORT_DEVICE_EXTENSION;
     let mut Pdo: PDEVICE_OBJECT;
     let mut DeviceNameBuffer: [u16; 36] = [0; 36];
     let mut i: u32;
@@ -703,7 +703,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
         DeviceNameBuffer.as_mut_ptr(),
         core::mem::size_of::<[u16; 36]>() as u32,
         PdoFormat,
-        (*(*ChanExt)).DeviceObjectNumber,
+        (*ChanExt).DeviceObjectNumber,
         AtaScsiAddress.TargetId as i32,
         AtaScsiAddress.Lun as i32,
         AtapPdoNumber,
@@ -713,7 +713,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
     RtlInitUnicodeString(&mut DeviceName, DeviceNameBuffer.as_mut_ptr());
 
     Status = IoCreateDevice(
-        (*(*(*ChanExt)).Common.Self_).DriverObject,
+        (*(*ChanExt).Common.Self_).DriverObject,
         core::mem::size_of::<PATAPORT_DEVICE_EXTENSION>() as u32,
         &mut DeviceName,
         FILE_DEVICE_MASS_STORAGE,
@@ -731,91 +731,91 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
         &mut DeviceName,
     );
 
-    (*Pdo).AlignmentRequirement = (*(*(*ChanExt)).Common.Self_).AlignmentRequirement;
+    (*Pdo).AlignmentRequirement = (*(*ChanExt).Common.Self_).AlignmentRequirement;
     (*Pdo).AlignmentRequirement = max((*Pdo).AlignmentRequirement, ATA_MIN_BUFFER_ALIGNMENT);
 
     (*Pdo).Flags |= DO_DIRECT_IO;
 
-    DevExt = (*Pdo).DeviceExtension as *mut PATAPORT_DEVICE_EXTENSION;
+    DevExt = (*Pdo).DeviceExtension as PATAPORT_DEVICE_EXTENSION;
 
     RtlZeroMemory!(
         DevExt as *mut core::ffi::c_void,
         core::mem::size_of::<PATAPORT_DEVICE_EXTENSION>(),
     );
     AtaPnpInitializeCommonExtension(
-        &mut (*(*DevExt)).Common,
+        &mut (*DevExt).Common,
         Pdo,
-        (*(*ChanExt)).Common.Flags & !DO_IS_FDO,
+        (*ChanExt).Common.Flags & !DO_IS_FDO,
     );
-    (*(*DevExt)).Common.__bindgen_anon_1.FdoExt = ChanExt as *mut core::ffi::c_void;
-    (*(*DevExt)).TransferModeAllowedMask = MAXULONG;
-    (*(*DevExt)).Device.__bindgen_anon_1.SectorSize = ATA_MIN_SECTOR_SIZE;
-    (*(*DevExt)).Device.PortData = (PortData).cast();
-    (*(*DevExt)).Device.LocalBuffer = (*(*PortData)).LocalBuffer;
+    (*DevExt).Common.__bindgen_anon_1.FdoExt = ChanExt as *mut core::ffi::c_void;
+    (*DevExt).TransferModeAllowedMask = MAXULONG;
+    (*DevExt).Device.__bindgen_anon_1.SectorSize = ATA_MIN_SECTOR_SIZE;
+    (*DevExt).Device.PortData = (PortData).cast();
+    (*DevExt).Device.LocalBuffer = (*PortData).LocalBuffer;
 
-    (*(*DevExt)).Device.AtaScsiAddress = AtaScsiAddress;
-    (*(*DevExt)).Device.__bindgen_anon_1.TransportFlags = AtaScsiAddress.TargetId as u32;
-    (*(*DevExt)).Device.__bindgen_anon_1.DeviceSelect = (IDE_DRIVE_SELECT | (AtaScsiAddress.Lun as i32) as u32) as u8;
+    (*DevExt).Device.AtaScsiAddress = AtaScsiAddress;
+    (*DevExt).Device.__bindgen_anon_1.TransportFlags = AtaScsiAddress.TargetId as u32;
+    (*DevExt).Device.__bindgen_anon_1.DeviceSelect = (IDE_DRIVE_SELECT | (AtaScsiAddress.Lun as i32) as u32) as u8;
 
-    if !((*(*PortData)).PortFlags & PORT_FLAG_IS_AHCI != 0) {
-        (*(*DevExt)).Device.__bindgen_anon_1.DeviceSelect = ((*(*DevExt)).Device.__bindgen_anon_1.DeviceSelect as i32
+    if !((*PortData).PortFlags & PORT_FLAG_IS_AHCI != 0) {
+        (*DevExt).Device.__bindgen_anon_1.DeviceSelect = ((*DevExt).Device.__bindgen_anon_1.DeviceSelect as i32
             | ((AtaScsiAddress.TargetId as i32 & 1) << 4))
             as u8;
     }
 
-    (*(*DevExt)).Device.DeviceFlags = DEVICE_UNINITIALIZED;
+    (*DevExt).Device.DeviceFlags = DEVICE_UNINITIALIZED;
 
-    if (*(*PortData)).PortFlags & PORT_FLAG_IS_EXTERNAL != 0 {
-        (*(*DevExt)).Device.DeviceFlags |= DEVICE_IS_PDO_REMOVABLE;
+    if (*PortData).PortFlags & PORT_FLAG_IS_EXTERNAL != 0 {
+        (*DevExt).Device.DeviceFlags |= DEVICE_IS_PDO_REMOVABLE;
     }
 
-    if (*(*PortData)).PortFlags & PORT_FLAG_PIO_VIA_DMA != 0 {
-        (*(*DevExt)).Device.DeviceFlags |= DEVICE_PIO_VIA_DMA;
+    if (*PortData).PortFlags & PORT_FLAG_PIO_VIA_DMA != 0 {
+        (*DevExt).Device.DeviceFlags |= DEVICE_PIO_VIA_DMA;
     }
 
-    if (*(*PortData)).PortFlags & PORT_FLAG_PIO_FOR_LBA48_XFER != 0 {
-        (*(*DevExt)).Device.DeviceFlags |= DEVICE_PIO_FOR_LBA48_XFER;
+    if (*PortData).PortFlags & PORT_FLAG_PIO_FOR_LBA48_XFER != 0 {
+        (*DevExt).Device.DeviceFlags |= DEVICE_PIO_FOR_LBA48_XFER;
     }
 
-    (*(*DevExt)).Device.DeviceFlags |= DEVICE_PIO_ONLY;
+    (*DevExt).Device.DeviceFlags |= DEVICE_PIO_ONLY;
 
-    (*(*DevExt)).Device.FreeRequestsBitmap = NUM_TO_BITMAP!(((*(*PortData)).QueueDepth) as _);
-    (*(*DevExt)).Device.MaxRequestsBitmap = (*(*DevExt)).Device.FreeRequestsBitmap;
+    (*DevExt).Device.FreeRequestsBitmap = NUM_TO_BITMAP!(((*PortData).QueueDepth) as _);
+    (*DevExt).Device.MaxRequestsBitmap = (*DevExt).Device.FreeRequestsBitmap;
 
-    (*(*DevExt)).Device.Requests = ExAllocatePoolZero(
+    (*DevExt).Device.Requests = ExAllocatePoolZero(
         NonPagedPool,
-        ((core::mem::size_of::<ATA_DEVICE_REQUEST>() as u32) * (*(*PortData)).QueueDepth) as _,
+        ((core::mem::size_of::<ATA_DEVICE_REQUEST>() as u32) * (*PortData).QueueDepth) as _,
         ATAPORT_TAG,
     ) as *mut ATA_DEVICE_REQUEST;
-    if (*(*DevExt)).Device.Requests.is_null() {
+    if (*DevExt).Device.Requests.is_null() {
         AtaPdoFreeDevice(DevExt);
         return core::ptr::null_mut();
     }
 
     i = 0;
-    while i < (*(*PortData)).QueueDepth {
-        let Request: *mut ATA_DEVICE_REQUEST = (*(*DevExt)).Device.Requests.add(i as usize);
+    while i < (*PortData).QueueDepth {
+        let Request: *mut ATA_DEVICE_REQUEST = (*DevExt).Device.Requests.add(i as usize);
 
-        (*Request).Device = &mut (*(*DevExt)).Device as *mut _ as *mut ATA_IO_CONTEXT_COMMON;
+        (*Request).Device = &mut (*DevExt).Device as *mut _ as *mut ATA_IO_CONTEXT_COMMON;
         (*Request).Signature = ATA_DEVICE_REQUEST_SIGNATURE;
         i = i.wrapping_add(1);
     }
 
-    KeInitializeSpinLock(&mut (*(*DevExt)).Device.QueueLock);
-    InitializeListHead(&mut (*(*DevExt)).Device.DeviceQueueList);
-    InitializeListHead(&mut (*(*DevExt)).PowerIrpQueueList);
+    KeInitializeSpinLock(&mut (*DevExt).Device.QueueLock);
+    InitializeListHead(&mut (*DevExt).Device.DeviceQueueList);
+    InitializeListHead(&mut (*DevExt).PowerIrpQueueList);
     KeInitializeEvent(
-        &mut (*(*DevExt)).Device.QueueStoppedEvent,
+        &mut (*DevExt).Device.QueueStoppedEvent,
         _EVENT_TYPE_NotificationEvent,
         FALSE,
     );
     KeInitializeEvent(
-        &mut (*(*DevExt)).Worker.EnumerationEvent,
+        &mut (*DevExt).Worker.EnumerationEvent,
         _EVENT_TYPE_NotificationEvent,
         FALSE,
     );
     KeInitializeEvent(
-        &mut (*(*DevExt)).Worker.ConfigureEvent,
+        &mut (*DevExt).Worker.ConfigureEvent,
         _EVENT_TYPE_NotificationEvent,
         FALSE,
     );

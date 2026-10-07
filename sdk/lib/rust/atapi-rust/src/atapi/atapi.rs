@@ -476,7 +476,7 @@ pub unsafe extern "system" fn AtaStorageNotificationlDpc(
         DevExt = (AtaFdoFindDeviceByPath(
             (ChanExt).cast(),
             AtaMarshallScsiAddress((*PortData).PortNumber, i, 0),
-            AtaStorageNotificationlDpc,
+            (AtaStorageNotificationlDpc as *mut core::ffi::c_void),
         )).cast();
         if DevExt.is_null() {
             i = i.wrapping_add(1);
@@ -494,14 +494,14 @@ pub unsafe extern "system" fn AtaStorageNotificationlDpc(
             );
         }
 
-        IoReleaseRemoveLock(&mut (*DevExt).Common.RemoveLock, AtaStorageNotificationlDpc);
+        IoReleaseRemoveLock(&mut (*DevExt).Common.RemoveLock, (AtaStorageNotificationlDpc as *mut core::ffi::c_void));
 
         i = i.wrapping_add(1);
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaPnpQueryInterface(
-    CommonExt: *mut PATAPORT_COMMON_EXTENSION,
+    CommonExt: PATAPORT_COMMON_EXTENSION,
     Guid: *const GUID,
     Interface: *mut core::ffi::c_void,
     Version: u32,
@@ -523,7 +523,7 @@ pub unsafe extern "C" fn AtaPnpQueryInterface(
 
     Irp = IoBuildSynchronousFsdRequest(
         IRP_MJ_PNP,
-        (*(*CommonExt)).__bindgen_anon_1.LowerDeviceObject,
+        (*CommonExt).__bindgen_anon_1.LowerDeviceObject,
         core::ptr::null_mut(),
         0,
         core::ptr::null_mut(),
@@ -544,7 +544,7 @@ pub unsafe extern "C" fn AtaPnpQueryInterface(
     (*IoStack).Parameters.QueryInterface.Interface = (Interface).cast();
     (*IoStack).Parameters.QueryInterface.InterfaceSpecificData = core::ptr::null_mut();
 
-    Status = IoCallDriver((*(*CommonExt)).__bindgen_anon_1.LowerDeviceObject, Irp);
+    Status = IoCallDriver((*CommonExt).__bindgen_anon_1.LowerDeviceObject, Irp);
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(
             &mut Event as *mut KEVENT as *mut core::ffi::c_void,

@@ -53,7 +53,7 @@ unsafe extern "C" fn AtaDeviceSetPioTransferMode(
 ) -> NTSTATUS {
     let Request: PATA_DEVICE_REQUEST = &raw mut (*PortData).Worker.InternalRequest;
     let Status: NTSTATUS;
-    let Mode: ULONG;
+    let mut Mode: ULONG = core::mem::zeroed();
 
     NT_VERIFY!(
         _BitScanReverse(
@@ -62,7 +62,7 @@ unsafe extern "C" fn AtaDeviceSetPioTransferMode(
         ) != 0,
     );
 
-    Mode = IDE_SET_ADVANCE_PIO_MODE!(Mode);
+    Mode = (IDE_SET_ADVANCE_PIO_MODE!(Mode)) as u32;
     AtaDeviceBuildSetTransferModeTaskFile(Request, (Mode) as UCHAR);
 
     Status = AtaPortSendRequest(PortData, DevExt);
@@ -78,7 +78,7 @@ unsafe extern "C" fn AtaDeviceSetDmaTransferMode(
 ) -> NTSTATUS {
     let Request: PATA_DEVICE_REQUEST = &raw mut (*PortData).Worker.InternalRequest;
     let Status: NTSTATUS;
-    let Mode: ULONG;
+    let mut Mode: ULONG = core::mem::zeroed();
 
     if _BitScanReverse(
         &raw mut Mode,
@@ -89,11 +89,11 @@ unsafe extern "C" fn AtaDeviceSetDmaTransferMode(
     }
 
     if Mode >= UDMA_MODE!(0) {
-        Mode = IDE_SET_UDMA_MODE!(Mode - UDMA_MODE!(0));
+        Mode = (IDE_SET_UDMA_MODE!(Mode - UDMA_MODE!(0))) as u32;
     } else if Mode >= MWDMA_MODE!(0) {
-        Mode = IDE_SET_MWDMA_MODE!(Mode - MWDMA_MODE!(0));
+        Mode = (IDE_SET_MWDMA_MODE!(Mode - MWDMA_MODE!(0))) as u32;
     } else {
-        Mode = IDE_SET_SWDMA_MODE!(Mode - SWDMA_MODE!(0));
+        Mode = (IDE_SET_SWDMA_MODE!(Mode - SWDMA_MODE!(0))) as u32;
     }
     AtaDeviceBuildSetTransferModeTaskFile(Request, (Mode) as UCHAR);
 

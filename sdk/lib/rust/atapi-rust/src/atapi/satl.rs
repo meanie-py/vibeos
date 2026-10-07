@@ -489,7 +489,7 @@ unsafe extern "C" fn AtaReqScsiReadWrite(
     (*Request).Flags = REQUEST_FLAG_READ_WRITE;
 
     Cdb = ((*Srb).Cdb).as_mut_ptr() as PCDB;
-    match (*Cdb).AsByte[0] as i32 {
+    match ((*Cdb).AsByte[0] as i32) as u32 {
         SCSIOP_READ6 | SCSIOP_WRITE6 => {
             Lba = (CdbGetLogicalBlockAddress6(Cdb)) as _;
         }
@@ -1374,14 +1374,14 @@ unsafe extern "C" fn AtaReqScsiInquiryLogicalBlockProvisioning(
     );
     (*LogicalBlockProvisioningPage).PageLength[1] =
         (FIELD_OFFSET!(VPD_LOGICAL_BLOCK_PROVISIONING_PAGE, ProvisioningGroupDescr)
-            - RTL_SIZEOF_THROUGH_FIELD!(VPD_LOGICAL_BLOCK_PROVISIONING_PAGE, PageLength)) as UCHAR;
+            - (RTL_SIZEOF_THROUGH_FIELD!(VPD_LOGICAL_BLOCK_PROVISIONING_PAGE, PageLength)) as i32) as UCHAR;
 
-    if AtaDevHasTrimFunction(&(*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
-        if AtaDevHasDratFunction(&(*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
+    if AtaDevHasTrimFunction(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
+        if AtaDevHasDratFunction(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
             (*LogicalBlockProvisioningPage)._bitfield_2.set_ANC_SUP(1);
         }
 
-        if AtaDevHasRzatFunction(&(*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
+        if AtaDevHasRzatFunction(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
             (*LogicalBlockProvisioningPage)._bitfield_2.set_LBPRZ(1);
         }
     }
@@ -1409,7 +1409,7 @@ unsafe extern "C" fn AtaReqScsiInquiry(
         ) as UCHAR;
     }
 
-    match (*Cdb).CDB6INQUIRY3.PageCode as i32 {
+    match ((*Cdb).CDB6INQUIRY3.PageCode as i32) as u32 {
         VPD_SUPPORTED_PAGES => {
             Length = AtaReqScsiInquirySupportedPages(DevExt);
         }
@@ -1625,7 +1625,7 @@ unsafe extern "C" fn AtaReqScsiAtaPassThrough(
         | ((*Srb).SrbFlags & SRB_FLAGS_UNSPECIFIED_DIRECTION);
 
     Cdb = ((*Srb).Cdb).as_mut_ptr() as *mut UCHAR as PCDB;
-    match (*Cdb).ATA_PASSTHROUGH16.Protocol() as i32 {
+    match ((*Cdb).ATA_PASSTHROUGH16.Protocol() as i32) as u32 {
         ATA_PASSTHROUGH_PROTOCOL_NON_DATA => {
             if (*Cdb).ATA_PASSTHROUGH16.TLength() != 0 {
                 return AtaReqTerminateInvalidField(Srb);

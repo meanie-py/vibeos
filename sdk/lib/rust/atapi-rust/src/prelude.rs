@@ -30,9 +30,26 @@ pub use crate::{ERR, INFO, TRACE, WARN};
 // wdm.h/ntddk.h MACROS and MSVC intrinsics the C calls as functions. ntkrnl-sys has portable
 // wrappers for them outside the `ddk` glob (ke, inline::tier1, inline::ke, interlocked), so
 // they are re-exported here BY NAME -- the C's `_`-prefixed intrinsic spellings included.
-pub use ntkrnl_sys::ke::{
-    KeAcquireSpinLock, KeAcquireSpinLockAtDpcLevel, KeReleaseSpinLock, KeReleaseSpinLockFromDpcLevel,
-};
+// ntkrnl_sys::ke's spin-lock helpers take ITS `PKSPIN_LOCK` (`*mut usize`); a driver's lock
+// fields are the island's (`*mut c_ulonglong` on 64-bit) -- the same width, a distinct Rust
+// type, so a bare re-export made every call site E0308 (16 in atapi). Thin wrappers over the
+// island's type instead.
+#[inline]
+pub unsafe fn KeAcquireSpinLock(SpinLock: PKSPIN_LOCK, OldIrql: *mut KIRQL) {
+    ntkrnl_sys::ke::KeAcquireSpinLock(SpinLock.cast(), OldIrql)
+}
+#[inline]
+pub unsafe fn KeReleaseSpinLock(SpinLock: PKSPIN_LOCK, NewIrql: KIRQL) {
+    ntkrnl_sys::ke::KeReleaseSpinLock(SpinLock.cast(), NewIrql)
+}
+#[inline]
+pub unsafe fn KeAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK) {
+    ntkrnl_sys::ke::KeAcquireSpinLockAtDpcLevel(SpinLock.cast())
+}
+#[inline]
+pub unsafe fn KeReleaseSpinLockFromDpcLevel(SpinLock: PKSPIN_LOCK) {
+    ntkrnl_sys::ke::KeReleaseSpinLockFromDpcLevel(SpinLock.cast())
+}
 pub use ntkrnl_sys::inline::tier1::{
     IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation,
     IoMarkIrpPending, IoSetCancelRoutine, IoSetCompletionRoutine, IoSetNextIrpStackLocation,
@@ -260,6 +277,8 @@ pub const DO_DIRECT_IO: u32 = 16; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const DO_IS_FDO: u32 = 2147483648; // pciidex-rust/src/types_amd64.rs
 pub const DO_POWER_INRUSH: u32 = 16384; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const DevicePowerState: _POWER_STATE_TYPE = _POWER_STATE_TYPE_DevicePowerState; // island enum
+pub const DeviceTextDescription: _DEVICE_TEXT_TYPE = _DEVICE_TEXT_TYPE_DeviceTextDescription; // island enum
+pub const DeviceUsageTypePaging: _DEVICE_USAGE_NOTIFICATION_TYPE = _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypePaging; // island enum
 pub const EVENT_CODE_BAD_STATE: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_BAD_STATE; // island enum
 pub const EVENT_CODE_CRC_ERROR: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_CRC_ERROR; // island enum
 pub const EVENT_CODE_DMA_DISABLE: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_DMA_DISABLE; // island enum
@@ -272,6 +291,7 @@ pub const FILE_DEVICE_SECURE_OPEN: u32 = 256; // ntdll-sys/src/bindgen_amd64.rs
 pub const FILE_REMOVABLE_MEDIA: u32 = 1; // diskpart-rust/src/prelude.rs
 pub const GetDeviceType: DEVICE_TYPE_NAME = DEVICE_TYPE_NAME_GetDeviceType; // island enum
 pub const GetGenericType: DEVICE_TYPE_NAME = DEVICE_TYPE_NAME_GetGenericType; // island enum
+pub const GetPeripheralId: DEVICE_TYPE_NAME = DEVICE_TYPE_NAME_GetPeripheralId; // island enum
 pub const HighPagePriority: ULONG = 2; // ntoskrnl-rust/src/ARM3/helpers.rs
 pub const IDENTIFY_BUFFER_SIZE: u32 = 512; // cdrom-rust/src/types_amd64.rs
 pub const IDE_ACPI_TIMING_MODE_NOT_SUPPORTED: u32 = 4294967295; // legide-rust/src/types_amd64.rs
@@ -329,7 +349,9 @@ pub const IDE_STATUS_ERROR: u32 = 1; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_STATUS_INDEX: u32 = 2; // atapi-legacy-rust/src/types_amd64.rs
 pub const ID_CMD: u32 = 236; // cdrom-rust/src/types_amd64.rs
 pub const INQUIRYDATABUFFERSIZE: u32 = 36; // atapi-legacy-rust/src/types_amd64.rs
+pub const IOCTL_SCSI_GET_CAPABILITIES: u32 = 0x0004_1010; // scsidisk-rust/src/lib.rs
 pub const IOCTL_STORAGE_EVENT_NOTIFICATION: u32 = 0x002D1C90; // classpnp-rust/src/glue.rs
+pub const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D_1400; // diskpart-rust/src/prelude.rs
 pub const IO_DISK_INCREMENT: u32 = 1; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const IO_NO_INCREMENT: u32 = 0; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const IRP_MJ_CLOSE: u32 = 2; // ntkrnl-sys/src/hal_bindgen_amd64.rs
@@ -341,6 +363,10 @@ pub const IRP_MJ_SCSI: u32 = 15; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const IRP_MJ_SYSTEM_CONTROL: u32 = 23; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const IRP_PAGING_IO: u32 = 2; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const IRP_SYNCHRONOUS_PAGING_IO: u32 = 64; // ntkrnl-sys/src/hal_bindgen_amd64.rs
+pub const IrpForward: _SYSCTL_IRP_DISPOSITION = _SYSCTL_IRP_DISPOSITION_IrpForward; // island enum
+pub const IrpNotCompleted: _SYSCTL_IRP_DISPOSITION = _SYSCTL_IRP_DISPOSITION_IrpNotCompleted; // island enum
+pub const IrpNotWmi: _SYSCTL_IRP_DISPOSITION = _SYSCTL_IRP_DISPOSITION_IrpNotWmi; // island enum
+pub const IrpProcessed: _SYSCTL_IRP_DISPOSITION = _SYSCTL_IRP_DISPOSITION_IrpProcessed; // island enum
 pub const IsNEC_98: u32 = 0; // legide-rust/src/prelude.rs
 pub const KEY_ALL_ACCESS: u32 = 983103; // legide-rust/src/prelude.rs
 pub const KEY_READ: DWORD = 0x20019; // diskpart-rust/src/prelude.rs
@@ -504,6 +530,8 @@ pub const STORAGE_ADDRESS_TYPE_BTL8: u32 = 0; // cdrom-rust/src/types_amd64.rs
 pub const STORAGE_EVENT_ALL: u32 = 7; // cdrom-rust/src/types_amd64.rs
 pub const STORAGE_EVENT_NOTIFICATION_VERSION_V1: u32 = 1; // cdrom-rust/src/types_amd64.rs
 pub const SWDMA_ALL: u32 = 224; // pciidex-rust/src/types_amd64.rs
+pub const StorageAdapterProperty: _STORAGE_PROPERTY_ID = _STORAGE_PROPERTY_ID_StorageAdapterProperty; // island enum
+pub const StorageDeviceProperty: _STORAGE_PROPERTY_ID = _STORAGE_PROPERTY_ID_StorageDeviceProperty; // island enum
 pub const SystemPowerState: _POWER_STATE_TYPE = _POWER_STATE_TYPE_SystemPowerState; // island enum
 pub const THREAD_ALL_ACCESS: u32 = 2032639; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const TargetDeviceRelation: _DEVICE_RELATION_TYPE = _DEVICE_RELATION_TYPE_TargetDeviceRelation; // island enum
@@ -558,6 +586,11 @@ pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, Rtl
 // ==== port facts: constants evaluated by clang from the C headers (generated -- `rustconv port resolve`) ====
 pub const ATAPORT_TAG: u32 = 0x50656449; // clang, atapi.c
 pub const ATA_DEVICE_REQUEST_SIGNATURE: u32 = 0x72415441; // clang, fdo.c
+pub const IOCTL_ATA_PASS_THROUGH: u32 = 0x4D02C; // clang, ioctl.c
+pub const IOCTL_ATA_PASS_THROUGH_DIRECT: u32 = 0x4D030; // clang, ioctl.c
+pub const IOCTL_SCSI_GET_INQUIRY_DATA: u32 = 0x4100C; // clang, ioctl.c
+pub const IOCTL_SCSI_PASS_THROUGH: u32 = 0x4D004; // clang, ioctl.c
+pub const IOCTL_SCSI_PASS_THROUGH_DIRECT: u32 = 0x4D014; // clang, ioctl.c
 pub const IO_ERR_CONTROLLER_ERROR: NTSTATUS = 0xC004000B_u32 as NTSTATUS; // clang, dev_error.c
 pub const IO_ERR_PARITY: NTSTATUS = 0xC0040005_u32 as NTSTATUS; // clang, dev_error.c
 pub const IO_ERR_TIMEOUT: NTSTATUS = 0xC0040009_u32 as NTSTATUS; // clang, dev_error.c

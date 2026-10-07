@@ -109,7 +109,7 @@ unsafe extern "C" fn AtaCreateAtapiStandardInquiryData(
     (*InquiryData).__bindgen_anon_1.Versions = 0x04;
     (*InquiryData).set_ResponseDataFormat((2) as _);
     (*InquiryData).AdditionalLength =
-        (INQUIRYDATABUFFERSIZE - RTL_SIZEOF_THROUGH_FIELD!(INQUIRYDATA, AdditionalLength)) as u8;
+        (INQUIRYDATABUFFERSIZE - (RTL_SIZEOF_THROUGH_FIELD!(INQUIRYDATA, AdditionalLength)) as u32) as u8;
 
     AtaCopyIdStringSafe(
         (*InquiryData).VendorId.as_mut_ptr() as PCHAR,
@@ -190,11 +190,11 @@ pub unsafe extern "C" fn AtaPortIdentifyDevice(
     let mut IsSameDevice: BOOLEAN;
     let mut Attempt: ULONG;
     let mut RetryCount: ULONG;
-    let mut DeviceType: ATA_DEVICE_TYPE;
+    let mut DeviceType: ATA_DEVICE_TYPE = core::mem::zeroed();
 
     _InterlockedOr(&mut (*PortData).InterruptFlags, (PORT_INT_FLAG_IGNORE_LINK_IRQ) as i32);
 
-    ConnectionStatus = (*PortData).IdentifyDevice.expect("non-null function pointer")(
+    ConnectionStatus = (*PortData).IdentifyDevice.unwrap_unchecked()(
         (*PortData).ChannelContext,
         ((*DevExt).Device.AtaScsiAddress.TargetId) as _,
     );
@@ -217,7 +217,7 @@ pub unsafe extern "C" fn AtaPortIdentifyDevice(
     if (*DevExt).Device.DeviceFlags & DEVICE_UNINITIALIZED != 0 {
         StartFromAtapi = (ConnectionStatus == CONN_STATUS_DEV_ATAPI) as BOOLEAN;
     } else {
-        StartFromAtapi = IS_ATAPI!(&(*DevExt).Device);
+        StartFromAtapi = (IS_ATAPI!(&(*DevExt).Device)) as u8;
     }
 
     RetryCount = 0;

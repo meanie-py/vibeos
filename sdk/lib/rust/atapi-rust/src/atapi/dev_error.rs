@@ -327,9 +327,9 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
     let mut RetryCount: SIZE_T;
     let mut OldIrql: KIRQL;
 
-    ASSERT_REQUEST!(Request);
+    ASSERT_REQUEST!((!(Request).is_null()));
 
-    SrbStatus = SRB_STATUS!((*Request).SrbStatus);
+    SrbStatus = (SRB_STATUS!((*Request).SrbStatus)) as u8;
 
     RetryCount = SRB_GET_FLAGS!((*Request).Srb) & (SRB_FLAG_RETRY_COUNT_MASK) as _;
     RetryCount = RetryCount.wrapping_add(1);
@@ -359,7 +359,7 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
     SrbStatus = SrbStatus | ((*Request).SrbStatus & ((SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as u8);
     (*Request).SrbStatus = SrbStatus;
 
-    if SRB_STATUS!(SrbStatus) == SRB_STATUS_BUSY {
+    if SRB_STATUS!(SrbStatus) == (SRB_STATUS_BUSY as i32) {
         return;
     }
 
@@ -415,7 +415,7 @@ unsafe extern "C" fn AtaDeviceNcqRecovery(
         }
 
         FailedRequest = (*PortData).Slots[(*LogPage).NcqTag() as usize];
-        ASSERT_REQUEST!(FailedRequest);
+        ASSERT_REQUEST!((!(FailedRequest).is_null()));
         (*PortData).Worker.FailedRequest = FailedRequest;
 
         (*FailedRequest).SrbStatus = (SRB_STATUS_ERROR) as u8;

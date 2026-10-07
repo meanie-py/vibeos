@@ -104,7 +104,7 @@ unsafe extern "C" fn AtaFdoCreateSymLinks(
 }
 
 unsafe extern "C" fn AtaFdoAllocateLocalBuffer(
-    PortData: *mut PATAPORT_PORT_DATA,
+    PortData: PATAPORT_PORT_DATA,
 ) -> NTSTATUS {
     let mut PhysicalAddress: PHYSICAL_ADDRESS;
     let mut HighestAcceptableAddress: PHYSICAL_ADDRESS = core::mem::zeroed();
@@ -113,29 +113,29 @@ unsafe extern "C" fn AtaFdoAllocateLocalBuffer(
 
     PAGED_CODE!();
 
-    if !(*(*PortData)).LocalBuffer.is_null() {
+    if !(*PortData).LocalBuffer.is_null() {
         return STATUS_SUCCESS;
     }
 
     LowestAcceptableAddress.QuadPart = 0;
     HighestAcceptableAddress.QuadPart = 0xFFFFFFFF; // 32-bit DMA
     BoundaryAddressMultiple.QuadPart = 0x10000; // 64k, for PATA compability
-    (*(*PortData)).LocalBuffer = MmAllocateContiguousMemorySpecifyCache(
+    (*PortData).LocalBuffer = MmAllocateContiguousMemorySpecifyCache(
         (ATA_LOCAL_BUFFER_SIZE) as SIZE_T,
         LowestAcceptableAddress,
         HighestAcceptableAddress,
         BoundaryAddressMultiple,
         MmNonCached,
     );
-    if (*(*PortData)).LocalBuffer.is_null() {
+    if (*PortData).LocalBuffer.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    PhysicalAddress = MmGetPhysicalAddress((*(*PortData)).LocalBuffer);
+    PhysicalAddress = MmGetPhysicalAddress((*PortData).LocalBuffer);
 
-    (*(*PortData)).LocalSgList.NumberOfElements = 1;
-    (*(*PortData)).LocalSgList.Elements[0].Length = ATA_LOCAL_BUFFER_SIZE;
-    (*(*PortData)).LocalSgList.Elements[0].Address.QuadPart = PhysicalAddress.QuadPart;
+    (*PortData).LocalSgList.NumberOfElements = 1;
+    (*PortData).LocalSgList.Elements[0].Length = ATA_LOCAL_BUFFER_SIZE;
+    (*PortData).LocalSgList.Elements[0].Address.QuadPart = PhysicalAddress.QuadPart;
 
     return STATUS_SUCCESS;
 }
@@ -143,13 +143,13 @@ unsafe extern "C" fn AtaFdoAllocateLocalBuffer(
 unsafe extern "C" fn AtaFdoCreatePortThread(
     PortData: *mut ATAPORT_PORT_DATA,
 ) -> NTSTATUS {
-    let ObjectAttributes: _OBJECT_ATTRIBUTES = RTL_CONSTANT_OBJECT_ATTRIBUTES(core::ptr::null_mut(), OBJ_KERNEL_HANDLE);
-    let mut ThreadHandle: HANDLE;
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = RTL_CONSTANT_OBJECT_ATTRIBUTES(core::ptr::null_mut(), OBJ_KERNEL_HANDLE);
+    let mut ThreadHandle: HANDLE = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
     PAGED_CODE!();
 
-    if (*PortData).Worker.Thread != 0 {
+    if (*PortData).Worker.Thread != core::ptr::null_mut() {
         return STATUS_SUCCESS;
     }
 
@@ -162,7 +162,7 @@ unsafe extern "C" fn AtaFdoCreatePortThread(
     Status = PsCreateSystemThread(
         core::ptr::addr_of_mut!(ThreadHandle),
         THREAD_ALL_ACCESS,
-        core::ptr::addr_of!(ObjectAttributes),
+        core::ptr::addr_of_mut!(ObjectAttributes),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         Some(AtaPortWorkerThread),
@@ -262,10 +262,10 @@ unsafe extern "C" fn AtaFdoRemoveSymLinks(
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaFdoStartDevice(
-    ChanExt: *mut PATAPORT_CHANNEL_EXTENSION,
+    ChanExt: PATAPORT_CHANNEL_EXTENSION,
     ResourcesTranslated: PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
-    let PortData: *mut PATAPORT_PORT_DATA = &mut (*(*ChanExt)).PortData;
+    let PortData: PATAPORT_PORT_DATA = &mut (*ChanExt).PortData;
     let mut ChannelInterface: PCIIDEX_CHANNEL_INTERFACE = core::mem::zeroed();
     let mut Status: NTSTATUS;
 
@@ -277,7 +277,7 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
     );
 
     Status = AtaPnpQueryInterface(
-        &mut (*(*ChanExt)).Common,
+        &mut (*ChanExt).Common,
         &GUID_PCIIDE_INTERFACE_ROS,
         &mut ChannelInterface as *mut PCIIDEX_CHANNEL_INTERFACE as *mut core::ffi::c_void,
         PCIIDEX_INTERFACE_VERSION,
@@ -286,65 +286,65 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
     if !NT_SUCCESS!(Status) {
         return Status;
     }
-    (*(*PortData)).ChannelContext = ChannelInterface.ChannelContext;
-    (*(*PortData)).AttachChannel = ChannelInterface.AttachChannel;
-    (*(*PortData)).SetDeviceData = ChannelInterface.SetDeviceData;
-    (*(*PortData)).GetInitTaskFile = ChannelInterface.GetInitTaskFile;
-    (*(*PortData)).DowngradeInterfaceSpeed = ChannelInterface.DowngradeInterfaceSpeed;
-    (*(*PortData)).InterruptObject = ChannelInterface.InterruptObject;
-    (*(*PortData)).AbortChannel = ChannelInterface.AbortChannel;
-    (*(*PortData)).ResetChannel = ChannelInterface.ResetChannel;
-    (*(*PortData)).EnumerateChannel = ChannelInterface.EnumerateChannel;
-    (*(*PortData)).IdentifyDevice = ChannelInterface.IdentifyDevice;
-    (*(*PortData)).SetTransferMode = ChannelInterface.SetTransferMode;
-    (*(*PortData)).AllocateSlot = ChannelInterface.AllocateSlot;
-    (*(*PortData)).PreparePrdTable = ChannelInterface.PreparePrdTable;
-    (*(*PortData)).PrepareIo = ChannelInterface.PrepareIo;
-    (*(*PortData)).StartIo = ChannelInterface.StartIo;
-    (*(*PortData)).MaxTargetId = ChannelInterface.MaxTargetId;
-    (*(*PortData)).MaximumTransferLength = ChannelInterface.MaximumTransferLength;
-    (*(*PortData)).MaximumPhysicalPages = ChannelInterface.MaximumPhysicalPages;
-    (*(*PortData)).QueueDepth = ChannelInterface.QueueDepth;
-    (*(*PortData)).PortNumber = ChannelInterface.Channel;
-    (*(*PortData)).DmaAdapter = ChannelInterface.DmaAdapter;
-    (*(*PortData)).ChannelObject = ChannelInterface.ChannelObject;
+    (*PortData).ChannelContext = ChannelInterface.ChannelContext;
+    (*PortData).AttachChannel = ChannelInterface.AttachChannel;
+    (*PortData).SetDeviceData = ChannelInterface.SetDeviceData;
+    (*PortData).GetInitTaskFile = ChannelInterface.GetInitTaskFile;
+    (*PortData).DowngradeInterfaceSpeed = ChannelInterface.DowngradeInterfaceSpeed;
+    (*PortData).InterruptObject = ChannelInterface.InterruptObject;
+    (*PortData).AbortChannel = ChannelInterface.AbortChannel;
+    (*PortData).ResetChannel = ChannelInterface.ResetChannel;
+    (*PortData).EnumerateChannel = ChannelInterface.EnumerateChannel;
+    (*PortData).IdentifyDevice = ChannelInterface.IdentifyDevice;
+    (*PortData).SetTransferMode = ChannelInterface.SetTransferMode;
+    (*PortData).AllocateSlot = ChannelInterface.AllocateSlot;
+    (*PortData).PreparePrdTable = ChannelInterface.PreparePrdTable;
+    (*PortData).PrepareIo = ChannelInterface.PrepareIo;
+    (*PortData).StartIo = ChannelInterface.StartIo;
+    (*PortData).MaxTargetId = ChannelInterface.MaxTargetId;
+    (*PortData).MaximumTransferLength = ChannelInterface.MaximumTransferLength;
+    (*PortData).MaximumPhysicalPages = ChannelInterface.MaximumPhysicalPages;
+    (*PortData).QueueDepth = ChannelInterface.QueueDepth;
+    (*PortData).PortNumber = ChannelInterface.Channel;
+    (*PortData).DmaAdapter = ChannelInterface.DmaAdapter;
+    (*PortData).ChannelObject = ChannelInterface.ChannelObject;
 
-    (*(*PortData)).InterruptFlags = (PORT_INT_FLAG_IS_IO_ACTIVE) as i32;
-    (*(*PortData)).FreeSlotsBitmap = NUM_TO_BITMAP!(((*(*PortData)).QueueDepth) as _);
-    (*(*PortData)).MaxSlotsBitmap = (*(*PortData)).FreeSlotsBitmap;
-    (*(*PortData)).LastUsedSlot = (RTL_BITS_OF!(ULONG) - 1) as _;
+    (*PortData).InterruptFlags = (PORT_INT_FLAG_IS_IO_ACTIVE) as i32;
+    (*PortData).FreeSlotsBitmap = NUM_TO_BITMAP!(((*PortData).QueueDepth) as _);
+    (*PortData).MaxSlotsBitmap = (*PortData).FreeSlotsBitmap;
+    (*PortData).LastUsedSlot = (RTL_BITS_OF!(ULONG) - 1) as _;
 
     if (((ChannelInterface.TransferModeSupported & !PIO_ALL)) == 0) {
-        (*(*PortData)).PortFlags |= PORT_FLAG_PIO_ONLY;
+        (*PortData).PortFlags |= PORT_FLAG_PIO_ONLY;
     }
 
     if ChannelInterface.Flags & ATA_CHANNEL_FLAG_PIO_VIA_DMA != 0 {
-        (*(*PortData)).PortFlags |= PORT_FLAG_PIO_VIA_DMA;
+        (*PortData).PortFlags |= PORT_FLAG_PIO_VIA_DMA;
     }
 
     if ChannelInterface.Flags & ATA_CHANNEL_FLAG_NCQ != 0 {
-        (*(*PortData)).PortFlags |= PORT_FLAG_NCQ;
+        (*PortData).PortFlags |= PORT_FLAG_NCQ;
     }
 
     if ChannelInterface.Flags & ATA_CHANNEL_FLAG_IS_AHCI != 0 {
-        (*(*PortData)).PortFlags |= PORT_FLAG_IS_AHCI;
+        (*PortData).PortFlags |= PORT_FLAG_IS_AHCI;
     }
 
     if ChannelInterface.Flags & ATA_CHANNEL_FLAG_IS_EXTERNAL != 0 {
-        (*(*PortData)).PortFlags |= PORT_FLAG_IS_EXTERNAL;
+        (*PortData).PortFlags |= PORT_FLAG_IS_EXTERNAL;
     }
 
     if ChannelInterface.Flags & ATA_CHANNEL_FLAG_PIO_FOR_LBA48_XFER != 0 {
-        (*(*PortData)).PortFlags |= PORT_FLAG_PIO_FOR_LBA48_XFER;
+        (*PortData).PortFlags |= PORT_FLAG_PIO_FOR_LBA48_XFER;
     }
 
     if !ChannelInterface.HwSyncObject.is_null() {
-        (*(*PortData)).PortFlags |= PORT_FLAG_IS_SIMPLEX;
-        (*(*PortData)).HwSyncObject = ChannelInterface.HwSyncObject;
+        (*PortData).PortFlags |= PORT_FLAG_IS_SIMPLEX;
+        (*PortData).HwSyncObject = ChannelInterface.HwSyncObject;
     }
 
-    if !(ChannelInterface.Flags & ATA_CHANNEL_FLAG_PIO_VIA_DMA != 0) && (*(*PortData)).ReservedVaSpace.is_null() {
-        (*(*PortData)).ReservedVaSpace = MmAllocateMappingAddress(
+    if !(ChannelInterface.Flags & ATA_CHANNEL_FLAG_PIO_VIA_DMA != 0) && (*PortData).ReservedVaSpace.is_null() {
+        (*PortData).ReservedVaSpace = MmAllocateMappingAddress(
             (ATA_RESERVED_PAGES * PAGE_SIZE) as SIZE_T,
             ATAPORT_TAG,
         );
@@ -355,37 +355,37 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
         return Status;
     }
 
-    InitializeListHead(&mut (*(*PortData)).PortQueueList);
+    InitializeListHead(&mut (*PortData).PortQueueList);
     KeInitializeEvent(
-        &mut (*(*PortData)).QueueStoppedEvent,
+        &mut (*PortData).QueueStoppedEvent,
         _EVENT_TYPE_NotificationEvent,
         FALSE,
     );
 
     KeInitializeDpc(
-        &mut (*(*PortData)).Worker.Dpc,
+        &mut (*PortData).Worker.Dpc,
         Some(AtaPortWorkerSignalDpc),
         (PortData).cast(),
     );
     KeInitializeDpc(
-        &mut (*(*PortData)).Worker.NotificationDpc,
+        &mut (*PortData).Worker.NotificationDpc,
         Some(AtaStorageNotificationlDpc),
         (PortData).cast(),
     );
-    KeInitializeSpinLock(&mut (*(*PortData)).Worker.Lock);
+    KeInitializeSpinLock(&mut (*PortData).Worker.Lock);
     KeInitializeEvent(
-        &mut (*(*PortData)).Worker.EnumerationEvent,
+        &mut (*PortData).Worker.EnumerationEvent,
         _EVENT_TYPE_NotificationEvent,
         FALSE,
     );
 
     KeInitializeEvent(
-        &mut (*(*PortData)).Worker.CompletionEvent,
+        &mut (*PortData).Worker.CompletionEvent,
         _EVENT_TYPE_NotificationEvent,
         FALSE,
     );
-    (*(*PortData)).Worker.InternalRequest.Complete = Some(AtaPortCompleteInternalRequest);
-    (*(*PortData)).Worker.InternalRequest.Signature = ATA_DEVICE_REQUEST_SIGNATURE;
+    (*PortData).Worker.InternalRequest.Complete = Some(AtaPortCompleteInternalRequest);
+    (*PortData).Worker.InternalRequest.Signature = ATA_DEVICE_REQUEST_SIGNATURE;
 
     Status = AtaFdoCreatePortThread((PortData).cast());
     if !NT_SUCCESS!(Status) {
@@ -397,13 +397,13 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
         return Status;
     }
 
-    AtaSetPortRegistryKey((ChanExt).cast(), DD_ATA_REG_MAX_TARGET_ID, (*(*PortData)).MaxTargetId);
+    AtaSetPortRegistryKey((ChanExt).cast(), DD_ATA_REG_MAX_TARGET_ID, (*PortData).MaxTargetId);
 
     Status = IoRegisterDeviceInterface(
-        (*(*ChanExt)).Pdo,
+        (*ChanExt).Pdo,
         &GUID_DEVINTERFACE_STORAGEPORT,
         core::ptr::null_mut(),
-        &mut (*(*ChanExt)).StorageInterfaceName,
+        &mut (*ChanExt).StorageInterfaceName,
     );
     if NT_SUCCESS!(Status) {
         INFO!(
@@ -412,32 +412,32 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
         );
 
         Status = IoSetDeviceInterfaceState(
-            &(*(*ChanExt)).StorageInterfaceName,
+            &raw mut (*ChanExt).StorageInterfaceName,
             TRUE,
         );
         if !NT_SUCCESS!(Status) {
-            RtlFreeUnicodeString(&mut (*(*ChanExt)).StorageInterfaceName);
-            (*(*ChanExt)).StorageInterfaceName.Buffer = core::ptr::null_mut();
+            RtlFreeUnicodeString(&mut (*ChanExt).StorageInterfaceName);
+            (*ChanExt).StorageInterfaceName.Buffer = core::ptr::null_mut();
         }
     }
 
     *ChannelInterface.PortContext = (PortData).cast();
     *ChannelInterface.PortNotification = Some(AtaPortNotification);
-    *ChannelInterface.Slots = ((*(*PortData)).Slots).as_mut_ptr();
+    *ChannelInterface.Slots = ((*PortData).Slots).as_mut_ptr();
 
-    Status = IoInitializeTimer((*(*ChanExt)).Common.Self_, Some(AtaPortIoTimer), (PortData).cast());
+    Status = IoInitializeTimer((*ChanExt).Common.Self_, Some(AtaPortIoTimer), (PortData).cast());
     if !NT_SUCCESS!(Status) {
         return Status;
     }
 
-    IoStartTimer((*(*ChanExt)).Common.Self_);
-    (*(*PortData)).PortFlags |= PORT_FLAG_IO_TIMER_ACTIVE;
+    IoStartTimer((*ChanExt).Common.Self_);
+    (*PortData).PortFlags |= PORT_FLAG_IO_TIMER_ACTIVE;
 
-    Status = (((*(*PortData)).AttachChannel).unwrap_unchecked())((*(*PortData)).ChannelContext, TRUE);
+    Status = (((*PortData).AttachChannel).unwrap_unchecked())((*PortData).ChannelContext, TRUE);
     if !NT_SUCCESS!(Status) {
         return Status;
     }
-    (*(*PortData)).PortFlags |= PORT_FLAG_CHANNEL_ATTACHED;
+    (*PortData).PortFlags |= PORT_FLAG_CHANNEL_ATTACHED;
 
     return STATUS_SUCCESS;
 }
@@ -563,7 +563,7 @@ unsafe extern "C" fn AtaFdoRemoveDevice(
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaFdoPnp(
-    ChanExt: *mut PATAPORT_CHANNEL_EXTENSION,
+    ChanExt: PATAPORT_CHANNEL_EXTENSION,
     Irp: PIRP,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
@@ -579,7 +579,7 @@ pub unsafe extern "C" fn AtaFdoPnp(
         GetIRPMinorFunctionString(IoGetCurrentIrpStackLocation(Irp).MinorFunction),
     );
 
-    Status = IoAcquireRemoveLock(&mut (*(*ChanExt)).Common.RemoveLock, (Irp).cast());
+    Status = IoAcquireRemoveLock(&mut (*ChanExt).Common.RemoveLock, (Irp).cast());
     if !NT_SUCCESS!(Status) {
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
         IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
@@ -590,13 +590,13 @@ pub unsafe extern "C" fn AtaFdoPnp(
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     match (*IoStack).MinorFunction {
         IRP_MN_START_DEVICE => {
-            if ((NT_VERIFY!(IoForwardIrpSynchronously((*(*ChanExt)).Common.__bindgen_anon_1.LowerDeviceObject, Irp))) == 0) {
+            if ((NT_VERIFY!(IoForwardIrpSynchronously((*ChanExt).Common.__bindgen_anon_1.LowerDeviceObject, Irp))) == 0) {
                 Status = STATUS_UNSUCCESSFUL;
                 'CompleteIrp: {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
                     IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
 
-                    IoReleaseRemoveLock(&mut (*(*ChanExt)).Common.RemoveLock, (Irp).cast());
+                    IoReleaseRemoveLock(&mut (*ChanExt).Common.RemoveLock, (Irp).cast());
 
                     return Status;
                 }
@@ -607,7 +607,7 @@ pub unsafe extern "C" fn AtaFdoPnp(
                     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
                     IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
 
-                    IoReleaseRemoveLock(&mut (*(*ChanExt)).Common.RemoveLock, (Irp).cast());
+                    IoReleaseRemoveLock(&mut (*ChanExt).Common.RemoveLock, (Irp).cast());
 
                     return Status;
                 }
@@ -621,7 +621,7 @@ pub unsafe extern "C" fn AtaFdoPnp(
                 (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
                 IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
 
-                IoReleaseRemoveLock(&mut (*(*ChanExt)).Common.RemoveLock, (Irp).cast());
+                IoReleaseRemoveLock(&mut (*ChanExt).Common.RemoveLock, (Irp).cast());
 
                 return Status;
             }
@@ -640,7 +640,7 @@ pub unsafe extern "C" fn AtaFdoPnp(
         }
 
         IRP_MN_QUERY_PNP_DEVICE_STATE => {
-            Status = AtaPnpQueryPnpDeviceState(&mut (*(*ChanExt)).Common, Irp);
+            Status = AtaPnpQueryPnpDeviceState(&mut (*ChanExt).Common, Irp);
         }
 
         IRP_MN_QUERY_DEVICE_RELATIONS => {
@@ -653,7 +653,7 @@ pub unsafe extern "C" fn AtaFdoPnp(
                         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
                         IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
 
-                        IoReleaseRemoveLock(&mut (*(*ChanExt)).Common.RemoveLock, (Irp).cast());
+                        IoReleaseRemoveLock(&mut (*ChanExt).Common.RemoveLock, (Irp).cast());
 
                         return Status;
                     }
@@ -664,7 +664,7 @@ pub unsafe extern "C" fn AtaFdoPnp(
         }
 
         IRP_MN_DEVICE_USAGE_NOTIFICATION => {
-            Status = AtaPnpQueryDeviceUsageNotification(&mut (*(*ChanExt)).Common, Irp);
+            Status = AtaPnpQueryDeviceUsageNotification(&mut (*ChanExt).Common, Irp);
         }
 
         IRP_MN_QUERY_STOP_DEVICE
@@ -678,42 +678,42 @@ pub unsafe extern "C" fn AtaFdoPnp(
     }
 
     IoSkipCurrentIrpStackLocation(Irp);
-    Status = IoCallDriver((*(*ChanExt)).Common.__bindgen_anon_1.LowerDeviceObject, Irp);
+    Status = IoCallDriver((*ChanExt).Common.__bindgen_anon_1.LowerDeviceObject, Irp);
 
-    IoReleaseRemoveLock(&mut (*(*ChanExt)).Common.RemoveLock, (Irp).cast());
+    IoReleaseRemoveLock(&mut (*ChanExt).Common.RemoveLock, (Irp).cast());
 
     return Status;
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaFdoFindDeviceByPath(
-    ChanExt: *mut PATAPORT_CHANNEL_EXTENSION,
+    ChanExt: PATAPORT_CHANNEL_EXTENSION,
     AtaScsiAddress: ATA_SCSI_ADDRESS,
     ReferenceTag: *mut core::ffi::c_void,
-) -> *mut PATAPORT_DEVICE_EXTENSION {
-    let mut DevExt: *mut PATAPORT_DEVICE_EXTENSION;
-    let mut Result: *mut PATAPORT_DEVICE_EXTENSION = core::ptr::null_mut();
+) -> PATAPORT_DEVICE_EXTENSION {
+    let mut DevExt: PATAPORT_DEVICE_EXTENSION;
+    let mut Result: PATAPORT_DEVICE_EXTENSION = core::ptr::null_mut();
     let mut Entry: PSINGLE_LIST_ENTRY;
     let mut OldLevel: KIRQL = 0;
     let mut Status: NTSTATUS;
 
-    KeAcquireSpinLock(&mut (*(*ChanExt)).PdoListLock, &mut OldLevel);
+    KeAcquireSpinLock(&mut (*ChanExt).PdoListLock, &mut OldLevel);
 
-    Entry = (*(*ChanExt)).PdoList.Next;
+    Entry = (*ChanExt).PdoList.Next;
     while !Entry.is_null() {
         DevExt = CONTAINING_RECORD!(Entry, ATAPORT_DEVICE_EXTENSION, ListEntry);
 
-        if (*(*DevExt)).Device.AtaScsiAddress.AsULONG != AtaScsiAddress.AsULONG {
+        if (*DevExt).Device.AtaScsiAddress.AsULONG != AtaScsiAddress.AsULONG {
             Entry = (*Entry).Next;
             continue;
         }
 
-        if (*(*DevExt)).ReportedMissing != 0 || (*(*DevExt)).RemovalPending != 0 {
+        if (*DevExt).ReportedMissing != 0 || (*DevExt).RemovalPending != 0 {
             Entry = (*Entry).Next;
             continue;
         }
 
         if !ReferenceTag.is_null() {
-            Status = IoAcquireRemoveLock(&mut (*(*DevExt)).Common.RemoveLock, ReferenceTag);
+            Status = IoAcquireRemoveLock(&mut (*DevExt).Common.RemoveLock, ReferenceTag);
             if NT_SUCCESS!(Status) == false {
                 break;
             }
@@ -723,7 +723,7 @@ pub unsafe extern "C" fn AtaFdoFindDeviceByPath(
         break;
     }
 
-    KeReleaseSpinLock(&mut (*(*ChanExt)).PdoListLock, OldLevel);
+    KeReleaseSpinLock(&mut (*ChanExt).PdoListLock, OldLevel);
 
     Result
 }
@@ -740,7 +740,7 @@ pub unsafe extern "C" fn AtaFdoFindNextDeviceByPath(
     let mut OldLevel: KIRQL = core::mem::zeroed();
     let mut Status: i32;
 
-    KeAcquireSpinLock(&mut (*ChanExt).PdoListLock as *mut _ as *mut usize, &mut OldLevel);
+    KeAcquireSpinLock((&mut (*ChanExt).PdoListLock as *mut _ as *mut usize).cast(), &mut OldLevel);
 
     Entry = (*ChanExt).PdoList.Next;
     while !Entry.is_null() {
@@ -774,7 +774,7 @@ pub unsafe extern "C" fn AtaFdoFindNextDeviceByPath(
         break;
     }
 
-    KeReleaseSpinLock(&mut (*ChanExt).PdoListLock as *mut _ as *mut usize, OldLevel);
+    KeReleaseSpinLock((&mut (*ChanExt).PdoListLock as *mut _ as *mut usize).cast(), OldLevel);
 
     Result
 }
@@ -791,7 +791,7 @@ pub unsafe extern "C" fn AtaFdoDeviceListInsert(
 
     PAGED_CODE!();
 
-    KeAcquireSpinLock(&mut (*ChanExt).PdoListLock as *mut _ as *mut usize, &mut OldLevel);
+    KeAcquireSpinLock((&mut (*ChanExt).PdoListLock as *mut _ as *mut usize).cast(), &mut OldLevel);
 
     Entry = (*ChanExt).PdoList.Next;
     PrevEntry = core::ptr::null_mut();
@@ -829,5 +829,5 @@ pub unsafe extern "C" fn AtaFdoDeviceListInsert(
         }
     }
 
-    KeReleaseSpinLock(&mut (*ChanExt).PdoListLock as *mut _ as *mut usize, OldLevel);
+    KeReleaseSpinLock((&mut (*ChanExt).PdoListLock as *mut _ as *mut usize).cast(), OldLevel);
 }

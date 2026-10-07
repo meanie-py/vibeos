@@ -20,20 +20,20 @@ unsafe extern "C" fn AtaPowerCompleteIrp(
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaDeviceFlushPowerIrpQueue(
-    DevExt: *mut PATAPORT_DEVICE_EXTENSION,
+    DevExt: PATAPORT_DEVICE_EXTENSION,
 ) {
     loop {
         let mut Entry: PLIST_ENTRY;
         let mut PowerIrp: PIRP;
         let mut OldLevel: KIRQL = core::mem::zeroed();
 
-        KeAcquireSpinLock(&mut (*(*DevExt)).Device.QueueLock as *mut _ as *mut usize, &mut OldLevel);
-        if IsListEmpty(&mut (*(*DevExt)).PowerIrpQueueList) != 0 {
+        KeAcquireSpinLock((&mut (*DevExt).Device.QueueLock as *mut _ as *mut usize).cast(), &mut OldLevel);
+        if IsListEmpty(&mut (*DevExt).PowerIrpQueueList) != 0 {
             Entry = core::ptr::null_mut();
         } else {
-            Entry = RemoveHeadList(&mut (*(*DevExt)).PowerIrpQueueList);
+            Entry = RemoveHeadList(&mut (*DevExt).PowerIrpQueueList);
         }
-        KeReleaseSpinLock(&mut (*(*DevExt)).Device.QueueLock as *mut _ as *mut usize, OldLevel);
+        KeReleaseSpinLock((&mut (*DevExt).Device.QueueLock as *mut _ as *mut usize).cast(), OldLevel);
 
         if Entry.is_null() {
             break;
@@ -41,21 +41,21 @@ pub unsafe extern "C" fn AtaDeviceFlushPowerIrpQueue(
 
         PowerIrp = CONTAINING_RECORD!(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
 
-        AtaPowerCompleteIrp(&mut (*(*DevExt)).Common, PowerIrp, STATUS_NO_SUCH_DEVICE);
+        AtaPowerCompleteIrp(&mut (*DevExt).Common, PowerIrp, STATUS_NO_SUCH_DEVICE);
     }
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaDeviceGetFlushCacheCommand(
-    DevExt: *mut PATAPORT_DEVICE_EXTENSION,
+    DevExt: PATAPORT_DEVICE_EXTENSION,
 ) -> UCHAR {
     let mut Command: u8 = 0;
 
-    if !IS_ATAPI!(&(*(*DevExt)).Device) {
-        if ((*(*DevExt)).Device.DeviceFlags & DEVICE_LBA48) != 0
-            && AtaDevHasFlushCacheExt(&(*(*DevExt)).__bindgen_anon_1.IdentifyDeviceData) != 0
+    if !IS_ATAPI!(&(*DevExt).Device) {
+        if ((*DevExt).Device.DeviceFlags & DEVICE_LBA48) != 0
+            && AtaDevHasFlushCacheExt(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0
         {
             Command = (IDE_COMMAND_FLUSH_CACHE_EXT) as u8;
-        } else if AtaDevHasFlushCache(&(*(*DevExt)).__bindgen_anon_1.IdentifyDeviceData) != 0 {
+        } else if AtaDevHasFlushCache(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
             Command = (IDE_COMMAND_FLUSH_CACHE) as u8;
         }
     }
@@ -221,25 +221,25 @@ pub unsafe extern "C" fn AtaPortCheckDevicePowerState(
     return Status;
 }
 unsafe extern "C" fn AtaPdoQueuePowerIrp(
-    DevExt: *mut PATAPORT_DEVICE_EXTENSION,
+    DevExt: PATAPORT_DEVICE_EXTENSION,
     Irp: PIRP,
 ) {
     let mut OldLevel: KIRQL = 0;
 
     KeAcquireSpinLock(
-        &mut (*(*DevExt)).Device.QueueLock as *mut _ as *mut usize,
+        (&mut (*DevExt).Device.QueueLock as *mut _ as *mut usize).cast(),
         &mut OldLevel,
     );
     InsertTailList(
-        &mut (*(*DevExt)).PowerIrpQueueList,
+        &mut (*DevExt).PowerIrpQueueList,
         &mut (*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry,
     );
     KeReleaseSpinLock(
-        &mut (*(*DevExt)).Device.QueueLock as *mut _ as *mut usize,
+        (&mut (*DevExt).Device.QueueLock as *mut _ as *mut usize).cast(),
         OldLevel,
     );
 
-    AtaDeviceQueueEvent((*(*DevExt)).Device.PortData, (DevExt).cast(), ACTION_DEVICE_POWER);
+    AtaDeviceQueueEvent((*DevExt).Device.PortData, (DevExt).cast(), ACTION_DEVICE_POWER);
 }
 
 unsafe extern "system" fn AtaPdoPowerUpCompletionRoutine(
@@ -394,12 +394,12 @@ unsafe extern "C" fn AtaPdoPower(
 }
 
 unsafe extern "C" fn AtaFdoPower(
-    ChanExt: *mut PATAPORT_CHANNEL_EXTENSION,
+    ChanExt: PATAPORT_CHANNEL_EXTENSION,
     Irp: PIRP,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    Status = IoAcquireRemoveLock(&mut (*(*ChanExt)).Common.RemoveLock, (Irp).cast());
+    Status = IoAcquireRemoveLock(&mut (*ChanExt).Common.RemoveLock, (Irp).cast());
     if !NT_SUCCESS!(Status) {
         PoStartNextPowerIrp(Irp);
 
@@ -410,9 +410,9 @@ unsafe extern "C" fn AtaFdoPower(
 
     PoStartNextPowerIrp(Irp);
     IoSkipCurrentIrpStackLocation(Irp);
-    Status = PoCallDriver((*(*ChanExt)).Common.__bindgen_anon_1.LowerDeviceObject, Irp);
+    Status = PoCallDriver((*ChanExt).Common.__bindgen_anon_1.LowerDeviceObject, Irp);
 
-    IoReleaseRemoveLock(&mut (*(*ChanExt)).Common.RemoveLock, (Irp).cast());
+    IoReleaseRemoveLock(&mut (*ChanExt).Common.RemoveLock, (Irp).cast());
 
     return Status;
 }

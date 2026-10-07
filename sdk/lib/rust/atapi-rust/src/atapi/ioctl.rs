@@ -228,7 +228,7 @@ unsafe extern "C" fn AtaPdoQueryStorageDeviceTrimProperty(
     TrimDescriptor = (*Irp).AssociatedIrp.SystemBuffer as PDEVICE_TRIM_DESCRIPTOR;
     (*TrimDescriptor).Version = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as ULONG;
     (*TrimDescriptor).Size = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as ULONG;
-    (*TrimDescriptor).TrimEnabled = (AtaDevHasTrimFunction(&(*DevExt).__bindgen_anon_1.IdentifyDeviceData)) as u8;
+    (*TrimDescriptor).TrimEnabled = (AtaDevHasTrimFunction(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData)) as u8;
 
     (*Irp).IoStatus.Information = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as ULONG_PTR;
     return STATUS_SUCCESS;
@@ -314,11 +314,11 @@ unsafe extern "C" fn AtaPdoSendHbaControl(
     BufferSize: ULONG,
 ) -> NTSTATUS {
     let mut Srb: PSCSI_REQUEST_BLOCK;
-    let mut IoStatusBlock: _IO_STATUS_BLOCK;
+    let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut Irp: PIRP;
-    let mut Event: KEVENT;
+    let mut Event: KEVENT = core::mem::zeroed();
     let mut Status: NTSTATUS;
-    let mut LargeInt: LARGE_INTEGER;
+    let mut LargeInt: LARGE_INTEGER = core::mem::zeroed();
     let mut IoStack: PIO_STACK_LOCATION;
 
     PAGED_CODE!();
@@ -363,12 +363,12 @@ unsafe extern "C" fn AtaPdoSendHbaControl(
     (*Srb).DataTransferLength = BufferSize;
 
     IoStack = IoGetNextIrpStackLocation(Irp);
-    (*IoStack).Parameters.Scsi.Srb = Srb;
+    (*IoStack).Parameters.Scsi.Srb = (Srb).cast();
 
     Status = IoCallDriver((*DevExt).Common.Self_, Irp);
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(
-            &mut Event,
+            (&raw mut Event).cast(),
             _KWAIT_REASON_Executive,
             (0i32) as KPROCESSOR_MODE,
             FALSE,
@@ -682,10 +682,10 @@ unsafe extern "C" fn AtaFdoHandleGetScsiInquiryData(
         PdoCount = PdoCount.wrapping_add(1);
     }
 
-    EntrySize = ALIGN_UP!(
+    EntrySize = (ALIGN_UP!(
         core::mem::size_of::<SCSI_INQUIRY_DATA>().wrapping_sub(1).wrapping_add((INQUIRYDATABUFFERSIZE) as _),
         core::mem::size_of::<ULONG>() as ULONG,
-    );
+    )) as u32;
     TotalSize = (core::mem::size_of::<SCSI_ADAPTER_BUS_INFO>().wrapping_add((EntrySize.wrapping_mul(PdoCount)) as _)) as _;
 
     if !AtaVerifyOutBuffer!(IoStack, TotalSize) {
@@ -730,7 +730,7 @@ unsafe extern "C" fn AtaFdoHandleGetScsiInquiryData(
 
         InquiryData = &mut (*ScsiInquiryData).InquiryData as *mut UCHAR as PINQUIRYDATA;
         (*InquiryData).AdditionalLength =
-            (INQUIRYDATABUFFERSIZE - RTL_SIZEOF_THROUGH_FIELD!(INQUIRYDATA, AdditionalLength)) as u8;
+            (INQUIRYDATABUFFERSIZE - (RTL_SIZEOF_THROUGH_FIELD!(INQUIRYDATA, AdditionalLength)) as u32) as u8;
 
         IoReleaseRemoveLock(&mut (*DevExt).Common.RemoveLock, (Irp).cast());
 
@@ -790,7 +790,7 @@ unsafe extern "C" fn AtaFdoHandleScsiPassthrough(
 
     PAGED_CODE!();
 
-    if !AtaVerifyInBuffer!(IoStack, RTL_SIZEOF_THROUGH_FIELD!(SCSI_PASS_THROUGH, Lun)) {
+    if !AtaVerifyInBuffer!(IoStack, (RTL_SIZEOF_THROUGH_FIELD!(SCSI_PASS_THROUGH, Lun)) as u32) {
         return STATUS_BUFFER_TOO_SMALL;
     }
 

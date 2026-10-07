@@ -11,7 +11,7 @@ unsafe extern "C" fn AtaPortQueueEvent(
     if Action & (ACTION_PORT_RESET | ACTION_DEVICE_ERROR) != 0 {
         if Action & ACTION_DEVICE_ERROR != 0 {
             if !FailedRequest.is_null() {
-                ASSERT_REQUEST!(FailedRequest);
+                ASSERT_REQUEST!((!(FailedRequest).is_null()));
 
                 DevExt = CONTAINING_RECORD!((*FailedRequest).Device, ATAPORT_DEVICE_EXTENSION, Device);
 
@@ -43,7 +43,7 @@ unsafe extern "C" fn AtaPortQueueEvent(
         (*PortData).Worker.PausedSlotsBitmap |= (*PortData).ActiveSlotsBitmap;
         (*PortData).ActiveSlotsBitmap = 0;
 
-        (*PortData).AbortChannel.expect("non-null function pointer")(
+        (*PortData).AbortChannel.unwrap_unchecked()(
             (*PortData).ChannelContext,
             (Action & ACTION_PORT_RESET != 0) as i32 as u8,
         );
@@ -95,7 +95,7 @@ unsafe extern "C" fn AtaPortFindDeviceForAction(
 
     ChanExt = CONTAINING_RECORD!(PortData, ATAPORT_CHANNEL_EXTENSION, PortData);
 
-    KeAcquireSpinLock(&mut (*ChanExt).PdoListLock as *mut _ as *mut usize, &mut OldLevel);
+    KeAcquireSpinLock((&mut (*ChanExt).PdoListLock as *mut _ as *mut usize).cast(), &mut OldLevel);
     OldIrql = KeAcquireInterruptSpinLock((*PortData).InterruptObject);
 
     Entry = (*ChanExt).PdoList.Next;
@@ -130,7 +130,7 @@ unsafe extern "C" fn AtaPortFindDeviceForAction(
     }
 
     KeReleaseInterruptSpinLock((*PortData).InterruptObject, OldIrql);
-    KeReleaseSpinLock(&mut (*ChanExt).PdoListLock as *mut _ as *mut usize, OldLevel);
+    KeReleaseSpinLock((&mut (*ChanExt).PdoListLock as *mut _ as *mut usize).cast(), OldLevel);
 
     Result
 }
@@ -214,23 +214,23 @@ unsafe extern "C" fn AtaPortOnRequestComplete(
         CommandsCompleted &= !((1 << Slot) as ULONG);
 
         Request = (*PortData).Slots[Slot as usize];
-        ASSERT_REQUEST!(Request);
+        ASSERT_REQUEST!((!(Request).is_null()));
 
-        InterlockedPushEntrySList(&mut AtapCompletionQueueList, &mut (*Request).__bindgen_anon_1.CompletionEntry);
+        InterlockedPushEntrySList((&raw mut AtapCompletionQueueList).cast(), (&raw mut (*Request).__bindgen_anon_1.CompletionEntry).cast());
     }
 
     KeInsertQueueDpc(&mut AtapCompletionDpc, core::ptr::null_mut(), core::ptr::null_mut());
 }
 
 unsafe extern "C" fn AtaPortMarkDeviceFailed(
-    PortData: *mut PATAPORT_PORT_DATA,
-    DevExt: *mut PATAPORT_DEVICE_EXTENSION,
+    PortData: PATAPORT_PORT_DATA,
+    DevExt: PATAPORT_DEVICE_EXTENSION,
 ) {
-    (*(*DevExt)).Worker.ResetRetryCount = (*(*DevExt)).Worker.ResetRetryCount.wrapping_add(1);
-    if (*(*DevExt)).Worker.ResetRetryCount >= 4 {
-        (*(*DevExt)).Worker.Flags |= DEV_WORKER_FLAG_REMOVED;
-        (*(*PortData)).Worker.BadDeviceBitmap |= 1
-            << (*(*DevExt)).Device.AtaScsiAddress.TargetId as ULONG;
+    (*DevExt).Worker.ResetRetryCount = (*DevExt).Worker.ResetRetryCount.wrapping_add(1);
+    if (*DevExt).Worker.ResetRetryCount >= 4 {
+        (*DevExt).Worker.Flags |= DEV_WORKER_FLAG_REMOVED;
+        (*PortData).Worker.BadDeviceBitmap |= 1
+            << (*DevExt).Device.AtaScsiAddress.TargetId as ULONG;
     }
 }
 
@@ -647,7 +647,7 @@ unsafe extern "C" fn AtaPortExitStateMachine(mut PortData: PATAPORT_PORT_DATA) {
 
         if (*DevExt).Worker.Flags & DEV_WORKER_FLAG_HOLD_REFERENCE != 0 {
             (*DevExt).Worker.Flags &= !DEV_WORKER_FLAG_HOLD_REFERENCE;
-            IoReleaseRemoveLock(&mut (*DevExt).Common.RemoveLock, AtaPortWorkerThread);
+            IoReleaseRemoveLock(&mut (*DevExt).Common.RemoveLock, (AtaPortWorkerThread as *mut core::ffi::c_void));
         }
     }
 
@@ -671,17 +671,17 @@ unsafe extern "C" fn AtaPortWorkerClearSignal(PortData: PATAPORT_PORT_DATA) {
 
 #[no_mangle]
 pub unsafe extern "system" fn AtaPortWorkerThread(StartContext: *mut core::ffi::c_void) {
-    let PortData: *mut PATAPORT_PORT_DATA = StartContext as *mut PATAPORT_PORT_DATA;
+    let PortData: PATAPORT_PORT_DATA = StartContext as PATAPORT_PORT_DATA;
 
     loop {
         KeWaitForSingleObject(
-            &raw mut (*(*PortData)).Worker.ThreadEvent as *mut core::ffi::c_void,
+            &raw mut (*PortData).Worker.ThreadEvent as *mut core::ffi::c_void,
             _KWAIT_REASON_Executive,
             (0i32) as KPROCESSOR_MODE,
             FALSE,
             core::ptr::null_mut(),
         );
-        if (*(*PortData)).PortFlags & PORT_FLAG_EXIT_THREAD != 0 {
+        if (*PortData).PortFlags & PORT_FLAG_EXIT_THREAD != 0 {
             break;
         }
         AtaPortWorkerClearSignal((PortData).cast());
@@ -815,7 +815,7 @@ pub unsafe extern "C" fn AtaPortSendRequest(
     KeLowerIrql(OldIrql);
 
     KeWaitForSingleObject(
-        &mut (*PortData).Worker.CompletionEvent,
+        (&raw mut (*PortData).Worker.CompletionEvent).cast(),
         _KWAIT_REASON_Executive,
         (0i32) as KPROCESSOR_MODE,
         FALSE,
@@ -874,15 +874,15 @@ pub unsafe extern "C" fn AtaPortTimeout(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaPortSignalWorkerThread(PortData: *mut PATAPORT_PORT_DATA) {
+pub unsafe extern "C" fn AtaPortSignalWorkerThread(PortData: PATAPORT_PORT_DATA) {
     let mut OldIrql: KIRQL = 0;
-    KeAcquireSpinLock((&raw mut (*(*PortData)).Worker.Lock).cast(), &raw mut OldIrql);
+    KeAcquireSpinLock((&raw mut (*PortData).Worker.Lock).cast(), &raw mut OldIrql);
     KeSetEvent(
-        &raw mut (*(*PortData)).Worker.ThreadEvent,
+        &raw mut (*PortData).Worker.ThreadEvent,
         (IO_NO_INCREMENT) as KPRIORITY,
         FALSE,
     );
-    KeReleaseSpinLock((&raw mut (*(*PortData)).Worker.Lock).cast(), OldIrql);
+    KeReleaseSpinLock((&raw mut (*PortData).Worker.Lock).cast(), OldIrql);
 }
 
 #[no_mangle]
