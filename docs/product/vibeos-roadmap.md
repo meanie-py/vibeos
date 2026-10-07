@@ -985,6 +985,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     20261007-144313-uhji_66e, 20261007-145433-6emhz3k9). How the leak turned into a failed
     read is not established; reopen on any recurrence. Earlier runs: 20261006-041704-og7v50sd,
     20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
+  - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
+    (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
+    control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU
+    can change the value between the validating read and the sizing read. Arm/early-exit/
+    advanced-source awareness cut 31 raw candidates to 3. The real bug: **SeCaptureSecurityDescriptor**
+    re-read `Control` from the absolute-descriptor copy after branching on it in the header copy,
+    so a racing SE_SELF_RELATIVE flip made it copy absolute pointer fields and then rebase them as
+    self-relative offsets — a wild kernel address into `RtlValidSid`; fixed by pinning the
+    self-relative decision from the first read (the absolute re-read can no longer flip it). Baseline (reviewed, not bugs):
+    `NtGdiCreateDIBSection` (header then full BITMAPINFO, size pinned from the kernel copy) and
+    `NtUserInitializeClientPfnArrays` (owed, low-severity, init-time client-callback tables). Still
+    blind: a fetch split across a syscall and a worker it calls. Field manual: "The double-fetch is
+    the same hazard in TIME".
   - **arm64 FAULTLOOP was the detector, not a loop** (RESOLVED 2026-10-04). The report
     fingerprinted a fault as (VA, PC, TTBR0); a stream of DISTINCT faults sharing those --
     Cc reading many small files (rapps' cab extraction), each new VACB recycled onto the same

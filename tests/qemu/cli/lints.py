@@ -940,6 +940,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The SAME user address read twice (a TOCTOU double-fetch): one snapshot validates
+    # a size and a second, re-read snapshot sizes the copy, so on SMP a thread on
+    # another CPU changes the value in between. Gated against a BASELINE of reviewed
+    # two-stage reads (header then body) and one owed low-severity case; a NEW row —
+    # a fresh same-source pair reachable on one control-flow path — fails.
+    sdf = repo / "tools" / "scan_double_fetch.py"
+    specs.append(
+        (
+            "scan_double_fetch",
+            [py, str(sdf), "--lint"] if sdf.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
     # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
     # covers the names that emit nothing and were therefore outside every scanner here.
