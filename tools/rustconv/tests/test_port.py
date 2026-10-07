@@ -269,3 +269,19 @@ def test_seeded_switch_facts_already_in_the_prelude_pass(tmp_path, monkeypatch):
     port._seed_switch_facts({"switch_facts": ["STD_INPUT_HANDLE"]}, prelude)
     with pytest.raises(port.PortError):
         port._seed_switch_facts({"switch_facts": ["STD_INPUT_HANDLE", "MISSING_X"]}, prelude)
+
+
+def test_an_initguid_tu_is_lowered_from_its_header(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    inc = tmp_path / "sdk" / "include" / "psdk"
+    inc.mkdir(parents=True)
+    (inc / "diskguid.h").write_text(
+        "DEFINE_GUID(PARTITION_SYSTEM_GUID, 0xC12A7328, 0xF81F, 0x11D2, 0xBA, 0x4B, 0x00, "
+        "0xA0, 0xC9, 0x3E, 0xC9, 0x3B);    // EFI\n"
+    )
+    tu = tmp_path / "guid.c"
+    tu.write_text("/* x */\n#define INITGUID\n#include <guiddef.h>\n#include <diskguid.h>\n")
+    out = port.initguid_module(tu)
+    assert out is not None and "Data1: 0xC12A7328" in out and "0xC9, 0x3B]" in out
+    tu.write_text("#define INITGUID\n#include <diskguid.h>\nint x;\n")
+    assert port.initguid_module(tu) is None, "real code goes to translate"

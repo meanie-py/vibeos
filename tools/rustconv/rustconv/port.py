@@ -394,6 +394,57 @@ def set_expand_macros(stem: str, tus: list[str]) -> list[str]:
     return state["expand_macros"]
 
 
+_DEFINE_GUID_RE = re.compile(
+    r"^\s*DEFINE_GUID\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)\s*,\s*(0x[0-9A-Fa-f]+)\s*,"
+    r"\s*(0x[0-9A-Fa-f]+)\s*,((?:\s*0x[0-9A-Fa-f]+\s*,?){8})\)",
+    re.M,
+)
+
+
+def initguid_module(c_path: Path) -> str | None:
+    """Rust for a TU that only instantiates GUIDs (`#define INITGUID` + includes), else None.
+
+    diskpart's guid.c is three lines -- `#define INITGUID`, `<guiddef.h>`, `<diskguid.h>` --
+    which define storage for every DEFINE_GUID in the headers. There is nothing for a model
+    to translate (translate found 0 functions and left the module missing), and the values
+    are data the header states exactly, so they are lowered here for $0.
+    """
+    text = re.sub(r"/\*.*?\*/|//[^\n]*", "", c_path.read_text(errors="replace"), flags=re.S)
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if "#define INITGUID" not in lines:
+        return None
+    includes = []
+    for ln in lines:
+        m = re.match(r"#\s*include\s*[<\"]([^>\"]+)[>\"]", ln)
+        if m:
+            includes.append(m.group(1))
+        elif ln != "#define INITGUID":
+            return None  # anything else is real code: translate it
+    guids: dict[str, str] = {}
+    for inc in includes:
+        if Path(inc).name == "guiddef.h":
+            continue
+        hits = sorted((REPO / "sdk" / "include").rglob(Path(inc).name))
+        hits = [h for h in hits if "/host/" not in str(h)]
+        if len(hits) != 1:
+            raise PortError(f"{c_path.name}: cannot place <{inc}> ({len(hits)} candidates)")
+        for m in _DEFINE_GUID_RE.finditer(hits[0].read_text(errors="replace")):
+            name, d1, d2, d3, tail = m.groups()
+            d4 = ", ".join(re.findall(r"0x[0-9A-Fa-f]+", tail))
+            guids[name] = (
+                f"pub static {name}: GUID = GUID {{ Data1: {d1}, Data2: {d2}, Data3: {d3}, "
+                f"Data4: [{d4}] }};"
+            )
+    if not guids:
+        raise PortError(f"{c_path.name}: INITGUID TU whose headers define no GUID")
+    head = (
+        f"// {c_path.name}: INITGUID storage for {', '.join(includes)}, lowered from the "
+        "headers' DEFINE_GUID lines by `rustconv port translate` ($0).\n"
+        "use crate::prelude::*;\n\n"
+    )
+    return head + "\n".join(guids[n] for n in guids) + "\n"
+
+
 def failing_audit_tus(state: dict) -> list[str]:
     """TU file names whose latest translate log says a banked body fails the audit."""
     out = []
@@ -455,6 +506,14 @@ def stage_translate(
     done: list[dict] = []
     arch_only = _arch_only_tus(state, todo)
     for tu in todo:
+        lowered = initguid_module(REPO / tu)
+        if lowered is not None:
+            out = _tu_output(state, tu)
+            if not dry_run:
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_text(lowered)
+            print(f"translate: {Path(tu).name}: INITGUID storage lowered ($0)")
+            continue
         left = cost_cap - spent
         # A replay-only run never buys, so the cap cannot stop it. It used to: `port replay`
         # passes cap 0, and every replay ever run broke out here before the first TU and
