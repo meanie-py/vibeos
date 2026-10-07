@@ -2,7 +2,7 @@
 # classpnp speak to: SRB/CDB decoding, sense data, and the storage
 # property/address IOCTLs. Pure no_std logic with no kernel imports, so the
 # whole translation is unit-tested on the host (`cargo test -p scsidisk-rust`).
-# Used by nvme-rust. sdhc-rust/src/scsi.rs is the older, card-specific copy of
+# Used by nvme-rust and vioblk-rust (its virtio-mmio path). sdhc-rust/src/scsi.rs is the older, card-specific copy of
 # the same layer and should move onto this crate.
 
 [package]

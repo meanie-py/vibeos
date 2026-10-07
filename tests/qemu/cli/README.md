@@ -115,8 +115,10 @@ all included), then auto-triage on failure.
   stick + NVMe drive, opt out with `VIBEOS_QEMU_NVME=0`) attaches a QEMU `nvme`
   controller with one 64M MBR+FAT16 namespace (`VIBEOS_QEMU_NVME=1`) and FAILS the
   boot (`NVME_NOT_ENGAGED`) unless nvme.sys prints
-  `[NVME] controller 0: namespace 1 published as a disk`, and (`NVME_POLLING`) unless a
-  completion arrived by interrupt (`[NVME] controller 0: interrupts working`). The net
+  `[NVME] controller 0: namespace 1 published as a disk`, (`NVME_NOT_MSIX`) unless its
+  MSI-X messages connected (`[NVME] controller 0: MSI-X: `; it would otherwise work on its
+  pin and hide the break), and (`NVME_POLLING`) unless a completion arrived by interrupt
+  (`[NVME] controller 0: interrupts working`). The net
   suite never inherits the knob: QEMU's nvme device blocks the `savevm` it takes.
   `VIBEOS_QEMU_NVME=1 pytest tests/qemu/test_nvme.py --arch <a>` goes further: the
   desktop copies the namespace's file and the host reads the copy back.
@@ -728,7 +730,7 @@ Design, gdb recipe and the divergence log: `docs/engineering/qemu-record-replay.
 Every QEMU running **across all worktrees** + slot-pool usage. Run it first when
 you're unsure what's live or why KVM is contended.
 
-### `prune [--apply] [--self] [--idle-hours N] [--retain-gib N]`
+### `prune [--apply] [--self] [--idle-hours N] [--retain-gib N] [--trim]`
 Reclaim disk by GC'ing **idle worktrees' build-`<arch>`/ + Rust target dirs**.
 Build trees are ephemeral scratch — the shared cache rehydrates a pruned tree
 fast — so an idle lane's 26–42 G can be freed and regenerated on demand (measured
@@ -753,6 +755,18 @@ Updated artifact-consuming CLI commands hold shared leases on that lock.
 **Do not enable the owner until every lane is updated and older/raw jobs are
 drained**; they do not honor the lock. No owner is enabled automatically.
 See [storage/retention rollout](../../../docs/engineering/rust-output-retention-plan.md).
+
+`--trim` is the other half: it cuts every tree's cargo target back to what its
+build can still read, so a lane's target dir stops growing past its ~32 G fresh
+size (weeks-old lanes measured 35–45 G). It removes **superseded units** (same
+package, target, path, profile and features as a newer fingerprint: a rustc, dep
+or flag change minted a new hash and cargo never deletes the old one) and **idle
+ad-hoc trees** (`target/<triple>/`, `target/debug/` from hand-run `cargo
+check/test`; the CMake build never writes there). Nothing younger than
+`--idle-hours` (default 24) is touched. It needs no quiet fleet or pinned owner
+and costs no lane a warm build, so it is safe on live lanes; the kill switch
+still stops it. `vibeos-cli build` also trims its OWN tree after every green
+build (`VIBEOS_TRIM=0` opts out), so this is mostly for catching up.
 
 ### `retention [--enable | --disable | --run]`
 

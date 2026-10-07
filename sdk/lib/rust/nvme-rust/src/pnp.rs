@@ -15,11 +15,12 @@ use core::ptr::null_mut;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use ntkrnl_sys::ddk::{
-    ExAllocatePoolWithTag, ExFreePoolWithTag, IoConnectInterrupt, IoCreateDevice, IoForwardIrpSynchronously, KeInitializeDpc,
-    KeInitializeEvent, KeSetEvent, _KINTERRUPT_MODE_Latched, _KINTERRUPT_MODE_LevelSensitive,
-    KeWaitForSingleObject, MmMapIoSpace, PsCreateSystemThread, ZwClose, _MEMORY_CACHING_TYPE_MmNonCached, HANDLE, IRP,
-    KEVENT, LIST_ENTRY, NTSTATUS, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIRP,
-    PIO_STACK_LOCATION, PVOID, ULONG,
+    ExAllocatePoolWithTag, ExFreePoolWithTag, IoCreateDevice, IoForwardIrpSynchronously,
+    IoOpenDeviceRegistryKey, KeInitializeDpc, KeInitializeEvent, KeSetEvent, KeWaitForSingleObject, MmMapIoSpace,
+    PsCreateSystemThread, ZwClose, ZwCreateKey, ZwSetValueKey, _MEMORY_CACHING_TYPE_MmNonCached, HANDLE,
+    IO_CONNECT_INTERRUPT_PARAMETERS, IRP, KEVENT, LIST_ENTRY, NTSTATUS, OBJECT_ATTRIBUTES, PDEVICE_OBJECT,
+    PDEVICE_RELATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_INTERRUPT_MESSAGE_INFO, PIO_STACK_LOCATION, PIRP, PVOID,
+    ULONG, UNICODE_STRING,
 };
 use ntkrnl_sys::driver_ddk::{IoCallDriver, IoCompleteRequest, PoCallDriver, PoStartNextPowerIrp};
 use ntkrnl_sys::inline::mm::MmGetSystemAddressForMdlSafe;
@@ -28,6 +29,11 @@ use ntkrnl_sys::{InitializeListHead, InsertTailList, IsListEmpty, RemoveHeadList
 use scsidisk::{Disk, Request, Srb};
 
 use crate::nvme::{now_us, Controller, Identity, Irq, Namespace};
+
+unsafe extern "system" {
+    // ntoskrnl export (iomgr-rust irq.rs); Vista-era, so not in the pre-Vista bindings.
+    fn IoConnectInterruptEx(Parameters: *mut IO_CONNECT_INTERRUPT_PARAMETERS) -> NTSTATUS;
+}
 use crate::print::nvprint;
 
 const IRP_MJ_CREATE: u8 = 0x00;
@@ -87,8 +93,16 @@ const STATUS_ADAPTER_HARDWARE_ERROR: NTSTATUS = 0xC000_00C2u32 as NTSTATUS;
 
 const CM_RESOURCE_TYPE_INTERRUPT: u8 = 2;
 const CM_RESOURCE_TYPE_MEMORY: u8 = 3;
-const CM_RESOURCE_INTERRUPT_LATCHED: u16 = 1;
-const CM_RESOURCE_SHARE_SHARED: u8 = 3;
+const CM_RESOURCE_INTERRUPT_MESSAGE: u16 = 2;
+// IO_CONNECT_INTERRUPT_PARAMETERS.Version (wdm.h).
+const CONNECT_LINE_BASED: ULONG = 2;
+const CONNECT_MESSAGE_BASED: ULONG = 3;
+/// Admin and I/O completion queues: all the messages this driver can use.
+const MESSAGES_WANTED: u32 = 2;
+const PLUGPLAY_REGKEY_DEVICE: ULONG = 1;
+const KEY_ALL_ACCESS: ULONG = 0xF003F;
+const REG_DWORD: ULONG = 4;
+const OBJ_CASE_INSENSITIVE_KERNEL_HANDLE: ULONG = 0x240;
 const CM_RESOURCE_TYPE_MEMORY_LARGE: u8 = 7;
 const CM_RESOURCE_MEMORY_LARGE_40: u16 = 0x0200;
 const CM_RESOURCE_MEMORY_LARGE_48: u16 = 0x0400;
@@ -112,7 +126,11 @@ struct Fdo {
     kind: u32,
     number: u32,
     device: PDEVICE_OBJECT,
+    pdo: PDEVICE_OBJECT,
     lower: PDEVICE_OBJECT,
+    /// The MSI-X messages connected (the table to disconnect them by); null on
+    /// the pin or when polling.
+    messages: PIO_INTERRUPT_MESSAGE_INFO,
     /// Set in START before any disk is published; then the worker's alone.
     controller: Option<Controller>,
     /// The connected interrupt, shared by the ISR, the DPC and the worker.
@@ -176,7 +194,9 @@ pub unsafe extern "system" fn add_device(driver: PDRIVER_OBJECT, pdo: PDEVICE_OB
         kind: FDO_KIND,
         number: u32::MAX,
         device,
+        pdo,
         lower,
+        messages: null_mut(),
         controller: None,
         irq: Irq::new(),
         queue: core::mem::zeroed(),
@@ -187,8 +207,73 @@ pub unsafe extern "system" fn add_device(driver: PDRIVER_OBJECT, pdo: PDEVICE_OB
     });
     InitializeListHead(&raw mut (*fdo).queue);
     KeInitializeEvent(&raw mut (*fdo).event, SYNCHRONIZATION_EVENT as _, 0);
+    opt_in_to_msix(pdo);
     (*device).Flags &= !DO_DEVICE_INITIALIZING;
     STATUS_SUCCESS
+}
+
+/// A UTF-16 literal without a terminator: UNICODE_STRING lengths exclude it.
+macro_rules! utf16 {
+    ($s:literal) => {{
+        const W: &[u16] = &{
+            const B: &[u8] = $s.as_bytes();
+            let mut out = [0u16; B.len()];
+            let mut i = 0;
+            while i < B.len() {
+                out[i] = B[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        W
+    }};
+}
+
+unsafe fn unicode(s: &[u16]) -> UNICODE_STRING {
+    let mut u: UNICODE_STRING = core::mem::zeroed();
+    u.Buffer = s.as_ptr() as *mut u16;
+    u.Length = (s.len() * 2) as u16;
+    u.MaximumLength = u.Length;
+    u
+}
+
+/// Create (or open) `name` under `parent`.
+unsafe fn create_key(parent: HANDLE, name: &[u16]) -> Option<HANDLE> {
+    let mut name = unicode(name);
+    let mut oa: OBJECT_ATTRIBUTES = core::mem::zeroed();
+    oa.Length = size_of::<OBJECT_ATTRIBUTES>() as ULONG;
+    oa.RootDirectory = parent;
+    oa.ObjectName = &mut name;
+    oa.Attributes = OBJ_CASE_INSENSITIVE_KERNEL_HANDLE;
+    let mut key: HANDLE = null_mut();
+    (ZwCreateKey(&mut key, KEY_ALL_ACCESS, &mut oa, 0, null_mut(), 0, null_mut()) >= 0).then_some(key)
+}
+
+unsafe fn set_dword(key: HANDLE, name: &[u16], value: u32) {
+    let mut name = unicode(name);
+    let mut v = value;
+    ZwSetValueKey(key, &mut name, 0, REG_DWORD, (&raw mut v).cast(), 4);
+}
+
+/// Ask pci.sys for MSI-X the Windows way: `MSISupported` under the device key's
+/// Interrupt Management\MessageSignaledInterruptProperties, which an INF's HKR
+/// AddReg would write (stornvme's does). Done here because there is no INF; the
+/// PnP manager has not assigned resources yet, so pci.sys sees it in time.
+unsafe fn opt_in_to_msix(pdo: PDEVICE_OBJECT) {
+    let mut device_key: HANDLE = null_mut();
+    if IoOpenDeviceRegistryKey(pdo, PLUGPLAY_REGKEY_DEVICE, KEY_ALL_ACCESS, &mut device_key) < 0 {
+        nvprint!("could not open the device key; no MSI-X\n");
+        return;
+    }
+    if let Some(management) = create_key(device_key, utf16!("Interrupt Management")) {
+        if let Some(props) = create_key(management, utf16!("MessageSignaledInterruptProperties")) {
+            set_dword(props, utf16!("MSISupported"), 1);
+            set_dword(props, utf16!("MessageNumberLimit"), MESSAGES_WANTED);
+            ZwClose(props);
+        }
+        ZwClose(management);
+    }
+    ZwClose(device_key);
 }
 
 pub unsafe extern "system" fn dispatch(device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
@@ -297,63 +382,64 @@ unsafe fn registers(io: PIO_STACK_LOCATION) -> Option<(u64, u64)> {
     })
 }
 
-/// The interrupt START assigned: (vector, level, affinity, latched, shared).
-unsafe fn interrupt(io: PIO_STACK_LOCATION) -> Option<(ULONG, u8, usize, bool, bool)> {
+/// How many MSI-X messages START assigned.
+unsafe fn message_count(io: PIO_STACK_LOCATION) -> u32 {
     let list = (*io).Parameters.StartDevice.AllocatedResourcesTranslated;
     if list.is_null() || (*list).Count == 0 {
-        return None;
+        return 0;
     }
     let partial = &(*(*list).List.as_ptr()).PartialResourceList;
     let descs = core::slice::from_raw_parts(partial.PartialDescriptors.as_ptr(), partial.Count as usize);
-    descs.iter().find(|d| d.Type == CM_RESOURCE_TYPE_INTERRUPT).map(|d| {
-        let i = d.u.Interrupt;
-        (
-            i.Vector,
-            i.Level as u8,
-            i.Affinity as usize,
-            d.Flags & CM_RESOURCE_INTERRUPT_LATCHED != 0,
-            d.ShareDisposition == CM_RESOURCE_SHARE_SHARED,
-        )
-    })
+    descs
+        .iter()
+        .filter(|d| d.Type == CM_RESOURCE_TYPE_INTERRUPT && d.Flags & CM_RESOURCE_INTERRUPT_MESSAGE != 0)
+        .count() as u32
 }
 
-/// Connect the controller's pin-based interrupt and switch it over to it.
-/// Without one (no resource, or the connect fails) it keeps polling, and says so.
-unsafe fn connect(fdo: &mut Fdo, io: PIO_STACK_LOCATION, c: &mut Controller) {
+/// Connect the controller's interrupt: its MSI-X messages when it was assigned
+/// any, else (IoConnectInterruptEx falls back on its own) the pin. Returns how
+/// many messages connected (0: the pin), or None when nothing did and it polls.
+unsafe fn connect(fdo: &mut Fdo) -> Option<u32> {
     let n = fdo.number;
-    let Some((vector, level, affinity, latched, shared)) = interrupt(io) else {
-        nvprint!("controller {}: START_DEVICE carried no interrupt; polling\n", n);
-        return;
-    };
     let irq = &raw mut fdo.irq;
     KeInitializeEvent((*irq).event(), SYNCHRONIZATION_EVENT as _, 0);
     KeInitializeDpc((*irq).dpc(), Some(crate::nvme::dpc), irq.cast());
-    let status = IoConnectInterrupt(
-        &raw mut (*irq).interrupt,
-        Some(crate::nvme::isr),
-        irq.cast(),
-        null_mut(),
-        vector,
-        level,
-        level,
-        if latched { _KINTERRUPT_MODE_Latched } else { _KINTERRUPT_MODE_LevelSensitive },
-        shared as u8,
-        affinity as _,
-        0,
-    );
-    if status < 0 {
-        nvprint!("controller {}: IoConnectInterrupt (vector {}, level {}) failed {:#010x}; polling\n", n, vector, level, status as u32);
-        return;
+    // One slot receives what connected: the message table, or, when it fell
+    // back to the pin, that interrupt's KINTERRUPT (wdm.h's ConnectionContext).
+    let mut connection: PVOID = null_mut();
+    let mut p: IO_CONNECT_INTERRUPT_PARAMETERS = core::mem::zeroed();
+    p.Version = CONNECT_MESSAGE_BASED;
+    {
+        let m = &mut p.__bindgen_anon_1.MessageBased;
+        m.PhysicalDeviceObject = fdo.pdo;
+        m.ConnectionContext.Generic = &mut connection;
+        m.MessageServiceRoutine = Some(crate::nvme::message_isr);
+        m.ServiceContext = irq.cast();
+        m.FallBackServiceRoutine = Some(crate::nvme::isr);
     }
-    c.use_interrupts(irq, n);
+    let status = IoConnectInterruptEx(&mut p);
+    if status < 0 {
+        nvprint!("controller {}: IoConnectInterruptEx failed {:#010x}; polling\n", n, status as u32);
+        return None;
+    }
+    if p.Version == CONNECT_LINE_BASED {
+        (*irq).interrupt = connection.cast();
+        nvprint!("controller {}: interrupt connected: the pin (no MSI-X assigned)\n", n);
+        return Some(0);
+    }
+    let table = connection as PIO_INTERRUPT_MESSAGE_INFO;
+    fdo.messages = table;
+    let count = (*table).MessageCount;
+    let entries = core::slice::from_raw_parts((*table).MessageInfo.as_ptr(), count as usize);
     nvprint!(
-        "controller {}: interrupt connected: vector {}, level {}, {}, {}\n",
+        "controller {}: MSI-X: {} message(s) connected at level {}: admin on vector {}, I/O on vector {}\n",
         n,
-        vector,
-        level,
-        if latched { "latched" } else { "level-sensitive" },
-        if shared { "shared" } else { "exclusive" }
+        count,
+        (*table).UnifiedIrql,
+        entries[0].Vector,
+        entries[(count as usize - 1).min(1)].Vector
     );
+    Some(count)
 }
 
 /// Map the registers, bring the controller up, and publish its namespaces.
@@ -374,8 +460,15 @@ unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
     }
     nvprint!("controller {}: registers at {:#x}+{:#x}\n", n, base, len);
 
+    // Messages are connected before bring-up: under MSI-X the admin queue's
+    // interrupts cannot be masked, so its completions during bring-up must find
+    // a vector that is ours (the ISR absorbs them until the worker is armed).
+    // The pin is connected after, once bring-up has masked it.
+    let early = if message_count(io) > 0 { connect(fdo) } else { None };
+    let messages = early.unwrap_or(0);
+
     let t0 = now_us();
-    let mut c = match Controller::start(regs, len as usize) {
+    let mut c = match Controller::start(regs, len as usize, messages) {
         Ok(c) => c,
         Err(e) => {
             nvprint!("controller {}: bring-up failed: {:?}\n", n, e);
@@ -395,7 +488,11 @@ unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
         if id.volatile_cache { "present (disabled)" } else { "none" },
         (now_us() - t0) / 1000
     );
-    connect(fdo, io, &mut c);
+    let connected = if messages > 0 { early } else { connect(fdo) };
+    match connected {
+        Some(_) => c.use_interrupts(&raw mut fdo.irq, n),
+        None => nvprint!("controller {}: no interrupt connected; polling\n", n),
+    }
 
     let mut ids = [0u32; NAMESPACES_PER_CONTROLLER];
     let active = c.active_namespaces(&mut ids);
@@ -551,6 +648,9 @@ unsafe fn self_test(n: u32, c: &mut Controller, ns: &Namespace) {
         c.late,
         c.by_poll
     );
+    if let Some((admin, io)) = c.message_counts() {
+        nvprint!("controller {}: self-test: MSI-X messages taken: {} admin, {} I/O\n", n, admin, io);
+    }
 }
 
 // ---------------------------------------------------------------------------

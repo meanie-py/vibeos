@@ -680,6 +680,12 @@ unsafe fn HalpSetMountLetter(DeviceName: PUNICODE_STRING, DriveLetter: u8) -> NT
     ObDereferenceObject(FileObject as *mut core::ffi::c_void);
     ExFreePoolWithTag(InputBuffer as *mut core::ffi::c_void, TAG_FSTUB);
 
+    ntkrnl_sys::driver_ddk::DbgPrint(
+        c"[FSTUB] SetMountLetter %c: -> %wZ = 0x%x\n".as_ptr(),
+        DriveLetter as u32,
+        DeviceName,
+        Status as u32,
+    );
     return Status;
 }
 
@@ -808,6 +814,7 @@ unsafe fn HalpIsOldStyleFloppy(DeviceName: PUNICODE_STRING) -> BOOLEAN {
 
 #[no_mangle]
 pub unsafe extern "system" fn HalpDeleteMountLetter(DriveLetter: u8) -> NTSTATUS {
+    ntkrnl_sys::driver_ddk::DbgPrint(c"[FSTUB] DeleteMountLetter %c:\n".as_ptr(), DriveLetter as u32);
     let mut Irp: PIRP;
     let mut Event: KEVENT = core::mem::zeroed();
     let mut Status: NTSTATUS;

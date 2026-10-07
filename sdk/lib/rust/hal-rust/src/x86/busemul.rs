@@ -250,6 +250,9 @@ pub unsafe extern "system" fn HalGetInterruptVector(
     Irql: PKIRQL,
     Affinity: PKAFFINITY,
 ) -> ULONG {
+    if crate::message::is_message_token(BusInterruptVector) {
+        return unsafe { crate::message::allocate(Irql, Affinity) };
+    }
     unsafe { HalpGetRootInterruptVector(BusInterruptLevel, BusInterruptVector, Irql, Affinity) }
 }
 

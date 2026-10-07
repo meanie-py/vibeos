@@ -1968,38 +1968,6 @@ _RE_METHOD_NOT_FIELD = re.compile(r"attempted to take value of method `(?P<name>
 _RE_ASSIGN_OP = re.compile(rb"\s*(?P<op>\|=|&=|\^=|\+=|-=|<<=|>>=|=(?!=))")
 
 
-def _receiver_start(data: bytes, dot: int) -> int | None:
-    """Start of the postfix chain ending just before `data[dot] == b'.'` (`(*p).a[i].b`)."""
-    i = dot
-    while True:
-        j = i
-        while j > 0 and (chr(data[j - 1]).isalnum() or data[j - 1] == ord("_")):
-            j -= 1
-        if j > 0 and data[j - 1] in b")]":
-            close, open_ = data[j - 1], b"(" if data[j - 1] == ord(")") else b"["
-            depth, k = 0, j - 1
-            while k >= 0:
-                if data[k] == close:
-                    depth += 1
-                elif data[k] == open_[0]:
-                    depth -= 1
-                    if depth == 0:
-                        break
-                k -= 1
-            if k < 0:
-                return None
-            j = k
-            # `f(x)` / `a[i]`: the callee or array name belongs to the chain too.
-            while j > 0 and (chr(data[j - 1]).isalnum() or data[j - 1] == ord("_")):
-                j -= 1
-        if j == i:
-            return None
-        if j > 0 and data[j - 1] == ord("."):
-            i = j - 1
-            continue
-        return j
-
-
 def _statement_end(data: bytes, start: int) -> int | None:
     """Offset of the `;` ending the statement that continues at `start` (depth 0)."""
     depth = 0

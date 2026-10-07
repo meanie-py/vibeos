@@ -1092,17 +1092,19 @@ pub unsafe extern "system" fn NtPowerInformation(
                 BatteryState.AcOnLine = 1;
             }
 
-            core::ptr::copy_nonoverlapping(
-                core::ptr::addr_of!(BatteryState) as *const u8,
-                OutputBuffer as *mut u8,
+            // The probe proves where OutputBuffer is, not that it stays mapped; the C
+            // wrote it inside _SEH2_TRY, so publish fault-tolerantly from the local.
+            if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+                OutputBuffer as *mut core::ffi::c_void,
+                core::ptr::addr_of!(BatteryState) as *const core::ffi::c_void,
                 core::mem::size_of::<SYSTEM_BATTERY_STATE>(),
-            );
+            ) {
+                return e;
+            }
             Status = STATUS_SUCCESS;
         }
 
         SystemPowerCapabilities => {
-            let PowerCapabilities = OutputBuffer as *mut SYSTEM_POWER_CAPABILITIES;
-
             if !InputBuffer.is_null() {
                 return STATUS_INVALID_PARAMETER;
             }
@@ -1110,18 +1112,18 @@ pub unsafe extern "system" fn NtPowerInformation(
                 return STATUS_BUFFER_TOO_SMALL;
             }
 
-            core::ptr::copy_nonoverlapping(
-                core::ptr::addr_of!(PopCapabilities) as *const u8,
-                PowerCapabilities as *mut u8,
+            if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+                OutputBuffer as *mut core::ffi::c_void,
+                core::ptr::addr_of!(PopCapabilities) as *const core::ffi::c_void,
                 core::mem::size_of::<SYSTEM_POWER_CAPABILITIES>(),
-            );
+            ) {
+                return e;
+            }
 
             Status = STATUS_SUCCESS;
         }
 
         ProcessorInformation => {
-            let PowerInformation = OutputBuffer as *mut PROCESSOR_POWER_INFORMATION;
-
             if !InputBuffer.is_null() {
                 return STATUS_INVALID_PARAMETER;
             }
@@ -1129,12 +1131,23 @@ pub unsafe extern "system" fn NtPowerInformation(
                 return STATUS_BUFFER_TOO_SMALL;
             }
 
-            (*PowerInformation).Number = 0;
-            (*PowerInformation).MaxMhz = 1000;
-            (*PowerInformation).CurrentMhz = (*(KeGetCurrentPrcb() as *mut _KPRCB)).MHz;
-            (*PowerInformation).MhzLimit = 1000;
-            (*PowerInformation).MaxIdleState = 0;
-            (*PowerInformation).CurrentIdleState = 0;
+            // Fill a kernel local, then publish it fault-tolerantly: the fields were
+            // being stored straight through the caller's OutputBuffer pointer.
+            let mut PowerInformation: PROCESSOR_POWER_INFORMATION = core::mem::zeroed();
+            PowerInformation.Number = 0;
+            PowerInformation.MaxMhz = 1000;
+            PowerInformation.CurrentMhz = (*(KeGetCurrentPrcb() as *mut _KPRCB)).MHz;
+            PowerInformation.MhzLimit = 1000;
+            PowerInformation.MaxIdleState = 0;
+            PowerInformation.CurrentIdleState = 0;
+
+            if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+                OutputBuffer as *mut core::ffi::c_void,
+                core::ptr::addr_of!(PowerInformation) as *const core::ffi::c_void,
+                core::mem::size_of::<PROCESSOR_POWER_INFORMATION>(),
+            ) {
+                return e;
+            }
 
             Status = STATUS_SUCCESS;
         }

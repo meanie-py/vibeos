@@ -113,7 +113,7 @@ extern "C" {
     fn DbgPrint(format: *const u8, ...) -> u32;
 }
 
-fn log(args: core::fmt::Arguments) {
+pub(crate) fn log(args: core::fmt::Arguments) {
     let mut line = Line { buf: [0; 192], len: 0 };
     let _ = line.write_fmt(args);
     line.buf[line.len] = 0;
@@ -123,8 +123,9 @@ fn log(args: core::fmt::Arguments) {
 }
 
 macro_rules! vlog {
-    ($($t:tt)*) => { log(format_args!($($t)*)) };
+    ($($t:tt)*) => { $crate::miniport::log(format_args!($($t)*)) };
 }
+pub(crate) use vlog;
 
 // ---- DriverEntry ----------------------------------------------------------------------
 
@@ -154,6 +155,14 @@ pub unsafe extern "system" fn DriverEntry(DriverObject: PVOID, RegistryPath: PVO
         // SCSIPORT convention: a driver that registers for several hardware IDs
         // returns the LOWEST status, i.e. success if any registration succeeded.
         status = status.min(s);
+    }
+    // virtio-mmio disks are PnP children of the arm64 HAL's ACPI root, which
+    // only that HAL publishes; the driver must then stay loaded even when no
+    // PCI function matched, to take them when the PnP manager offers them.
+    #[cfg(target_arch = "aarch64")]
+    {
+        crate::pnp::install(DriverObject.cast());
+        status = 0;
     }
     status
 }

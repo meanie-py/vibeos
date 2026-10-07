@@ -1742,6 +1742,14 @@ Three faces, all seen live:
   `netapi32` `MIB_IPADDRTABLE.table`. Deterministic on the flipping tree but the gate
   classifies it `NET_FLAKE`; the differential tell is that **only** the flipping worktree fails
   net. The inconsistency is intra-file — sibling functions already used pointer arithmetic.
+- **ntdll's CSR capture buffer — the console app that "hangs".** `CsrAllocateMessagePointer`
+  wrote `PointerOffsetsArray[PointerCount]`, so every CSR call capturing two or more pointers
+  panicked on the second. An interactive cmd died on its first `echo x > file`, but its
+  console window lives in csrss and stayed up, so it looked like a hang. A census showing a
+  `WrLpcReply` thread sent two diagnoses the wrong way. **When a console app freezes, grep
+  serial for `RUST PANIC` and `PROC-TERM` before reading wait states:** a dead process
+  leaves its window behind. `tools/scan_flex_array_panic.py` could not see it, because it
+  never reads cargo-linked modules (ntdll and the rest of the boot path).
 - **A CORRECTLY-sized array whose guard is a runtime variable — caught at build time by
   `scan_ud2`, not at runtime.** Same panic, different reason: nothing is over-allocated and no
   index is ever out of range, but the *guard* the C relies on is a `static mut` the optimiser
@@ -2501,6 +2509,25 @@ tail into the suspend counts.
 **Generalize.** A macro spelled `FIELD_OFFSET(..) + sizeof(..)` or `RTL_SIZEOF_THROUGH_FIELD`
 exists precisely because the tail is someone else's storage. Grep for the overlay
 (`*Fill[...]` members in ndk headers) before collapsing it to `size_of`.
+
+### `size_of` on an aliased import measures the alias, not the C type
+**Symptom.** pci.sys asked the x86 HAL for a device's whole 256-byte config space to walk
+its capability list, and got 64 bytes back, so every capability looked absent. Nothing
+failed: `HalGetBusDataByOffset` just reports a short count.
+
+**Cause.** `hal-rust/src/x86/pcibus.rs` imports `_PCI_COMMON_HEADER as PCI_COMMON_CONFIG`
+(bindgen's own `PCI_COMMON_CONFIG` is a header-less 192-byte blob, so the translation
+borrowed the header's name). `HalpGetPCIData`/`HalpSetPCIData` clamp the length to
+`sizeof(PCI_COMMON_CONFIG)`, and in Rust that became the header's 64, where C's is 256.
+Every x86 config access past the standard header was silently cut short.
+
+**Fix.** A named constant for the C size (`PCI_COMMON_CONFIG_SIZE = 256`), never `size_of`
+of the alias.
+
+**Generalize.** An `X as Y` import, or a local `type Y = X`, keeps Y's name and X's layout.
+Field access through it still type-checks wherever the two share fields, so the only
+symptom is the size. Before trusting a `size_of::<Y>()` that stands for a C `sizeof`, check
+what Y is bound to.
 
 ## Constants: invented, guessed, and swallowed match arms
 
@@ -5171,8 +5198,18 @@ argument raw; its baseline is EMPTY, so any new row fails `vibeos-cli check`. Us
 validates something ONCE and use the copy, never `(*p).Length` then `*p`. The scanner follows
 the pointer into callees (a bare, cast or `opaque_ptr` argument), so a helper shared with
 kernel callers needs its user arm spelled `if mode != KernelMode { .. } else { .. }` (or an
-early return from the user arm) — anything subtler is a row. It cannot see a pointer read OUT
-of a user structure: an embedded buffer or `UNICODE_STRING.Buffer` is user memory too.
+early return from the user arm) — anything subtler is a row. The scanner also follows a pointer
+field read OUT of a `read_back` capture (`cap.Buffer`, whether deref'd in place, lifted into a
+local, or handed to a callee `f(oa.ObjectName)`) and flags a raw deref/copy of it, while a
+scalar field passed as a length is not; and it reads a raw primitive whose pointer argument
+wraps onto a LATER line (`copy_nonoverlapping(\n InputBuffer, ..)`) — that per-line miss had
+been a false "clean" tree-wide, hiding NtDeviceIoControlFile/NtSetInformationFile/
+NtPowerInformation and more. What it still cannot see: an ARRAY of user pointers/structs indexed
+element by element (NtGdiExtCreateRegion's RGNDATA rects, SepAccessCheckAndAuditAlarm's result
+lists), a capture made by a primitive other than `read_back` (`safe_copy_from_user` into a
+local, then its buffer field used raw), and a method call — those are caught only by reading. A
+write INTO a user buffer the caller pinned with EngSecureMem/MmSecureVirtualMemory first
+(NtGdiGetDIBitsInternal) is safe and carries a nolint.
 
 **Syscalls are not the only door, and the scanner only watches syscalls.** `int 2d` hands the
 kernel a user pointer in a register, which arrives as `ExceptionInformation[1]`. KdpStub's
@@ -5182,6 +5219,18 @@ bugchecked the box (0x1E/0x50 in `KdpStub`). Capture it as `KdpPrint` does
 (`safe_copy_from_user` into a bounded local, passing PreviousMode). Any trap-path handler that
 reads an exception record's parameters is in this class. `sehtest`'s `bad-print-buffer` probe
 covers this one on every amd64 boot.
+
+**In user mode the same drop turns a VALIDATOR into a constant.** kernel32's `IsBadReadPtr`,
+`IsBadWritePtr`, `IsBadCodePtr` and `IsBadStringPtrA/W` ARE the C's probe plus its
+`_SEH2_EXCEPT { Result = TRUE; }`. The translation kept the probe and commented the handler
+out, and the probe was a non-volatile `*Current = *Current` / `let _ = *Current`, which LLVM
+deletes. So all five returned FALSE for every non-NULL pointer. The sdk delayimp apitests'
+`UnProtect` asked `IsBadWritePtr` about an import name in `.rdata`, skipped its
+`VirtualProtect`, and the write killed the process (exit 0x80). The tell is a function whose
+whole result is set only in a commented-out `_SEH2_EXCEPT`. Fix: answer the question without
+a fault. They now walk `VirtualQuery` regions (committed, not GUARD/NOACCESS, granting the
+access), which also stops them consuming a stack guard page the way Windows' probe does.
+`sehtest`'s `bad-ptr-probes` covers them on every boot, all three arches.
 
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
 HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
@@ -12152,6 +12201,38 @@ Two lessons beyond the fix:
   `EXCEPTION_CONTINUE_SEARCH` turns the crash into a livelock (31,511 iterations). Guard, log,
   and fix the cause.
 
+### A WoW64 process's fixed TLS slots must be RESERVED, or the first `TlsAlloc` takes slot 1
+Symptom: every 32-bit guest crashes early in libwow64fex's rpmalloc (`heap_get_page_generic`)
+after an unrelated-looking change — here, making arm64 ntdll's `_errno`/`atan2`/`tan` its own
+instead of forwarders to msvcrt.
+
+Cause: WoW64 addresses TEB64 `TlsSlots[1]` (CPU area), `[10]` (WOW64INFO), `[12]` (callback
+frame) and FEX `[15..18]` by fixed index, but ntdll reserved only bit 0 of `PEB->TlsBitmap`.
+FEX's own `TlsAlloc` (rpmalloc's thread-heap key, `DYNAMIC_TLS_NO_FLS`) takes the first clear
+bit. While the msvcrt forwarders loaded msvcrt early, msvcrt's DllMain `TlsAlloc` got slot 1 and
+nothing noticed; with msvcrt gone, rpmalloc got slot 1 and it and the CPU area overwrote each
+other. The change's own `errno` home was blamed at the time and was innocent.
+
+Fix: `LdrpInitializeProcess` sets bits `1..WOW64_TLS_MAX_NUMBER` in a WoW64 process before any
+DLL initializes (Windows does the same). Lesson: an allocator that "works" because an earlier
+allocation happened to take the dangerous index is a latent bug, and removing the earlier
+allocation is the moment it fires. Find the fixed-index users of a shared table and reserve
+them; never rely on load order.
+
+### A 32-bit guest goes silent right after `MapViewOfFile` of a DATA section
+Symptom: under FEX on arm64 the guest's last serial line is wow64's `NtMapViewOfSection =>
+00000000 base=...` for a pagefile-backed view (`CreateFileMapping(INVALID_HANDLE_VALUE)`), and
+it never runs another guest instruction; natively on amd64 the same guest is fine.
+
+Cause: wow64's `NtMapViewOfSection` thunk called `BTCpuNotifyMapViewOfSection` for EVERY view.
+FEX's handler (`HandleImageMap`) takes the address for a mapped PE image — its file path, its
+headers — and a zeroed data view is not one. Wine's wow64 notifies only when
+`NtQuerySection(SectionImageInformation)` succeeds. Fix: the same gate
+(`wow64_manual.c`). No ladder guest had mapped a data section before spawn32's rung-10 channel.
+A process stuck this way also appeared to outlive `TerminateProcess` (a named mutex it held
+was still there minutes later) — inferred, not traced; revisit if a guest ever hangs this way
+again.
+
 ### The shared USER handle table has no 32-bit view `[§9.58b]`
 Client-side `ValidateHwnd` fails, so `DispatchMessage` silently drops `WM_PAINT`. **This is a
 subsystem, not a marshaller** — WoW64 GUI needs a per-process 32-bit view of USER shared memory
@@ -12681,7 +12762,10 @@ introduced at any heap exit — it is an external stray write.**
   2. **The driver raised an interrupt before its framework opened the ISR gate.** usbport
      connects the interrupt, calls the miniport's StartController, and only *then* sets
      the flags its ISR wrapper checks. A StartController that enables controller
-     interrupts and issues a command gets its completion interrupt declined.
+     interrupts and issues a command gets its completion interrupt declined. A driver's
+     own gate does the same: vioblk's virtio-mmio path (2026-10-06) set its ISR's `armed`
+     flag after IoConnectInterrupt returned, and the slot's line was already up from
+     device setup. Ack the device's pending status and arm the ISR *before* connecting.
   3. **A polled driver answered "not mine" without reading the device's status.** On x86
      the symptom is scsiport's `[SCSIPORT] Isr entry count=100000` and a silent hang
      (vioblk, 2026-10-05). A virtio INTx stays asserted until the ISR status register is

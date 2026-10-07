@@ -50,6 +50,13 @@ use core::ffi::c_void;
 
 pub type PPCI_COMMON_CONFIG = PPCI_COMMON_HEADER;
 
+/// `sizeof(PCI_COMMON_CONFIG)` in C: the 64-byte header plus 192 device-specific
+/// bytes, all of conventional config space. NOT `size_of::<PCI_COMMON_CONFIG>()`:
+/// that name is aliased to the header here (bindgen's own PCI_COMMON_CONFIG is a
+/// header-less 192-byte blob), and clamping to it cut every config read or write
+/// at 64 bytes, so a capability list could never be read in one call.
+const PCI_COMMON_CONFIG_SIZE: ULONG = 256;
+
 // bindgen names the per-PCI-header-type sub-structs awkwardly.
 pub type PCI_COMMON_CONFIG__u__type0 =
     ntkrnl_sys::hal_ddk::_PCI_COMMON_HEADER__bindgen_ty_1__PCI_HEADER_TYPE_0;
@@ -1017,8 +1024,8 @@ pub unsafe extern "system" fn HalpGetPCIData(
         }
     }
 
-    if Length > core::mem::size_of::<PCI_COMMON_CONFIG>() as ULONG {
-        Length = core::mem::size_of::<PCI_COMMON_CONFIG>() as ULONG;
+    if Length > PCI_COMMON_CONFIG_SIZE {
+        Length = PCI_COMMON_CONFIG_SIZE;
     }
 
     if Offset >= 64 {
@@ -1094,8 +1101,8 @@ pub unsafe extern "system" fn HalpSetPCIData(
         let mut Offset = Offset;
         let mut Buffer = Buffer;
         
-        if Length > core::mem::size_of::<PCI_COMMON_CONFIG>() as u32 {
-            Length = core::mem::size_of::<PCI_COMMON_CONFIG>() as u32;
+        if Length > PCI_COMMON_CONFIG_SIZE {
+            Length = PCI_COMMON_CONFIG_SIZE;
         }
         
         if Offset >= 64 {

@@ -15,6 +15,7 @@ prevent.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -463,30 +464,41 @@ def test_a_real_local_edit_IS_stale(tmp_path: Path, monkeypatch):
     assert vuc._stale_against_sources(archive) == "sdk/lib/rust/cnt-rust/src/lib.rs"
 
 
-def test_the_authority_includes_ucrtbases_own_C_not_just_its_libraries():
-    """The subset assertion is against OUR C — and ucrtbase's own TUs are ours.
+def test_the_authority_includes_ucrtbases_own_objects_not_just_its_libraries():
+    """The subset assertion is against OUR surface -- and ucrtbase's own objects are ours.
 
     OURS_REFERENCE must stay exactly the link LIBRARIES (the test above pins it
-    against the CMake). But ucrtbase.dll also gets symbols from its own 132 lines —
-    printf.c and stubs.c — and six of those are EXPORTED: the intrinsic placeholders
-    spec2def cannot stub. Left out of the authority, a Rust twin of any of them reads
+    against the CMake). But ucrtbase.dll also gets symbols from its own sources, and
+    several are EXPORTED. Left out of the authority, a Rust twin of any of them reads
     as displacing a genuine Microsoft UCRT body when it would be displacing ReactOS's
     own. That is the defect the link-line test's docstring records (a correct ucrtbase
     math flip coming back as 60 findings), one target over.
+
+    ucrtbase's own C (printf.c, stubs.c, ucrt_varargs_shim.c) is all Rust now and stays
+    on disk only as the record; the one object it still compiles is spec2def's generated
+    stubs. So the guard against a silent second definition is that none of the record
+    files is back in the source list, and that the bodies they held live in ucrt-rust.
     """
     assert set(vuc.OURS_C_AUTHORITY) == set(vuc.OURS_REFERENCE) | set(vuc.OURS_OWN_TUS)
     assert set(vuc.OURS_REFERENCE) & set(vuc.OURS_OWN_TUS) == set(), "the two must be disjoint"
-    # The six symbols that motivated this (fma/fmaf, log2/log2f, lrint/lrintf) moved to
-    # ucrt-rust's c99math (2026-10-03) and are declared takeovers there, so they must be
-    # GONE from stubs.c -- two definitions would be the silent first-match this file
-    # exists to prevent. The entry itself still carries printf.c and the rest of stubs.c.
-    stubs = REPO / "dll" / "win32" / "ucrtbase" / "stubs.c"
-    text = stubs.read_text(errors="replace")
-    c99 = (REPO / "sdk" / "lib" / "rust" / "ucrt-rust" / "src" / "c99math.rs").read_text()
+
+    cmake = (REPO / "dll" / "win32" / "ucrtbase" / "CMakeLists.txt").read_text()
+    code = "\n".join(line.split("#", 1)[0] for line in cmake.splitlines())
+    sources = re.search(r"add_library\(ucrtbase SHARED([^)]*)\)", code)
+    assert sources, "no add_library(ucrtbase SHARED ...) in dll/win32/ucrtbase/CMakeLists.txt"
+    listed = set(sources.group(1).split())
+    assert listed == {"ucrtbase_stubs.c", "ucrtbase.def"}, (
+        f"ucrtbase compiles {sorted(listed)}: a record .c back in the list defines its "
+        "symbols a second time beside ucrt-rust's -- re-derive OURS_OWN_TUS"
+    )
+
+    rust = REPO / "sdk" / "lib" / "rust" / "ucrt-rust" / "src"
+    reactos = (rust / "ucrt_reactos.rs").read_text()
+    for sym in ("atexit", "operator_new", "operator_delete", "_chkesp_failed"):
+        assert f'extern "C" fn {sym}(' in reactos, f"{sym} no longer in ucrt_reactos.rs"
+    c99 = (rust / "c99math.rs").read_text()
     for sym in ("fma", "fmaf", "log2", "log2f", "lrint", "lrintf"):
-        assert f" {sym}(" not in text, f"{sym} is back in ucrtbase/stubs.c beside c99math's"
         assert f'extern "C" fn {sym}(' in c99, f"{sym} no longer in c99math.rs"
-    assert "atexit(" in text, "stubs.c no longer defines atexit — re-derive OURS_OWN_TUS"
 
 
 # ── the burn-down ratchet ────────────────────────────────────────────────────

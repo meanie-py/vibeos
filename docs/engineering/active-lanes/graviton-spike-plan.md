@@ -12,10 +12,13 @@
 > hardware directly, so the work is drivers, not accelerator plumbing:
 >
 > - **Disks are NVMe** (EBS and instance store alike): `nvme.sys`, done on all three
->   arches (2026-10-06), on INTx interrupts. Nitro's device IDs are untested.
+>   arches (2026-10-06), on MSI-X interrupts. Nitro's device IDs are untested.
 > - **The NIC is ENA** (Elastic Network Adapter), not e1000 or virtio: missing.
 > - **PCIe interrupts:** Nitro devices expect MSI-X, which on arm64 is the GICv3 ITS:
->   missing. nvme.sys uses INTx, and falls back to a 10 ms poll where none arrives.
+>   half done. MSI-X works end to end (2026-10-07: pci.sys, PnP, HAL,
+>   `IoConnectInterruptEx`), but the arm64 HAL's only message backend is GICv2m, the
+>   QEMU virt frame; the ITS backend is missing. Without it nvme.sys falls back to INTx,
+>   and to a 10 ms poll where no interrupt arrives.
 > - **PCIe config space:** the arm64 HAL's ECAM reads bus 0 of one segment only;
 >   Graviton's layout is unmeasured.
 > - **Boot and console:** UEFI and ACPI, which arm64 vibeos already uses; the serial

@@ -61,6 +61,12 @@ pub mod ldr;
 #[cfg(target_arch = "aarch64")]
 pub mod dispatch;
 
+// crtexports/ — the C-runtime exports arm64 ntdll owes the FEX CPU layers'
+// mini-CRT (`_errno`). They were forwarders to msvcrt, which made every
+// process with a CPU layer load msvcrt, and through msvcrt's imports kernel32.
+#[cfg(target_arch = "aarch64")]
+pub mod crtexports;
+
 // setjmp/ — x64 `longjmp` C glue (vcruntime/amd64/longjmp.c). amd64 ntdll.dll
 // is the only consumer of setjmp/longjmp (i386/arm64 never reference it — the
 // cmake libsetjmp.a is dead there; ntdll_vista.dll doesn't link it). The
