@@ -213,9 +213,12 @@ def _abi_class(abi: str | None) -> str:
 def _placeholder_decl(item: Item) -> bool:
     """`fn NtClose(_: usize);` -- a link-only stub some crates keep. Not evidence of a signature."""
     params = re.search(r"\((.*)\)", item.text)
-    return bool(params) and all(
-        re.fullmatch(r"\s*_\s*:\s*usize\s*", p) for p in params.group(1).split(",") if p.strip()
-    )
+    if params is None:
+        return False
+    parts = [p for p in params.group(1).split(",") if p.strip()]
+    # A function with NO parameters is not a placeholder: `all([])` called usetup's
+    # CreatePartitionList() one, and every zero-argument extern was discarded as "mixed".
+    return bool(parts) and all(re.fullmatch(r"\s*_\s*:\s*usize\s*", p) for p in parts)
 
 
 def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:

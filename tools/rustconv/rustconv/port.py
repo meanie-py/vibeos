@@ -1247,6 +1247,26 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
         for name in differs:
             print(f"resolve: local type {name} differs across arches in {tu}; hand-port it")
     prelude_resolve.write_local_types(prelude, items)
+    # The island's OTHER structs still name the stub (usetup's search struct has
+    # `File: PCFFILE` -> the island's `_CFFILE`), so the stub itself must go: it is replaced
+    # by an import of the definition just written. Re-applied on every resolve, since a
+    # regenerated island brings the stub back.
+    real = {
+        n for n in opaque & set(items) if re.search(rf"\bpub struct {re.escape(n)}\b", items[n][0])
+    }
+    for isl in prelude.parent.glob("types_*.rs"):
+        text = isl.read_text()
+        new_text = text
+        for name in sorted(real):
+            stub = rf"^pub struct {re.escape(name)} \{{\n\s*_unused: \[u8; 0\],\n\}}\n"
+            new_text = re.sub(
+                rf"(?:^#\[[^\n]*\]\n)*{stub}",
+                f"use crate::prelude::{name}; // whole in the TU that defines it (port resolve)\n",
+                new_text,
+                flags=re.M,
+            )
+        if new_text != text:
+            isl.write_text(new_text)
     if items:
         print(f"resolve: {len(items)} local type item(s) from c2rust: {', '.join(sorted(items))}")
         dropped = drop_model_type_twins(_crate_dir(state) / "src" / state["stem"], set(items))

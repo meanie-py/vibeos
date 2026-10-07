@@ -271,3 +271,12 @@ def test_an_exported_rust_definition_gives_its_extern_declaration():
         ),
         ("Other", "pub fn Other(a: *mut u8);", "C"),
     ]
+
+
+def test_a_zero_argument_function_is_not_a_placeholder():
+    from rustconv.prelude_resolve import Item, consensus
+
+    item = Item("fn", "fn CreatePartitionList() -> *mut PARTLIST;", "system", "x.rs")
+    assert consensus("CreatePartitionList", [item])[0] is item
+    stub = Item("fn", "fn NtClose(_: usize);", "system", "y.rs")
+    assert consensus("NtClose", [stub])[0] is None
