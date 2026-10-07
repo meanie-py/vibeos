@@ -37,7 +37,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import crate_integrate, local_macros, prelude_resolve
+from . import crate_integrate, local_macros, pointer_depth, prelude_resolve
 from . import profile_derive as pd
 
 REPO = Path(__file__).resolve().parents[3]
@@ -1108,6 +1108,24 @@ def stage_headers(
     return spent
 
 
+def _pointer_decls(state: dict) -> tuple[set[str], dict[str, pointer_depth.CFunctionDecls]]:
+    """The island's pointer typedefs, and what each C function declares with them."""
+    from .scanner import scan_file
+
+    crate = _crate_dir(state)
+    types = pointer_depth.pointer_typedefs(
+        p.read_text(errors="replace") for p in sorted((crate / "src").glob("types_*.rs"))
+    )
+    decls: dict[str, pointer_depth.CFunctionDecls] = {}
+    for unit in _units(state):
+        path = REPO / unit
+        if not path.is_file():
+            continue
+        for fn in scan_file(path).functions:
+            decls[fn.name] = pointer_depth.c_declarations(fn.name, fn.params, fn.body_text, types)
+    return types, decls
+
+
 def stage_integrate(stem: str) -> None:
     """Move each translated file onto the crate's prelude (crate_integrate): the per-file
     substrate globs and hand-declared externs a standalone translation carries are WRONG
@@ -1118,13 +1136,35 @@ def stage_integrate(stem: str) -> None:
     crate = _crate_dir(state)
     unprovided: dict[str, list[str]] = {}
     changed = 0
+    ptr_types, decls = _pointer_decls(state)
+    depth_fixed: list[str] = []
     for path in sorted((crate / "src" / stem).glob("*.rs")):
         report = crate_integrate.integrate_path(path, crate)
         changed += report.changed
         if report.kept_unprovided:
             unprovided[path.stem] = report.kept_unprovided
         print(f"integrate: {report.summary()}")
-    _record(state, "integrate", started, changed=changed, unprovided=unprovided)
+        text = path.read_text()
+        new, fixes = pointer_depth.repair(text, decls, ptr_types)
+        if new != text:
+            path.write_text(new)
+            changed += 1
+            depth_fixed += [f"{path.stem}::{f}" for f in fixes]
+    if depth_fixed:
+        print(
+            f"integrate: {len(depth_fixed)} function(s) read a pointer typedef as its struct "
+            "(`*mut PFOO`, `(*(*x))`); the C's declarations put back:"
+        )
+        for f in depth_fixed:
+            print(f"  {f}")
+    _record(
+        state,
+        "integrate",
+        started,
+        changed=changed,
+        unprovided=unprovided,
+        pointer_depth=depth_fixed,
+    )
     if unprovided:
         print("integrate: names nothing provides (a prelude gap, or invented by the model):")
         for mod, names in unprovided.items():
@@ -1220,6 +1260,14 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     prelude_resolve.write_block(prelude, prelude_resolve.render(copied))
     siblings = prelude_resolve.existing_siblings(prelude)
     modules_dir = crate / "src" / stem
+    island_sys = prelude_resolve.island_substrate(crate / "src", workspace)
+    kernel_sys = (
+        island_sys if island_sys is not None and island_sys.parent.name == "ntkrnl-sys" else None
+    )
+    substrate: dict[str, dict[str, str | None]] = {
+        n: {} for n in prelude_resolve.existing_substrate(prelude)
+    }
+    substrate_why: dict[str, str] = {}
     res = prelude_resolve.Resolution()
     ambiguous: dict[str, list[str]] = {}
     types_only: set[str] = set()
@@ -1233,7 +1281,11 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         types_only = {k for k, ns in wanted.items() if ns == {"type"}}
         # A copy of the wrong KIND for a name wanted only as a type is what caused the gap.
         for name in types_only & set(copied):
-            if copied[name].kind != "type":
+            # ...except an island enum alias: the island says the name IS that constant, so a
+            # type use of it is the translation's mistake (atapi typed locals
+            # `DevicePowerState` where the C says DEVICE_POWER_STATE). Dropping it only
+            # re-copied it next pass, every pass.
+            if copied[name].kind != "type" and copied[name].path != "island enum":
                 del copied[name]
         # The crate's OWN definitions first: a name one translated module defines is
         # imported from it, never copied from the tree.
@@ -1251,6 +1303,23 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         if wired:
             prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
         names -= set(found_here)
+        # A header helper the kernel -sys crate implements in Rust is imported from it, before
+        # tree consensus is asked -- C macros included, since the substrate's port IS the
+        # macro's Rust form. atapi's InsertTailList (16 copies, two ABIs), KeQuerySystemTime
+        # and MmGetMdlVirtualAddress (C macros, never asked) all live in ntkrnl-sys.
+        if kernel_sys is not None:
+            found_sub, sub_why = prelude_resolve.substrate_helpers(
+                (names - shared) | set(substrate), kernel_sys, "ntkrnl_sys"
+            )
+            wired += len(set(found_sub) - set(substrate))
+            substrate = found_sub
+            substrate_why = {k: v for k, v in sub_why.items() if k in names}
+            for name in substrate:
+                copied.pop(name, None)
+            prelude_resolve.write_substrate(
+                prelude, prelude_resolve.render_substrate(substrate, "ntkrnl_sys")
+            )
+            names -= set(substrate)
         res.pending = sorted(names & pending)
         todo = names - pending - set(copied) - c_macros - shared - id_aliases
         # Plus every enum member a C `case` label names (derive's SWITCH_CONST_ENUM_PREFIXED):
@@ -1258,7 +1327,7 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         # reach this alias step on its own. diskpart's FormatCallback matched `PROGRESS` and
         # `DONE` bare, and the first arm caught every command.
         case_enums = set(load_state(stem).get("switch_enums", [])) - set(copied)
-        aliases = prelude_resolve.island_enum_aliases(todo | case_enums, crate / "src")
+        aliases = prelude_resolve.island_enum_aliases(todo | case_enums, crate / "src", island_sys)
         copied.update(aliases)
         todo -= set(aliases)
         items = prelude_resolve.workspace_items(todo, workspace, crate)
@@ -1369,6 +1438,13 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     )
     if siblings:
         print(f"resolve: {len(siblings)} name(s) imported from the module's own translations")
+    if substrate:
+        print(f"resolve: {len(substrate)} header helper(s) imported from ntkrnl-sys")
+    if substrate_why:
+        print(
+            "resolve: ntkrnl-sys defines these but cannot provide them: "
+            + "; ".join(f"{k} ({v})" for k, v in sorted(substrate_why.items()))
+        )
     if ambiguous:
         print(
             "resolve: defined by more than one translated module (C `static` twins?), "

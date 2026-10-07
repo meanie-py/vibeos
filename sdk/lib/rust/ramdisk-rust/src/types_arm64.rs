@@ -190,7 +190,7 @@ impl<T> ::core::cmp::PartialEq for __BindgenUnionField<T> {
 }
 impl<T> ::core::cmp::Eq for __BindgenUnionField<T> {}
 pub const DD_RAMDISK_DEVICE_NAME: &[u8; 16] = b"\\Device\\Ramdisk\0";
-pub const DD_RAMDISK_DEVICE_NAME_U: &[u8; 16] = b"\\Device\\Ramdisk\0";
+pub const DD_RAMDISK_DEVICE_NAME_U: &[u16; 16] = &[0x005C, 0x0044, 0x0065, 0x0076, 0x0069, 0x0063, 0x0065, 0x005C, 0x0052, 0x0061, 0x006D, 0x0064, 0x0069, 0x0073, 0x006B, 0x0000]; // L"\\Device\\Ramdisk"
 pub const IOCTL_RAMDISK_BASE: u32 = 36;
 pub const RAMDISK_REGISTRY_DISK: u32 = 1;
 pub const RAMDISK_MEMORY_MAPPED_DISK: u32 = 2;

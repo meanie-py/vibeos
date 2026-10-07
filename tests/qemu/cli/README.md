@@ -117,8 +117,11 @@ all included), then auto-triage on failure.
   boot (`NVME_NOT_ENGAGED`) unless nvme.sys prints
   `[NVME] controller 0: namespace 1 published as a disk`, (`NVME_NOT_MSIX`) unless its
   MSI-X messages connected (`[NVME] controller 0: MSI-X: `; it would otherwise work on its
-  pin and hide the break), and (`NVME_POLLING`) unless a completion arrived by interrupt
-  (`[NVME] controller 0: interrupts working`). The net
+  pin and hide the break), (`NVME_POLLING`) unless a completion arrived by interrupt
+  (`[NVME] controller 0: interrupts working`), (`NVME_NOT_QUEUED`) unless its self-test
+  read had at least two commands in flight at once, and (`NVME_BOUNCED`) unless that read
+  moved by DMA to the reader's pages rather than through the bounce buffer: one command at
+  a time, or every byte copied, still works, so neither would otherwise fail a boot. The net
   suite never inherits the knob: QEMU's nvme device blocks the `savevm` it takes.
   `VIBEOS_QEMU_NVME=1 pytest tests/qemu/test_nvme.py --arch <a>` goes further: the
   desktop copies the namespace's file and the host reads the copy back.

@@ -31,11 +31,9 @@
 //! changes the CPU layer must hear about -- are listed in `syscall.rs`. Guest
 //! exceptions are delivered to the guest's own `KiUserExceptionDispatcher`
 //! (`except.rs`), win32k callbacks run in the guest (`callback.rs`), and
-//! guest-created threads become guest threads (`thread.rs`).
-//!
-//! Still owed (the design doc keeps the list): user-mode APCs queued to a guest
-//! thread, `NtCreateThreadEx`, thread creation into a non-x86-64 process, and
-//! the CPU layer's per-thread state on thread exit.
+//! guest-created threads become guest threads (`thread.rs`), as do threads a
+//! native process creates here; user-mode APCs run in the guest (`apc.rs`).
+//! What is still owed is listed in docs/engineering/wow64-x64-guest-design.md.
 
 #![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]

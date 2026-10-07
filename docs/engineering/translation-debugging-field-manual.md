@@ -399,6 +399,16 @@ the same file had 46 parameters where the model's spelling merely disagreed with
 mapping and the model was **right** (`size_t`/`usize`, `threadmbcinfo *`/`pthreadmbcinfo`).
 Locals are not covered — grep `\*mut <ptr typedef>` after a flip.
 
+**Driver modules repeat it at scale, with a double deref to match.** atapi's
+`PATAPORT_PORT_DATA PortData` came back as `PortData: *mut PATAPORT_PORT_DATA` on params, locals
+AND returns, and every field access as `(*(*PortData)).Worker` — 169 sites in atapi, 125 in
+pciidex, all in the paid bank, all compiling, all reading the struct's first word as a pointer.
+crate-repair's `raw_pointer_field` rule makes the same shape out of a `p.F` on a double pointer,
+so the repair loop cannot see it either. `port integrate` now runs `pointer_depth.py`: per C
+function, a name the C declares `T x` (no star, `T` a pointer typedef in the island) and the
+Rust declares `*mut T` loses one level — declaration, `(*(*x))` and the `as *mut T` assigned
+to it. `T *x` out-parameters are left alone.
+
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
 `@KfRaiseIrql@4`), by **hal on arm64** (halstubs), and by **neither on amd64** — so routing a
@@ -1705,7 +1715,12 @@ types.
   "Cannot open winsta". Build a real UTF-16 twin via a `const fn`. The sibling bug is
   `size_of_val()` on that narrow const returning N instead of N*2 → an undersized
   UNICODE_STRING `MaximumLength` → truncation → 0xc000021a → BUGCHECK 0x4C. Use the wide twin
-  in **both** the append and the size math.
+  in **both** the append and the size math. For `gen_driver_types.sh` islands this is now
+  mechanized: `widen_island_constants.py` rewrites each such constant to `&[u16; N]` when the
+  tree `#define`s that name `L"<same text>"` exactly once (1,116 constants across 246 islands
+  on 2026-10-07; shell32's `drive.rs` was passing the narrow `TOOLTIPS_CLASSW` to
+  `CreateWindowExW`). The `-sys` crates' own generators (ntkrnl-sys, ntdll-sys, win32k-sys, …)
+  do not run it yet.
 - **`--allowlist-file` matches where an item is DEFINED, not where it is REACHED.** An umbrella
   header that is a pure `#include` manifold contributes nothing by being allowlisted, and the
   failure is asymmetric in the worst way: bindgen still emits a STRUCT the allowlist reaches as
@@ -12272,8 +12287,9 @@ headers — and a zeroed data view is not one. Wine's wow64 notifies only when
 `NtQuerySection(SectionImageInformation)` succeeds. Fix: the same gate
 (`wow64_manual.c`). No ladder guest had mapped a data section before spawn32's rung-10 channel.
 A process stuck this way also appeared to outlive `TerminateProcess` (a named mutex it held
-was still there minutes later) — inferred, not traced; revisit if a guest ever hangs this way
-again.
+was still there minutes later). Since measured and NOT so: spawn64 rung 14 kills a 32-bit and
+an x86-64 guest busy running guest code, and each dies within the wait with the exit code it
+was killed with — so the held mutex was more likely the stuck child never being killed at all.
 
 ### The shared USER handle table has no 32-bit view `[§9.58b]`
 Client-side `ValidateHwnd` fails, so `DispatchMessage` silently drops `WM_PAINT`. **This is a
@@ -12557,6 +12573,14 @@ time.
 | Floats | **no SSE: no by-value f32/f64** | fine | fine |
 | Boot media | LiveCD ISO (`ninja livecd` repacks) | LiveCD ISO | **ramdisk — staged set is partial** |
 | Baseline boot | ~1m48s | ~3m45s | ~40s |
+
+**A 12 KB stack does not hold a by-value struct of kilobytes.** BUGCHECK 0x50 with Arg1 about a
+page below the trapframe's ESP is the stack probe hitting the guard page, faulting at the
+function's entry rather than at any suspect line. nvme.sys's `Controller::start` built a
+`Controller` holding 63 queue slots by value. Its constructor, the `Result` and the move into
+the FDO each took a copy, which was fine on amd64's 48 KB and fatal on i386. The fix is to
+build a large state in pool, in place, field by field through `&raw mut`. A
+`ptr.write(Big { .. })` still assembles the value on the stack first.
 
 **Per-arch smoke marker is the same on all three:** `[EXPLORER] _tWinMain entered` + `shell
 ready`. `shell ready` alone is an intermediate **milestone**, not the verdict.

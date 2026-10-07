@@ -320,34 +320,6 @@ PUBLIC RtlRaiseException
 
 RaiseException:
 
-#ifdef _USE_DUMMY_PSEH
-    /* DUMMY_PSEH: SEH handlers are dead code, so RtlDispatchException never
-     * finds a handler. For continuable software exceptions (code < 0xC0000000,
-     * e.g. DBG_PRINTEXCEPTION_C 0x40010006), swallow the exception by resuming
-     * execution at the saved context. This simulates the effect of
-     * _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) catching and ignoring the
-     * exception. Without this, ZwRaiseException(FirstChance=FALSE) goes
-     * directly to second-chance in the kernel and terminates the process. */
-    mov rax, [rsp + CONTEXT_FRAME_LENGTH + 8 + P1Home]
-    test dword ptr [rax + ErExceptionFlags], EXCEPTION_NONCONTINUABLE
-    jnz _RtlRaise_NoSwallow
-
-    cmp dword ptr [rax + ErExceptionCode], HEX(C0000000)
-    jae _RtlRaise_NoSwallow
-
-    /* Continuable software exception - swallow by resuming.
-     * For STATUS_BREAKPOINT: skip past the int3 byte to avoid infinite loop. */
-    cmp dword ptr [rax + ErExceptionCode], HEX(80000003)
-    jne _RtlRaise_NoBreakpointAdjust
-    inc qword ptr [rsp + CxRip]
-_RtlRaise_NoBreakpointAdjust:
-    mov rcx, rsp
-    mov dl, 0
-    call ZwContinue
-    jmp RaiseStatus
-
-_RtlRaise_NoSwallow:
-#endif
 
     mov rcx, [rsp + CONTEXT_FRAME_LENGTH + 8 + P1Home]
     mov rdx, rsp

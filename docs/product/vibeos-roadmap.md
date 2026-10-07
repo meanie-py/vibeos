@@ -483,7 +483,7 @@ Full plan, oracles and safety rules:
 | # | Boss | First rung | Size | Status (2026-10-05) |
 |---|------|-----------|------|--------|
 | 12a | **Windows 10 kernel export surface**, shared by everything below | An import-gap census tool: missing exports across real Windows 10 drivers and apps, ranked | L | proposed |
-| 12b | **Modern hardware drivers**: KMDF (built, 1.17) on real drivers, NVMe (`nvme.sys` works on all three arches on MSI-X interrupts, 2026-10-07; queue depth next), NDIS 6, Vista audio stack, Wi-Fi, HID-over-I²C | NVMe StorPort miniport on the 7010 | XL | proposed |
+| 12b | **Modern hardware drivers**: KMDF (built, 1.17) on real drivers, NVMe (`nvme.sys` works on all three arches on MSI-X interrupts, 63 commands deep with direct DMA, 2026-10-07), NDIS 6, Vista audio stack, Wi-Fi, HID-over-I²C | NVMe StorPort miniport on the 7010 | XL | proposed |
 | 12c | **Real GPU**: XP x64 driver (XDDM), then WDDM 1.1, then WDDM 2.x (dxgkrnl + a CDD-style adapter so win32k keeps its interface) | Radeon HD 5450 on AMD's XP x64 driver | XXL | proposed |
 | 12d | **Latest Google Chrome**: Windows 10 user-mode surface (mostly Wine), then the sandbox's four kernel primitives (syscall filter, integrity levels, job limits, namespace isolation) plus Windows-exact ntdll stubs | `chrome --headless --no-sandbox --dump-dom` as a smoke ladder rung | XL | proposed |
 
@@ -617,9 +617,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   32-bit start to wow64.dll — which also fixes a NATIVE 64-bit creator's remote thread into a
   WoW64 process), and no native kernel32/msvcrt loads in a guest any more (ntdll's own `_errno`
   in a reserved TLS slot). That last fix exposed a latent WoW64 bug, also fixed: its fixed TLS
-  slots were never reserved, so the first `TlsAlloc` could take slot 1, the CPU area. Still
-  owed: CreateRemoteThread INTO an x86-64 guest from a non-x86-64 process. See
-  `../engineering/wow64-x64-guest-design.md`.
+  slots were never reserved, so the first `TlsAlloc` could take slot 1, the CPU area. Then
+  (spawn64 rungs 13-14, 2026-10-07): a NATIVE process's CreateRemoteThread/RtlCreateUserThread
+  into a running guest works (the guest's native loader hands the thread to wowx64), a guest
+  can start a native arm64 child (system32 hides only foreign DLLs from it now, as Windows on
+  ARM hides nothing), and TerminateProcess ends a spinning guest of either width. Nothing in
+  the thread/process matrix is owed; see `../engineering/wow64-x64-guest-design.md`.
 - **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
   lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
   captured mid-body of itself, so `ZwContinue` after a vectored handler's
@@ -804,14 +807,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   under `_USE_DUMMY_PSEH`. The three test binaries now build with real SEH the kmtests'
   way (`_USE_NATIVE_SEH` + the `-windows-msvc` retarget). All three pass: nohook 18,
   globalhook 396, runtimehook 396, 0 failures (`tools/payloads/delayimp`).
-- **i386: an unhandled continuable exception RETURNS from `RtlRaiseException`** (OPEN,
-  2026-10-06). `sdk/lib/rtl/i386/except_asm.s`'s `_USE_DUMMY_PSEH` "safety net" returns to
-  the caller when no handler takes a software exception that is not NONCONTINUABLE, instead
-  of raising it second-chance. With dummy PSEH most `_SEH2_EXCEPT`s are dead, so this is
-  load-bearing, but it also hides real failures: the delayimp test's unhandled
-  `0xC06D007F` came back as the helper returning NULL, and the process died at eip 0 several
-  frames later. Retire it with user-mode dummy PSEH; until then, an AV at a NULL eip right
-  after a `RaiseException` is this.
+- **i386/amd64: an unhandled continuable exception RETURNED from `RtlRaiseException`**
+  (FIXED, 2026-10-07). Both arches' `except_asm` carried a `_USE_DUMMY_PSEH` "safety net"
+  that resumed the caller when no handler took a non-NONCONTINUABLE software exception
+  (i386: every code; amd64: codes below 0xC0000000) instead of raising it second-chance.
+  It hid real failures: the delayimp test's unhandled `0xC06D007F` came back as the
+  helper returning NULL, and the process died at eip 0 several frames later. arm64's Rust
+  `RtlRaiseException` never had one, which is what showed it was not load-bearing; both
+  nets are gone, and smoke ×3 plus `appstorm` on i386 and amd64 (43/43 each) show no
+  second-chance deaths. An unhandled `RaiseException` now ends the process at the raise,
+  as on Windows: read the `[KI-EXC] ... second chance` line. STILL OWED: the sibling net
+  in `KiUserExceptionDispatcher` (`dll/ntdll/dispatch/{i386,amd64,arm64}/dispatch.S`)
+  resumes kernel-delivered continuable exceptions below 0xC0000000, chiefly a user-mode
+  `int3` with no debugger, which Windows would kill.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
   `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs
@@ -1722,12 +1730,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `-smp 4`: PASS 3 of 4 (59,153 / 63,700 / 902 copies, 0 silent). The fourth died BEFORE the
     probe ran, in first-boot setup: `BUGCHECK 0x50` on `0xfffffa800041d560`, faulting in
     `CmpFindSubKeyByName` entry (`cmlib-rust/src/cmindex.rs:1201`) under setupapi's install
-    work, i.e. a key-node pointer that was no longer mapped. OPEN, 1 in 8 arm64 `-smp 4`
-    boots that ran past setup, never seen at `-smp 1` or `-smp 2` in today's runs; the shape
-    fits a registry-lock hole (a cell pointer held across another CPU's bin change), not yet
-    shown. 2026-10-05: the hive cell-map race (HvpAddBin freeing a `BlockList` other CPUs
-    still index) was found and fixed under `-smp 2` and matches this shape; not re-run at
-    `-smp 4`, so this stays OPEN until it is. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
+    work, i.e. a key-node pointer that was no longer mapped. It was 1 in 8 arm64 `-smp 4`
+    boots that ran past setup. 2026-10-05: the hive cell-map race (HvpAddBin freeing a
+    `BlockList` other CPUs still index) was found and fixed under `-smp 2`; it matches this
+    shape. CLOSED 2026-10-07 on that fix: 8/8 arm64 `-smp 4` boots and 8/8 rpmprobe races
+    (43,929-62,117 copies, 0 silent, no bugcheck; runs 20261007-105543-x416okl3 and
+    20261007-112018-ezkfnnie). Reopen on any recurrence. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
     The `ke/ipi.rs` `== SYNCH_LEVEL` assert was already re-contracted to `>= DISPATCH_LEVEL`
     and no longer prints.
     amd64 `-smp 2` and `-smp 4`: FIXED 2026-10-04. The boot death seen 2026-09-25 was

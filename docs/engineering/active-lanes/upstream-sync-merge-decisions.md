@@ -825,9 +825,12 @@ The pre-rewrite translations were renamed, not removed: `pciidex-legacy-rust` an
    fixes the same night (stale prelude facts, the bitfield accessor rule) took atapi to **206
    per arch**. That state is committed on `ata-stack-port`, with atapi wired for `port`: the
    drafted cohab CMakeLists and the workspace member, both of which `translate` needs to prove
-   a TU's owner. Remaining amd64: E0308 x79, E0425 x65 (kernel helpers such as
-   `InsertTailList`, `MmGetMdlVirtualAddress`, `PowerDeviceD0` -- the next tool target), E0408
-   x10. pciidex and legide have not been re-replayed under the new rules.
+   a TU's owner.
+   **2026-10-07, $0:** the E0425/E0308/E0408 classes went to tooling (rustconv-pipeline.md,
+   "The kernel substrate in `resolve`"): atapi is **amd64 55, i386 66, arm64 61**, with E0425 0,
+   E0408 0 and E0308 3. The same pass found a silent bug class in the bank: 169 atapi and 125
+   pciidex `(*(*x))` double derefs from `PFOO` read as a struct, now undone by `port integrate`.
+   pciidex and legide have not been re-replayed under the new rules.
 2. The remaining body errors (`port fix`, or by hand). Do it AFTER every deterministic change:
    a fix bought against a body that a later tool change rewrites does not replay.
 3. Wire the drafted cohab CMakeLists (`~/vibeos-rust-staging/ata-stack/cmake-new/`, also on
