@@ -114,6 +114,11 @@ _CONST = r"^[ \t]*pub[ \t]+const[ \t]+{n}[ \t]*:[^=;]+=[^;]+;"
 _TYPE = r"^[ \t]*pub[ \t]+type[ \t]+{n}[ \t]*=[^;]+;"
 
 
+def is_test_source(rel: str) -> bool:
+    """A test harness file (`tests/`, a `*-difftest` crate): never tree consensus."""
+    return "/tests/" in f"/{rel}" or bool(re.search(r"(?:^|/)[\w-]*-difftest/", rel))
+
+
 def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str, list[Item]]:
     """Every tracked definition of each name: consts, type aliases, extern fn decls."""
     if not names:
@@ -132,7 +137,7 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
             continue
         # Test harnesses are not the tree's declarations: diskpart got `_wfopen` and `fgetws`
         # from msvcrt-difftest/tests/file.rs, typed with that file's private `FILEP`.
-        if "/tests/" in f"/{rel}" or re.search(r"(?:^|/)[\w-]*-difftest/", rel):
+        if is_test_source(rel):
             continue
         try:
             src = path.read_text(errors="replace")

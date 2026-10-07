@@ -448,9 +448,12 @@ def initguid_module(c_path: Path) -> str | None:
         for m in _DEFINE_GUID_RE.finditer(hits[0].read_text(errors="replace")):
             name, d1, d2, d3, tail = m.groups()
             d4 = ", ".join(re.findall(r"0x[0-9A-Fa-f]+", tail))
+            # #[no_mangle]: guid.c DEFINES these with external linkage, and the island
+            # declares them `extern` (DEFINE_GUID without INITGUID), so a mangled static
+            # left every reference undefined at link.
             guids[name] = (
-                f"pub static {name}: GUID = GUID {{ Data1: {d1}, Data2: {d2}, Data3: {d3}, "
-                f"Data4: [{d4}] }};"
+                f"#[no_mangle]\npub static {name}: GUID = GUID {{ Data1: {d1}, Data2: {d2}, "
+                f"Data3: {d3}, Data4: [{d4}] }};"
             )
     if not guids:
         raise PortError(f"{c_path.name}: INITGUID TU whose headers define no GUID")
@@ -730,6 +733,91 @@ def apply_hand_bodies(crate: Path, stem: str) -> list[str]:
     return applied
 
 
+def flip_cmake(cml: str, state: dict) -> str:
+    """The module's CMakeLists with every translated TU replaced by the Rust staticlib.
+
+    The cohab flip, as setuplib, usetup and diskpart all did it by hand: each TU's source line
+    is commented out naming its `.rs` (the C stays on disk), a one-line stub TU keeps the
+    target non-empty, and the target links `rust_staticlib_variant`'s archive. Idempotent; a
+    TU missing from the source list is an error, never a skip.
+    """
+    stem, crate, target = state["stem"], state["crate"], state["target"]
+    module = REPO / state["module_dir"]
+    lines = cml.split("\n")
+    last = None
+    for tu in state["tus"]:
+        rel = str((REPO / tu).relative_to(module))
+        rs = _tu_output(state, tu).relative_to(REPO)
+        pat = re.compile(rf"^(\s*){re.escape(rel)}(\s*\)?)\s*$")
+        hit = next((i for i, ln in enumerate(lines) if pat.match(ln)), None)
+        if hit is None:
+            if any(re.match(rf"^\s*#\s*{re.escape(rel)}\b", ln) for ln in lines):
+                last = max(
+                    last or 0,
+                    next(
+                        i
+                        for i, ln in enumerate(lines)
+                        if re.match(rf"^\s*#\s*{re.escape(rel)}\b", ln)
+                    ),
+                )
+                continue  # already flipped
+            raise PortError(f"flip: {rel} is not in {module}/CMakeLists.txt's source lists")
+        m = pat.match(lines[hit])
+        assert m is not None
+        lines[hit] = f"{m.group(1)}# {rel}  # replaced by Rust ({rs}){m.group(2).rstrip()}"
+        if m.group(2).strip():  # the `)` closing the list rode on this line: keep it live
+            lines[hit] = f"{m.group(1)}# {rel}  # replaced by Rust ({rs})\n{m.group(1)})"
+        last = max(last or 0, hit)
+    text = "\n".join(lines)
+    if "rust_cohab_stub.c" not in text and last is not None:
+        lines = text.split("\n")
+        indent = re.match(r"^(\s*)", lines[last]).group(1)  # type: ignore[union-attr]
+        lines.insert(last + 1, f"{indent}rust_cohab_stub.c")
+        text = "\n".join(lines)
+    variant = f"{stem}_rust"
+    if f"rust_staticlib_variant({variant} " not in text:
+        add = re.search(rf"^add_(?:executable|library)\(\s*{re.escape(target)}\b", text, re.M)
+        if add is None:
+            raise PortError(f"flip: no add_executable/add_library({target}) in the CMakeLists")
+        depth, i = 0, text.index("(", add.start())
+        while i < len(text):
+            depth += {"(": 1, ")": -1}.get(text[i], 0)
+            if depth == 0 and text[i] == ")":
+                break
+            i += 1
+        end = text.index("\n", i) + 1 if "\n" in text[i:] else len(text)
+        head = (
+            f"# Every translation unit is Rust now ({crate}, `rustconv port`); the C stays on\n"
+            f"# disk. The target keeps a stub TU and links the Rust archive.\n"
+            f'rust_staticlib_variant({variant} {crate} "" TRUE)\n'
+        )
+        tail = (
+            f"add_dependencies({target} rust_{variant})\n"
+            f"target_link_libraries({target} ${{{variant}_LIB}})\n"
+        )
+        text = text[: add.start()] + head + text[add.start() : end] + tail + text[end:]
+    return text
+
+
+def stage_flip(stem: str) -> None:
+    started = time.time()
+    state = load_state(stem)
+    module = REPO / state["module_dir"]
+    cml = module / "CMakeLists.txt"
+    new = flip_cmake(cml.read_text(), state)
+    stub = module / "rust_cohab_stub.c"
+    if not stub.exists():
+        stub.write_text(
+            f"/* {stem} is Rust (sdk/lib/rust/{state['crate']}); a CMake target needs one TU. */\n"
+            f"typedef int {stem}_rust_cohab_placeholder;\n"
+        )
+    changed = new != cml.read_text()
+    if changed:
+        cml.write_text(new)
+    _record(state, "flip", started, changed=changed)
+    print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
+
+
 def _tokens(log: str) -> tuple[int, int, int]:
     """(functions bought, input tokens, output tokens) from a translate log.
 
@@ -834,10 +922,21 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     # `CmResourceTypePort: u32` beside its own `u8`, and advapi32's `FALSE: BOOL`.
     hand = prelude_resolve.hand_written_names(prelude)
     shared |= hand
+    # ...and never a FORCEINLINE helper ntdll-sys already implements in Rust (inlines.rs,
+    # re-exported through `ntdll_sys::nt`, which the island globs): diskpart got
+    # winlogon-sys's bindgen `extern` InitializeListHead/IsListEmpty/RemoveEntryList/
+    # RemoveHeadList, which shadow the real ones and fail at link -- no DLL exports them.
+    if state.get("usermode", True):
+        inl = workspace / "ntdll-sys" / "src" / "inlines.rs"
+        if inl.is_file():
+            shared |= set(re.findall(r"^pub (?:unsafe )?fn (\w+)", inl.read_text(), re.M))
     copied = {
         k: v
         for k, v in prelude_resolve.existing_block(prelude).items()
-        if not (v.kind == "fn" and k in c_macros) and k not in shared
+        if not (v.kind == "fn" and k in c_macros)
+        and k not in shared
+        # A copy made before test harnesses stopped counting as consensus.
+        and not prelude_resolve.is_test_source(v.path)
     }
     siblings = prelude_resolve.existing_siblings(prelude)
     modules_dir = crate / "src" / stem
@@ -2314,6 +2413,8 @@ def _main(args) -> int:
             stage_resolve(args.stem)
         elif args.port_stage == "check":
             stage_check(args.stem)
+        elif args.port_stage == "flip":
+            stage_flip(args.stem)
         elif args.port_stage == "status":
             stage_status(args.stem)
     except (PortError, pd.ProfileDeriveError) as e:
@@ -2329,7 +2430,7 @@ def add_parser(sub) -> None:
         q = stages.add_parser(name)
         q.add_argument("module", help="module directory (holding CMakeLists.txt)")
         q.add_argument("--target", default=None, help="CMake target, when there are several")
-    for name in ("island", "integrate", "resolve", "check", "status"):
+    for name in ("island", "integrate", "resolve", "check", "status", "flip"):
         stages.add_parser(name).add_argument("stem")
     q = stages.add_parser("hand", help="bank hand-written functions so replays keep them")
     q.add_argument("stem")

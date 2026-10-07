@@ -296,3 +296,27 @@ def test_split_top_keeps_fn_pointer_types_whole():
         'cb: Option<unsafe extern "C" fn(x: i32, y: u8) -> u32>',
         "z: *mut u16",
     ]
+
+
+def test_flip_comments_each_tu_and_links_the_archive(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    (tmp_path / "m").mkdir()
+    state = {
+        "stem": "m",
+        "crate": "m-rust",
+        "target": "m",
+        "module_dir": "m",
+        "tus": ["m/a.c", "m/sub/b.c"],
+    }
+    cml = "list(APPEND SOURCE\n    a.c\n    sub/b.c\n    m.h)\n\nadd_executable(m ${SOURCE} m.rc)\nset_module_type(m win32cui)\n"
+    out = port.flip_cmake(cml, state)
+    assert "    # a.c  # replaced by Rust (sdk/lib/rust/m-rust/src/m/a.rs)" in out
+    assert "    # sub/b.c  # replaced by Rust (sdk/lib/rust/m-rust/src/m/b.rs)" in out
+    assert "    rust_cohab_stub.c\n    m.h)" in out
+    assert 'rust_staticlib_variant(m_rust m-rust "" TRUE)\nadd_executable(m' in out
+    assert "m.rc)\nadd_dependencies(m rust_m_rust)\ntarget_link_libraries(m ${m_rust_LIB})\n" in out
+    assert port.flip_cmake(out, state) == out, "idempotent"
+    import pytest as _pytest
+
+    with _pytest.raises(port.PortError):
+        port.flip_cmake(cml.replace("    a.c\n", ""), state)
