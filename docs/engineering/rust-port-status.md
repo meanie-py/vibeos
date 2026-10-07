@@ -1984,8 +1984,9 @@ vioblk presents it to disk.sys on the shared `scsidisk-rust` layer, in nvme.sys'
 and `tests/qemu/test_virtio_mmio.py` copies a file on one from the desktop) and `nvme.sys` (all three
 arches, 2026-10-06: NVM Express controllers, each namespace presented to disk.sys with no
 port driver underneath; completions by MSI-X interrupt (2026-10-07: admin and I/O
-queues on their own messages, the pin when none are assigned) with a 10 ms poll behind
-it, one command at a time; `nvme-rust/src/lib.rs`, on the shared `scsidisk-rust` SCSI layer).** USB mass storage on arm64 (usbstor → classpnp/disk
+queues on their own messages, the pin when none are assigned) with a 10 ms timer behind
+it; since 2026-10-07 up to 63 commands in flight on its one I/O queue, by DMA straight to the
+requester's MDL pages; `nvme-rust/src/lib.rs`, on the shared `scsidisk-rust` SCSI layer).** USB mass storage on arm64 (usbstor → classpnp/disk
 → partmgr → mountmgr → fastfat, all Rust bodies) is first boot-exercised by the xHCI rig's
 stick test, 2026-09-26; before that none of those five was staged on arm64.
 Everything else is a cohab flip (body in a `*-rust` crate, thin C residue —

@@ -12559,6 +12559,14 @@ time.
 | Boot media | LiveCD ISO (`ninja livecd` repacks) | LiveCD ISO | **ramdisk — staged set is partial** |
 | Baseline boot | ~1m48s | ~3m45s | ~40s |
 
+**A 12 KB stack does not hold a by-value struct of kilobytes.** BUGCHECK 0x50 with Arg1 about a
+page below the trapframe's ESP is the stack probe hitting the guard page, faulting at the
+function's entry rather than at any suspect line. nvme.sys's `Controller::start` built a
+`Controller` holding 63 queue slots by value. Its constructor, the `Result` and the move into
+the FDO each took a copy, which was fine on amd64's 48 KB and fatal on i386. The fix is to
+build a large state in pool, in place, field by field through `&raw mut`. A
+`ptr.write(Big { .. })` still assembles the value on the stack first.
+
 **Per-arch smoke marker is the same on all three:** `[EXPLORER] _tWinMain entered` + `shell
 ready`. `shell ready` alone is an intermediate **milestone**, not the verdict.
 ---

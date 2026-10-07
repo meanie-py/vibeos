@@ -64,6 +64,10 @@ def test_nvme_controller_and_namespace(vm: QemuVM) -> None:
     # Both messages fired: admin completions on one, the self-test's reads on the other.
     taken = re.search(r"MSI-X messages taken: (\d+) admin, (\d+) I/O", serial)
     assert taken and int(taken[1]) > 0 and int(taken[2]) > 0, serial[-6000:]
+    # The megabyte went as one request, cut into commands that were all in flight
+    # at once, and moved by DMA to the reader's pages rather than the bounce buffer.
+    depth = re.search(r"up to (\d+) commands in flight.*?(\d+) commands by DMA", serial)
+    assert depth and int(depth[1]) >= 2 and int(depth[2]) > 0, serial[-6000:]
 
 
 def test_nvme_read_and_write_from_the_desktop(vm: QemuVM) -> None:
