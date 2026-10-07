@@ -4220,6 +4220,32 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
     }
     hRgn = (*Region).BaseObject.hHmgr as HRGN;
 
+    // Capture the caller's rectangle array into kernel memory: the loop below reads
+    // each rect raw and hands it to REGION_UnionRectWithRgn, but RgnData is user
+    // memory the probe only range-checked (the C wrapped the probe and these loads
+    // in one _SEH2_TRY). nCount*RECT fits inside the validated Count, checked above.
+    let mut krects: *mut RECT = core::ptr::null_mut();
+    if nCount != 0 {
+        let bytes = nCount as usize * core::mem::size_of::<RECT>();
+        krects = ExAllocatePoolWithTag(PagedPool, bytes as SIZE_T, TAG_REGION) as *mut RECT;
+        if krects.is_null()
+            || !crate::copy::capture_from_user(
+                krects as *mut core::ffi::c_void,
+                rects as *const core::ffi::c_void,
+                bytes,
+            )
+        {
+            if !krects.is_null() {
+                ExFreePoolWithTag(krects as *mut core::ffi::c_void, TAG_REGION);
+            }
+            EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            REGION_UnlockRgn(Region);
+            GreDeleteObject(hRgn as HGDIOBJ);
+            return core::ptr::null_mut();
+        }
+        rects = krects;
+    }
+
     {
         for i in 0..nCount {
             if (*rects.offset(i as isize)).left < (*rects.offset(i as isize)).right &&
@@ -4232,6 +4258,10 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
                     break;
                 }
             }
+        }
+
+        if !krects.is_null() {
+            ExFreePoolWithTag(krects as *mut core::ffi::c_void, TAG_REGION);
         }
 
         if !Xform.is_null() && !hRgn.is_null() {
@@ -4338,6 +4368,32 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
     }
     hRgn = (*Region).BaseObject.hHmgr as HRGN;
 
+    // Capture the caller's rectangle array into kernel memory: the loop below reads
+    // each rect raw and hands it to REGION_UnionRectWithRgn, but RgnData is user
+    // memory the probe only range-checked (the C wrapped the probe and these loads
+    // in one _SEH2_TRY). nCount*RECT fits inside the validated Count, checked above.
+    let mut krects: *mut RECT = core::ptr::null_mut();
+    if nCount != 0 {
+        let bytes = nCount as usize * core::mem::size_of::<RECT>();
+        krects = ExAllocatePoolWithTag(PagedPool, bytes as SIZE_T, TAG_REGION) as *mut RECT;
+        if krects.is_null()
+            || !crate::copy::capture_from_user(
+                krects as *mut core::ffi::c_void,
+                rects as *const core::ffi::c_void,
+                bytes,
+            )
+        {
+            if !krects.is_null() {
+                ExFreePoolWithTag(krects as *mut core::ffi::c_void, TAG_REGION);
+            }
+            EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            REGION_UnlockRgn(Region);
+            GreDeleteObject(hRgn as HGDIOBJ);
+            return core::ptr::null_mut();
+        }
+        rects = krects;
+    }
+
     {
         for i in 0..nCount {
             if (*rects.offset(i as isize)).left < (*rects.offset(i as isize)).right &&
@@ -4350,6 +4406,10 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
                     break;
                 }
             }
+        }
+
+        if !krects.is_null() {
+            ExFreePoolWithTag(krects as *mut core::ffi::c_void, TAG_REGION);
         }
 
         if !Xform.is_null() && !hRgn.is_null() {

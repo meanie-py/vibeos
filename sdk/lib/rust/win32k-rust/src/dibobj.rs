@@ -1179,8 +1179,11 @@ pub unsafe extern "system" fn GreGetDIBitsInternal(
             if ret == 0 {
                 ScanLines = 0;
             } else {
+                // Bits is the caller's pjBits, which NtGdiGetDIBitsInternal pins with
+                // EngSecureMem for the whole GreGetDIBitsInternal call, so this copy
+                // into it cannot fault.
                 RtlCopyMemory(
-                    Bits as *mut core::ffi::c_void,
+                    Bits as *mut core::ffi::c_void, // nolint: raw-user-access (pjBits is EngSecureMem-pinned)
                     pDIBits,
                     DIB_GetDIBImageBytes(width, ScanLines as INT, bpp as INT) as usize,
                 );
