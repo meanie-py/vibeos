@@ -16,7 +16,7 @@ WHAT IS FLAGGED. In the body of each `pub unsafe extern "system" fn Nt*`, a raw
 access through one of its pointer-typed parameters:
 
     *P = ..   (*P).f   *(P as T)   = *P   P.add(..) deref   copy/move/fill/volatile
-    primitives with P as an argument
+    and slice::from_raw_parts with P as an argument
 
 `addr_of!((*P).f)` is address arithmetic, not an access, and is not flagged. A
 parameter re-bound or re-assigned to something other than `opaque_ptr(P)` (a
@@ -30,11 +30,23 @@ parameter, transitively, and a raw access there is reported against the syscall
 with the chain that reached it (`NtFoo P -> helper(q) -> inner(r)`). The callee is
 resolved by name: a function in the same crate first, then a name defined exactly
 once in the tree (the `#[no_mangle]` exports crates call each other through).
-Method calls and ambiguous names are not followed.
+Ambiguous names are not followed.
+
+EMBEDDED POINTERS. A value bound from `read_back(<tracked ptr>)` is a CAPTURED user
+struct: reading its own fields is a kernel-local load, but a POINTER field of it
+(`UNICODE_STRING.Buffer`, `OBJECT_ATTRIBUTES.ObjectName`) still addresses user
+memory. A raw deref or copy of that field is reported just like the parameter, and
+a field lifted into a local (`let b = cap.Buffer`) or handed straight to a callee
+(`f(cap.ObjectName)`) carries the taint onward. `read_back` is the one load that is
+user-safe by construction, so it marks the capture unambiguously; a scalar field
+passed as a primitive's length argument (`RtlZeroMemory(pool, cap.MaximumLength)`)
+is not a buffer and is not flagged.
 
 WHAT IT CANNOT SEE. Whether the access sits in a kernel-mode-only branch (where the
-pointer is trusted), a pointer that reaches a callee through a struct or a derived
-expression, and method calls. That is why this gates against a BASELINE
+pointer is trusted); a user struct captured by a primitive OTHER than `read_back`
+(`safe_copy_from_user` into a local, then its buffer field used raw); an array of
+user pointers indexed element by element; and pointers reached through method calls.
+That is why this gates against a BASELINE
 (`tools/lint-baseline/scan_raw_user_access.txt`) and not at zero: rows in the
 baseline were read and are either kernel-mode branches or owed. A NEW row fails
 `vibeos-cli check`. Suppress a reviewed site with `// nolint: raw-user-access
@@ -77,6 +89,10 @@ RAW_PRIMITIVES = (
     "RtlMoveMemory",
     "RtlZeroMemory",
     "RtlFillMemory",
+    "from_raw_parts",
+    "from_raw_parts_mut",
+    "slice_from_raw_parts",
+    "slice_from_raw_parts_mut",
 )
 SKIP_DIR_PARTS = ("-sys", "/target/", "rtl-strings", "ntdll")
 
@@ -154,15 +170,25 @@ def _split_params(sig: str) -> list[tuple[str, str]]:
     return out
 
 
+# Pointer-arithmetic methods: `P.offset(i)` addresses the same user memory as
+# `P.add(i)`, so a deref of either is an access. Missing `.offset` hid a raw loop
+# store `*access_status_list.offset(i) = ..` (se/audit.c result write-back).
+PTR_ARITH = r"(?:add|offset|sub|wrapping_add|wrapping_offset|wrapping_sub|byte_add|byte_offset)"
+
+
 def _access_patterns(name: str) -> list[re.Pattern[str]]:
     n = re.escape(name)
     prims = "|".join(RAW_PRIMITIVES)
     return [
-        re.compile(rf"(?<![\w.])\*\s*{n}\b\s*(\.add\([^)]*\)\s*)?=(?!=)"),  # *P = / *P.add(i) =
+        re.compile(rf"(?<![\w.])\*\s*{n}\b\s*(\.{PTR_ARITH}\([^)]*\)\s*)?=(?!=)"),  # *P[.add(i)] =
+        re.compile(rf"(?<![\w.])\*\s*{n}\s*\.\s*{PTR_ARITH}\s*\("),  # *P.offset(i) (read or store)
         re.compile(rf"\(\*{n}\)\s*\."),  # (*P).f
         re.compile(rf"\*\(\s*{n}\s+as\b"),  # *(P as T)
         re.compile(rf"=\s*\*\s*{n}\b"),  # = *P, = *P as T
-        re.compile(rf"(?<![\w:])(?:core::ptr::|ptr::)?(?:{prims})\s*\((?:[^;]*?[(,\s])?{n}\b"),
+        re.compile(
+            rf"(?<![\w:])(?:core::ptr::|ptr::|core::slice::|slice::)?(?:{prims})"
+            rf"\s*\((?:[^;]*?[(,\s])?{n}\b"
+        ),
     ]
 
 
@@ -291,8 +317,17 @@ def _forwarded_arg(text: str, name: str) -> bool:
     )
 
 
-def _call_sites(body: str, name: str) -> list[tuple[str, int, int]]:
-    """(callee, argument index, offset) for each call taking `name` as an argument."""
+def _forwarded_field_arg(text: str, name: str) -> bool:
+    """A POINTER field of the capture `name` IS the argument (`cap.Buffer`,
+    `cap.ObjectName as PUNICODE_STRING`). A scalar field passed this way reaches a
+    non-pointer parameter, which the caller filters out, so no field whitelist is
+    needed here."""
+    n = re.escape(name)
+    return bool(re.fullmatch(rf"\s*{n}\s*\.\s*\w+\s*(?:as\s+[^,]+)?\s*", text, re.S))
+
+
+def _call_sites(body: str, name: str, is_fwd=_forwarded_arg) -> list[tuple[str, int, int, int]]:
+    """(callee, argument index, offset, arg count) per call taking `name` as an arg."""
     out = []
     for m in re.finditer(rf"(?<![\w.]){re.escape(name)}\b", body):
         # The innermost unclosed '(' before the token.
@@ -332,9 +367,129 @@ def _call_sites(body: str, name: str) -> list[tuple[str, int, int]]:
                 cur += c
             q += 1
         args.append(cur)
-        if idx is not None and idx < len(args) and _forwarded_arg(args[idx], name):
-            out.append((call.group(2), idx, m.start()))
+        if idx is not None and idx < len(args) and is_fwd(args[idx], name):
+            out.append((call.group(2), idx, m.start(), len(args)))
     return out
+
+
+# A value bound from `read_back(<user ptr>)` is a CAPTURED user struct: reading its
+# own fields is now a kernel-local load, but a POINTER field of it
+# (`UNICODE_STRING.Buffer`, `OBJECT_ATTRIBUTES.ObjectName`) still addresses user
+# memory. Dereferencing or copying from that field raw -- not through a
+# fault-tolerant primitive -- is the same any-process bugcheck as touching the
+# original pointer, one level removed, and the parameter walk above cannot see it
+# because the field pointer is a fresh local. `read_back` is the one load that is
+# user-safe by construction, so it marks the capture unambiguously; a pointer field
+# stored into a local (`let b = cap.Buffer`) carries the taint onward like a param.
+READBACK_RE = re.compile(r"\bread_back\s*(?:::<[^>]*>)?\s*\(")
+FIELD_SINK_PRIMS = RAW_PRIMITIVES  # the slice/copy primitives are a raw read of a field
+ASSIGN_RE = re.compile(r"(?:\blet\s+(?:mut\s+)?)?(\w+)\s*(?::[^=;{}]*)?=(?!=)")
+
+
+def _stmt_end(text: str, start: int) -> int:
+    """Offset of the `;` (or unbalanced close) that ends the statement at `start`."""
+    depth = 0
+    for k in range(start, len(text)):
+        c = text[k]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            if depth == 0:
+                return k
+            depth -= 1
+        elif c == ";" and depth == 0:
+            return k
+    return len(text)
+
+
+def _first_arg(text: str, lpar: int) -> str:
+    """The first top-level argument of the call whose `(` is at `lpar`."""
+    depth = 0
+    out: list[str] = []
+    for k in range(lpar, len(text)):
+        c = text[k]
+        if c in "([{":
+            depth += 1
+            if depth == 1:
+                continue
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                break
+        if depth == 1 and c == ",":
+            break
+        out.append(c)
+    return "".join(out)
+
+
+def _field_patterns(s: str) -> list[re.Pattern[str]]:
+    e = re.escape(s)
+    prims = "|".join(re.escape(p) for p in FIELD_SINK_PRIMS)
+    return [
+        re.compile(rf"(?<![\w.])\*\s*{e}\s*\.\s*\w+"),  # *cap.field  (deref/store)
+        # a raw copy/slice primitive reading a POINTER field of the capture: the
+        # field must be followed by a comma with no intervening ')', so a scalar
+        # length argument (`cap.Length)`) at the tail of the call is not matched.
+        re.compile(
+            rf"(?<![\w:])(?:core::ptr::|ptr::|core::slice::|slice::)?(?:{prims})\s*\([^;]*?"
+            rf"{e}\s*\.\s*\w+\b[^;)]*,"
+        ),
+    ]
+
+
+def _derived_patterns(name: str) -> list[re.Pattern[str]]:
+    """Accesses through a pointer LIFTED from a capture (`let b = cap.Buffer`). Like
+    `_access_patterns`, but the raw-primitive rule requires the pointer in a non-final
+    argument position, so a scalar field (`let n = cap.MaximumLength`) passed as a
+    length -- the last argument -- is not mistaken for a buffer."""
+    n = re.escape(name)
+    prims = "|".join(re.escape(p) for p in FIELD_SINK_PRIMS)
+    return [
+        re.compile(rf"(?<![\w.])\*\s*{n}\b"),  # *b  (deref read/store, *b.add(i)/.offset(i))
+        re.compile(rf"\(\*{n}\)\s*\."),  # (*b).f
+        re.compile(rf"\*\(\s*{n}\s+as\b"),  # *(b as T)
+        re.compile(rf"=\s*\*\s*{n}\b"),  # = *b
+        re.compile(
+            rf"(?<![\w:])(?:core::ptr::|ptr::|core::slice::|slice::)?(?:{prims})"
+            rf"\s*\([^;]*?{n}\b[^;)]*,"
+        ),
+    ]
+
+
+def _captures(text: str, seed: set[str]) -> tuple[dict[str, int], list[tuple[str, int]]]:
+    """Resolve, to a fixpoint, which locals hold a user-struct capture reachable from
+    `seed` (the tracked pointers), and which locals are pointer fields lifted out of
+    one. Returns {capture -> first def offset} and [(derived pointer, def offset)]."""
+    captured: dict[str, int] = {}
+    derived: list[tuple[str, int]] = []
+    if "read_back" not in text:  # no capture possible; skip the fixpoint entirely
+        return captured, derived
+    tracked = set(seed)
+    changed = True
+    while changed:
+        changed = False
+        for m in ASSIGN_RE.finditer(text):
+            lhs = m.group(1)
+            init = text[m.end() : _stmt_end(text, m.end())]
+            rb = READBACK_RE.search(init)
+            if rb and lhs not in captured:
+                arg = _first_arg(init, rb.end() - 1)
+                # read_back of a tracked pointer, or of a pointer field of an
+                # existing capture (`read_back(oa.ObjectName)`): still a capture.
+                if any(_forwarded_arg(arg, t) for t in tracked) or any(
+                    _forwarded_field_arg(arg, c) for c in captured
+                ):
+                    captured[lhs] = m.start()
+                    changed = True
+                continue
+            if lhs in tracked:
+                continue
+            fld = re.match(r"\s*(\w+)\s*\.\s*\w+\s*(?:as\b|$)", init)
+            if fld and fld.group(1) in captured and lhs not in tracked:
+                derived.append((lhs, m.start()))
+                tracked.add(lhs)
+                changed = True
+    return captured, derived
 
 
 # `if <mode> != KernelMode { user } else { kernel }` and the `==` form. Only an
@@ -434,18 +589,39 @@ def _walk(fn: FnDef, names: set[str]):
                 depth -= 1
         return fn.end
 
+    # A pointer field lifted out of a capture (`let b = cap.Buffer`) is tracked like
+    # a parameter from its definition on; captured structs grow a field-deref check.
+    captured, derived = _captures(text, names)
+    derived_names = {b for b, _ in derived}
+    names = set(names) | derived_names
+
     # A rebind -- `let P = ..` or a plain `P = ..`, e.g. `prcl = addr_of_mut!(local)`
     # after capturing into it -- ends tracking only until its enclosing block
     # closes. Function-wide, one reassignment in one `match` arm (IntDefWindowProc's
     # `lParam = ..` for WM_CONTEXTMENU) hid every other arm's raw access.
     dead: dict[str, list[tuple[int, int]]] = {n: [] for n in names}
-    patterns = {n: _access_patterns(n) for n in names}
+    # A derived pointer is dead before its own binding (where `cap.Buffer` appears as
+    # a value, not a deref) and anywhere before it is defined.
+    for b, off in derived:
+        dead[b].append((fn.body0, fn.body0 + text.count("\n", 0, off)))
+    patterns = {
+        n: (_derived_patterns(n) if n in derived_names else _access_patterns(n)) for n in names
+    }
+    field_pats = {s: _field_patterns(s) for s in captured}
+    seen_hits: set[tuple[str, int]] = set()  # dedup per-line and cross-line prim hits
     for k in range(fn.body0, fn.end + 1):
         code = body[k - fn.body0]
         rebind = re.match(r"\s*(?:let\s+(?:mut\s+)?)?(\w+)\s*(?::[^=]*)?=(?!=)\s*(.*)", code)
         if rebind and rebind.group(1) in names:
             n = rebind.group(1)
-            if not re.match(rf"\s*opaque_ptr(_const)?\(\s*{re.escape(n)}\s*\)", rebind.group(2)):
+            rhs = rebind.group(2)
+            # `let b = cap.Buffer` is what MAKES b a tracked (derived) pointer -- it is
+            # the definition, not a rebind away, so it must not kill b for the scope.
+            fld = re.match(r"(\w+)\s*\.\s*\w+", rhs)
+            is_derive = bool(fld and fld.group(1) in captured)
+            if not is_derive and not re.match(
+                rf"\s*opaque_ptr(_const)?\(\s*{re.escape(n)}\s*\)", rhs
+            ):
                 dead[n].append((k, scope_end(k, n)))
                 continue
         if NOLINT_RE.search(fn.raw_lines[k]) or k in kernel_lines:
@@ -453,16 +629,46 @@ def _walk(fn: FnDef, names: set[str]):
         for name, pats in patterns.items():
             if any(a <= k <= b for a, b in dead[name]):
                 continue
-            if any(p.search(code) for p in pats):
+            if any(p.search(code) for p in pats) and (name, k + 1) not in seen_hits:
+                seen_hits.add((name, k + 1))
                 yield ("hit", name, k + 1, fn.raw_lines[k].strip())
+        for s, pats in field_pats.items():
+            if any(p.search(code) for p in pats) and (s, k + 1) not in seen_hits:
+                seen_hits.add((s, k + 1))
+                yield ("hit", s, k + 1, fn.raw_lines[k].strip())
+    # Calls carrying a tracked pointer. A raw PRIMITIVE (copy_nonoverlapping, ...) is
+    # reported as a hit here, not just per line above: `_call_sites` parses the
+    # argument list across line breaks, so it catches a primitive whose pointer
+    # argument sits on a later line -- which the per-line regex misses entirely.
     for name in names:
-        for callee, idx, off in _call_sites(text, name):
+        for callee, idx, off, nargs in _call_sites(text, name):
             line = fn.body0 + text.count("\n", 0, off)
             if line in kernel_lines or any(a <= line <= b for a, b in dead[name]):
                 continue
             if NOLINT_RE.search(fn.raw_lines[line]):
                 continue
-            yield ("call", name, line + 1, (callee, idx))
+            # A primitive's pointer argument is never its last (length) argument, so
+            # a scalar lifted from a capture and passed as a length does not flag.
+            if callee in RAW_PRIMITIVES and idx < nargs - 1:
+                if (name, line + 1) not in seen_hits:
+                    seen_hits.add((name, line + 1))
+                    yield ("hit", name, line + 1, fn.raw_lines[line].strip())
+            elif callee not in RAW_PRIMITIVES:
+                yield ("call", name, line + 1, (callee, idx))
+    # A pointer field handed straight to a callee (`f(oa.ObjectName)`) is followed
+    # like a parameter; a scalar field reaches a non-pointer parameter, which the
+    # caller's POINTER_TYPE_RE filter drops.
+    for s in captured:
+        for callee, idx, off, nargs in _call_sites(text, s, _forwarded_field_arg):
+            line = fn.body0 + text.count("\n", 0, off)
+            if line in kernel_lines or NOLINT_RE.search(fn.raw_lines[line]):
+                continue
+            if callee in RAW_PRIMITIVES and idx < nargs - 1:
+                if (s, line + 1) not in seen_hits:
+                    seen_hits.add((s, line + 1))
+                    yield ("hit", s, line + 1, fn.raw_lines[line].strip())
+            elif callee not in RAW_PRIMITIVES:
+                yield ("call", s, line + 1, (callee, idx))
 
 
 FN_NAME_RE = re.compile(r"\bfn\s+(\w+)[^;{]*\{")

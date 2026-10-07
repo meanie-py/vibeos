@@ -421,7 +421,12 @@ def _boot_vm(
             pass
         if outcome == "reached":
             # A green desktop does not prove an `--smp N` run actually got SMP.
-            smp_fail = _smp_check(text, arch) or _ahci_check(text) or _nvme_check(text)
+            smp_fail = (
+                _smp_check(text, arch)
+                or _ahci_check(text)
+                or _nvme_check(text)
+                or _virtio_mmio_check(text, arch)
+            )
             if smp_fail is not None:
                 return {
                     "ok": False,
@@ -798,15 +803,20 @@ def nvme_requested() -> bool:
     return os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "1"
 
 
+# ...this once its MSI-X messages are connected (nvme-rust pnp.rs `connect`)...
+_NVME_MSIX = "[NVME] controller 0: MSI-X: "
 # ...and this once a completion arrived by interrupt (nvme-rust nvme.rs `count`).
 _NVME_INTERRUPTS = "[NVME] controller 0: interrupts working"
 
 
 def _nvme_check(text: str) -> dict | None:
-    """Prove an `--nvme` boot brought the controller up, on interrupts. A desktop
-    alone proves nothing: the boot never needs the NVMe disk, so a driver that
-    never loaded would look identical. And a driver whose interrupt never arrives
-    still works, through its 10 ms poll, so it would quietly regress to polling."""
+    """Prove an `--nvme` boot brought the controller up, on MSI-X interrupts. A
+    desktop alone proves nothing: the boot never needs the NVMe disk, so a driver
+    that never loaded would look identical. A driver whose interrupt never arrives
+    still works, through its 10 ms poll, so it would quietly regress to polling.
+    And with no messages assigned it falls back to its pin and works there too,
+    so MSI-X could break anywhere along pci.sys -> PnP -> HAL -> IoConnectInterruptEx
+    without a symptom. Every rig's QEMU offers MSI-X (x86 APIC, arm64 GICv2m)."""
     if not nvme_requested():
         return None
     lines = [ln.strip() for ln in text.splitlines() if "[NVME]" in ln][-6:]
@@ -824,6 +834,17 @@ def _nvme_check(text: str) -> dict | None:
                 ),
             ],
         }
+    if _NVME_MSIX not in text:
+        msix = [ln.strip() for ln in text.splitlines() if "MSI-X" in ln][-4:]
+        return {
+            "classification": "NVME_NOT_MSIX",
+            "salient": [
+                f"the namespace was published but nvme.sys never printed `{_NVME_MSIX}`: "
+                "no MSI-X messages were assigned, so it fell back to its pin",
+                *(msix or ["pci.sys printed no MSI-X line: the request never reached it"]),
+                *lines,
+            ],
+        }
     if _NVME_INTERRUPTS not in text:
         return {
             "classification": "NVME_POLLING",
@@ -834,6 +855,41 @@ def _nvme_check(text: str) -> dict | None:
             ],
         }
     return None
+
+
+# vioblk-rust's virtio-mmio path prints this once its self-test read has
+# drawn an interrupt (pnp.rs `self_test`).
+_VIRTIO_MMIO_INTERRUPTS = ": interrupts working"
+
+
+def _virtio_mmio_check(text: str, arch: str) -> dict | None:
+    """Prove an arm64 boot served its scratch disk, a virtio-blk-device on the
+    virtio-mmio transport (vm.py _scratch_device_args), on interrupts. Nothing
+    in the boot needs that disk, so a desktop alone would look identical with
+    the HAL never publishing the slot, vioblk never binding it, or its interrupt
+    lost and every transfer quietly running on the 10 ms poll."""
+    if arch != "arm64":
+        return None
+    lines = [ln.strip() for ln in text.splitlines() if "virtio-mmio" in ln][-6:]
+    if any(
+        "[VIOBLK] virtio-mmio" in ln and _VIRTIO_MMIO_INTERRUPTS in ln for ln in text.splitlines()
+    ):
+        return None
+    return {
+        "classification": "VIRTIO_MMIO_DISK_NOT_SERVED",
+        "salient": [
+            "arm64 boot reached the desktop but vioblk never printed "
+            f"`[VIOBLK] virtio-mmio <base>{_VIRTIO_MMIO_INTERRUPTS}` for the scratch disk",
+            *(
+                lines
+                or [
+                    "no virtio-mmio line at all: the HAL published no LNRO0005 block slot "
+                    "(hal-rust arm64/pnpdd.rs) or vioblk never bound it "
+                    "(ACPI#LNRO0005&DEV_0002 in hivesys.inf)"
+                ]
+            ),
+        ],
+    }
 
 
 def smoke(args, repo: Path) -> int:

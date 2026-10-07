@@ -434,6 +434,11 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
     if Vector as usize >= 1020 {
         return FALSE;
     }
+    // A v2m SPI is raised by a doorbell write, a pulse: configure it edge before
+    // enabling it (changing an enabled line's trigger is UNPREDICTABLE).
+    if super::v2m::owns(Vector as u32) {
+        super::clock::set_gic_edge(Vector as u32);
+    }
     super::clock::enable_gic_interrupt(Vector as u32, Irql, InterruptMode == ddk::_KINTERRUPT_MODE_LevelSensitive);
     TRUE
 }
@@ -630,6 +635,9 @@ pub unsafe extern "system" fn HalGetInterruptVector(
     // as the bus interrupt level and/or vector, and get it back verbatim plus
     // the DIRQL it will run at. Valid range: PPIs+SPIs (16..1019); SGIs (<16)
     // and the special INTIDs (>=1020) are not connectable device lines.
+    if crate::message::is_message_token(BusInterruptVector) {
+        return unsafe { crate::message::allocate(Irql, Affinity) };
+    }
     let intid = if BusInterruptVector != 0 {
         BusInterruptVector
     } else {

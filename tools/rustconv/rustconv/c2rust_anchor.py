@@ -67,6 +67,9 @@ def _find_db_entries(c_file: Path, arch: str | None = None) -> list[tuple[dict, 
     on i386 `WINAPI` IS such an attribute while on amd64 it is nothing. msvcrt's
     except.c fails on the i386 db and transpiles cleanly on the amd64 one.
     """
+    from .macro_authority import flags_source
+
+    c_file = flags_source(c_file)
     cf = str(c_file.resolve())
     order = (
         _DB_BUILD_DIRS
@@ -112,6 +115,9 @@ def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] |
     `_transpile_text` falls back, and only after the pinned arch's db has actually
     failed, and it says so when it does.
     """
+    from .macro_authority import flags_source
+
+    c_file = flags_source(c_file)
     cf = str(c_file.resolve())
     for bd in [f"build-{arch}"] if arch is not None else _DB_BUILD_DIRS:
         db_path = REACTOS_ROOT / bd / "compile_commands.json"
@@ -408,6 +414,13 @@ def _transpile_text(
         if verbose:
             print(f"  [c2rust] {msg} — skipping", file=sys.stderr)
 
+    from .macro_authority import flags_source
+
+    # A header translated `--via` a TU: c2rust transpiles the TU, whose output carries every
+    # inline function of the headers it includes. Callers keep reading the HEADER's own text
+    # (build_preamble's own-data filter), so only the transpile is redirected.
+    c_file = flags_source(c_file)
+
     try:
         key = (f"{c_file.resolve()}:{arch}", c_file.stat().st_mtime)
     except OSError as e:
@@ -617,13 +630,16 @@ def _anchor_elsewhere(
     the identifier survive its PREPROCESSOR at all? Anything unsettled is recorded in
     _ANCHOR_FAILURES and the caller keeps the hard error.
     """
+    from .macro_authority import flags_source
+
     found: dict[str, str] = {}
     failures: list[str] = []
+    source = flags_source(c_file)
     for entry, build_dir in _find_db_entries(c_file):
         attempts: list[str] = []
-        text = _transpile_one(c_file, entry, build_dir, timeout, attempts, strict=True)
+        text = _transpile_one(source, entry, build_dir, timeout, attempts, strict=True)
         if text is None:
-            kept = _preprocessor_keeps(c_file, entry, build_dir, names, timeout)
+            kept = _preprocessor_keeps(source, entry, build_dir, names, timeout)
             if kept is None or kept - set(found):
                 failures.extend(attempts)
             continue

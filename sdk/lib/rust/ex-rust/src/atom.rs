@@ -97,11 +97,17 @@ pub unsafe extern "system" fn NtAddAtom(
                     PreviousMode,
                 )?;
 
-                core::ptr::copy_nonoverlapping(
-                    AtomName as *const u8,
-                    CapturedName as *mut u8,
+                // The probe proves where AtomName is, not that it stays mapped; a
+                // raw copy from it is an any-process bugcheck. On fault free the
+                // pool buffer and return the status, as the C's __except does.
+                if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+                    CapturedName as *mut core::ffi::c_void,
+                    AtomName as *const core::ffi::c_void,
                     AtomNameLength as usize,
-                );
+                ) {
+                    ExFreePoolWithTag(CapturedName as PVOID, TAG_ATOM);
+                    return Err(e);
+                }
                 *(CapturedName.add((AtomNameLength / core::mem::size_of::<u16>() as ULONG) as usize)) = UNICODE_NULL;
 
                 if !Atom.is_null() {
@@ -191,11 +197,15 @@ pub unsafe extern "system" fn NtFindAtom(
                     return Ok(STATUS_INSUFFICIENT_RESOURCES);
                 }
 
-                core::ptr::copy_nonoverlapping(
-                    AtomName as *const u8,
-                    CapturedName as *mut u8,
+                // Fault-tolerant copy from the caller's page; free and bail on fault.
+                if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+                    CapturedName as *mut core::ffi::c_void,
+                    AtomName as *const core::ffi::c_void,
                     AtomNameLength as usize,
-                );
+                ) {
+                    ExFreePoolWithTag(CapturedName as PVOID, TAG_ATOM);
+                    return Err(e);
+                }
                 *(CapturedName.add((AtomNameLength / core::mem::size_of::<u16>() as ULONG) as usize)) = UNICODE_NULL;
 
                 if !Atom.is_null() {

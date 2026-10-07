@@ -171,7 +171,8 @@ base/system/diskpart/CMakeLists.txt	1	# shrink.c # replaced by Rust (sdk/lib/rus
 base/system/diskpart/CMakeLists.txt	1	# uniqueid.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/uniqueid.rs)
 base/system/lsass/CMakeLists.txt	1	# FULL flip + CARGO-DRIVEN LINK. lsass.c is replaced by Rust (lsass-rust), and
 base/system/lsass/CMakeLists.txt	1	# Keep lsass.c on disk (never delete the C — translation philosophy).
-base/system/sehtest/CMakeLists.txt	1	# ntoskrnl/seh_poc.c. Compiled with REAL clang native SEH (-fms-extensions),
+base/system/sehtest/CMakeLists.txt	1	# _local_unwind2 come from libpseh.a's real i386/seh.s. Spawned by userinit at
+base/system/sehtest/CMakeLists.txt	1	# ntoskrnl/seh_poc.c. Compiled with REAL clang native SEH (-fms-extensions).
 base/system/services/CMakeLists.txt	1	# link compiles ZERO C — services.c was the last C residue, now gone from the
 base/system/services/CMakeLists.txt	1	# sources (services_rust_stub.c + the generated svcctl_s.c) into
 base/system/services/CMakeLists.txt	1	# winlogon). ALL 9 SCM .c are now Rust (services.c flipped → services-rust/

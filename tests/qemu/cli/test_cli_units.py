@@ -5518,6 +5518,26 @@ def test_staleness_lint_baseline_change_is_not_stale(staleness_repo: Path):
     assert v.fresh and not v.stale, v.reasons
 
 
+def test_staleness_pytest_module_edit_is_not_stale(staleness_repo: Path):
+    """A pytest module only consumes the media; editing one must not void it.
+    The harness's own modules (vm.py, archcfg) stay build-relevant."""
+    t = staleness_repo / "tests" / "qemu" / "test_rig.py"
+    t.parent.mkdir(parents=True, exist_ok=True)
+    t.write_text("def test_a(): pass\n")
+    (t.parent / "vm.py").write_text("X = 1\n")
+    _git(staleness_repo, "add", "-A")
+    _git(staleness_repo, "commit", "-qm", "tests")
+    provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
+        staleness_repo / "build-i386"
+    )
+    t.write_text("def test_a(): pass\ndef test_b(): pass\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.fresh and not v.stale, v.reasons
+    (t.parent / "vm.py").write_text("X = 2\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, "vm.py is harness code, not a test module"
+
+
 def test_staleness_cohab_census_rerecord_is_not_stale(staleness_repo: Path):
     """`cohab_census --write` after a build must not void that build's media."""
     census = staleness_repo / "tools" / "cohab-census.txt"
@@ -9614,13 +9634,44 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     failed = '[NVME] controller 0: bring-up failed: Timeout("enable")\n'
     bad = smoke_mod._nvme_check(failed)
     assert bad and any("bring-up failed" in s for s in bad["salient"])
-    polled = "[NVME] controller 0: namespace 1 published as a disk\n"
+    pinned = "[NVME] controller 0: namespace 1 published as a disk\n"
+    bad = smoke_mod._nvme_check(pinned)
+    assert bad and bad["classification"] == "NVME_NOT_MSIX"
+    assert any("never reached" in s for s in bad["salient"])
+    declined = "(pci-rust/src/msix.rs:1) MSI-X: slot 0x9: config space unreadable\n" + pinned
+    bad = smoke_mod._nvme_check(declined)
+    assert bad and any("config space unreadable" in s for s in bad["salient"])
+    polled = pinned + "[NVME] controller 0: MSI-X: 2 message(s) connected at level 7: ...\n"
     bad = smoke_mod._nvme_check(polled)
     assert bad and bad["classification"] == "NVME_POLLING"
     real = polled + "[NVME] controller 0: interrupts working (first completion by interrupt: x)\n"
     assert smoke_mod._nvme_check(real) is None
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
     assert smoke_mod._nvme_check(never_loaded) is None
+
+
+def test_arm64_boot_must_serve_its_virtio_mmio_scratch_disk():
+    """Nothing in an arm64 boot needs the scratch disk, so the HAL not publishing
+    its slot, vioblk not binding it, or its interrupt never arriving all reach the
+    desktop looking exactly like a real boot."""
+    from . import smoke as smoke_mod
+
+    never_bound = "[EXPLORER] _tWinMain entered\n"
+    bad = smoke_mod._virtio_mmio_check(never_bound, "arm64")
+    assert bad and bad["classification"] == "VIRTIO_MMIO_DISK_NOT_SERVED"
+    assert any("hivesys.inf" in s for s in bad["salient"])
+    polled = (
+        "[HAL] ACPI virtio-mmio block (LNRO0005 #31): regs 000000000a003e00+0x200, GSIV 79 level\n"
+        "[VIOBLK] virtio-mmio 0xa003e00: self-test: read 64 KiB, block 0 has no MBR signature\n"
+        "[VIOBLK] virtio-mmio 0xa003e00: no interrupt arrived for the self-test read; "
+        "transfers will poll\n"
+    )
+    bad = smoke_mod._virtio_mmio_check(polled, "arm64")
+    assert bad and any("will poll" in s for s in bad["salient"])
+    real = polled + "[VIOBLK] virtio-mmio 0xa003e00: interrupts working\n"
+    assert smoke_mod._virtio_mmio_check(real, "arm64") is None
+    # x86 attaches its scratch disk over PCI, which the miniport serves.
+    assert smoke_mod._virtio_mmio_check(never_bound, "amd64") is None
 
 
 def test_the_bios_lane_boots_with_an_nvme_drive(monkeypatch):

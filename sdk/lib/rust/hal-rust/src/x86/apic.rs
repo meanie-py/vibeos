@@ -874,6 +874,72 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
 }
 
 // ---------------------------------------------------------------------------
+// Message-signaled interrupts (crate::message). An MSI is a write to the
+// local APIC's address window that names a vector directly, so a message
+// vector is just an IDT vector with no IOAPIC pin behind it: claimed in
+// HalpVectorToIndex as APIC_RESERVED_VECTOR (the marker the software vectors
+// already use, which also routes the i386 lazy-IRQL replay to an edge
+// self-IPI, the right shape for a message), and remembered here so the
+// enable/disable paths leave the IOAPIC alone.
+// ---------------------------------------------------------------------------
+
+static mut MessageVectors: [bool; 256] = [false; 256];
+
+fn is_message_vector(vector: ULONG) -> bool {
+    vector < 256 && unsafe { MessageVectors[vector as usize] }
+}
+
+/// Every free vector in the device IRQL band, in the order
+/// HalpGetRootInterruptVector hands them out (highest IRQL first).
+unsafe fn free_device_vectors(mut f: impl FnMut(UCHAR, KIRQL) -> bool) {
+    for offset in 0u32..15 {
+        let mut irql = (CLOCK_LEVEL as KIRQL).wrapping_sub(1);
+        while irql >= CMCI_LEVEL {
+            let cand = (irql_to_tpr(irql) + offset) as UCHAR;
+            if HalpVectorToIrq(cand) == APIC_FREE_VECTOR && !f(cand, irql) {
+                return;
+            }
+            if irql == 0 {
+                break;
+            }
+            irql -= 1;
+        }
+    }
+}
+
+pub(crate) unsafe fn message_capacity() -> u32 {
+    let mut n = 0;
+    free_device_vectors(|_, _| {
+        n += 1;
+        true
+    });
+    n
+}
+
+pub(crate) unsafe fn allocate_message_vector() -> Option<(u32, KIRQL, KAFFINITY)> {
+    let mut got = None;
+    free_device_vectors(|vector, irql| {
+        got = Some((vector, irql));
+        false
+    });
+    let (vector, irql) = got?;
+    HalpVectorToIndex[vector as usize] = APIC_RESERVED_VECTOR;
+    MessageVectors[vector as usize] = true;
+    Some((vector as u32, irql, HalpDefaultInterruptAffinity))
+}
+
+/// Address 0xFEE0_0000 with the destination APIC ID in bits 19:12 (physical
+/// mode, no redirection hint); data = the vector, fixed delivery, edge. The
+/// destination is this processor, as HalEnableSystemInterrupt does for a line.
+pub(crate) unsafe fn message_target(vector: u32) -> Option<(u64, u32)> {
+    if !is_message_vector(vector) {
+        return None;
+    }
+    let dest = (apic_read(APIC_ID) >> 24) as u64;
+    Some((0xFEE0_0000 | (dest << 12), vector))
+}
+
+// ---------------------------------------------------------------------------
 // ApicInitializeIOApic — map the IOAPIC MMIO page, mask all redir entries,
 // init HalpVectorToIndex, then unmask the timer slot.
 // ---------------------------------------------------------------------------
@@ -1020,6 +1086,9 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
     _Irql: KIRQL,
     InterruptMode: u32,
 ) -> BOOLEAN {
+    if is_message_vector(Vector) {
+        return 1; // TRUE: nothing to unmask, the device's table entry is the gate
+    }
     let index = HalpVectorToIndex[Vector as usize];
     if index == APIC_FREE_VECTOR {
         return 0; // FALSE
@@ -1049,6 +1118,9 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalDisableSystemInterrupt(Vector: ULONG, _Irql: KIRQL) {
+    if is_message_vector(Vector) {
+        return;
+    }
     let index = HalpVectorToIndex[Vector as usize];
 
     // Mask just the lower dword (Mask bit at position 16).

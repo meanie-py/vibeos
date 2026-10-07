@@ -698,7 +698,20 @@ pub unsafe extern "system" fn NtGdiGetTextFaceW(
             return 0;
         }
         if Count > 0 && (Count as SIZE_T) < fLen {
-            *FaceName.offset((Count - 1) as isize) = 0;
+            // NUL-terminate in the caller's buffer fault-tolerantly: a raw store
+            // through FaceName is a kernel write to a caller-chosen address that a
+            // probe cannot keep mapped, the same hazard the copy above avoids.
+            let nul: u16 = 0;
+            let st = _MmCopyToCaller(
+                FaceName.offset((Count - 1) as isize) as *mut core::ffi::c_void,
+                core::ptr::addr_of!(nul) as *const core::ffi::c_void,
+                core::mem::size_of::<u16>() as _,
+            );
+            if !NT_SUCCESS(st) {
+                TEXTOBJ_UnlockText(TextObj);
+                SetLastNtError(st);
+                return 0;
+            }
         }
         ret = Count;
     } else {

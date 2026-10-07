@@ -31,9 +31,15 @@ use crate::print::sdprint;
 use crate::scsi::{self, Ident, Srb};
 
 /// Windows may write to the card. Off, scsi.rs reports write protection and
-/// refuses WRITEs (fastfat then mounts the volume read-only); the self-test
-/// proves the write path either way, outside every partition.
+/// refuses WRITEs (fastfat then mounts the volume read-only).
 pub const WRITE_ENABLED: bool = true;
+
+/// The self-test also writes a pattern to the card's last sectors, outside every
+/// partition, and restores them. Off: a driver must not write to whatever card
+/// it finds, and the Pi 5's card holds the bench's Linux stager. Write coverage
+/// on the bench comes from stortest, which writes only to a volume labelled for
+/// it (VIBEOS_RPI4 on the Pi 4's card).
+const WRITE_SELF_TEST: bool = false;
 
 /// Log every request the disk PDO receives and completes (opcode, LBA, count,
 /// requesting thread, status). Off: it is several lines per sector run.
@@ -358,6 +364,10 @@ unsafe fn self_test(host: &Host) {
     sdprint!("self-test: read {} KiB in {} ms ({} KiB/s){}\n", lba / 2, us / 1000, lba as u64 * 512 * 1_000_000 / 1024 / us, if ok { "" } else { " - FAILED" });
 
     let probe = host.card.blocks.saturating_sub(PROBE as u64);
+    if !WRITE_SELF_TEST {
+        ExFreePoolWithTag(buf.cast(), SDHC_POOL_TAG);
+        return;
+    }
     if !signed || gpt || probe < end || probe == 0 {
         sdprint!("self-test: no sectors outside the partitions; write path not tested\n");
         ExFreePoolWithTag(buf.cast(), SDHC_POOL_TAG);

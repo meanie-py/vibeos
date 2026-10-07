@@ -29,12 +29,6 @@ unsafe fn SharedUserData_NtSystemRoot() -> *const u16 {
     (K32_USER_SHARED_DATA + 0x30) as *const u16
 }
 
-// <ntddk.h> ALIGN_DOWN_POINTER_BY(ptr, align) — round pointer down to alignment.
-#[inline]
-unsafe fn ALIGN_DOWN_POINTER_BY<T>(ptr: *const T, align: ULONG) -> *const T {
-    ((ptr as ULONG_PTR) & !((align as ULONG_PTR).wrapping_sub(1))) as *const T
-}
-
 // wcslen — not in the substrate.
 #[inline]
 unsafe fn wcslen(mut s: *const u16) -> usize {
@@ -870,64 +864,84 @@ pub unsafe extern "system" fn SetUnhandledExceptionFilter(
     );
 }
 
+// The IsBad*Ptr family. The C probes the range inside _SEH2_TRY and returns TRUE from the
+// except block. The first translation kept the probes (`*Current = *Current`, `let _ = *Current`:
+// non-volatile, so LLVM deleted them) and dropped the handler, so every non-NULL pointer was
+// "good": the sdk delayimp apitests' UnProtect helper asked IsBadWritePtr about an import
+// name in .rdata, skipped its VirtualProtect, and the write took the process down.
+//
+// Divergence from the C: instead of touching each page and catching the fault, ask the memory
+// manager. A range is good when every region it covers is committed and grants the access.
+// The answer is the same for every page that would fault (NOACCESS, reserved, free,
+// read-only for a write), except that a PAGE_GUARD page is reported bad without being touched.
+// Windows does report it bad too, but its probe consumes the guard, which is how
+// IsBadReadPtr on a thread's stack guard page used to break that stack's growth.
+
+const PAGE_READABLE: ULONG = PAGE_READONLY
+    | PAGE_READWRITE
+    | PAGE_WRITECOPY
+    | PAGE_EXECUTE
+    | PAGE_EXECUTE_READ
+    | PAGE_EXECUTE_READWRITE
+    | PAGE_EXECUTE_WRITECOPY;
+const PAGE_WRITABLE: ULONG =
+    PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+
+/// The end (exclusive) of the region holding `address` if that region is committed and grants
+/// `access` (a PAGE_READABLE/PAGE_WRITABLE mask), else None. `usize::MAX` stands for a region
+/// that ends at the top of the address space.
+unsafe fn accessible_region_end(address: ULONG_PTR, access: ULONG) -> Option<ULONG_PTR> {
+    let mut mbi: MEMORY_BASIC_INFORMATION = core::mem::zeroed();
+    if VirtualQuery(
+        address as *const c_void,
+        &mut mbi,
+        core::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+    ) != core::mem::size_of::<MEMORY_BASIC_INFORMATION>()
+    {
+        return None;
+    }
+    if mbi.State != MEM_COMMIT
+        || mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS) != 0
+        || mbi.Protect & access == 0
+    {
+        return None;
+    }
+    let base = mbi.BaseAddress as ULONG_PTR;
+    Some(base.checked_add(mbi.RegionSize as ULONG_PTR).unwrap_or(ULONG_PTR::MAX))
+}
+
+/// TRUE when any byte of `[first, last]` (inclusive, `last >= first`) is not accessible.
+unsafe fn range_is_bad(first: ULONG_PTR, last: ULONG_PTR, access: ULONG) -> BOOL {
+    let mut current = first;
+    loop {
+        match accessible_region_end(current, access) {
+            None => return TRUE as BOOL,
+            Some(end) if end == ULONG_PTR::MAX || end > last => return FALSE as BOOL,
+            Some(end) => current = end,
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn IsBadReadPtr(
     lp: LPCVOID,
     ucb: UINT_PTR,
 ) -> BOOL {
-    let PageSize: ULONG;
-    let Result: BOOLEAN = 0;
-    let mut Current: *const CHAR;
-    let mut Last: PCHAR;
-
     /* Quick cases */
     if ucb == 0 {
-        return 0;
+        return FALSE as BOOL;
     }
     if lp.is_null() {
-        return 1;
+        return TRUE as BOOL;
     }
 
-    /* Get the page size */
-    PageSize = (*BaseStaticServerData).SysInfo.PageSize;
+    /* Another quick failure case: the range wraps */
+    let first = lp as ULONG_PTR;
+    let Some(last) = first.checked_add(ucb as ULONG_PTR - 1) else {
+        return TRUE as BOOL;
+    };
 
-    /* Calculate start and end */
-    Current = lp as *const CHAR;
-    Last = (lp as ULONG_PTR).wrapping_add(ucb).wrapping_sub(1) as PCHAR;
-
-    /* Another quick failure case */
-    if Last < Current as PCHAR {
-        return 1;
-    }
-
-    /* Enter SEH */
-    // _SEH2_TRY
-    {
-        /* Do an initial probe */
-        let _ = *Current;
-
-        /* Align the addresses */
-        Current = ALIGN_DOWN_POINTER_BY(Current, PageSize) as *const CHAR;
-        Last = ALIGN_DOWN_POINTER_BY(Last, PageSize) as PCHAR;
-
-        /* Probe the entire range */
-        while Current as PCHAR != Last {
-            Current = (Current as PCHAR).add(PageSize as usize) as *const CHAR;
-            let _ = *Current;
-        }
-    }
-    // _SEH2_END
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): under USE_DUMMY_PSEH the SEH filter
-    // never runs, so this handler is DEAD CODE and must NOT execute. The original
-    // C sets `Result = TRUE` *only* inside the except handler (when the probe above
-    // faults). Leaving it as an unconditional block made IsBadReadPtr report EVERY
-    // pointer — valid ones included — as bad, which broke ws2_32 connect()
-    // (sockctrl.c: `IsBadReadPtr(name) -> WSAEFAULT`) and the rnr.c name-resolution
-    // validators. With the handler dead, Result stays FALSE for a probed-OK range.
-    // (DUMMY_PSEH limitation: a genuinely-bad pointer can't be caught here.)
-    // { Result = 1; }   // dead _SEH2_EXCEPT body — intentionally not executed
-
-    return Result as BOOL;
+    range_is_bad(first, last, PAGE_READABLE)
 }
 
 #[no_mangle]
@@ -948,16 +962,12 @@ pub unsafe extern "system" fn IsBadCodePtr(
         1,
     );
 }
+
 #[no_mangle]
 pub unsafe extern "system" fn IsBadWritePtr(
     lp: LPVOID,
     ucb: UINT_PTR,
 ) -> BOOL {
-    let PageSize: ULONG;
-    let Result: BOOLEAN = FALSE as BOOLEAN;
-    let mut Current: *mut CHAR;
-    let mut Last: PCHAR;
-
     /* Quick cases */
     if ucb == 0 {
         return FALSE as BOOL;
@@ -966,41 +976,13 @@ pub unsafe extern "system" fn IsBadWritePtr(
         return TRUE as BOOL;
     }
 
-    /* Get the page size */
-    PageSize = (*BaseStaticServerData).SysInfo.PageSize;
-
-    /* Calculate start and end */
-    Current = lp as *mut CHAR;
-    Last = (lp as ULONG_PTR).wrapping_add(ucb).wrapping_sub(1) as PCHAR;
-
-    /* Another quick failure case */
-    if Last < Current as PCHAR {
+    /* Another quick failure case: the range wraps */
+    let first = lp as ULONG_PTR;
+    let Some(last) = first.checked_add(ucb as ULONG_PTR - 1) else {
         return TRUE as BOOL;
-    }
+    };
 
-    /* Enter SEH */
-    // _SEH2_TRY
-    {
-        /* Do an initial probe */
-        *Current = *Current;
-
-        /* Align the addresses */
-        Current = ALIGN_DOWN_POINTER_BY(Current, PageSize) as *mut CHAR;
-        Last = ALIGN_DOWN_POINTER_BY(Last, PageSize) as PCHAR;
-
-        /* Probe the entire range */
-        while Current != Last {
-            Current = (Current as ULONG_PTR).wrapping_add(PageSize as ULONG_PTR) as *mut CHAR;
-            *Current = *Current;
-        }
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DEAD under USE_DUMMY_PSEH — must NOT
-    // run, or IsBadWritePtr reports every (even valid, writable) pointer as bad.
-    // { Result = TRUE as BOOLEAN; }   // dead _SEH2_EXCEPT body — intentionally not executed
-    // _SEH2_END
-
-    /* Return exception status */
-    return Result as BOOL;
+    range_is_bad(first, last, PAGE_WRITABLE)
 }
 
 #[no_mangle]
@@ -1011,46 +993,51 @@ pub unsafe extern "system" fn IsBadHugeWritePtr(
     return IsBadWritePtr(lp, ucb);
 }
 
+/// IsBadStringPtrA/W: read characters until a NUL or `max_chars` of them, and report TRUE if
+/// any byte read lies outside a readable region. Each region is queried once, before the
+/// first character that reaches into it is read.
+unsafe fn string_is_bad<T: Copy + PartialEq + Default>(s: *const T, max_chars: UINT_PTR) -> BOOL {
+    /* Quick cases */
+    if max_chars == 0 {
+        return FALSE as BOOL;
+    }
+    if s.is_null() {
+        return TRUE as BOOL;
+    }
+
+    let size = core::mem::size_of::<T>() as ULONG_PTR;
+    // Bytes [current, readable_end) are known readable.
+    let mut readable_end: ULONG_PTR = s as ULONG_PTR;
+    let mut current = s;
+    for _ in 0..max_chars {
+        let first = current as ULONG_PTR;
+        let Some(last) = first.checked_add(size - 1) else {
+            return TRUE as BOOL;
+        };
+        // A character may straddle a region boundary; keep extending until it is covered.
+        while readable_end <= last {
+            match accessible_region_end(readable_end.max(first), PAGE_READABLE) {
+                None => return TRUE as BOOL,
+                Some(end) => readable_end = end,
+            }
+            if readable_end == ULONG_PTR::MAX {
+                break;
+            }
+        }
+        if current.read_unaligned() == T::default() {
+            break;
+        }
+        current = current.add(1);
+    }
+    FALSE as BOOL
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn IsBadStringPtrW(
     lpsz: LPCWSTR,
     ucchMax: UINT_PTR,
 ) -> BOOL {
-    let Result: BOOLEAN = 0;
-    let mut Current: *const WCHAR;
-    let mut Last: PWCHAR;
-    let mut Char: WCHAR;
-
-    /* Quick cases */
-    if ucchMax == 0 {
-        return 0;
-    }
-    if lpsz.is_null() {
-        return 1;
-    }
-
-    /* Calculate start and end */
-    Current = lpsz as *const WCHAR;
-    Last = (lpsz as ULONG_PTR).wrapping_add(ucchMax.wrapping_mul(2)).wrapping_sub(2) as PWCHAR;
-
-    /* Enter SEH */
-    // _SEH2_TRY
-    {
-        /* Probe the entire range */
-        Char = *Current;
-        Current = Current.offset(1);
-        while (Char != 0) && (Current as PWCHAR != Last) {
-            Char = *Current;
-            Current = Current.offset(1);
-        }
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DEAD under USE_DUMMY_PSEH — must NOT
-    // run, or IsBadStringPtr reports every (even valid) string pointer as bad.
-    // { Result = 1; }   // dead _SEH2_EXCEPT body — intentionally not executed
-    // _SEH2_END
-
-    /* Return result */
-    return Result as BOOL;
+    string_is_bad::<WCHAR>(lpsz, ucchMax)
 }
 
 #[no_mangle]
@@ -1058,41 +1045,7 @@ pub unsafe extern "system" fn IsBadStringPtrA(
     lpsz: LPCSTR,
     ucchMax: UINT_PTR,
 ) -> BOOL {
-    let Result: BOOLEAN = 0;
-    let mut Current: *const CHAR;
-    let mut Last: PCHAR;
-    let mut Char: CHAR;
-
-    /* Quick cases */
-    if ucchMax == 0 {
-        return 0;
-    }
-    if lpsz.is_null() {
-        return 1;
-    }
-
-    /* Calculate start and end */
-    Current = lpsz as *const CHAR;
-    Last = (lpsz as ULONG_PTR).wrapping_add(ucchMax).wrapping_sub(1) as PCHAR;
-
-    /* Enter SEH */
-    // _SEH2_TRY
-    {
-        /* Probe the entire range */
-        Char = *Current;
-        Current = Current.offset(1);
-        while (Char != 0) && (Current as PCHAR != Last) {
-            Char = *Current;
-            Current = Current.offset(1);
-        }
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DEAD under USE_DUMMY_PSEH — must NOT
-    // run, or IsBadStringPtr reports every (even valid) string pointer as bad.
-    // { Result = 1; }   // dead _SEH2_EXCEPT body — intentionally not executed
-    // _SEH2_END
-
-    /* Return result */
-    return Result as BOOL;
+    string_is_bad::<CHAR>(lpsz, ucchMax)
 }
 
 #[no_mangle]

@@ -791,11 +791,15 @@ unsafe fn IopDeviceFsIoControl(
                     }
                     (*Irp).AssociatedIrp.SystemBuffer = buffer;
                     if !InputBuffer.is_null() {
-                        core::ptr::copy_nonoverlapping(
-                            InputBuffer as *const u8,
-                            buffer as *mut u8,
+                        // Fault-tolerant copy from the caller's buffer: the probe
+                        // proves location, not that the page stays mapped (C wrapped
+                        // the RtlCopyMemory in _SEH2_TRY). On fault `?` returns Err,
+                        // and the caller runs IopCleanupAfterException.
+                        ntkrnl_sys::probe::safe_copy_raw(
+                            buffer as *mut core::ffi::c_void,
+                            InputBuffer as *const core::ffi::c_void,
                             InputBufferLength as usize,
-                        );
+                        )?;
                     }
                     (*Irp).Flags = IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
                     if !OutputBuffer.is_null() {
@@ -824,11 +828,12 @@ unsafe fn IopDeviceFsIoControl(
                         return Err(STATUS_INSUFFICIENT_RESOURCES);
                     }
                     (*Irp).AssociatedIrp.SystemBuffer = buffer;
-                    core::ptr::copy_nonoverlapping(
-                        InputBuffer as *const u8,
-                        buffer as *mut u8,
+                    // Fault-tolerant copy from the caller's buffer (see METHOD_BUFFERED).
+                    ntkrnl_sys::probe::safe_copy_raw(
+                        buffer as *mut core::ffi::c_void,
+                        InputBuffer as *const core::ffi::c_void,
                         InputBufferLength as usize,
-                    );
+                    )?;
                     (*Irp).Flags = IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
                 }
                 if OutputBufferLength != 0 {
@@ -3184,11 +3189,22 @@ pub unsafe extern "system" fn NtSetInformationFile(
 
     (*Irp).AssociatedIrp.SystemBuffer =
         ExAllocatePoolWithQuotaTag(NonPagedPool, Length as _, TAG_IOBUF);
-    core::ptr::copy_nonoverlapping(
-        FileInformation as *const u8,
-        (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+    // C (io/iomgr/iofunc.c:3285-3302) wraps alloc + copy in one _SEH2_TRY whose
+    // handler runs IopCleanupAfterException and returns the code: the quota alloc
+    // can fail (null here, where the C raises) and the copy from the caller's buffer
+    // can fault on an unmapped page the probe could not keep mapped.
+    if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
+        IopCleanupAfterException(FileObject, Irp, core::ptr::null_mut(), Event);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+        (*Irp).AssociatedIrp.SystemBuffer as *mut core::ffi::c_void,
+        FileInformation as *const core::ffi::c_void,
         Length as usize,
-    );
+    ) {
+        IopCleanupAfterException(FileObject, Irp, core::ptr::null_mut(), Event);
+        return e;
+    }
 
     (*Irp).Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_DEFER_IO_COMPLETION;
     (*StackPtr).Parameters.SetFile.FileInformationClass = FileInformationClass as u32;
@@ -4242,11 +4258,21 @@ pub unsafe extern "system" fn NtSetVolumeInformationFile(
 
     (*Irp).AssociatedIrp.SystemBuffer =
         ExAllocatePoolWithQuotaTag(NonPagedPool, Length as _, TAG_IOBUF);
-    core::ptr::copy_nonoverlapping(
-        FsInformation as *const u8,
-        (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+    // C (io/iomgr/iofunc.c:4565-4578) wraps alloc + copy in one _SEH2_TRY whose
+    // handler runs IopCleanupAfterException and returns the code (see
+    // NtSetInformationFile): the copy from the caller's buffer must be fault-tolerant.
+    if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
+        IopCleanupAfterException(FileObject, Irp, core::ptr::null_mut(), Event);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+        (*Irp).AssociatedIrp.SystemBuffer as *mut core::ffi::c_void,
+        FsInformation as *const core::ffi::c_void,
         Length as usize,
-    );
+    ) {
+        IopCleanupAfterException(FileObject, Irp, core::ptr::null_mut(), Event);
+        return e;
+    }
     (*Irp).Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
     (*StackPtr).Parameters.SetVolume.Length = Length;
     (*StackPtr).Parameters.SetVolume.FsInformationClass = FsInformationClass as u32;

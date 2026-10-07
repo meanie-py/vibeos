@@ -5,6 +5,7 @@ writes a copy that the host then reads back out of the image."""
 from __future__ import annotations
 
 import os
+import re
 import time
 
 import pytest
@@ -54,10 +55,15 @@ def test_nvme_controller_and_namespace(vm: QemuVM) -> None:
         "[NVME] controller 0: namespace 1: 131072 blocks of 512 B (64 MiB)",
         "[NVME] controller 0: self-test: partition 1 type 0x06 at block 2048",
         "[NVME] controller 0: namespace 1 published as a disk",
+        "MSI-X enabled for 1b36:0010: 2 of 65 table entries",
+        "[NVME] controller 0: MSI-X: 2 message(s) connected",
         "[NVME] controller 0: interrupts working",
     ):
         assert line in serial, f"missing {line!r}:\n{serial[-6000:]}"
     assert "self-test: read 1024 KiB" in serial, serial[-6000:]
+    # Both messages fired: admin completions on one, the self-test's reads on the other.
+    taken = re.search(r"MSI-X messages taken: (\d+) admin, (\d+) I/O", serial)
+    assert taken and int(taken[1]) > 0 and int(taken[2]) > 0, serial[-6000:]
 
 
 def test_nvme_read_and_write_from_the_desktop(vm: QemuVM) -> None:

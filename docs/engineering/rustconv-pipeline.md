@@ -281,8 +281,8 @@ and before `crate-repair`: it is what makes the crate compile at all, and the ca
 stage's time and spend in `~/vibeos-rust-staging/port/<stem>/state.json` (`port status <stem>`
 prints it). Stages, in order: `derive <module-dir> [--target T]` (profile → the
 `gen_driver_types.sh` arm), `island`, `scaffold`, `translate --cost-cap $`, `integrate`,
-`resolve`, `macros`, `fix --cost-cap $`, `check`, and `replay` (all of them from the banks), plus
-`hand` (bank a hand-written function). Every
+`resolve`, `headers --cost-cap $`, `macros`, `fix --cost-cap $`, `check`, and `replay` (all of
+them from the banks), plus `hand` (bank a hand-written function). Every
 stage is idempotent; re-run any of them after a fix.
 
 - **`translate --escalate`** buys with DeepSeek thinking OFF (~1/40 of the output tokens on
@@ -607,6 +607,55 @@ appeared as a misleading number.
 - **Owed.** `port hand` cannot capture an `extern {}` declaration (the usetup agent wrote
   those bank entries by hand); a TU's data reached only through a header it includes
   (usetup's language tables) is not harvested -- kept as a C data TU for now.
+### `port headers`: header inline functions as units of the crate (2026-10-06)
+
+A function a HEADER defines (`FORCEINLINE`, `static inline`) is compiled privately into every
+includer, so no `.c` defines it and no crate exports it. resolve reports it as "defined nowhere
+in the tree", and the `macros` stage only reads headers inside the module directory. atapi's
+44 `AtaDev*` helpers live in `sdk/include/reactos/drivers/ata/identify_funcs.h` and were the
+largest block of its unresolved names. Now, after `resolve`:
+
+    rustconv port headers <stem> --cost-cap 0.50 [--dry-run]
+
+- **Discovery** asks each TU's own preprocessor (`clang -M`, via the borrowed compile command)
+  which headers it includes, then keeps the headers that define a name resolve still lists.
+  This works even when the CMakeLists does not list the TUs (a flipped or not-yet-wired module).
+  Only module headers and `sdk/include/reactos/**` are adopted. An inline in a platform header
+  (ddk/psdk/ndk) is reported as the `-sys` or shared crate's job, because one port there serves
+  every module. That is how `RtlStringCchPrintfExA` landed in `strsafe-rust`.
+- **`translate <header> --via <tu.c>`** translates the header's functions with every
+  compilation question answered by the via TU: the call seal's `-dM`, the constant probes and
+  the c2rust transpile (`macro_authority.register_via` / `flags_source`). c2rust's transpile
+  of a TU contains every inline function of the headers it includes, so header bodies are
+  anchored like any other.
+- **Output** is one module per header: `identify_funcs.h` becomes `src/<stem>/identify_funcs_h.rs`,
+  added to `lib.rs` (`wire_modules`, which also adds any later unit scaffold never listed).
+  The units are recorded in `state.json` `header_tus`, so `replay` and `fix` treat them as TUs
+  from then on.
+- **Linkage.** The scanner marks every function defined in a C header `static`. A
+  `__forceinline` is gnu_inline `extern __inline__` and emits no out-of-line copy, so the first
+  run's `#[no_mangle]` exports would have become a duplicate symbol once a second crate ported
+  the header. resolve's `promote_pub` makes them crate-visible.
+- **A case-only rename is not a missing body.** The model returned
+  `AtaDevIsReadLookAheadEnabled` for the C's `AtaDevIsReadLookAHeadEnabled`, and the stitcher
+  refused the whole header as "Planned Rust definitions absent". `restore_requested_name`
+  respells a definition that matches the requested C name ignoring case (exactly one, and no
+  exact match) on both fresh replies and bank hits, so the banked body replayed for $0.
+
+Cost: atapi's 44 helpers came to $0.06 on DeepSeek, thinking off.
+
+Measured against what it fixed, the header pass was the smaller win: atapi went 374 -> 361 on
+amd64. The same night's two $0 tool fixes did more:
+
+- **`resolve` prunes facts the island now defines.** A prelude fact is a stand-in for a
+  constant the island lacks. When a later resolve widens the island (`island_headers`), each
+  stale fact becomes a second definition: atapi gained ata_shared.h after the facts pass had
+  evaluated 47 of its constants, giving 47 E0428s (361 -> 317).
+- **crate-repair `bitfield_accessor` (E0615).** bindgen emits a C bitfield as a getter `F()`
+  and a setter `set_F(v)`. A read becomes the getter; a plain or compound assignment statement
+  becomes `set_F((v) as _)` (the setter masks to the width, as C's store truncates). An
+  assignment used as an expression, or a reference to the field, stays red. atapi had 101 per
+  arch (317 -> 206).
 
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 

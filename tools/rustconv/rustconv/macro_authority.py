@@ -49,6 +49,26 @@ _DEFINE_ALIAS = re.compile(
 )
 _ARCHES = ("i386", "amd64", "arm64")
 
+#: Headers translated THROUGH one of their includers (`translate --via`), header -> TU.
+#: A shared header's inline helpers (identify_funcs.h's 44 `AtaDev*`, in sdk/include) have no
+#: compile command, no includer in their own directory, and a different macro environment in
+#: every module that pulls them in. The one that is right is the module being ported, so the
+#: caller names a TU of it that reaches the header, and every question asked about the header's
+#: compilation -- the macro set, constant probes, the c2rust transpile -- is asked of that TU
+#: instead. Its preprocessed text contains the header's bodies by definition.
+_VIA: dict[Path, Path] = {}
+
+
+def register_via(header: Path, tu: Path) -> None:
+    _VIA[header.resolve()] = tu.resolve()
+    function_like_macros.cache_clear()
+    string_literal_macros.cache_clear()
+
+
+def flags_source(path: Path) -> Path:
+    """The file whose compile command answers for `path`: its via TU, else itself."""
+    return _VIA.get(path.resolve(), path)
+
 
 def _function_like(text: str) -> set[str]:
     """Function-like macro names in a `-dM` dump, following object-like ALIASES.
@@ -195,8 +215,9 @@ def _derived_kernel_entry(repo_root: Path, arch: str, source: Path) -> list[str]
     return [base[0], *kept, *includes, *defines, str(source)]
 
 
-def _preprocess_defines(argv: list[str]) -> str:
-    stripped: list[str] = []
+def _without_outputs(argv: list[str]) -> list[str]:
+    """A compile command minus what makes it write files (`-c`, `-o`, dependency outputs)."""
+    out: list[str] = []
     skip = False
     for arg in argv:
         if skip:
@@ -207,7 +228,48 @@ def _preprocess_defines(argv: list[str]) -> str:
             continue
         if arg in ("-c", "-MD", "-MMD"):
             continue
-        stripped.append(arg)
+        out.append(arg)
+    return out
+
+
+def compile_argv(repo_root: Path, arch: str, source: Path) -> list[str] | None:
+    """`source`'s compile command on `arch`: its own, else the borrowed one the seal uses."""
+    source = flags_source(source)
+    return (
+        _compile_entry(repo_root, arch, source)
+        or _sibling_target_entry(repo_root, arch, source)
+        or _derived_kernel_entry(repo_root, arch, source)
+    )
+
+
+def included_headers(repo_root: Path, source: Path, arch: str = "amd64") -> set[Path]:
+    """Every header `source` really includes on `arch`, by its own preprocessor (`-M`).
+
+    Exact where a lexical include walk is not (conditional and macro-spelled includes), and
+    it needs only a compile command -- not a CMakeLists that still lists the TU.
+    """
+    argv = compile_argv(repo_root, arch, source)
+    if argv is None:
+        raise MacroAuthorityError(
+            f"no compile command for {source} on {arch}\nfix: ./vibeos-cli build --arch {arch}"
+        )
+    result = subprocess.run(
+        [*_without_outputs(argv), "-E", "-M"], capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        raise MacroAuthorityError(
+            f"preprocessor failed listing {source.name}'s headers:\n" + result.stderr[:600]
+        )
+    deps = result.stdout.replace("\\\n", " ").split(":", 1)[-1].split()
+    return {
+        Path(d.replace(CANONICAL_BUILD_ROOT, str(repo_root))).resolve()
+        for d in deps
+        if d.endswith((".h", ".hpp", ".inl"))
+    }
+
+
+def _preprocess_defines(argv: list[str]) -> str:
+    stripped = _without_outputs(argv)
     result = subprocess.run([*stripped, "-E", "-dM"], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise MacroAuthorityError(
@@ -355,8 +417,11 @@ def string_literal_macros(repo_root: Path, source: Path) -> dict[str, dict[str, 
     TU has no command of its own; the seal then skips the run as it always did (reported).
     """
     out: dict[str, dict[str, str]] = {}
+    via = flags_source(source)
     for arch in _ARCHES:
-        argv = _compile_entry(repo_root, arch, source)
+        argv = _compile_entry(repo_root, arch, via)
+        if argv is None and via != source:
+            argv = _sibling_target_entry(repo_root, arch, via)
         if argv is None:
             continue
         try:
@@ -407,21 +472,22 @@ def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
     names: set[str] = set()
     found: list[str] = []
     borrowed_failures: list[str] = []
-    is_header = source.suffix in (".h", ".hpp")
+    flag_src = flags_source(source)
+    is_header = flag_src.suffix in (".h", ".hpp")
     for arch in _ARCHES:
         borrowed = False
-        argv = _compile_entry(repo_root, arch, source)
+        argv = _compile_entry(repo_root, arch, flag_src)
         if argv is None and is_header:
             # See _includer_entry: a header's macro set is its includers' macro set.
-            argv = _includer_entry(repo_root, arch, source)
+            argv = _includer_entry(repo_root, arch, flag_src)
             borrowed = argv is not None
         if argv is None and not is_header:
             # See _sibling_target_entry: a FLIPPED .c has no command of its own.
-            argv = _sibling_target_entry(repo_root, arch, source)
+            argv = _sibling_target_entry(repo_root, arch, flag_src)
             borrowed = argv is not None
         if argv is None and not is_header:
             # See _derived_kernel_entry: ntoskrnl compiles no C through CMake at all.
-            argv = _derived_kernel_entry(repo_root, arch, source)
+            argv = _derived_kernel_entry(repo_root, arch, flag_src)
             borrowed = argv is not None
         if argv is None:
             continue

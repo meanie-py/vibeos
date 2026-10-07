@@ -103,7 +103,7 @@ def test_every_rule_renames_a_symbol_that_exists(arch):
 def test_the_reference_set_is_only_microsoft_c(arch):
     """Our own code must never reach the reference side -- it would grade itself.
 
-    ucrtbase's link line also carries ucrtbase's own printf.c/stubs.c and every one of our
+    ucrtbase's link line also carries its spec2def-generated stubs and every one of our
     static libs. Only the `ucrt` target's objects are Microsoft's.
     """
     if not _built(arch):

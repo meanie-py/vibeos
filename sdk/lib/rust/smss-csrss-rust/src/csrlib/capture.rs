@@ -107,6 +107,15 @@ pub unsafe extern "system" fn CsrAllocateCaptureBuffer(
     CaptureBuffer
 }
 
+/// The next free `PointerOffsetsArray` slot. The C declares the array
+/// `[ANYSIZE_ARRAY]` and CsrAllocateCaptureBuffer sizes it for ArgumentCount
+/// entries, but bindgen makes it `[ULONG_PTR; 1]`: indexing it with `[n]`
+/// panicked on the second pointer of every multi-pointer CSR call (cmd's
+/// `echo x > file` died here on its console call).
+unsafe fn offset_slot(CaptureBuffer: PCSR_CAPTURE_BUFFER) -> *mut ULONG_PTR {
+    (&raw mut (*CaptureBuffer).PointerOffsetsArray[0]).add((*CaptureBuffer).PointerCount as usize)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn CsrAllocateMessagePointer(
     CaptureBuffer: PCSR_CAPTURE_BUFFER,
@@ -118,8 +127,7 @@ pub unsafe extern "system" fn CsrAllocateMessagePointer(
     if MessageLength == 0 {
         *CapturedData = core::ptr::null_mut();
         let CapturedData = core::ptr::null_mut::<PVOID>();
-        (*CaptureBuffer).PointerOffsetsArray[(*CaptureBuffer).PointerCount as usize] =
-            CapturedData as ULONG_PTR;
+        *offset_slot(CaptureBuffer) = CapturedData as ULONG_PTR;
         (*CaptureBuffer).PointerCount += 1;
         return 0;
     } else {
@@ -135,8 +143,7 @@ pub unsafe extern "system" fn CsrAllocateMessagePointer(
             ((*CaptureBuffer).BufferEnd as ULONG_PTR + aligned_length as ULONG_PTR) as PVOID;
     }
 
-    (*CaptureBuffer).PointerOffsetsArray[(*CaptureBuffer).PointerCount as usize] =
-        CapturedData as ULONG_PTR;
+    *offset_slot(CaptureBuffer) = CapturedData as ULONG_PTR;
     (*CaptureBuffer).PointerCount += 1;
 
     aligned_length

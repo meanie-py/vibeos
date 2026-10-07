@@ -1631,7 +1631,10 @@ unsafe fn PdoStartDevice(
                     as *mut CM_PARTIAL_RESOURCE_DESCRIPTOR)
                     .add(ii as usize);
 
-            if (*RawPartialDesc).Type == CmResourceTypeInterrupt {
+            // A message's raw vector is a token, not a line to write back.
+            if (*RawPartialDesc).Type == CmResourceTypeInterrupt
+                && (*RawPartialDesc).Flags & crate::msix::CM_RESOURCE_INTERRUPT_MESSAGE == 0
+            {
                 DPRINT!("Assigning IRQ ...\n");
 
                 let Irq: UCHAR = (*RawPartialDesc).u.Interrupt.Vector as UCHAR;
@@ -1649,6 +1652,12 @@ unsafe fn PdoStartDevice(
         RawFullDesc = CmiGetNextResourceDescriptor(RawFullDesc);
         i += 1;
     }
+
+    crate::msix::program(
+        DeviceExtension,
+        RawResList,
+        (*IrpSp).Parameters.StartDevice.AllocatedResourcesTranslated,
+    );
 
     let mut Command: USHORT = 0;
 
@@ -1853,8 +1862,7 @@ pub unsafe extern "system" fn PdoPnpControl(
         }
         IRP_MN_FILTER_RESOURCE_REQUIREMENTS => {
             DPRINT!("IRP_MN_FILTER_RESOURCE_REQUIREMENTS received\n");
-            /* Nothing to do */
-            (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+            Status = crate::msix::filter_requirements(DeviceObject, Irp, IrpSp);
         }
         _ => {
             DPRINT1!("Unknown IOCTL 0x%lx\n", (*IrpSp).MinorFunction as core::ffi::c_uint);
