@@ -1203,6 +1203,19 @@ def test_match_scrutinee_already_cast_is_not_cast_again():
     assert not plan.edits
 
 
+def test_match_scrutinee_the_translation_cast_to_another_type_is_cast_again():
+    """atapi's `match (*Cdb).AsByte[0] as i32` against u32 SCSIOP_* arms: the `as i32` is C's
+    integer promotion written out, not an earlier answer. Skipping it left 30 arms red."""
+    src = _MATCH_SRC.replace(b"match code {", b"match code as i32 {")
+    plan = propose_edits(
+        [_arm_diag(b"PSN_APPLY", "i32", "u32", src=src)],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_MATCH_SCRUTINEE],
+    )
+    assert [e.replacement for e in plan.edits] == ["(code as i32) as u32"]
+
+
 def test_match_scrutinee_edit_needs_cross_target_agreement():
     """`found` is a resolved primitive, so one target's answer can bake that arch's width."""
     plan = propose_edits(
@@ -1486,6 +1499,22 @@ def test_c_truthiness_both_directions():
     assert sorted(e.replacement for e in plan.edits) == sorted(
         ["((Ok(a, b)) == 0)", "((Done()) != 0)", "(((x & 4)) == 0)", "(x == 2) as u8"]
     )
+
+
+def test_c_truthiness_a_pointer_condition_is_a_null_test():
+    """atapi.h's ASSERT_REQUEST: `ASSERT((Request) && (Request)->Signature == ..)`."""
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = b"fn f(r: *mut R) {\n    if (r) && x {}\n    if !q {}\n    if (!(r).is_null()) {}\n}\n"
+    diags = [
+        _mismatch(src, b"(r)", "bool", "*mut R"),
+        _mismatch(src, b"!q", "bool", "*const u8"),
+        _mismatch(src, b"(!(r).is_null())", "bool", "*mut R"),  # already converted
+    ]
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS]
+    )
+    assert sorted(e.replacement for e in plan.edits) == ["(!((r)).is_null())", "((q).is_null())"]
 
 
 def test_c_truthiness_never_bakes_a_pointer_width():
@@ -2058,3 +2087,221 @@ def test_a_c_literal_into_a_mut_pointer_parameter_casts_mut():
     edits, _, handled = _literal_mut_rule(diag, lambda f: src, _Ctx(target="i386", width=32))
     assert handled and edits[0].rule == RULE_LITERAL_MUT
     assert edits[0].replacement == "RUSTCONV_WSTR_AB12.as_ptr().cast_mut()"
+
+
+def test_a_shared_address_of_into_a_mut_pointer_parameter_is_raw_mut():
+    """atapi: `AtaDevHasFlushCache(&(*DevExt).IdentifyDeviceData)` against a `*mut` param."""
+    from rustconv.crate_repair import _Ctx, _literal_mut_rule
+
+    src = b"F(&(*D).Id, &mut y, &raw mut z);\n"
+
+    def diag(needle: bytes) -> dict:
+        lo = src.index(needle)
+        return {
+            "code": {"code": "E0308"},
+            "spans": [
+                {
+                    "file_name": "m.rs",
+                    "byte_start": lo,
+                    "byte_end": lo + len(needle),
+                    "line_start": 1,
+                    "column_start": lo + 1,
+                    "label": "types differ in mutability",
+                }
+            ],
+            "children": [{"message": "expected raw pointer `*mut ID`\nfound reference `&ID`"}],
+        }
+
+    ctx = _Ctx(target="amd64", width=64)
+    edits, _, handled = _literal_mut_rule(diag(b"&(*D).Id"), lambda f: src, ctx)
+    assert handled and [e.replacement for e in edits] == ["&raw mut (*D).Id"]
+    # Already mutable spellings are not this shape and are left alone.
+    for needle in (b"&mut y", b"&raw mut z"):
+        assert _literal_mut_rule(diag(needle), lambda f: src, ctx)[0] == []
+
+
+def test_a_constant_that_fits_is_cast_to_the_type_its_use_wants():
+    """atapi: `(*Device).QueueFlags & QUEUE_FLAG_FROZEN_POWER` -- LONG & a u32 bindgen const."""
+    from rustconv.crate_repair import RULE_CONST_OPERAND
+
+    src = b"fn f(q: i32) -> bool {\n    q & FLAG == 0 && q & BIG == 0\n}\n"
+    plan = propose_edits(
+        [_mismatch(src, b"FLAG", "i32", "u32"), _mismatch(src, b"BIG", "i32", "u32")],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_CONST_OPERAND],
+        constants={"FLAG": 0x20, "BIG": 0x8000_0000},
+    )
+    # 0x80000000 does not fit i32: that one is a promotion question, left alone.
+    assert [e.replacement for e in plan.edits] == ["(FLAG as i32)"]
+    # An arm is a pattern: a cast there does not parse (the scrutinee rule answers it).
+    arm = b"fn f(q: i32) {\n    match q {\n        FLAG => {}\n        _ => {}\n    }\n}\n"
+    plan = propose_edits(
+        [_mismatch(arm, b"FLAG", "i32", "u32")],
+        _reader({"src/a.rs": arm}),
+        target="amd64",
+        rules=[RULE_CONST_OPERAND],
+        constants={"FLAG": 0x20},
+    )
+    assert not plan.edits
+
+
+def test_crate_constants_with_two_values_are_not_an_authority(tmp_path):
+    from rustconv.crate_repair import local_constants
+
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "types_i386.rs").write_text(
+        "pub const A: u32 = 0x20;\npub const W: u32 = 4;\n"
+    )
+    (tmp_path / "src" / "types_amd64.rs").write_text(
+        "pub const A: u32 = 32;\npub const W: u32 = 8;\n"
+    )
+    assert local_constants(tmp_path) == {"A": 32}
+
+
+def test_an_address_of_where_void_pointer_is_wanted_is_a_raw_cast():
+    from rustconv.crate_repair import RULE_POINTER_CAST
+
+    src = b"fn f() {\n    KeWait(&mut Event, 0);\n    Q(&mut (*D).Ev);\n    R(&Shared);\n}\n"
+    plan = propose_edits(
+        [
+            _mismatch(src, b"&mut Event", "*mut c_void", "&mut _KEVENT"),
+            _mismatch(src, b"&mut (*D).Ev", "*mut core::ffi::c_void", "&mut _KEVENT"),
+            _mismatch(src, b"&Shared", "*mut c_void", "&_KEVENT"),  # mutability: not this rule
+        ],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_POINTER_CAST],
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "(&raw mut (*D).Ev).cast()",
+        "(&raw mut Event).cast()",
+    ]
+
+
+def test_a_shared_macro_body_is_never_edited_its_call_site_is_cast():
+    """atapi: `EntrySize = ALIGN_UP!(..)` -- win32macros' body is `usize`, the C stores ULONG."""
+    from rustconv.crate_repair import RULE_NUMERIC_CAST
+
+    shared = b"macro_rules! A { ($x:expr) => { ($x as usize) }; }\n"
+    mine = b"fn f() {\n    let e: u32 = A!(3);\n}\n"
+    body = shared.index(b"($x as usize)")
+    inner = _span(
+        "win32macros-rust/src/lib.rs",
+        body,
+        body + len(b"($x as usize)"),
+        is_primary=True,
+        label="expected `u32`, found `usize`",
+    )
+    call = mine.index(b"A!(3)")
+    inner["expansion"] = {
+        "span": _span("atapi-rust/src/m.rs", call, call + len(b"A!(3)")),
+        "macro_decl_name": "A!",
+    }
+    plan = propose_edits(
+        [_diag("mismatched types", code="E0308", spans=[inner])],
+        _reader({"win32macros-rust/src/lib.rs": shared, "atapi-rust/src/m.rs": mine}),
+        target="amd64",
+        rules=[RULE_NUMERIC_CAST],
+        own_prefix="atapi-rust/",
+    )
+    assert [(e.file_name, e.replacement) for e in plan.edits] == [
+        ("atapi-rust/src/m.rs", "(A!(3)) as u32")
+    ]
+
+
+def test_a_function_as_a_void_pointer_and_zero_as_a_null_pointer():
+    from rustconv.crate_repair import RULE_POINTER_CAST
+
+    src = b"fn f() {\n    Rel(&mut L, Dpc);\n    if (*P).Thread != 0 {}\n    g(1);\n}\n"
+
+    def site(needle: bytes, label: str) -> dict:
+        at = src.index(needle)
+        return _diag(
+            "mismatched types",
+            code="E0308",
+            spans=[_span("src/a.rs", at, at + len(needle), is_primary=True, label=label)],
+        )
+
+    plan = propose_edits(
+        [
+            site(b"Dpc", "expected `*mut c_void`, found fn item"),
+            site(b"0", "expected `*mut _KTHREAD`, found `usize`"),
+            site(b"1", "expected `*mut _KTHREAD`, found `i32`"),  # not C's null constant
+        ],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_POINTER_CAST],
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "(Dpc as *mut core::ffi::c_void)",
+        "core::ptr::null_mut()",
+    ]
+
+
+def test_addr_of_where_the_callee_takes_mut_becomes_addr_of_mut():
+    from rustconv.crate_repair import _Ctx, _literal_mut_rule
+
+    src = b"PsCreate(core::ptr::addr_of!(Oa), 0);\n"
+    lo, hi = 9, src.index(b", 0")
+    diag = {
+        "code": {"code": "E0308"},
+        "spans": [
+            {
+                "file_name": "m.rs",
+                "byte_start": lo,
+                "byte_end": hi,
+                "line_start": 1,
+                "column_start": lo + 1,
+                "label": "types differ in mutability",
+            }
+        ],
+        "children": [{"message": "expected raw pointer `*mut OA`\nfound raw pointer `*const OA`"}],
+    }
+    edits, _, _ = _literal_mut_rule(diag, lambda f: src, _Ctx(target="amd64", width=64))
+    assert [e.replacement for e in edits] == ["core::ptr::addr_of_mut!(Oa)"]
+    # A C local's immutable `let` gets its `mut` in the same pass.
+    pre = b"let Oa: OA = make();\n"
+    diag["spans"][0]["byte_start"] += len(pre)
+    diag["spans"][0]["byte_end"] += len(pre)
+    edits, _, _ = _literal_mut_rule(diag, lambda f: pre + src, _Ctx(target="amd64", width=64))
+    assert sorted(e.replacement for e in edits) == ["core::ptr::addr_of_mut!(Oa)", "let mut Oa"]
+
+
+def test_truthiness_converts_our_macro_bodys_comparison_into_a_boolean_byte():
+    """atapi.h IS_ATAPI: `((f & ATAPI) != 0)` returned into a BOOLEAN."""
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = b"fn f() -> u8 {\n    ((x & 4) != 0)\n}\n"
+    plan = propose_edits(
+        [_mismatch(src, b"((x & 4) != 0)", "u8", "bool")],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_C_TRUTHINESS],
+    )
+    assert [e.replacement for e in plan.edits] == ["(((x & 4) != 0)) as u8"]
+
+
+def test_one_c_struct_under_two_rust_paths_is_a_pointer_cast():
+    """atapi: the island's full `_SCSI_REQUEST_BLOCK` vs the ddk's opaque one, and
+    ntkrnl-sys's hand `SLIST_HEADER` vs bindgen's `_SLIST_HEADER`."""
+    from rustconv.crate_repair import RULE_POINTER_CAST
+
+    src = b"fn f() {\n    S.Srb = Srb0;\n    Push(&mut Head, e);\n    g(Other);\n}\n"
+    ddk_srb = "ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK"
+    plan = propose_edits(
+        [
+            _mismatch(src, b"Srb0", ddk_srb, "types_arch::_SCSI_REQUEST_BLOCK"),
+            _mismatch(
+                src,
+                b"&mut Head",
+                "*mut ntkrnl_sys::SLIST_HEADER",
+                "&mut ntkrnl_sys::ddk::_SLIST_HEADER",
+            ),
+            _mismatch(src, b"Other", "ntkrnl_sys::ddk::_KEVENT", "types_arch::_KTIMER"),
+        ],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_POINTER_CAST],
+    )
+    assert sorted(e.replacement for e in plan.edits) == ["(&raw mut Head).cast()", "(Srb0).cast()"]
