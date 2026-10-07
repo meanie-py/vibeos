@@ -42,6 +42,7 @@ pub mod arbiter;
 #[cfg(not(feature = "minihal"))]
 pub mod bus;
 pub mod irql;
+pub mod message;
 #[cfg(not(feature = "minihal"))]
 pub mod kdpci;
 #[cfg(not(feature = "minihal"))]

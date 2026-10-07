@@ -20,6 +20,7 @@ pub mod shared;
 pub mod pci;
 pub mod fdo;
 pub mod pdo;
+mod msix;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

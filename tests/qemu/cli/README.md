@@ -115,8 +115,10 @@ all included), then auto-triage on failure.
   stick + NVMe drive, opt out with `VIBEOS_QEMU_NVME=0`) attaches a QEMU `nvme`
   controller with one 64M MBR+FAT16 namespace (`VIBEOS_QEMU_NVME=1`) and FAILS the
   boot (`NVME_NOT_ENGAGED`) unless nvme.sys prints
-  `[NVME] controller 0: namespace 1 published as a disk`, and (`NVME_POLLING`) unless a
-  completion arrived by interrupt (`[NVME] controller 0: interrupts working`). The net
+  `[NVME] controller 0: namespace 1 published as a disk`, (`NVME_NOT_MSIX`) unless its
+  MSI-X messages connected (`[NVME] controller 0: MSI-X: `; it would otherwise work on its
+  pin and hide the break), and (`NVME_POLLING`) unless a completion arrived by interrupt
+  (`[NVME] controller 0: interrupts working`). The net
   suite never inherits the knob: QEMU's nvme device blocks the `savevm` it takes.
   `VIBEOS_QEMU_NVME=1 pytest tests/qemu/test_nvme.py --arch <a>` goes further: the
   desktop copies the namespace's file and the host reads the copy back.

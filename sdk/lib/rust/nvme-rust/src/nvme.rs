@@ -8,14 +8,20 @@
 //! walks an MDL for physical pages and the device only ever sees memory this
 //! driver owns.
 //!
-//! Completions arrive by interrupt once pnp.rs has connected the controller's
-//! pin-based (INTx) vector ([`Irq`]): the worker sleeps until the DPC wakes it.
-//! Until then, and on a machine whose interrupt never arrives, it polls: the
-//! bring-up commands at start, and a 10 ms poll behind every interrupt wait,
-//! which says so on the debug port the first time it is the one that finds a
-//! completion. Both completion queues raise vector 0, which stays masked
-//! (INTMS) whenever nothing is connected to it, so the line can never be left
-//! asserted on a pin another device shares.
+//! Completions arrive by interrupt once pnp.rs has connected one ([`Irq`]): the
+//! worker sleeps until the DPC wakes it. Until then, and on a machine whose
+//! interrupt never arrives, it polls: the bring-up commands at start, and a
+//! 10 ms poll behind every interrupt wait, which says so on the debug port the
+//! first time it is the one that finds a completion.
+//!
+//! Two kinds of interrupt. MSI-X, when the PnP manager assigned messages: the
+//! admin queue raises message 0 and the I/O queue message 1 (both 0 when there
+//! is only one), each an exclusive, edge-triggered vector, so the ISR has
+//! nothing to check or mask. Otherwise the pin (INTx): both queues raise vector
+//! 0, which stays masked (INTMS) whenever nothing is connected to it, so the
+//! line can never be left asserted on a pin another device shares. The spec
+//! forbids touching INTMS/INTMC under MSI-X, so the controller is told which
+//! it has before bring-up.
 //!
 //! Register and command layouts are from the NVM Express Base Specification
 //! (2.0); the section numbers below are that document's.
@@ -26,7 +32,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use ntkrnl_sys::ddk::{
     KeDelayExecutionThread, KeInsertQueueDpc, KeQueryPerformanceCounter, KeSetEvent, KeStallExecutionProcessor,
     KeWaitForSingleObject, MmAllocateContiguousMemorySpecifyCache, MmGetPhysicalAddress, _MEMORY_CACHING_TYPE_MmCached,
-    BOOLEAN, KDPC, KEVENT, LARGE_INTEGER, PHYSICAL_ADDRESS, PKINTERRUPT, PVOID,
+    BOOLEAN, KDPC, KEVENT, LARGE_INTEGER, PHYSICAL_ADDRESS, PKINTERRUPT, PVOID, ULONG,
 };
 
 use crate::print::nvprint;
@@ -178,6 +184,8 @@ pub struct Controller {
     pub identity: Identity,
     /// Null until [`Controller::use_interrupts`]; then the worker sleeps on it.
     irq: *mut Irq,
+    /// Interrupts are MSI-X messages, not the pin: INTMS/INTMC are off limits.
+    msix: bool,
     /// The controller's number, for the debug port.
     number: u32,
     /// Completions whose interrupt arrived (some of them `late`: the ISR
@@ -211,6 +219,8 @@ pub struct Irq {
     pub interrupt: PKINTERRUPT,
     /// Interrupts claimed by the ISR.
     pub claimed: AtomicU32,
+    /// Under MSI-X: interrupts per message (admin, I/O).
+    pub messages: [AtomicU32; 2],
 }
 
 impl Irq {
@@ -224,6 +234,7 @@ impl Irq {
             dpc: unsafe { core::mem::zeroed() },
             interrupt: null_mut(),
             claimed: AtomicU32::new(0),
+            messages: [AtomicU32::new(0), AtomicU32::new(0)],
         }
     }
 
@@ -258,6 +269,20 @@ pub unsafe extern "system" fn isr(_interrupt: PKINTERRUPT, context: PVOID) -> BO
     write_volatile(irq.regs.add(REG_INTMS).cast::<u32>(), VECTOR_0);
     irq.claimed.fetch_add(1, Ordering::Relaxed);
     KeInsertQueueDpc(&irq.dpc as *const KDPC as *mut KDPC, null_mut(), null_mut());
+    1
+}
+
+/// The MSI-X message service routine (`ServiceContext` is the [`Irq`]). A
+/// message is this device's alone and edge-triggered: nothing to check, nothing
+/// to mask. One that lands before the worker is armed (bring-up polls) is just
+/// absorbed.
+pub unsafe extern "system" fn message_isr(_interrupt: PKINTERRUPT, context: PVOID, message: ULONG) -> BOOLEAN {
+    let irq = &*(context as *const Irq);
+    irq.messages[(message as usize).min(1)].fetch_add(1, Ordering::Relaxed);
+    if irq.armed.load(Ordering::Acquire) {
+        irq.claimed.fetch_add(1, Ordering::Relaxed);
+        KeInsertQueueDpc(&irq.dpc as *const KDPC as *mut KDPC, null_mut(), null_mut());
+    }
     1
 }
 
@@ -306,11 +331,12 @@ impl Controller {
     }
 
     /// Reset the controller behind `regs` (a mapping of BAR0, uncached, at
-    /// least `len` bytes) and bring it up with one I/O queue pair.
+    /// least `len` bytes) and bring it up with one I/O queue pair. `messages`
+    /// is how many MSI-X messages are connected (0: the pin).
     ///
     /// # Safety
     /// `regs` must map the controller's registers for `len` bytes.
-    pub unsafe fn start(regs: *mut u8, len: usize) -> Result<Controller, Error> {
+    pub unsafe fn start(regs: *mut u8, len: usize, messages: u32) -> Result<Controller, Error> {
         let cap = read_volatile(regs.add(REG_CAP).cast::<u32>()) as u64 | (read_volatile(regs.add(REG_CAP + 4).cast::<u32>()) as u64) << 32;
         let version = read_volatile(regs.add(REG_VS).cast::<u32>());
         if cap == u64::MAX || version >> 16 == 0 || version == u32::MAX {
@@ -378,6 +404,7 @@ impl Controller {
             max_transfer: BOUNCE,
             identity: core::mem::zeroed(),
             irq: null_mut(),
+            msix: messages > 0,
             number: 0,
             by_interrupt: 0,
             late: 0,
@@ -396,7 +423,9 @@ impl Controller {
         }
         c.wait_ready(false)?;
         // Mask every pin-based vector until an interrupt is connected to it.
-        c.wr(REG_INTMS, u32::MAX);
+        if !c.msix {
+            c.wr(REG_INTMS, u32::MAX);
+        }
         c.wr(REG_AQA, ((entries as u32 - 1) << 16) | (entries as u32 - 1));
         c.wr64(REG_ASQ, c.admin.sq_phys);
         c.wr64(REG_ACQ, c.admin.cq_phys);
@@ -412,12 +441,14 @@ impl Controller {
 
         // One I/O queue pair; the count is a request the controller may round.
         let _ = c.admin_command("set features (queues)", Command::new(ADMIN_SET_FEATURES, 0).dw(10, FEATURE_NUMBER_OF_QUEUES));
-        // Completion queue first: physically contiguous, interrupts enabled on
-        // vector 0 (IV 0 in 31:16), which INTMS masks until one is connected.
+        // Completion queue first: physically contiguous, interrupts enabled. On
+        // the pin, vector 0, which INTMS masks until one is connected; under
+        // MSI-X, message 1 when there is one, so its interrupts are its own.
+        let vector = (messages >= 2) as u32;
         let cq = Command::new(ADMIN_CREATE_CQ, 0)
             .prp(c.io.cq_phys, 0)
             .dw(10, ((entries as u32 - 1) << 16) | 1)
-            .dw(11, 1 << 1 | 1);
+            .dw(11, vector << 16 | 1 << 1 | 1);
         c.admin_command("create I/O completion queue", cq)?;
         let sq = Command::new(ADMIN_CREATE_SQ, 0)
             .prp(c.io.sq_phys, 0)
@@ -451,7 +482,9 @@ impl Controller {
         self.publish(false);
         self.publish(true);
         (*irq).armed.store(true, Ordering::Release);
-        self.wr(REG_INTMC, VECTOR_0);
+        if !self.msix {
+            self.wr(REG_INTMC, VECTOR_0);
+        }
     }
 
     /// Tell the ISR where queue `io`'s next completion will land.
@@ -688,10 +721,19 @@ impl Controller {
         // Completion queue y head doorbell: 0x1000 + (2y + 1) * stride.
         unsafe { write_volatile(regs.add(DOORBELLS + (2 * q.id as usize + 1) * stride).cast::<u32>(), q.head as u32) };
         self.publish(io);
-        if !self.irq.is_null() {
+        if !self.irq.is_null() && !self.msix {
             self.wr(REG_INTMC, VECTOR_0);
         }
         Some((dw0, dw3))
+    }
+
+    /// Under MSI-X: the interrupts taken on the admin and I/O messages.
+    pub fn message_counts(&self) -> Option<(u32, u32)> {
+        if self.irq.is_null() || !self.msix {
+            return None;
+        }
+        let m = unsafe { &(*self.irq).messages };
+        Some((m[0].load(Ordering::Relaxed), m[1].load(Ordering::Relaxed)))
     }
 
     fn claimed(&self) -> u32 {

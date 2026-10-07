@@ -2510,6 +2510,25 @@ tail into the suspend counts.
 exists precisely because the tail is someone else's storage. Grep for the overlay
 (`*Fill[...]` members in ndk headers) before collapsing it to `size_of`.
 
+### `size_of` on an aliased import measures the alias, not the C type
+**Symptom.** pci.sys asked the x86 HAL for a device's whole 256-byte config space to walk
+its capability list, and got 64 bytes back, so every capability looked absent. Nothing
+failed: `HalGetBusDataByOffset` just reports a short count.
+
+**Cause.** `hal-rust/src/x86/pcibus.rs` imports `_PCI_COMMON_HEADER as PCI_COMMON_CONFIG`
+(bindgen's own `PCI_COMMON_CONFIG` is a header-less 192-byte blob, so the translation
+borrowed the header's name). `HalpGetPCIData`/`HalpSetPCIData` clamp the length to
+`sizeof(PCI_COMMON_CONFIG)`, and in Rust that became the header's 64, where C's is 256.
+Every x86 config access past the standard header was silently cut short.
+
+**Fix.** A named constant for the C size (`PCI_COMMON_CONFIG_SIZE = 256`), never `size_of`
+of the alias.
+
+**Generalize.** An `X as Y` import, or a local `type Y = X`, keeps Y's name and X's layout.
+Field access through it still type-checks wherever the two share fields, so the only
+symptom is the size. Before trusting a `size_of::<Y>()` that stands for a C `sizeof`, check
+what Y is bound to.
+
 ## Constants: invented, guessed, and swallowed match arms
 
 **This is the single largest translation bug class in the repo, and the least visible.** rustc
