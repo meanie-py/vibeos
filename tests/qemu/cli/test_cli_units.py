@@ -9644,8 +9644,19 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     polled = pinned + "[NVME] controller 0: MSI-X: 2 message(s) connected at level 7: ...\n"
     bad = smoke_mod._nvme_check(polled)
     assert bad and bad["classification"] == "NVME_POLLING"
-    real = polled + "[NVME] controller 0: interrupts working (first completion by interrupt: x)\n"
-    assert smoke_mod._nvme_check(real) is None
+    working = polled + "[NVME] controller 0: interrupts working (1 completion(s) on the first)\n"
+    bad = smoke_mod._nvme_check(working)
+    assert bad and bad["classification"] == "NVME_NOT_QUEUED"
+    test = (
+        "[NVME] controller 0: self-test: read 1024 KiB in 9 ms (113777 KiB/s), up to {} commands"
+        " in flight; completions so far: 9 by interrupt, 0 by the poll; {} commands by DMA to"
+        " the caller's pages, 0 through the bounce buffer\n"
+    )
+    bad = smoke_mod._nvme_check(working + test.format(1, 9))
+    assert bad and bad["classification"] == "NVME_NOT_QUEUED"
+    bad = smoke_mod._nvme_check(working + test.format(8, 0))
+    assert bad and bad["classification"] == "NVME_BOUNCED"
+    assert smoke_mod._nvme_check(working + test.format(8, 9)) is None
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
     assert smoke_mod._nvme_check(never_loaded) is None
 
