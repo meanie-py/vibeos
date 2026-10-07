@@ -814,6 +814,13 @@ def stage_flip(stem: str) -> None:
     changed = new != cml.read_text()
     if changed:
         cml.write_text(new)
+        # A flip IS a census change (check-tooling's test_cohab_census fails until the
+        # snapshot is re-recorded); record it here rather than leave it to be remembered.
+        subprocess.run(
+            [sys.executable, str(REPO / "tools" / "cohab_census.py"), "--write"],
+            cwd=REPO,
+            check=True,
+        )
     _record(state, "flip", started, changed=changed)
     print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
 
