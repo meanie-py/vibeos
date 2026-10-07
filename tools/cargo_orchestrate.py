@@ -33,6 +33,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import shlex
 import shutil
@@ -279,11 +280,33 @@ def build_pefixup(root: Path, arch: str, out_dir: Path, dry: bool = False) -> Pa
     return exe
 
 
+def target_json(root: Path, cell: Cell, arch: str) -> Path:
+    """A build-std cell's custom target spec (i386 only)."""
+    return root / "sdk/lib/rust" / cell.crate / f"{ARCH_STEM[arch]}.json"
+
+
+def cargo_target_dir(root: Path, cell: Cell, arch: str) -> Path:
+    """The CARGO_TARGET_DIR a cell builds in.
+
+    The i386 kernel json comes in two variants (345bab65b7a): kernel-mode cells add
+    `-mmx,-sse,+soft-float` to keep x87 out of the kernel, and the user-mode cells and
+    win32k stay hard-float for the f32-in-ST0 ABI at their C calls. Both are named
+    i686-kernel.json, so in one target dir they would share `target/i686-kernel/`, and
+    cargo does not fingerprint a target json's contents: the second variant would link
+    against the first one's `core`. Each variant gets a directory of its own, keyed by
+    the json's hash."""
+    ws = root / "sdk/lib/rust"
+    if arch != "i386":
+        return ws / "target"
+    digest = hashlib.sha256(target_json(root, cell, arch).read_bytes()).hexdigest()[:12]
+    return ws / "target" / f"orchestrate-{arch}-{digest}"
+
+
 def built_exe(root: Path, cell: Cell, arch: str) -> Path:
     """Where cargo drops a cell's linked .exe."""
     stem = ARCH_STEM[arch]
     bin_name = cell.crate.removesuffix("-cargo")
-    return root / "sdk/lib/rust" / "target" / stem / "release" / f"{bin_name}.exe"
+    return cargo_target_dir(root, cell, arch) / stem / "release" / f"{bin_name}.exe"
 
 
 def cargo_build_many(
@@ -294,13 +317,29 @@ def cargo_build_many(
     trace_dir: Path | None = None,
     force_off: bool = False,
 ) -> None:
-    """ONE cargo invocation building every cell (per-arch fan-out). All cells share
-    the identical target, so a single
-    `--target` + many `-p` lets cargo build the shared rlibs once and the
-    per-cell links in parallel — far better than N sequential invocations (each
-    re-resolves the 190-member workspace and links serially). Concurrent cargo
-    invocations can't help (cargo locks the target dir), so the in-process
-    parallelism of one build is the win."""
+    """ONE cargo invocation per target (per-arch fan-out). Cells that share a target
+    build together: a single `--target` + many `-p` lets cargo build the shared
+    rlibs once and the per-cell links in parallel — far better than N sequential
+    invocations (each re-resolves the 190-member workspace and links serially).
+    amd64/arm64 are one group (the builtin triple); i386 is one group per
+    i686-kernel.json variant (see cargo_target_dir)."""
+    groups: dict[Path, list[Cell]] = {}
+    for c in cells:
+        groups.setdefault(cargo_target_dir(root, c, arch), []).append(c)
+    for target_dir, group in groups.items():
+        _cargo_build_group(root, group, arch, target_dir, dry, trace_dir, force_off)
+
+
+def _cargo_build_group(
+    root: Path,
+    cells: list[Cell],
+    arch: str,
+    target_dir: Path,
+    dry: bool,
+    trace_dir: Path | None,
+    force_off: bool,
+) -> None:
+    """One cargo invocation for cells that share a target spec and target dir."""
     ws = root / "sdk/lib/rust"
     stem = ARCH_STEM[arch]
     # Mirror gcc.cmake:add_cargo_module. i386 is the only build-std cell left (it
@@ -310,8 +349,8 @@ def cargo_build_many(
     # tests/qemu/cli/lints.py.
     env = dict(os.environ)
     if arch == "i386":
-        # All cells' i686-kernel.json are byte-identical; use the first cell's copy.
-        target = str(ws / cells[0].crate / f"{stem}.json")
+        # Every cell in a group has the same json bytes (cargo_target_dir's key).
+        target = str(target_json(root, cells[0], arch))
         std_args = [
             "-Z",
             "build-std=core,alloc,compiler_builtins",
@@ -328,6 +367,7 @@ def cargo_build_many(
             rustflags += " -C link-self-contained=no"
         env["RUSTFLAGS"] = rustflags
 
+    env["CARGO_TARGET_DIR"] = str(target_dir)
     env_cmd = [
         "cargo",
         "build",
@@ -342,7 +382,10 @@ def cargo_build_many(
         env_cmd += ["-p", c.crate]  # each cell package builds its single [[bin]]
     if dry:
         pin = env.get("RUSTUP_TOOLCHAIN", "<stable: rust-toolchain.toml>")
-        log(f"DRY  RUSTUP_TOOLCHAIN={pin} {' '.join(env_cmd)}  (cwd={ws})")
+        log(
+            f"DRY  RUSTUP_TOOLCHAIN={pin} CARGO_TARGET_DIR={target_dir} "
+            f"{' '.join(env_cmd)}  (cwd={ws})"
+        )
         return
     if trace_dir is not None:
         # Engine appends each in-cargo command to <trace_dir>/<pkg>.trace.

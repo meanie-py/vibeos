@@ -5183,6 +5183,18 @@ bugchecked the box (0x1E/0x50 in `KdpStub`). Capture it as `KdpPrint` does
 reads an exception record's parameters is in this class. `sehtest`'s `bad-print-buffer` probe
 covers this one on every amd64 boot.
 
+**In user mode the same drop turns a VALIDATOR into a constant.** kernel32's `IsBadReadPtr`,
+`IsBadWritePtr`, `IsBadCodePtr` and `IsBadStringPtrA/W` ARE the C's probe plus its
+`_SEH2_EXCEPT { Result = TRUE; }`. The translation kept the probe and commented the handler
+out, and the probe was a non-volatile `*Current = *Current` / `let _ = *Current`, which LLVM
+deletes. So all five returned FALSE for every non-NULL pointer. The sdk delayimp apitests'
+`UnProtect` asked `IsBadWritePtr` about an import name in `.rdata`, skipped its
+`VirtualProtect`, and the write killed the process (exit 0x80). The tell is a function whose
+whole result is set only in a commented-out `_SEH2_EXCEPT`. Fix: answer the question without
+a fault. They now walk `VirtualQuery` regions (committed, not GUARD/NOACCESS, granting the
+access), which also stops them consuming a stack guard page the way Windows' probe does.
+`sehtest`'s `bad-ptr-probes` covers them on every boot, all three arches.
+
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
 HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
 call `ProbeForWrite` — so "did it dereference a user pointer where its C validated one"
