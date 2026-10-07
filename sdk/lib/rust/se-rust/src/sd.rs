@@ -382,15 +382,12 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
         return STATUS_UNKNOWN_REVISION;
     }
 
-    // Pin the header scalars from THIS first read. The absolute copy below re-reads
-    // the same bytes; a racing caller that flips SE_SELF_RELATIVE between the two reads
+    // Decide self-relative from THIS first read. The absolute copy below re-reads
+    // Control, and a racing caller that flips SE_SELF_RELATIVE between the two reads
     // could otherwise make us copy the absolute struct (raw pointer fields) and then
     // rebase them as self-relative offsets -- a wild kernel address later handed to
-    // RtlValidSid. Decide self-relative ONCE, here, and never re-trust Control/Revision.
-    let pinned_revision = Header.Revision;
-    let pinned_sbz1 = Header.Sbz1;
-    let pinned_control = Header.Control;
-    let self_relative = pinned_control & SE_SELF_RELATIVE != 0;
+    // RtlValidSid. Pin the branch here; the getters below read copy #2 consistently.
+    let self_relative = Header.Control & SE_SELF_RELATIVE != 0;
 
     if !self_relative {
         // Absolute: the header is the larger struct of pointers.
@@ -416,9 +413,9 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
         }
     };
     let header_ptr = core::ptr::addr_of_mut!(Header) as PISECURITY_DESCRIPTOR;
-    DescriptorCopy.Revision = pinned_revision;
-    DescriptorCopy.Sbz1 = pinned_sbz1;
-    DescriptorCopy.Control = pinned_control & !SE_SELF_RELATIVE;
+    DescriptorCopy.Revision = Header.Revision;
+    DescriptorCopy.Sbz1 = Header.Sbz1;
+    DescriptorCopy.Control = Header.Control & !SE_SELF_RELATIVE;
     DescriptorCopy.Owner = rebase(SepGetOwnerFromDescriptor(header_ptr) as usize) as PSID;
     DescriptorCopy.Group = rebase(SepGetGroupFromDescriptor(header_ptr) as usize) as PSID;
     DescriptorCopy.Sacl = rebase(SepGetSaclFromDescriptor(header_ptr) as usize) as PACL;
