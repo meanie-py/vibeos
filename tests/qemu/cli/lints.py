@@ -891,6 +891,20 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # lower-confidence pairs (basename-only, or C still compiled) are printed to stderr and
     # deliberately NOT gated -- basename matching pairs fastfat/create.c with
     # lpc-rust/create.rs, and a human has to read those.
+    # A local or parameter the C declares as a pointer TYPEDEF (`PFILEPATHS_W x`) that the
+    # Rust declares one level deeper (`x: *mut PFILEPATHS_W`), then reads `(*(*x)).Field` --
+    # the struct's first field taken as its address. usetup shipped five (every keypress
+    # and copy-progress message read garbage); rustconv's purchase audit now rejects the
+    # shape in a new body, and this holds the bodies already in the tree to the same check.
+    # Gated at ZERO: the sweep that introduced it found two (pcix, ramdisk), both fixed.
+    sptd = repo / "tools" / "scan_ptr_typedef_indirection.py"
+    specs.append(
+        (
+            "scan_ptr_typedef_indirection",
+            [py, str(sptd)] if sptd.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sdsp = repo / "tools" / "scan_dropped_seh_pairs.py"
     specs.append(
         (

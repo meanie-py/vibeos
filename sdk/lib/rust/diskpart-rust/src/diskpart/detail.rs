@@ -79,17 +79,17 @@ pub unsafe extern "C" fn DetailDisk(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
     DPRINT!(b"DetailDisk()\n\0".as_ptr() as *const i8);
 
     if argc > 2 {
-        ConResPuts(StdErr, (IDS_ERROR_INVALID_ARGS) as UINT);
+        ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
         return EXIT_SUCCESS;
     }
 
     if CurrentDisk.is_null() {
-        ConResPuts(StdOut, (IDS_SELECT_NO_DISK) as UINT);
+        ConResPuts(StdOut, IDS_SELECT_NO_DISK);
         return EXIT_SUCCESS;
     }
 
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
-    ConResPrintf(StdOut, (IDS_DETAIL_DISK_DESCRIPTION) as u32, (*CurrentDisk).Description);
+    ConResPrintf(StdOut, IDS_DETAIL_DISK_DESCRIPTION, (*CurrentDisk).Description);
     if (*(*CurrentDisk).LayoutBuffer).PartitionStyle == PARTITION_STYLE_GPT {
         PrintGUID(
             szBuffer.as_mut_ptr(),
@@ -104,35 +104,35 @@ pub unsafe extern "C" fn DetailDisk(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
     } else {
         wcscpy(szBuffer.as_mut_ptr(), RUSTCONV_WSTR_03F08D6FD1B3.as_ptr());
     }
-    ConResPrintf(StdOut, (IDS_DETAIL_DISK_ID) as u32, szBuffer.as_mut_ptr());
+    ConResPrintf(StdOut, IDS_DETAIL_DISK_ID, szBuffer.as_mut_ptr());
     PrintBusType(
         szBuffer.as_mut_ptr(),
         (ARRAYSIZE!(szBuffer)) as i32,
         (*CurrentDisk).BusType,
     );
-    ConResPrintf(StdOut, (IDS_DETAIL_DISK_TYPE) as u32, szBuffer.as_mut_ptr());
+    ConResPrintf(StdOut, IDS_DETAIL_DISK_TYPE, szBuffer.as_mut_ptr());
     LoadStringW(
         GetModuleHandle(core::ptr::null_mut()),
-        (IDS_STATUS_ONLINE) as UINT,
+        IDS_STATUS_ONLINE,
         szBuffer.as_mut_ptr(),
-        (ARRAYSIZE!(szBuffer)) as INT,
+        (ARRAYSIZE!(szBuffer)) as i32,
     );
-    ConResPrintf(StdOut, (IDS_DETAIL_DISK_STATUS) as u32, szBuffer.as_mut_ptr());
-    ConResPrintf(StdOut, (IDS_DETAIL_INFO_PATH) as u32, (*CurrentDisk).PathId as core::ffi::c_uint);
-    ConResPrintf(StdOut, (IDS_DETAIL_INFO_TARGET) as u32, (*CurrentDisk).TargetId as core::ffi::c_uint);
-    ConResPrintf(StdOut, (IDS_DETAIL_INFO_LUN_ID) as u32, (*CurrentDisk).Lun as core::ffi::c_uint);
+    ConResPrintf(StdOut, IDS_DETAIL_DISK_STATUS, szBuffer.as_mut_ptr());
+    ConResPrintf(StdOut, IDS_DETAIL_INFO_PATH, (*CurrentDisk).PathId as core::ffi::c_uint);
+    ConResPrintf(StdOut, IDS_DETAIL_INFO_TARGET, (*CurrentDisk).TargetId as core::ffi::c_uint);
+    ConResPrintf(StdOut, IDS_DETAIL_INFO_LUN_ID, (*CurrentDisk).Lun as core::ffi::c_uint);
 
     LoadStringW(
         GetModuleHandle(core::ptr::null_mut()),
         if (*CurrentDisk).IsBoot != 0 {
-            (IDS_STATUS_YES) as u32
+            IDS_STATUS_YES
         } else {
-            (IDS_STATUS_YES) as u32
+            IDS_STATUS_YES
         },
         szBuffer.as_mut_ptr(),
-        (ARRAYSIZE!(szBuffer)) as INT,
+        (ARRAYSIZE!(szBuffer)) as i32,
     );
-    ConResPrintf(StdOut, (IDS_DETAIL_INFO_BOOT_DSK) as u32, szBuffer.as_mut_ptr());
+    ConResPrintf(StdOut, IDS_DETAIL_INFO_BOOT_DSK, szBuffer.as_mut_ptr());
 
     Entry = VolumeListHead.Flink;
     while Entry != &mut VolumeListHead {
@@ -141,8 +141,8 @@ pub unsafe extern "C" fn DetailDisk(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
         if IsDiskInVolume((VolumeEntry).cast(), CurrentDisk) != 0 {
             if bPrintHeader != 0 {
                 ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
-                ConResPuts(StdOut, (IDS_LIST_VOLUME_HEAD) as UINT);
-                ConResPuts(StdOut, (IDS_LIST_VOLUME_LINE) as UINT);
+                ConResPuts(StdOut, IDS_LIST_VOLUME_HEAD);
+                ConResPuts(StdOut, IDS_LIST_VOLUME_LINE);
                 bPrintHeader = FALSE;
             }
 

@@ -781,7 +781,7 @@ unsafe extern "C" fn CreatePrimaryGptPartition(
 
     if !pszPartitionType.is_null() {
         if StringToGUID(&mut guidPartitionType, pszPartitionType) == 0 {
-            ConResPuts(StdErr, (IDS_ERROR_INVALID_ARGS) as UINT);
+            ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
             return;
         }
     } else {
@@ -805,7 +805,7 @@ unsafe extern "C" fn CreatePrimaryGptPartition(
 
     PartEntry = InsertGptPartition(CurrentDisk, ullSectorCount, &mut guidPartitionType);
     if PartEntry == FALSE as PPARTENTRY {
-        ConResPuts(StdOut, (IDS_CREATE_PARTITION_FAIL) as UINT);
+        ConResPuts(StdOut, IDS_CREATE_PARTITION_FAIL);
         CurrentPartition = core::ptr::null_mut();
         return;
     }
@@ -816,12 +816,12 @@ unsafe extern "C" fn CreatePrimaryGptPartition(
     UpdateGptDiskLayout(CurrentDisk, FALSE);
     Status = WriteGptPartitions(CurrentDisk);
     if !NT_SUCCESS!(Status) {
-        ConResPuts(StdOut, (IDS_CREATE_PARTITION_FAIL) as UINT);
+        ConResPuts(StdOut, IDS_CREATE_PARTITION_FAIL);
         CurrentPartition = core::ptr::null_mut();
         return;
     }
 
-    ConResPuts(StdOut, (IDS_CREATE_PARTITION_SUCCESS) as UINT);
+    ConResPuts(StdOut, IDS_CREATE_PARTITION_SUCCESS);
 }
 #[no_mangle]
 pub unsafe extern "C" fn CreatePrimaryPartition(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {

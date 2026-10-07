@@ -75,7 +75,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(active_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_ACTIVE,
+            help: (IDS_HELP_ACTIVE) as i32,
             help_detail: MSG_COMMAND_ACTIVE,
         },
         _COMMAND {
@@ -83,7 +83,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(assign_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_ASSIGN,
+            help: (IDS_HELP_ASSIGN) as i32,
             help_detail: MSG_COMMAND_ASSIGN,
         },
         _COMMAND {
@@ -91,7 +91,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(automount_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_AUTOMOUNT,
+            help: (IDS_HELP_AUTOMOUNT) as i32,
             help_detail: MSG_COMMAND_AUTOMOUNT,
         },
         _COMMAND {
@@ -99,7 +99,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(clean_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_CLEAN,
+            help: (IDS_HELP_CLEAN) as i32,
             help_detail: MSG_COMMAND_CLEAN,
         },
         _COMMAND {
@@ -107,7 +107,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: None,
-            help: IDS_HELP_CONVERT,
+            help: (IDS_HELP_CONVERT) as i32,
             help_detail: MSG_NONE as DWORD,
         },
         _COMMAND {
@@ -115,7 +115,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_E066D47523FF.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(ConvertGPT as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_CONVERT_GPT,
+            help: (IDS_HELP_CONVERT_GPT) as i32,
             help_detail: MSG_COMMAND_CONVERT_GPT,
         },
         _COMMAND {
@@ -123,7 +123,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_DD8FED8124A3.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(ConvertMBR as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_CONVERT_MBR,
+            help: (IDS_HELP_CONVERT_MBR) as i32,
             help_detail: MSG_COMMAND_CONVERT_MBR,
         },
         _COMMAND {
@@ -131,7 +131,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: None,
-            help: IDS_HELP_CREATE,
+            help: (IDS_HELP_CREATE) as i32,
             help_detail: MSG_NONE as DWORD,
         },
         _COMMAND {
@@ -139,7 +139,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_7AC6B9716F5E.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: None,
-            help: IDS_HELP_CREATE_PARTITION,
+            help: (IDS_HELP_CREATE_PARTITION) as i32,
             help_detail: MSG_NONE as DWORD,
         },
         _COMMAND {
@@ -147,7 +147,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_7AC6B9716F5E.as_ptr() as PWSTR,
             cmd3: RUSTCONV_C2R_WSTR_D59F02F16056.as_ptr() as PWSTR,
             func: Some(CreateEfiPartition as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_CREATE_PARTITION_EFI,
+            help: (IDS_HELP_CREATE_PARTITION_EFI) as i32,
             help_detail: MSG_COMMAND_CREATE_PARTITION_EFI,
         },
         _COMMAND {
@@ -157,7 +157,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             func: Some(
                 CreateExtendedPartition as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE,
             ),
-            help: IDS_HELP_CREATE_PARTITION_EXTENDED,
+            help: (IDS_HELP_CREATE_PARTITION_EXTENDED) as i32,
             help_detail: MSG_COMMAND_CREATE_PARTITION_EXTENDED,
         },
         _COMMAND {
@@ -167,7 +167,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             func: Some(
                 CreateLogicalPartition as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE,
             ),
-            help: IDS_HELP_CREATE_PARTITION_LOGICAL,
+            help: (IDS_HELP_CREATE_PARTITION_LOGICAL) as i32,
             help_detail: MSG_COMMAND_CREATE_PARTITION_LOGICAL,
         },
         _COMMAND {
@@ -175,7 +175,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_7AC6B9716F5E.as_ptr() as PWSTR,
             cmd3: RUSTCONV_C2R_WSTR_E076BFB34195.as_ptr() as PWSTR,
             func: Some(CreateMsrPartition as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_CREATE_PARTITION_MSR,
+            help: (IDS_HELP_CREATE_PARTITION_MSR) as i32,
             help_detail: MSG_COMMAND_CREATE_PARTITION_MSR,
         },
         _COMMAND {
@@ -185,7 +185,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             func: Some(
                 CreatePrimaryPartition as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE,
             ),
-            help: IDS_HELP_CREATE_PARTITION_PRIMARY,
+            help: (IDS_HELP_CREATE_PARTITION_PRIMARY) as i32,
             help_detail: MSG_COMMAND_CREATE_PARTITION_PRIMARY,
         },
         _COMMAND {
@@ -193,7 +193,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: None,
-            help: IDS_HELP_DELETE,
+            help: (IDS_HELP_DELETE) as i32,
             help_detail: MSG_NONE as DWORD,
         },
         _COMMAND {
@@ -201,7 +201,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_7AC6B9716F5E.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(DeletePartition as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_DELETE_PARTITION,
+            help: (IDS_HELP_DELETE_PARTITION) as i32,
             help_detail: MSG_COMMAND_DELETE_PARTITION,
         },
         _COMMAND {
@@ -209,7 +209,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: None,
-            help: IDS_HELP_DETAIL,
+            help: (IDS_HELP_DETAIL) as i32,
             help_detail: MSG_NONE as DWORD,
         },
         _COMMAND {
@@ -217,7 +217,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_5D58467A1130.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(DetailDisk as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_DETAIL_DISK,
+            help: (IDS_HELP_DETAIL_DISK) as i32,
             help_detail: MSG_COMMAND_DETAIL_DISK,
         },
         _COMMAND {
@@ -225,7 +225,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_7AC6B9716F5E.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(DetailPartition as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_DETAIL_PARTITION,
+            help: (IDS_HELP_DETAIL_PARTITION) as i32,
             help_detail: MSG_COMMAND_DETAIL_PARTITION,
         },
         _COMMAND {
@@ -233,7 +233,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_B745EAE41AE4.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(DetailVolume as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_DETAIL_VOLUME,
+            help: (IDS_HELP_DETAIL_VOLUME) as i32,
             help_detail: MSG_COMMAND_DETAIL_VOLUME,
         },
         _COMMAND {
@@ -265,7 +265,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: None,
-            help: IDS_HELP_EXIT,
+            help: (IDS_HELP_EXIT) as i32,
             help_detail: MSG_COMMAND_EXIT,
         },
         _COMMAND {
@@ -273,7 +273,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(filesystems_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_FILESYSTEMS,
+            help: (IDS_HELP_FILESYSTEMS) as i32,
             help_detail: MSG_COMMAND_FILESYSTEMS,
         },
         _COMMAND {
@@ -281,7 +281,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(format_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_FORMAT,
+            help: (IDS_HELP_FORMAT) as i32,
             help_detail: MSG_COMMAND_FORMAT,
         },
         _COMMAND {
@@ -289,7 +289,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(gpt_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_GPT,
+            help: (IDS_HELP_GPT) as i32,
             help_detail: MSG_COMMAND_GPT,
         },
         _COMMAND {
@@ -297,7 +297,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(help_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_HELP,
+            help: (IDS_HELP_HELP) as i32,
             help_detail: MSG_COMMAND_HELP,
         },
         _COMMAND {
@@ -305,7 +305,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(inactive_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_INACTIVE,
+            help: (IDS_HELP_INACTIVE) as i32,
             help_detail: MSG_COMMAND_INACTIVE,
         },
         _COMMAND {
@@ -313,7 +313,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: None,
-            help: IDS_HELP_LIST,
+            help: (IDS_HELP_LIST) as i32,
             help_detail: MSG_NONE as DWORD,
         },
         _COMMAND {
@@ -321,7 +321,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_5D58467A1130.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(ListDisk as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_LIST_DISK,
+            help: (IDS_HELP_LIST_DISK) as i32,
             help_detail: MSG_COMMAND_LIST_DISK,
         },
         _COMMAND {
@@ -329,7 +329,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_7AC6B9716F5E.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(ListPartition as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_LIST_PARTITION,
+            help: (IDS_HELP_LIST_PARTITION) as i32,
             help_detail: MSG_COMMAND_LIST_PARTITION,
         },
         _COMMAND {
@@ -337,7 +337,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_B745EAE41AE4.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(ListVolume as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_LIST_VOLUME,
+            help: (IDS_HELP_LIST_VOLUME) as i32,
             help_detail: MSG_COMMAND_LIST_VOLUME,
         },
         _COMMAND {
@@ -345,7 +345,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: None,
-            help: IDS_HELP_REM,
+            help: (IDS_HELP_REM) as i32,
             help_detail: MSG_COMMAND_REM,
         },
         _COMMAND {
@@ -353,7 +353,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(remove_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_REMOVE,
+            help: (IDS_HELP_REMOVE) as i32,
             help_detail: MSG_COMMAND_REMOVE,
         },
         _COMMAND {
@@ -361,7 +361,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(rescan_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_RESCAN,
+            help: (IDS_HELP_RESCAN) as i32,
             help_detail: MSG_COMMAND_RESCAN,
         },
         _COMMAND {
@@ -369,7 +369,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: None,
-            help: IDS_HELP_SELECT,
+            help: (IDS_HELP_SELECT) as i32,
             help_detail: MSG_NONE as DWORD,
         },
         _COMMAND {
@@ -377,7 +377,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_5D58467A1130.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(SelectDisk as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_SELECT_DISK,
+            help: (IDS_HELP_SELECT_DISK) as i32,
             help_detail: MSG_COMMAND_SELECT_DISK,
         },
         _COMMAND {
@@ -385,7 +385,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_7AC6B9716F5E.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(SelectPartition as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_SELECT_PARTITION,
+            help: (IDS_HELP_SELECT_PARTITION) as i32,
             help_detail: MSG_COMMAND_SELECT_PARTITION,
         },
         _COMMAND {
@@ -393,7 +393,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_B745EAE41AE4.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(SelectVolume as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_SELECT_VOLUME,
+            help: (IDS_HELP_SELECT_VOLUME) as i32,
             help_detail: MSG_COMMAND_SELECT_VOLUME,
         },
         _COMMAND {
@@ -401,7 +401,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(setid_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_SETID,
+            help: (IDS_HELP_SETID) as i32,
             help_detail: MSG_COMMAND_SETID,
         },
         _COMMAND {
@@ -409,7 +409,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(setid_main as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_SETID,
+            help: (IDS_HELP_SETID) as i32,
             help_detail: MSG_COMMAND_SETID,
         },
         _COMMAND {
@@ -417,7 +417,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: None,
-            help: IDS_HELP_UNIQUEID,
+            help: (IDS_HELP_UNIQUEID) as i32,
             help_detail: MSG_NONE as DWORD,
         },
         _COMMAND {
@@ -425,7 +425,7 @@ pub static mut cmds: [COMMAND; 45] = unsafe {
             cmd2: RUSTCONV_C2R_WSTR_5D58467A1130.as_ptr() as PWSTR,
             cmd3: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
             func: Some(UniqueIdDisk as unsafe extern "C" fn(INT, *mut PWSTR) -> EXIT_CODE),
-            help: IDS_HELP_UNIQUEID_DISK,
+            help: (IDS_HELP_UNIQUEID_DISK) as i32,
             help_detail: MSG_COMMAND_UNIQUEID_DISK,
         },
         _COMMAND {
@@ -543,7 +543,7 @@ pub unsafe extern "C" fn InterpretScript(input_line: PWSTR) -> EXIT_CODE {
             *ptr = 0;
             bWhiteSpace = TRUE;
         } else {
-            if (bWhiteSpace != FALSE) && (bQuote == FALSE) && (args_count < MAX_ARGS_COUNT) {
+            if (bWhiteSpace != FALSE) && (bQuote == FALSE) && (((args_count) as u32) < MAX_ARGS_COUNT) {
                 args_vector[args_count as usize] = ptr;
                 args_count += 1;
             }
@@ -576,7 +576,7 @@ pub unsafe extern "C" fn InterpretMain() {
 
         ConResPuts(StdOut, (IDS_APP_PROMPT) as u32);
 
-        fgetws(input_line.as_mut_ptr(), MAX_STRING_SIZE, stdin());
+        fgetws(input_line.as_mut_ptr(), (MAX_STRING_SIZE) as i32, stdin());
 
         bQuote = FALSE;
         ptr = input_line.as_mut_ptr();
@@ -591,7 +591,7 @@ pub unsafe extern "C" fn InterpretMain() {
             } else {
                 if (bWhiteSpace != FALSE)
                     && (bQuote == FALSE)
-                    && (args_count < MAX_ARGS_COUNT)
+                    && (((args_count) as u32) < MAX_ARGS_COUNT)
                 {
                     args_vector[args_count as usize] = ptr;
                     args_count += 1;

@@ -29,25 +29,25 @@ unsafe extern "C" fn PrintSize(
 
     if ullSize >= SIZE_10TB {
         ullSize = RoundingDivide(ullSize, SIZE_1TB);
-        nUnitId = IDS_UNIT_TB;
+        nUnitId = (IDS_UNIT_TB) as i32;
     } else if ullSize >= SIZE_10GB {
-        ullSize = RoundingDivide(ullSize, SIZE_1GB);
-        nUnitId = IDS_UNIT_GB;
-    } else if ullSize >= SIZE_10MB {
-        ullSize = RoundingDivide(ullSize, SIZE_1MB);
-        nUnitId = IDS_UNIT_MB;
-    } else if ullSize >= SIZE_10KB {
-        ullSize = RoundingDivide(ullSize, SIZE_1KB);
-        nUnitId = IDS_UNIT_KB;
+        ullSize = RoundingDivide(ullSize, (SIZE_1GB) as ULONGLONG);
+        nUnitId = (IDS_UNIT_GB) as i32;
+    } else if ullSize >= (SIZE_10MB) as _ {
+        ullSize = RoundingDivide(ullSize, (SIZE_1MB) as ULONGLONG);
+        nUnitId = (IDS_UNIT_MB) as i32;
+    } else if ullSize >= (SIZE_10KB) as _ {
+        ullSize = RoundingDivide(ullSize, (SIZE_1KB) as ULONGLONG);
+        nUnitId = (IDS_UNIT_KB) as i32;
     } else {
-        nUnitId = IDS_UNIT_B;
+        nUnitId = (IDS_UNIT_B) as i32;
     }
 
     LoadStringW(
         GetModuleHandle(core::ptr::null_mut()),
-        (nUnitId) as UINT,
+        (nUnitId) as u32,
         szUnitBuffer.as_mut_ptr(),
-        (ARRAYSIZE!(szUnitBuffer)) as INT,
+        (ARRAYSIZE!(szUnitBuffer)) as i32,
     );
 
     _swprintf(
@@ -135,14 +135,14 @@ pub unsafe extern "C" fn PrintDisk(DiskEntry: PDISKENTRY) {
 
     LoadStringW(
         GetModuleHandle(core::ptr::null_mut()),
-        (IDS_STATUS_ONLINE) as UINT,
+        IDS_STATUS_ONLINE,
         szBuffer.as_mut_ptr(),
-        (ARRAYSIZE!(szBuffer)) as INT,
+        (ARRAYSIZE!(szBuffer)) as i32,
     );
 
     ConResPrintf(
         StdOut,
-        (IDS_LIST_DISK_FORMAT) as u32,
+        IDS_LIST_DISK_FORMAT,
         if CurrentDisk == DiskEntry { 0x002Au16 } else { 0x0020u16 } as core::ffi::c_uint,
         (*DiskEntry).DiskNumber,
         szBuffer.as_mut_ptr(),
@@ -158,8 +158,8 @@ pub unsafe extern "C" fn ListDisk(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
     let mut DiskEntry: *mut DISKENTRY;
 
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
-    ConResPuts(StdOut, (IDS_LIST_DISK_HEAD) as UINT);
-    ConResPuts(StdOut, (IDS_LIST_DISK_LINE) as UINT);
+    ConResPuts(StdOut, IDS_LIST_DISK_HEAD);
+    ConResPuts(StdOut, IDS_LIST_DISK_LINE);
 
     Entry = DiskListHead.Flink;
     while Entry != &mut DiskListHead {
@@ -188,7 +188,7 @@ pub unsafe extern "C" fn ListPartition(argc: INT, argv: *mut PWSTR) -> EXIT_CODE
     let mut nPartitionType: i32 = 0;
 
     if CurrentDisk.is_null() {
-        ConResPuts(StdOut, (IDS_LIST_PARTITION_NO_DISK) as UINT);
+        ConResPuts(StdOut, IDS_LIST_PARTITION_NO_DISK);
         return EXIT_SUCCESS;
     }
 
@@ -214,14 +214,14 @@ pub unsafe extern "C" fn ListPartition(argc: INT, argv: *mut PWSTR) -> EXIT_CODE
 
     if bPartitionFound == FALSE {
         ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
-        ConResPuts(StdOut, (IDS_LIST_PARTITION_NONE) as UINT);
+        ConResPuts(StdOut, IDS_LIST_PARTITION_NONE);
         ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
         return EXIT_SUCCESS;
     }
 
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
-    ConResPuts(StdOut, (IDS_LIST_PARTITION_HEAD) as UINT);
-    ConResPuts(StdOut, (IDS_LIST_PARTITION_LINE) as UINT);
+    ConResPuts(StdOut, IDS_LIST_PARTITION_HEAD);
+    ConResPuts(StdOut, IDS_LIST_PARTITION_LINE);
 
     if (*CurrentDisk).PartitionStyle == PARTITION_STYLE_MBR {
         Entry = (*CurrentDisk).PrimaryPartListHead.Flink;
@@ -238,17 +238,17 @@ pub unsafe extern "C" fn ListPartition(argc: INT, argv: *mut PWSTR) -> EXIT_CODE
                 LoadStringW(
                     GetModuleHandle(core::ptr::null_mut()),
                     if IsContainerPartition!((*PartEntry).__bindgen_anon_1.Mbr.PartitionType) {
-                        (IDS_PARTITION_TYPE_EXTENDED) as u32
+                        IDS_PARTITION_TYPE_EXTENDED
                     } else {
-                        (IDS_PARTITION_TYPE_PRIMARY) as u32
+                        IDS_PARTITION_TYPE_PRIMARY
                     },
                     szPartitionTypeBuffer.as_mut_ptr(),
-                    (ARRAYSIZE!(szPartitionTypeBuffer)) as INT,
+                    (ARRAYSIZE!(szPartitionTypeBuffer)) as i32,
                 );
 
                 ConResPrintf(
                     StdOut,
-                    (IDS_LIST_PARTITION_FORMAT) as u32,
+                    IDS_LIST_PARTITION_FORMAT,
                     if CurrentPartition == PartEntry {
                         0x002Au16
                     } else {
@@ -278,14 +278,14 @@ pub unsafe extern "C" fn ListPartition(argc: INT, argv: *mut PWSTR) -> EXIT_CODE
 
                 LoadStringW(
                     GetModuleHandle(core::ptr::null_mut()),
-                    (IDS_PARTITION_TYPE_LOGICAL) as UINT,
+                    IDS_PARTITION_TYPE_LOGICAL,
                     szPartitionTypeBuffer.as_mut_ptr(),
-                    (ARRAYSIZE!(szPartitionTypeBuffer)) as INT,
+                    (ARRAYSIZE!(szPartitionTypeBuffer)) as i32,
                 );
 
                 ConResPrintf(
                     StdOut,
-                    (IDS_LIST_PARTITION_FORMAT) as u32,
+                    IDS_LIST_PARTITION_FORMAT,
                     if CurrentPartition == PartEntry {
                         0x002Au16
                     } else {
@@ -314,27 +314,27 @@ pub unsafe extern "C" fn ListPartition(argc: INT, argv: *mut PWSTR) -> EXIT_CODE
                 PrintSize(PartOffset, szOffsetBuffer.as_mut_ptr(), ARRAYSIZE!(szOffsetBuffer));
 
                 if IsEqualGUID!(&(*PartEntry).__bindgen_anon_1.Gpt.PartitionType, &PARTITION_ENTRY_UNUSED_GUID) {
-                    nPartitionType = IDS_PARTITION_TYPE_UNUSED;
+                    nPartitionType = (IDS_PARTITION_TYPE_UNUSED) as i32;
                 } else if IsEqualGUID!(&(*PartEntry).__bindgen_anon_1.Gpt.PartitionType, &PARTITION_BASIC_DATA_GUID) {
-                    nPartitionType = IDS_PARTITION_TYPE_PRIMARY;
+                    nPartitionType = (IDS_PARTITION_TYPE_PRIMARY) as i32;
                 } else if IsEqualGUID!(&(*PartEntry).__bindgen_anon_1.Gpt.PartitionType, &PARTITION_SYSTEM_GUID) {
-                    nPartitionType = IDS_PARTITION_TYPE_SYSTEM;
+                    nPartitionType = (IDS_PARTITION_TYPE_SYSTEM) as i32;
                 } else if IsEqualGUID!(&(*PartEntry).__bindgen_anon_1.Gpt.PartitionType, &PARTITION_MSFT_RESERVED_GUID) {
-                    nPartitionType = IDS_PARTITION_TYPE_RESERVED;
+                    nPartitionType = (IDS_PARTITION_TYPE_RESERVED) as i32;
                 } else {
-                    nPartitionType = IDS_PARTITION_TYPE_UNKNOWN;
+                    nPartitionType = (IDS_PARTITION_TYPE_UNKNOWN) as i32;
                 }
 
                 LoadStringW(
                     GetModuleHandle(core::ptr::null_mut()),
-                    (nPartitionType) as UINT,
+                    (nPartitionType) as u32,
                     szPartitionTypeBuffer.as_mut_ptr(),
-                    (ARRAYSIZE!(szPartitionTypeBuffer)) as INT,
+                    (ARRAYSIZE!(szPartitionTypeBuffer)) as i32,
                 );
 
                 ConResPrintf(
                     StdOut,
-                    (IDS_LIST_PARTITION_FORMAT) as u32,
+                    IDS_LIST_PARTITION_FORMAT,
                     if CurrentPartition == PartEntry {
                         0x002Au16
                     } else {
@@ -365,24 +365,24 @@ pub unsafe extern "C" fn PrintVolume(VolumeEntry: PVOLENTRY) {
 
     match (*VolumeEntry).VolumeType as u32 {
         VOLUME_TYPE_CDROM => {
-            nVolumeType = IDS_VOLUME_TYPE_DVD;
+            nVolumeType = (IDS_VOLUME_TYPE_DVD) as i32;
         }
         VOLUME_TYPE_PARTITION => {
-            nVolumeType = IDS_VOLUME_TYPE_PARTITION;
+            nVolumeType = (IDS_VOLUME_TYPE_PARTITION) as i32;
         }
         VOLUME_TYPE_REMOVABLE => {
-            nVolumeType = IDS_VOLUME_TYPE_REMOVABLE;
+            nVolumeType = (IDS_VOLUME_TYPE_REMOVABLE) as i32;
         }
         VOLUME_TYPE_UNKNOWN | _ => {
-            nVolumeType = IDS_VOLUME_TYPE_UNKNOWN;
+            nVolumeType = (IDS_VOLUME_TYPE_UNKNOWN) as i32;
         }
     }
 
     LoadStringW(
         GetModuleHandle(core::ptr::null_mut()),
-        (nVolumeType) as UINT,
+        (nVolumeType) as u32,
         szVolumeTypeBuffer.as_mut_ptr(),
-        (ARRAYSIZE!(szVolumeTypeBuffer)) as INT,
+        (ARRAYSIZE!(szVolumeTypeBuffer)) as i32,
     );
 
     PrintSize(
@@ -395,22 +395,22 @@ pub unsafe extern "C" fn PrintVolume(VolumeEntry: PVOLENTRY) {
     if (*VolumeEntry).IsSystem != 0 {
         LoadStringW(
             GetModuleHandle(core::ptr::null_mut()),
-            (IDS_INFO_SYSTEM) as UINT,
+            IDS_INFO_SYSTEM,
             szInfoBuffer.as_mut_ptr(),
-            (ARRAYSIZE!(szInfoBuffer)) as INT,
+            (ARRAYSIZE!(szInfoBuffer)) as i32,
         );
     } else if (*VolumeEntry).IsBoot != 0 {
         LoadStringW(
             GetModuleHandle(core::ptr::null_mut()),
-            (IDS_INFO_BOOT) as UINT,
+            IDS_INFO_BOOT,
             szInfoBuffer.as_mut_ptr(),
-            (ARRAYSIZE!(szInfoBuffer)) as INT,
+            (ARRAYSIZE!(szInfoBuffer)) as i32,
         );
     }
 
     ConResPrintf(
         StdOut,
-        (IDS_LIST_VOLUME_FORMAT) as u32,
+        IDS_LIST_VOLUME_FORMAT,
         if CurrentVolume == VolumeEntry {
             0x002Au16
         } else {
@@ -440,8 +440,8 @@ pub unsafe extern "C" fn ListVolume(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
     let mut VolumeEntry: *mut VOLENTRY;
 
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
-    ConResPuts(StdOut, (IDS_LIST_VOLUME_HEAD) as UINT);
-    ConResPuts(StdOut, (IDS_LIST_VOLUME_LINE) as UINT);
+    ConResPuts(StdOut, IDS_LIST_VOLUME_HEAD);
+    ConResPuts(StdOut, IDS_LIST_VOLUME_LINE);
 
     Entry = VolumeListHead.Flink;
     while Entry != &mut VolumeListHead {

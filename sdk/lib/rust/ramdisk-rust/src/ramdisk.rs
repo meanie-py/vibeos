@@ -401,7 +401,6 @@ pub unsafe extern "system" fn RamdiskCreateDiskDevice(
     let DiskType: ULONG;
     let Length: ULONG;
     let mut Status: NTSTATUS;
-    let DeviceObject: *mut PDEVICE_OBJECT = core::ptr::null_mut();
     let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
     let DriveExtension: PRAMDISK_DRIVE_EXTENSION;
     let mut Buffer: PVOID;
