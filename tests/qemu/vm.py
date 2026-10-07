@@ -2016,6 +2016,25 @@ class QemuVM:
             "nvme,serial=VIBEOSNVME0,drive=nvme0,addr=0x9",
         ]
 
+    def _virtio_mmio_disk_args(self) -> list[str]:
+        """VIBEOS_QEMU_VIRTIO_MMIO_DISK=1 (arm64) attaches a second virtio-blk-device
+        holding the USB stick's 64M MBR + FAT16 image, for vioblk's virtio-mmio path
+        (the HAL publishes the slot from ACPI; vioblk-rust/src/pnp.rs drives it). The
+        default scratch disk is on the same transport but blank, so it proves the
+        disk comes up and nothing about the file system above it."""
+        flag = os.environ.get("VIBEOS_QEMU_VIRTIO_MMIO_DISK", "").strip()
+        if flag not in ("1", "true", "yes") or not self.config.arch.startswith("arm64"):
+            return []
+        disk = self.scratch_path.parent / "viommiodisk.qcow2"
+        if not disk.exists():
+            make_usb_stick_image(disk)
+        return [
+            "-drive",
+            f"file={disk},format=qcow2,if=none,id=viommio0",
+            "-device",
+            "virtio-blk-device,drive=viommio0",
+        ]
+
     def _set_live_tee(self) -> None:
         """Tee to the caller's owned log, or the legacy per-arch live path."""
         # ASCII-only header: the tee file is latin-1 (byte-faithful to the serial stream).
@@ -2241,6 +2260,7 @@ class QemuVM:
             *self._scratch_device_args(),
             *self._usb_disk_args(),
             *self._nvme_args(),
+            *self._virtio_mmio_disk_args(),
             *self._temp_disk_args(),
         ]
         self._prepared_arch_args = (

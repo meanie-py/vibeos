@@ -12681,7 +12681,10 @@ introduced at any heap exit — it is an external stray write.**
   2. **The driver raised an interrupt before its framework opened the ISR gate.** usbport
      connects the interrupt, calls the miniport's StartController, and only *then* sets
      the flags its ISR wrapper checks. A StartController that enables controller
-     interrupts and issues a command gets its completion interrupt declined.
+     interrupts and issues a command gets its completion interrupt declined. A driver's
+     own gate does the same: vioblk's virtio-mmio path (2026-10-06) set its ISR's `armed`
+     flag after IoConnectInterrupt returned, and the slot's line was already up from
+     device setup. Ack the device's pending status and arm the ISR *before* connecting.
   3. **A polled driver answered "not mine" without reading the device's status.** On x86
      the symptom is scsiport's `[SCSIPORT] Isr entry count=100000` and a silent hang
      (vioblk, 2026-10-05). A virtio INTx stays asserted until the ISR status register is

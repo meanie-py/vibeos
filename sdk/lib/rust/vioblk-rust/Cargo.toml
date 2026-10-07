@@ -5,7 +5,10 @@
 # It presents one SCSI disk per virtio-blk PCI function and turns the SCSI commands
 # disk.sys/classpnp send (INQUIRY, READ CAPACITY, MODE SENSE, READ/WRITE 10/16, flush) into
 # virtio-blk requests through the `virtio-drivers` crate, which the netstack already uses
-# for virtio-net. Polled and synchronous: each request completes inside HwStartIo.
+# for virtio-net. Interrupt-driven: HwStartIo queues a transfer and HwInterrupt completes it.
+#
+# On arm64 it is also the PnP driver for virtio-mmio block slots, which SCSIPORT's bus scan
+# cannot reach (src/pnp.rs): one disk PDO per slot for disk.sys, on the scsidisk-rust layer.
 #
 # Driver-private layouts (HW_INITIALIZATION_DATA, PORT_CONFIGURATION_INFORMATION, the SRB)
 # come from the gen_driver_types.sh substrate (src/types_*.rs, `gen_driver_types.sh vioblk`).
@@ -23,4 +26,5 @@ crate-type = ["staticlib"]
 [dependencies]
 panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
+scsidisk-rust = { path = "../scsidisk-rust" }
 virtio-drivers = { version = "0.13.0", default-features = false }
