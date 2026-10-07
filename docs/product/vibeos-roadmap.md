@@ -779,14 +779,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   shell32's 14 linked delay DLLs. With the directory present, sdk's delayimp_nohook apitest
   finally runs instead of skipping: 18 tests, 0 failures, i386 (`tools/payloads/delayimp`;
   the sweep now streams a single-test binary's output instead of only its first line).
-- **delayimp apitests: the hook variants die with exit 128** (OPEN, 2026-10-06, i386).
-  `delayimp_globalhook` and `delayimp_runtimehook` print the directory trace line, then exit
-  128 with no summary and no failure line, so the process dies inside the first hooked delay
-  load (`mmGetCurrentTask`). It happens identically with the C and the Rust runtime (A/B,
-  2026-10-04), so the cause is shared: the generated thunks, or the hooks' contract
-  (`DliHook` rewrites `szDll`/`szProcName` in place and returns fake HMODULEs). delayimp-rt's
-  hook type is `extern "system"`, which is right. Next step: run it under the debug toolkit and
-  break in `DliHook`.
+- **delayimp apitests: the hook variants died with exit 128** (FIXED 2026-10-06, i386). Two
+  causes, neither in the delay-load runtime. (1) kernel32's `IsBad*Ptr` family never probed:
+  the C's probe was a non-volatile self-copy that LLVM deleted, and its `_SEH2_EXCEPT` was
+  commented out, so every non-NULL pointer was "good". The test's `UnProtect` therefore
+  skipped `VirtualProtect` before rewriting an import name in `.rdata`, and the write was a
+  second-chance AV (csrss ends such a process with 0x80). They now walk `VirtualQuery`
+  regions; `sehtest`'s `bad-ptr-probes` covers them on all three arches. (2) The test
+  recovers from the helper's `VcppException` in an `_SEH2_EXCEPT` filter, which is dead
+  under `_USE_DUMMY_PSEH`. The three test binaries now build with real SEH the kmtests'
+  way (`_USE_NATIVE_SEH` + the `-windows-msvc` retarget). All three pass: nohook 18,
+  globalhook 396, runtimehook 396, 0 failures (`tools/payloads/delayimp`).
+- **i386: an unhandled continuable exception RETURNS from `RtlRaiseException`** (OPEN,
+  2026-10-06). `sdk/lib/rtl/i386/except_asm.s`'s `_USE_DUMMY_PSEH` "safety net" returns to
+  the caller when no handler takes a software exception that is not NONCONTINUABLE, instead
+  of raising it second-chance. With dummy PSEH most `_SEH2_EXCEPT`s are dead, so this is
+  load-bearing, but it also hides real failures: the delayimp test's unhandled
+  `0xC06D007F` came back as the helper returning NULL, and the process died at eip 0 several
+  frames later. Retire it with user-mode dummy PSEH; until then, an AV at a NULL eip right
+  after a `RaiseException` is this.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
   `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs
