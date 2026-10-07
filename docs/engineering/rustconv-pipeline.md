@@ -573,6 +573,19 @@ largest block of its unresolved names. Now, after `resolve`:
 
 Cost: atapi's 44 helpers came to $0.06 on DeepSeek, thinking off.
 
+Measured against what it fixed, the header pass was the smaller win: atapi went 374 -> 361 on
+amd64. The same night's two $0 tool fixes did more:
+
+- **`resolve` prunes facts the island now defines.** A prelude fact is a stand-in for a
+  constant the island lacks. When a later resolve widens the island (`island_headers`), each
+  stale fact becomes a second definition: atapi gained ata_shared.h after the facts pass had
+  evaluated 47 of its constants, giving 47 E0428s (361 -> 317).
+- **crate-repair `bitfield_accessor` (E0615).** bindgen emits a C bitfield as a getter `F()`
+  and a setter `set_F(v)`. A read becomes the getter; a plain or compound assignment statement
+  becomes `set_F((v) as _)` (the setter masks to the width, as C's store truncates). An
+  assignment used as an expression, or a reference to the field, stays red. atapi had 101 per
+  arch (317 -> 206).
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it
