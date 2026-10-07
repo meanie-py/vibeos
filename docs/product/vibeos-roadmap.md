@@ -1730,12 +1730,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `-smp 4`: PASS 3 of 4 (59,153 / 63,700 / 902 copies, 0 silent). The fourth died BEFORE the
     probe ran, in first-boot setup: `BUGCHECK 0x50` on `0xfffffa800041d560`, faulting in
     `CmpFindSubKeyByName` entry (`cmlib-rust/src/cmindex.rs:1201`) under setupapi's install
-    work, i.e. a key-node pointer that was no longer mapped. OPEN, 1 in 8 arm64 `-smp 4`
-    boots that ran past setup, never seen at `-smp 1` or `-smp 2` in today's runs; the shape
-    fits a registry-lock hole (a cell pointer held across another CPU's bin change), not yet
-    shown. 2026-10-05: the hive cell-map race (HvpAddBin freeing a `BlockList` other CPUs
-    still index) was found and fixed under `-smp 2` and matches this shape; not re-run at
-    `-smp 4`, so this stays OPEN until it is. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
+    work, i.e. a key-node pointer that was no longer mapped. It was 1 in 8 arm64 `-smp 4`
+    boots that ran past setup. 2026-10-05: the hive cell-map race (HvpAddBin freeing a
+    `BlockList` other CPUs still index) was found and fixed under `-smp 2`; it matches this
+    shape. CLOSED 2026-10-07 on that fix: 8/8 arm64 `-smp 4` boots and 8/8 rpmprobe races
+    (43,929-62,117 copies, 0 silent, no bugcheck; runs 20261007-105543-x416okl3 and
+    20261007-112018-ezkfnnie). Reopen on any recurrence. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
     The `ke/ipi.rs` `== SYNCH_LEVEL` assert was already re-contracted to `>= DISPATCH_LEVEL`
     and no longer prints.
     amd64 `-smp 2` and `-smp 4`: FIXED 2026-10-04. The boot death seen 2026-09-25 was

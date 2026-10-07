@@ -2760,24 +2760,53 @@ class QemuVM:
         Output from before the snapshot belongs to the boot record, never to a flush."""
         self._boot_output += self.serial.read_available(timeout=0)
 
+    def _drain_paused_serial(self) -> str:
+        """Everything still in flight from a STOPPED guest: read until the line goes quiet.
+
+        A stopped guest prints nothing new, but bytes it printed just before the stop can
+        still be crossing the chardev socket, so one non-blocking read is not enough."""
+        out = ""
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            chunk = self.serial.read_available(timeout=0.3)
+            if not chunk:
+                break
+            out += chunk
+        return out
+
     def save_snapshot(self, name: str = "ready") -> None:
-        """Save VM state via QMP/HMP savevm."""
-        # Everything drained so far was printed BEFORE the snapshot: keep it (see
-        # _absorb_pending). restore_snapshot flushes what is left, and a restored guest
-        # never prints pre-snapshot output again.
-        self._absorb_pending()
-        result = self.qmp.hmp(f"savevm {name}")
+        """Save VM state via QMP/HMP savevm.
+
+        The guest is STOPPED around the save. Everything printed before the snapshot
+        belongs to the boot record (see _absorb_pending), and a running guest keeps
+        printing between the last read and the moment savevm freezes it: an arm64
+        `-smp 4` rpmprobe run printed `[RPMPROBE] done` 300 bytes into that gap, the
+        restore threw it away, and the payload failed with its marker in its own
+        serial log (2026-10-07)."""
+        self.qmp.hmp("stop")
+        try:
+            self._boot_output += self._drain_paused_serial()
+            result = self.qmp.hmp(f"savevm {name}")
+        finally:
+            self.qmp.hmp("cont")
         if "Error" in result:
             raise RuntimeError(f"savevm failed: {result}")
-        time.sleep(0.5)
 
     def restore_snapshot(self, name: str = "ready") -> None:
-        """Restore VM state via QMP/HMP loadvm."""
-        result = self.qmp.hmp(f"loadvm {name}")
+        """Restore VM state via QMP/HMP loadvm.
+
+        Output from the abandoned timeline is discarded while the guest is stopped,
+        BEFORE the load. Flushing after it instead discards whatever the restored guest
+        prints first, and a guest snapshotted mid-payload re-prints its payload's last
+        lines at once: the post-load flush ate the `[RPMPROBE] done` replay too."""
+        self.qmp.hmp("stop")
+        try:
+            self._drain_paused_serial()
+            result = self.qmp.hmp(f"loadvm {name}")
+        finally:
+            self.qmp.hmp("cont")
         if "Error" in result:
             raise RuntimeError(f"loadvm failed: {result}")
-        time.sleep(0.5)
-        self.serial.read_available(timeout=0.2)
 
     def serial_output(self, timeout: float = 1.0) -> str:
         """Read available serial output since last read."""

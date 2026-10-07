@@ -643,6 +643,17 @@ def _staged_payloads(repo: Path, arch: str) -> list[str]:
     return mod.read_stamp(repo / f"build-{arch}")
 
 
+def _guest_reached_desktop(results: list[dict]) -> bool:
+    """Whether the plain boots license the payload runs: some boot passed and every
+    failure was a launch failure. A boot that never launched (the host refused or
+    starved QEMU) says nothing about the guest. It still reds the run, but must not
+    throw the payload runs away: a loaded host once cost a whole regstress batch with
+    5/6 boots green."""
+    return any(r["ok"] for r in results) and all(
+        r["ok"] or r.get("classification") == "LAUNCH_FAIL" for r in results
+    )
+
+
 def _payload_stage(
     run: Run, repo: Path, arch: str, payloads: str, idx: int = 0, total: int = 1
 ) -> None:
@@ -1119,7 +1130,7 @@ def smoke(args, repo: Path) -> int:
         payloads = f"{payloads},doom".strip(",")
     # --repeat N soaks the payload too: a payload flake (the app sweep's intermittent crash) is
     # exactly what N runs are for, and one payload boot after N plain boots cannot see it.
-    if payloads and npass == total:
+    if payloads and _guest_reached_desktop(results):
         for i in range(total):
             _payload_stage(run, repo, arch, payloads, idx=i, total=total)
 

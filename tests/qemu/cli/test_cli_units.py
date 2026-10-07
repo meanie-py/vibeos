@@ -10489,6 +10489,57 @@ def test_a_payload_marker_printed_during_the_settle_survives_the_snapshot_restor
     assert "[UCRTDIFF] done" in vm._boot_output
 
 
+class _GuestSerial:
+    """A serial line fed by a fake guest: `print` appends, reads consume."""
+
+    def __init__(self) -> None:
+        self.buf, self.pos = "", 0
+
+    def read_available(self, timeout: float = 0) -> str:
+        out, self.pos = self.buf[self.pos :], len(self.buf)
+        return out
+
+
+class _GuestQmp:
+    """HMP with a guest behind it: output already crossing the socket when `stop` lands,
+    and a snapshot taken mid-payload that re-prints the payload's last line on load."""
+
+    def __init__(self, serial: _GuestSerial, in_flight: str, replay: str) -> None:
+        self.serial, self.in_flight, self.replay = serial, in_flight, replay
+        self.running, self.seen = True, []
+
+    def hmp(self, cmd: str) -> str:
+        self.seen.append(cmd)
+        if cmd == "stop":
+            self.running = False
+            self.serial.buf += self.in_flight
+            self.in_flight = ""
+        elif cmd == "cont":
+            self.running = True
+        elif cmd.startswith("loadvm"):
+            assert not self.running, "loadvm on a running guest races the drain"
+            self.serial.buf += self.replay
+        return ""
+
+
+def test_a_marker_printed_around_the_snapshot_reaches_the_test(monkeypatch):
+    """arm64 -smp 4 rpmprobe, 2026-10-07: `[RPMPROBE] done` landed between the last
+    boot read and savevm, and the restored guest re-printed it at once. The old restore
+    flushed after loadvm and ate both, so the payload failed with the marker in its own
+    serial log. Pausing the guest closes both gaps."""
+    monkeypatch.setattr(vm_mod.time, "sleep", lambda s: None)
+    vm = object.__new__(vm_mod.QemuVM)
+    serial = _GuestSerial()
+    qmp = _GuestQmp(serial, "[RPMPROBE] done\n", "[RPMPROBE] done\n")
+    vm.serial, vm.qmp = cast(Any, serial), cast(Any, qmp)
+    vm._boot_output = "...shell ready\n"
+    vm.save_snapshot("ready")
+    assert "[RPMPROBE] done" in vm._boot_output
+    vm.restore_snapshot("ready")
+    assert "[RPMPROBE] done" in serial.read_available()
+    assert qmp.running and qmp.seen[-1] == "cont"
+
+
 def _load_payload_compile():
     import importlib.util
 
@@ -11070,3 +11121,14 @@ def test_staging_amd64_build_holds_build_i386_still(tmp_path, monkeypatch):
     assert not held("amd64", no_wow64_stage=True)
     assert not held("i386", no_wow64_stage=False)
     assert not held("arm64", no_wow64_stage=False)
+
+
+def test_a_host_launch_failure_does_not_cancel_the_payload_runs():
+    from . import smoke as smoke_mod
+
+    ok = {"ok": True}
+    launch = {"ok": False, "classification": "LAUNCH_FAIL"}
+    hang = {"ok": False, "classification": "HANG_TIMEOUT"}
+    assert smoke_mod._guest_reached_desktop([ok, launch, ok])
+    assert not smoke_mod._guest_reached_desktop([ok, hang, ok])
+    assert not smoke_mod._guest_reached_desktop([launch, launch])
