@@ -130,6 +130,10 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
         path = workspace / rel
         if exclude in path.parents or "/target/" in rel:
             continue
+        # Test harnesses are not the tree's declarations: diskpart got `_wfopen` and `fgetws`
+        # from msvcrt-difftest/tests/file.rs, typed with that file's private `FILEP`.
+        if "/tests/" in f"/{rel}" or re.search(r"(?:^|/)[\w-]*-difftest/", rel):
+            continue
         try:
             src = path.read_text(errors="replace")
         except OSError:
