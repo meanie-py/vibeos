@@ -804,14 +804,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   under `_USE_DUMMY_PSEH`. The three test binaries now build with real SEH the kmtests'
   way (`_USE_NATIVE_SEH` + the `-windows-msvc` retarget). All three pass: nohook 18,
   globalhook 396, runtimehook 396, 0 failures (`tools/payloads/delayimp`).
-- **i386: an unhandled continuable exception RETURNS from `RtlRaiseException`** (OPEN,
-  2026-10-06). `sdk/lib/rtl/i386/except_asm.s`'s `_USE_DUMMY_PSEH` "safety net" returns to
-  the caller when no handler takes a software exception that is not NONCONTINUABLE, instead
-  of raising it second-chance. With dummy PSEH most `_SEH2_EXCEPT`s are dead, so this is
-  load-bearing, but it also hides real failures: the delayimp test's unhandled
-  `0xC06D007F` came back as the helper returning NULL, and the process died at eip 0 several
-  frames later. Retire it with user-mode dummy PSEH; until then, an AV at a NULL eip right
-  after a `RaiseException` is this.
+- **i386/amd64: an unhandled continuable exception RETURNED from `RtlRaiseException`**
+  (FIXED, 2026-10-07). Both arches' `except_asm` carried a `_USE_DUMMY_PSEH` "safety net"
+  that resumed the caller when no handler took a non-NONCONTINUABLE software exception
+  (i386: every code; amd64: codes below 0xC0000000) instead of raising it second-chance.
+  It hid real failures: the delayimp test's unhandled `0xC06D007F` came back as the
+  helper returning NULL, and the process died at eip 0 several frames later. arm64's Rust
+  `RtlRaiseException` never had one, which is what showed it was not load-bearing; both
+  nets are gone, and smoke ×3 plus `appstorm` on i386 and amd64 (43/43 each) show no
+  second-chance deaths. An unhandled `RaiseException` now ends the process at the raise,
+  as on Windows: read the `[KI-EXC] ... second chance` line. STILL OWED: the sibling net
+  in `KiUserExceptionDispatcher` (`dll/ntdll/dispatch/{i386,amd64,arm64}/dispatch.S`)
+  resumes kernel-delivered continuable exceptions below 0xC0000000, chiefly a user-mode
+  `int3` with no debugger, which Windows would kill.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
   `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs
