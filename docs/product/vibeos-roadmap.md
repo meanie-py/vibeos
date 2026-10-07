@@ -966,14 +966,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
     without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
     i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
-  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (OPEN, unowned, found
-    2026-10-06; about 8 of 45 `smoke:amd64-bios` gate boots that day, across lanes). The lane
-    boots from a USB stick over xHCI with an NVMe disk attached. Usually csrss takes
-    `0xC0000006` (STATUS_IN_PAGE_ERROR) at the same ntdll address and the boot hangs; once the
-    font driver took it in kernel mode as BUGCHECK 0x1E in `ftfd.dll`. Every amd64-bios boot,
-    passing ones included, prints 9 `ASSERT FAILED: !Pkt->SlistEntry.Next at xferpkt.rs:706`
-    (classpnp reusing a transfer packet still on its free list), which is the first suspect.
-    Runs: 20261006-041704-og7v50sd, 20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
+  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-07; found
+    2026-10-06, 15 of 80 `smoke:amd64-bios` runs over 10-06/07 across lanes). The lane boots
+    from a USB stick over xHCI with an NVMe disk attached. Usually csrss took `0xC0000006`
+    (STATUS_IN_PAGE_ERROR) on a data read in ntdll and the boot hung; sometimes a kernel-mode
+    BUGCHECK 0x1E with the same code. Cause: classpnp's `ddk_shims.rs` defined
+    `RtlInterlockedPushEntrySList`/`PopEntrySList` as no-op stubs, and a local definition beats
+    the importlib, so the transfer-packet free list and the SRB lookaside never held anything:
+    every request allocated fresh and leaked. Its `SimplePopSlist` also skipped the C's
+    `Next = NULL`, which was the 9 `ASSERT FAILED: !Pkt->SlistEntry.Next` per boot. Fix: the
+    shims forward to `ExpInterlocked*` (64-bit) and FASTCALL `Interlocked*` (i386), verified as
+    imports in classpnp.sys; `create.rs` takes the real lookaside inline instead of a
+    null-returning stub. After: 16/16 amd64-bios boots, 0 in-page errors, 0 asserts (runs
+    20261007-144313-uhji_66e, 20261007-145433-6emhz3k9). How the leak turned into a failed
+    read is not established; reopen on any recurrence. Earlier runs: 20261006-041704-og7v50sd,
+    20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
   - **arm64 FAULTLOOP was the detector, not a loop** (RESOLVED 2026-10-04). The report
     fingerprinted a fault as (VA, PC, TTBR0); a stream of DISTINCT faults sharing those --
     Cc reading many small files (rapps' cab extraction), each new VACB recycled onto the same

@@ -284,7 +284,6 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 }
 
 // ============================ Ex timer / lookaside (stubs) ============================
-#[no_mangle] pub unsafe extern "C" fn ExAllocateFromNPagedLookasideList(l: PVOID) -> PVOID { core::ptr::null_mut() }
 #[no_mangle] pub unsafe extern "C" fn ExSetTimer(t: PVOID, due: i64, period: i64, p: PVOID) -> u8 { 0 }
 #[no_mangle] pub unsafe extern "C" fn ExDeleteTimer(t: PVOID, cancel: u8, wait: u8, p: PVOID) -> u8 { 0 }
 #[no_mangle] pub unsafe extern "C" fn ExInitializeSetTimerParameters(p: PVOID) {}
@@ -298,13 +297,35 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 #[no_mangle] pub unsafe extern "C" fn SimpleInitSlistHdr(h: *mut PVOID) { *h = core::ptr::null_mut(); }
 #[no_mangle] pub unsafe extern "C" fn SimpleIsSlistEmpty(h: *mut PVOID) -> u8 { (*h).is_null() as u8 }
 #[no_mangle] pub unsafe extern "C" fn SimplePushSlist(h: *mut PVOID, e: *mut PVOID) { *e = *h; *h = e as PVOID; }
+// Pop clears the entry's link, as classp.h's FORCEINLINE does: Enqueue/DestroyTransferPacket
+// assert `!Pkt->SlistEntry.Next`, and a stale link tripped that 9 times on every boot.
 #[no_mangle] pub unsafe extern "C" fn SimplePopSlist(h: *mut PVOID) -> PVOID {
-    let e = *h; if !e.is_null() { *h = *(e as *mut PVOID); } e
+    let e = *h; if !e.is_null() { *h = *(e as *mut PVOID); *(e as *mut PVOID) = core::ptr::null_mut(); } e
 }
 
 // ============================ Rtl helpers ============================
-#[no_mangle] pub unsafe extern "system" fn RtlInterlockedPushEntrySList(head: PVOID, entry: PVOID) -> PVOID { core::ptr::null_mut() }
-#[no_mangle] pub unsafe extern "system" fn RtlInterlockedPopEntrySList(head: PVOID) -> PVOID { core::ptr::null_mut() }
+// ntkrnl-sys binds the interlocked SList to `RtlInterlocked{Push,Pop}EntrySList`, which is
+// right inside ntoskrnl and unlinkable from a driver: the kernel exports the pair as
+// `ExpInterlocked*` on 64-bit and as FASTCALL `Interlocked*` on i386 (ntoskrnl.spec:175-176,
+// 327-328). These forward to those exports. They were no-op stubs from 2026-06-10 to
+// 2026-10-07, and a local `#[no_mangle]` definition beats the importlib, so every push
+// dropped its entry and every pop came back empty: each transfer packet and each lookaside
+// SRB was allocated fresh and leaked. Nonpaged pool drained per disk request until paging
+// reads failed -- amd64-bios's STATUS_IN_PAGE_ERROR (C0000006) boots.
+#[cfg(not(target_arch = "x86"))]
+extern "system" {
+    fn ExpInterlockedPushEntrySList(head: PVOID, entry: PVOID) -> PVOID;
+    fn ExpInterlockedPopEntrySList(head: PVOID) -> PVOID;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    #[link_name = "InterlockedPushEntrySList"]
+    fn ExpInterlockedPushEntrySList(head: PVOID, entry: PVOID) -> PVOID;
+    #[link_name = "InterlockedPopEntrySList"]
+    fn ExpInterlockedPopEntrySList(head: PVOID) -> PVOID;
+}
+#[no_mangle] pub unsafe extern "system" fn RtlInterlockedPushEntrySList(head: PVOID, entry: PVOID) -> PVOID { ExpInterlockedPushEntrySList(head, entry) }
+#[no_mangle] pub unsafe extern "system" fn RtlInterlockedPopEntrySList(head: PVOID) -> PVOID { ExpInterlockedPopEntrySList(head) }
 #[no_mangle] pub unsafe extern "C" fn RtlStringCbPrintfW(dst: *mut u16, cb: usize, fmt: *const u16) -> NTSTATUS { if cb>=2 { *dst = 0; } 0 }
 #[no_mangle] pub unsafe extern "C" fn RtlStringCchPrintfA(dst: *mut i8, cch: usize, fmt: *const i8) -> NTSTATUS { if cch>=1 { *dst = 0; } 0 }
 #[no_mangle] pub unsafe extern "C" fn RtlULongAdd(a: u32, b: u32, out: *mut u32) -> NTSTATUS {
