@@ -15,23 +15,23 @@ unsafe extern "C" fn ShowFileSystemInfo(VolumeEntry: PVOLENTRY) {
     let mut pszSizeUnit: PWSTR = RUSTCONV_WSTR_96A296D224F2.as_ptr().cast_mut();
     let mut ulClusterSize: u32;
 
-    ConResPuts(StdOut, (IDS_FILESYSTEMS_CURRENT) as UINT);
+    ConResPuts(StdOut, IDS_FILESYSTEMS_CURRENT);
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
 
-    ConResPrintf(StdOut, (IDS_FILESYSTEMS_TYPE) as u32, (*VolumeEntry).pszFilesystem);
+    ConResPrintf(StdOut, IDS_FILESYSTEMS_TYPE, (*VolumeEntry).pszFilesystem);
 
     ulClusterSize = (*VolumeEntry).SectorsPerAllocationUnit.wrapping_mul((*VolumeEntry).BytesPerSector);
-    if (ulClusterSize as u64) >= SIZE_10MB {
-        ulClusterSize = (RoundingDivide((ulClusterSize) as ULONGLONG, SIZE_1MB)) as u32;
+    if ulClusterSize >= SIZE_10MB {
+        ulClusterSize = (RoundingDivide((ulClusterSize) as ULONGLONG, (SIZE_1MB) as ULONGLONG)) as u32;
         pszSizeUnit = RUSTCONV_WSTR_6096F1180D1E.as_ptr().cast_mut();
-    } else if (ulClusterSize as u64) >= SIZE_10KB {
-        ulClusterSize = (RoundingDivide((ulClusterSize) as ULONGLONG, SIZE_1KB)) as u32;
+    } else if ulClusterSize >= SIZE_10KB {
+        ulClusterSize = (RoundingDivide((ulClusterSize) as ULONGLONG, (SIZE_1KB) as ULONGLONG)) as u32;
         pszSizeUnit = RUSTCONV_WSTR_B00670AF8E90.as_ptr().cast_mut();
     }
 
     wsprintf(szBuffer.as_mut_ptr(), RUSTCONV_WSTR_AFA8EDFD6C6D.as_ptr(), ulClusterSize, pszSizeUnit);
-    ConResPrintf(StdOut, (IDS_FILESYSTEMS_CLUSTERSIZE) as u32, szBuffer.as_mut_ptr());
-    ConResPrintf(StdOut, (IDS_FILESYSTEMS_SERIAL_NUMBER) as u32, (*VolumeEntry).SerialNumber);
+    ConResPrintf(StdOut, IDS_FILESYSTEMS_CLUSTERSIZE, szBuffer.as_mut_ptr());
+    ConResPrintf(StdOut, IDS_FILESYSTEMS_SERIAL_NUMBER, (*VolumeEntry).SerialNumber);
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
 }
 
@@ -46,12 +46,12 @@ unsafe extern "C" fn ShowInstalledFileSystems(mut VolumeEntry: PVOLENTRY) {
 
     LoadStringW(
         GetModuleHandle(core::ptr::null_mut()),
-        (IDS_FILESYSTEMS_DEFAULT) as UINT,
+        IDS_FILESYSTEMS_DEFAULT,
         szDefault.as_mut_ptr(),
-        (ARRAYSIZE!(szDefault)) as INT,
+        (ARRAYSIZE!(szDefault)) as i32,
     );
 
-    ConResPuts(StdOut, (IDS_FILESYSTEMS_FORMATTING) as UINT);
+    ConResPuts(StdOut, IDS_FILESYSTEMS_FORMATTING);
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
 
     dwIndex = 0;
@@ -71,9 +71,9 @@ unsafe extern "C" fn ShowInstalledFileSystems(mut VolumeEntry: PVOLENTRY) {
             wcscat(szBuffer.as_mut_ptr(), szDefault.as_mut_ptr());
         }
 
-        ConResPrintf(StdOut, (IDS_FILESYSTEMS_TYPE) as u32, szBuffer.as_mut_ptr());
+        ConResPrintf(StdOut, IDS_FILESYSTEMS_TYPE, szBuffer.as_mut_ptr());
         wcscpy(szBuffer.as_mut_ptr(), RUSTCONV_WSTR_28276425D458.as_ptr());
-        ConResPrintf(StdOut, (IDS_FILESYSTEMS_CLUSTERSIZE) as u32, szBuffer.as_mut_ptr());
+        ConResPrintf(StdOut, IDS_FILESYSTEMS_CLUSTERSIZE, szBuffer.as_mut_ptr());
         ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
 
         dwIndex = dwIndex.wrapping_add(1);
@@ -82,7 +82,7 @@ unsafe extern "C" fn ShowInstalledFileSystems(mut VolumeEntry: PVOLENTRY) {
 #[no_mangle]
 pub unsafe extern "C" fn filesystems_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
     if CurrentVolume.is_null() {
-        ConResPuts(StdOut, (IDS_SELECT_NO_VOLUME) as UINT);
+        ConResPuts(StdOut, IDS_SELECT_NO_VOLUME);
         return EXIT_SUCCESS;
     }
 

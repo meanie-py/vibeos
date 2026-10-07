@@ -204,6 +204,18 @@ else
     echo "[!] spawn32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD) -- the ladder will NOT stage"
 fi
 
+# apc32.exe — user APCs into 32-bit code (QueueUserAPC, ReadFileEx, timers) and
+# per-thread cleanup: Apc64.c, the x86-64 ladder's apc64, built at 32 bits.
+if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
+        -o "$HARNESS_BUILD/apc32.exe" "$HARNESS_SRC/Apc64.c" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+else
+    echo "[!] apc32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD) -- the ladder will NOT stage"
+fi
+
 # marshal32.exe — the M18 marshaller-verification guest: NtQueryInformationThread
 # TBI (verified against the guest's OWN TEB32), IOCP post/get sentinel round-trip
 # (NtRemoveIoCompletion out-slots + IOSB), EnumDisplayMonitors/GetMonitorInfo/
@@ -282,6 +294,16 @@ x64_guest spawn64.exe Spawn32.c "$K64"
 x64_guest apc64.exe Apc64.c "$K64"
 x64_guest marshal64.exe Marshal32.c "$U64" "$K64" "$(x64_lib dll/ntdll ntdll)" \
     "$(x64_lib dll/win32/ws2_32 ws2_32)"
+
+# xinject.exe -- spawn64's NATIVE helper (rung 13, XInject.c): built for each
+# host machine and staged as system32\xinject.exe on that arch's media. It is
+# no guest, so it links llvm-mingw's own kernel32/ntdll import libraries (by
+# name, nothing build-specific) and needs no build-* tree.
+for M in aarch64:arm64 x86_64:amd64; do
+    "$LLVM_MINGW/${M%%:*}-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,start \
+        -Wl,--subsystem,windows -Wl,--no-insert-timestamp \
+        -o "$HARNESS_BUILD/xinject-${M##*:}.exe" "$HARNESS_SRC/XInject.c" -lkernel32 -lntdll
+done
 
 echo
 echo "Built:"

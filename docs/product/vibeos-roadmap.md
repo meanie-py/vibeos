@@ -483,7 +483,7 @@ Full plan, oracles and safety rules:
 | # | Boss | First rung | Size | Status (2026-10-05) |
 |---|------|-----------|------|--------|
 | 12a | **Windows 10 kernel export surface**, shared by everything below | An import-gap census tool: missing exports across real Windows 10 drivers and apps, ranked | L | proposed |
-| 12b | **Modern hardware drivers**: KMDF (built, 1.17) on real drivers, NVMe (`nvme.sys` works on all three arches on MSI-X interrupts, 2026-10-07; queue depth next), NDIS 6, Vista audio stack, Wi-Fi, HID-over-I²C | NVMe StorPort miniport on the 7010 | XL | proposed |
+| 12b | **Modern hardware drivers**: KMDF (built, 1.17) on real drivers, NVMe (`nvme.sys` works on all three arches on MSI-X interrupts, 63 commands deep with direct DMA, 2026-10-07), NDIS 6, Vista audio stack, Wi-Fi, HID-over-I²C | NVMe StorPort miniport on the 7010 | XL | proposed |
 | 12c | **Real GPU**: XP x64 driver (XDDM), then WDDM 1.1, then WDDM 2.x (dxgkrnl + a CDD-style adapter so win32k keeps its interface) | Radeon HD 5450 on AMD's XP x64 driver | XXL | proposed |
 | 12d | **Latest Google Chrome**: Windows 10 user-mode surface (mostly Wine), then the sandbox's four kernel primitives (syscall filter, integrity levels, job limits, namespace isolation) plus Windows-exact ntdll stubs | `chrome --headless --no-sandbox --dump-dom` as a smoke ladder rung | XL | proposed |
 
@@ -617,9 +617,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   32-bit start to wow64.dll — which also fixes a NATIVE 64-bit creator's remote thread into a
   WoW64 process), and no native kernel32/msvcrt loads in a guest any more (ntdll's own `_errno`
   in a reserved TLS slot). That last fix exposed a latent WoW64 bug, also fixed: its fixed TLS
-  slots were never reserved, so the first `TlsAlloc` could take slot 1, the CPU area. Still
-  owed: CreateRemoteThread INTO an x86-64 guest from a non-x86-64 process. See
-  `../engineering/wow64-x64-guest-design.md`.
+  slots were never reserved, so the first `TlsAlloc` could take slot 1, the CPU area. Then
+  (spawn64 rungs 13-14, 2026-10-07): a NATIVE process's CreateRemoteThread/RtlCreateUserThread
+  into a running guest works (the guest's native loader hands the thread to wowx64), a guest
+  can start a native arm64 child (system32 hides only foreign DLLs from it now, as Windows on
+  ARM hides nothing), and TerminateProcess ends a spinning guest of either width. Nothing in
+  the thread/process matrix is owed; see `../engineering/wow64-x64-guest-design.md`.
 - **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
   lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
   captured mid-body of itself, so `ZwContinue` after a vectored handler's
@@ -823,21 +826,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the same binaries against the pre-takeover ucrtbase.dll (`24089de2c88`, Microsoft's C)
   staged beside them. The two agree failure for failure, so none of these is a Rust
   regression, but each is owed: `file` 10 failures of 120 (identical on both; was an AV
-  while the sweep ran it from the read-only CDFS); `misc` dies on an unmasked FP exception
-  (0xC0000090) or times out after calling the `fesetround`/`fegetenv` spec stubs, and its
-  math-errno checks (misc.c:774/776) fail on ours past the point where the baseline has
-  already crashed, so they are UNCOMPARED. The HANG is ROOT-CAUSED and FIXED (2026-10-03):
-  `log10(INFINITY)` never returned -- cnt-rust's `log10`/`pow`/`fmod` were ports of upstream's
-  placeholder C (`pow(2, 0.5) == 0` shipped in msvcrt.dll and ucrtbase.dll on every arch); they
-  are the `libm` crate's now, and the x87 asm on no-SSE i386 (`tools/payloads/matherrs` traces
-  Wine's test per call). The math-errno checks are FIXED (2026-10-04): cnt-rust's C89 set
-  reports through `__cnt_math_error` at Wine's `math_error` points, and `tools/payloads/matherrs`
-  (Wine's `test_math_errors`) is 304 checks, 0 failed on all three arches; misc.c:363 (`_EM_AMBIGUOUS`) is FIXED by the
-  i386 `_control87` in fenv.rs; `cpp` hangs past 120s; `string` fails two `mbstowcs` UTF-8 checks
+  while the sweep ran it from the read-only CDFS); `misc` (198,593 checks) is down to ONE failure as of 2026-10-07:
+  misc.c:1355, `clock()` ~0.8-3 s below its window measured from the process creation time
+  (TCG start-up latency or the clock base, not yet split). Its earlier deaths and failures
+  are all FIXED: the `log10(INFINITY)` hang (cnt-rust's `log10`/`pow`/`fmod` were ports of
+  upstream's placeholder C -- `pow(2, 0.5) == 0` shipped on every arch -- and are the `libm`
+  crate's now, x87 asm on no-SSE i386; `tools/payloads/matherrs` traces Wine's test per call),
+  the math-errno checks (cnt-rust reports through `__cnt_math_error` at Wine's `math_error`
+  points; `matherrs` is 304 checks, 0 failed on all three arches), misc.c:363
+  (`_EM_AMBIGUOUS`, the i386 `_control87` in fenv.rs), and misc.c:1126/1127 (gone by
+  2026-10-07; not re-bisected). `cpp` is 33 checks, 0 failed (FIXED 2026-10-07): it HUNG in
+  ntdll's `InterlockedPushEntrySList` -- the slist crate's i386 `cmpxchg8b` let LLVM put the
+  header pointer in ebx, which its own `xchg` then overwrote, so the CAS compared against the
+  entry and spun (also in ks.sys; `tools/scan_xchg_ebx_deref.py` now gates the class on every
+  i386 build) -- and then failed `__unDName`'s four ref-qualifier rows, the `#ifdef _UCRT`
+  arms the translation had pinned off for ucrtbase too. `string` fails two `mbstowcs` UTF-8 checks
   (string.c:831/835) -- ROOT-CAUSED, expected: kernel32 exports `IsValidLocaleName` only at
   `-version=0x600+` and this build is NT 5.2, so ucrtbase takes its downlevel locale path,
   where ".UTF-8" is not a code page and `en_US.UTF-8` resolves by LCID to ANSI 1252 (UCRT
-  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` dies on an invalid handle (0xC0000008). `misc` now runs to the end (198,593 checks, 2026-10-04) with 3 failures, identical with and without that day's vcstartup/TLS move (A/B on one tree): misc.c:1126/1127 (a `_mbstowcs`-class codepage conversion, `ret = 4`, `"a?"` for `"\x96\xd8"`) and misc.c:1355 (`clock()` ~3 s below its window measured from the process creation time, both runs; TCG start-up latency or the clock base, not yet split).
+  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` dies on an invalid handle (0xC0000008).
   `environ`, `printf` (1,950), `scanf` and `thread` (60) are clean on both. `thread` was
   an AV at EIP 0 until two fixes the same day: kernel32's `FindResourceA` asked for
   language 4 (LANG_CHINESE) instead of LANG_NEUTRAL, so EVERY ANSI resource lookup in the
@@ -963,14 +970,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
     without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
     i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
-  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (OPEN, unowned, found
-    2026-10-06; about 8 of 45 `smoke:amd64-bios` gate boots that day, across lanes). The lane
-    boots from a USB stick over xHCI with an NVMe disk attached. Usually csrss takes
-    `0xC0000006` (STATUS_IN_PAGE_ERROR) at the same ntdll address and the boot hangs; once the
-    font driver took it in kernel mode as BUGCHECK 0x1E in `ftfd.dll`. Every amd64-bios boot,
-    passing ones included, prints 9 `ASSERT FAILED: !Pkt->SlistEntry.Next at xferpkt.rs:706`
-    (classpnp reusing a transfer packet still on its free list), which is the first suspect.
-    Runs: 20261006-041704-og7v50sd, 20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
+  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-07; found
+    2026-10-06, 15 of 80 `smoke:amd64-bios` runs over 10-06/07 across lanes). The lane boots
+    from a USB stick over xHCI with an NVMe disk attached. Usually csrss took `0xC0000006`
+    (STATUS_IN_PAGE_ERROR) on a data read in ntdll and the boot hung; sometimes a kernel-mode
+    BUGCHECK 0x1E with the same code. Cause: classpnp's `ddk_shims.rs` defined
+    `RtlInterlockedPushEntrySList`/`PopEntrySList` as no-op stubs, and a local definition beats
+    the importlib, so the transfer-packet free list and the SRB lookaside never held anything:
+    every request allocated fresh and leaked. Its `SimplePopSlist` also skipped the C's
+    `Next = NULL`, which was the 9 `ASSERT FAILED: !Pkt->SlistEntry.Next` per boot. Fix: the
+    shims forward to `ExpInterlocked*` (64-bit) and FASTCALL `Interlocked*` (i386), verified as
+    imports in classpnp.sys; `create.rs` takes the real lookaside inline instead of a
+    null-returning stub. After: 16/16 amd64-bios boots, 0 in-page errors, 0 asserts (runs
+    20261007-144313-uhji_66e, 20261007-145433-6emhz3k9). How the leak turned into a failed
+    read is not established; reopen on any recurrence. Earlier runs: 20261006-041704-og7v50sd,
+    20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
   - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
     (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
     control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU
@@ -979,7 +993,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     re-read `Control` from the absolute-descriptor copy after branching on it in the header copy,
     so a racing SE_SELF_RELATIVE flip made it copy absolute pointer fields and then rebase them as
     self-relative offsets — a wild kernel address into `RtlValidSid`; fixed by pinning the
-    self-relative decision and header scalars from the first read. Baseline (reviewed, not bugs):
+    self-relative decision from the first read (the absolute re-read can no longer flip it). Baseline (reviewed, not bugs):
     `NtGdiCreateDIBSection` (header then full BITMAPINFO, size pinned from the kernel copy) and
     `NtUserInitializeClientPfnArrays` (owed, low-severity, init-time client-callback tables). Still
     blind: a fetch split across a syscall and a worker it calls. Field manual: "The double-fetch is
@@ -1740,12 +1754,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `-smp 4`: PASS 3 of 4 (59,153 / 63,700 / 902 copies, 0 silent). The fourth died BEFORE the
     probe ran, in first-boot setup: `BUGCHECK 0x50` on `0xfffffa800041d560`, faulting in
     `CmpFindSubKeyByName` entry (`cmlib-rust/src/cmindex.rs:1201`) under setupapi's install
-    work, i.e. a key-node pointer that was no longer mapped. OPEN, 1 in 8 arm64 `-smp 4`
-    boots that ran past setup, never seen at `-smp 1` or `-smp 2` in today's runs; the shape
-    fits a registry-lock hole (a cell pointer held across another CPU's bin change), not yet
-    shown. 2026-10-05: the hive cell-map race (HvpAddBin freeing a `BlockList` other CPUs
-    still index) was found and fixed under `-smp 2` and matches this shape; not re-run at
-    `-smp 4`, so this stays OPEN until it is. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
+    work, i.e. a key-node pointer that was no longer mapped. It was 1 in 8 arm64 `-smp 4`
+    boots that ran past setup. 2026-10-05: the hive cell-map race (HvpAddBin freeing a
+    `BlockList` other CPUs still index) was found and fixed under `-smp 2`; it matches this
+    shape. CLOSED 2026-10-07 on that fix: 8/8 arm64 `-smp 4` boots and 8/8 rpmprobe races
+    (43,929-62,117 copies, 0 silent, no bugcheck; runs 20261007-105543-x416okl3 and
+    20261007-112018-ezkfnnie). Reopen on any recurrence. Artifact: `~/vibeos-flake-farm/fails/smp-arm64-cm0x50-20261004/`.
     The `ke/ipi.rs` `== SYNCH_LEVEL` assert was already re-contracted to `>= DISPATCH_LEVEL`
     and no longer prints.
     amd64 `-smp 2` and `-smp 4`: FIXED 2026-10-04. The boot death seen 2026-09-25 was
@@ -4105,8 +4119,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the very signal `MsafdWaitForAlert` is about to wait for — missing the re-signal is a guest
   hang with no error printed anywhere. `IOCTL_AFD_SEND_DATAGRAM` was the last refusal in this
   family and is now marshalled too (see the entry below). Still OPEN: a guest `ApcRoutine`.
-- **A guest `ApcRoutine` is still refused, but NOT for the reason previously recorded — OPEN**
-  (2026-09-06). This entry said "no 64->32 user-APC dispatch"; that was written from the
+- **A guest `ApcRoutine` is still refused, but NOT for the reason previously recorded — FIXED
+  2026-10-07**: 32-bit user APCs (QueueUserAPC, ReadFileEx completion routines, waitable-timer
+  routines) run on both hosts, graded by the new `apc32.exe` (Apc64.c at 32 bits); IOCTL
+  completion routines are wired the same way but no guest grades them yet. The routine is queued as wow64's `Wow64ApcRoutine` with the guest's routine and
+  context packed into the 64-bit context, which runs the guest's own `KiUserApcDispatcher` in a
+  nested simulate (wow64_callback.c). It found an amd64 KERNEL bug on the way: the 64-bit
+  syscall trap frame never recorded CS, so a WoW64 thread's APC context resumed in compat mode
+  (field manual, "A WoW64 thread NtContinues a native context into 32-bit compat mode").
+  `NtQueryDirectoryFile`/`NtLockFile` still refuse async (they complete on a host IOSB).
+  Original entry (2026-09-06): This entry said "no 64->32 user-APC dispatch"; that was written from the
   refusal's own comment and is wrong. The guest-entry half EXISTS and is load-bearing:
   `Wow64pBuildLoaderApcFrame` (`wow64.c`) builds a `KiUserApcDispatcher`-ABI frame and
   `Wow64pKiUserApcDispatcher32` is resolved out of ntdll32 at startup, and that pair runs on

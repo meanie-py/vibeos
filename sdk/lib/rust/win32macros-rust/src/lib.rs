@@ -773,6 +773,112 @@ macro_rules! PAGE_ROUND_UP {
     };
 }
 
+/// `basetsd.h` — `PtrToUlong(p)` = `(ULONG)(ULONG_PTR)(p)`: the low 32 bits of the pointer.
+#[macro_export]
+macro_rules! PtrToUlong {
+    ($p:expr $(,)?) => {
+        (($p) as usize as u32)
+    };
+}
+
+/// `ntbasedef.h` — `DBG_UNREFERENCED_LOCAL_VARIABLE(L)` = `((void)(L))`.
+#[macro_export]
+macro_rules! DBG_UNREFERENCED_LOCAL_VARIABLE {
+    ($l:expr $(,)?) => {{
+        let _ = &$l;
+    }};
+}
+
+/// `mmfuncs.h` — `ALIGN_UP(size, type)` = `ALIGN_UP_BY(size, sizeof(type))`, rounding `size` up
+/// to a multiple of `sizeof(type)` in `ULONG_PTR` arithmetic.
+///
+/// The second argument is a TYPE in C. A translation that already lowered it to
+/// `core::mem::size_of::<T>() as U` is accepted too (the first arms): atapi's port wrote exactly
+/// that, and it names the same alignment.
+#[macro_export]
+macro_rules! ALIGN_UP {
+    ($size:expr, core::mem::size_of::<$t:ty>() $(as $u:ty)? $(,)?) => {
+        $crate::ALIGN_UP!($size, $t)
+    };
+    ($size:expr, size_of::<$t:ty>() $(as $u:ty)? $(,)?) => {
+        $crate::ALIGN_UP!($size, $t)
+    };
+    ($size:expr, $t:ty $(,)?) => {
+        ((($size) as usize).wrapping_add(core::mem::size_of::<$t>() - 1)
+            & !(core::mem::size_of::<$t>() - 1))
+    };
+}
+
+/// `ntbasedef.h` — `RTL_CONTAINS_FIELD(Struct, Size, Field)`: does a buffer of `Size` bytes at
+/// `Struct` reach the END of `Field`? C's comparison is an `int`, so this is `i32` 0/1.
+/// `Struct` is evaluated more than once, as in C.
+#[macro_export]
+macro_rules! RTL_CONTAINS_FIELD {
+    ($s:expr, $size:expr, $($f:ident).+ $(,)?) => {{
+        const fn __size<T>(_: *const T) -> usize {
+            core::mem::size_of::<T>()
+        }
+        let field = core::ptr::addr_of!((*$s).$($f).+);
+        ((field as *const u8).wrapping_add(__size(field))
+            <= ($s as *const u8).wrapping_add(($size) as usize)) as i32
+    }};
+}
+
+// ================= srb.h / ata.h — storage request macros =====================================
+// Each yields C's own result type (`int` for SRB_STATUS, the `(UCHAR)` cast for IDE_SET_*);
+// the conversion C does implicitly at the use (`Mode = IDE_SET_UDMA_MODE(m)` stores a UCHAR
+// into a ULONG) is the CALL SITE's, which crate-repair casts there. An `as _` here could not
+// infer under `match SRB_STATUS!(s) { .. }`.
+
+/// `srb.h` — `SRB_STATUS(Status)`: the status with its two flag bits cleared,
+/// SRB_STATUS_AUTOSENSE_VALID (`0x80`) and SRB_STATUS_QUEUE_FROZEN (`0x40`). `int` arithmetic in C.
+#[macro_export]
+macro_rules! SRB_STATUS {
+    ($s:expr $(,)?) => {
+        ((($s) as i32) & !(0x80 | 0x40))
+    };
+}
+
+/// `ata.h` — `IDE_SET_DEFAULT_PIO_MODE(mode)` = `(UCHAR)1`; `mode` is not evaluated.
+#[macro_export]
+macro_rules! IDE_SET_DEFAULT_PIO_MODE {
+    ($m:expr $(,)?) => {
+        1u8
+    };
+}
+
+/// `ata.h` — `IDE_SET_ADVANCE_PIO_MODE(mode)` = `(UCHAR)((1 << 3) | (mode))`.
+#[macro_export]
+macro_rules! IDE_SET_ADVANCE_PIO_MODE {
+    ($m:expr $(,)?) => {
+        (((1 << 3) | ($m)) as u8)
+    };
+}
+
+/// `ata.h` — `IDE_SET_SWDMA_MODE(mode)` = `(UCHAR)((1 << 4) | (mode))`.
+#[macro_export]
+macro_rules! IDE_SET_SWDMA_MODE {
+    ($m:expr $(,)?) => {
+        (((1 << 4) | ($m)) as u8)
+    };
+}
+
+/// `ata.h` — `IDE_SET_MWDMA_MODE(mode)` = `(UCHAR)((1 << 5) | (mode))`.
+#[macro_export]
+macro_rules! IDE_SET_MWDMA_MODE {
+    ($m:expr $(,)?) => {
+        (((1 << 5) | ($m)) as u8)
+    };
+}
+
+/// `ata.h` — `IDE_SET_UDMA_MODE(mode)` = `(UCHAR)((1 << 6) | (mode))`.
+#[macro_export]
+macro_rules! IDE_SET_UDMA_MODE {
+    ($m:expr $(,)?) => {
+        (((1 << 6) | ($m)) as u8)
+    };
+}
+
 // ================= constants bindgen folds away ===============================================
 
 /// `ntbasedef.h:619` — `#define UNICODE_NULL ((WCHAR)0)`. A cast expression, so bindgen drops it.
@@ -947,6 +1053,49 @@ mod tests {
         assert_eq!(PAGE_ROUND_UP!(0x1001u32), 0x2000);
         // Zero-extended: ULONG 0xFFFFFFFF is never a sign-extended -1 pointer.
         assert_eq!(UlongToPtr!(0xFFFF_FFFFu32) as usize, 0xFFFF_FFFFusize);
+    }
+
+    #[test]
+    fn ddk_pointer_alignment_and_field_macros() {
+        let p = 0x1_2345_6789usize as *const core::ffi::c_void;
+        assert_eq!(PtrToUlong!(p), 0x2345_6789);
+        // ALIGN_UP(5, ULONG) = 8; ALIGN_UP(8, ULONG) = 8; the size_of spelling is the same.
+        assert_eq!(ALIGN_UP!(5u32, u32), 8);
+        assert_eq!(ALIGN_UP!(8u32, u32), 8);
+        assert_eq!(ALIGN_UP!(37usize, core::mem::size_of::<u32>() as u32), 40);
+        #[repr(C)]
+        struct S {
+            a: u32,
+            b: u16,
+        }
+        let s = S { a: 0, b: 0 };
+        let ps: *const S = &s;
+        let x = 0;
+        DBG_UNREFERENCED_LOCAL_VARIABLE!(x);
+        // `b` ends at byte 6: a 6-byte buffer contains it, a 5-byte one does not.
+        unsafe {
+            assert_eq!(RTL_CONTAINS_FIELD!(ps, 6u32, b), 1);
+            assert_eq!(RTL_CONTAINS_FIELD!(ps, 5u32, b), 0);
+            assert_eq!(RTL_CONTAINS_FIELD!(ps, 4u32, a,), 1);
+        }
+        let _ = (s.a, s.b);
+    }
+
+    #[test]
+    fn storage_request_macros_match_srb_h_and_ata_h() {
+        // SRB_STATUS_ERROR (0x04) | AUTOSENSE_VALID (0x80) | QUEUE_FROZEN (0x40) -> 0x04.
+        let st: i32 = SRB_STATUS!(0xC4u8);
+        assert_eq!(st, 0x04);
+        match SRB_STATUS!(0x41u8) {
+            0x01 => {}
+            _ => panic!("SRB_STATUS must strip QUEUE_FROZEN"),
+        }
+        // UDMA mode 5: 0x40 | 5 = 0x45.
+        assert_eq!(IDE_SET_UDMA_MODE!(5u32), 0x45u8);
+        assert_eq!(IDE_SET_MWDMA_MODE!(2u32), 0x22u8);
+        assert_eq!(IDE_SET_SWDMA_MODE!(1u32), 0x11u8);
+        assert_eq!(IDE_SET_ADVANCE_PIO_MODE!(4u32), 0x0Cu8);
+        assert_eq!(IDE_SET_DEFAULT_PIO_MODE!(9u32), 1u8);
     }
 
     #[test]

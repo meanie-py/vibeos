@@ -117,3 +117,113 @@ def test_a_fact_the_island_now_defines_is_found_on_every_arch(tmp_path, monkeypa
     monkeypatch.setattr(port, "_crate_dir", lambda state: tmp_path)
     # Defined by every island: the prelude fact is a duplicate. Defined by some: not (yet).
     assert port._island_constants({}) == {"ATA_MAX_DEVICE"}
+
+
+def test_enum_aliases_read_the_substrate_island_the_types_glob(tmp_path):
+    src, sys_src = tmp_path / "src", tmp_path / "sys"
+    src.mkdir()
+    sys_src.mkdir()
+    for arch in ("i386", "amd64", "arm64"):
+        (src / f"types_{arch}.rs").write_text("use ntkrnl_sys::ddk::*;\n")
+        (sys_src / f"bindgen_{arch}.rs").write_text(
+            "pub const _SYSTEM_POWER_STATE_PowerSystemWorking: _SYSTEM_POWER_STATE = 1;\n"
+        )
+    from rustconv import prelude_resolve as pr
+
+    assert pr.island_enum_aliases({"PowerSystemWorking"}, src) == {}
+    got = pr.island_enum_aliases({"PowerSystemWorking"}, src, sys_src)
+    assert got["PowerSystemWorking"].text == (
+        "const PowerSystemWorking: _SYSTEM_POWER_STATE = _SYSTEM_POWER_STATE_PowerSystemWorking;"
+    )
+
+
+_SYS_LIB = """
+pub mod base;
+#[cfg(feature = "inline_exports")]
+pub mod inline;
+#[cfg(feature = "never_default")]
+pub mod hidden;
+"""
+_SYS_INLINE = """
+pub mod common;
+pub mod ke;
+"""
+_SYS_KE = """
+/// macro on amd64/arm64, an export on i386
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub unsafe fn KeQuerySystemTime(t: *mut i64) {
+    extern "C" { static SharedUserData: *mut u8; }
+    let s = "{ not a brace }";
+}
+impl Foo { pub fn NotAHelper() {} }
+"""
+
+
+def _fake_sys(tmp_path):
+    sys_src = tmp_path / "ntkrnl-sys" / "src"
+    (sys_src / "inline").mkdir(parents=True)
+    (sys_src.parent / "Cargo.toml").write_text(
+        '[package]\nname = "ntkrnl-sys"\n\n[features]\ndefault = ["inline_exports"]\n'
+        "inline_exports = []\nnever_default = []\n"
+    )
+    (sys_src / "lib.rs").write_text(_SYS_LIB)
+    (sys_src / "base.rs").write_text(
+        "pub unsafe fn InsertTailList(h: *mut u8, e: *mut u8) {}\n"
+        '#[cfg(not(target_arch = "x86"))]\n'
+        'extern "system" {\n    #[link_name = "X"]\n'
+        "    pub fn InterlockedPushEntrySList(a: u8);\n}\n"
+        '#[cfg(target_arch = "x86")]\n'
+        "pub unsafe fn InterlockedPushEntrySList(a: u8) {}\n"
+    )
+    (sys_src / "hidden.rs").write_text("pub fn Hidden() {}\n")
+    (sys_src / "inline" / "mod.rs").write_text(_SYS_INLINE)
+    (sys_src / "inline" / "common.rs").write_text(
+        "pub unsafe fn InsertTailList(h: *mut u8, e: *mut u8) {}\n"
+    )
+    (sys_src / "inline" / "ke.rs").write_text(_SYS_KE)
+    for suffix in ("i386", "amd64", "arm64"):
+        glob = "pub fn KeQuerySystemTime(t: *mut i64);\n" if suffix == "i386" else ""
+        (sys_src / f"bindgen_{suffix}.rs").write_text(f'extern "system" {{\n    {glob}}}\n')
+    return sys_src
+
+
+def test_substrate_helpers_are_found_per_arch_and_rendered_as_imports(tmp_path):
+    from rustconv import prelude_resolve as pr
+
+    sys_src = _fake_sys(tmp_path)
+    names = {"InsertTailList", "KeQuerySystemTime", "InterlockedPushEntrySList"}
+    names |= {"Hidden", "NotAHelper"}
+    found, why = pr.substrate_helpers(names, sys_src, "ntkrnl_sys")
+    # inline:: beats base for the same name; i386's KeQuerySystemTime comes from the glob.
+    assert found["InsertTailList"] == dict.fromkeys(pr.ARCHES, "inline::common")
+    assert found["KeQuerySystemTime"] == {
+        "x86": None,
+        "x86_64": "inline::ke",
+        "aarch64": "inline::ke",
+    }
+    # The extern-block declaration counts, under the block's own cfg.
+    assert found["InterlockedPushEntrySList"] == dict.fromkeys(pr.ARCHES, "base")
+    # Behind a non-default feature, or a method of an impl: not a helper at all.
+    assert "Hidden" not in found and "NotAHelper" not in found and not why
+    block = pr.render_substrate(found, "ntkrnl_sys")
+    assert (
+        '#[cfg(not(target_arch = "x86"))]\npub use ntkrnl_sys::inline::ke::KeQuerySystemTime;'
+        in block
+    )
+    assert "pub use ntkrnl_sys::inline::common::InsertTailList;" in block
+    prelude = tmp_path / "prelude.rs"
+    prelude.write_text("pub use crate::types::*;\n")
+    pr.write_substrate(prelude, block)
+    assert pr.existing_substrate(prelude) == set(found)
+    assert not pr.write_substrate(prelude, block)  # idempotent
+
+
+def test_a_helper_two_modules_define_for_one_arch_is_reported_not_chosen(tmp_path):
+    from rustconv import prelude_resolve as pr
+
+    sys_src = _fake_sys(tmp_path)
+    (sys_src / "inline" / "ke.rs").write_text(_SYS_KE + "pub fn Twice() {}\n")
+    (sys_src / "inline" / "common.rs").write_text("pub fn Twice() {}\n")
+    found, why = pr.substrate_helpers({"Twice"}, sys_src, "ntkrnl_sys")
+    assert not found and "inline::common, inline::ke" in why["Twice"]

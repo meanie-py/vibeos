@@ -280,3 +280,30 @@ def test_a_zero_argument_function_is_not_a_placeholder():
     assert consensus("CreatePartitionList", [item])[0] is item
     stub = Item("fn", "fn NtClose(_: usize);", "system", "y.rs")
     assert consensus("NtClose", [stub])[0] is None
+
+
+def test_same_name_different_arity_is_not_consensus():
+    # diskpart's command handler and setuplib's partlist function share a name and an ABI;
+    # the shorter text used to win and usetup called setuplib's with diskpart's signature.
+    a = F("pub fn SelectPartition(argc: INT, argv: *mut PWSTR) -> EXIT_CODE;", '"C"', "d.rs")
+    b = F(
+        "pub fn SelectPartition(List: PPARTLIST, DiskNumber: ULONG, PartitionNumber: ULONG,) "
+        "-> PPARTENTRY;",
+        '"C"',
+        "s.rs",
+    )
+    pick, why = consensus("SelectPartition", [a, b])
+    assert pick is None and why.startswith("signature disagreement")
+    assert pr._arity('pub fn g(cb: Option<unsafe extern "C" fn(a: i32, b: i32)>, ...);') == 2
+
+
+def test_clang_param_count_reads_past_the_calling_convention():
+    from rustconv.sdk_facts import param_count
+
+    assert param_count("PPARTLIST (*)(void) __attribute__((stdcall))") == 0
+    assert (
+        param_count("BOOLEAN (*)(PPARTLIST, PPARTENTRY, PPARTENTRY *) __attribute__((stdcall))")
+        == 3
+    )
+    assert param_count("void (*)(SHORT, SHORT, LPCSTR, ...)") == 4
+    assert param_count("int (*)(int (*)(int, int), char)") == 2

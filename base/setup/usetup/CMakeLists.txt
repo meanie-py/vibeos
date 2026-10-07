@@ -20,7 +20,7 @@ list(APPEND SOURCE
     # progress.c  # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/progress.rs)
     # usetup.c  # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/usetup.rs)
     rust_cohab_stub.c
-    mui_tables.c  # the language string tables stay C data (see the file)
+    # mui_tables.c  # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/mui_tables/mod.rs, generated: port data)
     usetup.h)
 
 # Every translation unit is Rust now (usetup-rust, `rustconv port`); the C stays on

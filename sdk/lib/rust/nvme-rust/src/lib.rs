@@ -4,16 +4,18 @@
 //! database names this driver for `PCI\CC_010802`. At START it brings the
 //! controller up (nvme.rs) and publishes one child PDO per active namespace,
 //! which disk.sys binds through `GenDisk`, answering classpnp's SRBs itself
-//! from a worker thread (pnp.rs) through the shared SCSI-disk layer
-//! (scsidisk-rust). There is no storport or scsiport underneath: ReactOS's
-//! storport never completed an SRB, and scsiport finds PCI adapters by its
-//! own legacy bus scan, which has no slot resources to assign on arm64.
+//! (pnp.rs) through the shared SCSI-disk layer (scsidisk-rust). There is no
+//! storport or scsiport underneath: ReactOS's storport never completed an
+//! SRB, and scsiport finds PCI adapters by its own legacy bus scan, which has
+//! no slot resources to assign on arm64.
 //!
-//! One command at a time, through a bounce buffer, completed by MSI-X
-//! messages (admin and I/O queue each its own), or the pin-based (INTx)
-//! interrupt where none are assigned, with a 10 ms poll behind either (see
-//! nvme.rs): the simplest controller that works on QEMU, the OptiPlex's drive
-//! and a Graviton's EBS volumes alike. Deeper queues come next.
+//! Reads, writes and flushes go straight from the dispatch routine onto one
+//! I/O queue, up to 63 commands deep, by DMA to and from the requester's own
+//! pages (a bounce buffer only for data no MDL describes or not on a dword),
+//! and complete from the DPC of an MSI-X message (admin and I/O queue each
+//! its own) or, where none are assigned, the pin-based (INTx) interrupt, with
+//! a 10 ms timer behind either (see nvme.rs). One queue pair serves every
+//! CPU: per-CPU queues are owed, and matter only once one queue is the limit.
 //!
 //! There is no C original. Windows' equivalent is stornvme.sys, a storport
 //! miniport; ReactOS has none.

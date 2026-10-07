@@ -285,6 +285,10 @@ cannot reach. Nearly every marshalling bug from E6 onward was found by one.
   unreachable from a user-mode guest), `PORT_MESSAGE` (the LPC server side,
   which belongs with the CSR-32 layer), and `TOKEN_GROUPS`.
 - **IOCTL embedded-pointer buffers** (task #42) and **guest `int3` dispatch**.
+- ~~**Guest user APCs**~~ — **BUILT** (2026-10-07): QueueUserAPC, I/O completion routines
+  and waitable-timer routines run in the guest (`Wow64ApcRoutine`, wow64_callback.c), graded
+  by `apc32.exe`. Still refusing async: `NtQueryDirectoryFile` and `NtLockFile`, which complete
+  on a host IOSB.
 
 ## Things that turned out to matter more than expected
 

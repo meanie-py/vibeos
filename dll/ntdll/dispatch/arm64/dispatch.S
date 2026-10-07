@@ -46,8 +46,12 @@ KiUserApcDispatcher:
     /* Save CONTEXT pointer for NormalRoutine (e.g., LdrInitializeThunk reads x9) */
     mov x9, sp
 
-    /* Call the APC routine: NormalRoutine(NormalContext, SysArg1, SysArg2) */
-    blr x3
+    /* Call the APC routine: NormalRoutine(NormalContext, SysArg1, SysArg2,
+     * Context) -- the CONTEXT as a 4th argument, as the amd64 dispatcher passes
+     * it in r9 (and Windows on both): wow64.dll's Wow64ApcRoutine resumes it. */
+    mov x16, x3
+    mov x3, sp
+    blr x16
 
     /* After APC routine returns, call NtContinue to resume */
     mov x0, sp          /* PCONTEXT */

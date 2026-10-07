@@ -87,6 +87,9 @@ LADDER: dict[str, int] = {
     # diagnostic guest that starts passing has finished its job, and leaving it
     # ungraded would mean a regression in the thing it proved could go unnoticed.
     "spawn32": 0x600D,
+    # User APCs into 32-bit code (QueueUserAPC, ReadFileEx, waitable timers) and
+    # per-thread cleanup -- Apc64.c at 32 bits.
+    "apc32": 0x600D,
     # The first x86-64 guest (BTCpu64 M1, docs/engineering/wow64-x64-guest-design.md
     # Fork B). Parity in the sense this table means, one width up: the SAME binary
     # runs under FEX in 64-bit mode on arm64 and natively on amd64. Not a WoW64
@@ -285,6 +288,7 @@ GUEST_SOURCE: dict[str, str] = {
     "selfmod32": "tools/fex/hello-compute/Selfmod32.c",
     "reg32": "tools/fex/hello-compute/Reg32.c",
     "spawn32": "tools/fex/hello-compute/Spawn32.c",
+    "apc32": "tools/fex/hello-compute/Apc64.c",
     "hello64": "tools/fex/hello-compute/Hello64.c",
     "gui64": "tools/fex/hello-compute/Gui32.c",
     "win64": "tools/fex/hello-compute/Win32App.c",
@@ -297,6 +301,12 @@ GUEST_SOURCE: dict[str, str] = {
     "reg64": "tools/fex/hello-compute/Reg32.c",
     "spawn64": "tools/fex/hello-compute/Spawn32.c",
     "apc64": "tools/fex/hello-compute/Apc64.c",
+}
+
+# Further sources a guest's verdict depends on: the native helpers it starts.
+# The builder makes them in the same run, so the guest's binary dates them too.
+GUEST_HELPERS: dict[str, list[str]] = {
+    "spawn64": ["tools/fex/hello-compute/XInject.c"],
 }
 
 # The script carries the link lines, so a change to it (a new flag, a different
@@ -360,7 +370,9 @@ def stale_guests(repo: Path) -> list[str]:
         if rel is None:
             out.append(f"{guest} (no source mapping)")
             continue
-        out.extend(_newer_than(repo, guest, exe, [rel, GUEST_BUILDER]))
+        out.extend(
+            _newer_than(repo, guest, exe, [rel, GUEST_BUILDER, *GUEST_HELPERS.get(guest, [])])
+        )
 
     # DIAGNOSTIC guests are opt-in (VIBEOS_WOW64_SPAWN=1), so absent is the
     # normal state and must not read as a hole -- but a built one is compared
@@ -374,7 +386,9 @@ def stale_guests(repo: Path) -> list[str]:
         if rel is None:
             out.append(f"{guest} (no source mapping)")
             continue
-        out.extend(_newer_than(repo, guest, exe, [rel, GUEST_BUILDER]))
+        out.extend(
+            _newer_than(repo, guest, exe, [rel, GUEST_BUILDER, *GUEST_HELPERS.get(guest, [])])
+        )
 
     # OPTIONAL guests are built on demand by a script that FETCHES, so they are
     # absent in most trees. Absent means "nobody built it", which

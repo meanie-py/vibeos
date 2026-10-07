@@ -66,7 +66,7 @@ pub unsafe extern "C" fn DumpDisk(argc: INT, argv: *mut LPWSTR) -> EXIT_CODE {
         let mut endptr: *mut u16 = core::ptr::null_mut();
 
         if CurrentDisk.is_null() {
-            ConResPuts(StdOut, (IDS_SELECT_NO_DISK) as UINT);
+            ConResPuts(StdOut, IDS_SELECT_NO_DISK);
             return EXIT_SUCCESS;
         }
 
@@ -79,7 +79,7 @@ pub unsafe extern "C" fn DumpDisk(argc: INT, argv: *mut LPWSTR) -> EXIT_CODE {
         if (Sector == 0 && endptr == *argv.offset(2))
             || Sector < 0
         {
-            ConResPuts(StdErr, (IDS_ERROR_INVALID_ARGS) as UINT);
+            ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
             return EXIT_SUCCESS;
         }
 
@@ -207,12 +207,12 @@ pub unsafe extern "C" fn DumpPartition(argc: INT, argv: *mut LPWSTR) -> EXIT_COD
 
     'done: {
         if CurrentDisk.is_null() {
-            ConResPuts(StdOut, (IDS_SELECT_NO_DISK) as UINT);
+            ConResPuts(StdOut, IDS_SELECT_NO_DISK);
             return EXIT_SUCCESS;
         }
 
         if CurrentPartition.is_null() {
-            ConResPuts(StdOut, (IDS_SELECT_NO_PARTITION) as UINT);
+            ConResPuts(StdOut, IDS_SELECT_NO_PARTITION);
             return EXIT_SUCCESS;
         }
 
@@ -226,7 +226,7 @@ pub unsafe extern "C" fn DumpPartition(argc: INT, argv: *mut LPWSTR) -> EXIT_COD
             && (endptr == *argv.offset(2 as isize)))
             || (Sector < 0)
         {
-            ConResPuts(StdErr, (IDS_ERROR_INVALID_ARGS) as UINT);
+            ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
             return EXIT_SUCCESS;
         }
 

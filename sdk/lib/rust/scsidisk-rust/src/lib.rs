@@ -192,13 +192,15 @@ fn extent(cdb: &[u8; 16]) -> (u64, u64) {
 /// Decode one EXECUTE_SCSI CDB. `data` is the SRB's data buffer (empty when
 /// it moves none); replies are written into it.
 pub fn decode(disk: &Disk, cdb: &[u8; 16], data: &mut [u8]) -> Request {
+    if let Some(r) = decode_transfer(disk, cdb, data.len()) {
+        return r;
+    }
     match cdb[0] {
         SCSIOP_TEST_UNIT_READY
         | SCSIOP_START_STOP_UNIT
         | SCSIOP_MEDIUM_REMOVAL
         | SCSIOP_VERIFY
         | SCSIOP_VERIFY16 => Request::Done(Ok(0)),
-        SCSIOP_SYNCHRONIZE_CACHE | SCSIOP_SYNCHRONIZE_CACHE16 => Request::Flush,
         // No vital product data pages: classpnp takes the standard data.
         SCSIOP_INQUIRY if cdb[1] & 1 != 0 => Request::Done(Err(Sense(SCSI_SENSE_ILLEGAL_REQUEST, SCSI_ADSENSE_INVALID_CDB))),
         SCSIOP_INQUIRY => {
@@ -241,12 +243,23 @@ pub fn decode(disk: &Disk, cdb: &[u8; 16], data: &mut [u8]) -> Request {
             let wp = if disk.writable { 0 } else { MODE_DSP_WRITE_PROTECT };
             reply(data, &[0, 6, 0, wp, 0, 0, 0, 0])
         }
-        SCSIOP_READ6 | SCSIOP_READ | SCSIOP_READ12 | SCSIOP_READ16 => transfer(disk, cdb, data.len(), false),
-        SCSIOP_WRITE6 | SCSIOP_WRITE | SCSIOP_WRITE12 | SCSIOP_WRITE16 if !disk.writable => {
-            Request::Done(Err(Sense(SCSI_SENSE_DATA_PROTECT, SCSI_ADSENSE_WRITE_PROTECT)))
-        }
-        SCSIOP_WRITE6 | SCSIOP_WRITE | SCSIOP_WRITE12 | SCSIOP_WRITE16 => transfer(disk, cdb, data.len(), true),
         _ => Request::Done(Err(Sense(SCSI_SENSE_ILLEGAL_REQUEST, SCSI_ADSENSE_ILLEGAL_COMMAND))),
+    }
+}
+
+/// [`decode`] for the CDBs that move data on the medium (reads, writes,
+/// SYNCHRONIZE CACHE), which need only the data buffer's length, so a driver
+/// that DMAs to the buffer's pages never has to map it. None for the rest,
+/// which [`decode`] answers into the buffer itself.
+pub fn decode_transfer(disk: &Disk, cdb: &[u8; 16], len: usize) -> Option<Request> {
+    match cdb[0] {
+        SCSIOP_SYNCHRONIZE_CACHE | SCSIOP_SYNCHRONIZE_CACHE16 => Some(Request::Flush),
+        SCSIOP_READ6 | SCSIOP_READ | SCSIOP_READ12 | SCSIOP_READ16 => Some(transfer(disk, cdb, len, false)),
+        SCSIOP_WRITE6 | SCSIOP_WRITE | SCSIOP_WRITE12 | SCSIOP_WRITE16 if !disk.writable => {
+            Some(Request::Done(Err(Sense(SCSI_SENSE_DATA_PROTECT, SCSI_ADSENSE_WRITE_PROTECT))))
+        }
+        SCSIOP_WRITE6 | SCSIOP_WRITE | SCSIOP_WRITE12 | SCSIOP_WRITE16 => Some(transfer(disk, cdb, len, true)),
+        _ => None,
     }
 }
 
@@ -509,6 +522,20 @@ mod tests {
             decode(&disk(), &two, &mut data),
             Request::Done(Err(Sense(SCSI_SENSE_ILLEGAL_REQUEST, SCSI_ADSENSE_INVALID_CDB)))
         );
+    }
+
+    #[test]
+    fn transfers_decode_from_the_length_alone_and_nothing_else_does() {
+        let read = cdb(&[SCSIOP_READ, 0, 0, 0, 0x12, 0x34, 0, 0, 4]);
+        assert_eq!(decode_transfer(&disk(), &read, 4 * 512), Some(Request::Read { lba: 0x1234, blocks: 4 }));
+        assert_eq!(
+            decode_transfer(&disk(), &read, 512),
+            Some(Request::Done(Err(Sense(SCSI_SENSE_ILLEGAL_REQUEST, SCSI_ADSENSE_INVALID_CDB))))
+        );
+        assert_eq!(decode_transfer(&disk(), &cdb(&[SCSIOP_SYNCHRONIZE_CACHE]), 0), Some(Request::Flush));
+        // These reply into the buffer, which only decode has.
+        assert_eq!(decode_transfer(&disk(), &cdb(&[SCSIOP_INQUIRY]), 96), None);
+        assert_eq!(decode_transfer(&disk(), &cdb(&[SCSIOP_TEST_UNIT_READY]), 0), None);
     }
 
     #[test]

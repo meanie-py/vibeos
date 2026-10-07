@@ -1,54 +1,90 @@
-//! One NVMe controller: the admin queue, one I/O queue pair, and a DMA bounce
-//! buffer, all in one physically contiguous allocation.
+//! One NVMe controller: the admin queue, one I/O queue pair many commands deep,
+//! and a DMA bounce buffer, all in one physically contiguous allocation.
 //!
-//! Every command is submitted and waited for before the next (the worker in
-//! pnp.rs serializes them), so a queue never holds more than one entry and
-//! there is no command-ID bookkeeping beyond a check. Data moves through the
-//! bounce buffer: its PRP list is built once, at start, so a transfer never
-//! walks an MDL for physical pages and the device only ever sees memory this
-//! driver owns.
+//! Admin commands run one at a time and are polled. All of them are issued at
+//! START, before the interrupt is armed, so they never meet the I/O path.
 //!
-//! Completions arrive by interrupt once pnp.rs has connected one ([`Irq`]): the
-//! worker sleeps until the DPC wakes it. Until then, and on a machine whose
-//! interrupt never arrives, it polls: the bring-up commands at start, and a
-//! 10 ms poll behind every interrupt wait, which says so on the debug port the
-//! first time it is the one that finds a completion.
+//! I/O is asynchronous. A caller hands [`Controller::submit`] a [`Request`] (a
+//! read or write of any length, or a flush) and gets its `done` callback, at
+//! DISPATCH_LEVEL, once all of it has completed. The engine cuts a request into
+//! commands of at most `max_transfer` bytes and keeps up to one per [`Slot`] in
+//! flight, the slot index serving as the command ID. A request that cannot start
+//! yet waits in a FIFO, so requests start in the order they were submitted, and
+//! only the one at its head is ever part-way issued. A flush starts only once
+//! everything ahead of it has completed: NVMe's Flush covers the writes that
+//! completed before it was submitted, not the ones still in flight.
+//!
+//! Data moves by DMA straight to and from the requester's pages, through PRP
+//! entries (4.1.1) built from its MDL, whenever the MDL is one whose page list
+//! can be trusted (locked, nonpaged or partial) and the data starts on a dword,
+//! as PRP1's offset must. Anything else goes through the bounce buffer, one
+//! command at a time; its PRP list is built once, at start.
+//!
+//! Completions are reaped in the DPC, queued by the ISR and by a 10 ms timer
+//! that runs while anything is in flight. With an interrupt connected the timer
+//! reaps only a completion it already saw at its previous tick, so it cannot
+//! steal one from a working interrupt; when it does reap, the interrupt went
+//! missing, and it says so on the debug port the first time. With none
+//! connected the timer is all there is.
 //!
 //! Two kinds of interrupt. MSI-X, when the PnP manager assigned messages: the
 //! admin queue raises message 0 and the I/O queue message 1 (both 0 when there
 //! is only one), each an exclusive, edge-triggered vector, so the ISR has
 //! nothing to check or mask. Otherwise the pin (INTx): both queues raise vector
 //! 0, which stays masked (INTMS) whenever nothing is connected to it, so the
-//! line can never be left asserted on a pin another device shares. The spec
-//! forbids touching INTMS/INTMC under MSI-X, so the controller is told which
-//! it has before bring-up.
+//! line can never be left asserted on a pin another device shares; the ISR
+//! masks it and the DPC unmasks it once the queue is drained. The spec forbids
+//! touching INTMS/INTMC under MSI-X, so the controller is told which it has
+//! before bring-up.
+//!
+//! A command that never completes is reported after 30 s and left in flight:
+//! its pages may still be the target of a DMA, so the request cannot be handed
+//! back. Recovering from that needs a controller reset, which this driver does
+//! not do yet.
 //!
 //! Register and command layouts are from the NVM Express Base Specification
 //! (2.0); the section numbers below are that document's.
 
+use core::cell::UnsafeCell;
+use core::ffi::c_void;
+use core::mem::size_of;
 use core::ptr::{null, null_mut, read_volatile, write_volatile};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use ntkrnl_sys::ddk::{
-    KeDelayExecutionThread, KeInsertQueueDpc, KeQueryPerformanceCounter, KeSetEvent, KeStallExecutionProcessor,
-    KeWaitForSingleObject, MmAllocateContiguousMemorySpecifyCache, MmGetPhysicalAddress, _MEMORY_CACHING_TYPE_MmCached,
-    BOOLEAN, KDPC, KEVENT, LARGE_INTEGER, PHYSICAL_ADDRESS, PKINTERRUPT, PVOID, ULONG,
+    KeDelayExecutionThread, KeInitializeDpc, KeInitializeTimer, KeInsertQueueDpc, KeQueryPerformanceCounter, KeSetTimer,
+    KeStallExecutionProcessor, ExAllocatePoolWithTag, MmAllocateContiguousMemorySpecifyCache, MmFreeContiguousMemory, MmGetPhysicalAddress, _MEMORY_CACHING_TYPE_MmCached,
+    BOOLEAN, KDPC, KTIMER, LARGE_INTEGER, MDL, PHYSICAL_ADDRESS, PKINTERRUPT, PMDL, PVOID, ULONG,
 };
+use ntkrnl_sys::guards::SpinLockGuard;
+use ntkrnl_sys::ke::KSPIN_LOCK;
 
 use crate::print::nvprint;
 
 pub const PAGE: usize = 4096;
 /// The bounce buffer, and so the most one command moves (before MDTS).
 const BOUNCE: usize = 128 * 1024;
-const QUEUE_ENTRIES: u16 = 16;
+const ADMIN_ENTRIES: u16 = 16;
+/// I/O queue entries. A queue of N entries holds N - 1 commands, so this many
+/// less one is the deepest the I/O queue gets: one command per slot.
+const IO_ENTRIES: u16 = 64;
+pub const SLOTS: usize = IO_ENTRIES as usize - 1;
+const NONPAGED_POOL: i32 = 0;
+const IO_POOL_TAG: u32 = u32::from_le_bytes(*b"NVMq");
+/// Each slot's PRP list: room for a whole command starting anywhere in a page
+/// (BOUNCE / PAGE + 1 pages, less the one PRP1 names), and a power of two, so
+/// that no list crosses a page boundary (4.1.1 forbids it without chaining).
+const PRP_LIST: usize = 512;
+const _: () = assert!((BOUNCE / PAGE) * 8 <= PRP_LIST && PAGE % PRP_LIST == 0);
+const SLOT_PRP_PAGES: usize = (SLOTS * PRP_LIST).div_ceil(PAGE);
 const SQE: usize = 64;
 const CQE: usize = 16;
-/// A command that has not completed in this long has failed.
+/// An admin command that has not completed in this long has failed.
 const COMMAND_TIMEOUT_US: u64 = 30_000_000;
-/// Spin this long for a completion before sleeping between polls.
+/// Spin this long for an admin completion before sleeping between polls.
 const SPIN_US: u64 = 2_000;
-/// With interrupts on: how long to sleep for one before looking anyway.
-const INTERRUPT_POLL_MS: i64 = 10;
+/// The completion timer's period, while anything is in flight.
+pub const POLL_MS: i64 = 10;
 
 // Controller registers (3.1).
 const REG_CAP: usize = 0x00;
@@ -83,6 +119,12 @@ const CNS_CONTROLLER: u32 = 0x01;
 const CNS_ACTIVE_NAMESPACES: u32 = 0x02;
 const FEATURE_VOLATILE_WRITE_CACHE: u32 = 0x06;
 const FEATURE_NUMBER_OF_QUEUES: u32 = 0x07;
+
+// mmtypes.h: MDLs whose page list describes locked, present pages.
+const MDL_PAGES_LOCKED: i16 = 0x0002;
+const MDL_SOURCE_IS_NONPAGED_POOL: i16 = 0x0004;
+const MDL_PARTIAL: i16 = 0x0010;
+const MDL_IO_SPACE: i16 = 0x0800;
 
 // The fields are read by Debug, in the log lines; dead-code analysis does not see that.
 #[allow(dead_code)]
@@ -140,6 +182,7 @@ fn rmb() {
 
 struct Queue {
     id: u16,
+    entries: u16,
     sq: *mut u8,
     sq_phys: u64,
     cq: *mut u8,
@@ -147,6 +190,49 @@ struct Queue {
     tail: u16,
     head: u16,
     phase: u32,
+}
+
+impl Queue {
+    /// Write `cmd` at the tail; the caller rings the doorbell.
+    fn push(&mut self, cmd: &Command) {
+        unsafe {
+            let slot = self.sq.add(self.tail as usize * SQE).cast::<u32>();
+            for (i, &dw) in cmd.0.iter().enumerate() {
+                write_volatile(slot.add(i), dw);
+            }
+        }
+        self.tail = (self.tail + 1) % self.entries;
+    }
+
+    /// The completion at the head, if it has arrived: dwords 0 and 3.
+    fn peek(&self) -> Option<(u32, u32)> {
+        let entry = unsafe { self.cq.add(self.head as usize * CQE).cast::<u32>() };
+        let dw3 = unsafe { read_volatile(entry.add(3)) };
+        if dw3 >> 16 & 1 != self.phase {
+            return None;
+        }
+        rmb();
+        Some((unsafe { read_volatile(entry) }, dw3))
+    }
+
+    fn advance(&mut self) {
+        self.head += 1;
+        if self.head == self.entries {
+            self.head = 0;
+            self.phase ^= 1;
+        }
+    }
+
+    /// Where the next completion lands and the phase it will carry, as one word.
+    fn position(&self) -> u32 {
+        self.head as u32 | self.phase << 16
+    }
+}
+
+/// Status (4.2.3): code type in 27:25, code in 24:17. None when it succeeded.
+fn status(dw3: u32) -> Option<(u8, u8)> {
+    let (sct, sc) = ((dw3 >> 25 & 7) as u8, (dw3 >> 17) as u8);
+    (sct != 0 || sc != 0).then_some((sct, sc))
 }
 
 /// What Identify Controller says about the device.
@@ -168,57 +254,201 @@ pub struct Namespace {
     pub block_shift: u32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Op {
+    Read,
+    Write,
+    Flush,
+}
+
+impl Op {
+    pub fn name(self) -> &'static str {
+        match self {
+            Op::Read => "read",
+            Op::Write => "write",
+            Op::Flush => "flush",
+        }
+    }
+}
+
+/// One read, write or flush, from [`Controller::submit`] to `done`. The caller
+/// owns the memory, which must stay put and untouched in between.
+pub struct Request {
+    pub op: Op,
+    pub nsid: u32,
+    pub block_shift: u32,
+    pub lba: u64,
+    pub blocks: u64,
+    /// The data's pages, and how far into the MDL's bytes the data starts.
+    /// Null: there is no MDL, and the data goes through the bounce buffer.
+    pub mdl: PMDL,
+    pub mdl_offset: usize,
+    /// The data at a system address, which the bounce buffer copies to or
+    /// from. Needed only when [`dma_ready`] says the pages cannot be used.
+    pub system: *mut u8,
+    /// Runs at DISPATCH_LEVEL once every command of the request has completed.
+    pub done: unsafe fn(*mut Request),
+    pub context: *mut c_void,
+    /// The first command to fail, if one did; the rest were not issued.
+    pub error: Option<Error>,
+    // The engine's, under its lock.
+    direct: bool,
+    issued: u64,
+    outstanding: u32,
+    queued: bool,
+    next: *mut Request,
+}
+
+impl Request {
+    pub fn new(op: Op, ns: &Namespace, lba: u64, blocks: u64, done: unsafe fn(*mut Request), context: *mut c_void) -> Self {
+        Request {
+            op,
+            nsid: ns.id,
+            block_shift: ns.block_shift,
+            lba,
+            blocks: if op == Op::Flush { 0 } else { blocks },
+            mdl: null_mut(),
+            mdl_offset: 0,
+            system: null_mut(),
+            done,
+            context,
+            error: None,
+            direct: false,
+            issued: 0,
+            outstanding: 0,
+            queued: false,
+            next: null_mut(),
+        }
+    }
+
+    pub fn bytes(&self) -> usize {
+        (self.blocks << self.block_shift) as usize
+    }
+
+    fn finished(&self) -> bool {
+        self.outstanding == 0 && (self.issued == self.blocks || self.error.is_some())
+    }
+}
+
+/// Can the device DMA straight to `bytes` bytes at `offset` into `mdl`'s
+/// data? Its page list must describe pages that stay put, which a locked,
+/// nonpaged-pool or partial MDL's does (and nothing else's need), and PRP1's
+/// offset must be dword aligned.
+///
+/// # Safety
+/// `mdl` must be null or a valid MDL.
+pub unsafe fn dma_ready(mdl: PMDL, offset: usize, bytes: usize) -> bool {
+    if mdl.is_null() {
+        return false;
+    }
+    let m = &*mdl;
+    m.MdlFlags & (MDL_PAGES_LOCKED | MDL_SOURCE_IS_NONPAGED_POOL | MDL_PARTIAL) != 0
+        && m.MdlFlags & MDL_IO_SPACE == 0
+        && (m.ByteOffset as usize + offset) & 3 == 0
+        && offset.checked_add(bytes).is_some_and(|end| end <= m.ByteCount as usize)
+}
+
+/// The physical address `offset` bytes into `mdl`'s data, from its page list
+/// (the PFN array that follows the MDL header).
+unsafe fn mdl_phys(mdl: PMDL, offset: usize) -> u64 {
+    let at = (*mdl).ByteOffset as usize + offset;
+    let pfns = mdl.cast::<MDL>().add(1).cast::<usize>();
+    ((*pfns.add(at / PAGE) as u64) << 12) | (at % PAGE) as u64
+}
+
+/// One command's worth of a request, in flight. The index is its command ID.
+struct Slot {
+    request: *mut Request,
+    /// Where in the request this command's data starts, and how much it moves.
+    offset: usize,
+    bytes: usize,
+    bounce: bool,
+    started: u64,
+    warned: bool,
+    prp: *mut u64,
+    prp_phys: u64,
+}
+
+/// The I/O path's state: everything the submitters, the DPC and the timer
+/// share, under [`Controller`]'s lock.
+struct Io {
+    queue: Queue,
+    slots: [Slot; SLOTS],
+    /// Slots usable: fewer than SLOTS when the controller's queues are shallower.
+    depth: usize,
+    in_flight: usize,
+    bounce_busy: bool,
+    /// The FIFO of requests not yet fully issued.
+    head: *mut Request,
+    tail: *mut Request,
+    timer_set: bool,
+    /// With an interrupt connected: where the timer saw a completion waiting
+    /// at its last tick (`Queue::position`), or u32::MAX.
+    poll_mark: u32,
+    stats: Stats,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct Stats {
+    /// Completions the ISR's DPC reaped, and those the timer had to.
+    pub by_interrupt: u32,
+    pub by_poll: u32,
+    /// The most commands in flight at once.
+    pub peak: u32,
+    /// Commands whose data moved by DMA to the requester's pages, and through the bounce buffer.
+    pub direct: u32,
+    pub bounced: u32,
+}
+
 pub struct Controller {
     regs: *mut u8,
     doorbell_stride: usize,
     ready_timeout_ms: u64,
     admin: Queue,
-    io: Queue,
-    /// The PRP list page and the bounce buffer it describes.
-    prp_list: *mut u64,
-    prp_list_phys: u64,
+    /// The bounce buffer, and the PRP list page describing it.
     bounce: *mut u8,
     bounce_phys: u64,
+    bounce_prp_phys: u64,
     next_cid: u16,
     pub max_transfer: usize,
     pub identity: Identity,
-    /// Null until [`Controller::use_interrupts`]; then the worker sleeps on it.
-    irq: *mut Irq,
     /// Interrupts are MSI-X messages, not the pin: INTMS/INTMC are off limits.
     msix: bool,
+    /// Null until [`Controller::arm`].
+    irq: *mut Irq,
+    /// An interrupt is connected (else the timer alone reaps).
+    interrupts: bool,
     /// The controller's number, for the debug port.
     number: u32,
-    /// Completions whose interrupt arrived (some of them `late`: the ISR
-    /// claimed it but the poll interval ran out before the DPC woke the
-    /// worker), and those that came with no interrupt at all.
-    pub by_interrupt: u32,
-    pub late: u32,
-    pub by_poll: u32,
+    lock: UnsafeCell<KSPIN_LOCK>,
+    /// In nonpaged pool, for the life of the system (see `start`).
+    io: *mut Io,
 }
 
-// The controller lives in the FDO's extension and is used only by its worker
-// thread (and by START before that thread exists).
+// Started on one thread, then shared by the submitters, the DPC and the timer,
+// which touch the I/O state only under the lock.
 unsafe impl Send for Controller {}
+unsafe impl Sync for Controller {}
 
 /// Pin-based interrupt vector 0, the one both completion queues raise.
 const VECTOR_0: u32 = 1;
 
-/// What the interrupt path shares with the worker. Lives in the FDO's
-/// extension, so its address is stable for the ISR and the DPC.
+/// What the interrupt path shares with the I/O engine. Lives in the FDO's
+/// extension, so its address is stable for the ISR, the DPC and the timer.
 pub struct Irq {
     regs: *mut u8,
     /// Admin and I/O completion queues, and for each the slot the next
-    /// completion will land in and the phase it will carry (`head | phase << 16`),
-    /// published by the worker every time it consumes one.
+    /// completion will land in and the phase it will carry (`Queue::position`),
+    /// published every time one is consumed. The pin ISR reads them.
     cqs: [*const u8; 2],
     next: [AtomicU32; 2],
-    /// Set once the interrupt is connected and the state above is valid.
+    /// Set once the controller is armed and the state above is valid.
     armed: AtomicBool,
-    event: KEVENT,
+    controller: *const Controller,
     dpc: KDPC,
+    timer: KTIMER,
+    timer_dpc: KDPC,
     pub interrupt: PKINTERRUPT,
-    /// Interrupts claimed by the ISR.
-    pub claimed: AtomicU32,
     /// Under MSI-X: interrupts per message (admin, I/O).
     pub messages: [AtomicU32; 2],
 }
@@ -230,23 +460,20 @@ impl Irq {
             cqs: [null(); 2],
             next: [AtomicU32::new(0), AtomicU32::new(0)],
             armed: AtomicBool::new(false),
-            event: unsafe { core::mem::zeroed() },
+            controller: null(),
             dpc: unsafe { core::mem::zeroed() },
+            timer: unsafe { core::mem::zeroed() },
+            timer_dpc: unsafe { core::mem::zeroed() },
             interrupt: null_mut(),
-            claimed: AtomicU32::new(0),
             messages: [AtomicU32::new(0), AtomicU32::new(0)],
         }
-    }
-
-    pub fn event(&mut self) -> *mut KEVENT {
-        &raw mut self.event
     }
 
     pub fn dpc(&mut self) -> *mut KDPC {
         &raw mut self.dpc
     }
 
-    /// Does either completion queue hold an entry the worker has not consumed?
+    /// Does either completion queue hold an entry not yet consumed?
     fn pending(&self) -> bool {
         (0..2).any(|i| {
             let next = self.next[i].load(Ordering::Acquire);
@@ -260,36 +487,42 @@ impl Irq {
 /// The interrupt service routine (`ServiceContext` is the [`Irq`]). The line may
 /// be shared and is level-triggered, so it claims the interrupt only when a
 /// completion queue has news, and then masks vector 0 so the line drops until
-/// the worker has consumed the completion and unmasked it.
+/// the DPC has drained the queue and unmasked it.
 pub unsafe extern "system" fn isr(_interrupt: PKINTERRUPT, context: PVOID) -> BOOLEAN {
     let irq = &*(context as *const Irq);
     if !irq.armed.load(Ordering::Acquire) || !irq.pending() {
         return 0;
     }
     write_volatile(irq.regs.add(REG_INTMS).cast::<u32>(), VECTOR_0);
-    irq.claimed.fetch_add(1, Ordering::Relaxed);
     KeInsertQueueDpc(&irq.dpc as *const KDPC as *mut KDPC, null_mut(), null_mut());
     1
 }
 
 /// The MSI-X message service routine (`ServiceContext` is the [`Irq`]). A
 /// message is this device's alone and edge-triggered: nothing to check, nothing
-/// to mask. One that lands before the worker is armed (bring-up polls) is just
-/// absorbed.
+/// to mask. One that lands before the controller is armed (the admin commands
+/// at START, which poll) is just counted.
 pub unsafe extern "system" fn message_isr(_interrupt: PKINTERRUPT, context: PVOID, message: ULONG) -> BOOLEAN {
     let irq = &*(context as *const Irq);
     irq.messages[(message as usize).min(1)].fetch_add(1, Ordering::Relaxed);
     if irq.armed.load(Ordering::Acquire) {
-        irq.claimed.fetch_add(1, Ordering::Relaxed);
         KeInsertQueueDpc(&irq.dpc as *const KDPC as *mut KDPC, null_mut(), null_mut());
     }
     1
 }
 
-/// The DPC: wake the worker (`DeferredContext` is the [`Irq`]).
+/// The interrupt's DPC (`DeferredContext` is the [`Irq`]).
 pub unsafe extern "system" fn dpc(_dpc: *mut KDPC, context: PVOID, _a: PVOID, _b: PVOID) {
-    let irq = context as *mut Irq;
-    KeSetEvent(&raw mut (*irq).event, 0, 0);
+    let irq = &*(context as *const Irq);
+    if irq.armed.load(Ordering::Acquire) {
+        (*irq.controller).service(true);
+    }
+}
+
+/// The completion timer's DPC (`DeferredContext` is the [`Irq`]).
+unsafe extern "system" fn timer_dpc(_dpc: *mut KDPC, context: PVOID, _a: PVOID, _b: PVOID) {
+    let irq = &*(context as *const Irq);
+    (*irq.controller).service(false);
 }
 
 /// The command's 16 dwords (4.2).
@@ -314,6 +547,10 @@ impl Command {
         self.0[index] = value;
         self
     }
+    fn cid(mut self, cid: u16) -> Self {
+        self.0[0] |= (cid as u32) << 16;
+        self
+    }
 }
 
 impl Controller {
@@ -329,6 +566,11 @@ impl Controller {
         self.wr(off, v as u32);
         self.wr(off + 4, (v >> 32) as u32);
     }
+    /// Submission queue y tail doorbell: 0x1000 + (2y) * stride (3.1.24);
+    /// completion queue y head doorbell: 0x1000 + (2y + 1) * stride.
+    fn ring(&self, queue: u16, completion: bool, value: u16) {
+        self.wr(DOORBELLS + (2 * queue as usize + completion as usize) * self.doorbell_stride, value as u32);
+    }
 
     /// Reset the controller behind `regs` (a mapping of BAR0, uncached, at
     /// least `len` bytes) and bring it up with one I/O queue pair. `messages`
@@ -342,7 +584,7 @@ impl Controller {
         if cap == u64::MAX || version >> 16 == 0 || version == u32::MAX {
             return Err(Error::NotNvme(version));
         }
-        let mqes = (cap & 0xFFFF) as u16 + 1;
+        let mqes = (cap & 0xFFFF) as u32 + 1;
         let doorbell_stride = 4usize << ((cap >> 32) & 0xF);
         let ready_timeout_ms = ((cap >> 24) & 0xFF).max(1) * 500;
         let mps_min = ((cap >> 48) & 0xF) as u32;
@@ -352,7 +594,8 @@ impl Controller {
         if DOORBELLS + 4 * doorbell_stride > len {
             return Err(Error::NotNvme(version));
         }
-        let entries = QUEUE_ENTRIES.min(mqes);
+        let admin_entries = (ADMIN_ENTRIES as u32).min(mqes) as u16;
+        let io_entries = (IO_ENTRIES as u32).min(mqes) as u16;
         nvprint!(
             "controller: NVMe {}.{}, {} queue entries max, doorbell stride {}, ready timeout {} ms\n",
             version >> 16,
@@ -362,8 +605,10 @@ impl Controller {
             ready_timeout_ms
         );
 
-        // Pages: admin SQ, admin CQ, I/O SQ, I/O CQ, PRP list, then the bounce buffer.
-        let size = 5 * PAGE + BOUNCE;
+        // Pages: admin SQ, admin CQ, I/O SQ, I/O CQ, the bounce buffer's PRP
+        // list, the slots' PRP lists, then the bounce buffer.
+        let tables = 5 + SLOT_PRP_PAGES;
+        let size = tables * PAGE + BOUNCE;
         let mut low: PHYSICAL_ADDRESS = core::mem::zeroed();
         let mut high: PHYSICAL_ADDRESS = core::mem::zeroed();
         let boundary: PHYSICAL_ADDRESS = core::mem::zeroed();
@@ -371,17 +616,17 @@ impl Controller {
         // NVMe addresses all 64 bits; i386 kernels map no more than 4 GiB.
         high.QuadPart = if cfg!(target_pointer_width = "64") { 0x0000_FFFF_FFFF_FFFF } else { 0xFFFF_FFFF };
         // Cached: PCIe DMA snoops the CPU caches on every machine this targets
-        // (x86, QEMU virt, Graviton). An uncached bounce buffer would make every
-        // read of it a bus transaction.
+        // (x86, QEMU virt, Graviton), as it must for the requesters' own pages.
         let base = MmAllocateContiguousMemorySpecifyCache(size as _, low, high, boundary, _MEMORY_CACHING_TYPE_MmCached)
             as *mut u8;
         if base.is_null() {
             return Err(Error::NoMemory);
         }
-        core::ptr::write_bytes(base, 0, 5 * PAGE);
+        core::ptr::write_bytes(base, 0, tables * PAGE);
         let phys = |p: *mut u8| MmGetPhysicalAddress(p.cast()).QuadPart as u64;
-        let queue = |id, sq: *mut u8, cq: *mut u8| Queue {
+        let queue = |id, entries, sq: *mut u8, cq: *mut u8| Queue {
             id,
+            entries,
             sq,
             sq_phys: phys(sq),
             cq,
@@ -390,30 +635,60 @@ impl Controller {
             head: 0,
             phase: 1,
         };
+        let bounce_prp = base.add(4 * PAGE).cast::<u64>();
+        let bounce = base.add(tables * PAGE);
+        let slot_prps = base.add(5 * PAGE);
+        // The I/O state is built in place, in pool: with its slots it is
+        // kilobytes, and i386's kernel stack is 12 KiB all told.
+        let io = ExAllocatePoolWithTag(NONPAGED_POOL as _, size_of::<Io>() as _, IO_POOL_TAG) as *mut Io;
+        if io.is_null() {
+            MmFreeContiguousMemory(base.cast());
+            return Err(Error::NoMemory);
+        }
+        (&raw mut (*io).queue).write(queue(1, io_entries, base.add(2 * PAGE), base.add(3 * PAGE)));
+        let slots = (&raw mut (*io).slots).cast::<Slot>();
+        for i in 0..SLOTS {
+            slots.add(i).write(Slot {
+                request: null_mut(),
+                offset: 0,
+                bytes: 0,
+                bounce: false,
+                started: 0,
+                warned: false,
+                prp: slot_prps.add(i * PRP_LIST).cast(),
+                prp_phys: phys(slot_prps.add(i * PRP_LIST)),
+            });
+        }
+        (&raw mut (*io).depth).write(io_entries as usize - 1);
+        (&raw mut (*io).in_flight).write(0);
+        (&raw mut (*io).bounce_busy).write(false);
+        (&raw mut (*io).head).write(null_mut());
+        (&raw mut (*io).tail).write(null_mut());
+        (&raw mut (*io).timer_set).write(false);
+        (&raw mut (*io).poll_mark).write(u32::MAX);
+        (&raw mut (*io).stats).write(Stats::default());
         let mut c = Controller {
             regs,
             doorbell_stride,
             ready_timeout_ms,
-            admin: queue(0, base, base.add(PAGE)),
-            io: queue(1, base.add(2 * PAGE), base.add(3 * PAGE)),
-            prp_list: base.add(4 * PAGE).cast(),
-            prp_list_phys: phys(base.add(4 * PAGE)),
-            bounce: base.add(5 * PAGE),
-            bounce_phys: phys(base.add(5 * PAGE)),
+            admin: queue(0, admin_entries, base, base.add(PAGE)),
+            bounce,
+            bounce_phys: phys(bounce),
+            bounce_prp_phys: phys(bounce_prp.cast()),
             next_cid: 0,
             max_transfer: BOUNCE,
             identity: core::mem::zeroed(),
-            irq: null_mut(),
             msix: messages > 0,
+            irq: null_mut(),
+            interrupts: false,
             number: 0,
-            by_interrupt: 0,
-            late: 0,
-            by_poll: 0,
+            lock: UnsafeCell::new(0),
+            io,
         };
-        // The PRP list (4.1.1): entry i is the bounce buffer's page i + 1, since
+        // The bounce buffer's PRP list (4.1.1): entry i is its page i + 1, since
         // PRP1 always names page 0. The pages are physically contiguous.
         for i in 0..BOUNCE / PAGE - 1 {
-            *c.prp_list.add(i) = c.bounce_phys + ((i + 1) * PAGE) as u64;
+            *bounce_prp.add(i) = c.bounce_phys + ((i + 1) * PAGE) as u64;
         }
 
         // Disable (firmware may have left it running), then program the admin
@@ -426,7 +701,7 @@ impl Controller {
         if !c.msix {
             c.wr(REG_INTMS, u32::MAX);
         }
-        c.wr(REG_AQA, ((entries as u32 - 1) << 16) | (entries as u32 - 1));
+        c.wr(REG_AQA, ((admin_entries as u32 - 1) << 16) | (admin_entries as u32 - 1));
         c.wr64(REG_ASQ, c.admin.sq_phys);
         c.wr64(REG_ACQ, c.admin.cq_phys);
         c.wr(REG_CC, CC_IOSQES_IOCQES | CC_EN); // NVM command set, 4 KiB pages, round robin
@@ -445,14 +720,16 @@ impl Controller {
         // the pin, vector 0, which INTMS masks until one is connected; under
         // MSI-X, message 1 when there is one, so its interrupts are its own.
         let vector = (messages >= 2) as u32;
+        let io = &mut *c.io;
+        let (cq_phys, sq_phys, size) = (io.queue.cq_phys, io.queue.sq_phys, io_entries as u32 - 1);
         let cq = Command::new(ADMIN_CREATE_CQ, 0)
-            .prp(c.io.cq_phys, 0)
-            .dw(10, ((entries as u32 - 1) << 16) | 1)
+            .prp(cq_phys, 0)
+            .dw(10, (size << 16) | 1)
             .dw(11, vector << 16 | 1 << 1 | 1);
         c.admin_command("create I/O completion queue", cq)?;
         let sq = Command::new(ADMIN_CREATE_SQ, 0)
-            .prp(c.io.sq_phys, 0)
-            .dw(10, ((entries as u32 - 1) << 16) | 1)
+            .prp(sq_phys, 0)
+            .dw(10, (size << 16) | 1)
             .dw(11, 1 << 16 | 1);
         c.admin_command("create I/O submission queue", sq)?;
 
@@ -468,32 +745,35 @@ impl Controller {
         Ok(c)
     }
 
-    /// Take completions by interrupt from now on. `irq` must already be
-    /// connected (its ISR may run as soon as vector 0 is unmasked) and must
-    /// outlive the controller.
-    ///
-    /// # Safety
-    /// `irq` must point to a live [`Irq`] whose interrupt is connected with it as context.
-    pub unsafe fn use_interrupts(&mut self, irq: *mut Irq, number: u32) {
-        self.number = number;
-        (*irq).regs = self.regs;
-        (*irq).cqs = [self.admin.cq, self.io.cq];
-        self.irq = irq;
-        self.publish(false);
-        self.publish(true);
-        (*irq).armed.store(true, Ordering::Release);
-        if !self.msix {
-            self.wr(REG_INTMC, VECTOR_0);
-        }
+    /// How many commands the I/O queue holds at once.
+    pub fn depth(&mut self) -> usize {
+        unsafe { (*self.io).depth }
     }
 
-    /// Tell the ISR where queue `io`'s next completion will land.
-    fn publish(&self, io: bool) {
-        if self.irq.is_null() {
-            return;
+    /// Open the I/O path. The controller must be where it will stay (its
+    /// address goes to the DPCs), every admin command must be done (they poll,
+    /// and would race the DPC for the pin), and when `interrupts` is set,
+    /// `irq`'s interrupt must be connected with `irq` as its context.
+    ///
+    /// # Safety
+    /// `irq` must point to a live [`Irq`] that outlives the controller, and
+    /// neither may move from here on.
+    pub unsafe fn arm(&mut self, irq: *mut Irq, number: u32, interrupts: bool) {
+        self.number = number;
+        self.irq = irq;
+        self.interrupts = interrupts;
+        let io = &mut *self.io;
+        (*irq).regs = self.regs;
+        (*irq).cqs = [self.admin.cq, io.queue.cq];
+        (*irq).next[0].store(self.admin.position(), Ordering::Release);
+        (*irq).next[1].store(io.queue.position(), Ordering::Release);
+        (*irq).controller = self;
+        KeInitializeTimer(&raw mut (*irq).timer);
+        KeInitializeDpc(&raw mut (*irq).timer_dpc, Some(timer_dpc), irq.cast());
+        (*irq).armed.store(true, Ordering::Release);
+        if interrupts && !self.msix {
+            self.wr(REG_INTMC, VECTOR_0);
         }
-        let q = if io { &self.io } else { &self.admin };
-        unsafe { (*self.irq).next[io as usize].store(q.head as u32 | q.phase << 16, Ordering::Release) };
     }
 
     fn wait_ready(&self, ready: bool) -> Result<(), Error> {
@@ -588,143 +868,328 @@ impl Controller {
         Ok(Some(Namespace { id, blocks, block_shift }))
     }
 
-    /// The most blocks of `ns` one read or write may move.
+    /// Submit an admin command and poll for its completion. Returns completion
+    /// dword 0. Only before [`Controller::arm`]: see the module comment.
+    fn admin_command(&mut self, what: &'static str, cmd: Command) -> Result<u32, Error> {
+        let cid = self.next_cid;
+        self.next_cid = self.next_cid.wrapping_add(1);
+        self.admin.push(&cmd.cid(cid));
+        wmb();
+        self.ring(0, false, self.admin.tail);
+
+        let t0 = now_us();
+        loop {
+            if let Some((dw0, dw3)) = self.admin.peek() {
+                self.admin.advance();
+                self.ring(0, true, self.admin.head);
+                if dw3 as u16 != cid {
+                    nvprint!("{}: completion for command {} while {} was outstanding\n", what, dw3 as u16, cid);
+                }
+                return match status(dw3) {
+                    Some((sct, sc)) => Err(Error::Status(what, sct, sc)),
+                    None => Ok(dw0),
+                };
+            }
+            let elapsed = now_us() - t0;
+            if elapsed > COMMAND_TIMEOUT_US {
+                return Err(if self.rd(REG_CSTS) & CSTS_CFS != 0 { Error::Fatal } else { Error::Timeout(what) });
+            }
+            if elapsed < SPIN_US {
+                unsafe { KeStallExecutionProcessor(1) };
+            } else {
+                sleep_ms(1);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // The I/O path
+    // -----------------------------------------------------------------------
+
+    /// The most blocks of `ns` one command may move.
     pub fn max_blocks(&self, ns: &Namespace) -> u64 {
         (self.max_transfer >> ns.block_shift) as u64
     }
 
-    /// Read `blocks` blocks at `lba` into the bounce buffer; returns it.
-    pub fn read(&mut self, ns: &Namespace, lba: u64, blocks: u64) -> Result<&[u8], Error> {
-        let bytes = self.rw(NVM_READ, "read", ns, lba, blocks)?;
-        Ok(unsafe { core::slice::from_raw_parts(self.bounce, bytes) })
-    }
-
-    /// Write `data` (whole blocks, at most max_blocks) to `lba`.
-    pub fn write(&mut self, ns: &Namespace, lba: u64, data: &[u8]) -> Result<(), Error> {
-        unsafe { core::ptr::copy_nonoverlapping(data.as_ptr(), self.bounce, data.len()) };
-        self.rw(NVM_WRITE, "write", ns, lba, (data.len() >> ns.block_shift) as u64).map(|_| ())
-    }
-
-    pub fn flush(&mut self, ns: &Namespace) -> Result<(), Error> {
-        self.io_command("flush", Command::new(NVM_FLUSH, ns.id)).map(|_| ())
-    }
-
-    fn rw(&mut self, opcode: u8, what: &'static str, ns: &Namespace, lba: u64, blocks: u64) -> Result<usize, Error> {
-        let bytes = (blocks << ns.block_shift) as usize;
-        assert!(blocks > 0 && bytes <= self.max_transfer, "{what} of {blocks} blocks");
-        let prp2 = match bytes {
-            0..=PAGE => 0,
-            _ if bytes <= 2 * PAGE => self.bounce_phys + PAGE as u64,
-            _ => self.prp_list_phys,
-        };
-        let cmd = Command::new(opcode, ns.id)
-            .prp(self.bounce_phys, prp2)
-            .dw(10, lba as u32)
-            .dw(11, (lba >> 32) as u32)
-            .dw(12, blocks as u32 - 1); // NLB is zero-based
-        self.io_command(what, cmd)?;
-        Ok(bytes)
-    }
-
-    fn admin_command(&mut self, what: &'static str, cmd: Command) -> Result<u32, Error> {
-        self.submit(false, what, cmd)
-    }
-
-    fn io_command(&mut self, what: &'static str, cmd: Command) -> Result<u32, Error> {
-        self.submit(true, what, cmd)
-    }
-
-    /// Submit `cmd` and wait for its completion. Returns completion dword 0.
-    fn submit(&mut self, io: bool, what: &'static str, mut cmd: Command) -> Result<u32, Error> {
-        let cid = self.next_cid;
-        self.next_cid = self.next_cid.wrapping_add(1);
-        cmd.0[0] |= (cid as u32) << 16;
-        let stride = self.doorbell_stride;
-        let regs = self.regs;
-        let claimed = self.claimed();
-        {
-            let q = if io { &mut self.io } else { &mut self.admin };
-            unsafe {
-                let slot = q.sq.add(q.tail as usize * SQE).cast::<u32>();
-                for (i, &dw) in cmd.0.iter().enumerate() {
-                    write_volatile(slot.add(i), dw);
-                }
-            }
-            q.tail = (q.tail + 1) % QUEUE_ENTRIES;
-            wmb();
-            // Submission queue y tail doorbell: 0x1000 + (2y) * stride (3.1.24).
-            unsafe { write_volatile(regs.add(DOORBELLS + 2 * q.id as usize * stride).cast::<u32>(), q.tail as u32) };
+    /// Start `r` (at <= DISPATCH_LEVEL, after [`Controller::arm`]). Its `done`
+    /// runs once it has completed, never from inside this call.
+    ///
+    /// # Safety
+    /// `r` must stay valid and untouched until its `done` runs. Its data must
+    /// be reachable as the [`Request`] fields promise.
+    pub unsafe fn submit(&self, r: *mut Request) {
+        let req = &mut *r;
+        assert!(req.op == Op::Flush || req.blocks > 0, "an empty {}", req.op.name());
+        assert!(
+            req.op == Op::Flush || dma_ready(req.mdl, req.mdl_offset, req.bytes()) || !req.system.is_null(),
+            "a {} with neither DMA-ready pages nor a system address",
+            req.op.name()
+        );
+        req.direct = req.op != Op::Flush && dma_ready(req.mdl, req.mdl_offset, req.bytes());
+        req.issued = 0;
+        req.outstanding = 0;
+        req.error = None;
+        req.next = null_mut();
+        let _g = SpinLockGuard::acquire(self.lock.get());
+        let io = &mut *self.io;
+        req.queued = true;
+        if io.tail.is_null() {
+            io.head = r;
+        } else {
+            (*io.tail).next = r;
         }
+        io.tail = r;
+        self.pump(io);
+    }
 
-        let t0 = now_us();
-        let mut woken = false;
-        loop {
-            if !self.irq.is_null() {
-                // Sleep until the DPC says a completion queue has news, or the
-                // poll interval runs out. Always sleep first: the completion
-                // could already be there, but then its interrupt has fired too,
-                // and finding it straight away would hide whether it did.
-                let mut interval: LARGE_INTEGER = unsafe { core::mem::zeroed() };
-                interval.QuadPart = -10_000 * INTERRUPT_POLL_MS;
-                woken = unsafe {
-                    KeWaitForSingleObject((&raw mut (*self.irq).event).cast(), 0, 0, 0, &mut interval)
-                } == 0;
+    fn pop(io: &mut Io) {
+        let r = io.head;
+        unsafe {
+            io.head = (*r).next;
+            (*r).next = null_mut();
+            (*r).queued = false;
+        }
+        if io.head.is_null() {
+            io.tail = null_mut();
+        }
+    }
+
+    /// Issue commands from the head of the FIFO while there are slots for
+    /// them, then ring the doorbell once for the lot. Under the lock.
+    unsafe fn pump(&self, io: &mut Io) {
+        let mut issued = false;
+        while !io.head.is_null() {
+            let r = &mut *io.head;
+            if r.error.is_some() {
+                // A command of it failed (and others are still in flight, or
+                // the reap would have finished it): issue no more of it.
+                Self::pop(io);
+                continue;
             }
-            if let Some((dw0, dw3)) = self.reap(io) {
-                let claimed_since = self.claimed().wrapping_sub(claimed);
-                self.count(woken, claimed_since, what);
-                let returned = dw3 as u16;
-                if returned != cid {
-                    nvprint!("{}: completion for command {} while {} was outstanding\n", what, returned, cid);
-                }
-                // Status (4.2.3): code in 24:17, type in 27:25.
-                let (sct, sc) = ((dw3 >> 25 & 7) as u8, (dw3 >> 17) as u8);
-                if sct != 0 || sc != 0 {
-                    return Err(Error::Status(what, sct, sc));
-                }
-                return Ok(dw0);
+            if r.op == Op::Flush && io.in_flight > 0 {
+                break;
             }
-            let elapsed = now_us() - t0;
-            if elapsed > COMMAND_TIMEOUT_US {
-                let csts = unsafe { read_volatile(regs.add(REG_CSTS).cast::<u32>()) };
-                return Err(if csts & CSTS_CFS != 0 { Error::Fatal } else { Error::Timeout(what) });
+            if !r.direct && r.op != Op::Flush && io.bounce_busy {
+                break;
             }
-            if self.irq.is_null() {
-                if elapsed < SPIN_US {
-                    unsafe { KeStallExecutionProcessor(1) };
+            let Some(index) = io.slots[..io.depth].iter().position(|s| s.request.is_null()) else {
+                break;
+            };
+            // Every field set afresh: the slot's last command may have been anything.
+            let slot = &mut io.slots[index];
+            slot.request = r;
+            slot.started = now_us();
+            slot.warned = false;
+            slot.offset = 0;
+            slot.bytes = 0;
+            slot.bounce = false;
+            let cmd = if r.op == Op::Flush {
+                Command::new(NVM_FLUSH, r.nsid)
+            } else {
+                let blocks = (self.max_transfer as u64 >> r.block_shift).min(r.blocks - r.issued);
+                let offset = (r.issued << r.block_shift) as usize;
+                let bytes = (blocks << r.block_shift) as usize;
+                let lba = r.lba + r.issued;
+                slot.offset = offset;
+                slot.bytes = bytes;
+                slot.bounce = !r.direct;
+                let (prp1, prp2) = if r.direct {
+                    io.stats.direct += 1;
+                    self.direct_prps(r, slot, offset, bytes)
                 } else {
-                    sleep_ms(1);
-                }
+                    io.stats.bounced += 1;
+                    io.bounce_busy = true;
+                    if r.op == Op::Write {
+                        core::ptr::copy_nonoverlapping(r.system.add(offset), self.bounce, bytes);
+                    }
+                    let prp2 = match bytes {
+                        0..=PAGE => 0,
+                        _ if bytes <= 2 * PAGE => self.bounce_phys + PAGE as u64,
+                        _ => self.bounce_prp_phys,
+                    };
+                    (self.bounce_phys, prp2)
+                };
+                r.issued += blocks;
+                let opcode = if r.op == Op::Write { NVM_WRITE } else { NVM_READ };
+                Command::new(opcode, r.nsid)
+                    .prp(prp1, prp2)
+                    .dw(10, lba as u32)
+                    .dw(11, (lba >> 32) as u32)
+                    .dw(12, blocks as u32 - 1) // NLB is zero-based
+            };
+            io.queue.push(&cmd.cid(index as u16));
+            r.outstanding += 1;
+            io.in_flight += 1;
+            io.stats.peak = io.stats.peak.max(io.in_flight as u32);
+            issued = true;
+            if r.op == Op::Flush || r.issued == r.blocks {
+                Self::pop(io);
             }
+        }
+        if issued {
+            wmb();
+            self.ring(io.queue.id, false, io.queue.tail);
+        }
+        if io.in_flight > 0 && !io.timer_set {
+            let mut due: LARGE_INTEGER = core::mem::zeroed();
+            due.QuadPart = -10_000 * POLL_MS;
+            KeSetTimer(&raw mut (*self.irq).timer, due, &raw mut (*self.irq).timer_dpc);
+            io.timer_set = true;
         }
     }
 
-    /// Consume the completion at queue `io`'s head, if it has arrived: ring the
-    /// head doorbell, tell the ISR, and unmask the vector it masked. Returns
-    /// completion dwords 0 and 3.
-    fn reap(&mut self, io: bool) -> Option<(u32, u32)> {
-        let stride = self.doorbell_stride;
-        let regs = self.regs;
-        let q = if io { &mut self.io } else { &mut self.admin };
-        let entry = unsafe { q.cq.add(q.head as usize * CQE).cast::<u32>() };
-        let dw3 = unsafe { read_volatile(entry.add(3)) };
-        if dw3 >> 16 & 1 != q.phase {
-            return None;
+    /// PRP1 and PRP2 for `bytes` bytes at `offset` into `r`'s data, straight
+    /// from its MDL's page list (4.1.1): PRP1 the first byte, PRP2 the second
+    /// page or, past two, the slot's list of the rest.
+    unsafe fn direct_prps(&self, r: &Request, slot: &mut Slot, offset: usize, bytes: usize) -> (u64, u64) {
+        let at = r.mdl_offset + offset;
+        let prp1 = mdl_phys(r.mdl, at);
+        let first = PAGE - (prp1 as usize % PAGE);
+        if bytes <= first {
+            return (prp1, 0);
         }
-        rmb();
-        let dw0 = unsafe { read_volatile(entry) };
-        q.head += 1;
-        if q.head == QUEUE_ENTRIES {
-            q.head = 0;
-            q.phase ^= 1;
+        let rest = (bytes - first).div_ceil(PAGE);
+        if rest == 1 {
+            return (prp1, mdl_phys(r.mdl, at + first));
         }
-        // Completion queue y head doorbell: 0x1000 + (2y + 1) * stride.
-        unsafe { write_volatile(regs.add(DOORBELLS + (2 * q.id as usize + 1) * stride).cast::<u32>(), q.head as u32) };
-        self.publish(io);
-        if !self.irq.is_null() && !self.msix {
+        for i in 0..rest {
+            *slot.prp.add(i) = mdl_phys(r.mdl, at + first + i * PAGE);
+        }
+        (prp1, slot.prp_phys)
+    }
+
+    /// Reap what has completed, start what now can, and call the finished
+    /// requests back. From the interrupt's DPC (`interrupt`) or the timer's.
+    unsafe fn service(&self, interrupt: bool) {
+        let mut finished: *mut Request = null_mut();
+        {
+            let _g = SpinLockGuard::acquire(self.lock.get());
+            let io = &mut *self.io;
+            if !interrupt {
+                io.timer_set = false;
+            }
+            // With an interrupt connected the timer reaps only what it saw
+            // waiting last tick too: anything newer is the interrupt's.
+            let reap = interrupt || !self.interrupts || {
+                let waiting = io.queue.peek().is_some();
+                let seen = waiting && io.poll_mark == io.queue.position();
+                io.poll_mark = if waiting { io.queue.position() } else { u32::MAX };
+                seen
+            };
+            if reap {
+                let reaped = self.reap(io, &mut finished);
+                io.poll_mark = u32::MAX;
+                if reaped > 0 {
+                    self.tally(io, interrupt, reaped);
+                }
+            }
+            if !interrupt {
+                self.check_overdue(io);
+            }
+            self.pump(io);
+        }
+        // The queue is drained: the pin may raise the next one.
+        if interrupt && !self.msix {
             self.wr(REG_INTMC, VECTOR_0);
         }
-        Some((dw0, dw3))
+        while !finished.is_null() {
+            let r = finished;
+            finished = (*r).next;
+            (*r).next = null_mut();
+            ((*r).done)(r);
+        }
+    }
+
+    /// Consume every completion that has arrived; requests now finished are
+    /// linked onto `finished`. Under the lock. Returns how many were reaped.
+    unsafe fn reap(&self, io: &mut Io, finished: &mut *mut Request) -> u32 {
+        let mut n = 0;
+        while let Some((_, dw3)) = io.queue.peek() {
+            io.queue.advance();
+            n += 1;
+            let cid = (dw3 & 0xFFFF) as usize;
+            let Some(slot) = io.slots[..io.depth].get_mut(cid).filter(|s| !s.request.is_null()) else {
+                nvprint!("controller {}: a completion for command {}, which is not in flight\n", self.number, cid);
+                continue;
+            };
+            let r = &mut *slot.request;
+            slot.request = null_mut();
+            io.in_flight -= 1;
+            r.outstanding -= 1;
+            if slot.bounce {
+                if r.op == Op::Read && status(dw3).is_none() {
+                    core::ptr::copy_nonoverlapping(self.bounce, r.system.add(slot.offset), slot.bytes);
+                }
+                io.bounce_busy = false;
+            }
+            if let Some((sct, sc)) = status(dw3) {
+                r.error.get_or_insert(Error::Status(r.op.name(), sct, sc));
+            }
+            if r.finished() {
+                if r.queued {
+                    // Only the head is ever part-way issued.
+                    Self::pop(io);
+                }
+                r.next = *finished;
+                *finished = r;
+            }
+        }
+        if n > 0 {
+            self.ring(io.queue.id, true, io.queue.head);
+            (*self.irq).next[1].store(io.queue.position(), Ordering::Release);
+        }
+        n
+    }
+
+    /// Keep score of who found the completions, and say on the debug port the
+    /// first time each way happens: the first by interrupt proves the line
+    /// works; the first by the timer means one went missing.
+    fn tally(&self, io: &mut Io, interrupt: bool, reaped: u32) {
+        let s = &mut io.stats;
+        if interrupt {
+            s.by_interrupt += reaped;
+            if s.by_interrupt == reaped && self.interrupts {
+                nvprint!("controller {}: interrupts working ({} completion(s) on the first)\n", self.number, reaped);
+            }
+        } else {
+            s.by_poll += reaped;
+            if s.by_poll == reaped && self.interrupts {
+                nvprint!(
+                    "controller {}: {} completion(s) came with no interrupt; the {} ms poll found them ({} by interrupt so far)\n",
+                    self.number,
+                    reaped,
+                    POLL_MS,
+                    s.by_interrupt
+                );
+            }
+        }
+    }
+
+    /// Report each command in flight past the timeout, once (see the module
+    /// comment for why it stays in flight).
+    fn check_overdue(&self, io: &mut Io) {
+        let now = now_us();
+        for (cid, s) in io.slots[..io.depth].iter_mut().enumerate() {
+            if !s.request.is_null() && !s.warned && now.saturating_sub(s.started) > COMMAND_TIMEOUT_US {
+                s.warned = true;
+                let r = unsafe { &*s.request };
+                nvprint!(
+                    "controller {}: command {} ({} of {} bytes at block {}) has not completed in {} s; CSTS {:#x}\n",
+                    self.number,
+                    cid,
+                    r.op.name(),
+                    s.bytes,
+                    r.lba + (s.offset >> r.block_shift) as u64,
+                    COMMAND_TIMEOUT_US / 1_000_000,
+                    self.rd(REG_CSTS)
+                );
+            }
+        }
+    }
+
+    pub fn stats(&self) -> Stats {
+        let _g = unsafe { SpinLockGuard::acquire(self.lock.get()) };
+        unsafe { (*self.io).stats }
     }
 
     /// Under MSI-X: the interrupts taken on the admin and I/O messages.
@@ -734,39 +1199,5 @@ impl Controller {
         }
         let m = unsafe { &(*self.irq).messages };
         Some((m[0].load(Ordering::Relaxed), m[1].load(Ordering::Relaxed)))
-    }
-
-    fn claimed(&self) -> u32 {
-        if self.irq.is_null() {
-            return 0;
-        }
-        unsafe { (*self.irq).claimed.load(Ordering::Relaxed) }
-    }
-
-    /// Keep score of how completions were found, and say on the debug port
-    /// the first time each way happens: the first by interrupt proves the
-    /// line works; the first with no interrupt at all means one went missing.
-    fn count(&mut self, woken: bool, claimed_since: u32, what: &str) {
-        if self.irq.is_null() {
-            return;
-        }
-        if woken || claimed_since > 0 {
-            self.by_interrupt += 1;
-            self.late += !woken as u32;
-            if self.by_interrupt == 1 {
-                nvprint!("controller {}: interrupts working (first completion by interrupt: {})\n", self.number, what);
-            }
-        } else {
-            self.by_poll += 1;
-            if self.by_poll == 1 {
-                nvprint!(
-                    "controller {}: a completion ({}) came with no interrupt; the {} ms poll found it ({} by interrupt so far)\n",
-                    self.number,
-                    what,
-                    INTERRUPT_POLL_MS,
-                    self.by_interrupt
-                );
-            }
-        }
     }
 }

@@ -407,6 +407,11 @@ def test_partially_built_names_the_missing_guest_not_a_restage(tmp_path):
 _T0 = time.time()
 
 
+def _all_sources():
+    """Every source a staged guest's freshness is dated against."""
+    return [*ladder.GUEST_SOURCE.values(), *(h for hs in ladder.GUEST_HELPERS.values() for h in hs)]
+
+
 def _built_tree(tmp_path, *, sources=True):
     """A repo with a staged manifest, every guest binary, and their sources."""
     repo = _manifest(tmp_path, [f"reactos/syswow64/{g}.exe=/tmp/x" for g in ladder.staged_guests()])
@@ -415,7 +420,7 @@ def _built_tree(tmp_path, *, sources=True):
     (repo / "tools" / "fex").mkdir(parents=True)
     (repo / ladder.GUEST_BUILDER).write_text("#!/bin/sh\n")
     if sources:
-        for rel in ladder.GUEST_SOURCE.values():
+        for rel in _all_sources():
             src = repo / rel
             src.parent.mkdir(parents=True, exist_ok=True)
             src.write_text("int start(void){return 0;}\n")
@@ -425,7 +430,7 @@ def _built_tree(tmp_path, *, sources=True):
     # EXPLICITLY and far apart rather than with utime(None): the real gap is
     # days, and a test that relies on "now is later than a moment ago" turns
     # filesystem mtime granularity into a flake.
-    for rel in ladder.GUEST_SOURCE.values():
+    for rel in _all_sources():
         os.utime(repo / rel, (_T0 - 1000, _T0 - 1000))
     os.utime(repo / ladder.GUEST_BUILDER, (_T0 - 1000, _T0 - 1000))
     for g in ladder.staged_guests():
@@ -467,7 +472,7 @@ def test_absolute_age_would_not_have_caught_it(tmp_path):
     binary whose source is older still must read as FRESH."""
     repo = _built_tree(tmp_path)
     ancient = _T0 - 60 * 60 * 24 * 90
-    for rel in ladder.GUEST_SOURCE.values():
+    for rel in _all_sources():
         os.utime(repo / rel, (ancient - 100, ancient - 100))
     os.utime(repo / ladder.GUEST_BUILDER, (ancient - 100, ancient - 100))
     for g in ladder.staged_guests():

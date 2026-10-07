@@ -3659,10 +3659,26 @@ pub const CmResourceTypeMemory: u8 = 3;
 // wdm.h/ntddk.h MACROS and MSVC intrinsics the C calls as functions. ntkrnl-sys has portable
 // wrappers for them outside the `ddk` glob (ke, inline::tier1, inline::ke, interlocked), so
 // they are re-exported here BY NAME -- the C's `_`-prefixed intrinsic spellings included.
-pub use ntkrnl_sys::ke::{
-    KeAcquireSpinLock, KeAcquireSpinLockAtDpcLevel, KeReleaseSpinLock,
-    KeReleaseSpinLockFromDpcLevel,
-};
+// ntkrnl_sys::ke's spin-lock helpers take ITS `PKSPIN_LOCK` (`*mut usize`); a driver's lock
+// fields are the island's (`*mut c_ulonglong` on 64-bit) -- the same width, a distinct Rust
+// type, so a bare re-export made every call site E0308 (16 in atapi). Thin wrappers over the
+// island's type instead.
+#[inline]
+pub unsafe fn KeAcquireSpinLock(SpinLock: PKSPIN_LOCK, OldIrql: *mut KIRQL) {
+    ntkrnl_sys::ke::KeAcquireSpinLock(SpinLock.cast(), OldIrql)
+}
+#[inline]
+pub unsafe fn KeReleaseSpinLock(SpinLock: PKSPIN_LOCK, NewIrql: KIRQL) {
+    ntkrnl_sys::ke::KeReleaseSpinLock(SpinLock.cast(), NewIrql)
+}
+#[inline]
+pub unsafe fn KeAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK) {
+    ntkrnl_sys::ke::KeAcquireSpinLockAtDpcLevel(SpinLock.cast())
+}
+#[inline]
+pub unsafe fn KeReleaseSpinLockFromDpcLevel(SpinLock: PKSPIN_LOCK) {
+    ntkrnl_sys::ke::KeReleaseSpinLockFromDpcLevel(SpinLock.cast())
+}
 pub use ntkrnl_sys::inline::tier1::{
     IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation,
     IoMarkIrpPending, IoSetCancelRoutine, IoSetCompletionRoutine, IoSetNextIrpStackLocation,
@@ -3831,29 +3847,29 @@ def scaffold_crate(
     deps = (
         'panic-common = { path = "../panic-common", features = ["user"] }\n'
         'ntdll-sys = { path = "../ntdll-sys" }\n'
-        'win32macros-rust = { path = "../win32macros-rust" }\n'
         if m.is_usermode
         else 'panic-common = { path = "../panic-common", features = ["kernel"] }\n'
         'ntkrnl-sys = { path = "../ntkrnl-sys" }\n'
-    )
+        # Kernel crates too: DPRINT1 is win32macros' (DbgPrint is cdecl in ntoskrnl exactly
+        # as in ntdll), and the rest are header macros kernel C uses as much as user C.
+    ) + 'win32macros-rust = { path = "../win32macros-rust" }\n'
     win32_reexport = ""
-    if m.is_usermode:
-        # The MACROS only, by name: a glob would also pull win32macros' type aliases
-        # (HANDLE, WCHAR) into the prelude next to the island's, and every use of either
-        # becomes E0659 ambiguous.
-        macro_src = dp.env.repo_root / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
-        names = sorted(
-            {
-                n
-                for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
-                for n in re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", f.read_text())
-            }
+    # The MACROS only, by name: a glob would also pull win32macros' type aliases
+    # (HANDLE, WCHAR) into the prelude next to the island's, and every use of either
+    # becomes E0659 ambiguous.
+    macro_src = dp.env.repo_root / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
+    names = sorted(
+        {
+            n
+            for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
+            for n in re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", f.read_text())
+        }
+    )
+    if names:
+        win32_reexport = (
+            "// The Win32 header macros, ported once in win32macros-rust, not per module.\n"
+            f"pub use win32macros_rust::{{{', '.join(names)}}};\n"
         )
-        if names:
-            win32_reexport = (
-                "// The Win32 header macros, ported once in win32macros-rust, not per module.\n"
-                f"pub use win32macros_rust::{{{', '.join(names)}}};\n"
-            )
     write(
         out_dir / "Cargo.toml",
         f"""# {crate} — see src/lib.rs for the module map.
@@ -3937,21 +3953,12 @@ pub use crate::{ERR, FIXME, TRACE, WARN};"""
         else """// reactos/debug.h DPRINT/UNIMPLEMENTED — no-op MACROS, never out-of-line fns
 // (field manual §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py
 // rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
-// DPRINT1 PRINTS in this DBG=1 tree: it comes from win32macros-rust with the other macros.
+// DPRINT1 PRINTS in this DBG=1 tree, kernel and user mode alike: it comes from
+// win32macros-rust with the other macros.
 #[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
 pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};"""
-        if m.is_usermode
-        else """// reactos/debug.h DPRINT/DPRINT1/UNIMPLEMENTED — no-op MACROS, never out-of-line
-// fns (field manual §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py
-// rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
-// OWED: a kernel DPRINT1 that prints (DbgPrint is an ntoskrnl export); user mode has one.
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! DPRINT1 { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
-pub use crate::{DPRINT, DPRINT1, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};"""
     )
     write(
         src / "prelude.rs",

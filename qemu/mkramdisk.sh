@@ -267,6 +267,13 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
                     echo "[!] VIBEOS_FEX=1: $G.exe not built — that x86-64 rung will no-op"
                 fi
             done
+            # spawn64's native helper (rung 13): the arm64 build, under the
+            # name spawn64 starts. Missing, rung 13 fails loudly.
+            if [ -f "$PROJECT_DIR/build-fex-hello/xinject-arm64.exe" ]; then
+                mcopy -o -i "$RAMDISK_IMG" "$PROJECT_DIR/build-fex-hello/xinject-arm64.exe" "::/reactos/system32/xinject.exe"
+            else
+                echo "[!] VIBEOS_FEX=1: xinject-arm64.exe not built — spawn64 rung 13 will fail"
+            fi
         else
             echo "[!] VIBEOS_FEX=1: no build-amd64 ($TESTGUI64) — x86-64 guests that import"
             echo "[!]   anything (all but hello64) will fail at their first DLL. Build amd64 first."
@@ -475,6 +482,12 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             echo "[*] VIBEOS_FEX=1 — staging syswow64/spawn32.exe (process-creation guest)"
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$SPAWN32" ::/reactos/syswow64/spawn32.exe
+        fi
+        APC32="${VIBEOS_APC32_EXE:-$PROJECT_DIR/build-fex-hello/apc32.exe}"
+        if [ -f "$APC32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/apc32.exe (user-APC guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$APC32" ::/reactos/syswow64/apc32.exe
         fi
         # sqlite32.exe — a THIRD-PARTY stress guest (tools/stress/sqlite). The
         # other guests each probe one mechanism on purpose; this one is a large

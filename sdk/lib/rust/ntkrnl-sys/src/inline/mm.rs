@@ -64,6 +64,28 @@ pub unsafe fn MmGetSystemAddressForMdl(mdl: ddk::PMDL) -> PVOID {
 }
 
 // ============================================================================
+// MDL accessors (macros from mmfuncs.h)
+// ============================================================================
+
+/// `MmGetMdlVirtualAddress(Mdl)` = `(PVOID)((PCHAR)(Mdl)->StartVa + (Mdl)->ByteOffset)`.
+#[inline]
+pub unsafe fn MmGetMdlVirtualAddress(mdl: ddk::PMDL) -> PVOID {
+    ((*mdl).StartVa as *mut u8).wrapping_add((*mdl).ByteOffset as usize) as PVOID
+}
+
+/// `MmGetMdlByteCount(Mdl)` = `(Mdl)->ByteCount`.
+#[inline]
+pub unsafe fn MmGetMdlByteCount(mdl: ddk::PMDL) -> ULONG {
+    (*mdl).ByteCount
+}
+
+/// `MmGetMdlByteOffset(Mdl)` = `(Mdl)->ByteOffset`.
+#[inline]
+pub unsafe fn MmGetMdlByteOffset(mdl: ddk::PMDL) -> ULONG {
+    (*mdl).ByteOffset
+}
+
+// ============================================================================
 // MmGetSystemAddressForMdlSafe (macro from mmfuncs.h)
 // ============================================================================
 

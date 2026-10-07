@@ -294,14 +294,14 @@ pub unsafe extern "C" fn PrintBusType(
     if BusType as u32 <= BusTypeMax {
         LoadStringW(
             GetModuleHandle(core::ptr::null_mut()),
-            (IDS_BUSTYPE_UNKNOWN + (BusType) as i32) as UINT,
+            IDS_BUSTYPE_UNKNOWN + BusType as u32,
             pszBuffer,
             cchBufferMax,
         );
     } else {
         LoadStringW(
             GetModuleHandle(core::ptr::null_mut()),
-            (IDS_BUSTYPE_OTHER) as UINT,
+            IDS_BUSTYPE_OTHER,
             pszBuffer,
             cchBufferMax,
         );

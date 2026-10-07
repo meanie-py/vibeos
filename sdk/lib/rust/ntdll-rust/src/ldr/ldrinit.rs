@@ -1871,6 +1871,49 @@ unsafe fn LdrpDivertWow64Thread(Context: PCONTEXT) {
     Handoff(Start as ULONG_PTR, Param as ULONG_PTR, Win32Thread);
 }
 
+/// Set once process init has seen an x86-64 guest process (LdrpInitializeProcess).
+#[cfg(target_arch = "aarch64")]
+static mut LdrpIsX64GuestProcess: bool = false;
+
+/// A new thread of an x86-64 guest process whose start is not native code:
+/// hand it to wowx64.dll, which makes it a guest thread. Returns if it does not
+/// (or, for a Win32-shape start around a native routine, after wowx64 rewrote
+/// the context to run that routine natively).
+///
+/// The threads a guest creates itself start in wowx64.dll, which is native
+/// code, and are never diverted. What arrives here is a thread ANOTHER, native
+/// process created (CreateRemoteThread, RtlCreateUserThread): its CONTEXT names
+/// the native kernel32's BaseThreadStartup, which an x86-64 guest process does
+/// not load, or the x86-64 routine itself. Same shape as LdrpDivertWow64Thread.
+#[cfg(target_arch = "aarch64")]
+unsafe fn LdrpDivertWowX64Thread(Context: PCONTEXT) {
+    if !LdrpIsX64GuestProcess || Context.is_null() {
+        return;
+    }
+    let Pc = (*Context).Pc;
+    let mut Base: PVOID = core::ptr::null_mut();
+    if !RtlPcToFileHeader(Pc as PVOID, &mut Base).is_null() {
+        let Nt = RtlImageNtHeader(Base);
+        if !Nt.is_null() && (*Nt).FileHeader.Machine == IMAGE_FILE_MACHINE_ARM64 as u16 {
+            return;
+        }
+    }
+    let mut WowX64: PVOID = core::ptr::null_mut();
+    let mut Name: ANSI_STRING = core::mem::zeroed();
+    let mut Handoff: PVOID = core::ptr::null_mut();
+    RtlInitAnsiString(&mut Name, b"WowX64StartGuestThreadFromNative\0".as_ptr() as PCSZ);
+    if !NT_SUCCESS(LdrGetDllHandle(core::ptr::null_mut(), core::ptr::null_mut(),
+                                   core::ptr::addr_of_mut!(WowX64DllString), &mut WowX64))
+        || !NT_SUCCESS(LdrGetProcedureAddress(WowX64, &mut Name, 0, &mut Handoff))
+    {
+        DbgPrint(b"[LDR] x86-64 guest thread with a non-native start %p, but no wowx64.dll handoff\n\0".as_ptr()
+                 as *const i8, Pc as PVOID);
+        return;
+    }
+    let Handoff: unsafe extern "system" fn(PCONTEXT) = core::mem::transmute(Handoff);
+    Handoff(Context);
+}
+
 /// Hand the initial thread to a guest layer — wow64.dll for an i386 image,
 /// wowx64.dll for an x86-64 image on arm64 — by calling its
 /// `<InitName>(Context)`, which never returns: it runs the guest from here.
@@ -2592,6 +2635,10 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     #[cfg(target_arch = "aarch64")]
     let IsX64GuestProcess =
         (*NtHeader).FileHeader.Machine == 0x8664 /* IMAGE_FILE_MACHINE_AMD64 */;
+    #[cfg(target_arch = "aarch64")]
+    if IsX64GuestProcess {
+        LdrpIsX64GuestProcess = true;
+    }
 
     /* An x86-64 guest's Win32 layer is the GUEST's amd64 kernel32, loaded by
      * its own loader under emulation. The native one would be pure baggage
@@ -2998,6 +3045,11 @@ pub unsafe extern "system" fn LdrpInit(
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     if LdrpIsWow64Process && !IsInitialThread && NT_SUCCESS(LoaderStatus) {
         LdrpDivertWow64Thread(Context);
+    }
+    /* ... and of an x86-64 guest process whose start is not native code. */
+    #[cfg(target_arch = "aarch64")] // nolint: cfg-vs-c (x86-64 guests on arm64 (wowx64), Rust-only)
+    if LdrpIsX64GuestProcess && !IsInitialThread && NT_SUCCESS(LoaderStatus) {
+        LdrpDivertWowX64Thread(Context);
     }
 }
 

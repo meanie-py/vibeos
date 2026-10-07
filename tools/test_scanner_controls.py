@@ -2357,6 +2357,14 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_ptr_typedef_indirection": (
+        "its pairing is body_audit's -- every module whose CMakeLists links a Rust crate, its "
+        "flipped-out TUs (from the build's compiled-TU set) against its crates' sources -- so a "
+        "fixture directory has no module to resolve. The decision is findings_for(c_body, "
+        "rust), driven directly in tools/test_scan_ptr_typedef_indirection.py: it must flag "
+        "usetup's `*mut PFILEPATHS_W` FileCopyCallback shape at its line, and must not flag a "
+        "genuine `PFOO *x` or a nolint line."
+    ),
     "scan_hresult_literals": (
         "its oracle is the C module scan_invented_constants.c_dirs_for() finds for a crate in "
         "the real tree, so a fixture directory has no crate to map. The decision is "

@@ -66,6 +66,8 @@
 #define S64_FAIL_REMOTE32  0xBAEB /* x86-64 only: CreateRemoteThread into a RUNNING 32-bit child */
 #define S64_FAIL_REMOTENAT 0xBAEC /* x86-64 only: CreateRemoteThread into a RUNNING native process */
 #define S64_FAIL_BAGGAGE   0xBAED /* x86-64 only: a native kernel32/msvcrt is mapped in this process */
+#define S64_FAIL_NATIVE    0xBAEE /* x86-64 only: native child xinject (threads INTO this process) failed */
+#define S64_FAIL_KILL      0xBAEF /* x86-64 only: TerminateProcess did not end a spinning guest child */
 #define S32_CHILD_MAGIC    0x0C41 /* child saw the remote thread's signal */
 #define S32_CHILD_NOSIGNAL 0x0C42 /* child ran but nothing ever signalled it */
 #define S32_REMOTE_MAGIC   0x0DEF /* what the injected thread returns */
@@ -97,6 +99,11 @@
 
 #define CHILD_ARG L" child"
 
+/* Rung 14's child: spin in guest code until killed, after saying so. */
+#define SPIN_ARG L" spin"
+#define S32_EVENT_SPIN L"VibeOSSpawn32Spinning"
+#define S64_KILLED 0x7E57 /* the exit code the parent kills it with */
+
 static void Say(const char *msg)
 {
     /* OutputDebugStringA reaches serial via the guest DbgPrint forwarding
@@ -121,10 +128,9 @@ static void SayHex(const char *label, DWORD v)
 /* Does the command line carry our marker? Searched as a substring rather than
  * parsed as argv: there is no CRT here to split it, and the marker is one we
  * chose that nothing else on the media uses. */
-static BOOL HasChildMarker(void)
+static BOOL HasMarker(const WCHAR *needle)
 {
     const WCHAR *p = GetCommandLineW();
-    const WCHAR *needle = CHILD_ARG;
     int i;
 
     if (!p)
@@ -167,7 +173,7 @@ static BOOL IsChildInvocation(void)
     /* Both are consulted, and AnotherInstanceIsParent() must run either way so
      * the parent actually CLAIMS the guard before it spawns anything. */
     BOOL guardSaysChild = AnotherInstanceIsParent();
-    return HasChildMarker() || guardSaysChild;
+    return HasMarker(CHILD_ARG) || guardSaysChild;
 }
 
 /* "<our full path>" + CHILD_ARG, quoted because the path contains spaces
@@ -569,6 +575,92 @@ static int CheckNoNativeBaggage(void)
         Say("[spawn32] rung12 no native images (not under emulation)\n");
     return Verdict;
 }
+
+/* Rung 14: TerminateProcess ends an emulated process that is busy RUNNING
+ * guest code -- 32-bit and x86-64 -- and its handle signals with the exit code
+ * it was killed with. Once a 32-bit guest stuck after a data-section map
+ * appeared to outlive its own termination (a mutex it held was still held
+ * minutes later); this measures it rather than inferring it. 0 = passed. */
+static int KillSpinningChild(const WCHAR *Rel)
+{
+    PROCESS_INFORMATION pi;
+    HANDLE Spinning;
+    DWORD Code = 0, Waited;
+    int Verdict = 0;
+
+    Spinning = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_SPIN);
+    if (!Spinning || !StartForeignChild(Rel, SPIN_ARG, &pi)) {
+        Say("[spawn32] rung14 could not start the spinning child\n");
+        if (Spinning)
+            CloseHandle(Spinning);
+        return -1;
+    }
+    Waited = WaitForSingleObject(Spinning, CHILD_WAIT_MS);
+    if (Waited != WAIT_OBJECT_0)
+        SayHex("[spawn32] rung14 child never said it was spinning, wait", Waited);
+    if (!TerminateProcess(pi.hProcess, S64_KILLED)) {
+        SayHex("[spawn32] rung14 TerminateProcess FAILED, GetLastError", GetLastError());
+        Verdict = -1;
+    } else if ((Waited = WaitForSingleObject(pi.hProcess, 10000)) != WAIT_OBJECT_0) {
+        SayHex("[spawn32] rung14 killed child is still alive 10 s later, wait", Waited);
+        Verdict = -1;
+    } else if (!GetExitCodeProcess(pi.hProcess, &Code) || Code != S64_KILLED) {
+        SayHex("[spawn32] rung14 killed child's exit code", Code);
+        Verdict = -1;
+    }
+    if (Waited != WAIT_OBJECT_0 && Verdict == 0)
+        Verdict = -1; /* it never got to spinning: not the case under test */
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    CloseHandle(Spinning);
+    return Verdict;
+}
+
+/* Rung 13: a NATIVE child, which creates threads back in THIS process. Under
+ * FEX on arm64, system32\xinject.exe is an arm64 program: starting it is an
+ * x86-64 guest creating a native child, and its CreateRemoteThread and
+ * RtlCreateUserThread into us are a native process creating threads in an
+ * x86-64 guest -- both shapes running InjectedBody, x86-64 code. On amd64 it is
+ * an amd64 program and all of it is native, the oracle. xinject's own exit
+ * code grades its half (XInject.c); the count here says the body really ran
+ * HERE, once per thread. 0 = passed. */
+static volatile LONG g_Injected;
+
+static DWORD WINAPI InjectedBody(LPVOID Param)
+{
+    InterlockedIncrement(&g_Injected);
+    /* Not a return: the RtlCreateUserThread shape has no kernel32 frame to
+     * return into on every target, and ExitThread is the same on all of them. */
+    ExitThread((DWORD)(ULONG_PTR)Param + 1);
+}
+
+static void AppendHex(WCHAR *Buf, DWORD *n, ULONGLONG v)
+{
+    static const WCHAR Digits[] = L"0123456789abcdef";
+    int Shift;
+    Buf[(*n)++] = L' ';
+    for (Shift = 60; Shift > 0 && !((v >> Shift) & 0xf); Shift -= 4)
+        ;
+    for (; Shift >= 0; Shift -= 4)
+        Buf[(*n)++] = Digits[(v >> Shift) & 0xf];
+    Buf[*n] = 0;
+}
+
+static int RunNativeInjector(void)
+{
+    WCHAR Args[64];
+    DWORD n = 0;
+    g_Injected = 0;
+    AppendHex(Args, &n, GetCurrentProcessId());
+    AppendHex(Args, &n, (ULONG_PTR)InjectedBody);
+    if (RunForeignChild(L"\\system32\\xinject.exe", Args, S32_PASS) != 0)
+        return -1;
+    if (g_Injected != 2) {
+        SayHex("[spawn32] rung13 InjectedBody ran here this many times", (DWORD)g_Injected);
+        return -1;
+    }
+    return 0;
+}
 #endif
 
 static DWORD RunParent(void)
@@ -724,11 +816,6 @@ static DWORD RunParent(void)
      * arm64 the x86-64 kernel32's initial-thread CONTEXT names its own x86-64
      * start thunk, which means nothing in either child; natively on amd64 these
      * are the plain cases and say the rungs themselves are right. */
-    // A native arm64 child is NOT testable from here: the x86-64 guest's
-    // system32 is redirected to sysamd64, where an arm64 cmd.exe reads back as
-    // not-found (WoW64's own-machine view), so CreateProcess cannot name it.
-    // Only a 32-bit child, which lives in the un-redirected syswow64, is
-    // reachable (rung 9).
     if (RunForeignChild(L"\\syswow64\\hello32.exe", L"", 0x600D) != 0)
         return S64_FAIL_GUEST32;
     Say("[spawn32] rung9 32-bit child (hello32) OK\n");
@@ -741,12 +828,34 @@ static DWORD RunParent(void)
     if (CheckNoNativeBaggage() != 0)
         return S64_FAIL_BAGGAGE;
     Say("[spawn32] rung12 no native kernel32/msvcrt in this process OK\n");
+    if (RunNativeInjector() != 0)
+        return S64_FAIL_NATIVE;
+    Say("[spawn32] rung13 native child created threads in this process OK\n");
+    if (KillSpinningChild(L"\\syswow64\\spawn32.exe") != 0 ||
+        KillSpinningChild(L"\\system32\\spawn64.exe") != 0)
+        return S64_FAIL_KILL;
+    Say("[spawn32] rung14 TerminateProcess ends a spinning 32-bit and x86-64 guest OK\n");
 #endif
     return S32_PASS;
 }
 
+/* Rung 14's child. Checked before the guard mutex is touched, so it never
+ * takes a role in the parent/child protocol; were the marker lost, the guard
+ * would make it a plain child, never a second parent. */
+static void Spin(void)
+{
+    volatile ULONG_PTR Turns = 0;
+    HANDLE Spinning = CreateEventW(NULL, TRUE, FALSE, S32_EVENT_SPIN);
+    if (Spinning)
+        SetEvent(Spinning);
+    for (;;)
+        Turns++;
+}
+
 int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) */
 {
+    if (HasMarker(SPIN_ARG))
+        Spin();
     DWORD verdict = IsChildInvocation() ? RunChild() : RunParent();
     SayHex("[spawn32] verdict", verdict);
     ExitProcess(verdict);
