@@ -129,6 +129,7 @@ def test_the_native_entry_point_is_not_a_syscall(tmp_path):
     )
     assert rows(tmp_path, {"u-rust/src/a.rs": src}) == []
 
+
 def test_a_pointer_field_lifted_from_a_capture_is_tracked(tmp_path):
     # read_back captures the header; .Buffer still points at user memory, so a raw
     # copy from it -- not through a fault-tolerant primitive -- is a bug one hop out.
