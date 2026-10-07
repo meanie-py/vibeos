@@ -12280,6 +12280,30 @@ Two lessons beyond the fix:
   `EXCEPTION_CONTINUE_SEARCH` turns the crash into a livelock (31,511 iterations). Guard, log,
   and fix the cause.
 
+### A WoW64 thread NtContinues a native context into 32-bit compat mode
+Symptom: amd64 only. A 32-bit guest faults executing at a 32-bit address that is the LOW half
+of a native ntdll address (`eip=b7002919` for `0x7FFB7002919`), with `ebx/esi/edi/ebp` equal to
+the native registers of some earlier 64-bit context; first seen when a user APC (resumed with
+`NtContinue` of the context the kernel delivered it with) returned.
+
+Cause: `KiSystemCallEntry64` (ke/amd64/trap.S) built the trap frame without `SegCs`/`SegSs` --
+`syscall` pushes no machine frame -- so the frame kept whatever the last trap at that kernel
+stack slot left. In a WoW64 thread that is the compat code selector from an interrupt taken in
+guest code, and `KeContextToTrapFrame` turns any CS other than 64-bit user CS into compat CS, so
+a CONTEXT built from a syscall frame resumed as 32-bit code. A native process never takes a trap
+in compat mode, so it never showed. Fix: the entry stores the 64-bit user selectors.
+
+### A guest routine in the x86-64 MAIN IMAGE was run as arm64 code
+Symptom: an x86-64 guest's waitable-timer completion routine (apc64 rung 8) dies with
+`c000001d` at the routine's own address, under the native `KiUserApcDispatcher`; QueueUserAPC
+and ReadFileEx routines work.
+
+Cause: wowx64's `IsGuestCode` called anything in the NATIVE loader's module list native, and
+the x86-64 main image is in that list (the native loader maps it). QueueUserAPC hides this --
+kernel32 wraps the routine in its own `BaseDispatchApc`, which lives in a sysamd64 DLL -- but
+SetWaitableTimer passes the exe's routine straight through. Fix: native means in the native list
+AND an arm64 image.
+
 ### A WoW64 process's fixed TLS slots must be RESERVED, or the first `TlsAlloc` takes slot 1
 Symptom: every 32-bit guest crashes early in libwow64fex's rpmalloc (`heap_get_page_generic`)
 after an unrelated-looking change — here, making arm64 ntdll's `_errno`/`atan2`/`tan` its own

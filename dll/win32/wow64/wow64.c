@@ -147,6 +147,7 @@ LONG Wow64DispatchSystemService(ULONG ServiceNumber, PULONG Arguments);
 #define WOW64_TEB_TLSSLOTS_OFFSET  0x1480  /* TEB64->TlsSlots[]              */
 #define WOW64_TLS_WOW64INFO        10
 #define WOW64_TLS_CPURESERVED      1
+#define WOW64_TLS_INCPUSIMULATION  2
 #define WOW64_INITBLOCK_NTDLL_OFF  72      /* SYSTEM_DLL_INIT_BLOCK.ntdll_handle */
 #define WOW64_ZEROBITS_BELOW_2G    ((ULONG_PTR)0x7FFFFFFF) /* mask form */
 #define WOW64_TEB_WOWTEBOFFSET     0x180c  /* raw Win10 slot (see MmCreateTeb) */
@@ -497,7 +498,7 @@ VOID Wow64pResolveNotifyContract(PVOID CpuDll)
  * which is the register file the CPU layer reads and rewrites on every mode
  * switch. These are the values that really are process-wide, hoisted so the
  * split-out thread entry can reach them. */
-static PVOID Wow64pKiUserApcDispatcher32;
+PVOID Wow64pKiUserApcDispatcher32; /* also wow64_callback.c's guest APCs */
 static PVOID Wow64pLdrInitThunk32;
 static VOID (WINAPI *Wow64pBTCpuThreadInit)(VOID);
 
@@ -1542,6 +1543,11 @@ static VOID Wow64pThreadInit(const WOW64_CONTEXT *Start,
 
     Wow64pBTCpuThreadInit();
 
+    /* From here the thread has guest state, so a guest APC can run on it
+     * (Wow64ApcRoutine defers one that arrives earlier). Windows' name for the
+     * slot; it is reserved in PEB->TlsBitmap with the rest (ldrinit.rs). */
+    Wow64pTlsSlots()[WOW64_TLS_INCPUSIMULATION] = (PVOID)1;
+
     DbgPrint("[FEX-WOW64C] %s: entering guest eip=%08lx esp=%08lx stack=%08lx..%08lx dealloc=%08lx\n",
              What, Ctx->Eip, Ctx->Esp, StackLimit, StackBase, DeallocationStack);
     Wow64pBTCpuSimulate();
@@ -1941,6 +1947,49 @@ static ULONGLONG Wow64pRemoteModuleBase(HANDLE Process, ULONGLONG Peb64,
             break;
     }
     return 0;
+}
+
+/*
+ * Where Wow64ApcRoutine (wow64_callback.c) is in the process that owns Thread:
+ * ours for a thread of this process, translated through the measured wow64.dll
+ * delta for another WoW64 process (the bases differ between processes), NULL
+ * for a process that has no wow64.dll -- there is nothing over there to run a
+ * 32-bit routine.
+ */
+VOID WINAPI Wow64ApcRoutine(ULONG_PTR Packed, ULONG_PTR Arg1, ULONG_PTR Arg2, PVOID Native);
+LONG WINAPI NtQueryInformationThread(HANDLE, ULONG, PVOID, ULONG, PULONG);
+LONG WINAPI NtOpenProcess(HANDLE *, ACCESS_MASK, WOW64_OBJECT_ATTRIBUTES *, WOW64_CLIENT_ID *);
+PVOID Wow64pApcRoutineFor(HANDLE Thread)
+{
+    /* THREAD_/PROCESS_BASIC_INFORMATION as 64-bit words: ClientId.UniqueProcess
+     * is word 2 of the first, PebBaseAddress word 1 and UniqueProcessId word 4
+     * of the second. */
+    ULONGLONG Tbi[6], Pbi[6], Me[6];
+    WOW64_OBJECT_ATTRIBUTES Oa = { sizeof(Oa) };
+    WOW64_CLIENT_ID Cid;
+    HANDLE Process = NULL;
+    ULONGLONG TheirBase = 0;
+
+    if (Thread == (HANDLE)(LONG_PTR)-2)
+        return (PVOID)Wow64ApcRoutine;
+    if (NtQueryInformationThread(Thread, 0 /* ThreadBasicInformation */, Tbi, sizeof(Tbi), NULL) < 0 ||
+        NtQueryInformationProcess(WOW64_CURRENT_PROCESS, 0 /* ProcessBasicInformation */, Me,
+                                  sizeof(Me), NULL) < 0 ||
+        Tbi[2] == Me[4])
+        return (PVOID)Wow64ApcRoutine; /* ours (or a bad handle: the kernel says so) */
+
+    Cid.UniqueProcess = (HANDLE)(ULONG_PTR)Tbi[2];
+    Cid.UniqueThread = NULL;
+    if (NtOpenProcess(&Process, 0x0410 /* QUERY_INFORMATION | VM_READ */, &Oa, &Cid) < 0)
+        return NULL;
+    if (Wow64pSelfBase &&
+        NtQueryInformationProcess(Process, 0, Pbi, sizeof(Pbi), NULL) >= 0)
+        TheirBase = Wow64pRemoteModuleBase(Process, Pbi[1], WOW64_SELF_DLL_NAME);
+    NtClose(Process);
+    if (!TheirBase)
+        return NULL;
+    return (PVOID)(ULONG_PTR)((LONGLONG)(ULONG_PTR)Wow64ApcRoutine +
+                              ((LONGLONG)TheirBase - (LONGLONG)(ULONG_PTR)Wow64pSelfBase));
 }
 
 LONG Wow64CreateForeignGuestThread(HANDLE Process, ULONGLONG Peb64,

@@ -761,11 +761,25 @@ unsafe fn X64SupportStaged() -> bool {
  * NUL-terminated wide exe name; `Ascii` the same name for the serial lines. */
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 unsafe fn TryStartX64Guest(Name: &[u16], Ascii: &[u8]) {
+    TryStartGuestIn(wstr!("\\system32\\").as_ptr(), Name, Ascii, b"x86-64 guest\0");
+}
+
+/* The same for a 32-bit ladder guest in syswow64 -- the shape every
+ * hand-written TryStartWow64* above repeats, for the guests added since. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartWow64Guest(Name: &[u16], Ascii: &[u8]) {
+    if Wow64SupportStaged() {
+        TryStartGuestIn(wstr!("\\syswow64\\").as_ptr(), Name, Ascii, b"i386 guest\0");
+    }
+}
+
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartGuestIn(Dir: *const u16, Name: &[u16], Ascii: &[u8], Kind: &[u8]) {
     let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 48) == 0 {
         return;
     }
-    wcscat(Path.as_mut_ptr(), wstr!("\\system32\\").as_ptr());
+    wcscat(Path.as_mut_ptr(), Dir);
     wcscat(Path.as_mut_ptr(), Name.as_ptr());
     if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
         return; // not staged — silent no-op
@@ -798,8 +812,9 @@ unsafe fn TryStartX64Guest(Name: &[u16], Ascii: &[u8]) {
     );
     if ok != 0 {
         DbgPrint(
-            b"[WINLOGON] %s (x86-64 guest) created (PID %lu) - waiting\n\0".as_ptr() as *const i8,
+            b"[WINLOGON] %s (%s) created (PID %lu) - waiting\n\0".as_ptr() as *const i8,
             Ascii.as_ptr(),
+            Kind.as_ptr(),
             Pi.dwProcessId,
         );
         if WaitForSingleObject(Pi.hProcess, 30_000) != 0 {
@@ -850,7 +865,7 @@ unsafe fn TryStartX64Ladder() {
     TryStartX64Guest(&wstr_arr!("selfmod64.exe"), b"selfmod64.exe\0");
     TryStartX64Guest(&wstr_arr!("reg64.exe"), b"reg64.exe\0");
     TryStartX64Guest(&wstr_arr!("spawn64.exe"), b"spawn64.exe\0");
-    // x86-64 only (no 32-bit source): guest APCs and thread-exit cleanup.
+    // Guest APCs and thread-exit cleanup (apc32.exe is the same source).
     TryStartX64Guest(&wstr_arr!("apc64.exe"), b"apc64.exe\0");
 }
 
@@ -3384,6 +3399,8 @@ pub unsafe extern "system" fn WinMain(
              * silently costs spawn32 its verdict, which is exactly what the rule
              * above describes happening to lua32. */
             TryStartWow64Spawn();
+            /* User APCs into 32-bit code (QueueUserAPC, ReadFileEx, timers). */
+            TryStartWow64Guest(&wstr_arr!("apc32.exe"), b"apc32.exe\0");
 
             /* The x86-64 ladder under FEX: the 32-bit ladder's sources rebuilt
              * for x86-64. After every graded 32-bit guest, so a hung x64 guest
@@ -3525,6 +3542,7 @@ pub unsafe extern "system" fn WinMain(
          * silently costs spawn32 its verdict, which is exactly what the rule
          * above describes happening to lua32. */
         TryStartWow64Spawn();
+        TryStartWow64Guest(&wstr_arr!("apc32.exe"), b"apc32.exe\0");
         /* The x86-64 ladder: native here, the oracle for the arm64 run. */
         TryStartX64Ladder();
         /* Third-party stress: real SQLite, last — see the note at the other

@@ -87,6 +87,9 @@ LADDER: dict[str, int] = {
     # diagnostic guest that starts passing has finished its job, and leaving it
     # ungraded would mean a regression in the thing it proved could go unnoticed.
     "spawn32": 0x600D,
+    # User APCs into 32-bit code (QueueUserAPC, ReadFileEx, waitable timers) and
+    # per-thread cleanup -- Apc64.c at 32 bits.
+    "apc32": 0x600D,
     # The first x86-64 guest (BTCpu64 M1, docs/engineering/wow64-x64-guest-design.md
     # Fork B). Parity in the sense this table means, one width up: the SAME binary
     # runs under FEX in 64-bit mode on arm64 and natively on amd64. Not a WoW64
@@ -285,6 +288,7 @@ GUEST_SOURCE: dict[str, str] = {
     "selfmod32": "tools/fex/hello-compute/Selfmod32.c",
     "reg32": "tools/fex/hello-compute/Reg32.c",
     "spawn32": "tools/fex/hello-compute/Spawn32.c",
+    "apc32": "tools/fex/hello-compute/Apc64.c",
     "hello64": "tools/fex/hello-compute/Hello64.c",
     "gui64": "tools/fex/hello-compute/Gui32.c",
     "win64": "tools/fex/hello-compute/Win32App.c",
