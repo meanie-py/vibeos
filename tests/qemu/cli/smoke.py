@@ -798,15 +798,20 @@ def nvme_requested() -> bool:
     return os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "1"
 
 
+# ...this once its MSI-X messages are connected (nvme-rust pnp.rs `connect`)...
+_NVME_MSIX = "[NVME] controller 0: MSI-X: "
 # ...and this once a completion arrived by interrupt (nvme-rust nvme.rs `count`).
 _NVME_INTERRUPTS = "[NVME] controller 0: interrupts working"
 
 
 def _nvme_check(text: str) -> dict | None:
-    """Prove an `--nvme` boot brought the controller up, on interrupts. A desktop
-    alone proves nothing: the boot never needs the NVMe disk, so a driver that
-    never loaded would look identical. And a driver whose interrupt never arrives
-    still works, through its 10 ms poll, so it would quietly regress to polling."""
+    """Prove an `--nvme` boot brought the controller up, on MSI-X interrupts. A
+    desktop alone proves nothing: the boot never needs the NVMe disk, so a driver
+    that never loaded would look identical. A driver whose interrupt never arrives
+    still works, through its 10 ms poll, so it would quietly regress to polling.
+    And with no messages assigned it falls back to its pin and works there too,
+    so MSI-X could break anywhere along pci.sys -> PnP -> HAL -> IoConnectInterruptEx
+    without a symptom. Every rig's QEMU offers MSI-X (x86 APIC, arm64 GICv2m)."""
     if not nvme_requested():
         return None
     lines = [ln.strip() for ln in text.splitlines() if "[NVME]" in ln][-6:]
@@ -822,6 +827,17 @@ def _nvme_check(text: str) -> dict | None:
                         "(PCI#CC_010802 in hivesys.inf?)"
                     ]
                 ),
+            ],
+        }
+    if _NVME_MSIX not in text:
+        msix = [ln.strip() for ln in text.splitlines() if "MSI-X" in ln][-4:]
+        return {
+            "classification": "NVME_NOT_MSIX",
+            "salient": [
+                f"the namespace was published but nvme.sys never printed `{_NVME_MSIX}`: "
+                "no MSI-X messages were assigned, so it fell back to its pin",
+                *(msix or ["pci.sys printed no MSI-X line: the request never reached it"]),
+                *lines,
             ],
         }
     if _NVME_INTERRUPTS not in text:

@@ -227,6 +227,9 @@ unsafe fn IopFindDmaResource(
     0u8
 }
 
+/// `CM_RESOURCE_INTERRUPT_MESSAGE` (cmtypes.h).
+const CM_RESOURCE_INTERRUPT_MESSAGE: u16 = 0x0002;
+
 unsafe fn IopFindInterruptResource(
     IoDesc: PIO_RESOURCE_DESCRIPTOR,
     CmDesc: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
@@ -235,6 +238,18 @@ unsafe fn IopFindInterruptResource(
 
     ntkrnl_sys::ASSERT!((*IoDesc).Type == (*CmDesc).Type);
     ntkrnl_sys::ASSERT!((*IoDesc).Type == 2); // CmResourceTypeInterrupt
+
+    // A message-signaled interrupt is not a line to arbitrate: its vector is a
+    // token (pci.sys asks for message k as CM_RESOURCE_INTERRUPT_MESSAGE_TOKEN - k)
+    // that the HAL turns into a real vector at translation. Raw form, per
+    // cmtypes.h's MessageInterrupt.Raw: MessageCount in the high half of the slot
+    // a line keeps its Level in.
+    if ((*IoDesc).Flags & CM_RESOURCE_INTERRUPT_MESSAGE) != 0 {
+        (*CmDesc).u.Interrupt.Vector = (*IoDesc).u.Interrupt.MinimumVector;
+        (*CmDesc).u.Interrupt.Level = 1 << 16;
+        (*CmDesc).u.Interrupt.Affinity = !0;
+        return 1u8;
+    }
 
     Vector = (*IoDesc).u.Interrupt.MinimumVector;
     while Vector <= (*IoDesc).u.Interrupt.MaximumVector {
@@ -562,7 +577,10 @@ unsafe fn IopCheckResourceDescriptor(
                     }
                 }
                 2 => { // CmResourceTypeInterrupt
-                    if (*ResDesc).u.Interrupt.Vector == (*ResDesc2).u.Interrupt.Vector {
+                    // Message tokens repeat across devices by design; the HAL hands
+                    // each its own vector, so they never conflict.
+                    let message = ((*ResDesc).Flags | (*ResDesc2).Flags) & CM_RESOURCE_INTERRUPT_MESSAGE;
+                    if message == 0 && (*ResDesc).u.Interrupt.Vector == (*ResDesc2).u.Interrupt.Vector {
                         Result = 1u8;
                         break;
                     }

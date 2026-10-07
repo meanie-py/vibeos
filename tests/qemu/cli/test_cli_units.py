@@ -9634,7 +9634,14 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     failed = '[NVME] controller 0: bring-up failed: Timeout("enable")\n'
     bad = smoke_mod._nvme_check(failed)
     assert bad and any("bring-up failed" in s for s in bad["salient"])
-    polled = "[NVME] controller 0: namespace 1 published as a disk\n"
+    pinned = "[NVME] controller 0: namespace 1 published as a disk\n"
+    bad = smoke_mod._nvme_check(pinned)
+    assert bad and bad["classification"] == "NVME_NOT_MSIX"
+    assert any("never reached" in s for s in bad["salient"])
+    declined = "(pci-rust/src/msix.rs:1) MSI-X: slot 0x9: config space unreadable\n" + pinned
+    bad = smoke_mod._nvme_check(declined)
+    assert bad and any("config space unreadable" in s for s in bad["salient"])
+    polled = pinned + "[NVME] controller 0: MSI-X: 2 message(s) connected at level 7: ...\n"
     bad = smoke_mod._nvme_check(polled)
     assert bad and bad["classification"] == "NVME_POLLING"
     real = polled + "[NVME] controller 0: interrupts working (first completion by interrupt: x)\n"

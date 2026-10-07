@@ -195,6 +195,21 @@ extern "system" {
 // enable/disable lives here next to the distributor programming it mirrors.
 // ---------------------------------------------------------------------------
 
+/// Configure an SPI edge-triggered. Call with the line disabled.
+pub(crate) unsafe fn set_gic_edge(intid: u32) {
+    let gicd = GICD_BASE.load(Ordering::SeqCst);
+    let id = intid as usize;
+    if gicd == 0 || !(32..1020).contains(&id) {
+        return;
+    }
+    let reg = GICD_ICFGR + (id / 16) * 4;
+    let bit = 1u32 << ((id % 16) * 2 + 1);
+    let v = mmio_read(gicd, reg);
+    if v & bit == 0 {
+        mmio_write(gicd, reg, v | bit);
+    }
+}
+
 /// Enable a device interrupt line (SPI) in the GIC distributor at the GIC
 /// priority derived from its IRQL, routed to CPU0, then set-enable. No-op
 /// until the GIC is mapped (clock init).
