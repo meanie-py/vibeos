@@ -60,6 +60,7 @@ from .macro_authority import (
     MacroAuthorityError,
     _compile_entry,
     _sibling_target_entry,
+    flags_source,
 )
 
 
@@ -70,7 +71,11 @@ def _probe_entry(repo_root: Path, arch: str, tu: Path) -> list[str] | None:
     compiled in this tree (upstream's new pciidex/atapi, unbuilt since the merge) or one a
     cohab flip took out of the build has no entry of its own, and the probe used to fail for
     EVERY TU -- which left its hundreds of header constants for the model to guess.
+
+    A header translated `--via` a TU is probed AS that TU (macro_authority.flags_source):
+    the probe `#include`s it, so the header's own names are in scope exactly as compiled.
     """
+    tu = flags_source(tu)
     return _compile_entry(repo_root, arch, tu) or _sibling_target_entry(repo_root, arch, tu)
 
 
@@ -190,6 +195,7 @@ def _resolve_one_arch(
             f"no compile_commands.json entry for {tu.name} on {arch}\n"
             f"fix: ./vibeos-cli build --arch {arch}"
         )
+    tu = flags_source(tu)
     is_c = tu.suffix == ".c"
     with tempfile.TemporaryDirectory() as td:
         probe = Path(td) / ("probe.c" if is_c else "probe.cpp")
