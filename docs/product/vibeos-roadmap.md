@@ -922,6 +922,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
     without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
     i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
+  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (OPEN, unowned, found
+    2026-10-06; about 8 of 45 `smoke:amd64-bios` gate boots that day, across lanes). The lane
+    boots from a USB stick over xHCI with an NVMe disk attached. Usually csrss takes
+    `0xC0000006` (STATUS_IN_PAGE_ERROR) at the same ntdll address and the boot hangs; once the
+    font driver took it in kernel mode as BUGCHECK 0x1E in `ftfd.dll`. Every amd64-bios boot,
+    passing ones included, prints 9 `ASSERT FAILED: !Pkt->SlistEntry.Next at xferpkt.rs:706`
+    (classpnp reusing a transfer packet still on its free list), which is the first suspect.
+    Runs: 20261006-041704-og7v50sd, 20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
   - **arm64 FAULTLOOP was the detector, not a loop** (RESOLVED 2026-10-04). The report
     fingerprinted a fault as (VA, PC, TTBR0); a stream of DISTINCT faults sharing those --
     Cc reading many small files (rapps' cab extraction), each new VACB recycled onto the same
