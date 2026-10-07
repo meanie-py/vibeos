@@ -46,7 +46,7 @@ sys.path.insert(0, str(REPO / "tools"))
 
 SPEC = REPO / "dll" / "win32" / "ucrtbase" / "ucrtbase.spec"
 #: Object directory of the `ucrt` target -- the genuine Microsoft C. Objects OUTSIDE it on
-#: ucrtbase's link line (ucrtbase's own printf.c/stubs.c, and every .a) are ours and are
+#: ucrtbase's link line (its spec2def-generated stubs, and every .a) are ours and are
 #: deliberately excluded: the reference side must be Microsoft's code and nothing else.
 UCRT_OBJ_MARKER = "CMakeFiles/ucrt.dir/"
 

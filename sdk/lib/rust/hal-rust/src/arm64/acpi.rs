@@ -136,6 +136,9 @@ pub(crate) struct AcpiDevice {
     /// Physical address of the device's PCI config space (from _INI's
     /// OperationRegion), or 0 when the table has none.
     pub cfg: u64,
+    /// The node's _UID when it is a constant integer, else 0. Tells apart the
+    /// instances of a _HID the table repeats (QEMU's 32 virtio-mmio slots).
+    pub uid: u32,
 }
 
 const XHCI_HID_STRING: &[u8] = b"_HID\x0DPNP0D10\x00";
@@ -143,6 +146,7 @@ const XHCI_HID_STRING: &[u8] = b"_HID\x0DPNP0D10\x00";
 const XHCI_HID_EISAID: &[u8] = b"_HID\x0C\x41\xD0\x0D\x10";
 const GENET_HID_STRING: &[u8] = b"_HID\x0DBCM6E4E\x00";
 const SDHC_HID_STRING: &[u8] = b"_HID\x0DBRCME88C\x00";
+const VIRTIO_MMIO_HID_STRING: &[u8] = b"_HID\x0DLNRO0005\x00";
 /// The Pi 5's SD hosts (worproject): the card slot's _HID is a Method returning
 /// this string, so match the string alone.
 const SDHC5_HID_STRING: &[u8] = b"\x0DBRCM5D12\x00";
@@ -370,28 +374,16 @@ fn patched_field(crs: &[u8], aml: &[u8], offset: usize) -> Option<u64> {
 }
 
 /// Find the device whose _HID is one of `hids` in one definition block
-/// (DSDT/SSDT body).
+/// (DSDT/SSDT body), taking the first whose body `accept` agrees to.
 fn find_device_in(aml: &[u8], hids: &[&[u8]], accept: fn(&[u8]) -> bool) -> Option<AcpiDevice> {
     for needle in hids {
         let mut at = 0;
         while let Some(o) = find(&aml[at..], needle) {
             let hid = at + o;
             at = hid + 1;
-            // Bound the search to the enclosing Device(): the nearest DeviceOp
-            // (5B 82) before the id whose PkgLength covers it. A Name _HID sits
-            // 12 bytes after it; a Method _HID returning a string, further.
-            let Some(end) = (hid.saturating_sub(64)..hid).rev().find_map(|i| {
-                if aml[i] != 0x5B || aml.get(i + 1) != Some(&0x82) {
-                    return None;
-                }
-                let (len, _) = pkg_length(aml, i + 2)?;
-                (i + 2 + len > hid).then_some((i + 2 + len).min(aml.len()))
-            }) else {
-                continue;
-            };
-            let body = &aml[hid..end];
-            if accept(body) {
-                if let Some(x) = device_resources(aml, body) {
+            let Some(end) = device_end(aml, hid) else { continue };
+            if accept(&aml[hid..end]) {
+                if let Some(x) = device_resources(aml, &aml[hid..end]) {
                     return Some(x);
                 }
             }
@@ -400,9 +392,26 @@ fn find_device_in(aml: &[u8], hids: &[&[u8]], accept: fn(&[u8]) -> bool) -> Opti
     None
 }
 
+/// The end of the Device() enclosing the _HID at `hid`: the nearest DeviceOp
+/// (5B 82) before it whose PkgLength covers it. A Name _HID sits 12 bytes after
+/// the DeviceOp; a Method _HID returning a string (the Pi 5's SDC0), further.
+fn device_end(aml: &[u8], hid: usize) -> Option<usize> {
+    (hid.saturating_sub(64)..hid).rev().find_map(|i| {
+        if aml[i] != 0x5B || aml.get(i + 1) != Some(&0x82) {
+            return None;
+        }
+        let (len, _) = pkg_length(aml, i + 2)?;
+        (i + 2 + len > hid).then_some((i + 2 + len).min(aml.len()))
+    })
+}
+
+/// The device whose _HID name sits at `hid` in a definition block.
+fn device_at(aml: &[u8], hid: usize) -> Option<AcpiDevice> {
+    device_resources(aml, &aml[hid..device_end(aml, hid)?])
+}
+
 /// The resources of the device whose body (from its _HID on) is `body`.
 fn device_resources(aml: &[u8], body: &[u8]) -> Option<AcpiDevice> {
-
     let mut x = AcpiDevice::default();
     // _CRS: the resource template is the first Buffer after the name, whether
     // _CRS is a Name or a Method building one; or, for a Method that builds
@@ -437,6 +446,9 @@ fn device_resources(aml: &[u8], body: &[u8]) -> Option<AcpiDevice> {
                 x.gsiv = patched_field(&body[s..e], aml, field).unwrap_or(0) as u32;
             }
         }
+    }
+    if let Some(uid) = find(body, b"_UID") {
+        x.uid = integer(body, uid + 4).map_or(0, |(v, _)| v as u32);
     }
     // _INI: OperationRegion(Name, SystemMemory, Offset, Length).
     if let Some(ini) = find(body, b"_INI") {
@@ -576,11 +588,42 @@ pub(crate) unsafe fn log_device_ids() {
 
 /// Search the SSDTs, then the DSDT, for the first device with one of `hids`.
 unsafe fn find_device(hids: &[&[u8]], accept: fn(&[u8]) -> bool) -> Option<AcpiDevice> {
+    let mut found = None;
+    for_each_definition_block(|aml| {
+        found = find_device_in(aml, hids, accept);
+        found.is_some()
+    });
+    found
+}
+
+/// Call `f` for every device whose _HID is `hid`, in every definition block.
+unsafe fn for_each_device(hid: &[u8], mut f: impl FnMut(AcpiDevice)) {
+    for_each_definition_block(|aml| {
+        let mut p = 0;
+        while let Some(o) = find(&aml[p..], hid) {
+            if let Some(x) = device_at(aml, p + o) {
+                f(x);
+            }
+            p += o + hid.len();
+        }
+        false
+    });
+}
+
+/// QEMU virt's virtio-mmio transports (_HID LNRO0005, the Linaro ID the
+/// kernel's virtio-mmio driver binds), each with its 0x200-byte register window
+/// and level-triggered SPI. The table lists every slot; most are empty.
+pub(crate) unsafe fn for_each_virtio_mmio(f: impl FnMut(AcpiDevice)) {
+    for_each_device(VIRTIO_MMIO_HID_STRING, f)
+}
+
+/// Call `f` with the body of each SSDT and then the DSDT, until it returns true.
+unsafe fn for_each_definition_block(mut f: impl FnMut(&[u8]) -> bool) {
     let xsdt = XSDT_PA.load(Ordering::Relaxed);
     if xsdt == 0 {
-        return None;
+        return;
     }
-    let mut found: Option<AcpiDevice> = None;
+    let mut done = false;
     let mut dsdt_pa = 0u64;
     for_each_table(xsdt, |sig, t, len| {
         if sig == b"FACP" && len >= 148 {
@@ -589,23 +632,24 @@ unsafe fn find_device(hids: &[&[u8]], accept: fn(&[u8]) -> bool) -> Option<AcpiD
             if dsdt_pa == 0 {
                 dsdt_pa = rd::<u32>(t, 40) as u64;
             }
-        } else if sig == b"SSDT" && found.is_none() {
-            found = find_device_in(core::slice::from_raw_parts(t.add(36), len - 36), hids, accept);
+        } else if sig == b"SSDT" && !done {
+            done = f(core::slice::from_raw_parts(t.add(36), len - 36));
         }
     });
-    if found.is_none() && dsdt_pa != 0 {
-        let h = map_table(dsdt_pa, 36);
-        if !h.is_null() {
-            let len = rd::<u32>(h, 4) as usize;
-            unmap_table(h, 36);
-            if len > 36 {
-                let t = map_table(dsdt_pa, len);
-                if !t.is_null() {
-                    found = find_device_in(core::slice::from_raw_parts(t.add(36), len - 36), hids, accept);
-                    unmap_table(t, len);
-                }
-            }
+    if done || dsdt_pa == 0 {
+        return;
+    }
+    let h = map_table(dsdt_pa, 36);
+    if h.is_null() {
+        return;
+    }
+    let len = rd::<u32>(h, 4) as usize;
+    unmap_table(h, 36);
+    if len > 36 {
+        let t = map_table(dsdt_pa, len);
+        if !t.is_null() {
+            f(core::slice::from_raw_parts(t.add(36), len - 36));
+            unmap_table(t, len);
         }
     }
-    found
 }

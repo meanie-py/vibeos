@@ -5191,6 +5191,18 @@ bugchecked the box (0x1E/0x50 in `KdpStub`). Capture it as `KdpPrint` does
 reads an exception record's parameters is in this class. `sehtest`'s `bad-print-buffer` probe
 covers this one on every amd64 boot.
 
+**In user mode the same drop turns a VALIDATOR into a constant.** kernel32's `IsBadReadPtr`,
+`IsBadWritePtr`, `IsBadCodePtr` and `IsBadStringPtrA/W` ARE the C's probe plus its
+`_SEH2_EXCEPT { Result = TRUE; }`. The translation kept the probe and commented the handler
+out, and the probe was a non-volatile `*Current = *Current` / `let _ = *Current`, which LLVM
+deletes. So all five returned FALSE for every non-NULL pointer. The sdk delayimp apitests'
+`UnProtect` asked `IsBadWritePtr` about an import name in `.rdata`, skipped its
+`VirtualProtect`, and the write killed the process (exit 0x80). The tell is a function whose
+whole result is set only in a commented-out `_SEH2_EXCEPT`. Fix: answer the question without
+a fault. They now walk `VirtualQuery` regions (committed, not GUARD/NOACCESS, granting the
+access), which also stops them consuming a stack guard page the way Windows' probe does.
+`sehtest`'s `bad-ptr-probes` covers them on every boot, all three arches.
+
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
 HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
 call `ProbeForWrite` — so "did it dereference a user pointer where its C validated one"
@@ -12172,6 +12184,38 @@ Two lessons beyond the fix:
   `EXCEPTION_CONTINUE_SEARCH` turns the crash into a livelock (31,511 iterations). Guard, log,
   and fix the cause.
 
+### A WoW64 process's fixed TLS slots must be RESERVED, or the first `TlsAlloc` takes slot 1
+Symptom: every 32-bit guest crashes early in libwow64fex's rpmalloc (`heap_get_page_generic`)
+after an unrelated-looking change — here, making arm64 ntdll's `_errno`/`atan2`/`tan` its own
+instead of forwarders to msvcrt.
+
+Cause: WoW64 addresses TEB64 `TlsSlots[1]` (CPU area), `[10]` (WOW64INFO), `[12]` (callback
+frame) and FEX `[15..18]` by fixed index, but ntdll reserved only bit 0 of `PEB->TlsBitmap`.
+FEX's own `TlsAlloc` (rpmalloc's thread-heap key, `DYNAMIC_TLS_NO_FLS`) takes the first clear
+bit. While the msvcrt forwarders loaded msvcrt early, msvcrt's DllMain `TlsAlloc` got slot 1 and
+nothing noticed; with msvcrt gone, rpmalloc got slot 1 and it and the CPU area overwrote each
+other. The change's own `errno` home was blamed at the time and was innocent.
+
+Fix: `LdrpInitializeProcess` sets bits `1..WOW64_TLS_MAX_NUMBER` in a WoW64 process before any
+DLL initializes (Windows does the same). Lesson: an allocator that "works" because an earlier
+allocation happened to take the dangerous index is a latent bug, and removing the earlier
+allocation is the moment it fires. Find the fixed-index users of a shared table and reserve
+them; never rely on load order.
+
+### A 32-bit guest goes silent right after `MapViewOfFile` of a DATA section
+Symptom: under FEX on arm64 the guest's last serial line is wow64's `NtMapViewOfSection =>
+00000000 base=...` for a pagefile-backed view (`CreateFileMapping(INVALID_HANDLE_VALUE)`), and
+it never runs another guest instruction; natively on amd64 the same guest is fine.
+
+Cause: wow64's `NtMapViewOfSection` thunk called `BTCpuNotifyMapViewOfSection` for EVERY view.
+FEX's handler (`HandleImageMap`) takes the address for a mapped PE image — its file path, its
+headers — and a zeroed data view is not one. Wine's wow64 notifies only when
+`NtQuerySection(SectionImageInformation)` succeeds. Fix: the same gate
+(`wow64_manual.c`). No ladder guest had mapped a data section before spawn32's rung-10 channel.
+A process stuck this way also appeared to outlive `TerminateProcess` (a named mutex it held
+was still there minutes later) — inferred, not traced; revisit if a guest ever hangs this way
+again.
+
 ### The shared USER handle table has no 32-bit view `[§9.58b]`
 Client-side `ValidateHwnd` fails, so `DispatchMessage` silently drops `WM_PAINT`. **This is a
 subsystem, not a marshaller** — WoW64 GUI needs a per-process 32-bit view of USER shared memory
@@ -12701,7 +12745,10 @@ introduced at any heap exit — it is an external stray write.**
   2. **The driver raised an interrupt before its framework opened the ISR gate.** usbport
      connects the interrupt, calls the miniport's StartController, and only *then* sets
      the flags its ISR wrapper checks. A StartController that enables controller
-     interrupts and issues a command gets its completion interrupt declined.
+     interrupts and issues a command gets its completion interrupt declined. A driver's
+     own gate does the same: vioblk's virtio-mmio path (2026-10-06) set its ISR's `armed`
+     flag after IoConnectInterrupt returned, and the slot's line was already up from
+     device setup. Ack the device's pending status and arm the ISR *before* connecting.
   3. **A polled driver answered "not mine" without reading the device's status.** On x86
      the symptom is scsiport's `[SCSIPORT] Isr entry count=100000` and a silent hang
      (vioblk, 2026-10-05). A virtio INTx stays asserted until the ISR status register is

@@ -1747,8 +1747,16 @@ static NTSTATUS Wow64Manual_NtMapViewOfSection(ULONG *a)
         if (Size32) *Size32 = (ULONG)Size;
         DbgPrint("[WOW64]   NtMapViewOfSection => %08lx base=%p size=%p\n",
                  St, Base, (PVOID)Size);
-        /* Tell the CPU layer about the new mapping (real wow64 notifies on
-         * every map) — without this FEX won't translate code from the range. */
+        /* Tell the CPU layer about a new IMAGE mapping — without this FEX
+         * won't translate code from the range. Images only, as Wine's wow64
+         * gates it on NtQuerySection(SectionImageInformation): FEX's handler
+         * (HandleImageMap) takes the address for a mapped PE and looks up its
+         * file and headers, and fed a pagefile-backed DATA view (a 32-bit
+         * CreateFileMapping + MapViewOfFile -- spawn32's RemoteBody channel was
+         * the first guest to do one) the guest never ran another instruction. */
+        UCHAR ImageInfo[0x80];
+        if (NtQuerySection(Section, 1 /* SectionImageInformation */, ImageInfo,
+                           sizeof(ImageInfo), NULL) >= 0)
         {
             extern LONG (WINAPI *Wow64pBTCpuNotifyMap)(PVOID, PVOID, PVOID,
                                                        SIZE_T, ULONG, ULONG);

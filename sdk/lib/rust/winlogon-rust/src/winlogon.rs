@@ -3021,9 +3021,8 @@ pub unsafe extern "system" fn WinMain(
      * Lives HERE because this boot path skips userinit entirely. Its
      * [SEH-USER] PASS/FAIL serial lines prove hardware-fault ->
      * KiUserExceptionDispatcher -> ntdll dispatch -> __except delivery
-     * end-to-end. amd64/arm64 only (native clang SEH does not lower on
-     * i386), matching sehtest's cmake gate. */
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] // nolint: cfg-vs-c (test-harness hook, Rust-only)
+     * end-to-end, on all three arches (i386 builds it for -windows-msvc,
+     * the env in which clang lowers frame-based SEH; see its CMakeLists). */
     {
         let mut Si: STARTUPINFOW = zeroed();
         let mut Pi: PROCESS_INFORMATION = zeroed();

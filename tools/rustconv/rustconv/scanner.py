@@ -1604,6 +1604,7 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
         raw,
     )
     is_cpp = force_cpp or path.suffix.lower() in _CPP_SUFFIXES
+    is_header_c = not is_cpp and path.suffix.lower() == ".h"
     if is_cpp:
         # Resolve preprocessor conditionals so #ifdef-spanning constructs don't
         # break tree-sitter function extraction (uniata etc.). Macros preserved.
@@ -1678,6 +1679,15 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
                 return
             func = _parse_function(node, source, source_text)
             if func:
+                # A function DEFINED in a C header has no symbol of its own: it is
+                # FORCEINLINE (`__forceinline` = gnu_inline `extern __inline__`, which emits
+                # no out-of-line copy) or `static inline`, compiled privately into every
+                # includer. Translated as exported, identify_funcs.h's 44 helpers came out
+                # `#[no_mangle]` -- one duplicate symbol away from a link failure the moment a
+                # second crate ports the same header. (C++ headers are not touched: their
+                # inline methods belong to the class path.)
+                if is_header_c:
+                    func.is_static = True
                 result.functions.append(func)
             else:
                 # C++ method (qualified/field/destructor/operator declarator)
