@@ -109,6 +109,7 @@ pub const STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32;
 pub const STATUS_INVALID_PARAMETER: i32 = 0xC000_000Du32 as i32;
 
 /// STORAGE_BUS_TYPE values the drivers report.
+pub const BUS_TYPE_SCSI: u8 = 0x01;
 pub const BUS_TYPE_SD: u8 = 0x0C;
 pub const BUS_TYPE_NVME: u8 = 0x11;
 

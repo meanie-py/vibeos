@@ -2943,6 +2943,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "scsidisk-rust",
  "virtio-drivers",
 ]
 

@@ -1,4 +1,5 @@
-//! vioblk-rust — the virtio-blk SCSIPORT miniport (vioblk.sys). See Cargo.toml.
+//! vioblk-rust — vioblk.sys: virtio-blk as a SCSIPORT miniport for PCI functions
+//! (miniport.rs), and as a PnP disk driver for virtio-mmio slots (pnp.rs). See Cargo.toml.
 #![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, improper_ctypes, improper_ctypes_definitions)]
@@ -9,6 +10,7 @@
 pub mod hal;
 pub mod miniport;
 pub mod pci;
+pub mod pnp;
 #[allow(unused_imports, unused_variables, unused_mut, clippy::all)]
 pub mod types;
 

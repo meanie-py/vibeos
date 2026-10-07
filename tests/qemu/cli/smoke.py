@@ -421,7 +421,12 @@ def _boot_vm(
             pass
         if outcome == "reached":
             # A green desktop does not prove an `--smp N` run actually got SMP.
-            smp_fail = _smp_check(text, arch) or _ahci_check(text) or _nvme_check(text)
+            smp_fail = (
+                _smp_check(text, arch)
+                or _ahci_check(text)
+                or _nvme_check(text)
+                or _virtio_mmio_check(text, arch)
+            )
             if smp_fail is not None:
                 return {
                     "ok": False,
@@ -834,6 +839,41 @@ def _nvme_check(text: str) -> dict | None:
             ],
         }
     return None
+
+
+# vioblk-rust's virtio-mmio path prints this once its self-test read has
+# drawn an interrupt (pnp.rs `self_test`).
+_VIRTIO_MMIO_INTERRUPTS = ": interrupts working"
+
+
+def _virtio_mmio_check(text: str, arch: str) -> dict | None:
+    """Prove an arm64 boot served its scratch disk, a virtio-blk-device on the
+    virtio-mmio transport (vm.py _scratch_device_args), on interrupts. Nothing
+    in the boot needs that disk, so a desktop alone would look identical with
+    the HAL never publishing the slot, vioblk never binding it, or its interrupt
+    lost and every transfer quietly running on the 10 ms poll."""
+    if arch != "arm64":
+        return None
+    lines = [ln.strip() for ln in text.splitlines() if "virtio-mmio" in ln][-6:]
+    if any(
+        "[VIOBLK] virtio-mmio" in ln and _VIRTIO_MMIO_INTERRUPTS in ln for ln in text.splitlines()
+    ):
+        return None
+    return {
+        "classification": "VIRTIO_MMIO_DISK_NOT_SERVED",
+        "salient": [
+            "arm64 boot reached the desktop but vioblk never printed "
+            f"`[VIOBLK] virtio-mmio <base>{_VIRTIO_MMIO_INTERRUPTS}` for the scratch disk",
+            *(
+                lines
+                or [
+                    "no virtio-mmio line at all: the HAL published no LNRO0005 block slot "
+                    "(hal-rust arm64/pnpdd.rs) or vioblk never bound it "
+                    "(ACPI#LNRO0005&DEV_0002 in hivesys.inf)"
+                ]
+            ),
+        ],
+    }
 
 
 def smoke(args, repo: Path) -> int:

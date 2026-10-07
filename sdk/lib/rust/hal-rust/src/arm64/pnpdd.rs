@@ -13,18 +13,25 @@
 //! - the EMMC2 SD host controller behind the card slot (_HID BRCME88C), as
 //!   ACPI\BRCME88C, which sdhc.sys drives.
 //!
+//! And on QEMU virt, each virtio-mmio transport (_HID LNRO0005) that holds a
+//! block device, as ACPI\LNRO0005&DEV_0002, which vioblk.sys drives. The HAL
+//! reads the slot's device ID itself, because the table lists all 32 slots
+//! whether populated or not, and a published node no driver claims would ask
+//! the user for one; input devices stay unpublished because arm64input finds
+//! its own by scanning the window.
+//!
 //! For the xHCI child, usbport treats every miniport's parent as a PCI function: it reads the
 //! config header through BUS_INTERFACE_STANDARD, asks for the bus number and
 //! capabilities, and usbxhci writes the command register. The VL805 IS a PCI
 //! function, and the ACPI table names its config window (the _INI
 //! OperationRegion), so the child PDO answers those from the real registers.
 //!
-//! On a machine with no such node (QEMU virt), the FDO simply has no children.
+//! On a machine with no such node, the FDO simply has no children.
 
 #![cfg(target_arch = "aarch64")]
 #![allow(non_snake_case)]
 
-use super::acpi::{find_genet, find_sdhc, find_xhci, AcpiDevice};
+use super::acpi::{find_genet, find_sdhc, find_xhci, for_each_virtio_mmio, AcpiDevice};
 use ntkrnl_sys::ddk;
 use ntkrnl_sys::ddk::{
     BOOLEAN, GUID, NTSTATUS, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PIO_STACK_LOCATION, PUNICODE_STRING, PVOID,
@@ -102,7 +109,17 @@ static DRIVER_NAME: [u16; 17] = wide(b"\\Driver\\ACPI_HAL\0");
 static XHCI_HARDWARE_IDS: [u16; 23] = wide(b"ACPI\\PNP0D10\0*PNP0D10\0\0");
 static GENET_HARDWARE_IDS: [u16; 23] = wide(b"ACPI\\BCM6E4E\0*BCM6E4E\0\0");
 static SDHC_HARDWARE_IDS: [u16; 25] = wide(b"ACPI\\BRCME88C\0*BRCME88C\0\0");
-static INSTANCE_ZERO: [u16; 2] = wide(b"0\0");
+/// The device type rides in the most specific ID, as PCI's DEV_ does, so a
+/// future virtio-mmio driver for another type gets its own database key.
+static VIRTIO_BLK_HARDWARE_IDS: [u16; 48] = wide(b"ACPI\\LNRO0005&DEV_0002\0ACPI\\LNRO0005\0*LNRO0005\0\0");
+
+/// virtio-mmio registers: "virt" at 0, the device type at 8 (0 = empty slot).
+const VIRTIO_MMIO_MAGIC: u32 = u32::from_le_bytes(*b"virt");
+const VIRTIO_MMIO_DEVICE_ID: usize = 8;
+const VIRTIO_ID_BLOCK: u32 = 2;
+
+/// Children the FDO reports: the Pi's three, plus a virtio-mmio slot each.
+const MAX_CHILDREN: usize = 40;
 
 unsafe extern "system" {
     fn IoCreateDriver(
@@ -131,6 +148,7 @@ enum Child {
     Xhci,
     Genet,
     Sdhc,
+    VirtioBlk,
 }
 
 #[repr(C)]
@@ -282,17 +300,34 @@ unsafe fn query_interface(pdo: *mut PdoExtension, io: PIO_STACK_LOCATION) -> NTS
 // Child PDO: IDs, resources, bus information.
 // ---------------------------------------------------------------------------
 
-unsafe fn query_id(child: Child, id_type: u32, out: *mut PVOID) -> NTSTATUS {
-    let ids: &[u16] = match child {
+unsafe fn query_id(pdo: &PdoExtension, id_type: u32, out: *mut PVOID) -> NTSTATUS {
+    let ids: &[u16] = match pdo.child {
         Child::Xhci => &XHCI_HARDWARE_IDS,
         Child::Genet => &GENET_HARDWARE_IDS,
         Child::Sdhc => &SDHC_HARDWARE_IDS,
+        Child::VirtioBlk => &VIRTIO_BLK_HARDWARE_IDS,
     };
+    // The instance ID is the node's _UID in decimal: unique among nodes that
+    // share a _HID, and stable across boots.
+    let mut instance = [0u16; 11];
+    let mut digits = [0u16; 10];
+    let (mut n, mut uid) = (0, pdo.acpi.uid);
+    loop {
+        digits[n] = b'0' as u16 + (uid % 10) as u16;
+        n += 1;
+        uid /= 10;
+        if uid == 0 {
+            break;
+        }
+    }
+    for i in 0..n {
+        instance[i] = digits[n - 1 - i];
+    }
     let src: &[u16] = match id_type {
         // The device ID is the first string of the hardware-ID multi-sz.
         BUS_QUERY_DEVICE_ID => &ids[..=ids.iter().position(|&c| c == 0).unwrap_or(0)],
         BUS_QUERY_HARDWARE_IDS => ids,
-        BUS_QUERY_INSTANCE_ID => &INSTANCE_ZERO,
+        BUS_QUERY_INSTANCE_ID => &instance[..=n],
         _ => return STATUS_NOT_SUPPORTED,
     };
     let p = alloc(src.len() * 2) as *mut u16;
@@ -442,7 +477,7 @@ unsafe extern "system" fn DispatchPnp(device: PDEVICE_OBJECT, irp: PIRP) -> NTST
     if *((*device).DeviceExtension as *const ULONG) == EXT_FDO {
         let fdo = (*device).DeviceExtension as *mut FdoExtension;
         if minor == IRP_MN_QUERY_DEVICE_RELATIONS && (*io).Parameters.QueryDeviceRelations.Type == BUS_RELATIONS {
-            let mut kids: [PDEVICE_OBJECT; 4] = [core::ptr::null_mut(); 4];
+            let mut kids: [PDEVICE_OBJECT; MAX_CHILDREN] = [core::ptr::null_mut(); MAX_CHILDREN];
             let mut n = 0;
             let mut p = (*fdo).children;
             while !p.is_null() && n < kids.len() {
@@ -471,7 +506,7 @@ unsafe extern "system" fn DispatchPnp(device: PDEVICE_OBJECT, irp: PIRP) -> NTST
         IRP_MN_QUERY_CAPABILITIES => query_capabilities(io),
         IRP_MN_QUERY_RESOURCES => query_resources(&(*pdo).acpi, info),
         IRP_MN_QUERY_RESOURCE_REQUIREMENTS => query_requirements(&(*pdo).acpi, info),
-        IRP_MN_QUERY_ID => query_id((*pdo).child, (*io).Parameters.QueryId.IdType as u32, info),
+        IRP_MN_QUERY_ID => query_id(&*pdo, (*io).Parameters.QueryId.IdType as u32, info),
         IRP_MN_QUERY_BUS_INFORMATION if (*pdo).child == Child::Xhci => query_bus_information(info),
         _ => STATUS_NOT_SUPPORTED,
     };
@@ -521,6 +556,14 @@ unsafe fn create_pdo(driver: PDRIVER_OBJECT, child: Child, x: AcpiDevice) -> *mu
     );
     match child {
         Child::Xhci => init_xhci(pdo),
+        Child::VirtioBlk => DbgPrint(
+            b"[HAL] ACPI virtio-mmio block (LNRO0005 #%u): regs %p+0x%x, GSIV %u %s\n\0".as_ptr(),
+            x.uid,
+            x.mmio as PVOID,
+            x.mmio_len as u32,
+            x.gsiv,
+            if x.edge { b"edge\0".as_ptr() } else { b"level\0".as_ptr() },
+        ),
         Child::Genet | Child::Sdhc => DbgPrint(
             b"[HAL] ACPI %s: regs %p+0x%x, GSIV %u %s\n\0".as_ptr(),
             if child == Child::Genet { b"GENET (BCM6E4E)\0".as_ptr() } else { b"SD host (BRCME88C)\0".as_ptr() },
@@ -561,6 +604,27 @@ unsafe fn init_xhci(pdo: *mut PdoExtension) -> u32 {
     )
 }
 
+/// The device type a virtio-mmio slot holds: 0 for an empty slot, or for a
+/// window that does not answer as virtio-mmio.
+unsafe fn virtio_mmio_device_id(x: &AcpiDevice) -> u32 {
+    if x.mmio_len < 0x100 {
+        return 0;
+    }
+    let mut pa: ddk::PHYSICAL_ADDRESS = core::mem::zeroed();
+    pa.QuadPart = x.mmio as i64;
+    let regs = ddk::MmMapIoSpace(pa, 0x100, ddk::_MEMORY_CACHING_TYPE_MmNonCached) as *const u32;
+    if regs.is_null() {
+        return 0;
+    }
+    let id = if regs.read_volatile() == VIRTIO_MMIO_MAGIC {
+        regs.add(VIRTIO_MMIO_DEVICE_ID / 4).read_volatile()
+    } else {
+        0
+    };
+    ddk::MmUnmapIoSpace(regs as PVOID, 0x100);
+    id
+}
+
 unsafe extern "system" fn AddDevice(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT) -> NTSTATUS {
     let mut dev: PDEVICE_OBJECT = core::ptr::null_mut();
     let status = ddk::IoCreateDevice(
@@ -582,15 +646,23 @@ unsafe extern "system" fn AddDevice(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT)
         ddk::IoDeleteDevice(dev);
         return STATUS_NO_SUCH_DEVICE;
     }
+    let add = |child, x| {
+        let pdo = create_pdo(driver, child, x);
+        if !pdo.is_null() {
+            (*pdo).next = (*fdo).children;
+            (*fdo).children = pdo;
+        }
+    };
     for (child, found) in [(Child::Xhci, find_xhci()), (Child::Genet, find_genet()), (Child::Sdhc, find_sdhc())] {
         if let Some(x) = found {
-            let pdo = create_pdo(driver, child, x);
-            if !pdo.is_null() {
-                (*pdo).next = (*fdo).children;
-                (*fdo).children = pdo;
-            }
+            add(child, x);
         }
     }
+    for_each_virtio_mmio(|x| {
+        if virtio_mmio_device_id(&x) == VIRTIO_ID_BLOCK {
+            add(Child::VirtioBlk, x);
+        }
+    });
     (*dev).Flags &= !DO_DEVICE_INITIALIZING;
     STATUS_SUCCESS
 }
