@@ -825,16 +825,17 @@ macro_rules! RTL_CONTAINS_FIELD {
 }
 
 // ================= srb.h / ata.h — storage request macros =====================================
-// C converts these results implicitly to whatever receives them (`Mode = IDE_SET_UDMA_MODE(m)`
-// stores a UCHAR into a ULONG). The bodies do C's own narrowing first and end in `as _`, which
-// is that implicit conversion: the destination's type, inferred at the use.
+// Each yields C's own result type (`int` for SRB_STATUS, the `(UCHAR)` cast for IDE_SET_*);
+// the conversion C does implicitly at the use (`Mode = IDE_SET_UDMA_MODE(m)` stores a UCHAR
+// into a ULONG) is the CALL SITE's, which crate-repair casts there. An `as _` here could not
+// infer under `match SRB_STATUS!(s) { .. }`.
 
 /// `srb.h` — `SRB_STATUS(Status)` = `Status & ~(SRB_STATUS_AUTOSENSE_VALID |
 /// SRB_STATUS_QUEUE_FROZEN)`, those two flags being `0x80` and `0x40`. `int` arithmetic in C.
 #[macro_export]
 macro_rules! SRB_STATUS {
     ($s:expr $(,)?) => {
-        ((($s) as i32) & !(0x80 | 0x40)) as _
+        ((($s) as i32) & !(0x80 | 0x40))
     };
 }
 
@@ -842,7 +843,7 @@ macro_rules! SRB_STATUS {
 #[macro_export]
 macro_rules! IDE_SET_DEFAULT_PIO_MODE {
     ($m:expr $(,)?) => {
-        (1u8 as _)
+        1u8
     };
 }
 
@@ -850,7 +851,7 @@ macro_rules! IDE_SET_DEFAULT_PIO_MODE {
 #[macro_export]
 macro_rules! IDE_SET_ADVANCE_PIO_MODE {
     ($m:expr $(,)?) => {
-        ((((1 << 3) | ($m)) as u8) as _)
+        (((1 << 3) | ($m)) as u8)
     };
 }
 
@@ -858,7 +859,7 @@ macro_rules! IDE_SET_ADVANCE_PIO_MODE {
 #[macro_export]
 macro_rules! IDE_SET_SWDMA_MODE {
     ($m:expr $(,)?) => {
-        ((((1 << 4) | ($m)) as u8) as _)
+        (((1 << 4) | ($m)) as u8)
     };
 }
 
@@ -866,7 +867,7 @@ macro_rules! IDE_SET_SWDMA_MODE {
 #[macro_export]
 macro_rules! IDE_SET_MWDMA_MODE {
     ($m:expr $(,)?) => {
-        ((((1 << 5) | ($m)) as u8) as _)
+        (((1 << 5) | ($m)) as u8)
     };
 }
 
@@ -874,7 +875,7 @@ macro_rules! IDE_SET_MWDMA_MODE {
 #[macro_export]
 macro_rules! IDE_SET_UDMA_MODE {
     ($m:expr $(,)?) => {
-        ((((1 << 6) | ($m)) as u8) as _)
+        (((1 << 6) | ($m)) as u8)
     };
 }
 
@@ -1083,21 +1084,18 @@ mod tests {
     #[test]
     fn storage_request_macros_match_srb_h_and_ata_h() {
         // SRB_STATUS_ERROR (0x04) | AUTOSENSE_VALID (0x80) | QUEUE_FROZEN (0x40) -> 0x04.
-        let st: u8 = SRB_STATUS!(0xC4u8);
+        let st: i32 = SRB_STATUS!(0xC4u8);
         assert_eq!(st, 0x04);
-        let wide: u32 = SRB_STATUS!(0x01u8);
-        assert_eq!(wide, 0x01);
-        // UDMA mode 5: 0x40 | 5 = 0x45; stored into a ULONG as C does.
-        let m: u32 = IDE_SET_UDMA_MODE!(5u32);
-        assert_eq!(m, 0x45);
-        let m: u8 = IDE_SET_MWDMA_MODE!(2u32);
-        assert_eq!(m, 0x22);
-        let m: u8 = IDE_SET_SWDMA_MODE!(1u32);
-        assert_eq!(m, 0x11);
-        let m: u32 = IDE_SET_ADVANCE_PIO_MODE!(4u32);
-        assert_eq!(m, 0x0C);
-        let m: u8 = IDE_SET_DEFAULT_PIO_MODE!(9u32);
-        assert_eq!(m, 1);
+        match SRB_STATUS!(0x41u8) {
+            0x01 => {}
+            _ => panic!("SRB_STATUS must strip QUEUE_FROZEN"),
+        }
+        // UDMA mode 5: 0x40 | 5 = 0x45.
+        assert_eq!(IDE_SET_UDMA_MODE!(5u32), 0x45u8);
+        assert_eq!(IDE_SET_MWDMA_MODE!(2u32), 0x22u8);
+        assert_eq!(IDE_SET_SWDMA_MODE!(1u32), 0x11u8);
+        assert_eq!(IDE_SET_ADVANCE_PIO_MODE!(4u32), 0x0Cu8);
+        assert_eq!(IDE_SET_DEFAULT_PIO_MODE!(9u32), 1u8);
     }
 
     #[test]

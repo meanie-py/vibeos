@@ -101,7 +101,44 @@ def unresolved(crate: str, triple: str, workspace: Path, target_dir: Path) -> di
         m = _VALUE_FOR_TYPE.match(text)
         if m:
             names.setdefault(m.group(1), set()).add("type")
+        for name in pattern_bindings(msg.get("message") or {}):
+            names.setdefault(name, set()).add("value")
     return names
+
+
+_UNBOUND = re.compile(r"^variable `([A-Za-z_]\w*)` is not bound in all patterns")
+
+
+def pattern_bindings(diag: dict) -> set[str]:
+    """Names a `match` arm BINDS where the C `case` named a constant.
+
+    A constant missing from scope is never "cannot find" in a pattern: it silently becomes a
+    fresh binding that matches everything (the shape that shipped BUGCHECK 0x1E). rustc only
+    objects indirectly -- E0408 when an or-pattern's halves bind different names (atapi's
+    `IOCTL_SCSI_PASS_THROUGH | IOCTL_SCSI_PASS_THROUGH_DIRECT`), or an `unreachable pattern`
+    warning whose culprit "matches any value". Both are read as wanted VALUES; one that starts
+    lowercase is a real Rust binding and is left alone.
+    """
+    text = str(diag.get("message") or "")
+    out: set[str] = set()
+    m = _UNBOUND.match(text)
+    if m:
+        out.add(m.group(1))
+    if text.startswith("unreachable pattern"):
+        for span in [
+            *(diag.get("spans") or []),
+            *(sp for c in diag.get("children") or [] for sp in c.get("spans") or []),
+        ]:
+            if "matches any value" in str(span.get("label") or ""):
+                got = (span.get("text") or [{}])[0]
+                line = str(got.get("text") or "")
+                word = line[
+                    int(got.get("highlight_start") or 1) - 1 : int(got.get("highlight_end") or 1)
+                    - 1
+                ]
+                if re.fullmatch(r"[A-Z]\w*", word.strip()):
+                    out.add(word.strip())
+    return {n for n in out if n[:1].isupper()}
 
 
 def _norm(text: str) -> str:

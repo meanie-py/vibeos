@@ -37,7 +37,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import crate_integrate, local_macros, prelude_resolve
+from . import crate_integrate, local_macros, pointer_depth, prelude_resolve
 from . import profile_derive as pd
 
 REPO = Path(__file__).resolve().parents[3]
@@ -1032,6 +1032,24 @@ def stage_headers(
     return spent
 
 
+def _pointer_decls(state: dict) -> tuple[set[str], dict[str, pointer_depth.CFunctionDecls]]:
+    """The island's pointer typedefs, and what each C function declares with them."""
+    from .scanner import scan_file
+
+    crate = _crate_dir(state)
+    types = pointer_depth.pointer_typedefs(
+        p.read_text(errors="replace") for p in sorted((crate / "src").glob("types_*.rs"))
+    )
+    decls: dict[str, pointer_depth.CFunctionDecls] = {}
+    for unit in _units(state):
+        path = REPO / unit
+        if not path.is_file():
+            continue
+        for fn in scan_file(path).functions:
+            decls[fn.name] = pointer_depth.c_declarations(fn.name, fn.params, fn.body_text, types)
+    return types, decls
+
+
 def stage_integrate(stem: str) -> None:
     """Move each translated file onto the crate's prelude (crate_integrate): the per-file
     substrate globs and hand-declared externs a standalone translation carries are WRONG
@@ -1042,13 +1060,35 @@ def stage_integrate(stem: str) -> None:
     crate = _crate_dir(state)
     unprovided: dict[str, list[str]] = {}
     changed = 0
+    ptr_types, decls = _pointer_decls(state)
+    depth_fixed: list[str] = []
     for path in sorted((crate / "src" / stem).glob("*.rs")):
         report = crate_integrate.integrate_path(path, crate)
         changed += report.changed
         if report.kept_unprovided:
             unprovided[path.stem] = report.kept_unprovided
         print(f"integrate: {report.summary()}")
-    _record(state, "integrate", started, changed=changed, unprovided=unprovided)
+        text = path.read_text()
+        new, fixes = pointer_depth.repair(text, decls, ptr_types)
+        if new != text:
+            path.write_text(new)
+            changed += 1
+            depth_fixed += [f"{path.stem}::{f}" for f in fixes]
+    if depth_fixed:
+        print(
+            f"integrate: {len(depth_fixed)} function(s) read a pointer typedef as its struct "
+            "(`*mut PFOO`, `(*(*x))`); the C's declarations put back:"
+        )
+        for f in depth_fixed:
+            print(f"  {f}")
+    _record(
+        state,
+        "integrate",
+        started,
+        changed=changed,
+        unprovided=unprovided,
+        pointer_depth=depth_fixed,
+    )
     if unprovided:
         print("integrate: names nothing provides (a prelude gap, or invented by the model):")
         for mod, names in unprovided.items():

@@ -51,7 +51,7 @@ impl<T> ::core::cmp::PartialEq for __BindgenUnionField<T> {
 impl<T> ::core::cmp::Eq for __BindgenUnionField<T> {}
 pub const EXPECTED_ACCESS: u32 = 3;
 pub const DD_DISK_DEVICE_NAME: &[u8; 16] = b"\\Device\\UNKNOWN\0";
-pub const DD_DISK_DEVICE_NAME_U: &[u8; 16] = b"\\Device\\UNKNOWN\0";
+pub const DD_DISK_DEVICE_NAME_U: &[u16; 16] = &[0x005C, 0x0044, 0x0065, 0x0076, 0x0069, 0x0063, 0x0065, 0x005C, 0x0055, 0x004E, 0x004B, 0x004E, 0x004F, 0x0057, 0x004E, 0x0000]; // L"\\Device\\UNKNOWN"
 pub const IOCTL_DISK_BASE: u32 = 7;
 pub const PARTITION_ENTRY_UNUSED: u32 = 0;
 pub const PARTITION_FAT_12: u32 = 1;

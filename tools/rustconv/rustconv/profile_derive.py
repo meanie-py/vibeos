@@ -3659,10 +3659,26 @@ pub const CmResourceTypeMemory: u8 = 3;
 // wdm.h/ntddk.h MACROS and MSVC intrinsics the C calls as functions. ntkrnl-sys has portable
 // wrappers for them outside the `ddk` glob (ke, inline::tier1, inline::ke, interlocked), so
 // they are re-exported here BY NAME -- the C's `_`-prefixed intrinsic spellings included.
-pub use ntkrnl_sys::ke::{
-    KeAcquireSpinLock, KeAcquireSpinLockAtDpcLevel, KeReleaseSpinLock,
-    KeReleaseSpinLockFromDpcLevel,
-};
+// ntkrnl_sys::ke's spin-lock helpers take ITS `PKSPIN_LOCK` (`*mut usize`); a driver's lock
+// fields are the island's (`*mut c_ulonglong` on 64-bit) -- the same width, a distinct Rust
+// type, so a bare re-export made every call site E0308 (16 in atapi). Thin wrappers over the
+// island's type instead.
+#[inline]
+pub unsafe fn KeAcquireSpinLock(SpinLock: PKSPIN_LOCK, OldIrql: *mut KIRQL) {
+    ntkrnl_sys::ke::KeAcquireSpinLock(SpinLock.cast(), OldIrql)
+}
+#[inline]
+pub unsafe fn KeReleaseSpinLock(SpinLock: PKSPIN_LOCK, NewIrql: KIRQL) {
+    ntkrnl_sys::ke::KeReleaseSpinLock(SpinLock.cast(), NewIrql)
+}
+#[inline]
+pub unsafe fn KeAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK) {
+    ntkrnl_sys::ke::KeAcquireSpinLockAtDpcLevel(SpinLock.cast())
+}
+#[inline]
+pub unsafe fn KeReleaseSpinLockFromDpcLevel(SpinLock: PKSPIN_LOCK) {
+    ntkrnl_sys::ke::KeReleaseSpinLockFromDpcLevel(SpinLock.cast())
+}
 pub use ntkrnl_sys::inline::tier1::{
     IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation,
     IoMarkIrpPending, IoSetCancelRoutine, IoSetCompletionRoutine, IoSetNextIrpStackLocation,
