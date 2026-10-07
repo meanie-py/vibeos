@@ -31,6 +31,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .crate_integrate import _LITERAL_OR_COMMENT as _LITERAL_OR_COMMENT_RE
 from .crate_integrate import extern_block_spans, split_decls
 
 BEGIN = "// ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ===="
@@ -100,7 +101,44 @@ def unresolved(crate: str, triple: str, workspace: Path, target_dir: Path) -> di
         m = _VALUE_FOR_TYPE.match(text)
         if m:
             names.setdefault(m.group(1), set()).add("type")
+        for name in pattern_bindings(msg.get("message") or {}):
+            names.setdefault(name, set()).add("value")
     return names
+
+
+_UNBOUND = re.compile(r"^variable `([A-Za-z_]\w*)` is not bound in all patterns")
+
+
+def pattern_bindings(diag: dict) -> set[str]:
+    """Names a `match` arm BINDS where the C `case` named a constant.
+
+    A constant missing from scope is never "cannot find" in a pattern: it silently becomes a
+    fresh binding that matches everything (the shape that shipped BUGCHECK 0x1E). rustc only
+    objects indirectly -- E0408 when an or-pattern's halves bind different names (atapi's
+    `IOCTL_SCSI_PASS_THROUGH | IOCTL_SCSI_PASS_THROUGH_DIRECT`), or an `unreachable pattern`
+    warning whose culprit "matches any value". Both are read as wanted VALUES; one that starts
+    lowercase is a real Rust binding and is left alone.
+    """
+    text = str(diag.get("message") or "")
+    out: set[str] = set()
+    m = _UNBOUND.match(text)
+    if m:
+        out.add(m.group(1))
+    if text.startswith("unreachable pattern"):
+        for span in [
+            *(diag.get("spans") or []),
+            *(sp for c in diag.get("children") or [] for sp in c.get("spans") or []),
+        ]:
+            if "matches any value" in str(span.get("label") or ""):
+                got = (span.get("text") or [{}])[0]
+                line = str(got.get("text") or "")
+                word = line[
+                    int(got.get("highlight_start") or 1) - 1 : int(got.get("highlight_end") or 1)
+                    - 1
+                ]
+                if re.fullmatch(r"[A-Z]\w*", word.strip()):
+                    out.add(word.strip())
+    return {n for n in out if n[:1].isupper()}
 
 
 def _norm(text: str) -> str:
@@ -267,18 +305,31 @@ def _most_common(items: list[Item]) -> Item:
     return next(i for i in items if (i.text, i.abi) == best)
 
 
-def island_enum_aliases(names: set[str], src: Path) -> dict[str, Item]:
+def island_enum_aliases(
+    names: set[str], src: Path, substrate: Path | None = None
+) -> dict[str, Item]:
     """`FreeLdr` -> `pub const FreeLdr: _BOOT_STORE_TYPE = _BOOT_STORE_TYPE_FreeLdr;`.
 
     bindgen prefixes every enumerator with its enum's name, while C code -- and so the
     sealed translation -- spells it bare. netid, samlib and others carried these aliases by
     hand. The island is the authority, so this is exact: a name gets an alias only when
     every arch's island has exactly one `<E>_<name>: <E>` constant, and the same E.
+
+    `substrate`: the src dir of the -sys crate the island globs (a kernel island's
+    `use ntkrnl_sys::ddk::*`). Its bindgen is part of each arch's island: atapi's
+    `PowerSystemWorking`, `BusRelations` and `MmCached` are wdm.h enums, defined there and
+    nowhere in the driver's own types, and fell through to "no literal definition".
     """
     islands = sorted(src.glob("types_*.rs"))
     if not islands or not names:
         return {}
     texts = [p.read_text(errors="replace") for p in islands]
+    if substrate is not None:
+        for k, p in enumerate(islands):
+            arch = p.stem.removeprefix("types_")
+            for extra in (substrate / f"bindgen_{arch}.rs", substrate / "bindgen_common.rs"):
+                if extra.is_file():
+                    texts[k] += "\n" + extra.read_text(errors="replace")
     out: dict[str, Item] = {}
     for name in sorted(names):
         pat = re.compile(
@@ -502,6 +553,303 @@ def existing_siblings(prelude: Path) -> dict[str, str]:
 def write_siblings(prelude: Path, block: str) -> bool:
     text = prelude.read_text()
     m = re.search(re.escape(SIBLING_BEGIN) + r".*?" + re.escape(SIBLING_END) + r"\n?", text, re.S)
+    new = text[: m.start()] + block + text[m.end() :] if m else text.rstrip("\n") + "\n\n" + block
+    if new == text:
+        return False
+    prelude.write_text(new)
+    return True
+
+
+SUBSTRATE_BEGIN = "// ==== port resolve: substrate helpers (generated) ===="
+SUBSTRATE_END = "// ==== end substrate helpers ===="
+#: Rust `target_arch` -> the island file suffix.
+ARCHES = {"x86": "i386", "x86_64": "amd64", "aarch64": "arm64"}
+_ALL_ARCHES = frozenset(ARCHES)
+#: Generated layout/assert files are not helpers anyone imports by name.
+_NOT_HELPERS = re.compile(r"^(?:hal_)?bindgen_|^size_check|^offset_check")
+_SUBSTRATE_TOKEN = re.compile(
+    r"(?P<cfg>#!?\[cfg\()"
+    # Matched on MASKED text, where `extern "system" {` reads `extern          {`.
+    r"|(?P<extern>\b(?:unsafe\s+)?extern\s*\{)"
+    r"|(?P<export>#\[macro_export\])"
+    r"|\bmacro_rules!\s*(?P<macro>[A-Za-z_]\w*)"
+    r"|\bpub\s+(?:const\s+)?(?:unsafe\s+)?(?:extern\s+)?fn\s+(?P<fn>[A-Za-z_]\w*)"
+    r"|(?P<open>\{)|(?P<close>\})|(?P<semi>;)"
+)
+
+
+def _split_top(text: str) -> list[str]:
+    parts, depth, cur = [], 0, []
+    for ch in text:
+        depth += ch == "("
+        depth -= ch == ")"
+        if ch == "," and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    if "".join(cur).strip():
+        parts.append("".join(cur))
+    return parts
+
+
+def cfg_arches(expr: str, features: frozenset[str] = frozenset()) -> frozenset[str] | None:
+    """The arches a `cfg(...)` predicate admits; None when it tests anything else.
+
+    `feature = "x"` is decided by `features`, the dependency's DEFAULT feature set.
+    """
+    expr = expr.strip()
+    m = re.fullmatch(r'target_arch\s*=\s*"(\w+)"', expr)
+    if m:
+        return frozenset({m.group(1)}) & _ALL_ARCHES
+    m = re.fullmatch(r'feature\s*=\s*"([\w-]+)"', expr)
+    if m:
+        return _ALL_ARCHES if m.group(1) in features else frozenset()
+    m = re.fullmatch(r"(not|any|all)\s*\((.*)\)", expr, re.S)
+    if not m:
+        return None
+    parts = [cfg_arches(p, features) for p in _split_top(m.group(2))]
+    if any(p is None for p in parts):
+        return None
+    sets = [p for p in parts if p is not None]
+    if m.group(1) == "not":
+        return _ALL_ARCHES - sets[0] if len(sets) == 1 else None
+    if m.group(1) == "any":
+        return frozenset().union(*sets)
+    return _ALL_ARCHES.intersection(*sets)
+
+
+def _balanced(text: str, start: int) -> int:
+    """Index just past the `)` closing the `(` before `start`."""
+    depth = 1
+    i = start
+    while i < len(text) and depth:
+        depth += text[i] == "("
+        depth -= text[i] == ")"
+        i += 1
+    return i
+
+
+def substrate_items(
+    text: str, features: frozenset[str] = frozenset()
+) -> list[tuple[str, str, frozenset[str]]]:
+    """`(name, kind, arches)` for each helper a substrate source file makes importable.
+
+    Kind `fn`: a `pub fn` at the file's top level, or one declared in a top-level `extern`
+    block. Kind `macro`: a `#[macro_export]` `macro_rules!` (it lives at the crate root).
+    `arches` is what every enclosing `#[cfg(target_arch ...)]` admits, the file's own
+    `#![cfg]` included. An item behind any other cfg (a feature) is left out: whether it
+    exists is not a property of the target -- unless it is one of `features`, the -sys crate's
+    DEFAULT features, which every plain path dependency gets (ntkrnl-sys's whole `inline`
+    module is `#[cfg(feature = "inline_exports")]`).
+    """
+    masked = _LITERAL_OR_COMMENT_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+    file_arches: frozenset[str] | None = _ALL_ARCHES
+    stack: list[tuple[str, frozenset[str] | None]] = []
+    pending: frozenset[str] | None = _ALL_ARCHES
+    export = False
+    out: list[tuple[str, str, frozenset[str]]] = []
+    pos = 0
+    while True:
+        m = _SUBSTRATE_TOKEN.search(masked, pos)
+        if m is None:
+            break
+        pos = m.end()
+        here = stack[-1][1] if stack else file_arches
+        if m.group("cfg"):
+            end = _balanced(masked, m.end())
+            # The predicate from the ORIGINAL text: masking blanked its `"x86"`.
+            arches = cfg_arches(text[m.end() : end - 1], features)
+            pos = end
+            if m.group("cfg").startswith("#!"):
+                file_arches = (
+                    None if arches is None or file_arches is None else (file_arches & arches)
+                )
+            else:
+                pending = None if arches is None or pending is None else pending & arches
+            continue
+        if m.group("export"):
+            export = True
+            continue
+        both = None if here is None or pending is None else here & pending
+        if m.group("extern"):
+            stack.append(("extern", both))
+        elif m.group("open"):
+            stack.append(("other", both))
+        elif m.group("close"):
+            if stack:
+                stack.pop()
+        elif m.group("macro"):
+            if export and both:
+                out.append((m.group("macro"), "macro", both))
+        elif m.group("fn"):
+            if all(kind == "extern" for kind, _ in stack) and both:
+                out.append((m.group("fn"), "fn", both))
+            # The body's `{` opens under the fn's own cfg, already applied.
+            pending = _ALL_ARCHES
+            export = False
+            continue
+        pending = _ALL_ARCHES
+        export = False
+    return out
+
+
+def _module_paths(
+    src: Path, features: frozenset[str] = frozenset()
+) -> dict[Path, tuple[str, frozenset[str] | None]]:
+    """Each `pub mod` source file -> (its path from the crate root, the arches it builds on)."""
+    out: dict[Path, tuple[str, frozenset[str] | None]] = {}
+
+    def walk(parent: Path, prefix: str, arches: frozenset[str] | None, here: Path) -> None:
+        if not parent.is_file():
+            return
+        raw = parent.read_text(errors="replace")
+        masked = _LITERAL_OR_COMMENT_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), raw)
+        for m in re.finditer(r"((?:#\[cfg\([^\]]*\)\]\s*)*)pub\s+mod\s+([A-Za-z_]\w*)\s*;", masked):
+            mod_arches = arches
+            attrs = raw[m.start(1) : m.end(1)]  # the original: masking blanked `"x86"`
+            for c in re.findall(r"#\[cfg\((.*?)\)\]\s*", attrs, re.S):
+                a = cfg_arches(c, features)
+                mod_arches = None if a is None or mod_arches is None else mod_arches & a
+            name = m.group(2)
+            path = f"{prefix}::{name}" if prefix else name
+            for f in (here / f"{name}.rs", here / name / "mod.rs"):
+                if f.is_file():
+                    out[f] = (path, mod_arches)
+                    walk(f, path, mod_arches, here / name)
+                    break
+
+    lib = src / "lib.rs"
+    out[lib] = ("", _ALL_ARCHES)
+    walk(lib, "", _ALL_ARCHES, src)
+    return out
+
+
+def default_features(manifest: Path) -> frozenset[str]:
+    """A crate's `[features] default = [...]`, expanded through the features it names."""
+    if not manifest.is_file():
+        return frozenset()
+    m = re.search(r"^\[features\](.*?)(?=^\[|\Z)", manifest.read_text(), re.M | re.S)
+    if not m:
+        return frozenset()
+    table = {
+        k: re.findall(r'"([\w-]+)"', v)
+        for k, v in re.findall(r"^([\w-]+)\s*=\s*(\[[^\]]*\])", m.group(1), re.M | re.S)
+    }
+    out: set[str] = set()
+    todo = list(table.get("default", []))
+    while todo:
+        f = todo.pop()
+        if f not in out:
+            out.add(f)
+            todo += table.get(f, [])
+    return frozenset(out)
+
+
+def substrate_helpers(
+    names: set[str], sys_src: Path, ident: str
+) -> tuple[dict[str, dict[str, str | None]], dict[str, str]]:
+    """Where a kernel -sys crate implements each wanted header helper, per arch.
+
+    ntkrnl-sys ports wdm.h's inlines and macros in Rust outside its bindgen glob
+    (`inline::mm::MmGetSystemAddressForMdlSafe`, `interlocked::InterlockedPushEntrySList`,
+    `inline::ke::KeQuerySystemTime`), and a driver prelude used to re-export them by hand.
+    Tree consensus cannot stand in: atapi's `InsertTailList` had 16 copies across the tree
+    in two ABIs, so resolve refused it, and `MmGetMdlVirtualAddress` -- a C macro to the
+    module -- was never even asked. The substrate is the authority, read per arch:
+
+    - a module under `inline::` (the crate's documented home for these) beats any other;
+    - two remaining paths for one arch is ambiguous, reported, never chosen;
+    - an arch with no Rust helper is fine when its bindgen glob declares the name (i386's
+      `KeQuerySystemTime` is a real export, wdm.h's macro is amd64/arm64-only) -> `None`;
+    - otherwise the name is reported with the arch it is missing on.
+
+    Returns `({name: {target_arch: module path | None}}, {name: why not})`.
+    """
+    features = default_features(sys_src.parent / "Cargo.toml")
+    index: dict[str, list[tuple[str, frozenset[str]]]] = {}
+    for f, (mod, mod_arches) in _module_paths(sys_src, features).items():
+        if mod_arches is None or _NOT_HELPERS.search(f.stem):
+            continue
+        for name, kind, arches in substrate_items(f.read_text(errors="replace"), features):
+            if name in names and arches & mod_arches:
+                path = "" if kind == "macro" else mod
+                index.setdefault(name, []).append((path, arches & mod_arches))
+    globs = {
+        arch: "\n".join(
+            p.read_text(errors="replace")
+            for p in (sys_src / f"bindgen_{suffix}.rs", sys_src / "bindgen_common.rs")
+            if p.is_file()
+        )
+        for arch, suffix in ARCHES.items()
+    }
+    found: dict[str, dict[str, str | None]] = {}
+    why: dict[str, str] = {}
+    for name in sorted(set(index)):
+        per: dict[str, str | None] = {}
+        for arch in ARCHES:
+            paths = {p for p, a in index[name] if arch in a}
+            inline = {p for p in paths if p.startswith("inline::")}
+            paths = inline or paths
+            if len(paths) == 1:
+                per[arch] = paths.pop()
+            elif paths:
+                why[name] = f"{ident} defines it in {', '.join(sorted(paths))} on {arch}"
+                break
+            elif re.search(
+                rf"^\s*pub\s+(?:fn|const|static)\s+{re.escape(name)}\b", globs[arch], re.M
+            ):
+                per[arch] = None
+            else:
+                why[name] = f"{ident} has no {arch} definition"
+                break
+        else:
+            found[name] = per
+    return found, why
+
+
+def island_substrate(src: Path, workspace: Path) -> Path | None:
+    """The src dir of the -sys crate a bindgen island globs (`use ntkrnl_sys::ddk::*;`)."""
+    for island in sorted(src.glob("types_*.rs")):
+        m = re.search(
+            r"^(?:pub\s+)?use\s+(\w+)::\w+::\*;", island.read_text(errors="replace"), re.M
+        )
+        if m:
+            sys_src = workspace / m.group(1).replace("_", "-") / "src"
+            return sys_src if sys_src.is_dir() else None
+    return None
+
+
+def render_substrate(found: dict[str, dict[str, str | None]], ident: str) -> str:
+    lines = [SUBSTRATE_BEGIN]
+    for name in sorted(found):
+        by_path: dict[str, list[str]] = {}
+        for arch, path in found[name].items():
+            if path is not None:
+                by_path.setdefault(path, []).append(arch)
+        for path, arches in sorted(by_path.items()):
+            if len(arches) == 2:
+                (other,) = set(ARCHES) - set(arches)
+                lines.append(f'#[cfg(not(target_arch = "{other}"))]')
+            elif len(arches) == 1:
+                lines.append(f'#[cfg(target_arch = "{arches[0]}")]')
+            lines.append(f"pub use {ident}::{path + '::' if path else ''}{name};")
+    lines.append(SUBSTRATE_END)
+    return "\n".join(lines) + "\n"
+
+
+def existing_substrate(prelude: Path) -> set[str]:
+    m = re.search(
+        re.escape(SUBSTRATE_BEGIN) + r"(.*?)" + re.escape(SUBSTRATE_END), prelude.read_text(), re.S
+    )
+    return set(re.findall(r"pub use [\w:]+::(\w+);", m.group(1))) if m else set()
+
+
+def write_substrate(prelude: Path, block: str) -> bool:
+    text = prelude.read_text()
+    m = re.search(
+        re.escape(SUBSTRATE_BEGIN) + r".*?" + re.escape(SUBSTRATE_END) + r"\n?", text, re.S
+    )
     new = text[: m.start()] + block + text[m.end() :] if m else text.rstrip("\n") + "\n\n" + block
     if new == text:
         return False

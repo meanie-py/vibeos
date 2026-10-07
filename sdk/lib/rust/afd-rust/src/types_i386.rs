@@ -189,7 +189,7 @@ impl<T> ::core::cmp::PartialEq for __BindgenUnionField<T> {
     }
 }
 impl<T> ::core::cmp::Eq for __BindgenUnionField<T> {}
-pub const DD_TCP_DEVICE_NAME: &[u8; 12] = b"\\Device\\Tcp\0";
+pub const DD_TCP_DEVICE_NAME: &[u16; 12] = &[0x005C, 0x0044, 0x0065, 0x0076, 0x0069, 0x0063, 0x0065, 0x005C, 0x0054, 0x0063, 0x0070, 0x0000]; // L"\\Device\\Tcp"
 pub const FSCTL_TCP_BASE: u32 = 18;
 pub const IF_MIB_STATS_ID: u32 = 1;
 pub const IP_MIB_STATS_ID: u32 = 1;

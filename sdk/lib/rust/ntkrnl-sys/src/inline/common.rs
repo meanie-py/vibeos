@@ -706,3 +706,68 @@ pub unsafe fn RtlStringCbCopyA(
     }
     rtl_string_copy_worker_a(psz_dest, cch_dest, psz_src)
 }
+
+// ============================================================================
+// wdm.h / ntdef.h macros a driver calls as functions
+// ============================================================================
+
+/// `RtlEqualMemory(D, S, L)` = `(!memcmp((D), (S), (L)))`. Through `RtlCompareMemory`, which
+/// ntoskrnl exports, so no Rust byte loop can be folded back into a self-call.
+#[inline]
+pub unsafe fn RtlEqualMemory(
+    destination: *const core::ffi::c_void,
+    source: *const core::ffi::c_void,
+    length: SIZE_T,
+) -> bool {
+    ddk::RtlCompareMemory(destination, source, length as _) == length as _
+}
+
+/// `PoSetDeviceBusy(IdlePointer)` = `((void)(*(IdlePointer) = 0))`.
+#[inline]
+pub unsafe fn PoSetDeviceBusy(idle_pointer: *mut ULONG) {
+    *idle_pointer = 0;
+}
+
+/// `IoInitializeRemoveLock(Lock, Tag, Minutes, HighWater)` =
+/// `IoInitializeRemoveLockEx(Lock, Tag, Minutes, HighWater, sizeof(IO_REMOVE_LOCK))`.
+#[inline]
+pub unsafe fn IoInitializeRemoveLock(
+    lock: ddk::PIO_REMOVE_LOCK,
+    allocate_tag: ULONG,
+    max_locked_minutes: ULONG,
+    high_watermark: ULONG,
+) {
+    ddk::IoInitializeRemoveLockEx(
+        lock,
+        allocate_tag,
+        max_locked_minutes,
+        high_watermark,
+        core::mem::size_of::<ddk::IO_REMOVE_LOCK>() as ULONG,
+    );
+}
+
+/// `IoAdjustPagingPathCount(Count, Increment)`: interlocked ++ or -- of `*Count`.
+#[inline]
+pub unsafe fn IoAdjustPagingPathCount(count: *mut LONG, increment: BOOLEAN) {
+    if increment != 0 {
+        crate::interlocked::InterlockedIncrement(count);
+    } else {
+        crate::interlocked::InterlockedDecrement(count);
+    }
+}
+
+/// `RTL_CONSTANT_OBJECT_ATTRIBUTES(n, a)`: a brace initializer in C, a value here.
+#[inline]
+pub const fn RTL_CONSTANT_OBJECT_ATTRIBUTES(
+    object_name: ddk::PUNICODE_STRING,
+    attributes: ULONG,
+) -> ddk::OBJECT_ATTRIBUTES {
+    ddk::OBJECT_ATTRIBUTES {
+        Length: core::mem::size_of::<ddk::OBJECT_ATTRIBUTES>() as ULONG,
+        RootDirectory: core::ptr::null_mut(),
+        ObjectName: object_name,
+        Attributes: attributes,
+        SecurityDescriptor: core::ptr::null_mut(),
+        SecurityQualityOfService: core::ptr::null_mut(),
+    }
+}

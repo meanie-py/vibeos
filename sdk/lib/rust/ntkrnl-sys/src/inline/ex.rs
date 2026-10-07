@@ -771,3 +771,15 @@ pub unsafe fn ExReleasePushLockShared(push_lock: ddk::PEX_PUSH_LOCK) {
         ddk::ExfReleasePushLockShared(push_lock);
     }
 }
+
+// ============================================================================
+// ExInterlockedFlushSList (exfuncs.h)
+// ============================================================================
+
+/// `ExInterlockedFlushSList(SListHead)` = `ExpInterlockedFlushSList(SListHead)` off x86. On
+/// i386 it is a real (fastcall) export, which the bindgen glob already declares.
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub unsafe fn ExInterlockedFlushSList(list_head: ddk::PSLIST_HEADER) -> ddk::PSLIST_ENTRY {
+    ddk::ExpInterlockedFlushSList(list_head)
+}

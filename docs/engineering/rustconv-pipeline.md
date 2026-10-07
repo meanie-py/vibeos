@@ -657,6 +657,54 @@ amd64. The same night's two $0 tool fixes did more:
   assignment used as an expression, or a reference to the field, stays red. atapi had 101 per
   arch (317 -> 206).
 
+### The kernel substrate in `resolve`, and the repairs atapi's body errors asked for (2026-10-07)
+
+atapi's 206 errors per arch were mostly names and conversions the tree already had an answer
+for. Every change below is $0 and deterministic, and amd64 went 206 -> 55 with no purchase
+(E0425 65 -> 0, E0308 82 -> 3, E0408 10 -> 0; i386 66, arm64 61).
+
+- **Header helpers come from ntkrnl-sys.** A wdm.h inline or macro the C calls
+  (`InsertTailList`, `KeQuerySystemTime`, `MmGetMdlVirtualAddress`) is imported from the
+  module ntkrnl-sys ports it in, before tree consensus is asked. Consensus had refused
+  `InsertTailList` (16 copies, two ABIs) and never asked about the C macros at all.
+  `prelude_resolve.substrate_helpers` reads the -sys crate's pub modules per arch, honouring
+  `cfg(target_arch)`, extern blocks and DEFAULT features (`inline::` sits behind
+  `inline_exports`), and prefers `inline::`. An arch the bindgen glob already declares is
+  fine (i386's `KeQuerySystemTime` is a real export). Two paths for one arch is reported, never
+  chosen. Output is a generated `pub use` block. Missing helpers were ported once into
+  ntkrnl-sys (MDL accessors, remove lock, `RtlEqualMemory` via `RtlCompareMemory`) or into
+  win32macros-rust (`ALIGN_UP`, `RTL_CONTAINS_FIELD`, `SRB_STATUS`, `IDE_SET_*_MODE`).
+- **Enum aliases read the island's -sys bindgen.** A kernel island globs
+  `ntkrnl_sys::ddk`, so `PowerSystemWorking` or `BusRelations` is defined there, not in the
+  driver's types. An alias the island proves is no longer dropped because the translation
+  also used the name as a type; that drop re-copied it every pass.
+- **Pattern names are wanted names.** A constant missing from scope is a BINDING in a `match`
+  arm, never "cannot find". `resolve` now also reads E0408 ("not bound in all patterns": atapi's
+  `IOCTL_SCSI_PASS_THROUGH | IOCTL_SCSI_PASS_THROUGH_DIRECT`) and `unreachable pattern` culprits.
+  The clang probe then evaluated the IOCTL codes, and the island gave `IrpForward`.
+- **`port integrate` restores pointer depth** (`pointer_depth.py`; field manual, "A typedef
+  that is ALREADY a pointer"). 15 atapi functions and 14 pciidex functions had read
+  `PATAPORT_*` as the struct (169 and 125 `(*(*x))` sites).
+- **crate-repair**, each from a site atapi showed:
+  - the match scrutinee is cast even when the translation already cast it to another type;
+  - a pointer used as a condition becomes `!p.is_null()`;
+  - `&x` passed to a `*mut` parameter becomes `&raw mut`, and `addr_of!` there becomes
+    `addr_of_mut!` (plus the `mut` on the local);
+  - `&mut x` passed as `void *` becomes `(&raw mut x).cast()`, a function becomes
+    `f as *mut c_void`, and a literal `0` in pointer context becomes `null_mut()`;
+  - one C struct under two Rust paths (an island's full `_SCSI_REQUEST_BLOCK` vs the ddk's
+    opaque one) becomes `.cast()`;
+  - `c_constant_operand`: a constant whose value fits the wanted type is cast, with no
+    promotion proof and no width vote;
+  - a type error blamed inside a SHARED crate's macro is cast at the call site (`own_prefix`),
+    and so is a condition stored into an integer, even from our own macro. `IS_ATAPI!` is a
+    condition at 14 sites; rewriting its body for the 15th broke them all.
+- **A gen_driver_types island's `L"..."` constants are UTF-16 again**
+  (`widen_island_constants.py`; field manual, "bindgen drops things silently").
+- **The kernel scaffold wraps the spin-lock helpers.** `KERNEL_PRELUDE_EXTRAS` now has thin
+  wrappers over the island's `PKSPIN_LOCK` instead of re-exporting ntkrnl-sys's, which take
+  `*mut usize` (16 E0308s in atapi).
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it

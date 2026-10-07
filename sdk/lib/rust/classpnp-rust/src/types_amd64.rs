@@ -1230,7 +1230,7 @@ pub const READ_COPY_NUMBER_BYPASS_CACHE_FLAG: u32 = 256;
 pub const STORAGE_IDLE_POWERUP_REASON_VERSION_V1: u32 = 1;
 pub const IOCTL_SCSI_BASE: u32 = 4;
 pub const DD_SCSI_DEVICE_NAME: &[u8; 17] = b"\\Device\\ScsiPort\0";
-pub const DD_SCSI_DEVICE_NAME_U: &[u8; 17] = b"\\Device\\ScsiPort\0";
+pub const DD_SCSI_DEVICE_NAME_U: &[u16; 17] = &[0x005C, 0x0044, 0x0065, 0x0076, 0x0069, 0x0063, 0x0065, 0x005C, 0x0053, 0x0063, 0x0073, 0x0069, 0x0050, 0x006F, 0x0072, 0x0074, 0x0000]; // L"\\Device\\ScsiPort"
 pub const ATA_FLAGS_DRDY_REQUIRED: u32 = 1;
 pub const ATA_FLAGS_DATA_IN: u32 = 2;
 pub const ATA_FLAGS_DATA_OUT: u32 = 4;
@@ -1329,7 +1329,7 @@ pub const MAX_TOKEN_LIST_IDENTIFIERS: u32 = 4294967295;
 pub const MAX_NUMBER_BLOCK_DEVICE_DESCRIPTORS: u32 = 64;
 pub const REG_DISK_CLASS_CONTROL: &[u8; 56] =
     b"\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Control\\DISK\0";
-pub const REG_MAX_LIST_IDENTIFIER_VALUE: &[u8; 22] = b"MaximumListIdentifier\0";
+pub const REG_MAX_LIST_IDENTIFIER_VALUE: &[u16; 22] = &[0x004D, 0x0061, 0x0078, 0x0069, 0x006D, 0x0075, 0x006D, 0x004C, 0x0069, 0x0073, 0x0074, 0x0049, 0x0064, 0x0065, 0x006E, 0x0074, 0x0069, 0x0066, 0x0069, 0x0065, 0x0072, 0x0000]; // L"MaximumListIdentifier"
 pub const VPD_PAGE_HEADER_SIZE: u32 = 4;
 pub const GET_LBA_STATUS_RETRY_COUNT_MAX: u32 = 2;
 pub const SHIFT10000: u32 = 13;
