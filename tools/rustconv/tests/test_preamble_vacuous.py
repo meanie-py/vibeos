@@ -27,3 +27,13 @@ def test_a_locally_defined_switch_kills_its_ifndef_arm():
     # #undef cancels it
     src = "#define NDEBUG\n#undef NDEBUG\n#ifndef NDEBUG\nint x;\n#endif\n"
     assert never_compiled_lines(src) == set()
+
+
+def test_a_tu_local_ifdef_switch_is_vacuous():
+    from rustconv.__main__ import _preamble_has_translatable_content as has
+
+    pre = "#define NDEBUG\n#define HIDE_FAT32_CHOICE\n"
+    tu = pre + "void f(void) {\n#ifdef HIDE_FAT32_CHOICE\n  g();\n#endif\n}\n"
+    assert not has(pre, tu)
+    assert has(pre, tu + "int x = HIDE_FAT32_CHOICE;\n"), "a value read in code is content"
+    assert has(pre), "without the TU text the switch is not provably vacuous"

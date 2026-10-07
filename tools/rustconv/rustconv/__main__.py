@@ -534,7 +534,13 @@ _HEADER_SWITCHES = frozenset(
 )
 
 
-def _preamble_has_translatable_content(preamble_src: str) -> bool:
+def _only_preprocessor_reads(name: str, tu_text: str) -> bool:
+    """True when every line naming *name* in the TU is a preprocessor directive."""
+    lines = [ln for ln in tu_text.splitlines() if re.search(rf"\b{re.escape(name)}\b", ln)]
+    return bool(lines) and all(ln.lstrip().startswith("#") for ln in lines)
+
+
+def _preamble_has_translatable_content(preamble_src: str, tu_text: str | None = None) -> bool:
     """True when a file-scope preamble holds anything a translation must carry over.
 
     False ONLY for a preamble made up entirely of #include / #pragma once / comments —
@@ -577,6 +583,12 @@ def _preamble_has_translatable_content(preamble_src: str) -> bool:
         # changes which GUIDs this TU emits.
         m = re.match(r"^#\s*(?:define|undef)\s+([A-Za-z_]\w*)\s*$", stripped)
         if m and m.group(1) in _HEADER_SWITCHES:
+            continue
+        # The TU's OWN value-less switch, read only by preprocessor conditionals in the same
+        # file (usetup fslist.c: `#define HIDE_FAT32_CHOICE`, then two `#ifdef`s). It
+        # steers which lines compile and has no Rust rendering of its own; the model said
+        # so with an empty reply, twice, and the hard-fail refused the file both times.
+        if m and tu_text is not None and _only_preprocessor_reads(m.group(1), tu_text):
             continue
         return True  # any surviving token => real content
     return False
@@ -4225,7 +4237,7 @@ def cmd_translate(args):
 
         file_scope = "" if cpp_com_mode else (scan.preamble_text or scan.globals_text or "")
         if not translated and not (
-            file_scope.strip() and _preamble_has_translatable_content(file_scope)
+            file_scope.strip() and _preamble_has_translatable_content(file_scope, scan.raw_source)
         ):
             print(f"  No functions translated for {c_file.name}", file=sys.stderr)
             continue
@@ -4263,7 +4275,7 @@ def cmd_translate(args):
         # This does not soften the hard-fail — a genuinely-failed non-empty preamble still
         # raises. (Found on wkssvc domain.c/rpcserver.c, whose preamble is one #include: the
         # model correctly returned nothing and the run died AFTER 38/38 paid functions.)
-        if preamble_src and not _preamble_has_translatable_content(preamble_src):
+        if preamble_src and not _preamble_has_translatable_content(preamble_src, scan.raw_source):
             print(
                 f"  [preamble] {len(preamble_src)} C chars — no file-scope C to carry over "
                 "(includes/comments/debug-channel only), nothing to translate ($0)",
