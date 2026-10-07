@@ -11143,6 +11143,18 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   Reproduce NIC-less in QEMU with `VIBEOS_QEMU_EXTRA_ARGS="-nic user,model=rtl8139"` (a NIC
   nothing drives). Not `-nic none`: that renumbers PCI, the efivars boot entry then names the
   wrong device, and the firmware drops to the Shell.
+- **An SError reported at `_enable` happened somewhere else, maybe in the loader.**
+  Symptom: BUGCHECK 0x80, ESR EC=0x2F (`0xBE000011`), the PC on `_enable+4` in
+  `KiSystemStartupBootStack`, every boot of the Pi 5. Cause: `_enable` is `daifclr #0xF`,
+  the first time anything unmasks SError, so an SError left pending at ANY earlier point,
+  including firmware and the loader at EL2, is delivered there. Here it was the loader's
+  PCI detection reading an MCFG "ECAM" that was really the Broadcom PCIe controller's
+  registers (00:00.0 read 0xDEADDEAD). QEMU's ECAM never aborts, so smoke cannot see it.
+  How to find the access: bracket it with `ISR_EL1` (bit 8 = SError pending), which reads
+  the state without taking it, printed at checkpoints from `EfiEntry` to the kernel
+  handoff, then halve the window that flips 0 to 0x100. Five boots found it. Do not trust
+  firmware ECAM on boards that are not SBSA: the loader keeps an MCFG quirk list
+  (`freeldr-rust/src/arm64_serial_acpi.rs`) the way Linux's `pci_mcfg.c` does.
 - **A UART print inside a trap costs ~90 ms per KB at 115200 baud.** QEMU's UART is instant, so
   per-fault diagnostics are free there. FEX takes ~1,200 alignment faults per ladder boot by
   design (unaligned `STLR`/`LDAR` on an A72, which has no LSE2; QEMU raises them too), and the

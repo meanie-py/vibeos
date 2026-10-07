@@ -369,6 +369,88 @@ pub(crate) unsafe fn find_sdhc() -> Option<AcpiDevice> {
     find_device(&[SDHC_HID_STRING])
 }
 
+/// Every `_HID` one definition block declares, as (Device name, id). A string
+/// _HID is `0D <ascii> 00`; an EISAID is `0C` + a 4-byte compressed id.
+fn device_ids_in(aml: &[u8], mut f: impl FnMut(&[u8], &[u8])) {
+    let mut at = 0;
+    while let Some(o) = find(&aml[at..], b"_HID") {
+        let hid = at + o;
+        at = hid + 4;
+        let name = (hid.saturating_sub(12)..hid)
+            .rev()
+            .find(|&i| aml[i] == 0x5B && aml.get(i + 1) == Some(&0x82))
+            .and_then(|dev| pkg_length(aml, dev + 2).map(|(_, n)| dev + 2 + n))
+            .and_then(|n| aml.get(n..n + 4))
+            .unwrap_or(b"????");
+        let mut eisa = [0u8; 7];
+        let id: &[u8] = match aml.get(hid + 4) {
+            Some(0x0D) => {
+                let s = &aml[hid + 5..];
+                &s[..s.iter().position(|&c| c == 0).unwrap_or(0).min(16)]
+            }
+            Some(0x0C) => match aml.get(hid + 5..hid + 9) {
+                Some(b) => {
+                    let v = u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
+                    eisa[0] = b'@' + ((v >> 26) & 0x1F) as u8;
+                    eisa[1] = b'@' + ((v >> 21) & 0x1F) as u8;
+                    eisa[2] = b'@' + ((v >> 16) & 0x1F) as u8;
+                    for (k, sh) in [12u32, 8, 4, 0].iter().enumerate() {
+                        eisa[3 + k] = b"0123456789ABCDEF"[((v >> sh) & 0xF) as usize];
+                    }
+                    &eisa
+                }
+                None => continue,
+            },
+            _ => continue,
+        };
+        f(name, id);
+    }
+}
+
+/// Print every device the firmware's DSDT and SSDTs declare, so a new board's
+/// inventory is one boot log away: `[ACPI] DSDT XHC0 _HID PNP0D10`.
+pub(crate) unsafe fn log_device_ids() {
+    extern "C" {
+        fn DbgPrint(Format: *const u8, ...) -> u32;
+    }
+    let xsdt = XSDT_PA.load(Ordering::Relaxed);
+    if xsdt == 0 {
+        return;
+    }
+    let print = |table: &[u8; 5], name: &[u8], id: &[u8]| {
+        let mut n = [0u8; 5];
+        n[..name.len().min(4)].copy_from_slice(&name[..name.len().min(4)]);
+        let mut i = [0u8; 17];
+        i[..id.len().min(16)].copy_from_slice(&id[..id.len().min(16)]);
+        DbgPrint(b"[ACPI] %s %s _HID %s\n\0".as_ptr(), table.as_ptr(), n.as_ptr(), i.as_ptr());
+    };
+    let mut dsdt_pa = 0u64;
+    for_each_table(xsdt, |sig, t, len| {
+        if sig == b"FACP" && len >= 148 {
+            dsdt_pa = rd::<u64>(t, 140);
+            if dsdt_pa == 0 {
+                dsdt_pa = rd::<u32>(t, 40) as u64;
+            }
+        } else if sig == b"SSDT" && len > 36 {
+            device_ids_in(core::slice::from_raw_parts(t.add(36), len - 36), |n, i| print(b"SSDT\0", n, i));
+        }
+    });
+    if dsdt_pa != 0 {
+        let h = map_table(dsdt_pa, 36);
+        if !h.is_null() {
+            let len = rd::<u32>(h, 4) as usize;
+            unmap_table(h, 36);
+            if len > 36 {
+                let t = map_table(dsdt_pa, len);
+                if !t.is_null() {
+                    device_ids_in(core::slice::from_raw_parts(t.add(36), len - 36), |n, i| print(b"DSDT\0", n, i));
+                    unmap_table(t, len);
+                }
+            }
+        }
+    }
+}
+
 /// Search the SSDTs, then the DSDT, for the first device with one of `hids`.
 unsafe fn find_device(hids: &[&[u8]]) -> Option<AcpiDevice> {
     let xsdt = XSDT_PA.load(Ordering::Relaxed);

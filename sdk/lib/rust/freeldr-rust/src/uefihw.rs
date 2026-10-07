@@ -534,6 +534,13 @@ pub unsafe extern "C" fn UefiFindPciBios(BusData: crate::hwpci::PPCI_REGISTRY_IN
     if rsdp.revision < 2 {
         return 0u8;
     }
+    if let Some((oem, table)) = crate::arm64_serial_acpi::mcfg_oem_from_xsdt(rsdp.xsdt_physical_address) {
+        crate::frldr::dbgcon_str(b"[FLDR] MCFG OEM \"");
+        crate::frldr::dbgcon_str(&oem);
+        crate::frldr::dbgcon_str(b"\" \"");
+        crate::frldr::dbgcon_str(&table);
+        crate::frldr::dbgcon_str(b"\"\r\n");
+    }
     let Some((base, first, last)) = crate::arm64_serial_acpi::mcfg_from_xsdt(rsdp.xsdt_physical_address)
     else {
         TRACE(b"No ACPI MCFG: no PCI\n\0".as_ptr() as *const i8);

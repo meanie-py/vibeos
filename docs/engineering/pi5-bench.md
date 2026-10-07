@@ -64,8 +64,12 @@ delete that file after rebuilding a card.
 
 ## Serial, plug, Pico, capture
 
-- **Serial** comes from the 3-pin JST-SH debug connector, wired to picousb's GP0, GP1
-  and GND. That port is the UART UEFI's ACPI tables name, so the firmware, UEFI, the
+- **Serial** comes from the 3-pin JST-SH debug connector, wired to picousb: the Pi's
+  TX to GP1 (the Pico's UART0 RX), its RX to GP0 (UART0 TX), and the middle pin to
+  GND. Crossed the other way, both directions are silent: no byte arrives and the
+  Pico counts no errors. It was, until 2026-10-06, so no boot before then had serial.
+  Check it from the stager: `echo hi | sudo tee /dev/ttyAMA10` must raise the Pico's
+  `console_rx` (`./vibeos-cli pi5 status`). `pico.sh serial --send` needs `--seconds`. That port is the UART UEFI's ACPI tables name, so the firmware, UEFI, the
   loader and the kernel all print there with no configuration.
   - Start the listener with `tools/pi5/serial.sh up`.
   - **With the listener, `pi5 boot` waits for `shell ready`** like `pi4 boot`.
@@ -80,3 +84,24 @@ delete that file after rebuilding a card.
   `tools/pi5/pico.sh` for input.
 - **Capture:** the Pi 5's card has USB vendor id 345f and the Pi 4's has 534d. Both
   are named "USB Video", so `hdmi.sh` picks by id.
+
+## What the firmware describes
+
+`docs/engineering/pi5-acpi/dsdt.dsl` is the worproject v0.3 DSDT, decompiled from a dump
+taken on the bench. The HAL prints the same inventory on every boot (`[ACPI] DSDT <name>
+_HID <id>`):
+
+- CPU0-3, the debug PL011 (`URT0`, ARMH0011), and three PCIe root complexes (PNP0A08),
+  each with an `AMZN0001` resource device: the firmware borrows Graviton's ID for a
+  non-standard ECAM.
+- `RP1B`: RP1 as an ACPI0004 container. `PBAR` = 0x1F_0000_0000 (RP1's registers) and
+  `PINT` = 0x105 (GIC INTID 261). Inside it, `XHC0` and `XHC1` (PNP0D10) at PBAR +
+  0x200000 and + 0x300000, both on INTID 261, level, shared.
+- `SDC1` (BRCM5D12, compatible 80860F16: generic SDHCI) at 0x10_0110_0000, INTID 306.
+- No Ethernet: RP1's GEM is not described.
+
+The MCFG (OEM `RPIFDN`/`RPI5`) is not generic ECAM. It names bus 0 at 0x10_0010_8000,
+inside the Broadcom controller's registers, and the first read there returns 0xDEADDEAD
+and leaves an SError pending. The loader keeps that OEM on a quirk list and reports no
+MCFG (`arm64_serial_acpi.rs`); before it did, every boot ended in BUGCHECK 0x80 at the
+kernel's first `_enable`.

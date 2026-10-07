@@ -582,6 +582,7 @@ unsafe extern "system" fn AddDevice(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT)
         ddk::IoDeleteDevice(dev);
         return STATUS_NO_SUCH_DEVICE;
     }
+    super::acpi::log_device_ids();
     for (child, found) in [(Child::Xhci, find_xhci()), (Child::Genet, find_genet()), (Child::Sdhc, find_sdhc())] {
         if let Some(x) = found {
             let pdo = create_pdo(driver, child, x);

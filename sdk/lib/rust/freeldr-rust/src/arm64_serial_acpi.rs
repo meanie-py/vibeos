@@ -318,8 +318,12 @@ pub unsafe fn gic_from_xsdt(address: u64) -> Option<(u64, u64)> {
 /// ACPICA actbl1.h: ACPI_TABLE_MCFG is the header plus 8 reserved bytes, then 16-byte
 /// ACPI_MCFG_ALLOCATION records {u64 Address, u16 PciSegment, u8 StartBusNumber,
 /// u8 EndBusNumber, u32 Reserved}.
+///
+/// An MCFG on the quirk list below describes a host bridge that is NOT generic ECAM,
+/// and is reported as no MCFG at all (Linux keeps the same kind of list in
+/// drivers/acpi/pci_mcfg.c).
 pub fn mcfg_segment0(data: &[u8]) -> Option<(u64, u8, u8)> {
-    if !valid_table(data) || data.get(..4)? != b"MCFG" {
+    if !valid_table(data) || data.get(..4)? != b"MCFG" || mcfg_is_quirked(data) {
         return None;
     }
     let records = data.get(size_of::<Header>() + 8..)?;
@@ -329,6 +333,32 @@ pub fn mcfg_segment0(data: &[u8]) -> Option<(u64, u8, u8)> {
         let (start, end) = (read::<u8>(r, 10)?, read::<u8>(r, 11)?);
         (segment == 0 && base != 0 && start <= end).then_some((base, start, end))
     })
+}
+
+/// OEM IDs whose MCFG must not be read as ECAM.
+///
+/// "RPIFDN": the Raspberry Pi UEFI firmware (Pi 4 pftf, Pi 5 worproject). On the
+/// Pi 5 its MCFG names 0x10_0010_8000, inside the Broadcom PCIe controller's
+/// register block, for bus 0. That controller is not ECAM-compliant: reading
+/// 00:00.0 there returned 0xDEADDEAD and left an SError pending, which the kernel
+/// took as BUGCHECK 0x80 the first time it unmasked SError. Every other "device"
+/// read back as register garbage (0xDEADD0D0, 0x271214E4).
+const MCFG_QUIRKS: &[[u8; 6]] = &[*b"RPIFDN"];
+
+fn mcfg_is_quirked(data: &[u8]) -> bool {
+    data.get(10..16).is_some_and(|oem| MCFG_QUIRKS.iter().any(|q| q[..] == *oem))
+}
+
+/// The MCFG's (OEM ID, OEM table ID), whether or not it is quirked, for the log.
+pub fn mcfg_oem(data: &[u8]) -> Option<([u8; 6], [u8; 8])> {
+    if !valid_table(data) || data.get(..4)? != b"MCFG" {
+        return None;
+    }
+    Some((data.get(10..16)?.try_into().ok()?, data.get(16..24)?.try_into().ok()?))
+}
+
+pub unsafe fn mcfg_oem_from_xsdt(address: u64) -> Option<([u8; 6], [u8; 8])> {
+    walk_xsdt(address, mcfg_oem)
 }
 
 pub unsafe fn mcfg_from_xsdt(address: u64) -> Option<(u64, u8, u8)> {
@@ -349,6 +379,14 @@ mod tests {
         let r = size_of::<Header>() + 8;
         data[r..r + 8].copy_from_slice(&0x40_1000_0000u64.to_le_bytes());
         data[r + 11] = 0xFF;
+        checksum(&mut data);
+        assert_eq!(mcfg_segment0(&data), Some((0x40_1000_0000, 0, 0xFF)));
+        // The Raspberry Pi firmware's MCFG is not ECAM: reported as none.
+        data[10..16].copy_from_slice(b"RPIFDN");
+        checksum(&mut data);
+        assert_eq!(mcfg_segment0(&data), None);
+        assert_eq!(mcfg_oem(&data).map(|(o, _)| o), Some(*b"RPIFDN"));
+        data[10..16].copy_from_slice(b"BOCHS ");
         checksum(&mut data);
         assert_eq!(mcfg_segment0(&data), Some((0x40_1000_0000, 0, 0xFF)));
         // Another segment only: nothing for segment 0.

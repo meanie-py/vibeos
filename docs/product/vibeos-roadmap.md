@@ -640,6 +640,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (0x1E with a DISK_GEOMETRY in FP, 0x109 from WAITDEP). `[IO-STRANDED]` now reports any
   recurrence. Field manual: "A kernel return address holds a DISK_GEOMETRY". It may account
   for other arm64 dispatcher flakes in this registry; re-check them against it.
+- **Pi 5: BUGCHECK 0x80 at the kernel's first `_enable`, every boot** (FIXED 2026-10-06,
+  `e4622a4597b` regression). The loader's new arm64 PCI detection read the MCFG's ECAM
+  window, and the Pi 5's MCFG names the Broadcom controller's registers, not ECAM: the
+  first read of 00:00.0 returned 0xDEADDEAD and left an SError pending. `_enable` is
+  `daifclr #0xF`, the first unmask of SError, so it surfaced there, long after the read.
+  The loader now has an MCFG quirk list (`RPIFDN`). **Still owed:** the arm64 HAL's
+  `ecam_bus0_va` (`hal-rust/src/arm64/halstubs.rs`) probes QEMU's two fixed ECAM bases
+  on any board, and on a Pi the low one (0x3F00_0000) is RAM, which it would accept as
+  ECAM. Nothing on the Pi reaches it while the loader reports no PCI bus, but the HAL
+  should take the base from the loader's MCFG instead of guessing.
 - **Interactive `cmd` died on its first redirection** (FIXED 2026-10-06). `echo hi > F:\x.txt`
   typed at a cmd prompt killed cmd with a Rust panic in ntdll's
   `CsrAllocateMessagePointer` (`smss-csrss-rust/src/csrlib/capture.rs`): it indexed the
