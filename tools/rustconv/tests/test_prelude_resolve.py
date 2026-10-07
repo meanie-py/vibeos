@@ -251,3 +251,23 @@ def test_unresolved_keeps_the_namespace(monkeypatch, tmp_path):
         "STATUS_X": {"value"},
         "_ROOT_KEY": {"type"},
     }
+
+
+def test_an_exported_rust_definition_gives_its_extern_declaration():
+    from rustconv.prelude_resolve import exported_definitions
+
+    src = (
+        '#[no_mangle]\npub unsafe extern "system" fn GetListEntryData(mut Entry: PGENERIC_LIST_ENTRY)'
+        " -> PVOID {\n    (*Entry).Data\n}\n"
+        '#[no_mangle]\npub unsafe extern "C" fn Other(a: *mut u8) {}\n'
+        "pub unsafe fn NotExported() {}\n"
+    )
+    got = exported_definitions(src, {"GetListEntryData", "Other", "NotExported"})
+    assert got == [
+        (
+            "GetListEntryData",
+            "pub fn GetListEntryData(Entry: PGENERIC_LIST_ENTRY) -> PVOID;",
+            "system",
+        ),
+        ("Other", "pub fn Other(a: *mut u8);", "C"),
+    ]

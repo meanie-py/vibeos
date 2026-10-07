@@ -144,7 +144,43 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
                 m = re.search(r"\bfn\s+([A-Za-z_]\w*)\s*\(", decl)
                 if m and m.group(1) in present:
                     found[m.group(1)].append(Item("fn", _norm(decl), abi, rel))
+        for name, decl, abi in exported_definitions(src, present):
+            found[name].append(Item("fn", _norm(decl), abi, rel))
     return found
+
+
+_EXPORTED_FN = re.compile(
+    r"#\[no_mangle\]\s*(?:#\[[^\]]*\]\s*)*pub\s+(?:unsafe\s+)?extern\s+\"(\w+)\"\s+fn\s+"
+    r"([A-Za-z_]\w*)\s*\("
+)
+
+
+def exported_definitions(src: str, names: set[str]) -> list[tuple[str, str, str]]:
+    """``(name, extern decl, abi)`` for each ``#[no_mangle]`` Rust DEFINITION of a wanted name.
+
+    A module that links a library already ported to Rust calls functions the tree only
+    DEFINES: usetup imports setuplib.dll, whose 52 exports are bodies in setuplib-rust, and
+    resolve found "no definition" for every one of them (it read only extern blocks). The
+    exported definition is the symbol itself, so its signature and ABI are the declaration.
+    """
+    out = []
+    for m in _EXPORTED_FN.finditer(src):
+        abi, name = m.group(1), m.group(2)
+        if name not in names:
+            continue
+        depth, i = 1, m.end()
+        while i < len(src) and depth:
+            depth += {"(": 1, ")": -1}.get(src[i], 0)
+            i += 1
+        params = src[m.end() : i - 1]
+        ret = re.match(r"\s*(->\s*[^{]+?)\s*(?:where\b[^{]*)?\{", src[i:])
+        if ret is None and not re.match(r"\s*\{", src[i:]):
+            continue
+        # A binding pattern (`mut x: T`) is not allowed in a foreign declaration.
+        params = re.sub(r"(^|,)(\s*)mut\s+(?=[A-Za-z_]\w*\s*:)", r"\1\2", params)
+        tail = f" {ret.group(1).strip()}" if ret else ""
+        out.append((name, f"pub fn {name}({params.strip()}){tail};", abi))
+    return out
 
 
 _INT = re.compile(

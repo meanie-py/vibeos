@@ -162,6 +162,15 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
     if not arm.lstrip().startswith(f"{stem})") and "|" not in arm.split(")", 1)[0]:
         raise PortError(f"derived arm is not labelled {stem!r}:\n{arm[:200]}")
     script = GEN.read_text()
+    prior = load_state(stem)
+    if "real_unions" not in prior:
+        # Decided ONCE, when port first writes the arm: a crate nothing has compiled against
+        # yet takes real Rust unions. usetup's bodies read `Event.KeyEvent.uChar` as the C
+        # does, and against `__BindgenUnionField` that was 150 of its 422 errors. A crate
+        # whose arm predates port keeps the emulation its translations already call.
+        prior["real_unions"] = not re.search(rf"^  {re.escape(stem)}\)\n", script, re.M)
+    if prior["real_unions"] and "REAL_UNIONS=1" not in arm:
+        arm = re.sub(r"^(    USERMODE=1)$", r"\1\n    REAL_UNIONS=1", arm, count=1, flags=re.M)
     updated = upsert_profile_arm(script, arm, stem)
     if updated != script:
         GEN.write_text(updated)
@@ -174,6 +183,7 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
         tus=[str(p.relative_to(REPO)) for p in dp.module.compiled_tus if not pd.is_shim_tu(p)],
         usermode=dp.module.is_usermode,
         switch_facts=switch_facts(dp),
+        real_unions=prior["real_unions"],
     )
     _record(
         state, "derive", started, tus=len(dp.module.compiled_tus), arm_changed=updated != script
@@ -1104,7 +1114,23 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
                 re.findall(r"^pub (?:struct|union|enum|type) (\w+)", isl.read_text(), re.M)
             )
     # ...nor a base type the -sys crate owns (pciidex had ULONG/PVOID/NTSTATUS pinned here).
-    names -= island
+    # Except an OPAQUE island stub (`_unused: [u8; 0]`): a header that only forward-declares
+    # `struct _CFFILE` gives bindgen nothing more, while usetup's cabinet.c defines the whole
+    # struct -- and 50 field accesses failed against the stub. Those, and the island's
+    # pointer aliases to them (PCFFILE would still point at the stub), are taken from the TU
+    # that defines them; a stub no TU defines stays the island's.
+    opaque: set[str] = set()
+    for isl in prelude.parent.glob("types_*.rs"):
+        text = isl.read_text()
+        stubs = set(re.findall(r"^pub struct (\w+) \{\n\s*_unused: \[u8; 0\],\n\}", text, re.M))
+        opaque |= stubs
+        opaque |= {
+            alias
+            for alias, target in re.findall(r"^pub type (\w+) = \*(?:mut|const) (\w+);", text, re.M)
+            if target in stubs
+        }
+    names |= opaque
+    names -= island - opaque
     items: dict[str, tuple[str, str]] = {}
     for tu in state["tus"]:
         c_file = REPO / tu
