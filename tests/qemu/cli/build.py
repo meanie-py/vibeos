@@ -27,6 +27,7 @@ from . import (
     ladder,
     lints,
     provenance,
+    trim,
     warmth,
 )
 from .artifacts import Run, Stage
@@ -412,11 +413,33 @@ def build(args, repo: Path) -> int:
             if not _hold_wow64_source(run, repo, arch, args, reads):
                 return run.finalize(repo)
             with diskspace.reserve(repo, "build"):
-                return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+                rc = _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+            if rc == 0:
+                _trim_own_target(repo)
+            return rc
     except hostlock.buildpolicy.PolicyError as exc:
         run.classification = "BUILD_POLICY_REFUSED"
         run.add(Stage("admission", status="fail", detail=str(exc)))
         return run.finalize(repo)
+
+
+def _trim_own_target(repo: Path) -> None:
+    """Cargo never deletes a superseded unit, so without this a lane's target dir only
+    grows (32 G fresh, 45 G measured on a weeks-old lane). Own tree only, after a green
+    build; see trim.py for why this is safe while sibling arches are still building.
+    VIBEOS_TRIM=0 opts out."""
+    if os.environ.get("VIBEOS_TRIM", "1") == "0":
+        return
+    try:
+        plan = trim.plan_worktree(repo)
+        if plan.paths:
+            freed, _ = trim.apply(repo, plan)
+            print(
+                f"[trim] freed {freed / 1024**3:.1f} G of superseded cargo output "
+                f"({plan.superseded_units} units, {plan.adhoc_dirs} idle ad-hoc dirs)"
+            )
+    except OSError as exc:
+        print(f"[trim] skipped: {exc}")
 
 
 def _flag_in_cache(build_dir: Path, flag: str) -> bool:
