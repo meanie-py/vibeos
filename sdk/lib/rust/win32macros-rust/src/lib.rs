@@ -830,8 +830,8 @@ macro_rules! RTL_CONTAINS_FIELD {
 // into a ULONG) is the CALL SITE's, which crate-repair casts there. An `as _` here could not
 // infer under `match SRB_STATUS!(s) { .. }`.
 
-/// `srb.h` — `SRB_STATUS(Status)` = `Status & ~(SRB_STATUS_AUTOSENSE_VALID |
-/// SRB_STATUS_QUEUE_FROZEN)`, those two flags being `0x80` and `0x40`. `int` arithmetic in C.
+/// `srb.h` — `SRB_STATUS(Status)`: the status with its two flag bits cleared,
+/// SRB_STATUS_AUTOSENSE_VALID (`0x80`) and SRB_STATUS_QUEUE_FROZEN (`0x40`). `int` arithmetic in C.
 #[macro_export]
 macro_rules! SRB_STATUS {
     ($s:expr $(,)?) => {
