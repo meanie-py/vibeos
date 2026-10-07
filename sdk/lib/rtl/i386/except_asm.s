@@ -311,20 +311,6 @@ DebuggerActive1:
 
 RaiseException:
 
-#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
-    /* Safety net: For continuable software exceptions that escape all handlers,
-     * return from RtlRaiseException to caller instead of killing the process. */
-    mov eax, [ebp+8]
-    test dword ptr [eax+EXCEPTION_RECORD_EXCEPTION_FLAGS], EXCEPTION_NONCONTINUABLE
-    jnz DummyPseh_SecondChance1
-
-    /* Continuable — return from RtlRaiseException to caller */
-    mov esp, ebp
-    pop ebp
-    ret 4
-
-DummyPseh_SecondChance1:
-#endif
     /* Raise the exception */
     mov ecx, esp
     push 0

@@ -270,13 +270,55 @@ pub static MmProtectToValue: [ULONG; 32] = [
 // (virtio etc.) are SPIs. The HAL owns the GIC hardware (ack/enable/EOI in
 // hal-rust::arm64); this side owns the KINTERRUPT registry + ISR dispatch.
 //
-// One ISR per vector (no shared-vector chaining yet) — sufficient for the
-// QEMU `virt` device set where each SPI is dedicated. Single-CPU, IRQs are
-// masked by hardware for the duration of the exception, so a plain AtomicPtr
-// (no per-vector lock) is race-free against the dispatch read.
+// The table holds the FIRST interrupt object connected to a vector. Objects that
+// share the vector (both asked ShareVector, same Mode) chain after it through
+// InterruptListEntry, as NT's KiChainedDispatch does: the Pi 5's two RP1 xHCI
+// controllers sit on one level-triggered SPI. Each vector's CHAIN_LOCKS entry
+// serializes connect, disconnect and dispatch of that vector. It is per vector,
+// not global, because dispatch holds it across the ISRs: with one global lock,
+// an ISR waiting on an interrupt lock another CPU holds in KeSynchronizeExecution
+// deadlocks the moment that CPU takes a different interrupt.
 const GIC_MAX_INTID: usize = 1020;
 static INTERRUPT_TABLE: [core::sync::atomic::AtomicPtr<_KINTERRUPT>; GIC_MAX_INTID] =
     [const { core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()) }; GIC_MAX_INTID];
+/// A plain atomic flag, not a KSPIN_LOCK: dispatch takes it before raising the
+/// software IRQL (hardware already masks IRQs for the whole exception), where
+/// KeAcquireSpinLockAtDpcLevel's IRQL check would bugcheck 0x9.
+static CHAIN_LOCKS: [core::sync::atomic::AtomicBool; GIC_MAX_INTID] =
+    [const { core::sync::atomic::AtomicBool::new(false) }; GIC_MAX_INTID];
+
+unsafe fn chain_acquire(vector: usize) {
+    use core::sync::atomic::Ordering;
+    while CHAIN_LOCKS[vector].compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+        core::hint::spin_loop();
+    }
+}
+
+unsafe fn chain_release(vector: usize) {
+    CHAIN_LOCKS[vector].store(false, core::sync::atomic::Ordering::Release);
+}
+
+/// Take a vector's chain lock from thread context: at HIGH_LEVEL, so that
+/// vector's dispatch cannot try to take it under us on this CPU.
+unsafe fn chain_lock(vector: usize) -> KIRQL {
+    let old = crate::ke::ke_defs::KfRaiseIrql(HIGH_LEVEL);
+    chain_acquire(vector);
+    old
+}
+
+unsafe fn chain_unlock(vector: usize, old: KIRQL) {
+    chain_release(vector);
+    crate::ke::ke_defs::KeLowerIrql(old);
+}
+
+/// The interrupt object after `i` in its vector's chain, or null at the end.
+unsafe fn chain_next(head: *mut _KINTERRUPT, i: *mut _KINTERRUPT) -> *mut _KINTERRUPT {
+    let next = (*i).InterruptListEntry.Flink;
+    if next == &raw mut (*head).InterruptListEntry {
+        return core::ptr::null_mut();
+    }
+    (next as *mut u8).sub(core::mem::offset_of!(_KINTERRUPT, InterruptListEntry)) as *mut _KINTERRUPT
+}
 
 extern "system" {
     fn HalEnableSystemInterrupt(Vector: ULONG, Irql: KIRQL, Mode: KINTERRUPT_MODE) -> BOOLEAN;
@@ -297,13 +339,28 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
     if (*Interrupt).Connected != 0 {
         return 1u8;
     }
-    // Refuse to silently steal a vector already owned by another ISR (no
-    // shared-vector chaining yet) — fail so the caller knows, matching NT.
-    let prev = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
-    if !prev.is_null() && prev != Interrupt {
-        return 0u8;
+    let entry = &raw mut (*Interrupt).InterruptListEntry;
+    let irql = chain_lock(vector);
+    let head = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
+    if !head.is_null() && head != Interrupt {
+        // Chain only when both sides agreed to share, in the same mode; a
+        // vector owned exclusively is refused, as NT refuses it.
+        let ok = (*head).ShareVector != 0 && (*Interrupt).ShareVector != 0 && (*head).Mode == (*Interrupt).Mode;
+        if ok {
+            let list = &raw mut (*head).InterruptListEntry;
+            (*entry).Flink = list;
+            (*entry).Blink = (*list).Blink;
+            (*(*list).Blink).Flink = entry;
+            (*list).Blink = entry;
+            (*Interrupt).Connected = 1u8;
+        }
+        chain_unlock(vector, irql);
+        return ok as u8;
     }
+    (*entry).Flink = entry;
+    (*entry).Blink = entry;
     INTERRUPT_TABLE[vector].store(Interrupt, Ordering::SeqCst);
+    chain_unlock(vector, irql);
     // Enable the GIC line. On failure, roll back the table slot.
     if HalEnableSystemInterrupt((*Interrupt).Vector, (*Interrupt).Irql, (*Interrupt).Mode) == 0 {
         INTERRUPT_TABLE[vector].store(core::ptr::null_mut(), Ordering::SeqCst);
@@ -319,11 +376,27 @@ pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> B
     let Interrupt = opaque_ptr(Interrupt);
     let vector = (*Interrupt).Vector as usize;
     let was_connected = (*Interrupt).Connected;
-    if vector < GIC_MAX_INTID
-        && INTERRUPT_TABLE[vector].load(Ordering::SeqCst) == Interrupt
-    {
-        HalDisableSystemInterrupt((*Interrupt).Vector, (*Interrupt).Irql);
-        INTERRUPT_TABLE[vector].store(core::ptr::null_mut(), Ordering::SeqCst);
+    if vector < GIC_MAX_INTID && was_connected != 0 {
+        let irql = chain_lock(vector);
+        let head = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
+        let entry = &raw mut (*Interrupt).InterruptListEntry;
+        let alone = (*entry).Flink == entry;
+        if head == Interrupt && alone {
+            HalDisableSystemInterrupt((*Interrupt).Vector, (*Interrupt).Irql);
+            INTERRUPT_TABLE[vector].store(core::ptr::null_mut(), Ordering::SeqCst);
+        } else if !head.is_null() {
+            // Promote the next object when the head leaves; the line stays on.
+            if head == Interrupt {
+                let next = ((*entry).Flink as *mut u8)
+                    .sub(core::mem::offset_of!(_KINTERRUPT, InterruptListEntry)) as *mut _KINTERRUPT;
+                INTERRUPT_TABLE[vector].store(next, Ordering::SeqCst);
+            }
+            (*(*entry).Blink).Flink = (*entry).Flink;
+            (*(*entry).Flink).Blink = (*entry).Blink;
+            (*entry).Flink = entry;
+            (*entry).Blink = entry;
+        }
+        chain_unlock(vector, irql);
     }
     (*Interrupt).Connected = 0u8;
     was_connected
@@ -343,10 +416,31 @@ pub unsafe extern "system" fn KiDispatchInterruptArm64(Intid: ULONG) -> BOOLEAN 
     if vector >= GIC_MAX_INTID {
         return 0u8;
     }
-    let interrupt = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
-    if interrupt.is_null() {
+    let head = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
+    if head.is_null() {
         return 0u8;
     }
+    chain_acquire(vector);
+    // Walk the chain (usually one object). A level-triggered line stops at the
+    // first ISR that claims it, since another still asserting it will re-raise
+    // the line; an edge (latched) line must ask every ISR, or an edge is lost.
+    let mut handled = 0u8;
+    let mut interrupt = head;
+    while !interrupt.is_null() {
+        if run_isr(interrupt) != 0 {
+            handled = 1;
+            if (*interrupt).Mode == ntkrnl_sys::ddk::_KINTERRUPT_MODE_LevelSensitive {
+                break;
+            }
+        }
+        interrupt = chain_next(head, interrupt);
+    }
+    chain_release(vector);
+    handled
+}
+
+/// Run one connected ISR.
+unsafe fn run_isr(interrupt: *mut _KINTERRUPT) -> BOOLEAN {
     let Some(svc) = (*interrupt).ServiceRoutine else {
         return 0u8;
     };
@@ -431,6 +525,9 @@ pub unsafe extern "system" fn KeInitializeInterrupt(
     (*Interrupt).Number = ProcessorNumber;
     (*Interrupt).FloatingSave = FloatingSave;
     (*Interrupt).Connected = 0u8;
+    let entry = &raw mut (*Interrupt).InterruptListEntry;
+    (*entry).Flink = entry;
+    (*entry).Blink = entry;
 }
 
 #[no_mangle]
