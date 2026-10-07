@@ -43,12 +43,12 @@ pub unsafe extern "C" fn remove_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
     DPRINT!(b"remove_main()\n\0".as_ptr() as *const i8);
 
     if CurrentVolume.is_null() {
-        ConResPuts(StdOut, (IDS_SELECT_NO_VOLUME) as UINT);
+        ConResPuts(StdOut, IDS_SELECT_NO_VOLUME);
         return EXIT_SUCCESS;
     }
 
     if (*CurrentVolume).DriveLetter == UNICODE_NULL {
-        ConResPuts(StdOut, (IDS_REMOVE_NO_LETTER) as UINT);
+        ConResPuts(StdOut, IDS_REMOVE_NO_LETTER);
         return EXIT_SUCCESS;
     }
 
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn remove_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
                 DriveLetter = towupper((*pszSuffix) as _) as u16;
                 nExclusive += 1;
             } else {
-                ConResPuts(StdErr, (IDS_ERROR_INVALID_ARGS) as UINT);
+                ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
                 return EXIT_SUCCESS;
             }
         } else if HasPrefix(*argv.offset(i as isize), RUSTCONV_WSTR_AF152B64BB07.as_ptr().cast_mut(), &mut pszSuffix) != 0 {
@@ -82,19 +82,19 @@ pub unsafe extern "C" fn remove_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
         } else if _wcsicmp(*argv.offset(i as isize), RUSTCONV_WSTR_D2A0BCF54203.as_ptr()) == 0 {
             /* noerr - Already handled above */
         } else {
-            ConResPuts(StdErr, (IDS_ERROR_INVALID_ARGS) as UINT);
+            ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
             return EXIT_SUCCESS;
         }
         i += 1;
     }
 
     if (*CurrentVolume).IsBoot != 0 || (*CurrentVolume).IsSystem != 0 {
-        ConResPuts(StdOut, (IDS_ASSIGN_SYSTEM_VOLUME) as UINT);
+        ConResPuts(StdOut, IDS_ASSIGN_SYSTEM_VOLUME);
         return EXIT_SUCCESS;
     }
 
     if nExclusive > 1 {
-        ConResPuts(StdErr, (IDS_ERROR_INVALID_ARGS) as UINT);
+        ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
         return EXIT_SUCCESS;
     }
 
@@ -106,12 +106,12 @@ pub unsafe extern "C" fn remove_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
         DPRINT1!(b"DriveLetter: %C\n\0".as_ptr() as *const i8, DriveLetter as i32);
 
         if (DriveLetter < 0x0043u16) || (DriveLetter > 0x005Au16) {
-            ConResPuts(StdOut, (IDS_ASSIGN_INVALID_LETTER) as UINT);
+            ConResPuts(StdOut, IDS_ASSIGN_INVALID_LETTER);
             return EXIT_SUCCESS;
         }
 
         if DriveLetter != (*CurrentVolume).DriveLetter {
-            ConResPuts(StdOut, (IDS_REMOVE_WRONG_LETTER) as UINT);
+            ConResPuts(StdOut, IDS_REMOVE_WRONG_LETTER);
             return EXIT_SUCCESS;
         }
     } else {
@@ -120,12 +120,12 @@ pub unsafe extern "C" fn remove_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
 
     bResult = DeleteDriveLetter(DriveLetter);
     if bResult == FALSE {
-        ConResPuts(StdOut, (IDS_REMOVE_FAIL) as UINT);
+        ConResPuts(StdOut, IDS_REMOVE_FAIL);
         return EXIT_SUCCESS;
     }
 
     (*CurrentVolume).DriveLetter = UNICODE_NULL;
-    ConResPuts(StdOut, (IDS_REMOVE_SUCCESS) as UINT);
+    ConResPuts(StdOut, IDS_REMOVE_SUCCESS);
 
     return EXIT_SUCCESS;
 }

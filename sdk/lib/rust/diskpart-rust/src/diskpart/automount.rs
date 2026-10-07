@@ -35,7 +35,7 @@ pub unsafe extern "C" fn automount_main(argc: INT, argv: *mut PWSTR) -> EXIT_COD
             bScrub = TRUE;
         } else if _wcsicmp(*argv.offset(i as isize), RUSTCONV_WSTR_D2A0BCF54203.as_ptr()) == 0 {
         } else {
-            ConResPuts(StdErr, (IDS_ERROR_INVALID_ARGS) as UINT);
+            ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
             return (TRUE) as EXIT_CODE;
         }
         i += 1;
@@ -46,7 +46,7 @@ pub unsafe extern "C" fn automount_main(argc: INT, argv: *mut PWSTR) -> EXIT_COD
     DPRINT!(b"bScrub   %u\n\0".as_ptr() as *const i8, bScrub);
 
     if bDisable != 0 && bEnable != 0 {
-        ConResPuts(StdErr, (IDS_ERROR_INVALID_ARGS) as UINT);
+        ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
         return (TRUE) as EXIT_CODE;
     }
 
@@ -58,9 +58,9 @@ pub unsafe extern "C" fn automount_main(argc: INT, argv: *mut PWSTR) -> EXIT_COD
         }
 
         if State != 0 {
-            ConResPuts(StdOut, (IDS_AUTOMOUNT_ENABLED) as UINT);
+            ConResPuts(StdOut, IDS_AUTOMOUNT_ENABLED);
         } else {
-            ConResPuts(StdOut, (IDS_AUTOMOUNT_DISABLED) as UINT);
+            ConResPuts(StdOut, IDS_AUTOMOUNT_DISABLED);
         }
         ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
     }
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn automount_main(argc: INT, argv: *mut PWSTR) -> EXIT_COD
             return (TRUE) as EXIT_CODE;
         }
 
-        ConResPuts(StdOut, (IDS_AUTOMOUNT_DISABLED) as UINT);
+        ConResPuts(StdOut, IDS_AUTOMOUNT_DISABLED);
         ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
     }
 
@@ -83,7 +83,7 @@ pub unsafe extern "C" fn automount_main(argc: INT, argv: *mut PWSTR) -> EXIT_COD
             return (TRUE) as EXIT_CODE;
         }
 
-        ConResPuts(StdOut, (IDS_AUTOMOUNT_ENABLED) as UINT);
+        ConResPuts(StdOut, IDS_AUTOMOUNT_ENABLED);
         ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
     }
 
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn automount_main(argc: INT, argv: *mut PWSTR) -> EXIT_COD
             return (TRUE) as EXIT_CODE;
         }
 
-        ConResPuts(StdOut, (IDS_AUTOMOUNT_SCRUBBED) as UINT);
+        ConResPuts(StdOut, IDS_AUTOMOUNT_SCRUBBED);
         ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
     }
 

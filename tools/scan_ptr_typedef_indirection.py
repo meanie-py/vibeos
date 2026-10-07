@@ -55,7 +55,9 @@ def c_definitions(text: str) -> dict[str, str]:
     return out
 
 
-def findings_for(c_body: str, rust_text: str, rust_body: str, body_at: int) -> list[tuple[int, str]]:
+def findings_for(
+    c_body: str, rust_text: str, rust_body: str, body_at: int
+) -> list[tuple[int, str]]:
     """(1-based line in `rust_text`, message) for each over-deep declaration in `rust_body`,
     which starts at offset `body_at` of `rust_text`; suppressed lines are dropped."""
     out = []
@@ -88,7 +90,9 @@ def scan(repo: Path) -> list[str]:
             for name, body in ba.rust_definitions_all(text):
                 rust.setdefault(name, []).append((f, text, body, max(text.find(body), 0)))
         for cf in c_files:
-            for name, c_body in c_definitions(cf.read_text(encoding="utf-8", errors="replace")).items():
+            for name, c_body in c_definitions(
+                cf.read_text(encoding="utf-8", errors="replace")
+            ).items():
                 for rf, text, body, at in rust.get(name, []):
                     for line, msg in findings_for(c_body, text, body, at):
                         out.add(

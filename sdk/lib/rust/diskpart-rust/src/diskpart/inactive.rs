@@ -7,18 +7,18 @@ pub unsafe extern "C" fn inactive_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE
     DPRINT!(b"Inactive()\n".as_ptr() as *const i8);
 
     if CurrentDisk.is_null() {
-        ConResPuts(StdOut, (IDS_SELECT_NO_DISK) as UINT);
+        ConResPuts(StdOut, IDS_SELECT_NO_DISK);
         return EXIT_SUCCESS;
     }
 
     if CurrentPartition.is_null() {
-        ConResPuts(StdOut, (IDS_SELECT_NO_PARTITION) as UINT);
+        ConResPuts(StdOut, IDS_SELECT_NO_PARTITION);
         return EXIT_SUCCESS;
     }
 
     if (*CurrentDisk).PartitionStyle == PARTITION_STYLE_MBR {
         if (*CurrentPartition).__bindgen_anon_1.Mbr.BootIndicator == 0 {
-            ConResPuts(StdOut, (IDS_INACTIVE_ALREADY) as UINT);
+            ConResPuts(StdOut, IDS_INACTIVE_ALREADY);
             return EXIT_SUCCESS;
         }
 
@@ -27,12 +27,12 @@ pub unsafe extern "C" fn inactive_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE
         UpdateMbrDiskLayout(CurrentDisk);
         Status = WriteMbrPartitions(CurrentDisk);
         if NT_SUCCESS!(Status) {
-            ConResPuts(StdOut, (IDS_INACTIVE_SUCCESS) as UINT);
+            ConResPuts(StdOut, IDS_INACTIVE_SUCCESS);
         } else {
-            ConResPuts(StdOut, (IDS_INACTIVE_FAIL) as UINT);
+            ConResPuts(StdOut, IDS_INACTIVE_FAIL);
         }
     } else {
-        ConResPuts(StdOut, (IDS_INACTIVE_NO_MBR) as UINT);
+        ConResPuts(StdOut, IDS_INACTIVE_NO_MBR);
     }
 
     return EXIT_SUCCESS;

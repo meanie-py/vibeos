@@ -604,9 +604,68 @@ appeared as a misleading number.
   from a broken run -- setuplib exports stdcall); a name the module's preprocessor aliases
   (`snprintf` -> `_snprintf`) is never copied as a function; and replay repairs once more
   after the hand bank, since a hand body is written against the prelude of its day.
-- **Owed.** `port hand` cannot capture an `extern {}` declaration (the usetup agent wrote
-  those bank entries by hand); a TU's data reached only through a header it includes
-  (usetup's language tables) is not harvested -- kept as a C data TU for now.
+- **`port hand` banks a C-variadic port whole** (closed 2026-10-07): the `extern {}` block
+  declaring the symbol (by Rust name or `#[link_name]`), the `<name>_export` / `va_entry!`
+  mod that defines it, and the comments above each are one contiguous piece; anything else
+  between them is refused. The 19 entries the usetup agent wrote by hand re-capture
+  byte-identically.
+- **Kernel `DPRINT1` prints** (closed 2026-10-07): kernel scaffolds depend on
+  win32macros-rust and take its `DPRINT1` (DbgPrint is cdecl in ntoskrnl as in ntdll)
+  instead of a no-op.
+- **`scan_ptr_typedef_indirection`** (`vibeos-cli check`, gated at zero) holds every body
+  already in the tree to the new pointer-typedef depth check: 143 modules, 16,140 C/Rust
+  function pairs, two hits (pcix, ramdisk), neither live, both fixed.
+
+- **`port replay usetup` reproduces the committed crate again** (it had drifted to 15
+  errors). Two causes, both silent: `identifier_aliases` read only a TU's OWN compile
+  command, so after the flip it returned `{}` and the A/W-spelled `WriteConsole` /
+  `ReadConsoleInput` / `PeekConsoleInput` were dropped as dead branches again -- it now
+  borrows a sibling's command like the rest of macro_authority. And once diskpart landed,
+  the tree held two `SelectPartition`s (diskpart's command handler, setuplib's partlist
+  function) and two `CreatePartitionList`s; consensus picked by text, and the c2rust
+  prototype route cannot run on usetup.c (c2rust panics on it). Candidates that disagree
+  on arity are now a conflict, and a split is settled by the module's own prototype from
+  clang (`sdk_facts.function_prototypes`: ABI and arity), keeping only the matching
+  candidates. The cleaned consensus block is written BEFORE rustc is asked what is
+  unresolved, or a dropped copy still on disk reads as resolved and is lost. The aliases
+  also made diskpart declare `K32LoadStringW` twice (consensus + alias target); an alias
+  target already declared is now only re-exported. All three port modules replay to 0 on
+  every arch: usetup byte-identical to the tree, diskpart equivalent (the island's `u32`
+  `IDS_*` constants replace 167 clang facts, moving casts), setuplib after banking two
+  hand fixes (`ArcPathToNtPath`, `IsDiskSuperFloppyEx`) that had been made in the crate
+  and never banked.
+
+### `port data`: a C data TU as Rust statics, $0 (2026-10-07)
+
+    rustconv port data <stem> <tu.c>        # or: python -m rustconv.c_data_port <tu.c> --crate X --out DIR
+
+Tables are not code: buying them retypes data and invites the model to "fix" a string, and
+c2rust spells each narrow literal as a `[u8; N]`. `c_data_port.py` takes everything that
+decides a byte from clang run with the TU's own compile command -- which declarations exist
+(the build's `#ifdef LANGUAGE_*`), types, field order, lengths, every evaluated initializer
+-- and only the spelling from the source:
+
+- A string keeps its source tokens: escapes stay escapes, raw UTF-8 stays text, and a string
+  macro (`KERNEL_VERSION_STR`, generated per build and per arch) stays a NAME, joined at
+  compile time by the generated `cstr_cat!`. Each literal is read back as Rust reads it and
+  must equal clang's evaluated bytes. Spelling from the bytes instead displayed cs-CZ's
+  escaped cp852 `\xd8\x9f` as an Arabic `?`.
+- An integer keeps its spelling (`TEXT_STYLE_NORMAL | TEXT_ALIGN_CENTER`, an enum constant
+  as bindgen's `_PAGE_NUMBER_SETUP_INIT_PAGE`) only when the crate island's values evaluate
+  it to clang's; otherwise clang's number, with the spelling as a comment.
+- Output is generated on all three arches and must be identical; each extern table's
+  length is checked against the island's `extern` declaration (how the crate's code reaches
+  it), and is a `#[no_mangle] pub static mut`. A NULL is `null()` / `null_mut()` through the
+  typedef chain. Unions, bit-fields, designated initializers and wide literals refuse.
+- `port data` writes `src/<stem>/<tu>/` (one file per header), wires lib.rs and comments the
+  TU out of the CMakeLists. The TU stays on disk as the generator's INPUT; flipped, it
+  borrows a sibling's compile command.
+
+usetup's `mui_tables.c`: 959 tables from 30 lang headers (~70K lines of C, five encodings)
+became 31 files and 14.7K lines, 0 errors on the first `cargo check` on every arch, with no
+numeric fallbacks. Checked independently of the generator: all 6,443 distinct strings the
+C object's `.rdata` holds are present, NUL-terminated, in each arch's Rust-linked usetup.exe.
+
 ### `port headers`: header inline functions as units of the crate (2026-10-06)
 
 A function a HEADER defines (`FORCEINLINE`, `static inline`) is compiled privately into every
