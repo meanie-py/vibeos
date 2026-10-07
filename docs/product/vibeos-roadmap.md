@@ -422,7 +422,7 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 |---|-------|-----|------|-----------|
 | 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
 | 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). **Pi 5 SD reads** (2026-10-06: the same `sdhc.sys` on the BCM2712's SDC0, ~11 MB/s; writes enabled but untested, its card holds the bench stager). Next: boot from the card instead of the RAM disk |
-| 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
+| 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC; shared vectors chain since 2026-10-07, for the Pi 5's two RP1 xHCIs on one SPI) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
 | 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). Next: its interrupts, then GEM and I217. The Pi 5's GEM is not in its firmware's ACPI tables at all (`docs/engineering/pi5-acpi/dsdt.dsl`), so it needs describing before a driver can find it |
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
 | 10f | **Maybe: bring legacy BIOS boot back (loader only)** for i386 and amd64. The BIOS prune (`85102c111a3`..`5ca4d482d32`, 2026-05-29) assumed BIOS no longer mattered. That holds for amd64 PCs from about 2012 on, but almost every real 32-bit PC is BIOS-only, so without it i386 boots on no physical hardware; SeaBIOS is also the default in plain QEMU and Proxmox, and on coreboot/Libreboot machines such as the owner's OptiPlex 9020 (a candidate x64 bench: COM1, NVMe boot through SeaBIOS). **Scope: the loader, not the emulator.** The PC-AT machine layer survives in `freeldr-rust` (`machpc`, `pcmem`, `pcdisk`, `pcvesa`, `pchw`, `pxe`); restore the real-mode entry (`arch/realmode/*`) and `pcat.cmake` from git, wire `freeldr.sys` into the cargo-driven loader link (`ab763550984`), and repair four months of drift in the BIOS-only paths. The loader hands the kernel a VESA framebuffer like UEFI's GOP one, so fast486, HAL x86bios and videoprt INT10 stay retired. **Add a SeaBIOS smoke cell for i386 and amd64**, or it rots again. Quick experiment first: OpenCore's OpenDuet (UEFI loaded from disk by a legacy BIOS) runs today's `uefildr.efi` with no OS change. | — | M | considered 2026-10-05 |
@@ -804,14 +804,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   under `_USE_DUMMY_PSEH`. The three test binaries now build with real SEH the kmtests'
   way (`_USE_NATIVE_SEH` + the `-windows-msvc` retarget). All three pass: nohook 18,
   globalhook 396, runtimehook 396, 0 failures (`tools/payloads/delayimp`).
-- **i386: an unhandled continuable exception RETURNS from `RtlRaiseException`** (OPEN,
-  2026-10-06). `sdk/lib/rtl/i386/except_asm.s`'s `_USE_DUMMY_PSEH` "safety net" returns to
-  the caller when no handler takes a software exception that is not NONCONTINUABLE, instead
-  of raising it second-chance. With dummy PSEH most `_SEH2_EXCEPT`s are dead, so this is
-  load-bearing, but it also hides real failures: the delayimp test's unhandled
-  `0xC06D007F` came back as the helper returning NULL, and the process died at eip 0 several
-  frames later. Retire it with user-mode dummy PSEH; until then, an AV at a NULL eip right
-  after a `RaiseException` is this.
+- **i386/amd64: an unhandled continuable exception RETURNED from `RtlRaiseException`**
+  (FIXED, 2026-10-07). Both arches' `except_asm` carried a `_USE_DUMMY_PSEH` "safety net"
+  that resumed the caller when no handler took a non-NONCONTINUABLE software exception
+  (i386: every code; amd64: codes below 0xC0000000) instead of raising it second-chance.
+  It hid real failures: the delayimp test's unhandled `0xC06D007F` came back as the
+  helper returning NULL, and the process died at eip 0 several frames later. arm64's Rust
+  `RtlRaiseException` never had one, which is what showed it was not load-bearing; both
+  nets are gone, and smoke ×3 plus `appstorm` on i386 and amd64 (43/43 each) show no
+  second-chance deaths. An unhandled `RaiseException` now ends the process at the raise,
+  as on Windows: read the `[KI-EXC] ... second chance` line. STILL OWED: the sibling net
+  in `KiUserExceptionDispatcher` (`dll/ntdll/dispatch/{i386,amd64,arm64}/dispatch.S`)
+  resumes kernel-delivered continuable exceptions below 0xC0000000, chiefly a user-mode
+  `int3` with no debugger, which Windows would kill.
 - **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
   Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
   `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs

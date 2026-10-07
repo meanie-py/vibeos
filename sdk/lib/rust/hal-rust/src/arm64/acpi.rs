@@ -466,13 +466,17 @@ fn device_resources(aml: &[u8], body: &[u8]) -> Option<AcpiDevice> {
     Some(x)
 }
 
-/// Search the DSDT and every SSDT for an ACPI-only xHCI controller.
-pub(crate) unsafe fn find_xhci() -> Option<AcpiDevice> {
-    let mut x = find_device(&[XHCI_HID_STRING, XHCI_HID_EISAID], any)?;
-    if x.mmio_len < XHCI_MIN_WINDOW {
-        x.mmio_len = XHCI_MIN_WINDOW;
+/// Every ACPI-only xHCI controller the DSDT and SSDTs declare: the Pi 4's VL805,
+/// or the Pi 5's two RP1 controllers (XHC0, XHC1: one interrupt, shared).
+pub(crate) unsafe fn for_each_xhci(mut f: impl FnMut(AcpiDevice)) {
+    for hid in [XHCI_HID_STRING, XHCI_HID_EISAID] {
+        for_each_device(hid, |mut x| {
+            if x.mmio_len < XHCI_MIN_WINDOW {
+                x.mmio_len = XHCI_MIN_WINDOW;
+            }
+            f(x)
+        });
     }
-    Some(x)
 }
 
 /// Search the DSDT and every SSDT for the Raspberry Pi 4's GENET Ethernet MAC.
