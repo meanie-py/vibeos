@@ -540,8 +540,11 @@ exercised. What changed, each a class rather than a site:
 
 Two fresh user-mode modules, run end to end on the tools setuplib built: usetup (15 TUs,
 188 functions, links setuplib.dll) and diskpart (43 TUs, 118 functions, links conutils).
-Translation cost $0.93 and $0.94 on the first pass; every gap below was a TOOL gap, fixed as a
-class, and each first appeared as a misleading number.
+$5.63 in all ($3.05 and $2.58; setuplib alone had cost $10.10); `port fix` took them to
+about 120 and 33 errors, one subagent each closed the residue by hand, and `port flip` put
+both in the build: 0 errors and a linked .exe on all three arches, reproducible by
+`port replay` at $0. Every gap below was a TOOL gap, fixed as a class, and each first
+appeared as a misleading number.
 
 - **Derive.** A case label owned by a base header (`STD_INPUT_HANDLE`) no longer blocks: derive
   records it and scaffold has clang evaluate it into the prelude, hard-failing if it cannot
@@ -590,7 +593,20 @@ class, and each first appeared as a misleading number.
   `Event.KeyEvent.uChar` against `__BindgenUnionField` was 150 of usetup's errors.
 - **crate-repair** parenthesizes a cast a `<` follows (`x as i32 < y` is generic arguments).
 - **win32macros-rust**: `IsEqualGUID` (eight crates had their own), `CopyMemory`/`MoveMemory`,
-  and `RTL_NUMBER_OF_FIELD` accepts rustfmt's trailing comma.
+  and `RTL_NUMBER_OF_FIELD` accepts rustfmt's trailing comma. **strsafe-rust**: ntstrsafe's
+  narrow `RtlStringCchCopyA`/`RtlStringCchPrintfA`/`RtlStringCbPrintfA` (static inline in
+  the header; consensus had copied `extern`s of them from kernel crates).
+- **Link.** `port flip <stem>` does the cohab flip (TU lines commented naming their `.rs`,
+  stub TU, `rust_staticlib_variant` linked). The first links found: INITGUID statics need
+  `#[no_mangle]` (the island declares them `extern`); ntdll-sys's Rust `inlines` must win
+  over another crate's bindgen `extern InitializeListHead`; resolve re-derives every kept
+  consensus copy from source each run (40 setuplib imports had been kept as `extern "C"`
+  from a broken run -- setuplib exports stdcall); a name the module's preprocessor aliases
+  (`snprintf` -> `_snprintf`) is never copied as a function; and replay repairs once more
+  after the hand bank, since a hand body is written against the prelude of its day.
+- **Owed.** `port hand` cannot capture an `extern {}` declaration (the usetup agent wrote
+  those bank entries by hand); a TU's data reached only through a header it includes
+  (usetup's language tables) is not harvested -- kept as a C data TU for now.
 
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
