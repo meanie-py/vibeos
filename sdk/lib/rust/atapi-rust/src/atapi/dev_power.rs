@@ -47,7 +47,7 @@ pub unsafe extern "C" fn AtaDeviceFlushPowerIrpQueue(
 #[no_mangle]
 pub unsafe extern "C" fn AtaDeviceGetFlushCacheCommand(
     DevExt: *mut PATAPORT_DEVICE_EXTENSION,
-) -> u8 {
+) -> UCHAR {
     let mut Command: u8 = 0;
 
     if !IS_ATAPI!(&(*(*DevExt)).Device) {

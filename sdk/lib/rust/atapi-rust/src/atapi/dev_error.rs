@@ -89,7 +89,7 @@ unsafe extern "C" fn AtaDeviceHandleRequestSense(
         (*FailedRequest).SrbStatus = AtaReqSetFixedSenseData(Srb, SenseCode);
     }
 
-    if RTL_CONTAINS_FIELD(
+    if RTL_CONTAINS_FIELD!(
         SenseData,
         (*Srb).SenseInfoBufferLength,
         AdditionalSenseCodeQualifier,
@@ -329,7 +329,7 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
 
     ASSERT_REQUEST!(Request);
 
-    SrbStatus = SRB_STATUS((*Request).SrbStatus);
+    SrbStatus = SRB_STATUS!((*Request).SrbStatus);
 
     RetryCount = SRB_GET_FLAGS!((*Request).Srb) & (SRB_FLAG_RETRY_COUNT_MASK) as _;
     RetryCount = RetryCount.wrapping_add(1);
@@ -359,7 +359,7 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
     SrbStatus = SrbStatus | ((*Request).SrbStatus & ((SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as u8);
     (*Request).SrbStatus = SrbStatus;
 
-    if SRB_STATUS(SrbStatus) == SRB_STATUS_BUSY {
+    if SRB_STATUS!(SrbStatus) == SRB_STATUS_BUSY {
         return;
     }
 

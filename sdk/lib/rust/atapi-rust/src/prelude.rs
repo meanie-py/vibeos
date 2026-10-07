@@ -216,7 +216,7 @@ pub const ACTION_ENUM_PORT: _ATA_PORT_ACTION = _ATA_PORT_ACTION_ACTION_ENUM_PORT
 pub const ACTION_PORT_RESET: _ATA_PORT_ACTION = _ATA_PORT_ACTION_ACTION_PORT_RESET; // island enum
 pub const ACTION_PORT_TIMING: _ATA_PORT_ACTION = _ATA_PORT_ACTION_ACTION_PORT_TIMING; // island enum
 pub const ANSI_NULL: CHAR = 0; // freeldr-rust/src/ui_keystone.rs
-pub const APC_LEVEL: u32 = 1; // ntkrnl-sys/src/hal_bindgen_amd64.rs
+pub const APC_LEVEL: u32 = 1; // legide-rust/src/prelude.rs
 pub const ATA_CHANNEL_FLAG_IS_AHCI: u32 = 8; // legide-rust/src/types_amd64.rs
 pub const ATA_CHANNEL_FLAG_IS_EXTERNAL: u32 = 2; // legide-rust/src/types_amd64.rs
 pub const ATA_CHANNEL_FLAG_NCQ: u32 = 4; // legide-rust/src/types_amd64.rs
@@ -227,6 +227,9 @@ pub const ATA_MAX_LBA_28: ULONG64 = 0x0FFFFFFF; // freeldr-rust/src/hwide.rs
 pub const ATA_MAX_SECTORS_PER_IO: u32 = 256; // legide-rust/src/types_amd64.rs
 pub const ATA_MIN_BUFFER_ALIGNMENT: u32 = 1; // legide-rust/src/types_amd64.rs
 pub const ATA_MIN_SECTOR_SIZE: u32 = 512; // legide-rust/src/types_amd64.rs
+pub const BusRelations: _DEVICE_RELATION_TYPE = _DEVICE_RELATION_TYPE_BusRelations; // island enum
+pub const BusTypeAta: _STORAGE_BUS_TYPE = _STORAGE_BUS_TYPE_BusTypeAta; // island enum
+pub const BusTypeSata: _STORAGE_BUS_TYPE = _STORAGE_BUS_TYPE_BusTypeSata; // island enum
 pub const CAP_ATAPI_ID_CMD: u32 = 2; // cdrom-rust/src/types_amd64.rs
 pub const CAP_ATA_ID_CMD: u32 = 1; // cdrom-rust/src/types_amd64.rs
 pub const CAP_SMART_CMD: u32 = 4; // cdrom-rust/src/types_amd64.rs
@@ -235,6 +238,7 @@ pub const COMPLETE_NO_IRP: ATA_COMPLETION_ACTION = ATA_COMPLETION_ACTION_COMPLET
 pub const CONN_STATUS_DEV_ATAPI: _ATA_CONNECTION_STATUS = _ATA_CONNECTION_STATUS_CONN_STATUS_DEV_ATAPI; // island enum
 pub const CONN_STATUS_FAILURE: _ATA_CONNECTION_STATUS = _ATA_CONNECTION_STATUS_CONN_STATUS_FAILURE; // island enum
 pub const CONN_STATUS_NO_DEVICE: _ATA_CONNECTION_STATUS = _ATA_CONNECTION_STATUS_CONN_STATUS_NO_DEVICE; // island enum
+pub const CriticalWorkQueue: _WORK_QUEUE_TYPE = _WORK_QUEUE_TYPE_CriticalWorkQueue; // island enum
 pub const DEVICE_HAS_CDB_INTERRUPT: u32 = 32; // legide-rust/src/types_amd64.rs
 pub const DEVICE_IS_ATAPI: u32 = 16; // legide-rust/src/types_amd64.rs
 pub const DEVICE_IS_NEC_CDR260: u32 = 128; // legide-rust/src/types_amd64.rs
@@ -255,71 +259,72 @@ pub const DO_DEVICE_INITIALIZING: u32 = 128; // ntkrnl-sys/src/hal_bindgen_amd64
 pub const DO_DIRECT_IO: u32 = 16; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const DO_IS_FDO: u32 = 2147483648; // pciidex-rust/src/types_amd64.rs
 pub const DO_POWER_INRUSH: u32 = 16384; // ntkrnl-sys/src/hal_bindgen_amd64.rs
+pub const DevicePowerState: _POWER_STATE_TYPE = _POWER_STATE_TYPE_DevicePowerState; // island enum
 pub const EVENT_CODE_BAD_STATE: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_BAD_STATE; // island enum
 pub const EVENT_CODE_CRC_ERROR: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_CRC_ERROR; // island enum
 pub const EVENT_CODE_DMA_DISABLE: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_DMA_DISABLE; // island enum
 pub const EVENT_CODE_DOWNSHIFT: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_DOWNSHIFT; // island enum
 pub const EVENT_CODE_NCQ_DISABLE: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_NCQ_DISABLE; // island enum
 pub const EVENT_CODE_TIMEOUT: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_TIMEOUT; // island enum
-pub const FILE_DEVICE_CONTROLLER: u32 = 4; // ntdll-sys/src/bindgen_amd64.rs
-pub const FILE_DEVICE_MASS_STORAGE: u32 = 45; // ntdll-sys/src/bindgen_amd64.rs
+pub const FILE_DEVICE_CONTROLLER: u32 = 4; // diskpart-rust/src/types_amd64.rs
+pub const FILE_DEVICE_MASS_STORAGE: u32 = 45; // diskpart-rust/src/types_amd64.rs
 pub const FILE_DEVICE_SECURE_OPEN: u32 = 256; // ntdll-sys/src/bindgen_amd64.rs
-pub const FILE_REMOVABLE_MEDIA: u32 = 1; // ntdll-sys/src/bindgen_amd64.rs
+pub const FILE_REMOVABLE_MEDIA: u32 = 1; // diskpart-rust/src/prelude.rs
 pub const GetDeviceType: DEVICE_TYPE_NAME = DEVICE_TYPE_NAME_GetDeviceType; // island enum
 pub const GetGenericType: DEVICE_TYPE_NAME = DEVICE_TYPE_NAME_GetGenericType; // island enum
 pub const HighPagePriority: ULONG = 2; // ntoskrnl-rust/src/ARM3/helpers.rs
 pub const IDENTIFY_BUFFER_SIZE: u32 = 512; // cdrom-rust/src/types_amd64.rs
 pub const IDE_ACPI_TIMING_MODE_NOT_SUPPORTED: u32 = 4294967295; // legide-rust/src/types_amd64.rs
 pub const IDE_COMMAND_ATAPI_IDENTIFY: u32 = 161; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_COMMAND_DOOR_LOCK: u32 = 222; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_DOOR_UNLOCK: u32 = 223; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_FLUSH_CACHE: u32 = 231; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_FLUSH_CACHE_EXT: u32 = 234; // storahci-rust/src/types_amd64.rs
+pub const IDE_COMMAND_DOOR_LOCK: u32 = 222; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_DOOR_UNLOCK: u32 = 223; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_FLUSH_CACHE: u32 = 231; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_FLUSH_CACHE_EXT: u32 = 234; // legide-rust/src/types_amd64.rs
 pub const IDE_COMMAND_IDENTIFY: u32 = 236; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_COMMAND_IDLE_IMMEDIATE: u32 = 225; // storahci-rust/src/types_amd64.rs
+pub const IDE_COMMAND_IDLE_IMMEDIATE: u32 = 225; // legide-rust/src/types_amd64.rs
 pub const IDE_COMMAND_MEDIA_EJECT: u32 = 237; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_COMMAND_READ: u32 = 32; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_COMMAND_READ_DMA: u32 = 200; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_COMMAND_READ_DMA_EXT: u32 = 37; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_READ_EXT: u32 = 36; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_READ_FPDMA_QUEUED: u32 = 96; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_READ_LOG_EXT: u32 = 47; // storahci-rust/src/types_amd64.rs
+pub const IDE_COMMAND_READ_DMA_EXT: u32 = 37; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_READ_EXT: u32 = 36; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_READ_FPDMA_QUEUED: u32 = 96; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_READ_LOG_EXT: u32 = 47; // legide-rust/src/types_amd64.rs
 pub const IDE_COMMAND_READ_MULTIPLE: u32 = 196; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_COMMAND_READ_MULTIPLE_EXT: u32 = 41; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_SECURITY_FREEZE_LOCK: u32 = 245; // storahci-rust/src/types_amd64.rs
+pub const IDE_COMMAND_READ_MULTIPLE_EXT: u32 = 41; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_SECURITY_FREEZE_LOCK: u32 = 245; // legide-rust/src/types_amd64.rs
 pub const IDE_COMMAND_SET_DRIVE_PARAMETERS: u32 = 145; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_COMMAND_SET_FEATURE: u32 = 239; // storahci-rust/src/types_amd64.rs
+pub const IDE_COMMAND_SET_FEATURE: u32 = 239; // legide-rust/src/types_amd64.rs
 pub const IDE_COMMAND_SET_MULTIPLE: u32 = 198; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_COMMAND_SMART: u32 = 176; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_STANDBY_IMMEDIATE: u32 = 224; // storahci-rust/src/types_amd64.rs
+pub const IDE_COMMAND_SMART: u32 = 176; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_STANDBY_IMMEDIATE: u32 = 224; // legide-rust/src/types_amd64.rs
 pub const IDE_COMMAND_VERIFY: u32 = 64; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_COMMAND_VERIFY_EXT: u32 = 66; // storahci-rust/src/types_amd64.rs
+pub const IDE_COMMAND_VERIFY_EXT: u32 = 66; // legide-rust/src/types_amd64.rs
 pub const IDE_COMMAND_WRITE: u32 = 48; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_COMMAND_WRITE_DMA: u32 = 202; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_COMMAND_WRITE_DMA_EXT: u32 = 53; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_WRITE_DMA_FUA_EXT: u32 = 61; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_WRITE_EXT: u32 = 52; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_WRITE_FPDMA_QUEUED: u32 = 97; // storahci-rust/src/types_amd64.rs
+pub const IDE_COMMAND_WRITE_DMA_EXT: u32 = 53; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_WRITE_DMA_FUA_EXT: u32 = 61; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_WRITE_EXT: u32 = 52; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_WRITE_FPDMA_QUEUED: u32 = 97; // legide-rust/src/types_amd64.rs
 pub const IDE_COMMAND_WRITE_MULTIPLE: u32 = 197; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_COMMAND_WRITE_MULTIPLE_EXT: u32 = 57; // storahci-rust/src/types_amd64.rs
-pub const IDE_COMMAND_WRITE_MULTIPLE_FUA_EXT: u32 = 206; // storahci-rust/src/types_amd64.rs
-pub const IDE_DRIVE_SELECT: u32 = 160; // uniata-rust/src/types_amd64.rs
-pub const IDE_ERROR_ADDRESS_NOT_FOUND: u32 = 1; // storahci-rust/src/types_amd64.rs
+pub const IDE_COMMAND_WRITE_MULTIPLE_EXT: u32 = 57; // legide-rust/src/types_amd64.rs
+pub const IDE_COMMAND_WRITE_MULTIPLE_FUA_EXT: u32 = 206; // legide-rust/src/types_amd64.rs
+pub const IDE_DRIVE_SELECT: u32 = 160; // pciidex-rust/src/prelude.rs
+pub const IDE_ERROR_ADDRESS_NOT_FOUND: u32 = 1; // legide-rust/src/types_amd64.rs
 pub const IDE_ERROR_COMMAND_ABORTED: u32 = 4; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_ERROR_CRC_ERROR: u32 = 128; // storahci-rust/src/types_amd64.rs
+pub const IDE_ERROR_CRC_ERROR: u32 = 128; // legide-rust/src/types_amd64.rs
 pub const IDE_ERROR_DATA_ERROR: u32 = 64; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_ERROR_END_OF_MEDIA: u32 = 2; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_ERROR_ID_NOT_FOUND: u32 = 16; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_ERROR_MEDIA_CHANGE: u32 = 32; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_ERROR_MEDIA_CHANGE_REQ: u32 = 8; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_FEATURE_DISABLE_REVERT_TO_POWER_ON: u32 = 102; // storahci-rust/src/types_amd64.rs
-pub const IDE_FEATURE_ENABLE_MSN: u32 = 149; // storahci-rust/src/types_amd64.rs
-pub const IDE_FEATURE_PUIS_SPIN_UP: u32 = 7; // storahci-rust/src/types_amd64.rs
-pub const IDE_FEATURE_SET_TRANSFER_MODE: u32 = 3; // storahci-rust/src/types_amd64.rs
+pub const IDE_FEATURE_DISABLE_REVERT_TO_POWER_ON: u32 = 102; // legide-rust/src/types_amd64.rs
+pub const IDE_FEATURE_ENABLE_MSN: u32 = 149; // legide-rust/src/types_amd64.rs
+pub const IDE_FEATURE_PUIS_SPIN_UP: u32 = 7; // legide-rust/src/types_amd64.rs
+pub const IDE_FEATURE_SET_TRANSFER_MODE: u32 = 3; // legide-rust/src/types_amd64.rs
 pub const IDE_GP_LOG_NCQ_COMMAND_ERROR_ADDRESS: u32 = 16; // legide-rust/src/types_amd64.rs
 pub const IDE_GP_LOG_SECTOR_SIZE: u32 = 512; // legide-rust/src/types_amd64.rs
-pub const IDE_LBA_MODE: u32 = 64; // storahci-rust/src/types_amd64.rs
-pub const IDE_STATUS_DEVICE_FAULT: u32 = 32; // storahci-rust/src/types_amd64.rs
+pub const IDE_LBA_MODE: u32 = 64; // legide-rust/src/types_amd64.rs
+pub const IDE_STATUS_DEVICE_FAULT: u32 = 32; // legide-rust/src/prelude.rs
 pub const IDE_STATUS_ERROR: u32 = 1; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_STATUS_INDEX: u32 = 2; // atapi-legacy-rust/src/types_amd64.rs
 pub const ID_CMD: u32 = 236; // cdrom-rust/src/types_amd64.rs
@@ -336,12 +341,13 @@ pub const IRP_MJ_SCSI: u32 = 15; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const IRP_MJ_SYSTEM_CONTROL: u32 = 23; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const IRP_PAGING_IO: u32 = 2; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const IRP_SYNCHRONOUS_PAGING_IO: u32 = 64; // ntkrnl-sys/src/hal_bindgen_amd64.rs
-pub const IsNEC_98: u32 = 0; // ntdll-sys/src/bindgen_amd64.rs
-pub const KEY_ALL_ACCESS: u32 = 983103; // ntdll-sys/src/bindgen_amd64.rs
-pub const KEY_READ: DWORD = 0x20019; // shell32-rust/src/cfs_folder.rs
+pub const IsNEC_98: u32 = 0; // legide-rust/src/prelude.rs
+pub const KEY_ALL_ACCESS: u32 = 983103; // legide-rust/src/prelude.rs
+pub const KEY_READ: DWORD = 0x20019; // diskpart-rust/src/prelude.rs
+pub const KeepObject: _IO_ALLOCATION_ACTION = _IO_ALLOCATION_ACTION_KeepObject; // island enum
 pub const KeyValuePartialInformation: u32 = 2; // config-rust/src/cmsysini.rs
 pub const MAXULONG: u32 = 4294967295; // ntdll-sys/src/bindgen_amd64.rs
-pub const MAX_IDE_DEVICE: u32 = 2; // pciidex-legacy-rust/src/types_amd64.rs
+pub const MAX_IDE_DEVICE: u32 = 2; // legide-rust/src/prelude.rs
 pub const MAX_SLOTS: usize = 16; // usbxhci-rust/src/controller.rs
 pub const MODE_DSP_FUA_SUPPORTED: u32 = 16; // atapi-legacy-rust/src/types_amd64.rs
 pub const MODE_DSP_WRITE_PROTECT: u32 = 128; // atapi-legacy-rust/src/types_amd64.rs
@@ -352,21 +358,25 @@ pub const MODE_PAGE_FAULT_REPORTING: u32 = 28; // atapi-legacy-rust/src/types_am
 pub const MODE_SENSE_RETURN_ALL: u32 = 63; // atapi-legacy-rust/src/types_amd64.rs
 pub const MODE_SENSE_SAVED_VALUES: u32 = 192; // atapi-legacy-rust/src/types_amd64.rs
 pub const MWDMA_ALL: u32 = 1792; // pciidex-rust/src/types_amd64.rs
-pub const MmNonCached: MEMORY_CACHING_TYPE = 0; // ntkrnl-sys/src/mm.rs
+pub const MmCached: _MEMORY_CACHING_TYPE = _MEMORY_CACHING_TYPE_MmCached; // island enum
+pub const MmNonCached: MEMORY_CACHING_TYPE = 0; // legide-rust/src/prelude.rs
 pub const NonPagedPool: POOL_TYPE = 0; // msfs-rust/src/glue.rs
-pub const OBJ_CASE_INSENSITIVE: u32 = 64; // ntdll-sys/src/bindgen_amd64.rs
-pub const OBJ_KERNEL_HANDLE: u32 = 512; // ntdll-sys/src/bindgen_amd64.rs
+pub const OBJ_CASE_INSENSITIVE: u32 = 64; // diskpart-rust/src/prelude.rs
+pub const OBJ_KERNEL_HANDLE: u32 = 512; // legide-rust/src/prelude.rs
 pub const OBJ_PERMANENT: u32 = 16; // ntdll-sys/src/bindgen_amd64.rs
 pub const PAGE_SIZE: u32 = 4096; // ntdll-sys/src/bindgen_amd64.rs
 pub const PCIIDEX_INTERFACE_VERSION: u32 = 1; // legide-rust/src/prelude.rs
 pub const PIO_ALL: u32 = 31; // pciidex-rust/src/types_amd64.rs
-pub const PIO_MODE0: u32 = 1; // pciidex-legacy-rust/src/types_amd64.rs
-pub const PIO_MODE1: u32 = 2; // pciidex-legacy-rust/src/types_amd64.rs
-pub const PIO_MODE2: u32 = 4; // pciidex-legacy-rust/src/types_amd64.rs
+pub const PIO_MODE0: u32 = 1; // legide-rust/src/types_amd64.rs
+pub const PIO_MODE1: u32 = 2; // legide-rust/src/types_amd64.rs
+pub const PIO_MODE2: u32 = 4; // legide-rust/src/types_amd64.rs
 pub const PLUGPLAY_REGKEY_DEVICE: u32 = 1; // classpnp-rust/src/glue.rs
 pub const PNP_DEVICE_NOT_DISABLEABLE: u32 = 32; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const PagedPool: POOL_TYPE = 1; // ks-rust/src/image.rs
 pub const PowerDeviceD0: usize = 1; // kbdhid-rust/src/glue.rs
+pub const PowerDeviceD3: _DEVICE_POWER_STATE = _DEVICE_POWER_STATE_PowerDeviceD3; // island enum
+pub const PowerSystemUnspecified: _SYSTEM_POWER_STATE = _SYSTEM_POWER_STATE_PowerSystemUnspecified; // island enum
+pub const PowerSystemWorking: _SYSTEM_POWER_STATE = _SYSTEM_POWER_STATE_PowerSystemWorking; // island enum
 pub const PropertyExistsQuery: u32 = 1; // scsiport-rust/src/glue.rs
 pub const PropertyStandardQuery: u32 = 0; // scsiport-rust/src/glue.rs
 pub const READ_ATTRIBUTE_BUFFER_SIZE: u32 = 512; // cdrom-rust/src/types_amd64.rs
@@ -387,17 +397,13 @@ pub const REQUEST_FLAG_HAS_RESERVED_MAPPING: u32 = 524288; // legide-rust/src/ty
 pub const REQUEST_FLAG_HAS_SG_LIST: u32 = 65536; // legide-rust/src/types_amd64.rs
 pub const REQUEST_FLAG_HAS_TASK_FILE: u32 = 1024; // legide-rust/src/types_amd64.rs
 pub const REQUEST_FLAG_INTERNAL: u32 = 4194304; // legide-rust/src/types_amd64.rs
-pub const REQUEST_FLAG_LBA48: ULONG = 0x00000001; // freeldr-rust/src/hwide.rs
 pub const REQUEST_FLAG_NCQ: u32 = 4; // legide-rust/src/types_amd64.rs
 pub const REQUEST_FLAG_NO_KEEP_AWAKE: u32 = 1048576; // legide-rust/src/types_amd64.rs
-pub const REQUEST_FLAG_PACKET_COMMAND: ULONG = 0x00000004; // freeldr-rust/src/hwide.rs
 pub const REQUEST_FLAG_PASSTHROUGH: u32 = 8388608; // legide-rust/src/types_amd64.rs
 pub const REQUEST_FLAG_POLL: u32 = 2147483648; // legide-rust/src/types_amd64.rs
 pub const REQUEST_FLAG_PROGRAM_DMA: u32 = 2097152; // legide-rust/src/types_amd64.rs
 pub const REQUEST_FLAG_READ_WRITE: u32 = 32; // legide-rust/src/types_amd64.rs
-pub const REQUEST_FLAG_READ_WRITE_MULTIPLE: ULONG = 0x00000002; // freeldr-rust/src/hwide.rs
 pub const REQUEST_FLAG_SAVE_TASK_FILE: u32 = 512; // legide-rust/src/types_amd64.rs
-pub const REQUEST_FLAG_SET_DEVICE_REGISTER: ULONG = 0x00000008; // freeldr-rust/src/hwide.rs
 pub const REQUEST_STATE_FREEZE_QUEUE: u32 = 3; // legide-rust/src/types_amd64.rs
 pub const REQUEST_STATE_NOT_STARTED: u32 = 1; // legide-rust/src/types_amd64.rs
 pub const REQUEST_STATE_REQUEUE: u32 = 2; // legide-rust/src/types_amd64.rs
@@ -471,15 +477,15 @@ pub const SRB_STATUS_TIMEOUT: u32 = 9; // atapi-legacy-rust/src/types_amd64.rs
 pub const SRB_TYPE_SCSI_REQUEST_BLOCK: u32 = 0; // cdrom-rust/src/types_amd64.rs
 pub const STATUS_ADAPTER_HARDWARE_ERROR: i32 = 0xC00000C2u32 as i32; // scsiport-rust/src/glue.rs
 pub const STATUS_BUFFER_OVERFLOW: i32 = 0x80000005_u32 as i32; // fastfat-rust/src/glue.rs
-pub const STATUS_BUFFER_TOO_SMALL: NTSTATUS = 0xC0000023u32 as NTSTATUS; // kernel32-rust/src/console/history.rs
-pub const STATUS_CANCELLED: NTSTATUS = 0xC000_0120u32 as NTSTATUS; // msfs-rust/src/glue.rs
+pub const STATUS_BUFFER_TOO_SMALL: i32 = 0xC000_0023u32 as i32; // diskpart-rust/src/prelude.rs
+pub const STATUS_CANCELLED: NTSTATUS = 0xC000_0120u32 as NTSTATUS; // legide-rust/src/prelude.rs
 pub const STATUS_CONTINUE_COMPLETION: NTSTATUS = 0x00000000_u32 as i32; // hidusb-rust/src/glue.rs
 pub const STATUS_DEVICE_BUSY: i32 = 0x80000011u32 as i32; // classpnp-rust/src/glue.rs
 pub const STATUS_DEVICE_DOES_NOT_EXIST: i32 = 0xC00000C0u32 as i32; // classpnp-rust/src/glue.rs
 pub const STATUS_DEVICE_NOT_CONNECTED: i32 = 0xC000009D_u32 as i32; // ntdll-sys/src/constants.rs
 pub const STATUS_DEVICE_REMOVED: i32 = 0xC00002B6u32 as i32; // partmgr-rust/src/glue.rs
 pub const STATUS_INFO_LENGTH_MISMATCH: i32 = 0xC0000004u32 as i32; // kernel32-rust/src/client/sysinfo.rs
-pub const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000_009Au32 as NTSTATUS; // msfs-rust/src/glue.rs
+pub const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000_009Au32 as NTSTATUS; // legide-rust/src/prelude.rs
 pub const STATUS_INVALID_DEVICE_REQUEST: NTSTATUS = 0xC000_0010u32 as NTSTATUS; // mup-rust/src/glue.rs
 pub const STATUS_INVALID_PARAMETER: i32 = 0xC000_000Du32 as i32; // network/src/lib.rs
 pub const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185u32 as i32; // classpnp-rust/src/glue.rs
@@ -489,16 +495,18 @@ pub const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002u32 as NTSTATUS; // kerne
 pub const STATUS_NOT_SUPPORTED: i32 = 0xC00000BB_u32 as i32; // ntdll-sys/src/constants.rs
 pub const STATUS_NO_SUCH_DEVICE: i32 = 0xC000000Eu32 as i32; // afd-rust/src/glue.rs
 pub const STATUS_PENDING: NTSTATUS = 0x00000103; // kernel32-rust/src/client/synch.rs
-pub const STATUS_REVISION_MISMATCH: i32 = 0xC0000059_u32 as i32; // ntdll-sys/src/constants.rs
-pub const STATUS_SUCCESS: i32 = 0; // network/src/lib.rs
-pub const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC000_0001u32 as NTSTATUS; // msfs-rust/src/glue.rs
+pub const STATUS_REVISION_MISMATCH: i32 = 0xC0000059_u32 as i32; // legide-rust/src/prelude.rs
+pub const STATUS_SUCCESS: i32 = 0; // diskpart-rust/src/prelude.rs
+pub const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC000_0001u32 as NTSTATUS; // diskpart-rust/src/prelude.rs
 pub const STATUS_WMI_GUID_NOT_FOUND: i32 = 0xC0000295u32 as i32; // classpnp-rust/src/glue.rs
 pub const STATUS_WMI_INSTANCE_NOT_FOUND: i32 = 0xC0000296u32 as i32; // classpnp-rust/src/glue.rs
 pub const STORAGE_ADDRESS_TYPE_BTL8: u32 = 0; // cdrom-rust/src/types_amd64.rs
 pub const STORAGE_EVENT_ALL: u32 = 7; // cdrom-rust/src/types_amd64.rs
 pub const STORAGE_EVENT_NOTIFICATION_VERSION_V1: u32 = 1; // cdrom-rust/src/types_amd64.rs
 pub const SWDMA_ALL: u32 = 224; // pciidex-rust/src/types_amd64.rs
+pub const SystemPowerState: _POWER_STATE_TYPE = _POWER_STATE_TYPE_SystemPowerState; // island enum
 pub const THREAD_ALL_ACCESS: u32 = 2032639; // ntkrnl-sys/src/hal_bindgen_amd64.rs
+pub const TargetDeviceRelation: _DEVICE_RELATION_TYPE = _DEVICE_RELATION_TYPE_TargetDeviceRelation; // island enum
 pub const UDMA_ALL: u32 = 260096; // pciidex-rust/src/types_amd64.rs
 pub const VPD_BLOCK_DEVICE_CHARACTERISTICS: u32 = 177; // atapi-legacy-rust/src/types_amd64.rs
 pub const VPD_BLOCK_LIMITS: u32 = 176; // atapi-legacy-rust/src/types_amd64.rs
@@ -521,32 +529,31 @@ extern "C" {
     pub fn PushEntryList(ListHead: *mut SINGLE_LIST_ENTRY, Entry: *mut SINGLE_LIST_ENTRY); // cdfs-rust/src/strucsup.rs
     pub fn RemoveEntryList(Entry: PLIST_ENTRY) -> BOOLEAN; // winlogon-sys/src/bindgen_amd64.rs
     pub fn RemoveHeadList(ListHead: PLIST_ENTRY) -> PLIST_ENTRY; // winlogon-sys/src/bindgen_amd64.rs
-    pub fn RtlULongAdd(a: u32, b: u32, result: *mut u32) -> i32; // cdrom-rust/src/ioctl.rs
+    pub fn RtlULongAdd(ul1: u32, ul2: u32, result: *mut u32) -> NTSTATUS; // cdrom-rust/src/ddk_shims.rs
     pub fn SptiHandleScsiPassthru( DeviceObject: PDEVICE_OBJECT, Irp: PIRP, MaximumTransferLength: ULONG, MaximumPhysicalPages: ULONG, ) -> NTSTATUS; // usbstor-rust/src/disk.rs
     pub fn strcmp(a: *const c_char, b: *const c_char) -> c_int; // browser-rust/src/prelude.rs
     pub fn strlen(s: *const i8) -> usize; // advapi32-rust/src/prelude.rs
     pub fn strstr(haystack: *const i8, needle: *const i8) -> *mut i8; // fstub-rust/src/disksup.rs
 }
 extern "system" {
-    pub fn ExFreePoolWithTag(P: PVOID, Tag: ULONG); // iomgr-rust/src/file.rs
+    pub fn ExFreePoolWithTag(P: PVOID, Tag: ULONG); // freeldr-rust/src/heap.rs
     pub fn InitializeSListHead(ListHead: PSLIST_HEADER); // aclui-rust/src/types_amd64.rs
     pub fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS; // fastfat-rust/src/flush.rs
     pub fn IoCompleteRequest(Irp: PIRP, PriorityBoost: CCHAR); // hal-rust/src/x86/halpnpdd.rs
     pub fn KeClearEvent(Event: PRKEVENT); // ntkrnl-sys/src/bindgen_amd64.rs
-    pub fn KeGetCurrentIrql() -> u8; fn ClassModeSense( DeviceObject: PDEVICE_OBJECT, buffer: *mut i8, bufferSize: u32, pageCode: u8, ) -> u32; // disk-rust/src/disk.rs
     pub fn KeSetEvent(Event: PRKEVENT, Increment: KPRIORITY, Wait: BOOLEAN) -> LONG; // ntkrnl-sys/src/bindgen_amd64.rs
     pub fn ObDereferenceObject(Object: PVOID); // fastfat-rust/src/create.rs
     pub fn PoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS; // hal-rust/src/arm64/pnpdd.rs
-    pub fn PoRequestPowerIrp( DeviceObject: PDEVICE_OBJECT, MinorFunction: UCHAR, PowerState: POWER_STATE, CompletionFunction: PREQUEST_POWER_COMPLETE, Context: PVOID, Irp: *mut PIRP, ) -> NTSTATUS; // usbhub-rust/src/power.rs
+    pub fn PoRequestPowerIrp(DeviceObject: PDEVICE_OBJECT, MinorFunction: UCHAR, PowerState: POWER_STATE, CompletionFunction: PREQUEST_POWER_COMPLETE, Context: PVOID, pIrp: *mut PIRP,) -> NTSTATUS; // po-rust/src/power.rs
     pub fn PoSetPowerState( DeviceObject: PDEVICE_OBJECT, Type: ULONG, State: POWER_STATE, ) -> POWER_STATE; // acpi-rust/src/buspdo.rs
     pub fn PoStartNextPowerIrp(Irp: PIRP); // hal-rust/src/arm64/pnpdd.rs
-    pub fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: PCHAR); // ntdll-sys/src/bindgen_amd64.rs
-    pub fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32; // disk-rust/src/disk.rs
+    pub fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, ); // mountmgr-rust/src/mountmgr.rs
+    pub fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32; // disk-rust/src/ddk_shims.rs
 }
 // ==== end port resolve ====
-pub use win32macros_rust::{ARRAYSIZE, ASSERT, C_ASSERT, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_X_LPARAM, GET_Y_LPARAM, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, INVALID_HANDLE_VALUE, InitializeObjectAttributes, IsContainerPartition, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, PAGE_ROUND_UP, PRIMARYLANGID, RGB, RTL_CONSTANT_STRING, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SUBLANGID, UNICODE_NULL, UNREFERENCED_PARAMETER, UlongToPtr, ZeroMemory, _countof, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes};
-pub use strsafe_rust::{RtlStringCbPrintfW, RtlStringCchPrintfExA, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatW, StringCbCopyNExW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCchCatW, StringCchCopyNExW, StringCchCopyW, StringCchLengthW, StringCchPrintfW, StringCchVPrintfW};
-pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, RtlStringCbCatNW, RtlStringCbCatW, RtlStringCbCopyNA, RtlStringCbCopyNW, RtlStringCbCopyW, RtlStringCchCatNW, RtlStringCchCatW, RtlStringCchCopyNW, RtlStringCchCopyW, RtlStringCopyNWorkerW, RtlStringCopyWorkerW, RtlStringLengthWorkerW};
+pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ASSERT, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_X_LPARAM, GET_Y_LPARAM, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, InitializeObjectAttributes, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToUlong, RGB, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, UNICODE_NULL, UNREFERENCED_PARAMETER, UlongToPtr, ZeroMemory, _countof, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes};
+pub use strsafe_rust::{RtlStringCbPrintfA, RtlStringCbPrintfW, RtlStringCchPrintfA, RtlStringCchPrintfExA, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatW, StringCbCopyNExW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCchCatW, StringCchCopyNExW, StringCchCopyW, StringCchLengthW, StringCchPrintfW, StringCchVPrintfW};
+pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, RtlStringCbCatNW, RtlStringCbCatW, RtlStringCbCopyNA, RtlStringCbCopyNW, RtlStringCbCopyW, RtlStringCchCatNW, RtlStringCchCatW, RtlStringCchCopyA, RtlStringCchCopyNW, RtlStringCchCopyW, RtlStringCopyNWorkerW, RtlStringCopyWorkerA, RtlStringCopyWorkerW, RtlStringLengthWorkerW};
 
 // ==== port facts: constants evaluated by clang from the C headers (generated -- `rustconv port resolve`) ====
 pub const ATAPORT_TAG: u32 = 0x50656449; // clang, atapi.c
@@ -982,3 +989,22 @@ macro_rules! SRB_SET_FLAGS {
 #[allow(unused_imports)]
 pub(crate) use SRB_SET_FLAGS;
 // ==== end port macros ====
+
+// ==== port resolve: substrate helpers (generated) ====
+pub use ntkrnl_sys::mm::ADDRESS_AND_SIZE_TO_SPAN_PAGES;
+#[cfg(not(target_arch = "x86"))]
+pub use ntkrnl_sys::inline::ex::ExInterlockedFlushSList;
+pub use ntkrnl_sys::inline::common::InsertTailList;
+pub use ntkrnl_sys::interlocked::InterlockedPushEntrySList;
+pub use ntkrnl_sys::inline::common::IoAdjustPagingPathCount;
+pub use ntkrnl_sys::inline::common::IoInitializeRemoveLock;
+#[cfg(not(target_arch = "x86"))]
+pub use ntkrnl_sys::inline::ke::KeQuerySystemTime;
+pub use ntkrnl_sys::inline::mm::MmGetMdlByteCount;
+pub use ntkrnl_sys::inline::mm::MmGetMdlVirtualAddress;
+pub use ntkrnl_sys::inline::mm::MmGetSystemAddressForMdlSafe;
+pub use ntkrnl_sys::inline::tier1::ObReferenceObject;
+pub use ntkrnl_sys::inline::common::PoSetDeviceBusy;
+pub use ntkrnl_sys::inline::common::RTL_CONSTANT_OBJECT_ATTRIBUTES;
+pub use ntkrnl_sys::inline::common::RtlEqualMemory;
+// ==== end substrate helpers ====

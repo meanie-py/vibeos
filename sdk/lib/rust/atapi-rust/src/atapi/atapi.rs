@@ -454,7 +454,7 @@ pub unsafe extern "system" fn AtaStorageNotificationlDpc(
     SystemArgument2: *mut core::ffi::c_void,
 ) {
     let PortData: *mut ATAPORT_PORT_DATA = DeferredContext as *mut ATAPORT_PORT_DATA;
-    let DeviceBitmap: u32 = PtrToUlong(SystemArgument1);
+    let DeviceBitmap: u32 = PtrToUlong!(SystemArgument1);
     let mut ChanExt: *mut ATAPORT_CHANNEL_EXTENSION;
     let mut i: u32;
 

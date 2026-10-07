@@ -448,7 +448,7 @@ unsafe extern "C" fn AtaPdoHandleScsiMiniport(
         &mut (*SrbControl).Signature as *mut UCHAR as *const core::ffi::c_void,
         b"SCSIDISK\0".as_ptr() as *const core::ffi::c_void,
         (core::mem::size_of::<[core::ffi::c_char; 9]>() as usize).wrapping_sub(1),
-    ) != 0 {
+    ) != false {
         Status = AtaPdoSendHbaControl(DevExt, SrbControl, BufferSize);
     } else {
         Status = STATUS_INVALID_PARAMETER;
@@ -588,9 +588,9 @@ unsafe extern "C" fn AtaFdoQueryStorageAdapterProperty(
     (*AdapterDescriptor).CommandQueueing = FALSE;
     (*AdapterDescriptor).AcceleratedTransfer = FALSE;
     if (*ChanExt).PortData.PortFlags & PORT_FLAG_IS_AHCI != 0 {
-        (*AdapterDescriptor).BusType = BusTypeSata;
+        (*AdapterDescriptor).BusType = (BusTypeSata) as u8;
     } else {
-        (*AdapterDescriptor).BusType = BusTypeAta;
+        (*AdapterDescriptor).BusType = (BusTypeAta) as u8;
     }
     (*AdapterDescriptor).BusMajorVersion = 1;
     (*AdapterDescriptor).BusMinorVersion = 0;
@@ -682,7 +682,7 @@ unsafe extern "C" fn AtaFdoHandleGetScsiInquiryData(
         PdoCount = PdoCount.wrapping_add(1);
     }
 
-    EntrySize = ALIGN_UP(
+    EntrySize = ALIGN_UP!(
         core::mem::size_of::<SCSI_INQUIRY_DATA>().wrapping_sub(1).wrapping_add((INQUIRYDATABUFFERSIZE) as _),
         core::mem::size_of::<ULONG>() as ULONG,
     );

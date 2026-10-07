@@ -62,7 +62,7 @@ unsafe extern "C" fn AtaDeviceSetPioTransferMode(
         ) != 0,
     );
 
-    Mode = IDE_SET_ADVANCE_PIO_MODE(Mode);
+    Mode = IDE_SET_ADVANCE_PIO_MODE!(Mode);
     AtaDeviceBuildSetTransferModeTaskFile(Request, (Mode) as UCHAR);
 
     Status = AtaPortSendRequest(PortData, DevExt);
@@ -89,11 +89,11 @@ unsafe extern "C" fn AtaDeviceSetDmaTransferMode(
     }
 
     if Mode >= UDMA_MODE!(0) {
-        Mode = IDE_SET_UDMA_MODE(Mode - UDMA_MODE!(0));
+        Mode = IDE_SET_UDMA_MODE!(Mode - UDMA_MODE!(0));
     } else if Mode >= MWDMA_MODE!(0) {
-        Mode = IDE_SET_MWDMA_MODE(Mode - MWDMA_MODE!(0));
+        Mode = IDE_SET_MWDMA_MODE!(Mode - MWDMA_MODE!(0));
     } else {
-        Mode = IDE_SET_SWDMA_MODE(Mode - SWDMA_MODE!(0));
+        Mode = IDE_SET_SWDMA_MODE!(Mode - SWDMA_MODE!(0));
     }
     AtaDeviceBuildSetTransferModeTaskFile(Request, (Mode) as UCHAR);
 

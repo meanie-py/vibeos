@@ -34,7 +34,7 @@ pub unsafe extern "C" fn AtaDeviceSendIdentify(
     PortData: *mut ATAPORT_PORT_DATA,
     DevExt: *mut ATAPORT_DEVICE_EXTENSION,
     Command: u8,
-) -> i32 {
+) -> NTSTATUS {
     let Request: *mut ATA_DEVICE_REQUEST = &raw mut (*PortData).Worker.InternalRequest;
 
     (*Request).Flags = REQUEST_FLAG_POLL;

@@ -207,7 +207,7 @@ pub unsafe extern "system" fn AtaDispatchWmi(
 pub unsafe extern "C" fn AtaPdoWmiRegistration(
     DevExt: *mut ATAPORT_DEVICE_EXTENSION,
     Register: u8,
-) -> i32 {
+) -> NTSTATUS {
     let mut Action: u32;
 
     PAGED_CODE!();

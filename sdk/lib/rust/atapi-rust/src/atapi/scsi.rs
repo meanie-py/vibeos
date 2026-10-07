@@ -37,7 +37,7 @@ pub static mut AtapCompletionDpc: KDPC = _KDPC {
 
 
 unsafe extern "C" fn AtaSrbStatusToNtStatus(mut SrbStatus: u8) -> i32 {
-    match SRB_STATUS(SrbStatus) {
+    match SRB_STATUS!(SrbStatus) {
         SRB_STATUS_SUCCESS => return STATUS_SUCCESS,
         SRB_STATUS_TIMEOUT => return STATUS_IO_TIMEOUT,
         SRB_STATUS_NO_DEVICE => return STATUS_DEVICE_DOES_NOT_EXIST,
@@ -115,7 +115,7 @@ unsafe extern "C" fn AtaReqRequeueRequest(
     mut ResultSrbStatus: PUCHAR,
 ) -> NTSTATUS {
     let mut SrbStatus: UCHAR = 0;
-    SrbStatus = SRB_STATUS(*ResultSrbStatus);
+    SrbStatus = SRB_STATUS!(*ResultSrbStatus);
     if (SrbStatus as i32) as u32 != SRB_STATUS_BUSY && (SrbStatus as i32) as u32 != SRB_STATUS_INSUFFICIENT_RESOURCES {
         return (COMPLETE_IRP) as i32;
     }
@@ -287,7 +287,7 @@ unsafe extern "C" fn AtaReqCompleteRequest(mut Request: PATA_DEVICE_REQUEST) {
     }
 
     if CompletionAction == COMPLETE_IRP {
-        if SRB_STATUS(SrbStatus) == SRB_STATUS_INSUFFICIENT_RESOURCES {
+        if SRB_STATUS!(SrbStatus) == SRB_STATUS_INSUFFICIENT_RESOURCES {
             (*Srb).SrbStatus = (SRB_STATUS_INTERNAL_ERROR) as u8;
             (*Srb).__bindgen_anon_1.InternalStatus = (STATUS_INSUFFICIENT_RESOURCES) as u32;
             (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -353,7 +353,7 @@ pub unsafe extern "C" fn AtaReqSetLbaInformation(
 
     SenseData = ((*Srb).SenseInfoBuffer).cast();
 
-    if RTL_CONTAINS_FIELD(SenseData, (*Srb).SenseInfoBufferLength, Information) {
+    if RTL_CONTAINS_FIELD!(SenseData, (*Srb).SenseInfoBufferLength, Information) {
         (*SenseData).Information[0] = (Lba >> 24) as u8;
         (*SenseData).Information[1] = (Lba >> 16) as u8;
         (*SenseData).Information[2] = (Lba >> 8) as u8;
@@ -463,10 +463,10 @@ unsafe extern "C" fn AtaReqMapBuffer(
         return core::ptr::null_mut();
     }
 
-    PagesNeeded = ADDRESS_AND_SIZE_TO_SPAN_PAGES(
+    PagesNeeded = (ADDRESS_AND_SIZE_TO_SPAN_PAGES(
         MmGetMdlVirtualAddress((*Request).Mdl),
         MmGetMdlByteCount((*Request).Mdl),
-    );
+    )) as _;
     if PagesNeeded > ATA_RESERVED_PAGES {
         return core::ptr::null_mut();
     }

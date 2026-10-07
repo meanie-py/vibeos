@@ -229,7 +229,7 @@ unsafe extern "C" fn AtaPdoQueryTargetDeviceRelations(
 
     (*DeviceRelations).Count = 1;
     *(*DeviceRelations).Objects.as_mut_ptr().add(0) = (*DevExt).Common.Self_;
-    ObReferenceObject((*DevExt).Common.Self_);
+    ObReferenceObject(((*DevExt).Common.Self_).cast());
 
     (*Irp).IoStatus.Information = DeviceRelations as ULONG_PTR;
     return STATUS_SUCCESS;
@@ -301,7 +301,7 @@ unsafe extern "C" fn AtaPdoQueryId(
         BusQueryHardwareIDs => {
             let mut IdStart: PWCHAR;
 
-            DBG_UNREFERENCED_LOCAL_VARIABLE(IdStart);
+            DBG_UNREFERENCED_LOCAL_VARIABLE!(IdStart);
 
             DeviceType = AtaTypeCodeToName(DevExt, GetDeviceType);
             GenericType = AtaTypeCodeToName(DevExt, GetGenericType);

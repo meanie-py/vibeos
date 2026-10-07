@@ -525,7 +525,7 @@ unsafe extern "C" fn AtaFdoInitializeDeviceRelations(
         let fresh = (*DeviceRelations).Count;
         (*DeviceRelations).Count = (*DeviceRelations).Count.wrapping_add(1);
         *((*DeviceRelations).Objects.as_mut_ptr().offset(fresh as isize)) = (*DevExt).Common.Self_;
-        ObReferenceObject((*DevExt).Common.Self_);
+        ObReferenceObject(((*DevExt).Common.Self_).cast());
     }
 }
 #[no_mangle]
