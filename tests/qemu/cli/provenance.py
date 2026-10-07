@@ -832,6 +832,11 @@ NON_BUILD_PATHSPEC = (
     # made the first `pi5 boot` refuse a fresh build as STALE_MEDIA).
     ":(exclude)tools/pi4",
     ":(exclude)tools/pi5",
+    # pytest modules are test-time consumers of the media, never build inputs:
+    # only other tests import them. Adding a regression test to test_xhci.py made
+    # that very test refuse the build it was written against.
+    ":(exclude,glob)tests/**/test_*.py",
+    ":(exclude,glob)tools/test_*.py",
 )
 
 

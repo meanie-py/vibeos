@@ -701,3 +701,11 @@ census's new per-thread backtraces showed. stortest now also accepts the Pi's bo
 `type`s the file it wrote. `WRITE_ENABLED` is on. The driver also completes
 SRBs at DISPATCH_LEVEL now, answers MODE SENSE underruns as success (classpnp failed the
 mismatch), and logs `[SDHC] io:` rates while the card is busy.
+
+Second correction (2026-10-06): cmd was not waiting on csrss, it was dead. ntdll's
+`CsrAllocateMessagePointer` panicked indexing a bindgen `[_; 1]` flexible array on the
+second captured pointer, and the console window, which csrss owns, stayed on screen. Fixed.
+On the Pi, `echo hello from cmd> F:\REDIR.TXT` (the SD card) and `> E:\REDIR.TXT` (the
+Ventoy stick) both `type` back, and cmd keeps going. Bench tip: open cmd with
+`pico.sh key GUI R`. Ctrl+Esc then letters does not reach "Run…" because the Start menu has
+no mnemonics, and Enter with nothing selected used to kill explorer (fixed, roadmap).

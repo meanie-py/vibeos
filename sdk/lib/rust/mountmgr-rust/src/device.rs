@@ -728,6 +728,12 @@ pub unsafe extern "C" fn MountMgrNextDriveLetterWorker(
         _ => {}
     }
 
+    DbgPrint(
+        c"[MNTMGR] NextDlWorker: %wZ -> assigned=%u letter=%c\n".as_ptr(),
+        core::ptr::addr_of_mut!(TargetDeviceName),
+        (*DriveLetterInfo).DriveLetterWasAssigned as u32,
+        if (*DriveLetterInfo).CurrentDriveLetter != 0 { (*DriveLetterInfo).CurrentDriveLetter as u32 } else { '?' as u32 },
+    );
     ExFreePoolWithTag(TargetDeviceName.Buffer as *mut core::ffi::c_void, 1098149453u32);
     STATUS_SUCCESS
 }
