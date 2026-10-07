@@ -42,6 +42,7 @@ use crate::host::{die, Cpu, CURRENT_PROCESS};
 const MEM_COMMIT: ULONG = 0x1000;
 const MEM_RESERVE: ULONG = 0x2000;
 const MEM_RELEASE: ULONG = 0x8000;
+const MEM_IMAGE: ULONG = 0x0100_0000;
 const PAGE_READWRITE: ULONG = 0x04;
 const STATUS_NO_MEMORY: u64 = 0xC000_0017;
 
@@ -116,6 +117,8 @@ struct ThreadStart {
 const STATUS_NOT_SUPPORTED: u64 = 0xC000_00BB;
 const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
 const IMAGE_FILE_MACHINE_I386: u16 = 0x014C;
+const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
+const STATUS_ENTRYPOINT_NOT_FOUND: u64 = 0xC000_0139;
 
 /// What we can learn about a thread's target process from outside it: the
 /// machine of its main image, and whether its loader has run yet (PEB->Ldr).
@@ -271,17 +274,39 @@ unsafe fn RemoteExport(Process: HANDLE, Base: u64, Name: &[u8]) -> Option<u64> {
 }
 
 /// The guest kernel32's Win32 thread start (its `BaseThreadStart` export, of
-/// `BaseThreadStartup`): the `rip` of every x86-64 CONTEXT kernel32 builds for
-/// a new thread, with `rcx`/`rdx` = routine/parameter. 0 until the guest has a
-/// kernel32. Cached once found: the guest kernel32 never moves.
-unsafe fn GuestThreadStart() -> u64 {
-    static mut CACHED: u64 = 0;
-    if CACHED == 0 {
+/// `BaseThreadStartup`) or process start (`BaseProcessStart`, of
+/// `BaseProcessStartup`): the `rip` of every x86-64 CONTEXT kernel32 builds for
+/// a new thread or a new process's initial thread, with `rcx`/`rdx` = routine
+/// (the image entry) / parameter. 0 until the guest has a kernel32. Cached once
+/// found: the guest kernel32 never moves.
+unsafe fn GuestKernel32Start(Process: bool) -> u64 {
+    static mut THREAD: u64 = 0;
+    static mut PROCESS: u64 = 0;
+    let Slot = if Process { core::ptr::addr_of_mut!(PROCESS) } else { core::ptr::addr_of_mut!(THREAD) };
+    if *Slot == 0 {
         if let Some(Base) = RemoteModuleBase(CURRENT_PROCESS, b"kernel32.dll") {
-            CACHED = RemoteExport(CURRENT_PROCESS, Base, b"BaseThreadStart").unwrap_or(0);
+            *Slot = RemoteExport(CURRENT_PROCESS, Base, if Process { b"BaseProcessStart" } else { b"BaseThreadStart" })
+                .unwrap_or(0);
         }
     }
-    CACHED
+    *Slot
+}
+
+unsafe fn GuestThreadStart() -> u64 {
+    GuestKernel32Start(false)
+}
+
+/// The same two starts of the NATIVE kernel32, where a native process has them
+/// (image.rs `NativeSystemExport`). 0 if they cannot be read. Cached.
+unsafe fn NativeKernel32Start(Process: bool) -> u64 {
+    static mut THREAD: u64 = 0;
+    static mut PROCESS: u64 = 0;
+    let Slot = if Process { core::ptr::addr_of_mut!(PROCESS) } else { core::ptr::addr_of_mut!(THREAD) };
+    if *Slot == 0 {
+        let Name: &[u8] = if Process { b"BaseProcessStart\0" } else { b"BaseThreadStart\0" };
+        *Slot = crate::image::NativeSystemExport(b"kernel32.dll", Name).unwrap_or(0);
+    }
+    *Slot
 }
 
 /// The guest's `NtCreateThread` into a RUNNING process that is not an x86-64
@@ -344,6 +369,42 @@ unsafe fn CreateForeignThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_AR
     crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCreateThread, Args.as_ptr())
 }
 
+/// The initial thread of a NEW native arm64 child (CreateProcess of an arm64
+/// exe; system32's are not hidden from an x86-64 process, as Windows on ARM
+/// does not hide them -- syscall.rs `ForeignDll`). Unlike a new x86-64 or
+/// 32-bit child, its loader DOES run the initial context, so it has to be the
+/// one a native parent builds: the guest kernel32's process start (rip =
+/// `BaseProcessStart`, rcx/rdx = image entry / PEB) becomes the native
+/// kernel32's `BaseProcessStart(entry, PEB)` -- at the address the child will
+/// have it, since this process has no native kernel32 of its own -- on the
+/// stack the guest kernel32 already allocated in the child.
+unsafe fn CreateNativeChildThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]) -> u64 {
+    let Guest = *(Args[5] as *const WowX64Context);
+    let (GuestStart, NativeStart) = (GuestKernel32Start(true), NativeKernel32Start(true));
+    if GuestStart == 0 || Guest.Rip != GuestStart || NativeStart == 0 {
+        crate::trace!(
+            "guest NtCreateThread: new arm64 child, but rip %p is not kernel32's process start %p (native %p)",
+            Guest.Rip as *const c_void,
+            GuestStart as *const c_void,
+            NativeStart as *const c_void,
+        );
+        return STATUS_ENTRYPOINT_NOT_FOUND;
+    }
+    let mut Native: CONTEXT = core::mem::zeroed();
+    Native.ContextFlags = CONTEXT_FULL;
+    Native.Sp = Guest.Rsp & !15;
+    Native.Pc = NativeStart;
+    Native.__bindgen_anon_1.X[0] = Guest.Rcx;
+    Native.__bindgen_anon_1.X[1] = Guest.Rdx;
+    crate::trace!(
+        "guest NtCreateThread: new arm64 child starts at %p (entry %p)",
+        Native.Pc as *const c_void,
+        Guest.Rcx as *const c_void,
+    );
+    Args[5] = &Native as *const CONTEXT as u64;
+    crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCreateThread, Args.as_ptr())
+}
+
 unsafe fn Free(Process: HANDLE, Base: PVOID) {
     let (mut B, mut S) = (Base, 0 as SIZE_T);
     NtFreeVirtualMemory(Process, &mut B, &mut S, MEM_RELEASE);
@@ -367,8 +428,7 @@ unsafe fn Free(Process: HANDLE, Base: PVOID) {
 ///   * a NEW 32-bit child: the same, for the same reason (its wow64.dll
 ///     starts it from its image).
 ///   * a RUNNING native or 32-bit process: [`CreateForeignThread`].
-///   * a NEW native arm64 child: unreachable — the x86-64 guest's redirected
-///     system32 cannot name an arm64 exe to spawn (image.rs). Refused.
+///   * a NEW native arm64 child: [`CreateNativeChildThread`].
 pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]) -> u64 {
     let GuestContext = Args[5] as *const WowX64Context;
     let Process = Args[3] as HANDLE;
@@ -404,12 +464,8 @@ pub unsafe fn CreateThread(Args: &mut [u64; crate::syscall::WOWX64_SERVICE_ARGS]
             }
             // A RUNNING native or 32-bit process (CreateRemoteThread).
             Some((_, true)) => return CreateForeignThread(Args, Process),
+            Some((IMAGE_FILE_MACHINE_ARM64, false)) => return CreateNativeChildThread(Args),
             Some((Machine, false)) => {
-                // A NEW native arm64 child, whose initial context its loader
-                // DOES run. An x86-64 guest cannot reach this: its system32 is
-                // redirected to sysamd64, where an arm64 image reads back as
-                // not-found (image.rs / syscall.rs), so it cannot name an arm64
-                // exe to spawn -- WoW64's own-machine view.
                 crate::trace!("guest NtCreateThread: initial thread of a new machine-%04x process", Machine as u32);
                 return STATUS_NOT_SUPPORTED;
             }
@@ -496,6 +552,125 @@ unsafe extern "C" fn WowX64GuestThreadStart(Start: *mut ThreadStart, Rec: *mut T
     crate::host::ThreadInit();
     // Not the initial thread: SystemArgument1 is the ntdll base only for that one.
     crate::host::EnterGuest(&Context, 0);
+}
+
+/// Is `Address` code of a NATIVE image mapped in this process?
+unsafe fn IsNativeCode(Address: u64) -> bool {
+    let mut Mbi: MEMORY_BASIC_INFORMATION = core::mem::zeroed();
+    if NtQueryVirtualMemory(
+        CURRENT_PROCESS,
+        Address as PVOID,
+        MemoryBasicInformation,
+        &mut Mbi as *mut _ as PVOID,
+        core::mem::size_of::<MEMORY_BASIC_INFORMATION>() as SIZE_T,
+        null_mut(),
+    ) < 0
+        || Mbi.Type != MEM_IMAGE
+    {
+        return false;
+    }
+    let Nt = RtlImageNtHeader(Mbi.AllocationBase);
+    !Nt.is_null() && (*Nt).FileHeader.Machine == IMAGE_FILE_MACHINE_ARM64
+}
+
+/// Size of the guest stack given to a thread another process created here.
+const FOREIGN_GUEST_STACK_SIZE: SIZE_T = 0x10_0000;
+
+/// A thread that a NATIVE process created in this one (CreateRemoteThread,
+/// RtlCreateUserThread), handed over by the native loader once its thread init
+/// is done (ntdll-rust `LdrpDivertWowX64Thread`, for any start that is not
+/// native code). The reverse of [`CreateForeignThread`], and the x86-64 form of
+/// what wow64.dll's `Wow64StartGuestThreadFrom64` does for a WoW64 process.
+///
+/// The creator built a native CONTEXT for code that is x86-64: kernel32's Win32
+/// shape (pc = the native kernel32's `BaseThreadStart`, which this process
+/// does not have, x0/x1 = routine/parameter) or the RtlCreateUserThread shape
+/// (pc = routine, x0 = parameter). Either becomes a guest thread running the
+/// routine through the GUEST kernel32's `BaseThreadStart`, so it exits through
+/// ExitThread with the routine's value however it was created. A Win32-shape
+/// start around a NATIVE routine (a creator calling ntdll in here) returns,
+/// with the context rewritten to routine(parameter) into `RtlExitUserThread`.
+///
+/// The stack the creator allocated becomes this thread's native stack, freed
+/// with the thread like any other we own ([`TerminateThread`]); the guest gets
+/// a stack of its own.
+#[no_mangle]
+pub unsafe extern "system" fn WowX64StartGuestThreadFromNative(Context: PCONTEXT) {
+    let C = &mut *Context;
+    let (Pc, Arg0, Arg1) = (C.Pc, C.__bindgen_anon_1.X[0], C.__bindgen_anon_1.X[1]);
+    let NativeStart = NativeKernel32Start(false);
+    let Win32 = NativeStart != 0 && Pc == NativeStart;
+    let (Routine, Param) = if Win32 { (Arg0, Arg1) } else { (Pc, Arg0) };
+    if IsNativeCode(Routine) {
+        C.Pc = Routine;
+        C.__bindgen_anon_1.X[0] = Param;
+        C.__bindgen_anon_1.X[30] = RtlExitUserThread as usize as u64; // lr
+        crate::trace!("native thread from another process: native routine %p, run as is", Routine as *const c_void);
+        return;
+    }
+
+    // The thread may arrive before WowX64LdrpInitialize has finished, and
+    // before the guest loader has mapped its kernel32: wait for both (bounded --
+    // a guest that never maps a kernel32 gets the bare routine below).
+    let mut Delay: LARGE_INTEGER = core::mem::zeroed();
+    Delay.QuadPart = -10_000; // 1 ms, relative
+    for _ in 0..10_000 {
+        if crate::host::GuestReady() && GuestThreadStart() != 0 {
+            break;
+        }
+        NtDelayExecution(0, &mut Delay);
+    }
+    if !crate::host::GuestReady() {
+        crate::trace!("native thread from another process: the guest never came up, thread %p ends",
+            (*NtCurrentTeb()).ClientId.UniqueThread);
+        RtlExitUserThread(0xC000_007Bu32 as NTSTATUS); // STATUS_INVALID_IMAGE_FORMAT
+    }
+    let Cpu = crate::host::Cpu();
+
+    let mut Stack: PVOID = null_mut();
+    let mut StackSize = FOREIGN_GUEST_STACK_SIZE;
+    (Cpu.NotifyMemoryAlloc)(Stack, StackSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE, 0, 0);
+    let Status = NtAllocateVirtualMemory(CURRENT_PROCESS, &mut Stack, 0, &mut StackSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    (Cpu.NotifyMemoryAlloc)(Stack, StackSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE, 1, Status as u32);
+    if Status < 0 {
+        crate::trace!("native thread from another process: no guest stack (%08lx)", Status);
+        RtlExitUserThread(STATUS_NO_MEMORY as NTSTATUS);
+    }
+    let Top = Stack as u64 + StackSize as u64;
+
+    let Teb = NtCurrentTeb();
+    let NativeStack = (*Teb).DeallocationStack as u64;
+    CommitWholeStack(NativeStack, (*Teb).NtTib.StackBase as u64);
+    PublishGuestStack(Stack as u64, Top);
+    (*Teb).FreeStackOnTermination = 1; // the guest stack: ours, freed with the thread
+    // Lives in this frame, which never returns.
+    let mut Rec = ThreadRecord { Callouts: null_mut(), Apcs: null_mut(), NativeStack };
+    SetRecord(&mut Rec);
+
+    // Entered as if CALLed, with a zero return address: a routine that returns
+    // without a guest kernel32 to return to faults loudly at 0.
+    let RunRsp = ((Top - 0x100) & !0xF) - 8;
+    *(RunRsp as *mut u64) = 0;
+    let mut Run = crate::host::InitialContext();
+    Run.Rsp = RunRsp;
+    let GuestStart = GuestThreadStart();
+    if GuestStart != 0 {
+        Run.Rip = GuestStart;
+        Run.Rcx = Routine;
+        Run.Rdx = Param;
+    } else {
+        Run.Rip = Routine;
+        Run.Rcx = Param;
+    }
+    crate::trace!(
+        "native thread %p from another process -> guest thread: %s shape, routine %p param %p",
+        (*Teb).ClientId.UniqueThread,
+        if Win32 { b"Win32\0".as_ptr() } else { b"Rtl\0".as_ptr() },
+        Routine as *const c_void,
+        Param as *const c_void,
+    );
+    crate::host::ThreadInit();
+    crate::host::EnterGuest(&Run, 0);
 }
 
 const THREAD_AM_I_LAST_THREAD: THREADINFOCLASS = 12;

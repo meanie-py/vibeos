@@ -260,5 +260,13 @@ foreach(_x64_guest hello64 gui64 win64 file64 async64 marshal64 fault64 thread64
         message(STATUS "BTCpu64: ${_x64_exe} not staged — ${_x64_guest} will no-op")
     endif()
 endforeach()
+# spawn64's native helper for rung 13 (xinject): on amd64 a native amd64
+# program like spawn64 itself, staged under the name spawn64 starts.
+set(_xinject ${REACTOS_SOURCE_DIR}/build-fex-hello/xinject-amd64.exe)
+if(EXISTS ${_xinject} AND NOT VIBEOS_WOW64_NO_STAGE)
+    add_cd_file(FILE ${_xinject} DESTINATION reactos/system32 NAME_ON_CD xinject.exe FOR livecd)
+else()
+    message(STATUS "BTCpu64: ${_xinject} not staged — spawn64 rung 13 will fail")
+endif()
 
 endif()

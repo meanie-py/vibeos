@@ -283,6 +283,16 @@ x64_guest apc64.exe Apc64.c "$K64"
 x64_guest marshal64.exe Marshal32.c "$U64" "$K64" "$(x64_lib dll/ntdll ntdll)" \
     "$(x64_lib dll/win32/ws2_32 ws2_32)"
 
+# xinject.exe -- spawn64's NATIVE helper (rung 13, XInject.c): built for each
+# host machine and staged as system32\xinject.exe on that arch's media. It is
+# no guest, so it links llvm-mingw's own kernel32/ntdll import libraries (by
+# name, nothing build-specific) and needs no build-* tree.
+for M in aarch64:arm64 x86_64:amd64; do
+    "$LLVM_MINGW/${M%%:*}-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,start \
+        -Wl,--subsystem,windows -Wl,--no-insert-timestamp \
+        -o "$HARNESS_BUILD/xinject-${M##*:}.exe" "$HARNESS_SRC/XInject.c" -lkernel32 -lntdll
+done
+
 echo
 echo "Built:"
 ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe "$HARNESS_BUILD"/gui32.exe "$HARNESS_BUILD"/win32.exe "$HARNESS_BUILD"/file32.exe "$HARNESS_BUILD"/marshal32.exe "$HARNESS_BUILD"/hello64.exe "$HARNESS_BUILD"/wowx64fex/libwowx64fex.dll 2>/dev/null || true

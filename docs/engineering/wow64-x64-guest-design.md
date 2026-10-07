@@ -130,13 +130,40 @@ imports) stays in the always-owed `LADDER`.
   CPU area, once they did not. Those slots are reserved now in every WoW64 process (field
   manual, "A WoW64 process's fixed TLS slots").
 
-**Owed:**
+**Done in the third round (spawn64 rungs 13-14, its native helper `xinject.exe`):**
 
-1. **Into an x86-64 guest FROM a non-x86-64 process** (the reverse direction): a native or 32-bit
-   creator's CreateRemoteThread into a running x86-64 guest starts the native kernel32's
-   `BaseThreadStartup`, which that process no longer has, with an x86-64 routine. It wants the
-   same divert as WoW64's: the guest process's native loader handing a start that is no native
-   image's code to wowx64.
-2. **A NEW native arm64 child** of an x86-64 guest: unreachable — the guest's system32 is
-   redirected to sysamd64, where an arm64 exe reads back as not-found (WoW64's own-machine
-   view) — and refused with `STATUS_NOT_SUPPORTED` if it ever is reached.
+- **Into an x86-64 guest FROM a native process** (CreateRemoteThread and RtlCreateUserThread).
+  The creator built a native CONTEXT for x86-64 code: kernel32's Win32 shape starts in the
+  native kernel32's `BaseThreadStartup`, which a guest process does not load, and the Rtl shape
+  starts at the routine itself. The guest process's native loader hands any new thread whose
+  start is no native image's code to wowx64 (`ldrinit.rs LdrpDivertWowX64Thread` →
+  `thread.rs WowX64StartGuestThreadFromNative`), the reverse of `CreateForeignThread`: it
+  tells the shapes apart by the native kernel32's `BaseThreadStart` address, gives the thread
+  a guest stack and its CPU-layer state, and runs the routine through the GUEST kernel32's
+  `BaseThreadStart` (either shape then exits through ExitThread with the routine's value). The
+  creator's stack becomes the thread's native stack, freed with it. A Win32-shape start around
+  a NATIVE routine is rewritten to routine(parameter) and run natively. A thread can arrive
+  before `WowX64LdrpInitialize` has finished (the loader publishes process init just before the
+  handoff), so it waits for the guest to be up.
+- **A new native arm64 child of an x86-64 guest.** system32 no longer hides an arm64 EXE from a
+  guest, only an arm64 DLL (`syscall.rs ForeignDll`), as Windows on ARM does not redirect an
+  x64 process's system32 at all. A native child's loader DOES run the initial context, so
+  `CreateNativeChildThread` turns the guest kernel32's process start into the native
+  kernel32's `BaseProcessStart(entry, PEB)` (`BaseProcessStart` is a new kernel32 export of
+  `BaseProcessStartup` on every arch, as XP x64 had).
+- **Where the native kernel32's starts are**, in a process that has no native kernel32:
+  `image.rs NativeSystemExport` maps `system32\kernel32.dll` as an image, reads the export's
+  RVA, and adds the PREFERRED base — every native process loads kernel32 there, since there is
+  no ASLR and nothing else is linked at that address. If that ever stops being true, both paths
+  above break together.
+- **TerminateProcess of a guest that is busy running guest code** — 32-bit and x86-64, rung 14
+  — ends it, and its handle signals with the exit code it was killed with. The earlier
+  suspicion, recorded after a 32-bit guest hung on a data-section map, that such a process
+  outlived its termination is now measured rather than inferred.
+
+**Not owed, by design:** CreateRemoteThread from a 32-bit (WoW64) process into an x86-64 guest
+is refused (`STATUS_NOT_IMPLEMENTED`, wow64_manual.c `Wow64pCreateForeignThread`), as Windows
+refuses a WoW64 process's remote thread into any 64-bit process.
+
+**Owed:** nothing in the thread/process matrix. `NtCreateThreadEx` is still not in the service
+table; the build fails the day it lands without an intercept (above).

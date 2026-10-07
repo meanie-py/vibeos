@@ -12272,8 +12272,9 @@ headers — and a zeroed data view is not one. Wine's wow64 notifies only when
 `NtQuerySection(SectionImageInformation)` succeeds. Fix: the same gate
 (`wow64_manual.c`). No ladder guest had mapped a data section before spawn32's rung-10 channel.
 A process stuck this way also appeared to outlive `TerminateProcess` (a named mutex it held
-was still there minutes later) — inferred, not traced; revisit if a guest ever hangs this way
-again.
+was still there minutes later). Since measured and NOT so: spawn64 rung 14 kills a 32-bit and
+an x86-64 guest busy running guest code, and each dies within the wait with the exit code it
+was killed with — so the held mutex was more likely the stuck child never being killed at all.
 
 ### The shared USER handle table has no 32-bit view `[§9.58b]`
 Client-side `ValidateHwnd` fails, so `DispatchMessage` silently drops `WM_PAINT`. **This is a

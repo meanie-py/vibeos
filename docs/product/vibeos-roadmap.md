@@ -617,9 +617,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   32-bit start to wow64.dll — which also fixes a NATIVE 64-bit creator's remote thread into a
   WoW64 process), and no native kernel32/msvcrt loads in a guest any more (ntdll's own `_errno`
   in a reserved TLS slot). That last fix exposed a latent WoW64 bug, also fixed: its fixed TLS
-  slots were never reserved, so the first `TlsAlloc` could take slot 1, the CPU area. Still
-  owed: CreateRemoteThread INTO an x86-64 guest from a non-x86-64 process. See
-  `../engineering/wow64-x64-guest-design.md`.
+  slots were never reserved, so the first `TlsAlloc` could take slot 1, the CPU area. Then
+  (spawn64 rungs 13-14, 2026-10-07): a NATIVE process's CreateRemoteThread/RtlCreateUserThread
+  into a running guest works (the guest's native loader hands the thread to wowx64), a guest
+  can start a native arm64 child (system32 hides only foreign DLLs from it now, as Windows on
+  ARM hides nothing), and TerminateProcess ends a spinning guest of either width. Nothing in
+  the thread/process matrix is owed; see `../engineering/wow64-x64-guest-design.md`.
 - **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
   lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
   captured mid-body of itself, so `ZwContinue` after a vectored handler's

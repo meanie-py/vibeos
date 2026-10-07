@@ -161,6 +161,21 @@ unsafe fn MapSystemImage(Dir: &[u8], File: &[u8]) -> Result<(GuestImage, NTSTATU
     Ok((GuestImage { Base: Base as *mut u8, Size: ViewSize as usize }, Status))
 }
 
+/// Where export `Name` of the NATIVE `<SystemRoot>\system32\<File>` sits in a
+/// native process: its preferred base plus the export's RVA, read from an
+/// image view mapped here for the purpose and unmapped again. An x86-64 guest
+/// process has no native kernel32 (ldrinit.rs `NeedNativeKernel32`), yet it
+/// must name kernel32's thread and process starts as a native process has
+/// them -- a native creator's CreateRemoteThread starts there, and so must a
+/// native child this process creates -- and every native process maps kernel32
+/// at its preferred base (there is no ASLR, and nothing else is linked there).
+pub unsafe fn NativeSystemExport(File: &[u8], Name: &[u8]) -> Option<u64> {
+    let (Image, _) = MapSystemImage(b"\\system32\\", File).ok()?;
+    let Found = FindExport(&Image, Name).map(|At| At - Image.Base as u64 + PreferredBase(Image.Base));
+    NtUnmapViewOfSection(CURRENT_PROCESS, Image.Base as PVOID);
+    Found
+}
+
 /// Map `<SystemRoot>\sysamd64\ntdll.dll` as an image. Dies on any failure: no
 /// guest process can start without it, and the stage that should have put it
 /// there is the thing to go fix.

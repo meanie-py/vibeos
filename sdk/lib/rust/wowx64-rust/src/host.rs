@@ -48,6 +48,16 @@ static mut GUEST: GuestEntry = GuestEntry { ApcDispatcher: 0, LdrInitializeThunk
 
 static mut CPU: Option<CpuLayer> = None;
 
+/// Set once the guest can take a thread: the CPU layer loaded and initialized,
+/// the guest ntdll's entry points known. A thread another process creates in
+/// this one can arrive as soon as the native loader has published its process
+/// init (`LdrpEnterGuestLayer`), which is BEFORE `WowX64LdrpInitialize` has run.
+static GUEST_READY: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+pub fn GuestReady() -> bool {
+    GUEST_READY.load(core::sync::atomic::Ordering::Acquire)
+}
+
 /// The CPU layer. Only reachable once it is loaded: every caller is a guest
 /// syscall or a fault taken after `WowX64LdrpInitialize` resolved it.
 pub unsafe fn CpuIfLoaded() -> Option<&'static CpuLayer> {
@@ -154,7 +164,7 @@ unsafe fn Resolve(Module: PVOID, Name: &[u8]) -> PVOID {
 
 /// An x86-64 user context with the flat long-mode selectors and the reset
 /// FPU/SSE state, ready for `Rip`/`Rsp`/argument registers to be filled in.
-fn InitialContext() -> WowX64Context {
+pub fn InitialContext() -> WowX64Context {
     let mut Ctx: WowX64Context = unsafe { core::mem::zeroed() };
     Ctx.ContextFlags = WOWX64_CONTEXT_ALL;
     Ctx.EFlags = 0x202; // IF | the always-one bit
@@ -335,6 +345,7 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
         Stack,
         StackSize as *const c_void,
     );
+    GUEST_READY.store(true, core::sync::atomic::Ordering::Release);
     // SystemArgument1 = the guest ntdll's base: its LdrpInitializeProcess
     // builds ntdll's own loader entry from it, as on amd64.
     EnterGuest(&Run, Ntdll.Base as u64);
