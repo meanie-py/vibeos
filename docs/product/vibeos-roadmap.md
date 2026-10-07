@@ -4095,8 +4095,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the very signal `MsafdWaitForAlert` is about to wait for — missing the re-signal is a guest
   hang with no error printed anywhere. `IOCTL_AFD_SEND_DATAGRAM` was the last refusal in this
   family and is now marshalled too (see the entry below). Still OPEN: a guest `ApcRoutine`.
-- **A guest `ApcRoutine` is still refused, but NOT for the reason previously recorded — OPEN**
-  (2026-09-06). This entry said "no 64->32 user-APC dispatch"; that was written from the
+- **A guest `ApcRoutine` is still refused, but NOT for the reason previously recorded — FIXED
+  2026-10-07**: 32-bit user APCs (QueueUserAPC, ReadFileEx completion routines, waitable-timer
+  routines) run on both hosts, graded by the new `apc32.exe` (Apc64.c at 32 bits); IOCTL
+  completion routines are wired the same way but no guest grades them yet. The routine is queued as wow64's `Wow64ApcRoutine` with the guest's routine and
+  context packed into the 64-bit context, which runs the guest's own `KiUserApcDispatcher` in a
+  nested simulate (wow64_callback.c). It found an amd64 KERNEL bug on the way: the 64-bit
+  syscall trap frame never recorded CS, so a WoW64 thread's APC context resumed in compat mode
+  (field manual, "A WoW64 thread NtContinues a native context into 32-bit compat mode").
+  `NtQueryDirectoryFile`/`NtLockFile` still refuse async (they complete on a host IOSB).
+  Original entry (2026-09-06): This entry said "no 64->32 user-APC dispatch"; that was written from the
   refusal's own comment and is wrong. The guest-entry half EXISTS and is load-bearing:
   `Wow64pBuildLoaderApcFrame` (`wow64.c`) builds a `KiUserApcDispatcher`-ABI frame and
   `Wow64pKiUserApcDispatcher32` is resolved out of ntdll32 at startup, and that pair runs on

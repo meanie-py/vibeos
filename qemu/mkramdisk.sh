@@ -483,6 +483,12 @@ if [ "${VIBEOS_FEX:-0}" = "1" ]; then
             mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
             mcopy -o -i "$RAMDISK_IMG" "$SPAWN32" ::/reactos/syswow64/spawn32.exe
         fi
+        APC32="${VIBEOS_APC32_EXE:-$PROJECT_DIR/build-fex-hello/apc32.exe}"
+        if [ -f "$APC32" ]; then
+            echo "[*] VIBEOS_FEX=1 — staging syswow64/apc32.exe (user-APC guest)"
+            mmd -i "$RAMDISK_IMG" ::/reactos/syswow64 2>/dev/null || true
+            mcopy -o -i "$RAMDISK_IMG" "$APC32" ::/reactos/syswow64/apc32.exe
+        fi
         # sqlite32.exe — a THIRD-PARTY stress guest (tools/stress/sqlite). The
         # other guests each probe one mechanism on purpose; this one is a large
         # C program that never heard of us, leaning on allocator churn, Win32

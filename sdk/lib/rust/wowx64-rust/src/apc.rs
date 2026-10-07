@@ -88,16 +88,24 @@ pub unsafe fn Install() {
     *(Slot as *mut Option<unsafe extern "system" fn(u64, u64, u64, u64, PCONTEXT)>) = Some(WowX64UserApc);
 }
 
-/// Is `Address` code the guest runs? Everything except the modules the NATIVE
-/// loader loaded (its own list — two loaders share this process, see
+/// Is `Address` code the guest runs? Everything except the arm64 modules the
+/// NATIVE loader loaded (its own list — two loaders share this process, see
 /// ntdll-rust `LdrpLdrData`): ntdll, wowx64.dll, the CPU layer. The guest's
 /// images, which only its own loader knows, and its runtime-generated code
-/// are all the guest's. (Not the region's image type and machine: the native
-/// ntdll's own thread-start APC did not read back as an arm64 image, and was
-/// run as x86-64 code.)
+/// are all the guest's -- and so is the main image, which IS in the native
+/// list but is x86-64: a routine in the exe itself (SetWaitableTimer passes
+/// one straight through, where QueueUserAPC wraps it in kernel32's
+/// BaseDispatchApc) was run as arm64 code until the machine was checked too.
+/// (The list lookup, not the region's image type: the native ntdll's own
+/// thread-start APC did not read back as an arm64 image.)
 unsafe fn IsGuestCode(Address: u64) -> bool {
+    const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
     let mut Base: PVOID = null_mut();
-    RtlPcToFileHeader(Address as PVOID, &mut Base).is_null()
+    if RtlPcToFileHeader(Address as PVOID, &mut Base).is_null() {
+        return true;
+    }
+    let Nt = RtlImageNtHeader(Base);
+    Nt.is_null() || (*Nt).FileHeader.Machine != IMAGE_FILE_MACHINE_ARM64
 }
 
 /// The native `KiUserApcDispatcher`'s first call. Returns only when the routine

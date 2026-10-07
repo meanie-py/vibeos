@@ -255,6 +255,11 @@ NTSTATUS WINAPI NtQueryDirectoryFile(HANDLE File, HANDLE Event, PVOID ApcRoutine
 NTSTATUS WINAPI NtWaitForSingleObject(HANDLE Object, BOOLEAN Alertable,
                                       PLARGE_INTEGER Timeout);
 NTSTATUS WINAPI NtSetEvent(HANDLE Event, PLONG PreviousState);
+NTSTATUS WINAPI NtQueueApcThread(HANDLE Thread, PVOID ApcRoutine, PVOID NormalContext,
+                                 PVOID SystemArgument1, PVOID SystemArgument2);
+NTSTATUS WINAPI NtSetTimer(HANDLE Timer, PLARGE_INTEGER DueTime, PVOID ApcRoutine,
+                           PVOID ApcContext, BOOLEAN ResumeTimer, LONG Period,
+                           PBOOLEAN PreviousState);
 NTSTATUS WINAPI NtWaitForMultipleObjects(ULONG Count, HANDLE Objects[],
                                          ULONG WaitType, BOOLEAN Alertable,
                                          PLARGE_INTEGER Timeout);
@@ -1318,6 +1323,34 @@ static int Wow64pRefuseAsync(ULONG Event, ULONG ApcRoutine, const char *Who)
     return 1;
 }
 
+/* A guest APC routine, as the kernel is handed it: Wow64ApcRoutine
+ * (wow64_callback.c) with the guest's routine and context packed into the
+ * 64-bit NormalContext, routine high. Every service that queues a user APC
+ * goes through these two. */
+VOID WINAPI Wow64ApcRoutine(ULONG_PTR Packed, ULONG_PTR Arg1, ULONG_PTR Arg2, PVOID Native);
+PVOID Wow64pApcRoutineFor(HANDLE Thread);
+static PVOID Wow64pApcContext(ULONG Routine32, ULONG Context32)
+{
+    return (PVOID)(((ULONG_PTR)Routine32 << 32) | Context32);
+}
+
+/* A marshalled I/O call that ran to completion here (its host buffers live on
+ * our frame) owes the guest its completion APC itself: queued as the kernel
+ * would have queued it -- (context, IO_STATUS_BLOCK, 0) -- unless the request
+ * failed outright, which delivers none. */
+static NTSTATUS Wow64pQueueIoApc(NTSTATUS St, ULONG Routine32, ULONG Context32, ULONG Iosb32)
+{
+    NTSTATUS Q;
+    if (!Routine32 || St < 0)
+        return St;
+    Q = NtQueueApcThread((HANDLE)(LONG_PTR)-2, (PVOID)Wow64ApcRoutine,
+                         Wow64pApcContext(Routine32, Context32),
+                         (PVOID)(ULONG_PTR)Iosb32, NULL);
+    if (Q < 0)
+        DbgPrint("[WOW64]   completion APC %08lx could not be queued: %08lx\n", Routine32, Q);
+    return St;
+}
+
 /* Copy the host IOSB down to the guest, blocking first if the host pended. */
 static NTSTATUS Wow64pFinishIosb(NTSTATUS St, HANDLE File,
                                  WOW64_IO_STATUS_BLOCK64_M *I64, ULONG Iosb32Ptr,
@@ -1388,17 +1421,12 @@ static NTSTATUS Wow64pReadWriteFile(WOW64_RW_FN Fn, ULONG *a, const char *Who)
     HANDLE Event = (HANDLE)(LONG_PTR)(LONG)a[1];
     NTSTATUS St;
 
-    if (a[2])
-    {
-        DbgPrint("[WOW64]   %s: guest ApcRoutine=%08lx is not supported yet "
-                 "(needs a host thunk standing in as the NormalRoutine) — "
-                 "refusing\n", Who, a[2]);
-        return WOW64_STATUS_NOT_IMPLEMENTED;
-    }
-
-    /* ByteOffset is a LARGE_INTEGER* and Key a ULONG* — both layout-identical. */
+    /* ByteOffset is a LARGE_INTEGER* and Key a ULONG* — both layout-identical.
+     * A completion routine (ReadFileEx/WriteFileEx) is queued by the kernel
+     * with the guest's IOSB32 as its argument, through Wow64ApcRoutine. */
     Wow64pLatchIosb32(a[4]);
-    St = Fn(File, Event, NULL, (PVOID)(ULONG_PTR)a[3],
+    St = Fn(File, Event, a[2] ? (PVOID)Wow64ApcRoutine : NULL,
+            a[2] ? Wow64pApcContext(a[2], a[3]) : (PVOID)(ULONG_PTR)a[3],
             (PVOID)(ULONG_PTR)a[4],
             (PVOID)(ULONG_PTR)a[5], a[6],
             (PLARGE_INTEGER)(ULONG_PTR)a[7], (PULONG)(ULONG_PTR)a[8]);
@@ -2544,6 +2572,42 @@ static NTSTATUS Wow64Manual_NtQuerySymbolicLinkObject(ULONG *a)
     return St;
 }
 
+/* NtQueueApcThread(Thread, ApcRoutine, NormalContext, SystemArgument1,
+ * SystemArgument2) -- QueueUserAPC. The routine is the guest's, so the kernel
+ * gets Wow64ApcRoutine as it exists in the thread's process (Wow64pApcRoutineFor:
+ * a thread of another WoW64 process runs that process's copy). Into a process
+ * with no wow64.dll a 32-bit routine cannot run at all: refused, as Windows
+ * refuses a WoW64 process's APC into a 64-bit one. */
+static NTSTATUS Wow64Manual_NtQueueApcThread(ULONG *a)
+{
+    HANDLE Thread = (HANDLE)(LONG_PTR)(LONG)a[0];
+    PVOID Routine;
+
+    if (!a[1])
+        return NtQueueApcThread(Thread, NULL, (PVOID)(ULONG_PTR)a[2],
+                                (PVOID)(ULONG_PTR)a[3], (PVOID)(ULONG_PTR)a[4]);
+    Routine = Wow64pApcRoutineFor(Thread);
+    if (!Routine)
+    {
+        DbgPrint("[WOW64]   NtQueueApcThread: target thread's process runs no 32-bit code\n");
+        return (NTSTATUS)0xC0000022L; /* STATUS_ACCESS_DENIED */
+    }
+    return NtQueueApcThread(Thread, Routine, Wow64pApcContext(a[1], a[2]),
+                            (PVOID)(ULONG_PTR)a[3], (PVOID)(ULONG_PTR)a[4]);
+}
+
+/* NtSetTimer(Timer, DueTime, ApcRoutine, ApcContext, Resume, Period,
+ * PreviousState) -- SetWaitableTimer's completion routine, run as
+ * routine(context, low, high) on the setting thread. DueTime is a
+ * LARGE_INTEGER* and PreviousState a BOOLEAN*: both layout-identical. */
+static NTSTATUS Wow64Manual_NtSetTimer(ULONG *a)
+{
+    return NtSetTimer((HANDLE)(LONG_PTR)(LONG)a[0], (PLARGE_INTEGER)(ULONG_PTR)a[1],
+                      a[2] ? (PVOID)Wow64ApcRoutine : NULL,
+                      a[2] ? Wow64pApcContext(a[2], a[3]) : (PVOID)(ULONG_PTR)a[3],
+                      (BOOLEAN)a[4], (LONG)a[5], (PBOOLEAN)(ULONG_PTR)a[6]);
+}
+
 /* NtContinue: load the guest's 32-bit CONTEXT into the CPU layer instead of
  * letting the host kernel reinterpret it as an arm64 CONTEXT. FEX marks the
  * CPU area dirty and reloads guest state when BTCpuSimulate reenters, so
@@ -2551,8 +2615,11 @@ static NTSTATUS Wow64Manual_NtQuerySymbolicLinkObject(ULONG *a)
 static NTSTATUS Wow64Manual_NtContinue(ULONG *a)
 {
     extern LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
+    extern int Wow64pCompleteGuestApc(ULONG Context32, BOOLEAN TestAlert);
     PVOID Ctx32 = (PVOID)(ULONG_PTR)a[0];
 
+    /* The end of a guest APC (wow64_callback.c): does not return. */
+    Wow64pCompleteGuestApc(a[0], (BOOLEAN)a[1]);
     if (!Ctx32 || !Wow64pBTCpuSetContext)
         return (NTSTATUS)0xC000000DL;
     return Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2 /* thread */,
@@ -5655,39 +5722,29 @@ static NTSTATUS Wow64pIoControl(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
 
     /* M15c: an Event is no longer a refusal. It used to be, because the only
      * IOSB we could offer the kernel was a host one on this frame; the kernel
-     * now writes the GUEST's 8-byte block directly (Wow64pLatchIosb32 above), which
-     * outlives us by construction. An APC routine is still refused — that needs
-     * a host-side thunk to stand in as the kernel's NormalRoutine (see the
-     * M15b note above — the guest-entry half already exists). AFD is inherently
-     * async and msafd always passes an Event, so this refusal was blocking
-     * every socket operation a 32-bit guest could make. */
-    if (a[2])
-    {
-        DbgPrint("[WOW64]   %s: guest ApcRoutine=%08lx is not supported yet "
-                 "(needs a host thunk standing in as the NormalRoutine) — "
-                 "refusing\n", Who, a[2]);
-        return WOW64_STATUS_NOT_IMPLEMENTED;
-    }
-
+     * now writes the GUEST's 8-byte block directly (Wow64pLatchIosb32 above),
+     * which outlives us by construction. An APC routine (a[2]) goes to the
+     * kernel as Wow64ApcRoutine on the pass-through path below; a marshalled
+     * IOCTL completes here, so it queues the completion APC itself. */
     switch (a[5])
     {
     case WOW64_IOCTL_AFD_SEND:
     case WOW64_IOCTL_AFD_RECV:
-        return Wow64pIoctlAfdXfer(Fn, a, Who);
+        return Wow64pQueueIoApc(Wow64pIoctlAfdXfer(Fn, a, Who), a[2], a[3], a[4]);
     case WOW64_IOCTL_AFD_RECV_DATAGRAM:
-        return Wow64pIoctlAfdRecvFrom(Fn, a, Who);
+        return Wow64pQueueIoApc(Wow64pIoctlAfdRecvFrom(Fn, a, Who), a[2], a[3], a[4]);
     case WOW64_IOCTL_AFD_SELECT:
-        return Wow64pIoctlAfdSelect(Fn, a, Who);
+        return Wow64pQueueIoApc(Wow64pIoctlAfdSelect(Fn, a, Who), a[2], a[3], a[4]);
     case WOW64_IOCTL_AFD_EVENT_SELECT:
-        return Wow64pIoctlAfdEventSelect(Fn, a, Who);
+        return Wow64pQueueIoApc(Wow64pIoctlAfdEventSelect(Fn, a, Who), a[2], a[3], a[4]);
     case WOW64_IOCTL_AFD_ENUM_NETWORK_EVENTS:
-        return Wow64pIoctlAfdEnumEvents(Fn, a, Who);
+        return Wow64pQueueIoApc(Wow64pIoctlAfdEnumEvents(Fn, a, Who), a[2], a[3], a[4]);
     case WOW64_IOCTL_AFD_ACCEPT:
-        return Wow64pIoctlAfdAccept(Fn, a, Who);
+        return Wow64pQueueIoApc(Wow64pIoctlAfdAccept(Fn, a, Who), a[2], a[3], a[4]);
     case WOW64_IOCTL_AFD_GET_TDI_HANDLES:
-        return Wow64pIoctlAfdTdiHandles(Fn, a, Who);
+        return Wow64pQueueIoApc(Wow64pIoctlAfdTdiHandles(Fn, a, Who), a[2], a[3], a[4]);
     case WOW64_IOCTL_AFD_SEND_DATAGRAM:
-        return Wow64pIoctlAfdSendTo(Fn, a, Who);
+        return Wow64pQueueIoApc(Wow64pIoctlAfdSendTo(Fn, a, Who), a[2], a[3], a[4]);
     default:
         break;
     }
@@ -5696,7 +5753,8 @@ static NTSTATUS Wow64pIoControl(WOW64_IOCTL_FN Fn, ULONG *a, const char *Who)
      * the guest's IOSB and let the request pend for real if it wants to. This
      * is the one IOCTL path that is genuinely asynchronous under WoW64. */
     Wow64pLatchIosb32(a[4]);
-    St = Fn(File, Event, NULL, (PVOID)(ULONG_PTR)a[3], (PVOID)(ULONG_PTR)a[4],
+    St = Fn(File, Event, a[2] ? (PVOID)Wow64ApcRoutine : NULL,
+            a[2] ? Wow64pApcContext(a[2], a[3]) : (PVOID)(ULONG_PTR)a[3], (PVOID)(ULONG_PTR)a[4],
             a[5], (PVOID)(ULONG_PTR)a[6], a[7], (PVOID)(ULONG_PTR)a[8], a[9]);
     /* Consumed by the kernel at entry; cleared here for the paths that fail
      * before reaching it (bad handle, failed probe). */
@@ -7348,6 +7406,10 @@ NTSTATUS Wow64ManualDispatch(const char *Name, ULONG *Arguments)
         return Wow64Manual_NtConnectPort(Arguments);
     if (WOW64_IS("NtContinue"))
         return Wow64Manual_NtContinue(Arguments);
+    if (WOW64_IS("NtQueueApcThread"))
+        return Wow64Manual_NtQueueApcThread(Arguments);
+    if (WOW64_IS("NtSetTimer"))
+        return Wow64Manual_NtSetTimer(Arguments);
     if (WOW64_IS("NtRaiseException"))
         return Wow64Manual_NtRaiseException(Arguments);
     if (WOW64_IS("NtCreateDirectoryObject"))

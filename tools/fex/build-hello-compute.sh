@@ -204,6 +204,18 @@ else
     echo "[!] spawn32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD) -- the ladder will NOT stage"
 fi
 
+# apc32.exe — user APCs into 32-bit code (QueueUserAPC, ReadFileEx, timers) and
+# per-thread cleanup: Apc64.c, the x86-64 ladder's apc64, built at 32 bits.
+if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
+        -o "$HARNESS_BUILD/apc32.exe" "$HARNESS_SRC/Apc64.c" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+else
+    echo "[!] apc32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD) -- the ladder will NOT stage"
+fi
+
 # marshal32.exe — the M18 marshaller-verification guest: NtQueryInformationThread
 # TBI (verified against the guest's OWN TEB32), IOCP post/get sentinel round-trip
 # (NtRemoveIoCompletion out-slots + IOSB), EnumDisplayMonitors/GetMonitorInfo/
