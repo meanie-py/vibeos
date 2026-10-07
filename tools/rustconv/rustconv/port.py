@@ -1489,21 +1489,30 @@ def stage_macros(
 def _repair(stem: str, crate: str) -> str:
     from . import crate_repair as cr
 
-    session = cr.repair_crate(
-        crate,
-        root=REPO / "sdk" / "lib" / "rust",
-        targets=list(RUST_TARGETS),
-        max_passes=10,
-        target_dirs=_target_dirs(stem),
-    )
-    # Per pass: a run that ends at max_passes while still applying edits is converging
-    # slowly; one applying the same rules every pass with flat counts is oscillating.
-    for ps in session.passes:
-        rules: dict[str, int] = {}
-        for e in ps.applied:
-            rules[e.rule] = rules.get(e.rule, 0) + 1
-        top = ", ".join(f"{r} {n}" for r, n in sorted(rules.items(), key=lambda kv: -kv[1])[:4])
-        print(f"  repair pass {ps.index}: {ps.error_counts} applied {len(ps.applied)} ({top})")
+    # A session that ends at max_passes while still lowering the count is converging slowly
+    # (a nested cast is fixed one layer per pass), so it gets another, up to four. diskpart's
+    # replay stopped at pass 10 with 26 wide-literal `*const` -> PWSTR sites one session from
+    # done, and read 62 errors where a standalone crate-repair reached 36.
+    best: int | None = None
+    for _ in range(4):
+        session = cr.repair_crate(
+            crate,
+            root=REPO / "sdk" / "lib" / "rust",
+            targets=list(RUST_TARGETS),
+            max_passes=10,
+            target_dirs=_target_dirs(stem),
+        )
+        # One applying the same rules every pass with flat counts is oscillating.
+        for ps in session.passes:
+            rules: dict[str, int] = {}
+            for e in ps.applied:
+                rules[e.rule] = rules.get(e.rule, 0) + 1
+            top = ", ".join(f"{r} {n}" for r, n in sorted(rules.items(), key=lambda kv: -kv[1])[:4])
+            print(f"  repair pass {ps.index}: {ps.error_counts} applied {len(ps.applied)} ({top})")
+        last = sum(session.passes[-1].error_counts.values()) if session.passes else 0
+        if session.status != "max_passes" or (best is not None and last >= best):
+            break
+        best = last
     return session.status
 
 

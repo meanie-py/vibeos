@@ -82,6 +82,7 @@ RULE_UNSIGNED_NEGATE = "unsigned_negative_literal"
 RULE_OPTION_FN_AS_PTR = "option_fn_as_pointer"
 RULE_SOME_FN_ITEM = "some_fn_item"
 RULE_KEYWORD_FIELD = "bindgen_keyword_field"
+RULE_LITERAL_MUT = "c_literal_to_mut_param"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -124,6 +125,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_OPTION_FN_AS_PTR,
     RULE_SOME_FN_ITEM,
     RULE_KEYWORD_FIELD,
+    RULE_LITERAL_MUT,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -3588,10 +3590,61 @@ def _some_fn_item_rule(
     return edits, [], bool(edits)
 
 
+_C_LITERAL_PTR = re.compile(r"(?:RUSTCONV_WSTR_\w+|b\"(?:[^\"\\]|\\.)*\")\.as_ptr\(\)")
+
+
+def _literal_mut_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A C string literal passed to a non-const pointer parameter: `.cast_mut()`.
+
+    In C a string literal is `wchar_t[N]` and decays to `wchar_t *`, so const-incorrect
+    prototypes take it without a cast -- diskpart's `HasPrefix(PWSTR, PWSTR, PWSTR *)`, called
+    with `L"primary"` at 22 sites. The sealed literal is a Rust static, `.as_ptr()` is
+    `*const`, and rustc says "types differ in mutability". Only for an expression that IS the
+    literal (a `RUSTCONV_WSTR_*` static or a byte string); C's semantics, nothing invented --
+    writing through it is undefined in both languages.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0308":
+        return [], [], False
+    text_all = json.dumps(diagnostic)
+    if "types differ in mutability" not in text_all or "found raw pointer `*const" not in text_all:
+        return [], [], False
+    edits: list[Edit] = []
+    for span in diagnostic.get("spans") or []:
+        if "types differ in mutability" not in str(span.get("label") or ""):
+            continue
+        file_name = str(span.get("file_name") or "")
+        data = load(file_name)
+        if data is None:
+            continue
+        lo, hi = int(span["byte_start"]), int(span["byte_end"])
+        inner = data[lo:hi].decode("utf-8", "replace")
+        if not _C_LITERAL_PTR.fullmatch(inner.strip()):
+            continue
+        if _in_macro_definition(_mask_lexical(data), lo):
+            continue
+        edits.append(
+            _simple_edit(
+                RULE_LITERAL_MUT,
+                file_name,
+                data,
+                lo,
+                hi,
+                f"{inner.strip()}.cast_mut()",
+                "rustc E0308 (mutability): a C string literal decays to a non-const pointer",
+                span,
+                ctx,
+            )
+        )
+    return edits, [], bool(edits)
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
     RULE_WIDTH_ALIAS: _width_alias_rule,
+    RULE_LITERAL_MUT: _literal_mut_rule,
     RULE_NUMERIC_CAST: _numeric_cast_rule,
     RULE_COMPARISON: _comparison_rule,
     RULE_MATCH_SCRUTINEE: _match_scrutinee_rule,
