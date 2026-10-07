@@ -31,7 +31,7 @@
 #![cfg(target_arch = "aarch64")]
 #![allow(non_snake_case)]
 
-use super::acpi::{find_genet, find_sdhc, find_sdhc_pi5, find_xhci, for_each_virtio_mmio, AcpiDevice};
+use super::acpi::{find_genet, find_sdhc, find_sdhc_pi5, for_each_virtio_mmio, for_each_xhci, AcpiDevice};
 use ntkrnl_sys::ddk;
 use ntkrnl_sys::ddk::{
     BOOLEAN, GUID, NTSTATUS, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PIO_STACK_LOCATION, PUNICODE_STRING, PVOID,
@@ -601,7 +601,8 @@ unsafe fn init_xhci(pdo: *mut PdoExtension) -> u32 {
         cfg_access(pdo, true, cmd.as_mut_ptr(), PCI_COMMAND, 2);
     }
     DbgPrint(
-        b"[HAL] ACPI xHCI (PNP0D10): regs %p+0x%x, GSIV %u %s, config %p (%04x:%04x)\n\0".as_ptr(),
+        b"[HAL] ACPI xHCI (PNP0D10 #%u): regs %p+0x%x, GSIV %u %s, config %p (%04x:%04x)\n\0".as_ptr(),
+        x.uid,
         x.mmio as PVOID,
         x.mmio_len as u32,
         x.gsiv,
@@ -662,8 +663,8 @@ unsafe extern "system" fn AddDevice(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT)
             (*fdo).children = pdo;
         }
     };
+    for_each_xhci(|x| add(Child::Xhci, x));
     for (child, found) in [
-        (Child::Xhci, find_xhci()),
         (Child::Genet, find_genet()),
         (Child::Sdhc, find_sdhc()),
         (Child::Sdhc5, find_sdhc_pi5()),
