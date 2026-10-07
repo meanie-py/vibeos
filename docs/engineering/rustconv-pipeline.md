@@ -536,6 +536,62 @@ exercised. What changed, each a class rather than a site:
   `port replay` restores the banked body, and one that does not parse hides every type error
   in the crate: atapi's `AtaCreateIdeDirectory` hid 2,100.
 
+### usetup and diskpart: the generalization test (2026-10-07)
+
+Two fresh user-mode modules, run end to end on the tools setuplib built: usetup (15 TUs,
+188 functions, links setuplib.dll) and diskpart (43 TUs, 118 functions, links conutils).
+Translation cost $0.93 and $0.94 on the first pass; every gap below was a TOOL gap, fixed as a
+class, and each first appeared as a misleading number.
+
+- **Derive.** A case label owned by a base header (`STD_INPUT_HANDLE`) no longer blocks: derive
+  records it and scaffold has clang evaluate it into the prelude, hard-failing if it cannot
+  (resolve can never find it -- an unknown name in a pattern is a binding). The same holds
+  for an enum member a case label names bare (`SWITCH_CONST_ENUM_PREFIXED`): derive records
+  it and resolve aliases the island's prefixed constant every pass. diskpart's
+  FormatCallback matched `PROGRESS`/`DONE` and its first arm caught every command -- the
+  warning had named the fix, and nothing applied it. Header symbols are
+  read with comments blanked (`/**/ChangeSystemPartition/**/`). `--dry-run` ignores the cap.
+- **Bank namespace.** The resume bank was keyed `<dir>__<stem>`, and setuplib and usetup each
+  carry `spapisup/fileqsup.c`: usetup bought 19 bodies into setuplib's namespace. Each
+  namespace now records its source file (`.source`); a claimed one sends a different file to
+  `<grandparent>__<dir>__<stem>`. Unclaimed (older) banks keep their key.
+- **A body that does not parse is never banked.** On a last attempt, parse and control-flow
+  findings (a literal C `goto`) were accepted "unverified" like a constant-envelope miss.
+  Seven such bodies were banked, and every replay reassembled them into parse errors that
+  read as "22 errors" over ~1,700. They now always reject, and `--escalate` also revisits
+  every TU whose latest log reports a banked body failing the current audit.
+- **Vacuous preambles.** A TU's own value-less `#define X` read only by its `#ifdef`s
+  (`HIDE_FAT32_CHOICE`) is vacuous, like the header switches; the model's correct empty
+  reply hit the hard-fail. An INITGUID-only TU (`guid.c`) is lowered from its headers'
+  `DEFINE_GUID` lines for $0.
+- **A/W-spelled definitions are not dead code.** usetup's console.c defines `WriteConsole(`,
+  which its build preprocesses to `WriteConsoleA`; the anchor map found only the expanded
+  name and dropped three live functions as a "dead branch" -- untranslated, unbilled, and
+  reported as intended. Missing names now map through the TU's own `-dM` aliases first.
+- **Checker false positive.** `invented_flag_assignments` read `Pos = Length = 0;` as
+  assigning only `Pos`, and refused the correct `Length = 0` on every sample.
+- **Resolve.** Declarations come from an exported Rust DEFINITION too (`#[no_mangle] pub
+  extern fn`: usetup calls setuplib-rust's exports); a function the tree declares with split
+  ABIs goes to the clang prototype; the SDK's A/W aliases (`GetModuleHandle` ->
+  `GetModuleHandleW`, from the TU's own `-dM`) declare the target and re-export it; a
+  zero-argument function is no longer discarded as a link stub (`all([])`); test harnesses
+  (`tests/`, `*-difftest`) are not consensus (`FILEP` came from one); an opaque island stub
+  yields to the TU that defines the struct, and the island's stub becomes an import of it; a
+  constant the tree spells only as an expression (`CTL_CODE(..)`) goes to the clang probe.
+  `workspace_items` scans each file once -- one regex per name per file was a 40-minute CPU
+  stall inside `port replay` with 544 names.
+- **Signatures.** A crate-defined function takes its return type from the C prototype
+  (`EXIT_CODE` for diskpart's 31 command handlers), and one used as a value (a callback)
+  takes the whole signature; crate-repair casts `return x as i32;` to the function's declared
+  NAME, as it already did for arguments, and passes a sealed C string literal to a `PWSTR`
+  parameter with `.cast_mut()` (C's literal decays to a non-const pointer; diskpart's
+  `HasPrefix` took one at 22 sites). Replay's repair keeps going while it still converges.
+- **Island.** A crate whose arm port writes first gets `REAL_UNIONS=1`, recorded in its state:
+  `Event.KeyEvent.uChar` against `__BindgenUnionField` was 150 of usetup's errors.
+- **crate-repair** parenthesizes a cast a `<` follows (`x as i32 < y` is generic arguments).
+- **win32macros-rust**: `IsEqualGUID` (eight crates had their own), `CopyMemory`/`MoveMemory`,
+  and `RTL_NUMBER_OF_FIELD` accepts rustfmt's trailing comma.
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it

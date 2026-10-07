@@ -183,6 +183,13 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
         tus=[str(p.relative_to(REPO)) for p in dp.module.compiled_tus if not pd.is_shim_tu(p)],
         usermode=dp.module.is_usermode,
         switch_facts=switch_facts(dp),
+        switch_enums=sorted(
+            m.group(1)
+            for f in dp.findings
+            if f.code == "SWITCH_CONST_ENUM_PREFIXED"
+            for m in [re.search(r"`(\w+)`", f.detail)]
+            if m
+        ),
         real_unions=prior["real_unions"],
     )
     _record(
@@ -865,7 +872,12 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         names -= set(found_here)
         res.pending = sorted(names & pending)
         todo = names - pending - set(copied) - c_macros - shared
-        aliases = prelude_resolve.island_enum_aliases(todo, crate / "src")
+        # Plus every enum member a C `case` label names (derive's SWITCH_CONST_ENUM_PREFIXED):
+        # in a Rust pattern the bare name is a BINDING, never unresolved, so it would never
+        # reach this alias step on its own. diskpart's FormatCallback matched `PROGRESS` and
+        # `DONE` bare, and the first arm caught every command.
+        case_enums = set(load_state(stem).get("switch_enums", [])) - set(copied)
+        aliases = prelude_resolve.island_enum_aliases(todo | case_enums, crate / "src")
         copied.update(aliases)
         todo -= set(aliases)
         items = prelude_resolve.workspace_items(todo, workspace, crate)
