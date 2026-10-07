@@ -1998,10 +1998,8 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
             print(f"hand: dropped {spec}")
             continue
         text = (modules / fname).read_text()
-        spans = item_spans(text, name)
-        if len(spans) != 1:
-            raise PortError(f"hand: {spec}: {len(spans)} items named {name} in {fname}")
-        body = text[spans[0][0] : spans[0][1]]
+        lo, hi = hand_span(text, name, where=f"hand: {spec}")
+        body = text[lo:hi]
         entry.write_text(json.dumps({"file": fname, "name": replaces, "text": body}, indent=1))
         print(f"hand: banked {spec} ({len(body.splitlines())} lines)")
     _record(state, "hand", started, specs=specs, drop=drop)
@@ -2047,6 +2045,75 @@ def item_spans(text: str, name: str) -> list[tuple[int, int]]:
     return sorted(set(out))
 
 
+_EXTERN_BLOCK = re.compile(r'(?m)^(?:unsafe[ \t]+)?extern(?:[ \t]+"[^"]*")?[ \t]*\{')
+_MOD_BLOCK = re.compile(r"(?m)^(?:pub(?:\([^)]*\))?[ \t]+)?mod[ \t]+(\w+)[ \t]*\{")
+_FOREIGN_ITEM = re.compile(r"(?m)^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:fn|static(?:[ \t]+mut)?)[ \t]+(\w+)")
+_LINK_NAME = re.compile(r'#\[link_name\s*=\s*"(\w+)"\]')
+_VA_ENTRY = re.compile(r"\bva_entry!\s*\(\s*(\w+)")
+
+
+def _with_leading_comments(text: str, start: int) -> int:
+    """`start` moved back over the attribute, doc and plain `//` lines directly above it --
+    a hand item's comment says why it is hand-written, and is the part a replay must keep."""
+    while start > 0:
+        prev_start = text.rfind("\n", 0, start - 1) + 1
+        line = text[prev_start : start - 1].strip()
+        if not line.startswith(("//", "#[")):
+            break
+        start = prev_start
+    return start
+
+
+def hand_span(text: str, name: str, *, where: str) -> tuple[int, int]:
+    """The one contiguous run of top-level items that make up `name` in `text`.
+
+    A C-variadic function is not one Rust item but three, and the hand bank has to carry
+    them together or the replay half-applies it: the `extern {}` block that declares the
+    symbol so the crate's callers can pass varargs, the `mod <name>_export` whose `va_entry!`
+    defines it, and the comment above each saying why. So besides `item_spans`, this takes
+    an `extern` block declaring `name` -- by its Rust name or its `#[link_name]`, since an
+    import renamed in Rust only (usetup's `NlsMbOemCodePageTag`, one block per arch) is
+    still that symbol -- and a `mod` named `<name>_export` or whose `va_entry!` names
+    `name`. A block that also declares other names is banked whole; if the replayed file
+    declares them too that is E0428, loud. The pieces must sit together, separated by blank lines
+    only; anything else between them is refused rather than captured or dropped."""
+    from . import crate_fix as cf
+
+    spans = list(item_spans(text, name))
+    for m in _EXTERN_BLOCK.finditer(text):
+        close = cf._matching_brace(text, m.end() - 1)
+        if close is None:
+            continue
+        block = text[m.end() : close]
+        names = set(_FOREIGN_ITEM.findall(block))
+        names |= {n.removeprefix("__imp_") for n in _LINK_NAME.findall(block)}
+        if name in names:
+            spans.append((m.start(), close + 1))
+    for m in _MOD_BLOCK.finditer(text):
+        close = cf._matching_brace(text, m.end() - 1)
+        if close is None:
+            continue
+        body = text[m.end() : close]
+        if m.group(1) == f"{name}_export" or name in _VA_ENTRY.findall(body):
+            spans.append((m.start(), close + 1))
+    # Drop an item nested inside another (item_spans also matches an indented
+    # `static NAME` inside the extern block it belongs to).
+    spans = sorted(set(spans))
+    spans = [s for s in spans if not any(o != s and o[0] <= s[0] and s[1] <= o[1] for o in spans)]
+    if not spans:
+        raise PortError(f"{where} 0 items named {name} -- re-capture or drop it")
+    spans = [(_with_leading_comments(text, lo), hi) for lo, hi in spans]
+    lo, hi = spans[0]
+    for nlo, nhi in spans[1:]:
+        if text[hi:nlo].strip():
+            raise PortError(
+                f"{where} {len(spans)} separate items named {name} (other code between "
+                "them) -- move them together or re-capture"
+            )
+        hi = max(hi, nhi)
+    return lo, hi
+
+
 def hand_names(stem: str) -> set[tuple[str, str]]:
     """(module file, function) of every function the hand bank writes, in its final names."""
     from . import crate_fix as cf
@@ -2072,14 +2139,12 @@ def apply_hand(stem: str) -> int:
         if h["text"] in text:  # already applied (replay runs this before and after fix)
             applied += 1
             continue
-        spans = item_spans(text, h["name"])
-        if len(spans) != 1:
-            # Loud: the function moved or was renamed upstream of the bank; never skip quietly.
-            raise PortError(
-                f"hand: {h['file']}:{h['name']} is banked but the replayed file has "
-                f"{len(spans)} item(s) of that name -- re-capture or drop it"
-            )
-        lo, hi = spans[0]
+        # Loud: the function moved or was renamed upstream of the bank; never skip quietly.
+        lo, hi = hand_span(
+            text,
+            h["name"],
+            where=f"hand: {h['file']}:{h['name']} is banked but the replayed file has",
+        )
         if text[lo:hi] != h["text"]:
             path.write_text(text[:lo] + h["text"] + text[hi:])
         applied += 1
