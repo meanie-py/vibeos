@@ -929,21 +929,43 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `ExfReleasePushLock[Shared]`, so a release that found another thread already waking spun
     forever on a stale value. It was the unexplained HANG_TIMEOUT 20261005-002201-1b2o74m7
     (CPU1 in `ExfReleasePushLock+308`) and hung every regstress `-smp 2` boot until fixed.
-  - **arm64 `-smp 2` under regstress: timed waits stop expiring** (OPEN, about 3 in 11 boots
-    on 2026-10-06; still there after the amd64 `KiSwitchKernelStack` IRQ fix, which arm64 has no
-    counterpart of). regstress's `Sleep` heartbeat and the CENSUS thread go silent mid-run. It
-    is NOT a dead clock: the hang capture now reads KUSER_SHARED_DATA.InterruptTime in both
-    samples, and it advanced 3.25 s across the 5 s gap (20261006-135002-2c9c8anl,
-    verdict `IDLE-BLOCKED`) with both vCPUs on `KiIdleLoop`'s `wfi` and CPU1's tick live. So
-    something readies nothing: either expired timers never wake their waiters or readied
-    threads are lost. The earlier "FROZEN, read GICC_PMR/CNTV_CTL" lead came from identical PCs
-    alone, which an idle box shows anyway. Not the `ready`-snapshot `loadvm` either (one wedge
-    began 10 s before the snapshot). A timer-table watchdog (overdue timers + per-PRCB ready
-    state, printed from CPU0's tick) is on local branch `diag/smp2-timerwd` (6d6e85a5f55); its 4
-    boots all passed, so it has not caught one yet. One debug-VM boot instead died BUGCHECK 0x19
-    (BAD_POOL_HEADER, P1=3, `ExFreePoolWithTag`) during regstress thread startup. Repro:
+  - **arm64 `-smp 2` under regstress: user pages lost to a local-only TLB flush** (FIXED
+    2026-10-06; it was filed as "timed waits stop expiring", which was wrong). About 1 in 3
+    regstress `-smp 2` boots stopped with no further heartbeat. Every failing boot had a user
+    access violation in ntdll's heap right after `[REGSTRESS] start` (free entry with `Size`
+    0 in `RtlpRemoveFreeBlock`, or a NULL `Flink` in `RtlpInsertFreeBlockHelper`), and no
+    passing boot had one. The idle CPUs the hang capture showed were a process stalled
+    behind its dead worker, not a timer bug. A probe showed the page under the bad entry
+    was 512 of 512 qwords zero, at the guard-entry slot the heap writes just below a
+    decommit. Cause: `MiProcessValidPteList` (decommit), `MiDeletePte` (release),
+    `MiRemoveMappedPtes` (view unmap) and `MiFlushTbAndCapture` (protect) flushed with
+    `KeFlushCurrentTb`, as the C does, so the other CPU kept translating the VA to a frame
+    MM had freed. Its writes went to that frame while this CPU recommitted the VA to a zero
+    page, and the frame's next owner was overwritten (the BAD_POOL_HEADER 0x19 seen once
+    during regstress startup fits this). Fix: those four sites use `KeFlushProcessTb`
+    (`tlbi vmalle1is` on arm64, the shootdown broadcast on x86 SMP). Same latent bug on
+    amd64/i386 SMP, fixed by the same change. Measured on arm64 regstress `-smp 2`:
+    before, 6 of 17 boots failed this way; after, 23 of 24 completed with no heap fault (the
+    24th was the vioblk ISR race below, now fixed; 12 of 12 with both fixes, runs
+    20261006-232117-0slrdumx and 20261006-232124-1r91etyp).
+    Field manual: "User pages lost after a decommit". Repro (pre-fix):
     `VIBEOS_PAYLOAD=regstress ./vibeos-cli build --arch arm64 && ./vibeos-cli smoke --arch arm64
-    --payload regstress --smp 2 --repeat 4`.
+    --payload regstress --smp 2 --repeat 6`.
+  - **arm64 `-smp 2`: vioblk ISR ran inside a synchronized routine** (FIXED 2026-10-06). One
+    regstress `-smp 2` boot died before the desktop in a Rust panic in vioblk.sys
+    (virtio-drivers `queue.rs:477`, `assert_ne!(buffer.len(), 0)`):
+    the completion interrupt was serviced on CPU 1 while `HwStartIo` on CPU 0 had queued the
+    request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
+    without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
+    i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
+  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (OPEN, unowned, found
+    2026-10-06; about 8 of 45 `smoke:amd64-bios` gate boots that day, across lanes). The lane
+    boots from a USB stick over xHCI with an NVMe disk attached. Usually csrss takes
+    `0xC0000006` (STATUS_IN_PAGE_ERROR) at the same ntdll address and the boot hangs; once the
+    font driver took it in kernel mode as BUGCHECK 0x1E in `ftfd.dll`. Every amd64-bios boot,
+    passing ones included, prints 9 `ASSERT FAILED: !Pkt->SlistEntry.Next at xferpkt.rs:706`
+    (classpnp reusing a transfer packet still on its free list), which is the first suspect.
+    Runs: 20261006-041704-og7v50sd, 20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
   - **arm64 FAULTLOOP was the detector, not a loop** (RESOLVED 2026-10-04). The report
     fingerprinted a fault as (VA, PC, TTBR0); a stream of DISTINCT faults sharing those --
     Cc reading many small files (rapps' cab extraction), each new VACB recycled onto the same
