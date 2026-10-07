@@ -1220,6 +1220,23 @@ def drop_model_type_twins(modules: Path, names: set[str]) -> dict[str, list[str]
     return out
 
 
+def _island_constants(state: dict) -> set[str]:
+    """Constants EVERY arch's island defines (`types_<arch>.rs`, plus `types_N_<arch>.rs`)."""
+    src = _crate_dir(state) / "src"
+    per_arch: list[set[str]] = []
+    for arch in ("i386", "amd64", "arm64"):
+        names: set[str] = set()
+        for island in src.glob(f"types*_{arch}.rs"):
+            names |= set(
+                re.findall(
+                    r"(?m)^pub (?:const|static) (\w+)\s*:", island.read_text(errors="replace")
+                )
+            )
+        if names:
+            per_arch.append(names)
+    return set.intersection(*per_arch) if per_arch else set()
+
+
 def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str]:
     """Constants the module's C sees and no Rust in the tree defines: clang evaluates them.
 
@@ -1233,6 +1250,16 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
     from .macro_authority import MacroAuthorityError
 
     facts = prelude_resolve.existing_facts(prelude)
+    # A fact is a stand-in for a constant the island lacks. Once a later resolve widens the
+    # island (`island_headers`), the island defines it too and the prelude copy is a second
+    # definition: atapi's replay gained ata_shared.h in its island AFTER the facts pass had
+    # evaluated 47 of its constants, and every one became an E0428 on every arch.
+    in_island = _island_constants(state)
+    stale = sorted(set(facts) & in_island)
+    for name in stale:
+        del facts[name]
+    if stale:
+        print(f"resolve: {len(stale)} fact(s) dropped, the island defines them now")
     wanted = sorted(n for n in undefined if prelude_resolve.looks_constant(n) and n not in facts)
     if not wanted:
         prelude_resolve.write_facts(prelude, prelude_resolve.render_facts(facts))

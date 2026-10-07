@@ -1560,6 +1560,40 @@ def test_keyword_named_fields_take_bindgens_spelling():
     ]
 
 
+def test_a_c_bitfield_goes_through_bindgens_accessors():
+    from rustconv.crate_repair import RULE_BITFIELD
+
+    src = (
+        b"unsafe fn f(d: *mut INQ, c: *mut CAPS) {\n"
+        b"    (*d).DeviceType = READ_ONLY;\n"
+        b"    (*c).Removable =\n        (x & 4 != 0) as u32;\n"
+        b"    (*c).Flags |= 2;\n"
+        b"    let t = (*d).DeviceType as u8;\n"
+        b"}\n"
+    )
+    sites = [
+        (src.index(b"DeviceType ="), "DeviceType"),
+        (src.index(b"Removable"), "Removable"),
+        (src.index(b"Flags"), "Flags"),
+        (src.index(b"DeviceType as"), "DeviceType"),
+    ]
+    diags = [
+        _diag(
+            f"attempted to take value of method `{name}` on type `_INQUIRYDATA`",
+            code="E0615",
+            spans=[_span("src/a.rs", at, at + len(name), is_primary=True)],
+        )
+        for at, name in sites
+    ]
+    plan = propose_edits(diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_BITFIELD])
+    assert sorted(e.replacement for e in plan.edits) == [
+        "(*c).set_Flags(((*c).Flags() | (2)) as _)",
+        "(*c).set_Removable(((x & 4 != 0) as u32) as _)",
+        "(*d).set_DeviceType((READ_ONLY) as _)",
+        "DeviceType()",
+    ]
+
+
 def test_an_uninitialised_c_local_is_zeroed_at_its_declaration():
     from rustconv.crate_repair import RULE_UNINIT_LOCAL
 

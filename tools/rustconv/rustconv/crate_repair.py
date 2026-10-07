@@ -82,6 +82,7 @@ RULE_UNSIGNED_NEGATE = "unsigned_negative_literal"
 RULE_OPTION_FN_AS_PTR = "option_fn_as_pointer"
 RULE_SOME_FN_ITEM = "some_fn_item"
 RULE_KEYWORD_FIELD = "bindgen_keyword_field"
+RULE_BITFIELD = "bitfield_accessor"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -124,6 +125,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_OPTION_FN_AS_PTR,
     RULE_SOME_FN_ITEM,
     RULE_KEYWORD_FIELD,
+    RULE_BITFIELD,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -1962,6 +1964,130 @@ def _keyword_field_rule(
     )
 
 
+_RE_METHOD_NOT_FIELD = re.compile(r"attempted to take value of method `(?P<name>\w+)`")
+_RE_ASSIGN_OP = re.compile(rb"\s*(?P<op>\|=|&=|\^=|\+=|-=|<<=|>>=|=(?!=))")
+
+
+def _receiver_start(data: bytes, dot: int) -> int | None:
+    """Start of the postfix chain ending just before `data[dot] == b'.'` (`(*p).a[i].b`)."""
+    i = dot
+    while True:
+        j = i
+        while j > 0 and (chr(data[j - 1]).isalnum() or data[j - 1] == ord("_")):
+            j -= 1
+        if j > 0 and data[j - 1] in b")]":
+            close, open_ = data[j - 1], b"(" if data[j - 1] == ord(")") else b"["
+            depth, k = 0, j - 1
+            while k >= 0:
+                if data[k] == close:
+                    depth += 1
+                elif data[k] == open_[0]:
+                    depth -= 1
+                    if depth == 0:
+                        break
+                k -= 1
+            if k < 0:
+                return None
+            j = k
+            # `f(x)` / `a[i]`: the callee or array name belongs to the chain too.
+            while j > 0 and (chr(data[j - 1]).isalnum() or data[j - 1] == ord("_")):
+                j -= 1
+        if j == i:
+            return None
+        if j > 0 and data[j - 1] == ord("."):
+            i = j - 1
+            continue
+        return j
+
+
+def _statement_end(data: bytes, start: int) -> int | None:
+    """Offset of the `;` ending the statement that continues at `start` (depth 0)."""
+    depth = 0
+    for k in range(start, len(data)):
+        c = data[k]
+        if c in b"([{":
+            depth += 1
+        elif c in b")]}":
+            depth -= 1
+            if depth < 0:
+                return None
+        elif c == ord(";") and depth == 0:
+            return k
+    return None
+
+
+def _bitfield_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A C bitfield used as a field: bindgen emits it as a getter `F()` and a setter `set_F(v)`.
+
+    atapi had 101 of these (`(*InquiryData).DeviceType = ...`, `Caps.Removable`). A read
+    becomes the getter call; a plain or compound assignment statement becomes the setter, its
+    value cast with `as _` to the setter's parameter type -- exactly what C's store into a
+    bitfield does (the setter masks to the field width, as C truncates). Anything else (a
+    reference to the field, an assignment used as an expression) is left red.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0615":
+        return [], [], False
+    m = _RE_METHOD_NOT_FIELD.search(str(diagnostic.get("message") or ""))
+    span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+    if m is None or span is None:
+        return [], [], False
+    name = m.group("name")
+    file_name = str(span.get("file_name") or "")
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    data = load(file_name)
+    if data is None or data[start:end].decode("utf-8", "replace") != name:
+        return [], [], False
+    authority = "bindgen emits a C bitfield as a getter F() and a setter set_F()"
+    line, column = int(span.get("line_start") or 0), int(span.get("column_start") or 0)
+    op = _RE_ASSIGN_OP.match(data, end)
+    before = data[:start].rstrip()
+    if op is None or (start > 0 and data[start - 1 : start] != b"."):
+        if data[end : end + 1] == b"(" or before.endswith((b"&", b"&mut", b"addr_of!(")):
+            return [], [], False
+        edit = Edit(
+            file_name,
+            start,
+            end,
+            f"{name}()",
+            RULE_BITFIELD,
+            authority,
+            name,
+            line,
+            column,
+            targets=(ctx.target,),
+        )
+        return [edit], [], True
+    recv_start = _receiver_start(data, start - 1)
+    stmt_end = _statement_end(data, op.end())
+    # Only a whole statement: the receiver must begin the line (after indentation).
+    if (
+        recv_start is None
+        or stmt_end is None
+        or data[:recv_start].rstrip(b" \t")[-1:] not in (b"\n", b"{", b";", b"}", b"")
+    ):
+        return [], [], False
+    recv = data[recv_start : start - 1].decode("utf-8", "replace")
+    rhs = data[op.end() : stmt_end].decode("utf-8", "replace").strip()
+    o = op.group("op").decode()
+    value = rhs if o == "=" else f"{recv}.{name}() {o[:-1]} ({rhs})"
+    original = data[recv_start:stmt_end].decode("utf-8", "replace")
+    edit = Edit(
+        file_name,
+        recv_start,
+        stmt_end,
+        f"{recv}.set_{name}(({value}) as _)",
+        RULE_BITFIELD,
+        authority,
+        original,
+        line,
+        column,
+        targets=(ctx.target,),
+    )
+    return [edit], [], True
+
+
 def _uninit_local_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -3574,6 +3700,7 @@ _RULE_TABLE: dict[
     RULE_OPTION_FN_AS_PTR: _option_fn_as_ptr_rule,
     RULE_SOME_FN_ITEM: _some_fn_item_rule,
     RULE_KEYWORD_FIELD: _keyword_field_rule,
+    RULE_BITFIELD: _bitfield_rule,
 }
 
 
