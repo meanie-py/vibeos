@@ -354,6 +354,22 @@ macro_rules! RtlCopyMemory {
     }};
 }
 
+/// `winbase.h` — `#define CopyMemory RtlCopyMemory`.
+#[macro_export]
+macro_rules! CopyMemory {
+    ($($args:tt)*) => {
+        $crate::RtlCopyMemory!($($args)*)
+    };
+}
+
+/// `winbase.h` — `#define MoveMemory RtlMoveMemory`.
+#[macro_export]
+macro_rules! MoveMemory {
+    ($($args:tt)*) => {
+        $crate::RtlMoveMemory!($($args)*)
+    };
+}
+
 /// `ntdef.h` — `#define RtlMoveMemory(D, S, L) memmove((D), (S), (L))`: overlap allowed.
 #[macro_export]
 macro_rules! RtlMoveMemory {

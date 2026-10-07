@@ -975,6 +975,19 @@ def _enclosing_call(masked: bytes, start: int) -> tuple[str | None, int]:
 _RE_TRAILING_CAST = re.compile(r"\s+as\s+(?:" + "|".join(sorted(INT_PRIMITIVES)) + r")\s*$")
 
 
+def _return_type_name(diagnostic: Mapping[str, Any], load: FileReader) -> str | None:
+    """The type NAME a mismatch's "expected ... because of return type" label points at."""
+    for span in diagnostic.get("spans") or []:
+        if "because of return type" not in str(span.get("label") or ""):
+            continue
+        data = load(str(span.get("file_name") or ""))
+        if data is None:
+            return None
+        text = data[int(span["byte_start"]) : int(span["byte_end"])].decode("utf-8", "replace")
+        return text.strip() if re.fullmatch(r"\s*[A-Za-z_]\w*\s*", text) else None
+    return None
+
+
 def _width_alias_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -1033,6 +1046,42 @@ def _width_alias_rule(
             continue
         text = data[start:end].decode("utf-8", "replace")
         if not _balanced(masked[start:end]):
+            continue
+        returned = _return_type_name(diagnostic, load)
+        if (
+            returned is not None
+            and masked[:start].rstrip().endswith(b"return")
+            and _next_code_byte(masked, end) == b";"
+        ):
+            # `return (EXIT_SUCCESS) as i32;` in a fn declared `-> EXIT_CODE`: the function's
+            # own signature is the authority, exactly as a callee's parameter is below.
+            # diskpart's command table (31 E0308s) became 31 of these once the definitions
+            # took the C prototype's return type.
+            if returned in INT_PRIMITIVES or returned not in ctx.local_aliases:
+                decline("return_alias_not_local", f"`{returned}`")
+                continue
+            inner = _RE_TRAILING_CAST.sub("", text).strip()
+            if not _balanced(_mask_lexical(inner.encode())):
+                inner = text.strip()
+            ctx.claimed.add((file_name, start, end))
+            edits.append(
+                Edit(
+                    file_name=file_name,
+                    byte_start=start,
+                    byte_end=end,
+                    replacement=f"({inner}) as {returned}",
+                    rule=RULE_WIDTH_ALIAS,
+                    authority=(
+                        f"the enclosing function returns `{returned}`, declared in this crate; "
+                        f"the expression is `{found}`. Casting to the NAME is portable."
+                    ),
+                    original=text,
+                    line=line,
+                    column=int(span.get("column_start") or 0),
+                    requires_target_agreement=False,
+                    targets=(ctx.target,),
+                )
+            )
             continue
         if _prev_code_byte(masked, start) not in (b"(", b",") or _next_code_byte(
             masked, end

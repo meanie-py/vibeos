@@ -913,6 +913,7 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     }
     found = _resolve_local_types(state, prelude, type_gaps)
     align_definition_abis(state)
+    align_definition_returns(state)
     island_found = _resolve_island_types(load_state(stem), type_gaps - found)
     if island_found:
         state = load_state(stem)  # it recorded island_headers + derive + island
@@ -1115,6 +1116,70 @@ def align_definition_abis(state: dict) -> dict[str, list[str]]:
         changed[path.name] = sorted(wrong)
     for name, fns in sorted(changed.items()):
         print(f"resolve: {name}: calling convention set from the C for {', '.join(fns)}")
+    return changed
+
+
+_PRIMITIVE_RET = re.compile(r"^(?:[iu](?:8|16|32|64|size)|bool|\(\))$")
+
+
+def align_definition_returns(state: dict) -> dict[str, list[str]]:
+    """Give a crate-defined function the RETURN TYPE its C prototype names.
+
+    diskpart's command table is `EXIT_CODE (*func)(INT, PWSTR*)` and every `*_main` returns
+    EXIT_CODE, an enum bindgen makes `u32`; the model wrote `-> i32` for all of them and the
+    table failed 31 times (E0308, fn item vs fn pointer). The prototype is the authority:
+    c2rust reads it from a TU that only DECLARES the function (one that defines it gives no
+    prototype). Only a primitive the model chose is replaced, and only by a named C type.
+    """
+    from . import c2rust_anchor
+
+    modules = _crate_dir(state) / "src" / state["stem"]
+    rets: dict[str, tuple[Path, str]] = {}
+    for path in sorted(modules.glob("*.rs")):
+        text = path.read_text()
+        for m in re.finditer(r"\bfn\s+([A-Za-z_]\w*)\s*\(", text):
+            depth, i = 1, m.end()
+            while i < len(text) and depth:
+                depth += {"(": 1, ")": -1}.get(text[i], 0)
+                i += 1
+            r = re.match(r"\s*->\s*([^{;]+?)\s*\{", text[i:])
+            if r and _PRIMITIVE_RET.match(r.group(1)):
+                rets[m.group(1)] = (path, r.group(1))
+    todo = set(rets)
+    proto: dict[str, str] = {}
+    for tu in state["tus"]:
+        if not todo:
+            break
+        own = set(
+            re.findall(r"^\w[^\n;]*?\b(\w+)\s*\(", (REPO / tu).read_text(errors="replace"), re.M)
+        )
+        ask = todo - own
+        if not ask:
+            continue
+        try:
+            found = c2rust_anchor.extern_signatures(REPO / tu, ask)
+        except c2rust_anchor.C2RustError:
+            continue
+        for name, sig in found.items():
+            r = re.search(r"\)\s*->\s*([A-Za-z_]\w*)\s*;$", sig)
+            if r and not _PRIMITIVE_RET.match(r.group(1)):
+                proto[name] = r.group(1)
+        todo -= set(found)
+    changed: dict[str, list[str]] = {}
+    for name, ret in sorted(proto.items()):
+        path, old = rets[name]
+        text = path.read_text()
+        new = re.sub(
+            rf"(\bfn\s+{re.escape(name)}\s*\((?:[^()]|\([^()]*\))*\)\s*->\s*){re.escape(old)}(\s*\{{)",
+            rf"\g<1>{ret}\g<2>",
+            text,
+            count=1,
+        )
+        if new != text:
+            path.write_text(new)
+            changed.setdefault(path.name, []).append(name)
+    for fname, fns in sorted(changed.items()):
+        print(f"resolve: {fname}: return type set from the C prototype for {', '.join(fns)}")
     return changed
 
 
