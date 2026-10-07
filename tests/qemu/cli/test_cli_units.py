@@ -11121,3 +11121,14 @@ def test_staging_amd64_build_holds_build_i386_still(tmp_path, monkeypatch):
     assert not held("amd64", no_wow64_stage=True)
     assert not held("i386", no_wow64_stage=False)
     assert not held("arm64", no_wow64_stage=False)
+
+
+def test_a_host_launch_failure_does_not_cancel_the_payload_runs():
+    from . import smoke as smoke_mod
+
+    ok = {"ok": True}
+    launch = {"ok": False, "classification": "LAUNCH_FAIL"}
+    hang = {"ok": False, "classification": "HANG_TIMEOUT"}
+    assert smoke_mod._guest_reached_desktop([ok, launch, ok])
+    assert not smoke_mod._guest_reached_desktop([ok, hang, ok])
+    assert not smoke_mod._guest_reached_desktop([launch, launch])
