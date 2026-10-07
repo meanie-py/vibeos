@@ -102,18 +102,41 @@ imports) stays in the always-owed `LADDER`.
   32-bit process's initial thread is the kernel's to start through its own `Wow64LdrpInitialize`,
   so `NtCreateThread` hands the kernel a harmless native context, as for a new x86-64 child.
 
+**Done in the round after (spawn64 rungs 10-12):**
+
+- **CreateRemoteThread from an x86-64 guest into a RUNNING native or 32-bit process.** Nothing
+  of ours runs in the target and nothing has to: the routine is already the target's code. Only
+  the CONTEXT's shape is x86-64, so `thread.rs` `CreateForeignThread` translates it into the one
+  a native creator builds — kernel32's Win32 shape (`rip` = the guest kernel32's
+  `BaseThreadStart`, `rcx`/`rdx` = routine/parameter) into the TARGET's native kernel32
+  `BaseThreadStart(routine, parameter)`, found through its loader list and export table; the
+  RtlCreateUserThread shape into `routine(parameter)` returning into `RtlExitUserThread`.
+  (`BaseThreadStart` is a new kernel32 export of `BaseThreadStartup`, XP x64's name, on every
+  arch.) A native target just runs it. A WoW64 target's native loader sees a start that is no
+  native image's code and hands the thread to wow64.dll (`ldrinit.rs LdrpDivertWow64Thread` →
+  `Wow64StartGuestThreadFrom64`), which gives it a 32-bit stack and runs it as a 32-bit thread
+  through the 32-bit loader — Windows' `ThunkStartupContext64TO32`, and the same path a NATIVE
+  64-bit creator's remote thread into a WoW64 process now takes too (on amd64 that one used to
+  run 32-bit code as 64-bit and take the target down).
+- **No native kernel32 in an x86-64 guest process.** arm64 ntdll's `_errno`/`atan2`/`tan` are
+  its own now (`ntdll-rust crtexports.rs`; the math the linked CRT's), not forwarders to msvcrt,
+  so neither msvcrt nor — through msvcrt's imports — kernel32 is loaded any more; rung 12 checks
+  every non-x86-64 image mapped in the process. `errno` lives in `TlsSlots[19]`, reserved in
+  `PEB->TlsBitmap` at process init. The first attempt at this was backed out after it crashed
+  every 32-bit guest in libwow64fex's rpmalloc, blamed then on its `errno` home; the real cause
+  was that **a WoW64 process's fixed-index TLS slots (wow64.dll's 1/10/12, FEX's 15..18) were
+  never reserved in the bitmap.** The first `TlsAlloc` in the process gets slot 1 — msvcrt's,
+  harmlessly, while the forwarders dragged it in early; libwow64fex's rpmalloc, overwriting the
+  CPU area, once they did not. Those slots are reserved now in every WoW64 process (field
+  manual, "A WoW64 process's fixed TLS slots").
+
 **Owed:**
 
-1. **Thread creation into a RUNNING non-x86-64 process** (CreateRemoteThread into a native arm64
-   or a running 32-bit process) is refused with `STATUS_NOT_SUPPORTED`: it needs that process's
-   own CPU/WoW64 layer to establish the guest side, from a start routine the x86-64 caller cannot
-   name. A NEW native arm64 child is not even reachable — the guest's system32 is redirected to
-   sysamd64, where an arm64 exe reads back as not-found (WoW64's own-machine view), so the guest
-   cannot name one to spawn.
-2. **A native kernel32 still loads** in an x86-64 guest process. Root cause found: arm64 ntdll
-   exports `_errno`/`atan2`/`tan` as **forwarders to msvcrt** (the FEX CPU layers' mini-CRT
-   imports them), resolving a forwarder loads msvcrt, and msvcrt's imports load kernel32. The
-   obvious fix — make them ntdll's own (cnt-rust math + a local `_errno`) — was tried and backed
-   out: a local `_errno` has to live somewhere per-thread, and the TEB slot used for it aliased
-   libwow64fex's rpmalloc thread-heap pointer, crashing the whole 32-bit ladder. A correct fix
-   needs a non-aliasing per-thread errno in ntdll. Harmless today, so parked.
+1. **Into an x86-64 guest FROM a non-x86-64 process** (the reverse direction): a native or 32-bit
+   creator's CreateRemoteThread into a running x86-64 guest starts the native kernel32's
+   `BaseThreadStartup`, which that process no longer has, with an x86-64 routine. It wants the
+   same divert as WoW64's: the guest process's native loader handing a start that is no native
+   image's code to wowx64.
+2. **A NEW native arm64 child** of an x86-64 guest: unreachable — the guest's system32 is
+   redirected to sysamd64, where an arm64 exe reads back as not-found (WoW64's own-machine
+   view) — and refused with `STATUS_NOT_SUPPORTED` if it ever is reached.

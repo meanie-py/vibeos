@@ -37,7 +37,11 @@
 ;@ stdcall -version=0x502 -arch=x86_64 BaseProcessStart()
 @ stdcall BaseQueryModuleData(str str ptr ptr ptr) ;check
 @ stub -version=0x600+ BaseThreadInitThunk
-;@ stdcall -version=0x502 -arch=x86_64 BaseThreadStart()
+# XP x64 exported this; here on every arch, as the Win32 thread start
+# (BaseInitializeContext's ContextType 1) under a name another process can
+# resolve: wowx64 recognises an x86-64 guest's new-thread CONTEXT by it, and
+# translates it for a non-x86-64 target into that target's own.
+@ stdcall BaseThreadStart(ptr ptr) BaseThreadStartup
 @ stdcall BaseUpdateAppcompatCache(long long long)
 @ stdcall BasepCheckBadapp(long ptr long long long long long long long)
 @ stdcall BasepCheckWinSaferRestrictions(long long long long long long)

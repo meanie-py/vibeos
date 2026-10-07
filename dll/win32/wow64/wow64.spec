@@ -7,3 +7,6 @@
 # Phase C: the 64-bit ntdll loader's thread handoff for WoW64 processes
 # (ldrinit.rs LdrpInitializeProcess resolves this by name; never returns).
 @ stdcall -arch=arm64,x86_64 Wow64LdrpInitialize(ptr)
+# A thread a 64-bit creator started here with a 32-bit start: the native
+# loader's LdrpDivertWow64Thread hands it over by name; never returns.
+@ stdcall -arch=arm64,x86_64 Wow64StartGuestThreadFrom64(ptr ptr long)
