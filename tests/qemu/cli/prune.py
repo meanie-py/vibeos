@@ -24,7 +24,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import canon, fsutil, maintenance, queue
+from . import canon, fsutil, hostlock, maintenance, queue, trim
 
 # Same global lock dir vm.py / qemu/start.sh / qemu/ps use.
 LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
@@ -250,6 +250,8 @@ def _fmt(n: int) -> str:
 
 
 def prune(args, repo: Path) -> int:
+    if getattr(args, "trim", False):
+        return _trim(args, repo)
     try:
         if not getattr(args, "apply", False):
             return _prune(args, repo)
@@ -258,6 +260,47 @@ def prune(args, repo: Path) -> int:
     except maintenance.MaintenanceError as exc:
         print(f"PRUNE_REFUSED: {exc}")
         return 2
+
+
+def _trim(args, repo: Path) -> int:
+    """`--trim`: superseded cargo units + idle ad-hoc target trees, every worktree. Needs no
+    quiet fleet and no pinned owner, unlike a full prune: nothing it removes is reachable by
+    any tree's current build (see trim.py), so it costs no lane a warm build. The host kill
+    switch still stops it."""
+    worktrees = git_worktrees(repo)
+    if not worktrees:
+        print("prune: no git worktrees found")
+        return 1
+    idle = float(getattr(args, "idle_hours", 0) or 24)
+    if not math.isfinite(idle) or idle < 1:
+        print("PRUNE_REFUSED: --trim needs --idle-hours >= 1")
+        return 2
+    apply = getattr(args, "apply", False)
+    header = "TRIMMING" if apply else "DRY-RUN (nothing deleted; pass --apply)"
+    print(f"vibeos-cli prune --trim — {header}  (untouched >= {idle:g}h)\n")
+    plans = [(wt, trim.plan_worktree(wt, idle_hours=idle)) for wt in worktrees]
+    plans.sort(key=lambda x: x[1].total, reverse=True)
+    for wt, plan in plans:
+        if plan.paths:
+            print(
+                f"  {_fmt(plan.total)}  {wt.name}  "
+                f"({plan.superseded_units} superseded units, {plan.adhoc_dirs} ad-hoc dirs)"
+            )
+    total = sum(p.total for _, p in plans)
+    print(f"\n  trimmable: {_fmt(total)}")
+    if not apply:
+        print("\n  → re-run with --apply to delete.")
+        return 0
+    if (hostlock.HOSTLOCK_DIR / "maintenance-disabled").exists():
+        print("PRUNE_REFUSED: host maintenance-disabled kill switch is present")
+        return 2
+    freed = failures = 0
+    for wt, plan in plans:
+        f, n = trim.apply(wt, plan)
+        freed += f
+        failures += n
+    print(f"  freed {_fmt(freed)}.")
+    return 1 if failures else 0
 
 
 def select_budget(candidates: list[Candidate], budget: float | None) -> list[Candidate]:

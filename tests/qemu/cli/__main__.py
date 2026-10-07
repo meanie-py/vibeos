@@ -1004,6 +1004,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         help="also reclaim eligible outputs toward this filesystem headroom",
     )
+    pr.add_argument(
+        "--trim",
+        action="store_true",
+        help="only cut cargo targets back to what builds still read (superseded units, idle "
+        "ad-hoc cargo trees); safe on live lanes, never costs a warm build",
+    )
     pr.set_defaults(fn=prune_mod.prune)
 
     from . import windows_cleanup
