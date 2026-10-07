@@ -906,12 +906,18 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     # extern fn, whatever another crate declared: winsrv's `fn RTL_FIELD_SIZE(t: usize, f:
     # usize)` was copied by consensus and shadowed the real macro. Dropped, including copies
     # an earlier run made.
-    from .macro_authority import function_like_macros
+    from .macro_authority import function_like_macros, identifier_aliases
 
     c_macros: set[str] = set()
+    # ...nor a name the module's preprocessor ALIASES to another (`#define snprintf
+    # _snprintf`): the C calls the target, and _resolve_externs declares it and re-exports it
+    # under the alias. usetup got oleaut32-rust's `snprintf` by consensus -- a symbol ntdll
+    # does not export.
+    id_aliases: set[str] = set()
     for tu in state["tus"]:
         try:
             c_macros |= function_like_macros(REPO, (REPO / tu).resolve())
+            id_aliases |= set(identifier_aliases(REPO, (REPO / tu).resolve()))
         except Exception as e:  # reported, then judged without it
             print(f"resolve: no macro authority for {tu}: {str(e).splitlines()[0][:120]}")
     # ...and a name a shared crate provides is imported from it, never copied: tree consensus
@@ -933,21 +939,37 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     copied = {
         k: v
         for k, v in prelude_resolve.existing_block(prelude).items()
-        if not (v.kind == "fn" and k in c_macros)
+        if not (v.kind == "fn" and (k in c_macros or k in id_aliases))
         and k not in shared
         # A copy made before test harnesses stopped counting as consensus.
         and not prelude_resolve.is_test_source(v.path)
     }
+    # Re-derive every kept copy from the tree as it is NOW: a copy is only as right as the run
+    # that made it. usetup kept 40 setuplib externs under `extern "C"` from a run whose ABI
+    # was written unquoted (unreadable, so read back as C) -- every one undefined at link,
+    # because setuplib's exports are stdcall. A copy nothing defines any more is dropped and
+    # resolved afresh.
+    fresh = prelude_resolve.workspace_items(set(copied), workspace, crate)
+    for name in list(copied):
+        if copied[name].path == "island enum":
+            continue
+        pick, _why = prelude_resolve.consensus(name, fresh.get(name, []))
+        if pick is None:
+            del copied[name]
+        else:
+            copied[name] = pick
     siblings = prelude_resolve.existing_siblings(prelude)
     modules_dir = crate / "src" / stem
     res = prelude_resolve.Resolution()
     ambiguous: dict[str, list[str]] = {}
     types_only: set[str] = set()
+    seen_names: set[str] = set()
     for n in range(1, max_passes + 1):
         wanted = prelude_resolve.unresolved(
             state["crate"], RUST_TARGETS["amd64"], workspace, STATE_ROOT / stem / "target-amd64"
         )
         names = set(wanted)
+        seen_names |= names
         types_only = {k for k, ns in wanted.items() if ns == {"type"}}
         # A copy of the wrong KIND for a name wanted only as a type is what caused the gap.
         for name in types_only & set(copied):
@@ -970,7 +992,7 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
             prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
         names -= set(found_here)
         res.pending = sorted(names & pending)
-        todo = names - pending - set(copied) - c_macros - shared
+        todo = names - pending - set(copied) - c_macros - shared - id_aliases
         # Plus every enum member a C `case` label names (derive's SWITCH_CONST_ENUM_PREFIXED):
         # in a Rust pattern the bare name is a BINDING, never unresolved, so it would never
         # reach this alias step on its own. diskpart's FormatCallback matched `PROGRESS` and
@@ -1046,6 +1068,7 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     abi_split = {
         n for n, why in res.conflicting.items() if why.startswith(("ABI disagreement", "mixed"))
     }
+    abi_split |= id_aliases & seen_names
     found |= _resolve_externs(state, prelude, (set(res.undefined) | abi_split) - found)
     res.undefined = [n for n in res.undefined if n not in found]
     res.conflicting = {k: v for k, v in res.conflicting.items() if k not in found}
@@ -1117,7 +1140,11 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     from . import c2rust_anchor, sdk_facts
     from .macro_authority import MacroAuthorityError, function_like_macros, identifier_aliases
 
-    names = set(names) | prelude_resolve.existing_externs(prelude)
+    # Never a name the hand-written prelude declares, including one an earlier run put in
+    # this block before the hand declaration existed (E0428).
+    names = (set(names) | prelude_resolve.existing_externs(prelude)) - (
+        prelude_resolve.hand_written_names(prelude)
+    )
     sigs: dict[str, tuple[str, str, str]] = {}
     module_dir = REPO / state["module_dir"]
     files = sorted([*module_dir.rglob("*.h"), *module_dir.rglob("*.c")])
@@ -1162,7 +1189,9 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             target = known.get(name)
             if target and target not in macros and target != name:
                 sdk_alias[name] = target
-    todo = (todo - set(sdk_alias)) | set(sdk_alias.values())
+    # A target the hand-written prelude already declares is aliased, not declared again (E0428).
+    hand = prelude_resolve.hand_written_names(prelude)
+    todo = (todo - set(sdk_alias)) | {t for t in sdk_alias.values() if t not in hand}
     for tu in state["tus"]:
         if not todo:
             break
@@ -1719,6 +1748,11 @@ def stage_replay(stem: str, *, fix_cap: float = 0.0, fix_rounds: int = 1) -> Non
         concurrency=8,
     )
     apply_hand(stem)
+    # Once more, AFTER the hand bank: a hand body is written against the prelude of its day,
+    # and the prelude moves (strsafe-rust began providing RtlStringCchPrintfA as a macro, and
+    # usetup's 12 banked call sites still called it as a function). Repair is deterministic
+    # and idempotent, so a body that needs nothing is left byte-identical.
+    print(f"replay: crate-repair {_repair(stem, state['crate'])}")
     stage_check(stem)
     print(f"replay: {(time.time() - started) / 60:.1f} min")
 
