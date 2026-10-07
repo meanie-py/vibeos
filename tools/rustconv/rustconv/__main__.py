@@ -123,7 +123,11 @@ from .fact_seal import (
     prepare_sealed_source,
     unseal_facts,
 )
-from .function_coverage import require_c_plan, require_rust_definitions
+from .function_coverage import (
+    require_c_plan,
+    require_rust_definitions,
+    restore_requested_name,
+)
 from .function_prompt import (
     build_file_context,
     build_function_prompt,
@@ -135,7 +139,7 @@ from .kernel_com import generate_owner
 from .kernel_preamble import derive_kernel_preamble
 from .local_macros import expand as expand_macros
 from .local_macros import module_macros
-from .macro_authority import function_like_macros, string_literal_macros
+from .macro_authority import function_like_macros, register_via, string_literal_macros
 from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
 from .placement_audit import placement_findings
@@ -964,7 +968,7 @@ def _unseal_worker(
     fixed signature and mean nothing for a free function); only the unseal itself is,
     and it always was.
     """
-    rust = scrub_comment_token_echoes(rust)
+    rust = restore_requested_name(scrub_comment_token_echoes(rust), dep.name)
     # Sealed tokens the model omitted that live only in code the build never executes
     # (`#if`-disabled arms, DUMMY_PSEH except-blocks). Accepted, but printed: relaxing a
     # guarantee silently is the failure mode sealing exists to prevent (dead_regions.py).
@@ -2347,6 +2351,18 @@ def cmd_translate(args):
         ]
         target_path = next((c for c in candidates if c.exists()), candidates[0])
 
+    via = getattr(args, "via", None)
+    if via:
+        via_path = Path(via) if Path(via).is_absolute() else REACTOS_ROOT / via
+        if target_path.suffix.lower() not in (".h", ".hpp") or not via_path.is_file():
+            print(
+                f"Error: --via needs a header to translate and an existing TU "
+                f"(got {target_path}, {via_path})",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        register_via(target_path, via_path)
+
     # Detect target (ntoskrnl vs hal) from the path
     rustconv_target = resolve_target(args, target_path)
     print(f"Target: {rustconv_target.name}", file=sys.stderr)
@@ -3214,7 +3230,7 @@ def cmd_translate(args):
         c2rust_preamble = ""
         anchor_enabled = getattr(args, "c2rust", None)
         if anchor_enabled is None:
-            anchor_enabled = c_file.suffix.lower() == ".c" and not getattr(
+            anchor_enabled = (c_file.suffix.lower() == ".c" or bool(via)) and not getattr(
                 args, "deterministic_only", False
             )
         if anchor_enabled:
@@ -3723,6 +3739,9 @@ def cmd_translate(args):
                     # so re-running the closed-envelope check here judged token-free Rust
                     # and could only false-reject, sending banked work back to be re-paid.
                     if hit is not None:
+                        # The bank keeps the reply as the model spelled it; see
+                        # restore_requested_name (a case-only rename of the C name).
+                        hit = restore_requested_name(hit, dep.name)
                         translated[dep.name] = hit
                         resumed += 1
                         _record_outcome(
@@ -4002,6 +4021,7 @@ def cmd_translate(args):
                         sealed_names.get(dep.name),
                     )
                 if hit is not None:
+                    hit = restore_requested_name(hit, dep.name)
                     translated[dep.name] = hit
                     resumed += 1
                     _record_outcome(
@@ -5883,6 +5903,14 @@ def main():
         "Missing tools, build inputs or function anchors fail before payment. "
         "C++ uses its separate class preflight; c2rust cannot anchor C++. "
         "--no-c2rust explicitly opts out of C anchoring.",
+    )
+    p.add_argument(
+        "--via",
+        default=None,
+        metavar="TU",
+        help="translate a HEADER's inline functions through this .c of the module that "
+        "includes it: its compile command answers every macro, constant and c2rust question "
+        "about the header (needed for a shared header outside the module directory)",
     )
 
     # probe-migrate

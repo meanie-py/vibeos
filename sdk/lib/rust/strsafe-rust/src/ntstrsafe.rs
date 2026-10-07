@@ -16,6 +16,7 @@
 //! [`StringCchPrintfW!`](crate::StringCchPrintfW).
 
 use crate::WCHAR;
+use core::ffi::c_char;
 
 pub type NTSTATUS = i32;
 
@@ -406,6 +407,134 @@ macro_rules! RtlStringCchPrintfExW {
     }};
 }
 
+/// :2894 `RtlStringVPrintfExWorkerA`, its `_vsnprintf` handed in as `print`. NOT the W worker
+/// at another width: the A one formats into `cchDest - 1` characters and always terminates
+/// (the classic strsafe contract), where ReactOS's W worker goes through
+/// `RtlpArrayVPrintfWorkerW` and does neither. Ported as written, both.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn ntstrsafe_printf_ex_worker_a(
+    pszDest: *mut c_char,
+    cchDest: usize,
+    cbDest: usize,
+    ppszDestEnd: *mut *mut c_char,
+    pcchRemaining: *mut usize,
+    dwFlags: crate::DWORD,
+    mut pszFormat: *const c_char,
+    print: impl FnOnce(*mut c_char, usize, *const c_char) -> core::ffi::c_int,
+) -> NTSTATUS {
+    use crate::{
+        STRSAFE_FILL_BEHIND_NULL, STRSAFE_FILL_ON_FAILURE, STRSAFE_IGNORE_NULLS,
+        STRSAFE_NO_TRUNCATION, STRSAFE_NULL_ON_FAILURE, STRSAFE_VALID_FLAGS,
+    };
+    let mut status = STATUS_SUCCESS;
+    let mut pszDestEnd = pszDest;
+    let mut cchRemaining: usize = 0;
+    if dwFlags & !STRSAFE_VALID_FLAGS != 0 {
+        status = STATUS_INVALID_PARAMETER;
+    } else {
+        if dwFlags & STRSAFE_IGNORE_NULLS != 0 {
+            if pszDest.is_null() && (cchDest != 0 || cbDest != 0) {
+                status = STATUS_INVALID_PARAMETER;
+            }
+            if pszFormat.is_null() {
+                pszFormat = c"".as_ptr();
+            }
+        }
+        if status >= 0 {
+            if cchDest == 0 {
+                pszDestEnd = pszDest;
+                cchRemaining = 0;
+                if *pszFormat != 0 {
+                    status = if pszDest.is_null() {
+                        STATUS_INVALID_PARAMETER
+                    } else {
+                        STATUS_BUFFER_OVERFLOW
+                    };
+                }
+            } else {
+                let cchMax = cchDest - 1;
+                let iRet = print(pszDest, cchMax, pszFormat);
+                if iRet < 0 || iRet as usize > cchMax {
+                    pszDestEnd = pszDest.add(cchMax);
+                    cchRemaining = 1;
+                    *pszDestEnd = 0;
+                    status = STATUS_BUFFER_OVERFLOW;
+                } else if iRet as usize == cchMax {
+                    pszDestEnd = pszDest.add(cchMax);
+                    cchRemaining = 1;
+                    *pszDestEnd = 0;
+                } else {
+                    pszDestEnd = pszDest.add(iRet as usize);
+                    cchRemaining = cchDest - iRet as usize;
+                    if dwFlags & STRSAFE_FILL_BEHIND_NULL != 0 {
+                        crate::memset(
+                            pszDestEnd.add(1) as *mut core::ffi::c_void,
+                            crate::fill_pattern(dwFlags),
+                            cchRemaining - 1,
+                        );
+                    }
+                }
+            }
+        }
+    }
+    if status < 0 && !pszDest.is_null() {
+        if dwFlags & STRSAFE_FILL_ON_FAILURE != 0 {
+            crate::memset(pszDest as *mut core::ffi::c_void, crate::fill_pattern(dwFlags), cbDest);
+            if crate::fill_pattern(dwFlags) == 0 {
+                pszDestEnd = pszDest;
+                cchRemaining = cchDest;
+            } else if cchDest > 0 {
+                pszDestEnd = pszDest.add(cchDest - 1);
+                cchRemaining = 1;
+                *pszDestEnd = 0;
+            }
+        }
+        if dwFlags & (STRSAFE_NULL_ON_FAILURE | STRSAFE_NO_TRUNCATION) != 0 && cchDest > 0 {
+            pszDestEnd = pszDest;
+            cchRemaining = cchDest;
+            *pszDestEnd = 0;
+        }
+    }
+    if status >= 0 || status == STATUS_BUFFER_OVERFLOW {
+        if !ppszDestEnd.is_null() {
+            *ppszDestEnd = pszDestEnd;
+        }
+        if !pcchRemaining.is_null() {
+            *pcchRemaining = cchRemaining;
+        }
+    }
+    status
+}
+
+/// :1218 `RtlStringCchPrintfExA(pszDest, cchDest, ppszDestEnd, pcchRemaining, dwFlags,
+/// pszFormat, ...)`, over `_snprintf`. atapi formats its serial number with it.
+#[macro_export]
+macro_rules! RtlStringCchPrintfExA {
+    ($pszDest:expr, $cchDest:expr, $ppszDestEnd:expr, $pcchRemaining:expr, $dwFlags:expr,
+     $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut core::ffi::c_char = $pszDest as _;
+        let cchDest: usize = $cchDest as usize;
+        if cchDest > $crate::ntstrsafe::NTSTRSAFE_MAX_CCH {
+            if cchDest > 0 {
+                *pszDest = 0;
+            }
+            $crate::ntstrsafe::STATUS_INVALID_PARAMETER
+        } else {
+            $crate::ntstrsafe::ntstrsafe_printf_ex_worker_a(
+                pszDest,
+                cchDest,
+                cchDest,
+                $ppszDestEnd as _,
+                $pcchRemaining as _,
+                $dwFlags as _,
+                $pszFormat as _,
+                |d, n, f| $crate::_snprintf(d, n, f $(, $arg)*),
+            )
+        }
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -504,6 +633,40 @@ mod tests {
             0
         );
         assert_eq!(buf[3], 1);
+    }
+
+    #[test]
+    fn printf_ex_a_formats_one_short_and_chains_like_atapis_serial_number() {
+        // enum.c: `RtlStringCchPrintfExA(End, Remaining, &End, &Remaining, 0, "%2x", b)` per
+        // byte. The A worker hands `_vsnprintf` cchDest - 1 and terminates, so each call's
+        // End lands ON the terminator and Remaining still counts it.
+        let mut buf = [0x55 as c_char; 5];
+        let mut end: *mut c_char = core::ptr::null_mut();
+        let mut rem = 0usize;
+        let st = unsafe {
+            ntstrsafe_printf_ex_worker_a(buf.as_mut_ptr(), 5, 5, &mut end, &mut rem, 0, c"%2x".as_ptr(), |d, n, _f| {
+                assert_eq!(n, 4);
+                *d = b'a' as c_char;
+                *d.add(1) = b'b' as c_char;
+                *d.add(2) = 0;
+                2
+            })
+        };
+        assert_eq!(st, STATUS_SUCCESS);
+        assert_eq!(unsafe { end.offset_from(buf.as_ptr()) }, 2);
+        assert_eq!(rem, 3);
+        // Exactly full: terminated in the last slot, one character "remaining" (the NUL).
+        let st = unsafe {
+            ntstrsafe_printf_ex_worker_a(buf.as_mut_ptr(), 3, 3, &mut end, &mut rem, 0, c"x".as_ptr(), |_d, _n, _f| 2)
+        };
+        assert_eq!(st, STATUS_SUCCESS);
+        assert_eq!((unsafe { end.offset_from(buf.as_ptr()) }, rem, buf[2]), (2, 1, 0));
+        // Too long: overflow, still terminated, End/Remaining still reported.
+        let st = unsafe {
+            ntstrsafe_printf_ex_worker_a(buf.as_mut_ptr(), 3, 3, &mut end, &mut rem, 0, c"x".as_ptr(), |_d, _n, _f| -1)
+        };
+        assert_eq!(st, STATUS_BUFFER_OVERFLOW);
+        assert_eq!((unsafe { end.offset_from(buf.as_ptr()) }, rem, buf[2]), (2, 1, 0));
     }
 
     #[test]

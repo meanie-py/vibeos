@@ -506,6 +506,14 @@ extern "C" {
     /// msvcrt's `_snwprintf`: `_vsnwprintf` with the arguments in place of the `va_list`.
     #[doc(hidden)]
     pub fn _snwprintf(buf: *mut WCHAR, n: usize, fmt: *const WCHAR, ...) -> c_int;
+    /// msvcrt's / ntoskrnl's `_snprintf`, for the narrow (`A`) forms.
+    #[doc(hidden)]
+    pub fn _snprintf(
+        buf: *mut core::ffi::c_char,
+        n: usize,
+        fmt: *const core::ffi::c_char,
+        ...
+    ) -> c_int;
 }
 
 /// strsafe.h `StringVPrintfWorkerW` after its `_vsnwprintf` call, given that call's result.

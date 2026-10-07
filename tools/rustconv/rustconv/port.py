@@ -335,8 +335,23 @@ def add_workspace_member(crate: str) -> bool:
 # --------------------------------------------------------------------------------------
 
 
+def _is_header(unit: str) -> bool:
+    return Path(unit).suffix in (".h", ".hpp")
+
+
+def _module_name(unit: str) -> str:
+    """`enum.c` -> `enum`; `identify_funcs.h` -> `identify_funcs_h` (a module may ship both
+    `foo.c` and `foo.h`, and they are different units)."""
+    return f"{Path(unit).stem}_h" if _is_header(unit) else Path(unit).stem
+
+
 def _tu_output(state: dict, tu: str) -> Path:
-    return _crate_dir(state) / "src" / state["stem"] / f"{Path(tu).stem}.rs"
+    return _crate_dir(state) / "src" / state["stem"] / f"{_module_name(tu)}.rs"
+
+
+def _units(state: dict) -> list[str]:
+    """What translate runs: the module's TUs, then the headers `port headers` adopted."""
+    return [*state["tus"], *state.get("header_tus", {})]
 
 
 def _has_body(path: Path) -> bool:
@@ -373,20 +388,25 @@ def stage_translate(
     replay_only: bool = False,
     no_c2rust: list[str] | None = None,
     revisit: list[str] | None = None,
+    units_override: dict[str, str] | None = None,
 ) -> tuple[float, list[str]]:
     """Run translate per TU; return (USD spent, file names of the TUs it ran)."""
     state = load_state(stem)
+    recorded_headers = state.get("header_tus")
+    if units_override is not None:  # a dry run of `port headers`: shown, never recorded
+        state["header_tus"] = units_override
     started = time.time()
     # STICKY, because the anchor is part of what was bought: a TU translated without one
     # replays from the bank only when asked for without one again (replay, escalation).
     if no_c2rust:
-        known = {Path(t).name for t in state["tus"]}
+        known = {Path(t).name for t in _units(state)}
         unknown = sorted(set(no_c2rust) - known)
         if unknown:
             raise PortError(f"--no-c2rust: not a TU of {stem}: {', '.join(unknown)}")
         state["no_c2rust"] = sorted(set(state.get("no_c2rust", [])) | set(no_c2rust))
         _record(state, "no-c2rust", started, tus=state["no_c2rust"])
-    picked = [t for t in state["tus"] if not only or Path(t).name in only]
+    picked = [t for t in _units(state) if not only or Path(t).name in only]
+    vias: dict[str, str] = state.get("header_tus", {})
     # An escalation pass revisits TUs that already have output: their good bodies replay
     # for $0 and only rejected / audit-failing functions are bought again, with thinking.
     # `--rebuy-fn` names bodies inside TUs that already have output, so those are revisited
@@ -403,7 +423,9 @@ def stage_translate(
     )
     spent = 0.0
     done: list[dict] = []
-    arch_only = _arch_only_tus(state, todo)
+    arch_only = _arch_only_tus(state, [*todo, *(vias[t] for t in todo if t in vias)])
+    # A header compiles as its via TU does, so it is anchored on that TU's arch.
+    arch_only.update({t: arch_only[vias[t]] for t in todo if vias.get(t) in arch_only})
     for tu in todo:
         left = cost_cap - spent
         # A replay-only run never buys, so the cap cannot stop it. It used to: `port replay`
@@ -440,6 +462,8 @@ def stage_translate(
             "--concurrency",
             str(concurrency),
         ]
+        if tu in vias:
+            cmd += ["--via", str(REPO / vias[tu])]
         # Per TU, recorded in the state so `port replay` asks the bank the same question.
         if Path(tu).name in state.get("expand_macros", []):
             cmd += ["--expand-local-macros", state["module_dir"]]
@@ -469,7 +493,7 @@ def stage_translate(
         )
         # One log per TU per PASS: the escalation pass used to overwrite the cheap pass's
         # log, which destroyed exactly the token counts the cheap-vs-thinking comparison needs.
-        log = STATE_ROOT / stem / f"translate-{Path(tu).stem}-thinking-{thinking}.log"
+        log = STATE_ROOT / stem / f"translate-{_module_name(tu)}-thinking-{thinking}.log"
         log.write_text(proc.stdout + proc.stderr)
         cost = _run_cost(proc.stdout + proc.stderr)
         # Keyed on the run's own report, not on the output file: a TU revisited for
@@ -519,6 +543,11 @@ def stage_translate(
             f"translate: {Path(tu).name}: rc={proc.returncode} ${cost:.4f} "
             f"{status} ({round(time.time() - t0)}s)"
         )
+    if units_override is not None:
+        if recorded_headers is None:
+            state.pop("header_tus", None)
+        else:
+            state["header_tus"] = recorded_headers
     _record(
         state,
         "translate",
@@ -537,6 +566,9 @@ def stage_translate(
         + (f", {sum(d['to_buy'] for d in done)} fn(s) to buy" if dry_run else "")
     )
     if not dry_run:
+        wired = wire_modules(state)
+        if wired:
+            print(f"translate: module(s) added to lib.rs: {', '.join(wired)}")
         applied = apply_hand_bodies(_crate_dir(state), state["stem"])
         if applied:
             print(f"translate: {len(applied)} hand-ported body(ies) applied: {', '.join(applied)}")
@@ -635,6 +667,147 @@ def _run_cost(log: str) -> float:
 # --------------------------------------------------------------------------------------
 # integrate
 # --------------------------------------------------------------------------------------
+
+
+def wire_modules(state: dict) -> list[str]:
+    """`pub mod X;` in lib.rs's `pub mod <stem> { .. }` for each unit with output and none.
+
+    scaffold writes the module list once, from the TUs; a header unit adopted later (or a
+    TU added to the CMakeLists since) would otherwise be translated and never compiled.
+    """
+    lib = _crate_dir(state) / "src" / "lib.rs"
+    if not lib.is_file():
+        return []
+    text = lib.read_text()
+    block = re.search(rf"(?m)^pub mod {re.escape(state['stem'])} \{{\n(.*?)^\}}", text, re.S)
+    if block is None:
+        return []
+    present = set(re.findall(r"pub mod (?:r#)?(\w+);", block.group(1)))
+    added = [
+        name
+        for unit in _units(state)
+        if (name := _module_name(unit)) not in present and _has_body(_tu_output(state, unit))
+    ]
+    if added:
+        from .profile_derive import _rust_mod_ident
+
+        lines = "".join(f"    pub mod {_rust_mod_ident(n)};\n" for n in added)
+        text = text[: block.end(1)] + lines + text[block.end(1) :]
+        lib.write_text(text)
+    return added
+
+
+# --------------------------------------------------------------------------------------
+# headers
+# --------------------------------------------------------------------------------------
+
+#: Where a header's inline functions are THIS module's to translate. The platform headers
+#: (ddk/psdk/ndk/xdk/crt) are the -sys crates' job: one hand port there serves every module,
+#: where a per-crate copy would be the drift the shared crates exist to prevent.
+_PRIVATE_HEADER_ROOTS = ("sdk/include/reactos",)
+
+
+def discover_header_units(state: dict) -> tuple[dict[str, str], dict[str, str]]:
+    """({header: via TU}, {name: why not}) for the functions the crate still calls, that no
+    translation defines, and that a header in the module's include closure defines inline.
+
+    identify_funcs.h's 44 `AtaDev*` helpers were this: resolve listed them as "defined
+    nowhere in the tree", because they are defined in no .c and no crate, and the macros
+    stage only reads headers inside the module directory. The via TU is the first of the
+    module's TUs whose preprocessor includes the header -- its compile command is exactly
+    what the inline bodies are compiled with in this module. Asked of the preprocessor, not
+    of the CMakeLists, so a flipped (or not-yet-wired) module answers the same.
+    """
+    from .macro_authority import MacroAuthorityError, included_headers
+    from .scanner import scan_file
+
+    resolves = [h for h in state["stages"] if h["stage"] == "resolve"]
+    wanted = set(resolves[-1].get("undefined", [])) if resolves else set()
+    if not wanted:
+        return {}, {}
+    module_dir = (REPO / state["module_dir"]).resolve()
+    called = re.compile(r"\b(" + "|".join(sorted(map(re.escape, wanted))) + r")\s*\(")
+    # header -> the first TU (in the module's own order) whose preprocessor includes it.
+    reached: dict[Path, str] = {}
+    for tu in state["tus"]:
+        try:
+            for header in included_headers(REPO, REPO / tu):
+                reached.setdefault(header, tu)
+        except MacroAuthorityError as e:
+            print(f"headers: {Path(tu).name}: {str(e).splitlines()[0]}")
+    defined_in: dict[str, list[tuple[str, str]]] = {}
+    skipped: dict[str, str] = {}
+    for path, via in sorted(reached.items()):
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        if not called.search(text):
+            continue
+        try:
+            fns = {f.name for f in scan_file(path).functions} & wanted
+        except Exception:  # a header the scanner cannot read defines nothing we can use
+            continue
+        if not fns:
+            continue
+        rel = str(path.relative_to(REPO)) if path.is_relative_to(REPO) else str(path)
+        private = path.is_relative_to(module_dir) or any(
+            path.is_relative_to((REPO / root).resolve()) for root in _PRIVATE_HEADER_ROOTS
+        )
+        if not private:
+            for name in fns:
+                skipped[name] = f"inline in platform header {rel}: the -sys crate's job"
+            continue
+        for name in fns:
+            defined_in.setdefault(name, []).append((rel, via))
+    units: dict[str, str] = {}
+    for name, places in sorted(defined_in.items()):
+        if len({h for h, _ in places}) > 1:
+            skipped[name] = "inline in several headers: " + ", ".join(h for h, _ in places)
+            continue
+        header, via = places[0]
+        units[header] = via
+    return units, skipped
+
+
+def stage_headers(
+    stem: str, *, model: str, cost_cap: float, dry_run: bool, thinking: str = "off"
+) -> float:
+    """Adopt the headers whose inline functions the crate calls, and translate them through
+    a TU that includes them (`translate --via`): sealed and c2rust-anchored like any TU, one
+    module per header (`identify_funcs.h` -> `src/<stem>/identify_funcs_h.rs`). Recorded in
+    the state, so replay and `port fix` treat them as units of the crate from then on."""
+    state = load_state(stem)
+    started = time.time()
+    found, skipped = discover_header_units(state)
+    units = dict(state.get("header_tus", {}))
+    new = {h: v for h, v in found.items() if units.get(h) != v}
+    units.update(found)
+    for name, why in sorted(skipped.items()):
+        print(f"headers: {name}: {why}")
+    for header, via in sorted(new.items()):
+        print(f"headers: {header} (via {via})")
+    if not dry_run:
+        state["header_tus"] = units
+        _record(state, "headers", started, adopted=sorted(new), skipped=skipped)
+    if not units:
+        print("headers: no header defines a function the crate still needs")
+        return 0.0
+    if dry_run:
+        # The adoption is not recorded on a dry run, so translate is shown the units directly.
+        state["header_tus"] = units
+    spent, _ran = stage_translate(
+        stem,
+        model=model,
+        cost_cap=cost_cap,
+        only=[Path(h).name for h in units],
+        dry_run=dry_run,
+        thinking=thinking,
+        units_override=units if dry_run else None,
+    )
+    if not dry_run:
+        stage_integrate(stem)
+    return spent
 
 
 def stage_integrate(stem: str) -> None:
@@ -1467,7 +1640,7 @@ def stage_fix(
     crate_dir = _crate_dir(state)
     root = REPO / "sdk" / "lib" / "rust"
     bank = STATE_ROOT / stem / "fix"
-    tu_by_stem = {Path(t).stem: REPO / t for t in state["tus"]}
+    tu_by_stem = {_module_name(t): REPO / t for t in _units(state)}
     c_cache: dict = {}
     fact_sources = [
         crate_dir / "src" / "prelude.rs",
@@ -1943,6 +2116,14 @@ def _main(args) -> int:
                     thinking="on",
                     escalate=True,
                 )
+        elif args.port_stage == "headers":
+            stage_headers(
+                args.stem,
+                model=args.model,
+                cost_cap=args.cost_cap,
+                dry_run=args.dry_run,
+                thinking=args.thinking,
+            )
         elif args.port_stage == "macros":
             stage_macros(
                 args.stem,
@@ -1999,6 +2180,16 @@ def add_parser(sub) -> None:
     )
     q.add_argument("--drop", action="store_true", help="forget these banked functions")
     q.add_argument("--apply", action="store_true", help="re-apply every banked function")
+    q = stages.add_parser(
+        "headers",
+        help="translate the header inline functions the crate calls, through a TU that "
+        "includes each header (after resolve; replay keeps them)",
+    )
+    q.add_argument("stem")
+    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("--cost-cap", type=float, required=True)
+    q.add_argument("--dry-run", action="store_true")
+    q.add_argument("--thinking", choices=("on", "off"), default="off")
     q = stages.add_parser("macros", help="port the module's own C macros the crate calls")
     q.add_argument("stem")
     q.add_argument("-m", "--model", default="deepseek")
