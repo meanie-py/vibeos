@@ -148,6 +148,14 @@ def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] |
 #: not part of the ABI or the body. The real build is untouched -- these -D only
 #: reach c2rust. They work because the macros are `#ifndef`-guarded in
 #: dll/win32/msvcrt/include/corecrt.h (that guard is the one C change this needed).
+_INTRINSIC_PREFIX = "__rustconv_intrin_"
+
+
+def _unprefix_intrinsics(text: str) -> str:
+    """Undo the _ATTR_NEUTRALIZERS intrinsic renames in c2rust's output."""
+    return text.replace(_INTRINSIC_PREFIX, "")
+
+
 _ATTR_NEUTRALIZERS = (
     "-D__WINE_MALLOC=",
     "-D__WINE_CRT_PRINTF_ATTR(a,b)=",
@@ -163,16 +171,19 @@ _ATTR_NEUTRALIZERS = (
     # and fails LOUDLY rather than being anchored against control flow it does not have.
     # The guard that lets these win is the `#ifndef _SEH2_TRY` in pseh2.h.
     #
-    # MSVC INTERLOCKED INTRINSICS -- the third blocker. Under -fms-extensions clang treats
-    # `_InterlockedOr` & co. as language builtins, c2rust 0.22 has no lowering for them, and it
-    # DROPS every function that calls one ("Unimplemented builtin _InterlockedOr"). That made
-    # five of ntoskrnl/ps/job.c's functions unanchorable, so its required-anchor check refused
-    # the whole TU. Renaming the intrinsic to its un-underscored name turns the declaration
-    # into an ordinary function. The `InterlockedOr` -> `_InterlockedOr` header macro then stops
-    # at `InterlockedOr`, since a macro is not re-expanded inside itself, so the anchor shows
-    # the plain call the Rust uses (ntkrnl_sys::interlocked).
+    # MSVC INTERLOCKED / BIT-SCAN INTRINSICS -- the third blocker. Under -fms-extensions clang
+    # treats `_InterlockedOr`, `_BitScanReverse` & co. as language builtins, c2rust 0.22 has no
+    # lowering for them, and it DROPS every function that calls one ("Unimplemented builtin
+    # _InterlockedOr"). That made five of ntoskrnl/ps/job.c's functions unanchorable, and
+    # most of the new pciidex/atapi stack. Renaming the intrinsic turns its declaration into an
+    # ordinary function. The new name must be one NO header macro maps back: renaming to the
+    # plain `InterlockedOr` worked for job.c, which calls the plain name, but atapi calls
+    # `_InterlockedOr` directly, and `_InterlockedOr -> InterlockedOr -> _InterlockedOr`
+    # (xdk's `#define InterlockedOr _InterlockedOr`) stops back at the builtin. So it gets a
+    # private prefix, and `_unprefix_intrinsics` turns the anchor back into the plain call the
+    # Rust uses (ntkrnl_sys::interlocked).
     *(
-        f"-D_Interlocked{op}{width}=Interlocked{op}{width}"
+        f"-D_Interlocked{op}{width}={_INTRINSIC_PREFIX}Interlocked{op}{width}"
         for op in (
             "Exchange",
             "ExchangeAdd",
@@ -187,6 +198,16 @@ _ATTR_NEUTRALIZERS = (
         )
         for width in ("", "8", "16", "64")
     ),
+    *(
+        f"-D_BitScan{d}{w}={_INTRINSIC_PREFIX}BitScan{d}{w}"
+        for d in ("Forward", "Reverse")
+        for w in ("", "64")
+    ),
+    # The assertion trap and the barrier, which every checked-build NT_VERIFY/NT_ASSERT and
+    # every DMA descriptor publish reach: `DbgRaiseAssertionFailure` is `__int2c` on x86 and
+    # `__break(0xf001)` on arm64, and arm64's KeMemoryBarrier-style publishes use `__dsb`.
+    # These keep their own spelling after the round trip.
+    *(f"-D{name}={_INTRINSIC_PREFIX}{name}" for name in ("__int2c", "__break", "__dsb")),
 )
 
 #: PSEH overrides, tried in order. Both are behaviour-identical to the inert dummy
@@ -519,7 +540,7 @@ def _transpile_attempt(
                 f"{_c2rust_reason(proc.stderr, proc.stdout)}"
             )
             return None
-        result = rs.read_text(errors="replace")
+        result = _unprefix_intrinsics(rs.read_text(errors="replace"))
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
     return result
@@ -631,6 +652,63 @@ def _preprocessor_keeps(
 # defs are likewise excluded — drivers get those exact from bindgen `types_*.rs`; only DATA is
 # fabrication-prone. Scalar #define consts stay the harvest_consts/LLM-preamble job (low risk).
 _DATA_SIG = re.compile(r"^(?:pub\s+)?(static(?:\s+mut)?|const)\s+[A-Za-z_]\w*\s*:", re.M)
+_DATA_NAME = re.compile(r"^(?:pub\s+)?(?:static(?:\s+mut)?|const)\s+([A-Za-z_]\w*)\s*:")
+
+
+def _is_own_data(name: str, c_text: str, own_fns: set[str]) -> bool:
+    """Is a c2rust file-scope item really THIS file's data?
+
+    Two things c2rust emits at file scope are not:
+      * a header's DATA when the TU sees definitions -- atapi.h includes <initguid.h>, so
+        every GUID in wdmguid.h/ntddstor.h/wmidata.h (416 of them) became a `pub static`
+        in each of 15 modules. Only names the .c itself spells are kept.
+      * a function-typed forward declaration, `static IO_COMPLETION_ROUTINE Foo;`, which
+        c2rust turns into `static Foo: IO_COMPLETION_ROUTINE = None;` beside the real
+        `fn Foo` -- E0428, and a NULL where the function should be.
+    """
+    if name in own_fns:
+        return False
+    return re.search(rf"\b{re.escape(name)}\b", c_text) is not None
+
+
+_ANON_TYPE_RE = re.compile(r"\bC2RustUnnamed\w*")
+
+
+def _with_anonymous_types(text: str, items: list[str]) -> list[str]:
+    """Prepend the definitions of the anonymous types the kept data items are typed with.
+
+    A file-scope table of an anonymous struct (`static const struct { USHORT VendorID; ... }
+    AhciControllerList[]`) is `static AhciControllerList: [C2RustUnnamed_158; N]` in c2rust's
+    output, and the harvest kept the static without its type: pciidex had 90 "cannot find
+    struct C2RustUnnamed_*" errors. A named type comes from the island; an anonymous one
+    exists only here, so it travels with its table (recursively, for nested ones).
+    """
+    wanted: list[str] = []
+    pending = sorted(set(_ANON_TYPE_RE.findall("\n".join(items))))
+    seen: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        m = re.search(
+            rf"^((?:#\[[^\]]*\]\n)*)pub (?:struct|union) {re.escape(name)} \{{", text, re.M
+        )
+        if m is None:
+            continue
+        depth, i = 0, text.index("{", m.end() - 1)
+        while i < len(text):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        block = text[m.start() : i + 1]
+        wanted.append(block)
+        pending += [n for n in _ANON_TYPE_RE.findall(block) if n not in seen]
+    return [*reversed(wanted), *items] if wanted else items
 
 
 def build_preamble(
@@ -648,6 +726,9 @@ def build_preamble(
     if text is None:
         return ""
     lines = text.splitlines()
+    # No source to consult (a caller that stubs the transpile): keep every item, as before.
+    c_text = c_file.read_text(errors="replace") if c_file.is_file() else None
+    own_fns = set(re.findall(r"^([A-Za-z_]\w*)\s*\(", c_text, re.M)) if c_text else set()
     out: list[str] = []
     i, n = 0, len(lines)
     while i < n:
@@ -664,15 +745,26 @@ def build_preamble(
                 if depth <= 0 and lines[j].rstrip().endswith(";"):
                     break
                 j += 1
+            # c2rust marks a C global with external linkage `#[no_mangle]`; dropping that line
+            # left setuplib's SpInfExports / SpFileExports / ProcessHeap mangled, and the C
+            # (main.c) and the island's `extern` declarations could not link to them.
+            while start > 0 and lines[start - 1].strip() == "#[no_mangle]":
+                start -= 1
             block = "\n".join(lines[start : j + 1])
             # keep `static*` always; keep `const` ONLY if it carries an aggregate (table/struct),
             # never a bare scalar enum-variant const.
-            if m.group(1).startswith("static") or ("[" in block or "{" in block):
+            named = _DATA_NAME.match(lines[i])  # the item line, not a #[no_mangle] above it
+            if (
+                named is not None
+                and (m.group(1).startswith("static") or ("[" in block or "{" in block))
+                and (c_text is None or _is_own_data(named.group(1), c_text, own_fns))
+            ):
                 out.append(block)
             i = j + 1
             continue
         i += 1
     out = fold_static_initializers(text, out)
+    out = _with_anonymous_types(text, out)
     if verbose:
         print(f"  [c2rust] preamble: {len(out)} data item(s) from {c_file.name}", file=sys.stderr)
     return hoist_wide_temporaries("\n\n".join(out))

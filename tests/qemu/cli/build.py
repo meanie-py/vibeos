@@ -8,6 +8,7 @@ LINK_FAIL distinctly with i386 PE-decoration hints.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
@@ -95,8 +96,37 @@ def _ninja_timeout() -> int:
     return value
 
 
+_NINJA_STATUS = re.compile(r"^\[\d+/\d+\] ")
+
+
+def _failed_edges(blob: str) -> list[tuple[str, list[str]]]:
+    """Each ninja `FAILED: <outputs>` edge with the output it printed, command echo
+    dropped. ninja buffers an edge's output and prints it whole after the FAILED
+    line, so the section ends at the next status line or `ninja: build stopped`."""
+    edges: list[tuple[str, list[str]]] = []
+    cur: list[str] | None = None
+    for ln in blob.splitlines():
+        if ln.startswith("FAILED: "):
+            cur = []
+            edges.append((ln[len("FAILED: ") :].strip(), cur))
+        elif cur is not None:
+            if _NINJA_STATUS.match(ln) or ln.startswith("ninja: "):
+                cur = None
+            else:
+                cur.append(ln)
+    return [(edge, lines[1:]) for edge, lines in edges]  # [0] is the command echo
+
+
 def _classify_build_failure(out: str, err: str, rc: int | None = None) -> tuple[str, list[str]]:
-    blob = out + "\n" + err
+    full = out + "\n" + err
+    # Classify on what the FAILED edge printed, not the whole log. A warm build's
+    # log is mostly other edges' warnings, and three misfiles came from that text:
+    # "error: c_int" in a bindgen warning (a timeout), ld.lld duplicate-symbol
+    # WARNINGS (a rustc error), and on 2026-10-05 `'error: {` source lines quoted
+    # in a cargo warning, which filed a failed mkisofs as CARGO_CHECK_FAIL. Only
+    # when ninja named no failed edge (a wrapper died first) is the whole log used.
+    edges = _failed_edges(full)
+    blob = "\n".join(ln for _, lines in edges for ln in lines) if edges else full
     low = blob.lower()
     # The runner turns a stage timeout into exit 124 (artifacts.Run.run). Classify it
     # before scanning the text: a slow build's log is full of warnings, and
@@ -111,7 +141,7 @@ def _classify_build_failure(out: str, err: str, rc: int | None = None) -> tuple[
     # text and would otherwise be filed as CARGO_CHECK_FAIL or BUILD_FAIL — i.e.
     # as a defect in the diff, which is exactly the wrong cause. It cost four
     # lanes a day on 2026-09-06. The detail always carries free bytes.
-    if hostdisk.looks_like_enospc(blob):
+    if hostdisk.looks_like_enospc(full):
         return "DISK_FULL", hostdisk.enospc_detail()
     if "cmake error" in low:
         return "CMAKE_CONFIGURE_FAIL", [
@@ -131,6 +161,12 @@ def _classify_build_failure(out: str, err: str, rc: int | None = None) -> tuple[
         return "CARGO_CHECK_FAIL", [
             ln.strip() for ln in blob.splitlines() if "error[" in ln or "error:" in ln
         ][:3]
+    if edges:
+        # Name the edge: a media or custom-command failure rarely says "error"
+        # (mkisofs: "No such file or directory. Invalid node - <path>").
+        edge, lines = edges[0]
+        said = [ln.strip() for ln in lines if ln.strip()]
+        return "BUILD_FAIL", [f"FAILED: {edge}"[:200], *said[-2:]]
     return "BUILD_FAIL", [ln.strip() for ln in blob.splitlines() if "error" in ln.lower()][:3]
 
 
@@ -370,9 +406,11 @@ def build(args, repo: Path) -> int:
     # left is the narrower guarantee that the claim tracks the build, not the process.
     # Safe here only because reserve() never BLOCKS: it admits or raises at once.
     try:
-        with hostlock.build_lock(build_dir, arch) as admission:
+        with hostlock.build_lock(build_dir, arch) as admission, contextlib.ExitStack() as reads:
             hostjobs.ensure(repo)
             run.extra["admission"] = admission
+            if not _hold_wow64_source(run, repo, arch, args, reads):
+                return run.finalize(repo)
             with diskspace.reserve(repo, "build"):
                 return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
     except hostlock.buildpolicy.PolicyError as exc:
@@ -766,6 +804,63 @@ def _verify_flag_artifacts(run, repo: Path, build_dir: Path, args) -> bool:
     return ok
 
 
+def _hold_wow64_source(run, repo: Path, arch: str, args, reads: contextlib.ExitStack) -> bool:
+    """Hold build-i386 still while a staging amd64 build reads it. False = refused.
+
+    The amd64 media is partly MADE of build-i386: the SysWOW64 closure is computed
+    from it at configure, the guests link its importlibs, and mkisofs reads ~200MB
+    of its PEs at the very last edge. Nothing serialized that against an i386 build
+    in the same worktree, so `build --arch i386 --clean` beside `build --arch amd64`
+    deleted the cargo-built kernel32.dll out from under the amd64 ISO step
+    (`mkisofs: ... Invalid node - .../build-i386/dll/win32/kernel32/kernel32.dll`,
+    2026-10-05). A warm i386 relink there is worse: a torn read ships silently.
+
+    The fix is the i386 tree's own directory lock, for the whole amd64 build: the
+    read reaches the final edge of the same `ninja livecd` that builds everything,
+    so there is no narrower window to hold. Lock order is always amd64 -> i386 and
+    no i386 build takes amd64's, so this cannot deadlock. The gate is unaffected:
+    it builds amd64 with --no-wow64-stage beside i386 and restages once i386 is
+    done, which is the way to get both in parallel by hand too.
+    """
+    i386 = repo / "build-i386"
+    if arch != "amd64" or getattr(args, "no_wow64_stage", False) or not i386.is_dir():
+        return True
+    t0 = time.monotonic()
+    reader = "amd64 SysWOW64 staging"
+    fd = hostlock.acquire_build_dir(i386, timeout=0, arch="i386", reader=reader)
+    if fd is None:
+        # hostlock's own wait line says "CPU lease"; say what this one is.
+        print(
+            "[build] an i386 build holds build-i386, which this amd64 media stages "
+            "SysWOW64 from: waiting for it (--no-wow64-stage builds beside it instead)",
+            flush=True,
+        )
+        fd = hostlock.acquire_build_dir(i386, arch="i386", reader=reader)
+    if fd is None:
+        run.classification = "BUILD_POLICY_REFUSED"
+        run.add(
+            Stage(
+                "wow64-source",
+                status="fail",
+                detail="timed out waiting for the i386 build this media stages from",
+                salient=["or build with --no-wow64-stage and restage after i386 finishes"],
+            )
+        )
+        return False
+    reads.callback(hostlock.release, fd)
+    waited = time.monotonic() - t0
+    run.add(
+        Stage(
+            "wow64-source",
+            status="ok",
+            detail=f"build-i386 held (waited {waited:.0f}s for an i386 build)"
+            if waited >= 1
+            else "build-i386 held",
+        )
+    )
+    return True
+
+
 def _refresh_wow64_guests(run, repo: Path) -> bool:
     """Make the graded WoW64 guests current. False = hard failure (stage added)."""
     todo = ladder.guests_to_refresh(repo)
@@ -836,6 +931,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # build so a plain build reverts to the APIC HAL. i386 only — amd64
             # hal is always APIC.
             "VIBEOS_PIC_HAL": bool(getattr(args, "hal_pic", False)),
+            # Storage on upstream's new ATA stack instead of uniata (`--ata-stack`).
+            # Reconciled: it changes which driver owns the boot CD, so it must never
+            # outlive the build that asked for it.
+            "VIBEOS_ATA_STACK": bool(getattr(args, "ata_stack", False)),
             # The full winetest corpus (`--rostests`). RECONCILED, not sticky,
             # which is the opposite call from ENABLE_ROSTESTS_KMTESTS below and
             # for a reason: kmtests are cheap to keep and something (conformance)

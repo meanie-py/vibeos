@@ -281,6 +281,131 @@ macro_rules! RtlStringCbPrintfW {
     };
 }
 
+/// :3017 `RtlpStringVPrintfExWorkerW` (with `pcchDestNewLen` NULL, as `RtlStringCchPrintfExW`
+/// passes it), its one `_vsnwprintf` handed in as `print(dest, cch, format)` the way the
+/// HRESULT family's `printf_ex_worker` does. Unlike that family -- and unlike this crate's
+/// `RtlStringCchPrintfW!` -- ReactOS's Ex worker formats into all `cchDest` characters
+/// (`RtlpArrayVPrintfWorkerW`) and does NOT force a terminator; that is ported as written.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn ntstrsafe_printf_ex_worker(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    cbDest: usize,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcchRemaining: *mut usize,
+    dwFlags: crate::DWORD,
+    mut pszFormat: *const WCHAR,
+    print: impl FnOnce(*mut WCHAR, usize, *const WCHAR) -> core::ffi::c_int,
+) -> NTSTATUS {
+    use crate::{
+        STRSAFE_FILL_BEHIND_NULL, STRSAFE_FILL_ON_FAILURE, STRSAFE_IGNORE_NULLS,
+        STRSAFE_NO_TRUNCATION, STRSAFE_NULL_ON_FAILURE, STRSAFE_VALID_FLAGS,
+    };
+    let mut status = STATUS_SUCCESS;
+    let mut pszDestEnd = pszDest;
+    let mut cchRemaining: usize = 0;
+    if dwFlags & !STRSAFE_VALID_FLAGS != 0 {
+        status = STATUS_INVALID_PARAMETER;
+    } else {
+        if dwFlags & STRSAFE_IGNORE_NULLS != 0 {
+            if pszDest.is_null() && (cchDest != 0 || cbDest != 0) {
+                status = STATUS_INVALID_PARAMETER;
+            }
+            if pszFormat.is_null() {
+                pszFormat = crate::EMPTY.as_ptr();
+            }
+        }
+        if status >= 0 {
+            if cchDest == 0 {
+                pszDestEnd = pszDest;
+                cchRemaining = 0;
+                if *pszFormat != 0 {
+                    status = if pszDest.is_null() {
+                        STATUS_INVALID_PARAMETER
+                    } else {
+                        STATUS_BUFFER_OVERFLOW
+                    };
+                }
+            } else {
+                // :2830 RtlpArrayVPrintfWorkerW
+                let iRet = print(pszDest, cchDest, pszFormat);
+                let cchDestNewLen = if iRet < 0 || iRet as usize > cchDest {
+                    status = STATUS_BUFFER_OVERFLOW;
+                    cchDest
+                } else {
+                    iRet as usize
+                };
+                pszDestEnd = pszDest.add(cchDestNewLen);
+                cchRemaining = cchDest - cchDestNewLen;
+                if status >= 0 && dwFlags & STRSAFE_FILL_BEHIND_NULL != 0 && cchRemaining != 0 {
+                    crate::memset(
+                        pszDestEnd as *mut core::ffi::c_void,
+                        crate::fill_pattern(dwFlags),
+                        cchRemaining * core::mem::size_of::<WCHAR>()
+                            + cbDest % core::mem::size_of::<WCHAR>(),
+                    );
+                }
+            }
+        }
+    }
+    if status < 0 && !pszDest.is_null() {
+        if dwFlags & STRSAFE_FILL_ON_FAILURE != 0 {
+            crate::memset(pszDest as *mut core::ffi::c_void, crate::fill_pattern(dwFlags), cbDest);
+            if crate::fill_pattern(dwFlags) == 0 {
+                pszDestEnd = pszDest;
+                cchRemaining = cchDest;
+            } else if cchDest > 0 {
+                pszDestEnd = pszDest.add(cchDest - 1);
+                cchRemaining = 1;
+                *pszDestEnd = 0;
+            }
+        }
+        if dwFlags & (STRSAFE_NULL_ON_FAILURE | STRSAFE_NO_TRUNCATION) != 0 && cchDest > 0 {
+            pszDestEnd = pszDest;
+            cchRemaining = cchDest;
+            *pszDestEnd = 0;
+        }
+    }
+    if status >= 0 || status == STATUS_BUFFER_OVERFLOW {
+        if !ppszDestEnd.is_null() {
+            *ppszDestEnd = pszDestEnd;
+        }
+        if !pcchRemaining.is_null() {
+            *pcchRemaining = cchRemaining;
+        }
+    }
+    status
+}
+
+/// :1246 `RtlStringCchPrintfExW(pszDest, cchDest, ppszDestEnd, pcchRemaining, dwFlags,
+/// pszFormat, ...)`. pciidex builds its multi-sz hardware IDs with it.
+#[macro_export]
+macro_rules! RtlStringCchPrintfExW {
+    ($pszDest:expr, $cchDest:expr, $ppszDestEnd:expr, $pcchRemaining:expr, $dwFlags:expr,
+     $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut $crate::WCHAR = $pszDest as _;
+        let cchDest: usize = $cchDest as usize;
+        if cchDest > $crate::ntstrsafe::NTSTRSAFE_MAX_CCH {
+            if cchDest > 0 {
+                *pszDest = 0;
+            }
+            $crate::ntstrsafe::STATUS_INVALID_PARAMETER
+        } else {
+            $crate::ntstrsafe::ntstrsafe_printf_ex_worker(
+                pszDest,
+                cchDest,
+                cchDest * core::mem::size_of::<$crate::WCHAR>(),
+                $ppszDestEnd as _,
+                $pcchRemaining as _,
+                $dwFlags as _,
+                $pszFormat as _,
+                |d, n, f| $crate::_snwprintf(d, n, f $(, $arg)*),
+            )
+        }
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -380,4 +505,37 @@ mod tests {
         );
         assert_eq!(buf[3], 1);
     }
+
+    #[test]
+    fn printf_ex_reports_end_and_remaining_and_does_not_force_a_terminator() {
+        let mut buf = [0xFFFFu16; 8];
+        let mut end: *mut WCHAR = core::ptr::null_mut();
+        let mut rem: usize = 0;
+        let st = unsafe {
+            ntstrsafe_printf_ex_worker(buf.as_mut_ptr(), 8, 16, &mut end, &mut rem, 0, w("x").as_ptr(), |d, _n, _f| {
+                *d = b'a' as u16;
+                *d.add(1) = b'b' as u16;
+                *d.add(2) = 0;
+                2
+            })
+        };
+        assert_eq!(st, STATUS_SUCCESS);
+        assert_eq!(rem, 6);
+        assert_eq!(end, unsafe { buf.as_mut_ptr().add(2) });
+        // Overflow: the whole buffer is used, nothing remains, and no NUL is forced.
+        let st = unsafe {
+            ntstrsafe_printf_ex_worker(buf.as_mut_ptr(), 8, 16, &mut end, &mut rem, 0, w("x").as_ptr(), |_d, _n, _f| -1)
+        };
+        assert_eq!(st, STATUS_BUFFER_OVERFLOW);
+        assert_eq!(rem, 0);
+        assert_eq!(end, unsafe { buf.as_mut_ptr().add(8) });
+        // An invalid flag is refused and leaves the outputs alone.
+        rem = 99;
+        let st = unsafe {
+            ntstrsafe_printf_ex_worker(buf.as_mut_ptr(), 8, 16, &mut end, &mut rem, 0x8000_0000, w("x").as_ptr(), |_d, _n, _f| 0)
+        };
+        assert_eq!(st, STATUS_INVALID_PARAMETER);
+        assert_eq!(rem, 99);
+    }
+
 }

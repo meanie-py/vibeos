@@ -128,6 +128,95 @@ static int add_loadconfig(unsigned char *buffer, PIMAGE_NT_HEADERS nt_header)
     return 1;
 }
 
+/* The delay-import table that sdk/tools/gen-delaylib.py brackets in .CRT$VBDLYIMPA/B/C:
+ * a 16-byte marker, then one ImgDelayDescr per delay-loaded DLL, then a null descriptor.
+ * lld fills DataDirectory[DELAY_IMPORT] only for delay imports it generated itself, so it
+ * stays empty for ours; this points it at the table. Must match gen-delaylib.py. */
+#define DELAY_TABLE_MAGIC "VIBEOS-DLYIMP-01"
+#define DELAY_TABLE_MAGIC_LEN 16
+#define DELAY_DESCRIPTOR_SIZE 32
+#define DIRECTORY_ENTRY_DELAY_IMPORT 13
+
+static int set_delayimport(unsigned char *buffer, PIMAGE_NT_HEADERS nt_header)
+{
+    PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(nt_header);
+    PIMAGE_SECTION_HEADER found_section = NULL;
+    unsigned char *optional = (unsigned char *)&nt_header->OptionalHeader;
+    DWORD *directory;
+    DWORD found_offset = 0, table_rva, n = 0;
+    unsigned int i, hits = 0;
+
+    /* DataDirectory sits at +96 in a PE32 optional header and +112 in PE32+; the
+     * host's IMAGE_NT_HEADERS describes only one of them. */
+    if (*(WORD *)optional == 0x20b)
+        directory = (DWORD *)(optional + 112);
+    else if (*(WORD *)optional == 0x10b)
+        directory = (DWORD *)(optional + 96);
+    else
+    {
+        error("Unknown optional header magic %x\n", *(WORD *)optional);
+        return 1;
+    }
+
+    for (i = 0; i < nt_header->FileHeader.NumberOfSections; i++, section++)
+    {
+        DWORD off;
+        for (off = 0; off + DELAY_TABLE_MAGIC_LEN <= section->SizeOfRawData; off += 4)
+        {
+            if (memcmp(buffer + section->PointerToRawData + off, DELAY_TABLE_MAGIC, DELAY_TABLE_MAGIC_LEN))
+                continue;
+            hits++;
+            found_section = section;
+            found_offset = off;
+        }
+    }
+
+    /* No delay library got linked in: none of its functions was referenced. */
+    if (hits == 0)
+        return 0;
+    if (hits > 1)
+    {
+        error("Delay-import table marker found %u times\n", hits);
+        return 1;
+    }
+
+    table_rva = found_section->VirtualAddress + found_offset + DELAY_TABLE_MAGIC_LEN;
+    for (;;)
+    {
+        DWORD off = found_offset + DELAY_TABLE_MAGIC_LEN + n * DELAY_DESCRIPTOR_SIZE;
+        DWORD *descriptor;
+        static const unsigned char zero[DELAY_DESCRIPTOR_SIZE];
+
+        if (off + DELAY_DESCRIPTOR_SIZE > found_section->SizeOfRawData)
+        {
+            error("Delay-import table runs off the end of its section\n");
+            return 1;
+        }
+        descriptor = (DWORD *)(buffer + found_section->PointerToRawData + off);
+        if (!memcmp(descriptor, zero, DELAY_DESCRIPTOR_SIZE))
+            break;
+        /* grAttrs must be dlattrRva, and the DLL name must resolve inside the image. */
+        if (descriptor[0] != 1 || rva_to_ptr(buffer, nt_header, descriptor[1]) == NULL)
+        {
+            error("Delay-import descriptor %u is malformed (grAttrs %x, rvaDLLName %x)\n",
+                  n, descriptor[0], descriptor[1]);
+            return 1;
+        }
+        n++;
+    }
+
+    if (n == 0)
+    {
+        error("Delay-import table marker with no descriptors\n");
+        return 1;
+    }
+
+    /* Size covers the null terminator, as the MSVC linker's does. */
+    directory[DIRECTORY_ENTRY_DELAY_IMPORT * 2] = table_rva;
+    directory[DIRECTORY_ENTRY_DELAY_IMPORT * 2 + 1] = (n + 1) * DELAY_DESCRIPTOR_SIZE;
+    return 0;
+}
+
 static int driver_fixup(enum fixup_mode mode, unsigned char *buffer, PIMAGE_NT_HEADERS nt_header)
 {
     /* GNU LD just doesn't know what a driver is, and has notably no idea of paged vs non-paged sections */
@@ -362,6 +451,8 @@ print_usage(void)
     printf("Usage: %s <options> <filename>\n\n", g_ApplicationName);
     printf("<options> can be one of the following options:\n"
            "  --loadconfig          Fix the LOAD_CONFIG directory entry;\n"
+           "  --delayimport         Point the DELAY_IMPORT directory entry at the table\n"
+           "                        gen-delaylib.py's delay libraries bracket;\n"
            "  --kernelmodedriver    Fix code, data and resource sections for driver images;\n"
            "  --wdmdriver           Fix code, data and resource sections for WDM drivers;\n"
            "  --kerneldll           Fix code, data and resource sections for Kernel-Mode DLLs;\n"
@@ -377,6 +468,7 @@ int main(int argc, char **argv)
 {
     int result = 1;
     enum fixup_mode mode = MODE_NONE;
+    int delayimport = 0;
     int i;
     FILE* file;
     size_t len;
@@ -429,6 +521,11 @@ int main(int argc, char **argv)
         else if (strncmp(&argv[i][2], "section:", 8) == 0)
         {
             /* Section attributes override, will be handled later */
+        }
+        else if (strcmp(&argv[i][2], "delayimport") == 0)
+        {
+            /* Independent of the mode; handled after it */
+            delayimport = 1;
         }
         else
         {
@@ -506,6 +603,9 @@ int main(int argc, char **argv)
         else
             result = driver_fixup(mode, buffer, nt_header);
     }
+
+    if (delayimport && result == 0)
+        result = set_delayimport(buffer, nt_header);
 
     /* Apply any section attributes override */
     for (i = 1; (i < argc) && (result == 0); ++i)

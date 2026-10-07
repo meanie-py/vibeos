@@ -5176,7 +5176,20 @@ in user memory must pin that count in the copy, or a racing caller grows it past
 allocation. `tools/scan_raw_user_access.py` lists the Nt* syscalls that still touch a pointer
 argument raw; its baseline is EMPTY, so any new row fails `vibeos-cli check`. Use
 `read_back` (load) / `write_back` (store) for a single value; read a value that sizes or
-validates something ONCE and use the copy, never `(*p).Length` then `*p`.
+validates something ONCE and use the copy, never `(*p).Length` then `*p`. The scanner follows
+the pointer into callees (a bare, cast or `opaque_ptr` argument), so a helper shared with
+kernel callers needs its user arm spelled `if mode != KernelMode { .. } else { .. }` (or an
+early return from the user arm) — anything subtler is a row. It cannot see a pointer read OUT
+of a user structure: an embedded buffer or `UNICODE_STRING.Buffer` is user memory too.
+
+**Syscalls are not the only door, and the scanner only watches syscalls.** `int 2d` hands the
+kernel a user pointer in a register, which arrives as `ExceptionInformation[1]`. KdpStub's
+debugger-less echo of `BREAKPOINT_PRINT` to the UART, which is our addition with no C to drop
+a probe from, read that pointer in place. A user-mode panic whose report ran into garbage
+bugchecked the box (0x1E/0x50 in `KdpStub`). Capture it as `KdpPrint` does
+(`safe_copy_from_user` into a bounded local, passing PreviousMode). Any trap-path handler that
+reads an exception record's parameters is in this class. `sehtest`'s `bad-print-buffer` probe
+covers this one on every amd64 boot.
 
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
 HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
@@ -5391,6 +5404,17 @@ is the shape of the result, not the code: **one arch hanging while the others ar
 arch-conditional in the C you did not carry**, and the C comment usually names the reason.
 Carrying it is `#[cfg(target_arch = "aarch64")]`, keeping BOTH arms and the comment, so whoever
 fixes the underlying win32k dispatch can find and delete it.
+
+**Variant: an `#ifdef _M_IX86` around x86 port I/O, dropped, faults on arm64 — but only when
+the code first runs there.** scsiport's ISR writes QEMU debugcon markers
+(`WRITE_PORT_UCHAR((PUCHAR)0xE9, '#')`) under `#ifdef _M_IX86`; the Rust wrote them on every
+arch. arm64 has no I/O ports, so the HAL's `WRITE_PORT_UCHAR` is a store to virtual address
+0xE9: six access violations per interrupt, at DIRQL. It sat latent for months because no
+SCSIPORT adapter had ever interrupted on arm64; vioblk's first one (2026-10-06) produced
+`[IRQL] VIOLATION: raise-DOWN 8 -> 2` once per disk read — the exception dispatch takes a
+DISPATCH-level spinlock in `RtlPcToFileHeader` — and then `BUGCHECK 0xB8`. The tell is
+`kernel-fault-pc` in the flight recorder landing in `WRITE_PORT_*`. Carry the guard as
+`#[cfg(target_arch = "x86")]` (`_M_IX86` is i386 only, not amd64).
 
 Three things that bite:
 - **Guards are plural.** wldap32 branches on EIGHT (`HAVE_LDAP`, `HAVE_LDAP_H`, and six
@@ -11420,6 +11444,19 @@ returns (`NtTestAlert`, `NtSetInformationThread`).
 **Generalize.** A user-mode crash at a PC equal to a byte count is a status block written late.
 Check that every path back to user mode delivers kernel APCs.
 
+**Sibling (USER APCs, same root shape).** `NtContinue(ctx, TestAlert=TRUE)` is the loop by which
+`KiUserApcDispatcher` drains more than one user APC queued at a single alertable wait: the first
+APC's dispatcher ends in it, and the TestAlert must deliver the next before `ctx` resumes. arm64
+`NtContinue` calls `KeTestAlertThread` (which sets `UserApcPending`) and then exits through
+`KiExceptionExit` — a bare `eret`, NOT the SVC-dispatch tail — so the just-marked user APC was
+never delivered and the second `QueueUserAPC` ran only at the thread's next trap. `SleepEx`
+returned `WAIT_IO_COMPLETION` after one APC instead of both (first seen draining chained APCs for
+an x86-64 FEX guest, apc64 rung 2). **Fix:** `NtContinue` (ke/except.rs), arm64 only, delivers the
+pending user APC itself after `KeTestAlertThread` — `KiDeliverApc(UserMode, …)` at `APC_LEVEL`
+when returning to EL0 with `UserApcPending` set, mirroring `KiDeliverUserApcArm64`. amd64's trap
+return already checks this; arm64's `KiExceptionExit` asm does not, so any shortcut return that
+bypasses the SVC tail owes the check.
+
 ### A kernel return address holds a DISK_GEOMETRY: the completion APC ran after its caller returned
 **Symptom.** Pi 4, once the SD card became writable: a bugcheck in stortest's thread, either 0x1E
 with `PC=LR=0` and `FP=0x0000_0200_0000_003F` (`SectorsPerTrack=63, BytesPerSector=512`, the tail
@@ -12680,6 +12717,14 @@ introduced at any heap exit — it is an external stray write.**
 - **Fix:** set all three in the miniport. scsiport's own `[SCSIPORT] resources:` diagnostic
   also dereferenced `AccessRanges[0]` unconditionally and crashed (0x1E) for a miniport
   declaring no access ranges; it is guarded now.
+- **arm64: `DriverEntry` fails with `STATUS_DEVICE_DOES_NOT_EXIST` and no `[SCSIPORT] pci scan`
+  line.** Three platform gaps a PCIBus miniport hits in order, none of them the miniport's:
+  the hardware tree had no PCI bus (scsiport asks `IoQueryDeviceDescription(PCIBus)` before
+  scanning), `HalAssignSlotResources` was a `STATUS_NOT_IMPLEMENTED` stub, and firmware leaves
+  every `InterruptLine` at 0, which scsiport reads as "no interrupt" and skips the adapter.
+  Now the UEFI loader reports the bus from the ACPI MCFG and programs `InterruptLine` with
+  the GIC INTID from QEMU virt's INTx swizzle (`uefihw.rs`), and the arm64 HAL assigns slot
+  resources over ECAM. The arm64 HAL treats a PCI interrupt level as the INTID.
 
 ### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
 - **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,

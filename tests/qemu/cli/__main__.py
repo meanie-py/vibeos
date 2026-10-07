@@ -194,11 +194,11 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument(
         "--no-wow64-stage",
         action="store_true",
-        help="amd64: build the media WITHOUT the SysWOW64 set. The staging "
-        "snapshots build-i386 at configure time, so an amd64 build running "
-        "beside a cold i386 one reads a half-cleaned tree and fails its import "
-        "closure. `gate` passes this when it builds both, then restages amd64 "
-        "once i386 is done. RECONCILED, not sticky",
+        help="amd64: build the media WITHOUT the SysWOW64 set. A staging amd64 "
+        "build reads build-i386 from configure to its last (mkisofs) edge, so it "
+        "holds build-i386's directory lock throughout and waits out any i386 "
+        "build in this worktree; pass this to run beside one instead. `gate` "
+        "does, then restages amd64 once i386 is done. RECONCILED, not sticky",
     )
     b.add_argument(
         "--hal-pic",
@@ -208,6 +208,14 @@ def build_parser() -> argparse.ArgumentParser:
         "with the legacy 8259 PIC interrupt model instead of the DEFAULT "
         "LAPIC/IOAPIC/TPR APIC HAL (-DVIBEOS_PIC_HAL=ON). i386 only (amd64 hal "
         "is always APIC); a plain build is the APIC HAL",
+    )
+    b.add_argument(
+        "--ata-stack",
+        action="store_true",
+        help="boot storage on upstream's new ATA stack (pciide + pciidex + atapi, and "
+        "legide on i386) instead of uniata (-DVIBEOS_ATA_STACK=ON): re-points the "
+        "CriticalDeviceDatabase for PCI IDE/RAID/AHCI and *PNP0600. RECONCILED, not "
+        "sticky: a plain build is uniata again",
     )
     b.add_argument("--strict", action="store_true")
     b.add_argument(
@@ -297,6 +305,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="x86 only: put the boot CD on an ich9-ahci controller instead of IDE, "
         "so uniata's AHCI path carries the whole boot. The boot FAILS "
         "(AHCI_NOT_ENGAGED) unless uniata reports finding the controller",
+    )
+    s.add_argument(
+        "--nvme",
+        action="store_true",
+        help="attach an NVMe controller with one 64M FAT namespace (VIBEOS_QEMU_NVME=1, "
+        "every arch). The boot FAILS (NVME_NOT_ENGAGED) unless nvme.sys publishes the "
+        "namespace as a disk; tests/qemu/test_nvme.py then drives it from the desktop",
     )
     s.add_argument(
         "--no-net",

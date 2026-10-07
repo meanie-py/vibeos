@@ -11,12 +11,12 @@
 # into the cmake atapi.sys with atapi.c commented out; #[no_mangle] DriverEntry
 # takes over. Depends on ntkrnl-sys. Built for all 3 arches.
 [package]
-name = "atapi-rust"
+name = "atapi-legacy-rust"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "atapi_rust"
+name = "atapi_legacy_rust"
 path = "src/lib.rs"
 crate-type = ["staticlib"]
 

@@ -5,6 +5,23 @@
 > The original TCG-only history below is disputed by the owner's report that
 > ARM64 VibeOS already works under Linux KVM. Its ordering claims remain
 > unmeasured; do not repeat them as findings. No AWS resources were created.
+>
+> **2026-10-06: the target is wrong, per the owner.** The aim is vibeos booting
+> *as* the Graviton instance (bare metal, on Nitro), not vibeos running in QEMU/KVM
+> on a Graviton host, which is what everything below plans. On Nitro the OS sees the
+> hardware directly, so the work is drivers, not accelerator plumbing:
+>
+> - **Disks are NVMe** (EBS and instance store alike): `nvme.sys`, done on all three
+>   arches (2026-10-06), on INTx interrupts. Nitro's device IDs are untested.
+> - **The NIC is ENA** (Elastic Network Adapter), not e1000 or virtio: missing.
+> - **PCIe interrupts:** Nitro devices expect MSI-X, which on arm64 is the GICv3 ITS:
+>   missing. nvme.sys uses INTx, and falls back to a 10 ms poll where none arrives.
+> - **PCIe config space:** the arm64 HAL's ECAM reads bus 0 of one segment only;
+>   Graviton's layout is unmeasured.
+> - **Boot and console:** UEFI and ACPI, which arm64 vibeos already uses; the serial
+>   console's UART type is unverified.
+>
+> The rest of this document is kept for its history, not as the plan.
 
 
 **Worktree** `/home/curi/Projects/os-playground/vibeos-graviton` · **branch** `graviton-spike`

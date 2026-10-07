@@ -187,6 +187,9 @@ def test_facts_block_round_trips_and_types_by_typedef(tmp_path):
     # Unknown typedef: its LLP64 canonical type -- C long is 32-bit on Windows.
     assert pr.fact_rust_type("ULONG|unsigned long", 1, set()) == "u32"
     assert pr.fact_rust_type("int", 1, set()) == "i32"
+    # Kernel crates spell a bare non-negative `int` macro the way bindgen does.
+    assert pr.fact_rust_type("int", 1, set(), bare_int_unsigned=True) == "u32"
+    assert pr.fact_rust_type("int", -1, set(), bare_int_unsigned=True) == "i32"
     assert pr.looks_constant("STATUS_X") and not pr.looks_constant("Foo")
 
 

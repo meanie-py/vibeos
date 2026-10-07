@@ -372,6 +372,49 @@ def _resolve_path(rust_path: str, crate: Path) -> list[Path]:
     return out
 
 
+_INLINE_GLOB_RE = re.compile(r"pub use super::(\w+)::\*")
+
+
+def _resolve_inline_module(rust_path: str, crate: Path) -> list[Path]:
+    """`ntkrnl_sys::ddk` is no file: lib.rs declares `pub mod ddk { pub use super::bindgen_
+    <arch>::*; ... }`. Follow its `super::X::*` globs to the files (amd64's arm only, plus the
+    arch-independent ones -- the names are the same on every arch)."""
+    segs = rust_path.split("::")
+    if len(segs) != 2 or segs[0] in ("crate", "self"):
+        return []
+    root = crate.parent / segs[0].replace("_", "-") / "src"
+    lib = root / "lib.rs"
+    if not lib.is_file():
+        return []
+    m = re.search(rf"^pub mod {re.escape(segs[1])}\s*\{{(.*?)^\}}", lib.read_text(), re.S | re.M)
+    if not m:
+        return []
+    out = []
+    for mod in _INLINE_GLOB_RE.findall(m.group(1)):
+        if mod.endswith(("_i386", "_arm64")):
+            continue
+        out += [c for c in (root / f"{mod}.rs", root / mod / "mod.rs") if c.is_file()]
+    return out
+
+
+_PATH_MOD_RE = re.compile(r'#\[path\s*=\s*"([^"]+)"\]\s*mod\s+(\w+)\s*;')
+
+
+def _path_module_globs(f: Path) -> list[Path]:
+    """A dispatcher (`types.rs`) that `#[path]`-includes per-arch files and re-exports one with
+    `pub use types_arch::*;`: the names live in the included file (amd64's, as above)."""
+    text = f.read_text(errors="replace")
+    out = []
+    for target, mod in _PATH_MOD_RE.findall(text):
+        if re.search(rf"pub use {re.escape(mod)}::\*", text) and not target.endswith(
+            ("_i386.rs", "_arm64.rs")
+        ):
+            cand = f.parent / target
+            if cand.is_file():
+                out.append(cand)
+    return out
+
+
 def provided_names(crate: Path) -> set[str]:
     """Every name reachable in a module that does `use crate::prelude::*;`.
 
@@ -398,8 +441,10 @@ def provided_names(crate: Path) -> set[str]:
     names = _harvest_file(prelude)
 
     for path in _GLOB_USE_RE.findall(text):
-        for f in _resolve_path(path, crate):
+        for f in _resolve_path(path, crate) or _resolve_inline_module(path, crate):
             names |= _harvest_file(f)
+            for g in _path_module_globs(f):
+                names |= _harvest_file(g)
 
     for _path, items in _LIST_USE_RE.findall(text):
         for item in items.split(","):
@@ -541,6 +586,12 @@ def _split_top_commas(body: str) -> list[str]:
     return parts
 
 
+_LITERAL_OR_COMMENT = re.compile(
+    r'//[^\n]*|/\*.*?\*/|b?r#*"(?:[^"]|"(?!#))*"#*|b?"(?:\\.|[^"\\])*"|b?\'(?:\\.|[^\'\\])\'',
+    re.S,
+)
+
+
 def fix_macro_calls(src: str, macros: set[str], defined: set[str]) -> tuple[str, list[str]]:
     """Turn `NAME(args)` into `NAME!(args)` for every prelude macro. Returns (src, fixed).
 
@@ -563,14 +614,18 @@ def fix_macro_calls(src: str, macros: set[str], defined: set[str]) -> tuple[str,
         # boolean test and is 17 of mbcs.c's 42 `MSVCRT_CHECK_PMT` sites.
         pattern = re.compile(rf"(?<!\w){re.escape(name)}(?!\s*!)\s*\(")
 
-        def bang(m: re.Match[str], name: str = name) -> str:
+        # Matched on a copy with string literals and comments blanked: install.c's
+        # `DPRINT1("SpInfFindFirstLine(\"SourceDisksNames\", ...) failed")` had its MESSAGE
+        # rewritten to `SpInfFindFirstLine!(`.
+        masked = _LITERAL_OR_COMMENT.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), src)
+        count = 0
+        for m in reversed(list(pattern.finditer(masked))):
             # `fn NAME(` is a DECLARATION (an extern decl of what the prelude has as a
             # macro): `fn DPRINT1!(` is not Rust. integrate() drops such decls as provided.
-            if re.search(r"\bfn\s+$", m.string[max(0, m.start() - 16) : m.start()]):
-                return m.group(0)
-            return f"{name}!("
-
-        src, count = pattern.subn(bang, src)
+            if re.search(r"\bfn\s+$", masked[max(0, m.start() - 16) : m.start()]):
+                continue
+            src = src[: m.start()] + f"{name}!(" + src[m.end() :]
+            count += 1
         if count:
             fixed.append(f"{name}×{count}")
     return src, fixed
@@ -596,6 +651,11 @@ class Report:
     kept_statics: list[str] = field(default_factory=list)  # e.g. IID_* link symbols
     promoted_pub: list[str] = field(default_factory=list)
     macro_calls_fixed: list[str] = field(default_factory=list)  # `NAME(x)` -> `NAME!(x)`
+    multichar_folded: list[str] = field(default_factory=list)  # C `'PedI'` -> 0x50656449
+    dropped_bad_imports: list[str] = field(default_factory=list)  # `use sys::m::{Nope}`
+    indexed_offsets: int = 0  # offset_of!(T, a[i]) -> FIELD_OFFSET!
+    dropped_fn_statics: list[str] = field(default_factory=list)  # `static F: FNTYPE = None;`
+    dropped_type_defs: list[str] = field(default_factory=list)  # re-declared provided types
     blocks_removed: int = 0
 
     @property
@@ -652,6 +712,278 @@ def _swap_substrate(src: str, report: Report) -> str:
     return "".join(lines)
 
 
+# C's multi-character constant (`'PedI'`, the pool-tag idiom) is an int whose bytes are the
+# characters in BIG-endian order (clang/GCC). In Rust it is not a literal at all -- it is a
+# parse error that hides every other error in the file -- so fold it to its value. Two to
+# four printable ASCII characters between quotes is never valid Rust, so nothing else matches.
+# Guarded both ways against lifetimes: `<'a, 'b>` would otherwise read `'a, '` as one.
+_MULTICHAR_RE = re.compile(r"(?<![<&\w])'([\x20-\x26\x28-\x5b\x5d-\x7e]{2,4})'(?![\w])")
+
+
+def fold_multichar_literals(src: str) -> tuple[str, list[str]]:
+    folded: list[str] = []
+    out: list[str] = []
+    for line in src.splitlines(keepends=True):
+        code, sep, comment = line.partition("//")
+        if '"' in code:  # a string could hold the pattern; leave the line to the model
+            out.append(line)
+            continue
+
+        def repl(m: re.Match) -> str:
+            value = 0
+            for ch in m.group(1):
+                value = (value << 8) | ord(ch)
+            folded.append(m.group(1))
+            return f"0x{value:08X} /* '{m.group(1)}' */"
+
+        out.append(_MULTICHAR_RE.sub(repl, code) + sep + comment)
+    return "".join(out), folded
+
+
+_SYS_NAMES_CACHE: dict[Path, frozenset[str]] = {}
+_SYS_ITEM_RE = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
+    r"(?:fn|const|static(?:\s+mut)?|struct|union|enum|type|trait)\s+([A-Za-z_]\w*)",
+    re.M,
+)
+_EXPLICIT_SYS_USE_RE = re.compile(
+    r"^use\s+((?:ntkrnl_sys|ntdll_sys)(?:::\w+)*)::\{([^}]*)\}\s*;[ \t]*\n?", re.M
+)
+
+
+def _sys_names(workspace: Path, crate_ident: str) -> frozenset[str]:
+    """Every item name the -sys crate defines anywhere (no module scoping: a cheap filter)."""
+    root = (workspace / crate_ident.replace("_", "-") / "src").resolve()
+    if root not in _SYS_NAMES_CACHE:
+        names: set[str] = set()
+        # Imported here, not at module scope: `port` runs rustconv with cwd tools/rustconv,
+        # where `tools.` is not importable, and this module is on __main__'s import path.
+        try:
+            from tools.source_walk import source_files
+        except ModuleNotFoundError:
+            import sys
+
+            sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+            from tools.source_walk import source_files
+
+        for rs in source_files(root) if root.is_dir() else []:
+            names |= set(_SYS_ITEM_RE.findall(rs.read_text(errors="replace")))
+        _SYS_NAMES_CACHE[root] = frozenset(names)
+    return _SYS_NAMES_CACHE[root]
+
+
+_MODULE_NAMES_CACHE: dict[tuple[Path, str], frozenset[str]] = {}
+_TOP_ITEM_RE = re.compile(
+    r"^(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
+    r"(?:fn|const|static(?:\s+mut)?|struct|union|enum|type|trait)\s+([A-Za-z_]\w*)",
+    re.M,
+)
+
+
+def _item_names(f: Path) -> set[str]:
+    """Column-0 items plus the fns of its extern blocks -- never an indented METHOD (bindgen's
+    bitfield accessors are `pub fn Level(&self)`, which is not an importable item)."""
+    text = f.read_text(errors="replace")
+    names = set(_TOP_ITEM_RE.findall(text))
+    for _, _, body, _ in extern_block_spans(text):
+        names |= set(re.findall(r"\bfn\s+([A-Za-z_]\w*)", body))
+    return names
+
+
+def _module_names(workspace: Path, path: str) -> frozenset[str]:
+    """Item names THE NAMED MODULE provides on EVERY arch (`ntkrnl_sys::ddk` -> its
+    per-arch bindgen re-exports, intersected).
+
+    A crate-wide name set let `Level`/`Mask` through because bitfield accessors are spelled
+    `pub fn`, and a one-arch view let `DRIVER_INITIALIZE` through, which i386's ddk lacks:
+    an unconditional `use` of either fails the whole statement on some target. Empty when
+    the module cannot be located."""
+    key = (workspace.resolve(), path)
+    if key in _MODULE_NAMES_CACHE:
+        return _MODULE_NAMES_CACHE[key]
+    segs = path.split("::")
+    root = workspace / segs[0].replace("_", "-") / "src"
+    per_arch: list[set[str]] = []
+    lib = root / "lib.rs"
+    m = (
+        re.search(rf"^pub mod {re.escape(segs[1])}\s*\{{(.*?)^\}}", lib.read_text(), re.S | re.M)
+        if len(segs) == 2 and lib.is_file()
+        else None
+    )
+    if m:
+        mods = _INLINE_GLOB_RE.findall(m.group(1))
+        common = [x for x in mods if not x.endswith(("_i386", "_amd64", "_arm64"))]
+        for arch in ("i386", "amd64", "arm64"):
+            names: set[str] = set()
+            for mod in [*common, *(x for x in mods if x.endswith(f"_{arch}"))]:
+                for c in (root / f"{mod}.rs", root / mod / "mod.rs"):
+                    if c.is_file():
+                        names |= _item_names(c)
+            per_arch.append(names)
+    else:
+        files = _resolve_path(path, workspace / "__probe__")
+        if files:
+            per_arch.append(set().union(*(_item_names(f) for f in files)))
+    result = frozenset(set.intersection(*per_arch)) if per_arch else frozenset()
+    _MODULE_NAMES_CACHE[key] = result
+    return result
+
+
+def drop_unknown_substrate_imports(src: str, workspace: Path) -> tuple[str, list[str]]:
+    """Drop names an explicit `use ntkrnl_sys::ddk::{...};` list asks for that do not exist.
+
+    The kernel import header lists C's bare enumerators (`Latched`, `PCIConfiguration`), which
+    bindgen spells with their enum prefix; one unknown name fails the WHOLE `use` (E0432) and
+    every other name in it with it. A dropped name stays unresolved in the body, where
+    `port resolve` aliases the bare enumerator to the prefixed constant.
+    """
+    dropped: list[str] = []
+
+    def repl(m: re.Match) -> str:
+        path, items = m.group(1), m.group(2)
+        known = _module_names(workspace, path) or _sys_names(workspace, path.split("::")[0])
+        if not known:
+            return m.group(0)
+        keep = []
+        for item in (i.strip() for i in items.split(",")):
+            if not item:
+                continue
+            name = item.split()[0]
+            if name in known or name == "self":
+                keep.append(item)
+            else:
+                dropped.append(name)
+        if not keep:
+            return ""
+        return f"use {path}::{{{', '.join(keep)}}};\n"
+
+    return _EXPLICIT_SYS_USE_RE.sub(repl, src), dropped
+
+
+_OFFSET_OF_CALL = "core::mem::offset_of!("
+
+
+def route_indexed_offset_of(src: str) -> tuple[str, int]:
+    """`core::mem::offset_of!(T, Arr[i])` -> the index-aware `FIELD_OFFSET!`, as `usize`.
+
+    C's `FIELD_OFFSET(AHCI_COMMAND_LIST, CommandHeader[Slots])` sizes a variable-length
+    struct; offset_of! refuses an index ("array indexing not supported in offset_of") and
+    the parse error hides every other error in the file. Parens are matched, because the
+    index is often an expression (`PrdTable[(*ChanData).MaximumPhysicalPages as usize]`).
+    """
+    out, pos, count = [], 0, 0
+    while True:
+        at = src.find(_OFFSET_OF_CALL, pos)
+        if at < 0:
+            break
+        open_ = at + len(_OFFSET_OF_CALL) - 1
+        depth, i, comma = 0, open_, -1
+        while i < len(src):
+            ch = src[i]
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif ch == "," and depth == 1 and comma < 0:
+                comma = i
+            i += 1
+        if i >= len(src) or comma < 0 or "[" not in src[comma:i]:
+            out.append(src[pos : open_ + 1])
+            pos = open_ + 1
+            continue
+        ty, path = src[open_ + 1 : comma].strip(), src[comma + 1 : i].strip()
+        out.append(src[pos:at])
+        out.append(f"(FIELD_OFFSET!({ty}, {path}) as usize)")
+        pos = i + 1
+        count += 1
+    out.append(src[pos:])
+    return "".join(out), count
+
+
+_FN_FORWARD_STATIC_RE = re.compile(
+    r"^[ \t]*(?:pub(?:\([^)]*\))?\s+)?static(?:\s+mut)?\s+([A-Za-z_]\w*)"
+    r"\s*:[^=;\n]*=\s*None\s*;[ \t]*\n?",
+    re.M,
+)
+
+
+def drop_fn_forward_statics(src: str) -> tuple[str, list[str]]:
+    """Drop `static Foo: IO_COMPLETION_ROUTINE = None;` beside a real `fn Foo`.
+
+    That is C's function-typed FORWARD DECLARATION (`static IO_COMPLETION_ROUTINE Foo;`)
+    read as data: the preamble pass emits it, and next to the definition it is E0428 -- or,
+    if it ever won, a NULL where the routine should be (atapi's dev_power.c and scsi.c).
+    """
+    fns = set(DEFINED_FN_RE.findall(_outside_extern(src)))
+    dropped: list[str] = []
+
+    def repl(m: re.Match) -> str:
+        if m.group(1) in fns:
+            dropped.append(m.group(1))
+            return ""
+        return m.group(0)
+
+    return _FN_FORWARD_STATIC_RE.sub(repl, src), dropped
+
+
+_TYPE_DEF_START_RE = re.compile(
+    r"^(?:#\[[^\]]*\]\s*\n)*(?:pub(?:\([^)]*\))?\s+)?(struct|union|type)\s+([A-Za-z_]\w*)\b",
+    re.M,
+)
+
+
+def drop_provided_type_defs(src: str, provided: set[str]) -> tuple[str, list[str]]:
+    """Drop a module-local struct/union/type alias that the prelude already provides.
+
+    The layout of a type the island or the -sys crate provides comes from bindgen; a
+    preamble that re-declares it (atapi.c re-emitted `_UNICODE_STRING`, plus the
+    self-referential `pub type _UNICODE_STRING = _UNICODE_STRING;`) can only be a second,
+    hand-guessed copy. A self-alias is dropped unconditionally: it is never valid Rust.
+    """
+    dropped: list[str] = []
+    out, pos = [], 0
+    for m in _TYPE_DEF_START_RE.finditer(src):
+        if m.start() < pos:
+            continue
+        kind, name = m.group(1), m.group(2)
+        line_end = src.find("\n", m.end())
+        line_end = len(src) if line_end < 0 else line_end
+        first_line = src[m.start() : line_end]
+        self_alias = kind == "type" and re.search(rf"=\s*{re.escape(name)}\s*;", first_line)
+        if not self_alias and name not in provided:
+            continue
+        if kind == "type":
+            end = src.find(";", m.end())
+            if end < 0:
+                continue
+            end += 1
+        else:
+            brace = src.find("{", m.end())
+            semi = src.find(";", m.end())
+            if brace < 0 or (0 <= semi < brace):
+                end = semi + 1
+            else:
+                depth, i = 0, brace
+                while i < len(src):
+                    if src[i] == "{":
+                        depth += 1
+                    elif src[i] == "}":
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    i += 1
+                end = i + 1
+        while end < len(src) and src[end] == "\n":
+            end += 1
+        out.append(src[pos : m.start()])
+        pos = end
+        dropped.append(name)
+    out.append(src[pos:])
+    return "".join(out), dropped
+
+
 def integrate(
     src: str,
     crate: Path,
@@ -682,6 +1014,9 @@ def integrate(
         provided = provided_names(crate)
 
     src = _swap_substrate(src, report)
+    src, report.multichar_folded = fold_multichar_literals(src)
+    src, report.dropped_bad_imports = drop_unknown_substrate_imports(src, crate.parent)
+    src, report.indexed_offsets = route_indexed_offset_of(src)
     src, report.enums_lowered = lower_c_enums(src)
     src, _self_imports = drop_self_imports(src, module)
 
@@ -704,6 +1039,8 @@ def integrate(
     # translates each function independently, so a caller translated before its callee can
     # get an `extern` decl for something defined in the very same file: a hard E0428.
     defined = defined_names(src, pub_only=False)
+    src, report.dropped_fn_statics = drop_fn_forward_statics(src)
+    src, report.dropped_type_defs = drop_provided_type_defs(src, provided)
 
     # A prelude macro is spelled as a plain call in the C, so it comes back as a plain call.
     # Which names are macros is a fact about the PRELUDE, not about the C — see prelude_macros.

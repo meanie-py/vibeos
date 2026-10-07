@@ -62,7 +62,7 @@ and both of these were in the 72 that never conflicted.
 | `dll/win32/kernelbase` → wine-based `kernelbase_ros` | **The biggest judgment call in the merge.** Ours is a deliberately minimal Vista-scoped shim, documented as such in its own header. See "owed" below. |
 | ole32 → `combase`/`coml2`/`pathcch_static` split | Same reasoning; ole32 is Rust-flipped here. |
 | libjpeg 9f → 10 | A major API break, and the research lane owns vendor bumps. libpng and mbedTLS were declined because **ours are newer** (1.6.58 vs 1.6.54; 3.6.7 vs 2.16.11). libtiff 4.7.0 → 4.7.1 was taken. |
-| The new ATA stack: `atapi/` SATL driver + `pciidex/chipset/` (incl. software AHCI), and the uniata→pciide default switch (`7d33f7503bb`) | **WON'T PORT (owner, 2026-10-03).** We already drive AHCI: uniata-rust claims `ich9-ahci` (`PCI#CC_0106` in hivesys) and both x86 arches boot to desktop with the CD on AHCI (`VIBEOS_AHCI_CD=1` smoke, verified 2026-10-03). The rewrite is ~20K lines (~$10-12) of replacement for a working driver. Policy: uniata is OUR storage driver going forward. An upstream bug fix in the new stack is ported SEMANTICALLY into uniata-rust when it describes a bug uniata also has, never by bulk-adopting their files. The C stays unbuilt on disk as reference. |
+| The new ATA stack: `atapi/` SATL driver + `pciidex/chipset/` (incl. software AHCI), and the uniata→pciide default switch (`7d33f7503bb`) | **WON'T PORT (owner, 2026-10-03) -- REVERSED by the owner 2026-10-06 ("do the AHCI/SATA work overnight, $5 of DeepSeek"): see "The new ATA stack" below.** The 10-03 reasoning, kept for the record: We already drive AHCI: uniata-rust claims `ich9-ahci` (`PCI#CC_0106` in hivesys) and both x86 arches boot to desktop with the CD on AHCI (`VIBEOS_AHCI_CD=1` smoke, verified 2026-10-03). The rewrite is ~20K lines (~$10-12) of replacement for a working driver. Policy: uniata is OUR storage driver going forward. An upstream bug fix in the new stack is ported SEMANTICALLY into uniata-rust when it describes a bug uniata also has, never by bulk-adopting their files. The C stays unbuilt on disk as reference. |
 | pruned trees | pc98, xbox, arm32, BIOS realmode, ext2/btrfs/ntfs/udfs/nfs, NTVDM, ISAPNP, fast486, SAC, x86bios/INT10, legacy tcpip, floppy, fraginator, `untfs`. |
 
 ### uniata-rust: what upstream's ATA stack taught us, and what is still owed
@@ -791,12 +791,50 @@ rangelist port is graded against. Restored from upstream.
 SymCrypt moved to `vendor/symcrypt` (registered in vendor.yaml, not yet diffed against pristine
 upstream).
 
+## The new ATA stack (2026-10-06): translated, parked, not yet compiling
+
+The owner reversed the 10-03 won't-port. Upstream's stack is three drivers, all now translated
+with `rustconv port` (sealed DeepSeek) and **parked** on the local `ata-stack-port` branch,
+because none of them compiles yet and the land gates lint parked sources:
+
+| Crate | C | Errors per arch (amd64), first honest count -> parked |
+|---|---|---|
+| `pciidex-rust` | pciidex core + `chipset/` (PATA quirks, software AHCI), 23 TUs | ~1,880 -> ~370 |
+| `atapi-rust` | the ATA port driver + SATL, 15 TUs (not the NT4 miniport) | ~2,150 -> ~370 |
+| `legide-rust` | i386 legacy PATA enumerator, 1 TU | ~95 -> 5 |
+
+Spend: $4.10 of $5 (translate $2.42, module macros $0.29, `port fix` $1.39; the ledger is
+`tools/rustconv/.responses/outcomes.jsonl` and `~/vibeos-rust-staging/port/<stem>/state.json`).
+Every banked body replays for $0 (`rustconv port replay <stem>`), so nothing paid is at risk.
+
+**What shipped here instead:** most of the drop above came from ~30 tool defects, fixed at $0 and
+listed in rustconv-pipeline.md, "`port` on a kernel driver". Also landed: `ntkrnl_sys::portio`
+(HAL port/register I/O, until now re-ported per driver), `InterlockedOr/And/Xor` and
+`BitScanForward` in ntkrnl-sys, `RtlStringCchPrintfExW!` in strsafe-rust, index-aware
+`FIELD_OFFSET!`/`RTL_SIZEOF_THROUGH_FIELD!` and `RTL_NUMBER_OF!` in win32macros-rust, the
+pciide-rust port of upstream `ae2827f4810` (DMA support), and `./vibeos-cli build --ata-stack`
+with `drivers/storage/ide/ata_stack.inf` -- which FATAL_ERRORs until the crates are wired.
+The pre-rewrite translations were renamed, not removed: `pciidex-legacy-rust` and
+`atapi-legacy-rust` still build pciidex.sys and atapi.sys. uniata stays the default driver.
+
+**Still owed, in order:**
+1. ~600 lines of header inlines no TU translation covers: `identify_funcs.h` (44 `AtaDev*`),
+   plus the FORCEINLINEs in `atapi.h`, `pciidex.h`, `pata.h`, `ahci.h`. `translate` refuses a
+   header (no compile command); either teach `port` a header-inline TU or hand-port them into
+   `<crate>/hand/`. This is most of atapi's remaining errors.
+2. The remaining body errors (`port fix`, or by hand). Do it AFTER every deterministic change:
+   a fix bought against a body that a later tool change rewrites does not replay.
+3. Wire the drafted cohab CMakeLists (`~/vibeos-rust-staging/ata-stack/cmake-new/`, also on
+   the branch), drop the FATAL_ERROR, and boot `--ata-stack` on IDE and on `--ahci`.
+4. Clear the parked crates' lint findings (~135) before they land.
+
 ## Owed, in rough priority order
 
 1. ~~`RtlIsProcessorFeaturePresent` / `RtlGetCurrentProcessorNumberEx` unimplemented.~~ **Done
    2026-09-30:** hand-ported into `rtl-strings` beside `RtlGetCurrentProcessorNumber`. The Ex one
    answers group 0 without the 0xA00+ `NtGetCurrentProcessorNumberEx` syscall we don't have.
-2. **Upstream's AHCI/SATA work.** A new SATL/port atapi driver plus a 16-file chipset quirks
+2. **Upstream's AHCI/SATA work.** IN PROGRESS 2026-10-06, see "The new ATA stack" above.
+   A new SATL/port atapi driver plus a 16-file chipset quirks
    framework with a full software AHCI implementation in `pciidex/chipset/`. All of it is on
    disk and none of it is built. Probably the largest single translation opportunity this merge
    surfaced.

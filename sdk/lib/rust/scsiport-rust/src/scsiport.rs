@@ -2037,9 +2037,17 @@ pub unsafe extern "system" fn ScsiPortIsr(
         }
     }
 
-    WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
-    WRITE_PORT_UCHAR(0xE9 as *mut u8, b'I');
-    WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
+    // QEMU debugcon markers, under the C's `#ifdef _M_IX86`. Dropping the guard put
+    // them on every arch: on arm64 there are no I/O ports, so WRITE_PORT_UCHAR stored
+    // to virtual address 0xE9 and every ISR took six access violations at DIRQL,
+    // whose dispatch took a DISPATCH-level spinlock -- the first arm64 disk interrupt
+    // (vioblk) ended in IRQL violations and BUGCHECK 0xB8.
+    #[cfg(target_arch = "x86")]
+    {
+        WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
+        WRITE_PORT_UCHAR(0xE9 as *mut u8, b'I');
+        WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
+    }
 
     if (*device_extension).InterruptData.Flags & SCSI_PORT_DISABLE_INTERRUPTS != 0 {
         return 0; // FALSE
@@ -2050,15 +2058,21 @@ pub unsafe extern "system" fn ScsiPortIsr(
     );
     if hw_result == 0 {
         // false
-        WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
-        WRITE_PORT_UCHAR(0xE9 as *mut u8, b'i');
-        WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
+        #[cfg(target_arch = "x86")]
+        {
+            WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
+            WRITE_PORT_UCHAR(0xE9 as *mut u8, b'i');
+            WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
+        }
         return 0;
     }
 
-    WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
-    WRITE_PORT_UCHAR(0xE9 as *mut u8, b'J');
-    WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
+    #[cfg(target_arch = "x86")]
+    {
+        WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
+        WRITE_PORT_UCHAR(0xE9 as *mut u8, b'J');
+        WRITE_PORT_UCHAR(0xE9 as *mut u8, b'#');
+    }
 
     if (*device_extension).InterruptData.Flags & SCSI_PORT_NOTIFICATION_NEEDED != 0 {
         IoRequestDpc(

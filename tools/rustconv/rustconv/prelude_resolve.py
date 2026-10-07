@@ -420,10 +420,17 @@ def promote_pub(path: Path, name: str) -> bool:
     return bool(n)
 
 
+def _raw_ident(seg: str) -> str:
+    from .profile_derive import _RUST_KEYWORDS
+
+    return f"r#{seg}" if seg in _RUST_KEYWORDS else seg
+
+
 def render_siblings(uses: dict[str, str], stem: str) -> str:
     lines = [SIBLING_BEGIN]
     for name in sorted(uses):
-        lines.append(f"pub use crate::{stem}::{uses[name]}::{name};")
+        # `enum.c` -> module `r#enum`: a keyword path segment must be a raw identifier.
+        lines.append(f"pub use crate::{stem}::{_raw_ident(uses[name])}::{name};")
     lines.append(SIBLING_END)
     return "\n".join(lines) + "\n"
 
@@ -434,7 +441,10 @@ def existing_siblings(prelude: Path) -> dict[str, str]:
     )
     if not m:
         return {}
-    return {name: mod for mod, name in re.findall(r"pub use crate::\w+::(\w+)::(\w+);", m.group(1))}
+    return {
+        name: mod
+        for mod, name in re.findall(r"pub use crate::\w+::(?:r#)?(\w+)::(\w+);", m.group(1))
+    }
 
 
 def write_siblings(prelude: Path, block: str) -> bool:
@@ -534,7 +544,9 @@ def looks_constant(name: str) -> bool:
     return bool(_CONSTANT_NAME.match(name))
 
 
-def fact_rust_type(c_type: str | None, value: int, known_types: set[str]) -> str:
+def fact_rust_type(
+    c_type: str | None, value: int, known_types: set[str], *, bare_int_unsigned: bool = False
+) -> str:
     """The Rust spelling of a constant's C type: its typedef when the crate has it
     (`NTSTATUS`), else the LLP64 primitive, else (unprobed) the narrowest by value."""
     if c_type:
@@ -542,6 +554,13 @@ def fact_rust_type(c_type: str | None, value: int, known_types: set[str]) -> str
         canonical = (canonical or sugar).removeprefix("const ").strip()
         if re.fullmatch(r"[A-Za-z_]\w*", sugar) and sugar in known_types:
             return sugar
+        if bare_int_unsigned and sugar == "int" and value >= 0:
+            # A bare `#define X 4` is an `int` to clang, and bindgen -- hence every island
+            # and -sys constant these bodies mix it with -- spells the same macro `u32`.
+            # Following the C type put atapi at 190 `u32 & i32` errors against flag fields;
+            # an explicitly typed or negative constant still keeps its C type. Kernel crates
+            # only (the caller decides): setuplib's banked fixes were made against `i32`.
+            return "u32"
         if canonical in _C_PRIMITIVE:
             return _C_PRIMITIVE[canonical]
     if value < 0:
@@ -673,3 +692,20 @@ def write_externs(prelude: Path, block: str) -> bool:
         return False
     prelude.write_text(new)
     return True
+
+
+def hand_written_names(prelude: Path) -> set[str]:
+    """Names the prelude defines OUTSIDE its generated `// ==== ... ====` blocks."""
+    if not prelude.is_file():
+        return set()
+    from .profile_derive import prelude_provided_names
+
+    text = re.sub(
+        r"^// ==== (?!end)[^\n]*\n.*?^// ==== end [^\n]*\n?",
+        "",
+        prelude.read_text(),
+        flags=re.S | re.M,
+    )
+    names: set[str] = set(re.findall(r"^\s*(?:pub\s+)?(?:unsafe\s+)?fn\s+(\w+)", text, re.M))
+    names |= set(re.findall(r"macro_rules!\s+(\w+)", text))
+    return names | prelude_provided_names(None, text)

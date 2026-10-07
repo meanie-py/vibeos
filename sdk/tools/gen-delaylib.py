@@ -23,6 +23,14 @@ ARCH = {
                   pub=lambda s: s,           imp=lambda s: "__imp_"+s),
 }
 
+# The delay-import table's bracket (see emit). The magic is exactly 16 bytes, so the
+# first descriptor follows it 4-aligned; pefixup.c's DELAY_TABLE_MAGIC must match.
+DELAY_TABLE_MAGIC = "VIBEOS-DLYIMP-01"
+DELAY_TABLE_HEAD = "__vibeos_delayimp_head"
+DELAY_TABLE_TAIL = "__vibeos_delayimp_tail"
+assert len(DELAY_TABLE_MAGIC) == 16
+
+
 def parse_def(path):
     dll, exports, in_exports, seen = None, [], False, set()
     for line in open(path):
@@ -76,7 +84,12 @@ def emit(dll, exports, arch):
     ptralign = "\t.p2align 2" if ptr == 4 else "\t.p2align 3"
 
     # --- .rdata: dll name, hint/name strings, INT ---
-    L += ['\t.section .rdata,"dr"', f'__dll_name: .asciz "{dll}"']
+    # The trailing .rva pair is what keeps the table's head and tail (below) through
+    # --gc-sections: nothing else references them, and this section is live because
+    # the descriptor names __dll_name.
+    L += ['\t.section .rdata,"dr"', '\t.p2align 2',
+          f'\t.rva {DELAY_TABLE_HEAD}', f'\t.rva {DELAY_TABLE_TAIL}',
+          f'__dll_name: .asciz "{dll}"']
     for i, fn in enumerate(fns):
         if ords[fn] is not None:
             continue
@@ -103,7 +116,26 @@ def emit(dll, exports, arch):
     L += [f'\t{ptrdir} 0', '__delay_hmod:', f'\t{ptrdir} 0']
 
     # --- descriptor (ImgDelayDescr, all RVAs) ---
-    L += ['\t.section .rdata,"dr"', '\t.p2align 2', f'\t.globl {desc}', f'{desc}:',
+    # lld leaves data directory 13 empty for descriptors it did not make itself, and
+    # the Windows loader never needs it (the thunk hands the helper its descriptor).
+    # But anything that walks a module's delay imports -- the sdk delayimp apitest,
+    # dbghelp, a debugger -- reads the directory, and the table it points at must be
+    # one contiguous, null-terminated array. So every library's descriptor goes in
+    # the grouped section `.CRT$VBDLYIMPB`, which the linker sorts between a COMDAT
+    # head (`A`, a magic marker) and tail (`C`, the null descriptor) that every delay
+    # library carries and the link keeps one of. `pefixup --delayimport` then finds
+    # the marker in the image and sets the directory.
+    # Why `.CRT$` and not `.rdata$`: lld in MinGW mode keeps GNU ld's semantics and
+    # does NOT sort `$`-grouped sections, except `.CRT$` (and `.tls$`), which it sorts
+    # by name and merges into .rdata. `.rdata$` came out head, tail, unrelated data,
+    # then the descriptor. `VB` sorts before the CRT's own `.CRT$XC*`/`XL*` ranges, so
+    # the table cannot land inside the initializer or TLS-callback arrays.
+    L += [f'\t.section .CRT$VBDLYIMPA,"dr",discard,{DELAY_TABLE_HEAD}', '\t.p2align 2',
+          f'\t.globl {DELAY_TABLE_HEAD}', f'{DELAY_TABLE_HEAD}:',
+          f'\t.ascii "{DELAY_TABLE_MAGIC}"']
+    L += [f'\t.section .CRT$VBDLYIMPC,"dr",discard,{DELAY_TABLE_TAIL}', '\t.p2align 2',
+          f'\t.globl {DELAY_TABLE_TAIL}', f'{DELAY_TABLE_TAIL}:', '\t.zero 32']
+    L += ['\t.section .CRT$VBDLYIMPB,"dr"', '\t.p2align 2', f'\t.globl {desc}', f'{desc}:',
           '\t.long 1', '\t.rva __dll_name', '\t.rva __delay_hmod',
           '\t.rva __delay_iat', '\t.rva __delay_int', '\t.long 0', '\t.long 0', '\t.long 0']
 

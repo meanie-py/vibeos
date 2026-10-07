@@ -252,8 +252,16 @@ unsafe extern "system" fn worker(_context: PVOID) {
     let rx_event: *mut ntkrnl_sys::ddk::KEVENT = match &mut phy {
         AnyPhy::Virtio(v) => {
             v.enable_interrupts();
-            match crate::pci::find_virtio_net().and_then(crate::pci::read_interrupt_line) {
-                Some(line) => unsafe { crate::isr::connect(v.dev_ptr(), line as u32) },
+            let df = crate::pci::find_virtio_net();
+            match df.and_then(crate::pci::read_interrupt_line) {
+                Some(line) => {
+                    let event = unsafe { crate::isr::connect(v.dev_ptr(), line as u32) };
+                    // INTx stays masked (pci::enable_bus_master) unless the ISR is in.
+                    if let (false, Some(df)) = (event.is_null(), df) {
+                        crate::pci::unmask_intx(df);
+                    }
+                    event
+                }
                 None => null_mut(),
             }
         }

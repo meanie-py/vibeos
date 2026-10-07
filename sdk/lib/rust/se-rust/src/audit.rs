@@ -413,7 +413,17 @@ unsafe fn SepAccessCheckAndAuditAlarm(
         return s;
     }
 
-    local_generic_mapping = *generic_mapping;
+    // C: inside the same __try as the probe, whose handler is this cleanup.
+    local_generic_mapping = match read_back(generic_mapping as *const _GENERIC_MAPPING) {
+        Ok(v) => v,
+        Err(s) => {
+            if allocated_result_lists != 0 {
+                ExFreePoolWithTag(safe_granted_access_list as PVOID, TAG_SEPA);
+            }
+            SeReleaseSubjectContext(&mut subject_context);
+            return s;
+        }
+    };
 
     if !client_token_handle.is_null() {
         status = ObReferenceObjectByHandle(

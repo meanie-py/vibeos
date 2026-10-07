@@ -81,6 +81,7 @@ RULE_ARROW_FIELD = "raw_pointer_field"
 RULE_UNSIGNED_NEGATE = "unsigned_negative_literal"
 RULE_OPTION_FN_AS_PTR = "option_fn_as_pointer"
 RULE_SOME_FN_ITEM = "some_fn_item"
+RULE_KEYWORD_FIELD = "bindgen_keyword_field"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -122,6 +123,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_UNSIGNED_NEGATE,
     RULE_OPTION_FN_AS_PTR,
     RULE_SOME_FN_ITEM,
+    RULE_KEYWORD_FIELD,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -1881,6 +1883,85 @@ def _option_fn_call_rule(
     )
 
 
+#: Rust keywords bindgen renames with a trailing `_` when they name a C field.
+_BINDGEN_KEYWORDS = frozenset(
+    {
+        "Self",
+        "self",
+        "type",
+        "match",
+        "fn",
+        "impl",
+        "mod",
+        "move",
+        "mut",
+        "ref",
+        "return",
+        "static",
+        "struct",
+        "trait",
+        "use",
+        "where",
+        "loop",
+        "crate",
+        "super",
+        "box",
+        "in",
+        "as",
+        "async",
+        "await",
+        "dyn",
+    }
+)
+_RE_NO_FIELD_NAME = re.compile(r"no field `(?P<field>\w+)` on type")
+
+
+def _keyword_field_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A C field named like a Rust keyword: `.Self` (or c2rust's `.Self_0`) -> bindgen's `.Self_`.
+
+    atapi's ATAPORT_COMMON_EXTENSION has a `PDEVICE_OBJECT Self;`, which bindgen emits as
+    `Self_`; the model spelled the C name (26 sites) or c2rust's (5). Only a keyword is renamed,
+    and to bindgen's one spelling, so a field that really is missing stays an error.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0609":
+        return [], [], False
+    m = _RE_NO_FIELD_NAME.search(str(diagnostic.get("message") or ""))
+    if m is None:
+        return [], [], False
+    field_name = m.group("field")
+    base = field_name[:-2] if field_name.endswith("_0") else field_name
+    if base not in _BINDGEN_KEYWORDS:
+        return [], [], False
+    span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    data = load(file_name)
+    if data is None or data[start:end].decode("utf-8", "replace") != field_name:
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"{base}_",
+                rule=RULE_KEYWORD_FIELD,
+                authority="bindgen renames a keyword-named C field with a trailing underscore",
+                original=field_name,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
 def _uninit_local_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -2129,6 +2210,10 @@ def _infer_widen_rule(
         masked = _mask_lexical(data)
         if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
             continue
+        # A match-arm PATTERN cannot hold `(X) as _`: pciidex's intel.rs lost every arm of a
+        # `match (*Info).Type` to this rule, and the parse errors reverted the whole pass.
+        if _in_match_pattern(masked, end):
+            continue
         if _next_code_byte(masked, end) == b"(":
             continue  # a callee, not a value
         text = data[start:end].decode("utf-8", "replace")
@@ -2325,7 +2410,7 @@ def _match_scrutinee_rule(
 
 
 #: E0609 ``no field `X` on type `Y` `` — ``Y`` may arrive as a raw pointer or a reference.
-_RE_NO_FIELD = re.compile(r"no field `(?P<field>\w+)` on type `(?P<ty>[&*\w \n]+?)`", re.S)
+_RE_NO_FIELD = re.compile(r"no field `(?P<field>\w+)` on type `(?P<ty>[&*\w: \n]+?)`", re.S)
 #: E0560 ``struct `Y` has no field named `X` `` — a struct-LITERAL field, which is not fixable
 #: by the same substitution (see the rule).
 _RE_NO_LITERAL_FIELD = re.compile(
@@ -2397,6 +2482,9 @@ def _anon_union_rule(
     for prefix in ("mut ", "const "):
         if struct.startswith(prefix):
             struct = struct[len(prefix) :].strip()
+    # rustc names a per-arch island's type by its module path (`types_arch::_IDE_REGISTERS`),
+    # and the map is keyed by the bare name, as the struct-literal branch above already knows.
+    struct = struct.split("::")[-1]
     path = ctx.anon_unions.get((struct, field_name))
     if path is None:
         return [], [], False
@@ -3485,6 +3573,7 @@ _RULE_TABLE: dict[
     RULE_UNSIGNED_NEGATE: _unsigned_negate_rule,
     RULE_OPTION_FN_AS_PTR: _option_fn_as_ptr_rule,
     RULE_SOME_FN_ITEM: _some_fn_item_rule,
+    RULE_KEYWORD_FIELD: _keyword_field_rule,
 }
 
 
@@ -4362,6 +4451,14 @@ def _local_anon_unions(crate_dir: Path) -> dict[tuple[str, str], str]:
     islands = [d for p, d in sources.items() if re.search(r"/types_[a-z0-9]+\.rs$", p)]
     if any(re.search(rb"^pub use ntdll_sys::nt::\*;", d, re.M) for d in islands):
         sys_src = crate_dir.parent / "ntdll-sys" / "src"
+        sys_sources = {p.as_posix(): p.read_bytes() for p in sorted(sys_src.glob("bindgen_*.rs"))}
+        for key, path in harvest_anon_unions(sys_sources).items():
+            unions.setdefault(key, path)
+    # A kernel island's `use ntkrnl_sys::ddk::*;` is private; the crate PRELUDE re-exports it
+    # (`rustconv port` crates), which is the same one link for `_LARGE_INTEGER.LowPart` & co.
+    prelude = sources.get((crate_dir / "src" / "prelude.rs").as_posix(), b"")
+    if re.search(rb"^pub use ntkrnl_sys::ddk::\*;", prelude, re.M):
+        sys_src = crate_dir.parent / "ntkrnl-sys" / "src"
         sys_sources = {p.as_posix(): p.read_bytes() for p in sorted(sys_src.glob("bindgen_*.rs"))}
         for key, path in harvest_anon_unions(sys_sources).items():
             unions.setdefault(key, path)

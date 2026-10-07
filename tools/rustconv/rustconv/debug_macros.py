@@ -22,9 +22,11 @@ def preserve_debug_macros(code: str) -> str:
                     edits.append((callee.end_byte, b"!"))
         elif node.type == "expression_statement" and node.named_children:
             child = node.named_children[0]
-            if (
-                child.type == "identifier"
-                and data[child.start_byte : child.end_byte] == b"UNIMPLEMENTED"
+            # Bare statement macros: `UNIMPLEMENTED;`, and `UNREACHABLE;` (ntbasedef.h's
+            # `__builtin_unreachable()`), which the new ATA stack uses after exhaustive switches.
+            if child.type == "identifier" and data[child.start_byte : child.end_byte] in (
+                b"UNIMPLEMENTED",
+                b"UNREACHABLE",
             ):
                 edits.append((child.end_byte, b"!()"))
         for child in node.named_children:

@@ -297,6 +297,12 @@ pub unsafe extern "system" fn EngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
 
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiEngLockSurface(hsurf: HSURF) -> *mut SURFOBJ {
+    // Hands back a kernel SURFOBJ address (and a reference nothing can release:
+    // NtGdiEngUnlockSurface is unimplemented), whose only use is as input to the
+    // refused NtGdiEng* calls.
+    if crate::safe_user_io::umpd_call_refused() {
+        return core::ptr::null_mut();
+    }
     EngLockSurface(hsurf)
 }
 

@@ -10,7 +10,7 @@
 # (src/types.rs). Depends on ntkrnl-sys. Built for all 3 arches. DeepSeek+c2rust.
 
 [package]
-name = "pciidex-rust"
+name = "pciidex-legacy-rust"
 version = "0.1.0"
 edition = "2021"
 

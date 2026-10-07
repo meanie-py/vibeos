@@ -247,6 +247,9 @@ members = [
     "usbstor-rust",
     "sdhc-rust",
     "sdhc-cargo",
+    "scsidisk-rust",
+    "nvme-rust",
+    "nvme-cargo",
     "usbccgp-rust",
     "usbhub-rust",
     "usbehci-rust",
@@ -314,9 +317,9 @@ members = [
     "pcix-rust",
     "partmgr-rust",
     "fs_rec-rust",
-    "pciidex-rust",
+    "pciidex-legacy-rust",
     "scsiport-rust",
-    "atapi-rust",
+    "atapi-legacy-rust",
     "buslogic-rust",
     "vioblk-rust",
     "vioblk-cargo",
@@ -400,6 +403,7 @@ members = [
     # builds and no boot can regress. Membership only puts it in every lane's `cargo check`,
     # which is what stops the rot.
     "recyclebin-rust",
+    "setuplib-rust",
     # wowx64.dll, the OS side of BTCpu64 (x86-64 guests on arm64). The link cell
     # builds on arm64 only; the body crate checks everywhere (its host half is
     # cfg(aarch64), the rest is the arch-neutral contract types).

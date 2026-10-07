@@ -154,3 +154,18 @@ def test_expand_follows_c_rules():
     assert "m = MAX_X" in out and "s = STR(q)" in out
     assert '"Size(z)"' in out and "/* Size(z) */" in out
     assert used == {"SpInfFindFirstLine", "Twice", "Size"}
+
+
+def test_a_table_call_never_panics():
+    from rustconv.local_macros import parse_reply
+
+    reply = (
+        "macro_rules! SpInfFindFirstLine {\n    ($($a:expr),*) => {\n"
+        "        ((SpInfExports.SpInfFindFirstLine.unwrap())($($a),*))\n    };\n}\n"
+    )
+    out = parse_reply(reply, {"SpInfFindFirstLine"})
+    assert ".unwrap_unchecked())($($a),*)" in out["SpInfFindFirstLine"]
+    import pytest
+
+    with pytest.raises(ValueError, match="panic path"):
+        parse_reply(reply.replace("SpInfFindFirstLine.unwrap())", "X.expect(\"y\"))"), {"SpInfFindFirstLine"})

@@ -1957,9 +1957,10 @@ class QemuVM:
         case: 0xc0150010 on both sides of the WoW64 A/B). winlogon points the
         winetest children's TEMP here when it finds C:\\TEMP (winlogon.rs).
 
-        IDE, not virtio: x86 has no virtio-blk driver, and uniata already serves
-        the CD. Partitioned, not a superfloppy: FreeLDR crashes on an unpartitioned
-        BIOS-visible disk (see _scratch_device_args), and partmgr expects a table.
+        IDE: uniata already serves the CD's controller, so the disk adds no driver
+        to the default boot (vioblk would serve a virtio-blk one). Partitioned, not
+        a superfloppy: FreeLDR crashes on an unpartitioned BIOS-visible disk (see
+        _scratch_device_args), and partmgr expects a table.
         No bootindex, so OVMF never tries it ahead of the CD. qcow2 so savevm works.
         """
         return temp_disk_args(self.config.arch, self.scratch_path.parent)
@@ -1991,6 +1992,28 @@ class QemuVM:
             *drive,
             "-device",
             "usb-storage,bus=xehci.0,drive=usbstor0",
+        ]
+
+    def _nvme_enabled(self) -> bool:
+        return os.environ.get("VIBEOS_QEMU_NVME", "").strip() in ("1", "true", "yes")
+
+    def _nvme_args(self) -> list[str]:
+        """VIBEOS_QEMU_NVME=1 attaches an NVMe controller (nvme.sys bring-up rig, every
+        arch): one namespace holding the same 64M MBR + FAT16 image as the USB stick,
+        so the desktop has a known file to read back and copy. No bootindex: firmware
+        must keep booting the CD. Pinned to PCI slot 9 for the reason xHCI is pinned to
+        8: auto-assigned, it takes slot 2 from arm64's boot disk, whose `Pci(0x2,0x0)`
+        path is saved in efivars, and UEFI falls through to PXE."""
+        if not self._nvme_enabled():
+            return []
+        disk = self.scratch_path.parent / "nvmedisk.qcow2"
+        if not disk.exists():
+            make_usb_stick_image(disk)
+        return [
+            "-drive",
+            f"file={disk},format=qcow2,if=none,id=nvme0",
+            "-device",
+            "nvme,serial=VIBEOSNVME0,drive=nvme0,addr=0x9",
         ]
 
     def _set_live_tee(self) -> None:
@@ -2214,7 +2237,12 @@ class QemuVM:
             capture_output=True,
         )
         arch = self._without_virtio_input(self.config.prepare_args(self.work_dir))
-        disks = [*self._scratch_device_args(), *self._usb_disk_args(), *self._temp_disk_args()]
+        disks = [
+            *self._scratch_device_args(),
+            *self._usb_disk_args(),
+            *self._nvme_args(),
+            *self._temp_disk_args(),
+        ]
         self._prepared_arch_args = (
             _acpitable_relative(be.stage_media_paths(arch, staging)) if windows else arch
         )
@@ -2789,6 +2817,7 @@ class QemuVM:
             except Exception as exc:  # QMP dead//timed out — say so, don't raise
                 body = f"<unavailable: {exc!r}>"
             chunks.append(f"=== {cmd} ===\n{body}")
+        chunks.append(self._read_guest_clock())
         # The instructions AT each PC. A register dump says where a vCPU is;
         # only the code there says what it is doing — a `wfi` is idle, a `b .`
         # is a deliberate park, and an unmapped or user page under a kernel PC
@@ -2846,6 +2875,41 @@ class QemuVM:
             walk = self._walk_frames(idx, fp)
             chunks.append(f"=== CPU#{idx} frames (frame-pointer chain) ===\n{walk}")
         return "\n\n".join(chunks) + "\n"
+
+    def _read_guest_clock(self) -> str:
+        """KUSER_SHARED_DATA.InterruptTime, read as plain kernel memory. Compared across
+        the two samples it says whether ticks are still arriving: an idle box parks every
+        vCPU on the same `wfi` whether its clock is dead or not, so the PCs alone cannot
+        (the 2026-10-06 arm64 -smp 2 wedge read FROZEN on PCs alone). Never raises."""
+        from .cli.triage import KUSER_SHARED_DATA
+
+        arch = getattr(getattr(self, "config", None), "arch", "") or ""
+        base = KUSER_SHARED_DATA.get(arch.split("-")[0])
+        if base is None:
+            return "=== guest clock ===\n<no KUSER_SHARED_DATA address for this arch>"
+        cmd = f"x /3wx 0x{base + 8:x}"
+        try:
+            body = self.qmp.hmp(cmd).strip()
+        except Exception as exc:
+            return f"=== guest clock ===\n<unavailable: {exc!r}>"
+        words = re.findall(r"0x([0-9a-fA-F]+)", body.split(":", 1)[-1])
+        if len(words) < 3:
+            return f"=== guest clock ===\n<unreadable: {body}>"
+        low, high1, high2 = (int(w, 16) for w in words[:3])
+        if high1 != high2:
+            # Torn read: the tick was mid-update. Still says the clock is moving.
+            return f"=== guest clock ===\n<torn read {body}; the clock is mid-update>"
+        t = (high1 << 32) | low
+        out = f"=== guest clock ===\nInterruptTime=0x{t:x} ({t / 1e7:.3f}s since boot)"
+        # TickCount (+0x320) is what the timer-table expiry scan indexes by, while
+        # insertion hashes InterruptTime: a TickCount that stalls while InterruptTime
+        # runs strands every timer outside the one slot still being scanned.
+        try:
+            tick = self.qmp.hmp(f"x /1wx 0x{base + 0x320:x}").strip()
+            out += f"\nTickCount={tick.split(':', 1)[-1].strip()}"
+        except Exception as exc:
+            out += f"\nTickCount=<unavailable: {exc!r}>"
+        return out
 
     def _walk_frames(self, cpu: int, fp_hex: str, limit: int = 32) -> str:
         """Follow saved-fp/return-address pairs from `fp_hex` through `cpu`'s own
@@ -2935,13 +2999,40 @@ class QemuVM:
                 moved = cpu_pcs(second) != cpu_pcs(self.hang_cpu_state)
             except Exception:
                 moved = second.strip() != self.hang_cpu_state.strip()
-            verdict = (
-                "EXECUTING — vCPU PCs moved between samples, so the box is running "
-                "and blocked on something specific, not frozen"
-                if moved
-                else "FROZEN — every vCPU PC is identical across both samples; "
-                "nothing was scheduled in between"
-            )
+            # Same PCs are not "nothing ran": an idle vCPU sits on its `wfi` between
+            # ticks, so two samples of a healthy idle box match too. The guest clock
+            # is what separates a dead tick from a box with nothing runnable.
+            try:
+                from .cli.triage import guest_interrupt_time
+
+                t1 = guest_interrupt_time(self.hang_cpu_state)
+                t2 = guest_interrupt_time(second)
+            except Exception:
+                t1 = t2 = None
+            if moved:
+                verdict = (
+                    "EXECUTING — vCPU PCs moved between samples, so the box is running "
+                    "and blocked on something specific, not frozen"
+                )
+            elif t1 is not None and t2 is not None and t2 > t1:
+                verdict = (
+                    "IDLE-BLOCKED — every vCPU PC is identical, but the guest clock "
+                    f"advanced {(t2 - t1) / 1e4:.0f}ms between samples: ticks ARE "
+                    "arriving and nothing is runnable. Look for a wait nobody "
+                    "signals or a lost wakeup, not a dead clock"
+                )
+            elif t1 is not None and t1 == t2:
+                verdict = (
+                    "FROZEN — every vCPU PC is identical AND the guest clock did not "
+                    "advance between samples: no tick was delivered. Look at the "
+                    "timer and interrupt controller (masking, a missing EOI)"
+                )
+            else:
+                verdict = (
+                    "FROZEN? — every vCPU PC is identical across both samples, but the "
+                    "guest clock was unreadable, so a dead tick and an idle box with "
+                    "nothing runnable cannot be told apart"
+                )
             # A same-PC pair has a THIRD reading the two-sample test cannot
             # see: a tight fault loop — abort, handler, eret to the same PC,
             # repeat — never moves the PC either, yet nothing is frozen. On

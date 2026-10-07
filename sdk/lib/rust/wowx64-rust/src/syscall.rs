@@ -113,11 +113,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
 
     match Service {
         svc::SVC_NtContinue => {
-            // The guest's KiUserApcDispatcher / exception dispatcher resuming a
-            // saved x86-64 context. The CPU layer installs it; the handler sees
-            // rip changed and does not overwrite it with this call's return.
-            let Status = (Cpu.SetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), Args[0] as *const WowX64Context);
-            return Status as u32 as u64;
+            return crate::apc::Continue(Args);
         }
         svc::SVC_NtRaiseException => {
             return crate::except::RaiseException(
@@ -143,6 +139,9 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
         }
         svc::SVC_NtCreateThread => {
             return crate::thread::CreateThread(Args);
+        }
+        svc::SVC_NtTerminateThread => {
+            return crate::thread::TerminateThread(Args);
         }
         svc::SVC_NtGetContextThread | svc::SVC_NtSetContextThread => {
             if !IsCurrentThread(Args[0] as HANDLE) {

@@ -1467,6 +1467,55 @@ def test_save_hang_state_separates_a_frozen_box_from_a_blocked_one(tmp_path, _no
     assert "EXECUTING" in (tmp_path / "b" / "hang-cpustate.txt").read_text()
 
 
+def test_save_hang_state_uses_the_guest_clock_when_pcs_match(tmp_path, _no_resample_wait):
+    # An idle box parks every vCPU on its `wfi` between ticks, so identical PCs
+    # are what a HEALTHY idle box looks like too. The 2026-10-06 arm64 -smp 2
+    # wedge read "FROZEN — nothing was scheduled" on PCs alone. The clock decides.
+    def sample(t):
+        return f"CPU#0\nPC=fffff800421ac784\n=== guest clock ===\nInterruptTime=0x{t:x} (x)\n"
+
+    clocks = iter([sample(10_000_000), sample(60_000_000)])
+    idle = _hang_vm(tmp_path / "idle", None, lambda: next(clocks))
+    idle.save_hang_state("payload")
+    body = (tmp_path / "idle" / "hang-cpustate.txt").read_text()
+    assert "IDLE-BLOCKED" in body and "advanced 5000ms" in body
+
+    dead = _hang_vm(tmp_path / "dead", None, lambda: sample(10_000_000))
+    dead.save_hang_state("payload")
+    body = (tmp_path / "dead" / "hang-cpustate.txt").read_text()
+    assert "FROZEN —" in body and "did not advance" in body
+
+    unread = _hang_vm(tmp_path / "unread", None, lambda: "CPU#0\nPC=fffff800421ac784\n")
+    unread.save_hang_state("payload")
+    assert "FROZEN?" in (tmp_path / "unread" / "hang-cpustate.txt").read_text()
+
+
+def test_read_guest_clock_parses_kuser_interrupt_time():
+    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
+    v.config = vm_mod.ArchConfig(
+        arch="arm64", qemu_bin="x", machine_args=[], memory="1G", boot_marker="m"
+    )
+    seen = []
+
+    class _Qmp:
+        def hmp(self, cmd):
+            seen.append(cmd)
+            return "fffff78000000008: 0x9502f900 0x00000002 0x00000002"
+
+    v.qmp = _Qmp()  # type: ignore[assignment]
+    out = v._read_guest_clock()
+    assert seen == ["x /3wx 0xfffff78000000008", "x /1wx 0xfffff78000000320"]
+    assert triage.guest_interrupt_time(out) == 0x2_9502F900
+    assert "TickCount=0x9502f900" in out
+
+    class _Torn:
+        def hmp(self, cmd):
+            return "fffff78000000008: 0x00000010 0x00000003 0x00000002"
+
+    v.qmp = _Torn()  # type: ignore[assignment]
+    assert triage.guest_interrupt_time(v._read_guest_clock()) is None
+
+
 def test_save_hang_state_names_a_kernel_fault_loop_at_a_user_pc(tmp_path, _no_resample_wait):
     # The third reading of "the PC never moved": a same-EL instruction abort
     # the handler keeps resolving as spurious, eret'ing straight back to the
@@ -9571,6 +9620,54 @@ def test_ahci_check_is_silent_on_a_plain_boot(monkeypatch):
     assert smoke_mod._ahci_check("[EXPLORER] _tWinMain entered\n") is None
 
 
+def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
+    """The boot never needs the NVMe disk, so an --nvme boot where nvme.sys never
+    loaded, or brought the controller up and found nothing, reaches the desktop
+    looking exactly like a real one."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    never_loaded = "[EXPLORER] _tWinMain entered\n"
+    bad = smoke_mod._nvme_check(never_loaded)
+    assert bad and bad["classification"] == "NVME_NOT_ENGAGED"
+    assert any("never loaded" in s for s in bad["salient"])
+    failed = '[NVME] controller 0: bring-up failed: Timeout("enable")\n'
+    bad = smoke_mod._nvme_check(failed)
+    assert bad and any("bring-up failed" in s for s in bad["salient"])
+    polled = "[NVME] controller 0: namespace 1 published as a disk\n"
+    bad = smoke_mod._nvme_check(polled)
+    assert bad and bad["classification"] == "NVME_POLLING"
+    real = polled + "[NVME] controller 0: interrupts working (first completion by interrupt: x)\n"
+    assert smoke_mod._nvme_check(real) is None
+    monkeypatch.delenv("VIBEOS_QEMU_NVME")
+    assert smoke_mod._nvme_check(never_loaded) is None
+
+
+def test_the_bios_lane_boots_with_an_nvme_drive(monkeypatch):
+    """amd64-bios is the OptiPlex 9020's configuration: USB stick + NVMe drive."""
+    from types import SimpleNamespace
+
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_NVME", raising=False)
+    assert smoke_mod.nvme_default_on(SimpleNamespace(arch="amd64-bios", nvme=False))
+    assert not smoke_mod.nvme_default_on(SimpleNamespace(arch="amd64", nvme=False))
+    assert smoke_mod.nvme_default_on(SimpleNamespace(arch="arm64", nvme=True))
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "0")
+    assert not smoke_mod.nvme_default_on(SimpleNamespace(arch="amd64-bios", nvme=False))
+
+
+def test_the_net_suite_never_inherits_the_nvme_rig(monkeypatch, tmp_path):
+    """QEMU's nvme device blocks savevm, which the net suite takes, so `smoke
+    --nvme` once errored all 16 net tests at setup."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    env = smoke_mod._net_suite_env(tmp_path)
+    assert "VIBEOS_QEMU_NVME" not in env
+    assert env["VIBEOS_ARTIFACT_DIR"] == str(tmp_path)
+
+
 def test_the_up_kernel_is_opt_in_only_and_nothing_automated_opts_in():
     """UP is a dead branch: no automated path may select it.
 
@@ -10880,3 +10977,65 @@ def test_polite_farm_gives_up_at_the_deadline(monkeypatch):
     monkeypatch.setattr(farm_mod.hostlock, "land_holder", lambda: {"kind": "land"})
     monkeypatch.setattr(farm_mod.hostlock, "foreign_boot_holders", lambda _pid: [])
     assert not farm_mod._wait_for_quiet_host("amd64", farm_mod.time.monotonic() - 1)
+
+
+def test_build_classifier_reads_the_FAILED_edge_not_the_whole_log():
+    """2026-10-05: a concurrent i386 --clean deleted kernel32.dll under the amd64
+    mkisofs edge, and the summary said CARGO_CHECK_FAIL with three `'error: {`
+    lines quoted from an unrelated cargo warning. Verbatim shape, trimmed."""
+    log = (
+        "[200/370] Building ntdll-rust\n"
+        "warning: unused variable\n"
+        "146 |             'error: {\n"
+        "   Compiling ntkrnlmp-cargo v0.1.0\n"
+        "[370/370] cd /tmp/vibeos/build-amd64/boot && mkisofs ...\n"
+        "FAILED: boot/CMakeFiles/livecd /tmp/vibeos/build-amd64/boot/CMakeFiles/livecd \n"
+        "cd /tmp/vibeos/build-amd64/boot && mkisofs ...\n"
+        "mkisofs: No such file or directory. Invalid node - "
+        "'/tmp/vibeos/build-i386/dll/win32/kernel32/kernel32.dll'.\n"
+        "ninja: build stopped: subcommand failed.\n"
+    )
+    cls, salient = build_mod._classify_build_failure(log, "", 1)
+    assert cls == "BUILD_FAIL"
+    assert salient[0].startswith("FAILED: boot/CMakeFiles/livecd")
+    assert any("kernel32.dll" in s for s in salient), salient
+    # a failed CARGO edge still classifies by its own output
+    cargo = (
+        "warning: `ld.lld: error` quoted in a doc\n"
+        "FAILED: ntoskrnl/ntoskrnl.exe\n"
+        "cargo build ...\n"
+        "error[E0308]: mismatched types\n"
+        "ninja: build stopped: subcommand failed.\n"
+    )
+    assert build_mod._classify_build_failure(cargo, "", 1)[0] == "CARGO_CHECK_FAIL"
+
+
+def test_staging_amd64_build_holds_build_i386_still(tmp_path, monkeypatch):
+    """amd64 media is partly made of build-i386 (closure at configure, mkisofs at
+    the last edge), so a staging amd64 build holds the i386 directory lock; a
+    deferred one (the gate's --no-wow64-stage) and other arches do not."""
+    (tmp_path / "build-i386").mkdir()
+    taken: list[str] = []
+    released: list[int] = []
+    monkeypatch.setattr(
+        build_mod.hostlock,
+        "acquire_build_dir",
+        lambda d, **kw: taken.append(Path(d).name) or 7,
+    )
+    monkeypatch.setattr(build_mod.hostlock, "release", released.append)
+
+    def held(arch: str, **flags) -> bool:
+        run = build_mod.Run("build", arch)
+        with contextlib.ExitStack() as reads:
+            ok = build_mod._hold_wow64_source(
+                run, tmp_path, arch, types.SimpleNamespace(**flags), reads
+            )
+            assert ok
+        return bool(taken)
+
+    assert held("amd64", no_wow64_stage=False)
+    assert taken == ["build-i386"] and released == [7]
+    taken.clear()
+    assert not held("amd64", no_wow64_stage=True)
+    assert not held("i386", no_wow64_stage=False)
+    assert not held("arm64", no_wow64_stage=False)

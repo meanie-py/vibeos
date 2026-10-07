@@ -1925,7 +1925,13 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             if output_buffer_length != core::mem::size_of::<DBGKD_GET_VERSION64>() as u32 {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                KdpSysGetVersion(output_buffer as PDBGKD_GET_VERSION64);
+                // Build it here, then one fault-tolerant store: KdpSysGetVersion's
+                // KdpMoveMemory is a raw copy, and this is the caller's buffer.
+                let mut version: DBGKD_GET_VERSION64 = core::mem::zeroed();
+                KdpSysGetVersion(&mut version);
+                if let Err(s) = ntkrnl_sys::probe::write_back(output_buffer as PDBGKD_GET_VERSION64, version) {
+                    return s;
+                }
                 status = STATUS_SUCCESS;
             }
         }
@@ -1933,7 +1939,10 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             if input_buffer_length != core::mem::size_of::<SYSDBG_VIRTUAL>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = *(input_buffer as PSYSDBG_VIRTUAL);
+                let request = match ntkrnl_sys::probe::read_back(input_buffer as *const SYSDBG_VIRTUAL) {
+                    Ok(v) => v,
+                    Err(s) => return s, // C: the caller's __except returns the code
+                };
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
@@ -1970,7 +1979,10 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             if input_buffer_length != core::mem::size_of::<SYSDBG_PHYSICAL>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = *(input_buffer as PSYSDBG_PHYSICAL);
+                let request = match ntkrnl_sys::probe::read_back(input_buffer as *const SYSDBG_PHYSICAL) {
+                    Ok(v) => v,
+                    Err(s) => return s, // C: the caller's __except returns the code
+                };
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
@@ -2008,7 +2020,10 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             if input_buffer_length != core::mem::size_of::<SYSDBG_CONTROL_SPACE>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = *(input_buffer as PSYSDBG_CONTROL_SPACE);
+                let request = match ntkrnl_sys::probe::read_back(input_buffer as *const SYSDBG_CONTROL_SPACE) {
+                    Ok(v) => v,
+                    Err(s) => return s, // C: the caller's __except returns the code
+                };
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
@@ -2036,7 +2051,10 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             if input_buffer_length != core::mem::size_of::<SYSDBG_CONTROL_SPACE>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = *(input_buffer as PSYSDBG_CONTROL_SPACE);
+                let request = match ntkrnl_sys::probe::read_back(input_buffer as *const SYSDBG_CONTROL_SPACE) {
+                    Ok(v) => v,
+                    Err(s) => return s, // C: the caller's __except returns the code
+                };
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
@@ -2064,7 +2082,10 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             if input_buffer_length != core::mem::size_of::<SYSDBG_IO_SPACE>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = *(input_buffer as PSYSDBG_IO_SPACE);
+                let request = match ntkrnl_sys::probe::read_back(input_buffer as *const SYSDBG_IO_SPACE) {
+                    Ok(v) => v,
+                    Err(s) => return s, // C: the caller's __except returns the code
+                };
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
@@ -2094,7 +2115,10 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             if input_buffer_length != core::mem::size_of::<SYSDBG_IO_SPACE>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = *(input_buffer as PSYSDBG_IO_SPACE);
+                let request = match ntkrnl_sys::probe::read_back(input_buffer as *const SYSDBG_IO_SPACE) {
+                    Ok(v) => v,
+                    Err(s) => return s, // C: the caller's __except returns the code
+                };
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
@@ -2124,29 +2148,39 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             if input_buffer_length != core::mem::size_of::<SYSDBG_MSR>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = input_buffer as PSYSDBG_MSR;
-                status = KdpSysReadMsr(
-                    (*request).Address,
-                    core::ptr::addr_of_mut!((*request).Data),
-                );
+                // Worked on a captured copy; Data goes back with one fault-tolerant store.
+                let mut request = match ntkrnl_sys::probe::read_back(input_buffer as *const SYSDBG_MSR) {
+                    Ok(v) => v,
+                    Err(s) => return s,
+                };
+                status = KdpSysReadMsr(request.Address, core::ptr::addr_of_mut!(request.Data));
+                // Unconditional, as the C's in-place call leaves whatever it stored;
+                // the local started as the caller's own value.
+                let data = core::ptr::addr_of_mut!((*(input_buffer as PSYSDBG_MSR)).Data);
+                if let Err(s) = ntkrnl_sys::probe::write_back(data, request.Data) {
+                    return s;
+                }
             }
         }
         SysDbgWriteMsr => {
             if input_buffer_length != core::mem::size_of::<SYSDBG_MSR>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = input_buffer as PSYSDBG_MSR;
-                status = KdpSysWriteMsr(
-                    (*request).Address,
-                    core::ptr::addr_of_mut!((*request).Data),
-                );
+                let mut request = match ntkrnl_sys::probe::read_back(input_buffer as *const SYSDBG_MSR) {
+                    Ok(v) => v,
+                    Err(s) => return s,
+                };
+                status = KdpSysWriteMsr(request.Address, core::ptr::addr_of_mut!(request.Data));
             }
         }
         SysDbgReadBusData => {
             if input_buffer_length != core::mem::size_of::<SYSDBG_BUS_DATA>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = *(input_buffer as PSYSDBG_BUS_DATA);
+                let request = match ntkrnl_sys::probe::read_back(input_buffer as *const SYSDBG_BUS_DATA) {
+                    Ok(v) => v,
+                    Err(s) => return s, // C: the caller's __except returns the code
+                };
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
@@ -2176,7 +2210,10 @@ pub unsafe extern "system" fn KdSystemDebugControl(
             if input_buffer_length != core::mem::size_of::<SYSDBG_BUS_DATA>() as ULONG {
                 status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                let request = *(input_buffer as PSYSDBG_BUS_DATA);
+                let request = match ntkrnl_sys::probe::read_back(input_buffer as *const SYSDBG_BUS_DATA) {
+                    Ok(v) => v,
+                    Err(s) => return s, // C: the caller's __except returns the code
+                };
                 let mut locked_buffer = core::ptr::null_mut();
                 let mut lock_variable = core::ptr::null_mut();
 
@@ -2248,7 +2285,12 @@ pub unsafe extern "system" fn KdChangeOption(
         return STATUS_ACCESS_VIOLATION;
     }
 
-    KdBlockEnable = *(in_buffer as *mut u8);
+    // NtSystemDebugControl passes the caller's buffer straight through; the C reads
+    // it inside that syscall's __try, whose handler returns the code.
+    KdBlockEnable = match ntkrnl_sys::probe::read_back(in_buffer as *const u8) {
+        Ok(v) => v,
+        Err(s) => return s,
+    };
 
     if !out_buffer_needed.is_null() {
         out_buffer_needed.write_volatile(0);
