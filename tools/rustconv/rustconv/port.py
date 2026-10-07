@@ -917,7 +917,14 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     if island_found:
         state = load_state(stem)  # it recorded island_headers + derive + island
     found |= island_found
-    found |= _resolve_externs(state, prelude, set(res.undefined) - found)
+    # A function the tree declares with DIFFERENT ABIs (kernel32's Sleep, RegCloseKey: some
+    # crates say "C", some "system") is settled the same way as one nobody declares -- by
+    # the prototype clang sees and the calling convention it reports. diskpart had eleven
+    # such calls left unresolved.
+    abi_split = {
+        n for n, why in res.conflicting.items() if why.startswith(("ABI disagreement", "mixed"))
+    }
+    found |= _resolve_externs(state, prelude, (set(res.undefined) | abi_split) - found)
     res.undefined = [n for n in res.undefined if n not in found]
     res.conflicting = {k: v for k, v in res.conflicting.items() if k not in found}
     res.copied = copied
@@ -986,7 +993,7 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
       reports on i386 -- c2rust writes `extern "C"` even for a stdcall (NTAPI) function.
     """
     from . import c2rust_anchor, sdk_facts
-    from .macro_authority import MacroAuthorityError
+    from .macro_authority import MacroAuthorityError, function_like_macros, identifier_aliases
 
     names = set(names) | prelude_resolve.existing_externs(prelude)
     sigs: dict[str, tuple[str, str, str]] = {}
@@ -1015,6 +1022,25 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             defs[name].where,
         )
     todo = names - set(sigs)
+    # The SDK's A/W aliases (`#define GetModuleHandle GetModuleHandleW`): declare the target
+    # from its prototype below and re-export it under the name the C spells. Only to a
+    # FUNCTION -- an alias of a function-like macro (CopyMemory -> RtlCopyMemory) is a call
+    # site that needs `!`, not a declaration.
+    sdk_alias: dict[str, str] = {}
+    for tu in state["tus"]:
+        pending = {n for n in todo if n not in sdk_alias}
+        if not pending:
+            break
+        try:
+            known = identifier_aliases(REPO, REPO / tu)
+            macros = function_like_macros(REPO, REPO / tu)
+        except MacroAuthorityError:
+            continue
+        for name in pending:
+            target = known.get(name)
+            if target and target not in macros and target != name:
+                sdk_alias[name] = target
+    todo = (todo - set(sdk_alias)) | set(sdk_alias.values())
     for tu in state["tus"]:
         if not todo:
             break
@@ -1032,6 +1058,9 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             abi = "C" if "..." in sig else abis[name]
             sigs[name] = (abi, sig, Path(tu).name)
             todo.discard(name)
+    for name, target in sorted(sdk_alias.items()):
+        if target in sigs or re.search(rf"\bfn {re.escape(target)}\b", prelude.read_text()):
+            sigs[name] = ("use", f"pub use crate::prelude::{target} as {name};", "sdk alias")
     prelude_resolve.write_externs(prelude, prelude_resolve.render_externs(sigs))
     if sigs:
         print(f"resolve: {len(sigs)} extern/alias declaration(s): {', '.join(sorted(sigs))}")

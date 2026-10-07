@@ -427,6 +427,22 @@ macro_rules! RTL_NUMBER_OF_FIELD {
     };
 }
 
+/// `guiddef.h:147` — `#define IsEqualGUID(rguid1, rguid2) (!memcmp(rguid1, rguid2,
+/// sizeof(GUID)))`, for C callers (C++ gets an inline operator). `GUID` is 16 bytes on every
+/// target, so the shared crate needs no GUID type: each argument may be a reference or a raw
+/// pointer to one. Eight crates had re-ported this by hand, three with different signatures.
+#[macro_export]
+macro_rules! IsEqualGUID {
+    ($a:expr, $b:expr $(,)?) => {{
+        let a = $a as *const _ as *const u8;
+        let b = $b as *const _ as *const u8;
+        #[allow(unused_unsafe)]
+        unsafe {
+            core::slice::from_raw_parts(a, 16) == core::slice::from_raw_parts(b, 16)
+        }
+    }};
+}
+
 /// `ntbasedef.h:110` — `#define FIELD_OFFSET(Type, Field) ((LONG)__builtin_offsetof(Type,
 /// Field))`. `LONG` is `i32` on every target (LLP64), so the result type is fixed.
 #[macro_export]
@@ -975,6 +991,15 @@ mod tests {
         let s = unsafe { core::slice::from_raw_parts(ps[1], 12) };
         let want: [u16; 12] = [76, 105, 98, 114, 97, 114, 121, 80, 97, 116, 104, 0];
         assert_eq!(s, &want);
+    }
+
+    #[test]
+    fn is_equal_guid_compares_all_sixteen_bytes() {
+        let a: [u32; 4] = [1, 2, 3, 4];
+        let mut b = a;
+        assert!(IsEqualGUID!(&a, &b));
+        b[3] = 5;
+        assert!(!IsEqualGUID!(&a, core::ptr::addr_of!(b)));
     }
 
     #[test]
