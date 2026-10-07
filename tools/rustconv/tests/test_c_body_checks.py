@@ -104,3 +104,12 @@ def test_an_invented_success_assignment_is_refused():
     assert not any("invented" in f for f in control_flow_findings(_STATUS_C, ok))
     c_with_success = _STATUS_C.replace("STATUS_INVALID_DEVICE_REQUEST", "STATUS_SUCCESS")
     assert not any("invented" in f for f in control_flow_findings(c_with_success, bad))
+
+
+def test_a_chained_c_assignment_gives_every_name_its_value():
+    from rustconv.c_body_checks import invented_flag_assignments
+
+    c = "Length = wcslen(d);\nPos = Length = 0;\n"
+    rust = "Length = wcslen(d);\nLength = 0;\nPos = Length;\n"
+    assert invented_flag_assignments(c, rust) == []
+    assert invented_flag_assignments("Length = wcslen(d);\n", "Length = 0;\n")

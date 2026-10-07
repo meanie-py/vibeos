@@ -161,8 +161,17 @@ def invented_flag_assignments(c_body: str, rust: str) -> list[str]:
     c_code = _C_COMMENT_OR_STRING.sub(" ", c_body)
     c_values: dict[str, set[str]] = {}
     for m in _C_ASSIGN.finditer(c_code):
-        rhs = re.sub(r"^\(\s*\w+\s*\)\s*", "", m.group(2).strip()).strip("() ")
-        c_values.setdefault(m.group(1), set()).add(rhs)
+        # A chained assignment gives every name in it the final value: usetup's
+        # `Pos = Length = 0;` was split into two statements by a correct translation, and
+        # `Length = 0` was refused on every sample because only `Pos` was recorded.
+        names = [m.group(1)]
+        rhs = m.group(2).strip()
+        while chained := re.match(r"([A-Za-z_]\w*)\s*=(?!=)\s*(.+)$", rhs, re.S):
+            names.append(chained.group(1))
+            rhs = chained.group(2).strip()
+        rhs = re.sub(r"^\(\s*\w+\s*\)\s*", "", rhs).strip("() ")
+        for name in names:
+            c_values.setdefault(name, set()).add(rhs)
     out = []
     for m in _RS_FLAG_ASSIGN.finditer(rust):
         if re.search(r"\blet\b", m.group("lead")):
