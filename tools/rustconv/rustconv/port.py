@@ -141,7 +141,10 @@ def _seed_switch_facts(state: dict, prelude: Path) -> None:
     names = state.get("switch_facts", [])
     if not names or not prelude.is_file():
         return
-    left = set(_resolve_facts(state, prelude, names)) & set(names)
+    _resolve_facts(state, prelude, names)
+    # Judged by the facts block itself: `_resolve_facts` hands back its input untouched when
+    # every name is already there, which read as "could not evaluate" on the second run.
+    left = set(names) - set(prelude_resolve.existing_facts(prelude))
     if left:
         raise PortError(
             f"clang could not evaluate case-label constant(s) {', '.join(sorted(left))}: "

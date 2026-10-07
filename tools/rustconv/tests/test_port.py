@@ -257,3 +257,15 @@ def test_a_macro_name_inside_a_string_is_not_a_call():
     out, fixed = fix_macro_calls(src, {"SpInfFindFirstLine", "DPRINT1"}, set())
     assert "if SpInfFindFirstLine!(a, b)" in out and "DPRINT1!(" in out
     assert 'b"SpInfFindFirstLine(\\"x\\")' in out and "// SpInfFindFirstLine(old)" in out
+
+
+def test_seeded_switch_facts_already_in_the_prelude_pass(tmp_path, monkeypatch):
+    prelude = tmp_path / "prelude.rs"
+    prelude.write_text("")
+    monkeypatch.setattr(port, "_resolve_facts", lambda state, p, names: names)
+    monkeypatch.setattr(
+        port.prelude_resolve, "existing_facts", lambda p: {"STD_INPUT_HANDLE": ("DWORD", 1, "x")}
+    )
+    port._seed_switch_facts({"switch_facts": ["STD_INPUT_HANDLE"]}, prelude)
+    with pytest.raises(port.PortError):
+        port._seed_switch_facts({"switch_facts": ["STD_INPUT_HANDLE", "MISSING_X"]}, prelude)
