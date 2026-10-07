@@ -167,6 +167,44 @@ def test_a_replay_reassembles_every_tu_and_never_buys(tmp_path, monkeypatch):
     assert all("--replay-only" in c and "--rebuy-rejected" not in c for c in runs)
 
 
+def test_a_dry_run_estimates_every_tu_at_cost_cap_zero(tmp_path, monkeypatch):
+    import subprocess
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    monkeypatch.setattr(port, "_arch_only_tus", lambda state, tus: {})
+    tus = ["m/a.c", "m/b.c"]
+    for tu in tus:
+        (tmp_path / tu).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / tu).write_text("int f(void) { return 0; }\n")
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    state = {"stem": "m", "crate": "m-rust", "module_dir": "m", "tus": tus, "stages": []}
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    runs: list[list[str]] = []
+
+    def fake_run(cmd, **kw):
+        runs.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(port.subprocess, "run", fake_run)
+    port.stage_translate("m", model="deepseek", cost_cap=0.0, only=[], dry_run=True)
+    assert len(runs) == 2 and all("--dry-run" in c for c in runs)
+
+
+def test_base_header_case_constants_are_recorded_not_blocking():
+    from rustconv import profile_derive as pd
+
+    from types import SimpleNamespace
+
+    dp = SimpleNamespace(
+        errors=[
+            pd.Finding("error", "SWITCH_CONST_IN_BASE_HEADER", "`STD_INPUT_HANDLE` is owned"),
+            pd.Finding("error", "SWITCH_CONST_IN_BASE_HEADER", "`STATUS_X` is owned"),
+        ]
+    )
+    assert port.switch_facts(dp) == ["STATUS_X", "STD_INPUT_HANDLE"]  # type: ignore[arg-type]
+
+
 def test_a_second_port_run_on_one_module_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(port, "STATE_ROOT", tmp_path)
     first = port._hold("m")

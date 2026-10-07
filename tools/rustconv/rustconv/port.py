@@ -113,10 +113,41 @@ def derive(module_dir: Path, target: str | None, arch: str = "i386") -> pd.Deriv
         if "already flipped" not in str(e):
             raise
         dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target, flipped_sources=True)
-    if dp.errors:
-        lines = "\n".join(str(f) for f in dp.errors)
+    blocking = [f for f in dp.errors if f.code != "SWITCH_CONST_IN_BASE_HEADER"]
+    if blocking:
+        lines = "\n".join(str(f) for f in blocking)
         raise PortError(f"profile_derive reports BLOCKING errors -- fix these first:\n{lines}")
     return dp
+
+
+def switch_facts(dp: pd.DerivedProfile) -> list[str]:
+    """Case-label constants a BASE header owns and the -sys crate lacks.
+
+    The fix profile_derive asks for is transcribing each into the prelude, and that is
+    mechanical: scaffold has clang evaluate them (`_resolve_facts`), so a translated
+    `STD_INPUT_HANDLE =>` arm names a constant instead of binding everything. resolve cannot
+    find these on its own -- an unknown name in a pattern is a binding, not an error.
+    """
+    return sorted(
+        m.group(1)
+        for f in dp.errors
+        if f.code == "SWITCH_CONST_IN_BASE_HEADER"
+        for m in [re.search(r"`(\w+)`", f.detail)]
+        if m
+    )
+
+
+def _seed_switch_facts(state: dict, prelude: Path) -> None:
+    names = state.get("switch_facts", [])
+    if not names or not prelude.is_file():
+        return
+    left = set(_resolve_facts(state, prelude, names)) & set(names)
+    if left:
+        raise PortError(
+            f"clang could not evaluate case-label constant(s) {', '.join(sorted(left))}: "
+            "an unresolved name in a match arm binds everything -- transcribe them into "
+            f"{prelude} by hand"
+        )
 
 
 def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
@@ -139,6 +170,7 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
         # Never the rust_*.c cohab scaffolding a flipped module's re-derive also lists.
         tus=[str(p.relative_to(REPO)) for p in dp.module.compiled_tus if not pd.is_shim_tu(p)],
         usermode=dp.module.is_usermode,
+        switch_facts=switch_facts(dp),
     )
     _record(
         state, "derive", started, tus=len(dp.module.compiled_tus), arm_changed=updated != script
@@ -308,6 +340,7 @@ def stage_scaffold(module_dir: Path, target: str | None) -> None:
     kept: list[Path] = []
     written = pd.scaffold_crate(dp, _crate_dir(state), force=False, kept=kept)
     member = add_workspace_member(state["crate"])
+    _seed_switch_facts(state, _crate_dir(state) / "src" / "prelude.rs")
     _record(state, "scaffold", started, written=len(written), kept=len(kept), member_added=member)
     print(
         f"scaffold: {len(written)} file(s) written, {len(kept)} kept, into {_crate_dir(state)}"
@@ -410,7 +443,8 @@ def stage_translate(
         # passes cap 0, and every replay ever run broke out here before the first TU and
         # reassembled nothing -- each "rebuild from the banks" re-ran resolve/repair/fix over
         # whatever the files already held.
-        if left <= 0 and not replay_only:
+        # Nor a dry run: it is how you learn what the cap should BE, and it buys nothing.
+        if left <= 0 and not (replay_only or dry_run):
             print(
                 f"translate: cost cap ${cost_cap:.2f} reached; {len(todo) - len(done)} TU(s) left"
             )
@@ -787,6 +821,7 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         _resolve_facts(state, prelude, [n for n in res.undefined if n not in types_only])
         + type_names
     )
+    _seed_switch_facts(state, prelude)
     type_gaps = set(res.undefined) | {
         n for n, why in res.conflicting.items() if why.startswith("a type")
     }

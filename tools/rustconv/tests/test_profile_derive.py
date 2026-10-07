@@ -520,6 +520,17 @@ def test_tu_local_const_needs_no_island_change(tmp_path):
     assert not dp.errors
 
 
+def test_header_symbols_sees_a_comment_wrapped_enum_member(tmp_path):
+    # setuplib's fsutil.h, verbatim shape: the member was reported UNOWNED.
+    h = tmp_path / "fsutil.h"
+    h.write_text(
+        "typedef enum _FSVOLNOTIFY\n{\n    FSVOLNOTIFY_CHECKERROR,\n"
+        "    /**/ChangeSystemPartition/**/ // FIXME: Deprecate!\n} FSVOLNOTIFY;\n"
+    )
+    syms = header_symbols(h, frozenset({"ChangeSystemPartition"}))
+    assert syms["ChangeSystemPartition"][0] == "enum"
+
+
 def test_header_symbols_classifies_macro_kinds(tmp_path):
     h = _write(
         tmp_path / "h.h",

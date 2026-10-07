@@ -2143,6 +2143,14 @@ def _macro_kind(body: str) -> str:
     return "literal" if re.fullmatch(r"[-+~()\s0-9a-fA-FxXLlUu|&<>*/+]*", core) else "expression"
 
 
+_C_COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+
+
+def _strip_c_comments(text: str) -> str:
+    """Blank C comments, keeping newlines so line-anchored patterns still line up."""
+    return _C_COMMENT_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+
+
 def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str, tuple[str, str]]:
     """``{name: (macro_kind, definition)}`` for the constants a header OWNS.
 
@@ -2155,8 +2163,12 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
     ``#define TDI_ADDRESS_TYPE_IPX`` line, `IPX` is reported UNOWNED, and the tool raises a
     FALSE §9.112 alarm on a constant that is defined two lines from its sibling. (Found on
     the real ``afd``/``tdihelpers`` closure, not in a unit test.)
+
+    Comments are blanked first: setuplib's fsutil.h spells an enum member
+    ``/**/ChangeSystemPartition/**/ // FIXME``, which no member pattern sees through, and the
+    member was reported UNOWNED.
     """
-    text = _read(path)
+    text = _strip_c_comments(_read(path))
     out: dict[str, tuple[str, str]] = {}
     if wanted is not None:
         if not wanted:
