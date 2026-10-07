@@ -410,6 +410,8 @@ members = [
     # cfg(aarch64), the rest is the arch-neutral contract types).
     "wowx64-rust",
     "wowx64-cargo",
+    "usetup-rust",
+    "diskpart-rust",
 ]
 resolver = "2"
 

@@ -421,9 +421,9 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | # | Quest | Doc | Size | Status (2026-07-10) |
 |---|-------|-----|------|-----------|
 | 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
-| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). Next: boot from the card instead of the RAM disk |
-| 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
-| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). Next: its interrupts, then GEM and I217 |
+| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). **Pi 5 SD reads** (2026-10-06: the same `sdhc.sys` on the BCM2712's SDC0, ~11 MB/s; writes enabled but untested, its card holds the bench stager). Next: boot from the card instead of the RAM disk |
+| 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC; shared vectors chain since 2026-10-07, for the Pi 5's two RP1 xHCIs on one SPI) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
+| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). Next: its interrupts, then GEM and I217. The Pi 5's GEM is not in its firmware's ACPI tables at all (`docs/engineering/pi5-acpi/dsdt.dsl`), so it needs describing before a driver can find it |
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
 | 10f | **Maybe: bring legacy BIOS boot back (loader only)** for i386 and amd64. The BIOS prune (`85102c111a3`..`5ca4d482d32`, 2026-05-29) assumed BIOS no longer mattered. That holds for amd64 PCs from about 2012 on, but almost every real 32-bit PC is BIOS-only, so without it i386 boots on no physical hardware; SeaBIOS is also the default in plain QEMU and Proxmox, and on coreboot/Libreboot machines such as the owner's OptiPlex 9020 (a candidate x64 bench: COM1, NVMe boot through SeaBIOS). **Scope: the loader, not the emulator.** The PC-AT machine layer survives in `freeldr-rust` (`machpc`, `pcmem`, `pcdisk`, `pcvesa`, `pchw`, `pxe`); restore the real-mode entry (`arch/realmode/*`) and `pcat.cmake` from git, wire `freeldr.sys` into the cargo-driven loader link (`ab763550984`), and repair four months of drift in the BIOS-only paths. The loader hands the kernel a VESA framebuffer like UEFI's GOP one, so fast486, HAL x86bios and videoprt INT10 stay retired. **Add a SeaBIOS smoke cell for i386 and amd64**, or it rots again. Quick experiment first: OpenCore's OpenDuet (UEFI loaded from disk by a legacy BIOS) runs today's `uefildr.efi` with no OS change. | — | M | considered 2026-10-05 |
 
@@ -644,6 +644,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (0x1E with a DISK_GEOMETRY in FP, 0x109 from WAITDEP). `[IO-STRANDED]` now reports any
   recurrence. Field manual: "A kernel return address holds a DISK_GEOMETRY". It may account
   for other arm64 dispatcher flakes in this registry; re-check them against it.
+- **Pi 5: BUGCHECK 0x80 at the kernel's first `_enable`, every boot** (FIXED 2026-10-06,
+  `e4622a4597b` regression). The loader's new arm64 PCI detection read the MCFG's ECAM
+  window, and the Pi 5's MCFG names the Broadcom controller's registers, not ECAM: the
+  first read of 00:00.0 returned 0xDEADDEAD and left an SError pending. `_enable` is
+  `daifclr #0xF`, the first unmask of SError, so it surfaced there, long after the read.
+  The loader now has an MCFG quirk list (`RPIFDN`). **Still owed:** the arm64 HAL's
+  `ecam_bus0_va` (`hal-rust/src/arm64/halstubs.rs`) probes QEMU's two fixed ECAM bases
+  on any board, and on a Pi the low one (0x3F00_0000) is RAM, which it would accept as
+  ECAM. Nothing on the Pi reaches it while the loader reports no PCI bus, but the HAL
+  should take the base from the loader's MCFG instead of guessing.
 - **Interactive `cmd` died on its first redirection** (FIXED 2026-10-06). `echo hi > F:\x.txt`
   typed at a cmd prompt killed cmd with a Rust panic in ntdll's
   `CsrAllocateMessagePointer` (`smss-csrss-rust/src/csrlib/capture.rs`): it indexed the
@@ -919,21 +929,43 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `ExfReleasePushLock[Shared]`, so a release that found another thread already waking spun
     forever on a stale value. It was the unexplained HANG_TIMEOUT 20261005-002201-1b2o74m7
     (CPU1 in `ExfReleasePushLock+308`) and hung every regstress `-smp 2` boot until fixed.
-  - **arm64 `-smp 2` under regstress: timed waits stop expiring** (OPEN, about 3 in 11 boots
-    on 2026-10-06; still there after the amd64 `KiSwitchKernelStack` IRQ fix, which arm64 has no
-    counterpart of). regstress's `Sleep` heartbeat and the CENSUS thread go silent mid-run. It
-    is NOT a dead clock: the hang capture now reads KUSER_SHARED_DATA.InterruptTime in both
-    samples, and it advanced 3.25 s across the 5 s gap (20261006-135002-2c9c8anl,
-    verdict `IDLE-BLOCKED`) with both vCPUs on `KiIdleLoop`'s `wfi` and CPU1's tick live. So
-    something readies nothing: either expired timers never wake their waiters or readied
-    threads are lost. The earlier "FROZEN, read GICC_PMR/CNTV_CTL" lead came from identical PCs
-    alone, which an idle box shows anyway. Not the `ready`-snapshot `loadvm` either (one wedge
-    began 10 s before the snapshot). A timer-table watchdog (overdue timers + per-PRCB ready
-    state, printed from CPU0's tick) is on local branch `diag/smp2-timerwd` (6d6e85a5f55); its 4
-    boots all passed, so it has not caught one yet. One debug-VM boot instead died BUGCHECK 0x19
-    (BAD_POOL_HEADER, P1=3, `ExFreePoolWithTag`) during regstress thread startup. Repro:
+  - **arm64 `-smp 2` under regstress: user pages lost to a local-only TLB flush** (FIXED
+    2026-10-06; it was filed as "timed waits stop expiring", which was wrong). About 1 in 3
+    regstress `-smp 2` boots stopped with no further heartbeat. Every failing boot had a user
+    access violation in ntdll's heap right after `[REGSTRESS] start` (free entry with `Size`
+    0 in `RtlpRemoveFreeBlock`, or a NULL `Flink` in `RtlpInsertFreeBlockHelper`), and no
+    passing boot had one. The idle CPUs the hang capture showed were a process stalled
+    behind its dead worker, not a timer bug. A probe showed the page under the bad entry
+    was 512 of 512 qwords zero, at the guard-entry slot the heap writes just below a
+    decommit. Cause: `MiProcessValidPteList` (decommit), `MiDeletePte` (release),
+    `MiRemoveMappedPtes` (view unmap) and `MiFlushTbAndCapture` (protect) flushed with
+    `KeFlushCurrentTb`, as the C does, so the other CPU kept translating the VA to a frame
+    MM had freed. Its writes went to that frame while this CPU recommitted the VA to a zero
+    page, and the frame's next owner was overwritten (the BAD_POOL_HEADER 0x19 seen once
+    during regstress startup fits this). Fix: those four sites use `KeFlushProcessTb`
+    (`tlbi vmalle1is` on arm64, the shootdown broadcast on x86 SMP). Same latent bug on
+    amd64/i386 SMP, fixed by the same change. Measured on arm64 regstress `-smp 2`:
+    before, 6 of 17 boots failed this way; after, 23 of 24 completed with no heap fault (the
+    24th was the vioblk ISR race below, now fixed; 12 of 12 with both fixes, runs
+    20261006-232117-0slrdumx and 20261006-232124-1r91etyp).
+    Field manual: "User pages lost after a decommit". Repro (pre-fix):
     `VIBEOS_PAYLOAD=regstress ./vibeos-cli build --arch arm64 && ./vibeos-cli smoke --arch arm64
-    --payload regstress --smp 2 --repeat 4`.
+    --payload regstress --smp 2 --repeat 6`.
+  - **arm64 `-smp 2`: vioblk ISR ran inside a synchronized routine** (FIXED 2026-10-06). One
+    regstress `-smp 2` boot died before the desktop in a Rust panic in vioblk.sys
+    (virtio-drivers `queue.rs:477`, `assert_ne!(buffer.len(), 0)`):
+    the completion interrupt was serviced on CPU 1 while `HwStartIo` on CPU 0 had queued the
+    request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
+    without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
+    i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
+  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (OPEN, unowned, found
+    2026-10-06; about 8 of 45 `smoke:amd64-bios` gate boots that day, across lanes). The lane
+    boots from a USB stick over xHCI with an NVMe disk attached. Usually csrss takes
+    `0xC0000006` (STATUS_IN_PAGE_ERROR) at the same ntdll address and the boot hangs; once the
+    font driver took it in kernel mode as BUGCHECK 0x1E in `ftfd.dll`. Every amd64-bios boot,
+    passing ones included, prints 9 `ASSERT FAILED: !Pkt->SlistEntry.Next at xferpkt.rs:706`
+    (classpnp reusing a transfer packet still on its free list), which is the first suspect.
+    Runs: 20261006-041704-og7v50sd, 20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
   - **arm64 FAULTLOOP was the detector, not a loop** (RESOLVED 2026-10-04). The report
     fingerprinted a fault as (VA, PC, TTBR0); a stream of DISTINCT faults sharing those --
     Cc reading many small files (rapps' cab extraction), each new VACB recycled onto the same

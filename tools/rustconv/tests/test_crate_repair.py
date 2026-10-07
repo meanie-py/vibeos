@@ -2023,3 +2023,38 @@ def test_a_function_into_an_option_fn_slot_is_some():
     assert "EnumerateBootStoreEntries(h, Some(EnumerateInstallations), d);" in _apply_plan(
         src, diag
     )
+
+
+def test_a_cast_followed_by_less_than_is_parenthesized():
+    from rustconv.crate_repair import _guard_cast_before_lt as g
+
+    assert g("(a - b) as i32", b" < h") == "((a - b) as i32)"
+    assert g("(a - b) as i32", b" == h") == "(a - b) as i32"
+    assert g(" as i32", b" < h") == " as i32"
+
+
+def test_a_c_literal_into_a_mut_pointer_parameter_casts_mut():
+    from rustconv.crate_repair import RULE_LITERAL_MUT, _Ctx, _literal_mut_rule
+
+    src = b"HasPrefix(s, RUSTCONV_WSTR_AB12.as_ptr(), &mut x);\n"
+    lo = src.index(b"RUSTCONV")
+    hi = src.index(b", &mut")
+    diag = {
+        "code": {"code": "E0308"},
+        "spans": [
+            {
+                "file_name": "m.rs",
+                "byte_start": lo,
+                "byte_end": hi,
+                "line_start": 1,
+                "column_start": lo + 1,
+                "label": "types differ in mutability",
+            }
+        ],
+        "children": [
+            {"message": "expected raw pointer `*mut u16`\nfound raw pointer `*const u16`"}
+        ],
+    }
+    edits, _, handled = _literal_mut_rule(diag, lambda f: src, _Ctx(target="i386", width=32))
+    assert handled and edits[0].rule == RULE_LITERAL_MUT
+    assert edits[0].replacement == "RUSTCONV_WSTR_AB12.as_ptr().cast_mut()"

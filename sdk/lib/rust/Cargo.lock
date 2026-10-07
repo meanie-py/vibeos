@@ -591,6 +591,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "diskpart-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "dnsapi-rust"
 version = "0.1.0"
 dependencies = [
@@ -2895,6 +2905,17 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "winsrv-sys",
+]
+
+[[package]]
+name = "usetup-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]

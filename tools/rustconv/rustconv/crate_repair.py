@@ -82,6 +82,7 @@ RULE_UNSIGNED_NEGATE = "unsigned_negative_literal"
 RULE_OPTION_FN_AS_PTR = "option_fn_as_pointer"
 RULE_SOME_FN_ITEM = "some_fn_item"
 RULE_KEYWORD_FIELD = "bindgen_keyword_field"
+RULE_LITERAL_MUT = "c_literal_to_mut_param"
 RULE_BITFIELD = "bitfield_accessor"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
@@ -125,6 +126,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_OPTION_FN_AS_PTR,
     RULE_SOME_FN_ITEM,
     RULE_KEYWORD_FIELD,
+    RULE_LITERAL_MUT,
     RULE_BITFIELD,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
@@ -977,6 +979,19 @@ def _enclosing_call(masked: bytes, start: int) -> tuple[str | None, int]:
 _RE_TRAILING_CAST = re.compile(r"\s+as\s+(?:" + "|".join(sorted(INT_PRIMITIVES)) + r")\s*$")
 
 
+def _return_type_name(diagnostic: Mapping[str, Any], load: FileReader) -> str | None:
+    """The type NAME a mismatch's "expected ... because of return type" label points at."""
+    for span in diagnostic.get("spans") or []:
+        if "because of return type" not in str(span.get("label") or ""):
+            continue
+        data = load(str(span.get("file_name") or ""))
+        if data is None:
+            return None
+        text = data[int(span["byte_start"]) : int(span["byte_end"])].decode("utf-8", "replace")
+        return text.strip() if re.fullmatch(r"\s*[A-Za-z_]\w*\s*", text) else None
+    return None
+
+
 def _width_alias_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -1035,6 +1050,42 @@ def _width_alias_rule(
             continue
         text = data[start:end].decode("utf-8", "replace")
         if not _balanced(masked[start:end]):
+            continue
+        returned = _return_type_name(diagnostic, load)
+        if (
+            returned is not None
+            and masked[:start].rstrip().endswith(b"return")
+            and _next_code_byte(masked, end) == b";"
+        ):
+            # `return (EXIT_SUCCESS) as i32;` in a fn declared `-> EXIT_CODE`: the function's
+            # own signature is the authority, exactly as a callee's parameter is below.
+            # diskpart's command table (31 E0308s) became 31 of these once the definitions
+            # took the C prototype's return type.
+            if returned in INT_PRIMITIVES or returned not in ctx.local_aliases:
+                decline("return_alias_not_local", f"`{returned}`")
+                continue
+            inner = _RE_TRAILING_CAST.sub("", text).strip()
+            if not _balanced(_mask_lexical(inner.encode())):
+                inner = text.strip()
+            ctx.claimed.add((file_name, start, end))
+            edits.append(
+                Edit(
+                    file_name=file_name,
+                    byte_start=start,
+                    byte_end=end,
+                    replacement=f"({inner}) as {returned}",
+                    rule=RULE_WIDTH_ALIAS,
+                    authority=(
+                        f"the enclosing function returns `{returned}`, declared in this crate; "
+                        f"the expression is `{found}`. Casting to the NAME is portable."
+                    ),
+                    original=text,
+                    line=line,
+                    column=int(span.get("column_start") or 0),
+                    requires_target_agreement=False,
+                    targets=(ctx.target,),
+                )
+            )
             continue
         if _prev_code_byte(masked, start) not in (b"(", b",") or _next_code_byte(
             masked, end
@@ -3633,10 +3684,61 @@ def _some_fn_item_rule(
     return edits, [], bool(edits)
 
 
+_C_LITERAL_PTR = re.compile(r"(?:RUSTCONV_WSTR_\w+|b\"(?:[^\"\\]|\\.)*\")\.as_ptr\(\)")
+
+
+def _literal_mut_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A C string literal passed to a non-const pointer parameter: `.cast_mut()`.
+
+    In C a string literal is `wchar_t[N]` and decays to `wchar_t *`, so const-incorrect
+    prototypes take it without a cast -- diskpart's `HasPrefix(PWSTR, PWSTR, PWSTR *)`, called
+    with `L"primary"` at 22 sites. The sealed literal is a Rust static, `.as_ptr()` is
+    `*const`, and rustc says "types differ in mutability". Only for an expression that IS the
+    literal (a `RUSTCONV_WSTR_*` static or a byte string); C's semantics, nothing invented --
+    writing through it is undefined in both languages.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0308":
+        return [], [], False
+    text_all = json.dumps(diagnostic)
+    if "types differ in mutability" not in text_all or "found raw pointer `*const" not in text_all:
+        return [], [], False
+    edits: list[Edit] = []
+    for span in diagnostic.get("spans") or []:
+        if "types differ in mutability" not in str(span.get("label") or ""):
+            continue
+        file_name = str(span.get("file_name") or "")
+        data = load(file_name)
+        if data is None:
+            continue
+        lo, hi = int(span["byte_start"]), int(span["byte_end"])
+        inner = data[lo:hi].decode("utf-8", "replace")
+        if not _C_LITERAL_PTR.fullmatch(inner.strip()):
+            continue
+        if _in_macro_definition(_mask_lexical(data), lo):
+            continue
+        edits.append(
+            _simple_edit(
+                RULE_LITERAL_MUT,
+                file_name,
+                data,
+                lo,
+                hi,
+                f"{inner.strip()}.cast_mut()",
+                "rustc E0308 (mutability): a C string literal decays to a non-const pointer",
+                span,
+                ctx,
+            )
+        )
+    return edits, [], bool(edits)
+
+
 _RULE_TABLE: dict[
     str, Callable[[Mapping[str, Any], FileReader, _Ctx], tuple[list[Edit], list[Skipped], bool]]
 ] = {
     RULE_WIDTH_ALIAS: _width_alias_rule,
+    RULE_LITERAL_MUT: _literal_mut_rule,
     RULE_NUMERIC_CAST: _numeric_cast_rule,
     RULE_COMPARISON: _comparison_rule,
     RULE_MATCH_SCRUTINEE: _match_scrutinee_rule,
@@ -4030,6 +4132,24 @@ def assert_faithful(edit: Edit) -> None:
             )
 
 
+_TRAILING_CAST = re.compile(r"\bas\s+[A-Za-z_][\w:]*\s*$")
+
+
+def _guard_cast_before_lt(replacement: str, rest: bytes) -> str:
+    """Parenthesize a cast that a `<` follows: `x as i32 < y` does not parse.
+
+    rustc reads `i32 <` as the start of generic arguments. usetup's partlist.rs got
+    `(a - b) as i32 < (Height) as i32` from a promotion cast, and that one parse error hid
+    every other error in the crate. A suffix-only edit (` as T`) has no start to wrap, so
+    it is left alone.
+    """
+    if replacement.startswith(" ") or not _TRAILING_CAST.search(replacement):
+        return replacement
+    if not rest.lstrip(b" \t\r\n").startswith(b"<"):
+        return replacement
+    return f"({replacement})"
+
+
 def apply_edits(
     edits: Sequence[Edit], root: Path, within: Path | None = None
 ) -> tuple[list[Edit], dict[str, bytes], list[Skipped]]:
@@ -4083,7 +4203,8 @@ def apply_edits(
                     )
                 )
                 continue
-            data = data[: edit.byte_start] + edit.replacement.encode() + data[edit.byte_end :]
+            replacement = _guard_cast_before_lt(edit.replacement, data[edit.byte_end :])
+            data = data[: edit.byte_start] + replacement.encode() + data[edit.byte_end :]
             last_start = edit.byte_start
             applied.append(edit)
         path.write_bytes(data)
