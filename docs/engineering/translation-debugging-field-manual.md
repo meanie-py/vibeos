@@ -5211,6 +5211,25 @@ local, then its buffer field used raw), and a method call — those are caught o
 write INTO a user buffer the caller pinned with EngSecureMem/MmSecureVirtualMemory first
 (NtGdiGetDIBitsInternal) is safe and carries a nolint.
 
+**The double-fetch is the same hazard in TIME, and SMP is what makes it bite.** Capturing a
+user value ONCE and using the copy is only half enforced by the rule above; the other half is
+never capturing the SAME address TWICE. Two `read_back`/`safe_copy_from_user` of one user
+pointer take two independent snapshots, and a thread on another CPU changes the value between
+them, so a length validated on the first read no longer bounds the copy sized by the second.
+`tools/scan_double_fetch.py` (`vibeos-cli check`, baseline-gated) flags a source read twice on
+one control-flow path, and the quieting rules it needs are instructive: sibling `match`/`if-else`
+arms and a branch that `break`/`return`s before the second read are mutually exclusive (not a
+re-read); a source POINTER advanced between the reads (`p = p.add(i)`) addresses different memory
+each time (a streaming copy); and the source normaliser must strip a trailing `as T` only at
+paren depth 0, or `(*(p as *const S)).a` and `.b` collapse to one key. The real one it caught:
+`SeCaptureSecurityDescriptor` read the SD header, branched on `Control & SE_SELF_RELATIVE`, then
+re-read Control from the absolute struct — a racing flip made it copy absolute pointer fields and
+then rebase them as self-relative offsets, a wild address handed to `RtlValidSid`. Fixed by
+pinning the self-relative decision and the header scalars from the first read. The baseline holds
+two reviewed two-stage reads (header then body, size pinned from the kernel copy) and one owed
+low-severity init-time case; a NEW same-path pair fails. What it cannot see: two fetches split
+across a syscall and a worker it calls.
+
 **Syscalls are not the only door, and the scanner only watches syscalls.** `int 2d` hands the
 kernel a user pointer in a register, which arrives as `ExceptionInformation[1]`. KdpStub's
 debugger-less echo of `BREAKPOINT_PRINT` to the UART, which is our addition with no C to drop

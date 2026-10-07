@@ -1,0 +1,3 @@
+sdk/lib/rust/se-rust/src/sd.rs: SeCaptureSecurityDescriptor OriginalDescriptor
+sdk/lib/rust/win32k-rust/src/dibobj.rs: NtGdiCreateDIBSection bmi
+sdk/lib/rust/win32k-rust/src/ntstubs.rs: NtUserInitializeClientPfnArrays pfnClientW
