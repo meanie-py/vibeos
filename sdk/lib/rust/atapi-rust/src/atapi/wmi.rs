@@ -4,6 +4,7 @@ use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[no_mangle]
 pub static mut MSIde_PortDeviceInfo_GUID: GUID = _GUID {
     Data1: 0x53f5630f as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0xb6bf as ::core::ffi::c_ushort,
@@ -27,8 +28,7 @@ static mut AtapWmiGuidList: [WMIGUIDREGINFO; 1] = unsafe {
         Flags: 0 as ULONG,
     }]
 };
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn AtaQueryWmiRegInfo(
+unsafe extern "system" fn AtaQueryWmiRegInfo(
     mut DeviceObject: PDEVICE_OBJECT,
     mut RegFlags: PULONG,
     mut InstanceName: PUNICODE_STRING,
@@ -59,115 +59,7 @@ unsafe extern "stdcall" fn AtaQueryWmiRegInfo(
     *Pdo = (*DevExt).Common.Self_;
     return STATUS_SUCCESS;
 }
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn AtaQueryWmiRegInfo(
-    mut DeviceObject: PDEVICE_OBJECT,
-    mut RegFlags: PULONG,
-    mut InstanceName: PUNICODE_STRING,
-    mut RegistryPath: *mut PUNICODE_STRING,
-    mut MofResourceName: PUNICODE_STRING,
-    mut Pdo: *mut PDEVICE_OBJECT,
-) -> NTSTATUS {
-    let mut DevExt: PATAPORT_DEVICE_EXTENSION =
-        (*DeviceObject).DeviceExtension as PATAPORT_DEVICE_EXTENSION;
-    if (KeGetCurrentIrql() as ::core::ffi::c_int) as u32 > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as PCSTR,
-            KeGetCurrentIrql() as ::core::ffi::c_int,
-        );
-        if 0 as ::core::ffi::c_int == 0 {
-            RtlAssert(
-                b"0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
-                b"drivers/storage/ide/atapi/wmi.c\0"
-                    as *const u8 as *const ::core::ffi::c_char as PVOID,
-                38 as ULONG,
-                ::core::ptr::null_mut::<CHAR>(),
-            );
-        } else {
-        };
-    }
-    *RegFlags = WMIREG_FLAG_INSTANCE_PDO;
-    *RegistryPath = &raw mut AtapDriverRegistryPath as PUNICODE_STRING;
-    *Pdo = (*DevExt).Common.Self_;
-    return STATUS_SUCCESS;
-}
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn AtaQueryWmiDataBlock(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    GuidIndex: u32,
-    InstanceIndex: u32,
-    InstanceCount: u32,
-    InstanceLengthArray: *mut u32,
-    BufferAvail: u32,
-    Buffer: *mut u8,
-) -> i32 {
-    let mut DevExt: *mut _ATAPORT_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut Status: i32 = 0;
-    let mut AtaScsiAddress: ATA_SCSI_ADDRESS = { let mut __lit: ATA_SCSI_ADDRESS = core::mem::zeroed(); __lit.__bindgen_anon_1.Lun = 0; __lit.__bindgen_anon_1.TargetId = 0; __lit.__bindgen_anon_1.PathId = 0; __lit.__bindgen_anon_1.IsValid = 0; __lit };
-    let mut DeviceInfo: *mut _MSIde_PortDeviceInfo = core::ptr::null_mut();
-
-    PAGED_CODE!();
-
-    if GuidIndex as usize > RTL_NUMBER_OF!(AtapWmiGuidList) as usize {
-        Status = STATUS_WMI_GUID_NOT_FOUND;
-        return WmiCompleteRequest(
-            DeviceObject,
-            Irp,
-            Status,
-            core::mem::size_of::<_MSIde_PortDeviceInfo>() as u32,
-            (IO_NO_INCREMENT) as CCHAR,
-        );
-    }
-
-    if InstanceIndex != 0 || InstanceCount != 1 {
-        Status = STATUS_WMI_INSTANCE_NOT_FOUND;
-        return WmiCompleteRequest(
-            DeviceObject,
-            Irp,
-            Status,
-            core::mem::size_of::<_MSIde_PortDeviceInfo>() as u32,
-            (IO_NO_INCREMENT) as CCHAR,
-        );
-    }
-
-    if InstanceLengthArray.is_null()
-        || (BufferAvail as usize) < core::mem::size_of::<_MSIde_PortDeviceInfo>()
-    {
-        Status = STATUS_BUFFER_TOO_SMALL;
-        return WmiCompleteRequest(
-            DeviceObject,
-            Irp,
-            Status,
-            core::mem::size_of::<_MSIde_PortDeviceInfo>() as u32,
-            (IO_NO_INCREMENT) as CCHAR,
-        );
-    }
-
-    DevExt = (*DeviceObject).DeviceExtension as *mut _ATAPORT_DEVICE_EXTENSION;
-    AtaScsiAddress = (*DevExt).Device.AtaScsiAddress;
-
-    DeviceInfo = Buffer as *mut _MSIde_PortDeviceInfo;
-    (*DeviceInfo).Bus = AtaScsiAddress.PathId;
-    (*DeviceInfo).Target = AtaScsiAddress.TargetId;
-    (*DeviceInfo).Lun = AtaScsiAddress.Lun;
-
-    *InstanceLengthArray = core::mem::size_of::<_MSIde_PortDeviceInfo>() as u32;
-
-    Status = STATUS_SUCCESS;
-
-    return WmiCompleteRequest(
-        DeviceObject,
-        Irp,
-        Status,
-        core::mem::size_of::<_MSIde_PortDeviceInfo>() as u32,
-        (IO_NO_INCREMENT) as CCHAR,
-    );
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn AtaQueryWmiDataBlock(
+unsafe extern "system" fn AtaQueryWmiDataBlock(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     GuidIndex: u32,
@@ -270,14 +162,14 @@ unsafe extern "C" fn AtaPdoWmi(
             IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
         }
 
-        IrpForward | IrpNotWmi => {
+        _ => {
+            ASSERT!(FALSE);
             Status = STATUS_NOT_SUPPORTED;
             (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
             IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
         }
 
-        _ => {
-            ASSERT!(FALSE);
+        IrpForward | IrpNotWmi => {
             Status = STATUS_NOT_SUPPORTED;
             (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
             IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
@@ -324,8 +216,8 @@ pub unsafe extern "C" fn AtaPdoWmiRegistration(
         (*DevExt).WmiLibInfo.GuidCount = RTL_NUMBER_OF!(AtapWmiGuidList);
         (*DevExt).WmiLibInfo.GuidList = AtapWmiGuidList.as_mut_ptr();
 
-        (*DevExt).WmiLibInfo.QueryWmiRegInfo = Some(AtaQueryWmiRegInfo as unsafe extern "system" fn(_, _, _, _, _, _) -> _);
-        (*DevExt).WmiLibInfo.QueryWmiDataBlock = Some(AtaQueryWmiDataBlock as unsafe extern "system" fn(_, _, _, _, _, _, _, _) -> _);
+        (*DevExt).WmiLibInfo.QueryWmiRegInfo = Some(AtaQueryWmiRegInfo);
+        (*DevExt).WmiLibInfo.QueryWmiDataBlock = Some(AtaQueryWmiDataBlock);
 
         Action = WMIREG_ACTION_REGISTER;
     } else {

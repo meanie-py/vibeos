@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{PMDL, RtlUlongByteSwap, RtlUlonglongByteSwap, ServiceAction};
+use ntkrnl_sys::ddk::{PMDL, RtlUlongByteSwap, RtlUlonglongByteSwap};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -489,7 +489,7 @@ unsafe extern "C" fn AtaReqScsiReadWrite(
     (*Request).Flags = REQUEST_FLAG_READ_WRITE;
 
     Cdb = ((*Srb).Cdb).as_mut_ptr() as PCDB;
-    match (*Cdb).AsByte[0] as u32 {
+    match (*Cdb).AsByte[0] as i32 {
         SCSIOP_READ6 | SCSIOP_WRITE6 => {
             Lba = (CdbGetLogicalBlockAddress6(Cdb)) as _;
         }
@@ -652,7 +652,7 @@ unsafe extern "C" fn AtaReqCompleteReadCapacity(
         let mut MaximumLba: ULONG;
 
         MaximumLba = min(
-            ((*DevExt).Device.TotalSectors.wrapping_sub(1)) as ULONG,
+            ((*DevExt).Device.TotalSectors.wrapping_sub(1)) as T,
             MAXULONG,
         );
 
@@ -692,17 +692,16 @@ unsafe extern "C" fn AtaReqCompleteReadCapacity(
         );
         (*CapacityData).LogicalBlockAddress.QuadPart = (RtlUlonglongByteSwap(MaximumLba)) as i64;
         (*CapacityData).BytesPerBlock = RtlUlongByteSwap((*DevExt).Device.__bindgen_anon_1.SectorSize);
-        (*CapacityData).LogicalBlockAddress.__bindgen_anon_1.LogicalPerPhysicalExponent = LogicalPerPhysicalExponent as UCHAR;
-        (*CapacityData).LogicalBlockAddress.__bindgen_anon_1.LowestAlignedBlock_MSB =
-            (LowestAlignedBlock >> 8) as UCHAR;
+        (*CapacityData).set_LogicalPerPhysicalExponent((LogicalPerPhysicalExponent as UCHAR) as _);
+        (*CapacityData).set_LowestAlignedBlock_MSB(((LowestAlignedBlock >> 8) as UCHAR) as _);
         (*CapacityData).LowestAlignedBlock_LSB = LowestAlignedBlock as UCHAR;
 
         if AtaDevHasTrimFunction(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
             if AtaDevHasDratFunction(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
-                (*CapacityData).LogicalBlockAddress.__bindgen_anon_1.LBPME = 1;
+                (*CapacityData).set_LBPME((1) as _);
 
                 if AtaDevHasRzatFunction(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
-                    (*CapacityData).LogicalBlockAddress.__bindgen_anon_1.LBPRZ = 1;
+                    (*CapacityData).set_LBPRZ((1) as _);
                 }
             }
         }
@@ -744,15 +743,15 @@ unsafe extern "C" fn AtaReqControlModePage(
 ) -> ULONG {
     let PageData: PMODE_CONTROL_PAGE = Buffer as PMODE_CONTROL_PAGE;
 
-    (*PageData).PageCode = MODE_PAGE_CONTROL;
+    (*PageData).set_PageCode((MODE_PAGE_CONTROL) as _);
     (*PageData).PageLength = (core::mem::size_of::<PMODE_CONTROL_PAGE>() as usize)
         .wrapping_sub(RTL_SIZEOF_THROUGH_FIELD!(MODE_CONTROL_PAGE, PageLength)) as UCHAR;
 
-    (*PageData).QERR = 0;
-    (*PageData).QueueAlgorithmModifier = 1;
+    (*PageData).set_QERR((0) as _);
+    (*PageData).set_QueueAlgorithmModifier((1) as _);
     (*PageData).BusyTimeoutPeriod[0] = 0xFF;
     (*PageData).BusyTimeoutPeriod[1] = 0xFF;
-    (*PageData).D_SENSE = ((*DevExt).Device.DeviceFlags & DEVICE_DESCRIPTOR_SENSE != 0) as UCHAR;
+    (*PageData).set_D_SENSE((((*DevExt).Device.DeviceFlags & DEVICE_DESCRIPTOR_SENSE != 0) as UCHAR) as _);
 
     return core::mem::size_of::<PMODE_CONTROL_PAGE>() as ULONG;
 }
@@ -763,9 +762,9 @@ unsafe extern "C" fn AtaReqControlExtensionModePage(
 ) -> ULONG {
     let PageData: PMODE_CONTROL_EXTENSION_PAGE = Buffer as PMODE_CONTROL_EXTENSION_PAGE;
 
-    (*PageData).SubPageFormat = 1;
+    (*PageData).set_SubPageFormat((1) as _);
     (*PageData).SubPageCode = 0x00;
-    (*PageData).PageCode = MODE_PAGE_CONTROL;
+    (*PageData).set_PageCode((MODE_PAGE_CONTROL) as _);
     (*PageData).PageLength[1] =
         (core::mem::size_of::<PMODE_CONTROL_EXTENSION_PAGE>() as usize)
             .wrapping_sub(RTL_SIZEOF_THROUGH_FIELD!(MODE_CONTROL_EXTENSION_PAGE, PageLength)) as UCHAR;
@@ -779,7 +778,7 @@ unsafe extern "C" fn AtaReqRwErrorRecoveryModePage(
 ) -> ULONG {
     let PageData: PMODE_READ_WRITE_RECOVERY_PAGE = Buffer as PMODE_READ_WRITE_RECOVERY_PAGE;
 
-    (*PageData).set_PageCode(MODE_PAGE_ERROR_RECOVERY as UCHAR);
+    (*PageData).set_PageCode((MODE_PAGE_ERROR_RECOVERY) as u8);
     (*PageData).PageLength =
         (core::mem::size_of::<PMODE_READ_WRITE_RECOVERY_PAGE>() as usize)
             .wrapping_sub(RTL_SIZEOF_THROUGH_FIELD!(MODE_READ_WRITE_RECOVERY_PAGE, PageLength)) as UCHAR;
@@ -795,19 +794,19 @@ unsafe extern "C" fn AtaReqCachingModePage(
 ) -> ULONG {
     let PageData: PMODE_CACHING_PAGE_SPC5 = Buffer as PMODE_CACHING_PAGE_SPC5;
 
-    (*PageData).set_PageCode(MODE_PAGE_CACHING as UCHAR);
-    (*PageData).PageLength = (core::mem::size_of::<MODE_CACHING_PAGE_SPC5>()
+    (*PageData).set_PageCode((MODE_PAGE_CACHING) as _);
+    (*PageData).PageLength = (core::mem::size_of::<PMODE_CACHING_PAGE_SPC5>()
         - RTL_SIZEOF_THROUGH_FIELD!(MODE_CACHING_PAGE_SPC5, PageLength)) as UCHAR;
 
     if AtaDevIsVolatileWriteCacheEnabled(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
-        (*PageData).set_WriteCacheEnable(1);
+        (*PageData).set_WriteCacheEnable((1) as _);
     }
 
     if AtaDevIsReadLookAHeadEnabled(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
-        (*PageData).set_DisableReadAHead(1);
+        (*PageData).set_DisableReadAHead((1) as _);
     }
 
-    return core::mem::size_of::<MODE_CACHING_PAGE_SPC5>() as ULONG;
+    return core::mem::size_of::<PMODE_CACHING_PAGE_SPC5>() as ULONG;
 }
 
 unsafe extern "C" fn AtaReqInformationalExceptionsControlModePage(
@@ -816,12 +815,12 @@ unsafe extern "C" fn AtaReqInformationalExceptionsControlModePage(
 ) -> ULONG {
     let PageData: PMODE_INFO_EXCEPTIONS = Buffer as PMODE_INFO_EXCEPTIONS;
 
-    (*PageData)._bitfield_1.set(0, 8, MODE_PAGE_FAULT_REPORTING as u64);
+    (*PageData)._bitfield_1.set(0, (MODE_PAGE_FAULT_REPORTING as u32) as u8);
     (*PageData).PageLength =
         (core::mem::size_of::<MODE_INFO_EXCEPTIONS>() as usize)
             .wrapping_sub(RTL_SIZEOF_THROUGH_FIELD!(MODE_INFO_EXCEPTIONS, PageLength)) as UCHAR;
 
-    (*PageData)._bitfield_2.set(0, 8, 6);
+    (*PageData)._bitfield_2.set(0, 6);
 
     return core::mem::size_of::<MODE_INFO_EXCEPTIONS>() as ULONG;
 }
@@ -969,10 +968,10 @@ unsafe extern "C" fn AtaReqScsiModeSense(
     mut Is6ByteCommand: BOOLEAN,
 ) -> UCHAR {
     let mut Cdb: PCDB = &raw mut (*Srb).Cdb as *mut UCHAR as PCDB;
-    if (*Cdb).MODE_SENSE.Pc as ::core::ffi::c_int == MODE_SENSE_SAVED_VALUES {
+    if ((*Cdb).MODE_SENSE.Pc() as ::core::ffi::c_int) as u32 == MODE_SENSE_SAVED_VALUES {
         return AtaReqTerminateInvalidField(Srb);
     }
-    match (*Cdb).MODE_SENSE.PageCode as ::core::ffi::c_int {
+    match ((*Cdb).MODE_SENSE.PageCode() as ::core::ffi::c_int) as u32 {
         MODE_PAGE_FAULT_REPORTING => {
             if AtaDevHasSmartFeature(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) == 0 {
                 return AtaReqTerminateInvalidField(Srb);
@@ -1022,25 +1021,25 @@ pub unsafe extern "C" fn AtaCreateStandardInquiryData(
 
     PAGED_CODE!();
 
-    (*InquiryData).__bindgen_anon_1.DeviceType = DIRECT_ACCESS_DEVICE;
-    (*InquiryData).__bindgen_anon_1.RemovableMedia = AtaDevIsRemovable(IdentifyData);
+    (*InquiryData).set_DeviceType((DIRECT_ACCESS_DEVICE) as _);
+    (*InquiryData).set_RemovableMedia((AtaDevIsRemovable(IdentifyData)) as _);
     (*InquiryData).__bindgen_anon_1.Versions = 0x07;
-    (*InquiryData).__bindgen_anon_1.ResponseDataFormat = 2;
+    (*InquiryData).set_ResponseDataFormat((2) as _);
 
     if (*DevExt).Device.DeviceFlags & DEVICE_NCQ != 0 {
-        (*InquiryData).__bindgen_anon_1.CommandQueue = 1;
+        (*InquiryData).set_CommandQueue((1) as _);
     }
 
     RtlCopyMemory!(
         &raw mut (*InquiryData).VendorId as *mut UCHAR as *mut core::ffi::c_void,
         b"ATA     \0".as_ptr() as *const core::ffi::c_void,
-        RTL_FIELD_SIZE!(INQUIRYDATA, VendorId),
+        RTL_FIELD_SIZE!(INQUIRYDATA, VendorId) as u32,
     );
 
     AtaCopyIdStringUnsafe(
         &raw mut (*InquiryData).ProductId as PUCHAR,
         &raw mut (*IdentifyData).ModelNumber as PUCHAR,
-        RTL_FIELD_SIZE!(INQUIRYDATA, ProductId),
+        RTL_FIELD_SIZE!(INQUIRYDATA, ProductId) as u32,
     );
 
     if (*IdentifyData).FirmwareRevision[4 as usize] as i32 == ' ' as i32
@@ -1056,7 +1055,7 @@ pub unsafe extern "C" fn AtaCreateStandardInquiryData(
     AtaCopyIdStringUnsafe(
         &raw mut (*InquiryData).ProductRevisionLevel as PUCHAR,
         (&raw mut (*IdentifyData).FirmwareRevision as *mut UCHAR).offset(Offset as isize) as PUCHAR,
-        RTL_FIELD_SIZE!(INQUIRYDATA, ProductRevisionLevel),
+        RTL_FIELD_SIZE!(INQUIRYDATA, ProductRevisionLevel) as u32,
     );
 
     VersionDescriptor = (&raw mut (*InquiryData).Reserved3 as *mut UCHAR)
@@ -1274,12 +1273,12 @@ unsafe extern "C" fn AtaReqScsiInquiryDeviceIdentifiers(
         RTL_SIZEOF_THROUGH_FIELD!(VPD_IDENTIFICATION_PAGE, PageLength) as UCHAR,
     );
 
-    Descriptor = core::ptr::addr_of_mut!((*DeviceIdentificationPage).Descriptors)
+    Descriptor = (&mut (*DeviceIdentificationPage).Descriptors[0])
         as *mut _ as PVPD_IDENTIFICATION_DESCRIPTOR;
 
     if AtaDevHasWorldWideName(&mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
-        (*Descriptor)._bitfield_1.set_CodeSet(VpdCodeSetBinary);
-        (*Descriptor)._bitfield_1.set_IdentifierType(VpdIdentifierTypeFCPHName);
+        (*Descriptor).set_CodeSet((VpdCodeSetBinary) as _);
+        (*Descriptor).set_IdentifierType((VpdIdentifierTypeFCPHName) as _);
         (*Descriptor).IdentifierLength =
             RTL_FIELD_SIZE!(IDENTIFY_DEVICE_DATA, WorldWideName) as UCHAR;
 
@@ -1291,13 +1290,13 @@ unsafe extern "C" fn AtaReqScsiInquiryDeviceIdentifiers(
     } else {
         let mut Identifier: PUCHAR;
 
-        (*Descriptor)._bitfield_1.set_CodeSet(VpdCodeSetAscii);
-        (*Descriptor)._bitfield_1.set_IdentifierType(VpdIdentifierTypeVendorId);
+        (*Descriptor).set_CodeSet((VpdCodeSetAscii) as _);
+        (*Descriptor).set_IdentifierType((VpdIdentifierTypeVendorId) as _);
         (*Descriptor).IdentifierLength = RTL_FIELD_SIZE!(INQUIRYDATA, VendorId) as UCHAR
             + RTL_FIELD_SIZE!(IDENTIFY_DEVICE_DATA, ModelNumber) as UCHAR
             + RTL_FIELD_SIZE!(IDENTIFY_DEVICE_DATA, SerialNumber) as UCHAR;
 
-        Identifier = (*Descriptor).Identifier.as_mut_ptr();
+        Identifier = (*Descriptor).Identifier[0..].as_mut_ptr();
 
         RtlCopyMemory!(
             Identifier as *mut core::ffi::c_void,
@@ -1358,8 +1357,8 @@ unsafe extern "C" fn AtaReqScsiInquiryBlockDeviceCharacteristics(
     MediumRotationRate = AtaDevMediumRotationRate(&mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData);
     (*Characteristics).MediumRotationRateMsb = (MediumRotationRate >> 8) as UCHAR;
     (*Characteristics).MediumRotationRateLsb = MediumRotationRate as UCHAR;
-    (*Characteristics)._bitfield_2.set_NominalFormFactor(AtaDevNominalFormFactor(&mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) as USHORT);
-    (*Characteristics)._bitfield_2.set_ZONED(AtaDevZonedCapabilities(&mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) as UCHAR);
+    (*Characteristics).set_NominalFormFactor((AtaDevNominalFormFactor(&mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData)) as _);
+    (*Characteristics).set_ZONED((AtaDevZonedCapabilities(&mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData)) as _);
     return core::mem::size_of::<VPD_BLOCK_DEVICE_CHARACTERISTICS_PAGE>() as ULONG;
 }
 
@@ -1374,20 +1373,20 @@ unsafe extern "C" fn AtaReqScsiInquiryLogicalBlockProvisioning(
         FIELD_OFFSET!(VPD_LOGICAL_BLOCK_PROVISIONING_PAGE, ProvisioningGroupDescr),
     );
     (*LogicalBlockProvisioningPage).PageLength[1] =
-        (FIELD_OFFSET!(VPD_LOGICAL_BLOCK_PROVISIONING_PAGE, ProvisioningGroupDescr) as i32
-            - RTL_SIZEOF_THROUGH_FIELD!(VPD_LOGICAL_BLOCK_PROVISIONING_PAGE, PageLength) as i32) as UCHAR;
+        (FIELD_OFFSET!(VPD_LOGICAL_BLOCK_PROVISIONING_PAGE, ProvisioningGroupDescr)
+            - RTL_SIZEOF_THROUGH_FIELD!(VPD_LOGICAL_BLOCK_PROVISIONING_PAGE, PageLength)) as UCHAR;
 
     if AtaDevHasTrimFunction(&(*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
         if AtaDevHasDratFunction(&(*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
-            (*LogicalBlockProvisioningPage)._bitfield_1.set(0, 1);
+            (*LogicalBlockProvisioningPage)._bitfield_2.set_ANC_SUP(1);
         }
 
         if AtaDevHasRzatFunction(&(*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
-            (*LogicalBlockProvisioningPage)._bitfield_2.set(0, 1);
+            (*LogicalBlockProvisioningPage)._bitfield_2.set_LBPRZ(1);
         }
     }
 
-    return FIELD_OFFSET!(VPD_LOGICAL_BLOCK_PROVISIONING_PAGE, ProvisioningGroupDescr);
+    return FIELD_OFFSET!(VPD_LOGICAL_BLOCK_PROVISIONING_PAGE, ProvisioningGroupDescr) as ULONG;
 }
 
 unsafe extern "C" fn AtaReqScsiInquiry(
@@ -1399,7 +1398,7 @@ unsafe extern "C" fn AtaReqScsiInquiry(
     let Cdb: PCDB = ((*Srb).Cdb).as_mut_ptr() as PCDB;
     let mut Length: ULONG = 0;
 
-    if (*Cdb).CDB6INQUIRY3.EnableVitalProductData == 0 {
+    if (*Cdb).CDB6INQUIRY3.EnableVitalProductData() == 0 {
         if (*Cdb).CDB6INQUIRY3.PageCode != 0 {
             return AtaReqTerminateInvalidField(Srb);
         }
@@ -1441,8 +1440,8 @@ unsafe extern "C" fn AtaReqScsiInquiry(
     }
 
     Buffer = (*DevExt).Device.LocalBuffer as PVPD_SUPPORTED_PAGES_PAGE;
-    (*Buffer).DeviceType = (*DevExt).InquiryData.DeviceType;
-    (*Buffer).DeviceTypeQualifier = (*DevExt).InquiryData.DeviceTypeQualifier;
+    (*Buffer).set_DeviceType(((*DevExt).InquiryData.DeviceType()) as _);
+    (*Buffer).set_DeviceTypeQualifier(((*DevExt).InquiryData.DeviceTypeQualifier()) as _);
     (*Buffer).PageCode = (*Cdb).CDB6INQUIRY3.PageCode;
 
     return AtaReqCopySatlBuffer(Request, (*DevExt).Device.LocalBuffer, Length) as UCHAR;
@@ -1540,8 +1539,8 @@ unsafe extern "C" fn AtaReqSetAtaStatusSenseData(
         SenseData as *mut ::core::ffi::c_void,
         BufferLength as usize,
     );
-    (*SenseData).ErrorCode = SCSI_SENSE_ERRORCODE_DESCRIPTOR_CURRENT as UCHAR;
-    (*SenseData).SenseKey = SK as UCHAR;
+    (*SenseData).set_ErrorCode((SCSI_SENSE_ERRORCODE_DESCRIPTOR_CURRENT as UCHAR) as _);
+    (*SenseData).set_SenseKey((SK as UCHAR) as _);
     (*SenseData).AdditionalSenseCode = ASK;
     (*SenseData).AdditionalSenseCodeQualifier = ASCQ;
     (*SenseData).AdditionalSenseLength = (BufferLength as usize).wrapping_sub(
@@ -1562,7 +1561,7 @@ unsafe extern "C" fn AtaReqSetAtaStatusSenseData(
     (*Descriptor).LbaLow15_8 =
         ((*TaskFile).DriveSelect as ::core::ffi::c_int & 0x0F as ::core::ffi::c_int) as UCHAR;
     if (*Request).Flags & REQUEST_FLAG_LBA48 as ULONG != 0 {
-        (*Descriptor).Extend = 1 as UCHAR;
+        (*Descriptor).set_Extend((1 as UCHAR) as _);
         (*Descriptor).SectorCount15_8 = (*TaskFile).SectorCountEx;
         (*Descriptor).LbaLow15_8 = (*TaskFile).LowLbaEx;
         (*Descriptor).LbaMid15_8 = (*TaskFile).MidLba;
@@ -1626,19 +1625,19 @@ unsafe extern "C" fn AtaReqScsiAtaPassThrough(
         | ((*Srb).SrbFlags & SRB_FLAGS_UNSPECIFIED_DIRECTION);
 
     Cdb = ((*Srb).Cdb).as_mut_ptr() as *mut UCHAR as PCDB;
-    match (*Cdb).ATA_PASSTHROUGH16.Protocol as i32 {
+    match (*Cdb).ATA_PASSTHROUGH16.Protocol() as i32 {
         ATA_PASSTHROUGH_PROTOCOL_NON_DATA => {
-            if (*Cdb).ATA_PASSTHROUGH16.TLength != 0 {
+            if (*Cdb).ATA_PASSTHROUGH16.TLength() != 0 {
                 return AtaReqTerminateInvalidField(Srb);
             }
         }
         ATA_PASSTHROUGH_PROTOCOL_PIO_DATA_IN => {
-            if (*Cdb).ATA_PASSTHROUGH16.TDir == 0 {
+            if (*Cdb).ATA_PASSTHROUGH16.TDir() == 0 {
                 return AtaReqTerminateInvalidField(Srb);
             }
         }
         ATA_PASSTHROUGH_PROTOCOL_PIO_DATA_OUT => {
-            if (*Cdb).ATA_PASSTHROUGH16.TDir != 0 {
+            if (*Cdb).ATA_PASSTHROUGH16.TDir() != 0 {
                 return AtaReqTerminateInvalidField(Srb);
             }
         }
@@ -1657,7 +1656,7 @@ unsafe extern "C" fn AtaReqScsiAtaPassThrough(
         _ => return AtaReqTerminateInvalidField(Srb),
     }
 
-    if (*Cdb).ATA_PASSTHROUGH16.TLength == 0
+    if (*Cdb).ATA_PASSTHROUGH16.TLength() == 0
         && (*Srb).SrbFlags & SRB_FLAGS_UNSPECIFIED_DIRECTION != 0
     {
         return AtaReqTerminateInvalidField(Srb);
@@ -1680,7 +1679,7 @@ unsafe extern "C" fn AtaReqScsiAtaPassThrough(
         (*TaskFile).DriveSelect = (*Cdb).ATA_PASSTHROUGH16.Device;
         (*TaskFile).__bindgen_anon_1.Command = (*Cdb).ATA_PASSTHROUGH16.Command;
 
-        if (*Cdb).ATA_PASSTHROUGH16.Extend != 0 {
+        if (*Cdb).ATA_PASSTHROUGH16.Extend() != 0 {
             (*TaskFile).FeatureEx = (*Cdb).ATA_PASSTHROUGH16.Features15_8;
             (*TaskFile).SectorCountEx = (*Cdb).ATA_PASSTHROUGH16.SectorCount15_8;
             (*TaskFile).LowLbaEx = (*Cdb).ATA_PASSTHROUGH16.LbaLow15_8;
@@ -1701,7 +1700,7 @@ unsafe extern "C" fn AtaReqScsiAtaPassThrough(
 
     (*TaskFile).DriveSelect = ((*TaskFile).DriveSelect as i32 & (!IDE_DRIVE_SELECT_SLAVE) as i32) as UCHAR;
     (*TaskFile).DriveSelect = ((*TaskFile).DriveSelect as i32
-        | (*DevExt).Device.DeviceSelect as i32 & IDE_DRIVE_SELECT_SLAVE) as UCHAR;
+        | (*DevExt).Device.__bindgen_anon_1.DeviceSelect as i32 & (IDE_DRIVE_SELECT_SLAVE) as i32) as UCHAR;
 
     (*Request).Complete = Some(
         AtaReqCompleteAtaPassThrough
@@ -1715,7 +1714,7 @@ unsafe extern "C" fn AtaReqExecuteScsiAta(
     Request: PATA_DEVICE_REQUEST,
     Srb: PSCSI_REQUEST_BLOCK,
 ) -> UCHAR {
-    match (*Srb).Cdb[0] as i32 {
+    match (*Srb).Cdb[0] as u32 {
         SCSIOP_REPORT_LUNS => return (AtaReqScsiReportLuns(DevExt, Request, Srb)) as u8,
         SCSIOP_INQUIRY => return AtaReqScsiInquiry(DevExt, Request, Srb),
         SCSIOP_TEST_UNIT_READY => return AtaReqScsiTestUnitReady(DevExt, Request, Srb),
@@ -1727,7 +1726,7 @@ unsafe extern "C" fn AtaReqExecuteScsiAta(
                 DevExt,
                 Request,
                 Srb,
-                (((*Srb).Cdb[0] as i32) as u32 == SCSIOP_MODE_SENSE) as BOOLEAN,
+                ((*Srb).Cdb[0] as u32 == SCSIOP_MODE_SENSE) as BOOLEAN,
             );
         }
         SCSIOP_MODE_SELECT | SCSIOP_MODE_SELECT10 => {
@@ -1735,14 +1734,14 @@ unsafe extern "C" fn AtaReqExecuteScsiAta(
                 DevExt,
                 Request,
                 Srb,
-                (((*Srb).Cdb[0] as i32) as u32 == SCSIOP_MODE_SELECT) as BOOLEAN,
+                ((*Srb).Cdb[0] as u32 == SCSIOP_MODE_SELECT) as BOOLEAN,
             );
         }
         SCSIOP_SERVICE_ACTION_IN16 => {
             let ServiceAction: UCHAR = (*(&raw mut (*Srb).Cdb as *mut UCHAR as PCDB))
                 .READ_CAPACITY16
-                .ServiceAction;
-            if ServiceAction as i32 != SERVICE_ACTION_READ_CAPACITY16 {
+                .ServiceAction();
+            if ServiceAction as u32 != SERVICE_ACTION_READ_CAPACITY16 {
                 // fall through to default
             } else {
                 return AtaReqScsiReadCapacity(DevExt, Request, Srb);
@@ -1804,7 +1803,7 @@ unsafe extern "C" fn AtaReqExecuteScsiAtapi(
     Request: PATA_DEVICE_REQUEST,
     Srb: PSCSI_REQUEST_BLOCK,
 ) -> UCHAR {
-    match (*Srb).Cdb[0 as usize] as i32 {
+    match (*Srb).Cdb[0 as usize] as u32 {
         SCSIOP_ATA_PASSTHROUGH12 | SCSIOP_ATA_PASSTHROUGH16 => {
             return AtaReqScsiAtaPassThrough(DevExt, Request, Srb);
         }

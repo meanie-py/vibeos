@@ -217,7 +217,16 @@ pub const ACTION_PORT_RESET: _ATA_PORT_ACTION = _ATA_PORT_ACTION_ACTION_PORT_RES
 pub const ACTION_PORT_TIMING: _ATA_PORT_ACTION = _ATA_PORT_ACTION_ACTION_PORT_TIMING; // island enum
 pub const ANSI_NULL: CHAR = 0; // freeldr-rust/src/ui_keystone.rs
 pub const APC_LEVEL: u32 = 1; // ntkrnl-sys/src/hal_bindgen_amd64.rs
+pub const ATA_CHANNEL_FLAG_IS_AHCI: u32 = 8; // legide-rust/src/types_amd64.rs
+pub const ATA_CHANNEL_FLAG_IS_EXTERNAL: u32 = 2; // legide-rust/src/types_amd64.rs
+pub const ATA_CHANNEL_FLAG_NCQ: u32 = 4; // legide-rust/src/types_amd64.rs
+pub const ATA_CHANNEL_FLAG_PIO_FOR_LBA48_XFER: u32 = 16; // legide-rust/src/types_amd64.rs
+pub const ATA_CHANNEL_FLAG_PIO_VIA_DMA: u32 = 1; // legide-rust/src/types_amd64.rs
+pub const ATA_MAX_DEVICE: u32 = 15; // legide-rust/src/types_amd64.rs
 pub const ATA_MAX_LBA_28: ULONG64 = 0x0FFFFFFF; // freeldr-rust/src/hwide.rs
+pub const ATA_MAX_SECTORS_PER_IO: u32 = 256; // legide-rust/src/types_amd64.rs
+pub const ATA_MIN_BUFFER_ALIGNMENT: u32 = 1; // legide-rust/src/types_amd64.rs
+pub const ATA_MIN_SECTOR_SIZE: u32 = 512; // legide-rust/src/types_amd64.rs
 pub const CAP_ATAPI_ID_CMD: u32 = 2; // cdrom-rust/src/types_amd64.rs
 pub const CAP_ATA_ID_CMD: u32 = 1; // cdrom-rust/src/types_amd64.rs
 pub const CAP_SMART_CMD: u32 = 4; // cdrom-rust/src/types_amd64.rs
@@ -226,6 +235,12 @@ pub const COMPLETE_NO_IRP: ATA_COMPLETION_ACTION = ATA_COMPLETION_ACTION_COMPLET
 pub const CONN_STATUS_DEV_ATAPI: _ATA_CONNECTION_STATUS = _ATA_CONNECTION_STATUS_CONN_STATUS_DEV_ATAPI; // island enum
 pub const CONN_STATUS_FAILURE: _ATA_CONNECTION_STATUS = _ATA_CONNECTION_STATUS_CONN_STATUS_FAILURE; // island enum
 pub const CONN_STATUS_NO_DEVICE: _ATA_CONNECTION_STATUS = _ATA_CONNECTION_STATUS_CONN_STATUS_NO_DEVICE; // island enum
+pub const DEVICE_HAS_CDB_INTERRUPT: u32 = 32; // legide-rust/src/types_amd64.rs
+pub const DEVICE_IS_ATAPI: u32 = 16; // legide-rust/src/types_amd64.rs
+pub const DEVICE_IS_NEC_CDR260: u32 = 128; // legide-rust/src/types_amd64.rs
+pub const DEVICE_NEED_DMA_DIRECTION: u32 = 64; // legide-rust/src/types_amd64.rs
+pub const DEVICE_QUEUE_DEPTH_MASK: u32 = 65280; // legide-rust/src/types_amd64.rs
+pub const DEVICE_QUEUE_DEPTH_SHIFT: u32 = 8; // legide-rust/src/types_amd64.rs
 pub const DEV_ATA: _ATA_DEVICE_TYPE = _ATA_DEVICE_TYPE_DEV_ATA; // island enum
 pub const DEV_ATAPI: _ATA_DEVICE_TYPE = _ATA_DEVICE_TYPE_DEV_ATAPI; // island enum
 pub const DEV_NONE: _ATA_DEVICE_TYPE = _ATA_DEVICE_TYPE_DEV_NONE; // island enum
@@ -238,8 +253,8 @@ pub const DIRECT_ACCESS_DEVICE: u32 = 0; // atapi-legacy-rust/src/types_amd64.rs
 pub const DISPATCH_LEVEL: u32 = 2; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const DO_DEVICE_INITIALIZING: u32 = 128; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const DO_DIRECT_IO: u32 = 16; // ntkrnl-sys/src/hal_bindgen_amd64.rs
+pub const DO_IS_FDO: u32 = 2147483648; // pciidex-rust/src/types_amd64.rs
 pub const DO_POWER_INRUSH: u32 = 16384; // ntkrnl-sys/src/hal_bindgen_amd64.rs
-pub const DevicePowerState: u32 = 1; // kbdhid-rust/src/glue.rs
 pub const EVENT_CODE_BAD_STATE: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_BAD_STATE; // island enum
 pub const EVENT_CODE_CRC_ERROR: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_CRC_ERROR; // island enum
 pub const EVENT_CODE_DMA_DISABLE: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_DMA_DISABLE; // island enum
@@ -254,6 +269,7 @@ pub const GetDeviceType: DEVICE_TYPE_NAME = DEVICE_TYPE_NAME_GetDeviceType; // i
 pub const GetGenericType: DEVICE_TYPE_NAME = DEVICE_TYPE_NAME_GetGenericType; // island enum
 pub const HighPagePriority: ULONG = 2; // ntoskrnl-rust/src/ARM3/helpers.rs
 pub const IDENTIFY_BUFFER_SIZE: u32 = 512; // cdrom-rust/src/types_amd64.rs
+pub const IDE_ACPI_TIMING_MODE_NOT_SUPPORTED: u32 = 4294967295; // legide-rust/src/types_amd64.rs
 pub const IDE_COMMAND_ATAPI_IDENTIFY: u32 = 161; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_COMMAND_DOOR_LOCK: u32 = 222; // storahci-rust/src/types_amd64.rs
 pub const IDE_COMMAND_DOOR_UNLOCK: u32 = 223; // storahci-rust/src/types_amd64.rs
@@ -300,6 +316,8 @@ pub const IDE_FEATURE_DISABLE_REVERT_TO_POWER_ON: u32 = 102; // storahci-rust/sr
 pub const IDE_FEATURE_ENABLE_MSN: u32 = 149; // storahci-rust/src/types_amd64.rs
 pub const IDE_FEATURE_PUIS_SPIN_UP: u32 = 7; // storahci-rust/src/types_amd64.rs
 pub const IDE_FEATURE_SET_TRANSFER_MODE: u32 = 3; // storahci-rust/src/types_amd64.rs
+pub const IDE_GP_LOG_NCQ_COMMAND_ERROR_ADDRESS: u32 = 16; // legide-rust/src/types_amd64.rs
+pub const IDE_GP_LOG_SECTOR_SIZE: u32 = 512; // legide-rust/src/types_amd64.rs
 pub const IDE_LBA_MODE: u32 = 64; // storahci-rust/src/types_amd64.rs
 pub const IDE_STATUS_DEVICE_FAULT: u32 = 32; // storahci-rust/src/types_amd64.rs
 pub const IDE_STATUS_ERROR: u32 = 1; // atapi-legacy-rust/src/types_amd64.rs
@@ -333,12 +351,15 @@ pub const MODE_PAGE_ERROR_RECOVERY: u32 = 1; // atapi-legacy-rust/src/types_amd6
 pub const MODE_PAGE_FAULT_REPORTING: u32 = 28; // atapi-legacy-rust/src/types_amd64.rs
 pub const MODE_SENSE_RETURN_ALL: u32 = 63; // atapi-legacy-rust/src/types_amd64.rs
 pub const MODE_SENSE_SAVED_VALUES: u32 = 192; // atapi-legacy-rust/src/types_amd64.rs
+pub const MWDMA_ALL: u32 = 1792; // pciidex-rust/src/types_amd64.rs
 pub const MmNonCached: MEMORY_CACHING_TYPE = 0; // ntkrnl-sys/src/mm.rs
 pub const NonPagedPool: POOL_TYPE = 0; // msfs-rust/src/glue.rs
 pub const OBJ_CASE_INSENSITIVE: u32 = 64; // ntdll-sys/src/bindgen_amd64.rs
 pub const OBJ_KERNEL_HANDLE: u32 = 512; // ntdll-sys/src/bindgen_amd64.rs
 pub const OBJ_PERMANENT: u32 = 16; // ntdll-sys/src/bindgen_amd64.rs
 pub const PAGE_SIZE: u32 = 4096; // ntdll-sys/src/bindgen_amd64.rs
+pub const PCIIDEX_INTERFACE_VERSION: u32 = 1; // legide-rust/src/prelude.rs
+pub const PIO_ALL: u32 = 31; // pciidex-rust/src/types_amd64.rs
 pub const PIO_MODE0: u32 = 1; // pciidex-legacy-rust/src/types_amd64.rs
 pub const PIO_MODE1: u32 = 2; // pciidex-legacy-rust/src/types_amd64.rs
 pub const PIO_MODE2: u32 = 4; // pciidex-legacy-rust/src/types_amd64.rs
@@ -353,10 +374,33 @@ pub const READ_ONLY_DIRECT_ACCESS_DEVICE: u32 = 5; // atapi-legacy-rust/src/type
 pub const READ_THRESHOLD_BUFFER_SIZE: u32 = 512; // cdrom-rust/src/types_amd64.rs
 pub const REG_DWORD: u32 = 4; // advapi32-sys/src/bindgen_amd64.rs
 pub const REG_OPTION_VOLATILE: u32 = 1; // advapi32-sys/src/bindgen_amd64.rs
+pub const REQUEST_DMA_FLAGS: u32 = 2097153; // legide-rust/src/types_amd64.rs
+pub const REQUEST_EXCLUSIVE_ACCESS_FLAGS: u32 = 16896; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_DATA_IN: u32 = 64; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_DATA_OUT: u32 = 128; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_DMA: u32 = 1; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_EXCLUSIVE: u32 = 16384; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_FUA: u32 = 256; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_HAS_LOCAL_BUFFER: u32 = 32768; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_HAS_MDL: u32 = 131072; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_HAS_RESERVED_MAPPING: u32 = 524288; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_HAS_SG_LIST: u32 = 65536; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_HAS_TASK_FILE: u32 = 1024; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_INTERNAL: u32 = 4194304; // legide-rust/src/types_amd64.rs
 pub const REQUEST_FLAG_LBA48: ULONG = 0x00000001; // freeldr-rust/src/hwide.rs
+pub const REQUEST_FLAG_NCQ: u32 = 4; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_NO_KEEP_AWAKE: u32 = 1048576; // legide-rust/src/types_amd64.rs
 pub const REQUEST_FLAG_PACKET_COMMAND: ULONG = 0x00000004; // freeldr-rust/src/hwide.rs
+pub const REQUEST_FLAG_PASSTHROUGH: u32 = 8388608; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_POLL: u32 = 2147483648; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_PROGRAM_DMA: u32 = 2097152; // legide-rust/src/types_amd64.rs
+pub const REQUEST_FLAG_READ_WRITE: u32 = 32; // legide-rust/src/types_amd64.rs
 pub const REQUEST_FLAG_READ_WRITE_MULTIPLE: ULONG = 0x00000002; // freeldr-rust/src/hwide.rs
+pub const REQUEST_FLAG_SAVE_TASK_FILE: u32 = 512; // legide-rust/src/types_amd64.rs
 pub const REQUEST_FLAG_SET_DEVICE_REGISTER: ULONG = 0x00000008; // freeldr-rust/src/hwide.rs
+pub const REQUEST_STATE_FREEZE_QUEUE: u32 = 3; // legide-rust/src/types_amd64.rs
+pub const REQUEST_STATE_NOT_STARTED: u32 = 1; // legide-rust/src/types_amd64.rs
+pub const REQUEST_STATE_REQUEUE: u32 = 2; // legide-rust/src/types_amd64.rs
 pub const SCSIOP_ATA_PASSTHROUGH12: u32 = 161; // atapi-legacy-rust/src/types_amd64.rs
 pub const SCSIOP_INQUIRY: u32 = 18; // atapi-legacy-rust/src/types_amd64.rs
 pub const SCSIOP_MODE_SENSE: u32 = 26; // atapi-legacy-rust/src/types_amd64.rs
@@ -453,7 +497,9 @@ pub const STATUS_WMI_INSTANCE_NOT_FOUND: i32 = 0xC0000296u32 as i32; // classpnp
 pub const STORAGE_ADDRESS_TYPE_BTL8: u32 = 0; // cdrom-rust/src/types_amd64.rs
 pub const STORAGE_EVENT_ALL: u32 = 7; // cdrom-rust/src/types_amd64.rs
 pub const STORAGE_EVENT_NOTIFICATION_VERSION_V1: u32 = 1; // cdrom-rust/src/types_amd64.rs
+pub const SWDMA_ALL: u32 = 224; // pciidex-rust/src/types_amd64.rs
 pub const THREAD_ALL_ACCESS: u32 = 2032639; // ntkrnl-sys/src/hal_bindgen_amd64.rs
+pub const UDMA_ALL: u32 = 260096; // pciidex-rust/src/types_amd64.rs
 pub const VPD_BLOCK_DEVICE_CHARACTERISTICS: u32 = 177; // atapi-legacy-rust/src/types_amd64.rs
 pub const VPD_BLOCK_LIMITS: u32 = 176; // atapi-legacy-rust/src/types_amd64.rs
 pub const VPD_DEVICE_IDENTIFIERS: u32 = 131; // atapi-legacy-rust/src/types_amd64.rs
@@ -498,120 +544,16 @@ extern "system" {
     pub fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32; // disk-rust/src/disk.rs
 }
 // ==== end port resolve ====
-pub use win32macros_rust::{ARRAYSIZE, ASSERT, C_ASSERT, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_X_LPARAM, GET_Y_LPARAM, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, INVALID_HANDLE_VALUE, InitializeObjectAttributes, IsContainerPartition, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, PAGE_ROUND_UP, PRIMARYLANGID, RGB, RTL_CONSTANT_STRING, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SUBLANGID, UNICODE_NULL, UNREFERENCED_PARAMETER, UlongToPtr, ZeroMemory, _countof, wide_bytes};
-pub use strsafe_rust::{RtlStringCbPrintfW, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatW, StringCbCopyNExW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCchCatW, StringCchCopyNExW, StringCchCopyW, StringCchLengthW, StringCchPrintfW, StringCchVPrintfW};
+pub use win32macros_rust::{ARRAYSIZE, ASSERT, C_ASSERT, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_X_LPARAM, GET_Y_LPARAM, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, INVALID_HANDLE_VALUE, InitializeObjectAttributes, IsContainerPartition, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, PAGE_ROUND_UP, PRIMARYLANGID, RGB, RTL_CONSTANT_STRING, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SUBLANGID, UNICODE_NULL, UNREFERENCED_PARAMETER, UlongToPtr, ZeroMemory, _countof, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes};
+pub use strsafe_rust::{RtlStringCbPrintfW, RtlStringCchPrintfExA, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatW, StringCbCopyNExW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCchCatW, StringCchCopyNExW, StringCchCopyW, StringCchLengthW, StringCchPrintfW, StringCchVPrintfW};
 pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, RtlStringCbCatNW, RtlStringCbCatW, RtlStringCbCopyNA, RtlStringCbCopyNW, RtlStringCbCopyW, RtlStringCchCatNW, RtlStringCchCatW, RtlStringCchCopyNW, RtlStringCchCopyW, RtlStringCopyNWorkerW, RtlStringCopyWorkerW, RtlStringLengthWorkerW};
 
 // ==== port facts: constants evaluated by clang from the C headers (generated -- `rustconv port resolve`) ====
-pub const ATAPORT_FN_FIELD: u32 = 0x28; // clang, enum.c
-pub const ATAPORT_RN_FIELD: u32 = 8; // clang, enum.c
 pub const ATAPORT_TAG: u32 = 0x50656449; // clang, atapi.c
-pub const ATA_CHANNEL_FLAG_IS_AHCI: u32 = 8; // clang, fdo.c
-pub const ATA_CHANNEL_FLAG_IS_EXTERNAL: u32 = 2; // clang, fdo.c
-pub const ATA_CHANNEL_FLAG_NCQ: u32 = 4; // clang, fdo.c
-pub const ATA_CHANNEL_FLAG_PIO_FOR_LBA48_XFER: u32 = 0x10; // clang, fdo.c
-pub const ATA_CHANNEL_FLAG_PIO_VIA_DMA: u32 = 1; // clang, fdo.c
 pub const ATA_DEVICE_REQUEST_SIGNATURE: u32 = 0x72415441; // clang, fdo.c
-pub const ATA_LOCAL_BUFFER_SIZE: u32 = 0x23C; // clang, dev_error.c
-pub const ATA_MAX_DEVICE: u32 = 0xF; // clang, atapi.c
-pub const ATA_MAX_SECTORS_PER_IO: u32 = 0x100; // clang, satl.c
-pub const ATA_MIN_BUFFER_ALIGNMENT: u32 = 1; // clang, atapi.c
-pub const ATA_MIN_SECTOR_SIZE: u32 = 0x200; // clang, enum.c
-pub const ATA_RESERVED_PAGES: u32 = 4; // clang, fdo.c
-pub const DEVICE_CACHE_INQUIRY: u32 = 0x4000; // clang, dev_identify.c
-pub const DEVICE_DESCRIPTOR_SENSE: u32 = 0x800; // clang, satl.c
-pub const DEVICE_HAS_CDB_INTERRUPT: u32 = 0x20; // clang, dev_identify.c
-pub const DEVICE_HAS_FUA: u32 = 8; // clang, enum.c
-pub const DEVICE_HAS_MEDIA_STATUS: u32 = 0x20; // clang, dev_config.c
-pub const DEVICE_IS_ATAPI: u32 = 0x10; // clang, dev_identify.c
-pub const DEVICE_IS_NEC_CDR260: u32 = 0x80; // clang, dev_identify.c
-pub const DEVICE_IS_PDO_REMOVABLE: u32 = 0x100; // clang, pdo.c
-pub const DEVICE_IS_SUPER_FLOPPY: u32 = 0x80; // clang, atapi.c
-pub const DEVICE_LBA48: u32 = 4; // clang, dev_power.c
-pub const DEVICE_LBA_MODE: u32 = 2; // clang, dev_config.c
-pub const DEVICE_NCQ: u32 = 0x10; // clang, dev_config.c
-pub const DEVICE_NEED_DMA_DIRECTION: u32 = 0x40; // clang, dev_identify.c
-pub const DEVICE_PIO_FOR_LBA48_XFER: u32 = 0x2000; // clang, pdo.c
-pub const DEVICE_PIO_ONLY: u32 = 1; // clang, dev_config.c
-pub const DEVICE_PIO_VIA_DMA: u32 = 0x1000; // clang, pdo.c
-pub const DEVICE_PNP_STARTED: u32 = 0x400; // clang, dev_timings.c
-pub const DEVICE_QUEUE_DEPTH_MASK: u32 = 0xFF00; // clang, scsi.c
-pub const DEVICE_QUEUE_DEPTH_SHIFT: u32 = 8; // clang, enum.c
-pub const DEVICE_SENSE_DATA_REPORTING: u32 = 0x40; // clang, dev_config.c
-pub const DEVICE_UNINITIALIZED: u32 = 0x200; // clang, dev_identify.c
-pub const DEV_WORKER_FLAG_HOLD_REFERENCE: u32 = 1; // clang, portstate.c
-pub const DEV_WORKER_FLAG_REMOVED: u32 = 2; // clang, portstate.c
-pub const DO_IS_FDO: u32 = 0x80000000; // clang, atapi.c
-pub const IDE_ACPI_TIMING_MODE_NOT_SUPPORTED: u32 = 0xFFFFFFFF; // clang, dev_timings.c
-pub const IDE_COMMAND_REQUEST_SENSE_DATA_EXT: u32 = 0xB; // clang, dev_error.c
-pub const IDE_DEVICE_FUA_NCQ: u32 = 0x80; // clang, satl.c
-pub const IDE_DRIVE_SELECT_SLAVE: u32 = 0x10; // clang, satl.c
-pub const IDE_ERROR_WRITE_PROTECT: u32 = 0x40; // clang, satl.c
-pub const IDE_GP_LOG_NCQ_COMMAND_ERROR_ADDRESS: u32 = 0x10; // clang, dev_error.c
-pub const IDE_GP_LOG_SECTOR_SIZE: u32 = 0x200; // clang, dev_error.c
 pub const IO_ERR_CONTROLLER_ERROR: NTSTATUS = 0xC004000B_u32 as NTSTATUS; // clang, dev_error.c
 pub const IO_ERR_PARITY: NTSTATUS = 0xC0040005_u32 as NTSTATUS; // clang, dev_error.c
 pub const IO_ERR_TIMEOUT: NTSTATUS = 0xC0040009_u32 as NTSTATUS; // clang, dev_error.c
-pub const MWDMA_ALL: u32 = 0x700; // clang, dev_error.c
-pub const PCIIDEX_INTERFACE_VERSION: u32 = 1; // clang, fdo.c
-pub const PIO_ALL: u32 = 0x1F; // clang, dev_config.c
-pub const PORT_FLAG_CHANNEL_ATTACHED: u32 = 0x80; // clang, fdo.c
-pub const PORT_FLAG_EXIT_THREAD: u32 = 0x80000000; // clang, fdo.c
-pub const PORT_FLAG_IO_TIMER_ACTIVE: u32 = 0x40; // clang, fdo.c
-pub const PORT_FLAG_IS_AHCI: u32 = 0x10; // clang, fdo.c
-pub const PORT_FLAG_IS_EXTERNAL: u32 = 4; // clang, fdo.c
-pub const PORT_FLAG_IS_SIMPLEX: u32 = 1; // clang, fdo.c
-pub const PORT_FLAG_NCQ: u32 = 8; // clang, enum.c
-pub const PORT_FLAG_PIO_FOR_LBA48_XFER: u32 = 0x200; // clang, fdo.c
-pub const PORT_FLAG_PIO_ONLY: u32 = 0x100; // clang, fdo.c
-pub const PORT_FLAG_PIO_VIA_DMA: u32 = 2; // clang, dev_error.c
-pub const PORT_FLAG_SYMLINK_CREATED: u32 = 0x20; // clang, fdo.c
-pub const PORT_INT_FLAG_IGNORE_LINK_IRQ: u32 = 2; // clang, dev_identify.c
-pub const PORT_INT_FLAG_IS_IO_ACTIVE: u32 = 1; // clang, fdo.c
-pub const PORT_QUEUE_FLAG_EXCLUSIVE_MODE: u32 = 1; // clang, scsi.c
-pub const PORT_QUEUE_FLAG_SIGNAL_STOP: u32 = 2; // clang, portstate.c
-pub const QUEUE_FLAGS_FROZEN: u32 = 0x80077; // clang, scsi.c
-pub const QUEUE_FLAGS_FROZEN_NOT_BYPASS: u32 = 0x67; // clang, scsi.c
-pub const QUEUE_FLAG_FROZEN_PNP: u32 = 4; // clang, enum.c
-pub const QUEUE_FLAG_FROZEN_PORT_BUSY: u32 = 1; // clang, portstate.c
-pub const QUEUE_FLAG_FROZEN_POWER: u32 = 0x20; // clang, dev_power.c
-pub const QUEUE_FLAG_FROZEN_QUEUE_FREEZE: u32 = 0x10; // clang, scsi.c
-pub const QUEUE_FLAG_FROZEN_QUEUE_LOCK: u32 = 0x80000; // clang, scsi.c
-pub const QUEUE_FLAG_FROZEN_REMOVED: u32 = 0x40; // clang, pdo.c
-pub const QUEUE_FLAG_FROZEN_SLOT: u32 = 2; // clang, scsi.c
-pub const QUEUE_FLAG_SIGNAL_STOP: u32 = 8; // clang, scsi.c
-pub const REQUEST_DMA_FLAGS: u32 = 0x200001; // clang, satl.c
-pub const REQUEST_EXCLUSIVE_ACCESS_FLAGS: u32 = 0x4200; // clang, scsi.c
-pub const REQUEST_FLAG_DATA_IN: u32 = 0x40; // clang, dev_error.c
-pub const REQUEST_FLAG_DATA_OUT: u32 = 0x80; // clang, satl.c
-pub const REQUEST_FLAG_DMA: u32 = 1; // clang, dev_error.c
-pub const REQUEST_FLAG_EXCLUSIVE: u32 = 0x4000; // clang, satl.c
-pub const REQUEST_FLAG_FUA: u32 = 0x100; // clang, satl.c
-pub const REQUEST_FLAG_HAS_LOCAL_BUFFER: u32 = 0x8000; // clang, dev_error.c
-pub const REQUEST_FLAG_HAS_MDL: u32 = 0x20000; // clang, scsi.c
-pub const REQUEST_FLAG_HAS_RESERVED_MAPPING: u32 = 0x80000; // clang, scsi.c
-pub const REQUEST_FLAG_HAS_SG_LIST: u32 = 0x10000; // clang, scsi.c
-pub const REQUEST_FLAG_HAS_TASK_FILE: u32 = 0x400; // clang, dev_error.c
-pub const REQUEST_FLAG_INTERNAL: u32 = 0x400000; // clang, portstate.c
-pub const REQUEST_FLAG_NCQ: u32 = 4; // clang, dev_error.c
-pub const REQUEST_FLAG_NO_KEEP_AWAKE: u32 = 0x100000; // clang, scsi.c
-pub const REQUEST_FLAG_PASSTHROUGH: u32 = 0x800000; // clang, dev_error.c
-pub const REQUEST_FLAG_POLL: u32 = 0x80000000; // clang, dev_identify.c
-pub const REQUEST_FLAG_PROGRAM_DMA: u32 = 0x200000; // clang, scsi.c
-pub const REQUEST_FLAG_READ_WRITE: u32 = 0x20; // clang, satl.c
-pub const REQUEST_FLAG_SAVE_TASK_FILE: u32 = 0x200; // clang, dev_error.c
-pub const REQUEST_STATE_FREEZE_QUEUE: u32 = 3; // clang, dev_error.c
-pub const REQUEST_STATE_NOT_STARTED: u32 = 1; // clang, scsi.c
-pub const REQUEST_STATE_REQUEUE: u32 = 2; // clang, portstate.c
-pub const SCSI_ADSENSE_ADDRESS_MARK_NOT_FOUND_FOR_DATA_FIELD: u32 = 0x13; // clang, satl.c
-pub const SCSI_SENSEQ_ATA_PASS_THROUGH_INFORMATION_AVAILABLE: u32 = 0x1D; // clang, satl.c
-pub const SRB_FLAG_LOW_MEM_RETRY: u32 = 0x100; // clang, scsi.c
-pub const SRB_FLAG_PIO_RETRY: u32 = 0x200; // clang, dev_error.c
-pub const SRB_FLAG_RETRY_COUNT_MASK: u32 = 0xFF; // clang, dev_error.c
-pub const SWDMA_ALL: u32 = 0xE0; // clang, dev_error.c
-pub const UDMA_ALL: u32 = 0x3F800; // clang, dev_error.c
-pub const WORKER_FLAG_COMPLETE_PORT_ENUM_EVENT: u32 = 2; // clang, portstate.c
-pub const WORKER_FLAG_NEED_RESCAN: u32 = 1; // clang, dev_error.c
 pub const _WMIGUIDREGINFO: u32 = 8; // clang, atapi.c
 // ==== end port facts ====
 
@@ -677,6 +619,46 @@ extern "system" {
 pub use crate::atapi::r#enum::AtaCopyIdStringSafe;
 pub use crate::atapi::r#enum::AtaCopyIdStringUnsafe;
 pub use crate::atapi::satl::AtaCreateStandardInquiryData;
+pub use crate::atapi::identify_funcs_h::AtaDevBytesPerLogicalSector;
+pub use crate::atapi::identify_funcs_h::AtaDevCdbSizeInWords;
+pub use crate::atapi::identify_funcs_h::AtaDevCurrentChsTranslation;
+pub use crate::atapi::identify_funcs_h::AtaDevDefaultChsTranslation;
+pub use crate::atapi::identify_funcs_h::AtaDevHas48BitAddressFeature;
+pub use crate::atapi::identify_funcs_h::AtaDevHasCdbInterrupt;
+pub use crate::atapi::identify_funcs_h::AtaDevHasDratFunction;
+pub use crate::atapi::identify_funcs_h::AtaDevHasFlushCache;
+pub use crate::atapi::identify_funcs_h::AtaDevHasFlushCacheExt;
+pub use crate::atapi::identify_funcs_h::AtaDevHasForceUnitAccessCommands;
+pub use crate::atapi::identify_funcs_h::AtaDevHasIeee1667;
+pub use crate::atapi::identify_funcs_h::AtaDevHasLbaTranslation;
+pub use crate::atapi::identify_funcs_h::AtaDevHasNcqAutosense;
+pub use crate::atapi::identify_funcs_h::AtaDevHasRemovableMediaFeature;
+pub use crate::atapi::identify_funcs_h::AtaDevHasRemovableMediaStatusNotification;
+pub use crate::atapi::identify_funcs_h::AtaDevHasRzatFunction;
+pub use crate::atapi::identify_funcs_h::AtaDevHasSecurityModeFeature;
+pub use crate::atapi::identify_funcs_h::AtaDevHasSmartFeature;
+pub use crate::atapi::identify_funcs_h::AtaDevHasTrimFunction;
+pub use crate::atapi::identify_funcs_h::AtaDevHasWorldWideName;
+pub use crate::atapi::identify_funcs_h::AtaDevInPuisState;
+pub use crate::atapi::identify_funcs_h::AtaDevIsCurrentGeometryValid;
+pub use crate::atapi::identify_funcs_h::AtaDevIsDmaDirectionRequired;
+pub use crate::atapi::identify_funcs_h::AtaDevIsIdentifyDataIncomplete;
+pub use crate::atapi::identify_funcs_h::AtaDevIsIdentifyDataValid;
+pub use crate::atapi::identify_funcs_h::AtaDevIsReadLookAHeadEnabled;
+pub use crate::atapi::identify_funcs_h::AtaDevIsRemovable;
+pub use crate::atapi::identify_funcs_h::AtaDevIsRotatingDevice;
+pub use crate::atapi::identify_funcs_h::AtaDevIsSsd;
+pub use crate::atapi::identify_funcs_h::AtaDevIsTape;
+pub use crate::atapi::identify_funcs_h::AtaDevIsVolatileWriteCacheEnabled;
+pub use crate::atapi::identify_funcs_h::AtaDevLogicalSectorAlignment;
+pub use crate::atapi::identify_funcs_h::AtaDevLogicalSectorsPerPhysicalSector;
+pub use crate::atapi::identify_funcs_h::AtaDevMaximumSectorsPerDrq;
+pub use crate::atapi::identify_funcs_h::AtaDevMediumRotationRate;
+pub use crate::atapi::identify_funcs_h::AtaDevNominalFormFactor;
+pub use crate::atapi::identify_funcs_h::AtaDevQueueDepth;
+pub use crate::atapi::identify_funcs_h::AtaDevUserAddressableSectors28Bit;
+pub use crate::atapi::identify_funcs_h::AtaDevUserAddressableSectors48Bit;
+pub use crate::atapi::identify_funcs_h::AtaDevZonedCapabilities;
 pub use crate::atapi::dev_power::AtaDeviceFlushPowerIrpQueue;
 pub use crate::atapi::dev_power::AtaDeviceGetFlushCacheCommand;
 pub use crate::atapi::portstate::AtaDeviceQueueEvent;
@@ -934,7 +916,7 @@ pub(crate) use IRP_FROM_QUEUE_ENTRY;
 #[allow(unused_macros)]
 macro_rules! IS_ATAPI {
     ($Device:expr $(,)?) => {
-        (((*($Device)).TransportFlags & DEVICE_IS_ATAPI) != 0)
+        (((*($Device)).__bindgen_anon_1.TransportFlags & DEVICE_IS_ATAPI) != 0)
     };
 }
 #[allow(unused_imports)]

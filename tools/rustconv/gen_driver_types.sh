@@ -396,7 +396,7 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
   atapi)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from drivers/storage/ide/atapi/CMakeLists.txt
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-07 from drivers/storage/ide/atapi/CMakeLists.txt
     # (16 compiled TU(s), 91 headers in the include closure, 160 switch constant(s)).
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
@@ -424,7 +424,12 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]wmidata\.h'
                   --allowlist-file '.*[/\\]wmilib\.h'
                   --allowlist-file '.*[/\\]wmistr\.h'
-                  --allowlist-file '.*atapi[/\\].*\.h' )
+                  --allowlist-file '.*atapi[/\\].*\.h'
+                  --allowlist-file '.*[/\\]atapi\.h'
+                  --allowlist-file '.*[/\\]guiddef\.h'
+                  --allowlist-file '.*[/\\]ntdef\.h'
+                  --allowlist-file '.*[/\\]scsiex\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
     # OPAQUE in ntkrnl-sys ({ _address: u8 }) but defined by an allowlisted header and named by
     # this module's C, so the island emits the real layout (fields reachable).
     UNBLOCK="_SCSI_REQUEST_BLOCK SCSI_REQUEST_BLOCK PSCSI_REQUEST_BLOCK"

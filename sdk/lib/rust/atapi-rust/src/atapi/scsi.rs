@@ -1,9 +1,17 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{DRIVER_CANCEL, DRIVER_CONTROL, DRIVER_LIST_CONTROL, _KWAIT_REASON_Executive, IoAllocateController, IoAllocateMdl, IoFreeController, IoFreeMdl, IoReleaseCancelSpinLock, KeAcquireInterruptSpinLock, KeInsertQueueDpc, KeReleaseInterruptSpinLock, KeWaitForSingleObject, MmBuildMdlForNonPagedPool, MmMapLockedPagesWithReservedMapping, MmUnmapReservedMapping, PDEVICE_OBJECT, PDMA_ADAPTER, PDMA_OPERATIONS, PIRP, PMDL, POWER_STATE, PSCATTER_GATHER_LIST, PowerState};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoAllocateController, IoAllocateMdl, IoFreeController, IoFreeMdl, IoReleaseCancelSpinLock, KeAcquireInterruptSpinLock, KeInsertQueueDpc, KeReleaseInterruptSpinLock, KeWaitForSingleObject, MmBuildMdlForNonPagedPool, MmMapLockedPagesWithReservedMapping, MmUnmapReservedMapping, PDEVICE_OBJECT, PDMA_ADAPTER, PDMA_OPERATIONS, PIRP, PMDL, POWER_STATE, PSCATTER_GATHER_LIST};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_100 {
+    pub Alignment: ULONGLONG,
+    pub Region: ULONGLONG,
+}
+
+#[no_mangle]
 pub static mut AtapCompletionQueueList: SLIST_HEADER = _SLIST_HEADER {
     c2rust_unnamed: C2RustUnnamed_100 {
         Alignment: 0,
@@ -11,6 +19,7 @@ pub static mut AtapCompletionQueueList: SLIST_HEADER = _SLIST_HEADER {
     },
 };
 
+#[no_mangle]
 pub static mut AtapCompletionDpc: KDPC = _KDPC {
     Type: 0,
     Importance: 0,
@@ -44,7 +53,7 @@ unsafe extern "C" fn AtaDeviceCheckPowerState(Device: PATAPORT_IO_CONTEXT) {
     let mut Status: NTSTATUS = 0;
     let mut PowerState: POWER_STATE = POWER_STATE { SystemState: 0 };
 
-    if (*Device).QueueFlags as u32 & QUEUE_FLAG_FROZEN_POWER == 0 {
+    if (*Device).QueueFlags & QUEUE_FLAG_FROZEN_POWER == 0 {
         return;
     }
 
@@ -54,7 +63,7 @@ unsafe extern "C" fn AtaDeviceCheckPowerState(Device: PATAPORT_IO_CONTEXT) {
         return;
     }
 
-    if (*DevExt).Common.SystemPowerState as u32 != PowerSystemWorking {
+    if (*DevExt).Common.SystemPowerState as u32 != PowerSystemWorking as u32 {
         return;
     }
 
@@ -71,6 +80,7 @@ unsafe extern "C" fn AtaDeviceCheckPowerState(Device: PATAPORT_IO_CONTEXT) {
     );
 
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Failed to power up device '%s' %lx\n\0".as_ptr() as *const i8, (*DevExt).FriendlyName, Status);
     }
 }
 
@@ -153,7 +163,7 @@ unsafe extern "C" fn AtaReqReleaseResources(
     if (*Request).Flags & REQUEST_FLAG_HAS_SG_LIST != 0 {
         let DmaAdapter: PDMA_ADAPTER = (*(*Device).PortData).DmaAdapter;
         let DmaOperations: PDMA_OPERATIONS = (*DmaAdapter).DmaOperations as PDMA_OPERATIONS;
-        ((*DmaOperations).PutScatterGatherList)(
+        (((*DmaOperations).PutScatterGatherList).unwrap_unchecked())(
             DmaAdapter,
             (*Request).SgList,
             ((*Request).Flags & REQUEST_FLAG_DATA_IN != 0) as i32 as u8,
@@ -265,7 +275,7 @@ unsafe extern "C" fn AtaReqCompleteRequest(mut Request: PATA_DEVICE_REQUEST) {
         INFO!("Freeze queue\n");
     }
 
-    if (*Device).QueueFlags as u32 & QUEUE_FLAG_SIGNAL_STOP != 0 && (*Device).FreeRequestsBitmap == (*Device).MaxRequestsBitmap {
+    if (*Device).QueueFlags & QUEUE_FLAG_SIGNAL_STOP != 0 && (*Device).FreeRequestsBitmap == (*Device).MaxRequestsBitmap {
         (*Device).QueueFlags &= (!QUEUE_FLAG_SIGNAL_STOP) as i32;
         AtaDeviceQueueEmptyEvent(Device);
     }
@@ -308,9 +318,9 @@ pub unsafe extern "C" fn AtaReqSetFixedSenseData(
         &mut SenseData as *mut SENSE_DATA as *mut core::ffi::c_void,
         core::mem::size_of::<SENSE_DATA>(),
     );
-    SenseData._bitfield_1.set(0, 1, 1);
-    SenseData._bitfield_1.set(1, 7, SCSI_SENSE_ERRORCODE_FIXED_CURRENT as u64);
-    SenseData._bitfield_2.set(0, 4, SenseCode.SenseKey as u64);
+    SenseData._bitfield_1.set(0, 1);
+    SenseData._bitfield_1.set(1, (SCSI_SENSE_ERRORCODE_FIXED_CURRENT as u32) as u8);
+    SenseData._bitfield_2.set(0, (SenseCode.SenseKey as u32) as u8);
     SenseData.AdditionalSenseCode = SenseCode.AdditionalSenseCode;
     SenseData.AdditionalSenseCodeQualifier = SenseCode.AdditionalSenseCodeQualifier;
     SenseData.AdditionalSenseLength = (core::mem::size_of::<SENSE_DATA>()
@@ -414,8 +424,8 @@ unsafe extern "C" fn AtaReqStartIo(Request: PATA_DEVICE_REQUEST) {
         AtaReqStartCompletionDpc(Request);
     }
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn AtaReqPreparePrdTable(
+
+unsafe extern "system" fn AtaReqPreparePrdTable(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     SgList: PSCATTER_GATHER_LIST,
@@ -431,28 +441,7 @@ unsafe extern "stdcall" fn AtaReqPreparePrdTable(
     (*Request).SgList = SgList;
     (*Request).Flags |= REQUEST_FLAG_HAS_SG_LIST;
 
-    ((*PortData).PreparePrdTable)((*PortData).ChannelContext, Request, SgList);
-    AtaReqStartIo(Request);
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn AtaReqPreparePrdTable(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    SgList: PSCATTER_GATHER_LIST,
-    Context: PVOID,
-) {
-    let Request: PATA_DEVICE_REQUEST = Context as PATA_DEVICE_REQUEST;
-    let Device: PATAPORT_IO_CONTEXT = (*Request).Device as PATAPORT_IO_CONTEXT;
-    let PortData: PATAPORT_PORT_DATA = (*Device).PortData as PATAPORT_PORT_DATA;
-
-    UNREFERENCED_PARAMETER!(DeviceObject);
-    UNREFERENCED_PARAMETER!(Irp);
-
-    (*Request).SgList = SgList;
-    (*Request).Flags |= REQUEST_FLAG_HAS_SG_LIST;
-
-    (*PortData).PreparePrdTable((*PortData).ChannelContext, Request, SgList);
+    (((*PortData).PreparePrdTable).unwrap_unchecked())((*PortData).ChannelContext, Request, SgList);
     AtaReqStartIo(Request);
 }
 
@@ -522,8 +511,7 @@ unsafe extern "C" fn AtaReqGetScatterGatherList(
         (*Request).DataBuffer,
         (*Request).DataTransferLength,
         Some(
-            AtaReqPreparePrdTable
-                as unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, PSCATTER_GATHER_LIST, PVOID) -> (),
+            AtaReqPreparePrdTable,
         ),
         Request as PVOID,
         ((*Request).Flags & REQUEST_FLAG_DATA_IN as ULONG != 0) as BOOLEAN,
@@ -609,25 +597,8 @@ pub unsafe extern "C" fn AtaReqSendRequest(Request: PATA_DEVICE_REQUEST) {
     (*Request).__bindgen_anon_3.__bindgen_anon_1.InternalState = REQUEST_STATE_REQUEUE as UCHAR;
     AtaReqStartCompletionDpc(Request);
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn AtaReqCallSendRequestSerialized(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    MapRegisterBase: *mut core::ffi::c_void,
-    Context: *mut core::ffi::c_void,
-) -> IO_ALLOCATION_ACTION {
-    let Request: PATA_DEVICE_REQUEST = Context as PATA_DEVICE_REQUEST;
 
-    UNREFERENCED_PARAMETER!(DeviceObject);
-    UNREFERENCED_PARAMETER!(Irp);
-    UNREFERENCED_PARAMETER!(MapRegisterBase);
-
-    AtaReqSendRequest(Request);
-    return KeepObject;
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn AtaReqCallSendRequestSerialized(
+unsafe extern "system" fn AtaReqCallSendRequestSerialized(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     MapRegisterBase: *mut core::ffi::c_void,
@@ -674,7 +645,7 @@ pub unsafe extern "system" fn AtaReqCompletionDpc(
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaReqStartCompletionDpc(Request: PATA_DEVICE_REQUEST) {
-    ASSERT_REQUEST!(!Request.is_null());
+    ASSERT_REQUEST!(Request);
 
     InterlockedPushEntrySList(&mut AtapCompletionQueueList, &mut (*Request).__bindgen_anon_1.CompletionEntry);
     KeInsertQueueDpc(&mut AtapCompletionDpc, core::ptr::null_mut(), core::ptr::null_mut());
@@ -729,7 +700,7 @@ unsafe extern "C" fn AtaReqAllocateSlot(
         return FALSE;
     }
 
-    if ((*PortData).AllocateSlot)((*PortData).ChannelContext, Request, TRUE) == 0 {
+    if (*PortData).AllocateSlot((*PortData).ChannelContext, Request, TRUE) == 0 {
         return FALSE;
     }
 
@@ -888,13 +859,13 @@ unsafe extern "C" fn AtaReqDeviceQueueRemoveEntry(
 ) {
     RemoveEntryList(&raw mut (*QueueEntry).ListEntry);
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn AtaReqDeviceQueueCancelIo(
+
+unsafe extern "system" fn AtaReqDeviceQueueCancelIo(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) {
     let mut Device: PATAPORT_IO_CONTEXT;
-    let mut OldLevel: KIRQL = 0;
+    let mut OldLevel: KIRQL = core::mem::zeroed();
     let mut Srb: PSCSI_REQUEST_BLOCK;
     let mut QueueEntry: PREQUEST_QUEUE_ENTRY;
 
@@ -910,36 +881,6 @@ unsafe extern "stdcall" fn AtaReqDeviceQueueCancelIo(
     KeReleaseSpinLock((&raw mut (*Device).QueueLock).cast(), OldLevel);
 
     Srb = (*IoGetCurrentIrpStackLocation(Irp)).Parameters.Scsi.Srb.cast();
-
-    (*Srb).SrbStatus = (SRB_STATUS_ABORTED) as u8;
-    (*Srb).__bindgen_anon_1.InternalStatus = STATUS_CANCELLED as u32;
-
-    (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_CANCELLED;
-    IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn AtaReqDeviceQueueCancelIo(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) {
-    let mut Device: PATAPORT_IO_CONTEXT;
-    let mut OldLevel: KIRQL;
-    let mut Srb: PSCSI_REQUEST_BLOCK;
-    let mut QueueEntry: PREQUEST_QUEUE_ENTRY;
-
-    UNREFERENCED_PARAMETER!(DeviceObject);
-
-    IoReleaseCancelSpinLock((*Irp).CancelIrql);
-
-    QueueEntry = QUEUE_ENTRY_FROM_IRP!(Irp);
-    Device = ((*QueueEntry).Context).cast();
-
-    KeAcquireSpinLock((&raw mut (*Device).QueueLock).cast(), &raw mut OldLevel);
-    AtaReqDeviceQueueRemoveEntry(Device, QueueEntry);
-    KeReleaseSpinLock((&raw mut (*Device).QueueLock).cast(), OldLevel);
-
-    Srb = (*IoGetCurrentIrpStackLocation(Irp)).Parameters.Scsi.Srb;
 
     (*Srb).SrbStatus = (SRB_STATUS_ABORTED) as u8;
     (*Srb).__bindgen_anon_1.InternalStatus = (STATUS_CANCELLED) as u32;
@@ -981,13 +922,13 @@ unsafe extern "C" fn AtaReqDeviceQueueAddSrb(
     mut Srb: PSCSI_REQUEST_BLOCK,
 ) -> NTSTATUS {
     let mut Irp: PIRP = (*Srb).OriginalRequest as PIRP;
-    if (*Device).QueueFlags as u32 & QUEUE_FLAG_FROZEN_REMOVED != 0 {
+    if (*Device).QueueFlags & QUEUE_FLAG_FROZEN_REMOVED != 0 {
         (*Srb).SrbStatus = (SRB_STATUS_NO_DEVICE) as u8;
         return STATUS_NO_SUCH_DEVICE;
     }
     AtaReqDeviceQueueInsertSrb(Device, Srb, Irp);
     AtaDeviceCheckPowerState(Device);
-    IoSetCancelRoutine(Irp, Some(AtaReqDeviceQueueCancelIo));
+    IoSetCancelRoutine(Irp, Some(AtaReqDeviceQueueCancelIo as unsafe extern "system" fn(_, _)));
     if (*Irp).Cancel as ::core::ffi::c_int != 0 && IoSetCancelRoutine(Irp, None).is_some() {
         AtaReqDeviceQueueRemoveEntry(
             Device,
@@ -1047,15 +988,15 @@ unsafe extern "C" fn AtaReqDeviceQueueDispatchNextRequest(
         return FALSE;
     }
 
-    if (*Device).QueueFlags & (QUEUE_FLAG_FROZEN_QUEUE_FREEZE | QUEUE_FLAG_FROZEN_QUEUE_LOCK) != 0
-        && (*Device).QueueFlags & QUEUE_FLAGS_FROZEN_NOT_BYPASS == 0
+    if (*Device).QueueFlags as u32 & (QUEUE_FLAG_FROZEN_QUEUE_FREEZE | QUEUE_FLAG_FROZEN_QUEUE_LOCK) != 0
+        && (*Device).QueueFlags as u32 & QUEUE_FLAGS_FROZEN_NOT_BYPASS == 0
     {
         let mut Entry: PLIST_ENTRY = (*Device).DeviceQueueList.Flink;
         while Entry != &raw mut (*Device).DeviceQueueList {
             QueueEntry = CONTAINING_RECORD!(Entry, REQUEST_QUEUE_ENTRY, ListEntry);
 
             Irp = IRP_FROM_QUEUE_ENTRY!(QueueEntry);
-            Srb = (*IoGetCurrentIrpStackLocation(Irp)).Parameters.Scsi.Srb;
+            Srb = (*IoGetCurrentIrpStackLocation(Irp)).Parameters.Scsi.Srb as PSCSI_REQUEST_BLOCK;
 
             if ((AtaReqGetTagForRequest(Device, Srb, &raw mut Tag)) == 0) {
                 Entry = (*Entry).Flink;
@@ -1064,7 +1005,7 @@ unsafe extern "C" fn AtaReqDeviceQueueDispatchNextRequest(
 
             AtaReqDeviceQueueRemoveEntry(Device, QueueEntry);
 
-            if !IoSetCancelRoutine(Irp, None) {
+            if IoSetCancelRoutine(Irp, None).is_none() {
                 InitializeListHead(&raw mut (*QueueEntry).ListEntry);
                 Entry = (*Entry).Flink;
                 continue;
@@ -1078,7 +1019,7 @@ unsafe extern "C" fn AtaReqDeviceQueueDispatchNextRequest(
     } else {
         let mut Entry: PLIST_ENTRY = core::ptr::null_mut();
 
-        if (*Device).QueueFlags & QUEUE_FLAGS_FROZEN != 0 {
+        if (*Device).QueueFlags as u32 & QUEUE_FLAGS_FROZEN != 0 {
             return FALSE;
         }
 
@@ -1089,11 +1030,11 @@ unsafe extern "C" fn AtaReqDeviceQueueDispatchNextRequest(
             QueueEntry = CONTAINING_RECORD!(Entry, REQUEST_QUEUE_ENTRY, ListEntry);
 
             Irp = IRP_FROM_QUEUE_ENTRY!(QueueEntry);
-            Srb = (*IoGetCurrentIrpStackLocation(Irp)).Parameters.Scsi.Srb;
+            Srb = (*IoGetCurrentIrpStackLocation(Irp)).Parameters.Scsi.Srb as PSCSI_REQUEST_BLOCK;
 
             AtaReqDeviceQueueRemoveEntry(Device, QueueEntry);
 
-            if !IoSetCancelRoutine(Irp, None) {
+            if IoSetCancelRoutine(Irp, None).is_none() {
                 InitializeListHead(&raw mut (*QueueEntry).ListEntry);
                 Entry = (*Entry).Flink;
                 continue;
@@ -1113,10 +1054,10 @@ unsafe extern "C" fn AtaReqStartSrb(
     Device: PATAPORT_IO_CONTEXT,
     Srb: PSCSI_REQUEST_BLOCK,
 ) -> NTSTATUS {
-    let mut OldIrql: KIRQL;
+    let mut OldIrql: KIRQL = 0;
     let mut Status: NTSTATUS;
     let mut Request: PATA_DEVICE_REQUEST;
-    let mut Tag: ULONG;
+    let mut Tag: ULONG = 0;
 
     KeRaiseIrql((DISPATCH_LEVEL) as KIRQL, &mut OldIrql);
     KeAcquireSpinLockAtDpcLevel(&mut (*Device).QueueLock);
@@ -1185,7 +1126,7 @@ pub unsafe extern "C" fn AtaReqWaitForOutstandingIoToComplete(
     Device: PATAPORT_IO_CONTEXT,
     Srb: PSCSI_REQUEST_BLOCK,
 ) {
-    let mut OldIrql: KIRQL;
+    let mut OldIrql: KIRQL = 0;
     let mut DoWait: BOOLEAN;
     let mut Request: PATA_DEVICE_REQUEST;
 
@@ -1233,7 +1174,7 @@ pub unsafe extern "C" fn AtaReqWaitForOutstandingIoToComplete(
     KeWaitForSingleObject(
         &mut (*Device).QueueStoppedEvent,
         _KWAIT_REASON_Executive,
-        (0i32) as i8,
+        (0i32) as KPROCESSOR_MODE,
         FALSE,
         core::ptr::null_mut(),
     );
@@ -1241,7 +1182,7 @@ pub unsafe extern "C" fn AtaReqWaitForOutstandingIoToComplete(
 #[no_mangle]
 pub unsafe extern "C" fn AtaReqFlushDeviceQueue(Device: PATAPORT_IO_CONTEXT) {
     let mut Request: PATA_DEVICE_REQUEST;
-    let mut OldLevel: KIRQL;
+    let mut OldLevel: KIRQL = 0;
     let mut Entry: PLIST_ENTRY;
 
     KeAcquireSpinLock(&mut (*Device).QueueLock, &mut OldLevel);
@@ -1281,7 +1222,7 @@ pub unsafe extern "C" fn AtaReqFlushDeviceQueue(Device: PATAPORT_IO_CONTEXT) {
     KeReleaseSpinLock(&mut (*Device).QueueLock, OldLevel);
 
     if !Request.is_null() {
-        let mut OldIrql: KIRQL;
+        let mut OldIrql: KIRQL = 0;
 
         (*Request).SrbStatus = (SRB_STATUS_ABORTED) as u8;
         (*Request).__bindgen_anon_3.__bindgen_anon_1.InternalState = (REQUEST_STATE_NOT_STARTED) as u8;
@@ -1373,7 +1314,7 @@ unsafe extern "C" fn AtaPdoDispatchScsi(
     let mut Status: NTSTATUS;
     let mut Srb: PSCSI_REQUEST_BLOCK;
 
-    Srb = (*IoGetCurrentIrpStackLocation(Irp)).Parameters.Scsi.Srb;
+    Srb = (*IoGetCurrentIrpStackLocation(Irp)).Parameters.Scsi.Srb as PSCSI_REQUEST_BLOCK;
 
     Status = IoAcquireRemoveLock(&mut (*DevExt).Common.RemoveLock, (Irp).cast());
     if !NT_SUCCESS!(Status) {
@@ -1386,7 +1327,7 @@ unsafe extern "C" fn AtaPdoDispatchScsi(
         return Status;
     }
 
-    match (*Srb).Function as i32 {
+    match (*Srb).Function as u32 {
         SRB_FUNCTION_CLAIM_DEVICE | SRB_FUNCTION_RELEASE_DEVICE => {
             Status = AtaPdoHandleAttachReleaseDevice(DevExt, Srb);
         }

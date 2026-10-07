@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{DeviceType, PCSTR};
+use ntkrnl_sys::ddk::{PCSTR};
 use core::ffi::c_void;
 
 unsafe extern "C" fn AtaDeviceIdentifyDataEqual(
@@ -104,12 +104,12 @@ unsafe extern "C" fn AtaCreateAtapiStandardInquiryData(
     IdentifyData: PIDENTIFY_DEVICE_DATA,
     InquiryData: PINQUIRYDATA,
 ) {
-    (*InquiryData).set_DeviceType(READ_ONLY_DIRECT_ACCESS_DEVICE as u8);
-    (*InquiryData).set_RemovableMedia(AtaDevIsRemovable(IdentifyData));
+    (*InquiryData).set_DeviceType((READ_ONLY_DIRECT_ACCESS_DEVICE) as _);
+    (*InquiryData).set_RemovableMedia((AtaDevIsRemovable(IdentifyData)) as _);
     (*InquiryData).__bindgen_anon_1.Versions = 0x04;
-    (*InquiryData).set_ResponseDataFormat(2);
+    (*InquiryData).set_ResponseDataFormat((2) as _);
     (*InquiryData).AdditionalLength =
-        (INQUIRYDATABUFFERSIZE - RTL_SIZEOF_THROUGH_FIELD!(INQUIRYDATA, AdditionalLength) as u32) as u8;
+        (INQUIRYDATABUFFERSIZE - RTL_SIZEOF_THROUGH_FIELD!(INQUIRYDATA, AdditionalLength)) as u8;
 
     AtaCopyIdStringSafe(
         (*InquiryData).VendorId.as_mut_ptr() as PCHAR,
@@ -298,29 +298,29 @@ pub unsafe extern "C" fn AtaPortIdentifyDevice(
         return DEV_STATUS_SAME_DEVICE;
     }
 
-    (*DevExt).Device.TransportFlags &= !(DEVICE_IS_ATAPI
+    (*DevExt).Device.__bindgen_anon_1.TransportFlags &= !(DEVICE_IS_ATAPI
         | DEVICE_HAS_CDB_INTERRUPT
         | DEVICE_NEED_DMA_DIRECTION
         | DEVICE_IS_NEC_CDR260);
 
     if DeviceType == DEV_ATAPI {
-        (*DevExt).Device.TransportFlags |= DEVICE_IS_ATAPI;
+        (*DevExt).Device.__bindgen_anon_1.TransportFlags |= DEVICE_IS_ATAPI;
 
-        (*DevExt).Device.CdbSize = AtaDevCdbSizeInWords(&mut (*DevExt).__bindgen_anon_1.IdentifyPacketData);
+        (*DevExt).Device.__bindgen_anon_1.CdbSize = AtaDevCdbSizeInWords(&mut (*DevExt).__bindgen_anon_1.IdentifyPacketData);
 
         if AtaDevHasCdbInterrupt(&mut (*DevExt).__bindgen_anon_1.IdentifyPacketData) != 0 {
-            (*DevExt).Device.TransportFlags |= DEVICE_HAS_CDB_INTERRUPT;
+            (*DevExt).Device.__bindgen_anon_1.TransportFlags |= DEVICE_HAS_CDB_INTERRUPT;
         }
 
         if AtaDevIsDmaDirectionRequired(&mut (*DevExt).__bindgen_anon_1.IdentifyPacketData) != 0 {
-            (*DevExt).Device.TransportFlags |= DEVICE_NEED_DMA_DIRECTION;
+            (*DevExt).Device.__bindgen_anon_1.TransportFlags |= DEVICE_NEED_DMA_DIRECTION;
         }
 
         if (*DevExt).__bindgen_anon_1.IdentifyPacketData.ModelNumber[0 as usize] as i32 == 'N' as i32
             && (*DevExt).__bindgen_anon_1.IdentifyPacketData.ModelNumber[1 as usize] as i32 == 'E' as i32
             && (*DevExt).__bindgen_anon_1.IdentifyPacketData.ModelNumber[2 as usize] as i32 == 'C' as i32
         {
-            (*DevExt).Device.TransportFlags |= DEVICE_IS_NEC_CDR260;
+            (*DevExt).Device.__bindgen_anon_1.TransportFlags |= DEVICE_IS_NEC_CDR260;
         }
 
         Status = AtaDeviceSendInquiry(PortData, DevExt);

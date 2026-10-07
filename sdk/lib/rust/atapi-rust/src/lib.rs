@@ -32,6 +32,7 @@ pub mod atapi {
     pub mod scsi;
     pub mod smart;
     pub mod wmi;
+    pub mod identify_funcs_h;
 }
 
 // staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.

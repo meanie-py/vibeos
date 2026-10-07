@@ -68,11 +68,11 @@ unsafe extern "C" fn AtaPdoQueryStorageDeviceProperty(
     let mut Length3: ULONG = 0;
     PAGED_CODE!();
     Length1 = (strlen(&raw mut (*DevExt).FriendlyName as *mut CHAR) as ULONG as usize)
-        .wrapping_add(::core::mem::size_of::<ANSI_NULL>() as usize) as ULONG;
+        .wrapping_add(::core::mem::size_of_val(&ANSI_NULL) as usize) as ULONG;
     Length2 = (strlen(&raw mut (*DevExt).RevisionNumber as *mut CHAR) as ULONG as usize)
-        .wrapping_add(::core::mem::size_of::<ANSI_NULL>() as usize) as ULONG;
+        .wrapping_add(::core::mem::size_of_val(&ANSI_NULL) as usize) as ULONG;
     Length3 = (strlen(&raw mut (*DevExt).SerialNumber as *mut CHAR) as ULONG as usize)
-        .wrapping_add(::core::mem::size_of::<ANSI_NULL>() as usize) as ULONG;
+        .wrapping_add(::core::mem::size_of_val(&ANSI_NULL) as usize) as ULONG;
     RawPropertiesLength = Length1.wrapping_add(Length2).wrapping_add(Length3);
     DescriptorSize = (FIELD_OFFSET!(STORAGE_DEVICE_DESCRIPTOR, RawDeviceProperties)
         .wrapping_add((RawPropertiesLength) as i32)) as u32;
@@ -83,9 +83,9 @@ unsafe extern "C" fn AtaPdoQueryStorageDeviceProperty(
     (*DeviceDescriptor).RawPropertiesLength = RawPropertiesLength;
     (*DeviceDescriptor).Version = ::core::mem::size_of::<_STORAGE_DEVICE_DESCRIPTOR>() as ULONG;
     (*DeviceDescriptor).Size = DescriptorSize;
-    (*DeviceDescriptor).DeviceType = (*InquiryData).DeviceType;
-    (*DeviceDescriptor).DeviceTypeModifier = (*InquiryData).DeviceTypeModifier;
-    (*DeviceDescriptor).RemovableMedia = (*InquiryData).RemovableMedia as BOOLEAN;
+    (*DeviceDescriptor).DeviceType = (*InquiryData).DeviceType();
+    (*DeviceDescriptor).DeviceTypeModifier = (*InquiryData).DeviceTypeModifier();
+    (*DeviceDescriptor).RemovableMedia = (*InquiryData).RemovableMedia() as BOOLEAN;
     (*DeviceDescriptor).CommandQueueing = FALSE as BOOLEAN;
     if (*(*DevExt).Device.PortData).PortFlags & PORT_FLAG_IS_AHCI as ULONG != 0 {
         (*DeviceDescriptor).BusType = BusTypeSata;
@@ -93,7 +93,7 @@ unsafe extern "C" fn AtaPdoQueryStorageDeviceProperty(
         (*DeviceDescriptor).BusType = BusTypeAta;
     }
     (*DeviceDescriptor).VendorIdOffset = 0 as ULONG;
-    (*DeviceDescriptor).ProductIdOffset = FIELD_OFFSET!(STORAGE_DEVICE_DESCRIPTOR, RawDeviceProperties);
+    (*DeviceDescriptor).ProductIdOffset = FIELD_OFFSET!(STORAGE_DEVICE_DESCRIPTOR, RawDeviceProperties) as ULONG;
     RtlCopyMemory!(
         (DeviceDescriptor as ULONG_PTR)
             .wrapping_add((*DeviceDescriptor).ProductIdOffset as ULONG_PTR) as PUCHAR
@@ -164,18 +164,16 @@ unsafe extern "C" fn AtaPdoQueryStorageAccessAlignmentProperty(
 
     (*AccessAlignmentDescriptor).BytesPerPhysicalSector = (*DevExt)
         .Device
-        .__bindgen_anon_1
-        .SectorSize
+        .__bindgen_anon_1.SectorSize
         .wrapping_mul(LogicalSectorsPerPhysicalSector);
 
     (*AccessAlignmentDescriptor).BytesOffsetForSectorAlignment = (*DevExt)
         .Device
-        .__bindgen_anon_1
-        .SectorSize
+        .__bindgen_anon_1.SectorSize
         .wrapping_mul(AtaDevLogicalSectorAlignment(&mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData));
 
     (*Irp).IoStatus.Information =
-        core::mem::size_of::<STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR>() as ULONG_PTR;
+        core::mem::size_of::<STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR>() as usize as u64;
     return STATUS_SUCCESS;
 }
 
@@ -230,7 +228,7 @@ unsafe extern "C" fn AtaPdoQueryStorageDeviceTrimProperty(
     TrimDescriptor = (*Irp).AssociatedIrp.SystemBuffer as PDEVICE_TRIM_DESCRIPTOR;
     (*TrimDescriptor).Version = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as ULONG;
     (*TrimDescriptor).Size = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as ULONG;
-    (*TrimDescriptor).TrimEnabled = AtaDevHasTrimFunction(&(*DevExt).__bindgen_anon_1.IdentifyDeviceData);
+    (*TrimDescriptor).TrimEnabled = (AtaDevHasTrimFunction(&(*DevExt).__bindgen_anon_1.IdentifyDeviceData)) as u8;
 
     (*Irp).IoStatus.Information = core::mem::size_of::<DEVICE_TRIM_DESCRIPTOR>() as ULONG_PTR;
     return STATUS_SUCCESS;
@@ -284,7 +282,7 @@ unsafe extern "C" fn AtaPdoHandleGetScsiAddress(
     let mut ChanExt: PATAPORT_CHANNEL_EXTENSION = core::ptr::null_mut();
     let mut ScsiAddress: PSCSI_ADDRESS = core::ptr::null_mut();
     let mut AtaScsiAddress: ATA_SCSI_ADDRESS = ATA_SCSI_ADDRESS {
-        c2rust_unnamed: _ATA_SCSI_ADDRESS__bindgen_ty_1 {
+        c2rust_unnamed: ATA_SCSI_ADDRESS__bindgen_ty_1 {
             Lun: 0,
             TargetId: 0,
             PathId: 0,
@@ -365,14 +363,14 @@ unsafe extern "C" fn AtaPdoSendHbaControl(
     (*Srb).DataTransferLength = BufferSize;
 
     IoStack = IoGetNextIrpStackLocation(Irp);
-    (*IoStack).Parameters.Scsi.Srb = (Srb).cast();
+    (*IoStack).Parameters.Scsi.Srb = Srb;
 
     Status = IoCallDriver((*DevExt).Common.Self_, Irp);
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(
-            (&mut Event).cast(),
+            &mut Event,
             _KWAIT_REASON_Executive,
-            (0i32) as i8,
+            (0i32) as KPROCESSOR_MODE,
             FALSE,
             core::ptr::null_mut(),
         );

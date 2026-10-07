@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{ErrorCode, IO_ERROR_LOG_PACKET, IoAllocateErrorLogEntry, IoWriteErrorLogEntry, KeAcquireInterruptSpinLock, KeReleaseInterruptSpinLock, LARGE_INTEGER, PIO_ERROR_LOG_PACKET};
+use ntkrnl_sys::ddk::{IO_ERROR_LOG_PACKET, IoAllocateErrorLogEntry, IoWriteErrorLogEntry, KeAcquireInterruptSpinLock, KeReleaseInterruptSpinLock, LARGE_INTEGER, PIO_ERROR_LOG_PACKET};
 use core::ffi::c_void;
 
 unsafe extern "C" fn AtaDeviceRequestSenseNeeded(Request: PATA_DEVICE_REQUEST) -> BOOLEAN {
@@ -74,7 +74,7 @@ unsafe extern "C" fn AtaDeviceHandleRequestSense(
         RtlCopyMemory!(
             (*Srb).SenseInfoBuffer as *mut core::ffi::c_void,
             (*DevExt).Device.LocalBuffer as *const core::ffi::c_void,
-            min((*Srb).SenseInfoBufferLength, ATA_LOCAL_BUFFER_SIZE) as usize,
+            min((*Srb).SenseInfoBufferLength, (ATA_LOCAL_BUFFER_SIZE) as T) as usize,
         );
 
         (*Srb).ScsiStatus = (SCSISTAT_CHECK_CONDITION) as u8;
@@ -415,11 +415,11 @@ unsafe extern "C" fn AtaDeviceNcqRecovery(
         }
 
         FailedRequest = (*PortData).Slots[(*LogPage).NcqTag() as usize];
-        ASSERT_REQUEST!(!FailedRequest.is_null());
+        ASSERT_REQUEST!(FailedRequest);
         (*PortData).Worker.FailedRequest = FailedRequest;
 
         (*FailedRequest).SrbStatus = (SRB_STATUS_ERROR) as u8;
-        (*FailedRequest).Output.__bindgen_anon_1.Status = (*LogPage).Status;
+        (*FailedRequest).Output.__bindgen_anon_1.Status = (*LogPage).__bindgen_anon_1.Status;
         (*FailedRequest).Output.__bindgen_anon_2.Error = (*LogPage).Error;
         if ((*FailedRequest).Flags & (REQUEST_FLAG_SAVE_TASK_FILE as u32)) != 0 {
             AtaDeviceSaveLogPageTaskFile(LogPage, FailedRequest);

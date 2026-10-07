@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{IO_COMPLETION_ROUTINE, _IO_STATUS_BLOCK, IRP, PDEVICE_OBJECT, PDEVICE_POWER_STATE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, POWER_STATE, PowerState, REQUEST_POWER_COMPLETE};
+use ntkrnl_sys::ddk::{_IO_STATUS_BLOCK, IRP, PDEVICE_OBJECT, PDEVICE_POWER_STATE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, POWER_STATE};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -25,7 +25,7 @@ pub unsafe extern "C" fn AtaDeviceFlushPowerIrpQueue(
     loop {
         let mut Entry: PLIST_ENTRY;
         let mut PowerIrp: PIRP;
-        let mut OldLevel: KIRQL = 0;
+        let mut OldLevel: KIRQL = core::mem::zeroed();
 
         KeAcquireSpinLock(&mut (*(*DevExt)).Device.QueueLock as *mut _ as *mut usize, &mut OldLevel);
         if IsListEmpty(&mut (*(*DevExt)).PowerIrpQueueList) != 0 {
@@ -241,35 +241,8 @@ unsafe extern "C" fn AtaPdoQueuePowerIrp(
 
     AtaDeviceQueueEvent((*(*DevExt)).Device.PortData, (DevExt).cast(), ACTION_DEVICE_POWER);
 }
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn AtaPdoPowerUpCompletionRoutine(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: *mut core::ffi::c_void,
-) -> NTSTATUS {
-    let DevExt: *mut ATAPORT_DEVICE_EXTENSION = Context as *mut ATAPORT_DEVICE_EXTENSION;
-    let Status: NTSTATUS;
 
-    UNREFERENCED_PARAMETER!(DeviceObject);
-
-    Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-
-    INFO!("Powering up device, lower driver status %lx\n", Status);
-
-    if !NT_SUCCESS!(Status) {
-        PoStartNextPowerIrp(Irp);
-
-        IoReleaseRemoveLock(&mut (*DevExt).Common.RemoveLock, (Irp).cast());
-        return STATUS_CONTINUE_COMPLETION;
-    }
-
-    AtaPdoQueuePowerIrp((DevExt).cast(), Irp);
-
-    return STATUS_MORE_PROCESSING_REQUIRED;
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn AtaPdoPowerUpCompletionRoutine(
+unsafe extern "system" fn AtaPdoPowerUpCompletionRoutine(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
     Context: *mut core::ffi::c_void,
@@ -300,7 +273,7 @@ unsafe extern "C" fn AtaPdoPowerSetDevicePowerState(
     mut Irp: PIRP,
 ) -> NTSTATUS {
     let mut IoStack: PIO_STACK_LOCATION = core::ptr::null_mut();
-    let mut NewState: DEVICE_POWER_STATE = PowerDeviceD0;
+    let mut NewState: DEVICE_POWER_STATE = (PowerDeviceD0) as _;
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     NewState = (*IoStack).Parameters.Power.State.DeviceState;
     IoMarkIrpPending(Irp);
@@ -322,33 +295,8 @@ unsafe extern "C" fn AtaPdoPowerSetDevicePowerState(
     }
     return STATUS_PENDING;
 }
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn AtaPdoPowerSetSysStateWithDevStateComplete(
-    DeviceObject: PDEVICE_OBJECT,
-    MinorFunction: u8,
-    PowerState: POWER_STATE,
-    Context: *mut core::ffi::c_void,
-    IoStatus: PIO_STATUS_BLOCK,
-) {
-    let DevExt = (*DeviceObject).DeviceExtension as *mut ATAPORT_DEVICE_EXTENSION;
-    let Irp = Context as PIRP;
 
-    UNREFERENCED_PARAMETER!(MinorFunction);
-
-    if (*DevExt).Common.SystemPowerState as u32 != PowerState.SystemState as u32 {
-        (*DevExt).Common.SystemPowerState = PowerState.SystemState;
-        PoSetPowerState(DeviceObject, PowerState.SystemState, PowerState);
-    }
-
-    AtaPowerCompleteIrp(
-        core::ptr::addr_of_mut!((*DevExt).Common),
-        Irp,
-        (*IoStatus).__bindgen_anon_1.Status,
-    );
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn AtaPdoPowerSetSysStateWithDevStateComplete(
+unsafe extern "system" fn AtaPdoPowerSetSysStateWithDevStateComplete(
     DeviceObject: PDEVICE_OBJECT,
     MinorFunction: u8,
     PowerState: POWER_STATE,
@@ -392,7 +340,7 @@ unsafe extern "C" fn AtaPdoPowerSetSystemPowerState(
     let mut NewPowerState: POWER_STATE = POWER_STATE {
         SystemState: PowerSystemWorking,
     };
-    let mut NewSystemState: SYSTEM_POWER_STATE = PowerSystemWorking;
+    let mut NewSystemState: SystemPowerState = PowerSystemWorking;
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     NewSystemState = (*IoStack).Parameters.Power.State.SystemState;
@@ -405,14 +353,7 @@ unsafe extern "C" fn AtaPdoPowerSetSystemPowerState(
         IRP_MN_SET_POWER,
         NewPowerState,
         Some(
-            AtaPdoPowerSetSysStateWithDevStateComplete
-                as unsafe extern "system" fn(
-                    PDEVICE_OBJECT,
-                    u8,
-                    POWER_STATE,
-                    *mut core::ffi::c_void,
-                    PIO_STATUS_BLOCK,
-                ) -> (),
+            AtaPdoPowerSetSysStateWithDevStateComplete,
         ),
         Irp as *mut core::ffi::c_void,
         core::ptr::null_mut(),

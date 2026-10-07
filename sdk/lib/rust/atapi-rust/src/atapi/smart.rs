@@ -17,7 +17,7 @@ unsafe extern "C" fn AtaIdeRegsToTaskFile(
     (*TaskFile).__bindgen_anon_1.Command = (IDE_COMMAND_SMART) as u8;
 
     (*TaskFile).DriveSelect = (*IdeRegs).bDriveHeadReg & (!IDE_DRIVE_SELECT_SLAVE) as u8;
-    (*TaskFile).DriveSelect |= (*DevExt).Device.DeviceSelect & IDE_DRIVE_SELECT_SLAVE;
+    (*TaskFile).DriveSelect |= (*DevExt).Device.__bindgen_anon_1.DeviceSelect & (IDE_DRIVE_SELECT_SLAVE) as u8;
 }
 
 unsafe extern "C" fn AtaTaskFileToIdeRegs(

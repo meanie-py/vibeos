@@ -24,7 +24,7 @@ unsafe extern "C" fn AtaDeviceSetGeometry(
     (*Request).__bindgen_anon_2.TaskFile.DriveSelect =
         (((*DevExt).Device.Heads as ::core::ffi::c_int - 1 as ::core::ffi::c_int)
             as UCHAR as ::core::ffi::c_int
-            | (*DevExt).Device.DeviceSelect as ::core::ffi::c_int) as UCHAR;
+            | (*DevExt).Device.__bindgen_anon_1.DeviceSelect as ::core::ffi::c_int) as UCHAR;
     Status = AtaPortSendRequest(PortData, DevExt);
     if !NT_SUCCESS!(Status) {
     }
@@ -119,7 +119,7 @@ unsafe extern "C" fn AtaDeviceSetMultipleMode(
         return STATUS_SUCCESS;
     }
 
-    (*DevExt).Device.__bindgen_anon_1.MultiSectorCount = AtaDevMaximumSectorsPerDrq(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) as u8;
+    (*DevExt).Device.__bindgen_anon_1.MultiSectorCount = AtaDevMaximumSectorsPerDrq(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData);
     if (*DevExt).Device.__bindgen_anon_1.MultiSectorCount == 0 {
         return STATUS_SUCCESS;
     }

@@ -248,7 +248,7 @@ pub unsafe extern "C" fn AtaPortSelectTimings(
             i = i.wrapping_add(1);
         }
 
-        ((*PortData).SetTransferMode)((*PortData).ChannelContext, DeviceList.as_mut_ptr());
+        (((*PortData).SetTransferMode).unwrap_unchecked())((*PortData).ChannelContext, DeviceList.as_mut_ptr());
         return;
     }
 
@@ -295,7 +295,7 @@ pub unsafe extern "C" fn AtaPortSelectTimings(
         i = i.wrapping_add(1);
     }
 
-    ((*PortData).SetTransferMode)((*PortData).ChannelContext, DeviceList.as_mut_ptr());
+    (((*PortData).SetTransferMode).unwrap_unchecked())((*PortData).ChannelContext, DeviceList.as_mut_ptr());
 
     i = 0;
     while i < ATA_MAX_DEVICE {

@@ -11,7 +11,7 @@ unsafe extern "C" fn AtaPortQueueEvent(
     if Action & (ACTION_PORT_RESET | ACTION_DEVICE_ERROR) != 0 {
         if Action & ACTION_DEVICE_ERROR != 0 {
             if !FailedRequest.is_null() {
-                ASSERT_REQUEST!(!FailedRequest.is_null());
+                ASSERT_REQUEST!(FailedRequest);
 
                 DevExt = CONTAINING_RECORD!((*FailedRequest).Device, ATAPORT_DEVICE_EXTENSION, Device);
 
@@ -91,7 +91,7 @@ unsafe extern "C" fn AtaPortFindDeviceForAction(
     let mut ChanExt: PATAPORT_CHANNEL_EXTENSION;
     let mut Entry: PSINGLE_LIST_ENTRY;
     let mut OldIrql: KIRQL;
-    let mut OldLevel: KIRQL = 0;
+    let mut OldLevel: KIRQL = core::mem::zeroed();
 
     ChanExt = CONTAINING_RECORD!(PortData, ATAPORT_CHANNEL_EXTENSION, PortData);
 
@@ -214,7 +214,7 @@ unsafe extern "C" fn AtaPortOnRequestComplete(
         CommandsCompleted &= !((1 << Slot) as ULONG);
 
         Request = (*PortData).Slots[Slot as usize];
-        ASSERT_REQUEST!(Request != core::ptr::null_mut());
+        ASSERT_REQUEST!(Request);
 
         InterlockedPushEntrySList(&mut AtapCompletionQueueList, &mut (*Request).__bindgen_anon_1.CompletionEntry);
     }
@@ -236,13 +236,13 @@ unsafe extern "C" fn AtaPortMarkDeviceFailed(
 
 unsafe extern "C" fn AtaPortEnumeratePort(PortData: *mut ATAPORT_PORT_DATA) -> NTSTATUS {
     let mut ChanExt: *mut ATAPORT_CHANNEL_EXTENSION;
-    let mut AtaScsiAddress: ATA_SCSI_ADDRESS;
+    let mut AtaScsiAddress: ATA_SCSI_ADDRESS = core::mem::zeroed();
 
     _InterlockedOr(
         core::ptr::addr_of_mut!((*PortData).InterruptFlags),
         (PORT_INT_FLAG_IGNORE_LINK_IRQ) as i32,
     );
-    (*PortData).Worker.DeviceCount = ((*PortData).EnumerateChannel)((*PortData).ChannelContext);
+    (*PortData).Worker.DeviceCount = (((*PortData).EnumerateChannel).unwrap_unchecked())((*PortData).ChannelContext);
     _InterlockedAnd(
         core::ptr::addr_of_mut!((*PortData).InterruptFlags),
         (!PORT_INT_FLAG_IGNORE_LINK_IRQ) as i32,
@@ -557,7 +557,7 @@ unsafe extern "C" fn AtaPortWaitForIdle(PortData: PATAPORT_PORT_DATA) {
         KeWaitForSingleObject(
             &raw mut (*PortData).QueueStoppedEvent as PVOID,
             _KWAIT_REASON_Executive,
-            (0i32) as i8,
+            (0i32) as KPROCESSOR_MODE,
             FALSE,
             core::ptr::null_mut(),
         );
@@ -677,7 +677,7 @@ pub unsafe extern "system" fn AtaPortWorkerThread(StartContext: *mut core::ffi::
         KeWaitForSingleObject(
             &raw mut (*(*PortData)).Worker.ThreadEvent as *mut core::ffi::c_void,
             _KWAIT_REASON_Executive,
-            (0i32) as i8,
+            (0i32) as KPROCESSOR_MODE,
             FALSE,
             core::ptr::null_mut(),
         );
@@ -766,7 +766,7 @@ pub unsafe extern "C" fn AtaPortSendRequest(
     DevExt: *mut ATAPORT_DEVICE_EXTENSION,
 ) -> NTSTATUS {
     let Request: *mut ATA_DEVICE_REQUEST = &mut (*PortData).Worker.InternalRequest;
-    let mut OldIrql: KIRQL;
+    let mut OldIrql: KIRQL = 0;
 
     if (*Request).Flags & REQUEST_FLAG_PACKET_COMMAND != 0 {
         INFO!(
@@ -817,7 +817,7 @@ pub unsafe extern "C" fn AtaPortSendRequest(
     KeWaitForSingleObject(
         &mut (*PortData).Worker.CompletionEvent,
         _KWAIT_REASON_Executive,
-        (0i32) as i8,
+        (0i32) as KPROCESSOR_MODE,
         FALSE,
         core::ptr::null_mut(),
     );

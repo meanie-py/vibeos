@@ -19,17 +19,27 @@ pub static RUSTCONV_WSTR_604F52A85CB9: [u16; 12] = [
 ];
 
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{DeviceType, ExAllocatePoolUninitialized, _KWAIT_REASON_Executive, GUID, _IO_STATUS_BLOCK, IoAllocateIrp, IoAllocateWorkItem, IoAttachDeviceToDeviceStack, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, IoFreeIrp, IoFreeWorkItem, IoGetAttachedDeviceReference, IoInvalidateDeviceState, IoOpenDeviceRegistryKey, IoQueueWorkItem, KEVENT, KEY_VALUE_PARTIAL_INFORMATION, KeInitializeDpc, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, PCSTR, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDRIVER_OBJECT, PHANDLE, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PKEY_VALUE_PARTIAL_INFORMATION, PUNICODE_STRING, RtlCopyUnicodeString, RtlFreeUnicodeString, RtlInitUnicodeString, STORAGE_EVENT_NOTIFICATION, _KWAIT_REASON_Suspended, Type, ZwClose, ZwCreateDirectoryObject, ZwCreateKey, ZwOpenKey, ZwQueryValueKey, ZwSetValueKey};
+use ntkrnl_sys::ddk::{ExAllocatePoolUninitialized, _KWAIT_REASON_Executive, GUID, _IO_STATUS_BLOCK, IoAllocateIrp, IoAllocateWorkItem, IoAttachDeviceToDeviceStack, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, IoFreeIrp, IoFreeWorkItem, IoGetAttachedDeviceReference, IoInvalidateDeviceState, IoOpenDeviceRegistryKey, IoQueueWorkItem, KEVENT, KEY_VALUE_PARTIAL_INFORMATION, KeInitializeDpc, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, PCSTR, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDRIVER_OBJECT, PHANDLE, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PKEY_VALUE_PARTIAL_INFORMATION, PUNICODE_STRING, RtlCopyUnicodeString, RtlFreeUnicodeString, RtlInitUnicodeString, STORAGE_EVENT_NOTIFICATION, _KWAIT_REASON_Suspended, ZwClose, ZwCreateDirectoryObject, ZwCreateKey, ZwOpenKey, ZwQueryValueKey, ZwSetValueKey};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_168 {
+    pub DeviceType: PCSTR,
+    pub GenericType: PCSTR,
+    pub PeripheralId: PCSTR,
+}
+
+#[no_mangle]
 pub static mut AtapDriverRegistryPath: _UNICODE_STRING = _UNICODE_STRING {
     Length: 0,
     MaximumLength: 0,
     Buffer: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
 };
 
+#[no_mangle]
 pub static mut AtapInPEMode: BOOLEAN = 0;
 
 static mut AtapGenericDeviceNames: [C2RustUnnamed_168; 11] = [
@@ -423,7 +433,7 @@ pub unsafe extern "system" fn AtaStorageNotificationWorker(
                 KeWaitForSingleObject(
                     core::ptr::addr_of_mut!(Event) as PVOID,
                     _KWAIT_REASON_Suspended,
-                    (0i32) as i8,
+                    (0i32) as KPROCESSOR_MODE,
                     FALSE,
                     core::ptr::null_mut(),
                 );
@@ -539,7 +549,7 @@ pub unsafe extern "C" fn AtaPnpQueryInterface(
         KeWaitForSingleObject(
             &mut Event as *mut KEVENT as *mut core::ffi::c_void,
             _KWAIT_REASON_Executive,
-            (0i32) as i8,
+            (0i32) as KPROCESSOR_MODE,
             FALSE,
             core::ptr::null_mut(),
         );
@@ -602,7 +612,7 @@ pub unsafe extern "C" fn AtaPnpRepeatRequest(
         KeWaitForSingleObject(
             &mut Event as *mut KEVENT as *mut core::ffi::c_void,
             _KWAIT_REASON_Executive,
-            (0i32) as i8,
+            (0i32) as KPROCESSOR_MODE,
             FALSE,
             core::ptr::null_mut(),
         );
@@ -704,7 +714,7 @@ pub unsafe extern "system" fn AtaAddChannel(
     let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
     let mut ChanExt: *mut ATAPORT_CHANNEL_EXTENSION = core::ptr::null_mut();
     let mut DeviceNameBuffer: [u16; 25] = [0; 25];
-    DECLARE_PAGED_WSTRING!(FdoFormat, RUSTCONV_WSTR_01D8877A5F07);
+    DECLARE_PAGED_WSTRING!(FdoFormat, RUSTCONV_WSTR_01D8877A5F07.as_ptr());
     static mut AtapFdoNumber: u32 = 0;
 
     PAGED_CODE!();
@@ -731,7 +741,7 @@ pub unsafe extern "system" fn AtaAddChannel(
 
     Status = IoCreateDevice(
         DriverObject,
-        (core::mem::size_of::<ATAPORT_CHANNEL_EXTENSION>()) as _,
+        (core::mem::size_of::<ATAPORT_CHANNEL_EXTENSION>()) as ULONG,
         core::ptr::addr_of_mut!(DeviceName),
         FILE_DEVICE_CONTROLLER,
         FILE_DEVICE_SECURE_OPEN,
@@ -846,7 +856,7 @@ pub unsafe extern "system" fn DriverEntry(
     }
 
     AtapDriverRegistryPath.MaximumLength = ((*RegistryPath).Length as usize)
-        .wrapping_add(core::mem::size_of::<UNICODE_NULL>()) as u16;
+        .wrapping_add(core::mem::size_of_val(&UNICODE_NULL)) as u16;
     AtapDriverRegistryPath.Buffer = ExAllocatePoolUninitialized(
         NonPagedPool,
         (AtapDriverRegistryPath.MaximumLength as usize) as _,
@@ -884,7 +894,7 @@ pub unsafe extern "system" fn DriverEntry(
 
     KeInitializeDpc(
         core::ptr::addr_of_mut!(AtapCompletionDpc),
-        AtaReqCompletionDpc as unsafe extern "system" fn(PKDPC, *mut core::ffi::c_void, *mut core::ffi::c_void, *mut core::ffi::c_void),
+        Some(AtaReqCompletionDpc as unsafe extern "system" fn(PKDPC, *mut core::ffi::c_void, *mut core::ffi::c_void, *mut core::ffi::c_void)),
         core::ptr::null_mut(),
     );
     InitializeSListHead(core::ptr::addr_of_mut!(AtapCompletionQueueList));

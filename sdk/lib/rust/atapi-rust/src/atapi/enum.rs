@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{DEVICE_RELATIONS, Destination, ExAllocatePoolUninitialized, _KWAIT_REASON_Executive, KeWaitForSingleObject, LARGE_INTEGER, PDEVICE_RELATIONS, PIRP, RtlUshortByteSwap};
+use ntkrnl_sys::ddk::{DEVICE_RELATIONS, ExAllocatePoolUninitialized, _KWAIT_REASON_Executive, KeWaitForSingleObject, LARGE_INTEGER, PDEVICE_RELATIONS, PIRP, RtlUshortByteSwap};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -138,7 +138,7 @@ unsafe extern "C" fn AtaPdoFillIdentificationStrings(mut DevExt: PATAPORT_DEVICE
         End = AtaCopyIdStringSafe(
             &raw mut (*DevExt).FriendlyName as PCHAR,
             &raw mut (*DevExt).InquiryData.VendorId as PUCHAR,
-            RTL_FIELD_SIZE!(INQUIRYDATA, VendorId),
+            RTL_FIELD_SIZE!(INQUIRYDATA, VendorId) as ULONG,
             ' ' as i32 as CHAR,
         );
         End = AtaTrimIdString(&raw mut (*DevExt).FriendlyName as PCHAR, End);
@@ -148,7 +148,7 @@ unsafe extern "C" fn AtaPdoFillIdentificationStrings(mut DevExt: PATAPORT_DEVICE
         End = AtaCopyIdStringSafe(
             End,
             &raw mut (*DevExt).InquiryData.ProductId as PUCHAR,
-            RTL_FIELD_SIZE!(INQUIRYDATA, ProductId),
+            RTL_FIELD_SIZE!(INQUIRYDATA, ProductId) as ULONG,
             ' ' as i32 as CHAR,
         );
         AtaTrimIdString(&raw mut (*DevExt).FriendlyName as PCHAR, End);
@@ -156,7 +156,7 @@ unsafe extern "C" fn AtaPdoFillIdentificationStrings(mut DevExt: PATAPORT_DEVICE
         End = AtaCopyIdStringSafe(
             &raw mut (*DevExt).RevisionNumber as PCHAR,
             &raw mut (*DevExt).InquiryData.ProductRevisionLevel as PUCHAR,
-            RTL_FIELD_SIZE!(INQUIRYDATA, ProductRevisionLevel),
+            RTL_FIELD_SIZE!(INQUIRYDATA, ProductRevisionLevel) as ULONG,
             ' ' as i32 as CHAR,
         );
         AtaTrimIdString(&raw mut (*DevExt).RevisionNumber as PCHAR, End);
@@ -191,7 +191,7 @@ unsafe extern "C" fn AtaPdoFillIdentificationStrings(mut DevExt: PATAPORT_DEVICE
 
     i = 0;
     while (i as usize) < core::mem::size_of::<[UCHAR; 20]>() as usize {
-        Status = RtlStringCchPrintfExA(
+        Status = RtlStringCchPrintfExA!(
             End,
             Remaining,
             &raw mut End,
@@ -226,12 +226,12 @@ pub unsafe extern "C" fn AtaDeviceSetAddressingMode(DevExt: PATAPORT_DEVICE_EXTE
                 (*DevExt).Device.DeviceFlags |= DEVICE_HAS_FUA;
             }
         } else {
-            TotalSectors = AtaDevUserAddressableSectors28Bit(IdentifyData);
+            TotalSectors = (AtaDevUserAddressableSectors28Bit(IdentifyData)) as _;
         }
     } else {
-        let mut Cylinders: USHORT;
-        let mut Heads: USHORT;
-        let mut SectorsPerTrack: USHORT;
+        let mut Cylinders: USHORT = core::mem::zeroed();
+        let mut Heads: USHORT = core::mem::zeroed();
+        let mut SectorsPerTrack: USHORT = core::mem::zeroed();
 
         if AtaDevIsCurrentGeometryValid(IdentifyData) != 0 {
             AtaDevCurrentChsTranslation(IdentifyData, &raw mut Cylinders, &raw mut Heads, &raw mut SectorsPerTrack);
@@ -262,7 +262,7 @@ pub unsafe extern "C" fn AtaDeviceSetAddressingMode(DevExt: PATAPORT_DEVICE_EXTE
     INFO!(
         b"Total sectors %I64u of size %lu, CHS %u:%u:%u\n\0".as_ptr() as *const i8,
         (*DevExt).Device.TotalSectors,
-        (*DevExt).Device.__bindgen_anon_1.SectorSize,
+        (*DevExt).Device.SectorSize,
         (*DevExt).Device.Cylinders,
         (*DevExt).Device.Heads,
         (*DevExt).Device.SectorsPerTrack,
@@ -289,7 +289,7 @@ unsafe extern "C" fn AtaDeviceEnableQueuedCommands(mut DevExt: PATAPORT_DEVICE_E
 unsafe extern "C" fn AtaDeviceIsSuperFloppy(DevExt: PATAPORT_DEVICE_EXTENSION) -> BOOLEAN {
     PAGED_CODE!();
 
-    if (*DevExt).InquiryData.DeviceType() as u32 == DIRECT_ACCESS_DEVICE {
+    if ((*DevExt).InquiryData.DeviceType()) as u32 == DIRECT_ACCESS_DEVICE {
         return ((!strstr(
             (*DevExt).FriendlyName.as_mut_ptr(),
             b" LS-120\0".as_ptr() as *const i8,
@@ -377,7 +377,7 @@ unsafe extern "C" fn AtaFdoQueryDeviceCount(mut PortData: PATAPORT_PORT_DATA) ->
     KeWaitForSingleObject(
         (&raw mut (*PortData).Worker.EnumerationEvent).cast(),
         _KWAIT_REASON_Executive,
-        (0i32) as i8,
+        (0i32) as KPROCESSOR_MODE,
         FALSE,
         core::ptr::null_mut(),
     );
@@ -396,7 +396,7 @@ unsafe extern "C" fn AtaFdoQueryDeviceStatus(
     KeWaitForSingleObject(
         (&raw mut (*DevExt).Worker.EnumerationEvent).cast(),
         _KWAIT_REASON_Executive,
-        (0i32) as i8,
+        (0i32) as KPROCESSOR_MODE,
         FALSE,
         core::ptr::null_mut(),
     );

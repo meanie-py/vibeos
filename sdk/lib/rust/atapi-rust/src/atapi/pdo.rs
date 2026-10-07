@@ -27,7 +27,7 @@ pub static RUSTCONV_WSTR_FA5668E0AE70: [u16; 14] = [
 ];
 
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{DEVICE_CAPABILITIES, DeviceType, ExAllocatePoolUninitialized, ExAllocatePoolZero, _KWAIT_REASON_Executive, IoCreateDevice, IoDeleteDevice, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PCSTR, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, RtlInitUnicodeString};
+use ntkrnl_sys::ddk::{DEVICE_CAPABILITIES, ExAllocatePoolUninitialized, ExAllocatePoolZero, _KWAIT_REASON_Executive, IoCreateDevice, IoDeleteDevice, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PCSTR, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, RtlInitUnicodeString};
 use core::ffi::c_void;
 
 unsafe extern "C" fn AtaPdoStartDevice(
@@ -74,7 +74,7 @@ unsafe extern "C" fn AtaPdoStartDevice(
         KeWaitForSingleObject(
             &raw mut (*DevExt).Worker.ConfigureEvent as PVOID,
             _KWAIT_REASON_Executive,
-            (0i32) as i8,
+            (0i32) as KPROCESSOR_MODE,
             FALSE,
             core::ptr::null_mut::<_LARGE_INTEGER>(),
         );
@@ -198,10 +198,9 @@ unsafe extern "C" fn AtaPdoQueryCapabilities(
     AtaScsiAddress = (*DevExt).Device.AtaScsiAddress;
 
     (*DeviceCapabilities).UINumber = AtaScsiAddress.TargetId as u32;
-    (*DeviceCapabilities).UniqueID = FALSE as u32;
-    (*DeviceCapabilities).SurpriseRemovalOK = FALSE as u32;
-    (*DeviceCapabilities).Removable =
-        (((*DevExt).Device.DeviceFlags & DEVICE_IS_PDO_REMOVABLE) != 0) as u32;
+    (*DeviceCapabilities).set_UniqueID((FALSE as u32) as _);
+    (*DeviceCapabilities).set_SurpriseRemovalOK((FALSE as u32) as _);
+    (*DeviceCapabilities).set_Removable(((((*DevExt).Device.DeviceFlags & DEVICE_IS_PDO_REMOVABLE) != 0) as u32) as _);
     (*DeviceCapabilities).D1Latency = 31 * 10000;
     (*DeviceCapabilities).D2Latency = (*DeviceCapabilities).D1Latency;
     (*DeviceCapabilities).D3Latency = (*DeviceCapabilities).D2Latency;
@@ -260,7 +259,7 @@ unsafe extern "C" fn AtaPdoQueryId(
                 + strlen(DeviceType)
                 + (ATAPORT_FN_FIELD) as _
                 + (ATAPORT_RN_FIELD) as _
-                + core::mem::size_of::<ANSI_NULL>();
+                + core::mem::size_of_val(&ANSI_NULL);
 
             Buffer = (ExAllocatePoolUninitialized(
                 PagedPool,
@@ -312,8 +311,8 @@ unsafe extern "C" fn AtaPdoQueryId(
                 + (core::mem::size_of::<[u8; 5]>() - 1) * 3
                 + (ATAPORT_FN_FIELD * 4) as _
                 + (ATAPORT_RN_FIELD * 3) as _
-                + 5 * core::mem::size_of::<ANSI_NULL>()
-                + core::mem::size_of::<ANSI_NULL>();
+                + 5 * core::mem::size_of_val(&ANSI_NULL)
+                + core::mem::size_of_val(&ANSI_NULL);
 
             Buffer = (ExAllocatePoolUninitialized(
                 PagedPool,
@@ -426,7 +425,7 @@ unsafe extern "C" fn AtaPdoQueryId(
             GenericType = AtaTypeCodeToName(DevExt, GetGenericType);
 
             CharCount = strlen(GenericType)
-                + 2 * core::mem::size_of::<ANSI_NULL>();
+                + 2 * core::mem::size_of_val(&ANSI_NULL);
 
             Buffer = (ExAllocatePoolUninitialized(
                 PagedPool,
@@ -475,9 +474,9 @@ unsafe extern "C" fn AtaPdoQueryId(
                 &mut Remaining,
                 0,
                 RUSTCONV_WSTR_A1EB8D485789.as_ptr(),
-                AtaScsiAddress.PathId,
-                AtaScsiAddress.TargetId,
-                AtaScsiAddress.Lun,
+                AtaScsiAddress.PathId as core::ffi::c_uint,
+                AtaScsiAddress.TargetId as core::ffi::c_uint,
+                AtaScsiAddress.Lun as core::ffi::c_uint,
             );
 
             INFO!("InstanceID: '%S'\n", Buffer);
@@ -504,7 +503,7 @@ unsafe extern "C" fn AtaPdoQueryDeviceText(
     match (*IoStack).Parameters.QueryDeviceText.DeviceTextType as u32 {
         DeviceTextDescription => {
             CharCount = strlen(((*DevExt).FriendlyName).as_ptr() as *const i8)
-                .wrapping_add(core::mem::size_of::<ANSI_NULL>());
+                .wrapping_add(core::mem::size_of_val(&ANSI_NULL));
 
             Buffer = ExAllocatePoolUninitialized(
                 PagedPool,
@@ -686,7 +685,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
     ChanExt: *mut PATAPORT_CHANNEL_EXTENSION,
     AtaScsiAddress: ATA_SCSI_ADDRESS,
 ) -> *mut PATAPORT_DEVICE_EXTENSION {
-    let PortData: *mut PATAPORT_PORT_DATA = &mut (*(*ChanExt)).PortData;
+    let PortData: *mut PATAPORT_PORT_DATA = &mut (*(*ChanExt)).PortData as *mut PATAPORT_PORT_DATA;
     let mut Status: NTSTATUS;
     let mut DeviceName: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
@@ -697,7 +696,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
     let mut Pdo: PDEVICE_OBJECT;
     let mut DeviceNameBuffer: [u16; 36] = [0; 36];
     let mut i: u32;
-    static PdoFormat: *const u16 = RUSTCONV_WSTR_6BE0C8F6E502.as_ptr();
+    static mut PdoFormat: *const u16 = RUSTCONV_WSTR_6BE0C8F6E502.as_ptr();
     static mut AtapPdoNumber: u32 = 0;
 
     Status = RtlStringCbPrintfW!(
@@ -714,7 +713,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
     RtlInitUnicodeString(&mut DeviceName, DeviceNameBuffer.as_mut_ptr());
 
     Status = IoCreateDevice(
-        (*(*ChanExt).Common.Self).DriverObject,
+        (*(*(*ChanExt)).Common.Self_).DriverObject,
         core::mem::size_of::<PATAPORT_DEVICE_EXTENSION>() as u32,
         &mut DeviceName,
         FILE_DEVICE_MASS_STORAGE,
@@ -732,7 +731,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
         &mut DeviceName,
     );
 
-    (*Pdo).AlignmentRequirement = (*(*ChanExt).Common.Self).AlignmentRequirement;
+    (*Pdo).AlignmentRequirement = (*(*(*ChanExt)).Common.Self_).AlignmentRequirement;
     (*Pdo).AlignmentRequirement = max((*Pdo).AlignmentRequirement, ATA_MIN_BUFFER_ALIGNMENT);
 
     (*Pdo).Flags |= DO_DIRECT_IO;
@@ -750,16 +749,16 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
     );
     (*(*DevExt)).Common.__bindgen_anon_1.FdoExt = ChanExt as *mut core::ffi::c_void;
     (*(*DevExt)).TransferModeAllowedMask = MAXULONG;
-    (*(*DevExt)).Device.SectorSize = ATA_MIN_SECTOR_SIZE;
+    (*(*DevExt)).Device.__bindgen_anon_1.SectorSize = ATA_MIN_SECTOR_SIZE;
     (*(*DevExt)).Device.PortData = (PortData).cast();
     (*(*DevExt)).Device.LocalBuffer = (*(*PortData)).LocalBuffer;
 
     (*(*DevExt)).Device.AtaScsiAddress = AtaScsiAddress;
-    (*(*DevExt)).Device.TransportFlags = AtaScsiAddress.TargetId as u32;
-    (*(*DevExt)).Device.DeviceSelect = (IDE_DRIVE_SELECT | (AtaScsiAddress.Lun as i32) as u32) as u8;
+    (*(*DevExt)).Device.__bindgen_anon_1.TransportFlags = AtaScsiAddress.TargetId as u32;
+    (*(*DevExt)).Device.__bindgen_anon_1.DeviceSelect = (IDE_DRIVE_SELECT | (AtaScsiAddress.Lun as i32) as u32) as u8;
 
     if !((*(*PortData)).PortFlags & PORT_FLAG_IS_AHCI != 0) {
-        (*(*DevExt)).Device.DeviceSelect = ((*(*DevExt)).Device.DeviceSelect as i32
+        (*(*DevExt)).Device.__bindgen_anon_1.DeviceSelect = ((*(*DevExt)).Device.__bindgen_anon_1.DeviceSelect as i32
             | ((AtaScsiAddress.TargetId as i32 & 1) << 4))
             as u8;
     }

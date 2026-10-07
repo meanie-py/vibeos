@@ -19,8 +19,8 @@ use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoCreateSymbolicLink, IoDeleteDev
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-pub static AtapDevSymLinkFormat: *const u16 = RUSTCONV_WSTR_499DA777F3BC.as_ptr();
-pub static AtapDosSymLinkFormat: *const u16 = RUSTCONV_WSTR_30996DDBD6F9.as_ptr();
+pub static mut AtapDevSymLinkFormat: *const u16 = RUSTCONV_WSTR_499DA777F3BC.as_ptr();
+pub static mut AtapDosSymLinkFormat: *const u16 = RUSTCONV_WSTR_30996DDBD6F9.as_ptr();
 
 unsafe extern "C" fn AtaFdoCreateSymLinks(
     ChanExt: *mut ATAPORT_CHANNEL_EXTENSION,
@@ -121,7 +121,7 @@ unsafe extern "C" fn AtaFdoAllocateLocalBuffer(
     HighestAcceptableAddress.QuadPart = 0xFFFFFFFF; // 32-bit DMA
     BoundaryAddressMultiple.QuadPart = 0x10000; // 64k, for PATA compability
     (*(*PortData)).LocalBuffer = MmAllocateContiguousMemorySpecifyCache(
-        (ATA_LOCAL_BUFFER_SIZE) as _,
+        (ATA_LOCAL_BUFFER_SIZE) as SIZE_T,
         LowestAcceptableAddress,
         HighestAcceptableAddress,
         BoundaryAddressMultiple,
@@ -149,7 +149,7 @@ unsafe extern "C" fn AtaFdoCreatePortThread(
 
     PAGED_CODE!();
 
-    if (*PortData).Worker.Thread != core::ptr::null_mut() {
+    if (*PortData).Worker.Thread != 0 {
         return STATUS_SUCCESS;
     }
 
@@ -176,7 +176,7 @@ unsafe extern "C" fn AtaFdoCreatePortThread(
         ThreadHandle,
         THREAD_ALL_ACCESS,
         core::ptr::null_mut(),
-        (0i32) as i8,
+        (0i32) as KPROCESSOR_MODE,
         core::ptr::addr_of_mut!((*PortData).Worker.Thread) as *mut PVOID,
         core::ptr::null_mut(),
     );
@@ -206,7 +206,7 @@ unsafe extern "C" fn AtaFdoDestroyPortThread(
     KeWaitForSingleObject(
         ((*PortData).Worker.Thread).cast(),
         _KWAIT_REASON_Executive,
-        (0i32) as i8,
+        (0i32) as KPROCESSOR_MODE,
         FALSE,
         core::ptr::null_mut(),
     );
@@ -279,7 +279,7 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
     Status = AtaPnpQueryInterface(
         &mut (*(*ChanExt)).Common,
         &GUID_PCIIDE_INTERFACE_ROS,
-        &mut ChannelInterface,
+        &mut ChannelInterface as *mut PCIIDEX_CHANNEL_INTERFACE as *mut core::ffi::c_void,
         PCIIDEX_INTERFACE_VERSION,
         (core::mem::size_of::<PCIIDEX_CHANNEL_INTERFACE>()) as _,
     );
@@ -345,7 +345,7 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
 
     if !(ChannelInterface.Flags & ATA_CHANNEL_FLAG_PIO_VIA_DMA != 0) && (*(*PortData)).ReservedVaSpace.is_null() {
         (*(*PortData)).ReservedVaSpace = MmAllocateMappingAddress(
-            (ATA_RESERVED_PAGES * PAGE_SIZE) as _,
+            (ATA_RESERVED_PAGES * PAGE_SIZE) as SIZE_T,
             ATAPORT_TAG,
         );
     }
@@ -412,7 +412,7 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
         );
 
         Status = IoSetDeviceInterfaceState(
-            &(*ChanExt).StorageInterfaceName,
+            &(*(*ChanExt)).StorageInterfaceName,
             TRUE,
         );
         if !NT_SUCCESS!(Status) {
@@ -449,7 +449,7 @@ unsafe extern "C" fn AtaFdoDetachChannel(
 
     PAGED_CODE!();
 
-    if (*PortData).AttachChannel.is_some() {
+    if !(*PortData).AttachChannel.is_none() {
         (((*PortData).AttachChannel).unwrap_unchecked())((*PortData).ChannelContext, FALSE);
         (*PortData).AttachChannel = None;
     }
@@ -532,7 +532,7 @@ unsafe extern "C" fn AtaFdoRemoveDevice(
         if !(*ChanExt).PortData.LocalBuffer.is_null() {
             MmFreeContiguousMemorySpecifyCache(
                 (*ChanExt).PortData.LocalBuffer,
-                (ATA_LOCAL_BUFFER_SIZE) as _,
+                (ATA_LOCAL_BUFFER_SIZE) as SIZE_T,
                 MmNonCached,
             );
             (*ChanExt).PortData.LocalBuffer = core::ptr::null_mut();
@@ -693,7 +693,7 @@ pub unsafe extern "C" fn AtaFdoFindDeviceByPath(
     let mut DevExt: *mut PATAPORT_DEVICE_EXTENSION;
     let mut Result: *mut PATAPORT_DEVICE_EXTENSION = core::ptr::null_mut();
     let mut Entry: PSINGLE_LIST_ENTRY;
-    let mut OldLevel: KIRQL;
+    let mut OldLevel: KIRQL = 0;
     let mut Status: NTSTATUS;
 
     KeAcquireSpinLock(&mut (*(*ChanExt)).PdoListLock, &mut OldLevel);
@@ -737,7 +737,7 @@ pub unsafe extern "C" fn AtaFdoFindNextDeviceByPath(
     let mut DevExt: *mut ATAPORT_DEVICE_EXTENSION;
     let mut Result: *mut ATAPORT_DEVICE_EXTENSION = core::ptr::null_mut();
     let mut Entry: PSINGLE_LIST_ENTRY;
-    let mut OldLevel: KIRQL = 0;
+    let mut OldLevel: KIRQL = core::mem::zeroed();
     let mut Status: i32;
 
     KeAcquireSpinLock(&mut (*ChanExt).PdoListLock as *mut _ as *mut usize, &mut OldLevel);
@@ -786,7 +786,7 @@ pub unsafe extern "C" fn AtaFdoDeviceListInsert(
 ) {
     let mut Entry: PSINGLE_LIST_ENTRY;
     let mut PrevEntry: PSINGLE_LIST_ENTRY;
-    let mut OldLevel: KIRQL = 0;
+    let mut OldLevel: KIRQL = core::mem::zeroed();
     let Address: u32 = (*DevExt).Device.AtaScsiAddress.AsULONG;
 
     PAGED_CODE!();
