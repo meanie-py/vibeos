@@ -358,17 +358,23 @@ pub unsafe extern "system" fn KiDispatchInterruptArm64(Intid: ULONG) -> BOOLEAN 
     // via KiRetireDpcList on the exit path). Restore bypasses the KfLowerIrql
     // soft-interrupt drain — no APC delivery in interrupt context.
     //
-    // No ActualLock acquire: UP port — the interrupt spinlock's cross-CPU
-    // role is vacuous, and ISR-vs-thread exclusion is exactly what the PMR
-    // raise in KeAcquireInterruptSpinLock (KfRaiseIrql to SynchronizeIrql)
-    // now provides for real.
+    // The ISR runs under the interrupt's own spinlock, as i386 (irqobj.rs) and
+    // amd64 dispatch it. KeSynchronizeExecution and KeAcquireInterruptSpinLock
+    // take ActualLock on the thread side; the PMR raise there only keeps THIS
+    // CPU's ISR out, so without the lock here the ISR ran on the other CPU in
+    // the middle of a synchronized routine. vioblk panicked on it at -smp 2:
+    // HwStartIo had queued a request but not yet recorded its token and chunk
+    // when the completion interrupt arrived on CPU 1. Same CPU cannot deadlock:
+    // the holder sits at SynchronizeIrql, which masks this line here.
     let dirql = if (*interrupt).SynchronizeIrql != 0 {
         (*interrupt).SynchronizeIrql
     } else {
         (*interrupt).Irql
     };
     let old_irql = HalpEnterInterruptIrql(dirql);
+    KeAcquireSpinLockAtDpcLevel((*interrupt).ActualLock as PKSPIN_LOCK);
     let handled = svc(interrupt, (*interrupt).ServiceContext);
+    KeReleaseSpinLockFromDpcLevel((*interrupt).ActualLock as PKSPIN_LOCK);
     HalpExitInterruptIrql(old_irql);
     handled
 }
@@ -1732,8 +1738,11 @@ pub unsafe extern "system" fn KiSwapProcess(NewProcess: PKPROCESS, OldProcess: P
 #[no_mangle]
 pub unsafe extern "system" fn KeFlushCurrentTb() {
     // Local-only by CONTRACT (NT: flush the CURRENT processor's TLB) — the
-    // non-IS `vmalle1` is correct here, not an SMP bug. Callers audited
-    // (M5d): freeze path + sysldr post-relocation flush, both local-scoped.
+    // non-IS `vmalle1` is correct here, not an SMP bug. The freeze path and the
+    // sysldr post-relocation flush are local-scoped. The ARM3 sites that drop a
+    // user mapping (MiDeletePte, MiProcessValidPteList, MiFlushTbAndCapture,
+    // MiRemoveMappedPtes) called this too, as the C does, and lost user pages
+    // at -smp 2; they now use KeFlushProcessTb.
     core::arch::asm!("dsb nshst", options(nomem, nostack));
     core::arch::asm!("tlbi vmalle1", options(nomem, nostack));
     core::arch::asm!("dsb nsh", options(nomem, nostack));

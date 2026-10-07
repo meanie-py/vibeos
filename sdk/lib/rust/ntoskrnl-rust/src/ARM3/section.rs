@@ -49,7 +49,6 @@ use ntkrnl_sys::ddk::{
     ExGetPreviousMode,
     IoSetTopLevelIrp,
     KPROCESSOR_MODE,
-    KeFlushCurrentTb,
     KeStackAttachProcess,
     KeUnstackDetachProcess,
     MiCheckSecuredVad,
@@ -1493,7 +1492,8 @@ pub unsafe extern "system" fn MiFlushTbAndCapture(
         );
     }
     MI_UPDATE_VALID_PTE(pointer_pte, temp_pte);
-    KeFlushCurrentTb();
+    // All CPUs, not the C's KeFlushCurrentTb: see virtual.rs MiProcessValidPteList.
+    ntkrnl_sys::inline::mm::KeFlushProcessTb();
     #[cfg(target_arch = "aarch64")]
     {
         if (update_dirty != 0) && !MI_IS_PAGE_DIRTY(&previous_pte) {
@@ -1546,7 +1546,8 @@ unsafe fn MiRemoveMappedPtes(
         pointer_pte = pointer_pte.add(1);
         number_of_ptes -= 1;
     }
-    KeFlushCurrentTb();
+    // All CPUs, not the C's KeFlushCurrentTb: see virtual.rs MiProcessValidPteList.
+    ntkrnl_sys::inline::mm::KeFlushProcessTb();
     let old_irql = MiAcquirePfnLock();
     (*control_area).NumberOfUserReferences -= 1;
     (*control_area).NumberOfMappedViews -= 1;

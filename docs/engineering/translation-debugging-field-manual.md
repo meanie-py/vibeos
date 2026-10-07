@@ -10822,6 +10822,13 @@ the SMP kernel it delivered exactly nothing; on UP the IRQL raise happened to be
 is why it survived. When a per-arch port of a synchronisation primitive is shorter than its
 siblings, the missing lines are the primitive.
 
+Fourth, the other half of the third: once `KeSynchronizeExecution` took `ActualLock`, arm64's
+**ISR dispatch (`KiDispatchInterruptArm64`) still called the ISR without it**, on a comment
+calling the lock "vacuous" on a UP port. At `-smp 2` vioblk's completion interrupt ran on CPU 1
+while `HwStartIo` was mid-submit on CPU 0, matched a token not yet recorded, and handed
+virtio-drivers a zero-length buffer (`assert_ne!` in `queue.rs` `recycle_descriptors`). A lock
+held on one side only is no lock: check the thread side AND the interrupt side.
+
 ### A dropped interrupt RESTORE: one CPU spins IF=0 on a lock while the holder waits for its TB ack
 **Symptom:** amd64 `-smp 2` `HANG_TIMEOUT`, serial silent after `[user32] DllMain PROCESS_ATTACH`
 (the WoW64 guest starting alongside). `hang-cpustate.txt`: CPU0 in `ki_tb_shootdown` waiting on
@@ -10944,6 +10951,29 @@ after `IoPageRead` in `MmMakeSegmentResident` then showed full 16 KB reads succe
 pages, every one on CPU 1, against a `-smp 1` control whose only zero reads were single genuine
 tail sectors. **Diff the SMP probe output against a UP control before reading it** — half the
 first listing was legitimate zeros.
+
+### User pages lost after a decommit: MM flushed only its own CPU's TLB
+**Symptom** (arm64 `-smp 2`, regstress, about 1 boot in 3): the process stops mid-run with
+both CPUs idle. The real event is earlier: a user access violation inside ntdll's heap, on
+metadata that reads back as zero (`RtlpRemoveFreeBlock` on a free entry with `Size` 0, so the
+hint index is `0xFFFFFFFF`; `RtlpInsertFreeBlockHelper` following a NULL `Flink`). The page
+under the bad entry is entirely zero while the next page is properly decommitted.
+
+**Cause:** `MiProcessValidPteList` (decommit), `MiDeletePte`, `MiRemoveMappedPtes` and
+`MiFlushTbAndCapture` free or change user mappings and then call `KeFlushCurrentTb`, exactly
+as the ReactOS C does. That only flushes the calling CPU. A thread of the same process on the
+other CPU keeps the old translation, writes into a frame MM has already freed, and the heap's
+own CPU recommits the VA to a fresh zero page. The data is lost on one side and lands on the
+frame's next owner on the other (kernel pool included).
+
+**Fix:** `KeFlushProcessTb` at those sites (broadcast `tlbi vmalle1is` on arm64, the
+shootdown on x86 SMP), before the PFN lock is released. `KeFlushCurrentTb` is local by
+contract; any caller that just changed a mapping another CPU may hold is a bug.
+
+**How it was found:** the hang capture looked like a scheduler wedge, and a timer-table
+watchdog chased that for hours. What broke it was splitting failing boots from passing ones
+on a single fact (`[UEXC]` after `[REGSTRESS] start`: every failure, no pass), then probing
+the corrupt page itself: a page that is ALL zero is lost memory, not an overwrite.
 
 ### The machine keeps running after a BUGCHECK: the other CPUs were never frozen
 **Symptom** (MP, both amd64 and arm64): the serial carries thread exits, network

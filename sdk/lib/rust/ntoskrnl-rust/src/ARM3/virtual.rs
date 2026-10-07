@@ -31,7 +31,6 @@ use ntkrnl_sys::ddk::{
     HANDLE,
     ExGetPreviousMode,
     _KAPC_STATE,
-    KeFlushCurrentTb,
     KeRosDumpStackFrames,
     KeStackAttachProcess,
     KeUnstackDetachProcess,
@@ -624,7 +623,8 @@ pub unsafe extern "system" fn MiDeletePte(
         MiDecrementShareCount(Pfn1 as ntkrnl_sys::ddk::PMMPFN, PageFrameIndex as ntkrnl_sys::ddk::PFN_NUMBER);
     }
 
-    KeFlushCurrentTb();
+    // All CPUs, not the C's KeFlushCurrentTb: see MiProcessValidPteList.
+    ntkrnl_sys::inline::mm::KeFlushProcessTb();
 }
 
 #[no_mangle]
@@ -1594,7 +1594,16 @@ pub unsafe extern "system" fn MiProcessValidPteList(
         i += 1;
     }
 
-    KeFlushCurrentTb();
+    // The C flushes only THIS processor (KeFlushCurrentTb), which is wrong the
+    // moment the process has threads on another CPU: that CPU keeps translating
+    // the decommitted VA to the frame just freed, so its writes land in a page
+    // the zero-page thread is about to clear or MM has already handed to someone
+    // else, while this CPU recommits the VA to a fresh zero page. arm64 -smp 2
+    // regstress lost whole user-heap pages this way (free-list headers read back
+    // as zero) and a kernel pool page once (BAD_POOL_HEADER). Every CPU must drop
+    // the stale entry before the frames can be reused, i.e. before the PFN lock
+    // is released.
+    ntkrnl_sys::inline::mm::KeFlushProcessTb();
     MiReleasePfnLock(OldIrql);
 }
 
