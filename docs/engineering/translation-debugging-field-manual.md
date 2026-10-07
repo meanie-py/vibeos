@@ -1393,6 +1393,19 @@ there an importlib entry" — grep the spec line for `-private` before deleting 
 mentions its own name in an `extern` block is always this bug** — and note the shape survives
 `cargo check`, `clippy` and code review, and is only visible post-link.
 
+**The quiet version is a stub that links and returns nothing.** Instead of a loop, the shim
+satisfies an unresolved name with `{ core::ptr::null_mut() }`. That boots, so nothing flags it.
+classpnp carried `RtlInterlockedPushEntrySList`/`PopEntrySList` stubs from 2026-06-10 to
+2026-10-07: ntkrnl-sys binds the SList pair to those `Rtl` names, which only exist inside
+ntoskrnl (drivers must import `ExpInterlocked*` on 64-bit, FASTCALL `Interlocked*` on i386,
+`ntoskrnl.spec:175-176,327-328`). Every free-list push dropped its packet and every pop came
+back empty, so each disk request allocated a fresh transfer packet and SRB and leaked them,
+including through ntkrnl-sys's inline lookaside helpers. The symptom was not "out of memory":
+amd64-bios boots failed paging reads with `STATUS_IN_PAGE_ERROR` (C0000006) in 15 of 80 runs,
+and none in 16 runs after the shims forwarded to the real exports. The failure mechanism was
+not pinned down. Check: `objdump -p <driver>.sys | grep <name>` must show an IMPORT, and
+`objdump -d` of a shim must show a `jmp` to that import, not `xor eax,eax; ret`.
+
 ### captures(none)-class hardening that is still worth doing
 - **Stale/hoisted load through a `static mut` table across a foreign call** — a by-handle
   lookup wrongly rejects an object; a `DbgPrint` between the reads "fixes" it. `read_volatile`
