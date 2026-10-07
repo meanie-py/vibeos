@@ -149,8 +149,7 @@ def main() -> int:
 
     if not scanned:
         print(
-            f"scan_xchg_ebx_deref: no PE inputs in {args.build_dir} "
-            f"(corpus basis: {corpus.basis})",
+            f"scan_xchg_ebx_deref: no PE inputs in {args.build_dir} (corpus basis: {corpus.basis})",
             file=sys.stderr,
         )
         return 2
@@ -163,7 +162,7 @@ def main() -> int:
     print(
         "\nThe instruction dereferences ebx after ebx was swapped out, so it uses the"
         "\nswapped-in VALUE as the address. In Rust inline asm this means LLVM allocated"
-        "\nthe pointer operand to ebx: pin it to a fixed register (in(\"edi\") addr) and"
+        '\nthe pointer operand to ebx: pin it to a fixed register (in("edi") addr) and'
         "\nname that register in the template."
     )
     return 1 if args.check else 0
