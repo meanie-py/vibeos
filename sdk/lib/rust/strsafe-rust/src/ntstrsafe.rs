@@ -188,6 +188,32 @@ pub unsafe fn RtlStringCbCopyNA(
     copy_worker(pszDest, cbDest, pszSrc, cbToCopy)
 }
 
+/// :63 `RtlStringCopyWorkerA`: :1702's worker over `char`.
+pub unsafe fn RtlStringCopyWorkerA(
+    pszDest: *mut core::ffi::c_char,
+    cchDest: usize,
+    pszSrc: *const core::ffi::c_char,
+) -> NTSTATUS {
+    copy_worker(pszDest, cchDest, pszSrc, usize::MAX)
+}
+
+/// :110 `RtlStringCchCopyA`. Like every ntstrsafe entry point it is `static __inline`, so
+/// no object exports it: usetup's prelude had copied an `extern` declaration of it from
+/// another crate by tree consensus, which compiles and fails at link.
+pub unsafe fn RtlStringCchCopyA(
+    pszDest: *mut core::ffi::c_char,
+    cchDest: usize,
+    pszSrc: *const core::ffi::c_char,
+) -> NTSTATUS {
+    if cchDest > NTSTRSAFE_MAX_CCH {
+        if cchDest > 0 {
+            *pszDest = 0;
+        }
+        return STATUS_INVALID_PARAMETER;
+    }
+    RtlStringCopyWorkerA(pszDest, cchDest, pszSrc)
+}
+
 /// `RtlStringCchCatW`. Note: unlike the Copy entry points, Cat does NOT nul an oversized
 /// destination (the header returns at once).
 pub unsafe fn RtlStringCchCatW(
@@ -266,6 +292,53 @@ macro_rules! RtlStringCchPrintfW {
             $crate::ntstrsafe::ntstrsafe_printf_finish(pszDest, cchDest, iRet)
         }
     }};
+}
+
+/// :2797 `RtlStringVPrintfWorkerA`'s tail, given `_vsnprintf`'s return for `cchDest - 1`:
+/// the same contract as the wide worker, over `char`.
+pub unsafe fn ntstrsafe_printf_finish_a(
+    pszDest: *mut core::ffi::c_char,
+    cchDest: usize,
+    iRet: i32,
+) -> NTSTATUS {
+    let cch_max = cchDest - 1;
+    if iRet < 0 || iRet as usize > cch_max {
+        *pszDest.add(cch_max) = 0;
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    if iRet as usize == cch_max {
+        *pszDest.add(cch_max) = 0;
+    }
+    STATUS_SUCCESS
+}
+
+/// :1085 `RtlStringCchPrintfA(pszDest, cchDest, pszFormat, ...)`.
+#[macro_export]
+macro_rules! RtlStringCchPrintfA {
+    ($pszDest:expr, $cchDest:expr, $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut core::ffi::c_char = $pszDest as _;
+        let cchDest: usize = $cchDest as usize;
+        if cchDest > $crate::ntstrsafe::NTSTRSAFE_MAX_CCH {
+            if cchDest > 0 {
+                *pszDest = 0;
+            }
+            $crate::ntstrsafe::STATUS_INVALID_PARAMETER
+        } else if cchDest == 0 {
+            // RtlStringVPrintfWorkerA (:2805) refuses an empty buffer before formatting.
+            $crate::ntstrsafe::STATUS_INVALID_PARAMETER
+        } else {
+            let iRet = $crate::_snprintf(pszDest, cchDest - 1, $pszFormat as _ $(, $arg)*);
+            $crate::ntstrsafe::ntstrsafe_printf_finish_a(pszDest, cchDest, iRet)
+        }
+    }};
+}
+
+/// :1148 `RtlStringCbPrintfA`: `sizeof(char)` is 1, so it is the Cch form on `cbDest`.
+#[macro_export]
+macro_rules! RtlStringCbPrintfA {
+    ($pszDest:expr, $cbDest:expr, $pszFormat:expr $(, $arg:expr)* $(,)?) => {
+        $crate::RtlStringCchPrintfA!($pszDest, $cbDest, $pszFormat $(, $arg)*)
+    };
 }
 
 /// `RtlStringCbPrintfW`: the Cch form with `cbDest / sizeof(wchar_t)`.
@@ -482,6 +555,25 @@ mod tests {
             STATUS_INVALID_PARAMETER
         );
         assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn narrow_copy_and_printf_finish_match_the_wide_ones() {
+        let mut buf = [1i8; 4];
+        let src = [b'a' as i8, b'b' as i8, b'c' as i8, b'd' as i8, 0];
+        assert_eq!(
+            unsafe { RtlStringCchCopyA(buf.as_mut_ptr(), 4, src.as_ptr()) },
+            STATUS_BUFFER_OVERFLOW
+        );
+        assert_eq!(buf, [b'a' as i8, b'b' as i8, b'c' as i8, 0]);
+        let mut buf = [1i8; 4];
+        assert_eq!(unsafe { ntstrsafe_printf_finish_a(buf.as_mut_ptr(), 4, 2) }, 0);
+        assert_eq!(buf[3], 1);
+        assert_eq!(
+            unsafe { ntstrsafe_printf_finish_a(buf.as_mut_ptr(), 4, -1) },
+            STATUS_BUFFER_OVERFLOW
+        );
+        assert_eq!(buf[3], 0);
     }
 
     #[test]

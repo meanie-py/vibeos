@@ -506,6 +506,11 @@ extern "C" {
     /// msvcrt's `_snwprintf`: `_vsnwprintf` with the arguments in place of the `va_list`.
     #[doc(hidden)]
     pub fn _snwprintf(buf: *mut WCHAR, n: usize, fmt: *const WCHAR, ...) -> c_int;
+    /// The narrow twin, for ntstrsafe's `*A` printf entry points (`_vsnprintf` in the
+    /// header). ntdll exports it too, so a native image that links no CRT still resolves it.
+    #[doc(hidden)]
+    pub fn _snprintf(buf: *mut core::ffi::c_char, n: usize, fmt: *const core::ffi::c_char, ...)
+        -> c_int;
 }
 
 /// strsafe.h `StringVPrintfWorkerW` after its `_vsnwprintf` call, given that call's result.
