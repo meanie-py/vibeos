@@ -138,7 +138,9 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
             src = path.read_text(errors="replace")
         except OSError:
             continue
-        present = {n for n in names if re.search(rf"\b{re.escape(n)}\b", src)}
+        # One identifier scan per file, not one regex per name: with 544 unresolved names
+        # over the tree that loop was a 40-minute CPU stall inside `port replay`.
+        present = names & set(re.findall(r"[A-Za-z_]\w*", src))
         for n in present:
             for kind, pat in (("const", _CONST), ("type", _TYPE)):
                 for m in re.finditer(pat.format(n=re.escape(n)), src, re.M):
@@ -183,7 +185,9 @@ def exported_definitions(src: str, names: set[str]) -> list[tuple[str, str, str]
         # A binding pattern (`mut x: T`) is not allowed in a foreign declaration.
         params = re.sub(r"(^|,)(\s*)mut\s+(?=[A-Za-z_]\w*\s*:)", r"\1\2", params)
         tail = f" {ret.group(1).strip()}" if ret else ""
-        out.append((name, f"pub fn {name}({params.strip()}){tail};", abi))
+        # Quoted, as extern_block_spans gives it: render writes `extern {abi} {`, and a bare
+        # `C` there is a parse error that hid every name in diskpart (4,867 errors).
+        out.append((name, f"pub fn {name}({params.strip()}){tail};", f'"{abi}"'))
     return out
 
 

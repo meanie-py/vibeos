@@ -267,9 +267,9 @@ def test_an_exported_rust_definition_gives_its_extern_declaration():
         (
             "GetListEntryData",
             "pub fn GetListEntryData(Entry: PGENERIC_LIST_ENTRY) -> PVOID;",
-            "system",
+            '"system"',
         ),
-        ("Other", "pub fn Other(a: *mut u8);", "C"),
+        ("Other", "pub fn Other(a: *mut u8);", '"C"'),
     ]
 
 
