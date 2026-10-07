@@ -1145,7 +1145,13 @@ def align_definition_returns(state: dict) -> dict[str, list[str]]:
             r = re.match(r"\s*->\s*([^{;]+?)\s*\{", text[i:])
             if r and _PRIMITIVE_RET.match(r.group(1)):
                 rets[m.group(1)] = (path, r.group(1))
-    todo = set(rets)
+    # Only names a module HEADER declares: a `static` function has no prototype for c2rust
+    # to find, and asking every TU about it costs a c2rust run per TU per arch (usetup's
+    # replay spent most of an hour here).
+    headers = " ".join(
+        h.read_text(errors="replace") for h in (REPO / state["module_dir"]).rglob("*.h")
+    )
+    todo = {n for n in rets if re.search(rf"\b{re.escape(n)}\s*\(", headers)}
     proto: dict[str, str] = {}
     for tu in state["tus"]:
         if not todo:
