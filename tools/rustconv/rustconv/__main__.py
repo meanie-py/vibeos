@@ -162,6 +162,8 @@ from .response_cache import (
     RESPONSES_DIR,
     ExactBodyTranslationMemory,
     ResponseCache,
+    bank_base,
+    claim_bank,
     require_no_namespace_rebuy,
 )
 from .scanner import print_scan_result, scan_file
@@ -758,9 +760,10 @@ def _open_response_cache(
     `--no-resume` forces fresh.
     """
     suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled)
-    base = f"{subsystem}__{c_file.stem}"
+    base = bank_base(subsystem, c_file, suffix, REACTOS_ROOT)
     if not getattr(args, "dry_run", False):
         require_no_namespace_rebuy(base, base + suffix)
+        claim_bank(base + suffix, c_file, REACTOS_ROOT)
     return ResponseCache(base + suffix)
 
 
