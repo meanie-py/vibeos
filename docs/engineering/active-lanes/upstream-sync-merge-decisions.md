@@ -818,10 +818,16 @@ The pre-rewrite translations were renamed, not removed: `pciidex-legacy-rust` an
 `atapi-legacy-rust` still build pciidex.sys and atapi.sys. uniata stays the default driver.
 
 **Still owed, in order:**
-1. ~600 lines of header inlines no TU translation covers: `identify_funcs.h` (44 `AtaDev*`),
-   plus the FORCEINLINEs in `atapi.h`, `pciidex.h`, `pata.h`, `ahci.h`. `translate` refuses a
-   header (no compile command); either teach `port` a header-inline TU or hand-port them into
-   `<crate>/hand/`. This is most of atapi's remaining errors.
+1. ~~Header inlines.~~ **Done 2026-10-07** with `port headers` (rustconv-pipeline.md). The
+   module-local FORCEINLINEs (`atapi.h`, `pciidex.h`, `pata.h`, `ahci.h`) had already been
+   ported by the `macros` stage. Only `identify_funcs.h`'s 44 `AtaDev*` were missing, $0.06.
+   They were NOT most of atapi's errors, as this line used to claim: 374 -> 361. Two $0 tool
+   fixes the same night (stale prelude facts, the bitfield accessor rule) took atapi to **206
+   per arch**. That state is committed on `ata-stack-port`, with atapi wired for `port`: the
+   drafted cohab CMakeLists and the workspace member, both of which `translate` needs to prove
+   a TU's owner. Remaining amd64: E0308 x79, E0425 x65 (kernel helpers such as
+   `InsertTailList`, `MmGetMdlVirtualAddress`, `PowerDeviceD0` -- the next tool target), E0408
+   x10. pciidex and legide have not been re-replayed under the new rules.
 2. The remaining body errors (`port fix`, or by hand). Do it AFTER every deterministic change:
    a fix bought against a body that a later tool change rewrites does not replay.
 3. Wire the drafted cohab CMakeLists (`~/vibeos-rust-staging/ata-stack/cmake-new/`, also on

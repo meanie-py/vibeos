@@ -106,3 +106,14 @@ def test_discovery_adopts_private_headers_and_routes_platform_ones(tmp_path, mon
         str(Path("sdk/include/reactos/drivers/ata/identify_funcs.h")): "drivers/atapi/fdo.c"
     }
     assert "-sys crate" in skipped["RtlStringCchPrintfExA"]
+
+
+def test_a_fact_the_island_now_defines_is_found_on_every_arch(tmp_path, monkeypatch):
+    src = tmp_path / "src"
+    src.mkdir()
+    for arch in ("i386", "amd64", "arm64"):
+        extra = "pub const ONLY_64: u32 = 2;\n" if arch != "i386" else ""
+        (src / f"types_{arch}.rs").write_text(f"pub const ATA_MAX_DEVICE: u32 = 15;\n{extra}")
+    monkeypatch.setattr(port, "_crate_dir", lambda state: tmp_path)
+    # Defined by every island: the prelude fact is a duplicate. Defined by some: not (yet).
+    assert port._island_constants({}) == {"ATA_MAX_DEVICE"}
