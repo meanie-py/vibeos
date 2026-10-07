@@ -13,7 +13,9 @@ different is how a build reaches the board.
 ```
 
 VibeOS reached the desktop on the Pi 5 on 2026-10-04. The first hands-free
-`pi5 boot` took 2m48s from SSH stage to desktop.
+`pi5 boot` took 2m48s from SSH stage to desktop. Since 2026-10-06 RP1's first xHCI
+(XHC0) runs under `usbxhci.sys`, so the Pico's keyboard and mouse work, and the card
+slot (SDC0) runs under the Pi 4's `sdhc.sys`, at ~11 MB/s.
 
 ## How a build gets there: the Linux stager and tryboot
 
@@ -97,7 +99,11 @@ _HID <id>`):
 - `RP1B`: RP1 as an ACPI0004 container. `PBAR` = 0x1F_0000_0000 (RP1's registers) and
   `PINT` = 0x105 (GIC INTID 261). Inside it, `XHC0` and `XHC1` (PNP0D10) at PBAR +
   0x200000 and + 0x300000, both on INTID 261, level, shared.
-- `SDC1` (BRCM5D12, compatible 80860F16: generic SDHCI) at 0x10_0110_0000, INTID 306.
+- `SDC0`, the card slot, at 0x10_00FF_F000, INTID 305: its _HID is a Method returning
+  BRCM5D12, and its child `SDMM` is the card. `_INI` clears bit 3 of the GPIO data
+  register at 0x10_7D51_7C04, which by its `_DSM` is the 3.3 V/1.8 V signalling switch.
+- `SDC1` (BRCM5D12, compatible 80860F16: generic SDHCI) at 0x10_0110_0000, INTID 306:
+  the Wi-Fi's SDIO host (child `WLAN`). The HAL tells the two apart by that child.
 - No Ethernet: RP1's GEM is not described.
 
 The MCFG (OEM `RPIFDN`/`RPI5`) is not generic ECAM. It names bus 0 at 0x10_0010_8000,

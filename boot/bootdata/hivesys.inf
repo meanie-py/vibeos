@@ -59,10 +59,13 @@ HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#PNP0D10","Cla
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BCM6E4E","Service",0x00000000,"netstack"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BCM6E4E","ClassGUID",0x00000000,"{4D36E972-E325-11CE-BFC1-08002BE10318}"
 
-; The Raspberry Pi 4's EMMC2 SD host controller (the card slot), also from ACPI.
-; sdhc.sys drives it and presents the card to disk.sys; see sdhc-rust/src/lib.rs.
+; The Raspberry Pi card slots' SD hosts, also from ACPI: the Pi 4's EMMC2 (BRCME88C)
+; and the Pi 5's SDC0 (BRCM5D12). sdhc.sys drives both and presents the card to
+; disk.sys; see sdhc-rust/src/lib.rs.
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BRCME88C","Service",0x00000000,"sdhc"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BRCME88C","ClassGUID",0x00000000,"{4D36E97B-E325-11CE-BFC1-08002BE10318}"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BRCM5D12","Service",0x00000000,"sdhc"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BRCM5D12","ClassGUID",0x00000000,"{4D36E97B-E325-11CE-BFC1-08002BE10318}"
 
 ; NVM Express controllers (PCI class 01/08/02) on every architecture: the
 ; OptiPlex's drive, QEMU's nvme device, a Graviton's EBS volumes. nvme.sys

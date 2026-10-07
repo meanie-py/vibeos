@@ -24,7 +24,7 @@
 #![cfg(target_arch = "aarch64")]
 #![allow(non_snake_case)]
 
-use super::acpi::{find_genet, find_sdhc, find_xhci, AcpiDevice};
+use super::acpi::{find_genet, find_sdhc, find_sdhc_pi5, find_xhci, AcpiDevice};
 use ntkrnl_sys::ddk;
 use ntkrnl_sys::ddk::{
     BOOLEAN, GUID, NTSTATUS, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PIO_STACK_LOCATION, PUNICODE_STRING, PVOID,
@@ -102,6 +102,7 @@ static DRIVER_NAME: [u16; 17] = wide(b"\\Driver\\ACPI_HAL\0");
 static XHCI_HARDWARE_IDS: [u16; 23] = wide(b"ACPI\\PNP0D10\0*PNP0D10\0\0");
 static GENET_HARDWARE_IDS: [u16; 23] = wide(b"ACPI\\BCM6E4E\0*BCM6E4E\0\0");
 static SDHC_HARDWARE_IDS: [u16; 25] = wide(b"ACPI\\BRCME88C\0*BRCME88C\0\0");
+static SDHC5_HARDWARE_IDS: [u16; 25] = wide(b"ACPI\\BRCM5D12\0*BRCM5D12\0\0");
 static INSTANCE_ZERO: [u16; 2] = wide(b"0\0");
 
 unsafe extern "system" {
@@ -131,6 +132,8 @@ enum Child {
     Xhci,
     Genet,
     Sdhc,
+    /// The Pi 5's card slot (SDC0, BRCM5D12): the same sdhc.sys, another id.
+    Sdhc5,
 }
 
 #[repr(C)]
@@ -287,6 +290,7 @@ unsafe fn query_id(child: Child, id_type: u32, out: *mut PVOID) -> NTSTATUS {
         Child::Xhci => &XHCI_HARDWARE_IDS,
         Child::Genet => &GENET_HARDWARE_IDS,
         Child::Sdhc => &SDHC_HARDWARE_IDS,
+        Child::Sdhc5 => &SDHC5_HARDWARE_IDS,
     };
     let src: &[u16] = match id_type {
         // The device ID is the first string of the hardware-ID multi-sz.
@@ -521,9 +525,13 @@ unsafe fn create_pdo(driver: PDRIVER_OBJECT, child: Child, x: AcpiDevice) -> *mu
     );
     match child {
         Child::Xhci => init_xhci(pdo),
-        Child::Genet | Child::Sdhc => DbgPrint(
+        Child::Genet | Child::Sdhc | Child::Sdhc5 => DbgPrint(
             b"[HAL] ACPI %s: regs %p+0x%x, GSIV %u %s\n\0".as_ptr(),
-            if child == Child::Genet { b"GENET (BCM6E4E)\0".as_ptr() } else { b"SD host (BRCME88C)\0".as_ptr() },
+            match child {
+                Child::Genet => b"GENET (BCM6E4E)\0".as_ptr(),
+                Child::Sdhc5 => b"SD host (BRCM5D12)\0".as_ptr(),
+                _ => b"SD host (BRCME88C)\0".as_ptr(),
+            },
             x.mmio as PVOID,
             x.mmio_len as u32,
             x.gsiv,
@@ -583,7 +591,12 @@ unsafe extern "system" fn AddDevice(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT)
         return STATUS_NO_SUCH_DEVICE;
     }
     super::acpi::log_device_ids();
-    for (child, found) in [(Child::Xhci, find_xhci()), (Child::Genet, find_genet()), (Child::Sdhc, find_sdhc())] {
+    for (child, found) in [
+        (Child::Xhci, find_xhci()),
+        (Child::Genet, find_genet()),
+        (Child::Sdhc, find_sdhc()),
+        (Child::Sdhc5, find_sdhc_pi5()),
+    ] {
         if let Some(x) = found {
             let pdo = create_pdo(driver, child, x);
             if !pdo.is_null() {

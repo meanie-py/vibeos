@@ -123,7 +123,7 @@ pub(crate) unsafe fn for_each_table(xsdt_pa: u64, mut f: impl FnMut(&[u8; 4], *c
 //     _DSD { "sdhci-caps-mask" ... } }
 //
 // The template's base is a placeholder that _CRS patches, so the base comes
-// from the Store (`patched_base`), not from the template.
+// from the method (`patched_field`), not from the template.
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Default)]
@@ -143,6 +143,9 @@ const XHCI_HID_STRING: &[u8] = b"_HID\x0DPNP0D10\x00";
 const XHCI_HID_EISAID: &[u8] = b"_HID\x0C\x41\xD0\x0D\x10";
 const GENET_HID_STRING: &[u8] = b"_HID\x0DBCM6E4E\x00";
 const SDHC_HID_STRING: &[u8] = b"_HID\x0DBRCME88C\x00";
+/// The Pi 5's SD hosts (worproject): the card slot's _HID is a Method returning
+/// this string, so match the string alone.
+const SDHC5_HID_STRING: &[u8] = b"\x0DBRCM5D12\x00";
 /// An xHCI register file is never smaller than this, and it is what the Pi's
 /// _CRS method computes (Len 1 + 0xFFF) from its placeholder template.
 const XHCI_MIN_WINDOW: u64 = 0x1000;
@@ -193,11 +196,21 @@ fn u32_at(b: &[u8], p: usize) -> Option<u32> {
     Some(u32::from_le_bytes(b.get(p..p + 4)?.try_into().ok()?))
 }
 
+/// Where a template leaves values for its _CRS method to fill in: the byte
+/// offsets (within the template) of the first memory range's base and of the
+/// first interrupt's number, when the template holds 0 there.
+#[derive(Clone, Copy, Default)]
+struct Placeholders {
+    base: Option<usize>,
+    len: Option<usize>,
+    gsiv: Option<usize>,
+}
+
 /// Walk a resource template (the bytes of a Buffer), taking the first memory
-/// range and the first interrupt. Returns the template offset of a
-/// Memory32Fixed base left as a 0 placeholder, for `patched_base`.
-fn parse_resources(t: &[u8], x: &mut AcpiDevice) -> Option<usize> {
-    let mut placeholder = None;
+/// range and the first interrupt, and noting the fields left as 0 for the
+/// method to patch.
+fn parse_resources(t: &[u8], x: &mut AcpiDevice) -> Placeholders {
+    let mut holes = Placeholders::default();
     let mut p = 0;
     while p < t.len() {
         let tag = t[p];
@@ -215,30 +228,40 @@ fn parse_resources(t: &[u8], x: &mut AcpiDevice) -> Option<usize> {
             0x8A if body.first() == Some(&0) && x.mmio == 0 => {
                 x.mmio = u64_at(body, 11).unwrap_or(0);
                 x.mmio_len = u64_at(body, 35).unwrap_or(0);
+                if x.mmio == 0 {
+                    holes.base = Some(p + 3 + 11);
+                    holes.len = Some(p + 3 + 35);
+                }
             }
             // DWord Address Space, memory.
             0x87 if body.first() == Some(&0) && x.mmio == 0 => {
                 x.mmio = u32_at(body, 7).unwrap_or(0) as u64;
                 x.mmio_len = u32_at(body, 19).unwrap_or(0) as u64;
+                if x.mmio == 0 {
+                    holes.base = Some(p + 3 + 7);
+                }
             }
             // Memory32Fixed.
             0x86 if x.mmio == 0 => {
                 x.mmio = u32_at(body, 1).unwrap_or(0) as u64;
                 x.mmio_len = u32_at(body, 5).unwrap_or(0) as u64;
                 if x.mmio == 0 {
-                    placeholder = Some(p + 4);
+                    holes.base = Some(p + 4);
                 }
             }
             // Extended Interrupt: flags bit 1 = edge-triggered.
-            0x89 if x.gsiv == 0 && body.len() >= 6 && body[1] >= 1 => {
+            0x89 if x.gsiv == 0 && holes.gsiv.is_none() && body.len() >= 6 && body[1] >= 1 => {
                 x.edge = body[0] & 2 != 0;
                 x.gsiv = u32_at(body, 2).unwrap_or(0);
+                if x.gsiv == 0 {
+                    holes.gsiv = Some(p + 3 + 2);
+                }
             }
             _ => {}
         }
         p += 3 + len;
     }
-    placeholder
+    holes
 }
 
 /// The extent of the Method whose name is at `name`: (start, end) of
@@ -264,47 +287,121 @@ fn returned_name(m: &[u8]) -> Option<&[u8]> {
     m.get(q..q + 4)
 }
 
-/// The value a _CRS method stores into the template field at `field`:
-/// `CreateDWordField(^RBUF, field, NAME)` then `Store(Integer, NAME)`, the
-/// pftf idiom for a base address the table is built without.
-fn patched_base(crs: &[u8], field: usize) -> Option<u64> {
-    let mut p = 0;
-    while let Some(o) = crs.get(p..).and_then(|s| s.iter().position(|&c| c == 0x8A)) {
-        let mut q = p + o + 1;
-        // Source buffer: a NameString with optional root/parent prefixes.
-        while matches!(crs.get(q), Some(0x5C | 0x5E)) {
+/// A NameString at `p`: its last 4-character segment and the bytes it took.
+/// Handles the root/parent prefixes and Dual/MultiNamePrefix paths.
+fn name_string(b: &[u8], p: usize) -> Option<(&[u8], usize)> {
+    let mut q = p;
+    while matches!(b.get(q), Some(0x5C | 0x5E)) {
+        q += 1;
+    }
+    let segs = match *b.get(q)? {
+        0x2E => {
             q += 1;
+            2
         }
-        q += 4;
-        if let Some((idx, n)) = integer(crs, q) {
-            let name = crs.get(q + n..q + n + 4)?;
-            if idx as usize == field {
-                let mut r = q + n + 4;
-                while let Some(s) = crs.get(r..).and_then(|s| s.iter().position(|&c| c == 0x70)) {
-                    r += s;
-                    if let Some((v, vn)) = integer(crs, r + 1) {
-                        if crs.get(r + 1 + vn..r + 1 + vn + 4) == Some(name) {
-                            return Some(v);
-                        }
+        0x2F => {
+            q += 2;
+            *b.get(q - 1)? as usize
+        }
+        0x00 => return None,
+        _ => 1,
+    };
+    let end = q + 4 * segs;
+    let last = b.get(end - 4..end)?;
+    last.iter().all(|&c| c == b'_' || c.is_ascii_uppercase() || c.is_ascii_digit()).then_some((last, end - p))
+}
+
+/// The value of an operand: an integer, or a name declared `Name (X, Integer)`
+/// somewhere in the definition block (RP1B's PBAR/PINT live on the parent).
+fn operand(b: &[u8], aml: &[u8], p: usize) -> Option<(u64, usize)> {
+    if let Some(v) = integer(b, p) {
+        return Some(v);
+    }
+    let (name, n) = name_string(b, p)?;
+    let mut decl = [0x08, 0, 0, 0, 0];
+    decl[1..].copy_from_slice(name);
+    let at = find(aml, &decl)?;
+    Some((integer(aml, at + 5)?.0, n))
+}
+
+/// The value a _CRS method writes into the template field at byte `offset`.
+/// The method names the field with `CreateDWordField`/`CreateQWordField (RBUF,
+/// offset, NAME)` and then sets NAME with `Store (src, NAME)` or `Add (a, b,
+/// NAME)`, where each operand is an integer or a `Name` declared in the block:
+/// pftf's Pi 4 stores constants, worproject's Pi 5 adds an offset to its
+/// parent's PBAR. Anything else is not evaluated.
+fn patched_field(crs: &[u8], aml: &[u8], offset: usize) -> Option<u64> {
+    // The field's name.
+    let mut field: Option<&[u8]> = None;
+    let mut p = 0;
+    while field.is_none() && p < crs.len() {
+        if matches!(crs[p], 0x8A | 0x8F) {
+            if let Some((_, n)) = name_string(crs, p + 1) {
+                if let Some((idx, m)) = integer(crs, p + 1 + n) {
+                    if idx as usize == offset {
+                        field = name_string(crs, p + 1 + n + m).map(|(f, _)| f);
                     }
-                    r += 1;
                 }
             }
         }
-        p += o + 1;
+        p += 1;
+    }
+    let field = field?;
+    // The first Store/Add whose target is that name.
+    for r in 0..crs.len() {
+        let (value, used) = match crs[r] {
+            0x70 => match operand(crs, aml, r + 1) {
+                Some((v, n)) => (v, 1 + n),
+                None => continue,
+            },
+            0x72 => match operand(crs, aml, r + 1).and_then(|(a, n)| {
+                operand(crs, aml, r + 1 + n).map(|(b, m)| (a.wrapping_add(b), 1 + n + m))
+            }) {
+                Some(v) => v,
+                None => continue,
+            },
+            _ => continue,
+        };
+        if name_string(crs, r + used).map(|(t, _)| t) == Some(field) {
+            return Some(value);
+        }
     }
     None
 }
 
 /// Find the device whose _HID is one of `hids` in one definition block
 /// (DSDT/SSDT body).
-fn find_device_in(aml: &[u8], hids: &[&[u8]]) -> Option<AcpiDevice> {
-    let hid = hids.iter().find_map(|h| find(aml, h))?;
-    // Bound the search to the enclosing Device(): its DeviceOp (5B 82) is
-    // PkgLength + 4-byte name before the _HID's NameOp.
-    let dev = (hid.saturating_sub(12)..hid).rev().find(|&i| aml[i] == 0x5B && aml.get(i + 1) == Some(&0x82))?;
-    let (len, _) = pkg_length(aml, dev + 2)?;
-    let body = &aml[hid..(dev + 2 + len).min(aml.len())];
+fn find_device_in(aml: &[u8], hids: &[&[u8]], accept: fn(&[u8]) -> bool) -> Option<AcpiDevice> {
+    for needle in hids {
+        let mut at = 0;
+        while let Some(o) = find(&aml[at..], needle) {
+            let hid = at + o;
+            at = hid + 1;
+            // Bound the search to the enclosing Device(): the nearest DeviceOp
+            // (5B 82) before the id whose PkgLength covers it. A Name _HID sits
+            // 12 bytes after it; a Method _HID returning a string, further.
+            let Some(end) = (hid.saturating_sub(64)..hid).rev().find_map(|i| {
+                if aml[i] != 0x5B || aml.get(i + 1) != Some(&0x82) {
+                    return None;
+                }
+                let (len, _) = pkg_length(aml, i + 2)?;
+                (i + 2 + len > hid).then_some((i + 2 + len).min(aml.len()))
+            }) else {
+                continue;
+            };
+            let body = &aml[hid..end];
+            if accept(body) {
+                if let Some(x) = device_resources(aml, body) {
+                    return Some(x);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The resources of the device whose body (from its _HID on) is `body`.
+fn device_resources(aml: &[u8], body: &[u8]) -> Option<AcpiDevice> {
 
     let mut x = AcpiDevice::default();
     // _CRS: the resource template is the first Buffer after the name, whether
@@ -328,9 +425,16 @@ fn find_device_in(aml: &[u8], hids: &[&[u8]]) -> Option<AcpiDevice> {
             let (size, sn) = integer(body, b + 1 + pn)?;
             let start = b + 1 + pn + sn;
             let end = (b + 1 + plen).min(start + size as usize).min(body.len());
-            if let Some(field) = parse_resources(&body[start..end], &mut x) {
-                let (s, e) = method.unwrap_or((crs, body.len()));
-                x.mmio = patched_base(&body[s..e], field).unwrap_or(0);
+            let holes = parse_resources(&body[start..end], &mut x);
+            let (s, e) = method.unwrap_or((crs, body.len()));
+            if let Some(field) = holes.base {
+                x.mmio = patched_field(&body[s..e], aml, field).unwrap_or(0);
+            }
+            if let Some(len) = holes.len.and_then(|f| patched_field(&body[s..e], aml, f)) {
+                x.mmio_len = len;
+            }
+            if let Some(field) = holes.gsiv {
+                x.gsiv = patched_field(&body[s..e], aml, field).unwrap_or(0) as u32;
             }
         }
     }
@@ -352,7 +456,7 @@ fn find_device_in(aml: &[u8], hids: &[&[u8]]) -> Option<AcpiDevice> {
 
 /// Search the DSDT and every SSDT for an ACPI-only xHCI controller.
 pub(crate) unsafe fn find_xhci() -> Option<AcpiDevice> {
-    let mut x = find_device(&[XHCI_HID_STRING, XHCI_HID_EISAID])?;
+    let mut x = find_device(&[XHCI_HID_STRING, XHCI_HID_EISAID], any)?;
     if x.mmio_len < XHCI_MIN_WINDOW {
         x.mmio_len = XHCI_MIN_WINDOW;
     }
@@ -361,12 +465,23 @@ pub(crate) unsafe fn find_xhci() -> Option<AcpiDevice> {
 
 /// Search the DSDT and every SSDT for the Raspberry Pi 4's GENET Ethernet MAC.
 pub(crate) unsafe fn find_genet() -> Option<AcpiDevice> {
-    find_device(&[GENET_HID_STRING])
+    find_device(&[GENET_HID_STRING], any)
 }
 
 /// Search the DSDT and every SSDT for the Raspberry Pi 4's EMMC2 SD host.
 pub(crate) unsafe fn find_sdhc() -> Option<AcpiDevice> {
-    find_device(&[SDHC_HID_STRING])
+    find_device(&[SDHC_HID_STRING], any)
+}
+
+/// Search for the Raspberry Pi 5's SD card host (SDC0). SDC1 answers the same
+/// _HID but is the Wi-Fi's SDIO host: both declare a child Device (the card is
+/// SDC0's `SDMM`), so tell them apart by SDC1's child, `WLAN`.
+pub(crate) unsafe fn find_sdhc_pi5() -> Option<AcpiDevice> {
+    find_device(&[SDHC5_HID_STRING], |body| find(body, b"WLAN").is_none())
+}
+
+fn any(_: &[u8]) -> bool {
+    true
 }
 
 /// Every `_HID` one definition block declares, as (Device name, id). A string
@@ -383,6 +498,14 @@ fn device_ids_in(aml: &[u8], mut f: impl FnMut(&[u8], &[u8])) {
             .and_then(|n| aml.get(n..n + 4))
             .unwrap_or(b"????");
         let mut eisa = [0u8; 7];
+        // A Method _HID (SDC0's): report the first string it returns.
+        if let Some((m, e)) = method_body(aml, hid) {
+            if let Some(o) = aml[m..e].iter().position(|&c| c == 0x0D) {
+                let s = &aml[m + o + 1..e];
+                f(name, &s[..s.iter().position(|&c| c == 0).unwrap_or(0).min(16)]);
+            }
+            continue;
+        }
         let id: &[u8] = match aml.get(hid + 4) {
             Some(0x0D) => {
                 let s = &aml[hid + 5..];
@@ -452,7 +575,7 @@ pub(crate) unsafe fn log_device_ids() {
 }
 
 /// Search the SSDTs, then the DSDT, for the first device with one of `hids`.
-unsafe fn find_device(hids: &[&[u8]]) -> Option<AcpiDevice> {
+unsafe fn find_device(hids: &[&[u8]], accept: fn(&[u8]) -> bool) -> Option<AcpiDevice> {
     let xsdt = XSDT_PA.load(Ordering::Relaxed);
     if xsdt == 0 {
         return None;
@@ -467,7 +590,7 @@ unsafe fn find_device(hids: &[&[u8]]) -> Option<AcpiDevice> {
                 dsdt_pa = rd::<u32>(t, 40) as u64;
             }
         } else if sig == b"SSDT" && found.is_none() {
-            found = find_device_in(core::slice::from_raw_parts(t.add(36), len - 36), hids);
+            found = find_device_in(core::slice::from_raw_parts(t.add(36), len - 36), hids, accept);
         }
     });
     if found.is_none() && dsdt_pa != 0 {
@@ -478,7 +601,7 @@ unsafe fn find_device(hids: &[&[u8]]) -> Option<AcpiDevice> {
             if len > 36 {
                 let t = map_table(dsdt_pa, len);
                 if !t.is_null() {
-                    found = find_device_in(core::slice::from_raw_parts(t.add(36), len - 36), hids);
+                    found = find_device_in(core::slice::from_raw_parts(t.add(36), len - 36), hids, accept);
                     unmap_table(t, len);
                 }
             }
