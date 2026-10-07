@@ -666,13 +666,33 @@ unsafe fn SepAccessCheckAndAuditAlarm(
     );
 
     if status >= 0 {
-        for i in 0..result_list_length {
-            *access_status_list.offset(i as isize) = *safe_access_status_list.offset(i as isize);
-            *granted_access_list.offset(i as isize) = *safe_granted_access_list.offset(i as isize);
-        }
-        // Write-back to user-mode pointer
-        if let Err(s) = probe_write_user(generate_on_close, local_generate_on_close, UserMode) {
-            status = s;
+        // The out-lists were range-probed (377/390), but the probe proves where the
+        // caller's buffer is, not that its pages stay mapped; with no SEH each store
+        // must be fault-tolerant, exactly as the generate_on_close write below is.
+        // The source lists are kernel pool/stack, so reading them raw is fine.
+        // C (se/audit.c:889-901) wraps this loop AND the generate_on_close store in
+        // one _SEH2_TRY, so a fault in the loop abandons that write too.
+        'writeback: {
+            for i in 0..result_list_length {
+                if let Err(s) = write_back(
+                    access_status_list.offset(i as isize),
+                    *safe_access_status_list.offset(i as isize),
+                ) {
+                    status = s;
+                    break 'writeback;
+                }
+                if let Err(s) = write_back(
+                    granted_access_list.offset(i as isize),
+                    *safe_granted_access_list.offset(i as isize),
+                ) {
+                    status = s;
+                    break 'writeback;
+                }
+            }
+            // Write-back to user-mode pointer
+            if let Err(s) = probe_write_user(generate_on_close, local_generate_on_close, UserMode) {
+                status = s;
+            }
         }
     }
 

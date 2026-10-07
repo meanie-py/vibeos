@@ -1579,18 +1579,37 @@ pub unsafe extern "fastcall" fn IntSetMenuItemInfo(
                 (*MenuItem).lpstr.Length = 0;
                 (*MenuItem).lpstr.MaximumLength =
                     Source.Length + core::mem::size_of::<u16>() as USHORT;
-                RtlCopyUnicodeString(
-                    core::ptr::addr_of_mut!((*MenuItem).lpstr).cast(),
-                    core::ptr::addr_of_mut!(Source).cast(),
-                );
-                *(*MenuItem)
-                    .lpstr
-                    .Buffer
-                    .add((*MenuItem).lpstr.Length as usize / core::mem::size_of::<u16>()) = 0;
+                // Source.Buffer is (*lpmii).dwTypeData, a USER pointer the capture of
+                // lpmii never repointed; RtlCopyUnicodeString would memcpy from it
+                // raw. Copy the bytes fault-tolerantly into the kernel buffer, then
+                // terminate as RtlCopyUnicodeString would. On fault free the buffer
+                // so the MF_STRING cleanup (which only frees when Length != 0) cannot
+                // leak it.
+                if crate::safe_user_io::copy_from_user(
+                    (*MenuItem).lpstr.Buffer as *mut core::ffi::c_void,
+                    Source.Buffer as *const core::ffi::c_void,
+                    Source.Length as usize,
+                    1,
+                )
+                .is_ok()
+                {
+                    (*MenuItem).lpstr.Length = Source.Length;
+                    *(*MenuItem)
+                        .lpstr
+                        .Buffer
+                        .add((*MenuItem).lpstr.Length as usize / core::mem::size_of::<u16>()) = 0;
 
-                (*MenuItem).cch =
-                    (*MenuItem).lpstr.Length as u32 / core::mem::size_of::<u16>() as u32;
-                (*MenuItem).Xlpstr = (*MenuItem).lpstr.Buffer as *mut USHORT;
+                    (*MenuItem).cch =
+                        (*MenuItem).lpstr.Length as u32 / core::mem::size_of::<u16>() as u32;
+                    (*MenuItem).Xlpstr = (*MenuItem).lpstr.Buffer as *mut USHORT;
+                } else {
+                    DesktopHeapFree(
+                        (*MenuObject).head.rpdesk,
+                        (*MenuItem).lpstr.Buffer as *mut core::ffi::c_void,
+                    );
+                    (*MenuItem).lpstr.Buffer = core::ptr::null_mut();
+                    (*MenuItem).lpstr.MaximumLength = 0;
+                }
             }
         }
     }
@@ -1762,18 +1781,37 @@ pub unsafe extern "C" fn IntSetMenuItemInfo(
                 (*MenuItem).lpstr.Length = 0;
                 (*MenuItem).lpstr.MaximumLength =
                     Source.Length + core::mem::size_of::<u16>() as USHORT;
-                RtlCopyUnicodeString(
-                    core::ptr::addr_of_mut!((*MenuItem).lpstr).cast(),
-                    core::ptr::addr_of_mut!(Source).cast(),
-                );
-                *(*MenuItem)
-                    .lpstr
-                    .Buffer
-                    .add((*MenuItem).lpstr.Length as usize / core::mem::size_of::<u16>()) = 0;
+                // Source.Buffer is (*lpmii).dwTypeData, a USER pointer the capture of
+                // lpmii never repointed; RtlCopyUnicodeString would memcpy from it
+                // raw. Copy the bytes fault-tolerantly into the kernel buffer, then
+                // terminate as RtlCopyUnicodeString would. On fault free the buffer
+                // so the MF_STRING cleanup (which only frees when Length != 0) cannot
+                // leak it.
+                if crate::safe_user_io::copy_from_user(
+                    (*MenuItem).lpstr.Buffer as *mut core::ffi::c_void,
+                    Source.Buffer as *const core::ffi::c_void,
+                    Source.Length as usize,
+                    1,
+                )
+                .is_ok()
+                {
+                    (*MenuItem).lpstr.Length = Source.Length;
+                    *(*MenuItem)
+                        .lpstr
+                        .Buffer
+                        .add((*MenuItem).lpstr.Length as usize / core::mem::size_of::<u16>()) = 0;
 
-                (*MenuItem).cch =
-                    (*MenuItem).lpstr.Length as u32 / core::mem::size_of::<u16>() as u32;
-                (*MenuItem).Xlpstr = (*MenuItem).lpstr.Buffer as *mut USHORT;
+                    (*MenuItem).cch =
+                        (*MenuItem).lpstr.Length as u32 / core::mem::size_of::<u16>() as u32;
+                    (*MenuItem).Xlpstr = (*MenuItem).lpstr.Buffer as *mut USHORT;
+                } else {
+                    DesktopHeapFree(
+                        (*MenuObject).head.rpdesk,
+                        (*MenuItem).lpstr.Buffer as *mut core::ffi::c_void,
+                    );
+                    (*MenuItem).lpstr.Buffer = core::ptr::null_mut();
+                    (*MenuItem).lpstr.MaximumLength = 0;
+                }
             }
         }
     }

@@ -5171,8 +5171,18 @@ argument raw; its baseline is EMPTY, so any new row fails `vibeos-cli check`. Us
 validates something ONCE and use the copy, never `(*p).Length` then `*p`. The scanner follows
 the pointer into callees (a bare, cast or `opaque_ptr` argument), so a helper shared with
 kernel callers needs its user arm spelled `if mode != KernelMode { .. } else { .. }` (or an
-early return from the user arm) — anything subtler is a row. It cannot see a pointer read OUT
-of a user structure: an embedded buffer or `UNICODE_STRING.Buffer` is user memory too.
+early return from the user arm) — anything subtler is a row. The scanner also follows a pointer
+field read OUT of a `read_back` capture (`cap.Buffer`, whether deref'd in place, lifted into a
+local, or handed to a callee `f(oa.ObjectName)`) and flags a raw deref/copy of it, while a
+scalar field passed as a length is not; and it reads a raw primitive whose pointer argument
+wraps onto a LATER line (`copy_nonoverlapping(\n InputBuffer, ..)`) — that per-line miss had
+been a false "clean" tree-wide, hiding NtDeviceIoControlFile/NtSetInformationFile/
+NtPowerInformation and more. What it still cannot see: an ARRAY of user pointers/structs indexed
+element by element (NtGdiExtCreateRegion's RGNDATA rects, SepAccessCheckAndAuditAlarm's result
+lists), a capture made by a primitive other than `read_back` (`safe_copy_from_user` into a
+local, then its buffer field used raw), and a method call — those are caught only by reading. A
+write INTO a user buffer the caller pinned with EngSecureMem/MmSecureVirtualMemory first
+(NtGdiGetDIBitsInternal) is safe and carries a nolint.
 
 **Syscalls are not the only door, and the scanner only watches syscalls.** `int 2d` hands the
 kernel a user pointer in a register, which arrives as `ExceptionInformation[1]`. KdpStub's
