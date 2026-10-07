@@ -299,6 +299,12 @@ GUEST_SOURCE: dict[str, str] = {
     "apc64": "tools/fex/hello-compute/Apc64.c",
 }
 
+# Further sources a guest's verdict depends on: the native helpers it starts.
+# The builder makes them in the same run, so the guest's binary dates them too.
+GUEST_HELPERS: dict[str, list[str]] = {
+    "spawn64": ["tools/fex/hello-compute/XInject.c"],
+}
+
 # The script carries the link lines, so a change to it (a new flag, a different
 # importlib) invalidates every guest just as a source edit invalidates one.
 GUEST_BUILDER = "tools/fex/build-hello-compute.sh"
@@ -360,7 +366,9 @@ def stale_guests(repo: Path) -> list[str]:
         if rel is None:
             out.append(f"{guest} (no source mapping)")
             continue
-        out.extend(_newer_than(repo, guest, exe, [rel, GUEST_BUILDER]))
+        out.extend(
+            _newer_than(repo, guest, exe, [rel, GUEST_BUILDER, *GUEST_HELPERS.get(guest, [])])
+        )
 
     # DIAGNOSTIC guests are opt-in (VIBEOS_WOW64_SPAWN=1), so absent is the
     # normal state and must not read as a hole -- but a built one is compared
@@ -374,7 +382,9 @@ def stale_guests(repo: Path) -> list[str]:
         if rel is None:
             out.append(f"{guest} (no source mapping)")
             continue
-        out.extend(_newer_than(repo, guest, exe, [rel, GUEST_BUILDER]))
+        out.extend(
+            _newer_than(repo, guest, exe, [rel, GUEST_BUILDER, *GUEST_HELPERS.get(guest, [])])
+        )
 
     # OPTIONAL guests are built on demand by a script that FETCHES, so they are
     # absent in most trees. Absent means "nobody built it", which
