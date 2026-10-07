@@ -109,3 +109,11 @@ def test_nolint_on_the_call_stops_the_chain(tmp_path):
         "unsafe fn inner(r: *mut ULONG) {\n    *r = 0;\n}\n"
     )
     assert rows(tmp_path, {"x-rust/src/a.rs": src}) == []
+
+
+def test_the_native_entry_point_is_not_a_syscall(tmp_path):
+    src = (
+        'pub unsafe extern "system" fn NtProcessStartup(Peb: PPEB) {\n'
+        "    let x = (*Peb).ImageBaseAddress;\n}\n"
+    )
+    assert rows(tmp_path, {"u-rust/src/a.rs": src}) == []

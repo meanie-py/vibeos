@@ -190,6 +190,39 @@ def invented_flag_assignments(c_body: str, rust: str) -> list[str]:
     return sorted(set(out))
 
 
+_C_PTR_TYPEDEF_DECL = re.compile(
+    r"(?<![\w*])((?:P|LP)[A-Z][A-Z0-9_]*)\s+(?!\*)([A-Za-z_]\w*)\s*(?=[;=,)])"
+)
+
+
+def pointer_typedef_indirection_findings(c_body: str, rust: str) -> list[str]:
+    """A local or parameter the C declares as a pointer TYPEDEF (`PFILEPATHS_W x`), which the
+    Rust declares one level deeper (`x: *mut PFILEPATHS_W`).
+
+    usetup's FileCopyCallback and four pages did exactly this: `Param1 as *mut PFILEPATHS_W`
+    and then `(*(*x)).Target` -- the struct's first field read as the struct's address, so
+    every progress message (and every keypress, through PINPUT_RECORD) read garbage. It
+    compiles; only the C's own declaration says it is wrong. A C `PFOO *x` is left alone
+    (setuplib's `PCM_INT13_DRIVE_PARAMETER *Int13Drives` really is two levels).
+    """
+    c_code = _C_COMMENT_OR_STRING.sub(" ", c_body)
+    c_types: dict[str, set[str]] = {}
+    for m in _C_PTR_TYPEDEF_DECL.finditer(c_code):
+        c_types.setdefault(m.group(2), set()).add(m.group(1))
+    out = []
+    for m in re.finditer(
+        r"\b(?:let\s+(?:mut\s+)?)?([A-Za-z_]\w*)\s*:\s*\*(?:mut|const)\s+((?:P|LP)[A-Z][A-Z0-9_]*)\b",
+        rust,
+    ):
+        name, ty = m.group(1), m.group(2)
+        if ty in c_types.get(name, set()):
+            out.append(
+                f"`{name}: *{'mut' if '*mut' in m.group(0) else 'const'} {ty}` adds a level of "
+                f"indirection: the C declares `{ty} {name}`, and {ty} is already a pointer"
+            )
+    return sorted(set(out))
+
+
 def parse_findings(rust: str) -> list[str]:
     """The body does not even PARSE as Rust -- judged by rustc's own parser (rustfmt).
 
@@ -222,5 +255,6 @@ def body_findings(c_body: str, rust: str) -> list[str]:
     return (
         parse_findings(rust)
         + control_flow_findings(c_body, rust)
+        + pointer_typedef_indirection_findings(c_body, rust)
         + [f.message().replace("\n", "; ") for f in placement_findings(c_body, rust)]
     )

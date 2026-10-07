@@ -239,7 +239,7 @@ unsafe extern "C" fn DrawProgressBar(Bar: PPROGRESSBAR) {
     }
 
     if !(*Bar).UpdateProgressProc.is_none()
-        && (*Bar).UpdateProgressProc.unwrap()(
+        && (*Bar).UpdateProgressProc.unwrap_unchecked()(
             Bar,
             TRUE as u8,
             TextBuffer.as_mut_ptr(),

@@ -40,8 +40,16 @@ macro_rules! w {
 pub const IOCTL_CONSOLE_WRITE_OUTPUT_CHARACTER: u32 = (0x1C << 16) | (2 << 14) | (0x822 << 2) | 1;
 pub const IOCTL_CONSOLE_DRAW:                    u32 = (0x1C << 16) | (2 << 14) | (0x830 << 2) | 1;
 pub const IOCTL_CONSOLE_LOADFONT:                u32 = (0x1C << 16) | (2 << 14) | (0x840 << 2) | 1;
-pub const IOCTL_CONSOLE_SET_CURSOR_INFO:         u32 = (0x1C << 16) | (2 << 14) | (0x806 << 2) | 0;
-pub const IOCTL_CONSOLE_SET_SCREEN_BUFFER_INFO:  u32 = (0x1C << 16) | (2 << 14) | (0x807 << 2) | 0;
+// ntddblue.h:9 and :7. These were 0x806 (IOCTL_CONSOLE_SET_MODE) and 0x807 (no such
+// IOCTL): every cursor and screen-buffer update went to the wrong blue.sys handler.
+pub const IOCTL_CONSOLE_SET_CURSOR_INFO:         u32 = (0x1C << 16) | (2 << 14) | (0x804 << 2) | 0;
+pub const IOCTL_CONSOLE_SET_SCREEN_BUFFER_INFO:  u32 = (0x1C << 16) | (2 << 14) | (0x802 << 2) | 0;
+// ntddblue.h:4, :16 and :6. Previously hand-typed inside TuiInit as 0x20000/0x20004/0x20008
+// -- not the device type 0x1C, not the functions 0x800/0x813/0x801 -- so blue.sys never
+// recognised the reset, the attribute or the buffer-info request.
+pub const IOCTL_CONSOLE_RESET_SCREEN:            u32 = (0x1C << 16) | (2 << 14) | (0x800 << 2) | 0;
+pub const IOCTL_CONSOLE_SET_TEXT_ATTRIBUTE:      u32 = (0x1C << 16) | (2 << 14) | (0x813 << 2) | 0;
+pub const IOCTL_CONSOLE_GET_SCREEN_BUFFER_INFO:  u32 = (0x1C << 16) | (1 << 14) | (0x801 << 2) | 0;
 pub const STATUS_INVALID_BUFFER_SIZE: NTSTATUS = 0xC0000206u32 as NTSTATUS;
 
 extern "C" {
@@ -781,9 +789,6 @@ pub(crate) unsafe fn TuiInit(OemCP: UINT) -> BOOL {
 
     const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
     const FILE_ALL_ACCESS: u32 = 0x1F01FF;
-    const IOCTL_CONSOLE_RESET_SCREEN: u32 = 0x00020000;
-    const IOCTL_CONSOLE_SET_TEXT_ATTRIBUTE: u32 = 0x00020004;
-    const IOCTL_CONSOLE_GET_SCREEN_BUFFER_INFO: u32 = 0x00020008;
 
     if ConsInitialized != 0 {
         return 1;

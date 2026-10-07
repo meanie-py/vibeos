@@ -548,7 +548,15 @@ def scan_tree(files: list[tuple[Path, str]]) -> dict[str, list[tuple[int, str]]]
     return rows
 
 
+# Spelled like a syscall, but not one: the native-subsystem image entry point (smss, usetup),
+# which the loader calls in the process itself with its own PEB. Nothing crosses a privilege
+# boundary, so there is no caller pointer to fault on.
+NOT_SYSCALLS = frozenset({"NtProcessStartup"})
+
+
 def _is_syscall(f: FnDef) -> bool:
+    if f.name in NOT_SYSCALLS:
+        return False
     for k in range(max(0, f.body0 - 40), f.body0 + 1):
         m = SYSCALL_RE.search(f.raw_lines[k])
         if m and m.group(1) == f.name and not f.raw_lines[k].lstrip().startswith("//"):

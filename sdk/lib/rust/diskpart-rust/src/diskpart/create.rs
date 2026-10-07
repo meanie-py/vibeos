@@ -477,7 +477,7 @@ pub unsafe extern "C" fn CreateLogicalPartition(argc: INT, argv: *mut PWSTR) -> 
     }
 
     DPRINT1!("Size: %I64u\n", ullSize);
-    DPRINT1!("Partition Type: %hx\n", PartitionType);
+    DPRINT1!("Partition Type: %hx\n", PartitionType as core::ffi::c_uint);
 
     if ullSize != 0 {
         ullSectorCount = ullSize.wrapping_mul(1024).wrapping_mul(1024) / (*CurrentDisk).BytesPerSector as u64;

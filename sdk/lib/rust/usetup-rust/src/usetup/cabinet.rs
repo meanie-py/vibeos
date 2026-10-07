@@ -770,7 +770,7 @@ pub unsafe extern "C" fn CabinetExtractFile(CabinetContext: PCABINET_CONTEXT, Se
         );
 
         if (*CabinetContext).CreateFileHandler.is_some() {
-            CurrentDestBuffer = (*CabinetContext).CreateFileHandler.expect("non-null function pointer")(
+            CurrentDestBuffer = (*CabinetContext).CreateFileHandler.unwrap_unchecked()(
                 CabinetContext as PCABINET_CONTEXT,
                 (*(*Search).File).FileSize,
             );
@@ -832,7 +832,7 @@ pub unsafe extern "C" fn CabinetExtractFile(CabinetContext: PCABINET_CONTEXT, Se
                 );
 
                 if (*CabinetContext).OverwriteHandler.is_none()
-                    || ((*CabinetContext).OverwriteHandler.expect("non-null function pointer")(
+                    || ((*CabinetContext).OverwriteHandler.unwrap_unchecked()(
                         CabinetContext as PCABINET_CONTEXT,
                         (*Search).File,
                         &raw mut DestName as *mut WCHAR as PCWSTR,
@@ -978,7 +978,7 @@ pub unsafe extern "C" fn CabinetExtractFile(CabinetContext: PCABINET_CONTEXT, Se
         }
 
         if (*CabinetContext).ExtractHandler.is_some() {
-            ((*CabinetContext).ExtractHandler.expect("non-null function pointer"))(
+            ((*CabinetContext).ExtractHandler.unwrap_unchecked())(
                 CabinetContext as PCABINET_CONTEXT,
                 (*Search).File,
                 &raw mut DestName as *mut WCHAR as PCWSTR,
@@ -1019,7 +1019,7 @@ pub unsafe extern "C" fn CabinetExtractFile(CabinetContext: PCABINET_CONTEXT, Se
             }
             OutputLength = -OutputLength;
 
-            ((*(*CabinetContext).Codec).Uncompress).expect("non-null function pointer")(
+            ((*(*CabinetContext).Codec).Uncompress).unwrap_unchecked()(
                 (*CabinetContext).Codec,
                 &raw mut Chunk as *mut core::ffi::c_void,
                 CurrentBuffer as PVOID,
@@ -1045,7 +1045,7 @@ pub unsafe extern "C" fn CabinetExtractFile(CabinetContext: PCABINET_CONTEXT, Se
                 Size,
             );
 
-            Status = ((*(*CabinetContext).Codec).Uncompress).expect("non-null function pointer")(
+            Status = ((*(*CabinetContext).Codec).Uncompress).unwrap_unchecked()(
                 (*CabinetContext).Codec,
                 CurrentDestBuffer,
                 CurrentBuffer as PVOID,

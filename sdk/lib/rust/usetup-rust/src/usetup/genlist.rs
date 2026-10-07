@@ -146,7 +146,7 @@ unsafe extern "C" fn DrawListEntries(mut ListUi: PGENERIC_LIST_UI) {
 
         (*ListUi).CurrentItemText[0 as usize] = ANSI_NULL;
         if !(*ListUi).GetEntryDescriptionProc.is_none() {
-            (*ListUi).GetEntryDescriptionProc.expect("non-null function pointer")(
+            (*ListUi).GetEntryDescriptionProc.unwrap_unchecked()(
                 ListEntry,
                 &raw mut (*ListUi).CurrentItemText as PSTR,
                 (ARRAYSIZE!((*ListUi).CurrentItemText)) as _,
@@ -489,7 +489,7 @@ pub unsafe extern "C" fn GenericListKeyPress(
 
     (*ListUi).CurrentItemText[0] = ANSI_NULL;
     if !(*ListUi).GetEntryDescriptionProc.is_none() {
-        (*ListUi).GetEntryDescriptionProc.expect("non-null function pointer")(
+        (*ListUi).GetEntryDescriptionProc.unwrap_unchecked()(
             ListEntry,
             (*ListUi).CurrentItemText.as_mut_ptr(),
             (ARRAYSIZE!((*ListUi).CurrentItemText)) as _,
@@ -506,7 +506,7 @@ pub unsafe extern "C" fn GenericListKeyPress(
 
         (*ListUi).CurrentItemText[0] = ANSI_NULL;
         if !(*ListUi).GetEntryDescriptionProc.is_none() {
-            (*ListUi).GetEntryDescriptionProc.expect("non-null function pointer")(
+            (*ListUi).GetEntryDescriptionProc.unwrap_unchecked()(
                 ListEntry,
                 (*ListUi).CurrentItemText.as_mut_ptr(),
                 (ARRAYSIZE!((*ListUi).CurrentItemText)) as _,
@@ -528,7 +528,7 @@ pub unsafe extern "C" fn GenericListKeyPress(
             loop {
                 (*ListUi).CurrentItemText[0] = ANSI_NULL;
                 if !(*ListUi).GetEntryDescriptionProc.is_none() {
-                    (*ListUi).GetEntryDescriptionProc.expect("non-null function pointer")(
+                    (*ListUi).GetEntryDescriptionProc.unwrap_unchecked()(
                         ListEntry,
                         (*ListUi).CurrentItemText.as_mut_ptr(),
                         (ARRAYSIZE!((*ListUi).CurrentItemText)) as _,
@@ -573,7 +573,7 @@ pub unsafe extern "C" fn GenericListKeyPress(
         loop {
             (*ListUi).CurrentItemText[0] = ANSI_NULL;
             if !(*ListUi).GetEntryDescriptionProc.is_none() {
-                (*ListUi).GetEntryDescriptionProc.expect("non-null function pointer")(
+                (*ListUi).GetEntryDescriptionProc.unwrap_unchecked()(
                     ListEntry,
                     (*ListUi).CurrentItemText.as_mut_ptr(),
                     (ARRAYSIZE!((*ListUi).CurrentItemText)) as _,

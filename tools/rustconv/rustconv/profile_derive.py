@@ -3934,9 +3934,19 @@ pub extern "C" fn rust_eh_personality() {{}}
 #[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
 pub use crate::{ERR, FIXME, TRACE, WARN};"""
         if uses_wine
+        else """// reactos/debug.h DPRINT/UNIMPLEMENTED — no-op MACROS, never out-of-line fns
+// (field manual §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py
+// rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
+// DPRINT1 PRINTS in this DBG=1 tree: it comes from win32macros-rust with the other macros.
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
+pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};"""
+        if m.is_usermode
         else """// reactos/debug.h DPRINT/DPRINT1/UNIMPLEMENTED — no-op MACROS, never out-of-line
 // fns (field manual §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py
 // rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
+// OWED: a kernel DPRINT1 that prints (DbgPrint is an ntoskrnl export); user mode has one.
 #[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! DPRINT1 { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }

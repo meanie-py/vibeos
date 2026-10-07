@@ -656,6 +656,7 @@ class Report:
     indexed_offsets: int = 0  # offset_of!(T, a[i]) -> FIELD_OFFSET!
     dropped_fn_statics: list[str] = field(default_factory=list)  # `static F: FNTYPE = None;`
     dropped_type_defs: list[str] = field(default_factory=list)  # re-declared provided types
+    fn_ptr_calls: int = 0  # `.expect("..")(` / `.unwrap()(` on an Option<fn> -> unchecked
     blocks_removed: int = 0
 
     @property
@@ -663,6 +664,7 @@ class Report:
         return bool(
             self.substrate_swapped
             or self.prelude_added
+            or self.fn_ptr_calls
             or self.dropped_provided
             or self.dropped_self
             or self.promoted_pub
@@ -984,6 +986,22 @@ def drop_provided_type_defs(src: str, provided: set[str]) -> tuple[str, list[str
     return "".join(out), dropped
 
 
+_PANICKING_FN_CALL = re.compile(r"\.(?:expect\(\s*\"(?:[^\"\\]|\\.)*\"\s*\)|unwrap\(\))(\)?)\s*\(")
+
+
+def unchecked_fn_pointer_calls(src: str) -> tuple[str, int]:
+    """`f.expect("non-null function pointer")(args)` -> `f.unwrap_unchecked()(args)`.
+
+    C calls a function pointer without a check; calling NULL is undefined in both languages,
+    and a panic is a crash C does not have. The model writes `.expect(..)` / `.unwrap()` on a
+    bindgen `Option<fn>` slot, which compiles, so crate-repair never sees it -- the deferred
+    lint did, eleven times in usetup's cabinet and list code. Only the call shape `..)(` is
+    rewritten: an `.unwrap()` whose result is not immediately called is left for review.
+    """
+    out, n = _PANICKING_FN_CALL.subn(lambda m: f".unwrap_unchecked(){m.group(1)}(", src)
+    return out, n
+
+
 def integrate(
     src: str,
     crate: Path,
@@ -1046,6 +1064,7 @@ def integrate(
     # Which names are macros is a fact about the PRELUDE, not about the C — see prelude_macros.
     macros = prelude_macros(crate)
     src, report.macro_calls_fixed = fix_macro_calls(src, macros, defined)
+    src, report.fn_ptr_calls = unchecked_fn_pointer_calls(src)
 
     out, pos = [], 0
     for start, end, body, abi in extern_block_spans(src):

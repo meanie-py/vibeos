@@ -2732,7 +2732,7 @@ unsafe extern "system" fn FileCopyCallback(
     mut Param2: UINT_PTR,
 ) -> u32 {
     let CopyContext: *mut COPYCONTEXT = Context as *mut COPYCONTEXT;
-    let FilePathInfo: *mut PFILEPATHS_W;
+    let FilePathInfo: PFILEPATHS_W;
     let mut SrcFileName: PCWSTR;
     let mut DstFileName: PCWSTR;
 
@@ -2745,14 +2745,14 @@ unsafe extern "system" fn FileCopyCallback(
         }
 
         SPFILENOTIFY_STARTDELETE | SPFILENOTIFY_STARTRENAME | SPFILENOTIFY_STARTCOPY => {
-            FilePathInfo = Param1 as *mut PFILEPATHS_W;
+            FilePathInfo = Param1 as PFILEPATHS_W;
 
             if Notification == SPFILENOTIFY_STARTDELETE {
-                DstFileName = wcsrchr((*(*FilePathInfo)).Target, 0x005Cu16);
+                DstFileName = wcsrchr((*FilePathInfo).Target, 0x005Cu16);
                 if !DstFileName.is_null() {
                     DstFileName = DstFileName.add(1);
                 } else {
-                    DstFileName = (*(*FilePathInfo)).Target;
+                    DstFileName = (*FilePathInfo).Target;
                 }
 
                 CONSOLE_SetStatusText(
@@ -2760,18 +2760,18 @@ unsafe extern "system" fn FileCopyCallback(
                     DstFileName,
                 );
             } else if Notification == SPFILENOTIFY_STARTRENAME {
-                SrcFileName = wcsrchr((*(*FilePathInfo)).Source, 0x005Cu16);
+                SrcFileName = wcsrchr((*FilePathInfo).Source, 0x005Cu16);
                 if !SrcFileName.is_null() {
                     SrcFileName = SrcFileName.add(1);
                 } else {
-                    SrcFileName = (*(*FilePathInfo)).Source;
+                    SrcFileName = (*FilePathInfo).Source;
                 }
 
-                DstFileName = wcsrchr((*(*FilePathInfo)).Target, 0x005Cu16);
+                DstFileName = wcsrchr((*FilePathInfo).Target, 0x005Cu16);
                 if !DstFileName.is_null() {
                     DstFileName = DstFileName.add(1);
                 } else {
-                    DstFileName = (*(*FilePathInfo)).Target;
+                    DstFileName = (*FilePathInfo).Target;
                 }
 
                 if _wcsicmp(SrcFileName, DstFileName) == 0 {
@@ -2788,11 +2788,11 @@ unsafe extern "system" fn FileCopyCallback(
             } else if Notification == SPFILENOTIFY_STARTCOPY {
                 static mut s_pszCopying: PCSTR = core::ptr::null_mut();
 
-                DstFileName = wcsrchr((*(*FilePathInfo)).Target, 0x005Cu16);
+                DstFileName = wcsrchr((*FilePathInfo).Target, 0x005Cu16);
                 if !DstFileName.is_null() {
                     DstFileName = DstFileName.add(1);
                 } else {
-                    DstFileName = (*(*FilePathInfo)).Target;
+                    DstFileName = (*FilePathInfo).Target;
                 }
 
                 if s_pszCopying.is_null() {
@@ -2806,7 +2806,7 @@ unsafe extern "system" fn FileCopyCallback(
         }
 
         SPFILENOTIFY_COPYERROR => {
-            FilePathInfo = Param1 as *mut PFILEPATHS_W;
+            FilePathInfo = Param1 as PFILEPATHS_W;
 
             DPRINT1!(
                 b"An error happened while trying to copy file '%S' (error 0x%08lx), skipping it...\n\0"
