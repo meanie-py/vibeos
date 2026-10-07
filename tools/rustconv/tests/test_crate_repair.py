@@ -1989,3 +1989,11 @@ def test_a_function_into_an_option_fn_slot_is_some():
     assert "EnumerateBootStoreEntries(h, Some(EnumerateInstallations), d);" in _apply_plan(
         src, diag
     )
+
+
+def test_a_cast_followed_by_less_than_is_parenthesized():
+    from rustconv.crate_repair import _guard_cast_before_lt as g
+
+    assert g("(a - b) as i32", b" < h") == "((a - b) as i32)"
+    assert g("(a - b) as i32", b" == h") == "(a - b) as i32"
+    assert g(" as i32", b" < h") == " as i32"

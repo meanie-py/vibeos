@@ -1013,10 +1013,13 @@ def _unseal_worker(
                     raise FactSealError(finding.message())
                 ignored_envelope.append(finding.message().replace("\n", "; "))
         if not getattr(dep, "cpp_class", None):
+            # Never relaxed on a last attempt, unlike the constant envelope above: a body
+            # that does not parse (a literal C `goto`) is not "unverified", it is broken,
+            # and one of them hides every type error in its crate. usetup and diskpart
+            # banked seven such bodies this way, and every replay reassembled them. A
+            # reject here escalates (`port translate --escalate`) instead of shipping.
             for note in parse_findings(rust) + control_flow_findings(dep.body_text, rust):
-                if strict:
-                    raise FactSealError(note)
-                ignored_envelope.append(note)
+                raise FactSealError(note)
         # LAST, which is the exact reverse of the sealing order. It is also the only one
         # that substitutes RUST rather than restoring C: running it earlier would hand the
         # fact seal's by-name recovery a body full of generated `0x0041u16` elements to

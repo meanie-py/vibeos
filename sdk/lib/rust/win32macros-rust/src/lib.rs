@@ -409,13 +409,22 @@ macro_rules! RTL_NUMBER_OF {
 /// No instance is read: the field's address is formed in an uninitialised slot, never a null.
 #[macro_export]
 macro_rules! RTL_NUMBER_OF_FIELD {
-    ($t:ty, $($f:tt)+) => {{
+    (@field $t:ty, $($f:tt)+) => {{
         const fn __len<T, const N: usize>(_: *const [T; N]) -> usize {
             N
         }
         let slot = core::mem::MaybeUninit::<$t>::uninit();
         __len(unsafe { core::ptr::addr_of!((*slot.as_ptr()).$($f)+) })
     }};
+    // One field name, with the trailing comma rustfmt adds to a call it wraps over lines
+    // (usetup's `RTL_NUMBER_OF_FIELD(\n VOLINFO,\n DeviceName,\n)`), which the `tt` arm
+    // below would swallow into the field path.
+    ($t:ty, $f:ident $(,)?) => {
+        $crate::RTL_NUMBER_OF_FIELD!(@field $t, $f)
+    };
+    ($t:ty, $($f:tt)+) => {
+        $crate::RTL_NUMBER_OF_FIELD!(@field $t, $($f)+)
+    };
 }
 
 /// `ntbasedef.h:110` — `#define FIELD_OFFSET(Type, Field) ((LONG)__builtin_offsetof(Type,
@@ -978,6 +987,12 @@ mod tests {
         let buf: [u16; RTL_NUMBER_OF_FIELD!(VolInfo, device_name) + 1] =
             [0; RTL_NUMBER_OF_FIELD!(VolInfo, device_name) + 1];
         assert_eq!(buf.len(), 261);
+        #[rustfmt::skip]
+        let wrapped = RTL_NUMBER_OF_FIELD!(
+            VolInfo,
+            device_name,
+        );
+        assert_eq!(wrapped, 260);
     }
 
     #[test]

@@ -394,6 +394,20 @@ def set_expand_macros(stem: str, tus: list[str]) -> list[str]:
     return state["expand_macros"]
 
 
+def failing_audit_tus(state: dict) -> list[str]:
+    """TU file names whose latest translate log says a banked body fails the audit."""
+    out = []
+    for tu in state["tus"]:
+        stem = Path(tu).stem
+        logs = sorted(
+            (STATE_ROOT / state["stem"]).glob(f"translate-{stem}-thinking-*.log"),
+            key=lambda p: p.stat().st_mtime,
+        )
+        if logs and "banked body FAILS the current audit" in logs[-1].read_text(errors="replace"):
+            out.append(Path(tu).name)
+    return out
+
+
 def stage_translate(
     stem: str,
     *,
@@ -1970,11 +1984,18 @@ def _main(args) -> int:
                 # One cap for the whole invocation, and the escalation revisits only what
                 # the cheap pass just bought -- not every TU that already had output. With
                 # nothing new (everything already translated) it re-checks what was asked.
+                # Plus every TU holding a banked body the CURRENT audit refuses: usetup's
+                # cabinet.c and cmdcons.c kept literal C `goto`s through an escalation that
+                # never looked at them (they had output), and every replay reassembled them
+                # into parse errors that hid the crate's real type errors.
+                stale = failing_audit_tus(load_state(args.stem))
+                if args.only:
+                    stale = [t for t in stale if t in args.only]
                 stage_translate(
                     args.stem,
                     model=args.model,
                     cost_cap=max(0.0, args.cost_cap - spent),
-                    only=ran or args.only or [],
+                    only=sorted(set(ran) | set(stale)) or args.only or [],
                     dry_run=False,
                     mode=args.mode,
                     concurrency=args.concurrency,

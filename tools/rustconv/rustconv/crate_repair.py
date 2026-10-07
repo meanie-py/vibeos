@@ -3935,6 +3935,24 @@ def assert_faithful(edit: Edit) -> None:
             )
 
 
+_TRAILING_CAST = re.compile(r"\bas\s+[A-Za-z_][\w:]*\s*$")
+
+
+def _guard_cast_before_lt(replacement: str, rest: bytes) -> str:
+    """Parenthesize a cast that a `<` follows: `x as i32 < y` does not parse.
+
+    rustc reads `i32 <` as the start of generic arguments. usetup's partlist.rs got
+    `(a - b) as i32 < (Height) as i32` from a promotion cast, and that one parse error hid
+    every other error in the crate. A suffix-only edit (` as T`) has no start to wrap, so
+    it is left alone.
+    """
+    if replacement.startswith(" ") or not _TRAILING_CAST.search(replacement):
+        return replacement
+    if not rest.lstrip(b" \t\r\n").startswith(b"<"):
+        return replacement
+    return f"({replacement})"
+
+
 def apply_edits(
     edits: Sequence[Edit], root: Path, within: Path | None = None
 ) -> tuple[list[Edit], dict[str, bytes], list[Skipped]]:
@@ -3988,7 +4006,8 @@ def apply_edits(
                     )
                 )
                 continue
-            data = data[: edit.byte_start] + edit.replacement.encode() + data[edit.byte_end :]
+            replacement = _guard_cast_before_lt(edit.replacement, data[edit.byte_end :])
+            data = data[: edit.byte_start] + replacement.encode() + data[edit.byte_end :]
             last_start = edit.byte_start
             applied.append(edit)
         path.write_bytes(data)
