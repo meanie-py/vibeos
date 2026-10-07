@@ -1610,6 +1610,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
         run.add(Stage("scan_self_recursive", status="skip", detail="no binary"))
         run.add(Stage("scan_export_thunks", status="skip", detail="no binary"))
+        run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="no binary"))
         return
     # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
     # their output is arch-specific so a single baseline can't match across arches
@@ -1663,3 +1664,19 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         )
     else:
         run.add(Stage("scan_export_thunks", status="skip", detail="amd64-only scan"))
+    # i386 inline asm that swaps ebx out for cmpxchg8b and then dereferences ebx: LLVM
+    # put the pointer operand IN ebx. slist's try_store shipped that in ntdll.dll and
+    # ks.sys, and InterlockedPushEntrySList spun forever. i386 only -- ebx is allocatable
+    # there and nowhere else; see tools/scan_xchg_ebx_deref.py.
+    if arch == "i386":
+        sxe = repo / "tools" / "scan_xchg_ebx_deref.py"
+        _lint_stage(
+            run,
+            repo,
+            "scan_xchg_ebx_deref",
+            [py, str(sxe), "--check", str(build_dir)] if sxe.is_file() else ["MISSING"],
+            strict=strict,
+            by_exit_code=True,
+        )
+    else:
+        run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="i386-only scan"))

@@ -596,12 +596,17 @@ unsafe extern "C" fn get_extended_qualifier(sym: *mut parsed_symbol, xdt: *mut d
                 append_extended_qualifier(sym, core::ptr::addr_of_mut!((*xdt).left), b"__unaligned\0".as_ptr() as *const i8, (TRUE) as i32);
                 fl |= 2;
             }
-            #[cfg(any())] // `#ifdef _UCRT` — not defined for msvcrt.dll; see above.
+            // `#ifdef _UCRT`: the ref-qualifiers of a member function (`void f() &`). The
+            // translation pinned these OFF with `cfg(any())`, which was right for msvcrt.dll
+            // and wrong for ucrtbase.dll, which links this same crate: Wine's ucrtbase cpp
+            // test expects `Q::meth(void)const __ptr64& ` and got the mangled name back.
+            // `ucrtsupport` is the crate's existing "this is the UCRT build" switch.
+            #[cfg(feature = "ucrtsupport")]
             b'G' => {
                 append_extended_qualifier(sym, core::ptr::addr_of_mut!((*xdt).right), b"&\0".as_ptr() as *const i8, (FALSE) as i32);
                 fl |= 1;
             }
-            #[cfg(any())] // `#ifdef _UCRT` — not defined for msvcrt.dll; see above.
+            #[cfg(feature = "ucrtsupport")] // `#ifdef _UCRT`, as above.
             b'H' => {
                 append_extended_qualifier(sym, core::ptr::addr_of_mut!((*xdt).right), b"&&\0".as_ptr() as *const i8, (FALSE) as i32);
                 fl |= 1;

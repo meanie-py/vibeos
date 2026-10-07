@@ -1039,6 +1039,15 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 - **LLVM COFF-i386 rejects `push offset <label>`** ("unsupported relocation type"); the
   `mov reg, offset` encoding works. Worse, bare `push <label>` is a silent **memory** push.
   Materialise into a provably-dead scratch register, then push it.
+- **On i386 `ebx` is an ordinary `reg`: never `xchg` it around an instruction whose pointer
+  operand is `in(reg)`.** Only x86_64 reserves rbx. The slist crate's i386 `cmpxchg8b` did
+  `xchg {new_lo}, ebx` / `lock cmpxchg8b [{addr}]`, LLVM put `addr` in ebx, and the swap
+  replaced the header pointer with the entry being pushed. Symptom: `InterlockedPushEntrySList`
+  spins forever at 100% (or "succeeds" into the entry with the list unchanged); Wine's
+  ucrtbase cpp test hung in `__std_type_info_name`. Shipped in ntdll.dll and ks.sys; ntoskrnl,
+  built from the same source, allocated differently and was fine. Fix: pin the pointer to a
+  fixed register (`in("edi") addr`, `[edi]` in the template). `scan_xchg_ebx_deref` gates it on
+  every i386 build.
 - **Verify an asm translation by disasm-diffing against the original `.obj`**, not by smoke —
   SEH/setjmp/CRT paths are barely exercised by a boot. `objdump -d` both (don't extract from a
   *thin* archive; objdump the on-disk `.obj`). Any diff beyond annotated reloc workarounds is
