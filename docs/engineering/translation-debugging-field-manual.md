@@ -5819,6 +5819,12 @@ suspect call kept it failing; eighty made it green.
   an inheritance mechanism with a trait, every virtual the original called through needs a
   hook, not just the ones your first class happened to use** — the missing one costs nothing
   to add and is invisible once dropped.
+  A hook that HAS a do-nothing default drops the same way at the other end. `OnFinalMessage`
+  got one (ATL's base is empty), and CDefView's port never overrode it, so the `Release`
+  balancing `OnNCCreate`'s `AddRef` never ran and every folder view leaked (browseui:
+  `Unexpected RefCount > 0 (1)` at close). Found by logging each AddRef/Release with
+  `RtlCaptureStackBackTrace` and netting them by call site. **Make a virtual's hook
+  REQUIRED when any class overrides it**, so a port has to say "nothing" out loud.
 - **`delete this` gets a deallocator the model INVENTED, because the allocator is invisible to
   it.** shellrecyclebin has five textually identical `delete this;` — one per hand-rolled COM
   class `Release()` — and the C++ COM path lowered them five different ways, none correct:
