@@ -953,6 +953,21 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A user pointer validated by a NON-raising range probe (SafeProbeForRead /
+    # SafeProbeForWrite, or a crate's Ks* mirror) and then dereferenced RAW. The probe
+    # proves the range, never that the page stays mapped, so under DUMMY_PSEH a raw
+    # touch after it is an any-process BUGCHECK 0x1E where the C's _SEH2_TRY returned a
+    # status (NtUserScrollDC / NtUserSetSysColors / NtGdiGetDIBits were this). The class
+    # was driven to zero, so this gates at ZERO (empty baseline): a baseline would be a
+    # place for the next one to hide.
+    sspd = repo / "tools" / "scan_safe_probe_deref.py"
+    specs.append(
+        (
+            "scan_safe_probe_deref",
+            [py, str(sspd), "--lint"] if sspd.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
     # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
     # covers the names that emit nothing and were therefore outside every scanner here.

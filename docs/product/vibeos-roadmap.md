@@ -1961,9 +1961,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   RANGE and not the MAPPING (it cannot touch-test under DUMMY_PSEH), the C wraps probe AND
   copy in one `_SEH2_TRY`, and our Rust does `rcScroll = *(prcUnsafeScroll as *const RECTL)`
   outside any guard. Same fix: capture through `KmProtectedCopyMemory`
-  (`win32k-rust/src/copy.rs`). **Third instance of this class, which makes it systematic
-  rather than incidental** — a scanner for "`SafeProbeFor*` followed by a raw dereference of
-  the probed pointer" would enumerate the rest for free, and is owed.
+  (`win32k-rust/src/copy.rs`). **Third instance of this class, which made it systematic
+  rather than incidental.** Now enumerated and GATED: `tools/scan_safe_probe_deref.py`
+  flags a pointer passed to a `*SafeProbeFor{Read,Write}` call (the suffix match catches
+  ks.sys's `KsSafeProbeForRead` mirror) and then dereferenced raw rather than through a
+  fault-tolerant copy, reusing `scan_raw_user_access`'s `_walk` for the access detection,
+  arm-awareness and capture-shadow rules; the kernel-mode arm of an explicit
+  `if mode != KernelMode` is trusted and skipped. It gates at ZERO (empty baseline,
+  `vibeos-cli check`). Building it turned up a **fourth** instance the three win32k fixes
+  had not — ks.sys's `KsFastPropertyHandler` did a raw `copy_nonoverlapping` from the
+  user `Property` on its UserMode arm after only the range-only `KsSafeProbeForRead`
+  (the KernelMode arm's raw copy is correct and trusted); FIXED 2026-10-07 by routing it
+  through `ntkrnl_sys::probe::safe_copy_raw`, the same primitive the rest of that file
+  already used.
 
 - **`msvcrt log10(0.0)` returns a large finite negative instead of `-Inf`. OPEN**
   (2026-09-23, found by the apitest verification sweep). Exact values, from the test's

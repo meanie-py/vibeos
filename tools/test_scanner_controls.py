@@ -1498,6 +1498,42 @@ pub unsafe extern "system" fn NtThing(P: *mut _UNICODE_STRING, Mode: KPROCESSOR_
 """
 
 
+# scan_safe_probe_deref: a user pointer range-probed and then touched RAW. Seeded from
+# ks.sys's KsFastPropertyHandler (2026-10). BAD exercises the Ks* suffix anchor and the
+# trusted-kernel-arm skip: the Mode==0 copy must stay quiet, while the UserMode arm's
+# raw copy_nonoverlapping after the range-only probe is the any-process BUGCHECK. GOOD
+# keeps the probe for its range check and routes the copy through the fault-tolerant
+# safe_copy_raw.
+_SAFEPROBE_BAD = """
+pub unsafe fn KsFastPropertyHandler(Property: *const KSPROPERTY, Mode: i8) -> BOOLEAN {
+    let mut PropRequest: KSPROPERTY = core::mem::zeroed();
+    let dst = &mut PropRequest as *mut KSPROPERTY as *mut u8;
+    if Mode == 0i8 {
+        core::ptr::copy_nonoverlapping(Property as *const u8, dst, 24);
+    } else {
+        if !NT_SUCCESS(KsSafeProbeForRead(Property as *const c_void, 24, 1)) { return FALSE; }
+        core::ptr::copy_nonoverlapping(Property as *const u8, dst, 24);
+    }
+    TRUE
+}
+"""
+_SAFEPROBE_GOOD = """
+pub unsafe fn KsFastPropertyHandler(Property: *const KSPROPERTY, Mode: i8) -> BOOLEAN {
+    let mut PropRequest: KSPROPERTY = core::mem::zeroed();
+    let dst = &mut PropRequest as *mut KSPROPERTY;
+    if Mode == 0i8 {
+        core::ptr::copy_nonoverlapping(Property as *const u8, dst as *mut u8, 24);
+    } else {
+        if !NT_SUCCESS(KsSafeProbeForRead(Property as *const c_void, 24, 1)) { return FALSE; }
+        if ntkrnl_sys::probe::safe_copy_raw(
+            dst as *mut c_void, Property as *const c_void, 24,
+        ).is_err() { return FALSE; }
+    }
+    TRUE
+}
+"""
+
+
 # scan_dropped_seh_pairs. The LPC shape: the C is cohab-flipped OUT of the build
 # (commented in the CMake source list) and a separate .rs took over under
 # #[no_mangle], so the two files are never in the same place and the inline
@@ -2048,6 +2084,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"sdk/lib/rust/ex-rust/src/dblfetch.rs": _DBLFETCH_BAD},
         good={"sdk/lib/rust/ex-rust/src/dblfetch.rs": _DBLFETCH_GOOD},
+    ),
+    Control(
+        name="scan_safe_probe_deref",
+        script="tools/scan_safe_probe_deref.py",
+        argv=["--lint"],
+        bad={"sdk/lib/rust/ks-rust/src/property.rs": _SAFEPROBE_BAD},
+        good={"sdk/lib/rust/ks-rust/src/property.rs": _SAFEPROBE_GOOD},
     ),
     Control(
         name="strip_msvc_cmake",
