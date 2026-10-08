@@ -69,12 +69,12 @@ pub static mut cloc_time_data: __lc_time_data = __lc_time_data {
     lcid: MAKELCID!(LANG_ENGLISH, SORT_DEFAULT),
     unk: 1,
     refcount: -1,
-    wstr: __lc_time_data__bindgen_ty_2 { wstr: [b"S\0u\0n\0\0\0".as_ptr() as *mut wchar_t, b"M\0o\0n\0\0\0".as_ptr() as *mut wchar_t, b"T\0u\0e\0\0\0".as_ptr() as *mut wchar_t, b"W\0e\0d\0\0\0".as_ptr() as *mut wchar_t, b"T\0h\0u\0\0\0".as_ptr() as *mut wchar_t, b"F\0r\0i\0\0\0".as_ptr() as *mut wchar_t, b"S\0a\0t\0\0\0".as_ptr() as *mut wchar_t,
-      b"S\0u\0n\0d\0a\0y\0\0\0".as_ptr() as *mut wchar_t, b"M\0o\0n\0d\0a\0y\0\0\0".as_ptr() as *mut wchar_t, b"T\0u\0e\0s\0d\0a\0y\0\0\0".as_ptr() as *mut wchar_t, b"W\0e\0d\0n\0e\0s\0d\0a\0y\0\0\0".as_ptr() as *mut wchar_t, b"T\0h\0u\0r\0s\0d\0a\0y\0\0\0".as_ptr() as *mut wchar_t, b"F\0r\0i\0d\0a\0y\0\0\0".as_ptr() as *mut wchar_t, b"S\0a\0t\0u\0r\0d\0a\0y\0\0\0".as_ptr() as *mut wchar_t,
-      b"J\0a\0n\0\0\0".as_ptr() as *mut wchar_t, b"F\0e\0b\0\0\0".as_ptr() as *mut wchar_t, b"M\0a\0r\0\0\0".as_ptr() as *mut wchar_t, b"A\0p\0r\0\0\0".as_ptr() as *mut wchar_t, b"M\0a\0y\0\0\0".as_ptr() as *mut wchar_t, b"J\0u\0n\0\0\0".as_ptr() as *mut wchar_t, b"J\0u\0l\0\0\0".as_ptr() as *mut wchar_t, b"A\0u\0g\0\0\0".as_ptr() as *mut wchar_t, b"S\0e\0p\0\0\0".as_ptr() as *mut wchar_t, b"O\0c\0t\0\0\0".as_ptr() as *mut wchar_t, b"N\0o\0v\0\0\0".as_ptr() as *mut wchar_t, b"D\0e\0c\0\0\0".as_ptr() as *mut wchar_t,
-      b"J\0a\0n\0u\0a\0r\0y\0\0\0".as_ptr() as *mut wchar_t, b"F\0e\0b\0r\0u\0a\0r\0y\0\0\0".as_ptr() as *mut wchar_t, b"M\0a\0r\0c\0h\0\0\0".as_ptr() as *mut wchar_t, b"A\0p\0r\0i\0l\0\0\0".as_ptr() as *mut wchar_t, b"M\0a\0y\0\0\0".as_ptr() as *mut wchar_t, b"J\0u\0n\0e\0\0\0".as_ptr() as *mut wchar_t, b"J\0u\0l\0y\0\0\0".as_ptr() as *mut wchar_t,
-      b"A\0u\0g\0u\0s\0t\0\0\0".as_ptr() as *mut wchar_t, b"S\0e\0p\0t\0e\0m\0b\0e\0r\0\0\0".as_ptr() as *mut wchar_t, b"O\0c\0t\0o\0b\0e\0r\0\0\0".as_ptr() as *mut wchar_t, b"N\0o\0v\0e\0m\0b\0e\0r\0\0\0".as_ptr() as *mut wchar_t, b"D\0e\0c\0e\0m\0b\0e\0r\0\0\0".as_ptr() as *mut wchar_t,
-      b"A\0M\0\0\0".as_ptr() as *mut wchar_t, b"P\0M\0\0\0".as_ptr() as *mut wchar_t, b"M\0M\0/\0d\0d\0/\0y\0y\0\0\0".as_ptr() as *mut wchar_t, b"d\0d\0d\0d\0,\0 \0M\0M\0M\0M\0 \0d\0d\0,\0 \0y\0y\0y\0y\0\0\0".as_ptr() as *mut wchar_t, b"H\0H\0:\0m\0m\0:\0s\0s\0\0\0".as_ptr() as *mut wchar_t] },
+    wstr: __lc_time_data__bindgen_ty_2 { wstr: [win32macros_rust::wide_bytes!(b"S\0u\0n\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"M\0o\0n\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"T\0u\0e\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"W\0e\0d\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"T\0h\0u\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"F\0r\0i\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"S\0a\0t\0\0\0") as *mut wchar_t,
+      win32macros_rust::wide_bytes!(b"S\0u\0n\0d\0a\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"M\0o\0n\0d\0a\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"T\0u\0e\0s\0d\0a\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"W\0e\0d\0n\0e\0s\0d\0a\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"T\0h\0u\0r\0s\0d\0a\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"F\0r\0i\0d\0a\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"S\0a\0t\0u\0r\0d\0a\0y\0\0\0") as *mut wchar_t,
+      win32macros_rust::wide_bytes!(b"J\0a\0n\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"F\0e\0b\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"M\0a\0r\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"A\0p\0r\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"M\0a\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"J\0u\0n\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"J\0u\0l\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"A\0u\0g\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"S\0e\0p\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"O\0c\0t\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"N\0o\0v\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"D\0e\0c\0\0\0") as *mut wchar_t,
+      win32macros_rust::wide_bytes!(b"J\0a\0n\0u\0a\0r\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"F\0e\0b\0r\0u\0a\0r\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"M\0a\0r\0c\0h\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"A\0p\0r\0i\0l\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"M\0a\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"J\0u\0n\0e\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"J\0u\0l\0y\0\0\0") as *mut wchar_t,
+      win32macros_rust::wide_bytes!(b"A\0u\0g\0u\0s\0t\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"S\0e\0p\0t\0e\0m\0b\0e\0r\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"O\0c\0t\0o\0b\0e\0r\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"N\0o\0v\0e\0m\0b\0e\0r\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"D\0e\0c\0e\0m\0b\0e\0r\0\0\0") as *mut wchar_t,
+      win32macros_rust::wide_bytes!(b"A\0M\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"P\0M\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"M\0M\0/\0d\0d\0/\0y\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"d\0d\0d\0d\0,\0 \0M\0M\0M\0M\0 \0d\0d\0,\0 \0y\0y\0y\0y\0\0\0") as *mut wchar_t, win32macros_rust::wide_bytes!(b"H\0H\0:\0m\0m\0:\0s\0s\0\0\0") as *mut wchar_t] },
     // The trailing flexible-array member; the C initializer omits it, so it is zero.
     data: [0; 1],
 };
@@ -632,7 +632,7 @@ unsafe extern "C" fn update_threadlocinfo_category(
         let mut len: i32 = 0;
 
         if LANGIDFROMLCID!((*locinfo).lc_handle[category as usize]) == MAKELANGID!(LANG_NORWEGIAN, SUBLANG_NORWEGIAN_NYNORSK) {
-            wcscpy(wbuf.as_mut_ptr(), b"N\0o\0r\0w\0e\0g\0i\0a\0n\0-\0N\0y\0n\0o\0r\0s\0k\0\0\0".as_ptr() as *const WCHAR);
+            wcscpy(wbuf.as_mut_ptr(), win32macros_rust::wide_bytes!(b"N\0o\0r\0w\0e\0g\0i\0a\0n\0-\0N\0y\0n\0o\0r\0s\0k\0\0\0") as *const WCHAR);
             len = wcslen(wbuf.as_ptr()) as i32 + 1;
         } else {
             len += GetLocaleInfoEx(
@@ -657,7 +657,7 @@ unsafe extern "C" fn update_threadlocinfo_category(
         _snwprintf(
             wbuf.as_mut_ptr().offset(len as isize),
             ARRAY_SIZE!(wbuf) - len as usize,
-            b"%\0d\0\0\0".as_ptr() as *const WCHAR,
+            win32macros_rust::wide_bytes!(b"%\0d\0\0\0") as *const WCHAR,
             cp as core::ffi::c_int,
         );
         len += wcslen(wbuf.as_ptr().offset(len as isize)) as i32;

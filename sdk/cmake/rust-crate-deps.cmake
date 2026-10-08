@@ -72,3 +72,50 @@ function(rust_crate_sources out_var workspace crate)
     list(REMOVE_DUPLICATES _srcs)
     set(${out_var} ${_srcs} PARENT_SCOPE)
 endfunction()
+
+# rust_staticlib_variant(<name> <crate> "<features>" <defaults> [extra DEPENDS...]
+#                        [ENV <VAR=value>...])
+#
+# One user-mode staticlib build of workspace crate <crate> with exactly <features>
+# (cargo defaults off unless <defaults>), copied to ${CMAKE_CURRENT_BINARY_DIR}/lib<name>.a,
+# with a `rust_<name>` target and `<name>_LIB` set in the caller. Each variant gets its own
+# target dir: rust_storage_target allows one owner per crate artifact, and a crate built
+# with several feature sets (crt-startup-rust's personalities) needs one per set. Extra
+# arguments are extra DEPENDS, for sources the crate compiles from outside itself; after
+# ENV, environment for cargo (`RUSTFLAGS=...`: i386 user code that needs SSE2, as the
+# workspace config gives i686 -sse,-sse2).
+function(rust_staticlib_variant name crate features defaults)
+    cmake_parse_arguments(_V "" "" "ENV" ${ARGN})
+    set(_ws "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
+    if(ARCH STREQUAL "i386")
+        set(_triple "i686-pc-windows-gnu")
+    elseif(ARCH STREQUAL "amd64")
+        set(_triple "x86_64-pc-windows-gnu")
+    elseif(ARCH STREQUAL "arm64")
+        set(_triple "aarch64-pc-windows-gnullvm")
+    endif()
+    set(_dir "${CMAKE_CURRENT_BINARY_DIR}/rust-${name}-target")
+    set(_lib "${CMAKE_CURRENT_BINARY_DIR}/lib${name}.a")
+    string(REPLACE "-" "_" _artifact "${crate}")
+    rust_crate_sources(_srcs "${_ws}" ${crate})
+    set(_feat)
+    if(NOT defaults)
+        list(APPEND _feat --no-default-features)
+    endif()
+    if(features)
+        list(APPEND _feat --features ${features})
+    endif()
+    add_custom_command(
+        OUTPUT ${_lib}
+        COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${_dir} ${_V_ENV}
+            cargo build --release --target ${_triple} -p ${crate} ${_feat}
+                --manifest-path ${_ws}/Cargo.toml
+        COMMAND ${CMAKE_COMMAND} -E copy ${_dir}/${_triple}/release/lib${_artifact}.a ${_lib}
+        DEPENDS ${_srcs} ${_ws}/${crate}/Cargo.toml ${_V_UNPARSED_ARGUMENTS}
+        WORKING_DIRECTORY ${_ws}
+        COMMENT "Building ${crate} [${features}] (${_triple})"
+        VERBATIM)
+    add_custom_target(rust_${name} DEPENDS ${_lib})
+    set(${name}_LIB ${_lib} PARENT_SCOPE)
+endfunction()
+

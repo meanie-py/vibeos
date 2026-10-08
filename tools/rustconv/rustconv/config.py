@@ -1,5 +1,6 @@
 """Shared paths, model config, token budgets."""
 
+import datetime
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -150,6 +151,8 @@ FS_REC_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "fs_rec"
 FASTFAT_DIR = REACTOS_ROOT / "drivers" / "filesystems" / "fastfat"
 MOUNTMGR_DIR = REACTOS_ROOT / "drivers" / "storage" / "mountmgr"
 PCIIDEX_DIR = REACTOS_ROOT / "drivers" / "storage" / "ide" / "pciidex"
+ATAPI_DIR = REACTOS_ROOT / "drivers" / "storage" / "ide" / "atapi"
+LEGIDE_DIR = REACTOS_ROOT / "drivers" / "storage" / "ide" / "legide"
 SCSIPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "scsiport"
 STORPORT_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storport"
 STORAHCI_DIR = REACTOS_ROOT / "drivers" / "storage" / "port" / "storahci"
@@ -645,10 +648,47 @@ def model_pricing(model: str) -> tuple[float, float]:
     return MODEL_PRICING.get(model, MODEL_PRICING["claude-opus-4-8"])
 
 
-def cost_usd(model: str, input_tokens: int, output_tokens: int, batch: bool = False) -> float:
-    """USD cost for a single call. batch=True applies the 50% batch discount."""
+# DeepSeek bills three rates, and each one halves off-peak. Verified 2026-10-05 against
+# https://api-docs.deepseek.com/quick_start/pricing/ (USD/1M, PEAK; off-peak is half):
+# (cache-hit input, cache-miss input, output). The old single (miss, output) pair priced
+# every input token as a peak MISS, and a function prompt re-sends the same file context
+# each call, so most of it is a cache HIT at 1/30 the price: rustconv reported $7.81 for a
+# day the dashboard billed $3.73.
+DEEPSEEK_RATES = {
+    "deepseek-v4-pro": (0.044, 1.32, 3.96),
+    "deepseek-v4-flash": (0.006, 0.30, 1.20),
+    "deepseek-flash": (0.006, 0.30, 1.20),
+}
+
+
+def deepseek_peak(when: datetime.datetime) -> bool:
+    """01:00-04:00 and 06:00-10:00 UTC, Monday to Friday. Chinese public holidays are
+    off-peak too but are not modelled, so the estimate can only err HIGH."""
+    t = when.astimezone(datetime.timezone.utc)
+    return t.weekday() < 5 and (1 <= t.hour < 4 or 6 <= t.hour < 10)
+
+
+def cost_usd(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int = 0,
+    *,
+    batch: bool = False,
+    when: datetime.datetime | None = None,
+) -> float:
+    """USD cost for a single call. batch=True applies the 50% batch discount.
+
+    `input_tokens` are the UNCACHED ones; `cache_read_tokens` the prefix served from cache
+    (DeepSeek's prompt_cache_hit_tokens). `when` is the call's time (default: now), which
+    decides DeepSeek's peak/off-peak band.
+    """
+    if model in DEEPSEEK_RATES:
+        hit, miss, out = DEEPSEEK_RATES[model]
+        scale = 1.0 if deepseek_peak(when or datetime.datetime.now(datetime.timezone.utc)) else 0.5
+        return (cache_read_tokens * hit + input_tokens * miss + output_tokens * out) * scale / 1e6
     pin, pout = model_pricing(model)
-    cost = input_tokens * pin / 1_000_000 + output_tokens * pout / 1_000_000
+    cost = (input_tokens + cache_read_tokens) * pin / 1_000_000 + output_tokens * pout / 1_000_000
     return cost * (BATCH_DISCOUNT if batch else 1.0)
 
 

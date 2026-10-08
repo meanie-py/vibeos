@@ -22,4 +22,5 @@ cabi = []
 kernel = ["cabi"]
 
 [dependencies]
+win32macros-rust = { path = "../win32macros-rust" }
 ntkrnl-sys = { path = "../ntkrnl-sys" }

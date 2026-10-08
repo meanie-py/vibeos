@@ -431,11 +431,11 @@ pub unsafe extern "system" fn ExitThread(uExitCode: DWORD) {
     (*NtCurrentTeb()).FreeStackOnTermination = 1u8;
     NtTerminateThread(core::ptr::null_mut(), uExitCode as NTSTATUS);
 
-    /* We should never reach this place */
-    // ERROR_FATAL("It should not happen")
-    loop {
-        /* 'noreturn' function */
-    }
+    /* Divergence from the C, which spins here ("should never be reached"). The kernel
+     * refuses to terminate the current thread only when it is the last one
+     * (STATUS_CANT_TERMINATE_SELF), so finish the job the way the last thread does: a
+     * silent busy loop at normal priority starved the arm64 guest of a CPU forever. */
+    ExitProcess(uExitCode);
 }
 
 #[no_mangle]

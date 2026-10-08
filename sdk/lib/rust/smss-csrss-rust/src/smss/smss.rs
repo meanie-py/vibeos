@@ -241,8 +241,8 @@ pub unsafe extern "system" fn SmpInvokeAutoChk(
     Arguments: PUNICODE_STRING,
     Flags: ULONG,
 ) -> NTSTATUS {
-    let mut MessageString: ANSI_STRING = core::mem::zeroed();
-    let mut MessageBuffer: [i8; 256] = [0; 256];
+    // The C's `CHAR MessageBuffer[256]` bounds the not-found message.
+    const MESSAGE_CCH: usize = 256;
     let mut Destination: _UNICODE_STRING = core::mem::zeroed();
     let mut Buffer: [u16; 1024] = [0; 1024];
     let mut BootOkay: BOOLEAN = 0;
@@ -253,21 +253,23 @@ pub unsafe extern "system" fn SmpInvokeAutoChk(
     }
 
     if Flags & SMP_INVALID_PATH != 0 {
-        // Original C: RtlStringCbPrintfA("%wZ program not found - skipping AUTOCHECK\r\n", FileName).
-        // RtlStringCbPrintfA is a `static __inline NTSTATUS __cdecl` from
-        // ntstrsafe.h (not a real export) and variadic fn definitions are
-        // unstable in Rust. Drop the FileName formatting; emit the static
-        // tail of the message — this is an AUTOCHECK-failure printout, the
-        // missing prefix is cosmetic.
-        let msg = b"program not found - skipping AUTOCHECK\r\n\0";
-        let n = msg.len().min(MessageBuffer.len());
-        core::ptr::copy_nonoverlapping(msg.as_ptr() as *const i8, MessageBuffer.as_mut_ptr(), n);
-        let _ = FileName; // silence unused warning
-        RtlInitAnsiString(&mut MessageString, MessageBuffer.as_ptr());
-        if RtlAnsiStringToUnicodeString(&mut Destination, &mut MessageString, 1u8) >= 0 {
-            NtDisplayString(&mut Destination);
-            RtlFreeUnicodeString(&mut Destination);
-        }
+        // Original C: RtlStringCbPrintfA(MessageBuffer, sizeof(MessageBuffer),
+        // "%wZ program not found - skipping AUTOCHECK\r\n", FileName), then
+        // ANSI -> Unicode for NtDisplayString. ntstrsafe's printf is a header
+        // inline with no export, so build the identical Unicode text directly:
+        // the file name followed by the fixed tail, bounded the same way
+        // (sizeof(MessageBuffer) characters).
+        RtlInitEmptyUnicodeString(
+            &mut Destination,
+            Buffer.as_mut_ptr(),
+            (MESSAGE_CCH * core::mem::size_of::<u16>()) as u16,
+        );
+        RtlAppendUnicodeStringToString(&mut Destination, FileName);
+        RtlAppendUnicodeToString(
+            &mut Destination,
+            w!(" program not found - skipping AUTOCHECK\r\n").as_ptr() as *const u16,
+        );
+        NtDisplayString(&mut Destination);
     } else {
         let BootState = SmpSaveAndClearBootStatusData(&mut BootOkay, &mut ShutdownOkay);
 

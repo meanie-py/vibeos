@@ -30,6 +30,12 @@ default = ["float"]
 # Does NOT imply `float`: the i386 kernel links cabi WITHOUT float
 # (no-SSE — see below). cnt-difftest gets float via `default`.
 cabi = []
+# The boot loaders link the CRT for printf/strtoul/... and never set an
+# environment, but getenv/_putenv stay reachable through the C runtime, so the
+# environment table is always linked. At full size it is ~111 KB of .bss, which
+# alone pushed the BIOS loader past the conventional-memory ceiling it must fit
+# under (x86common.h MAX_FREELDR_PE_SIZE). Implied by cnt-rust-lib's `freeldr`.
+small-env = []
 # ONLY cabi/math.rs's 66 #[no_mangle] libm exports (sin/cos/exp/pow/…),
 # none of the other ~200 shims. For msvcrt-crt-cargo: msvcrt.dll's math
 # exports bind to the same plain engine names crtmath defines, so the
@@ -46,6 +52,11 @@ cabi = []
 # ungated `_errno` reference would make the whole math object fail the kernel
 # link. cnt-difftest enables BOTH features so those six are still graded.
 cabi-math = []
+# The CRT error contract on top of the math engines: a domain/pole/range error goes to
+# `__cnt_math_error(type, name, arg1, arg2, retval)`, which each CRT defines (msvcrt's
+# math_error, ucrtbase's _matherr path) -- errno and the user's _matherr live there. The
+# kernel does not enable it and never references the hook.
+crt-math-errors = ["cabi-math"]
 # abs/labs/div/ldiv under cabi-math. msvcrt takes them from here; ucrtbase does
 # NOT, because ucrt-rust's stdlib port answers them with Microsoft's contract
 # (a zero divisor traps on x86 and gives sdiv's 0 on arm64, where this body's `/`
@@ -69,3 +80,14 @@ cabi-intdiv = []
 float = []
 
 [dependencies]
+
+# The math engines (src/cabi/math.rs): the `libm` crate (MIT) for log10/fmod, and our
+# port of musl's current exp/exp2/log/pow (`musl-math`, MIT), which round to the nearest
+# double far more often than libm's FreeBSD versions. Not on the builtin i686 triple with
+# -sse,-sse2 (the i386 ntdll/win32k cells and libcntpr): there rustc rejects their
+# Rust-ABI f64 functions outright, and cnt-rust keeps its own extern-"C" bodies or leaves
+# the symbol to the x87 asm. The i386 kernel's `x86-softfloat` json reports `soft-float`
+# and builds both fine. build.rs names this condition `cnt_libm` for the source.
+[target.'cfg(not(all(target_arch = "x86", not(target_feature = "sse2"), not(target_feature = "soft-float"))))'.dependencies]
+libm = "0.2.16"
+musl-math = { path = "../musl-math" }

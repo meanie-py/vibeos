@@ -1,9 +1,9 @@
 use ntkrnl_sys::driver_ddk::*;
 use win32k_sys::win32k::*;
-use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, PsGetCurrentProcessSessionId, PsGetCurrentThreadWin32Thread, RtlAllocateHeap, RtlFreeHeap, RtlSizeHeap, RtlCopyUnicodeString, RtlInitUnicodeString};
+use ntkrnl_sys::ddk::{ExFreePoolWithTag, PsGetCurrentProcessSessionId, PsGetCurrentThreadWin32Thread, RtlAllocateHeap, RtlFreeHeap, RtlSizeHeap, RtlCopyUnicodeString, RtlInitUnicodeString};
 use ntkrnl_sys::ob::ObDereferenceObject;
 use ntkrnl_sys::ps::PsGetCurrentProcess;
-use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES};
+use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use core::ffi::c_void;
 
 // Not in ntkrnl_sys::base; declared per-file, as the rest of the crate does.
@@ -295,61 +295,16 @@ unsafe fn MmCopyFromCaller(dst: *mut core::ffi::c_void, src: *const core::ffi::c
     _MmCopyFromCaller(dst, src, len as UINT)
 }
 
-// ProbeForRead (Mm NTAPI, stdcall `_ProbeForRead@12`) — real export.
-extern "system" {
-    fn ProbeForRead(Address: *const c_void, Length: SIZE_T, Alignment: ULONG);
-}
-// ProbeForReadUnicodeString(Ptr) — capture a UNICODE_STRING by value (probe.h).
-#[inline(always)]
-unsafe fn ProbeForReadUnicodeString(ptr: *const _UNICODE_STRING) -> _UNICODE_STRING {
-    ProbeForRead(ptr as *const c_void, core::mem::size_of::<_UNICODE_STRING>() as SIZE_T,
-                 core::mem::size_of::<usize>() as ULONG);
-    *ptr
-}
 // ProbeAndCaptureUnicodeString (probe.h static __inline) — probe + deep-copy.
+// Delegates to the one SEH-faithful implementation: the old local copy used the
+// RAISING ProbeForRead (unhandled here = BUGCHECK 0x1E) and an unprotected copy.
 #[inline(always)]
 unsafe fn ProbeAndCaptureUnicodeString(
     Dest: PUNICODE_STRING,
     CurrentMode: u8,
     UnsafeSrc: *const _UNICODE_STRING,
 ) -> NTSTATUS {
-    if CurrentMode != 0 {
-        *Dest = ProbeForReadUnicodeString(UnsafeSrc);
-        if !(*Dest).Buffer.is_null() {
-            if (*Dest).Length != 0 {
-                ProbeForRead((*Dest).Buffer as *const c_void, (*Dest).Length as SIZE_T,
-                             core::mem::size_of::<u16>() as ULONG);
-                let Buffer = ExAllocatePoolWithTag(
-                    PagedPool,
-                    ((*Dest).Length as SIZE_T) + core::mem::size_of::<u16>() as SIZE_T,
-                    u32::from_le_bytes(*b"RTSU"),
-                ) as PWSTR;
-                if Buffer.is_null() {
-                    return STATUS_INSUFFICIENT_RESOURCES as NTSTATUS;
-                }
-                RtlCopyMemory(Buffer as *mut c_void, (*Dest).Buffer as *const c_void, (*Dest).Length as SIZE_T);
-                *Buffer.add(((*Dest).Length / 2) as usize) = 0;
-                (*Dest).Buffer = Buffer;
-                if (*Dest).Length % 2 != 0 {
-                    (*Dest).Length -= 1;
-                }
-                if (*Dest).Length as u32 >= 0xFFFE {
-                    (*Dest).MaximumLength = (*Dest).Length;
-                } else {
-                    (*Dest).MaximumLength = (*Dest).Length + 2;
-                }
-            } else {
-                (*Dest).MaximumLength = 0;
-                (*Dest).Buffer = core::ptr::null_mut();
-            }
-        } else {
-            (*Dest).Length = 0;
-            (*Dest).MaximumLength = 0;
-        }
-    } else {
-        *Dest = *UnsafeSrc;
-    }
-    STATUS_SUCCESS as NTSTATUS
+    crate::safe_user_io::probe_and_capture_unicode_string(Dest, CurrentMode as i8, UnsafeSrc)
 }
 // ReleaseCapturedUnicodeString (probe.h) — free a user-mode captured buffer.
 #[inline(always)]
@@ -1624,18 +1579,37 @@ pub unsafe extern "fastcall" fn IntSetMenuItemInfo(
                 (*MenuItem).lpstr.Length = 0;
                 (*MenuItem).lpstr.MaximumLength =
                     Source.Length + core::mem::size_of::<u16>() as USHORT;
-                RtlCopyUnicodeString(
-                    core::ptr::addr_of_mut!((*MenuItem).lpstr).cast(),
-                    core::ptr::addr_of_mut!(Source).cast(),
-                );
-                *(*MenuItem)
-                    .lpstr
-                    .Buffer
-                    .add((*MenuItem).lpstr.Length as usize / core::mem::size_of::<u16>()) = 0;
+                // Source.Buffer is (*lpmii).dwTypeData, a USER pointer the capture of
+                // lpmii never repointed; RtlCopyUnicodeString would memcpy from it
+                // raw. Copy the bytes fault-tolerantly into the kernel buffer, then
+                // terminate as RtlCopyUnicodeString would. On fault free the buffer
+                // so the MF_STRING cleanup (which only frees when Length != 0) cannot
+                // leak it.
+                if crate::safe_user_io::copy_from_user(
+                    (*MenuItem).lpstr.Buffer as *mut core::ffi::c_void,
+                    Source.Buffer as *const core::ffi::c_void,
+                    Source.Length as usize,
+                    1,
+                )
+                .is_ok()
+                {
+                    (*MenuItem).lpstr.Length = Source.Length;
+                    *(*MenuItem)
+                        .lpstr
+                        .Buffer
+                        .add((*MenuItem).lpstr.Length as usize / core::mem::size_of::<u16>()) = 0;
 
-                (*MenuItem).cch =
-                    (*MenuItem).lpstr.Length as u32 / core::mem::size_of::<u16>() as u32;
-                (*MenuItem).Xlpstr = (*MenuItem).lpstr.Buffer as *mut USHORT;
+                    (*MenuItem).cch =
+                        (*MenuItem).lpstr.Length as u32 / core::mem::size_of::<u16>() as u32;
+                    (*MenuItem).Xlpstr = (*MenuItem).lpstr.Buffer as *mut USHORT;
+                } else {
+                    DesktopHeapFree(
+                        (*MenuObject).head.rpdesk,
+                        (*MenuItem).lpstr.Buffer as *mut core::ffi::c_void,
+                    );
+                    (*MenuItem).lpstr.Buffer = core::ptr::null_mut();
+                    (*MenuItem).lpstr.MaximumLength = 0;
+                }
             }
         }
     }
@@ -1807,18 +1781,37 @@ pub unsafe extern "C" fn IntSetMenuItemInfo(
                 (*MenuItem).lpstr.Length = 0;
                 (*MenuItem).lpstr.MaximumLength =
                     Source.Length + core::mem::size_of::<u16>() as USHORT;
-                RtlCopyUnicodeString(
-                    core::ptr::addr_of_mut!((*MenuItem).lpstr).cast(),
-                    core::ptr::addr_of_mut!(Source).cast(),
-                );
-                *(*MenuItem)
-                    .lpstr
-                    .Buffer
-                    .add((*MenuItem).lpstr.Length as usize / core::mem::size_of::<u16>()) = 0;
+                // Source.Buffer is (*lpmii).dwTypeData, a USER pointer the capture of
+                // lpmii never repointed; RtlCopyUnicodeString would memcpy from it
+                // raw. Copy the bytes fault-tolerantly into the kernel buffer, then
+                // terminate as RtlCopyUnicodeString would. On fault free the buffer
+                // so the MF_STRING cleanup (which only frees when Length != 0) cannot
+                // leak it.
+                if crate::safe_user_io::copy_from_user(
+                    (*MenuItem).lpstr.Buffer as *mut core::ffi::c_void,
+                    Source.Buffer as *const core::ffi::c_void,
+                    Source.Length as usize,
+                    1,
+                )
+                .is_ok()
+                {
+                    (*MenuItem).lpstr.Length = Source.Length;
+                    *(*MenuItem)
+                        .lpstr
+                        .Buffer
+                        .add((*MenuItem).lpstr.Length as usize / core::mem::size_of::<u16>()) = 0;
 
-                (*MenuItem).cch =
-                    (*MenuItem).lpstr.Length as u32 / core::mem::size_of::<u16>() as u32;
-                (*MenuItem).Xlpstr = (*MenuItem).lpstr.Buffer as *mut USHORT;
+                    (*MenuItem).cch =
+                        (*MenuItem).lpstr.Length as u32 / core::mem::size_of::<u16>() as u32;
+                    (*MenuItem).Xlpstr = (*MenuItem).lpstr.Buffer as *mut USHORT;
+                } else {
+                    DesktopHeapFree(
+                        (*MenuObject).head.rpdesk,
+                        (*MenuItem).lpstr.Buffer as *mut core::ffi::c_void,
+                    );
+                    (*MenuItem).lpstr.Buffer = core::ptr::null_mut();
+                    (*MenuItem).lpstr.MaximumLength = 0;
+                }
             }
         }
     }
@@ -8064,7 +8057,22 @@ pub unsafe extern "system" fn NtUserThunkedMenuItemInfo(
             break 'cleanup;
         }
 
-        if !lpszCaption.is_null() && !(*lpszCaption).Buffer.is_null() {
+        // The C tests `lpszCaption->Buffer` before any probe and outside SEH (a C
+        // bug: an unmapped or kernel pointer faults/reads there). Capture the
+        // header fault-tolerantly first; ProbeAndCaptureUnicodeString then does
+        // the real capture.
+        let CaptionHeader: Option<_UNICODE_STRING> = if lpszCaption.is_null() {
+            None
+        } else {
+            match crate::safe_user_io::capture_user(lpszCaption as *const _UNICODE_STRING) {
+                Ok(v) => Some(v),
+                Err(st) => {
+                    SetLastNtError(st);
+                    break 'cleanup;
+                }
+            }
+        };
+        if CaptionHeader.map_or(false, |h| !h.Buffer.is_null()) {
             Status = ProbeAndCaptureUnicodeString(
                 core::ptr::addr_of_mut!(lstrCaption),
                 (1i32 as KPROCESSOR_MODE as u8),
@@ -8128,7 +8136,22 @@ pub unsafe extern "system" fn NtUserThunkedMenuItemInfo(
             break 'cleanup;
         }
 
-        if !lpszCaption.is_null() && !(*lpszCaption).Buffer.is_null() {
+        // The C tests `lpszCaption->Buffer` before any probe and outside SEH (a C
+        // bug: an unmapped or kernel pointer faults/reads there). Capture the
+        // header fault-tolerantly first; ProbeAndCaptureUnicodeString then does
+        // the real capture.
+        let CaptionHeader: Option<_UNICODE_STRING> = if lpszCaption.is_null() {
+            None
+        } else {
+            match crate::safe_user_io::capture_user(lpszCaption as *const _UNICODE_STRING) {
+                Ok(v) => Some(v),
+                Err(st) => {
+                    SetLastNtError(st);
+                    break 'cleanup;
+                }
+            }
+        };
+        if CaptionHeader.map_or(false, |h| !h.Buffer.is_null()) {
             Status = ProbeAndCaptureUnicodeString(
                 core::ptr::addr_of_mut!(lstrCaption),
                 1u8,

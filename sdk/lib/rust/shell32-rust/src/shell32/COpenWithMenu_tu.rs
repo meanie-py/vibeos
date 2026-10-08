@@ -148,7 +148,7 @@ pub struct CMVERBMAP {
 
 pub static mut g_VerbMap: [CMVERBMAP; 2] = [
     CMVERBMAP {
-        pszVerb: b"o\0p\0e\0n\0a\0s\0\0\0".as_ptr() as PCWSTR,
+        pszVerb: win32macros_rust::wide_bytes!(b"o\0p\0e\0n\0a\0s\0\0\0") as PCWSTR,
         idCmd: 0,
     },
     CMVERBMAP {

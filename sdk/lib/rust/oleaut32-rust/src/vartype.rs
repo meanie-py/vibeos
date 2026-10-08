@@ -1554,7 +1554,10 @@ pub unsafe extern "system" fn VarR8Round(dblIn: f64, nDig: i32, pDblOut: *mut f6
     } else if fract >= 0.0 {
         whole
     } else if fract == -0.5 {
-        whole - fmod(whole, 2.0)
+        // Wine 10.0 (upstream e05d78ede06): `+`, not `-`. fmod keeps the sign
+        // of `whole`, so for -3.5 this is -3 + -1 = -4 (round half to even);
+        // the old `-` gave -2.
+        whole + fmod(whole, 2.0)
     } else if fract > -0.5 {
         whole
     } else {
@@ -1589,30 +1592,76 @@ pub unsafe extern "system" fn VarCyFromR4(fltIn: f32, pCyOut: *mut CY) -> HRESUL
 
 #[no_mangle]
 pub unsafe extern "system" fn VarCyFromR8(dblIn: f64, pCyOut: *mut CY) -> HRESULT {
-    if dblIn < -922337203685477.5807_f64 || dblIn >= 922337203685477.5807_f64 {
-        return DISP_E_OVERFLOW;
+    // Wine 10.0 on x86/x86_64 does this on the x87 (fldl; fmull 10000; fistpll with
+    // precision 64 bits, round-to-nearest-even) and says that is what matches Windows;
+    // its plain-double fallback "produces slightly different results for boundary
+    // cases": 922337203685476.0 * 10000 needs 67 bits, so the double product loses
+    // the low digits. Do the x87's arithmetic exactly in integers, on every arch.
+    match cy_from_r8_x87(dblIn) {
+        Some(v) => {
+            (*pCyOut).int64 = v;
+            S_OK
+        }
+        None => DISP_E_OVERFLOW,
     }
-    let value = dblIn * 10000.0_f64;
-    let whole = if value < 0.0_f64 { ceil(value) } else { floor(value) };
-    let fract = value - whole;
-    let res: i64;
-    if fract > 0.5 {
-        res = (whole as i64) + 1;
-    } else if fract == 0.5 {
-        let is_odd = (whole as i64) & 1;
-        res = (whole as i64) + is_odd;
-    } else if fract >= 0.0 {
-        res = whole as i64;
-    } else if fract == -0.5 {
-        let is_odd = (whole as i64) & 1;
-        res = (whole as i64) - is_odd;
-    } else if fract > -0.5 {
-        res = whole as i64;
+}
+
+/// Round `p / 2^sh` to the nearest integer, ties to even.
+fn round_shift_even(p: u128, sh: u32) -> u128 {
+    if sh == 0 {
+        return p;
+    }
+    if sh >= 127 {
+        // p < 2^68 here, so the quotient rounds to 0.
+        return 0;
+    }
+    let q = p >> sh;
+    let rem = p & ((1u128 << sh) - 1);
+    let half = 1u128 << (sh - 1);
+    if rem > half || (rem == half && (q & 1) == 1) { q + 1 } else { q }
+}
+
+/// fldl d; fmull 10000.0; fistpll -- `None` where fistpll raises Invalid.
+fn cy_from_r8_x87(d: f64) -> Option<i64> {
+    if !d.is_finite() {
+        return None;
+    }
+    let bits = d.to_bits();
+    let neg = (bits >> 63) != 0;
+    let bexp = ((bits >> 52) & 0x7ff) as i32;
+    let frac = bits & ((1u64 << 52) - 1);
+    let (m, mut e) = if bexp == 0 { (frac, -1074) } else { (frac | (1u64 << 52), bexp - 1075) };
+    if m == 0 {
+        return Some(0);
+    }
+    // fmull: the exact product (< 2^67), rounded to the x87's 64-bit significand.
+    let mut p = (m as u128) * 10000;
+    let nbits = 128 - p.leading_zeros();
+    if nbits > 64 {
+        let sh = nbits - 64;
+        p = round_shift_even(p, sh);
+        e += sh as i32;
+    }
+    // fistpll: to an integer, ties to even.
+    let mag: u128 = if e >= 0 {
+        if e >= 64 {
+            return None;
+        }
+        let v = p << e;
+        if v >> 64 != 0 {
+            return None;
+        }
+        v
     } else {
-        res = (whole as i64) - 1;
+        round_shift_even(p, (-e) as u32)
+    };
+    if neg {
+        if mag > 1u128 << 63 { None } else { Some((mag as i128).wrapping_neg() as i64) }
+    } else if mag > i64::MAX as u128 {
+        None
+    } else {
+        Some(mag as i64)
     }
-    (*pCyOut).int64 = res;
-    S_OK
 }
 
 #[no_mangle]
@@ -1674,9 +1723,11 @@ pub unsafe extern "system" fn VarCyFromDec(pdecIn: *const DECIMAL, pCyOut: *mut 
         if rounded.Hi32 != 0 {
             return DISP_E_OVERFLOW;
         }
-        let signscale = rounded.__bindgen_anon_1.signscale;
-        let scale = (signscale & 0x7F) as usize;
-        let sign = (signscale & 0x80) != 0;
+        // C: DEC_SCALE / DEC_SIGN, the named bytes. Testing signscale & 0x80
+        // read bit 7 of the SCALE byte (sign is the high byte, 0x8000), so a
+        // negative DECIMAL converted to CY came out positive.
+        let scale = rounded.__bindgen_anon_1.__bindgen_anon_1.scale as usize;
+        let sign = rounded.__bindgen_anon_1.__bindgen_anon_1.sign != 0;
         let lo64 = rounded.__bindgen_anon_2.Lo64 as f64;
         let divisor = CY_Divisors[scale] as f64;
         let d = if sign { -lo64 / divisor } else { lo64 / divisor };
@@ -2245,6 +2296,39 @@ pub unsafe extern "system" fn VarDecAdd(
         }
 
         if overflow != 0 {
+            // Wine 10.0: a SUM (equal signs) that overflows 96 bits drops one
+            // decimal digit of scale, rounding half up, instead of failing;
+            // only a scale-0 sum has nowhere to go. (Differences cannot carry.)
+            if left_sign_neg == right_sign_neg {
+                let scale = (*pLeft).__bindgen_anon_1.__bindgen_anon_1.scale;
+                if scale == 0 {
+                    break 'calc -2147352566i32; /* DISP_E_OVERFLOW */
+                }
+                let mut n: [u32; 4] = [
+                    (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Lo32,
+                    (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Mid32,
+                    (*pDecOut).Hi32,
+                    overflow,
+                ];
+                let remainder = VARIANT_int_divbychar(n.as_mut_ptr(), 4, 10);
+                if remainder >= 5 {
+                    let mut carry = true;
+                    for digit in n.iter_mut() {
+                        if !carry {
+                            break;
+                        }
+                        let (v, c) = digit.overflowing_add(1);
+                        *digit = v;
+                        carry = c;
+                    }
+                }
+                (*pDecOut).__bindgen_anon_1.__bindgen_anon_1.scale = scale - 1;
+                (*pDecOut).__bindgen_anon_1.__bindgen_anon_1.sign = sign;
+                (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Lo32 = n[0];
+                (*pDecOut).__bindgen_anon_2.__bindgen_anon_1.Mid32 = n[1];
+                (*pDecOut).Hi32 = n[2];
+                break 'calc 0i32; /* S_OK */
+            }
             break 'calc -2147352566i32; /* DISP_E_OVERFLOW */
         }
 
@@ -2265,7 +2349,10 @@ unsafe fn VARIANT_DIFromDec(from: *const DECIMAL, to: *mut VARIANT_DI) {
 unsafe fn VARIANT_DecFromDI(from: *const VARIANT_DI, to: *mut DECIMAL) {
     let sign_byte: u8 = if (*from).sign != 0 { 0x80 } else { 0 };
     let scale = (*from).scale;
-    (*to).__bindgen_anon_1.signscale = ((scale as u16) << 8) | sign_byte as u16;
+    // sign in the HIGH byte, scale in the low (little-endian DECIMAL; see
+    // SIGNSCALE). This had them swapped, so every product, quotient and
+    // R4/R8->DECIMAL conversion came back with sign and scale crossed.
+    (*to).__bindgen_anon_1.signscale = ((sign_byte as u16) << 8) | scale as u16;
     (*to).__bindgen_anon_2.__bindgen_anon_1.Lo32 = (*from).bitsnum[0];
     (*to).__bindgen_anon_2.__bindgen_anon_1.Mid32 = (*from).bitsnum[1];
     (*to).Hi32 = (*from).bitsnum[2];
@@ -3614,10 +3701,36 @@ unsafe fn VARIANT_BstrReplaceDecimal(buff: *const u16, lcid: u32, dwFlags: u32) 
         minFormat.lpThousandSep = empty.as_ptr() as *mut u16;
         minFormat.NegativeOrder = 1;
 
-        let p = wcschr(buff, b'.' as u16);
+        // Wine 10.0: the locale's leading-zero setting (was hard-coded 0), and
+        // an exponent is split off before formatting and re-appended after,
+        // so "1,5E+20" does not count "5E+20" as decimal digits.
+        GetLocaleInfoW(
+            lcid,
+            LOCALE_ILZERO | LOCALE_RETURN_NUMBER | (dwFlags & LOCALE_NOUSEROVERRIDE),
+            &mut minFormat.LeadingZero as *mut u32 as *mut u16,
+            (core::mem::size_of::<u32>() / core::mem::size_of::<u16>()) as i32,
+        );
+
+        // buff is the caller's local buffer; copy so the exponent can be cut
+        let mut work: [u16; 256] = [0u16; 256];
+        let n = (lstrlenW(buff) as usize).min(255);
+        core::ptr::copy_nonoverlapping(buff, work.as_mut_ptr(), n);
+        let p = wcschr(work.as_ptr(), b'.' as u16);
+        let e = wcschr(if p.is_null() { work.as_ptr() } else { p.add(1) }, b'E' as u16);
         if !p.is_null() {
-            minFormat.NumDigits = lstrlenW(p.add(1)) as u32;
+            minFormat.NumDigits = if e.is_null() {
+                lstrlenW(p.add(1)) as u32
+            } else {
+                e.offset_from(p.add(1)) as u32
+            };
         }
+        let mut exponent: [u16; 16] = [0u16; 16];
+        if !e.is_null() {
+            let en = (lstrlenW(e) as usize).min(15);
+            core::ptr::copy_nonoverlapping(e, exponent.as_mut_ptr(), en);
+            *(e as *mut u16) = 0;
+        }
+        let buff = work.as_ptr();
 
         numbuff[0] = 0u16;
         if GetNumberFormatW(lcid, 0, buff, &minFormat, numbuff.as_mut_ptr(), 256) == 0 {
@@ -3627,6 +3740,13 @@ unsafe fn VARIANT_BstrReplaceDecimal(buff: *const u16, lcid: u32, dwFlags: u32) 
             );
             bstrOut = SysAllocString(buff);
         } else {
+            if exponent[0] != 0 {
+                let l = lstrlenW(numbuff.as_ptr()) as usize;
+                let el = lstrlenW(exponent.as_ptr()) as usize;
+                if l + el < numbuff.len() {
+                    core::ptr::copy_nonoverlapping(exponent.as_ptr(), numbuff.as_mut_ptr().add(l), el + 1);
+                }
+            }
             TRACE!(
                 b"created minimal NLS string %s\n\0".as_ptr() as *const i8,
                 debugstr_w(numbuff.as_ptr()),
@@ -3643,7 +3763,7 @@ unsafe fn VARIANT_BstrFromReal(
     lcid: u32,
     dwFlags: u32,
     pbstrOut: *mut *mut u16,
-    lpszFormat: *const u16,
+    ndigits: i32,
 ) -> HRESULT {
     let mut buff: [u16; 256] = [0; 256];
 
@@ -3651,7 +3771,51 @@ unsafe fn VARIANT_BstrFromReal(
         return E_INVALIDARG;
     }
 
-    swprintf(buff.as_mut_ptr(), lpszFormat, dblIn);
+    // Wine 10.0: %.*G first; if that chose an exponent but the number fits in
+    // `ndigits` significant digits as plain decimals, print it that way
+    // instead (VarBstrFromR8(0.00001) is "0.00001", not "1E-05"). %.*f is only
+    // reached for magnitudes below 10^ndigits, so it cannot overrun buff.
+    let fmt_g: [u16; 5] = [b'%' as u16, b'.' as u16, b'*' as u16, b'G' as u16, 0];
+    let mut len = swprintf(buff.as_mut_ptr(), fmt_g.as_ptr(), ndigits, dblIn);
+    let e = wcschr(buff.as_ptr(), b'E' as u16);
+    if !e.is_null() {
+        let dot = wcschr(buff.as_ptr(), b'.' as u16);
+        let extra_decimals = if dot.is_null() { 0 } else { e.offset_from(dot) as i32 - 2 };
+        // the exponent: optional sign, then decimal digits (wcstol(e+1, NULL, 10))
+        let mut q = e.add(1);
+        let neg = *q == b'-' as u16;
+        if neg || *q == b'+' as u16 {
+            q = q.add(1);
+        }
+        let mut exp: i32 = 0;
+        while (b'0' as u16..=b'9' as u16).contains(&*q) {
+            exp = exp * 10 + (*q - b'0' as u16) as i32;
+            q = q.add(1);
+        }
+        if exp + extra_decimals < ndigits {
+            let fmt_f: [u16; 5] = [b'%' as u16, b'.' as u16, b'*' as u16, b'f' as u16, 0];
+            len = swprintf(buff.as_mut_ptr(), fmt_f.as_ptr(), ndigits, dblIn);
+            while len > 0 && buff[len as usize - 1] == b'0' as u16 {
+                len -= 1;
+            }
+        }
+    }
+    if len >= 0 && (len as usize) < buff.len() {
+        buff[len as usize] = 0;
+    }
+    // Wine builds this with a C-locale UCRT printf, whose exponent has two
+    // digits ("1.234E+16", what native oleaut32 returns). Our msvcrt prints
+    // three, like classic msvcrt ("1.234E+016"); drop the padding zero
+    // (Wine's vartype test, 'expected 1,234E+16').
+    {
+        let e = wcschr(buff.as_ptr(), b'E' as u16) as *mut u16;
+        if !e.is_null() && (*e.add(1) == b'+' as u16 || *e.add(1) == b'-' as u16) {
+            let d = e.add(2);
+            if *d == b'0' as u16 && lstrlenW(d) == 3 {
+                core::ptr::copy(d.add(1), d, 3); /* two digits + NUL */
+            }
+        }
+    }
 
     if buff[0] == b'-' as u16 {
         const SZ_ACCEPT: [u16; 3] = [b'0' as u16, b'.' as u16, 0];
@@ -3692,7 +3856,7 @@ pub unsafe extern "system" fn VarBstrFromR4(
     dwFlags: u32,
     pbstrOut: *mut *mut u16,
 ) -> HRESULT {
-    VARIANT_BstrFromReal(fltIn as f64, lcid, dwFlags, pbstrOut, szFloatFormatW.as_ptr())
+    VARIANT_BstrFromReal(fltIn as f64, lcid, dwFlags, pbstrOut, 7)
 }
 
 #[no_mangle]
@@ -3702,7 +3866,7 @@ pub unsafe extern "system" fn VarBstrFromR8(
     dwFlags: u32,
     pbstrOut: *mut *mut u16,
 ) -> HRESULT {
-    VARIANT_BstrFromReal(dblIn, lcid, dwFlags, pbstrOut, szDoubleFormatW.as_ptr())
+    VARIANT_BstrFromReal(dblIn, lcid, dwFlags, pbstrOut, 15)
 }
 
 #[no_mangle]
@@ -4237,7 +4401,11 @@ pub unsafe extern "system" fn VarBstrCat(
         return E_OUTOFMEMORY;
     }
 
-    (*(*pbstrOut) as *mut u8).write_unaligned(0u8);
+    // C: (*pbstrOut)[0] = '\0'. The translation wrote
+    // `(*(*pbstrOut) as *mut u8).write_unaligned(0)`, which casts the first
+    // WCHAR's VALUE (0, just memset) to a pointer and stores through it: every
+    // VarBstrCat call faulted on address 0.
+    *(*pbstrOut) = 0;
 
     if !pbstrLeft.is_null() {
         core::ptr::copy_nonoverlapping(
@@ -4547,7 +4715,8 @@ unsafe fn VARIANT_MakeDate(
 
     (*st).wDay = v1 as u16;
     (*st).wMonth = v2 as u16;
-    let year: u32 = if v3 < 30 {
+    // Wine 10.0, as current Windows: two-digit years 00-49 are 20xx (was 00-29).
+    let year: u32 = if v3 <= 49 {
         2000 + v3
     } else if v3 < 100 {
         1900 + v3
@@ -4619,7 +4788,9 @@ pub unsafe extern "system" fn VarDateFromStr(
     // Parse the string into our structure
     while *strIn != 0 {
         let ch = *strIn as u32;
-        if iswdigit(ch) != 0 {
+        // ASCII digits only (Wine 10.0): iswdigit also accepts other scripts'
+        // digits, which wcstoul below cannot convert.
+        if (b'0' as u32..=b'9' as u32).contains(&ch) {
             if dp.dwCount >= 6 {
                 hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH
                 break;

@@ -58,6 +58,7 @@ def cpu_pct(pid: int, window: float = 2.0) -> float:
 def _shot(vm: QemuVM, tag: str) -> None:
     try:
         from PIL import Image
+
         ppm = vm.work_dir / f"_il_{tag}.ppm"
         vm.screendump(ppm)
         Image.open(ppm).save(PROJECT_DIR / "qemu" / f"amd64_il_{tag}.png", "PNG")
@@ -68,47 +69,56 @@ def _shot(vm: QemuVM, tag: str) -> None:
 def _key(vm: QemuVM, qcode: str, down: bool) -> None:
     vm.qmp.execute(
         "input-send-event",
-        events=[{"type": "key",
-                 "data": {"down": down, "key": {"type": "qcode", "data": qcode}}}])
+        events=[{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": qcode}}}],
+    )
 
 
 def _ctrl_esc(vm: QemuVM) -> None:
     # Send the chord BOTH ways: 4 separate events (as before) AND once as a
     # single batched event (more faithful to how a real chord arrives).
-    _key(vm, "ctrl", True); _key(vm, "esc", True)
-    _key(vm, "esc", False); _key(vm, "ctrl", False)
+    _key(vm, "ctrl", True)
+    _key(vm, "esc", True)
+    _key(vm, "esc", False)
+    _key(vm, "ctrl", False)
     time.sleep(0.5)
-    vm.qmp.execute("input-send-event", events=[
-        {"type": "key", "data": {"down": True, "key": {"type": "qcode", "data": "ctrl"}}},
-        {"type": "key", "data": {"down": True, "key": {"type": "qcode", "data": "esc"}}},
-        {"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": "esc"}}},
-        {"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": "ctrl"}}},
-    ])
+    vm.qmp.execute(
+        "input-send-event",
+        events=[
+            {"type": "key", "data": {"down": True, "key": {"type": "qcode", "data": "ctrl"}}},
+            {"type": "key", "data": {"down": True, "key": {"type": "qcode", "data": "esc"}}},
+            {"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": "esc"}}},
+            {"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": "ctrl"}}},
+        ],
+    )
 
 
 def _phase(vm: QemuVM, pid: int, label: str) -> dict:
     idle = cpu_pct(pid, 2.0)
     _shot(vm, f"{label}_pre")
     _ctrl_esc(vm)
-    during = cpu_pct(pid, 2.0)          # immediately after injection
+    during = cpu_pct(pid, 2.0)  # immediately after injection
     time.sleep(2.0)
-    after = cpu_pct(pid, 2.0)           # settled
+    after = cpu_pct(pid, 2.0)  # settled
     _shot(vm, f"{label}_post")
     # Did the screen change? (Start menu would be a big delta.)
     changed = "n/a"
     try:
         from PIL import Image, ImageChops
+
         a = Image.open(vm.work_dir / f"_il_{label}_pre.ppm").convert("RGB")
         b = Image.open(vm.work_dir / f"_il_{label}_post.ppm").convert("RGB")
         d = ImageChops.difference(a, b).convert("L")
-        moved = sum(1 for px in d.getdata() if px > 16)
+        moved = sum(d.histogram()[17:])  # pixels with a delta > 16
         changed = round(moved / (a.width * a.height) * 100, 3)
     except Exception:
         pass
-    r = {"idle_cpu_pct": idle, "cpu_pct_during_inject": during,
-         "cpu_pct_after_settle": after, "screen_changed_pct": changed}
-    print(f"  [{label}] idle={idle}%  during={during}%  after={after}%  "
-          f"screenΔ={changed}%")
+    r = {
+        "idle_cpu_pct": idle,
+        "cpu_pct_during_inject": during,
+        "cpu_pct_after_settle": after,
+        "screen_changed_pct": changed,
+    }
+    print(f"  [{label}] idle={idle}%  during={during}%  after={after}%  screenΔ={changed}%")
     return r
 
 
@@ -122,6 +132,7 @@ def main() -> None:
     t0 = time.monotonic()
     vm.start()
     vm.wait_for_boot()
+    assert vm._proc is not None
     pid = vm._proc.pid
     res: dict = {"boot_seconds": round(time.monotonic() - t0, 1), "qemu_pid": pid}
     print(f"  booted in {res['boot_seconds']}s; qemu pid={pid}")
@@ -141,14 +152,19 @@ def main() -> None:
             verdict.append("FRESH input WORKS (Start opened)")
         else:
             verdict.append("FRESH input produced no UI change")
-        if (a["screen_changed_pct"] != "n/a" and b["screen_changed_pct"] != "n/a"
-                and a["screen_changed_pct"] > 1 >= b["screen_changed_pct"]):
+        if (
+            a["screen_changed_pct"] != "n/a"
+            and b["screen_changed_pct"] != "n/a"
+            and a["screen_changed_pct"] > 1 >= b["screen_changed_pct"]
+        ):
             verdict.append("=> loadvm BREAKS input routing")
         # idle vs spin read
         floor = max(a["idle_cpu_pct"], b["idle_cpu_pct"])
         if floor > 60:
-            verdict.append(f"guest NOT idle at rest ({floor}% — spin/storm, "
-                           f"consistent with known KiUnwaitThread storm)")
+            verdict.append(
+                f"guest NOT idle at rest ({floor}% — spin/storm, "
+                f"consistent with known KiUnwaitThread storm)"
+            )
         elif floor < 15:
             verdict.append(f"guest cleanly HLT-idle at rest ({floor}%)")
         res["verdict"] = verdict

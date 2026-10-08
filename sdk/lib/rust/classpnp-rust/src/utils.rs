@@ -6,7 +6,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{DEVICE_COPY_OFFLOAD_DESCRIPTOR, DEVICE_DATA_SET_LBP_STATE_PARAMETERS, DEVICE_DATA_SET_LB_PROVISIONING_STATE, DEVICE_DATA_SET_LB_PROVISIONING_STATE_V2, DEVICE_DATA_SET_RANGE, DEVICE_LB_PROVISIONING_DESCRIPTOR, DEVICE_MANAGE_DATA_SET_ATTRIBUTES, DEVICE_MANAGE_DATA_SET_ATTRIBUTES_OUTPUT, DEVICE_SEEK_PENALTY_DESCRIPTOR, DEVICE_TRIM_DESCRIPTOR, ExFreePool, _KWAIT_REASON_Executive, IO_ERROR_LOG_PACKET, _IO_STATUS_BLOCK, IoAllocateErrorLogEntry, IoAllocateIrp, IoAllocateMdl, IoAllocateWorkItem, IoBuildDeviceIoControlRequest, IoCopyCurrentIrpStackLocationToNext, IoFreeIrp, IoFreeMdl, IoFreeWorkItem, IoGetCurrentIrpStackLocation, IoGetDeviceProperty, IoMarkIrpPending, IoOpenDeviceRegistryKey, IoQueueWorkItem, IoReadPartitionTableEx, IoSetCompletionRoutine, IoSetNextIrpStackLocation, IoWriteErrorLogEntry, KEVENT, KLOCK_QUEUE_HANDLE, KeAcquireInStackQueuedSpinLock, KeGetRecommendedSharedDataAlignment, KeInitializeEvent, KeReleaseInStackQueuedSpinLock, KeWaitForSingleObject, LARGE_INTEGER, MmProbeAndLockPages, MmUnlockPages, _OBJECT_ATTRIBUTES, PCSZ, PDEVICE_COPY_OFFLOAD_DESCRIPTOR, PDEVICE_DATA_SET_LBP_STATE_PARAMETERS, PDEVICE_DATA_SET_LB_PROVISIONING_STATE, PDEVICE_DATA_SET_LB_PROVISIONING_STATE_V2, PDEVICE_DATA_SET_RANGE, PDEVICE_LB_PROVISIONING_DESCRIPTOR, PDEVICE_MANAGE_DATA_SET_ATTRIBUTES, PDEVICE_MANAGE_DATA_SET_ATTRIBUTES_OUTPUT, PDEVICE_OBJECT, PDEVICE_SEEK_PENALTY_DESCRIPTOR, PDEVICE_TRIM_DESCRIPTOR, PDRIVE_LAYOUT_INFORMATION_EX, PERSISTENT_RESERVE_COMMAND, PGUID, PIO_ERROR_LOG_PACKET, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PMDL, PPERSISTENT_RESERVE_COMMAND, PSTORAGE_ACCESS_ALIGNMENT_DESCRIPTOR, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_DEVICE_ID_DESCRIPTOR, PSTORAGE_EVENT_NOTIFICATION, PSTORAGE_LB_PROVISIONING_MAP_RESOURCES, PSTORAGE_MEDIUM_PRODUCT_TYPE_DESCRIPTOR, PSTORAGE_PRIORITY_HINT_SUPPORT, PSTORAGE_PROPERTY_QUERY, PSTORAGE_WRITE_CACHE_PROPERTY, PULONGLONG, RTL_QUERY_REGISTRY_TABLE, RtlInitUnicodeString, RtlQueryRegistryValues, RtlWriteRegistryValue, STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR, STORAGE_DESCRIPTOR_HEADER, STORAGE_EVENT_NOTIFICATION, STORAGE_LB_PROVISIONING_MAP_RESOURCES, STORAGE_MEDIUM_PRODUCT_TYPE_DESCRIPTOR, STORAGE_PRIORITY_HINT_SUPPORT, STORAGE_WRITE_CACHE_PROPERTY, _EVENT_TYPE_SynchronizationEvent, ZwClose, ZwCreateKey, ZwOpenKey};
+use ntkrnl_sys::ddk::{DEVICE_COPY_OFFLOAD_DESCRIPTOR, DEVICE_DATA_SET_LBP_STATE_PARAMETERS, DEVICE_DATA_SET_LB_PROVISIONING_STATE, DEVICE_DATA_SET_LB_PROVISIONING_STATE_V2, DEVICE_DATA_SET_RANGE, DEVICE_LB_PROVISIONING_DESCRIPTOR, DEVICE_MANAGE_DATA_SET_ATTRIBUTES, DEVICE_MANAGE_DATA_SET_ATTRIBUTES_OUTPUT, DEVICE_SEEK_PENALTY_DESCRIPTOR, DEVICE_TRIM_DESCRIPTOR, ExFreePool, _KWAIT_REASON_Executive, IO_ERROR_LOG_PACKET, _IO_STATUS_BLOCK, IoAllocateErrorLogEntry, IoAllocateIrp, IoAllocateMdl, IoAllocateWorkItem, IoBuildDeviceIoControlRequest, IoCopyCurrentIrpStackLocationToNext, IoFreeIrp, IoFreeMdl, IoFreeWorkItem, IoGetCurrentIrpStackLocation, IoGetDeviceProperty, IoMarkIrpPending, IoOpenDeviceRegistryKey, IoQueueWorkItem, IoReadPartitionTableEx, IoSetCompletionRoutine, IoSetNextIrpStackLocation, IoWriteErrorLogEntry, KEVENT, KLOCK_QUEUE_HANDLE, KeAcquireInStackQueuedSpinLock, KeGetRecommendedSharedDataAlignment, KeInitializeEvent, KeReleaseInStackQueuedSpinLock, KeWaitForSingleObject, LARGE_INTEGER, MmUnlockPages, _OBJECT_ATTRIBUTES, PCSZ, PDEVICE_COPY_OFFLOAD_DESCRIPTOR, PDEVICE_DATA_SET_LBP_STATE_PARAMETERS, PDEVICE_DATA_SET_LB_PROVISIONING_STATE, PDEVICE_DATA_SET_LB_PROVISIONING_STATE_V2, PDEVICE_DATA_SET_RANGE, PDEVICE_LB_PROVISIONING_DESCRIPTOR, PDEVICE_MANAGE_DATA_SET_ATTRIBUTES, PDEVICE_MANAGE_DATA_SET_ATTRIBUTES_OUTPUT, PDEVICE_OBJECT, PDEVICE_SEEK_PENALTY_DESCRIPTOR, PDEVICE_TRIM_DESCRIPTOR, PDRIVE_LAYOUT_INFORMATION_EX, PERSISTENT_RESERVE_COMMAND, PGUID, PIO_ERROR_LOG_PACKET, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PMDL, PPERSISTENT_RESERVE_COMMAND, PSTORAGE_ACCESS_ALIGNMENT_DESCRIPTOR, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_DEVICE_ID_DESCRIPTOR, PSTORAGE_EVENT_NOTIFICATION, PSTORAGE_LB_PROVISIONING_MAP_RESOURCES, PSTORAGE_MEDIUM_PRODUCT_TYPE_DESCRIPTOR, PSTORAGE_PRIORITY_HINT_SUPPORT, PSTORAGE_PROPERTY_QUERY, PSTORAGE_WRITE_CACHE_PROPERTY, PULONGLONG, RTL_QUERY_REGISTRY_TABLE, RtlInitUnicodeString, RtlQueryRegistryValues, RtlWriteRegistryValue, STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR, STORAGE_DESCRIPTOR_HEADER, STORAGE_EVENT_NOTIFICATION, STORAGE_LB_PROVISIONING_MAP_RESOURCES, STORAGE_MEDIUM_PRODUCT_TYPE_DESCRIPTOR, STORAGE_PRIORITY_HINT_SUPPORT, STORAGE_WRITE_CACHE_PROPERTY, _EVENT_TYPE_SynchronizationEvent, ZwClose, ZwCreateKey, ZwOpenKey};
 // Enum variant aliases: these exist in ntkrnl_sys::ddk with _ENUM_Variant prefixed names
 use ntkrnl_sys::ddk::{_WORK_QUEUE_TYPE_DelayedWorkQueue as DelayedWorkQueue};
 use ntkrnl_sys::ddk::{_LOCK_OPERATION_IoReadAccess as IoReadAccess, _LOCK_OPERATION_IoWriteAccess as IoWriteAccess};
@@ -928,11 +928,22 @@ pub unsafe extern "C" fn ClasspBuildDeviceMdl(Buffer: *mut core::ffi::c_void, Bu
         return core::ptr::null_mut();
     }
 
-    MmProbeAndLockPages(
+    // C: _SEH2_EXCEPT { trace; free the MDL; return NULL }.
+    let status = ntkrnl_sys::probe::MmTryProbeAndLockPages(
         mdl,
         (0i32) as i8,
         if WriteToDevice != 0 { IoReadAccess } else { IoWriteAccess },
     );
+    if status < 0 {
+        TracePrint(
+            TRACE_LEVEL_WARNING,
+            TRACE_FLAG_INIT,
+            b"ClasspBuildDeviceMdl: MmProbeAndLockPages failed with %xh.\0".as_ptr() as PCSZ,
+            status,
+        );
+        IoFreeMdl(mdl);
+        return core::ptr::null_mut();
+    }
 
     mdl
 }
@@ -2963,7 +2974,10 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
 
                 SrbSetCdbLength((Srb).cast(), 10);
 
-                let cdb = (*(Srb as *mut _SCSI_REQUEST_BLOCK)).Cdb.as_mut_ptr() as *mut _CDB;
+                // SrbGetCdb: for a STORAGE_REQUEST_BLOCK (the SrbType branch above)
+                // the CDB lives in the SrbExData, not at SCSI_REQUEST_BLOCK.Cdb; the
+                // direct field cast wrote the UNMAP CDB over the SRB_EX header.
+                let cdb = SrbGetCdb((Srb).cast()) as *mut _CDB;
                 (*cdb).UNMAP.as_mut().OperationCode = 0x42u8; // SCSIOP_UNMAP
                 (*cdb).UNMAP.as_mut().set_Anchor(0);
                 (*cdb).UNMAP.as_mut().set_GroupNumber(0);
@@ -3573,14 +3587,32 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
     maxSlabs = (maxBufferSize - core::mem::size_of::<LBA_STATUS_LIST_HEADER>() as u32) / core::mem::size_of::<LBA_STATUS_DESCRIPTOR>() as u32;
     slabsPerCommand = core::cmp::min(requestedSlabs, maxSlabs as u64);
 
-    lbaStatusSize = core::mem::size_of::<LBA_STATUS_LIST_HEADER>() as u32
-        + (slabsPerCommand as u32 * core::mem::size_of::<LBA_STATUS_DESCRIPTOR>() as u32);
-
-    lbaStatusListHeader = ExAllocatePoolWithTag(
-        NonPagedPoolNx,
-        lbaStatusSize as usize,
-        CLASS_TAG_LB_PROVISIONING,
-    ) as *mut LBA_STATUS_LIST_HEADER;
+    // ARM has specific alignment requirements (the C's `_ARM_ || _ARM64_` arm,
+    // which every other VPD/capacity allocation in this file already mirrors).
+    #[cfg(any(target_arch = "arm", target_arch = "aarch64"))]
+    {
+        lbaStatusSize = ALIGN_UP_BY(
+            (core::mem::size_of::<LBA_STATUS_LIST_HEADER>() as u32
+                + (slabsPerCommand as u32 * core::mem::size_of::<LBA_STATUS_DESCRIPTOR>() as u32))
+                as _,
+            KeGetRecommendedSharedDataAlignment() as _,
+        ) as _;
+        lbaStatusListHeader = ExAllocatePoolWithTag(
+            NonPagedPoolNxCacheAligned,
+            lbaStatusSize as usize,
+            CLASS_TAG_LB_PROVISIONING,
+        ) as *mut LBA_STATUS_LIST_HEADER;
+    }
+    #[cfg(not(any(target_arch = "arm", target_arch = "aarch64")))]
+    {
+        lbaStatusSize = core::mem::size_of::<LBA_STATUS_LIST_HEADER>() as u32
+            + (slabsPerCommand as u32 * core::mem::size_of::<LBA_STATUS_DESCRIPTOR>() as u32);
+        lbaStatusListHeader = ExAllocatePoolWithTag(
+            NonPagedPoolNx,
+            lbaStatusSize as usize,
+            CLASS_TAG_LB_PROVISIONING,
+        ) as *mut LBA_STATUS_LIST_HEADER;
+    }
 
     if lbaStatusListHeader.is_null() {
         TracePrint(
@@ -5075,7 +5107,7 @@ pub unsafe extern "C" fn ClasspGetCopyOffloadMaxDuration(
     let status: NTSTATUS;
 
     queryTable[0].Flags = RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK;
-    queryTable[0].Name = CLASSP_REG_COPY_OFFLOAD_MAX_TARGET_DURATION.as_ptr() as *const u16;
+    queryTable[0].Name = crate::glue::regw::CLASSP_REG_COPY_OFFLOAD_MAX_TARGET_DURATION.as_ptr() as *const u16;
     queryTable[0].EntryContext = &mut value as *mut ULONG as *mut core::ffi::c_void;
     queryTable[0].DefaultType = (REG_DWORD as u32) << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT | REG_NONE as u32;
     queryTable[0].DefaultData = &value as *const ULONG as *mut core::ffi::c_void;

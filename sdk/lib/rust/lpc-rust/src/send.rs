@@ -35,7 +35,8 @@ extern "system" {
     static mut LpcpLock: KGUARDED_MUTEX;
     static mut LpcpNextMessageId: ULONG;
 
-    fn LpcpGetMessageType(msg: PPORT_MESSAGE) -> ULONG;
+    #[link_name = "LpcpGetMessageType"]
+    fn LpcpGetMessageType__c(msg: PPORT_MESSAGE) -> u16;
     fn LpcpMoveMessage(
         dest: PPORT_MESSAGE,
         src: PPORT_MESSAGE,
@@ -52,6 +53,12 @@ extern "system" {
         object: *mut PVOID,
         info: PVOID,
     ) -> NTSTATUS;
+}
+
+// listen.rs (and lpc_x.h's macro) return the 16-bit Type: a ULONG decl read 16 bits nobody wrote.
+#[allow(non_snake_case)]
+unsafe fn LpcpGetMessageType(msg: PPORT_MESSAGE) -> ULONG {
+    LpcpGetMessageType__c(msg) as ULONG
 }
 extern "system" {
     fn KeEnterCriticalRegion();
@@ -443,7 +450,11 @@ pub unsafe extern "system" fn NtRequestPort(
         }
         CapturedLpcRequest = Staging.assume_init();
     } else {
-        CapturedLpcRequest = *LpcRequest;
+        // Kernel-mode caller: no probe, but still one fault-tolerant fetch.
+        CapturedLpcRequest = match ntkrnl_sys::probe::read_back(LpcRequest as *const PORT_MESSAGE) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
     }
 
     // From the CAPTURED copy, as the C does (send.c:481). This used to read
@@ -803,7 +814,11 @@ pub unsafe extern "system" fn NtRequestWaitReplyPort(
             return Status;
         }
     } else {
-        CapturedLpcRequest = *LpcRequest;
+        // Kernel-mode caller: no probe, but still one fault-tolerant fetch.
+        CapturedLpcRequest = match ntkrnl_sys::probe::read_back(LpcRequest as *const PORT_MESSAGE) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
         Status = LpcpVerifyMessageDataInfo(LpcRequest, core::ptr::addr_of_mut!(NumberOfDataEntries));
         if Status < 0 {
             return Status;

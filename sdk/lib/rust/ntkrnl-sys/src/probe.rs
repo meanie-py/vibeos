@@ -21,10 +21,63 @@ type KPROCESSOR_MODE = i8;
 pub const STATUS_DATATYPE_MISALIGNMENT: NTSTATUS = 0x80000002_u32 as i32;
 pub const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005_u32 as i32;
 
-extern "C" {
-    /// MmUserProbeAddress — highest user-mode address + 1.
-    /// Pointers above this are kernel-mode and must not be passed from user-mode.
-    static MmUserProbeAddress: ULONG_PTR;
+/// MmUserProbeAddress — highest user-mode address + 1. Pointers at or above it
+/// are kernel-mode and must not be passed from user mode.
+///
+/// A data export of ntoskrnl, so how it binds depends on who links this crate
+/// (feature `import_mm_user_probe_address`, see Cargo.toml).
+#[cfg(not(feature = "import_mm_user_probe_address"))]
+#[inline(always)]
+unsafe fn mm_user_probe_address() -> ULONG_PTR {
+    extern "C" {
+        static MmUserProbeAddress: ULONG_PTR;
+    }
+    MmUserProbeAddress
+}
+
+/// Driver side: i386/arm64 bind through raw-dylib `+verbatim` (the symbol is the
+/// value); amd64 binds `__imp_` and dereferences. Same as win32k's safe_user_io.
+#[cfg(all(feature = "import_mm_user_probe_address", any(target_arch = "x86", target_arch = "aarch64")))]
+#[inline(always)]
+unsafe fn mm_user_probe_address() -> ULONG_PTR {
+    #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+    extern "C" {
+        static MmUserProbeAddress: ULONG_PTR;
+    }
+    MmUserProbeAddress
+}
+
+#[cfg(all(feature = "import_mm_user_probe_address", not(any(target_arch = "x86", target_arch = "aarch64"))))]
+#[inline(always)]
+unsafe fn mm_user_probe_address() -> ULONG_PTR {
+    extern "C" {
+        #[link_name = "__imp_MmUserProbeAddress"]
+        static MmUserProbeAddress_imp: *const ULONG_PTR;
+    }
+    *MmUserProbeAddress_imp
+}
+
+/// The range test every typed probe.h macro makes before it touches `Ptr`:
+///
+/// ```c
+/// if ((ULONG_PTR)(Ptr) + sizeof(Type) - 1 < (ULONG_PTR)(Ptr) ||
+///     (ULONG_PTR)(Ptr) + sizeof(Type) - 1 >= (ULONG_PTR)MmUserProbeAddress)
+///     ExRaiseAccessViolation();
+/// ```
+///
+/// The inline::common and macros.rs Probe* helpers shipped without it, so a
+/// user-mode caller could hand a syscall a KERNEL address and have the kernel
+/// read or write it. That stayed hidden partly because C shims
+/// (io_rust_shims.c) carried the check and won the amd64/arm64 link by order for
+/// two of the exported names; tools/link_guard.py surfaced it.
+/// No alignment check: the typed macros have none.
+#[inline]
+pub unsafe fn probe_user_range<T>(ptr: *const T) {
+    let first = ptr as ULONG_PTR;
+    let last = first.wrapping_add(core::mem::size_of::<T>() - 1);
+    if last < first || last >= mm_user_probe_address() {
+        crate::ddk::ExRaiseAccessViolation();
+    }
 }
 
 // ============================================================================
@@ -113,7 +166,7 @@ pub unsafe fn probe_user_buffer(
     if length > 0 {
         let addr = buffer as usize;
         let end = addr.wrapping_add(length);
-        if end < addr || end > MmUserProbeAddress {
+        if end < addr || end > mm_user_probe_address() {
             return Err(STATUS_ACCESS_VIOLATION);
         }
     }
@@ -349,6 +402,18 @@ extern "C" {
     ) -> i32;
 }
 
+// ntoskrnl-rust ARM3/mdlsup.rs: MmProbeAndLockPages returning its failure status
+// instead of raising it. The raising NT export is a bugcheck wherever no SEH frame
+// catches it, which is every Rust caller; `scan_raising_probes` gates the raising
+// name. Exported by ntoskrnl.spec, so drivers outside the kernel image link it too.
+extern "system" {
+    pub fn MmTryProbeAndLockPages(
+        Mdl: crate::ddk::PMDL,
+        AccessMode: KPROCESSOR_MODE,
+        Operation: crate::ddk::_LOCK_OPERATION,
+    ) -> NTSTATUS;
+}
+
 /// Copy `length` bytes, returning `Err(STATUS_ACCESS_VIOLATION)` instead of
 /// BUGCHECKing when the source or destination faults.
 ///
@@ -425,6 +490,35 @@ pub unsafe fn safe_copy_raw(
         return Ok(());
     }
     fault_tolerant_copy(dst, src, length)
+}
+
+/// Store one value through a caller's pointer that was range-probed earlier: the
+/// C's `_SEH2_TRY { *Ptr = Value; } _SEH2_EXCEPT { Status = code; }`. No probe and
+/// no alignment check (the probe already ran, with the C's alignment); the store
+/// itself survives an unmapped page.
+#[inline]
+pub unsafe fn write_back<T: Copy>(dst: *mut T, value: T) -> Result<(), NTSTATUS> {
+    safe_copy_raw(
+        dst.cast(),
+        core::ptr::addr_of!(value).cast(),
+        core::mem::size_of::<T>(),
+    )
+}
+
+/// Load one value through a caller's pointer that was range-probed earlier: the
+/// C's `_SEH2_TRY { Value = *Ptr; } _SEH2_EXCEPT { Status = code; }`. The mirror
+/// of `write_back`: no probe and no alignment check, but the load survives a page
+/// another thread unmapped after the probe. Each call is ONE fetch, so a value
+/// that sizes or validates something must be read once and the copy used after.
+#[inline]
+pub unsafe fn read_back<T: Copy>(src: *const T) -> Result<T, NTSTATUS> {
+    let mut value = core::mem::MaybeUninit::<T>::uninit();
+    safe_copy_raw(
+        value.as_mut_ptr().cast(),
+        src.cast(),
+        core::mem::size_of::<T>(),
+    )?;
+    Ok(value.assume_init())
 }
 
 /// Validate a user-mode source buffer, then fault-tolerantly copy `length` bytes
@@ -505,6 +599,7 @@ extern "system" {
 }
 extern "system" {
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
+    fn ExAllocatePoolWithTag(PoolType: i32, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
 }
 
 /// RAII guard that calls `ObDereferenceObject` on drop.
@@ -573,6 +668,94 @@ impl Drop for PoolAllocGuard {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
             unsafe { ExFreePoolWithTag(self.ptr, self.tag); }
+        }
+    }
+}
+
+// ============================================================================
+// Output bounce: query syscalls that fill a caller's buffer in place
+// ============================================================================
+
+const TAG_OUTPUT_BOUNCE: ULONG = u32::from_le_bytes(*b"PbOb");
+
+/// A pool stand-in for a user-mode caller's output buffer.
+///
+/// The NtQuery* syscalls fill their output buffer IN PLACE inside one `_SEH2_TRY`,
+/// often under a lock, so a user page that goes bad mid-query was the handler's
+/// problem. With no SEH it is a bugcheck. Running the query against a pool copy
+/// and copying it out once at the end covers every write in the body at once,
+/// including the ones made by helpers (`RtlCopySidAndAttributesArray`, ...).
+///
+/// The buffer is copied IN first, so bytes the query leaves alone come back
+/// unchanged. A class that stores a pointer INTO the buffer (a UNICODE_STRING
+/// whose text follows it, a SID array) must move it to the caller's address with
+/// [`OutputBounce::rebase`] before [`OutputBounce::finish`].
+///
+/// Kernel-mode callers (and empty buffers) are passed straight through.
+pub struct OutputBounce {
+    pool: PVOID,
+    user: PVOID,
+    length: usize,
+}
+
+impl OutputBounce {
+    pub unsafe fn new(user: PVOID, length: usize, previous_mode: KPROCESSOR_MODE) -> Result<Self, NTSTATUS> {
+        if previous_mode == 0 || length == 0 || user.is_null() {
+            return Ok(Self { pool: core::ptr::null_mut(), user, length: 0 });
+        }
+        let pool = ExAllocatePoolWithTag(1 /* PagedPool */, length, TAG_OUTPUT_BOUNCE);
+        if pool.is_null() {
+            return Err(STATUS_INSUFFICIENT_RESOURCES);
+        }
+        if let Err(status) = fault_tolerant_copy(pool, user, length) {
+            ExFreePoolWithTag(pool, TAG_OUTPUT_BOUNCE);
+            return Err(status);
+        }
+        Ok(Self { pool, user, length })
+    }
+
+    /// The buffer the query should fill.
+    pub fn buffer(&self) -> PVOID {
+        if self.pool.is_null() { self.user } else { self.pool }
+    }
+
+    /// The mode to pass to a probe or write INTO the buffer: kernel once it is pool.
+    pub fn mode(&self, previous_mode: KPROCESSOR_MODE) -> KPROCESSOR_MODE {
+        if self.pool.is_null() { previous_mode } else { 0 }
+    }
+
+    /// Whether `size` bytes at `p` lie inside the pool copy.
+    pub fn contains(&self, p: *const core::ffi::c_void, size: usize) -> bool {
+        let base = self.pool as usize;
+        let p = p as usize;
+        !self.pool.is_null() && p >= base && p.wrapping_add(size) <= base + self.length && p.wrapping_add(size) >= p
+    }
+
+    /// Move a pointer that points into the pool copy to the same offset in the
+    /// caller's buffer. Anything else is left alone.
+    pub unsafe fn rebase<T>(&self, field: *mut *mut T) {
+        if self.contains(field as *const _, core::mem::size_of::<*mut T>()) && self.contains(*field as *const _, 0) {
+            *field = ((*field as usize) - (self.pool as usize) + (self.user as usize)) as *mut T;
+        }
+    }
+
+    /// Copy the result out and release the pool copy. `Err` is a fault on the
+    /// caller's buffer: the C handler's exception code.
+    pub unsafe fn finish(mut self) -> Result<(), NTSTATUS> {
+        if self.pool.is_null() {
+            return Ok(());
+        }
+        let result = fault_tolerant_copy(self.user, self.pool, self.length);
+        ExFreePoolWithTag(self.pool, TAG_OUTPUT_BOUNCE);
+        self.pool = core::ptr::null_mut();
+        result
+    }
+}
+
+impl Drop for OutputBounce {
+    fn drop(&mut self) {
+        if !self.pool.is_null() {
+            unsafe { ExFreePoolWithTag(self.pool, TAG_OUTPUT_BOUNCE) };
         }
     }
 }

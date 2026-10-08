@@ -34,10 +34,16 @@
 @ stdcall BaseIsAppcompatInfrastructureDisabled() IsShimInfrastructureDisabled
 @ stdcall -version=0x501-0x502 BaseProcessInitPostImport()
 @ stdcall -version=0x600+ BaseProcessInitPostImport() # HACK: This export is dynamicaly imported by ntdll
-;@ stdcall -version=0x502 -arch=x86_64 BaseProcessStart()
+# BaseProcessStart / BaseThreadStart: XP x64's exports, here on every arch, as
+# BaseInitializeContext's process and thread starts under names another process
+# can resolve. wowx64 recognises an x86-64 guest's new-process and new-thread
+# CONTEXTs by them and translates each into the native kernel32's (a native
+# arm64 child's initial thread; CreateRemoteThread between an x86-64 guest and
+# a native or 32-bit process, in either direction).
+@ stdcall BaseProcessStart(ptr) BaseProcessStartup
 @ stdcall BaseQueryModuleData(str str ptr ptr ptr) ;check
 @ stub -version=0x600+ BaseThreadInitThunk
-;@ stdcall -version=0x502 -arch=x86_64 BaseThreadStart()
+@ stdcall BaseThreadStart(ptr ptr) BaseThreadStartup
 @ stdcall BaseUpdateAppcompatCache(long long long)
 @ stdcall BasepCheckBadapp(long ptr long long long long long long long)
 @ stdcall BasepCheckWinSaferRestrictions(long long long long long long)
@@ -610,7 +616,7 @@
 @ stdcall GetSystemDEPPolicy()
 @ stdcall GetSystemDefaultLCID()
 @ stdcall GetSystemDefaultLangID()
-@ stdcall -stub -version=0x600+ GetSystemDefaultLocaleName(ptr long)
+@ stdcall -version=0x600+ GetSystemDefaultLocaleName(ptr long)
 @ stdcall GetSystemDefaultUILanguage()
 @ stdcall GetSystemDirectoryA(ptr long)
 @ stdcall GetSystemDirectoryW(ptr long)

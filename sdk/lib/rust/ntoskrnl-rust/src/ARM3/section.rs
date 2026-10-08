@@ -49,7 +49,6 @@ use ntkrnl_sys::ddk::{
     ExGetPreviousMode,
     IoSetTopLevelIrp,
     KPROCESSOR_MODE,
-    KeFlushCurrentTb,
     KeStackAttachProcess,
     KeUnstackDetachProcess,
     MiCheckSecuredVad,
@@ -367,8 +366,6 @@ struct _MEMORY_SECTION_NAME {
 }
 
 extern "system" {
-    pub fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
-    pub fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     fn MmSetPageEntrySectionSegment(
         Segment: PVOID, Offset: *const u64, Entry: ULONG_PTR,
     ) -> NTSTATUS;
@@ -1495,7 +1492,8 @@ pub unsafe extern "system" fn MiFlushTbAndCapture(
         );
     }
     MI_UPDATE_VALID_PTE(pointer_pte, temp_pte);
-    KeFlushCurrentTb();
+    // All CPUs, not the C's KeFlushCurrentTb: see virtual.rs MiProcessValidPteList.
+    ntkrnl_sys::inline::mm::KeFlushProcessTb();
     #[cfg(target_arch = "aarch64")]
     {
         if (update_dirty != 0) && !MI_IS_PAGE_DIRTY(&previous_pte) {
@@ -1548,7 +1546,8 @@ unsafe fn MiRemoveMappedPtes(
         pointer_pte = pointer_pte.add(1);
         number_of_ptes -= 1;
     }
-    KeFlushCurrentTb();
+    // All CPUs, not the C's KeFlushCurrentTb: see virtual.rs MiProcessValidPteList.
+    ntkrnl_sys::inline::mm::KeFlushProcessTb();
     let old_irql = MiAcquirePfnLock();
     (*control_area).NumberOfUserReferences -= 1;
     (*control_area).NumberOfMappedViews -= 1;
@@ -2146,22 +2145,24 @@ pub unsafe extern "system" fn NtCreateSection(
     safe_maximum_size.QuadPart = 0;
     if previous_mode != 0i8 {
         // Faithful to the C's ProbeForReadLargeInteger(MaximumSize) — validate the
-        // user pointer (range + ULONG alignment) BEFORE dereferencing it, so a bad
-        // pointer raises a catchable STATUS_ACCESS_VIOLATION instead of a raw kernel
-        // read fault (BUGCHECK 0x50). The port had dropped this probe. (conformance:
-        // kmtest NtCreateSection deliberately passes a bad MaximumSize.)
+        // user pointer (range only: the typed macro checks no alignment) and capture
+        // it fault-tolerantly. C: inside _SEH2_TRY, handler returns the exception
+        // code. (conformance: kmtest NtCreateSection deliberately passes a bad
+        // MaximumSize.)
         if !maximum_size.is_null() {
-            ProbeForRead(
-                maximum_size as PVOID,
-                core::mem::size_of::<_LARGE_INTEGER>() as SIZE_T,
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
-            safe_maximum_size = *maximum_size;
+            safe_maximum_size = match ntkrnl_sys::probe::probe_read_generic(maximum_size as *const _LARGE_INTEGER, 1, previous_mode) {
+                Ok(v) => v,
+                Err(status) => return status,
+            };
         }
-        ProbeForWriteHandle(section_handle);
+        // C: inside _SEH2_TRY, handler returns the exception code. No SEH here, so the
+        // Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(section_handle, 1, previous_mode) {
+            return status;
+        }
     } else {
         if !maximum_size.is_null() {
-            safe_maximum_size = *maximum_size;
+            safe_maximum_size = match ntkrnl_sys::probe::read_back(maximum_size) { Ok(v) => v, Err(s) => return s };
         }
     }
     if (file_handle == core::ptr::null_mut()) && (safe_maximum_size.QuadPart == 0) {
@@ -2191,7 +2192,12 @@ pub unsafe extern "system" fn NtCreateSection(
         &mut handle,
     );
     if status >= 0 {
-        *section_handle = handle;
+        // C: _SEH2_TRY { *SectionHandle = Handle; } _SEH2_EXCEPT { /* Nothing here */ }
+        let _ = ntkrnl_sys::probe::safe_copy_raw(
+            section_handle as PVOID,
+            &handle as *const HANDLE as *const core::ffi::c_void,
+            core::mem::size_of::<HANDLE>(),
+        );
     }
     status
 }
@@ -2206,7 +2212,11 @@ pub unsafe extern "system" fn NtOpenSection(
     let object_attributes = opaque_ptr(object_attributes);
     let previous_mode = ExGetPreviousMode();
     if previous_mode != 0i8 {
-        ProbeForWriteHandle(section_handle);
+        // C: inside _SEH2_TRY, handler returns the exception code. No SEH here, so the
+        // Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(section_handle, 1, previous_mode) {
+            return status;
+        }
     }
     let mut handle: HANDLE = core::ptr::null_mut();
     let status = ObOpenObjectByName(
@@ -2218,7 +2228,12 @@ pub unsafe extern "system" fn NtOpenSection(
         core::ptr::null_mut(),
         &mut handle,
     );
-    *section_handle = handle;
+    // C: _SEH2_TRY { *SectionHandle = Handle; } _SEH2_EXCEPT { /* Nothing here */ }
+    let _ = ntkrnl_sys::probe::safe_copy_raw(
+        section_handle as PVOID,
+        &handle as *const HANDLE as *const core::ffi::c_void,
+        core::mem::size_of::<HANDLE>(),
+    );
     status
 }
 
@@ -2241,14 +2256,7 @@ pub unsafe extern "system" fn NtMapViewOfSection(
     let section_offset = opaque_ptr(section_offset);
     let view_size = opaque_ptr(view_size);
     extern "C" {
-        fn ProbeForWritePointer(Address: *mut PVOID);
-        fn ProbeForWriteSize_t(Address: *mut SIZE_T);
         static mut MmHighestPhysicalPage: PFN_NUMBER;
-    }
-    // ProbeForWrite's provider is Rust `extern "system"` (ex/exintrin.rs) — an
-    // extern "C" decl here would reference the wrong i386 decoration (_Name vs _Name@12).
-    extern "system" {
-        fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     }
 
     let previous_mode = ExGetPreviousMode();
@@ -2283,27 +2291,41 @@ pub unsafe extern "system" fn NtMapViewOfSection(
 
     // Check for unsafe parameters
     if previous_mode != 0i8 {
-        // Probe the parameters
-        ProbeForWritePointer(base_address);
-        ProbeForWriteSize_t(view_size);
+        // Probe the parameters. C: inside _SEH2_TRY, handler returns the exception
+        // code. No SEH here, so the Result probe returns it instead of raising.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(base_address, 1, previous_mode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(view_size, 1, previous_mode) {
+            return status;
+        }
     }
 
-    // Check if a section offset was given
+    // Check if a section offset was given. C: this and the captures below are in
+    // the same _SEH2_TRY (for every mode), handler returns the exception code.
     if !section_offset.is_null() {
         // Check for unsafe parameters and capture section offset
+        // (ProbeForWriteLargeInteger: range only, no alignment).
         if previous_mode != 0i8 {
-            ProbeForWrite(
-                section_offset as PVOID,
-                core::mem::size_of::<_LARGE_INTEGER>(),
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
+            if let Err(status) = ntkrnl_sys::probe::probe_write_generic(section_offset, 1, previous_mode) {
+                return status;
+            }
         }
-        safe_section_offset = *section_offset;
+        safe_section_offset = match ntkrnl_sys::probe::probe_read_generic(section_offset as *const _LARGE_INTEGER, 1, previous_mode) {
+            Ok(v) => v,
+            Err(status) => return status,
+        };
     }
 
     // Capture the other parameters
-    let safe_base_address = *base_address;
-    let safe_view_size = *view_size;
+    let safe_base_address = match ntkrnl_sys::probe::probe_read_generic(base_address as *const PVOID, 1, previous_mode) {
+        Ok(v) => v,
+        Err(status) => return status,
+    };
+    let safe_view_size = match ntkrnl_sys::probe::probe_read_generic(view_size as *const SIZE_T, 1, previous_mode) {
+        Ok(v) => v,
+        Err(status) => return status,
+    };
 
     // Check for kernel-mode address
     if safe_base_address > MM_HIGHEST_VAD_ADDRESS as PVOID {
@@ -2430,10 +2452,10 @@ pub unsafe extern "system" fn NtMapViewOfSection(
         }
 
         // Return parameters to user
-        *base_address = safe_base_address;
-        *view_size = safe_view_size;
+        let _ = ntkrnl_sys::probe::write_back(base_address, safe_base_address);
+        let _ = ntkrnl_sys::probe::write_back(view_size, safe_view_size);
         if !section_offset.is_null() {
-            *section_offset = safe_section_offset;
+            let _ = ntkrnl_sys::probe::write_back(section_offset, safe_section_offset);
         }
     }
 

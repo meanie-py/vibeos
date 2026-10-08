@@ -888,11 +888,22 @@ unsafe fn User32CreateImeUIWindow(pimeui: PIMEUI, mut hKL: HKL) -> HWND {
             );
         }
 
+        // C: NtUserSetWindowLongPtr, which ntuser.h aliases to NtUserSetWindowLong only on
+        // x86. On 64-bit the 4-byte store truncated the HIMC and left the slot's upper
+        // half as whatever it held before.
         if !hwndUI.is_null() {
+            #[cfg(target_arch = "x86")]
             NtUserSetWindowLong(
                 hwndUI,
                 IMMGWLP_IMC,
                 (*pimeui).hIMC as LONG,
+                FALSE,
+            );
+            #[cfg(not(target_arch = "x86"))]
+            NtUserSetWindowLongPtr(
+                hwndUI,
+                IMMGWLP_IMC,
+                (*pimeui).hIMC as LONG_PTR,
                 FALSE,
             );
         }

@@ -1,10 +1,4 @@
 
-# Replace the old CRT include directory with the UCRT include directory
-get_property(INCLUDE_DIRS DIRECTORY . PROPERTY INCLUDE_DIRECTORIES)
-list(REMOVE_ITEM INCLUDE_DIRS "${REACTOS_SOURCE_DIR}/sdk/include/crt")
-set_property(DIRECTORY . PROPERTY INCLUDE_DIRECTORIES ${INCLUDE_DIRS})
-include_directories(${REACTOS_SOURCE_DIR}/sdk/include/ucrt)
-
 include_directories(inc)
 
 if(DBG)
@@ -68,19 +62,10 @@ add_library(setjmp ${VCRT_SETJMP_SOURCES} ${vcrt_setjmp_asm})
 add_dependencies(setjmp psdk asm)
 
 
-if(${ARCH} STREQUAL "i386")
-    list(APPEND VCRUNTIME_ASM_SOURCES
-        i386/_chkesp.s
-    )
-elseif(${ARCH} STREQUAL "amd64")
-    list(APPEND VCRUNTIME_ASM_SOURCES
-
-    )
-endif()
-add_asm_files(vcruntime_asm ${VCRUNTIME_ASM_SOURCES})
+# i386/_chkesp.s is ucrt-rust's ucrt_reactos.rs (global_asm!) for ucrtbase, and msvcrt's
+# misc.rs carries Wine's own for msvcrt/msvcrt20/msvcrt40/crtdll; vcruntime builds no asm.
 
 list(APPEND VCRUNTIME_SOURCES
-    ${vcruntime_asm}
     __std_terminate.c
     __vcrt_init.c
     purecall.cpp
@@ -92,7 +77,15 @@ if(${ARCH} STREQUAL "i386")
     )
 endif()
 
+# setjmp/longjmp for the runtime library: setjmp-rust (2026-10-04), the same .s/.c
+# transcribed (global_asm! with offset_of! operands; instruction-identical to these
+# objects). The C `setjmp` library above stays for its non-CRT consumers (ftfd,
+# static_crt_apitest); vcruntime no longer embeds its objects.
+# (The CRT DLLs carry setjmp-rt inside their own Rust archive instead.)
+rust_staticlib_variant(vcrt_setjmp_rust setjmp-rust "user" FALSE)
+
 # Runtime library (linked into ucrtbase)
-add_library(vcruntime ${VCRUNTIME_SOURCES} $<TARGET_OBJECTS:setjmp>)
-target_link_libraries(vcruntime ${PSEH_LIB})
+add_library(vcruntime ${VCRUNTIME_SOURCES})
+add_dependencies(vcruntime rust_vcrt_setjmp_rust)
+target_link_libraries(vcruntime ${PSEH_LIB} ${vcrt_setjmp_rust_LIB})
 target_include_directories(vcruntime INTERFACE inc)

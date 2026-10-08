@@ -1,4 +1,5 @@
 
+
 include_directories(libm_sse2)
 
 list(APPEND LIBCNTPR_MATH_SOURCE
@@ -257,30 +258,35 @@ list(APPEND CRT_MATH_SOURCE
     math/fdivbug.c
     math/frexp.c
     math/huge_val.c
-    math/ieee754/j0_y0.c
-    math/ieee754/j1_y1.c
-    math/ieee754/jn_yn.c
-    math/j0_y0.c
-    math/j1_y1.c
-    math/jn_yn.c
+    # The Bessel functions: cnt-rust's _j0.._yn over the `libm` crate. The vendored
+    # FDLIBM bodies (math/ieee754) are gone; these wrappers stay on disk as the
+    # cnt-difftest oracle for the errno shell.
+    # math/j0_y0.c
+    # math/j1_y1.c
+    # math/jn_yn.c
     math/ldiv.c
     math/logf.c
     math/powf.c
+    math/trunc.c
+    math/truncf.c
 )
 
 list(APPEND CRT_MATH_ASM_SOURCE
     ${LIBCNTPR_MATH_ASM_SOURCE}
 )
 
+# `atan2`, the one libm function gdi32 links (its Wine EMF driver's arc angles): Rust,
+# sdk/lib/rust/atan2-rust (libm::atan2). It was a different C/asm per arch -- i386
+# math/i386/atan2_asm.s, amd64 AMD libm_sse2 atan2.c with _handle_error/_invoke_matherr/
+# _set_statfp, arm64 math/arm64/{atan2,atan}.c -- and the amd64 one was the last shipped use
+# of the vendored libm_sse2 tree. SSE2 on i386, as msvcrt-crt-rust: libm's f64 code needs it.
+set(_ATAN2_ENV)
 if(ARCH STREQUAL "i386")
-    list(APPEND ATAN2_ASM_SOURCE math/i386/atan2_asm.s)
-elseif(ARCH STREQUAL "amd64")
-    list(APPEND ATAN2_SOURCE math/_invoke_matherr.c math/amd64/_set_statfp.c math/libm_sse2/_handle_error.c math/libm_sse2/atan2.c)
-elseif(ARCH STREQUAL "arm64")
-    list(APPEND ATAN2_SOURCE math/arm64/atan2.c math/arm64/atan.c)
+    set(_ATAN2_ENV ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")
 endif()
-
-add_asm_files(atan2_asm ${ATAN2_ASM_SOURCE})
-add_library(atan2 ${ATAN2_SOURCE} ${atan2_asm})
-set_target_properties(atan2 PROPERTIES LINKER_LANGUAGE "C")
-add_dependencies(atan2 asm)
+# gdi32 names the archive BY PATH, ${ATAN2_LIB} (gcc.cmake): through an INTERFACE target it
+# landed behind ntdll's import library, which exports atan2 on arm64.
+rust_staticlib_variant(atan2_rust atan2-rust "" TRUE ${_ATAN2_ENV})
+if(NOT atan2_rust_LIB STREQUAL ATAN2_LIB)
+    message(FATAL_ERROR "ATAN2_LIB (${ATAN2_LIB}) is not atan2-rust's archive (${atan2_rust_LIB})")
+endif()

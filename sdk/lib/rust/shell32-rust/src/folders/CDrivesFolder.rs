@@ -55,12 +55,22 @@ unsafe extern "C" {
     fn CRegFolder_CreateInstance(pInit: PREGFOLDERINITDATA, pidlRoot: LPCITEMIDLIST, riid: REFIID, ppv: *mut *mut c_void) -> HRESULT;
 }
 
-// CDrivesFolder.cpp:344-353. The `#if 0` arm (0/1/2) is unconditionally dead; these are the
-// live values, and the FIXME above them says they should start at 0 once our menu-building
-// system matches Windows'. Do not "fix" them here — the C is the authority.
-const CMDID_FORMAT: UINT = 1;
-const CMDID_EJECT: UINT = 2;
-const CMDID_DISCONNECT: UINT = 3;
+// CDrivesFolder.cpp: `enum { CMDID_FORMAT, CMDID_EJECT, CMDID_DISCONNECT }`. Upstream 62519e131a7
+// moved these from the old 1/2/3 workaround to 0/1/2 once CDefaultContextMenu learned
+// DFM_MAPCOMMANDNAME, and idCmdFirst now advances by exactly one past the last id.
+const CMDID_FORMAT: UINT = 0;
+const CMDID_EJECT: UINT = 1;
+const CMDID_DISCONNECT: UINT = 2;
+
+// The verbs DFM_MAPCOMMANDNAME resolves. Divergence: upstream's array has no `{ NULL }`
+// terminator, but SHELL_MapContextMenuVerbToCmdId walks until `Verb == NULL`, so an unknown
+// verb reads past the end of it. Every other CMVERBMAP in shell32 is terminated; so is this one.
+static mut g_VerbMap: [CMVERBMAP; 4] = [
+    CMVERBMAP { Verb: b"format\0".as_ptr() as LPCSTR, CmdId: CMDID_FORMAT as WORD },
+    CMVERBMAP { Verb: b"eject\0".as_ptr() as LPCSTR, CmdId: CMDID_EJECT as WORD },
+    CMVERBMAP { Verb: b"disconnect\0".as_ptr() as LPCSTR, CmdId: CMDID_DISCONNECT as WORD },
+    CMVERBMAP { Verb: core::ptr::null(), CmdId: 0 },
+];
 
 // winioctl.h CTL_CODE expansions; values cross-checked against ntkrnl-sys/constants.rs and
 // cdrom-rust, which independently carry the same numbers.
@@ -478,7 +488,7 @@ pub unsafe extern "system" fn DrivesContextMenuCallback(
     wParam: WPARAM,
     lParam: LPARAM,
 ) -> HRESULT {
-    if uMsg != DFM_MERGECONTEXTMENU && uMsg != DFM_INVOKECOMMAND {
+    if uMsg != DFM_MERGECONTEXTMENU && uMsg != DFM_INVOKECOMMAND && uMsg != DFM_MAPCOMMANDNAME {
         return SHELL32_DefaultContextMenuCallBack(psf, pdtobj, uMsg);
     }
 
@@ -605,7 +615,7 @@ pub unsafe extern "system" fn DrivesContextMenuCallback(
         }
 
         if idCmd != 0 {
-            (*pqcminfo).idCmdFirst = idCmd + 2;
+            (*pqcminfo).idCmdFirst = idCmd + 1; // Note: This assumes the items above are added in ascending id order
         }
         hr = S_OK;
     } else if uMsg == DFM_INVOKECOMMAND {
@@ -661,6 +671,8 @@ pub unsafe extern "system" fn DrivesContextMenuCallback(
                 } else {
                     nStringID = IDS_CANTDISCONNECT as i32;
                 }
+            } else if hr == S_OK {
+                hr = E_INVALIDARG; // Don't eat DFM_CMD_* in CDefaultContextMenu::Do*
             }
         }
 
@@ -680,6 +692,19 @@ pub unsafe extern "system" fn DrivesContextMenuCallback(
                 core::ptr::null_mut(),
                 MB_ICONERROR,
             );
+        }
+    } else if uMsg == DFM_MAPCOMMANDNAME {
+        let mut ici: CMINVOKECOMMANDINFOEX = core::mem::zeroed();
+        ici.cbSize = core::mem::size_of::<CMINVOKECOMMANDINFOEX>() as DWORD;
+        ici.fMask = SEE_MASK_UNICODE as DWORD; // CMIC_MASK_UNICODE (shobjidl.idl: == SEE_MASK_UNICODE)
+        ici.lpVerbW = lParam as PWSTR as LPCWSTR;
+        hr = crate::shell32::utils::SHELL_MapContextMenuVerbToCmdId(
+            &mut ici as *mut CMINVOKECOMMANDINFOEX as LPCMINVOKECOMMANDINFO,
+            core::ptr::addr_of!(g_VerbMap).cast(),
+        );
+        if hr >= 0 {
+            *(wParam as *mut INT) = hr;
+            hr = S_OK;
         }
     }
 

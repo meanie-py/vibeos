@@ -571,7 +571,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 
         FatSingleAsync(IrpContext, Vcb, StartingLbo, ByteCount, Irp);
 
-        #[cfg(ntddi_win8)] // placeholder for conditional
+        #[cfg(ntddi_ge_ntddi_win8)]
         {
             if FatDiskAccountingEnabled != 0 {
                 let ThreadIssuingIo: *mut ETHREAD = PsGetCurrentThread();
@@ -819,7 +819,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
                                 SystemBuffer = FatMapUserBuffer(IrpContext, *p_irp);
 
                                 // CcCopyReadEx or fallback to CcCopyRead
-                                #[cfg(ntddi_win8)]
+                                #[cfg(ntddi_ge_ntddi_win8)]
                                 let copy_result = CcCopyReadEx(FileObject,
                                                                &raw mut StartingByte,
                                                                ByteCount,
@@ -827,7 +827,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
                                                                SystemBuffer,
                                                                &raw mut (*(*p_irp)).IoStatus,
                                                                (*(*p_irp)).Tail.Overlay.Thread);
-                                #[cfg(not(ntddi_win8))]
+                                #[cfg(not(ntddi_ge_ntddi_win8))]
                                 let copy_result = CcCopyRead(FileObject,
                                                              &raw mut StartingByte,
                                                              ByteCount,

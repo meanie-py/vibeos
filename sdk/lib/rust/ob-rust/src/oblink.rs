@@ -80,10 +80,15 @@ use ntkrnl_sys::inline::ke::KeQuerySystemTime;
 // Inline probe helpers (C macros in probe.h)
 // ============================================================================
 
+/// probe.h's ProbeForWriteUnicodeString: range-check, then read the struct and
+/// write it back to prove the page writable. The C raises into the caller's
+/// _SEH2_TRY; this returns the code. (It was a bare read/write with no range
+/// check, so a user caller could have the kernel rewrite a kernel address.)
 #[inline]
-unsafe fn ProbeForWriteUnicodeString(ptr: *mut _UNICODE_STRING) {
-    let val = core::ptr::read_volatile(ptr);
-    core::ptr::write_volatile(ptr, val);
+unsafe fn ProbeForWriteUnicodeString(ptr: *mut _UNICODE_STRING) -> Result<_UNICODE_STRING, NTSTATUS> {
+    let val = ntkrnl_sys::probe::probe_read_generic(ptr as *const _UNICODE_STRING, 1, 1)?;
+    ntkrnl_sys::probe::write_user(ptr, val, 0)?;
+    Ok(val)
 }
 
 #[no_mangle]
@@ -589,7 +594,7 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
         if let Err(s) = probe_user_buffer(LinkTarget as _, core::mem::size_of::<_UNICODE_STRING>(), core::mem::size_of::<ULONG>(), PreviousMode) {
             return s;
         }
-        CapturedLinkTarget = core::ptr::read_volatile(LinkTarget);
+        CapturedLinkTarget = match ntkrnl_sys::probe::read_back(LinkTarget) { Ok(v) => v, Err(s) => return s };
         
         if let Err(s) = probe_user_buffer(
             CapturedLinkTarget.Buffer as _,
@@ -604,7 +609,7 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
             return s;
         }
     } else {
-        CapturedLinkTarget = *LinkTarget;
+        CapturedLinkTarget = match ntkrnl_sys::probe::read_back(LinkTarget) { Ok(v) => v, Err(s) => return s };
     }
 
     if CapturedLinkTarget.MaximumLength % core::mem::size_of::<WCHAR>() as USHORT != 0 {
@@ -678,7 +683,9 @@ pub unsafe extern "system" fn NtCreateSymbolicLinkObject(
             &mut hLink,
         );
         if Status >= 0 {
-            *LinkHandle = hLink;
+            if let Err(s) = ntkrnl_sys::probe::write_back(LinkHandle, hLink) {
+                Status = s;
+            }
         }
     }
 
@@ -713,7 +720,10 @@ pub unsafe extern "system" fn NtOpenSymbolicLinkObject(
         &mut hLink,
     );
 
-    *LinkHandle = hLink;
+    // C: unconditional, so a failed open hands the caller back NULL.
+    if let Err(s) = ntkrnl_sys::probe::write_back(LinkHandle, hLink) {
+        Status = s;
+    }
 
     Status
 }
@@ -735,9 +745,11 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0 {
-        ProbeForWriteUnicodeString(LinkTarget as *mut _UNICODE_STRING);
-
-        SafeLinkTarget = *(LinkTarget as *const _UNICODE_STRING);
+        // C: under _SEH2_TRY, whose handler returns the exception code.
+        SafeLinkTarget = match ProbeForWriteUnicodeString(LinkTarget as *mut _UNICODE_STRING) {
+            Ok(target) => target,
+            Err(status) => return status,
+        };
         if let Err(s) = probe_user_buffer(
             SafeLinkTarget.Buffer as _,
             SafeLinkTarget.MaximumLength as usize,
@@ -753,7 +765,7 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
             }
         }
     } else {
-        SafeLinkTarget = *(LinkTarget as *const _UNICODE_STRING);
+        SafeLinkTarget = match ntkrnl_sys::probe::read_back(LinkTarget as *const _UNICODE_STRING) { Ok(v) => v, Err(s) => return s };
     }
 
     Status = ObReferenceObjectByHandle(
@@ -775,20 +787,41 @@ pub unsafe extern "system" fn NtQuerySymbolicLinkObject(
             (*SymlinkObject).LinkTarget.Length as ULONG
         };
 
+        // C: these three stores into the caller's memory sit in one _SEH2_TRY, whose
+        // handler sets Status to the code. They run under the object lock, which the
+        // fault-tolerant copy lets us still release.
+        let write_back = |dst: PVOID, src: *const core::ffi::c_void, size: usize| -> Result<(), NTSTATUS> {
+            safe_copy_raw(dst, src, size)
+        };
+        let mut written: Result<(), NTSTATUS> = Ok(());
         if LengthUsed <= SafeLinkTarget.MaximumLength as ULONG {
-            core::ptr::copy_nonoverlapping(
-                (*SymlinkObject).LinkTarget.Buffer as *const u8,
-                SafeLinkTarget.Buffer as *mut u8,
+            let length = (*SymlinkObject).LinkTarget.Length;
+            written = write_back(
+                SafeLinkTarget.Buffer as PVOID,
+                (*SymlinkObject).LinkTarget.Buffer as *const core::ffi::c_void,
                 LengthUsed as usize,
-            );
-
-            (*LinkTarget).Length = (*SymlinkObject).LinkTarget.Length;
+            )
+            .and_then(|()| {
+                write_back(
+                    core::ptr::addr_of_mut!((*LinkTarget).Length) as PVOID,
+                    &length as *const _ as *const core::ffi::c_void,
+                    core::mem::size_of_val(&length),
+                )
+            });
         } else {
             Status = STATUS_BUFFER_TOO_SMALL;
         }
 
-        if ResultLength != core::ptr::null_mut() {
-            *ResultLength = (*SymlinkObject).LinkTarget.MaximumLength as ULONG;
+        if written.is_ok() && ResultLength != core::ptr::null_mut() {
+            let maximum = (*SymlinkObject).LinkTarget.MaximumLength as ULONG;
+            written = write_back(
+                ResultLength as PVOID,
+                &maximum as *const ULONG as *const core::ffi::c_void,
+                core::mem::size_of::<ULONG>(),
+            );
+        }
+        if let Err(s) = written {
+            Status = s;
         }
 
         ObpReleaseObjectLock(ObjectHeader);

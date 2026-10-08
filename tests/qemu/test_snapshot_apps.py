@@ -37,15 +37,16 @@ from tests.qemu.vm import PROJECT_DIR, QemuVM
 # qcode names for the characters we type into the Run box.
 _QCODE = {
     **{c: c for c in "abcdefghijklmnopqrstuvwxyz0123456789"},
-    ".": "dot", "-": "minus", " ": "spc",
+    ".": "dot",
+    "-": "minus",
+    " ": "spc",
 }
 
 
 def _key(vm: QemuVM, qcode: str, down: bool) -> None:
     r = vm.qmp.execute(
         "input-send-event",
-        events=[{"type": "key",
-                 "data": {"down": down, "key": {"type": "qcode", "data": qcode}}}],
+        events=[{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": qcode}}}],
     )
     if "error" in r:
         pytest.fail(f"QMP input-send-event failed for {qcode!r}: {r['error']}")
@@ -81,6 +82,7 @@ def _step_shot(vm: QemuVM, arch: str, tag: str) -> None:
     """
     try:
         from PIL import Image
+
         ppm = vm.work_dir / f"_step_{tag}.ppm"
         vm.screendump(ppm)
         Image.open(ppm).save(PROJECT_DIR / "qemu" / f"{arch}_step_{tag}.png", "PNG")
@@ -98,23 +100,23 @@ def _launch_via_run(vm: QemuVM, exe: str, arch: str) -> None:
     this stops working, the per-case screen-delta expectation fails loudly
     (no silent pass) and the _step_*.png trail shows which step died.
     """
-    _chord(vm, "ctrl", "esc")          # open Start menu
+    _chord(vm, "ctrl", "esc")  # open Start menu
     _drain(vm, 1.5)
     _step_shot(vm, arch, f"{exe}_1_startmenu")
-    _tap(vm, "r")                       # type-ahead -> "Run..."
+    _tap(vm, "r")  # type-ahead -> "Run..."
     _drain(vm, 0.5)
-    _tap(vm, "ret")                     # open Run dialog
+    _tap(vm, "ret")  # open Run dialog
     _drain(vm, 1.5)
     _step_shot(vm, arch, f"{exe}_2_rundialog")
     _type(vm, exe)
     _drain(vm, 0.5)
     _step_shot(vm, arch, f"{exe}_3_typed")
-    _tap(vm, "ret")                     # execute
+    _tap(vm, "ret")  # execute
 
 
 def _drain(vm: QemuVM, secs: float) -> str:
     out = ""
-    n = max(1, int(round(secs)))
+    n = max(1, round(secs))
     for _ in range(n):
         out += vm.serial_output(timeout=1.0)
     return out
@@ -123,6 +125,7 @@ def _drain(vm: QemuVM, secs: float) -> str:
 # ---------------------------------------------------------------------------
 # Observation
 # ---------------------------------------------------------------------------
+
 
 def _changed_fraction(ppm_a, ppm_b) -> float:
     """Fraction of pixels that differ between two screendumps (0.0-1.0).
@@ -138,7 +141,7 @@ def _changed_fraction(ppm_a, ppm_b) -> float:
     b = Image.open(ppm_b).convert("RGB")
     diff = ImageChops.difference(a, b).convert("L")
     # Threshold out codec/dither noise; count pixels that really moved.
-    moved = sum(1 for px in diff.getdata() if px > 16)
+    moved = sum(diff.histogram()[17:])  # pixels with a delta > 16
     return moved / (a.width * a.height)
 
 
@@ -148,12 +151,13 @@ def _changed_fraction(ppm_a, ppm_b) -> float:
 # in-guest agent later returns structured pass/fail through this same hook.
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class AppCase:
     name: str
-    exe: str                       # text typed into the Run dialog
-    min_changed_frac: float        # window must repaint at least this much
-    settle_secs: float = 6.0       # time for the app window to draw
+    exe: str  # text typed into the Run dialog
+    min_changed_frac: float  # window must repaint at least this much
+    settle_secs: float = 6.0  # time for the app window to draw
 
 
 APP_CASES = [
@@ -177,12 +181,13 @@ def pristine_ref(vm: QemuVM):
     # amd64 showed an 88% KiUnwaitThread storm here; this surfaces whether
     # i386's desktop is the clean idle baseline (and is the owed smoke-TODO).
     try:
+        assert vm._proc is not None
         idle = cpu_pct(vm._proc.pid, 2.0)
-        vm._idle_cpu_pct = idle
-        print(f"\n[snap] steady-state qemu CPU = {idle}% "
-              f"({'CLEAN idle' if idle < 15 else 'SPINNING — not idle'})")
+        print(
+            f"\n[snap] steady-state qemu CPU = {idle}% "
+            f"({'CLEAN idle' if idle < 15 else 'SPINNING — not idle'})"
+        )
     except Exception as e:
-        vm._idle_cpu_pct = None
         print(f"\n[snap] idle CPU probe failed: {e}")
     ref = vm.work_dir / "pristine_ref.ppm"
     vm.screendump(ref)
@@ -193,13 +198,15 @@ def pristine_ref(vm: QemuVM):
 def test_snapshot_app_launch(vm: QemuVM, arch: str, pristine_ref, case: AppCase) -> None:
     """From the steady-state snapshot, launch one app and assert:
 
-      isolation : post-restore frame ~= pristine reference (prev app gone)
-      liveness  : no fatal marker, VM still running after the launch
-      effect    : screen changed >= case.min_changed_frac (window appeared)
+    isolation : post-restore frame ~= pristine reference (prev app gone)
+    liveness  : no fatal marker, VM still running after the launch
+    effect    : screen changed >= case.min_changed_frac (window appeared)
     """
     if arch == "arm64":
-        pytest.skip("arm64 uses idle-detect boot + serial-hack input; "
-                    "GUI-drive PoC is i386/amd64 (QMP input-send-event)")
+        pytest.skip(
+            "arm64 uses idle-detect boot + serial-hack input; "
+            "GUI-drive PoC is i386/amd64 (QMP input-send-event)"
+        )
 
     # autouse `restore_vm` already rewound us to pristine `ready`.
     vm.serial_output(timeout=1.0)  # clear backlog
@@ -223,11 +230,13 @@ def test_snapshot_app_launch(vm: QemuVM, arch: str, pristine_ref, case: AppCase)
     hit = [m for m in _FATAL_MARKERS if m in settle]
     if hit:
         sym = _symbolicate_bugcheck(settle, arch)
-        pytest.fail(f"OS died launching {case.exe!r} — markers {hit}\n{sym}\n"
-                    f"serial tail: {settle[-800:]!r}")
+        pytest.fail(
+            f"OS died launching {case.exe!r} — markers {hit}\n{sym}\nserial tail: {settle[-800:]!r}"
+        )
     status = vm.qmp.execute("query-status")
-    assert status["return"]["running"] is True, \
+    assert status["return"]["running"] is True, (
         f"VM not running after launching {case.exe!r}: {status.get('return')}"
+    )
 
     # --- effect: a window appeared (screen changed vs this run's baseline).
     post = vm.work_dir / f"{case.name}_post.ppm"
@@ -238,9 +247,11 @@ def test_snapshot_app_launch(vm: QemuVM, arch: str, pristine_ref, case: AppCase)
     out_png = PROJECT_DIR / "qemu" / f"{arch}_snap_{case.name}.png"
     try:
         from PIL import Image
+
         Image.open(post).save(out_png, "PNG")
     except ImportError:
         import shutil
+
         out_png = PROJECT_DIR / "qemu" / f"{arch}_snap_{case.name}.ppm"
         shutil.copy2(post, out_png)
 
@@ -251,8 +262,12 @@ def test_snapshot_app_launch(vm: QemuVM, arch: str, pristine_ref, case: AppCase)
             f"see {out_png}. If Win+R is unsupported, switch _launch_via_run "
             f"to the Ctrl+Esc Start-menu path."
         )
-        print(f"\n[snap:{case.name}] launched; screen changed {changed:.2%}; "
-              f"isolation drift {drift:.3%}; saved {out_png}")
+        print(
+            f"\n[snap:{case.name}] launched; screen changed {changed:.2%}; "
+            f"isolation drift {drift:.3%}; saved {out_png}"
+        )
     else:
-        print(f"\n[snap:{case.name}] PIL unavailable — crash/liveness gate "
-              f"passed; visual at {out_png}")
+        print(
+            f"\n[snap:{case.name}] PIL unavailable — crash/liveness gate "
+            f"passed; visual at {out_png}"
+        )

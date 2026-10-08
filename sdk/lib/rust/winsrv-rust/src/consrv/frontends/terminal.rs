@@ -457,7 +457,7 @@ pub(crate) unsafe fn ConioWriteConsole(
     let mut i: u32;
     let mut Ptr: PCHAR_INFO;
     let mut UpdateRect: SMALL_RECT = core::mem::zeroed();
-    let CursorStartX: i16;
+    let mut CursorStartX: i16;
     let CursorStartY: i16;
     let mut ScrolledLines: u32;
     let mut bFullwidth: u8;
@@ -480,14 +480,14 @@ pub(crate) unsafe fn ConioWriteConsole(
         if (*Buff).Mode & ENABLE_PROCESSED_OUTPUT as u16 != 0 {
             if *Buffer.add(i as usize) == 0x000D {
                 (*Buff).CursorPosition.X = 0;
-                let _CursorStartX = (*Buff).CursorPosition.X;
+                CursorStartX = (*Buff).CursorPosition.X;
                 UpdateRect.Left = min(UpdateRect.Left, (*Buff).CursorPosition.X);
                 UpdateRect.Right = max(UpdateRect.Right, (*Buff).CursorPosition.X);
                 i += 1;
                 continue;
             } else if *Buffer.add(i as usize) == 0x000A {
                 (*Buff).CursorPosition.X = 0;
-                let _CursorStartX = (*Buff).CursorPosition.X;
+                CursorStartX = (*Buff).CursorPosition.X;
                 ConioNextLine(Buff, &mut UpdateRect, &mut ScrolledLines);
                 i += 1;
                 continue;
@@ -586,7 +586,7 @@ pub(crate) unsafe fn ConioWriteConsole(
                 if (*Buff).CursorPosition.X >= (*Buff).ScreenBufferSize.X {
                     if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT as u16 != 0 {
                         (*Buff).CursorPosition.X = 0;
-                        let _CursorStartX = (*Buff).CursorPosition.X;
+                        CursorStartX = (*Buff).CursorPosition.X;
                         ConioNextLine(Buff, &mut UpdateRect, &mut ScrolledLines);
                     } else {
                         (*Buff).CursorPosition.X = CursorStartX;
@@ -609,7 +609,7 @@ pub(crate) unsafe fn ConioWriteConsole(
             if (*Buff).CursorPosition.X >= (*Buff).ScreenBufferSize.X - 1 {
                 if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT as u16 != 0 {
                     (*Buff).CursorPosition.X = 0;
-                    let _CursorStartX = (*Buff).CursorPosition.X;
+                    CursorStartX = (*Buff).CursorPosition.X;
                     ConioNextLine(Buff, &mut UpdateRect, &mut ScrolledLines);
                 } else {
                     (*Buff).CursorPosition.X = CursorStartX;
@@ -675,7 +675,7 @@ pub(crate) unsafe fn ConioWriteConsole(
         if (*Buff).CursorPosition.X >= (*Buff).ScreenBufferSize.X {
             if (*Buff).Mode & ENABLE_WRAP_AT_EOL_OUTPUT as u16 != 0 {
                 (*Buff).CursorPosition.X = 0;
-                let _CursorStartX = (*Buff).CursorPosition.X;
+                CursorStartX = (*Buff).CursorPosition.X;
                 ConioNextLine(Buff, &mut UpdateRect, &mut ScrolledLines);
             } else {
                 (*Buff).CursorPosition.X = CursorStartX;

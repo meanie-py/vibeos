@@ -62,6 +62,11 @@ pub const WIN32_WINNT_WS03: u32 = 0x0502;
 // fixed-VA `KI_USER_SHARED_DATA` mapping.
 pub const KUSER_SHARED_COOKIE_OFFSET: usize = 0x330;
 
+// --- KUSER_SHARED_DATA.ProcessorFeatures (ndk/ketypes.h:582): BOOLEAN[PROCESSOR_FEATURE_MAX]
+// at 0x274 on all 3 arches (the ndk/tests C_ASSERT_FIELD rows pin it on x86 and x64).
+pub const KUSER_SHARED_PROCESSOR_FEATURES_OFFSET: usize = 0x274;
+pub const PROCESSOR_FEATURE_MAX: u32 = 64;
+
 #[cfg(target_arch = "x86")]
 pub const KI_USER_SHARED_DATA_VA: usize = 0xFFDF0000;
 #[cfg(target_arch = "x86_64")]

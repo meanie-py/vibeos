@@ -130,6 +130,7 @@ PROBE_ALTS = (
     r"probe_write_boolean",
     r"probe_write_size_t",
     r"probe_read_generic",
+    r"probe_write_generic",
     r"probe_capture_unicode_string_header",
     r"write_user_nofail",
     r"write_user",
@@ -137,6 +138,16 @@ PROBE_ALTS = (
     r"safe_copy_to_user",
     r"safe_copy_raw",
     r"mm_user_probe_address",
+    # win32k-rust/src/safe_user_io.rs: the Result probes win32k uses in place of
+    # ntkrnl_sys::probe (a separate .sys; same range/alignment arithmetic).
+    r"probe_for_read",
+    r"probe_for_write",
+    r"copy_from_user",
+    r"copy_to_user",
+    r"capture_user",
+    r"probe_and_capture_unicode_string",
+    # dbgk-rust DbgkpPostFakeModuleMessages: a local macro over probe_user_buffer.
+    r"probe_or_done!",
 )
 # The trailing `[({]` is what makes this a CALL rather than a mention — `ProbeMode`,
 # `ProbeFlags` and `probe_size` are all variables in this tree and must not count. The

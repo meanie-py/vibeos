@@ -627,7 +627,9 @@ pub unsafe extern "C" fn RtlpCreateAtomHandle(AtomTable: PRTL_ATOM_TABLE, Entry:
     if !RtlHandle.is_null() {
         let AtomHandle: *mut _RTL_ATOM_HANDLE = RtlHandle as *mut _RTL_ATOM_HANDLE;
         
-        if HandleIndex < 0xC000 {
+        // Exceeds the C (bound 0xC000): the atom is 0xC000 + index in a
+        // USHORT, so an index from 0x4000 up wrapped below 0xC000.
+        if HandleIndex < 0x4000 {
             (*Entry).HandleIndex = HandleIndex as u16;
             (*Entry).Atom = 0xC000 + HandleIndex as u16;
             
@@ -842,13 +844,13 @@ pub unsafe extern "system" fn RtlPcToFileHeader(
     let mut Module: PLDR_DATA_TABLE_ENTRY;
     let mut ImageBase: PVOID = core::ptr::null_mut();
 
-    if (*NtCurrentPeb()).Ldr.is_null() {
+    if crate::ldr::ldrinit::LdrpLdrData().is_null() {
         *BaseOfImage = core::ptr::null_mut();
         return core::ptr::null_mut();
     }
 
-    RtlEnterCriticalSection((*NtCurrentPeb()).LoaderLock);
-    ModuleListHead = core::ptr::addr_of_mut!((*(*NtCurrentPeb()).Ldr).InLoadOrderModuleList);
+    RtlEnterCriticalSection(core::ptr::addr_of_mut!(crate::ldr::ldrinit::LdrpLoaderLock));
+    ModuleListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InLoadOrderModuleList);
     Entry = (*ModuleListHead).Flink;
     while Entry != ModuleListHead {
         Module = (Entry as *mut u8).offset(-(core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks) as isize)) as PLDR_DATA_TABLE_ENTRY;
@@ -860,7 +862,7 @@ pub unsafe extern "system" fn RtlPcToFileHeader(
         }
         Entry = (*Entry).Flink;
     }
-    RtlLeaveCriticalSection((*NtCurrentPeb()).LoaderLock);
+    RtlLeaveCriticalSection(core::ptr::addr_of_mut!(crate::ldr::ldrinit::LdrpLoaderLock));
 
     *BaseOfImage = ImageBase;
     ImageBase

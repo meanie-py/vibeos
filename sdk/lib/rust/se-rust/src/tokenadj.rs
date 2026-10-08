@@ -189,6 +189,32 @@ unsafe fn SepAdjustGroups(
     STATUS_SUCCESS
 }
 
+/// Runs `adjust` with a PreviousState it can store through. A user-mode caller's
+/// buffer is replaced by a pool copy of `required` bytes, which is copied out with
+/// the fault-tolerant copy; `required` is the size the dry run measured under the
+/// same exclusive lock, so the adjusting pass writes no more than that.
+///
+/// `Err` is a fault on the caller's buffer, the C's exception code.
+unsafe fn with_previous_state<T>(
+    previous_state: *mut T,
+    required: ULONG,
+    previous_mode: KPROCESSOR_MODE,
+    adjust: impl FnOnce(*mut T) -> NTSTATUS,
+) -> Result<NTSTATUS, NTSTATUS> {
+    if previous_state.is_null() || previous_mode == 0 {
+        return Ok(adjust(previous_state));
+    }
+    let tag = u32::from_le_bytes(*b"SePs");
+    let kbuf = ExAllocatePoolWithTag(PagedPool, required as SIZE_T, tag);
+    if kbuf.is_null() {
+        return Err(ntkrnl_sys::base::STATUS_INSUFFICIENT_RESOURCES);
+    }
+    let _guard = PoolAllocGuard::new(kbuf, tag);
+    let status = adjust(kbuf as *mut T);
+    safe_copy_raw(previous_state as PVOID, kbuf, required as usize)?;
+    Ok(status)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn NtAdjustPrivilegesToken(
     TokenHandle: HANDLE,
@@ -222,7 +248,10 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
                 return s;
             }
 
-            CapturedCount = (*NewState).PrivilegeCount;
+            CapturedCount = match probe_read_generic(core::ptr::addr_of!((*NewState).PrivilegeCount), 1, PreviousMode) {
+                Ok(count) => count,
+                Err(s) => return s,
+            };
             NewStateSize = core::mem::size_of::<TOKEN_PRIVILEGES>() as ULONG + 
                           (CapturedCount.saturating_sub(1)) * core::mem::size_of::<LUID_AND_ATTRIBUTES>() as ULONG;
 
@@ -241,7 +270,11 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
         }
     } else {
         if DisableAllPrivileges == 0 {
-            CapturedCount = (*NewState).PrivilegeCount;
+            // Kernel-mode caller: no probe, but the load is still fault-tolerant.
+            CapturedCount = match read_back(core::ptr::addr_of!((*NewState).PrivilegeCount)) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
         }
     }
 
@@ -294,47 +327,46 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
         &mut ChangesMade,
     );
 
-    if !PreviousState.is_null() {
-        RequiredLength = core::mem::size_of::<TOKEN_PRIVILEGES>() as ULONG + 
-                        (ChangeCount.saturating_sub(1)) * core::mem::size_of::<LUID_AND_ATTRIBUTES>() as ULONG;
+    // C: everything below runs to a Cleanup label that regenerates ModifiedId if
+    // anything changed, drops the lock, DEREFERENCES the token and releases the
+    // capture. The previous translation disarmed the reference guard instead, so
+    // every call leaked a token reference.
+    'cleanup: {
+        if !PreviousState.is_null() {
+            RequiredLength = core::mem::size_of::<TOKEN_PRIVILEGES>() as ULONG +
+                            (ChangeCount.saturating_sub(1)) * core::mem::size_of::<LUID_AND_ATTRIBUTES>() as ULONG;
 
-        if let Err(s) = probe_write_user(ReturnLength, RequiredLength, PreviousMode) {
-            Status = s;
-            ChangesMade = 1u8;
-            SepReleaseTokenLock(Token);
-            _token_guard.disarm();
-            if !CapturedPrivileges.is_null() {
-                SeReleaseLuidAndAttributesArray(CapturedPrivileges, PreviousMode, 1u8);
+            if let Err(s) = probe_write_user(ReturnLength, RequiredLength, PreviousMode) {
+                Status = s;
+                break 'cleanup;
             }
-            return Status;
+
+            if BufferLength < RequiredLength {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break 'cleanup;
+            }
         }
 
-        if BufferLength < RequiredLength {
-            Status = STATUS_BUFFER_TOO_SMALL;
-            ChangesMade = 1u8;
-        } else {
-            Status = SepAdjustPrivileges(
+        // The C runs this under _SEH2_TRY because it stores into PreviousState, a
+        // user buffer; a fault there forces ChangesMade so the ModifiedId moves.
+        Status = match with_previous_state(PreviousState, RequiredLength, PreviousMode, |ps| {
+            SepAdjustPrivileges(
                 Token,
                 DisableAllPrivileges,
                 CapturedPrivileges,
                 CapturedCount,
-                PreviousState,
+                ps,
                 1u8,
                 &mut ChangeCount,
                 &mut ChangesMade,
-            );
-        }
-    } else {
-        Status = SepAdjustPrivileges(
-            Token,
-            DisableAllPrivileges,
-            CapturedPrivileges,
-            CapturedCount,
-            core::ptr::null_mut(),
-            1u8,
-            &mut ChangeCount,
-            &mut ChangesMade,
-        );
+            )
+        }) {
+            Ok(status) => status,
+            Err(status) => {
+                ChangesMade = 1u8;
+                status
+            }
+        };
     }
 
     if ChangesMade != 0 {
@@ -342,7 +374,7 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
     }
 
     SepReleaseTokenLock(Token);
-    _token_guard.disarm();
+    drop(_token_guard);
 
     if !CapturedPrivileges.is_null() {
         SeReleaseLuidAndAttributesArray(CapturedPrivileges, PreviousMode, 1u8);
@@ -385,7 +417,10 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
                 return s;
             }
 
-            CapturedCount = (*NewState).GroupCount;
+            CapturedCount = match probe_read_generic(core::ptr::addr_of!((*NewState).GroupCount), 1, PreviousMode) {
+                Ok(count) => count,
+                Err(s) => return s,
+            };
             NewStateSize = core::mem::size_of::<TOKEN_GROUPS>() as ULONG + 
                           (CapturedCount.saturating_sub(1)) * core::mem::size_of::<SID_AND_ATTRIBUTES>() as ULONG;
 
@@ -404,7 +439,11 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
         }
     } else {
         if ResetToDefault == 0 {
-            CapturedCount = (*NewState).GroupCount;
+            // Kernel-mode caller: no probe, but the load is still fault-tolerant.
+            CapturedCount = match read_back(core::ptr::addr_of!((*NewState).GroupCount)) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
         }
     }
 
@@ -457,47 +496,46 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
         &mut ChangeCount,
     );
 
-    if !PreviousState.is_null() {
-        RequiredLength = core::mem::size_of::<TOKEN_GROUPS>() as ULONG + 
-                        (ChangeCount.saturating_sub(1)) * core::mem::size_of::<SID_AND_ATTRIBUTES>() as ULONG;
+    // C: everything below runs to a Cleanup label that regenerates ModifiedId if
+    // anything changed, drops the lock, DEREFERENCES the token and releases the
+    // capture. The previous translation disarmed the reference guard instead, so
+    // every call leaked a token reference.
+    'cleanup: {
+        if !PreviousState.is_null() {
+            RequiredLength = core::mem::size_of::<TOKEN_GROUPS>() as ULONG +
+                            (ChangeCount.saturating_sub(1)) * core::mem::size_of::<SID_AND_ATTRIBUTES>() as ULONG;
 
-        if let Err(s) = probe_write_user(ReturnLength, RequiredLength, PreviousMode) {
-            Status = s;
-            ChangesMade = 1u8;
-            SepReleaseTokenLock(Token);
-            _token_guard.disarm();
-            if !CapturedGroups.is_null() {
-                SeReleaseSidAndAttributesArray(CapturedGroups, PreviousMode, 1u8);
+            if let Err(s) = probe_write_user(ReturnLength, RequiredLength, PreviousMode) {
+                Status = s;
+                break 'cleanup;
             }
-            return Status;
+
+            if BufferLength < RequiredLength {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break 'cleanup;
+            }
         }
 
-        if BufferLength < RequiredLength {
-            Status = STATUS_BUFFER_TOO_SMALL;
-            ChangesMade = 1u8;
-        } else {
-            Status = SepAdjustGroups(
+        // The C runs this under _SEH2_TRY because it stores into PreviousState, a
+        // user buffer; a fault there forces ChangesMade so the ModifiedId moves.
+        Status = match with_previous_state(PreviousState, RequiredLength, PreviousMode, |ps| {
+            SepAdjustGroups(
                 Token,
                 CapturedGroups,
                 CapturedCount,
                 1u8,
                 ResetToDefault,
                 &mut ChangesMade,
-                PreviousState,
+                ps,
                 &mut ChangeCount,
-            );
-        }
-    } else {
-        Status = SepAdjustGroups(
-            Token,
-            CapturedGroups,
-            CapturedCount,
-            1u8,
-            ResetToDefault,
-            &mut ChangesMade,
-            core::ptr::null_mut(),
-            &mut ChangeCount,
-        );
+            )
+        }) {
+            Ok(status) => status,
+            Err(status) => {
+                ChangesMade = 1u8;
+                status
+            }
+        };
     }
 
     if ChangesMade != 0 {
@@ -505,7 +543,7 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
     }
 
     SepReleaseTokenLock(Token);
-    _token_guard.disarm();
+    drop(_token_guard);
 
     if !CapturedGroups.is_null() {
         SeReleaseSidAndAttributesArray(CapturedGroups, PreviousMode, 1u8);

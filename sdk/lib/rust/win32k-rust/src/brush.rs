@@ -37,8 +37,6 @@ extern "system" {
     fn GreSetBitmapOwner(hbmp: HBITMAP, ulOwner: ULONG) -> BOOL;
     fn GreCreateDIBitmapFromPackedDIB(pvPackedDIB: PVOID, cjPackedDIB: UINT, uUsage: ULONG) -> HBITMAP;
     fn EngSetLastError(iError: ULONG);
-    fn ProbeForRead(a: *const core::ffi::c_void, l: usize, al: u32);
-    fn ProbeForWrite(a: *mut core::ffi::c_void, l: usize, al: u32);
 }
 
 // GetBrushAttrPool is the cdecl `extern "C" PGDI_POOL GetBrushAttrPool(VOID)`
@@ -513,9 +511,13 @@ pub unsafe extern "system" fn NtGdiCreateDIBBrush(
 
     let mut hbr: HBRUSH = core::ptr::null_mut();
 
-    /* Probe and copy the packed DIB (DUMMY_PSEH: the _SEH2_EXCEPT path is dead). */
-    ProbeForRead(pv, cj as usize, 1);
-    core::ptr::copy_nonoverlapping(pv as *const u8, pv_packed_dib as *mut u8, cj as usize);
+    /* Probe and copy the packed DIB */
+    // C: _SEH2_TRY { ProbeForRead(pv, cj, 1); RtlCopyMemory(..); }
+    //    _SEH2_EXCEPT { goto cleanup; } -- free the temp buffer, return NULL.
+    if crate::safe_user_io::copy_from_user(pv_packed_dib, pv as *const core::ffi::c_void, cj as usize, 1).is_err() {
+        ExFreePoolWithTag(pv_packed_dib, GDITAG_TEMP);
+        return hbr;
+    }
 
     let mut fl_attrs: FLONG = (BR_IS_BITMAP | BR_IS_DIB) as FLONG;
 
@@ -560,12 +562,17 @@ pub unsafe extern "system" fn NtGdiGetObjectBitmapHandle(hbr: HBRUSH, piUsage: *
     /* Unlock the brush */
     v_unlock(pbr);
 
-    /* DUMMY_PSEH: the _SEH2_EXCEPT path is dead; validate before writing. */
-    ProbeForWrite(piUsage as *mut core::ffi::c_void, core::mem::size_of::<UINT>(), 1);
-    if piUsage.is_null() {
+    // C: _SEH2_TRY { ProbeForWrite(piUsage, sizeof(*piUsage), 1); *piUsage = uUsage; }
+    //    _SEH2_EXCEPT { hbm = NULL; }  (a NULL piUsage faults into the handler too)
+    if crate::safe_user_io::copy_to_user(
+        piUsage as *mut core::ffi::c_void,
+        core::ptr::addr_of!(u_usage) as *const core::ffi::c_void,
+        core::mem::size_of::<UINT>(),
+        1,
+    )
+    .is_err()
+    {
         hbm = core::ptr::null_mut();
-    } else {
-        core::ptr::write_volatile(piUsage, u_usage);
     }
 
     hbm

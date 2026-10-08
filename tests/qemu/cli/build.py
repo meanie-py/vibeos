@@ -8,11 +8,11 @@ LINK_FAIL distinctly with i386 PE-decoration hints.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -27,6 +27,7 @@ from . import (
     ladder,
     lints,
     provenance,
+    trim,
     warmth,
 )
 from .artifacts import Run, Stage
@@ -77,6 +78,10 @@ def source_date_epoch(repo: Path) -> str | None:
 NINJA_TIMEOUT_ENV = "VIBEOS_BUILD_TIMEOUT"
 
 
+#: Generated-header / host-tool barrier targets built before the boot set (ninja-prime).
+_PRIME_TARGETS = ("host-tools", "asm", "psdk", "xdk", "bugcodes", "errcodes")
+
+
 def _ninja_timeout() -> int:
     """The ninja stage's wall-clock budget in seconds (default one hour), overridable with
     VIBEOS_BUILD_TIMEOUT for a deliberately cold rebuild (a regenerated -sys crate)."""
@@ -92,8 +97,37 @@ def _ninja_timeout() -> int:
     return value
 
 
+_NINJA_STATUS = re.compile(r"^\[\d+/\d+\] ")
+
+
+def _failed_edges(blob: str) -> list[tuple[str, list[str]]]:
+    """Each ninja `FAILED: <outputs>` edge with the output it printed, command echo
+    dropped. ninja buffers an edge's output and prints it whole after the FAILED
+    line, so the section ends at the next status line or `ninja: build stopped`."""
+    edges: list[tuple[str, list[str]]] = []
+    cur: list[str] | None = None
+    for ln in blob.splitlines():
+        if ln.startswith("FAILED: "):
+            cur = []
+            edges.append((ln[len("FAILED: ") :].strip(), cur))
+        elif cur is not None:
+            if _NINJA_STATUS.match(ln) or ln.startswith("ninja: "):
+                cur = None
+            else:
+                cur.append(ln)
+    return [(edge, lines[1:]) for edge, lines in edges]  # [0] is the command echo
+
+
 def _classify_build_failure(out: str, err: str, rc: int | None = None) -> tuple[str, list[str]]:
-    blob = out + "\n" + err
+    full = out + "\n" + err
+    # Classify on what the FAILED edge printed, not the whole log. A warm build's
+    # log is mostly other edges' warnings, and three misfiles came from that text:
+    # "error: c_int" in a bindgen warning (a timeout), ld.lld duplicate-symbol
+    # WARNINGS (a rustc error), and on 2026-10-05 `'error: {` source lines quoted
+    # in a cargo warning, which filed a failed mkisofs as CARGO_CHECK_FAIL. Only
+    # when ninja named no failed edge (a wrapper died first) is the whole log used.
+    edges = _failed_edges(full)
+    blob = "\n".join(ln for _, lines in edges for ln in lines) if edges else full
     low = blob.lower()
     # The runner turns a stage timeout into exit 124 (artifacts.Run.run). Classify it
     # before scanning the text: a slow build's log is full of warnings, and
@@ -108,7 +142,7 @@ def _classify_build_failure(out: str, err: str, rc: int | None = None) -> tuple[
     # text and would otherwise be filed as CARGO_CHECK_FAIL or BUILD_FAIL — i.e.
     # as a defect in the diff, which is exactly the wrong cause. It cost four
     # lanes a day on 2026-09-06. The detail always carries free bytes.
-    if hostdisk.looks_like_enospc(blob):
+    if hostdisk.looks_like_enospc(full):
         return "DISK_FULL", hostdisk.enospc_detail()
     if "cmake error" in low:
         return "CMAKE_CONFIGURE_FAIL", [
@@ -128,6 +162,12 @@ def _classify_build_failure(out: str, err: str, rc: int | None = None) -> tuple[
         return "CARGO_CHECK_FAIL", [
             ln.strip() for ln in blob.splitlines() if "error[" in ln or "error:" in ln
         ][:3]
+    if edges:
+        # Name the edge: a media or custom-command failure rarely says "error"
+        # (mkisofs: "No such file or directory. Invalid node - <path>").
+        edge, lines = edges[0]
+        said = [ln.strip() for ln in lines if ln.strip()]
+        return "BUILD_FAIL", [f"FAILED: {edge}"[:200], *said[-2:]]
     return "BUILD_FAIL", [ln.strip() for ln in blob.splitlines() if "error" in ln.lower()][:3]
 
 
@@ -330,75 +370,6 @@ def _policy_build_env(env: dict | None) -> dict | None:
     return dict(os.environ if env is None else env, CARGO_BUILD_JOBS=str(policy["cargo_jobs"]))
 
 
-def _ninja_known_targets(repo: Path, build_dir: Path, wrap, env) -> set[str]:
-    """All declared ninja target paths (`ninja -t targets all`), for filtering the
-    mkramdisk boot manifest down to buildable file targets. Plain subprocess (not
-    run.run) — the ~40K-line target list would bloat every full.log."""
-    try:
-        cp = subprocess.run(
-            wrap(["ninja", "-t", "targets", "all"]),
-            cwd=build_dir,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return set()
-    return {ln.split(":", 1)[0].strip() for ln in cp.stdout.splitlines() if ":" in ln}
-
-
-def _build_ramdisk_apps(run: Run, repo: Path, build_dir: Path, wrap, env, args) -> bool:
-    """Build the arm64 ramdisk's stock apps and their import closure (tools/ramdisk_apps.py).
-
-    The closure is read from BUILT binaries' import tables, so each round of newly built
-    modules can name the next round's imports: repeat until the tool asks for nothing.
-    A fresh tree converges in four rounds (apps -> dnsapi & co -> d3dwine -> opengl32); a
-    warm one asks for nothing on the first."""
-    tool = [sys.executable, str(repo / "tools" / "ramdisk_apps.py"), "--build-dir", str(build_dir)]
-    built: list[str] = []
-    for _round in range(8):
-        cp = subprocess.run([*tool, "--targets"], capture_output=True, text=True, cwd=repo)
-        if cp.returncode != 0:
-            run.add(
-                Stage(
-                    "ramdisk-apps",
-                    exit=cp.returncode,
-                    status="fail",
-                    detail="closure unresolvable",
-                    salient=cp.stderr.splitlines()[-4:],
-                )
-            )
-            return False
-        todo = [t for t in cp.stdout.split() if t not in built]
-        if not todo:
-            run.add(Stage("ramdisk-apps", status="ok", detail=f"{len(built)} built"))
-            return True
-        built += todo
-        cp = run.run(
-            wrap(["ninja", *_ninja_jobs(), *_ninja_keep_going(args), *todo]),
-            cwd=build_dir,
-            env=env,
-            stage="ramdisk-apps",
-            timeout=3600,
-        )
-        if cp.returncode != 0:
-            cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
-            run.classification = cls
-            run.add(
-                Stage(
-                    "ramdisk-apps",
-                    exit=cp.returncode,
-                    status="fail",
-                    detail=cls,
-                    salient=salient or ["see full log"],
-                )
-            )
-            return False
-    run.add(Stage("ramdisk-apps", status="fail", detail="closure did not converge in 8 rounds"))
-    return False
-
-
 def build(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # build side keys on the base arch
     cfg = archcfg.arch_build(arch)
@@ -436,15 +407,39 @@ def build(args, repo: Path) -> int:
     # left is the narrower guarantee that the claim tracks the build, not the process.
     # Safe here only because reserve() never BLOCKS: it admits or raises at once.
     try:
-        with hostlock.build_lock(build_dir, arch) as admission:
+        with hostlock.build_lock(build_dir, arch) as admission, contextlib.ExitStack() as reads:
             hostjobs.ensure(repo)
             run.extra["admission"] = admission
+            if not _hold_wow64_source(run, repo, arch, args, reads):
+                return run.finalize(repo)
             with diskspace.reserve(repo, "build"):
-                return _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+                rc = _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+            if rc == 0:
+                _trim_own_target(repo)
+            return rc
     except hostlock.buildpolicy.PolicyError as exc:
         run.classification = "BUILD_POLICY_REFUSED"
         run.add(Stage("admission", status="fail", detail=str(exc)))
         return run.finalize(repo)
+
+
+def _trim_own_target(repo: Path) -> None:
+    """Cargo never deletes a superseded unit, so without this a lane's target dir only
+    grows (32 G fresh, 45 G measured on a weeks-old lane). Own tree only, after a green
+    build; see trim.py for why this is safe while sibling arches are still building.
+    VIBEOS_TRIM=0 opts out."""
+    if os.environ.get("VIBEOS_TRIM", "1") == "0":
+        return
+    try:
+        plan = trim.plan_worktree(repo)
+        if plan.paths:
+            freed, _ = trim.apply(repo, plan)
+            print(
+                f"[trim] freed {freed / 1024**3:.1f} G of superseded cargo output "
+                f"({plan.superseded_units} units, {plan.adhoc_dirs} idle ad-hoc dirs)"
+            )
+    except OSError as exc:
+        print(f"[trim] skipped: {exc}")
 
 
 def _flag_in_cache(build_dir: Path, flag: str) -> bool:
@@ -832,6 +827,63 @@ def _verify_flag_artifacts(run, repo: Path, build_dir: Path, args) -> bool:
     return ok
 
 
+def _hold_wow64_source(run, repo: Path, arch: str, args, reads: contextlib.ExitStack) -> bool:
+    """Hold build-i386 still while a staging amd64 build reads it. False = refused.
+
+    The amd64 media is partly MADE of build-i386: the SysWOW64 closure is computed
+    from it at configure, the guests link its importlibs, and mkisofs reads ~200MB
+    of its PEs at the very last edge. Nothing serialized that against an i386 build
+    in the same worktree, so `build --arch i386 --clean` beside `build --arch amd64`
+    deleted the cargo-built kernel32.dll out from under the amd64 ISO step
+    (`mkisofs: ... Invalid node - .../build-i386/dll/win32/kernel32/kernel32.dll`,
+    2026-10-05). A warm i386 relink there is worse: a torn read ships silently.
+
+    The fix is the i386 tree's own directory lock, for the whole amd64 build: the
+    read reaches the final edge of the same `ninja livecd` that builds everything,
+    so there is no narrower window to hold. Lock order is always amd64 -> i386 and
+    no i386 build takes amd64's, so this cannot deadlock. The gate is unaffected:
+    it builds amd64 with --no-wow64-stage beside i386 and restages once i386 is
+    done, which is the way to get both in parallel by hand too.
+    """
+    i386 = repo / "build-i386"
+    if arch != "amd64" or getattr(args, "no_wow64_stage", False) or not i386.is_dir():
+        return True
+    t0 = time.monotonic()
+    reader = "amd64 SysWOW64 staging"
+    fd = hostlock.acquire_build_dir(i386, timeout=0, arch="i386", reader=reader)
+    if fd is None:
+        # hostlock's own wait line says "CPU lease"; say what this one is.
+        print(
+            "[build] an i386 build holds build-i386, which this amd64 media stages "
+            "SysWOW64 from: waiting for it (--no-wow64-stage builds beside it instead)",
+            flush=True,
+        )
+        fd = hostlock.acquire_build_dir(i386, arch="i386", reader=reader)
+    if fd is None:
+        run.classification = "BUILD_POLICY_REFUSED"
+        run.add(
+            Stage(
+                "wow64-source",
+                status="fail",
+                detail="timed out waiting for the i386 build this media stages from",
+                salient=["or build with --no-wow64-stage and restage after i386 finishes"],
+            )
+        )
+        return False
+    reads.callback(hostlock.release, fd)
+    waited = time.monotonic() - t0
+    run.add(
+        Stage(
+            "wow64-source",
+            status="ok",
+            detail=f"build-i386 held (waited {waited:.0f}s for an i386 build)"
+            if waited >= 1
+            else "build-i386 held",
+        )
+    )
+    return True
+
+
 def _refresh_wow64_guests(run, repo: Path) -> bool:
     """Make the graded WoW64 guests current. False = hard failure (stage added)."""
     todo = ladder.guests_to_refresh(repo)
@@ -902,6 +954,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             # build so a plain build reverts to the APIC HAL. i386 only — amd64
             # hal is always APIC.
             "VIBEOS_PIC_HAL": bool(getattr(args, "hal_pic", False)),
+            # Storage on upstream's new ATA stack instead of uniata (`--ata-stack`).
+            # Reconciled: it changes which driver owns the boot CD, so it must never
+            # outlive the build that asked for it.
+            "VIBEOS_ATA_STACK": bool(getattr(args, "ata_stack", False)),
             # The full winetest corpus (`--rostests`). RECONCILED, not sticky,
             # which is the opposite call from ENABLE_ROSTESTS_KMTESTS below and
             # for a reason: kmtests are cheap to keep and something (conformance)
@@ -1076,7 +1132,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     # dirs masked (winnt.h always pre-existed). Prime the generator targets as an
     # explicit barrier; warm trees no-op in ~1s.
     cp = run.run(
-        wrap(["ninja", *_ninja_jobs(), "host-tools", "asm", "psdk", "xdk", "bugcodes", "errcodes"]),
+        wrap(["ninja", *_ninja_jobs(), *_PRIME_TARGETS]),
         cwd=build_dir,
         env=build_env,
         stage="ninja-prime",
@@ -1097,30 +1153,49 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         return run.finalize(repo)
     run.add(Stage("ninja-prime", status="ok", detail="generated headers"))
 
+    # --- delete outputs the current graph no longer declares ---
+    # ninja never removes the output of an edge that has left build.ninja, so a warm
+    # tree keeps every object of a source taken out of a target, every archive of a
+    # removed library -- and anything that reads the build dir (a difftest oracle,
+    # an object-dir glob) goes on seeing it, where a fresh integration tree does not.
+    # Three red masters came from that gap (__chkesp, the shim objects, msvcrt_static).
+    # Runs after ninja-prime, because that pass is what regenerates the manifest; the
+    # first run on an old tree deletes thousands of files, after which it is ~0.
+    # It cannot catch an edge that is still declared but no longer built (an unlinked
+    # library outside the livecd closure) -- only a fresh tree catches that.
+    cp = run.run(
+        wrap(["ninja", "-t", "cleandead"]),
+        cwd=build_dir,
+        env=build_env,
+        stage="ninja-cleandead",
+        timeout=300,
+    )
+    if cp.returncode != 0:
+        cls, salient = _classify_build_failure(cp.stdout, cp.stderr, cp.returncode)
+        run.classification = cls
+        run.add(
+            Stage(
+                "cleandead",
+                exit=cp.returncode,
+                status="fail",
+                detail=f"ninja -t cleandead failed ({cls})",
+                salient=salient or ["see full log"],
+            )
+        )
+        return run.finalize(repo)
+    removed = re.search(r"(\d+) files?\.", cp.stdout or "")
+    n = removed.group(1) if removed else "?"
+    run.add(Stage("cleandead", status="ok", detail=f"{n} dead output(s) removed"))
+
     # --- ninja the boot target(s) ---
-    # arm64 (mkramdisk arches): force-build the ENTIRE boot manifest (mkramdisk
-    # REQUIRED_FILES — file paths are valid ninja targets), not just the curated
-    # ninja_targets list. Two bugs this kills: (a) the cohab-flip false-green —
-    # a Rust .sys/.dll missing from ninja_targets left a STALE C binary that
-    # mkramdisk staged (fastfat/ramdisk/advapi32 class); (b) the fresh-tree gap —
-    # a canonized/provisioned build-arm64 had never built smss.exe etc. at all
-    # (the curated list assumed a previously-full tree). Deriving from the boot
-    # manifest keeps it self-maintaining; ninja dedups anything a phony target
-    # already covers. x86 builds the full `livecd` DAG and needs neither.
+    # Every arch builds its `livecd` DAG, which is the whole boot set. The cohab rels are
+    # forced on top because a cargo-LINKED module's link only re-runs when its declared
+    # deps change (cargo_link_staleness_reasons covers that case too).
     targets = list(dict.fromkeys([*cfg.ninja_targets, *getattr(args, "extra_target", [])]))
     if any(not target or target.startswith("-") for target in targets):
         run.add(Stage("targets", status="fail", detail="invalid extra Ninja target"))
         return run.finalize(repo)
-    if cfg.needs_mkramdisk:
-        # Not every staged file is a ninja target (e.g. media/nls/l_intl.nls is
-        # copied by an aggregate rule) — intersect with the known target list or
-        # ninja hard-errors on the first unknown.
-        known = _ninja_known_targets(repo, build_dir, wrap, build_env)
-        cohab = [
-            r for r in provenance.mkramdisk_required_rels(repo) if r not in targets and r in known
-        ]
-    else:
-        cohab = [r for r in provenance.boot_set_cohab_rels(repo, arch) if r not in targets]
+    cohab = [r for r in provenance.boot_set_cohab_rels(repo, arch) if r not in targets]
     if cohab:
         run.log(
             "force-building the boot-manifest set (self-heal):\n" + "\n".join(cohab),
@@ -1147,9 +1222,6 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         )
         return run.finalize(repo)
     run.add(Stage("ninja", status="ok", detail="+".join(targets)))
-
-    if cfg.needs_mkramdisk and not _build_ramdisk_apps(run, repo, build_dir, wrap, build_env, args):
-        return run.finalize(repo)
 
     # --- flag→artifact verification (T1.2): requested features must PROVE
     # themselves in the output; unrequested ones must be absent. ---
@@ -1251,6 +1323,49 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         )
     )
 
+    # --- prune what the requested targets no longer depend on ---
+    # cleandead's blind spot: an edge still DECLARED that nothing we build depends
+    # on (a library unlinked but kept "as a reference"). Its outputs live on in a
+    # warm tree and never exist in a fresh one -- msvcrt_static, 2026-10-04: every
+    # lane green, the fresh integration tree red. After this a warm build dir holds
+    # what a fresh build of the same targets would. Only files ninja logged
+    # building are candidates (tools/ninja_closure_prune.py).
+    _spec = importlib.util.spec_from_file_location(
+        "ninja_closure_prune", repo / "tools" / "ninja_closure_prune.py"
+    )
+    assert _spec is not None and _spec.loader is not None
+    _prune = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_prune)
+    roots = ["build.ninja", *_PRIME_TARGETS, *targets, *cohab, *cfg.ninja_targets_optional]
+    try:
+        victims, unknown = _prune.plan(build_dir, roots, canon.canon_path() + f"/{build_dir.name}")
+    except OSError as exc:
+        victims, unknown = [], [f"<{exc}>"]
+    # An optional target absent from this graph is a normal skip above; anything
+    # else unresolvable means the walk cannot be trusted, so delete nothing.
+    unknown = [u for u in unknown if u not in cfg.ninja_targets_optional]
+    if unknown:
+        run.classification = "BUILD_FAIL"
+        run.add(
+            Stage(
+                "closure-prune",
+                status="fail",
+                detail=f"cannot resolve root(s) in build.ninja: {' '.join(unknown)[:200]}",
+            )
+        )
+        return run.finalize(repo)
+    for rel in victims:
+        (build_dir / rel).unlink(missing_ok=True)
+    if victims:
+        run.log("\n".join(victims), header="closure-prune")
+    run.add(
+        Stage(
+            "closure-prune",
+            status="ok",
+            detail=f"{len(victims)} output(s) outside the closure removed",
+        )
+    )
+
     # --- cache hit-rate stats (also the determinism gauge) ---
     if caching and build_env is not None:
         _collect_cache_stats(run, cache, build_env, repo=repo, wrap=wrap)
@@ -1259,7 +1374,12 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     if cfg.needs_mkramdisk:
         mk = repo / "qemu" / "mkramdisk.sh"
         ramdisk = repo / "qemu" / "ramdisk.img"
-        flag = "--refresh" if ramdisk.is_file() else ""
+        # A --clean build never reuses the FAT image: it is untracked state that outlives
+        # whichever revision made it. The conductor's integration worktree gated a lane
+        # whose mkramdisk sized the image to its contents (284 MB), then gated master,
+        # whose script reused that image and failed copying it into its fixed 280 MB
+        # boot.img -- "Disk full", read as a red master, and the train halted.
+        flag = "--refresh" if ramdisk.is_file() and not getattr(args, "clean", False) else ""
         cmd = ["bash", str(mk)] + ([flag] if flag else [])
         # Both pairs are staged unconditionally and freeldr.ini ships both entries;
         # the MP one is the DEFAULT since 2026-09-12. `--up` here moves `DefaultOS=`
@@ -1269,6 +1389,27 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         if getattr(args, "up_kernel", False):
             cmd.append("--up")
         cp = run.run(cmd, cwd=repo, stage="mkramdisk", timeout=900)
+        # The warm-build half of the same hazard: --refresh only overwrites and adds into
+        # the existing fixed-size FAT image, so a tree that once staged something big (a
+        # VIBEOS_FEX SysWOW64 closure, an old payload) carries it into every later refresh
+        # until mtools says "Disk full", though a fresh image of the same inputs fits. The
+        # image is THIS tree's derived state: rebuild it from scratch once, loudly, rather
+        # than fail a build whose inputs fit.
+        out = (cp.stdout or "") + (cp.stderr or "")
+        if cp.returncode != 0 and flag == "--refresh" and "Disk full" in out:
+            run.add(
+                Stage(
+                    "mkramdisk-refresh",
+                    exit=cp.returncode,
+                    status="warn",
+                    detail="refresh hit Disk full on a stale image; recreating it",
+                )
+            )
+            ramdisk.unlink(missing_ok=True)
+            (repo / "qemu" / "ramdisk.payloads").unlink(missing_ok=True)
+            flag = ""
+            cmd = [c for c in cmd if c != "--refresh"]
+            cp = run.run(cmd, cwd=repo, stage="mkramdisk", timeout=900)
         if cp.returncode != 0:
             run.classification = "RESTAGE_FAIL"
             run.add(

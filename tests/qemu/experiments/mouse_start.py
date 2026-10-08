@@ -20,17 +20,22 @@ from tests.qemu.vm import PROJECT_DIR, QemuVM, get_arch_config
 
 
 def _rel(vm: QemuVM, dx: int, dy: int) -> None:
-    vm.qmp.execute("input-send-event", events=[
-        {"type": "rel", "data": {"axis": "x", "value": dx}},
-        {"type": "rel", "data": {"axis": "y", "value": dy}},
-    ])
+    vm.qmp.execute(
+        "input-send-event",
+        events=[
+            {"type": "rel", "data": {"axis": "x", "value": dx}},
+            {"type": "rel", "data": {"axis": "y", "value": dy}},
+        ],
+    )
 
 
 def _click(vm: QemuVM) -> None:
-    vm.qmp.execute("input-send-event", events=[
-        {"type": "btn", "data": {"button": "left", "down": True}}])
-    vm.qmp.execute("input-send-event", events=[
-        {"type": "btn", "data": {"button": "left", "down": False}}])
+    vm.qmp.execute(
+        "input-send-event", events=[{"type": "btn", "data": {"button": "left", "down": True}}]
+    )
+    vm.qmp.execute(
+        "input-send-event", events=[{"type": "btn", "data": {"button": "left", "down": False}}]
+    )
 
 
 def _shot(vm: QemuVM, tag: str) -> Path:
@@ -39,6 +44,7 @@ def _shot(vm: QemuVM, tag: str) -> Path:
     png = PROJECT_DIR / "qemu" / f"i386_ms_{tag}.png"
     try:
         from PIL import Image
+
         Image.open(ppm).save(png, "PNG")
     except Exception:
         pass
@@ -47,10 +53,11 @@ def _shot(vm: QemuVM, tag: str) -> Path:
 
 def _delta_pct(a: Path, b: Path) -> float:
     from PIL import Image, ImageChops
+
     ia = Image.open(a).convert("RGB")
     ib = Image.open(b).convert("RGB")
     d = ImageChops.difference(ia, ib).convert("L")
-    moved = sum(1 for px in d.getdata() if px > 16)
+    moved = sum(d.histogram()[17:])  # pixels with a delta > 16
     return moved / (ia.width * ia.height) * 100.0
 
 
@@ -71,7 +78,7 @@ def main() -> None:
         for _ in range(15):
             _rel(vm, -400, -400)
         time.sleep(0.3)
-        tl = _shot(vm, "1_topleft")
+        _shot(vm, "1_topleft")
 
         # 2. Drive to BOTTOM-LEFT corner = Start button (res-independent):
         #    huge +dy clamps at bottom; small +dx keeps us at the far left.
@@ -92,15 +99,21 @@ def main() -> None:
         print(f"  screenΔ after Start click     : {d_click:.3f}%")
         print(f"  screenΔ total vs baseline     : {d_total:.3f}%")
         if d_click > 1.0:
-            print("\n  VERDICT: Start menu OPENED — host MOUSE-drive WORKS on "
-                  "this win32k (keyboard hotkeys don't, mouse does). Next: "
-                  "navigate the menu to launch notepad/calc.")
+            print(
+                "\n  VERDICT: Start menu OPENED — host MOUSE-drive WORKS on "
+                "this win32k (keyboard hotkeys don't, mouse does). Next: "
+                "navigate the menu to launch notepad/calc."
+            )
         elif d_move > 0.3:
-            print("\n  PARTIAL: cursor moved (mouse input IS delivered) but "
-                  "the click didn't open Start — try click timing / position.")
+            print(
+                "\n  PARTIAL: cursor moved (mouse input IS delivered) but "
+                "the click didn't open Start — try click timing / position."
+            )
         else:
-            print("\n  VERDICT: no screen change at all — host mouse injection "
-                  "also doesn't drive this win32k. Pivot to in-guest agent.")
+            print(
+                "\n  VERDICT: no screen change at all — host mouse injection "
+                "also doesn't drive this win32k. Pivot to in-guest agent."
+            )
         print("  screenshots: qemu/i386_ms_*.png")
     finally:
         vm.stop()

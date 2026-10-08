@@ -14,7 +14,7 @@
 @ cdecl -arch=i386 _CIsqrt()
 @ cdecl -arch=i386 _CItan()
 @ cdecl -arch=i386 _CItanh()
-@ cdecl -stub _Cbuild(ptr double double)
+@ cdecl _Cbuild(ptr double double)
 @ stub _Cmulcc
 @ stub _Cmulcr
 @ cdecl _CreateFrameInfo(ptr ptr)
@@ -113,7 +113,7 @@
 @ cdecl __conio_common_vcwprintf_p(int64 wstr ptr ptr)
 @ cdecl __conio_common_vcwprintf_s(int64 wstr ptr ptr)
 @ cdecl __conio_common_vcwscanf(int64 wstr ptr ptr)
-@ cdecl -stub -arch=i386 __control87_2(long long ptr ptr)
+@ cdecl -arch=i386 __control87_2(long long ptr ptr)
 @ cdecl __current_exception()
 @ cdecl __current_exception_context()
 @ cdecl __daylight()
@@ -121,7 +121,7 @@
 @ cdecl __dcrt_initial_narrow_environment()
 @ cdecl __doserrno()
 @ cdecl __dstbias()
-@ cdecl -stub __fpe_flt_rounds()
+@ cdecl __fpe_flt_rounds()
 @ cdecl __fpecode()
 @ cdecl __initialize_lconv_for_unsigned_char()
 @ cdecl __intrinsic_abnormal_termination()
@@ -304,7 +304,7 @@
 @ cdecl _difftime64(int64 int64)
 @ cdecl -stub _dlog(double long)
 @ cdecl -stub _dnorm(ptr)
-@ cdecl -stub _dpcomp(double double)
+@ cdecl _dpcomp(double double)
 @ cdecl -stub _dpoly(double ptr long)
 @ cdecl -stub _dscale(ptr long)
 @ cdecl _dsign(double)
@@ -347,7 +347,7 @@
 @ cdecl -stub _fdlog(float long)
 @ cdecl -stub _fdnorm(ptr)
 @ cdecl _fdopen(long str)
-@ cdecl -stub _fdpcomp(float float)
+@ cdecl _fdpcomp(float float)
 @ cdecl -stub _fdpoly(float ptr long)
 @ cdecl -stub _fdscale(ptr long)
 @ cdecl _fdsign(float)
@@ -375,9 +375,9 @@
 @ cdecl -arch=!i386 _finitef(float)
 @ cdecl _flushall()
 @ cdecl _fpclass(double)
-@ cdecl -stub -arch=!i386 _fpclassf(float)
+@ cdecl -arch=!i386 _fpclassf(float)
 @ cdecl _fpieee_flt(long ptr ptr)
-@ cdecl -stub _fpreset()
+@ cdecl _fpreset()
 @ cdecl _fputc_nolock(long ptr)
 @ cdecl _fputchar(long)
 @ cdecl _fputwc_nolock(long ptr)
@@ -615,7 +615,8 @@
 @ cdecl -arch=i386 -norelay _libm_sse2_sqrt_precise()
 @ cdecl -arch=i386 -norelay _libm_sse2_tan_precise()
 @ cdecl _loaddll(str)
-@ cdecl -arch=win64 _local_unwind(ptr ptr) ntdll._local_unwind
+@ cdecl -arch=x86_64 _local_unwind(ptr ptr) ntdll._local_unwind
+@ cdecl -arch=arm64 _local_unwind(ptr ptr)
 @ cdecl -arch=i386 _local_unwind2(ptr long)
 @ cdecl -arch=i386 _local_unwind4(ptr ptr long)
 @ cdecl _localtime32(ptr)
@@ -1383,8 +1384,8 @@
 @ cdecl _o__resetstkoflw() _resetstkoflw
 @ cdecl _o__rmdir(str) _rmdir
 @ cdecl _o__rmtmp() _rmtmp
-@ cdecl _o__scalb(double long) scalbn
-@ cdecl -arch=x86_64 _o__scalbf(float long) scalbnf
+@ cdecl _o__scalb(double long) _scalb
+@ cdecl -arch=x86_64 _o__scalbf(float long) _scalbf
 @ cdecl _o__searchenv(str str ptr) _searchenv
 @ cdecl _o__searchenv_s(str str ptr long) _searchenv_s
 @ cdecl _o__seh_filter_dll(long ptr) _seh_filter_dll # __CppXcptFilter
@@ -1935,8 +1936,8 @@
 @ cdecl -ret64 _rotl64(int64 long)
 @ cdecl _rotr(long long)
 @ cdecl -ret64 _rotr64(int64 long)
-@ cdecl _scalb(double long) scalbn # double _scalb(double x, long exp);
-@ cdecl -arch=x86_64 _scalbf(float long) scalbnf # float _scalbf(float x, long exp);
+@ cdecl _scalb(double long)
+@ cdecl -arch=x86_64 _scalbf(float long)
 @ cdecl _searchenv(str str ptr)
 @ cdecl _searchenv_s(str str ptr long)
 @ cdecl _seh_filter_dll(long ptr) # __CppXcptFilter
@@ -1986,7 +1987,7 @@
 @ cdecl _stat64i32(str ptr)
 @ cdecl -arch=win64 -impsym _stat(ptr) _stat64i32
 @ cdecl _statusfp()
-@ cdecl -stub -arch=i386 _statusfp2(ptr ptr)
+@ cdecl -arch=i386 _statusfp2(ptr ptr)
 @ cdecl _strcoll_l(str str ptr)
 @ cdecl _strdate(ptr)
 @ cdecl _strdate_s(ptr long)
@@ -2230,23 +2231,23 @@
 @ cdecl abs(long)
 @ cdecl acos(double)
 @ cdecl -arch=!i386 acosf(float)
-@ cdecl -stub acosh(double)
-@ cdecl -stub acoshf(float)
-@ cdecl -stub acoshl(double)
+@ cdecl acosh(double)
+@ cdecl acoshf(float)
+@ cdecl acoshl(double)
 @ cdecl asctime(ptr)
 @ cdecl asctime_s(ptr long ptr)
 @ cdecl asin(double)
 @ cdecl -arch=!i386 asinf(float)
-@ cdecl -stub asinh(double)
-@ cdecl -stub asinhf(float)
-@ cdecl -stub asinhl(double) asinh
+@ cdecl asinh(double)
+@ cdecl asinhf(float)
+@ cdecl asinhl(double) asinh
 @ cdecl atan(double)
 @ cdecl atan2(double double)
 @ cdecl -arch=!i386 atan2f(float float)
 @ cdecl -arch=!i386 atanf(float)
-@ cdecl -stub atanh(double)
-@ cdecl -stub atanhf(float)
-@ cdecl -stub atanhl(double)
+@ cdecl atanh(double)
+@ cdecl atanhf(float)
+@ cdecl atanhl(double)
 @ cdecl atof(str)
 @ cdecl atoi(str)
 @ cdecl atol(str)
@@ -2281,9 +2282,9 @@
 @ stub catanhf
 @ stub catanhl
 @ stub catanl
-@ cdecl -stub cbrt(double)
-@ cdecl -stub cbrtf(float)
-@ cdecl -stub cbrtl(double) cbrt
+@ cdecl cbrt(double)
+@ cdecl cbrtf(float)
+@ cdecl cbrtl(double) cbrt
 @ stub ccos
 @ stub ccosf
 @ stub ccosh
@@ -2310,9 +2311,9 @@
 @ stub conj
 @ stub conjf
 @ stub conjl
-@ cdecl -stub copysign(double double)
-@ cdecl -stub copysignf(float float)
-@ cdecl -stub copysignl(double double) copysign
+@ cdecl copysign(double double)
+@ cdecl copysignf(float float)
+@ cdecl copysignl(double double) copysign
 @ cdecl cos(double)
 @ cdecl -arch=!i386 cosf(float)
 @ cdecl cosh(double)
@@ -2323,7 +2324,7 @@
 @ stub cproj
 @ stub cprojf
 @ stub cprojl
-@ cdecl -stub creal(int128)
+@ cdecl creal(int128)
 @ stub crealf
 @ stub creall
 @ stub csin
@@ -2342,38 +2343,38 @@
 @ stub ctanhl
 @ stub ctanl
 @ cdecl -ret64 div(long long)
-@ cdecl -stub erf(double)
-@ cdecl -stub erfc(double)
-@ cdecl -stub erfcf(float)
-@ cdecl -stub erfcl(double) erfc
-@ cdecl -stub erff(float)
-@ cdecl -stub erfl(double) erf
+@ cdecl erf(double)
+@ cdecl erfc(double)
+@ cdecl erfcf(float)
+@ cdecl erfcl(double) erfc
+@ cdecl erff(float)
+@ cdecl erfl(double) erf
 @ cdecl exit(long)
 @ cdecl exp(double)
 @ cdecl exp2(double)
 @ cdecl exp2f(float)
 @ cdecl exp2l(double) exp2
 @ cdecl -arch=!i386 expf(float)
-@ cdecl -stub expm1(double)
-@ cdecl -stub expm1f(float)
+@ cdecl expm1(double)
+@ cdecl expm1f(float)
 @ cdecl expm1l(double) expm1
 @ cdecl fabs(double)
-@ cdecl -stub -arch=arm,arm64 fabsf(float)
+@ cdecl -arch=arm,arm64 fabsf(float)
 @ cdecl fclose(ptr)
-@ cdecl -stub fdim(double double)
-@ cdecl -stub fdimf(float float)
+@ cdecl fdim(double double)
+@ cdecl fdimf(float float)
 @ cdecl fdiml(double double) fdim
-@ cdecl -stub feclearexcept(long)
-@ cdecl -stub fegetenv(ptr)
-@ cdecl -stub fegetexceptflag(ptr long)
-@ cdecl -stub fegetround()
-@ cdecl -stub feholdexcept(ptr)
+@ cdecl feclearexcept(long)
+@ cdecl fegetenv(ptr)
+@ cdecl fegetexceptflag(ptr long)
+@ cdecl fegetround()
+@ cdecl feholdexcept(ptr)
 @ cdecl feof(ptr)
 @ cdecl ferror(ptr)
-@ cdecl -stub fesetenv(ptr)
-@ cdecl -stub fesetexceptflag(ptr long)
-@ cdecl -stub fesetround(long)
-@ cdecl -stub fetestexcept(long)
+@ cdecl fesetenv(ptr)
+@ cdecl fesetexceptflag(ptr long)
+@ cdecl fesetround(long)
+@ cdecl fetestexcept(long)
 @ cdecl fflush(ptr)
 @ cdecl fgetc(ptr)
 @ cdecl fgetpos(ptr ptr)
@@ -2385,11 +2386,11 @@
 @ cdecl fma(double double double)
 @ cdecl fmaf(float float float)
 @ cdecl fmal(double double double) fma
-@ cdecl -stub fmax(double double)
-@ cdecl -stub fmaxf(float float)
+@ cdecl fmax(double double)
+@ cdecl fmaxf(float float)
 @ cdecl fmaxl(double double) fmax
-@ cdecl -stub fmin(double double)
-@ cdecl -stub fminf(float float)
+@ cdecl fmin(double double)
+@ cdecl fminf(float float)
 @ cdecl fminl(double double) fmin
 @ cdecl fmod(double double)
 @ cdecl -arch=!i386 fmodf(float float)
@@ -2418,8 +2419,8 @@
 @ cdecl getwc(ptr)
 @ cdecl getwchar()
 @ cdecl hypot(double double) _hypot
-@ cdecl -stub ilogb(double)
-@ cdecl -stub ilogbf(float)
+@ cdecl ilogb(double)
+@ cdecl ilogbf(float)
 @ cdecl ilogbl(double) ilogb
 @ cdecl -ret64 imaxabs(int64)
 @ cdecl -ret64 imaxdiv(int64 int64)
@@ -2454,37 +2455,37 @@
 @ cdecl labs(long)
 @ cdecl ldexp(double long)
 @ cdecl -ret64 ldiv(long long)
-@ cdecl -stub lgamma(double)
-@ cdecl -stub lgammaf(float)
+@ cdecl lgamma(double)
+@ cdecl lgammaf(float)
 @ cdecl lgammal(double) lgamma
 @ cdecl -ret64 llabs(int64)
 @ cdecl -norelay lldiv(int64 int64)
-@ cdecl -stub -ret64 llrint(double)
-@ cdecl -stub -ret64 llrintf(float)
+@ cdecl -ret64 llrint(double)
+@ cdecl -ret64 llrintf(float)
 @ cdecl -ret64 llrintl(double) llrint
-@ cdecl -stub -ret64 llround(double)
-@ cdecl -stub -ret64 llroundf(float)
+@ cdecl -ret64 llround(double)
+@ cdecl -ret64 llroundf(float)
 @ cdecl -ret64 llroundl(double) llround
 @ cdecl localeconv()
 @ cdecl log(double)
 @ cdecl log10(double)
 @ cdecl -arch=!i386 log10f(float)
-@ cdecl -stub log1p(double)
-@ cdecl -stub log1pf(float)
+@ cdecl log1p(double)
+@ cdecl log1pf(float)
 @ cdecl log1pl(double) log1p
 @ cdecl log2(double)
 @ cdecl log2f(float)
 @ cdecl log2l(double) log2
-@ cdecl -stub logb(double)
-@ cdecl -stub logbf(float)
+@ cdecl logb(double)
+@ cdecl logbf(float)
 @ cdecl logbl(double) logb
 @ cdecl -arch=!i386 logf(float)
 @ cdecl longjmp(ptr long)
 @ cdecl lrint(double)
 @ cdecl lrintf(float)
 @ cdecl lrintl(double) lrint
-@ cdecl -stub lround(double)
-@ cdecl -stub lroundf(float)
+@ cdecl lround(double)
+@ cdecl lroundf(float)
 @ cdecl lroundl(double) lround
 @ cdecl malloc(long)
 @ cdecl mblen(ptr long)
@@ -2505,12 +2506,12 @@
 @ cdecl memmove_s(ptr long ptr long)
 @ cdecl memset(ptr long long)
 @ cdecl modf(double ptr)
-@ cdecl -stub -arch=!i386 modff(float ptr)
-@ cdecl -stub nan(str)
-@ cdecl -stub nanf(str)
+@ cdecl -arch=!i386 modff(float ptr)
+@ cdecl nan(str)
+@ cdecl nanf(str)
 @ cdecl nanl(str) nan
-@ cdecl -stub nearbyint(double)
-@ cdecl -stub nearbyintf(float)
+@ cdecl nearbyint(double)
+@ cdecl nearbyintf(float)
 @ cdecl nearbyintl(double) nearbyint
 @ cdecl nextafter(double double)
 @ cdecl nextafterf(float float)
@@ -2536,17 +2537,17 @@
 @ cdecl rand()
 @ cdecl rand_s(ptr)
 @ cdecl realloc(ptr long)
-@ cdecl -stub remainder(double double)
-@ cdecl -stub remainderf(float float)
+@ cdecl remainder(double double)
+@ cdecl remainderf(float float)
 @ cdecl remainderl(double double) remainder
 @ cdecl remove(str)
-@ cdecl -stub remquo(double double ptr)
-@ cdecl -stub remquof(float float ptr)
+@ cdecl remquo(double double ptr)
+@ cdecl remquof(float float ptr)
 @ cdecl remquol(double double ptr) remquo
 @ cdecl rename(str str)
 @ cdecl rewind(ptr)
-@ cdecl -stub rint(double)
-@ cdecl -stub rintf(float)
+@ cdecl rint(double)
+@ cdecl rintf(float)
 @ cdecl rintl(double) rint
 @ cdecl round(double)
 @ cdecl roundf(float)
@@ -2611,8 +2612,8 @@
 @ cdecl tanh(double)
 @ cdecl -arch=!i386 tanhf(float)
 @ cdecl terminate()
-@ cdecl -stub tgamma(double)
-@ cdecl -stub tgammaf(float)
+@ cdecl tgamma(double)
+@ cdecl tgammaf(float)
 @ cdecl tgammal(double) tgamma
 @ cdecl tmpfile()
 @ cdecl tmpfile_s(ptr)
@@ -2623,8 +2624,8 @@
 @ cdecl towctrans(long long)
 @ cdecl towlower(long)
 @ cdecl towupper(long)
-@ cdecl -stub trunc(double)
-@ cdecl -stub truncf(float)
+@ cdecl trunc(double)
+@ cdecl truncf(float)
 @ cdecl truncl(double) trunc
 @ stub unexpected
 @ cdecl ungetc(long ptr)

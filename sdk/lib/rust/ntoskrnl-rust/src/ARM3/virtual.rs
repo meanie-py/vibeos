@@ -31,7 +31,6 @@ use ntkrnl_sys::ddk::{
     HANDLE,
     ExGetPreviousMode,
     _KAPC_STATE,
-    KeFlushCurrentTb,
     KeRosDumpStackFrames,
     KeStackAttachProcess,
     KeUnstackDetachProcess,
@@ -161,8 +160,6 @@ const MemorySectionName: u32 = 2;
 extern "C" {
     fn MmGetCurrentAddressSpace() -> PMMSUPPORT;
     fn KeInvalidateTlbEntry(Address: PVOID);
-    fn ProbeForWriteSize_t(Address: *mut SIZE_T);
-    fn ProbeForWriteIoStatusBlock(Address: PIO_STATUS_BLOCK);
     fn KeSweepICache(BaseAddress: PVOID, Length: SIZE_T);
     fn MiLockProcessWorkingSet(Process: PEPROCESS, Thread: PETHREAD);
     fn MiUnlockProcessWorkingSet(Process: PEPROCESS, Thread: PETHREAD);
@@ -175,15 +172,6 @@ extern "C" {
 // owns the stdcall definition outright, use bindgen's correct stdcall import.)
 use ntkrnl_sys::ddk::{ExAllocatePoolZero, ExFreePool};
 
-// ProbeForWriteUlong/ProbeForWritePointer: provided as NTAPI in tier1_rust_shims.c.
-// Must use extern "system" (stdcall on i386) to match the NTAPI calling convention.
-extern "C" {
-    fn ProbeForWritePointer(Address: *mut PVOID);
-}
-// NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
-extern "system" {
-    fn ProbeForWriteUlong(Address: *mut ULONG);
-}
 
 #[inline]
 unsafe fn ALIGN_UP_POINTER_BY(ptr: PVOID, align: usize) -> PVOID {
@@ -201,8 +189,6 @@ const MI_POOL_COPY_BYTES: usize = 512;
 const MI_MAX_TRANSFER_SIZE: usize = 64 * 1024;
 
 extern "system" {
-    fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
-    fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     static mut PsProcessType: POBJECT_TYPE;
     fn MmProbeAndLockPages(MemoryDescriptorList: *mut MDL, AccessMode: KPROCESSOR_MODE, Operation: u32);
     static mut MmSectionCommitMutex: KeGuardedMutex;
@@ -637,7 +623,8 @@ pub unsafe extern "system" fn MiDeletePte(
         MiDecrementShareCount(Pfn1 as ntkrnl_sys::ddk::PMMPFN, PageFrameIndex as ntkrnl_sys::ddk::PFN_NUMBER);
     }
 
-    KeFlushCurrentTb();
+    // All CPUs, not the C's KeFlushCurrentTb: see MiProcessValidPteList.
+    ntkrnl_sys::inline::mm::KeFlushProcessTb();
 }
 
 #[no_mangle]
@@ -1607,7 +1594,16 @@ pub unsafe extern "system" fn MiProcessValidPteList(
         i += 1;
     }
 
-    KeFlushCurrentTb();
+    // The C flushes only THIS processor (KeFlushCurrentTb), which is wrong the
+    // moment the process has threads on another CPU: that CPU keeps translating
+    // the decommitted VA to the frame just freed, so its writes land in a page
+    // the zero-page thread is about to clear or MM has already handed to someone
+    // else, while this CPU recommits the VA to a fresh zero page. arm64 -smp 2
+    // regstress lost whole user-heap pages this way (free-list headers read back
+    // as zero) and a kernel pool page once (BAD_POOL_HEADER). Every CPU must drop
+    // the stale entry before the frames can be reused, i.e. before the PFN lock
+    // is released.
+    ntkrnl_sys::inline::mm::KeFlushProcessTb();
     MiReleasePfnLock(OldIrql);
 }
 
@@ -2279,11 +2275,17 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
 
     /* Probe + capture user pointers (DUMMY_PSEH: no SEH wrap) */
     if PreviousMode != 0i32 as i8 {
-        ProbeForWritePointer(UBaseAddress);
-        ProbeForWriteSize_t(URegionSize);
+        // C: inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+        // so the Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(UBaseAddress, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(URegionSize, 1, PreviousMode) {
+            return status;
+        }
     }
-    PBaseAddress = *UBaseAddress;
-    PRegionSize = *URegionSize as ULONG_PTR;
+    PBaseAddress = match ntkrnl_sys::probe::read_back(UBaseAddress) { Ok(v) => v, Err(s) => return s };
+    PRegionSize = match ntkrnl_sys::probe::read_back(URegionSize) { Ok(v) => v as ULONG_PTR, Err(s) => return s };
 
     /* Make sure the allocation isn't past the VAD area */
     if (PBaseAddress as ULONG_PTR) > MM_HIGHEST_VAD_ADDRESS {
@@ -2544,8 +2546,8 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
         }
 
         /* Write back base + size (DUMMY_PSEH: no SEH wrap; ignore failure) */
-        *URegionSize = PRegionSize as SIZE_T;
-        *UBaseAddress = StartingAddress as PVOID;
+        let _ = ntkrnl_sys::probe::write_back(URegionSize, PRegionSize as SIZE_T);
+        let _ = ntkrnl_sys::probe::write_back(UBaseAddress, StartingAddress as PVOID);
         return STATUS_SUCCESS;
     }
 
@@ -2713,8 +2715,8 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
             ObDereferenceObject(Process as PVOID);
         }
         if NT_SUCCESS(Status) {
-            *URegionSize = PRegionSize as SIZE_T;
-            *UBaseAddress = StartingAddress as PVOID;
+            let _ = ntkrnl_sys::probe::write_back(URegionSize, PRegionSize as SIZE_T);
+            let _ = ntkrnl_sys::probe::write_back(UBaseAddress, StartingAddress as PVOID);
         }
         return Status;
     }
@@ -2800,8 +2802,8 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
     }
 
     if NT_SUCCESS(Status) {
-        *URegionSize = PRegionSize as SIZE_T;
-        *UBaseAddress = StartingAddress as PVOID;
+        let _ = ntkrnl_sys::probe::write_back(URegionSize, PRegionSize as SIZE_T);
+        let _ = ntkrnl_sys::probe::write_back(UBaseAddress, StartingAddress as PVOID);
     } else if QuotaCharged != 0 {
         PsReturnProcessNonPagedPoolQuota(
             Process,
@@ -2848,11 +2850,17 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
 
     /* Probe + capture (DUMMY_PSEH: no SEH wrap) */
     if PreviousMode != 0i32 as i8 {
-        ProbeForWritePointer(UBaseAddress);
-        ProbeForWriteUlong(URegionSize as *mut ULONG);
+        // C: inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+        // so the Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(UBaseAddress, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(URegionSize as *mut ULONG, 1, PreviousMode) {
+            return status;
+        }
     }
-    PBaseAddress = *UBaseAddress;
-    PRegionSize = *URegionSize;
+    PBaseAddress = match ntkrnl_sys::probe::read_back(UBaseAddress) { Ok(v) => v, Err(s) => return s };
+    PRegionSize = match ntkrnl_sys::probe::read_back(URegionSize) { Ok(v) => v, Err(s) => return s };
 
     /* Ensure base + size sit inside user space */
     if (PBaseAddress as ULONG_PTR) >= MM_HIGHEST_USER_ADDRESS {
@@ -3086,8 +3094,8 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
         if ProcessHandle != NtCurrentProcess() as HANDLE {
             ObDereferenceObject(Process as PVOID);
         }
-        *URegionSize = PRegionSize;
-        *UBaseAddress = StartingAddress as PVOID;
+        let _ = ntkrnl_sys::probe::write_back(URegionSize, PRegionSize);
+        let _ = ntkrnl_sys::probe::write_back(UBaseAddress, StartingAddress as PVOID);
         return Status;
     }
 
@@ -3136,8 +3144,8 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
     if ProcessHandle != NtCurrentProcess() as HANDLE {
         ObDereferenceObject(Process as PVOID);
     }
-    *URegionSize = PRegionSize;
-    *UBaseAddress = StartingAddress as PVOID;
+    let _ = ntkrnl_sys::probe::write_back(URegionSize, PRegionSize);
+    let _ = ntkrnl_sys::probe::write_back(UBaseAddress, StartingAddress as PVOID);
     Status
 }
 
@@ -3232,8 +3240,11 @@ pub unsafe extern "system" fn NtReadVirtualMemory(
             return STATUS_ACCESS_VIOLATION;
         }
 
+        // C: inside _SEH2_TRY; the handler returns the exception code.
         if !NumberOfBytesRead.is_null() {
-            ProbeForWriteSize_t(NumberOfBytesRead);
+            if let Err(status) = ntkrnl_sys::probe::probe_write_generic(NumberOfBytesRead, 1, PreviousMode) {
+                return status;
+            }
         }
     }
 
@@ -3261,8 +3272,9 @@ pub unsafe extern "system" fn NtReadVirtualMemory(
         }
     }
 
+    // C: guarded write, the _SEH2_EXCEPT handler does nothing.
     if !NumberOfBytesRead.is_null() {
-        *NumberOfBytesRead = BytesRead;
+        ntkrnl_sys::probe::write_user_nofail(NumberOfBytesRead, BytesRead, PreviousMode);
     }
 
     Status
@@ -3293,8 +3305,11 @@ pub unsafe extern "system" fn NtWriteVirtualMemory(
             return STATUS_ACCESS_VIOLATION;
         }
 
+        // C: inside _SEH2_TRY; the handler returns the exception code.
         if !NumberOfBytesWritten.is_null() {
-            ProbeForWriteSize_t(NumberOfBytesWritten);
+            if let Err(status) = ntkrnl_sys::probe::probe_write_generic(NumberOfBytesWritten, 1, PreviousMode) {
+                return status;
+            }
         }
     }
 
@@ -3322,8 +3337,9 @@ pub unsafe extern "system" fn NtWriteVirtualMemory(
         }
     }
 
+    // C: guarded write, the _SEH2_EXCEPT handler does nothing.
     if !NumberOfBytesWritten.is_null() {
-        *NumberOfBytesWritten = BytesWritten;
+        ntkrnl_sys::probe::write_user_nofail(NumberOfBytesWritten, BytesWritten, PreviousMode);
     }
 
     Status
@@ -3415,15 +3431,23 @@ pub unsafe extern "system" fn NtProtectVirtualMemory(
     }
 
     if PreviousMode != 0i32 as i8 {
-        ProbeForWritePointer(UnsafeBaseAddress);
-        ProbeForWriteSize_t(UnsafeNumberOfBytesToProtect);
-        ProbeForWriteUlong(UnsafeOldAccessProtection);
+        // C: inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+        // so the Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(UnsafeBaseAddress, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(UnsafeNumberOfBytesToProtect, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(UnsafeOldAccessProtection, 1, PreviousMode) {
+            return status;
+        }
 
-        BaseAddress = *UnsafeBaseAddress;
-        NumberOfBytesToProtect = *UnsafeNumberOfBytesToProtect;
+        BaseAddress = match ntkrnl_sys::probe::read_back(UnsafeBaseAddress) { Ok(v) => v, Err(s) => return s };
+        NumberOfBytesToProtect = match ntkrnl_sys::probe::read_back(UnsafeNumberOfBytesToProtect) { Ok(v) => v, Err(s) => return s };
     } else {
-        BaseAddress = *UnsafeBaseAddress;
-        NumberOfBytesToProtect = *UnsafeNumberOfBytesToProtect;
+        BaseAddress = match ntkrnl_sys::probe::read_back(UnsafeBaseAddress) { Ok(v) => v, Err(s) => return s };
+        NumberOfBytesToProtect = match ntkrnl_sys::probe::read_back(UnsafeNumberOfBytesToProtect) { Ok(v) => v, Err(s) => return s };
     }
 
     if BaseAddress > MM_HIGHEST_USER_ADDRESS as PVOID {
@@ -3472,9 +3496,9 @@ pub unsafe extern "system" fn NtProtectVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *UnsafeOldAccessProtection = OldAccessProtection;
-    *UnsafeBaseAddress = BaseAddress;
-    *UnsafeNumberOfBytesToProtect = NumberOfBytesToProtect;
+    let _ = ntkrnl_sys::probe::write_back(UnsafeOldAccessProtection, OldAccessProtection);
+    let _ = ntkrnl_sys::probe::write_back(UnsafeBaseAddress, BaseAddress);
+    let _ = ntkrnl_sys::probe::write_back(UnsafeNumberOfBytesToProtect, NumberOfBytesToProtect);
 
     Status
 }
@@ -3725,11 +3749,17 @@ pub unsafe extern "system" fn NtLockVirtualMemory(
         return STATUS_INVALID_PARAMETER;
     }
 
-    ProbeForWritePointer(BaseAddress);
-    ProbeForWriteSize_t(NumberOfBytesToLock);
+    // C probes these unconditionally (no previous-mode test), inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+    // so the Result probe returns it instead of raising unhandled.
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(BaseAddress, 1, 1i8) {
+        return status;
+    }
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(NumberOfBytesToLock, 1, 1i8) {
+        return status;
+    }
 
-    CapturedBaseAddress = *BaseAddress;
-    CapturedBytesToLock = *NumberOfBytesToLock;
+    CapturedBaseAddress = match ntkrnl_sys::probe::read_back(BaseAddress) { Ok(v) => v, Err(s) => return s };
+    CapturedBytesToLock = match ntkrnl_sys::probe::read_back(NumberOfBytesToLock) { Ok(v) => v, Err(s) => return s };
 
     if CapturedBaseAddress > MM_HIGHEST_USER_ADDRESS as PVOID {
         return STATUS_INVALID_PARAMETER;
@@ -3782,8 +3812,8 @@ pub unsafe extern "system" fn NtLockVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *BaseAddress = CapturedBaseAddress;
-    *NumberOfBytesToLock = CapturedBytesToLock;
+    if let Err(s) = ntkrnl_sys::probe::write_back(BaseAddress, CapturedBaseAddress) { return s; }
+    if let Err(s) = ntkrnl_sys::probe::write_back(NumberOfBytesToLock, CapturedBytesToLock) { return s; }
 
     Status
 }
@@ -3983,11 +4013,17 @@ pub unsafe extern "system" fn NtUnlockVirtualMemory(
         return STATUS_INVALID_PARAMETER;
     }
 
-    ProbeForWritePointer(BaseAddress);
-    ProbeForWriteSize_t(NumberOfBytesToUnlock);
+    // C probes these unconditionally (no previous-mode test), inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+    // so the Result probe returns it instead of raising unhandled.
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(BaseAddress, 1, 1i8) {
+        return status;
+    }
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(NumberOfBytesToUnlock, 1, 1i8) {
+        return status;
+    }
 
-    CapturedBaseAddress = *BaseAddress;
-    CapturedBytesToUnlock = *NumberOfBytesToUnlock;
+    CapturedBaseAddress = match ntkrnl_sys::probe::read_back(BaseAddress) { Ok(v) => v, Err(s) => return s };
+    CapturedBytesToUnlock = match ntkrnl_sys::probe::read_back(NumberOfBytesToUnlock) { Ok(v) => v, Err(s) => return s };
 
     if CapturedBaseAddress > MM_HIGHEST_USER_ADDRESS as PVOID {
         return STATUS_INVALID_PARAMETER;
@@ -4040,8 +4076,8 @@ pub unsafe extern "system" fn NtUnlockVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *BaseAddress = CapturedBaseAddress;
-    *NumberOfBytesToUnlock = CapturedBytesToUnlock;
+    if let Err(s) = ntkrnl_sys::probe::write_back(BaseAddress, CapturedBaseAddress) { return s; }
+    if let Err(s) = ntkrnl_sys::probe::write_back(NumberOfBytesToUnlock, CapturedBytesToUnlock) { return s; }
 
     STATUS_SUCCESS
 }
@@ -4065,15 +4101,23 @@ pub unsafe extern "system" fn NtFlushVirtualMemory(
     let mut LocalStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
 
     if PreviousMode != 0i32 as i8 {
-        ProbeForWritePointer(BaseAddress);
-        ProbeForWriteSize_t(NumberOfBytesToFlush);
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
+        // C: inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+        // so the Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(BaseAddress, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(NumberOfBytesToFlush, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(IoStatusBlock, 1, PreviousMode) {
+            return status;
+        }
 
-        CapturedBaseAddress = *BaseAddress;
-        CapturedBytesToFlush = *NumberOfBytesToFlush;
+        CapturedBaseAddress = match ntkrnl_sys::probe::read_back(BaseAddress) { Ok(v) => v, Err(s) => return s };
+        CapturedBytesToFlush = match ntkrnl_sys::probe::read_back(NumberOfBytesToFlush) { Ok(v) => v, Err(s) => return s };
     } else {
-        CapturedBaseAddress = *BaseAddress;
-        CapturedBytesToFlush = *NumberOfBytesToFlush;
+        CapturedBaseAddress = match ntkrnl_sys::probe::read_back(BaseAddress) { Ok(v) => v, Err(s) => return s };
+        CapturedBytesToFlush = match ntkrnl_sys::probe::read_back(NumberOfBytesToFlush) { Ok(v) => v, Err(s) => return s };
     }
 
     if CapturedBaseAddress > MM_HIGHEST_USER_ADDRESS as PVOID {
@@ -4105,9 +4149,10 @@ pub unsafe extern "system" fn NtFlushVirtualMemory(
 
     ObDereferenceObject(Process as PVOID);
 
-    *BaseAddress = PAGE_ALIGN(CapturedBaseAddress as usize) as PVOID;
-    *NumberOfBytesToFlush = 0;
-    *IoStatusBlock = LocalStatusBlock;
+    // C: one _SEH2_TRY with an empty handler; a fault stops the remaining stores.
+    let _ = ntkrnl_sys::probe::write_back(BaseAddress, PAGE_ALIGN(CapturedBaseAddress as usize) as PVOID)
+        .and_then(|()| ntkrnl_sys::probe::write_back(NumberOfBytesToFlush, 0))
+        .and_then(|()| ntkrnl_sys::probe::write_back(IoStatusBlock as *mut _IO_STATUS_BLOCK, LocalStatusBlock));
 
     Status
 }
@@ -4142,10 +4187,20 @@ pub unsafe extern "system" fn NtGetWriteWatch(
             return STATUS_INVALID_PARAMETER_3;
         }
 
-        ProbeForWriteSize_t(EntriesInUserAddressArray);
-        ProbeForWriteUlong(Granularity);
+        // C: inside _SEH2_TRY; the handler returns the exception code. No SEH here,
+        // so the Result probe returns it instead of raising unhandled.
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(EntriesInUserAddressArray, 1, PreviousMode) {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(Granularity, 1, PreviousMode) {
+            return status;
+        }
 
-        CapturedEntryCount = *EntriesInUserAddressArray;
+        // The capture is inside the same C _SEH2_TRY.
+        CapturedEntryCount = match ntkrnl_sys::probe::probe_read_generic(EntriesInUserAddressArray, 1, PreviousMode) {
+            Ok(v) => v,
+            Err(status) => return status,
+        };
 
         if CapturedEntryCount == 0 {
             return STATUS_INVALID_PARAMETER_5;
@@ -4155,13 +4210,16 @@ pub unsafe extern "system" fn NtGetWriteWatch(
             return STATUS_INVALID_PARAMETER_5;
         }
 
-        ProbeForWrite(
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
             UserAddressArray as PVOID,
             CapturedEntryCount * core::mem::size_of::<PVOID>(),
-            core::mem::size_of::<PVOID>() as ULONG,
-        );
+            core::mem::size_of::<PVOID>(),
+            PreviousMode,
+        ) {
+            return status;
+        }
     } else {
-        CapturedEntryCount = *EntriesInUserAddressArray;
+        CapturedEntryCount = match ntkrnl_sys::probe::read_back(EntriesInUserAddressArray) { Ok(v) => v, Err(s) => return s };
         ntkrnl_sys::ASSERT!(CapturedEntryCount != 0);
     }
 
@@ -4193,8 +4251,9 @@ pub unsafe extern "system" fn NtGetWriteWatch(
         ObDereferenceObject(Process as PVOID);
     }
 
-    *EntriesInUserAddressArray = 0;
-    *Granularity = PAGE_SIZE as ULONG;
+    // C: guarded write whose handler's status is discarded (returns SUCCESS).
+    ntkrnl_sys::probe::write_user_nofail(EntriesInUserAddressArray, 0, PreviousMode);
+    ntkrnl_sys::probe::write_user_nofail(Granularity, PAGE_SIZE as ULONG, PreviousMode);
 
     STATUS_SUCCESS
 }
@@ -4275,16 +4334,40 @@ pub unsafe extern "system" fn NtQueryVirtualMemory(
 
     PreviousMode = ExGetPreviousMode();
     if PreviousMode != 0i32 as i8 {
-        ProbeForWrite(
+        // C: inside _SEH2_TRY; the handler captures the code and returns it.
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
             MemoryInformation,
             MemoryInformationLength,
-            core::mem::size_of::<ULONG_PTR>() as ULONG,
-        );
+            core::mem::size_of::<ULONG_PTR>(),
+            PreviousMode,
+        ) {
+            return status;
+        }
 
         if !ReturnLength.is_null() {
-            ProbeForWriteSize_t(ReturnLength);
+            if let Err(status) = ntkrnl_sys::probe::probe_write_generic(ReturnLength, 1, PreviousMode) {
+                return status;
+            }
         }
     }
+
+    // The C's MiQuery* helpers store into MemoryInformation and ReturnLength inside
+    // _SEH2_TRY. Hand them a pool copy (OutputBounce) and a kernel length instead;
+    // both reach the caller once, below, through the fault-tolerant copy.
+    let bounce = match ntkrnl_sys::probe::OutputBounce::new(MemoryInformation, MemoryInformationLength, PreviousMode) {
+        Ok(b) => b,
+        Err(s) => return s,
+    };
+    let UserReturnLength = ReturnLength;
+    let mut KernelReturnLength: SIZE_T = SIZE_T::MAX;
+    let MemoryInformation = bounce.buffer();
+    let ReturnLength: PSIZE_T = if UserReturnLength.is_null() {
+        core::ptr::null_mut()
+    } else if PreviousMode != 0 {
+        &mut KernelReturnLength
+    } else {
+        UserReturnLength
+    };
 
     match MemoryInformationClass {
         MemoryBasicInformation => {
@@ -4312,6 +4395,22 @@ pub unsafe extern "system" fn NtQueryVirtualMemory(
             );
         }
         _ => {}
+    }
+
+    // MEMORY_SECTION_NAME's string Buffer points just past it, inside the buffer.
+    if Status >= 0
+        && MemoryInformationClass == MemorySectionName
+        && bounce.contains(MemoryInformation, core::mem::size_of::<MEMORY_SECTION_NAME_T>())
+    {
+        bounce.rebase(core::ptr::addr_of_mut!((*(MemoryInformation as *mut _MEMORY_SECTION_NAME)).SectionFileName.Buffer));
+    }
+    if let Err(s) = bounce.finish() {
+        return s;
+    }
+    if PreviousMode != 0 && !UserReturnLength.is_null() && KernelReturnLength != SIZE_T::MAX {
+        if let Err(s) = ntkrnl_sys::probe::write_user(UserReturnLength, KernelReturnLength, 0) {
+            return s;
+        }
     }
 
     Status

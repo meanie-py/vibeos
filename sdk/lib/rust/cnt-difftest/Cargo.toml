@@ -16,6 +16,9 @@ publish = false
 # kernel because they need `_errno`. Without cabi-math here they would be
 # the one part of cabi/math.rs that nothing grades.
 cnt-rust = { path = "../cnt-rust", features = ["cabi", "cabi-math"] }
+# The engine cnt-rust exports exp/log/exp2 from (graded itself in musl-math-difftest).
+musl-math = { path = "../musl-math" }
+libm = "0.2.16"
 cnt-ctype = { path = "../cnt-ctype" }
 
 [build-dependencies]

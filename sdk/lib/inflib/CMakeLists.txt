@@ -62,9 +62,7 @@ else()
     add_library(inflibhost STATIC ${SOURCE})
     target_include_directories(inflibhost INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
-    if(NOT MSVC)
-        target_compile_options(inflibhost PRIVATE -fshort-wchar -Wpointer-arith -Wwrite-strings)
-    endif()
+    target_compile_options(inflibhost PRIVATE -fshort-wchar -Wpointer-arith -Wwrite-strings)
 
     target_link_libraries(inflibhost PRIVATE host_includes)
 endif()

@@ -4170,3 +4170,11 @@ pub mod string_l;
 // uses. The 40 `...` entry points cannot be Rust (no `va_start` on stable) and live in
 // `dll/win32/msvcrt/rust_scanf_shim.c`. `pub` for the difftest.
 pub mod scanf;
+// The C `...` entry points (were the rust_*_shim.c files), as va_entry! thunks.
+mod va_entries;
+// sdk/lib/crt/misc/dbgrpt.cpp: the _CrtDbgReport family (was the `dbgrpt` C++ library).
+mod dbgrpt;
+// crtdll's dllmain.c and msvcrt20.c: the legacy DLLs' own overrides, under prefixed names.
+// x86 only, as the DLLs are (dll/win32/CMakeLists.txt builds them for i386 alone).
+#[cfg(all(feature = "dllmain", target_arch = "x86"))]
+mod legacy;

@@ -767,6 +767,9 @@ pub unsafe extern "system" fn BasepMapFile(
         (FILE_SHARE_DELETE | FILE_SHARE_READ) as u32,
         (FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE) as u32,
     );
+    // The relative-name handle RtlDosPathNameToNtPathName_U opened must be released
+    // whatever NtOpenFile returned (upstream ef8bcd3fbe7; it leaked once per call before).
+    RtlReleaseRelativeName(&mut RelativeName);
 
     if !NT_SUCCESS(Status) {
         BaseSetLastNTError(Status);

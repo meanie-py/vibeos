@@ -35,6 +35,11 @@ Getting those wrong is not a small matter of noise: the first draft of this scan
 reported 4710 sites, essentially all of them these two idioms, which is indistinguishable
 from having no scanner at all.
 
+Also flagged: `!!x`. C uses it to normalise a value to 0/1; in Rust it is two NOTs,
+the identity on a bool AND on an integer, so it is never the C. ws2_32's getxyDataEnt
+carried `if !!IsEqualGUID(..)` for C's `if (!IsEqualGUID(..))`, an inverted condition
+that made every gethostbyname fail WSANO_DATA (2026-10-04).
+
 Usage:
     python3 tools/scan_bitwise_not_bool.py            # report
     python3 tools/scan_bitwise_not_bool.py --lint     # terse (CLI baseline gate)
@@ -66,6 +71,9 @@ GEN_MARKERS = (
 
 # A `!` applied to something that starts a value expression.
 UNARY_NOT_RE = re.compile(r"!(?=[A-Za-z_(*])")
+# `!!expr` as an operator: not a macro bang (identifier before it) and not `!!!`.
+DOUBLE_NOT_RE = re.compile(r"(?<![A-Za-z0-9_!])!!(?=[A-Za-z_(*])")
+STRING_RE = re.compile(r'b?"(?:\\.|[^"\\])*"')
 
 
 def is_generated(text: str) -> bool:
@@ -73,7 +81,10 @@ def is_generated(text: str) -> bool:
 
 
 def scan_line(line: str) -> bool:
-    """True if `line` compares a bitwise-NOT result against 0 at the same paren depth."""
+    """True if `line` compares a bitwise-NOT result against 0 at the same paren depth,
+    or applies `!!` to a value."""
+    if DOUBLE_NOT_RE.search(STRING_RE.sub('""', line)):
+        return True
     for m in UNARY_NOT_RE.finditer(line):
         before = line[: m.start()].rstrip()
         # `foo!(` / `assert!(` — a macro bang, not the not-operator.

@@ -64,6 +64,28 @@ pub unsafe fn MmGetSystemAddressForMdl(mdl: ddk::PMDL) -> PVOID {
 }
 
 // ============================================================================
+// MDL accessors (macros from mmfuncs.h)
+// ============================================================================
+
+/// `MmGetMdlVirtualAddress(Mdl)` = `(PVOID)((PCHAR)(Mdl)->StartVa + (Mdl)->ByteOffset)`.
+#[inline]
+pub unsafe fn MmGetMdlVirtualAddress(mdl: ddk::PMDL) -> PVOID {
+    ((*mdl).StartVa as *mut u8).wrapping_add((*mdl).ByteOffset as usize) as PVOID
+}
+
+/// `MmGetMdlByteCount(Mdl)` = `(Mdl)->ByteCount`.
+#[inline]
+pub unsafe fn MmGetMdlByteCount(mdl: ddk::PMDL) -> ULONG {
+    (*mdl).ByteCount
+}
+
+/// `MmGetMdlByteOffset(Mdl)` = `(Mdl)->ByteOffset`.
+#[inline]
+pub unsafe fn MmGetMdlByteOffset(mdl: ddk::PMDL) -> ULONG {
+    (*mdl).ByteOffset
+}
+
+// ============================================================================
 // MmGetSystemAddressForMdlSafe (macro from mmfuncs.h)
 // ============================================================================
 
@@ -1356,6 +1378,7 @@ pub unsafe fn KiReleaseProcessLock(handle: ddk::PKLOCK_QUEUE_HANDLE) {
 /// ProbeForWriteSize_t — probe a SIZE_T for write access.
 #[inline]
 pub unsafe fn ProbeForWriteSize_t(ptr: *mut ULONG_PTR) {
+    crate::probe::probe_user_range(ptr);
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }
@@ -1363,6 +1386,7 @@ pub unsafe fn ProbeForWriteSize_t(ptr: *mut ULONG_PTR) {
 /// ProbeForWriteIoStatusBlock — probe an IO_STATUS_BLOCK for write access.
 #[inline]
 pub unsafe fn ProbeForWriteIoStatusBlock(ptr: *mut ddk::IO_STATUS_BLOCK) {
+    crate::probe::probe_user_range(ptr);
     // Read then write back to trigger page fault if not writeable
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);

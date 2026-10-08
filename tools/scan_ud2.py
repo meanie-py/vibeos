@@ -199,6 +199,19 @@ KNOWN_DRIVER_UD2: dict[str, set[str]] = {
     # heuristic. Boots green daily.
     "rosload.exe": {"LoadAndBootWindowsCommon"},
     "freeldr.exe": {"LoadAndBootWindowsCommon"},
+    # pcix-rust's arbiters are `UNIMPLEMENTED; loop {}` because they were translated
+    # BEFORE upstream #9502 (023d8af5566, "Implement the PCIX Arbiters") gave the C
+    # real bodies; the Rust never absorbed it. Seen on arm64 since 2026-10-03, when
+    # its corpus became the livecd set (x86's sweep reads ud2, not `b .`). Unreached
+    # there (arm64 binds pci.sys, not pcix.sys). OWED: port #9502 into pcix-rust
+    # (roadmap, "pcix-rust predates upstream's arbiters"), then delete this entry.
+    "pcix.sys": {
+        "PciArbiterDestructor",
+        "ario_ApplyBrokenVideoHack",
+        "ario_Constructor",
+        "armem_Constructor",
+        "arbusno_Constructor",
+    },
     # Do NOT add new entries without a written root-cause attempt; every
     # 2026-07-18 first-sweep latent (user32 SwitchWndProc_common §9.103
     # null-blind deref, kernel32 seqlock spins §9.106, win32k
@@ -221,10 +234,9 @@ def _is_mangled(fn: str) -> bool:
 def find_rust_binaries(build_dir: Path, nm: str, cache=None, repo: Path | None = None):
     """Every PE in the build dir's GOVERNED corpus that links Rust code.
 
-    The corpus comes from tools/binary_corpus.py, not from a directory listing:
-    on arm64 there is no livecd DAG, so most of what sits in `build-arm64/` is
-    whatever an older ninja left there and a verdict over it is a verdict about
-    the directory rather than the tree. ntoskrnl.exe is dropped here because
+    The corpus comes from tools/binary_corpus.py: the build tree minus staging
+    copies (strip caches, the arm64 ramdisk's symlink tree), which every arch's
+    `livecd` DAG re-rolls on each build. ntoskrnl.exe is dropped here because
     main() scans it separately against its own kernel baselines. The llvm-nm
     `rust_begin_unwind` probe keeps this fast (~6s over ~1000 files).
 

@@ -90,7 +90,20 @@ def coalesce_unionfields(lines):
     return out
 
 
+_INCOMPLETE_ARRAY_RE = re.compile(
+    r'^#\[derive\(Default\)\]\n(pub struct __IncompleteArrayField<T>\()', re.M)
+
+
 def transform(text: str) -> str:
+    # Step 1 makes every local struct `Copy`, and a struct that ends in a C flexible array
+    # holds bindgen's `__IncompleteArrayField<T>`, which bindgen derives only `Default` for:
+    # legide's island then had 19 E0204 + 13 `Clone` errors of its own. It is a zero-sized
+    # marker (`PhantomData<T>, [T; 0]`), so Copy/Clone are sound for any `T: Copy`.
+    text = _INCOMPLETE_ARRAY_RE.sub(r'#[derive(Default, Copy, Clone)]\n\1', text)
+    return _transform(text)
+
+
+def _transform(text: str) -> str:
     lines = coalesce_unionfields(text.splitlines(keepends=False))
     out = []
     i = 0

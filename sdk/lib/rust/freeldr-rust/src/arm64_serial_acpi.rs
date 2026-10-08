@@ -1,6 +1,11 @@
-//! Pre-allocator PL011 discovery. Layouts follow ACPICA actbl.h, actbl1.h
-//! (DBG2), and actbl3.h (SPCR). Keep parsing independent of firmware pointers
-//! so captured hardware tables can be tested on the host.
+//! Pre-allocator console-UART discovery from ACPI. Layouts follow ACPICA
+//! actbl.h, actbl1.h (DBG2), and actbl3.h (SPCR). Keep parsing independent of
+//! firmware pointers so captured hardware tables can be tested on the host.
+//!
+//! arm64 reads a PL011 MMIO base (DBG2/SPCR, plus the GIC from the MADT).
+//! x86 reads a 16550-family I/O-port base from SPCR: real PCs without a legacy
+//! COM1 describe their console UART there (Intel AMT serial-over-LAN, a BMC, a
+//! PCIe serial card), at an address nothing else would guess.
 #[cfg(test)]
 use core::mem::offset_of;
 use core::mem::size_of;
@@ -76,6 +81,12 @@ struct SubHeader {
 
 const MADT_GICC: u8 = 11;
 const MADT_GICD: u8 = 12;
+/// ACPI_MADT_GENERIC_REDISTRIBUTOR: one discovery range of GICv3 redistributors.
+const MADT_GICR: u8 = 14;
+/// ACPI_MADT_GENERIC_REDISTRIBUTOR.BaseAddress and .Length.
+const GICR_BASE_OFFSET: usize = 4;
+const GICR_LENGTH_OFFSET: usize = 12;
+const GICR_MIN_LENGTH: usize = GICR_LENGTH_OFFSET + 4;
 /// ACPI_MADT_GENERIC_INTERRUPT.BaseAddress — the GICC MMIO base.
 const GICC_BASE_OFFSET: usize = 32;
 /// Through BaseAddress inclusive; shorter records cannot carry it.
@@ -188,7 +199,8 @@ pub unsafe fn table_at<'a>(address: u64) -> Option<&'a [u8]> {
     valid_table(data).then_some(data)
 }
 
-pub unsafe fn from_xsdt(address: u64) -> Option<u64> {
+/// The first answer `probe` gives for a table the XSDT at `address` lists.
+unsafe fn walk_xsdt<T>(address: u64, probe: impl Fn(&[u8]) -> Option<T>) -> Option<T> {
     let table = table_at(address)?;
     if table.get(..4)? != b"XSDT" {
         return None;
@@ -200,18 +212,71 @@ pub unsafe fn from_xsdt(address: u64) -> Option<u64> {
     for entry in entries.chunks_exact(size_of::<u64>()) {
         let address = read::<u64>(entry, 0)?;
         if let Some(child) = table_at(address) {
-            if let Some(base) = serial_base(child) {
-                return Some(base);
+            if let Some(found) = probe(child) {
+                return Some(found);
             }
         }
     }
     None
 }
 
-/// GICv2 distributor and CPU-interface bases from a MADT. Returns None unless
-/// BOTH are present: the early-SMP path needs the pair, and half a GIC is worse
-/// than none (it would program a distributor nothing can acknowledge).
-pub fn gic_bases(data: &[u8]) -> Option<(u64, u64)> {
+pub unsafe fn from_xsdt(address: u64) -> Option<u64> {
+    walk_xsdt(address, serial_base)
+}
+
+// SPCR interface types for the 16550 family (ACPI SPCR rev 2 / DBG2 serial
+// subtypes): full 16550, 16450 (a 16550 subset), and 16550-compatible with the
+// register layout given by the GAS.
+const NS16550: u8 = 0x00;
+const NS16450: u8 = 0x01;
+const NS16550_GAS: u8 = 0x12;
+const SYSTEM_IO: u8 = 1;
+
+/// The I/O-port base of a 16550-family console UART that an SPCR describes.
+/// None for anything else (MMIO UARTs, PL011, a malformed table): the x86
+/// loader drives its UART with port I/O.
+pub fn spcr_io_port(data: &[u8]) -> Option<u16> {
+    if !valid_table(data) {
+        return None;
+    }
+    let spcr = read::<SpcrPrefix>(data, 0)?;
+    if &spcr.header.signature != b"SPCR"
+        || !matches!(spcr.interface, NS16550 | NS16450 | NS16550_GAS)
+    {
+        return None;
+    }
+    let a = spcr.address;
+    // A 16550 occupies eight consecutive ports, all of which must fit.
+    if a.space != SYSTEM_IO || a.bit_offset != 0 || a.address == 0 || a.address > 0xfff8 {
+        return None;
+    }
+    Some(a.address as u16)
+}
+
+pub unsafe fn spcr_io_from_xsdt(address: u64) -> Option<u16> {
+    walk_xsdt(address, spcr_io_port)
+}
+
+/// The interrupt controller a MADT describes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Gic {
+    /// Distributor and memory-mapped CPU interface.
+    V2 { gicd: u64, gicc: u64 },
+    /// Distributor and the first redistributor discovery range: the CPU interface
+    /// is system registers, so there is no GICC base to carry.
+    V3 { gicd: u64, gicr: u64, gicr_length: u32 },
+}
+
+/// The GIC a MADT describes. A redistributor range means GICv3 or later, whatever
+/// else the table says: a GICv3 with GICv2 compatibility may also report a CPU
+/// interface base, but driving it that way would bypass the affinity routing its
+/// firmware already turned on. Otherwise BOTH v2 bases are required: the early-SMP
+/// path needs the pair, and half a GIC is worse than none (it would program a
+/// distributor nothing can acknowledge).
+///
+/// Firmware that gives GICv3 redistributors only per core, in each GICC record,
+/// reports no GIC here; nothing we boot on does that yet.
+pub fn gic(data: &[u8]) -> Option<Gic> {
     if !valid_table(data) {
         return None;
     }
@@ -222,6 +287,7 @@ pub fn gic_bases(data: &[u8]) -> Option<(u64, u64)> {
     let mut offset = MADT_RECORDS_OFFSET;
     let mut gicd = 0u64;
     let mut gicc = 0u64;
+    let mut gicr = (0u64, 0u32);
     while offset < data.len() {
         let sub = read::<SubHeader>(data, offset)?;
         let length = sub.length as usize;
@@ -238,19 +304,33 @@ pub fn gic_bases(data: &[u8]) -> Option<(u64, u64)> {
             MADT_GICD if gicd == 0 && length >= GICD_MIN_LENGTH => {
                 gicd = read::<u64>(record, GICD_BASE_OFFSET)?;
             }
+            MADT_GICR if gicr.0 == 0 && length >= GICR_MIN_LENGTH => {
+                gicr = (read::<u64>(record, GICR_BASE_OFFSET)?, read::<u32>(record, GICR_LENGTH_OFFSET)?);
+            }
             _ => {}
         }
         offset += length;
     }
     // Page-aligned MMIO is what the loader can identity-map a page of.
-    if gicd == 0 || gicc == 0 || gicd & 0xFFF != 0 || gicc & 0xFFF != 0 {
+    if gicd == 0 || gicd & 0xFFF != 0 {
         return None;
     }
-    Some((gicd, gicc))
+    if gicr.0 != 0 {
+        // Redistributor frames are 64 KiB pages; a range shorter than one frame
+        // (RD_base + SGI_base, 128 KiB) holds none.
+        if gicr.0 & 0xFFFF != 0 || gicr.1 < 0x2_0000 {
+            return None;
+        }
+        return Some(Gic::V3 { gicd, gicr: gicr.0, gicr_length: gicr.1 });
+    }
+    if gicc == 0 || gicc & 0xFFF != 0 {
+        return None;
+    }
+    Some(Gic::V2 { gicd, gicc })
 }
 
-/// Walk the XSDT for the MADT and return its GICv2 bases.
-pub unsafe fn gic_from_xsdt(address: u64) -> Option<(u64, u64)> {
+/// Walk the XSDT for the MADT and return the GIC it describes.
+pub unsafe fn gic_from_xsdt(address: u64) -> Option<Gic> {
     let table = table_at(address)?;
     if table.get(..4)? != b"XSDT" {
         return None;
@@ -262,17 +342,95 @@ pub unsafe fn gic_from_xsdt(address: u64) -> Option<(u64, u64)> {
     for entry in entries.chunks_exact(size_of::<u64>()) {
         let address = read::<u64>(entry, 0)?;
         if let Some(child) = table_at(address) {
-            if let Some(bases) = gic_bases(child) {
-                return Some(bases);
+            if let Some(gic) = gic(child) {
+                return Some(gic);
             }
         }
     }
     None
 }
 
+/// The ECAM window of PCI segment 0 an MCFG describes: (base, first bus, last bus).
+/// The base addresses bus 0 even when the range starts later (PCI Firmware spec 4.1.2).
+/// ACPICA actbl1.h: ACPI_TABLE_MCFG is the header plus 8 reserved bytes, then 16-byte
+/// ACPI_MCFG_ALLOCATION records {u64 Address, u16 PciSegment, u8 StartBusNumber,
+/// u8 EndBusNumber, u32 Reserved}.
+///
+/// An MCFG on the quirk list below describes a host bridge that is NOT generic ECAM,
+/// and is reported as no MCFG at all (Linux keeps the same kind of list in
+/// drivers/acpi/pci_mcfg.c).
+pub fn mcfg_segment0(data: &[u8]) -> Option<(u64, u8, u8)> {
+    if !valid_table(data) || data.get(..4)? != b"MCFG" || mcfg_is_quirked(data) {
+        return None;
+    }
+    let records = data.get(size_of::<Header>() + 8..)?;
+    records.chunks_exact(16).find_map(|r| {
+        let base = read::<u64>(r, 0)?;
+        let segment = read::<u16>(r, 8)?;
+        let (start, end) = (read::<u8>(r, 10)?, read::<u8>(r, 11)?);
+        (segment == 0 && base != 0 && start <= end).then_some((base, start, end))
+    })
+}
+
+/// OEM IDs whose MCFG must not be read as ECAM.
+///
+/// "RPIFDN": the Raspberry Pi UEFI firmware (Pi 4 pftf, Pi 5 worproject). On the
+/// Pi 5 its MCFG names 0x10_0010_8000, inside the Broadcom PCIe controller's
+/// register block, for bus 0. That controller is not ECAM-compliant: reading
+/// 00:00.0 there returned 0xDEADDEAD and left an SError pending, which the kernel
+/// took as BUGCHECK 0x80 the first time it unmasked SError. Every other "device"
+/// read back as register garbage (0xDEADD0D0, 0x271214E4).
+const MCFG_QUIRKS: &[[u8; 6]] = &[*b"RPIFDN"];
+
+fn mcfg_is_quirked(data: &[u8]) -> bool {
+    data.get(10..16).is_some_and(|oem| MCFG_QUIRKS.iter().any(|q| q[..] == *oem))
+}
+
+/// The MCFG's (OEM ID, OEM table ID), whether or not it is quirked, for the log.
+pub fn mcfg_oem(data: &[u8]) -> Option<([u8; 6], [u8; 8])> {
+    if !valid_table(data) || data.get(..4)? != b"MCFG" {
+        return None;
+    }
+    Some((data.get(10..16)?.try_into().ok()?, data.get(16..24)?.try_into().ok()?))
+}
+
+pub unsafe fn mcfg_oem_from_xsdt(address: u64) -> Option<([u8; 6], [u8; 8])> {
+    walk_xsdt(address, mcfg_oem)
+}
+
+pub unsafe fn mcfg_from_xsdt(address: u64) -> Option<(u64, u8, u8)> {
+    walk_xsdt(address, mcfg_segment0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcfg_segment0_reads_the_allocation() {
+        // QEMU virt with highmem: one allocation, segment 0, buses 0..=255.
+        let mut data = vec![0u8; size_of::<Header>() + 8 + 16];
+        data[..4].copy_from_slice(b"MCFG");
+        let len = data.len() as u32;
+        data[4..8].copy_from_slice(&len.to_le_bytes());
+        let r = size_of::<Header>() + 8;
+        data[r..r + 8].copy_from_slice(&0x40_1000_0000u64.to_le_bytes());
+        data[r + 11] = 0xFF;
+        checksum(&mut data);
+        assert_eq!(mcfg_segment0(&data), Some((0x40_1000_0000, 0, 0xFF)));
+        // The Raspberry Pi firmware's MCFG is not ECAM: reported as none.
+        data[10..16].copy_from_slice(b"RPIFDN");
+        checksum(&mut data);
+        assert_eq!(mcfg_segment0(&data), None);
+        assert_eq!(mcfg_oem(&data).map(|(o, _)| o), Some(*b"RPIFDN"));
+        data[10..16].copy_from_slice(b"BOCHS ");
+        checksum(&mut data);
+        assert_eq!(mcfg_segment0(&data), Some((0x40_1000_0000, 0, 0xFF)));
+        // Another segment only: nothing for segment 0.
+        data[r + 8] = 1;
+        checksum(&mut data);
+        assert_eq!(mcfg_segment0(&data), None);
+    }
 
     // Exact DBG2 bytes from Pi 4B UEFI v1.53, acpiview over COM5 on
     // 2026-09-20; unlike QEMU's SPCR-only path this catches real layout gaps.
@@ -356,31 +514,59 @@ mod tests {
 
     #[test]
     fn pi_style_madt() {
-        assert_eq!(gic_bases(&madt(0xFF84_1000, 0xFF84_2000, 80)), Some((0xFF84_1000, 0xFF84_2000)));
+        assert_eq!(gic(&madt(0xFF84_1000, 0xFF84_2000, 80)), Some(Gic::V2 { gicd: 0xFF84_1000, gicc: 0xFF84_2000 }));
+    }
+
+    /// QEMU virt at gic-version=3: CPU interface base 0 in every GICC, and one
+    /// redistributor range after the distributor.
+    fn madt_v3(gicr: u64, length: u32) -> Vec<u8> {
+        let mut data = madt(0x0800_0000, 0, 80);
+        let mut rec = vec![0u8; 16];
+        rec[0] = MADT_GICR;
+        rec[1] = 16;
+        rec[GICR_BASE_OFFSET..GICR_BASE_OFFSET + 8].copy_from_slice(&gicr.to_le_bytes());
+        rec[GICR_LENGTH_OFFSET..GICR_LENGTH_OFFSET + 4].copy_from_slice(&length.to_le_bytes());
+        data.extend_from_slice(&rec);
+        let total = data.len() as u32;
+        data[offset_of!(Header, length)..offset_of!(Header, length) + 4]
+            .copy_from_slice(&total.to_le_bytes());
+        checksum(&mut data);
+        data
+    }
+
+    #[test]
+    fn qemu_gicv3_madt() {
+        assert_eq!(
+            gic(&madt_v3(0x080A_0000, 0xF6_0000)),
+            Some(Gic::V3 { gicd: 0x0800_0000, gicr: 0x080A_0000, gicr_length: 0xF6_0000 })
+        );
+        // Not 64 KiB aligned, or too short to hold one frame: no GIC at all.
+        assert_eq!(gic(&madt_v3(0x080A_1000, 0xF6_0000)), None);
+        assert_eq!(gic(&madt_v3(0x080A_0000, 0x1_0000)), None);
     }
 
     #[test]
     fn madt_rejects_partial_unaligned_and_truncated() {
-        // GICv3 reports no CPU interface: absent, not half a GIC.
-        assert_eq!(gic_bases(&madt(0xFF84_1000, 0, 80)), None);
+        // No CPU interface and no redistributors: absent, not half a GIC.
+        assert_eq!(gic(&madt(0xFF84_1000, 0, 80)), None);
         // A GICC too short to carry BaseAddress leaves the pair incomplete.
-        assert_eq!(gic_bases(&madt(0xFF84_1000, 0xFF84_2000, 32)), None);
+        assert_eq!(gic(&madt(0xFF84_1000, 0xFF84_2000, 32)), None);
         // Not page-aligned: the loader could not identity-map a page of it.
-        assert_eq!(gic_bases(&madt(0xFF84_1000, 0xFF84_2004, 80)), None);
+        assert_eq!(gic(&madt(0xFF84_1000, 0xFF84_2004, 80)), None);
         let full = madt(0xFF84_1000, 0xFF84_2000, 80);
         for len in 0..full.len() {
-            assert_eq!(gic_bases(&full[..len]), None);
+            assert_eq!(gic(&full[..len]), None);
         }
         // A zero-length subrecord must terminate the walk, not spin on it.
         let mut zero = full.clone();
         zero[MADT_RECORDS_OFFSET + 1] = 0;
         checksum(&mut zero);
-        assert_eq!(gic_bases(&zero), None);
+        assert_eq!(gic(&zero), None);
         // Right layout, wrong table: only a MADT may answer.
         let mut wrong = full;
         wrong[..4].copy_from_slice(b"SRAT");
         checksum(&mut wrong);
-        assert_eq!(gic_bases(&wrong), None);
+        assert_eq!(gic(&wrong), None);
     }
 
     #[test]
@@ -400,4 +586,33 @@ mod tests {
         checksum(&mut data);
         assert_eq!(serial_base(&data), None);
     }
+
+    fn spcr(interface: u8, space: u8, address: u64) -> Vec<u8> {
+        let mut data = vec![0u8; 80];
+        data[..4].copy_from_slice(b"SPCR");
+        data[4..8].copy_from_slice(&80u32.to_le_bytes());
+        data[8] = 2;
+        data[36] = interface;
+        data[40] = space;
+        data[41] = 8;
+        data[44..52].copy_from_slice(&address.to_le_bytes());
+        checksum(&mut data);
+        data
+    }
+
+    #[test]
+    fn spcr_16550_in_io_space() {
+        assert_eq!(spcr_io_port(&spcr(NS16550, SYSTEM_IO, 0x5000)), Some(0x5000));
+        assert_eq!(spcr_io_port(&spcr(NS16550_GAS, SYSTEM_IO, 0x3f8)), Some(0x3f8));
+        assert_eq!(spcr_io_port(&spcr(NS16450, SYSTEM_IO, 0x2f8)), Some(0x2f8));
+        // MMIO 16550, PL011, port space overflow, zero, corrupt: not an x86 port UART.
+        assert_eq!(spcr_io_port(&spcr(NS16550, 0, 0xfe00_0000)), None);
+        assert_eq!(spcr_io_port(&spcr(PL011 as u8, SYSTEM_IO, 0x5000)), None);
+        assert_eq!(spcr_io_port(&spcr(NS16550, SYSTEM_IO, 0xfffc)), None);
+        assert_eq!(spcr_io_port(&spcr(NS16550, SYSTEM_IO, 0)), None);
+        let mut bad = spcr(NS16550, SYSTEM_IO, 0x5000);
+        bad[50] ^= 1;
+        assert_eq!(spcr_io_port(&bad), None);
+    }
+
 }

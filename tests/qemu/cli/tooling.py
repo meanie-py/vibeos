@@ -32,8 +32,11 @@ _PYRIGHT = str(_VBIN / "pyright")
 # tools/fex was outside every lint root, which is how an unused import and an
 # unlinted closure walker sat there unnoticed. A tool the merge train depends on
 # belongs under the same standard as the rest of our python.
-_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli", "tools/fex"]
-_PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu/cli"]
+# tests/qemu was linted only below cli/, so the harness core -- vm.py, backend.py and
+# test_smoke.py itself -- carried 29 findings, including two `assert False` in the
+# north-star test that `python -O` strips. The whole tree is ruff- and format-checked;
+_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu", "tools/fex"]
+_PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu"]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
@@ -53,6 +56,7 @@ _PYTEST_SUITES = [
     # resolved when it is blind — neither shows up in review or in its own output.
     (".", ".", "tools/test_verify_c_signatures.py"),
     (".", ".", "tools/test_scan_wide_literals.py"),
+    (".", ".", "tools/test_scan_unaligned_wide.py"),
     # The apitest sweep's parser. Its failure mode is FALSE GREEN, not a crash --
     # it shipped scoring `afd_apitest send` OK on the boot whose BUGCHECK that
     # subtest caused, because the subtest printed a clean summary before taking
@@ -63,6 +67,7 @@ _PYTEST_SUITES = [
     # forbidden imports). It replaced `objdump | grep -q` pipes that passed and failed
     # at random under pipefail, so it must not become a new untested oracle.
     (".", ".", "tools/payloads/test_pecheck.py"),
+    (".", ".", "tools/payloads/olewinetest/test_classify_failures.py"),
     # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
     # being named and documented as seconds, so a chatty payload spent a declared
     # 7200s in 12-28 minutes. Nothing could see it: the boot still "worked", it
@@ -91,13 +96,33 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    (".", ".", "tools/test_scan_ptr_highword_mask.py"),
+    (".", ".", "tools/test_scan_hresult_literals.py"),
+    (".", ".", "tools/test_scan_dowhile_continue.py"),
+    (".", ".", "tools/test_scan_byteptr_stride.py"),
+    (".", ".", "tools/test_scan_gmem_flags.py"),
+    (".", ".", "tools/test_scan_let_shadow.py"),
+    (".", ".", "tools/test_scan_winerror_consts.py"),
     (".", ".", "tools/test_scan_res_named_types.py"),
     (".", ".", "tools/test_scan_bindgen_padding_index.py"),
-    (".", ".", "tools/test_ramdisk_apps.py"),
+    (".", ".", "tools/test_scan_extern_static_width.py"),
+    (".", ".", "tools/test_ramdisk_tree.py"),
     (".", ".", "tools/test_scan_const_vs_island.py"),
     (".", ".", "tools/test_scan_raw_uart_writes.py"),
+    # The callee pass of the user-pointer lint: its quieting rules (kernel arm,
+    # early return, scoped rebind, null guard) each hid or invented rows once.
+    (".", ".", "tools/test_scan_raw_user_access.py"),
+    # The double-fetch lint's quieting rules (sibling arms, early-exit branch,
+    # advanced source, inner-cast normalisation) each over- or under-fired once.
+    (".", ".", "tools/test_scan_double_fetch.py"),
+    # The safe-probe-deref lint: a range probe validates a user pointer that is then
+    # touched raw. Its quieting rules (fault-tolerant copy, trusted kernel arm,
+    # capture-shadow, field-of-capture) share _walk with scan_raw_user_access.
+    (".", ".", "tools/test_scan_safe_probe_deref.py"),
+    (".", ".", "tools/test_scan_ptr_typedef_indirection.py"),
     (".", ".", "tools/test_lint_facts.py"),
     (".", ".", "tools/test_cargo_link_context.py"),
+    (".", ".", "tools/test_cargo_orchestrate.py"),
     (".", ".", "tools/test_rust_storage.py"),
     (".", ".", "tools/test_host_jobs.py"),
     (".", ".", "tools/test_binary_facts.py"),
@@ -114,6 +139,8 @@ _PYTEST_SUITES = [
     # guarded by test_cli_units, so a new tools/test_*.py cannot go quiet again.
     (".", ".", "tools/test_conformance_probe.py"),
     (".", ".", "tools/test_export_census.py"),
+    (".", ".", "tools/test_link_pulls.py"),
+    (".", ".", "tools/test_ninja_closure_prune.py"),
     (".", ".", "tools/test_gen_ctype_tables.py"),
     (".", ".", "tools/test_verify_lost_exports.py"),
     (".", ".", "tools/test_verify_translation_literals.py"),
@@ -140,6 +167,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
     (".", ".", "tools/test_kernel_probe.py"),
+    (".", ".", "tools/test_link_guard.py"),
     (".", ".", "tools/test_scan_orphan_modules.py"),
     (".", ".", "tools/test_cohab_census.py"),
     (".", ".", "tools/test_build_invalidation.py"),
@@ -150,7 +178,10 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_retarget_cargo_depfile.py"),
     (".", ".", "tools/test_rust_module_tree.py"),
     (".", ".", "tools/test_scan_self_recursive.py"),
+    (".", ".", "tools/test_scan_export_thunks.py"),
+    (".", ".", "tools/test_scan_xchg_ebx_deref.py"),
     (".", ".", "tools/test_scan_dropped_asserts.py"),
+    (".", ".", "tools/test_strip_msvc_cmake.py"),
     # The substrate half of scan_extern_decl_drift has no other oracle: its
     # findings are about declarations of symbols NOTHING in the tree defines, so
     # neither rustc nor the linker nor a same-crate definition can adjudicate one.

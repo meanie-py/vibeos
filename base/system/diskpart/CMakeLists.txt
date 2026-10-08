@@ -2,52 +2,58 @@
 include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/libs/fmifs)
 
 list(APPEND SOURCE
-    active.c
-    add.c
-    assign.c
-    attach.c
-    attributes.c
-    automount.c
-    break.c
-    clean.c
-    compact.c
-    convert.c
-    create.c
-    delete.c
-    detach.c
-    detail.c
-    diskpart.c
-    dump.c
-    expand.c
-    extend.c
-    filesystems.c
-    format.c
-    gpt.c
-    guid.c
-    help.c
-    import.c
-    inactive.c
-    interpreter.c
-    list.c
-    merge.c
-    misc.c
-    mountmgr.c
-    offline.c
-    online.c
-    partlist.c
-    recover.c
-    remove.c
-    repair.c
-    rescan.c
-    retain.c
-    san.c
-    select.c
-    setid.c
-    shrink.c
-    uniqueid.c
+    # active.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/active.rs)
+    # add.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/add.rs)
+    # assign.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/assign.rs)
+    # attach.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/attach.rs)
+    # attributes.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/attributes.rs)
+    # automount.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/automount.rs)
+    # break.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/break.rs)
+    # clean.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/clean.rs)
+    # compact.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/compact.rs)
+    # convert.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/convert.rs)
+    # create.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/create.rs)
+    # delete.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/delete.rs)
+    # detach.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/detach.rs)
+    # detail.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/detail.rs)
+    # diskpart.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/diskpart.rs)
+    # dump.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/dump.rs)
+    # expand.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/expand.rs)
+    # extend.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/extend.rs)
+    # filesystems.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/filesystems.rs)
+    # format.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/format.rs)
+    # gpt.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/gpt.rs)
+    # guid.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/guid.rs)
+    # help.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/help.rs)
+    # import.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/import.rs)
+    # inactive.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/inactive.rs)
+    # interpreter.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/interpreter.rs)
+    # list.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/list.rs)
+    # merge.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/merge.rs)
+    # misc.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/misc.rs)
+    # mountmgr.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/mountmgr.rs)
+    # offline.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/offline.rs)
+    # online.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/online.rs)
+    # partlist.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/partlist.rs)
+    # recover.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/recover.rs)
+    # remove.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/remove.rs)
+    # repair.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/repair.rs)
+    # rescan.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/rescan.rs)
+    # retain.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/retain.rs)
+    # san.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/san.rs)
+    # select.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/select.rs)
+    # setid.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/setid.rs)
+    # shrink.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/shrink.rs)
+    # uniqueid.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/uniqueid.rs)
+    rust_cohab_stub.c
     diskpart.h)
 
+# Every translation unit is Rust now (diskpart-rust, `rustconv port`); the C stays on
+# disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(diskpart_rust diskpart-rust "" TRUE)
 add_executable(diskpart ${SOURCE} diskpart.rc)
+add_dependencies(diskpart rust_diskpart_rust)
+target_link_libraries(diskpart ${diskpart_rust_LIB})
 add_pch(diskpart diskpart.h SOURCE)
 add_message_headers(UNICODE diskpart_msg.mc)
 add_dependencies(diskpart diskpart_msg)
@@ -55,8 +61,5 @@ add_dependencies(diskpart diskpart_msg)
 set_module_type(diskpart win32cui UNICODE)
 target_link_libraries(diskpart conutils ${PSEH_LIB})
 add_importlibs(diskpart fmifs advapi32 msvcrt user32 kernel32 ntdll)
-if(MSVC)
-    add_importlibs(diskpart ntdll)
-endif()
 
 add_cd_file(TARGET diskpart DESTINATION reactos/system32 FOR all)

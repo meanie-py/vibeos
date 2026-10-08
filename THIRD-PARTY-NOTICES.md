@@ -2,7 +2,7 @@
 
 This product includes third-party software. **This file is GENERATED** from `vendor.yaml` by `tools/vendored.py --notices` — edit the registry, not this file. Each entry reproduces the licence grant as it appears in the tree.
 
-39 vendored C/C++ components:
+38 vendored C/C++ components:
 
 - [AC'97 audio sample driver](#ac97-audio-sample-driver) — unknown — MIT
 - [ACPICA](#acpica) — 0x20260408 — BSD-3-Clause OR GPL-2.0
@@ -13,7 +13,6 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [dosfstools (fsck.fat)](#dosfstools-fsckfat) — 4.1 — GPL-3.0-or-later
 - [dxtn (S3TC)](#dxtn-s3tc) — unknown — MIT
 - [EDK2 / TianoCore headers](#edk2--tianocore-headers) — unknown — BSD-2-Clause
-- [FDLIBM (Sun Microsystems freely-distributable libm)](#fdlibm-sun-microsystems-freely-distributable-libm) — 1.8 — FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
 - [FEX-Emu](#fex-emu) — FEX-2607 (1cc4b93e7a71c883ec021b71359f136394dc1f3c, snapshot 2026-07-08) — MIT
 - [FreeType](#freetype) — 2.10.4 — GPL-2.0-only
 - [libdxg D3DKMT thunk header](#libdxg-d3dkmt-thunk-header) — git commit 045831e — MIT
@@ -29,13 +28,13 @@ This product includes third-party software. **This file is GENERATED** from `ven
 - [Mbed TLS](#mbed-tls) — 3.6.7 — Apache-2.0 OR GPL-2.0-or-later
 - [Mesa 3-D graphics library](#mesa-3-d-graphics-library) — 2.6 — LGPL-2.0-or-later
 - [Microsoft compiler-tests (EH/SEH)](#microsoft-compiler-tests-ehseh) — unknown — MIT
-- [Microsoft UCRT](#microsoft-ucrt) — unknown — Microsoft (see the Windows SDK licence terms)
+- [musl libc math (exp/exp2/log/log2/pow and f32 forms; ARM optimized-routines)](#musl-libc-math-expexp2loglog2pow-and-f32-forms-arm-optimized-routines) — musl master, src/math, fetched 2026-10-03 — MIT
 - [OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)](#opengl-sdk-headers-mesa-glh-khronos-glexth-sgi-gluh) — 7.6 — MIT
 - [rdesktop (as mstsc.exe)](#rdesktop-as-mstscexe) — 1.8.3 — GPL-3.0-or-later
 - [rdesktop (rosapps tsclient)](#rdesktop-rosapps-tsclient) — 1.8.3 — GPL-3.0-or-later
 - [Schily Tools (mkisofs)](#schily-tools-mkisofs) — schily-2017-09-07 — CDDL-1.0
 - [SGI GLU (OpenGL Utility Library)](#sgi-glu-opengl-utility-library) — glu-9.0.1 (Mesa git tag, not a release tarball) — SGI-B-2.0
-- [STLport](#stlport) — 5.2.1 — STLport licence (permissive)
+- [SymCrypt](#symcrypt) — 103.11.0 — MIT
 - [TreeList control](#treelist-control) — ??? (Imported on 2018.11.06: 2fdfb41 (0.4.11-dev-668)) — GPL-3.0-or-later
 - [VirtIO driver library](#virtio-driver-library) — unknown — BSD-3-Clause
 - [VirtIO NetKVM guest driver (NDIS 5)](#virtio-netkvm-guest-driver-ndis-5) — git commit 5e01b36 — BSD-3-Clause
@@ -1344,30 +1343,6 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
 ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
-```
-
-## FDLIBM (Sun Microsystems freely-distributable libm)
-
-- Upstream: https://github.com/NetBSD/src (lib/libm/src) — FDLIBM-derived; ancestral source https://www.netlib.org/fdlibm/
-- Version: 1.8
-- In this tree: `sdk/lib/crt/math/ieee754`
-- Licence: FDLIBM (Sun 1993 permissive; use/copy/modify/distribute, notice preserved)
-- Grant reproduced from: `sdk/lib/crt/math/ieee754/j0_y0.c (header comment)`
-
-```
-@(#)e_j0.c 5.1 93/09/24 */
-
-====================================================
-Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
-
-Developed at SunPro, a Sun Microsystems, Inc. business.
-Permission to use, copy, modify, and distribute this
-software is freely granted, provided that this notice
-is preserved.
-====================================================
-
-Modified by Naohiko Shimizu/Tokai University, Japan 1997/08/26,
-   for performance improvement on pipelined processors.
 ```
 
 ## FEX-Emu
@@ -4482,17 +4457,208 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Microsoft UCRT
+## musl libc math (exp/exp2/log/log2/pow and f32 forms; ARM optimized-routines)
 
-- Upstream: Windows SDK "Source/ucrt" drop (exact SDK version UNKNOWN — see note)
-- Version: unknown
-- In this tree: `sdk/lib/ucrt`, `sdk/include/ucrt`
-- Licence: Microsoft (see the Windows SDK licence terms)
-- Grant reproduced from: **the tree carries no licence grant**
+- Upstream: https://git.musl-libc.org/cgit/musl/tree/src/math
+- Version: musl master, src/math, fetched 2026-10-03
+- In this tree: `sdk/lib/rust/musl-math/ref`
+- Licence: MIT
+- Grant reproduced from: `sdk/lib/rust/musl-math/ref/COPYRIGHT`
 
 ```
-THIS TREE CARRIES NO LICENCE GRANT. Its source headers bear only "Copyright (c) Microsoft Corporation. All rights reserved." with no permission statement of any kind, and there is no LICENSE, COPYING or README in either sdk/lib/ucrt or sdk/include/ucrt. The recorded licence is therefore a POINTER to the Windows SDK licence terms under which Microsoft distributes the ucrt sources, not something reproducible from this repository — and those terms are an SDK EULA, not an open-source licence.
-This is the largest unresolved provenance question in the tree (~78K lines) and the reason the entry says the SDK version is unknown: without the version we cannot even name which EULA applies. It is recorded here rather than rounded off so that generated notices state the gap instead of hiding it. Resolving it means establishing the SDK version and its terms, or replacing the tree — see the ucrtbase work item in the roadmap.
+musl as a whole is licensed under the following standard MIT license:
+
+----------------------------------------------------------------------
+Copyright © 2005-2020 Rich Felker, et al.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+----------------------------------------------------------------------
+
+Authors/contributors include:
+
+A. Wilcox
+Ada Worcester
+Alex Dowad
+Alex Suykov
+Alexander Monakov
+Andre McCurdy
+Andrew Kelley
+Anthony G. Basile
+Aric Belsito
+Arvid Picciani
+Bartosz Brachaczek
+Benjamin Peterson
+Bobby Bingham
+Boris Brezillon
+Brent Cook
+Chris Spiegel
+Clément Vasseur
+Daniel Micay
+Daniel Sabogal
+Daurnimator
+David Carlier
+David Edelsohn
+Denys Vlasenko
+Dmitry Ivanov
+Dmitry V. Levin
+Drew DeVault
+Emil Renner Berthing
+Fangrui Song
+Felix Fietkau
+Felix Janda
+Gianluca Anzolin
+Hauke Mehrtens
+He X
+Hiltjo Posthuma
+Isaac Dunham
+Jaydeep Patil
+Jens Gustedt
+Jeremy Huntwork
+Jo-Philipp Wich
+Joakim Sindholt
+John Spencer
+Julien Ramseier
+Justin Cormack
+Kaarle Ritvanen
+Khem Raj
+Kylie McClain
+Leah Neukirchen
+Luca Barbato
+Luka Perkov
+Lynn Ochs
+M Farkas-Dyck (Strake)
+Mahesh Bodapati
+Markus Wichmann
+Masanori Ogino
+Michael Clark
+Michael Forney
+Mikhail Kremnyov
+Natanael Copa
+Nicholas J. Kain
+orc
+Pascal Cuoq
+Patrick Oppenlander
+Petr Hosek
+Petr Skocik
+Pierre Carrier
+Reini Urban
+Rich Felker
+Richard Pennington
+Ryan Fairfax
+Samuel Holland
+Segev Finer
+Shiz
+sin
+Solar Designer
+Stefan Kristiansson
+Stefan O'Rear
+Szabolcs Nagy
+Timo Teräs
+Trutz Behn
+Will Dietz
+William Haddon
+William Pitcock
+
+Portions of this software are derived from third-party works licensed
+under terms compatible with the above MIT license:
+
+The TRE regular expression implementation (src/regex/reg* and
+src/regex/tre*) is Copyright © 2001-2008 Ville Laurikari and licensed
+under a 2-clause BSD license (license text in the source files). The
+included version has been heavily modified by Rich Felker in 2012, in
+the interests of size, simplicity, and namespace cleanliness.
+
+Much of the math library code (src/math/* and src/complex/*) is
+Copyright © 1993,2004 Sun Microsystems or
+Copyright © 2003-2011 David Schultz or
+Copyright © 2003-2009 Steven G. Kargl or
+Copyright © 2003-2009 Bruce D. Evans or
+Copyright © 2008 Stephen L. Moshier or
+Copyright © 2017-2018 Arm Limited
+and labelled as such in comments in the individual source files. All
+have been licensed under extremely permissive terms.
+
+The ARM memcpy code (src/string/arm/memcpy.S) is Copyright © 2008
+The Android Open Source Project and is licensed under a two-clause BSD
+license. It was taken from Bionic libc, used on Android.
+
+The AArch64 memcpy and memset code (src/string/aarch64/*) are
+Copyright © 1999-2019, Arm Limited.
+
+The implementation of DES for crypt (src/crypt/crypt_des.c) is
+Copyright © 1994 David Burren. It is licensed under a BSD license.
+
+The implementation of blowfish crypt (src/crypt/crypt_blowfish.c) was
+originally written by Solar Designer and placed into the public
+domain. The code also comes with a fallback permissive license for use
+in jurisdictions that may not recognize the public domain.
+
+The smoothsort implementation (src/stdlib/qsort.c) is Copyright © 2011
+Lynn Ochs and is licensed under an MIT-style license.
+
+The x86_64 port was written by Nicholas J. Kain and is licensed under
+the standard MIT terms.
+
+The mips and microblaze ports were originally written by Richard
+Pennington for use in the ellcc project. The original code was adapted
+by Rich Felker for build system and code conventions during upstream
+integration. It is licensed under the standard MIT terms.
+
+The mips64 port was contributed by Imagination Technologies and is
+licensed under the standard MIT terms.
+
+The powerpc port was also originally written by Richard Pennington,
+and later supplemented and integrated by John Spencer. It is licensed
+under the standard MIT terms.
+
+All other files which have no copyright comments are original works
+produced specifically for use as part of this library, written either
+by Rich Felker, the main author of the library, or by one or more
+contibutors listed above. Details on authorship of individual files
+can be found in the git version control history of the project. The
+omission of copyright and license comments in each file is in the
+interest of source tree size.
+
+In addition, permission is hereby granted for all public header files
+(include/* and arch/*/bits/*) and crt files intended to be linked into
+applications (crt/*, ldso/dlstart.c, and arch/*/crt_arch.h) to omit
+the copyright notice and permission notice otherwise required by the
+license, and to use these files without any requirement of
+attribution. These files include substantial contributions from:
+
+Bobby Bingham
+John Spencer
+Nicholas J. Kain
+Rich Felker
+Richard Pennington
+Stefan Kristiansson
+Szabolcs Nagy
+
+all of whom have explicitly granted such permission.
+
+This file previously contained text expressing a belief that most of
+the files covered by the above exception were sufficiently trivial not
+to be subject to copyright, resulting in confusion over whether it
+negated the permissions granted in the license. In the spirit of
+permissive licensing, and of not having licensing issues being an
+obstacle to adoption, that text has been removed.
 ```
 
 ## OpenGL SDK headers (Mesa gl.h, Khronos glext.h, SGI glu.h)
@@ -5019,80 +5185,36 @@ other dealings in this Software without prior written authorization from
 Silicon Graphics, Inc.
 ```
 
-## STLport
+## SymCrypt
 
-- Upstream: http://www.stlport.org/
-- Version: 5.2.1
-- In this tree: `vendor/stlport`
-- Licence: STLport licence (permissive)
-- Modified by us: yes, see `vendor-patches/stlport.patch`
-- Grant reproduced from: `vendor/stlport/README`
+- Upstream: https://github.com/microsoft/SymCrypt
+- Version: 103.11.0
+- In this tree: `vendor/symcrypt`
+- Licence: MIT
+- Grant reproduced from: `vendor/symcrypt/LICENSE.txt`
 
 ```
-**********************************************************************
-* 	README file for STLport 5.0                                    *
-*                                                                    *
-**********************************************************************
+Copyright (c) Microsoft Corporation. All rights reserved.
 
-This directory contains the STLport-5.0 release.
+MIT License
 
-What's inside :
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-README           - this file
-INSTALL          - installation instructions
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-bin              - installation directory for STLport unit tests;
-                   it may contain more subdirs, if you use
-                   crosscompilation
-build/lib        - build directory for STLport library (if you use
-                   STLport iostreams and/or locale only)
-build/test/unit  - build directory for regression (unit) tests
-build/test/eh    - build directory for exception handling tests
-stlport          - main STLport include directory
-src              - source for iostreams implementation and other parts
-                   that aren't pure template code
-lib              - installation directory for STLport library (if you
-                   use STLport iostreams and/or locale only);
-                   it may contain more subdirs, if you use
-                   crosscompilation
-test/unit        - unit (regression) tests
-test/eh          - exception handling test using STLport iostreams
-etc              - miscellanous files (ChangeLog, TODO, scripts, etc.)
-
-GETTING STLPORT
-
-To download the latest version of STLport, please be sure to visit
-https://sourceforge.net/project/showfiles.php?group_id=146814
-
-LEGALESE
-
-This software is being distributed under the following terms:
-
- *
- *
- * Copyright (c) 1994
- * Hewlett-Packard Company
- *
- * Copyright (c) 1996-1999
- * Silicon Graphics Computer Systems, Inc.
- *
- * Copyright (c) 1997
- * Moscow Center for SPARC Technology
- *
- * Copyright (c) 1999-2003
- * Boris Fomitchev
- *
- * This material is provided "as is", with absolutely no warranty expressed
- * or implied. Any use is at your own risk.
- *
- * Permission to use or copy this software for any purpose is hereby granted
- * without fee, provided the above notices are retained on all copies.
- * Permission to modify the code and to distribute modified code is granted,
- * provided the above notices are retained, and a notice that the code was
- * modified is included with the above copyright notice.
- *
-
-**********************************************************************
+THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## TreeList control
@@ -5223,9 +5345,9 @@ SUCH DAMAGE.
 
 - Upstream: https://gitlab.winehq.org/wine/vkd3d
 - Version: 1.14
-- In this tree: `sdk/lib/vkd3d`
+- In this tree: `vendor/vkd3d`
 - Licence: LGPL-2.1-or-later
-- Grant reproduced from: `sdk/lib/vkd3d/COPYING`
+- Grant reproduced from: `vendor/vkd3d/COPYING`
 
 ```
 Copyright 2016-2024 the Vkd3d project authors (see the file AUTHORS for a
@@ -5333,7 +5455,7 @@ Copyright notice:
 
 ## Rust crates
 
-This product also links 18 third-party Rust crates, out of 58 that enter the build. Generated from `cargo metadata` into `tools/rust-crates.yaml`; see that file for the ones used only to build or test, and for why the shipped/host split errs toward listing more.
+This product also links 19 third-party Rust crates, out of 59 that enter the build. Generated from `cargo metadata` into `tools/rust-crates.yaml`; see that file for the ones used only to build or test, and for why the shipped/host split errs toward listing more.
 
 | crate | version | licence |
 | --- | --- | --- |
@@ -5345,6 +5467,7 @@ This product also links 18 third-party Rust crates, out of 58 that enter the bui
 | defmt | 1.1.0 | MIT OR Apache-2.0 |
 | hash32 | 0.3.1 | MIT OR Apache-2.0 |
 | heapless | 0.9.3 | MIT OR Apache-2.0 |
+| libm | 0.2.16 | MIT |
 | libz-rs-sys | 0.6.3 | Zlib |
 | log | 0.4.32 | MIT OR Apache-2.0 |
 | managed | 0.8.0 | 0BSD |

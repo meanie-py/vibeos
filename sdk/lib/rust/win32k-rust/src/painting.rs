@@ -65,7 +65,6 @@ extern "C" {
 extern "system" {
     // SafeProbeForRead / ProbeForRead — NTAPI (stdcall `_..@12`).
     fn SafeProbeForRead(Address: *mut core::ffi::c_void, Length: usize, Alignment: u32) -> i32;
-    fn ProbeForRead(Address: *const core::ffi::c_void, Length: SIZE_T, Alignment: ULONG);
 }
 // ValidateHwndNoErr — real FASTCALL export (window.rs). i386 fastcall, cdecl else.
 #[cfg(target_arch = "x86")]
@@ -109,14 +108,6 @@ unsafe fn UserIsDesktopWindow(Wnd: PWND) -> BOOL {
 #[inline(always)]
 unsafe fn UserIsMessageWindow(Wnd: PWND) -> BOOL {
     (!Wnd.is_null() && (*Wnd).fnid == FNID_MESSAGEWND) as BOOL
-}
-// ProbeForReadUnicodeString (probe.h inline) — capture a UNICODE_STRING by value.
-#[inline(always)]
-unsafe fn ProbeForReadUnicodeString(SourceString: PUNICODE_STRING) -> _UNICODE_STRING {
-    ProbeForRead(SourceString as *const core::ffi::c_void,
-                 core::mem::size_of::<_UNICODE_STRING>() as SIZE_T,
-                 core::mem::size_of::<usize>() as ULONG);
-    *SourceString
 }
 
 // UserRefObjectCo / UserDerefObjectCo (object.h static __inline; mirrors focus.rs).
@@ -2666,6 +2657,7 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
     let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
     let mut SafeRect: RECTL = core::mem::zeroed();
     let mut Ret: BOOL;
+    let mut caption_guard: Option<ntkrnl_sys::probe::PoolAllocGuard> = None;
 
     UserEnterExclusive();
 
@@ -2677,33 +2669,48 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
         }
     }
 
-    Status = SafeProbeForRead(
-        lpRc as *mut core::ffi::c_void,
-        (core::mem::size_of::<RECTL>() as ULONG).try_into().unwrap(),
-        core::mem::size_of::<ULONG>() as ULONG,
-    );
-    if NT_SUCCESS(Status) {
-        Status = SafeProbeForRead(
-            SafeStr.Buffer as *mut core::ffi::c_void,
-            (SafeStr.Length as ULONG).try_into().unwrap(),
-            core::mem::size_of::<WCHAR>() as ULONG,
-        );
-    }
-    if NT_SUCCESS(Status) {
-        // The probe VALIDATES only; this capture is the access. There is no label to
-        // break to here -- a fault lands in Status, which is checked immediately after
-        // this block, and the string handling below is skipped so it does not run on a
-        // capture that did not happen.
-        if !crate::copy::capture_from_user(
+    // C: _SEH2_TRY {
+    //        ProbeForRead(lpRc, sizeof(RECTL), sizeof(ULONG));
+    //        RtlCopyMemory(&SafeRect, lpRc, sizeof(RECTL));
+    //        if (str != NULL) {
+    //            SafeStr = ProbeForReadUnicodeString(str);
+    //            if (SafeStr.Length != 0)
+    //                ProbeForRead(SafeStr.Buffer, SafeStr.Length, sizeof(WCHAR));
+    //        }
+    //    } _SEH2_EXCEPT { Status = _SEH2_GetExceptionCode(); }
+    // (The earlier translation probed SafeStr.Buffer BEFORE capturing SafeStr,
+    // and never range-checked the header read at all.)
+    Status = STATUS_SUCCESS as NTSTATUS;
+    'seh: {
+        if let Err(st) = crate::safe_user_io::copy_from_user(
             core::ptr::addr_of_mut!(SafeRect) as *mut core::ffi::c_void,
             lpRc as *const core::ffi::c_void,
             core::mem::size_of::<RECTL>(),
+            core::mem::size_of::<ULONG>() as u32,
         ) {
-            Status = STATUS_ACCESS_VIOLATION;
+            Status = st;
+            break 'seh;
         }
-        if NT_SUCCESS(Status) && !str.is_null() {
-            SafeStr = ProbeForReadUnicodeString(str);
-            if SafeStr.Length != 0 {}
+        if !str.is_null() {
+            SafeStr = match crate::safe_user_io::capture_user(str as *const _UNICODE_STRING) {
+                Ok(v) => v,
+                Err(st) => {
+                    Status = st;
+                    break 'seh;
+                }
+            };
+            // The C probes the text here and UserDrawCaption then draws it IN
+            // PLACE, outside the _SEH2_TRY. Draw a pool copy instead.
+            match crate::safe_user_io::capture_string_buffer(
+                &mut SafeStr,
+                u32::from_le_bytes(*b"Usdc"),
+            ) {
+                Ok(guard) => caption_guard = guard,
+                Err(st) => {
+                    Status = st;
+                    break 'seh;
+                }
+            }
         }
     }
 
@@ -2775,6 +2782,7 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
     let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
     let mut SafeRect: RECTL = core::mem::zeroed();
     let mut Ret: BOOL;
+    let mut caption_guard: Option<ntkrnl_sys::probe::PoolAllocGuard> = None;
 
     UserEnterExclusive();
 
@@ -2786,31 +2794,48 @@ pub unsafe extern "system" fn NtUserDrawCaptionTemp(
         }
     }
 
-    Status = SafeProbeForRead(
-        lpRc as *mut core::ffi::c_void,
-        core::mem::size_of::<RECTL>() as usize,
-        core::mem::size_of::<ULONG>() as ULONG,
-    );
-    if NT_SUCCESS(Status) {
-        Status = SafeProbeForRead(
-            SafeStr.Buffer as *mut core::ffi::c_void,
-            SafeStr.Length as usize,
-            core::mem::size_of::<WCHAR>() as ULONG,
-        );
-    }
-    if NT_SUCCESS(Status) {
-        // The probe VALIDATES only; this capture is the access, and a fault lands in
-        // Status, which is checked immediately after this block.
-        if !crate::copy::capture_from_user(
+    // C: _SEH2_TRY {
+    //        ProbeForRead(lpRc, sizeof(RECTL), sizeof(ULONG));
+    //        RtlCopyMemory(&SafeRect, lpRc, sizeof(RECTL));
+    //        if (str != NULL) {
+    //            SafeStr = ProbeForReadUnicodeString(str);
+    //            if (SafeStr.Length != 0)
+    //                ProbeForRead(SafeStr.Buffer, SafeStr.Length, sizeof(WCHAR));
+    //        }
+    //    } _SEH2_EXCEPT { Status = _SEH2_GetExceptionCode(); }
+    // (The earlier translation probed SafeStr.Buffer BEFORE capturing SafeStr,
+    // and never range-checked the header read at all.)
+    Status = STATUS_SUCCESS as NTSTATUS;
+    'seh: {
+        if let Err(st) = crate::safe_user_io::copy_from_user(
             core::ptr::addr_of_mut!(SafeRect) as *mut core::ffi::c_void,
             lpRc as *const core::ffi::c_void,
             core::mem::size_of::<RECTL>(),
+            core::mem::size_of::<ULONG>() as u32,
         ) {
-            Status = STATUS_ACCESS_VIOLATION;
+            Status = st;
+            break 'seh;
         }
-        if NT_SUCCESS(Status) && !str.is_null() {
-            SafeStr = ProbeForReadUnicodeString(str);
-            if SafeStr.Length != 0 {}
+        if !str.is_null() {
+            SafeStr = match crate::safe_user_io::capture_user(str as *const _UNICODE_STRING) {
+                Ok(v) => v,
+                Err(st) => {
+                    Status = st;
+                    break 'seh;
+                }
+            };
+            // The C probes the text here and UserDrawCaption then draws it IN
+            // PLACE, outside the _SEH2_TRY. Draw a pool copy instead.
+            match crate::safe_user_io::capture_string_buffer(
+                &mut SafeStr,
+                u32::from_le_bytes(*b"Usdc"),
+            ) {
+                Ok(guard) => caption_guard = guard,
+                Err(st) => {
+                    Status = st;
+                    break 'seh;
+                }
+            }
         }
     }
 

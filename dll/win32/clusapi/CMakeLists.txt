@@ -8,11 +8,6 @@ list(APPEND SOURCE
 
 add_library(clusapi MODULE ${SOURCE})
 
-if(MSVC)
-    # error C4312: 'type cast': conversion from 'unsigned int' to 'HCLUSTER' of greater size
-    remove_target_compile_option(clusapi "/we4312")
-endif()
-
 set_module_type(clusapi win32dll)
 target_link_libraries(clusapi wine)
 add_importlibs(clusapi msvcrt kernel32 ntdll)

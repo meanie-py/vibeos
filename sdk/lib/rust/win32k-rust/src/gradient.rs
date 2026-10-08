@@ -1223,18 +1223,6 @@ pub unsafe extern "system" fn EngGradientFill(
                     gt = gt.offset(1);
                     continue;
                 }
-                #[cfg(target_arch = "x86")]
-                let result = IntEngGradientFillTriangle(
-                    psoDest,
-                    pco_local,
-                    pxlo,
-                    pVertex,
-                    nVertex,
-                    gt,
-                    prclExtents,
-                    pptlDitherOrg,
-                );
-                #[cfg(not(target_arch = "x86"))]
                 let result = IntEngGradientFillTriangle(
                     psoDest,
                     pco_local,

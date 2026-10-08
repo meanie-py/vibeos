@@ -223,16 +223,16 @@
 223 stdcall -noname SHGlobalCounterGetValue(long)
 224 stdcall -noname SHGlobalCounterIncrement(long)
 225 stdcall -noname SHStripMneumonicW(wstr)
-226 stub -noname ZoneCheckPathA
-227 stub -noname ZoneCheckPathW
-228 stub -noname ZoneCheckUrlA
-229 stub -noname ZoneCheckUrlW
-230 stub -noname ZoneCheckUrlExA
-231 stdcall -noname ZoneCheckUrlExW(wstr ptr long long long long long long)
-232 stub -noname ZoneCheckUrlExCacheA
-233 stub -noname ZoneCheckUrlExCacheW
-234 stub -noname ZoneCheckHost
-235 stub -noname ZoneCheckHostEx
+226 stdcall -noname ZoneCheckPathA(str long long ptr)
+227 stdcall -noname ZoneCheckPathW(wstr long long ptr)
+228 stdcall -noname ZoneCheckUrlA(str long long ptr)
+229 stdcall -noname ZoneCheckUrlW(wstr long long ptr)
+230 stdcall -noname ZoneCheckUrlExA(str ptr long ptr long long long ptr)
+231 stdcall -noname ZoneCheckUrlExW(wstr ptr long ptr long long long ptr)
+232 stdcall -noname ZoneCheckUrlExCacheA(str ptr long ptr long long long ptr ptr)
+233 stdcall -noname ZoneCheckUrlExCacheW(wstr ptr long ptr long long long ptr ptr)
+234 stdcall -noname ZoneCheckHost(ptr wstr long)
+235 stdcall -noname ZoneCheckHostEx(ptr ptr long ptr long wstr long)
 236 stdcall -noname SHPinDllOfCLSID(ptr)
 237 stdcall -noname SHRegisterClassW(ptr)
 238 stdcall -noname SHUnregisterClassesA(ptr ptr long)
@@ -378,7 +378,7 @@
 378 stdcall -noname MLLoadLibraryW(wstr long long)
 379 stub -noname Shell_GetCachedImageIndexWrapW
 380 stub -noname Shell_GetCachedImageIndexWrapA
-381 stub -noname AssocCopyVerbs
+381 stdcall -noname AssocCopyVerbs(ptr ptr)
 382 stdcall -noname ZoneComputePaneSize(ptr)
 383 stub -noname ZoneConfigureW
 384 stub -noname SHRestrictedMessageBox
@@ -404,10 +404,10 @@
 404 stdcall -noname IShellFolder_EnumObjects(ptr ptr long ptr) SHIShellFolder_EnumObjects
 405 stdcall -noname MLBuildResURLA(str ptr long str ptr long)
 406 stdcall -noname MLBuildResURLW(wstr ptr long wstr ptr long)
-407 stub -noname AssocMakeProgid
-408 stub -noname AssocMakeShell
-409 stub -noname AssocMakeApplicationByKeyW
-410 stub -noname AssocMakeApplicationByKeyA
+407 stdcall -noname AssocMakeProgid(ptr ptr ptr ptr)
+408 stdcall -noname AssocMakeShell(ptr ptr ptr ptr)
+409 stdcall -noname AssocMakeApplicationByKeyW(ptr ptr ptr)
+410 stdcall -noname AssocMakeApplicationByKeyA(ptr ptr ptr)
 411 stub -noname AssocMakeFileExtsToApplicationW
 412 stub -noname AssocMakeFileExtsToApplicationA
 413 stdcall -noname SHGetMachineInfo(long)
@@ -541,7 +541,7 @@
 541 stub -noname SHInvokeCommandsOnContextMenu
 542 stdcall -noname GetUIVersion()
 543 stdcall -noname CreateColorSpaceWrapW(ptr) gdi32.CreateColorSpaceW
-544 stub -noname QuerySourceCreateFromKey
+544 stdcall -noname QuerySourceCreateFromKey(ptr wstr long ptr ptr)
 545 stdcall -noname SHForwardContextMenuMsg(ptr long long long ptr long)
 546 stub -noname IUnknown_DoContextMenuPopup
 547 stdcall DelayLoadFailureHook(str str) kernel32.DelayLoadFailureHook
@@ -557,7 +557,7 @@
 557 stub -noname SHCoCreateExtension
 558 stub -noname SHCoExtensionCollectStats
 559 stub -noname SHGetSignatureInfo
-560 stdcall -stub -noname SHWindowsPolicyGetValue(ptr ptr ptr)
+560 stdcall -noname SHWindowsPolicyGetValue(ptr ptr ptr)
 561 stub -noname AssocGetUrlAction
 562 stub -noname SHGetPrivateProfileInt
 563 stdcall -stub -noname SHGetPrivateProfileSection(wstr ptr long ptr)

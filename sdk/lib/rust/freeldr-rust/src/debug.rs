@@ -152,6 +152,25 @@ unsafe fn c_strstr(hay: *const i8, needle: &[u8]) -> *const i8 {
     core::ptr::null()
 }
 
+unsafe fn c_hex(mut p: *const i8) -> ULONG {
+    if *p == b'0' as i8 && (*p.add(1) == b'x' as i8 || *p.add(1) == b'X' as i8) {
+        p = p.add(2);
+    }
+    let mut v: ULONG = 0;
+    loop {
+        let c = *p as u8;
+        let d = match c {
+            b'0'..=b'9' => c - b'0',
+            b'a'..=b'f' => c - b'a' + 10,
+            b'A'..=b'F' => c - b'A' + 10,
+            _ => break,
+        };
+        v = v.wrapping_mul(16).wrapping_add(d as ULONG);
+        p = p.add(1);
+    }
+    v
+}
+
 unsafe fn c_atol(mut p: *const i8) -> ULONG {
     let mut v: ULONG = 0;
     while *p == b' ' as i8 { p = p.add(1); }
@@ -185,7 +204,12 @@ pub unsafe extern "C" fn DebugInit(DebugString: PCSTR) {
                 let com = c_strstr(q, b"COM");
                 if com == q {
                     DebugPort |= RS232;
-                    let v = c_atol(com.add(3));
+                    // COMn, or COM:0x<port> (the kernel's KD accepts the same).
+                    let v = if *com.add(3) == b':' as i8 {
+                        c_hex(com.add(4))
+                    } else {
+                        c_atol(com.add(3))
+                    };
                     if v != 0 { DbgComPort = v; }
                 }
             }
@@ -207,10 +231,106 @@ pub unsafe extern "C" fn DebugInit(DebugString: PCSTR) {
         fn Rs232PortInitialize(ComPort: ULONG, BaudRate: ULONG) -> u8;
     }
     if (DebugPort & RS232) != 0 {
-        if Rs232PortInitialize(DbgComPort, DbgBaudRate) == 0 {
+        if Rs232PortInitialize(DbgComPort, DbgBaudRate) == 0 && !spcr_fallback() {
             DebugPort &= !RS232;
         }
     }
+}
+
+/// The I/O port the debug channel moved to because the configured COM port is
+/// absent and an ACPI SPCR described another UART; 0 when no move happened.
+/// winldr hands it to the kernel (SpcrRewriteDebugPort) so KD follows.
+static mut SpcrDebugPort: ULONG = 0;
+
+#[cfg(all(feature = "uefi", any(target_arch = "x86", target_arch = "x86_64")))]
+unsafe fn spcr_fallback() -> bool {
+    extern "C" {
+        fn UefiSpcrConsolePort() -> ULONG;
+        fn Rs232PortInitialize(ComPort: ULONG, BaudRate: ULONG) -> u8;
+    }
+    let port = UefiSpcrConsolePort();
+    if port == 0 || Rs232PortInitialize(port, DbgBaudRate) == 0 {
+        return false;
+    }
+    let already = SpcrDebugPort == port;
+    SpcrDebugPort = port;
+    if !already {
+        // DbgComPort 0 is the pre-init probe of COM4..COM1, not a named port.
+        DbgPrint(
+            b"[FLDR] debug port: no legacy COM port, using the ACPI SPCR UART at I/O 0x%lx\n\0"
+                .as_ptr() as *const i8,
+            port as usize,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        );
+    }
+    true
+}
+
+#[cfg(not(all(feature = "uefi", any(target_arch = "x86", target_arch = "x86_64"))))]
+unsafe fn spcr_fallback() -> bool {
+    false
+}
+
+/// When the debug channel moved to an SPCR UART, rewrite the kernel's
+/// `DEBUGPORT=COMn` in `options` (a NUL-terminated buffer of `cap` bytes) to
+/// `DEBUGPORT=COM:0x<port>`, so KD prints where the loader did. Otherwise, or
+/// if the rewrite would not fit, the options are left alone.
+#[no_mangle]
+pub unsafe extern "C" fn SpcrRewriteDebugPort(options: *mut i8, cap: usize) {
+    if SpcrDebugPort == 0 || options.is_null() {
+        return;
+    }
+    let at = c_strstr(options, b"DEBUGPORT=COM");
+    if at.is_null() {
+        DbgPrint(
+            b"[FLDR] kernel options carry no DEBUGPORT=COMn to move to the SPCR UART: %s\n\0".as_ptr()
+                as *const i8,
+            options as usize,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        );
+        return;
+    }
+    let digit = at.add(b"DEBUGPORT=COM".len()) as *mut i8;
+    if !(*digit as u8).is_ascii_digit() {
+        return;
+    }
+    let mut repl = [0u8; 16];
+    let n = format_port(&mut repl, SpcrDebugPort);
+    let len = {
+        let mut l = 0usize;
+        while *options.add(l) != 0 { l += 1; }
+        l
+    };
+    // One digit becomes `n` bytes: the tail (after the digit, with its NUL) shifts right.
+    let tail = len - (digit.offset_from(options) as usize + 1) + 1;
+    if len + n - 1 + 1 > cap {
+        return;
+    }
+    core::ptr::copy(digit.add(1), digit.add(n), tail);
+    core::ptr::copy_nonoverlapping(repl.as_ptr() as *const i8, digit, n);
+    DbgPrint(
+        b"[FLDR] kernel options: debug port moved to the SPCR UART: %s\n\0".as_ptr() as *const i8,
+        options as usize,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    );
+}
+
+/// `:0x<hex>` for a port number; returns the byte count written.
+fn format_port(out: &mut [u8; 16], port: ULONG) -> usize {
+    let mut digits = [0u8; 8];
+    let mut v = port;
+    let mut d = 0;
+    loop {
+        digits[d] = b"0123456789ABCDEF"[(v & 0xf) as usize];
+        d += 1;
+        v >>= 4;
+        if v == 0 { break; }
+    }
+    out[..3].copy_from_slice(b":0x");
+    for i in 0..d {
+        out[3 + i] = digits[d - 1 - i];
+    }
+    3 + d
 }
 
 unsafe fn DbgPrintString(s: *const i8) {
@@ -446,6 +566,25 @@ pub unsafe extern "system" fn KeBugCheckEx(
     loop {}
 }
 
+extern "C" {
+    // i386bug.rs / arm64_debug.rs (same decl as pcmem.rs). The Rust
+    // definition prints its Format verbatim, so it is handed the message
+    // already formatted, with no further arguments.
+    fn FrLdrBugCheckWithMessage(BugCode: ULONG, File: PCHAR, Line: ULONG, Format: PCHAR, ...);
+}
+
+// Upstream b0bd092c0d4 "[FREELDR] Make ASSERT bugcheck on failure": after the
+// debug print, an assertion is a FrLdrBugCheckWithMessage(ASSERT_FAILURE, ...)
+// halt, not a DbgBreakPoint that boot then carries on from.
+unsafe fn assert_bugcheck(FileName: PVOID, LineNumber: ULONG, msg: &[i8; 512]) {
+    FrLdrBugCheckWithMessage(
+        crate::frldr::ASSERT_FAILURE,
+        FileName as PCHAR,
+        LineNumber,
+        msg.as_ptr() as PCHAR,
+    );
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn RtlAssert(
     FailedAssertion: PVOID,
@@ -472,6 +611,7 @@ pub unsafe extern "system" fn RtlAssert(
             Message,
         );
         DbgPrintSz(buf.as_ptr() as PCSTR);
+        assert_bugcheck(FileName, LineNumber, &buf);
     } else {
         sprintf(
             buf.as_mut_ptr(),
@@ -481,6 +621,7 @@ pub unsafe extern "system" fn RtlAssert(
             LineNumber,
         );
         DbgPrintSz(buf.as_ptr() as PCSTR);
+        assert_bugcheck(FileName, LineNumber, &buf);
     }
 
     DbgBreakPoint();

@@ -7,7 +7,7 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAllocateMdl, IoFreeMdl, _LOCK_OPERATION_IoModifyAccess as IoModifyAccess, _LOCK_OPERATION_IoReadAccess as IoReadAccess, IoReleaseCancelSpinLock, KPROCESSOR_MODE, KWAIT_REASON, KeReleaseMutex, MmProbeAndLockPages, MmUnlockPages, ObReferenceObjectByHandle, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PDEVICE_OBJECT, PDRIVER_CANCEL};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoAcquireCancelSpinLock, IoAllocateMdl, IoFreeMdl, _LOCK_OPERATION_IoModifyAccess as IoModifyAccess, _LOCK_OPERATION_IoReadAccess as IoReadAccess, IoReleaseCancelSpinLock, KPROCESSOR_MODE, KWAIT_REASON, KeReleaseMutex, MmUnlockPages, ObReferenceObjectByHandle, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PDEVICE_OBJECT, PDRIVER_CANCEL};
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending, IoSetCancelRoutine};
 
 extern "system" {
@@ -40,7 +40,7 @@ pub unsafe extern "C" fn LockRequest(
     Output: BOOLEAN,
     LockMode: *mut KPROCESSOR_MODE,
 ) -> PVOID {
-    let LockFailed: BOOLEAN = 0u8;
+    let mut LockFailed: BOOLEAN;
 
     (*Irp).MdlAddress = core::ptr::null_mut();
 
@@ -54,7 +54,12 @@ pub unsafe extern "C" fn LockRequest(
                 core::ptr::null_mut(),
             );
             if !(*Irp).MdlAddress.is_null() {
-                MmProbeAndLockPages((*Irp).MdlAddress, (*Irp).RequestorMode, IoModifyAccess);
+                // C: _SEH2_TRY { MmProbeAndLockPages } _SEH2_EXCEPT { LockFailed = TRUE; }
+                LockFailed = (ntkrnl_sys::probe::MmTryProbeAndLockPages(
+                    (*Irp).MdlAddress,
+                    (*Irp).RequestorMode,
+                    IoModifyAccess as _,
+                ) < 0) as BOOLEAN;
 
                 if LockFailed != 0 {
                     IoFreeMdl((*Irp).MdlAddress);
@@ -115,7 +120,12 @@ pub unsafe extern "C" fn LockRequest(
                 core::ptr::null_mut(),
             );
             if !(*Irp).MdlAddress.is_null() {
-                MmProbeAndLockPages((*Irp).MdlAddress, (*Irp).RequestorMode, IoModifyAccess);
+                // C: _SEH2_TRY { MmProbeAndLockPages } _SEH2_EXCEPT { LockFailed = TRUE; }
+                LockFailed = (ntkrnl_sys::probe::MmTryProbeAndLockPages(
+                    (*Irp).MdlAddress,
+                    (*Irp).RequestorMode,
+                    IoModifyAccess as _,
+                ) < 0) as BOOLEAN;
 
                 if LockFailed != 0 {
                     IoFreeMdl((*Irp).MdlAddress);
@@ -200,7 +210,7 @@ pub unsafe extern "C" fn LockBuffers(
     let Lock = if LockAddress != 0 { 2 } else { 0 };
     let Size = (core::mem::size_of::<AFD_WSABUF>() + core::mem::size_of::<AFD_MAPBUF>()) * (Count as usize + Lock);
     let NewBuf = ExAllocatePoolWithTag(PagedPool, Size, TAG_AFD_WSA_BUFFER) as PAFD_WSABUF;
-    let LockFailed: BOOLEAN = 0;
+    let mut LockFailed: BOOLEAN;
     let MapBuf: PAFD_MAPBUF;
 
     AFD_DbgPrint!(MID_TRACE, b"Called(%p)\n\0".as_ptr() as PCHAR, NewBuf);
@@ -253,13 +263,12 @@ pub unsafe extern "C" fn LockBuffers(
 
                 if !(*MapBuf.offset(i as isize)).Mdl.is_null() {
                     AFD_DbgPrint!(MID_TRACE, b"Probe and lock pages\n\0".as_ptr() as PCHAR);
-                    {
-                        MmProbeAndLockPages(
-                            (*MapBuf.offset(i as isize)).Mdl,
-                            LockMode,
-                            if Write != 0 { IoModifyAccess } else { IoReadAccess },
-                        );
-                    }
+                    // C: _SEH2_TRY { MmProbeAndLockPages } _SEH2_EXCEPT { LockFailed = TRUE; }
+                    LockFailed = (ntkrnl_sys::probe::MmTryProbeAndLockPages(
+                        (*MapBuf.offset(i as isize)).Mdl,
+                        LockMode,
+                        if Write != 0 { IoModifyAccess } else { IoReadAccess } as _,
+                    ) < 0) as BOOLEAN;
                     AFD_DbgPrint!(MID_TRACE, b"MmProbeAndLock finished\n\0".as_ptr() as PCHAR);
 
                     if LockFailed != 0 {

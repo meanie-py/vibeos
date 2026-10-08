@@ -991,13 +991,35 @@ pub unsafe extern "system" fn NtUserGetPriorityClipboardFormat(
         } else {
             iRet = -1;
 
-            i = 0;
-            while i < cFormats {
-                if IntIsFormatAvailable(pWinStaObj, *paFormatPriorityList.offset(i as isize)) != 0 {
-                    iRet = *paFormatPriorityList.offset(i as isize) as INT;
-                    break;
+            // _SEH2_TRY { ProbeForRead(paFormatPriorityList, cFormats * sizeof(UINT),
+            // sizeof(UINT)); for (..) if (IntIsFormatAvailable(.., list[i])) iRet = list[i]; }
+            // _SEH2_EXCEPT { SetLastNtError(code); }. Each entry is fetched ONCE
+            // (the C fetched it twice) and fault-tolerantly.
+            // size_t arithmetic as in the C: a negative cFormats wraps and fails the probe.
+            let cb = (cFormats as isize as usize).wrapping_mul(core::mem::size_of::<UINT>());
+            match crate::safe_user_io::probe_for_read(
+                paFormatPriorityList as *const core::ffi::c_void,
+                cb,
+                core::mem::size_of::<UINT>() as u32,
+            ) {
+                Err(st) => SetLastNtError(st),
+                Ok(()) => {
+                    i = 0;
+                    while i < cFormats {
+                        let fmt: UINT = match ntkrnl_sys::probe::read_back(paFormatPriorityList.offset(i as isize)) {
+                            Ok(v) => v,
+                            Err(st) => {
+                                SetLastNtError(st);
+                                break;
+                            }
+                        };
+                        if IntIsFormatAvailable(pWinStaObj, fmt) != 0 {
+                            iRet = fmt as INT;
+                            break;
+                        }
+                        i += 1;
+                    }
                 }
-                i += 1;
             }
         }
 
@@ -1109,21 +1131,44 @@ pub unsafe extern "system" fn NtUserGetClipboardData(fmt: UINT, pgcd: PGETCLIPBD
             break 'cleanup;
         }
 
-        // _SEH2_TRY body (handler is dead code)
-        let _ = core::ptr::read_volatile(pgcd as *const u8);
-        (*pgcd).uFmtRet = (*pElement).fmt;
-        (*pgcd).fGlobalHandle = (*pElement).fGlobalHandle;
+        // _SEH2_TRY { ProbeForWrite(pgcd, sizeof(*pgcd), 1); pgcd->... = ..; }
+        // _SEH2_EXCEPT { SetLastNtError(code); } -- hRet stays NULL on a fault.
+        // Each store is fault-tolerant: the probe proves where pgcd is, not
+        // that it stays mapped.
+        let gcd_result: Result<(), NTSTATUS> = (|| {
+            crate::safe_user_io::probe_for_write(
+                pgcd as *mut core::ffi::c_void,
+                core::mem::size_of::<GETCLIPBDATA>(),
+                1,
+            )?;
+            ntkrnl_sys::probe::write_back(core::ptr::addr_of_mut!((*pgcd).uFmtRet), (*pElement).fmt)?;
+            ntkrnl_sys::probe::write_back(
+                core::ptr::addr_of_mut!((*pgcd).fGlobalHandle),
+                (*pElement).fGlobalHandle,
+            )?;
 
-        if fmt == CF_TEXT as UINT {
-            let pLocaleEl: PCLIP = IntGetFormatElement(pWinStaObj, CF_LOCALE as UINT);
-            if !pLocaleEl.is_null() && (*pLocaleEl).hData != 0 as HANDLE {
-                (*pgcd).__bindgen_anon_1.hLocale = (*pLocaleEl).hData;
+            if fmt == CF_TEXT as UINT {
+                let pLocaleEl: PCLIP = IntGetFormatElement(pWinStaObj, CF_LOCALE as UINT);
+                if !pLocaleEl.is_null() && (*pLocaleEl).hData != 0 as HANDLE {
+                    ntkrnl_sys::probe::write_back(
+                        core::ptr::addr_of_mut!((*pgcd).__bindgen_anon_1.hLocale),
+                        (*pLocaleEl).hData,
+                    )?;
+                }
+            } else if fmt == CF_BITMAP as UINT {
+                let pPaletteEl: PCLIP = IntGetFormatElement(pWinStaObj, CF_PALETTE as UINT);
+                if !pPaletteEl.is_null() && (*pPaletteEl).hData != 0 as HANDLE {
+                    ntkrnl_sys::probe::write_back(
+                        core::ptr::addr_of_mut!((*pgcd).__bindgen_anon_1.hPalette),
+                        (*pPaletteEl).hData,
+                    )?;
+                }
             }
-        } else if fmt == CF_BITMAP as UINT {
-            let pPaletteEl: PCLIP = IntGetFormatElement(pWinStaObj, CF_PALETTE as UINT);
-            if !pPaletteEl.is_null() && (*pPaletteEl).hData != 0 as HANDLE {
-                (*pgcd).__bindgen_anon_1.hPalette = (*pPaletteEl).hData;
-            }
+            Ok(())
+        })();
+        if let Err(st) = gcd_result {
+            SetLastNtError(st);
+            break 'cleanup;
         }
 
         hRet = (*pElement).hData;
@@ -1174,13 +1219,18 @@ pub unsafe extern "system" fn UserSetClipboardData(
                 0,
             );
 
-            if (*scd).fIncSerialNumber != 0 {
-                (*pWinStaObj).iClipSequenceNumber += 1;
-            }
-
             (*pWinStaObj).set_fClipboardChanged(1);
         } else {
             IntAddFormatedData(pWinStaObj, fmt, core::ptr::null_mut(), 0, 0);
+        }
+
+        // Every set changes the clipboard, a delayed-render placeholder included, except
+        // the owner answering WM_RENDERFORMAT (wine-10 server set_clipboard_data: `if
+        // (!clipboard->rendering) clipboard->seqno++`). The C bumped only for real data,
+        // and user32 never asked, so OleFlushClipboard rendering every format left the
+        // number unchanged and OleGetClipboard kept handing out the stale snapshot.
+        if (*scd).fIncSerialNumber != 0 && (*pWinStaObj).fInDelayedRendering() == 0 {
+            (*pWinStaObj).iClipSequenceNumber += 1;
         }
 
         hRet = hData;

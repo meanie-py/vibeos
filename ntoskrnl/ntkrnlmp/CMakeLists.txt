@@ -4,10 +4,6 @@ include(../ntos.cmake)
 include_directories(${REACTOS_SOURCE_DIR}/ntoskrnl)
 spec2def(ntkrnlmp.exe ../ntoskrnl.spec)
 
-if(MSVC_IDE)
-    set_source_files_properties(${NTKRNLMP_ASM_SOURCE} PROPERTIES COMPILE_DEFINITIONS "CONFIG_SMP")
-endif()
-
 add_asm_files(ntkrnlmp_asm ${NTKRNLMP_ASM_SOURCE})
 
 # mproc.c is now translated to Rust (ke/i386/mproc.rs, ke/amd64/mproc.rs)

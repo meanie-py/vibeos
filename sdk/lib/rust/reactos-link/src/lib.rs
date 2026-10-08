@@ -217,6 +217,15 @@ pub enum ModuleKind {
     /// dispatch tables in as a source object; as archive members they'd be
     /// GC'd) are supplied via `.force_undefined(...)` on the builder.
     NativeExe { entry: String, image_base: u64 },
+    /// The BIOS FreeLDR body (`freeldr_pe`, the PE half of `freeldr.sys`; the
+    /// 16-bit `frldr16.bin` is concatenated in front of it by cmake). Mirrors
+    /// the pre-prune cmake link (pcat.cmake): native subsystem exe, image base
+    /// `0x10000`, file AND section alignment `0x200` (the real-mode stub
+    /// relocates the image as laid out on disk), `--gc-sections`, and EXPORTS
+    /// from `freeldr.spec` via `.spec2def()`: rosload.exe imports its loader
+    /// services from `freeldr.sys` by name, so unlike uefildr (which calls the
+    /// boot manager directly) the BIOS loader must carry an export table.
+    BiosLoader { entry: String, image_base: u64 },
     /// `win32gui`/`win32cui` — a user-mode Win32 exe (e.g. lsass.exe). Mirrors
     /// the cmake `set_module_type(<m> win32gui)` link: explicit `--subsystem`
     /// (`windows:5.01` for GUI, `console:5.01` for CUI), `--gc-sections`, NOT
@@ -1543,9 +1552,17 @@ impl Linker {
         }
 
         // ---- PE link flags (common to every module kind) -------------
+        let ld_path = format!(
+            "--ld-path={}",
+            self.repo_root.join("tools/link_guard/ld.lld").display()
+        );
         for f in [
             "-nostdlib",
             "-fuse-ld=lld",
+            // lld through tools/link_guard.py, which fails the link on any
+            // duplicate symbol that --allow-multiple-definition (below) would
+            // otherwise resolve silently by link order. Same policy as gcc.cmake.
+            ld_path.as_str(),
             "-Wl,--enable-auto-image-base,--disable-auto-import",
             "-Wl,--major-image-version,5",
             "-Wl,--minor-image-version,01",
@@ -1690,6 +1707,15 @@ impl Linker {
                 // Strip DWARF unconditionally (same as EfiApplication above: rosload
                 // is symbolicated via offset math, not in-image debug info, so debug=1
                 // line tables are dead weight here). No-op at debug=0.
+                println!("cargo:rustc-link-arg=-Wl,--strip-debug");
+                (entry, Some(*image_base))
+            }
+            ModuleKind::BiosLoader { entry, image_base } => {
+                println!("cargo:rustc-link-arg=-Wl,--subsystem,native:5.01");
+                println!("cargo:rustc-link-arg=-Wl,--file-alignment,0x200,--section-alignment,0x200");
+                println!("cargo:rustc-link-arg=-Wl,--gc-sections");
+                // Same as EfiApplication/NativeExe: symbolicated by offset math,
+                // not in-image DWARF. The cmake link also ran `strip --strip-all`.
                 println!("cargo:rustc-link-arg=-Wl,--strip-debug");
                 (entry, Some(*image_base))
             }

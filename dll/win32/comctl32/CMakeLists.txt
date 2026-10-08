@@ -9,10 +9,6 @@ add_definitions(-D_WIN32_WINNT=0x600 -DWINVER=0x600)
 
 spec2def(comctl32.dll comctl32.spec ADD_IMPORTLIB)
 
-if(MSVC)
-
-endif()
-
 list(APPEND SOURCE
     animate.c
     button.c
@@ -61,13 +57,6 @@ add_library(comctl32 MODULE
     ${PCH_SKIP_SOURCE}
     rsrc.rc
     ${CMAKE_CURRENT_BINARY_DIR}/comctl32.def)
-
-if(MSVC)
-    # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    # Disable warning C4267: '=': conversion from 'size_t' to 'WORD', possible loss of data
-    # Disable warning C4477 (printf format warnings)
-    target_compile_options(comctl32 PRIVATE /wd4146 /wd4267 /wd4477)
-endif()
 
 set_module_type(comctl32 win32dll UNICODE)
 target_link_libraries(comctl32 uuid wine ${PSEH_LIB} oldnames)

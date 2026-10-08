@@ -48,8 +48,6 @@ target_link_libraries(buslogic libcntpr)
 set_module_type(buslogic kernelmodedriver)
 add_importlibs(buslogic scsiport)
 add_dependencies(buslogic rust_buslogic)
-# C-cohab object(s) and the Rust rlib can both supply transiently-shared helper symbols.
-target_link_options(buslogic PRIVATE -Wl,--allow-multiple-definition)
 target_link_libraries(buslogic ${BUSLOGIC_RUST_LIB})
 add_cd_file(TARGET buslogic DESTINATION reactos/system32/drivers NO_CAB FOR all)
 add_registry_inf(buslogic_reg.inf)

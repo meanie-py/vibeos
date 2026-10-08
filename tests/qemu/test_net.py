@@ -34,7 +34,21 @@ import time
 
 import pytest
 
-from tests.qemu.vm import QemuVM
+from tests.qemu.vm import (
+    Amd64UefiNetConfig,
+    Arm64NetConfig,
+    I386UefiNetConfig,
+    QemuVM,
+)
+
+_NET_CONFIG_TYPES = (Amd64UefiNetConfig, I386UefiNetConfig, Arm64NetConfig)
+
+
+def _net_config(vm: QemuVM) -> Amd64UefiNetConfig | I386UefiNetConfig | Arm64NetConfig:
+    """vm.config as the net config it must be: only those forward the guest ports."""
+    cfg = vm.config
+    assert isinstance(cfg, _NET_CONFIG_TYPES), f"{type(cfg).__name__} forwards no guest ports"
+    return cfg
 
 
 def _wait_for_marker(vm: QemuVM, marker: str, timeout: float = 90.0) -> bool:
@@ -58,6 +72,7 @@ def _wait_for_marker(vm: QemuVM, marker: str, timeout: float = 90.0) -> bool:
         time.sleep(0.5)
     return False
 
+
 # Markers — keep in sync with the netstack-rust self-test (see module docstring).
 MARK_M1_OK = "[NETSTACK] M1 raw frame RX/TX OK"
 MARK_PING = "[NETSTACK] ping gateway OK"
@@ -70,6 +85,7 @@ MARK_OUT_RECV = "[NETSTACK] outbound TCP echo received"
 MARK_TDI_CONNECT = "[NETSTACK] TDI self-test: CONNECT OK"
 MARK_TDI_RT = "[NETSTACK] TDI self-test: RECEIVE OK"
 MARK_TDI_DGRAM = "[NETSTACK] TDI dgram self-test: RECEIVE_DATAGRAM OK"
+MARK_TDI_BCAST = "[NETSTACK] TDI dgram self-test: BROADCAST local delivery OK"
 MARK_TDI_SRV_LISTEN = "[NETSTACK] TDI server: listening on :8888"
 MARK_TDI_SRV_ECHO = b"TDI-SRV-ECHO"
 MARK_USERMODE_TCP = "[NETTEST] usermode winsock TCP echo OK"
@@ -90,6 +106,7 @@ def _require_net_config(vm: QemuVM) -> None:
 # --------------------------------------------------------------------------- #
 # M0 gate — GREEN today: the NIC's presence must not break or stall boot.
 # --------------------------------------------------------------------------- #
+
 
 def test_boot_with_nic(vm: QemuVM) -> None:
     """Boot reaches the full desktop with a virtio-net-pci NIC attached.
@@ -112,6 +129,7 @@ def test_boot_with_nic(vm: QemuVM) -> None:
 # proves both directions of the device path work.
 # --------------------------------------------------------------------------- #
 
+
 def test_m1_raw_frame_roundtrip(vm: QemuVM) -> None:
     """netstack.sys DriverEntry self-test ARP'd 10.0.2.2 and got slirp's reply."""
     _require_net_config(vm)
@@ -123,6 +141,7 @@ def test_m1_raw_frame_roundtrip(vm: QemuVM) -> None:
 # --------------------------------------------------------------------------- #
 # M2 — engine self-test: ICMP + TCP echo (no TDI, driven inside the kernel).
 # --------------------------------------------------------------------------- #
+
 
 def test_selftest_ping_gateway(vm: QemuVM) -> None:
     """Kernel self-test pinged the slirp gateway (10.0.2.2) and got a reply."""
@@ -142,7 +161,7 @@ def test_tcp_echo_roundtrip(vm: QemuVM) -> None:
     # net_host is 127.0.0.1 on native; on the windows-host backend it's the WSL
     # default-gateway IP (the Windows QEMU's 0.0.0.0 hostfwd isn't on WSL's loopback).
     with socket.create_connection(
-        (vm.net_host, vm.config.echo_hostfwd_port), timeout=10.0
+        (vm.net_host, _net_config(vm).echo_hostfwd_port), timeout=10.0
     ) as s:
         s.settimeout(10.0)
         s.sendall(payload)
@@ -158,6 +177,7 @@ def test_tcp_echo_roundtrip(vm: QemuVM) -> None:
 # --------------------------------------------------------------------------- #
 # M3 — DHCPv4 lease + DNS through slirp's built-in servers.
 # --------------------------------------------------------------------------- #
+
 
 def test_dhcp_lease(vm: QemuVM) -> None:
     """Kernel self-test obtained a DHCPv4 lease from slirp (10.0.2.x)."""
@@ -214,6 +234,7 @@ def test_dns_resolve(vm: QemuVM) -> None:
 # round-trip are the remaining M4 work.
 # --------------------------------------------------------------------------- #
 
+
 def test_tdi_devices_owned(vm: QemuVM) -> None:
     r"""netstack created + owns all four TDI devices (\Device\Tcp/Udp/Ip/RawIp)."""
     _require_net_config(vm)
@@ -233,9 +254,7 @@ def test_outbound_tcp_client(vm: QemuVM) -> None:
     """
     _require_net_config(vm)
     assert _wait_for_marker(vm, MARK_OUT_SENT), "outbound TCP connect/send did not complete"
-    assert _wait_for_marker(vm, MARK_OUT_RECV), (
-        "outbound TCP recv (echo back) did not complete"
-    )
+    assert _wait_for_marker(vm, MARK_OUT_RECV), "outbound TCP recv (echo back) did not complete"
 
 
 def test_tdi_selftest_roundtrip(vm: QemuVM) -> None:
@@ -310,8 +329,7 @@ def test_interrupt_driven_rx(vm: QemuVM) -> None:
     if "arm64" in vm.config.arch:
         pytest.skip("M10 interrupt-driven RX needs the x86 HAL vector path (arm64 stub)")
     assert _wait_for_marker(vm, MARK_M10_CONNECTED, timeout=90), (
-        "virtio RX interrupt was not connected "
-        "(IoConnectInterrupt / HalGetInterruptVector(PCIBus))"
+        "virtio RX interrupt was not connected (IoConnectInterrupt / HalGetInterruptVector(PCIBus))"
     )
     assert _wait_for_marker(vm, MARK_M10_IRQ, timeout=90), (
         "RX interrupt never fired (ISR->DPC->event path) — worker is polling-only"
@@ -336,6 +354,21 @@ def test_tdi_datagram_roundtrip(vm: QemuVM) -> None:
     )
 
 
+def test_tdi_broadcast_local_delivery(vm: QemuVM) -> None:
+    """A UDP broadcast this host sends reaches a local socket bound to that port.
+
+    NDIS never loops a broadcast back to its sender, and smoltcp handles broadcast only
+    on egress, so without the local delivery in tditrans.rs a second socket on the
+    same host never sees it (NetBIOS, SSDP-style self-discovery). The self-test sends
+    to the limited (255.255.255.255) and the directed (10.0.2.255) broadcast and needs
+    both. Upstream tcpip fixed the same gap in b8ee7950af4.
+    """
+    _require_net_config(vm)
+    assert _wait_for_marker(vm, MARK_TDI_BCAST), (
+        "a broadcast sent through TDI never reached the local listener bound to its port"
+    )
+
+
 def test_tdi_server_listen_accept(vm: QemuVM) -> None:
     r"""M8: the SERVER/inbound mirror of the TDI round-trip. netstack's kernel TDI
     server self-test (tdisrvtest.rs) binds :8888, posts a TDI_LISTEN that PENDS,
@@ -356,7 +389,7 @@ def test_tdi_server_listen_accept(vm: QemuVM) -> None:
     )
     payload = b"vibeos-tdi-server-probe\n"
     with socket.create_connection(
-        (vm.net_host, vm.config.tdi_srv_hostfwd_port), timeout=10.0
+        (vm.net_host, _net_config(vm).tdi_srv_hostfwd_port), timeout=10.0
     ) as s:
         s.settimeout(15.0)
         s.sendall(payload)
@@ -380,8 +413,7 @@ def test_usermode_winsock_roundtrip(vm: QemuVM) -> None:
     """
     _require_net_config(vm)
     assert _wait_for_marker(vm, MARK_USERMODE_TCP, timeout=120), (
-        "usermode winsock TCP round-trip did not complete "
-        "(ws2_32 -> AFD -> netstack TCP path)"
+        "usermode winsock TCP round-trip did not complete (ws2_32 -> AFD -> netstack TCP path)"
     )
     assert _wait_for_marker(vm, MARK_USERMODE_UDP, timeout=120), (
         "usermode winsock UDP round-trip did not complete "

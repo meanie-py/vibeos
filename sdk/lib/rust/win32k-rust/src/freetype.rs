@@ -423,15 +423,15 @@ pub const MAX_FONT_CACHE: i32 = 256;
 pub static mut g_FontCacheNumEntries: UINT = 0;
 
 pub static mut g_ElfScripts: [PWCHAR; 32] = [
-    b"W\0e\0s\0t\0e\0r\0n\0\0\0".as_ptr() as PWCHAR,
-    b"C\0e\0n\0t\0r\0a\0l\0_\0E\0u\0r\0o\0p\0e\0a\0n\0\0\0".as_ptr() as PWCHAR,
-    b"C\0y\0r\0i\0l\0l\0i\0c\0\0\0".as_ptr() as PWCHAR,
-    b"G\0r\0e\0e\0k\0\0\0".as_ptr() as PWCHAR,
-    b"T\0u\0r\0k\0i\0s\0h\0\0\0".as_ptr() as PWCHAR,
-    b"H\0e\0b\0r\0e\0w\0\0\0".as_ptr() as PWCHAR,
-    b"A\0r\0a\0b\0i\0c\0\0\0".as_ptr() as PWCHAR,
-    b"B\0a\0l\0t\0i\0c\0\0\0".as_ptr() as PWCHAR,
-    b"V\0i\0e\0t\0n\0a\0m\0e\0s\0e\0\0\0".as_ptr() as PWCHAR,
+    win32macros_rust::wide_bytes!(b"W\0e\0s\0t\0e\0r\0n\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"C\0e\0n\0t\0r\0a\0l\0_\0E\0u\0r\0o\0p\0e\0a\0n\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"C\0y\0r\0i\0l\0l\0i\0c\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"G\0r\0e\0e\0k\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"T\0u\0r\0k\0i\0s\0h\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"H\0e\0b\0r\0e\0w\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"A\0r\0a\0b\0i\0c\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"B\0a\0l\0t\0i\0c\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"V\0i\0e\0t\0n\0a\0m\0e\0s\0e\0\0\0") as PWCHAR,
     core::ptr::null_mut(),
     core::ptr::null_mut(),
     core::ptr::null_mut(),
@@ -439,12 +439,12 @@ pub static mut g_ElfScripts: [PWCHAR; 32] = [
     core::ptr::null_mut(),
     core::ptr::null_mut(),
     core::ptr::null_mut(),
-    b"T\0h\0a\0i\0\0\0".as_ptr() as PWCHAR,
-    b"J\0a\0p\0a\0n\0e\0s\0e\0\0\0".as_ptr() as PWCHAR,
-    b"C\0H\0I\0N\0E\0S\0E\0_\0G\0B\02\03\01\02\0\0\0".as_ptr() as PWCHAR,
-    b"H\0a\0n\0g\0u\0l\0\0\0".as_ptr() as PWCHAR,
-    b"C\0H\0I\0N\0E\0S\0E\0_\0B\0I\0G\05\0\0\0".as_ptr() as PWCHAR,
-    b"H\0a\0n\0g\0u\0l\0(\0J\0o\0h\0a\0b\0)\0\0\0".as_ptr() as PWCHAR,
+    win32macros_rust::wide_bytes!(b"T\0h\0a\0i\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"J\0a\0p\0a\0n\0e\0s\0e\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"C\0H\0I\0N\0E\0S\0E\0_\0G\0B\02\03\01\02\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"H\0a\0n\0g\0u\0l\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"C\0H\0I\0N\0E\0S\0E\0_\0B\0I\0G\05\0\0\0") as PWCHAR,
+    win32macros_rust::wide_bytes!(b"H\0a\0n\0g\0u\0l\0(\0J\0o\0h\0a\0b\0)\0\0\0") as PWCHAR,
     core::ptr::null_mut(),
     core::ptr::null_mut(),
     core::ptr::null_mut(),
@@ -454,7 +454,7 @@ pub static mut g_ElfScripts: [PWCHAR; 32] = [
     core::ptr::null_mut(),
     core::ptr::null_mut(),
     core::ptr::null_mut(),
-    b"S\0y\0m\0b\0o\0l\0\0\0".as_ptr() as PWCHAR,
+    win32macros_rust::wide_bytes!(b"S\0y\0m\0b\0o\0l\0\0\0") as PWCHAR,
 ];
 
 pub const CP_SYMBOL: u32 = 42;
@@ -573,7 +573,7 @@ unsafe fn FontLink_LoadDefaultFonts() -> NTSTATUS {
 
     // Open the registry key
     Status = RegOpenKey(
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0F\0o\0n\0t\0A\0s\0s\0o\0c\0\\\0A\0s\0s\0o\0c\0i\0a\0t\0e\0d\0 \0D\0e\0f\0a\0u\0l\0t\0F\0o\0n\0t\0s\0\0\0".as_ptr() as *const WCHAR,
+        win32macros_rust::wide_bytes!(b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0F\0o\0n\0t\0A\0s\0s\0o\0c\0\\\0A\0s\0s\0o\0c\0i\0a\0t\0e\0d\0 \0D\0e\0f\0a\0u\0l\0t\0F\0o\0n\0t\0s\0\0\0") as *const WCHAR,
         &mut hKey,
     );
     if !NT_SUCCESS(Status) {
@@ -583,7 +583,7 @@ unsafe fn FontLink_LoadDefaultFonts() -> NTSTATUS {
     cbData = core::mem::size_of_val(&szValue) as DWORD;
     Status = RegQueryValue(
         hKey,
-        b"A\0s\0s\0o\0c\0S\0y\0s\0t\0e\0m\0F\0o\0n\0t\0\0\0".as_ptr() as *const WCHAR,
+        win32macros_rust::wide_bytes!(b"A\0s\0s\0o\0c\0S\0y\0s\0t\0e\0m\0F\0o\0n\0t\0\0\0") as *const WCHAR,
         REG_SZ,
         szValue.as_mut_ptr() as *mut core::ffi::c_void,
         &mut cbData,
@@ -600,7 +600,7 @@ unsafe fn FontLink_LoadDefaultFonts() -> NTSTATUS {
     cbData = core::mem::size_of_val(&szValue) as DWORD;
     Status = RegQueryValue(
         hKey,
-        b"F\0o\0n\0t\0P\0a\0c\0k\0a\0g\0e\0\0\0".as_ptr() as *const WCHAR,
+        win32macros_rust::wide_bytes!(b"F\0o\0n\0t\0P\0a\0c\0k\0a\0g\0e\0\0\0") as *const WCHAR,
         REG_SZ,
         szValue.as_mut_ptr() as *mut core::ffi::c_void,
         &mut cbData,
@@ -629,7 +629,7 @@ unsafe fn FontLink_LoadDefaultCharset() -> NTSTATUS {
     s_fFontLinkUseAnsi = 0;
 
     Status = RegOpenKey(
-        b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0F\0o\0n\0t\0A\0s\0s\0o\0c\0\\\0A\0s\0s\0o\0c\0i\0a\0t\0e\0d\0 \0C\0h\0a\0r\0s\0e\0t\0\0\0".as_ptr() as *const WCHAR,
+        win32macros_rust::wide_bytes!(b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0Y\0S\0T\0E\0M\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0F\0o\0n\0t\0A\0s\0s\0o\0c\0\\\0A\0s\0s\0o\0c\0i\0a\0t\0e\0d\0 \0C\0h\0a\0r\0s\0e\0t\0\0\0") as *const WCHAR,
         &mut hKey,
     );
     if !NT_SUCCESS(Status) {
@@ -639,40 +639,40 @@ unsafe fn FontLink_LoadDefaultCharset() -> NTSTATUS {
     cbData = core::mem::size_of_val(&szValue) as DWORD;
     Status = RegQueryValue(
         hKey,
-        b"A\0N\0S\0I\0(\00\00\0)\0\0\0".as_ptr() as *const WCHAR,
+        win32macros_rust::wide_bytes!(b"A\0N\0S\0I\0(\00\00\0)\0\0\0") as *const WCHAR,
         REG_SZ,
         szValue.as_mut_ptr() as *mut core::ffi::c_void,
         &mut cbData,
     );
     if NT_SUCCESS(Status) {
         szValue[szValue.len() - 1] = 0;
-        s_fFontLinkUseAnsi = (_wcsicmp(szValue.as_ptr(), b"Y\0E\0S\0\0\0".as_ptr() as *const WCHAR) == 0) as BOOL;
+        s_fFontLinkUseAnsi = (_wcsicmp(szValue.as_ptr(), win32macros_rust::wide_bytes!(b"Y\0E\0S\0\0\0") as *const WCHAR) == 0) as BOOL;
     }
 
     cbData = core::mem::size_of_val(&szValue) as DWORD;
     Status = RegQueryValue(
         hKey,
-        b"O\0E\0M\0(\0F\0F\0)\0\0\0".as_ptr() as *const WCHAR,
+        win32macros_rust::wide_bytes!(b"O\0E\0M\0(\0F\0F\0)\0\0\0") as *const WCHAR,
         REG_SZ,
         szValue.as_mut_ptr() as *mut core::ffi::c_void,
         &mut cbData,
     );
     if NT_SUCCESS(Status) {
         szValue[szValue.len() - 1] = 0;
-        s_fFontLinkUseOem = (_wcsicmp(szValue.as_ptr(), b"Y\0E\0S\0\0\0".as_ptr() as *const WCHAR) == 0) as BOOL;
+        s_fFontLinkUseOem = (_wcsicmp(szValue.as_ptr(), win32macros_rust::wide_bytes!(b"Y\0E\0S\0\0\0") as *const WCHAR) == 0) as BOOL;
     }
 
     cbData = core::mem::size_of_val(&szValue) as DWORD;
     Status = RegQueryValue(
         hKey,
-        b"S\0Y\0M\0B\0O\0L\0(\00\02\0)\0\0\0".as_ptr() as *const WCHAR,
+        win32macros_rust::wide_bytes!(b"S\0Y\0M\0B\0O\0L\0(\00\02\0)\0\0\0") as *const WCHAR,
         REG_SZ,
         szValue.as_mut_ptr() as *mut core::ffi::c_void,
         &mut cbData,
     );
     if NT_SUCCESS(Status) {
         szValue[szValue.len() - 1] = 0;
-        s_fFontLinkUseSymbol = (_wcsicmp(szValue.as_ptr(), b"Y\0E\0S\0\0\0".as_ptr() as *const WCHAR) == 0) as BOOL;
+        s_fFontLinkUseSymbol = (_wcsicmp(szValue.as_ptr(), win32macros_rust::wide_bytes!(b"Y\0E\0S\0\0\0") as *const WCHAR) == 0) as BOOL;
     }
 
     ZwClose(hKey as *mut core::ffi::c_void);
@@ -3033,7 +3033,7 @@ unsafe fn IntLoadFontsInRegistry_impl() -> BOOL {
             Status = w32r_RtlStringCbPrintfW_2(
                 szPath.as_mut_ptr(),
                 core::mem::size_of_val(&szPath),
-                b"\\\0S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0\\\0F\0o\0n\0t\0s\0\\\0%\0s\0\0\0".as_ptr() as *const WCHAR,
+                win32macros_rust::wide_bytes!(b"\\\0S\0y\0s\0t\0e\0m\0R\0o\0o\0t\0\\\0F\0o\0n\0t\0s\0\\\0%\0s\0\0\0") as *const WCHAR,
                 pchPath,
             );
         } else {
@@ -6287,7 +6287,13 @@ unsafe fn GetFontPenalty(
     Byte = (*LogFont).lfCharSet;
 
     if Byte != (*TM).tmCharSet {
-        if Byte != DEFAULT_CHARSET as BYTE && Byte != ANSI_CHARSET as BYTE {
+        // The C waives the charset penalty for an ANSI request because a face here carries
+        // ONE tmCharSet, and most non-ANSI faces (CJK, Cyrillic) also cover Latin-1. A
+        // symbol face never does: Windows and Wine map "Marlett" + ANSI_CHARSET to another
+        // face (oleaut32 olefont test_realization), where the C kept Marlett.
+        if (Byte != DEFAULT_CHARSET as BYTE && Byte != ANSI_CHARSET as BYTE)
+            || (Byte == ANSI_CHARSET as BYTE && (*TM).tmCharSet == SYMBOL_CHARSET as BYTE)
+        {
             Penalty += 65000;
         } else {
             if UserCharSet != (*TM).tmCharSet {

@@ -436,11 +436,16 @@ pub unsafe extern "system" fn NtRaiseHardError(
                 return e;
             }
 
-            core::ptr::copy_nonoverlapping(
-                Parameters as *const u8,
-                SafeParams as *mut u8,
+            // The probe proves where Parameters is, not that it stays mapped; copy
+            // fault-tolerantly and free + bail on fault, as the C's __except does.
+            if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+                SafeParams as *mut core::ffi::c_void,
+                Parameters as *const core::ffi::c_void,
                 ParamSize,
-            );
+            ) {
+                ExFreePoolWithTag(SafeParams as PVOID, TAG_ERR);
+                return e;
+            }
 
             if UnicodeStringParameterMask != 0 {
                 for i in 0..(NumberOfParameters as usize) {
@@ -488,9 +493,10 @@ pub unsafe extern "system" fn NtRaiseHardError(
             ExFreePoolWithTag(SafeParams as PVOID, TAG_ERR);
         }
 
-        *Response = SafeResponse;
-
-        Status
+        match ntkrnl_sys::probe::write_back(Response, SafeResponse) {
+            Ok(()) => Status,
+            Err(s) => s,
+        }
     } else {
         SafeParams = Parameters;
 
@@ -503,9 +509,10 @@ pub unsafe extern "system" fn NtRaiseHardError(
             &mut SafeResponse,
         );
 
-        *Response = SafeResponse;
-
-        Status
+        match ntkrnl_sys::probe::write_back(Response, SafeResponse) {
+            Ok(()) => Status,
+            Err(s) => s,
+        }
     }
 }
 

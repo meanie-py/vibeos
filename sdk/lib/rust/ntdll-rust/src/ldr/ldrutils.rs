@@ -502,12 +502,43 @@ pub unsafe extern "system" fn LdrpUpdateLoadCount2(
     LdrpUpdateLoadCount3(LdrEntry, Flags, &mut UpdateString);
 }
 
+/// True when the image at `Base` was built for another machine than this
+/// ntdll: an i386 module in a WoW64 process, or an amd64 one in an x86-64
+/// guest process on arm64 (wowx64). Such a module sits in this loader's
+/// module list — the process image of a guest process IS one — but its code,
+/// and on i386 even its header layout, belongs to the guest's own loader
+/// running under emulation. The native loader must never run its callbacks
+/// or parse its TLS directory.
+///
+/// Keyed on the MACHINE rather than on PE32 vs PE32+, which is what the
+/// 32-bit-only check it replaced used: an amd64 guest is PE32+ exactly like
+/// the native arm64 modules, so the optional-header magic cannot tell them
+/// apart, and that check would have run an x64 exe's TLS callbacks natively.
+pub unsafe fn LdrpIsForeignMachineImage(Base: PVOID) -> bool {
+    #[cfg(target_arch = "aarch64")]
+    const NATIVE_MACHINE: u16 = 0xAA64; /* IMAGE_FILE_MACHINE_ARM64 */
+    #[cfg(target_arch = "x86_64")]
+    const NATIVE_MACHINE: u16 = 0x8664; /* IMAGE_FILE_MACHINE_AMD64 */
+    #[cfg(target_arch = "x86")]
+    const NATIVE_MACHINE: u16 = 0x014C; /* IMAGE_FILE_MACHINE_I386 */
+
+    let NtHeaders: PIMAGE_NT_HEADERS = RtlImageNtHeader(Base);
+    !NtHeaders.is_null() && (*NtHeaders).FileHeader.Machine != NATIVE_MACHINE
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn LdrpCallTlsInitializers(
     LdrEntry: PLDR_DATA_TABLE_ENTRY,
     Reason: ULONG,
 ) {
     let mut Size: ULONG = 0;
+
+    /* A guest module's callbacks are guest machine code (an x86-64 exe in an
+     * arm64 process): calling one natively executes x86 bytes as arm64. They
+     * belong to the guest's own loader, under emulation. */
+    if LdrpIsForeignMachineImage((*LdrEntry).DllBase) {
+        return;
+    }
 
     let TlsDirectory: PIMAGE_TLS_DIRECTORY = RtlImageDirectoryEntryToData(
         (*LdrEntry).DllBase,
@@ -1230,7 +1261,7 @@ pub unsafe extern "system" fn LdrpMapDll(
         ImageBase = (*NtHeaders).OptionalHeader.ImageBase as ULONG_PTR;
         ImageEnd = ImageBase + ViewSize;
 
-        ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InLoadOrderModuleList);
+        ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InLoadOrderModuleList);
         NextEntry = (*ListHead).Flink;
         while NextEntry != ListHead {
             CandidateEntry = (NextEntry as usize
@@ -1414,7 +1445,7 @@ pub unsafe extern "system" fn LdrpAllocateDataTableEntry(BaseAddress: PVOID) -> 
 
 #[no_mangle]
 pub unsafe extern "system" fn LdrpInsertMemoryTableEntry(LdrEntry: PLDR_DATA_TABLE_ENTRY) {
-    let PebData: PPEB_LDR_DATA = (*NtCurrentPeb()).Ldr;
+    let PebData: PPEB_LDR_DATA = crate::ldr::ldrinit::LdrpLdrData();
     let i: u32;
 
     i = LDR_GET_HASH_ENTRY(*(*LdrEntry).BaseDllName.Buffer);
@@ -1465,7 +1496,7 @@ pub unsafe extern "system" fn LdrpCheckForLoadedDllHandle(
     }
 
     ListHead = core::ptr::addr_of_mut!(
-        (*(*NtCurrentPeb()).Ldr).InLoadOrderModuleList
+        (*crate::ldr::ldrinit::LdrpLdrData()).InLoadOrderModuleList
     );
     Next = (*ListHead).Flink;
     while Next != ListHead {
@@ -1842,7 +1873,7 @@ pub unsafe extern "system" fn LdrpCheckForLoadedDll(
         break;
     }
 
-    ListHead = core::ptr::addr_of_mut!((*(*NtCurrentPeb()).Ldr).InLoadOrderModuleList);
+    ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InLoadOrderModuleList);
     ListEntry = (*ListHead).Flink;
     while ListEntry != ListHead {
         CurEntry = (ListEntry as *mut u8)
@@ -1938,7 +1969,7 @@ pub unsafe extern "system" fn LdrpCheckForLoadedDll(
         return 0u8;
     }
 
-    ListHead = core::ptr::addr_of_mut!((*(*NtCurrentPeb()).Ldr).InLoadOrderModuleList);
+    ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InLoadOrderModuleList);
     ListEntry = (*ListHead).Flink;
     while ListEntry != ListHead {
         CurEntry = (ListEntry as *mut u8)
@@ -1984,7 +2015,6 @@ pub unsafe extern "system" fn LdrpLoadDll(
     BaseAddress: *mut PVOID,
     CallInit: BOOLEAN,
 ) -> NTSTATUS {
-    let Peb: PPEB = NtCurrentPeb();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut p: *const WCHAR;
     let mut GotExtension: BOOLEAN;
@@ -2093,7 +2123,7 @@ pub unsafe extern "system" fn LdrpLoadDll(
                 if !NT_SUCCESS(Status) {
                     (*LdrEntry).EntryPoint = core::ptr::null_mut();
                     InsertTailList(
-                        core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList),
+                        core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList),
                         core::ptr::addr_of_mut!((*LdrEntry).InInitializationOrderLinks),
                     );
 
@@ -2116,7 +2146,7 @@ pub unsafe extern "system" fn LdrpLoadDll(
 
             /* Insert it into the list */
             InsertTailList(
-                core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList),
+                core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList),
                 core::ptr::addr_of_mut!((*LdrEntry).InInitializationOrderLinks),
             );
 
@@ -2176,7 +2206,7 @@ pub unsafe extern "system" fn LdrpLoadDll(
 pub unsafe extern "system" fn LdrpClearLoadInProgress() -> ULONG {
     let mut ModulesCount: ULONG = 0;
 
-    let ListHead: PLIST_ENTRY = core::ptr::addr_of_mut!((*(*NtCurrentPeb()).Ldr).InInitializationOrderModuleList);
+    let ListHead: PLIST_ENTRY = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList);
     let mut Entry: PLIST_ENTRY = (*ListHead).Flink;
     while Entry != ListHead {
         let LdrEntry: PLDR_DATA_TABLE_ENTRY = (Entry as *mut u8)
@@ -2225,7 +2255,7 @@ pub unsafe extern "system" fn LdrpGetShimEngineInterface() {
 
 #[no_mangle]
 pub unsafe extern "system" fn LdrpRunShimEngineInitRoutine(Reason: ULONG) {
-    let ListHead: PLIST_ENTRY = core::ptr::addr_of_mut!((*(*NtCurrentPeb()).Ldr).InLoadOrderModuleList);
+    let ListHead: PLIST_ENTRY = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InLoadOrderModuleList);
     let mut Next: PLIST_ENTRY = (*ListHead).Flink;
     while Next != ListHead {
         let LdrEntry: PLDR_DATA_TABLE_ENTRY = (Next as *mut u8)
@@ -2424,7 +2454,7 @@ pub unsafe extern "system" fn LdrpGetProcedureAddress(
         if NT_SUCCESS(Status) && ExecuteInit != 0 {
             /* It's possible a forwarded entry had us load the DLL. Use the
              * last loaded DLL for this. */
-            Entry = (*(*NtCurrentPeb()).Ldr).InInitializationOrderModuleList.Blink;
+            Entry = (*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList.Blink;
             LdrEntry = (Entry as *mut u8)
                 .offset(-(core::mem::offset_of!(_LDR_DATA_TABLE_ENTRY, InInitializationOrderLinks) as isize))
                 as PLDR_DATA_TABLE_ENTRY;
@@ -2433,6 +2463,16 @@ pub unsafe extern "system" fn LdrpGetProcedureAddress(
             if (*LdrEntry).Flags & LDRP_ENTRY_PROCESSED == 0 {
                 /* Call the init routine */
                 Status = LdrpRunInitializeRoutines(core::ptr::null_mut());
+
+                /* Failed: unload the entry, or it lingers in the loader
+                 * waiting to run its init routine (upstream 4a96f375a0f) */
+                if !NT_SUCCESS(Status) {
+                    DbgPrint(
+                        b"Initialization routine failed with 0x%08x\n\0".as_ptr() as PCHAR,
+                        Status,
+                    );
+                    LdrUnloadDll((*LdrEntry).DllBase);
+                }
             }
         }
 

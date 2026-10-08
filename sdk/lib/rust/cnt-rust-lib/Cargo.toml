@@ -24,6 +24,9 @@ crate-type = ["staticlib"]
 # The math surface (cabi::math) is no-SSE-safe and compiled
 # unconditionally regardless of this feature — see cnt-rust/Cargo.toml.
 float = ["cnt-rust/float"]
+# freeldr: the loader supplies its own small `iswctype` (see cnt-ctype), and
+# keeps a token environment table (cnt-rust `small-env`).
+freeldr = ["cnt-ctype/no-iswctype", "cnt-rust/small-env"]
 
 [dependencies]
 # default-features=false drops cnt-rust's default `float`; `cabi`

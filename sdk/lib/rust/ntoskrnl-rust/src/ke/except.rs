@@ -12,6 +12,8 @@ use ntkrnl_sys::ddk::{
     KiExceptionExit, KiRaiseException as KiRaiseExceptionExtern,
     PCONTEXT, PEXCEPTION_RECORD, PKEXCEPTION_FRAME, PKTHREAD, PKTRAP_FRAME,
 };
+#[cfg(target_arch = "aarch64")]
+use ntkrnl_sys::ddk::KiDeliverApc;
 // KeGetPcr: FORCEINLINE on i386 (fs:[0x1c]), extern on amd64/arm64
 // Need a shim for i386 — provide via ke_rust_shims.c
 #[cfg(target_arch = "x86")]
@@ -23,7 +25,6 @@ use ntkrnl_sys::ddk::KeGetPcr;
 
 extern "system" {
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
-    fn ProbeForRead(address: PVOID, length: usize, alignment: ULONG);
     fn KiDispatchException(ExceptionRecord: PEXCEPTION_RECORD, ExceptionFrame: PKEXCEPTION_FRAME, TrapFrame: PKTRAP_FRAME, PreviousMode: KPROCESSOR_MODE, SearchFrames: BOOLEAN);
 }
 extern "C" {
@@ -33,15 +34,24 @@ extern "C" {
 const EXCEPTION_MAXIMUM_PARAMETERS: ULONG = 15;
 const KI_EXCEPTION_INTERNAL: ULONG = 0x10000000;
 
+/// C: void, but always called inside KiContinue's _SEH2_TRY, whose handler
+/// stores the exception code as the return status. No SEH here, so the probe and
+/// the capture copy report that code as `Err` instead of raising/faulting.
 unsafe fn KiContinuePreviousModeUser(
     Context: PCONTEXT,
     ExceptionFrame: PKEXCEPTION_FRAME,
     TrapFrame: PKTRAP_FRAME,
-) {
+) -> Result<(), NTSTATUS> {
     let mut LocalContext: CONTEXT = core::mem::zeroed();
 
-    ProbeForRead(Context as PVOID, core::mem::size_of::<CONTEXT>(), core::mem::size_of::<ULONG>() as ULONG);
-    core::ptr::copy_nonoverlapping(Context as *const u8, &mut LocalContext as *mut CONTEXT as *mut u8, core::mem::size_of::<CONTEXT>());
+    // C ProbeForRead checks unconditionally: UserMode (1).
+    ntkrnl_sys::probe::safe_copy_from_user(
+        &mut LocalContext as *mut CONTEXT as *mut core::ffi::c_void,
+        Context as *const core::ffi::c_void,
+        core::mem::size_of::<CONTEXT>(),
+        core::mem::size_of::<ULONG>(),
+        1,
+    )?;
 
     KeContextToTrapFrame(
         &mut LocalContext,
@@ -50,6 +60,7 @@ unsafe fn KiContinuePreviousModeUser(
         LocalContext.ContextFlags,
         1i8,
     );
+    Ok(())
 }
 
 #[no_mangle]
@@ -66,23 +77,18 @@ pub unsafe extern "system" fn KiContinue(
         KeRaiseIrql(APC_LEVEL, &mut OldIrql);
     }
 
-    let result: Result<(), NTSTATUS> = (|| {
-        if PreviousMode != 0i8 {
-            KiContinuePreviousModeUser(Context, ExceptionFrame, TrapFrame);
-        } else {
-            KeContextToTrapFrame(
-                Context,
-                ExceptionFrame,
-                TrapFrame,
-                (*Context).ContextFlags,
-                0i8,
-            );
+    if PreviousMode != 0i8 {
+        if let Err(code) = KiContinuePreviousModeUser(Context, ExceptionFrame, TrapFrame) {
+            Status = code;
         }
-        Ok(())
-    })();
-
-    if let Err(code) = result {
-        Status = code;
+    } else {
+        KeContextToTrapFrame(
+            Context,
+            ExceptionFrame,
+            TrapFrame,
+            (*Context).ContextFlags,
+            0i8,
+        );
     }
 
     if OldIrql < APC_LEVEL {
@@ -111,24 +117,54 @@ pub unsafe extern "system" fn KiRaiseException(
 
     if PreviousMode != 0i8 {
         let probe_result: Result<(), NTSTATUS> = (|| {
-            ProbeForRead(Context as PVOID, core::mem::size_of::<CONTEXT>(), core::mem::size_of::<ULONG>() as ULONG);
+            // C: one _SEH2_TRY whose handler returns the exception code (and the
+            // too-many-parameters early return is STATUS_INVALID_PARAMETER). No SEH
+            // here: Result probes + fault-tolerant reads/copies report the code.
+            ntkrnl_sys::probe::probe_user_buffer(
+                Context as PVOID,
+                core::mem::size_of::<CONTEXT>(),
+                core::mem::size_of::<ULONG>(),
+                PreviousMode,
+            )?;
 
-            ProbeForRead(
+            ntkrnl_sys::probe::probe_user_buffer(
                 ExceptionRecord as PVOID,
                 core::mem::offset_of!(EXCEPTION_RECORD, NumberParameters) + core::mem::size_of::<ULONG>(),
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
+                core::mem::size_of::<ULONG>(),
+                PreviousMode,
+            )?;
 
-            ParameterCount = (*ExceptionRecord).NumberParameters;
+            ParameterCount = ntkrnl_sys::probe::probe_read_generic(
+                core::ptr::addr_of!((*ExceptionRecord).NumberParameters),
+                1,
+                PreviousMode,
+            )?;
             if ParameterCount > EXCEPTION_MAXIMUM_PARAMETERS {
                 return Err(STATUS_INVALID_PARAMETER);
             }
 
             Size = core::mem::size_of::<EXCEPTION_RECORD>() - ((EXCEPTION_MAXIMUM_PARAMETERS - ParameterCount) as usize * core::mem::size_of::<ULONG>());
-            ProbeForRead(ExceptionRecord as PVOID, Size, core::mem::size_of::<ULONG>() as ULONG);
+            ntkrnl_sys::probe::probe_user_buffer(
+                ExceptionRecord as PVOID,
+                Size,
+                core::mem::size_of::<ULONG>(),
+                PreviousMode,
+            )?;
 
-            core::ptr::copy_nonoverlapping(Context as *const u8, &mut LocalContext as *mut CONTEXT as *mut u8, core::mem::size_of::<CONTEXT>());
-            core::ptr::copy_nonoverlapping(ExceptionRecord as *const u8, &mut LocalExceptionRecord as *mut EXCEPTION_RECORD as *mut u8, Size);
+            ntkrnl_sys::probe::safe_copy_from_user(
+                &mut LocalContext as *mut CONTEXT as *mut core::ffi::c_void,
+                Context as *const core::ffi::c_void,
+                core::mem::size_of::<CONTEXT>(),
+                core::mem::size_of::<ULONG>(),
+                PreviousMode,
+            )?;
+            ntkrnl_sys::probe::safe_copy_from_user(
+                &mut LocalExceptionRecord as *mut EXCEPTION_RECORD as *mut core::ffi::c_void,
+                ExceptionRecord as *const core::ffi::c_void,
+                Size,
+                core::mem::size_of::<ULONG>(),
+                PreviousMode,
+            )?;
 
             LocalExceptionRecord.NumberParameters = ParameterCount;
 
@@ -222,6 +258,23 @@ pub unsafe extern "system" fn NtContinue(
 
     if TestAlert != 0 {
         KeTestAlertThread(*kt_PreviousMode(Thread));
+
+        // arm64: KiExceptionExit (asm) erets straight to the continued context
+        // and, unlike the SVC-dispatch tail (KiDeliverUserApcArm64) and unlike
+        // amd64's trap return, does NOT check UserApcPending. So a user APC
+        // that KeTestAlertThread just marked pending would wait for the NEXT
+        // trap — breaking an alertable NtContinue(TestAlert=TRUE), the loop by
+        // which KiUserApcDispatcher drains more than one user APC at a single
+        // wait. Deliver it here, as KiDeliverUserApcArm64 does on the SVC path:
+        // KiDeliverApc(UserMode) rewrites this trap frame to KiUserApcDispatcher
+        // when UserApcPending is set, and KiExceptionExit then erets to it.
+        #[cfg(target_arch = "aarch64")]
+        if ((*TrapFrame).Spsr & 0xF) == 0 && kt_ApcState(Thread).UserApcPending != 0 {
+            let mut OldIrql = APC_LEVEL;
+            KeRaiseIrql(APC_LEVEL, &mut OldIrql);
+            KiDeliverApc(1i8 /* UserMode */, ExceptionFrame, TrapFrame);
+            KeLowerIrql(OldIrql);
+        }
     }
 
     KiExceptionExit(TrapFrame, ExceptionFrame);

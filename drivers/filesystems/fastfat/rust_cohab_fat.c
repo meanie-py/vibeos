@@ -356,10 +356,6 @@ static BOOLEAN __c_FatIsNameShortOemValid(PIRP_CONTEXT IC, OEM_STRING N, BOOLEAN
 #undef FatIsNameShortOemValid
 BOOLEAN FatIsNameShortOemValid(PIRP_CONTEXT IrpContext, OEM_STRING OemName, BOOLEAN CanContainWildCards, BOOLEAN PathNameOk, BOOLEAN LeadingBackslashOk){ return __c_FatIsNameShortOemValid(IrpContext, OemName, CanContainWildCards, PathNameOk, LeadingBackslashOk); }
 
-/* FatTestRaisedStatus: fault-injection debug global referenced by the FatRaiseStatus
- * debug path (pulled in by FatVerifyIndexIsValid). Defaults to 0 (disabled). */
-BOOLEAN FatTestRaisedStatus = 0;
-
 /* ---- header-defined macro constants the Rust translation references as DATA ----
  * These C macros (DCB_UNION_SLACK_SPACE / FCB_LOOKUP_ALLOCATIONSIZE_HINT / etc.)
  * were translated as `extern static` data refs. Provide them as real DATA symbols
@@ -396,7 +392,6 @@ const ULONG __c_FAT_DIRENT_ATTR_READ_ONLY __asm__(FF_SYM("FAT_DIRENT_ATTR_READ_O
 const ULONG __c_FAT_DIRENT_ATTR_DIRECTORY __asm__(FF_SYM("FAT_DIRENT_ATTR_DIRECTORY")) = (ULONG)(FAT_DIRENT_ATTR_DIRECTORY);
 const ULONG __c_OPLOCK_FLAG_PARENT_OBJECT __asm__(FF_SYM("OPLOCK_FLAG_PARENT_OBJECT")) = 0x00000002UL; /* not in this header set; Windows-documented value */
 const ULONG __c_FO_FILE_MODIFIED __asm__(FF_SYM("FO_FILE_MODIFIED")) = (ULONG)(FO_FILE_MODIFIED);
-const ULONG __c_MAX_LFN_CHARACTERS __asm__(FF_SYM("MAX_LFN_CHARACTERS")) = (ULONG)(MAX_LFN_CHARACTERS);
 const ULONG __c_TAG_DIRENT __asm__(FF_SYM("TAG_DIRENT")) = (ULONG)(TAG_DIRENT);
 const ULONG __c_TAG_FILENAME_BUFFER __asm__(FF_SYM("TAG_FILENAME_BUFFER")) = (ULONG)(TAG_FILENAME_BUFFER);
 const ULONG __c_FAT_NTC_FCB __asm__(FF_SYM("FAT_NTC_FCB")) = (ULONG)(FAT_NTC_FCB);

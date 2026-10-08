@@ -5,11 +5,9 @@
  *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
  */
 
-#if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
-#else
-#include MBEDTLS_CONFIG_FILE
-#endif
+/* Mbed TLS 3.x: library sources take the configuration through common.h (it was
+ * mbedtls/config.h in 2.x, which 3.x keeps only as a shim that trips check_config). */
+#include "common.h"
 
 #if defined(MBEDTLS_DSA_C)
 
@@ -31,10 +29,16 @@
 
 #if !defined(MBEDTLS_DSA_ALT)
 
+#if MBEDTLS_VERSION_MAJOR >= 3
+/* 3.x dropped MBEDTLS_INTERNAL_VALIDATE*, and its own modules' checks with it. */
+#define DSA_VALIDATE_RET( cond )    do { } while( 0 )
+#define DSA_VALIDATE( cond )        do { } while( 0 )
+#else
 #define DSA_VALIDATE_RET( cond )    \
     MBEDTLS_INTERNAL_VALIDATE_RET( cond, MBEDTLS_ERR_DSA_BAD_INPUT_DATA )
 #define DSA_VALIDATE( cond )        \
     MBEDTLS_INTERNAL_VALIDATE( cond )
+#endif
 
 /*
  * Initialize context

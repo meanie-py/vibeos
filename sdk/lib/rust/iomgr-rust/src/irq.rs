@@ -16,6 +16,13 @@ use ntkrnl_sys::ddk::{
     KAFFINITY,
     KINTERRUPT_MODE,
     ExAllocatePoolZero,
+    CM_PARTIAL_RESOURCE_DESCRIPTOR,
+    IO_INTERRUPT_MESSAGE_INFO,
+    IO_INTERRUPT_MESSAGE_INFO_ENTRY,
+    PIO_INTERRUPT_MESSAGE_INFO,
+    PKMESSAGE_SERVICE_ROUTINE,
+    PEXTENDED_DEVOBJ_EXTENSION,
+    PDEVICE_OBJECT,
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
@@ -32,6 +39,10 @@ extern "system" {
     fn KeInitializeInterrupt( Interrupt: PKINTERRUPT, ServiceRoutine: PKSERVICE_ROUTINE, ServiceContext: PVOID, SpinLock: PKSPIN_LOCK, Vector: ULONG, Irql: KIRQL, SynchronizeIrql: KIRQL, InterruptMode: KINTERRUPT_MODE, ShareVector: BOOLEAN, ProcessorNumber: CCHAR, FloatingSave: BOOLEAN, );
     fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN;
     fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT);
+    // hal-rust message.rs: the address/data that raises a message vector.
+    /// `RequesterId` u32::MAX: unknown here; pci.sys bound each vector to its device
+    /// when it programmed the table, which happened at START, before this.
+    fn HalVibeosMessageTarget(Vector: ULONG, RequesterId: ULONG, Address: *mut u64, Data: *mut ULONG) -> BOOLEAN;
 }
 
 const TAG_IO_INTERRUPT: ULONG = 0x6E696F49;
@@ -194,15 +205,223 @@ unsafe fn IopConnectInterruptExFullySpecific(
     Status
 }
 
+// IO_CONNECT_INTERRUPT_PARAMETERS.Version (wdm.h).
+const CONNECT_FULLY_SPECIFIED: ULONG = 1;
+const CONNECT_LINE_BASED: ULONG = 2;
+const CONNECT_MESSAGE_BASED: ULONG = 3;
+const CONNECT_FULLY_SPECIFIED_GROUP: ULONG = 4;
+
+const CM_RESOURCE_TYPE_INTERRUPT: u8 = 2;
+const CM_RESOURCE_SHARE_SHARED: u8 = 3;
+const CM_RESOURCE_INTERRUPT_LATCHED: u16 = 0x0001;
+const CM_RESOURCE_INTERRUPT_MESSAGE: u16 = 0x0002;
+const LEVEL_SENSITIVE: KINTERRUPT_MODE = 0;
+const LATCHED: KINTERRUPT_MODE = 1;
+const TAG_IO_MESSAGE: ULONG = u32::from_le_bytes(*b"IoMs");
+
+/// The translated interrupt descriptors the PnP manager assigned to `Pdo`, or an
+/// empty slice when it has none (not a PnP device, or not started).
+unsafe fn assigned_interrupts<'a>(Pdo: PDEVICE_OBJECT) -> &'a [CM_PARTIAL_RESOURCE_DESCRIPTOR] {
+    if Pdo.is_null() {
+        return &[];
+    }
+    let ext = (*Pdo).DeviceObjectExtension as PEXTENDED_DEVOBJ_EXTENSION;
+    if ext.is_null() || (*ext).DeviceNode.is_null() {
+        return &[];
+    }
+    let list = (*(*ext).DeviceNode).ResourceListTranslated;
+    // PCI devices get exactly one full descriptor; anything else is not ours to guess at.
+    if list.is_null() || (*list).Count != 1 {
+        return &[];
+    }
+    let partial = core::ptr::addr_of!((*list).List[0].PartialResourceList);
+    core::slice::from_raw_parts(
+        core::ptr::addr_of!((*partial).PartialDescriptors[0]),
+        (*partial).Count as usize,
+    )
+}
+
+fn is_interrupt(d: &CM_PARTIAL_RESOURCE_DESCRIPTOR, message: bool) -> bool {
+    d.Type == CM_RESOURCE_TYPE_INTERRUPT && ((d.Flags & CM_RESOURCE_INTERRUPT_MESSAGE) != 0) == message
+}
+
+/// CONNECT_LINE_BASED: the device's line interrupt, from its assigned resources.
+unsafe fn IopConnectInterruptExLineBased(
+    Pdo: PDEVICE_OBJECT,
+    InterruptObject: *mut PKINTERRUPT,
+    ServiceRoutine: PKSERVICE_ROUTINE,
+    ServiceContext: PVOID,
+    SpinLock: PKSPIN_LOCK,
+    SynchronizeIrql: KIRQL,
+    FloatingSave: BOOLEAN,
+) -> NTSTATUS {
+    let Some(line) = assigned_interrupts(Pdo).iter().find(|d| is_interrupt(d, false)) else {
+        return STATUS_NOT_FOUND;
+    };
+    let irql = line.u.Interrupt.Level as KIRQL;
+    IoConnectInterrupt(
+        InterruptObject,
+        ServiceRoutine,
+        ServiceContext,
+        SpinLock,
+        line.u.Interrupt.Vector,
+        irql,
+        SynchronizeIrql.max(irql),
+        if line.Flags & CM_RESOURCE_INTERRUPT_LATCHED != 0 { LATCHED } else { LEVEL_SENSITIVE },
+        (line.ShareDisposition == CM_RESOURCE_SHARE_SHARED) as BOOLEAN,
+        line.u.Interrupt.Affinity,
+        FloatingSave,
+    )
+}
+
+/// What a message's KINTERRUPT calls: the driver's routine, told which message fired.
+#[repr(C)]
+struct MessageTrampoline {
+    routine: PKMESSAGE_SERVICE_ROUTINE,
+    context: PVOID,
+    message_id: ULONG,
+}
+
+unsafe extern "system" fn message_trampoline(Interrupt: PKINTERRUPT, Context: PVOID) -> BOOLEAN {
+    let t = Context as *const MessageTrampoline;
+    match (*t).routine {
+        Some(routine) => routine(Interrupt, (*t).context, (*t).message_id),
+        None => 0,
+    }
+}
+
+/// One pool block: the IO_INTERRUPT_MESSAGE_INFO handed to the driver (its MessageInfo
+/// array sized to `count`), then the trampolines its KINTERRUPTs point at. The driver
+/// returns the block's address to IoDisconnectInterruptEx, which frees it whole.
+fn message_block_layout(count: usize) -> (usize, usize) {
+    let info = core::mem::offset_of!(IO_INTERRUPT_MESSAGE_INFO, MessageInfo)
+        + count * core::mem::size_of::<IO_INTERRUPT_MESSAGE_INFO_ENTRY>();
+    let align = core::mem::align_of::<MessageTrampoline>();
+    let trampolines = (info + align - 1) & !(align - 1);
+    (trampolines, trampolines + count * core::mem::size_of::<MessageTrampoline>())
+}
+
+unsafe fn IopDisconnectMessages(Table: PIO_INTERRUPT_MESSAGE_INFO) {
+    let entries = core::ptr::addr_of_mut!((*Table).MessageInfo) as *mut IO_INTERRUPT_MESSAGE_INFO_ENTRY;
+    for i in 0..(*Table).MessageCount as usize {
+        let object = (*entries.add(i)).InterruptObject;
+        if !object.is_null() {
+            IoDisconnectInterrupt(object);
+        }
+    }
+    ExFreePoolWithTag(Table as PVOID, TAG_IO_MESSAGE);
+}
+
+/// CONNECT_MESSAGE_BASED: every message the PnP manager assigned, each its own
+/// KINTERRUPT. A device with none (its driver did not opt in, or the HAL cannot route
+/// messages) gets its line interrupt through FallBackServiceRoutine instead, and
+/// Version is rewritten to CONNECT_LINE_BASED to say so, as on Windows.
+unsafe fn IopConnectInterruptExMessageBased(Parameters: PIO_CONNECT_INTERRUPT_PARAMETERS) -> NTSTATUS {
+    let p = &mut (*Parameters).__bindgen_anon_1.MessageBased;
+    let assigned = assigned_interrupts(p.PhysicalDeviceObject);
+    let count = assigned.iter().filter(|d| is_interrupt(d, true)).count();
+    if count == 0 {
+        if p.FallBackServiceRoutine.is_none() {
+            return STATUS_NOT_FOUND;
+        }
+        let status = IopConnectInterruptExLineBased(
+            p.PhysicalDeviceObject,
+            p.ConnectionContext.InterruptObject,
+            p.FallBackServiceRoutine,
+            p.ServiceContext,
+            p.SpinLock as PKSPIN_LOCK,
+            p.SynchronizeIrql,
+            p.FloatingSave,
+        );
+        if status >= 0 {
+            (*Parameters).Version = CONNECT_LINE_BASED;
+        }
+        return status;
+    }
+    if p.MessageServiceRoutine.is_none() {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    let (trampolines_at, size) = message_block_layout(count);
+    let block = ExAllocatePoolZero(NonPagedPool, size as _, TAG_IO_MESSAGE) as *mut u8;
+    if block.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    let table = block as PIO_INTERRUPT_MESSAGE_INFO;
+    let entries = core::ptr::addr_of_mut!((*table).MessageInfo) as *mut IO_INTERRUPT_MESSAGE_INFO_ENTRY;
+    let trampolines = block.add(trampolines_at) as *mut MessageTrampoline;
+    let unified = assigned
+        .iter()
+        .filter(|d| is_interrupt(d, true))
+        .map(|d| d.u.Interrupt.Level as KIRQL)
+        .max()
+        .unwrap_or(0);
+    (*table).UnifiedIrql = unified;
+    (*table).MessageCount = count as ULONG;
+
+    // Message IDs follow the order the messages were assigned in, which is the
+    // MSI-X table order pci.sys requested them in.
+    for (id, d) in assigned.iter().filter(|d| is_interrupt(d, true)).enumerate() {
+        let t = trampolines.add(id);
+        (*t).routine = p.MessageServiceRoutine;
+        (*t).context = p.ServiceContext;
+        (*t).message_id = id as ULONG;
+        let e = &mut *entries.add(id);
+        e.Vector = d.u.Interrupt.Vector;
+        e.Irql = d.u.Interrupt.Level as KIRQL;
+        e.TargetProcessorSet = d.u.Interrupt.Affinity;
+        e.Mode = LATCHED;
+        e.Polarity = 0; // InterruptPolarityUnknown
+        let mut address = 0u64;
+        if HalVibeosMessageTarget(e.Vector, u32::MAX, &mut address, &mut e.MessageData) != 0 {
+            e.MessageAddress.QuadPart = address as i64;
+        }
+        let status = IoConnectInterrupt(
+            &mut e.InterruptObject,
+            Some(message_trampoline),
+            t as PVOID,
+            p.SpinLock as PKSPIN_LOCK,
+            e.Vector,
+            e.Irql,
+            p.SynchronizeIrql.max(unified),
+            LATCHED,
+            0,
+            e.TargetProcessorSet,
+            p.FloatingSave,
+        );
+        if status < 0 {
+            (*table).MessageCount = id as ULONG; // disconnect only what connected
+            IopDisconnectMessages(table);
+            return status;
+        }
+    }
+    *p.ConnectionContext.InterruptMessageTable = table;
+    STATUS_SUCCESS
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn IoConnectInterruptEx(
     Parameters: PIO_CONNECT_INTERRUPT_PARAMETERS,
 ) -> NTSTATUS {
     match (*Parameters).Version {
-        0 => IopConnectInterruptExFullySpecific(Parameters),
-        1 => IopConnectInterruptExFullySpecific(Parameters),
-        2 | 3 => STATUS_SUCCESS,
-        _ => STATUS_SUCCESS,
+        CONNECT_FULLY_SPECIFIED | CONNECT_FULLY_SPECIFIED_GROUP => {
+            IopConnectInterruptExFullySpecific(Parameters)
+        }
+        CONNECT_LINE_BASED => {
+            let p = &(*Parameters).__bindgen_anon_1.LineBased;
+            IopConnectInterruptExLineBased(
+                p.PhysicalDeviceObject,
+                p.InterruptObject,
+                p.ServiceRoutine,
+                p.ServiceContext,
+                p.SpinLock as PKSPIN_LOCK,
+                p.SynchronizeIrql,
+                p.FloatingSave,
+            )
+        }
+        CONNECT_MESSAGE_BASED => IopConnectInterruptExMessageBased(Parameters),
+        // CONNECT_MESSAGE_BASED_PASSIVE (5) and anything newer.
+        _ => STATUS_NOT_SUPPORTED,
     }
 }
 
@@ -210,8 +429,19 @@ pub unsafe extern "system" fn IoConnectInterruptEx(
 pub unsafe extern "system" fn IoDisconnectInterruptEx(
     Parameters: PIO_DISCONNECT_INTERRUPT_PARAMETERS,
 ) {
-    if !(*Parameters).ConnectionContext.InterruptObject.is_null() {
-        IoDisconnectInterrupt((*Parameters).ConnectionContext.InterruptObject);
+    match (*Parameters).Version {
+        CONNECT_MESSAGE_BASED => {
+            let table = (*Parameters).ConnectionContext.InterruptMessageTable;
+            if !table.is_null() {
+                IopDisconnectMessages(table);
+            }
+        }
+        _ => {
+            let object = (*Parameters).ConnectionContext.InterruptObject;
+            if !object.is_null() {
+                IoDisconnectInterrupt(object);
+            }
+        }
     }
 }
 

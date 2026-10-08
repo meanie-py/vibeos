@@ -165,8 +165,8 @@ list(REMOVE_ITEM LIBCNTPR_SOURCE
 # flip to cnt-rust behind the `float` feature, owned on amd64/arm64. On
 # i386 the crate builds no-SSE where an `f32`/`f64` *return* is a hard ABI
 # error (float *args* — Tier A's predicates — only warn), so i386 keeps
-# the C exactly like format_float above. `nexttowardf` is additionally
-# i386-only-C by ABI (80-bit `long double` arg). div.c is NOT here — it's
+# the C exactly like format_float above. (`nexttowardf`'s `long double` is
+# NOT 80-bit here: gcc.cmake passes -mlong-double-64.) div.c is NOT here — it's
 # pure integer and already removed all-arch above.
 if(NOT ARCH STREQUAL "i386")
     list(REMOVE_ITEM LIBCNTPR_SOURCE
@@ -455,8 +455,8 @@ endif()
 #
 # KEEP (cnt-rust does NOT provide these): the _CIxxx MSVC intrinsic
 # wrappers (ci*.c — they CALL the now-Rust libm fns: e.g. _CIsqrt→sqrt),
-# the i386 libm_sse2.c SSE-register wrappers, nexttowardf.c (80-bit
-# `long double` arg — cnt-rust gates nexttowardf out on x86), exp2f.c (f32
+# the i386 libm_sse2.c SSE-register wrappers, nexttowardf.c (an f32 return,
+# which the no-SSE kernel cell cannot compile), exp2f.c (f32
 # exp2 — cnt-rust has only the f64 exp2), _invoke_matherr.c, and the
 # integer/conversion asm (alldiv/allmul/…/ftol/ftol2/ftoul2 — not math
 # symbols). The cold-link is the oracle.
@@ -603,6 +603,7 @@ file(GLOB_RECURSE CNT_RUST_SOURCES CONFIGURE_DEPENDS
     ${RUST_WORKSPACE_DIR}/cnt-rust/src/*.rs
     ${RUST_WORKSPACE_DIR}/cnt-rust-lib/src/*.rs
     ${RUST_WORKSPACE_DIR}/cnt-ctype/src/*.rs
+    ${RUST_WORKSPACE_DIR}/musl-math/src/*.rs
 )
 add_custom_command(
     OUTPUT ${RUST_CNT_LIB}
@@ -619,6 +620,8 @@ add_custom_command(
             ${RUST_WORKSPACE_DIR}/cnt-rust-lib/Cargo.toml
             ${RUST_WORKSPACE_DIR}/cnt-ctype/Cargo.toml
             ${RUST_WORKSPACE_DIR}/cnt-rust/Cargo.toml
+            ${RUST_WORKSPACE_DIR}/cnt-rust/build.rs
+            ${RUST_WORKSPACE_DIR}/musl-math/Cargo.toml
             ${RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust libcntpr umbrella (${RUST_TARGET})"
 )

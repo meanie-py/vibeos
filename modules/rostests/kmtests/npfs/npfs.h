@@ -161,6 +161,14 @@ struct _THREAD_CONTEXT;
 typedef VOID (WORK_FUNCTION)(IN OUT struct _THREAD_CONTEXT *);
 typedef WORK_FUNCTION *PWORK_FUNCTION;
 
+/* DIAGNOSTIC ONLY (vibeos): where every CPU's time went, summed, in 100 ns units.
+ * Kernel time includes the idle thread's. Filled by NpfsDiagTimes (NpfsHelpers.c). */
+typedef struct _NPFS_DIAG_TIMES
+{
+    ULONGLONG Idle, Kernel, Dpc, Interrupt;
+    ULONG Interrupts;
+} NPFS_DIAG_TIMES, *PNPFS_DIAG_TIMES;
+
 typedef struct _THREAD_CONTEXT
 {
     volatile PWORK_FUNCTION Work;
@@ -197,6 +205,12 @@ typedef struct _THREAD_CONTEXT
      * Read and printed by PipeWorkerThread; no assertion or return value uses them. */
     volatile ULONGLONG DiagTriggered;
     volatile ULONG DiagDeadlineMs;
+    /* DIAGNOSTIC ONLY (vibeos), for the caller's side of the same deadline: the CPUs'
+     * time breakdown at the trigger, whether the worker has started the item, and
+     * whether WaitForWork already reported this item. See NpfsDiagReportWait. */
+    NPFS_DIAG_TIMES DiagTimesTriggered;
+    volatile LONG DiagWoke;
+    BOOLEAN DiagReported;
 } THREAD_CONTEXT, *PTHREAD_CONTEXT;
 
 VOID

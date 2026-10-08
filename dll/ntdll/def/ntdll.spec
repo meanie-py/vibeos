@@ -1155,6 +1155,8 @@
 @ stdcall RtlSeekMemoryStream(ptr int64 long ptr)
 @ stdcall RtlSelfRelativeToAbsoluteSD2(ptr ptr)
 @ stdcall RtlSelfRelativeToAbsoluteSD(ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr ptr)
+@ cdecl RtlSehTryExcept(ptr ptr ptr ptr ptr)
+@ cdecl RtlSehTryFinally(ptr ptr ptr ptr)
 @ stdcall -stub -version=0x600+ RtlSendMsgToSm(ptr ptr)
 @ stdcall RtlSetAllBits(ptr)
 @ stdcall RtlSetAttributesSecurityDescriptor(ptr long ptr)
@@ -1295,13 +1297,14 @@
 @ stdcall -arch=arm64,x86_64 RtlWow64GetThreadContext(ptr ptr)
 @ stdcall -arch=arm64,x86_64 RtlWow64SetThreadContext(ptr ptr)
 @ stdcall -arch=arm64,x86_64 RtlWow64SuspendThread(ptr ptr)
-# Wine/Win10 ntdll exports these CRT helpers; libwow64fex's mini-CRT imports
-# them (wow64-plan Phase B — our loader poison-snaps missing imports to
+# Wine/Win10 ntdll exports these CRT helpers; the FEX CPU layers' mini-CRT
+# imports them (wow64-plan Phase B — our loader poison-snaps missing imports to
 # 0xffbadd11, so absence means a PC-alignment crash on first errno write, not
-# a load failure). Forward to msvcrt's real per-thread-errno CRT.
-@ cdecl -arch=arm64 _errno() msvcrt._errno
-@ cdecl -arch=arm64 atan2(double double) msvcrt.atan2
-@ cdecl -arch=arm64 tan(double) msvcrt.tan
+# a load failure). ntdll's OWN (ntdll-rust crtexports.rs; atan2/tan the linked
+# CRT math, tan below), NOT forwarders to msvcrt: resolving a forwarder loads
+# msvcrt, and msvcrt's imports load kernel32, into every CPU-layer process.
+@ cdecl -arch=arm64 _errno()
+@ cdecl -arch=arm64 atan2(double double)
 @ stdcall RtlWow64EnableFsRedirection(long)
 @ stdcall RtlWow64EnableFsRedirectionEx(long ptr)
 # WoW64 syscall dispatch slot (i386 only): every user Nt* stub calls through
@@ -1309,6 +1312,13 @@
 # SharedUserData->SystemCall path. Under WoW64 the host wow64.dll patches the
 # guest ntdll32's slot to the CPU layer's BOP bridge (Win10-parity export).
 @ extern -arch=i386 Wow64Transition
+# The win32k callback hook slot (dispatch/mod.rs, KiUserCallbackDispatcher).
+# wowx64.dll fills it in an x86-64 guest process, whose callback table is the
+# guest user32's x86-64 code. Data export; arm64 only.
+@ extern -arch=arm64 WowX64UserCallbackHook
+# Its user-APC twin (dispatch.S, KiUserApcDispatcher): an APC routine there
+# may be the guest's x86-64 code. Data export; arm64 only.
+@ extern -arch=arm64 WowX64UserApcHook
 # E5: the KiUserExceptionDispatcher hook slot (dispatch.S). wow64.dll writes its
 # guest-SEH dispatch handler here so hardware faults in 32-bit guest code reach
 # the guest's own exception dispatcher. Data export; amd64 native WoW64 only.
@@ -1935,7 +1945,7 @@
 @ cdecl strtol(str ptr long)
 @ cdecl strtoul(str ptr long)
 @ varargs swprintf(ptr wstr) _swprintf # Non-conforming swprintf
-@ cdecl -arch=i386,x86_64 tan(double)
+@ cdecl tan(double)
 @ cdecl tolower(long)
 @ cdecl toupper(long) toupper_nt_mb
 @ cdecl towlower(long)

@@ -59,7 +59,9 @@ set(_wow64_ladder
     # belongs in the unconditional set so a REGRESSION can red it. Its old
     # reason for being opt-in -- it could BUGCHECK the machine -- died with the
     # dropped _SEH2_EXCEPT that caused it.
-    ${REACTOS_SOURCE_DIR}/build-fex-hello/spawn32.exe)
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/spawn32.exe
+    # apc32: user APCs into 32-bit code, and per-thread cleanup.
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/apc32.exe)
 
 # Best-effort robustness extras. Their pass criterion is "still running after
 # 8-10s", which ladder.py explicitly does NOT check, so a missing one must not
@@ -235,6 +237,38 @@ if(_wow64_guest_ok)
     if(EXISTS ${REACTOS_SOURCE_DIR}/tools/doom/doom1.wad)
         add_cd_file(FILE ${REACTOS_SOURCE_DIR}/tools/doom/doom1.wad DESTINATION reactos/syswow64 FOR livecd)
     endif()
+endif()
+
+# hello64.exe — the BTCpu64 M1 guest (docs/engineering/wow64-x64-guest-design.md,
+# Fork B). On arm64 it runs under FEX; HERE it runs natively, and that is the
+# point: the same binary passing on real x86-64 hardware semantics is the oracle
+# that the guest is right, independently of the emulator. An x64 exe is not a
+# WoW64 guest, so system32, and it needs no i386 closure — hence outside both
+# the ladder set and _wow64_guest_ok. Same configure-time EXISTS caveat as above,
+# with the same nearest-existing-ancestor dependency fix.
+# The rest of the x86-64 ladder (M2) rides the same rule: the 32-bit ladder's
+# sources rebuilt for x86-64 by build-hello-compute.sh, each staged if built.
+foreach(_x64_guest hello64 gui64 win64 file64 async64 marshal64 fault64 thread64
+                   selfmod64 reg64 spawn64 apc64)
+    set(_x64_exe ${REACTOS_SOURCE_DIR}/build-fex-hello/${_x64_guest}.exe)
+    set(_dep ${_x64_exe})
+    while(NOT EXISTS ${_dep})
+        get_filename_component(_dep ${_dep} DIRECTORY)
+    endwhile()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_dep})
+    if(EXISTS ${_x64_exe} AND NOT VIBEOS_WOW64_NO_STAGE)
+        add_cd_file(FILE ${_x64_exe} DESTINATION reactos/system32 FOR livecd)
+    else()
+        message(STATUS "BTCpu64: ${_x64_exe} not staged — ${_x64_guest} will no-op")
+    endif()
+endforeach()
+# spawn64's native helper for rung 13 (xinject): on amd64 a native amd64
+# program like spawn64 itself, staged under the name spawn64 starts.
+set(_xinject ${REACTOS_SOURCE_DIR}/build-fex-hello/xinject-amd64.exe)
+if(EXISTS ${_xinject} AND NOT VIBEOS_WOW64_NO_STAGE)
+    add_cd_file(FILE ${_xinject} DESTINATION reactos/system32 NAME_ON_CD xinject.exe FOR livecd)
+else()
+    message(STATUS "BTCpu64: ${_xinject} not staged — spawn64 rung 13 will fail")
 endif()
 
 endif()

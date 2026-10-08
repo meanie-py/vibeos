@@ -9,11 +9,6 @@
 ##              Copyright 2023 Hermès Bélusca-Maïto <hermes.belusca-maito@reactos.org>
 ##
 
-if(MSVC)
-    # Explicitly use string pooling
-    add_compile_options("/GF")
-endif()
-
 #spec2def(freeldr_pe.exe freeldr.spec)
 
 include_directories(BEFORE include)
@@ -232,3 +227,7 @@ if(NOT ARCH STREQUAL "arm64")
     include(rosload.cmake)
 endif()
 include(uefi.cmake)
+# The legacy BIOS loader, freeldr.sys (restored 2026-10-05; amd64 only).
+if(ARCH STREQUAL "amd64")
+    include(pcat.cmake)
+endif()

@@ -21,6 +21,7 @@ from ...config import (
     AFD_DIR,
     ARBITER_DIR,
     ARM64INPUT_DIR,
+    ATAPI_DIR,
     BINDGEN_FILES,
     BOOTVID_DIR,
     BUSLOGIC_DIR,
@@ -45,6 +46,7 @@ from ...config import (
     KERNEL32_DIR,
     KS_DIR,
     KSECDD_DIR,
+    LEGIDE_DIR,
     LSASRV_DIR,
     MOUCLASS_DIR,
     MOUNTMGR_DIR,
@@ -482,6 +484,40 @@ TARGETS = {
         bindgen_files=BINDGEN_FILES,
         hal_bindgen_files={},
         spec_file=PCIIDEX_DIR / "pciidex.spec",
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # atapi.sys — upstream's 2026 ATA port driver (drivers/storage/ide/atapi, ~11K LOC, 15
+    # .c: atapi/fdo/pdo/enum/satl/scsi/ioctl/portstate/dev_*/smart/wmi). NOT the NT4-DDK
+    # SCSIPORT miniport the name used to mean (that translation is parked as
+    # atapi-legacy-rust; its C was deleted under the DDK EULA). A WDM port driver that sits
+    # on pciidex's channel PDOs and exposes disks through a SATL. No spec.
+    "atapi": Target(
+        name="atapi",
+        source_dir=ATAPI_DIR,
+        output_crate=RUST_DIR / "atapi-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # legide.sys — upstream's legacy (ISA-port) PATA bus enumerator, i386 only
+    # (drivers/storage/ide/legide, 1 .c). A pciidex client like pciide; part of the same
+    # new ATA stack as pciidex/atapi. No spec.
+    "legide": Target(
+        name="legide",
+        source_dir=LEGIDE_DIR,
+        output_crate=RUST_DIR / "legide-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
         system_prompt=TEMPLATES_DIR / "system_prompt.md",
         src_subdir=Path("src"),
         cmake_deps_file=None,
@@ -1337,6 +1373,10 @@ def detect_target(
         return TARGETS["mountmgr"]
     if "/drivers/storage/ide/pciidex" in posix:
         return TARGETS["pciidex"]
+    if "/drivers/storage/ide/atapi" in posix:
+        return TARGETS["atapi"]
+    if "/drivers/storage/ide/legide" in posix:
+        return TARGETS["legide"]
     if "/drivers/storage/port/scsiport" in posix:
         return TARGETS["scsiport"]
     if "/drivers/storage/port/storport" in posix:
@@ -1485,7 +1525,11 @@ def _detect_concrete_stdcall_slots(crate: Path) -> bool:
         return True
     # A NON-recursive glob on the two stems, not a tree walk: every island in the tree sits
     # directly in `<crate>/src`, and this runs at import for every target.
-    islands = sorted(src.glob("island_*.rs")) + sorted(src.glob("bindgen_*.rs"))
+    # `types_<arch>.rs` is gen_driver_types.sh's island (the driver fleet, and every crate
+    # `rustconv port` scaffolds). Unlisted, setuplib had "no island", got the conservative
+    # answer, and seven NTAPI callbacks came back as stdcall / "C" twins that match neither
+    # of its `extern "system"` slots.
+    islands = sorted([*src.glob("island_*.rs"), *src.glob("bindgen_*.rs"), *src.glob("types_*.rs")])
     if not islands:
         return True
     from ...crate_integrate import _without_comments

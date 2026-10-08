@@ -17,6 +17,11 @@ from tests.qemu.vm import PROJECT_DIR, QemuVM, process_cpu_pct
 sys.path.insert(0, str(PROJECT_DIR / "tools"))
 
 
+def _qcode_key_event(k, d):
+    """A QMP input-send-event key event for qcode `k`, down if `d`."""
+    return {"type": "key", "data": {"down": d, "key": {"type": "qcode", "data": k}}}
+
+
 def _screenshot_path(arch: str) -> Path:
     """Return the path where the smoke screenshot will be saved."""
     return PROJECT_DIR / "qemu" / f"{arch}_smoke.png"
@@ -37,8 +42,8 @@ def _symbolicate_bugcheck(serial_output: str, arch: str) -> str:
     # Match: *** BUGCHECK: 0x0000001E (0xC000001D, 0x804C4213, 0xF7BBB8C8, 0x00000000)
     # Or:    *** STOP: 0x0000001E (0xC000001D,0x804C4213,0xF7BBB8C8,0x00000000)
     match = re.search(
-        r'\*\*\*\s+(?:BUGCHECK|STOP):\s+(0x[0-9A-Fa-f]+)\s*'
-        r'\((0x[0-9A-Fa-f]+)[,\s]+(0x[0-9A-Fa-f]+)[,\s]+(0x[0-9A-Fa-f]+)[,\s]+(0x[0-9A-Fa-f]+)\)',
+        r"\*\*\*\s+(?:BUGCHECK|STOP):\s+(0x[0-9A-Fa-f]+)\s*"
+        r"\((0x[0-9A-Fa-f]+)[,\s]+(0x[0-9A-Fa-f]+)[,\s]+(0x[0-9A-Fa-f]+)[,\s]+(0x[0-9A-Fa-f]+)\)",
         serial_output,
     )
     if not match:
@@ -85,16 +90,19 @@ def _symbolicate_bugcheck(serial_output: str, arch: str) -> str:
             if ntoskrnl.exists():
                 try:
                     from scan_ud2 import find_objdump
+
                     objdump = find_objdump(arch)
                     if objdump:
                         result = subprocess.run(
                             [objdump, "-d", str(ntoskrnl)],
-                            capture_output=True, text=True, timeout=120,
+                            capture_output=True,
+                            text=True,
+                            timeout=120,
                         )
                         # Find which function contains the crash address
                         last_func = None
                         for line in result.stdout.splitlines():
-                            func_match = re.match(r'^([0-9a-f]+)\s+<(.+)>:', line)
+                            func_match = re.match(r"^([0-9a-f]+)\s+<(.+)>:", line)
                             if func_match:
                                 func_addr = int(func_match.group(1), 16)
                                 if func_addr <= rva:
@@ -115,16 +123,13 @@ def test_boot_and_serial(vm: QemuVM, arch: str) -> None:
     assert vm._boot_output, f"No boot output captured{hint}"
     threshold = vm.config.min_boot_bytes
     assert len(vm._boot_output) >= threshold, (
-        f"Too little boot output: {len(vm._boot_output)} bytes "
-        f"(expected >= {threshold}){hint}"
+        f"Too little boot output: {len(vm._boot_output)} bytes (expected >= {threshold}){hint}"
     )
     # Detect crashes in serial output (catches BSODs that idle detection misses)
     for crash_sig in ["*** BUGCHECK:", "*** STOP:"]:
         if crash_sig in vm._boot_output:
             sym = _symbolicate_bugcheck(vm._boot_output, arch)
-            assert False, (
-                f"Crash detected in serial output: {crash_sig!r}{sym}{hint}"
-            )
+            raise AssertionError(f"Crash detected in serial output: {crash_sig!r}{sym}{hint}")
 
 
 def test_milestones(vm: QemuVM, arch: str) -> None:
@@ -148,9 +153,7 @@ def test_milestones(vm: QemuVM, arch: str) -> None:
     # (ke/amd64/ipi.rs KiSmpNoteApSwitch, called from KiSwapContextResume).
     smp = os.environ.get("VIBEOS_QEMU_SMP", "").strip()
     if smp.isdigit() and int(smp) > 1:
-        milestones = milestones + [
-            f"CPU{n} scheduling live" for n in range(1, int(smp))
-        ]
+        milestones = milestones + [f"CPU{n} scheduling live" for n in range(1, int(smp))]
 
     output = vm._boot_output or ""
     missing = [m for m in milestones if m not in output]
@@ -197,11 +200,13 @@ def test_screenshot(vm: QemuVM, arch: str) -> None:
     png_path = PROJECT_DIR / "qemu" / f"{arch}_smoke.png"
     try:
         from PIL import Image
+
         Image.open(ppm_path).save(png_path, "PNG")
     except ImportError:
         # PIL not available — fall back to keeping the raw PPM
         png_path = PROJECT_DIR / "qemu" / f"{arch}_smoke.ppm"
         import shutil
+
         shutil.copy2(ppm_path, png_path)
 
     print(f"\n[screenshot] Saved to {png_path}")
@@ -238,8 +243,10 @@ def test_post_shell_ready_input(vm: QemuVM, arch: str) -> None:
     boot markers structurally miss (audit open question #6).
     """
     if arch == "arm64":
-        pytest.skip("arm64 uses idle-detect boot + serial-hack input; "
-                    "post-input gate is i386/amd64 (QMP input-send-event)")
+        pytest.skip(
+            "arm64 uses idle-detect boot + serial-hack input; "
+            "post-input gate is i386/amd64 (QMP input-send-event)"
+        )
 
     # Clear serial backlog so the post-injection scan only sees input fallout.
     vm.serial_output(timeout=1.0)
@@ -253,14 +260,17 @@ def test_post_shell_ready_input(vm: QemuVM, arch: str) -> None:
         if "error" in r:
             pytest.fail(f"QMP input-send-event failed: {r['error']}")
 
-    key = lambda k, d: {"type": "key",
-                        "data": {"down": d, "key": {"type": "qcode", "data": k}}}
+    key = _qcode_key_event
     for k in ("esc", "a", "spc", "ret", "esc"):
         _send([key(k, True)])
         _send([key(k, False)])
     for _ in range(6):
-        _send([{"type": "rel", "data": {"axis": "x", "value": 40}},
-               {"type": "rel", "data": {"axis": "y", "value": 30}}])
+        _send(
+            [
+                {"type": "rel", "data": {"axis": "x", "value": 40}},
+                {"type": "rel", "data": {"axis": "y", "value": 30}},
+            ]
+        )
     _send([{"type": "btn", "data": {"button": "left", "down": True}}])
     _send([{"type": "btn", "data": {"button": "left", "down": False}}])
 
@@ -273,13 +283,16 @@ def test_post_shell_ready_input(vm: QemuVM, arch: str) -> None:
     hit = [m for m in _FATAL_MARKERS if m in settle]
     if hit:
         sym = _symbolicate_bugcheck(settle, arch)
-        pytest.fail(f"win32k died handling injected input — markers {hit}\n"
-                    f"{sym}\nserial tail: {settle[-800:]!r}")
+        pytest.fail(
+            f"win32k died handling injected input — markers {hit}\n"
+            f"{sym}\nserial tail: {settle[-800:]!r}"
+        )
 
     # HARD: VM still running (not paused/shutdown/guest-panicked).
     status = vm.qmp.execute("query-status")
-    assert status["return"]["running"] is True, \
+    assert status["return"]["running"] is True, (
         f"VM not running after input: {status.get('return')}"
+    )
 
     # HARD (i386/amd64): the injected keystroke must actually REACH the
     # keyboard class driver — delivery, not just "win32k didn't crash".
@@ -297,9 +310,12 @@ def test_post_shell_ready_input(vm: QemuVM, arch: str) -> None:
     assert KBD_DELIVERED in settle, (
         f"injected keystroke never reached kbdclass on {arch} — input is "
         f"not being delivered to the class driver (chain broken upstream of "
-        f"win32k: HAL/i8042prt/kbdclass).\nserial tail: {settle[-1000:]!r}")
-    print(f"\n[post-input] kbd delivery confirmed — keystroke reached "
-          f"kbdclass ({KBD_DELIVERED!r} observed)")
+        f"win32k: HAL/i8042prt/kbdclass).\nserial tail: {settle[-1000:]!r}"
+    )
+    print(
+        f"\n[post-input] kbd delivery confirmed — keystroke reached "
+        f"kbdclass ({KBD_DELIVERED!r} observed)"
+    )
 
     # Diagnostic: after-shot for visual inspection + pixel-delta signal
     # (soft — PS/2 relative mouse + theme variance make a hard threshold
@@ -310,6 +326,7 @@ def test_post_shell_ready_input(vm: QemuVM, arch: str) -> None:
     delta = "n/a"
     try:
         from PIL import Image, ImageChops
+
         a = Image.open(before_ppm).convert("RGB")
         b = Image.open(after_ppm).convert("RGB")
         bbox = ImageChops.difference(a, b).getbbox()
@@ -318,9 +335,9 @@ def test_post_shell_ready_input(vm: QemuVM, arch: str) -> None:
     except ImportError:
         after_png = PROJECT_DIR / "qemu" / f"{arch}_post_input.ppm"
         import shutil
+
         shutil.copy2(after_ppm, after_png)
-    print(f"\n[post-input] survived input dispatch; screen={delta}; "
-          f"saved {after_png}")
+    print(f"\n[post-input] survived input dispatch; screen={delta}; saved {after_png}")
 
 
 def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
@@ -364,8 +381,7 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
         if "error" in r:
             pytest.fail(f"QMP input-send-event failed: {r['error']}")
 
-    key = lambda k, d: {"type": "key",
-                        "data": {"down": d, "key": {"type": "qcode", "data": k}}}
+    key = _qcode_key_event
 
     def _ctrl_esc() -> None:
         _send([key("ctrl", True)])
@@ -406,6 +422,7 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
     serial = ""
     after_ppm = vm.work_dir / "post_startmenu.ppm"
     after = before
+
     # Up to 3 Ctrl+Esc attempts, each with an ~8s render window — first-open
     # loads shell links from disk under TCG, and an occasional swallowed
     # chord (see priming note above) should not fail the gate.
@@ -462,15 +479,18 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
     # Save the after-shot regardless of verdict — it's the artifact to eyeball.
     png_path = PROJECT_DIR / "qemu" / f"{arch}_startmenu.png"
     after.save(png_path, "PNG")
-    print(f"\n[startmenu] Ctrl+Esc: panel-lit {lit_before:.2f} -> {lit:.2f}; "
-          f"region-delta={region_delta}; delta bbox={bbox}; saved {png_path}")
+    print(
+        f"\n[startmenu] Ctrl+Esc: panel-lit {lit_before:.2f} -> {lit:.2f}; "
+        f"region-delta={region_delta}; delta bbox={bbox}; saved {png_path}"
+    )
 
     # HARD: the input must not have killed anything.
     hit = [m for m in _FATAL_MARKERS if m in serial]
     if hit:
         sym = _symbolicate_bugcheck(serial, arch)
-        pytest.fail(f"OS died opening the start menu — markers {hit}\n"
-                    f"{sym}\nserial tail: {serial[-800:]!r}")
+        pytest.fail(
+            f"OS died opening the start menu — markers {hit}\n{sym}\nserial tail: {serial[-800:]!r}"
+        )
 
     # HARD: the menu panel must be rendered. Both halves are required — the
     # lit fraction alone is fooled by a pre-existing light window under the
@@ -481,7 +501,8 @@ def test_start_menu_opens(vm: QemuVM, arch: str) -> None:
         f"lit {lit:.0%} (needs ≥60%; was {lit_before:.0%} before), "
         f"region-changed={region_delta} (needs True). Keyboard layout dead? "
         f"Hotkey path broken? Explorer menu paint broken? "
-        f"Screenshot: {png_path}")
+        f"Screenshot: {png_path}"
+    )
 
 
 def test_post_shell_ready_mouse(vm: QemuVM, arch: str) -> None:
@@ -505,8 +526,10 @@ def test_post_shell_ready_mouse(vm: QemuVM, arch: str) -> None:
     bus, so the OS still must not fault handling the empty path.
     """
     if arch == "arm64":
-        pytest.skip("arm64 uses idle-detect boot + serial-hack input; "
-                    "mouse-dispatch gate is i386/amd64 (QMP input-send-event)")
+        pytest.skip(
+            "arm64 uses idle-detect boot + serial-hack input; "
+            "mouse-dispatch gate is i386/amd64 (QMP input-send-event)"
+        )
 
     vm.serial_output(timeout=1.0)  # clear backlog
     before_ppm = vm.work_dir / "pre_mouse.ppm"
@@ -522,8 +545,12 @@ def test_post_shell_ready_mouse(vm: QemuVM, arch: str) -> None:
     legs = [(45, 0), (0, 35), (-45, 0), (0, -35), (40, 30), (-40, -30)]
     for dx, dy in legs:
         for _ in range(8):
-            _send([{"type": "rel", "data": {"axis": "x", "value": dx}},
-                   {"type": "rel", "data": {"axis": "y", "value": dy}}])
+            _send(
+                [
+                    {"type": "rel", "data": {"axis": "x", "value": dx}},
+                    {"type": "rel", "data": {"axis": "y", "value": dy}},
+                ]
+            )
         _send([{"type": "btn", "data": {"button": "left", "down": True}}])
         _send([{"type": "btn", "data": {"button": "left", "down": False}}])
     _send([{"type": "btn", "data": {"button": "right", "down": True}}])
@@ -537,13 +564,16 @@ def test_post_shell_ready_mouse(vm: QemuVM, arch: str) -> None:
     hit = [m for m in _FATAL_MARKERS if m in settle]
     if hit:
         sym = _symbolicate_bugcheck(settle, arch)
-        pytest.fail(f"win32k died handling mouse storm — markers {hit}\n"
-                    f"{sym}\nserial tail: {settle[-800:]!r}")
+        pytest.fail(
+            f"win32k died handling mouse storm — markers {hit}\n"
+            f"{sym}\nserial tail: {settle[-800:]!r}"
+        )
 
     # HARD: VM still alive.
     status = vm.qmp.execute("query-status")
-    assert status["return"]["running"] is True, \
+    assert status["return"]["running"] is True, (
         f"VM not running after mouse storm: {status.get('return')}"
+    )
 
     # Diagnostic only (cursor not reliably composited from snapshot state).
     after_png = PROJECT_DIR / "qemu" / f"{arch}_post_mouse.png"
@@ -552,6 +582,7 @@ def test_post_shell_ready_mouse(vm: QemuVM, arch: str) -> None:
     delta = "n/a"
     try:
         from PIL import Image, ImageChops
+
         a = Image.open(before_ppm).convert("RGB")
         b = Image.open(after_ppm).convert("RGB")
         delta = "changed" if ImageChops.difference(a, b).getbbox() else "identical"
@@ -559,9 +590,9 @@ def test_post_shell_ready_mouse(vm: QemuVM, arch: str) -> None:
     except ImportError:
         after_png = PROJECT_DIR / "qemu" / f"{arch}_post_mouse.ppm"
         import shutil
+
         shutil.copy2(after_ppm, after_png)
-    print(f"\n[post-mouse] survived mouse storm; screen={delta}; "
-          f"saved {after_png}")
+    print(f"\n[post-mouse] survived mouse storm; screen={delta}; saved {after_png}")
 
 
 def test_arm64input_delivery(vm: QemuVM, arch: str) -> None:
@@ -589,8 +620,10 @@ def test_arm64input_delivery(vm: QemuVM, arch: str) -> None:
     test_post_shell_ready_input / _mouse instead.
     """
     if arch != "arm64":
-        pytest.skip("arm64input is the arm64-only bespoke virtio-mmio "
-                    "driver; i386/amd64 use test_post_shell_ready_input")
+        pytest.skip(
+            "arm64input is the arm64-only bespoke virtio-mmio "
+            "driver; i386/amd64 use test_post_shell_ready_input"
+        )
 
     vm.serial_output(timeout=2.0)  # drain backlog so the scan sees fallout
 
@@ -603,16 +636,19 @@ def test_arm64input_delivery(vm: QemuVM, arch: str) -> None:
         if "error" in r:
             pytest.fail(f"QMP input-send-event failed: {r['error']}")
 
-    key = lambda k, d: {"type": "key",
-                        "data": {"down": d, "key": {"type": "qcode", "data": k}}}
+    key = _qcode_key_event
 
     def _inject() -> None:
         for k in ("a", "spc", "ret", "esc"):
             _send([key(k, True)])
             _send([key(k, False)])
         for _ in range(6):
-            _send([{"type": "rel", "data": {"axis": "x", "value": 40}},
-                   {"type": "rel", "data": {"axis": "y", "value": 30}}])
+            _send(
+                [
+                    {"type": "rel", "data": {"axis": "x", "value": 40}},
+                    {"type": "rel", "data": {"axis": "y", "value": 30}},
+                ]
+            )
         _send([{"type": "btn", "data": {"button": "left", "down": True}}])
         _send([{"type": "btn", "data": {"button": "left", "down": False}}])
 
@@ -632,8 +668,10 @@ def test_arm64input_delivery(vm: QemuVM, arch: str) -> None:
         hit = [m for m in _FATAL_MARKERS if m in acc]
         if hit:
             sym = _symbolicate_bugcheck(acc, arch)
-            pytest.fail(f"arm64input died handling injected input — "
-                        f"markers {hit}\n{sym}\nserial tail: {acc[-800:]!r}")
+            pytest.fail(
+                f"arm64input died handling injected input — "
+                f"markers {hit}\n{sym}\nserial tail: {acc[-800:]!r}"
+            )
         if KBD in acc:
             break
 
@@ -644,8 +682,11 @@ def test_arm64input_delivery(vm: QemuVM, arch: str) -> None:
         # the boot serial, not in `acc`. Surface it + persist full serial so
         # the failure is actionable without a blind re-run.
         boot = vm._boot_output or ""
-        drv = [ln for ln in (boot + "\n" + acc).splitlines()
-               if "VIRTIO-INPUT" in ln or "ARM64INPUT" in ln]
+        drv = [
+            ln
+            for ln in (boot + "\n" + acc).splitlines()
+            if "VIRTIO-INPUT" in ln or "ARM64INPUT" in ln
+        ]
         # QEMU's authoritative virtqueue view at injection time — the only
         # thing that can settle "guest ring correct but QEMU sees it empty":
         # compare evtq desc/avail/used addr + avail/used idx vs the guest's
@@ -653,14 +694,16 @@ def test_arm64input_delivery(vm: QemuVM, arch: str) -> None:
         # path of the virtio-input device.
         virtio = ""
         try:
+
             def _hmp(c: str) -> str:
                 r = vm.qmp.execute("human-monitor-command", **{"command-line": c})
                 return r.get("return", "") if isinstance(r, dict) else str(r)
+
             listing = _hmp("info virtio")
             virtio += "=== info virtio ===\n" + listing + "\n"
             # Each line: "<qom-path> [<type>]" — grab the path token; keep
             # only the virtio-input devices (the ones under test).
-            paths = re.findall(r'^\s*(\S+)\s+\[virtio-input\]', listing, re.M)
+            paths = re.findall(r"^\s*(\S+)\s+\[virtio-input\]", listing, re.M)
             for path in paths:
                 virtio += f"=== info virtio-status {path} ===\n"
                 virtio += _hmp(f"info virtio-status {path}") + "\n"
@@ -671,32 +714,42 @@ def test_arm64input_delivery(vm: QemuVM, arch: str) -> None:
             virtio = f"(info virtio capture failed: {e})"
         dbg = PROJECT_DIR / "qemu" / "arm64_input_debug.log"
         try:
-            dbg.write_text(boot + "\n==== POST-INJECT ====\n" + acc +
-                           "\n==== QEMU VIRTIO ====\n" + virtio)
+            dbg.write_text(
+                boot + "\n==== POST-INJECT ====\n" + acc + "\n==== QEMU VIRTIO ====\n" + virtio
+            )
         except OSError:
             pass
         assert not missing, (
             f"arm64input did not deliver keyboard input within the window — "
             f"the bespoke virtio-mmio kbd path is broken end-to-end.\n"
-            f"driver boot markers ({len(drv)}):\n  " +
-            ("\n  ".join(drv[-25:]) if drv else "(NONE — driver never logged "
-             "[VIRTIO-INPUT]/[ARM64INPUT]; not loaded or DriverEntry failed)") +
-            f"\n=== QEMU virtio (authoritative vq view) ===\n{virtio[-2000:]}"
-            f"\nfull serial saved: {dbg}\nserial tail: {acc[-400:]!r}")
+            f"driver boot markers ({len(drv)}):\n  "
+            + (
+                "\n  ".join(drv[-25:])
+                if drv
+                else "(NONE — driver never logged "
+                "[VIRTIO-INPUT]/[ARM64INPUT]; not loaded or DriverEntry failed)"
+            )
+            + f"\n=== QEMU virtio (authoritative vq view) ===\n{virtio[-2000:]}"
+            f"\nfull serial saved: {dbg}\nserial tail: {acc[-400:]!r}"
+        )
 
     status = vm.qmp.execute("query-status")
-    assert status["return"]["running"] is True, \
+    assert status["return"]["running"] is True, (
         f"VM not running after arm64 input delivery: {status.get('return')}"
+    )
 
     if MOU in acc:
-        print("\n[arm64input] delivery confirmed — KBD + MOU reached the "
-              "class-driver ring end-to-end")
+        print(
+            "\n[arm64input] delivery confirmed — KBD + MOU reached the class-driver ring end-to-end"
+        )
     else:
         # Non-fatal: keyboard (the hard gate) is green. arm64 mouse
         # accumulate+EV_SYN-flush is a tracked secondary follow-up.
-        print("\n[arm64input] KEYBOARD delivery confirmed (hard gate green). "
-              "MOUSE marker not observed — known arm64 pointer-path follow-up, "
-              "non-fatal (kbd path proves the DMA/virtqueue chain works).")
+        print(
+            "\n[arm64input] KEYBOARD delivery confirmed (hard gate green). "
+            "MOUSE marker not observed — known arm64 pointer-path follow-up, "
+            "non-fatal (kbd path proves the DMA/virtqueue chain works)."
+        )
 
 
 def test_no_unexpected_ud2(arch: str) -> None:
@@ -729,7 +782,7 @@ def test_no_unexpected_ud2(arch: str) -> None:
         lines = [f"Found {len(unexpected)} unexpected ud2 (LLVM miscompilation):"]
         for f in unexpected:
             lines.append(f"  0x{f['address']}: {f['function']}")
-        assert False, "\n".join(lines)
+        raise AssertionError("\n".join(lines))
 
 
 def test_sacred_primitives(arch: str) -> None:
@@ -763,7 +816,9 @@ def test_sacred_primitives(arch: str) -> None:
 
     result = subprocess.run(
         [objdump, "-d", str(ntoskrnl)],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     disasm = result.stdout
 
@@ -803,9 +858,11 @@ def test_idle_cpu_not_spinning(vm: QemuVM, arch: str) -> None:
     arches where it is valid.
     """
     if arch == "arm64":
-        pytest.skip("arm64 is TCG (no KVM on x86 host) + no GIC: busy-polls "
-                    "at idle so host-CPU%% is not a valid idle signal; this "
-                    "gate is -accel kvm-only (i386/amd64)")
+        pytest.skip(
+            "arm64 is TCG (no KVM on x86 host) + no GIC: busy-polls "
+            "at idle so host-CPU%% is not a valid idle signal; this "
+            "gate is -accel kvm-only (i386/amd64)"
+        )
 
     if getattr(vm, "_backend", "native") == "windows-host":
         # Doubly invalid here: (1) vm._proc.pid is the WSL *interop shim* that
@@ -815,13 +872,18 @@ def test_idle_cpu_not_spinning(vm: QemuVM, arch: str) -> None:
         # is calibrated against (clean 3-6%, starved 90%+) doesn't apply. Same
         # reasoning as the arm64 skip. Skip honestly rather than read the shim
         # and report a meaningless "pass".
-        pytest.skip("windows-host backend: vm._proc.pid is the WSL interop shim "
-                    "(not the Windows QEMU) so /proc CPU% is unreadable, and it "
-                    "runs TCG not KVM — host-CPU%% is not a valid idle signal")
+        pytest.skip(
+            "windows-host backend: vm._proc.pid is the WSL interop shim "
+            "(not the Windows QEMU) so /proc CPU% is unreadable, and it "
+            "runs TCG not KVM — host-CPU%% is not a valid idle signal"
+        )
 
+    assert vm._proc is not None
     pct = process_cpu_pct(vm._proc.pid, window=3.0)
-    print(f"\n[idle-cpu] steady-state qemu host CPU = {pct}% "
-          f"({'CLEAN idle' if pct < 30 else 'SPINNING/STARVED'})")
+    print(
+        f"\n[idle-cpu] steady-state qemu host CPU = {pct}% "
+        f"({'CLEAN idle' if pct < 30 else 'SPINNING/STARVED'})"
+    )
     assert pct < 40.0, (
         f"Guest is NOT idle at steady state: {pct}% host CPU (healthy < ~6%, "
         f"starved/spinning ~90%+). Something is busy-looping — likely serial/"

@@ -1,0 +1,19 @@
+# fatprobe — the fastfat paths the ucrtbase Tier-2 grader bugchecked arm64 on
+# (FsRtlCheckOplock, 0x23): MoveFileExW of an existing file, and a create/delete run.
+#   tools/payloads/fatprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=fatprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload fatprobe
+name: fatprobe
+description: rename and create/delete files in the temp dir; a bugcheck here is the fastfat oplock bug
+
+build_hint: "tools/payloads/fatprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/fatprobe/fatprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/fatprobe.exe
+
+test:
+  launch_marker: "[FATPROBE] done"
+  pass_marker: "[FATPROBE] done VERDICT=PASS"
+  launch_drain_secs: 300

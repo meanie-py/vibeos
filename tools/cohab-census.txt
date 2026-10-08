@@ -47,7 +47,7 @@ base/services/telnetd/CMakeLists.txt	1	# telnetd.c (→ telnetd-rust src/telnetd
 base/services/umpnpmgr/CMakeLists.txt	1	# event.c
 base/services/umpnpmgr/CMakeLists.txt	1	# event.c install.c rpcserver.c umpnpmgr.c → umpnpmgr-rust
 base/services/umpnpmgr/CMakeLists.txt	1	# install.c
-base/services/umpnpmgr/CMakeLists.txt	1	# pnp_s.c and umpnpmgr_stubs.c stay C: both are GENERATED (MIDL server stubs and spec2def), so
+base/services/umpnpmgr/CMakeLists.txt	1	# pnp_s.c stays C: it is GENERATED (the MIDL server stubs), so there is nothing to translate —
 base/services/umpnpmgr/CMakeLists.txt	1	# rpcserver.c
 base/services/umpnpmgr/CMakeLists.txt	1	# umpnpmgr.c
 base/services/wkssvc/CMakeLists.txt	1	# STILL C (correctly): the MIDL product wkssvc_s.c — generated wire marshalling for
@@ -60,6 +60,45 @@ base/services/wlansvc/CMakeLists.txt	1	# MIDL-generated wlansvc_s.c remains, whi
 base/services/wlansvc/CMakeLists.txt	1	# STILL C (correctly): the MIDL product wlansvc_s.c — generated wire marshalling for wlansvc.idl.
 base/services/wlansvc/CMakeLists.txt	1	# rpcserver.c (→ wlansvc-rust src/wlansvc/rpcserver.rs — the Rpc* WLAN entry points)
 base/services/wlansvc/CMakeLists.txt	1	# wlansvc.c (→ wlansvc-rust src/wlansvc/wlansvc.rs — wmain/ServiceMain + control handler)
+base/setup/lib/CMakeLists.txt	1	# bootcode.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/bootcode.rs)
+base/setup/lib/CMakeLists.txt	1	# bootsup.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/bootsup.rs)
+base/setup/lib/CMakeLists.txt	1	# fsutil.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/fsutil.rs)
+base/setup/lib/CMakeLists.txt	1	# install.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/install.rs)
+base/setup/lib/CMakeLists.txt	1	# mui.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/mui.rs)
+base/setup/lib/CMakeLists.txt	1	# registry.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/registry.rs)
+base/setup/lib/CMakeLists.txt	1	# settings.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/settings.rs)
+base/setup/lib/CMakeLists.txt	1	# setuplib.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/setuplib.rs)
+base/setup/lib/CMakeLists.txt	1	# spapisup/fileqsup.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/fileqsup.rs)
+base/setup/lib/CMakeLists.txt	1	# spapisup/infsupp.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/infsupp.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/arcname.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/arcname.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/bldrsup.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/bldrsup.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/devutils.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/devutils.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/filesup.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/filesup.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/fsrec.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/fsrec.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/genlist.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/genlist.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/inicache.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/inicache.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/ntverrsrc.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/ntverrsrc.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/osdetect.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/osdetect.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/partinfo.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/partinfo.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/partlist.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/partlist.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/regutil.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/regutil.rs)
+base/setup/lib/CMakeLists.txt	1	# utils/volutil.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/volutil.rs)
+base/setup/usetup/CMakeLists.txt	1	# cmdcons.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/cmdcons.rs)
+base/setup/usetup/CMakeLists.txt	1	# console.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/console.rs)
+base/setup/usetup/CMakeLists.txt	1	# consup.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/consup.rs)
+base/setup/usetup/CMakeLists.txt	1	# devinst.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/devinst.rs)
+base/setup/usetup/CMakeLists.txt	1	# fmtchk.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/fmtchk.rs)
+base/setup/usetup/CMakeLists.txt	1	# fslist.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/fslist.rs)
+base/setup/usetup/CMakeLists.txt	1	# genlist.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/genlist.rs)
+base/setup/usetup/CMakeLists.txt	1	# keytrans.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/keytrans.rs)
+base/setup/usetup/CMakeLists.txt	1	# mui.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/mui.rs)
+base/setup/usetup/CMakeLists.txt	1	# mui_tables.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/mui_tables/mod.rs, generated: port data)
+base/setup/usetup/CMakeLists.txt	1	# partlist.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/partlist.rs)
+base/setup/usetup/CMakeLists.txt	1	# progress.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/progress.rs)
+base/setup/usetup/CMakeLists.txt	1	# spapisup/cabinet.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/cabinet.rs)
+base/setup/usetup/CMakeLists.txt	1	# spapisup/fileqsup.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/fileqsup.rs)
+base/setup/usetup/CMakeLists.txt	1	# spapisup/infsupp.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/infsupp.rs)
+base/setup/usetup/CMakeLists.txt	1	# usetup.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/usetup.rs)
 base/shell/explorer/CMakeLists.txt	1	# TaskbarSettings::Save/Load method entry points forward from settings_shim.cpp.
 base/shell/explorer/CMakeLists.txt	1	# appbar.cpp — replaced by Rust (folded into explorer-rust traywnd.rs);
 base/shell/explorer/CMakeLists.txt	1	# desktop.cpp — replaced by Rust (explorer-rust desktop.rs)
@@ -88,9 +127,53 @@ base/shell/explorer/CMakeLists.txt	1	# traywnd.cpp — replaced by Rust (explore
 base/shell/explorer/CMakeLists.txt	1	# util.cpp — replaced by Rust (sdk/lib/rust/explorer-rust/src/explorer/util.rs);
 base/shell/rshell/CMakeLists.txt	1	# (misc.cpp) over rshell's COM module.
 base/shell/rshell/CMakeLists.txt	1	# exactly as it already does for ShellDDEInit since dde.cpp flipped.
+base/system/diskpart/CMakeLists.txt	1	# active.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/active.rs)
+base/system/diskpart/CMakeLists.txt	1	# add.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/add.rs)
+base/system/diskpart/CMakeLists.txt	1	# assign.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/assign.rs)
+base/system/diskpart/CMakeLists.txt	1	# attach.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/attach.rs)
+base/system/diskpart/CMakeLists.txt	1	# attributes.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/attributes.rs)
+base/system/diskpart/CMakeLists.txt	1	# automount.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/automount.rs)
+base/system/diskpart/CMakeLists.txt	1	# break.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/break.rs)
+base/system/diskpart/CMakeLists.txt	1	# clean.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/clean.rs)
+base/system/diskpart/CMakeLists.txt	1	# compact.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/compact.rs)
+base/system/diskpart/CMakeLists.txt	1	# convert.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/convert.rs)
+base/system/diskpart/CMakeLists.txt	1	# create.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/create.rs)
+base/system/diskpart/CMakeLists.txt	1	# delete.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/delete.rs)
+base/system/diskpart/CMakeLists.txt	1	# detach.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/detach.rs)
+base/system/diskpart/CMakeLists.txt	1	# detail.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/detail.rs)
+base/system/diskpart/CMakeLists.txt	1	# diskpart.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/diskpart.rs)
+base/system/diskpart/CMakeLists.txt	1	# dump.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/dump.rs)
+base/system/diskpart/CMakeLists.txt	1	# expand.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/expand.rs)
+base/system/diskpart/CMakeLists.txt	1	# extend.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/extend.rs)
+base/system/diskpart/CMakeLists.txt	1	# filesystems.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/filesystems.rs)
+base/system/diskpart/CMakeLists.txt	1	# format.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/format.rs)
+base/system/diskpart/CMakeLists.txt	1	# gpt.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/gpt.rs)
+base/system/diskpart/CMakeLists.txt	1	# guid.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/guid.rs)
+base/system/diskpart/CMakeLists.txt	1	# help.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/help.rs)
+base/system/diskpart/CMakeLists.txt	1	# import.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/import.rs)
+base/system/diskpart/CMakeLists.txt	1	# inactive.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/inactive.rs)
+base/system/diskpart/CMakeLists.txt	1	# interpreter.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/interpreter.rs)
+base/system/diskpart/CMakeLists.txt	1	# list.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/list.rs)
+base/system/diskpart/CMakeLists.txt	1	# merge.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/merge.rs)
+base/system/diskpart/CMakeLists.txt	1	# misc.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/misc.rs)
+base/system/diskpart/CMakeLists.txt	1	# mountmgr.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/mountmgr.rs)
+base/system/diskpart/CMakeLists.txt	1	# offline.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/offline.rs)
+base/system/diskpart/CMakeLists.txt	1	# online.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/online.rs)
+base/system/diskpart/CMakeLists.txt	1	# partlist.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/partlist.rs)
+base/system/diskpart/CMakeLists.txt	1	# recover.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/recover.rs)
+base/system/diskpart/CMakeLists.txt	1	# remove.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/remove.rs)
+base/system/diskpart/CMakeLists.txt	1	# repair.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/repair.rs)
+base/system/diskpart/CMakeLists.txt	1	# rescan.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/rescan.rs)
+base/system/diskpart/CMakeLists.txt	1	# retain.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/retain.rs)
+base/system/diskpart/CMakeLists.txt	1	# san.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/san.rs)
+base/system/diskpart/CMakeLists.txt	1	# select.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/select.rs)
+base/system/diskpart/CMakeLists.txt	1	# setid.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/setid.rs)
+base/system/diskpart/CMakeLists.txt	1	# shrink.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/shrink.rs)
+base/system/diskpart/CMakeLists.txt	1	# uniqueid.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/uniqueid.rs)
 base/system/lsass/CMakeLists.txt	1	# FULL flip + CARGO-DRIVEN LINK. lsass.c is replaced by Rust (lsass-rust), and
 base/system/lsass/CMakeLists.txt	1	# Keep lsass.c on disk (never delete the C — translation philosophy).
-base/system/sehtest/CMakeLists.txt	1	# ntoskrnl/seh_poc.c. Compiled with REAL clang native SEH (-fms-extensions),
+base/system/sehtest/CMakeLists.txt	1	# _local_unwind2 come from libpseh.a's real i386/seh.s. Spawned by userinit at
+base/system/sehtest/CMakeLists.txt	1	# ntoskrnl/seh_poc.c. Compiled with REAL clang native SEH (-fms-extensions).
 base/system/services/CMakeLists.txt	1	# link compiles ZERO C — services.c was the last C residue, now gone from the
 base/system/services/CMakeLists.txt	1	# sources (services_rust_stub.c + the generated svcctl_s.c) into
 base/system/services/CMakeLists.txt	1	# winlogon). ALL 9 SCM .c are now Rust (services.c flipped → services-rust/
@@ -98,7 +181,6 @@ base/system/smss/CMakeLists.txt	1	# smss_rust_stub.c was an empty TU (archive-ex
 base/system/winlogon/CMakeLists.txt	1	# (winlogon_rust_stub.c + the generated winreg_s.c) into compile_commands.json
 base/system/winlogon/CMakeLists.txt	1	# server (rpcserver.c) and the generated winreg_s.c RPC stub stay C. So this is
 base/system/winlogon/CMakeLists.txt	1	# the GINA core (wlx.c), SAS state machine (sas.c), main (winlogon.c), RPC
-boot/freeldr/bootsect/CMakeLists.txt	1	# experimental FATY.S generator were pruned — nothing executes a legacy MBR/VBR
 boot/freeldr/freeldr/CMakeLists.txt	1	# ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
 boot/freeldr/freeldr/CMakeLists.txt	1	# AddMemoryDescriptor symbols heap.c/meminit.c also provided are now
 boot/freeldr/freeldr/CMakeLists.txt	1	# Crown jewel: peloader.c (and the rest of freeldr) is translated to Rust. The
@@ -159,6 +241,8 @@ boot/freeldr/freeldr/CMakeLists.txt	1	# ui/tui.c # replaced by Rust (freeldr-rus
 boot/freeldr/freeldr/CMakeLists.txt	1	# ui/tuimenu.c # replaced by Rust (freeldr-rust/src/tuimenu.rs)
 boot/freeldr/freeldr/CMakeLists.txt	1	# ui/ui.c # replaced by Rust (freeldr-rust/src/ui.rs)
 boot/freeldr/freeldr/CMakeLists.txt	1	# ui/video.c # replaced by Rust (freeldr-rust/src/video.rs)
+boot/freeldr/freeldr/pcat.cmake	1	# misc.S and linux.S were flipped to Rust global_asm! (loader_asm.rs).
+boot/freeldr/freeldr/pcat.cmake	1	# multiboot.S carries the multiboot header and owns `cmdline`, which entry.S
 boot/freeldr/freeldr/rosload.cmake	1	# ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
 boot/freeldr/freeldr/rosload.cmake	1	# (linux.S + amd64 misc.S were flipped to Rust global_asm! in freeldr-rust,
 boot/freeldr/freeldr/rosload.cmake	1	# (rosload-cargo .asm()); it needs only asm.inc + pcbios.h (REGS_*).
@@ -270,12 +354,9 @@ dll/cpl/sysdm/CMakeLists.txt	1	# startrec.c
 dll/cpl/sysdm/CMakeLists.txt	1	# sysdm.c
 dll/cpl/sysdm/CMakeLists.txt	1	# userprofile.c
 dll/cpl/sysdm/CMakeLists.txt	1	# virtmem.c)
-dll/directx/wine/d3d10/CMakeLists.txt	1	# C4267: effect.c narrows strlen(mask) into a BYTE ComponentCount.
-dll/directx/wine/d3d11/CMakeLists.txt	1	# C4133: device.c casts a D3D_FEATURE_LEVEL* to an enum wined3d_feature_level*.
 dll/directx/wine/d3dx9_36/d3dx9.cmake	1	# math.c wants M_PI, which <math.h> only exposes on request here.
 dll/directx/wine/dmime/CMakeLists.txt	1	# performance.c drives its message pump with a CONDITION_VARIABLE.
 dll/directx/wine/dpnet/CMakeLists.txt	1	# dpnet_main.c guards its one-time init with InitOnceExecuteOnce.
-dll/directx/wine/wined3d/CMakeLists.txt	1	# C4319: context_vk.c masks a 64-bit VkDeviceSize with a size_t-wide
 dll/ntdll/CMakeLists.txt	1	# asm = generates the asm includes (ks*.inc / syscalls.inc / sysfuncs.h) the
 dll/ntdll/CMakeLists.txt	1	# dbg/dbgui.c — replaced by Rust (ntdll-rust/src/dbg/dbgui.rs);
 dll/ntdll/CMakeLists.txt	1	# dispatch/dispatch.c — replaced by Rust (ntdll-rust/src/dispatch/mod.rs,
@@ -338,6 +419,8 @@ dll/win32/authz/CMakeLists.txt	1	# authz.c clictx.c resman.c → authz-rust
 dll/win32/authz/CMakeLists.txt	1	# clictx.c
 dll/win32/authz/CMakeLists.txt	1	# resman.c
 dll/win32/cabinet/CMakeLists.txt	1	# (reactos-link, ModuleKind::Win32Dll) compiles rust_cohab_stub.c (wine debug
+dll/win32/crtdll/CMakeLists.txt	1	# advapi32: the shared CRT's rand_s calls SystemFunction036 (RtlGenRandom). dllmain.c used to
+dll/win32/crtdll/CMakeLists.txt	1	# dllmain.c is msvcrt-crt-rust src/legacy.rs (CRTDLL_* names, which crtdll.spec maps).
 dll/win32/dbghelp/CMakeLists.txt	1	# elf_module.c
 dll/win32/dbghelp/CMakeLists.txt	1	# macho_module.c
 dll/win32/dnsapi/CMakeLists.txt	1	# adns.c
@@ -515,19 +598,12 @@ dll/win32/msv1_0/CMakeLists.txt	1	# user.c
 dll/win32/msv1_0/CMakeLists.txt	1	# user.c → src/msv1_0/user.rs
 dll/win32/msv1_0/CMakeLists.txt	1	# usercontext.c → src/msv1_0/usercontext.rs
 dll/win32/msv1_0/CMakeLists.txt	1	# usercontext.c)
-dll/win32/msvcrt/CMakeLists.txt	1	# `_vcprintf_l`, `_vcwprintf` and `_vcwprintf_l` are console.c's own exports, and are
-dll/win32/msvcrt/CMakeLists.txt	1	# above: no va_start on stable, and left in file.c they would keep calling
-dll/win32/msvcrt/CMakeLists.txt	1	# cannot be Rust (no va_start on stable) and cannot stay in wcs.c
-dll/win32/msvcrt/CMakeLists.txt	1	# console.c's 4 `_cprintf`/`_cwprintf` WINAPIV `...` entry points. Same reason and same
-dll/win32/msvcrt/CMakeLists.txt	1	# copies (string.c etc.) go dead (--allow-multiple-definition, MODULE-link
-dll/win32/msvcrt/CMakeLists.txt	1	# file.c's 20 `...` entry points — the 16 fprintf/printf/fwprintf/wprintf
-dll/win32/msvcrt/CMakeLists.txt	1	# file.c's own C bodies. Their delegates are all external (the `v*` twins
-dll/win32/msvcrt/CMakeLists.txt	1	# placement as the three above: no va_start on stable, and left in process.c they
-dll/win32/msvcrt/CMakeLists.txt	1	# process.c's 16 `_exec*`/`_spawn*` WINAPIV `...` entry points. Same reason and same
-dll/win32/msvcrt/CMakeLists.txt	1	# reason here — scanf.c's 16 engines are `static`, so a Rust engine cannot
-dll/win32/msvcrt/CMakeLists.txt	1	# scanf.c's engines they are not `static`), so first-match reaches Rust.
-dll/win32/msvcrt/CMakeLists.txt	1	# the C monolith (string.c.obj) is pulled. Plain link-order is NOT enough: the
-dll/win32/msvcrt/CMakeLists.txt	1	# would keep calling process.c's own C bodies. Their `_v*`-prefixed twins are Rust in
+dll/win32/msvcrt/CMakeLists.txt	1	# gen_ctype_tables.py checks the Rust ctype tables against ctype.c.obj's .data,
+dll/win32/msvcrt/CMakeLists.txt	1	# i386/__wine_RtlUnwind.s, i386/exception_ptr.s, i386/inout.s -- replaced by Rust
+dll/win32/msvcrt/CMakeLists.txt	1	# msvcrt_rust_shims (rust_varargs_shim.c, rust_scanf_shim.c, rust_file_varargs_shim.c,
+dll/win32/msvcrt/CMakeLists.txt	1	# rust_process_varargs_shim.c, rust_console_varargs_shim.c), C only because stable Rust
+dll/win32/msvcrt/msvcrt_rust_cohab.cmake	1	# The legacy DLLs' own overrides (crtdll's dllmain.c, msvcrt20.c) are in the archive too,
+dll/win32/msvcrt20/CMakeLists.txt	1	# msvcrt20.c is msvcrt-crt-rust src/legacy.rs (MSVCRT20__getmainargs/__wgetmainargs).
 dll/win32/mswsock/CMakeLists.txt	1	# extensions.c
 dll/win32/mswsock/CMakeLists.txt	1	# extensions.c — replaced by Rust (mswsock-rust src/mswsock/extensions.rs — AcceptEx/TransmitFile/GetAcceptExSockaddrs)
 dll/win32/mswsock/CMakeLists.txt	1	# mswhelper.c
@@ -843,7 +919,8 @@ dll/win32/syssetup/CMakeLists.txt	1	# rust_varargs_shim.c is no longer built (re
 dll/win32/syssetup/CMakeLists.txt	1	# security.c
 dll/win32/syssetup/CMakeLists.txt	1	# wizard.c
 dll/win32/syssetup/CMakeLists.txt	1	#addons.c
-dll/win32/ucrtbase/CMakeLists.txt	1	# Silence warnings in ucrtbase_stubs.c
+dll/win32/ucrtbase/CMakeLists.txt	1	# printf.c (sprintf/_vsnprintf) and ucrt_varargs_shim.c (the `...` entry points as
+dll/win32/ucrtbase/CMakeLists.txt	1	# stubs.c (atexit, operator_new/delete, _chkesp_failed, __acrt_initialize_sse2) is
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c — replaced by Rust (userenv-rust src/userenv/desktop.rs — GetAllUsers/DefaultUserProfileDirectory)
 dll/win32/userenv/CMakeLists.txt	1	# directory.c
@@ -1021,7 +1098,7 @@ drivers/bus/pci/CMakeLists.txt	1	# pci.c/fdo.c/pdo.c are translated to Rust (sdk
 drivers/bus/pcix/CMakeLists.txt	1	# debug.c device.c dispatch.c enum.c fdo.c hookhal.c init.c pcivrify.c pdo.c power.c utils.c
 drivers/bus/pcix/CMakeLists.txt	1	# guid.c (GUID data) + the 4 empty stub TUs stay C:
 drivers/bus/pcix/CMakeLists.txt	1	# pcix-rust builds on PLAIN STABLE rustc. pci/id.rs faithfully translates id.c's C-variadic
-drivers/bus/pcix/CMakeLists.txt	1	# rule). 28 .c bodies are replaced by libpcix_rust.a; guid.c (GUID data instantiation,
+drivers/bus/pcix/CMakeLists.txt	1	# rule). 31 .c bodies are replaced by libpcix_rust.a; guid.c (GUID data instantiation,
 drivers/bus/pcix/CMakeLists.txt	1	# trampolines in rust_varargs_shim.c below, calling the fixed-arity `*_v` twins in
 drivers/filesystems/cdfs/CMakeLists.txt	1	# Two .c stay C (never translated -> no .rs counterpart): cdprocssrc.c (forces
 drivers/filesystems/cdfs/CMakeLists.txt	1	# create.c devctrl.c deviosup.c dirctrl.c dirsup.c fileinfo.c fsctrl.c fspdisp.c
@@ -1598,6 +1675,7 @@ ntoskrnl/ntos.cmake	2	#list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/kdbg/i3
 ntoskrnl/ntos.cmake	1	#list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/se/debug.c) # replaced by Rust
 sdk/cmake/baseaddress_dwarf.cmake	1	# cohab grows kernel32 past its old 0x440000 slot — proc.c took it to 0x47f000,
 sdk/cmake/gcc.cmake	1	# declares them; dbghelp_apitest's pdb.c assigns the failure hook), and those
+sdk/cmake/gcc.cmake	1	# lists ${file}_stubs.c among its sources, and this swaps it for the Rust object, so
 sdk/lib/cmlib/CMakeLists.txt	1	# Add a placeholder TU (mirrors the HAL lib_hal_*_empty.c pattern); the real
 sdk/lib/conutils/CMakeLists.txt	1	# Rust archive (lsalib-style cohab). instream.c was already not built. 3 arches.
 sdk/lib/conutils/CMakeLists.txt	1	# here (were in outstream.c, no longer built).
@@ -1611,14 +1689,17 @@ sdk/lib/cportlib/CMakeLists.txt	1	# add_library(cportlib cport.c) # replaced by 
 sdk/lib/cportlib/CMakeLists.txt	1	# cport.c (the NS16550 serial library) is translated to Rust (cport-rust,
 sdk/lib/cportlib/CMakeLists.txt	1	# cportlib — Rust cohabitation flip (cport.c -> sdk/lib/rust/cport-rust)
 sdk/lib/cportlib/CMakeLists.txt	1	# libcportlib.a by path, which rust_cohab_stub.c keeps present).
+sdk/lib/crt/CMakeLists.txt	1	# printf/streamout.c printf/wstreamout.c printf/wsprintfA.c printf/wsprintfW.c
+sdk/lib/crt/CMakeLists.txt	1	# printf/wvsprintfA.c printf/wvsprintfW.c printf/wvsnprintfA.c printf/wvsnprintfW.c
+sdk/lib/crt/CMakeLists.txt	1	# string/strnlen.c string/wcsnlen.c string/mbstowcs_nt.c string/wcstombs_nt.c
 sdk/lib/crt/libcntpr.cmake	1	# (float feature). These are the AMD-libm math/libm_sse2/*f.c — amd64-ONLY
 sdk/lib/crt/libcntpr.cmake	1	# (i386 uses *_asm.s, REMOVE_ITEM'd from the asm list above so the
 sdk/lib/crt/libcntpr.cmake	1	# (iswctype) + is_wctype.c (is_wctype).
 sdk/lib/crt/libcntpr.cmake	1	# (no funcs; unused by the linked iswctype). winesup.c stays C but its
 sdk/lib/crt/libcntpr.cmake	1	# + mem/memicmp.c + stdlib/rand_nt.c + string/ctype.c + iswctype_nt.c +
+sdk/lib/crt/libcntpr.cmake	1	# NOT 80-bit here: gcc.cmake passes -mlong-double-64.) div.c is NOT here — it's
 sdk/lib/crt/libcntpr.cmake	1	# Wave SCANF: the kernel's variadic scanf shell. scanf.c (full C engine)
 sdk/lib/crt/libcntpr.cmake	1	# Wave WCS flips the kernel (_LIBCNT_) slice of wcs.c — the 8 pure wide
-sdk/lib/crt/libcntpr.cmake	1	# `long double` arg — cnt-rust gates nexttowardf out on x86), exp2f.c (f32
 sdk/lib/crt/libcntpr.cmake	1	# amd64/arm64; i386 keeps its x87 atan_asm.s / atan2_asm.s — modf is not in
 sdk/lib/crt/libcntpr.cmake	1	# amd64/arm64; i386 keeps tan_asm.s). Uniform sin/cos quotient per the
 sdk/lib/crt/libcntpr.cmake	1	# appends printf/format_float.c + format_floatw.c — the Rust
@@ -1633,17 +1714,21 @@ sdk/lib/crt/libcntpr.cmake	1	# feature). sincos = the combined sin/cos (math/sin
 sdk/lib/crt/libcntpr.cmake	1	# feature, amd64/arm64; i386 keeps its x87 *_asm.s). These are the SAME
 sdk/lib/crt/libcntpr.cmake	1	# feature, amd64/arm64; i386 keeps its x87 *_asm.s). sin/cos are the same
 sdk/lib/crt/libcntpr.cmake	1	# hand-optimized AMD-libm tan AND arm64's arm64/tan.c (already sin/cos).
-sdk/lib/crt/libcntpr.cmake	1	# i386-only-C by ABI (80-bit `long double` arg). div.c is NOT here — it's
 sdk/lib/crt/libcntpr.cmake	1	# in libcntpr. Faithful port of the AMD-libm math/libm_sse2/hypot.c (the
 sdk/lib/crt/libcntpr.cmake	1	# is*/_tolower/_toupper/toupper + wide isw*/towlower) + iswctype_nt.c
 sdk/lib/crt/libcntpr.cmake	1	# is_wctype.c are all-arch (Wave MEM2/RAND/CTYPE, cnt-difftest-gated).
 sdk/lib/crt/libcntpr.cmake	1	# math/*f.c in a different archive). The Rust reuses the f64 foundation
 sdk/lib/crt/libcntpr.cmake	1	# so they stay C. wctype.c is only the dead wine_wctype_table data
-sdk/lib/crt/libcntpr.cmake	1	# the i386 libm_sse2.c SSE-register wrappers, nexttowardf.c (80-bit
+sdk/lib/crt/libcntpr.cmake	1	# the i386 libm_sse2.c SSE-register wrappers, nexttowardf.c (an f32 return,
 sdk/lib/crt/libcntpr.cmake	1	# the portable math/sqrt.c fast-invsqrt approximation) — cnt-rust replaces
 sdk/lib/crt/libcntpr.cmake	1	# tiny scanf_trampoline.c — Rust can't DEFINE variadics on stable. It
 sdk/lib/crt/libcntpr.cmake	1	# uses *_asm.s, so REMOVE_ITEM is a harmless no-op there); mem/memccpy.c
+sdk/lib/crt/libcntpr.cmake	1	# which the no-SSE kernel cell cannot compile), exp2f.c (f32
+sdk/lib/crt/math/math.cmake	1	# math/i386/atan2_asm.s, amd64 AMD libm_sse2 atan2.c with _handle_error/_invoke_matherr/
 sdk/lib/crt/math/math.cmake	1	# math/i386/fabs_asm.s # FIXME
+sdk/lib/crt/math/math.cmake	1	# math/j0_y0.c
+sdk/lib/crt/math/math.cmake	1	# math/j1_y1.c
+sdk/lib/crt/math/math.cmake	1	# math/jn_yn.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/_chgsign.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/_chgsignf.c
 sdk/lib/crt/math/math.cmake	1	# math/libm_sse2/_copysign.c
@@ -1660,6 +1745,8 @@ sdk/lib/crt/msvcrtex.cmake	1	# recalloc.c is NEW upstream (CORE-20596): it defin
 sdk/lib/crt/msvcrtex.cmake	1	# sec_mgr.c started calling it in this merge.
 sdk/lib/crt/printf/printf.cmake	1	# instead deleted swprintf.c and renamed vswprintf.c to _vswprintf.c; we keep ours,
 sdk/lib/crt/printf/printf.cmake	1	# swprintf. We took that change. But swprintf.c / vswprintf.c ARE the non-conforming
+sdk/lib/delayimp/CMakeLists.txt	1	# __pfnDliNotifyHook2/__pfnDliFailureHook2 hook variables, from delayimp.c,
+sdk/lib/delayimp/CMakeLists.txt	1	# pfnDliNotifyHook2.c and pfnDliFailureHook2.c (kept on disk as the record). `delayimp` stays
 sdk/lib/dnslib/CMakeLists.txt	1	# addr.c dnsaddr.c flatbuf.c hostent.c memory.c sablob.c straddr.c string.c
 sdk/lib/dnslib/CMakeLists.txt	1	# debug.c dnsutil.c ip6.c name.c print.c record.c rrprint.c table.c utf8.c
 sdk/lib/dnslib/CMakeLists.txt	1	# disk per the never-delete rule. dnslib_rust_stub.c is the anchor TU
@@ -1677,6 +1764,7 @@ sdk/lib/evtlib/CMakeLists.txt	1	# ── kernel: drop evtlib.c, link libevtlib_r
 sdk/lib/libwine/CMakeLists.txt	1	# string.c implements _stricmp, already shipped with crt
 sdk/lib/lsalib/CMakeLists.txt	1	# add_library(ntlsalib lsa.c) + _NTSYSTEM_ # body replaced by Rust; kept on disk
 sdk/lib/lsalib/CMakeLists.txt	1	# lsa.c is translated to Rust (lsalib-rust, kept on disk per the never-delete
+sdk/lib/pseh/CMakeLists.txt	1	# The user-mode SEH runtime (seh.s's, + dummy.c's volatile symbols) is pseh-rt, the same Rust
 sdk/lib/rtl/CMakeLists.txt	1	# The asm stub's _LdrpAccessResource@16 callee lived in res.c.obj (now Rust); keeping
 sdk/lib/rtl/CMakeLists.txt	1	# access.c — replaced by Rust implementation (sdk/lib/rust/access/)
 sdk/lib/rtl/CMakeLists.txt	1	# acl.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ACL)
@@ -1707,7 +1795,6 @@ sdk/lib/rtl/CMakeLists.txt	1	# encode.c — replaced by Rust implementation (sdk
 sdk/lib/rtl/CMakeLists.txt	1	# env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
 sdk/lib/rtl/CMakeLists.txt	1	# error.c — replaced by Rust implementation (sdk/lib/rust/rtl-error/)
 sdk/lib/rtl/CMakeLists.txt	1	# exception.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
-sdk/lib/rtl/CMakeLists.txt	1	# export the Rtl{Cm,Io}{En,De}codeMemIoResource family. Porting memres.c to
 sdk/lib/rtl/CMakeLists.txt	1	# generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
 sdk/lib/rtl/CMakeLists.txt	1	# handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
 sdk/lib/rtl/CMakeLists.txt	1	# heap.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/, Wave HEAP)
@@ -1724,7 +1811,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# largeint.c — replaced by Rust implementation (s
 sdk/lib/rtl/CMakeLists.txt	1	# locale.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC-locale)
 sdk/lib/rtl/CMakeLists.txt	1	# luid.c — replaced by Rust implementation (sdk/lib/rust/luid/)
 sdk/lib/rtl/CMakeLists.txt	2	# mem.c — replaced by Rust implementation (sdk/lib/rust/mem/)
-sdk/lib/rtl/CMakeLists.txt	1	# memres.c is upstream-new (2026, memory/port resource descriptor encode/decode
+sdk/lib/rtl/CMakeLists.txt	1	# memres.c (upstream-new, 2026) — replaced by Rust implementation (sdk/lib/rust/rtl-misc/
 sdk/lib/rtl/CMakeLists.txt	1	# memstream.c — replaced by Rust implementation (sdk/lib/rust/rtl-misc/, Wave MISC)
 sdk/lib/rtl/CMakeLists.txt	1	# message.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
 sdk/lib/rtl/CMakeLists.txt	1	# network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
@@ -1734,7 +1821,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# ppb.c — replaced by Rust implementation (sdk/li
 sdk/lib/rtl/CMakeLists.txt	1	# prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
 sdk/lib/rtl/CMakeLists.txt	1	# priv.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRIV)
 sdk/lib/rtl/CMakeLists.txt	1	# process.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PRC)
-sdk/lib/rtl/CMakeLists.txt	1	# processor.c is upstream-new (2026) but declined here: it DEFINES
+sdk/lib/rtl/CMakeLists.txt	1	# processor.c (upstream-new, 2026) — replaced by Rust (rtl-strings cabi): it defines
 sdk/lib/rtl/CMakeLists.txt	1	# propvar.c — replaced by Rust implementation (sdk/lib/rust/rtl-propvar/)
 sdk/lib/rtl/CMakeLists.txt	1	# random.c — replaced by Rust implementation (sdk/lib/rust/random/)
 sdk/lib/rtl/CMakeLists.txt	1	# rangelist.c — replaced by Rust implementation (sdk/lib/rust/rtl-rangelist/)
@@ -1763,6 +1850,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# version.c — replaced by Rust implementation (sd
 sdk/lib/rtl/CMakeLists.txt	1	# wait.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC)
 sdk/lib/rtl/CMakeLists.txt	1	# wine_debug.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
 sdk/lib/rtl/CMakeLists.txt	1	# workitem.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
+sdk/lib/rtl/CMakeLists.txt	1	#memres.c
 sdk/lib/skiplist/CMakeLists.txt	1	# add_library(skiplist16 skiplist.c) # body replaced by Rust; kept on disk
 sdk/lib/skiplist/CMakeLists.txt	1	# skiplist.c → Rust (sdk/lib/rust/skiplist-rust, kept on disk per the never-delete
 sdk/lib/smlib/CMakeLists.txt	1	# smclient.c — replaced by Rust (smss-csrss-rust/src/smlib/smclient.rs)
@@ -1784,6 +1872,7 @@ sdk/lib/uuid/CMakeLists.txt	1	# oledbnewiid.c
 sdk/lib/uuid/CMakeLists.txt	1	# qosguid.c
 sdk/lib/uuid/CMakeLists.txt	1	# tapi3iid.c
 sdk/lib/uuid/CMakeLists.txt	1	# vcguids.c
+sdk/lib/vcruntime/CMakeLists.txt	1	# i386/_chkesp.s is ucrt-rust's ucrt_reactos.rs (global_asm!) for ucrtbase, and msvcrt's
 sdk/lib/vcstartup/CMakeLists.txt	1	# msvcrtex needs the same hook msvcrtex gets from startup/gccmain.c. It used
 subsystems/csr/csrlib/CMakeLists.txt	1	# api.c — replaced by Rust (smss-csrss-rust/src/csrlib/api.rs)
 subsystems/csr/csrlib/CMakeLists.txt	1	# capture.c — replaced by Rust (smss-csrss-rust/src/csrlib/capture.rs)
@@ -1942,6 +2031,7 @@ win32ss/CMakeLists.txt	1	# user/ntuser/hook.c # replaced by Rust (sdk/lib/rust/w
 win32ss/CMakeLists.txt	1	# user/ntuser/hotkey.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/hotkey.rs) — cohabitation [ntuser wave 18]
 win32ss/CMakeLists.txt	1	# user/ntuser/ime.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/ime.rs) — cohabitation [ntuser wave 36]
 win32ss/CMakeLists.txt	1	# user/ntuser/input.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/input.rs) — cohabitation [ntuser wave 30]
+win32ss/CMakeLists.txt	1	# user/ntuser/job.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/job.rs) — upstream b272427baa3, never built as C here
 win32ss/CMakeLists.txt	1	# user/ntuser/kbdlayout.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/kbdlayout.rs) — cohabitation [ntuser frontier]
 win32ss/CMakeLists.txt	1	# user/ntuser/keyboard.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/keyboard.rs) — cohabitation [ntuser wave 38]
 win32ss/CMakeLists.txt	1	# user/ntuser/layered.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/layered.rs) — cohabitation [ntuser wave 16]

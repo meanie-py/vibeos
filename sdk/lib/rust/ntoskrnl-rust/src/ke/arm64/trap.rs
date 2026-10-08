@@ -358,12 +358,23 @@ unsafe fn KiDeliverUserApcArm64(
     TrapFrame: PKTRAP_FRAME,
     ExceptionFrame: ntkrnl_sys::ddk::PKEXCEPTION_FRAME,
 ) {
-    // Only a return to EL0 (user) with a pending user APC needs this.
+    // Only a return to EL0 (user) with a pending APC needs this.
     if ((*TrapFrame).Spsr & 0xF) != 0 {
         return;
     }
     let Thread = KeGetCurrentThread() as PKTHREAD;
-    if kt_ApcState(Thread).UserApcPending == 0 {
+    // A pending KERNEL APC must be drained here too, not just a user one. x86
+    // never gets back to user mode with one pending: lowering IRQL on the way
+    // out fires the APC interrupt. arm64's software APC bit only drains at a
+    // KfLowerIrql, so a kernel APC still pending at this point used to run at
+    // the thread's NEXT syscall -- and for IopCompleteRequest that means
+    // writing the I/O status block into a user stack slot the caller had
+    // already reused. dhcpcsvc's AdapterDiscoveryThread returned to PC=0x74
+    // that way: 0x74 is netstack's 116-byte IFEntry reply, landed on a saved
+    // LR, and the dead svchost wedged the arm64 conformance sweep.
+    // KiDeliverApc(UserMode) runs the kernel list first and only touches the
+    // user list when UserApcPending is set.
+    if kt_ApcState(Thread).UserApcPending == 0 && kt_ApcState(Thread).KernelApcPending == 0 {
         return;
     }
 
@@ -398,6 +409,63 @@ const KI_FAULT_RETRY_FATAL: u32 = 1_000_000;
 /// so a torn read on a foreign CPU's slot can at worst delay the report.
 static mut KiFaultRetryState: [(u64, u64, u64, u32); 8] = [(0, 0, 0, 0); 8];
 
+/// Per-CPU hash of the faulting context's registers. A real loop returns to the faulting
+/// instruction with the SAME registers every round; a stream of distinct faults that merely
+/// share (VA, PC, TTBR0) -- Cc reading many small files through a recycled view VA, the heap
+/// re-committing one page -- differs in its arguments, and must not count as a loop.
+static mut KiFaultRetryRegs: [u64; 8] = [0; 8];
+/// Per-CPU count of faults that matched (VA, PC, TTBR0) but not the registers: churn the
+/// old fingerprint reported as a loop.
+static mut KiFaultRetryChurn: [u32; 8] = [0; 8];
+
+unsafe fn ki_fault_regs_hash(TrapFrame: PKTRAP_FRAME) -> u64 {
+    let x = &(*TrapFrame).__bindgen_anon_3.X;
+    let mut h = (*TrapFrame).Sp ^ (*TrapFrame).Lr.rotate_left(17);
+    for (i, r) in x.iter().enumerate() {
+        h ^= r.rotate_left((i as u32 * 7) % 64);
+        h = h.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    }
+    h
+}
+
+/// Per-CPU: PAR_EL1 from `AT S1E1R` on the fault VA, taken on fault ENTRY before the pager
+/// runs, and how many rounds of the current loop found it already translatable. A loop whose
+/// rounds enter with a valid translation is the MMU disagreeing with AT; one whose rounds
+/// enter faulting is something tearing the PTE down between the pager and the retry.
+static mut KiFaultEntryPar: [(u64, u32); 8] = [(0, 0); 8];
+
+/// The page of a fault the pager has "resolved" eight times running: a loop in progress. MM's
+/// unmap paths call `KiFaultLoopUnmapCheck` so whoever tears that page's mapping down
+/// between the pager and the retry names itself. Reports are budgeted.
+static mut KiFaultLoopVa: u64 = 0;
+static mut KiFaultLoopUnmapReports: u32 = 0;
+
+/// Called by MM before it clears a PTE. Prints the unmapping call chain when `Address` is
+/// the page of a fault loop in progress.
+pub unsafe fn KiFaultLoopUnmapCheck(Address: u64, Caller: u64) {
+    let va = core::ptr::read_volatile(core::ptr::addr_of!(KiFaultLoopVa));
+    if va == 0 || Address & !0xFFF != va || KiFaultLoopUnmapReports >= 4 {
+        return;
+    }
+    KiFaultLoopUnmapReports += 1;
+    TrapPuts(b"[FAULTLOOP-UNMAP] VA="); TrapPutHex64(Address);
+    TrapPuts(b" unmapped by:\r\n");
+    let mut caller: [ULONG_PTR; 1] = [Caller as ULONG_PTR];
+    crate::ke::bug::KeRosDumpStackFrameArray(caller.as_mut_ptr(), 1);
+    let mut frames: [ULONG_PTR; 16] = [0; 16];
+    let mut n = 0usize;
+    let mut fp: u64;
+    core::arch::asm!("mov {}, x29", out(reg) fp, options(nomem, nostack));
+    while n < frames.len() && fp >> 63 != 0 && fp & 0xF == 0 {
+        frames[n] = core::ptr::read_volatile((fp + 8) as *const u64) as ULONG_PTR;
+        n += 1;
+        fp = core::ptr::read_volatile(fp as *const u64);
+    }
+    if n > 0 {
+        crate::ke::bug::KeRosDumpStackFrameArray(frames.as_mut_ptr(), n as ULONG);
+    }
+}
+
 #[inline(always)]
 unsafe fn ki_cpu_slot() -> usize {
     let mpidr: u64;
@@ -409,6 +477,8 @@ unsafe fn ki_cpu_slot() -> usize {
 /// reporting success, because that breaks any loop in progress.
 unsafe fn ki_fault_retry_forget() {
     KiFaultRetryState[ki_cpu_slot()] = (0, 0, 0, 0);
+    KiFaultLoopVa = 0;
+    KiFaultEntryPar[ki_cpu_slot()] = (0, 0);
 }
 
 /// True when the pager has now claimed success on the identical fault
@@ -428,8 +498,26 @@ unsafe fn ki_fault_retry_tripped(TrapFrame: PKTRAP_FRAME, DFSC: ULONG) -> bool {
 
     let slot = ki_cpu_slot();
     let st = KiFaultRetryState[slot];
-    let n = if st.0 == va && st.1 == pc && st.2 == ttbr0 { st.3 + 1 } else { 1 };
+    let regs = ki_fault_regs_hash(TrapFrame);
+    let same_site = st.0 == va && st.1 == pc && st.2 == ttbr0;
+    let same_regs = KiFaultRetryRegs[slot] == regs;
+    if same_site && !same_regs {
+        KiFaultRetryChurn[slot] += 1;
+    }
+    KiFaultRetryRegs[slot] = regs;
+    let n = if same_site && same_regs { st.3 + 1 } else { 1 };
     KiFaultRetryState[slot] = (va, pc, ttbr0, n);
+    if n == 1 {
+        KiFaultLoopVa = 0;
+        KiFaultEntryPar[slot].1 = 0;
+    } else if n == 8 {
+        // Eight identical rounds is a loop (churn no longer counts, and a real one passes
+        // round 8 in microseconds): arm the tripwire on its page with a fresh budget.
+        // Disarmed when the loop ends, so it never reports another loop's (or a
+        // legitimate) unmap. Arming at round 2 printed ordinary double faults every boot.
+        KiFaultLoopVa = va & !0xFFF;
+        KiFaultLoopUnmapReports = 0;
+    }
     // Report once, on the way past the reporting mark, and keep going. Printing
     // every turn would itself hang the box on the UART.
     if n != KI_FAULT_RETRY_REPORT && n != KI_FAULT_RETRY_FATAL {
@@ -453,7 +541,9 @@ unsafe fn ki_fault_retry_tripped(TrapFrame: PKTRAP_FRAME, DFSC: ULONG) -> bool {
         b"\r\n[FAULTLOOP] note: the pager has reported success on the same fault ".as_slice()
     });
     TrapPutHex32(n);
-    TrapPuts(b" times\r\n");
+    TrapPuts(b" times (same registers each round; churn seen on this CPU so far: ");
+    TrapPutHex32(KiFaultRetryChurn[slot]);
+    TrapPuts(b")\r\n");
     TrapPuts(b"[FAULTLOOP] VA=");    TrapPutHex64(va);
     TrapPuts(b" PC=");               TrapPutHex64(pc);
     TrapPuts(b" ESR=");              TrapPutHex32((*TrapFrame).Esr);
@@ -466,10 +556,73 @@ unsafe fn ki_fault_retry_tripped(TrapFrame: PKTRAP_FRAME, DFSC: ULONG) -> bool {
     let pte_va = 0xFFFFF68000000000u64
         .wrapping_add(((va >> 12) & 0xF_FFFF_FFFFu64) << 3);
     let pte = core::ptr::read_volatile(pte_va as *const u64);
+    // The same formula once more gives the PDE. A level-2 fault (DFSC 0x06) is about it,
+    // and so is any loop where the PTE reads valid: is the table it lives in the one the
+    // walker uses?
+    let pde_va = 0xFFFFF68000000000u64
+        .wrapping_add(((pte_va >> 12) & 0xF_FFFF_FFFFu64) << 3);
+    let pde = core::ptr::read_volatile(pde_va as *const u64);
+    TrapPuts(b" PDE@");              TrapPutHex64(pde_va);
+    TrapPuts(b"=");                  TrapPutHex64(pde);
     TrapPuts(b" PTE@");              TrapPutHex64(pte_va);
     TrapPuts(b"=");                  TrapPutHex64(pte);
     TrapPuts(b"\r\n");
+    // Where does the MMU say the self-map PTE address lives? If the PDE names table T but
+    // AT resolves the PTE's self-map VA to a different page, software is reading and
+    // writing a stale copy of the table through a stale translation, and the walker (which
+    // reads T) never sees the PTE the pager keeps installing. PAR bit 0 set = AT faulted.
+    let par_pte = ki_at_s1e1r(pte_va);
+    let par_va = ki_at_s1e1r(va);
+    TrapPuts(b"[FAULTLOOP] AT(PTE@)=");  TrapPutHex64(par_pte);
+    // PAR's low 12 bits are attributes, not the offset: compare pages.
+    TrapPuts(b" (want page ");          TrapPutHex64(pde & 0x0000_FFFF_FFFF_F000);
+    TrapPuts(b")");
+    TrapPuts(b" AT(VA)=");              TrapPutHex64(par_va);
+    let (entry_par, entry_valid) = KiFaultEntryPar[slot];
+    TrapPuts(b"\r\n[FAULTLOOP] on entry: last AT(VA)="); TrapPutHex64(entry_par);
+    TrapPuts(b", rounds entering with a valid translation="); TrapPutHex32(entry_valid);
+    TrapPuts(b"\r\n");
+    // Who is copying from a page that keeps being unmapped: the args of the faulting
+    // (leaf) routine and the frame-record chain above it. kernel PCs only; a user loop's FP
+    // is the user's to walk.
+    let x = &(*TrapFrame).__bindgen_anon_3.__bindgen_anon_1;
+    TrapPuts(b"[FAULTLOOP] X0="); TrapPutHex64(x.X0);
+    TrapPuts(b" X1=");            TrapPutHex64(x.X1);
+    TrapPuts(b" X2=");            TrapPutHex64(x.X2);
+    TrapPuts(b" LR=");            TrapPutHex64((*TrapFrame).Lr);
+    TrapPuts(b" SPSR=");          TrapPutHex32((*TrapFrame).Spsr);
+    TrapPuts(b"\r\n");
+    if pc >> 63 != 0 {
+        // PC, LR, then the frame-record chain, each named module+offset.
+        let mut frames: [ULONG_PTR; 12] = [0; 12];
+        frames[0] = pc as ULONG_PTR;
+        frames[1] = (*TrapFrame).Lr as ULONG_PTR;
+        let mut n = 2usize;
+        let mut fp = (*TrapFrame).Fp;
+        while n < frames.len() && fp >> 63 != 0 && fp & 0xF == 0 {
+            frames[n] = core::ptr::read_volatile((fp + 8) as *const u64) as ULONG_PTR;
+            n += 1;
+            fp = core::ptr::read_volatile(fp as *const u64);
+        }
+        TrapPuts(b"[FAULTLOOP] frames (pc, lr, chain):\r\n");
+        crate::ke::bug::KeRosDumpStackFrameArray(frames.as_mut_ptr(), n as ULONG);
+    }
     fatal
+}
+
+/// AT S1E1R: the stage-1 EL1 read translation the MMU would use for `va` right now,
+/// as PAR_EL1 (PA in bits 47:12 when bit 0 is clear).
+unsafe fn ki_at_s1e1r(va: u64) -> u64 {
+    let par: u64;
+    core::arch::asm!(
+        "at s1e1r, {va}",
+        "isb",
+        "mrs {par}, par_el1",
+        va = in(reg) va,
+        par = out(reg) par,
+        options(nostack),
+    );
+    par
 }
 
 #[no_mangle]
@@ -507,8 +660,10 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
             // Device memory" (PTE AttrIndx bits [3:2] != 0) from "instruction
             // demands alignment on Normal memory" (LDAR/STLR/LDAPR — what FEX
             // emits for x86-TSO). Alignment fault ⇒ translation succeeded, so
-            // the self-map PTE chain for FAR is walkable.
-            if DFSC == 0x21 {
+            // the self-map PTE chain for FAR is walkable. Capped like the
+            // [UEXC] records (stubs.rs `uexc_should_print`): FEX takes these by
+            // design and each line blocks on the UART.
+            if DFSC == 0x21 && crate::ke::arm64::stubs::align_trap_should_print() {
                 let far = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress;
                 let pc = (*TrapFrame).Pc;
                 TrapPuts(b"[ALIGN] FAR="); TrapPutHex64(far);
@@ -529,6 +684,14 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                (DFSC & 0x3C) == 0x08 ||
                (DFSC & 0x3C) == 0x0C
             {
+                {
+                    let par = ki_at_s1e1r((*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress as u64);
+                    let e = &mut KiFaultEntryPar[ki_cpu_slot()];
+                    e.0 = par;
+                    if par & 1 == 0 {
+                        e.1 += 1;
+                    }
+                }
                 let Status = MmAccessFault(
                     FaultCode,
                     (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress as PVOID,
@@ -673,6 +836,42 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                     ExceptionFrame,
                     TrapFrame,
                     0i8,
+                    1u8,
+                );
+                return;
+            }
+
+            // brk #0xF003 is __fastfail (x0 = the FAST_FAIL_* code): the arm64 form of
+            // x86's int 0x29, handled as i386's KiRaiseSecurityCheckFailureHandler is.
+            // Kernel mode bugchecks KERNEL_SECURITY_CHECK_FAILURE; user mode gets a
+            // non-continuable STATUS_STACK_BUFFER_OVERRUN. It used to fall through to
+            // the skip below, so a fastfail carried on past the brk -- and a Rust
+            // panic handler built on it spun silently instead of stopping loudly.
+            if BrkImm == 0xF003 {
+                let Code = (*TrapFrame).__bindgen_anon_3.X[0];
+                let mut ExRec: EXCEPTION_RECORD = core::mem::zeroed();
+                ExRec.ExceptionCode = STATUS_STACK_BUFFER_OVERRUN;
+                ExRec.ExceptionFlags = 1; // EXCEPTION_NONCONTINUABLE
+                ExRec.ExceptionRecord = core::ptr::null_mut();
+                ExRec.ExceptionAddress = (*TrapFrame).Pc as PVOID;
+                ExRec.NumberParameters = 1;
+                ExRec.ExceptionInformation[0] = Code;
+                if BrkFromKernel {
+                    TrapPuts(b"[FASTFAIL] kernel-mode __fastfail\r\n");
+                    KiDumpTrapFrame(TrapFrame);
+                    KeBugCheckEx(
+                        KERNEL_SECURITY_CHECK_FAILURE,
+                        Code as ULONG_PTR,
+                        TrapFrame as ULONG_PTR,
+                        &mut ExRec as *mut EXCEPTION_RECORD as ULONG_PTR,
+                        0,
+                    );
+                }
+                KiDispatchException(
+                    &mut ExRec as *mut EXCEPTION_RECORD,
+                    ExceptionFrame,
+                    TrapFrame,
+                    1i8, // UserMode
                     1u8,
                 );
                 return;
@@ -886,7 +1085,15 @@ pub unsafe extern "C" fn KiIrqHandler(TrapFrame: PKTRAP_FRAME) {
 #[no_mangle]
 pub unsafe extern "C" fn KiEL0IrqPreempt() {
     let Prcb = KeGetCurrentPrcb();
-    if (*Prcb).QuantumEnd == 0 && (*Prcb).NextThread.is_null() {
+    // A DPC this IRQ retired may have completed an IRP for the interrupted thread,
+    // queuing its IopCompleteRequest kernel APC. KiIrqHandler leaves that pending
+    // (delivering from exception context wedges); this is the thread-context point
+    // where x86's APC interrupt would fire before user code resumes. Left for the
+    // thread's next syscall, the APC writes the I/O status block into user memory
+    // the program has since reused.
+    let Thread = KeGetCurrentThread() as PKTHREAD;
+    let KernelApc = kt_ApcState(Thread).KernelApcPending != 0;
+    if (*Prcb).QuantumEnd == 0 && (*Prcb).NextThread.is_null() && !KernelApc {
         return;
     }
     if KeGetCurrentIrql() != PASSIVE_LEVEL {
@@ -895,6 +1102,13 @@ pub unsafe extern "C" fn KiEL0IrqPreempt() {
     core::arch::asm!("msr daifclr, #2", options(nomem, nostack));
     let OldIrql = KfRaiseIrql(DISPATCH_LEVEL);
     KfLowerIrql(OldIrql);
+    // The lower above drains the APC only if this CPU's software APC bit is set;
+    // the APC may have been requested on another CPU or before a switch.
+    if kt_ApcState(Thread).KernelApcPending != 0 {
+        let OldIrql = KfRaiseIrql(APC_LEVEL);
+        ntkrnl_sys::ddk::KiDeliverApc(0i8 /* KernelMode */, core::ptr::null_mut(), core::ptr::null_mut());
+        KfLowerIrql(OldIrql);
+    }
     core::arch::asm!("msr daifset, #2", options(nomem, nostack));
 }
 

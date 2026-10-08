@@ -635,6 +635,9 @@ pub unsafe extern "system" fn GetFileAttributesW(lpFileName: LPCWSTR) -> DWORD {
 
     /* Simply query attributes */
     Status = NtQueryAttributesFile(&mut ObjectAttributes, &mut FileInformation);
+    // RtlDosPathNameToNtPathName_U heap-allocated FileName.Buffer; every call leaked it
+    // until upstream ef8bcd3fbe7 ("Fix leaks after calling RtlDosPathNameToNtPathName_U").
+    RtlFreeHeap(RtlGetProcessHeap(), 0, FileName.Buffer as PVOID);
     if !NT_SUCCESS(Status) {
         /* It failed? Is it a DOS device? */
         if RtlIsDosDeviceName_U(lpFileName) != 0 {

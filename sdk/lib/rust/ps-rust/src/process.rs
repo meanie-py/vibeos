@@ -523,6 +523,10 @@ pub unsafe extern "system" fn PspCreateProcess(
 
     InitializeListHead(core::ptr::addr_of_mut!((*proc).ThreadListHead) as PLIST_ENTRY);
 
+    // The job process list entry (upstream 55563444377): PspAssignProcessToJob asserts it is
+    // empty and PspRemoveProcessFromJob unlinks it.
+    InitializeListHead(core::ptr::addr_of_mut!((*proc).JobLinks) as PLIST_ENTRY);
+
     PspInheritQuota(process, parent);
     ObInheritDeviceMap(parent, process);
 
@@ -866,7 +870,31 @@ pub unsafe extern "system" fn PspCreateProcess(
         SeAuditProcessCreate(process);
     }
 
-    if !parent.is_null() && !(*(parent as *mut _EPROCESS)).Job.is_null() {
+    // Attach the process to the parent's job unless the job allows silent breakaway
+    // (upstream 55563444377; the C here was a "Jobs not yet supported" DPRINT).
+    if !parent.is_null()
+        && !(*(parent as *mut _EPROCESS)).Job.is_null()
+        && (*(*(parent as *mut _EPROCESS)).Job).LimitFlags & JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK == 0
+    {
+        let parent_job = (*(parent as *mut _EPROCESS)).Job;
+
+        status = if flags & PROCESS_CREATE_FLAGS_BREAKAWAY != 0 {
+            // An explicit breakaway is denied unless the job allows it.
+            if (*parent_job).LimitFlags & JOB_OBJECT_LIMIT_BREAKAWAY_OK == 0 {
+                STATUS_ACCESS_DENIED
+            } else {
+                STATUS_SUCCESS
+            }
+        } else {
+            // Normally the child joins the parent's job.
+            crate::job::PspAssignProcessToJob(process, parent_job)
+        };
+        if status < 0 {
+            // goto CleanupWithRef
+            ObDereferenceObject(process as PVOID);
+            ObDereferenceObject(parent as PVOID);
+            return status;
+        }
     }
 
     if !parent.is_null() && needs_peb != 0 {
@@ -1452,7 +1480,7 @@ pub unsafe extern "system" fn NtOpenProcess(
             if let Err(s) = probe_user_buffer(client_id as _, core::mem::size_of::<_CLIENT_ID>(), core::mem::size_of::<ULONG>(), previous_mode) {
                 return s;
             }
-            safe_client_id = *client_id;
+            safe_client_id = match ntkrnl_sys::probe::read_back(client_id) { Ok(v) => v, Err(s) => return s };
             cid_ptr = core::ptr::addr_of_mut!(safe_client_id);
         } else {
             cid_ptr = core::ptr::null_mut();
@@ -1466,12 +1494,12 @@ pub unsafe extern "system" fn NtOpenProcess(
         ) {
             return s;
         }
-        has_object_name = if (*object_attributes).ObjectName.is_null() { 0u8 } else { 1u8 };
+        has_object_name = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*object_attributes).ObjectName)) { Ok(n) => (!n.is_null()) as u8, Err(s) => return s };
 
-        attributes = ObpValidateAttributes((*object_attributes).Attributes, previous_mode);
+        attributes = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*object_attributes).Attributes)) { Ok(a) => ObpValidateAttributes(a, previous_mode), Err(s) => return s };
     } else {
-        has_object_name = if (*object_attributes).ObjectName.is_null() { 0u8 } else { 1u8 };
-        attributes = ObpValidateAttributes((*object_attributes).Attributes, previous_mode);
+        has_object_name = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*object_attributes).ObjectName)) { Ok(n) => (!n.is_null()) as u8, Err(s) => return s };
+        attributes = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*object_attributes).Attributes)) { Ok(a) => ObpValidateAttributes(a, previous_mode), Err(s) => return s };
         cid_ptr = client_id;
     }
 

@@ -8,11 +8,11 @@ Rust, booting to a graphical desktop on i386, amd64, and ARM64.**
 Historical snapshots + project timeline live in the
 [old-details rollup](archive/rust-port-status-rollup.md).*
 
-> **The core ledger below is GENERATED — run `python3 tools/port_audit.py` rather than
-> trusting this page's date.** The hand audit that used to produce it was last run on
-> 2026-07-03 and there was no command to refresh it, so it read as current for twelve
-> weeks. The narrative ledger further down is still hand-written and still dated; treat
-> it as commentary on the generated numbers, not as a second measurement of them.
+> **The core ledger below is GENERATED.** Refresh it with
+> `python3 tools/port_audit.py --write-doc`, which rewrites the marked block and stamps it
+> with its commit and date. Read that stamp rather than trusting anything around it. The
+> per-module narrative further down is hand-maintained row by row; treat it as commentary on
+> the generated numbers, not as a second measurement of them.
 
 > **Cohabitation caveat.** Convention is *never delete a translated C file*: a flipped
 > `.c` is commented out in CMake (`# replaced by Rust`) and kept on disk as dead source;
@@ -20,43 +20,39 @@ Historical snapshots + project timeline live in the
 > `find -name '*.c' | wc -l` counts **on-disk** C, not **compiled** C. Every "C remaining"
 > figure below is compiled/active C unless marked *on-disk*.
 
-## TL;DR
+## TL;DR (2026-10-05, from the generated ledger)
 
-**The entire boot-to-desktop path is Rust.** Kernel, win32k, the usermode boot spine, the
-core client DLLs, and the driver fleet are all ~90–100% translated with the replaced C
-*removed from the compile* (not overridden-in-place). The OS boots to a graphical desktop
-on all three arches with an essentially all-Rust runtime.
+**The entire boot-to-desktop path is Rust.** ntoskrnl and HAL compile zero lines of C,
+ntdll 38 and CSR 17. win32k USER/GDI/ReactX are 71–84% covered; what is left there is
+neighbours of the kernel core, not the core itself (imm32, Wine user32 parts, `videoprt`
+and the font drivers). The driver fleet is 87%. The OS boots to a graphical desktop on all
+three arches with an essentially all-Rust runtime.
 
-> The paragraphs below are the 2026-07-03 estimates, kept for their per-category framing.
-> Where a figure here and the generated ledger disagree, **the ledger is the measurement**
-> — e.g. this section's "~140 ROS-native DLLs (~240K LOC)" is 424,078 live lines across
-> `dll/win32` as actually compiled, ~124K of which carries a Wine copyright header the
-> registry does not yet cover.
+**Core is 45% covered, with 1.79M live lines of C still compiled, and 72% of that is
+Wine-derived:** 507K ReactOS-native lines at 69% covered, 1.28M Wine-derived lines at 19%.
+So the remaining frontier is mostly Wine userland: the Win32 DLLs (1.02M live), the DirectX
+stack (300K, 0%), and a never-started native tail (setup, keyboard layouts, CTF/IME, the
+print spooler, shell extensions, AppCompat; all 0%, no crate). See "What the table says"
+below the ledger.
 
-The remaining C is four well-bounded categories, **none on the boot-critical path**: (1) the
-bulk userland **CRT** (msvcrt/ucrt leaf library — the assemble-from-`cnt-rust`+`rtl-rust`
-track), (2) **vendored/by-policy** C (enumerated in `vendor.yaml` — see below), (3) **legacy dead** C superseded by
-Rust (videoprt, old NDIS/tcpip), and (4) **irreducible glue** (variadic trampolines, arch
-`.S`, generated RPC/syscall stubs). *(The desktop shell `explorer.exe` is NO LONGER a
-remnant — it's ~99% Rust as of the crate-split era; see the ledger below.)* The broad
-still-C userland frontier is the **~140 ROS-native DLLs (~240K LOC)** + the **Wine-derived
-bucket (~154 DLLs, ~1.05M LOC)** catalogued in the roadmap's Phase 0 Tier 3, plus — added
-by the 2026-08-08 classification sweep, and not covered by either of those counts — the
-**Microsoft DDK storage class drivers** (`classpnp`/`cdrom`/`disk`, ~90.5K lines of
-bodies), now explicit in `vendor.yaml`'s `ours:` half rather than uncounted.
+**What moved since the 2026-09-25 ledger**, none of it translation:
 
-Tree inventory (2026-09-25, `python3 tools/port_audit.py --rust`): 7.05M lines of `.rs`
-under `sdk/lib/rust/`, of which **4.01M are generated** (checked-in `bindgen_*.rs`;
-`win32k-sys` alone is 4.4M bytes per arch), **47K are host test harnesses**
-(`*-difftest`), and **2.99M are hand-written or paid translation output**. Quoting the 7M
-as "lines of Rust written" overstates the port by more than half. And **the 2.99M is Rust,
-not C**: the ledger below counts the C it replaced (1.45M lines with a Rust twin), and the
-ratio of about 2:1 is the normal cost of explicit casts, `unsafe` blocks and FFI shapes.
-Both numbers describe the same progress.
+- **DirectX grew 268K → 300K live lines** from upstream ReactOS's Wine 10.0 DirectX rebase
+  (`e98fa71fdcc`, "pass at building Wine-10.0", which added the `d3dcompiler_33`…`47`
+  modules), brought in by the upstream-sync lane. Coverage there was 0% before and after.
+- **Third-party code now lives under `vendor/`** (the relocation; vkd3d moved 2026-10-03),
+  and **stlport and the MSVC toolchain files are deleted** (roadmap §11). ucrt was removed by
+  the CRT lane. Compile edges fell by about 400 per arch.
+- Rust inventory: 7.22M lines of `.rs`, of which **4.09M are generated bindings**, 47K are
+  host test harnesses, and **3.08M are hand-written or paid translation output** (exact
+  figures in the ledger stamp). Quoting the 7M as "lines of Rust written" overstates the
+  port by more than half. And the 3.08M is Rust, not C: the ledger counts the C it replaced
+  (1.45M lines with a Rust twin), and a ratio of about 2:1 is the normal cost of explicit
+  casts, `unsafe` blocks and FFI shapes.
 
-## Core OS ledger — GENERATED, 2026-09-25 (`tools/port_audit.py`)
+## Core OS ledger — GENERATED (`python3 tools/port_audit.py --write-doc`)
 
-Measured at commit `1a825d6d19a` against this worktree's three build graphs. **The oracle is the
+The block below carries its own commit and date. **The oracle is the
 link, not the source tree**: a surface's "live C" is the translation units some arch
 actually compiles, after every `if(ARCH)` and every commented-out CMake entry, taken as the
 union across i386/amd64/arm64.
@@ -76,24 +72,27 @@ zero.** `Out of build` counts every `.c` the link does not contain, which includ
 C this port never compiled; `Rust twin` narrows that to files whose module has a crate in
 `sdk/lib/rust/`, and `Covered` is built from that column, never from `Out of build`.
 
+<!-- port_audit:begin (generated by `python3 tools/port_audit.py --write-doc`; do not hand-edit) -->
+*Measured at commit `9fab42097dc` on 2026-10-05, against this worktree's three build graphs. Rust inventory: 7,219,399 lines of `.rs` under `sdk/lib/rust/`, of which 3,077,070 are translation or hand-written, 4,094,840 generated bindings and 47,489 host test harnesses.*
+
 | Surface | Live C (TUs) | Live C (lines) | of which Wine | Out of build | Rust twin | Covered |
 |---|---:|---:|---:|---:|---:|---:|
-| Win32 DLLs | 1,023 | 1,012,731 | 933,768 | 520,185 | 433,645 | 30% |
-| DirectX | 201 | 267,951 | 267,683 | 40,884 | 0 | 0% |
-| Support libraries | 692 | 114,929 | 17,820 | 93,559 | 82,615 | 42% |
-| Driver fleet | 176 | 55,895 | 0 | 425,597 | 388,912 | 87% |
-| Setup | 45 | 42,721 | 0 | 132 | 0 | 0% |
+| Win32 DLLs | 1,005 | 1,019,983 | 941,220 | 517,127 | 434,043 | 30% |
+| DirectX | 248 | 300,469 | 300,201 | 141,736 | 0 | 0% |
+| Support libraries | 660 | 110,661 | 14,502 | 97,979 | 83,159 | 43% |
+| Driver fleet | 177 | 55,676 | 0 | 425,927 | 389,242 | 87% |
+| Setup | 45 | 42,922 | 0 | 132 | 0 | 0% |
 | Keyboard layouts | 86 | 37,899 | 0 | 0 | 0 | 0% |
 | Control Panel applets | 72 | 28,183 | 1,473 | 24,863 | 24,753 | 47% |
-| Shell | 69 | 27,189 | 0 | 14,826 | 14,513 | 35% |
+| Shell | 69 | 27,189 | 0 | 14,975 | 14,662 | 35% |
 | Text services (CTF/IME) | 31 | 27,175 | 8,218 | 0 | 0 | 0% |
-| Print spooler | 66 | 27,069 | 694 | 0 | 0 | 0% |
-| win32k: USER | 25 | 20,079 | 3,749 | 87,009 | 79,550 | 80% |
-| Shell extensions | 57 | 18,940 | 0 | 9 | 0 | 0% |
-| System spine | 61 | 18,176 | 1,516 | 28,526 | 28,505 | 61% |
+| Print spooler | 66 | 27,051 | 694 | 0 | 0 | 0% |
+| win32k: USER | 25 | 20,052 | 3,749 | 87,009 | 79,550 | 80% |
+| Shell extensions | 57 | 18,942 | 0 | 9 | 0 | 0% |
+| System spine | 61 | 18,202 | 1,542 | 28,526 | 28,505 | 61% |
 | Services | 41 | 16,169 | 1,152 | 21,495 | 21,495 | 57% |
 | win32k: display drivers | 26 | 11,322 | 0 | 1,798 | 1,798 | 14% |
-| win32k: GDI | 13 | 9,522 | 9,299 | 29,465 | 24,038 | 72% |
+| win32k: GDI | 13 | 9,847 | 9,299 | 29,465 | 24,038 | 71% |
 | AppCompat | 24 | 7,339 | 0 | 0 | 0 | 0% |
 | OpenGL (opengl32) | 6 | 3,496 | 0 | 0 | 0 | 0% |
 | SDK inline TUs | 13 | 2,704 | 0 | 724 | 724 | 21% |
@@ -103,37 +102,38 @@ C this port never compiled; `Rust twin` narrows that to files whose module has a
 | ntdll.dll | 2 | 38 | 0 | 12,115 | 12,115 | 100% |
 | win32k: syscall stubs | 1 | 31 | 0 | 0 | 0 | 0% |
 | CSR subsystem | 1 | 17 | 0 | 12,258 | 11,284 | 100% |
-| Kernel (ntoskrnl.exe) | 0 | 0 | 0 | 273,724 | 273,107 | 100% |
-| HAL | 0 | 0 | 0 | 17,766 | 15,773 | 100% |
-| **CORE TOTAL** | **2,743** | **1,753,392** | **1,245,372** | **1,648,587** | **1,446,067** | **45%** |
+| Kernel (ntoskrnl.exe) | 0 | 0 | 0 | 274,008 | 273,391 | 100% |
+| HAL | 0 | 0 | 0 | 18,061 | 15,862 | 100% |
+| **CORE TOTAL** | **2,741** | **1,789,184** | **1,282,050** | **1,751,859** | **1,447,861** | **45%** |
 
 | Core by provenance | Live C (lines) | Rust twin | Covered |
 |---|---:|---:|---:|
-| ReactOS-native | 508,020 | 1,140,823 | 69% |
-| Wine-derived | 1,245,372 | 305,244 | 20% |
+| ReactOS-native | 507,134 | 1,142,327 | 69% |
+| Wine-derived | 1,282,050 | 305,534 | 19% |
 
 | Surface | Live C (TUs) | Live C (lines) | of which Wine | Out of build | Rust twin | Covered |
 |---|---:|---:|---:|---:|---:|---:|
-| In-box applications | 337 | 153,232 | 24,806 | 15,952 | 7,860 | 5% |
-| **APPS TOTAL** | **337** | **153,232** | **24,806** | **15,952** | **7,860** | **5%** |
+| In-box applications | 342 | 155,928 | 24,806 | 15,952 | 7,860 | 5% |
+| **APPS TOTAL** | **342** | **155,928** | **24,806** | **15,952** | **7,860** | **5%** |
 
 | Not ours to translate | Live C (TUs) | Live C (lines) | Why |
 |---|---:|---:|---|
-| Vendored (vendor.yaml) | 1,451 | 948,216 | third-party, kept in C as a versioned dep |
-| Tests | 141 | 41,008 | apitests + winetests |
+| Vendored (vendor.yaml) | 1,028 | 978,522 | third-party, kept in C as a versioned dep |
+| Tests | 142 | 41,192 | apitests + winetests |
 | Host tools | 1 | 642 | build-time only, never ships |
 | rosapps | 0 | 0 | optional extras, not configured into the build |
 
-*Compile edges per arch: i386 4,515, amd64 4,597, arm64 4,566; the tables are their union.*
+*Compile edges per arch: i386 4,113, amd64 4,190, arm64 4,156; the tables are their union.*
+<!-- port_audit:end -->
 
 ### What the table says
 
 **The boot path is done.** ntoskrnl and HAL compile zero lines of C, ntdll 38, CSR 17;
-win32k USER/GDI/ReactX are 72–84% with ~30K live lines left. Nothing in the
+win32k USER/GDI/ReactX are 71–84% with ~30K live lines left. Nothing in the
 boot-to-desktop chain is waiting on a translation.
 
-**Core is 1.75M live lines, and 71% of what is left is Wine-derived** — 508K
-ReactOS-native at 69% covered, 1.25M Wine-derived at 20%. Provenance comes from two
+**Core is 1.79M live lines, and 72% of what is left is Wine-derived** — 507K
+ReactOS-native at 69% covered, 1.28M Wine-derived at 19%. Provenance comes from two
 sources: vendor.yaml's `ours:` Wine entry (24 paths) and upstream's own import ledger,
 `media/doc/WINESYNC.txt` (~316 paths and files). Reading only the first, as the 2026-09-25
 morning cut did, labelled gdiplus, shlwapi, riched20, dbghelp, comdlg32, usp10, rsaenh
@@ -147,15 +147,17 @@ wow64 11K, the sound/rdbss/rxce driver libs ~30K, devmgr 10K (C++), diskpart 9K,
 the static CRT (~12K across stdio/string/math) and keyboard layouts (38K of scancode
 tables). Kernel, HAL, ntdll and CSR are at or near zero.
 
-**Where the Wine half sits** (live lines): comctl32 87K, wined3d 80K, mshtml 71K, msi 53K,
+**Where the Wine half sits** (live lines, measured 2026-09-25; the DirectX figure is current): comctl32 87K, wined3d 80K, mshtml 71K, msi 53K,
 msvcrt 45K, crypt32 42K, msxml3 35K, jscript 34K, d3dx9_36 34K, setupapi 32K,
 windowscodecs 31K, rpcrt4 27K, ddraw 25K, wininet 24K, quartz 24K, urlmon 23K. Two
 clusters are worth naming because they are big and could be argued either way under "out
-of the box": the **DirectX stack** (268K, all Wine, all live, 0% — wined3d plus the
+of the box": the **DirectX stack** (300K, all Wine, all live, 0% — wined3d plus the
 d3d8/9/ddraw/dsound/dinput/quartz front ends) and the **IE engine** (mshtml + jscript +
 vbscript + ieframe + urlmon + wininet, ~177K). XP shipped both, so both are core here.
 
-**Compile edges overcount a first-match cohab — msvcrt is the example.** The ledger
+**Compile edges overcount a first-match cohab — msvcrt is the example** (written against
+the 2026-09-25 ledger; the CRT lane has moved since, so read its row for the current
+state). The ledger
 shows 45K live Wine lines under `dll/win32/msvcrt`, and `msvcrt.dll` itself is done:
 `python3 tools/msvcrt_export_coverage.py` reports 1,192 of 1,280 exports Rust-backed, the
 88 left being asm and deliberate (`memmove`), and the C++ runtime (`cpp.c`/`except.c`/
@@ -168,7 +170,7 @@ legacy DLLs. They can be relinked against the existing Rust for no translation c
 Anywhere else that cohabs with `--allow-multiple-definition` inflates `Live C` the same
 way; the per-module export tools are the finer measure there.
 
-**The never-started native tail** is unchanged: Setup (56K), keyboard layouts (38K),
+**The never-started native tail** is unchanged (per-module figures from 2026-09-25): Setup (56K), keyboard layouts (38K),
 CTF/IME (27K), print spooler (27K), shell extensions (19K), AppCompat (7K) — 0% covered,
 no crate.
 
@@ -192,7 +194,7 @@ no crate.
   (usp10, imm32, winmm, msctf, …) no longer moves the headline — they are core either way.
   It only affects the `of which Wine` column, which is labelling, not scope.
 
-## Headline component ledger — narrative, hand-written (2026-07-03)
+## Headline component ledger — narrative, hand-maintained per row (started 2026-07-03; each row carries its own dates)
 
 | Surface | Status | Coverage |
 |---|---|---|
@@ -219,6 +221,9 @@ no crate.
 | **aclui** (Tier 3, batch D) | **FLIPPED — all 4 translatable `.c` → aclui-rust, `cargo check` clean on all three arches.** The ACL editor: the "Security" property page plus the owner-drawn check-list control it is built around. `guid.c` stays C on purpose (it is `#include <initguid.h>` and says "NO CODE HERE" — macro-generated data, nothing to buy), and `rust_varargs_shim.c` carries `LoadAndFormatString`'s `va_start` because stable Rust cannot DEFINE a C-variadic. **628 cargo-check errors to zero.** What actually moved the number: `BLOCKLIST_FUNCS_FROM_CRATE` (~290 errors, replacing ~200 hand-written user32/comctl32 prototypes); **collapsing the 5 per-arch `#[cfg]` twin pairs** — 1,369 duplicated lines, and while they existed `crate-repair` withheld **119 of 119** repairs because two targets can never agree about a site that exists on only one of them (105 applied on the next run); and `UNBLOCK`ing DLGPROC/WNDPROC/LPTHREAD_START_ROUTINE into this island so one `extern "system"` definition of each callback serves all three arches. **Four bugs the compiler could not have found:** `PaintControl` (~180 lines) was never in the plan at all — checklist.c closes an `#if SUPPORT_UXTHEME` between an `if` and its body, which does not parse in one pass; one of the three `GetKeyState` sites read `VK_BACK` where the C reads `VK_SHIFT`, for a variable named `Shift`; `AddSelectedPrincipal`'s first parameter lost its `IDsObjectPicker` type to `c_void`; and the whole TCHAR type family was resolving to the ANSI one out of ntdll-sys's glob, in a module compiled `-DUNICODE`. | **flipped** |
 | **netcfgx** (Tier 3) | **FULL FLIP — all 11 compiled `.c` → netcfgx-rust, `cargo check` clean on all three arches, links.** 9,100 LOC for **$0.36 total**. Stuck at 6 of 11 since 2026-07-26 on "one or two functions per TU the call-seal keeps rejecting across two samplings"; finished 2026-08-03 for $0.08 once the three real causes were found, and all three were in the harness. (1) `_audit_paid_body` unsealed the plain-C reply TWICE, and the second pass — which sees no tokens — rejected bodies the first had accepted, four of them here. (2) The first pass then ACCEPTED a SHIFTED envelope: `ApplyOrCancelChanges` spent CALL_0000 on `IsEqualGUID`, a function-like macro that by design gets no token, and every later token slid one call to the left, so unsealing restored `swprintf`'s name onto `StringFromCLSID`'s site. A shift is a permutation and passes every count-based check, so the envelope now also compares the ARGUMENT COUNT at each token's C and Rust site (0 disagreements over all 164 banked bodies; catches this on the first pass). The envelope additionally NAMES the untokenized macros now instead of only disclaiming them in general — three interleaved windowsx.h macros were enough to make `ReadParameterValue` invent three token numbers. (3) `netcfgx.c` was refused outright: its three `STDAPI` exports are unextractable, because `STDAPI` is `EXTERN_C HRESULT STDAPICALLTYPE` and the scanner normalized it to a bare `__stdcall`, deleting the return type — same class as the `TYPE * CDECL fn()` drop. `KW_EXPANSION` now carries the eleven aliases that are really `[linkage] <TYPE> <conv>`. The 2,758-error `cargo check` came down in the documented order — 236 missing symbols closed by a generated substrate (the 110 Win32 externs are bindgen output from the same header set and `-D` flags the `.c` compiles with, checked identical across all three arches; the 40 COBJMACROS dispatch shims are generated from the island's own `IFACEVtbl` structs, so a parameter list cannot drift from the vtable it dispatches through), then `MACRO_SIGNED=1` on the profile (bindgen's u32 default cost 715 E0308s on `rc != ERROR_SUCCESS` and `GetDlgItem(hDlg, IDC_*)` alone), then `crate-repair` ×2 (1,186 → 375), then the residue by hand. `UNBLOCK="DLGPROC"` is what lets one definition of each of the twelve dialog procs serve all three targets — Rust compares fn-pointer ABIs nominally, and ntdll-sys spells DLGPROC `stdcall` on i386 and `C` on the 64-bit targets, so without it every proc needs a `#[cfg]` twin (field manual, the fn-pointer-typedef entry). **Six real bugs the compiler could not have found**, all caught by checking the output against the C: 157 wide literals spelled as Rust BYTE strings (plain ASCII cast to a wide pointer, hand-encoded UTF-16 with a half-width terminator, and the C `L` prefix carried into the content) — of which `L"\Device\"` had silently lost its trailing separator; four `RegSetValueExW` calls whose wide-literal DATA argument was dropped entirely, leaving the bare type name `LPBYTE`; `SUCCEEDED(hr)`/`FAILED(hr)` expanded and then compared against zero a second time; `ZeroMemory` given memset's three arguments; `CheckInfFile` returning `u32` where the C returns `BOOL`; and `MergePropPages`'s `pszStartPage` typed `*const LPCWSTR` against netcfgn.h's `LPCWSTR *`. Two bodies needed judgement rather than sampling and both were the model IMPROVING on the C: `CreateInstanceKey` hoisted the `goto done` tail per path and lost `if (ret == FALSE)`, fixed by feeding the audit finding back into the retry; `ScanForInfFile` refused three samplings to reproduce a `continue` that skips its own `FindNextFileW` (an infinite loop, unreachable because `\inf\*.inf` cannot match `.` or `..`), repaired by hand in its stored reject and adopted for $0 through the new re-audit path. | **flipped** |
 | **umpnpmgr** (Tier 3, batch E) | **FULL FLIP — all 4 compiled `src/*.c` → umpnpmgr-rust, `cargo check` clean on all three arches.** The user-mode PnP manager service: the SERVER half of pnp.idl that cfgmgr32 and setupapi speak as clients, owning device enumeration/installation, the kernel PnP event pump (`NtGetPlugPlayEvent`) and the device-install worker. 7,038 LOC, 1,150 cargo-check errors to zero for **$0.47**. `pnp_s.c` (MIDL server stubs) and `umpnpmgr_stubs.c` (spec2def) stay C — build products, nothing to translate. **`MACRO_SIGNED=0` was MEASURED, and the resemblance argument was wrong**: netcfgx and aclui both want it ON because their constants are `int` control ids and window messages, and umpnpmgr looks the same — but it spends its time passing DBT_/WM_/CM_/SERVICE_ constants into UNSIGNED Win32 parameters, so signing them cost 90 extra E0308s (165 signed against 76 unsigned). Generate both islands and count; it is one cargo check. | **flipped** |
+| **setuplib** (`base/setup/lib`, the text/GUI installer's library) | **FULL FLIP — all 23 compiled `.c` → setuplib-rust, `cargo check` clean on all three arches, setuplib.dll links with its 52 spec exports from Rust and only `rust_cohab_stub.c` as C.** Partition list, volume/filesystem format and check, boot-loader install (FreeLdr/NtLdr stores, boot code), INF file queues, registry hive setup, MUI, settings. The first module driven end to end by `rustconv port` (2026-10-06): translate $7.70 + `port fix` $2.02 + `port macros` $0.38 = **$10.10**, then 41 → 0 by hand (five subagents), every hand edit banked with `port hand` so `port replay` reproduces 0 errors from the banks at $0. **Not exercised at runtime by any gate:** setuplib ships only on the bootcd and smoke boots the livecd; an unattended-install smoke is owed. **Bugs the compiler could not have found** (all fixed): an island wrapper that copied partlist.c's `pshpack1.h` and packed 62 structs C lays out naturally (USETUP_DATA, the STORAGE_* IOCTL buffers); seven NTAPI callbacks defined `extern "C"` (i386 stack imbalance); two `RTL_CONSTANT_STRING` statics compiled EMPTY (c2rust's startup initialiser dropped); `Status = 0` invented on a failure path (an unreadable volume reported success); four do-while loops whose `continue` skipped the condition (endless loops in UpdateRegistry, PrepareCopyInfFile, AddComputerTypeEntries; a wrong retry target in UpdateRegistry); `!_wcsicmp(..)` as a BITWISE not (every INF key "matched"); fsutil's media-type `match` on three undefined FMIFS_* names (a catch-all: every format got F5_320_1024); `PARTITION_ISO9660`/`PARTITION_OLD_LINUX` re-declared with wrong values; 18 INF/file-queue table macros calling through `.unwrap()`; and `DPRINT1` a no-op although this tree builds DBG=1. | **flipped** |
+| **usetup** (`base/setup/usetup`, text-mode setup, the bootcd's smss.exe) | **FULL FLIP — all 15 `.c` → usetup-rust, `cargo check` clean on all three arches, usetup.exe links on all three with only `rust_cohab_stub.c` as C.** The 30 languages' UI string tables (lang/*.h, ~70K lines of data, `mui_tables.c`) are Rust too since 2026-10-07: `rustconv port data usetup mui_tables.c` generates `src/usetup/mui_tables/` from clang's AST for $0 (14.7K lines; every string byte-checked against clang, and all 6,443 of the C object's strings found in the Rust-linked exe). Edit a lang/*.h, re-run it. Second `rustconv port` module (2026-10-07): translate $2.17 + `port fix` $0.88 = **$3.05**, residue by hand (one subagent; varargs via `va_entry!`, setuplib header macros, inflib prototypes), banked, `port replay` reproduces 0 at $0. **Not exercised at runtime by any gate** (bootcd only; the unattended-install smoke is owed, as for setuplib). **Bugs the compiler could not have found** (fixed): four pages read keys through a `*mut PINPUT_RECORD` one level too deep (garbage on every keypress); 13 uses of a local `Pos` resolved to ntdll-sys's bus-type constant `Pos`; FsVolCallback/FormatCallback matched bare enum names (first arm caught all); inflib's `InfOpenFile` declared returning `u8` for NTSTATUS. C's own bug preserved and noted: spapisup/cabinet.c:747/778 add a byte count to a `WCHAR*`. | **flipped** |
+| **diskpart** (`base/system/diskpart`) | **FULL FLIP — all 43 `.c` → diskpart-rust, `cargo check` clean on all three arches, diskpart.exe links on all three with only `rust_cohab_stub.c` as C.** guid.c (INITGUID storage) is lowered from diskguid.h's DEFINE_GUIDs for $0. Third `rustconv port` module (2026-10-07): translate $1.34 + `port fix` $1.24 = **$2.58**, residue by hand (one subagent), banked, `port replay` reproduces 0 at $0. Smoke boots it only if a test runs diskpart (none does). **Bugs the compiler could not have found** (fixed): wrong wide-string constants in CreateEfiPartition/CreateMsrPartition/setid_main (`offset=` matched against `"noerr"`); `fgetws` read a NULL stream instead of stdin; `bQuote = !bQuote` as a bitwise not; FormatCallback matched bare `PROGRESS`/`DONE` (catch-all); format_main carried on after a bad `unit=` where the C skips the format. C's own bug, fixed and noted: create.c allocates `sizeof(PPARTENTRY)` for a whole PARTENTRY (heap overflow). | **flipped** |
 | **syssetup** (Tier 3, batch F) | **FULL FLIP — all 8 compiled `.c` → syssetup-rust, `cargo check` clean on all three arches, links.** The system setup DLL: the second-stage GUI wizard (welcome/product/owner/computer/locale/date-time/theme/process/finish pages), the account and security-policy writer that drives LSA and SAM, the network-component installer, the setup action log, and the PS/2 mouse property page. ~20K lines for **$2.94**; 1,392 → 0 cargo-check errors. **Parked RED at 176/177/177 for a session** because the residue had no width answer — of the 17 integer sites erroring on all three targets exactly ONE had three-way agreement, since the parameters genuinely differ per arch (SIZE_T, WPARAM, UINT_PTR). Cross-target agreement is a filter, not a repair. Unstuck by `crate-repair`'s new **`width_alias_cast`** rule, which reads the callee's DECLARED parameter type out of the crate's own island and casts to the NAME (34 sites; 55 more claimed so the width-baked rule stood down). `syssetup_stubs.c` stays C (spec2def), the only C left: `rust_varargs_shim.c` (the three variadic entry points) retired 2026-09-25 — `pSetupDebugPrint` (`@ varargs` in the .spec, a real export) and `FatalError` RECEIVE their varargs the va-slots way, and `StringCchPrintfW` is a strsafe-rust macro. **strsafe.h's other bounded string ops now come from the shared `strsafe-rust` crate** (they were ported here first, in `src/syssetup/strsafe.rs`, which is now a re-export): they are `static __inline`, so no object file in the tree ever defined them and the prelude's `extern` block named a strsafe static lib the module does not link — invisible until the last C TU was flipped. Profile: `REAL_UNIONS=1` (PROPSHEETPAGE/PROPSHEETHEADER are half anonymous union and the C flattens them), `UNBLOCK` of the DLGPROC/PROPSHEET family, and `MACRO_SIGNED=0` measured (483 signed against 432 unsigned) — the second module running where the shape argument lost to the measurement. **Six bugs the compiler could not have found**: `CreateTimeZoneList` dropped its callback entirely (`EnumerateTimeZoneList(RetrieveTimeZone, SetupData)` became `(SetupData, NULL)`, so the time-zone list would have been empty); `PFNREQUESTWIZARDPAGES` lost a pointer level; ADMIN_INFO's three LPWSTR fields were initialised as `[0; 256]` arrays; proppage stored the PMOUSE_INFO through a 32-bit truncation on 64-bit; five of wizard.c's six registry-path statics had the wrong declared `[WCHAR; N]`; and 54 wide literals arrived spelled out elementwise as `['S' as u16, …]`, which dangles in a function body. | **flipped** |
 | **desk.cpl** (Tier 3, batch G) | **FULL FLIP — all 19 compiled `.c` → desk-rust, `cargo check` clean on all three arches, links.** The Display control panel: the Background/Screen Saver/Appearance/Settings/Desktop-items property sheets, the classic-and-visual theme reader and applier, the monitor-selection and preview custom controls, the GDI+ wallpaper loader, the display class installer, and the `CDevSettings` IDataObject carrying the desk.cpl ↔ display-driver shell-extension protocol. ~14K lines; 2,261 cargo-check errors to zero. `guid.c` stays C (an `initguid.h` TU that emits CLSIDs as data — zero functions); `rust_varargs_shim.c` (strsafe's three variadic entry points) retired 2026-09-25 for strsafe-rust's `StringC*PrintfW!`/`StringCbPrintfExW!` macros; the rest of strsafe.h now comes from the shared `strsafe-rust` crate (task #48; desk's copy was the superset the crate was built from). **desk was reported FLIPPED-READY at 20/20 TUs when it was 17** — `settings.c` and `theme.c` had never been translated, and nothing could see it: `lib.rs` declared modules for files that did not exist, a crate out of `workspace.members` is never compiled, and no source scanner opens a path that is absent. `scan_orphan_modules` now reports that as `[PHANTOM]`, the dual of its orphan finding, with no banner escape — an orphan can be parked on purpose, a `mod` pointing at nothing never can. **`MACRO_SIGNED=0` MEASURED** (1,517 unsigned against 1,820 signed): the third property-sheet module where the resemblance argument would have lost. **Two island bugs that compiled clean:** three constant families desk uses by bare name (DVASPECT_*, TYMED_*, DATADIR_*) were absent because `--allowlist-file` matches where an item is DEFINED and objbase.h only `#include`s the widl-GENERATED objidl.h/wtypes.h — so the island carried `IDataObject` but none of the constants its own call sites pass; and `TCHAR` resolved to ntdll-sys's `c_char`, making desk.h's `TCHAR szPath[MAX_PATH]` structs HALF-SIZED, hidden behind `.cast()`s the translation had sprinkled to make the narrow pointers fit. Both fixed in the profile (allowlist + `UNBLOCK` of the TCHAR family), never in the prelude. **Bugs the compiler could not have found:** `REGSTR_PATH_CONTROLSFOLDER TEXT("\\Desk")` is C string-literal CONCATENATION and came across as a COMMA, turning a 4-argument call into a 5-argument one; the `DesktopIcons` table shipped four invented resource ids (1001/1004/1000/1347 where the header says 3901–3904), which would have wired every desktop-icon checkbox to a control that does not exist; `devsett.c`'s `vtblIDataObject` was dropped entirely, so every COM slot came across but not the table wiring them together; 104 wide literals arrived in four broken spellings (narrow bytes behind a wide pointer, the C source text `L"…"` quotes and all, hand-interleaved UTF-16 at alignment 1, and decimal character codes typed `i32`); the two bitfield structs lost their accessors; `SwitchDisplayMode` narrowed BOOL to `u8` and `SettingsPageCallbackProc`'s third parameter LPPROPSHEETPAGE to `*mut u32`; and **two `#if` directives were read as ARCHITECTURE tests** — classinst.c's `#if _WIN32_WINNT >= 0x502` became `#[cfg(target_pointer_width)]` on two argument expressions, and theme.c's `#if (WINVER >= 0x0600)` became `#[cfg(target_arch)]`. A version test and an architecture test look alike and are never interchangeable. | **flipped** |
 | **hal** (x86 + arm64 stub) | 42+ cohab markers; `.S` NT-ABI + setjmp glue *(not re-verified this pass)*. **i386 default flavor is now APIC** (LAPIC/IOAPIC/TPR, lazy-IRQL, RTC clock — i386-apic-hal lane, 2026-07-16); the legacy 8259 PIC HAL is preserved in-tree, gated off, behind `vibeos-cli build --hal-pic` (`VIBEOS_PIC_HAL`). amd64 was already APIC | **~97%** |
@@ -228,7 +233,7 @@ no crate.
 | **Driver fleet** (storage, FS, input, bus, netstack) | see below — netstack is a from-scratch Rust rewrite; rest cohab-flipped | **~90–100%** |
 | **LSA/SAM server** (lsasrv / samsrv) | active frontier — samsrv ~90%, lsasrv ~50%+ | **partial** |
 | **explorer.exe** (desktop shell) | `explorer-rust` 22 `.rs`/22K LOC; 22 cohab markers; 2 glue `.cpp` left (settings_shim, util_vararg) | **~99%** |
-| **CRT** (msvcrt/ucrt body) | **The legacy CRT DLLs are Rust now too (2026-09-25, i386, the only arch they build on): msvcrt20 669/681 (98%), msvcrt40 659/673 (97%), crtdll 469/505 (92%)**, up from 0% -- they link msvcrt_static's same `_MSVCR_VER=0` C and now take the same cohab archive and varargs shims as msvcrt.dll (`msvcrt_rust_cohab.cmake`), so msvcrt-difftest's grading is their evidence too; `tools/payloads/oldcrt` loads each in the guest and checks a spread of exports (all PASS). `--dll` measures any of the four; the tool's i386 figures were ~0% until the same day (it never stripped i386's leading underscore). **1,192 of 1,280 implemented C exports Rust-backed — 93%** (2026-09-13, amd64. **Re-measure with `python3 tools/msvcrt_export_coverage.py`** — this figure was hand-derived three times and rotted every time: the previous entry said 44% while the true value was already 91%, because eight waves landed and nobody re-ran the recipe written out beside it. The tool refuses a stale or missing archive rather than reporting the previous wave's number.) The denominator excludes 24 `-stub` entries (msvcrt has no body at all — and `-stub` is a FLAG on `@ varargs -stub`, not a directive, which is how the first draft counted them as implemented), 5 DLL forwards, and the 124 `?`-mangled C++ exports, which are a separate lane. **None of the 88 still-C exports is msvcrt's own C**: 40 are crtmath (16 x87 `_CI*`, 21 `__libm_sse2_*`, 3 `_ftol*` — all assembly; the 18 float/bessel/misc that used to sit here are Rust as of 2026-09-13, see the crtmath section below), 18 are i386 FDIV errata fixups in asm, 17 are SEH/setjmp asm plus `except_i386`, 6 are dbgrpt, 6 are `i386/inout.s` port I/O, and one is `memmove`, which is deliberately not Rust (§9.65: LLVM folds a byte-copy loop back into a call to itself). crtmath and dbgrpt are a shared-library lane serving five DLLs, not an msvcrt one. Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). Every `.c` in `msvcrt_static` still compiles and is inert — Rust wins by lld first-match — and every one now has a Rust counterpart except `sincos.c`, whose two symbols are `#pragma makedep implib` and never reach the DLL export table at all. `concurrency.c` (3,839 lines) and `handler4.c` (775) compile to **ZERO defined symbols** at this `_MSVCR_VER=0` config — entirely inside version-gated blocks, confirmed by `nm` and independently by `profile_derive --target msvcrt_shared`, which flags handler4 `DEAD_TU` at 97% dead with "DO NOT PAY TO TRANSLATE IT". Neither is porting debt; both would have been money burned. **ucrtbase now links Rust** (2026-09-05): it is vendored Microsoft UCRT (`sdk/lib/ucrt`, see vendor.yaml) plus OUR `msvcrt_shared` plus 132 lines of its own C, so the shared TUs -- cpp.c, cpp_rtti, except.c, except_<arch>.c, seh_i386, undname.c -- moved into their own crate `crt-shared-rust`, and `crt-shared-cargo` is what ucrtbase links under `--whole-archive` ahead of `msvcrt_shared`. The split is the point, not the packaging: ucrtbase.spec and msvcrt's cohab archive collide on 891 names of which only 35 are msvcrt_shared's, so pointing msvcrt's rail at ucrtbase would have silently replaced 856 genuine Microsoft UCRT bodies with msvcrt-contract ones -- and with `--allow-multiple-definition` that raises no diagnostic at all. Measured, not argued: the ucrtbase archive defines 128 symbols where msvcrt's defines 1,320, and `tools/verify_ucrtbase_cohab.py` (in `vibeos-cli check`, empty strict baseline) fails the build if the archive ever defines something ucrtbase EXPORTS that `msvcrt_shared`'s C does not -- negative-tested at 899 findings by putting msvcrt's archive in the slot. The `ucrtsupport` cargo feature carries the `-D__UCRTSUPPORT__` live set, which swaps in BOTH directions: 7 bodies out (set_terminate, _get_terminate, terminate, unexpected, __pxcptinfoptrs, signal, raise -- ucrt owns those) and 15 in that msvcrt's `_MSVCR_VER=0` never compiled. The arch-SEH family is no longer owed on i386: `msvcrt-seh-difftest` (2026-08-07) is a 32-bit host harness that grades `except_i386.c` at 9,982 rows, and it caught a shipping panic — a C flexible array indexed as a Rust array. `except_x86_64.c` and `except_arm64.c` stay ungraded on purpose: between them the ten symbols are one-line calls through a function pointer, a `Rip` read, a two-line FIXME stub, and one `RtlUnwindEx` wrapper, so rows over them would grade nothing anyone would miss. | **~13–19%** |
+| **CRT** (msvcrt/ucrt body) | **msvcrt.dll and ucrtbase.dll link no hand-written C or assembly on any arch (2026-10-04)**: each one's only C object was its spec2def-generated `*_stubs.c` (link maps, all three arches), and since 2026-10-06 that is Rust too: spec2def emits `*_stubs.rs`, compiled by one `rustc --emit=obj` per module, for every spec module in the tree (build-system.md, "spec2def stubs"). **The CRT DLLs link no C at all.** What moved that day: crtmath's i386 `_ftol*`/`_CI*`/`__libm_sse2_*` (crt-shared-rust `crtmath_i386`, shared by all five CRT DLLs), amd64 MXCSR float control and FMA3 detection (ucrt-rust `fpctrl_amd64`/`fma3`), PSEH and setjmp/longjmp (pseh-rust/setjmp-rust user builds, named BY PATH ahead of ntdll's import library), msvcrt_shared's i386 `.s` files, the 133 `...` entry points (varargs-rust `va_entry!` thunks; `tools/payloads/vaentry`), vcstartup/vcruntime/`ucrt_tls_sup` (ucrt-rust `vcstartup`, crt-shared-rust `ucrt_tls`), `_chkesp`, `dbgrpt` (msvcrt-crt-rust `dbgrpt`) and the delay-load runtime (delayimp-rust, every delay-importing module). The "still-C" list further down predates this. Same day, after: msvcrt20's two `_getmainargs` overrides and crtdll's `dllmain.c` moved to msvcrt-crt-rust `legacy.rs` under `CRTDLL_`/`MSVCRT20_` names the specs map (an unprefixed `_strinc` in the shared archive would have become msvcrt.dll's too), and **no CRT DLL links `msvcrt_static` any more** -- nor crtmath, vcruntime, wine, chkstk or chkesp; import and export tables of all four DLLs unchanged except crtdll's newly-filled `_baseversion_dll` importing `GetVersion`. `msvcrt_static` is still compiled, unlinked, as the tools' reference objects (`gen_ctype_tables.py`, `gen_msvcrt_ref_protos.py`, `verify_cohab_coverage.py`). Then ucrtbase the same way: msvcrt_shared, crtmath, vcruntime, vcstartup, chkstk, wine and libsupc++ off its link line (`tools/link_pulls.py`: no object pulled on any arch), kept compiled as `verify_ucrtbase_cohab`'s reference. And all five CRT DLLs link WITHOUT `--allow-multiple-definition` (`link_strict`, build-system.md): one Rust graph each, with pseh-rt/setjmp-rt (and delayimp-rt in msvcrt's) inside it instead of separate archives named by path, and no clang_rt. The vendored AMD libm_sse2 tree ships in nothing: gdi32's `atan2`, its last user, is atan2-rust. The generated stubs went Rust on 2026-10-06. **ucrtbase has no Microsoft C left (2026-10-03).** `sdk/lib/ucrt` and `sdk/lib/ucrt_reactos` are deleted; `ucrt-rust` owns every implemented export (`tools/ucrt_burndown.py`: MICROSOFT 0 on all three arches; `tools/ucrt-takeover.yaml` names each family's replaced files and its Tier-2 oracle -- eight batches, each graded in the arm64 guest against the Microsoft C it replaced, the last via `ucrt_tier2_sweep.py --takeover-from`). The headers went too (2026-10-03): `sdk/include/ucrt` is deleted and ucrtbase, vcruntime, vcstartup and the ucrtbase tests build against ReactOS's own `sdk/include/crt`, plus mingw-w64's public-domain `corecrt_startup.h` there and the startup-handshake prototypes in `vcruntime/inc/internal_shared.h`; the arm64 FP-control forward to msvcrt is gone (`fpctrl_arm64.rs`). Microsoft's UCRT survives only in git history, as the host difftests' pinned reference. The text below predates the takeover where it calls ucrt vendored. **The legacy CRT DLLs are Rust now too (2026-09-25, i386, the only arch they build on): msvcrt20 669/681 (98%), msvcrt40 659/673 (97%), crtdll 469/505 (92%)**, up from 0% -- they link msvcrt_static's same `_MSVCR_VER=0` C and now take the same cohab archive and varargs shims as msvcrt.dll (`msvcrt_rust_cohab.cmake`), so msvcrt-difftest's grading is their evidence too; `tools/payloads/oldcrt` loads each in the guest and checks a spread of exports (all PASS). `--dll` measures any of the four; the tool's i386 figures were ~0% until the same day (it never stripped i386's leading underscore). **1,192 of 1,280 implemented C exports Rust-backed — 93%** (2026-09-13, amd64. **Re-measure with `python3 tools/msvcrt_export_coverage.py`** — this figure was hand-derived three times and rotted every time: the previous entry said 44% while the true value was already 91%, because eight waves landed and nobody re-ran the recipe written out beside it. The tool refuses a stale or missing archive rather than reporting the previous wave's number.) The denominator excludes 24 `-stub` entries (msvcrt has no body at all — and `-stub` is a FLAG on `@ varargs -stub`, not a directive, which is how the first draft counted them as implemented), 5 DLL forwards, and the 124 `?`-mangled C++ exports, which are a separate lane. **None of the 88 still-C exports is msvcrt's own C**: 40 are crtmath (16 x87 `_CI*`, 21 `__libm_sse2_*`, 3 `_ftol*` — all assembly; the 18 float/bessel/misc that used to sit here are Rust as of 2026-09-13, see the crtmath section below), 18 are i386 FDIV errata fixups in asm, 17 are SEH/setjmp asm plus `except_i386`, 6 are dbgrpt, 6 are `i386/inout.s` port I/O, and one is `memmove`, which is deliberately not Rust (§9.65: LLVM folds a byte-copy loop back into a call to itself). crtmath and dbgrpt are a shared-library lane serving five DLLs, not an msvcrt one. Wave 14m flipped the **whole core libm** (+45 exports: `sin`/`cos`/`exp`/`pow`/`sqrt`/`fmod`/`abs`/`div`/… — the DLL's math exports bind straight to `crtmath`'s plain names, and cnt-rust's kernel-proven `cabi/math.rs` supplies them via one `cabi-math` feature; no new code, cnt-difftest already grades that engine against the same sources). Waves 1–13 cover — the pure string/mem/wide/radix/`_s` floor, the whole locale-table **ctype/case** family (`ctype.c`), the **collation** family, and the **bignum float parser** (`strtod`/`atof`/`wcstod`/`_atoflt`/`_atodbl`/`_atoldbl`/`__STRINGTOLD` — msvcrt's own `bnum.h` PORTED, wave 5's DO-NOT-FLIP reversed the honest way). Differentially proved against the genuine `string.c`/`wcs.c`/`ctype.c` by **six** instruments (`classify` values incl. **exact 64-bit float bit patterns** · `oob_guard` access · `perf` speed · `hot_path` per-element env lookups · `ref_integrity` the oracle · `link`), in **both** the "C" and a real NLS locale. The float family flips on all three arches — i386 via x87 `ST(0)` extern-C returns (I first gated it out on a wrong premise; field manual §9.79). Phase D's locale door is OPEN (`msvcrt-sys` = bindgen + `offset_of!` + a two-compiler layout guardian). Every `.c` in `msvcrt_static` still compiles and is inert — Rust wins by lld first-match — and every one now has a Rust counterpart except `sincos.c`, whose two symbols are `#pragma makedep implib` and never reach the DLL export table at all. `concurrency.c` (3,839 lines) and `handler4.c` (775) compile to **ZERO defined symbols** at this `_MSVCR_VER=0` config — entirely inside version-gated blocks, confirmed by `nm` and independently by `profile_derive --target msvcrt_shared`, which flags handler4 `DEAD_TU` at 97% dead with "DO NOT PAY TO TRANSLATE IT". Neither is porting debt; both would have been money burned. **ucrtbase now links Rust** (2026-09-05): it is vendored Microsoft UCRT (`sdk/lib/ucrt`, see vendor.yaml) plus OUR `msvcrt_shared` plus 132 lines of its own C, so the shared TUs -- cpp.c, cpp_rtti, except.c, except_<arch>.c, seh_i386, undname.c -- moved into their own crate `crt-shared-rust`, and `crt-shared-cargo` is what ucrtbase links under `--whole-archive` ahead of `msvcrt_shared`. The split is the point, not the packaging: ucrtbase.spec and msvcrt's cohab archive collide on 891 names of which only 35 are msvcrt_shared's, so pointing msvcrt's rail at ucrtbase would have silently replaced 856 genuine Microsoft UCRT bodies with msvcrt-contract ones -- and with `--allow-multiple-definition` that raises no diagnostic at all. Measured, not argued: the ucrtbase archive defines 128 symbols where msvcrt's defines 1,320, and `tools/verify_ucrtbase_cohab.py` (in `vibeos-cli check`, empty strict baseline) fails the build if the archive ever defines something ucrtbase EXPORTS that `msvcrt_shared`'s C does not -- negative-tested at 899 findings by putting msvcrt's archive in the slot. The `ucrtsupport` cargo feature carries the `-D__UCRTSUPPORT__` live set, which swaps in BOTH directions: 7 bodies out (set_terminate, _get_terminate, terminate, unexpected, __pxcptinfoptrs, signal, raise -- ucrt owns those) and 15 in that msvcrt's `_MSVCR_VER=0` never compiled. The arch-SEH family is no longer owed on i386: `msvcrt-seh-difftest` (2026-08-07) is a 32-bit host harness that grades `except_i386.c` at 9,982 rows, and it caught a shipping panic — a C flexible array indexed as a Rust array. `except_x86_64.c` and `except_arm64.c` stay ungraded on purpose: between them the ten symbols are one-line calls through a function pointer, a `Rip` read, a two-line FIXME stub, and one `RtlUnwindEx` wrapper, so rows over them would grade nothing anyone would miss. | **~13–19%** |
 
 ### CRT (msvcrt) detail — the assemble-from-`cnt-rust` track
 
@@ -1406,11 +1411,17 @@ Three things worth keeping:
   `if(USE_LLVM_MINGW)`, and we build WITH llvm-mingw, whose clang cannot assemble MASM. The
   arm that actually compiles (math.cmake:161-166) names `math/sinf.c`. Ordinary C, on all
   three arches. Check which arm is live before sizing anything else in this tree.
-* **The Bessel bodies are vendored and were nearly paid for.** `_j0`..`_yn` are 102 lines of
-  ours sitting on 1,346 lines of Sun FDLIBM under `math/ieee754/`, which `vendor.yaml`
-  registered 2026-09-06 precisely so nobody translates them. Only the errno/`_fpclass` shell
-  was ported; cnt-difftest compiles the FDLIBM once and has BOTH sides call it, so a row can
-  only ever report a divergence in the part that is ours.
+* **The Bessel bodies are `libm`'s (2026-10-04).** `_j0`..`_yn` are 102 lines of ours (the
+  errno/`_fpclass` shell) over the `libm` crate's j0..yn. They used to sit on 1,346 lines of
+  vendored NetBSD FDLIBM under `math/ieee754/`, now deleted: same lineage, ~0.3% of 3M
+  arguments differ by ulps, and against a 200-bit reference `libm` has the far smaller worst
+  case (jn 10 ulp vs 901). cnt-difftest has BOTH sides call `libm` under the C shell, so a row
+  only ever reports a divergence in the part that is ours.
+* **cnt-rust's transcendental C89 set is `libm`'s too** wherever `cnt_libm` holds: sin, cos,
+  tan, asin, acos, atan, atan2, the hyperbolics, `_hypot`, and their `f` forms, each with
+  Wine's `math_error` points through `__cnt_math_error` (exp/log/pow/log10/fmod went first).
+  The AMD ports stay as `*_amd`, graded against their C, and are still the exports on the
+  no-SSE i686 build. sqrt, ldexp and `_logb` kept their exact bodies and gained the reports.
 * **`_j0`..`_yn` are `cabi-math` ONLY, not `cabi`.** They call `_errno`, which the kernel
   does not have (not in ntoskrnl.spec). cnt-rust is one codegen unit, so an ungated `_errno`
   would make the whole math object fail the kernel link. Verified by `nm`: the i386
@@ -1478,7 +1489,7 @@ here. Do not assume the ucrtbase link-order finding above applies to it.
 | bucket | files | lines |
 |---|---|---|
 | AMD LibM — `math/libm_sse2/`, vendored | 48 | 8,900 |
-| Sun FDLIBM — `math/ieee754/`, vendored | 3 | 1,346 |
+| Sun FDLIBM — `math/ieee754/`, vendored (deleted 2026-10-04 for `libm`) | 3 | 1,346 |
 | i386-only (x87 asm shims, `_CI*`, `libm_sse2.c`) | 13 | 772 |
 | already has a `cnt-rust` Rust body | 60 | 2,234 |
 | **ours, still C** | **35** | **1,259** |
@@ -1956,11 +1967,26 @@ constants that are pure bit positions, where an invented value demangles with th
 options rather than failing.
 
 ### Driver fleet detail
-Essentially the entire boot/smoke driver fleet is Rust. **Two drivers are from-scratch
-Rust with zero C: `netstack.sys` (replacing the legacy NDIS/tcpip stack) and `usbxhci.sys`
+Essentially the entire boot/smoke driver fleet is Rust. **Five drivers are from-scratch
+Rust with zero C: `netstack.sys` (replacing the legacy NDIS/tcpip stack), `usbxhci.sys`
 (the USB 3 xHCI miniport under usbport, written against the xHCI 1.2 spec, 2026-09-26; it
 drives the Raspberry Pi 4's VL805;
-`docs/engineering/usbxhci-design.md`).** USB mass storage on arm64 (usbstor → classpnp/disk
+`docs/engineering/usbxhci-design.md`), `sdhc.sys` (arm64, 2026-10-05: the Pi 4's SD
+card slot, an SDHCI 3.0 host, presented to disk.sys as a SCSI disk with no port driver
+underneath; `sdhc-rust/src/lib.rs`), `vioblk.sys` (a virtio-blk SCSIPORT miniport
+over the `virtio-drivers` crate, 2026-10-05: one SCSI disk per virtio-blk PCI function,
+interrupt-driven since 2026-10-06; x86 boots its ISO over virtio-blk with it, which it could
+not before — the kernel had no virtio-blk driver at all — and arm64 mounts its boot disk
+through it. Since 2026-10-06 it is also the PnP driver for arm64's virtio-mmio disks, which
+scsiport's bus scan cannot reach: the HAL publishes each block slot from ACPI (LNRO0005) and
+vioblk presents it to disk.sys on the shared `scsidisk-rust` layer, in nvme.sys's shape;
+`vioblk-rust/src/pnp.rs`. Every arm64 smoke requires its scratch disk served on interrupts,
+and `tests/qemu/test_virtio_mmio.py` copies a file on one from the desktop) and `nvme.sys` (all three
+arches, 2026-10-06: NVM Express controllers, each namespace presented to disk.sys with no
+port driver underneath; completions by MSI-X interrupt (2026-10-07: admin and I/O
+queues on their own messages, the pin when none are assigned) with a 10 ms timer behind
+it; since 2026-10-07 up to 63 commands in flight on its one I/O queue, by DMA straight to the
+requester's MDL pages; `nvme-rust/src/lib.rs`, on the shared `scsidisk-rust` SCSI layer).** USB mass storage on arm64 (usbstor → classpnp/disk
 → partmgr → mountmgr → fastfat, all Rust bodies) is first boot-exercised by the xHCI rig's
 stick test, 2026-09-26; before that none of those five was staged on arm64.
 Everything else is a cohab flip (body in a `*-rust` crate, thin C residue —
@@ -1980,15 +2006,18 @@ that isn't just a port — capabilities and correctness properties that go past 
 ReactOS, made tractable because the kernel is now our Rust in one workspace. Landed-vs-in-
 flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
 
-- **x86-on-ARM64 — a homegrown Rosetta (WoW64 + FEX).** 32-bit x86 PE binaries launch as a
-  **WoW64 process on the ARM64 NT kernel** — Phase B complete + Phase C M1 landed (real
-  i386 PE runs through the full WoW64 stack: `wow64.dll`/`wow64cpu`/`wow64win`, generated
-  syscall thunks). M3b (ntdll32 loader → `RtlCreateActivationContext`) is in flight on
-  `fex-arm`, currently blocked on a foundational arm64 unaligned-access fault. The x86→arm64
-  execution engine is **FEX-emu** (vendored FEX-2607, `wow64fex`/`FEXOfflineCompiler` link
-  with zero patches; `fexprobe` executes an x86 guest blob) — the "run real x86 Windows
-  binaries on an ARM64 Rust kernel" thesis. Docs: `active-lanes/wow64-plan.md`,
-  `active-lanes/fex-bringup-plan.md`.
+- **x86-on-ARM64 — a homegrown Rosetta (WoW64 + FEX).** 32-bit x86 PE binaries run as
+  **WoW64 processes on the ARM64 NT kernel**: `wow64.dll` + generated syscall thunks over
+  **FEX-emu** (vendored FEX-2607; one recorded patch, `vendor-patches/fex.md`). The graded
+  guest ladder is green in QEMU and on a **real Raspberry Pi 4** (roadmap, 2026-10-04 entry),
+  and amd64 runs the same ladder natively through `wow64cpu`. **x86-64 on ARM64** started
+  2026-10-05 (BTCpu64, Fork B of `wow64-x64-guest-design.md`): our own CPU-layer contract,
+  `wowx64.dll` (Rust, no C counterpart) driving `libwowx64fex.dll` (FEXCore in 64-bit mode,
+  linked out of tree). M2 (2026-10-06): the x64 ladder (`hello64` + the ten 32-bit guest
+  sources rebuilt for x86-64) passes under FEX on arm64 and natively on amd64, on the guest's
+  own amd64 ntdll, loader and system DLLs. Docs: `active-lanes/wow64-plan.md`,
+  `active-lanes/fex-bringup-plan.md` (32-bit), `wow64-x64-guest-design.md` (x86-64: status
+  and the owed list).
 - **SMP / multi-processor bring-up.** The `CONFIG_SMP` kernel (`ntkrnlmp.exe`) **links on
   all three arches and boots `-smp 1` to desktop (amd64)** — landed. The **first amd64 AP
   starts and runs `KiSystemStartup`** (CPU 1 parks) on the `smp-bringup` lane; M2 is pinned
@@ -2064,49 +2093,24 @@ flight is marked; in-flight lanes live in [`active-lanes/`](active-lanes/).*
     `cnt-rust` because i386 builds `-sse,-sse2` (the same ABI-required-target-feature error that
     forced every `cabi/math.rs` helper to `extern "C"`); `nexttowardf.c` takes an x87 80-bit
     `long double`, which Rust has no type for. So `libcntpr` is done.
-  - `msvcrtex` — **translated** (`crt-startup-rust` + `crt0-rust` + `crt-dllmain-rust`, ~190
-    symbols, commit `94f2d421748`) but wired through **`reactos-link`'s `.msvcrtex_crt()`**, not
-    CMake — so grepping CMakeLists for the crate name finds nothing and it looks orphaned. It
-    ships into *cargo* modules; the 44-TU C archive still ships into every module that links
-    `libmsvcrt` the C way (`dll/win32/msvcrt/CMakeLists.txt:311`). Retiring the C archive is an
-    architectural call, not a transcription.
-  - **`user32_wsprintf` — 12 TUs, and the one genuine unclaimed CRT frontier left.**
-    It is the LAST target in the tree still compiling `printf/streamout.c` +
-    `wstreamout.c` as C: the 708-line engine is already Rust in `cnt-rust`
-    (`cabi/streamout.rs`) and flipped for `libcntpr` (`libcntpr.cmake:125`). The other
-    10 TUs are 4 trivial leaves (`strnlen` 5 lines, `wcsnlen` 6, `mbstowcs_nt` 66,
-    `wcstombs_nt` 57) and 8 irreducible variadic shells.
-
-    **It is not free wiring, because `-D_USER32_WSPRINTF` (`sdk/lib/crt/CMakeLists.txt:47`)
-    is a different CONFIGURATION of that engine**, and `cabi/streamout.rs:294` says those
-    paths are deliberately not compiled. The delta is bounded and fully enumerable — six
-    points, mostly subtractive:
-      1. no `_IOSTRG`/`_base == NULL` early-return in `streamout_char`/`_astring`/`_wstring`
-         (3 sites, `streamout.c:231/257/285`);
-      2. the buffer path is `defined(_USER32_WSPRINTF) || defined(_LIBCNT_)` — ALREADY
-         what the Rust implements, so this one costs nothing;
-      3. `USE_MULTISIZE 0` (`:318`) — no size modifiers;
-      4. `*` field width and precision emit the literal `*` instead of consuming a
-         `va_arg` (`:376`, `:407`);
-      5. no float conversions — the `G/E/A/g/e/a/f` cases are `#ifndef`-ed out (`:548`);
-      6. `fieldwidth += 2` for the `FLAG_SPECIAL` `0x` prefix (`:608`).
-
-    **Do NOT implement this as a cargo feature on `cnt-rust`.** Cargo features are an
-    additive UNION and this one is not additive: it changes the behaviour of symbols that
-    already exist rather than adding new ones. `cnt-rust` has 10 dependents and is one
-    codegen unit, so unification would hand `libcntpr` — the KERNEL's printf — the user32
-    variant, silently and with no diagnostic. Its own Cargo.toml already documents this
-    hazard for `cabi`/`cabi-math` ("The msvcrt DIFFTEST must NOT see this feature").
-    The right shape is a separate crate, exactly the precedent `crt-shared-rust` set when
-    ucrtbase needed its own configuration of the shared TUs.
-
-    Link mechanics, checked: there is no `--whole-archive` rail in `sdk/cmake`, and
-    `win32ss/user/user32/CMakeLists.txt:126` lists `user32_wsprintf` BEFORE
-    `${USER32_RUST_LIB}`, so a Rust twin loses to the C by lld first-match. Unlike
-    ucrtbase this is fixable: `user32_wsprintf` is a plain static lib whose source list
-    can be edited, which is the ordinary cohab pattern. Scoped 2026-09-13, not started —
-    user32 is on the boot path, so this wants its own session with a 3-arch smoke, not
-    the tail of one.
+  - `msvcrtex` — **Rust everywhere (2026-10-04).** `crt-startup-rust` + `crt0-rust` +
+    `crt-dllmain-rust`, which cargo modules linked through reactos-link's `.msvcrtex_crt()`, are
+    now also what every CMake module gets: `msvcrtex.cmake` builds one variant per personality
+    (dll / exe / wide exe / bare) and `set_entrypoint` records which one a module links
+    (`REACTOS_CRT_KIND`). The 44 C TUs compile nowhere; only the MSVC integer/stack-probe
+    intrinsics stay asm (`msvcrtex_asm`). Two things the C archive had silently provided:
+    `_recalloc` (added upstream after the translation; now in crt-startup-rust) and a C link
+    language for modules with no C of their own (now `set_module_type`).
+  - **`user32_wsprintf` — Rust (2026-10-04, `user32-wsprintf-rust`).** cnt-rust's
+    `cabi/streamout.rs` compiled a second time under `cfg(streamout_user32)` (a per-crate cfg,
+    so libcntpr cannot inherit it, which is why this is not a cargo feature), carrying the six
+    `_USER32_WSPRINTF` differences; the `wv[s|sn]printf{A,W}` string-stream wrappers; the
+    NT-flavoured `mbtowc`/`wctomb`/`mbstowcs`/`wcstombs` and `str/wcsnlen`; and `wsprintfA/W`,
+    the two C-variadic exports, as naked thunks (`varargs.rs`: spill the register-passed
+    variadics next to the stack ones, call a `va_list` helper; SEH directives on amd64/arm64).
+    cnt-difftest grades the configuration against the genuine streamout.c built
+    `-D_USER32_WSPRINTF` (a dropped `fieldwidth += 2` fails it); `tools/payloads/wsprintf`
+    grades the thunks across the register/stack boundary on all three arches.
 
 
   Recorded because the obvious check misleads: `grep -rl '\bcrt\b' --include=CMakeLists.txt`

@@ -48,6 +48,7 @@ pub mod interlocked;
 pub mod ke;
 pub mod macros;
 pub mod mm;
+pub mod portio;
 pub mod ob;
 pub mod probe;
 pub mod guards;

@@ -75,7 +75,7 @@ unsafe fn DesktopPtrToUser(ptr: PVOID) -> PVOID {
 }
 #[inline]
 unsafe fn GetThreadDesktopInfo() -> PDESKTOPINFO {
-    let ti = (*NtCurrentTeb()).Win32ThreadInfo as PTHREADINFO;
+    let ti = GetW32ThreadInfo();
     if !ti.is_null() {
         (*GetWin32ClientInfo()).pDeskInfo
     } else {
@@ -120,17 +120,7 @@ pub unsafe extern "system" fn UserSetLastNTError(Status: NTSTATUS) {
     UserSetLastError(RtlNtStatusToDosError(Status));
 }
 
-unsafe fn GetW32ThreadInfo() -> PTHREADINFO {
-    let mut ti: PTHREADINFO;
-
-    ti = (*NtCurrentTeb()).Win32ThreadInfo as PTHREADINFO;
-    if ti.is_null() {
-        NtUserGetThreadState(THREADSTATE_GETTHREADINFO as _);
-        ti = (*NtCurrentTeb()).Win32ThreadInfo as PTHREADINFO;
-    }
-
-    ti
-}
+use crate::windows::message::GetW32ThreadInfo;
 
 #[no_mangle]
 pub unsafe extern "system" fn GetUserObjectSecurity(

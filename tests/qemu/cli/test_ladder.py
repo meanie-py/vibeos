@@ -56,6 +56,23 @@ def test_gui32_wants_its_own_verdict_code():
     assert ladder.check(_all_pass()) is None
 
 
+def test_x64_guests_are_owed_only_where_the_media_carries_them():
+    """STAGED_LADDER: graded when staged. Absent from the media, absent from
+    the serial, and the ladder is green -- an arm64-only tree builds none of
+    them. Staged and silent is a hang, and red."""
+    assert ladder.check(_all_pass()) is None
+    got = ladder.check(_all_pass(), optional_staged=["file64"])
+    assert got is not None and any("file64" in s for s in got["salient"])
+    assert ladder.check(_all_pass() + _serial(file64=0x600D), optional_staged=["file64"]) is None
+
+
+def test_a_red_x64_guest_is_red_even_unasked():
+    """A verdict on the serial is graded whether or not the media read found it:
+    the guest ran, so its answer counts."""
+    got = ladder.check(_all_pass() + _serial(reg64=0xBAD3))
+    assert got is not None and any("reg64" in s and "0xbad3" in s for s in got["salient"])
+
+
 def test_one_guest_silent_is_a_fail_not_a_staging_report():
     """Partial silence is a regression: the others proved the media was staged."""
     text = "".join(line + "\n" for line in _all_pass().splitlines() if "selfmod32" not in line)
@@ -390,6 +407,11 @@ def test_partially_built_names_the_missing_guest_not_a_restage(tmp_path):
 _T0 = time.time()
 
 
+def _all_sources():
+    """Every source a staged guest's freshness is dated against."""
+    return [*ladder.GUEST_SOURCE.values(), *(h for hs in ladder.GUEST_HELPERS.values() for h in hs)]
+
+
 def _built_tree(tmp_path, *, sources=True):
     """A repo with a staged manifest, every guest binary, and their sources."""
     repo = _manifest(tmp_path, [f"reactos/syswow64/{g}.exe=/tmp/x" for g in ladder.staged_guests()])
@@ -398,7 +420,7 @@ def _built_tree(tmp_path, *, sources=True):
     (repo / "tools" / "fex").mkdir(parents=True)
     (repo / ladder.GUEST_BUILDER).write_text("#!/bin/sh\n")
     if sources:
-        for rel in ladder.GUEST_SOURCE.values():
+        for rel in _all_sources():
             src = repo / rel
             src.parent.mkdir(parents=True, exist_ok=True)
             src.write_text("int start(void){return 0;}\n")
@@ -408,7 +430,7 @@ def _built_tree(tmp_path, *, sources=True):
     # EXPLICITLY and far apart rather than with utime(None): the real gap is
     # days, and a test that relies on "now is later than a moment ago" turns
     # filesystem mtime granularity into a flake.
-    for rel in ladder.GUEST_SOURCE.values():
+    for rel in _all_sources():
         os.utime(repo / rel, (_T0 - 1000, _T0 - 1000))
     os.utime(repo / ladder.GUEST_BUILDER, (_T0 - 1000, _T0 - 1000))
     for g in ladder.staged_guests():
@@ -450,7 +472,7 @@ def test_absolute_age_would_not_have_caught_it(tmp_path):
     binary whose source is older still must read as FRESH."""
     repo = _built_tree(tmp_path)
     ancient = _T0 - 60 * 60 * 24 * 90
-    for rel in ladder.GUEST_SOURCE.values():
+    for rel in _all_sources():
         os.utime(repo / rel, (ancient - 100, ancient - 100))
     os.utime(repo / ladder.GUEST_BUILDER, (ancient - 100, ancient - 100))
     for g in ladder.staged_guests():

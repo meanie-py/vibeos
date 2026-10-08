@@ -8,13 +8,13 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{ExGetPreviousMode, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IRP, IoAcquireCancelSpinLock, IoBuildSynchronousFsdRequest, IoGetCurrentIrpStackLocation, IoGetFileObjectGenericMapping, IoGetNextIrpStackLocation, IoGetRelatedDeviceObject, IoReleaseCancelSpinLock, IoSetCancelRoutine, IoSetCompletionRoutine, KEVENT, KPROCESSOR_MODE, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, LPWSTR, MmMapLockedPages, MmProbeAndLockPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDRIVER_CANCEL, PDRIVER_DISPATCH, PDRIVER_OBJECT, PFAST_IO_DISPATCH, PFILE_BASIC_INFORMATION, PFILE_OBJECT, PFILE_STANDARD_INFORMATION, PGENERIC_MAPPING, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL, PSECURITY_DESCRIPTOR, PUNICODE_STRING, RtlCompareUnicodeString, SeQuerySecurityDescriptorInfo, SeSetSecurityDescriptorInfo};
+use ntkrnl_sys::ddk::{ExGetPreviousMode, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IRP, IoAcquireCancelSpinLock, IoBuildSynchronousFsdRequest, IoGetCurrentIrpStackLocation, IoGetFileObjectGenericMapping, IoGetNextIrpStackLocation, IoGetRelatedDeviceObject, IoReleaseCancelSpinLock, IoSetCancelRoutine, IoSetCompletionRoutine, KEVENT, KPROCESSOR_MODE, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, LPWSTR, MmMapLockedPages, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDRIVER_CANCEL, PDRIVER_DISPATCH, PDRIVER_OBJECT, PFAST_IO_DISPATCH, PFILE_BASIC_INFORMATION, PFILE_OBJECT, PFILE_STANDARD_INFORMATION, PGENERIC_MAPPING, PIO_COMPLETION_ROUTINE, PIO_STACK_LOCATION, PIO_STATUS_BLOCK, PIRP, PKEVENT, PLARGE_INTEGER, PMDL, PSECURITY_DESCRIPTOR, PUNICODE_STRING, RtlCompareUnicodeString, SeQuerySecurityDescriptorInfo, SeSetSecurityDescriptorInfo};
 use core::ffi::c_void;
 
 // ---- cross-module helpers + bindgen-name aliases (used only in this module) ----
 use crate::misc::{CompleteRequest, AllocateItem, FreeItem};
 use crate::device::{IKsDevice_Create, IKsDevice_Power, IKsDevice_Pnp};
-use ntkrnl_sys::ddk::{FILE_INFORMATION_CLASS, LOCK_OPERATION};
+use ntkrnl_sys::ddk::{FILE_INFORMATION_CLASS, IoAllocateMdl, LOCK_OPERATION};
 use ntkrnl_sys::ddk::{
     _FILE_INFORMATION_CLASS_FileBasicInformation as FileBasicInformation,
     _FILE_INFORMATION_CLASS_FileStandardInformation as FileStandardInformation,
@@ -34,8 +34,6 @@ use crate::types::{
 
 // ProbeForRead/ProbeForWrite are real ntoskrnl exports (not in the bindgen layer).
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: usize, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: ULONG);
 }
 
 // KS #defines used only here (header-sourced: sdk/include/psdk/ks.h, xdk/iotypes.h)
@@ -157,13 +155,9 @@ pub unsafe extern "system" fn KsReadFile(
     }
 
     if RequestorMode == 1i8 {
-        let mut Status: NTSTATUS;
-        {
-            ProbeForWrite(Buffer, Length as usize, core::mem::size_of::<UCHAR>() as ULONG);
-            Status = STATUS_SUCCESS;
-        }
-        if !NT_SUCCESS(Status) {
-            return Status;
+        // C: _SEH2_TRY { ProbeForWrite } whose handler returns the exception code.
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(Buffer, Length as usize, 1, 1) {
+            return status;
         }
     }
 
@@ -250,13 +244,9 @@ pub unsafe extern "system" fn KsWriteFile(
     }
 
     if RequestorMode == 1i8 {
-        let probe_status: NTSTATUS;
-        {
-            ProbeForRead(Buffer, Length as usize, core::mem::size_of::<UCHAR>() as ULONG);
-            probe_status = STATUS_SUCCESS;
-        }
-        if !NT_SUCCESS(probe_status) {
-            return probe_status;
+        // C: _SEH2_TRY { ProbeForRead } whose handler returns the exception code.
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(Buffer, Length as usize, 1, 1) {
+            return status;
         }
     }
 
@@ -425,9 +415,15 @@ pub unsafe extern "system" fn KsSetInformationFile(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    ProbeForRead(Buffer, Length as usize, core::mem::size_of::<UCHAR>() as ULONG);
-    core::ptr::copy_nonoverlapping(FileInformation as *const u8, Buffer as *mut u8, Length as usize);
-    Status = STATUS_SUCCESS;
+    // Divergence: the C runs `ProbeForRead(Buffer, ...)` on the pool buffer it
+    // just allocated, not on FileInformation. A kernel address always fails that
+    // probe, so the C returned STATUS_ACCESS_VIOLATION for every non-empty call.
+    // What it meant is a guarded capture of the caller's data; its _SEH2_EXCEPT
+    // stores the code, and the failure path below frees the buffer.
+    Status = match ntkrnl_sys::probe::safe_copy_raw(Buffer, FileInformation, Length as usize) {
+        Ok(()) => STATUS_SUCCESS,
+        Err(status) => status,
+    };
 
     if !NT_SUCCESS(Status) {
         FreeItem(Buffer);
@@ -596,7 +592,6 @@ pub unsafe extern "system" fn KsProbeStreamIrp(
     let mut Buffer: *mut core::ffi::c_void;
     let Operation: LOCK_OPERATION;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let StreamHeader: PKSSTREAM_HEADER;
     let IoStack: PIO_STACK_LOCATION;
     let Length: ULONG;
 
@@ -605,68 +600,219 @@ pub unsafe extern "system" fn KsProbeStreamIrp(
 
     if (*Irp).RequestorMode == 0i8 || !(*Irp).AssociatedIrp.SystemBuffer.is_null() {
         if (*Irp).RequestorMode == 0i8 {
+            /* no need to allocate stream header */
             (*Irp).AssociatedIrp.SystemBuffer = (*Irp).UserBuffer;
         }
-        'AllocMdl: loop {
-            if (ProbeFlags & KSPROBE_ALLOCATEMDL) == 0 {
-                return STATUS_SUCCESS;
-            }
-            if !(*Irp).MdlAddress.is_null() {
+    } else {
+        /* probe user mode buffers */
+        if !(Length != 0
+            && (HeaderSize == 0
+                || Length % HeaderSize == 0
+                || ((ProbeFlags & KSPROBE_ALLOWFORMATCHANGE) != 0
+                    && Length as usize == core::mem::size_of::<KSSTREAM_HEADER>())))
+        {
+            return STATUS_INVALID_BUFFER_SIZE;
+        }
+
+        /* allocate stream header buffer */
+        (*Irp).AssociatedIrp.SystemBuffer = AllocateItem(NonPagedPool, Length as usize);
+        if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        /* mark irp as buffered so that changes the stream headers are propagated back */
+        (*Irp).Flags = IRP_DEALLOCATE_BUFFER | IRP_BUFFERED_IO;
+
+        // C: the probes and the copy are one _SEH2_TRY whose handler stores the
+        // exception code; failure returns it. ProbeForRead and ProbeForWrite make
+        // the same range check, so one Result probe covers each branch.
+        if let Err(status) = ntkrnl_sys::probe::safe_copy_from_user(
+            (*Irp).AssociatedIrp.SystemBuffer,
+            (*Irp).UserBuffer,
+            Length as usize,
+            1,
+            1,
+        ) {
+            return status;
+        }
+        if (ProbeFlags & KSPROBE_STREAMWRITE) == 0 {
+            /* stream reads means writing */
+            (*Irp).Flags |= IRP_INPUT_OPERATION;
+        }
+
+        if (ProbeFlags & KSPROBE_ALLOCATEMDL) == 0 {
+            /* validate the captured headers; with no MDL requested there is
+             * nothing more to do (the C's `goto AllocMdl` returns at once) */
+            return ks_check_stream_headers(Irp, ProbeFlags, HeaderSize, Length, false);
+        }
+        /* else fall through to AllocMdl, which validates and allocates */
+    }
+
+    /* AllocMdl: */
+    if (ProbeFlags & KSPROBE_ALLOCATEMDL) == 0 {
+        /* nothing more to do */
+        return STATUS_SUCCESS;
+    }
+    if (*Irp).MdlAddress.is_null() {
+        /* check all stream headers, allocating an MDL for each data frame */
+        Status = ks_check_stream_headers(Irp, ProbeFlags, HeaderSize, Length, true);
+        if !NT_SUCCESS(Status) {
+            return Status;
+        }
+        if (*Irp).MdlAddress.is_null() {
+            /* No header carried a frame, so there is nothing to probe. The C
+             * jumps to ProbeMdl regardless and dereferences the NULL MdlAddress. */
+            return Status;
+        }
+    }
+
+    /* ProbeMdl: */
+    if (ProbeFlags & KSPROBE_PROBEANDLOCK) != 0 {
+        if (*(*Irp).MdlAddress).MdlFlags as u32 & (MDL_PAGES_LOCKED | MDL_SOURCE_IS_NONPAGED_POOL as u32) != 0 {
+            if (ProbeFlags & KSPROBE_SYSTEMADDRESS) != 0 {
+                Mdl = (*Irp).MdlAddress;
                 loop {
-                    if (ProbeFlags & KSPROBE_PROBEANDLOCK) != 0 {
-                        if (*(*Irp).MdlAddress).MdlFlags as u32 & (MDL_PAGES_LOCKED | MDL_SOURCE_IS_NONPAGED_POOL as u32) != 0 {
-                            if (ProbeFlags & KSPROBE_SYSTEMADDRESS) != 0 {
-                                Mdl = (*Irp).MdlAddress;
-                                loop {
-                                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL as i16;
-                                    if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
-                                        Buffer = (*Mdl).MappedSystemVa;
-                                    } else {
-                                        Buffer = MmMapLockedPages(Mdl, 0i8);
-                                    }
-                                    if Buffer.is_null() {
-                                        ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
-                                    }
-                                    Mdl = (*Mdl).Next;
-                                    if Mdl.is_null() {
-                                        break;
-                                    }
-                                }
-                            }
-                        } else {
-                            Mdl = (*Irp).MdlAddress;
-                            if (ProbeFlags & KSPROBE_STREAMWRITE) == 0 || (ProbeFlags & KSPROBE_MODIFY) != 0 {
-                                Operation = IoWriteAccess;
-                            } else {
-                                Operation = IoReadAccess;
-                            }
-                            loop {
-                                MmProbeAndLockPages(Mdl, (*Irp).RequestorMode, Operation);
-                                if (ProbeFlags & KSPROBE_SYSTEMADDRESS) != 0 {
-                                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL as i16;
-                                    if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
-                                        Buffer = (*Mdl).MappedSystemVa;
-                                    } else {
-                                        Buffer = MmMapLockedPages(Mdl, 0i8);
-                                    }
-                                    if Buffer.is_null() {
-                                        ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
-                                    }
-                                }
-                                Mdl = (*Mdl).Next;
-                                if Mdl.is_null() {
-                                    break;
-                                }
-                            }
-                        }
+                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL as i16;
+                    if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
+                        Buffer = (*Mdl).MappedSystemVa;
+                    } else {
+                        Buffer = MmMapLockedPages(Mdl, 0i8);
                     }
-                    return Status;
+                    if Buffer.is_null() {
+                        /* the C raises this into its own handler, which only
+                         * records it as the status (dead under DUMMY_PSEH) */
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    Mdl = (*Mdl).Next;
+                    if Mdl.is_null() {
+                        break;
+                    }
                 }
             }
-            break 'AllocMdl;
+        } else {
+            Mdl = (*Irp).MdlAddress;
+            if (ProbeFlags & KSPROBE_STREAMWRITE) == 0 || (ProbeFlags & KSPROBE_MODIFY) != 0 {
+                Operation = IoWriteAccess;
+            } else {
+                Operation = IoReadAccess;
+            }
+            loop {
+                /* the C's handler around this loop returns the raised code */
+                Status = ntkrnl_sys::probe::MmTryProbeAndLockPages(Mdl, (*Irp).RequestorMode, Operation as _);
+                if !NT_SUCCESS(Status) {
+                    return Status;
+                }
+                if (ProbeFlags & KSPROBE_SYSTEMADDRESS) != 0 {
+                    (*Mdl).MdlFlags |= MDL_MAPPING_CAN_FAIL as i16;
+                    if (*Mdl).MdlFlags as u16 & (MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) != 0 {
+                        Buffer = (*Mdl).MappedSystemVa;
+                    } else {
+                        Buffer = MmMapLockedPages(Mdl, 0i8);
+                    }
+                    if Buffer.is_null() {
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                }
+                Mdl = (*Mdl).Next;
+                if Mdl.is_null() {
+                    break;
+                }
+            }
         }
     }
     Status
+}
+
+/// The two "check all stream headers" loops of KsProbeStreamIrp (irp.c). They
+/// differ in one place: the AllocMdl pass (`allocate_frames`) also allocates an
+/// MDL for every header's data frame; the user-buffer pass only for a format
+/// change packet. Each C `ExRaiseStatus(X)` lands in a handler that just records
+/// X as the status, so it is returned directly here: under DUMMY_PSEH that
+/// handler is dead and the raise would bugcheck instead of failing the IRP.
+unsafe fn ks_check_stream_headers(
+    Irp: PIRP,
+    ProbeFlags: ULONG,
+    HeaderSize: ULONG,
+    mut Length: ULONG,
+    allocate_frames: bool,
+) -> NTSTATUS {
+    let header_len = core::mem::size_of::<KSSTREAM_HEADER>() as ULONG;
+    let mut StreamHeader = (*Irp).AssociatedIrp.SystemBuffer as PKSSTREAM_HEADER;
+    if StreamHeader.is_null() {
+        return STATUS_INVALID_BUFFER_SIZE;
+    }
+
+    loop {
+        let size = (*StreamHeader).Size;
+        if HeaderSize != 0 {
+            /* does the supplied header size match stream header size and no type changed */
+            if size != HeaderSize && ((*StreamHeader).OptionsFlags & KSSTREAM_HEADER_OPTIONSF_TYPECHANGED) == 0 {
+                return STATUS_INVALID_BUFFER_SIZE;
+            }
+        } else if size < header_len || (size & 7) != 0 {
+            /* stream must be at least of size KSSTREAM_HEADER and 8-byte block aligned */
+            return STATUS_INVALID_BUFFER_SIZE;
+        }
+
+        if Length < size {
+            return STATUS_INVALID_BUFFER_SIZE;
+        }
+        if size == 0 {
+            /* A zero-sized format-change header passes the HeaderSize test and
+             * would never advance; the C spins here forever. */
+            return STATUS_INVALID_BUFFER_SIZE;
+        }
+
+        if (ProbeFlags & KSPROBE_STREAMWRITE) != 0 {
+            if (*StreamHeader).DataUsed > (*StreamHeader).FrameExtent {
+                /* frame extend can never be smaller */
+                return STATUS_INVALID_BUFFER_SIZE;
+            }
+
+            /* is this stream change packet */
+            if ((*StreamHeader).OptionsFlags & KSSTREAM_HEADER_OPTIONSF_TYPECHANGED) != 0 {
+                if Length != header_len || StreamHeader as PVOID != (*Irp).AssociatedIrp.SystemBuffer {
+                    /* stream changed - must be send in a single packet */
+                    return STATUS_INVALID_BUFFER_SIZE;
+                }
+                if (ProbeFlags & KSPROBE_ALLOWFORMATCHANGE) == 0 {
+                    /* caller does not permit format changes */
+                    return STATUS_INVALID_PARAMETER;
+                }
+                if (*StreamHeader).FrameExtent != 0 {
+                    if IoAllocateMdl((*StreamHeader).Data, (*StreamHeader).FrameExtent, 0, 1, Irp).is_null() {
+                        return STATUS_INSUFFICIENT_RESOURCES;
+                    }
+                    /* break-out to probe for the irp */
+                    return STATUS_SUCCESS;
+                }
+            }
+        } else {
+            if (*StreamHeader).DataUsed != 0 {
+                /* DataUsed must be zero for stream read operation */
+                return STATUS_INVALID_BUFFER_SIZE;
+            }
+            if (*StreamHeader).OptionsFlags != 0 {
+                /* no flags supported for reading */
+                return STATUS_INVALID_PARAMETER;
+            }
+        }
+
+        if allocate_frames && (*StreamHeader).FrameExtent != 0 {
+            /* IoAllocateMdl chains each MDL onto Irp->MdlAddress. (The C asserts
+             * MdlAddress == NULL here, which the second header always trips.) */
+            if IoAllocateMdl((*StreamHeader).Data, (*StreamHeader).FrameExtent, 0, 1, Irp).is_null() {
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+        }
+
+        /* move to next stream header */
+        Length -= size;
+        if Length == 0 {
+            return STATUS_SUCCESS;
+        }
+        StreamHeader = (StreamHeader as ULONG_PTR + size as ULONG_PTR) as PKSSTREAM_HEADER;
+    }
 }
 
 #[no_mangle]

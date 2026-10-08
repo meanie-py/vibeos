@@ -85,7 +85,9 @@ def _settle_watch(
     return buf, (milestone in buf) if milestone else True
 
 
-def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
+def _screenshot(
+    vm: QemuVM, work: Path, repo: Path, arch: str, boot_arch: str | None = None
+) -> str | None:
     """Capture a PNG screenshot, pass OR fail, while the VM is still alive.
 
     Screendumps a PPM then converts via PIL — NOT ImageMagick `convert`, which
@@ -109,7 +111,7 @@ def _screenshot(vm: QemuVM, work: Path, repo: Path, arch: str) -> str | None:
     except Exception:
         return str(ppm) if ppm.exists() else None
     try:
-        canon = repo / "qemu" / f"{archcfg.vm_arch(arch)}_smoke.png"
+        canon = repo / "qemu" / f"{boot_arch or archcfg.vm_arch(arch)}_smoke.png"
         img.save(canon, "PNG")
     except Exception:
         pass
@@ -285,11 +287,14 @@ def _boot_vm(
     total: int,
     want_ladder: bool = False,
     timings: dict[str, float] | None = None,
+    boot_arch: str | None = None,
 ) -> dict:
     """A single independent boot. Returns {ok, outcome, classification, ...}.
     `arch` is the base arch (i386/amd64/arm64); the boot config is the vm_arch
     (i386 → i386-uefi) since x86 boots UEFI now."""
-    config = get_arch_config(archcfg.vm_arch(arch))
+    # `boot_arch` names a firmware variant of the same build (amd64-bios); the
+    # base arch alone always resolves to the default UEFI config.
+    config = get_arch_config(boot_arch or archcfg.vm_arch(arch))
     marker = until or config.boot_marker
     work = run.dir / f"boot{idx}"
     work.mkdir(exist_ok=True)
@@ -408,7 +413,7 @@ def _boot_vm(
                 text += ladder_txt
                 run.log(ladder_txt[-8000:], header=f"{label} ladder serial")
         # Always capture a PNG screenshot (pass or fail), while the VM is alive.
-        shot = _screenshot(vm, work, repo, arch)
+        shot = _screenshot(vm, work, repo, arch, boot_arch)
         dbg_raw = ""
         try:
             dbg_raw = vm.read_debugcon().decode("ascii", errors="replace")
@@ -416,7 +421,13 @@ def _boot_vm(
             pass
         if outcome == "reached":
             # A green desktop does not prove an `--smp N` run actually got SMP.
-            smp_fail = _smp_check(text, arch)
+            smp_fail = (
+                _smp_check(text, arch)
+                or _ahci_check(text)
+                or _gic_check(text)
+                or _nvme_check(text)
+                or _virtio_mmio_check(text, arch)
+            )
             if smp_fail is not None:
                 return {
                     "ok": False,
@@ -511,6 +522,16 @@ def _boot_vm(
             last_line = diag.get("last_line", "")
             tail = f"; last serial: {last_line}" if last_line else ""
             tri["salient"].insert(0, f"timeout: {hint}{tail}")
+        # A replay stopped at an armed `replay-break` presents EXACTLY like a hang:
+        # the guest is paused, so serial goes quiet and the early-hang watchdog
+        # fires long before boot_timeout. Reported here rather than only on the
+        # timeout path in vm.py, because this is the path such a run actually
+        # takes -- the first version of this reported nothing for that reason.
+        # Empty string whenever no break was armed, so ordinary boots are
+        # unchanged.
+        brk = vm.report_replay_break()
+        if brk:
+            tri["salient"].insert(0, brk)
         if shot:
             tri["screenshot"] = shot
         return {"ok": False, "outcome": outcome, **tri}
@@ -554,7 +575,7 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
             capture_output=True,
             text=True,
             timeout=1200,
-            env={**os.environ, "VIBEOS_ARTIFACT_DIR": str(run.dir / "net")},
+            env=_net_suite_env(run.dir / "net"),
         )
     except subprocess.TimeoutExpired:
         run.add(
@@ -608,6 +629,30 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
                 ],
             )
         )
+
+
+def _staged_payloads(repo: Path, arch: str) -> list[str]:
+    """The payload names the last build of this arch stamped into its build dir."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "payload_compile", repo / "tools" / "payloads" / "compile.py"
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.read_stamp(repo / f"build-{arch}")
+
+
+def _guest_reached_desktop(results: list[dict]) -> bool:
+    """Whether the plain boots license the payload runs: some boot passed and every
+    failure was a launch failure. A boot that never launched (the host refused or
+    starved QEMU) says nothing about the guest. It still reds the run, but must not
+    throw the payload runs away: a loaded host once cost a whole regstress batch with
+    5/6 boots green."""
+    return any(r["ok"] for r in results) and all(
+        r["ok"] or r.get("classification") == "LAUNCH_FAIL" for r in results
+    )
 
 
 def _payload_stage(
@@ -709,9 +754,222 @@ def _payload_stage(
         )
 
 
+# uniata-rust prints this from AhciDetect (id_sata.rs) once it has mapped the
+# controller's ABAR and counted its ports; found=1 is the only proof that the
+# guest drove the CD through AHCI rather than some fallback.
+_AHCI_FOUND_RE = re.compile(r"\[UNIATA\] AhciDetect: exit found=1\b")
+
+
+def ahci_requested() -> bool:
+    """`--ahci` (or the older VIBEOS_AHCI_CD=1 knob it sets): the boot CD sits
+    on an ich9-ahci controller instead of the IDE bus (backend.py)."""
+    return os.environ.get("VIBEOS_AHCI_CD", "").strip() == "1"
+
+
+def _ahci_check(text: str) -> dict | None:
+    """Prove an `--ahci` boot actually ran uniata's AHCI path. A desktop alone
+    proves nothing here: if the controller were not attached, or uniata fell
+    back to legacy/PIO mode, the boot would look identical and an AHCI soak
+    would bank green for a path it never touched."""
+    if not ahci_requested() or _AHCI_FOUND_RE.search(text):
+        return None
+    return {
+        "classification": "AHCI_NOT_ENGAGED",
+        "salient": [
+            "--ahci boot reached the desktop but uniata never reported `AhciDetect: exit found=1`",
+            "the CD was not on ich9-ahci (backend.py rewrite) or uniata did not "
+            "claim it in AHCI mode (PCI#CC_0106 in hivesys.inf)",
+        ],
+    }
+
+
+def _net_suite_env(artifact_dir: Path) -> dict[str, str]:
+    """The net suite's environment: ours, minus the NVMe rig. The suite snapshots
+    its VM (savevm), and QEMU's nvme device refuses migration ("State blocked by
+    non-migratable device"), so an `--nvme` smoke that leaked the knob errored
+    every net test at setup. The NVMe controller belongs to the boot under test."""
+    env = {k: v for k, v in os.environ.items() if k != "VIBEOS_QEMU_NVME"}
+    env["VIBEOS_ARTIFACT_DIR"] = str(artifact_dir)
+    return env
+
+
+# nvme-rust prints this once a namespace's disk PDO exists; disk.sys binds it
+# from there. The rig's controller is the only one, so it is controller 0.
+_NVME_PUBLISHED = "[NVME] controller 0: namespace 1 published as a disk"
+
+
+def nvme_default_on(args) -> bool:
+    """`--nvme`, or the amd64-bios lane, which IS the OptiPlex 9020 (Libreboot):
+    the ISO on a USB stick and an NVMe drive in the box. So every gate boots
+    nvme.sys under SeaBIOS, beside a second BIOS disk, and the driver cannot rot
+    unseen. `VIBEOS_QEMU_NVME=0` opts the lane out."""
+    if getattr(args, "nvme", False):
+        return True
+    if os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "0":
+        return False
+    return getattr(args, "arch", "") == "amd64-bios"
+
+
+def nvme_requested() -> bool:
+    """`--nvme` (VIBEOS_QEMU_NVME=1): an NVMe controller is attached (vm.py _nvme_args)."""
+    return os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "1"
+
+
+# ...this once its MSI-X messages are connected (nvme-rust pnp.rs `connect`)...
+_NVME_MSIX = "[NVME] controller 0: MSI-X: "
+# ...this once a completion arrived by interrupt (nvme-rust nvme.rs `tally`)...
+_NVME_INTERRUPTS = "[NVME] controller 0: interrupts working"
+# ...and this after its start-time self-test: one 1 MiB read, which the I/O path
+# cuts into commands and runs at once, by DMA to the reader's pages (pnp.rs `self_test`).
+_NVME_SELF_TEST = re.compile(
+    r"\[NVME\] controller 0: self-test: read \d+ KiB .*?up to (\d+) commands in flight"
+    r".*?(\d+) commands by DMA to the caller's pages"
+)
+
+
+# hal-rust arm64/gic3.rs prints this once clock init has mapped the GICv3...
+_GIC_V3 = "[GIC] GICv3: distributor"
+# ...and arm64/its.rs this once the ITS is up, at the first MSI-X request.
+_GIC_ITS = "[HAL] GICv3 ITS at"
+
+
+def _gic_check(text: str) -> dict | None:
+    """Prove a `--gic 3` boot ran on the GICv3. The GICv2 path never runs there (QEMU
+    describes no GICC), so a desktop already implies most of it, but not that the HAL
+    took the v3 path rather than, say, booting without a clock; and with `--nvme`, that
+    MSI-X went through the ITS."""
+    if os.environ.get("VIBEOS_QEMU_GIC", "").strip() != "3":
+        return None
+    lines = [ln.strip() for ln in text.splitlines() if "[GIC]" in ln or "GICv3" in ln][-6:]
+    if _GIC_V3 not in text:
+        return {
+            "classification": "GIC_NOT_V3",
+            "salient": [
+                f"--gic 3 boot reached the desktop but the HAL never printed `{_GIC_V3}`",
+                *lines,
+            ],
+        }
+    if nvme_requested() and _GIC_ITS not in text:
+        return {
+            "classification": "GIC_NO_ITS",
+            "salient": [f"--gic 3 --nvme boot, but the HAL never printed `{_GIC_ITS}`", *lines],
+        }
+    return None
+
+
+def _nvme_check(text: str) -> dict | None:
+    """Prove an `--nvme` boot brought the controller up, on MSI-X interrupts. A
+    desktop alone proves nothing: the boot never needs the NVMe disk, so a driver
+    that never loaded would look identical. A driver whose interrupt never arrives
+    still works, through its 10 ms poll, so it would quietly regress to polling.
+    And with no messages assigned it falls back to its pin and works there too,
+    so MSI-X could break anywhere along pci.sys -> PnP -> HAL -> IoConnectInterruptEx
+    without a symptom. Every rig's QEMU offers MSI-X (x86 APIC, arm64 GICv2m, or
+    the ITS under --gic 3)."""
+    if not nvme_requested():
+        return None
+    lines = [ln.strip() for ln in text.splitlines() if "[NVME]" in ln][-6:]
+    if _NVME_PUBLISHED not in text:
+        return {
+            "classification": "NVME_NOT_ENGAGED",
+            "salient": [
+                f"--nvme boot reached the desktop but nvme.sys never printed `{_NVME_PUBLISHED}`",
+                *(
+                    lines
+                    or [
+                        "no [NVME] line at all: nvme.sys never loaded "
+                        "(PCI#CC_010802 in hivesys.inf?)"
+                    ]
+                ),
+            ],
+        }
+    if _NVME_MSIX not in text:
+        msix = [ln.strip() for ln in text.splitlines() if "MSI-X" in ln][-4:]
+        return {
+            "classification": "NVME_NOT_MSIX",
+            "salient": [
+                f"the namespace was published but nvme.sys never printed `{_NVME_MSIX}`: "
+                "no MSI-X messages were assigned, so it fell back to its pin",
+                *(msix or ["pci.sys printed no MSI-X line: the request never reached it"]),
+                *lines,
+            ],
+        }
+    if _NVME_INTERRUPTS not in text:
+        return {
+            "classification": "NVME_POLLING",
+            "salient": [
+                f"the namespace was published but nvme.sys never printed `{_NVME_INTERRUPTS}`: "
+                "no completion arrived by interrupt, so the driver ran on its poll",
+                *lines,
+            ],
+        }
+    # One command at a time, or every transfer copied through the bounce buffer,
+    # still works, only slower: a regression to either would never fail a boot.
+    test = _NVME_SELF_TEST.search(text)
+    if not test or int(test[1]) < 2:
+        return {
+            "classification": "NVME_NOT_QUEUED",
+            "salient": [
+                "nvme.sys's self-test never had two commands in flight at once"
+                if test
+                else "nvme.sys printed no self-test read line",
+                *lines,
+            ],
+        }
+    if int(test[2]) == 0:
+        return {
+            "classification": "NVME_BOUNCED",
+            "salient": [
+                "nvme.sys's self-test read went through the bounce buffer, not by DMA "
+                "to the reader's pages (nvme.rs `dma_ready` refused its MDL)",
+                *lines,
+            ],
+        }
+    return None
+
+
+# vioblk-rust's virtio-mmio path prints this once its self-test read has
+# drawn an interrupt (pnp.rs `self_test`).
+_VIRTIO_MMIO_INTERRUPTS = ": interrupts working"
+
+
+def _virtio_mmio_check(text: str, arch: str) -> dict | None:
+    """Prove an arm64 boot served its scratch disk, a virtio-blk-device on the
+    virtio-mmio transport (vm.py _scratch_device_args), on interrupts. Nothing
+    in the boot needs that disk, so a desktop alone would look identical with
+    the HAL never publishing the slot, vioblk never binding it, or its interrupt
+    lost and every transfer quietly running on the 10 ms poll."""
+    if arch != "arm64":
+        return None
+    lines = [ln.strip() for ln in text.splitlines() if "virtio-mmio" in ln][-6:]
+    if any(
+        "[VIOBLK] virtio-mmio" in ln and _VIRTIO_MMIO_INTERRUPTS in ln for ln in text.splitlines()
+    ):
+        return None
+    return {
+        "classification": "VIRTIO_MMIO_DISK_NOT_SERVED",
+        "salient": [
+            "arm64 boot reached the desktop but vioblk never printed "
+            f"`[VIOBLK] virtio-mmio <base>{_VIRTIO_MMIO_INTERRUPTS}` for the scratch disk",
+            *(
+                lines
+                or [
+                    "no virtio-mmio line at all: the HAL published no LNRO0005 block slot "
+                    "(hal-rust arm64/pnpdd.rs) or vioblk never bound it "
+                    "(ACPI#LNRO0005&DEV_0002 in hivesys.inf)"
+                ]
+            ),
+        ],
+    }
+
+
 def smoke(args, repo: Path) -> int:
-    arch = archcfg.base_arch(args.arch)  # base for staleness/build dir; boot resolves vm_arch
-    run = Run("smoke", arch)
+    arch = archcfg.base_arch(args.arch)  # base for staleness/build dir
+    # The boot config. A firmware variant (amd64-bios) shares the base build but must
+    # not collapse back to the default UEFI config, and its runs are labelled as
+    # themselves so flake history never mixes BIOS and UEFI boots.
+    boot_arch = archcfg.vm_arch(args.arch)
+    run = Run("smoke", boot_arch if boot_arch == "amd64-bios" else arch)
 
     # --timing: stamp the live serial log with elapsed seconds so the boot can
     # be decomposed into phases afterwards. The env var is read by the
@@ -768,6 +1026,34 @@ def smoke(args, repo: Path) -> int:
             )
         )
 
+    # --- payload preflight (hard boundary) ---
+    # Payloads are staged at BUILD time, and the build stamps which. Booting media
+    # that lacks the payload waits out its whole launch drain for a marker nothing
+    # can print, then fails as a generic "payload suite FAILED" -- and meanwhile
+    # runs whatever the media DOES carry (an rpmprobe run on kmtest media drove a
+    # kmtest sweep into a double fault and reported it as rpmprobe's failure).
+    wanted = [p.strip() for p in (getattr(args, "payload", "") or "").split(",") if p.strip()]
+    if getattr(args, "doom", False) and "doom" not in wanted:
+        wanted.append("doom")
+    if wanted:
+        staged = _staged_payloads(repo, arch)
+        absent = [p for p in wanted if p not in staged]
+        if absent:
+            run.classification = "PAYLOAD_NOT_IN_MEDIA"
+            run.add(
+                Stage(
+                    "payload-check",
+                    status="fail",
+                    detail=f"media carries {','.join(staged) or '<none>'}, not {','.join(absent)}",
+                    salient=[
+                        f"VIBEOS_PAYLOAD={','.join(wanted)} ./vibeos-cli build --arch {arch}",
+                        "then re-run this smoke",
+                    ],
+                )
+            )
+            return run.finalize(repo)
+        run.add(Stage("payload-check", status="ok", detail=",".join(wanted)))
+
     total = max(1, int(getattr(args, "repeat", 1) or 1))
     until = getattr(args, "until", None) or ""
     fail_on = getattr(args, "fail_on", None)
@@ -786,6 +1072,37 @@ def smoke(args, repo: Path) -> int:
         os.environ["VIBEOS_QEMU_SMP"] = str(smp)
         run.add(Stage("smp", status="warn", detail=f"-smp {smp}"))
 
+    # AHCI channel: the boot CD on ich9-ahci (backend.py), and every boot must
+    # then show uniata driving it (_ahci_check). x86 only: arm64 boots a
+    # ramdisk and has no IDE CD to move.
+    if getattr(args, "ahci", False):
+        if arch == "arm64":
+            run.classification = "BAD_ARGS"
+            run.add(
+                Stage("ahci", status="fail", detail="--ahci is x86-only (arm64 boots a ramdisk)")
+            )
+            return run.finalize(repo)
+        os.environ["VIBEOS_AHCI_CD"] = "1"
+        run.add(Stage("ahci", status="warn", detail="boot CD on ich9-ahci"))
+
+    # GIC channel: arm64's virt machine at gic-version=3 (vm.py gic_version), and
+    # every boot must then show the HAL driving it as one (_gic_check).
+    gic = getattr(args, "gic", None)
+    if gic is not None:
+        if arch != "arm64" and gic != 2:
+            run.classification = "BAD_ARGS"
+            run.add(Stage("gic", status="fail", detail="--gic 3 is arm64-only (x86 has no GIC)"))
+            return run.finalize(repo)
+        os.environ["VIBEOS_QEMU_GIC"] = str(gic)
+        if gic == 3:
+            run.add(Stage("gic", status="warn", detail="GICv3 + ITS"))
+
+    # NVMe channel: a controller attached on every arch (vm.py _nvme_args), and
+    # every boot must then show nvme.sys publishing its namespace (_nvme_check).
+    if nvme_default_on(args):
+        os.environ["VIBEOS_QEMU_NVME"] = "1"
+        run.add(Stage("nvme", status="warn", detail="NVMe controller attached"))
+
     results = []
     for i in range(total):
         r = _one_boot(
@@ -797,6 +1114,7 @@ def smoke(args, repo: Path) -> int:
             idx=i,
             total=total,
             want_ladder=bool(getattr(args, "ladder", False)),
+            boot_arch=boot_arch,
         )
         results.append(r)
         status = "ok" if r["ok"] else "fail"
@@ -871,7 +1189,8 @@ def smoke(args, repo: Path) -> int:
     # isolation is the reason for the extra boot, not an accident. Only runs when
     # the boot itself is green. `--no-net` skips it for fast local boot-only
     # iteration (a dev escape hatch, not the gate default).
-    if arch == "amd64" and npass == total and not getattr(args, "no_net", False):
+    # The net suite boots its own UEFI config; a BIOS smoke does not repeat it.
+    if boot_arch == "amd64-uefi" and npass == total and not getattr(args, "no_net", False):
         _net_stage(run, repo, arch)
 
     # Opt-in payload gate (--payload / legacy --doom alias): its own boot via
@@ -883,7 +1202,7 @@ def smoke(args, repo: Path) -> int:
         payloads = f"{payloads},doom".strip(",")
     # --repeat N soaks the payload too: a payload flake (the app sweep's intermittent crash) is
     # exactly what N runs are for, and one payload boot after N plain boots cannot see it.
-    if payloads and npass == total:
+    if payloads and _guest_reached_desktop(results):
         for i in range(total):
             _payload_stage(run, repo, arch, payloads, idx=i, total=total)
 
@@ -926,7 +1245,8 @@ def boot(args, repo: Path) -> int:
     (machine/KVM/vga/media/debugcon) so the fast path can't diverge from smoke
     (smss-csrss #3: q35-vs-pc misdiagnosis). Writes artifacts, decodes debugcon."""
     arch = archcfg.base_arch(args.arch)
-    run = Run("boot", arch)
+    boot_arch = archcfg.vm_arch(args.arch)
+    run = Run("boot", boot_arch if boot_arch == "amd64-bios" else arch)
     r = _one_boot(
         run,
         repo,
@@ -935,6 +1255,7 @@ def boot(args, repo: Path) -> int:
         fail_on=getattr(args, "fail_on", None),
         idx=0,
         total=1,
+        boot_arch=boot_arch,
     )
     run.add(
         Stage(

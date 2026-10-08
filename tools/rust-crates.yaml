@@ -11,7 +11,7 @@
 # -difftest harness or a build helper. Treat false as certain and true as
 # 'assume it ships'.
 #
-# Regenerate with: tools/vendored.py --write-crates   (58 crates)
+# Regenerate with: tools/vendored.py --write-crates   (59 crates)
 crates:
   - name: aho-corasick
     version: 1.1.4
@@ -95,6 +95,10 @@ crates:
     license: MIT OR Apache-2.0
     ships: false
     host_only_because: build/test only
+  - name: libm
+    version: 0.2.16
+    license: MIT
+    ships: true
   - name: libz-rs-sys
     version: 0.6.3
     license: Zlib

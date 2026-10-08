@@ -42,11 +42,6 @@ list(APPEND SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/server_interp_c.c
     ${CMAKE_CURRENT_BINARY_DIR}/server_interp_s.c)
 
-if(MSVC)
-    # The nmake generator misses this dependency, so set it explicitly until this bug is fixed.
-    set_source_files_properties(server.c PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/server_s.h)
-endif()
-
 add_executable(rpcrt4_winetest ${SOURCE})
 
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")

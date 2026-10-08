@@ -17,14 +17,7 @@ pub unsafe fn CONTAINING_RECORD_typed<T>(address: PVOID, field_offset: usize) ->
     (address as *mut u8).sub(field_offset) as *mut T
 }
 
-// ============================================================================
-// Extern declarations for kernel functions not in bindgen
-// ============================================================================
-
-extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
-}
+use crate::probe::probe_user_range;
 
 // ============================================================================
 // ICIF flags for DefaultQueryInfoBufferCheck / DefaultSetInfoBufferCheck
@@ -93,24 +86,28 @@ pub unsafe fn PspClearCrossThreadFlag(thread: ddk::PETHREAD, flag: ULONG) {
 pub unsafe fn ProbeForReadLargeInteger(
     addr: *const ddk::_LARGE_INTEGER,
 ) -> ddk::_LARGE_INTEGER {
+    probe_user_range(addr);
     core::ptr::read_volatile(addr)
 }
 
 /// ProbeForReadUchar — volatile read of a UCHAR from user-mode.
 #[inline]
 pub unsafe fn ProbeForReadUchar(addr: *const u8) -> u8 {
+    probe_user_range(addr);
     core::ptr::read_volatile(addr)
 }
 
 /// ProbeForReadUshort — volatile read of a USHORT from user-mode.
 #[inline]
 pub unsafe fn ProbeForReadUshort(addr: *const u16) -> u16 {
+    probe_user_range(addr);
     core::ptr::read_volatile(addr)
 }
 
 /// ProbeForWriteHandle — volatile read/write to validate user-mode handle ptr.
 #[inline]
 pub unsafe fn ProbeForWriteHandle(ptr: *mut ddk::HANDLE) {
+    probe_user_range(ptr);
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }
@@ -118,6 +115,7 @@ pub unsafe fn ProbeForWriteHandle(ptr: *mut ddk::HANDLE) {
 /// ProbeForWriteUlong — volatile read/write to validate user-mode ULONG ptr.
 #[inline]
 pub unsafe fn ProbeForWriteUlong(ptr: *mut ULONG) {
+    probe_user_range(ptr);
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }
@@ -171,7 +169,6 @@ pub unsafe fn DefaultSetInfoBufferCheck(
 
 /// DefaultQueryInfoBufferCheck — validate info class and probe buffer for QUERY operations.
 ///
-/// With DUMMY_PSEH, the SEH handlers are dead code; probing may fault.
 #[inline]
 pub unsafe fn DefaultQueryInfoBufferCheck(
     class: ULONG,
@@ -200,35 +197,38 @@ pub unsafe fn DefaultQueryInfoBufferCheck(
         }
     }
 
+    // C: the probes are one _SEH2_TRY whose handler returns the exception code.
+    // ProbeForRead and ProbeForWrite make the same range/alignment check, so one
+    // Result probe serves both; ProbeForWriteUlong is the typed range-and-touch.
     if previous_mode != KernelMode {
         if !buffer.is_null() {
-            if flags & ICIF_PROBE_READ != 0 {
-                ProbeForRead(
-                    buffer,
-                    buffer_length as ULONG_PTR,
-                    info.AlignmentQUERY as ULONG,
-                );
-            } else {
-                ProbeForWrite(
-                    buffer,
-                    buffer_length as ULONG_PTR,
-                    info.AlignmentQUERY as ULONG,
-                );
+            if let Err(status) = crate::probe::probe_user_buffer(
+                buffer,
+                buffer_length as usize,
+                info.AlignmentQUERY as usize,
+                previous_mode,
+            ) {
+                return status;
             }
         }
 
         if (flags & (ICIF_FORCE_RETURN_LENGTH_PROBE as ULONG) != 0)
             || !return_length.is_null()
         {
-            ProbeForWriteUlong(return_length);
+            if let Err(status) = crate::probe::probe_write_generic(return_length, 1, previous_mode) {
+                return status;
+            }
         }
 
         if !return_length_ptr.is_null() {
-            ProbeForWrite(
+            if let Err(status) = crate::probe::probe_user_buffer(
                 return_length_ptr as PVOID,
-                core::mem::size_of::<ULONG_PTR>() as ULONG_PTR,
-                core::mem::size_of::<ULONG_PTR>() as ULONG,
-            );
+                core::mem::size_of::<ULONG_PTR>(),
+                core::mem::size_of::<ULONG_PTR>(),
+                previous_mode,
+            ) {
+                return status;
+            }
         }
     }
 
@@ -241,78 +241,81 @@ pub unsafe fn DefaultQueryInfoBufferCheck(
 
 /// ProbeAndCaptureUnicodeString — probe and capture a user-mode UNICODE_STRING.
 ///
-/// Allocates pool memory for the buffer copy. With DUMMY_PSEH, no exception handling.
+/// Allocates pool memory for the buffer copy. The C version catches its own probe
+/// exceptions (`_SEH2_EXCEPT`: free the buffer, zero `Dest`, return the code); this
+/// kernel has no SEH, so the probes and copies are the `Result` ones from `probe.rs`
+/// and the same cleanup runs on `Err`.
 #[inline]
 pub unsafe fn ProbeAndCaptureUnicodeString(
     dest: ddk::PUNICODE_STRING,
     mode: i8, // KPROCESSOR_MODE
     src: *const ddk::_UNICODE_STRING,
 ) -> NTSTATUS {
-    if mode != KernelMode {
-        // Probe and copy the UNICODE_STRING header
-        ProbeForRead(
-            src as PVOID,
-            core::mem::size_of::<ddk::_UNICODE_STRING>() as ULONG_PTR,
-            1,
-        );
-        core::ptr::copy_nonoverlapping(src, dest, 1);
-
-        if !(*dest).Buffer.is_null() {
-            if (*dest).Length != 0 {
-                // Probe the buffer
-                ProbeForRead(
-                    (*dest).Buffer as PVOID,
-                    (*dest).Length as ULONG_PTR,
-                    core::mem::size_of::<u16>() as ULONG,
-                );
-
-                // Allocate and copy
-                let alloc_size = (*dest).Length as ULONG_PTR + core::mem::size_of::<u16>() as ULONG_PTR;
-                let buffer = ddk::ExAllocatePoolWithTag(
-                    ddk::_POOL_TYPE_PagedPool,
-                    alloc_size as ddk::SIZE_T,
-                    TAG_USTR,
-                ) as *mut u16;
-
-                if buffer.is_null() {
-                    return STATUS_INSUFFICIENT_RESOURCES;
-                }
-
-                core::ptr::copy_nonoverlapping(
-                    (*dest).Buffer,
-                    buffer,
-                    (*dest).Length as usize / core::mem::size_of::<u16>(),
-                );
-                // Null-terminate
-                *buffer.add((*dest).Length as usize / core::mem::size_of::<u16>()) = 0;
-
-                (*dest).Buffer = buffer;
-
-                // Adjust Length/MaximumLength
-                if (*dest).Length % (core::mem::size_of::<u16>() as u16) != 0 {
-                    (*dest).Length -= 1;
-                }
-                if (*dest).Length >= 0xFFFE {
-                    // UNICODE_STRING_MAX_BYTES
-                    (*dest).MaximumLength = (*dest).Length;
-                } else {
-                    (*dest).MaximumLength =
-                        (*dest).Length + core::mem::size_of::<u16>() as u16;
-                }
-            } else {
-                (*dest).MaximumLength = 0;
-                (*dest).Buffer = core::ptr::null_mut();
-            }
-        } else {
-            (*dest).Length = 0;
-            (*dest).MaximumLength = 0;
-        }
-    } else {
+    if mode == KernelMode {
         // KernelMode — trust the pointer, just copy the struct
         core::ptr::copy_nonoverlapping(src, dest, 1);
+        return STATUS_SUCCESS;
     }
 
-    STATUS_SUCCESS
+    let mut buffer: *mut u16 = core::ptr::null_mut();
+    let result = (|| -> Result<NTSTATUS, NTSTATUS> {
+        crate::probe::safe_copy_from_user(
+            dest.cast(),
+            src.cast(),
+            core::mem::size_of::<ddk::_UNICODE_STRING>(),
+            1,
+            mode,
+        )?;
+        if (*dest).Buffer.is_null() {
+            (*dest).Length = 0;
+            (*dest).MaximumLength = 0;
+            return Ok(STATUS_SUCCESS);
+        }
+        if (*dest).Length == 0 {
+            (*dest).MaximumLength = 0;
+            (*dest).Buffer = core::ptr::null_mut();
+            return Ok(STATUS_SUCCESS);
+        }
+        let length = (*dest).Length as usize;
+        crate::probe::probe_user_buffer((*dest).Buffer.cast(), length, 2, mode)?;
+
+        buffer = ddk::ExAllocatePoolWithTag(
+            ddk::_POOL_TYPE_PagedPool,
+            (length + core::mem::size_of::<u16>()) as ddk::SIZE_T,
+            TAG_USTR,
+        ) as *mut u16;
+        if buffer.is_null() {
+            // C: Status = STATUS_INSUFFICIENT_RESOURCES; _SEH2_LEAVE — no cleanup.
+            return Ok(STATUS_INSUFFICIENT_RESOURCES);
+        }
+        crate::probe::safe_copy_from_user(buffer.cast(), (*dest).Buffer.cast(), length, 2, mode)?;
+        *buffer.add(length / core::mem::size_of::<u16>()) = 0;
+
+        (*dest).Buffer = buffer;
+        if (*dest).Length % (core::mem::size_of::<u16>() as u16) != 0 {
+            (*dest).Length -= 1;
+        }
+        if (*dest).Length >= 0xFFFE {
+            // UNICODE_STRING_MAX_BYTES
+            (*dest).MaximumLength = (*dest).Length;
+        } else {
+            (*dest).MaximumLength = (*dest).Length + core::mem::size_of::<u16>() as u16;
+        }
+        Ok(STATUS_SUCCESS)
+    })();
+
+    match result {
+        Ok(status) => status,
+        Err(status) => {
+            if !buffer.is_null() {
+                ddk::ExFreePoolWithTag(buffer.cast(), TAG_USTR);
+            }
+            (*dest).Length = 0;
+            (*dest).MaximumLength = 0;
+            (*dest).Buffer = core::ptr::null_mut();
+            status
+        }
+    }
 }
 
 // ============================================================================
@@ -450,6 +453,7 @@ pub unsafe fn RtlLongLongAdd(
 /// ProbeForWritePointer — volatile read/write to validate user-mode pointer-sized ptr.
 #[inline]
 pub unsafe fn ProbeForWritePointer(ptr: *mut PVOID) {
+    probe_user_range(ptr);
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }
@@ -550,6 +554,7 @@ pub unsafe fn ExceptionRecord32To64(
 /// ProbeForWriteBoolean — volatile read/write to validate user-mode BOOLEAN ptr.
 #[inline]
 pub unsafe fn ProbeForWriteBoolean(ptr: *mut BOOLEAN) {
+    probe_user_range(ptr);
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }
@@ -561,6 +566,7 @@ pub unsafe fn ProbeForWriteBoolean(ptr: *mut BOOLEAN) {
 /// ProbeForWriteLangId — volatile read/write to validate user-mode LANGID ptr.
 #[inline]
 pub unsafe fn ProbeForWriteLangId(ptr: *mut u16) {
+    probe_user_range(ptr);
     let val = core::ptr::read_volatile(ptr);
     core::ptr::write_volatile(ptr, val);
 }
@@ -699,4 +705,69 @@ pub unsafe fn RtlStringCbCopyA(
         return crate::constants::STATUS_INVALID_PARAMETER;
     }
     rtl_string_copy_worker_a(psz_dest, cch_dest, psz_src)
+}
+
+// ============================================================================
+// wdm.h / ntdef.h macros a driver calls as functions
+// ============================================================================
+
+/// `RtlEqualMemory(D, S, L)` = `(!memcmp((D), (S), (L)))`. Through `RtlCompareMemory`, which
+/// ntoskrnl exports, so no Rust byte loop can be folded back into a self-call.
+#[inline]
+pub unsafe fn RtlEqualMemory(
+    destination: *const core::ffi::c_void,
+    source: *const core::ffi::c_void,
+    length: SIZE_T,
+) -> bool {
+    ddk::RtlCompareMemory(destination, source, length as _) == length as _
+}
+
+/// `PoSetDeviceBusy(IdlePointer)` = `((void)(*(IdlePointer) = 0))`.
+#[inline]
+pub unsafe fn PoSetDeviceBusy(idle_pointer: *mut ULONG) {
+    *idle_pointer = 0;
+}
+
+/// `IoInitializeRemoveLock(Lock, Tag, Minutes, HighWater)` =
+/// `IoInitializeRemoveLockEx(Lock, Tag, Minutes, HighWater, sizeof(IO_REMOVE_LOCK))`.
+#[inline]
+pub unsafe fn IoInitializeRemoveLock(
+    lock: ddk::PIO_REMOVE_LOCK,
+    allocate_tag: ULONG,
+    max_locked_minutes: ULONG,
+    high_watermark: ULONG,
+) {
+    ddk::IoInitializeRemoveLockEx(
+        lock,
+        allocate_tag,
+        max_locked_minutes,
+        high_watermark,
+        core::mem::size_of::<ddk::IO_REMOVE_LOCK>() as ULONG,
+    );
+}
+
+/// `IoAdjustPagingPathCount(Count, Increment)`: interlocked ++ or -- of `*Count`.
+#[inline]
+pub unsafe fn IoAdjustPagingPathCount(count: *mut LONG, increment: BOOLEAN) {
+    if increment != 0 {
+        crate::interlocked::InterlockedIncrement(count);
+    } else {
+        crate::interlocked::InterlockedDecrement(count);
+    }
+}
+
+/// `RTL_CONSTANT_OBJECT_ATTRIBUTES(n, a)`: a brace initializer in C, a value here.
+#[inline]
+pub const fn RTL_CONSTANT_OBJECT_ATTRIBUTES(
+    object_name: ddk::PUNICODE_STRING,
+    attributes: ULONG,
+) -> ddk::OBJECT_ATTRIBUTES {
+    ddk::OBJECT_ATTRIBUTES {
+        Length: core::mem::size_of::<ddk::OBJECT_ATTRIBUTES>() as ULONG,
+        RootDirectory: core::ptr::null_mut(),
+        ObjectName: object_name,
+        Attributes: attributes,
+        SecurityDescriptor: core::ptr::null_mut(),
+        SecurityQualityOfService: core::ptr::null_mut(),
+    }
 }

@@ -74,8 +74,21 @@ static int test_tcp(void)
 
         if (connect(s, (struct sockaddr *)&sa, sizeof(sa)) != 0)
         {
+            int err = WSAGetLastError();
             if (attempt == 0)
-                markf("[NETTEST] TCP connect() failed, WSAGetLastError=%d\n", WSAGetLastError());
+                markf("[NETTEST] TCP connect() failed, WSAGetLastError=%d\n", err);
+            /* The retries are for a host listener that is not up YET, which answers
+             * with RST at once. A timeout means nothing answers at all: there is no
+             * guestfwd on this boot. Stop, because every attempt holds a SYN-SENT
+             * that re-ARPs an address nobody answers, and smoltcp rate-limits ARP
+             * for the whole interface -- 40 of them kept the DNS server from ever
+             * being resolved, for every program on the system. */
+            if (err == WSAETIMEDOUT)
+            {
+                closesocket(s);
+                mark("[NETTEST] usermode winsock TCP: no echo host (connect timed out)\n");
+                return 0;
+            }
         }
         else
         {

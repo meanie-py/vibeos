@@ -22,10 +22,29 @@
  * tests that exist.
  */
 #include <windows.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <string.h>
 
 ULONG __cdecl DbgPrint(const char *Format, ...);
+
+#define SAY(...) DbgPrint("[APITEST-SWEEP] " __VA_ARGS__)
+#include "../stackdump.h"
+
+/* A TIMEOUT used to arrive with nothing but its name: errorinfo and tmarshal hung for
+ * weeks with no clue where. Dump every thread of the child before killing it; feed the
+ * addresses to `vibeos-cli sym`. */
+static void dump_child_threads(DWORD pid)
+{
+    THREADENTRY32 te = { sizeof te };
+    HANDLE s = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (s == INVALID_HANDLE_VALUE)
+        return;
+    for (BOOL k = Thread32First(s, &te); k; k = Thread32Next(s, &te))
+        if (te.th32OwnerProcessID == pid)
+            dump_thread(pid, te.th32ThreadID);
+    CloseHandle(s);
+}
 
 #define PER_SUBTEST_TIMEOUT_MS (120u * 1000u)
 #define ENUMERATE_TIMEOUT_MS   (60u * 1000u)
@@ -33,6 +52,7 @@ ULONG __cdecl DbgPrint(const char *Format, ...);
 
 #define MAX_SUBTESTS      256
 #define MAX_SUBTEST_NAME  64
+#define SWEEP_LINE_MAX    512
 
 struct pump_ctx
 {
@@ -150,10 +170,53 @@ static DWORD WINAPI pump(LPVOID param)
  * Returns the exit code, or -1 if it could not start, or -2 on timeout.
  * With ctx->Capture set, output is parsed for subtest names instead of echoed.
  */
+/* The children's working directory: bindir, unless bin\apitest-cwd.txt names
+ * another. Opt-in, for suites that create files relative to it: the i386 media
+ * boots from a CDFS image, so X:\ (bindir and %TEMP% included) refuses every
+ * write with ERROR_ACCESS_DENIED, and such a suite reports its own environment
+ * as failures. TEMP/TMP follow it (below). The regular apitest sweep stages no such file -- its suites may
+ * read testdata relative to bindir. */
+static char g_child_cwd[MAX_PATH];
+
+static void load_child_cwd(const char *bindir)
+{
+    char path[MAX_PATH];
+    FILE *f;
+    size_t n;
+
+    lstrcpynA(g_child_cwd, bindir, sizeof(g_child_cwd));
+    _snprintf(path, sizeof(path), "%s\\apitest-cwd.txt", bindir);
+    f = fopen(path, "r");
+    if (!f)
+        return;
+    if (fgets(g_child_cwd, sizeof(g_child_cwd), f))
+    {
+        n = strlen(g_child_cwd);
+        while (n && (g_child_cwd[n - 1] == '\n' || g_child_cwd[n - 1] == '\r' || g_child_cwd[n - 1] == ' '))
+            g_child_cwd[--n] = 0;
+    }
+    fclose(f);
+    if (!g_child_cwd[0])
+    {
+        lstrcpynA(g_child_cwd, bindir, sizeof(g_child_cwd));
+        return;
+    }
+    /* %TEMP% is on the same read-only image (X:\reactos\TEMP), and suites put
+     * their scratch files there (ucrtbase's thread test writes its helper DLL
+     * to GetTempPath()), so the children inherit the writable directory as
+     * TEMP/TMP too. */
+    SetEnvironmentVariableA("TEMP", g_child_cwd);
+    SetEnvironmentVariableA("TMP", g_child_cwd);
+    DbgPrint("[APITEST-SWEEP] child cwd=TEMP=%s\n", g_child_cwd);
+}
+
 static int run_child(const char *bindir, const char *suite, const char *arg,
                      struct pump_ctx *ctx, DWORD timeout_ms)
 {
-    char exepath[MAX_PATH], cmdline[MAX_PATH + MAX_SUBTEST_NAME + 8];
+    /* A list line is "<exe> <rest>", and <rest> may be a whole command line
+     * (olewinetest's `reg.exe add "HKLM\...\Image File Execution Options\..."`),
+     * not just a subtest name: size it for SWEEP_LINE_MAX. */
+    char exepath[MAX_PATH], cmdline[MAX_PATH + SWEEP_LINE_MAX + 8];
     SECURITY_ATTRIBUTES sa;
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -191,7 +254,7 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
      * context hangs the child before main(). Our pipe carries the output, so
      * having no console costs nothing. */
     if (!CreateProcessA(exepath, cmdline, NULL, NULL, TRUE, DETACHED_PROCESS,
-                        NULL, bindir, &si, &pi))
+                        NULL, g_child_cwd, &si, &pi))
     {
         DbgPrint("[APITEST-SWEEP] launch FAILED %s err=%lu\n", suite, GetLastError());
         CloseHandle(rd);
@@ -246,6 +309,7 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
     wait = WaitForSingleObject(pi.hProcess, timeout_ms);
     if (wait == WAIT_TIMEOUT)
     {
+        dump_child_threads(pi.dwProcessId);
         TerminateProcess(pi.hProcess, 0xDEAD);
         WaitForSingleObject(pi.hProcess, 10000);
     }
@@ -317,6 +381,32 @@ static int is_skipped(const char *suite, const char *subtest)
     return 0;
 }
 
+static void run_one_subtest(const char *bindir, const char *suite, const char *subtest,
+                            int *subtests, int *failstart, int *timeouts)
+{
+    struct pump_ctx ctx;
+    int rc;
+
+    ZeroMemory(&ctx, sizeof(ctx));
+    ctx.Suite = suite;
+    ctx.Label = subtest;
+
+    DbgPrint("[APITEST-SWEEP] launch %s %s\n", suite, subtest);
+    rc = run_child(bindir, suite, subtest, &ctx, PER_SUBTEST_TIMEOUT_MS);
+    ++*subtests;
+
+    if (rc == -1)
+        ++*failstart;
+    else if (rc == -2)
+    {
+        ++*timeouts;
+        DbgPrint("[APITEST-SWEEP] TIMEOUT %s %s (%us) - terminated\n",
+                 suite, subtest, PER_SUBTEST_TIMEOUT_MS / 1000u);
+    }
+    else
+        DbgPrint("[APITEST-SWEEP] exit %s %s code=%d\n", suite, subtest, rc);
+}
+
 static void run_suite(const char *bindir, const char *suite,
                       int *subtests, int *launched, int *failstart, int *timeouts)
 {
@@ -361,6 +451,30 @@ static void run_suite(const char *bindir, const char *suite,
          * almost always a loader failure (missing import). */
         DbgPrint("[APITEST-SWEEP] NOSUBTESTS %s (exit %d) first-line=%s\n",
                  suite, rc, ctx.FirstLine[0] ? ctx.FirstLine : "(no output)");
+        /* A binary with ONE test (the sdk delayimp apitests: no testlist, so no
+         * "Valid test names:" banner) does not list anything: it just RUNS, and
+         * the enumeration pass above swallowed every line of its result but the
+         * first. Run it once more with its output on the serial, so its
+         * failures are readable rather than an exit code. A loader failure
+         * printed nothing, and a usage banner is not a run. */
+        if (ctx.FirstLine[0] && strncmp(ctx.FirstLine, "Usage:", 6) != 0)
+        {
+            ZeroMemory(&ctx, sizeof(ctx));
+            ctx.Suite = suite;
+            ctx.Label = "";
+            ++*launched;
+            rc = run_child(bindir, suite, NULL, &ctx, PER_SUBTEST_TIMEOUT_MS);
+            if (rc == -1)
+                ++*failstart;
+            else if (rc == -2)
+            {
+                ++*timeouts;
+                DbgPrint("[APITEST-SWEEP] TIMEOUT %s (single test, %us) - terminated\n",
+                         suite, PER_SUBTEST_TIMEOUT_MS / 1000u);
+            }
+            else
+                DbgPrint("[APITEST-SWEEP] exit %s (single test) code=%d\n", suite, rc);
+        }
         return;
     }
 
@@ -401,10 +515,59 @@ static void run_suite(const char *bindir, const char *suite,
     ++*launched;
 }
 
+/* The LiveCD's setup.exe (syssetup InstallLiveCD) registers COM components --
+ * actxprxy's proxy/stubs among them -- in the background, AFTER auto-start, and on a
+ * slow boot after the sweep has begun. A suite racing it sees REGDB_E_IIDNOTREG:
+ * ole32's compobj test failed CoRegisterClassObject(LOCAL_SERVER) on exactly that
+ * whenever it started before "InstallLiveCD: registering components" (2026-10-04).
+ * So wait for setup.exe to exit. No setup.exe (an installed system) passes at once. */
+static int setup_running(void)
+{
+    PROCESSENTRY32W pe;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    int found = 0;
+
+    if (snap == INVALID_HANDLE_VALUE)
+        return 0;
+    pe.dwSize = sizeof(pe);
+    if (Process32FirstW(snap, &pe))
+    {
+        do
+        {
+            if (!lstrcmpiW(pe.szExeFile, L"setup.exe"))
+            {
+                found = 1;
+                break;
+            }
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return found;
+}
+
+static void wait_for_livecd_setup(void)
+{
+    int waited = 0;
+
+    while (setup_running())
+    {
+        if (waited >= 900)
+        {
+            DbgPrint("[APITEST-SWEEP] WARN: setup.exe still running after %ds -- proceeding; "
+                     "COM registration may be incomplete\n", waited);
+            return;
+        }
+        Sleep(5000);
+        waited += 5;
+    }
+    if (waited)
+        DbgPrint("[APITEST-SWEEP] LiveCD setup finished (waited ~%ds)\n", waited);
+}
+
 int main(void)
 {
     char windir[MAX_PATH], bindir[MAX_PATH], listpath[MAX_PATH];
-    char line[128];
+    char line[SWEEP_LINE_MAX];
     FILE *f;
     int total = 0, launched = 0, failstart = 0, timeouts = 0, subtests = 0;
 
@@ -459,7 +622,10 @@ int main(void)
         }
     }
 
+    wait_for_livecd_setup();
+
     load_skips(bindir);
+    load_child_cwd(bindir);
     DbgPrint("[APITEST-SWEEP] start list=%s\n", listpath);
 
     while (fgets(line, sizeof(line), f))
@@ -473,12 +639,29 @@ int main(void)
              * fake test in the baseline once (2026-07-12). */
             int ch;
             while ((ch = fgetc(f)) != EOF && ch != '\n') { }
+            /* Loud: a silently dropped line reads as a step nobody asked for
+             * (olewinetest's 150-char reg.exe step vanished at the old 128). */
+            DbgPrint("[APITEST-SWEEP] SKIP over-long list line (> %d chars): %.60s...\n",
+                     SWEEP_LINE_MAX - 2, line);
             continue;
         }
         *nl = 0;
         if (!line[0] || line[0] == '#')
             continue;
         ++total;
+
+        /* "<suite.exe> <subtest>": run just that subtest (gen_suites --only suite:subtest).
+         * Reproducing one subtest otherwise meant running every subtest ahead of it, and a
+         * suite that stalls early (user32's AttachThreadInput) hid the rest entirely. */
+        {
+            char *sp = strchr(line, ' ');
+            if (sp)
+            {
+                *sp = 0;
+                run_one_subtest(bindir, line, sp + 1, &subtests, &failstart, &timeouts);
+                continue;
+            }
+        }
 
         run_suite(bindir, line, &subtests, &launched, &failstart, &timeouts);
     }

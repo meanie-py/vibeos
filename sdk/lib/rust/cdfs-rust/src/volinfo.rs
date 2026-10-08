@@ -101,6 +101,10 @@ pub unsafe extern "C" fn CdCommonQueryVolInfo(IrpContext: PIRP_CONTEXT, Irp: PIR
     ntkrnl_sys::seh::try_finally(
         &mut (),
         |_| {
+            // Verify the Vcb (raises on a dismounted volume or changed media,
+            // like every other CDFS request path does).
+            CdVerifyVcb(IrpContext, (*Fcb).Vcb);
+
             Status = match (*IrpSp).Parameters.QueryVolume.FsInformationClass {
                 FileFsSizeInformation => CdQueryFsSizeInfo(
                     IrpContext,

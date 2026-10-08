@@ -330,15 +330,18 @@ pub unsafe extern "system" fn SeCaptureLuidAndAttributesArray(
         if (*dest).is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        
-        let _guard = PoolAllocGuard::new(*dest as PVOID, TAG_LUID);
-        
-        // Copy from user-mode buffer to kernel-mode allocation
-        if let Err(s) = safe_copy_from_user(*dest as PVOID, src as _, buffer_size as usize, core::mem::size_of::<ULONG>(), previous_mode) {
-            return s;
+    }
+
+    // The C copies into either buffer under _SEH2_TRY (the previous translation
+    // skipped the copy into a caller-supplied buffer entirely). On a fault it frees
+    // its own allocation; it also leaves *Dest pointing at the freed block, which
+    // NtFilterToken's error path then releases again. Clear it here.
+    if let Err(s) = safe_copy_from_user(*dest as PVOID, src as _, buffer_size as usize, core::mem::size_of::<ULONG>(), previous_mode) {
+        status = s;
+        if allocated_mem.is_null() {
+            ExFreePoolWithTag(*dest as PVOID, TAG_LUID);
         }
-        
-        _guard.disarm();
+        core::ptr::write_volatile(dest, core::ptr::null_mut());
     }
 
     status
@@ -554,8 +557,15 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
             return s;
         }
 
-        privilege_count = (*required_privileges).PrivilegeCount;
-        privilege_control = (*required_privileges).Control;
+        // Each field read ONCE, fault-tolerantly; the C's __except returns the code.
+        privilege_count = match read_back(core::ptr::addr_of!((*required_privileges).PrivilegeCount)) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
+        privilege_control = match read_back(core::ptr::addr_of!((*required_privileges).Control)) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
 
         if (core::mem::size_of::<PRIVILEGE_SET>()
             - core::mem::size_of::<[LUID_AND_ATTRIBUTES; 1]>()
@@ -586,8 +596,15 @@ pub unsafe extern "system" fn NtPrivilegeCheck(
             return s;
         }
     } else {
-        privilege_count = (*required_privileges).PrivilegeCount;
-        privilege_control = (*required_privileges).Control;
+        // Kernel-mode caller: no probe, but the loads are still fault-tolerant.
+        privilege_count = match read_back(core::ptr::addr_of!((*required_privileges).PrivilegeCount)) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
+        privilege_control = match read_back(core::ptr::addr_of!((*required_privileges).Control)) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
     }
 
     status = ObReferenceObjectByHandle(

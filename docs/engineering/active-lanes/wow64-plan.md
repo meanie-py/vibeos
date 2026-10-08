@@ -22,8 +22,11 @@ Predecessor: `fex-bringup-plan.md` (rungs 0–3; this doc was its rung 4+).
 
 ## Ground rules
 
-- FEX vendor tree stays unmodified (`external/fex/CLAUDE.md` forbids AI-authored
-  contributions upstream; we consume its binary contract only).
+- FEX vendor tree stays unmodified (`vendor/fex/CLAUDE.md` forbids AI-authored
+  contributions upstream; we consume its binary contract only). One exception has
+  been taken since: `6afc128553f`, recorded in `vendor-patches/fex.md` and marked
+  in-source with a `VIBEOS PATCH` comment. That is the bar — a patch here is
+  allowed only if it is both places.
 - wow64.dll / wow64cpu.dll / ntdll changes are vibeos code.
 - Every phase lands behind the existing gates: all three arches stay green; x86
   arches stay untouched by arch-gated exports (§9.43 ordinal discipline).
@@ -282,6 +285,10 @@ cannot reach. Nearly every marshalling bug from E6 onward was found by one.
   unreachable from a user-mode guest), `PORT_MESSAGE` (the LPC server side,
   which belongs with the CSR-32 layer), and `TOKEN_GROUPS`.
 - **IOCTL embedded-pointer buffers** (task #42) and **guest `int3` dispatch**.
+- ~~**Guest user APCs**~~ — **BUILT** (2026-10-07): QueueUserAPC, I/O completion routines
+  and waitable-timer routines run in the guest (`Wow64ApcRoutine`, wow64_callback.c), graded
+  by `apc32.exe`. Still refusing async: `NtQueryDirectoryFile` and `NtLockFile`, which complete
+  on a host IOSB.
 
 ## Things that turned out to matter more than expected
 
@@ -314,7 +321,7 @@ picture is above; durable, reusable lessons are cross-referenced into
 ## The model (Win10+ BTCpu architecture)
 
 Modern WOW64 splits into three layers; we adopt it because FEX's wow64 module
-(`external/fex/Source/Windows/WOW64/`, prebuilt as `libwow64fex.dll`) already
+(`vendor/fex/Source/Windows/WOW64/`, prebuilt as `libwow64fex.dll`) already
 implements the bottom layer's exact contract:
 
 1. **Kernel + 64-bit loader**: creates the WoW64 process (PEB32/TEB32 beside

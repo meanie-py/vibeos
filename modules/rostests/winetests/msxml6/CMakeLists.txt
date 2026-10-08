@@ -18,8 +18,4 @@ add_dependencies(msxml6_winetest xmlparser_idlheader_test)
 set_module_type(msxml6_winetest win32cui)
 add_importlibs(msxml6_winetest ole32 oleaut32 msvcrt kernel32)
 
-if(MSVC)
-    add_importlibs(msxml6_winetest ntdll)
-endif()
-
 add_rostests_file(TARGET msxml6_winetest)

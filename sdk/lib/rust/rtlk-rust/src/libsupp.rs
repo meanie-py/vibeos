@@ -88,7 +88,6 @@ extern "system" {
         Size: *mut ULONG,
     ) -> PVOID;
 
-    fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
     fn KeGetCurrentThread() -> PKTHREAD;
     fn ExFreePool(P: PVOID);
 }
@@ -546,11 +545,13 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
         if StackEnd <= StackBegin {
             return 0;
         }
-        ProbeForRead(
-            StackBegin as PVOID,
-            StackEnd - StackBegin,
-            core::mem::size_of::<u8>() as ULONG,
-        );
+        // C: the walk is one _SEH2_TRY whose handler sets `i = 0`; a bad stack
+        // returns no frames. Same for the frame reads below.
+        if ntkrnl_sys::probe::probe_user_buffer(StackBegin as *const core::ffi::c_void, StackEnd - StackBegin, 1, 1)
+            .is_err()
+        {
+            return 0;
+        }
     }
 
     i = 0;
@@ -562,8 +563,18 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
             break;
         }
 
-        NewStack = *(Stack as *mut ULONG_PTR);
-        Eip = *((Stack + core::mem::size_of::<ULONG_PTR>()) as *mut ULONG);
+        NewStack = match ntkrnl_sys::probe::probe_read_generic(Stack as *const ULONG_PTR, 1, 0) {
+            Ok(value) => value,
+            Err(_) => return 0,
+        };
+        Eip = match ntkrnl_sys::probe::probe_read_generic(
+            (Stack + core::mem::size_of::<ULONG_PTR>()) as *const ULONG,
+            1,
+            0,
+        ) {
+            Ok(value) => value,
+            Err(_) => return 0,
+        };
 
         if !((Stack < NewStack) && (NewStack < StackEnd)) {
             StopSearch = true;
@@ -722,7 +733,11 @@ pub unsafe extern "C" fn RtlpCreateAtomHandle(AtomTable: PRTL_ATOM_TABLE, Entry:
 
     HandleIndex = ((Handle as ULONG_PTR) >> 2) as USHORT;
 
-    if HandleIndex >= 0xC000 {
+    // Exceeds the C, which bounds the index at 0xC000: the atom is 0xC000 +
+    // index in a USHORT, so any index from 0x4000 up wrapped to an integer
+    // atom below 0xC000 that RtlpGetAtomEntry can never find again. Atoms
+    // 0xC000-0xFFFF give exactly 0x4000 slots; test the untruncated index.
+    if ((Handle as ULONG_PTR) >> 2) >= 0x4000 {
         ExDestroyHandle((*AtomTable).__bindgen_anon_2.ExHandleTable, Handle, core::ptr::null_mut());
         return 0u8;
     }

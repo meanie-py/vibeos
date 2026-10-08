@@ -607,7 +607,9 @@ unsafe fn VARIANT_ValidateType(vt: VARTYPE) -> HRESULT {
 #[no_mangle]
 pub unsafe extern "system" fn VariantInit(pVarg: *mut VARIANTARG) {
     TRACE!(b"(%p)\n\0".as_ptr() as PCHAR, pVarg);
-    
+
+    // Wine 10.0, as Windows 8.1+: the whole VARIANT is zeroed, not just vt.
+    core::ptr::write_bytes(pVarg as *mut u8, 0, core::mem::size_of::<VARIANTARG>());
     (*V_VT_ref(pVarg)) = VT_EMPTY;
 }
 #[no_mangle]
@@ -716,10 +718,12 @@ unsafe fn VARIANT_CopyIRecordInfo(dest: *mut VARIANT, src: *mut VARIANT) -> HRES
         return hr;
     }
 
-    (*dest_rec).pvRecord = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size as SIZE_T);
+    // COM task memory, as RecordCreate/RecordDestroy now use (Wine 10.0).
+    (*dest_rec).pvRecord = CoTaskMemAlloc(size as SIZE_T);
     if (*dest_rec).pvRecord.is_null() {
         return E_OUTOFMEMORY;
     }
+    core::ptr::write_bytes((*dest_rec).pvRecord as *mut u8, 0, size as usize);
 
     (*dest_rec).pRecInfo = (*src_rec).pRecInfo;
     IRecordInfo_AddRef((*src_rec).pRecInfo);
@@ -1018,9 +1022,10 @@ unsafe fn VARIANT_RollUdate(lpUd: *mut UDATE) -> HRESULT {
     if iYear > 9999 || iYear < -9999 {
         return E_INVALIDARG;
     }
-    if iYear >= 0 && iYear < 30 {
+    // Wine 10.0, as current Windows: two-digit years 00-49 are 20xx (was 00-29).
+    if iYear >= 0 && iYear <= 49 {
         iYear += 2000;
-    } else if iYear >= 30 && iYear < 100 {
+    } else if iYear >= 50 && iYear < 100 {
         iYear += 1900;
     }
 
@@ -1385,7 +1390,10 @@ pub unsafe extern "system" fn VarUdateFromDate(
     0i32
 }
 
-/* The localised characters that make up a valid number (variant.h:107-117) */
+/* The localised characters that make up a valid number (Wine 10.0 variant.c).
+ * Wine 10.0 replaced the one-character cCurrencyLocal/cCurrencyLocal2 pair with
+ * the whole currency string (up to 7 chars + NUL), matched with wcsncmp, and
+ * dropped the lcid cache. */
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct VARIANT_NUMBER_CHARS {
@@ -1393,144 +1401,86 @@ pub struct VARIANT_NUMBER_CHARS {
     pub cPositiveSymbol: WCHAR,
     pub cDecimalPoint: WCHAR,
     pub cDigitSeparator: WCHAR,
-    pub cCurrencyLocal: WCHAR,
-    pub cCurrencyLocal2: WCHAR,
+    pub sCurrencyLen: DWORD,
+    pub sCurrency: [WCHAR; 8],
     pub cCurrencyDecimalPoint: WCHAR,
     pub cCurrencyDigitSeparator: WCHAR,
 }
 
+extern "C" {
+    #[link_name = "wcsncmp"]
+    fn wcsncmp_numchars(s1: *const WCHAR, s2: *const WCHAR, n: usize) -> i32;
+}
+
 unsafe fn VARIANT_GetLocalisedNumberChars(lpChars: *mut VARIANT_NUMBER_CHARS, lcid: LCID, dwFlags: DWORD) {
-    static mut defaultChars: VARIANT_NUMBER_CHARS = VARIANT_NUMBER_CHARS {
-        cNegativeSymbol: b'-' as u16,
-        cPositiveSymbol: b'+' as u16,
-        cDecimalPoint: b'.' as u16,
-        cDigitSeparator: b',' as u16,
-        cCurrencyLocal: b'$' as u16,
-        cCurrencyLocal2: 0,
-        cCurrencyDecimalPoint: b'.' as u16,
-        cCurrencyDigitSeparator: b',' as u16,
-    };
-    static mut lastChars: VARIANT_NUMBER_CHARS = VARIANT_NUMBER_CHARS {
-        cNegativeSymbol: 0,
-        cPositiveSymbol: 0,
-        cDecimalPoint: 0,
-        cDigitSeparator: 0,
-        cCurrencyLocal: 0,
-        cCurrencyLocal2: 0,
-        cCurrencyDecimalPoint: 0,
-        cCurrencyDigitSeparator: 0,
-    };
-    static mut lastLcid: LCID = 0xFFFFFFFF;
-    static mut lastFlags: DWORD = 0;
-    
     let lctype: LCTYPE = dwFlags & LOCALE_NOUSEROVERRIDE as u32;
     let mut buff: [WCHAR; 4] = [0; 4];
 
-    EnterCriticalSection(core::ptr::addr_of_mut!(cache_cs));
+    *lpChars = VARIANT_NUMBER_CHARS {
+        cNegativeSymbol: b'-' as u16,
+        cPositiveSymbol: b'+' as u16,
+        cDecimalPoint: b'.' as u16,
+        cDigitSeparator: 0,
+        sCurrencyLen: 1,
+        sCurrency: [b'$' as u16, 0, 0, 0, 0, 0, 0, 0],
+        cCurrencyDecimalPoint: 0,
+        cCurrencyDigitSeparator: b',' as u16,
+    };
 
-    if lcid == lastLcid && dwFlags == lastFlags {
-        core::ptr::copy_nonoverlapping(
-            core::ptr::addr_of!(lastChars) as *const u8,
-            lpChars as *mut u8,
-            core::mem::size_of::<VARIANT_NUMBER_CHARS>()
-        );
-        LeaveCriticalSection(core::ptr::addr_of_mut!(cache_cs));
-        return;
+    // GET_NUMBER_TEXT: the locale's first character, if it has one
+    macro_rules! get_number_text {
+        ($fld:expr, $name:ident) => {{
+            buff[0] = 0;
+            if GetLocaleInfoW(lcid, lctype | $fld, buff.as_mut_ptr(), buff.len() as i32) != 0
+                && buff[0] != 0
+            {
+                (*lpChars).$name = buff[0];
+            }
+        }};
     }
+    get_number_text!(LOCALE_SNEGATIVESIGN, cNegativeSymbol);
+    get_number_text!(LOCALE_SPOSITIVESIGN, cPositiveSymbol);
+    get_number_text!(LOCALE_SDECIMAL, cDecimalPoint);
+    get_number_text!(LOCALE_STHOUSAND, cDigitSeparator);
+    get_number_text!(LOCALE_SMONDECIMALSEP, cCurrencyDecimalPoint);
+    get_number_text!(LOCALE_SMONTHOUSANDSEP, cCurrencyDigitSeparator);
 
-    core::ptr::copy_nonoverlapping(
-        core::ptr::addr_of!(defaultChars) as *const u8,
-        lpChars as *mut u8,
-        core::mem::size_of::<VARIANT_NUMBER_CHARS>()
-    );
-
-    buff[0] = 0;
-    if GetLocaleInfoW(lcid, lctype | LOCALE_SNEGATIVESIGN, buff.as_mut_ptr(), 2) == 0 {
-        WARN!(b"buffer too small for LOCALE_SNEGATIVESIGN\n\0".as_ptr() as PCHAR);
-    } else {
-        if buff[0] != 0 {
-            (*lpChars).cNegativeSymbol = buff[0];
-        }
+    if GetLocaleInfoW(
+        lcid,
+        lctype | LOCALE_SCURRENCY,
+        (*lpChars).sCurrency.as_mut_ptr(),
+        (*lpChars).sCurrency.len() as i32,
+    ) == 0
+    {
+        (*lpChars).sCurrency[0] = 0;
     }
-    TRACE!(b"lcid 0x%x, cNegativeSymbol=%d '%c'\n\0".as_ptr() as PCHAR, lcid, (*lpChars).cNegativeSymbol as i32, (*lpChars).cNegativeSymbol as i32);
-
-    buff[0] = 0;
-    if GetLocaleInfoW(lcid, lctype | LOCALE_SPOSITIVESIGN, buff.as_mut_ptr(), 2) == 0 {
-        WARN!(b"buffer too small for LOCALE_SPOSITIVESIGN\n\0".as_ptr() as PCHAR);
-    } else {
-        if buff[0] != 0 {
-            (*lpChars).cPositiveSymbol = buff[0];
-        }
+    if (*lpChars).sCurrency[0] == 0 {
+        (*lpChars).sCurrency[0] = b'$' as u16;
+        (*lpChars).sCurrency[1] = 0;
     }
-    TRACE!(b"lcid 0x%x, cPositiveSymbol=%d '%c'\n\0".as_ptr() as PCHAR, lcid, (*lpChars).cPositiveSymbol as i32, (*lpChars).cPositiveSymbol as i32);
-
-    buff[0] = 0;
-    if GetLocaleInfoW(lcid, lctype | LOCALE_SDECIMAL, buff.as_mut_ptr(), 2) == 0 {
-        WARN!(b"buffer too small for LOCALE_SDECIMAL\n\0".as_ptr() as PCHAR);
-    } else {
-        if buff[0] != 0 {
-            (*lpChars).cDecimalPoint = buff[0];
-        }
+    let mut n = 0usize;
+    while n < (*lpChars).sCurrency.len() && (*lpChars).sCurrency[n] != 0 {
+        n += 1;
     }
-    TRACE!(b"lcid 0x%x, cDecimalPoint=%d '%c'\n\0".as_ptr() as PCHAR, lcid, (*lpChars).cDecimalPoint as i32, (*lpChars).cDecimalPoint as i32);
-
-    buff[0] = 0;
-    if GetLocaleInfoW(lcid, lctype | LOCALE_STHOUSAND, buff.as_mut_ptr(), 2) == 0 {
-        WARN!(b"buffer too small for LOCALE_STHOUSAND\n\0".as_ptr() as PCHAR);
-    } else {
-        if buff[0] != 0 {
-            (*lpChars).cDigitSeparator = buff[0];
-        }
-    }
-    TRACE!(b"lcid 0x%x, cDigitSeparator=%d '%c'\n\0".as_ptr() as PCHAR, lcid, (*lpChars).cDigitSeparator as i32, (*lpChars).cDigitSeparator as i32);
-
-    buff[0] = 0;
-    if GetLocaleInfoW(lcid, lctype | LOCALE_SMONDECIMALSEP, buff.as_mut_ptr(), 2) == 0 {
-        WARN!(b"buffer too small for LOCALE_SMONDECIMALSEP\n\0".as_ptr() as PCHAR);
-    } else {
-        if buff[0] != 0 {
-            (*lpChars).cCurrencyDecimalPoint = buff[0];
-        }
-    }
-    TRACE!(b"lcid 0x%x, cCurrencyDecimalPoint=%d '%c'\n\0".as_ptr() as PCHAR, lcid, (*lpChars).cCurrencyDecimalPoint as i32, (*lpChars).cCurrencyDecimalPoint as i32);
-
-    buff[0] = 0;
-    if GetLocaleInfoW(lcid, lctype | LOCALE_SMONTHOUSANDSEP, buff.as_mut_ptr(), 2) == 0 {
-        WARN!(b"buffer too small for LOCALE_SMONTHOUSANDSEP\n\0".as_ptr() as PCHAR);
-    } else {
-        if buff[0] != 0 {
-            (*lpChars).cCurrencyDigitSeparator = buff[0];
-        }
-    }
-    TRACE!(b"lcid 0x%x, cCurrencyDigitSeparator=%d '%c'\n\0".as_ptr() as PCHAR, lcid, (*lpChars).cCurrencyDigitSeparator as i32, (*lpChars).cCurrencyDigitSeparator as i32);
-
-    (*lpChars).cCurrencyLocal2 = 0;
-    match GetLocaleInfoW(lcid, lctype | LOCALE_SCURRENCY, buff.as_mut_ptr(), 4) {
-        3 => {
-            (*lpChars).cCurrencyLocal2 = buff[1];
-            (*lpChars).cCurrencyLocal = buff[0];
-        }
-        2 => {
-            (*lpChars).cCurrencyLocal = buff[0];
-        }
-        _ => {
-            WARN!(b"buffer too small for LOCALE_SCURRENCY\n\0".as_ptr() as PCHAR);
-        }
-    }
-    TRACE!(b"lcid 0x%x, cCurrencyLocal =%d,%d '%c','%c'\n\0".as_ptr() as PCHAR, lcid,
-          (*lpChars).cCurrencyLocal as i32, (*lpChars).cCurrencyLocal2 as i32, 
-          (*lpChars).cCurrencyLocal as i32, (*lpChars).cCurrencyLocal2 as i32);
-
-    core::ptr::copy_nonoverlapping(
-        lpChars as *const u8,
-        core::ptr::addr_of_mut!(lastChars) as *mut u8,
-        core::mem::size_of::<VARIANT_NUMBER_CHARS>()
-    );
-    lastLcid = lcid;
-    lastFlags = dwFlags;
-    LeaveCriticalSection(core::ptr::addr_of_mut!(cache_cs));
+    (*lpChars).sCurrencyLen = n as DWORD;
 }
 
+/* Digits are ASCII only (Wine 10.0; iswdigit also took other scripts' digits,
+ * which the `- '0'` arithmetic below cannot convert). */
+#[inline]
+fn is_digit(c: WCHAR) -> bool {
+    (b'0' as u16..=b'9' as u16).contains(&c)
+}
+
+/// VarParseNumFromStr [OLEAUT32.46], ported from Wine 10.0 (the pre-10
+/// translation is replaced whole). What changed, all visible in Wine's
+/// vartest: a leading decimal point is accepted; a thousands separator before
+/// the first digit is DISP_E_TYPEMISMATCH; the decimal point masks an equal
+/// thousands separator, and a non-breaking-space separator admits plain
+/// spaces; currency decimal/thousands separators are always accepted (and set
+/// NUMPRS_CURRENCY); the whole currency string is matched, before or after
+/// the number; hex/octal is refused after currency or a decimal point; no
+/// exponent inside currency.
 #[no_mangle]
 pub unsafe extern "system" fn VarParseNumFromStr(
     lpszStr: *mut OLECHAR,
@@ -1542,335 +1492,391 @@ pub unsafe extern "system" fn VarParseNumFromStr(
     let mut chars: VARIANT_NUMBER_CHARS = core::mem::zeroed();
     let mut rgbTmp: [BYTE; 1024] = [0; 1024];
     let mut dwState: DWORD = B_EXPONENT_START | B_INEXACT_ZEROS;
-    let mut iMaxDigits: i32 = 1024;
+    let mut iMaxDigits: i32 = rgbTmp.len() as i32;
     let mut cchUsed: i32 = 0;
-    let mut lpszStr = lpszStr;
-
-    TRACE!(
-        b"(%s,%d,0x%08x,%p,%p)\n\0".as_ptr(),
-        debugstr_w(lpszStr),
-        lcid,
-        dwFlags,
-        pNumprs,
-        rgbDig,
-    );
+    let mut s = lpszStr as *const OLECHAR;
 
     if pNumprs.is_null() || rgbDig.is_null() {
         return E_INVALIDARG;
     }
+    let np = &mut *pNumprs;
+    let in_flags = np.dwInFlags;
 
-    if (*pNumprs).cDig < iMaxDigits {
-        iMaxDigits = (*pNumprs).cDig;
+    if np.cDig < iMaxDigits {
+        iMaxDigits = np.cDig;
     }
 
-    (*pNumprs).cDig = 0;
-    (*pNumprs).dwOutFlags = 0;
-    (*pNumprs).cchUsed = 0;
-    (*pNumprs).nBaseShift = 0;
-    (*pNumprs).nPwr10 = 0;
+    np.cDig = 0;
+    np.dwOutFlags = 0;
+    np.cchUsed = 0;
+    np.nBaseShift = 0;
+    np.nPwr10 = 0;
 
-    if lpszStr.is_null() {
+    if s.is_null() {
         return DISP_E_TYPEMISMATCH;
     }
 
     VARIANT_GetLocalisedNumberChars(&mut chars, lcid, dwFlags);
+    if chars.cDigitSeparator == chars.cDecimalPoint {
+        /* The decimal point completely masks the digit separator */
+        chars.cDigitSeparator = 0;
+    }
+    /* A non-breaking-space thousands separator implies regular spaces are
+     * allowed too (not the converse). */
+    let cDigitSeparator2: WCHAR = if chars.cDigitSeparator == 0xa0 { b' ' as u16 } else { 0 };
+    let is_sep = |c: WCHAR| {
+        (chars.cDigitSeparator != 0 && c == chars.cDigitSeparator)
+            || (cDigitSeparator2 != 0 && c == cDigitSeparator2)
+    };
+    let cur_at = |p: *const OLECHAR| {
+        wcsncmp_numchars(p, chars.sCurrency.as_ptr(), chars.sCurrencyLen as usize) == 0
+    };
+    let thousands_currency = (NUMPRS_THOUSANDS | NUMPRS_CURRENCY) as u32;
 
+    /* First consume all the leading symbols and space from the string */
     loop {
-        if ((*pNumprs).dwInFlags & NUMPRS_LEADING_WHITE) != 0 && iswspace(*lpszStr) != 0 {
-            (*pNumprs).dwOutFlags |= NUMPRS_LEADING_WHITE;
+        let c = *s;
+        if in_flags & NUMPRS_DECIMAL != 0
+            && (c == chars.cDecimalPoint || c == chars.cCurrencyDecimalPoint)
+        {
+            np.dwOutFlags |= NUMPRS_DECIMAL;
+            if c == chars.cCurrencyDecimalPoint && chars.cDecimalPoint != chars.cCurrencyDecimalPoint {
+                np.dwOutFlags |= NUMPRS_CURRENCY;
+            }
+            cchUsed += 1;
+            s = s.add(1);
+
+            /* If we have no digits so far, skip leading zeros */
+            if np.cDig == 0 {
+                while *s == b'0' as u16 {
+                    dwState |= B_LEADING_ZERO;
+                    cchUsed += 1;
+                    s = s.add(1);
+                    np.nPwr10 -= 1;
+                }
+            }
+            break;
+        } else if in_flags & NUMPRS_LEADING_WHITE != 0 && iswspace(c) != 0 {
+            np.dwOutFlags |= NUMPRS_LEADING_WHITE;
             loop {
                 cchUsed += 1;
-                lpszStr = lpszStr.offset(1);
-                if iswspace(*lpszStr) == 0 {
+                s = s.add(1);
+                if iswspace(*s) == 0 {
                     break;
                 }
             }
-        } else if ((*pNumprs).dwInFlags & NUMPRS_LEADING_PLUS) != 0
-            && *lpszStr == chars.cPositiveSymbol
-            && ((*pNumprs).dwOutFlags & NUMPRS_LEADING_PLUS) == 0
+        } else if in_flags & NUMPRS_THOUSANDS != 0 && is_sep(c) {
+            return DISP_E_TYPEMISMATCH; /* Not allowed before the first digit */
+        } else if (in_flags as u32 & thousands_currency) == thousands_currency
+            && chars.cCurrencyDigitSeparator != 0
+            && c == chars.cCurrencyDigitSeparator
         {
-            (*pNumprs).dwOutFlags |= NUMPRS_LEADING_PLUS;
-            cchUsed += 1;
-            lpszStr = lpszStr.offset(1);
-        } else if ((*pNumprs).dwInFlags & NUMPRS_LEADING_MINUS) != 0
-            && *lpszStr == chars.cNegativeSymbol
-            && ((*pNumprs).dwOutFlags & NUMPRS_LEADING_MINUS) == 0
+            return DISP_E_TYPEMISMATCH; /* Not allowed before the first digit */
+        } else if in_flags & NUMPRS_LEADING_PLUS != 0
+            && c == chars.cPositiveSymbol
+            && np.dwOutFlags & NUMPRS_LEADING_PLUS == 0
         {
-            (*pNumprs).dwOutFlags |= NUMPRS_LEADING_MINUS | NUMPRS_NEG;
+            np.dwOutFlags |= NUMPRS_LEADING_PLUS;
             cchUsed += 1;
-            lpszStr = lpszStr.offset(1);
-        } else if ((*pNumprs).dwInFlags & NUMPRS_CURRENCY) != 0
-            && ((*pNumprs).dwOutFlags & NUMPRS_CURRENCY) == 0
-            && *lpszStr == chars.cCurrencyLocal
-            && (chars.cCurrencyLocal2 == 0 || *lpszStr.offset(1) == chars.cCurrencyLocal2)
+            s = s.add(1);
+        } else if in_flags & NUMPRS_LEADING_MINUS != 0
+            && c == chars.cNegativeSymbol
+            && np.dwOutFlags & NUMPRS_LEADING_MINUS == 0
         {
-            (*pNumprs).dwOutFlags |= NUMPRS_CURRENCY;
+            np.dwOutFlags |= NUMPRS_LEADING_MINUS | NUMPRS_NEG;
             cchUsed += 1;
-            lpszStr = lpszStr.offset(1);
-            chars.cDecimalPoint = chars.cCurrencyDecimalPoint;
-            chars.cDigitSeparator = chars.cCurrencyDigitSeparator;
-        } else if ((*pNumprs).dwInFlags & NUMPRS_PARENS) != 0
-            && *lpszStr == '(' as OLECHAR
-            && ((*pNumprs).dwOutFlags & NUMPRS_PARENS) == 0
+            s = s.add(1);
+        } else if in_flags & NUMPRS_CURRENCY != 0
+            && np.dwOutFlags & NUMPRS_CURRENCY == 0
+            && cur_at(s)
         {
-            (*pNumprs).dwOutFlags |= NUMPRS_PARENS;
+            np.dwOutFlags |= NUMPRS_CURRENCY;
+            cchUsed += chars.sCurrencyLen as i32;
+            s = s.add(chars.sCurrencyLen as usize);
+        } else if in_flags & NUMPRS_PARENS != 0
+            && c == b'(' as u16
+            && np.dwOutFlags & NUMPRS_PARENS == 0
+        {
+            np.dwOutFlags |= NUMPRS_PARENS;
             cchUsed += 1;
-            lpszStr = lpszStr.offset(1);
+            s = s.add(1);
         } else {
             break;
         }
     }
 
-    if ((*pNumprs).dwOutFlags & NUMPRS_CURRENCY) == 0 {
-        chars.cCurrencyDecimalPoint = chars.cDecimalPoint;
-        chars.cCurrencyDigitSeparator = chars.cDigitSeparator;
+    if np.dwOutFlags & (NUMPRS_CURRENCY | NUMPRS_DECIMAL) == 0 && in_flags & NUMPRS_HEX_OCT != 0 && *s == b'&' as u16 {
+        let k = *s.add(1);
+        if k == b'H' as u16 || k == b'h' as u16 {
+            dwState |= B_PROCESSING_HEX;
+            np.dwOutFlags |= NUMPRS_HEX_OCT;
+            cchUsed += 2;
+            s = s.add(2);
+        } else if k == b'O' as u16 || k == b'o' as u16 {
+            dwState |= B_PROCESSING_OCT;
+            np.dwOutFlags |= NUMPRS_HEX_OCT;
+            cchUsed += 2;
+            s = s.add(2);
+        }
     }
 
-    if *lpszStr == '&' as OLECHAR
-        && (*lpszStr.offset(1) == 'H' as OLECHAR || *lpszStr.offset(1) == 'h' as OLECHAR)
-        && ((*pNumprs).dwInFlags & NUMPRS_HEX_OCT) != 0
-    {
-        dwState |= B_PROCESSING_HEX;
-        (*pNumprs).dwOutFlags |= NUMPRS_HEX_OCT;
-        cchUsed = cchUsed + 2;
-        lpszStr = lpszStr.offset(2);
-    } else if *lpszStr == '&' as OLECHAR
-        && (*lpszStr.offset(1) == 'O' as OLECHAR || *lpszStr.offset(1) == 'o' as OLECHAR)
-        && ((*pNumprs).dwInFlags & NUMPRS_HEX_OCT) != 0
-    {
-        dwState |= B_PROCESSING_OCT;
-        (*pNumprs).dwOutFlags |= NUMPRS_HEX_OCT;
-        cchUsed = cchUsed + 2;
-        lpszStr = lpszStr.offset(2);
-    }
-
-    while *lpszStr == '0' as OLECHAR {
+    /* Strip Leading zeros */
+    while *s == b'0' as u16 {
         dwState |= B_LEADING_ZERO;
         cchUsed += 1;
-        lpszStr = lpszStr.offset(1);
+        s = s.add(1);
     }
 
-    while *lpszStr != 0 {
-        if iswdigit(*lpszStr) != 0 {
-            if (dwState & B_PROCESSING_EXPONENT) != 0 {
+    while *s != 0 {
+        let c = *s;
+        if is_digit(c) {
+            if dwState & B_PROCESSING_EXPONENT != 0 {
                 let mut exponentSize: i32 = 0;
-                if (dwState & B_EXPONENT_START) != 0 {
-                    if iswdigit(*lpszStr) == 0 {
-                        break;
-                    }
-                    while *lpszStr == '0' as OLECHAR {
+                if dwState & B_EXPONENT_START != 0 {
+                    while *s == b'0' as u16 {
+                        /* Skip leading zero's in the exponent */
                         cchUsed += 1;
-                        lpszStr = lpszStr.offset(1);
+                        s = s.add(1);
                     }
                 }
 
-                while iswdigit(*lpszStr) != 0 {
-                    exponentSize *= 10;
-                    exponentSize += (*lpszStr - '0' as OLECHAR) as i32;
+                while is_digit(*s) {
+                    exponentSize = exponentSize.wrapping_mul(10);
+                    exponentSize = exponentSize.wrapping_add((*s - b'0' as u16) as i32);
                     cchUsed += 1;
-                    lpszStr = lpszStr.offset(1);
+                    s = s.add(1);
                 }
-                if (dwState & B_NEGATIVE_EXPONENT) != 0 {
+                if dwState & B_NEGATIVE_EXPONENT != 0 {
                     exponentSize = -exponentSize;
                 }
-                (*pNumprs).nPwr10 += exponentSize;
+                /* Add the exponent into the powers of 10 */
+                np.nPwr10 += exponentSize;
                 dwState &= !(B_PROCESSING_EXPONENT | B_EXPONENT_START);
-                lpszStr = lpszStr.offset(-1);
+                s = s.sub(1); /* back up to allow processing of next char */
             } else {
-                if (*pNumprs).cDig >= iMaxDigits
-                    && (dwState & B_PROCESSING_HEX) == 0
-                    && (dwState & B_PROCESSING_OCT) == 0
+                if np.cDig >= iMaxDigits
+                    && dwState & B_PROCESSING_HEX == 0
+                    && dwState & B_PROCESSING_OCT == 0
                 {
-                    (*pNumprs).dwOutFlags |= NUMPRS_INEXACT;
+                    np.dwOutFlags |= NUMPRS_INEXACT;
 
-                    if *lpszStr != '0' as OLECHAR {
-                        dwState &= !B_INEXACT_ZEROS;
+                    if c != b'0' as u16 {
+                        dwState &= !B_INEXACT_ZEROS; /* Inexact number with non-trailing zeros */
                     }
 
-                    if ((*pNumprs).dwOutFlags & NUMPRS_DECIMAL) != 0 {
-                        (*pNumprs).nPwr10 -= 1;
+                    /* This digit can't be represented, but count it in nPwr10 */
+                    if np.dwOutFlags & NUMPRS_DECIMAL != 0 {
+                        np.nPwr10 -= 1;
                     } else {
-                        (*pNumprs).nPwr10 += 1;
+                        np.nPwr10 += 1;
                     }
                 } else {
-                    if (dwState & B_PROCESSING_OCT) != 0
-                        && (*lpszStr == '8' as OLECHAR || *lpszStr == '9' as OLECHAR)
-                    {
+                    if dwState & B_PROCESSING_OCT != 0 && (c == b'8' as u16 || c == b'9' as u16) {
                         break;
                     }
 
-                    if ((*pNumprs).dwOutFlags & NUMPRS_DECIMAL) != 0 {
-                        (*pNumprs).nPwr10 -= 1;
+                    if np.dwOutFlags & NUMPRS_DECIMAL != 0 {
+                        np.nPwr10 -= 1; /* Count decimal points in nPwr10 */
                     }
 
-                    rgbTmp[(*pNumprs).cDig as usize] = (*lpszStr - '0' as OLECHAR) as BYTE;
+                    rgbTmp[np.cDig as usize] = (c - b'0' as u16) as BYTE;
                 }
-                (*pNumprs).cDig += 1;
+                np.cDig += 1;
                 cchUsed += 1;
             }
-        } else if *lpszStr == chars.cDigitSeparator
-            && ((*pNumprs).dwInFlags & NUMPRS_THOUSANDS) != 0
+        } else if in_flags & NUMPRS_THOUSANDS != 0
+            && np.dwOutFlags & NUMPRS_HEX_OCT == 0
+            && is_sep(c)
         {
-            (*pNumprs).dwOutFlags |= NUMPRS_THOUSANDS;
+            np.dwOutFlags |= NUMPRS_THOUSANDS;
             cchUsed += 1;
-        } else if *lpszStr == chars.cDecimalPoint
-            && ((*pNumprs).dwInFlags & NUMPRS_DECIMAL) != 0
-            && ((*pNumprs).dwOutFlags & (NUMPRS_DECIMAL | NUMPRS_EXPONENT)) == 0
+        } else if (in_flags as u32 & thousands_currency) == thousands_currency
+            && np.dwOutFlags & NUMPRS_HEX_OCT == 0
+            && chars.cCurrencyDigitSeparator != 0
+            && c == chars.cCurrencyDigitSeparator
         {
-            (*pNumprs).dwOutFlags |= NUMPRS_DECIMAL;
+            np.dwOutFlags |= NUMPRS_THOUSANDS | NUMPRS_CURRENCY;
+            cchUsed += 1;
+        } else if in_flags & NUMPRS_DECIMAL != 0
+            && (c == chars.cDecimalPoint || c == chars.cCurrencyDecimalPoint)
+            && np.dwOutFlags & (NUMPRS_HEX_OCT | NUMPRS_DECIMAL | NUMPRS_EXPONENT) == 0
+        {
+            np.dwOutFlags |= NUMPRS_DECIMAL;
+            if c == chars.cCurrencyDecimalPoint && chars.cDecimalPoint != chars.cCurrencyDecimalPoint {
+                np.dwOutFlags |= NUMPRS_CURRENCY;
+            }
             cchUsed += 1;
 
-            if (*pNumprs).cDig == 0 {
-                while *lpszStr.offset(1) == '0' as OLECHAR {
+            /* If we have no digits so far, skip leading zeros */
+            if np.cDig == 0 {
+                while *s.add(1) == b'0' as u16 {
                     dwState |= B_LEADING_ZERO;
                     cchUsed += 1;
-                    lpszStr = lpszStr.offset(1);
-                    (*pNumprs).nPwr10 -= 1;
+                    s = s.add(1);
+                    np.nPwr10 -= 1;
                 }
             }
-        } else if ((*lpszStr >= 'a' as OLECHAR && *lpszStr <= 'f' as OLECHAR)
-            || (*lpszStr >= 'A' as OLECHAR && *lpszStr <= 'F' as OLECHAR))
-            && (dwState & B_PROCESSING_HEX) != 0
+        } else if ((b'a' as u16..=b'f' as u16).contains(&c) || (b'A' as u16..=b'F' as u16).contains(&c))
+            && dwState & B_PROCESSING_HEX != 0
         {
-            if (*pNumprs).cDig >= iMaxDigits {
+            if np.cDig >= iMaxDigits {
                 return DISP_E_OVERFLOW;
-            } else {
-                if *lpszStr >= 'a' as OLECHAR {
-                    rgbTmp[(*pNumprs).cDig as usize] = (*lpszStr - 'a' as OLECHAR + 10) as BYTE;
-                } else {
-                    rgbTmp[(*pNumprs).cDig as usize] = (*lpszStr - 'A' as OLECHAR + 10) as BYTE;
-                }
             }
-            (*pNumprs).cDig += 1;
+            rgbTmp[np.cDig as usize] = if c >= b'a' as u16 {
+                (c - b'a' as u16 + 10) as BYTE
+            } else {
+                (c - b'A' as u16 + 10) as BYTE
+            };
+            np.cDig += 1;
             cchUsed += 1;
-        } else if (*lpszStr == 'e' as OLECHAR || *lpszStr == 'E' as OLECHAR)
-            && ((*pNumprs).dwInFlags & NUMPRS_EXPONENT) != 0
-            && ((*pNumprs).dwOutFlags & NUMPRS_EXPONENT) == 0
+        } else if (c == b'e' as u16 || c == b'E' as u16)
+            && in_flags & NUMPRS_EXPONENT != 0
+            && np.dwOutFlags & (NUMPRS_HEX_OCT | NUMPRS_CURRENCY | NUMPRS_EXPONENT) == 0
         {
             dwState |= B_PROCESSING_EXPONENT;
-            (*pNumprs).dwOutFlags |= NUMPRS_EXPONENT;
+            np.dwOutFlags |= NUMPRS_EXPONENT;
             cchUsed += 1;
-        } else if (dwState & B_PROCESSING_EXPONENT) != 0 && *lpszStr == chars.cPositiveSymbol {
-            cchUsed += 1;
-        } else if (dwState & B_PROCESSING_EXPONENT) != 0 && *lpszStr == chars.cNegativeSymbol {
+        } else if dwState & B_PROCESSING_EXPONENT != 0 && c == chars.cPositiveSymbol {
+            cchUsed += 1; /* Ignore positive exponent */
+        } else if dwState & B_PROCESSING_EXPONENT != 0 && c == chars.cNegativeSymbol {
             dwState |= B_NEGATIVE_EXPONENT;
             cchUsed += 1;
         } else {
-            break;
+            break; /* Stop at an unrecognised character */
         }
 
-        lpszStr = lpszStr.offset(1);
+        s = s.add(1);
     }
 
-    if (*pNumprs).cDig == 0 && (dwState & B_LEADING_ZERO) != 0 {
-        (*pNumprs).cDig = 1;
+    if np.cDig == 0 && dwState & B_LEADING_ZERO != 0 {
+        /* Ensure a 0 on its own gets stored */
+        np.cDig = 1;
         rgbTmp[0] = 0;
     }
 
-    if ((*pNumprs).dwOutFlags & NUMPRS_EXPONENT) != 0
-        && (dwState & B_PROCESSING_EXPONENT) != 0
-    {
-        (*pNumprs).cchUsed = cchUsed;
-        WARN!(b"didn't completely parse exponent\n\0".as_ptr());
-        return DISP_E_TYPEMISMATCH;
+    if np.dwOutFlags & NUMPRS_EXPONENT != 0 && dwState & B_PROCESSING_EXPONENT != 0 {
+        np.cchUsed = cchUsed;
+        return DISP_E_TYPEMISMATCH; /* Failed to completely parse the exponent */
     }
 
-    if ((*pNumprs).dwOutFlags & NUMPRS_INEXACT) != 0 {
-        if (dwState & B_INEXACT_ZEROS) != 0 {
-            (*pNumprs).dwOutFlags &= !NUMPRS_INEXACT;
+    if np.dwOutFlags & NUMPRS_INEXACT != 0 {
+        if dwState & B_INEXACT_ZEROS != 0 {
+            np.dwOutFlags &= !NUMPRS_INEXACT; /* All zeros doesn't set NUMPRS_INEXACT */
         }
-    } else if ((*pNumprs).dwInFlags & NUMPRS_HEX_OCT) != 0 {
-        memcpy(
-            rgbDig as *mut c_void,
-            rgbTmp.as_ptr() as *const c_void,
-            ((*pNumprs).cDig as usize) * core::mem::size_of::<BYTE>(),
-        );
+    } else if in_flags & NUMPRS_HEX_OCT != 0 {
+        /* copy all of the digits into the output digit buffer; this is exactly
+         * what windows does although it also returns cDig of X and writes X+Y
+         * where Y>=0 number of digits to rgbDig */
+        core::ptr::copy_nonoverlapping(rgbTmp.as_ptr(), rgbDig, np.cDig as usize);
 
-        if (dwState & B_PROCESSING_HEX) != 0 {
-            (*pNumprs).nPwr10 = 0;
-            (*pNumprs).nBaseShift = 4;
+        if dwState & B_PROCESSING_HEX != 0 {
+            /* hex numbers have always the same format */
+            np.nPwr10 = 0;
+            np.nBaseShift = 4;
+        } else if dwState & B_PROCESSING_OCT != 0 {
+            /* oct numbers have always the same format */
+            np.nPwr10 = 0;
+            np.nBaseShift = 3;
         } else {
-            if (dwState & B_PROCESSING_OCT) != 0 {
-                (*pNumprs).nPwr10 = 0;
-                (*pNumprs).nBaseShift = 3;
-            } else {
-                while (*pNumprs).cDig > 1 && rgbTmp[((*pNumprs).cDig - 1) as usize] == 0 {
-                    (*pNumprs).nPwr10 += 1;
-                    (*pNumprs).cDig -= 1;
-                }
+            while np.cDig > 1 && rgbTmp[np.cDig as usize - 1] == 0 {
+                np.nPwr10 += 1;
+                np.cDig -= 1;
             }
         }
     } else {
-        while (*pNumprs).cDig > 1 && rgbTmp[((*pNumprs).cDig - 1) as usize] == 0 {
-            (*pNumprs).nPwr10 += 1;
-            (*pNumprs).cDig -= 1;
+        /* Remove trailing zeros from the last (whole number or decimal) part */
+        while np.cDig > 1 && rgbTmp[np.cDig as usize - 1] == 0 {
+            np.nPwr10 += 1;
+            np.cDig -= 1;
         }
     }
 
-    if (*pNumprs).cDig <= iMaxDigits {
-        (*pNumprs).dwOutFlags &= !NUMPRS_INEXACT;
+    if np.cDig <= iMaxDigits {
+        np.dwOutFlags &= !NUMPRS_INEXACT; /* Ignore stripped zeros for NUMPRS_INEXACT */
     } else {
-        (*pNumprs).cDig = iMaxDigits;
+        np.cDig = iMaxDigits; /* Only return iMaxDigits worth of digits */
     }
 
-    memcpy(
-        rgbDig as *mut c_void,
-        rgbTmp.as_ptr() as *const c_void,
-        ((*pNumprs).cDig as usize) * core::mem::size_of::<BYTE>(),
-    );
+    /* Copy the digits we processed into rgbDig */
+    core::ptr::copy_nonoverlapping(rgbTmp.as_ptr(), rgbDig, np.cDig as usize);
 
+    /* Consume any trailing symbols and space */
     loop {
-        if ((*pNumprs).dwInFlags & NUMPRS_TRAILING_WHITE) != 0 && iswspace(*lpszStr) != 0 {
-            (*pNumprs).dwOutFlags |= NUMPRS_TRAILING_WHITE;
+        let c = *s;
+        if is_sep(c) {
+            if in_flags & NUMPRS_THOUSANDS != 0 && np.dwOutFlags & NUMPRS_HEX_OCT == 0 {
+                np.dwOutFlags |= NUMPRS_THOUSANDS;
+                cchUsed += 1;
+                s = s.add(1);
+            } else {
+                break; /* Not allowed, even with NUMPRS_TRAILING_WHITE */
+            }
+        } else if c == chars.cCurrencyDigitSeparator {
+            if (in_flags as u32 & thousands_currency) == thousands_currency
+                && np.dwOutFlags & NUMPRS_HEX_OCT == 0
+            {
+                np.dwOutFlags |= NUMPRS_THOUSANDS | NUMPRS_CURRENCY;
+                cchUsed += 1;
+                s = s.add(1);
+            } else {
+                break; /* Not allowed, even with NUMPRS_TRAILING_WHITE */
+            }
+        } else if in_flags & NUMPRS_TRAILING_WHITE != 0 && iswspace(c) != 0 {
+            np.dwOutFlags |= NUMPRS_TRAILING_WHITE;
             loop {
                 cchUsed += 1;
-                lpszStr = lpszStr.offset(1);
-                if iswspace(*lpszStr) == 0 {
+                s = s.add(1);
+                if iswspace(*s) == 0 {
                     break;
                 }
             }
-        } else if ((*pNumprs).dwInFlags & NUMPRS_TRAILING_PLUS) != 0
-            && ((*pNumprs).dwOutFlags & NUMPRS_LEADING_PLUS) == 0
-            && *lpszStr == chars.cPositiveSymbol
+        } else if in_flags & NUMPRS_TRAILING_PLUS != 0
+            && np.dwOutFlags & NUMPRS_LEADING_PLUS == 0
+            && c == chars.cPositiveSymbol
         {
-            (*pNumprs).dwOutFlags |= NUMPRS_TRAILING_PLUS;
+            np.dwOutFlags |= NUMPRS_TRAILING_PLUS;
             cchUsed += 1;
-            lpszStr = lpszStr.offset(1);
-        } else if ((*pNumprs).dwInFlags & NUMPRS_TRAILING_MINUS) != 0
-            && ((*pNumprs).dwOutFlags & NUMPRS_LEADING_MINUS) == 0
-            && *lpszStr == chars.cNegativeSymbol
+            s = s.add(1);
+        } else if in_flags & NUMPRS_TRAILING_MINUS != 0
+            && np.dwOutFlags & NUMPRS_LEADING_MINUS == 0
+            && c == chars.cNegativeSymbol
         {
-            (*pNumprs).dwOutFlags |= NUMPRS_TRAILING_MINUS | NUMPRS_NEG;
+            np.dwOutFlags |= NUMPRS_TRAILING_MINUS | NUMPRS_NEG;
             cchUsed += 1;
-            lpszStr = lpszStr.offset(1);
-        } else if ((*pNumprs).dwInFlags & NUMPRS_PARENS) != 0
-            && *lpszStr == ')' as OLECHAR
-            && ((*pNumprs).dwOutFlags & NUMPRS_PARENS) != 0
+            s = s.add(1);
+        } else if in_flags & NUMPRS_PARENS != 0
+            && c == b')' as u16
+            && np.dwOutFlags & NUMPRS_PARENS != 0
         {
             cchUsed += 1;
-            lpszStr = lpszStr.offset(1);
-            (*pNumprs).dwOutFlags |= NUMPRS_NEG;
+            s = s.add(1);
+            np.dwOutFlags |= NUMPRS_NEG;
+        } else if in_flags & NUMPRS_CURRENCY != 0
+            && np.dwOutFlags & NUMPRS_HEX_OCT == 0
+            && cur_at(s)
+        {
+            np.dwOutFlags |= NUMPRS_CURRENCY;
+            cchUsed += chars.sCurrencyLen as i32;
+            s = s.add(chars.sCurrencyLen as usize);
         } else {
             break;
         }
     }
 
-    if ((*pNumprs).dwOutFlags & NUMPRS_PARENS) != 0
-        && ((*pNumprs).dwOutFlags & NUMPRS_NEG) == 0
-    {
-        (*pNumprs).cchUsed = cchUsed;
-        return DISP_E_TYPEMISMATCH;
+    if np.dwOutFlags & NUMPRS_PARENS != 0 && np.dwOutFlags & NUMPRS_NEG == 0 {
+        np.cchUsed = cchUsed;
+        return DISP_E_TYPEMISMATCH; /* Opening parenthesis not matched */
     }
 
-    if ((*pNumprs).dwInFlags & NUMPRS_USE_ALL) != 0 && *lpszStr != 0 {
-        return DISP_E_TYPEMISMATCH;
+    if in_flags & NUMPRS_USE_ALL != 0 && *s != 0 {
+        return DISP_E_TYPEMISMATCH; /* Not all chars were consumed */
     }
 
-    if (*pNumprs).cDig == 0 {
-        return DISP_E_TYPEMISMATCH;
+    if np.cDig == 0 {
+        return DISP_E_TYPEMISMATCH; /* No Number found */
     }
 
-    (*pNumprs).cchUsed = cchUsed;
+    np.cchUsed = cchUsed;
     S_OK
 }
 #[no_mangle]
@@ -3559,7 +3565,7 @@ pub unsafe extern "system" fn VarDiv(left: LPVARIANT, right: LPVARIANT, result: 
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn VarSub(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
+pub unsafe extern "system" fn VarSub(mut left: LPVARIANT, mut right: LPVARIANT, result: LPVARIANT) -> HRESULT {
     let mut hres: HRESULT = S_OK;
     let mut resvt: VARTYPE = VT_EMPTY;
     let leftvt: VARTYPE;
@@ -3603,7 +3609,7 @@ pub unsafe extern "system" fn VarSub(left: LPVARIANT, right: LPVARIANT, result: 
             }
             hres = VARIANT_FetchDispatchValue(left, &mut tempLeft);
             if FAILED(hres) { break 'end; }
-            let _left = &mut tempLeft;
+            left = &mut tempLeft; // C re-points the operand at the fetched value
         }
         if ((*V_VT_ref(right)) & VT_TYPEMASK) == VT_DISPATCH &&
             ((*V_VT_ref(right)) & (!VT_TYPEMASK)) == 0 &&
@@ -3628,7 +3634,7 @@ pub unsafe extern "system" fn VarSub(left: LPVARIANT, right: LPVARIANT, result: 
             }
             hres = VARIANT_FetchDispatchValue(right, &mut tempRight);
             if FAILED(hres) { break 'end; }
-            let _right = &mut tempRight;
+            right = &mut tempRight;
         }
 
         leftvt = (*V_VT_ref(left)) & VT_TYPEMASK;
@@ -4387,7 +4393,6 @@ pub unsafe extern "system" fn VarOr(pVarLeft: LPVARIANT, pVarRight: LPVARIANT, p
 
 #[no_mangle]
 pub unsafe extern "system" fn VarAbs(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> HRESULT {
-    let mut varIn: VARIANT = core::mem::zeroed();
     let mut hRet: HRESULT = S_OK;
     let mut temp: VARIANT = core::mem::zeroed();
 
@@ -4454,37 +4459,29 @@ pub unsafe extern "system" fn VarAbs(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
                 (*V_I8_ref(pVarOut)) = -(*V_I8_ref(pVarIn));
             }
         }
+        // Wine 10.0. Floats have no unrepresentable minimum, so the old
+        // `== R4_MIN/R8_MIN -> DISP_E_OVERFLOW` (R4_MIN/R8_MIN are the smallest
+        // DENORMALS) rejected a valid input. And a BSTR is parsed straight into
+        // pVarOut: the old code parsed into a local and wrote pVarOut only for a
+        // negative value, so VarAbs("5") returned VT_R8 holding the shallow-
+        // copied BSTR pointer's bits.
         VT_R4 => {
-            if (*V_R4_ref(pVarIn)) == R4_MIN as f32 {
-                hRet = DISP_E_OVERFLOW;
-            } else if (*V_R4_ref(pVarIn)) < 0.0 {
-                (*V_R4_ref(pVarOut)) = -(*V_R4_ref(pVarIn));
+            if (*V_R4_ref(pVarOut)) < 0.0 {
+                (*V_R4_ref(pVarOut)) = -(*V_R4_ref(pVarOut));
             }
         }
         VT_BSTR => {
-            hRet = VarR8FromStr(*V_BSTR_ref(pVarIn) , LOCALE_USER_DEFAULT, 0, V_R8_ref(&mut varIn));
+            hRet = VarR8FromStr(*V_BSTR_ref(pVarIn), LOCALE_USER_DEFAULT, 0, V_R8_ref(pVarOut));
             if !FAILED(hRet) {
                 (*V_VT_ref(pVarOut)) = VT_R8;
-                pVarIn = &mut varIn;
-                if (*V_R8_ref(pVarIn)) == R8_MIN {
-                    hRet = DISP_E_OVERFLOW;
-                } else if (*V_R8_ref(pVarIn)) < 0.0 {
-                    (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarIn));
+                if (*V_R8_ref(pVarOut)) < 0.0 {
+                    (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarOut));
                 }
             }
         }
-        VT_DATE => {
-            if (*V_R8_ref(pVarIn)) == R8_MIN {
-                hRet = DISP_E_OVERFLOW;
-            } else if (*V_R8_ref(pVarIn)) < 0.0 {
-                (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarIn));
-            }
-        }
-        VT_R8 => {
-            if (*V_R8_ref(pVarIn)) == R8_MIN {
-                hRet = DISP_E_OVERFLOW;
-            } else if (*V_R8_ref(pVarIn)) < 0.0 {
-                (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarIn));
+        VT_DATE | VT_R8 => {
+            if (*V_R8_ref(pVarOut)) < 0.0 {
+                (*V_R8_ref(pVarOut)) = -(*V_R8_ref(pVarOut));
             }
         }
         VT_CY => {
@@ -5029,7 +5026,8 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             (*V_I2_ref(pVarOut)) = !(*V_I2_ref(pVarIn));
         }
         VT_UI2 => {
-            (*V_I4_ref(pVarOut)) = !(*V_UI2_ref(pVarIn)) as i32;
+            // C promotes the USHORT to int before `~`: ~0 is -1, not 0xFFFF
+            (*V_I4_ref(pVarOut)) = !(*V_UI2_ref(pVarIn) as i32);
             (*V_VT_ref(pVarOut)) = VT_I4;
         }
         VT_DECIMAL => {
@@ -5388,6 +5386,9 @@ pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: 
     VariantInit(&mut tempRight);
     VariantInit(&mut lv);
     VariantInit(&mut rv);
+    // Wine 10.0: the early-error exits below return `result` untouched, so
+    // give it a defined type first.
+    (*V_VT_ref(result)) = VT_EMPTY;
 
     TRACE!(b"(%s,%s,%p)\n\0".as_ptr() as *const i8, debugstr_variant(left), debugstr_variant(right), result);
 
@@ -5429,42 +5430,54 @@ pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: 
             }
         }
 
-        match (*V_VT_ref(right_ptr)) & VT_TYPEMASK {
-            VT_BOOL | VT_I1 | VT_I2 | VT_I4 | VT_I8 => {
-                if ((*V_VT_ref(left_ptr)) == VT_INT) && ((*V_VT_ref(right_ptr)) == VT_I8) {
-                    (*V_VT_ref(result)) = VT_EMPTY;
-                    rc = DISP_E_TYPEMISMATCH;
-                    break 'end;
-                }
+        // C: these cases FALL THROUGH into each other (BOOL..I8 -> INT -> UI1..CY
+        // -> EMPTY/DATE/DECIMAL -> BSTR), so every one of them ends at BSTR's
+        // "NULL % x is NULL" check. The translation gave each arm only its own
+        // check, so VarMod(NULL, <any non-BSTR>) went on to convert NULL to I8
+        // and failed DISP_E_TYPEMISMATCH (Wine's vartest). `stage` replays the
+        // fallthrough: an arm runs its own check and every later one.
+        let rvt = (*V_VT_ref(right_ptr)) & VT_TYPEMASK;
+        let stage: u8 = match rvt {
+            VT_BOOL | VT_I1 | VT_I2 | VT_I4 | VT_I8 => 1,
+            VT_INT => 2,
+            VT_UI1 | VT_UI2 | VT_UI4 | VT_UI8 | VT_UINT | VT_R4 | VT_R8 | VT_CY => 3,
+            VT_EMPTY | VT_DATE | VT_DECIMAL => 4,
+            VT_BSTR => 5,
+            _ => 0,
+        };
+        if stage != 0 {
+            if stage <= 1 && ((*V_VT_ref(left_ptr)) == VT_INT) && ((*V_VT_ref(right_ptr)) == VT_I8) {
+                (*V_VT_ref(result)) = VT_EMPTY;
+                rc = DISP_E_TYPEMISMATCH;
+                break 'end;
             }
-            VT_INT => {
-                if ((*V_VT_ref(right_ptr)) == VT_INT) && ((*V_VT_ref(left_ptr)) == VT_I8) {
-                    (*V_VT_ref(result)) = VT_EMPTY;
-                    rc = DISP_E_TYPEMISMATCH;
-                    break 'end;
-                }
+            if stage <= 2 && ((*V_VT_ref(right_ptr)) == VT_INT) && ((*V_VT_ref(left_ptr)) == VT_I8) {
+                (*V_VT_ref(result)) = VT_EMPTY;
+                rc = DISP_E_TYPEMISMATCH;
+                break 'end;
             }
-            VT_UI1 | VT_UI2 | VT_UI4 | VT_UI8 | VT_UINT | VT_R4 | VT_R8 | VT_CY => {
-                if (*V_VT_ref(left_ptr)) == VT_EMPTY {
-                    (*V_VT_ref(result)) = VT_I4;
-                    rc = S_OK;
-                    break 'end;
-                }
+            if stage <= 3 && (*V_VT_ref(left_ptr)) == VT_EMPTY {
+                // Wine 10.0: and a VALUE (the result held whatever the caller had).
+                (*V_VT_ref(result)) = VT_I4;
+                (*V_I4_ref(result)) = 0;
+                rc = S_OK;
+                break 'end;
             }
-            VT_EMPTY | VT_DATE | VT_DECIMAL => {
-                if (*V_VT_ref(left_ptr)) == VT_ERROR {
-                    (*V_VT_ref(result)) = VT_EMPTY;
-                    rc = DISP_E_TYPEMISMATCH;
-                    break 'end;
-                }
+            if stage <= 4 && (*V_VT_ref(left_ptr)) == VT_ERROR {
+                (*V_VT_ref(result)) = VT_EMPTY;
+                rc = DISP_E_TYPEMISMATCH;
+                break 'end;
             }
-            VT_BSTR => {
-                if (*V_VT_ref(left_ptr)) == VT_NULL {
-                    (*V_VT_ref(result)) = VT_NULL;
-                    rc = S_OK;
-                    break 'end;
-                }
+            if (*V_VT_ref(left_ptr)) == VT_NULL {
+                (*V_VT_ref(result)) = VT_NULL;
+                rc = S_OK;
+                break 'end;
             }
+        }
+
+        match rvt {
+            VT_BOOL | VT_I1 | VT_I2 | VT_I4 | VT_I8 | VT_INT | VT_UI1 | VT_UI2 | VT_UI4 | VT_UI8
+            | VT_UINT | VT_R4 | VT_R8 | VT_CY | VT_EMPTY | VT_DATE | VT_DECIMAL | VT_BSTR => {}
             VT_VOID => {
                 (*V_VT_ref(result)) = VT_EMPTY;
                 rc = DISP_E_BADVARTYPE;

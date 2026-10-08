@@ -49,9 +49,11 @@ def main() -> None:
     t0 = time.monotonic()
     vm.start()
     vm.wait_for_boot()
+    assert vm._proc is not None
     pid = vm._proc.pid
-    print(f"  booted {time.monotonic()-t0:.0f}s; pid={pid}")
-    print(f"  cmdline: {' '.join(vm._proc.args)}\n")
+    print(f"  booted {time.monotonic() - t0:.0f}s; pid={pid}")
+    args = vm._proc.args
+    print(f"  cmdline: {' '.join(map(str, args)) if isinstance(args, list) else args}\n")
 
     try:
         vcpu = vm.qmp.execute("query-cpus-fast")["return"][0]["thread-id"]
@@ -59,10 +61,12 @@ def main() -> None:
 
         def vcpu_pct(window: float) -> float:
             def j():
-                p = (Path(f"/proc/{pid}/task/{vcpu}/stat")
-                     .read_text().rsplit(')', 1)[1].split())
+                p = Path(f"/proc/{pid}/task/{vcpu}/stat").read_text().rsplit(")", 1)[1].split()
                 return int(p[11]) + int(p[12])
-            a = j(); time.sleep(window); b = j()
+
+            a = j()
+            time.sleep(window)
+            b = j()
             return (b - a) / _CLK / window * 100.0
 
         # CONFIRMING A/B on the REAL smoke config — only var: drain serial?
@@ -74,30 +78,39 @@ def main() -> None:
 
         print("  [B] continuously draining serial socket:")
         stop = threading.Event()
+
         def drain():
             while not stop.is_set():
                 try:
                     vm.serial.read_available(timeout=0.2)
                 except Exception:
                     time.sleep(0.1)
+
         dt = threading.Thread(target=drain, daemon=True)
         dt.start()
-        time.sleep(2)                 # let the backlog flush
+        time.sleep(2)  # let the backlog flush
         b_pct = vcpu_pct(6.0)
-        stop.set(); dt.join(timeout=2)
+        stop.set()
+        dt.join(timeout=2)
         print(f"      vCPU = {b_pct:.1f}%")
 
-        print(f"\n  VERDICT: undrained={a_pct:.1f}%  drained={b_pct:.1f}%  "
-              f"(lean start.sh baseline 3.4%)")
+        print(
+            f"\n  VERDICT: undrained={a_pct:.1f}%  drained={b_pct:.1f}%  "
+            f"(lean start.sh baseline 3.4%)"
+        )
         if a_pct > 50 and b_pct < 20:
-            print("  => CONFIRMED: the 'idle storm' is SERIAL BACKPRESSURE — "
-                  "ReactOS polled-serial DbgPrint spinning on UART THRE because "
-                  "the harness stops draining the socket chardev post-boot. "
-                  "NOT an OS bug. Fix: drain serial continuously, or use "
-                  "-serial file:, or unblock the chardev.")
+            print(
+                "  => CONFIRMED: the 'idle storm' is SERIAL BACKPRESSURE — "
+                "ReactOS polled-serial DbgPrint spinning on UART THRE because "
+                "the harness stops draining the socket chardev post-boot. "
+                "NOT an OS bug. Fix: drain serial continuously, or use "
+                "-serial file:, or unblock the chardev."
+            )
         elif a_pct > 50 and b_pct > 50:
-            print("  => NOT (only) serial; vCPU still hot when drained — "
-                  "another vmexit source remains.")
+            print(
+                "  => NOT (only) serial; vCPU still hot when drained — "
+                "another vmexit source remains."
+            )
         else:
             print("  => inconclusive (undrained not hot this sample).")
     finally:

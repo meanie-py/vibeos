@@ -55,9 +55,7 @@ def decode_debugcon(raw: bytes, catalog: dict) -> DebugconResult:
     result = DebugconResult(raw_bytes=raw)
 
     trace_points = catalog.get("trace_points", [])
-    hex_delimiters = {
-        d["open"]: d for d in catalog.get("hex_dump_delimiters", [])
-    }
+    hex_delimiters = {d["open"]: d for d in catalog.get("hex_dump_delimiters", [])}
 
     # Build TracePoint objects from catalog, skipping error markers ('!')
     # for sequential matching (errors are conditional branches)
@@ -65,13 +63,15 @@ def decode_debugcon(raw: bytes, catalog: dict) -> DebugconResult:
     for tp in trace_points:
         if tp["char"] == "!":
             continue  # Skip error paths — they only fire on bugcheck
-        milestones.append(TracePoint(
-            char=tp["char"],
-            function=tp["function"],
-            file=tp["file"],
-            line=tp["line"],
-            description=tp["description"],
-        ))
+        milestones.append(
+            TracePoint(
+                char=tp["char"],
+                function=tp["function"],
+                file=tp["file"],
+                line=tp["line"],
+                description=tp["description"],
+            )
+        )
 
     milestone_idx = 0
     i = 0
@@ -107,7 +107,9 @@ def decode_debugcon(raw: bytes, catalog: dict) -> DebugconResult:
             # Skip past the closing delimiter milestone too
             if j < len(raw):
                 close_char = chr(raw[j])
-                while milestone_idx < len(milestones) and milestones[milestone_idx].char == close_char:
+                while (
+                    milestone_idx < len(milestones) and milestones[milestone_idx].char == close_char
+                ):
                     result.milestones_reached.append(milestones[milestone_idx])
                     milestone_idx += 1
             i = j + 1

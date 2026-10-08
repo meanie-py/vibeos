@@ -27,6 +27,27 @@ pub unsafe fn InterlockedDecrement(Addend: *mut LONG) -> LONG {
     atomic.fetch_sub(1, Ordering::SeqCst).wrapping_sub(1)
 }
 
+/// InterlockedOr / InterlockedAnd / InterlockedXor — return the OLD value, as the MSVC
+/// `_Interlocked{Or,And,Xor}` intrinsics do. The new ATA stack (atapi's port state machine,
+/// pciidex's AHCI slots) sets and clears event and slot bits with them.
+#[inline]
+pub unsafe fn InterlockedOr(Destination: *mut LONG, Value: LONG) -> LONG {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    (&*(Destination as *const AtomicI32)).fetch_or(Value, Ordering::SeqCst)
+}
+
+#[inline]
+pub unsafe fn InterlockedAnd(Destination: *mut LONG, Value: LONG) -> LONG {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    (&*(Destination as *const AtomicI32)).fetch_and(Value, Ordering::SeqCst)
+}
+
+#[inline]
+pub unsafe fn InterlockedXor(Destination: *mut LONG, Value: LONG) -> LONG {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    (&*(Destination as *const AtomicI32)).fetch_xor(Value, Ordering::SeqCst)
+}
+
 /// InterlockedExchangeAdd — returns the OLD value.
 #[inline]
 pub unsafe fn InterlockedExchangeAdd(Addend: *mut LONG, Value: LONG) -> LONG {

@@ -36,16 +36,7 @@ add_library(gdiplus MODULE
     gdiplus.rc
     ${CMAKE_CURRENT_BINARY_DIR}/gdiplus.def)
 
-if(MSVC)
-    target_compile_options(gdiplus PRIVATE
-        /wd4146 # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-        /wd4267 # Disable warning C4267: 'return': conversion from 'size_t' to 'UINT', possible loss of data
-        /wd4305 # Disable warning C4305: '=': truncation from 'double' to 'REAL'
-        /wd4334 # Disable warning C4334: '<<': result of 32-bit shift implicitly converted to 64 bits (was 64-bit shift intended?)
-    )
-else()
-    target_compile_options(gdiplus PRIVATE -Wno-incompatible-pointer-types)
-endif()
+target_compile_options(gdiplus PRIVATE -Wno-incompatible-pointer-types)
 
 set_module_type(gdiplus win32dll)
 target_link_libraries(gdiplus wine)

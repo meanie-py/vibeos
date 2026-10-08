@@ -1003,6 +1003,11 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
             0,
             core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>());
         attributes.Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>() as u32;
+        // The INIT macro also sets both of these to InheritFromParent (1); left at 0
+        // (Invalid), FxValidateObjectAttributes rejected the request and START UNIT was
+        // never sent.
+        attributes.ExecutionLevel = 1; // WdfExecutionLevelInheritFromParent
+        attributes.SynchronizationScope = 1; // WdfSynchronizationScopeInheritFromParent
         attributes.ContextTypeInfo = &CDROM_REQUEST_CONTEXT_TYPE_INFO as *const _ as *const WDF_OBJECT_CONTEXT_TYPE_INFO;
 
         attributes.ParentObject = (*deviceExtension).IoTarget as WDFOBJECT;
@@ -1024,6 +1029,8 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
             0,
             core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>());
         attributes.Size = core::mem::size_of::<WDF_OBJECT_ATTRIBUTES>() as u32;
+        attributes.ExecutionLevel = 1; // WdfExecutionLevelInheritFromParent
+        attributes.SynchronizationScope = 1; // WdfSynchronizationScopeInheritFromParent
         attributes.ParentObject = startUnitRequest as WDFOBJECT;
 
         status = WdfMemoryCreatePreallocated(

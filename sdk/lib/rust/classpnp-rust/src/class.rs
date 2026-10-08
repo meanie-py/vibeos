@@ -1166,8 +1166,8 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                                 (*fdo_data).HotplugInfo.MediaRemovable = 0u8;
                                 ClassSetDeviceParameter(
                                     DeviceObject as *mut FUNCTIONAL_DEVICE_EXTENSION,
-                                    CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
-                                    CLASSP_REG_REMOVAL_POLICY_VALUE_NAME.as_ptr() as PWSTR,
+                                    crate::glue::regw::CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
+                                    crate::glue::regw::CLASSP_REG_REMOVAL_POLICY_VALUE_NAME.as_ptr() as PWSTR,
                                     RemovalPolicyExpectOrderlyRemoval,
                                 );
                             }
@@ -1468,8 +1468,8 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                 let mut t: ULONG = CLASS_PERF_RESTORE_MINIMUM;
                 ClassGetDeviceParameter(
                     fdo_extension,
-                    CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
-                    CLASSP_REG_PERF_RESTORE_VALUE_NAME.as_ptr() as PWSTR,
+                    crate::glue::regw::CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
+                    crate::glue::regw::CLASSP_REG_PERF_RESTORE_VALUE_NAME.as_ptr() as PWSTR,
                     &raw mut t,
                 );
                 if t >= CLASS_PERF_RESTORE_MINIMUM {
@@ -1549,7 +1549,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                         ClassDetermineTokenOperationCommandSupport(device_object);
                     }
 
-                    ClassGetDeviceParameter(fdo_extension, CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR, CLASSP_REG_QERR_OVERRIDE_MODE.as_ptr() as PWSTR, &raw mut qerr_override_mode);
+                    ClassGetDeviceParameter(fdo_extension, crate::glue::regw::CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR, crate::glue::regw::CLASSP_REG_QERR_OVERRIDE_MODE.as_ptr() as PWSTR, &raw mut qerr_override_mode);
 
                     if qerr_override_mode == QERR_SET_ZERO_ALWAYS ||
                         (qerr_override_mode == QERR_SET_ZERO_ODX_OR_TP_ONLY &&
@@ -1564,7 +1564,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                     (*(*fdo_extension).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus = STATUS_UNSUCCESSFUL;
                 }
 
-                ClassGetDeviceParameter(fdo_extension, CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR, CLASSP_REG_ACCESS_ALIGNMENT_NOT_SUPPORTED.as_ptr() as PWSTR, &raw mut access_alignment_not_supported);
+                ClassGetDeviceParameter(fdo_extension, crate::glue::regw::CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR, crate::glue::regw::CLASSP_REG_ACCESS_ALIGNMENT_NOT_SUPPORTED.as_ptr() as PWSTR, &raw mut access_alignment_not_supported);
                 if access_alignment_not_supported > 0 {
                     (*(*fdo_extension).FunctionSupportInfo).RegAccessAlignmentQueryNotSupported = TRUE;
                 }
@@ -1655,8 +1655,8 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                 let mut disable_idle_power: ULONG = 0;
                 ClassGetDeviceParameter(
                     fdo_extension,
-                    CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
-                    CLASSP_REG_DISBALE_IDLE_POWER_NAME.as_ptr() as PWSTR,
+                    crate::glue::regw::CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
+                    crate::glue::regw::CLASSP_REG_DISBALE_IDLE_POWER_NAME.as_ptr() as PWSTR,
                     &raw mut disable_idle_power,
                 );
                 if disable_idle_power == 0 {

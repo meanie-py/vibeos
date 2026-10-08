@@ -752,6 +752,11 @@
 # (spec2def.c:750), so win32k.sys would fail to link against it.
 @ cdecl KmProtectedCopyMemory(ptr ptr long)
 @ cdecl KmProtectedInterlockedAdd(ptr long ptr)
+# vibeos-internal: MmProbeAndLockPages returning its status instead of raising it.
+# Without kernel SEH a raise from the NT export is a bugcheck, so every Rust caller
+# uses this; it is exported for the drivers that are separate PEs (mup, ks, afd,
+# cdfs, cdrom, win32k). Not `-private`, for the same import-lib reason as above.
+@ stdcall MmTryProbeAndLockPages(ptr long long)
 @ cdecl RtlSehTryExcept(ptr ptr ptr ptr ptr)
 @ cdecl RtlSehTryFinally(ptr ptr ptr ptr)
 @ stdcall LdrAccessResource(ptr ptr ptr ptr)
@@ -1098,6 +1103,8 @@
 @ stdcall RtlClearAllBits(ptr)
 @ stdcall RtlClearBit(ptr long)
 @ stdcall RtlClearBits(ptr long long)
+@ stdcall RtlCmDecodeMemIoResource(ptr ptr)
+@ stdcall RtlCmEncodeMemIoResource(ptr long int64 int64)
 @ stdcall RtlCompareMemory(ptr ptr long)
 @ stdcall RtlCompareMemoryUlong(ptr long long)
 @ stdcall RtlCompareString(ptr ptr long)
@@ -1220,6 +1227,8 @@
 @ stdcall RtlIntegerToUnicodeString(long long ptr)
 @ stdcall RtlInvertRangeList(ptr ptr)
 @ stdcall RtlInvertRangeListEx(ptr ptr long ptr ptr)
+@ stdcall RtlIoDecodeMemIoResource(ptr ptr ptr ptr)
+@ stdcall RtlIoEncodeMemIoResource(ptr long int64 int64 int64 int64)
 @ stdcall RtlIpv4AddressToStringA(ptr ptr)
 @ stdcall RtlIpv4AddressToStringExA(ptr long ptr ptr)
 @ stdcall RtlIpv4AddressToStringExW(ptr long ptr ptr)

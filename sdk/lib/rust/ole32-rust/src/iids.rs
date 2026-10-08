@@ -66,6 +66,7 @@ extern "C" {
     pub static CLSID_CompositeMoniker: GUID;
     pub static CLSID_ClassMoniker: GUID;
     pub static CLSID_PointerMoniker: GUID;
+    pub static CLSID_ObjrefMoniker: GUID;
     pub static CLSID_DfMarshal: GUID;
 
     // --- Tier-D: storage / property-set / OLE-embedding interfaces ---

@@ -1391,17 +1391,43 @@ unsafe fn CreateQueueEvtIoDefaultImpl(
     Request: WDFREQUEST,
 ) {
     unsafe {
+        let fileObject: WDFFILEOBJECT = WdfRequestGetFileObject(Request);
         let device: WDFDEVICE = WdfIoQueueGetDevice(Queue);
         let mut status: NTSTATUS = STATUS_SUCCESS;
         let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
 
         // PAGED_CODE(); // no-op
 
+        if fileObject.is_null() {
+            // "received a file create request with file object set to NULL"
+            CdromRequestCompletion(deviceExtension, Request, STATUS_INTERNAL_ERROR, 0);
+            return;
+        }
+
+        // Initialize this WDFFILEOBJECT's context: DeviceEvtFileClose's lock /
+        // MCN / exclusive-access cleanup reads it. Guarded like the C close
+        // shim guards its own lookup.
+        let fileObjectContext: *mut FILE_OBJECT_CONTEXT = FileObjectGetContext(fileObject);
+        if !fileObjectContext.is_null() {
+            (*fileObjectContext).DeviceObject = device;
+            (*fileObjectContext).FileObject = fileObject;
+            (*fileObjectContext).LockCount = 0;
+            (*fileObjectContext).McnDisableCount = 0;
+            (*fileObjectContext).EnforceStreamingRead = 0; // FALSE
+            (*fileObjectContext).EnforceStreamingWrite = 0; // FALSE
+        }
+
         // send down the create synchronously
         status = DeviceSendRequestSynchronously(device, Request, 0); // FALSE
 
-        // Need to complete the request in this routine.
-        CdromRequestCompletion(deviceExtension, Request, status, 0);
+        // Need to complete the request in this routine, passing on the lower
+        // driver's Information (FILE_OPENED...), not 0.
+        CdromRequestCompletion(
+            deviceExtension,
+            Request,
+            status,
+            WdfRequestGetInformation(Request) as ULONG_PTR,
+        );
     }
 }
 

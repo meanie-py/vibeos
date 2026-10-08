@@ -60,8 +60,33 @@ def discover(repo: Path) -> list[str]:
     m = re.search(r"^\s*members\s*=\s*\[(.*?)\]", text, re.S | re.M)
     if not m:
         return []
-    names = re.findall(r'"([^"]+)"', m.group(1))
-    return sorted({n.rsplit("/", 1)[-1] for n in names if n.rsplit("/", 1)[-1].endswith(_SUFFIX)})
+    names = [n.rsplit("/", 1)[-1] for n in re.findall(r'"([^"]+)"', m.group(1))]
+    return sorted({n for n in names if n.endswith(_SUFFIX) or _host_tests(repo, n)})
+
+
+def _host_tests(repo: Path, name: str) -> bool:
+    """A shared crate whose own `#[test]`s are known-answer checks run here too:
+
+        [package.metadata.difftest]
+        host-tests = true
+
+    win32macros-rust's 22 are computed from the C macro by hand, and they are what caught
+    RTL_CONSTANT_STRING pointing Buffer at a stack copy. Nothing ran them, so the
+    `as u8` crate-repair once wrote into IsRecognizedPartition! landed on master with two of
+    them failing. Opt-in by manifest for the same reason the suffix is the registration: a
+    shared crate's tests may need the host to build it, and the crate is the one that knows.
+    """
+    m = re.search(
+        r"^\s*\[package\.metadata\.difftest\]\s*$(.*?)(?=^\s*\[|\Z)",
+        _manifest(repo, name),
+        re.S | re.M,
+    )
+    return bool(m and re.search(r"^\s*host-tests\s*=\s*true\b", m.group(1), re.M))
+
+
+def _manifest(repo: Path, name: str) -> str:
+    path = repo.joinpath(*RUST_WS) / name / "Cargo.toml"
+    return path.read_text() if path.is_file() else ""
 
 
 def crate_target(repo: Path, name: str) -> str | None:

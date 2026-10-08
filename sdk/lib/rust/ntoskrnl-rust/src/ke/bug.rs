@@ -337,7 +337,7 @@ pub unsafe extern "system" fn KeRosCaptureUserStackBackTrace(
     i as USHORT
 }
 
-unsafe fn KeRosDumpStackFrameArray(Frames: PULONG_PTR, FrameCount: ULONG) {
+pub(crate) unsafe fn KeRosDumpStackFrameArray(Frames: PULONG_PTR, FrameCount: ULONG) {
     let mut i: ULONG;
     let mut Addr: ULONG_PTR;
     let mut InSystem: BOOLEAN = 0;
@@ -878,6 +878,16 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
         }
         HalVibeosQuiesceIrqlTripwire();
     }
+
+    // Freeze the other CPUs BEFORE the diagnostics below, not at the C's position
+    // further down. The trap-frame scans and flight-recorder dump take long enough
+    // under TCG that the other CPUs kept running threads, printing and writing memory
+    // into the middle of the crash record (seen on amd64 and arm64 MP). Idempotent for
+    // the owner, so the later call is harmless. Not i386: its freeze rides a maskable
+    // vector with an unbounded wait, so an early freeze there could hang before any
+    // evidence is printed.
+    #[cfg(all(feature = "smp", any(target_arch = "x86_64", target_arch = "aarch64")))] // nolint: cfg-vs-c (early freeze only where the wait is bounded or NMI-delivered; i386 keeps the C position)
+    KxFreezeExecution();
 
     // Direct callers (KiSystemFatalException on double fault, trap handlers)
     // reach WithTf WITHOUT going through KeBugCheckEx — historically NO banner

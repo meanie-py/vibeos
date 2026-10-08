@@ -158,3 +158,209 @@ impl VaArg for isize {
         }
     }
 }
+
+// ============================================================================
+// Windows: defining a C `...` entry point WITHOUT a C file.
+//
+// The two gaps above are only gaps in GENERAL. On the three Windows ABIs this tree builds,
+// a `va_list` is a `char*` into the argument list itself, and a variadic function's
+// arguments can be made contiguous in memory by one fixed spill that does not depend on the
+// function's arity:
+//
+// * i386 (cdecl): every argument is already on the stack, from [esp + 4].
+// * x86_64 (Microsoft x64): the first four travel in rcx/rdx/r8/r9 and the caller reserves
+//   their 32-byte home area right below the stack arguments; storing all four into it makes
+//   the whole list contiguous from [rsp + 8]. (Variadic doubles are passed in the integer
+//   registers too, so this covers them.)
+// * aarch64 (Windows ARM64, variadic convention): x0-x7 then the stack, floating point in
+//   the integer registers too; x0-x7 stored in the 64 bytes just below the caller's stack
+//   arguments make the list contiguous.
+//
+// So a naked thunk that performs that spill and calls `helper(&first_argument)` serves every
+// `...` export, and the helper reads its fixed arguments from the slots ([`VaSlots::get`])
+// and passes [`VaSlots::va`] wherever the C passed its `va_list`. [`va_entry!`] writes both.
+// ============================================================================
+
+/// The argument list of a C `...` function, laid out contiguously by [`va_entry!`]'s thunk:
+/// one pointer-width slot per fixed argument, then the variadic ones.
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct VaSlots(pub *const usize);
+
+#[cfg(target_os = "windows")]
+impl VaSlots {
+    /// Fixed argument `i`, as its whole slot. Every fixed parameter of the CRT's `...`
+    /// exports is a pointer, an `int` or a `size_t`, each of which occupies exactly one
+    /// pointer-width slot (an `int` in the low half on 64-bit); convert with `as _` at the
+    /// call, which truncates an `int` to its 32 bits as the callee would.
+    ///
+    /// # Safety
+    /// `i` must be below the function's fixed-argument count.
+    #[inline(always)]
+    pub unsafe fn get(self, i: usize) -> usize {
+        *self.0.add(i)
+    }
+
+    /// The `va_list` for the variadic arguments that follow `n` fixed ones (`va_start` on
+    /// the last fixed parameter): on these ABIs a plain pointer to them.
+    #[inline(always)]
+    pub fn va(self, n: usize) -> *mut c_void {
+        self.0.wrapping_add(n) as *mut c_void
+    }
+}
+
+/// `va_entry!(export => |a| -> Ret { body })` defines the C-variadic export `export`: a naked
+/// thunk (see the section comment) that hands `body` the argument list as `a: VaSlots`.
+/// `body` runs in a private module named after the export, which glob-imports the caller's
+/// module, so it sees the same items the caller does.
+///
+/// ```ignore
+/// // int sprintf(char *str, const char *format, ...)
+/// va_entry!(sprintf => |a| -> i32 { _vsnprintf(a.get(0) as _, i32::MAX as _, a.get(1) as _, a.va(2) as _) });
+/// ```
+#[cfg(target_os = "windows")]
+#[macro_export]
+macro_rules! va_entry {
+    ($export:ident => |$a:ident| -> $ret:ty $body:block) => {
+        #[doc(hidden)]
+        #[allow(non_snake_case, unused_imports)]
+        mod $export {
+            use super::*;
+            #[inline(never)]
+            pub(super) unsafe extern "C" fn body($a: $crate::VaSlots) -> $ret $body
+        }
+        $crate::va_entry_thunk!($export, $export::body);
+    };
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! va_entry_thunk {
+    ($export:ident, $helper:path) => {
+        #[unsafe(naked)]
+        #[no_mangle]
+        pub unsafe extern "C" fn $export() {
+            core::arch::naked_asm!(
+                "lea eax, [esp + 4]",
+                "push eax",
+                "call {h}",
+                "add esp, 4",
+                "ret",
+                h = sym $helper,
+            );
+        }
+    };
+}
+
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! va_entry_thunk {
+    ($export:ident, $helper:path) => {
+        #[unsafe(naked)]
+        #[no_mangle]
+        pub unsafe extern "C" fn $export() {
+            // The calls out carry SEH unwind directives: rustc emits none for a naked
+            // function, and an exception unwinding through a frame without .pdata is lost.
+            core::arch::naked_asm!(
+                concat!(".seh_proc ", stringify!($export)),
+                "mov [rsp + 8], rcx",
+                "mov [rsp + 16], rdx",
+                "mov [rsp + 24], r8",
+                "mov [rsp + 32], r9",
+                "sub rsp, 40",
+                ".seh_stackalloc 40",
+                ".seh_endprologue",
+                "lea rcx, [rsp + 48]",
+                "call {h}",
+                "add rsp, 40",
+                "ret",
+                ".seh_endproc",
+                h = sym $helper,
+            );
+        }
+    };
+}
+
+#[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! va_entry_thunk {
+    ($export:ident, $helper:path) => {
+        #[unsafe(naked)]
+        #[no_mangle]
+        pub unsafe extern "C" fn $export() {
+            core::arch::naked_asm!(
+                concat!(".seh_proc ", stringify!($export)),
+                // 16 bytes fp/lr + x0..x7 (64), ending at the caller's stack arguments.
+                "stp x29, x30, [sp, #-80]!",
+                ".seh_save_fplr_x 80",
+                "mov x29, sp",
+                ".seh_set_fp",
+                ".seh_endprologue",
+                "stp x0, x1, [sp, #16]",
+                "stp x2, x3, [sp, #32]",
+                "stp x4, x5, [sp, #48]",
+                "stp x6, x7, [sp, #64]",
+                "add x0, sp, #16",
+                "bl {h}",
+                ".seh_startepilogue",
+                "ldp x29, x30, [sp], #80",
+                ".seh_save_fplr_x 80",
+                ".seh_endepilogue",
+                "ret",
+                ".seh_endproc",
+                h = sym $helper,
+            );
+        }
+    };
+}
+
+/// The six `vibeos_va_arg_*` pullers in Rust, for a module that defines its `...` entries with
+/// [`va_entry!`] and so has no `rust_varargs_shim.c` to supply them. Windows `va_arg`: read the
+/// value at the pointer, advance by its size rounded up to the pointer width (i386: 4 for
+/// `int`/pointers, 8 for `long long`/`double`, unaligned; 64-bit: 8 for every type here).
+#[cfg(all(feature = "rust-pullers", target_os = "windows"))]
+mod pullers {
+    use core::ffi::c_void;
+    use core::mem::size_of;
+
+    #[inline(always)]
+    unsafe fn pull<T: Copy>(app: *mut c_void) -> T {
+        let p = app as *mut *mut u8;
+        let v = (*p as *const T).read_unaligned();
+        let w = size_of::<usize>();
+        *p = (*p).add((size_of::<T>() + w - 1) & !(w - 1));
+        v
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn vibeos_va_arg_i32(app: *mut c_void) -> i32 {
+        pull(app)
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn vibeos_va_arg_u32(app: *mut c_void) -> u32 {
+        pull(app)
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn vibeos_va_arg_i64(app: *mut c_void) -> i64 {
+        pull(app)
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn vibeos_va_arg_u64(app: *mut c_void) -> u64 {
+        pull(app)
+    }
+    // Not on i386: user code there builds -sse,-sse2, where an f64 cannot cross a function
+    // boundary at all. A module that pulls a double on i386 then fails to LINK, loudly,
+    // instead of every rust-pullers user failing to compile (setuplib pulls none).
+    #[cfg(not(target_arch = "x86"))]
+    #[no_mangle]
+    pub unsafe extern "C" fn vibeos_va_arg_f64(app: *mut c_void) -> f64 {
+        pull(app)
+    }
+    #[no_mangle]
+    pub unsafe extern "C" fn vibeos_va_arg_ptr(app: *mut c_void) -> *mut c_void {
+        pull(app)
+    }
+}

@@ -727,7 +727,7 @@ pub unsafe extern "C" fn _strdate_s(date: *mut i8, size: usize) -> i32 {
 pub unsafe extern "C" fn _wstrdate(date: *mut wchar_t) -> *mut wchar_t {
     // `L"MM'/'dd'/'yy"` — 12 code units plus a WIDE NUL, so 26 bytes. The terminator is two
     // zero bytes; one leaves GetDateFormatW reading the last unit's high half out of bounds.
-    GetDateFormatW(LOCALE_NEUTRAL, 0, core::ptr::null_mut(), b"M\0M\0'\0/\0'\0d\0d\0'\0/\0'\0y\0y\0\0\0".as_ptr() as *const wchar_t, date, 9);
+    GetDateFormatW(LOCALE_NEUTRAL, 0, core::ptr::null_mut(), win32macros_rust::wide_bytes!(b"M\0M\0'\0/\0'\0d\0d\0'\0/\0'\0y\0y\0\0\0") as *const wchar_t, date, 9);
     date
 }
 
@@ -791,7 +791,7 @@ pub unsafe extern "C" fn _strtime_s(time: *mut u8, size: usize) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn _wstrtime(time: *mut wchar_t) -> *mut wchar_t {
     // `L"HH':'mm':'ss"` — same wide-NUL rule as `_wstrdate` above.
-    GetTimeFormatW(LOCALE_NEUTRAL, 0, core::ptr::null_mut(), b"H\0H\0'\0:\0'\0m\0m\0'\0:\0'\0s\0s\0\0\0".as_ptr() as *const wchar_t, time, 9);
+    GetTimeFormatW(LOCALE_NEUTRAL, 0, core::ptr::null_mut(), win32macros_rust::wide_bytes!(b"H\0H\0'\0:\0'\0m\0m\0'\0:\0'\0s\0s\0\0\0") as *const wchar_t, time, 9);
     time
 }
 

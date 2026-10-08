@@ -4,7 +4,8 @@
  *
  * Compiled with -fms-extensions so __try/__except are the REAL clang SEH
  * keywords (this file deliberately includes no headers so no pseh macro
- * layer can interfere). Spawned fire-and-forget by userinit before the
+ * layer can interfere); on i386, retargeted to -windows-msvc, the only env
+ * in which clang lowers frame-based fs:[0] SEH. Spawned fire-and-forget by userinit before the
  * shell starts; prints [SEH-USER] lines on the kernel debug serial.
  *
  * Exercises the full user-mode exception chain both ways:
@@ -24,8 +25,9 @@
 
 unsigned long __stdcall GetVersion(void);         /* anchor kernel32 import */
 unsigned long DbgPrint(const char *Format, ...);  /* ntdll */
+typedef __UINTPTR_TYPE__ SEH_ULONG_PTR;
 void __stdcall RaiseException(unsigned long Code, unsigned long Flags,
-                              unsigned long NumArgs, const unsigned long long *Args);
+                              unsigned long NumArgs, const SEH_ULONG_PTR *Args);
 
 #define SEH_USER_RAISE_STATUS 0xE0DEAD02L
 #define STATUS_ACCESS_VIOLATION 0xC0000005L
@@ -95,6 +97,103 @@ static int TestFinally(void)
     return ran_finally == 1 && caught == 1;
 }
 
+/* spec2def's stubs are generated Rust. An export with no implementation must
+ * raise EXCEPTION_WINE_STUB carrying the module and function names, as the C
+ * stubs did; msvcrt's _CrtCheckMemory is a bare `@ stub`. */
+#define EXCEPTION_WINE_STUB 0x80000100L
+int _CrtCheckMemory(void);
+typedef struct { unsigned long Code, Flags; void *Record, *Address;
+                 unsigned long Count; SEH_ULONG_PTR Info[15]; } SEH_RECORD;
+typedef struct { SEH_RECORD *Record; void *Context; } SEH_POINTERS;
+static volatile int StubNamesMatch;
+
+static int StubFilter(SEH_POINTERS *p)
+{
+    const char *module = (const char *)p->Record->Info[0];
+    const char *function = (const char *)p->Record->Info[1];
+    const char *want_m = "msvcrt.dll", *want_f = "_CrtCheckMemory";
+    int i;
+
+    if (p->Record->Code != EXCEPTION_WINE_STUB || p->Record->Count != 2)
+        return 0;
+    for (i = 0; want_m[i] && module[i] == want_m[i]; i++);
+    StubNamesMatch = !want_m[i] && !module[i];
+    for (i = 0; want_f[i] && function[i] == want_f[i]; i++);
+    StubNamesMatch &= !want_f[i] && !function[i];
+    return 1;
+}
+
+static int TestUnimplementedStub(void)
+{
+    volatile int caught = 0;
+
+    __try {
+        _CrtCheckMemory();
+    } __except (StubFilter((SEH_POINTERS *)_exception_info())) {
+        caught = 1;
+    }
+
+    DbgPrint("[SEH-USER] spec-stub: caught=%d names=%d (%s)\n", caught, StubNamesMatch,
+             (caught && StubNamesMatch) ? "PASS" : "FAIL");
+    return caught && StubNamesMatch;
+}
+
+/* kernel32's IsBad*Ptr. Their first Rust translation never probed: the C's
+ * self-assignment probe was non-volatile and optimized away, and its __except was
+ * dropped, so every non-NULL pointer was "good". The sdk delayimp apitests then
+ * wrote through a read-only import name that IsBadWritePtr had cleared. */
+int __stdcall IsBadReadPtr(const void *lp, SEH_ULONG_PTR ucb);
+int __stdcall IsBadWritePtr(void *lp, SEH_ULONG_PTR ucb);
+int __stdcall IsBadStringPtrA(const char *lpsz, SEH_ULONG_PTR ucchMax);
+int __stdcall IsBadCodePtr(void *lpfn);
+static const char ReadOnlyString[] = "read-only";
+
+static int TestBadPtrProbes(void)
+{
+    volatile char writable[16] = { 'w', 0 };
+    void *unmapped = (void *)0x1000; /* the first 64K are never mapped */
+    int ok = 1;
+
+    ok &= !IsBadReadPtr((const void *)writable, sizeof(writable));
+    ok &= !IsBadWritePtr((void *)writable, sizeof(writable));
+    ok &= !IsBadReadPtr(ReadOnlyString, sizeof(ReadOnlyString));
+    ok &= IsBadWritePtr((void *)ReadOnlyString, 1);
+    ok &= IsBadReadPtr(unmapped, 1);
+    ok &= IsBadWritePtr(unmapped, 1);
+    ok &= !IsBadStringPtrA(ReadOnlyString, 1000);
+    ok &= IsBadStringPtrA((const char *)unmapped, 1);
+    ok &= !IsBadCodePtr((void *)TestBadPtrProbes);
+
+    DbgPrint("[SEH-USER] bad-ptr-probes: (%s)\n", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
+#ifdef __x86_64__
+/* A debug print whose buffer the caller does not own. With no debugger
+ * attached the kernel's KdpStub echoes BREAKPOINT_PRINT to the console UART,
+ * and that echo once read the caller's buffer in place: a user-mode Rust
+ * panic whose backtrace walked into garbage bugchecked the kernel (0x1E in
+ * KdpStub). The print must fail with STATUS_ACCESS_VIOLATION, and the system
+ * must still be up to say so. Same register convention as rtl's amd64
+ * DebugService: eax = service, rcx = buffer, edx = length. */
+#define BREAKPOINT_PRINT 1
+static int TestBadPrintBuffer(void)
+{
+    long status;
+
+    __asm__ volatile("int $0x2d\n\tint3"
+                     : "=a"(status)
+                     : "a"(BREAKPOINT_PRINT),
+                       "c"((void *)0xFFFF800000001000ULL), /* kernel space */
+                       "d"(64)
+                     : "r8", "r9", "memory");
+
+    DbgPrint("[SEH-USER] bad-print-buffer: status=0x%lx (%s)\n", status,
+             status == STATUS_ACCESS_VIOLATION ? "PASS" : "FAIL");
+    return status == STATUS_ACCESS_VIOLATION;
+}
+#endif
+
 int main(void)
 {
     int pass = 1;
@@ -105,6 +204,11 @@ int main(void)
     pass &= TestSoftwareRaise();   /* least demanding first */
     pass &= TestFinally();
     pass &= TestHardwareFault();   /* the real hardware→userland roundtrip */
+    pass &= TestUnimplementedStub();
+    pass &= TestBadPtrProbes();
+#ifdef __x86_64__
+    pass &= TestBadPrintBuffer();
+#endif
 
     DbgPrint("[SEH-USER] RESULT: %s\n", pass ? "PASS" : "FAIL");
     return pass ? 0 : 1;

@@ -72,13 +72,6 @@ add_library(msi MODULE
     msi.rc
     ${CMAKE_CURRENT_BINARY_DIR}/msi.def)
 
-if(MSVC)
-    # Disable warning C4090: 'function': different 'const' qualifiers
-    # Disable warning C4133: 'function': incompatible types - from 'UINT *' to 'MSIINSTALLCONTEXT *'
-    # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    # Disable warning C4312: 'type cast': conversion from 'unsigned int' to 'HANDLE' of greater size
-    target_compile_options(msi PRIVATE /wd4090 /wd4133 /wd4146 /wd4312)
-endif()
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
     target_compile_options(msi PRIVATE -Wno-incompatible-pointer-types) # error: passing argument 1 of 'RtlGetVersion' from incompatible pointer type
 endif()

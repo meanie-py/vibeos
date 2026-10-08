@@ -127,7 +127,7 @@ pub unsafe extern "system" fn Dns_Ip4AddressToReverseName_W(
 ) {
     wsprintfW(
         AddressBuffer,
-        b"%\0u\0.\0%\0u\0.\0%\0u\0.\0%\0u\0.\0i\0n\0-\0a\0d\0d\0r\0.\0a\0r\0p\0a\0.\0\0\0".as_ptr() as PCWSTR,
+        win32macros_rust::wide_bytes!(b"%\0u\0.\0%\0u\0.\0%\0u\0.\0%\0u\0.\0i\0n\0-\0a\0d\0d\0r\0.\0a\0r\0p\0a\0.\0\0\0") as PCWSTR,
         Address.S_un.S_un_b.s_b4 as i32,
         Address.S_un.S_un_b.s_b3 as i32,
         Address.S_un.S_un_b.s_b2 as i32,

@@ -1,0 +1,20 @@
+# regstress — several threads growing, shrinking and reading values under different keys of ONE
+# hive at once, so HvAllocateCell/HvpAddBin run concurrently. Meant for `--smp 2`: on one CPU
+# the hive-lock race (cmlib-rust hivelock.rs) almost never opens.
+#   tools/payloads/regstress/build.sh {arch}
+#   VIBEOS_PAYLOAD=regstress ./vibeos-cli build --arch {arch}
+#   ./vibeos-cli smoke --arch {arch} --payload regstress --smp 2
+name: regstress
+description: concurrent registry writers and readers in one hive (hive cell-map locking)
+
+build_hint: "tools/payloads/regstress/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/regstress/regstress-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/regstress.exe
+
+test:
+  launch_marker: "[REGSTRESS] done"
+  pass_marker: "[REGSTRESS] done PASS"
+  launch_drain_secs: 300

@@ -252,16 +252,7 @@ pub unsafe extern "system" fn MmDeleteKernelStack(StackBase: PVOID, GuiStack: BO
             let PageTableFrameNumber = (*Pfn1).pte_frame();
             let Pfn2 = MiGetPfnEntry(PageTableFrameNumber);
 
-            #[cfg(target_arch = "aarch64")]
-            {
-                if !Pfn2.is_null() {
-                    MiDecrementShareCount(Pfn2 as *mut _MMPFN, PageTableFrameNumber as u64);
-                }
-            }
-            #[cfg(not(target_arch = "aarch64"))]
-            {
-                MiDecrementShareCount(Pfn2 as *mut _MMPFN, (PageTableFrameNumber) as _);
-            }
+            MiDecrementShareCount(Pfn2 as *mut _MMPFN, (PageTableFrameNumber) as _);
 
             MI_SET_PFN_DELETED(Pfn1);
             MiDecrementShareCount(Pfn1 as *mut _MMPFN, (PageFrameNumber) as _);
@@ -523,12 +514,38 @@ pub unsafe extern "system" fn MmCreatePeb(
             (IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG) as u16,
             &mut ViewSize as *mut SIZE_T as *mut ULONG,
         ) as PIMAGE_LOAD_CONFIG_DIRECTORY;
+        // C: this block is one _SEH2_TRY whose handler detaches and returns
+        // STATUS_INVALID_IMAGE_PROTECT. The config directory lives in the user
+        // mapping of the image, so the probe and the two field reads below must
+        // not raise/fault unhandled. (The port probed size_of::<c_void>() = 1 byte
+        // here; the C probes sizeof(IMAGE_LOAD_CONFIG_DIRECTORY).)
+        #[inline(always)]
+        fn pointee_size<T>(_: *const T) -> usize { core::mem::size_of::<T>() }
+        let mut ConfigCSDVersion: USHORT = 0;
+        let mut ConfigAffinityMask: ULONG_PTR = 0;
         if !ImageConfigData.is_null() {
-            ProbeForRead(
+            // C ProbeForRead checks unconditionally: UserMode (1).
+            let captured = ntkrnl_sys::probe::probe_user_buffer(
                 ImageConfigData as PVOID,
-                (core::mem::size_of::<c_void /* _IMAGE_LOAD_CONFIG_DIRECTORY */>() as ULONG) as usize,
-                core::mem::size_of::<ULONG>() as ULONG,
-            );
+                pointee_size(ImageConfigData),
+                core::mem::size_of::<ULONG>(),
+                1,
+            )
+            .and_then(|()| ntkrnl_sys::probe::probe_read_generic(
+                core::ptr::addr_of!((*ImageConfigData).CSDVersion), 1, 1))
+            .and_then(|csd| ntkrnl_sys::probe::probe_read_generic(
+                core::ptr::addr_of!((*ImageConfigData).ProcessAffinityMask), 1, 1)
+                .map(|mask| (csd, mask)));
+            match captured {
+                Ok((csd, mask)) => {
+                    ConfigCSDVersion = csd as USHORT;
+                    ConfigAffinityMask = mask as ULONG_PTR;
+                }
+                Err(_) => {
+                    KeDetachProcess();
+                    return STATUS_INVALID_IMAGE_PROTECT;
+                }
+            }
         }
 
         (*Peb).ImageSubsystem = (*(NtHeaders as *mut _IMAGE_NT_HEADERS)).OptionalHeader.Subsystem as u32;
@@ -541,13 +558,13 @@ pub unsafe extern "system" fn MmCreatePeb(
             (*Peb).OSBuildNumber = (((*(NtHeaders as *mut _IMAGE_NT_HEADERS)).OptionalHeader.Win32VersionValue >> 16) & 0x3FFF) as USHORT;
             (*Peb).OSPlatformId = (((*(NtHeaders as *mut _IMAGE_NT_HEADERS)).OptionalHeader.Win32VersionValue >> 30) ^ 2) as ULONG;
 
-            if !ImageConfigData.is_null() && (*ImageConfigData).CSDVersion != 0 {
-                (*Peb).OSCSDVersion = (*ImageConfigData).CSDVersion;
+            if !ImageConfigData.is_null() && ConfigCSDVersion != 0 {
+                (*Peb).OSCSDVersion = ConfigCSDVersion as _;
             }
         }
 
-        if !ImageConfigData.is_null() && (*ImageConfigData).ProcessAffinityMask != 0 {
-            (*Peb).ImageProcessAffinityMask = (*ImageConfigData).ProcessAffinityMask;
+        if !ImageConfigData.is_null() && ConfigAffinityMask != 0 {
+            (*Peb).ImageProcessAffinityMask = ConfigAffinityMask as _;
         }
 
         if ((Characteristics as u32) & IMAGE_FILE_UP_SYSTEM_ONLY) != 0 {

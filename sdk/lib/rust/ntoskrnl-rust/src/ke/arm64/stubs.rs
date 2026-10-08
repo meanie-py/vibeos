@@ -56,6 +56,55 @@ extern "C" {
     fn Arm64DumpPte(prefix: PCSTR, address: PVOID);
 }
 
+/// Full first-chance records printed per noisy exception code before going quiet.
+const UEXC_FULL_RECORDS: u32 = 32;
+static UEXC_AV_SEEN: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+static UEXC_MISALIGN_SEEN: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+static ALIGN_TRAP_SEEN: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+/// Count one occurrence; true while it is within the first UEXC_FULL_RECORDS.
+/// Past that, prints one `<tag> N` line at every power of two, so the total
+/// stays readable to within 2x without a record per fault.
+unsafe fn uexc_count(counter: &core::sync::atomic::AtomicU32, tag: &[u8]) -> bool {
+    let n = counter.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+    if n <= UEXC_FULL_RECORDS || crate::tripwire::UEXC_VERBOSE {
+        return true;
+    }
+    if n & (n - 1) == 0 {
+        ARM64_UART_TRACE_HEX(tag.as_ptr() as PCSTR, n as ULONG_PTR);
+    }
+    false
+}
+
+/// Whether to dump a first-chance user exception record in full.
+///
+/// FEX takes access violations (overcommit commits, its own probes) and
+/// alignment faults (unaligned LDAR/STLR from x86-TSO on cores without LSE2)
+/// BY DESIGN, and recovers them. Each full record is ~1 KB written byte by byte
+/// to the UART inside the trap: free in QEMU, ~90 ms at 115200 baud on a real
+/// Pi 4, where one ladder boot took 1,229 alignment faults. So those two codes
+/// print in full only for their first UEXC_FULL_RECORDS, then as a running
+/// count. Every other code always prints, and the second-chance `[UEXC-KILL]`
+/// dump is never capped. Tripwire `UEXCVERBOSE` lifts the cap.
+pub(crate) unsafe fn uexc_should_print(code: NTSTATUS) -> bool {
+    match code as u32 {
+        0xC000_0005 => uexc_count(
+            &UEXC_AV_SEEN,
+            b"[UEXC] quiet (UEXCVERBOSE for all): first-chance C0000005 count=\0",
+        ),
+        0x8000_0002 => uexc_count(
+            &UEXC_MISALIGN_SEEN,
+            b"[UEXC] quiet (UEXCVERBOSE for all): first-chance 80000002 count=\0",
+        ),
+        _ => true,
+    }
+}
+
+/// Same cap for trap.rs's `[ALIGN]` decode of each DFSC 0x21 alignment fault.
+pub(crate) unsafe fn align_trap_should_print() -> bool {
+    uexc_count(&ALIGN_TRAP_SEEN, b"[ALIGN] quiet (UEXCVERBOSE for all): count=\0")
+}
+
 #[cfg(target_arch = "aarch64")]
 unsafe fn Arm64TraceImageName(prefix: PCSTR, image_name: *const i8, len: usize) {
     let mut buf = [0u8; 32];
@@ -221,13 +270,73 @@ pub static MmProtectToValue: [ULONG; 32] = [
 // (virtio etc.) are SPIs. The HAL owns the GIC hardware (ack/enable/EOI in
 // hal-rust::arm64); this side owns the KINTERRUPT registry + ISR dispatch.
 //
-// One ISR per vector (no shared-vector chaining yet) — sufficient for the
-// QEMU `virt` device set where each SPI is dedicated. Single-CPU, IRQs are
-// masked by hardware for the duration of the exception, so a plain AtomicPtr
-// (no per-vector lock) is race-free against the dispatch read.
+// The table holds the FIRST interrupt object connected to a vector. Objects that
+// share the vector (both asked ShareVector, same Mode) chain after it through
+// InterruptListEntry, as NT's KiChainedDispatch does: the Pi 5's two RP1 xHCI
+// controllers sit on one level-triggered SPI. Each vector's CHAIN_LOCKS entry
+// serializes connect, disconnect and dispatch of that vector. It is per vector,
+// not global, because dispatch holds it across the ISRs: with one global lock,
+// an ISR waiting on an interrupt lock another CPU holds in KeSynchronizeExecution
+// deadlocks the moment that CPU takes a different interrupt.
+//
+// Vectors are GIC INTIDs: SGIs, PPIs and SPIs below 1020, and on a GICv3 with an
+// ITS the LPIs the HAL hands out for message-signaled interrupts, from 8192 up.
+// LPIs take the slots after the SPIs.
 const GIC_MAX_INTID: usize = 1020;
-static INTERRUPT_TABLE: [core::sync::atomic::AtomicPtr<_KINTERRUPT>; GIC_MAX_INTID] =
-    [const { core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()) }; GIC_MAX_INTID];
+const LPI_BASE: usize = 8192;
+/// The HAL's ITS backend hands out no more than this many (hal-rust arm64/its.rs).
+const LPI_SLOTS: usize = 1024;
+const TABLE_SLOTS: usize = GIC_MAX_INTID + LPI_SLOTS;
+static INTERRUPT_TABLE: [core::sync::atomic::AtomicPtr<_KINTERRUPT>; TABLE_SLOTS] =
+    [const { core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()) }; TABLE_SLOTS];
+
+/// The table slot of a connectable INTID; None for the special INTIDs 1020-8191
+/// and past the LPIs the HAL can hand out.
+fn slot(intid: ULONG) -> Option<usize> {
+    match intid as usize {
+        v if v < GIC_MAX_INTID => Some(v),
+        v if (LPI_BASE..LPI_BASE + LPI_SLOTS).contains(&v) => Some(GIC_MAX_INTID + v - LPI_BASE),
+        _ => None,
+    }
+}
+/// A plain atomic flag, not a KSPIN_LOCK: dispatch takes it before raising the
+/// software IRQL (hardware already masks IRQs for the whole exception), where
+/// KeAcquireSpinLockAtDpcLevel's IRQL check would bugcheck 0x9.
+static CHAIN_LOCKS: [core::sync::atomic::AtomicBool; TABLE_SLOTS] =
+    [const { core::sync::atomic::AtomicBool::new(false) }; TABLE_SLOTS];
+
+unsafe fn chain_acquire(vector: usize) {
+    use core::sync::atomic::Ordering;
+    while CHAIN_LOCKS[vector].compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+        core::hint::spin_loop();
+    }
+}
+
+unsafe fn chain_release(vector: usize) {
+    CHAIN_LOCKS[vector].store(false, core::sync::atomic::Ordering::Release);
+}
+
+/// Take a vector's chain lock from thread context: at HIGH_LEVEL, so that
+/// vector's dispatch cannot try to take it under us on this CPU.
+unsafe fn chain_lock(vector: usize) -> KIRQL {
+    let old = crate::ke::ke_defs::KfRaiseIrql(HIGH_LEVEL);
+    chain_acquire(vector);
+    old
+}
+
+unsafe fn chain_unlock(vector: usize, old: KIRQL) {
+    chain_release(vector);
+    crate::ke::ke_defs::KeLowerIrql(old);
+}
+
+/// The interrupt object after `i` in its vector's chain, or null at the end.
+unsafe fn chain_next(head: *mut _KINTERRUPT, i: *mut _KINTERRUPT) -> *mut _KINTERRUPT {
+    let next = (*i).InterruptListEntry.Flink;
+    if next == &raw mut (*head).InterruptListEntry {
+        return core::ptr::null_mut();
+    }
+    (next as *mut u8).sub(core::mem::offset_of!(_KINTERRUPT, InterruptListEntry)) as *mut _KINTERRUPT
+}
 
 extern "system" {
     fn HalEnableSystemInterrupt(Vector: ULONG, Irql: KIRQL, Mode: KINTERRUPT_MODE) -> BOOLEAN;
@@ -240,21 +349,35 @@ extern "system" {
 pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
     use core::sync::atomic::Ordering;
     let Interrupt = opaque_ptr(Interrupt);
-    let vector = (*Interrupt).Vector as usize;
-    // Reject out-of-range / special INTIDs (>=1020).
-    if vector >= GIC_MAX_INTID {
+    // Reject the special INTIDs and anything past the table.
+    let Some(vector) = slot((*Interrupt).Vector) else {
         return 0u8;
-    }
+    };
     if (*Interrupt).Connected != 0 {
         return 1u8;
     }
-    // Refuse to silently steal a vector already owned by another ISR (no
-    // shared-vector chaining yet) — fail so the caller knows, matching NT.
-    let prev = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
-    if !prev.is_null() && prev != Interrupt {
-        return 0u8;
+    let entry = &raw mut (*Interrupt).InterruptListEntry;
+    let irql = chain_lock(vector);
+    let head = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
+    if !head.is_null() && head != Interrupt {
+        // Chain only when both sides agreed to share, in the same mode; a
+        // vector owned exclusively is refused, as NT refuses it.
+        let ok = (*head).ShareVector != 0 && (*Interrupt).ShareVector != 0 && (*head).Mode == (*Interrupt).Mode;
+        if ok {
+            let list = &raw mut (*head).InterruptListEntry;
+            (*entry).Flink = list;
+            (*entry).Blink = (*list).Blink;
+            (*(*list).Blink).Flink = entry;
+            (*list).Blink = entry;
+            (*Interrupt).Connected = 1u8;
+        }
+        chain_unlock(vector, irql);
+        return ok as u8;
     }
+    (*entry).Flink = entry;
+    (*entry).Blink = entry;
     INTERRUPT_TABLE[vector].store(Interrupt, Ordering::SeqCst);
+    chain_unlock(vector, irql);
     // Enable the GIC line. On failure, roll back the table slot.
     if HalEnableSystemInterrupt((*Interrupt).Vector, (*Interrupt).Irql, (*Interrupt).Mode) == 0 {
         INTERRUPT_TABLE[vector].store(core::ptr::null_mut(), Ordering::SeqCst);
@@ -268,13 +391,28 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
 pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
     use core::sync::atomic::Ordering;
     let Interrupt = opaque_ptr(Interrupt);
-    let vector = (*Interrupt).Vector as usize;
     let was_connected = (*Interrupt).Connected;
-    if vector < GIC_MAX_INTID
-        && INTERRUPT_TABLE[vector].load(Ordering::SeqCst) == Interrupt
-    {
-        HalDisableSystemInterrupt((*Interrupt).Vector, (*Interrupt).Irql);
-        INTERRUPT_TABLE[vector].store(core::ptr::null_mut(), Ordering::SeqCst);
+    if let (Some(vector), true) = (slot((*Interrupt).Vector), was_connected != 0) {
+        let irql = chain_lock(vector);
+        let head = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
+        let entry = &raw mut (*Interrupt).InterruptListEntry;
+        let alone = (*entry).Flink == entry;
+        if head == Interrupt && alone {
+            HalDisableSystemInterrupt((*Interrupt).Vector, (*Interrupt).Irql);
+            INTERRUPT_TABLE[vector].store(core::ptr::null_mut(), Ordering::SeqCst);
+        } else if !head.is_null() {
+            // Promote the next object when the head leaves; the line stays on.
+            if head == Interrupt {
+                let next = ((*entry).Flink as *mut u8)
+                    .sub(core::mem::offset_of!(_KINTERRUPT, InterruptListEntry)) as *mut _KINTERRUPT;
+                INTERRUPT_TABLE[vector].store(next, Ordering::SeqCst);
+            }
+            (*(*entry).Blink).Flink = (*entry).Flink;
+            (*(*entry).Flink).Blink = (*entry).Blink;
+            (*entry).Flink = entry;
+            (*entry).Blink = entry;
+        }
+        chain_unlock(vector, irql);
     }
     (*Interrupt).Connected = 0u8;
     was_connected
@@ -290,14 +428,34 @@ pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> B
 #[no_mangle]
 pub unsafe extern "system" fn KiDispatchInterruptArm64(Intid: ULONG) -> BOOLEAN {
     use core::sync::atomic::Ordering;
-    let vector = Intid as usize;
-    if vector >= GIC_MAX_INTID {
+    let Some(vector) = slot(Intid) else {
+        return 0u8;
+    };
+    let head = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
+    if head.is_null() {
         return 0u8;
     }
-    let interrupt = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
-    if interrupt.is_null() {
-        return 0u8;
+    chain_acquire(vector);
+    // Walk the chain (usually one object). A level-triggered line stops at the
+    // first ISR that claims it, since another still asserting it will re-raise
+    // the line; an edge (latched) line must ask every ISR, or an edge is lost.
+    let mut handled = 0u8;
+    let mut interrupt = head;
+    while !interrupt.is_null() {
+        if run_isr(interrupt) != 0 {
+            handled = 1;
+            if (*interrupt).Mode == ntkrnl_sys::ddk::_KINTERRUPT_MODE_LevelSensitive {
+                break;
+            }
+        }
+        interrupt = chain_next(head, interrupt);
     }
+    chain_release(vector);
+    handled
+}
+
+/// Run one connected ISR.
+unsafe fn run_isr(interrupt: *mut _KINTERRUPT) -> BOOLEAN {
     let Some(svc) = (*interrupt).ServiceRoutine else {
         return 0u8;
     };
@@ -309,17 +467,23 @@ pub unsafe extern "system" fn KiDispatchInterruptArm64(Intid: ULONG) -> BOOLEAN 
     // via KiRetireDpcList on the exit path). Restore bypasses the KfLowerIrql
     // soft-interrupt drain — no APC delivery in interrupt context.
     //
-    // No ActualLock acquire: UP port — the interrupt spinlock's cross-CPU
-    // role is vacuous, and ISR-vs-thread exclusion is exactly what the PMR
-    // raise in KeAcquireInterruptSpinLock (KfRaiseIrql to SynchronizeIrql)
-    // now provides for real.
+    // The ISR runs under the interrupt's own spinlock, as i386 (irqobj.rs) and
+    // amd64 dispatch it. KeSynchronizeExecution and KeAcquireInterruptSpinLock
+    // take ActualLock on the thread side; the PMR raise there only keeps THIS
+    // CPU's ISR out, so without the lock here the ISR ran on the other CPU in
+    // the middle of a synchronized routine. vioblk panicked on it at -smp 2:
+    // HwStartIo had queued a request but not yet recorded its token and chunk
+    // when the completion interrupt arrived on CPU 1. Same CPU cannot deadlock:
+    // the holder sits at SynchronizeIrql, which masks this line here.
     let dirql = if (*interrupt).SynchronizeIrql != 0 {
         (*interrupt).SynchronizeIrql
     } else {
         (*interrupt).Irql
     };
     let old_irql = HalpEnterInterruptIrql(dirql);
+    KeAcquireSpinLockAtDpcLevel((*interrupt).ActualLock as PKSPIN_LOCK);
     let handled = svc(interrupt, (*interrupt).ServiceContext);
+    KeReleaseSpinLockFromDpcLevel((*interrupt).ActualLock as PKSPIN_LOCK);
     HalpExitInterruptIrql(old_irql);
     handled
 }
@@ -376,6 +540,9 @@ pub unsafe extern "system" fn KeInitializeInterrupt(
     (*Interrupt).Number = ProcessorNumber;
     (*Interrupt).FloatingSave = FloatingSave;
     (*Interrupt).Connected = 0u8;
+    let entry = &raw mut (*Interrupt).InterruptListEntry;
+    (*entry).Flink = entry;
+    (*entry).Blink = entry;
 }
 
 #[no_mangle]
@@ -952,14 +1119,27 @@ pub unsafe extern "system" fn KiInitializeUserApc(
         Arm64DumpPte(b"[APC] StackPage=\0".as_ptr() as PCSTR, Stack as PVOID);
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
-    ProbeForWrite(Stack as PVOID, core::mem::size_of::<_CONTEXT>(), 16);
-
-    core::ptr::copy_nonoverlapping(
-        core::ptr::addr_of!(Context) as *const u8,
-        Stack as *mut u8,
+    // C: probe + copy inside _SEH2_TRY; the handler skips this APC (plain
+    // return). No SEH here: Result probe + fault-tolerant copy. (The probe was a
+    // raising ProbeForWrite under cfg(not(aarch64)) in this aarch64-only module,
+    // i.e. never compiled, and the copy was a raw memcpy.)
+    if ntkrnl_sys::probe::probe_user_buffer(
+        Stack as *const core::ffi::c_void,
         core::mem::size_of::<_CONTEXT>(),
-    );
+        16,
+        1,
+    )
+    .and_then(|()| ntkrnl_sys::probe::safe_copy_to_user(
+        Stack as *mut core::ffi::c_void,
+        core::ptr::addr_of!(Context) as *const core::ffi::c_void,
+        core::mem::size_of::<_CONTEXT>(),
+        16,
+        1,
+    ))
+    .is_err()
+    {
+        return;
+    }
 
     (*TrapFrame).__bindgen_anon_3.X[0] = NormalContext as u64;
     (*TrapFrame).__bindgen_anon_3.X[1] = SystemArgument1 as u64;
@@ -1033,12 +1213,118 @@ pub unsafe extern "system" fn KxSwitchKdProcessor(ProcessorIndex: ULONG) -> KCON
     ntkrnl_sys::globals::ContinueSuccess
 }
 
+// The freeze protocol, as on amd64/i386: the owner stages every other PRCB's IpiFrozen
+// to TARGET_FREEZE, sends IPI_FREEZE, and waits for each to report FROZEN; the target
+// side is KiArm64FreezeHandler, called from KiIpiServiceRoutine. These were empty
+// stubs, so an arm64 bugcheck never stopped the other CPUs: they kept running threads,
+// writing memory and printing to serial while the dump was being taken (an arm64
+// -smp 4 registry 0x50 kept on through network self-tests and thread exits after the
+// BUGCHECK line).
+#[cfg(feature = "smp")]
+static mut KiFreezeOwner: PKPRCB = core::ptr::null_mut();
+
+/// arm64 has no NMI, so a CPU spinning with IRQs masked cannot take the SGI. A bugcheck
+/// must never hang on the freeze it exists to take, so the owner waits a bounded number
+/// of polls per target and then proceeds without it, naming the CPU that did not stop.
+#[cfg(feature = "smp")]
+const KI_FREEZE_SPIN_LIMIT: u64 = 50_000_000;
+
 #[no_mangle]
 pub unsafe extern "system" fn KxFreezeExecution() {
+    #[cfg(feature = "smp")]
+    {
+        use core::sync::atomic::{AtomicPtr, Ordering};
+        let CurrentPrcb = KeGetCurrentPrcb();
+        let owner = AtomicPtr::from_ptr(core::ptr::addr_of_mut!(KiFreezeOwner));
+        if owner.load(Ordering::SeqCst) == CurrentPrcb {
+            return;
+        }
+        while owner
+            .compare_exchange(core::ptr::null_mut(), CurrentPrcb, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            core::hint::spin_loop();
+        }
+
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*CurrentPrcb).IpiFrozen),
+            (IPI_FROZEN_STATE_OWNER | IPI_FROZEN_FLAG_ACTIVE) as _,
+        );
+        let mut targets: ntkrnl_sys::ddk::KAFFINITY = 0;
+        for i in 0..KeNumberProcessors as usize {
+            let Target = *(core::ptr::addr_of!(KiProcessorBlock) as *const PKPRCB).add(i);
+            if !Target.is_null() && Target != CurrentPrcb {
+                core::ptr::write_volatile(
+                    core::ptr::addr_of_mut!((*Target).IpiFrozen),
+                    IPI_FROZEN_STATE_TARGET_FREEZE as _,
+                );
+                targets |= (*Target).SetMember;
+            }
+        }
+        core::sync::atomic::fence(Ordering::SeqCst);
+        crate::ke::ipi::KiIpiSend(targets, IPI_FREEZE);
+
+        for i in 0..KeNumberProcessors as usize {
+            let Target = *(core::ptr::addr_of!(KiProcessorBlock) as *const PKPRCB).add(i);
+            if Target.is_null() || Target == CurrentPrcb {
+                continue;
+            }
+            let mut spins: u64 = 0;
+            while core::ptr::read_volatile(core::ptr::addr_of!((*Target).IpiFrozen))
+                != IPI_FROZEN_STATE_FROZEN as _
+            {
+                spins += 1;
+                if spins > KI_FREEZE_SPIN_LIMIT {
+                    crate::dbg_print!(
+                        b"[FREEZE] CPU %u did not freeze (IRQs masked?) -- continuing without it\n\0",
+                        (*Target).Number as u32,
+                    );
+                    break;
+                }
+                core::hint::spin_loop();
+            }
+        }
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KxThawExecution() {
+    #[cfg(feature = "smp")]
+    {
+        let CurrentPrcb = KeGetCurrentPrcb();
+        for i in 0..KeNumberProcessors as usize {
+            let Target = *(core::ptr::addr_of!(KiProcessorBlock) as *const PKPRCB).add(i);
+            if !Target.is_null() && Target != CurrentPrcb {
+                core::ptr::write_volatile(
+                    core::ptr::addr_of_mut!((*Target).IpiFrozen),
+                    IPI_FROZEN_STATE_THAW as _,
+                );
+            }
+        }
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*CurrentPrcb).IpiFrozen),
+            IPI_FROZEN_STATE_RUNNING as _,
+        );
+        core::sync::atomic::AtomicPtr::from_ptr(core::ptr::addr_of_mut!(KiFreezeOwner))
+            .store(core::ptr::null_mut(), core::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Target side of KxFreezeExecution, from KiIpiServiceRoutine: park until thawed.
+/// No KiSaveProcessorState / KdReportProcessorChange -- those serve the kernel
+/// debugger's processor switch, which arm64 does not have.
+#[cfg(feature = "smp")]
+pub(crate) unsafe fn KiArm64FreezeHandler() {
+    let Prcb = KeGetCurrentPrcb();
+    let state = core::ptr::addr_of_mut!((*Prcb).IpiFrozen);
+    if core::ptr::read_volatile(state) != IPI_FROZEN_STATE_TARGET_FREEZE as _ {
+        return;
+    }
+    core::ptr::write_volatile(state, IPI_FROZEN_STATE_FROZEN as _);
+    while core::ptr::read_volatile(state) != IPI_FROZEN_STATE_THAW as _ {
+        core::hint::spin_loop();
+    }
+    core::ptr::write_volatile(state, IPI_FROZEN_STATE_RUNNING as _);
 }
 
 #[no_mangle]
@@ -1329,8 +1615,9 @@ pub unsafe extern "system" fn KiDispatchException(
             0,
         );
     } else {
+        let PrintRecord = uexc_should_print((*ExceptionRecord).ExceptionCode);
         #[cfg(target_arch = "aarch64")]
-        {
+        if PrintRecord {
             ARM64_UART_TRACE_HEX(
                 b"[UEXC] Code=\0".as_ptr() as PCSTR,
                 (*ExceptionRecord).ExceptionCode as ULONG_PTR,
@@ -1439,7 +1726,7 @@ pub unsafe extern "system" fn KiDispatchException(
             (*TrapFrame).Spsr &= !0xF;
 
             #[cfg(target_arch = "aarch64")]
-            {
+            if PrintRecord {
                 ARM64_UART_TRACE_HEX(
                     b"[UEXC-DISPATCH] PC=\0".as_ptr() as PCSTR,
                     (*TrapFrame).Pc as ULONG_PTR,
@@ -1563,8 +1850,11 @@ pub unsafe extern "system" fn KiSwapProcess(NewProcess: PKPROCESS, OldProcess: P
 #[no_mangle]
 pub unsafe extern "system" fn KeFlushCurrentTb() {
     // Local-only by CONTRACT (NT: flush the CURRENT processor's TLB) — the
-    // non-IS `vmalle1` is correct here, not an SMP bug. Callers audited
-    // (M5d): freeze path + sysldr post-relocation flush, both local-scoped.
+    // non-IS `vmalle1` is correct here, not an SMP bug. The freeze path and the
+    // sysldr post-relocation flush are local-scoped. The ARM3 sites that drop a
+    // user mapping (MiDeletePte, MiProcessValidPteList, MiFlushTbAndCapture,
+    // MiRemoveMappedPtes) called this too, as the C does, and lost user pages
+    // at -smp 2; they now use KeFlushProcessTb.
     core::arch::asm!("dsb nshst", options(nomem, nostack));
     core::arch::asm!("tlbi vmalle1", options(nomem, nostack));
     core::arch::asm!("dsb nsh", options(nomem, nostack));

@@ -1,5 +1,7 @@
 
 list(APPEND _keyboard_layouts
+    kbd101
+    kbd106
     kbda1
     kbda2
     kbda3
@@ -53,6 +55,7 @@ list(APPEND _keyboard_layouts
     kbdlv
     kbdmac
     kbdne
+    kbdnec
     kbdno
     kbdpl
     kbdpl1
@@ -99,10 +102,7 @@ foreach(_keyboard_layout ${_keyboard_layouts})
     set_image_base(${_keyboard_layout} 0x5FFF0000)
     set_subsystem(${_keyboard_layout} native)
 
-    if(MSVC)
-        # Merge the .text and .rdata section into the .data section
-        target_link_options(${_keyboard_layout} PRIVATE "/ignore:4254;/SECTION:.data,ER;/MERGE:.text=.data;/MERGE:.rdata=.data;/MERGE:.bss=.data;/MERGE:.edata=.data")
-    elseif(USE_LLVM_MINGW)
+    if(USE_LLVM_MINGW)
         # LLD in MinGW PE mode does not support -T linker scripts; use /MERGE directives instead
         # Use SHELL: prefix to prevent CMake from splitting on commas in /SECTION:.data,ER
         target_link_options(${_keyboard_layout} PRIVATE

@@ -48,7 +48,6 @@ use ntkrnl_sys::ddk::{
     KeInitializeEvent, KeAcquireQueuedSpinLock, KeReleaseQueuedSpinLock,
     ExGetPreviousMode,
     ObReferenceObjectByHandle, ObCloseHandle, ObReferenceObjectByName,
-    MmProbeAndLockPages,
     IoCreateFile, IoCreateFileSpecifyDeviceObjectHint,
     IoSetIoCompletion, IoReportTargetDeviceChange, IoGetRelatedTargetDevice,
     ObReferenceFileObjectForWrite,
@@ -93,16 +92,11 @@ extern "system" {
     fn ExAllocatePoolWithTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExAllocatePoolWithQuotaTag(PoolType: ULONG, NumberOfBytes: usize, Tag: ULONG) -> PVOID;
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
-    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 
 // These are defined as extern "C" in shim_exports.rs — must match.
 extern "C" {
     fn ObReferenceObject(Object: PVOID);
-    fn ProbeForWriteIoStatusBlock(Ptr: PIO_STATUS_BLOCK);
-    fn ProbeForWriteHandle(Ptr: *mut HANDLE);
-    fn ProbeForReadLargeInteger(Ptr: *const LARGE_INTEGER) -> LARGE_INTEGER;
     fn InterlockedCompareExchangePointer(Destination: *mut PVOID, Exchange: PVOID, Comparand: PVOID) -> PVOID;
 }
 unsafe extern "system" {
@@ -797,11 +791,15 @@ unsafe fn IopDeviceFsIoControl(
                     }
                     (*Irp).AssociatedIrp.SystemBuffer = buffer;
                     if !InputBuffer.is_null() {
-                        core::ptr::copy_nonoverlapping(
-                            InputBuffer as *const u8,
-                            buffer as *mut u8,
+                        // Fault-tolerant copy from the caller's buffer: the probe
+                        // proves location, not that the page stays mapped (C wrapped
+                        // the RtlCopyMemory in _SEH2_TRY). On fault `?` returns Err,
+                        // and the caller runs IopCleanupAfterException.
+                        ntkrnl_sys::probe::safe_copy_raw(
+                            buffer as *mut core::ffi::c_void,
+                            InputBuffer as *const core::ffi::c_void,
                             InputBufferLength as usize,
-                        );
+                        )?;
                     }
                     (*Irp).Flags = IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
                     if !OutputBuffer.is_null() {
@@ -830,11 +828,12 @@ unsafe fn IopDeviceFsIoControl(
                         return Err(STATUS_INSUFFICIENT_RESOURCES);
                     }
                     (*Irp).AssociatedIrp.SystemBuffer = buffer;
-                    core::ptr::copy_nonoverlapping(
-                        InputBuffer as *const u8,
-                        buffer as *mut u8,
+                    // Fault-tolerant copy from the caller's buffer (see METHOD_BUFFERED).
+                    ntkrnl_sys::probe::safe_copy_raw(
+                        buffer as *mut core::ffi::c_void,
+                        InputBuffer as *const core::ffi::c_void,
                         InputBufferLength as usize,
-                    );
+                    )?;
                     (*Irp).Flags = IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
                 }
                 if OutputBufferLength != 0 {
@@ -849,7 +848,7 @@ unsafe fn IopDeviceFsIoControl(
                         return Err(STATUS_INSUFFICIENT_RESOURCES);
                     }
                     (*Irp).MdlAddress = mdl;
-                    MmProbeAndLockPages(
+                    let st = ntkrnl_sys::probe::MmTryProbeAndLockPages(
                         mdl,
                         PreviousMode,
                         if AccessType == METHOD_IN_DIRECT {
@@ -858,6 +857,9 @@ unsafe fn IopDeviceFsIoControl(
                             IoWriteAccess
                         },
                     );
+                    if st < 0 {
+                        return Err(st);
+                    }
                 }
                 Ok(())
             })();
@@ -1931,8 +1933,8 @@ pub unsafe extern "system" fn NtLockFile(
             Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; }
         }
     } else {
-        CapturedByteOffset = *ByteOffset;
-        CapturedLength = *Length;
+        CapturedByteOffset = match ntkrnl_sys::probe::read_back(ByteOffset) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
+        CapturedLength = match ntkrnl_sys::probe::read_back(Length) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
     }
 
     if EventHandle != core::ptr::null_mut() {
@@ -2133,11 +2135,16 @@ pub unsafe extern "system" fn NtQueryDirectoryFile(
             if AuxBuffer.is_null() {
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
-            core::ptr::copy_nonoverlapping(
-                CapturedFileName.Buffer as *const u8,
-                (AuxBuffer as usize + core::mem::size_of::<_UNICODE_STRING>()) as *mut u8,
+            // C: the capture copy sits in the same _SEH2_TRY as the probes; its
+            // handler frees AuxBuffer and returns the code.
+            if let Err(e) = safe_copy_raw(
+                (AuxBuffer as usize + core::mem::size_of::<_UNICODE_STRING>()) as PVOID,
+                CapturedFileName.Buffer as *const core::ffi::c_void,
                 CapturedFileName.Length as usize,
-            );
+            ) {
+                ExFreePoolWithTag(AuxBuffer, TAG_IOBUF);
+                return e;
+            }
             SearchPattern = AuxBuffer as PUNICODE_STRING;
             (*SearchPattern).Buffer =
                 (AuxBuffer as usize + core::mem::size_of::<_UNICODE_STRING>()) as *mut u16;
@@ -2297,7 +2304,10 @@ pub unsafe extern "system" fn NtQueryDirectoryFile(
             if mdl.is_null() {
                 return Err(STATUS_INSUFFICIENT_RESOURCES);
             }
-            MmProbeAndLockPages(mdl, PreviousMode, IoWriteAccess);
+            let st = ntkrnl_sys::probe::MmTryProbeAndLockPages(mdl, PreviousMode, IoWriteAccess);
+            if st < 0 {
+                return Err(st);
+            }
             Ok(())
         })();
         if let Err(e) = alloc_result {
@@ -2812,10 +2822,10 @@ pub unsafe extern "system" fn NtReadFile(
         }
     } else {
         if !ByteOffset.is_null() {
-            CapturedByteOffset = *ByteOffset;
+            CapturedByteOffset = match ntkrnl_sys::probe::read_back(ByteOffset) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
         }
         if !Key.is_null() {
-            CapturedKey = *Key;
+            CapturedKey = match ntkrnl_sys::probe::read_back(Key) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
         }
     }
 
@@ -2966,7 +2976,10 @@ pub unsafe extern "system" fn NtReadFile(
                 if mdl.is_null() {
                     return Err(STATUS_INSUFFICIENT_RESOURCES);
                 }
-                MmProbeAndLockPages(mdl, PreviousMode, IoWriteAccess);
+                let st = ntkrnl_sys::probe::MmTryProbeAndLockPages(mdl, PreviousMode, IoWriteAccess);
+                if st < 0 {
+                    return Err(st);
+                }
                 Ok(())
             })();
             if let Err(e) = alloc_result {
@@ -3073,9 +3086,19 @@ pub unsafe extern "system" fn NtSetInformationFile(
     }
 
     if PreviousMode != 0i8 {
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
+        // C: under _SEH2_TRY, whose handler returns the exception code.
+        if let Err(status) = probe_user_buffer(
+            IoStatusBlock as *const core::ffi::c_void,
+            core::mem::size_of::<_IO_STATUS_BLOCK>(),
+            1,
+            PreviousMode,
+        ) {
+            return status;
+        }
         let align = if Length == core::mem::size_of::<BOOLEAN>() as ULONG { 1 } else { 4 };
-        ProbeForRead(FileInformation, Length as ULONG_PTR, align);
+        if let Err(status) = probe_user_buffer(FileInformation as *const core::ffi::c_void, Length as usize, align, PreviousMode) {
+            return status;
+        }
     }
 
     Status = ObReferenceObjectByHandle(
@@ -3104,11 +3127,21 @@ pub unsafe extern "system" fn NtSetInformationFile(
         }
 
         if FileInformationClass == FilePositionInformation {
-            (*FileObject).CurrentByteOffset =
-                (*(FileInformation as PFILE_POSITION_INFORMATION)).CurrentByteOffset;
-            (*IoStatusBlock).Information = 0;
-            (*IoStatusBlock).__bindgen_anon_1.Status = STATUS_SUCCESS;
-            Status = STATUS_SUCCESS;
+            // C: the read of FileInformation and the IoStatusBlock stores are one
+            // _SEH2_TRY whose handler sets Status to the code.
+            Status = match probe_read_generic(FileInformation as *const FILE_POSITION_INFORMATION, 1, 0) {
+                Ok(position) => {
+                    (*FileObject).CurrentByteOffset = position.CurrentByteOffset;
+                    match write_back(IoStatusBlock, _IO_STATUS_BLOCK {
+                        __bindgen_anon_1: _IO_STATUS_BLOCK__bindgen_ty_1 { Status: STATUS_SUCCESS },
+                        Information: 0,
+                    }) {
+                        Ok(()) => STATUS_SUCCESS,
+                        Err(e) => e,
+                    }
+                }
+                Err(e) => e,
+            };
             IopUpdateTransferCount(IopOtherTransfer, Length);
             IopUnlockFileObject(FileObject);
             ObDereferenceObject(FileObject as PVOID);
@@ -3156,11 +3189,22 @@ pub unsafe extern "system" fn NtSetInformationFile(
 
     (*Irp).AssociatedIrp.SystemBuffer =
         ExAllocatePoolWithQuotaTag(NonPagedPool, Length as _, TAG_IOBUF);
-    core::ptr::copy_nonoverlapping(
-        FileInformation as *const u8,
-        (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+    // C (io/iomgr/iofunc.c:3285-3302) wraps alloc + copy in one _SEH2_TRY whose
+    // handler runs IopCleanupAfterException and returns the code: the quota alloc
+    // can fail (null here, where the C raises) and the copy from the caller's buffer
+    // can fault on an unmapped page the probe could not keep mapped.
+    if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
+        IopCleanupAfterException(FileObject, Irp, core::ptr::null_mut(), Event);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+        (*Irp).AssociatedIrp.SystemBuffer as *mut core::ffi::c_void,
+        FileInformation as *const core::ffi::c_void,
         Length as usize,
-    );
+    ) {
+        IopCleanupAfterException(FileObject, Irp, core::ptr::null_mut(), Event);
+        return e;
+    }
 
     (*Irp).Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_DEFER_IO_COMPLETION;
     (*StackPtr).Parameters.SetFile.FileInformationClass = FileInformationClass as u32;
@@ -3272,7 +3316,10 @@ pub unsafe extern "system" fn NtSetInformationFile(
             }
 
             Status = KernelIosb.__bindgen_anon_1.Status;
-            *IoStatusBlock = KernelIosb;
+            // C: _SEH2_TRY { *IoStatusBlock = KernelIosb; } _SEH2_EXCEPT { Status = code; }
+            if let Err(e) = write_back(IoStatusBlock, KernelIosb) {
+                Status = e;
+            }
             ExFreePoolWithTag(Event as PVOID, TAG_IO);
         } else {
             Status = KeWaitForSingleObject(
@@ -3381,12 +3428,28 @@ pub unsafe extern "system" fn NtUnlockFile(
             return STATUS_ACCESS_DENIED;
         }
 
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
-        CapturedByteOffset = ProbeForReadLargeInteger(ByteOffset);
-        CapturedLength = ProbeForReadLargeInteger(Length);
+        // C: _SEH2_TRY around these, except handler dereferences FileObject and
+        // returns the exception code. No SEH here, so Result probes instead.
+        let probed = (|| -> Result<(LARGE_INTEGER, LARGE_INTEGER), NTSTATUS> {
+            ntkrnl_sys::probe::probe_write_generic(IoStatusBlock, 1, PreviousMode)?;
+            Ok((
+                ntkrnl_sys::probe::probe_read_generic(ByteOffset as *const LARGE_INTEGER, 1, PreviousMode)?,
+                ntkrnl_sys::probe::probe_read_generic(Length as *const LARGE_INTEGER, 1, PreviousMode)?,
+            ))
+        })();
+        match probed {
+            Ok((offset, length)) => {
+                CapturedByteOffset = offset;
+                CapturedLength = length;
+            }
+            Err(status) => {
+                ObDereferenceObject(FileObject as PVOID);
+                return status;
+            }
+        }
     } else {
-        CapturedByteOffset = *ByteOffset;
-        CapturedLength = *Length;
+        CapturedByteOffset = match ntkrnl_sys::probe::read_back(ByteOffset) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
+        CapturedLength = match ntkrnl_sys::probe::read_back(Length) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
     }
 
     if (*FileObject).Flags & FO_DIRECT_DEVICE_OPEN != 0 {
@@ -3407,9 +3470,13 @@ pub unsafe extern "system" fn NtUnlockFile(
             DeviceObject,
         ) != 0
         {
-            *IoStatusBlock = KernelIosb;
+            // C: _SEH2_TRY { *IoStatusBlock = KernelIosb; } _SEH2_EXCEPT { Status = code; }
+            let Status = match write_back(IoStatusBlock, KernelIosb) {
+                Ok(()) => KernelIosb.__bindgen_anon_1.Status,
+                Err(e) => e,
+            };
             ObDereferenceObject(FileObject as PVOID);
-            return KernelIosb.__bindgen_anon_1.Status;
+            return Status;
         }
     }
 
@@ -3554,13 +3621,30 @@ pub unsafe extern "system" fn NtWriteFile(
                 ObDereferenceObject(FileObject as PVOID);
                 return e;
             }
-        } else {
-            ProbeForWriteIoStatusBlock(IoStatusBlock);
+        } else if let Err(status) = probe_user_buffer(
+            IoStatusBlock as *const core::ffi::c_void,
+            core::mem::size_of::<_IO_STATUS_BLOCK>(),
+            1,
+            PreviousMode,
+        ) {
+            ObDereferenceObject(FileObject as PVOID);
+            return status;
         }
-        ProbeForRead(Buffer, Length as ULONG_PTR, 1);
+        if let Err(status) = probe_user_buffer(Buffer as *const core::ffi::c_void, Length as usize, 1, PreviousMode) {
+            ObDereferenceObject(FileObject as PVOID);
+            return status;
+        }
 
         if !ByteOffset.is_null() {
-            CapturedByteOffset = ProbeForReadLargeInteger(ByteOffset);
+            // C: inside _SEH2_TRY; the handler dereferences FileObject and
+            // returns the exception code.
+            match ntkrnl_sys::probe::probe_read_generic(ByteOffset as *const LARGE_INTEGER, 1, PreviousMode) {
+                Ok(offset) => CapturedByteOffset = offset,
+                Err(status) => {
+                    ObDereferenceObject(FileObject as PVOID);
+                    return status;
+                }
+            }
         }
 
         if !(*FileObject).CompletionContext.is_null() && ApcRoutine.is_some() {
@@ -3599,14 +3683,18 @@ pub unsafe extern "system" fn NtWriteFile(
         }
 
         if !Key.is_null() {
-            CapturedKey = *Key;
+            // C: ProbeForReadUlong(Key) — the translation read it unprobed.
+            match probe_read_user::<ULONG>(Key, PreviousMode) {
+                Ok(v) => CapturedKey = v,
+                Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; }
+            }
         }
     } else {
         if !ByteOffset.is_null() {
-            CapturedByteOffset = *ByteOffset;
+            CapturedByteOffset = match ntkrnl_sys::probe::read_back(ByteOffset) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
         }
         if !Key.is_null() {
-            CapturedKey = *Key;
+            CapturedKey = match ntkrnl_sys::probe::read_back(Key) { Ok(v) => v, Err(e) => { ObDereferenceObject(FileObject as PVOID); return e; } };
         }
     }
 
@@ -3669,12 +3757,16 @@ pub unsafe extern "system" fn NtWriteFile(
             if Success != 0 && KernelIosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
                 IopUpdateOperationCount(IopWriteTransfer);
                 IopUpdateTransferCount(IopWriteTransfer, KernelIosb.Information as ULONG);
-                if Iosb32 {
+                // C: _SEH2_TRY { store the IOSB } _SEH2_EXCEPT { KernelIosb.Status = code; }
+                let written = if Iosb32 {
                     let P = IoStatusBlock as *mut IoStatusBlock32;
-                    (*P).Status = KernelIosb.__bindgen_anon_1.Status;
-                    (*P).Information = KernelIosb.Information as u32;
+                    write_back(core::ptr::addr_of_mut!((*P).Status), KernelIosb.__bindgen_anon_1.Status)
+                        .and_then(|()| write_back(core::ptr::addr_of_mut!((*P).Information), KernelIosb.Information as u32))
                 } else {
-                    *IoStatusBlock = KernelIosb;
+                    write_back(IoStatusBlock, KernelIosb)
+                };
+                if let Err(e) = written {
+                    KernelIosb.__bindgen_anon_1.Status = e;
                 }
 
                 if !EventObject.is_null() {
@@ -3758,11 +3850,19 @@ pub unsafe extern "system" fn NtWriteFile(
         }
     } else if (*DeviceObject).Flags & DO_DIRECT_IO != 0 {
         if Length != 0 {
+            // C: both the allocation failure (an explicit ExRaiseStatus) and the
+            // probe raise into a handler that runs IopCleanupAfterException and
+            // returns the code. Without SEH either raise was a bugcheck.
             Mdl = IoAllocateMdl(Buffer, Length, 0u8, 1u8, Irp);
-            if Mdl.is_null() {
-                ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+            let st = if Mdl.is_null() {
+                STATUS_INSUFFICIENT_RESOURCES
+            } else {
+                ntkrnl_sys::probe::MmTryProbeAndLockPages(Mdl, PreviousMode, IoReadAccess)
+            };
+            if st < 0 {
+                IopCleanupAfterException(FileObject, Irp, EventObject, core::ptr::null_mut());
+                return st;
             }
-            MmProbeAndLockPages(Mdl, PreviousMode, IoReadAccess);
         }
         (*Irp).Flags = 0;
     } else {
@@ -3842,8 +3942,18 @@ pub unsafe extern "system" fn NtQueryVolumeInformationFile(
             return STATUS_INFO_LENGTH_MISMATCH;
         }
 
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
-        ProbeForWrite(FsInformation, Length as ULONG_PTR, 4);
+        // C: under _SEH2_TRY, whose handler returns the exception code.
+        if let Err(status) = probe_user_buffer(
+            IoStatusBlock as *const core::ffi::c_void,
+            core::mem::size_of::<_IO_STATUS_BLOCK>(),
+            1,
+            PreviousMode,
+        ) {
+            return status;
+        }
+        if let Err(status) = probe_user_buffer(FsInformation as *const core::ffi::c_void, Length as usize, 4, PreviousMode) {
+            return status;
+        }
     }
 
     Status = ObReferenceObjectByHandle(
@@ -3877,46 +3987,68 @@ pub unsafe extern "system" fn NtQueryVolumeInformationFile(
         && ((*FileObject).Flags & FO_DIRECT_DEVICE_OPEN != 0
             || (*(*FileObject).DeviceObject).DeviceType != FILE_DEVICE_NETWORK_FILE_SYSTEM)
     {
-        let FsDeviceInfo = FsInformation as PFILE_FS_DEVICE_INFORMATION;
         DeviceObject = (*FileObject).DeviceObject;
 
-        (*FsDeviceInfo).DeviceType = (*DeviceObject).DeviceType;
-        (*FsDeviceInfo).Characteristics = (*DeviceObject).Characteristics;
+        let mut FsDeviceInfo: FILE_FS_DEVICE_INFORMATION = core::mem::zeroed();
+        FsDeviceInfo.DeviceType = (*DeviceObject).DeviceType;
+        FsDeviceInfo.Characteristics = (*DeviceObject).Characteristics;
         if IopGetMountFlag(DeviceObject) != 0 {
-            (*FsDeviceInfo).Characteristics |= FILE_DEVICE_IS_MOUNTED;
+            FsDeviceInfo.Characteristics |= FILE_DEVICE_IS_MOUNTED;
         }
 
-        (*IoStatusBlock).Information = core::mem::size_of::<FILE_FS_DEVICE_INFORMATION>() as _;
-        (*IoStatusBlock).__bindgen_anon_1.Status = STATUS_SUCCESS;
+        // C: the stores into FsInformation and IoStatusBlock are one _SEH2_TRY whose
+        // handler returns the code.
+        let iosb = _IO_STATUS_BLOCK {
+            __bindgen_anon_1: _IO_STATUS_BLOCK__bindgen_ty_1 { Status: STATUS_SUCCESS },
+            Information: core::mem::size_of::<FILE_FS_DEVICE_INFORMATION>() as _,
+        };
+        let Status = match write_user(FsInformation as PFILE_FS_DEVICE_INFORMATION, FsDeviceInfo, 0)
+            .and_then(|()| write_user(IoStatusBlock, iosb, 0))
+        {
+            Ok(()) => STATUS_SUCCESS,
+            Err(e) => e,
+        };
 
         if (*FileObject).Flags & FO_SYNCHRONOUS_IO != 0 {
             IopUnlockFileObject(FileObject);
         }
 
         ObDereferenceObject(FileObject as PVOID);
-        return STATUS_SUCCESS;
+        return Status;
     } else if FsInformationClass == FileFsDriverPathInformation {
         let mut DriverPathInfo: PVOID = core::ptr::null_mut();
 
+        // C: the capture, the DriverInPath store and the IoStatusBlock stores are one
+        // _SEH2_TRY whose handler returns the code. (The quota allocation raises on
+        // failure in the C; here it is checked.)
         DriverPathInfo = ExAllocatePoolWithQuotaTag(NonPagedPool, Length as _, TAG_IO);
-        core::ptr::copy_nonoverlapping(
-            FsInformation as *const u8,
-            DriverPathInfo as *mut u8,
-            Length as usize,
-        );
-
-        Status = IopGetDriverPathInformation(
-            FileObject,
-            DriverPathInfo as PFILE_FS_DRIVER_PATH_INFORMATION,
-            Length,
-        );
+        Status = if DriverPathInfo.is_null() {
+            STATUS_INSUFFICIENT_RESOURCES
+        } else {
+            match safe_copy_raw(DriverPathInfo, FsInformation as *const core::ffi::c_void, Length as usize) {
+                Ok(()) => IopGetDriverPathInformation(
+                    FileObject,
+                    DriverPathInfo as PFILE_FS_DRIVER_PATH_INFORMATION,
+                    Length,
+                ),
+                Err(e) => e,
+            }
+        };
 
         if Status >= 0 {
-            (*(FsInformation as PFILE_FS_DRIVER_PATH_INFORMATION)).DriverInPath =
-                (*(DriverPathInfo as PFILE_FS_DRIVER_PATH_INFORMATION)).DriverInPath;
-            (*IoStatusBlock).Information =
-                core::mem::size_of::<FILE_FS_DRIVER_PATH_INFORMATION>() as _;
-            (*IoStatusBlock).__bindgen_anon_1.Status = STATUS_SUCCESS;
+            let iosb = _IO_STATUS_BLOCK {
+                __bindgen_anon_1: _IO_STATUS_BLOCK__bindgen_ty_1 { Status: STATUS_SUCCESS },
+                Information: core::mem::size_of::<FILE_FS_DRIVER_PATH_INFORMATION>() as _,
+            };
+            let written = write_user(
+                core::ptr::addr_of_mut!((*(FsInformation as PFILE_FS_DRIVER_PATH_INFORMATION)).DriverInPath),
+                (*(DriverPathInfo as PFILE_FS_DRIVER_PATH_INFORMATION)).DriverInPath,
+                0,
+            )
+            .and_then(|()| write_user(IoStatusBlock, iosb, 0));
+            if let Err(e) = written {
+                Status = e;
+            }
         }
 
         if !DriverPathInfo.is_null() {
@@ -4037,8 +4169,18 @@ pub unsafe extern "system" fn NtSetVolumeInformationFile(
             return STATUS_INFO_LENGTH_MISMATCH;
         }
 
-        ProbeForWriteIoStatusBlock(IoStatusBlock);
-        ProbeForRead(FsInformation, Length as ULONG_PTR, 4);
+        // C: under _SEH2_TRY, whose handler returns the exception code.
+        if let Err(status) = probe_user_buffer(
+            IoStatusBlock as *const core::ffi::c_void,
+            core::mem::size_of::<_IO_STATUS_BLOCK>(),
+            1,
+            PreviousMode,
+        ) {
+            return status;
+        }
+        if let Err(status) = probe_user_buffer(FsInformation as *const core::ffi::c_void, Length as usize, 4, PreviousMode) {
+            return status;
+        }
     }
 
     Status = ObReferenceObjectByHandle(
@@ -4116,11 +4258,21 @@ pub unsafe extern "system" fn NtSetVolumeInformationFile(
 
     (*Irp).AssociatedIrp.SystemBuffer =
         ExAllocatePoolWithQuotaTag(NonPagedPool, Length as _, TAG_IOBUF);
-    core::ptr::copy_nonoverlapping(
-        FsInformation as *const u8,
-        (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+    // C (io/iomgr/iofunc.c:4565-4578) wraps alloc + copy in one _SEH2_TRY whose
+    // handler runs IopCleanupAfterException and returns the code (see
+    // NtSetInformationFile): the copy from the caller's buffer must be fault-tolerant.
+    if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
+        IopCleanupAfterException(FileObject, Irp, core::ptr::null_mut(), Event);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+        (*Irp).AssociatedIrp.SystemBuffer as *mut core::ffi::c_void,
+        FsInformation as *const core::ffi::c_void,
         Length as usize,
-    );
+    ) {
+        IopCleanupAfterException(FileObject, Irp, core::ptr::null_mut(), Event);
+        return e;
+    }
     (*Irp).Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER;
     (*StackPtr).Parameters.SetVolume.Length = Length;
     (*StackPtr).Parameters.SetVolume.FsInformationClass = FsInformationClass as u32;

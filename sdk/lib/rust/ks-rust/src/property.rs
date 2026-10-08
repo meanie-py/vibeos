@@ -12,21 +12,16 @@ use core::ffi::c_void;
 // ProbeForRead/ProbeForWrite are real ntoskrnl exports; declare them locally so
 // this module can link (sibling modules api.rs/irp.rs do the same).
 extern "system" {
-    fn ProbeForRead(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: ULONG_PTR, Alignment: ULONG);
 }
 
 // MmUserProbeAddress — highest user-mode address + 1, a DATA export from ntoskrnl
 // (`@ extern MmUserProbeAddress` in ntoskrnl.spec).
 //
-// It is declared here rather than reached through `ntkrnl_sys::probe` on purpose, and
-// the reason is a link error, not a preference: that module declares the symbol as a
-// plain `extern "C" static`, which resolves only for crates linked INTO ntoskrnl. ks is
-// a separate .sys, so importing it that way gives
-// `ld.lld: error: undefined symbol: _MmUserProbeAddress`. A data import needs the
-// per-arch import form — i386/arm64 raw-dylib +verbatim (the symbol IS the value),
-// amd64 binds __imp_ and dereferences — which is the same shape win32k-rust's
-// safe_user_io.rs and class.rs already use.
+// A data import needs the per-arch import form — i386/arm64 raw-dylib +verbatim (the
+// symbol IS the value), amd64 binds __imp_ and dereferences; a plain extern static
+// fails the .sys link (`undefined symbol: _MmUserProbeAddress`). This local copy
+// predates ntkrnl-sys's `import_mm_user_probe_address` feature, which ks now enables,
+// so `ntkrnl_sys::probe` works here too.
 #[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
@@ -242,12 +237,27 @@ pub unsafe extern "C" fn KspPropertyHandler(
     Property = (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as PKSPROPERTY;
 
     if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
+        // Divergence: the C makes these probes and user reads with NO _SEH2_TRY
+        // of its own (its only one wraps the property handler call), so a bad
+        // user buffer raises out into the calling driver's dispatch routine,
+        // which has none either. Here each one returns the code instead.
         if (*Irp).RequestorMode == 1i8 {
-            ProbeForRead((*IoStack).Parameters.DeviceIoControl.Type3InputBuffer, InputBufferLength as ULONG_PTR, 1);
+            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+                (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer,
+                InputBufferLength as usize,
+                1,
+                1,
+            ) {
+                return status;
+            }
         }
+        let user_flags = match ntkrnl_sys::probe::probe_read_generic(core::ptr::addr_of!((*Property).Flags), 1, 0) {
+            Ok(flags) => flags,
+            Err(status) => return status,
+        };
 
-        if Allocator.is_some() && ((*Property).Flags & (KSPROPERTY_TYPE_GET | KSPROPERTY_TYPE_SET)) != 0 {
-            Status = (Allocator.unwrap())(Irp, TotalSize, ((*Property).Flags & KSPROPERTY_TYPE_GET) as BOOLEAN);
+        if Allocator.is_some() && (user_flags & (KSPROPERTY_TYPE_GET | KSPROPERTY_TYPE_SET)) != 0 {
+            Status = (Allocator.unwrap())(Irp, TotalSize, (user_flags & KSPROPERTY_TYPE_GET) as BOOLEAN);
             if !NT_SUCCESS(Status) {
                 return Status;
             }
@@ -256,28 +266,36 @@ pub unsafe extern "C" fn KspPropertyHandler(
             (*Irp).Flags |= IRP_DEALLOCATE_BUFFER | IRP_BUFFERED_IO;
         }
 
-        core::ptr::copy_nonoverlapping(
-            (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const u8,
-            ((*Irp).AssociatedIrp.SystemBuffer as ULONG_PTR + OutputBufferLength as ULONG_PTR) as *mut u8,
+        if let Err(status) = ntkrnl_sys::probe::safe_copy_raw(
+            ((*Irp).AssociatedIrp.SystemBuffer as ULONG_PTR + OutputBufferLength as ULONG_PTR) as PVOID,
+            (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer,
             InputBufferLength as usize,
-        );
+        ) {
+            return status;
+        }
 
         Property = ((*Irp).AssociatedIrp.SystemBuffer as ULONG_PTR + OutputBufferLength as ULONG_PTR) as PKSPROPERTY;
 
         if (*Property).Flags & KSPROPERTY_TYPE_SET != 0 {
-            if (*Irp).RequestorMode == 1i8 {
-                ProbeForRead((*Irp).UserBuffer, (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as ULONG_PTR, 1);
-            }
-            core::ptr::copy_nonoverlapping(
-                (*Irp).UserBuffer as *const u8,
-                (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+            if let Err(status) = ntkrnl_sys::probe::safe_copy_from_user(
+                (*Irp).AssociatedIrp.SystemBuffer,
+                (*Irp).UserBuffer,
                 (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize,
-            );
+                1,
+                (*Irp).RequestorMode,
+            ) {
+                return status;
+            }
         }
 
         if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength != 0 {
-            if (*Irp).RequestorMode == 1i8 {
-                ProbeForWrite((*Irp).UserBuffer, (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as ULONG_PTR, 1);
+            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+                (*Irp).UserBuffer,
+                (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize,
+                1,
+                (*Irp).RequestorMode,
+            ) {
+                return status;
             }
             if Allocator.is_none() || ((*Property).Flags & KSPROPERTY_TYPE_GET) == 0 {
                 (*Irp).Flags |= IRP_INPUT_OPERATION;
@@ -426,12 +444,16 @@ pub unsafe extern "system" fn KsFastPropertyHandler(
         );
         if !NT_SUCCESS(probe_status) {
             Status = probe_status;
-        } else {
-            core::ptr::copy_nonoverlapping(
-                Property as *const u8,
-                &mut PropRequest as *mut KSPROPERTY as *mut u8,
-                core::mem::size_of::<KSPROPERTY>(),
-            );
+        } else if let Err(status) = ntkrnl_sys::probe::safe_copy_raw(
+            // The range-only probe proves WHERE the buffer is, never that it stays
+            // mapped: another thread can unmap it between the probe and here, and under
+            // DUMMY_PSEH a raw copy would then BUGCHECK 0x1E where the C's _SEH2_TRY
+            // returned the fault. The copy itself must be fault-tolerant.
+            &mut PropRequest as *mut KSPROPERTY as *mut c_void,
+            Property as *const c_void,
+            core::mem::size_of::<KSPROPERTY>(),
+        ) {
+            Status = status;
         }
 
         if !NT_SUCCESS(Status) {

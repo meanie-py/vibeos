@@ -185,3 +185,23 @@ def test_stale_quarantine_still_warns_when_ignored(monkeypatch, tmp_path, capsys
     rc = _run(monkeypatch, tmp_path, build, "typo_apitest.exe\n", ["--ignore-quarantine"])
     assert rc == 0
     assert "typo_apitest.exe" in capsys.readouterr().err
+
+
+def test_only_suite_colon_subtest_emits_the_two_field_line(monkeypatch, tmp_path) -> None:
+    """`--only user32_apitest.exe:UserHandleGrantAccess` runs that one subtest: the sweep
+    reads `<suite> <subtest>` as a single-subtest request, so a test behind an earlier
+    stalling subtest can be reached at all."""
+    build = _fake_build(tmp_path, ["a_apitest.exe", "b_apitest.exe"])
+    rc = _run(monkeypatch, tmp_path, build, "", ["--only", "b_apitest.exe:Grant"])
+    assert rc == 0
+    body = [
+        ln
+        for ln in (tmp_path / "gen" / "apitest-suites-amd64.txt").read_text().splitlines()
+        if ln and not ln.startswith("#")
+    ]
+    assert body == ["b_apitest.exe Grant"]
+
+
+def test_only_colon_subtest_still_rejects_a_suite_the_build_lacks(monkeypatch, tmp_path) -> None:
+    build = _fake_build(tmp_path, ["a_apitest.exe"])
+    assert _run(monkeypatch, tmp_path, build, "", ["--only", "typo_apitest.exe:Grant"]) == 1

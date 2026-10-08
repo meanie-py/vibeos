@@ -97,11 +97,17 @@ pub unsafe extern "system" fn NtAddAtom(
                     PreviousMode,
                 )?;
 
-                core::ptr::copy_nonoverlapping(
-                    AtomName as *const u8,
-                    CapturedName as *mut u8,
+                // The probe proves where AtomName is, not that it stays mapped; a
+                // raw copy from it is an any-process bugcheck. On fault free the
+                // pool buffer and return the status, as the C's __except does.
+                if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+                    CapturedName as *mut core::ffi::c_void,
+                    AtomName as *const core::ffi::c_void,
                     AtomNameLength as usize,
-                );
+                ) {
+                    ExFreePoolWithTag(CapturedName as PVOID, TAG_ATOM);
+                    return Err(e);
+                }
                 *(CapturedName.add((AtomNameLength / core::mem::size_of::<u16>() as ULONG) as usize)) = UNICODE_NULL;
 
                 if !Atom.is_null() {
@@ -191,11 +197,15 @@ pub unsafe extern "system" fn NtFindAtom(
                     return Ok(STATUS_INSUFFICIENT_RESOURCES);
                 }
 
-                core::ptr::copy_nonoverlapping(
-                    AtomName as *const u8,
-                    CapturedName as *mut u8,
+                // Fault-tolerant copy from the caller's page; free and bail on fault.
+                if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+                    CapturedName as *mut core::ffi::c_void,
+                    AtomName as *const core::ffi::c_void,
                     AtomNameLength as usize,
-                );
+                ) {
+                    ExFreePoolWithTag(CapturedName as PVOID, TAG_ATOM);
+                    return Err(e);
+                }
                 *(CapturedName.add((AtomNameLength / core::mem::size_of::<u16>() as ULONG) as usize)) = UNICODE_NULL;
 
                 if !Atom.is_null() {
@@ -242,8 +252,6 @@ pub unsafe extern "system" fn NtQueryInformationAtom(
     let ReturnLength = opaque_ptr(ReturnLength);
     let inner = || -> Result<NTSTATUS, NTSTATUS> {
         let AtomTable = ExpGetGlobalAtomTable();
-        let BasicInformation = AtomInformation as *mut _ATOM_BASIC_INFORMATION;
-        let TableInformation = AtomInformation as *mut _ATOM_TABLE_INFORMATION;
         let mut Status = STATUS_SUCCESS;
         let mut Flags: ULONG = 0;
         let mut UsageCount: ULONG = 0;
@@ -274,6 +282,13 @@ pub unsafe extern "system" fn NtQueryInformationAtom(
                 )?;
             }
         }
+
+        // The C fills AtomInformation in place under _SEH2_TRY, and the Rtl atom
+        // routines write it while holding the table lock. A user-mode caller's buffer
+        // is a pool copy here, copied back once below (OutputBounce).
+        let bounce = OutputBounce::new(AtomInformation, AtomInformationLength as usize, PreviousMode)?;
+        let BasicInformation = bounce.buffer() as *mut _ATOM_BASIC_INFORMATION;
+        let TableInformation = bounce.buffer() as *mut _ATOM_TABLE_INFORMATION;
 
         match AtomInformationClass {
             AtomBasicInformation => {
@@ -323,6 +338,8 @@ pub unsafe extern "system" fn NtQueryInformationAtom(
                 Status = STATUS_INVALID_INFO_CLASS;
             }
         }
+
+        bounce.finish()?;
 
         if !ReturnLength.is_null() {
             write_user(ReturnLength, RequiredLength, PreviousMode)?;

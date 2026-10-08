@@ -297,6 +297,15 @@ class CMakeModule:
     # (msvcrt_static, feeding msvcrt.dll/msvcrt20.dll/msvcrt40.dll) never calls it,
     # and it is exactly such a target that owns the C in a cohab module.
     usermode_override: bool | None = None
+    # What the Rust side is NAMED after, when that is not the CMake target: a static library
+    # with exactly one consumer (setuplib_static -> setuplib) belongs to that module, so its
+    # crate is setuplib-rust and its gen_driver_types.sh arm is `setuplib)`. The compile-db
+    # lookup still keys on `name`, the real target.
+    stem: str | None = None
+
+    @property
+    def crate_stem(self) -> str:
+        return self.stem or self.name
 
     @property
     def compiled_tus(self) -> list[Path]:
@@ -464,7 +473,7 @@ class DerivedProfile:
 
     @property
     def crate_name(self) -> str:
-        return f"{self.module.name}-rust"
+        return f"{self.module.crate_stem}-rust"
 
     @property
     def errors(self) -> list[Finding]:
@@ -607,7 +616,11 @@ _SOURCE_LIST_OPEN = re.compile(
 #: The precision comes from two other places instead: the depth tracking that decides
 #: "inside", and the on-disk check below, which is what stops a HEADING that merely names a
 #: file (shell32 writes one above each flipped block) from inventing an entry.
-_COMMENTED_ENTRY = re.compile(r"^[ \t]*#[ \t]*([\w./+-]+\.(?:c|cpp|cc))(?:[ \t].*)?$")
+#: ntoskrnl's ntos.cmake spells every entry repo-rooted, `#${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c`
+#: (237 of them), so the prefix is accepted and resolved against the repo root.
+_COMMENTED_ENTRY = re.compile(
+    r"^[ \t]*#[ \t]*((?:\$\{REACTOS_SOURCE_DIR\}/)?[\w./+-]+\.(?:c|cpp|cc))(?:[ \t].*)?$"
+)
 
 #: `# list(APPEND SOURCE` / `# set(SOURCE` — what a cohab flip leaves behind.
 _COMMENTED_LIST_OPEN = re.compile(r"^[ \t]*#[ \t]?(list\s*\(\s*APPEND\s+\w+|set\s*\(\s*\w+)")
@@ -615,7 +628,7 @@ _SOURCE_ARG = re.compile(r"^(?:\$\{[^}]+\}|[\w./+-]+\.(?:c|cpp|cc|h|hpp|idl|rc))
 
 
 def uncomment_flipped_source_lists(
-    text: str, module_dir: Path | None = None
+    text: str, module_dir: Path | None = None, repo_root: Path | None = None
 ) -> tuple[str, list[str]]:
     """Restore the source list a cohab flip commented out. Returns `(text, restored files)`.
 
@@ -680,12 +693,17 @@ def uncomment_flipped_source_lists(
         # heading shell32 writes above each flipped block, which names the same file in prose.
         # Deduped for the same reason, and because rtl legitimately lists `byteswap.c` in two
         # different `if(ARCH)` arms.
-        if (
-            entry is not None
-            and module_dir is not None
-            and not (module_dir / entry.group(1)).is_file()
-        ):
-            entry = None
+        if entry is not None and module_dir is not None:
+            rel = entry.group(1)
+            if rel.startswith("${REACTOS_SOURCE_DIR}/"):
+                on_disk = (
+                    repo_root is not None
+                    and (repo_root / rel[len("${REACTOS_SOURCE_DIR}/") :]).is_file()
+                )
+            else:
+                on_disk = (module_dir / rel).is_file()
+            if not on_disk:
+                entry = None
         if entry is not None:
             final.append("    " + entry.group(1))
             if entry.group(1) not in restored:
@@ -788,16 +806,54 @@ def _targets_compiling_c(
     return out
 
 
+_INTERFACE_INCLUDE_RE = re.compile(
+    r"\btarget_include_directories\s*\(\s*(\w+)\s+INTERFACE\s+([^)]*)\)"
+)
+_INTERFACE_SCAN_ROOTS = ("sdk", "drivers", "dll", "win32ss", "ntoskrnl", "hal", "base", "boot")
+
+
+@functools.lru_cache(maxsize=4)
+def _interface_include_index(repo_root: Path) -> dict[str, tuple[Path, ...]]:
+    """`target_include_directories(<name> INTERFACE <dirs>)` across the tree: name -> dirs."""
+    index: dict[str, list[Path]] = {}
+    for top in _INTERFACE_SCAN_ROOTS:
+        for cm in (repo_root / top).rglob("CMakeLists.txt"):
+            try:
+                text = _strip_cmake_comments(cm.read_text(errors="replace"))
+            except OSError:
+                continue
+            for m in _INTERFACE_INCLUDE_RE.finditer(text):
+                for d in m.group(2).split():
+                    d = d.replace("${CMAKE_CURRENT_SOURCE_DIR}", str(cm.parent)).replace(
+                        "${REACTOS_SOURCE_DIR}", str(repo_root)
+                    )
+                    if "$" not in d:
+                        path = Path(d) if Path(d).is_absolute() else cm.parent / d
+                        index.setdefault(m.group(1), []).append(path)
+    return {k: tuple(v) for k, v in index.items()}
+
+
+_CARGO_KERNEL_RE = re.compile(r"\badd_cargo_module\s*\(\s*(\w+)[^)]*\bKIND\s+kernelexe\b")
+
+
+def _cargo_kernel_targets(cmake: Path) -> set[str]:
+    """`add_cargo_module(<name> ... KIND kernelexe)` targets in a CMakeLists (ntoskrnl)."""
+    return set(_CARGO_KERNEL_RE.findall(_strip_cmake_comments(_read_with_includes(cmake))))
+
+
 def _target_names(cmake: Path) -> set[str]:
-    """Every add_library()/add_executable() target name in a CMakeLists."""
+    """Every add_library()/add_executable() target name in a CMakeLists, plus a cargo-linked
+    kernel (`add_cargo_module(<name> ... KIND kernelexe)`, see parse_cmakelists)."""
     if not cmake.is_file():
         raise ProfileDeriveError(f"no CMakeLists.txt at {cmake}")
     text = _strip_cmake_comments(_read_with_includes(cmake))
-    return {
+    names = {
         m.group(2)
         for m in re.finditer(r"\b(add_library|add_executable)\s*\(\s*([A-Za-z0-9_${}]+)", text)
         if not m.group(2).startswith("$")
     }
+    names.update(_CARGO_KERNEL_RE.findall(text))
+    return names
 
 
 def parse_cmakelists(
@@ -822,7 +878,7 @@ def parse_cmakelists(
     raw_text = _read_with_includes(cmake)
     restored_sources: list[str] = []
     if flipped_sources:
-        raw_text, restored_sources = uncomment_flipped_source_lists(raw_text, module_dir)
+        raw_text, restored_sources = uncomment_flipped_source_lists(raw_text, module_dir, repo_root)
     text = _strip_cmake_comments(raw_text)
     vars_: dict[str, list[str]] = {
         "CMAKE_CURRENT_SOURCE_DIR": [str(module_dir)],
@@ -843,6 +899,7 @@ def parse_cmakelists(
     pch: Path | None = None
     pch_skip: set[Path] = set()
     rpc: list[str] = []
+    link_deps: dict[str, list[str]] = {}
 
     def cond() -> str | None:
         live = [c for c in cond_stack if c]
@@ -881,6 +938,20 @@ def parse_cmakelists(
             tgt = args[0]
             srcs = [a for a in args_raw[1:] if a not in ("MODULE", "SHARED", "STATIC", "WIN32")]
             targets[tgt] = ("library" if name == "add_library" else "executable", srcs)
+        elif name == "add_cargo_module" and len(args_raw) >= 3 and "kernelexe" in args_raw:
+            # ntoskrnl.exe graduated to a cargo-driven link: `add_cargo_module(ntoskrnl ...
+            # KIND kernelexe ...)` takes no source list, and the kernel's C TUs are the
+            # `${SOURCE}` list ntos.cmake builds (every one of them a flipped `#` entry now).
+            # Without this, no ntoskrnl file had a provable owner and a sealed translate of
+            # any of them refused outright.
+            targets[args[0]] = ("executable", ["${SOURCE}"])
+            module_types[args[0]] = ("kernel", False)
+            if "EXTRA_DEPENDS" in args:
+                link_deps.setdefault(args[0], []).extend(args[args.index("EXTRA_DEPENDS") + 1 :])
+        elif name == "target_link_libraries" and len(args) >= 2:
+            link_deps.setdefault(args[0], []).extend(
+                a for a in args[1:] if a not in ("PUBLIC", "PRIVATE", "INTERFACE")
+            )
         elif name == "set_module_type" and len(args) >= 2:
             module_types[args[0]] = (args[1], any(a.upper() == "UNICODE" for a in args[2:]))
         elif name == "add_definitions":
@@ -923,23 +994,43 @@ def parse_cmakelists(
     if target not in targets:
         raise ProfileDeriveError(f"{cmake}: no target {target!r} (have: {', '.join(targets)})")
 
-    target_kind, src_args = targets[target]
-    entries: list[SourceEntry] = []
-    seen: set[str] = set()
-    for a in src_args:
-        m = re.fullmatch(r"\$\{(\w+)\}", a)
-        expanded_entries = (
-            entries_by_var.get(m.group(1), []) if m else [_classify_entry(a, module_dir, None)]
-        )
-        if m and m.group(1) not in entries_by_var and m.group(1) in vars_:
-            expanded_entries = [_classify_entry(v, module_dir, None) for v in vars_[m.group(1)]]
-        for e in expanded_entries:
-            if e.raw in seen:
-                continue
-            seen.add(e.raw)
-            entries.append(e)
+    def target_entries(name: str) -> list[SourceEntry]:
+        out: list[SourceEntry] = []
+        seen: set[str] = set()
+        for a in targets[name][1]:
+            m = re.fullmatch(r"\$\{(\w+)\}", a)
+            expanded_entries = (
+                entries_by_var.get(m.group(1), []) if m else [_classify_entry(a, module_dir, None)]
+            )
+            if m and m.group(1) not in entries_by_var and m.group(1) in vars_:
+                expanded_entries = [_classify_entry(v, module_dir, None) for v in vars_[m.group(1)]]
+            for e in expanded_entries:
+                if e.raw in seen:
+                    continue
+                seen.add(e.raw)
+                out.append(e)
+        return out
+
+    target_kind, _ = targets[target]
+    entries = target_entries(target)
+    # TUs a SIBLING target in this same CMakeLists compiles. setuplib's 24 .c are built by
+    # `setuplib_static` and linked into `setuplib`; judged against `setuplib` alone they read
+    # as dead source, and the finding said "do not pay to translate them" about live code.
+    sibling_tus: dict[Path, str] = {}
+    for other in targets:
+        if other == target:
+            continue
+        for e in target_entries(other):
+            if e.kind == "tu" and e.path is not None:
+                sibling_tus.setdefault(e.path.resolve(), other)
 
     definitions.extend(per_target_defs.get(target, []))
+    # A linked library's `target_include_directories(<lib> INTERFACE dir)` is on this target's
+    # include path too. cmlib.h reaches ntoskrnl's internal/cm.h only this way, and upstream
+    # moved evtlib/arbiter/infros/skiplist/concfg headers to the same mechanism.
+    interface = _interface_include_index(repo_root)
+    for dep in link_deps.get(target, []):
+        include_dirs.extend(interface.get(dep, ()))
     mt = module_types.get(target)
     module = CMakeModule(
         cmake=cmake,
@@ -957,6 +1048,26 @@ def parse_cmakelists(
         rpc_interfaces=rpc,
         findings=findings,
     )
+    if module.module_type is None:
+        # A static library has no set_module_type(); it runs in whatever image links it.
+        # When every consumer in this CMakeLists agrees on the mode, inherit it rather than
+        # make every caller remember --usermode (setuplib_static -> setuplib, a nativedll).
+        consumers = sorted(t for t, deps in link_deps.items() if target in deps)
+        kinds = {module_types[c][0] for c in consumers if c in module_types}
+        modes = {k in KERNEL_MODULE_TYPES for k in kinds}
+        if consumers and len(modes) == 1 and all(c in module_types for c in consumers):
+            module.module_type = sorted(kinds)[0]
+            if len(consumers) == 1:
+                module.stem = consumers[0]
+            findings.append(
+                Finding(
+                    "info",
+                    "MODULE_TYPE_INHERITED",
+                    f"{target!r} has no set_module_type(); it links into "
+                    f"{', '.join(consumers)} ({', '.join(sorted(kinds))}), so it is "
+                    f"{'kernel' if modes == {True} else 'usermode'} like them.",
+                )
+            )
     if restored_sources:
         findings.append(
             Finding(
@@ -972,11 +1083,27 @@ def parse_cmakelists(
     # Dead source: on disk, absent from the compiled list. Translating one of these
     # is paid-for work that nobody links (it happened last batch).
     compiled = {p.resolve() for p in module.compiled_tus}
+    by_sibling: dict[str, list[Path]] = {}
     for cand in sorted(module_dir.rglob("*.c")) + sorted(module_dir.rglob("*.cpp")):
         if any(part in {"tests", "test", "build", ".git"} for part in cand.parts):
             continue
-        if cand.resolve() not in compiled:
+        if cand.resolve() in compiled:
+            continue
+        owner = sibling_tus.get(cand.resolve())
+        if owner is not None:
+            by_sibling.setdefault(owner, []).append(cand)
+        else:
             module.dead_sources.append(cand)
+    for owner, files in sorted(by_sibling.items()):
+        findings.append(
+            Finding(
+                "warn",
+                "SIBLING_TARGET",
+                f"{len(files)} .c are compiled by sibling target {owner!r}, not {target!r}: "
+                f"they are LIVE. To derive the island for them, pass --target {owner}: "
+                + ", ".join(_rel(p, repo_root) for p in files[:6]),
+            )
+        )
     if module.dead_sources:
         findings.append(
             Finding(
@@ -1039,7 +1166,11 @@ def build_include_env(
     search.append((module.module_dir, "module"))
     if (module.module_dir / "include").is_dir():
         search.append((module.module_dir / "include", "module"))
-    search.extend((d if d.is_absolute() else repo_root / d, "idl") for d in module.include_dirs)
+    # CMake resolves a relative include_directories() entry against the CMakeLists' own
+    # directory, not the repo root (setuplib: `include_directories(spapisup utils)`).
+    search.extend(
+        (d if d.is_absolute() else module.module_dir / d, "idl") for d in module.include_dirs
+    )
     search.extend((repo_root / p, "sdk") for p in _SDK_SEARCH)
     if build_dir is not None:
         search.extend((build_dir / p, "generated") for p in _BUILD_SEARCH)
@@ -1447,17 +1578,30 @@ def scan_preamble(
             continue
         if any(a for a in arms):
             continue  # inside a decidably-dead arm
+        if _PACKING_RE.search(line):
+            # A packing include opens a region that the TU closes AFTER its prologue
+            # (partlist.c: `#include <pshpack1.h>`, two typedefs, `#include <poppack.h>`), so
+            # the prologue holds only the push. Carried into the module's merged wrapper it
+            # packed every header after it: setuplib's island laid out USETUP_DATA,
+            # FILE_SYSTEM and 60-odd more `#[repr(C, packed)]`, which C never does.
+            continue
         if kind in ("include", "define", "undef"):
             keep.append(line.strip())
     return keep, conditional
 
 
+_PACKING_RE = re.compile(r"#\s*include\s*[<\"](?:pshpack\d*|poppack)\.h[>\"]|#\s*pragma\s+pack\b")
+
+
 def resolve_include(inc: Include, includer: Path, env: IncludeEnv) -> Path | None:
     """Resolve one include. Quoted form searches the includer's directory FIRST."""
     cands: list[Path] = []
+    # A Windows-style `..\\diblib\\DibLib_interface.h` (win32ss/gdi/dib/dib_new.c) is the same
+    # path to the compilers this tree is built with; on a POSIX host it is one odd filename.
+    name = inc.name.replace("\\", "/")
     if not inc.angled:
-        cands.append(includer.parent / inc.name)
-    cands.extend(d / inc.name for d, _ in env.search)
+        cands.append(includer.parent / name)
+    cands.extend(d / name for d, _ in env.search)
     for c in cands:
         if c.is_file():
             return c.resolve()
@@ -1999,6 +2143,14 @@ def _macro_kind(body: str) -> str:
     return "literal" if re.fullmatch(r"[-+~()\s0-9a-fA-FxXLlUu|&<>*/+]*", core) else "expression"
 
 
+_C_COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+
+
+def _strip_c_comments(text: str) -> str:
+    """Blank C comments, keeping newlines so line-anchored patterns still line up."""
+    return _C_COMMENT_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+
+
 def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str, tuple[str, str]]:
     """``{name: (macro_kind, definition)}`` for the constants a header OWNS.
 
@@ -2011,8 +2163,12 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
     ``#define TDI_ADDRESS_TYPE_IPX`` line, `IPX` is reported UNOWNED, and the tool raises a
     FALSE §9.112 alarm on a constant that is defined two lines from its sibling. (Found on
     the real ``afd``/``tdihelpers`` closure, not in a unit test.)
+
+    Comments are blanked first: setuplib's fsutil.h spells an enum member
+    ``/**/ChangeSystemPartition/**/ // FIXME``, which no member pattern sees through, and the
+    member was reported UNOWNED.
     """
-    text = _read(path)
+    text = _strip_c_comments(_read(path))
     out: dict[str, tuple[str, str]] = {}
     if wanted is not None:
         if not wanted:
@@ -2142,9 +2298,35 @@ def sys_crate_consts(
     for f in files:
         if f.stem.endswith(other_arches):
             continue  # another arch's island
-        for name in re.findall(r"pub const (\w+)", _read(f)):
+        text = _read(f)
+        for name in re.findall(r"pub const (\w+)", text):
             out.setdefault(name, f.stem)
+        # bindgen spells a C enumerator `<enum type>_<member>` (`_DEVICE_USAGE_NOTIFICATION_
+        # TYPE_DeviceUsageTypePaging`), so the bare member the C switches on never appears
+        # as a `pub const` of its own. It IS carried -- `port resolve` aliases the bare
+        # name to the prefixed one -- and reporting it as missing made every PnP driver's
+        # DeviceUsageType*/DeviceText* cases a blocking error.
+        for _ty, member in re.findall(r"pub const (\w+?)_(\w+):\s*\1\s*=", text):
+            out.setdefault(member, f.stem)
     return out
+
+
+def prelude_provided_names(prelude: Path | None, text: str | None = None) -> set[str]:
+    """Names a crate prelude defines (`pub const X`) or re-exports by name
+    (`pub use a::b::X;`, `pub use a::{X, Y as Z};` -- the alias is what callers see)."""
+    if text is None:
+        if prelude is None or not prelude.is_file():
+            return set()
+        text = _read(prelude)
+    names = set(re.findall(r"^\s*pub const (\w+)", text, re.M))
+    for body in re.findall(r"^\s*pub use [\w:]+::\{([^}]*)\}\s*;", text, re.M):
+        for item in body.split(","):
+            words = item.split()
+            if words:
+                names.add(words[-1])
+    names.update(re.findall(r"^\s*pub use [\w:]+::(\w+)\s*;", text, re.M))
+    names.update(re.findall(r"^\s*pub use [\w:]+ as (\w+)\s*;", text, re.M))
+    return names
 
 
 def own_constants(
@@ -2474,6 +2656,11 @@ def derive_source(
             raise ProfileDeriveError(f"{source}: ambiguous CMake owners: {owners}")
         if owners:
             name, flipped = owners[0]
+            # The cargo-linked kernel is ~240 flipped TUs whose island is the whole of
+            # ntkrnl-sys, not a module allowlist. Auditing all of them for one file costs
+            # minutes and fails on TUs that no longer compile at all (mm/marea.c includes the
+            # deleted cache/ headers), so a kernel file is audited as itself.
+            scoped = (source,) if name in _cargo_kernel_targets(cmake) else ()
             return derive(
                 directory,
                 repo_root,
@@ -2481,6 +2668,7 @@ def derive_source(
                 target=name,
                 usermode=usermode,
                 flipped_sources=flipped,
+                sources=scoped,
             )
         if directory == repo_root.resolve():
             break
@@ -2640,6 +2828,13 @@ def derive(
         repo_root, module.name, module.is_usermode
     )
     sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch, sys_crate)
+    # A name the output crate's prelude already provides is resolved for every module of
+    # the crate, which is exactly the fix SWITCH_CONST_IN_BASE_HEADER asks for -- so a
+    # re-derive after transcribing must stop reporting it.
+    for name in prelude_provided_names(
+        repo_root / "sdk/lib/rust" / f"{module.crate_stem}-rust" / "src" / "prelude.rs"
+    ):
+        sys_consts[name] = "prelude"  # overrides a secondary-island hit: the prelude fixed it
     owners = own_constants(switch_consts, closure, tus, sys_consts)
 
     # ---- BLOCKLIST_FUNCS evidence (never a decision) ----
@@ -2710,7 +2905,7 @@ def derive(
             # already a const in ntdll-sys/ntkrnl-sys: it resolves through the crate glob,
             # so its (often huge) owning header does NOT need to be allowlisted.
             o.allowlisted = True
-            if o.sys_source not in (f"bindgen_{arch}", "bindgen_common"):
+            if o.sys_source not in (f"bindgen_{arch}", "bindgen_common", "prelude"):
                 findings.append(
                     Finding(
                         "warn",
@@ -2757,13 +2952,19 @@ def derive(
             )
         o.allowlisted = True
         if o.macro_kind == "function-like":
+            # A warning, not a blocking error: the case label is `NAME(args)`, and a
+            # call-shaped pattern cannot bind everything the way an unresolved bare name
+            # does -- rustc rejects it ("expected tuple struct or tuple variant, found
+            # function"), so the failure is loud by construction. pciidex's
+            # `case PIO_MODE(0):` blocked the whole module on a hazard it cannot have.
             findings.append(
                 Finding(
-                    "error",
+                    "warn",
                     "SWITCH_CONST_NOT_BINDGENABLE",
                     f"`{o.ident}` ({ref.name}) is a FUNCTION-LIKE macro: bindgen emits no "
-                    "constant for it, so the match arm will still be a catch-all binding — "
-                    "transcribe it into the prelude by hand",
+                    "constant for it — fold the case label to its value or port the macro "
+                    "(`macro_rules!` is legal in pattern position); rustc rejects the "
+                    "call-shaped pattern until you do",
                 )
             )
         elif o.macro_kind == "expression":
@@ -2883,7 +3084,7 @@ def derive(
                 ],
                 reason="TU group with a mutually-legal include set",
                 wrapper_inc=_wrapper_for(group),
-                label=module.name if i == 0 else f"{module.name}-{stem}",
+                label=module.crate_stem if i == 0 else f"{module.crate_stem}-{stem}",
             )
             for i, (stem, group) in enumerate(groups)
         ]
@@ -2913,7 +3114,7 @@ def derive(
                 allow_files,
                 "one mutually-legal include set",
                 wrapper_inc=wrapper,
-                label=module.name,
+                label=module.crate_stem,
             )
         ]
 
@@ -2924,7 +3125,7 @@ def derive(
     if env.build_dir is not None:
         extra_inc.append(f'-I"${{SRC}}/build-{arch}/{module.module_dir.relative_to(repo_root)}"')
     for d in module.include_dirs:
-        p = d if d.is_absolute() else repo_root / d
+        p = (d if d.is_absolute() else module.module_dir / d).resolve()
         if p.is_dir() and _is_within(p, repo_root):
             extra_inc.append(f'-I"${{SRC}}/{p.relative_to(repo_root)}"')
     late_inc: list[str] = []
@@ -3056,6 +3257,42 @@ def _hdr_regex_dir(dirname: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+_OPAQUE_RE = re.compile(r"pub struct (\w+) \{\s*pub _address: u8,\s*\}")
+
+
+def opaque_types_to_unblock(dp: DerivedProfile, arch: str = "amd64") -> list[str]:
+    """Struct tags the kernel -sys crate leaves opaque that this module needs WHOLE.
+
+    ntkrnl-sys emits `_SCSI_REQUEST_BLOCK { _address: u8 }`, and the island blocklists every
+    -sys type, so `Srb->SrbStatus` resolved to the opaque one: atapi's first check had 22
+    `no field SrbStatus` and 22 `no field Cdb`. A tag is unblocked (with its plain and `P`
+    typedefs) when an allowlisted closure header defines it and the module's own code names it.
+    """
+    root = dp.env.repo_root
+    sys_src = root / "sdk/lib/rust/ntkrnl-sys/src" / f"bindgen_{arch}.rs"
+    if not sys_src.is_file():
+        return []
+    opaque = set(_OPAQUE_RE.findall(_read(sys_src)))
+    allow = [re.compile(a) for a in dp.allow_files]
+    defined: set[str] = set()
+    for path, ref in dp.closure.headers.items():
+        posix = path.as_posix()
+        if ref.kind != "module" and not any(a.fullmatch(posix) or a.search(posix) for a in allow):
+            continue
+        for tag in re.findall(r"\bstruct\s+(\w+)\s*\{", _read(path)):
+            if tag in opaque:
+                defined.add(tag)
+    own = "\n".join(_read(p) for p in dp.module.compiled_tus)
+    own += "\n".join(_read(p) for p, r in dp.closure.headers.items() if r.kind == "module")
+    out: list[str] = []
+    for tag in sorted(defined):
+        plain = tag[1:] if tag.startswith("_") else tag
+        names = [tag, plain, f"P{plain}"]
+        if any(re.search(rf"\b{re.escape(n)}\b", own) for n in names):
+            out.extend(dict.fromkeys(names))
+    return out
+
+
 def emit_profile(dp: DerivedProfile) -> str:
     """The ready-to-paste ``case`` arm for ``gen_driver_types.sh``.
 
@@ -3069,7 +3306,7 @@ def emit_profile(dp: DerivedProfile) -> str:
     # Multi-island profiles use the netapi32 shape: ONE case arm matching every island label,
     # branching WRAPPER_INC/ALLOW_FILES on $DRIVER, with OUT_CRATE_DIR pinned so all islands
     # land in the same crate. TYPES_STEM comes from the env at invocation.
-    labels = "|".join(i.label for i in dp.islands) if multi else m.name
+    labels = "|".join(i.label for i in dp.islands) if multi else m.crate_stem
     out.append(f"  {labels})")
     out.append(
         f"    # AUTO-DERIVED by rustconv.profile_derive on {date.today().isoformat()} from "
@@ -3085,6 +3322,13 @@ def emit_profile(dp: DerivedProfile) -> str:
     )
     out.append("    # that exact sequence is bindgen-able). Review the WHY notes in the report.")
     out.append(f"    USERMODE={1 if m.is_usermode else 0}")
+    if not m.is_usermode:
+        # Real Rust unions, not `__BindgenUnionField<T>`: a translation of C reaches an
+        # anonymous union member as a plain field (`Regs.Control`), and crate-repair routes
+        # that to `__bindgen_anon_N.Control` -- which only typechecks against a real union.
+        # Kernel only, and only because no derived kernel arm predates it: flipping it for a
+        # usermode arm someone already compiles against would rewrite that crate's island.
+        out.append("    REAL_UNIONS=1")
     if m.is_usermode:
         # Emitted as 1 always, and the measurement goes NEXT TO IT rather than into it. A
         # count that nearly separates twelve samples is a count that will pick wrong on the
@@ -3123,6 +3367,14 @@ def emit_profile(dp: DerivedProfile) -> str:
             out.extend("    " + line for line in _allow_files_lines(isl.allow_files))
             out.append("        ;;")
         out.append("    esac")
+    unblock = opaque_types_to_unblock(dp) if not m.is_usermode else []
+    if unblock:
+        out.append(
+            "    # OPAQUE in ntkrnl-sys ({ _address: u8 }) but defined by an allowlisted header "
+            "and named by"
+        )
+        out.append("    # this module's C, so the island emits the real layout (fields reachable).")
+        out.append('    UNBLOCK="' + " ".join(unblock) + '"')
     out.append("    EXTRA_INC=( " + " ".join(dp.extra_inc) + " )")
     if dp.late_inc:
         out.append(
@@ -3321,6 +3573,220 @@ def to_json(dp: DerivedProfile) -> dict:
 # ---------------------------------------------------------------------------
 
 
+_RUST_KEYWORDS = frozenset(
+    {
+        "as",
+        "async",
+        "await",
+        "break",
+        "const",
+        "continue",
+        "crate",
+        "dyn",
+        "else",
+        "enum",
+        "extern",
+        "false",
+        "fn",
+        "for",
+        "if",
+        "impl",
+        "in",
+        "let",
+        "loop",
+        "match",
+        "mod",
+        "move",
+        "mut",
+        "pub",
+        "ref",
+        "return",
+        "self",
+        "static",
+        "struct",
+        "super",
+        "trait",
+        "true",
+        "type",
+        "unsafe",
+        "use",
+        "where",
+        "while",
+        "abstract",
+        "become",
+        "box",
+        "do",
+        "final",
+        "gen",
+        "macro",
+        "override",
+        "priv",
+        "try",
+        "typeof",
+        "unsized",
+        "virtual",
+        "yield",
+    }
+)
+
+
+def _rust_mod_ident(stem: str) -> str:
+    return f"r#{stem}" if stem in _RUST_KEYWORDS else stem
+
+
+#: Appended to a KERNEL crate's scaffold prelude: what every port of a WDM driver needs and
+#: the -sys `ddk` glob does not carry (see the comments inside). Written once for
+#: pciidex/atapi/legide on 2026-10-06; every later kernel port starts from it.
+KERNEL_PRELUDE_EXTRAS = r"""
+// ================= PnP / resource constants the -sys glob does not carry ===================
+// The C switches on these. ntkrnl-sys has them only in `driver_ddk` (hand-written, every
+// arch) and, on x86, `hal_ddk` -- neither is reached by the `ddk` glob the island
+// re-exports, so a bare name in a match arm would bind everything (§9.112). Values: wdm.h.
+pub use ntkrnl_sys::driver_ddk::{
+    IRP_MN_CANCEL_REMOVE_DEVICE, IRP_MN_CANCEL_STOP_DEVICE, IRP_MN_DEVICE_USAGE_NOTIFICATION,
+    IRP_MN_QUERY_CAPABILITIES, IRP_MN_QUERY_DEVICE_RELATIONS, IRP_MN_QUERY_DEVICE_TEXT,
+    IRP_MN_QUERY_ID, IRP_MN_QUERY_INTERFACE, IRP_MN_QUERY_PNP_DEVICE_STATE, IRP_MN_QUERY_POWER,
+    IRP_MN_QUERY_REMOVE_DEVICE, IRP_MN_QUERY_RESOURCES, IRP_MN_QUERY_RESOURCE_REQUIREMENTS,
+    IRP_MN_QUERY_STOP_DEVICE, IRP_MN_REMOVE_DEVICE, IRP_MN_SET_POWER, IRP_MN_START_DEVICE,
+    IRP_MN_STOP_DEVICE, IRP_MN_SURPRISE_REMOVAL,
+};
+// CM_PARTIAL_RESOURCE_DESCRIPTOR.Type is a UCHAR.
+pub const CmResourceTypePort: u8 = 1;
+pub const CmResourceTypeInterrupt: u8 = 2;
+pub const CmResourceTypeMemory: u8 = 3;
+
+// ================= kernel header helpers ======================================================
+// wdm.h/ntddk.h MACROS and MSVC intrinsics the C calls as functions. ntkrnl-sys has portable
+// wrappers for them outside the `ddk` glob (ke, inline::tier1, inline::ke, interlocked), so
+// they are re-exported here BY NAME -- the C's `_`-prefixed intrinsic spellings included.
+// ntkrnl_sys::ke's spin-lock helpers take ITS `PKSPIN_LOCK` (`*mut usize`); a driver's lock
+// fields are the island's (`*mut c_ulonglong` on 64-bit) -- the same width, a distinct Rust
+// type, so a bare re-export made every call site E0308 (16 in atapi). Thin wrappers over the
+// island's type instead.
+#[inline]
+pub unsafe fn KeAcquireSpinLock(SpinLock: PKSPIN_LOCK, OldIrql: *mut KIRQL) {
+    ntkrnl_sys::ke::KeAcquireSpinLock(SpinLock.cast(), OldIrql)
+}
+#[inline]
+pub unsafe fn KeReleaseSpinLock(SpinLock: PKSPIN_LOCK, NewIrql: KIRQL) {
+    ntkrnl_sys::ke::KeReleaseSpinLock(SpinLock.cast(), NewIrql)
+}
+#[inline]
+pub unsafe fn KeAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK) {
+    ntkrnl_sys::ke::KeAcquireSpinLockAtDpcLevel(SpinLock.cast())
+}
+#[inline]
+pub unsafe fn KeReleaseSpinLockFromDpcLevel(SpinLock: PKSPIN_LOCK) {
+    ntkrnl_sys::ke::KeReleaseSpinLockFromDpcLevel(SpinLock.cast())
+}
+pub use ntkrnl_sys::inline::tier1::{
+    IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation,
+    IoMarkIrpPending, IoSetCancelRoutine, IoSetCompletionRoutine, IoSetNextIrpStackLocation,
+    IoSkipCurrentIrpStackLocation,
+};
+// KeRaiseIrql/KeLowerIrql are wdm.h MACROS over KfRaiseIrql/KfLowerIrql: x86 has wrappers in
+// inline::tier1; amd64 writes CR8 inline (inline::mm); arm64 calls the HAL exports.
+#[cfg(target_arch = "x86")]
+pub use ntkrnl_sys::inline::tier1::{KeLowerIrql, KeRaiseIrql};
+#[cfg(target_arch = "x86_64")]
+#[inline]
+pub unsafe fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL) {
+    *OldIrql = ntkrnl_sys::inline::mm::KfRaiseIrql(NewIrql);
+}
+#[cfg(target_arch = "x86_64")]
+#[inline]
+pub unsafe fn KeLowerIrql(NewIrql: KIRQL) {
+    ntkrnl_sys::inline::mm::KfLowerIrql(NewIrql);
+}
+#[cfg(target_arch = "aarch64")]
+extern "C" {
+    fn KfRaiseIrql(NewIrql: KIRQL) -> KIRQL;
+    fn KfLowerIrql(NewIrql: KIRQL);
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+pub unsafe fn KeRaiseIrql(NewIrql: KIRQL, OldIrql: *mut KIRQL) {
+    *OldIrql = KfRaiseIrql(NewIrql);
+}
+#[cfg(target_arch = "aarch64")]
+#[inline]
+pub unsafe fn KeLowerIrql(NewIrql: KIRQL) {
+    KfLowerIrql(NewIrql);
+}
+// ntbasedef.h: `__assume(e)` is an optimiser promise; `RTL_BITS_OF(t)` is sizeof(t) * 8.
+#[inline(always)]
+pub unsafe fn __assume(cond: bool) {
+    core::hint::assert_unchecked(cond)
+}
+#[macro_export] macro_rules! RTL_BITS_OF { ($t:ty $(,)?) => { (core::mem::size_of::<$t>() * 8) }; }
+pub use crate::RTL_BITS_OF;
+pub use ntkrnl_sys::inline::common::InterlockedCompareExchange;
+pub use ntkrnl_sys::inline::common::InterlockedCompareExchange as _InterlockedCompareExchange;
+pub use ntkrnl_sys::inline::ke::{BitScanForward, BitScanReverse};
+pub use ntkrnl_sys::inline::ke::{
+    BitScanForward as _BitScanForward, BitScanReverse as _BitScanReverse,
+};
+pub use ntkrnl_sys::interlocked::{
+    InterlockedAnd, InterlockedCompareExchangePointer, InterlockedDecrement, InterlockedExchangeAdd,
+    InterlockedExchangePointer, InterlockedIncrement, InterlockedOr, InterlockedXor,
+};
+pub use ntkrnl_sys::interlocked::{
+    InterlockedAnd as _InterlockedAnd, InterlockedDecrement as _InterlockedDecrement,
+    InterlockedExchangeAdd as _InterlockedExchangeAdd,
+    InterlockedIncrement as _InterlockedIncrement,
+    InterlockedOr as _InterlockedOr, InterlockedXor as _InterlockedXor,
+};
+
+/// wdm.h: `IoAcquireRemoveLockEx(RemoveLock, Tag, __FILE__, __LINE__, sizeof(IO_REMOVE_LOCK))`.
+#[inline]
+pub unsafe fn IoAcquireRemoveLock(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID) -> NTSTATUS {
+    IoAcquireRemoveLockEx(
+        RemoveLock,
+        Tag,
+        concat!(file!(), "\0").as_ptr() as PCSTR,
+        line!(),
+        core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG,
+    )
+}
+/// wdm.h: `IoReleaseRemoveLockEx(RemoveLock, Tag, sizeof(IO_REMOVE_LOCK))`.
+#[inline]
+pub unsafe fn IoReleaseRemoveLock(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID) {
+    IoReleaseRemoveLockEx(RemoveLock, Tag, core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG)
+}
+/// wdm.h: `IoReleaseRemoveLockAndWaitEx(RemoveLock, Tag, sizeof(IO_REMOVE_LOCK))`.
+#[inline]
+pub unsafe fn IoReleaseRemoveLockAndWait(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID) {
+    IoReleaseRemoveLockAndWaitEx(RemoveLock, Tag, core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG)
+}
+
+// PAGED_CODE() asserts IRQL < DISPATCH_LEVEL in checked builds and is empty otherwise.
+#[macro_export] macro_rules! PAGED_CODE { () => {{}}; }
+// NT_VERIFY(exp) is `((exp) ? TRUE : FALSE)` in a free build: the expression is evaluated.
+#[macro_export] macro_rules! NT_VERIFY { ($e:expr $(,)?) => { ($e) }; }
+// ntbasedef.h: UNREACHABLE is `__builtin_unreachable()`, so reaching it is UB in C too.
+#[macro_export] macro_rules! UNREACHABLE { () => { core::hint::unreachable_unchecked() }; }
+pub use crate::{NT_VERIFY, PAGED_CODE, UNREACHABLE};
+
+// HAL port/register I/O (hal.dll exports on i386/arm64, inline on amd64).
+pub use ntkrnl_sys::portio::*;
+// C's TRUE/FALSE are ints; in kernel code they land in BOOLEAN (UCHAR) far more than BOOL.
+pub const TRUE: BOOLEAN = 1;
+pub const FALSE: BOOLEAN = 0;
+
+// C's min()/max() macros (`((a) < (b) ? (a) : (b))`): both operands already share a type in
+// a translation that compiles, and the C evaluates the winner twice, which no caller here
+// relies on.
+#[inline]
+pub fn min<T: PartialOrd>(a: T, b: T) -> T {
+    if a < b { a } else { b }
+}
+#[inline]
+pub fn max<T: PartialOrd>(a: T, b: T) -> T {
+    if a > b { a } else { b }
+}
+"""
+
+
 def scaffold_crate(
     dp: DerivedProfile,
     out_dir: Path,
@@ -3369,7 +3835,7 @@ def scaffold_crate(
                 f"(pass force=True):\n  {listing}"
             )
         src.mkdir(parents=True, exist_ok=True)
-        (src / m.name).mkdir(exist_ok=True)
+        (src / m.crate_stem).mkdir(exist_ok=True)
         for path, text in planned:
             if path in soft and path.exists() and not force:
                 if kept is not None:
@@ -3384,7 +3850,26 @@ def scaffold_crate(
         if m.is_usermode
         else 'panic-common = { path = "../panic-common", features = ["kernel"] }\n'
         'ntkrnl-sys = { path = "../ntkrnl-sys" }\n'
+        # Kernel crates too: DPRINT1 is win32macros' (DbgPrint is cdecl in ntoskrnl exactly
+        # as in ntdll), and the rest are header macros kernel C uses as much as user C.
+    ) + 'win32macros-rust = { path = "../win32macros-rust" }\n'
+    win32_reexport = ""
+    # The MACROS only, by name: a glob would also pull win32macros' type aliases
+    # (HANDLE, WCHAR) into the prelude next to the island's, and every use of either
+    # becomes E0659 ambiguous.
+    macro_src = dp.env.repo_root / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
+    names = sorted(
+        {
+            n
+            for f in (macro_src.glob("*.rs") if macro_src.is_dir() else [])
+            for n in re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", f.read_text())
+        }
     )
+    if names:
+        win32_reexport = (
+            "// The Win32 header macros, ported once in win32macros-rust, not per module.\n"
+            f"pub use win32macros_rust::{{{', '.join(names)}}};\n"
+        )
     write(
         out_dir / "Cargo.toml",
         f"""# {crate} — see src/lib.rs for the module map.
@@ -3405,10 +3890,11 @@ crate-type = ["staticlib"]
 
     mods = []
     for tu in m.compiled_tus:
-        mods.append(f"    pub mod {tu.stem};")
+        # `enum.c` (atapi) is a Rust keyword: a raw identifier still names enum.rs.
+        mods.append(f"    pub mod {_rust_mod_ident(tu.stem)};")
     write(
         src / "lib.rs",
-        f"""//! {m.name} — Rust translation of {m.module_dir.relative_to(dp.env.repo_root)}.
+        f"""//! {m.crate_stem} — Rust translation of {m.module_dir.relative_to(dp.env.repo_root)}.
 //! staticlib → lib{lib}.a, cohab-linked into the cmake-built {m.name}
 //! ({"usermode" if m.is_usermode else "kernel-mode"} module type `{m.module_type}`).
 //!
@@ -3421,12 +3907,12 @@ crate-type = ["staticlib"]
 #![allow(unused_assignments, static_mut_refs)]
 #![allow(clippy::all)]
 
-pub mod types; // bindgen island, per arch (gen_driver_types.sh {m.name})
+pub mod types; // bindgen island, per arch (gen_driver_types.sh {m.crate_stem})
 #[macro_use]
 pub mod prelude; // the ONE import surface: types glob + debug macros + CRT externs
 
 #[allow(clippy::module_inception)]
-pub mod {m.name} {{
+pub mod {m.crate_stem} {{
 {chr(10).join(mods)}
 }}
 
@@ -3443,7 +3929,16 @@ pub extern "C" fn rust_eh_personality() {{}}
 """,
     )
 
-    reexport = "pub use ntdll_sys::nt::*;" if m.is_usermode else "use ntkrnl_sys::ddk::*;"
+    # A usermode island re-exports ntdll_sys::nt publicly; a KERNEL island's
+    # `use ntkrnl_sys::ddk::*;` is private, so the prelude must glob the kernel types itself.
+    # It said "the island re-exports" for both, and atapi's first resolve reported IRP,
+    # LIST_ENTRY and IO_STACK_LOCATION as "defined nowhere".
+    kernel_glob = (
+        "// The island re-exports the base NT identity: pub use ntdll_sys::nt::*;"
+        if m.is_usermode
+        else "// A kernel island's `use ntkrnl_sys::ddk::*;` is private: glob it here.\n"
+        "pub use ntkrnl_sys::ddk::*;"
+    )
     uses_wine = any("wine/debug.h" in w for w in dp.wrapper_inc)
     debug_block = (
         """// The wine/debug.h channel (TRACE/ERR/WARN/FIXME). Kept as no-op MACROS, never
@@ -3455,11 +3950,15 @@ pub extern "C" fn rust_eh_personality() {{}}
 #[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
 pub use crate::{ERR, FIXME, TRACE, WARN};"""
         if uses_wine
-        else """// reactos/debug.h DPRINT/DPRINT1 — no-op MACROS, never out-of-line fns
-// (field manual §9.65: an out-of-line no-op is an optimization barrier).
+        else """// reactos/debug.h DPRINT/UNIMPLEMENTED — no-op MACROS, never out-of-line fns
+// (field manual §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py
+// rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
+// DPRINT1 PRINTS in this DBG=1 tree, kernel and user mode alike: it comes from
+// win32macros-rust with the other macros.
 #[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! DPRINT1 { ($($arg:tt)*) => {{}}; }
-pub use crate::{DPRINT, DPRINT1};"""
+#[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
+pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};"""
     )
     write(
         src / "prelude.rs",
@@ -3470,6 +3969,8 @@ pub use crate::{DPRINT, DPRINT1};"""
 
 pub use crate::types::*;
 pub use core::ffi::{{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c_void}};
+// C's `size_t`: bindgen spells it `usize` inline, so no island carries the name the C uses.
+pub type size_t = usize;
 pub use core::ptr::{{addr_of, addr_of_mut}};
 
 // ================= debug ======================================================================
@@ -3491,9 +3992,33 @@ pub const NULL: *mut c_void = core::ptr::null_mut();
 pub fn NT_SUCCESS(s: NTSTATUS) -> bool {{
     s >= 0
 }}
-
-// The island re-exports the base {"NT" if m.is_usermode else "kernel"} identity: {reexport}
-""",
+// Translations reach for the C MACRO forms too (`NT_SUCCESS!(st)`, `CONTAINING_RECORD!(p, T, f)`)
+// and a fresh crate otherwise starts with `cannot find macro` in every module that walks a list.
+// Address arithmetic, so neither needs an `unsafe` context of its own.
+#[macro_export] macro_rules! NT_SUCCESS {{ ($s:expr) => {{ (($s) as i32) >= 0 }}; }}
+#[macro_export] macro_rules! CONTAINING_RECORD {{
+    // An indexed member (`Tail.Overlay.DriverContext[0]`): offsetof the array plus the
+    // element stride, as clang folds it -- offset_of! refuses an index.
+    ($addr:expr, $ty:ty, $($field:ident).+ [ $idx:expr ] $(,)?) => {{{{
+        const fn __elem<T, const N: usize>(_: *const [T; N]) -> usize {{
+            core::mem::size_of::<T>()
+        }}
+        let slot = core::mem::MaybeUninit::<$ty>::uninit();
+        let stride = __elem(unsafe {{ core::ptr::addr_of!((*slot.as_ptr()).$($field).+) }});
+        (($addr) as usize - (core::mem::offset_of!($ty, $($field).+) + ($idx) as usize * stride))
+            as *mut $ty
+    }}}};
+    // C's field argument is a member PATH (`Tail.Overlay.ListEntry`), and the model
+    // often leaves a trailing comma after a multi-line call.
+    ($addr:expr, $ty:ty, $($field:ident).+ $(,)?) => {{
+        (($addr) as usize - core::mem::offset_of!($ty, $($field).+)) as *mut $ty
+    }};
+}}
+pub use crate::{{CONTAINING_RECORD, NT_SUCCESS}};
+{win32_reexport}
+{kernel_glob}
+"""
+        + ("" if m.is_usermode else KERNEL_PRELUDE_EXTRAS),
     )
 
     write_unless_generated(
@@ -3515,7 +4040,7 @@ pub use types_arch::*;
 // island become silent catch-all match arms (field manual §9.112). So this fails the build
 // loudly instead of compiling as an empty module.
 compile_error!(
-    "types_{arch}.rs is a placeholder: run tools/rustconv/gen_driver_types.sh {m.name} \\
+    "types_{arch}.rs is a placeholder: run tools/rustconv/gen_driver_types.sh {m.crate_stem} \\
      (add the derived profile first) to generate the real island."
 );
 """,

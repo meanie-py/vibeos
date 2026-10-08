@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import re
 import sys
 from pathlib import Path
 
@@ -44,14 +45,14 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from verify_ucrtbase_cohab import (  # noqa: E402
-    OURS_ON_LINK_LINE,
+    OURS_REFERENCE,
     _nm_defined,
     _spec_exports,
 )
 
 SPEC = REPO / "dll" / "win32" / "ucrtbase" / "ucrtbase.spec"
 UCRT_OBJ_DIR = Path("sdk/lib/ucrt/CMakeFiles/ucrt.dir")
-#: ucrtbase's own TUs, and the Rust archive, which live outside OURS_ON_LINK_LINE.
+#: ucrtbase's own TUs, and the Rust archive, which live outside OURS_REFERENCE.
 OWN_OBJ_DIR = Path("dll/win32/ucrtbase/CMakeFiles/ucrtbase.dir")
 RUST_ARCHIVE = Path("dll/win32/ucrtbase/libcrt_shared_cargo.a")
 
@@ -72,12 +73,18 @@ def classify(arch: str) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
             f"ucrt_burndown: no build tree at {build}\n  fix: ./vibeos-cli build --arch {arch}"
         )
 
-    ucrt_objs = sorted((build / UCRT_OBJ_DIR).rglob("*.obj"))
-    if not ucrt_objs:
-        raise SystemExit(f"ucrt_burndown: no ucrt objects under {build / UCRT_OBJ_DIR}")
+    # The LINK LINE, not a glob of the object dir: since 2026-10-03 there is no ucrt
+    # target, so a glob only ever finds objects a past build or a `--takeover-from`
+    # sweep's pre-build left behind -- Microsoft C counted as live that nothing links.
+    # No ucrt object on the link line means none is linked: MICROSOFT is 0, not an error.
+    ninja = build / "build.ninja"
+    if not ninja.is_file():
+        raise SystemExit(f"ucrt_burndown: no {ninja}\n  fix: ./vibeos-cli build --arch {arch}")
+    linked = set(re.findall(re.escape(str(UCRT_OBJ_DIR)) + r"/\S+?\.obj", ninja.read_text()))
+    ucrt_objs = sorted(build / o for o in linked if (build / o).is_file())
 
     ours_paths: list[Path] = []
-    for rel in OURS_ON_LINK_LINE.values():
+    for rel in OURS_REFERENCE.values():
         ours_paths += sorted((build / rel).rglob("*.obj"))
     ours_paths += sorted((build / OWN_OBJ_DIR).rglob("*.obj"))
     if (build / RUST_ARCHIVE).is_file():

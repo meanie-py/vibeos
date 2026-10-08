@@ -264,7 +264,7 @@ unsafe fn get_irot_handle() -> IrotHandle {
     irot_handle
 }
 
-unsafe fn start_rpcss() -> BOOL {
+pub(crate) unsafe fn start_rpcss() -> BOOL {
     const RPCSSW: [u16; 6] = [
         b'R' as u16,
         b'p' as u16,
@@ -423,6 +423,8 @@ unsafe fn get_moniker_comparison_data(
                 hr
             );
             HeapFree(GetProcessHeap(), 0, *moniker_data as LPVOID);
+            // wine-10: the caller's cleanup (rot_entry_delete) frees it again.
+            *moniker_data = core::ptr::null_mut();
             return hr;
         }
         (**moniker_data).ulCntData = size;
@@ -1007,6 +1009,11 @@ fn RunningObjectTableImpl_GetObject(
             {
                 let mut pStream: *mut IStream = core::ptr::null_mut();
                 hr = create_stream_on_mip_ro((*rot_entry).object, &mut pStream);
+                // wine-10: drop the ROT lock BEFORE unmarshalling. Unmarshal can
+                // call out of apartment, and a server that touches this ROT from
+                // there would deadlock against us.
+                LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
+
                 if hr == S_OK {
                     hr = CoUnmarshalInterface(
                         pStream,
@@ -1016,7 +1023,6 @@ fn RunningObjectTableImpl_GetObject(
                     IStream_Release(pStream);
                 }
 
-                LeaveCriticalSection(core::ptr::addr_of_mut!((*This).lock));
                 HeapFree(GetProcessHeap(), 0, moniker_data as LPVOID);
 
                 return hr;

@@ -16,8 +16,4 @@ add_executable(msxml4_winetest
 set_module_type(msxml4_winetest win32cui)
 add_importlibs(msxml4_winetest ole32 oleaut32 msvcrt kernel32)
 
-if(MSVC)
-    add_importlibs(msxml4_winetest ntdll)
-endif()
-
 add_rostests_file(TARGET msxml4_winetest)

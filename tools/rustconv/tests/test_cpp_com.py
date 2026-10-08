@@ -9,11 +9,11 @@ from rustconv.call_seal import seal_calls, unseal_calls
 from rustconv.callgraph import FunctionDep, extract_call_graph
 from rustconv.config import REACTOS_ROOT, SHELL32_ISLAND_FILES, TARGETS, detect_target
 from rustconv.cpp_com import (
-    _drop_duplicate_type_definitions,
     _WINDOWS_SCALAR_TYPEDEFS,
     CppComError,
     InterfaceMethod,
     InterfaceSpec,
+    _drop_duplicate_type_definitions,
     _parse_plain_state_field,
     _state_field_name,
     _vtbl_declared_slots,
@@ -55,9 +55,28 @@ SHELL32 = REACTOS_ROOT / "dll" / "win32" / "shell32"
 # a code defect — so gate those cases explicitly instead of leaving `check-tooling` red for
 # everyone who hasn't built i386 here yet.
 GENERATED_PSDK_I386 = REACTOS_ROOT / "build-i386" / "sdk" / "include" / "psdk"
+
+
+def _generated_psdk_ready(psdk: Path) -> bool:
+    """The generated shell headers are there and COMPLETE, not merely the directory.
+
+    The gate's `--clean` builds run concurrently with check-tooling: configure recreates
+    build-<arch>/sdk/include/psdk long before widl writes shobjidl.h into it, so a
+    directory check let these tests read a half-built tree (master's own gate went red
+    TOOLING_FAIL on 2026-10-05 with "no flattened vtable definition found"). widl ends
+    every header with its include guard's #endif, so that line proves the write finished.
+    """
+    header = psdk / "shobjidl.h"
+    try:
+        text = header.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return text.rstrip().endswith("#endif /* __shobjidl_h__ */")
+
+
 needs_generated_psdk_i386 = pytest.mark.skipif(
-    not GENERATED_PSDK_I386.is_dir(),
-    reason=f"needs widl-generated headers in {GENERATED_PSDK_I386} (build i386 first)",
+    not _generated_psdk_ready(GENERATED_PSDK_I386),
+    reason=f"needs complete widl-generated headers in {GENERATED_PSDK_I386} (build i386 first)",
 )
 
 # Same rule, amd64. This one was missing and it cost a bogus merge-train rejection
@@ -69,8 +88,8 @@ needs_generated_psdk_i386 = pytest.mark.skipif(
 # builds would serialize the gate; declaring the dependency is the cheap half.
 GENERATED_PSDK_AMD64 = REACTOS_ROOT / "build-amd64" / "sdk" / "include" / "psdk"
 needs_generated_psdk_amd64 = pytest.mark.skipif(
-    not GENERATED_PSDK_AMD64.is_dir(),
-    reason=f"needs widl-generated headers in {GENERATED_PSDK_AMD64} (build amd64 first)",
+    not _generated_psdk_ready(GENERATED_PSDK_AMD64),
+    reason=f"needs complete widl-generated headers in {GENERATED_PSDK_AMD64} (build amd64 first)",
 )
 
 WIDL_HEADER = r"""
@@ -3533,26 +3552,30 @@ class TestDeleteThisLowering:
         assert "__rustconv_delete" not in out
 
 
-def test_header_discovery_retries_disappearing_directory(tmp_path, monkeypatch):
+def _vanish_on_scan(monkeypatch, victim: Path) -> list:
+    """os.scandir that deletes `victim` the first time the walk reaches it."""
     import os
 
-    from rustconv.cpp_com import _header_files
-
-    scratch = tmp_path / "scratch"
-    scratch.mkdir()
-    header = tmp_path / "real.h"
-    header.write_text("struct ActualState { int value; };\n")
-    accessor = getattr(Path, "_accessor", os)
-    scanned = accessor.scandir
+    scanned = os.scandir
     raced = []
 
     def disappear(path):
-        if Path(path) == scratch and not raced:
+        if Path(path) == victim and not raced:
             raced.append(True)
-            scratch.rmdir()
+            victim.rmdir()
         return scanned(path)
 
-    monkeypatch.setattr(accessor, "scandir", disappear)
+    monkeypatch.setattr(os, "scandir", disappear)
+    return raced
+
+
+def test_header_discovery_skips_a_vanishing_scratch_directory(tmp_path, monkeypatch):
+    from rustconv.cpp_com import _header_files
+
+    (tmp_path / "tmp6af3226e").mkdir()
+    header = tmp_path / "real.h"
+    header.write_text("struct ActualState { int value; };\n")
+    raced = _vanish_on_scan(monkeypatch, tmp_path / "tmp6af3226e")
     assert _header_files(tmp_path) == [header]
     assert raced
 
@@ -3560,20 +3583,17 @@ def test_header_discovery_retries_disappearing_directory(tmp_path, monkeypatch):
 def test_header_discovery_never_returns_partial_corpus(tmp_path, monkeypatch):
     from rustconv.cpp_com import _header_files
 
-    attempts = []
-
-    def interrupted(root, pattern):
-        attempts.append(root)
-        yield root / "partial.h"
-        raise FileNotFoundError("directory churn")
-
-    monkeypatch.setattr(Path, "rglob", interrupted)
-    with pytest.raises(FileNotFoundError, match="directory churn"):
+    (tmp_path / "real.h").write_text("int x;\n")
+    (tmp_path / "subdir").mkdir()
+    (tmp_path / "subdir" / "more.h").write_text("int y;\n")
+    (tmp_path / "subdir").joinpath("more.h").unlink()
+    raced = _vanish_on_scan(monkeypatch, tmp_path / "subdir")
+    # A real directory vanishing mid-walk is churn in the corpus itself: raise.
+    with pytest.raises(FileNotFoundError):
         _header_files(tmp_path)
-    assert len(attempts) == 3
+    assert raced
     with pytest.raises(FileNotFoundError):
         _header_files(tmp_path / "missing")
-    assert len(attempts) == 3
 
 
 def test_elaborated_struct_state_field_is_the_same_type_as_the_bare_spelling():

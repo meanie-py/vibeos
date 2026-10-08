@@ -202,7 +202,7 @@ pub struct PresentationDataHeader {
 
 pub type PPresentationDataHeader = *mut PresentationDataHeader;
 
-/// The one and only ole_clipbrd object which is created by OLEClipbrd_Initialize()
+/// The one and only ole_clipbrd object, created on first use by clipbrd_create()
 pub static mut theOleClipboard: *mut ole_clipbrd = core::ptr::null_mut();
 
 static LATEST_SNAPSHOT_CS_NAME: &[u8; 34] = b"clipboard.c: clipboard last snap\0\0";
@@ -312,13 +312,27 @@ unsafe fn impl_from_IDataObject(iface: *mut IDataObject) -> *mut snapshot {
     CONTAINING_RECORD!(iface, snapshot, IDataObject_iface)
 }
 
-unsafe fn get_ole_clipbrd(clipbrd: *mut *mut ole_clipbrd) -> HRESULT {
-    let info = crate::compobj::compobj::COM_CurrentInfo();
-    *clipbrd = core::ptr::null_mut();
+/// static INIT_ONCE init_once = INIT_ONCE_STATIC_INIT (get_ole_clipbrd's)
+static mut clipbrd_init_once: crate::compobj::ffi::INIT_ONCE = core::ptr::null_mut();
 
-    if (*info).ole_inits == 0 {
+/// wine-10: the clipboard object is created lazily on first use and lives until
+/// process detach (clipbrd_destroy). It no longer depends on OleInitialize -- the
+/// old `ole_inits == 0 -> CO_E_NOTINITIALIZED` here made OleGetClipboard fail
+/// before OleInitialize, and Wine's test_get_clipboard_uninitialized then released
+/// the NULL it got back. The entry points that DO need OLE initialized
+/// (OleSetClipboard, OleFlushClipboard) check ole_inits themselves.
+unsafe fn get_ole_clipbrd(clipbrd: *mut *mut ole_clipbrd) -> HRESULT {
+    if crate::compobj::ffi::InitOnceExecuteOnce(
+        core::ptr::addr_of_mut!(clipbrd_init_once),
+        Some(clipbrd_create),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    ) == 0
+    {
+        *clipbrd = core::ptr::null_mut();
         return CO_E_NOTINITIALIZED;
     }
+
     *clipbrd = theOleClipboard;
 
     S_OK
@@ -1313,7 +1327,8 @@ unsafe fn get_tymed_from_nonole_cf(cf: UINT) -> DWORD {
     }
 
     match cf {
-        CF_TEXT | CF_OEMTEXT | CF_UNICODETEXT => TYMED_ISTREAM | TYMED_HGLOBAL,
+        // wine-10 adds CF_HDROP (dropped files are an HGLOBAL DROPFILES).
+        CF_TEXT | CF_OEMTEXT | CF_UNICODETEXT | CF_HDROP => TYMED_ISTREAM | TYMED_HGLOBAL,
         CF_ENHMETAFILE => TYMED_ENHMF,
         CF_METAFILEPICT => TYMED_MFPICT,
         CF_BITMAP => TYMED_GDI,
@@ -2074,21 +2089,25 @@ unsafe fn register_clipboard_formats() {
     wine_marshal_clipboard_format = RegisterClipboardFormatW(WineMarshalledDataObject.as_ptr());
 }
 
-/// Initializes the OLE clipboard.
-#[no_mangle]
-pub unsafe extern "C" fn OLEClipbrd_Initialize() {
+/// wine-10 clipbrd_create: the InitOnce callback that creates the clipboard object.
+unsafe extern "system" fn clipbrd_create(
+    _init_once: *mut crate::compobj::ffi::INIT_ONCE,
+    _parameter: LPVOID,
+    _context: *mut LPVOID,
+) -> BOOL {
+    TRACE!(b"()\n\0".as_ptr());
+
     register_clipboard_formats();
 
-    if theOleClipboard.is_null() {
-        TRACE!(b"()\n\0".as_ptr());
-
+    {
         let clipbrd = HeapAlloc(
             GetProcessHeap(),
             0,
             core::mem::size_of::<ole_clipbrd>() as SIZE_T,
         ) as *mut ole_clipbrd;
         if clipbrd.is_null() {
-            return;
+            ERR!(b"No memory.\n\0".as_ptr());
+            return 0;
         }
 
         (*clipbrd).latest_snapshot = core::ptr::null_mut();
@@ -2098,8 +2117,9 @@ pub unsafe extern "C" fn OLEClipbrd_Initialize() {
 
         let h: HGLOBAL = GlobalAlloc(GMEM_DDESHARE | GMEM_MOVEABLE, 0);
         if h.is_null() {
+            ERR!(b"No memory.\n\0".as_ptr());
             HeapFree(GetProcessHeap(), 0, clipbrd as LPVOID);
-            return;
+            return 0;
         }
 
         if FAILED(CreateStreamOnHGlobal(
@@ -2107,13 +2127,15 @@ pub unsafe extern "C" fn OLEClipbrd_Initialize() {
             1,
             core::ptr::addr_of_mut!((*clipbrd).marshal_data),
         )) {
+            ERR!(b"CreateStreamOnHGlobal failed.\n\0".as_ptr());
             GlobalFree(h);
             HeapFree(GetProcessHeap(), 0, clipbrd as LPVOID);
-            return;
+            return 0;
         }
 
         theOleClipboard = clipbrd;
     }
+    1
 }
 
 /// Enumerate all formats supported by the source and make those formats available
@@ -2344,9 +2366,11 @@ unsafe fn set_src_dataobject(clipbrd: *mut ole_clipbrd, data: *mut IDataObject) 
     hr
 }
 
-/// Un-Initializes the OLE clipboard
-#[no_mangle]
-pub unsafe extern "C" fn OLEClipbrd_UnInitialize() {
+/// wine-10 clipbrd_uninitialize (OleUninitialize): drops the source data object and
+/// the clipboard window, but KEEPS the object -- get_ole_clipbrd's InitOnce will
+/// never recreate it, so freeing it here would leave theOleClipboard dangling for
+/// the next OleInitialize. The object goes in clipbrd_destroy at process detach.
+pub unsafe fn clipbrd_uninitialize() {
     let clipbrd: *mut ole_clipbrd = theOleClipboard;
 
     TRACE!(b"()\n\0".as_ptr());
@@ -2367,12 +2391,24 @@ pub unsafe extern "C" fn OLEClipbrd_UnInitialize() {
         if !(*clipbrd).window.is_null() {
             DestroyWindow((*clipbrd).window);
             UnregisterClassW(clipbrd_wndclass.as_ptr(), hinst);
+            (*clipbrd).window = core::ptr::null_mut();
         }
-
-        IStream_Release((*clipbrd).marshal_data);
-        HeapFree(GetProcessHeap(), 0, clipbrd as LPVOID);
-        theOleClipboard = core::ptr::null_mut();
     }
+}
+
+/// wine-10 clipbrd_destroy (DllMain, DLL_PROCESS_DETACH): free the object itself.
+pub unsafe fn clipbrd_destroy() {
+    let clipbrd: *mut ole_clipbrd = theOleClipboard;
+
+    if clipbrd.is_null() {
+        return;
+    }
+
+    clipbrd_uninitialize();
+
+    IStream_Release((*clipbrd).marshal_data);
+    HeapFree(GetProcessHeap(), 0, clipbrd as LPVOID);
+    theOleClipboard = core::ptr::null_mut();
 }
 
 unsafe extern "system" fn clipbrd_wndproc(
@@ -2523,6 +2559,10 @@ pub unsafe extern "system" fn OleSetClipboard(data: *mut IDataObject) -> HRESULT
 
     TRACE!(b"(%p)\n\0".as_ptr(), data);
 
+    if (*crate::compobj::compobj::COM_CurrentInfo()).ole_inits == 0 {
+        return CO_E_NOTINITIALIZED;
+    }
+
     let mut hr = get_ole_clipbrd(&mut clipbrd);
     if FAILED(hr) {
         return hr;
@@ -2625,6 +2665,10 @@ pub unsafe extern "system" fn OleFlushClipboard() -> HRESULT {
     let mut hr = get_ole_clipbrd(&mut clipbrd);
     if FAILED(hr) {
         return hr;
+    }
+
+    if (*crate::compobj::compobj::COM_CurrentInfo()).ole_inits == 0 {
+        return E_FAIL;
     }
 
     hr = get_clipbrd_window(clipbrd, &mut wnd);

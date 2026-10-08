@@ -24,7 +24,6 @@ target_include_directories(userinit_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # OBJECT lib stays (EXTRA_DEPENDS below) to populate compile_commands.json.
 set(USERINIT_REUSED
     ${CMAKE_BINARY_DIR}/sdk/lib/libwine/libwine.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libmsvcrtex.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 
 add_cargo_module(userinit userinit-cargo userinit.exe

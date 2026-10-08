@@ -80,6 +80,12 @@ BATCH_CAP = max(1, int(os.environ.get("VIBEOS_QUEUE_BATCH", "4")))
 PIPELINE_DEPTH = max(1, int(os.environ.get("VIBEOS_QUEUE_DEPTH", "2")))
 INTEGRATION_BRANCH = "integration"
 INTEGRATION_DIRNAME = "vibeos-integration"
+CONDUCTOR_DIRNAME = "vibeos-conductor"
+JOURNAL_FILE = "journal.log"
+JOURNAL_MAX_BYTES = 8 << 20
+# "<pid>:<lane>" of a conductor that holds the land lock and hands its drain to a pinned
+# child (see `_conduct_pinned`). Read once and deleted, so nothing the drain runs inherits it.
+HANDOFF_ENV = "VIBEOS_CONDUCTOR_HANDOFF"
 
 
 def integration_names(slot: int) -> tuple[str, str]:
@@ -743,6 +749,144 @@ def _seed_gitignored_boot_assets(repo: Path, dest: Path) -> None:
                 pass
 
 
+# Ignored state a scrub KEEPS: the toolchain, the venv, tool caches, and the firmware the
+# arm64 boot needs. Everything else that is ignored is a build product of SOME commit.
+_SCRUB_KEEP = (
+    ".build-tools",
+    ".venv",
+    ".cache",
+    "__pycache__",
+    ".ruff_cache",
+    ".pytest_cache",
+    "/qemu/QEMU_EFI.fd",
+    "/qemu/efivars.fd",
+)
+
+
+def scrub_build_state(repo: Path, wt: Path) -> None:
+    """Delete every ignored build product in `wt` (build-*, cargo targets, boot media, staged
+    payloads), so the next gate there sees only what the checked-out commit itself produces.
+
+    WHY (2026-09-26, twice in one afternoon): the base check is meant to say whether
+    origin/master ALONE is green, but `git clean -fdq` keeps ignored files, so it gated master
+    on top of whatever the previous submission had built. First a ucrtbase ratchet test
+    measured the last batch's objects and failed; then a submission's WoW64 guests sat in
+    build-i386 and made master's amd64 configure walk a closure master never builds alone.
+    Both times the train announced "mainline is broken", auto-held the line, and blamed no
+    one. `--clean` does not cover this: it removes cargo outputs, not CMake caches or staged
+    media. The cost is a fresh configure plus cache-hit rebuilds, paid only when a lone
+    submission has already come back red."""
+    excludes = [a for k in _SCRUB_KEEP for a in ("-e", k)]
+    git(wt, "clean", "-fdqx", *excludes)
+    _seed_gitignored_boot_assets(repo, wt)
+
+
+def conductor_path(repo: Path) -> Path:
+    return cachecfg.vibeos_root(repo) / CONDUCTOR_DIRNAME
+
+
+def pin_conductor_checkout(repo: Path) -> Path:
+    """The checkout the drain runs from: origin/master, freshly fetched. CALLER MUST HOLD the
+    land lock, which is also what guarantees nothing is running from it while it moves.
+
+    Tool-owned and detached, like the integration trees; no lane ever works in it."""
+    path = conductor_path(repo)
+    git(repo, "fetch", "origin")
+    if not (path / ".git").exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        git(repo, "worktree", "add", "--detach", str(path), "origin/master")
+    else:
+        git(path, "checkout", "-q", "--detach", "--force", "origin/master")
+        git(path, "clean", "-fdq")
+    return path
+
+
+def _running_from(path: Path) -> bool:
+    try:
+        return Path(__file__).resolve().parents[3] == path.resolve()
+    except OSError:
+        return False
+
+
+def _wants_pinned_conductor(repo: Path) -> bool:
+    if os.environ.get("VIBEOS_CONDUCTOR_PIN", "1").lower() in ("0", "false", "no"):
+        return False
+    return not _running_from(conductor_path(repo))
+
+
+def _conduct_pinned(repo: Path, log, *, retries: int) -> None:
+    """Run the drain with MASTER's queue code. CALLER MUST HOLD the land lock.
+
+    WHY (2026-09-26): the conductor is whoever wins the election, and it used to drain with
+    its OWN worktree's copy of this file. The merge train landed at 15:00 and the next drain
+    was still serial, because the conformance lane that won it had not merged master. So a
+    fix to the queue reached the queue only as fast as lanes happened to merge, and which
+    rules a drain obeyed depended on who won the lock. Now the winner keeps the lock and runs
+    the drain as a child in a checkout pinned to origin/master. The gate was never the
+    problem: it always ran the batch's own code in the integration tree.
+
+    The child must not take the lock its parent holds, and it must not learn that by an
+    environment switch everything below it inherits. The first version passed
+    VIBEOS_LAND_LOCK=0, which reached the gate's check-tooling, made land_lock() a no-op in
+    six unit tests, and had the queue call master red and hold the line (2026-10-03, 11:01).
+    Now the child gets the parent's pid (HANDOFF_ENV), proves it against the lock's live
+    holder, and deletes it from its own environment before draining."""
+    cond = pin_conductor_checkout(repo)
+    head = git(cond, "rev-parse", "HEAD")
+    pinned_queue = cond / "tests" / "qemu" / "cli" / "queue.py"
+    if HANDOFF_ENV not in pinned_queue.read_text(errors="replace"):
+        # Master predates the handoff, so its drain would WAIT on the lock held right here.
+        log(f"queue: {cond.name} @ {head[:12]} cannot take a handoff yet -- draining in-process")
+        drain(repo, journaled(repo, log), retries=retries)
+        return
+    log(f"queue: conducting with master's queue code ({cond.name} @ {head[:12]})")
+    env = dict(os.environ, VIBEOS_CONDUCTOR_PIN="0")
+    env[HANDOFF_ENV] = f"{os.getpid()}:{lane_id(repo)}"
+    proc = subprocess.Popen(
+        [str(cond / "vibeos-cli"), "land", "--drain", "--foreground", "--retries", str(retries)],
+        cwd=str(cond),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=env,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        log(line.rstrip("\n"))
+    rc = proc.wait()
+    if rc != 0:
+        raise NoVerdict(
+            f"the pinned conductor ({cond.name} @ {head[:12]}) exited {rc}; its lines are above. "
+            "Anything it did not judge stays QUEUED"
+        )
+
+
+def journaled(repo: Path, log, *, who: str | None = None):
+    """`log`, plus a timestamped copy in the queue dir's journal.
+
+    WHY: every conductor log lived under /tmp/vibeos-cli, and a reboot on 2026-10-02 erased
+    the only record of how the train had behaved for a week. The queue's own state already
+    lives in the git common dir; its history belongs beside it. One rotation keeps it
+    bounded."""
+    path = queue_dir(repo) / JOURNAL_FILE
+    who = who or lane_id(repo)
+
+    def _log(msg: str) -> None:
+        log(msg)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.is_file() and path.stat().st_size > JOURNAL_MAX_BYTES:
+                path.replace(path.with_name(JOURNAL_FILE + ".1"))
+            stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            with open(path, "a") as fh:
+                for line in str(msg).splitlines() or [""]:
+                    fh.write(f"{stamp} [{who}] {line}\n")
+        except OSError:
+            pass
+
+    return _log
+
+
 # ── the train ───────────────────────────────────────────────────────────────
 
 
@@ -1107,7 +1251,7 @@ def inert_only_batch(wt: Path) -> list[str]:
     return [p for p in paths if not is_inert(p)]
 
 
-def gate_batch(wt: Path, log, *, retries: int = 2) -> GateVerdict:
+def gate_batch(wt: Path, log, *, retries: int = 2, clean: bool = True) -> GateVerdict:
     """Run the FULL gate in the integration tree. This is the only place a batch is judged —
     no batch is ever presumed green.
 
@@ -1138,7 +1282,10 @@ def gate_batch(wt: Path, log, *, retries: int = 2) -> GateVerdict:
     # `--keep-going` (ninja -k0) is the other half: the three breaks were found ONE PER BUILD
     # because ninja halts at the first failing edge. A verdict build wants the whole failure set
     # in one pass. VIBEOS_QUEUE_CLEAN=0 opts out if a batch ever needs to be fast over sure.
-    if os.environ.get("VIBEOS_QUEUE_CLEAN", "1").lower() not in ("0", "false", "no"):
+    # `clean=False` is for re-gating a tree this drain has ALREADY built cold (the base
+    # check's confirming run): the cold build already proved it, and repeating it would buy
+    # nothing but time.
+    if clean and os.environ.get("VIBEOS_QUEUE_CLEAN", "1").lower() not in ("0", "false", "no"):
         cmd += ["--clean", "--keep-going"]
     cp = subprocess.run(
         cmd,
@@ -1184,6 +1331,19 @@ class BaseRed(NoVerdict):
 
 class Inconclusive(NoVerdict):
     """The gate failed for a reason that is not evidence about the code: the environment."""
+
+
+class FlakyBase(NoVerdict):
+    """A lone submission failed only stages that the base itself just failed and then passed
+    on a re-run. Its red is indistinguishable from the base's flake, so it is neither
+    rejected nor landed: it stays QUEUED for a later drain. No hold — master is not red."""
+
+
+def _timing_only(v: GateVerdict) -> bool:
+    """Did this red gate fail ONLY timing-sensitive stages? False when there is no per-stage
+    evidence: an unparsed summary proves nothing either way."""
+    failed = [name for name, status in v.stages.items() if status == "fail"]
+    return bool(failed) and not any(_is_deterministic(name) for name in failed)
 
 
 # A red gate with one of these classifications says nothing about the submission — the host
@@ -1244,6 +1404,9 @@ class BaseCheck:
         self.classification = ""
         self.salient = ""
         self.stages: Mapping[str, str] = _NO_STAGES
+        # Stages the base failed once and then passed on the confirming re-gate. A lone
+        # submission red on these alone cannot be told apart from the base's own flake.
+        self.flaked: frozenset[str] = frozenset()
         self.landed: list[str] = []  # lanes landed EARLIER in this same drain
 
     def is_green(self, repo: Path, wt: Path, log, *, retries: int) -> bool:
@@ -1252,16 +1415,50 @@ class BaseCheck:
         log("queue: a lone submission failed — gating the BASE alone to see who is at fault")
         git(wt, "fetch", "origin")
         git(wt, "reset", "--hard", "origin/master")
-        git(wt, "clean", "-fdq")
+        scrub_build_state(repo, wt)
         v = gate_batch(wt, log, retries=retries)
+        if not v.ok and _timing_only(v):
+            # CONFIRM BEFORE HOLDING THE LINE. A base red is the most expensive verdict the
+            # queue renders: it auto-holds every lane until master moves. On 2026-10-04 it
+            # was rendered twice on ONE run of a timing-sensitive stage -- a spawn32 race in
+            # the test itself (0xBAE4), then an arm64 BUGCHECK -- and each time master was
+            # not broken; four lanes sat behind the first hold and nothing queued could
+            # move master to lift it. The confirming run is WARM: this tree was just built
+            # cold, so it costs boots, not builds.
+            #
+            # This retries no regression INTO master: the base is already master. It only
+            # decides whether to stop everyone else. A bug that reproduces still holds.
+            failed = sorted(n for n, st in v.stages.items() if st == "fail")
+            log(
+                f"queue: base failed only timing-sensitive stages ({', '.join(failed)}) — "
+                "re-gating it once, warm, before holding the line"
+            )
+            again = gate_batch(wt, log, retries=retries, clean=False)
+            if again.ok:
+                self.flaked = frozenset(failed)
+                v = again
+            else:
+                v = again._replace(
+                    salient=f"{again.salient or v.salient} (red on a confirming re-gate too; "
+                    f"first run: {v.artifact or '(none)'})"
+                )
         self.verdict, self.classification = v.ok, v.classification
         self.artifact, self.salient, self.stages = v.artifact, v.salient, v.stages
-        log(
-            "queue: BASE is GREEN — the submission really is the culprit"
-            if v.ok
-            else f"queue: BASE ITSELF IS RED ({v.classification}) — mainline is broken"
-        )
+        if v.ok and self.flaked:
+            flaked = ", ".join(sorted(self.flaked))
+            log(f"queue: BASE is GREEN on a re-gate — it flaked on {flaked}; not holding the line")
+        else:
+            log(
+                "queue: BASE is GREEN — the submission really is the culprit"
+                if v.ok
+                else f"queue: BASE ITSELF IS RED ({v.classification}) — mainline is broken"
+            )
         return v.ok
+
+    def explains(self, stages: Mapping[str, str]) -> bool:
+        """Is every stage this submission failed one the base itself flaked on?"""
+        failed = {name for name, status in stages.items() if status == "fail"}
+        return bool(failed) and failed <= self.flaked
 
     def own_faults(self, stages: Mapping[str, str]) -> list[str]:
         """The DETERMINISTIC stages this submission fails that the base RAN AND PASSED.
@@ -1539,6 +1736,17 @@ def judge_car(
                 + f"The train is halted: nothing can land on a red base. "
                 f"Artifact: {base.artifact or '(none)'}"
             )
+        if base.explains(verdict.stages):
+            # Rejecting here would convict the lane for the base's own flake; landing would
+            # retry a possible regression away. Neither: it goes again in a later drain.
+            stages = ", ".join(sorted(n for n, st in verdict.stages.items() if st == "fail"))
+            log(f"queue: {sub.lane} {sub.tip[:12]} failed only {stages}, as the base did once")
+            raise FlakyBase(
+                f"{sub.lane} failed only {stages}, and origin/master failed the same and then "
+                f"passed on a re-gate, so this red says nothing about the lane. It stays "
+                f"QUEUED; nothing was rejected and the line is not held. "
+                f"Artifact: {artifact or '(none)'}"
+            )
         log(f"queue: REJECTED {sub.lane} {sub.tip[:12]} — {classification or 'gate red'}")
         # Say what it was gated AGAINST. "red on this submission alone" is misleading when an
         # earlier half of the same batch has already landed: the lane may be green against the
@@ -1749,6 +1957,21 @@ def drain(
         batches += 1
 
 
+def _drain_handed_off(repo: Path, log, handoff: str, *, retries: int) -> bool:
+    """Drain without taking the land lock, because the parent named in `handoff` holds it.
+    Refuses unless that parent is the lock's live holder: a stale or copied token must
+    never become an unlocked drain."""
+    pid, _, lane = handoff.partition(":")
+    holder = hostlock.land_holder() if hostlock.land_lock_enabled() else {}
+    if hostlock.land_lock_enabled() and str(holder.get("pid")) != pid:
+        raise QueueError(
+            f"handed a drain by pid {pid}, but the land lock's holder is "
+            f"{holder.get('pid') or 'nobody'}; refusing to drain without the lock"
+        )
+    drain(repo, journaled(repo, log, who=lane or None), retries=retries)
+    return True
+
+
 def try_become_conductor(repo: Path, log, *, retries: int = 2, timeout: float = 0.0) -> bool:
     """Take the land lock and drain. Returns False if the lock could not be had in `timeout`.
 
@@ -1765,9 +1988,15 @@ def try_become_conductor(repo: Path, log, *, retries: int = 2, timeout: float = 
     conductor that wakes to an empty queue exits in ~1s, so several waiters are cheap rather
     than wasteful. Callers that genuinely cannot block (the inline-from-submit convenience path)
     keep passing 0.0."""
+    handoff = os.environ.pop(HANDOFF_ENV, "")
+    if handoff:
+        return _drain_handed_off(repo, log, handoff, retries=retries)
     try:
         with hostlock.land_lock(f"conductor:{lane_id(repo)}", timeout=timeout, repo=str(repo)):
-            drain(repo, log, retries=retries)
+            if _wants_pinned_conductor(repo):
+                _conduct_pinned(repo, log, retries=retries)
+            else:
+                drain(repo, journaled(repo, log), retries=retries)
         return True
     except hostlock.LandLockBusy:
         return False

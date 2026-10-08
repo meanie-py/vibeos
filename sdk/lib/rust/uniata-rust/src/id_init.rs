@@ -268,6 +268,8 @@ pub unsafe extern "system" fn UniataChipDetectChannels(
         n += 1;
         i >>= 1;
     }
+    let channels_before = (*deviceExtension).NumberChannels;
+    let default_mask = 0xffffffffu32 >> (32 - channels_before);
 
     match VendorID {
         ATA_ACER_LABS_ID => {
@@ -276,6 +278,18 @@ pub unsafe extern "system" fn UniataChipDetectChannels(
                     (*deviceExtension).NumberChannels = 4;
                 }
                 _ => {}
+            }
+        }
+        ATA_SERVERWORKS_ID => {
+            // The SATA parts have 4 ports, and UniATA left them at the 2-channel
+            // default, hiding ports 2 and 3. 0x0241 (Frodo8) has 8: that is what
+            // all three drivers that program the chip do (upstream svw_sata.c,
+            // Linux sata_svw chip_svw8, FreeBSD ATA_FRODO8 = 0x02411166 with 8
+            // channels). Only NAMES disagree (Linux's comment and NetBSD pcidevs
+            // call 0x0241 "Frodo4", and UniATA copied that into its table).
+            if ChipType == SWKSMIO {
+                (*deviceExtension).NumberChannels =
+                    if ((*deviceExtension).DevID >> 16) == 0x0241 { 8 } else { 4 };
             }
         }
         ATA_PROMISE_ID => 'promise: {
@@ -406,6 +420,21 @@ pub unsafe extern "system" fn UniataChipDetectChannels(
         }
         _ => {}
     } // end match(VendorID)
+
+    // The C sized `n` (and the default PortMask) from the channel count BEFORE
+    // the match above, and clamps to it below, so every arm that RAISES the
+    // count (ALi 5287/5288 and Promise MIO to 4, ServerWorks SATA to 4/8) was
+    // cut back to the 2-channel default: dead code since UniATA was written.
+    // When an arm raised it and the mask is still the computed default (no
+    // user PortMask), size both from the arm's count. An explicit PortMask or
+    // NumberChannels registry value still limits it, which is what the clamp
+    // is for.
+    if (*deviceExtension).NumberChannels > channels_before
+        && (*deviceExtension).AHCI_PI_mask == default_mask
+    {
+        n = (*deviceExtension).NumberChannels;
+        (*deviceExtension).AHCI_PI_mask = 0xffffffffu32 >> (32 - n);
+    }
 
     i = AtapiRegCheckDevValue(
         deviceExtension as PVOID,
@@ -991,9 +1020,10 @@ pub unsafe extern "system" fn UniataChipDetect(
                             break 'swks;
                         }
                         (*deviceExtension).AltRegMap = TRUE;
+                        // 0x100 per port: the C mapped a fixed 0x400 (4 ports).
                         BaseMemAddress = AtapiGetIoRange(
                             HwDeviceExtension, ConfigInfo, pciData, SystemIoBusNumber,
-                            5, 0, 0x400,
+                            5, 0, core::cmp::max(0x400, 0x100 * (*deviceExtension).NumberChannels),
                         );
                         if BaseMemAddress == 0 {
                             return STATUS_UNSUCCESSFUL;
@@ -1005,6 +1035,17 @@ pub unsafe extern "system" fn UniataChipDetect(
                             &mut (*deviceExtension).BaseIoAddressSATA_0,
                             BaseMemAddress, MemIo, FALSE,
                         );
+                        {
+                            // Upstream svw_sata.c errata: clear SICR bit 18 so the
+                            // chip stops waiting for a status message before
+                            // sending a FIS (fixes Seagate drives), then clear
+                            // pending interrupts.
+                            let sata0 = (&(*deviceExtension).BaseIoAddressSATA_0) as *const _ as ULONG_PTR;
+                            AtapiWritePortEx4(core::ptr::null_mut(), sata0, 0x80,
+                                AtapiReadPortEx4(core::ptr::null_mut(), sata0, 0x80) & !0x00040000);
+                            AtapiWritePortEx4(core::ptr::null_mut(), sata0, 0x44, 0xFFFFFFFF);
+                            AtapiWritePortEx4(core::ptr::null_mut(), sata0, 0x88, 0);
+                        }
                         c = 0;
                         while c < (*deviceExtension).NumberChannels {
                             let offs: ULONG_PTR = (c as ULONG_PTR) * 0x100;

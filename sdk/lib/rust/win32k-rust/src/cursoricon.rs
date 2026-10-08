@@ -2,7 +2,7 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{ExAllocatePoolWithTag, ExFreePoolWithTag, PsGetCurrentProcessWin32Process, RtlAddAtomToAtomTable, RtlCompareUnicodeString, RtlDeleteAtomFromAtomTable, RtlLookupAtomInAtomTable, RtlQueryAtomInAtomTable};
 use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
-use ntkrnl_sys::base::{NT_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, STATUS_SUCCESS};
+use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 use core::ffi::c_void;
 const STATUS_ACCESS_VIOLATION: i32 = 0xC0000005_u32 as i32;
 
@@ -94,61 +94,18 @@ extern "system" {
 // ProbeAndCaptureUnicodeStringOrAtom (class.c) — NTAPI (`_...@8`), real export.
 extern "system" {
     fn ProbeAndCaptureUnicodeStringOrAtom(pustrOut: PUNICODE_STRING, pustrUnsafe: PUNICODE_STRING) -> NTSTATUS;
-    fn ProbeForRead(Address: *const c_void, Length: SIZE_T, Alignment: ULONG);
-}
-
-// ProbeForReadUnicodeString(Ptr) — capture a UNICODE_STRING by value (probe.h).
-#[inline(always)]
-unsafe fn ProbeForReadUnicodeString(ptr: *const _UNICODE_STRING) -> _UNICODE_STRING {
-    ProbeForRead(ptr as *const c_void, core::mem::size_of::<_UNICODE_STRING>() as SIZE_T,
-                 core::mem::size_of::<usize>() as ULONG);
-    *ptr
 }
 
 // ProbeAndCaptureUnicodeString (probe.h static __inline) — probe + deep-copy.
+// Delegates to the one SEH-faithful implementation: the old local copy used the
+// RAISING ProbeForRead (unhandled here = BUGCHECK 0x1E) and an unprotected copy.
 #[inline(always)]
 unsafe fn ProbeAndCaptureUnicodeString(
     Dest: PUNICODE_STRING,
     CurrentMode: KPROCESSOR_MODE,
     UnsafeSrc: *const _UNICODE_STRING,
 ) -> NTSTATUS {
-    if CurrentMode != 0 {
-        *Dest = ProbeForReadUnicodeString(UnsafeSrc);
-        if !(*Dest).Buffer.is_null() {
-            if (*Dest).Length != 0 {
-                ProbeForRead((*Dest).Buffer as *const c_void, (*Dest).Length as SIZE_T,
-                             core::mem::size_of::<u16>() as ULONG);
-                let Buffer = ExAllocatePoolWithTag(
-                    PagedPool,
-                    ((*Dest).Length as SIZE_T) + core::mem::size_of::<u16>() as SIZE_T,
-                    u32::from_le_bytes(*b"RTSU"),
-                ) as PWSTR;
-                if Buffer.is_null() {
-                    return STATUS_INSUFFICIENT_RESOURCES as NTSTATUS;
-                }
-                RtlCopyMemory(Buffer as *mut c_void, (*Dest).Buffer as *const c_void, (*Dest).Length as usize);
-                *Buffer.add(((*Dest).Length / 2) as usize) = 0;
-                (*Dest).Buffer = Buffer;
-                if (*Dest).Length % 2 != 0 {
-                    (*Dest).Length -= 1;
-                }
-                if (*Dest).Length as u32 >= 0xFFFE {
-                    (*Dest).MaximumLength = (*Dest).Length;
-                } else {
-                    (*Dest).MaximumLength = (*Dest).Length + 2;
-                }
-            } else {
-                (*Dest).MaximumLength = 0;
-                (*Dest).Buffer = core::ptr::null_mut();
-            }
-        } else {
-            (*Dest).Length = 0;
-            (*Dest).MaximumLength = 0;
-        }
-    } else {
-        *Dest = *UnsafeSrc;
-    }
-    STATUS_SUCCESS as NTSTATUS
+    crate::safe_user_io::probe_and_capture_unicode_string(Dest, CurrentMode as i8, UnsafeSrc)
 }
 
 // ReleaseCapturedUnicodeString (probe.h) — free a user-mode captured buffer.
@@ -718,53 +675,71 @@ pub unsafe extern "system" fn NtUserGetIconInfo(
                 &mut BufLen,
             );
             /* Get the module name from the atom table */
-            // ---- dropped _SEH2_TRY/_SEH2_EXCEPT recovered here ----
-            // C (cursoricon.c:497-522, NtUserGetIconInfo): handler is
-            // `Status = _SEH2_GetExceptionCode();` with no return/goto -- it
-            // falls through to the `if (!NT_SUCCESS(Status))` check that
-            // already exists right below this block. So a probe failure here
-            // just sets `Status` and skips the body; the untouched check
-            // after this block is the same fall-through cleanup as the C.
+            // C (cursoricon.c:497-522, NtUserGetIconInfo), one _SEH2_TRY whose
+            // handler is `Status = _SEH2_GetExceptionCode();`, falling through to
+            // the `if (!NT_SUCCESS(Status))` check below:
+            //   BufLen += sizeof(WCHAR);
+            //   if (BufLen > lpModule->MaximumLength) { lpModule->Length = 0;
+            //       lpModule->MaximumLength = BufLen; }
+            //   else { ProbeForWrite(lpModule->Buffer, lpModule->MaximumLength, 1);
+            //       BufLen = lpModule->MaximumLength;
+            //       RtlQueryAtomInAtomTable(.., lpModule->Buffer, &BufLen);
+            //       lpModule->Length = BufLen; }
+            // Every touch of lpModule and its Buffer is fault-tolerant here: the
+            // header is captured ONCE (MaximumLength sizes the copy, so it must
+            // not be re-fetched), the atom name is queried into a pool buffer and
+            // published with copy_to_user, and the header fields are written back.
             //
-            // The dropped probe itself -- `ProbeForWrite(lpModule->Buffer,
-            // lpModule->MaximumLength, 1)` -- was missing entirely (not just
-            // its handler); restored via SafeProbeForWrite (alignment 1,
-            // matching the C's literal argument), the same helper this
-            // function already uses for the IconInfo/pbpp probe above and the
-            // lpResName probes below.
-            {
+            // Divergence: the C never probes lpModule itself before writing its
+            // fields; a kernel-range pointer would be written through. Probe it.
+            Status = (|| -> Result<(), NTSTATUS> {
+                crate::safe_user_io::probe_for_write(
+                    lpModule as *mut c_void,
+                    core::mem::size_of::<_UNICODE_STRING>(),
+                    1,
+                )?;
+                let Module: _UNICODE_STRING = ntkrnl_sys::probe::read_back(lpModule as *const _UNICODE_STRING)?;
                 BufLen += core::mem::size_of::<WCHAR>() as ULONG;
-                if BufLen > (*lpModule).MaximumLength as ULONG {
-                    (*lpModule).Length = 0;
-                    (*lpModule).MaximumLength = BufLen as USHORT;
-                } else {
-                    Status = SafeProbeForWrite(
-                        (*lpModule).Buffer as *mut c_void,
-                        (*lpModule).MaximumLength as SIZE_T,
-                        1,
-                    );
-                    if NT_SUCCESS(Status) {
-                        BufLen = (*lpModule).MaximumLength as ULONG;
-                        // RtlQueryAtomInAtomTable writes directly into
-                        // lpModule->Buffer (already probed above) rather than
-                        // through a fault-protected copy helper -- same
-                        // range/touch-only gap noted for ConnectionInformation
-                        // in lpc-rust/connect.rs: the C's _SEH2_TRY also
-                        // guarded this call itself against a TOCTOU fault,
-                        // which a probe alone cannot close for an opaque
-                        // callee. Noted rather than silently dropped.
-                        RtlQueryAtomInAtomTable(
-                            gAtomTable as _,
-                            (*CurIcon).atomModName,
-                            core::ptr::null_mut(),
-                            core::ptr::null_mut(),
-                            (*lpModule).Buffer as _,
-                            &mut BufLen,
-                        );
-                        (*lpModule).Length = BufLen as USHORT;
-                    }
+                if BufLen > Module.MaximumLength as ULONG {
+                    ntkrnl_sys::probe::write_back(core::ptr::addr_of_mut!((*lpModule).Length), 0 as USHORT)?;
+                    ntkrnl_sys::probe::write_back(
+                        core::ptr::addr_of_mut!((*lpModule).MaximumLength),
+                        BufLen as USHORT,
+                    )?;
+                    return Ok(());
                 }
-            }
+                crate::safe_user_io::probe_for_write(
+                    Module.Buffer as *mut c_void,
+                    Module.MaximumLength as usize,
+                    1,
+                )?;
+                // BufLen > 0 here, so MaximumLength >= 2 and the pool size is non-zero.
+                let cb = Module.MaximumLength as usize;
+                let tag = u32::from_le_bytes(*b"Usgm");
+                let pool = ExAllocatePoolWithTag(PagedPool, cb as _, tag) as *mut WCHAR;
+                if pool.is_null() {
+                    return Err(0xC000009A_u32 as NTSTATUS); // STATUS_INSUFFICIENT_RESOURCES
+                }
+                let _pool_guard = ntkrnl_sys::probe::PoolAllocGuard::new(pool as _, tag);
+                RtlZeroMemory(pool as *mut c_void, cb as _);
+                BufLen = Module.MaximumLength as ULONG;
+                RtlQueryAtomInAtomTable(
+                    gAtomTable as _,
+                    (*CurIcon).atomModName,
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
+                    pool as _,
+                    &mut BufLen,
+                );
+                // The name plus its NUL when it fits: exactly the bytes the C's
+                // in-place query would have stored.
+                let publish = core::cmp::min(BufLen as usize + core::mem::size_of::<WCHAR>(), cb);
+                ntkrnl_sys::probe::safe_copy_raw(Module.Buffer as *mut c_void, pool as *const c_void, publish)?;
+                ntkrnl_sys::probe::write_back(core::ptr::addr_of_mut!((*lpModule).Length), BufLen as USHORT)?;
+                Ok(())
+            })()
+            .err()
+            .unwrap_or(Status);
 
             if !NT_SUCCESS(Status) {
                 SetLastNtError(Status);
@@ -1730,8 +1705,17 @@ pub unsafe extern "system" fn NtUserSetCursorIconData(
     pvBuffer = core::ptr::null_mut();
 
     'exit: loop {
+        // The C runs this whole capture inside one _SEH2_TRY whose handler is
+        // `SetLastNtError(code); goto Exit;`. Each read below is probe +
+        // fault-tolerant copy, failing the same way.
         /* Probe and capture the cursor data structure */
-        cursordata = *pCursorData;
+        cursordata = match crate::safe_user_io::capture_user(pCursorData) {
+            Ok(v) => v,
+            Err(st) => {
+                SetLastNtError(st);
+                break 'exit;
+            }
+        };
 
         /* Check if this is an animated cursor */
         if (cursordata.CURSORF_flags & CURSORF_ACON) != 0 {
@@ -1759,25 +1743,37 @@ pub unsafe extern "system" fn NtUserSetCursorIconData(
             ajifRate = aicur.offset(cursordata.cicur as isize) as PINT;
 
             /* Probe and copy aspcur */
-            RtlCopyMemory(
+            if let Err(st) = crate::safe_user_io::copy_from_user(
                 aspcur as *mut core::ffi::c_void,
                 cursordata.aspcur as *const core::ffi::c_void,
                 cursordata.cpcur as usize * core::mem::size_of::<CURSORDATA>(),
-            );
+                1,
+            ) {
+                SetLastNtError(st);
+                break 'exit;
+            }
 
             /* Probe and copy aicur */
-            RtlCopyMemory(
+            if let Err(st) = crate::safe_user_io::copy_from_user(
                 aicur as *mut core::ffi::c_void,
                 cursordata.aicur as *const core::ffi::c_void,
                 cursordata.cicur as usize * core::mem::size_of::<DWORD>(),
-            );
+                1,
+            ) {
+                SetLastNtError(st);
+                break 'exit;
+            }
 
             /* Probe and copy ajifRate */
-            RtlCopyMemory(
+            if let Err(st) = crate::safe_user_io::copy_from_user(
                 ajifRate as *mut core::ffi::c_void,
                 cursordata.ajifRate as *const core::ffi::c_void,
                 cursordata.cicur as usize * core::mem::size_of::<INT>(),
-            );
+                1,
+            ) {
+                SetLastNtError(st);
+                break 'exit;
+            }
 
             /* Set the new pointers */
             cursordata.aspcur = aspcur;

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import socket
+import time
 from collections import deque
 from typing import Any
 
@@ -113,6 +114,32 @@ class QmpClient:
                 return obj
         return None
 
+    def wait_event(self, name: str, timeout: float) -> dict | None:
+        """Block until QEMU sends event `name` (or one is already retained), else None.
+
+        Only for a connection nobody else is issuing commands on: it consumes
+        whatever arrives, and a command reply read here would be lost.
+        """
+        if (ev := self.saw_event(name)) is not None:
+            return ev
+        assert self._sock is not None
+        deadline = time.monotonic() + timeout
+        old = self._sock.gettimeout()
+        try:
+            while (left := deadline - time.monotonic()) > 0:
+                self._sock.settimeout(min(left, 5.0))
+                try:
+                    obj = self._recv_one_json()
+                except TimeoutError:
+                    continue
+                if "event" in obj:
+                    self.events.append(obj)
+                    if obj["event"] == name:
+                        return obj
+        finally:
+            self._sock.settimeout(old)
+        return None
+
     def close(self) -> None:
         """Close the connection and (if listening) the server socket."""
         for attr in ("_sock", "_server"):
@@ -146,7 +173,7 @@ class QmpClient:
             nl = self._buf.find(b"\n")
             if nl >= 0:
                 line = self._buf[:nl]
-                self._buf = self._buf[nl + 1:]
+                self._buf = self._buf[nl + 1 :]
                 if line.strip():
                     return json.loads(line)
                 continue

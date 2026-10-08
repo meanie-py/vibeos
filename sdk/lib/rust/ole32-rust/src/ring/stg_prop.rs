@@ -487,8 +487,22 @@ unsafe fn PropertyStorage_PropVariantCopy(
         if SUCCEEDED(hr) {
             (*prop).vt = VT_LPSTR as VARTYPE;
         }
+    } else if (*propvar).vt == VT_BSTR as VARTYPE {
+        // wine-10: by length, so a BSTR with embedded NULs survives (PropVariantCopy
+        // routes it through PropSysAllocString, which stops at the first NUL).
+        (*prop).__bindgen_anon_1.bstrVal = SysAllocStringLen(
+            (*propvar).__bindgen_anon_1.bstrVal,
+            SysStringLen((*propvar).__bindgen_anon_1.bstrVal),
+        );
+        if !(*prop).__bindgen_anon_1.bstrVal.is_null() {
+            (*prop).vt = VT_BSTR as VARTYPE;
+        } else {
+            hr = E_OUTOFMEMORY;
+        }
     } else {
-        PropVariantCopy(prop, propvar);
+        // wine-10: the copy's own result is the result (it was discarded, and a failed
+        // copy was then stored as if it had succeeded).
+        hr = PropVariantCopy(prop, propvar);
     }
     hr
 }
@@ -661,7 +675,7 @@ unsafe fn IPropertyStorage_fnWriteMultiple(
                         && (*rgpropvar.add(i as usize)).vt == VT_I2 as VARTYPE
                     {
                         (*This).codePage =
-                            (*rgpropvar.add(i as usize)).__bindgen_anon_1.iVal as UINT;
+                            (*rgpropvar.add(i as usize)).__bindgen_anon_1.iVal as u16 as UINT;
                         if (*This).codePage == CP_UNICODE {
                             (*This).grfFlags &= !PROPSETFLAG_ANSI;
                         } else {
@@ -1077,58 +1091,172 @@ unsafe fn PropertyStorage_ByteSwapString(str: LPWSTR, len: usize) {
     }
 }
 
-/// Reads the dictionary from the memory buffer beginning at ptr.
+// ---- wine-10.0 bounded reads (upstream 5f6b295cb90) ----
+//
+// The old translation read property sets through a bare pointer: the dictionary wrote
+// `*ptr.add(cbEntry - 1) = 0` with no bound (a hostile or truncated stream corrupted the
+// heap), and every property read could run past the section. wine-10 threads a
+// `read_buffer { data, size }` through every read and fails STG_E_READFAULT instead.
+
+/// wine-10 `struct read_buffer`.
+#[repr(C)]
+struct read_buffer {
+    data: *mut BYTE,
+    size: usize,
+}
+
+/// `((len + align) & ~align)` -- stg_prop.c's ALIGNED_LENGTH.
+#[inline]
+fn ALIGNED_LENGTH(len: usize, align: usize) -> usize {
+    (len.wrapping_add(align)) & !align
+}
+
+unsafe fn buffer_test_offset(buffer: *const read_buffer, offset: usize, len: usize) -> HRESULT {
+    if len > (*buffer).size || offset > (*buffer).size - len {
+        STG_E_READFAULT
+    } else {
+        S_OK
+    }
+}
+
+unsafe fn buffer_read_uint64(
+    buffer: *const read_buffer,
+    offset: usize,
+    data: *mut ULARGE_INTEGER,
+) -> HRESULT {
+    let hr = buffer_test_offset(buffer, offset, core::mem::size_of::<ULARGE_INTEGER>());
+    if SUCCEEDED(hr) {
+        StorageUtl_ReadULargeInteger((*buffer).data.add(offset), 0, data);
+    }
+    hr
+}
+
+unsafe fn buffer_read_dword(buffer: *const read_buffer, offset: usize, data: *mut DWORD) -> HRESULT {
+    let hr = buffer_test_offset(buffer, offset, core::mem::size_of::<DWORD>());
+    if SUCCEEDED(hr) {
+        StorageUtl_ReadDWord((*buffer).data.add(offset), 0, data);
+    }
+    hr
+}
+
+unsafe fn buffer_read_word(buffer: *const read_buffer, offset: usize, data: *mut WORD) -> HRESULT {
+    let hr = buffer_test_offset(buffer, offset, core::mem::size_of::<WORD>());
+    if SUCCEEDED(hr) {
+        StorageUtl_ReadWord((*buffer).data.add(offset), 0, data);
+    }
+    hr
+}
+
+unsafe fn buffer_read_byte(buffer: *const read_buffer, offset: usize, data: *mut BYTE) -> HRESULT {
+    let hr = buffer_test_offset(buffer, offset, core::mem::size_of::<BYTE>());
+    if SUCCEEDED(hr) {
+        *data = *(*buffer).data.add(offset);
+    }
+    hr
+}
+
+unsafe fn buffer_read_len(
+    buffer: *const read_buffer,
+    offset: usize,
+    dest: *mut c_void,
+    len: usize,
+) -> HRESULT {
+    let hr = buffer_test_offset(buffer, offset, len);
+    if SUCCEEDED(hr) {
+        core::ptr::copy_nonoverlapping((*buffer).data.add(offset), dest as *mut u8, len);
+    }
+    hr
+}
+
+/// Reads the dictionary from `buffer` at `offset`, interpreting the entries according to
+/// This->codePage and This->locale (wine-10.0).
 unsafe fn PropertyStorage_ReadDictionary(
     This: *mut PropertyStorage_impl,
-    mut ptr: *mut BYTE,
+    buffer: *const read_buffer,
+    mut offset: usize,
 ) -> HRESULT {
     let mut numEntries: DWORD = 0;
-    let mut hr: HRESULT = S_OK;
 
     assert(!(*This).name_to_propid.is_null());
     assert(!(*This).propid_to_name.is_null());
 
-    StorageUtl_ReadDWord(ptr, 0, core::ptr::addr_of_mut!(numEntries));
+    let mut hr = buffer_read_dword(buffer, offset, &mut numEntries);
+    if FAILED(hr) {
+        return hr;
+    }
     TRACE!(b"Reading %d entries:\n\0".as_ptr() as LPCSTR, numEntries);
-    ptr = ptr.add(core::mem::size_of::<DWORD>());
+    offset += core::mem::size_of::<DWORD>();
 
     let mut i: DWORD = 0;
     while SUCCEEDED(hr) && i < numEntries {
         let mut propid: PROPID = 0;
         let mut cbEntry: DWORD = 0;
+        let mut ch: WCHAR = 0;
 
-        StorageUtl_ReadDWord(ptr, 0, core::ptr::addr_of_mut!(propid));
-        ptr = ptr.add(core::mem::size_of::<PROPID>());
-        StorageUtl_ReadDWord(ptr, 0, core::ptr::addr_of_mut!(cbEntry));
-        ptr = ptr.add(core::mem::size_of::<DWORD>());
+        hr = buffer_read_dword(buffer, offset, &mut propid);
+        if SUCCEEDED(hr) {
+            hr = buffer_read_dword(buffer, offset + core::mem::size_of::<PROPID>(), &mut cbEntry);
+        }
+        if FAILED(hr) {
+            break;
+        }
+
+        offset += core::mem::size_of::<PROPID>() + core::mem::size_of::<DWORD>();
+
+        let span = if (*This).codePage == CP_UNICODE {
+            ALIGNED_LENGTH(cbEntry as usize * core::mem::size_of::<WCHAR>(), 3)
+        } else {
+            cbEntry as usize
+        };
+        hr = buffer_test_offset(buffer, offset, span);
+        if FAILED(hr) {
+            WARN!(b"Broken name length for entry %d.\n\0".as_ptr() as LPCSTR, i);
+            return hr;
+        }
+
+        // Make sure the source string is NULL-terminated -- CHECKED, not forced: wine-10
+        // rejects an unterminated name instead of writing a NUL into the caller's data.
+        // (C size_t arithmetic: cbEntry == 0 wraps to a probe that fails its bounds test,
+        // leaving ch == 0.)
+        if (*This).codePage != CP_UNICODE {
+            let mut b: BYTE = 0;
+            buffer_read_byte(buffer, offset.wrapping_add(cbEntry as usize).wrapping_sub(1), &mut b);
+            ch = b as WCHAR;
+        } else {
+            buffer_read_word(
+                buffer,
+                offset.wrapping_add(
+                    (cbEntry as usize).wrapping_sub(1).wrapping_mul(core::mem::size_of::<WCHAR>()),
+                ),
+                &mut ch,
+            );
+        }
+
+        if ch != 0 {
+            WARN!(b"Dictionary entry name %d is not null-terminated.\n\0".as_ptr() as LPCSTR, i);
+            return E_FAIL;
+        }
+
         TRACE!(
-            b"Reading entry with ID 0x%08x, %d bytes\n\0".as_ptr() as LPCSTR,
+            b"Reading entry with ID 0x%08x, %d chars\n\0".as_ptr() as LPCSTR,
             propid,
             cbEntry,
         );
 
-        // Make sure the source string is NULL-terminated
-        if (*This).codePage != CP_UNICODE {
-            *ptr.add((cbEntry - 1) as usize) = 0;
+        hr = PropertyStorage_StoreNameWithId(
+            This,
+            (*buffer).data.add(offset) as LPCSTR,
+            (*This).codePage,
+            propid,
+        );
+
+        // Unicode entries are padded to DWORD boundaries
+        let advance = if (*This).codePage == CP_UNICODE {
+            ALIGNED_LENGTH(cbEntry as usize * core::mem::size_of::<WCHAR>(), 3)
         } else {
-            *(ptr as *mut WCHAR).add((cbEntry - 1) as usize) = 0;
-        }
-
-        hr = PropertyStorage_StoreNameWithId(This, ptr as LPCSTR, (*This).codePage, propid);
-
-        if (*This).codePage == CP_UNICODE {
-            // cbEntry is the number of characters
-            cbEntry *= 2;
-
-            // Unicode entries are padded to DWORD boundaries
-            if cbEntry % core::mem::size_of::<DWORD>() as DWORD != 0 {
-                ptr = ptr.add(
-                    core::mem::size_of::<DWORD>()
-                        - (cbEntry % core::mem::size_of::<DWORD>() as DWORD) as usize,
-                );
-            }
-        }
-        ptr = ptr.add(cbEntry as usize);
+            cbEntry as usize
+        };
+        offset += advance;
 
         i += 1;
     }
@@ -1145,139 +1273,89 @@ unsafe extern "system" fn Allocate_CoTaskMemAlloc(
     CoTaskMemAlloc(size as SIZE_T)
 }
 
-unsafe fn PropertyStorage_ReadProperty(
+type PropAllocator = unsafe extern "system" fn(*mut c_void, ULONG) -> *mut c_void;
+
+/// wine-10 `propertystorage_read_scalar`: one non-vector value of `(*prop).vt` at `offset`.
+unsafe fn propertystorage_read_scalar(
     prop: *mut PROPVARIANT,
-    data: *const BYTE,
+    buffer: *const read_buffer,
+    mut offset: usize,
     codepage: UINT,
-    allocate: unsafe extern "system" fn(*mut c_void, ULONG) -> *mut c_void,
+    allocate: PropAllocator,
     allocate_data: *mut c_void,
 ) -> HRESULT {
-    let mut hr: HRESULT = S_OK;
-    let mut vt: DWORD = 0;
-    let mut data_ptr = data;
+    let u = core::ptr::addr_of_mut!((*prop).__bindgen_anon_1);
+    let mut hr: HRESULT;
 
-    assert(!prop.is_null());
-    assert(!data.is_null());
-    StorageUtl_ReadDWord(data_ptr, 0, core::ptr::addr_of_mut!(vt));
-    data_ptr = data_ptr.add(core::mem::size_of::<DWORD>());
-    (*prop).vt = vt as VARTYPE;
+    assert(((*prop).vt as DWORD & (VT_ARRAY | VT_VECTOR)) == 0);
 
     match (*prop).vt as DWORD {
-        VT_EMPTY | VT_NULL => {}
+        VT_EMPTY | VT_NULL => hr = S_OK,
         VT_I1 => {
-            (*prop).__bindgen_anon_1.cVal = *(data_ptr as *const c_char);
-            TRACE!(
-                b"Read char 0x%x ('%c')\n\0".as_ptr() as LPCSTR,
-                (*prop).__bindgen_anon_1.cVal,
-                (*prop).__bindgen_anon_1.cVal,
-            );
+            hr = buffer_read_byte(buffer, offset, core::ptr::addr_of_mut!((*u).cVal) as *mut BYTE);
         }
-        VT_UI1 => {
-            (*prop).__bindgen_anon_1.bVal = *data_ptr;
-            TRACE!(b"Read byte 0x%x\n\0".as_ptr() as LPCSTR, (*prop).__bindgen_anon_1.bVal);
-        }
+        VT_UI1 => hr = buffer_read_byte(buffer, offset, core::ptr::addr_of_mut!((*u).bVal) as *mut BYTE),
         VT_BOOL => {
-            StorageUtl_ReadWord(
-                data_ptr,
-                0,
-                core::ptr::addr_of_mut!((*prop).__bindgen_anon_1.boolVal) as *mut WORD,
-            );
-            TRACE!(b"Read bool %d\n\0".as_ptr() as LPCSTR, (*prop).__bindgen_anon_1.boolVal);
+            hr = buffer_read_word(buffer, offset, core::ptr::addr_of_mut!((*u).boolVal) as *mut WORD);
         }
-        VT_I2 => {
-            StorageUtl_ReadWord(
-                data_ptr,
-                0,
-                core::ptr::addr_of_mut!((*prop).__bindgen_anon_1.iVal) as *mut WORD,
-            );
-            TRACE!(b"Read short %d\n\0".as_ptr() as LPCSTR, (*prop).__bindgen_anon_1.iVal);
-        }
-        VT_UI2 => {
-            StorageUtl_ReadWord(
-                data_ptr,
-                0,
-                core::ptr::addr_of_mut!((*prop).__bindgen_anon_1.uiVal),
-            );
-            TRACE!(b"Read ushort %d\n\0".as_ptr() as LPCSTR, (*prop).__bindgen_anon_1.uiVal);
-        }
+        VT_I2 => hr = buffer_read_word(buffer, offset, core::ptr::addr_of_mut!((*u).iVal) as *mut WORD),
+        VT_UI2 => hr = buffer_read_word(buffer, offset, core::ptr::addr_of_mut!((*u).uiVal) as *mut WORD),
         VT_INT | VT_I4 => {
-            StorageUtl_ReadDWord(
-                data_ptr,
-                0,
-                core::ptr::addr_of_mut!((*prop).__bindgen_anon_1.lVal) as *mut DWORD,
-            );
-            TRACE!(b"Read long %d\n\0".as_ptr() as LPCSTR, (*prop).__bindgen_anon_1.lVal);
+            hr = buffer_read_dword(buffer, offset, core::ptr::addr_of_mut!((*u).lVal) as *mut DWORD);
         }
         VT_UINT | VT_UI4 => {
-            StorageUtl_ReadDWord(
-                data_ptr,
-                0,
-                core::ptr::addr_of_mut!((*prop).__bindgen_anon_1.ulVal),
-            );
-            TRACE!(b"Read ulong %d\n\0".as_ptr() as LPCSTR, (*prop).__bindgen_anon_1.ulVal);
+            hr = buffer_read_dword(buffer, offset, core::ptr::addr_of_mut!((*u).ulVal) as *mut DWORD);
         }
         VT_I8 => {
-            StorageUtl_ReadULargeInteger(
-                data_ptr,
-                0,
-                core::ptr::addr_of_mut!((*prop).__bindgen_anon_1.hVal) as *mut ULARGE_INTEGER,
-            );
-            TRACE!(
-                b"Read long long %s\n\0".as_ptr() as LPCSTR,
-                wine_dbgstr_longlong((*prop).__bindgen_anon_1.hVal.QuadPart),
+            hr = buffer_read_uint64(
+                buffer,
+                offset,
+                core::ptr::addr_of_mut!((*u).hVal) as *mut ULARGE_INTEGER,
             );
         }
         VT_UI8 => {
-            StorageUtl_ReadULargeInteger(
-                data_ptr,
-                0,
-                core::ptr::addr_of_mut!((*prop).__bindgen_anon_1.uhVal),
-            );
-            TRACE!(
-                b"Read ulong long %s\n\0".as_ptr() as LPCSTR,
-                wine_dbgstr_longlong((*prop).__bindgen_anon_1.uhVal.QuadPart),
+            hr = buffer_read_uint64(
+                buffer,
+                offset,
+                core::ptr::addr_of_mut!((*u).uhVal) as *mut ULARGE_INTEGER,
             );
         }
         VT_R8 => {
-            core::ptr::copy_nonoverlapping(
-                data_ptr,
-                core::ptr::addr_of_mut!((*prop).__bindgen_anon_1.dblVal) as *mut u8,
+            hr = buffer_read_len(
+                buffer,
+                offset,
+                core::ptr::addr_of_mut!((*u).dblVal) as *mut c_void,
                 core::mem::size_of::<f64>(),
             );
-            TRACE!(b"Read double %f\n\0".as_ptr() as LPCSTR, (*prop).__bindgen_anon_1.dblVal);
         }
         VT_LPSTR => {
             let mut count: DWORD = 0;
 
-            StorageUtl_ReadDWord(data_ptr, 0, core::ptr::addr_of_mut!(count));
-            if codepage == CP_UNICODE && count % 2 != 0 {
+            hr = buffer_read_dword(buffer, offset, &mut count);
+            if FAILED(hr) {
+                return hr;
+            }
+            offset += core::mem::size_of::<DWORD>();
+
+            if codepage == CP_UNICODE && count % core::mem::size_of::<WCHAR>() as DWORD != 0 {
                 WARN!(b"Unicode string has odd number of bytes\n\0".as_ptr() as LPCSTR);
                 hr = STG_E_INVALIDHEADER;
             } else {
-                (*prop).__bindgen_anon_1.pszVal = allocate(allocate_data, count) as LPSTR;
-                if !(*prop).__bindgen_anon_1.pszVal.is_null() {
-                    core::ptr::copy_nonoverlapping(
-                        data_ptr.add(core::mem::size_of::<DWORD>()),
-                        (*prop).__bindgen_anon_1.pszVal as *mut u8,
-                        count as usize,
-                    );
-                    // This is stored in the code page specified in codepage. Don't
-                    // convert it, the caller will just store it as-is.
+                (*u).pszVal = allocate(allocate_data, count) as LPSTR;
+                if !(*u).pszVal.is_null() {
+                    hr = buffer_read_len(buffer, offset, (*u).pszVal as *mut c_void, count as usize);
+                    if FAILED(hr) {
+                        return hr;
+                    }
+
+                    // This is stored in the code page specified in codepage. Don't convert
+                    // it, the caller will just store it as-is. Make sure it's
+                    // NULL-terminated.
                     if codepage == CP_UNICODE {
-                        // Make sure it's NULL-terminated
-                        *((*prop).__bindgen_anon_1.pszVal as *mut WCHAR)
-                            .add((count / core::mem::size_of::<WCHAR>() as DWORD - 1) as usize) = 0;
-                        TRACE!(
-                            b"Read string value %s\n\0".as_ptr() as LPCSTR,
-                            debugstr_w((*prop).__bindgen_anon_1.pwszVal),
-                        );
+                        *((*u).pszVal as *mut WCHAR)
+                            .add((count as usize / core::mem::size_of::<WCHAR>()).wrapping_sub(1)) = 0;
                     } else {
-                        // Make sure it's NULL-terminated
-                        *((*prop).__bindgen_anon_1.pszVal).add((count - 1) as usize) = 0;
-                        TRACE!(
-                            b"Read string value %s\n\0".as_ptr() as LPCSTR,
-                            debugstr_a((*prop).__bindgen_anon_1.pszVal),
-                        );
+                        *(*u).pszVal.add((count as usize).wrapping_sub(1)) = 0;
                     }
                 } else {
                     hr = STG_E_INSUFFICIENTMEMORY;
@@ -1288,18 +1366,27 @@ unsafe fn PropertyStorage_ReadProperty(
             let mut count: DWORD = 0;
             let wcount: DWORD;
 
-            StorageUtl_ReadDWord(data_ptr, 0, core::ptr::addr_of_mut!(count));
-            if codepage == CP_UNICODE && count % 2 != 0 {
+            hr = buffer_read_dword(buffer, offset, &mut count);
+            if FAILED(hr) {
+                return hr;
+            }
+            offset += core::mem::size_of::<DWORD>();
+
+            if codepage == CP_UNICODE && count % core::mem::size_of::<WCHAR>() as DWORD != 0 {
                 WARN!(b"Unicode string has odd number of bytes\n\0".as_ptr() as LPCSTR);
                 hr = STG_E_INVALIDHEADER;
             } else {
                 if codepage == CP_UNICODE {
-                    wcount = count / 2;
+                    wcount = count / core::mem::size_of::<WCHAR>() as DWORD;
                 } else {
+                    hr = buffer_test_offset(buffer, offset, count as usize);
+                    if FAILED(hr) {
+                        return hr;
+                    }
                     wcount = MultiByteToWideChar(
                         codepage,
                         0,
-                        data_ptr.add(core::mem::size_of::<DWORD>()) as LPCSTR,
+                        (*buffer).data.add(offset) as LPCSTR,
                         count as c_int,
                         core::ptr::null_mut(),
                         0,
@@ -1307,32 +1394,21 @@ unsafe fn PropertyStorage_ReadProperty(
                 }
 
                 // FIXME: use allocator?
-                (*prop).__bindgen_anon_1.bstrVal =
-                    SysAllocStringLen(core::ptr::null(), wcount as UINT);
-
-                if !(*prop).__bindgen_anon_1.bstrVal.is_null() {
+                (*u).bstrVal = SysAllocStringLen(core::ptr::null(), wcount as UINT);
+                if !(*u).bstrVal.is_null() {
                     if codepage == CP_UNICODE {
-                        core::ptr::copy_nonoverlapping(
-                            data_ptr.add(core::mem::size_of::<DWORD>()),
-                            (*prop).__bindgen_anon_1.bstrVal as *mut u8,
-                            count as usize,
-                        );
+                        hr = buffer_read_len(buffer, offset, (*u).bstrVal as *mut c_void, count as usize);
                     } else {
                         MultiByteToWideChar(
                             codepage,
                             0,
-                            data_ptr.add(core::mem::size_of::<DWORD>()) as LPCSTR,
+                            (*buffer).data.add(offset) as LPCSTR,
                             count as c_int,
-                            (*prop).__bindgen_anon_1.bstrVal,
+                            (*u).bstrVal,
                             wcount as c_int,
                         );
                     }
-
-                    *((*prop).__bindgen_anon_1.bstrVal).add((wcount - 1) as usize) = 0;
-                    TRACE!(
-                        b"Read string value %s\n\0".as_ptr() as LPCSTR,
-                        debugstr_w((*prop).__bindgen_anon_1.bstrVal),
-                    );
+                    *(*u).bstrVal.add((wcount as usize).wrapping_sub(1)) = 0;
                 } else {
                     hr = STG_E_INSUFFICIENTMEMORY;
                 }
@@ -1341,16 +1417,15 @@ unsafe fn PropertyStorage_ReadProperty(
         VT_BLOB => {
             let mut count: DWORD = 0;
 
-            StorageUtl_ReadDWord(data_ptr, 0, core::ptr::addr_of_mut!(count));
-            (*prop).__bindgen_anon_1.blob.cbSize = count;
-            (*prop).__bindgen_anon_1.blob.pBlobData = allocate(allocate_data, count) as *mut BYTE;
-            if !(*prop).__bindgen_anon_1.blob.pBlobData.is_null() {
-                core::ptr::copy_nonoverlapping(
-                    data_ptr.add(core::mem::size_of::<DWORD>()),
-                    (*prop).__bindgen_anon_1.blob.pBlobData,
-                    count as usize,
-                );
-                TRACE!(b"Read blob value of size %d\n\0".as_ptr() as LPCSTR, count);
+            hr = buffer_read_dword(buffer, offset, &mut count);
+            if FAILED(hr) {
+                return hr;
+            }
+            offset += core::mem::size_of::<DWORD>();
+            (*u).blob.cbSize = count;
+            (*u).blob.pBlobData = allocate(allocate_data, count) as *mut BYTE;
+            if !(*u).blob.pBlobData.is_null() {
+                hr = buffer_read_len(buffer, offset, (*u).blob.pBlobData as *mut c_void, count as usize);
             } else {
                 hr = STG_E_INSUFFICIENTMEMORY;
             }
@@ -1358,61 +1433,78 @@ unsafe fn PropertyStorage_ReadProperty(
         VT_LPWSTR => {
             let mut count: DWORD = 0;
 
-            StorageUtl_ReadDWord(data_ptr, 0, core::ptr::addr_of_mut!(count));
-            (*prop).__bindgen_anon_1.pwszVal =
-                allocate(allocate_data, count * core::mem::size_of::<WCHAR>() as DWORD) as LPWSTR;
-            if !(*prop).__bindgen_anon_1.pwszVal.is_null() {
-                core::ptr::copy_nonoverlapping(
-                    data_ptr.add(core::mem::size_of::<DWORD>()),
-                    (*prop).__bindgen_anon_1.pwszVal as *mut u8,
-                    (count * core::mem::size_of::<WCHAR>() as DWORD) as usize,
+            hr = buffer_read_dword(buffer, offset, &mut count);
+            if FAILED(hr) {
+                return hr;
+            }
+            offset += core::mem::size_of::<DWORD>();
+            (*u).pwszVal =
+                allocate(allocate_data, count * core::mem::size_of::<WCHAR>() as ULONG) as LPWSTR;
+            if !(*u).pwszVal.is_null() {
+                hr = buffer_read_len(
+                    buffer,
+                    offset,
+                    (*u).pwszVal as *mut c_void,
+                    count as usize * core::mem::size_of::<WCHAR>(),
                 );
-                // make sure string is NULL-terminated
-                *((*prop).__bindgen_anon_1.pwszVal).add((count - 1) as usize) = 0;
-                PropertyStorage_ByteSwapString(
-                    (*prop).__bindgen_anon_1.pwszVal,
-                    count as usize,
-                );
-                TRACE!(
-                    b"Read string value %s\n\0".as_ptr() as LPCSTR,
-                    debugstr_w((*prop).__bindgen_anon_1.pwszVal),
-                );
+                if SUCCEEDED(hr) {
+                    // make sure string is NULL-terminated
+                    *(*u).pwszVal.add((count as usize).wrapping_sub(1)) = 0;
+                    PropertyStorage_ByteSwapString((*u).pwszVal, count as usize);
+                }
             } else {
                 hr = STG_E_INSUFFICIENTMEMORY;
             }
         }
         VT_FILETIME => {
-            StorageUtl_ReadULargeInteger(
-                data_ptr,
-                0,
-                core::ptr::addr_of_mut!((*prop).__bindgen_anon_1.filetime) as *mut ULARGE_INTEGER,
+            hr = buffer_read_uint64(
+                buffer,
+                offset,
+                core::ptr::addr_of_mut!((*u).filetime) as *mut ULARGE_INTEGER,
             );
         }
         VT_CF => {
             let mut len: DWORD = 0;
             let mut tag: DWORD = 0;
 
-            StorageUtl_ReadDWord(data_ptr, 0, core::ptr::addr_of_mut!(len));
-            StorageUtl_ReadDWord(data_ptr, 4, core::ptr::addr_of_mut!(tag));
+            hr = buffer_read_dword(buffer, offset, &mut len);
+            if SUCCEEDED(hr) {
+                hr = buffer_read_dword(buffer, offset + core::mem::size_of::<DWORD>(), &mut tag);
+            }
+            if FAILED(hr) {
+                return hr;
+            }
+            offset += 2 * core::mem::size_of::<DWORD>();
+
             if len > 8 {
                 len -= 8;
-                (*prop).__bindgen_anon_1.pclipdata =
-                    allocate(allocate_data, core::mem::size_of::<CLIPDATA>() as ULONG)
-                        as *mut CLIPDATA;
-                (*(*prop).__bindgen_anon_1.pclipdata).cbSize = len;
-                (*(*prop).__bindgen_anon_1.pclipdata).ulClipFmt = tag as LONG;
-                // C: `len - sizeof(prop->u.pclipdata->ulClipFmt)` — ulClipFmt is a LONG.
-                (*(*prop).__bindgen_anon_1.pclipdata).pClipData = allocate(
-                    allocate_data,
-                    len - core::mem::size_of::<LONG>() as ULONG,
-                ) as *mut BYTE;
-                core::ptr::copy_nonoverlapping( // nolint: silent-failure (element type IS u8 — src/dst are *mut BYTE — so elements == bytes)
-                    data_ptr.add(8),
-                    (*(*prop).__bindgen_anon_1.pclipdata).pClipData,
-                    (len - core::mem::size_of::<LONG>() as DWORD) as usize,
+                (*u).pclipdata =
+                    allocate(allocate_data, core::mem::size_of::<CLIPDATA>() as ULONG) as *mut CLIPDATA;
+                (*(*u).pclipdata).cbSize = len;
+                (*(*u).pclipdata).ulClipFmt = tag as LONG;
+                // C: `len - sizeof(prop->pclipdata->ulClipFmt)` -- ulClipFmt is a LONG.
+                let clip_len = len - core::mem::size_of::<LONG>() as DWORD;
+                (*(*u).pclipdata).pClipData = allocate(allocate_data, clip_len) as *mut BYTE;
+                hr = buffer_read_len(
+                    buffer,
+                    offset,
+                    (*(*u).pclipdata).pClipData as *mut c_void,
+                    clip_len as usize,
                 );
             } else {
                 hr = STG_E_INVALIDPARAMETER;
+            }
+        }
+        VT_CLSID => {
+            // wine-10: new. The old translation fell to the default arm, so a VT_CLSID
+            // property this crate's own writer emits was dropped on reload.
+            (*u).puuid = allocate(allocate_data, core::mem::size_of::<CLSID>() as ULONG) as *mut CLSID;
+            if (*u).puuid.is_null() {
+                return STG_E_INSUFFICIENTMEMORY;
+            }
+            hr = buffer_test_offset(buffer, offset, core::mem::size_of::<CLSID>());
+            if SUCCEEDED(hr) {
+                StorageUtl_ReadGUID((*buffer).data.add(offset), 0, (*u).puuid);
             }
         }
         _ => {
@@ -1420,6 +1512,112 @@ unsafe fn PropertyStorage_ReadProperty(
             hr = STG_E_INVALIDPARAMETER;
         }
     }
+
+    hr
+}
+
+/// wine-10 `propertystorage_get_elemsize`: the element size of a fixed-size VT_VECTOR.
+unsafe fn propertystorage_get_elemsize(prop: *const PROPVARIANT) -> usize {
+    if ((*prop).vt as DWORD & VT_VECTOR) == 0 {
+        return 0;
+    }
+
+    match (*prop).vt as DWORD & !VT_VECTOR {
+        VT_I1 | VT_UI1 => 1,
+        VT_I2 | VT_UI2 | VT_BOOL => 2,
+        VT_I4 | VT_UI4 | VT_R4 | VT_ERROR => 4,
+        VT_I8 | VT_UI8 | VT_R8 | VT_CY | VT_DATE | VT_FILETIME => 8,
+        VT_CLSID => core::mem::size_of::<CLSID>(),
+        VT_VARIANT => core::mem::size_of::<PROPVARIANT>(),
+        _ => {
+            FIXME!(b"Unhandled type %#x.\n\0".as_ptr() as LPCSTR, (*prop).vt);
+            0
+        }
+    }
+}
+
+/// wine-10 `PropertyStorage_ReadProperty`: a type DWORD at `offset`, then the value --
+/// a scalar, or a VT_VECTOR of fixed-size scalars (variable-length vectors and VT_ARRAY
+/// stay unsupported, as in Wine).
+unsafe fn PropertyStorage_ReadProperty(
+    prop: *mut PROPVARIANT,
+    buffer: *const read_buffer,
+    mut offset: usize,
+    codepage: UINT,
+    allocate: PropAllocator,
+    allocate_data: *mut c_void,
+) -> HRESULT {
+    let mut vt: DWORD = 0;
+
+    assert(!prop.is_null());
+    assert(!(*buffer).data.is_null());
+
+    let mut hr = buffer_read_dword(buffer, offset, &mut vt);
+    if FAILED(hr) {
+        return hr;
+    }
+
+    offset += core::mem::size_of::<DWORD>();
+    (*prop).vt = vt as VARTYPE;
+
+    if ((*prop).vt as DWORD & VT_VECTOR) != 0 {
+        let mut count: DWORD = 0;
+
+        match (*prop).vt as DWORD & !VT_VECTOR {
+            VT_BSTR | VT_VARIANT | VT_LPSTR | VT_LPWSTR | VT_CF => {
+                FIXME!(b"Vector with variable length elements are not supported.\n\0".as_ptr() as LPCSTR);
+                return STG_E_INVALIDPARAMETER;
+            }
+            _ => {}
+        }
+
+        hr = buffer_read_dword(buffer, offset, &mut count);
+        if SUCCEEDED(hr) {
+            let elemsize = propertystorage_get_elemsize(prop);
+            let mut elem: PROPVARIANT = core::mem::zeroed();
+
+            offset += core::mem::size_of::<DWORD>();
+
+            let elems = allocate(allocate_data, (elemsize * count as usize) as ULONG) as *mut u8;
+            (*prop).__bindgen_anon_1.capropvar.pElems = elems as *mut PROPVARIANT;
+            if !elems.is_null() {
+                (*prop).__bindgen_anon_1.capropvar.cElems = count;
+                elem.vt = (*prop).vt & !(VT_VECTOR as VARTYPE);
+
+                for i in 0..count as usize {
+                    hr = propertystorage_read_scalar(
+                        &mut elem,
+                        buffer,
+                        offset + i * elemsize,
+                        codepage,
+                        allocate,
+                        allocate_data,
+                    );
+                    if SUCCEEDED(hr) {
+                        // Divergence from wine-10, whose `memcpy(&prop->capropvar.pElems[i],
+                        // &elem.lVal, elemsize)` indexes pElems as a PROPVARIANT* -- a stride
+                        // of sizeof(PROPVARIANT) into a buffer allocated elemsize * count, so
+                        // every fixed-size vector of 2+ elements narrower than a PROPVARIANT
+                        // overran the heap. The element arrays are typed per member (CAL is
+                        // LONG*), so element i lives at pElems + i * elemsize.
+                        core::ptr::copy_nonoverlapping(
+                            core::ptr::addr_of!(elem.__bindgen_anon_1) as *const u8,
+                            elems.add(i * elemsize),
+                            elemsize,
+                        );
+                    }
+                }
+            } else {
+                hr = STG_E_INSUFFICIENTMEMORY;
+            }
+        }
+    } else if ((*prop).vt as DWORD & VT_ARRAY) != 0 {
+        FIXME!(b"VT_ARRAY properties are not supported.\n\0".as_ptr() as LPCSTR);
+        hr = STG_E_INVALIDPARAMETER;
+    } else {
+        hr = propertystorage_read_scalar(prop, buffer, offset, codepage, allocate, allocate_data);
+    }
+
     hr
 }
 
@@ -1567,6 +1765,7 @@ unsafe fn PropertyStorage_ReadFromStream(This: *mut PropertyStorage_impl) -> HRE
     let mut stat: STATSTG = core::mem::zeroed();
     let mut hr: HRESULT;
     let mut buf: *mut BYTE = core::ptr::null_mut();
+    let mut read_buf = read_buffer { data: core::ptr::null_mut(), size: 0 };
     let mut count: ULONG = 0;
     let mut dictOffset: DWORD = 0;
 
@@ -1643,6 +1842,16 @@ unsafe fn PropertyStorage_ReadFromStream(This: *mut PropertyStorage_impl) -> HRE
             hr = STG_E_INVALIDHEADER;
             break 'end;
         }
+        // wine-10: seek to the section the format-ID entry points at. The old code read
+        // the section header from wherever the FMTIDOFFSET read left the stream, which is
+        // only right when the section directly follows -- not for DocSummaryInformation
+        // (two FMTIDOFFSETs), where cbSection came back as garbage and the allocation
+        // below failed STG_E_INSUFFICIENTMEMORY.
+        seek.QuadPart = fmtOffset.dwOffset as LONGLONG;
+        hr = IStream_Seek((*This).stm, seek, STREAM_SEEK_SET, core::ptr::null_mut());
+        if FAILED(hr) {
+            break 'end;
+        }
         // wackiness alert: if the format ID is FMTID_DocSummaryInformation, there
         // follows not one, but two sections.  Reading the second isn't implemented yet.
         hr = PropertyStorage_ReadSectionHeaderFromStream(
@@ -1671,10 +1880,13 @@ unsafe fn PropertyStorage_ReadFromStream(This: *mut PropertyStorage_impl) -> HRE
             hr = STG_E_INSUFFICIENTMEMORY;
             break 'end;
         }
+        read_buf.data = buf;
+        read_buf.size =
+            (sectionHdr.cbSection as usize) - core::mem::size_of::<PROPERTYSECTIONHEADER>();
         hr = IStream_Read(
             (*This).stm,
             buf as *mut c_void,
-            sectionHdr.cbSection - core::mem::size_of::<PROPERTYSECTIONHEADER>() as ULONG,
+            read_buf.size as ULONG,
             core::ptr::addr_of_mut!(count),
         );
         if FAILED(hr) {
@@ -1709,11 +1921,10 @@ unsafe fn PropertyStorage_ReadFromStream(This: *mut PropertyStorage_impl) -> HRE
                     PropVariantInit(core::ptr::addr_of_mut!(prop));
                     if SUCCEEDED(PropertyStorage_ReadProperty(
                         core::ptr::addr_of_mut!(prop),
-                        buf.add(
-                            ((*idOffset).dwOffset
-                                - core::mem::size_of::<PROPERTYSECTIONHEADER>() as DWORD)
-                                as usize,
-                        ),
+                        &read_buf,
+                        ((*idOffset).dwOffset
+                            - core::mem::size_of::<PROPERTYSECTIONHEADER>() as DWORD)
+                            as usize,
                         (*This).codePage,
                         Allocate_CoTaskMemAlloc,
                         core::ptr::null_mut(),
@@ -1726,7 +1937,9 @@ unsafe fn PropertyStorage_ReadFromStream(This: *mut PropertyStorage_impl) -> HRE
                         match (*idOffset).propid {
                             PID_CODEPAGE => {
                                 if prop.vt == VT_I2 as VARTYPE {
-                                    (*This).codePage = prop.__bindgen_anon_1.iVal as UINT;
+                                    // (USHORT) first, as wine-10: a negative i16 (CP_UTF8 = 65001)
+                                    // must not sign-extend to 0xFFFFFDE9.
+                                    (*This).codePage = prop.__bindgen_anon_1.iVal as u16 as UINT;
                                 }
                             }
                             PID_LOCALE => {
@@ -1777,9 +1990,8 @@ unsafe fn PropertyStorage_ReadFromStream(This: *mut PropertyStorage_impl) -> HRE
         if dictOffset != 0 {
             hr = PropertyStorage_ReadDictionary(
                 This,
-                buf.add(
-                    (dictOffset - core::mem::size_of::<PROPERTYSECTIONHEADER>() as DWORD) as usize,
-                ),
+                &read_buf,
+                (dictOffset - core::mem::size_of::<PROPERTYSECTIONHEADER>() as DWORD) as usize,
             );
         }
     }
@@ -1918,12 +2130,19 @@ unsafe extern "C" fn PropertyStorage_DictionaryWriter(
     if (*This).codePage == CP_UNICODE {
         let mut keyLen: DWORD = 0;
         let pad: DWORD = 0;
+        // The on-disk entry length of a CP_UNICODE dictionary is a CHARACTER count:
+        // PropertyStorage_ReadDictionary (same file) reads it as one and doubles it to
+        // bytes. The pre-wine-10 C wrote a BYTE count here and then added
+        // `keyLen * sizeof(WCHAR)` to bytesWritten, so a dictionary this wrote could not be
+        // read back (the reader skipped twice the string) and every property offset after
+        // it in the section was shifted by the doubled count. Write the character count,
+        // and account the string, its padding and the section offset in bytes -- what
+        // wine-10.0 does, keeping the old reader-matching padding rule (pad only when the
+        // byte length is not already DWORD-aligned; wine-10 pads a full DWORD when it is).
+        let cchKey: DWORD = (lstrlenW(key as LPCWSTR) + 1) as DWORD;
+        let cbKey: DWORD = cchKey * core::mem::size_of::<WCHAR>() as DWORD;
 
-        StorageUtl_WriteDWord(
-            core::ptr::addr_of_mut!(keyLen) as LPBYTE,
-            0,
-            ((lstrlenW(key as LPCWSTR) + 1) * core::mem::size_of::<WCHAR>() as i32) as DWORD,
-        );
+        StorageUtl_WriteDWord(core::ptr::addr_of_mut!(keyLen) as LPBYTE, 0, cchKey);
         (*c).hr = IStream_Write(
             (*This).stm,
             core::ptr::addr_of!(keyLen) as *const c_void,
@@ -1939,34 +2158,26 @@ unsafe extern "C" fn PropertyStorage_DictionaryWriter(
         (*c).hr = PropertStorage_WriteWStringToStream(
             (*This).stm,
             key as LPCWSTR,
-            keyLen,
+            cbKey,
             core::ptr::addr_of_mut!(count),
         );
         if FAILED((*c).hr) {
             return SUCCEEDED((*c).hr) as BOOL;
         }
-        // UPSTREAM BUG (stg_prop.c:1621): `c->bytesWritten += keyLen * sizeof(WCHAR)` —
-        // keyLen is already a BYTE count (set two statements up), so the running total
-        // is doubled for unicode dictionaries. Preserved bug-for-bug.
-        (*c).bytesWritten = (*c)
-            .bytesWritten
-            .wrapping_add(keyLen.wrapping_mul(core::mem::size_of::<WCHAR>() as DWORD));
-        if keyLen % core::mem::size_of::<DWORD>() as DWORD != 0 {
+        (*c).bytesWritten = (*c).bytesWritten.wrapping_add(cbKey);
+        if cbKey % core::mem::size_of::<DWORD>() as DWORD != 0 {
+            let cbPad = core::mem::size_of::<DWORD>() as DWORD
+                - cbKey % core::mem::size_of::<DWORD>() as DWORD;
             (*c).hr = IStream_Write(
                 (*This).stm,
                 core::ptr::addr_of!(pad) as *const c_void,
-                (core::mem::size_of::<DWORD>() as DWORD)
-                    .wrapping_sub(keyLen % core::mem::size_of::<DWORD>() as DWORD)
-                    as ULONG,
+                cbPad as ULONG,
                 core::ptr::addr_of_mut!(count),
             );
             if FAILED((*c).hr) {
                 return SUCCEEDED((*c).hr) as BOOL;
             }
-            (*c).bytesWritten = (*c).bytesWritten.wrapping_add(
-                (core::mem::size_of::<DWORD>() as DWORD)
-                    .wrapping_sub(keyLen % core::mem::size_of::<DWORD>() as DWORD),
-            );
+            (*c).bytesWritten = (*c).bytesWritten.wrapping_add(cbPad);
         }
     } else {
         let mut keyLen: DWORD = 0;
@@ -2096,7 +2307,7 @@ unsafe fn PropertyStorage_WritePropertyToStream(
     let mut propIdOffset: PROPERTYIDOFFSET = core::mem::zeroed();
     let mut count: ULONG = 0;
     let mut dwType: DWORD = 0;
-    let bytesWritten: DWORD;
+    let mut bytesWritten: DWORD = 0;
 
     assert(!var.is_null());
     assert(!sectionOffset.is_null());
@@ -2199,6 +2410,23 @@ unsafe fn PropertyStorage_WritePropertyToStream(
             );
             bytesWritten = count;
         }
+        VT_I8 | VT_UI8 => {
+            // wine-10: new. The old translation fell to the default arm, so WriteMultiple
+            // accepted these and Commit then failed STG_E_INVALIDPARAMETER mid-write.
+            let mut ularge: ULARGE_INTEGER = core::mem::zeroed();
+
+            StorageUtl_WriteULargeInteger(
+                core::ptr::addr_of_mut!(ularge) as LPBYTE,
+                0,
+                core::ptr::addr_of!((*var).__bindgen_anon_1.uhVal),
+            );
+            hr = IStream_Write(
+                (*This).stm,
+                core::ptr::addr_of!(ularge) as *const c_void,
+                core::mem::size_of::<ULARGE_INTEGER>() as ULONG,
+                core::ptr::addr_of_mut!(bytesWritten),
+            );
+        }
         VT_LPSTR => {
             let len: DWORD;
             let mut dwTemp: DWORD = 0;
@@ -2223,6 +2451,109 @@ unsafe fn PropertyStorage_WritePropertyToStream(
                 (*This).stm,
                 (*var).__bindgen_anon_1.pszVal as *const c_void,
                 len,
+                core::ptr::addr_of_mut!(count),
+            );
+            bytesWritten = count + core::mem::size_of::<DWORD>() as DWORD;
+        }
+        VT_BSTR => {
+            // wine-10: new (see VT_I8). Unicode sets store the BSTR bytes plus its NUL; ANSI
+            // sets convert to the set's code page, NUL included.
+            let mut dwTemp: DWORD = 0;
+            let len: DWORD;
+
+            if (*This).codePage == CP_UNICODE {
+                len = SysStringByteLen((*var).__bindgen_anon_1.bstrVal)
+                    + core::mem::size_of::<WCHAR>() as DWORD;
+                StorageUtl_WriteDWord(core::ptr::addr_of_mut!(dwTemp) as LPBYTE, 0, len);
+                hr = IStream_Write(
+                    (*This).stm,
+                    core::ptr::addr_of!(dwTemp) as *const c_void,
+                    core::mem::size_of::<DWORD>() as ULONG,
+                    core::ptr::addr_of_mut!(count),
+                );
+                if SUCCEEDED(hr) {
+                    hr = IStream_Write(
+                        (*This).stm,
+                        (*var).__bindgen_anon_1.bstrVal as *const c_void,
+                        len,
+                        core::ptr::addr_of_mut!(count),
+                    );
+                }
+            } else {
+                let bstr = (*var).__bindgen_anon_1.bstrVal;
+                let cch = SysStringLen(bstr) as c_int;
+
+                len = WideCharToMultiByte(
+                    (*This).codePage,
+                    0,
+                    bstr,
+                    cch + 1,
+                    core::ptr::null_mut(),
+                    0,
+                    core::ptr::null(),
+                    core::ptr::null_mut(),
+                ) as DWORD;
+
+                // Zeroed: wine-10 converts only the SysStringLen characters (not the NUL
+                // its length counted) into an uninitialised buffer, so the last byte it
+                // writes to the stream is heap garbage. Here it is the terminator.
+                let str_ = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len as SIZE_T) as LPSTR;
+                if str_.is_null() {
+                    return E_OUTOFMEMORY;
+                }
+
+                WideCharToMultiByte(
+                    (*This).codePage,
+                    0,
+                    bstr,
+                    cch,
+                    str_,
+                    len as c_int,
+                    core::ptr::null(),
+                    core::ptr::null_mut(),
+                );
+                StorageUtl_WriteDWord(core::ptr::addr_of_mut!(dwTemp) as LPBYTE, 0, len);
+                hr = IStream_Write(
+                    (*This).stm,
+                    core::ptr::addr_of!(dwTemp) as *const c_void,
+                    core::mem::size_of::<DWORD>() as ULONG,
+                    core::ptr::addr_of_mut!(count),
+                );
+                if SUCCEEDED(hr) {
+                    hr = IStream_Write(
+                        (*This).stm,
+                        str_ as *const c_void,
+                        len,
+                        core::ptr::addr_of_mut!(count),
+                    );
+                }
+                HeapFree(GetProcessHeap(), 0, str_ as LPVOID);
+            }
+
+            bytesWritten = count + core::mem::size_of::<DWORD>() as DWORD;
+        }
+        VT_BLOB => {
+            // wine-10: new (see VT_I8).
+            let mut dwTemp: DWORD = 0;
+
+            StorageUtl_WriteDWord(
+                core::ptr::addr_of_mut!(dwTemp) as LPBYTE,
+                0,
+                (*var).__bindgen_anon_1.blob.cbSize,
+            );
+            hr = IStream_Write(
+                (*This).stm,
+                core::ptr::addr_of!(dwTemp) as *const c_void,
+                core::mem::size_of::<DWORD>() as ULONG,
+                core::ptr::addr_of_mut!(count),
+            );
+            if FAILED(hr) {
+                return hr;
+            }
+            hr = IStream_Write(
+                (*This).stm,
+                (*var).__bindgen_anon_1.blob.pBlobData as *const c_void,
+                (*var).__bindgen_anon_1.blob.cbSize,
                 core::ptr::addr_of_mut!(count),
             );
             bytesWritten = count + core::mem::size_of::<DWORD>() as DWORD;
@@ -2908,6 +3239,11 @@ unsafe fn IPropertySetStorage_fnEnum(
     ppenum: *mut *mut IEnumSTATPROPSETSTG,
 ) -> HRESULT {
     let This = impl_from_IPropertySetStorage(ppstg);
+    // wine-10: a NULL out-pointer is E_INVALIDARG, not a store through NULL
+    // (Wine's stg_prop test calls Enum(NULL)).
+    if ppenum.is_null() {
+        return E_INVALIDARG;
+    }
     create_EnumSTATPROPSETSTG(This, ppenum)
 }
 
@@ -3435,9 +3771,12 @@ pub unsafe extern "system" fn StgConvertPropertyToVariant(
     pvar: *mut PROPVARIANT,
     pma: *mut c_void,
 ) -> BOOLEAN {
+    // wine-10: an unbounded buffer -- the caller vouches for the serialized value.
+    let read_buf = read_buffer { data: prop as *mut BYTE, size: !0usize };
     let hr = PropertyStorage_ReadProperty(
         pvar,
-        prop as *const BYTE,
+        &read_buf,
+        0,
         CodePage as UINT,
         Allocate_PMemoryAllocator,
         pma,

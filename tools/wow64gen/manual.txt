@@ -185,3 +185,8 @@ NtCloseObjectAuditAlarm
 NtDeleteObjectAuditAlarm
 NtPrivilegeObjectAuditAlarm
 NtPrivilegedServiceAuditAlarm
+# User APCs: the routine is 32-bit code, which the native KiUserApcDispatcher
+# would call as native. Queued as wow64's Wow64ApcRoutine with the guest's
+# routine and context packed into the 64-bit context (wow64_callback.c).
+NtQueueApcThread
+NtSetTimer

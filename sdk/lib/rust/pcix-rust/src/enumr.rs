@@ -43,6 +43,8 @@ use core::ffi::c_void;
 use ntkrnl_sys::ddk::{CM_FULL_RESOURCE_DESCRIPTOR, _DEVICE_RELATIONS, _IO_RESOURCE_DESCRIPTOR, _IO_RESOURCE_REQUIREMENTS_LIST, _PCI_COMMON_HEADER};
 
 use crate::glue::{CmResourceTypeInterrupt, PCI_CAPABILITY_ID_AGP};
+use crate::glue::{CmResourceTypeMemoryLarge, CmResourceShareDeviceExclusive, CmResourceShareDriverExclusive};
+use ntkrnl_sys::ddk::RtlCmDecodeMemIoResource;
 use crate::types::{PCI_HACK_FIXUP_AFTER_CONFIGURATION, PCI_HACK_FIXUP_BEFORE_CONFIGURATION, PCI_HACK_FIXUP_BEFORE_UPDATE};
 // PCI macros from pci.h / iotypes.h, inlined as helpers.
 const PCI_MULTIFUNCTION: u8 = 0x80;
@@ -121,12 +123,11 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
 ) -> u8 {
     let mut Partial: *mut CM_PARTIAL_RESOURCE_DESCRIPTOR;
     let mut InterruptResource: *mut CM_PARTIAL_RESOURCE_DESCRIPTOR;
-    let mut BaseResource: *mut CM_PARTIAL_RESOURCE_DESCRIPTOR;
     let mut CurrentDescriptor: *mut CM_PARTIAL_RESOURCE_DESCRIPTOR;
-    let mut PreviousDescriptor: *mut CM_PARTIAL_RESOURCE_DESCRIPTOR;
     let mut ResourceArray: [CM_PARTIAL_RESOURCE_DESCRIPTOR; 7] = core::mem::zeroed();
+    let mut BarIndex: u32;
     let mut FullList: *mut CM_FULL_RESOURCE_DESCRIPTOR;
-    let mut DrainPartial: u8;
+    let mut DrainPartial: u32;
     let mut RangeChange: u8 = 0;
     let mut i: u32;
     let mut j: u32;
@@ -136,6 +137,11 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
 
     Partial = core::ptr::null_mut();
     InterruptResource = core::ptr::null_mut();
+    BarIndex = 0;
+
+    /* The limits say which BARs this function implements, so the walk below
+     * can tell which BAR each assigned descriptor belongs to */
+    PciResources = (*PdoExtension).Resources;
 
     if ResourceList.is_null() || (*ResourceList).Count == 0 {
         return (*PdoExtension).UpdateHardware;
@@ -151,7 +157,6 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
     i = 0;
     while i < (*ResourceList).Count {
         DrainPartial = 0;
-        BaseResource = core::ptr::null_mut();
 
         Partial = (*FullList).PartialResourceList.PartialDescriptors.as_mut_ptr();
         j = 0;
@@ -164,9 +169,34 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
             }
 
             match (*Partial).Type as u32 {
-                CmResourceTypePort | CmResourceTypeMemory => {
-                    /* ASSERT(BaseResource == NULL); omitted */
-                    BaseResource = Partial;
+                CmResourceTypePort | CmResourceTypeMemory | CmResourceTypeMemoryLarge => {
+                    /*
+                     * Skip legacy/shared resources (e.g., VGA ports 0x3B0-0x3DF,
+                     * memory 0xA0000): they do not belong to a BAR, so they are
+                     * not placed in the ResourceArray.
+                     */
+                    if (*Partial).ShareDisposition == CmResourceShareDeviceExclusive
+                        || (*Partial).ShareDisposition == CmResourceShareDriverExclusive
+                    {
+                        /*
+                         * The assigned descriptors come back in the order the
+                         * requirements list asked for them, so walking the limits
+                         * in that same order says which BAR this one satisfies.
+                         */
+                        if !PciResources.is_null() {
+                            while (BarIndex as usize) < ResourceArray.len()
+                                && (*PciResources).Limit[BarIndex as usize].Type
+                                    == CmResourceTypeNull as u8
+                            {
+                                BarIndex += 1;
+                            }
+
+                            if (BarIndex as usize) < ResourceArray.len() {
+                                ResourceArray[BarIndex as usize] = *Partial;
+                                BarIndex += 1;
+                            }
+                        }
+                    }
                 }
                 CmResourceTypeInterrupt => {
                     /* ASSERT(InterruptResource == NULL); omitted */
@@ -188,9 +218,8 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
                             UNIMPLEMENTED_DBGBREAK();
                         }
                         3 => {
-                            /* ASSERT(BaseResource == NULL); omitted */
-                            DrainPartial = *core::ptr::addr_of!((*Partial).u.DevicePrivate.Data).cast::<ULONG>().add(1) as u8;
-                            /* ASSERT(DrainPartial == TRUE); omitted */
+                            /* A drain request: skip the next Data[1] descriptors */
+                            DrainPartial = (*Partial).u.DevicePrivate.Data[1];
                         }
                         _ => {}
                     }
@@ -202,34 +231,25 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
             Partial = CmiGetNextPartialDescriptor(Partial);
         }
 
-        /* ASSERT(BaseResource == NULL); omitted */
         FullList = Partial as *mut CM_FULL_RESOURCE_DESCRIPTOR;
         i = i.wrapping_add(1);
     }
 
-    PciResources = (*PdoExtension).Resources;
+    /* A function with no discovered resources has nothing to update */
     if PciResources.is_null() {
         return 0;
     }
 
-    UNIMPLEMENTED!();
-    DbgPrint((b"Missing sanity checking code!\n\0".as_ptr() as *const u8 as *const i8).cast());
+    for i in 0..ResourceArray.len() {
+        CurrentDescriptor = (*PciResources).Current.as_mut_ptr().add(i);
+        Partial = ResourceArray.as_mut_ptr().add(i);
 
-    for i in 0..7 {
-        CurrentDescriptor = (*PciResources).Current.as_mut_ptr().add(i as usize);
-        Partial = ResourceArray.as_mut_ptr().add(i as usize);
-        PreviousDescriptor = if i == 0 {
-            (*PciResources).Current.as_mut_ptr()
-        } else {
-            (*PciResources).Current.as_mut_ptr().add((i - 1) as usize)
-        };
-
-        if ((*Partial).Type != (*CurrentDescriptor).Type
-            || (*Partial).Type != CmResourceTypeNull as u8)
-            && ((*Partial).u.Generic.Start.QuadPart
-                != (*CurrentDescriptor).u.Generic.Start.QuadPart
-                || (*Partial).u.Generic.Length
-                    != (*CurrentDescriptor).u.Generic.Length)
+        if (*Partial).Type != (*CurrentDescriptor).Type
+            || ((*Partial).Type != CmResourceTypeNull as u8
+                && ((*Partial).u.Generic.Start.QuadPart
+                    != (*CurrentDescriptor).u.Generic.Start.QuadPart
+                    || RtlCmDecodeMemIoResource(Partial, core::ptr::null_mut())
+                        != RtlCmDecodeMemIoResource(CurrentDescriptor, core::ptr::null_mut())))
         {
             RangeChange = 1;
 
@@ -245,12 +265,11 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
             DbgPrint((b"      changed to\n\0".as_ptr() as *const u8 as *const i8).cast());
             PciDebugPrintPartialResource(Partial);
 
+            /* Update to new range */
             (*CurrentDescriptor).Type = (*Partial).Type;
-            (*PreviousDescriptor).u.Generic.Start =
-                (*Partial).u.Generic.Start;
-            (*PreviousDescriptor).u.Generic.Length =
-                (*Partial).u.Generic.Length;
-            CurrentDescriptor = PreviousDescriptor;
+            (*CurrentDescriptor).Flags = (*Partial).Flags;
+            (*CurrentDescriptor).u.Generic.Start = (*Partial).u.Generic.Start;
+            (*CurrentDescriptor).u.Generic.Length = (*Partial).u.Generic.Length;
         }
     }
 
@@ -278,6 +297,17 @@ pub unsafe extern "system" fn PcipUpdateHardware(
             | PCI_ENABLE_BUS_MASTER
             | PCI_ENABLE_WRITE_AND_INVALIDATE) as u16);
         (*PciData).Command &= mask;
+
+        /* A BAR size can only change with the decodes off, before the BAR gets its address */
+        if (*PdoExtension).ResizableBarState.CapabilityPtr != 0 {
+            PciWriteDeviceConfig(
+                PdoExtension,
+                core::ptr::addr_of_mut!((*PciData).Command) as _,
+                core::mem::offset_of!(PCI_COMMON_HEADER, Command) as ULONG,
+                core::mem::size_of::<USHORT>() as ULONG,
+            );
+            PciApplyResizableBarSizes(PdoExtension);
+        }
     }
 
     // Update device configuration
@@ -410,7 +440,9 @@ pub unsafe extern "system" fn PciQueryResources(
     while i < 7 {
         /* Check if the decode for this descriptor is actually turned on */
         Partial = core::ptr::addr_of_mut!((*PciResources).Current[i as usize]);
-        if (HaveMemSpace != 0 && (*Partial).Type as u32 == CmResourceTypeMemory)
+        if (HaveMemSpace != 0
+            && ((*Partial).Type as u32 == CmResourceTypeMemory
+                || (*Partial).Type as u32 == CmResourceTypeMemoryLarge))
             || (HaveIoSpace != 0 && (*Partial).Type as u32 == CmResourceTypePort)
         {
             /* One more fully active descriptor */
@@ -477,7 +509,9 @@ pub unsafe extern "system" fn PciQueryResources(
     while i < 7 {
         /* Check if the decode for this descriptor is actually turned on */
         Partial = core::ptr::addr_of_mut!((*PciResources).Current[i as usize]);
-        if (HaveMemSpace != 0 && (*Partial).Type as u32 == CmResourceTypeMemory)
+        if (HaveMemSpace != 0
+            && ((*Partial).Type as u32 == CmResourceTypeMemory
+                || (*Partial).Type as u32 == CmResourceTypeMemoryLarge))
             || (HaveIoSpace != 0 && (*Partial).Type as u32 == CmResourceTypePort)
         {
             /* Copy the descriptor into the resource list */
@@ -570,7 +604,7 @@ pub unsafe extern "system" fn PciQueryTargetDeviceRelations(
 
 #[no_mangle]
 pub unsafe extern "system" fn PciQueryEjectionRelations(
-    PdoExtension: *mut PPCI_PDO_EXTENSION,
+    PdoExtension: PPCI_PDO_EXTENSION,
     pDeviceRelations: *mut *mut DEVICE_RELATIONS,
 ) -> NTSTATUS {
     let _ = PdoExtension;
@@ -586,27 +620,125 @@ pub unsafe extern "system" fn PciBuildRequirementsList(
     PciData: PPCI_COMMON_HEADER,
     Buffer: *mut PIO_RESOURCE_REQUIREMENTS_LIST,
 ) -> NTSTATUS {
-    // UNREFERENCED_PARAMETER(PdoExtension);
-    // UNREFERENCED_PARAMETER(PciData);
-    let _ = (PdoExtension, PciData);
+    const CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE: u16 = 0x0000; // xdk/cmtypes.h
+    let mut RequirementsList: PIO_RESOURCE_REQUIREMENTS_LIST;
+    let mut Descriptor: PIO_RESOURCE_DESCRIPTOR;
+    let Resources = (*PdoExtension).Resources;
+    let mut Count: u32;
 
-    let mut RequirementsList: PIO_RESOURCE_REQUIREMENTS_LIST = PciZeroIoResourceRequirements;
+    /* Count the BAR limits that resource discovery found for this function */
+    Count = 0;
+    if !Resources.is_null() {
+        for i in 0..(PCI_TYPE0_ADDRESSES as usize + 1) {
+            if (*Resources).Limit[i].Type == CmResourceTypeNull as u8 {
+                continue;
+            }
 
+            /* A resizable BAR also asks for the larger sizes it can decode */
+            Count += 1;
+            Count += PciAddResizableBarRequirements(
+                PdoExtension,
+                i as ULONG,
+                core::ptr::addr_of_mut!((*Resources).Limit[i]),
+                core::ptr::null_mut(),
+            );
+        }
+    }
+
+    /* A device with an interrupt pin also needs a line routed to it */
+    let HaveInterrupt = (*PdoExtension).InterruptPin != 0
+        && ((*PdoExtension).HackFlags & (PCI_HACK_NO_ENUM_AT_ALL as u64)) == 0;
+    if HaveInterrupt {
+        Count += 1;
+    }
+
+    /* And a bridge with legacy decodes enabled needs those ranges locked down */
+    Count += (*PdoExtension).AdditionalResourceCount as u32;
+
+    /* Check if the function turned out to need nothing after all */
+    if Count == 0 {
+        /* There aren't, so use the zero descriptor */
+        RequirementsList = PciZeroIoResourceRequirements;
+
+        if RequirementsList.is_null() {
+            RequirementsList = PciAllocateIoRequirementsList(0, 0, 0);
+            PciZeroIoResourceRequirements = RequirementsList;
+            if PciZeroIoResourceRequirements.is_null() {
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+        }
+
+        *Buffer = RequirementsList;
+
+        DbgPrint(
+            b"PCI - build resource reqs - early out, 0 resources\n\0"
+                .as_ptr() as *const i8,
+        );
+
+        return STATUS_SUCCESS;
+    }
+
+    RequirementsList = PciAllocateIoRequirementsList(
+        Count,
+        (*(*PdoExtension).ParentFdoExtension).BaseBus as u32,
+        (*PdoExtension).Slot.u.AsULONG,
+    );
     if RequirementsList.is_null() {
-        RequirementsList = PciAllocateIoRequirementsList(0, 0, 0);
-        PciZeroIoResourceRequirements = RequirementsList;
-        if PciZeroIoResourceRequirements.is_null() {
-            return STATUS_INSUFFICIENT_RESOURCES;
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    Descriptor = (*RequirementsList).List[0].Descriptors.as_mut_ptr();
+
+    /* Emit one descriptor per BAR that decoded something during discovery */
+    if !Resources.is_null() {
+        for i in 0..(PCI_TYPE0_ADDRESSES as usize + 1) {
+            /* Skip the BARs this function does not implement */
+            if (*Resources).Limit[i].Type == CmResourceTypeNull as u8 {
+                continue;
+            }
+
+            /* The larger sizes of a resizable BAR come first, its default size is the fallback */
+            let Resized = PciAddResizableBarRequirements(
+                PdoExtension,
+                i as ULONG,
+                core::ptr::addr_of_mut!((*Resources).Limit[i]),
+                Descriptor,
+            );
+            Descriptor = Descriptor.add(Resized as usize);
+
+            /* A BAR decodes for one function only, so it cannot be shared */
+            *Descriptor = (*Resources).Limit[i];
+            (*Descriptor).ShareDisposition = CmResourceShareDeviceExclusive;
+            if Resized != 0 {
+                (*Descriptor).Option = IO_RESOURCE_ALTERNATIVE as UCHAR;
+            }
+            Descriptor = Descriptor.add(1);
+        }
+    }
+
+    if HaveInterrupt {
+        (*Descriptor).Type = CmResourceTypeInterrupt as u8;
+        (*Descriptor).ShareDisposition = CmResourceShareShared;
+        (*Descriptor).Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
+        (*Descriptor).u.Interrupt.MinimumVector = 0;
+        (*Descriptor).u.Interrupt.MaximumVector = u32::MAX; // MAXULONG
+        Descriptor = Descriptor.add(1);
+    }
+
+    /* And finally any extra ranges this kind of function decodes on the side */
+    if (*PdoExtension).AdditionalResourceCount != 0 {
+        let mut Context: PCI_CONFIGURATOR_CONTEXT = core::mem::zeroed();
+        Context.PdoExtension = PdoExtension;
+        Context.Current = PciData;
+        // Every PciConfigurators row fills this slot (the C calls it unconditionally).
+        if let Some(GetAdditional) =
+            PciConfigurators[(*PdoExtension).HeaderType as usize].GetAdditionalResourceDescriptors
+        {
+            GetAdditional(core::ptr::addr_of_mut!(Context), PciData, Descriptor);
         }
     }
 
     *Buffer = RequirementsList;
-
-    DbgPrint(
-        b"PCI - build resource reqs - early out, 0 resources\n\0"
-            .as_ptr() as *const i8,
-    );
-
     STATUS_SUCCESS
 }
 
@@ -1131,6 +1263,12 @@ pub unsafe extern "system" fn PciGetEnhancedCapabilities(
             }
         }
     }
+    /* Now find out whether this is an Express function, and what kind */
+    PciGetExpressCapabilities(PdoExtension);
+
+    /* And whether any of its BARs can be resized */
+    PciGetResizableBarCapability(PdoExtension);
+
     if ((*PdoExtension).HackFlags & (PCI_HACK_NO_PM_CAPS as u64)) != 0 {
         (*PdoExtension).PowerState.CurrentDeviceState = if ((*PciData).Command
             & ((PCI_ENABLE_IO_SPACE | PCI_ENABLE_MEMORY_SPACE | PCI_ENABLE_BUS_MASTER) as u16))
@@ -1481,18 +1619,27 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
                                          (*pci_data).RevisionID) as i64;
 
             if PciIsCriticalDeviceClass((*pci_data).BaseClass, (*pci_data).SubClass) != 0 {
-                if (hack_flags & (PCI_HACK_DONT_DISABLE_DECODES as i64)) == 0 {
+                /* The hack database can take a device out of its critical class */
+                if (hack_flags & (PCI_HACK_NOT_CRITICAL_DEVICE as i64)) == 0 {
                     DbgPrint((b"Not allowing PM Because device is critical\n\0".as_ptr() as *const i8).cast());
-                    hack_flags |= (PCI_HACK_CRITICAL_DEVICE as i64);
+
+                    /* Probe it with the system held, and keep it decoding while stopped */
+                    hack_flags |= (PCI_HACK_CRITICAL_DEVICE | PCI_HACK_KEEP_DECODES_ON_STOP) as i64;
+
+                    /* Only the display can still be powered down */
+                    if (*pci_data).BaseClass != PCI_CLASS_DISPLAY_CTLR as u8 {
+                        hack_flags |= PCI_HACK_NEVER_POWER_DOWN as i64;
+                    }
                 }
             }
 
             if ((*pci_data).BaseClass == PCI_CLASS_BRIDGE_DEV as u8) &&
                ((*pci_data).SubClass == PCI_SUBCLASS_BR_PCI_TO_PCI as u8) &&
                ((*pci_data).u.type1.BridgeControl & PCI_ENABLE_BRIDGE_VGA as u16) != 0 &&
-               (hack_flags & (PCI_HACK_DONT_DISABLE_DECODES as i64)) == 0 {
+               (hack_flags & (PCI_HACK_NOT_CRITICAL_DEVICE as i64)) == 0 {
+                /* They follow the adapter behind them, so they can still be powered down */
                 DbgPrint((b"Not allowing PM because device is VGA\n\0".as_ptr() as *const i8).cast());
-                hack_flags |= (PCI_HACK_CRITICAL_DEVICE as i64);
+                hack_flags |= (PCI_HACK_CRITICAL_DEVICE | PCI_HACK_KEEP_DECODES_ON_STOP) as i64;
             }
 
             if PciSkipThisFunction(pci_data,
@@ -1855,7 +2002,45 @@ pub unsafe extern "system" fn PciSetResources(
     if (*PdoExtension).NeedsHotPlugConfiguration != 0
         && (*fdo_extension).HotPlugParameters.Acquired != 0
     {
-        UNIMPLEMENTED_DBGBREAK();
+        let mut cache_line_read_back: UCHAR = 0;
+
+        /* The firmware never configured this device, so use what _HPP asks for */
+        (*PdoExtension).SavedLatencyTimer = (*fdo_extension).HotPlugParameters.LatencyTimer;
+        (*PdoExtension).SavedCacheLineSize = (*fdo_extension).HotPlugParameters.CacheLineSize;
+
+        (*PdoExtension).CommandEnables &= !((PCI_ENABLE_PARITY | PCI_ENABLE_SERR) as u16);
+        if (*fdo_extension).HotPlugParameters.EnablePERR != 0 {
+            (*PdoExtension).CommandEnables |= PCI_ENABLE_PARITY as u16;
+        }
+
+        if (*fdo_extension).HotPlugParameters.EnableSERR != 0 {
+            (*PdoExtension).CommandEnables |= PCI_ENABLE_SERR as u16;
+        }
+
+        /* Only turn on memory write and invalidate if the device keeps the cache line size */
+        PciWriteDeviceConfig(
+            PdoExtension,
+            core::ptr::addr_of_mut!((*PdoExtension).SavedCacheLineSize) as _,
+            core::mem::offset_of!(PCI_COMMON_HEADER, CacheLineSize) as ULONG,
+            core::mem::size_of::<UCHAR>() as ULONG,
+        );
+        PciReadDeviceConfig(
+            PdoExtension,
+            core::ptr::addr_of_mut!(cache_line_read_back) as _,
+            core::mem::offset_of!(PCI_COMMON_HEADER, CacheLineSize) as ULONG,
+            core::mem::size_of::<UCHAR>() as ULONG,
+        );
+        if cache_line_read_back != 0 && cache_line_read_back == (*PdoExtension).SavedCacheLineSize {
+            (*PdoExtension).CommandEnables |= PCI_ENABLE_WRITE_AND_INVALIDATE as u16;
+        } else {
+            DbgPrint(
+                b"(%s:%d) PCI (pdox %p) cache line size %02x rejected, MWI stays off\n\0".as_ptr() as *const i8,
+                b"drivers/bus/pcix/enum.c\0".as_ptr() as *const i8,
+                2358,
+                PdoExtension,
+                (*PdoExtension).SavedCacheLineSize as u32,
+            );
+        }
     }
 
     let header_type = (*PdoExtension).HeaderType;

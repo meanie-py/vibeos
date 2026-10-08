@@ -25,6 +25,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 from pathlib import Path
 
 from .config import RUSTCONV_RESPONSES_DIR
@@ -221,6 +222,50 @@ def _sealed_ok(stored: list | None, current: frozenset[str] | None) -> bool:
     return current <= set(stored)
 
 
+SOURCE_CLAIM = ".source"
+
+
+def bank_base(subsystem: str, c_file: Path, suffix: str, root: Path) -> str:
+    """The bank namespace for *c_file*: ``<dir>__<stem>``, unless another file owns it.
+
+    The key used to be only the parent directory and stem, and two modules carry their own
+    ``spapisup/fileqsup.c`` (setuplib and usetup): usetup's run bought 19 bodies into
+    setuplib's namespace and was refused setuplib's preamble. Each namespace now records
+    the repo-relative C file that filled it (``.source``). A namespace without a claim is
+    taken as the caller's, so every existing bank stays addressable unchanged; a claimed one
+    belonging to a different file sends the caller to ``<grandparent>__<dir>__<stem>``.
+    """
+    try:
+        mine = c_file.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        mine = c_file.resolve().as_posix()
+    legacy = f"{subsystem}__{c_file.stem}"
+    candidates = [legacy, f"{c_file.resolve().parent.parent.name}__{legacy}"]
+    for base in candidates:
+        claim = RESPONSES_DIR / _safe_filename(base + suffix) / SOURCE_CLAIM
+        owner = claim.read_text().strip() if claim.is_file() else None
+        if owner in (None, mine):
+            return base
+    raise RuntimeError(
+        f"rustconv: no free bank namespace for {mine}: {candidates} are claimed by other "
+        "files. Pass --cache-tag to separate it."
+    )
+
+
+def claim_bank(key: str, c_file: Path, root: Path) -> None:
+    """Record which C file a namespace belongs to (first writer wins; never rewritten)."""
+    d = RESPONSES_DIR / _safe_filename(key)
+    claim = d / SOURCE_CLAIM
+    if claim.exists():
+        return
+    try:
+        mine = c_file.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        mine = c_file.resolve().as_posix()
+    d.mkdir(parents=True, exist_ok=True)
+    claim.write_text(mine + "\n")
+
+
 class ResponseCache:
     """One directory per translated file; one .rs per function + a manifest."""
 
@@ -284,17 +329,53 @@ class ResponseCache:
             return None  # poisoned by a pre-fix run: re-translate instead of replaying
         return text
 
-    def refuse_repurchase(self, name: str) -> None:
-        """A rejected or incompatible purchase is a repair task, not a fresh cache miss."""
-        if (
-            name in self._manifest
-            or (self.dir / (_safe_filename(name) + ".rs")).exists()
-            or self.get_rejected(name) is not None
-        ):
+    def refuse_repurchase(
+        self,
+        name: str,
+        *,
+        allow_rejected: bool = False,
+        failed_audit: bool = False,
+        body_text: str | None = None,
+        explicit: bool = False,
+    ) -> None:
+        """A rejected or incompatible purchase is a repair task, not a fresh cache miss.
+
+        `allow_rejected` (translate --rebuy-rejected) lets a name whose ONLY banked state is
+        a body the deterministic audit REJECTED be bought again: that reject was inspected
+        and the model was wrong, so a re-roll is the repair. An accepted body is never
+        re-bought this way.
+        """
+        if explicit:
+            # translate --rebuy-fn NAME: the caller named this body. The usual case is a seal
+            # that got stricter (setuplib's `L"AddReg.NT" INF_ARCH` became one sealed token),
+            # so the banked body answers a contract nobody sends any more. Named, never
+            # inferred: a contract-format change would otherwise re-buy the whole bank.
+            print(f"  {name}: re-buying by request (--rebuy-fn)", file=sys.stderr)
+            return
+        accepted = name in self._manifest or (self.dir / (_safe_filename(name) + ".rs")).exists()
+        entry = self._manifest.get(name)
+        if body_text is not None and entry and entry.get("hash") != _hash(body_text):
+            # The C INPUT changed since the purchase -- the bought body answers a question
+            # nobody is asking any more. setuplib's SetupMoveFile was bought from a body the
+            # scanner had cut at `_SEH2_TRY`; once the scanner saw the whole function the
+            # guard refused to buy it, which would have kept the truncated translation.
+            print(
+                f"  {name}: C body changed since its purchase (banked for a different "
+                "input); buying it for the current source",
+                file=sys.stderr,
+            )
+            return
+        # `failed_audit`: the accepted body fails a check added since it was bought, so it is
+        # a reject in all but storage. Its original response stays in the run archive.
+        if allow_rejected and (not accepted or failed_audit):
+            return
+        if accepted or self.get_rejected(name) is not None:
             raise ValueError(
                 f"{self.dir}: {name} already has purchased output which did not replay. "
                 "Refusing to buy it again automatically; inspect/repair the banked body "
-                "and its audit first. --no-resume is an explicit paid regeneration."
+                "and its audit first. If the C is unchanged but a seal got stricter since the "
+                f"purchase, re-buy just this body with `--rebuy-fn {name}`; --no-resume is an "
+                "explicit paid regeneration of everything."
             )
 
     def put(

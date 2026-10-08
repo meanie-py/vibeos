@@ -23,7 +23,7 @@
 //!
 //! The classification bits below are standard ISO-C/CRT `ctype.h` bits, defined at
 //! `sdk/include/crt/ctype.h:65-76` and re-declared identically at
-//! `sdk/include/ucrt/corecrt_wctype.h:48-58`:
+//! `ucrt/corecrt_wctype.h:48-58`:
 //!   `_UPPER=0x01  _LOWER=0x02  _DIGIT=0x04  _SPACE=0x08`
 //!   `_PUNCT=0x10  _CONTROL=0x20  _BLANK=0x40  _HEX=0x80`
 //! `C1_ALPHA=0x0100` is a GetStringTypeW/NLS "is-alphabetic" bit, defined at

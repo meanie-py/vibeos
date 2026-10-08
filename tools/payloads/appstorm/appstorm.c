@@ -21,7 +21,13 @@ ULONG __cdecl DbgPrint(const char *Format, ...);
 /* expect_box: the text of a message box that is the RIGHT answer in the test machine, not a
  * bug -- the app telling the truth about the environment. Any other box still fails, so an
  * allowance cannot hide a regression that changes what the app says. */
-typedef struct { const char *name; const char *exe; const char *args; const char *expect_box; } app_t;
+/* wait_past: the title of a progress window the app opens BEFORE its real one. rapps
+ * downloads its database first; closing that dialog makes it start the download again from
+ * its main window (upstream gui.cpp CheckAvailable), so judging the dialog under TCG's slow
+ * TLS measured the cancel path, not the app. The app is judged on the window after it. */
+typedef struct {
+    const char *name; const char *exe; const char *args; const char *expect_box; const char *wait_past;
+} app_t;
 static const app_t apps[] = {
     { "notepad", "notepad.exe", "" },       { "calc", "calc.exe", "" },
     { "regedit", "regedit.exe", "" },       { "taskmgr", "taskmgr.exe", "" },
@@ -37,7 +43,7 @@ static const app_t apps[] = {
     { "eventvwr", "eventvwr.exe", "", "attached to the system is not functioning" },
     { "devmgmt", "devmgmt.exe", "" },
     { "servman", "servman.exe", "" },       { "msconfig", "msconfig.exe", "" },
-    { "dxdiag", "dxdiag.exe", "" },         { "rapps", "rapps.exe", "" },
+    { "dxdiag", "dxdiag.exe", "" },         { "rapps", "rapps.exe", "", NULL, "Updating Database" },
     { "mplay32", "mplay32.exe", "" },       { "sndrec32", "sndrec32.exe", "" },
     { "explorer-folder", "explorer.exe", "%WINDIR%" },
     { "mycomputer", "explorer.exe", "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}" },
@@ -219,6 +225,21 @@ static void ascii(const WCHAR *w, char *o, size_t n)
     size_t i = 0;
     for (; w[i] && i + 1 < n; i++) o[i] = (w[i] >= 32 && w[i] < 127) ? (char)w[i] : '?';
     o[i] = 0;
+}
+
+static int progress_showing(const wset_t *before, const char *title)
+{
+    wset_t got;
+    new_windows(before, &got);
+    for (int i = 0; i < got.n; i++) {
+        WCHAR t[128] = L"";
+        char ta[128];
+        InternalGetWindowText(got.h[i], t, 128);
+        ascii(t, ta, sizeof ta);
+        if (!strncmp(ta, title, strlen(title)))
+            return 1;
+    }
+    return 0;
 }
 
 static void dump_hung_thread(HWND h)
@@ -489,6 +510,29 @@ static int app_msgbox(DWORD pid, const char *name, const char *step)
     return 0;
 }
 
+/* App Paths, as ShellExecute resolves an exe that is not on PATH. syssetup.inf's [Finalize]
+ * (RunOnceEx, first boot) moves iexplore.exe from %windir% into Program Files and registers it
+ * here. The x86 livecd is read-only, so the move fails there and SearchPath still finds it in
+ * %windir%; the arm64 ramdisk is writable and gets the real install, so only this finds it. */
+static int app_path(const char *exe, char *out)
+{
+    char key[MAX_PATH], raw[MAX_PATH];
+    DWORD len = sizeof raw, type;
+    HKEY hk;
+    int ok = 0;
+    wsprintfA(key, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\%s", exe);
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, key, 0, KEY_QUERY_VALUE, &hk))
+        return 0;
+    if (!RegQueryValueExA(hk, NULL, NULL, &type, (BYTE *)raw, &len) && (type == REG_SZ || type == REG_EXPAND_SZ)) {
+        char *p = raw;
+        if (*p == '"') { p++; p[strcspn(p, "\"")] = 0; }
+        ExpandEnvironmentStringsA(p, out, MAX_PATH);
+        ok = GetFileAttributesA(out) != INVALID_FILE_ATTRIBUTES;
+    }
+    RegCloseKey(hk);
+    return ok;
+}
+
 /* notepad: type text, File > Save As, name a file on the scratch volume, OK. The Pi crashed
  * notepad here, and the dialog is shell32 end to end (DefView lists the folder, the combo
  * autocompletes against the filesystem), so it reaches code no launch-and-close does. */
@@ -636,7 +680,7 @@ int main(void)
         char path[MAX_PATH], cmd[1024], args[MAX_PATH];
         if (!wanted(a->name))
             continue;
-        if (!SearchPathA(NULL, a->exe, NULL, MAX_PATH, path, NULL)) {
+        if (!SearchPathA(NULL, a->exe, NULL, MAX_PATH, path, NULL) && !app_path(a->exe, path)) {
             SAY("app %s ABSENT (%s)\n", a->name, a->exe);
             absent++;
             continue;
@@ -662,6 +706,7 @@ int main(void)
         end_prior_instances(a->exe);
         snapshot(&before);
         snapshot_pids();
+        DWORD app_t0 = GetTickCount();
         STARTUPINFOA si = { sizeof si };
         PROCESS_INFORMATION pi;
         if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
@@ -680,9 +725,37 @@ int main(void)
         /* Wait for a REAL window, not just the first new one: an applet's rundll32 shows its
          * hidden 166x24 host window at -32000,-32000 long before the dialog when the machine is
          * busy, and stopping there failed desk/sysdm/intl on amd64 with the dialog on its way. */
-        while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000)
+        /* grow_family on every poll: with no window yet nothing else does, and appwiz's
+         * rundll32 exits within seconds, orphaning the rapps it started. */
+        while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000) {
+            grow_family();
             Sleep(250);
+        }
         Sleep(3000);
+        /* After the settle: rapps titles its dialog only once it has been created. */
+        if (a->wait_past && progress_showing(&before, a->wait_past)) {
+            DWORD w0 = GetTickCount();
+            while (progress_showing(&before, a->wait_past) && GetTickCount() - w0 < 300000)
+                Sleep(1000);
+            SAY("  waited %lums past \"%s\"%s\n", GetTickCount() - w0, a->wait_past,
+                progress_showing(&before, a->wait_past) ? " (STILL SHOWING)" : "");
+            while (!has_real_window(&before, &got) && GetTickCount() - w0 < 330000)
+                Sleep(250);
+            Sleep(3000);
+        }
+        /* No real window: dump every launched process still alive. appwiz's rapps outlives
+         * the rundll32 that started it, and nothing else here says what it is doing. */
+        if (!has_real_window(&before, &got)) {
+            grow_family();
+            for (int f = 0; f < nfamily; f++) {
+                HANDLE h = OpenProcess(SYNCHRONIZE, FALSE, family[f]);
+                if (h && WaitForSingleObject(h, 0) == WAIT_TIMEOUT) {
+                    SAY("  no window: pid=%lu alive, threads:\n", family[f]);
+                    dump_process(family[f]);
+                }
+                if (h) CloseHandle(h);
+            }
+        }
         new_windows(&before, &got);
         /* At least one real window: an applet host also owns tiny helper windows. */
         int ok = 0, hung = 0, errbox = 0;
@@ -816,8 +889,11 @@ int main(void)
         /* An app that ignores WM_CLOSE is a failure, not a pass: every app on every arch
          * timing out on close (a lost PostMessage) scored PASS here until this counted. */
         int good = ok && !hung && !errbox && !crashed && shell && !strcmp(close, "OK");
-        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s\n",
-            a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED");
+        /* ms: launch to verdict. The serial log has no clock, and a run that hit the drain
+         * deadline could not say which app ate the time. */
+        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s ms=%lu\n",
+            a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED",
+            GetTickCount() - app_t0);
         good ? pass++ : fail++;
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);

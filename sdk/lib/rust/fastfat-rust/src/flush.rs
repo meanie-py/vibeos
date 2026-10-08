@@ -137,8 +137,9 @@ const UserVolumeOpen: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_UserVolumeOpen 
 const VirtualVolumeFile: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_VirtualVolumeFile as TYPE_OF_OPEN;
 const DirectoryFile: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_DirectoryFile as TYPE_OF_OPEN;
 const EaFile: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_EaFile as TYPE_OF_OPEN;
-const IRP_MN_FLUSH_DATA_ONLY: u8 = 0x01;
-const IRP_MN_FLUSH_NO_SYNC: u8 = 0x02;
+// wdm.h (WIN8+) values; 0x01 is IRP_MN_FLUSH_AND_PURGE, which must still reach the disk.
+const IRP_MN_FLUSH_DATA_ONLY: u8 = 0x02;
+const IRP_MN_FLUSH_NO_SYNC: u8 = 0x03;
 const FAT_NTC_ROOT_DCB: u32 = 0x0504; // NodeType for root DCB
 
 #[repr(C)]
@@ -371,8 +372,11 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
             }
             // If this is a normal termination then pass the request on to the target device object.
             if !abnormal {
-                if (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_DATA_ONLY) as u32 &&
-                   (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_NO_SYNC) as u32 {
+                // The data-only/no-sync exemptions are NTDDI >= WIN8 (flush.c 469-472); pre-WIN8
+                // every flush is passed on to the target device.
+                if !cfg!(ntddi_ge_ntddi_win8) ||
+                   ((*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_DATA_ONLY) as u32 &&
+                    (*IrpSp).MinorFunction as u32 != (IRP_MN_FLUSH_NO_SYNC) as u32) {
                     IoCopyCurrentIrpStackLocationToNext(*p_irp);
                     IoSetCompletionRoutine(
                         *p_irp,

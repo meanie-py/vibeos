@@ -990,11 +990,6 @@ pub unsafe extern "system" fn FatPopUpFileCorrupt(
     ) != 0 {
         Thread = core::ptr::null_mut();
     } else {
-        #[cfg(not(reactos))]
-        {
-            Thread = (*(*IrpContext).OriginatingIrp).Tail.Overlay.Thread as *mut KTHREAD;
-        }
-        #[cfg(reactos)]
         {
             Thread = (*(*IrpContext).OriginatingIrp).Tail.Overlay.Thread as *mut KTHREAD;
         }

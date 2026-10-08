@@ -59,7 +59,17 @@ static DiskVtbl: DEVVTBL = DEVVTBL {
 
 // pcmem.c global (defined #[no_mangle] in crate::pcmem); machpc.h extern decl.
 // freeldr.c / uefidisk.c globals (external C linkage).
+// The disk bounce buffer. hwdisk.c owned it in C (pcmem places it after the image);
+// the UEFI build's owner is uefidisk.rs, so it is defined here only for BIOS.
+#[cfg(not(feature = "uefi"))]
+#[no_mangle]
+pub static mut DiskReadBuffer: PVOID = core::ptr::null_mut();
+#[cfg(not(feature = "uefi"))]
+#[no_mangle]
+pub static mut DiskReadBufferSize: SIZE_T = 0;
+
 extern "C" {
+    #[cfg(feature = "uefi")]
     static mut DiskReadBufferSize: SIZE_T;
     static mut FrLdrBootPath: [CHAR; MAX_PATH];
     static FrldrBootDrive: UCHAR;
@@ -347,7 +357,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: u8) {
 
 unsafe fn EnumerateHarddisks(BootDriveReported: PBOOLEAN) -> u8 {
 
-    let DiskCount: u8;
+    let mut DiskCount: u8;
     let mut DriveNumber: u8;
     let _i: u32;
     let _Changed: u8;
@@ -379,7 +389,9 @@ unsafe fn EnumerateHarddisks(BootDriveReported: PBOOLEAN) -> u8 {
             *BootDriveReported = 1u8;
         }
 
-        let _DiskCount = DiskCount + 1;
+        // C `DiskCount++`: a shadowing `let` here left the count at 0, so
+        // PcBiosDiskCount registered no INT13 drives in the hardware tree.
+        DiskCount += 1;
         DriveNumber += 1;
         memset(DiskReadBuffer as *mut core::ffi::c_void, 0xcd, DiskReadBufferSize);
     }

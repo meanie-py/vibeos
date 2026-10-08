@@ -6,11 +6,11 @@
 // common kernel types from driver_ddk, private structs from this crate::types).
 use ntkrnl_sys::ddk::*;
 
-pub const MOUNTMGR_DEVICE_NAME: &[u8; 26] = b"\\Device\\MountPointManager\0";
-pub const MOUNTMGR_DOS_DEVICE_NAME: &[u8; 22] = b"\\\\.\\MountPointManager\0";
+pub const MOUNTMGR_DEVICE_NAME: &[u16; 26] = &[0x005C, 0x0044, 0x0065, 0x0076, 0x0069, 0x0063, 0x0065, 0x005C, 0x004D, 0x006F, 0x0075, 0x006E, 0x0074, 0x0050, 0x006F, 0x0069, 0x006E, 0x0074, 0x004D, 0x0061, 0x006E, 0x0061, 0x0067, 0x0065, 0x0072, 0x0000]; // L"\\Device\\MountPointManager"
+pub const MOUNTMGR_DOS_DEVICE_NAME: &[u16; 22] = &[0x005C, 0x005C, 0x002E, 0x005C, 0x004D, 0x006F, 0x0075, 0x006E, 0x0074, 0x0050, 0x006F, 0x0069, 0x006E, 0x0074, 0x004D, 0x0061, 0x006E, 0x0061, 0x0067, 0x0065, 0x0072, 0x0000]; // L"\\\\.\\MountPointManager"
 pub const EXPECTED_ACCESS: u32 = 3;
 pub const DD_DISK_DEVICE_NAME: &[u8; 16] = b"\\Device\\UNKNOWN\0";
-pub const DD_DISK_DEVICE_NAME_U: &[u8; 16] = b"\\Device\\UNKNOWN\0";
+pub const DD_DISK_DEVICE_NAME_U: &[u16; 16] = &[0x005C, 0x0044, 0x0065, 0x0076, 0x0069, 0x0063, 0x0065, 0x005C, 0x0055, 0x004E, 0x004B, 0x004E, 0x004F, 0x0057, 0x004E, 0x0000]; // L"\\Device\\UNKNOWN"
 pub const IOCTL_DISK_BASE: u32 = 7;
 pub const PARTITION_ENTRY_UNUSED: u32 = 0;
 pub const PARTITION_FAT_12: u32 = 1;

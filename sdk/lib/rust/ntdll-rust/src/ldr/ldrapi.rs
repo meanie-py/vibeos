@@ -437,7 +437,7 @@ pub unsafe extern "system" fn LdrFindEntryForAddress(
     let mut NextEntry: PLIST_ENTRY;
     let mut LdrEntry: PLDR_DATA_TABLE_ENTRY;
     let mut NtHeader: PIMAGE_NT_HEADERS;
-    let Ldr: PPEB_LDR_DATA = (*(*NtCurrentTeb()).ProcessEnvironmentBlock).Ldr;
+    let Ldr: PPEB_LDR_DATA = crate::ldr::ldrinit::LdrpLdrData();
     let mut DllBase: ULONG_PTR;
     let mut DllEnd: ULONG_PTR;
 
@@ -837,7 +837,7 @@ pub unsafe extern "system" fn LdrQueryProcessModuleInformationEx(
     let mut AnsiString: ANSI_STRING = core::mem::zeroed();
     let mut p: *mut i8;
 
-    RtlEnterCriticalSection((*NtCurrentPeb()).LoaderLock);
+    RtlEnterCriticalSection(core::ptr::addr_of_mut!(crate::ldr::ldrinit::LdrpLoaderLock));
 
     {
         if Size < UsedSize {
@@ -848,7 +848,7 @@ pub unsafe extern "system" fn LdrQueryProcessModuleInformationEx(
             Status = STATUS_SUCCESS;
         }
 
-        ModuleListHead = core::ptr::addr_of_mut!((*(*NtCurrentPeb()).Ldr).InLoadOrderModuleList);
+        ModuleListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InLoadOrderModuleList);
         Entry = (*ModuleListHead).Flink;
 
         while Entry != ModuleListHead {
@@ -870,7 +870,7 @@ pub unsafe extern "system" fn LdrQueryProcessModuleInformationEx(
                 (*ModulePtr).LoadOrderIndex = (*ModuleInformation).NumberOfModules as u16;
 
                 InitListHead = core::ptr::addr_of_mut!(
-                    (*(*NtCurrentPeb()).Ldr).InInitializationOrderModuleList
+                    (*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList
                 );
                 InitEntry = (*InitListHead).Flink;
 
@@ -922,7 +922,7 @@ pub unsafe extern "system" fn LdrQueryProcessModuleInformationEx(
         }
     }
 
-    RtlLeaveCriticalSection((*NtCurrentPeb()).LoaderLock);
+    RtlLeaveCriticalSection(core::ptr::addr_of_mut!(crate::ldr::ldrinit::LdrpLoaderLock));
 
     Status
 }
@@ -991,7 +991,7 @@ pub unsafe extern "system" fn LdrEnumerateLoadedModules(
         return Status;
     }
 
-    ListHead = core::ptr::addr_of_mut!((*(*NtCurrentPeb()).Ldr).InLoadOrderModuleList);
+    ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InLoadOrderModuleList);
     ListEntry = (*ListHead).Flink;
     while ListHead != ListEntry {
         LdrEntry = (ListEntry as usize
@@ -1120,7 +1120,7 @@ pub unsafe extern "system" fn LdrUnloadDll(BaseAddress: PVOID) -> NTSTATUS {
     'quickie: {
         /* Get the LDR Lock */
         if LdrpInLdrInit == 0 {
-            RtlEnterCriticalSection((*Peb).LoaderLock);
+            RtlEnterCriticalSection(core::ptr::addr_of_mut!(crate::ldr::ldrinit::LdrpLoaderLock));
         }
 
         /* Increase the unload count */
@@ -1174,8 +1174,8 @@ pub unsafe extern "system" fn LdrUnloadDll(BaseAddress: PVOID) -> NTSTATUS {
         }
 
         /* Loop the modules to build the list */
-        NextEntry = (*(*Peb).Ldr).InInitializationOrderModuleList.Blink;
-        while NextEntry != core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList) {
+        NextEntry = (*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList.Blink;
+        while NextEntry != core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList) {
             /* Get the entry */
             LdrEntry = (NextEntry as *mut u8).offset(
                 -(core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InInitializationOrderLinks) as isize)
@@ -1334,7 +1334,7 @@ pub unsafe extern "system" fn LdrUnloadDll(BaseAddress: PVOID) -> NTSTATUS {
     /* Decrease unload count */
     LdrpActiveUnloadCount -= 1;
     if LdrpInLdrInit == 0 {
-        RtlLeaveCriticalSection((*Peb).LoaderLock);
+        RtlLeaveCriticalSection(core::ptr::addr_of_mut!(crate::ldr::ldrinit::LdrpLoaderLock));
     }
 
     /* Return to caller */

@@ -41,6 +41,7 @@ from rustconv.profile_derive import (
     to_json,
     uncomment_flipped_source_lists,
     walk_includes,
+    _interface_include_index,
 )
 
 # ---------------------------------------------------------------------------
@@ -128,6 +129,36 @@ def test_dead_source_is_excluded_and_reported(tmp_path):
     assert [p.name for p in m.compiled_tus] == ["main.c", "helper.c"]
     assert [p.name for p in m.dead_sources] == ["orphan.c"]
     assert any(f.code == "DEAD_SOURCE" for f in m.findings)
+
+
+CMAKE_STATIC_SIBLING = """\
+list(APPEND SOURCE helper.c orphan_is_live.c)
+add_library(widget_static STATIC ${SOURCE})
+add_library(widget MODULE main.c widget.rc)
+target_link_libraries(widget widget_static)
+set_module_type(widget nativedll)
+"""
+
+
+def test_sibling_target_sources_are_live_not_dead(tmp_path):
+    """setuplib's shape: the .c live in a STATIC sibling linked into the module. Judged
+    against the module alone they read as dead, and DEAD_SOURCE says do not pay for them."""
+    root = _basic_module(tmp_path, cmake=CMAKE_STATIC_SIBLING)
+    _write(_mod(tmp_path) / "orphan_is_live.c", "int live(void) { return 1; }\n")
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root, target="widget")
+    assert [p.name for p in m.dead_sources] == ["orphan.c"]
+    sib = [f for f in m.findings if f.code == "SIBLING_TARGET"]
+    assert len(sib) == 1 and "--target widget_static" in sib[0].detail
+    assert "orphan_is_live.c" in sib[0].detail and "helper.c" in sib[0].detail
+
+
+def test_static_library_inherits_its_consumers_mode(tmp_path):
+    root = _basic_module(tmp_path, cmake=CMAKE_STATIC_SIBLING)
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root, target="widget_static")
+    assert m.is_usermode
+    assert any(f.code == "MODULE_TYPE_INHERITED" for f in m.findings)
+    # one consumer: the crate belongs to it (widget-rust, `widget)` arm), not widget_static
+    assert m.crate_stem == "widget"
 
 
 def test_generated_sources_are_kept_separate_from_translatable_ones(tmp_path):
@@ -432,8 +463,10 @@ def test_unreachable_switch_constant_is_a_loud_finding(tmp_path):
     assert dp.errors, "an unowned switch constant must make the run non-zero"
 
 
-def test_function_like_macro_in_a_case_label_is_an_error(tmp_path):
-    """bindgen emits no constant for a function-like macro, so allowlisting is not enough."""
+def test_function_like_macro_in_a_case_label_is_flagged_not_blocking(tmp_path):
+    """bindgen emits no constant for a function-like macro, so allowlisting is not enough --
+    but a call-shaped pattern cannot become a silent catch-all (rustc rejects it), so it
+    warns rather than blocking the module."""
     root = _basic_module(tmp_path)
     _write(
         _mod(tmp_path) / "helper.c",
@@ -441,7 +474,25 @@ def test_function_like_macro_in_a_case_label_is_an_error(tmp_path):
         "return 0; }\n",
     )
     dp = derive(_mod(tmp_path), root)
-    assert any(f.code == "SWITCH_CONST_NOT_BINDGENABLE" for f in dp.findings)
+    hits = [f for f in dp.findings if f.code == "SWITCH_CONST_NOT_BINDGENABLE"]
+    assert hits and all(f.severity == "warn" for f in hits)
+
+
+def test_sys_crate_consts_carries_bindgen_enum_members_by_bare_name(tmp_path):
+    """bindgen names an enumerator `<type>_<member>`; the bare member the C switches on is
+    still carried (port resolve aliases it), so it must not read as missing."""
+    from rustconv.profile_derive import sys_crate_consts
+
+    src = tmp_path / "sdk/lib/rust/ntkrnl-sys/src"
+    src.mkdir(parents=True)
+    (src / "bindgen_i386.rs").write_text(
+        "pub const _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeHibernation:\n"
+        "    _DEVICE_USAGE_NOTIFICATION_TYPE = 2;\n"
+        "pub const PLAIN: u32 = 1;\n"
+    )
+    got = sys_crate_consts(tmp_path, usermode=False, arch="i386")
+    assert got["DeviceUsageTypeHibernation"] == "bindgen_i386"
+    assert got["PLAIN"] == "bindgen_i386"
 
 
 def test_macro_expression_const_is_flagged_for_verification(tmp_path):
@@ -467,6 +518,17 @@ def test_tu_local_const_needs_no_island_change(tmp_path):
     assert owner.owner_kind == "tu-local"
     assert any(f.code == "SWITCH_CONST_TU_LOCAL" for f in dp.findings)
     assert not dp.errors
+
+
+def test_header_symbols_sees_a_comment_wrapped_enum_member(tmp_path):
+    # setuplib's fsutil.h, verbatim shape: the member was reported UNOWNED.
+    h = tmp_path / "fsutil.h"
+    h.write_text(
+        "typedef enum _FSVOLNOTIFY\n{\n    FSVOLNOTIFY_CHECKERROR,\n"
+        "    /**/ChangeSystemPartition/**/ // FIXME: Deprecate!\n} FSVOLNOTIFY;\n"
+    )
+    syms = header_symbols(h, frozenset({"ChangeSystemPartition"}))
+    assert syms["ChangeSystemPartition"][0] == "enum"
 
 
 def test_header_symbols_classifies_macro_kinds(tmp_path):
@@ -765,6 +827,10 @@ def test_kernel_scaffold_depends_on_ntkrnl_sys(tmp_path):
     cargo = (out / "Cargo.toml").read_text()
     assert 'features = ["kernel"]' in cargo and "ntkrnl-sys" in cargo
     assert "USERMODE=0" in emit_profile(dp)
+    # A kernel DPRINT1 prints too: win32macros' (DbgPrint is cdecl in ntoskrnl as in
+    # ntdll), never a local no-op that drops every diagnostic.
+    assert "win32macros-rust" in cargo
+    assert "macro_rules! DPRINT1" not in (out / "src/prelude.rs").read_text()
 
 
 # --------------------------------------------------------------------------- #
@@ -1204,9 +1270,9 @@ class TestBlocklistFuncsEvidence:
             tmp_path,
             main_extra=(
                 "int use(void)\n{\n"
-                "    WidgetOpen(0);\n"      # declared by a closure header -> a prototype
-                "    SamrConnect(0);\n"     # declared nowhere the closure walked
-                "    return helper();\n"    # defined in this module -> not external
+                "    WidgetOpen(0);\n"  # declared by a closure header -> a prototype
+                "    SamrConnect(0);\n"  # declared nowhere the closure walked
+                "    return helper();\n"  # defined in this module -> not external
                 "}\n"
             ),
         )
@@ -1332,3 +1398,77 @@ def test_resolve_sys_crate_strips_every_target_role_suffix(tmp_path: Path) -> No
     # No own island -> the mode default, and the suffix walk must not invent a crate.
     assert resolve_sys_crate(tmp_path, "shell32_static", usermode=True) == "ntdll-sys"
     assert resolve_sys_crate(tmp_path, "portcls", usermode=False) == "ntkrnl-sys"
+
+
+class TestCargoKernelTarget:
+    """ntoskrnl links through `add_cargo_module(... KIND kernelexe)` and flips per entry."""
+
+    def _tree(self, tmp_path):
+        root = tmp_path
+        (root / "ntoskrnl/ps").mkdir(parents=True)
+        (root / "ntoskrnl/ps/job.c").write_text("int PspJob(void) { return 0; }\n")
+        (root / "sdk/lib/cmlib").mkdir(parents=True)
+        (root / "sdk/lib/cmlib/cmlib.h").write_text("/* */\n")
+        (root / "sdk/lib/cmlib/CMakeLists.txt").write_text(
+            "add_library(cmlib x.c)\n"
+            "target_include_directories(cmlib INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})\n"
+        )
+        (root / "ntoskrnl/ntos.cmake").write_text(
+            "list(APPEND SOURCE\n"
+            "    # ps/ — replaced by Rust\n"
+            "    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c\n"
+            "    #${REACTOS_SOURCE_DIR}/ntoskrnl/ps/gone.c\n"
+            "    )\n"
+        )
+        (root / "ntoskrnl/CMakeLists.txt").write_text(
+            "include(ntos.cmake)\n"
+            "add_cargo_module(ntoskrnl ntoskrnl-cargo ntoskrnl.exe\n"
+            "    KIND kernelexe\n"
+            "    EXTRA_DEPENDS cmlib rtl)\n"
+        )
+        return root
+
+    def test_repo_rooted_flipped_entry_is_restored_only_if_on_disk(self, tmp_path):
+        root = self._tree(tmp_path)
+        text = (root / "ntoskrnl/ntos.cmake").read_text()
+        _out, restored = uncomment_flipped_source_lists(text, root / "ntoskrnl", root)
+        assert restored == ["${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c"]
+
+    def test_kernelexe_is_a_kernel_target_with_linked_interface_includes(self, tmp_path):
+        root = self._tree(tmp_path)
+        _interface_include_index.cache_clear()
+        m = parse_cmakelists(
+            root / "ntoskrnl/CMakeLists.txt", root, arch="amd64", flipped_sources=True
+        )
+        assert m.name == "ntoskrnl" and m.module_type == "kernel"
+        assert [p.name for p in m.compiled_tus] == ["job.c"]
+        assert (root / "sdk/lib/cmlib") in m.include_dirs
+
+
+def test_a_backslash_include_resolves_like_the_compiler_does(tmp_path):
+    """win32ss/gdi/dib/dib_new.c writes `#include "..\\diblib\\DibLib_interface.h"`."""
+    from rustconv.profile_derive import Include, IncludeEnv, resolve_include
+
+    (tmp_path / "dib").mkdir()
+    (tmp_path / "diblib").mkdir()
+    header = tmp_path / "diblib" / "DibLib_interface.h"
+    header.write_text("/* */\n")
+    inc = Include(
+        spelling='"..\\\\diblib\\\\DibLib_interface.h"',
+        name="..\\diblib\\DibLib_interface.h",
+        angled=False,
+        line=11,
+    )
+    env = IncludeEnv(repo_root=tmp_path, arch="amd64", module_dir=tmp_path, build_dir=None)
+    assert resolve_include(inc, tmp_path / "dib" / "dib_new.c", env) == header.resolve()
+
+
+def test_a_packing_push_in_a_prologue_never_reaches_the_wrapper():
+    # partlist.c: its prologue ends in `#include <pshpack1.h>`; the matching poppack comes after
+    # two typedefs. Mirrored into setuplib's merged wrapper it packed every later header.
+    src = (
+        '#include "precomp.h"\n#include "registry.h"\n#include <pshpack1.h>\n'
+        "typedef struct _X { char a; int b; } X;\n#include <poppack.h>\n"
+    )
+    lines, _ = scan_preamble(src)
+    assert lines == ['#include "precomp.h"', '#include "registry.h"']

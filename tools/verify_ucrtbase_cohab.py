@@ -78,7 +78,7 @@ def _spec_exports(spec: Path, arch: str) -> set[str]:
 TAKEOVER = REPO / "tools" / "ucrt-takeover.yaml"
 
 
-def declared_takeovers() -> dict[str, str]:
+def declared_takeovers(arch: str | None = None) -> dict[str, str]:
     """Genuine UCRT exports we have DELIBERATELY replaced -> the family that did it.
 
     Displacing a ucrt body is the exact shape of the accident this file exists to
@@ -86,6 +86,9 @@ def declared_takeovers() -> dict[str, str]:
     named an oracle. `tools/ucrt-takeover.yaml` is that declaration, and it is read
     both ways -- an undeclared displacement fails, and so does a declaration the
     archive no longer backs, because a stale entry is how a list stops being read.
+
+    A family may name `arches:` (fpctrl_arm64 exists only where sdk/lib/crt has no
+    body); with `arch` given, a family not built there declares nothing for it.
     """
     if not TAKEOVER.is_file():
         return {}
@@ -94,6 +97,8 @@ def declared_takeovers() -> dict[str, str]:
     doc = yaml.safe_load(TAKEOVER.read_text(encoding="utf-8")) or {}
     out: dict[str, str] = {}
     for fam, body in (doc.get("families") or {}).items():
+        if arch is not None and arch not in (body.get("arches") or (arch,)):
+            continue
         for sym in body.get("exports") or []:
             out[sym] = fam
     return out
@@ -109,12 +114,14 @@ FORBIDDEN_CRATE = "msvcrt-crt-rust"
 # honours and a grep for `extern crate` cannot see.
 EXTERN_CRATE_EXEMPT = {"panic-common"}
 
-# OUR static libraries on ucrtbase's link line (dll/win32/ucrtbase/CMakeLists.txt), mapped to
-# where CMake puts their objects. The Rust archive is whole-archived ahead of all of them, so
-# a Rust body replacing one of theirs is ordinary cohab -- these are jointly the authority on
-# what we are allowed to define. `ucrt` itself is deliberately absent: it is the vendored
-# Microsoft library, and displacing one of ITS bodies is precisely the defect.
-OURS_ON_LINK_LINE = {
+# OUR static libraries that ucrtbase linked behind its Rust (dll/win32/ucrtbase/CMakeLists.txt),
+# mapped to where CMake puts their objects. Since 2026-10-04 none is on the link line any more
+# (none contributed an object; tools/link_pulls.py), but they are still compiled, and this is
+# why: their C is the REFERENCE surface. A Rust body replacing one of theirs is ordinary
+# cohab -- these are jointly the authority on what we are allowed to define. `ucrt` itself is
+# deliberately absent: it was the vendored Microsoft library, and displacing one of ITS bodies
+# is precisely the defect.
+OURS_REFERENCE = {
     "msvcrt_shared": Path("dll/win32/msvcrt/CMakeFiles/msvcrt_shared.dir"),
     "crtmath": Path("sdk/lib/crt/CMakeFiles/crtmath.dir"),
     "vcruntime": Path("sdk/lib/vcruntime/CMakeFiles/vcruntime.dir"),
@@ -124,31 +131,35 @@ OURS_ON_LINK_LINE = {
     "vcstartup": Path("sdk/lib/vcstartup/CMakeFiles/vcstartup.dir"),
     "chkstk": Path("sdk/lib/crt/CMakeFiles/chkstk.dir"),
     "wine": Path("sdk/lib/libwine/CMakeFiles/wine.dir"),
+    # setjmp/longjmp and the i386 SEH runtime: setjmp-rt and pseh-rt, inside the ucrtbase
+    # archive since it went link_strict (2026-10-04). Before that they were their own Rust
+    # archives on the link line, outside this check's view. Their C originals are these two
+    # libraries, still compiled for their non-CRT consumers (ftfd, static_crt_apitest, hal).
+    "setjmp": Path("sdk/lib/vcruntime/CMakeFiles/setjmp.dir"),
+    "pseh": Path("sdk/lib/pseh/CMakeFiles/pseh.dir"),
 }
 
-#: ucrtbase's OWN C -- printf.c, stubs.c and the generated ucrtbase_stubs.c. Kept
-#: SEPARATE from OURS_ON_LINK_LINE because that set must stay exactly ucrtbase's
-#: link libraries (test_the_authority_set_is_the_whole_link_line_except_ucrt pins
-#: it against the CMake, so drift is caught); the DLL's own translation units are
-#: not a library and would break that invariant.
+#: ucrtbase's OWN object: since 2026-10-04 that is only spec2def's generated stubs,
+#: and since 2026-10-06 those are Rust (`ucrtbase_stubs.rs.obj`, compiled outside
+#: CMakeFiles, hence a FILE entry where the libraries are directories). Kept SEPARATE
+#: from OURS_REFERENCE because that set must stay exactly ucrtbase's link libraries
+#: (test_the_authority_set_is_the_whole_link_line_except_ucrt pins it against the
+#: CMake, so drift is caught); the DLL's own objects are not a library and would break
+#: that invariant.
 #:
-#: But they ARE ours, and the assertion is "the Rust surface is a subset of OUR C's
-#: surface", so leaving them out under-models the C. They define 12 symbols and
-#: ucrtbase EXPORTS six: fma, fmaf, log2, log2f, lrint, lrintf -- stubs.c's
-#: placeholders for things spec2def cannot stub because they are intrinsics. Omitted,
-#: a Rust twin of any of those six reads as displacing a genuine Microsoft UCRT body
-#: when it would be displacing ReactOS's own.
-#:
-#: This is the same defect the link-line test's docstring records, one target over:
+#: But they ARE ours, and the assertion is "the Rust surface is a subset of OUR
+#: surface", so leaving them out under-models it: a Rust twin of a stubbed export would
+#: read as displacing a genuine Microsoft UCRT body when it displaces ReactOS's own
+#: stub. The same defect the link-line test's docstring records, one target over:
 #: modelling the authority as too small turned a correct ucrtbase math flip into 60
-#: findings. Found by asking what blocks translating those 132 lines.
+#: findings.
 OURS_OWN_TUS = {
-    "ucrtbase-own": Path("dll/win32/ucrtbase/CMakeFiles/ucrtbase.dir"),
+    "ucrtbase-own": Path("dll/win32/ucrtbase/ucrtbase_stubs.rs.obj"),
 }
 
 #: Everything of OURS that contributes symbols to ucrtbase.dll, which is what the
 #: subset assertion must be taken against.
-OURS_C_AUTHORITY = {**OURS_ON_LINK_LINE, **OURS_OWN_TUS}
+OURS_C_AUTHORITY = {**OURS_REFERENCE, **OURS_OWN_TUS}
 
 ARCHES = {
     "i386": "i686-pc-windows-gnu",
@@ -182,8 +193,10 @@ def _deps_of(crate_dir: Path) -> set[str]:
             continue
         if not in_deps or not stripped or stripped.startswith("#"):
             continue
-        m = re.match(r"^([A-Za-z0-9_-]+)\s*=", stripped)
-        if m:
+        m = re.match(r"^([A-Za-z0-9_-]+)\s*=(.*)$", stripped)
+        # A registry crate (`libm = { version = ... }`) is not one: Cargo.lock pins it
+        # and nothing in this tree can edit it, so it cannot ship a stale archive.
+        if m and re.search(r"\bpath\s*=", m.group(2)):
             out.add(m.group(1))
     return out
 
@@ -298,42 +311,43 @@ def _closure(root: str, ws: Path | None = None) -> set[str]:
     return set(seen)
 
 
-#: Each Rust staticlib a CRT DLL links: (its CMakeLists, the `set(...)` naming the
-#: crates whose sources trigger its rebuild, the crate cargo builds).
+#: Each Rust staticlib a CRT DLL links: (its CMakeLists, the variable holding its rebuild
+#: inputs, the crate cargo builds).
 REBUILD_LISTS = (
-    ("dll/win32/ucrtbase/CMakeLists.txt", "UCRT_SHARED_RUST_CRATES", "crt-shared-cargo"),
-    ("dll/win32/msvcrt/CMakeLists.txt", "MSVCRT_CRT_RUST_CRATES", "msvcrt-crt-cargo"),
+    ("dll/win32/ucrtbase/CMakeLists.txt", "UCRT_SHARED_RUST_SOURCES", "crt-shared-cargo"),
+    ("dll/win32/msvcrt/CMakeLists.txt", "MSVCRT_CRT_RUST_SOURCES", "msvcrt-crt-cargo"),
 )
 
 
 def check_rebuild_lists(repo: Path | None = None, ws: Path | None = None) -> list[str]:
-    """Each archive's CMake rebuild list must name its whole crate closure.
+    """Each archive's rebuild inputs must be DERIVED from its crate's closure.
 
     A crate compiled INTO an archive but missing from the custom command's DEPENDS
     never triggers a rebuild: edit it and the build ships the stale archive, green,
-    with no error anywhere. ucrtbase's list named two of its seven crates -- the
-    ucrt-rust takeover families and cnt-rust's math were invisible to it -- and
-    msvcrt's lacked crt-portable-rust the day the string family moved there.
+    with no error anywhere. Both CRT archives used to name their crates in hand-kept
+    lists, and those drifted three times (ucrtbase's to two of seven crates; msvcrt's
+    lacked crt-portable-rust, then varargs-rust). They now call
+    `rust_crate_sources(<var> <workspace> <root>)`, which walks the manifests; this
+    check holds them to it, so a hand list cannot come back.
     """
     repo = REPO if repo is None else repo
+    del ws  # the closure is CMake's to compute now; kept for the callers' signature
     findings = []
     for cmake, var, root in REBUILD_LISTS:
         text = (repo / cmake).read_text(errors="replace")
-        m = re.search(rf"set\(\s*{var}\s+([^)]*)\)", text)
-        if not m:
-            findings.append(f"{cmake}: no `set({var} ...)` -- the rebuild list is missing")
-            continue
-        listed = set(m.group(1).split())
-        want = _closure(root, ws)
-        for crate in sorted(want - listed):
+        call = re.search(rf"rust_crate_sources\(\s*{var}\s+\S+\s+(\S+)\s*\)", text)
+        if not call:
             findings.append(
-                f"{cmake}: {var} omits `{crate}`, which is compiled into {root}'s archive -- "
-                f"an edit to it would ship a STALE archive. fix: add it to {var}"
+                f"{cmake}: {var} is not derived by `rust_crate_sources({var} <ws> {root})` -- "
+                f"a hand-kept list drifts and ships a STALE archive. fix: derive it"
             )
-        for crate in sorted(listed - want):
+        elif call.group(1) != root:
             findings.append(
-                f"{cmake}: {var} names `{crate}`, which {root} no longer depends on. fix: remove it"
+                f"{cmake}: {var} walks `{call.group(1)}`, but cargo builds `{root}`. "
+                f"fix: rust_crate_sources({var} <ws> {root})"
             )
+        if re.search(r"set\(\s*\w+_RUST_CRATES\b", text):
+            findings.append(f"{cmake}: a hand-kept `*_RUST_CRATES` list is back. fix: remove it")
     return findings
 
 
@@ -434,7 +448,7 @@ def burndown_stale(arch: str) -> str | None:
         return "nm cannot read the archive"
     if arch == "i386":
         defined = {d[1:] if d.startswith("_") else d for d in defined}
-    missing = sorted(set(declared_takeovers()) - defined)
+    missing = sorted(set(declared_takeovers(arch)) - defined)
     if missing:
         return (
             f"the archive lacks {len(missing)} export(s) this tree declares taken over "
@@ -514,6 +528,30 @@ def _nm_defined(path: Path | list[Path]) -> set[str] | None:
     return None
 
 
+def _graph_objects(build: Path) -> set[Path] | None:
+    """Every object file the CURRENT build graph produces (`build <obj>: ...` in build.ninja).
+
+    An object directory also holds whatever an earlier configure produced: delete a source
+    from CMake and its .obj stays behind, forever. Counted as C authority, such a leftover
+    vouches for a symbol nothing compiles any more -- it greened a lane whose
+    vcruntime/i386/_chkesp.s was gone (its stale .obj still defined __chkesp) while the
+    fresh integration build, which never had the file, went red on master (2026-10-04).
+    None when there is no build.ninja to ask; the caller then keeps the directory glob.
+    """
+    ninja = build / "build.ninja"
+    if not ninja.is_file():
+        return None
+    out: set[Path] = set()
+    with ninja.open(errors="replace") as fh:
+        for line in fh:
+            if not line.startswith("build "):
+                continue
+            target = line[6:].split(":", 1)[0].split(" | ", 1)[0].strip()
+            if target.endswith((".obj", ".o")):
+                out.add(build / target.replace("$ ", " "))
+    return out
+
+
 def check_archive() -> list[str]:
     """Built archive's symbols must be a subset of what OUR libs on the link line define.
 
@@ -560,9 +598,15 @@ def check_archive() -> list[str]:
 
         objs: list[Path] = []
         missing: list[str] = []
+        live = _graph_objects(build)
         for target, obj_dir in OURS_C_AUTHORITY.items():
             d = build / obj_dir
-            found = sorted(d.rglob("*.obj")) + sorted(d.rglob("*.o"))
+            if d.suffix == ".obj":
+                found = [d] if d.is_file() else []
+            else:
+                found = sorted(d.rglob("*.obj")) + sorted(d.rglob("*.o"))
+            if live is not None:
+                found = [o for o in found if o in live]
             if found:
                 objs += found
             else:
@@ -657,7 +701,7 @@ def check_archive() -> list[str]:
 
         # A DECLARED takeover is not shadowing -- it is the quest. Compared on the
         # stripped name so one declaration covers all three arches' decoration.
-        declared = declared_takeovers()
+        declared = declared_takeovers(arch)
         declared_norm = {k.lstrip("_"): v for k, v in declared.items()}
         rust_norm = {strip(s).lstrip("_") for s in rust_syms}
         gone = sorted(k for k in declared_norm if k not in rust_norm)
@@ -684,7 +728,7 @@ def check_archive() -> list[str]:
             findings.append(
                 f"build-{arch}: libcrt_shared_cargo.a defines {len(extra)} symbol(s) that "
                 f"ucrtbase EXPORTS but none of our own static libs on its link line "
-                f"({', '.join(OURS_ON_LINK_LINE)}) defines, so each one "
+                f"({', '.join(OURS_REFERENCE)}) defines, so each one "
                 f"silently replaces the genuine Microsoft UCRT body callers expect "
                 f"(--allow-multiple-definition raises nothing): {shown}. fix: move the body "
                 f"back to msvcrt-crt-rust; or, if this is a DELIBERATE takeover of the "
@@ -877,10 +921,6 @@ EXPORT_IMPORT_ALLOWED = {
         ),
         "ntdll.dll",
     ),
-    # OWED, arm64 only: the x87/SSE control-word family has no arm64 body in this
-    # tree (sdk/lib/crt builds them for i386/amd64 only), so arm64's resolve to
-    # msvcrt.dll's. Tracked in the roadmap's known-bugs registry.
-    **dict.fromkeys(("_clearfp", "_control87", "_controlfp", "_statusfp"), "msvcrt.dll"),
 }
 
 

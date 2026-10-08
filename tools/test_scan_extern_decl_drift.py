@@ -91,3 +91,77 @@ def test_pointer_width_is_known_inside_an_arch_gated_module(tmp_path):
     """
     crates = _tree(tmp_path, dep=True, decl=_BAD, call=_CALL, sub="i386")
     assert scan(tmp_path, crates) == []
+
+
+def _static_tree(root: Path, c: str, rust: str) -> list[Path]:
+    """A crate whose cohab C hands it data by asm label, as fastfat's does."""
+    (root / "drv").mkdir()
+    (root / "drv" / "rust_cohab.c").write_text(c)
+    crate = root / "foo-rust"
+    (crate / "src").mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[package]\nname = "foo-rust"\n')
+    (crate / "src" / "lib.rs").write_text("pub type ULONG = u32;\npub type BOOLEAN = u8;\n" + rust)
+    return [crate / "src"]
+
+
+def test_a_static_wider_than_its_rust_definition_is_reported(tmp_path):
+    crates = _static_tree(
+        tmp_path,
+        "",
+        '#[no_mangle]\npub static mut Flag: BOOLEAN = 0;\nextern "C" { static Flag: ULONG; }\n',
+    )
+    findings = scan(tmp_path, crates)
+    assert len(findings) == 1, findings
+    assert "Flag: static WIDTH decl `ULONG` (4)" in findings[0][2]
+
+
+def test_per_arch_definitions_that_disagree_are_not_an_oracle(tmp_path):
+    crates = _static_tree(
+        tmp_path,
+        "",
+        "#[no_mangle]\npub static mut Probe: ULONG = 0;\n"
+        "#[no_mangle]\npub static mut Probe: usize = 0;\n"
+        'extern "C" { static Probe: usize; }\n',
+    )
+    assert scan(tmp_path, crates) == []
+
+
+_C_UCHAR_FN = "UCHAR FatIndexBitSize(PBIOS_PARAMETER_BLOCK B){ return __c_FatIndexBitSize(B); }\n"
+
+
+def test_a_return_wider_than_the_c_definition_is_reported(tmp_path):
+    # The 14-cluster FAT16 volume: a UCHAR return read as u32 took 24 bits nobody
+    # wrote, and they became part of a divisor.
+    crates = _static_tree(
+        tmp_path,
+        _C_UCHAR_FN,
+        'extern "C" { fn FatIndexBitSize(b: *const u8) -> u32; }\n'
+        "pub unsafe fn go() { FatIndexBitSize(core::ptr::null()); }\n",
+    )
+    findings = scan(tmp_path, crates)
+    assert len(findings) == 1, findings
+    assert "FatIndexBitSize: RETURN WIDTH" in findings[0][2]
+
+
+def test_a_return_declared_at_the_c_width_is_silent(tmp_path):
+    crates = _static_tree(
+        tmp_path,
+        _C_UCHAR_FN,
+        'extern "C" { fn FatIndexBitSize(b: *const u8) -> u8; }\n'
+        "pub unsafe fn go() { FatIndexBitSize(core::ptr::null()); }\n",
+    )
+    assert scan(tmp_path, crates) == []
+
+
+def test_a_return_wider_than_the_rust_definition_is_reported(tmp_path):
+    # rustc does not extend a narrow return either: `x as u8` comes back unmasked.
+    crates = _static_tree(
+        tmp_path,
+        "",
+        '#[no_mangle]\npub extern "C" fn Hit() -> u8 { 1 }\n'
+        'extern "C" { fn Hit() -> ULONG; }\n'
+        "pub unsafe fn go() { Hit(); }\n",
+    )
+    findings = scan(tmp_path, crates)
+    assert len(findings) == 1, findings
+    assert "Hit: RETURN WIDTH decl `-> ULONG` (4) wider than def `-> u8`" in findings[0][2]

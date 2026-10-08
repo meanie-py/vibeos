@@ -8,6 +8,8 @@ change (the provided-RAII API a pre-capability output could not have used) and a
 seal that got *looser*.
 """
 
+import pytest
+
 from rustconv import response_cache
 from rustconv.response_cache import ResponseCache
 
@@ -104,3 +106,12 @@ def test_rejected_output_is_kept_for_forensics_and_never_replayed(tmp_path, monk
     assert "envelope broken" in kept
     assert "dropped a call" in kept
     assert cache.get("f", BODY, FACT_ENVELOPE) is None
+
+
+def test_a_changed_c_body_may_be_bought_again(tmp_path, monkeypatch):
+    # setuplib SetupMoveFile: banked from a body the scanner had cut at `_SEH2_TRY`
+    cache = _cache(tmp_path, monkeypatch)
+    cache.put("F", "old truncated body", "fn F() {}")
+    with pytest.raises(ValueError, match="did not replay"):
+        cache.refuse_repurchase("F", body_text="old truncated body")
+    cache.refuse_repurchase("F", body_text="the whole body, FINALLY and all")

@@ -170,11 +170,12 @@ pub fn HandleToLong(h: ddk::HANDLE) -> LONG {
 // Probe macros (from probe.h)
 // ============================================================================
 
-/// ProbeForWriteHandle — validate user-mode handle pointer.
+/// ProbeForWriteHandle — validate user-mode handle pointer: probe.h's range
+/// check (`crate::probe::probe_user_range`), then the touch-test write-back.
+/// This copy used to skip the range check entirely.
 #[inline]
 pub unsafe fn ProbeForWriteHandle(Ptr: *mut ddk::HANDLE) {
-    // Volatile read/write to trigger page fault if invalid
-    let _ = core::ptr::read_volatile(Ptr);
+    crate::probe::probe_user_range(Ptr);
     core::ptr::write_volatile(Ptr, core::ptr::read_volatile(Ptr));
 }
 

@@ -51,6 +51,10 @@ build-i386/
 
 # QEMU binary images (tracked scripts are fine)
 qemu/*.img
+# mkramdisk.sh's in-progress images (renamed over qemu/*.img when done). Untracked, they
+# moved the build-source fingerprint, so a build of another arch running at the same time
+# in this worktree failed BUILD_INCOMPLETE on "source changed since build".
+qemu/.*.img.partial-*
 qemu/ramdisk.payloads
 qemu/*.qcow2
 qemu/*.fd

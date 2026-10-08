@@ -1,0 +1,80 @@
+diff --git a/sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/stubs.rs b/sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/stubs.rs
+index bb188c1954f..3740851c2c6 100644
+--- a/sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/stubs.rs
++++ b/sdk/lib/rust/ntoskrnl-rust/src/ke/arm64/stubs.rs
+@@ -28,7 +28,7 @@ use ntkrnl_sys::ddk::{
+     RtlDispatchException, ZwTerminateProcess,
+     NtOpenKey, NtCreateKey, NtSetValueKey, NtClose, RtlInitUnicodeString,
+     RtlInitAnsiString, RtlAnsiStringToUnicodeString, RtlFreeUnicodeString,
+-    MmAccessFault, MmIsAddressValid,
++    MmAccessFault, MmIsAddressValid, PsGetCurrentThreadTeb,
+ };
+ 
+ use ntkrnl_sys::macros::NtCurrentProcess;
+@@ -1203,6 +1203,66 @@ pub unsafe extern "system" fn KiDispatchException(
+                     instr as ULONG_PTR,
+                 );
+             }
++            // WoW64/FEX guest state. A fatal fault inside a FEX JIT block (the
++            // M14 residual startup flake surfaces as PC=0 — FEX's ExitFunctionLink
++            // `blr`s to a null host block when CompileBlock returns 0 for a bad
++            // guest RIP, JIT.cpp:548) leaves the arm64 TrapFrame holding HOST
++            // state, which says nothing about which GUEST address FEX tried to
++            // run. FEX stashes the guest x86 CONTEXT in the WoW64 CPU area:
++            // TEB64.TlsSlots[WOW64_TLS_CPURESERVED=1] (@ TEB+0x1480) -> CpuArea,
++            // guest WOW64_CONTEXT at CpuArea+16 (i386 CONTEXT: Eax@+0xB0,
++            // Eip@+0xB8, Esp@+0xC4). Dump GuestEip (the bad target = the address
++            // whose block failed to compile) + the pushed return address so a
++            // recurrence names doom's call site instead of just "PC=0". Every
++            // deref is guarded; the state may be mid-corruption. Layout mirrors
++            // dll/win32/wow64/wow64.c (WOW64_TEB_TLSSLOTS_OFFSET / _CPURESERVED).
++            {
++                let eproc = PsGetCurrentProcess() as *mut _EPROCESS;
++                if !eproc.is_null() && !(*eproc).Wow64Process.is_null() {
++                    let teb = PsGetCurrentThreadTeb() as *const u8;
++                    let slot = teb.wrapping_add(0x1480 + 8); // TlsSlots[1]
++                    if !teb.is_null() && MmIsAddressValid(slot as PVOID) != 0 {
++                        let cpuarea = *(slot as *const *const u8);
++                        if !cpuarea.is_null() && MmIsAddressValid(cpuarea as PVOID) != 0 {
++                            let ctx = cpuarea.wrapping_add(16);
++                            let eip_p = ctx.wrapping_add(0xB8) as *const u32;
++                            if MmIsAddressValid(eip_p as PVOID) != 0 {
++                                let eip = *eip_p;
++                                let esp = *(ctx.wrapping_add(0xC4) as *const u32);
++                                let eax = *(ctx.wrapping_add(0xB0) as *const u32);
++                                ARM64_UART_TRACE_HEX(b"[UEXC-KILL] GuestEip=\0".as_ptr() as PCSTR, eip as ULONG_PTR);
++                                ARM64_UART_TRACE_HEX(b"[UEXC-KILL] GuestEsp=\0".as_ptr() as PCSTR, esp as ULONG_PTR);
++                                ARM64_UART_TRACE_HEX(b"[UEXC-KILL] GuestEax=\0".as_ptr() as PCSTR, eax as ULONG_PTR);
++                                // Dump the guest stack window around ESP. A `ret`
++                                // that branched to 0 popped its target from
++                                // [ESP-4] (ret reads [ESP] then ESP+=4), so
++                                // Stk-4 IS the RIP-to-be: if it's 0 the stack
++                                // genuinely held a 0 return address (a lost push
++                                // write on a racing stack page), not a FEX
++                                // mis-read. Stk+0/+4 are the frames above.
++                                let base = (esp as usize).wrapping_sub(8);
++                                let mut off = 0usize;
++                                while off <= 0x10 {
++                                    let p = (base + off) as *const u32;
++                                    if MmIsAddressValid(p as PVOID) != 0 {
++                                        ARM64_UART_TRACE_HEX(
++                                            match off {
++                                                0 => b"[UEXC-KILL] Stk-8=\0".as_ptr() as PCSTR,
++                                                4 => b"[UEXC-KILL] Stk-4=\0".as_ptr() as PCSTR,
++                                                8 => b"[UEXC-KILL] Stk+0=\0".as_ptr() as PCSTR,
++                                                12 => b"[UEXC-KILL] Stk+4=\0".as_ptr() as PCSTR,
++                                                _ => b"[UEXC-KILL] Stk+8=\0".as_ptr() as PCSTR,
++                                            },
++                                            *p as ULONG_PTR,
++                                        );
++                                    }
++                                    off += 4;
++                                }
++                            }
++                        }
++                    }
++                }
++            }
+             // User-mode FP-chain backtrace (arm64 keeps frame pointers; each
+             // frame is [prev_fp, lr] at x29). We're on the dying thread so its
+             // user VAs are current — walk with validity guards. This names the

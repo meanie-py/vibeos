@@ -10,6 +10,11 @@
 //! See ../crt-shared-rust for why that surface is a separate crate rather than a feature.
 #![no_std]
 
+// Linked for their #[no_mangle] exports (see Cargo.toml): an unreferenced dependency would
+// not reach the archive.
+extern crate pseh_rt;
+extern crate setjmp_rt;
+
 extern crate crt_shared_rust;
 
 // The ucrtbase half of the math wave, and the reason it needs an `extern crate` rather than

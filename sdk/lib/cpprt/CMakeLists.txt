@@ -4,26 +4,13 @@ include_directories(
     ${REACTOS_SOURCE_DIR}/sdk/include/c++)
 
 # We need different things, depending on the compiler
-if(MSVC)
-    list(APPEND SOURCE
-        ehvec.cpp
-        new_nothrow.cpp
-        terminate.cpp
-        typeinfo.cpp)
-    if(ARCH STREQUAL "i386")
-        add_asm_files(cpprt_asm i386/cpprt.s)
-    elseif(ARCH STREQUAL "amd64")
-        add_asm_files(cpprt_asm amd64/cpprt.s)
-    endif()
-else()
-    list(APPEND SOURCE
-        __cxa_pure_virtual.cpp)
-    # ARM64 with Clang needs C++ runtime stubs
-    if(ARCH STREQUAL "arm64")
-        list(APPEND SOURCE arm64/cpprt.cpp)
-        # Disable exceptions for this file to avoid circular dependencies
-        set_source_files_properties(arm64/cpprt.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions")
-    endif()
+list(APPEND SOURCE
+    __cxa_pure_virtual.cpp)
+# ARM64 with Clang needs C++ runtime stubs
+if(ARCH STREQUAL "arm64")
+    list(APPEND SOURCE arm64/cpprt.cpp)
+    # Disable exceptions for this file to avoid circular dependencies
+    set_source_files_properties(arm64/cpprt.cpp PROPERTIES COMPILE_OPTIONS "-fno-exceptions")
 endif()
 
 add_library(cpprt ${SOURCE} ${cpprt_asm})
@@ -31,6 +18,4 @@ set_target_cpp_properties(cpprt WITH_EXCEPTIONS)
 add_dependencies(cpprt xdk)
 
 # On GCC builds, we need to link against libsupc++
-if(NOT MSVC)
-    target_link_libraries(cpprt libsupc++)
-endif()
+target_link_libraries(cpprt libsupc++)

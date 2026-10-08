@@ -2391,7 +2391,7 @@ pub unsafe extern "system" fn NtDuplicateObject(
         if let Err(s) = probe_write_handle(target_handle as _, previous_mode) {
             return s;
         }
-        *target_handle = core::ptr::null_mut();
+        if let Err(s) = ntkrnl_sys::probe::write_back(target_handle, core::ptr::null_mut()) { return s; }
     }
 
     status = ObReferenceObjectByHandle(
@@ -2437,7 +2437,7 @@ pub unsafe extern "system" fn NtDuplicateObject(
     );
 
     if !target_handle.is_null() {
-        *target_handle = h_target;
+        if let Err(s) = ntkrnl_sys::probe::write_back(target_handle, h_target) { status = s; }
     }
 
     if !target.is_null() {

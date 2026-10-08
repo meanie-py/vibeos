@@ -726,6 +726,149 @@ unsafe fn TryStartWow64Hello() {
     }
 }
 
+/* x86-64 guests (docs/engineering/wow64-x64-guest-design.md, Fork B). Each is
+ * launched through the normal CreateProcessW front door. On arm64 that makes an
+ * x86-64 GUEST process — ntdll's process init diverts to
+ * wowx64!WowX64LdrpInitialize, the FEX CPU layer libwowx64fex.dll runs it, and
+ * its imports come from the amd64 DLL set in sysamd64. On amd64 the very same
+ * binary runs natively, which is the oracle that the guest itself is right.
+ * Verdict = its exit code (0x600D = PASS; the guest's source names the failure
+ * codes) + [WOWX64] serial lines. Silent no-op per guest unless staged, and on
+ * arm64 unless the CPU layer is too (the same rule as Wow64SupportStaged: a
+ * guest without its support layer would run half-initialized).
+ *
+ * hello64 is the import-free M1 guest and runs early with the WoW64 hello; the
+ * rest are the 32-bit ladder's sources rebuilt for x86-64 and run as one block
+ * AFTER the graded 32-bit guests, so a hanging x64 guest costs only its own
+ * 30s, never a 32-bit verdict. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn X64SupportStaged() -> bool {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+        if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 32) == 0 {
+            return false;
+        }
+        wcscat(Path.as_mut_ptr(), wstr!("\\system32\\libwowx64fex.dll").as_ptr());
+        if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+            return false;
+        }
+    }
+    true
+}
+
+/* Launch system32\<Name>, wait up to 30s, report its exit code. `Name` is a
+ * NUL-terminated wide exe name; `Ascii` the same name for the serial lines. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartX64Guest(Name: &[u16], Ascii: &[u8]) {
+    TryStartGuestIn(wstr!("\\system32\\").as_ptr(), Name, Ascii, b"x86-64 guest\0");
+}
+
+/* The same for a 32-bit ladder guest in syswow64 -- the shape every
+ * hand-written TryStartWow64* above repeats, for the guests added since. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartWow64Guest(Name: &[u16], Ascii: &[u8]) {
+    if Wow64SupportStaged() {
+        TryStartGuestIn(wstr!("\\syswow64\\").as_ptr(), Name, Ascii, b"i386 guest\0");
+    }
+}
+
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartGuestIn(Dir: *const u16, Name: &[u16], Ascii: &[u8], Kind: &[u8]) {
+    let mut Path: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    if GetWindowsDirectoryW(Path.as_mut_ptr(), MAX_PATH - 48) == 0 {
+        return;
+    }
+    wcscat(Path.as_mut_ptr(), Dir);
+    wcscat(Path.as_mut_ptr(), Name.as_ptr());
+    if GetFileAttributesW(Path.as_ptr()) == 0xFFFF_FFFF {
+        return; // not staged — silent no-op
+    }
+
+    let mut Line: [u16; 32] = [0; 32];
+    wcscat(Line.as_mut_ptr(), Name.as_ptr());
+    let mut Si: STARTUPINFOW = zeroed();
+    let mut Pi: PROCESS_INFORMATION = zeroed();
+    Si.cb = size_of::<STARTUPINFOW>() as DWORD;
+    /* On the INPUT desktop, as every 32-bit ladder launch already is: winlogon's
+     * own threads are on the Winlogon desktop, and a child that inherits it
+     * gets windows that are never visible (no WM_PAINT: win64 0x600E) and
+     * input that is refused as off the active desktop (SendInput
+     * ERROR_ACCESS_DENIED: marshal64 0xBAF4) -- on native amd64 exactly as
+     * under FEX, which is how it was told apart from an emulation bug. */
+    let mut Desk: [u16; 16] = wstr_arr!("WinSta0\\Default");
+    Si.lpDesktop = Desk.as_mut_ptr();
+    let ok = CreateProcessW(
+        Path.as_ptr(),
+        Line.as_mut_ptr(),
+        null_mut(),
+        null_mut(),
+        0,
+        0,
+        null_mut(),
+        null(),
+        &mut Si,
+        &mut Pi,
+    );
+    if ok != 0 {
+        DbgPrint(
+            b"[WINLOGON] %s (%s) created (PID %lu) - waiting\n\0".as_ptr() as *const i8,
+            Ascii.as_ptr(),
+            Kind.as_ptr(),
+            Pi.dwProcessId,
+        );
+        if WaitForSingleObject(Pi.hProcess, 30_000) != 0 {
+            // Say so, and end it: a hung guest left running would keep its
+            // window and its CPU through every later rung.
+            DbgPrint(b"[WINLOGON] %s TIMED OUT after 30s - terminating\n\0".as_ptr() as *const i8, Ascii.as_ptr());
+            TerminateProcess(Pi.hProcess, 0xDEAD_0030);
+            WaitForSingleObject(Pi.hProcess, 5_000);
+        }
+        let mut ExitCode: DWORD = 0xDEAD;
+        GetExitCodeProcess(Pi.hProcess, &mut ExitCode);
+        DbgPrint(
+            b"[WINLOGON] %s exit = 0x%lx (0x600D = PASS)\n\0".as_ptr() as *const i8,
+            Ascii.as_ptr(),
+            ExitCode,
+        );
+        CloseHandle(Pi.hThread);
+        CloseHandle(Pi.hProcess);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] CreateProcessW(%s) FAILED (error %lu)\n\0".as_ptr() as *const i8,
+            Ascii.as_ptr(),
+            GetLastError(),
+        );
+    }
+}
+
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartX64Hello() {
+    if X64SupportStaged() {
+        TryStartX64Guest(&wstr_arr!("hello64.exe"), b"hello64.exe\0");
+    }
+}
+
+/* The 32-bit ladder, one width up — same sources, same order, same verdicts. */
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn TryStartX64Ladder() {
+    if !X64SupportStaged() {
+        return;
+    }
+    TryStartX64Guest(&wstr_arr!("gui64.exe"), b"gui64.exe\0");
+    TryStartX64Guest(&wstr_arr!("win64.exe"), b"win64.exe\0");
+    TryStartX64Guest(&wstr_arr!("file64.exe"), b"file64.exe\0");
+    TryStartX64Guest(&wstr_arr!("async64.exe"), b"async64.exe\0");
+    TryStartX64Guest(&wstr_arr!("marshal64.exe"), b"marshal64.exe\0");
+    TryStartX64Guest(&wstr_arr!("fault64.exe"), b"fault64.exe\0");
+    TryStartX64Guest(&wstr_arr!("thread64.exe"), b"thread64.exe\0");
+    TryStartX64Guest(&wstr_arr!("selfmod64.exe"), b"selfmod64.exe\0");
+    TryStartX64Guest(&wstr_arr!("reg64.exe"), b"reg64.exe\0");
+    TryStartX64Guest(&wstr_arr!("spawn64.exe"), b"spawn64.exe\0");
+    // Guest APCs and thread-exit cleanup (apc32.exe is the same source).
+    TryStartX64Guest(&wstr_arr!("apc64.exe"), b"apc64.exe\0");
+}
+
 /* M10 file-I/O probe: an i386 guest that reads, writes and enumerates real
  * files. It is the oracle for the IO_STATUS_BLOCK 32<->64 marshalling — the
  * byte count ReadFile hands back IS IoStatusBlock.Information, which is 4 bytes
@@ -2157,6 +2300,65 @@ unsafe fn TryStartWinetest(
     CloseHandle(Pi.hProcess);
 }
 
+/* Did the harness ask for a QUIET boot? A run that measures timing passes the
+ * per-boot tripwire token `QUIET` (conformance boots do: VIBEOS_TRIPWIRE), the
+ * kernel publishes the tripwire config as `VibeTripwire` under
+ * CurrentControlSet\Control, and winlogon then skips its boot-time test ladder:
+ * the WoW64 guests, the stock i386 applets and the native winetests. Those run
+ * for minutes after the desktop is up, which is exactly when the kmtest sweep
+ * runs. On a uniprocessor guest each applet's startup under FEX is a burst of
+ * user-mode work that holds the one CPU for 100+ ms, so a kmtest whose worker
+ * thread must run inside a 100 ms window fails whenever one lands on it
+ * (NpfsReadWrite, KeEvent).
+ *
+ * Per BOOT, not per media, on purpose: the gate builds one media and boots it
+ * for smoke, the ladder and conformance alike, so a staged marker file would
+ * switch the ladder lane off in every gate. Says so on serial when it skips, so
+ * a skipped ladder is never a silent one. */
+unsafe fn QuietBootRequested() -> bool {
+    let mut hKey: HKEY = null_mut();
+    let mut dwType: DWORD = 0;
+    let mut Cfg: [u16; 260] = [0; 260];
+    let mut dwSize: DWORD = ((Cfg.len() - 1) * size_of::<u16>()) as DWORD;
+
+    if RegOpenKeyExW(
+        HKEY_LOCAL_MACHINE,
+        wstr!("SYSTEM\\CurrentControlSet\\Control").as_ptr(),
+        0,
+        KEY_QUERY_VALUE,
+        &mut hKey,
+    ) != ERROR_SUCCESS as LONG
+    {
+        return false;
+    }
+    let lError = RegQueryValueExW(
+        hKey,
+        wstr!("VibeTripwire").as_ptr(),
+        null_mut(),
+        &mut dwType,
+        Cfg.as_mut_ptr() as LPBYTE,
+        &mut dwSize,
+    );
+    RegCloseKey(hKey);
+    if lError != ERROR_SUCCESS as LONG || dwType != REG_SZ {
+        return false;
+    }
+
+    /* Same grammar as the kernel's parser: space/semicolon/newline-separated. */
+    let n = core::cmp::min(dwSize as usize / size_of::<u16>(), Cfg.len() - 1);
+    let Sep = |c: u16| c == b' ' as u16 || c == b';' as u16 || c == b'\n' as u16 || c == 0;
+    let Quiet = Cfg[..n].split(|&c| Sep(c)).any(|Tok| {
+        Tok.len() == 5 && Tok.iter().zip(b"QUIET").all(|(&w, &a)| w == a as u16)
+    });
+    if Quiet {
+        DbgPrint(
+            b"[WINLOGON] quiet boot (tripwire QUIET): boot-time test ladder SKIPPED\n\0"
+                .as_ptr() as *const i8,
+        );
+    }
+    Quiet
+}
+
 /* The harness's end-of-program marker. Printed once, after the last GRADED
  * guest or winetest on this arch and before the ungraded stock-applet / demo
  * phase. Without it the harness could only infer "done" from the absence of
@@ -2720,153 +2922,67 @@ pub unsafe extern "system" fn WinMain(
 
     /* LockWorkstation(WLSession) — empty macro */
 
-    /* arm64 + amd64: load a keyboard layout. Without one, win32k's key dispatch
-     * drops EVERY key at "NO keyboard layout" (UserProcessKeyboardInput:
-     * pti->KeyboardLayout NULL and gspklBaseLayout NULL) — keys reach kbdclass
-     * and the RIT and then silently vanish, so no app ever sees WM_KEYDOWN. A
-     * normal logon loads layouts via profile loading/userinit, which this
-     * customized boot path skips. Was #[cfg(aarch64)]-only ("required for
-     * RIT→WM_KEYDOWN delivery") — amd64 needed it for the same reason (found
-     * 2026-07-07 by the Doom playable gate: keys traced to [WIN32K] KEYDROP:
-     * NO keyboard layout; amd64 now green + playable).
-     *
-     * i386 EXCLUDED: LoadKeyboardLayoutW -> UserLoadKbdDll ->
-     * NtCreateSection(SEC_IMAGE) for kbdus.dll DEADLOCKS in the i386 Rust MM
-     * (the "#if 0" the old code cited) — it wedges winlogon before explorer
-     * spawns, so i386 never reaches the desktop. Until that MM deadlock is
-     * fixed, i386 keeps the pre-existing behavior (no layout -> app keys dead,
-     * tracked); the boot-to-desktop North Star wins over interactive input. */
-    #[cfg(not(target_arch = "x86"))] // nolint: cfg-vs-c (test-harness hook, Rust-only)
-    {
-        if InitKeyboardLayouts() == 0 {
-            DbgPrint(
-                b"[WINLOGON] InitKeyboardLayouts failed (non-fatal)\n\0".as_ptr()
-                    as *const i8,
-            );
-        } else {
-            DbgPrint(b"[WINLOGON] Keyboard layout loaded\n\0".as_ptr() as *const i8);
-        }
+    /* One path on every arch. arm64 used to skip winlogon's RPC server, notifications
+     * and GINA ("nothing on arm64 consumes them yet"), not wait for lsass, and load the
+     * keyboard layout from a block of its own; the media now carries msgina and the rest,
+     * so it runs what x86 runs. Without a layout win32k drops every key at
+     * "NO keyboard layout" (gspklBaseLayout null). */
+    if InitKeyboardLayouts() == 0 {
+        DbgPrint(b"[WINLOGON] InitKeyboardLayouts failed (non-fatal)\n\0".as_ptr() as *const i8);
+    } else {
+        DbgPrint(b"[WINLOGON] InitKeyboardLayouts OK\n\0".as_ptr() as *const i8);
     }
 
-    #[cfg(target_arch = "aarch64")]
-    {
-        /* arm64 still skips winlogon's OWN RPC server, notifications and GINA
-         * (nothing on arm64 consumes the winlogon RPC interface yet) — but NOT
-         * the SCM, and NOT lsass.
-         *
-         * services.exe is the Service Control Manager, and without it arm64 has
-         * no CreateService/StartService at all: that is what blocked the kmtest
-         * conformance sweep, where every test is advapi32 -> RPC over
-         * \pipe\ntsvcs -> services.exe and so raised RPC_S_SERVER_UNAVAILABLE
-         * (0x6BA) before printing a line. Its whole import set and npfs.sys (the
-         * pipe transport) are staged on the ramdisk now.
-         *
-         * lsass MUST come with it, and is not optional: ScmCreateServiceDatabase
-         * ends with ScmWaitForLsa(), which is a
-         * WaitForSingleObject(LSA_RPC_SERVER_ACTIVE, INFINITE) — the event only
-         * lsass.exe ever signals (services-rust/src/services.rs:253). Starting
-         * the SCM WITHOUT lsass therefore hangs services.exe inside
-         * ScmCreateServiceDatabase forever (measured 2026-07-15: the SCM reached
-         * "LastKnownGood OK" and then sat on that INFINITE wait for 420s+, so
-         * SC_AutoStartComplete never fired and the kmtest sweep timed out every
-         * test). x86 has never hit it because its branch below starts lsass.
-         *
-         * All three (SCM, lsass, and the RPC/pipe transport under them) are
-         * non-fatal exactly like the x86 branch: if any fails we log and boot on,
-         * so the desktop North Star cannot regress behind them.
-         *
-         * DELIBERATE divergence from x86: we do NOT call WaitForLsass() after
-         * StartLsass(). services.exe already does its own ScmWaitForLsa, so
-         * nothing needs winlogon to block here — and making winlogon wait on
-         * lsass would put a brand-new INFINITE wait directly on the arm64
-         * boot-to-desktop path (the very failure mode above, moved into the
-         * process that OWNS the boot). Let the SCM do the waiting. */
+    /* System fonts are win32k's job: IntLoadSystemFonts loads every file in
+     * \\SystemRoot\\Fonts at InitFontSupport, on every arch, as upstream does.
+     * winlogon used to AddFontResourceW eight fonts by name here because the
+     * kernel skipped that load on x86. The list lacked the console's "VGA" face,
+     * so no console window could be created. */
+
+    DbgPrint(b"[WINLOGON] Calling StartRpcServer\n\0".as_ptr() as *const i8);
+    if crate::rpcserver::StartRpcServer() == 0 {
+        DbgPrint(b"[WINLOGON] StartRpcServer failed (non-fatal)\n\0".as_ptr() as *const i8);
+    } else {
+        DbgPrint(b"[WINLOGON] StartRpcServer OK\n\0".as_ptr() as *const i8);
+    }
+
+    DbgPrint(b"[WINLOGON] Calling StartServicesManager\n\0".as_ptr() as *const i8);
+    if StartServicesManager() == 0 {
         DbgPrint(
-            b"[WINLOGON] ARM64: Skipping RPC, notifications, GINA\n\0".as_ptr() as *const i8,
+            b"[WINLOGON] StartServicesManager failed (non-fatal)\n\0".as_ptr() as *const i8,
         );
-        DbgPrint(b"[WINLOGON] ARM64: Calling StartServicesManager\n\0".as_ptr() as *const i8);
-        if StartServicesManager() == 0 {
-            DbgPrint(
-                b"[WINLOGON] StartServicesManager failed (non-fatal)\n\0".as_ptr() as *const i8,
-            );
-        } else {
-            DbgPrint(b"[WINLOGON] StartServicesManager OK\n\0".as_ptr() as *const i8);
-        }
-
-        DbgPrint(b"[WINLOGON] ARM64: Calling StartLsass\n\0".as_ptr() as *const i8);
-        if StartLsass() == 0 {
-            DbgPrint(
-                b"[WINLOGON] StartLsass failed (error %lu, non-fatal)\n\0".as_ptr() as *const i8,
-                GetLastError(),
-            );
-        } else {
-            DbgPrint(b"[WINLOGON] ARM64: StartLsass OK\n\0".as_ptr() as *const i8);
-        }
+    } else {
+        DbgPrint(b"[WINLOGON] StartServicesManager OK\n\0".as_ptr() as *const i8);
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        // _USE_DUMMY_PSEH path (x86/amd64). InitKeyboardLayouts was `#if 0`
-        // in the C for a NtCreateSection SEC_IMAGE deadlock in Rust MM; that Mm
-        // family was fixed 2026-07-05 (field manual §9.13), and without a layout
-        // win32k drops every keystroke (gspklBaseLayout null). Re-enabled.
-        if InitKeyboardLayouts() == 0 {
-            DbgPrint(b"[WINLOGON] InitKeyboardLayouts failed (non-fatal)\n\0".as_ptr() as *const i8);
-        } else {
-            DbgPrint(b"[WINLOGON] InitKeyboardLayouts OK\n\0".as_ptr() as *const i8);
-        }
-
-        /* System fonts are win32k's job: IntLoadSystemFonts loads every file in
-         * \\SystemRoot\\Fonts at InitFontSupport, on every arch, as upstream does.
-         * winlogon used to AddFontResourceW eight fonts by name here because the
-         * kernel skipped that load on x86. The list lacked the console's "VGA" face,
-         * so no console window could be created. */
-
-        DbgPrint(b"[WINLOGON] Calling StartRpcServer\n\0".as_ptr() as *const i8);
-        if crate::rpcserver::StartRpcServer() == 0 {
-            DbgPrint(b"[WINLOGON] StartRpcServer failed (non-fatal)\n\0".as_ptr() as *const i8);
-        } else {
-            DbgPrint(b"[WINLOGON] StartRpcServer OK\n\0".as_ptr() as *const i8);
-        }
-
-        DbgPrint(b"[WINLOGON] Calling StartServicesManager\n\0".as_ptr() as *const i8);
-        if StartServicesManager() == 0 {
-            DbgPrint(
-                b"[WINLOGON] StartServicesManager failed (non-fatal)\n\0".as_ptr() as *const i8,
-            );
-        } else {
-            DbgPrint(b"[WINLOGON] StartServicesManager OK\n\0".as_ptr() as *const i8);
-        }
-
-        DbgPrint(b"[WINLOGON] Calling StartLsass\n\0".as_ptr() as *const i8);
-        if StartLsass() == 0 {
-            DbgPrint(
-                b"[WINLOGON] StartLsass failed (error %lu, non-fatal)\n\0".as_ptr() as *const i8,
-                GetLastError(),
-            );
-        } else {
-            DbgPrint(
-                b"[WINLOGON] StartLsass OK, calling WaitForLsass\n\0".as_ptr() as *const i8,
-            );
-            /* Wait for the LSA server */
-            WaitForLsass();
-            DbgPrint(b"[WINLOGON] WaitForLsass returned\n\0".as_ptr() as *const i8);
-        }
-
-        /* Init Notifications */
-        DbgPrint(b"[WINLOGON] Calling InitNotifications\n\0".as_ptr() as *const i8);
-        crate::notify::InitNotifications();
+    DbgPrint(b"[WINLOGON] Calling StartLsass\n\0".as_ptr() as *const i8);
+    if StartLsass() == 0 {
         DbgPrint(
-            b"[WINLOGON] InitNotifications done, calling GinaInit\n\0".as_ptr() as *const i8,
+            b"[WINLOGON] StartLsass failed (error %lu, non-fatal)\n\0".as_ptr() as *const i8,
+            GetLastError(),
         );
-
-        /* Load and initialize gina */
-        if GinaInit(WLSession) == 0 {
-            DbgPrint(b"[WINLOGON] GinaInit failed (non-fatal)\n\0".as_ptr() as *const i8);
-        }
-
-        DisplayStatusMessage(WLSession, (*WLSession).WinlogonDesktop, IDS_REACTOSISSTARTINGUP);
+    } else {
+        DbgPrint(
+            b"[WINLOGON] StartLsass OK, calling WaitForLsass\n\0".as_ptr() as *const i8,
+        );
+        /* Wait for the LSA server */
+        WaitForLsass();
+        DbgPrint(b"[WINLOGON] WaitForLsass returned\n\0".as_ptr() as *const i8);
     }
+
+    /* Init Notifications */
+    DbgPrint(b"[WINLOGON] Calling InitNotifications\n\0".as_ptr() as *const i8);
+    crate::notify::InitNotifications();
+    DbgPrint(
+        b"[WINLOGON] InitNotifications done, calling GinaInit\n\0".as_ptr() as *const i8,
+    );
+
+    /* Load and initialize gina */
+    if GinaInit(WLSession) == 0 {
+        DbgPrint(b"[WINLOGON] GinaInit failed (non-fatal)\n\0".as_ptr() as *const i8);
+    }
+
+    DisplayStatusMessage(WLSession, (*WLSession).WinlogonDesktop, IDS_REACTOSISSTARTINGUP);
 
     // --- customized boot path (#if _M_ARM64 || _USE_DUMMY_PSEH: every arch) ---
 
@@ -2920,9 +3036,8 @@ pub unsafe extern "system" fn WinMain(
      * Lives HERE because this boot path skips userinit entirely. Its
      * [SEH-USER] PASS/FAIL serial lines prove hardware-fault ->
      * KiUserExceptionDispatcher -> ntdll dispatch -> __except delivery
-     * end-to-end. amd64/arm64 only (native clang SEH does not lower on
-     * i386), matching sehtest's cmake gate. */
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] // nolint: cfg-vs-c (test-harness hook, Rust-only)
+     * end-to-end, on all three arches (i386 builds it for -windows-msvc,
+     * the env in which clang lowers frame-based SEH; see its CMakeLists). */
     {
         let mut Si: STARTUPINFOW = zeroed();
         let mut Pi: PROCESS_INFORMATION = zeroed();
@@ -3225,93 +3340,107 @@ pub unsafe extern "system" fn WinMain(
             }
         }
 
-        /* FEX rung-2 hello-compute probe (no-op unless fexprobe.exe staged) —
-         * before the cmd.exe INFINITE wait so its [FEX-HELLO] serial lands. */
-        TryStartFexProbe();
+        /* The boot-time test ladder; skipped on a quiet boot (QuietBootRequested). */
+        if !QuietBootRequested() {
+            /* FEX rung-2 hello-compute probe (no-op unless fexprobe.exe staged) —
+             * before the cmd.exe INFINITE wait so its [FEX-HELLO] serial lands. */
+            TryStartFexProbe();
 
-        /* WOW64 Phase B probe (no-op unless wow64probe.exe staged). */
-        TryStartWow64Probe();
+            /* WOW64 Phase B probe (no-op unless wow64probe.exe staged). */
+            TryStartWow64Probe();
 
-        /* WOW64 Phase C probe: real i386 PE through CreateProcessW
-         * (no-op unless syswow64\hello32.exe staged). */
-        TryStartWow64Hello();
+            /* WOW64 Phase C probe: real i386 PE through CreateProcessW
+             * (no-op unless syswow64\hello32.exe staged). */
+            TryStartWow64Hello();
 
-        /* wow64win probe (M4): i386 GUI guest drawing through the win32k
-         * thunk table (no-op unless syswow64\gui32.exe staged). */
-        TryStartWow64Gui();
+            /* BTCpu64 M1: an x86-64 PE — a guest under FEX on arm64, native
+             * on amd64 (no-op unless system32\hello64.exe staged). */
+            TryStartX64Hello();
 
-        /* M8: window-creation guest AFTER the direct-DC guest (gui32 is the
-         * regression oracle; win32 is the frontier). */
-        TryStartWow64Win32();
+            /* wow64win probe (M4): i386 GUI guest drawing through the win32k
+             * thunk table (no-op unless syswow64\gui32.exe staged). */
+            TryStartWow64Gui();
 
-        /* M10: file-I/O guest — the IO_STATUS_BLOCK marshalling oracle. */
-        TryStartWow64File();
+            /* M8: window-creation guest AFTER the direct-DC guest (gui32 is the
+             * regression oracle; win32 is the frontier). */
+            TryStartWow64Win32();
 
-        /* M15b: overlapped-I/O guest — kernel-side IOSB32 completion oracle. */
-        TryStartWow64Async();
+            /* M10: file-I/O guest — the IO_STATUS_BLOCK marshalling oracle. */
+            TryStartWow64File();
 
-        /* M18: marshaller-verification guest (TBI/IOCP/monitors). */
-        TryStartWow64Marshal();
+            /* M15b: overlapped-I/O guest — kernel-side IOSB32 completion oracle. */
+            TryStartWow64Async();
 
-        /* E18: guest-SEH dispatch verify — a hardware AV in guest code must
-         * reach the guest's own fs:[0] handler. */
-        TryStartWow64Fault();
+            /* M18: marshaller-verification guest (TBI/IOCP/monitors). */
+            TryStartWow64Marshal();
 
-        /* #64: 32-bit guest threading, driven through FEX's BTCpu contract —
-         * the arm64 side of the per-thread WoW64 entry. */
-        TryStartWow64Thread();
+            /* E18: guest-SEH dispatch verify — a hardware AV in guest code must
+             * reach the guest's own fs:[0] handler. */
+            TryStartWow64Fault();
 
-        /* E17: runtime code generation — the CPU layer's memory-notification
-         * contract. Most rungs fail silently wrong, not loudly. */
-        TryStartWow64Selfmod();
+            /* #64: 32-bit guest threading, driven through FEX's BTCpu contract —
+             * the arm64 side of the per-thread WoW64 entry. */
+            TryStartWow64Thread();
 
-        /* Registry redirection — the Wow6432Node view, checked from inside a
-         * 32-bit process. The only ladder rung whose failure is silent. */
-        TryStartWow64Reg();
+            /* E17: runtime code generation — the CPU layer's memory-notification
+             * contract. Most rungs fail silently wrong, not loudly. */
+            TryStartWow64Selfmod();
 
-        /* Guest process creation. MOVED AHEAD of the stress guests 2026-09-19,
-         * when it started passing and joined the graded parity set: it used to
-         * run dead last because it bugchecked the kernel reliably, and anything
-         * after it would never report. That reason is gone, and the ordering
-         * rule now cuts the other way -- sqlite32 carries the registered
-         * BUGCHECK, so a GRADED guest must run BEFORE it or an sqlite32 crash
-         * silently costs spawn32 its verdict, which is exactly what the rule
-         * above describes happening to lua32. */
-        TryStartWow64Spawn();
+            /* Registry redirection — the Wow6432Node view, checked from inside a
+             * 32-bit process. The only ladder rung whose failure is silent. */
+            TryStartWow64Reg();
 
-        /* Third-party stress: real SQLite on the storage + allocator axis.
-         * LAST, after every parity guest: it is slow third-party code under
-         * emulation, and running it earlier delays the parity set past the
-         * ladder's drain budget (that is exactly how it faked a selfmod32
-         * failure the first time). The harness extends the drain itself once it
-         * sees this guest launch, so being last costs nothing. */
-        /* Third-party stress #2: real Lua on the control-flow axis. BEFORE
-         * sqlite32, though both follow the parity set -- sqlite32 is the
-         * registered arm64 on-disk instability (roadmap: BUGCHECK 0x1E), and a
-         * guest that can take the whole boot down must be LAST among the
-         * optional guests or its crash silently costs every guest after it its
-         * verdict. Measured: with sqlite32 first, an arm64 ladder run graded
-         * 9/9 parity PASS and reported nothing at all about lua32, because the
-         * machine was gone. lua32 is purely in-memory, so it is not exposed to
-         * that bug. */
-        TryStartWow64Lua();
+            /* Guest process creation. MOVED AHEAD of the stress guests 2026-09-19,
+             * when it started passing and joined the graded parity set: it used to
+             * run dead last because it bugchecked the kernel reliably, and anything
+             * after it would never report. That reason is gone, and the ordering
+             * rule now cuts the other way -- sqlite32 carries the registered
+             * BUGCHECK, so a GRADED guest must run BEFORE it or an sqlite32 crash
+             * silently costs spawn32 its verdict, which is exactly what the rule
+             * above describes happening to lua32. */
+            TryStartWow64Spawn();
+            /* User APCs into 32-bit code (QueueUserAPC, ReadFileEx, timers). */
+            TryStartWow64Guest(&wstr_arr!("apc32.exe"), b"apc32.exe\0");
 
-        TryStartWow64Sqlite();
-        LadderProgramComplete();
+            /* The x86-64 ladder under FEX: the 32-bit ladder's sources rebuilt
+             * for x86-64. After every graded 32-bit guest, so a hung x64 guest
+             * costs only its own 30s. */
+            TryStartX64Ladder();
+
+            /* Third-party stress: real SQLite on the storage + allocator axis.
+             * LAST, after every parity guest: it is slow third-party code under
+             * emulation, and running it earlier delays the parity set past the
+             * ladder's drain budget (that is exactly how it faked a selfmod32
+             * failure the first time). The harness extends the drain itself once it
+             * sees this guest launch, so being last costs nothing. */
+            /* Third-party stress #2: real Lua on the control-flow axis. BEFORE
+             * sqlite32, though both follow the parity set -- sqlite32 is the
+             * registered arm64 on-disk instability (roadmap: BUGCHECK 0x1E), and a
+             * guest that can take the whole boot down must be LAST among the
+             * optional guests or its crash silently costs every guest after it its
+             * verdict. Measured: with sqlite32 first, an arm64 ladder run graded
+             * 9/9 parity PASS and reported nothing at all about lua32, because the
+             * machine was gone. lua32 is purely in-memory, so it is not exposed to
+             * that bug. */
+            TryStartWow64Lua();
+
+            TryStartWow64Sqlite();
+            LadderProgramComplete();
 
 
-        /* The testgui pair never exits, so it would sit on top of DOOM's window.
-         * When the WoW64 doom is staged, DOOM is the demo — skip them. */
-        if !Wow64DoomStaged() {
-            /* M11 A/B control: the NATIVE arm64 build of the very same app, so a
-             * failure can be attributed. If native testgui reaches WM_PAINT and
-             * the WoW64 one does not, the bug is in the WoW64 layer; if they fail
-             * the same way, it is a plain user32 bug and belongs to another lane. */
-            TryStartNativeTestGui();
+            /* The testgui pair never exits, so it would sit on top of DOOM's window.
+             * When the WoW64 doom is staged, DOOM is the demo — skip them. */
+            if !Wow64DoomStaged() {
+                /* M11 A/B control: the NATIVE arm64 build of the very same app, so a
+                 * failure can be attributed. If native testgui reaches WM_PAINT and
+                 * the WoW64 one does not, the bug is in the WoW64 layer; if they fail
+                 * the same way, it is a plain user32 bug and belongs to another lane. */
+                TryStartNativeTestGui();
 
-            /* M11: the first STOCK i386 binary — real CRT, real imports, real
-             * window. It never exits: it stays up for the screenshot. */
-            TryStartWow64TestGui();
+                /* M11: the first STOCK i386 binary — real CRT, real imports, real
+                 * window. It never exits: it stays up for the screenshot. */
+                TryStartWow64TestGui();
+            }
         }
 
         /* M12 — THE NORTH STAR: x86 Doom under WoW64. Last, and alone on the
@@ -3377,11 +3506,17 @@ pub unsafe extern "system" fn WinMain(
      * marshallers); doom is the demo rung, same mutual-occlusion rule as
      * arm64. See wow64-plan.md Phase E. */
     #[cfg(target_arch = "x86_64")] // nolint: cfg-vs-c (test-harness hook, Rust-only)
-    {
+    'ladder: {
+        if QuietBootRequested() {
+            break 'ladder;
+        }
         /* Full arm64-parity probe ladder (each is a silent no-op unless its
          * guest is staged): loader → GDI → window/callbacks → file I/O →
          * overlapped I/O → marshaller self-verify. */
         TryStartWow64Hello();
+        /* BTCpu64 M1's guest, run NATIVELY here: the oracle that hello64 is
+         * right independently of FEX (it is the arm64 ladder's x86-64 guest). */
+        TryStartX64Hello();
         TryStartWow64Gui();
         TryStartWow64Win32();
         TryStartWow64File();
@@ -3407,6 +3542,9 @@ pub unsafe extern "system" fn WinMain(
          * silently costs spawn32 its verdict, which is exactly what the rule
          * above describes happening to lua32. */
         TryStartWow64Spawn();
+        TryStartWow64Guest(&wstr_arr!("apc32.exe"), b"apc32.exe\0");
+        /* The x86-64 ladder: native here, the oracle for the arm64 run. */
+        TryStartX64Ladder();
         /* Third-party stress: real SQLite, last — see the note at the other
          * call site on why it must not precede the parity guests. */
         /* Third-party stress #2: real Lua, setjmp/longjmp-heavy. BEFORE
@@ -3598,36 +3736,38 @@ pub unsafe extern "system" fn WinMain(
      * file and says nothing. */
     #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (test-harness hook, Rust-only)
     {
-        let mut Skips: [u8; 2048] = [0; 2048];
-        if WinetestSweepRequested(Skips.as_mut_ptr(), Skips.len()) {
-            TryStartWinetestSuite(
-                wstr!("bin").as_ptr(),
-                wstr!("user32_winetest.exe").as_ptr(),
-                b"native/user32\0".as_ptr(),
-                180_000,
-                Skips.as_ptr(),
-            );
-        } else {
-            TryStartWinetest(
-                wstr!("bin").as_ptr(),
-                wstr!("user32_winetest.exe").as_ptr(),
-                wstr!("wsprintf").as_ptr(),
-                b"native/user32:wsprintf\0".as_ptr() as *const i8,
-                180_000,
-                null_mut(),
-                0,
-            );
-            TryStartWinetest(
-                wstr!("bin").as_ptr(),
-                wstr!("user32_winetest.exe").as_ptr(),
-                wstr!("class").as_ptr(),
-                b"native/user32:class\0".as_ptr() as *const i8,
-                180_000,
-                null_mut(),
-                0,
-            );
+        if !QuietBootRequested() {
+            let mut Skips: [u8; 2048] = [0; 2048];
+            if WinetestSweepRequested(Skips.as_mut_ptr(), Skips.len()) {
+                TryStartWinetestSuite(
+                    wstr!("bin").as_ptr(),
+                    wstr!("user32_winetest.exe").as_ptr(),
+                    b"native/user32\0".as_ptr(),
+                    180_000,
+                    Skips.as_ptr(),
+                );
+            } else {
+                TryStartWinetest(
+                    wstr!("bin").as_ptr(),
+                    wstr!("user32_winetest.exe").as_ptr(),
+                    wstr!("wsprintf").as_ptr(),
+                    b"native/user32:wsprintf\0".as_ptr() as *const i8,
+                    180_000,
+                    null_mut(),
+                    0,
+                );
+                TryStartWinetest(
+                    wstr!("bin").as_ptr(),
+                    wstr!("user32_winetest.exe").as_ptr(),
+                    wstr!("class").as_ptr(),
+                    b"native/user32:class\0".as_ptr() as *const i8,
+                    180_000,
+                    null_mut(),
+                    0,
+                );
+            }
+            LadderProgramComplete();
         }
-        LadderProgramComplete();
     }
 
     /* DOOM (opt-in, VIBEOS_DOOM=1) — x86 call site. On arm64 doom is spawned

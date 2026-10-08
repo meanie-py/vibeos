@@ -79,12 +79,6 @@ add_library(jscript MODULE
     rsrc.rc
     ${CMAKE_CURRENT_BINARY_DIR}/jscript.def)
 
-if(MSVC)
-    # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    # Disable warning C4267: '=': conversion from 'size_t' to 'WCHAR', possible loss of data
-    target_compile_options(jscript PRIVATE /wd4146 /wd4267)
-endif()
-
 add_idl_headers(jscript_idlheader jscript_classes.idl)
 add_idl_headers(jscript_jsdisp_header jsdisp.idl)
 add_idl_reg_scripts(jscript registry jscript_classes.idl)

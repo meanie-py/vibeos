@@ -219,30 +219,6 @@ unsafe fn REGION_bAddRect(
     1u8
 }
 
-#[cfg(target_arch = "x86")]
-unsafe fn IntDumpRegion(hRgn: HRGN) {
-    let Data: PREGION;
-
-    Data = REGION_LockRgn(hRgn);
-    if Data.is_null() {
-        DbgPrint(b"IntDumpRegion called with invalid region!\n\0".as_ptr() as PCHAR);
-        return;
-    }
-
-    DbgPrint(
-        b"IntDumpRegion(%x): %d,%d-%d,%d %d\n\0".as_ptr() as PCHAR,
-        hRgn,
-        (*Data).rdh.rcBound.left,
-        (*Data).rdh.rcBound.top,
-        (*Data).rdh.rcBound.right,
-        (*Data).rdh.rcBound.bottom,
-        (*Data).rdh.iType,
-    );
-
-    REGION_UnlockRgn(Data);
-}
-
-#[cfg(not(target_arch = "x86"))]
 unsafe fn IntDumpRegion(hRgn: HRGN) {
     let Data: PREGION;
 
@@ -1156,53 +1132,6 @@ unsafe fn REGION_bMergeRect(
     1u8
 }
 
-#[cfg(target_arch = "x86")]
-unsafe fn REGION_UnionO(
-    pReg: PREGION,
-    mut r1: PRECTL,
-    r1End: PRECTL,
-    mut r2: PRECTL,
-    r2End: PRECTL,
-    top: i32,
-    bottom: i32,
-) -> u8 {
-    while (r1 != r1End) && (r2 != r2End) {
-        if (*r1).left < (*r2).left {
-            if REGION_bMergeRect(pReg, (*r1).left, top, (*r1).right, bottom) == 0 {
-                return 0;
-            }
-            r1 = r1.offset(1);
-        } else {
-            if REGION_bMergeRect(pReg, (*r2).left, top, (*r2).right, bottom) == 0 {
-                return 0;
-            }
-            r2 = r2.offset(1);
-        }
-    }
-
-    if r1 != r1End {
-        loop {
-            if REGION_bMergeRect(pReg, (*r1).left, top, (*r1).right, bottom) == 0 {
-                return 0;
-            }
-            r1 = r1.offset(1);
-            if r1 == r1End {
-                break;
-            }
-        }
-    } else {
-        while r2 != r2End {
-            if REGION_bMergeRect(pReg, (*r2).left, top, (*r2).right, bottom) == 0 {
-                return 0;
-            }
-            r2 = r2.offset(1);
-        }
-    }
-
-    1
-}
-
-#[cfg(not(target_arch = "x86"))]
 unsafe fn REGION_UnionO(
     pReg: PREGION,
     mut r1: PRECTL,
@@ -4291,6 +4220,32 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
     }
     hRgn = (*Region).BaseObject.hHmgr as HRGN;
 
+    // Capture the caller's rectangle array into kernel memory: the loop below reads
+    // each rect raw and hands it to REGION_UnionRectWithRgn, but RgnData is user
+    // memory the probe only range-checked (the C wrapped the probe and these loads
+    // in one _SEH2_TRY). nCount*RECT fits inside the validated Count, checked above.
+    let mut krects: *mut RECT = core::ptr::null_mut();
+    if nCount != 0 {
+        let bytes = nCount as usize * core::mem::size_of::<RECT>();
+        krects = ExAllocatePoolWithTag(PagedPool, bytes as SIZE_T, TAG_REGION) as *mut RECT;
+        if krects.is_null()
+            || !crate::copy::capture_from_user(
+                krects as *mut core::ffi::c_void,
+                rects as *const core::ffi::c_void,
+                bytes,
+            )
+        {
+            if !krects.is_null() {
+                ExFreePoolWithTag(krects as *mut core::ffi::c_void, TAG_REGION);
+            }
+            EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            REGION_UnlockRgn(Region);
+            GreDeleteObject(hRgn as HGDIOBJ);
+            return core::ptr::null_mut();
+        }
+        rects = krects;
+    }
+
     {
         for i in 0..nCount {
             if (*rects.offset(i as isize)).left < (*rects.offset(i as isize)).right &&
@@ -4305,12 +4260,31 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
             }
         }
 
+        if !krects.is_null() {
+            ExFreePoolWithTag(krects as *mut core::ffi::c_void, TAG_REGION);
+        }
+
         if !Xform.is_null() && !hRgn.is_null() {
             let ret: u32;
 
             Status = ERROR_INVALID_PARAMETER as i32;
             XFORMOBJ_vInit((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), core::ptr::addr_of_mut!(matrix));
-            ret = EXFORMOBJ_iSetXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), Xform as *mut XFORML);
+            // Xform is the caller's and nothing probed it: iSetXform read its six
+            // floats raw, so a kernel address leaked into the region's transform.
+            // Capture it; a fault takes the DDI_ERROR exit (ERROR_INVALID_PARAMETER).
+            let mut xform_local: XFORML = core::mem::zeroed();
+            ret = if crate::safe_user_io::copy_from_user(
+                core::ptr::addr_of_mut!(xform_local).cast(),
+                Xform as *const core::ffi::c_void,
+                core::mem::size_of::<XFORML>(),
+                1,
+            )
+            .is_ok()
+            {
+                EXFORMOBJ_iSetXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ), &mut xform_local)
+            } else {
+                DDI_ERROR
+            };
 
             if ret != DDI_ERROR {
                 if EXFORMOBJ_bApplyXform((core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ),
@@ -4394,6 +4368,32 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
     }
     hRgn = (*Region).BaseObject.hHmgr as HRGN;
 
+    // Capture the caller's rectangle array into kernel memory: the loop below reads
+    // each rect raw and hands it to REGION_UnionRectWithRgn, but RgnData is user
+    // memory the probe only range-checked (the C wrapped the probe and these loads
+    // in one _SEH2_TRY). nCount*RECT fits inside the validated Count, checked above.
+    let mut krects: *mut RECT = core::ptr::null_mut();
+    if nCount != 0 {
+        let bytes = nCount as usize * core::mem::size_of::<RECT>();
+        krects = ExAllocatePoolWithTag(PagedPool, bytes as SIZE_T, TAG_REGION) as *mut RECT;
+        if krects.is_null()
+            || !crate::copy::capture_from_user(
+                krects as *mut core::ffi::c_void,
+                rects as *const core::ffi::c_void,
+                bytes,
+            )
+        {
+            if !krects.is_null() {
+                ExFreePoolWithTag(krects as *mut core::ffi::c_void, TAG_REGION);
+            }
+            EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            REGION_UnlockRgn(Region);
+            GreDeleteObject(hRgn as HGDIOBJ);
+            return core::ptr::null_mut();
+        }
+        rects = krects;
+    }
+
     {
         for i in 0..nCount {
             if (*rects.offset(i as isize)).left < (*rects.offset(i as isize)).right &&
@@ -4408,12 +4408,31 @@ pub unsafe extern "system" fn NtGdiExtCreateRegion(
             }
         }
 
+        if !krects.is_null() {
+            ExFreePoolWithTag(krects as *mut core::ffi::c_void, TAG_REGION);
+        }
+
         if !Xform.is_null() && !hRgn.is_null() {
             let ret: u32;
 
             Status = ERROR_INVALID_PARAMETER as i32;
             XFORMOBJ_vInit(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ , core::ptr::addr_of_mut!(matrix));
-            ret = EXFORMOBJ_iSetXform(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ , Xform as *mut XFORML);
+            // Xform is the caller's and nothing probed it: iSetXform read its six
+            // floats raw, so a kernel address leaked into the region's transform.
+            // Capture it; a fault takes the DDI_ERROR exit (ERROR_INVALID_PARAMETER).
+            let mut xform_local: XFORML = core::mem::zeroed();
+            ret = if crate::safe_user_io::copy_from_user(
+                core::ptr::addr_of_mut!(xform_local).cast(),
+                Xform as *const core::ffi::c_void,
+                core::mem::size_of::<XFORML>(),
+                1,
+            )
+            .is_ok()
+            {
+                EXFORMOBJ_iSetXform(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ, &mut xform_local)
+            } else {
+                DDI_ERROR
+            };
 
             if ret != DDI_ERROR {
                 if EXFORMOBJ_bApplyXform(core::ptr::addr_of_mut!(xo) as *mut XFORMOBJ ,
@@ -4542,11 +4561,6 @@ pub unsafe extern "system" fn NtGdiRectInRegion(
         return 0;
     }
 
-    #[cfg(target_arch = "x86")]
-    {
-        IntRectInRegion(hrgn, core::ptr::addr_of_mut!(rcTemp))
-    }
-    #[cfg(not(target_arch = "x86"))]
     {
         IntRectInRegion(hrgn, core::ptr::addr_of_mut!(rcTemp))
     }

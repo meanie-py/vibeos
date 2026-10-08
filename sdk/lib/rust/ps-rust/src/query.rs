@@ -285,6 +285,17 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
         return STATUS_INVALID_PARAMETER;
     }
 
+    // The C fills ProcessInformation in place under _SEH2_TRY. A user-mode caller's
+    // buffer is replaced by a pool copy and copied back once, at the end, with the
+    // fault-tolerant copy; that also makes the write-failure `return`s below
+    // unreachable for user callers, which skipped the ObDereferenceObject.
+    let bounce = match OutputBounce::new(ProcessInformation, ProcessInformationLength as usize, PreviousMode) {
+        Ok(b) => b,
+        Err(s) => return s,
+    };
+    let ProcessInformation = bounce.buffer();
+    let InfoMode = bounce.mode(PreviousMode);
+
     match ProcessInformationClass {
         ProcessBasicInformation => {
             let ProcessBasicInfo = ProcessInformation as PPROCESS_BASIC_INFORMATION;
@@ -372,7 +383,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                         QuotaLimits.CpuRateLimit.RateData = 0;
                     }
 
-                    if let Err(s) = safe_copy_to_user(ProcessInformation, &QuotaLimits as *const _ as PVOID, Length as usize, core::mem::align_of::<ULONG>(), PreviousMode) {
+                    if let Err(s) = safe_copy_to_user(ProcessInformation, &QuotaLimits as *const _ as PVOID, Length as usize, core::mem::align_of::<ULONG>(), InfoMode) {
                         return s;
                     }
 
@@ -410,7 +421,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                         &ProcessValues.IoInfo as *const _ as PVOID,
                         core::mem::size_of::<IO_COUNTERS>(),
                         core::mem::align_of::<ULONG>(),
-                        PreviousMode,
+                        InfoMode,
                     ) {
                         return s;
                     }
@@ -474,7 +485,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                     } else {
                         core::ptr::null_mut()
                     };
-                    if let Err(s) = probe_write_user::<PVOID>(ProcessInformation as *mut PVOID, debug_handle as PVOID, PreviousMode) {
+                    if let Err(s) = probe_write_user::<PVOID>(ProcessInformation as *mut PVOID, debug_handle as PVOID, InfoMode) {
                         return s;
                     }
 
@@ -502,7 +513,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 if Status >= 0 {
                     HandleCount = ObGetProcessHandleCount(Process);
 
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, HandleCount, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, HandleCount, InfoMode) {
                         return s;
                     }
 
@@ -588,7 +599,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 );
                 if Status >= 0 {
                     let process = Process as *mut _EPROCESS;
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).DefaultHardErrorProcessing, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).DefaultHardErrorProcessing, InfoMode) {
                         return s;
                     }
 
@@ -614,7 +625,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 if Status >= 0 {
                     let process = Process as *mut _EPROCESS;
                     let boost_val = if (*process).Pcb.__bindgen_anon_1.__bindgen_anon_1.DisableBoost() != 0 { 1u32 } else { 0u32 };
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, boost_val, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, boost_val, InfoMode) {
                         return s;
                     }
 
@@ -716,7 +727,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                     Length = (*ImageName).MaximumLength as ULONG + core::mem::size_of::<OBJECT_NAME_INFORMATION>() as ULONG;
 
                     if Length <= ProcessInformationLength {
-                        if let Err(s) = safe_copy_to_user(ProcessInformation, ImageName as PVOID, Length as usize, core::mem::align_of::<ULONG>(), PreviousMode) {
+                        if let Err(s) = safe_copy_to_user(ProcessInformation, ImageName as PVOID, Length as usize, core::mem::align_of::<ULONG>(), InfoMode) {
                             return s;
                         }
 
@@ -763,7 +774,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                                     (*ObjectNameInfo).Name.Buffer as PVOID,
                                     (*ObjectNameInfo).Name.MaximumLength as usize,
                                     core::mem::align_of::<ULONG>(),
-                                    PreviousMode,
+                                    InfoMode,
                                 ) {
                                     return s;
                                 }
@@ -796,7 +807,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 if Status >= 0 {
                     let process = Process as *mut _EPROCESS;
                     let debug_val = if (*process).__bindgen_anon_2.__bindgen_anon_1.NoDebugInherit() != 0 { 0u32 } else { 1u32 };
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, debug_val, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, debug_val, InfoMode) {
                         return s;
                     }
 
@@ -821,7 +832,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 );
                 if Status >= 0 {
                     let process = Process as *mut _EPROCESS;
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).__bindgen_anon_2.__bindgen_anon_1.BreakOnTermination(), PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).__bindgen_anon_2.__bindgen_anon_1.BreakOnTermination(), InfoMode) {
                         return s;
                     }
 
@@ -863,7 +874,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = STATUS_SUCCESS;
 
-                if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, Cookie, PreviousMode) {
+                if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, Cookie, InfoMode) {
                     return s;
                 }
             }
@@ -903,7 +914,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                     ObDereferenceObject(Process as PVOID);
 
                     if Status >= 0 {
-                        if let Err(s) = probe_write_user::<PVOID>(ProcessInformation as *mut PVOID, DebugPort as PVOID, PreviousMode) {
+                        if let Err(s) = probe_write_user::<PVOID>(ProcessInformation as *mut PVOID, DebugPort as PVOID, InfoMode) {
                             return s;
                         }
                     } else if !DebugPort.is_null() {
@@ -925,7 +936,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                 Status = STATUS_SUCCESS;
 
-                if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, ObIsLUIDDeviceMapsEnabled(), PreviousMode) {
+                if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, ObIsLUIDDeviceMapsEnabled(), InfoMode) {
                     return s;
                 }
             }
@@ -947,7 +958,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 );
                 if Status >= 0 {
                     let process = Process as *mut _EPROCESS;
-                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).__bindgen_anon_2.__bindgen_anon_1.VdmAllowed(), PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, (*process).__bindgen_anon_2.__bindgen_anon_1.VdmAllowed(), InfoMode) {
                         return s;
                     }
 
@@ -985,7 +996,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
 
                     ObDereferenceObject(Process as PVOID);
 
-                    if let Err(s) = probe_write_user::<ULONG_PTR>(ProcessInformation as *mut ULONG_PTR, Wow64, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG_PTR>(ProcessInformation as *mut ULONG_PTR, Wow64, InfoMode) {
                         return s;
                     }
                 }
@@ -1005,7 +1016,7 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
                 } else {
                     Status = MmGetExecuteOptions(&mut ExecuteOptions);
                     if Status >= 0 {
-                        if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, ExecuteOptions, PreviousMode) {
+                        if let Err(s) = probe_write_user::<ULONG>(ProcessInformation as PULONG, ExecuteOptions, InfoMode) {
                             return s;
                         }
                     }
@@ -1020,6 +1031,19 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
         _ => {
             Status = STATUS_INVALID_INFO_CLASS;
         }
+    }
+
+    // ProcessImageFileName(Win32) return a UNICODE_STRING whose Buffer points just
+    // past it, inside the output buffer.
+    if Status >= 0
+        && (ProcessInformationClass == ProcessImageFileName
+            || ProcessInformationClass == ProcessImageFileNameWin32)
+        && bounce.contains(ProcessInformation, core::mem::size_of::<UNICODE_STRING>())
+    {
+        bounce.rebase(core::ptr::addr_of_mut!((*(ProcessInformation as PUNICODE_STRING)).Buffer));
+    }
+    if let Err(s) = bounce.finish() {
+        return s;
     }
 
     if !ReturnLength.is_null() && Length != 0 {
@@ -1100,12 +1124,12 @@ pub unsafe extern "system" fn NtSetInformationProcess(
 
     let process = Process as *mut _EPROCESS;
 
-    match ProcessInformationClass {
+    'class: { match ProcessInformationClass {
         ProcessWx86Information => {
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                VdmPower = *(ProcessInformation as PULONG);
+                VdmPower = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if SeSinglePrivilegeCheck(SeTcbPrivilege, PreviousMode) == 0 {
                     Status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1123,7 +1147,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<HANDLE>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                PortHandle = *(ProcessInformation as PHANDLE);
+                PortHandle = match ntkrnl_sys::probe::read_back(ProcessInformation as PHANDLE) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if SeSinglePrivilegeCheck(SeTcbPrivilege, PreviousMode) == 0 {
                     Status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1154,7 +1178,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<PROCESS_ACCESS_TOKEN>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                TokenHandle = (*(ProcessInformation as *const PROCESS_ACCESS_TOKEN)).Token;
+                TokenHandle = match ntkrnl_sys::probe::read_back(ProcessInformation as *const PROCESS_ACCESS_TOKEN) { Ok(v) => v.Token, Err(s) => { Status = s; break 'class; } };
 
                 Status = PspSetPrimaryToken(Process, TokenHandle, core::ptr::null_mut());
             }
@@ -1164,7 +1188,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DefaultHardErrorMode = *(ProcessInformation as PULONG);
+                DefaultHardErrorMode = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 (*process).DefaultHardErrorProcessing = DefaultHardErrorMode;
 
@@ -1181,7 +1205,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<PROCESS_SESSION_INFORMATION>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                SessionInfo = *(ProcessInformation as PPROCESS_SESSION_INFORMATION);
+                SessionInfo = match ntkrnl_sys::probe::read_back(ProcessInformation as PPROCESS_SESSION_INFORMATION) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if SeSinglePrivilegeCheck(SeTcbPrivilege, PreviousMode) == 0 {
                     Status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1199,7 +1223,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<PROCESS_PRIORITY_CLASS>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                PriorityClass = *(ProcessInformation as PPROCESS_PRIORITY_CLASS);
+                PriorityClass = match ntkrnl_sys::probe::read_back(ProcessInformation as PPROCESS_PRIORITY_CLASS) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if PriorityClass.PriorityClass > PROCESS_PRIORITY_CLASS_ABOVE_NORMAL as u8 {
                     Status = STATUS_INVALID_PARAMETER;
@@ -1241,7 +1265,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<PROCESS_FOREGROUND_BACKGROUND>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Foreground = *(ProcessInformation as PPROCESS_FOREGROUND_BACKGROUND);
+                Foreground = match ntkrnl_sys::probe::read_back(ProcessInformation as PPROCESS_FOREGROUND_BACKGROUND) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 PsSetProcessPriorityByClass(
                     Process,
@@ -1259,7 +1283,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<KPRIORITY>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                BasePriority = *(ProcessInformation as *const KPRIORITY);
+                BasePriority = match ntkrnl_sys::probe::read_back(ProcessInformation as *const KPRIORITY) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if (BasePriority & 0x80000000u32 as KPRIORITY) != 0 {
                     MemoryPriority = MEMORY_PRIORITY_FOREGROUND as UCHAR;
@@ -1297,7 +1321,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Boost = *(ProcessInformation as PULONG);
+                Boost = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if ExAcquireRundownProtection(core::ptr::addr_of_mut!((*process).RundownProtect)) != 0 {
                     KeEnterCriticalRegion();
@@ -1325,7 +1349,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Break = *(ProcessInformation as PULONG);
+                Break = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if SeSinglePrivilegeCheck(SeDebugPrivilege, PreviousMode) == 0 {
                     Status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1343,7 +1367,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<KAFFINITY>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Affinity = *(ProcessInformation as *const KAFFINITY);
+                Affinity = match ntkrnl_sys::probe::read_back(ProcessInformation as *const KAFFINITY) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 ValidAffinity = Affinity & KeActiveProcessors;
                 if (Affinity == 0) || (ValidAffinity != Affinity) {
@@ -1373,7 +1397,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DisableBoost = *(ProcessInformation as *const BOOLEAN);
+                DisableBoost = match ntkrnl_sys::probe::read_back(ProcessInformation as *const BOOLEAN) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if ExAcquireRundownProtection(core::ptr::addr_of_mut!((*process).RundownProtect)) != 0 {
                     KeEnterCriticalRegion();
@@ -1403,7 +1427,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DebugFlags = *(ProcessInformation as PULONG);
+                DebugFlags = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if (DebugFlags & !1) != 0 {
                     Status = STATUS_INVALID_PARAMETER;
@@ -1422,7 +1446,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<BOOLEAN>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                EnableFixup = *(ProcessInformation as PULONG);
+                EnableFixup = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if EnableFixup != 0 {
                     (*process).DefaultHardErrorProcessing |= SEM_NOALIGNMENTFAULTEXCEPT;
@@ -1464,7 +1488,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             } else if ProcessHandle != NtCurrentProcess() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
-                NoExecute = *(ProcessInformation as PULONG);
+                NoExecute = match ntkrnl_sys::probe::read_back(ProcessInformation as PULONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 Status = MmSetExecuteOptions(NoExecute);
             }
@@ -1474,7 +1498,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
             if ProcessInformationLength != core::mem::size_of::<HANDLE>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DirectoryHandle = *(ProcessInformation as PHANDLE);
+                DirectoryHandle = match ntkrnl_sys::probe::read_back(ProcessInformation as PHANDLE) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObSetDeviceMap(Process, DirectoryHandle);
             }
@@ -1501,7 +1525,7 @@ pub unsafe extern "system" fn NtSetInformationProcess(
         _ => {
             Status = STATUS_INVALID_INFO_CLASS;
         }
-    }
+    } }
 
     ObDereferenceObject(Process as PVOID);
     Status
@@ -1546,12 +1570,12 @@ pub unsafe extern "system" fn NtSetInformationThread(
         return Status;
     }
 
-    match ThreadInformationClass {
+    'class: { match ThreadInformationClass {
         ThreadPriority => {
             if ThreadInformationLength != core::mem::size_of::<KPRIORITY>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Priority = *(ThreadInformation as *const LONG);
+                Priority = match ntkrnl_sys::probe::read_back(ThreadInformation as *const LONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if (Priority > HIGH_PRIORITY as LONG) || (Priority <= LOW_PRIORITY as LONG) {
                     Status = STATUS_INVALID_PARAMETER;
@@ -1589,7 +1613,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<LONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Priority = *(ThreadInformation as *const LONG);
+                Priority = match ntkrnl_sys::probe::read_back(ThreadInformation as *const LONG) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if (Priority > THREAD_BASE_PRIORITY_MAX) || (Priority < THREAD_BASE_PRIORITY_MIN) {
                     if (Priority != THREAD_BASE_PRIORITY_LOWRT + 1) &&
@@ -1648,7 +1672,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Affinity = *(ThreadInformation as *const ULONG_PTR);
+                Affinity = match ntkrnl_sys::probe::read_back(ThreadInformation as *const ULONG_PTR) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if Affinity == 0 {
                     Status = STATUS_INVALID_PARAMETER;
@@ -1692,7 +1716,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<HANDLE>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                TokenHandle = *(ThreadInformation as PHANDLE);
+                TokenHandle = match ntkrnl_sys::probe::read_back(ThreadInformation as PHANDLE) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
@@ -1714,7 +1738,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Address = *(ThreadInformation as *mut PVOID);
+                Address = match ntkrnl_sys::probe::read_back(ThreadInformation as *mut PVOID) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
@@ -1736,7 +1760,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                IdealProcessor = *(ThreadInformation as *const ULONG_PTR);
+                IdealProcessor = match ntkrnl_sys::probe::read_back(ThreadInformation as *const ULONG_PTR) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 if IdealProcessor > MAXIMUM_PROCESSORS as ULONG_PTR {
                     Status = STATUS_INVALID_PARAMETER;
@@ -1772,7 +1796,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG_PTR>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                DisableBoost = *(ThreadInformation as *const ULONG_PTR);
+                DisableBoost = match ntkrnl_sys::probe::read_back(ThreadInformation as *const ULONG_PTR) { Ok(v) => v, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
@@ -1794,7 +1818,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                TlsIndex = *(ThreadInformation as PULONG) as ULONG_PTR;
+                TlsIndex = match ntkrnl_sys::probe::read_back(ThreadInformation as PULONG) { Ok(v) => v as ULONG_PTR, Err(s) => { Status = s; break 'class; } };
 
                 Status = ObReferenceObjectByHandle(
                     ThreadHandle,
@@ -1872,7 +1896,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
             if ThreadInformationLength != core::mem::size_of::<ULONG>() as ULONG {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
             } else {
-                Break = *(ThreadInformation as PULONG) as ULONG_PTR;
+                Break = match ntkrnl_sys::probe::read_back(ThreadInformation as PULONG) { Ok(v) => v as ULONG_PTR, Err(s) => { Status = s; break 'class; } };
 
                 if SeSinglePrivilegeCheck(SeDebugPrivilege, PreviousMode) == 0 {
                     Status = STATUS_PRIVILEGE_NOT_HELD;
@@ -1921,7 +1945,7 @@ pub unsafe extern "system" fn NtSetInformationThread(
         _ => {
             Status = STATUS_NOT_IMPLEMENTED;
         }
-    }
+    } }
 
     Status
 }
@@ -1942,8 +1966,6 @@ pub unsafe extern "system" fn NtQueryInformationThread(
     let mut Status: NTSTATUS;
     let Access: ULONG;
     let mut Length: ULONG = 0;
-    let ThreadBasicInfo = ThreadInformation as PTHREAD_BASIC_INFORMATION;
-    let ThreadTime = ThreadInformation as PKERNEL_USER_TIMES;
     let mut OldIrql: KIRQL = 0;
     let mut ThreadTerminated: ULONG;
 
@@ -1963,6 +1985,17 @@ pub unsafe extern "system" fn NtQueryInformationThread(
     }
 
     Access = THREAD_QUERY_INFORMATION;
+
+    // The C fills ThreadInformation in place under _SEH2_TRY; a user-mode caller's
+    // buffer is a pool copy here, copied back once at the end (OutputBounce).
+    let bounce = match OutputBounce::new(ThreadInformation, ThreadInformationLength as usize, PreviousMode) {
+        Ok(b) => b,
+        Err(s) => return s,
+    };
+    let ThreadInformation = bounce.buffer();
+    let InfoMode = bounce.mode(PreviousMode);
+    let ThreadBasicInfo = ThreadInformation as PTHREAD_BASIC_INFORMATION;
+    let ThreadTime = ThreadInformation as PKERNEL_USER_TIMES;
 
     match ThreadInformationClass {
         ThreadBasicInformation => {
@@ -2085,13 +2118,15 @@ pub unsafe extern "system" fn NtQueryInformationThread(
                 if Status >= 0 {
                     let thread = Thread as *mut _ETHREAD;
                     let process = (*thread).ThreadsProcess as *mut _EPROCESS;
-                    *(ThreadInformation as PULONG) = if (*(*process).ThreadListHead.Flink).Flink ==
-                        core::ptr::addr_of_mut!((*process).ThreadListHead)
-                    {
-                        1
-                    } else {
-                        0
-                    };
+                    // Divergence from the C, which answers "is ThreadListHead one entry long".
+                    // That list still holds EXITED threads whose objects a handle keeps alive,
+                    // while NtTerminateThread(NULL) refuses with STATUS_CANT_TERMINATE_SELF on
+                    // ActiveThreads == 1 (LIVE threads). With the two disagreeing, kernel32's
+                    // ExitThread was told "not last", had its self-termination refused, and
+                    // spun in its unreachable loop: svchost's main thread did it on arm64 once
+                    // its services had all exited, and the spin starved the whole guest.
+                    // Ask the question NtTerminateThread asks.
+                    *(ThreadInformation as PULONG) = ((*process).ActiveThreads == 1) as ULONG;
 
                     ObDereferenceObject(Thread as PVOID);
                 }
@@ -2173,7 +2208,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
                 );
                 if Status >= 0 {
                     let boost_val = if kthread_disable_boost(Thread as *mut _ETHREAD) != 0 { 1u32 } else { 0u32 };
-                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, boost_val, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, boost_val, InfoMode) {
                         return s;
                     }
 
@@ -2197,7 +2232,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
                     core::ptr::null_mut(),
                 );
                 if Status >= 0 {
-                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.BreakOnTermination(), PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.BreakOnTermination(), InfoMode) {
                         return s;
                     }
 
@@ -2224,7 +2259,7 @@ pub unsafe extern "system" fn NtQueryInformationThread(
                     ThreadTerminated = PsIsThreadTerminating(Thread) as ULONG;
 
                     let term_val = if ThreadTerminated != 0 { 1u32 } else { 0u32 };
-                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, term_val, PreviousMode) {
+                    if let Err(s) = probe_write_user::<ULONG>(ThreadInformation as PULONG, term_val, InfoMode) {
                         return s;
                     }
 
@@ -2236,6 +2271,10 @@ pub unsafe extern "system" fn NtQueryInformationThread(
         _ => {
             Status = STATUS_NOT_IMPLEMENTED;
         }
+    }
+
+    if let Err(s) = bounce.finish() {
+        return s;
     }
 
     if !ReturnLength.is_null() {

@@ -15,5 +15,13 @@ edition = "2021"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-panic-common = { path = "../panic-common", features = ["kernel"] }
-ntkrnl-sys = { path = "../ntkrnl-sys" }
+panic-common = { path = "../panic-common" }
+# The code (see ../setjmp-rt/Cargo.toml); this crate adds the panic runtime.
+setjmp-rt = { path = "../setjmp-rt" }
+
+[features]
+# The panic personality: the amd64 kernel links the default; the CRT's vcruntime builds
+# `--no-default-features --features user`.
+default = ["kernel"]
+kernel = ["panic-common/kernel"]
+user = ["panic-common/user"]

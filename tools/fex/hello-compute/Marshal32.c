@@ -172,12 +172,15 @@ static void ReportWide(const char *label, const WCHAR *s, ULONG chars)
 
 /* --- check 1: NtQueryInformationThread(ThreadBasicInformation) ----------- */
 
+/* THREAD_BASIC_INFORMATION at the CALLER's width (ULONG_PTR: 4 bytes in
+ * marshal32, 8 in marshal64), spelled out so the i386 field offsets are
+ * visible rather than inherited from a header. */
 typedef struct _M32_TBI32 {
     ULONG ExitStatus;
-    ULONG TebBaseAddress;
-    ULONG UniqueProcess;
-    ULONG UniqueThread;
-    ULONG AffinityMask;
+    ULONG_PTR TebBaseAddress;
+    ULONG_PTR UniqueProcess;
+    ULONG_PTR UniqueThread;
+    ULONG_PTR AffinityMask;
     LONG  Priority;
     LONG  BasePriority;
 } M32_TBI32;
@@ -203,7 +206,7 @@ static int CheckThreadBasicInformation(void)
         Report("[marshal32] FAIL: NtQueryInformationThread(TBI) errored\n");
         return M32_FAIL_QIT_CALL;
     }
-    if (Tbi.TebBaseAddress != (ULONG)(ULONG_PTR)NtCurrentTeb())
+    if (Tbi.TebBaseAddress != (ULONG_PTR)NtCurrentTeb())
     {
         Report("[marshal32] FAIL: TBI.TebBaseAddress != own TEB32\n");
         return M32_FAIL_QIT_TEB;
@@ -756,6 +759,8 @@ static int CheckSelfDescribingSizes(void)
     if (sent != 1)
     {
         ReportHex("[marshal32] cbSize: SendInput accepted events =", sent);
+        /* Meaningful at x86-64 (one TEB); at i386 see the note above. */
+        ReportHex("[marshal32] cbSize: SendInput GetLastError =", GetLastError());
         return M32_FAIL_SENDINPUT;
     }
 
@@ -973,9 +978,24 @@ static int CheckRegistryRedirection(void)
         return M32_FAIL_RDIR_CREATE;
     }
 
-    /* (a) ask the KERNEL where that handle actually points. */
+    /* (a) ask the KERNEL where that handle actually points. marshal64: an
+     * x86-64 process is not a WoW64 one -- under FEX on arm64 as natively on
+     * amd64 -- so its default view must be the native key, NOT Wow6432Node. */
     nameInfo.NameLength = 0;
     st = QueryKey(key, M32_KEY_NAME_INFORMATION, &nameInfo, sizeof(nameInfo), &got);
+#ifdef _WIN64
+    if (st < 0 ||
+        M32WideContains(nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR), NodeName))
+    {
+        CloseHandle(key);
+        ReportHex("[marshal32] redirect: a 64-bit process was redirected into Wow6432Node, status =",
+                  (DWORD)st);
+        if (st >= 0)
+            ReportWide("[marshal32] redirect: the kernel calls that handle ",
+                       nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR));
+        return M32_FAIL_RDIR_NAME;
+    }
+#else
     if (st < 0 ||
         !M32WideContains(nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR), NodeName))
     {
@@ -987,8 +1007,27 @@ static int CheckRegistryRedirection(void)
                        nameInfo.Name, nameInfo.NameLength / sizeof(WCHAR));
         return M32_FAIL_RDIR_NAME;
     }
+#endif
     CloseHandle(key);
 
+#ifdef _WIN64
+    /* (b) and the explicit 64-bit view is that SAME key: the value is there. */
+    key64 = NULL;
+    st = OpenKey(&key64, KEY_READ | M32_KEY_WOW64_64KEY, &oa);
+    if (st >= 0)
+    {
+        got = 0;
+        st = QueryValue(key64, &uVal, 2 /* KeyValuePartialInformation */,
+                        &info, sizeof(info), &got);
+        CloseHandle(key64);
+    }
+    if (st < 0)
+    {
+        ReportHex("[marshal32] redirect: 64-bit view cannot see the default view's value, status =",
+                  (DWORD)st);
+        return M32_FAIL_RDIR_LEAK;
+    }
+#else
     /* (b) the SAME path in the 64-bit view must be a different key, so the
      * value we just wrote must not be visible through it. */
     key64 = NULL;
@@ -1005,6 +1044,7 @@ static int CheckRegistryRedirection(void)
             return M32_FAIL_RDIR_LEAK;
         }
     }
+#endif
     /* NOT finding the key at all is the expected outcome here: nothing created
      * it in the 64-bit hive. Only a successful VALUE read is a failure. */
 
@@ -1230,10 +1270,10 @@ static int CheckSocketSendTo(void)
     }
 
     /* A send that the TRANSPORT declined is not a marshalling failure, and this
-     * rung must not turn one into a red ladder. The plain amd64/arm64 smoke
-     * boots carry no NIC — the NIC lives in the separate net config — and the
-     * netstack has no loopback path, so "no route" is the EXPECTED environment
-     * here rather than a defect. The datagram leaving the box was never the
+     * rung must not turn one into a red ladder. A board without a NIC netstack
+     * drives (the Pi 4) gets WSAENETUNREACH, and the netstack has no loopback
+     * path, so "no route" is an EXPECTED environment here rather than a defect.
+     * (QEMU smoke always has QEMU's default NIC, so there the send succeeds.) The datagram leaving the box was never the
      * claim; what is being tested is whether AFD could read the payload we
      * widened. So the error is reported and execution continues to the bind
      * check, which is the assertion that actually distinguishes the two. */
@@ -1287,7 +1327,7 @@ static int CheckSocketSendTo(void)
     return 0;
 }
 
-int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
+int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) */
 {
     int rc;
 

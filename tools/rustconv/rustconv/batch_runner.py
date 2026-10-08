@@ -341,6 +341,7 @@ def _submit_deepseek(
 
         response_text = ""
         input_tokens = 0
+        cache_read_tokens = 0
         output_tokens = 0
         finish_reason = None
 
@@ -373,7 +374,11 @@ def _submit_deepseek(
             usage = getattr(chunk, "usage", None)
             if usage:
                 usage_known = True
-                input_tokens = usage.prompt_tokens
+                # DeepSeek splits the prompt: `prompt_cache_hit_tokens` bill at ~1/30 of a
+                # miss. Recorded apart so the cost is the bill, not a ceiling twice its size.
+                hit = getattr(usage, "prompt_cache_hit_tokens", 0) or 0
+                cache_read_tokens = hit
+                input_tokens = usage.prompt_tokens - hit
                 output_tokens = usage.completion_tokens
 
         rust_code = _extract_rust_code(response_text)
@@ -394,6 +399,7 @@ def _submit_deepseek(
                 usage_known=usage_known,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
                 success=False,
                 error=(
                     f"empty output (finish_reason={finish_reason}, "
@@ -411,6 +417,7 @@ def _submit_deepseek(
                 usage_known=usage_known,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
                 success=False,
                 error=(
                     f"truncated output at {output_tokens} tokens "
@@ -426,6 +433,7 @@ def _submit_deepseek(
             usage_known=usage_known,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
             success=True,
         )
 
@@ -437,6 +445,7 @@ def _submit_deepseek(
             usage_known=usage_known,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
             success=False,
             error=str(e),
         )
@@ -494,7 +503,10 @@ def submit_single(
         if budget is not None:
             actual: Decimal | None = None
             if result.usage_known:
-                actual = (result.input_tokens * pin + result.output_tokens * pout) / 1000000
+                # The budget stays a CEILING: every prompt token at the peak miss rate,
+                # cache hits included. The reported cost (config.cost_usd) is the bill.
+                prompt_tokens = result.input_tokens + result.cache_read_tokens
+                actual = (prompt_tokens * pin + result.output_tokens * pout) / 1000000
             budget.settle(attempt.id, actual)
             durable_json(
                 attempt.path / "accounting.json",

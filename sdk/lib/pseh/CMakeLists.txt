@@ -5,7 +5,7 @@ if(ARCH STREQUAL "i386")
         i386/seh_prolog.s)
 endif()
 
-if(MSVC OR USE_NATIVE_SEH OR ((CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (ARCH STREQUAL "amd64")))
+if(USE_NATIVE_SEH OR ((CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (ARCH STREQUAL "amd64")))
     list(APPEND SOURCE dummy.c)
     add_asm_files(pseh_asm ${ASM_SOURCE})
     add_library(pseh ${SOURCE} ${pseh_asm})
@@ -53,3 +53,7 @@ target_include_directories(pseh INTERFACE include)
 if ((CMAKE_C_COMPILER_ID STREQUAL "GNU") OR
     ((CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (NOT (ARCH STREQUAL "amd64"))))
 endif()
+
+# The user-mode SEH runtime (seh.s's, + dummy.c's volatile symbols) is pseh-rt, the same Rust
+# the kernel links through pseh-rust; the CRT DLLs carry it inside their own Rust archive
+# (msvcrt-crt-cargo, crt-shared-cargo) and compile no PSEH C or asm.

@@ -125,3 +125,14 @@ add_dependencies(user32 asm rust_user32)
 add_delay_importlibs(user32 usp10 libpng)
 add_importlibs(user32 gdi32 advapi32 kernel32 ntdll)
 add_cd_file(TARGET user32 DESTINATION reactos/system32 FOR all)
+
+# Layout probe for tools/wow64gen/marshalgen.py's win32k audit: one TU compiled with
+# exactly user32's flags, so the audit can dump user32.h's records. user32 has no C of
+# its own left (its last TU was spec2def's stubs, Rust since 2026-10-06), so nothing
+# else puts those flags in compile_commands.json. Never built.
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/user32_layout_probe.c "#include <user32.h>\n")
+add_library(user32_layout_probe OBJECT EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_BINARY_DIR}/user32_layout_probe.c)
+foreach(_prop INCLUDE_DIRECTORIES COMPILE_DEFINITIONS COMPILE_OPTIONS)
+    set_property(TARGET user32_layout_probe PROPERTY ${_prop} $<TARGET_PROPERTY:user32,${_prop}>)
+endforeach()

@@ -961,8 +961,8 @@ pub struct apartment {
 pub struct oletls {
     pub apt: *mut apartment,
     pub errorinfo: *mut c_void,  // IErrorInfo*
-    pub state: *mut IUnknown,    // see CoSetState
-    pub apt_mask: DWORD,
+    pub thread_seqid: DWORD,     // wine-10: returned with CoGetCurrentProcess
+    pub flags: DWORD,            // wine-10 tlsdata_flags (+0Ch on x86); apps read it
     pub unknown0: *mut c_void,
     pub inits: DWORD,     // number of times CoInitializeEx called
     pub ole_inits: DWORD, // number of times OleInitialize called
@@ -974,8 +974,10 @@ pub struct oletls {
     pub call_state: *mut IUnknown,
     pub unknown2: [DWORD; 46],
     pub cancel_object: *mut IUnknown,
+    pub state: *mut IUnknown, // see CoSetState
     pub spies: list, // Spies installed with CoRegisterInitializeSpy
     pub spies_lock: DWORD,
+    pub cancelcount: DWORD,
 }
 
 /// compobj_private.h static inline apartment_getoxid()
@@ -1930,6 +1932,7 @@ extern "C" {
     pub fn apartment_createwindowifneeded(apt: *mut apartment) -> HRESULT;
     pub fn apartment_getwindow(apt: *const apartment) -> HWND;
     pub fn apartment_get_current_or_mta() -> *mut apartment;
+    pub fn apartment_get_mta() -> *mut apartment;
     pub fn enter_apartment(info: *mut oletls, model: DWORD) -> HRESULT;
     pub fn leave_apartment(info: *mut oletls);
     pub fn COM_OpenKeyForCLSID(

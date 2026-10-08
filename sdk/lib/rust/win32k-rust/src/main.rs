@@ -339,6 +339,15 @@ unsafe fn InitProcessCallback(Process: PEPROCESS) -> NTSTATUS {
         (*ppiCurrent).ppiNext = gppiList;
         gppiList = ppiCurrent;
 
+        /* If we belong to a job that restricts the UI, join it now. A process is normally
+           assigned to its job while still suspended, before it ever calls into win32k, so
+           the kernel could not hand us over back then (upstream b272427baa3). */
+        Status = crate::job::IntJobConnectProcess(ppiCurrent);
+        if !NT_SUCCESS(Status) {
+            ERR!("IntJobConnectProcess failed, Status 0x%08lx\n", Status);
+            break 'block;
+        }
+
         return STATUS_SUCCESS;
     }
 
@@ -352,6 +361,9 @@ unsafe fn ExitProcessCallback(Process: PEPROCESS) -> NTSTATUS {
     let ppiCurrent: PPROCESSINFO = PsGetProcessWin32Process(Process as _) as PPROCESSINFO;
 
     (*w32proc(ppiCurrent)).W32PF_flags |= W32PF_TERMINATED;
+
+    /* Leave the job we were restricted by, if any */
+    crate::job::IntJobDisconnectProcess(ppiCurrent);
 
     /* Remove it from the list */
     let mut pppi: *mut PPROCESSINFO = core::ptr::addr_of_mut!(gppiList);
@@ -545,6 +557,12 @@ pub unsafe extern "system" fn InitThreadCallback(Thread: PETHREAD) -> NTSTATUS {
     /* CSRSS threads have some special features */
     if Process == gpepCSRSS || gpepCSRSS.is_null() {
         (*ptiCurrent).TIF_flags = TIF_CSRSSTHREAD | TIF_DONTATTACHQUEUE;
+    }
+
+    /* A thread of a process in a job restricting the UI is restricted from the moment it
+       appears, not from the next time the job is touched */
+    if (*w32proc((*ptiCurrent).ppi)).W32PF_flags & W32PF_JOBRESTRICTED != 0 {
+        (*ptiCurrent).TIF_flags |= TIF_JOBRESTRICTED as FLONG;
     }
 
     /* Initialize the CLIENTINFO */
@@ -888,6 +906,7 @@ pub unsafe extern "system" fn DriverEntry(
     CalloutData.PowerEventCallout = Some(core::mem::transmute(IntHandlePowerEvent as *const ()));
     CalloutData.PowerStateCallout = Some(core::mem::transmute(IntHandlePowerState as *const ()));
     CalloutData.BatchFlushRoutine = Some(core::mem::transmute(NtGdiFlushUserBatch as *const ()));
+    CalloutData.JobCallout = Some(crate::job::Win32kJobCallout);
     CalloutData.DesktopOpenProcedure = Some(core::mem::transmute(IntDesktopObjectOpen as *const ()));
     CalloutData.DesktopOkToCloseProcedure = Some(core::mem::transmute(IntDesktopOkToClose as *const ()));
     CalloutData.DesktopCloseProcedure = Some(core::mem::transmute(IntDesktopObjectClose as *const ()));
@@ -944,6 +963,8 @@ pub unsafe extern "system" fn DriverEntry(
     Status = InitInputImpl();
     if !NT_SUCCESS(Status) { return Status; }
     Status = InitKeyboardImpl();
+    if !NT_SUCCESS(Status) { return Status; }
+    Status = crate::rawinput::InitRawInputImpl();
     if !NT_SUCCESS(Status) { return Status; }
     Status = MsqInitializeImpl();
     if !NT_SUCCESS(Status) { return Status; }

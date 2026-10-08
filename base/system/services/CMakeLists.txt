@@ -54,7 +54,6 @@ target_include_directories(services_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 set(SERVICES_REUSED
     ${CMAKE_BINARY_DIR}/sdk/lib/pseh/libpseh.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/libchkstk.a
-    ${CMAKE_BINARY_DIR}/sdk/lib/crt/libmsvcrtex.a
     ${CMAKE_BINARY_DIR}/sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a)
 
 add_cargo_module(services services-cargo services.exe

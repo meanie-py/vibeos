@@ -41,6 +41,7 @@ from . import (
     typedefs,
     user_lock_inventory,
 )
+from . import port as port_mod
 from .argument_facts import require_argument_facts
 from .assembler import AssemblyClobberError, assemble_file, generate_lib_rs, generate_mod_rs
 from .attempts import CHECKER_FINGERPRINT, digest, record_validation
@@ -49,7 +50,8 @@ from .bank_audit import exported_symbols
 from .bank_audit import format_report as format_bank_report
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .body_audit import main as body_audit_main
-from .c2rust_anchor import C2RustError, build_anchor_map, build_preamble
+from .c2rust_anchor import C2RustError, CompiledOut, build_anchor_map, build_preamble
+from .c_body_checks import body_findings, control_flow_findings, parse_findings
 from .call_seal import (
     CallSealError,
     call_contract,
@@ -121,7 +123,11 @@ from .fact_seal import (
     prepare_sealed_source,
     unseal_facts,
 )
-from .function_coverage import require_c_plan, require_rust_definitions
+from .function_coverage import (
+    require_c_plan,
+    require_rust_definitions,
+    restore_requested_name,
+)
 from .function_prompt import (
     build_file_context,
     build_function_prompt,
@@ -131,9 +137,12 @@ from .function_prompt import (
 from .function_resolver import resolve_function
 from .kernel_com import generate_owner
 from .kernel_preamble import derive_kernel_preamble
-from .macro_authority import function_like_macros
+from .local_macros import expand as expand_macros
+from .local_macros import module_macros
+from .macro_authority import function_like_macros, register_via, string_literal_macros
 from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
+from .placement_audit import placement_findings
 from .postprocess import postprocess
 from .preamble_audit import audit_preamble
 from .probe_migrate import (
@@ -157,6 +166,8 @@ from .response_cache import (
     RESPONSES_DIR,
     ExactBodyTranslationMemory,
     ResponseCache,
+    bank_base,
+    claim_bank,
     require_no_namespace_rebuy,
 )
 from .scanner import print_scan_result, scan_file
@@ -208,6 +219,14 @@ def _strip_vtbl_statics(rust: str) -> str:
     return "\n".join(out)
 
 
+def _preamble_is_function_macros_only(src: str) -> bool:
+    """True when every logical line of a preamble is a function-like `#define`."""
+    text = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
+    text = re.sub(r"//[^\n]*", "", text)
+    logical = [ln.strip() for ln in re.sub(r"\\\n", " ", text).splitlines() if ln.strip()]
+    return bool(logical) and all(re.match(r"#\s*define\s+\w+\(", ln) for ln in logical)
+
+
 def resolve_target(args, path):
     """Pick the rustconv Target: an explicit --target wins (a known TARGETS key, or a
     standalone dll/win32/<name> crate name), else auto-detect from the path. Auto-detect
@@ -216,6 +235,19 @@ def resolve_target(args, path):
     if name:
         if name in TARGETS:
             return TARGETS[name]
+        if ":" in name:
+            # `setuplib:base/setup/lib` — a module outside dll/ and sdk/lib, named for its
+            # crate (setuplib-rust) and located by its directory. `rustconv port` passes it.
+            name, rel = name.split(":", 1)
+            src = (REACTOS_ROOT / rel).resolve()
+            if not (src / "CMakeLists.txt").is_file():
+                raise SystemExit(f"--target {name}:{rel}: no CMakeLists.txt in {src}")
+            return make_user_dll_target(
+                name,
+                src,
+                output_crate=getattr(args, "output_crate", None),
+                sys_crate=getattr(args, "sys_crate", None),
+            )
         src = REACTOS_ROOT / "dll" / "win32" / name
         if not src.exists():
             src = REACTOS_ROOT / "dll" / name
@@ -490,7 +522,29 @@ def _scan_cpp_class_fragment(header: Path, class_name: str):
         return scan_file(Path(temp.name), force_cpp=True)
 
 
-def _preamble_has_translatable_content(preamble_src: str) -> bool:
+_HEADER_SWITCHES = frozenset(
+    {
+        "NDEBUG",
+        "YDEBUG",
+        "WIN32_NO_STATUS",
+        "NTOS_MODE_USER",
+        "WIN32_LEAN_AND_MEAN",
+        "COM_NO_WINDOWS_H",
+        "_INC_WINDOWS",
+        "NONAMELESSUNION",
+        "NONAMELESSSTRUCT",
+        "COBJMACROS",
+    }
+)
+
+
+def _only_preprocessor_reads(name: str, tu_text: str) -> bool:
+    """True when every line naming *name* in the TU is a preprocessor directive."""
+    lines = [ln for ln in tu_text.splitlines() if re.search(rf"\b{re.escape(name)}\b", ln)]
+    return bool(lines) and all(ln.lstrip().startswith("#") for ln in lines)
+
+
+def _preamble_has_translatable_content(preamble_src: str, tu_text: str | None = None) -> bool:
     """True when a file-scope preamble holds anything a translation must carry over.
 
     False ONLY for a preamble made up entirely of #include / #pragma once / comments —
@@ -525,6 +579,20 @@ def _preamble_has_translatable_content(preamble_src: str) -> bool:
         # empty-output hard-fail), the next invents a __wine_debug_channel static that collides
         # with the prelude's. wkssvc domain.c and rpcserver.c took one branch each, same input.
         if re.match(r"^WINE_(DEFAULT|DECLARE)_DEBUG_CHANNEL\s*\(", stripped):
+            continue
+        # A value-less switch that only steers how the INCLUDED headers expand (`#define
+        # NDEBUG` before `<debug.h>`): no per-file Rust rendering, like the includes it
+        # configures. setuplib's genlist.c preamble was exactly that, and the model's correct
+        # empty answer hit the hard-fail after 10/10 paid functions. INITGUID is NOT here: it
+        # changes which GUIDs this TU emits.
+        m = re.match(r"^#\s*(?:define|undef)\s+([A-Za-z_]\w*)\s*$", stripped)
+        if m and m.group(1) in _HEADER_SWITCHES:
+            continue
+        # The TU's OWN value-less switch, read only by preprocessor conditionals in the same
+        # file (usetup fslist.c: `#define HIDE_FAT32_CHOICE`, then two `#ifdef`s). It
+        # steers which lines compile and has no Rust rendering of its own; the model said
+        # so with an empty reply, twice, and the hard-fail refused the file both times.
+        if m and tu_text is not None and _only_preprocessor_reads(m.group(1), tu_text):
             continue
         return True  # any surviving token => real content
     return False
@@ -708,9 +776,10 @@ def _open_response_cache(
     `--no-resume` forces fresh.
     """
     suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled)
-    base = f"{subsystem}__{c_file.stem}"
+    base = bank_base(subsystem, c_file, suffix, REACTOS_ROOT)
     if not getattr(args, "dry_run", False):
         require_no_namespace_rebuy(base, base + suffix)
+        claim_bank(base + suffix, c_file, REACTOS_ROOT)
     return ResponseCache(base + suffix)
 
 
@@ -808,6 +877,30 @@ def _audit_paid_body_impl(
     return result.rust_code
 
 
+def _stale_c_body(dep, hit: str, args, reaudit_failed: set[str]) -> bool:
+    """Re-judge a banked plain-C body against TODAY's deterministic checks.
+
+    A cache hit used to be accepted as banked, so a check added after the purchase could
+    never reach it -- the stricter audit was blind to everything already paid for. The
+    finding is always printed; the body is discarded for re-purchase only under an
+    explicit --rebuy-rejected (a policy change asks for revalidation, it does not
+    authorise payment by itself).
+    """
+    if getattr(dep, "cpp_class", None):
+        return False
+    findings = body_findings(dep.body_text, hit)
+    if not findings:
+        return False
+    print(
+        f"  {dep.name}: banked body FAILS the current audit: " + "; ".join(findings),
+        file=sys.stderr,
+    )
+    if not getattr(args, "rebuy_rejected", False):
+        return False
+    reaudit_failed.add(dep.name)
+    return True
+
+
 def _adopt_rejected(
     dep, cache, fact_seals, call_seals, wide_seals, cpp_com_mode: bool, func_idx, contract, sealed
 ) -> str | None:
@@ -890,7 +983,7 @@ def _unseal_worker(
     fixed signature and mean nothing for a free function); only the unseal itself is,
     and it always was.
     """
-    rust = scrub_comment_token_echoes(rust)
+    rust = restore_requested_name(scrub_comment_token_echoes(rust), dep.name)
     # Sealed tokens the model omitted that live only in code the build never executes
     # (`#if`-disabled arms, DUMMY_PSEH except-blocks). Accepted, but printed: relaxing a
     # guarantee silently is the failure mode sealing exists to prevent (dead_regions.py).
@@ -917,6 +1010,20 @@ def _unseal_worker(
                 ignored_envelope=ignored_envelope,
                 strict=strict,
             )
+            # The closed SET check above passes a permutation; this catches constants
+            # that came back in each other's places (placement_audit.py).
+            for finding in placement_findings(dep.body_text, rust):
+                if strict:
+                    raise FactSealError(finding.message())
+                ignored_envelope.append(finding.message().replace("\n", "; "))
+        if not getattr(dep, "cpp_class", None):
+            # Never relaxed on a last attempt, unlike the constant envelope above: a body
+            # that does not parse (a literal C `goto`) is not "unverified", it is broken,
+            # and one of them hides every type error in its crate. usetup and diskpart
+            # banked seven such bodies this way, and every replay reassembled them. A
+            # reject here escalates (`port translate --escalate`) instead of shipping.
+            for note in parse_findings(rust) + control_flow_findings(dep.body_text, rust):
+                raise FactSealError(note)
         # LAST, which is the exact reverse of the sealing order. It is also the only one
         # that substitutes RUST rather than restoring C: running it earlier would hand the
         # fact seal's by-name recovery a body full of generated `0x0041u16` elements to
@@ -1447,9 +1554,9 @@ def cmd_submit(args):
             result.output_tokens,
             attempt_id=result.attempt_id,
         )
+        usd = cost_usd(model, result.input_tokens, result.output_tokens, result.cache_read_tokens)
         print(
-            f"Cost: ${cost_usd(model, result.input_tokens, result.output_tokens):.2f}  "
-            f"| archived: {archive.dir}",
+            f"Cost: ${usd:.2f}  | archived: {archive.dir}",
             file=sys.stderr,
         )
 
@@ -2262,6 +2369,18 @@ def cmd_translate(args):
         ]
         target_path = next((c for c in candidates if c.exists()), candidates[0])
 
+    via = getattr(args, "via", None)
+    if via:
+        via_path = Path(via) if Path(via).is_absolute() else REACTOS_ROOT / via
+        if target_path.suffix.lower() not in (".h", ".hpp") or not via_path.is_file():
+            print(
+                f"Error: --via needs a header to translate and an existing TU "
+                f"(got {target_path}, {via_path})",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        register_via(target_path, via_path)
+
     # Detect target (ntoskrnl vs hal) from the path
     rustconv_target = resolve_target(args, target_path)
     print(f"Target: {rustconv_target.name}", file=sys.stderr)
@@ -2592,6 +2711,17 @@ def cmd_translate(args):
         name.strip() for name in (getattr(args, "skip_fn", None) or []) if name.strip()
     }
     skip_fn_matched: set[str] = set()
+    rebuy_fn_requested = {
+        name.strip() for name in (getattr(args, "rebuy_fn", None) or []) if name.strip()
+    }
+    rebuy_fn_matched: set[str] = set()
+
+    def _rebuy_requested(name: str) -> bool:
+        if name in rebuy_fn_requested:
+            rebuy_fn_matched.add(name)
+            return True
+        return False
+
     # Decided ONCE, not per file, so the refusal below is stated once and not twenty times.
     # Never on the COM path: shell32's C++ literals are already lowered deterministically by
     # `rewrite_wide_literals`, and its prompts are banked under exactly that behaviour.
@@ -2716,7 +2846,12 @@ def cmd_translate(args):
                 "output_tokens": result.output_tokens,
                 "cache_read_tokens": result.cache_read_tokens,
                 "cache_write_tokens": result.cache_write_tokens,
-                "cost_usd": round(cost_usd(model, result.input_tokens, result.output_tokens), 8),
+                "cost_usd": round(
+                    cost_usd(
+                        model, result.input_tokens, result.output_tokens, result.cache_read_tokens
+                    ),
+                    8,
+                ),
                 "elapsed_ms": elapsed_ms,
                 "attempt_id": getattr(result, "attempt_id", None),
             }
@@ -2812,12 +2947,39 @@ def cmd_translate(args):
 
         fact_seal_enabled = bool(getattr(args, "seal_facts", False))
         call_seal_enabled = bool(getattr(args, "seal_calls", False))
+        expand_dir = getattr(args, "expand_local_macros", None)
+        if expand_dir:
+            # BEFORE everything else reads the body: the seals, the audits and the response
+            # cache key all see the expanded C, so an expanded body is a cache miss (bought
+            # once) and never a replay of the unexpanded translation.
+            mdir = Path(expand_dir)
+            mdir = mdir if mdir.is_absolute() else REACTOS_ROOT / mdir
+            mdefs, _ = module_macros(sorted([*mdir.rglob("*.h"), *mdir.rglob("*.c")]), REACTOS_ROOT)
+            expanded_names: set[str] = set()
+            new_deps = []
+            for dep in sorted_deps:
+                text, used = expand_macros(dep.body_text, mdefs)
+                expanded_names |= used
+                new_deps.append(replace(dep, body_text=text) if used else dep)
+            sorted_deps = new_deps
+            if expanded_names:
+                print(
+                    f"  [macros] expanded in the C: {', '.join(sorted(expanded_names))}",
+                    file=sys.stderr,
+                )
         model_bodies = {dep.name: strip_debug_statements(dep.body_text) for dep in sorted_deps}
         # FIRST of the three, so the fact seal sees an identifier where a literal was and
         # never has to reason about string contents, and so a wide literal's own array
         # BOUND (`WCHAR k[200] = L"..."`) is still a plain integer when this reads it.
+        # `L"AddReg.NT" INF_ARCH` folds only with the macro's real per-arch value.
+        string_macros = (
+            string_literal_macros(REACTOS_ROOT, c_file.resolve()) if wide_seal_enabled else {}
+        )
         wide_seals = (
-            {dep.name: seal_wide_literals(model_bodies[dep.name]) for dep in sorted_deps}
+            {
+                dep.name: seal_wide_literals(model_bodies[dep.name], string_macros)
+                for dep in sorted_deps
+            }
             if wide_seal_enabled
             else {}
         )
@@ -3086,7 +3248,7 @@ def cmd_translate(args):
         c2rust_preamble = ""
         anchor_enabled = getattr(args, "c2rust", None)
         if anchor_enabled is None:
-            anchor_enabled = c_file.suffix.lower() == ".c" and not getattr(
+            anchor_enabled = (c_file.suffix.lower() == ".c" or bool(via)) and not getattr(
                 args, "deterministic_only", False
             )
         if anchor_enabled:
@@ -3094,12 +3256,29 @@ def cmd_translate(args):
             # (strict=True) instead of silently degrading to a worse pure-LLM translation.
             # Fails before any paid API call, so no money is wasted on unanchored output.
             try:
-                c2rust_anchors = build_anchor_map(
-                    c_file,
-                    strict=True,
-                    required_names={dep.name for dep in sorted_deps},
-                    arch=args.arch,
-                )
+                try:
+                    c2rust_anchors = build_anchor_map(
+                        c_file,
+                        strict=True,
+                        required_names={dep.name for dep in sorted_deps},
+                        arch=args.arch,
+                    )
+                except CompiledOut as gone:
+                    # The compiler's own verdict, finer than `never_compiled_lines`: a
+                    # condition only the preprocessor could settle. Same treatment.
+                    sorted_deps = [d for d in sorted_deps if d.name not in gone.names]
+                    print(
+                        f"  dead branch (per c2rust, every built arch): {len(gone.names)} "
+                        f"body/bodies not translated and not billed: "
+                        f"{', '.join(sorted(gone.names))}",
+                        file=sys.stderr,
+                    )
+                    c2rust_anchors = build_anchor_map(
+                        c_file,
+                        strict=True,
+                        required_names={dep.name for dep in sorted_deps},
+                        arch=args.arch,
+                    )
                 # File-scope static/const DATA (tables/S-boxes) compiler-exact — prepended
                 # to the preamble so the LLM never has to (mis)transcribe a lookup table.
                 c2rust_preamble = build_preamble(c_file, strict=True, arch=args.arch)
@@ -3240,6 +3419,9 @@ def cmd_translate(args):
             else extract_call_graph(scan, spec_exports=file_res.exports)
         )
         translated: dict[str, str] = {}
+        # Banked plain-C bodies that fail a check added since they were bought (see
+        # _stale_c_body); only these may be re-bought under --rebuy-rejected.
+        reaudit_failed: set[str] = set()
         deterministic_workers: set[str] = set()
         if cpp_com_mode:
             for dep in sorted_deps:
@@ -3567,12 +3749,17 @@ def cmd_translate(args):
                     elif hit is not None and is_cpp_source:
                         hit = normalize_cpp_idioms(dep.body_text, hit)
                         hit = _cpp_free_half_semantics(dep, hit)
+                    elif hit is not None and _stale_c_body(dep, hit, args, reaudit_failed):
+                        hit = None
                     # No unseal on a cache hit. What is banked is the ACCEPTED text, already
                     # unsealed (`_audit_paid_body` mutates `rust_code` before `cache.put`),
                     # and `ResponseCache.get` refuses any entry that still holds a token —
                     # so re-running the closed-envelope check here judged token-free Rust
                     # and could only false-reject, sending banked work back to be re-paid.
                     if hit is not None:
+                        # The bank keeps the reply as the model spelled it; see
+                        # restore_requested_name (a case-only rename of the C name).
+                        hit = restore_requested_name(hit, dep.name)
                         translated[dep.name] = hit
                         resumed += 1
                         _record_outcome(
@@ -3582,7 +3769,13 @@ def cmd_translate(args):
                         )
                         continue
                 if not no_resume:
-                    cache.refuse_repurchase(dep.name)
+                    cache.refuse_repurchase(
+                        dep.name,
+                        allow_rejected=getattr(args, "rebuy_rejected", False),
+                        failed_audit=dep.name in reaudit_failed,
+                        body_text=dep.body_text,
+                        explicit=_rebuy_requested(dep.name),
+                    )
                 if getattr(args, "replay_only", False):
                     raise ValueError(f"--replay-only: no accepted cached body for {dep.name}")
                 todo.append((func_idx, dep))
@@ -3725,7 +3918,9 @@ def cmd_translate(args):
                                 r.output_tokens,
                                 attempt_id=r.attempt_id,
                             )
-                            running_cost += cost_usd(model, r.input_tokens, r.output_tokens)
+                            running_cost += cost_usd(
+                                model, r.input_tokens, r.output_tokens, r.cache_read_tokens
+                            )
                         _record_outcome(
                             dp,
                             "generated",
@@ -3828,8 +4023,10 @@ def cmd_translate(args):
                 elif hit is not None and is_cpp_source:
                     hit = normalize_cpp_idioms(dep.body_text, hit)
                     hit = _cpp_free_half_semantics(dep, hit)
+                elif hit is not None and _stale_c_body(dep, hit, args, reaudit_failed):
+                    hit = None
                 # No unseal on a cache hit — see the same site on the parallel path.
-                if hit is None:
+                if hit is None and dep.name not in reaudit_failed:
                     hit = _adopt_rejected(
                         dep,
                         cache,
@@ -3842,6 +4039,7 @@ def cmd_translate(args):
                         sealed_names.get(dep.name),
                     )
                 if hit is not None:
+                    hit = restore_requested_name(hit, dep.name)
                     translated[dep.name] = hit
                     resumed += 1
                     _record_outcome(
@@ -3854,7 +4052,13 @@ def cmd_translate(args):
 
             # Per-function resolve
             if not no_resume:
-                cache.refuse_repurchase(dep.name)
+                cache.refuse_repurchase(
+                    dep.name,
+                    allow_rejected=getattr(args, "rebuy_rejected", False),
+                    failed_audit=dep.name in reaudit_failed,
+                    body_text=dep.body_text,
+                    explicit=_rebuy_requested(dep.name),
+                )
             if getattr(args, "replay_only", False):
                 raise ValueError(f"--replay-only: no accepted cached body for {dep.name}")
             func_res = resolve_function(dep, catalog, file_res.exports, scan.defines)
@@ -3943,7 +4147,12 @@ def cmd_translate(args):
                     total_in += result.input_tokens
                     total_out += result.output_tokens
                     if archive is not None:
-                        running_cost += cost_usd(model, result.input_tokens, result.output_tokens)
+                        running_cost += cost_usd(
+                            model,
+                            result.input_tokens,
+                            result.output_tokens,
+                            result.cache_read_tokens,
+                        )
 
             if result.success:
                 try:
@@ -3988,7 +4197,9 @@ def cmd_translate(args):
                         result.output_tokens,
                         attempt_id=result.attempt_id,
                     )
-                    running_cost += cost_usd(model, result.input_tokens, result.output_tokens)
+                    running_cost += cost_usd(
+                        model, result.input_tokens, result.output_tokens, result.cache_read_tokens
+                    )
                     print(
                         f"OK ({result.input_tokens} in / {result.output_tokens} out)"
                         f"  [running ${running_cost:.2f}]",
@@ -4047,9 +4258,14 @@ def cmd_translate(args):
                 + stale
             )
 
-        if not translated:
+        file_scope = "" if cpp_com_mode else (scan.preamble_text or scan.globals_text or "")
+        if not translated and not (
+            file_scope.strip() and _preamble_has_translatable_content(file_scope, scan.raw_source)
+        ):
             print(f"  No functions translated for {c_file.name}", file=sys.stderr)
             continue
+        # A data-only TU (setuplib fileqsup.c: one exported global, no functions) still owns
+        # its file-scope definitions; skipping it here left the symbol undefined.
 
         # Translate the file-scope preamble (structs / typedefs /
         # #define→const / static tables) as ONE synthetic unit. The
@@ -4082,7 +4298,7 @@ def cmd_translate(args):
         # This does not soften the hard-fail — a genuinely-failed non-empty preamble still
         # raises. (Found on wkssvc domain.c/rpcserver.c, whose preamble is one #include: the
         # model correctly returned nothing and the run died AFTER 38/38 paid functions.)
-        if preamble_src and not _preamble_has_translatable_content(preamble_src):
+        if preamble_src and not _preamble_has_translatable_content(preamble_src, scan.raw_source):
             print(
                 f"  [preamble] {len(preamble_src)} C chars — no file-scope C to carry over "
                 "(includes/comments/debug-channel only), nothing to translate ($0)",
@@ -4096,7 +4312,9 @@ def cmd_translate(args):
         # every one of the 18 arrays that shipped without the terminator its readers scan
         # for was a file-scope `static const WCHAR X[] = L"...";`, which only this pass sees.
         preamble_wide_seal = (
-            seal_wide_literals(preamble_src) if (wide_seal_enabled and preamble_src) else None
+            seal_wide_literals(preamble_src, string_literal_macros(REACTOS_ROOT, c_file.resolve()))
+            if (wide_seal_enabled and preamble_src)
+            else None
         )
 
         pre_hit = None if (no_resume or not preamble_src) else cache.get(PREAMBLE_KEY, preamble_src)
@@ -4107,6 +4325,16 @@ def cmd_translate(args):
             print("  [preamble] CACHED ($0)", file=sys.stderr)
         elif preamble_src and deterministic_only:
             print("  [preamble] SKIPPED (--deterministic-only)", file=sys.stderr)
+        elif preamble_src and _preamble_is_function_macros_only(preamble_src):
+            # Nothing for the preamble pass to emit: function-like macros are ported by
+            # `port macros` (or the prelude), never as preamble items. The model agrees and
+            # replies with nothing, which the empty-output guard below then read as a
+            # failure -- atapi's ioctl.c, whose file scope is two AtaVerify*Buffer macros.
+            _record_preamble(preamble_src, "macros_only")
+            print(
+                "  [preamble] function-like macros only — nothing to translate ($0)",
+                file=sys.stderr,
+            )
         elif preamble_src and not capped:
             print(
                 f"  [preamble] {len(preamble_src)} C chars...", file=sys.stderr, end=" ", flush=True
@@ -4167,7 +4395,12 @@ def cmd_translate(args):
                         pre_res.output_tokens,
                         attempt_id=pre_res.attempt_id,
                     )
-                    running_cost += cost_usd(model, pre_res.input_tokens, pre_res.output_tokens)
+                    running_cost += cost_usd(
+                        model,
+                        pre_res.input_tokens,
+                        pre_res.output_tokens,
+                        pre_res.cache_read_tokens,
+                    )
                 _record_preamble(
                     preamble_src,
                     "generated",
@@ -4221,6 +4454,10 @@ def cmd_translate(args):
                         )
                         if m and m.group(1) in names:
                             dropping, drop_depth = True, 0
+                            # Its attributes go with it: an orphaned `#[no_mangle]` would
+                            # attach itself to whatever item comes next.
+                            while kept and re.match(r"\s*#\[", kept[-1]):
+                                kept.pop()
                         else:
                             kept.append(ln)
                     if dropping:
@@ -4661,6 +4898,12 @@ def cmd_translate(args):
     # belongs to one TU); across the WHOLE worklist it means the name is misspelled, and the
     # caller believes a body was left to them that was in fact translated and shipped. That is
     # the inverse of the skip's own guarantee, so it is an audit finding, not a log line.
+    unmatched_rebuy = sorted(rebuy_fn_requested - rebuy_fn_matched)
+    if unmatched_rebuy:
+        audit_findings.setdefault("--rebuy-fn NAMES THAT MATCHED NOTHING", []).extend(
+            f"'{name}' was never a cache miss in this worklist (misspelled, or it replayed)"
+            for name in unmatched_rebuy
+        )
     unmatched_skip = unmatched_skip_fn(skip_fn_requested, skip_fn_matched)
     if unmatched_skip:
         audit_findings.setdefault("--skip-fn NAMES THAT MATCHED NOTHING", []).extend(
@@ -4824,8 +5067,9 @@ def cmd_body_audit(args):
     argv = [str(m) for m in args.modules]
     if args.all:
         argv.append("--all")
-    if args.json:
-        argv.append("--json")
+    for flag in ("json", "provenance", "show_reviewed"):
+        if getattr(args, flag):
+            argv.append("--" + flag.replace("_", "-"))
     argv += ["--limit", str(args.limit), "--min-severity", args.min_severity]
     return body_audit_main(argv)
 
@@ -5530,6 +5774,17 @@ def main():
         "UNSEALED WIDE LITERAL audit findings rather than passed off as protected.",
     )
     p.add_argument(
+        "--expand-local-macros",
+        dest="expand_local_macros",
+        metavar="MODULE_DIR",
+        default=None,
+        help="Expand the module's OWN function-like macros (and object-like aliases of a member "
+        "or function) in each C body before it is sealed and sent, so the model translates what "
+        "the compiler sees. A ported macro_rules! body has one typing for every call site, where "
+        "C promotes silently per site; setuplib's macro bodies were ~20 of its last ~100 errors. "
+        "Header constants stay names. Changes the C text, so affected bodies are bought anew.",
+    )
+    p.add_argument(
         "--retry-rejects",
         dest="retry_rejects",
         type=int,
@@ -5540,6 +5795,14 @@ def main():
         "token slip in one function throws away every other function in the TU; the "
         "survivors after the deterministic fixes are sampling noise on the biggest "
         "bodies. Each retry is billed and applies the identical acceptance checks.",
+    )
+    p.add_argument(
+        "--rebuy-rejected",
+        action="store_true",
+        help="Re-buy functions whose only banked state is a body the deterministic audit "
+        "REJECTED (inspect the reject first: suspect the audit before the model). Accepted "
+        "bodies are never re-bought. `rustconv port translate` uses it to retry a TU whose "
+        "parallel run ended with rejects.",
     )
     p.add_argument(
         "--sdk-header",
@@ -5579,6 +5842,19 @@ def main():
             "functions, hand-write this one. Never silent — each name becomes an audit "
             "finding, and an unknown name is an error rather than a no-op. Repeatable, "
             "and accepts several names per flag."
+        ),
+    )
+    p.add_argument(
+        "--rebuy-fn",
+        dest="rebuy_fn",
+        action="extend",
+        nargs="*",
+        default=[],
+        metavar="NAME",
+        help=(
+            "FUNCTION names whose ACCEPTED banked body may be bought again, e.g. after a seal "
+            "got stricter and the banked body no longer replays. Named, never inferred; a name "
+            "that was never a cache miss is reported. Repeatable."
         ),
     )
     p.add_argument(
@@ -5645,6 +5921,14 @@ def main():
         "Missing tools, build inputs or function anchors fail before payment. "
         "C++ uses its separate class preflight; c2rust cannot anchor C++. "
         "--no-c2rust explicitly opts out of C anchoring.",
+    )
+    p.add_argument(
+        "--via",
+        default=None,
+        metavar="TU",
+        help="translate a HEADER's inline functions through this .c of the module that "
+        "includes it: its compile command answers every macro, constant and c2rust question "
+        "about the header (needed for a shared header outside the module directory)",
     )
 
     # probe-migrate
@@ -5717,6 +6001,16 @@ def main():
         choices=("stub-silent", "high", "medium", "low", "stub-loud"),
         help="hide findings ranked below this",
     )
+    p.add_argument(
+        "--provenance",
+        action="store_true",
+        help="mark dropped callees the C gained after the Rust was committed (git)",
+    )
+    p.add_argument(
+        "--show-reviewed",
+        action="store_true",
+        help="also list leads data/body_audit_reviewed.toml marks false/benign",
+    )
 
     # bank-audit
     p = sub.add_parser(
@@ -5737,6 +6031,8 @@ def main():
     # trace-catalog
     p = sub.add_parser("trace-catalog", help="Generate debugcon trace catalog from Rust source")
     p.add_argument("--arch", default="i386", choices=["i386", "amd64", "arm64"])
+
+    port_mod.add_parser(sub)
 
     args = parser.parse_args()
 
@@ -5780,6 +6076,7 @@ def main():
         "body-audit": cmd_body_audit,
         "pp": cmd_postprocess,
         "trace-catalog": cmd_trace_catalog,
+        "port": lambda a: sys.exit(port_mod.main(a)),
     }
 
     try:

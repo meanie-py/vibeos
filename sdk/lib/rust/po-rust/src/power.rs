@@ -95,8 +95,6 @@ extern "system" {
 
     fn KeGetCurrentThread() -> PKTHREAD;
     fn KeGetPreviousMode() -> KPROCESSOR_MODE;
-    fn ProbeForRead(address: PVOID, length: SIZE_T, alignment: ULONG);
-    fn ProbeForWrite(address: PVOID, length: SIZE_T, alignment: ULONG);
     fn SeSinglePrivilegeCheck(privilege: LUID, previous_mode: KPROCESSOR_MODE) -> BOOLEAN;
     fn ZwOpenFile(
         file_handle: *mut HANDLE,
@@ -140,22 +138,9 @@ extern "C" {
 }
 // NTAPI (stdcall on i386) — defs in shim_exports/common_inlines are extern "system"
 extern "system" {
-    fn ProbeForWriteUlong(address: *mut ULONG);
 }
 
-#[cfg(target_arch = "x86")]
 extern "system" {
-    fn PopAddRemoveSysCapsCallback(
-        notification_structure: PVOID,
-        context: PVOID,
-    ) -> NTSTATUS;
-}
-
-#[cfg(not(target_arch = "x86"))]
-extern "system" {
-    // NOTE: must stay extern "C" (not "system") — the fn is passed as a value to
-    // IoRegisterPlugPlayNotification, whose bindgen callback type is `extern "C" fn`
-    // on non-x86; extern "system" is ABI-identical there but a distinct Rust type.
     fn PopAddRemoveSysCapsCallback(
         notification_structure: PVOID,
         context: PVOID,
@@ -1066,8 +1051,20 @@ pub unsafe extern "system" fn NtPowerInformation(
     let PreviousMode: KPROCESSOR_MODE = KeGetPreviousMode();
 
     if PreviousMode != KernelMode {
-        ProbeForRead(InputBuffer, InputBufferLength as SIZE_T, 1);
-        ProbeForWrite(OutputBuffer, OutputBufferLength as SIZE_T, core::mem::size_of::<ULONG>() as ULONG);
+        // C: _SEH2_TRY { both probes } whose handler returns the exception code.
+        if let Err(status) =
+            ntkrnl_sys::probe::probe_user_buffer(InputBuffer, InputBufferLength as usize, 1, PreviousMode)
+        {
+            return status;
+        }
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            OutputBuffer,
+            OutputBufferLength as usize,
+            core::mem::size_of::<ULONG>(),
+            PreviousMode,
+        ) {
+            return status;
+        }
     }
 
     match PowerInformationLevel {
@@ -1095,17 +1092,19 @@ pub unsafe extern "system" fn NtPowerInformation(
                 BatteryState.AcOnLine = 1;
             }
 
-            core::ptr::copy_nonoverlapping(
-                core::ptr::addr_of!(BatteryState) as *const u8,
-                OutputBuffer as *mut u8,
+            // The probe proves where OutputBuffer is, not that it stays mapped; the C
+            // wrote it inside _SEH2_TRY, so publish fault-tolerantly from the local.
+            if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+                OutputBuffer as *mut core::ffi::c_void,
+                core::ptr::addr_of!(BatteryState) as *const core::ffi::c_void,
                 core::mem::size_of::<SYSTEM_BATTERY_STATE>(),
-            );
+            ) {
+                return e;
+            }
             Status = STATUS_SUCCESS;
         }
 
         SystemPowerCapabilities => {
-            let PowerCapabilities = OutputBuffer as *mut SYSTEM_POWER_CAPABILITIES;
-
             if !InputBuffer.is_null() {
                 return STATUS_INVALID_PARAMETER;
             }
@@ -1113,18 +1112,18 @@ pub unsafe extern "system" fn NtPowerInformation(
                 return STATUS_BUFFER_TOO_SMALL;
             }
 
-            core::ptr::copy_nonoverlapping(
-                core::ptr::addr_of!(PopCapabilities) as *const u8,
-                PowerCapabilities as *mut u8,
+            if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+                OutputBuffer as *mut core::ffi::c_void,
+                core::ptr::addr_of!(PopCapabilities) as *const core::ffi::c_void,
                 core::mem::size_of::<SYSTEM_POWER_CAPABILITIES>(),
-            );
+            ) {
+                return e;
+            }
 
             Status = STATUS_SUCCESS;
         }
 
         ProcessorInformation => {
-            let PowerInformation = OutputBuffer as *mut PROCESSOR_POWER_INFORMATION;
-
             if !InputBuffer.is_null() {
                 return STATUS_INVALID_PARAMETER;
             }
@@ -1132,12 +1131,23 @@ pub unsafe extern "system" fn NtPowerInformation(
                 return STATUS_BUFFER_TOO_SMALL;
             }
 
-            (*PowerInformation).Number = 0;
-            (*PowerInformation).MaxMhz = 1000;
-            (*PowerInformation).CurrentMhz = (*(KeGetCurrentPrcb() as *mut _KPRCB)).MHz;
-            (*PowerInformation).MhzLimit = 1000;
-            (*PowerInformation).MaxIdleState = 0;
-            (*PowerInformation).CurrentIdleState = 0;
+            // Fill a kernel local, then publish it fault-tolerantly: the fields were
+            // being stored straight through the caller's OutputBuffer pointer.
+            let mut PowerInformation: PROCESSOR_POWER_INFORMATION = core::mem::zeroed();
+            PowerInformation.Number = 0;
+            PowerInformation.MaxMhz = 1000;
+            PowerInformation.CurrentMhz = (*(KeGetCurrentPrcb() as *mut _KPRCB)).MHz;
+            PowerInformation.MhzLimit = 1000;
+            PowerInformation.MaxIdleState = 0;
+            PowerInformation.CurrentIdleState = 0;
+
+            if let Err(e) = ntkrnl_sys::probe::safe_copy_raw(
+                OutputBuffer as *mut core::ffi::c_void,
+                core::ptr::addr_of!(PowerInformation) as *const core::ffi::c_void,
+                core::mem::size_of::<PROCESSOR_POWER_INFORMATION>(),
+            ) {
+                return e;
+            }
 
             Status = STATUS_SUCCESS;
         }
@@ -1184,8 +1194,11 @@ pub unsafe extern "system" fn NtSetThreadExecutionState(
         return STATUS_INVALID_PARAMETER;
     }
 
+    // C: inside _SEH2_TRY, handler returns the exception code. No SEH here.
     if PreviousMode != KernelMode {
-        ProbeForWriteUlong(PreviousFlags as *mut ULONG);
+        if let Err(status) = ntkrnl_sys::probe::probe_write_generic(PreviousFlags as *mut ULONG, 1, PreviousMode) {
+            return status;
+        }
     }
 
     #[cfg(target_arch = "x86")]
@@ -1208,7 +1221,7 @@ pub unsafe extern "system" fn NtSetThreadExecutionState(
         }
     }
 
-    *PreviousFlags = PreviousState;
+    if let Err(s) = ntkrnl_sys::probe::write_back(PreviousFlags, PreviousState) { return s; }
 
     STATUS_SUCCESS
 }

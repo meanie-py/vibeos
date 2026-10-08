@@ -5,6 +5,46 @@ and without card swaps. Read this before touching the board. What has been
 found *on* the board, and where the port stands, lives in the lane doc
 `docs/engineering/active-lanes/pi4-bringup.md`.
 
+## Booting your change on the Pi (any lane)
+
+```bash
+./vibeos-cli build --arch arm64     # pi4 boot refuses stale media, like smoke
+./vibeos-cli pi4 boot               # lease, doctor, stage, netboot, desktop verdict
+./vibeos-cli pi4 boot --kernel up   # the UP kernel pair instead of MP
+```
+
+`pi4 boot` is `smoke` for the real board, and takes about two minutes. It takes
+the bench lease, checks every bench service, stages *this* tree's arm64 media
+and netboots it. It then waits for the same `shell ready` marker smoke requires,
+and classifies a failure with smoke's triage (BUGCHECK, RUST_PANIC, HANG_TIMEOUT,
+plus `NETBOOT_FAIL`, `STAGE_FAIL`, `BENCH_BUSY` and `BENCH_UNHEALTHY`). The run
+directory holds `summary.json`, this boot's slice of the serial log as
+`serial.log`, and `hdmi.png`. The screenshot waits up to 30 s for the HDMI frame
+to stop being black, because the display lags the marker by a few seconds.
+
+- **`./vibeos-cli pi4 doctor`** checks the plug, the Pico (including that it is on
+  the Pi's USB and not on another host), the serial listener, TFTP, HTTP, the
+  capture card and the staged payload. Each failure prints the command that fixes
+  it.
+- **`tools/pi4/bench.sh serial-restart`** replaces a serial listener whose capture has
+  stalled. A reconnect can come up half-open and silent while status still says
+  `LISTENING, connected`. One stayed that way for 11 hours, so since 2026-10-07
+  pico_serial.py reconnects whenever 2 minutes pass with no byte; the Pico buffers the
+  newest 128 KiB meanwhile. The old symptom was a boot that fails `NETBOOT_FAIL` with "serial
+  capture did not grow at all" while HDMI shows the firmware splash timing out to PXE.
+- **`./vibeos-cli pi4 status`** is the one-screen view: lease, power, Pico, serial
+  and payload.
+- **`./vibeos-cli pi4 lease take --minutes 60 --why "..."`** holds the board
+  across several manual commands; release it with `pi4 lease drop`. There is one
+  board.
+  - Every bench script that changes its state (`power.sh` on/off/cycle,
+    `netboot.sh`, `serial-send.sh`, `bench.sh stage|down`, and `pico.sh` input,
+    media and `bootsel`) takes or renews the lease for your worktree.
+  - While another lane holds it, those scripts exit **75** and name the holder.
+  - Reading state (`power.sh status`, `pico.sh usb`, `hdmi.sh`, `serial.bin`) is
+    always allowed.
+  - `pi4 lease drop --force` is for a lane that died holding the lease.
+
 Everything the bench runs is in `tools/pi4/`. The Windows-side paths below
 (COM port, bench directory, python) are this bench's defaults, and each can be
 overridden by the environment variable named beside it.
@@ -15,7 +55,7 @@ overridden by the environment variable named beside it.
 |---|---|---|
 | Board | Raspberry Pi 4B, 4 GB+ | Firmware exposes 3 GiB by default (the firmware's own cap) |
 | Firmware | [pftf/RPi4 UEFI](https://github.com/pftf/RPi4) v1.53 on a FAT32 SD card | ACPI mode. VibeOS boots as `EFI\BOOT\BOOTAA64.EFI` |
-| Serial | 3.3 V USB-UART (FT232, VID 0403 / PID 6001) on the GPIO header | The only kernel debug channel |
+| Serial | Pico 2 W UART bridge over Wi-Fi (default), or a 3.3 V USB-UART (FT232) | The only kernel debug channel; see "Host services" |
 | Video | HDMI → USB capture card (DirectShow "USB Video") | `tools/pi4/hdmi.sh` |
 | Network | Ethernet on the same LAN as the host | TFTP netboot |
 | Power | Shelly Plug (Gen2+ local RPC) | `tools/pi4/power.sh`, no one at the bench needed |
@@ -191,7 +231,10 @@ the card".
 ## USB input: the Pico
 
 A Pico 2 W running the picousb firmware (`D:\home\Projects\picousb`) sits in a
-Pi USB port. It presents a boot keyboard, boot mouse, mass storage and an
+Pi USB port. The bench has two: **`picousb5` is wired to the Pi 4** (USB and UART)
+and `picousb` to the Pi 5. Every Pi 4 script reads `PI4_PICO_HOST` (default
+`picousb5`), and `bench.sh up` restarts a serial listener that is reading the
+other Pico. It presents a boot keyboard, boot mouse, mass storage and an
 absolute pointer, is controlled over Wi-Fi, and reports what the Pi's USB host
 did to it. `tools/pi4/pico.sh` wraps its CLI (address, token file, venv; setup
 in the script header):
@@ -209,6 +252,20 @@ diode, besides the Pi's USB. It stays up and on Wi-Fi across a `power.sh cycle`:
 ~10 s in. Before that it rebooted with the Pi and joined Wi-Fi too late for the
 UEFI F1 window. Driving F1 from the Pico is untested; serial works.
 
+**Pico firmware updates.** The safe path is the host: plug the Pico's USB into
+the PC and run `pico-devbox bootsel` (picousb; no button needed). Then copy
+picousb's stripped `build/firmware/picousb.uf2` onto the RP2350 drive. Never use
+picotool's raw UF2: it wraps onto the config sector. `tools/pi4/pico-flash.sh`
+does the same through the Pi's UEFI Shell with the Pico left on the Pi. It is
+experimental and refuses to run without `PI4_PICO_FLASH_ATTENDED=1`, because a
+failed copy leaves the Pico in BOOTSEL until its power is pulled.
+
+`pico.sh usb` also reports the console bridge: `target_powered` is the Pi's USB
+VBUS as the Pico sees it (`pi4 doctor` checks that it follows the plug), plus
+`console_rx`, `console_errors` and `console_dropped`. When a boot leaves the
+console silent, `console_rx` stuck at 0 means the TX/RX wires are swapped or
+open, and a climbing `console_errors` means a baud or noise problem.
+
 The Pico is VibeOS's keyboard and mouse on the Pi (usbxhci M4, 2026-09-26):
 - **Configuration:** VibeOS configures it, and `usb` then shows `mounted=True`,
   `set_config=2` and growing completions.
@@ -217,6 +274,21 @@ The Pico is VibeOS's keyboard and mouse on the Pi (usbxhci M4, 2026-09-26):
   1920x1080 screen, so pixel = value × 1920 / 32768 (and × 1080 / 32768 for y).
   Notepad's text area is around `pointer click 8000 12000`.
 - **Chords:** modifiers come first, e.g. `key CTRL ESC`.
+
+**Its disk is remote and starts empty.** The mass-storage interface (`PICOUSB REMOTE DISK`)
+has no medium until a host serves one: `pico.sh serve-image <raw image>` (read-only unless
+`--writable`) or `pico.sh serve <directory>`, which runs until you stop it. Without one, every
+READ answers sense 2/3A, MEDIUM NOT PRESENT, by stalling the bulk-IN endpoint: the xHCI log's
+`ep 7: transfer failed, cc 6` followed by `halt cleared`. That is the device behaving
+correctly, not a host bug. MODE SENSE(6) stalls even with media (the Pico does not implement
+it), and classpnp carries on. A boot with an image served gives a volume at offset 0 with no
+partition table (`STORAGE#Partition#..._O0_L<size>`).
+
+The Pico takes **one websocket client at a time**. While `serve`/`serve-image` holds it, other
+`pico.sh` commands fail with `{"ok": false, "error": "other"}`, and the Pi drops the medium when
+the server stops. To type at a served disk, drive input from the same `DevBox` session
+(`box.storage.serve_image(...)`, then `box.keyboard.type(...)`). The serial console is a
+separate port (8082) and is unaffected.
 
 What proves each layer, on serial:
 

@@ -100,10 +100,37 @@ provenance stamp.
 - arm64 automatically re-stages into `ramdisk.img`/`boot.img` (the trap that
   silently boots a stale kernel otherwise).
 
-### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--timing] [--no-net] [--ladder]`
+### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--timing] [--no-net] [--nvme] [--ladder]`
 **The verdict front door.** Staleness preflight, then boot the real media via
 the same `QemuVM` the pytest harness uses (slots, reaper, lifetime cap, live-log
 all included), then auto-triage on failure.
+
+- **`--arch amd64-bios`** boots the same amd64 media through SeaBIOS (legacy BIOS,
+  `freeldr.sys`) instead of OVMF, with the ISO on a USB stick (xHCI) as a Libreboot
+  machine would boot it. Every gate that includes amd64 runs it as the
+  `smoke:amd64-bios` lane. `VIBEOS_QEMU_BOOT_TRANSPORT=usb-ehci|ide-cd|usb-storage`
+  picks the boot device on any x86 arch. See `docs/engineering/bios-boot.md`.
+
+- **`--gic 3`** (arm64) boots QEMU virt with a GICv3 and an ITS (`VIBEOS_QEMU_GIC=3`;
+  the default is the GICv2 the Pi 4 has) and FAILS the boot (`GIC_NOT_V3`) unless the HAL
+  prints `[GIC] GICv3: distributor`, and with `--nvme` (`GIC_NO_ITS`) unless MSI-X went
+  through the ITS (`[HAL] GICv3 ITS at`). With `--smp N` it also carries the IPIs, which are
+  `ICC_SGI1R_EL1` writes there instead of GICD_SGIR.
+
+- **`--nvme`** (any arch; the default for `amd64-bios`, which is the OptiPlex 9020's
+  stick + NVMe drive, opt out with `VIBEOS_QEMU_NVME=0`) attaches a QEMU `nvme`
+  controller with one 64M MBR+FAT16 namespace (`VIBEOS_QEMU_NVME=1`) and FAILS the
+  boot (`NVME_NOT_ENGAGED`) unless nvme.sys prints
+  `[NVME] controller 0: namespace 1 published as a disk`, (`NVME_NOT_MSIX`) unless its
+  MSI-X messages connected (`[NVME] controller 0: MSI-X: `; it would otherwise work on its
+  pin and hide the break), (`NVME_POLLING`) unless a completion arrived by interrupt
+  (`[NVME] controller 0: interrupts working`), (`NVME_NOT_QUEUED`) unless its self-test
+  read had at least two commands in flight at once, and (`NVME_BOUNCED`) unless that read
+  moved by DMA to the reader's pages rather than through the bounce buffer: one command at
+  a time, or every byte copied, still works, so neither would otherwise fail a boot. The net
+  suite never inherits the knob: QEMU's nvme device blocks the `savevm` it takes.
+  `VIBEOS_QEMU_NVME=1 pytest tests/qemu/test_nvme.py --arch <a>` goes further: the
+  desktop copies the namespace's file and the host reads the copy back.
 
 - **Net suite (amd64) runs by default** and folds into the verdict — a netstack
   regression turns the smoke red like any other, never hidden. It is a *second
@@ -164,6 +191,30 @@ all included), then auto-triage on failure.
   `--repeat` runs. `summary.json` lists all results under `boots`; its top-level
   serial archive selects the first failure, or first success if all passed.
   Use those paths for live observation and evidence, not the legacy per-arch log.
+- **`VIBEOS_QEMU_HOSTILE=all` (amd64) boots a QEMU stripped down to what a 2018+
+  mini PC gives you**, so real-hardware bugs show up at smoke speed. Or name the
+  hazards to bisect, e.g. `VIBEOS_QEMU_HOSTILE=q35,serial`:
+  - `q35`: ICH9 chipset, AHCI boot media, HPET.
+  - `cpu`: `-cpu max`, so TCG enforces the CPU's features.
+  - `nops2`: no i8042; input only through USB HID on xHCI.
+  - `novga`: GOP from ramfb only.
+  - `mem`: 6 GiB.
+  - `serial`: no COM1; the console UART sits at I/O 0x5000, named only by an
+    injected ACPI SPCR, the way AMT serial-over-LAN or a BMC is on a real PC.
+
+  All of them, plus `VIBEOS_QEMU_SMP=4`, boot green as of 2026-10-03. Opt-in, not
+  in the gate. `vibeos-cli gdb start amd64` honours the same knob.
+
+  arm64 takes the same variable, with the ways a Raspberry Pi differs from
+  QEMU's default virt (`all` applies them too):
+  - `a76`: `-cpu cortex-a76`, the Pi 5's core (ARMv8.2: PAN and friends enforced).
+  - `el2`: firmware hands off at EL2, as both Pis' UEFI do, so the loader's drop
+    to EL1 runs.
+  - `mem`: 6 GiB. This is what caught the 4 GiB Pi 5's silent hang (nonpaged
+    pool sizing underflow).
+
+  `a76,el2,mem` boots green on arm64 as of 2026-10-04. amd64 `mem` sees only
+  4 GiB until the roadmap's "amd64 RAM above 4 GiB" bug is fixed.
 - `--tripwire "SPECIALPOOL=Gla5"` arms per-boot kernel debug knobs via QEMU
   fw_cfg (no media rebuild; kernel side `ntoskrnl-rust/src/tripwire.rs`) —
   special pool turns silent pool corruption into an immediate symbolicated
@@ -317,7 +368,12 @@ the lock, so there is no daemon to supervise and nothing that can be "down".
   hit it (mainline failed to compile `fltmgr-rust` for i386) and, without this
   check, rejected a docs-only change for a build failure it could not have
   caused. The base gate is lazy and memoized per drain, so a green batch never
-  pays for it.
+  pays for it. A base that fails **only** timing-sensitive stages (smoke,
+  conformance) gets one warm re-gate before it can hold the line: on 2026-10-04 a
+  spawn32 race and an arm64 BUGCHECK each held every lane on a master that later
+  gated green. If the re-gate
+  passes, the line is not held. A lone submission red only on the stages the base
+  flaked on stays queued (`FlakyBase`), neither rejected nor landed.
 - **A batch is never presumed green from its parts.** Two individually-green
   lanes can be red *together*; the queue catches that before master, where today
   the second lane lands on the first without ever gating the combination.
@@ -358,6 +414,19 @@ used only if the first landed whole; otherwise it is discarded and those lanes
 stay queued, neither landed nor rejected. A second batch's merge conflict with
 the first is likewise only rejected once the first is on master. Depth 1 is the
 serial queue. Why (2026-09-26): one cold ~80-minute gate held nine lanes.
+
+### Whose code conducts, and where its log lives
+The lane that wins the election keeps the land lock but does not drain with its own
+copy of the queue: it runs the drain as a child in `vibeos-conductor`, a detached
+checkout it moves to origin/master first. A fix to the queue therefore governs the
+very next drain, whether or not the electing lane has merged it. `VIBEOS_CONDUCTOR_PIN=0`
+drains in-process (for testing queue changes before they land). Every conductor line
+is also appended to `$GIT_COMMON_DIR/vibeos-queue/journal.log` (one rotation at 8 MB),
+which survives the reboots that wipe `/tmp/vibeos-cli`.
+
+When a lone submission fails, the base check re-gates origin/master after
+`git clean -fdqx` (keeping only `.build-tools`, `.venv`, tool caches and the arm64
+firmware), so master is judged without the previous submission's build dirs.
 
 ### `land --withdraw` — step out of line
 Takes THIS lane's queued submissions out of the queue (verdict: `withdrawn`),
@@ -658,13 +727,19 @@ QMP `replay-break` landing part-way through a chunk aborts the whole replay with
 single boot, so there is no rounding rule — `--near <icount>` snaps a target to
 the next legal one and says how far into a chunk the unsnapped value sat.
 
+`rr record --sample SECS` fingerprints the guest (registers + per-MiB RAM hashes,
+the bytes kept deduplicated in the trace) every SECS of wall time; `rr diverge
+<trace>` replays it, breaks at each fingerprint, and reports the last icount where
+replay and recording agreed and the first that differs, down to the byte. A wedge is
+where a divergence becomes visible; this finds where it happened.
+
 Design, gdb recipe and the divergence log: `docs/engineering/qemu-record-replay.md`.
 
 ### `ps [--json]`
 Every QEMU running **across all worktrees** + slot-pool usage. Run it first when
 you're unsure what's live or why KVM is contended.
 
-### `prune [--apply] [--self] [--idle-hours N] [--retain-gib N]`
+### `prune [--apply] [--self] [--idle-hours N] [--retain-gib N] [--trim]`
 Reclaim disk by GC'ing **idle worktrees' build-`<arch>`/ + Rust target dirs**.
 Build trees are ephemeral scratch — the shared cache rehydrates a pruned tree
 fast — so an idle lane's 26–42 G can be freed and regenerated on demand (measured
@@ -689,6 +764,18 @@ Updated artifact-consuming CLI commands hold shared leases on that lock.
 **Do not enable the owner until every lane is updated and older/raw jobs are
 drained**; they do not honor the lock. No owner is enabled automatically.
 See [storage/retention rollout](../../../docs/engineering/rust-output-retention-plan.md).
+
+`--trim` is the other half: it cuts every tree's cargo target back to what its
+build can still read, so a lane's target dir stops growing past its ~32 G fresh
+size (weeks-old lanes measured 35–45 G). It removes **superseded units** (same
+package, target, path, profile and features as a newer fingerprint: a rustc, dep
+or flag change minted a new hash and cargo never deletes the old one) and **idle
+ad-hoc trees** (`target/<triple>/`, `target/debug/` from hand-run `cargo
+check/test`; the CMake build never writes there). Nothing younger than
+`--idle-hours` (default 24) is touched. It needs no quiet fleet or pinned owner
+and costs no lane a warm build, so it is safe on live lanes; the kill switch
+still stops it. `vibeos-cli build` also trims its OWN tree after every green
+build (`VIBEOS_TRIM=0` opts out), so this is mostly for catching up.
 
 ### `retention [--enable | --disable | --run]`
 

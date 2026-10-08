@@ -130,6 +130,7 @@ list(APPEND SOURCE
     # user/ntuser/hook.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/hook.rs) — cohabitation [ntuser wave 33]
     # user/ntuser/hotkey.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/hotkey.rs) — cohabitation [ntuser wave 18]
     # user/ntuser/input.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/input.rs) — cohabitation [ntuser wave 30]
+    # user/ntuser/job.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/job.rs) — upstream b272427baa3, never built as C here
     # user/ntuser/ime.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/ime.rs) — cohabitation [ntuser wave 36]
     # user/ntuser/keyboard.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/keyboard.rs) — cohabitation [ntuser wave 38]
     # user/ntuser/kbdlayout.c  # replaced by Rust (sdk/lib/rust/win32k-rust/src/kbdlayout.rs) — cohabitation [ntuser frontier]

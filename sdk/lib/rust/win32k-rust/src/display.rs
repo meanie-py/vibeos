@@ -86,13 +86,6 @@ unsafe fn rtl_init_empty_unicode_string(s: *mut _UNICODE_STRING, buf: *mut u16, 
     (*s).MaximumLength = sz;
 }
 
-// safe_user_io.h ProbeForReadUnicodeString(Ptr) — captures a UNICODE_STRING
-// from a (user) pointer. Under USE_DUMMY_PSEH the probe is a plain read.
-#[inline(always)]
-unsafe fn ProbeForReadUnicodeString(SourceString: PUNICODE_STRING) -> _UNICODE_STRING {
-    *(SourceString as *const _UNICODE_STRING)
-}
-
 // Fault-protected replacement for the shape repeated at three _SEH2_TRY sites
 // in display.c (NtUserEnumDisplayDevices ~400-414, NtUserEnumDisplaySettings
 // ~636-655, NtUserChangeDisplaySettings ~988-1003): probe the UNICODE_STRING
@@ -625,7 +618,8 @@ pub unsafe extern "system" fn NtUserEnumDisplayDevices(
 
     UserEnterShared();
 
-    Status = UserEnumDisplayDevices(pustrDevice, iDevNum, &mut dispdev, dwFlags);
+    // nolint: raw-user-access (both arms above re-point pustrDevice: the captured copy, or NULL)
+    Status = UserEnumDisplayDevices(pustrDevice, iDevNum, &mut dispdev, dwFlags); // nolint: raw-user-access (see above)
 
     UserLeave();
 

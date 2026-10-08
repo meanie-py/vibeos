@@ -442,24 +442,45 @@ set(CMAKE_C_CREATE_SHARED_MODULE ${CMAKE_C_CREATE_SHARED_LIBRARY})
 set(CMAKE_CXX_CREATE_SHARED_MODULE ${CMAKE_CXX_CREATE_SHARED_LIBRARY})
 set(CMAKE_RC_CREATE_SHARED_MODULE ${CMAKE_RC_CREATE_SHARED_LIBRARY})
 
-# --allow-multiple-definition (EXE too): libcntpr_rust.a now reaches EXE
-# links — freeldr rosload.exe / uefildr.efi link BOTH the i386 asm CRT
-# (liblibcntpr.a) and the Rust CRT (libcntpr_rust.a), so a fresh relink
-# double-defines memset/memcpy/strlen/…. SHARED/MODULE already carry the
-# flag for the same Rust-archive reason; EXEs need it now too (lld
-# first-match wins — both CRT impls are correct).
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--gc-sections,--allow-multiple-definition")
-# --allow-multiple-definition: Rust crates each define __rustc::rust_begin_unwind;
-# when multiple .a libraries link into one PE (e.g. ntdll), LLD sees duplicates.
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--allow-multiple-definition")
-set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--allow-multiple-definition")
+# Duplicate symbols: --allow-multiple-definition turns lld's duplicate ERROR into
+# a warning, and tools/link_guard.py (reached through --ld-path) reads those
+# warnings and fails the link on any duplicate that is not irreducible toolchain
+# runtime or an import. The flag is load-bearing only for the runtime cases (each
+# Rust staticlib carries its own panic runtime; compiler_builtins overlaps
+# libclang_rt.builtins). Before the guard it silently let C glue beat translated
+# Rust by link order: cdrom, fastfat, disk, crtdll, ucrtbase.
+set(_vibeos_dup_policy "--ld-path=${REACTOS_SOURCE_DIR}/tools/link_guard/ld.lld")
+# ... and the flag itself is per target: a module with the VIBEOS_STRICT_LINK property
+# (link_strict(), below) links without it, so lld rejects ANY duplicate, toolchain runtime
+# included. Such a module must be one Rust graph (one core / panic runtime /
+# compiler_builtins) and also drops clang's libclang_rt.builtins (see the
+# -print-libgcc-file-name block): lld fetches it for intrinsics that Rust's whole-archived
+# compiler_builtins defines too, whenever a Rust member referencing one is parsed before the
+# member defining it. As generator expressions because the property is set after
+# set_module_type, and an unset property keeps every other module's link exactly as it was.
+add_link_options("$<$<NOT:$<BOOL:$<TARGET_PROPERTY:VIBEOS_STRICT_LINK>>>:-Wl,--allow-multiple-definition>")
+
+# link_strict(<target>): link <target> with no duplicate symbol tolerated (see above).
+function(link_strict target)
+    set_target_properties(${target} PROPERTIES VIBEOS_STRICT_LINK ON)
+endfunction()
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup,--gc-sections ${_vibeos_dup_policy}")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup ${_vibeos_dup_policy}")
+set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS_INIT} -Wl,--disable-stdcall-fixup ${_vibeos_dup_policy}")
 
 set(CMAKE_C_COMPILE_OBJECT "<CMAKE_C_COMPILER> <DEFINES> ${_compress_debug_sections_flag} <INCLUDES> <FLAGS> -o <OBJECT> -c <SOURCE>")
 # FIXME: Once the GCC toolchain bugs are fixed, add _compress_debug_sections_flag to CXX too
 set(CMAKE_CXX_COMPILE_OBJECT "<CMAKE_CXX_COMPILER> <DEFINES> <INCLUDES> <FLAGS> -o <OBJECT> -c <SOURCE>")
 set(CMAKE_ASM_COMPILE_OBJECT "<CMAKE_ASM_COMPILER> ${_compress_debug_sections_flag} -x assembler-with-cpp -o <OBJECT> -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm <INCLUDES> <FLAGS> <DEFINES> -D__ASM__ -c <SOURCE>")
 
-set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
+# --codepage=65001: llvm-rc IGNORES `#pragma code_page`, so without a default every
+# UTF-8 resource script was decoded as cp1252 -- "fran\xc3\xa7ais" for "français" in
+# every translated string table, and kernel32's French LOCALE_STHOUSAND came out as
+# U+00C2 U+00A0, which VarParseNumFromStr then took as the separator. The tree's
+# resource scripts are all UTF-8 (the six that declare 1251/1252/932 are pure ASCII),
+# so UTF-8 is the one right default, and llvm-rc rejects invalid UTF-8 loudly.
+set(RC_CODEPAGE_FLAG "--codepage=65001")
+set(CMAKE_RC_COMPILE_OBJECT "<CMAKE_RC_COMPILER> -O coff ${RC_CODEPAGE_FLAG} <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>")
 
 # use_gnu_rc() — compile THIS DIRECTORY's .rc files with GNU windres instead of
 # llvm-mingw's (which is llvm-rc in a trench coat). Only for the handful of
@@ -488,7 +509,7 @@ function(use_gnu_rc)
         return()
     endif()
     set(CMAKE_RC_COMPILE_OBJECT
-        "${GNU_RC_COMPILER} -O coff <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>"
+        "${GNU_RC_COMPILER} -O coff ${RC_CODEPAGE_FLAG} <INCLUDES> <FLAGS> -DRC_INVOKED -D__WIN32__=1 -D__FLAT__=1 ${I18N_DEFS} <DEFINES> <SOURCE> <OBJECT>"
         PARENT_SCOPE)
 endfunction()
 
@@ -507,6 +528,18 @@ set(CMAKE_DEPFILE_FLAGS_RC "--preprocessor=\"${CMAKE_C_COMPILER}\" ${RC_PREPROCE
 
 # Optional 3rd parameter: stdcall stack bytes
 function(set_entrypoint MODULE ENTRYPOINT)
+    # Which Rust CRT-startup personality msvcrtex links into this module
+    # (sdk/lib/crt/msvcrtex.cmake). Derived from the entry symbol itself, so the last
+    # set_entrypoint wins exactly as the linker's -entry does.
+    if(ENTRYPOINT STREQUAL "DllMainCRTStartup")
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND dll)
+    elseif(ENTRYPOINT MATCHES "^(mainCRTStartup|WinMainCRTStartup)$")
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND exe)
+    elseif(ENTRYPOINT MATCHES "^(wmainCRTStartup|wWinMainCRTStartup)$")
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND wexe)
+    else()
+        set_property(TARGET ${MODULE} PROPERTY REACTOS_CRT_KIND bare)
+    endif()
     if(${ENTRYPOINT} STREQUAL "0")
         # lld interprets "0" as a symbol name, not an address
         # Use __ImageBase as a dummy entry point for modules that don't need one
@@ -614,6 +647,20 @@ function(add_delay_importlibs _module)
             target_link_libraries(${_module} lib${_basename}_delayed)
         endif()
     endforeach()
+    # lld leaves the DELAY_IMPORT data directory empty for gen-delaylib's descriptors;
+    # point it at their table (gen-delaylib.py brackets it) once the module is linked.
+    if(CMAKE_DLLTOOL_MACHINE AND VIBEOS_ENABLE_DELAYLOAD AND NOT VIBEOS_NO_DELAYLOAD)
+        get_target_property(_has_fixup ${_module} VIBEOS_DELAYIMPORT_FIXUP)
+        if(NOT _has_fixup)
+            set_target_properties(${_module} PROPERTIES VIBEOS_DELAYIMPORT_FIXUP TRUE)
+            add_custom_command(TARGET ${_module} POST_BUILD
+                COMMAND native-pefixup --delayimport "$<TARGET_FILE:${_module}>"
+                COMMENT "Setting the DELAY_IMPORT directory of ${_module}"
+                VERBATIM)
+            set_property(TARGET ${_module} APPEND PROPERTY
+                LINK_DEPENDS $<TARGET_PROPERTY:native-pefixup,IMPORTED_LOCATION>)
+        endif()
+    endif()
     # Link the delay-load runtime unconditionally — not just when delay-loading.
     # Modules may reference the __pfnDli*Hook2 variables directly (delayimp.h
     # declares them; dbghelp_apitest's pdb.c assigns the failure hook), and those
@@ -831,6 +878,17 @@ function(add_cargo_module _target _crate _output)
     if(_acm_BODY_CRATE)
         list(APPEND _acm_BODY_CRATES ${_acm_BODY_CRATE})
     endif()
+    # reactos-link's msvcrtex_crt() builds the Rust CRT floor (crt-startup-rust,
+    # crt-dllmain-rust, crt0-rust) as nested libs. Cargo's depfile does not carry
+    # them, so editing crtdll.rs left lsass/winlogon linked against the old CRT
+    # (`build` reported them stale, ninja had no edge to rerun). Watch them for
+    # every module whose build.rs asks for that CRT; the build.rs is the truth.
+    file(READ "${_ws}/${_crate}/build.rs" _acm_buildrs)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_ws}/${_crate}/build.rs")
+    string(FIND "${_acm_buildrs}" "msvcrtex_crt" _acm_uses_crt)
+    if(NOT _acm_uses_crt EQUAL -1)
+        list(APPEND _acm_BODY_CRATES crt-startup-rust crt-dllmain-rust crt0-rust)
+    endif()
     # Follow Cargo path dependencies TRANSITIVELY, not just the crates named in
     # BODY_CRATES. A declaration names the crate that holds the module's bodies,
     # but those bodies call into sibling crates by path, and editing one of THOSE
@@ -846,7 +904,15 @@ function(add_cargo_module _target _crate _output)
     # and well separated: of 314 workspace crates, kernel-rust reaches 33,
     # win32k-rust 5, shell32-rust 4, ntdll-rust 3. A module rebuilds when
     # something it actually links changes, which is the whole point.
-    _rust_path_dep_closure("${_ws}" "${_acm_BODY_CRATES}" _body_dirs)
+    # User-mode modules also link the CRT startup crates, which reactos-link's
+    # .msvcrtex_crt() builds in a NESTED cargo invocation: Cargo's depfile never
+    # sees them, so without this an edit to crt-startup-rust relinked no cargo
+    # module and `build` reported lsass/services stale (2026-10-04).
+    set(_closure_roots ${_acm_BODY_CRATES})
+    if(_acm_KIND MATCHES "^win32")
+        list(APPEND _closure_roots crt-startup-rust crt0-rust crt-dllmain-rust)
+    endif()
+    _rust_path_dep_closure("${_ws}" "${_closure_roots}" _body_dirs)
     foreach(_body_dir IN LISTS _body_dirs)
         file(GLOB_RECURSE _bsrcs CONFIGURE_DEPENDS
             ${_body_dir}/*.rs ${_body_dir}/Cargo.toml)
@@ -909,8 +975,9 @@ function(add_cargo_module _target _crate _output)
             set(_postlink COMMAND ${CMAKE_COMMAND} -E env python3
                 ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py ${_out})
         endif()
-    elseif(_acm_KIND STREQUAL "efi")
-        # Strip rossym + all (matches uefi.cmake's uefildr POST_BUILD).
+    elseif(_acm_KIND STREQUAL "efi" OR _acm_KIND STREQUAL "biosloader")
+        # Strip rossym + all (matches uefi.cmake's uefildr POST_BUILD, and the
+        # old pcat.cmake freeldr_pe POST_BUILD for the BIOS loader).
         set(_postlink
             COMMAND ${CMAKE_STRIP} --remove-section=.rossym ${_out}
             COMMAND ${CMAKE_STRIP} --strip-all ${_out})
@@ -1121,6 +1188,86 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
     add_dependencies(${_libname}_delayed ${_libname}_delayed_implib_target)
 endfunction()
 
+# spec2def's stubs are Rust: one `rustc --emit=obj` per module, no cargo. amd64 and
+# arm64 compile on pinned stable against the builtin triples' prebuilt core. i386
+# compiles on the pinned nightly against the user-mode cells' pentium/x86-softfloat
+# json, whose core comes from one `-Z build-std` run (tools/spec-stubs-core) shared
+# by every module. Stable i686 cannot stand in: it requires sse2 and the C here is
+# -march=pentium.
+set(SPEC_STUBS_RUSTC_FLAGS
+    --edition 2021 --crate-type=lib --emit=obj
+    -C opt-level=2 -C panic=abort -C force-frame-pointers=yes)
+set(SPEC_STUBS_RUSTC_ENV)
+set(SPEC_STUBS_RUSTC_DEPENDS)
+if(ARCH STREQUAL "i386")
+    file(STRINGS "${REACTOS_SOURCE_DIR}/.rust-nightly" _spec_stubs_nightly LIMIT_COUNT 1)
+    set(_spec_stubs_json "${REACTOS_SOURCE_DIR}/sdk/lib/rust/ntdll-cargo/i686-kernel.json")
+    set(_spec_stubs_target_dir "${CMAKE_BINARY_DIR}/spec-stubs-core/${_spec_stubs_nightly}")
+    set(_spec_stubs_sysroot "${CMAKE_BINARY_DIR}/spec-stubs-core/sysroot")
+    set(_spec_stubs_stamp "${_spec_stubs_sysroot}.stamp")
+    add_custom_command(
+        OUTPUT ${_spec_stubs_stamp}
+        COMMAND ${CMAKE_COMMAND} -E env RUSTUP_TOOLCHAIN=${_spec_stubs_nightly}
+            CARGO_TARGET_DIR=${_spec_stubs_target_dir}
+            cargo build --release --locked --target ${_spec_stubs_json} -Z build-std=core
+                --manifest-path ${REACTOS_SOURCE_DIR}/tools/spec-stubs-core/Cargo.toml
+        COMMAND ${CMAKE_COMMAND}
+            -DDEPS=${_spec_stubs_target_dir}/i686-kernel/release/deps
+            -DSYSROOT=${_spec_stubs_sysroot} -DTARGET=i686-kernel
+            -P ${REACTOS_SOURCE_DIR}/tools/spec-stubs-core/sysroot.cmake
+        COMMAND ${CMAKE_COMMAND} -E touch ${_spec_stubs_stamp}
+        DEPENDS ${REACTOS_SOURCE_DIR}/tools/spec-stubs-core/Cargo.toml
+            ${REACTOS_SOURCE_DIR}/tools/spec-stubs-core/src/lib.rs
+            ${REACTOS_SOURCE_DIR}/tools/spec-stubs-core/sysroot.cmake
+            ${_spec_stubs_json} ${REACTOS_SOURCE_DIR}/.rust-nightly
+        WORKING_DIRECTORY ${REACTOS_SOURCE_DIR}
+        COMMENT "Building core for spec2def's i386 Rust stubs"
+        VERBATIM)
+    add_custom_target(spec-stubs-core DEPENDS ${_spec_stubs_stamp})
+    list(APPEND SPEC_STUBS_RUSTC_FLAGS
+        --target ${_spec_stubs_json} -Z unstable-options --sysroot ${_spec_stubs_sysroot})
+    set(SPEC_STUBS_RUSTC_ENV RUSTUP_TOOLCHAIN=${_spec_stubs_nightly})
+    set(SPEC_STUBS_RUSTC_DEPENDS spec-stubs-core ${_spec_stubs_stamp})
+elseif(ARCH STREQUAL "amd64")
+    list(APPEND SPEC_STUBS_RUSTC_FLAGS --target x86_64-pc-windows-gnu)
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND SPEC_STUBS_RUSTC_FLAGS --target aarch64-pc-windows-gnullvm)
+else()
+    message(FATAL_ERROR "spec2def Rust stubs: no rustc target for ARCH ${ARCH}")
+endif()
+
+# Deferred to the end of the directory that called spec2def(): every module there
+# lists ${file}_stubs.c among its sources, and this swaps it for the Rust object, so
+# no module's CMakeLists has to change. A module in ANOTHER directory naming the .c
+# would fail at generate time ("Cannot find source file"), which is the loud outcome.
+function(_spec2def_use_rust_stubs _c_stub _rs_obj)
+    get_property(_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_t IN LISTS _targets)
+        get_target_property(_srcs ${_t} SOURCES)
+        if(NOT _srcs)
+            continue()
+        endif()
+        # A module names the generated stub by its absolute binary-dir path or by its
+        # bare name, which CMake resolves against the binary dir at generate time.
+        get_filename_component(_c_name "${_c_stub}" NAME)
+        list(FIND _srcs "${_c_stub}" _at)
+        if(_at EQUAL -1)
+            list(FIND _srcs "${_c_name}" _at)
+        endif()
+        if(_at GREATER -1)
+            list(REMOVE_AT _srcs ${_at})
+            list(INSERT _srcs ${_at} "${_rs_obj}")
+            set_property(TARGET ${_t} PROPERTY SOURCES ${_srcs})
+            # A DLL that is nothing but stubs now has no C source for CMake to infer
+            # the linker language from; it links through the C toolchain as before.
+            get_target_property(_lang ${_t} LINKER_LANGUAGE)
+            if(NOT _lang)
+                set_property(TARGET ${_t} PROPERTY LINKER_LANGUAGE C)
+            endif()
+        endif()
+    endforeach()
+endfunction()
+
 function(spec2def _dllname _spec_file)
 
     cmake_parse_arguments(__spec2def "ADD_IMPORTLIB;NO_PRIVATE_WARNINGS;WITH_RELAY;WITH_DBG;NO_DBG" "VERSION" "" ${ARGN})
@@ -1147,14 +1294,35 @@ function(spec2def _dllname _spec_file)
         set(__dbg_arg "--dbg")
     endif()
 
-    # Generate exports def and C stubs file for the DLL
+    # Generate the exports def and the stubs for the DLL. Relay-tracing thunks have
+    # no Rust form, so a WITH_RELAY module keeps spec2def's C emitter.
+    if(__spec2def_WITH_RELAY)
+        set(_stubs_src ${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.c)
+    else()
+        set(_stubs_src ${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.rs)
+    endif()
     add_custom_command(
-        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_file}.def ${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.c
-        COMMAND native-spec2def -n=${_dllname} -a=${ARCH2} -d=${CMAKE_CURRENT_BINARY_DIR}/${_file}.def -s=${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.c ${__with_relay_arg} ${__version_arg} ${__dbg_arg} ${CMAKE_CURRENT_SOURCE_DIR}/${_spec_file}
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_file}.def ${_stubs_src}
+        COMMAND native-spec2def -n=${_dllname} -a=${ARCH2} -d=${CMAKE_CURRENT_BINARY_DIR}/${_file}.def -s=${_stubs_src} ${__with_relay_arg} ${__version_arg} ${__dbg_arg} ${CMAKE_CURRENT_SOURCE_DIR}/${_spec_file}
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${_spec_file} native-spec2def)
 
-    # Do not use precompiled headers for the stub file
-    set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+    if(__spec2def_WITH_RELAY)
+        # Do not use precompiled headers for the stub file
+        set_source_files_properties(${_stubs_src} PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+    else()
+        set(_stubs_obj ${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.rs.obj)
+        add_custom_command(
+            OUTPUT ${_stubs_obj}
+            COMMAND ${CMAKE_COMMAND} -E env ${SPEC_STUBS_RUSTC_ENV}
+                rustc ${SPEC_STUBS_RUSTC_FLAGS} ${_stubs_src} -o ${_stubs_obj}
+            DEPENDS ${_stubs_src} ${SPEC_STUBS_RUSTC_DEPENDS}
+            WORKING_DIRECTORY ${REACTOS_SOURCE_DIR}
+            COMMENT "Compiling ${_file}_stubs.rs"
+            VERBATIM)
+        # DEFER CALL evaluates its arguments when the call RUNS, after this function's
+        # locals are gone; EVAL CODE bakes the two paths in now.
+        cmake_language(EVAL CODE "cmake_language(DEFER CALL _spec2def_use_rust_stubs [[${CMAKE_CURRENT_BINARY_DIR}/${_file}_stubs.c]] [[${_stubs_obj}]])")
+    endif()
 
     if(__spec2def_ADD_IMPORTLIB)
         set(_extraflags)
@@ -1174,6 +1342,17 @@ endmacro()
 
 # PSEH lib, needed with mingw
 set(PSEH_LIB "pseh")
+
+# A Rust archive a module names BY PATH on its link line: a path is placed exactly where it
+# is written (an INTERFACE wrapper's library lands after the direct items, behind import
+# libraries), and Ninja still orders the link after the custom command that produces it.
+# Spelled here, not exported from the producing directory, because dll/ and win32ss/ are
+# configured BEFORE sdk/lib/: a variable set there is empty when they read it on a fresh
+# configure; sdk/lib/crt FATAL_ERRORs if its rust_staticlib_variant disagrees. gdi32's: as the
+# `atan2` INTERFACE target it landed behind ntdll's import library, which exports atan2 on
+# arm64, and gdi32 imported ntdll's. (The CRT DLLs' pseh/setjmp archives were named this way
+# too until they moved inside the CRTs' own Rust graphs.)
+set(ATAN2_LIB "${CMAKE_BINARY_DIR}/sdk/lib/crt/libatan2_rust.a")
 
 function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_address)
     set(_object_file ${_binary_file}.o)
@@ -1343,8 +1522,10 @@ else()
             add_library(libclang_rt_builtins STATIC IMPORTED)
             set_target_properties(libclang_rt_builtins PROPERTIES IMPORTED_LOCATION "${_clang_rt_builtins}")
             target_link_libraries(libgcc INTERFACE libclang_rt_builtins)
-            # Also add to global link flags so kernel-mode drivers get it too
-            add_link_options("${_clang_rt_builtins}")
+            # Also add to global link flags so kernel-mode drivers get it too -- except a
+            # link_strict() module, whose Rust compiler_builtins supplies these (see
+            # _vibeos_dup_policy).
+            add_link_options("$<$<NOT:$<BOOL:$<TARGET_PROPERTY:VIBEOS_STRICT_LINK>>>:${_clang_rt_builtins}>")
             message(STATUS "Using compiler-rt builtins: ${_clang_rt_builtins}")
         endif()
     endif()
@@ -1356,7 +1537,13 @@ find_compiler_lib(supc++ libsupc++.a LIBSUPCXX_LOCATION)
 if(LIBSUPCXX_LOCATION_FOUND)
     add_library(libsupc++ STATIC IMPORTED GLOBAL)
     set_target_properties(libsupc++ PROPERTIES IMPORTED_LOCATION ${LIBSUPCXX_LOCATION})
-    # libsupc++ requires libgcc and stdc++compat
+    # libsupc++ requires libgcc and stdc++compat, and on a GCC SEH toolchain also the
+    # unwinder in libgcc_eh.a (SJLJ/DWARF toolchains have none). Upstream gcc.cmake does the
+    # same; llvm-mingw never reaches this branch (libc++/libunwind below).
+    find_compiler_lib(gcc_eh libgcc_eh.a LIBGCC_EH_LOCATION)
+    if(LIBGCC_EH_LOCATION_FOUND)
+        target_link_libraries(libsupc++ INTERFACE "${LIBGCC_EH_LOCATION}")
+    endif()
     target_link_libraries(libsupc++ INTERFACE libgcc stdc++compat)
 else()
     # For clang/llvm-mingw, use libc++, libc++abi, and libunwind instead of libsupc++

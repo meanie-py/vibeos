@@ -10,6 +10,7 @@ pub use ntdll_sys::nt::*;
 extern "system" {
     pub fn SetLastError(dwErrCode: DWORD);
     pub fn GetUserDefaultLCID() -> LCID;
+    pub fn GetSystemDefaultLCID() -> LCID;
     pub fn GetLocaleInfoW(Locale: LCID, LCType: LCTYPE, lpLCData: LPWSTR, cchData: core::ffi::c_int)
         -> core::ffi::c_int;
     pub fn lstrlenW(lpString: LPCWSTR) -> core::ffi::c_int;

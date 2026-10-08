@@ -1,12 +1,6 @@
 
 spec2def(ucrtbase.dll ucrtbase.spec NO_DBG ADD_IMPORTLIB)
 
-# Hack to replace the old CRT include directory with the UCRT include directory
-get_property(INCLUDE_DIRS DIRECTORY . PROPERTY INCLUDE_DIRECTORIES)
-list(REMOVE_ITEM INCLUDE_DIRS "${REACTOS_SOURCE_DIR}/sdk/include/crt")
-set_property(DIRECTORY . PROPERTY INCLUDE_DIRECTORIES ${INCLUDE_DIRS})
-include_directories(${REACTOS_SOURCE_DIR}/sdk/include/ucrt)
-
 add_compile_definitions(
     _UCRT
     _CORECRT_BUILD
@@ -14,24 +8,17 @@ add_compile_definitions(
 )
 
 add_library(ucrtbase SHARED
-    printf.c
-    # The `...` entry points of the ucrt-rust takeovers (and the va_arg pullers
-    # varargs-rust needs), as va_start trampolines over Rust `_v` twins. In the
-    # MODULE, not the ucrt archive, so they win first-match over any archive copy.
-    ucrt_varargs_shim.c
-    stubs.c
+    # printf.c (sprintf/_vsnprintf) and ucrt_varargs_shim.c (the `...` entry points as
+    # va_start trampolines, plus varargs-rust's va_arg pullers) are ucrt-rust's
+    # va_entries.rs and varargs-rust's `rust-pullers`: va_entry! thunks in the Rust
+    # archive linked whole below, so they still win first-match over any archive copy.
+    # stubs.c (atexit, operator_new/delete, _chkesp_failed, __acrt_initialize_sse2) is
+    # ucrt-rust's ucrt_reactos.rs and internal/init.rs.
     ucrtbase_stubs.c
     ucrtbase.def
 )
 
-if(NOT MSVC)
-    target_compile_options(ucrtbase PRIVATE -Wno-builtin-declaration-mismatch)
-endif()
-
-if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    # Silence warnings in ucrtbase_stubs.c
-    target_compile_options(ucrtbase PRIVATE -Wno-incompatible-library-redeclaration)
-endif()
+target_compile_options(ucrtbase PRIVATE -Wno-builtin-declaration-mismatch)
 
 set_entrypoint(ucrtbase __acrt_DllMain 12)
 
@@ -61,8 +48,17 @@ set_entrypoint(ucrtbase __acrt_DllMain 12)
 set(UCRT_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 set(UCRT_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/crt-shared-rust-target")
 if(ARCH STREQUAL "i386")
+    # SSE2, unlike every other i386 Rust module here: no kernel-side consumer links this
+    # archive (the -sse,-sse2 baseline exists for the ones that do), and Microsoft's own
+    # x86 ucrtbase.dll is built /arch:SSE2, as is every MSVC-built program that loads it.
+    # It is also the only way to use the `libm` crate: under -sse rustc refuses a Rust-ABI
+    # function that passes an f64, and libm is all Rust-ABI. Builtin triple plus -sse is
+    # the combination rustc has announced it will stop accepting (roadmap, "55 i386 crates
+    # build on an SSE/ABI combination rustc is phasing out"), so this is one fewer.
+    # Spelled out, not left empty: sdk/lib/rust/.cargo/config.toml gives this triple
+    # -sse,-sse2, and an unset RUSTFLAGS would let that apply.
     set(UCRT_RUST_TARGET "i686-pc-windows-gnu")
-    set(UCRT_RUST_ENV "RUSTFLAGS=-C target-feature=-sse,-sse2")
+    set(UCRT_RUST_ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")
 elseif(ARCH STREQUAL "amd64")
     set(UCRT_RUST_TARGET "x86_64-pc-windows-gnu")
     set(UCRT_RUST_ENV "")
@@ -72,22 +68,12 @@ elseif(ARCH STREQUAL "arm64")
 endif()
 
 set(UCRT_SHARED_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libcrt_shared_cargo.a")
-# Every crate whose code lands in libcrt_shared_cargo.a -- the path-dependency
-# closure of crt-shared-cargo. A crate missing here compiles into the archive but
-# never triggers its rebuild, so an edit to it ships a STALE archive with no error:
-# this list had drifted to two of seven crates (ucrt-rust's takeover families and
-# cnt-rust's math were both invisible to it). verify_ucrtbase_cohab.py derives the
-# closure from the manifests and fails if this list and it disagree.
-set(UCRT_SHARED_RUST_CRATES
-    crt-shared-cargo cnt-rust crt-portable-rust crt-shared-rust panic-common msvcrt-sys
-    ucrt-rust varargs-rust)
-set(UCRT_SHARED_RUST_GLOBS)
-set(UCRT_SHARED_RUST_MANIFESTS)
-foreach(crate ${UCRT_SHARED_RUST_CRATES})
-    list(APPEND UCRT_SHARED_RUST_GLOBS ${UCRT_RUST_WORKSPACE_DIR}/${crate}/src/*.rs)
-    list(APPEND UCRT_SHARED_RUST_MANIFESTS ${UCRT_RUST_WORKSPACE_DIR}/${crate}/Cargo.toml)
-endforeach()
-file(GLOB_RECURSE UCRT_SHARED_RUST_SOURCES CONFIGURE_DEPENDS ${UCRT_SHARED_RUST_GLOBS})
+# Every source compiled into libcrt_shared_cargo.a: crt-shared-cargo's path-dependency
+# closure, walked from the manifests (sources, Cargo.toml and build.rs of each crate). A
+# crate missing here compiles into the archive but never triggers its rebuild -- a stale
+# archive, no error. This was a hand-kept crate list that drifted to two of seven crates;
+# verify_ucrtbase_cohab.py fails if the derivation is replaced again.
+rust_crate_sources(UCRT_SHARED_RUST_SOURCES "${UCRT_RUST_WORKSPACE_DIR}" crt-shared-cargo)
 add_custom_command(
     OUTPUT ${UCRT_SHARED_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
@@ -100,37 +86,32 @@ add_custom_command(
         ${UCRT_SHARED_RUST_LIB}
     DEPENDS
             ${UCRT_SHARED_RUST_SOURCES}
-            ${UCRT_SHARED_RUST_MANIFESTS}
             ${UCRT_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMENT "Building Rust ucrtbase msvcrt_shared cohab (${UCRT_RUST_TARGET})"
 )
 add_custom_target(rust_ucrt_shared DEPENDS ${UCRT_SHARED_RUST_LIB})
 add_dependencies(ucrtbase rust_ucrt_shared)
 
-# --whole-archive for the same reason msvcrt.dll needs it: plain link order is not enough,
-# because msvcrt_shared still gets pulled for the symbols Rust does NOT define and drags in
-# its own copies of the ones it does, which would then win first-match. Forcing the Rust
-# defs in first makes the C copies the ignored duplicates.
+# The Rust archive is the whole DLL: one graph, with the SEH runtime and setjmp/longjmp as
+# pseh-rt/setjmp-rt inside it (whole-archived, so defined before ntdll's import library,
+# which exports longjmp on amd64, is consulted). So the link tolerates no duplicate symbol at
+# all (link_strict, gcc.cmake). No C library: msvcrt_shared, crtmath, vcruntime, vcstartup, chkstk, wine and libsupc++ (once
+# for __cxa_guard_*) contributed no object on any arch (tools/link_pulls.py, 2026-10-04), so
+# they came off the line as msvcrt.dll's did; a symbol the Rust lacks is now an undefined-
+# symbol error rather than a silent C fallback. msvcrt_shared is still compiled: the cohab
+# checks read its objects as the reference surface (tools/verify_ucrtbase_cohab.py).
 target_link_libraries(ucrtbase
-    ucrt
     -Wl,--whole-archive ${UCRT_SHARED_RUST_LIB} -Wl,--no-whole-archive
-    msvcrt_shared
-    crtmath
-    vcruntime
-    vcstartup
-    chkstk
-    wine
 )
+link_strict(ucrtbase)
+# Build-order only, nothing is linked: verify_ucrtbase_cohab and ucrt_burndown read these
+# libraries' OBJECTS as the reference surface (OURS_REFERENCE), and a build only makes what
+# `livecd` depends on. Off the link line, nothing else would build them in a fresh tree --
+# exactly how msvcrt_static's absence turned master red (DIFFTEST_STALE_ORACLE, 2026-10-04).
+add_dependencies(ucrtbase msvcrt_shared crtmath vcruntime vcstartup chkstk wine setjmp pseh)
 
 # Implicitly link to vcstartup
 target_link_libraries(libucrtbase INTERFACE vcstartup)
-
-if(MSVC)
-    target_link_libraries(ucrtbase runtmchk)
-else()
-    # For __cxa_guard_acquire / __cxa_guard_release
-    target_link_libraries(ucrtbase libsupc++)
-endif()
 
 add_importlibs(ucrtbase kernel32 ntdll)
 

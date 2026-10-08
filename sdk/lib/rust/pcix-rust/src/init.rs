@@ -178,8 +178,7 @@ pub unsafe extern "system" fn PciAcpiFindRsdt(
 
     'body: loop {
         Result = PciOpenKey(
-            b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0H\0A\0R\0D\0W\0A\0R\0E\0\\\0D\0E\0S\0C\0R\0I\0P\0T\0I\0O\0N\0\\\0S\0y\0s\0t\0e\0m\0\\\0M\0u\0l\0t\0i\0F\0u\0n\0c\0t\0i\0o\0n\0A\0d\0a\0p\0t\0e\0r\0\0\0"
-                .as_ptr() as PWCHAR,
+            win32macros_rust::wide_bytes!(b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0H\0A\0R\0D\0W\0A\0R\0E\0\\\0D\0E\0S\0C\0R\0I\0P\0T\0I\0O\0N\0\\\0S\0y\0s\0t\0e\0m\0\\\0M\0u\0l\0t\0i\0F\0u\0n\0c\0t\0i\0o\0n\0A\0d\0a\0p\0t\0e\0r\0\0\0") as PWCHAR,
             core::ptr::null_mut(),
             KEY_QUERY_VALUE,
             &mut KeyHandle,
@@ -287,7 +286,7 @@ pub unsafe extern "system" fn PciAcpiFindRsdt(
                 ) == 0
                 {
                     Status = PciGetRegistryValue(
-                        b"C\0o\0n\0f\0i\0g\0u\0r\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0".as_ptr()
+                        win32macros_rust::wide_bytes!(b"C\0o\0n\0f\0i\0g\0u\0r\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0")
                             as PWCHAR,
                         (*KeyInfo).Name.as_mut_ptr() as PWCHAR,
                         KeyHandle,
@@ -505,8 +504,7 @@ pub unsafe extern "system" fn PciGetIrqRoutingTableFromRegistry(
 
     'body: {
         let result = PciOpenKey(
-            b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0H\0A\0R\0D\0W\0A\0R\0E\0\\\0D\0E\0S\0C\0R\0I\0P\0T\0I\0O\0N\0\\\0S\0y\0s\0t\0e\0m\0\\\0M\0u\0l\0t\0i\0F\0u\0n\0c\0t\0i\0o\0n\0A\0d\0a\0p\0t\0e\0r\0\0\0"
-                .as_ptr() as PWCHAR,
+            win32macros_rust::wide_bytes!(b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0H\0A\0R\0D\0W\0A\0R\0E\0\\\0D\0E\0S\0C\0R\0I\0P\0T\0I\0O\0N\0\\\0S\0y\0s\0t\0e\0m\0\\\0M\0u\0l\0t\0i\0F\0u\0n\0c\0t\0i\0o\0n\0A\0d\0a\0p\0t\0e\0r\0\0\0") as PWCHAR,
             core::ptr::null_mut(),
             KEY_QUERY_VALUE,
             &mut KeyHandle,
@@ -607,10 +605,8 @@ pub unsafe extern "system" fn PciGetIrqRoutingTableFromRegistry(
                         w!("PCI BIOS").as_ptr() as *const u16;
                     if wcsncmp(data_ptr, pci_bios_ptr, (*ValueInfo).DataLength as usize) == 0 {
                         Status = PciGetRegistryValue(
-                            b"C\0o\0n\0f\0i\0g\0u\0r\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0"
-                                .as_ptr() as PWCHAR,
-                            b"R\0e\0a\0l\0M\0o\0d\0e\0I\0r\0q\0R\0o\0u\0t\0i\0n\0g\0T\0a\0b\0l\0e\0\\\x000\0\0\0"
-                                .as_ptr() as PWCHAR,
+                            win32macros_rust::wide_bytes!(b"C\0o\0n\0f\0i\0g\0u\0r\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0") as PWCHAR,
+                            win32macros_rust::wide_bytes!(b"R\0e\0a\0l\0M\0o\0d\0e\0I\0r\0q\0R\0o\0u\0t\0i\0n\0g\0T\0a\0b\0l\0e\0\\\x000\0\0\0") as PWCHAR,
                             SubKey,
                             REG_FULL_RESOURCE_DESCRIPTOR as ULONG,
                             &mut Package as *mut _ as *mut PVOID,

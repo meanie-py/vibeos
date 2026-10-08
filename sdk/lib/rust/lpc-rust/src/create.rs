@@ -137,7 +137,11 @@ pub unsafe extern "system" fn LpcpCreatePort(
             return st;
         }
 
-        ObjectName = (*ObjectAttributes).ObjectName;
+        // C: inside the __try, whose handler returns the code.
+        ObjectName = match ntkrnl_sys::probe::read_back(core::ptr::addr_of!((*ObjectAttributes).ObjectName)) {
+            Ok(v) => v,
+            Err(st) => return st,
+        };
         if !ObjectName.is_null() {
             // (b) SPURIOUS ALIGNMENT CHECK, fixed here: the C's
             // ProbeForReadUnicodeString (probe.h) is a RANGE check only -- its own

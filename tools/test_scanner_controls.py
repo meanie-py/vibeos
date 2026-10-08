@@ -289,6 +289,26 @@ pub unsafe fn A_SHAFinal(Pad: u32, LengthHi: u32) {
 }
 """
 
+# scan_constant_placement. A real C twin (drivers/usb/usbuhci/usbuhci.c) whose two
+# isochronous limits came back in each other's places: the TD count holds the transfer
+# size and vice versa. Every constant is present, so the fact seal's SET check passes;
+# GOOD puts them back.
+_PLACEMENT_BAD = """\
+pub unsafe extern "system" fn UhciQueryEndpointRequirements(
+    uhciExtension: PVOID,
+    EndpointProperties: PUSBPORT_ENDPOINT_PROPERTIES,
+    EndpointRequirements: PUSBPORT_ENDPOINT_REQUIREMENTS,
+) {
+    let TdCount: ULONG = (2 * UHCI_MAX_ISO_TRANSFER_SIZE) as ULONG;
+    (*EndpointRequirements).MaxTransferSize = UHCI_MAX_ISO_TD_COUNT as ULONG;
+}
+"""
+_PLACEMENT_GOOD = (
+    _PLACEMENT_BAD.replace("UHCI_MAX_ISO_TRANSFER_SIZE) as", "@@) as")
+    .replace("= UHCI_MAX_ISO_TD_COUNT as", "= UHCI_MAX_ISO_TRANSFER_SIZE as")
+    .replace("@@", "UHCI_MAX_ISO_TD_COUNT")
+)
+
 # scan_dropped_null_guard. compress before the fix: compress.c forwards final_size to
 # lznt1_decompress, whose `if (final_size)` is the guard — so this also pins the one-level
 # call-through. The fixture path shares `compress` with sdk/lib/rtl/compress.c, which is
@@ -660,6 +680,22 @@ pub static SLOT2: Option<unsafe extern "system" fn(*mut u8) -> i32> =
 pub unsafe extern "C" fn cexit(code: i32) -> ! { loop {} }
 pub static EXIT: unsafe extern "C" fn(i32) =
     unsafe { core::mem::transmute::<unsafe extern "C" fn(i32) -> !, _>(cexit) };
+"""
+
+# scan_unaligned_wide. Seeded from ws2_32's L"LibraryPath" (2026-10-04): a UTF-16 literal
+# spelled as a byte string and cast to a wide pointer, alignment 1, which landed on an odd
+# address and failed the kernel's ProbeForRead. GOOD has the aligned macro form and a narrow
+# C string that must not be mistaken for a wide one.
+_UNALIGNED_WIDE_BAD = """\
+pub unsafe fn f() {
+    RegQueryValueExW(key, b"L\\0i\\0b\\0\\0\\0".as_ptr() as LPCWSTR, 0 as _);
+}
+"""
+_UNALIGNED_WIDE_GOOD = """\
+pub unsafe fn f() {
+    RegQueryValueExW(key, win32macros_rust::wide_bytes!(b"L\\0i\\0b\\0\\0\\0") as LPCWSTR, 0 as _);
+    OutputDebugStringA(b"text\\0".as_ptr() as PCSTR);
+}
 """
 
 # scan_wide_byte_copy. Seeded from fastfat's FatQueryDirectory (2026-09-23): the
@@ -1353,6 +1389,151 @@ _VENDOR_GOOD_YAML = (
 """
 )
 
+# scan_raising_probes. Seeded from ex-rust NtAllocateLocallyUniqueId (2026-10-04): the
+# probe was kept, but it was the raising export, so a bad pointer from user mode was
+# an unhandled exception. GOOD is the Result probe, plus the two spellings that must
+# NOT fire: a qualified call (the raising C-ABI re-export) and an extern declaration.
+_RAISINGPROBE_BAD = """
+extern "system" {
+    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: usize);
+}
+pub unsafe extern "system" fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LUID) -> NTSTATUS {
+    if ExGetPreviousMode() != 0 {
+        ProbeForWrite(LocallyUniqueId as PVOID, core::mem::size_of::<LUID>(), 4);
+    }
+    STATUS_SUCCESS
+}
+"""
+_RAISINGPROBE_GOOD = """
+extern "system" {
+    fn ProbeForWrite(Address: PVOID, Length: usize, Alignment: usize);
+}
+pub unsafe extern "C" fn ProbeForWriteUlong(address: *mut ULONG) {
+    ntkrnl_sys::inline::common::ProbeForWriteUlong(address)
+}
+pub unsafe extern "system" fn NtAllocateLocallyUniqueId(LocallyUniqueId: *mut LUID) -> NTSTATUS {
+    if ExGetPreviousMode() != 0 {
+        // ProbeForWrite(LocallyUniqueId, sizeof(LUID), sizeof(ULONG));
+        let probed = ntkrnl_sys::probe::probe_user_buffer(LocallyUniqueId as PVOID, 8, 4, 1);
+        if let Err(status) = probed {
+            return status;
+        }
+    }
+    STATUS_SUCCESS
+}
+"""
+
+# The MDL half of the same class: MmProbeAndLockPages raises, and a path-qualified
+# call is still a call (win32k shipped `ntkrnl_sys::ddk::MmProbeAndLockPages(..)`).
+# GOOD pins both ways out: the status form, and a call inside a real SEH frame.
+_RAISINGMDL_BAD = """
+pub unsafe extern "C" fn HackSecureVirtualMemory(pmdl: PMDL) -> NTSTATUS {
+    ntkrnl_sys::ddk::MmProbeAndLockPages(pmdl, 1i8, 0);
+    STATUS_SUCCESS
+}
+"""
+_RAISINGMDL_GOOD = """
+extern "system" {
+    fn MmProbeAndLockPages(Mdl: PMDL, AccessMode: i8, Operation: u32);
+}
+pub unsafe extern "C" fn HackSecureVirtualMemory(pmdl: PMDL) -> NTSTATUS {
+    let status = ntkrnl_sys::probe::MmTryProbeAndLockPages(pmdl, 1i8, 0);
+    if status < 0 {
+        return status;
+    }
+    match ntkrnl_sys::seh::try_except(
+        &mut (),
+        |_| {
+            MmProbeAndLockPages(pmdl, 0i8, 1);
+        },
+        |_, _| 1,
+    ) {
+        Ok(()) => STATUS_SUCCESS,
+        Err(code) => code,
+    }
+}
+"""
+
+# scan_raw_user_access: the store after the probe. BAD writes the caller's handle with
+# a plain deref; GOOD does the same through write_back, and computing a field's
+# address (addr_of_mut!) is not an access.
+_RAWUSER_BAD = """
+pub unsafe extern "system" fn NtOpenKeyedEvent(OutHandle: PHANDLE, Access: ULONG) -> NTSTATUS {
+    let OutHandle = opaque_ptr(OutHandle);
+    probe_write_generic(OutHandle, 1, 1)?;
+    *OutHandle = core::ptr::null_mut();
+    STATUS_SUCCESS
+}
+"""
+_RAWUSER_GOOD = """
+pub unsafe extern "system" fn NtOpenKeyedEvent(OutHandle: PHANDLE, Info: PIO_STATUS) -> NTSTATUS {
+    let OutHandle = opaque_ptr(OutHandle);
+    probe_write_generic(OutHandle, 1, 1)?;
+    let _ = write_back(OutHandle, core::ptr::null_mut());
+    let _ = write_back(core::ptr::addr_of_mut!((*Info).Information), 0);
+    STATUS_SUCCESS
+}
+"""
+
+
+# scan_double_fetch: the SAME user address captured twice on one path. BAD validates
+# a length on the first read_back and sizes the copy from a second — the TOCTOU a
+# thread on another CPU races. GOOD captures once and uses the kernel copy for both.
+_DBLFETCH_BAD = """
+pub unsafe extern "system" fn NtThing(P: *mut _UNICODE_STRING, Mode: KPROCESSOR_MODE) -> NTSTATUS {
+    let hdr = match read_back(P) { Ok(v) => v, Err(s) => return s };
+    if hdr.Length > limit { return STATUS_INVALID_PARAMETER; }
+    let again = match read_back(P) { Ok(v) => v, Err(s) => return s };
+    let _ = safe_copy_raw(dst, again.Buffer as *const _, again.Length as usize);
+    STATUS_SUCCESS
+}
+"""
+_DBLFETCH_GOOD = """
+pub unsafe extern "system" fn NtThing(P: *mut _UNICODE_STRING, Mode: KPROCESSOR_MODE) -> NTSTATUS {
+    let hdr = match read_back(P) { Ok(v) => v, Err(s) => return s };
+    if hdr.Length > limit { return STATUS_INVALID_PARAMETER; }
+    let _ = safe_copy_raw(dst, hdr.Buffer as *const _, hdr.Length as usize);
+    STATUS_SUCCESS
+}
+"""
+
+
+# scan_safe_probe_deref: a user pointer range-probed and then touched RAW. Seeded from
+# ks.sys's KsFastPropertyHandler (2026-10). BAD exercises the Ks* suffix anchor and the
+# trusted-kernel-arm skip: the Mode==0 copy must stay quiet, while the UserMode arm's
+# raw copy_nonoverlapping after the range-only probe is the any-process BUGCHECK. GOOD
+# keeps the probe for its range check and routes the copy through the fault-tolerant
+# safe_copy_raw.
+_SAFEPROBE_BAD = """
+pub unsafe fn KsFastPropertyHandler(Property: *const KSPROPERTY, Mode: i8) -> BOOLEAN {
+    let mut PropRequest: KSPROPERTY = core::mem::zeroed();
+    let dst = &mut PropRequest as *mut KSPROPERTY as *mut u8;
+    if Mode == 0i8 {
+        core::ptr::copy_nonoverlapping(Property as *const u8, dst, 24);
+    } else {
+        if !NT_SUCCESS(KsSafeProbeForRead(Property as *const c_void, 24, 1)) { return FALSE; }
+        core::ptr::copy_nonoverlapping(Property as *const u8, dst, 24);
+    }
+    TRUE
+}
+"""
+_SAFEPROBE_GOOD = """
+pub unsafe fn KsFastPropertyHandler(Property: *const KSPROPERTY, Mode: i8) -> BOOLEAN {
+    let mut PropRequest: KSPROPERTY = core::mem::zeroed();
+    let dst = &mut PropRequest as *mut KSPROPERTY;
+    if Mode == 0i8 {
+        core::ptr::copy_nonoverlapping(Property as *const u8, dst as *mut u8, 24);
+    } else {
+        if !NT_SUCCESS(KsSafeProbeForRead(Property as *const c_void, 24, 1)) { return FALSE; }
+        if ntkrnl_sys::probe::safe_copy_raw(
+            dst as *mut c_void, Property as *const c_void, 24,
+        ).is_err() { return FALSE; }
+    }
+    TRUE
+}
+"""
+
+
 # scan_dropped_seh_pairs. The LPC shape: the C is cohab-flipped OUT of the build
 # (commented in the CMake source list) and a separate .rs took over under
 # #[no_mangle], so the two files are never in the same place and the inline
@@ -1438,6 +1619,20 @@ pub unsafe fn NtSetValueKey(Data: PVOID, DataSize: ULONG) -> NTSTATUS {
 // {
 //     _SEH2_TRY { ProbeForRead(Data, DataSize, 1); } _SEH2_END;
 //     RtlCopyMemory(DataCopy, Data, DataSize);
+// }
+// The write-side substrate counts too: IopCreateFile's ProbeForWriteHandle became
+// probe_write_generic (2026-10-04), and the scanner first reported it as dropped.
+pub unsafe fn NtOpenSection(SectionHandle: *mut HANDLE) -> NTSTATUS {
+    if let Err(status) = ntkrnl_sys::probe::probe_write_generic(SectionHandle, 1, PreviousMode) {
+        return status;
+    }
+    *SectionHandle = Handle;
+    STATUS_SUCCESS
+}
+// NTSTATUS NtOpenSection(PHANDLE SectionHandle)
+// {
+//     _SEH2_TRY { ProbeForWriteHandle(SectionHandle); } _SEH2_END;
+//     *SectionHandle = Handle;
 // }
 """
 
@@ -1663,7 +1858,150 @@ pub unsafe extern "system" fn KeGetPcr() -> usize { 0 }
 }
 
 
+# dhcpcsvc, 2026-10-04: `(*ip).name` is a `[c_char; 256]`, passed by value to a variadic
+# logger. i386 pushes the bytes, so `%s` dereferenced "nets". The good side keeps the
+# `.as_ptr()` fix and a same-named POINTER field, which a name-only match would flag.
+_VARIADIC_ARRAY_BAD = """\
+pub struct interface_info { pub next: *mut interface_info, pub name: [c_char; 256] }
+extern "C" { pub fn note(format: *const c_char, ...) -> c_int; }
+unsafe fn send_discover(ipp: *mut c_void) {
+    let ip = ipp as *mut interface_info;
+    note(b"DHCPDISCOVER on %s\\0".as_ptr() as *const i8, (*ip).name);
+}
+"""
+_VARIADIC_ARRAY_GOOD = """\
+pub struct interface_info { pub next: *mut interface_info, pub name: [c_char; 256] }
+pub struct universe { pub name: *const c_char }
+extern "C" { pub fn note(format: *const c_char, ...) -> c_int; }
+unsafe fn send_discover(ipp: *mut c_void, u: *mut universe) {
+    let ip = ipp as *mut interface_info;
+    note(b"DHCPDISCOVER on %s\\0".as_ptr() as *const i8, (*ip).name.as_ptr());
+    note(b"%s\\0".as_ptr() as *const i8, (*u).name);
+}
+"""
+
+# scan_byteptr_stride. Seeded from oleaut32 IRecordInfoImpl_RecordCopy (2026-10-04): the C's
+# `((BYTE*)src_rec) + offset` translated through `*mut PBYTE`, an 8x stride.
+_BYTEPTR_BAD = """\
+unsafe fn copy(src_rec: *mut c_void, off: isize) -> *mut c_void {
+    (src_rec as *mut PBYTE)
+        .offset(off) as *mut c_void
+}
+"""
+_BYTEPTR_GOOD = """\
+unsafe fn copy(src_rec: *mut c_void, off: isize) -> *mut c_void {
+    (src_rec as *mut BYTE).offset(off) as *mut c_void
+}
+"""
+
+# scan_gmem_flags. Seeded from oleaut32 create_stream (2026-10-04): the C's GMEM_FIXED came
+# out as HEAP_ZERO_MEMORY, which GlobalAlloc rejects.
+_GMEM_BAD = """\
+unsafe fn load(n: u32) -> HGLOBAL {
+    GlobalAlloc(HEAP_ZERO_MEMORY, n as SIZE_T)
+}
+"""
+_GMEM_GOOD = """\
+unsafe fn load(n: u32) -> HGLOBAL {
+    GlobalAlloc(GMEM_FIXED, n as SIZE_T)
+}
+"""
+
+# scan_let_shadow. Seeded from freeldr EnumerateHarddisks (2026-10-04): C `DiskCount++`
+# became a nested `let _DiskCount`, so the BIOS disk count stayed 0.
+_SHADOW_BAD = """\
+unsafe fn enumerate() -> u8 {
+    let mut DiskCount: u8 = 0;
+    while probe() {
+        let _DiskCount = DiskCount + 1;
+    }
+    DiskCount
+}
+"""
+_SHADOW_GOOD = """\
+unsafe fn enumerate() -> u8 {
+    let mut DiskCount: u8 = 0;
+    while probe() {
+        DiskCount += 1;
+    }
+    DiskCount
+}
+"""
+
+# scan_winerror_consts. Seeded from oleaut32 olesys.rs (2026-10-05): the typelib error
+# table held neighbours' values, so LoadTypeLib reported TYPE_E_AMBIGUOUSNAME.
+_WINERR_BAD = """\
+pub const TYPE_E_CANTLOADLIBRARY: HRESULT = 0x8002_802Cu32 as HRESULT;
+"""
+_WINERR_GOOD = """\
+pub const TYPE_E_CANTLOADLIBRARY: HRESULT = 0x8002_9C4Au32 as HRESULT;
+"""
+
+# scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
+# do-while's `continue` re-ran the same INF line forever once translated to `loop`.
+_DOWHILE_BAD = """\
+unsafe fn register(ctx: *mut Ctx) {
+    loop {
+        if read_line(ctx) == 0 {
+            continue;
+        }
+        if next_line(ctx) == 0 {
+            break;
+        }
+    }
+}
+"""
+_DOWHILE_GOOD = """\
+unsafe fn register(ctx: *mut Ctx) {
+    loop {
+        'next: {
+            if read_line(ctx) == 0 {
+                break 'next;
+            }
+        }
+        if next_line(ctx) == 0 {
+            break;
+        }
+    }
+}
+"""
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_byteptr_stride",
+        script="tools/scan_byteptr_stride.py",
+        argv=["--lint"],
+        bad={"recinfo.rs": _BYTEPTR_BAD},
+        good={"recinfo.rs": _BYTEPTR_GOOD},
+    ),
+    Control(
+        name="scan_gmem_flags",
+        script="tools/scan_gmem_flags.py",
+        argv=["--lint"],
+        bad={"olepicture.rs": _GMEM_BAD},
+        good={"olepicture.rs": _GMEM_GOOD},
+    ),
+    Control(
+        name="scan_let_shadow",
+        script="tools/scan_let_shadow.py",
+        argv=["--lint"],
+        bad={"hwdisk.rs": _SHADOW_BAD},
+        good={"hwdisk.rs": _SHADOW_GOOD},
+    ),
+    Control(
+        name="scan_winerror_consts",
+        script="tools/scan_winerror_consts.py",
+        argv=["--lint"],
+        bad={"olesys.rs": _WINERR_BAD},
+        good={"olesys.rs": _WINERR_GOOD},
+    ),
+    Control(
+        name="scan_dowhile_continue",
+        script="tools/scan_dowhile_continue.py",
+        argv=["--lint"],
+        bad={"install.rs": _DOWHILE_BAD},
+        good={"install.rs": _DOWHILE_GOOD},
+    ),
     Control(
         name="scan_dropped_asserts",
         script="tools/scan_dropped_asserts.py",
@@ -1718,6 +2056,50 @@ CONTROLS: list[Control] = [
             "ntoskrnl/lpc/reply.c": _SEHPAIR_C,
             "sdk/lib/rust/lpc-rust/src/reply.rs": _SEHPAIR_GOOD_RS,
         },
+    ),
+    Control(
+        name="scan_raising_probes",
+        script="tools/scan_raising_probes.py",
+        argv=["--lint"],
+        bad={"sdk/lib/rust/ex-rust/src/uuid.rs": _RAISINGPROBE_BAD},
+        good={"sdk/lib/rust/ex-rust/src/uuid.rs": _RAISINGPROBE_GOOD},
+    ),
+    Control(
+        name="scan_raising_probes",
+        script="tools/scan_raising_probes.py",
+        argv=["--lint"],
+        bad={"sdk/lib/rust/win32k-rust/src/mem.rs": _RAISINGMDL_BAD},
+        good={"sdk/lib/rust/win32k-rust/src/mem.rs": _RAISINGMDL_GOOD},
+    ),
+    Control(
+        name="scan_raw_user_access",
+        script="tools/scan_raw_user_access.py",
+        argv=[],
+        bad={"sdk/lib/rust/ex-rust/src/keyedevt.rs": _RAWUSER_BAD},
+        good={"sdk/lib/rust/ex-rust/src/keyedevt.rs": _RAWUSER_GOOD},
+    ),
+    Control(
+        name="scan_double_fetch",
+        script="tools/scan_double_fetch.py",
+        argv=["--lint"],
+        bad={"sdk/lib/rust/ex-rust/src/dblfetch.rs": _DBLFETCH_BAD},
+        good={"sdk/lib/rust/ex-rust/src/dblfetch.rs": _DBLFETCH_GOOD},
+    ),
+    Control(
+        name="scan_safe_probe_deref",
+        script="tools/scan_safe_probe_deref.py",
+        argv=["--lint"],
+        bad={"sdk/lib/rust/ks-rust/src/property.rs": _SAFEPROBE_BAD},
+        good={"sdk/lib/rust/ks-rust/src/property.rs": _SAFEPROBE_GOOD},
+    ),
+    Control(
+        name="strip_msvc_cmake",
+        script="tools/strip_msvc_cmake.py",
+        argv=["--check"],
+        bad={"CMakeLists.txt": "if(MSVC OR X)\n    a()\nendif()\n"},
+        good={"CMakeLists.txt": 'if(CMAKE_C_COMPILER_ID STREQUAL "Clang")\n    a()\nendif()\n'},
+        pass_files=True,
+        file_suffix="CMakeLists.txt",
     ),
     Control(
         name="scan_dropped_probes",
@@ -1842,6 +2224,13 @@ CONTROLS: list[Control] = [
         good={"compress/src/lib.rs": _NULL_GUARD_GOOD},
     ),
     Control(
+        name="scan_constant_placement",
+        script="tools/scan_constant_placement.py",
+        argv=["--lint"],
+        bad={"usbuhci/src/usbuhci.rs": _PLACEMENT_BAD},
+        good={"usbuhci/src/usbuhci.rs": _PLACEMENT_GOOD},
+    ),
+    Control(
         name="scan_store_on_failure",
         script="tools/scan_store_on_failure.py",
         argv=["--lint"],
@@ -1883,6 +2272,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BITWISE_NOT_BAD},
         good={"good.rs": _BITWISE_NOT_GOOD},
+    ),
+    Control(
+        name="scan_variadic_array_arg",
+        script="tools/scan_variadic_array_arg.py",
+        argv=["--lint"],
+        bad={"bad.rs": _VARIADIC_ARRAY_BAD},
+        good={"good.rs": _VARIADIC_ARRAY_GOOD},
     ),
     Control(
         name="scan_magic_offsets",
@@ -1942,6 +2338,13 @@ CONTROLS: list[Control] = [
         good={"bridge.c": _CDECL_ALIAS_GOOD},
     ),
     Control(
+        name="scan_unaligned_wide",
+        script="tools/scan_unaligned_wide.py",
+        argv=["--lint"],
+        bad={"bad.rs": _UNALIGNED_WIDE_BAD},
+        good={"good.rs": _UNALIGNED_WIDE_GOOD},
+    ),
+    Control(
         name="scan_wide_byte_copy",
         script="tools/scan_wide_byte_copy.py",
         argv=["--lint"],
@@ -1997,6 +2400,22 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_ptr_typedef_indirection": (
+        "its pairing is body_audit's -- every module whose CMakeLists links a Rust crate, its "
+        "flipped-out TUs (from the build's compiled-TU set) against its crates' sources -- so a "
+        "fixture directory has no module to resolve. The decision is findings_for(c_body, "
+        "rust), driven directly in tools/test_scan_ptr_typedef_indirection.py: it must flag "
+        "usetup's `*mut PFILEPATHS_W` FileCopyCallback shape at its line, and must not flag a "
+        "genuine `PFOO *x` or a nolint line."
+    ),
+    "scan_hresult_literals": (
+        "its oracle is the C module scan_invented_constants.c_dirs_for() finds for a crate in "
+        "the real tree, so a fixture directory has no crate to map. The decision is "
+        "scan_files(rs_files, c_dirs, names), driven directly in "
+        "tools/test_scan_hresult_literals.py with an explicit C dir: it must flag ole32's "
+        "STG_E_TOOMANYOPENFILES-for-READFAULT shape and must not flag a value the C function "
+        "returns, a named const, a nolint line, an extern declaration, or an NTSTATUS function."
+    ),
     # Already have dedicated suites (the prototypes this harness generalizes).
     "scan_wide_literals": "covered by tools/test_scan_wide_literals.py (20 tests)",
     "verify_c_signatures": "covered by tools/test_verify_c_signatures.py (9 tests)",
@@ -2075,6 +2494,13 @@ UNCOVERED: dict[str, str] = {
         "cases pin the nearest-binding rule that keeps an unrelated `u` from being "
         "reported, plus comments, strings and comparisons."
     ),
+    "scan_ptr_highword_mask": (
+        "main() walks the real tree, but the decision is scan_text(), a pure function over a "
+        "string, driven directly in tools/test_scan_ptr_highword_mask.py. Its fire cases are "
+        "the two shapes that shipped (a declared-usize identifier, an `as usize` cast); its "
+        "must-not cases pin the u32 rop, the version DWORD, the call-proc `== 0xFFFF0000` "
+        "form, the fixed `& !0xFFFF` form and C quoted in a comment."
+    ),
     "scan_octal_literals": (
         "main() walks the real tree, but the matcher and the comment/literal tokenizer are "
         "pure functions over a string — scan_text()/strip_noise() — and are driven directly "
@@ -2103,6 +2529,13 @@ UNCOVERED: dict[str, str] = {
         "restate its unit tests. tools/test_scan_bindgen_padding_index.py drives scan_text "
         "with the user32 wnd_pti read as the positive control and address-of/offset_of "
         "uses (layout-stable) as negatives, and asserts the real tree is clean."
+    ),
+    "scan_extern_static_width": (
+        "pairs the whole tree's C __asm__ definitions with its Rust extern statics, so a "
+        "fixture dir would only restate its unit tests. tools/test_scan_extern_static_width.py "
+        "drives c_definitions/scan_rust with fastfat's MAX_LFN_CHARACTERS over-read as the "
+        "positive control, equal/narrower/unknown widths as negatives, and asserts the real "
+        "tree is clean."
     ),
     "scan_res_named_types": (
         "reads COMMITTED binary resource objects (git ls-files '*.res'), not Rust source, so "

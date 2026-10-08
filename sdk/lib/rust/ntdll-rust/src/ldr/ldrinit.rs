@@ -307,6 +307,8 @@ rtl_constant_string!(Wow64OptionsString, WOW64_OPTIONS_STRING_BUF, "");
 rtl_constant_string!(NtDllString, NTDLL_STRING_BUF, "ntdll.dll");
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 rtl_constant_string!(Wow64DllString, WOW64_DLL_STRING_BUF, "wow64.dll");
+#[cfg(target_arch = "aarch64")]
+rtl_constant_string!(WowX64DllString, WOWX64_DLL_STRING_BUF, "wowx64.dll");
 rtl_constant_string!(Kernel32String, KERNEL32_STRING_BUF, "kernel32.dll");
 // C declares LdrpDotLocal `const` but it's only ever read; keep it as the
 // same mutable-static shape as the rest for uniformity.
@@ -391,6 +393,27 @@ pub static mut LdrpDefaultPath: _UNICODE_STRING = _UNICODE_STRING {
 };
 #[no_mangle]
 pub static mut PebLdr: PEB_LDR_DATA = unsafe { core::mem::zeroed() };
+
+/// THIS ntdll's module database: `&PebLdr` once process init has built it,
+/// NULL before (exactly what `PEB->Ldr` reads in an ordinary process, where
+/// the two are the same pointer). The loader reads its own data through here
+/// and never through `PEB->Ldr`/`PEB->LoaderLock`, because in an x86-64 guest
+/// process on arm64 two ntdlls share one PEB: the native arm64 one and the
+/// guest's amd64 one, run under emulation by wowx64.dll. Each publishes its
+/// list into the PEB at its own process init, the guest's last — so a loader
+/// that read the PEB would walk the OTHER architecture's modules (native
+/// unwinding would look up libwowx64fex.dll's .pdata in the guest's list and
+/// find nothing; the guest's LdrpInit would see a non-NULL `PEB->Ldr` and
+/// skip process init entirely). Same for the loader lock: use
+/// `LdrpLoaderLock` directly.
+#[inline(always)]
+pub unsafe fn LdrpLdrData() -> PPEB_LDR_DATA {
+    if PebLdr.Initialized == 0 {
+        core::ptr::null_mut()
+    } else {
+        core::ptr::addr_of_mut!(PebLdr)
+    }
+}
 #[no_mangle]
 pub static mut LdrpLoaderLockDebug: RTL_CRITICAL_SECTION_DEBUG = unsafe { core::mem::zeroed() };
 #[no_mangle]
@@ -784,7 +807,7 @@ pub unsafe extern "system" fn LdrpInitializeThread(_Context: PCONTEXT) {
 
         LdrpAllocateTls();
 
-        ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InMemoryOrderModuleList);
+        ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InMemoryOrderModuleList);
         NextEntry = (*ListHead).Flink;
         while NextEntry != ListHead {
             LdrEntry = (NextEntry as usize
@@ -900,7 +923,7 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
         LdrRootEntry = core::ptr::null_mut();
     }
 
-    ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList);
+    ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList);
     NextEntry = (*ListHead).Flink;
     i = 0;
     while NextEntry != ListHead {
@@ -1023,7 +1046,7 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
             }
         }
 
-        ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList);
+        ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList);
         NextEntry = (*NextEntry).Flink;
         while NextEntry != ListHead {
             LdrEntry = (NextEntry as usize
@@ -1096,7 +1119,7 @@ pub unsafe extern "system" fn LdrShutdownProcess() -> NTSTATUS {
         // FIXME
     }
 
-    ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList);
+    ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList);
     NextEntry = (*ListHead).Blink;
     while NextEntry != ListHead {
         LdrEntry = (NextEntry as usize
@@ -1175,7 +1198,7 @@ pub unsafe extern "system" fn LdrShutdownThread() -> NTSTATUS {
 
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(LdrpLoaderLock));
 
-    ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList);
+    ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList);
     NextEntry = (*ListHead).Blink;
     while NextEntry != ListHead {
         LdrEntry = (NextEntry as *mut u8).offset(
@@ -1304,8 +1327,7 @@ pub unsafe extern "system" fn LdrpInitializeTls() -> NTSTATUS {
 
     InitializeListHead(core::ptr::addr_of_mut!(LdrpTlsList));
 
-    let Peb = (*NtCurrentTeb()).ProcessEnvironmentBlock;
-    let LdrData = (*Peb).Ldr;
+    let LdrData = crate::ldr::ldrinit::LdrpLdrData();
     let ListHead: PLIST_ENTRY = core::ptr::addr_of_mut!((*LdrData).InLoadOrderModuleList);
     NextEntry = (*ListHead).Flink;
 
@@ -1324,20 +1346,17 @@ pub unsafe extern "system" fn LdrpInitializeTls() -> NTSTATUS {
          * directory at all and this loop skipped them on the null check. The
          * first CRT-linked guest (testgui.exe) has one, and it AV'd here.
          *
-         * 32-bit modules' TLS belongs to the guest's own 32-bit ntdll — the
-         * same source built for i386, where these structs have the right shape.
-         * The native loader must not touch them. (Cf. ImageNeedsRelocation in
-         * LdrpInitializeProcess, which dodges the same 64-bit-header-over-a-
-         * 32-bit-image trap for OptionalHeader.ImageBase.) */
-        #[cfg(target_pointer_width = "64")]
-        {
-            const IMAGE_NT_OPTIONAL_HDR32_MAGIC: u16 = 0x10B;
-            let NtHeader = RtlImageNtHeader((*LdrEntry).DllBase);
-            if !NtHeader.is_null()
-                && (*NtHeader).OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC
-            {
-                continue;
-            }
+         * An x86-64 guest on arm64 (wowx64) is the same hazard in a form the
+         * old PE32-magic test could not see: its directory HAS the native
+         * shape, so it would have been registered and its callbacks later run
+         * natively — x86 bytes executed as arm64. Hence the MACHINE test.
+         *
+         * Guest modules' TLS belongs to the guest's own ntdll, under
+         * emulation. The native loader must not touch them. (Cf.
+         * ImageNeedsRelocation in LdrpInitializeProcess, which dodges the
+         * 64-bit-header-over-a-32-bit-image trap for OptionalHeader.ImageBase.) */
+        if crate::ldr::ldrutils::LdrpIsForeignMachineImage((*LdrEntry).DllBase) {
+            continue;
         }
 
         TlsDirectory = RtlImageDirectoryEntryToData(
@@ -1769,6 +1788,182 @@ pub unsafe extern "system" fn LdrpInitializeDotLocalSupport(ProcessParameters: P
     }
 }
 
+
+/// Set once process init has seen a WoW64 process (LdrpInitializeProcess).
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+static mut LdrpIsWow64Process: bool = false;
+
+/// A new thread of a WoW64 process whose start is 32-bit code: hand it to
+/// wow64.dll to run as a 32-bit thread. Never returns if it does.
+///
+/// A 64-bit process -- native, or an x86-64 guest under wowx64 -- that does
+/// CreateRemoteThread into a WoW64 process names a 32-bit routine, but the
+/// thread the kernel makes is native and starts from a native CONTEXT: the
+/// Win32 shape the native kernel32's BaseThreadStartup(Start, Param), the
+/// RtlCreateUserThread shape Start(Param) itself. Run here, either one calls
+/// 32-bit code as native. Windows' WoW64 converts such a startup context for
+/// every thread it initializes (ThunkStartupContext64TO32); here the loader
+/// asks, and hands over only a thread whose start lies in no NATIVE image --
+/// so WoW64's own threads (wow64.dll's guest-thread start, the CPU layer's)
+/// and native ones (a debugger's break-in) still run as they always did.
+/// "Native" is the image's machine, not just its presence in our list: the
+/// i386 main image is in it too.
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn LdrpDivertWow64Thread(Context: PCONTEXT) {
+    #[cfg(target_arch = "aarch64")]
+    const NATIVE_MACHINE: u16 = IMAGE_FILE_MACHINE_ARM64 as u16;
+    #[cfg(target_arch = "x86_64")]
+    const NATIVE_MACHINE: u16 = IMAGE_FILE_MACHINE_AMD64 as u16;
+
+    if !LdrpIsWow64Process || Context.is_null() {
+        return;
+    }
+    #[cfg(target_arch = "aarch64")]
+    let (Pc, Arg0, Arg1) = (
+        (*Context).Pc,
+        (*Context).__bindgen_anon_1.X[0],
+        (*Context).__bindgen_anon_1.X[1],
+    );
+    #[cfg(target_arch = "x86_64")]
+    let (Pc, Arg0, Arg1) = ((*Context).Rip, (*Context).Rcx, (*Context).Rdx);
+
+    let IsNative = |Address: u64| -> bool {
+        let mut Base: PVOID = core::ptr::null_mut();
+        if RtlPcToFileHeader(Address as PVOID, &mut Base).is_null() {
+            return false;
+        }
+        let Nt = RtlImageNtHeader(Base);
+        !Nt.is_null() && (*Nt).FileHeader.Machine == NATIVE_MACHINE
+    };
+    let Export = |Dll: *mut _UNICODE_STRING, Name: &[u8]| -> u64 {
+        let mut Base: PVOID = core::ptr::null_mut();
+        let mut Ansi: ANSI_STRING = core::mem::zeroed();
+        let mut Address: PVOID = core::ptr::null_mut();
+        RtlInitAnsiString(&mut Ansi, Name.as_ptr() as PCSZ);
+        if !NT_SUCCESS(LdrGetDllHandle(core::ptr::null_mut(), core::ptr::null_mut(), Dll, &mut Base))
+            || !NT_SUCCESS(LdrGetProcedureAddress(Base, &mut Ansi, 0, &mut Address))
+        {
+            return 0;
+        }
+        Address as u64
+    };
+
+    let ThreadStart = Export(core::ptr::addr_of_mut!(Kernel32String), b"BaseThreadStart\0");
+    let (Start, Param, Win32Thread) = if ThreadStart != 0 && Pc == ThreadStart {
+        if IsNative(Arg0) {
+            return;
+        }
+        (Arg0, Arg1, 1u8)
+    } else {
+        if IsNative(Pc) {
+            return;
+        }
+        (Pc, Arg0, 0u8)
+    };
+
+    let Handoff = Export(core::ptr::addr_of_mut!(Wow64DllString), b"Wow64StartGuestThreadFrom64\0");
+    if Handoff == 0 {
+        DbgPrint(b"[LDR] WoW64 thread with a 32-bit start %p, but no wow64.dll handoff\n\0".as_ptr() as *const i8,
+                 Start as PVOID);
+        return;
+    }
+    let Handoff: unsafe extern "system" fn(ULONG_PTR, ULONG_PTR, BOOLEAN) = core::mem::transmute(Handoff);
+    Handoff(Start as ULONG_PTR, Param as ULONG_PTR, Win32Thread);
+}
+
+/// Set once process init has seen an x86-64 guest process (LdrpInitializeProcess).
+#[cfg(target_arch = "aarch64")]
+static mut LdrpIsX64GuestProcess: bool = false;
+
+/// A new thread of an x86-64 guest process whose start is not native code:
+/// hand it to wowx64.dll, which makes it a guest thread. Returns if it does not
+/// (or, for a Win32-shape start around a native routine, after wowx64 rewrote
+/// the context to run that routine natively).
+///
+/// The threads a guest creates itself start in wowx64.dll, which is native
+/// code, and are never diverted. What arrives here is a thread ANOTHER, native
+/// process created (CreateRemoteThread, RtlCreateUserThread): its CONTEXT names
+/// the native kernel32's BaseThreadStartup, which an x86-64 guest process does
+/// not load, or the x86-64 routine itself. Same shape as LdrpDivertWow64Thread.
+#[cfg(target_arch = "aarch64")]
+unsafe fn LdrpDivertWowX64Thread(Context: PCONTEXT) {
+    if !LdrpIsX64GuestProcess || Context.is_null() {
+        return;
+    }
+    let Pc = (*Context).Pc;
+    let mut Base: PVOID = core::ptr::null_mut();
+    if !RtlPcToFileHeader(Pc as PVOID, &mut Base).is_null() {
+        let Nt = RtlImageNtHeader(Base);
+        if !Nt.is_null() && (*Nt).FileHeader.Machine == IMAGE_FILE_MACHINE_ARM64 as u16 {
+            return;
+        }
+    }
+    let mut WowX64: PVOID = core::ptr::null_mut();
+    let mut Name: ANSI_STRING = core::mem::zeroed();
+    let mut Handoff: PVOID = core::ptr::null_mut();
+    RtlInitAnsiString(&mut Name, b"WowX64StartGuestThreadFromNative\0".as_ptr() as PCSZ);
+    if !NT_SUCCESS(LdrGetDllHandle(core::ptr::null_mut(), core::ptr::null_mut(),
+                                   core::ptr::addr_of_mut!(WowX64DllString), &mut WowX64))
+        || !NT_SUCCESS(LdrGetProcedureAddress(WowX64, &mut Name, 0, &mut Handoff))
+    {
+        DbgPrint(b"[LDR] x86-64 guest thread with a non-native start %p, but no wowx64.dll handoff\n\0".as_ptr()
+                 as *const i8, Pc as PVOID);
+        return;
+    }
+    let Handoff: unsafe extern "system" fn(PCONTEXT) = core::mem::transmute(Handoff);
+    Handoff(Context);
+}
+
+/// Hand the initial thread to a guest layer — wow64.dll for an i386 image,
+/// wowx64.dll for an x86-64 image on arm64 — by calling its
+/// `<InitName>(Context)`, which never returns: it runs the guest from here.
+/// Returns only on failure, with the status to fail process init with.
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+unsafe fn LdrpEnterGuestLayer(
+    DllName: *mut _UNICODE_STRING,
+    InitName: &[u8],
+    Context: PCONTEXT,
+) -> NTSTATUS {
+    const STATUS_ENTRYPOINT_NOT_FOUND: NTSTATUS = 0xC000_0139u32 as NTSTATUS;
+    let mut Base: PVOID = core::ptr::null_mut();
+    let mut Status = LdrLoadDll(core::ptr::null_mut(), core::ptr::null_mut(), DllName, &mut Base);
+    if !NT_SUCCESS(Status) {
+        DbgPrint(b"[LDR] guest layer %wZ: load FAILED 0x%08lx\n\0".as_ptr() as *const i8, DllName, Status);
+        return Status;
+    }
+    let mut Name: ANSI_STRING = core::mem::zeroed();
+    RtlInitAnsiString(&mut Name, InitName.as_ptr() as PCSZ);
+    let mut InitAddr: PVOID = core::ptr::null_mut();
+    Status = LdrGetProcedureAddress(Base, &mut Name, 0, &mut InitAddr);
+    if !NT_SUCCESS(Status) || InitAddr.is_null() {
+        DbgPrint(b"[LDR] guest layer %wZ: %s not found (0x%08lx)\n\0".as_ptr() as *const i8,
+                 DllName, InitName.as_ptr(), Status);
+        return STATUS_ENTRYPOINT_NOT_FOUND;
+    }
+    let Init: unsafe extern "system" fn(PCONTEXT) = core::mem::transmute(InitAddr);
+
+    /* Publish process-init completion BEFORE handing the thread over.
+     *
+     * The guest layer never returns — it drives the guest from here — so our
+     * caller's `LdrpInLdrInit = 0` + `_InterlockedIncrement(
+     * &LdrpProcessInitialized)` never run, and LdrpProcessInitialized is left
+     * at 1 forever. Any LATER thread then enters LdrpInitialize's
+     * `while _InterlockedCompareExchange(&LdrpProcessInitialized, 1, 0)
+     * == 1` wait and spins on ZwDelayExecution for the lifetime of the
+     * process, never reaching its start routine. That is invisible while a
+     * guest is single-threaded, and it is exactly what made every created
+     * WoW64 guest thread hang silently (task #64).
+     *
+     * Publishing here is accurate, not a workaround: the native loader HAS
+     * finished process init at this point (LdrpRunInitializeRoutines
+     * returned); all that remains is the handoff itself. */
+    LdrpInLdrInit = 0u8;
+    _InterlockedIncrement(core::ptr::addr_of_mut!(LdrpProcessInitialized));
+
+    Init(Context);
+    DbgPrint(b"[LDR] guest layer %wZ: %s RETURNED\n\0".as_ptr() as *const i8, DllName, InitName.as_ptr());
+    STATUS_INVALID_IMAGE_FORMAT
+}
 #[no_mangle]
 pub unsafe extern "system" fn LdrpInitializeProcess(
     Context: PCONTEXT,
@@ -2025,6 +2220,10 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
         TLS_MINIMUM_AVAILABLE,
     );
     RtlSetBit(&mut TlsBitMap, 0);
+    /* arm64: the slot ntdll's own `_errno` lives in (crtexports.rs), taken
+     * before anything can TlsAlloc it. */
+    #[cfg(target_arch = "aarch64")]
+    RtlSetBit(&mut TlsBitMap, crate::crtexports::NTDLL_TLS_ERRNO);
     RtlInitializeBitMap(
         &mut TlsExpansionBitMap,
         core::ptr::addr_of_mut!((*Peb).TlsExpansionBitmapBits) as PULONG,
@@ -2335,7 +2534,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
 
     /* Link the Init Order List */
     InsertHeadList(
-        core::ptr::addr_of_mut!((*(*Peb).Ldr).InInitializationOrderModuleList),
+        core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList),
         core::ptr::addr_of_mut!((*LdrpNtDllDataTableEntry).InInitializationOrderLinks),
     );
 
@@ -2407,8 +2606,56 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
         NT_SUCCESS(QueryStatus) && Peb32Ptr != 0
     };
 
-    if (*NtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI as USHORT
-        || (*NtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI as USHORT
+    /* A WoW64 process's 64-bit TlsSlots[0..WOW64_TLS_MAX_NUMBER) are the
+     * WoW64 layer's, addressed by fixed index: wow64.dll's CPURESERVED (1),
+     * WOW64INFO (10) and callback frame (12), FEX's per-thread state (15..18).
+     * Windows keeps TlsAlloc off them; so must we, before the first DLL that
+     * could TlsAlloc initializes. Unreserved, the first TlsAlloc in the process
+     * gets slot 1: for as long as msvcrt was dragged in early (ntdll's old
+     * msvcrt forwarders) its DllMain took it harmlessly, and the day msvcrt
+     * stopped loading libwow64fex's rpmalloc got slot 1 instead, its thread
+     * heap and the CPU area overwrote each other, and every 32-bit guest
+     * crashed in rpmalloc's heap_get_page_generic. */
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    if IsWow64Process {
+        LdrpIsWow64Process = true;
+        const WOW64_TLS_MAX_NUMBER: ULONG = 19;
+        RtlSetBits(&mut TlsBitMap, 1, WOW64_TLS_MAX_NUMBER - 1);
+    }
+
+    /* wowx64 (BTCpu64 — docs/engineering/wow64-x64-guest-design.md, Fork B):
+     * an x86-64 main image on an arm64 host is an x86-64 GUEST process. Its
+     * PE32+ headers have the native shape, so everything this loader does to
+     * the image as DATA stays valid (mapping, relocation below), but none of
+     * its CODE may run here: its imports are amd64 DLLs, resolved by the
+     * guest's own loader under emulation, and its entry point is x86 machine
+     * code. Same divert point and timing as WoW64; the guest layer is
+     * wowx64.dll. Keyed on the image itself — the kernel needs no flag for a
+     * process whose PEB, TEB and address space are the native 64-bit ones. */
+    #[cfg(target_arch = "aarch64")]
+    let IsX64GuestProcess =
+        (*NtHeader).FileHeader.Machine == 0x8664 /* IMAGE_FILE_MACHINE_AMD64 */;
+    #[cfg(target_arch = "aarch64")]
+    if IsX64GuestProcess {
+        LdrpIsX64GuestProcess = true;
+    }
+
+    /* An x86-64 guest's Win32 layer is the GUEST's amd64 kernel32, loaded by
+     * its own loader under emulation. The native one would be pure baggage
+     * (wowx64.dll and its CPU layer import ntdll alone) and worse than
+     * baggage: its DllMain registers the process with csrss and writes the
+     * shared PEB, both of which the guest kernel32 then does again. A WoW64
+     * process keeps it, as on Windows: neither wow64.dll nor libwow64fex
+     * imports it, but a thread a 64-bit process creates in it starts in the
+     * native kernel32's BaseThreadStartup (LdrpDivertWow64Thread). */
+    #[cfg(target_arch = "aarch64")]
+    let NeedNativeKernel32 = !IsX64GuestProcess;
+    #[cfg(not(target_arch = "aarch64"))]
+    let NeedNativeKernel32 = true;
+
+    if NeedNativeKernel32
+        && ((*NtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI as USHORT
+            || (*NtHeader).OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_WINDOWS_CUI as USHORT)
     {
         let mut Kernel32BaseAddress: PVOID = core::ptr::null_mut();
         let mut FunctionAddress: PVOID = core::ptr::null_mut();
@@ -2451,10 +2698,15 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
 
     /* Walk the IAT and load all the DLLs. For a WoW64 process the image is
      * i386 — its imports are 32-bit and must be resolved by the 32-bit loader
-     * running under emulation, NOT here against 64-bit modules. Skip. */
+     * running under emulation, NOT here against 64-bit modules. An x86-64
+     * guest's imports are amd64 DLLs: the same reasoning, one width up. Skip. */
+    #[cfg(target_arch = "aarch64")]
+    let SkipImageImports = IsWow64Process || IsX64GuestProcess;
+    #[cfg(target_arch = "x86_64")]
+    let SkipImageImports = IsWow64Process;
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     {
-        if IsWow64Process {
+        if SkipImageImports {
             ImportStatus = STATUS_SUCCESS;
         } else {
             ImportStatus = LdrpWalkImportDescriptor(LdrpDefaultPath.Buffer, LdrpImageEntry);
@@ -2504,7 +2756,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
     }
 
     /* Lock the DLLs */
-    ListHead = core::ptr::addr_of_mut!((*(*Peb).Ldr).InLoadOrderModuleList);
+    ListHead = core::ptr::addr_of_mut!((*crate::ldr::ldrinit::LdrpLdrData()).InLoadOrderModuleList);
     NextEntry = (*ListHead).Flink;
     while ListHead != NextEntry {
         NtLdrEntry = (NextEntry as usize
@@ -2619,51 +2871,26 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
      * inside emulation, not ours. Mirrors Win10's LdrpLoadWow64. */
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     if IsWow64Process {
-        const STATUS_ENTRYPOINT_NOT_FOUND: NTSTATUS = 0xC000_0139u32 as NTSTATUS;
         DbgPrint(b"[LDR] WoW64 process: init routines done, loading wow64.dll\n\0".as_ptr() as *const i8);
-        let mut Wow64Base: PVOID = core::ptr::null_mut();
-        Status = LdrLoadDll(
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
-            &mut Wow64DllString,
-            &mut Wow64Base,
+        return LdrpEnterGuestLayer(
+            core::ptr::addr_of_mut!(Wow64DllString),
+            b"Wow64LdrpInitialize\0",
+            Context,
         );
-        if !NT_SUCCESS(Status) {
-            DbgPrint(b"[LDR] WoW64: wow64.dll load FAILED 0x%08lx\n\0".as_ptr() as *const i8, Status);
-            return Status;
-        }
-        let mut Wow64InitName: ANSI_STRING = core::mem::zeroed();
-        RtlInitAnsiString(&mut Wow64InitName, b"Wow64LdrpInitialize\0".as_ptr() as PCSZ);
-        let mut Wow64InitAddr: PVOID = core::ptr::null_mut();
-        Status = LdrGetProcedureAddress(Wow64Base, &mut Wow64InitName, 0, &mut Wow64InitAddr);
-        if !NT_SUCCESS(Status) || Wow64InitAddr.is_null() {
-            DbgPrint(b"[LDR] WoW64: Wow64LdrpInitialize not found (0x%08lx)\n\0".as_ptr() as *const i8, Status);
-            return STATUS_ENTRYPOINT_NOT_FOUND;
-        }
-        let Wow64LdrpInitialize: unsafe extern "system" fn(PCONTEXT) =
-            core::mem::transmute(Wow64InitAddr);
+    }
 
-        /* Publish process-init completion BEFORE handing the thread over.
-         *
-         * Wow64LdrpInitialize never returns — it drives the guest from here —
-         * so our caller's `LdrpInLdrInit = 0` + `_InterlockedIncrement(
-         * &LdrpProcessInitialized)` never run, and LdrpProcessInitialized is
-         * left at 1 forever. Any LATER thread then enters LdrpInitialize's
-         * `while _InterlockedCompareExchange(&LdrpProcessInitialized, 1, 0)
-         * == 1` wait and spins on ZwDelayExecution for the lifetime of the
-         * process, never reaching its start routine. That is invisible while a
-         * WoW64 guest is single-threaded, and it is exactly what made every
-         * created guest thread hang silently (task #64).
-         *
-         * Publishing here is accurate, not a workaround: the 64-bit loader
-         * HAS finished process init at this point (LdrpRunInitializeRoutines
-         * returned just above); all that remains is the handoff itself. */
-        LdrpInLdrInit = 0u8;
-        _InterlockedIncrement(core::ptr::addr_of_mut!(LdrpProcessInitialized));
-
-        Wow64LdrpInitialize(Context);
-        DbgPrint(b"[LDR] WoW64: Wow64LdrpInitialize RETURNED\n\0".as_ptr() as *const i8);
-        return STATUS_INVALID_IMAGE_FORMAT;
+    /* wowx64 handoff: the same shape for an x86-64 guest (see the
+     * IsX64GuestProcess note above). wowx64!WowX64LdrpInitialize loads the
+     * FEX CPU layer and runs the guest from the image entry; it never
+     * returns. */
+    #[cfg(target_arch = "aarch64")]
+    if IsX64GuestProcess {
+        DbgPrint(b"[LDR] x86-64 guest process: init routines done, loading wowx64.dll\n\0".as_ptr() as *const i8);
+        return LdrpEnterGuestLayer(
+            core::ptr::addr_of_mut!(WowX64DllString),
+            b"WowX64LdrpInitialize\0",
+            Context,
+        );
     }
 
     /* Notify Shim Engine */
@@ -2755,7 +2982,8 @@ pub unsafe extern "system" fn LdrpInit(
         }
     }
 
-    if (*Peb).Ldr.is_null() {
+    let IsInitialThread = crate::ldr::ldrinit::LdrpLdrData().is_null();
+    if IsInitialThread {
         (*Peb).LoaderLock = core::ptr::addr_of_mut!(LdrpLoaderLock);
 
         LdrpInLdrInit = 1u8;
@@ -2810,6 +3038,18 @@ pub unsafe extern "system" fn LdrpInit(
     if !NT_SUCCESS(LoaderStatus) {
         LdrpInitFailure(LoaderStatus);
         RtlRaiseStatus(LoaderStatus);
+    }
+
+    /* A thread (never the initial one: that is the guest layer's from process
+     * init) of a WoW64 process whose start is 32-bit code. */
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    if LdrpIsWow64Process && !IsInitialThread && NT_SUCCESS(LoaderStatus) {
+        LdrpDivertWow64Thread(Context);
+    }
+    /* ... and of an x86-64 guest process whose start is not native code. */
+    #[cfg(target_arch = "aarch64")] // nolint: cfg-vs-c (x86-64 guests on arm64 (wowx64), Rust-only)
+    if LdrpIsX64GuestProcess && !IsInitialThread && NT_SUCCESS(LoaderStatus) {
+        LdrpDivertWowX64Thread(Context);
     }
 }
 

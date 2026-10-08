@@ -112,11 +112,11 @@ extern "C" {
 // MsqPostMessage — FASTCALL (msgqueue.h).
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,) -> BOOL;
 }
 #[cfg(not(target_arch = "x86"))]
 extern "C" {
-    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,);
+    fn MsqPostMessage(pti: PTHREADINFO, Msg: *mut MSG, HardwareMessage: BOOLEAN, MessageBits: DWORD, dwQEvent: DWORD, ExtraInfo: LONG_PTR,) -> BOOL;
 }
 
 // ---- additional win32k internal exports referenced by keyboard.c/split2 ----
@@ -1482,13 +1482,72 @@ unsafe fn UserSendKeyboardInput_impl(pKbdInput: *mut KEYBDINPUT, bInjected: BOOL
     ProcessKeyEvent(wVk, wScanCode, (*pKbdInput).dwFlags, bInjected, dwTime, (*pKbdInput).dwExtraInfo as DWORD)
 }
 
-// UserProcessKeyboardInput — `_UserProcessKeyboardInput@4` (NTAPI stdcall).
-#[no_mangle]
-pub unsafe extern "system" fn UserProcessKeyboardInput(pKbdInputData: *mut KEYBOARD_INPUT_DATA) {
-    UserProcessKeyboardInput_impl(pKbdInputData)
+/// UserRawInputProcessKeyboardInput — the WM_INPUT half of a keyboard packet (upstream #8819).
+unsafe fn UserRawInputProcessKeyboardInput(
+    pDeviceInfo: PINPUT_DEVICE_INFO,
+    pKbdInputData: *mut KEYBOARD_INPUT_DATA,
+    wScanCode: WORD,
+    wVk: WORD,
+) {
+    let mut pti: PTHREADINFO = core::ptr::null_mut();
+    let mut hwndTarget: HWND = core::ptr::null_mut();
+    let mut wParam: WPARAM = 0;
+    let mut kb: RAWKEYBOARD = core::mem::zeroed();
+    let mut Msg: MSG = core::mem::zeroed();
+    let bIsDown = (*pKbdInputData).Flags & KEY_BREAK as u16 == 0;
+
+    if crate::rawinput::UserGetRawInputTarget(RIM_TYPEKEYBOARD, &mut pti, &mut hwndTarget, &mut wParam) == 0 {
+        return;
+    }
+
+    kb.MakeCode = wScanCode & 0x7F;
+    kb.Flags = if bIsDown { RI_KEY_MAKE } else { RI_KEY_BREAK } as USHORT;
+    kb.VKey = wVk & 0xFF; // Note: wVk is simplified by msg queue
+    kb.Message = if bIsDown { WM_KEYDOWN } else { WM_KEYUP };
+    if (*pKbdInputData).Flags & KEY_E1 as u16 != 0 {
+        kb.Flags |= RI_KEY_E1 as USHORT;
+    }
+    if (*pKbdInputData).Flags & KEY_E0 as u16 != 0 {
+        kb.Flags |= RI_KEY_E0 as USHORT;
+    }
+    kb.ExtraInformation = (*pKbdInputData).ExtraInformation;
+
+    let hRawInput = crate::rawinput::UserCreateRawInput(
+        pti,
+        RIM_TYPEKEYBOARD,
+        pDeviceInfo as HANDLE,
+        wParam,
+        &kb as *const RAWKEYBOARD as *const c_void,
+        core::mem::size_of::<RAWKEYBOARD>() as UINT,
+    );
+    if hRawInput.is_null() {
+        return;
+    }
+
+    Msg.hwnd = hwndTarget;
+    Msg.message = WM_INPUT;
+    Msg.wParam = wParam;
+    Msg.lParam = hRawInput as LPARAM;
+    Msg.time = EngGetTickCount32();
+    let pt = gpsi_ptCursor();
+    Msg.pt.x = pt.x;
+    Msg.pt.y = pt.y;
+
+    if MsqPostMessage(pti, &mut Msg, 1, QS_RAWINPUT, 0, 0) == 0 {
+        crate::rawinput::UserFreeRawInput((*pti).MessageQueue, hRawInput);
+    }
 }
 
-unsafe fn UserProcessKeyboardInput_impl(pKbdInputData: *mut KEYBOARD_INPUT_DATA) {
+// UserProcessKeyboardInput — `_UserProcessKeyboardInput@8` (NTAPI stdcall).
+#[no_mangle]
+pub unsafe extern "system" fn UserProcessKeyboardInput(
+    pDeviceInfo: PINPUT_DEVICE_INFO,
+    pKbdInputData: *mut KEYBOARD_INPUT_DATA,
+) {
+    UserProcessKeyboardInput_impl(pDeviceInfo, pKbdInputData)
+}
+
+unsafe fn UserProcessKeyboardInput_impl(pDeviceInfo: PINPUT_DEVICE_INFO, pKbdInputData: *mut KEYBOARD_INPUT_DATA) {
     let mut wScanCode: WORD;
     let mut wVk: WORD;
     let mut pKl: PKL = core::ptr::null_mut();
@@ -1541,6 +1600,10 @@ unsafe fn UserProcessKeyboardInput_impl(pKbdInputData: *mut KEYBOARD_INPUT_DATA)
                 (*pKbdInputData).Flags as u32,
             );
         }
+    }
+
+    if crate::rawinput::RawInputEnabled == TRUE as BOOLEAN {
+        UserRawInputProcessKeyboardInput(pDeviceInfo, pKbdInputData, wScanCode, wVk);
     }
 
     if wVk != 0 {

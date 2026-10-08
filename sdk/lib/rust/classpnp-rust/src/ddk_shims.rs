@@ -284,7 +284,6 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 }
 
 // ============================ Ex timer / lookaside (stubs) ============================
-#[no_mangle] pub unsafe extern "C" fn ExAllocateFromNPagedLookasideList(l: PVOID) -> PVOID { core::ptr::null_mut() }
 #[no_mangle] pub unsafe extern "C" fn ExSetTimer(t: PVOID, due: i64, period: i64, p: PVOID) -> u8 { 0 }
 #[no_mangle] pub unsafe extern "C" fn ExDeleteTimer(t: PVOID, cancel: u8, wait: u8, p: PVOID) -> u8 { 0 }
 #[no_mangle] pub unsafe extern "C" fn ExInitializeSetTimerParameters(p: PVOID) {}
@@ -298,13 +297,35 @@ const EMPTY: *const i8 = b"\0".as_ptr() as *const i8;
 #[no_mangle] pub unsafe extern "C" fn SimpleInitSlistHdr(h: *mut PVOID) { *h = core::ptr::null_mut(); }
 #[no_mangle] pub unsafe extern "C" fn SimpleIsSlistEmpty(h: *mut PVOID) -> u8 { (*h).is_null() as u8 }
 #[no_mangle] pub unsafe extern "C" fn SimplePushSlist(h: *mut PVOID, e: *mut PVOID) { *e = *h; *h = e as PVOID; }
+// Pop clears the entry's link, as classp.h's FORCEINLINE does: Enqueue/DestroyTransferPacket
+// assert `!Pkt->SlistEntry.Next`, and a stale link tripped that 9 times on every boot.
 #[no_mangle] pub unsafe extern "C" fn SimplePopSlist(h: *mut PVOID) -> PVOID {
-    let e = *h; if !e.is_null() { *h = *(e as *mut PVOID); } e
+    let e = *h; if !e.is_null() { *h = *(e as *mut PVOID); *(e as *mut PVOID) = core::ptr::null_mut(); } e
 }
 
 // ============================ Rtl helpers ============================
-#[no_mangle] pub unsafe extern "system" fn RtlInterlockedPushEntrySList(head: PVOID, entry: PVOID) -> PVOID { core::ptr::null_mut() }
-#[no_mangle] pub unsafe extern "system" fn RtlInterlockedPopEntrySList(head: PVOID) -> PVOID { core::ptr::null_mut() }
+// ntkrnl-sys binds the interlocked SList to `RtlInterlocked{Push,Pop}EntrySList`, which is
+// right inside ntoskrnl and unlinkable from a driver: the kernel exports the pair as
+// `ExpInterlocked*` on 64-bit and as FASTCALL `Interlocked*` on i386 (ntoskrnl.spec:175-176,
+// 327-328). These forward to those exports. They were no-op stubs from 2026-06-10 to
+// 2026-10-07, and a local `#[no_mangle]` definition beats the importlib, so every push
+// dropped its entry and every pop came back empty: each transfer packet and each lookaside
+// SRB was allocated fresh and leaked. Nonpaged pool drained per disk request until paging
+// reads failed -- amd64-bios's STATUS_IN_PAGE_ERROR (C0000006) boots.
+#[cfg(not(target_arch = "x86"))]
+extern "system" {
+    fn ExpInterlockedPushEntrySList(head: PVOID, entry: PVOID) -> PVOID;
+    fn ExpInterlockedPopEntrySList(head: PVOID) -> PVOID;
+}
+#[cfg(target_arch = "x86")]
+extern "fastcall" {
+    #[link_name = "InterlockedPushEntrySList"]
+    fn ExpInterlockedPushEntrySList(head: PVOID, entry: PVOID) -> PVOID;
+    #[link_name = "InterlockedPopEntrySList"]
+    fn ExpInterlockedPopEntrySList(head: PVOID) -> PVOID;
+}
+#[no_mangle] pub unsafe extern "system" fn RtlInterlockedPushEntrySList(head: PVOID, entry: PVOID) -> PVOID { ExpInterlockedPushEntrySList(head, entry) }
+#[no_mangle] pub unsafe extern "system" fn RtlInterlockedPopEntrySList(head: PVOID) -> PVOID { ExpInterlockedPopEntrySList(head) }
 #[no_mangle] pub unsafe extern "C" fn RtlStringCbPrintfW(dst: *mut u16, cb: usize, fmt: *const u16) -> NTSTATUS { if cb>=2 { *dst = 0; } 0 }
 #[no_mangle] pub unsafe extern "C" fn RtlStringCchPrintfA(dst: *mut i8, cch: usize, fmt: *const i8) -> NTSTATUS { if cch>=1 { *dst = 0; } 0 }
 #[no_mangle] pub unsafe extern "C" fn RtlULongAdd(a: u32, b: u32, out: *mut u32) -> NTSTATUS {
@@ -544,13 +565,12 @@ use core::sync::atomic::{AtomicI32, Ordering};
     0xFFFFF78000000000usize as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
 
 /// utils.c ClasspDeviceCopyOffloadProperty — StorageDeviceCopyOffloadProperty
-/// query handler. Minimal-faithful: PropertyExistsQuery succeeds (consistency
-/// with the other property handlers); PropertyStandardQuery reports
-/// STATUS_NOT_SUPPORTED (no ODX/copy-offload support in this stack — same
-/// answer the full C gives for a device without the ODX VPD pages). Exit
-/// semantics mirror the C label: set IoStatus, release remove lock, complete.
-/// (Definition was missing entirely; linked only while the query-property arm
-/// was bind-all-dead.)
+/// query handler. This was a hand-written link-gap stub that answered every
+/// standard query STATUS_NOT_SUPPORTED, claiming that was what the C gives a
+/// device without ODX. It is not: the C answers a header-sized buffer with
+/// Version/Size and success, a short buffer with STATUS_BUFFER_TOO_SMALL, a
+/// device without the ROD-limits VPD page with STATUS_DEVICE_FEATURE_NOT_SUPPORTED,
+/// and a device with it with the cached descriptor. Now the C body.
 #[no_mangle]
 pub unsafe extern "C" fn ClasspDeviceCopyOffloadProperty(
     DeviceObject: PDEVICE_OBJECT,
@@ -563,15 +583,78 @@ pub unsafe extern "C" fn ClasspDeviceCopyOffloadProperty(
     }
     const STATUS_SUCCESS: NTSTATUS = 0;
     const STATUS_NOT_SUPPORTED: NTSTATUS = 0xC00000BBu32 as NTSTATUS;
+    const STATUS_BUFFER_TOO_SMALL: NTSTATUS = 0xC0000023u32 as NTSTATUS;
+    const STATUS_INVALID_LEVEL: NTSTATUS = 0xC0000148u32 as NTSTATUS;
+    const STATUS_DEVICE_FEATURE_NOT_SUPPORTED: NTSTATUS = 0xC0000463u32 as NTSTATUS;
+    const DISPATCH_LEVEL: u8 = 2;
 
+    let fdoExtension = (*DeviceObject).DeviceExtension as crate::types::PFUNCTIONAL_DEVICE_EXTENSION;
     let query = (*Irp).AssociatedIrp.SystemBuffer as *mut _STORAGE_PROPERTY_QUERY;
-    let status = if (*query).QueryType == _STORAGE_QUERY_TYPE_PropertyExistsQuery {
+    let copyOffloadDescr = (*Irp).AssociatedIrp.SystemBuffer as PDEVICE_COPY_OFFLOAD_DESCRIPTOR;
+    let irpStack = IoGetCurrentIrpStackLocation(Irp);
+    let mut information: usize = 0;
+
+    let status: NTSTATUS = 'exit: {
+        // Check proper query type. PropertyExistsQuery always succeeds, for
+        // consistency with how the other properties are handled.
+        if (*query).QueryType == _STORAGE_QUERY_TYPE_PropertyExistsQuery {
+            break 'exit STATUS_SUCCESS;
+        } else if (*query).QueryType != _STORAGE_QUERY_TYPE_PropertyStandardQuery {
+            break 'exit STATUS_NOT_SUPPORTED;
+        }
+
+        // Request validation (InputBufferLength and IsFdo were validated by
+        // the caller).
+        if KeGetCurrentIrql() >= DISPATCH_LEVEL {
+            break 'exit STATUS_INVALID_LEVEL;
+        }
+
+        let length = (*irpStack).Parameters.DeviceIoControl.OutputBufferLength;
+
+        if (length as usize) < core::mem::size_of::<DEVICE_COPY_OFFLOAD_DESCRIPTOR>() {
+            if (length as usize) >= core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>() {
+                information = core::mem::size_of::<STORAGE_DESCRIPTOR_HEADER>();
+                (*copyOffloadDescr).Version = core::mem::size_of::<DEVICE_COPY_OFFLOAD_DESCRIPTOR>() as ULONG;
+                (*copyOffloadDescr).Size = core::mem::size_of::<DEVICE_COPY_OFFLOAD_DESCRIPTOR>() as ULONG;
+                break 'exit STATUS_SUCCESS;
+            }
+            break 'exit STATUS_BUFFER_TOO_SMALL;
+        }
+
+        let fsi = (*fdoExtension).FunctionSupportInfo;
+        if (*fsi).ValidInquiryPages.BlockDeviceRODLimits() == 0 {
+            break 'exit STATUS_DEVICE_FEATURE_NOT_SUPPORTED;
+        }
+
+        let rod = &(*fsi).BlockDeviceRODLimitsData;
+        if rod.CommandStatus < 0 {
+            break 'exit rod.CommandStatus;
+        }
+
+        // Fill in the output buffer from the Block Limits / Block Device ROD
+        // Limits data cached when the device was first initialized.
+        core::ptr::write_bytes(copyOffloadDescr as *mut u8, 0, length as usize);
+        (*copyOffloadDescr).Version = 1;
+        (*copyOffloadDescr).Size = core::mem::size_of::<DEVICE_COPY_OFFLOAD_DESCRIPTOR>() as ULONG;
+        (*copyOffloadDescr).MaximumTokenLifetime = rod.MaximumInactivityTimer;
+        (*copyOffloadDescr).DefaultTokenLifetime = rod.DefaultInactivityTimer;
+        (*copyOffloadDescr).MaximumTransferSize = rod.MaximumTokenTransferSize;
+        (*copyOffloadDescr).OptimalTransferCount = rod.OptimalTransferCount;
+        (*copyOffloadDescr).MaximumDataDescriptors = rod.MaximumRangeDescriptors as ULONG;
+
+        let b0 = &(*fsi).BlockLimitsData;
+        if b0.CommandStatus >= 0 {
+            (*copyOffloadDescr).MaximumTransferLengthPerDescriptor = b0.MaximumTransferLength;
+            (*copyOffloadDescr).OptimalTransferLengthPerDescriptor = b0.OptimalTransferLength;
+            (*copyOffloadDescr).OptimalTransferLengthGranularity = b0.OptimalTransferLengthGranularity;
+        }
+
+        information = core::mem::size_of::<DEVICE_COPY_OFFLOAD_DESCRIPTOR>();
         STATUS_SUCCESS
-    } else {
-        STATUS_NOT_SUPPORTED
     };
 
-    (*Irp).IoStatus.Information = 0;
+    // Set the size and status in IRP
+    (*Irp).IoStatus.Information = information as _;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
     ClassCompleteRequest(DeviceObject, Irp, 0 /* IO_NO_INCREMENT */);

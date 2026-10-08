@@ -98,6 +98,7 @@ fn FileMonikerImpl_QueryInterface(
         || IsEqualIID(core::ptr::addr_of!(IID_IPersist), riid)
         || IsEqualIID(core::ptr::addr_of!(IID_IPersistStream), riid)
         || IsEqualIID(core::ptr::addr_of!(IID_IMoniker), riid)
+        || IsEqualGUID(core::ptr::addr_of!(CLSID_FileMoniker), riid)
     {
         *ppvObject = iface as *mut c_void;
     } else if IsEqualIID(core::ptr::addr_of!(IID_IROTData), riid) {
@@ -640,39 +641,42 @@ unsafe fn bind_to_object_finish(
 }
 
 stdmethod! {
+/// wine-10.0: needs a bind context, opens with ITS grfMode (not a hard-coded
+/// READWRITE|SHARE_DENY_WRITE) on the moniker's own path, and writes straight into
+/// the caller's out-pointer.
 fn FileMonikerImpl_BindToStorage(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
     riid: *const IID,
-    ppvObject: *mut *mut c_void,
+    object: *mut *mut c_void,
 ) -> HRESULT {
-    let mut filePath: LPOLESTR = core::ptr::null_mut();
-    let mut pstg: *mut IStorage = core::ptr::null_mut();
-    let res: HRESULT;
+    let moniker = impl_from_IMoniker(iface);
+    let mut bind_opts: BIND_OPTS = core::mem::zeroed();
 
     TRACE!(b"(%p,%p,%p,%s,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
-           debugstr_guid(riid as *const c_void), ppvObject);
+           debugstr_guid(riid as *const c_void), object);
+
+    if pbc.is_null() {
+        return E_INVALIDARG;
+    }
+
+    bind_opts.cbStruct = core::mem::size_of::<BIND_OPTS>() as DWORD;
+    let hr = IBindCtx_GetBindOptions(pbc, &mut bind_opts);
+    if FAILED(hr) {
+        return hr;
+    }
 
     if pmkToLeft.is_null() {
         if IsEqualIID(core::ptr::addr_of!(IID_IStorage), riid) {
-            /* get the file name */
-            IMoniker_GetDisplayName(iface, pbc, pmkToLeft, &mut filePath);
-
-            res = StgOpenStorage(
-                filePath,
+            return StgOpenStorage(
+                (*moniker).filePathName,
                 core::ptr::null_mut(),
-                STGM_READWRITE | STGM_SHARE_DENY_WRITE,
+                bind_opts.grfMode,
                 core::ptr::null_mut(),
                 0,
-                &mut pstg,
+                object as *mut *mut IStorage,
             );
-
-            if SUCCEEDED(res) {
-                *ppvObject = pstg as *mut c_void;
-            }
-
-            CoTaskMemFree(filePath as LPVOID);
         } else if IsEqualIID(core::ptr::addr_of!(IID_IStream), riid)
             || IsEqualIID(core::ptr::addr_of!(IID_ILockBytes), riid)
         {
@@ -680,14 +684,12 @@ fn FileMonikerImpl_BindToStorage(
         } else {
             return E_NOINTERFACE;
         }
-    } else {
-        FIXME!(b"(%p,%p,%p,%s,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
-               debugstr_guid(riid as *const c_void), ppvObject);
-
-        return E_NOTIMPL;
     }
 
-    res
+    FIXME!(b"(%p,%p,%p,%s,%p)\n\0".as_ptr() as *const c_char, iface, pbc, pmkToLeft,
+           debugstr_guid(riid as *const c_void), object);
+
+    E_NOTIMPL
 }
 }
 
@@ -702,8 +704,8 @@ fn FileMonikerImpl_Reduce(
     TRACE!(b"(%p,%p,%d,%p,%p)\n\0".as_ptr() as *const c_char, iface, pbc, dwReduceHowFar,
            ppmkToLeft, ppmkReduced);
 
-    if ppmkReduced.is_null() {
-        return E_POINTER;
+    if pbc.is_null() || ppmkReduced.is_null() {
+        return E_INVALIDARG;
     }
 
     IMoniker_AddRef(iface);
@@ -745,6 +747,7 @@ fn FileMonikerImpl_ComposeWith(
     let mut lastIdx1: c_int;
     let lastIdx2: c_int;
     let mut mkSys: DWORD = 0;
+    let mut order: DWORD = 0;
 
     TRACE!(b"(%p,%p,%d,%p)\n\0".as_ptr() as *const c_char, iface, pmkRight, fOnlyIfNotGeneric,
            ppmkComposite);
@@ -838,9 +841,13 @@ fn FileMonikerImpl_ComposeWith(
         CoTaskMemFree(str2 as LPVOID);
 
         res
-    } else if mkSys == MKSYS_ANTIMONIKER {
-        *ppmkComposite = core::ptr::null_mut();
-        S_OK
+    } else if crate::ring::antimoniker::is_anti_moniker(pmkRight, &mut order) {
+        /* wine-10: an anti-moniker of order N cancels this file moniker, leaving N-1 */
+        if order > 1 {
+            crate::ring::antimoniker::create_anti_moniker(order - 1, ppmkComposite)
+        } else {
+            S_OK
+        }
     } else if fOnlyIfNotGeneric != 0 {
         *ppmkComposite = core::ptr::null_mut();
         MK_E_NEEDGENERIC
@@ -858,8 +865,10 @@ fn FileMonikerImpl_Enum(
 ) -> HRESULT {
     TRACE!(b"(%p,%d,%p)\n\0".as_ptr() as *const c_char, iface, fForward, ppenumMoniker);
 
+    // Windows answers E_INVALIDARG here (moniker.c:2225, todo_wine in Wine, which
+    // returns E_POINTER).
     if ppenumMoniker.is_null() {
-        return E_POINTER;
+        return E_INVALIDARG;
     }
 
     *ppenumMoniker = core::ptr::null_mut();
@@ -869,43 +878,26 @@ fn FileMonikerImpl_Enum(
 }
 
 stdmethod! {
-fn FileMonikerImpl_IsEqual(iface: *mut IMoniker, pmkOtherMoniker: *mut IMoniker) -> HRESULT {
-    let This = impl_from_IMoniker(iface);
-    let mut clsid: CLSID = core::mem::zeroed();
-    let mut filePath: LPOLESTR = core::ptr::null_mut();
-    let mut bind: *mut IBindCtx = core::ptr::null_mut();
-    let mut res: HRESULT;
+fn FileMonikerImpl_IsEqual(iface: *mut IMoniker, other: *mut IMoniker) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char, iface, pmkOtherMoniker);
+    TRACE!(b"%p, %p.\n\0".as_ptr() as *const c_char, iface, other);
 
-    if pmkOtherMoniker.is_null() {
+    if other.is_null() {
+        return E_INVALIDARG;
+    }
+
+    /* wine-10: OUR file moniker by vtable, paths compared case-insensitively */
+    if (*other).lpVtbl as *const IMonikerVtbl != core::ptr::addr_of!(VT_FileMonikerImpl) {
         return S_FALSE;
     }
+    let other_moniker = impl_from_IMoniker(other);
 
-    IMoniker_GetClassID(pmkOtherMoniker, &mut clsid);
-
-    if !IsEqualCLSID(&clsid, core::ptr::addr_of!(CLSID_FileMoniker)) {
-        return S_FALSE;
+    if crate::compobj::ffi::_wcsicmp((*moniker).filePathName, (*other_moniker).filePathName) == 0 {
+        S_OK
+    } else {
+        S_FALSE
     }
-
-    res = CreateBindCtx(0, &mut bind);
-    if FAILED(res) {
-        return res;
-    }
-
-    res = S_FALSE;
-    if SUCCEEDED(IMoniker_GetDisplayName(pmkOtherMoniker, bind, core::ptr::null_mut(),
-                                         &mut filePath))
-    {
-        if lstrcmpiW(filePath, (*This).filePathName) == 0 {
-            res = S_OK;
-        }
-        CoTaskMemFree(filePath as LPVOID);
-    }
-
-    IBindCtx_Release(bind);
-
-    res
 }
 }
 

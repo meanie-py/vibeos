@@ -15,6 +15,7 @@ prevent.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -139,21 +140,24 @@ def _ucrtbase_link_libraries() -> list[str]:
     return names
 
 
-def test_the_authority_set_is_the_whole_link_line_except_ucrt():
-    """The archive check is only correct if its model IS the link line.
+def test_every_library_on_the_link_line_is_in_the_authority_set():
+    """A C library on ucrtbase's link line must be in OURS_REFERENCE.
 
     This is the assertion that actually rotted once: the tool modelled the authority as
     `msvcrt_shared` alone, and the ucrtbase math flip -- a correct change, every symbol of it
     a crtmath body we own and had graded -- came back as 60 findings. A gate that is red on a
-    correct change is one somebody switches off, so the set has to track the CMake rather than
-    be remembered. `ucrt` is the deliberate exclusion: it is the vendored Microsoft library,
-    and displacing one of ITS bodies is the entire defect this file exists to prevent.
+    correct change is one somebody switches off. Since 2026-10-04 ucrtbase links no C library
+    at all (link_strict; the set is the libraries the Rust replaced, kept compiled as the
+    reference), so the live rule is the subset: a library put back on the line without an
+    entry would make every symbol it defines look like ours shadowing UCRT. `ucrt` (the
+    vendored Microsoft library, deleted 2026-10-03) on the line would mean Microsoft's C came
+    back.
     """
     linked = _ucrtbase_link_libraries()
-    assert "ucrt" in linked, "ucrt vanished from the link line; the exclusion below is stale"
-    assert set(linked) - {"ucrt"} == set(vuc.OURS_ON_LINK_LINE), (
-        "ucrtbase's link line and OURS_ON_LINK_LINE disagree -- a library added there without "
-        "a matching entry makes every symbol it defines look like ours shadowing genuine UCRT"
+    assert "ucrt" not in linked, "Microsoft's ucrt is back on ucrtbase's link line"
+    assert set(linked) <= set(vuc.OURS_REFERENCE), (
+        "on ucrtbase's link line but not in OURS_REFERENCE: "
+        f"{sorted(set(linked) - set(vuc.OURS_REFERENCE))}"
     )
 
 
@@ -214,11 +218,11 @@ def test_every_modelled_target_has_a_real_object_directory():
     # fails on one (arch, target) at a time, so a model change that predates all three
     # build dirs is discovered three times: research rebuilt i386, hit amd64, rebuilt
     # that, hit arm64 -- three warm rebuilds and three queue round trips for one cause.
-    # `wine` entering OURS_ON_LINK_LINE in c474d932eb7 did exactly that.
+    # `wine` entering OURS_REFERENCE in c474d932eb7 did exactly that.
     missing = [
         (build.name, target, build / obj_dir)
         for build in builds
-        for target, obj_dir in vuc.OURS_ON_LINK_LINE.items()
+        for target, obj_dir in vuc.OURS_REFERENCE.items()
         if not (build / obj_dir).is_dir()
     ]
     if missing:
@@ -227,7 +231,7 @@ def test_every_modelled_target_has_a_real_object_directory():
             "modelled target(s) have no object directory:\n  "
             + "\n  ".join(f"{name}: {target} -> {path}" for name, target, path in missing)
             + "\n\nA COMPLETION STAMP PROVES A BUILD FINISHED, NOT THAT IT BUILT "
-            "EVERYTHING: a build dir predating a new entry in OURS_ON_LINK_LINE is stamped "
+            "EVERYTHING: a build dir predating a new entry in OURS_REFERENCE is stamped "
             "and still lacks it. If this names a target that was recently added to the "
             "model, the tree is stale rather than the model wrong.\n"
             + "fix: "
@@ -460,25 +464,41 @@ def test_a_real_local_edit_IS_stale(tmp_path: Path, monkeypatch):
     assert vuc._stale_against_sources(archive) == "sdk/lib/rust/cnt-rust/src/lib.rs"
 
 
-def test_the_authority_includes_ucrtbases_own_C_not_just_its_libraries():
-    """The subset assertion is against OUR C — and ucrtbase's own TUs are ours.
+def test_the_authority_includes_ucrtbases_own_objects_not_just_its_libraries():
+    """The subset assertion is against OUR surface -- and ucrtbase's own objects are ours.
 
-    OURS_ON_LINK_LINE must stay exactly the link LIBRARIES (the test above pins it
-    against the CMake). But ucrtbase.dll also gets symbols from its own 132 lines —
-    printf.c and stubs.c — and six of those are EXPORTED: the intrinsic placeholders
-    spec2def cannot stub. Left out of the authority, a Rust twin of any of them reads
+    OURS_REFERENCE must stay exactly the link LIBRARIES (the test above pins it
+    against the CMake). But ucrtbase.dll also gets symbols from its own sources, and
+    several are EXPORTED. Left out of the authority, a Rust twin of any of them reads
     as displacing a genuine Microsoft UCRT body when it would be displacing ReactOS's
     own. That is the defect the link-line test's docstring records (a correct ucrtbase
     math flip coming back as 60 findings), one target over.
+
+    ucrtbase's own C (printf.c, stubs.c, ucrt_varargs_shim.c) is all Rust now and stays
+    on disk only as the record; the one object it still compiles is spec2def's generated
+    stubs. So the guard against a silent second definition is that none of the record
+    files is back in the source list, and that the bodies they held live in ucrt-rust.
     """
-    assert set(vuc.OURS_C_AUTHORITY) == set(vuc.OURS_ON_LINK_LINE) | set(vuc.OURS_OWN_TUS)
-    assert set(vuc.OURS_ON_LINK_LINE) & set(vuc.OURS_OWN_TUS) == set(), "the two must be disjoint"
-    # The symbols that motivated this. If stubs.c stops defining them the entry is
-    # stale, and a stale authority entry is exactly what this file must not carry.
-    stubs = REPO / "dll" / "win32" / "ucrtbase" / "stubs.c"
-    text = stubs.read_text(errors="replace")
+    assert set(vuc.OURS_C_AUTHORITY) == set(vuc.OURS_REFERENCE) | set(vuc.OURS_OWN_TUS)
+    assert set(vuc.OURS_REFERENCE) & set(vuc.OURS_OWN_TUS) == set(), "the two must be disjoint"
+
+    cmake = (REPO / "dll" / "win32" / "ucrtbase" / "CMakeLists.txt").read_text()
+    code = "\n".join(line.split("#", 1)[0] for line in cmake.splitlines())
+    sources = re.search(r"add_library\(ucrtbase SHARED([^)]*)\)", code)
+    assert sources, "no add_library(ucrtbase SHARED ...) in dll/win32/ucrtbase/CMakeLists.txt"
+    listed = set(sources.group(1).split())
+    assert listed == {"ucrtbase_stubs.c", "ucrtbase.def"}, (
+        f"ucrtbase compiles {sorted(listed)}: a record .c back in the list defines its "
+        "symbols a second time beside ucrt-rust's -- re-derive OURS_OWN_TUS"
+    )
+
+    rust = REPO / "sdk" / "lib" / "rust" / "ucrt-rust" / "src"
+    reactos = (rust / "ucrt_reactos.rs").read_text()
+    for sym in ("atexit", "operator_new", "operator_delete", "_chkesp_failed"):
+        assert f'extern "C" fn {sym}(' in reactos, f"{sym} no longer in ucrt_reactos.rs"
+    c99 = (rust / "c99math.rs").read_text()
     for sym in ("fma", "fmaf", "log2", "log2f", "lrint", "lrintf"):
-        assert f"{sym}(" in text, f"{sym} no longer in ucrtbase/stubs.c — re-derive OURS_OWN_TUS"
+        assert f'extern "C" fn {sym}(' in c99, f"{sym} no longer in c99math.rs"
 
 
 # ── the burn-down ratchet ────────────────────────────────────────────────────
@@ -609,16 +629,37 @@ def test_rebuild_lists_match_the_crate_closure() -> None:
     assert vuc.check_rebuild_lists() == []
 
 
-def test_a_crate_missing_from_a_rebuild_list_is_named(tmp_path: Path) -> None:
-    """Control: a list that drops a closure crate must be reported -- a gate nobody
-    has watched fail is a gate nobody knows works."""
-    for cmake, _var, _root in vuc.REBUILD_LISTS:
-        src = (vuc.REPO / cmake).read_text()
+def test_a_registry_crate_is_not_a_rebuild_input(tmp_path: Path) -> None:
+    """`libm = { version = ... }` is pinned by Cargo.lock and nothing in the tree can
+    edit it, so it is not part of the closure a rebuild list must name; a path crate
+    beside it still is."""
+    _crate(
+        tmp_path,
+        "ucrt-rust",
+        'libm = { version = "0.2.16", optional = true }\n'
+        'varargs-rust = { path = "../varargs-rust" }\n',
+    )
+    assert vuc._deps_of(tmp_path / "ucrt-rust") == {"varargs-rust"}
+
+
+def test_a_hand_kept_or_misrooted_rebuild_list_is_named(tmp_path: Path) -> None:
+    """Control: replacing the derivation with a hand list, or walking the wrong root,
+    must be reported -- a gate nobody has watched fail is a gate nobody knows works."""
+    (cmake_a, var_a, _), (cmake_b, _, root_b) = vuc.REBUILD_LISTS
+    for cmake, edit in (
+        (
+            cmake_a,
+            lambda t: t.replace(f"rust_crate_sources({var_a}", "set(UCRT_SHARED_RUST_CRATES", 1),
+        ),
+        (cmake_b, lambda t: t.replace(f" {root_b})", " msvcrt-crt-rust)", 1)),
+    ):
         dst = tmp_path / cmake
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(src.replace(" crt-portable-rust", "", 1))
+        dst.write_text(edit((vuc.REPO / cmake).read_text()))
     found = vuc.check_rebuild_lists(repo=tmp_path)
-    assert any("omits `crt-portable-rust`" in f for f in found), found
+    assert any(cmake_a in f and "not derived" in f for f in found), found
+    assert any(cmake_a in f and "hand-kept" in f for f in found), found
+    assert any(cmake_b in f and "walks `msvcrt-crt-rust`" in f for f in found), found
 
 
 def test_a_stale_build_is_not_a_ratchet_regression(tmp_path: Path, monkeypatch) -> None:
@@ -641,7 +682,9 @@ def test_an_archive_from_another_tree_is_stale_whatever_its_mtime(tmp_path, monk
     a declared takeover the archive does not define means it was not built from here."""
     monkeypatch.setattr(vuc, "_ucrt_archive", lambda build, triple: tmp_path / "lib.a")
     monkeypatch.setattr(vuc, "_stale_against_sources", lambda a: None)  # clock says fresh
-    monkeypatch.setattr(vuc, "declared_takeovers", lambda: {"strlen": "string", "isalpha": "ctype"})
+    monkeypatch.setattr(
+        vuc, "declared_takeovers", lambda arch=None: {"strlen": "string", "isalpha": "ctype"}
+    )
     monkeypatch.setattr(vuc, "_nm_defined", lambda a: {"strlen", "memcpy"})
     why = vuc.burndown_stale("arm64")
     assert why and "isalpha" in why and "different tree" in why
@@ -766,3 +809,23 @@ def test_an_allowlisted_forward_passes_only_from_its_named_dll(tmp_path: Path, m
 def test_a_missing_build_is_a_note_not_a_pass_or_failure(tmp_path: Path):
     fails, notes = vuc.check_export_imports(tmp_path)
     assert fails == [] and len(notes) == 3
+
+
+def test_a_stale_object_is_not_c_authority(tmp_path: Path) -> None:
+    """An object CMake no longer builds (its source was deleted from the target) must not
+    vouch for a symbol: only objects the current build.ninja produces count."""
+    build = tmp_path / "build-i386"
+    d = build / "sdk/lib/vcruntime/CMakeFiles/vcruntime.dir"
+    (d / "i386").mkdir(parents=True)
+    live, stale = d / "purecall.cpp.obj", d / "i386/_chkesp.s.obj"
+    live.write_bytes(b"")
+    stale.write_bytes(b"")
+    (build / "build.ninja").write_text(
+        "build sdk/lib/vcruntime/CMakeFiles/vcruntime.dir/purecall.cpp.obj: CXX_COMPILER x.cpp\n"
+        "build sdk/lib/vcruntime/libvcruntime.a: C_STATIC_LIBRARY_LINKER x\n"
+    )
+    objs = vuc._graph_objects(build)
+    assert objs is not None
+    assert live in objs
+    assert stale not in objs
+    assert vuc._graph_objects(tmp_path / "nowhere") is None

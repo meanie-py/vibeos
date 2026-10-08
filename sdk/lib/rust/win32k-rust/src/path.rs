@@ -2429,7 +2429,7 @@ unsafe fn IntGdiWidenPath_impl(
                     let mut alpha: f64;
                     let theta: f64;
                     let miterWidth: f64;
-                    let mut _joint: DWORD = joint;
+                    let mut _joint: DWORD = joint; // nolint: let-shadow (the C declares its own _joint here)
                     let mut pt: POINT = core::mem::zeroed();
                     let pInsidePath: PPATH;
                     let pOutsidePath: PPATH;
@@ -3373,7 +3373,11 @@ pub unsafe extern "system" fn NtGdiGetMiterLimit(hdc: HDC, pdwOut: PDWORD) -> i3
         SetLastNtError(Status);
         bResult = 0;
     } else {
-        *pdwOut = (*pDc).dclevel.laPath.eMiterLimit as u32;
+        // The probe proves where pdwOut is, not that it stays mapped.
+        if let Err(st) = ntkrnl_sys::probe::write_back(pdwOut, (*pDc).dclevel.laPath.eMiterLimit as u32) {
+            SetLastNtError(st);
+            bResult = 0;
+        }
     }
 
     DC_UnlockDc(pDc);
@@ -3429,26 +3433,38 @@ pub unsafe extern "system" fn NtGdiGetPath(
             EngSetLastError(ERROR_INVALID_PARAMETER);
             break 'done;
         } else {
-            loop {
-                core::ptr::copy_nonoverlapping(
-                    (*pPath).pPoints as *const u8,
-                    Points as *mut u8,
-                    core::mem::size_of::<POINT>() * (*pPath).numEntriesUsed as usize,
-                );
-                core::ptr::copy_nonoverlapping(
-                    (*pPath).pFlags as *const u8,
-                    Types as *mut u8,
-                    core::mem::size_of::<BYTE>() * (*pPath).numEntriesUsed as usize,
-                );
-
-                if GdiPathDPtoLP(dc, Points, (*pPath).numEntriesUsed as INT) == 0 {
-                    EngSetLastError(ERROR_ARITHMETIC_OVERFLOW);
-                    break;
-                }
-
-                ret = (*pPath).numEntriesUsed as INT;
-                break;
+            // GdiPathDPtoLP transforms the points in place; both the copy and the
+            // transform must not touch the caller's probed-but-maybe-unmapped buffers
+            // raw (the C did all of this under one _SEH2_TRY). Transform a kernel copy
+            // of the points, then publish both arrays to the caller fault-tolerantly.
+            let count = (*pPath).numEntriesUsed as usize;
+            let pts_bytes = count * core::mem::size_of::<POINT>();
+            let tmp = ExAllocatePoolWithTag(PagedPool, pts_bytes, TAG_PATH) as *mut POINT;
+            if tmp.is_null() {
+                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                break 'done;
             }
+            core::ptr::copy_nonoverlapping((*pPath).pPoints as *const u8, tmp as *mut u8, pts_bytes);
+            if GdiPathDPtoLP(dc, tmp, count as INT) == 0 {
+                ExFreePoolWithTag(tmp as PVOID, TAG_PATH);
+                EngSetLastError(ERROR_ARITHMETIC_OVERFLOW);
+                break 'done;
+            }
+            let ok = crate::copy::publish_to_user(
+                Points as *mut core::ffi::c_void,
+                tmp as *const core::ffi::c_void,
+                pts_bytes,
+            ) && crate::copy::publish_to_user(
+                Types as *mut core::ffi::c_void,
+                (*pPath).pFlags as *const core::ffi::c_void,
+                count,
+            );
+            ExFreePoolWithTag(tmp as PVOID, TAG_PATH);
+            if !ok {
+                EngSetLastError(ERROR_INVALID_PARAMETER);
+                break 'done;
+            }
+            ret = count as INT;
         }
     }
 
@@ -3507,26 +3523,38 @@ pub unsafe extern "system" fn NtGdiGetPath(
             EngSetLastError(ERROR_INVALID_PARAMETER);
             break 'done;
         } else {
-            loop {
-                core::ptr::copy_nonoverlapping(
-                    (*pPath).pPoints as *const u8,
-                    Points as *mut u8,
-                    core::mem::size_of::<POINT>() * (*pPath).numEntriesUsed as usize,
-                );
-                core::ptr::copy_nonoverlapping(
-                    (*pPath).pFlags as *const u8,
-                    Types as *mut u8,
-                    core::mem::size_of::<BYTE>() * (*pPath).numEntriesUsed as usize,
-                );
-
-                if GdiPathDPtoLP(dc, Points, (*pPath).numEntriesUsed as INT) == 0 {
-                    EngSetLastError(ERROR_ARITHMETIC_OVERFLOW);
-                    break;
-                }
-
-                ret = (*pPath).numEntriesUsed as INT;
-                break;
+            // GdiPathDPtoLP transforms the points in place; both the copy and the
+            // transform must not touch the caller's probed-but-maybe-unmapped buffers
+            // raw (the C did all of this under one _SEH2_TRY). Transform a kernel copy
+            // of the points, then publish both arrays to the caller fault-tolerantly.
+            let count = (*pPath).numEntriesUsed as usize;
+            let pts_bytes = count * core::mem::size_of::<POINT>();
+            let tmp = ExAllocatePoolWithTag(PagedPool, pts_bytes, TAG_PATH) as *mut POINT;
+            if tmp.is_null() {
+                EngSetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                break 'done;
             }
+            core::ptr::copy_nonoverlapping((*pPath).pPoints as *const u8, tmp as *mut u8, pts_bytes);
+            if GdiPathDPtoLP(dc, tmp, count as INT) == 0 {
+                ExFreePoolWithTag(tmp as PVOID, TAG_PATH);
+                EngSetLastError(ERROR_ARITHMETIC_OVERFLOW);
+                break 'done;
+            }
+            let ok = crate::copy::publish_to_user(
+                Points as *mut core::ffi::c_void,
+                tmp as *const core::ffi::c_void,
+                pts_bytes,
+            ) && crate::copy::publish_to_user(
+                Types as *mut core::ffi::c_void,
+                (*pPath).pFlags as *const core::ffi::c_void,
+                count,
+            );
+            ExFreePoolWithTag(tmp as PVOID, TAG_PATH);
+            if !ok {
+                EngSetLastError(ERROR_INVALID_PARAMETER);
+                break 'done;
+            }
+            ret = count as INT;
         }
     }
 
@@ -3631,7 +3659,11 @@ pub unsafe extern "system" fn NtGdiSetMiterLimit(
             SetLastNtError(Status);
             bResult = 0;
         } else {
-            *pdwOut = worker1.l;
+            // The probe proves where pdwOut is, not that it stays mapped.
+            if let Err(st) = ntkrnl_sys::probe::write_back(pdwOut, worker1.l) {
+                SetLastNtError(st);
+                bResult = 0;
+            }
         }
     }
 
@@ -3672,7 +3704,11 @@ pub unsafe extern "system" fn NtGdiSetMiterLimit(
             SetLastNtError(Status);
             bResult = 0;
         } else {
-            *pdwOut = worker1.l;
+            // The probe proves where pdwOut is, not that it stays mapped.
+            if let Err(st) = ntkrnl_sys::probe::write_back(pdwOut, worker1.l) {
+                SetLastNtError(st);
+                bResult = 0;
+            }
         }
     }
 

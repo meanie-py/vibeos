@@ -55,7 +55,5 @@ target_include_directories(concfg INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 set_source_files_properties(concfg_rust_stub.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 add_dependencies(concfg concfg_rust_lib xdk)
 # Hand the Rust symbols to BOTH consumers (winsrv.dll + console.dll) via the
-# static lib's INTERFACE. --allow-multiple-definition covers the libcore/
-# compiler-builtins overlap (and the winsrv-rust rlib's own copy of these fns).
+# static lib's INTERFACE.
 target_link_libraries(concfg INTERFACE ${CONCFG_RUST_LIB})
-target_link_options(concfg INTERFACE "-Wl,--allow-multiple-definition")

@@ -227,6 +227,7 @@ pub unsafe fn COM_CurrentCausalityId() -> GUID {
     }
     if guid_eq(&(*info).causality_id, &GUID_NULL) {
         CoCreateGuid(&raw mut (*info).causality_id);
+        (*info).flags |= OLETLS_UUIDINITIALIZED;
     }
     (*info).causality_id
 }
@@ -361,7 +362,9 @@ unsafe fn create_classes_root_hkey(access: DWORD) -> HKEY {
     attr.Length = size_of::<OBJECT_ATTRIBUTES>() as ULONG;
     attr.RootDirectory = null_mut();
     attr.ObjectName = &raw mut name;
-    attr.Attributes = 0;
+    // C `#ifdef __REACTOS__`: our configuration manager matches key names
+    // case-sensitively unless asked, so `CLSID\{abc...}` vs `{ABC...}` missed.
+    attr.Attributes = OBJ_CASE_INSENSITIVE;
     attr.SecurityDescriptor = null_mut();
     attr.SecurityQualityOfService = null_mut();
     RtlInitUnicodeString(&raw mut name, classes_rootW.as_ptr());
@@ -439,7 +442,9 @@ pub unsafe extern "C" fn create_classes_key(
     attr.Length = size_of::<OBJECT_ATTRIBUTES>() as ULONG;
     attr.RootDirectory = hkey;
     attr.ObjectName = &raw mut nameW;
-    attr.Attributes = 0;
+    // C `#ifdef __REACTOS__`: our configuration manager matches key names
+    // case-sensitively unless asked, so `CLSID\{abc...}` vs `{ABC...}` missed.
+    attr.Attributes = OBJ_CASE_INSENSITIVE;
     attr.SecurityDescriptor = null_mut();
     attr.SecurityQualityOfService = null_mut();
     RtlInitUnicodeString(&raw mut nameW, name);
@@ -465,7 +470,9 @@ pub unsafe extern "C" fn open_classes_key(
     attr.Length = size_of::<OBJECT_ATTRIBUTES>() as ULONG;
     attr.RootDirectory = hkey;
     attr.ObjectName = &raw mut nameW;
-    attr.Attributes = 0;
+    // C `#ifdef __REACTOS__`: our configuration manager matches key names
+    // case-sensitively unless asked, so `CLSID\{abc...}` vs `{ABC...}` missed.
+    attr.Attributes = OBJ_CASE_INSENSITIVE;
     attr.SecurityDescriptor = null_mut();
     attr.SecurityQualityOfService = null_mut();
     RtlInitUnicodeString(&raw mut nameW, name);
@@ -627,6 +634,7 @@ unsafe fn apartment_construct(model: DWORD) -> *mut APARTMENT {
     list_init(&raw mut (*apt).proxies);
     list_init(&raw mut (*apt).stubmgrs);
     list_init(&raw mut (*apt).loaded_dlls);
+    list_init(&raw mut (*apt).usage_cookies);
     (*apt).ipidc = 0;
     (*apt).refs = 1;
     (*apt).remunk_exported = FALSE;
@@ -667,6 +675,12 @@ unsafe fn apartment_get_or_create(model: DWORD) -> *mut APARTMENT {
                 TRACE!();
             }
 
+            // wine-10 (combase apartment_get_or_create)
+            (*COM_CurrentInfo()).flags |= OLETLS_APARTMENTTHREADED;
+            if (model & COINIT_DISABLE_OLE1DDE) != 0 {
+                (*COM_CurrentInfo()).flags |= OLETLS_DISABLE_OLE1DDE;
+            }
+
             LeaveCriticalSection(&raw mut csApartment);
 
             if (*apt).main != FALSE {
@@ -684,6 +698,8 @@ unsafe fn apartment_get_or_create(model: DWORD) -> *mut APARTMENT {
             } else {
                 MTA = apartment_construct(model);
             }
+
+            (*COM_CurrentInfo()).flags |= OLETLS_MULTITHREADED | OLETLS_DISABLE_OLE1DDE;
 
             apt = MTA;
 
@@ -714,6 +730,13 @@ unsafe fn apartment_find_mta() -> *mut APARTMENT {
     LeaveCriticalSection(&raw mut csApartment);
 
     apt
+}
+
+/// combase `apartment_get_mta`: the MTA with a reference, or NULL. Exported for the
+/// marshal module's MTA ipid lookup.
+#[no_mangle]
+pub unsafe extern "C" fn apartment_get_mta() -> *mut APARTMENT {
+    apartment_find_mta()
 }
 
 /// Return the current apartment if it exists, or, failing that, the MTA. Caller
@@ -925,6 +948,19 @@ unsafe fn ManualResetEvent_Construct(
     let hr = ((*(*sync).lpVtbl).QueryInterface)(sync, iid, ppv);
     ((*(*sync).lpVtbl).Release)(sync);
     hr
+}
+
+/// compobj_private.h `ManualResetEvent_CreateInstance`: the IClassFactory entry
+/// ole32's ManualResetEventCF (oleproxy) hands out, so CoGetClassObject can serve
+/// CLSID_ManualResetEvent in-proc as wine-10 does.
+#[no_mangle]
+pub unsafe extern "system" fn ManualResetEvent_CreateInstance(
+    _iface: *mut IClassFactory,
+    outer: *mut IUnknown,
+    riid: REFIID,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    ManualResetEvent_Construct(outer, riid, ppv)
 }
 
 // ---------------------------------------------------------------------------
@@ -2000,6 +2036,7 @@ pub unsafe extern "C" fn leave_apartment(info: *mut oletls) {
         }
         apartment_release((*info).apt);
         (*info).apt = null_mut();
+        (*info).flags &= !(OLETLS_DISABLE_OLE1DDE | OLETLS_APARTMENTTHREADED | OLETLS_MULTITHREADED);
     }
 }
 
@@ -3194,8 +3231,18 @@ pub unsafe extern "system" fn CoGetClassObject(
             return FTMarshalCF_Create(iid, ppv);
         }
         if guid_eq(rclsid, &CLSID_GlobalOptions) {
+            apartment_release(apt); // the C leaked this reference; wine-10 releases it
             let cf = &raw mut GlobalOptionsCF;
             return ((*(*cf).lpVtbl).QueryInterface)(cf, iid, ppv);
+        }
+        // wine-10: the GIT is built in, never a registry lookup (it has no
+        // InprocServer32 key, so the generic path below reports REGDB_E_CLASSNOTREG).
+        if guid_eq(rclsid, &CLSID_StdGlobalInterfaceTable)
+            || ((dwClsContext & CLSCTX_APPCONTAINER) == 0
+                && guid_eq(rclsid, &CLSID_ManualResetEvent))
+        {
+            apartment_release(apt);
+            return DllGetClassObject(rclsid, iid, ppv);
         }
     }
 
@@ -3239,7 +3286,9 @@ pub unsafe extern "system" fn CoGetClassObject(
      * First, try and see if we can't match the class ID with one of the
      * registered classes.
      */
-    if S_OK == COM_GetRegisteredClassObject(apt, rclsid, dwClsContext, &raw mut regClassObject) {
+    if (dwClsContext & CLSCTX_APPCONTAINER) == 0
+        && S_OK == COM_GetRegisteredClassObject(apt, rclsid, dwClsContext, &raw mut regClassObject)
+    {
         /* Get the required interface from the retrieved pointer. */
         hres = IUnknown_QueryInterface(regClassObject, iid, ppv);
 
@@ -3471,39 +3520,15 @@ pub unsafe extern "system" fn CoCreateInstanceEx(
 
     init_multi_qi(cmq, pResults, E_NOINTERFACE);
 
-    let mut hres = CoGetTreatAsClass(rclsid, &raw mut clsid);
-    if FAILED(hres) {
-        clsid = *rclsid;
+    // wine-10.0: no TreatAs for an app-container activation, and no GIT /
+    // ManualResetEvent shortcuts here -- CoGetClassObject serves both in-proc, and
+    // only it knows that CLSCTX_APPCONTAINER refuses ManualResetEvent.
+    clsid = *rclsid;
+    if (dwClsContext & CLSCTX_APPCONTAINER) == 0 {
+        CoGetTreatAsClass(rclsid, &raw mut clsid);
     }
 
-    let apt = apartment_get_current_or_mta();
-    if apt.is_null() {
-        ERR!("apartment not initialised");
-        return CO_E_NOTINITIALIZED;
-    }
-    apartment_release(apt);
-
-    /*
-     * The Standard Global Interface Table (GIT) object is a process-wide singleton.
-     */
-    if guid_eq(&clsid, &CLSID_StdGlobalInterfaceTable) {
-        let git = get_std_git();
-        TRACE!();
-        return return_multi_qi(git as *mut IUnknown, cmq, pResults, FALSE);
-    }
-
-    if guid_eq(&clsid, &CLSID_ManualResetEvent) {
-        hres = ManualResetEvent_Construct(
-            pUnkOuter,
-            (*pResults).pIID,
-            &raw mut unk as *mut *mut c_void,
-        );
-        if FAILED(hres) {
-            return hres;
-        }
-        return return_multi_qi(unk, cmq, pResults, TRUE);
-    }
-
+    let mut hres: HRESULT;
     /*
      * Get a class factory to construct the object we want.
      */
@@ -3975,7 +4000,35 @@ pub unsafe extern "system" fn CoGetTreatAsClass(clsidOld: REFCLSID, clsidNew: *m
  */
 #[no_mangle]
 pub unsafe extern "system" fn CoGetCurrentProcess() -> DWORD {
-    GetCurrentProcessId()
+    // wine-10.0 combase: not the process id but a per-THREAD sequence number, unique
+    // on the machine, handed out once by rpcss and cached in the TLS block.
+    let info = COM_CurrentInfo();
+    if info.is_null() {
+        return 0;
+    }
+    if (*info).thread_seqid == 0 {
+        rpcss_get_next_seqid(&raw mut (*info).thread_seqid);
+    }
+    (*info).thread_seqid
+}
+
+extern "C" {
+    /// dll/win32/ole32/rpcss_seh.c: irpcss_get_thread_seq_id under rpc_filter.
+    fn ole32_rpcss_get_next_seqid(id: *mut DWORD) -> HRESULT;
+}
+
+/// combase rpc.c `rpcss_get_next_seqid`, with its RPCSS_CALL_END retry: start rpcss
+/// once if it is not running yet.
+unsafe fn rpcss_get_next_seqid(id: *mut DWORD) -> HRESULT {
+    loop {
+        let hr = ole32_rpcss_get_next_seqid(id);
+        if hr == HRESULT_FROM_WIN32(crate::win_consts::RPC_S_SERVER_UNAVAILABLE)
+            && crate::ring::moniker::start_rpcss() != 0
+        {
+            continue;
+        }
+        return hr;
+    }
 }
 
 /***********************************************************************
@@ -5081,6 +5134,8 @@ pub unsafe extern "system" fn CoGetApartmentType(
             apartment_release(apt);
             *type_ = APTTYPE_MTA;
             *qualifier = APTTYPEQUALIFIER_IMPLICIT_MTA;
+            // wine-10: an implicit MTA is a success, not CO_E_NOTINITIALIZED.
+            return S_OK;
         }
     }
 
@@ -5091,14 +5146,115 @@ pub unsafe extern "system" fn CoGetApartmentType(
     }
 }
 
+/// combase apartment.c `struct mta_cookie`: the opaque CO_MTA_USAGE_COOKIE.
+#[repr(C)]
+struct mta_cookie {
+    entry: list,
+}
+
+/***********************************************************************
+ *           CoIncrementMTAUsage [OLE32.@]  (wine-10 combase)
+ */
+#[no_mangle]
+pub unsafe extern "system" fn CoIncrementMTAUsage(cookie: *mut PVOID) -> HRESULT {
+    TRACE!();
+
+    *cookie = null_mut();
+
+    let mta_cookie = heap_alloc(size_of::<mta_cookie>()) as *mut mta_cookie;
+    if mta_cookie.is_null() {
+        return E_OUTOFMEMORY;
+    }
+
+    EnterCriticalSection(&raw mut csApartment);
+
+    if !MTA.is_null() {
+        apartment_addref(MTA);
+    } else {
+        MTA = apartment_construct(COINIT_MULTITHREADED);
+    }
+    list_add_head(&raw mut (*MTA).usage_cookies, &raw mut (*mta_cookie).entry);
+
+    LeaveCriticalSection(&raw mut csApartment);
+
+    *cookie = mta_cookie as PVOID;
+
+    S_OK
+}
+
+/***********************************************************************
+ *           CoDecrementMTAUsage [OLE32.@]  (wine-10 combase)
+ */
+#[no_mangle]
+pub unsafe extern "system" fn CoDecrementMTAUsage(cookie: PVOID) -> HRESULT {
+    TRACE!();
+
+    EnterCriticalSection(&raw mut csApartment);
+
+    if !MTA.is_null() {
+        let head = &raw mut (*MTA).usage_cookies;
+        let mut cur = (*head).next;
+        while cur != head {
+            if cur as PVOID == cookie {
+                // `entry` is the first field, so the node IS the cookie.
+                list_remove(cur);
+                heap_free(cur as PVOID);
+                // csApartment is a recursive critical section; apartment_release
+                // re-enters it, exactly as combase's does under apt_cs.
+                apartment_release(MTA);
+                break;
+            }
+            cur = (*cur).next;
+        }
+    }
+
+    LeaveCriticalSection(&raw mut csApartment);
+
+    S_OK
+}
+
+/***********************************************************************
+ *           CoCreateInstanceFromApp [OLE32.@]  (wine-10 combase)
+ */
+#[no_mangle]
+pub unsafe extern "system" fn CoCreateInstanceFromApp(
+    rclsid: REFCLSID,
+    outer: *mut IUnknown,
+    cls_context: DWORD,
+    server_info: PVOID,
+    count: ULONG,
+    results: *mut MULTI_QI,
+) -> HRESULT {
+    TRACE!();
+
+    CoCreateInstanceEx(
+        rclsid,
+        outer,
+        cls_context | CLSCTX_APPCONTAINER,
+        server_info as *mut COSERVERINFO,
+        count,
+        results,
+    )
+}
+
 /***********************************************************************
  *           CoDisableCallCancellation [OLE32.@]
  */
 #[no_mangle]
 pub unsafe extern "system" fn CoDisableCallCancellation(reserved: PVOID) -> HRESULT {
-    FIXME!("({:p}): stub", reserved);
+    TRACE!("{:p}", reserved);
 
-    E_NOTIMPL
+    // wine-10.0 combase: a per-thread nesting count, independent of CoInitialize.
+    let info = COM_CurrentInfo();
+    if info.is_null() {
+        return E_OUTOFMEMORY;
+    }
+    if (*info).cancelcount == 0 {
+        return crate::hresults::CO_E_CANCEL_DISABLED;
+    }
+    (*info).cancelcount -= 1;
+
+    S_OK
 }
 
 /***********************************************************************
@@ -5106,9 +5262,15 @@ pub unsafe extern "system" fn CoDisableCallCancellation(reserved: PVOID) -> HRES
  */
 #[no_mangle]
 pub unsafe extern "system" fn CoEnableCallCancellation(reserved: PVOID) -> HRESULT {
-    FIXME!("({:p}): stub", reserved);
+    TRACE!("{:p}", reserved);
 
-    E_NOTIMPL
+    let info = COM_CurrentInfo();
+    if info.is_null() {
+        return E_OUTOFMEMORY;
+    }
+    (*info).cancelcount += 1;
+
+    S_OK
 }
 
 /***********************************************************************
@@ -5197,9 +5359,22 @@ unsafe extern "system" fn GlobalOptions_Query(
     property: GLOBALOPT_PROPERTIES,
     value: *mut ULONG_PTR,
 ) -> HRESULT {
-    let This = impl_from_IGlobalOptions(iface);
-    FIXME!("({:p})->({} {:p})", This, property, value);
-    E_NOTIMPL
+    TRACE!("{:p}, {}, {:p}", iface, property, value);
+
+    // wine-10.0 combase: every property reads back from one zero-initialised table
+    // (Set is still a FIXME that stores nothing, as in Wine).
+    const COMGLB_EXCEPTION_HANDLING: u32 = 1;
+    const COMGLB_PROPERTIES_RESERVED3: u32 = 8;
+    static GLOBAL_OPTIONS: [ULONG_PTR; COMGLB_PROPERTIES_RESERVED3 as usize + 1] =
+        [0; COMGLB_PROPERTIES_RESERVED3 as usize + 1];
+
+    let property = property as u32;
+    if !(COMGLB_EXCEPTION_HANDLING..=COMGLB_PROPERTIES_RESERVED3).contains(&property) {
+        return E_INVALIDARG;
+    }
+    *value = GLOBAL_OPTIONS[property as usize];
+
+    S_OK
 }
 
 static GlobalOptionsVtbl: IGlobalOptionsVtbl = IGlobalOptionsVtbl {
@@ -5256,6 +5431,8 @@ pub unsafe extern "system" fn DllMain(
         }
 
         DLL_PROCESS_DETACH => {
+            // wine-10: the lazily created OLE clipboard lives until here.
+            crate::ring::clipboard::clipbrd_destroy();
             if !reserved.is_null() {
                 return TRUE;
             }

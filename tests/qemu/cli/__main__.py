@@ -20,6 +20,8 @@ from . import (
     host_clock,
     hostlock,
     maintenance,
+    pi4,
+    pi5,
     symbolize,
     tooling,
 )
@@ -58,6 +60,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
     checkpoint.add_parser(sub)
     host_clock.add_parser(sub)
+    pi4.add_parser(sub)
+    pi5.add_parser(sub)
 
     def arch_arg(sp, required=True):
         sp.add_argument(
@@ -190,11 +194,11 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument(
         "--no-wow64-stage",
         action="store_true",
-        help="amd64: build the media WITHOUT the SysWOW64 set. The staging "
-        "snapshots build-i386 at configure time, so an amd64 build running "
-        "beside a cold i386 one reads a half-cleaned tree and fails its import "
-        "closure. `gate` passes this when it builds both, then restages amd64 "
-        "once i386 is done. RECONCILED, not sticky",
+        help="amd64: build the media WITHOUT the SysWOW64 set. A staging amd64 "
+        "build reads build-i386 from configure to its last (mkisofs) edge, so it "
+        "holds build-i386's directory lock throughout and waits out any i386 "
+        "build in this worktree; pass this to run beside one instead. `gate` "
+        "does, then restages amd64 once i386 is done. RECONCILED, not sticky",
     )
     b.add_argument(
         "--hal-pic",
@@ -204,6 +208,14 @@ def build_parser() -> argparse.ArgumentParser:
         "with the legacy 8259 PIC interrupt model instead of the DEFAULT "
         "LAPIC/IOAPIC/TPR APIC HAL (-DVIBEOS_PIC_HAL=ON). i386 only (amd64 hal "
         "is always APIC); a plain build is the APIC HAL",
+    )
+    b.add_argument(
+        "--ata-stack",
+        action="store_true",
+        help="boot storage on upstream's new ATA stack (pciide + pciidex + atapi, and "
+        "legide on i386) instead of uniata (-DVIBEOS_ATA_STACK=ON): re-points the "
+        "CriticalDeviceDatabase for PCI IDE/RAID/AHCI and *PNP0600. RECONCILED, not "
+        "sticky: a plain build is uniata again",
     )
     b.add_argument("--strict", action="store_true")
     b.add_argument(
@@ -286,6 +298,28 @@ def build_parser() -> argparse.ArgumentParser:
         "is ONE vcpu. That is the cpu COUNT, not the kernel: the MP kernel boots "
         "by default on every arch and --up-kernel is the opt-out, so the default "
         "run is the MP kernel on one vcpu. N>1 needs SMP-capable media (ntkrnlmp)",
+    )
+    s.add_argument(
+        "--ahci",
+        action="store_true",
+        help="x86 only: put the boot CD on an ich9-ahci controller instead of IDE, "
+        "so uniata's AHCI path carries the whole boot. The boot FAILS "
+        "(AHCI_NOT_ENGAGED) unless uniata reports finding the controller",
+    )
+    s.add_argument(
+        "--gic",
+        type=int,
+        choices=(2, 3),
+        help="arm64 only: the virt machine's GIC (VIBEOS_QEMU_GIC). 3 boots a GICv3 "
+        "with an ITS, as Graviton has; the boot FAILS (GIC_NOT_V3) unless the HAL "
+        "drives it as one, and with --nvme (GIC_NO_ITS) unless MSI-X goes through the ITS",
+    )
+    s.add_argument(
+        "--nvme",
+        action="store_true",
+        help="attach an NVMe controller with one 64M FAT namespace (VIBEOS_QEMU_NVME=1, "
+        "every arch). The boot FAILS (NVME_NOT_ENGAGED) unless nvme.sys publishes the "
+        "namespace as a disk; tests/qemu/test_nvme.py then drives it from the desktop",
     )
     s.add_argument(
         "--no-net",
@@ -487,6 +521,19 @@ def build_parser() -> argparse.ArgumentParser:
         "_smp_check, so a soak that quietly booted the UP kernel FAILS rather "
         "than banking hours of false green. Without this the SMP lane could not "
         "use the farm corpus at all and had to hand-loop smoke",
+    )
+    f.add_argument(
+        "--ahci",
+        action="store_true",
+        help="soak with the boot CD on ich9-ahci (x86 only), same knob as "
+        "`smoke --ahci`; every boot must show uniata driving AHCI",
+    )
+    f.add_argument(
+        "--polite",
+        action="store_true",
+        help="background soak: before each boot, wait while a land holds the "
+        "lock or any OTHER process holds a boot permit, so the soak only fills "
+        "idle time and never competes with another agent's smoke or gate",
     )
     f.add_argument("--allow-stale", action="store_true")
     f.set_defaults(fn=farm_mod.farm)
@@ -725,6 +772,13 @@ def build_parser() -> argparse.ArgumentParser:
         "LARGE a value makes a healthy guest time out. Lower = faster virtual "
         f"CPU, bigger trace (default {rr_mod.rr.DEFAULT_ICOUNT_SHIFT})",
     )
+    rrec.add_argument(
+        "--sample",
+        type=float,
+        metavar="SECS",
+        help="pause every SECS of wall time and fingerprint the guest (registers + RAM "
+        "hashes) so `rr diverge` can find where a replay first departs from it",
+    )
     rrec.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
     rrec.set_defaults(fn=rr_mod.rr_cmd, rr_verb="record")
 
@@ -795,6 +849,37 @@ def build_parser() -> argparse.ArgumentParser:
         "--count", type=int, default=5, help="how many boundaries either side of --near (default 5)"
     )
     rbk.set_defaults(fn=rr_mod.rr_cmd, rr_verb="breaks")
+
+    rwg = rrsub.add_parser(
+        "wedge",
+        help="name the recorded events around where a stalled replay stopped reading",
+    )
+    rwg.add_argument("trace", help="trace name, path, or `latest`")
+    rwg.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rwg.add_argument(
+        "--at",
+        type=int,
+        help="inspect this byte offset instead of asking a live replay where it stopped",
+    )
+    rwg.add_argument(
+        "--icount",
+        type=int,
+        help="inspect the events at this instruction count -- the exact position of a "
+        "stalled replay, from `info replay` on a QEMU monitor (better than any read offset)",
+    )
+    rwg.add_argument(
+        "--count", type=int, default=8, help="events either side of the offset (default 8)"
+    )
+    rwg.set_defaults(fn=rr_mod.rr_cmd, rr_verb="wedge")
+
+    rdv = rrsub.add_parser(
+        "diverge",
+        help="replay a --sample'd trace and report the first icount where its guest "
+        "state differs from the recording's",
+    )
+    rdv.add_argument("trace", help="trace name, path, or `latest`")
+    rdv.add_argument("--root", help=f"trace root (default {rr_mod.DEFAULT_ROOT})")
+    rdv.set_defaults(fn=rr_mod.rr_cmd, rr_verb="diverge")
 
     kl = sub.add_parser(
         "kill",
@@ -926,6 +1011,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--min-free-gib",
         type=float,
         help="also reclaim eligible outputs toward this filesystem headroom",
+    )
+    pr.add_argument(
+        "--trim",
+        action="store_true",
+        help="only cut cargo targets back to what builds still read (superseded units, idle "
+        "ad-hoc cargo trees); safe on live lanes, never costs a warm build",
     )
     pr.set_defaults(fn=prune_mod.prune)
 

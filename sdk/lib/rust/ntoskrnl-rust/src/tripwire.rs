@@ -23,6 +23,9 @@
 //!                       "routing verified" only when the allocation really landed
 //!                       in special pool.
 //!   CSWITCH_SELFTEST=1  prove cswitchdep barks (needs --cswitchdep build).
+//!   QUIET               not read by the kernel: winlogon skips its boot-time
+//!                       test ladder (see VibeTripwireRead, and winlogon's
+//!                       QuietBootRequested). Conformance boots set it.
 //!   RUSTPANIC_SELFTEST=1  deliberate Rust panic!() at arm time — proves the
 //!                       shared panic handler (panic-common): expect the
 //!                       "*** RUST PANIC in ntoskrnl …" report + backtrace,
@@ -62,6 +65,10 @@ extern "system" {
 static mut VIBE_SELFTEST: u8 = 0;
 /// CSWITCH_SELFTEST=1 armed via fw_cfg (consumed by `KiStartSyncCensus`).
 pub static mut CSWITCH_SELFTEST_ARMED: bool = false;
+/// FREEZE_SELFTEST=1: see `ke::census::freeze_selftest`. Destructive.
+pub static mut FREEZE_SELFTEST_ARMED: bool = false;
+/// `UEXCVERBOSE`: no cap on the arm64 first-chance user-exception records.
+pub static mut UEXC_VERBOSE: bool = false;
 
 const TRIPWIRE_FILE: &[u8] = b"opt/org.vibeos.tripwire";
 const CFG_MAX: usize = 256;
@@ -256,6 +263,15 @@ unsafe fn apply_token(tok: &[u8]) {
                     .as_ptr(),
             );
         }
+    } else if let Some(val) = token_val(tok, b"FREEZE_SELFTEST") {
+        // Prove a bugcheck stops the OTHER CPUs: once the system is up, a thread on
+        // the last CPU prints ticks while this one bugchecks. Pass = ticks stop at the
+        // *** BUGCHECK banner (which prints before the freeze, on purpose: a hung freeze
+        // still leaves the crash code). Destructive by design -- the boot dies (0xE2).
+        if val == b"1" {
+            FREEZE_SELFTEST_ARMED = true;
+            DbgPrint(b"[TRIPWIRE] freeze selftest armed\n\0".as_ptr());
+        }
     } else if let Some(val) = token_val(tok, b"RUSTPANIC_SELFTEST") {
         // crash-value lane: prove the shared panic handler barks — deliberate
         // panic!() with a formatted message. Expect on serial: the full
@@ -283,6 +299,15 @@ unsafe fn apply_token(tok: &[u8]) {
         // KD=COM2 is consumed directly by kd64 KdInitSystem (via
         // VibeTripwireHasToken, long before this Mm-phase parse). Recognized
         // here only so it doesn't trip the unknown-token error below.
+    } else if tok == b"UEXCVERBOSE" {
+        // Print EVERY first-chance user exception in full, lifting the per-code
+        // cap in ke/arm64/stubs.rs `uexc_should_print` (which exists because
+        // FEX takes access violations and alignment faults by design).
+        UEXC_VERBOSE = true;
+    } else if tok == b"QUIET" {
+        // For user mode, not the kernel: winlogon reads it back through
+        // VibeTripwireRead's registry copy. Recognized here only so it doesn't
+        // trip the unknown-token error below.
     } else if !tok.is_empty() {
         DbgPrint(b"[TRIPWIRE] ERROR: unknown tripwire token (ignored)\n\0".as_ptr());
     }
@@ -291,6 +316,15 @@ unsafe fn apply_token(tok: &[u8]) {
 // ---------------------------------------------------------------------------
 // Entry points
 // ---------------------------------------------------------------------------
+
+/// This boot's raw config, kept from `vibe_tripwire_init` for `VibeTripwireRead`.
+/// A copy rather than a re-read: arm64 reaches fw_cfg through the early-boot
+/// identity map, which a Phase 1 caller cannot count on.
+struct TripwireCopy {
+    len: usize,
+    bytes: [u8; CFG_MAX],
+}
+static mut TRIPWIRE_COPY: TripwireCopy = TripwireCopy { len: 0, bytes: [0; CFG_MAX] };
 
 /// Called at the top of MmArmInitSystem Phase 0 — before system-PTE sizing and
 /// MiInitializeSpecialPool, so an armed MmSpecialPoolTag influences both.
@@ -301,6 +335,9 @@ pub unsafe fn vibe_tripwire_init() {
     };
 
     DbgPrint(b"[TRIPWIRE] config received (%lu bytes)\n\0".as_ptr(), n as u32);
+    let copy = core::ptr::addr_of_mut!(TRIPWIRE_COPY);
+    core::ptr::copy_nonoverlapping(cfg.as_ptr(), (*copy).bytes.as_mut_ptr(), n);
+    (*copy).len = n;
 
     for tok in cfg[..n].split(|&c| c == b' ' || c == b';' || c == b'\n' || c == b'\0') {
         if !tok.is_empty() {
@@ -330,6 +367,23 @@ pub unsafe extern "system" fn VibeTripwireHasToken(needle: *const u8, len: usize
         }
     }
     0
+}
+
+/// FFI for OTHER kernel crates: copy this boot's raw tripwire config (no NUL)
+/// into `out`, returning the bytes copied, 0 when the boot had none. Lets the
+/// config manager publish it to user mode (`VibeTripwire` under
+/// CurrentControlSet\Control), so a user-mode harness hook can take per-boot
+/// knobs too: winlogon's QUIET, which conformance boots set. Valid from
+/// MmArmInitSystem Phase 0 on.
+#[no_mangle]
+pub unsafe extern "system" fn VibeTripwireRead(out: *mut u8, cap: usize) -> usize {
+    let copy = core::ptr::addr_of!(TRIPWIRE_COPY);
+    let n = core::cmp::min((*copy).len, cap);
+    if out.is_null() || n == 0 {
+        return 0;
+    }
+    core::ptr::copy_nonoverlapping((*copy).bytes.as_ptr(), out, n);
+    n
 }
 
 /// Called right after MiInitializeSpecialPool. Reports arming outcome loudly and

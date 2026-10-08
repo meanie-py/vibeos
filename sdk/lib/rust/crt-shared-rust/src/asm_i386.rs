@@ -1,0 +1,91 @@
+//! msvcrt's three i386 assembly files (dll/win32/msvcrt/i386/{__wine_RtlUnwind,exception_ptr,
+//! inout}.s), shared by msvcrt.dll and ucrtbase.dll through `msvcrt_shared`, transcribed into
+//! `global_asm!`. Windows-only: the i686 Linux SEH difftest builds this crate too, and on ELF
+//! an `@16` suffix is a symbol version, not stdcall decoration.
+
+core::arch::global_asm!(
+    ".text",
+    // void WINAPI __wine_RtlUnwind(PVOID TargetFrame, PVOID TargetIp,
+    //                              PEXCEPTION_RECORD ExceptionRecord, PVOID ReturnValue)
+    // Wine code expects RtlUnwind to restore the non-volatile registers before returning;
+    // ours (and the native one) does not, so this wrapper saves and restores them. Wine's
+    // C is compiled -DRtlUnwind=__wine_RtlUnwind (except_i386.rs aliases it the same way).
+    ".globl ___wine_RtlUnwind@16",
+    "___wine_RtlUnwind@16:",
+    "    push ebp",
+    "    mov ebp, esp",
+    "    push ebx",
+    "    push esi",
+    "    push edi",
+    "    push dword ptr [ebp + 20]",
+    "    push dword ptr [ebp + 16]",
+    "    push dword ptr [ebp + 12]",
+    "    push dword ptr [ebp + 8]",
+    "    call _RtlUnwind@16",
+    "    pop edi",
+    "    pop esi",
+    "    pop ebx",
+    "    mov esp, ebp",
+    "    pop ebp",
+    "    ret 16",
+    // exception_ptr.c's helpers: call a thiscall copy constructor / destructor.
+    ".globl _call_copy_ctor",
+    "_call_copy_ctor:",
+    "    push ebp",
+    "    mov ebp, esp",
+    "    push 1",
+    "    mov ecx, [ebp + 12]",
+    "    push dword ptr [ebp + 16]",
+    "    call dword ptr [ebp + 8]",
+    "    leave",
+    "    ret",
+    ".globl _call_dtor",
+    "_call_dtor:",
+    "    mov ecx, [esp + 8]",
+    "    call dword ptr [esp + 4]",
+    "    ret",
+    // _inp/_inpw/_inpd(unsigned short port), _outp/_outpw/_outpd(unsigned short port, data).
+    // The .s read the port from [esp + 8] and the data from [esp + 12], one cdecl slot too
+    // far ([esp] is the return address, so the first argument is [esp + 4]). It never
+    // showed because user mode faults on `in`/`out` without I/O privilege; corrected here.
+    ".globl __inp",
+    "__inp:",
+    "    mov dx, [esp + 4]",
+    "    in al, dx",
+    "    ret",
+    ".globl __inpw",
+    "__inpw:",
+    "    mov dx, [esp + 4]",
+    "    in ax, dx",
+    "    ret",
+    ".globl __inpd",
+    "__inpd:",
+    "    mov dx, [esp + 4]",
+    "    in eax, dx",
+    "    ret",
+    ".globl __outp",
+    "__outp:",
+    "    mov dx, [esp + 4]",
+    "    mov al, [esp + 8]",
+    "    out dx, al",
+    "    ret",
+    ".globl __outpw",
+    "__outpw:",
+    "    mov dx, [esp + 4]",
+    "    mov ax, [esp + 8]",
+    "    out dx, ax",
+    "    ret",
+    ".globl __outpd",
+    "__outpd:",
+    "    mov dx, [esp + 4]",
+    "    mov eax, [esp + 8]",
+    "    out dx, eax",
+    "    ret",
+    // `__imp____wine_RtlUnwind@16`: the import-pointer spelling of the wrapper, for callers
+    // that reach it as __declspec(dllimport).
+    ".data",
+    ".globl __imp____wine_RtlUnwind@16",
+    ".p2align 2",
+    "__imp____wine_RtlUnwind@16:",
+    "    .long ___wine_RtlUnwind@16",
+);

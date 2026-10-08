@@ -57,9 +57,6 @@ add_library(rasadhlp MODULE
 set_module_type(rasadhlp win32dll)
 # librasadhlp_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(rasadhlp ${RASADHLP_RUST_LIB})
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the
-# 64-bit division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(rasadhlp PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(rasadhlp rust_rasadhlp)
 add_importlibs(rasadhlp ws2_32 msvcrt kernel32 ntdll)
 # add_pch dropped with precomp.h: the only remaining C is generated (rasadhlp_stubs.c)

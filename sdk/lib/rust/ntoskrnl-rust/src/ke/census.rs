@@ -78,6 +78,42 @@ const MAX_WAIT_REASON: usize = 37;
 /// Per-thread lines emitted per scan for the wide (non-gate) class. The
 /// histogram carries the totals, so this only has to name a few examples.
 const MAX_WIDE_LINES: u32 = 8;
+/// The parked thread's kernel call chain, from the frame KiSwapContext saved
+/// (ctxswitch.S: KernelStack -> [ApcBypass, lr], then x19..x28, x29, x30) and
+/// the frame-pointer chain above it. Bounded to the thread's own stack.
+#[cfg(target_arch = "aarch64")]
+unsafe fn report_stack(kthread: *mut _KTHREAD) {
+    let ks = (*kthread).KernelStack as usize;
+    let (lo, hi) = ((*kthread).StackLimit as usize, (*kthread).InitialStack as usize);
+    let inside = |a: usize| a >= lo && a.wrapping_add(16) <= hi && a & 7 == 0;
+    if !inside(ks) || !inside(ks + 16 + 96) {
+        return;
+    }
+    let rd = |a: usize| core::ptr::read_volatile(a as *const usize);
+    let mut lr = [0usize; 12];
+    lr[0] = rd(ks + 8);
+    lr[1] = rd(ks + 16 + 88);
+    let mut fp = rd(ks + 16 + 80);
+    let mut n = 2;
+    while n < lr.len() && inside(fp) {
+        lr[n] = rd(fp + 8);
+        n += 1;
+        let next = rd(fp);
+        if next <= fp {
+            break;
+        }
+        fp = next;
+    }
+    crate::dbg_print!(
+        b"[CENSUS]   bt %p %p %p %p %p %p %p %p %p %p %p %p\n\0",
+        lr[0] as *const (), lr[1] as *const (), lr[2] as *const (), lr[3] as *const (),
+        lr[4] as *const (), lr[5] as *const (), lr[6] as *const (), lr[7] as *const (),
+        lr[8] as *const (), lr[9] as *const (), lr[10] as *const (), lr[11] as *const (),
+    );
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+unsafe fn report_stack(_kthread: *mut _KTHREAD) {}
 /// Lifetime cap on histogram prints — a stall lasting hours must not bury the
 /// serial log the histogram exists to inform.
 const MAX_HIST_PRINTS: u32 = 200;
@@ -300,6 +336,7 @@ unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
                             if wide_lines < MAX_WIDE_LINES {
                                 wide_lines += 1;
                                 report_wide(eproc, kthread, state, reason, s.wait_time);
+                                report_stack(kthread);
                             }
                         }
                     }
@@ -575,6 +612,9 @@ pub unsafe extern "system" fn KiStartSyncCensus() {
         super::cswitchdep::cswitch_selftest();
     }
     crate::debugblock::debug_block_stamp();
+    if crate::tripwire::FREEZE_SELFTEST_ARMED {
+        freeze_selftest();
+    }
 
     let mut handle: HANDLE = core::ptr::null_mut();
     let status = PsCreateSystemThread(
@@ -600,4 +640,68 @@ pub unsafe extern "system" fn KiStartSyncCensus() {
     crate::dbg_print!(
         b"[CENSUS] sync watchdog up (10s cadence, gate waits + all parked waits w/ reason)\n\0"
     );
+}
+
+
+// ---------------------------------------------------------------------------
+// FREEZE_SELFTEST=1 (tripwire): does a bugcheck stop the other processors?
+//
+// A ticker thread pinned to the LAST processor prints a numbered tick in a tight
+// loop; this one waits until ticks are flowing, then bugchecks. With a working
+// freeze no tick appears after the *** BUGCHECK line. arm64's KxFreezeExecution was
+// an empty stub and the bugcheck froze nothing, so other CPUs ran on through the
+// dump; nothing could show that without a deliberate crash on a busy MP machine.
+// ---------------------------------------------------------------------------
+
+static FREEZE_TICKS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+unsafe extern "system" fn FreezeSelftestTicker(_ctx: PVOID) {
+    let last = (ntkrnl_sys::globals::KeNumberProcessors as u32).saturating_sub(1);
+    ntkrnl_sys::ddk::KeSetSystemAffinityThread(1 << last);
+    loop {
+        let n = FREEZE_TICKS.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        crate::dbg_print!(
+            b"[FREEZE-SELFTEST] tick %u cpu=%u\n\0",
+            n,
+            ntkrnl_sys::ddk::KeGetCurrentProcessorNumber() as u32,
+        );
+        ntkrnl_sys::ddk::KeStallExecutionProcessor(2000);
+    }
+}
+
+unsafe fn freeze_selftest() {
+    let cpus = ntkrnl_sys::globals::KeNumberProcessors as u32;
+    if cpus < 2 {
+        crate::dbg_print!(
+            b"[FREEZE-SELFTEST] ERROR: needs >= 2 CPUs (have %u) -- boot with --smp 2+\n\0",
+            cpus,
+        );
+        return;
+    }
+    let mut handle: HANDLE = core::ptr::null_mut();
+    let status = PsCreateSystemThread(
+        &mut handle,
+        THREAD_ALL_ACCESS,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::mem::transmute(FreezeSelftestTicker as usize),
+        core::ptr::null_mut(),
+    );
+    if status < 0 {
+        crate::dbg_print!(b"[FREEZE-SELFTEST] ERROR: ticker thread failed: %x\n\0", status as u32);
+        return;
+    }
+    ZwClose(handle);
+    // Stall, not KeDelayExecutionThread: this runs inside Phase-1 init, where a timed
+    // wait did not return (the ticker ran 249k ticks and the bugcheck never came).
+    while FREEZE_TICKS.load(core::sync::atomic::Ordering::SeqCst) < 20 {
+        ntkrnl_sys::ddk::KeStallExecutionProcessor(1000);
+    }
+    crate::dbg_print!(
+        b"[FREEZE-SELFTEST] ticks flowing on cpu %u; bugchecking from cpu %u -- PASS iff ticks stop within one line of the BUGCHECK banner (it prints before the freeze, on purpose)\n\0",
+        cpus - 1,
+        ntkrnl_sys::ddk::KeGetCurrentProcessorNumber() as u32,
+    );
+    ntkrnl_sys::ddk::KeBugCheckEx(0xE2 /* MANUALLY_INITIATED_CRASH */, 0xF2EE2E, 0, 0, 0);
 }

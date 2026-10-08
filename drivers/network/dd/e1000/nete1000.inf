@@ -26,8 +26,11 @@ DefaultDestDir = 12
 %IntelE1000_100A.DeviceDesc% = E1000_Inst.ndi,PCI\VEN_8086&DEV_100A
 %IntelE1000_100C.DeviceDesc% = E1000_Inst.ndi,PCI\VEN_8086&DEV_100C
 %IntelE1000_100D.DeviceDesc% = E1000_Inst.ndi,PCI\VEN_8086&DEV_100D
-%IntelE1000_100E.DeviceDesc% = E1000_Inst.ndi,PCI\VEN_8086&DEV_100E
-%IntelE1000_100F.DeviceDesc% = E1000_Inst.ndi,PCI\VEN_8086&DEV_100F
+; 82540EM (100E) and 82545EM (100F) are driven directly by netstack.sys, which
+; does not sit above NDIS yet (smoltcp-netstack-design.md, M11). Offering them here
+; made setup bind this miniport to the same NIC underneath it. Restore with M11.
+;%IntelE1000_100E.DeviceDesc% = E1000_Inst.ndi,PCI\VEN_8086&DEV_100E
+;%IntelE1000_100F.DeviceDesc% = E1000_Inst.ndi,PCI\VEN_8086&DEV_100F
 %IntelE1000_1010.DeviceDesc% = E1000_Inst.ndi,PCI\VEN_8086&DEV_1010
 %IntelE1000_1011.DeviceDesc% = E1000_Inst.ndi,PCI\VEN_8086&DEV_1011
 %IntelE1000_1012.DeviceDesc% = E1000_Inst.ndi,PCI\VEN_8086&DEV_1012

@@ -308,6 +308,14 @@ pub unsafe extern "system" fn KdpTrap(
     handled
 }
 
+extern "C" {
+    /// The UART KdpStub's text path writes DbgPrint to while real KD is off,
+    /// shared with rtl's kernel-mode DebugPrint (rtl-diag owns it). COM1 unless
+    /// kdinit.rs moved it for `DEBUGPORT=COM:0x<port>`: a PC without a legacy
+    /// COM1 publishes its console UART in ACPI SPCR, and the loader hands it over.
+    pub static mut RtlpDebugConsolePort: u16;
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KdpStub(
     TrapFrame: PKTRAP_FRAME,
@@ -327,18 +335,40 @@ pub unsafe extern "system" fn KdpStub(
             || (exception_command == BREAKPOINT_COMMAND_STRING)
             || (exception_command == BREAKPOINT_PRINT))
     {
+        // The C KdpStub prints nothing; this echo of a debugger-less DbgPrint to the console
+        // UART is ours. Buffer and length are the CALLER's registers, so from user mode they
+        // are whatever that process put there: the echo used to read them in place, and a
+        // user-mode Rust panic whose report walked into garbage took the kernel down with
+        // 0x1E here. Capture the way KdpPrint does (probe + fault-tolerant copy into a
+        // bounded local), and fail the print with STATUS_ACCESS_VIOLATION as KdpPrint would.
+        #[allow(unused_mut)] // only the x86 echo reassigns it
+        let mut print_status = STATUS_SUCCESS;
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if exception_command == BREAKPOINT_PRINT {
-            let buffer = (*ExceptionRecord).ExceptionInformation[1] as *const UCHAR;
-            let length = (*ExceptionRecord).ExceptionInformation[2] as USHORT;
-            let lcr = KdpReadPortUchar(0x3FB);
-            if (lcr & 0x80) != 0 {
-                KdpWritePortUchar(0x3FB, lcr & 0x7F);
-            }
-            let mut i: USHORT = 0;
-            while i < length {
-                KdpWritePortUchar(0x3F8, *buffer.add(i as usize));
-                i += 1;
+            const KD_PRINT_MAX_BYTES: usize = 512;
+            let mut captured = [0u8; KD_PRINT_MAX_BYTES];
+            let length = core::cmp::min(
+                (*ExceptionRecord).ExceptionInformation[2] as USHORT as usize,
+                KD_PRINT_MAX_BYTES,
+            );
+            match ntkrnl_sys::probe::safe_copy_from_user(
+                captured.as_mut_ptr().cast(),
+                (*ExceptionRecord).ExceptionInformation[1] as *const core::ffi::c_void,
+                length,
+                1,
+                PreviousMode,
+            ) {
+                Ok(()) => {
+                    let port = RtlpDebugConsolePort;
+                    let lcr = KdpReadPortUchar(port + 3);
+                    if (lcr & 0x80) != 0 {
+                        KdpWritePortUchar(port + 3, lcr & 0x7F);
+                    }
+                    for &byte in &captured[..length] {
+                        KdpWritePortUchar(port, byte);
+                    }
+                }
+                Err(status) => print_status = status,
             }
         }
 
@@ -347,7 +377,7 @@ pub unsafe extern "system" fn KdpStub(
         // DPRINT1 read "failed" and printed a second "DbgPrint() failed!" line. KdpTrap sets
         // it; with no debugger attached a print succeeded, which is what Windows reports.
         if exception_command == BREAKPOINT_PRINT {
-            KeSetContextReturnRegister(ContextRecord, STATUS_SUCCESS as ULONG_PTR);
+            KeSetContextReturnRegister(ContextRecord, print_status as ULONG_PTR);
         }
         KeSetContextPc(
             ContextRecord,

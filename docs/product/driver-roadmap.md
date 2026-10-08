@@ -1,5 +1,12 @@
 # Driver Ecosystem Roadmap
 
+> **Partly stale (checked 2026-10-05).** KMDF is built (`vendor/wdf`, `wdf01000.sys`,
+> KMDF 1.17) and xHCI exists as a Rust-native driver (`usbxhci`, USB 3 working on the
+> Pi 4); this page still lists both as missing. The current plan for Windows 10 drivers,
+> real GPUs (XDDM → WDDM 1.1 → 2.x) and Chrome is
+> [`../engineering/modern-windows-compat-roadmap.md`](../engineering/modern-windows-compat-roadmap.md).
+> This page gets a full refresh in the next docs pass.
+
 ## Current State
 
 ReactOS uses **WDM (Windows Driver Model)** — the NT5/XP-era driver framework. This supports:
@@ -50,7 +57,7 @@ KMDF is a library that sits on top of WDM. It calls into the kernel via standard
 |---------|--------|---------------|----------|
 | IDE/PATA | Working | UniATA driver | — |
 | AHCI/SATA | Working | UniATA driver | — |
-| NVMe | Missing | NVMe miniport driver (KMDF-based in Windows) | **Critical** |
+| NVMe | **Working** (MSI-X interrupts, 2026-10-07) | `nvme.sys`, Rust, all arches; see `docs/engineering/modern-windows-compat-roadmap.md` | **Critical** |
 | USB Mass Storage | Basic | Working for USB 2.0 | — |
 | SD/eMMC | Missing | Class driver needed | Medium |
 | VirtIO-blk | Working (ARM64) | Already ported for QEMU | — |

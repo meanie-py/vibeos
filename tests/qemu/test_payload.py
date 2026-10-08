@@ -94,7 +94,7 @@ def _frame_delta(vm: QemuVM, gap: float) -> float:
     vm.screendump(b_p)
     a = Image.open(a_p).convert("RGB")
     b = Image.open(b_p).convert("RGB")
-    diff = ImageChops.difference(a, b).convert("L").point(lambda v: 255 if v > 8 else 0)
+    diff = ImageChops.difference(a, b).convert("L").point([255 if v > 8 else 0 for v in range(256)])
     hist = diff.histogram()
     changed = sum(hist[1:])
     return changed / float(a.size[0] * a.size[1])
@@ -384,7 +384,8 @@ def test_payload_launched(vm: QemuVM, arch: str, payload: str, spec: dict[str, A
     if pass_marker:
         verdict = next((ln for ln in output.splitlines() if marker in ln), "")
         assert pass_marker in output, (
-            f"--payload {payload} finished but its output lacks {pass_marker!r}: {verdict.strip()!r}"
+            f"--payload {payload} finished but its output lacks {pass_marker!r}: "
+            f"{verdict.strip()!r}"
         )
 
 

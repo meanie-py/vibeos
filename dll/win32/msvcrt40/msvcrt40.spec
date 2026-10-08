@@ -501,7 +501,7 @@
 @ cdecl -arch=i386 _CItanh()
 @ stdcall _CxxThrowException(long long)
 @ cdecl -i386 _EH_prolog()
-@ extern _HUGE
+@ extern _HUGE MSVCRT__HUGE
 @ cdecl _XcptFilter(long ptr)
 @ cdecl -i386 __CxxFrameHandler(ptr ptr ptr ptr)
 @ stdcall -i386 __CxxLongjmpUnwind(ptr)
@@ -857,7 +857,7 @@
 @ cdecl _stat(str ptr)
 @ cdecl _stati64(str ptr)
 @ cdecl _statusfp()
-@ cdecl _strcmpi(str str)
+@ cdecl _strcmpi(str str) _stricmp
 @ cdecl _strdate(ptr)
 @ cdecl _strdup(str)
 @ cdecl _strerror(long)

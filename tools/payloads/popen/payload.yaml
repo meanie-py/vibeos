@@ -1,0 +1,18 @@
+# popen — why msvcrt _popen fails with EACCES in Wine misc.c:375 (the misc subtest then dies).
+#   tools/payloads/popen/build.sh {arch}
+#   VIBEOS_PAYLOAD=popen ./vibeos-cli build --arch {arch}
+#   ./vibeos-cli smoke --arch {arch} --payload popen
+name: popen
+description: "msvcrt _popen errno probe (Wine misc.c:375)"
+
+build_hint: "tools/payloads/popen/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/popen/popen-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/popen.exe
+
+test:
+  launch_marker: "[POPEN] done"
+  pass_marker: "[POPEN] done PASS"
+  launch_drain_secs: 300

@@ -46,9 +46,6 @@ add_library(mprapi MODULE ${SOURCE})
 set_module_type(mprapi win32dll)
 # libmprapi_rust.a FIRST so its #[no_mangle] symbols win.
 target_link_libraries(mprapi ${MPRAPI_RUST_LIB} wine)
-# lld first-match: compiler_builtins in the Rust staticlib and libgcc both carry the 64-bit
-# division helpers (__udivdi3/__divdi3). Same code, two copies — take the first.
-target_link_options(mprapi PRIVATE LINKER:--allow-multiple-definition)
 add_dependencies(mprapi rust_mprapi)
 add_importlibs(mprapi msvcrt kernel32 ntdll)
 add_cd_file(TARGET mprapi DESTINATION reactos/system32 FOR all)

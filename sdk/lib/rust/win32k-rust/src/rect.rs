@@ -76,13 +76,16 @@ pub unsafe extern "C" fn RECTL_bUnionRect(
     1
 }
 
+// rect.h declares BOOL. This returned u8, and every caller (C and the Rust decls alike) reads
+// 32 bits: the bits above the byte are whatever the register held, so "no intersection"
+// could read as TRUE.
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 unsafe extern "fastcall" fn RECTL_bIntersectRect(
     prclDst: *mut RECTL,
     prcl1: *const RECTL,
     prcl2: *const RECTL
-) -> u8 {
+) -> BOOL {
 
     (*prclDst).left = core::cmp::max((*prcl1).left, (*prcl2).left);
     (*prclDst).right = core::cmp::min((*prcl1).right, (*prcl2).right);
@@ -92,13 +95,13 @@ unsafe extern "fastcall" fn RECTL_bIntersectRect(
         (*prclDst).bottom = core::cmp::min((*prcl1).bottom, (*prcl2).bottom);
 
         if (*prclDst).top < (*prclDst).bottom {
-            return 1u8;
+            return 1;
         }
     }
 
     RECTL_vSetEmptyRect(prclDst);
 
-    return 0u8;
+    return 0;
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -107,7 +110,7 @@ unsafe extern "C" fn RECTL_bIntersectRect(
     prclDst: *mut RECTL,
     prcl1: *const RECTL,
     prcl2: *const RECTL
-) -> u8 {
+) -> BOOL {
 
     (*prclDst).left = core::cmp::max((*prcl1).left, (*prcl2).left);
     (*prclDst).right = core::cmp::min((*prcl1).right, (*prcl2).right);
@@ -117,13 +120,13 @@ unsafe extern "C" fn RECTL_bIntersectRect(
         (*prclDst).bottom = core::cmp::min((*prcl1).bottom, (*prcl2).bottom);
 
         if (*prclDst).top < (*prclDst).bottom {
-            return 1u8;
+            return 1;
         }
     }
 
     RECTL_vSetEmptyRect(prclDst);
 
-    return 0u8;
+    return 0;
 }
 
 #[cfg(target_arch = "x86")]

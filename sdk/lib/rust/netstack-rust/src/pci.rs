@@ -86,15 +86,27 @@ pub fn find_virtio_net() -> Option<DeviceFunction> {
 
 /// Set MEMORY_SPACE | BUS_MASTER in the PCI command register. virtio-drivers'
 /// `PciTransport::new` does NOT do this, and the device cannot DMA without bus
-/// mastering enabled.
+/// mastering enabled. INTx stays DISABLED (bit 10) until a driver that services
+/// it asks for it (`unmask_intx`, x86's M10): the line is shared (QEMU's arm64
+/// board routes INTx by slot, so virtio-net in slot 1 shares INTID 36 with slots
+/// 5, 9, 13, ...), and a virtio device raises it on its own, for a config change
+/// such as link-up, until someone reads its ISR register. Unserviced, that was a
+/// level-triggered interrupt nobody claimed, forever: the arm64 boot wedged the
+/// day nvme.sys connected INTID 36 (2026-10-06).
 pub fn enable_bus_master(df: DeviceFunction) {
     let mut access = HalPciAccess;
     let cmd_status = access.read_word(df, 0x04);
-    // Low 16 bits = command; bit1 = MEMORY_SPACE, bit2 = BUS_MASTER. Also clear
-    // bit10 (INTERRUPT_DISABLE) so the device can assert legacy INTx — M10's
-    // interrupt-driven RX depends on it (a no-op when firmware left it clear).
-    access.write_word(df, 0x04, (cmd_status | 0x0006) & !0x0400);
+    access.write_word(df, 0x04, cmd_status | 0x0006 | 0x0400);
 }
+
+/// Clear INTERRUPT_DISABLE (command bit 10) so the function may assert legacy
+/// INTx, for a driver about to connect an ISR to it.
+pub fn unmask_intx(df: DeviceFunction) {
+    let mut access = HalPciAccess;
+    let cmd_status = access.read_word(df, 0x04);
+    access.write_word(df, 0x04, cmd_status & !0x0400);
+}
+
 
 /// Read the PCI Interrupt Line (config byte 0x3C) — the IRQ the firmware routed
 /// this function's INTx pin to. 0xFF means "unrouted" → None. M10 (amd64) feeds

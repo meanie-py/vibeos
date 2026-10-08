@@ -45,6 +45,16 @@ pub const CM_RESOURCE_PORT_WINDOW_DECODE: u32 = 0x0080;
 pub const CmResourceTypeBusNumber: u32 = 6;
 pub const CmResourceTypeInterrupt: u32 = 2;
 pub const CmResourceTypeMemory: u32 = 3;
+// xdk/cmtypes.h: CmResourceTypeMemoryLarge, the CM_RESOURCE_MEMORY_LARGE_* flags, and the
+// CM_SHARE_DISPOSITION values (enum: Undetermined=0, DeviceExclusive, DriverExclusive, Shared).
+// Hand-added: hal_ddk has them but only on x86/x64, and pcix builds for arm64 too.
+pub const CmResourceTypeMemoryLarge: u32 = 7;
+pub const CM_RESOURCE_MEMORY_LARGE: u32 = 0x0E00;
+pub const CM_RESOURCE_MEMORY_LARGE_40: u32 = 0x0200;
+pub const CM_RESOURCE_MEMORY_LARGE_48: u32 = 0x0400;
+pub const CM_RESOURCE_MEMORY_LARGE_64: u32 = 0x0800;
+pub const CmResourceShareDeviceExclusive: u8 = 1;
+pub const CmResourceShareDriverExclusive: u8 = 2;
 pub const CmResourceTypeNull: u32 = 0;
 pub const CmResourceTypePort: u32 = 1;
 pub const FILE_DEVICE_BUS_EXTENDER: u32 = 42;
@@ -85,7 +95,14 @@ pub const PCI_HACK_BROKEN_SUBTRACTIVE_DECODE: u64 = 0x0000008000000000;
 pub const PCI_HACK_CB_SHARE_CMD_BITS: u64 = 0x0000000000010000;
 pub const PCI_HACK_CRITICAL_DEVICE: u64 = 0x0000002000000000;
 pub const PCI_HACK_DISABLE_IDE_NATIVE_MODE: u64 = 0x0000000800000000;
-pub const PCI_HACK_DONT_DISABLE_DECODES: u64 = 0x0000000040000000;
+// Upstream 4dabb9e5825 renamed 0x40000000 from PCI_HACK_DONT_DISABLE_DECODES to
+// PCI_HACK_NEVER_POWER_DOWN and gave 0x2 / 0x4000000000 their meanings
+// (sdk/include/reactos/drivers/pci/pci.h). Hand-added, values checked against that header.
+pub const PCI_HACK_NEVER_POWER_DOWN: u64 = 0x0000000040000000;
+pub const PCI_HACK_KEEP_DECODES_ON_STOP: u64 = 0x0000000000000002;
+pub const PCI_HACK_NOT_CRITICAL_DEVICE: u64 = 0x0000004000000000;
+pub const PCI_HACK_NEVER_DISCONNECT: u64 = 0x0000000000000040;
+pub const PCI_HACK_DONT_DISABLE: u64 = 0x0000000000000080;
 pub const PCI_HACK_DOUBLE_DECKER: u64 = 0x0000000000001000;
 pub const PCI_HACK_ENUM_NO_RESOURCE: u64 = 0x0000000000000010;
 pub const PCI_HACK_FAKE_CLASS_CODE: u64 = 0x0000000200000000;
@@ -127,3 +144,20 @@ pub const REG_FULL_RESOURCE_DESCRIPTOR: u32 = 9;
 pub const REG_OPTION_VOLATILE: u32 = 1;
 pub const RTL_RANGE_LIST_ADD_IF_CONFLICT: u32 = 0x00000001;
 pub const VER_SUITE_DATACENTER: u32 = 0x00000080;
+
+// Hand-added for upstream's ECAM (#9542), Express (#9543), resizable BAR and hot-plug
+// (#9592) work. hal_ddk carries these only on x86/x64 and pcix builds for arm64 too;
+// values checked against xdk/iotypes.h, xdk/ntbasedef.h, psdk/winnt.h, ntstatus.h and
+// sdk/include/reactos/drivers/pci/pci.h.
+pub const MAXUCHAR: u32 = 0xff;
+pub const PCI_EXTENDED_CONFIG_LENGTH: u32 = 0x1000;
+pub const PCI_MAX_BRIDGE_NUMBER: u32 = 0xFF;
+pub const PCI_CAPABILITY_ID_PCI_EXPRESS: u32 = 0x10;
+pub const PCI_DEVICE_TYPE: u32 = 0x00;
+pub const PCI_ENABLE_PARITY: u32 = 0x0040;
+pub const PCI_ENABLE_SERR: u32 = 0x0100;
+pub const PCI_HACK_NO_EXPRESS_CAP: u64 = 0x0000000000080000;
+pub const IO_RESOURCE_PREFERRED: u32 = 0x01;
+pub const IO_RESOURCE_ALTERNATIVE: u32 = 0x08;
+pub const REG_RESOURCE_REQUIREMENTS_LIST: u32 = 10;
+pub const STATUS_DEVICE_CONFIGURATION_ERROR: i32 = 0xC0000182u32 as i32;

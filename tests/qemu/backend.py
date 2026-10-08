@@ -220,7 +220,7 @@ def rewrite_accel(args: list[str], accel: str, arch: str = "amd64") -> list[str]
                 out += ["-accel", accel]
             i += 2
             continue
-        if a == "-cpu" and i + 1 < len(args):
+        if a == "-cpu" and i + 1 < len(args) and args[i + 1] == "host":
             i += 2  # drop `-cpu host` (KVM-only passthrough; faults OVMF under whpx)
             continue
         if (

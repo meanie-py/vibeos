@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <shell32|acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbxhci|usbport|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <shell32|acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|vioblk|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbxhci|usbport|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -280,20 +280,30 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
   pciidex)
-    # The PCI IDE bus extension (drivers/storage/ide/pciidex). Driver-PRIVATE structs
-    # (PCIIDEX_DRIVER_EXTENSION, COMMON_DEVICE_EXTENSION, FDO_DEVICE_EXTENSION,
-    # PDO_DEVICE_EXTENSION) live in the driver's own pciidex.h — allowlist it. pciidex.h
-    # pulls <ide.h> (sdk/include/ddk/ide.h), the shared IDE-miniport header defining
-    # IDE_CONTROLLER_PROPERTIES / IDE_CHANNEL_STATE / PCIIDE_* / the IdeBusData enums the
-    # modules reference; those are NOT in the ntkrnl-sys kernel bindgen, so allowlist
-    # ide.h too (blocklist keeps any shared ddk types on the single identity). No version
-    # macros in the pciidex CMakeLists → NT 5.2 default; NTDDI 0x05020400 (peb_teb trap).
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from drivers/storage/ide/pciidex/CMakeLists.txt
+    # (25 compiled TU(s), 84 headers in the include closure, 74 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
     DRIVER_DIR="${SRC}/drivers/storage/ide/pciidex"
-    WRAPPER_INC=$'#include "pciidex.h"'
-    ALLOW_FILES=( --allowlist-file '.*pciidex[/\\]pciidex\.h' --allowlist-file '.*ddk[/\\]ide\.h' )
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
-               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
-               -DDLL_EXPORT_VERSION=0x502 )
+    WRAPPER_INC=$'#include "pciidex.h"\n#include <acpiioct.h>\n#include <stdarg.h>\n#include <stddef.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]acpiioct\.h' --allowlist-file '.*[/\\]ata\.h'
+                  --allowlist-file '.*[/\\]debug[/\\]driverdbg\.h'
+                  --allowlist-file '.*[/\\]ide\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]ntintsafe\.h'
+                  --allowlist-file '.*[/\\]ntstrsafe\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_shared\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_user\.h'
+                  --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]wdmguid\.h'
+                  --allowlist-file '.*pciidex[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/storage/ide/pciidex" -I"${SRC}/build-i386/drivers/storage/ide/pciidex" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   scsiport)
     # The SCSI port driver (drivers/storage/port/scsiport). Driver-PRIVATE structs
@@ -386,29 +396,43 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
   atapi)
-    # The NT4-DDK ATAPI IDE miniport (drivers/storage/ide/atapi/atapi.c). It is a
-    # SCSIPORT miniport: its private register/IDENTIFY structs (IDE_REGISTERS_1/2/3,
-    # ATAPI_REGISTERS_1/2, IDENTIFY_DATA/IDENTIFY_DATA2, MODE_SENSE_10/MODE_SELECT_10/
-    # MODE_PARAMETER_HEADER_10, BROKEN_/NATIVE_MODE_CONTROLLER_INFORMATION) live in the
-    # driver's own atapi.h — allowlist it. The HW_DEVICE_EXTENSION / HW_LU_EXTENSION are
-    # defined in atapi.c (not a header), so a bindgen-only atapi_devext.h in the crate dir
-    # reproduces them (it embeds IDENTIFY_DATA + SCSI_REQUEST_BLOCK/SENSE_DATA/MECHANICAL_
-    # STATUS_INFORMATION_HEADER by value → those scsi.h/srb.h layouts must be emitted too).
-    # Like scsiport, _SCSI_REQUEST_BLOCK is OPAQUE in the kernel bindgen → UNBLOCK it so
-    # THIS driver's bindgen (which includes scsi.h) emits the full SRB. No version macros
-    # in the atapi CMakeLists → NT 5.2 default; NTDDI 0x05020400 (amd64 peb_teb trap).
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from drivers/storage/ide/atapi/CMakeLists.txt
+    # (16 compiled TU(s), 91 headers in the include closure, 160 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
     DRIVER_DIR="${SRC}/drivers/storage/ide/atapi"
-    WRAPPER_INC=$'#include <ntddk.h>\n#include "atapi.h"\n#include <ntddscsi.h>\n#include <ntdddisk.h>\n#include <ntddstor.h>\n#include "atapi_devext.h"'
-    ALLOW_FILES=( --allowlist-file '.*ide[/\\]atapi[/\\]atapi\.h'
-                  --allowlist-file '.*atapi_devext\.h'
+    WRAPPER_INC=$'#include "atapi.h"\n#include <acpiioct.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]acpiioct\.h' --allowlist-file '.*[/\\]ata\.h'
+                  --allowlist-file '.*[/\\]debug[/\\]driverdbg\.h'
+                  --allowlist-file '.*[/\\]ide\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]ntdddisk\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h'
+                  --allowlist-file '.*[/\\]ntddstor\.h'
+                  --allowlist-file '.*[/\\]ntintsafe\.h'
+                  --allowlist-file '.*[/\\]ntstrsafe\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_shared\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_user\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]identify_funcs\.h'
                   --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]section_attribs\.h'
+                  --allowlist-file '.*[/\\]sptilib\.h'
                   --allowlist-file '.*[/\\]srb\.h'
-                  --allowlist-file '.*[/\\]ntddscsi\.h' )
-    UNBLOCK="_SCSI_REQUEST_BLOCK"
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
-               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
-               -DDLL_EXPORT_VERSION=0x502 )
-    EXTRA_INC=( -I"${SRC}/sdk/lib/rust/atapi-rust" )
+                  --allowlist-file '.*[/\\]wdmguid\.h'
+                  --allowlist-file '.*[/\\]wmidata\.h'
+                  --allowlist-file '.*[/\\]wmilib\.h'
+                  --allowlist-file '.*[/\\]wmistr\.h'
+                  --allowlist-file '.*atapi[/\\].*\.h' )
+    # OPAQUE in ntkrnl-sys ({ _address: u8 }) but defined by an allowlisted header and named by
+    # this module's C, so the island emits the real layout (fields reachable).
+    UNBLOCK="_SCSI_REQUEST_BLOCK SCSI_REQUEST_BLOCK PSCSI_REQUEST_BLOCK"
+    EXTRA_INC=( -I"${SRC}/drivers/storage/ide/atapi" -I"${SRC}/build-i386/drivers/storage/ide/atapi" -I"${SRC}/sdk/lib/drivers/sptilib" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   usbaudio)
     # USB Audio class driver (drivers/usb/usbaudio, 4 .c). A KS/PortCls audio miniport:
@@ -453,6 +477,21 @@ case "$DRIVER" in
                -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
                -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 )
     EXTRA_INC=( -I"${SRC}/sdk/lib/rust/ks-rust" )
+    ;;
+  vioblk)
+    # virtio-blk SCSIPORT miniport, written in Rust from scratch (no C body). It needs
+    # only the SCSIPORT miniport surface: HW_INITIALIZATION_DATA / PORT_CONFIGURATION_
+    # INFORMATION / ACCESS_RANGE (srb.h) and the SCSI command layouts (scsi.h). Same
+    # SRB treatment as buslogic: _SCSI_REQUEST_BLOCK is opaque in the kernel ddk
+    # bindgen, so UNBLOCK it here. NT 5.2 defaults, as buslogic.
+    DRIVER_DIR="${SRC}/drivers/storage/port/vioblk"
+    WRAPPER_INC=$'#include "vioblk.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*[/\\]srb\.h' )
+    UNBLOCK="_SCSI_REQUEST_BLOCK"
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400
+               -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_SETUPAPI_VER=0x502
+               -DDLL_EXPORT_VERSION=0x502 )
     ;;
   buslogic)
     # The BusLogic BT-958 SCSI HBA miniport (drivers/storage/port/buslogic/BusLogic958.c,
@@ -2450,6 +2489,119 @@ case "$DRIVER" in
     # both islands live in the netapi32-rust crate
     OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/netapi32-rust/src}"
     ;;
+  legide)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from drivers/storage/ide/legide/CMakeLists.txt
+    # (2 compiled TU(s), 70 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/storage/ide/legide"
+    WRAPPER_INC=$'#include <ntddk.h>\n#include <ide.h>\n#include <ata.h>\n#include <scsi.h>\n#include <reactos/drivers/ata/ata_shared.h>\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]ata\.h' --allowlist-file '.*[/\\]ide\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_shared\.h'
+                  --allowlist-file '.*[/\\]scsi\.h'
+                  --allowlist-file '.*legide[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/storage/ide/legide" -I"${SRC}/build-i386/drivers/storage/ide/legide" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  setuplib)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from base/setup/lib/CMakeLists.txt
+    # (23 compiled TU(s), 298 headers in the include closure, 23 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    # BLOCKLIST_FUNCS, MEASURED: 77 external prototype(s) declared by the include closure, 30 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/setup/lib"
+    WRAPPER_INC=$'#include "precomp.h"\n#include "fileqsup.h"\n#define NDEBUG\n#include <debug.h>\n#include "infsupp.h"\n#include "filesup.h"\n#include "partlist.h"\n#include "arcname.h"\n#include "bldrsup.h"\n#include "inicache.h"\n#include "devutils.h"\n#include <pseh/pseh2.h>\n#include <ndk/umfuncs.h> // Ldr* functions\n#include "fsrec.h"\n#include "genlist.h"\n#include <ndk/ldrtypes.h>\n#include <ndk/ldrfuncs.h>\n#include "ntverrsrc.h"\n#include "osdetect.h"\n#include "partinfo.h"\n#include <ntddscsi.h>\n#include <mountdev.h> // For IOCTL_MOUNTDEV_QUERY_DEVICE_NAME\n#include "volutil.h"\n#include "fsrec.h" // For FileSystemToMBRPartitionType()\n#include "registry.h"\n#include "regutil.h"\n#include "bootcode.h"\n#include <ntddstor.h> // For STORAGE_DEVICE_NUMBER\n#include "fsutil.h"\n#include "setuplib.h"\n#include <fslib/vfatlib.h>\n#include "setuplib.h" // HACK for USETUP_DATA\n#include "install.h"\n#include "mui.h"\n#include "muifonts.h"\n#include "muilanguages.h"\n#include "substset.h"\n#include "settings.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]fmifs[/\\]fmifs\.h' --allowlist-file '.*[/\\]fslib[/\\]vfatlib\.h'
+                  --allowlist-file '.*[/\\]ldrtypes\.h'
+                  --allowlist-file '.*[/\\]mountdev\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h'
+                  --allowlist-file '.*[/\\]ntddstor\.h'
+                  --allowlist-file '.*[/\\]ntstrsafe\.h'
+                  --allowlist-file '.*[/\\]pseh[/\\]pseh2\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]rosioctl\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*lib[/\\].*\.h'
+                  --allowlist-file '.*[/\\]mountmgr\.h' )
+    EXTRA_INC=( -I"${SRC}/base/setup/lib" -I"${SRC}/build-i386/base/setup/lib" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/base/setup/lib/spapisup" -I"${SRC}/base/setup/lib/utils" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_WINKD_ -D_SETUPLIB_ -DLANGUAGE_AF_ZA -DLANGUAGE_AR_AE -DLANGUAGE_AR_BH -DLANGUAGE_AR_DZ -DLANGUAGE_AR_EG -DLANGUAGE_AR_IQ -DLANGUAGE_AR_JO -DLANGUAGE_AR_KW -DLANGUAGE_AR_LB -DLANGUAGE_AR_LY -DLANGUAGE_AR_MA -DLANGUAGE_AR_OM -DLANGUAGE_AR_QA -DLANGUAGE_AR_SA -DLANGUAGE_AR_SY -DLANGUAGE_AR_TN -DLANGUAGE_AR_YE -DLANGUAGE_AZ_AZ -DLANGUAGE_BE_BY -DLANGUAGE_BG_BG -DLANGUAGE_BN_BD -DLANGUAGE_BN_IN -DLANGUAGE_CA_ES -DLANGUAGE_CS_CZ -DLANGUAGE_DA_DK -DLANGUAGE_DE_AT -DLANGUAGE_DE_CH -DLANGUAGE_DE_DE -DLANGUAGE_DE_LI -DLANGUAGE_DE_LU -DLANGUAGE_DV_MV -DLANGUAGE_EL_GR -DLANGUAGE_EN_AU -DLANGUAGE_EN_BZ -DLANGUAGE_EN_CA -DLANGUAGE_EN_CB -DLANGUAGE_EN_GB -DLANGUAGE_EN_IE -DLANGUAGE_EN_JM -DLANGUAGE_EN_NZ -DLANGUAGE_EN_PH -DLANGUAGE_EN_TT -DLANGUAGE_EN_US -DLANGUAGE_EN_ZA -DLANGUAGE_EN_ZW -DLANGUAGE_EO_AA -DLANGUAGE_ES_AR -DLANGUAGE_ES_BO -DLANGUAGE_ES_CL -DLANGUAGE_ES_CO -DLANGUAGE_ES_CR -DLANGUAGE_ES_DO -DLANGUAGE_ES_EC -DLANGUAGE_ES_ES -DLANGUAGE_ES_GT -DLANGUAGE_ES_HN -DLANGUAGE_ES_MX -DLANGUAGE_ES_NI -DLANGUAGE_ES_PA -DLANGUAGE_ES_PE -DLANGUAGE_ES_PR -DLANGUAGE_ES_PY -DLANGUAGE_ES_SV -DLANGUAGE_ES_UY -DLANGUAGE_ES_VE -DLANGUAGE_ET_EE -DLANGUAGE_EU_ES -DLANGUAGE_FA_IR -DLANGUAGE_FI_FI -DLANGUAGE_FO_FO -DLANGUAGE_FR_BE -DLANGUAGE_FR_CA -DLANGUAGE_FR_CH -DLANGUAGE_FR_FR -DLANGUAGE_FR_LU -DLANGUAGE_FR_MC -DLANGUAGE_GL_ES -DLANGUAGE_GU_IN -DLANGUAGE_HE_IL -DLANGUAGE_HI_IN -DLANGUAGE_HR_HR -DLANGUAGE_HU_HU -DLANGUAGE_HY_AM -DLANGUAGE_ID_ID -DLANGUAGE_IS_IS -DLANGUAGE_IT_CH -DLANGUAGE_IT_IT -DLANGUAGE_JA_JP -DLANGUAGE_KA_GE -DLANGUAGE_KK_KZ -DLANGUAGE_KN_IN -DLANGUAGE_KOK_IN -DLANGUAGE_KO_KR -DLANGUAGE_KY_KG -DLANGUAGE_LT_LT -DLANGUAGE_LV_LV -DLANGUAGE_MK_MK -DLANGUAGE_MN_MN -DLANGUAGE_MR_IN -DLANGUAGE_MS_BN -DLANGUAGE_MS_MY -DLANGUAGE_MY_MM -DLANGUAGE_NL_BE -DLANGUAGE_NL_NL -DLANGUAGE_NN_NO -DLANGUAGE_PA_IN -DLANGUAGE_PL_PL -DLANGUAGE_PT_BR -DLANGUAGE_PT_PT -DLANGUAGE_RM_CH -DLANGUAGE_RO_RO -DLANGUAGE_RU_RU -DLANGUAGE_SA_IN -DLANGUAGE_SK_SK -DLANGUAGE_SL_SI -DLANGUAGE_SQ_AL -DLANGUAGE_SR_SP -DLANGUAGE_SV_FI -DLANGUAGE_SV_SE -DLANGUAGE_SW_KE -DLANGUAGE_SYR_SY -DLANGUAGE_TA_IN -DLANGUAGE_TE_IN -DLANGUAGE_TH_TH -DLANGUAGE_TR_TR -DLANGUAGE_TT_TA -DLANGUAGE_UK_UA -DLANGUAGE_UR_PK -DLANGUAGE_UZ_UZ -DLANGUAGE_VI_VN -DLANGUAGE_WA_BE -DLANGUAGE_ZH_CN -DLANGUAGE_ZH_HK -DLANGUAGE_ZH_MO -DLANGUAGE_ZH_SG -DLANGUAGE_ZH_TW -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    ;;
+  usetup)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-07 from base/setup/usetup/CMakeLists.txt
+    # (15 compiled TU(s), 271 headers in the include closure, 74 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 124 external prototype(s) declared by the include closure, 9 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/setup/usetup"
+    WRAPPER_INC=$'#include "usetup.h"\n#define Z_SOLO\n#include <zlib.h>\n#define NDEBUG\n#include <debug.h>\n#include <usetup.h>\n#include <blue/ntddblue.h>\n#include "keytrans.h"\n#define INITGUID\n#include <guiddef.h>\n#include <libs/umpnpmgr/sysguid.h>\n#include "muilanguages.h"\n#include <math.h>\n#include <ntstrsafe.h>\n#include "cmdcons.h"\n#include "devinst.h"\n#include "fmtchk.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]\.\.[/\\]lib[/\\]setuplib\.h' --allowlist-file '.*[/\\]blue[/\\]ntddblue\.h'
+                  --allowlist-file '.*[/\\]fmifs[/\\]fmifs\.h'
+                  --allowlist-file '.*[/\\]fsutil\.h'
+                  --allowlist-file '.*[/\\]infros\.h'
+                  --allowlist-file '.*[/\\]libs[/\\]umpnpmgr[/\\]sysguid\.h'
+                  --allowlist-file '.*[/\\]ntddkbd\.h'
+                  --allowlist-file '.*[/\\]ntstrsafe\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]buildno\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]rosioctl\.h'
+                  --allowlist-file '.*[/\\]spapisup[/\\]fileqsup\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*[/\\]winuser\.rh'
+                  --allowlist-file '.*[/\\]zlib\.h'
+                  --allowlist-file '.*usetup[/\\].*\.h'
+                  --allowlist-file '.*[/\\]spapisup[/\\]infsupp\.h'
+                  --allowlist-file '.*[/\\]wincon\.h' )
+    EXTRA_INC=( -I"${SRC}/base/setup/usetup" -I"${SRC}/build-i386/base/setup/usetup" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/drivers" -I"${SRC}/sdk/lib/inflib" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/vendor/zlib/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DLANGUAGE_AF_ZA -DLANGUAGE_AR_AE -DLANGUAGE_AR_BH -DLANGUAGE_AR_DZ -DLANGUAGE_AR_EG -DLANGUAGE_AR_IQ -DLANGUAGE_AR_JO -DLANGUAGE_AR_KW -DLANGUAGE_AR_LB -DLANGUAGE_AR_LY -DLANGUAGE_AR_MA -DLANGUAGE_AR_OM -DLANGUAGE_AR_QA -DLANGUAGE_AR_SA -DLANGUAGE_AR_SY -DLANGUAGE_AR_TN -DLANGUAGE_AR_YE -DLANGUAGE_AZ_AZ -DLANGUAGE_BE_BY -DLANGUAGE_BG_BG -DLANGUAGE_BN_BD -DLANGUAGE_BN_IN -DLANGUAGE_CA_ES -DLANGUAGE_CS_CZ -DLANGUAGE_DA_DK -DLANGUAGE_DE_AT -DLANGUAGE_DE_CH -DLANGUAGE_DE_DE -DLANGUAGE_DE_LI -DLANGUAGE_DE_LU -DLANGUAGE_DV_MV -DLANGUAGE_EL_GR -DLANGUAGE_EN_AU -DLANGUAGE_EN_BZ -DLANGUAGE_EN_CA -DLANGUAGE_EN_CB -DLANGUAGE_EN_GB -DLANGUAGE_EN_IE -DLANGUAGE_EN_JM -DLANGUAGE_EN_NZ -DLANGUAGE_EN_PH -DLANGUAGE_EN_TT -DLANGUAGE_EN_US -DLANGUAGE_EN_ZA -DLANGUAGE_EN_ZW -DLANGUAGE_EO_AA -DLANGUAGE_ES_AR -DLANGUAGE_ES_BO -DLANGUAGE_ES_CL -DLANGUAGE_ES_CO -DLANGUAGE_ES_CR -DLANGUAGE_ES_DO -DLANGUAGE_ES_EC -DLANGUAGE_ES_ES -DLANGUAGE_ES_GT -DLANGUAGE_ES_HN -DLANGUAGE_ES_MX -DLANGUAGE_ES_NI -DLANGUAGE_ES_PA -DLANGUAGE_ES_PE -DLANGUAGE_ES_PR -DLANGUAGE_ES_PY -DLANGUAGE_ES_SV -DLANGUAGE_ES_UY -DLANGUAGE_ES_VE -DLANGUAGE_ET_EE -DLANGUAGE_EU_ES -DLANGUAGE_FA_IR -DLANGUAGE_FI_FI -DLANGUAGE_FO_FO -DLANGUAGE_FR_BE -DLANGUAGE_FR_CA -DLANGUAGE_FR_CH -DLANGUAGE_FR_FR -DLANGUAGE_FR_LU -DLANGUAGE_FR_MC -DLANGUAGE_GL_ES -DLANGUAGE_GU_IN -DLANGUAGE_HE_IL -DLANGUAGE_HI_IN -DLANGUAGE_HR_HR -DLANGUAGE_HU_HU -DLANGUAGE_HY_AM -DLANGUAGE_ID_ID -DLANGUAGE_IS_IS -DLANGUAGE_IT_CH -DLANGUAGE_IT_IT -DLANGUAGE_JA_JP -DLANGUAGE_KA_GE -DLANGUAGE_KK_KZ -DLANGUAGE_KN_IN -DLANGUAGE_KOK_IN -DLANGUAGE_KO_KR -DLANGUAGE_KY_KG -DLANGUAGE_LT_LT -DLANGUAGE_LV_LV -DLANGUAGE_MK_MK -DLANGUAGE_MN_MN -DLANGUAGE_MR_IN -DLANGUAGE_MS_BN -DLANGUAGE_MS_MY -DLANGUAGE_MY_MM -DLANGUAGE_NL_BE -DLANGUAGE_NL_NL -DLANGUAGE_NN_NO -DLANGUAGE_PA_IN -DLANGUAGE_PL_PL -DLANGUAGE_PT_BR -DLANGUAGE_PT_PT -DLANGUAGE_RM_CH -DLANGUAGE_RO_RO -DLANGUAGE_RU_RU -DLANGUAGE_SA_IN -DLANGUAGE_SK_SK -DLANGUAGE_SL_SI -DLANGUAGE_SQ_AL -DLANGUAGE_SR_SP -DLANGUAGE_SV_FI -DLANGUAGE_SV_SE -DLANGUAGE_SW_KE -DLANGUAGE_SYR_SY -DLANGUAGE_TA_IN -DLANGUAGE_TE_IN -DLANGUAGE_TH_TH -DLANGUAGE_TR_TR -DLANGUAGE_TT_TA -DLANGUAGE_UK_UA -DLANGUAGE_UR_PK -DLANGUAGE_UZ_UZ -DLANGUAGE_VI_VN -DLANGUAGE_WA_BE -DLANGUAGE_ZH_CN -DLANGUAGE_ZH_HK -DLANGUAGE_ZH_MO -DLANGUAGE_ZH_SG -DLANGUAGE_ZH_TW -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  diskpart)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-07 from base/system/diskpart/CMakeLists.txt
+    # (43 compiled TU(s), 141 headers in the include closure, 10 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 56 external prototype(s) declared by the include closure, 5 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/system/diskpart"
+    WRAPPER_INC=$'#include "diskpart.h"\n#define NDEBUG\n#include <debug.h>\n#include <fmifs/fmifs.h>\n#define INITGUID\n#include <guiddef.h>\n#include <diskguid.h>\n#include "diskpart_msg.h"\n#include <mountmgr.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]conutils\.h' --allowlist-file '.*[/\\]diskguid\.h'
+                  --allowlist-file '.*[/\\]diskpart_msg\.h'
+                  --allowlist-file '.*[/\\]fmifs[/\\]fmifs\.h'
+                  --allowlist-file '.*[/\\]mountmgr\.h'
+                  --allowlist-file '.*[/\\]ntddscsi\.h'
+                  --allowlist-file '.*[/\\]ntddstor\.h'
+                  --allowlist-file '.*[/\\]ntsecapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]winioctl\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*diskpart[/\\].*\.h'
+                  --allowlist-file '.*[/\\]stream\.h' )
+    EXTRA_INC=( -I"${SRC}/base/system/diskpart" -I"${SRC}/build-i386/base/system/diskpart" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/libs/fmifs" -I"${SRC}/sdk/lib/conutils" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
@@ -2663,6 +2815,14 @@ open(final, "w").write("".join(out))
     # declaration or unbalance braces, so a silent truncation cannot ship.
     python3 "$(dirname "$0")/bindgen_unions_to_real.py" "$FINAL" >/dev/null
   fi
+  # MS anonymous struct members (`CHANNEL_DATA_COMMON;` as a struct's first member) come out
+  # of bindgen as opaque padding; restore them by name from the driver's own headers. A no-op
+  # for every driver whose headers have none. See the tool.
+  python3 "$(dirname "$0")/bindgen_ms_anon_members.py" "$FINAL" "${DRIVER_DIR}"/*.h \
+    "${SRC}"/sdk/include/reactos/drivers/ata/*.h
+  # bindgen drops the `L` of a `#define X L"..."` and emits a NARROW byte string; put the
+  # UTF-16 back wherever the tree's C defines that name wide with the same text. See the tool.
+  python3 "$(dirname "$0")/widen_island_constants.py" --repo "$SRC" "$FINAL"
   # MACRO_SIGNED post-pass: re-force the genuinely-DWORD/IN_ADDR high-bit consts back to u32.
   # Under --default-macro-constant-type signed these flip to negative i32 (same bits) but are
   # used in u32 contexts (IN_ADDR.s_addr masks, DeviceIoControl ioctl codes, DWORD timeouts) —

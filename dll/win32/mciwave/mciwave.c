@@ -23,6 +23,7 @@
 
 #include <assert.h>
 #include <stdarg.h>
+#include <stdlib.h> /* malloc: amd64 got it only via xmmintrin.h -> malloc.h, arm64 has no such path */
 
 #include "windef.h"
 #include "winbase.h"

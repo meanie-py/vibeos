@@ -2,6 +2,8 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "C" {
+    fn _snwprintf(buffer: *mut u16, count: usize, format: *const u16, ...) -> i32;
+    fn wcstod(nptr: *const u16, endptr: *mut *mut u16) -> f64;
     fn wcsicmp(s1: *const u16, s2: *const u16) -> i32;
     fn bsearch( key: *const core::ffi::c_void, base: *const core::ffi::c_void, num: usize, size: usize, compar: unsafe extern "C" fn(*const core::ffi::c_void, *const core::ffi::c_void) -> i32, ) -> *mut core::ffi::c_void;
     fn _wcsnicmp(s1: LPCWSTR, s2: LPCWSTR, n: usize) -> i32;
@@ -347,8 +349,8 @@ pub unsafe extern "system" fn VarTokenizeFormatString(
 
     let mut cbTok = cbTok;
     let header = rgbTok as *mut FMT_HEADER;
-    let str_header = rgbTok.add(core::mem::size_of::<FMT_HEADER>()) as *mut FMT_STRING_HEADER;
-    let num_header = str_header as *mut FMT_NUMBER_HEADER;
+    let mut str_header = rgbTok.add(core::mem::size_of::<FMT_HEADER>()) as *mut FMT_STRING_HEADER;
+    let mut num_header = str_header as *mut FMT_NUMBER_HEADER;
     let mut pOut = rgbTok.add(core::mem::size_of::<FMT_HEADER>() + core::mem::size_of::<FMT_STRING_HEADER>());
     let mut pLastHours: *mut u8 = core::ptr::null_mut();
     let mut fmt_number: u8 = 0;
@@ -408,8 +410,10 @@ pub unsafe extern "system" fn VarTokenizeFormatString(
                 pOut = pOut.add(1);
 
                 (*header).starts[fmt_number as usize] = pOut.offset_from(rgbTok) as u8;
-                let str_header = pOut as *mut FMT_STRING_HEADER;
-                let _num_header = pOut as *mut FMT_NUMBER_HEADER;
+                // Re-point the OUTER headers (C assigns, not declares): every token of
+                // the new section updates its own whole/fractional/flags.
+                str_header = pOut as *mut FMT_STRING_HEADER;
+                num_header = pOut as *mut FMT_NUMBER_HEADER;
                 core::ptr::write_bytes(str_header, 0, 1);
                 pOut = pOut.add(core::mem::size_of::<FMT_STRING_HEADER>());
                 fmt_state = 0;
@@ -1093,16 +1097,19 @@ unsafe extern "C" fn VARIANT_FormatNumber(
                     *pBuff = 'E' as u16;
                     pBuff = pBuff.offset(1);
                 }
+                // Wine 10.0 bounds these: the width comes from the caller's
+                // format string ("0E+000..."), so an unbounded write could run
+                // past buff. Count leaves room for _snwprintf's NUL (buff is zeroed).
                 if exponent < 0 {
                     *pBuff = '-' as u16;
                     pBuff = pBuff.offset(1);
-                    swprintf(pBuff, szPercentZeroStar_d.as_ptr(), *pToken.offset(1) as i32, -exponent);
+                    _snwprintf(pBuff, (buff.len() - 1).saturating_sub(pBuff.offset_from(buff.as_ptr()) as usize), szPercentZeroStar_d.as_ptr(), *pToken.offset(1) as i32, -exponent);
                 } else {
                     if *pToken == FMT_NUM_EXP_POS_L || *pToken == FMT_NUM_EXP_POS_U {
                         *pBuff = '+' as u16;
                         pBuff = pBuff.offset(1);
                     }
-                    swprintf(pBuff, szPercentZeroStar_d.as_ptr(), *pToken.offset(1) as i32, exponent);
+                    _snwprintf(pBuff, (buff.len() - 1).saturating_sub(pBuff.offset_from(buff.as_ptr()) as usize), szPercentZeroStar_d.as_ptr(), *pToken.offset(1) as i32, exponent);
                 }
                 while *pBuff != 0 {
                     pBuff = pBuff.offset(1);
@@ -1264,7 +1271,11 @@ unsafe extern "C" fn VARIANT_FormatNumber(
                         }
                     }
                 }
-                pToken = pToken.offset(1);
+                // C `break`s out of the case on the sign path, before this `pToken++`: the
+                // count byte must stay unconsumed for the re-visit (shouldAdvance is clear).
+                if shouldAdvance != 0 {
+                    pToken = pToken.offset(1);
+                }
             }
             FMT_NUM_COPY_SKIP => {
                 TRACE!(
@@ -1419,7 +1430,11 @@ unsafe extern "C" fn VARIANT_FormatNumber(
                         }
                     }
                 }
-                pToken = pToken.offset(1);
+                // C `break`s out of the case on the sign path, before this `pToken++`: the
+                // count byte must stay unconsumed for the re-visit (shouldAdvance is clear).
+                if shouldAdvance != 0 {
+                    pToken = pToken.offset(1);
+                }
             }
             _ => {
                 ERR!(b"Unknown token 0x%02x!\n\0".as_ptr() as PCHAR, *pToken);
@@ -1502,7 +1517,24 @@ unsafe extern "C" fn VARIANT_FormatDate(
 
         hRes = VariantChangeTypeEx(&mut vDate, pVarIn, lcid, usFlags, VT_DATE as u16);
         if FAILED(hRes) {
-            return hRes;
+            // Wine 10.0: a BSTR that is a DATE in numeric form ("31809.40")
+            // fails the locale date parse but is still a date: read it as a
+            // double. Anything else keeps the failure.
+            if *V_VT_ref(pVarIn) != VT_BSTR as VARTYPE {
+                return hRes;
+            }
+            let mut endptr: *mut u16 = core::ptr::null_mut();
+            let tmp = wcstod(*V_BSTR_ref(pVarIn), &mut endptr);
+            if endptr.is_null() || *endptr != 0 {
+                return hRes; /* not a double in string form */
+            }
+            let mut out: f64 = 0.0;
+            hRes = crate::vartype::VarDateFromR8(tmp, &mut out);
+            if FAILED(hRes) {
+                return hRes;
+            }
+            *V_VT_ref(&mut vDate) = VT_DATE as VARTYPE;
+            *V_DATE_ref(&mut vDate) = out;
         }
         dateHeader = rgbTok.offset(FmtGetPositive(header) as isize) as *const FMT_DATE_HEADER;
     }
@@ -1850,7 +1882,7 @@ unsafe extern "C" fn VARIANT_FormatDate(
                 pBuff = pBuff.offset(1);
             }
         } else if !szPrintFmt.is_null() {
-            swprintf(pBuff, szPrintFmt, dwVal);
+            _snwprintf(pBuff, (buff.len() - 1).saturating_sub(pBuff.offset_from(buff.as_ptr()) as usize), szPrintFmt, dwVal);
             while *pBuff != 0 {
                 pBuff = pBuff.offset(1);
             }
@@ -2447,8 +2479,28 @@ pub unsafe extern "system" fn VarFormatCurrency(
     *pbstrOut = core::ptr::null_mut();
 
     let mut vStr: VARIANT = core::mem::zeroed();
-    *V_VT_ref(&mut vStr) = VT_EMPTY as VARTYPE;
-    let mut hRet = VariantCopyInd(&mut vStr, pVarIn);
+    // Wine 10.0: a currency string is PARSED as currency first (it may carry
+    // the locale's currency symbol and separators, which GetCurrencyFormatW
+    // would refuse in the raw string).
+    let mut hRet;
+    let vt_in = *V_VT_ref(pVarIn);
+    if vt_in == VT_BSTR as VARTYPE || vt_in == (VT_BSTR | VT_BYREF) as VARTYPE {
+        let bstr = if vt_in & VT_BYREF as VARTYPE != 0 {
+            *((*pVarIn).n1.n2.n3.byref as *mut BSTR)
+        } else {
+            *V_BSTR_ref(pVarIn)
+        };
+        let mut cy: CY = core::mem::zeroed();
+        hRet = crate::vartype::VarCyFromStr(bstr, LOCALE_USER_DEFAULT, 0, &mut cy);
+        if FAILED(hRet) {
+            return hRet;
+        }
+        *V_VT_ref(&mut vStr) = VT_CY as VARTYPE;
+        *V_CY_ref(&mut vStr) = cy;
+    } else {
+        *V_VT_ref(&mut vStr) = VT_EMPTY as VARTYPE;
+        hRet = VariantCopyInd(&mut vStr, pVarIn);
+    }
 
     if SUCCEEDED(hRet) {
         // C passes &vStr as BOTH dest and src.

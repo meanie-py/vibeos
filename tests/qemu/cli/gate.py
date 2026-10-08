@@ -123,6 +123,12 @@ def _retryable(classification: str, summary: dict) -> bool:
     return False
 
 
+# Legacy-BIOS boot of the amd64 media. The BIOS loader was pruned 2026-05-29 and
+# nothing booted it, so nothing noticed it was gone; restored 2026-10-05 for
+# Libreboot/SeaBIOS machines, it is a gate lane so it cannot rot unseen again.
+BIOS_LANE = "amd64-bios"
+
+
 def _smoke_once(repo: Path, arch: str, root: Path, extra: list[str]) -> dict:
     """Run one `vibeos-cli smoke --arch <arch>` in its own artifact root so its
     summary.json is locatable deterministically. Returns a compact result dict."""
@@ -708,6 +714,8 @@ def _resolve_arches(raw: str | None) -> list[str]:
     return out
 
 
+# vCPUs for every smoke leg the gate runs (see smoke_extra in gate()).
+GATE_SMP = 2
 FULL_ARCH_SET = {"i386", "amd64", "arm64"}
 
 
@@ -833,7 +841,13 @@ def gate(args, repo: Path) -> int:
     # parallel gate lane (default) or not at all (--no-net). The smoke itself
     # therefore always gets --no-net — its net stage is the serial-two-boots
     # shape this lane split removes.
-    smoke_extra: list[str] = ["--no-net"]
+    # Every arch's smoke leg boots TWO CPUs. Until 2026-10-04 the gate booted one, so
+    # nothing on the landing path ever ran the MP kernel's cross-CPU paths -- and
+    # amd64 shipped a lazy-TLB hole that corrupted memory on roughly half of -smp 2
+    # boots (field manual: "Successful reads that leave their pages ZERO"), visible
+    # only to whoever passed --smp by hand. The MP kernel has been the default media
+    # selection since 2026-09-12; this makes the gate run it the way it ships.
+    smoke_extra: list[str] = ["--no-net", "--smp", str(GATE_SMP)]
 
     run = Run("gate", "+".join(arches))
     # Host free space BEFORE anything builds. A full disk does not present as a
@@ -947,6 +961,10 @@ def gate(args, repo: Path) -> int:
     def _lane_once(lane: str, root: Path) -> dict:
         if lane == "net":
             return _net_once(repo, root)
+        if lane == BIOS_LANE:
+            # Same media as the amd64 lane, booted by SeaBIOS. No ladder: the WoW64
+            # guests are a property of the build, which the amd64 lane already grades.
+            return _smoke_once(repo, lane, root, smoke_extra)
         if lane.startswith("conf:"):
             return _conformance_once(repo, lane.split(":", 1)[1], root)
         return _smoke_once(repo, lane, root, smoke_extra + _ladder_extra(lane))
@@ -962,6 +980,7 @@ def gate(args, repo: Path) -> int:
     n_lanes = (
         len(arches)
         + (1 if net_requested and "amd64" in arches else 0)
+        + (1 if "amd64" in arches else 0)
         + (len(arches) if conf_requested else 0)
     )
     max_workers = (
@@ -999,6 +1018,10 @@ def gate(args, repo: Path) -> int:
             fut[ex.submit(_lane_once, arch, gate_root / f"smoke-{arch}-a1")] = arch
             if arch == "amd64" and net_requested:
                 fut[ex.submit(_lane_once, "net", gate_root / "smoke-net-a1")] = "net"
+            if arch == "amd64":
+                fut[ex.submit(_lane_once, BIOS_LANE, gate_root / f"smoke-{BIOS_LANE}-a1")] = (
+                    BIOS_LANE
+                )
             if conf_requested:
                 fut[ex.submit(_lane_once, f"conf:{arch}", gate_root / f"conf-{arch}-a1")] = (
                     f"conf:{arch}"
@@ -1143,6 +1166,7 @@ def gate(args, repo: Path) -> int:
         lanes = (
             list(arches)
             + (["net"] if net_lane else [])
+            + ([BIOS_LANE] if "amd64" in arches else [])
             + ([f"conf:{a}" for a in arches] if conf_requested else [])
         )
 
@@ -1292,8 +1316,14 @@ def gate(args, repo: Path) -> int:
 
     # --- verdict matrix ---
     _conf_lanes = [f"conf:{a}" for a in arches] if conf_requested else []
+    # Every lane _launch_lanes submits must be listed here AND in requested_lanes below,
+    # or it runs, prints, and is ignored: the BIOS lane did exactly that on its first day.
+    _bios_lanes = [BIOS_LANE] if "amd64" in arches else []
     for arch in (
-        _resolve_arches(getattr(args, "arches", None)) + (["net"] if net_lane else []) + _conf_lanes
+        _resolve_arches(getattr(args, "arches", None))
+        + (["net"] if net_lane else [])
+        + _bios_lanes
+        + _conf_lanes
     ):
         r = results.get(arch)
         if r is None:
@@ -1335,6 +1365,7 @@ def gate(args, repo: Path) -> int:
     requested_lanes = (
         requested
         + (["net"] if net_lane else [])
+        + ([BIOS_LANE] if "amd64" in requested else [])
         # The whole point of wiring the ratchet in: a conformance regression must
         # withhold the push credential, exactly as a dead desktop does. Without this
         # line the lane would run, print red, and still mint the stamp.

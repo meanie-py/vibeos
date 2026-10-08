@@ -7,6 +7,7 @@
     rr replay <trace> [--gdb]                    # run that exact boot again
     rr verify <trace>                            # replay and diff serial vs the record
     rr breaks <trace> [--near N]                 # icounts a replay can legally stop at
+    rr record ... --sample 10 ; rr diverge <trace>   # first icount replay != record
 
 A trace is a self-contained directory under $VIBEOS_RR_ROOT (default
 ~/vibeos-rr/): the instruction-stream log, private copies of every image the
@@ -32,6 +33,7 @@ import bisect
 import itertools
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -40,6 +42,7 @@ import time
 from pathlib import Path
 
 from . import recordreplay as rr  # re-exported for the arg parser
+from . import rrsample
 
 # Traces are expensive (a full boot each) and worth keeping across reboots, so
 # they do NOT live in /tmp.
@@ -50,11 +53,16 @@ DEFAULT_ROOT = Path(os.environ.get("VIBEOS_RR_ROOT", Path.home() / "vibeos-rr"))
 # with the devices asking for it, so we persist them with the trace.
 _PINNED_ENV = (
     "VIBEOS_QEMU_SMP",
+    "VIBEOS_QEMU_GIC",
     "VIBEOS_QEMU_USB_DISK",
+    "VIBEOS_QEMU_NVME",
     "VIBEOS_QEMU_XHCI",
     "VIBEOS_QEMU_EXTRA_ARGS",
     "VIBEOS_TRIPWIRE",
     "VIBEOS_UP_DEFAULT_BOOT",
+    # x86 records over usb-storage: blkreplay refuses the ATAPI ide-cd the default boot
+    # uses, and the recorded device set must be the replayed one.
+    "VIBEOS_QEMU_BOOT_TRANSPORT",
 )
 
 
@@ -104,7 +112,12 @@ def _boot_cmd(repo: Path, arch: str, payload: str, smp: int, build: bool, timeou
         if not build:
             cmd.append("--no-build")
         return cmd
-    return [cli, "smoke", "--arch", arch, "--smp", str(smp)]
+    # --no-net: amd64's smoke runs a SECOND boot for its net suite. Under the rr env that
+    # boot re-staged fresh overlays over the trace's media after the recording ended,
+    # wiping the `init` snapshot (replay: "Snapshot 'init' does not exist"). Recording a
+    # network is unsupported anyway (recordreplay.py), and arm64 has no net stage, which
+    # is why no arm64 trace was ever hit.
+    return [cli, "smoke", "--arch", arch, "--smp", str(smp), "--no-net"]
 
 
 # --------------------------------------------------------------------------
@@ -141,6 +154,10 @@ def cmd_record(args, repo: Path) -> int:
             file=sys.stderr,
         )
     env["VIBEOS_QEMU_SMP"] = str(args.smp)
+    if getattr(args, "sample", None):
+        # Fingerprint the guest every N seconds so `rr diverge` has a recorded
+        # half to compare against. See rrsample.py.
+        env[rrsample.SAMPLE_ENV_VAR] = str(args.sample)
     # The trace has to come off the native stack; see recordreplay's module
     # docstring. Say so up front rather than letting the VM raise mid-launch.
     env["VIBEOS_QEMU_BACKEND"] = "native"
@@ -191,6 +208,16 @@ def cmd_record(args, repo: Path) -> int:
     mpath.write_text(json.dumps(meta, indent=2) + "\n")
 
     print(f"[rr] boot rc={rc} in {elapsed:.0f}s; trace {size / 1e6:.0f}MB at {trace}")
+    if size == 0 and "argv" not in meta:
+        # vm.py writes the argv the moment it launches QEMU; without it the boot
+        # command refused before any VM existed (stale media, a --no-build
+        # mismatch), and "QEMU was killed" would send the reader the wrong way.
+        print(
+            f"[rr] NO TRACE WRITTEN — the boot command exited rc={rc} without ever "
+            "launching QEMU. Its own message above says why.",
+            file=sys.stderr,
+        )
+        return 1
     if size == 0:
         print(
             "[rr] NO TRACE WRITTEN — the recording did not reach a clean shutdown.\n"
@@ -272,6 +299,9 @@ def _keep_serial(trace: Path, name: str, *, expect_mode: str) -> Path | None:
     return dst
 
 
+_HOST_STAMP = re.compile(r"\[\+\s*\d+\.\d+\] ?")
+
+
 def _guest_lines(p: Path) -> list[str]:
     """The guest's own serial output, with the harness's banner dropped.
 
@@ -285,7 +315,14 @@ def _guest_lines(p: Path) -> list[str]:
     i = 0
     while i < len(lines) and (not lines[i].strip() or lines[i].startswith("#")):
         i += 1
-    return lines[i:]
+    # The tee also stamps `[+ secs]` host time onto the stream, at host-timed chunk
+    # arrivals, so both the stamps and where they fall differ on every run. Diffing
+    # them made `verify` report "DIVERGED at serial line 2" on every arm64 trace —
+    # the same self-inflicted false positive as the banner, arriving later. Strip
+    # them and compare the guest's own bytes. A stamp that lands between a `\r` and
+    # its `\n` leaves an empty line on one side only, so blank lines are dropped too.
+    text = _HOST_STAMP.sub("", "\n".join(lines[i:])).replace("\r", "\n")
+    return [ln for ln in text.splitlines() if ln.strip()]
 
 
 def _serial_divergence(a: list[str], b: list[str]) -> tuple[int, str] | None:
@@ -293,6 +330,17 @@ def _serial_divergence(a: list[str], b: list[str]) -> tuple[int, str] | None:
     other. A prefix is not a divergence: a replay that was stopped early, or a
     record whose tail was still being flushed, both produce one."""
     for n, (x, y) in enumerate(zip(a, b, strict=False), 1):
+        # The harness's serial socket can connect a few bytes into the guest's
+        # output ("UEFI firmware" captured as "FI firmware"), so the FIRST line may
+        # be truncated at its front on either side. That is capture, not the guest.
+        if n == 1 and (x.endswith(y) or y.endswith(x)):
+            continue
+        # Likewise the LAST line of the shorter transcript: the harness quits QEMU
+        # the moment it has its verdict, mid-print. A whole-kmtest replay agreed for
+        # 18,286 lines and was reported DIVERGED on the 18,287th, which was "[".
+        last = n == min(len(a), len(b))
+        if last and (x.startswith(y) or y.startswith(x)):
+            continue
         if x != y:
             return n, f"record: {x[:160]}\nreplay: {y[:160]}"
     return None
@@ -469,6 +517,66 @@ def cmd_replay(args, repo: Path) -> int:
     return rc
 
 
+def cmd_diverge(args, repo: Path) -> int:
+    """Replay with a break at every recorded fingerprint; report the first mismatch.
+
+    The wedge is where a divergence becomes VISIBLE. This finds where it HAPPENED,
+    to the resolution the recording was sampled at. Needs `rr record --sample`.
+    """
+    trace = _resolve_trace(args)
+    samples = trace / rrsample.SAMPLES_FILE
+    if not samples.is_file() or not samples.read_text().strip():
+        print(
+            f"[rr] {trace.name} has no fingerprints ({rrsample.SAMPLES_FILE}); there is "
+            "nothing recorded to compare a replay against. Re-record it with "
+            "`rr record ... --sample 10`.",
+            file=sys.stderr,
+        )
+        return 2
+    verdict_path = trace / rrsample.VERDICT_FILE
+    verdict_path.unlink(missing_ok=True)
+    os.environ[rrsample.SAMPLE_ENV_VAR] = "check"
+    args.gdb = False
+    args.break_at = None
+    rc = cmd_replay(args, repo)
+    if not verdict_path.is_file():
+        print(f"[rr] diverge: no verdict written (replay rc={rc})", file=sys.stderr)
+        return 1
+    v = json.loads(verdict_path.read_text())
+    print(f"[rr] diverge: compared {v['compared']} of {v['samples']} fingerprints")
+    for sk in v["skipped"]:
+        print(f"[rr]   skipped icount {sk['icount']}: {sk['why']}")
+    for ic in v.get("inconclusive", []):
+        print(f"[rr]   inconclusive icount {ic['icount']}: {ic['why']} ({ic['mem_mib']})")
+    print(f"[rr]   last match:     {v['last_match']}")
+    mm = v.get("first_mismatch")
+    if mm:
+        print(f"[rr]   FIRST MISMATCH: icount {mm['icount']}")
+        for line in mm.get("regs", [])[:40]:
+            print(f"[rr]     {line}")
+        mib = mm.get("mem_mib", [])
+        if mib:
+            print(f"[rr]     RAM differs in {len(mib)} MiB: {' '.join(mib[:32])}")
+        for chunk in mm.get("mem_bytes", [])[:4]:
+            if "error" in chunk:
+                print(f"[rr]     {chunk['base']}: {chunk['error']}")
+                continue
+            print(f"[rr]     {chunk['base']}: {chunk['bytes_differing']} bytes differ")
+            for run in chunk["runs"][:3]:
+                print(f"[rr]       {run['addr']} +{run['len']}  (dump from {run['at']})")
+                print(f"[rr]         record {run['record']}")
+                print(f"[rr]         replay {run['replay']}")
+        print(f"[rr]   full detail: {verdict_path}")
+        return 1
+    if v.get("error"):
+        print(f"[rr]   ERROR: {v['error']}")
+        for line in (v.get("wedge_regs") or "").splitlines()[:4]:
+            print(f"[rr]     {line.strip()}")
+        return 1
+    print("[rr]   every compared fingerprint matched")
+    return 0
+
+
 def cmd_list(args, repo: Path) -> int:
     root = _root(args)
     if not root.is_dir():
@@ -635,6 +743,63 @@ def cmd_breaks(args, repo: Path) -> int:
     return 0
 
 
+def cmd_wedge(args, repo: Path) -> int:
+    """Name the recorded events around where a stalled replay stopped reading.
+
+    The wedge is the open rr limitation: a replay stops consuming the trace about
+    two thirds through, at a near-deterministic offset, while burning CPU. The
+    offset has been measured; which recorded event sits there has not, and that
+    is the next thing to know.
+
+    Reports a WINDOW, never a culprit. `trace_read_position` is the kernel file
+    offset of a buffered read, so QEMU has pulled bytes it has not yet acted on:
+    the stall is at or BEFORE the offset. Printing "the replay died here" from
+    that would be the handle's reading dressed up as the thing's.
+    """
+    trace = _resolve_trace(args)
+    offset = args.at
+    src = "--at"
+    icount = getattr(args, "icount", None)
+    if icount is not None:
+        # Exact, unlike a read offset: the first event at or past the instruction count
+        # QEMU reports for a stalled replay (`info replay` on a monitor).
+        offset = next((ev.offset for ev in rr.walk_events(trace) if ev.icount >= icount), None)
+        if offset is None:
+            print(f"icount {icount} is past the last event in {trace}", file=sys.stderr)
+            return 1
+        src = f"--icount {icount}"
+    if offset is None:
+        offset = rr.trace_read_position(trace)
+        if offset is None:
+            print(
+                f"nobody has {trace}/replay.bin open, so there is no read position to "
+                "look at. Pass --at <offset> to inspect a position recorded earlier.",
+                file=sys.stderr,
+            )
+            return 1
+        src = "live reader"
+
+    size = (trace / "replay.bin").stat().st_size
+    before, after = rr.events_around_offset(trace, offset, args.count, args.count)
+    pct = 100.0 * offset / size if size else 0.0
+    print(f"trace:  {trace}")
+    print(f"offset: {offset} of {size} ({pct:.2f}%, from {src})")
+    if not before and not after:
+        print("\nno events decode around that offset")
+        return 1
+    print("\nBEFORE (the stall is at or before one of these):")
+    for ev in before:
+        print(f"  @{ev.offset:<10} icount {ev.icount:<14} {ev.name}")
+    print("\nAFTER (context; not yet acted on):")
+    for ev in after:
+        print(f"  @{ev.offset:<10} icount {ev.icount:<14} {ev.name}")
+    print(
+        "\nThe offset is a BUFFERED kernel read position, so it runs ahead of what\n"
+        "the replay has acted on. Treat BEFORE as the evidence."
+    )
+    return 0
+
+
 def rr_cmd(args, repo: Path) -> int:
     verb = args.rr_verb
     fn = {
@@ -643,7 +808,9 @@ def rr_cmd(args, repo: Path) -> int:
         "list": cmd_list,
         "info": cmd_info,
         "breaks": cmd_breaks,
+        "wedge": cmd_wedge,
         "verify": cmd_verify,
+        "diverge": cmd_diverge,
         "prune": cmd_prune,
     }.get(verb)
     if fn is None:

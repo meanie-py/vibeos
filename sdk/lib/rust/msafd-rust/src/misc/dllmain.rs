@@ -854,9 +854,16 @@ pub unsafe extern "C" fn TranslateNtStatusError(Status: NTSTATUS) -> INT {
     const STATUS_REMOTE_NOT_LISTENING: NTSTATUS = 0xC00000BCu32 as NTSTATUS;
     const STATUS_LOCAL_DISCONNECT: NTSTATUS = 0xC000013Bu32 as NTSTATUS;
     const STATUS_REMOTE_DISCONNECT: NTSTATUS = 0xC000013Cu32 as NTSTATUS;
+    // Not in the C's table, so they fell to the "unhandled" WSAENETDOWN arm: a TCP
+    // connect that timed out read as "network is down" and a refused one logged an
+    // MSAFD error per call. Windows maps them to WSAETIMEDOUT / WSAECONNREFUSED, and
+    // netstack completes connects with both.
+    const STATUS_IO_TIMEOUT: NTSTATUS = 0xC00000B5u32 as NTSTATUS;
+    const STATUS_CONNECTION_REFUSED: NTSTATUS = 0xC0000236u32 as NTSTATUS;
     match Status {
         STATUS_CANT_WAIT => (WSAEWOULDBLOCK as i32),
-        STATUS_TIMEOUT => WSAETIMEDOUT as i32,
+        STATUS_TIMEOUT | STATUS_IO_TIMEOUT => WSAETIMEDOUT as i32,
+        STATUS_CONNECTION_REFUSED => WSAECONNREFUSED as i32,
         STATUS_SUCCESS => NO_ERROR as INT,
         STATUS_FILE_CLOSED => WSAECONNRESET as i32,
         STATUS_END_OF_FILE => WSAESHUTDOWN as i32,
@@ -892,6 +899,56 @@ pub unsafe extern "C" fn MsafdWaitForAlert(hObject: HANDLE) {
         if Result != WAIT_IO_COMPLETION {
             break;
         }
+    }
+}
+
+/// Wait for a synchronous send/receive, honouring SO_SNDTIMEO/SO_RCVTIMEO.
+///
+/// Upstream waits forever ("FIXME: Shouldn't wait infinitely for receive..."), so a 3s
+/// SO_RCVTIMEO blocked a recvfrom for 9 minutes. Windows instead cancels the request when
+/// the timeout expires and fails the call with WSAETIMEDOUT. 0 and INFINITE both mean "no
+/// timeout". If the request completes in the window between the timeout and the cancel, its
+/// real result wins. Returns the request's final status.
+pub unsafe fn MsafdWaitForIo(
+    Handle: HANDLE,
+    hObject: HANDLE,
+    IOSB: PIO_STATUS_BLOCK,
+    Timeout: DWORD,
+) -> NTSTATUS {
+    const WAIT_TIMEOUT: DWORD = 0x102;
+    const STATUS_IO_TIMEOUT: NTSTATUS = 0xC00000B5u32 as NTSTATUS;
+
+    if Timeout == 0 || Timeout == INFINITE {
+        MsafdWaitForAlert(hObject);
+        return (*IOSB).__bindgen_anon_1.Status;
+    }
+
+    let Start = GetTickCount();
+    loop {
+        // An APC (WAIT_IO_COMPLETION) restarts the wait with what is left of the timeout.
+        let Elapsed = GetTickCount().wrapping_sub(Start);
+        let Result = if Elapsed >= Timeout {
+            WAIT_TIMEOUT
+        } else {
+            WaitForSingleObjectEx(hObject, Timeout - Elapsed, 1)
+        };
+        if Result == WAIT_IO_COMPLETION {
+            continue;
+        }
+        if Result != WAIT_TIMEOUT {
+            return (*IOSB).__bindgen_anon_1.Status;
+        }
+        break;
+    }
+
+    let mut CancelIosb: IO_STATUS_BLOCK = core::mem::zeroed();
+    NtCancelIoFile(Handle, &mut CancelIosb);
+    MsafdWaitForAlert(hObject);
+    let Status = (*IOSB).__bindgen_anon_1.Status;
+    if Status == STATUS_CANCELLED {
+        STATUS_IO_TIMEOUT
+    } else {
+        Status
     }
 }
 #[no_mangle]

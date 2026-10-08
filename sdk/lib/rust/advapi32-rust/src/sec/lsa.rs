@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
@@ -128,11 +129,11 @@ pub unsafe extern "system" fn LsaAddAccountRights(
     UserRightSet.Entries = CountOfRights;
     UserRightSet.UserRights = UserRights as PRPC_UNICODE_STRING;
 
-    Status = LsarAddAccountRights(
+    Status = rpc_try(|| LsarAddAccountRights(
         PolicyHandle as LSAPR_HANDLE,
         AccountSid as PRPC_SID,
         core::ptr::addr_of_mut!(UserRightSet),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -150,10 +151,10 @@ pub unsafe extern "system" fn LsaAddPrivilegesToAccount(
         PrivilegeSet,
     );
 
-    Status = LsarAddPrivilegesToAccount(
+    Status = rpc_try(|| LsarAddPrivilegesToAccount(
         AccountHandle as LSAPR_HANDLE,
         PrivilegeSet as PLSAPR_PRIVILEGE_SET,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -162,7 +163,7 @@ pub unsafe extern "system" fn LsaAddPrivilegesToAccount(
 pub unsafe extern "system" fn LsaClearAuditLog(PolicyHandle: LSA_HANDLE) -> NTSTATUS {
     let Status: NTSTATUS;
 
-    Status = LsarClearAuditLog(PolicyHandle as LSAPR_HANDLE);
+    Status = rpc_try(|| LsarClearAuditLog(PolicyHandle as LSAPR_HANDLE)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -174,7 +175,7 @@ pub unsafe extern "system" fn LsaClose(ObjectHandle: LSA_HANDLE) -> NTSTATUS {
 
     TRACE!(b"LsaClose(%p) called\n\0".as_ptr(), ObjectHandle);
 
-    Status = LsarClose(core::ptr::addr_of_mut!(ObjectHandle) as PLSAPR_HANDLE);
+    Status = rpc_try(|| LsarClose(core::ptr::addr_of_mut!(ObjectHandle) as PLSAPR_HANDLE)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -196,12 +197,12 @@ pub unsafe extern "system" fn LsaCreateAccount(
         AccountHandle,
     );
 
-    Status = LsarCreateAccount(
+    Status = rpc_try(|| LsarCreateAccount(
         PolicyHandle as LSAPR_HANDLE,
         AccountSid as PRPC_SID,
         DesiredAccess,
         AccountHandle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -223,12 +224,12 @@ pub unsafe extern "system" fn LsaCreateSecret(
         SecretHandle,
     );
 
-    Status = LsarCreateSecret(
+    Status = rpc_try(|| LsarCreateSecret(
         PolicyHandle as LSAPR_HANDLE,
         SecretName as PRPC_UNICODE_STRING,
         DesiredAccess,
         SecretHandle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -250,12 +251,12 @@ pub unsafe extern "system" fn LsaCreateTrustedDomain(
         TrustedDomainHandle,
     );
 
-    Status = LsarCreateTrustedDomain(
+    Status = rpc_try(|| LsarCreateTrustedDomain(
         PolicyHandle as LSAPR_HANDLE,
         TrustedDomainInformation as PLSAPR_TRUST_INFORMATION,
         DesiredAccess,
         TrustedDomainHandle as PLSAPR_HANDLE,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -280,13 +281,13 @@ pub unsafe extern "system" fn LsaCreateTrustedDomainEx(
         TrustedDomainHandle,
     );
 
-    Status = LsarCreateTrustedDomainEx2(
+    Status = rpc_try(|| LsarCreateTrustedDomainEx2(
         PolicyHandle as LSAPR_HANDLE,
         TrustedDomainInformation as PLSAPR_TRUSTED_DOMAIN_INFORMATION_EX,
         EncryptedAuthInfo,
         DesiredAccess,
         TrustedDomainHandle as PLSAPR_HANDLE,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -297,7 +298,7 @@ pub unsafe extern "system" fn LsaDelete(ObjectHandle: LSA_HANDLE) -> NTSTATUS {
 
     TRACE!(b"LsaDelete(%p)\n\0".as_ptr() as *const i8, ObjectHandle);
 
-    Status = LsarDelete(ObjectHandle as LSAPR_HANDLE);
+    Status = rpc_try(|| LsarDelete(ObjectHandle as LSAPR_HANDLE)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -315,7 +316,7 @@ pub unsafe extern "system" fn LsaDeleteTrustedDomain(
         TrustedDomainSid,
     );
 
-    Status = LsarDeleteTrustedDomain(PolicyHandle as LSAPR_HANDLE, TrustedDomainSid as PRPC_SID);
+    Status = rpc_try(|| LsarDeleteTrustedDomain(PolicyHandle as LSAPR_HANDLE, TrustedDomainSid as PRPC_SID)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -341,11 +342,11 @@ pub unsafe extern "system" fn LsaEnumerateAccountRights(
     UserRightsSet.Entries = 0;
     UserRightsSet.UserRights = core::ptr::null_mut();
 
-    Status = LsarEnumerateAccountRights(
+    Status = rpc_try(|| LsarEnumerateAccountRights(
         PolicyHandle as LSAPR_HANDLE,
         AccountSid as PRPC_SID,
         &mut UserRightsSet,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *UserRights = UserRightsSet.UserRights as _;
     *CountOfRights = UserRightsSet.Entries;
@@ -376,12 +377,12 @@ pub unsafe extern "system" fn LsaEnumerateAccounts(
     AccountEnumBuffer.EntriesRead = 0;
     AccountEnumBuffer.Information = core::ptr::null_mut();
 
-    Status = LsarEnumerateAccounts(
+    Status = rpc_try(|| LsarEnumerateAccounts(
         PolicyHandle as LSAPR_HANDLE,
         EnumerationContext,
         core::ptr::addr_of_mut!(AccountEnumBuffer),
         PreferedMaximumLength,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *Buffer = AccountEnumBuffer.Information as _;
     *CountReturned = AccountEnumBuffer.EntriesRead;
@@ -410,11 +411,11 @@ pub unsafe extern "system" fn LsaEnumerateAccountsWithUserRight(
     AccountEnumBuffer.EntriesRead = 0;
     AccountEnumBuffer.Information = core::ptr::null_mut();
 
-    Status = LsarEnumerateAccountsWithUserRight(
+    Status = rpc_try(|| LsarEnumerateAccountsWithUserRight(
         PolicyHandle as LSAPR_HANDLE,
         UserRight as PRPC_UNICODE_STRING,
         &mut AccountEnumBuffer,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *Buffer = AccountEnumBuffer.Information as PVOID;
     *CountReturned = AccountEnumBuffer.EntriesRead;
@@ -445,12 +446,12 @@ pub unsafe extern "system" fn LsaEnumeratePrivileges(
     PrivilegeEnumBuffer.Entries = 0;
     PrivilegeEnumBuffer.Privileges = core::ptr::null_mut();
 
-    Status = LsarEnumeratePrivileges(
+    Status = rpc_try(|| LsarEnumeratePrivileges(
         PolicyHandle as LSAPR_HANDLE,
         EnumerationContext,
         core::ptr::addr_of_mut!(PrivilegeEnumBuffer),
         PreferedMaximumLength,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *Buffer = PrivilegeEnumBuffer.Privileges as PVOID;
     *CountReturned = PrivilegeEnumBuffer.Entries;
@@ -471,10 +472,10 @@ pub unsafe extern "system" fn LsaEnumeratePrivilegesOfAccount(
         Privileges,
     );
 
-    Status = LsarEnumeratePrivilegesAccount(
+    Status = rpc_try(|| LsarEnumeratePrivilegesAccount(
         AccountHandle as LSAPR_HANDLE,
         Privileges as *mut *mut LSAPR_PRIVILEGE_SET,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -497,12 +498,12 @@ pub unsafe extern "system" fn LsaEnumerateTrustedDomains(
     TrustedEnumBuffer.EntriesRead = 0;
     TrustedEnumBuffer.Information = core::ptr::null_mut();
 
-    Status = LsarEnumerateTrustedDomains(
+    Status = rpc_try(|| LsarEnumerateTrustedDomains(
         PolicyHandle as LSAPR_HANDLE,
         EnumerationContext,
         &mut TrustedEnumBuffer,
         PreferedMaximumLength,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *Buffer = TrustedEnumBuffer.Information as PVOID;
     *CountReturned = TrustedEnumBuffer.EntriesRead;
@@ -537,12 +538,12 @@ pub unsafe extern "system" fn LsaEnumerateTrustedDomainsEx(
     TrustedEnumBuffer.EntriesRead = 0;
     TrustedEnumBuffer.EnumerationBuffer = core::ptr::null_mut();
 
-    Status = LsarEnumerateTrustedDomainsEx(
+    Status = rpc_try(|| LsarEnumerateTrustedDomainsEx(
         PolicyHandle as LSAPR_HANDLE,
         EnumerationContext,
         &mut TrustedEnumBuffer,
         PreferedMaximumLength,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *Buffer = TrustedEnumBuffer.EnumerationBuffer as PVOID;
     *CountReturned = TrustedEnumBuffer.EntriesRead;
@@ -568,7 +569,7 @@ pub unsafe extern "system" fn LsaGetQuotasForAccount(
         QuotaLimits,
     );
 
-    Status = LsarGetQuotasForAccount(AccountHandle as LSAPR_HANDLE, QuotaLimits as *mut advapi32_sys::QUOTA_LIMITS);
+    Status = rpc_try(|| LsarGetQuotasForAccount(AccountHandle as LSAPR_HANDLE, QuotaLimits as *mut advapi32_sys::QUOTA_LIMITS)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -583,7 +584,7 @@ pub unsafe extern "system" fn LsaGetRemoteUserName(
     let mut DomainNameString: PUNICODE_STRING = core::ptr::null_mut();
     let Status: NTSTATUS;
 
-    Status = LsarGetUserName(
+    Status = rpc_try(|| LsarGetUserName(
         SystemName as PLSAPR_SERVER_NAME,
         core::ptr::addr_of_mut!(UserNameString) as *mut PRPC_UNICODE_STRING,
         if !DomainName.is_null() {
@@ -591,7 +592,7 @@ pub unsafe extern "system" fn LsaGetRemoteUserName(
         } else {
             core::ptr::null_mut()
         },
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *UserName = UserNameString;
 
@@ -615,10 +616,10 @@ pub unsafe extern "system" fn LsaGetSystemAccessAccount(
         SystemAccess,
     );
 
-    Status = LsarGetSystemAccessAccount(
+    Status = rpc_try(|| LsarGetSystemAccessAccount(
         AccountHandle as LSAPR_HANDLE,
         SystemAccess as *mut ACCESS_MASK,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -638,7 +639,7 @@ pub unsafe extern "system" fn LsaGetUserName(
         DomainName,
     );
 
-    Status = LsarGetUserName(
+    Status = rpc_try(|| LsarGetUserName(
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(UserNameString),
         if !DomainName.is_null() {
@@ -646,7 +647,7 @@ pub unsafe extern "system" fn LsaGetUserName(
         } else {
             core::ptr::null_mut()
         },
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *UserName = UserNameString as PUNICODE_STRING;
 
@@ -690,7 +691,7 @@ pub unsafe extern "system" fn LsaLookupNames(
 
     TranslatedSids.Entries = Count;
 
-    Status = LsarLookupNames(
+    Status = rpc_try(|| LsarLookupNames(
         PolicyHandle as LSAPR_HANDLE,
         Count,
         Names as PRPC_UNICODE_STRING,
@@ -698,7 +699,7 @@ pub unsafe extern "system" fn LsaLookupNames(
         &mut TranslatedSids,
         LsapLookupWksta,
         &mut MappedCount,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *Sids = TranslatedSids.Sids as PLSA_TRANSLATED_SID;
 
@@ -740,7 +741,7 @@ pub unsafe extern "system" fn LsaLookupNames2(
 
     TranslatedSids.Entries = Count;
 
-    Status = LsarLookupNames3(
+    Status = rpc_try(|| LsarLookupNames3(
         PolicyHandle as LSAPR_HANDLE,
         Count,
         Names as PRPC_UNICODE_STRING,
@@ -750,7 +751,7 @@ pub unsafe extern "system" fn LsaLookupNames2(
         &mut MappedCount,
         Flags,
         2,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *Sids = TranslatedSids.Sids as PLSA_TRANSLATED_SID2;
 
@@ -775,14 +776,14 @@ pub unsafe extern "system" fn LsaLookupPrivilegeDisplayName(
         LanguageReturned,
     );
 
-    Status = LsarLookupPrivilegeDisplayName(
+    Status = rpc_try(|| LsarLookupPrivilegeDisplayName(
         PolicyHandle,
         Name as PRPC_UNICODE_STRING,
         GetUserDefaultUILanguage(),
         GetSystemDefaultUILanguage(),
         &mut DisplayNameBuffer,
         LanguageReturned,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *DisplayName = DisplayNameBuffer as PLSA_UNICODE_STRING;
 
@@ -805,7 +806,7 @@ pub unsafe extern "system" fn LsaLookupPrivilegeName(
         Name,
     );
 
-    Status = LsarLookupPrivilegeName(PolicyHandle, Value as *mut advapi32_sys::LUID, &mut NameBuffer);
+    Status = rpc_try(|| LsarLookupPrivilegeName(PolicyHandle, Value as *mut advapi32_sys::LUID, &mut NameBuffer)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *Name = NameBuffer as PUNICODE_STRING;
 
@@ -828,11 +829,11 @@ pub unsafe extern "system" fn LsaLookupPrivilegeValue(
         Value,
     );
 
-    Status = LsarLookupPrivilegeValue(
+    Status = rpc_try(|| LsarLookupPrivilegeValue(
         PolicyHandle,
         Name as PRPC_UNICODE_STRING,
         core::ptr::addr_of_mut!(Luid) as *mut advapi32_sys::LUID,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if Status == STATUS_SUCCESS {
         *Value = Luid;
     }
@@ -875,14 +876,14 @@ pub unsafe extern "system" fn LsaLookupSids(
     TranslatedNames.Entries = 0;
     TranslatedNames.Names = core::ptr::null_mut();
 
-    Status = LsarLookupSids(
+    Status = rpc_try(|| LsarLookupSids(
         PolicyHandle as LSAPR_HANDLE,
         core::ptr::addr_of_mut!(SidEnumBuffer),
         ReferencedDomains as *mut PLSAPR_REFERENCED_DOMAIN_LIST,
         core::ptr::addr_of_mut!(TranslatedNames),
         LsapLookupWksta,
         core::ptr::addr_of_mut!(MappedCount),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *Names = TranslatedNames.Names as PLSA_TRANSLATED_NAME;
 
@@ -911,12 +912,12 @@ pub unsafe extern "system" fn LsaOpenAccount(
         AccountHandle,
     );
 
-    Status = LsarOpenAccount(
+    Status = rpc_try(|| LsarOpenAccount(
         PolicyHandle as LSAPR_HANDLE,
         AccountSid as PRPC_SID,
         DesiredAccess,
         AccountHandle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -936,7 +937,7 @@ pub unsafe extern "system" fn LsaOpenPolicy(
 
     *PolicyHandle = core::ptr::null_mut();
 
-    Status = LsarOpenPolicy(
+    Status = rpc_try(|| LsarOpenPolicy(
         if !SystemName.is_null() {
             (*SystemName).Buffer
         } else {
@@ -945,7 +946,7 @@ pub unsafe extern "system" fn LsaOpenPolicy(
         ObjectAttributes as PLSAPR_OBJECT_ATTRIBUTES,
         DesiredAccess,
         PolicyHandle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -965,7 +966,7 @@ pub unsafe extern "system" fn LsaOpenPolicySce(
 
     *PolicyHandle = core::ptr::null_mut();
 
-    Status = LsarOpenPolicySce(
+    Status = rpc_try(|| LsarOpenPolicySce(
         if !SystemName.is_null() {
             (*SystemName).Buffer
         } else {
@@ -974,7 +975,7 @@ pub unsafe extern "system" fn LsaOpenPolicySce(
         ObjectAttributes as PLSAPR_OBJECT_ATTRIBUTES,
         DesiredAccess,
         PolicyHandle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -990,12 +991,12 @@ pub unsafe extern "system" fn LsaOpenSecret(
 
     *SecretHandle = core::ptr::null_mut();
 
-    Status = LsarOpenSecret(
+    Status = rpc_try(|| LsarOpenSecret(
         PolicyHandle as LSAPR_HANDLE,
         SecretName as PRPC_UNICODE_STRING,
         DesiredAccess,
         SecretHandle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1017,12 +1018,12 @@ pub unsafe extern "system" fn LsaOpenTrustedDomain(
         TrustedDomainHandle,
     );
 
-    Status = LsarOpenTrustedDomain(
+    Status = rpc_try(|| LsarOpenTrustedDomain(
         PolicyHandle as LSAPR_HANDLE,
         TrustedDomainSid as PRPC_SID,
         DesiredAccess,
         TrustedDomainHandle as PLSAPR_HANDLE,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1044,12 +1045,12 @@ pub unsafe extern "system" fn LsaOpenTrustedDomainByName(
         TrustedDomainHandle,
     );
 
-    Status = LsarOpenTrustedDomainByName(
+    Status = rpc_try(|| LsarOpenTrustedDomainByName(
         PolicyHandle as LSAPR_HANDLE,
         TrustedDomainName as PRPC_UNICODE_STRING,
         DesiredAccess,
         TrustedDomainHandle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1070,11 +1071,11 @@ pub unsafe extern "system" fn LsaQueryDomainInformationPolicy(
         Buffer,
     );
 
-    Status = LsarQueryDomainInformationPolicy(
+    Status = rpc_try(|| LsarQueryDomainInformationPolicy(
         PolicyHandle as LSAPR_HANDLE,
         InformationClass,
         &mut PolicyInformation,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     *Buffer = PolicyInformation as PVOID;
 
@@ -1096,12 +1097,12 @@ pub unsafe extern "system" fn LsaQueryForestTrustInformation(
         ForestTrustInfo,
     );
 
-    Status = LsarQueryForestTrustInformation(
+    Status = rpc_try(|| LsarQueryForestTrustInformation(
         PolicyHandle as LSAPR_HANDLE,
         TrustedDomainName,
         ForestTrustDomainInfo,
         ForestTrustInfo,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1128,11 +1129,11 @@ pub unsafe extern "system" fn LsaQueryInfoTrustedDomain(
         return STATUS_INVALID_INFO_CLASS;
     }
 
-    Status = LsarQueryInfoTrustedDomain(
+    Status = rpc_try(|| LsarQueryInfoTrustedDomain(
         TrustedDomainHandle as LSAPR_HANDLE,
         InformationClass,
         &mut TrustedDomainInformation,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     *Buffer = TrustedDomainInformation as PVOID;
 
     TRACE!(b"Done (Status: 0x%08x)\n\0".as_ptr() as *const i8, Status);
@@ -1149,11 +1150,11 @@ pub unsafe extern "system" fn LsaQueryInformationPolicy(
     let mut PolicyInformation: PLSAPR_POLICY_INFORMATION = core::ptr::null_mut();
     let Status: NTSTATUS;
 
-    Status = LsarQueryInformationPolicy(
+    Status = rpc_try(|| LsarQueryInformationPolicy(
         PolicyHandle as LSAPR_HANDLE,
         InformationClass,
         &mut PolicyInformation,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     *Buffer = PolicyInformation as PVOID;
 
     Status
@@ -1183,13 +1184,13 @@ pub unsafe extern "system" fn LsaQuerySecret(
         OldValueSetTime,
     );
 
-    Status = LsarQuerySecret(
+    Status = rpc_try(|| LsarQuerySecret(
         SecretHandle as LSAPR_HANDLE,
         core::ptr::addr_of_mut!(EncryptedCurrentValue),
         CurrentValueSetTime as *mut advapi32_sys::LARGE_INTEGER,
         core::ptr::addr_of_mut!(EncryptedOldValue),
         OldValueSetTime as *mut advapi32_sys::LARGE_INTEGER,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     'done: {
         if !NT_SUCCESS(Status) {
@@ -1297,11 +1298,11 @@ pub unsafe extern "system" fn LsaQuerySecurityObject(
 
     let mut SdPointer = SdPointer;
 
-    Status = LsarQuerySecurityObject(
+    Status = rpc_try(|| LsarQuerySecurityObject(
         ObjectHandle as LSAPR_HANDLE,
         SecurityInformation,
         core::ptr::addr_of_mut!(SdPointer),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if NT_SUCCESS(Status) {
         *SecurityDescriptor = SdBuffer.SecurityDescriptor as PSECURITY_DESCRIPTOR;
     } else {
@@ -1334,12 +1335,12 @@ pub unsafe extern "system" fn LsaQueryTrustedDomainInfo(
         return STATUS_INVALID_INFO_CLASS;
     }
 
-    Status = LsarQueryTrustedDomainInfo(
+    Status = rpc_try(|| LsarQueryTrustedDomainInfo(
         PolicyHandle as LSAPR_HANDLE,
         TrustedDomainSid as PRPC_SID,
         InformationClass,
         Buffer as *mut PLSAPR_TRUSTED_DOMAIN_INFO,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1367,12 +1368,12 @@ pub unsafe extern "system" fn LsaQueryTrustedDomainInfoByName(
         return STATUS_INVALID_INFO_CLASS;
     }
 
-    Status = LsarQueryTrustedDomainInfoByName(
+    Status = rpc_try(|| LsarQueryTrustedDomainInfoByName(
         PolicyHandle as LSAPR_HANDLE,
         TrustedDomainName as PRPC_UNICODE_STRING,
         InformationClass,
         Buffer as *mut PLSAPR_TRUSTED_DOMAIN_INFO,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1400,12 +1401,12 @@ pub unsafe extern "system" fn LsaRemoveAccountRights(
     UserRightSet.Entries = CountOfRights;
     UserRightSet.UserRights = UserRights as PRPC_UNICODE_STRING;
 
-    Status = LsarRemoveAccountRights(
+    Status = rpc_try(|| LsarRemoveAccountRights(
         PolicyHandle as LSAPR_HANDLE,
         AccountSid as PRPC_SID,
         AllRights,
         core::ptr::addr_of_mut!(UserRightSet),
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1418,11 +1419,11 @@ pub unsafe extern "system" fn LsaRemovePrivilegesFromAccount(
 ) -> NTSTATUS {
     let Status: NTSTATUS;
 
-    Status = LsarRemovePrivilegesFromAccount(
+    Status = rpc_try(|| LsarRemovePrivilegesFromAccount(
         AccountHandle as LSAPR_HANDLE,
         AllPrivileges,
         Privileges as PLSAPR_PRIVILEGE_SET,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1445,11 +1446,11 @@ pub unsafe extern "system" fn LsaRetrievePrivateData(
         PrivateData,
     );
 
-    Status = LsarRetrievePrivateData(
+    Status = rpc_try(|| LsarRetrievePrivateData(
         PolicyHandle as LSAPR_HANDLE,
         KeyName as PRPC_UNICODE_STRING,
         &mut EncryptedData,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     'done: {
         if !NT_SUCCESS(Status) {
@@ -1510,11 +1511,11 @@ pub unsafe extern "system" fn LsaSetDomainInformationPolicy(
         Buffer,
     );
 
-    Status = LsarSetDomainInformationPolicy(
+    Status = rpc_try(|| LsarSetDomainInformationPolicy(
         PolicyHandle as LSAPR_HANDLE,
         InformationClass,
         Buffer as PLSAPR_POLICY_DOMAIN_INFORMATION,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1538,14 +1539,14 @@ pub unsafe extern "system" fn LsaSetForestTrustInformation(
         CollisionInfo,
     );
 
-    Status = LsarSetForestTrustInformation(
+    Status = rpc_try(|| LsarSetForestTrustInformation(
         PolicyHandle as LSAPR_HANDLE,
         TrustedDomainName,
         ForestTrustDomainInfo,
         ForestTrustInfo,
         CheckOnly,
         CollisionInfo,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1565,11 +1566,11 @@ pub unsafe extern "system" fn LsaSetInformationPolicy(
         Buffer,
     );
 
-    Status = LsarSetInformationPolicy(
+    Status = rpc_try(|| LsarSetInformationPolicy(
         PolicyHandle as LSAPR_HANDLE,
         InformationClass,
         Buffer as PLSAPR_POLICY_INFORMATION,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1596,7 +1597,7 @@ pub unsafe extern "system" fn LsaSetQuotasForAccount(
         QuotaLimits,
     );
 
-    Status = LsarSetQuotasForAccount(AccountHandle as LSAPR_HANDLE, QuotaLimits as *mut advapi32_sys::QUOTA_LIMITS);
+    Status = rpc_try(|| LsarSetQuotasForAccount(AccountHandle as LSAPR_HANDLE, QuotaLimits as *mut advapi32_sys::QUOTA_LIMITS)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1662,11 +1663,11 @@ pub unsafe extern "system" fn LsaSetSecret(
             }
         }
 
-        Status = LsarSetSecret(
+        Status = rpc_try(|| LsarSetSecret(
             SecretHandle as LSAPR_HANDLE,
             EncryptedCurrentValue,
             EncryptedOldValue,
-        );
+        )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     }
 
     if !EncryptedCurrentValue.is_null() {
@@ -1727,11 +1728,11 @@ pub unsafe extern "system" fn LsaSetSecurityObject(
 
         SdBuffer.Length = SdLength;
 
-        Status = LsarSetSecurityObject(
+        Status = rpc_try(|| LsarSetSecurityObject(
             ObjectHandle as LSAPR_HANDLE,
             SecurityInformation,
             &mut SdBuffer,
-        );
+        )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     }
 
     if !SdBuffer.SecurityDescriptor.is_null() {
@@ -1748,7 +1749,7 @@ pub unsafe extern "system" fn LsaSetSystemAccessAccount(
 ) -> NTSTATUS {
     let Status: NTSTATUS;
 
-    Status = LsarSetSystemAccessAccount(AccountHandle as LSAPR_HANDLE, SystemAccess);
+    Status = rpc_try(|| LsarSetSystemAccessAccount(AccountHandle as LSAPR_HANDLE, SystemAccess)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     Status
 }
@@ -1812,11 +1813,11 @@ pub unsafe extern "system" fn LsaStorePrivateData(
             }
         }
 
-        Status = LsarStorePrivateData(
+        Status = rpc_try(|| LsarStorePrivateData(
             PolicyHandle as LSAPR_HANDLE,
             KeyName as PRPC_UNICODE_STRING,
             EncryptedData,
-        );
+        )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
         break 'done;
     }

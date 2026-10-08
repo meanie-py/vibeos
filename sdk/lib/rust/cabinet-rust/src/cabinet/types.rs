@@ -82,7 +82,10 @@ pub type PFDICABINETINFO = *mut FDICABINETINFO;
 // ---- FDINOTIFICATION ----
 pub type FDINOTIFICATIONTYPE = i32;
 
-#[repr(C)]
+// fdi.h declares this under <pshpack4.h>: on 64-bit every pointer after `cb` sits at a
+// 4-byte offset (pv at 0x1c, not 0x20). Natural alignment shifted every field a C client
+// reads -- rapps' fnNotify took `pv` from 0x1c, got NULL, and crashed extracting its cab.
+#[repr(C, packed(4))]
 pub struct FDINOTIFICATION {
     pub cb: i32,
     pub psz1: *mut i8,
@@ -99,6 +102,16 @@ pub struct FDINOTIFICATION {
     pub fdie: i32,
 }
 pub type PFDINOTIFICATION = *mut FDINOTIFICATION;
+// Offsets measured with clang against sdk/include/psdk/fdi.h (amd64 and arm64 agree).
+#[cfg(target_pointer_width = "64")]
+const _: () = {
+    assert!(core::mem::offset_of!(FDINOTIFICATION, psz1) == 4);
+    assert!(core::mem::offset_of!(FDINOTIFICATION, pv) == 28);
+    assert!(core::mem::offset_of!(FDINOTIFICATION, hf) == 36);
+    assert!(core::mem::offset_of!(FDINOTIFICATION, date) == 44);
+    assert!(core::mem::offset_of!(FDINOTIFICATION, fdie) == 56);
+    assert!(core::mem::size_of::<FDINOTIFICATION>() == 60);
+};
 
 // ---- fdint constants ----
 pub const fdintCABINET_INFO: FDINOTIFICATIONTYPE = 0;

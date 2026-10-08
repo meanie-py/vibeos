@@ -4,6 +4,12 @@ use crate::prelude::*;
 // ole32_exports.rs — the prelude glob makes the bare name ambiguous, so bind explicitly.
 use crate::ring::compositemoniker::{CreateGenericComposite, MonikerCommonPrefixWith};
 
+// Semantically ported to wine-10.0 (upstream 5f6b295cb90): an anti-moniker now
+// carries an ORDER (`count`), i.e. how many components it cancels. Load/Save/Hash/
+// IsEqual/CommonPrefixWith/GetDisplayName/GetComparisonData all speak in that count,
+// and `is_anti_moniker`/`create_anti_moniker` are the helpers every other moniker's
+// ComposeWith uses to cancel against it.
+
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
 pub struct AntiMonikerImpl {
@@ -11,6 +17,7 @@ pub struct AntiMonikerImpl {
     pub IROTData_iface: IROTData,
     pub ref_: LONG,
     pub pMarshal: *mut IUnknown,
+    pub count: DWORD,
 }
 
 pub type PAntiMonikerImpl = *mut AntiMonikerImpl;
@@ -56,6 +63,32 @@ unsafe fn impl_from_IROTData(iface: *mut IROTData) -> *mut AntiMonikerImpl {
     CONTAINING_RECORD!(iface, AntiMonikerImpl, IROTData_iface)
 }
 
+/// wine-10 `unsafe_impl_from_IMoniker`: identify OUR anti-moniker by its vtable,
+/// never by `IsSystemMoniker` (a foreign moniker can claim MKSYS_ANTIMONIKER).
+unsafe fn unsafe_impl_from_IMoniker(iface: *mut IMoniker) -> *mut AntiMonikerImpl {
+    if iface.is_null()
+        || (*iface).lpVtbl as *const IMonikerVtbl != core::ptr::addr_of!(VT_AntiMonikerImpl)
+    {
+        return core::ptr::null_mut();
+    }
+    impl_from_IMoniker(iface)
+}
+
+/// wine-10 `is_anti_moniker`: true with the anti-moniker's order in `*order`, or
+/// false with `*order = 0`. (C returns BOOL; crate-internal, so a Rust bool.)
+pub unsafe fn is_anti_moniker(iface: *mut IMoniker, order: *mut DWORD) -> bool {
+    let moniker = unsafe_impl_from_IMoniker(iface);
+
+    if moniker.is_null() {
+        *order = 0;
+        return false;
+    }
+
+    *order = (*moniker).count;
+
+    true
+}
+
 stdmethod! {
 fn AntiMonikerImpl_QueryInterface(
     iface: *mut IMoniker,
@@ -66,20 +99,18 @@ fn AntiMonikerImpl_QueryInterface(
 
     TRACE!(b"(%p,%s,%p)\n\0".as_ptr(), This, debugstr_guid(riid), ppvObject);
 
-    /* Perform a sanity check on the parameters. */
     /* NOTE: unlike the other monikers, the C returns E_INVALIDARG here, not E_POINTER. */
     if ppvObject.is_null() {
         return E_INVALIDARG;
     }
 
-    /* Initialize the return parameter */
     *ppvObject = core::ptr::null_mut();
 
-    /* Compare the riid with the interface IDs implemented by this object. */
     if IsEqualIID(core::ptr::addr_of!(IID_IUnknown), riid)
         || IsEqualIID(core::ptr::addr_of!(IID_IPersist), riid)
         || IsEqualIID(core::ptr::addr_of!(IID_IPersistStream), riid)
         || IsEqualIID(core::ptr::addr_of!(IID_IMoniker), riid)
+        || IsEqualGUID(core::ptr::addr_of!(CLSID_AntiMoniker), riid)
     {
         *ppvObject = iface as LPVOID;
     } else if IsEqualIID(core::ptr::addr_of!(IID_IROTData), riid) {
@@ -95,12 +126,10 @@ fn AntiMonikerImpl_QueryInterface(
         return IUnknown_QueryInterface((*This).pMarshal, riid, ppvObject);
     }
 
-    /* Check that we obtained an interface. */
     if (*ppvObject).is_null() {
         return E_NOINTERFACE;
     }
 
-    /* always increase the reference count by one when it is successful */
     IMoniker_AddRef(iface);
 
     S_OK
@@ -109,31 +138,30 @@ fn AntiMonikerImpl_QueryInterface(
 
 stdmethod! {
 fn AntiMonikerImpl_AddRef(iface: *mut IMoniker) -> ULONG {
-    let This = impl_from_IMoniker(iface);
+    let moniker = impl_from_IMoniker(iface);
+    let refcount = InterlockedIncrement(core::ptr::addr_of_mut!((*moniker).ref_)) as ULONG;
 
-    TRACE!(b"(%p)\n\0".as_ptr(), This);
+    TRACE!(b"%p, refcount %u.\n\0".as_ptr(), iface, refcount);
 
-    InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG
+    refcount
 }
 }
 
 stdmethod! {
 fn AntiMonikerImpl_Release(iface: *mut IMoniker) -> ULONG {
-    let This = impl_from_IMoniker(iface);
+    let moniker = impl_from_IMoniker(iface);
+    let refcount = InterlockedDecrement(core::ptr::addr_of_mut!((*moniker).ref_)) as ULONG;
 
-    TRACE!(b"(%p)\n\0".as_ptr(), This);
+    TRACE!(b"%p, refcount %u.\n\0".as_ptr(), iface, refcount);
 
-    let ref_count = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as ULONG;
-
-    /* destroy the object if there are no more references to it */
-    if ref_count == 0 {
-        if !(*This).pMarshal.is_null() {
-            IUnknown_Release((*This).pMarshal);
+    if refcount == 0 {
+        if !(*moniker).pMarshal.is_null() {
+            IUnknown_Release((*moniker).pMarshal);
         }
-        HeapFree(GetProcessHeap(), 0, This as LPVOID);
+        HeapFree(GetProcessHeap(), 0, moniker as LPVOID);
     }
 
-    ref_count
+    refcount
 }
 }
 
@@ -164,34 +192,41 @@ fn AntiMonikerImpl_IsDirty(iface: *mut IMoniker) -> HRESULT {
 }
 
 stdmethod! {
-fn AntiMonikerImpl_Load(iface: *mut IMoniker, pStm: *mut IStream) -> HRESULT {
-    let constant: DWORD = 1;
-    let mut dwbuffer: DWORD = 0;
+fn AntiMonikerImpl_Load(iface: *mut IMoniker, stream: *mut IStream) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
+    let mut count: DWORD = 0;
 
-    /* data read by this function is only a DWORD constant (must be 1) ! */
-    let res = IStream_Read(
-        pStm,
-        core::ptr::addr_of_mut!(dwbuffer) as LPVOID,
+    TRACE!(b"%p, %p.\n\0".as_ptr(), iface, stream);
+
+    let hr = IStream_Read(
+        stream,
+        core::ptr::addr_of_mut!(count) as LPVOID,
         core::mem::size_of::<DWORD>() as ULONG,
         core::ptr::null_mut(),
     );
-
-    if SUCCEEDED(res) && dwbuffer != constant {
-        return E_FAIL;
+    if FAILED(hr) {
+        return hr;
     }
 
-    res
+    if count > 0xfffff {
+        return E_INVALIDARG;
+    }
+
+    (*moniker).count = count;
+
+    S_OK
 }
 }
 
 stdmethod! {
-fn AntiMonikerImpl_Save(iface: *mut IMoniker, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT {
-    static CONSTANT: DWORD = 1;
+fn AntiMonikerImpl_Save(iface: *mut IMoniker, stream: *mut IStream, clear_dirty: BOOL) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
 
-    /* data written by this function is only a DWORD constant set to 1 ! */
+    TRACE!(b"%p, %p, %d.\n\0".as_ptr(), iface, stream, clear_dirty);
+
     IStream_Write(
-        pStm,
-        core::ptr::addr_of!(CONSTANT) as *const core::ffi::c_void,
+        stream,
+        core::ptr::addr_of!((*moniker).count) as *const core::ffi::c_void,
         core::mem::size_of::<DWORD>() as ULONG,
         core::ptr::null_mut(),
     )
@@ -206,15 +241,9 @@ fn AntiMonikerImpl_GetSizeMax(iface: *mut IMoniker, pcbSize: *mut ULARGE_INTEGER
         return E_POINTER;
     }
 
-    /* for more details see AntiMonikerImpl_Save comments */
-
-    /*
-     * Normally the sizemax must be sizeof DWORD, but
-     * I tested this function it usually return 16 bytes
-     * more than the number of bytes used by AntiMoniker::Save function
-     */
-    (*pcbSize).u.LowPart = core::mem::size_of::<DWORD>() as DWORD + 16;
-    (*pcbSize).u.HighPart = 0;
+    /* Normally the sizemax must be sizeof DWORD, but native returns 16 bytes more
+       than the number of bytes AntiMoniker::Save writes. */
+    (*pcbSize).QuadPart = (core::mem::size_of::<DWORD>() + 16) as ULONGLONG;
 
     S_OK
 }
@@ -271,7 +300,7 @@ fn AntiMonikerImpl_Reduce(
     ppmkReduced: *mut *mut IMoniker,
 ) -> HRESULT {
     TRACE!(
-        b"(%p,%p,%d,%p,%p)\n\0".as_ptr(),
+        b"%p, %p, %d, %p, %p.\n\0".as_ptr(),
         iface,
         pbc,
         dwReduceHowFar,
@@ -298,13 +327,7 @@ fn AntiMonikerImpl_ComposeWith(
     fOnlyIfNotGeneric: BOOL,
     ppmkComposite: *mut *mut IMoniker,
 ) -> HRESULT {
-    TRACE!(
-        b"(%p,%p,%d,%p)\n\0".as_ptr(),
-        iface,
-        pmkRight,
-        fOnlyIfNotGeneric,
-        ppmkComposite,
-    );
+    TRACE!(b"(%p,%p,%d,%p)\n\0".as_ptr(), iface, pmkRight, fOnlyIfNotGeneric, ppmkComposite);
 
     if ppmkComposite.is_null() || pmkRight.is_null() {
         return E_POINTER;
@@ -323,13 +346,13 @@ fn AntiMonikerImpl_ComposeWith(
 stdmethod! {
 fn AntiMonikerImpl_Enum(
     iface: *mut IMoniker,
-    fForward: BOOL,
+    forward: BOOL,
     ppenumMoniker: *mut *mut IEnumMoniker,
 ) -> HRESULT {
-    TRACE!(b"(%p,%d,%p)\n\0".as_ptr(), iface, fForward, ppenumMoniker);
+    TRACE!(b"%p, %d, %p.\n\0".as_ptr(), iface, forward, ppenumMoniker);
 
     if ppenumMoniker.is_null() {
-        return E_POINTER;
+        return E_INVALIDARG;
     }
 
     *ppenumMoniker = core::ptr::null_mut();
@@ -339,18 +362,21 @@ fn AntiMonikerImpl_Enum(
 }
 
 stdmethod! {
-fn AntiMonikerImpl_IsEqual(iface: *mut IMoniker, pmkOtherMoniker: *mut IMoniker) -> HRESULT {
-    let mut mkSys: DWORD = 0;
+fn AntiMonikerImpl_IsEqual(iface: *mut IMoniker, other: *mut IMoniker) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr(), iface, pmkOtherMoniker);
+    TRACE!(b"%p, %p.\n\0".as_ptr(), iface, other);
 
-    if pmkOtherMoniker.is_null() {
+    if other.is_null() {
+        return E_INVALIDARG;
+    }
+
+    let other_moniker = unsafe_impl_from_IMoniker(other);
+    if other_moniker.is_null() {
         return S_FALSE;
     }
 
-    IMoniker_IsSystemMoniker(pmkOtherMoniker, &mut mkSys);
-
-    if mkSys == MKSYS_ANTIMONIKER {
+    if (*moniker).count == (*other_moniker).count {
         S_OK
     } else {
         S_FALSE
@@ -359,12 +385,16 @@ fn AntiMonikerImpl_IsEqual(iface: *mut IMoniker, pmkOtherMoniker: *mut IMoniker)
 }
 
 stdmethod! {
-fn AntiMonikerImpl_Hash(iface: *mut IMoniker, pdwHash: *mut DWORD) -> HRESULT {
-    if pdwHash.is_null() {
+fn AntiMonikerImpl_Hash(iface: *mut IMoniker, hash: *mut DWORD) -> HRESULT {
+    let moniker = impl_from_IMoniker(iface);
+
+    TRACE!(b"%p, %p.\n\0".as_ptr(), iface, hash);
+
+    if hash.is_null() {
         return E_POINTER;
     }
 
-    *pdwHash = 0x80000001;
+    *hash = 0x8000_0000 | (*moniker).count;
 
     S_OK
 }
@@ -379,25 +409,19 @@ fn AntiMonikerImpl_IsRunning(
 ) -> HRESULT {
     let mut rot: *mut IRunningObjectTable = core::ptr::null_mut();
 
-    TRACE!(
-        b"(%p,%p,%p,%p)\n\0".as_ptr(),
-        iface,
-        pbc,
-        pmkToLeft,
-        pmkNewlyRunning,
-    );
+    TRACE!(b"(%p,%p,%p,%p)\n\0".as_ptr(), iface, pbc, pmkToLeft, pmkNewlyRunning);
 
     if pbc.is_null() {
         return E_INVALIDARG;
     }
 
-    let res = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
+    let mut res = IBindCtx_GetRunningObjectTable(pbc, &mut rot);
 
     if FAILED(res) {
         return res;
     }
 
-    let res = IRunningObjectTable_IsRunning(rot, iface);
+    res = IRunningObjectTable_IsRunning(rot, iface);
 
     IRunningObjectTable_Release(rot);
 
@@ -435,43 +459,51 @@ fn AntiMonikerImpl_Inverse(iface: *mut IMoniker, ppmk: *mut *mut IMoniker) -> HR
 stdmethod! {
 fn AntiMonikerImpl_CommonPrefixWith(
     iface: *mut IMoniker,
-    pmkOther: *mut IMoniker,
-    ppmkPrefix: *mut *mut IMoniker,
+    other: *mut IMoniker,
+    prefix: *mut *mut IMoniker,
 ) -> HRESULT {
-    let mut mkSys: DWORD = 0;
+    let moniker = impl_from_IMoniker(iface);
 
-    IMoniker_IsSystemMoniker(pmkOther, &mut mkSys);
+    TRACE!(b"%p, %p, %p.\n\0".as_ptr(), iface, other, prefix);
 
-    if mkSys == MKSYS_ANTIMONIKER {
-        /* NOTE: the C AddRefs twice here — preserved verbatim. */
-        IMoniker_AddRef(iface);
+    let other_moniker = unsafe_impl_from_IMoniker(other);
+    if !other_moniker.is_null() {
+        let hr;
 
-        *ppmkPrefix = iface;
+        if (*moniker).count <= (*other_moniker).count {
+            *prefix = iface;
+            hr = if (*moniker).count == (*other_moniker).count {
+                MK_S_US
+            } else {
+                MK_S_ME
+            };
+        } else {
+            *prefix = other;
+            hr = MK_S_HIM;
+        }
 
-        IMoniker_AddRef(iface);
-
-        MK_S_US
-    } else {
-        MonikerCommonPrefixWith(iface, pmkOther, ppmkPrefix)
+        IMoniker_AddRef(*prefix);
+        return hr;
     }
+
+    MonikerCommonPrefixWith(iface, other, prefix)
 }
 }
 
 stdmethod! {
 fn AntiMonikerImpl_RelativePathTo(
     iface: *mut IMoniker,
-    pmOther: *mut IMoniker,
-    ppmkRelPath: *mut *mut IMoniker,
+    other: *mut IMoniker,
+    result: *mut *mut IMoniker,
 ) -> HRESULT {
-    TRACE!(b"(%p,%p,%p)\n\0".as_ptr(), iface, pmOther, ppmkRelPath);
+    TRACE!(b"%p, %p, %p.\n\0".as_ptr(), iface, other, result);
 
-    if ppmkRelPath.is_null() {
-        return E_POINTER;
+    if other.is_null() || result.is_null() {
+        return E_INVALIDARG;
     }
 
-    IMoniker_AddRef(pmOther);
-
-    *ppmkRelPath = pmOther;
+    IMoniker_AddRef(other);
+    *result = other;
 
     MK_S_HIM
 }
@@ -482,19 +514,14 @@ fn AntiMonikerImpl_GetDisplayName(
     iface: *mut IMoniker,
     pbc: *mut IBindCtx,
     pmkToLeft: *mut IMoniker,
-    ppszDisplayName: *mut LPOLESTR,
+    displayname: *mut LPOLESTR,
 ) -> HRESULT {
-    static BACK: [WCHAR; 4] = [b'\\' as WCHAR, b'.' as WCHAR, b'.' as WCHAR, 0];
+    let moniker = impl_from_IMoniker(iface);
+    const nameW: [WCHAR; 3] = [b'\\' as WCHAR, b'.' as WCHAR, b'.' as WCHAR];
 
-    TRACE!(
-        b"(%p,%p,%p,%p)\n\0".as_ptr(),
-        iface,
-        pbc,
-        pmkToLeft,
-        ppszDisplayName,
-    );
+    TRACE!(b"%p, %p, %p, %p.\n\0".as_ptr(), iface, pbc, pmkToLeft, displayname);
 
-    if ppszDisplayName.is_null() {
+    if displayname.is_null() {
         return E_POINTER;
     }
 
@@ -503,13 +530,20 @@ fn AntiMonikerImpl_GetDisplayName(
         return E_NOTIMPL;
     }
 
-    *ppszDisplayName = CoTaskMemAlloc(core::mem::size_of_val(&BACK) as SIZE_T) as LPOLESTR;
-
-    if (*ppszDisplayName).is_null() {
+    let count = (*moniker).count as usize;
+    let ptrW = CoTaskMemAlloc(
+        ((count * nameW.len() + 1) * core::mem::size_of::<WCHAR>()) as SIZE_T,
+    ) as *mut WCHAR;
+    *displayname = ptrW;
+    if ptrW.is_null() {
         return E_OUTOFMEMORY;
     }
 
-    lstrcpyW(*ppszDisplayName, BACK.as_ptr());
+    /* One "\.." per cancelled component. */
+    for i in 0..count {
+        core::ptr::copy_nonoverlapping(nameW.as_ptr(), ptrW.add(i * nameW.len()), nameW.len());
+    }
+    *ptrW.add(count * nameW.len()) = 0;
 
     S_OK
 }
@@ -593,27 +627,27 @@ fn AntiMonikerROTDataImpl_Release(iface: *mut IROTData) -> ULONG {
 stdmethod! {
 fn AntiMonikerROTDataImpl_GetComparisonData(
     iface: *mut IROTData,
-    pbData: *mut byte,
-    cbMax: ULONG,
-    pcbData: *mut ULONG,
+    data: *mut byte,
+    data_len: ULONG,
+    data_req: *mut ULONG,
 ) -> HRESULT {
-    let constant: DWORD = 1;
+    let moniker = impl_from_IROTData(iface);
 
-    TRACE!(b"(%p, %u, %p)\n\0".as_ptr(), pbData, cbMax, pcbData);
+    TRACE!(b"%p, %p, %u, %p.\n\0".as_ptr(), iface, data, data_len, data_req);
 
-    *pcbData = (core::mem::size_of::<CLSID>() + core::mem::size_of::<DWORD>()) as ULONG;
-    if cbMax < *pcbData {
+    *data_req = (core::mem::size_of::<CLSID>() + core::mem::size_of::<DWORD>()) as ULONG;
+    if data_len < *data_req {
         return E_OUTOFMEMORY;
     }
 
     memcpy(
-        pbData as *mut core::ffi::c_void,
+        data as *mut core::ffi::c_void,
         core::ptr::addr_of!(CLSID_AntiMoniker) as *const core::ffi::c_void,
         core::mem::size_of::<CLSID>(),
     );
     memcpy(
-        pbData.add(core::mem::size_of::<CLSID>()) as *mut core::ffi::c_void,
-        core::ptr::addr_of!(constant) as *const core::ffi::c_void,
+        data.add(core::mem::size_of::<CLSID>()) as *mut core::ffi::c_void,
+        core::ptr::addr_of!((*moniker).count) as *const core::ffi::c_void,
         core::mem::size_of::<DWORD>(),
     );
 
@@ -621,16 +655,26 @@ fn AntiMonikerROTDataImpl_GetComparisonData(
 }
 }
 
-unsafe fn AntiMonikerImpl_Construct(This: *mut AntiMonikerImpl) -> HRESULT {
-    TRACE!(b"(%p)\n\0".as_ptr(), This);
+/// wine-10 `create_anti_moniker`: a new anti-moniker of the given order, refcount 1.
+pub unsafe fn create_anti_moniker(order: DWORD, ret: *mut *mut IMoniker) -> HRESULT {
+    let moniker = HeapAlloc(
+        GetProcessHeap(),
+        HEAP_ZERO_MEMORY,
+        core::mem::size_of::<AntiMonikerImpl>() as SIZE_T,
+    ) as *mut AntiMonikerImpl;
 
-    /* Initialize the virtual function table. */
-    (*This).IMoniker_iface.lpVtbl =
+    if moniker.is_null() {
+        return E_OUTOFMEMORY;
+    }
+
+    (*moniker).IMoniker_iface.lpVtbl =
         core::ptr::addr_of!(VT_AntiMonikerImpl) as *mut IMonikerVtbl;
-    (*This).IROTData_iface.lpVtbl =
+    (*moniker).IROTData_iface.lpVtbl =
         core::ptr::addr_of!(VT_ROTDataImpl) as *mut IROTDataVtbl;
-    (*This).ref_ = 0;
-    (*This).pMarshal = core::ptr::null_mut();
+    (*moniker).ref_ = 1;
+    (*moniker).count = order;
+
+    *ret = core::ptr::addr_of_mut!((*moniker).IMoniker_iface);
 
     S_OK
 }
@@ -639,30 +683,10 @@ unsafe fn AntiMonikerImpl_Construct(This: *mut AntiMonikerImpl) -> HRESULT {
  *        CreateAntiMoniker	[OLE32.@]
  ******************************************************************************/
 #[no_mangle]
-pub unsafe extern "system" fn CreateAntiMoniker(ppmk: *mut *mut IMoniker) -> HRESULT {
-    TRACE!(b"(%p)\n\0".as_ptr(), ppmk);
+pub unsafe extern "system" fn CreateAntiMoniker(moniker: *mut *mut IMoniker) -> HRESULT {
+    TRACE!(b"%p.\n\0".as_ptr(), moniker);
 
-    let newAntiMoniker = HeapAlloc(
-        GetProcessHeap(),
-        0,
-        core::mem::size_of::<AntiMonikerImpl>() as SIZE_T,
-    ) as *mut AntiMonikerImpl;
-
-    if newAntiMoniker.is_null() {
-        return STG_E_INSUFFICIENTMEMORY;
-    }
-
-    let hr = AntiMonikerImpl_Construct(newAntiMoniker);
-    if FAILED(hr) {
-        HeapFree(GetProcessHeap(), 0, newAntiMoniker as LPVOID);
-        return hr;
-    }
-
-    AntiMonikerImpl_QueryInterface(
-        core::ptr::addr_of_mut!((*newAntiMoniker).IMoniker_iface),
-        core::ptr::addr_of!(IID_IMoniker),
-        ppmk as *mut LPVOID,
-    )
+    create_anti_moniker(1, moniker)
 }
 
 #[no_mangle]
@@ -688,10 +712,8 @@ pub unsafe extern "system" fn AntiMoniker_CreateInstance(
     }
 
     let hr = IMoniker_QueryInterface(pMoniker, riid, ppv);
-
-    if FAILED(hr) {
-        IMoniker_Release(pMoniker);
-    }
+    /* wine-10: always drop the creation reference (the old code leaked it on success). */
+    IMoniker_Release(pMoniker);
 
     hr
 }

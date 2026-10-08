@@ -31,6 +31,15 @@
 //! Either way the engine just hands it `(&mut string, &mut prefix,
 //! &mut cursor)` and the implementation peels exactly one float arg.
 
+//! ## Two configurations of one source
+//! This file is also compiled by `user32-wsprintf-rust` (via `#[path]`), whose build.rs sets
+//! `cfg(streamout_user32)`: the C's `-D_USER32_WSPRINTF` build of the same streamout.c, for
+//! user32's wsprintf family. A cfg is per-crate, so unlike a cargo feature it cannot leak into
+//! libcntpr's (the kernel's) build of this engine. The six differences are marked
+//! `streamout_user32` below: no `_IOSTRG`/NULL-base counting stream, one size prefix
+//! (USE_MULTISIZE 0), `*` width/precision printed literally, no float conversions, and
+//! `fieldwidth += 2` for a `#` hex prefix.
+
 #![allow(clippy::missing_safety_doc)]
 
 use core::mem::size_of;
@@ -118,7 +127,8 @@ unsafe fn va_next<T: Copy>(cursor: &mut *mut u8) -> T {
 #[inline]
 unsafe fn so_char<T: Unit>(s: *mut File, chr: u32) -> i32 {
     // `if ((_flag & _IOSTRG) && _base == NULL) return 1;` — the
-    // _vscprintf counting nul-stream: succeed without storing.
+    // _vscprintf counting nul-stream: succeed without storing. (`#if !_USER32_WSPRINTF`)
+    #[cfg(not(streamout_user32))]
     if ((*s)._flag & _IOSTRG) != 0 && (*s)._base.is_null() {
         return 1;
     }
@@ -144,6 +154,7 @@ unsafe fn so_char<T: Unit>(s: *mut File, chr: u32) -> i32 {
 
 /// `streamout_astring` — narrow (char) source into the T stream.
 unsafe fn so_astring<T: Unit>(s: *mut File, mut string: *const u8, mut count: usize) -> i32 {
+    #[cfg(not(streamout_user32))]
     if ((*s)._flag & _IOSTRG) != 0 && (*s)._base.is_null() {
         return count as i32;
     }
@@ -174,6 +185,7 @@ unsafe fn so_astring<T: Unit>(s: *mut File, mut string: *const u8, mut count: us
 /// `streamout_wstring` — wide (wchar) source into the T stream.
 unsafe fn so_wstring<T: Unit>(s: *mut File, mut string: *const u16, mut count: usize) -> i32 {
     // genuine guard is `#if defined(_UNICODE) && !_USER32_WSPRINTF`.
+    #[cfg(not(streamout_user32))]
     if T::WIDE && ((*s)._flag & _IOSTRG) != 0 && (*s)._base.is_null() {
         return count as i32;
     }
@@ -223,6 +235,7 @@ pub trait Unit: Copy + PartialEq {
     fn from_u32(v: u32) -> Self;
     fn to_u32(self) -> u32;
     /// `format_float` / `format_floatw` dispatch for this width.
+    #[cfg(not(streamout_user32))]
     unsafe fn call_format_float(
         chr: u32,
         flags: u32,
@@ -243,6 +256,7 @@ impl Unit for u8 {
     fn to_u32(self) -> u32 {
         self as u32
     }
+    #[cfg(not(streamout_user32))]
     #[inline]
     unsafe fn call_format_float(
         chr: u32,
@@ -266,6 +280,7 @@ impl Unit for u16 {
     fn to_u32(self) -> u32 {
         self as u32
     }
+    #[cfg(not(streamout_user32))]
     #[inline]
     unsafe fn call_format_float(
         chr: u32,
@@ -293,6 +308,8 @@ unsafe fn tlen<T: Unit>(mut p: *const T) -> usize {
 // One faithful body, monomorphized to streamout (T=u8) / wstreamout
 // (T=u16). `_USER32_WSPRINTF` paths are NOT compiled (libcntpr is the
 // `_LIBCNT_` / non-USER32 flavor), matching this crate's target.
+// The literal-`*` branches end in `continue`, leaving the va_arg path after them dead.
+#[cfg_attr(streamout_user32, allow(unreachable_code))]
 unsafe fn streamout_impl<T: Unit>(stream: *mut File, format: *const T, mut cursor: *mut u8) -> i32 {
     // digits as bytes (ASCII), converted to T at use. [16]='0',[17]='x'.
     const DIGITS_L: &[u8; 18] = b"0123456789abcdef0x";
@@ -355,6 +372,16 @@ unsafe fn streamout_impl<T: Unit>(stream: *mut File, format: *const T, mut curso
         // field width
         let mut fieldwidth: i32;
         if chr == b'*' as u32 {
+            // _USER32_WSPRINTF prints the `*` and abandons the specification.
+            #[cfg(streamout_user32)]
+            {
+                written = so_char::<T>(stream, chr);
+                if written == 0 {
+                    return -1;
+                }
+                written_all += written;
+                continue;
+            }
             fieldwidth = va_next::<i32>(&mut cursor);
             if fieldwidth < 0 {
                 flags |= FLAG_ALIGN_LEFT;
@@ -377,6 +404,15 @@ unsafe fn streamout_impl<T: Unit>(stream: *mut File, format: *const T, mut curso
             chr = (*fmt).to_u32();
             fmt = fmt.add(1);
             if chr == b'*' as u32 {
+                #[cfg(streamout_user32)]
+                {
+                    written = so_char::<T>(stream, chr);
+                    if written == 0 {
+                        return -1;
+                    }
+                    written_all += written;
+                    continue;
+                }
                 precision = va_next::<i32>(&mut cursor);
                 chr = (*fmt).to_u32();
                 fmt = fmt.add(1);
@@ -449,7 +485,10 @@ unsafe fn streamout_impl<T: Unit>(stream: *mut File, format: *const T, mut curso
             }
             chr = (*fmt).to_u32();
             fmt = fmt.add(1);
-            // USE_MULTISIZE == 1 (libcntpr): keep looping.
+            // USE_MULTISIZE: 1 for libcntpr (keep looping), 0 for _USER32_WSPRINTF.
+            if cfg!(streamout_user32) {
+                break;
+            }
         }
 
         // format specifier
@@ -555,6 +594,7 @@ unsafe fn streamout_impl<T: Unit>(stream: *mut File, format: *const T, mut curso
                 continue;
             }
 
+            #[cfg(not(streamout_user32))]
             b'G' | b'E' | b'A' | b'g' | b'e' | b'a' | b'f' => {
                 if T::WIDE {
                     flags |= FLAG_WIDECHAR;
@@ -654,6 +694,10 @@ unsafe fn streamout_impl<T: Unit>(stream: *mut File, format: *const T, mut curso
                         pbuf[1] = T::from_u32(digits[17] as u32);
                         pbuf[2] = T::from_u32(0);
                         prefix = pbuf.as_ptr();
+                        #[cfg(streamout_user32)]
+                        {
+                            fieldwidth += 2;
+                        }
                     }
                 }
                 val64 = va_arg_fu::<T>(&mut cursor, flags);
@@ -868,13 +912,17 @@ unsafe fn wcsnlen(s: *const u16, maxlen: usize) -> usize {
 
 // ── #[no_mangle] entry points the C printf wrappers link against ──────
 /// `int __cdecl streamout(FILE*, const char*, va_list)`.
-#[no_mangle]
+// Unexported in the user32 build: only its own wsprintf wrappers call it, and a second
+// global `streamout` would clash wherever both builds meet (cnt-difftest).
+#[cfg_attr(not(streamout_user32), no_mangle)]
 pub unsafe extern "C" fn streamout(stream: *mut File, format: *const u8, argptr: *mut u8) -> i32 {
     streamout_impl::<u8>(stream, format, argptr)
 }
 
 /// `int __cdecl wstreamout(FILE*, const wchar_t*, va_list)`.
-#[no_mangle]
+// Unexported in the user32 build: only its own wsprintf wrappers call it, and a second
+// global `streamout` would clash wherever both builds meet (cnt-difftest).
+#[cfg_attr(not(streamout_user32), no_mangle)]
 pub unsafe extern "C" fn wstreamout(stream: *mut File, format: *const u16, argptr: *mut u8) -> i32 {
     streamout_impl::<u16>(stream, format, argptr)
 }
@@ -892,7 +940,8 @@ pub unsafe extern "C" fn wstreamout(stream: *mut File, format: *const u16, argpt
 //
 // No longer `float`-gated: the engine is no-SSE-safe (extern "C" x87
 // returns + va_ffp's transmute read + core_rs::floatcvt's fb64 shims),
-// so it owns format_float on i386 too.
+// so it owns format_float on i386 too. (`_USER32_WSPRINTF` has no float conversions.)
+#[cfg(not(streamout_user32))]
 mod ff {
     use super::{slot_of, Unit, FLAG_FORCE_SIGN, FLAG_FORCE_SIGNSP, FLAG_SPECIAL};
     use crate::core_rs::floatcvt::{fl, is_finite, is_nan};
@@ -1093,6 +1142,7 @@ mod ff {
 
 /// `void format_float(char, unsigned, int, char**, const char**,
 /// va_list*)` — all 3 arches (Rust, no-SSE-safe on i386).
+#[cfg(not(streamout_user32))]
 #[no_mangle]
 pub unsafe extern "C" fn format_float(
     chr: u8,
@@ -1106,6 +1156,7 @@ pub unsafe extern "C" fn format_float(
 }
 
 /// Wide twin `format_floatw`.
+#[cfg(not(streamout_user32))]
 #[no_mangle]
 pub unsafe extern "C" fn format_floatw(
     chr: u16,

@@ -707,7 +707,10 @@ pub unsafe extern "C" fn DIB_16BPP_TransparentBlt(
     SrcWidth = (*SourceRect).right - (*SourceRect).left;
 
     RoundedRight = (*DestRect).right - (((*DestRect).right - (*DestRect).left) & 0x1);
-    DestBits = ((*DestSurf).pvScan0 as *mut PBYTE)
+    // C: `(PBYTE)DestSurf->pvScan0 + (left << 1) + top * lDelta` -- byte arithmetic.
+    // Through `*mut PBYTE` both terms were scaled by the pointer size, so a transparent
+    // blit into a 16bpp surface at any non-origin rect wrote 4x/8x past its target.
+    DestBits = ((*DestSurf).pvScan0 as PBYTE)
         .offset(((*DestRect).left << 1) as isize)
         .offset(((*DestRect).top * (*DestSurf).lDelta) as isize) as *mut u32;
     wd = (*DestSurf).lDelta - (((*DestRect).right - (*DestRect).left) << 1);

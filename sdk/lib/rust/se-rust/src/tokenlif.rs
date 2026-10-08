@@ -1148,56 +1148,112 @@ pub unsafe extern "system" fn NtCreateToken(
         if let Err(s) = probe_write_handle(token_handle as _, previous_mode) { return s; }
 
         if !object_attributes.is_null() {
-            if let Err(s) = probe_user_buffer(object_attributes as _, core::mem::size_of::<_OBJECT_ATTRIBUTES>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
-            local_security_qos = *((*object_attributes).SecurityQualityOfService as *const _SECURITY_QUALITY_OF_SERVICE);
+            // Every read below is of user memory, which the C does inside _SEH2_TRY.
+            // SecurityQualityOfService is a second user pointer that the C reads
+            // without probing; a NULL one faults there, and does here too.
+            let captured_attributes: _OBJECT_ATTRIBUTES =
+                match probe_read_generic(object_attributes as *const _OBJECT_ATTRIBUTES, core::mem::size_of::<ULONG>(), previous_mode) {
+                    Ok(v) => v, Err(s) => return s,
+                };
+            local_security_qos = match probe_read_generic(
+                captured_attributes.SecurityQualityOfService as *const _SECURITY_QUALITY_OF_SERVICE,
+                1,
+                previous_mode,
+            ) {
+                Ok(v) => v, Err(s) => return s,
+            };
         }
 
-        if let Err(s) = probe_user_buffer(authentication_id as _, core::mem::size_of::<LUID>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
-        local_authentication_id = *authentication_id;
+        local_authentication_id = match probe_read_generic(authentication_id as *const LUID, core::mem::size_of::<ULONG>(), previous_mode) {
+            Ok(v) => v, Err(s) => return s,
+        };
 
-        local_expiration_time = match probe_read_user::<LARGE_INTEGER>(expiration_time, previous_mode) {
+        // ProbeForReadLargeInteger is RANGE-ONLY; probe_read_user would demand
+        // align_of::<LARGE_INTEGER>() == 8 and reject addresses the C accepts.
+        local_expiration_time = match probe_read_generic(expiration_time as *const LARGE_INTEGER, 1, previous_mode) {
             Ok(v) => v, Err(s) => return s,
         };
 
         if let Err(s) = probe_user_buffer(token_user as _, core::mem::size_of::<_TOKEN_USER>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
 
         if let Err(s) = probe_user_buffer(token_groups as _, core::mem::size_of::<_TOKEN_GROUPS>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
-        group_count = (*token_groups).GroupCount;
+        group_count = match probe_read_generic(core::ptr::addr_of!((*token_groups).GroupCount), 1, previous_mode) {
+            Ok(v) => v, Err(s) => return s,
+        };
 
         if let Err(s) = probe_user_buffer(token_privileges as _, core::mem::size_of::<_TOKEN_PRIVILEGES>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
-        privilege_count = (*token_privileges).PrivilegeCount;
+        privilege_count = match probe_read_generic(core::ptr::addr_of!((*token_privileges).PrivilegeCount), 1, previous_mode) {
+            Ok(v) => v, Err(s) => return s,
+        };
 
         if !token_owner.is_null() {
-            if let Err(s) = probe_user_buffer(token_owner as _, core::mem::size_of::<_TOKEN_OWNER>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
-            owner_sid = (*token_owner).Owner;
+            owner_sid = match probe_read_generic(core::ptr::addr_of!((*token_owner).Owner), core::mem::size_of::<ULONG>(), previous_mode) {
+                Ok(v) => v, Err(s) => return s,
+            };
         } else {
             owner_sid = core::ptr::null_mut();
         }
 
-        if let Err(s) = probe_user_buffer(token_primary_group as _, core::mem::size_of::<_TOKEN_PRIMARY_GROUP>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
-        primary_group_sid = (*token_primary_group).PrimaryGroup;
+        primary_group_sid = match probe_read_generic(core::ptr::addr_of!((*token_primary_group).PrimaryGroup), core::mem::size_of::<ULONG>(), previous_mode) {
+            Ok(v) => v, Err(s) => return s,
+        };
 
         if !token_default_dacl.is_null() {
-            if let Err(s) = probe_user_buffer(token_default_dacl as _, core::mem::size_of::<_TOKEN_DEFAULT_DACL>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
-            default_dacl = (*token_default_dacl).DefaultDacl;
+            default_dacl = match probe_read_generic(core::ptr::addr_of!((*token_default_dacl).DefaultDacl), core::mem::size_of::<ULONG>(), previous_mode) {
+                Ok(v) => v, Err(s) => return s,
+            };
         } else {
             default_dacl = core::ptr::null_mut();
         }
 
-        if let Err(s) = probe_user_buffer(token_source as _, core::mem::size_of::<_TOKEN_SOURCE>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
-        local_token_source = *token_source;
+        local_token_source = match probe_read_generic(token_source as *const _TOKEN_SOURCE, core::mem::size_of::<ULONG>(), previous_mode) {
+            Ok(v) => v, Err(s) => return s,
+        };
     } else {
+        // Kernel-mode caller: no probes (as in the C), but every load is one
+        // fault-tolerant fetch so a bad kernel pointer returns a status instead
+        // of bugchecking. Nothing has been captured yet, so a plain return is
+        // the whole cleanup.
         if !object_attributes.is_null() {
-            local_security_qos = *((*object_attributes).SecurityQualityOfService as *const _SECURITY_QUALITY_OF_SERVICE);
+            let qos_ptr = match read_back(core::ptr::addr_of!((*object_attributes).SecurityQualityOfService)) {
+                Ok(v) => v, Err(s) => return s,
+            };
+            local_security_qos = match read_back(qos_ptr as *const _SECURITY_QUALITY_OF_SERVICE) {
+                Ok(v) => v, Err(s) => return s,
+            };
         }
-        local_authentication_id = *authentication_id;
-        local_expiration_time = *expiration_time;
-        group_count = (*token_groups).GroupCount;
-        privilege_count = (*token_privileges).PrivilegeCount;
-        owner_sid = if !token_owner.is_null() { (*token_owner).Owner } else { core::ptr::null_mut() };
-        primary_group_sid = (*token_primary_group).PrimaryGroup;
-        default_dacl = if !token_default_dacl.is_null() { (*token_default_dacl).DefaultDacl } else { core::ptr::null_mut() };
-        local_token_source = *token_source;
+        local_authentication_id = match read_back(authentication_id as *const LUID) {
+            Ok(v) => v, Err(s) => return s,
+        };
+        local_expiration_time = match read_back(expiration_time as *const LARGE_INTEGER) {
+            Ok(v) => v, Err(s) => return s,
+        };
+        group_count = match read_back(core::ptr::addr_of!((*token_groups).GroupCount)) {
+            Ok(v) => v, Err(s) => return s,
+        };
+        privilege_count = match read_back(core::ptr::addr_of!((*token_privileges).PrivilegeCount)) {
+            Ok(v) => v, Err(s) => return s,
+        };
+        owner_sid = if !token_owner.is_null() {
+            match read_back(core::ptr::addr_of!((*token_owner).Owner)) {
+                Ok(v) => v, Err(s) => return s,
+            }
+        } else {
+            core::ptr::null_mut()
+        };
+        primary_group_sid = match read_back(core::ptr::addr_of!((*token_primary_group).PrimaryGroup)) {
+            Ok(v) => v, Err(s) => return s,
+        };
+        default_dacl = if !token_default_dacl.is_null() {
+            match read_back(core::ptr::addr_of!((*token_default_dacl).DefaultDacl)) {
+                Ok(v) => v, Err(s) => return s,
+            }
+        } else {
+            core::ptr::null_mut()
+        };
+        local_token_source = match read_back(token_source as *const _TOKEN_SOURCE) {
+            Ok(v) => v, Err(s) => return s,
+        };
     }
 
     if token_type < TOKEN_TYPE_TokenPrimary || token_type > TOKEN_TYPE_TokenImpersonation {
@@ -1230,7 +1286,7 @@ pub unsafe extern "system" fn NtCreateToken(
     }
 
     status = SeCaptureSidAndAttributesArray(
-        &mut (*token_groups).Groups[0],
+        core::ptr::addr_of_mut!((*token_groups).Groups) as *mut _,
         group_count,
         previous_mode,
         core::ptr::null_mut(),
@@ -1251,7 +1307,7 @@ pub unsafe extern "system" fn NtCreateToken(
     }
 
     status = SeCaptureLuidAndAttributesArray(
-        &mut (*token_privileges).Privileges[0],
+        core::ptr::addr_of_mut!((*token_privileges).Privileges) as *mut _,
         privilege_count,
         previous_mode,
         core::ptr::null_mut(),
@@ -1509,7 +1565,10 @@ pub unsafe extern "system" fn NtFilterToken(
     if !sids_to_disable.is_null() {
         if let Err(s) = probe_user_buffer(sids_to_disable as _, core::mem::size_of::<_TOKEN_GROUPS>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
 
-        captured_sids_count = (*sids_to_disable).GroupCount;
+        captured_sids_count = match probe_read_generic(core::ptr::addr_of!((*sids_to_disable).GroupCount), 1, previous_mode) {
+            Ok(count) => count,
+            Err(s) => return s,
+        };
         probe_size = (core::mem::offset_of!(_TOKEN_GROUPS, Groups) + captured_sids_count as usize * core::mem::size_of::<_SID_AND_ATTRIBUTES>()) as ULONG;
 
         if let Err(s) = probe_user_buffer(sids_to_disable as _, probe_size as usize, core::mem::size_of::<ULONG>(), previous_mode) { return s; }
@@ -1518,7 +1577,10 @@ pub unsafe extern "system" fn NtFilterToken(
     if !privileges_to_delete.is_null() {
         if let Err(s) = probe_user_buffer(privileges_to_delete as _, core::mem::size_of::<_TOKEN_PRIVILEGES>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
 
-        captured_privileges_count = (*privileges_to_delete).PrivilegeCount;
+        captured_privileges_count = match probe_read_generic(core::ptr::addr_of!((*privileges_to_delete).PrivilegeCount), 1, previous_mode) {
+            Ok(count) => count,
+            Err(s) => return s,
+        };
         probe_size = (core::mem::offset_of!(_TOKEN_PRIVILEGES, Privileges) + captured_privileges_count as usize * core::mem::size_of::<_LUID_AND_ATTRIBUTES>()) as ULONG;
 
         if let Err(s) = probe_user_buffer(privileges_to_delete as _, probe_size as usize, core::mem::size_of::<ULONG>(), previous_mode) { return s; }
@@ -1527,7 +1589,10 @@ pub unsafe extern "system" fn NtFilterToken(
     if !restricted_sids.is_null() {
         if let Err(s) = probe_user_buffer(restricted_sids as _, core::mem::size_of::<_TOKEN_GROUPS>(), core::mem::size_of::<ULONG>(), previous_mode) { return s; }
 
-        captured_restricted_sids_count = (*restricted_sids).GroupCount;
+        captured_restricted_sids_count = match probe_read_generic(core::ptr::addr_of!((*restricted_sids).GroupCount), 1, previous_mode) {
+            Ok(count) => count,
+            Err(s) => return s,
+        };
         probe_size = (core::mem::offset_of!(_TOKEN_GROUPS, Groups) + captured_restricted_sids_count as usize * core::mem::size_of::<_SID_AND_ATTRIBUTES>()) as ULONG;
 
         if let Err(s) = probe_user_buffer(restricted_sids as _, probe_size as usize, core::mem::size_of::<ULONG>(), previous_mode) { return s; }
@@ -1548,7 +1613,7 @@ pub unsafe extern "system" fn NtFilterToken(
 
     if !sids_to_disable.is_null() {
         status = SeCaptureSidAndAttributesArray(
-            (*sids_to_disable).Groups.as_mut_ptr(),
+            core::ptr::addr_of_mut!((*sids_to_disable).Groups) as *mut _,
             captured_sids_count,
             previous_mode,
             core::ptr::null_mut(),
@@ -1575,7 +1640,7 @@ pub unsafe extern "system" fn NtFilterToken(
 
     if !privileges_to_delete.is_null() {
         status = SeCaptureLuidAndAttributesArray(
-            (*privileges_to_delete).Privileges.as_mut_ptr(),
+            core::ptr::addr_of_mut!((*privileges_to_delete).Privileges) as *mut _,
             captured_privileges_count,
             previous_mode,
             core::ptr::null_mut(),
@@ -1602,7 +1667,7 @@ pub unsafe extern "system" fn NtFilterToken(
 
     if !restricted_sids.is_null() {
         status = SeCaptureSidAndAttributesArray(
-            (*restricted_sids).Groups.as_mut_ptr(),
+            core::ptr::addr_of_mut!((*restricted_sids).Groups) as *mut _,
             captured_restricted_sids_count,
             previous_mode,
             core::ptr::null_mut(),

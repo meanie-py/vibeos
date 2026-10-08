@@ -1,0 +1,25 @@
+# atapi-rust — Rust translation of drivers/storage/ide/atapi/atapi.c, the NT4-DDK
+# ATAPI IDE miniport (single 6.5K-LOC TU). It is a SCSIPORT miniport: it imports
+# ScsiPort* (now scsiport-rust) and registers via ScsiPortInitialize. atapi.sys is
+# NOT in txtsetup.sif (the live IDE path is uniata.sys), so it is not boot-loaded —
+# link-clean ×3 is the verification bar. Hand-translated (not DeepSeek) because it
+# is link-only-verifiable, so hand quality beats un-bootable LLM output.
+#
+# Driver-private structs (IDE/ATAPI registers, IDENTIFY_DATA, HW_DEVICE_EXTENSION +
+# the SCSI SRB/CDB/sense DDK layouts) come from the gen_driver_types.sh substrate
+# (src/types.rs, per-arch). crate-type=staticlib → libatapi_rust.a, cohab-linked
+# into the cmake atapi.sys with atapi.c commented out; #[no_mangle] DriverEntry
+# takes over. Depends on ntkrnl-sys. Built for all 3 arches.
+[package]
+name = "atapi-legacy-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "atapi_legacy_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["raw"] }
+ntkrnl-sys = { path = "../ntkrnl-sys" }

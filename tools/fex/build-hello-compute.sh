@@ -35,6 +35,19 @@ if [ -f "$FEX_BUILD/FEXCore/Source/libFEXCore.a" ]; then
         -DFEX_BUILD="$FEX_BUILD"
 
     ninja -C "$HARNESS_BUILD" fexprobe wow64probe
+
+    # libwowx64fex.dll — the BTCpu64 CPU layer for x86-64 guests (Fork B of
+    # docs/engineering/wow64-x64-guest-design.md). A shipping DLL rather than a
+    # probe, but it links the same prebuilt FEX archives, so it builds where
+    # they are. Its own project: it is a DLL with FEX's private CRT, not an exe.
+    cmake -S "$REPO_ROOT/tools/fex/wowx64fex" -B "$HARNESS_BUILD/wowx64fex" -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="$FEX_SRC/Data/CMake/toolchain_mingw.cmake" \
+        -DMINGW_TRIPLE=aarch64-w64-mingw32 \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DFEX_SRC="$FEX_SRC" \
+        -DFEX_BUILD="$FEX_BUILD" \
+        -DVIBEOS_SRC="$REPO_ROOT"
+    ninja -C "$HARNESS_BUILD/wowx64fex"
 else
     echo "[!] fexprobe/wow64probe skipped: FEX not built at $FEX_BUILD"
     echo "    (run tools/fex/build-fex.sh if you need the arm64 probes)"
@@ -191,6 +204,18 @@ else
     echo "[!] spawn32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD) -- the ladder will NOT stage"
 fi
 
+# apc32.exe — user APCs into 32-bit code (QueueUserAPC, ReadFileEx, timers) and
+# per-thread cleanup: Apc64.c, the x86-64 ladder's apc64, built at 32 bits.
+if [ -f "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a" ]; then
+    "$LLVM_MINGW/i686-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,_start \
+        -Wl,--subsystem,windows:5.1 -Wl,--major-os-version,5 -Wl,--minor-os-version,1 \
+        -Wl,--no-insert-timestamp \
+        -o "$HARNESS_BUILD/apc32.exe" "$HARNESS_SRC/Apc64.c" \
+        "$I386_BUILD/dll/win32/kernel32/CMakeFiles/libkernel32.dir/libkernel32.a"
+else
+    echo "[!] apc32.exe skipped: build-i386 kernel32 importlib missing ($I386_BUILD) -- the ladder will NOT stage"
+fi
+
 # marshal32.exe — the M18 marshaller-verification guest: NtQueryInformationThread
 # TBI (verified against the guest's OWN TEB32), IOCP post/get sentinel round-trip
 # (NtRemoveIoCompletion out-slots + IOSB), EnumDisplayMonitors/GetMonitorInfo/
@@ -213,6 +238,73 @@ else
     echo "[!] marshal32.exe skipped: build-i386 importlibs missing ($I386_BUILD)"
 fi
 
+# hello64.exe — the first x86-64 guest (Fork B milestone M1): no CRT, no
+# imports, raw syscalls. Their numbers are read out of ntoskrnl/sysfuncs.lst
+# here — the list is arch-independent, so the guest's number IS the arm64
+# kernel's, which is what lets wowx64.dll forward a syscall by register
+# shuffle alone. Same binary runs natively on amd64 as the oracle.
+SYSFUNCS="$REPO_ROOT/ntoskrnl/sysfuncs.lst"
+svc_index() {
+    local n
+    n="$(awk -v f="$1" '$1==f {print NR-1; exit}' "$SYSFUNCS")"
+    [ -n "$n" ] || { echo "FATAL: $1 not in $SYSFUNCS" >&2; exit 1; }
+    echo "$n"
+}
+"$LLVM_MINGW/x86_64-w64-mingw32-clang" -O1 -nostdlib -ffreestanding -fno-stack-protector \
+    -Wl,-e,start -Wl,--subsystem,windows:5.2 -Wl,--no-insert-timestamp \
+    -DSVC_NTCLOSE="$(svc_index NtClose)" \
+    -DSVC_NTTERMINATEPROCESS="$(svc_index NtTerminateProcess)" \
+    -o "$HARNESS_BUILD/hello64.exe" "$HARNESS_SRC/Hello64.c"
+
+# The x86-64 ladder (BTCpu64 M2): the 32-bit ladder's own sources, rebuilt for
+# x86-64 against build-amd64's import libraries. One source per rung on purpose
+# -- the same checks at both widths is what makes the two ladders comparable;
+# the few width-specific bits (guest SEH has no fs:[0] chain on x64) are
+# #ifdef _WIN64 inside the source. They run under FEX on arm64 and natively on
+# amd64, the native run being the oracle that the guest itself is right.
+AMD64_BUILD="${VIBEOS_AMD64_BUILD:-$REPO_ROOT/build-amd64}"
+x64_lib() { # x64_lib <dir under build-amd64> <name>
+    echo "$AMD64_BUILD/$1/CMakeFiles/lib$2.dir/lib$2.a"
+}
+x64_guest() { # x64_guest <out.exe> <source> <importlib...>
+    local out="$1" src="$2" lib
+    shift 2
+    for lib in "$@"; do
+        if [ ! -f "$lib" ]; then
+            echo "[!] $out skipped: build-amd64 importlib missing ($lib)"
+            return 0
+        fi
+    done
+    "$LLVM_MINGW/x86_64-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,start \
+        -Wl,--subsystem,windows:5.2 -Wl,--no-insert-timestamp \
+        -o "$HARNESS_BUILD/$out" "$HARNESS_SRC/$src" "$@"
+}
+K64="$(x64_lib dll/win32/kernel32 kernel32)"
+G64="$(x64_lib win32ss/gdi/gdi32 gdi32)"
+U64="$(x64_lib win32ss/user/user32 user32)"
+x64_guest gui64.exe Gui32.c "$G64" "$K64"
+x64_guest win64.exe Win32App.c "$U64" "$G64" "$K64"
+x64_guest file64.exe File32.c "$K64"
+x64_guest async64.exe Async32.c "$K64"
+x64_guest fault64.exe Fault32.c "$K64"
+x64_guest thread64.exe Thread32.c "$K64"
+x64_guest selfmod64.exe Selfmod32.c "$K64"
+x64_guest reg64.exe Reg32.c "$(x64_lib dll/win32/advapi32 advapi32)" "$K64"
+x64_guest spawn64.exe Spawn32.c "$K64"
+x64_guest apc64.exe Apc64.c "$K64"
+x64_guest marshal64.exe Marshal32.c "$U64" "$K64" "$(x64_lib dll/ntdll ntdll)" \
+    "$(x64_lib dll/win32/ws2_32 ws2_32)"
+
+# xinject.exe -- spawn64's NATIVE helper (rung 13, XInject.c): built for each
+# host machine and staged as system32\xinject.exe on that arch's media. It is
+# no guest, so it links llvm-mingw's own kernel32/ntdll import libraries (by
+# name, nothing build-specific) and needs no build-* tree.
+for M in aarch64:arm64 x86_64:amd64; do
+    "$LLVM_MINGW/${M%%:*}-w64-mingw32-clang" -O1 -nostdlib -Wl,-e,start \
+        -Wl,--subsystem,windows -Wl,--no-insert-timestamp \
+        -o "$HARNESS_BUILD/xinject-${M##*:}.exe" "$HARNESS_SRC/XInject.c" -lkernel32 -lntdll
+done
+
 echo
 echo "Built:"
-ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe "$HARNESS_BUILD"/gui32.exe "$HARNESS_BUILD"/win32.exe "$HARNESS_BUILD"/file32.exe "$HARNESS_BUILD"/marshal32.exe 2>/dev/null || true
+ls -la "$HARNESS_BUILD"/fexprobe.exe "$HARNESS_BUILD"/wow64probe.exe "$HARNESS_BUILD"/hello32.exe "$HARNESS_BUILD"/gui32.exe "$HARNESS_BUILD"/win32.exe "$HARNESS_BUILD"/file32.exe "$HARNESS_BUILD"/marshal32.exe "$HARNESS_BUILD"/hello64.exe "$HARNESS_BUILD"/wowx64fex/libwowx64fex.dll 2>/dev/null || true

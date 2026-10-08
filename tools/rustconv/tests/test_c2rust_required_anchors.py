@@ -25,13 +25,55 @@ def test_requested_arch_does_not_fall_back_to_another_build(tmp_path, monkeypatc
 def test_strict_rejects_empty_extracted_map(monkeypatch):
     monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub static X: i32 = 0;")
     with pytest.raises(anchor.C2RustError, match="no extracted function"):
-        anchor.build_anchor_map(Path("pilot.c"), strict=True)
+        anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names={"Expected"})
+
+
+def test_a_data_only_tu_needs_no_function_anchors(monkeypatch):
+    # setuplib fileqsup.c: one file-scope global, no functions -- only a preamble to translate
+    monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub static X: i32 = 0;")
+    assert anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names=set()) == {}
+
+
+def _elsewhere(found, failures):
+    def fake(c_file, names, timeout):
+        anchor._ANCHOR_FAILURES[c_file] = failures
+        return dict(found), names - set(found)
+
+    return fake
 
 
 def test_strict_rejects_partial_map(monkeypatch):
+    # Another arch could not settle the name (its c2rust and preprocessor both failed).
     monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub unsafe fn Kept() {}")
-    with pytest.raises(anchor.C2RustError, match="Lost"):
+    monkeypatch.setattr(anchor, "_anchor_elsewhere", _elsewhere({}, ["build-i386: panic"]))
+    with pytest.raises(anchor.C2RustError, match="Lost") as e:
         anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names={"Kept", "Lost"})
+    assert not isinstance(e.value, anchor.CompiledOut)
+
+
+def test_a_body_only_another_arch_compiles_is_anchored_from_it(monkeypatch):
+    # setuplib IsAcpiComputer: called only under `#ifndef _M_AMD64`
+    monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub unsafe fn Kept() {}")
+    monkeypatch.setattr(anchor, "_anchor_elsewhere", _elsewhere({"Acpi": "{ x }"}, []))
+    got = anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names={"Kept", "Acpi"})
+    assert got["Acpi"] == "{ x }"
+
+
+def test_a_body_no_arch_compiles_is_reported_compiled_out(monkeypatch):
+    # partlist.c DumpPartitionTable under `#ifdef DUMP_PARTITION_TABLE`, defined nowhere
+    monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: "pub unsafe fn Kept() {}")
+    monkeypatch.setattr(anchor, "_anchor_elsewhere", _elsewhere({}, []))
+    with pytest.raises(anchor.CompiledOut) as e:
+        anchor.build_anchor_map(Path("pilot.c"), strict=True, required_names={"Kept", "Dump"})
+    assert e.value.names == {"Dump"}
+
+
+def test_attached_isystem_is_kept():
+    # the arm64 db spells `-isystem/…/crt` under -nostdinc
+    flags = anchor._extract_clang_flags(
+        {"arguments": ["cc", "-nostdinc", "-isystem/inc/crt", "-c", "x.c"]}
+    )
+    assert "-isystem/inc/crt" in flags
 
 
 def test_complete_map_is_accepted(monkeypatch):
@@ -64,8 +106,8 @@ def test_anchor_flags_preserve_preprocessor_order_and_quoted_paths():
 
 
 def test_nested_sal_does_not_erase_cdfs_functions():
-    from rustconv.scanner import scan_file, _strip_sal
     from rustconv.function_coverage import require_c_plan
+    from rustconv.scanner import _strip_sal, scan_file
 
     source = Path(__file__).resolve().parents[3] / "drivers/filesystems/cdfs/filobsup.c"
     scan = scan_file(source)
@@ -149,3 +191,83 @@ def test_pseh_variants_are_tried_labelled_first():
         assert names == {"-D_SEH2_TRY", "-D_SEH2_FINALLY", "-D_SEH2_EXCEPT(...)", "-D_SEH2_END"}
         # _SEH2_LEAVE is deliberately NOT overridden — it must fail loudly, never quietly.
         assert not any(d.startswith("-D_SEH2_LEAVE") for d in variant)
+
+
+def test_wide_temporaries_in_a_static_are_hoisted_to_named_statics():
+    # setuplib mui.c: `{ L"Arial,186" }` in a file-scope table
+    pre = (
+        "pub static mut T: [S; 1] = unsafe { [S { F: ::core::mem::transmute::<\n"
+        "    [u8; 6],\n    [::core::ffi::c_ushort; 3],\n"
+        '>(*b"A\\0,\\0\\0\\0")\n    .as_ptr() as PCWSTR }] };'
+    )
+    out = anchor.hoist_wide_temporaries(pre)
+    assert "transmute" not in out and ".as_ptr() as PCWSTR" in out
+    name = out.split("pub static ")[1].split(":")[0]
+    assert name.startswith("RUSTCONV_C2R_WSTR_")
+    assert "[0x0041u16, 0x002C, 0x0000]" in out
+    assert anchor.hoist_wide_temporaries(pre + "\n" + pre).count("pub static RUSTCONV") == 1
+
+
+def test_type_items_reads_structs_and_aliases_from_c2rust_text():
+    text = (
+        "pub type UCHAR = ::core::ffi::c_uchar;\n"
+        "#[derive(Copy, Clone)]\n#[repr(C)]\npub struct _MBR_PARTITION_TYPE {\n"
+        "    pub Type: UCHAR,\n    pub Description: PCSTR,\n}\n"
+        "pub type MBR_PARTITION_TYPE = _MBR_PARTITION_TYPE;\n"
+    )
+    items = anchor._type_items(text)
+    assert items["MBR_PARTITION_TYPE"] == "pub type MBR_PARTITION_TYPE = _MBR_PARTITION_TYPE;"
+    assert items["_MBR_PARTITION_TYPE"].startswith("#[derive(Copy, Clone)]\n#[repr(C)]\npub struct")
+    assert items["_MBR_PARTITION_TYPE"].endswith("pub Description: PCSTR,\n}")
+
+
+_C2R_INIT = """static mut Name: UNICODE_STRING = _UNICODE_STRING {
+    Length: 0,
+    MaximumLength: 0,
+    Buffer: ::core::ptr::null_mut::<WCHAR>(),
+};
+unsafe extern "C" fn run_static_initializers() {
+    Name = _UNICODE_STRING {
+        Length: 2 as USHORT,
+        MaximumLength: 4 as USHORT,
+        Buffer: &raw const ::core::mem::transmute::<[u8; 4], [::core::ffi::c_ushort; 2]>(
+            *b"A\\0\\0\\0",
+        ) as *const ::core::ffi::c_ushort as PWSTR,
+    };
+}
+#[used]
+static INIT_ARRAY: [unsafe extern "C" fn(); 1] = [run_static_initializers];
+"""
+
+
+def test_startup_initialisers_fold_into_their_statics():
+    # setuplib's `static UNICODE_STRING X = RTL_CONSTANT_STRING(L"...")` shipped EMPTY: the
+    # zero-filled static was kept and c2rust's constructor that filled it was dropped.
+    blocks = [_C2R_INIT.split("unsafe extern")[0].strip(), "static INIT_ARRAY: [x; 1] = [y];"]
+    out = anchor.fold_static_initializers(_C2R_INIT, blocks)
+    assert len(out) == 1 and "Length: 2 as USHORT" in out[0] and "null_mut" not in out[0]
+    hoisted = anchor.hoist_wide_temporaries(out[0])
+    assert "Buffer: RUSTCONV_C2R_WSTR_" in hoisted and ".as_ptr() as PWSTR" in hoisted
+    assert ": [u16; 2] = [0x0041u16, 0x0000];" in hoisted
+
+
+def test_a_startup_store_with_no_static_spelling_is_refused():
+    text = _C2R_INIT.replace(
+        "    Name = _UNICODE_STRING {", "    Name.Length = 2;\n    Name = _UNICODE_STRING {"
+    )
+    blocks = [_C2R_INIT.split("unsafe extern")[0].strip()]
+    with pytest.raises(anchor.C2RustError, match="hand-port"):
+        anchor.fold_static_initializers(text, blocks)
+
+
+def test_an_extern_linkage_global_keeps_no_mangle(monkeypatch):
+    # setuplib: SpInfExports / SpFileExports / ProcessHeap lost `#[no_mangle]` and the DLL
+    # failed to link against main.c and the island's extern declarations.
+    text = (
+        "fn helper() {}\n#[no_mangle]\npub static mut SpInfExports: SPINF_EXPORTS = _SPINF_EXPORTS {\n"
+        "    SpInfCloseInfFile: None,\n};\nstatic mut Local: u32 = 0;\n"
+    )
+    monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **k: text)
+    out = anchor.build_preamble(Path("x.c"), verbose=False)
+    assert "#[no_mangle]\npub static mut SpInfExports" in out
+    assert "#[no_mangle]\nstatic mut Local" not in out

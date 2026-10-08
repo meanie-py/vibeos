@@ -55,13 +55,42 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .macro_authority import CANONICAL_BUILD_ROOT, MacroAuthorityError, _compile_entry
+from .macro_authority import (
+    CANONICAL_BUILD_ROOT,
+    MacroAuthorityError,
+    _compile_entry,
+    _sibling_target_entry,
+    flags_source,
+)
+
+
+def _probe_entry(repo_root: Path, arch: str, tu: Path) -> list[str] | None:
+    """The TU's own compile command, else a same-module sibling's with the TU substituted.
+
+    The second half is the same fallback the c2rust anchor uses. A module that was never
+    compiled in this tree (upstream's new pciidex/atapi, unbuilt since the merge) or one a
+    cohab flip took out of the build has no entry of its own, and the probe used to fail for
+    EVERY TU -- which left its hundreds of header constants for the model to guess.
+
+    A header translated `--via` a TU is probed AS that TU (macro_authority.flags_source):
+    the probe `#include`s it, so the header's own names are in scope exactly as compiled.
+    """
+    tu = flags_source(tu)
+    return _compile_entry(repo_root, arch, tu) or _sibling_target_entry(repo_root, arch, tu)
+
 
 _ARCHES = ("i386", "amd64", "arm64")
 # clang prints the evaluated argument back in the diagnostic, attributed to its line.
 _SHOW_RE = re.compile(
     r"probe\.cpp:(\d+):\d+: error: implicit instantiation of undefined template "
     r"'rcv_show<(-?\d+)>'"
+)
+# ...and the C TYPE, the same way: clang keeps typedef sugar in a template argument, so
+# STATUS_PARTITION_FAILURE comes back as `NTSTATUS`, not `long`. A value typed by its
+# magnitude alone (`i32`) does not compare against the NTSTATUS it is used with.
+_TYPE_RE = re.compile(
+    r"probe\.cpp:(\d+):\d+: error: implicit instantiation of undefined template "
+    r"'rcv_type<([^']+)>'"
 )
 
 
@@ -71,6 +100,9 @@ class Fact:
 
     name: str
     value: int
+    #: the C type clang reports, typedef name kept: `NTSTATUS|long` (sugar|canonical) or
+    #: `int` when there is no sugar. None if not probed.
+    c_type: str | None = None
 
 
 @dataclass
@@ -80,20 +112,57 @@ class Resolution:
     unresolved: dict[str, str]
 
 
+# A plain-C TU cannot be probed through C++ (its own flags -- `-std=gnu99`, `-x c` -- refuse
+# a .cpp, and C-isms in its bodies do not compile as C++), and C has no templates. Two
+# diagnostics carry the same facts there: a DUPLICATED case label prints its value, and an
+# incompatible struct initializer prints the expression's type, typedef sugar first
+# ("'NTSTATUS' (aka 'long')").
+# An enumerator names itself in the message: "duplicate case value: 'X' and 'X' both equal '44'".
+_C_SHOW_RE = re.compile(
+    r"probe\.c:(\d+):\d+: error: duplicate case value(?: '(-?\d+)'|: .*? both equal '(-?\d+)')"
+)
+_C_TYPE_RE = re.compile(
+    r"probe\.c:(\d+):\d+: error: initializing 'struct rcv_t' with an expression of "
+    r"incompatible type '([^']+)'(?: \(aka '([^']+)'\))?"
+)
+
+
+def _probe_source_c(tu: Path, names: list[str]) -> str:
+    """Two lines per name: its duplicated case label, then its typed initializer."""
+    lines = [
+        f'#include "{tu.as_posix()}"',
+        "",
+        "struct rcv_t { int rcv_x; };",
+        "static void rcv_probe(void) {",
+    ]
+    for i, n in enumerate(names):
+        # `0 +`: a bare enumerator label makes clang name it instead of printing its value.
+        case = f"case 0 + (long long)({n}):"
+        lines.append(f"    switch ((long long)0) {{ {case} {case} ; }}")
+        lines.append(f"    {{ struct rcv_t t{i} = ({n}); }}")
+    lines += ["}", ""]
+    return "\n".join(lines)
+
+
+_C_FIRST_NAME_LINE = 5  # 1:#include 2:blank 3:struct 4:fn-open 5:first name
+
+
 def _probe_source(tu: Path, names: list[str]) -> str:
     """One undefined-template instantiation per name, one name per line."""
     lines = [
         f'#include "{tu.as_posix()}"',
         "",
         "template <long long V> struct rcv_show;",
+        "template <typename T> struct rcv_type;",
         "static void rcv_probe(void) {",
     ]
     lines += [f"    rcv_show<(long long)({n})> v{i};" for i, n in enumerate(names)]
+    lines += [f"    rcv_type<decltype({n})> t{i};" for i, n in enumerate(names)]
     lines += ["}", ""]
     return "\n".join(lines)
 
 
-_FIRST_NAME_LINE = 5  # 1:#include 2:blank 3:template 4:fn-open 5:first name
+_FIRST_NAME_LINE = 6  # 1:#include 2:blank 3-4:templates 5:fn-open 6:first name
 
 
 def _syntax_argv(argv: list[str], probe: Path) -> list[str]:
@@ -118,17 +187,19 @@ def _syntax_argv(argv: list[str], probe: Path) -> list[str]:
 
 
 def _resolve_one_arch(
-    repo_root: Path, arch: str, tu: Path, names: list[str]
+    repo_root: Path, arch: str, tu: Path, names: list[str], types: dict[str, str] | None = None
 ) -> tuple[dict[str, int], dict[str, str]]:
-    argv = _compile_entry(repo_root, arch, tu)
+    argv = _probe_entry(repo_root, arch, tu)
     if argv is None:
         raise MacroAuthorityError(
             f"no compile_commands.json entry for {tu.name} on {arch}\n"
             f"fix: ./vibeos-cli build --arch {arch}"
         )
+    tu = flags_source(tu)
+    is_c = tu.suffix == ".c"
     with tempfile.TemporaryDirectory() as td:
-        probe = Path(td) / "probe.cpp"
-        probe.write_text(_probe_source(tu, names))
+        probe = Path(td) / ("probe.c" if is_c else "probe.cpp")
+        probe.write_text(_probe_source_c(tu, names) if is_c else _probe_source(tu, names))
         proc = subprocess.run(
             _syntax_argv(argv, probe),
             capture_output=True,
@@ -136,10 +207,28 @@ def _resolve_one_arch(
             cwd=CANONICAL_BUILD_ROOT if Path(CANONICAL_BUILD_ROOT).is_dir() else None,
         )
     values: dict[str, int] = {}
+    if is_c:
+        for match in _C_SHOW_RE.finditer(proc.stderr):
+            index, odd = divmod(int(match.group(1)) - _C_FIRST_NAME_LINE, 2)
+            if not odd and 0 <= index < len(names):
+                values[names[index]] = int(match.group(2) or match.group(3))
+        if types is not None:
+            for match in _C_TYPE_RE.finditer(proc.stderr):
+                index, odd = divmod(int(match.group(1)) - _C_FIRST_NAME_LINE, 2)
+                if odd and 0 <= index < len(names):
+                    sugar, canon = match.group(2).strip(), (match.group(3) or "").strip()
+                    types.setdefault(names[index], f"{sugar}|{canon}" if canon else sugar)
+        rejected = {n: "not an integer constant expression" for n in names if n not in values}
+        return values, rejected
     for match in _SHOW_RE.finditer(proc.stderr):
         index = int(match.group(1)) - _FIRST_NAME_LINE
         if 0 <= index < len(names):
             values[names[index]] = int(match.group(2))
+    if types is not None:
+        for match in _TYPE_RE.finditer(proc.stderr):
+            index = int(match.group(1)) - _FIRST_NAME_LINE - len(names)
+            if 0 <= index < len(names):
+                types.setdefault(names[index], match.group(2).strip())
 
     rejected = {n: "not an integer constant expression" for n in names if n not in values}
     return values, rejected
@@ -152,9 +241,10 @@ def resolve(
     names = sorted(dict.fromkeys(names))
     per_arch: dict[str, dict[str, int]] = {}
     unresolved: dict[str, str] = {}
+    types: dict[str, str] = {}
     for arch in arches:
         try:
-            values, rejected = _resolve_one_arch(repo_root, arch, tu, names)
+            values, rejected = _resolve_one_arch(repo_root, arch, tu, names, types)
         except MacroAuthorityError:
             continue
         per_arch[arch] = values
@@ -177,7 +267,7 @@ def resolve(
                 f"{a}={v}" for a, v in sorted(seen.items())
             )
             continue
-        facts.append(Fact(name, distinct.pop()))
+        facts.append(Fact(name, distinct.pop(), types.get(name)))
     return Resolution(facts, unresolved)
 
 
@@ -205,3 +295,99 @@ def render(facts: list[Fact], source_note: str) -> str:
             literal = str(fact.value)
         out.append(f"pub const {fact.name}: {ty} = {literal};")
     return "\n".join(out)
+
+
+_C_FNTYPE_RE = re.compile(
+    r"probe\.c:(\d+):\d+: error: initializing 'struct rcv_t' with an expression of "
+    r"incompatible type '([^']+)'"
+)
+
+
+def _function_types(repo_root: Path, tu: Path, names: list[str]) -> dict[str, str]:
+    """clang's own type of `&name` on i386, as it prints it (`PPARTLIST (*)(void)
+    __attribute__((stdcall))`), for each name the TU declares as a function."""
+    names = sorted(dict.fromkeys(names))
+    argv = _probe_entry(repo_root, "i386", tu)
+    if argv is None:
+        raise MacroAuthorityError(
+            f"no compile_commands.json entry for {tu.name} on i386\n"
+            "fix: ./vibeos-cli build --arch i386"
+        )
+    lines = [
+        f'#include "{tu.as_posix()}"',
+        "struct rcv_t { int rcv_x; };",
+        "static void rcv_p(void) {",
+    ]
+    lines += [f"    {{ struct rcv_t f{i} = (&{n}); }}" for i, n in enumerate(names)]
+    lines += ["}", ""]
+    first = 4
+    with tempfile.TemporaryDirectory() as td:
+        probe = Path(td) / "probe.c"
+        probe.write_text("\n".join(lines))
+        proc = subprocess.run(
+            _syntax_argv(argv, probe),
+            capture_output=True,
+            text=True,
+            cwd=CANONICAL_BUILD_ROOT if Path(CANONICAL_BUILD_ROOT).is_dir() else None,
+        )
+    out: dict[str, str] = {}
+    for m in _C_FNTYPE_RE.finditer(proc.stderr):
+        index = int(m.group(1)) - first
+        if 0 <= index < len(names) and "(*)" in m.group(2):
+            out[names[index]] = m.group(2)
+    return out
+
+
+def _abi_of(ty: str) -> str | None:
+    if "__attribute__((stdcall))" in ty:
+        return "system"
+    if "__attribute__((" not in ty or "__attribute__((cdecl))" in ty:
+        return "C"
+    return None
+
+
+def function_abis(repo_root: Path, tu: Path, names: list[str]) -> dict[str, str]:
+    """The Rust ABI string for each C function, from clang's own type of `&name` on i386.
+
+    c2rust spells every extern `extern "C"`, which is wrong for an NTAPI function on i386
+    (stdcall): a cdecl call to a stdcall callee leaves the stack unbalanced. On the 64-bit
+    targets there is one convention, so i386 decides: `stdcall` -> "system", `cdecl` or none
+    -> "C". A name clang cannot type, or another convention (fastcall), is left out --
+    reported by the caller, never guessed.
+    """
+    out: dict[str, str] = {}
+    for name, ty in _function_types(repo_root, tu, names).items():
+        abi = _abi_of(ty)
+        if abi is not None:
+            out[name] = abi
+    return out
+
+
+def param_count(ty: str) -> int | None:
+    """Parameters of a clang function-pointer type (`T (*)(A, B) __attribute__((stdcall))`),
+    `...` counting one; balanced, so the attribute's own parentheses are not the list."""
+    at = ty.find("(*)(")
+    if at < 0:
+        return None
+    i, depth, n = at + 4, 1, 1
+    while i < len(ty) and depth:
+        depth += {"(": 1, ")": -1}.get(ty[i], 0)
+        n += ty[i] == "," and depth == 1
+        i += 1
+    body = ty[at + 4 : i - 1].strip()
+    return 0 if body in ("", "void") else n
+
+
+def function_prototypes(repo_root: Path, tu: Path, names: list[str]) -> dict[str, tuple[str, int]]:
+    """(Rust ABI, parameter count -- `...` counts one) of each C function as THIS TU's
+    headers declare it. What settles a name two crates in the tree declare differently:
+    diskpart's `SelectPartition(argc, argv)` and setuplib's three-argument one are different
+    functions in different binaries, and only the caller's prototype says which it calls --
+    for a module c2rust cannot transpile (usetup), clang's type is the only exact source."""
+    out: dict[str, tuple[str, int]] = {}
+    for name, ty in _function_types(repo_root, tu, names).items():
+        abi = _abi_of(ty)
+        count = param_count(ty)
+        if abi is not None and count is not None:
+            out[name] = (abi, count)
+    return out

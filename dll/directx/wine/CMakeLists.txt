@@ -1,13 +1,8 @@
 
-if (MSVC)
-    # Disable warning C4090: 'function': different 'const' qualifiers
-    # Disable warning C4146: unary minus operator applied to unsigned type, result still unsigned
-    add_compile_options(/wd4090 /wd4146)
-endif()
 
 set(VKD3D_INCLUDE_DIRS
-    ${REACTOS_SOURCE_DIR}/sdk/lib/vkd3d/include
-    ${REACTOS_SOURCE_DIR}/sdk/lib/vkd3d/include/private)
+    ${REACTOS_SOURCE_DIR}/vendor/vkd3d/include
+    ${REACTOS_SOURCE_DIR}/vendor/vkd3d/include/private)
 
 add_subdirectory(amstream)
 add_subdirectory(d3d8)
@@ -78,6 +73,7 @@ add_subdirectory(quartz)
 add_subdirectory(wined3d)
 
 if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
+    add_subdirectory(d2d1)
     add_subdirectory(d3d10)
     add_subdirectory(d3d10_1)
     add_subdirectory(d3d10core)
@@ -95,6 +91,7 @@ if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
     add_subdirectory(d3dx10_43)
     add_subdirectory(d3dx11_42)
     add_subdirectory(d3dx11_43)
+    add_subdirectory(dwrite)
     add_subdirectory(dxgi)
     add_subdirectory(dxva2)
 endif()

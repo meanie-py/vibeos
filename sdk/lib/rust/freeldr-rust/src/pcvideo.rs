@@ -279,7 +279,11 @@ unsafe fn PcVideoGetBiosMode(
 unsafe fn PcVideoGetDisplayMode() {
     let mut Mode: USHORT = 0;
 
-    if PcVideoGetBiosMode(&mut Mode) != 0 &&
+    // Is the current mode VESA? (VBE 4F03h. This asked INT 10h AH=0Fh for the
+    // BIOS mode instead and fed that 0x00-0x13 number to VBE 4F01h, so a real
+    // VESA start mode was never recognised, and a BIOS that answers 4F01h for
+    // a legacy mode number got taken for a VESA graphics mode.)
+    if PcVideoVesaGetCurrentSVGAMode(&mut Mode) != 0 &&
        PcVideoVesaGetSVGAModeInformation(Mode, &mut VesaVideoModeInformation) != 0
     {
         TRACE(b"VESA mode detected\n\0".as_ptr() as *const i8);
@@ -304,14 +308,9 @@ unsafe fn PcVideoGetDisplayMode() {
         ScreenWidth = (*(0x44A as *const USHORT)) as u32 ;
         ScreenHeight = 1 + *(0x484 as *const UCHAR) as ULONG;
 
-        BytesPerScanLine = ((*(0x489 as *const UCHAR)) & 0x90) as u32 ;
-        BytesPerScanLine = ((BytesPerScanLine & 0x80) >> 6) | ((BytesPerScanLine & 0x10) >> 4);
-        BytesPerScanLine = match BytesPerScanLine {
-            x if x == VERTRES_200_SCANLINES as u32 => 200,
-            x if x == VERTRES_350_SCANLINES as u32 => 350,
-            x if x == VERTRES_400_SCANLINES as u32 => 400,
-            _ => 160,
-        };
+        // Text mode: one byte for the character, one for the attribute. (Upstream
+        // bd881161ac2: BDA byte 0x489 holds the vertical scan-line count, not a row stride.)
+        BytesPerScanLine = ScreenWidth * 2;
 
         DisplayMode = VideoTextMode;
         VesaVideoMode = 0u8;
@@ -322,7 +321,7 @@ unsafe fn PcVideoGetDisplayMode() {
         BiosVideoMode = VIDEOMODE_NORMAL_TEXT;
         ScreenWidth = 80;
         ScreenHeight = 25;
-        BytesPerScanLine = 160;
+        BytesPerScanLine = ScreenWidth * 2;
         DisplayMode = VideoTextMode;
         VesaVideoMode = 0u8;
     }
@@ -463,6 +462,7 @@ unsafe fn PcVideoSetMode80x25() -> BOOLEAN {
     PcVideoSetBiosMode(0x03);
     ScreenWidth = 80;
     ScreenHeight = 25;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 
@@ -475,6 +475,7 @@ unsafe fn PcVideoSetMode80x50_80x43() -> BOOLEAN {
         PcVideoDefineCursor(6, 7);
         ScreenWidth = 80;
         ScreenHeight = 50;
+        BytesPerScanLine = ScreenWidth * 2;
     } else if VideoCard == VIDEOCARD_EGA {
         PcVideoSetBiosMode(0x03);
         PcVideoSetFont8x8();
@@ -483,6 +484,7 @@ unsafe fn PcVideoSetMode80x50_80x43() -> BOOLEAN {
         PcVideoDefineCursor(6, 7);
         ScreenWidth = 80;
         ScreenHeight = 43;
+        BytesPerScanLine = ScreenWidth * 2;
     } else {
         return 0u8;
     }
@@ -496,6 +498,7 @@ unsafe fn PcVideoSetMode80x28() -> BOOLEAN {
     PcVideoDefineCursor(11, 12);
     ScreenWidth = 80;
     ScreenHeight = 28;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 
@@ -504,6 +507,7 @@ unsafe fn PcVideoSetMode80x30() -> BOOLEAN {
     PcVideoSet480ScanLines();
     ScreenWidth = 80;
     ScreenHeight = 30;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 
@@ -515,6 +519,7 @@ unsafe fn PcVideoSetMode80x34() -> BOOLEAN {
     PcVideoSetDisplayEnd();
     ScreenWidth = 80;
     ScreenHeight = 34;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 
@@ -527,6 +532,7 @@ unsafe fn PcVideoSetMode80x43() -> BOOLEAN {
     PcVideoDefineCursor(6, 7);
     ScreenWidth = 80;
     ScreenHeight = 43;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 
@@ -540,6 +546,7 @@ unsafe fn PcVideoSetMode80x60() -> BOOLEAN {
     PcVideoSetDisplayEnd();
     ScreenWidth = 80;
     ScreenHeight = 60;
+    BytesPerScanLine = ScreenWidth * 2;
     return 1u8;
 }
 
@@ -869,8 +876,161 @@ pub unsafe extern "C" fn PcVideoSync() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// A VBE linear framebuffer for the kernel (BIOS boot only; not in pcvideo.c).
+//
+// Since 2026-05 the kernel's display path is framebuffer-only on every arch: the
+// lfb bootvid and the framebuffer display miniport read a DisplayController node
+// carrying CM_FRAMEBUF_DEVICE_DATA, which the UEFI loader builds from GOP. Without
+// one, win32k's InitVideo finds no DEVICEMAP\VIDEO and bugchecks 0xB4. On BIOS we
+// pick a VBE 2.0+ direct-colour mode with a linear framebuffer during hardware
+// detection, describe it in that same shape (machpc.rs DetectDisplayController),
+// and switch into it only in PcVideoPrepareForReactOS, so the loader's text UI is
+// untouched until the kernel takes over.
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy)]
+pub struct PcVbeFramebuffer {
+    pub Mode: USHORT,
+    pub Base: u64,
+    pub Size: ULONG,
+    pub Data: CM_FRAMEBUF_DEVICE_DATA,
+}
+
+static mut VbeFramebuffer: Option<PcVbeFramebuffer> = None;
+
+/// Mode preference: 1024x768, then 800x600, then the largest mode that fits
+/// 1920x1200. Anything below 640x480 is not a desktop.
+fn VbeModeScore(Width: u32, Height: u32) -> u64 {
+    if Width < 640 || Height < 480 || Width > 1920 || Height > 1200 {
+        return 0;
+    }
+    let area = (Width as u64) * (Height as u64);
+    match (Width, Height) {
+        (1024, 768) => 3 << 32,
+        (800, 600) => 2 << 32,
+        _ => (1 << 32) | area,
+    }
+}
+
+fn VbeMask(Size: u8, Position: u8) -> ULONG {
+    if Size == 0 || Size >= 32 {
+        return 0;
+    }
+    ((1u32 << Size) - 1) << Position
+}
+
+/// Choose the framebuffer mode the kernel will get. Needs VBE 2.0+ (linear
+/// framebuffers) and a 32-bpp direct-colour mode; returns None otherwise, and the
+/// caller falls back to a plain display node.
+pub unsafe fn PcVideoSelectVbeFramebuffer(VesaVersion: USHORT) -> Option<PcVbeFramebuffer> {
+    if VesaVersion < 0x0200 {
+        return None;
+    }
+    // BiosIsVesaSupported() just left the VBE info block in BIOSCALLBUFFER. The mode
+    // list it points to often lives INSIDE that block (its reserved area), and every
+    // 4F01 call below overwrites the buffer, so copy the list out first.
+    let info = BIOSCALLBUFFER as *const crate::pcvesa::VESA_SVGA_INFO;
+    let far = core::ptr::read_unaligned(core::ptr::addr_of!((*info).SupportedModeListPtr));
+    let list = ((((far >> 16) & 0xFFFF) << 4) + (far & 0xFFFF)) as usize as *const USHORT;
+    let mut modes = [0xFFFFu16; 256];
+    let mut count = 0usize;
+    while count < modes.len() {
+        let m = core::ptr::read_unaligned(list.add(count));
+        if m == 0xFFFF {
+            break;
+        }
+        modes[count] = m;
+        count += 1;
+    }
+
+    let mut best: Option<(u64, PcVbeFramebuffer)> = None;
+    for &mode in &modes[..count] {
+        let mut mi: SVGA_MODE_INFORMATION = core::mem::zeroed();
+        if PcVideoVesaGetSVGAModeInformation(mode, &mut mi) == 0 {
+            continue;
+        }
+        // Supported (bit 0), graphics (bit 4), linear framebuffer (bit 7);
+        // direct-colour memory model (6) at 32 bpp.
+        let attr = mi.ModeAttributes;
+        if attr & 0x0091 != 0x0091 || mi.MemoryModel != 6 || mi.BitsPerPixel != 32 {
+            continue;
+        }
+        let base = mi.LinearVideoBufferAddress;
+        let (w, h) = (mi.WidthInPixels as u32, mi.HeightInPixels as u32);
+        let score = VbeModeScore(w, h);
+        if base == 0 || score == 0 {
+            continue;
+        }
+        // VBE 3.0 reports the linear-mode pitch and masks separately; older
+        // BIOSes leave those zero and the banked fields describe both.
+        let linear = VesaVersion >= 0x0300 && mi.LinearBytesPerScanLine != 0;
+        let pitch = if linear { mi.LinearBytesPerScanLine } else { mi.BytesPerScanLine } as u32;
+        let (r, g, b, x) = if linear {
+            (
+                VbeMask(mi.LinearRedMaskSize, mi.LinearRedMaskPosition),
+                VbeMask(mi.LinearGreenMaskSize, mi.LinearGreenMaskPosition),
+                VbeMask(mi.LinearBlueMaskSize, mi.LinearBlueMaskPosition),
+                VbeMask(mi.LinearReservedMaskSize, mi.LinearReservedMaskPosition),
+            )
+        } else {
+            (
+                VbeMask(mi.RedMaskSize, mi.RedMaskPosition),
+                VbeMask(mi.GreenMaskSize, mi.GreenMaskPosition),
+                VbeMask(mi.BlueMaskSize, mi.BlueMaskPosition),
+                VbeMask(mi.ReservedMaskSize, mi.ReservedMaskPosition),
+            )
+        };
+        if pitch < w * 4 || r == 0 || g == 0 || b == 0 {
+            continue;
+        }
+        let mut data: CM_FRAMEBUF_DEVICE_DATA = core::mem::zeroed();
+        data.Version = 1;
+        data.Revision = 3;
+        data.FrameBufferOffset = 0;
+        data.ScreenWidth = w;
+        data.ScreenHeight = h;
+        data.PixelsPerScanLine = pitch / 4;
+        data.BitsPerPixel = 32;
+        data.PixelMasks.RedMask = r;
+        data.PixelMasks.GreenMask = g;
+        data.PixelMasks.BlueMask = b;
+        data.PixelMasks.ReservedMask = x;
+        let candidate = PcVbeFramebuffer {
+            Mode: mode,
+            Base: base as u64,
+            Size: (pitch * h + 0xFFF) & !0xFFF,
+            Data: data,
+        };
+        if best.map_or(true, |(s, _)| score > s) {
+            best = Some((score, candidate));
+        }
+    }
+    let chosen = best.map(|(_, fb)| fb);
+    if let Some(fb) = chosen {
+        TRACE(
+            b"VBE framebuffer: mode 0x%x %ux%u at 0x%x\n\0".as_ptr() as PCHAR,
+            fb.Mode as usize,
+            fb.Data.ScreenWidth as usize,
+            fb.Data.ScreenHeight as usize,
+            fb.Base as usize,
+        );
+    }
+    VbeFramebuffer = chosen;
+    chosen
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn PcVideoPrepareForReactOS() {
+    if let Some(fb) = VbeFramebuffer {
+        // Bit 14: use the linear framebuffer. If the BIOS refuses the mode it
+        // promised, fall back to text mode: the kernel then bugchecks 0xB4 with
+        // a readable screen instead of drawing into a mode that is not set.
+        if PcVideoSetBiosVesaMode(fb.Mode | 0x4000) != 0 {
+            return;
+        }
+        TRACE(b"VBE set mode 0x%x failed; staying in text mode\n\0".as_ptr() as PCHAR, fb.Mode as usize);
+    }
     PcVideoSetMode80x25();
     PcVideoHideShowTextCursor(0u8);
 }

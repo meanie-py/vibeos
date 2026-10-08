@@ -2,12 +2,12 @@
 include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers)
 
 # ============================================================================
-# pcix.sys — Rust cohabitation flip (28 of 34 .c -> pcix-rust)
+# pcix.sys — Rust cohabitation flip (31 of 37 .c -> pcix-rust)
 # ============================================================================
 # The full MS-architecture PCI bus driver (arb/ resource arbiters, intrface/ bus
 # interfaces, pci/ config-space, + the top-level FDO/PDO/enum/dispatch/power/init)
 # is translated to Rust (sdk/lib/rust/pcix-rust, kept on disk per the never-delete
-# rule). 28 .c bodies are replaced by libpcix_rust.a; guid.c (GUID data instantiation,
+# rule). 31 .c bodies are replaced by libpcix_rust.a; guid.c (GUID data instantiation,
 # referenced by the Rust modules) + 4 empty stub TUs (usage/ideintrf/pci-devhere/
 # pci-romimage, 0 functions) stay C. pcix is NOT loaded at boot (pci.sys is the live
 # PNP0A03 driver), so the integration bar is a clean link ×3, not smoke boot.
@@ -51,10 +51,10 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_pcix DEPENDS ${PCIX_RUST_LIB})
 
-# 28 .c bodies replaced by Rust (pcix-rust), kept on disk per the never-delete rule:
+# 31 .c bodies replaced by Rust (pcix-rust), kept on disk per the never-delete rule:
 #   arb/{ar_busno,ar_memio,arb_comn,tr_irq}.c
 #   intrface/{agpintrf,busintrf,cardbus,devhere,intrface,lddintrf,locintrf,pmeintf,routintf}.c
-#   pci/{busno,config,id,ppbridge,state}.c
+#   pci/{busno,config,ecam,express,id,ppbridge,rbar,state}.c
 #   debug.c device.c dispatch.c enum.c fdo.c hookhal.c init.c pcivrify.c pdo.c power.c utils.c
 # guid.c (GUID data) + the 4 empty stub TUs stay C:
 list(APPEND SOURCE
@@ -77,14 +77,10 @@ set_module_type(pcix kernelmodedriver)
 target_link_libraries(pcix arbiter)
 add_dependencies(pcix rust_pcix)
 target_link_libraries(pcix ${PCIX_RUST_LIB})
-if(MSVC)
-    target_link_options(pcix PRIVATE /SECTION:.rsrc,!D)
-else()
-    add_custom_command(
-        TARGET pcix POST_BUILD
-        COMMAND native-pefixup --section:.rsrc,!D $<TARGET_FILE:pcix>
-        VERBATIM)
-endif()
+add_custom_command(
+    TARGET pcix POST_BUILD
+    COMMAND native-pefixup --section:.rsrc,!D $<TARGET_FILE:pcix>
+    VERBATIM)
 add_importlibs(pcix ntoskrnl hal)
 add_dependencies(pcix pciclass)
 add_cd_file(TARGET pcix DESTINATION reactos/system32/drivers NO_CAB FOR all)

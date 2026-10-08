@@ -7,10 +7,14 @@
  * Rust), resolves a spread of exports and checks the answers against constants.
  * msvcrt.dll is the control -- if it fails here, the harness is wrong, not the DLLs.
  *
- * The spread is deliberate: a `...` export (sprintf, through the C varargs shims over
- * the Rust engine), plain Rust bodies (strlen, atoi, strtol, _itoa, qsort, toupper),
- * the heap (malloc/free/_strdup, which need DllMain's heap setup), and on crtdll one
- * of its OWN C overrides (_strinc from dllmain.c), which must still win first-match.
+ * The spread is deliberate: a `...` export (sprintf, a va_entry! thunk over the Rust
+ * engine), plain Rust bodies (strlen, atoi, strtol, _itoa, qsort, toupper), and the heap
+ * (malloc/free/_strdup, which need DllMain's heap setup). Then each legacy DLL's OWN
+ * behaviour, which was its dllmain.c / msvcrt20.c and is msvcrt-crt-rust's legacy.rs under
+ * prefixed names the spec maps: msvcrt20's by-value `new_mode`, and crtdll's byte-only
+ * `_str*`, narrow `struct stat`, -1-on-truncation `_snprintf` and version words. Each is a
+ * contract msvcrt.dll's export of the same name does NOT have, so a wrong spec mapping
+ * (crtdll answering with msvcrt's body) fails here.
  */
 #include <windows.h>
 #include <string.h>
@@ -29,6 +33,28 @@ typedef char *(__cdecl *strdup_t)(const char *);
 typedef void(__cdecl *qsort_t)(void *, size_t, size_t, int(__cdecl *)(const void *, const void *));
 typedef int(__cdecl *toupper_t)(int);
 typedef char *(__cdecl *strinc_t)(const char *);
+typedef char *(__cdecl *strdec_t)(const char *, const char *);
+typedef size_t(__cdecl *strncnt_t)(const char *, size_t);
+typedef unsigned int(__cdecl *strnextc_t)(const char *);
+typedef char *(__cdecl *strninc_t)(const char *, size_t);
+typedef char *(__cdecl *strspnp_t)(const char *, const char *);
+typedef unsigned char *(__cdecl *mbsstr_t)(const unsigned char *, const unsigned char *);
+typedef int(__cdecl *snprintf_t)(char *, size_t, const char *, ...);
+typedef int *(__cdecl *errno_t_)(void);
+typedef int(__cdecl *crtdll_stat_t)(const char *, void *);
+typedef void(__cdecl *getmainargs_t)(int *, char ***, char ***, int, int);
+typedef void(__cdecl *GetMainArgs_t)(int *, char ***, char ***, int);
+
+/* crtdll's `struct stat` (dev_t is a short there, an unsigned int in msvcrt). */
+struct crtdll_stat {
+    short st_dev;
+    unsigned short st_ino;
+    unsigned short st_mode;
+    short st_nlink, st_uid, st_gid;
+    short st_rdev;
+    long st_size;
+    long st_atime, st_mtime, st_ctime;
+};
 
 static int g_fail;
 
@@ -45,6 +71,75 @@ static int __cdecl cmp_int(const void *a, const void *b)
 }
 
 #define GET(T, name) ((T)(void *)GetProcAddress(h, name))
+
+static void probe_crtdll(HMODULE h)
+{
+    static const char dll[] = "crtdll.dll";
+    const char *s = "xyz";
+    strinc_t p_strinc = GET(strinc_t, "_strinc");
+    strdec_t p_strdec = GET(strdec_t, "_strdec");
+    strncnt_t p_strncnt = GET(strncnt_t, "_strncnt");
+    strnextc_t p_strnextc = GET(strnextc_t, "_strnextc");
+    strninc_t p_strninc = GET(strninc_t, "_strninc");
+    strspnp_t p_strspnp = GET(strspnp_t, "_strspnp");
+    mbsstr_t p_mbsstr = GET(mbsstr_t, "_mbsstr");
+    snprintf_t p_snprintf = GET(snprintf_t, "_snprintf");
+    errno_t_ p_errno = GET(errno_t_, "_errno");
+    crtdll_stat_t p_stat = GET(crtdll_stat_t, "_stat");
+    GetMainArgs_t p_GMA = GET(GetMainArgs_t, "__GetMainArgs");
+
+    check(dll, "_strinc", p_strinc && p_strinc(s) == s + 1);
+    check(dll, "_strdec", p_strdec && p_strdec(s, s + 2) == s + 1);
+    check(dll, "_strncnt", p_strncnt && p_strncnt("hello", 3) == 3 && p_strncnt("hi", 9) == 2);
+    /* Byte-only and sign-extending: crtdll's reads a plain char. */
+    check(dll, "_strnextc", p_strnextc && p_strnextc("\xe9z") == 0xFFFFFFE9u);
+    check(dll, "_strninc", p_strninc && p_strninc(s, 2) == s + 2);
+    check(dll, "_strspnp", p_strspnp && p_strspnp("aab", "a") && *p_strspnp("aab", "a") == 'b'
+                               && p_strspnp("aa", "a") == NULL);
+    /* Empty in empty is NULL in crtdll; msvcrt's returns the haystack. */
+    check(dll, "_mbsstr", p_mbsstr && p_mbsstr((const unsigned char *)"", (const unsigned char *)"") == NULL
+                              && p_mbsstr((const unsigned char *)"abc", (const unsigned char *)"bc") != NULL);
+    if (p_snprintf && p_errno) {
+        char buf[8];
+        *p_errno() = 77;
+        int trunc = p_snprintf(buf, 4, "%s", "hello");
+        int e1 = *p_errno();
+        int fits = p_snprintf(buf, sizeof(buf), "%d", 42);
+        check(dll, "_snprintf -1 on truncation, errno cleared",
+              trunc == -1 && e1 == 0 && fits == 2 && strcmp(buf, "42") == 0);
+    } else
+        check(dll, "_snprintf resolves", 0);
+    if (p_stat) {
+        char path[MAX_PATH];
+        struct crtdll_stat st;
+        memset(&st, 0xcc, sizeof(st));
+        DWORD n = GetModuleFileNameA(h, path, sizeof(path));
+        HANDLE f = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+        DWORD size = f != INVALID_HANDLE_VALUE ? GetFileSize(f, NULL) : 0;
+        if (f != INVALID_HANDLE_VALUE)
+            CloseHandle(f);
+        int r = n ? p_stat(path, &st) : -1;
+        /* The narrow layout puts st_size at offset 16; msvcrt's would put it at 20. */
+        check(dll, "_stat (crtdll struct)", r == 0 && size && st.st_size == (long)size
+                                               && (st.st_mode & 0x8000) && st.st_nlink >= 1);
+    } else
+        check(dll, "_stat resolves", 0);
+    if (p_GMA) {
+        int argc = -1;
+        char **argv = NULL, **envp = NULL;
+        p_GMA(&argc, &argv, &envp, 0);
+        check(dll, "__GetMainArgs", argc >= 1 && argv && argv[0]);
+    } else
+        check(dll, "__GetMainArgs resolves", 0);
+    {
+        unsigned *base = GET(unsigned *, "_baseversion_dll");
+        unsigned *major = GET(unsigned *, "_basemajor_dll");
+        unsigned *cpumode = GET(unsigned *, "_cpumode_dll");
+        unsigned want = GetVersion() >> 16;
+        check(dll, "_baseversion_dll", base && major && cpumode && *base == want
+                                           && *major == (want >> 8) && *cpumode == 1);
+    }
+}
 
 static void probe(const char *dll)
 {
@@ -94,12 +189,26 @@ static void probe(const char *dll)
     } else
         check(dll, "qsort resolves", 0);
     check(dll, "toupper", p_toupper && p_toupper('q') == 'Q' && p_toupper('7') == '7');
-
-    if (strcmp(dll, "crtdll.dll") == 0) {
-        strinc_t p_strinc = GET(strinc_t, "_strinc");
-        const char *s = "xyz";
-        check(dll, "_strinc (crtdll's own C)", p_strinc && p_strinc(s) == s + 1);
+    {
+        /* The CRT's _stricmp. The legacy specs once left this unmapped, so ntdll's import
+         * library answered it; both agree on ASCII, so check it resolves to the CRT body. */
+        void *p_strcmpi = (void *)GetProcAddress(h, "_strcmpi");
+        void *p_stricmp = (void *)GetProcAddress(h, "_stricmp");
+        check(dll, "_strcmpi is the CRT's _stricmp", p_strcmpi && p_strcmpi == p_stricmp);
     }
+
+    if (strcmp(dll, "msvcrt20.dll") == 0) {
+        /* new_mode by VALUE: 0 here would be a NULL int* to msvcrt's own __getmainargs. */
+        getmainargs_t p_gma = GET(getmainargs_t, "__getmainargs");
+        int argc = -1;
+        char **argv = NULL, **envp = NULL;
+        if (p_gma)
+            p_gma(&argc, &argv, &envp, 0, 0);
+        check(dll, "__getmainargs (new_mode by value)", p_gma && argc >= 1 && argv && argv[0]);
+    }
+
+    if (strcmp(dll, "crtdll.dll") == 0)
+        probe_crtdll(h);
 }
 
 int main(void)

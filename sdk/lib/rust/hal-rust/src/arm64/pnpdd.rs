@@ -4,22 +4,34 @@
 //! hal/halx86/acpi/halpnpdd.c): IoCreateDriver, IoReportDetectedDevice for a
 //! root-enumerated FDO, then child PDOs through BusRelations. arm64 has no
 //! acpi.sys to hand the rest of the namespace to, so the children here are the
-//! ACPI devices themselves, read by acpi.rs. Today that is one: an xHCI
-//! controller (_HID PNP0D10) such as the Raspberry Pi 4's VL805, published as
-//! ACPI\PNP0D10 with its register window and interrupt as boot resources.
+//! ACPI devices themselves, read by acpi.rs. Today there are three, all on the
+//! Raspberry Pi 4, each published with its register window and interrupt as
+//! boot resources:
+//! - an xHCI controller (_HID PNP0D10, the VL805), as ACPI\PNP0D10;
+//! - the GENET Ethernet MAC (_HID BCM6E4E), as ACPI\BCM6E4E. netstack binds to
+//!   it through the critical device database and drives it directly.
+//! - the EMMC2 SD host controller behind the card slot (_HID BRCME88C), as
+//!   ACPI\BRCME88C, which sdhc.sys drives.
 //!
-//! usbport treats every miniport's parent as a PCI function: it reads the
+//! And on QEMU virt, each virtio-mmio transport (_HID LNRO0005) that holds a
+//! block device, as ACPI\LNRO0005&DEV_0002, which vioblk.sys drives. The HAL
+//! reads the slot's device ID itself, because the table lists all 32 slots
+//! whether populated or not, and a published node no driver claims would ask
+//! the user for one; input devices stay unpublished because arm64input finds
+//! its own by scanning the window.
+//!
+//! For the xHCI child, usbport treats every miniport's parent as a PCI function: it reads the
 //! config header through BUS_INTERFACE_STANDARD, asks for the bus number and
 //! capabilities, and usbxhci writes the command register. The VL805 IS a PCI
 //! function, and the ACPI table names its config window (the _INI
 //! OperationRegion), so the child PDO answers those from the real registers.
 //!
-//! On a machine with no such node (QEMU virt), the FDO simply has no children.
+//! On a machine with no such node, the FDO simply has no children.
 
 #![cfg(target_arch = "aarch64")]
 #![allow(non_snake_case)]
 
-use super::acpi::{find_xhci, AcpiXhci};
+use super::acpi::{find_genet, find_sdhc, find_sdhc_pi5, for_each_virtio_mmio, for_each_xhci, AcpiDevice};
 use ntkrnl_sys::ddk;
 use ntkrnl_sys::ddk::{
     BOOLEAN, GUID, NTSTATUS, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PIO_STACK_LOCATION, PUNICODE_STRING, PVOID,
@@ -95,7 +107,20 @@ const fn wide<const N: usize>(s: &[u8; N]) -> [u16; N] {
 static DRIVER_NAME: [u16; 17] = wide(b"\\Driver\\ACPI_HAL\0");
 /// Multi-sz: the ACPI enumerator's ID, then the compatible *PNP0D10.
 static XHCI_HARDWARE_IDS: [u16; 23] = wide(b"ACPI\\PNP0D10\0*PNP0D10\0\0");
-static INSTANCE_ZERO: [u16; 2] = wide(b"0\0");
+static GENET_HARDWARE_IDS: [u16; 23] = wide(b"ACPI\\BCM6E4E\0*BCM6E4E\0\0");
+static SDHC_HARDWARE_IDS: [u16; 25] = wide(b"ACPI\\BRCME88C\0*BRCME88C\0\0");
+static SDHC5_HARDWARE_IDS: [u16; 25] = wide(b"ACPI\\BRCM5D12\0*BRCM5D12\0\0");
+/// The device type rides in the most specific ID, as PCI's DEV_ does, so a
+/// future virtio-mmio driver for another type gets its own database key.
+static VIRTIO_BLK_HARDWARE_IDS: [u16; 48] = wide(b"ACPI\\LNRO0005&DEV_0002\0ACPI\\LNRO0005\0*LNRO0005\0\0");
+
+/// virtio-mmio registers: "virt" at 0, the device type at 8 (0 = empty slot).
+const VIRTIO_MMIO_MAGIC: u32 = u32::from_le_bytes(*b"virt");
+const VIRTIO_MMIO_DEVICE_ID: usize = 8;
+const VIRTIO_ID_BLOCK: u32 = 2;
+
+/// Children the FDO reports: the Pi boards' four, plus a virtio-mmio slot each.
+const MAX_CHILDREN: usize = 40;
 
 unsafe extern "system" {
     fn IoCreateDriver(
@@ -119,12 +144,23 @@ struct FdoExtension {
     children: *mut PdoExtension,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum Child {
+    Xhci,
+    Genet,
+    Sdhc,
+    /// The Pi 5's card slot (SDC0, BRCM5D12): the same sdhc.sys, another id.
+    Sdhc5,
+    VirtioBlk,
+}
+
 #[repr(C)]
 struct PdoExtension {
     kind: ULONG,
     next: *mut PdoExtension,
     device: PDEVICE_OBJECT,
-    xhci: AcpiXhci,
+    child: Child,
+    acpi: AcpiDevice,
     /// Mapped config window (Device memory), or null when the table names none.
     cfg: *mut u8,
 }
@@ -267,12 +303,35 @@ unsafe fn query_interface(pdo: *mut PdoExtension, io: PIO_STACK_LOCATION) -> NTS
 // Child PDO: IDs, resources, bus information.
 // ---------------------------------------------------------------------------
 
-unsafe fn query_id(id_type: u32, out: *mut PVOID) -> NTSTATUS {
+unsafe fn query_id(pdo: &PdoExtension, id_type: u32, out: *mut PVOID) -> NTSTATUS {
+    let ids: &[u16] = match pdo.child {
+        Child::Xhci => &XHCI_HARDWARE_IDS,
+        Child::Genet => &GENET_HARDWARE_IDS,
+        Child::Sdhc => &SDHC_HARDWARE_IDS,
+        Child::Sdhc5 => &SDHC5_HARDWARE_IDS,
+        Child::VirtioBlk => &VIRTIO_BLK_HARDWARE_IDS,
+    };
+    // The instance ID is the node's _UID in decimal: unique among nodes that
+    // share a _HID, and stable across boots.
+    let mut instance = [0u16; 11];
+    let mut digits = [0u16; 10];
+    let (mut n, mut uid) = (0, pdo.acpi.uid);
+    loop {
+        digits[n] = b'0' as u16 + (uid % 10) as u16;
+        n += 1;
+        uid /= 10;
+        if uid == 0 {
+            break;
+        }
+    }
+    for i in 0..n {
+        instance[i] = digits[n - 1 - i];
+    }
     let src: &[u16] = match id_type {
         // The device ID is the first string of the hardware-ID multi-sz.
-        BUS_QUERY_DEVICE_ID => &XHCI_HARDWARE_IDS[..13],
-        BUS_QUERY_HARDWARE_IDS => &XHCI_HARDWARE_IDS,
-        BUS_QUERY_INSTANCE_ID => &INSTANCE_ZERO,
+        BUS_QUERY_DEVICE_ID => &ids[..=ids.iter().position(|&c| c == 0).unwrap_or(0)],
+        BUS_QUERY_HARDWARE_IDS => ids,
+        BUS_QUERY_INSTANCE_ID => &instance[..=n],
         _ => return STATUS_NOT_SUPPORTED,
     };
     let p = alloc(src.len() * 2) as *mut u16;
@@ -284,7 +343,7 @@ unsafe fn query_id(id_type: u32, out: *mut PVOID) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-unsafe fn query_resources(x: &AcpiXhci, out: *mut PVOID) -> NTSTATUS {
+unsafe fn query_resources(x: &AcpiDevice, out: *mut PVOID) -> NTSTATUS {
     let size = core::mem::size_of::<ddk::CM_RESOURCE_LIST>() + core::mem::size_of::<ddk::CM_PARTIAL_RESOURCE_DESCRIPTOR>();
     let list = alloc(size) as ddk::PCM_RESOURCE_LIST;
     if list.is_null() {
@@ -318,7 +377,7 @@ unsafe fn query_resources(x: &AcpiXhci, out: *mut PVOID) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-unsafe fn query_requirements(x: &AcpiXhci, out: *mut PVOID) -> NTSTATUS {
+unsafe fn query_requirements(x: &AcpiDevice, out: *mut PVOID) -> NTSTATUS {
     let size = core::mem::size_of::<ddk::IO_RESOURCE_REQUIREMENTS_LIST>()
         + core::mem::size_of::<ddk::IO_RESOURCE_DESCRIPTOR>();
     let req = alloc(size) as ddk::PIO_RESOURCE_REQUIREMENTS_LIST;
@@ -422,7 +481,7 @@ unsafe extern "system" fn DispatchPnp(device: PDEVICE_OBJECT, irp: PIRP) -> NTST
     if *((*device).DeviceExtension as *const ULONG) == EXT_FDO {
         let fdo = (*device).DeviceExtension as *mut FdoExtension;
         if minor == IRP_MN_QUERY_DEVICE_RELATIONS && (*io).Parameters.QueryDeviceRelations.Type == BUS_RELATIONS {
-            let mut kids: [PDEVICE_OBJECT; 4] = [core::ptr::null_mut(); 4];
+            let mut kids: [PDEVICE_OBJECT; MAX_CHILDREN] = [core::ptr::null_mut(); MAX_CHILDREN];
             let mut n = 0;
             let mut p = (*fdo).children;
             while !p.is_null() && n < kids.len() {
@@ -446,12 +505,13 @@ unsafe extern "system" fn DispatchPnp(device: PDEVICE_OBJECT, irp: PIRP) -> NTST
         IRP_MN_QUERY_DEVICE_RELATIONS if (*io).Parameters.QueryDeviceRelations.Type == TARGET_DEVICE_RELATION => {
             relations_of(&[device], core::ptr::null_mut(), info)
         }
-        IRP_MN_QUERY_INTERFACE => query_interface(pdo, io),
+        // Only the xHCI child has a PCI face (usbport asks for one).
+        IRP_MN_QUERY_INTERFACE if (*pdo).child == Child::Xhci => query_interface(pdo, io),
         IRP_MN_QUERY_CAPABILITIES => query_capabilities(io),
-        IRP_MN_QUERY_RESOURCES => query_resources(&(*pdo).xhci, info),
-        IRP_MN_QUERY_RESOURCE_REQUIREMENTS => query_requirements(&(*pdo).xhci, info),
-        IRP_MN_QUERY_ID => query_id((*io).Parameters.QueryId.IdType as u32, info),
-        IRP_MN_QUERY_BUS_INFORMATION => query_bus_information(info),
+        IRP_MN_QUERY_RESOURCES => query_resources(&(*pdo).acpi, info),
+        IRP_MN_QUERY_RESOURCE_REQUIREMENTS => query_requirements(&(*pdo).acpi, info),
+        IRP_MN_QUERY_ID => query_id(&*pdo, (*io).Parameters.QueryId.IdType as u32, info),
+        IRP_MN_QUERY_BUS_INFORMATION if (*pdo).child == Child::Xhci => query_bus_information(info),
         _ => STATUS_NOT_SUPPORTED,
     };
     // A PDO leaves an IRP it does not handle as the PnP manager sent it.
@@ -477,9 +537,8 @@ unsafe extern "system" fn DispatchWmi(device: PDEVICE_OBJECT, irp: PIRP) -> NTST
     complete(irp, status)
 }
 
-/// Create the xHCI child and do what its _INI would have: enable memory
-/// decoding and bus mastering in its command register.
-unsafe fn create_xhci_pdo(driver: PDRIVER_OBJECT, x: AcpiXhci) -> *mut PdoExtension {
+/// Create a child PDO for an ACPI-only device.
+unsafe fn create_pdo(driver: PDRIVER_OBJECT, child: Child, x: AcpiDevice) -> *mut PdoExtension {
     let mut dev: PDEVICE_OBJECT = core::ptr::null_mut();
     let status = ddk::IoCreateDevice(
         driver,
@@ -491,14 +550,45 @@ unsafe fn create_xhci_pdo(driver: PDRIVER_OBJECT, x: AcpiXhci) -> *mut PdoExtens
         &mut dev,
     );
     if status < 0 {
-        DbgPrint(b"[HAL] ACPI xHCI: IoCreateDevice failed 0x%x\n\0".as_ptr(), status);
+        DbgPrint(b"[HAL] ACPI child: IoCreateDevice failed 0x%x\n\0".as_ptr(), status);
         return core::ptr::null_mut();
     }
     let pdo = (*dev).DeviceExtension as *mut PdoExtension;
     core::ptr::write(
         pdo,
-        PdoExtension { kind: EXT_PDO, next: core::ptr::null_mut(), device: dev, xhci: x, cfg: core::ptr::null_mut() },
+        PdoExtension { kind: EXT_PDO, next: core::ptr::null_mut(), device: dev, child, acpi: x, cfg: core::ptr::null_mut() },
     );
+    match child {
+        Child::Xhci => init_xhci(pdo),
+        Child::VirtioBlk => DbgPrint(
+            b"[HAL] ACPI virtio-mmio block (LNRO0005 #%u): regs %p+0x%x, GSIV %u %s\n\0".as_ptr(),
+            x.uid,
+            x.mmio as PVOID,
+            x.mmio_len as u32,
+            x.gsiv,
+            if x.edge { b"edge\0".as_ptr() } else { b"level\0".as_ptr() },
+        ),
+        Child::Genet | Child::Sdhc | Child::Sdhc5 => DbgPrint(
+            b"[HAL] ACPI %s: regs %p+0x%x, GSIV %u %s\n\0".as_ptr(),
+            match child {
+                Child::Genet => b"GENET (BCM6E4E)\0".as_ptr(),
+                Child::Sdhc5 => b"SD host (BRCM5D12)\0".as_ptr(),
+                _ => b"SD host (BRCME88C)\0".as_ptr(),
+            },
+            x.mmio as PVOID,
+            x.mmio_len as u32,
+            x.gsiv,
+            if x.edge { b"edge\0".as_ptr() } else { b"level\0".as_ptr() },
+        ),
+    };
+    (*dev).Flags &= !DO_DEVICE_INITIALIZING;
+    pdo
+}
+
+/// Do what the xHCI child's _INI would have: enable memory decoding and bus
+/// mastering in its command register.
+unsafe fn init_xhci(pdo: *mut PdoExtension) -> u32 {
+    let x = (*pdo).acpi;
     if x.cfg != 0 {
         let mut pa: ddk::PHYSICAL_ADDRESS = core::mem::zeroed();
         pa.QuadPart = x.cfg as i64;
@@ -511,7 +601,8 @@ unsafe fn create_xhci_pdo(driver: PDRIVER_OBJECT, x: AcpiXhci) -> *mut PdoExtens
         cfg_access(pdo, true, cmd.as_mut_ptr(), PCI_COMMAND, 2);
     }
     DbgPrint(
-        b"[HAL] ACPI xHCI (PNP0D10): regs %p+0x%x, GSIV %u %s, config %p (%04x:%04x)\n\0".as_ptr(),
+        b"[HAL] ACPI xHCI (PNP0D10 #%u): regs %p+0x%x, GSIV %u %s, config %p (%04x:%04x)\n\0".as_ptr(),
+        x.uid,
         x.mmio as PVOID,
         x.mmio_len as u32,
         x.gsiv,
@@ -519,9 +610,28 @@ unsafe fn create_xhci_pdo(driver: PDRIVER_OBJECT, x: AcpiXhci) -> *mut PdoExtens
         x.cfg as PVOID,
         u16::from_le_bytes([id[0], id[1]]) as u32,
         u16::from_le_bytes([id[2], id[3]]) as u32,
-    );
-    (*dev).Flags &= !DO_DEVICE_INITIALIZING;
-    pdo
+    )
+}
+
+/// The device type a virtio-mmio slot holds: 0 for an empty slot, or for a
+/// window that does not answer as virtio-mmio.
+unsafe fn virtio_mmio_device_id(x: &AcpiDevice) -> u32 {
+    if x.mmio_len < 0x100 {
+        return 0;
+    }
+    let mut pa: ddk::PHYSICAL_ADDRESS = core::mem::zeroed();
+    pa.QuadPart = x.mmio as i64;
+    let regs = ddk::MmMapIoSpace(pa, 0x100, ddk::_MEMORY_CACHING_TYPE_MmNonCached) as *const u32;
+    if regs.is_null() {
+        return 0;
+    }
+    let id = if regs.read_volatile() == VIRTIO_MMIO_MAGIC {
+        regs.add(VIRTIO_MMIO_DEVICE_ID / 4).read_volatile()
+    } else {
+        0
+    };
+    ddk::MmUnmapIoSpace(regs as PVOID, 0x100);
+    id
 }
 
 unsafe extern "system" fn AddDevice(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT) -> NTSTATUS {
@@ -545,13 +655,29 @@ unsafe extern "system" fn AddDevice(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT)
         ddk::IoDeleteDevice(dev);
         return STATUS_NO_SUCH_DEVICE;
     }
-    if let Some(x) = find_xhci() {
-        let child = create_xhci_pdo(driver, x);
-        if !child.is_null() {
-            (*child).next = (*fdo).children;
-            (*fdo).children = child;
+    super::acpi::log_device_ids();
+    let add = |child, x| {
+        let pdo = create_pdo(driver, child, x);
+        if !pdo.is_null() {
+            (*pdo).next = (*fdo).children;
+            (*fdo).children = pdo;
+        }
+    };
+    for_each_xhci(|x| add(Child::Xhci, x));
+    for (child, found) in [
+        (Child::Genet, find_genet()),
+        (Child::Sdhc, find_sdhc()),
+        (Child::Sdhc5, find_sdhc_pi5()),
+    ] {
+        if let Some(x) = found {
+            add(child, x);
         }
     }
+    for_each_virtio_mmio(|x| {
+        if virtio_mmio_device_id(&x) == VIRTIO_ID_BLOCK {
+            add(Child::VirtioBlk, x);
+        }
+    });
     (*dev).Flags &= !DO_DEVICE_INITIALIZING;
     STATUS_SUCCESS
 }

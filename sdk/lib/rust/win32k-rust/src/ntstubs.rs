@@ -360,14 +360,7 @@ pub unsafe extern "system" fn NtUserUpdateInstance(
 ) -> DWORD {
     0
 }
-#[no_mangle]
-pub unsafe extern "system" fn NtUserUserHandleGrantAccess(
-    hUserHandle: HANDLE,
-    hJob: HANDLE,
-    bGrant: BOOL,
-) -> BOOL {
-    0
-}
+// NtUserUserHandleGrantAccess: implemented in job.rs (upstream b272427baa3).
 #[no_mangle]
 pub unsafe extern "system" fn NtUserWaitForMsgAndEvent(Unknown0: DWORD) -> DWORD {
     0
@@ -385,32 +378,6 @@ pub unsafe extern "system" fn NtUserWin32PoolAllocationStats(
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtUserYieldTask() -> DWORD {
-    0
-}
-#[no_mangle]
-pub unsafe extern "system" fn NtUserGetRawInputBuffer(
-    pData: PRAWINPUT,
-    pcbSize: PUINT,
-    cbSizeHeader: UINT,
-) -> DWORD {
-    0
-}
-#[no_mangle]
-pub unsafe extern "system" fn NtUserGetRawInputData(
-    hRawInput: HRAWINPUT,
-    uiCommand: UINT,
-    pData: LPVOID,
-    pcbSize: PUINT,
-    cbSizeHeader: UINT,
-) -> DWORD {
-    0
-}
-#[no_mangle]
-pub unsafe extern "system" fn NtUserGetRegisteredRawInputDevices(
-    pRawInputDevices: PRAWINPUTDEVICE,
-    puiNumDevices: PUINT,
-    cbSize: UINT,
-) -> DWORD {
     0
 }
 #[no_mangle]
@@ -576,14 +543,6 @@ pub unsafe extern "system" fn NtUserRealInternalGetMessage(
 pub unsafe extern "system" fn NtUserRealWaitMessageEx(
     dwWakeMask: DWORD,
     uTimeout: UINT,
-) -> BOOL {
-    0
-}
-#[no_mangle]
-pub unsafe extern "system" fn NtUserRegisterRawInputDevices(
-    pRawInputDevices: PCRAWINPUTDEVICE,
-    uiNumDevices: UINT,
-    cbSize: UINT,
 ) -> BOOL {
     0
 }

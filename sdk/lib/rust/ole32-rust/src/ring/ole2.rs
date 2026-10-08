@@ -298,6 +298,7 @@ pub struct tagTrackerWindowInfo {
     pub dwOKEffect: DWORD,
     pub pdwEffect: *mut DWORD,
     pub trackingDone: BOOL,
+    pub inTrackCall: BOOL,
     pub returnValue: HRESULT,
     pub escPressed: BOOL,
     pub curTargetHWND: HWND,
@@ -428,7 +429,7 @@ pub unsafe extern "system" fn OleInitialize(_reserved: LPVOID) -> HRESULT {
     {
         TRACE!(b"() - Initializing the OLE libraries\n\0".as_ptr());
 
-        OLEClipbrd_Initialize();
+        // wine-10: no OLEClipbrd_Initialize -- the clipboard is created on first use.
         OLEDD_Initialize();
         OLEMenu_Initialize();
     }
@@ -455,7 +456,7 @@ pub unsafe extern "system" fn OleUninitialize() {
     {
         TRACE!(b"() - Freeing the last reference count\n\0".as_ptr());
 
-        OLEClipbrd_UnInitialize();
+        crate::ring::clipboard::clipbrd_uninitialize();
         OLEMenu_UnInitialize();
     }
 
@@ -985,6 +986,7 @@ pub unsafe extern "system" fn DoDragDrop(
     trackerInfo.dwOKEffect = dwOKEffect;
     trackerInfo.pdwEffect = pdwEffect;
     trackerInfo.trackingDone = 0;
+    trackerInfo.inTrackCall = 0;
     trackerInfo.escPressed = 0;
     trackerInfo.curTargetHWND = core::ptr::null_mut();
     trackerInfo.curDragTarget = core::ptr::null_mut();
@@ -2591,6 +2593,13 @@ unsafe fn give_feedback(info: *mut TrackerWindowInfo) -> HRESULT {
 unsafe fn OLEDD_TrackStateChange(trackerInfo: *mut TrackerWindowInfo) {
     let mut pt: POINT = core::mem::zeroed();
 
+    // QueryContinueDrag may run a message loop and land back here (wine-10);
+    // don't recurse into a second drag-state update mid-flight.
+    if (*trackerInfo).inTrackCall != 0 {
+        return;
+    }
+    (*trackerInfo).inTrackCall = 1;
+
     // Get the handle of the window under the mouse
     pt.x = (*trackerInfo).curMousePos.x;
     pt.y = (*trackerInfo).curMousePos.y;
@@ -2637,6 +2646,8 @@ unsafe fn OLEDD_TrackStateChange(trackerInfo: *mut TrackerWindowInfo) {
     } else {
         drag_end(trackerInfo);
     }
+
+    (*trackerInfo).inTrackCall = 0;
 }
 
 /// ole2.c:2484 OLEDD_GetButtonState

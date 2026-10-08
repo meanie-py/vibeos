@@ -33,6 +33,7 @@ from pathlib import Path
 
 from .config import REACTOS_ROOT
 from .function_coverage import rust_definition_bodies
+from .wide_seal import _render_units
 
 # Library preference when no arch is specified. The CLI always pins its requested arch.
 _DB_BUILD_DIRS = ["build-amd64", "build-arm64", "build-i386"]
@@ -66,6 +67,9 @@ def _find_db_entries(c_file: Path, arch: str | None = None) -> list[tuple[dict, 
     on i386 `WINAPI` IS such an attribute while on amd64 it is nothing. msvcrt's
     except.c fails on the i386 db and transpiles cleanly on the amd64 one.
     """
+    from .macro_authority import flags_source
+
+    c_file = flags_source(c_file)
     cf = str(c_file.resolve())
     order = (
         _DB_BUILD_DIRS
@@ -86,6 +90,21 @@ def _find_db_entries(c_file: Path, arch: str | None = None) -> list[tuple[dict, 
             if str(Path(_decanon(e["file"])).resolve()) == cf:
                 out.append((e, REACTOS_ROOT / bd))
                 break
+    if not out:
+        # A FLIPPED .c has no db entry of its own. Borrow exactly what the call seal borrows
+        # (macro_authority): a surviving sibling TU's flags with this file substituted in, or,
+        # for ntoskrnl, which compiles no C through CMake at all, the command synthesized from
+        # the derived kernel profile. win32k's job.c (never built as C here) is the first case.
+        from .macro_authority import _derived_kernel_entry, _sibling_target_entry
+
+        for bd in order:
+            arch = bd.removeprefix("build-")
+            argv = _sibling_target_entry(REACTOS_ROOT, arch, c_file) or _derived_kernel_entry(
+                REACTOS_ROOT, arch, c_file
+            )
+            if argv is not None:
+                entry = {"file": cf, "arguments": argv, "directory": str(REACTOS_ROOT / bd)}
+                out.append((entry, REACTOS_ROOT / bd))
     return out
 
 
@@ -96,6 +115,9 @@ def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] |
     `_transpile_text` falls back, and only after the pinned arch's db has actually
     failed, and it says so when it does.
     """
+    from .macro_authority import flags_source
+
+    c_file = flags_source(c_file)
     cf = str(c_file.resolve())
     for bd in [f"build-{arch}"] if arch is not None else _DB_BUILD_DIRS:
         db_path = REACTOS_ROOT / bd / "compile_commands.json"
@@ -132,6 +154,14 @@ def _find_db_entry(c_file: Path, arch: str | None = None) -> tuple[dict, Path] |
 #: not part of the ABI or the body. The real build is untouched -- these -D only
 #: reach c2rust. They work because the macros are `#ifndef`-guarded in
 #: dll/win32/msvcrt/include/corecrt.h (that guard is the one C change this needed).
+_INTRINSIC_PREFIX = "__rustconv_intrin_"
+
+
+def _unprefix_intrinsics(text: str) -> str:
+    """Undo the _ATTR_NEUTRALIZERS intrinsic renames in c2rust's output."""
+    return text.replace(_INTRINSIC_PREFIX, "")
+
+
 _ATTR_NEUTRALIZERS = (
     "-D__WINE_MALLOC=",
     "-D__WINE_CRT_PRINTF_ATTR(a,b)=",
@@ -146,6 +176,44 @@ _ATTR_NEUTRALIZERS = (
     # for the anchor. A TU that really uses _SEH2_LEAVE gets "use of undeclared label"
     # and fails LOUDLY rather than being anchored against control flow it does not have.
     # The guard that lets these win is the `#ifndef _SEH2_TRY` in pseh2.h.
+    #
+    # MSVC INTERLOCKED / BIT-SCAN INTRINSICS -- the third blocker. Under -fms-extensions clang
+    # treats `_InterlockedOr`, `_BitScanReverse` & co. as language builtins, c2rust 0.22 has no
+    # lowering for them, and it DROPS every function that calls one ("Unimplemented builtin
+    # _InterlockedOr"). That made five of ntoskrnl/ps/job.c's functions unanchorable, and
+    # most of the new pciidex/atapi stack. Renaming the intrinsic turns its declaration into an
+    # ordinary function. The new name must be one NO header macro maps back: renaming to the
+    # plain `InterlockedOr` worked for job.c, which calls the plain name, but atapi calls
+    # `_InterlockedOr` directly, and `_InterlockedOr -> InterlockedOr -> _InterlockedOr`
+    # (xdk's `#define InterlockedOr _InterlockedOr`) stops back at the builtin. So it gets a
+    # private prefix, and `_unprefix_intrinsics` turns the anchor back into the plain call the
+    # Rust uses (ntkrnl_sys::interlocked).
+    *(
+        f"-D_Interlocked{op}{width}={_INTRINSIC_PREFIX}Interlocked{op}{width}"
+        for op in (
+            "Exchange",
+            "ExchangeAdd",
+            "CompareExchange",
+            "CompareExchangePointer",
+            "ExchangePointer",
+            "Increment",
+            "Decrement",
+            "Or",
+            "And",
+            "Xor",
+        )
+        for width in ("", "8", "16", "64")
+    ),
+    *(
+        f"-D_BitScan{d}{w}={_INTRINSIC_PREFIX}BitScan{d}{w}"
+        for d in ("Forward", "Reverse")
+        for w in ("", "64")
+    ),
+    # The assertion trap and the barrier, which every checked-build NT_VERIFY/NT_ASSERT and
+    # every DMA descriptor publish reach: `DbgRaiseAssertionFailure` is `__int2c` on x86 and
+    # `__break(0xf001)` on arm64, and arm64's KeMemoryBarrier-style publishes use `__dsb`.
+    # These keep their own spelling after the round trip.
+    *(f"-D{name}={_INTRINSIC_PREFIX}{name}" for name in ("__int2c", "__break", "__dsb")),
 )
 
 #: PSEH overrides, tried in order. Both are behaviour-identical to the inert dummy
@@ -227,6 +295,11 @@ def _extract_clang_flags(entry: dict) -> list[str]:
                 "-D",
                 "-U",
                 "-I",
+                # Attached forms too: the arm64 db spells `-isystem/…/sdk/include/crt`, and
+                # dropping it under `-nostdinc` left <stdio.h> unresolvable on that arch.
+                "-isystem",
+                "-idirafter",
+                "-iquote",
                 "--target=",
                 "--sysroot=",
                 "-std=",
@@ -263,6 +336,20 @@ class C2RustError(RuntimeError):
     an anchor transpilation. Raised instead of silently degrading to a pure-LLM
     translation: a requested-but-failed compiler anchor is a hard error, never a
     dumb fallback (see AGENTS.md — "Fail loud, never silently degrade")."""
+
+
+class CompiledOut(C2RustError):
+    """Required functions that NO built arch's preprocessor keeps.
+
+    Not a c2rust failure: c2rust ran and, with unused functions preserved, lists every
+    definition the compiler saw. A name absent on every arch sits under a condition the
+    build never sets -- partlist.c's `DumpPartitionTable` under `#ifdef
+    DUMP_PARTITION_TABLE`, which only diskpart.h mentions, commented out. The caller drops
+    these from the worklist (they are in no object we link) and says so."""
+
+    def __init__(self, c_file: Path, names: set[str]):
+        self.names = names
+        super().__init__(f"{c_file}: compiled out on every built arch: " + ", ".join(sorted(names)))
 
 
 # Transpile is the slow step (~seconds); a file's anchors AND preamble both need it.
@@ -326,6 +413,13 @@ def _transpile_text(
             raise C2RustError(msg)
         if verbose:
             print(f"  [c2rust] {msg} — skipping", file=sys.stderr)
+
+    from .macro_authority import flags_source
+
+    # A header translated `--via` a TU: c2rust transpiles the TU, whose output carries every
+    # inline function of the headers it includes. Callers keep reading the HEADER's own text
+    # (build_preamble's own-data filter), so only the transpile is redirected.
+    c_file = flags_source(c_file)
 
     try:
         key = (f"{c_file.resolve()}:{arch}", c_file.stat().st_mtime)
@@ -426,6 +520,11 @@ def _transpile_attempt(
             "--output-dir",
             str(out_dir),
             str(c_file.resolve()),
+            # c2rust prunes a `static` function nothing calls. Liveness is per ARCH:
+            # setuplib's IsAcpiComputer is called only under `#ifndef _M_AMD64`, so the amd64
+            # anchor lacked a body the i386 and arm64 builds compile. Every definition the
+            # preprocessor kept is a body we translate, so keep them all.
+            "--preserve-unused-functions",
             "--",
             # BEFORE the db flags, so a -D of the same name in the db still wins.
             *_ATTR_NEUTRALIZERS,
@@ -454,7 +553,7 @@ def _transpile_attempt(
                 f"{_c2rust_reason(proc.stderr, proc.stdout)}"
             )
             return None
-        result = rs.read_text(errors="replace")
+        result = _unprefix_intrinsics(rs.read_text(errors="replace"))
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
     return result
@@ -474,9 +573,41 @@ def build_anchor_map(
     if text is None:
         return {}
     fns = _parse_functions(text)
-    if strict and not fns:
+    # Only an error when functions were EXPECTED: a TU of file-scope data alone (setuplib's
+    # fileqsup.c) correctly transpiles to no functions, and has only a preamble to translate.
+    if strict and not fns and required_names:
         raise C2RustError(f"{c_file}: c2rust output contains no extracted function definitions")
     missing = (required_names or set()) - set(fns)
+    if missing:
+        # A definition spelled with an SDK A/W macro (usetup console.c: `WriteConsole(`,
+        # which UNICODE makes `WriteConsoleW`) is in c2rust's output under the expanded name.
+        # Read as absent, it was dropped as a "dead branch": three live functions, never
+        # translated, never billed, reported as working as intended.
+        from .config import REACTOS_ROOT
+        from .macro_authority import MacroAuthorityError, identifier_aliases
+
+        try:
+            aliases = identifier_aliases(REACTOS_ROOT, c_file.resolve())
+        except MacroAuthorityError:
+            aliases = {}
+        for name in sorted(missing):
+            target = aliases.get(name)
+            if target in fns:
+                fns[name] = fns[target]
+        missing = missing - set(fns)
+    if strict and missing:
+        found, absent = _anchor_elsewhere(c_file, missing, timeout)
+        for name, body in found.items():
+            fns[name] = body
+        if verbose and found:
+            print(
+                f"  [c2rust] {c_file.name}: {len(found)} anchor(s) from another arch, where "
+                f"the requested one does not compile them: {', '.join(sorted(found))}",
+                file=sys.stderr,
+            )
+        if absent == missing - set(found) and absent and not _ANCHOR_FAILURES.get(c_file):
+            raise CompiledOut(c_file, absent)
+        missing = missing - set(found)
     if strict and missing:
         raise C2RustError(
             f"{c_file}: missing required function anchors: " + ", ".join(sorted(missing))
@@ -484,6 +615,65 @@ def build_anchor_map(
     if verbose:
         print(f"  [c2rust] anchors: {len(fns)} fn(s) from {c_file.name}", file=sys.stderr)
     return fns
+
+
+_ANCHOR_FAILURES: dict[Path, list[str]] = {}
+
+
+def _anchor_elsewhere(
+    c_file: Path, names: set[str], timeout: int
+) -> tuple[dict[str, str], set[str]]:
+    """Look for `names` in every built arch's transpile: (bodies found, names in none).
+
+    A name is reported absent only when every db settles it. A db whose c2rust run fails
+    (arm64 panics on setuplib's partlist.c) is asked the narrower question directly: does
+    the identifier survive its PREPROCESSOR at all? Anything unsettled is recorded in
+    _ANCHOR_FAILURES and the caller keeps the hard error.
+    """
+    from .macro_authority import flags_source
+
+    found: dict[str, str] = {}
+    failures: list[str] = []
+    source = flags_source(c_file)
+    for entry, build_dir in _find_db_entries(c_file):
+        attempts: list[str] = []
+        text = _transpile_one(source, entry, build_dir, timeout, attempts, strict=True)
+        if text is None:
+            kept = _preprocessor_keeps(source, entry, build_dir, names, timeout)
+            if kept is None or kept - set(found):
+                failures.extend(attempts)
+            continue
+        fns = _parse_functions(text)
+        for n in names - set(found):
+            if n in fns:
+                found[n] = fns[n]
+    _ANCHOR_FAILURES[c_file] = failures
+    return found, names - set(found)
+
+
+def _preprocessor_keeps(
+    c_file: Path, entry: dict, build_dir: Path, names: set[str], timeout: int
+) -> set[str] | None:
+    """The subset of `names` still spelled anywhere after `clang -E`, or None if it failed."""
+    flags = _extract_clang_flags(entry)
+    extra = [] if _targets_i386(flags) else ["-D__thiscall="]
+    # The db's OWN compiler: arm64 is llvm-mingw, whose CRT headers come with the driver
+    # rather than from an -I, so a system clang cannot even find <stdio.h> there.
+    toks = entry.get("arguments") or shlex.split(entry.get("command", ""))
+    cc = _decanon(toks[0]) if toks else "clang"
+    try:
+        proc = subprocess.run(
+            [cc, "-E", "-P", *_ATTR_NEUTRALIZERS, *extra, *flags, str(c_file.resolve())],
+            cwd=str(build_dir),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return {n for n in names if re.search(rf"\b{re.escape(n)}\b", proc.stdout)}
 
 
 # File-scope DATA tables c2rust transcribes compiler-exact: the lookup tables / S-boxes /
@@ -495,6 +685,63 @@ def build_anchor_map(
 # defs are likewise excluded — drivers get those exact from bindgen `types_*.rs`; only DATA is
 # fabrication-prone. Scalar #define consts stay the harvest_consts/LLM-preamble job (low risk).
 _DATA_SIG = re.compile(r"^(?:pub\s+)?(static(?:\s+mut)?|const)\s+[A-Za-z_]\w*\s*:", re.M)
+_DATA_NAME = re.compile(r"^(?:pub\s+)?(?:static(?:\s+mut)?|const)\s+([A-Za-z_]\w*)\s*:")
+
+
+def _is_own_data(name: str, c_text: str, own_fns: set[str]) -> bool:
+    """Is a c2rust file-scope item really THIS file's data?
+
+    Two things c2rust emits at file scope are not:
+      * a header's DATA when the TU sees definitions -- atapi.h includes <initguid.h>, so
+        every GUID in wdmguid.h/ntddstor.h/wmidata.h (416 of them) became a `pub static`
+        in each of 15 modules. Only names the .c itself spells are kept.
+      * a function-typed forward declaration, `static IO_COMPLETION_ROUTINE Foo;`, which
+        c2rust turns into `static Foo: IO_COMPLETION_ROUTINE = None;` beside the real
+        `fn Foo` -- E0428, and a NULL where the function should be.
+    """
+    if name in own_fns:
+        return False
+    return re.search(rf"\b{re.escape(name)}\b", c_text) is not None
+
+
+_ANON_TYPE_RE = re.compile(r"\bC2RustUnnamed\w*")
+
+
+def _with_anonymous_types(text: str, items: list[str]) -> list[str]:
+    """Prepend the definitions of the anonymous types the kept data items are typed with.
+
+    A file-scope table of an anonymous struct (`static const struct { USHORT VendorID; ... }
+    AhciControllerList[]`) is `static AhciControllerList: [C2RustUnnamed_158; N]` in c2rust's
+    output, and the harvest kept the static without its type: pciidex had 90 "cannot find
+    struct C2RustUnnamed_*" errors. A named type comes from the island; an anonymous one
+    exists only here, so it travels with its table (recursively, for nested ones).
+    """
+    wanted: list[str] = []
+    pending = sorted(set(_ANON_TYPE_RE.findall("\n".join(items))))
+    seen: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        m = re.search(
+            rf"^((?:#\[[^\]]*\]\n)*)pub (?:struct|union) {re.escape(name)} \{{", text, re.M
+        )
+        if m is None:
+            continue
+        depth, i = 0, text.index("{", m.end() - 1)
+        while i < len(text):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        block = text[m.start() : i + 1]
+        wanted.append(block)
+        pending += [n for n in _ANON_TYPE_RE.findall(block) if n not in seen]
+    return [*reversed(wanted), *items] if wanted else items
 
 
 def build_preamble(
@@ -512,6 +759,9 @@ def build_preamble(
     if text is None:
         return ""
     lines = text.splitlines()
+    # No source to consult (a caller that stubs the transpile): keep every item, as before.
+    c_text = c_file.read_text(errors="replace") if c_file.is_file() else None
+    own_fns = set(re.findall(r"^([A-Za-z_]\w*)\s*\(", c_text, re.M)) if c_text else set()
     out: list[str] = []
     i, n = 0, len(lines)
     while i < n:
@@ -528,14 +778,273 @@ def build_preamble(
                 if depth <= 0 and lines[j].rstrip().endswith(";"):
                     break
                 j += 1
+            # c2rust marks a C global with external linkage `#[no_mangle]`; dropping that line
+            # left setuplib's SpInfExports / SpFileExports / ProcessHeap mangled, and the C
+            # (main.c) and the island's `extern` declarations could not link to them.
+            while start > 0 and lines[start - 1].strip() == "#[no_mangle]":
+                start -= 1
             block = "\n".join(lines[start : j + 1])
             # keep `static*` always; keep `const` ONLY if it carries an aggregate (table/struct),
             # never a bare scalar enum-variant const.
-            if m.group(1).startswith("static") or ("[" in block or "{" in block):
+            named = _DATA_NAME.match(lines[i])  # the item line, not a #[no_mangle] above it
+            if (
+                named is not None
+                and (m.group(1).startswith("static") or ("[" in block or "{" in block))
+                and (c_text is None or _is_own_data(named.group(1), c_text, own_fns))
+            ):
                 out.append(block)
             i = j + 1
             continue
         i += 1
+    out = fold_static_initializers(text, out)
+    out = _with_anonymous_types(text, out)
     if verbose:
         print(f"  [c2rust] preamble: {len(out)} data item(s) from {c_file.name}", file=sys.stderr)
-    return "\n\n".join(out)
+    return hoist_wide_temporaries("\n\n".join(out))
+
+
+_INIT_FN_RE = re.compile(r'(?m)^unsafe extern "C" fn run_static_initializers\(\) \{$')
+_INIT_ARRAY_RE = re.compile(r"\s*(?:pub\s+)?static\s+INIT_ARRAY\s*:")
+
+
+def _top_level_statements(body: str) -> list[str]:
+    """Split a block body at depth-0 `;`, skipping string and byte-string literals."""
+    out, depth, start, i = [], 0, 0, 0
+    while i < len(body):
+        c = body[i]
+        if c == '"':
+            i += 1
+            while i < len(body) and body[i] != '"':
+                i += 2 if body[i] == "\\" else 1
+        elif c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == ";" and depth == 0:
+            out.append(body[start:i].strip())
+            start = i + 1
+        i += 1
+    if body[start:].strip():
+        out.append(body[start:].strip())
+    return out
+
+
+def fold_static_initializers(text: str, blocks: list[str]) -> list[str]:
+    """Move c2rust's `run_static_initializers` assignments into the statics they initialise.
+
+    A C static whose initialiser is not a constant expression TO CLANG -- setuplib's
+    `static UNICODE_STRING X = RTL_CONSTANT_STRING(L"...")`, whose Length is a sizeof and whose
+    Buffer is an address -- c2rust zero-fills and assigns at startup from an `.init_array` /
+    `.CRT$XIB` constructor. Our preamble kept the zero-filled static and dropped that function,
+    so the module compiled with an EMPTY string in it. Rust evaluates the same expression at
+    compile time, so each `NAME = EXPR;` becomes NAME's initialiser and INIT_ARRAY goes.
+    Anything else in the constructor (a field or element store, a call) has no static
+    spelling: refused, never dropped.
+    """
+    blocks = [b for b in blocks if not _INIT_ARRAY_RE.match(b)]
+    m = _INIT_FN_RE.search(text)
+    if m is None:
+        return blocks
+    depth, end = 0, m.end() - 1
+    while end < len(text):
+        depth += {"{": 1, "}": -1}.get(text[end], 0)
+        if depth == 0:
+            break
+        end += 1
+    for stmt in _top_level_statements(text[m.end() : end]):
+        a = re.match(r"([A-Za-z_]\w*)\s*=(?!=)\s*(.*)\Z", stmt, re.S)
+        sig = None
+        if a is not None:
+            sig = re.compile(rf"^(\s*(?:pub\s+)?static(?:\s+mut)?\s+{a.group(1)}\s*:[^=]*=)")
+        hit = [k for k, b in enumerate(blocks) if sig is not None and sig.match(b)]
+        if a is None or len(hit) != 1:
+            raise C2RustError(
+                "c2rust initialises a static at startup in a shape with no static spelling: "
+                f"`{stmt[:120]}` -- hand-port this initialiser"
+            )
+        k = hit[0]
+        head = sig.match(blocks[k]).group(1)  # type: ignore[union-attr]
+        blocks[k] = f"{head} {a.group(2).strip()};"
+    return blocks
+
+
+# c2rust spells a file-scope `L"Arial,186"` as `transmute::<[u8; 20], [c_ushort; 10]>(*b"A\0r\0…")
+# .as_ptr()`: a pointer into a TEMPORARY, which const-eval rejects in a static's final value
+# ("encountered dangling pointer"). setuplib's mui.c font tables were 22 such errors.
+_WIDE_TEMP_RE = re.compile(
+    r"::core::mem::transmute::<\s*\[u8;\s*(\d+)\]\s*,\s*\[::core::ffi::c_ushort;\s*(\d+)\]\s*,?\s*>"
+    r"\(\s*\*b\"((?:[^\"\\]|\\.)*)\"\s*,?\s*\)\s*\.as_ptr\(\)"
+)
+# ...and, in a `run_static_initializers` body, as `&raw const transmute::<..>(*b"..") as *const
+# c_ushort` (regutil.c's SymbolicLinkValueName).
+_WIDE_RAW_RE = re.compile(
+    r"&raw const\s+::core::mem::transmute::<\s*\[u8;\s*(\d+)\]\s*,\s*\[::core::ffi::c_ushort;"
+    r"\s*(\d+)\]\s*,?\s*>\(\s*\*b\"((?:[^\"\\]|\\.)*)\"\s*,?\s*\)\s*as\s+\*const\s+"
+    r"::core::ffi::c_ushort"
+)
+_C2R_WSTR_PREFIX = "RUSTCONV_C2R_WSTR_"
+
+
+def _byte_string(body: str) -> bytes:
+    r"""Decode a Rust `b"..."` body (c2rust emits \0, \xNN, \n, \t, \r, \\, \", \')."""
+    out = bytearray()
+    i = 0
+    simple = {"0": 0, "n": 10, "t": 9, "r": 13, "\\": 92, '"': 34, "'": 39}
+    while i < len(body):
+        c = body[i]
+        if c != "\\":
+            out += c.encode()
+            i += 1
+            continue
+        e = body[i + 1]
+        if e == "x":
+            out.append(int(body[i + 2 : i + 4], 16))
+            i += 4
+        elif e in simple:
+            out.append(simple[e])
+            i += 2
+        else:
+            raise C2RustError(f"unhandled byte-string escape \\{e} in c2rust output")
+    return bytes(out)
+
+
+def hoist_wide_temporaries(text: str) -> str:
+    """Give each transmuted wide temporary a named `[u16; N]` static, pointed to by name.
+
+    The static is named by content hash, so a string used twice is emitted once; the prefix
+    differs from wide_seal's `RUSTCONV_WSTR_` so the two generators can never define one
+    name twice in a module.
+    """
+    import hashlib
+
+    statics: dict[str, str] = {}
+
+    def repl(m: re.Match[str]) -> str:
+        raw = _byte_string(m.group(3))
+        if len(raw) != int(m.group(1)) or len(raw) != 2 * int(m.group(2)):
+            raise C2RustError(f"c2rust wide literal length mismatch: {m.group(0)[:120]}")
+        units = tuple(int.from_bytes(raw[k : k + 2], "little") for k in range(0, len(raw), 2))
+        name = _C2R_WSTR_PREFIX + hashlib.sha256(raw).hexdigest()[:12].upper()
+        statics[name] = f"pub static {name}: [u16; {len(units)}] = {_render_units(units)};"
+        return f"{name}.as_ptr()"
+
+    body = _WIDE_RAW_RE.sub(repl, _WIDE_TEMP_RE.sub(repl, text))
+    if not statics:
+        return text
+    return "\n".join(statics[k] for k in sorted(statics)) + "\n\n" + body
+
+
+# --------------------------------------------------------------------------------------
+# types a TU defines for itself
+# --------------------------------------------------------------------------------------
+
+_TYPE_ITEM_RE = re.compile(r"(?m)^((?:#\[[^\n]*\]\n)*)pub (struct|union|type) ([A-Za-z_]\w*)\b")
+
+
+def _type_items(text: str) -> dict[str, str]:
+    """Every top-level `pub struct|union|type` in c2rust output, attributes included."""
+    out: dict[str, str] = {}
+    for m in _TYPE_ITEM_RE.finditer(text):
+        kind, name = m.group(2), m.group(3)
+        if kind == "type":
+            end = text.find(";", m.end())
+        else:
+            open_idx = text.find("{", m.end())
+            semi = text.find(";", m.end())
+            if open_idx < 0 or (0 <= semi < open_idx):
+                end = semi
+            else:
+                depth, end = 0, open_idx
+                while end < len(text):
+                    depth += {"{": 1, "}": -1}.get(text[end], 0)
+                    if depth == 0:
+                        break
+                    end += 1
+        if end < 0:
+            continue
+        out.setdefault(name, text[m.start() : end + 1])
+    return out
+
+
+def local_types(
+    c_file: Path, names: set[str], arches: tuple[str, ...] = ("i386", "amd64", "arm64")
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Exact Rust for types the C FILE ITSELF defines (a `typedef struct` in the .c, or one
+    declared inside a function body), from c2rust's translation of that file.
+
+    The bindgen island only sees headers, so partinfo.c's `MBR_PARTITION_TYPE` and bootsup.c's
+    function-local `DISK_GEOMETRY_EX_INTERNAL` were defined nowhere, and the per-function
+    translation cannot define a type it only uses. c2rust lays them out with the C compiler
+    and keeps C's typedef names (`UCHAR`, `PCSTR`), which the island defines identically.
+
+    A requested name is taken only if the C file's own text mentions it, plus the struct a
+    requested typedef aliases (`MBR_PARTITION_TYPE = _MBR_PARTITION_TYPE`). Each arch is
+    transpiled; an item whose text differs across arches is returned per arch in the second
+    dict as `name -> "arch:text\\0arch:text..."` -- never one arch's layout for all three.
+    Returns (agreed items, arch-dependent items).
+    """
+    c_text = c_file.read_text(errors="replace")
+    wanted = {n for n in names if re.search(rf"\b{re.escape(n)}\b", c_text)}
+    if not wanted:
+        return {}, {}
+    per_arch: dict[str, dict[str, str]] = {}
+    for arch in arches:
+        text = _transpile_text(c_file, verbose=False, arch=arch)
+        if text is None:
+            continue
+        items = _type_items(text)
+        picked: dict[str, str] = {}
+        for name in wanted:
+            item = items.get(name)
+            if item is None:
+                continue
+            picked[name] = item
+            alias = re.fullmatch(r"(?s).*pub type \w+ = (\w+);", item)
+            target = alias.group(1) if alias else None
+            if target and target in items and re.search(rf"\b{re.escape(target)}\b", c_text):
+                picked.setdefault(target, items[target])
+        per_arch[arch] = picked
+    agreed: dict[str, str] = {}
+    differs: dict[str, str] = {}
+    for name in sorted(set().union(*(p.keys() for p in per_arch.values())) if per_arch else ()):
+        texts = {a: p[name] for a, p in per_arch.items() if name in p}
+        if len(set(texts.values())) == 1 and len(texts) == len(per_arch):
+            agreed[name] = next(iter(texts.values()))
+        else:
+            differs[name] = "\0".join(f"{a}:{t}" for a, t in sorted(texts.items()))
+    return agreed, differs
+
+
+_EXTERN_FN_RE = re.compile(r"(?m)^    (?:pub )?fn ([A-Za-z_]\w*)\(")
+
+
+def extern_signatures(
+    c_file: Path, names: set[str], arches: tuple[str, ...] = ("i386", "amd64", "arm64")
+) -> dict[str, str]:
+    """`fn NAME(..) -> T;` for C functions the file DECLARES (a header outside the island),
+    from c2rust's `extern` block, when every arch's text agrees.
+
+    The calling convention is NOT taken from here: c2rust writes `extern "C"` even for a
+    stdcall function on i386. `sdk_facts.function_abis` supplies it.
+    """
+    per_arch: dict[str, dict[str, str]] = {}
+    for arch in arches:
+        text = _transpile_text(c_file, verbose=False, arch=arch)
+        if text is None:
+            continue
+        found: dict[str, str] = {}
+        for m in _EXTERN_FN_RE.finditer(text):
+            if m.group(1) not in names:
+                continue
+            end = text.find(";\n", m.end())
+            if end < 0:
+                continue
+            sig = text[m.start() : end + 1].strip()
+            found[m.group(1)] = re.sub(r"^(?:pub )?fn ", "fn ", sig)
+        per_arch[arch] = found
+    out: dict[str, str] = {}
+    for name in names:
+        texts = {p.get(name) for p in per_arch.values()}
+        if len(texts) == 1 and None not in texts and per_arch:
+            out[name] = texts.pop()  # type: ignore[assignment]
+    return out

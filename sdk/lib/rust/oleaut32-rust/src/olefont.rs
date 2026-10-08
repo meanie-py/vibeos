@@ -354,6 +354,10 @@ pub unsafe extern "system" fn OleCreateFontIndirect(
         fd.fUnderline = 0;
         fd.fStrikethrough = 0;
         lpFontDesc = core::ptr::addr_of_mut!(fd);
+    } else if (*lpFontDesc).lpstrName.is_null() {
+        // Wine 10.0, as Windows: a FONTDESC with no face name is rejected.
+        // Before, OLEFontImpl_Construct strdupW'd the NULL and faulted.
+        return CTL_E_INVALIDPROPERTYVALUE;
     }
 
     newFont = OLEFontImpl_Construct(lpFontDesc);
@@ -558,10 +562,10 @@ fn OLEFontImpl_QueryInterface(
     } else if IsEqualGUID(core::ptr::addr_of!(IID_IPersistPropertyBag), riid)
     {
         *ppvObject = core::ptr::addr_of_mut!((*this).IPersistPropertyBag_iface) as *mut core::ffi::c_void;
-    } else if IsEqualGUID(core::ptr::addr_of!(IID_IPersistStreamInit), riid)
-    {
-        *ppvObject = core::ptr::addr_of_mut!((*this).IPersistStreamInit_iface) as *mut core::ffi::c_void;
     }
+    // Wine 10.0, as Windows: the font object does not expose
+    // IPersistStreamInit (Wine's olefont test checks it is ABSENT). The
+    // interface's vtable stays in the struct, unreachable.
 
     if (*ppvObject).is_null() {
         FIXME!(

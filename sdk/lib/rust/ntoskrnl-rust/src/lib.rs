@@ -51,16 +51,33 @@ pub use dbgprint_rust::{
 /// reader to infer one. Prints are bounded per site: these sit on hot paths and
 /// an unbounded print would itself change the timing it is trying to observe.
 ///
-/// Silence from an armed site is a real result: it eliminates that site.
+/// Silence from an armed site is a real result: it eliminates that site —
+/// **on the arches where the probe actually compiles.** That caveat is load
+/// bearing and was discovered the hard way: this macro was `#[cfg(aarch64)]`
+/// in its entirety, because its only printer (`ARM64_UART_TRACE_HEX`) is an
+/// arm64 header macro, so all fourteen armed sites expanded to NOTHING on
+/// i386/amd64. `strings build-<arch>/ntoskrnl/ntoskrnl.exe | grep -c MMGUARD`
+/// read arm64 43, amd64 0, i386 0 — and "x86 is quiet at these sites" was
+/// therefore a statement about the compiler, not about x86. It is now portable:
+/// arm64 keeps the raw UART write, every other arch uses `DbgPrint`.
+///
+/// **Use `mm_guard_trip_atomic!` instead wherever a spinlock is held.** The PFN
+/// lock sites (`rmap.rs` MmPageOutPhysicalAddress / MmDeleteRmap, `section.rs`
+/// MiGrabDataSection) run at DISPATCH_LEVEL or above, and the C never DPRINTs
+/// under that lock anywhere in `mm/` — checked, not assumed. A raw UART poke is
+/// safe at any IRQL; a formatted printer that takes its own lock is not, and a
+/// deadlock inside the subsystem these guards watch would be the worst possible
+/// failure for them. Those sites stay arm64-only BY DECISION, which is a
+/// different thing from the accident above.
 #[allow(unused_macros)]
 macro_rules! mm_guard_trip {
     ($site:expr, $limit:expr $(, $label:expr => $val:expr)* $(,)?) => {{
-        #[cfg(target_arch = "aarch64")]
-        {
-            use core::sync::atomic::{AtomicU32, Ordering};
-            static HITS: AtomicU32 = AtomicU32::new(0);
-            let n = HITS.fetch_add(1, Ordering::Relaxed);
-            if n < $limit {
+        use core::sync::atomic::{AtomicU32, Ordering};
+        static HITS: AtomicU32 = AtomicU32::new(0);
+        let n = HITS.fetch_add(1, Ordering::Relaxed);
+        if n < $limit {
+            #[cfg(target_arch = "aarch64")]
+            {
                 extern "C" {
                     fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ntkrnl_sys::ddk::ULONG_PTR);
                 }
@@ -81,8 +98,107 @@ macro_rules! mm_guard_trip {
                     );
                 }
             }
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                // One call per operand, mirroring the arm64 line format exactly so
+                // the same grep works on every arch's serial log.
+                ntkrnl_sys::driver_ddk::DbgPrint(
+                    concat!("[MMGUARD] ", $site, " hit#=%p\n\0").as_ptr() as *const i8,
+                    (n + 1) as ntkrnl_sys::ddk::ULONG_PTR,
+                );
+                $(
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        concat!("[MMGUARD]   ", $label, "=%p\n\0").as_ptr() as *const i8,
+                        ($val) as ntkrnl_sys::ddk::ULONG_PTR,
+                    );
+                )*
+                if n + 1 == $limit {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        concat!("[MMGUARD] ", $site, " further hits suppressed after %p\n\0")
+                            .as_ptr() as *const i8,
+                        $limit as ntkrnl_sys::ddk::ULONG_PTR,
+                    );
+                }
+            }
         }
     }};
+}
+
+/// `mm_guard_trip!` for sites that hold a SPINLOCK.
+///
+/// Identical output, but never through `DbgPrint`: at DISPATCH_LEVEL or above a
+/// formatted printer that takes its own lock can deadlock, and the C avoids
+/// DPRINTing under the PFN lock throughout `mm/`. It writes through `raw_trace_hex`
+/// instead -- a polled serial write that takes no lock and is safe at any IRQL. Until
+/// 2026-10-04 only arm64 had one, so these three guards reported on arm64 alone.
+#[allow(unused_macros)]
+macro_rules! mm_guard_trip_atomic {
+    ($site:expr, $limit:expr $(, $label:expr => $val:expr)* $(,)?) => {{
+        use core::sync::atomic::{AtomicU32, Ordering};
+        static HITS: AtomicU32 = AtomicU32::new(0);
+        let n = HITS.fetch_add(1, Ordering::Relaxed);
+        if n < $limit {
+            $crate::raw_trace_hex(
+                concat!("[MMGUARD] ", $site, " hit#=\0").as_ptr(),
+                (n + 1) as usize,
+            );
+            $(
+                $crate::raw_trace_hex(concat!("[MMGUARD]   ", $label, "=\0").as_ptr(), ($val) as usize);
+            )*
+            if n + 1 == $limit {
+                $crate::raw_trace_hex(
+                    concat!("[MMGUARD] ", $site, " further hits suppressed after \0").as_ptr(),
+                    $limit as usize,
+                );
+            }
+        }
+    }};
+}
+
+/// Lock-free serial trace: `prefix` (NUL-terminated) then `0x` + 16 hex digits and a
+/// newline, written by polling the UART -- no lock, no allocation, any IRQL. Lines may
+/// interleave with locked prints; that is the price of never deadlocking.
+#[doc(hidden)]
+pub unsafe fn raw_trace_hex(prefix: *const u8, val: usize) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        extern "C" {
+            fn ARM64_UART_TRACE_HEX(prefix: *const u8, val: ntkrnl_sys::ddk::ULONG_PTR);
+        }
+        ARM64_UART_TRACE_HEX(prefix, val as ntkrnl_sys::ddk::ULONG_PTR);
+    }
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        // COM1, which is the serial port the smoke harness captures.
+        unsafe fn put(b: u8) {
+            const COM1: u16 = 0x3F8;
+            let mut spins = 0u32;
+            loop {
+                let lsr: u8;
+                core::arch::asm!("in al, dx", out("al") lsr, in("dx") COM1 + 5, options(nomem, nostack));
+                if lsr & 0x20 != 0 || spins > 100_000 {
+                    break;
+                }
+                spins += 1;
+            }
+            core::arch::asm!("out dx, al", in("dx") COM1, in("al") b, options(nomem, nostack));
+        }
+        let mut p = prefix;
+        while *p != 0 {
+            put(*p);
+            p = p.add(1);
+        }
+        put(b'0');
+        put(b'x');
+        let mut shift = (core::mem::size_of::<usize>() * 8) as i32 - 4;
+        while shift >= 0 {
+            let d = ((val >> shift) & 0xF) as u8;
+            put(if d < 10 { b'0' + d } else { b'a' + d - 10 });
+            shift -= 4;
+        }
+        put(b'\r');
+        put(b'\n');
+    }
 }
 
 /// Cast an `extern "system"` function to the target callback ABI.

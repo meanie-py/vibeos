@@ -45,6 +45,9 @@ pub type DWORD = u32;
 
 use core::ffi::{c_int, c_void};
 
+/// ntstrsafe.h's `RtlString*` (NTSTATUS) family, the kernel/native twin of this crate.
+pub mod ntstrsafe;
+
 extern "C" {
     /// msvcrt's `_vsnwprintf`. Variadic only in its `va_list` argument, so — unlike the `...`
     /// entry points — this IS expressible in stable Rust.
@@ -73,12 +76,12 @@ pub const STRSAFE_E_INVALID_PARAMETER: HRESULT = 0x8007_0057u32 as HRESULT;
 
 /// strsafe.h:100 `#define STRSAFE_GET_FILL_PATTERN(dwFlags) ((int)((dwFlags) & 0x000000FF))`
 #[inline(always)]
-fn fill_pattern(dwFlags: DWORD) -> c_int {
+pub(crate) fn fill_pattern(dwFlags: DWORD) -> c_int {
     (dwFlags & 0x0000_00FF) as c_int
 }
 
 /// The empty format `STRSAFE_IGNORE_NULLS` substitutes for a NULL one.
-static EMPTY: [WCHAR; 1] = [0];
+pub(crate) static EMPTY: [WCHAR; 1] = [0];
 // ============================ workers ============================
 // strsafe.h's `*WorkerW` functions, ported verbatim. Not exported: the header does not export
 // them either, and every public entry point below is a thin bound-check plus a worker call.
@@ -251,8 +254,16 @@ unsafe fn StringVPrintfExWorkerW(
     pszFormat: *const WCHAR,
     ap: *mut c_void,
 ) -> HRESULT {
-    printf_ex_worker(pszDest, cchDest, cbDest, ppszDestEnd, pcchRemaining, dwFlags, pszFormat,
-        |d, n, f| _vsnwprintf(d, n, f, ap))
+    printf_ex_worker(
+        pszDest,
+        cchDest,
+        cbDest,
+        ppszDestEnd,
+        pcchRemaining,
+        dwFlags,
+        pszFormat,
+        |d, n, f| _vsnwprintf(d, n, f, ap),
+    )
 }
 
 /// `StringVPrintfExWorkerW` with its one `_vsnwprintf` call handed in as `print(dest, cchMax,
@@ -495,6 +506,14 @@ extern "C" {
     /// msvcrt's `_snwprintf`: `_vsnwprintf` with the arguments in place of the `va_list`.
     #[doc(hidden)]
     pub fn _snwprintf(buf: *mut WCHAR, n: usize, fmt: *const WCHAR, ...) -> c_int;
+    /// msvcrt's / ntoskrnl's `_snprintf`, for the narrow (`A`) forms.
+    #[doc(hidden)]
+    pub fn _snprintf(
+        buf: *mut core::ffi::c_char,
+        n: usize,
+        fmt: *const core::ffi::c_char,
+        ...
+    ) -> c_int;
 }
 
 /// strsafe.h `StringVPrintfWorkerW` after its `_vsnwprintf` call, given that call's result.
@@ -612,7 +631,12 @@ pub unsafe extern "C" fn StringCbPrintfW_v(
     pszFormat: *const WCHAR,
     app: *mut c_void,
 ) -> HRESULT {
-    StringCchPrintfW_v(pszDest, cbDest / core::mem::size_of::<WCHAR>(), pszFormat, app)
+    StringCchPrintfW_v(
+        pszDest,
+        cbDest / core::mem::size_of::<WCHAR>(),
+        pszFormat,
+        app,
+    )
 }
 
 /// strsafe.h `StringCchVPrintfW` — NOT variadic in C either (it takes the `va_list`), so this

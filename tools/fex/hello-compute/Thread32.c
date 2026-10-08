@@ -86,6 +86,34 @@ typedef struct _T32_EXCREG {
     void *Handler;
 } T32_EXCREG;
 
+#ifdef _WIN64
+/* thread64.exe: x64 has no fs:[0] chain; the handler is named by
+ * T32FaultTarget's unwind info, so rung 7 proves the guest dispatcher walks
+ * .pdata on the worker thread (and the TEB stack bounds it checks against). */
+EXCEPTION_DISPOSITION T32Handler(EXCEPTION_RECORD *, void *, CONTEXT *, void *);
+DWORD T32FaultTarget(void);
+void T32FaultRecover(void);
+__asm__(
+    ".text\n"
+    ".globl T32FaultTarget\n"
+    ".def T32FaultTarget; .scl 2; .type 32; .endef\n"
+    ".seh_proc T32FaultTarget\n"
+    "T32FaultTarget:\n"
+    "    subq $40, %rsp\n"
+    "    .seh_stackalloc 40\n"
+    "    .seh_endprologue\n"
+    "    .seh_handler T32Handler, @except\n"
+    "    movl 0x0, %eax\n"         /* AV: read absolute address 0 */
+    "    xorl %eax, %eax\n"        /* reached only if resumed WITHOUT fixup */
+    "    jmp 1f\n"
+    ".globl T32FaultRecover\n"
+    "T32FaultRecover:\n"
+    "    movl $0x1234, %eax\n"
+    "1:\n"
+    "    addq $40, %rsp\n"
+    "    ret\n"
+    ".seh_endproc\n");
+#else
 /* Fault + recovery stubs with instruction bytes under our control, so the
  * handler can retarget Eip without decoding lengths. FaultTarget returns the
  * recovery stub's eax (0x1234) only if the handler redirected Eip there. */
@@ -102,6 +130,8 @@ __asm__(
     "_T32FaultRecover:\n"
     "    movl $0x1234, %eax\n"
     "    ret\n");
+
+#endif
 
 static volatile DWORD g_SehHits;
 static volatile DWORD g_SehCode;
@@ -125,17 +155,25 @@ static DWORD StrHasNoSeh(const char *s)
 
 /* i386 SEH handler ABI: cdecl(ExceptionRecord, EstablisherFrame, Context,
  * DispatcherContext) -> EXCEPTION_DISPOSITION. */
-static EXCEPTION_DISPOSITION __cdecl
+#ifndef _WIN64
+static
+#endif
+EXCEPTION_DISPOSITION __cdecl
 T32Handler(EXCEPTION_RECORD *Rec, void *Frame, CONTEXT *Ctx, void *Disp)
 {
     (void)Frame; (void)Disp;
     g_SehHits++;
     g_SehCode = Rec->ExceptionCode;
     if (Rec->ExceptionCode == 0xC0000005)
+#ifdef _WIN64
+        Ctx->Rip = (ULONG_PTR)T32FaultRecover; /* skip the faulting insn */
+#else
         Ctx->Eip = (ULONG)(ULONG_PTR)T32FaultRecover; /* skip the faulting insn */
+#endif
     return ExceptionContinueExecution;
 }
 
+#ifndef _WIN64
 /* The registration record must live ON THIS THREAD'S STACK — that is exactly
  * what RtlDispatchException checks against TEB32's NtTib bounds. */
 static void PushFrame(T32_EXCREG *Reg)
@@ -152,6 +190,8 @@ static void PopFrame(T32_EXCREG *Reg)
     __asm__ __volatile__("movl %0, %%fs:0" : : "r"(Reg->Next) : "memory");
 }
 
+#endif
+
 /* ---- the functional worker ---------------------------------------------- */
 
 static volatile DWORD g_WorkerParam;
@@ -163,7 +203,9 @@ static DWORD g_TlsIndex;
 
 static DWORD WINAPI Worker(LPVOID Parameter)
 {
+#ifndef _WIN64
     T32_EXCREG Reg;
+#endif
     DWORD Ret = 0;
 
     g_WorkerRan = 1;
@@ -183,9 +225,13 @@ static DWORD WINAPI Worker(LPVOID Parameter)
     }
     else
     {
+#ifdef _WIN64
+        Ret = T32FaultTarget();
+#else
         PushFrame(&Reg);
         __asm__ __volatile__("call _T32FaultTarget" : "=a"(Ret) : : "ecx", "edx", "memory");
         PopFrame(&Reg);
+#endif
         if (g_SehHits == 1 && g_SehCode == 0xC0000005 && Ret == 0x1234)
             g_WorkerSehOk = 1;
     }
@@ -196,7 +242,13 @@ static DWORD WINAPI Worker(LPVOID Parameter)
 /* ---- rungs 8-9: concurrency --------------------------------------------- */
 
 static volatile DWORD g_Sum[T32_NTHREAD];
-static volatile DWORD g_Esp[T32_NTHREAD];
+static volatile ULONG_PTR g_Esp[T32_NTHREAD];
+/* Workers that have recorded their stack pointer. Each waits here until all
+ * have, so every stack is live when rung 9 compares them: a worker that exited
+ * first could otherwise hand its freed stack to the next CreateThread, and the
+ * rung would read a reused stack as a shared one (amd64 thread64, 2026-10-06,
+ * four gate rejections on a correct WoW64). */
+static volatile LONG g_Recorded;
 
 #define T32_ROUNDS 8
 #define T32_ITERS  5000
@@ -221,10 +273,18 @@ static DWORD Mix(DWORD seed)
 static DWORD WINAPI SpinWorker(LPVOID Parameter)
 {
     DWORD Index = (DWORD)(ULONG_PTR)Parameter;
-    DWORD Esp, r, acc = Index + 1;
+    ULONG_PTR Esp;
+    DWORD r, acc = Index + 1;
 
+#ifdef _WIN64
+    __asm__ __volatile__("movq %%rsp, %0" : "=r"(Esp));
+#else
     __asm__ __volatile__("movl %%esp, %0" : "=r"(Esp));
+#endif
     g_Esp[Index] = Esp;
+    InterlockedIncrement(&g_Recorded);
+    while (g_Recorded < T32_NTHREAD)
+        Sleep(0);
 
     /* Yield between rounds: every Sleep(0) is a syscall, i.e. a full
      * 32->64->32 mode switch through THIS thread's CPU area, with three other
@@ -241,7 +301,7 @@ static DWORD WINAPI SpinWorker(LPVOID Parameter)
     return 0;
 }
 
-int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
+int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) */
 {
     HANDLE Thread;
     HANDLE Threads[T32_NTHREAD];
@@ -374,11 +434,13 @@ int start(void) /* cdecl: i386 symbol is _start, matching -Wl,-e,_start */
         }
         for (j = i + 1; j < T32_NTHREAD; j++)
         {
-            if ((g_Esp[i] & ~0xFFFFu) == (g_Esp[j] & ~0xFFFFu))
+            /* ~(ULONG_PTR)0xFFFF, not ~0xFFFFu: the latter is 0xFFFF0000
+             * zero-extended, which drops bits 32-63 of an x64 stack address. */
+            if ((g_Esp[i] & ~(ULONG_PTR)0xFFFF) == (g_Esp[j] & ~(ULONG_PTR)0xFFFF))
             {
                 SayHex("[THREAD32] FAIL rung9: shared stack, thread", i);
                 SayHex("[THREAD32]        collides with thread", j);
-                SayHex("[THREAD32]        esp", g_Esp[i]);
+                SayHex("[THREAD32]        esp", (DWORD)g_Esp[i]);
                 ExitProcess(T32_FAIL_STACKS);
             }
         }
