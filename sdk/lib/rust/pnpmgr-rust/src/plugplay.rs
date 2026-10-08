@@ -1588,19 +1588,53 @@ unsafe fn PiControlGetInterfaceDeviceAlias(
         return Status;
     }
 
+    // IoGetDeviceInterfaceAlias ignores the caller's buffer entirely and overwrites
+    // the whole UNICODE_STRING with a fresh pool copy of the alias (deviface.rs,
+    // `*AliasSymbolicLinkName = AliasSymbolicLink`), so pass it empty.
     let mut AliasSymbolicLinkName: _UNICODE_STRING = core::mem::zeroed();
-    AliasSymbolicLinkName.MaximumLength = cd.AliasSymbolicLinkNameLength as u16;
-    AliasSymbolicLinkName.Buffer = cd.AliasSymbolicLinkName;
-    let Status = IoGetDeviceInterfaceAlias(
+    let mut Status = IoGetDeviceInterfaceAlias(
         &mut SymbolicLinkName as *mut _ as PUNICODE_STRING,
         if cd.AliasInterfaceClassGuid.is_null() { core::ptr::null() } else { &guid },
         &mut AliasSymbolicLinkName,
     );
-    // IoGetDeviceInterfaceAlias REPLACES the string with its own pool copy, so the
-    // C never writes the caller's AliasSymbolicLinkName and leaks that copy. The
-    // leak is closed here; the unreturned alias is a functional gap kept as the C
-    // has it (vibeos-roadmap "Known bugs").
-    if Status >= 0 && AliasSymbolicLinkName.Buffer != cd.AliasSymbolicLinkName {
+    // The alias comes back in IoGetDeviceInterfaceAlias's own pool copy, NOT in the
+    // buffer the caller passed. Copy it back and report the length — the step the
+    // upstream C omits, which is why it allocates the alias and then leaks it without
+    // ever returning it. AliasSymbolicLinkNameLength is in WCHARs (umpnpmgr's
+    // PNP_GetInterfaceDeviceAlias sets size_is()-counted *pulLength from it and the
+    // transfer length to that + 1 for the terminator): in = caller capacity, out =
+    // alias length EXCLUDING the NUL. The user stores go through the fault-tolerant
+    // primitives, as every other PiControl write-back in this file does.
+    if Status >= 0 {
+        let wchar = core::mem::size_of::<u16>();
+        let alias_chars = AliasSymbolicLinkName.Length as usize / wchar;
+        let cap_bytes = cd.AliasSymbolicLinkNameLength as usize * wchar;
+        if AliasSymbolicLinkName.Length as usize + wchar <= cap_bytes {
+            let out = cd.AliasSymbolicLinkName;
+            if let Err(e) = safe_copy_to_user(
+                out as *mut core::ffi::c_void,
+                AliasSymbolicLinkName.Buffer as *const core::ffi::c_void,
+                AliasSymbolicLinkName.Length as usize,
+                1,
+                mode,
+            ) {
+                Status = e;
+            } else if let Err(e) = write_user(out.add(alias_chars), 0u16, mode) {
+                Status = e;
+            } else if let Err(e) = write_user(
+                core::ptr::addr_of_mut!((*ControlData).AliasSymbolicLinkNameLength),
+                alias_chars as ULONG,
+                mode,
+            ) {
+                Status = e;
+            }
+        } else {
+            Status = STATUS_BUFFER_TOO_SMALL;
+        }
+    }
+    // The caller's buffer was never handed to IoGetDeviceInterfaceAlias, so its pool
+    // copy never aliases it: free it unconditionally.
+    if !AliasSymbolicLinkName.Buffer.is_null() {
         ExFreePool(AliasSymbolicLinkName.Buffer as PVOID);
     }
     if !SymbolicLinkName.Buffer.is_null() {

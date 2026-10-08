@@ -53,6 +53,10 @@ unsafe impl AtlWindow for CChangeNotifyServer {
     }
     // No `atl_window_proc` override: CChangeNotifyServer declares no `GetWindowProc`, unlike
     // CDefView, so the trait default (the base procedure) is the faithful answer.
+
+    /// CChangeNotifyServer declares no `OnFinalMessage`; ATL's base one is empty.
+    #[inline]
+    unsafe fn atl_on_final_message(_this: *mut Self, _hWnd: HWND) {}
 }
 
 /// CChangeNotifyServer.cpp:65 `BEGIN_MSG_MAP(CChangeNotifyServer)` — all six entries, in

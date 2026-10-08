@@ -2722,9 +2722,6 @@ pub unsafe extern "system" fn RegOpenKeyExW(
                 &mut AlignedString,
             );
             if !NT_SUCCESS(Status) {
-                'exit: {
-                    break 'exit;
-                }
                 if SubKeyStringAllocated != 0 {
                     RtlFreeUnicodeString(&mut SubKeyString);
                 }

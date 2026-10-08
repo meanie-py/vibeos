@@ -2289,7 +2289,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
     // Single labeled block models the C `goto getout` cleanup jump: every
     // `break 'getout` exits here and falls through to the FREE_POOL + final
     // InterlockedExchange below. (Each goto was previously mis-lowered as a
-    // no-op `'getout: { break 'getout; }`, so failure paths fell THROUGH
+    // no-op self-breaking 'getout block, so failure paths fell THROUGH
     // instead of cleaning up.)
     'getout: {
     let copy_protect_key = dvd_read_structure as *mut DVD_COPY_PROTECT_KEY;

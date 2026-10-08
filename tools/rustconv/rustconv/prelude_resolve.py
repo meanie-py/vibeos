@@ -947,12 +947,16 @@ def glob_ties(crate_src: Path, modules_dir: Path, sys_src: Path) -> dict[str, li
     if prelude.is_file():
         text = prelude.read_text(errors="replace")
         m = re.search(re.escape(SUBSTRATE_BEGIN) + r".*?" + re.escape(SUBSTRATE_END), text, re.S)
-        settled = set(re.findall(r"\b[A-Za-z_]\w*\b", text[: m.start()] + text[m.end() :] if m else text))
+        settled = set(
+            re.findall(r"\b[A-Za-z_]\w*\b", text[: m.start()] + text[m.end() :] if m else text)
+        )
     used: set[str] = set()
     for rs in sorted(modules_dir.glob("*.rs")):
         text = rs.read_text(errors="replace")
         explicit = {
-            w.strip().split(" as ")[0] for m in _EXPLICIT_DDK.finditer(text) for w in m.group(1).split(",")
+            w.strip().split(" as ")[0]
+            for m in _EXPLICIT_DDK.finditer(text)
+            for w in m.group(1).split(",")
         }
         used |= set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", text)) - explicit
     ties: dict[str, list[str]] = {}

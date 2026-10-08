@@ -448,11 +448,15 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
     """
     module_dir = REPO / state["module_dir"]
     c_texts = [p.read_text(errors="replace") for p in module_dir.glob("*.[ch]")]
-    if not any(re.search(r"#\s*include\s*<initguid\.h>|#\s*define\s+INITGUID\b", t) for t in c_texts):
+    if not any(
+        re.search(r"#\s*include\s*<initguid\.h>|#\s*define\s+INITGUID\b", t) for t in c_texts
+    ):
         return "", []
     declared: set[str] = set()
     for island in (crate / "src").glob("types_*.rs"):
-        declared |= set(re.findall(r"^\s*pub static (\w+): GUID;", island.read_text(errors="replace"), re.M))
+        declared |= set(
+            re.findall(r"^\s*pub static (\w+): GUID;", island.read_text(errors="replace"), re.M)
+        )
     body = "\n".join(p.read_text(errors="replace") for p in sorted(modules_dir.glob("*.rs")))
     own = set(re.findall(r"\bstatic\s+(?:mut\s+)?(\w+)\s*:", body))
     want = {n for n in declared if re.search(rf"\b{n}\b", body)} - own
@@ -461,7 +465,10 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
     for name in sorted(want):
         files = subprocess.run(
             ["git", "grep", "-l", f"DEFINE_GUID({name},", "--", "*.h"],
-            cwd=REPO, capture_output=True, text=True, check=False,
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
         ).stdout.split()
         values = set()
         for f in files:
@@ -479,7 +486,9 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
         )
     if not out:
         return "", refused
-    return GUID_BEGIN + "\n" + "\n".join(out[n] for n in sorted(out)) + "\n" + GUID_END + "\n", refused
+    return GUID_BEGIN + "\n" + "\n".join(
+        out[n] for n in sorted(out)
+    ) + "\n" + GUID_END + "\n", refused
 
 
 def write_guid_block(prelude: Path, block: str) -> bool:
@@ -994,6 +1003,23 @@ def stage_data(stem: str, tu_arg: str) -> None:
     print(f"data: {tu.name} -> {out.relative_to(REPO)} ({len(files)} files, {lines} lines)")
 
 
+def stage_oracle(stem: str) -> None:
+    """The module's pre-flip C as an opt-in `<target>_c` (c_oracle.py): what modrun runs the
+    Rust against. Re-run after the CMakeLists changes; `python -m rustconv.c_oracle --check`
+    reports staleness."""
+    from . import c_oracle
+
+    module = REPO / load_state(stem)["module_dir"]
+    try:
+        current = c_oracle.write(module)
+    except c_oracle.OracleError as e:
+        raise PortError(f"oracle: {e}") from e
+    print(
+        f"oracle: {(module / c_oracle.ORACLE_FILE).relative_to(REPO)} "
+        + ("current" if current else "written")
+    )
+
+
 def _tokens(log: str) -> tuple[int, int, int]:
     """(functions bought, input tokens, output tokens) from a translate log.
 
@@ -1231,7 +1257,11 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
     entries: dict[str, tuple[str, str]] = {}
     for name, (params, ret) in sorted(all_twins.items()):
         tu = next(
-            (u for u in units if variadic_shim.c_variadic_arity(u.read_text(errors="replace"), name) is not None),
+            (
+                u
+                for u in units
+                if variadic_shim.c_variadic_arity(u.read_text(errors="replace"), name) is not None
+            ),
             None,
         )
         if tu is None:
@@ -1345,7 +1375,10 @@ def _static_lib_functions(module_dir: Path, names: set[str]) -> set[str]:
     for lib in sorted(libs):
         hits = subprocess.run(
             ["git", "grep", "-l", f"add_library({lib}\\b", "--", "*CMakeLists.txt"],
-            cwd=REPO, capture_output=True, text=True, check=False,
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
         ).stdout.split()
         for cm in hits:
             for c in sorted((REPO / cm).parent.glob("*.c")):
@@ -1641,7 +1674,8 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     if guid_block:
         print(f"resolve: {guid_block.count('pub static')} INITGUID GUID(s) given storage")
     if guid_refused:
-        print(f"resolve: GUIDs with no single DEFINE_GUID value in the tree: {', '.join(guid_refused)}")
+        refused = ", ".join(guid_refused)
+        print(f"resolve: GUIDs with no single DEFINE_GUID value in the tree: {refused}")
     if link_wanted:
         # Declared as an extern (by the island or a consensus copy), exported by nothing the
         # module imports, and not ported by the substrate either: these fail at LINK. Loud
@@ -3175,6 +3209,8 @@ def _main(args) -> int:
             stage_flip(args.stem)
         elif args.port_stage == "data":
             stage_data(args.stem, args.tu)
+        elif args.port_stage == "oracle":
+            stage_oracle(args.stem)
         elif args.port_stage == "status":
             stage_status(args.stem)
     except (PortError, pd.ProfileDeriveError) as e:
@@ -3192,6 +3228,9 @@ def add_parser(sub) -> None:
         q.add_argument("--target", default=None, help="CMake target, when there are several")
     for name in ("island", "integrate", "resolve", "check", "status", "flip"):
         stages.add_parser(name).add_argument("stem")
+    stages.add_parser(
+        "oracle", help="the pre-flip C as <target>_c, for modrun's runtime diff (c_oracle)"
+    ).add_argument("stem")
     q = stages.add_parser("data", help="a C DATA TU (tables, no code) as Rust statics, $0")
     q.add_argument("stem")
     q.add_argument("tu", help="the .c, relative to the module (or the repo)")

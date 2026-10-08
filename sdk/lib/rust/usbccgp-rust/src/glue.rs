@@ -69,11 +69,11 @@ pub unsafe extern "system" fn ExAllocatePoolZero(
 ) -> PVOID {
     ntkrnl_sys::inline::mm::ExAllocatePoolZero(PoolType, NumberOfBytes as _, Tag)
 }
-// RtlAssert — debug-only, inert in retail; cdecl no-op.
-#[no_mangle]
-pub unsafe extern "system" fn RtlAssert(
-    _failed_assertion: PVOID, _file_name: PVOID, _line_number: ULONG, _message: *mut ntkrnl_sys::ddk::CHAR,
-) {
+// RtlAssert is ntoskrnl's export: it prints the failed assertion and returns. An
+// empty local definition here won the link and made every failed ASSERT in this
+// driver vanish (scan_export_shadows).
+extern "system" {
+    pub fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut ntkrnl_sys::ddk::CHAR);
 }
 // UsbBuildGetDescriptorRequest — usbdlib.h macro; URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE=0x000B.
 #[no_mangle]

@@ -88,7 +88,7 @@ pub mod brfolder;
 ///     disagreed about who pops the arguments.
 ///   * `SUCCEEDED(hr)` translated to `(hr as u32) >= 0`, which is unconditionally true, so a
 ///     FAILED `AssocQueryStringW` still selected the "runas" verb.
-///   * `goto done` became a self-referential `'done: { break 'done; }` — a jump to itself, so
+///   * `goto done` became a self-referential 'done block that only broke out of itself — a jump to itself, so
 ///     the runas-cancelled path fell through and overwrote its `retval = 33` with an error.
 ///   * `GetUIObjectOf(.., addr_of_mut!(cm))` took the address of the out-parameter instead of
 ///     passing it, so `shellex_get_contextmenu` never filled its caller's pointer.

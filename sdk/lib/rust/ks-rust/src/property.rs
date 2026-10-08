@@ -444,12 +444,16 @@ pub unsafe extern "system" fn KsFastPropertyHandler(
         );
         if !NT_SUCCESS(probe_status) {
             Status = probe_status;
-        } else {
-            core::ptr::copy_nonoverlapping(
-                Property as *const u8,
-                &mut PropRequest as *mut KSPROPERTY as *mut u8,
-                core::mem::size_of::<KSPROPERTY>(),
-            );
+        } else if let Err(status) = ntkrnl_sys::probe::safe_copy_raw(
+            // The range-only probe proves WHERE the buffer is, never that it stays
+            // mapped: another thread can unmap it between the probe and here, and under
+            // DUMMY_PSEH a raw copy would then BUGCHECK 0x1E where the C's _SEH2_TRY
+            // returned the fault. The copy itself must be fault-tolerant.
+            &mut PropRequest as *mut KSPROPERTY as *mut c_void,
+            Property as *const c_void,
+            core::mem::size_of::<KSPROPERTY>(),
+        ) {
+            Status = status;
         }
 
         if !NT_SUCCESS(Status) {

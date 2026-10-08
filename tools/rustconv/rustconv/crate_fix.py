@@ -625,6 +625,7 @@ def reply_findings(
         # The signature may change only when an error is IN it.
         sig_end = _body_open(original, _name_end(original)) or 0
         in_sig = any("fn " + orig_name in r and "(" in r for r in errors)
+
         # rustc renders an unknown parameter TYPE at the parameter's line, not the `fn` line:
         # atapi's `DevExt: *mut ATA_PORT_DEVICE_EXTENSION` (no such type, E0412) was corrected
         # to ATAPORT_DEVICE_EXTENSION and rejected twice. A change that only drops names rustc
@@ -640,7 +641,10 @@ def reply_findings(
     # `ATA_SCSI_ADDRESS { c2rust_unnamed: .. { Lun: 0, TargetId: 0, .. } }` -> `{ AsULONG: 0 }`
     # zeroes the same union and drops four labels. Which field exists the compiler checks; the
     # VALUES (constants, callees) stay counted below.
-    new_code, old_code = _FIELD_LABEL.sub(r"\1", _code(fixed)), _FIELD_LABEL.sub(r"\1", _code(original))
+    new_code, old_code = (
+        _FIELD_LABEL.sub(r"\1", _code(fixed)),
+        _FIELD_LABEL.sub(r"\1", _code(original)),
+    )
     # Only a construct the reply ADDED: one already in the input is not the reply's doing.
     added = sorted(
         {m.group(0) for m in _FORBIDDEN.finditer(new_code)}

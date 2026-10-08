@@ -1,0 +1,24 @@
+# msv1_0 (dll/win32/msv1_0 -> msv1_0-rust), through LogonUserW -> lsass, on a user the probe
+# creates with a password. No oracle: lsass loads the one msv1_0 the system has, so the
+# expectations state what the C does -- a wrong or empty password and an unknown user fail
+# with ERROR_LOGON_FAILURE (1326), the right password logs on.
+module: logon
+variants:
+  rust: '%SystemRoot%\bin\modrun\logon.exe'
+stage:
+  - {src: 'tools/payloads/modrun/probes/logon-{arch}.exe', dest: bin/modrun/logon.exe}
+cases:
+  - id: rejects
+    expect:
+      - 'useradd status=0'
+      - 'logon wrong-password type=2 ok=0 err=1326'
+      - 'logon wrong-password type=4 ok=0 err=1326'
+      - 'logon empty-password type=2 ok=0 err=1326'
+      - 'userdel status=0'
+      - 'logon unknown-user type=2 ok=0 err=1326'
+      - 'probe done'
+  - id: accepts
+    expect: ['logon right-password type=2 ok=1 err=0']
+    xfail: >-
+      the right password fails with 1312: msv1_0 returns STATUS_NO_SUCH_LOGON_SESSION after
+      the password check passes (roadmap: Known bugs, "LogonUserW never succeeds")

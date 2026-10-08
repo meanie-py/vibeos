@@ -9685,6 +9685,77 @@ def test_arm64_boot_must_serve_its_virtio_mmio_scratch_disk():
     assert smoke_mod._virtio_mmio_check(never_bound, "amd64") is None
 
 
+def test_gic3_boot_must_show_the_hal_driving_a_gicv3(monkeypatch):
+    """`--gic 3`: the HAL must say it took the GICv3 path, and with `--nvme` that the
+    ITS came up (NVMe's MSI-X otherwise falls back to the pin and still works)."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_GIC", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_NVME", raising=False)
+    assert smoke_mod._gic_check("") is None  # not requested: nothing to prove
+    monkeypatch.setenv("VIBEOS_QEMU_GIC", "3")
+    bad = smoke_mod._gic_check("[EXPLORER] _tWinMain entered\n")
+    assert bad and bad["classification"] == "GIC_NOT_V3"
+    v3 = "[GIC] GICv3: distributor 0000000008000000, 131072 bytes of redistributors\n"
+    assert smoke_mod._gic_check(v3) is None
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    bad = smoke_mod._gic_check(v3)
+    assert bad and bad["classification"] == "GIC_NO_ITS"
+    # The ITS's own failure lines share the prefix and must not pass.
+    failed = v3 + "[HAL] GICv3 ITS: the boot CPU takes no LPIs - no MSIs\n"
+    assert (smoke_mod._gic_check(failed) or {}).get("classification") == "GIC_NO_ITS"
+    none_up = v3 + "[HAL] GICv3 ITS: 0 of 1 up, LPIs 8192-9215 spread over CPUs 1\n"
+    assert (smoke_mod._gic_check(none_up) or {}).get("classification") == "GIC_NO_ITS"
+    its = v3 + "[HAL] GICv3 ITS: 1 of 1 up, LPIs 8192-9215 spread over CPUs f\n"
+    assert smoke_mod._gic_check(its) is None
+    # On an SMP boot NVMe's I/O message lands on an AP; CPU0 alone is a regression.
+    monkeypatch.setenv("VIBEOS_QEMU_SMP", "4")
+    cpu0 = its + "[GIC] CPU0: first LPI delivered (INTID 8192)\n"
+    assert (smoke_mod._gic_check(cpu0) or {}).get("classification") == "GIC_LPIS_ONE_CPU"
+    assert smoke_mod._gic_check(cpu0 + "[GIC] CPU1: first LPI delivered (INTID 8193)\n") is None
+    monkeypatch.delenv("VIBEOS_QEMU_SMP")
+
+
+def test_smmu_boot_must_show_the_smmu_bypassing(monkeypatch):
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_GIC", raising=False)
+    monkeypatch.setenv("VIBEOS_QEMU_SMMU", "1")
+    bad = smoke_mod._gic_check("[HAL] IORT rev 3: 1 ITS group(s)\n")
+    assert bad and bad["classification"] == "SMMU_NOT_BYPASSED"
+    blocked = (
+        "[HAL] IORT: SMMUv3 at 0000000009050000 was ENABLED by firmware; now STILL BLOCKING - DMA\n"
+    )
+    assert (smoke_mod._gic_check(blocked) or {}).get("classification") == "SMMU_NOT_BYPASSED"
+    ok = "[HAL] IORT: SMMUv3 at 0000000009050000 was disabled; now bypassing: device DMA\n"
+    assert smoke_mod._gic_check(ok) is None
+
+
+def test_gic_version_puts_a_gicv3_with_an_its_on_the_virt_machine(monkeypatch):
+    from tests.qemu import vm as vm_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_GIC", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_HOSTILE", raising=False)
+    config = vm_mod.Arm64Config()
+    assert vm_mod.gic_version() == 2
+    machine = config.hostile_machine_args()
+    assert machine[machine.index("-M") + 1] == "virt"
+    monkeypatch.setenv("VIBEOS_QEMU_GIC", "3")
+    machine = config.hostile_machine_args()
+    assert machine[machine.index("-M") + 1] == "virt,gic-version=3,its=on"
+    monkeypatch.setenv("VIBEOS_QEMU_SMMU", "1")
+    machine = config.hostile_machine_args()
+    assert machine[machine.index("-M") + 1] == "virt,gic-version=3,its=on,iommu=smmuv3"
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU")
+    # The default config is never mutated by a GICv3 run.
+    assert config.machine_args[config.machine_args.index("-M") + 1] == "virt"
+    monkeypatch.setenv("VIBEOS_QEMU_GIC", "4")
+    with pytest.raises(ValueError):
+        vm_mod.gic_version()
+
+
 def test_the_bios_lane_boots_with_an_nvme_drive(monkeypatch):
     """amd64-bios is the OptiPlex 9020's configuration: USB stick + NVMe drive."""
     from types import SimpleNamespace

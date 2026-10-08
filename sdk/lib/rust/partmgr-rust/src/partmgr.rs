@@ -763,9 +763,12 @@ pub unsafe extern "C" fn FdoIoctlDiskGetDriveLayoutEx(
         PartMgrReleaseLayoutLock(FdoExtension);
         return STATUS_BUFFER_TOO_SMALL;
     }
+    // `size` is BYTES, as the C's RtlCopyMemory counts. Typed `*const _` made this copy
+    // `size` whole DRIVE_LAYOUT_INFORMATION_EX structs (192x): diskpart's first 624-byte
+    // layout query wrote ~117 KB through the caller's system buffer (BUGCHECK 0x19).
     core::ptr::copy_nonoverlapping(
-        layoutEx as *const _,
-        (*Irp).AssociatedIrp.SystemBuffer as *mut _,
+        layoutEx as *const u8,
+        (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
         size,
     );
     PartMgrReleaseLayoutLock(FdoExtension);

@@ -10,7 +10,8 @@
 //!      the token range and routes here instead of to a line: [`allocate`] hands out a
 //!      vector the CPU can take a message on, and its IRQL.
 //!   3. At START pci.sys asks [`HalVibeosMessageTarget`] for the address/data pair that
-//!      raises that vector, and writes it into the device's MSI-X table.
+//!      raises that vector, naming the device that will write it, and writes the pair
+//!      into the device's MSI-X table.
 //!   4. `IoConnectInterruptEx(CONNECT_MESSAGE_BASED)` connects each translated vector
 //!      like any other.
 //!
@@ -18,8 +19,10 @@
 //! exports, the HalVibeos* convention for HAL entry points with no Windows original.
 //!
 //! Backends: x86 hands out APIC vectors with no IOAPIC pin behind them
-//! (x86/apic.rs); arm64 hands out SPIs behind a GICv2m MSI frame (arm64/v2m.rs). The
-//! PIC HAL and an arm64 GIC without a v2m frame (the Pi 4's GIC-400) have none, so
+//! (x86/apic.rs); arm64 hands out SPIs behind a GICv2m MSI frame (arm64/v2m.rs) on a
+//! GICv2, and LPIs translated by an ITS (arm64/its.rs) on a GICv3. Only the ITS cares
+//! who writes a message: it keys its translation on the device. The PIC HAL and an
+//! arm64 GICv2 without a v2m frame (the Pi 4's GIC-400) have none, so
 //! [`HalVibeosMessageCapacity`] reports 0 and pci.sys never asks.
 
 use ntkrnl_sys::ddk::{BOOLEAN, PKAFFINITY, PKIRQL, ULONG};
@@ -28,6 +31,9 @@ use ntkrnl_sys::ddk::{BOOLEAN, PKAFFINITY, PKIRQL, ULONG};
 pub const MESSAGE_TOKEN: u32 = 0xFFFF_FFFE;
 /// MSI-X tables hold at most 2048 entries.
 pub const MAX_MESSAGES: u32 = 2048;
+/// [`HalVibeosMessageTarget`]'s requester when the caller does not know the device:
+/// only a vector already bound to one (by pci.sys) can be answered.
+pub const REQUESTER_UNKNOWN: u32 = u32::MAX;
 
 /// Is this raw interrupt vector a message token rather than a line?
 pub fn is_message_token(vector: u32) -> bool {
@@ -35,13 +41,24 @@ pub fn is_message_token(vector: u32) -> bool {
 }
 
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), hal_apic))]
-use crate::x86::apic as backend;
-#[cfg(target_arch = "aarch64")]
-use crate::arm64::v2m as backend;
-
-#[cfg(any(all(any(target_arch = "x86", target_arch = "x86_64"), hal_apic), target_arch = "aarch64"))]
 mod imp {
-    pub(super) use super::backend::{message_capacity, message_target, allocate_message_vector};
+    pub(super) use crate::x86::apic::{message_capacity, message_target, allocate_message_vector};
+}
+
+/// The GIC the firmware described decides: an ITS on a GICv3, a v2m frame on a GICv2.
+#[cfg(target_arch = "aarch64")]
+mod imp {
+    use crate::arm64::{gic3, its, v2m};
+    use ntkrnl_sys::ddk::{KAFFINITY, KIRQL};
+    pub(super) unsafe fn message_capacity() -> u32 {
+        unsafe { if gic3::present() { its::message_capacity() } else { v2m::message_capacity() } }
+    }
+    pub(super) unsafe fn message_target(vector: u32, requester: u32) -> Option<(u64, u32)> {
+        unsafe { if gic3::present() { its::message_target(vector, requester) } else { v2m::message_target(vector, requester) } }
+    }
+    pub(super) unsafe fn allocate_message_vector() -> Option<(u32, KIRQL, KAFFINITY)> {
+        unsafe { if gic3::present() { its::allocate_message_vector() } else { v2m::allocate_message_vector() } }
+    }
 }
 
 /// No message-capable interrupt controller (the PIC HAL).
@@ -51,7 +68,7 @@ mod imp {
     pub(super) unsafe fn message_capacity() -> u32 {
         0
     }
-    pub(super) unsafe fn message_target(_vector: u32) -> Option<(u64, u32)> {
+    pub(super) unsafe fn message_target(_vector: u32, _requester: u32) -> Option<(u64, u32)> {
         None
     }
     pub(super) unsafe fn allocate_message_vector() -> Option<(u32, KIRQL, KAFFINITY)> {
@@ -88,13 +105,19 @@ pub unsafe extern "system" fn HalVibeosMessageCapacity() -> ULONG {
 
 /// The address/data pair a device writes to raise `Vector`, which must have come from
 /// a message token's translation. FALSE for any other vector.
+///
+/// `RequesterId` is the PCI requester ID (bus << 8 | device << 3 | function) of the
+/// device that will write it, or [`REQUESTER_UNKNOWN`]. The first ask for a vector
+/// must name it where the backend translates per device (the ITS); later asks get the
+/// same pair back without it.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalVibeosMessageTarget(
     Vector: ULONG,
+    RequesterId: ULONG,
     Address: *mut u64,
     Data: *mut ULONG,
 ) -> BOOLEAN {
-    match unsafe { imp::message_target(Vector) } {
+    match unsafe { imp::message_target(Vector, RequesterId) } {
         Some((address, data)) => {
             unsafe {
                 *Address = address;

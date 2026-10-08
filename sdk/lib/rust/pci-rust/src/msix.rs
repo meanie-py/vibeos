@@ -46,7 +46,7 @@ macro_rules! utf16 {
 
 unsafe extern "system" {
     fn HalVibeosMessageCapacity() -> ULONG;
-    fn HalVibeosMessageTarget(Vector: ULONG, Address: *mut u64, Data: *mut ULONG) -> BOOLEAN;
+    fn HalVibeosMessageTarget(Vector: ULONG, RequesterId: ULONG, Address: *mut u64, Data: *mut ULONG) -> BOOLEAN;
 }
 
 const BUS_DATA_TYPE_PCIConfiguration: BUS_DATA_TYPE = 4;
@@ -321,6 +321,10 @@ pub unsafe fn program(ext: PPDO_DEVICE_EXTENSION, raw: PCM_RESOURCE_LIST, transl
     if table.is_null() {
         return;
     }
+    // The requester ID the device's writes carry: a GICv3 ITS translates by it.
+    let dev = (*ext).PciDevice;
+    let slot = (*dev).SlotNumber.u.AsULONG;
+    let requester = ((*dev).BusNumber & 0xFF) << 8 | (slot & 0x1F) << 3 | (slot >> 5) & 7;
     let mut programmed = 0u32;
     for i in 0..n {
         let r = rd.add(i);
@@ -330,7 +334,7 @@ pub unsafe fn program(ext: PPDO_DEVICE_EXTENSION, raw: PCM_RESOURCE_LIST, transl
         let entry = MESSAGE_TOKEN.wrapping_sub((*r).u.Interrupt.Vector);
         let mut address = 0u64;
         let mut data: ULONG = 0;
-        if entry >= msix.entries || HalVibeosMessageTarget((*td.add(i)).u.Interrupt.Vector, &mut address, &mut data) == 0 {
+        if entry >= msix.entries || HalVibeosMessageTarget((*td.add(i)).u.Interrupt.Vector, requester, &mut address, &mut data) == 0 {
             continue;
         }
         let e = table.add(entry as usize * MSIX_ENTRY_SIZE / 4);

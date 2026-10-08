@@ -1262,6 +1262,15 @@ offset: `&Dst[Len / sizeof(WCHAR)]` is `dst.add(len / 2) as *mut u8`.
 `scan_wide_byte_copy` gates the cast form (baseline empty). It only trusts an explicit cast,
 because both pointers share one `T`, and an uncast `.Buffer` is too often ANSI. An uncast
 `u16` field pair still needs reading against the C.
+**Any element type, and `as *const _` hides it.** partmgr's `FdoIoctlDiskGetDriveLayoutEx`
+copied `copy_nonoverlapping(layoutEx as *const _, SystemBuffer as *mut _, size)`: `_` inferred
+`DRIVE_LAYOUT_INFORMATION_EX` (192 bytes), so every `IOCTL_DISK_GET_DRIVE_LAYOUT_EX` wrote
+size × 192 bytes (~117 KB) through a 624-byte system buffer: BUGCHECK 0x19 `BAD_POOL_HEADER`
+next to an `IOBU` block. Smoke never sends that IOCTL; the first program that did (diskpart,
+under the `modrun` payload) bugchecked. The disassembly says it outright (`shl $6; lea
+(%rax,%rax,2)` before `memcpy`). `scan_typed_byte_copy` gates the general form: an explicit
+non-byte cast, or `_` resolved through the source variable's declared type, with a byte-named
+count or one multiplied by `size_of` (baseline empty).
 
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 
@@ -1425,6 +1434,12 @@ amd64-bios boots failed paging reads with `STATUS_IN_PAGE_ERROR` (C0000006) in 1
 and none in 16 runs after the shims forwarded to the real exports. The failure mechanism was
 not pinned down. Check: `objdump -p <driver>.sys | grep <name>` must show an IMPORT, and
 `objdump -d` of a shim must show a `jmp` to that import, not `xor eax,eax; ret`.
+`tools/scan_export_shadows.py` (in `vibeos-cli check`) finds the class from source: a
+kernel-mode driver crate defining a name ntoskrnl.spec or hal.spec exports, or the internal
+name an export forwards to (the column classpnp's stubs were named after). Its first run also
+found kdgdb defining its own `KdComPortInUse`, a HAL *data* export, so the HAL never learned
+the debug port was taken, and four drivers whose empty `RtlAssert` hid every failed ASSERT.
+A data export must be imported through `#[link(kind = "raw-dylib")]`, never defined.
 
 ### captures(none)-class hardening that is still worth doing
 - **Stale/hoisted load through a `static mut` table across a foreign call** — a by-handle
@@ -1560,6 +1575,12 @@ typedefs. Every header after it in setuplib's wrapper was bindgen'd under pack(1
 among them. The tell was rustc E0793 ("reference to packed field") on a struct nobody packs.
 `scan_preamble` now never carries a packing include or `#pragma pack` into a wrapper; count
 `repr(C, packed)` in a fresh island against the C's own pshpack regions.
+**A sector layout read through it reads PAST the sector.** diskpart's `partlist.c` declares
+`PARTITION` and `PARTITION_SECTOR` under `pshpack1`; the port made them plain `repr(C)`, so the
+partition table moved from byte 446 to 448 and `Magic` was read at 512..514 of a 512-byte
+heap buffer. No disk ever had `0xAA55` there, so every disk listed as unpartitioned ("There are
+no partitions on this disk", all space free). The `modrun` C oracle showed it as a one-line
+diff; the debug trace differed by one missing `Use megabyte alignment!` line.
 
 ### A macro translated from the wrong side of an `#ifdef`
 **Symptom.** Values built through one helper are corrupt in a way that looks like two fields
@@ -1780,6 +1801,14 @@ bindgen models C `T arr[ANYSIZE_ARRAY]`/`arr[1]` as `[T; 1]`, so Rust `arr[i]` f
 bounds-checks and panic-aborts, while the C intentionally over-allocates. **Always
 `arr.as_mut_ptr().add(i)`** (for a `static mut`, `FOO.as_mut_ptr().add(i)` — `addr_of_mut!(FOO)
 .add(i)` strides by the whole array). For a `[T; 0]` extern the panic is unconditional.
+**Rewrite a crate mechanically: `python -m rustconv.flex_index <crate> [--ambiguous]`.** A field
+is flexible when a bindgen struct ends with it as `[T; 1]`; each `p.F[i]` becomes
+`(*addr_of!(p.F[0]).add(i))` (`addr_of_mut!` when written). A name that is also a real array
+somewhere (`PartitionEntry`, `cStreamName`) gets a form that only TYPE-CHECKS for a `[T; 1]`;
+rustc rejects it on a real array and `--reject file:line ...` turns those back. kernel32's
+`FindNextVolumeW` (`MountPoints[(*data).Size]`) killed every diskpart at startup, the C one
+too, and setuplib's partition list panicked on a disk's second layout entry; both were found
+by the `modrun` payload, and the tool fixed 33 sites across kernel32/setuplib/diskpart.
 Three faces, all seen live:
 - **Kernel:** enumeration processes [0] then dies; csrss silently dies at i=1 → BUGCHECK 0x4C.
   Watch `DEVICE_RELATIONS.Objects`, `CM_RESOURCE_LIST`, `IO_RESOURCE_REQUIREMENTS_LIST`,
@@ -5278,6 +5307,27 @@ two reviewed two-stage reads (header then body, size pinned from the kernel copy
 low-severity init-time case; a NEW same-path pair fails. What it cannot see: two fetches split
 across a syscall and a worker it calls.
 
+**A non-raising RANGE probe is not a touch-test, and `scan_safe_probe_deref` gates it.** win32k
+and ks.sys validate a user pointer with `SafeProbeForRead`/`SafeProbeForWrite` (ks.sys's mirror
+is `KsSafeProbeForRead`) — the NON-raising cousins of `ProbeForRead`: they return a status, and
+they only check the range is below `MmUserProbeAddress` and aligned. They deliberately do NOT
+touch the page (under DUMMY_PSEH a touch-test would itself fault), so the probe proves WHERE the
+buffer is, never that it STAYS mapped. A raw dereference after one — `rc = *(prc as *const
+RECTL)`, a `copy_nonoverlapping` from it — is the same any-process BUGCHECK 0x1E as never probing
+at all, where the C's shared `_SEH2_TRY` over probe-and-copy returned a status. This is the class
+behind `NtUserScrollDC`, `NtUserSetSysColors` and `NtGdiGetDIBits`; the fix is the same
+fault-tolerant copy as above (`KmProtectedCopyMemory`/`safe_copy_raw`/`capture_from_user`),
+keeping the probe for its range check. `tools/scan_safe_probe_deref.py` (`vibeos-cli check`, gated
+at ZERO) flags a bare-identifier pointer passed to a `*SafeProbeFor{Read,Write}` call and then
+touched raw, reusing `scan_raw_user_access`'s `_walk` for the access patterns, the capture-shadow
+rule (`let bmi = pbmiSafe` after the safe copy ends tracking) and the kernel-arm skip (an
+`if mode != KernelMode`/`Mode == 0` arm is trusted). Writing it turned up a FOURTH instance the
+win32k fixes missed: ks.sys's `KsFastPropertyHandler` copied the user `Property` raw on its
+UserMode arm after only a `KsSafeProbeForRead` (the KernelMode arm's raw copy is correct), fixed
+by routing it through `safe_copy_raw` like the rest of that file. What it cannot see: a probe and
+a touch split across two functions, a validator not spelled `*SafeProbeFor*` (name it the house
+way or the scanner is blind to it), and a `.read()`-method or by-value `f(*p)` touch.
+
 **Syscalls are not the only door, and the scanner only watches syscalls.** `int 2d` hands the
 kernel a user pointer in a register, which arrives as `ExceptionInformation[1]`. KdpStub's
 debugger-less echo of `BREAKPOINT_PRINT` to the UART, which is our addition with no C to drop
@@ -5830,6 +5880,12 @@ suspect call kept it failing; eighty made it green.
   an inheritance mechanism with a trait, every virtual the original called through needs a
   hook, not just the ones your first class happened to use** — the missing one costs nothing
   to add and is invisible once dropped.
+  A hook that HAS a do-nothing default drops the same way at the other end. `OnFinalMessage`
+  got one (ATL's base is empty), and CDefView's port never overrode it, so the `Release`
+  balancing `OnNCCreate`'s `AddRef` never ran and every folder view leaked (browseui:
+  `Unexpected RefCount > 0 (1)` at close). Found by logging each AddRef/Release with
+  `RtlCaptureStackBackTrace` and netting them by call site. **Make a virtual's hook
+  REQUIRED when any class overrides it**, so a port has to say "nothing" out loud.
 - **`delete this` gets a deallocator the model INVENTED, because the allocator is invisible to
   it.** shellrecyclebin has five textually identical `delete this;` — one per hand-rolled COM
   class `Release()` — and the C++ COM path lowered them five different ways, none correct:
@@ -6124,6 +6180,21 @@ suspect call kept it failing; eighty made it green.
   macro is inlined rather than called, the inlining is a translation of its BODY — diff the
   body, not the name.** The general tell: an inlined predicate that is *simpler* than the C
   macro it replaces.
+
+### A `goto` became a labeled block that only breaks out of itself
+**Symptom:** a path the C exits early carries on. setuplib's `ArcPathToNtPath("ramdisk(0)")`
+failed ("adapter doesn't have a controller") where the C returns `\Device\Ramdisk0`; msv1_0's
+`LsaApLogonUserEx2` went on after a failed `SamValidateUser`: a `LogonUserW` naming an unknown
+user crashed lsass (`KI-EXC ... c0000005` in LSASS.EXE, then exit 0x80; gone with the fix, so
+probably the NULL `UserInfo` the failure leaves); the registry's `CmpLoadHiveThread` recorded
+a hive whose alternate write had failed.
+**Cause:** `goto Quit;` was spelled `'quit: { break 'quit; }`. `break 'x` leaves the block
+labeled 'x, so the block is a no-op and control falls into the code the C jumped over.
+Many copies are harmless vestiges (the translator ALSO restructured into if/else), which is
+why the live ones survived review: 23 sites in 9 crates, 2 live, 15 vestiges, 6 inside
+comments.
+**Fix:** move the label so the block spans the skipped code (`'quit: { ...; if c { break
+'quit; } ...skipped... }`), or delete a vestige. `scan_noop_goto` gates it (baseline empty).
 
 ### C++ constructs Rust cannot spell — overloads, default args, and RAII locals
 Translating a `.cpp` adds a failure class translating a `.c` does not have: C++ features with no
@@ -11001,6 +11072,19 @@ catches a wedge, so a genuine MP hang still fails in ~120s instead of burning th
 budget. Do not "fix" this by lowering the boot marker; the marker is what proves the desktop
 came up. Recompute the scale from a stashed UP value, not from the current one, or a config
 reused across a retry loop multiplies each time.
+
+### On a GICv3, every IPI of the early-SMP window is lost until the distributor is enabled
+**Symptom:** arm64 `--gic 3 --smp 4` hangs right after `KeStartAllProcessors: 4 processor(s)
+online` with `[IPI] KeIpiGenericCall stuck in arrival: ... TargetSet=e`. Every AP printed
+`[GIC] CPUn percpu (GICv3): ... awake=1 SRE=1 SGI0 enabled=1`, so each redistributor was found,
+woken and had the IPI enabled. **Cause:** a GICv3 distributor's group enables (GICD_CTLR
+EnableGrp1/ARE) gate SGIs and PPIs as well as SPIs, even though SGIs and PPIs live in the
+redistributors. UEFI leaves the distributor disabled at ExitBootServices, and the BSP turns
+it on only at clock init (Phase 1), well after the AP self-test IPI. The GICv2 path never hit
+this because each AP's per-CPU init already wrote GICD_CTLR. **Fix:** per-CPU init enables
+the distributor (idempotent, through the loader's identity map of its first page), and the
+BSP's affinity is recorded at HalInitSystem, so an early IPI to it pends instead of having
+no route (`hal-rust arm64/gic3.rs`).
 
 ### Dropped `#ifdef CONFIG_SMP` blocks are TIME BOMBS, not dead code `[§9.95]`
 `KiRetireDpcList`'s SMP-only deferred-ready drain was dropped in translation, so **an idle CPU

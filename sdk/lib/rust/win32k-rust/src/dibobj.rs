@@ -2199,9 +2199,6 @@ pub unsafe extern "system" fn DIB_CreateDIBSection(
         bm.bmBits = EngAllocUserMem(totalSize as _, 0);
         if bm.bmBits.is_null() {
             // goto cleanup
-            'cleanup: {
-                break 'cleanup;
-            }
             return cleanup_and_return(
                 res, bmp, &mut bm, ppalDIB, section, mapBits, offset, bits,
             );
