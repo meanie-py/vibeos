@@ -270,6 +270,40 @@ def test_a_wildcard_entry_grades_the_function_in_every_image():
     assert not s.is_graded(graded, "ntdll-cargo", "_ZN7network4pure5otherE")
 
 
+def test_cargo_images_are_declared_by_the_build_graph_for_one_arch(tmp_path):
+    """The boot path is cargo-linked PEs. Their corpus comes from build.ninja -- the
+    target dir also keeps images earlier configurations produced -- and only this arch's."""
+    (tmp_path / "build.ninja").write_text(
+        "build /tmp/vibeos/sdk/lib/rust/target/smss-cargo-amd64-cargo-link/"
+        "x86_64-pc-windows-gnu/release/smss.exe: CUSTOM_COMMAND\n"
+        "build sdk/lib/rust/target/smss-cargo-i386-cargo-link/i686-kernel/release/smss.exe: X\n"
+        "  # deps are not images: sdk/lib/rust/target/smss-cargo-amd64-cargo-link/"
+        "x86_64-pc-windows-gnu/release/deps/libfoo.rlib\n"
+    )
+    got = s.declared_cargo_images(tmp_path, "amd64")
+    assert [(c, p.name) for c, p in got] == [("smss-cargo", "smss.exe")]
+    assert str(got[0][1]).startswith(str(s.REPO / "sdk/lib/rust/target/smss-cargo-amd64"))
+
+
+def test_a_linked_location_resolves_by_address():
+    """No relocations in a linked image: the &Location and its file pointer are both
+    resolved addresses into the one .rdata."""
+    import struct
+
+    base = 0x14002F000
+    name = b"win32k-rust/src/freetype.rs"
+    rdata = bytearray(0x100)
+    rdata[0x80 : 0x80 + len(name)] = name
+    struct.pack_into("<QQII", rdata, 0x20, base + 0x80, len(name), 4694, 49)
+    got = s.resolve_va((base, bytes(rdata)), base + 0x20, ptr64=True)
+    assert got == "win32k-rust/src/freetype.rs:4694:49"
+    assert "outside" in s.resolve_va((base, bytes(rdata)), base + 0x1000, ptr64=True)
+
+
+def test_i386_fastcall_decoration_is_stripped():
+    assert s.normalize_symbol("@ftGetFontUnicodeRanges@8", "i386") == "ftGetFontUnicodeRanges"
+
+
 def test_the_shipped_allowlist_parses_on_every_arch():
     """A malformed scope would silently grade nothing on that arch."""
     for arch in s.ARCHES:

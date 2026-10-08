@@ -168,8 +168,8 @@ def normalize_symbol(sym: str, arch: str, *, decorated: bool = True) -> str:
     covers the target), and a C-ABI export is `_Name@8` against `Name`. Keying the
     allowlist on raw names would need one entry per arch for one graded site, and
     would go stale on every rebuild that moved a hash."""
-    if decorated and arch == "i386" and sym.startswith("_"):
-        sym = sym[1:]
+    if decorated and arch == "i386" and sym[:1] in ("_", "@"):
+        sym = sym[1:]  # `_cdecl`/`_stdcall@N` and fastcall `@name@N`
     sym = _LLVM_SUFFIX.sub("", re.sub(r"@\d+$", "", sym))
     if sym.startswith("_R"):
         return _V0_DISAMBIGUATOR.sub("C", sym)
@@ -236,6 +236,33 @@ def find_artifact(build: Path, crate: str) -> Path | None:
         if want in filenames:
             return Path(dirpath) / want
     return None
+
+
+def declared_cargo_images(build: Path, arch: str) -> list[tuple[str, Path]]:
+    """[(cargo crate, linked image)] for every cargo-linked module this arch's build
+    graph produces.
+
+    THE BOOT PATH LIVES HERE. ntoskrnl, hal, win32k, ntdll, smss and csrss are not
+    staticlibs a CMake target links: each is a cargo `-cargo` crate that links its own
+    PE under `sdk/lib/rust/target/<crate>-<arch>-cargo-link/`, pulling the translated
+    libraries in as rlibs. A reader of `.a` files therefore reported every one of them
+    NOT BUILT, and a CSR capture-buffer panic of exactly this class shipped in csrss
+    through that hole. The images are LINKED, so the panic call names its callee on the
+    call line itself and there are no relocations -- the same register discipline reads
+    them.
+
+    Declared by `build.ninja`, not discovered by listing the target dir: that dir keeps
+    every image any earlier configuration ever produced, and a verdict must not depend
+    on what a worktree happens to have lying around."""
+    ninja = build / "build.ninja"
+    if not ninja.is_file():
+        return []
+    rx = re.compile(
+        rf"sdk/lib/rust/target/([A-Za-z0-9_-]+)-{arch}-cargo-link/[A-Za-z0-9_.-]+"
+        r"/release/[A-Za-z0-9_.-]+\.(?:exe|dll|sys|efi)\b"
+    )
+    found = {m.group(0): m.group(1) for m in rx.finditer(ninja.read_text(errors="replace"))}
+    return sorted((crate, REPO / rel) for rel, crate in found.items())
 
 
 _MEMBER = re.compile(r"^(?:\S*\((?P<mem>[^)]+)\)|(?P<obj>\S+)):\s+file format ")
@@ -411,6 +438,35 @@ def resolve_location(
     return f"<unresolved file>:{line}:{col}"
 
 
+def _image_rdata(path: Path) -> tuple[int, bytes]:
+    """(VMA, bytes) of a LINKED image's .rdata: one section at one address."""
+    base, buf = None, bytearray()
+    for line in _objdump("-s", "-j", ".rdata", str(path)).splitlines():
+        m = re.match(r"^\s*([0-9a-f]+)\s((?:[0-9a-f]{2,8}\s){1,4})\s", line)
+        if m:
+            if base is None:
+                base = int(m.group(1), 16)
+            buf.extend(bytes.fromhex(m.group(2).replace(" ", "")))
+    return (base or 0, bytes(buf))
+
+
+def resolve_va(image: tuple[int, bytes], va: int, *, ptr64: bool) -> str:
+    """`file:line:col` for a &Location at virtual address `va` in a linked image, whose
+    file pointer the linker has already resolved to an address in the same .rdata."""
+    base, rdata = image
+    fmt, size = ("<QQII", 24) if ptr64 else ("<IIII", 16)
+    off = va - base
+    if not rdata or off < 0 or len(rdata) < off + size:
+        return f"<location at 0x{va:x}, outside .rdata>"
+    fptr, slen, line, col = struct.unpack_from(fmt, rdata, off)
+    soff = fptr - base
+    if 1 <= slen <= 512 and soff >= 0 and soff + slen <= len(rdata):
+        name = rdata[soff : soff + slen]
+        if name.isascii():
+            return f"{name.decode()}:{line}:{col}"
+    return f"<unresolved file>:{line}:{col}"
+
+
 # How many instructions of lead-up to keep for --explain. The useful signal is the
 # address computation feeding the check plus any relocation naming a global, and
 # those sit within a few instructions of the call.
@@ -430,9 +486,10 @@ class _Setup:
     pushes: list[int | None] = field(default_factory=list)  # i386 only, newest last
     pending: int | None = None  # 64-bit: displacement/immediate awaiting its relocation
     after_call: bool = False
+    page: int | None = None  # arm64, linked: the adrp page of x2
 
 
-def _feed_i386(st: _Setup, line: str) -> str:
+def _feed_i386(st: _Setup, line: str, linked: bool = False) -> str:
     """'' to keep going, 'reset' to drop the setup, 'call' when the panic call lands."""
     if _PUSH_ANY.search(line):
         m = _PUSH_CONST.search(line.rstrip())
@@ -443,12 +500,14 @@ def _feed_i386(st: _Setup, line: str) -> str:
         # pushes == [loc, len, index]; only a CONSTANT len of 1 is a [T; 1].
         if len(st.pushes) == 3:
             st.length = st.pushes[1]
-            st.loc = (".rdata", st.pushes[0]) if st.pushes[0] is not None else None
+            if st.pushes[0] is not None:
+                # Linked: the pushed Location is an absolute address.
+                st.loc = ("@va" if linked else ".rdata", st.pushes[0])
         return "call"
     return "" if _CARRY.search(line) else "reset"
 
 
-def _feed_x64(st: _Setup, line: str, arch: str) -> str:
+def _feed_x64(st: _Setup, line: str, arch: str, linked: bool = False) -> str:
     m = _RELOC.match(line)
     if m:
         kind, target = m.groups()
@@ -482,6 +541,9 @@ def _feed_x64(st: _Setup, line: str, arch: str) -> str:
         if dst in _X64_LEN_REGS:
             imm = re.fullmatch(r"\$0x([0-9a-f]+)", src) if mn.startswith("mov") else None
             st.length = int(imm.group(1), 16) if imm else None
+        elif mn.startswith("lea") and dst == "%r8" and linked and "# 0x" in line:
+            # A linked image: objdump resolved the target address onto the line.
+            st.loc = ("@va", int(line.rsplit("# 0x", 1)[1].split()[0], 16))
         elif mn.startswith("lea") and dst == "%r8":
             # objdump omits a zero displacement: `leaq (%rip), %r8`.
             disp = re.fullmatch(r"(-?0x[0-9a-f]+)?\(%rip\)", src)
@@ -496,9 +558,14 @@ def _feed_x64(st: _Setup, line: str, arch: str) -> str:
                 else None
             )
             st.length = int(imm.group(1), 16) if imm else None
+        elif mn == "adrp" and dst == "x2" and linked:
+            page = re.match(r"0x([0-9a-f]+)", ops[1]) if len(ops) > 1 else None
+            st.page = int(page.group(1), 16) if page else None
         elif mn == "add" and dst == "x2":
             imm = re.fullmatch(r"#0x([0-9a-f]+)", ops[-1])
             st.pending = int(imm.group(1), 16) if imm else None
+            if linked and st.page is not None and st.pending is not None:
+                st.loc = ("@va", st.page + st.pending)
     return ""
 
 
@@ -519,7 +586,11 @@ def scan_object(
     )
     if proc.returncode != 0:
         raise RuntimeError(f"{OBJDUMP} failed on {path}: {proc.stderr.strip()[:200]}")
-    members = _members(path) if explain else {}
+    # A LINKED image (a cargo-linked PE) has no relocations: calls name their callee on
+    # the call line and the &Location is a resolved address.
+    linked = path.suffix.lower() != ".a"
+    members = {} if linked or not explain else _members(path)
+    image = _image_rdata(path) if linked and explain else (0, b"")
     member = _Member()
     sym = "?"
     st = _Setup()
@@ -537,16 +608,18 @@ def scan_object(
             continue
         window.append(line.rstrip())
         del window[:-_EXPLAIN_WINDOW]
-        verdict = _feed_i386(st, line) if arch == "i386" else _feed_x64(st, line, arch)
+        verdict = (
+            _feed_i386(st, line, linked) if arch == "i386" else _feed_x64(st, line, arch, linked)
+        )
         if verdict == "call":
             if st.length == 1:
-                where = (
-                    resolve_location(
+                where = ""
+                if explain and st.loc and st.loc[0] == "@va":
+                    where = resolve_va(image, st.loc[1], ptr64=arch != "i386")
+                elif explain and st.loc:
+                    where = resolve_location(
                         member, st.loc, ptr64=arch != "i386", others=list(members.values())
                     )
-                    if explain and st.loc
-                    else ""
-                )
                 ctx = list(window) if explain else []
                 if where:
                     ctx = [f"    -> {where}   (from the panic Location)", *ctx]
@@ -581,6 +654,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     corpus = declared_corpus()
+    images = declared_cargo_images(build, args.arch)
     missing, findings = [], []
     work: list[tuple[str, Path]] = []
     for crate in corpus:
@@ -589,6 +663,11 @@ def main(argv: list[str]) -> int:
             missing.append(crate)
         else:
             work.append((crate, art))
+    for crate, image in images:
+        if image.is_file():
+            work.append((crate, image))
+        else:
+            missing.append(f"{crate}({image.name})")
     for crate, art in work:
         for sym, _, ctx in scan_object(art, arch=args.arch, explain=bool(args.explain)):
             key = normalize_symbol(sym, args.arch)
@@ -622,7 +701,8 @@ def main(argv: list[str]) -> int:
         )
     print(
         f"\n{args.arch}: {len(seen)} site(s) in {len({c for c, _ in seen})} module(s); "
-        f"corpus {len(corpus)} declared, {len(missing)} not built",
+        f"corpus {len(corpus)} staticlibs + {len(images)} cargo-linked images declared, "
+        f"{len(missing)} not built",
         file=sys.stderr,
     )
     if missing:

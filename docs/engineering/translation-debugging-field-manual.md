@@ -1785,8 +1785,10 @@ Three faces, all seen live:
   console window lives in csrss and stayed up, so it looked like a hang. A census showing a
   `WrLpcReply` thread sent two diagnoses the wrong way. **When a console app freezes, grep
   serial for `RUST PANIC` and `PROC-TERM` before reading wait states:** a dead process
-  leaves its window behind. `tools/scan_flex_array_panic.py` could not see it, because it
-  never reads cargo-linked modules (ntdll and the rest of the boot path).
+  leaves its window behind. `tools/scan_flex_array_panic.py` could not see it then, because
+  it did not read cargo-linked modules (ntdll and the rest of the boot path); it does now,
+  and its first pass there found ten more, win32k's glyph outlines and csrss's console
+  title among them.
 - **A CORRECTLY-sized array whose guard is a runtime variable — caught at build time by
   `scan_ud2`, not at runtime.** Same panic, different reason: nothing is over-allocated and no
   index is ever out of range, but the *guard* the C relies on is a `static mut` the optimiser

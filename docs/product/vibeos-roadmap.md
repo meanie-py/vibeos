@@ -677,10 +677,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `test_xhci.py::test_usb_stick_cmd_redirection`. **Still owed:**
   `tools/scan_flex_array_panic.py` would have caught this, but it reports ~100 crates
   "NOT BUILT", among them smss-csrss-rust, ntoskrnl, win32k and hal. Cargo-linked
-  modules build in `sdk/lib/rust/target/<crate>-<arch>-cargo-link/`, which the GATED
-  reader still does not read. Reading them works (2026-10-08, `warnings-burndown`): the
-  boot path's sites must be graded before that corpus can join the strict gate -- see the
-  flexible-array entry below.
+  modules build in `sdk/lib/rust/target/<crate>-<arch>-cargo-link/`, which it never read.
+  **Closed 2026-10-08:** the gated reader now reads every cargo-linked image the build
+  graph declares, and its first pass found ten more of this class on the boot path (see
+  the flexible-array entry below).
 - **Explorer crashed on Enter in a Start menu with nothing selected** (FIXED 2026-10-06,
   an upstream ReactOS defect). Ctrl+Esc opens the menu with no hot item, and
   `CMenuBand::_MenuItemSelect(MPOS_EXECUTE)` calls through a NULL `m_hotBar`; the Rust now
@@ -4618,8 +4618,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   touched. A verdict that depends on which artifacts a worktree happens to carry is the same
   shape as the AGENTS.md §7-8 fleet-isolation rule about resolving generated artifacts from
   siblings — the sweep should name its corpus, not discover it.
-- **Bindgen flexible-array bounds checks in built objects — the staticlib corpus is CLEAN and
-  GATED on all three arches; the cargo-linked boot path is OPEN** (2026-09-06; status 2026-10-08).
+- **Bindgen flexible-array bounds checks in built objects — CLEAN and GATED on all three
+  arches, staticlibs and the cargo-linked boot path** (2026-09-06; closed 2026-10-08).
   Found by generalising the cmlib fix above into `tools/scan_flex_array_panic.py`, which reads
   the i386 disassembly and keeps only `panic_bounds_check` sites whose pushed ARRAY LENGTH is 1
   — the bindgen `[T; 1]` shape — while leaving real fixed arrays alone. The method validated
@@ -4651,11 +4651,18 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   amd64 passes the length in `edx` and arm64 in `w1`, and reading i386 alone had missed a
   whole crate -- `diskpart-rust` panicked on any disk with two partitions (20 sites, fixed).
   64-bit adds one false-positive shape, a BRANCH-DERIVED constant on a slice (`cmp $1, %len;
-  je panic(1, 1)`), graded in the allowlist. **Still OPEN: the cargo-linked images** -- see
-  the CSR capture-buffer entry above. The reader can already read them (linked PEs, declared
-  by `build.ninja`), and its first pass found 14 boot-path functions to grade before that
-  corpus can gate strictly, several of them real flexible arrays (`GLYPHSET.ranges`,
-  `TTPOLYCURVE.apfx`, `VIDEO_CLUT`, resource lists in `IopEnumerateDetectedDevices`).
+  je panic(1, 1)`), graded in the allowlist. **The cargo-linked images are read too** -- the
+  boot path (ntoskrnl, win32k, winsrv, ntdll, freeldr, ...), linked PEs declared by
+  `build.ninja`, whose &Location resolves by address. Their first read found TEN real sites,
+  all fixed: win32k's `TTPOLYCURVE.apfx` in both glyph-outline paths and `GLYPHSET.ranges`
+  in `ftGetFontUnicodeRanges` (KERNEL mode: any multi-point curve or multi-range font was a
+  bugcheck), `IopEnumerateDetectedDevices`'s `PartialDescriptors[Count - 1]` (kernel, device
+  enumeration), winsrv's `CONSOLE_STATE_INFO.ConsoleTitle` twice (csrss: starting a console
+  from a shortcut, or opening its Properties), freeldr's `KeyList` (the boot loader, any
+  key's second value), framebuf's `VIDEO_CLUT` (every palette), classpnp's
+  `SrbExDataOffset` and `SlabAllocationBitMap`, and mlang's `GLYPHSET` read. The correct
+  checks (`KeNodeBlock[1]`, kdbg's one-row table, vendored zlib-rs/smoltcp slices, ...) are
+  graded in the allowlist.
 - **cmlib `CmpSelectLeaf` panicked on any multi-leaf index root — FIXED** (2026-09-06).
   It wrote `*RootCell` through `addr_of_mut!((*IndexKey).List[i])` at three sites
   (i = SubKeyIndex, +1, -1). An array index inside a raw-ref still emits a bounds check, and

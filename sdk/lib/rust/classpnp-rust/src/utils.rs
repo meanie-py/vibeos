@@ -3750,11 +3750,16 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
                                 let bitMapIndex = (totalProcessedSlabs / bitMapGranularityInBits as u64) as usize;
                                 let bitPos = (totalProcessedSlabs % bitMapGranularityInBits as u64) as u32;
 
+                                // SlabAllocationBitMap is a C flexible array (`ULONG
+                                // SlabAllocationBitMap[ANYSIZE_ARRAY]`, psdk/ntddstor.h:934/948)
+                                // sized for every requested slab. bindgen's [_; 1] panicked once
+                                // 32 slabs were processed. Raw pointers throughout: a pointer
+                                // derived from a `&mut` to the struct may not step past its end.
                                 if OutputVersion == DEVICE_DATA_SET_LB_PROVISIONING_STATE_VERSION_V2 {
-                                    let lbpV2 = &mut *(lbpState as *mut DEVICE_DATA_SET_LB_PROVISIONING_STATE_V2);
-                                    lbpV2.SlabAllocationBitMap[bitMapIndex] |= mapped << bitPos;
+                                    let lbpV2 = lbpState as *mut DEVICE_DATA_SET_LB_PROVISIONING_STATE_V2;
+                                    *(&raw mut (*lbpV2).SlabAllocationBitMap[0]).add(bitMapIndex) |= mapped << bitPos;
                                 } else {
-                                    (*lbpState).SlabAllocationBitMap[bitMapIndex] |= mapped << bitPos;
+                                    *(&raw mut (*lbpState).SlabAllocationBitMap[0]).add(bitMapIndex) |= mapped << bitPos;
                                 }
                                 descrSlabs -= 1;
                                 commandProcessedSlabs += 1;
@@ -4944,14 +4949,16 @@ pub unsafe extern "C" fn ClasspConvertToScsiRequestBlock(
 
     if (*SrbEx).NumSrbExData > 0 {
         let mut foundEntry: u8 = 0;
+        // SrbExDataOffset is a C flexible array (`ULONG SrbExDataOffset[ANYSIZE_ARRAY]`,
+        // ddk/srb.h:660) of NumSrbExData entries; bindgen's [_; 1] panicked on the second.
         for i in 0..(*SrbEx).NumSrbExData {
-            if (*SrbEx).SrbExDataOffset[i as usize] as usize == 0 ||
-                ((*SrbEx).SrbExDataOffset[i as usize] as usize) < core::mem::size_of::<_STORAGE_REQUEST_BLOCK>() {
+            if (*(&raw const (*SrbEx).SrbExDataOffset[0]).add(i as usize)) as usize == 0 ||
+                ((*(&raw const (*SrbEx).SrbExDataOffset[0]).add(i as usize)) as usize) < core::mem::size_of::<_STORAGE_REQUEST_BLOCK>() {
                 NT_ASSERT(0u8);
                 continue;
             }
 
-            let srbExData = (SrbEx as *const u8).add((*SrbEx).SrbExDataOffset[i as usize] as usize) as *mut _SRBEX_DATA;
+            let srbExData = (SrbEx as *const u8).add((*(&raw const (*SrbEx).SrbExDataOffset[0]).add(i as usize)) as usize) as *mut _SRBEX_DATA;
 
             match (*SrbEx).SrbFunction as u32 {
                 t if t == SRB_FUNCTION_EXECUTE_SCSI => {

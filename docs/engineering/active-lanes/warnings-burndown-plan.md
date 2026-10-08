@@ -475,9 +475,13 @@ sites were worth a human read, and they were read against the C:
 **Owed** (tracked here until done): `static_mut_refs` 168; the `clashing_extern` Phase 2
 below; `unused_assignments` 1,048 (some are lost writes -- grade, don't bulk-allow);
 `unreachable_code` 19, each wanting a read; 13 `path_statements` that are `STUB;` /
-`UNIMPLEMENTED;` debug macros translated as constants; fastfat's `fn PAGED_CODE();` declared
-extern and CALLED out of line in four files -- the AGENTS.md "debug macro as a no-op fn"
-anti-pattern; and the flexible-array reader's cargo-linked corpus (roadmap).
+`UNIMPLEMENTED;` debug macros translated as constants; and `PAGED_CODE()` declared as an
+extern fn and CALLED out of line -- 71 files in 10 crates (fastfat 26, cdfs 20, cdrom 11,
+cmlib, disk, classpnp, scsiport, pcix, pciidex-legacy, partmgr), resolving to
+`#[no_mangle] extern "C" fn PAGED_CODE() {}` shims. That is the AGENTS.md "debug macro as a
+no-op fn" anti-pattern, and it is mechanical: one `macro_rules!` per crate (fs_rec's and
+two cdfs modules already use `#[inline(always)]`). (The flexible-array reader's cargo-linked corpus, owed when this was written,
+closed the same day: ten boot-path sites fixed -- roadmap.)
 
 ## Owed follow-ups
 
