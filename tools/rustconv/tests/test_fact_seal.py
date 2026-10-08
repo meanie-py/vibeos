@@ -110,3 +110,17 @@ def test_few_distinct_spellings_still_recover():
     sealed = seal_facts("return 0 + 0 + S_OK;")
     restored = unseal_facts("unsafe fn body() -> HRESULT { return 0 + 0 + S_OK; }", sealed)
     assert "return 0 + 0 + S_OK" in restored
+
+
+def test_a_dropped_sizeof_around_a_sealed_type_is_restored():
+    """hdwwiz: `psp.dwSize = sizeof(PROPSHEETPAGE);` came back `PROPSHEETPAGE as DWORD`."""
+    from rustconv.fact_seal import seal_facts, unseal_facts
+
+    sealed = seal_facts("void f(void){ psp.dwSize = sizeof(PROPSHEETPAGE); }", dialect="c")
+    (fact,) = [f for f in sealed.facts if f.original == "PROPSHEETPAGE"]
+    assert fact.in_sizeof
+    tok = fact.placeholder
+    out = unseal_facts(f"psp.dwSize = {tok} as DWORD;", sealed)
+    assert out == "psp.dwSize = core::mem::size_of::<PROPSHEETPAGE>() as DWORD;"
+    kept = unseal_facts(f"psp.dwSize = core::mem::size_of::<{tok}>() as DWORD;", sealed)
+    assert kept == "psp.dwSize = core::mem::size_of::<PROPSHEETPAGE>() as DWORD;"

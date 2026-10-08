@@ -158,6 +158,11 @@ def eval_int_guard(expr: str, pinned: dict[str, int]) -> bool | None:
                 }[op]
             )
             continue
+        # A bare `DBG` / `!DBG` is C's truth test on the macro's value.
+        b = re.fullmatch(r"(!)?\s*\(?\s*([A-Za-z_]\w*)\s*\)?", term)
+        if b is not None and b.group(2) in pinned:
+            verdicts.append((pinned[b.group(2)] != 0) != bool(b.group(1)))
+            continue
         # A `defined(X)` term we cannot settle, or anything else: unknown.
         verdicts.append(None)
 
@@ -191,7 +196,7 @@ def cond_truth(
     kind = m.group(1)
     if kind in ("ifdef", "ifndef"):
         sym = rest.split()[0] if rest.split() else ""
-        if sym in KNOWN_DEFINED or sym in local:
+        if sym in KNOWN_DEFINED or sym in local or (pinned and sym in pinned):
             return kind == "ifdef"
         return None
     if re.fullmatch(r"\(?\s*0+\s*\)?", rest):
@@ -199,7 +204,9 @@ def cond_truth(
     if re.fullmatch(r"\(?\s*[1-9]\d*\s*\)?", rest):
         return True
     m2 = re.fullmatch(r"(!)?\s*defined\s*\(?\s*(\w+)\s*\)?", rest)
-    if m2 and (m2.group(2) in KNOWN_DEFINED or m2.group(2) in local):
+    if m2 and (
+        m2.group(2) in KNOWN_DEFINED or m2.group(2) in local or (pinned and m2.group(2) in pinned)
+    ):
         return m2.group(1) is None
     if pinned:
         return eval_int_guard(rest, pinned)

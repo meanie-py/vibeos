@@ -1678,6 +1678,13 @@ check is one grep: `grep '^pub type TCHAR = ' src/types_i386.rs` must say `WCHAR
 `scan_type_alias_contradictions` then reports the disagreement with ntdll-sys, which is real and
 deliberate — baseline it, exactly as BCHAR already is for aclui/shell32/syssetup/winsrv.
 
+**2026-10-08: mechanized, both halves.** The control panels re-hit it in 5 crates (27 stack
+buffers at half size, `RegEnumValueW` told 128 WCHARs into 128 bytes), each needing a hand fix.
+`profile_derive` now emits the TCHAR-family `UNBLOCK` for every UNICODE user-mode module, and
+`port resolve` writes a generated `UNICODE TCHAR family` prelude block (`TCHAR = WCHAR` …)
+whenever every TU's real compile command carries `-DUNICODE`. A `port fix` reply had already
+built a shim casting `LPTSTR` to `*mut i8` around the wrong type -- delete such shims on sight.
+
 ### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
 The entry above is about shadow *structs*; this is the same disease one level down, and it is
 cheaper to hit because a one-line `type X = ...;` does not look like a mirror at all.
@@ -1779,6 +1786,16 @@ copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32
 (macros + folded constants) are the two precedents. For the enum-member case above the fix is
 smaller and different: one `pub use crate::island::__WIDL_..._FVM_ICON as FVM_ICON;` in the
 prelude, and delete the copies.
+
+**The pointer-width/nominal half is now generated, not ported (2026-10-08).** `port macros`
+lowers every SDK header macro a crate calls (`PropSheet_Changed`, `ListView_InsertColumn`,
+`TreeView_GetSelection`, `MAKEWPARAM`, `TVI_ROOT`, `LV_ITEM`, `REGSTR_PATH_SYSTRAY`) from the
+TU's OWN preprocessor expansion on all three arches into a per-crate `macro_rules!`/`const`/
+`type` block (`rustconv/sdk_macros.py`), keeping C's integer promotions and literal types
+(`(WORD)x << 16` shifts an int; `0x80000001` is unsigned before `(LONG)` sign-extends it). An
+expansion outside the grammar, or one that differs per arch (`UlongToHandle` is a macro on
+i386 and an inline elsewhere), is refused by name -- never approximated. The control panels
+needed ~40; nobody wrote one.
 
 **The boundary is narrower than "core primitives", and the compiler is what finds it.** A shared
 crate cannot depend on any consumer's bindgen island, so it must express everything in primitives
@@ -3082,6 +3099,13 @@ nobody traced what the contradiction meant. **Baselining a constant contradictio
 bug; when the constant gates a diagnostic, baselining it disables the diagnostic.** Two
 unresolved neighbours still sit three lines away (`MI_HYPERSPACE_PTES` 0xFF vs 0x100).
 
+**2026-10-08: `port integrate` drops them.** A one-line top-level `const` in a translated
+module that the island also defines is removed, and a differing value is reported. Its first run
+found Haiku's timedate preamble carrying `IDC_CPLICON = 1000`, `IDS_CPLNAME = 100`,
+`IDS_CPLDESCRIPTION = 101` ("Assumed values") over resource.h's 1/1001/1002, and appwiz's
+`ID_DWL_GECKO_DIALOG = 0` over 1200, already shipped. c2rust-laid `[WCHAR; N]` tables are a
+different type from the island's `&[u16; N]` literal and are left alone.
+
 It also runs the other way: **a glob-imported unit const captures a LOCAL VARIABLE of the same
 name, because `let Name: T;` is then a constant PATTERN, not a binding.** msv1_0's
 `BuildTokenGroups` has the C's `PTOKEN_GROUPS TokenGroups;`, and ntdll-sys exports
@@ -3387,6 +3411,27 @@ argument is the assigned value, not an arm; and the `#define`'s own span must be
 parameter NAME is reported as a 43rd constant). 77 → 120 constants on msvcrt. **When an audit
 reports zero for a file you know dispatches, suspect the audit before believing the file** —
 `grep -c 'case '` against the finding count is a five-second control.
+
+**An A/W ALIAS constant is the same hole one level up (2026-10-08).** input.cpl's settings page
+switched on `TVN_SELCHANGED`, which commctrl.h defines as `TVN_SELCHANGEDW`; the island carries
+only the `W` form, so the arm bound everything and OK/Apply never saved the keyboard layouts --
+found by a reviewer, not a tool. Three tool gaps let it through, now closed: `port resolve`
+subtracted every identifier alias as a FUNCTION alias, so a constant alias never reached the
+clang-evaluated facts; rustc emits the `unreachable pattern` warning only on an error-free crate,
+and resolve rewrites its extern block mid-round, so it now iterates to a fixed point carrying the
+names each round uncovers (each catch-all hides the next: usrmgr needed three rounds); and newer
+rustc labels the culprit "matches SOME of the same values", so a pattern name defined nowhere
+the crate can see is taken from that label too. **`port check` now counts a catch-all arm as an
+error** (`CATCH-ALL -- match arm(s) binding an undefined constant`), so "0 errors" means it.
+
+**Mixed-type `case` labels: C converts each label to the scrutinee's type.** clang-evaluated
+facts type `TVN_SELCHANGED` `unsigned` (C: `TVN_FIRST` is `0U-400U`) while bindgen types
+`PSN_APPLY` `i32` by its VALUE; one `match` over both has no single scrutinee type. crate-repair
+used to cast the scrutinee toward whichever arm a pass reported and built `as i32) as u32` forty
+deep across passes; it now declines a cast it already undid, and when the arms disagree rewrites
+each mismatched bare-constant arm as `__c if __c == CONST as ScrutineeT =>` -- the C conversion,
+and a guard cannot silently bind. A lone minority arm against an existing scrutinee cast still
+needs that guard by hand (mmsys `SoundsDlgProc`).
 
 **A C ENUM MEMBER is the shape most likely to get past you**, because bindgen renames it and the
 translation does not. bindgen prefixes each member with the enum's OWN name, so fmifs's
@@ -6171,7 +6216,15 @@ suspect call kept it failing; eighty made it green.
   power-protected devices and onto devices that had explicitly reported FUA unsupported; an
   always-true `||` arm disabled win32k's CJK line-break rule in word wrap; kernel32's
   `DuplicateConsoleHandle` lost its `DUPLICATE_SAME_ACCESS` validation; and scsiport kept only
-  the null half of `ASSERT(Lun && !Lun->Common.IsFDO)`. Two idioms the scanner must NOT flag,
+  the null half of `ASSERT(Lun && !Lun->Common.IsFDO)`. **2026-10-08: the gate had a hole the
+  size of the class.** A keyword before the `!` read as a macro bang (`if!`), so every
+  `if !x != 0`, `while !x`, `return !x` went unseen while the baseline stayed EMPTY. Fixing it
+  found five live sites in other lanes: usetup's `PrepareCopyPage` quit setup unconditionally,
+  fastfat ignored `IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH`, csrss basesrv never initialised
+  `BaseSrvDDDBSMCritSec` with LUID device maps on, plus netcfgx and win32k; and Haiku's powercfg
+  `Pos_InitData` always failed. The toggle form `x = !x` on a BOOL (access's keyboard
+  preference could never be switched off) is the same bug and is NOT caught by the scanner,
+  because `!x` on a bool is right -- only the type says which. Two idioms the scanner must NOT flag,
   and both are everywhere: `x & !MASK != 0` (the unknown-flag test — genuinely bitwise) and the
   macro bang in `offset_of!(T,f) == 0`. Missing them is not cosmetic — the first draft reported
   **4710** sites, essentially all of them these two, which is worth exactly as much as no

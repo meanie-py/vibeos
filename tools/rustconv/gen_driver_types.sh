@@ -2685,6 +2685,787 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_DECLARE_NONSTDC_NAMES=1 -DUNICODE -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  timedate)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/timedate/CMakeLists.txt
+    # (6 compiled TU(s), 92 headers in the include closure, 65 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 94 external prototype(s) declared by the include closure, 2 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/timedate"
+    WRAPPER_INC=$'#include "timedate.h"\n#include <math.h>\n#include <stdlib.h>\n#include <windowsx.h>\n#include <tzlib.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]tzlib\.h'
+                  --allowlist-file '.*[/\\]windowsx\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*timedate[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/timedate" -I"${SRC}/build-i386/dll/cpl/timedate" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/lib/tzlib" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  powercfg)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/powercfg/CMakeLists.txt
+    # (6 compiled TU(s), 206 headers in the include closure, 39 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 53 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/powercfg"
+    WRAPPER_INC=$'#include "powercfg.h"\n#include <winreg.h>\n#include <regstr.h>\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]batclass\.h' --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]devguid\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]powrprof\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]regstr\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*powercfg[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/powercfg" -I"${SRC}/build-i386/dll/cpl/powercfg" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  joy)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/joy/CMakeLists.txt
+    # (1 compiled TU(s), 143 headers in the include closure, 17 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 11 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/joy"
+    WRAPPER_INC=$'#include "joy.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*joy[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/joy" -I"${SRC}/build-i386/dll/cpl/joy" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  hotplug)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/hotplug/CMakeLists.txt
+    # (3 compiled TU(s), 99 headers in the include closure, 23 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 42 external prototype(s) declared by the include closure, 1 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/hotplug"
+    WRAPPER_INC=$'#include "hotplug.h"\n#define NDEBUG\n#include <debug.h>\n#include <strsafe.h>\n#include <initguid.h>\n#include <devguid.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cfgmgr32\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]dbt\.h'
+                  --allowlist-file '.*[/\\]devguid\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]regstr\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]windowsx\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*hotplug[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/hotplug" -I"${SRC}/build-i386/dll/cpl/hotplug" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  hdwwiz)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/hdwwiz/CMakeLists.txt
+    # (1 compiled TU(s), 150 headers in the include closure, 13 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 23 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/hdwwiz"
+    WRAPPER_INC=$'#include "resource.h"\n#include "hdwwiz.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cfgmgr32\.h' --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]dll[/\\]devmgr[/\\]devmgr\.h'
+                  --allowlist-file '.*[/\\]rpc\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*hdwwiz[/\\].*\.h'
+                  --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]rpcdce\.h'
+                  --allowlist-file '.*[/\\]winuser\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/hdwwiz" -I"${SRC}/build-i386/dll/cpl/hdwwiz" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  access)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/access/CMakeLists.txt
+    # (6 compiled TU(s), 82 headers in the include closure, 74 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 26 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/access"
+    WRAPPER_INC=$'#include "access.h"\n#include <cpl.h>\n#include <wingdi.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*access[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/access" -I"${SRC}/build-i386/dll/cpl/access" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  inetcpl|inetcpl-types_1)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
+    # (5 compiled TU(s), 164 headers in the include closure, 34 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 8 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
+    case "$DRIVER" in
+      # island types — 2 TU(s):
+      # connections.c content.c
+      inetcpl)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h' )
+        ;;
+      # island types_1 — 3 TU(s):
+      # general.c inetcpl.c security.c
+      inetcpl-types_1)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                      --allowlist-file '.*[/\\]initguid\.h'
+                      --allowlist-file '.*[/\\]ole2\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]shlobj\.h'
+                      --allowlist-file '.*[/\\]shlwapi\.h'
+                      --allowlist-file '.*[/\\]urlmon\.h'
+                      --allowlist-file '.*[/\\]wingdi\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h' )
+        ;;
+    esac
+    EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
+    ;;
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh inetcpl
+  #   TYPES_STEM=types_1 gen_driver_types.sh inetcpl-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+  ncpa)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/ncpa/CMakeLists.txt
+    # (1 compiled TU(s), 69 headers in the include closure, 5 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 2 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/ncpa"
+    WRAPPER_INC=$'#define WIN32_NO_STATUS\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <shellapi.h>\n#include <cpl.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cpl\.h' --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*ncpa[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/ncpa" -I"${SRC}/build-i386/dll/cpl/ncpa" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  telephon)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/telephon/CMakeLists.txt
+    # (1 compiled TU(s), 67 headers in the include closure, 4 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 3 external prototype(s) declared by the include closure, 1 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/telephon"
+    WRAPPER_INC=$'#define WIN32_NO_STATUS\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <cpl.h>\n#include "resource.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cpl\.h' --allowlist-file '.*telephon[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/telephon" -I"${SRC}/build-i386/dll/cpl/telephon" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  odbccp32i)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/odbccp32/CMakeLists.txt
+    # (1 compiled TU(s), 78 headers in the include closure, 4 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 5 external prototype(s) declared by the include closure, 1 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/odbccp32"
+    WRAPPER_INC=$'#include "odbccp32.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*odbccp32[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/odbccp32" -I"${SRC}/build-i386/dll/cpl/odbccp32" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  openglcfg)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/openglcfg/CMakeLists.txt
+    # (3 compiled TU(s), 81 headers in the include closure, 16 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 13 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/openglcfg"
+    WRAPPER_INC=$'#include "openglcfg.h"\n#include <cpl.h>\n#include <winreg.h>\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*openglcfg[/\\].*\.h'
+                  --allowlist-file '.*[/\\]prsht\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/cpl/openglcfg" -I"${SRC}/build-i386/dll/cpl/openglcfg" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  wined3dcfg)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/wined3dcfg/CMakeLists.txt
+    # (3 compiled TU(s), 75 headers in the include closure, 10 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 10 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/wined3dcfg"
+    WRAPPER_INC=$'#include "wined3dcfg.h"\n#include <cpl.h>\n#include <winreg.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*wined3dcfg[/\\].*\.h'
+                  --allowlist-file '.*[/\\]wined3dcfg\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/cpl/wined3dcfg" -I"${SRC}/build-i386/dll/cpl/wined3dcfg" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  inetcpl|inetcpl-types_1)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
+    # (5 compiled TU(s), 164 headers in the include closure, 33 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 8 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
+    case "$DRIVER" in
+      # island types — 2 TU(s):
+      # connections.c content.c
+      inetcpl)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h' )
+        ;;
+      # island types_1 — 3 TU(s):
+      # general.c inetcpl.c security.c
+      inetcpl-types_1)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                      --allowlist-file '.*[/\\]initguid\.h'
+                      --allowlist-file '.*[/\\]ole2\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]shlobj\.h'
+                      --allowlist-file '.*[/\\]shlwapi\.h'
+                      --allowlist-file '.*[/\\]urlmon\.h'
+                      --allowlist-file '.*[/\\]wingdi\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h' )
+        ;;
+    esac
+    EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
+    ;;
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh inetcpl
+  #   TYPES_STEM=types_1 gen_driver_types.sh inetcpl-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+  console)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/console/CMakeLists.txt
+    # (6 compiled TU(s), 94 headers in the include closure, 50 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 77 external prototype(s) declared by the include closure, 3 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/console"
+    WRAPPER_INC=$'#include "console.h"\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]concfg\.h'
+                  --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*console[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/console" -I"${SRC}/build-i386/dll/cpl/console" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/win32ss/user/winsrv/concfg" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  input)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/input/CMakeLists.txt
+    # (10 compiled TU(s), 99 headers in the include closure, 69 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 79 external prototype(s) declared by the include closure, 2 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/input"
+    WRAPPER_INC=$'#include "input.h"\n#include "input_list.h"\n#include "layout_list.h"\n#include "locale_list.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]\.\.[/\\]\.\.[/\\]\.\.[/\\]base[/\\]setup[/\\]lib[/\\]muifonts\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]imm32_undoc\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]windowsx\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*input[/\\].*\.h'
+                  --allowlist-file '.*[/\\]input\.h'
+                  --allowlist-file '.*[/\\]input_list\.h'
+                  --allowlist-file '.*[/\\]layout_list\.h'
+                  --allowlist-file '.*[/\\]locale_list\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/cpl/input" -I"${SRC}/build-i386/dll/cpl/input" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  main)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/main/CMakeLists.txt
+    # (3 compiled TU(s), 167 headers in the include closure, 46 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 46 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/main"
+    WRAPPER_INC=$'#include "main.h"\n#include <commdlg.h>\n#include <cplext.h>\n#include <tchar.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]commdlg\.h'
+                  --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]cplext\.h'
+                  --allowlist-file '.*[/\\]devguid\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]regstr\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*main[/\\].*\.h'
+                  --allowlist-file '.*[/\\]main\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/cpl/main" -I"${SRC}/build-i386/dll/cpl/main" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  mmsys)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/mmsys/CMakeLists.txt
+    # (6 compiled TU(s), 155 headers in the include closure, 45 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 94 external prototype(s) declared by the include closure, 2 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/mmsys"
+    WRAPPER_INC=$'#include "mmsys.h"\n#include <winsvc.h>\n#include <shlwapi.h>\n#include <debug.h>\n#include <swenum.h>\n#include <newdev.h>\n#include <initguid.h>\n#include <devguid.h>\n#include <commdlg.h>\n#include <windowsx.h>\n#include <shellapi.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]commdlg\.h'
+                  --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]devguid\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]mmsystem\.h'
+                  --allowlist-file '.*[/\\]newdev\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]swenum\.h'
+                  --allowlist-file '.*[/\\]windowsx\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*[/\\]winsvc\.h'
+                  --allowlist-file '.*mmsys[/\\].*\.h'
+                  --allowlist-file '.*[/\\]mmsys\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/cpl/mmsys" -I"${SRC}/build-i386/dll/cpl/mmsys" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  usrmgr)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/usrmgr/CMakeLists.txt
+    # (7 compiled TU(s), 92 headers in the include closure, 60 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/usrmgr"
+    WRAPPER_INC=$'#include "usrmgr.h"\n#include <winreg.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]lmaccess\.h'
+                  --allowlist-file '.*[/\\]lmapibuf\.h'
+                  --allowlist-file '.*[/\\]lmerr\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]psdk[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*usrmgr[/\\].*\.h'
+                  --allowlist-file '.*[/\\]usrmgr\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/cpl/usrmgr" -I"${SRC}/build-i386/dll/cpl/usrmgr" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  inetcpl|inetcpl-types_1)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
+    # (5 compiled TU(s), 164 headers in the include closure, 33 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 8 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
+    case "$DRIVER" in
+      # island types — 2 TU(s):
+      # connections.c content.c
+      inetcpl)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h'
+                      --allowlist-file '.*[/\\]cpl\.h'
+                      --allowlist-file '.*[/\\]servprov\.h'
+                      --allowlist-file '.*[/\\]urlmon\.h' )
+        ;;
+      # island types_1 — 3 TU(s):
+      # general.c inetcpl.c security.c
+      inetcpl-types_1)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                      --allowlist-file '.*[/\\]initguid\.h'
+                      --allowlist-file '.*[/\\]ole2\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]shlobj\.h'
+                      --allowlist-file '.*[/\\]shlwapi\.h'
+                      --allowlist-file '.*[/\\]urlmon\.h'
+                      --allowlist-file '.*[/\\]wingdi\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h'
+                      --allowlist-file '.*[/\\]servprov\.h' )
+        ;;
+    esac
+    EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
+    ;;
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh inetcpl
+  #   TYPES_STEM=types_1 gen_driver_types.sh inetcpl-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+  inetcpl|inetcpl-types_1)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
+    # (5 compiled TU(s), 164 headers in the include closure, 33 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 8 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
+    case "$DRIVER" in
+      # island types — 2 TU(s):
+      # connections.c content.c
+      inetcpl)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h'
+                      --allowlist-file '.*[/\\]cpl\.h'
+                      --allowlist-file '.*[/\\]servprov\.h'
+                      --allowlist-file '.*[/\\]urlmon\.h' )
+        ;;
+      # island types_1 — 3 TU(s):
+      # general.c inetcpl.c security.c
+      inetcpl-types_1)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                      --allowlist-file '.*[/\\]initguid\.h'
+                      --allowlist-file '.*[/\\]ole2\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]shlobj\.h'
+                      --allowlist-file '.*[/\\]shlwapi\.h'
+                      --allowlist-file '.*[/\\]urlmon\.h'
+                      --allowlist-file '.*[/\\]wingdi\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h'
+                      --allowlist-file '.*[/\\]servprov\.h' )
+        ;;
+    esac
+    EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
+    ;;
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh inetcpl
+  #   TYPES_STEM=types_1 gen_driver_types.sh inetcpl-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+  inetcpl|inetcpl-types_1)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
+    # (5 compiled TU(s), 164 headers in the include closure, 33 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 8 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
+    case "$DRIVER" in
+      # island types — 2 TU(s):
+      # connections.c content.c
+      inetcpl)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h'
+                      --allowlist-file '.*[/\\]cpl\.h'
+                      --allowlist-file '.*[/\\]servprov\.h'
+                      --allowlist-file '.*[/\\]urlmon\.h' )
+        ;;
+      # island types_1 — 3 TU(s):
+      # general.c inetcpl.c security.c
+      inetcpl-types_1)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                      --allowlist-file '.*[/\\]initguid\.h'
+                      --allowlist-file '.*[/\\]ole2\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]shlobj\.h'
+                      --allowlist-file '.*[/\\]shlwapi\.h'
+                      --allowlist-file '.*[/\\]urlmon\.h'
+                      --allowlist-file '.*[/\\]wingdi\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h'
+                      --allowlist-file '.*[/\\]servprov\.h' )
+        ;;
+    esac
+    EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
+    ;;
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh inetcpl
+  #   TYPES_STEM=types_1 gen_driver_types.sh inetcpl-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+  inetcpl|inetcpl-types_1)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
+    # (5 compiled TU(s), 164 headers in the include closure, 33 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 8 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
+    case "$DRIVER" in
+      # island types — 2 TU(s):
+      # connections.c content.c
+      inetcpl)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h'
+                      --allowlist-file '.*[/\\]cpl\.h'
+                      --allowlist-file '.*[/\\]servprov\.h'
+                      --allowlist-file '.*[/\\]urlmon\.h' )
+        ;;
+      # island types_1 — 3 TU(s):
+      # general.c inetcpl.c security.c
+      inetcpl-types_1)
+        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                      --allowlist-file '.*[/\\]initguid\.h'
+                      --allowlist-file '.*[/\\]ole2\.h'
+                      --allowlist-file '.*[/\\]prsht\.h'
+                      --allowlist-file '.*[/\\]shlobj\.h'
+                      --allowlist-file '.*[/\\]shlwapi\.h'
+                      --allowlist-file '.*[/\\]urlmon\.h'
+                      --allowlist-file '.*[/\\]wingdi\.h'
+                      --allowlist-file '.*[/\\]wininet\.h'
+                      --allowlist-file '.*[/\\]winnls\.h'
+                      --allowlist-file '.*[/\\]winreg\.h'
+                      --allowlist-file '.*inetcpl[/\\].*\.h'
+                      --allowlist-file '.*[/\\]servprov\.h' )
+        ;;
+    esac
+    EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
+    ;;
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh inetcpl
+  #   TYPES_STEM=types_1 gen_driver_types.sh inetcpl-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

@@ -55,6 +55,15 @@ static const app_t apps[] = {
     { "cpl-appwiz", "control.exe", "appwiz.cpl" },    { "cpl-ncpa", "control.exe", "ncpa.cpl" },
     { "cpl-access", "control.exe", "access.cpl" },    { "cpl-powercfg", "control.exe", "powercfg.cpl" },
     { "cpl-inetcpl", "control.exe", "inetcpl.cpl" },  { "cpl-joy", "control.exe", "joy.cpl" },
+    /* The rest of dll/cpl, all Rust since 2026-10-08 (rustconv port, Haiku 5.5). input and
+     * console build as win32dll modules (input.dll, console.dll). Not here: telephon.cpl
+     * hands off to tapi32's internalConfig, a `-stub` in this tree, and odbccp32i.cpl
+     * answers CPL_GETCOUNT with 0 (it only forwards CPL_DBLCLK to odbccp32.dll) -- neither
+     * can open a window, in C or in Rust. */
+    { "cpl-input", "control.exe", "input.dll" },      { "cpl-usrmgr", "control.exe", "usrmgr.cpl" },
+    { "cpl-hdwwiz", "control.exe", "hdwwiz.cpl" },    { "cpl-openglcfg", "control.exe", "openglcfg.cpl" },
+    { "cpl-wined3dcfg", "control.exe", "wined3dcfg.cpl" }, { "cpl-console", "control.exe", "console.dll" },
+    { "cpl-hotplug", "rundll32.exe", "shell32.dll,Control_RunDLL hotplug.dll" },
 };
 
 #define MAXW 64

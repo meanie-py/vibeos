@@ -148,6 +148,21 @@ _RS_FLAG_ASSIGN = re.compile(
 _C_ASSIGN = re.compile(r"(?<![\w.>=!<*\])])([A-Za-z_]\w*)\s*=(?!=)\s*([^;]*);")
 
 
+def _top_level_commas(expr: str) -> list[str]:
+    """`expr` split at the commas outside any (), [] or {} -- C's comma operator."""
+    out, depth, start = [], 0, 0
+    for i, ch in enumerate(expr):
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            out.append(expr[start:i])
+            start = i + 1
+    out.append(expr[start:])
+    return out
+
+
 def invented_flag_assignments(c_body: str, rust: str) -> list[str]:
     """`Status = 0;` where the C function never gives Status a value that is 0 (or 1).
 
@@ -161,17 +176,25 @@ def invented_flag_assignments(c_body: str, rust: str) -> list[str]:
     c_code = _C_COMMENT_OR_STRING.sub(" ", c_body)
     c_values: dict[str, set[str]] = {}
     for m in _C_ASSIGN.finditer(c_code):
-        # A chained assignment gives every name in it the final value: usetup's
-        # `Pos = Length = 0;` was split into two statements by a correct translation, and
-        # `Length = 0` was refused on every sample because only `Pos` was recorded.
-        names = [m.group(1)]
-        rhs = m.group(2).strip()
-        while chained := re.match(r"([A-Za-z_]\w*)\s*=(?!=)\s*(.+)$", rhs, re.S):
-            names.append(chained.group(1))
-            rhs = chained.group(2).strip()
-        rhs = re.sub(r"^\(\s*\w+\s*\)\s*", "", rhs).strip("() ")
-        for name in names:
-            c_values.setdefault(name, set()).add(rhs)
+        # The COMMA operator makes one statement several assignments: hotplug's enum.c writes
+        # `dwCapabilities = 0, dwSize = sizeof(dwCapabilities);`, which recorded the value
+        # `0, dwSize = sizeof(..)` and refused the correct `dwCapabilities = 0` twice.
+        segments = _top_level_commas(f"{m.group(1)} = {m.group(2)}")
+        for seg in segments:
+            a = re.match(r"\s*([A-Za-z_]\w*)\s*=(?!=)\s*(.+)$", seg, re.S)
+            if a is None:
+                continue
+            # A chained assignment gives every name in it the final value: usetup's
+            # `Pos = Length = 0;` was split into two statements by a correct translation, and
+            # `Length = 0` was refused on every sample because only `Pos` was recorded.
+            names = [a.group(1)]
+            rhs = a.group(2).strip()
+            while chained := re.match(r"([A-Za-z_]\w*)\s*=(?!=)\s*(.+)$", rhs, re.S):
+                names.append(chained.group(1))
+                rhs = chained.group(2).strip()
+            rhs = re.sub(r"^\(\s*\w+\s*\)\s*", "", rhs).strip("() ")
+            for name in names:
+                c_values.setdefault(name, set()).add(rhs)
     out = []
     for m in _RS_FLAG_ASSIGN.finditer(rust):
         if re.search(r"\blet\b", m.group("lead")):
