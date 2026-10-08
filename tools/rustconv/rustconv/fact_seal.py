@@ -55,6 +55,11 @@ class SealedFact:
     # DUMMY_PSEH except-block). Defaults False so an older pickled/cached fact stays
     # required. See dead_regions.py for why these must not be DEMANDED of the model.
     dead: bool = False
+    # The occurrence is the whole operand of `sizeof(...)`. A model that hands such a token
+    # back bare has dropped the sizeof (Haiku did it in appwiz and hdwwiz: `psp.dwSize =
+    # PROPSHEETPAGE as DWORD`); unseal restores `size_of::<T>()`. A VALUE in that position
+    # (`sizeof(UNICODE_NULL)`) then fails to compile, which is the loud outcome.
+    in_sizeof: bool = False
 
 
 @dataclass(frozen=True)
@@ -390,8 +395,13 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
     for index, (start, end, kind) in reversed(list(enumerate(spans))):
         placeholder = f"__RUSTCONV_FACT_{index:04d}__"
         original = text[start:end]
+        in_sizeof = bool(
+            re.search(r"\bsizeof\s*\(\s*$", masked[:start]) and re.match(r"\s*\)", masked[end:])
+        )
         facts.append(
-            SealedFact(placeholder, original, kind, in_dead_region(dead_spans, start, end))
+            SealedFact(
+                placeholder, original, kind, in_dead_region(dead_spans, start, end), in_sizeof
+            )
         )
         result = result[:start] + placeholder + result[end:]
     facts.reverse()
@@ -565,8 +575,25 @@ def unseal_facts(
 
     for fact in sealed.facts:
         spelling = rust_integer_spelling(fact.original) if fact.kind == "integer" else fact.original
+        if fact.in_sizeof and fact.kind == "symbol":
+            rust = _restore_dropped_sizeof(rust, fact.placeholder)
         rust = rust.replace(fact.placeholder, spelling)
     return rust
+
+
+def _restore_dropped_sizeof(rust: str, placeholder: str) -> str:
+    """`TOKEN` where the C had `sizeof(TOKEN)` -> `core::mem::size_of::<TOKEN>()`, unless the
+    model already measured it (`size_of::<TOKEN>`, `size_of_val(&TOKEN)`)."""
+
+    def repl(m: re.Match[str]) -> str:
+        before = rust[: m.start()]
+        if re.search(
+            r"size_of(?:_val)?\s*(?:::\s*<\s*|\(\s*&?\s*(?:raw\s+(?:const|mut)\s+)?)$", before
+        ):
+            return m.group(0)
+        return f"core::mem::size_of::<{placeholder}>()"
+
+    return re.sub(rf"\b{re.escape(placeholder)}\b", repl, rust)
 
 
 def rust_integer_spelling(c: str) -> str:

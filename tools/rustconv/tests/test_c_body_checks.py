@@ -115,6 +115,16 @@ def test_a_chained_c_assignment_gives_every_name_its_value():
     assert invented_flag_assignments("Length = wcslen(d);\n", "Length = 0;\n")
 
 
+def test_a_comma_operator_statement_is_several_assignments():
+    """hotplug enum.c: `dwCapabilities = 0, dwSize = sizeof(dwCapabilities);`."""
+    from rustconv.c_body_checks import invented_flag_assignments
+
+    c = "dwCapabilities = 0,\n    dwSize = sizeof(dwCapabilities);\n"
+    rust = "dwCapabilities = 0;\ndwSize = 4;\n"
+    assert invented_flag_assignments(c, rust) == []
+    assert invented_flag_assignments("x = f(a, b), y = 2;\n", "x = 0;\n")
+
+
 def test_a_pointer_typedef_local_gets_no_extra_level():
     from rustconv.c_body_checks import pointer_typedef_indirection_findings as f
 

@@ -960,10 +960,13 @@ pub unsafe extern "system" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT
         }
     }
 
-    let write_through_to_disk: i32 = (!FlagOn(
+    // C `!FlagOn(IrpContext->Flags, IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH)`. Was
+    // `!FlagOn(..) != 0`, a BITWISE not of the flag word that is never zero, so
+    // DISABLE_WRITE_THROUGH was ignored.
+    let write_through_to_disk: i32 = (FlagOn(
         (*irp_context).Flags,
         IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH,
-    ) != 0
+    ) == 0
         && !(*irp_context).Vcb.is_null()
         && (FlagOn((*irp_context).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH) != 0
             || FlagOn(

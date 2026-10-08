@@ -471,6 +471,33 @@ def identifier_aliases(repo_root: Path, source: Path) -> dict[str, str]:
     return agreed
 
 
+def arch_only_aliases(repo_root: Path, source: Path) -> dict[str, dict[str, str]]:
+    """`{NAME: {arch: TARGET}}` for an identifier alias that holds on SOME built arches only.
+
+    winuser.h makes `GetWindowLongPtrW` a macro for `GetWindowLongW` on i386 and a real
+    export on the 64-bit targets. identifier_aliases keeps only what every arch agrees on, so
+    the extern resolve declares links on amd64/arm64 and is `undefined symbol
+    _GetWindowLongPtrW@8` on i386 -- appwiz, then timedate, each patched by hand.
+    """
+    per_arch: dict[str, dict[str, str]] = {}
+    for arch in _ARCHES:
+        argv = compile_argv(repo_root, arch, source)
+        if argv is None:
+            return {}
+        try:
+            dump = _preprocess_defines(argv)
+        except MacroAuthorityError:
+            return {}
+        per_arch[arch] = dict(re.findall(r"^#define ([A-Za-z_]\w*) ([A-Za-z_]\w*)\s*$", dump, re.M))
+    names = set().union(*per_arch.values())
+    out: dict[str, dict[str, str]] = {}
+    for name in names:
+        targets = {a: d[name] for a, d in per_arch.items() if name in d}
+        if len(targets) != len(_ARCHES):
+            out[name] = targets
+    return out
+
+
 @lru_cache(maxsize=64)
 def function_like_macros(repo_root: Path, source: Path) -> frozenset[str]:
     """Every `#define NAME(...)` visible to ``source``, unioned over built arches.
