@@ -98,17 +98,11 @@ pub unsafe fn RtlSecureZeroMemory(
     pointer
 }
 
-// RtlAssert — debug-only ntoskrnl helper, stripped in retail (undefined at link).
-// crypt.rs declares it in its own `extern "system"` block; provide the no-op
-// definition so the symbol resolves. NTAPI = stdcall on i386 (`_RtlAssert@N`),
-// cdecl on amd64/arm64 → extern "system" picks the right per-arch decoration.
-#[no_mangle]
-pub unsafe extern "system" fn RtlAssert(
-    _failed_assertion: ntkrnl_sys::ddk::PVOID,
-    _file_name: ntkrnl_sys::ddk::PVOID,
-    _line_number: ntkrnl_sys::ddk::ULONG,
-    _message: *mut ntkrnl_sys::ddk::CHAR,
-) {
+// RtlAssert is ntoskrnl's export: it prints the failed assertion and returns. An
+// empty local definition here won the link and made every failed ASSERT in this
+// driver vanish (scan_export_shadows).
+extern "system" {
+    pub fn RtlAssert(FailedAssertion: ntkrnl_sys::ddk::PVOID, FileName: ntkrnl_sys::ddk::PVOID, LineNumber: ntkrnl_sys::ddk::ULONG, Message: *mut ntkrnl_sys::ddk::CHAR);
 }
 
 // _rotl — MSVC rotate-left intrinsic (crypto). `value.rotate_left` reduces the

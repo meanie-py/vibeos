@@ -6,13 +6,16 @@ use core::ffi::c_void;
 
 use crate::KDDBGPRINT;
 
-// KdComPortInUse: the shared KD global the transport sets so the kernel knows
-// which COM port is in use. In a real _WINKD_ kernel this is the kernel's
-// global (kd/kdio); it is NOT in the (non-_WINKD_) ntoskrnl.spec, so for the
-// standalone link spike it is defined here. --allow-multiple-definition lets
-// the kernel's definition win if both are ever linked together.
-#[no_mangle]
-pub static mut KdComPortInUse: PUCHAR = core::ptr::null_mut();
+// KdComPortInUse: the HAL's global (hal.spec `extern KdComPortInUse`). The
+// transport stores its port here so the HAL reports that COM port as taken and
+// the serial driver leaves it alone. It is a DATA export, so it must be
+// imported through raw-dylib (the reference goes via __imp_); a local
+// definition — which this used to be — wins the link silently and the HAL
+// never learns the port is in use (scan_export_shadows).
+#[link(name = "hal.dll", kind = "raw-dylib", modifiers = "+verbatim")]
+extern "C" {
+    pub static mut KdComPortInUse: PUCHAR;
+}
 
 // cportlib CpGetByte return codes (cportlib.h). Not in ntkrnl-sys.
 pub const CP_GET_SUCCESS: USHORT = 0;

@@ -783,3 +783,29 @@ pub unsafe fn ExReleasePushLockShared(push_lock: ddk::PEX_PUSH_LOCK) {
 pub unsafe fn ExInterlockedFlushSList(list_head: ddk::PSLIST_HEADER) -> ddk::PSLIST_ENTRY {
     ddk::ExpInterlockedFlushSList(list_head)
 }
+
+/// `InterlockedPushEntrySList(h, e)` as a DRIVER calls it. Off x86 wdm.h maps it to the export
+/// `ExpInterlockedPushEntrySList`; on i386 it is itself a fastcall export. (`interlocked::`'s
+/// version links `RtlInterlockedPushEntrySList`, ntoskrnl's internal implementation symbol --
+/// right inside ntoskrnl, undefined in a .sys: atapi failed to link on it.)
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub unsafe fn InterlockedPushEntrySList(
+    list_head: ddk::PSLIST_HEADER,
+    list_entry: ddk::PSLIST_ENTRY,
+) -> ddk::PSLIST_ENTRY {
+    ddk::ExpInterlockedPushEntrySList(list_head, list_entry)
+}
+/// i386: the fastcall export (`@InterlockedPushEntrySList@8`).
+#[cfg(target_arch = "x86")]
+#[inline]
+pub unsafe fn InterlockedPushEntrySList(
+    list_head: ddk::PSLIST_HEADER,
+    list_entry: ddk::PSLIST_ENTRY,
+) -> ddk::PSLIST_ENTRY {
+    extern "fastcall" {
+        #[link_name = "InterlockedPushEntrySList"]
+        fn imp(list_head: ddk::PSLIST_HEADER, list_entry: ddk::PSLIST_ENTRY) -> ddk::PSLIST_ENTRY;
+    }
+    imp(list_head, list_entry)
+}

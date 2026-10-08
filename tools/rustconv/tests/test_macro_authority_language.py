@@ -99,3 +99,17 @@ def test_c_source_still_prefers_a_c_sibling(tmp_path):
     argv = _sibling_target_entry(repo, "amd64", mod / "Target.c")
     assert argv is not None
     assert "-std=gnu99" in argv and "-std=gnu++17" not in argv
+
+
+def test_identifier_aliases_fails_loud_without_any_command(tmp_path):
+    # It used to answer `{}` when the TU had no compile command, which after a cohab flip
+    # silently dropped every A/W alias the re-resolve was meant to keep.
+    import pytest
+
+    from rustconv.macro_authority import MacroAuthorityError, identifier_aliases
+
+    src = tmp_path / "dll" / "x" / "a.c"
+    src.parent.mkdir(parents=True)
+    src.write_text("int x;\n")
+    with pytest.raises(MacroAuthorityError):
+        identifier_aliases(tmp_path, src)

@@ -45,7 +45,10 @@ static mut RegisteredFileSystems: [FILE_SYSTEM; 2] = unsafe {
     ]
 };
 
-#[repr(C)]
+// fsutil.c declares the four boot sectors inside `#include <pshpack1.h>` and pins each
+// size with C_ASSERT. Unpacked, every BPB field from BytesPerSector (offset 11) on moved,
+// so installing boot code would have copied the wrong bytes into a volume's BPB.
+#[repr(C, packed)]
 pub struct _FAT_BOOTSECTOR {
     pub JumpBoot: [u8; 3],
     pub OemName: [i8; 8],
@@ -70,9 +73,10 @@ pub struct _FAT_BOOTSECTOR {
     pub BootCodeAndData: [u8; 448],
     pub BootSectorMagic: u16,
 }
+const _: () = assert!(core::mem::size_of::<_FAT_BOOTSECTOR>() == 512);
 pub type PFAT_BOOTSECTOR = *mut _FAT_BOOTSECTOR;
 
-#[repr(C)]
+#[repr(C, packed)]
 pub struct _FAT32_BOOTSECTOR {
     pub JumpBoot: [u8; 3],
     pub OemName: [i8; 8],
@@ -104,9 +108,10 @@ pub struct _FAT32_BOOTSECTOR {
     pub BootCodeAndData: [u8; 420],
     pub BootSectorMagic: u16,
 }
+const _: () = assert!(core::mem::size_of::<_FAT32_BOOTSECTOR>() == 512);
 pub type PFAT32_BOOTSECTOR = *mut _FAT32_BOOTSECTOR;
 
-#[repr(C)]
+#[repr(C, packed)]
 pub struct _BTRFS_BOOTSECTOR {
     pub JumpBoot: [u8; 3],
     pub ChunkMapSize: u8,
@@ -115,9 +120,10 @@ pub struct _BTRFS_BOOTSECTOR {
     pub Fill: [u8; 1521],
     pub BootSectorMagic: u16,
 }
+const _: () = assert!(core::mem::size_of::<_BTRFS_BOOTSECTOR>() == 1536);
 pub type PBTRFS_BOOTSECTOR = *mut _BTRFS_BOOTSECTOR;
 
-#[repr(C)]
+#[repr(C, packed)]
 pub struct _NTFS_BOOTSECTOR {
     pub Jump: [u8; 3],
     pub OEMID: [u8; 8],
@@ -144,6 +150,7 @@ pub struct _NTFS_BOOTSECTOR {
     pub EndSector: u16,
     pub BootCodeAndData: [u8; 7680],
 }
+const _: () = assert!(core::mem::size_of::<_NTFS_BOOTSECTOR>() == 8192);
 pub type PNTFS_BOOTSECTOR = *mut _NTFS_BOOTSECTOR;
 
 pub type PFILE_SYSTEM = *mut _FILE_SYSTEM;

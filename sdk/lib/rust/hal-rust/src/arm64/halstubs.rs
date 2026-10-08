@@ -1530,11 +1530,11 @@ pub unsafe extern "system" fn KeTryToAcquireQueuedSpinLockRaiseToSynch(
 }
 
 #[unsafe(no_mangle)]
-// OldIrql belongs to the OWNER: store it only once ownership is won, as ex.h's
-// _ExAcquireFastMutex/_ExTryToAcquireFastMutex do. Writing it before the acquire let
-// a blocked waiter (or a failed try) overwrite the holder's saved IRQL, so the
-// holder's release lowered to the wrong level -- kmtest ExFastMutex :57-:133 left
-// the caller stuck at APC_LEVEL, and :304 saw a waiter's PASSIVE in the owner's slot.
+// OldIrql belongs to the OWNER, here as in ExTryToAcquireFastMutex below: store it
+// only once the mutex is ours, as ex.h's _ExAcquireFastMutex does. Storing it before
+// ExAcquireFastMutexUnsafe let a BLOCKED waiter overwrite the holder's saved IRQL, so
+// the holder's release lowered to the waiter's level (kmtest ExFastMutex :304 read a
+// PASSIVE waiter's IRQL in the APC_LEVEL owner's slot).
 pub unsafe extern "system" fn ExAcquireFastMutex(FastMutex: ddk::PFAST_MUTEX) {
     unsafe {
         let OldIrql = KfRaiseIrql(APC_LEVEL);
@@ -1554,19 +1554,23 @@ pub unsafe extern "system" fn ExReleaseFastMutex(FastMutex: ddk::PFAST_MUTEX) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn ExTryToAcquireFastMutex(FastMutex: ddk::PFAST_MUTEX) -> ddk::BOOLEAN {
+    // OldIrql belongs to the OWNER: store it only once the mutex is ours, as the C
+    // `_ExTryToAcquireFastMutex` does. Writing it before the compare-exchange let
+    // every failed try overwrite the holder's saved IRQL with APC_LEVEL, so the
+    // holder's release "restored" APC_LEVEL and left the thread there (kmtest
+    // ExFastMutex lines 57/59/76/78/133/283, every arm64 run).
     unsafe {
         let OldIrql = KfRaiseIrql(APC_LEVEL);
-        if interlocked_compare_exchange(&raw mut (*FastMutex).Count, 0, 1) != 1 {
-            KfLowerIrql(OldIrql);
-            return FALSE;
+        if interlocked_compare_exchange(&raw mut (*FastMutex).Count, 0, 1) == 1 {
+            (*FastMutex).Owner = ddk::KeGetCurrentThread();
+            (*FastMutex).OldIrql = OldIrql as ddk::ULONG;
+            return TRUE; // nolint: irql-balance (acquired: stays at APC_LEVEL until ExReleaseFastMutex)
         }
 
-        // Owned: the raise now belongs to the mutex, and ExReleaseFastMutex lowers it.
-        (*FastMutex).Owner = ddk::KeGetCurrentThread();
-        (*FastMutex).OldIrql = OldIrql as ddk::ULONG;
+        KfLowerIrql(OldIrql);
     }
 
-    TRUE
+    FALSE
 }
 
 #[unsafe(no_mangle)]

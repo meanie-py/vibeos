@@ -1,31 +1,36 @@
 //! GICv3 ITS: message-signaled interrupts on a GICv3 (crate::message's arm64 backend
 //! when the GIC is a v3; v2m.rs is the GICv2 one).
 //!
-//! A device raises an MSI by writing an EventID to the ITS's GITS_TRANSLATER. The bus
+//! A device raises an MSI by writing an EventID to an ITS's GITS_TRANSLATER. The bus
 //! tags the write with the device's DeviceID, the ITS looks the pair up (DeviceID ->
 //! that device's Interrupt Translation Table -> EventID -> an LPI and a collection),
 //! and the collection names the redistributor the LPI is delivered to. An LPI is an
 //! INTID from 8192 up, with no distributor state at all: its priority and enable bit
 //! are one byte each in a table in memory (GICR_PROPBASER), and its pending bit is in
-//! another (GICR_PENDBASER), both owned by the OS.
+//! another per redistributor (GICR_PENDBASER), all owned by the OS.
 //!
 //! So unlike a v2m SPI, a message here is only meaningful for one device: the HAL has
 //! to know who will write it. pci.sys passes the requester ID (bus/device/function)
-//! when it asks for the address/data pair, and the IORT says which DeviceID the ITS
-//! sees for it. Every LPI targets one collection, mapped to the boot CPU, where every
-//! other device interrupt goes too.
+//! when it asks for the address/data pair, and the IORT (iort.rs) says which ITS that
+//! device's writes reach and which DeviceID it sees there.
 //!
-//! What is owed: a two-level device table (the flat one covers DeviceIDs up to 256
-//! pages' worth, which is all of QEMU's 16 bits), more than one ITS, routing anywhere
-//! but CPU0, and returning LPIs and events when a device goes away.
+//! Every ITS the MADT lists is brought up, each with its own command queue and tables.
+//! Every CPU whose redistributor takes LPIs gets a collection (ICID = its processor
+//! number) on every ITS, and messages are spread across those CPUs as they are
+//! handed out, the way Windows spreads a device's MSI-X messages: a driver whose
+//! queues each have a message then completes on more than one CPU.
+//!
+//! What is owed: returning LPIs and events when a device goes away, and moving an LPI
+//! (MOVI) when a driver asks for a different affinity.
 
 #![cfg(target_arch = "aarch64")]
 
-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use ntkrnl_sys::ddk;
 
 use super::acpi::{for_each_table, rd, XSDT_PA};
 use super::gic3;
+use super::iort;
 
 unsafe extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> u32;
@@ -46,16 +51,20 @@ const GITS_TRANSLATER: u64 = 0x1_0040;
 
 // GITS_BASER<n>.
 const BASER_VALID: u64 = 1 << 63;
+const BASER_INDIRECT: u64 = 1 << 62;
 const BASER_TYPE_DEVICES: u64 = 1;
 const BASER_TYPE_COLLECTIONS: u64 = 4;
 /// Every table and the command queue is ours, in non-cached memory; tell the ITS so
 /// (InnerCache = Normal Non-cacheable, Shareability = Non-shareable, OuterCache = same
 /// as inner), and nothing needs cache maintenance on either side.
 const CACHE_NONCACHEABLE: u64 = 1 << 59;
+/// A level-1 device table entry: the level-2 page it points at is valid.
+const L1_VALID: u64 = 1 << 63;
 /// The same attribute where GICR_PROPBASER and GICR_PENDBASER keep it.
 const GICR_CACHE_NONCACHEABLE: u64 = 1 << 7;
 const GICR_PENDBASER_PTZ: u64 = 1 << 62;
 const GICR_CTLR_ENABLE_LPIS: u32 = 1 << 0;
+const GICR_TYPER_PLPIS: u64 = 1 << 0;
 
 /// One LPI property byte: priority in bits 7:2, bit 1 RES1, bit 0 enable.
 const LPI_PROP_RES1: u8 = 1 << 1;
@@ -74,56 +83,96 @@ const COMMAND_SIZE: usize = 32;
 /// Events (messages) one device can have. MSI-X allows 2048; nothing we drive asks for
 /// more than a handful.
 const EVENTS_PER_DEVICE: u32 = 256;
-const MAX_DEVICES: usize = 32;
+const MAX_DEVICES: usize = 64;
+const MAX_ITS: usize = 4;
+const MAX_CPUS: u32 = 64;
 const NO_REQUESTER: u32 = u32::MAX;
+/// Requester IDs are on PCI segment 0: the only one pci.sys enumerates.
+const SEGMENT: u32 = 0;
 
 // ACPI.
 const MADT_RECORDS: usize = 44;
 const MADT_TYPE_GIC_ITS: u8 = 0x0F;
+const MADT_ITS_ID: usize = 4;
 const MADT_ITS_BASE: usize = 8;
 const MADT_ITS_LENGTH: usize = 20;
-const IORT_NODE_COUNT: usize = 36;
-const IORT_NODE_OFFSET: usize = 40;
-const IORT_ITS_GROUP: u8 = 0;
-const IORT_SMMU: u8 = 3;
-const IORT_ROOT_COMPLEX: u8 = 2;
-const IORT_SMMU_V3: u8 = 4;
-const IORT_RC_SEGMENT: usize = 28;
-const IORT_ID_MAPPING_SINGLE: u32 = 1;
 
-const UNPROBED: u64 = 0;
-const PROBING: u64 = 1;
-const ABSENT: u64 = u64::MAX;
-/// Physical base of the ITS, or UNPROBED / PROBING / ABSENT.
-static ITS_PA: AtomicU64 = AtomicU64::new(UNPROBED);
-static ITS: AtomicUsize = AtomicUsize::new(0);
-static ITT_ENTRY_SIZE: AtomicU32 = AtomicU32::new(0);
-static DEVICE_BITS: AtomicU32 = AtomicU32::new(0);
-/// DeviceIDs the flat device table covers.
-static DEVICE_LIMIT: AtomicU32 = AtomicU32::new(0);
-static EVENT_BITS: AtomicU32 = AtomicU32::new(0);
+const UNPROBED: u32 = 0;
+const PROBING: u32 = 1;
+const READY: u32 = 2;
+const ABSENT: u32 = 3;
+static STATE: AtomicU32 = AtomicU32::new(UNPROBED);
+
+/// One ITS, as brought up.
+#[derive(Clone, Copy)]
+struct Its {
+    /// The MADT's GIC ITS ID, which the IORT names it by.
+    id: u32,
+    pa: u64,
+    va: usize,
+    queue: usize,
+    queue_next: usize,
+    itt_entry: u32,
+    event_bits: u32,
+    /// GITS_TYPER.PTA: collections target a redistributor by address, not number.
+    pta: bool,
+    /// The device table: flat, or level 1 of two with `table_page`-sized level 2 pages.
+    indirect: bool,
+    table: usize,
+    table_page: usize,
+    table_entry: usize,
+    /// DeviceIDs the device table covers.
+    device_limit: u32,
+}
+const NO_ITS: Its = Its {
+    id: 0,
+    pa: 0,
+    va: 0,
+    queue: 0,
+    queue_next: 0,
+    itt_entry: 0,
+    event_bits: 0,
+    pta: false,
+    indirect: false,
+    table: 0,
+    table_page: 0,
+    table_entry: 0,
+    device_limit: 0,
+};
+static mut ITSES: [Its; MAX_ITS] = [NO_ITS; MAX_ITS];
+static ITS_COUNT: AtomicUsize = AtomicUsize::new(0);
+
 static LPI_COUNT: AtomicU32 = AtomicU32::new(0);
 static LPI_NEXT: AtomicU32 = AtomicU32::new(0);
 static PROPERTIES: AtomicUsize = AtomicUsize::new(0);
-static QUEUE: AtomicUsize = AtomicUsize::new(0);
-static QUEUE_NEXT: AtomicUsize = AtomicUsize::new(0);
-/// GITS_TYPER.PTA ? the boot CPU's redistributor address >> 16 : its processor number.
-static TARGET: AtomicU64 = AtomicU64::new(0);
+/// The CPUs whose redistributors take LPIs, each with a collection on every ITS.
+static CPUS: AtomicU64 = AtomicU64::new(0);
+/// Which CPU each LPI was handed out for, chosen at allocation.
+static LPI_CPU: [AtomicU8; LPI_SLOTS as usize] = [const { AtomicU8::new(0) }; LPI_SLOTS as usize];
 /// One ITT page per device slot, allocated at bring-up: nothing under LOCK allocates.
 static ITTS: AtomicU64 = AtomicU64::new(0);
 
-/// The command queue, the device list and the LPI bindings, under one lock taken at
+/// The command queues, the device list and the LPI bindings, under one lock taken at
 /// DISPATCH_LEVEL: every caller is PnP or KeConnectInterrupt, never an ISR.
 static LOCK: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Clone, Copy)]
 struct Device {
+    its: u8,
     id: u32,
     events: u32,
 }
-static mut DEVICES: [Device; MAX_DEVICES] = [Device { id: NO_REQUESTER, events: 0 }; MAX_DEVICES];
-/// For each LPI: (DeviceID, EventID), or DeviceID NO_REQUESTER while unbound.
-static mut BINDINGS: [(u32, u32); LPI_SLOTS as usize] = [(NO_REQUESTER, 0); LPI_SLOTS as usize];
+static mut DEVICES: [Device; MAX_DEVICES] = [Device { its: 0, id: NO_REQUESTER, events: 0 }; MAX_DEVICES];
+
+/// What an LPI is bound to: (ITS index, DeviceID, EventID); DeviceID NO_REQUESTER while
+/// unbound.
+#[derive(Clone, Copy)]
+struct Binding {
+    its: u8,
+    device: u32,
+    event: u32,
+}
+static mut BINDINGS: [Binding; LPI_SLOTS as usize] = [Binding { its: 0, device: NO_REQUESTER, event: 0 }; LPI_SLOTS as usize];
 
 struct Locked(ddk::KIRQL);
 impl Locked {
@@ -163,6 +212,10 @@ unsafe fn wr64(a: usize, v: u64) {
     core::ptr::write_volatile(a as *mut u64, v)
 }
 
+unsafe fn its(index: usize) -> &'static mut Its {
+    &mut (*(&raw mut ITSES))[index]
+}
+
 /// Zeroed, physically contiguous, non-cached memory aligned to `align`, which the
 /// contiguous allocator does not promise beyond a page: ask for enough to align
 /// within. Never freed, like everything the ITS is handed.
@@ -189,22 +242,20 @@ unsafe fn table(bytes: usize, align: usize) -> Option<(usize, u64)> {
     Some((va, pa + skip))
 }
 
-/// Queue one command and wait for the ITS to consume it.
-unsafe fn command(c: [u64; 4]) -> bool {
-    let its = ITS.load(Ordering::Relaxed);
-    let queue = QUEUE.load(Ordering::Relaxed);
-    let at = QUEUE_NEXT.load(Ordering::Relaxed);
-    for (i, word) in c.iter().enumerate() {
-        wr64(queue + at + i * 8, *word);
+/// Queue one command on an ITS and wait for it to be consumed.
+unsafe fn command(i: &mut Its, c: [u64; 4]) -> bool {
+    let at = i.queue_next;
+    for (n, word) in c.iter().enumerate() {
+        wr64(i.queue + at + n * 8, *word);
     }
     let next = (at + COMMAND_SIZE) % COMMAND_QUEUE;
-    QUEUE_NEXT.store(next, Ordering::Relaxed);
+    i.queue_next = next;
     dsb();
-    wr64(its + GITS_CWRITER, next as u64);
+    wr64(i.va + GITS_CWRITER, next as u64);
     for _ in 0..1_000_000 {
-        let creadr = rd64(its + GITS_CREADR);
+        let creadr = rd64(i.va + GITS_CREADR);
         if creadr & GITS_CREADR_STALLED != 0 {
-            DbgPrint(b"[HAL] GICv3 ITS: command %llx STALLED - the ITS rejected it\n\0".as_ptr(), c[0]);
+            DbgPrint(b"[HAL] GICv3 ITS %u: command %llx STALLED - the ITS rejected it\n\0".as_ptr(), i.id, c[0]);
             return false;
         }
         if creadr as usize & !(COMMAND_SIZE - 1) == next {
@@ -212,31 +263,42 @@ unsafe fn command(c: [u64; 4]) -> bool {
         }
         core::hint::spin_loop();
     }
-    DbgPrint(b"[HAL] GICv3 ITS: command %llx never consumed\n\0".as_ptr(), c[0]);
+    DbgPrint(b"[HAL] GICv3 ITS %u: command %llx never consumed\n\0".as_ptr(), i.id, c[0]);
     false
 }
 
-fn sync_command() -> [u64; 4] {
-    [0x05, 0, TARGET.load(Ordering::Relaxed) << 16, 0]
+/// How an ITS names a CPU's redistributor in MAPC and SYNC: its address >> 16 or its
+/// processor number, per GITS_TYPER.PTA.
+fn target(i: &Its, cpu: u32) -> u64 {
+    match gic3::frame_target(cpu) {
+        Some((pa, number)) => if i.pta { pa >> 16 } else { number as u64 },
+        None => 0,
+    }
 }
 
-/// Map ICID 0 to the boot CPU's redistributor.
-unsafe fn map_collection() -> bool {
-    let target = TARGET.load(Ordering::Relaxed);
-    command([0x09, 0, (1 << 63) | (target << 16), 0]) && command(sync_command())
+unsafe fn sync(i: &mut Its, cpu: u32) -> bool {
+    let t = target(i, cpu);
+    command(i, [0x05, 0, t << 16, 0])
 }
 
-/// Point the boot CPU's redistributor at the LPI property and pending tables and turn
-/// LPIs on. Once on they cannot be turned off again, and while on the tables cannot
-/// move, which is why firmware that left them on is refused rather than reused.
-unsafe fn enable_lpis(properties_pa: u64, pending_pa: u64) -> bool {
-    let Some(rd) = gic3::frame(0) else {
+/// Point a CPU's redistributor at the LPI property table and a pending table of its
+/// own, and turn LPIs on. Once on they cannot be turned off again, and while on the
+/// tables cannot move, which is why a redistributor firmware left on is passed over
+/// rather than reused.
+unsafe fn enable_lpis(cpu: u32, properties_pa: u64) -> bool {
+    let (Some(rd), Some(typer)) = (gic3::frame(cpu), gic3::redistributor_typer(cpu)) else {
         return false;
     };
-    if rd32(rd + gic3::GICR_CTLR) & GICR_CTLR_ENABLE_LPIS != 0 {
-        DbgPrint(b"[HAL] GICv3 ITS: firmware left LPIs on with its own tables - no MSIs\n\0".as_ptr());
+    if typer & GICR_TYPER_PLPIS == 0 {
         return false;
     }
+    if rd32(rd + gic3::GICR_CTLR) & GICR_CTLR_ENABLE_LPIS != 0 {
+        DbgPrint(b"[HAL] GICv3 ITS: CPU%u's redistributor has LPIs on with firmware's tables - no MSIs there\n\0".as_ptr(), cpu);
+        return false;
+    }
+    let Some((_, pending_pa)) = table((1usize << LPI_ID_BITS) / 8, 0x1_0000) else {
+        return false;
+    };
     wr64(rd + gic3::GICR_PROPBASER, properties_pa | GICR_CACHE_NONCACHEABLE | (LPI_ID_BITS as u64 - 1));
     wr64(rd + gic3::GICR_PENDBASER, pending_pa | GICR_CACHE_NONCACHEABLE | GICR_PENDBASER_PTZ);
     dsb();
@@ -245,11 +307,16 @@ unsafe fn enable_lpis(properties_pa: u64, pending_pa: u64) -> bool {
     true
 }
 
-/// Give the ITS memory for each table it asks for: devices (one entry per DeviceID,
-/// flat) and collections. vPE tables are left unset, since we do not virtualize.
-unsafe fn provision_tables(its: usize) -> bool {
+/// Give the ITS memory for each table it asks for: devices and collections. vPE tables
+/// are left unset, since we do not virtualize.
+///
+/// The device table is two-level when the ITS can do that and one page would not hold
+/// every DeviceID: level 1 is an array of pointers to level-2 pages, filled in as
+/// devices appear (prepare_device). Flat, all of a large DeviceID space costs
+/// megabytes of contiguous memory up front; QEMU's 16 bits alone are 512 KiB.
+unsafe fn provision_tables(i: &mut Its, device_bits: u32) -> bool {
     for n in 0..8 {
-        let reg = its + GITS_BASER + n * 8;
+        let reg = i.va + GITS_BASER + n * 8;
         let baser = rd64(reg);
         let kind = (baser >> 56) & 7;
         if kind != BASER_TYPE_DEVICES && kind != BASER_TYPE_COLLECTIONS {
@@ -263,60 +330,60 @@ unsafe fn provision_tables(its: usize) -> bool {
             1 => 0x4000,
             _ => 0x1_0000,
         };
-        let entries = if kind == BASER_TYPE_DEVICES { 1usize << DEVICE_BITS.load(Ordering::Relaxed) } else { 1 };
-        let pages = (entries * entry).div_ceil(page).clamp(1, 256);
-        let Some((_, pa)) = table(pages * page, page) else {
-            return false;
-        };
         let size_code = match page {
             0x1000 => 0u64,
             0x4000 => 1,
             _ => 2,
         };
-        wr64(reg, BASER_VALID | CACHE_NONCACHEABLE | (baser & (7 << 56)) | (baser & (0x1F << 48)) | pa | (size_code << 8) | (pages as u64 - 1));
+        let wanted = if kind == BASER_TYPE_DEVICES { 1usize << device_bits } else { MAX_CPUS as usize };
+        let per_page = page / entry;
+        let mut indirect = false;
+        if kind == BASER_TYPE_DEVICES && wanted > per_page {
+            wr64(reg, (baser & !(3 << 8)) | (size_code << 8) | BASER_INDIRECT);
+            indirect = rd64(reg) & BASER_INDIRECT != 0;
+        }
+        let bytes = if indirect { wanted.div_ceil(per_page) * 8 } else { wanted * entry };
+        let pages = bytes.div_ceil(page).clamp(1, 256);
+        let Some((va, pa)) = table(pages * page, page) else {
+            return false;
+        };
+        wr64(
+            reg,
+            BASER_VALID
+                | if indirect { BASER_INDIRECT } else { 0 }
+                | CACHE_NONCACHEABLE
+                | (baser & (7 << 56))
+                | (baser & (0x1F << 48))
+                | pa
+                | (size_code << 8)
+                | (pages as u64 - 1),
+        );
         if rd64(reg) & BASER_VALID == 0 {
-            DbgPrint(b"[HAL] GICv3 ITS: GITS_BASER%u refused its table\n\0".as_ptr(), n as u32);
+            DbgPrint(b"[HAL] GICv3 ITS %u: GITS_BASER%u refused its table\n\0".as_ptr(), i.id, n as u32);
             return false;
         }
         if kind == BASER_TYPE_DEVICES {
-            DEVICE_LIMIT.store(((pages * page) / entry).min(u32::MAX as usize) as u32, Ordering::Relaxed);
+            let covered = if indirect { pages * page / 8 * per_page } else { pages * page / entry };
+            i.indirect = indirect;
+            i.table = va;
+            i.table_page = page;
+            i.table_entry = entry;
+            i.device_limit = covered.min(wanted).min(u32::MAX as usize) as u32;
         }
     }
-    DEVICE_LIMIT.load(Ordering::Relaxed) != 0
+    i.device_limit != 0
 }
 
-/// Find the ITS once and bring it up. Runs at PnP time, so MmMapIoSpace is up and the
-/// boot CPU's redistributor has been found.
-unsafe fn probe() -> Option<u64> {
-    match ITS_PA.load(Ordering::Acquire) {
-        ABSENT => return None,
-        UNPROBED => {}
-        pa => return Some(pa),
-    }
-    // Bring-up allocates and maps, so it cannot run under LOCK; the first caller claims
-    // it and anyone else waits for the answer.
-    if ITS_PA.compare_exchange(UNPROBED, PROBING, Ordering::AcqRel, Ordering::Acquire).is_err() {
-        loop {
-            match ITS_PA.load(Ordering::Acquire) {
-                PROBING => core::hint::spin_loop(),
-                ABSENT => return None,
-                pa => return Some(pa),
-            }
-        }
-    }
-    let found = bring_up();
-    ITS_PA.store(found.unwrap_or(ABSENT), Ordering::Release);
-    found
-}
-
-unsafe fn madt_its() -> Option<u64> {
-    let mut base = None;
+/// Every ITS the MADT lists: (GIC ITS ID, physical base).
+unsafe fn madt_itses() -> ([(u32, u64); MAX_ITS], usize) {
+    let mut found = [(0u32, 0u64); MAX_ITS];
+    let mut count = 0;
     let xsdt = XSDT_PA.load(Ordering::Relaxed);
     if xsdt == 0 {
-        return None;
+        return (found, 0);
     }
     for_each_table(xsdt, |sig, t, len| {
-        if sig != b"APIC" || base.is_some() {
+        if sig != b"APIC" || count != 0 {
             return;
         }
         let mut off = MADT_RECORDS;
@@ -326,185 +393,256 @@ unsafe fn madt_its() -> Option<u64> {
             if rl < 2 || off + rl > len {
                 break;
             }
-            if ty == MADT_TYPE_GIC_ITS && rl >= MADT_ITS_LENGTH {
-                base = Some(rd::<u64>(t, off + MADT_ITS_BASE));
-                break;
+            if ty == MADT_TYPE_GIC_ITS && rl >= MADT_ITS_LENGTH && count < MAX_ITS {
+                found[count] = (rd::<u32>(t, off + MADT_ITS_ID), rd::<u64>(t, off + MADT_ITS_BASE));
+                count += 1;
             }
             off += rl;
         }
     });
-    base
+    (found, count)
 }
 
-unsafe fn bring_up() -> Option<u64> {
-    if !gic3::present() || !gic3::live() {
-        return None;
-    }
-    let pa = madt_its()?;
+/// Bring one ITS up: quiesce it, give it a command queue and its tables, enable it,
+/// and map a collection for every CPU that takes LPIs.
+unsafe fn bring_up_its(id: u32, pa: u64, cpus: u64) -> Option<Its> {
     let mut phys: ddk::PHYSICAL_ADDRESS = core::mem::zeroed();
     phys.QuadPart = pa as i64;
-    let its = ddk::MmMapIoSpace(phys, 0x1_0000, ddk::_MEMORY_CACHING_TYPE_MmNonCached) as usize;
-    if its == 0 {
+    let va = ddk::MmMapIoSpace(phys, 0x1_0000, ddk::_MEMORY_CACHING_TYPE_MmNonCached) as usize;
+    if va == 0 {
         return None;
     }
-    let typer = rd64(its + GITS_TYPER);
     // GITS_TYPER: Physical (bit 0), ITT_entry_size (7:4), ID_bits (12:8), Devbits
     // (17:13), PTA (19).
+    let typer = rd64(va + GITS_TYPER);
     if typer & 1 == 0 {
-        DbgPrint(b"[HAL] GICv3 ITS at %p does not do physical LPIs\n\0".as_ptr(), pa as ddk::PVOID);
+        DbgPrint(b"[HAL] GICv3 ITS %u at %p does not do physical LPIs\n\0".as_ptr(), id, pa as ddk::PVOID);
         return None;
     }
-    ITT_ENTRY_SIZE.store((((typer >> 4) & 0xF) + 1) as u32, Ordering::Relaxed);
-    EVENT_BITS.store((((typer >> 8) & 0x1F) + 1) as u32, Ordering::Relaxed);
-    DEVICE_BITS.store(((((typer >> 13) & 0x1F) + 1) as u32).min(20), Ordering::Relaxed);
-    let Some((rd_pa, processor)) = gic3::frame_target(0) else {
-        return None;
+    let mut i = Its {
+        id,
+        pa,
+        va,
+        itt_entry: (((typer >> 4) & 0xF) + 1) as u32,
+        event_bits: (((typer >> 8) & 0x1F) + 1) as u32,
+        pta: typer & (1 << 19) != 0,
+        ..NO_ITS
     };
-    TARGET.store(if typer & (1 << 19) != 0 { rd_pa >> 16 } else { processor as u64 }, Ordering::Relaxed);
+    let device_bits = ((((typer >> 13) & 0x1F) + 1) as u32).min(24);
 
     // Firmware may have left it on; it has to be off (and quiet) to be reprogrammed.
-    if rd32(its + GITS_CTLR) & GITS_CTLR_ENABLED != 0 {
-        wr32(its + GITS_CTLR, rd32(its + GITS_CTLR) & !GITS_CTLR_ENABLED);
+    if rd32(va + GITS_CTLR) & GITS_CTLR_ENABLED != 0 {
+        wr32(va + GITS_CTLR, rd32(va + GITS_CTLR) & !GITS_CTLR_ENABLED);
     }
-    let mut quiet = false;
-    for _ in 0..1_000_000 {
-        if rd32(its + GITS_CTLR) & GITS_CTLR_QUIESCENT != 0 {
-            quiet = true;
-            break;
-        }
-        core::hint::spin_loop();
-    }
-    if !quiet {
-        DbgPrint(b"[HAL] GICv3 ITS at %p never went quiescent\n\0".as_ptr(), pa as ddk::PVOID);
+    if !(0..1_000_000).any(|_| rd32(va + GITS_CTLR) & GITS_CTLR_QUIESCENT != 0) {
+        DbgPrint(b"[HAL] GICv3 ITS %u at %p never went quiescent\n\0".as_ptr(), id, pa as ddk::PVOID);
         return None;
     }
+    let (queue, queue_pa) = table(COMMAND_QUEUE, PAGE)?;
+    i.queue = queue;
+    wr64(va + GITS_CBASER, BASER_VALID | CACHE_NONCACHEABLE | queue_pa | (COMMAND_QUEUE / PAGE - 1) as u64);
+    wr64(va + GITS_CWRITER, 0);
+    if !provision_tables(&mut i, device_bits) {
+        return None;
+    }
+    dsb();
+    wr32(va + GITS_CTLR, rd32(va + GITS_CTLR) | GITS_CTLR_ENABLED);
+    // MAPC: ICID = processor number -> that CPU's redistributor, Valid.
+    let mut rest = cpus;
+    while rest != 0 {
+        let cpu = rest.trailing_zeros();
+        rest &= rest - 1;
+        let t = target(&i, cpu);
+        if !command(&mut i, [0x09, 0, (1 << 63) | (t << 16) | cpu as u64, 0]) || !sync(&mut i, cpu) {
+            return None;
+        }
+    }
+    DbgPrint(
+        b"[HAL] GICv3 ITS %u at %p: DeviceIDs below %u (%s table, %u-byte entries), %u-byte ITT entries\n\0".as_ptr(),
+        id,
+        pa as ddk::PVOID,
+        i.device_limit,
+        if i.indirect { b"two-level\0".as_ptr() } else { b"flat\0".as_ptr() },
+        i.table_entry as u32,
+        i.itt_entry,
+    );
+    Some(i)
+}
 
+unsafe fn bring_up() -> bool {
+    if !gic3::present() || !gic3::live() {
+        return false;
+    }
+    let (found, count) = madt_itses();
+    if count == 0 {
+        return false;
+    }
     // LPI tables: the GIC must implement LPIs and enough INTID bits for ours.
     let id_bits = gic3::id_bits();
     if id_bits < LPI_ID_BITS {
         DbgPrint(b"[HAL] GICv3 implements %u INTID bits, too few for LPIs\n\0".as_ptr(), id_bits);
-        return None;
+        return false;
     }
     let total = 1usize << LPI_ID_BITS;
-    let (properties, properties_pa) = table(total - LPI_BASE as usize, PAGE)?;
-    let (_, pending_pa) = table(total / 8, 0x1_0000)?;
+    let Some((properties, properties_pa)) = table(total - LPI_BASE as usize, PAGE) else {
+        return false;
+    };
     let disabled = (super::clock::gic_priority(super::clock::DEVICE_IRQL) & 0xFC) | LPI_PROP_RES1;
     core::ptr::write_bytes(properties as *mut u8, disabled, total - LPI_BASE as usize);
     PROPERTIES.store(properties, Ordering::Relaxed);
 
-    let (_, itts) = table(MAX_DEVICES * PAGE, PAGE)?;
+    // Every CPU that is up and whose redistributor will take them. The boot CPU must
+    // be one: an LPI routed nowhere is a lost interrupt.
+    let mut cpus = 0u64;
+    let mut rest = gic3::cpus();
+    while rest != 0 {
+        let cpu = rest.trailing_zeros();
+        rest &= rest - 1;
+        if enable_lpis(cpu, properties_pa) {
+            cpus |= 1 << cpu;
+        }
+    }
+    if cpus & 1 == 0 {
+        DbgPrint(b"[HAL] GICv3 ITS: the boot CPU takes no LPIs - no MSIs\n\0".as_ptr());
+        return false;
+    }
+    CPUS.store(cpus, Ordering::Relaxed);
+    let Some((_, itts)) = table(MAX_DEVICES * PAGE, PAGE) else {
+        return false;
+    };
     ITTS.store(itts, Ordering::Relaxed);
-    let (queue, queue_pa) = table(COMMAND_QUEUE, PAGE)?;
-    QUEUE.store(queue, Ordering::Relaxed);
-    QUEUE_NEXT.store(0, Ordering::Relaxed);
-    wr64(its + GITS_CBASER, BASER_VALID | CACHE_NONCACHEABLE | queue_pa | (COMMAND_QUEUE / PAGE - 1) as u64);
-    wr64(its + GITS_CWRITER, 0);
-    if !provision_tables(its) {
-        return None;
+
+    let mut up = 0;
+    for &(id, pa) in &found[..count] {
+        if let Some(i) = bring_up_its(id, pa, cpus) {
+            *its(up) = i;
+            up += 1;
+        }
     }
-    ITS.store(its, Ordering::Relaxed);
-    dsb();
-    wr32(its + GITS_CTLR, rd32(its + GITS_CTLR) | GITS_CTLR_ENABLED);
-    if !enable_lpis(properties_pa, pending_pa) || !map_collection() {
-        return None;
+    if up == 0 {
+        return false;
     }
+    ITS_COUNT.store(up, Ordering::Release);
     LPI_COUNT.store(LPI_SLOTS.min((total - LPI_BASE as usize) as u32), Ordering::Relaxed);
     DbgPrint(
-        b"[HAL] GICv3 ITS at %p: LPIs %u-%u, DeviceIDs below %u, %u-byte ITT entries\n\0".as_ptr(),
-        pa as ddk::PVOID,
+        b"[HAL] GICv3 ITS: %u of %u up, LPIs %u-%u spread over CPUs %llx\n\0".as_ptr(),
+        up as u32,
+        count as u32,
         LPI_BASE,
         LPI_BASE + LPI_COUNT.load(Ordering::Relaxed) - 1,
-        DEVICE_LIMIT.load(Ordering::Relaxed),
-        ITT_ENTRY_SIZE.load(Ordering::Relaxed),
+        cpus,
     );
-    Some(pa)
+    true
 }
 
-/// The DeviceID the ITS sees for a PCI requester ID on segment 0, from the IORT: the
-/// root complex's ID mapping, followed through an SMMU if it sits in between. With no
-/// IORT at all the requester ID is the DeviceID, which is what QEMU does anyway.
-unsafe fn device_id(requester: u32) -> Option<u32> {
+/// Bring the ITSes up once. Runs at PnP time, so MmMapIoSpace is up and every CPU's
+/// redistributor has been found. Bring-up allocates and maps, so it cannot run under
+/// LOCK; the first caller claims it and anyone else waits for the answer.
+unsafe fn probe() -> bool {
+    if STATE.compare_exchange(UNPROBED, PROBING, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+        let ok = bring_up();
+        STATE.store(if ok { READY } else { ABSENT }, Ordering::Release);
+        return ok;
+    }
+    loop {
+        match STATE.load(Ordering::Acquire) {
+            PROBING => core::hint::spin_loop(),
+            s => return s == READY,
+        }
+    }
+}
+
+/// Where a requester's MSIs go: (ITS index, DeviceID). The IORT says; with no IORT at
+/// all the requester ID is the DeviceID at the first ITS, which is what QEMU does.
+unsafe fn route(requester: u32) -> Option<(usize, u32)> {
     let xsdt = XSDT_PA.load(Ordering::Relaxed);
-    let mut result: Option<Option<u32>> = None;
+    let mut answer: Option<Result<iort::Route, iort::Error>> = None;
     if xsdt != 0 {
         for_each_table(xsdt, |sig, t, len| {
-            if sig != b"IORT" || result.is_some() {
+            if sig != b"IORT" || answer.is_some() {
                 return;
             }
-            result = Some(iort_translate(t, len, requester));
+            let bytes = core::slice::from_raw_parts(t, len);
+            answer = Some(iort::table(bytes).ok_or(iort::Error::Malformed).and_then(|t| iort::translate(t, SEGMENT, requester)));
         });
     }
-    result.unwrap_or(Some(requester))
-}
-
-/// Follow `id` from the root complex of segment 0 to an ITS group.
-unsafe fn iort_translate(t: *const u8, len: usize, requester: u32) -> Option<u32> {
-    let count = rd::<u32>(t, IORT_NODE_COUNT) as usize;
-    let mut node = rd::<u32>(t, IORT_NODE_OFFSET) as usize;
-    let mut rc = None;
-    for _ in 0..count {
-        if node + 16 > len {
+    let (its_id, device) = match answer {
+        None => (its(0).id, requester),
+        Some(Ok(r)) => (r.its, r.device_id),
+        Some(Err(e)) => {
+            report_route_error(requester, e);
             return None;
         }
-        if rd::<u8>(t, node) == IORT_ROOT_COMPLEX && node + IORT_RC_SEGMENT + 4 <= len && rd::<u32>(t, node + IORT_RC_SEGMENT) == 0 {
-            rc = Some(node);
-            break;
-        }
-        node += rd::<u16>(t, node + 1) as usize;
+    };
+    let index = (0..ITS_COUNT.load(Ordering::Acquire)).find(|&n| its(n).id == its_id);
+    if index.is_none() {
+        DbgPrint(b"[HAL] GICv3 ITS: requester %04x routes to ITS %u, which is not up\n\0".as_ptr(), requester, its_id);
     }
-    let (mut node, mut id) = (rc?, requester);
-    for _ in 0..4 {
-        let mappings = rd::<u32>(t, node + 8) as usize;
-        let first = node + rd::<u32>(t, node + 12) as usize;
-        let mut next = None;
-        for m in 0..mappings {
-            let e = first + m * 20;
-            if e + 20 > len {
-                return None;
-            }
-            let (input, ids, output, reference, flags) =
-                (rd::<u32>(t, e), rd::<u32>(t, e + 4), rd::<u32>(t, e + 8), rd::<u32>(t, e + 12), rd::<u32>(t, e + 16));
-            // A single mapping is the node's own MSI, not a translation of its input.
-            if flags & IORT_ID_MAPPING_SINGLE == 0 && id >= input && id - input <= ids {
-                next = Some((reference as usize, output + (id - input)));
-                break;
-            }
-        }
-        let (reference, out) = next?;
-        if reference + 16 > len {
-            return None;
-        }
-        match rd::<u8>(t, reference) {
-            IORT_ITS_GROUP => return Some(out),
-            IORT_SMMU | IORT_SMMU_V3 => (node, id) = (reference, out),
-            _ => return None,
-        }
-    }
-    None
+    Some((index?, device))
 }
 
-/// MAPD a new device with an ITT for EVENTS_PER_DEVICE events.
-unsafe fn map_device(id: u32) -> Option<usize> {
+unsafe fn report_route_error(requester: u32, e: iort::Error) {
+    match e {
+        iort::Error::Malformed => DbgPrint(b"[HAL] IORT: malformed - no MSI route for requester %04x\n\0".as_ptr(), requester),
+        iort::Error::NoRootComplex(s) => DbgPrint(b"[HAL] IORT: no root complex for segment %u\n\0".as_ptr(), s),
+        iort::Error::NoMapping { node, id } => {
+            DbgPrint(b"[HAL] IORT: node at %x maps no ID %x (requester %04x)\n\0".as_ptr(), node, id, requester)
+        }
+        iort::Error::Unsupported(kind) => DbgPrint(b"[HAL] IORT: requester %04x's path reaches a type %u node\n\0".as_ptr(), requester, kind as u32),
+        iort::Error::TooDeep => DbgPrint(b"[HAL] IORT: requester %04x's path never reaches an ITS\n\0".as_ptr(), requester),
+    };
+}
+
+/// Make sure a two-level device table has the level-2 page that holds `device`. Runs
+/// before LOCK is taken, because it may allocate; a page two callers both allocate is
+/// installed once and the other is simply never used.
+unsafe fn prepare_device(index: usize, device: u32) -> bool {
+    let i = its(index);
+    if !i.indirect {
+        return true;
+    }
+    let per_page = i.table_page / i.table_entry;
+    let slot = (i.table + (device as usize / per_page) * 8) as *mut u64;
+    if core::ptr::read_volatile(slot) & L1_VALID != 0 {
+        return true;
+    }
+    let Some((_, pa)) = table(i.table_page, i.table_page) else {
+        return false;
+    };
+    let _guard = Locked::take();
+    if core::ptr::read_volatile(slot) & L1_VALID == 0 {
+        core::ptr::write_volatile(slot, L1_VALID | pa);
+        dsb();
+    }
+    true
+}
+
+/// MAPD a device with an ITT for events_per_device() events, or find it mapped.
+unsafe fn map_device(index: usize, id: u32) -> Option<usize> {
     let devices = &raw mut DEVICES;
-    let slot = (0..MAX_DEVICES).find(|&i| (*devices)[i].id == id || (*devices)[i].id == NO_REQUESTER)?;
+    let slot = (0..MAX_DEVICES).find(|&n| {
+        let d = (*devices)[n];
+        (d.its as usize == index && d.id == id) || d.id == NO_REQUESTER
+    })?;
     if (*devices)[slot].id == id {
         return Some(slot);
     }
-    let events = events_per_device();
+    let i = its(index);
+    let events = events_per_device(i);
     let itt = ITTS.load(Ordering::Relaxed) + (slot * PAGE) as u64;
     // MAPD: DeviceID, Size (event ID bits - 1), ITT address, Valid.
     let size = events.trailing_zeros().max(1) - 1;
-    if !command([0x08 | ((id as u64) << 32), size as u64, (1 << 63) | itt, 0]) {
+    if !command(i, [0x08 | ((id as u64) << 32), size as u64, (1 << 63) | itt, 0]) {
         return None;
     }
-    (*devices)[slot] = Device { id, events: 0 };
+    (*devices)[slot] = Device { its: index as u8, id, events: 0 };
     Some(slot)
 }
 
 /// Events one device gets: what its ITT page holds, within what the ITS can name.
-fn events_per_device() -> u32 {
-    let fit = PAGE as u32 / ITT_ENTRY_SIZE.load(Ordering::Relaxed).max(1);
-    EVENTS_PER_DEVICE.min(1 << EVENT_BITS.load(Ordering::Relaxed)).min(1 << (31 - fit.leading_zeros()))
+fn events_per_device(i: &Its) -> u32 {
+    let fit = PAGE as u32 / i.itt_entry.max(1);
+    EVENTS_PER_DEVICE.min(1 << i.event_bits.min(31)).min(1 << (31 - fit.leading_zeros()))
 }
 
 /// Did this INTID come from the ITS? Those are LPIs we handed out.
@@ -513,60 +651,90 @@ pub(crate) fn owns(intid: u32) -> bool {
 }
 
 pub(crate) unsafe fn message_capacity() -> u32 {
-    if probe().is_none() {
+    if !probe() {
         return 0;
     }
     LPI_COUNT.load(Ordering::Relaxed).saturating_sub(LPI_NEXT.load(Ordering::Relaxed))
 }
 
+/// The next LPI, on the next CPU in turn.
 pub(crate) unsafe fn allocate_message_vector() -> Option<(u32, ddk::KIRQL, ddk::KAFFINITY)> {
-    probe()?;
+    if !probe() {
+        return None;
+    }
     let count = LPI_COUNT.load(Ordering::Relaxed);
     let n = LPI_NEXT
         .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| (n < count).then_some(n + 1))
         .ok()?;
-    Some((LPI_BASE + n, super::clock::DEVICE_IRQL, 1))
+    let cpus = CPUS.load(Ordering::Relaxed);
+    let mut pick = n % cpus.count_ones();
+    let mut rest = cpus;
+    while pick > 0 {
+        rest &= rest - 1;
+        pick -= 1;
+    }
+    let cpu = rest.trailing_zeros();
+    LPI_CPU[n as usize].store(cpu as u8, Ordering::Relaxed);
+    Some((LPI_BASE + n, super::clock::DEVICE_IRQL, 1 << cpu))
 }
 
 /// The address/data pair that raises `lpi`. The first ask, from pci.sys, names the
-/// requester and binds the LPI to one of that device's events; later asks (the I/O
-/// manager filling in a driver's message table) get the same pair back.
+/// requester and binds the LPI to one of that device's events on the ITS its writes
+/// reach; later asks (the I/O manager filling in a driver's message table) get the
+/// same pair back.
 pub(crate) unsafe fn message_target(lpi: u32, requester: u32) -> Option<(u64, u32)> {
-    let pa = probe()?;
-    if !owns(lpi) {
+    if !probe() || !owns(lpi) {
         return None;
     }
-    let translater = pa + GITS_TRANSLATER;
-    let _guard = Locked::take();
-    let bindings = &raw mut BINDINGS;
-    let binding = &mut (*bindings)[(lpi - LPI_BASE) as usize];
-    if binding.0 != NO_REQUESTER {
-        return Some((translater, binding.1));
+    let n = (lpi - LPI_BASE) as usize;
+    {
+        let _guard = Locked::take();
+        let b = (*(&raw const BINDINGS))[n];
+        if b.device != NO_REQUESTER {
+            return Some((its(b.its as usize).pa + GITS_TRANSLATER, b.event));
+        }
     }
     if requester == NO_REQUESTER {
         return None;
     }
-    let Some(id) = device_id(requester) else {
-        DbgPrint(b"[HAL] GICv3 ITS: the IORT maps no DeviceID for requester %04x\n\0".as_ptr(), requester);
-        return None;
-    };
-    if id >= DEVICE_LIMIT.load(Ordering::Relaxed) {
-        DbgPrint(b"[HAL] GICv3 ITS: DeviceID %x is past the device table\n\0".as_ptr(), id);
+    let (index, device) = route(requester)?;
+    if device >= its(index).device_limit {
+        DbgPrint(b"[HAL] GICv3 ITS %u: DeviceID %x is past its device table\n\0".as_ptr(), its(index).id, device);
         return None;
     }
-    let slot = map_device(id)?;
+    if !prepare_device(index, device) {
+        return None;
+    }
+    let _guard = Locked::take();
+    let bindings = &raw mut BINDINGS;
+    if (*bindings)[n].device != NO_REQUESTER {
+        let b = (*bindings)[n];
+        return Some((its(b.its as usize).pa + GITS_TRANSLATER, b.event));
+    }
+    let slot = map_device(index, device)?;
     let devices = &raw mut DEVICES;
+    let i = its(index);
     let event = (*devices)[slot].events;
-    if event >= events_per_device() {
+    if event >= events_per_device(i) {
         return None;
     }
-    // MAPTI: DeviceID, EventID -> pINTID, ICID 0.
-    if !command([0x0A | ((id as u64) << 32), event as u64 | ((lpi as u64) << 32), 0, 0]) || !command(sync_command()) {
+    // MAPTI: DeviceID, EventID -> pINTID, ICID (the CPU it was handed out for).
+    let cpu = LPI_CPU[n].load(Ordering::Relaxed) as u32;
+    if !command(i, [0x0A | ((device as u64) << 32), event as u64 | ((lpi as u64) << 32), cpu as u64, 0]) || !sync(i, cpu) {
         return None;
     }
     (*devices)[slot].events = event + 1;
-    *binding = (id, event);
-    Some((translater, event))
+    (*bindings)[n] = Binding { its: index as u8, device, event };
+    DbgPrint(
+        b"[HAL] GICv3 ITS %u: requester %04x (DeviceID %x) event %u -> LPI %u on CPU%u\n\0".as_ptr(),
+        i.id,
+        requester,
+        device,
+        event,
+        lpi,
+        cpu,
+    );
+    Some((i.pa + GITS_TRANSLATER, event))
 }
 
 /// Write an LPI's property byte and make the redistributor drop its cached copy.
@@ -575,15 +743,17 @@ unsafe fn set_property(lpi: u32, value: u8) -> bool {
     if properties == 0 || !owns(lpi) {
         return false;
     }
+    let n = (lpi - LPI_BASE) as usize;
     let _guard = Locked::take();
-    core::ptr::write_volatile((properties + (lpi - LPI_BASE) as usize) as *mut u8, value);
+    core::ptr::write_volatile((properties + n) as *mut u8, value);
     dsb();
-    let (id, event) = (*(&raw const BINDINGS))[(lpi - LPI_BASE) as usize];
-    if id == NO_REQUESTER {
+    let b = (*(&raw const BINDINGS))[n];
+    if b.device == NO_REQUESTER {
         // Never bound to a device, so nothing can raise it; INV needs a device.
         return true;
     }
-    command([0x0C | ((id as u64) << 32), event as u64, 0, 0]) && command(sync_command())
+    let i = its(b.its as usize);
+    command(i, [0x0C | ((b.device as u64) << 32), b.event as u64, 0, 0]) && sync(i, LPI_CPU[n].load(Ordering::Relaxed) as u32)
 }
 
 /// HalEnableSystemInterrupt for an LPI: its priority from the IRQL, and enable.

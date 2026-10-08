@@ -17,10 +17,14 @@
 > - **PCIe interrupts:** Nitro devices expect MSI-X, which on arm64 is the GICv3 ITS:
 >   done in QEMU (2026-10-07). The arm64 HAL drives a GICv3 (system-register CPU
 >   interface, redistributors, IPIs by `ICC_SGI1R_EL1`) and an ITS (LPIs, DeviceID from
->   the IORT, through an SMMU if one sits in between); `smoke --arch arm64 --gic 3 --nvme
->   --smp 4` runs nvme.sys on ITS-translated MSI-X. Unmeasured on Graviton: its IORT
->   (segments, SMMU), more than one ITS (we use the first), and whether firmware leaves
->   LPIs enabled (we then refuse, and nvme.sys falls back to INTx).
+>   the IORT, through an SMMU if one sits in between; every ITS the MADT lists; messages
+>   spread over the CPUs); `smoke --arch arm64 --gic 3 --nvme --smp 4 --smmu` runs
+>   nvme.sys on ITS-translated MSI-X behind an SMMUv3. Any SMMU the IORT lists is put in
+>   bypass at boot, since no driver programs one. The boot log prints the IORT's shape
+>   and where each segment's requester 0 lands, so the first Graviton serial log answers
+>   the layout questions. Unmeasured there: PCI segments other than 0 (pci.sys and the
+>   ECAM read only segment 0), and whether firmware leaves LPIs on in a redistributor
+>   (that CPU is then passed over; if it is CPU0, nvme.sys falls back to INTx).
 > - **PCIe config space:** the arm64 HAL's ECAM reads bus 0 of one segment only;
 >   Graviton's layout is unmeasured.
 > - **Boot and console:** UEFI and ACPI, which arm64 vibeos already uses; the serial
