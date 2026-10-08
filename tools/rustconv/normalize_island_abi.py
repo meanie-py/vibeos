@@ -376,7 +376,33 @@ def main(argv: list[str]) -> int:
             print("\n".join(notes))
     verb = "normalized" if args.apply else "would normalize"
     print(f"\n{verb} {grand} callback slot(s)")
+    if args.apply:
+        widen_crates(repo, crates, args.stem)
     return 0
+
+
+def widen_crates(repo: pathlib.Path, crates: list[pathlib.Path], stem: str | None) -> None:
+    """bindgen drops the `L` of `#define X L"..."`: put the UTF-16 back (widen_island_constants).
+
+    It rides on this pass because this is the one post-step EVERY island generator already
+    runs; a fix applied by only some generators is one the next regeneration of any other
+    crate silently undoes (ntdll-sys, win32k-sys and six more had shipped narrow constants
+    after gen_driver_types.sh alone learned to widen).
+    """
+    import widen_island_constants as widen
+
+    wide = widen.wide_defines(repo)
+    for c in crates:
+        src = c / "src" if (c / "src").is_dir() else c
+        files = sorted(src.glob(f"{stem}_*.rs" if stem else "*bindgen_*.rs"))
+        for path in files:
+            text = path.read_text()
+            new, widened, refused = widen.widen(text, wide)
+            if new != text:
+                path.write_text(new)
+            if widened or refused:
+                note = f", refused: {', '.join(refused)}" if refused else ""
+                print(f"widened {len(widened)} L\"..\" constant(s) in {path.name}{note}")
 
 
 if __name__ == "__main__":

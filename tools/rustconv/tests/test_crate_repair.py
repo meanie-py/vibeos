@@ -2305,3 +2305,55 @@ def test_one_c_struct_under_two_rust_paths_is_a_pointer_cast():
         rules=[RULE_POINTER_CAST],
     )
     assert sorted(e.replacement for e in plan.edits) == ["(&raw mut Head).cast()", "(Srb0).cast()"]
+
+
+_ADDR_ISLAND = b"""\
+pub struct _DEVICE {
+    pub Addr: ADDR,
+}
+pub union _ADDR {
+    pub __bindgen_anon_1: _ADDR__bindgen_ty_1,
+    pub AsULONG: ULONG,
+}
+pub struct _ADDR__bindgen_ty_1 {
+    pub Lun: UCHAR,
+}
+pub type ADDR = _ADDR;
+"""
+
+
+def test_a_raw_pointer_autoref_through_an_island_deref_names_the_anonymous_member():
+    # atapi: `(*DevExt).Device.AtaScsiAddress.Lun` read Lun through the island's
+    # `impl Deref for _ATA_SCSI_ADDRESS` -- deny-by-default dangerous_implicit_autorefs.
+    from rustconv.crate_repair import harvest_field_types
+
+    src = b"pub unsafe fn f(d: *mut _DEVICE) -> u8 {\n    (*d).Addr.Lun\n}\n"
+    start = src.index(b"(*d)")
+    cut = src.index(b".Lun")
+    diag = _diag(
+        "implicit autoref creates a reference to the dereference of a raw pointer",
+        code="dangerous_implicit_autorefs",
+        spans=[_span("src/a.rs", start, cut + 4, is_primary=True, line=2)],
+        children=[
+            {
+                "message": "try using a raw pointer method instead",
+                "level": "help",
+                "spans": [
+                    _span("src/a.rs", start, start, replacement="(&"),
+                    _span("src/a.rs", cut, cut, replacement=")"),
+                ],
+                "children": [],
+            }
+        ],
+    )
+    sources = {"types_i386.rs": _ADDR_ISLAND}
+    plan = propose_edits(
+        [diag],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_ANON_UNION],
+        anon_unions=harvest_anon_unions(sources),
+        field_types=harvest_field_types(sources),
+    )
+    assert [e.replacement for e in plan.edits] == ["__bindgen_anon_1.Lun"]
+    assert plan.edits[0].original == "Lun"

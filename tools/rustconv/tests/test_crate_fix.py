@@ -249,3 +249,28 @@ def test_a_banked_fix_follows_its_function_to_new_text():
     assert merged == "fn A() {\n    let x: u32 = f();\n    g(x as u16);\n    h(1 as i32);\n}\n"
     conflicting = original.replace("g(x as u8);", "g(x as u32);")
     assert cf.merge_banked(conflicting, [{"original": original, "fixed": fixed}]) is None
+
+
+def test_a_parameter_type_rustc_cannot_find_may_be_corrected():
+    # atapi: `DevExt: *mut ATA_PORT_DEVICE_EXTENSION` (no such type) -> ATAPORT_DEVICE_EXTENSION
+    # was rejected twice as "the signature changed"; rustc renders E0412 at the parameter line.
+    original = _second().replace("p: *mut u8", "p: *mut ATA_PORT_X")
+    fixed = original.replace("ATA_PORT_X", "ATAPORT_X")
+    errors = {"error[E0412]: cannot find type `ATA_PORT_X` in this scope": {"amd64"}}
+    assert cf.reply_findings(original, fixed, errors, lambda _: []) == []
+    # A signature change rustc did not ask for is still refused.
+    other = original.replace("p: *mut ATA_PORT_X", "p: *const ATA_PORT_X")
+    assert any("signature" in f for f in cf.reply_findings(original, other, errors, lambda _: []))
+
+
+def test_struct_literal_field_labels_are_not_kept_names():
+    # atapi: a zeroed union spelled field by field came back as `{ AsULONG: 0 }`.
+    body = "let a = ADDR { u: INNER { Lun: 0, TargetId: 0, IsValid: FLAG_A } };"
+    original = _second().replace("let", body + "\n    let", 1) if "let" in _second() else None
+    original = original or _second().replace("{\n", "{\n    " + body + "\n", 1)
+    fixed = original.replace(body, "let a = ADDR { AsULONG: FLAG_A };")
+    assert cf.reply_findings(original, fixed, {"error[E0560]": {"amd64"}}, lambda _: [], {"INNER"}) == []
+    # ...but the VALUE a label carried is still a kept name.
+    lost = original.replace(body, "let a = ADDR { AsULONG: 0 };")
+    found = cf.reply_findings(original, lost, {"error[E0560]": {"amd64"}}, lambda _: [])
+    assert any("FLAG_A" in f for f in found)
