@@ -113,9 +113,11 @@ _HID <id>`):
   (`gem.rs`). What the firmware leaves, logged on every boot (`[NETSTACK] gem: RP1 at`):
   the Ethernet clocks on, GPIO 32 (the PHY's reset) unassigned with its pad's output
   disabled, `MSIX_CFG(6)` off, and no station address in the GEM. So the driver drives the
-  reset itself and uses the locally administered MAC `02:56:42:50:35:01` (owed: the real one,
-  `2c:cf:67:6e:f2:fc` on the bench board, from the VideoCore mailbox). The DHCP server hands
-  that MAC a new address on most boots; read it from the `dhcp lease` line.
+  reset itself and asks the VideoCore firmware for the board's MAC (mailbox at
+  0x10_7C01_3880, property tag GET_BOARD_MAC_ADDRESS), the one Linux uses: VibeOS and the
+  stager then share the bench board's DHCP lease (192.168.1.248 on 2026-10-08), and the
+  stager still resolves as `vibeos-pi5` after a VibeOS boot. If the mailbox fails, the log
+  says so and the driver falls back to `02:56:42:50:35:01`.
 
 The MCFG (OEM `RPIFDN`/`RPI5`) is not generic ECAM. It names bus 0 at 0x10_0010_8000,
 inside the Broadcom controller's registers, and the first read there returns 0xDEADDEAD

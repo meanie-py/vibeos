@@ -92,6 +92,14 @@ const DCFG1: usize = 0x280;
 const DCFG1_DBWDEF_SHIFT: u32 = 25;
 const DCFG6: usize = 0x294;
 const TBQPH: usize = 0x4c8;
+// Statistics (clear on read): Linux's macb.h GEM_*.
+const GEM_TXCNT: usize = 0x108;
+const GEM_RXCNT: usize = 0x158;
+const GEM_RXFCSCNT: usize = 0x190;
+const GEM_RXRESERRCNT: usize = 0x1a0;
+const GEM_RXORCNT: usize = 0x1a4;
+/// How often the poll path folds the counters in, and reports errors.
+const STATS_MS: i64 = 10_000;
 const RBQPH: usize = 0x4d4;
 
 // ------------------------------------------------------------- descriptors
@@ -151,10 +159,25 @@ const PHY_RESET_MS: i64 = 5;
 const RP1_PCIE_APBS: u64 = 0x10_8000;
 const MSIX_CFG_ETH: usize = 0x8 + 4 * 6;
 
-/// A locally administered address for a board whose GEM was never given one.
-/// Every Pi 5 running VibeOS shares it until the firmware's is read (owed: the
-/// VideoCore mailbox's GET_BOARD_MAC_ADDRESS).
+/// A locally administered address, used only if the firmware will not say the
+/// board's own (`board_mac`). Every Pi 5 that falls back shares it.
 const FALLBACK_MAC: [u8; 6] = [0x02, 0x56, 0x42, 0x50, 0x35, 0x01];
+
+/// The BCM2712's VideoCore mailbox (soc@107c000000, mailbox@7c013880). RP1
+/// only ships on that SoC, so finding RP1 places the mailbox too.
+const VC_MBOX: u64 = 0x10_7c01_3880;
+const MBOX_READ: usize = 0x00;
+const MBOX_STATUS: usize = 0x18;
+const MBOX_WRITE: usize = 0x20;
+const MBOX_WRITE_STATUS: usize = 0x38;
+const MBOX_EMPTY: u32 = 1 << 30;
+const MBOX_FULL: u32 = 1 << 31;
+const MBOX_CH_PROPERTY: u32 = 8;
+const TAG_GET_BOARD_MAC: u32 = 0x0001_0003;
+const PROPERTY_OK: u32 = 0x8000_0000;
+/// The firmware reads the buffer by its bus address; nothing in the device
+/// tree translates it, and below 1 GiB is safe on every board.
+const MBOX_BUF_LIMIT: u64 = 0x3FFF_FFFF;
 
 const LINK_WAIT_MS: i64 = 5000;
 const LINK_POLL_MS: i64 = 500;
@@ -201,11 +224,40 @@ pub struct Gem {
     tx_prod: usize,
     tx_cons: usize,
     tx_restarts: u32,
+    next_stats: i64,
+    /// Running totals: frames sent, received, and receive errors (FCS, no
+    /// buffer, overrun).
+    stats: [u64; 5],
+    reported_errors: u64,
 }
 
 // The engine worker solely owns the device; the pointers are to non-paged DMA
 // memory and MMIO that live for the driver's lifetime.
 unsafe impl Send for Gem {}
+
+/// Order the CPU's descriptor writes before what follows, as the DEVICE sees
+/// them: the GEM reads descriptors from memory over PCIe while the doorbell
+/// (NCR) is a separate MMIO write, so a `dmb ish` (Rust's fences) is not
+/// enough and the GEM could read a just-released descriptor as still ours.
+/// Linux's wmb()/rmb() are the same instructions.
+#[inline]
+fn wmb() {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        core::arch::asm!("dsb st", options(nostack, preserves_flags))
+    };
+    #[cfg(not(target_arch = "aarch64"))]
+    fence(Ordering::SeqCst);
+}
+#[inline]
+fn rmb() {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        core::arch::asm!("dsb ld", options(nostack, preserves_flags))
+    };
+    #[cfg(not(target_arch = "aarch64"))]
+    fence(Ordering::SeqCst);
+}
 
 #[inline]
 unsafe fn desc_rd(ring: *mut u32, idx: usize, word: usize) -> u32 {
@@ -354,6 +406,26 @@ impl Gem {
             self.next_link_poll = t + LINK_POLL_MS;
             self.update_link();
         }
+        if t >= self.next_stats {
+            self.next_stats = t + STATS_MS;
+            self.fold_stats();
+        }
+    }
+
+    /// Accumulate the clear-on-read counters, and log a line whenever a
+    /// receive error count moved, so a lossy link says where frames went.
+    fn fold_stats(&mut self) {
+        for (i, reg) in [GEM_TXCNT, GEM_RXCNT, GEM_RXFCSCNT, GEM_RXRESERRCNT, GEM_RXORCNT].into_iter().enumerate() {
+            self.stats[i] += self.regs.rd(reg) as u64;
+        }
+        let errors = self.stats[2] + self.stats[3] + self.stats[4];
+        if errors != self.reported_errors {
+            self.reported_errors = errors;
+            nsprint!(
+                "[NETSTACK] gem: tx {} rx {} | rx errors: fcs {} no-buffer {} overrun {} | tx restarts {}\n",
+                self.stats[0], self.stats[1], self.stats[2], self.stats[3], self.stats[4], self.tx_restarts
+            );
+        }
     }
 
     pub fn mac_address(&self) -> [u8; 6] {
@@ -374,7 +446,7 @@ impl Gem {
                 return None;
             }
             // The used bit is read before the status it covers.
-            fence(Ordering::Acquire);
+            rmb();
             let status = desc_rd(self.rx_desc, idx, 1);
             let len = (status & RX_LEN_MASK) as usize;
             let good = status & (RX_SOF | RX_EOF) == RX_SOF | RX_EOF;
@@ -385,8 +457,8 @@ impl Gem {
             } else {
                 None
             };
-            fence(Ordering::Release);
             desc_wr(self.rx_desc, idx, 0, addr & !RX_ADDR_USED);
+            wmb();
             self.rx_idx = (idx + 1) % GEM_DESC_COUNT;
             out
         }
@@ -438,11 +510,10 @@ impl Gem {
             core::ptr::copy_nonoverlapping(frame.as_ptr(), buf, frame.len());
             dma_clean(buf, frame.len());
             let wrap = if idx == GEM_DESC_COUNT - 1 { TX_WRAP } else { 0 };
-            fence(Ordering::Release);
             // Clearing USED hands the descriptor to the GEM.
             desc_wr(self.tx_desc, idx, 1, frame.len() as u32 | TX_LAST | wrap);
         }
-        fence(Ordering::SeqCst);
+        wmb();
         self.tx_prod = (idx + 1) % GEM_DESC_COUNT;
         self.regs.wr(NCR, self.regs.rd(NCR) | NCR_TSTART);
     }
@@ -474,6 +545,59 @@ fn reset_phy(io: &Mmio, rio: &Mmio, pads: &Mmio) {
     rio.wr(RIO_SET + RIO_OUT, PHY_RESET_PIN);
     // The BCM54213PE answers MDIO a few ms after reset; be generous.
     delay_ms(50);
+}
+
+/// Ask the VideoCore firmware for the board's MAC address (property tag
+/// GET_BOARD_MAC_ADDRESS), which Linux gets from the device tree the firmware
+/// patches. None, with a log line, on any surprise.
+unsafe fn board_mac() -> Option<[u8; 6]> {
+    let mbox = Mmio::map(VC_MBOX, 0x40)?;
+    let buf = MmAllocateContiguousMemorySpecifyCache(64, phys_li(0), phys_li(MBOX_BUF_LIMIT), phys_li(0), MM_NON_CACHED as _)
+        as *mut u32;
+    if buf.is_null() {
+        return None;
+    }
+    let pa = MmGetPhysicalAddress(buf as PVOID).QuadPart as u64;
+    // size, request, tag, value buffer size, request length, 2 value words, end tag
+    let msg = [32u32, 0, TAG_GET_BOARD_MAC, 8, 0, 0, 0, 0];
+    for (i, w) in msg.iter().enumerate() {
+        core::ptr::write_volatile(buf.add(i), *w);
+    }
+    wmb();
+    let wait = |reg: usize, bit: u32| (0..10_000).any(|_| {
+        let clear = mbox.rd(reg) & bit == 0;
+        if !clear {
+            KeStallExecutionProcessor(10);
+        }
+        clear
+    });
+    // Drain anything stale, then post.
+    while mbox.rd(MBOX_STATUS) & MBOX_EMPTY == 0 {
+        let _ = mbox.rd(MBOX_READ);
+    }
+    if !wait(MBOX_WRITE_STATUS, MBOX_FULL) {
+        nsprint!("[NETSTACK] gem: VideoCore mailbox stays full\n");
+        return None;
+    }
+    mbox.wr(MBOX_WRITE, pa as u32 | MBOX_CH_PROPERTY);
+    if !wait(MBOX_STATUS, MBOX_EMPTY) {
+        nsprint!("[NETSTACK] gem: VideoCore mailbox did not answer (buffer at {:#x})\n", pa);
+        return None;
+    }
+    let reply = mbox.rd(MBOX_READ);
+    rmb();
+    let code = core::ptr::read_volatile(buf.add(1));
+    let (lo, hi) = (core::ptr::read_volatile(buf.add(5)), core::ptr::read_volatile(buf.add(6)));
+    let b = lo.to_le_bytes();
+    let mac = [b[0], b[1], b[2], b[3], hi.to_le_bytes()[0], hi.to_le_bytes()[1]];
+    if reply != (pa as u32 | MBOX_CH_PROPERTY) || code != PROPERTY_OK || mac == [0; 6] || mac[0] & 1 != 0 {
+        nsprint!(
+            "[NETSTACK] gem: VideoCore mailbox reply {:#x} code {:#x} mac {:02x?}: not usable\n",
+            reply, code, mac
+        );
+        return None;
+    }
+    Some(mac)
 }
 
 /// One non-cached, zeroed descriptor ring below DESC_LIMIT.
@@ -529,8 +653,16 @@ pub fn bringup(nic: PlatformNic) -> Option<Gem> {
             [b[0], b[1], b[2], b[3], t[0], t[1]]
         };
         if mac == [0; 6] || mac[0] & 1 != 0 {
-            nsprint!("[NETSTACK] gem: no station address in SA1B/SA1T; using locally administered {:02x?}\n", FALLBACK_MAC);
-            mac = FALLBACK_MAC;
+            mac = match board_mac() {
+                Some(m) => {
+                    nsprint!("[NETSTACK] gem: station address from the VideoCore firmware\n");
+                    m
+                }
+                None => {
+                    nsprint!("[NETSTACK] gem: no station address; using locally administered {:02x?}\n", FALLBACK_MAC);
+                    FALLBACK_MAC
+                }
+            };
         }
 
         enable_clocks(&clocks);
@@ -559,6 +691,9 @@ pub fn bringup(nic: PlatformNic) -> Option<Gem> {
             tx_prod: 0,
             tx_cons: 0,
             tx_restarts: 0,
+            next_stats: 0,
+            stats: [0; 5],
+            reported_errors: 0,
         };
         g.quiesce();
         g.regs.wr(NCFGR, ncfgr);
@@ -589,7 +724,7 @@ pub fn bringup(nic: PlatformNic) -> Option<Gem> {
             desc_wr(tx_desc, i, 1, TX_USED | twrap);
             desc_wr(tx_desc, i, 2, (tpa >> 32) as u32);
         }
-        fence(Ordering::SeqCst);
+        wmb();
         g.rx_desc = rx_desc;
         g.rx_va = rx_va;
         g.tx_desc = tx_desc;
