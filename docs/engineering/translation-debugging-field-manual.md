@@ -11583,6 +11583,20 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   the device tree does nothing under UEFI. Fix: clear the pad's OD bit (and set IE) before
   driving the pin (`netstack-rust/src/gem.rs` `reset_phy`). Read the pad, the function select and
   the RIO bits on both sides before guessing.
+- **A PHY that advertises EEE to a MAC driver that ignores LPI loses frames before the MAC.**
+  Symptom: the Pi 5 drops ~8% of pings in a rhythm (one frame every 2.5 s, bursts every
+  ~14 s); the sender's capture shows each lost request on the wire, the driver never sees it,
+  and the MAC counts no FCS, buffer or overrun error. Cause: the BCM54213PE advertises Energy
+  Efficient Ethernet out of reset (MMD 7.60 = 0x6), so the link enters low-power idle between
+  frames. Fix: clear the advertisement before restarting auto-negotiation unless the driver
+  implements LPI (Linux's phylib applies the same rule). How it was found: per-sequence
+  counts at the driver plus a capture on a second LAN host split "never arrived" from
+  "arrived, not answered" from "answered, lost"; only then was there one place to look.
+- **A self-test with the emulator's addresses baked in breaks the real network it runs on.**
+  netstack's self-tests targeted QEMU slirp's 10.0.2.2/.3/.100; on the Pi 5 one programmed a
+  default route via 10.0.2.2, and the endless ARP for it starved smoltcp's interface-wide
+  neighbor-discovery rate limit, dropping replies to real peers. Take targets from the
+  lease; gate harness-only peers on actually being on slirp.
 - **A Cadence GEM can go idle with a frame queued.** If the TX DMA reads the next descriptor
   while it is still CPU-owned, it stops, and a TSTART written as it finished the previous frame
   is ignored; the frame then waits for the next send. The log shows `TSR` 0x21 (used bit read,
@@ -11595,6 +11609,14 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   ~1 KB `[UEXC]`+`[ALIGN]` record per fault was minutes of serial time on the board. Those
   codes are now capped after 32 records (tripwire `UEXCVERBOSE` restores all). Before timing
   anything on hardware, count what the trap path prints.
+  The same cost applies outside traps: the per-thread and per-process breadcrumbs (`[PS]`
+  thread/process creation and exit, `[MM] InitProcAS`, `[IRQL-CHK]`, the `[APC]` frame dump)
+  were ~20 lines per thread and, on the Pi 5, 70-80% of the serial output after the desktop
+  appeared; gating them took first-minute ping loss from 12.5% to 3.3%. They now print only
+  when the boot options carry `PROCTRACE` (`ps-rust/src/trace.rs`, flag `VibeProcTrace` in
+  ntoskrnl-rust `shim_exports.rs`). Still printed without it: the first
+  `PspUserThreadStartup: returning` (a smoke milestone) and the exit trace of a thread that
+  exits non-zero (`tools/ucrt_tier2_sweep.py` reads it).
 
 ### arm64 bring-up bugs worth recognising again
 - **`0xE3 RESOURCE_NOT_OWNED` (#43) was a fastfat shim testing the wrong WAIT bit.**

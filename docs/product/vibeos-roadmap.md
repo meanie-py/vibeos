@@ -620,9 +620,33 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `rundll32 newdev` once per phantom, each with full `[PS]` tracing, which held the UART at
   ~10.6 KB/s. `ecam.rs` now probes only when the XSDT is QEMU's (OEM "BOCHS "). Settled desktop
   after the fix: serial 370 B/s, 0 install requests, ping 118/120. Found by restoring
-  umpnpmgr's `Installing: %S` print. Still owed, smaller: each real device without a `Class`
-  value is installed twice at boot and newdev fails it with error 259 (QEMU too), which costs
-  ~12% of pings for the first minute; and the per-thread `[PS]` trace.
+  umpnpmgr's `Installing: %S` print. Each real device without a `Class` value is still installed twice at
+  boot and newdev fails it with error 259 (QEMU too); bounded, but owed.
+- **Pi 5: ping still lost ~8% for minutes after boot, and the serial console never went
+  quiet** (FIXED 2026-10-08, after the phantom-PCI fix). Three causes, each measured:
+  - **EEE.** The BCM54213PE advertised Energy Efficient Ethernet (MMD 7.60 = 0x6) and the
+    GEM driver does nothing about LPI. Lost requests came one every 2.5 s in bursts every
+    ~14 s; a capture on a second LAN host showed every one on the wire, and a per-sequence
+    trace showed none reached the driver, with the GEM counting no FCS, buffer or overrun
+    error. `gem.rs` now clears the advertisement: 360/360 from two hosts at once.
+  - **Self-tests aimed at QEMU's slirp.** `settest` programmed a default route via
+    10.0.2.2, so the board ARPed for it every second, and smoltcp rate-limits neighbor
+    discovery for the whole interface; the ICMP, DNS and TDI datagram self-tests and the
+    engine's boot ping targeted 10.0.2.x too and failed on every Pi 5 boot. They now use the
+    lease's gateway and DNS server (`netcfg::gateway`, `dns0`), which are the same addresses
+    under slirp; the TCP connects that need the harness's 10.0.2.100 listener run only on
+    slirp (`netcfg::on_slirp`). QEMU arm64-net suite: 15 passed, 1 skipped.
+  - **Console chatter.** Per-thread and per-process breadcrumbs (`[PS]`, `[MM] InitProcAS`,
+    `[IRQL-CHK]`, `[APC]`) now print only under the `PROCTRACE` boot option; classpnp's
+    `TracePrint` limits each repeating warning (the Pico's empty disk polled every second)
+    to its first 8 occurrences, then every 1000th. Settled desktop: 0 B/s.
+  Owed: the GEM's transmitter goes idle after almost every frame (130 restarts for 211
+  frames sent), so each reply waits for the next `reap_tx` instead of leaving at once (fine
+  at ping rates, a throughput cap); GEM interrupts would fix both. The Pi 4's GENET drives the
+  same PHY and does not touch EEE either: measure it before changing it. `stortest.exe`
+  opens every volume each 2 s for two minutes on a board whose test volume it cannot find,
+  and each open of an unmountable volume (the SD's ext4 root, the empty Pico) retries every
+  file system.
 
 - **FAT file dates showed as 01/01/1601 in `dir`** (FIXED 2026-10-08). fastfat's directory
   query passed only the time half of the FAT stamp to its time converter, so the date read as

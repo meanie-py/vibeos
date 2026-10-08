@@ -44,8 +44,6 @@ const INFO_TYPE_PROVIDER: u32 = 0x100;
 const CL_NL_ENTITY: u32 = 0x301;
 const IP_MIB_ARPTABLE_ENTRY_ID: u32 = 0x101;
 
-/// Default route gateway (slirp's gateway) we program in the self-test.
-const GW: [u8; 4] = [10, 0, 2, 2];
 
 #[repr(C)]
 struct TdiEntityId {
@@ -106,6 +104,13 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
         nsprint!("[NETSTACK] SET_INFO self-test: skipped (no network device)\n");
         return;
     }
+    // The route programmed is the lease's own default route (10.0.2.2 under slirp).
+    // A hard-coded 10.0.2.2 replaced the Pi 5's real default route with one through a
+    // gateway nobody answers ARP for, and the ARP retries starved every other peer.
+    let Some(gw) = crate::netcfg::gateway() else {
+        nsprint!("[NETSTACK] SET_INFO self-test: skipped (the lease named no gateway)\n");
+        return;
+    };
     // Stagger behind the ICMP self-test so the markers don't interleave on the UART.
     delay_ms(2500);
 
@@ -143,12 +148,12 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
     (*req).buffer_size = size_of::<IpRouteEntry>() as u32;
     (*req).route.ire_dest = 0; // 0.0.0.0 default
     (*req).route.ire_mask = 0;
-    (*req).route.ire_gw = u32::from_ne_bytes(GW);
+    (*req).route.ire_gw = u32::from_ne_bytes(gw);
     (*req).route.ire_index = 1;
     (*req).route.ire_type = tdi::IP_FORWARD_ADD;
     (*req).route.ire_proto = 3; // MIB_IPPROTO_NETMGMT
 
-    nsprint!("[NETSTACK] SET_INFO self-test: program default route via 10.0.2.2\n");
+    nsprint!("[NETSTACK] SET_INFO self-test: program default route via {}.{}.{}.{}\n", gw[0], gw[1], gw[2], gw[3]);
 
     // --- Issue IOCTL_TCP_SET_INFORMATION_EX (METHOD_BUFFERED, output empty). ---
     // Event+IOSB in pool via the shared TdiWaitBlock — the old stack locals +
