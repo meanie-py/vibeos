@@ -223,7 +223,9 @@ def test_cfg_twins_are_separate_functions(tmp_path: Path):
     second = TWINS[spans[1].start : spans[1].end]
     cf._replace_named(tmp_path, "a.rs", "Cb#2", second.replace("a\n}", "a + 0\n}"), second)
     out = (tmp_path / "a.rs").read_text()
-    assert 'cfg(target_arch = "x86")]\nunsafe extern "stdcall" fn Cb(a: u32) -> u32 {\n    a\n}' in out
+    assert (
+        'cfg(target_arch = "x86")]\nunsafe extern "stdcall" fn Cb(a: u32) -> u32 {\n    a\n}' in out
+    )
     assert "a + 0" in out
     import pytest
 
@@ -269,7 +271,10 @@ def test_struct_literal_field_labels_are_not_kept_names():
     original = _second().replace("let", body + "\n    let", 1) if "let" in _second() else None
     original = original or _second().replace("{\n", "{\n    " + body + "\n", 1)
     fixed = original.replace(body, "let a = ADDR { AsULONG: FLAG_A };")
-    assert cf.reply_findings(original, fixed, {"error[E0560]": {"amd64"}}, lambda _: [], {"INNER"}) == []
+    assert (
+        cf.reply_findings(original, fixed, {"error[E0560]": {"amd64"}}, lambda _: [], {"INNER"})
+        == []
+    )
     # ...but the VALUE a label carried is still a kept name.
     lost = original.replace(body, "let a = ADDR { AsULONG: 0 };")
     found = cf.reply_findings(original, lost, {"error[E0560]": {"amd64"}}, lambda _: [])

@@ -170,6 +170,7 @@ def repair(
         if not wrong and ret_typ is None and not sized:
             continue
         for typ in sized:
+            assert targets is not None  # `sized` is empty without them
             body = re.sub(
                 rf"\bsize_of::<\s*{re.escape(typ)}\s*>", f"size_of::<{targets[typ]}>", body
             )

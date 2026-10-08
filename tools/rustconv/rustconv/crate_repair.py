@@ -2843,7 +2843,8 @@ def _anon_union_autoref(
             ],
             False,
         )
-    (path,) = paths
+    path = next(iter(paths))
+    assert path is not None  # `None in paths` returned above
     start = cut + rest.start(1)
     return (
         [

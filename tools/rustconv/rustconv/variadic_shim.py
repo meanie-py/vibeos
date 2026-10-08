@@ -106,7 +106,7 @@ def rewrite(text: str) -> Rewrite:
             continue
         sep = ",\n    " if "\n" in params else ", "
         twin = (
-            f"{m.group('attrs')}{m.group('vis') or ''}unsafe extern \"C\" fn {name}_v("
+            f'{m.group("attrs")}{m.group("vis") or ""}unsafe extern "C" fn {name}_v('
             f"{fixed}{sep}ap_list: *mut ::core::ffi::c_void{',' if sep != ', ' else ''}"
             f"{chr(10) if sep != ', ' else ''})"
             f"{' ' + ret if ret else ''} {body}"
@@ -118,7 +118,7 @@ def rewrite(text: str) -> Rewrite:
             f'\n\nextern "C" {{\n'
             f"    // The C-variadic entry is a trampoline in rust_varargs_shim.c (stable Rust\n"
             f"    // cannot define one); it `va_start`s and calls `{name}_v` above.\n"
-            f'    pub fn {name}({decl_params}, ...){" " + ret if ret else ""};\n}}\n'
+            f"    pub fn {name}({decl_params}, ...){' ' + ret if ret else ''};\n}}\n"
         )
         out.text = out.text[: m.start()] + twin + decl + out.text[body_close + 1 :]
         out.names.append(name)
@@ -141,17 +141,30 @@ def c_variadic_arity(c_text: str, name: str) -> int | None:
 
 
 _TWIN = re.compile(r'unsafe\s+extern\s+"C"\s+fn\s+(?P<name>[A-Za-z_]\w*)_v\s*\(')
-_ALIAS = re.compile(
-    r"^pub type (\w+) = ([^;]+);|^pub use self::(\w+) as (\w+);", re.M
-)
+_ALIAS = re.compile(r"^pub type (\w+) = ([^;]+);|^pub use self::(\w+) as (\w+);", re.M)
 _PRIM = {
-    "c_int": "int", "i32": "int", "c_uint": "unsigned int", "u32": "unsigned int",
-    "c_long": "long", "c_ulong": "unsigned long", "c_short": "short", "i16": "short",
-    "c_ushort": "unsigned short", "u16": "unsigned short", "c_char": "char",
-    "c_schar": "signed char", "i8": "signed char", "c_uchar": "unsigned char",
-    "u8": "unsigned char", "c_longlong": "long long", "i64": "long long",
-    "c_ulonglong": "unsigned long long", "u64": "unsigned long long",
-    "usize": "__UINTPTR_TYPE__", "isize": "__INTPTR_TYPE__", "f64": "double",
+    "c_int": "int",
+    "i32": "int",
+    "c_uint": "unsigned int",
+    "u32": "unsigned int",
+    "c_long": "long",
+    "c_ulong": "unsigned long",
+    "c_short": "short",
+    "i16": "short",
+    "c_ushort": "unsigned short",
+    "u16": "unsigned short",
+    "c_char": "char",
+    "c_schar": "signed char",
+    "i8": "signed char",
+    "c_uchar": "unsigned char",
+    "u8": "unsigned char",
+    "c_longlong": "long long",
+    "i64": "long long",
+    "c_ulonglong": "unsigned long long",
+    "u64": "unsigned long long",
+    "usize": "__UINTPTR_TYPE__",
+    "isize": "__INTPTR_TYPE__",
+    "f64": "double",
     "c_double": "double",
 }
 # One C name per arch is the point; these pairs are the same pointer-sized integer.
@@ -224,7 +237,9 @@ def c_primitive(rust_type: str, maps: list[dict[str, str]]) -> str:
     raise ValueError(f"`{rust_type}` is {sorted(seen)} across the arches")
 
 
-def c_trampoline(name: str, params: list[tuple[str, str]], ret: str, maps: list[dict[str, str]]) -> str:
+def c_trampoline(
+    name: str, params: list[tuple[str, str]], ret: str, maps: list[dict[str, str]]
+) -> str:
     """The shim entry: `name(..., ...)` -> `name_v(..., &ap)`, in primitive C types only.
 
     No module header is included: atapi.h pulls in <initguid.h>, so a shim that included it
@@ -272,7 +287,8 @@ SHIM_PULLERS = """\
 int                vibeos_va_arg_i32(void *app) { return va_arg(*(va_list *)app, int); }
 unsigned int       vibeos_va_arg_u32(void *app) { return va_arg(*(va_list *)app, unsigned int); }
 long long          vibeos_va_arg_i64(void *app) { return va_arg(*(va_list *)app, long long); }
-unsigned long long vibeos_va_arg_u64(void *app) { return va_arg(*(va_list *)app, unsigned long long); }
+unsigned long long vibeos_va_arg_u64(void *app)
+                   { return va_arg(*(va_list *)app, unsigned long long); }
 double             vibeos_va_arg_f64(void *app) { return va_arg(*(va_list *)app, double); }
 void *             vibeos_va_arg_ptr(void *app) { return va_arg(*(va_list *)app, void *); }
 """
@@ -307,7 +323,8 @@ def ensure_dependency(cargo_toml: Path) -> bool:
         return False
     text = re.sub(
         r"^\[dependencies\]\s*\n",
-        '[dependencies]\n# C-variadic entry points -> rust_varargs_shim.c (stable Rust cannot define one).\n'
+        "[dependencies]\n"
+        "# C-variadic entry points -> rust_varargs_shim.c (stable Rust cannot define one).\n"
         'varargs-rust = { path = "../varargs-rust" }\n',
         text,
         count=1,
