@@ -1476,6 +1476,28 @@ pub unsafe extern "system" fn NtOpenKeyedEvent(OutHandle: PHANDLE, Info: PIO_STA
 """
 
 
+# scan_double_fetch: the SAME user address captured twice on one path. BAD validates
+# a length on the first read_back and sizes the copy from a second — the TOCTOU a
+# thread on another CPU races. GOOD captures once and uses the kernel copy for both.
+_DBLFETCH_BAD = """
+pub unsafe extern "system" fn NtThing(P: *mut _UNICODE_STRING, Mode: KPROCESSOR_MODE) -> NTSTATUS {
+    let hdr = match read_back(P) { Ok(v) => v, Err(s) => return s };
+    if hdr.Length > limit { return STATUS_INVALID_PARAMETER; }
+    let again = match read_back(P) { Ok(v) => v, Err(s) => return s };
+    let _ = safe_copy_raw(dst, again.Buffer as *const _, again.Length as usize);
+    STATUS_SUCCESS
+}
+"""
+_DBLFETCH_GOOD = """
+pub unsafe extern "system" fn NtThing(P: *mut _UNICODE_STRING, Mode: KPROCESSOR_MODE) -> NTSTATUS {
+    let hdr = match read_back(P) { Ok(v) => v, Err(s) => return s };
+    if hdr.Length > limit { return STATUS_INVALID_PARAMETER; }
+    let _ = safe_copy_raw(dst, hdr.Buffer as *const _, hdr.Length as usize);
+    STATUS_SUCCESS
+}
+"""
+
+
 # scan_dropped_seh_pairs. The LPC shape: the C is cohab-flipped OUT of the build
 # (commented in the CMake source list) and a separate .rs took over under
 # #[no_mangle], so the two files are never in the same place and the inline
@@ -2021,6 +2043,13 @@ CONTROLS: list[Control] = [
         good={"sdk/lib/rust/ex-rust/src/keyedevt.rs": _RAWUSER_GOOD},
     ),
     Control(
+        name="scan_double_fetch",
+        script="tools/scan_double_fetch.py",
+        argv=["--lint"],
+        bad={"sdk/lib/rust/ex-rust/src/dblfetch.rs": _DBLFETCH_BAD},
+        good={"sdk/lib/rust/ex-rust/src/dblfetch.rs": _DBLFETCH_GOOD},
+    ),
+    Control(
         name="strip_msvc_cmake",
         script="tools/strip_msvc_cmake.py",
         argv=["--check"],
@@ -2328,6 +2357,14 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_ptr_typedef_indirection": (
+        "its pairing is body_audit's -- every module whose CMakeLists links a Rust crate, its "
+        "flipped-out TUs (from the build's compiled-TU set) against its crates' sources -- so a "
+        "fixture directory has no module to resolve. The decision is findings_for(c_body, "
+        "rust), driven directly in tools/test_scan_ptr_typedef_indirection.py: it must flag "
+        "usetup's `*mut PFILEPATHS_W` FileCopyCallback shape at its line, and must not flag a "
+        "genuine `PFOO *x` or a nolint line."
+    ),
     "scan_hresult_literals": (
         "its oracle is the C module scan_invented_constants.c_dirs_for() finds for a crate in "
         "the real tree, so a fixture directory has no crate to map. The decision is "

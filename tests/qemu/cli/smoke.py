@@ -643,6 +643,17 @@ def _staged_payloads(repo: Path, arch: str) -> list[str]:
     return mod.read_stamp(repo / f"build-{arch}")
 
 
+def _guest_reached_desktop(results: list[dict]) -> bool:
+    """Whether the plain boots license the payload runs: some boot passed and every
+    failure was a launch failure. A boot that never launched (the host refused or
+    starved QEMU) says nothing about the guest. It still reds the run, but must not
+    throw the payload runs away: a loaded host once cost a whole regstress batch with
+    5/6 boots green."""
+    return any(r["ok"] for r in results) and all(
+        r["ok"] or r.get("classification") == "LAUNCH_FAIL" for r in results
+    )
+
+
 def _payload_stage(
     run: Run, repo: Path, arch: str, payloads: str, idx: int = 0, total: int = 1
 ) -> None:
@@ -805,8 +816,14 @@ def nvme_requested() -> bool:
 
 # ...this once its MSI-X messages are connected (nvme-rust pnp.rs `connect`)...
 _NVME_MSIX = "[NVME] controller 0: MSI-X: "
-# ...and this once a completion arrived by interrupt (nvme-rust nvme.rs `count`).
+# ...this once a completion arrived by interrupt (nvme-rust nvme.rs `tally`)...
 _NVME_INTERRUPTS = "[NVME] controller 0: interrupts working"
+# ...and this after its start-time self-test: one 1 MiB read, which the I/O path
+# cuts into commands and runs at once, by DMA to the reader's pages (pnp.rs `self_test`).
+_NVME_SELF_TEST = re.compile(
+    r"\[NVME\] controller 0: self-test: read \d+ KiB .*?up to (\d+) commands in flight"
+    r".*?(\d+) commands by DMA to the caller's pages"
+)
 
 
 def _nvme_check(text: str) -> dict | None:
@@ -851,6 +868,28 @@ def _nvme_check(text: str) -> dict | None:
             "salient": [
                 f"the namespace was published but nvme.sys never printed `{_NVME_INTERRUPTS}`: "
                 "no completion arrived by interrupt, so the driver ran on its poll",
+                *lines,
+            ],
+        }
+    # One command at a time, or every transfer copied through the bounce buffer,
+    # still works, only slower: a regression to either would never fail a boot.
+    test = _NVME_SELF_TEST.search(text)
+    if not test or int(test[1]) < 2:
+        return {
+            "classification": "NVME_NOT_QUEUED",
+            "salient": [
+                "nvme.sys's self-test never had two commands in flight at once"
+                if test
+                else "nvme.sys printed no self-test read line",
+                *lines,
+            ],
+        }
+    if int(test[2]) == 0:
+        return {
+            "classification": "NVME_BOUNCED",
+            "salient": [
+                "nvme.sys's self-test read went through the bounce buffer, not by DMA "
+                "to the reader's pages (nvme.rs `dma_ready` refused its MDL)",
                 *lines,
             ],
         }
@@ -1119,7 +1158,7 @@ def smoke(args, repo: Path) -> int:
         payloads = f"{payloads},doom".strip(",")
     # --repeat N soaks the payload too: a payload flake (the app sweep's intermittent crash) is
     # exactly what N runs are for, and one payload boot after N plain boots cannot see it.
-    if payloads and npass == total:
+    if payloads and _guest_reached_desktop(results):
         for i in range(total):
             _payload_stage(run, repo, arch, payloads, idx=i, total=total)
 

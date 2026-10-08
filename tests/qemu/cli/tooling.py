@@ -112,6 +112,10 @@ _PYTEST_SUITES = [
     # The callee pass of the user-pointer lint: its quieting rules (kernel arm,
     # early return, scoped rebind, null guard) each hid or invented rows once.
     (".", ".", "tools/test_scan_raw_user_access.py"),
+    # The double-fetch lint's quieting rules (sibling arms, early-exit branch,
+    # advanced source, inner-cast normalisation) each over- or under-fired once.
+    (".", ".", "tools/test_scan_double_fetch.py"),
+    (".", ".", "tools/test_scan_ptr_typedef_indirection.py"),
     (".", ".", "tools/test_lint_facts.py"),
     (".", ".", "tools/test_cargo_link_context.py"),
     (".", ".", "tools/test_cargo_orchestrate.py"),
@@ -171,6 +175,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_rust_module_tree.py"),
     (".", ".", "tools/test_scan_self_recursive.py"),
     (".", ".", "tools/test_scan_export_thunks.py"),
+    (".", ".", "tools/test_scan_xchg_ebx_deref.py"),
     (".", ".", "tools/test_scan_dropped_asserts.py"),
     (".", ".", "tools/test_strip_msvc_cmake.py"),
     # The substrate half of scan_extern_decl_drift has no other oracle: its

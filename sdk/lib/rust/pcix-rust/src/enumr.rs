@@ -604,7 +604,7 @@ pub unsafe extern "system" fn PciQueryTargetDeviceRelations(
 
 #[no_mangle]
 pub unsafe extern "system" fn PciQueryEjectionRelations(
-    PdoExtension: *mut PPCI_PDO_EXTENSION,
+    PdoExtension: PPCI_PDO_EXTENSION,
     pDeviceRelations: *mut *mut DEVICE_RELATIONS,
 ) -> NTSTATUS {
     let _ = PdoExtension;

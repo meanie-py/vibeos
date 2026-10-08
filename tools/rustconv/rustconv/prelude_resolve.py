@@ -291,10 +291,43 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
         classes = {_abi_class(i.abi) for i in fns}
         if len(classes) != 1:
             return None, f"ABI disagreement ({', '.join(sorted(classes))})"
+        # Same name, different functions: diskpart's `SelectPartition(argc, argv)` command
+        # handler and setuplib's `SelectPartition(List, DiskNumber, PartitionNumber)` live in
+        # different binaries, agree on the ABI, and the shorter text won -- usetup called
+        # setuplib's with diskpart's signature. Only the module's own prototype can choose.
+        arities = {_arity(i.text) for i in fns} - {None}
+        if len(arities) > 1:
+            return None, f"signature disagreement ({len(arities)} arities)"
         return _most_common(fns), ""
     if any(i.kind == "type" for i in items):
         return None, "a type: add its header to the island allowlist"
     return None, "mixed kinds"
+
+
+def _arity(decl: str) -> int | None:
+    """Parameter count of a `fn NAME(...)` declaration (`...` counts), None if unreadable."""
+    m = re.search(r"\bfn\s+\w+\s*\(", decl)
+    if m is None:
+        return None
+    depth, i, n = 1, m.end(), 0
+    seen = False
+    while i < len(decl) and depth:
+        c = decl[i]
+        if c in "([<":
+            depth += 1
+        elif c in ")]>" and not (c == ">" and decl[i - 1] == "-"):
+            depth -= 1
+        elif c == "," and depth == 1:
+            n += 1
+            seen = False
+            i += 1
+            continue
+        if depth and not c.isspace():
+            seen = True
+        i += 1
+    if depth:
+        return None
+    return n + (1 if seen else 0)
 
 
 def _most_common(items: list[Item]) -> Item:

@@ -33,7 +33,7 @@ unsafe extern "C" fn DeleteMbrPartition(bOverride: BOOL) {
     let mut Status: NTSTATUS = 0;
 
     if (bOverride == FALSE) && (IsKnownPartition(CurrentPartition) == FALSE) {
-        ConResPuts(StdOut, (IDS_DELETE_PARTITION_FAIL) as UINT);
+        ConResPuts(StdOut, IDS_DELETE_PARTITION_FAIL);
         return;
     }
 
@@ -90,11 +90,11 @@ unsafe extern "C" fn DeleteMbrPartition(bOverride: BOOL) {
     UpdateMbrDiskLayout(CurrentDisk);
     Status = WriteMbrPartitions(CurrentDisk);
     if !NT_SUCCESS!(Status) {
-        ConResPuts(StdOut, (IDS_DELETE_PARTITION_FAIL) as UINT);
+        ConResPuts(StdOut, IDS_DELETE_PARTITION_FAIL);
         return;
     }
 
-    ConResPuts(StdOut, (IDS_DELETE_PARTITION_SUCCESS) as UINT);
+    ConResPuts(StdOut, IDS_DELETE_PARTITION_SUCCESS);
 }
 
 unsafe extern "C" fn DeleteGptPartition(mut bOverride: BOOL) {
@@ -114,7 +114,7 @@ unsafe extern "C" fn DeleteGptPartition(mut bOverride: BOOL) {
                 core::mem::size_of::<GUID>(),
             ) == 0)
     {
-        ConResPuts(StdOut, (IDS_DELETE_PARTITION_FAIL) as UINT);
+        ConResPuts(StdOut, IDS_DELETE_PARTITION_FAIL);
         return;
     }
 
@@ -184,11 +184,11 @@ unsafe extern "C" fn DeleteGptPartition(mut bOverride: BOOL) {
     UpdateGptDiskLayout(CurrentDisk, TRUE);
     Status = WriteGptPartitions(CurrentDisk);
     if !NT_SUCCESS!(Status) {
-        ConResPuts(StdOut, (IDS_DELETE_PARTITION_FAIL) as UINT);
+        ConResPuts(StdOut, IDS_DELETE_PARTITION_FAIL);
         return;
     }
 
-    ConResPuts(StdOut, (IDS_DELETE_PARTITION_SUCCESS) as UINT);
+    ConResPuts(StdOut, IDS_DELETE_PARTITION_SUCCESS);
 }
 #[no_mangle]
 pub unsafe extern "C" fn DeletePartition(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
@@ -198,12 +198,12 @@ pub unsafe extern "C" fn DeletePartition(argc: INT, argv: *mut PWSTR) -> EXIT_CO
     DPRINT!(b"DeletePartition()\n".as_ptr() as *const i8);
 
     if CurrentDisk.is_null() {
-        ConResPuts(StdOut, (IDS_SELECT_NO_DISK) as UINT);
+        ConResPuts(StdOut, IDS_SELECT_NO_DISK);
         return EXIT_SUCCESS;
     }
 
     if CurrentPartition.is_null() {
-        ConResPuts(StdOut, (IDS_SELECT_NO_PARTITION) as UINT);
+        ConResPuts(StdOut, IDS_SELECT_NO_PARTITION);
         return EXIT_SUCCESS;
     }
 
@@ -236,14 +236,14 @@ pub unsafe extern "C" fn DeletePartition(argc: INT, argv: *mut PWSTR) -> EXIT_CO
             DPRINT!(b"OVERRIDE\n".as_ptr() as *const i8);
             bOverride = TRUE;
         } else {
-            ConResPuts(StdErr, (IDS_ERROR_INVALID_ARGS) as UINT);
+            ConResPuts(StdErr, IDS_ERROR_INVALID_ARGS);
             return EXIT_SUCCESS;
         }
         i += 1;
     }
 
     if (*CurrentPartition).IsBoot != 0 || (*CurrentPartition).IsSystem != 0 {
-        ConResPuts(StdOut, (IDS_DELETE_PARTITION_SYSTEM) as UINT);
+        ConResPuts(StdOut, IDS_DELETE_PARTITION_SYSTEM);
         return EXIT_SUCCESS;
     }
 

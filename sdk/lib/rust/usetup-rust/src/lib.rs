@@ -32,6 +32,7 @@ pub mod usetup {
     pub mod partlist;
     pub mod progress;
     pub mod usetup;
+    pub mod mui_tables; // C data: `port data`
 }
 
 // staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.

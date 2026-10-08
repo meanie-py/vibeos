@@ -252,9 +252,13 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
 }
 
 static FallbackCount: AtomicU32 = AtomicU32::new(0);
-/// Is the file `Oa` names a PE image for a machine other than x86-64? Read
-/// from its headers; anything unreadable or not a PE is not.
-unsafe fn ForeignImage(Oa: *const OBJECT_ATTRIBUTES) -> bool {
+/// Is the file `Oa` names a DLL for a machine other than x86-64? Read from its
+/// headers; anything unreadable or not a PE is not. An EXE is not: an x86-64
+/// process on Windows on ARM sees system32 unredirected and runs its arm64
+/// programs as native children (thread.rs `CreateNativeChildThread`); what it
+/// must never get is a foreign module where it expects its own.
+unsafe fn ForeignDll(Oa: *const OBJECT_ATTRIBUTES) -> bool {
+    const IMAGE_FILE_DLL: u16 = 0x2000;
     const GENERIC_READ: ULONG = 0x8000_0000;
     const SYNCHRONIZE: ULONG = 0x0010_0000;
     const FILE_SHARE_READ_WRITE: ULONG = 3;
@@ -291,10 +295,13 @@ unsafe fn ForeignImage(Oa: *const OBJECT_ATTRIBUTES) -> bool {
         return false;
     }
     let Pe = u32::from_le_bytes([Head[0x3C], Head[0x3D], Head[0x3E], Head[0x3F]]) as usize;
-    if Pe + 6 > Head.len() || &Head[Pe..Pe + 4] != b"PE\0\0" {
+    // IMAGE_FILE_HEADER: Machine at +4, Characteristics at +22.
+    if Pe + 24 > Head.len() || &Head[Pe..Pe + 4] != b"PE\0\0" {
         return false;
     }
-    u16::from_le_bytes([Head[Pe + 4], Head[Pe + 5]]) != 0x8664
+    let Machine = u16::from_le_bytes([Head[Pe + 4], Head[Pe + 5]]);
+    let Characteristics = u16::from_le_bytes([Head[Pe + 22], Head[Pe + 23]]);
+    Machine != 0x8664 && Characteristics & IMAGE_FILE_DLL != 0
 }
 
 fn IsSelf(Process: u64) -> bool {
@@ -402,18 +409,18 @@ unsafe fn Redirect(Oa: *const OBJECT_ATTRIBUTES, Shadow: &mut Shadow) -> bool {
         return true;
     }
     // Not in sysamd64. Leave it in system32 -- unless what system32 holds
-    // under that name is an image for ANOTHER machine, which the guest must
-    // never be handed: a module loaded at run time (gdi32's LoadLibrary of
-    // lpk.dll) is outside the staged closure, and falling back to the native
-    // arm64 copy had the guest loader map it and call arm64 code as x86-64.
-    // Redirecting to the absent sysamd64 copy gives the guest "not found",
-    // which is what WoW64 gives a 32-bit process in the same spot.
-    let Foreign = ForeignImage(Oa);
+    // under that name is a DLL for ANOTHER machine, which the guest must never
+    // be handed: a module loaded at run time (gdi32's LoadLibrary of lpk.dll)
+    // is outside the staged closure, and falling back to the native arm64 copy
+    // had the guest loader map it and call arm64 code as x86-64. Redirecting
+    // to the absent sysamd64 copy gives the guest "not found", which is what
+    // WoW64 gives a 32-bit process in the same spot.
+    let Foreign = ForeignDll(Oa);
     if FallbackCount.fetch_add(1, Ordering::Relaxed) < 8 {
         crate::trace!(
             "not in sysamd64: %wZ -> %s",
             (*Oa).ObjectName,
-            if Foreign { b"a foreign-machine image in system32: NOT FOUND\0".as_ptr() } else { b"left in system32\0".as_ptr() },
+            if Foreign { b"a foreign-machine DLL in system32: NOT FOUND\0".as_ptr() } else { b"left in system32\0".as_ptr() },
         );
     }
     Foreign

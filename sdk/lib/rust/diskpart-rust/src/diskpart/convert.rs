@@ -111,17 +111,17 @@ pub unsafe extern "C" fn ConvertGPT(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
     DPRINT!(b"ConvertGPT()\n\0".as_ptr() as *const i8);
 
     if CurrentDisk.is_null() {
-        ConResPuts(StdOut, (IDS_SELECT_NO_DISK) as UINT);
+        ConResPuts(StdOut, IDS_SELECT_NO_DISK);
         return EXIT_SUCCESS;
     }
 
     if (*CurrentDisk).PartitionStyle == PARTITION_STYLE_GPT {
-        ConResPuts(StdOut, (IDS_CONVERT_GPT_ALREADY) as UINT);
+        ConResPuts(StdOut, IDS_CONVERT_GPT_ALREADY);
         return EXIT_SUCCESS;
     }
 
     if GetPrimaryPartitionCount(CurrentDisk) != 0 {
-        ConResPuts(StdOut, (IDS_CONVERT_GPT_NOT_EMPTY) as UINT);
+        ConResPuts(StdOut, IDS_CONVERT_GPT_NOT_EMPTY);
         return EXIT_SUCCESS;
     }
 
@@ -150,7 +150,7 @@ pub unsafe extern "C" fn ConvertGPT(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
     );
 
     ScanForUnpartitionedGptDiskSpace(CurrentDisk);
-    ConResPuts(StdOut, (IDS_CONVERT_GPT_SUCCESS) as UINT);
+    ConResPuts(StdOut, IDS_CONVERT_GPT_SUCCESS);
 
     return EXIT_SUCCESS;
 }
@@ -162,19 +162,19 @@ pub unsafe extern "C" fn ConvertMBR(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
     DPRINT!(b"ConvertMBR()\n\0".as_ptr() as *const i8);
 
     if CurrentDisk.is_null() {
-        ConResPuts(StdOut, (IDS_SELECT_NO_DISK) as UINT);
+        ConResPuts(StdOut, IDS_SELECT_NO_DISK);
         return EXIT_SUCCESS;
     }
 
     if (*CurrentDisk).PartitionStyle == PARTITION_STYLE_MBR
         || (*CurrentDisk).PartitionStyle == PARTITION_STYLE_RAW
     {
-        ConResPuts(StdOut, (IDS_CONVERT_MBR_ALREADY) as UINT);
+        ConResPuts(StdOut, IDS_CONVERT_MBR_ALREADY);
         return EXIT_SUCCESS;
     }
 
     if GetPrimaryPartitionCount(CurrentDisk) != 0 {
-        ConResPuts(StdOut, (IDS_CONVERT_MBR_NOT_EMPTY) as UINT);
+        ConResPuts(StdOut, IDS_CONVERT_MBR_NOT_EMPTY);
         return EXIT_SUCCESS;
     }
 
@@ -191,7 +191,7 @@ pub unsafe extern "C" fn ConvertMBR(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
     (*CurrentDisk).EndSector.QuadPart = min((*CurrentDisk).SectorCount.QuadPart, 0x100000000) - 1;
 
     ScanForUnpartitionedMbrDiskSpace(CurrentDisk);
-    ConResPuts(StdOut, (IDS_CONVERT_MBR_SUCCESS) as UINT);
+    ConResPuts(StdOut, IDS_CONVERT_MBR_SUCCESS);
 
     return EXIT_SUCCESS;
 }

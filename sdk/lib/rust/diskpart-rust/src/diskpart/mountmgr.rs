@@ -154,9 +154,9 @@ pub unsafe extern "C" fn SetAutomountState(bEnable: i32) -> BOOL {
     }
 
     if AutoMount.NewState == Enabled {
-        ConResPuts(StdOut, (IDS_AUTOMOUNT_ENABLED) as UINT);
+        ConResPuts(StdOut, IDS_AUTOMOUNT_ENABLED);
     } else {
-        ConResPuts(StdOut, (IDS_AUTOMOUNT_DISABLED) as UINT);
+        ConResPuts(StdOut, IDS_AUTOMOUNT_DISABLED);
     }
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
 

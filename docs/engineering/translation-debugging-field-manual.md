@@ -1039,6 +1039,15 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 - **LLVM COFF-i386 rejects `push offset <label>`** ("unsupported relocation type"); the
   `mov reg, offset` encoding works. Worse, bare `push <label>` is a silent **memory** push.
   Materialise into a provably-dead scratch register, then push it.
+- **On i386 `ebx` is an ordinary `reg`: never `xchg` it around an instruction whose pointer
+  operand is `in(reg)`.** Only x86_64 reserves rbx. The slist crate's i386 `cmpxchg8b` did
+  `xchg {new_lo}, ebx` / `lock cmpxchg8b [{addr}]`, LLVM put `addr` in ebx, and the swap
+  replaced the header pointer with the entry being pushed. Symptom: `InterlockedPushEntrySList`
+  spins forever at 100% (or "succeeds" into the entry with the list unchanged); Wine's
+  ucrtbase cpp test hung in `__std_type_info_name`. Shipped in ntdll.dll and ks.sys; ntoskrnl,
+  built from the same source, allocated differently and was fine. Fix: pin the pointer to a
+  fixed register (`in("edi") addr`, `[edi]` in the template). `scan_xchg_ebx_deref` gates it on
+  every i386 build.
 - **Verify an asm translation by disasm-diffing against the original `.obj`**, not by smoke —
   SEH/setjmp/CRT paths are barely exercised by a boot. `objdump -d` both (don't extract from a
   *thin* archive; objdump the on-disk `.obj`). Any diff beyond annotated reloc workarounds is
@@ -1392,6 +1401,19 @@ there an importlib entry" — grep the spec line for `-private` before deleting 
 **A `#[no_mangle]` shim that
 mentions its own name in an `extern` block is always this bug** — and note the shape survives
 `cargo check`, `clippy` and code review, and is only visible post-link.
+
+**The quiet version is a stub that links and returns nothing.** Instead of a loop, the shim
+satisfies an unresolved name with `{ core::ptr::null_mut() }`. That boots, so nothing flags it.
+classpnp carried `RtlInterlockedPushEntrySList`/`PopEntrySList` stubs from 2026-06-10 to
+2026-10-07: ntkrnl-sys binds the SList pair to those `Rtl` names, which only exist inside
+ntoskrnl (drivers must import `ExpInterlocked*` on 64-bit, FASTCALL `Interlocked*` on i386,
+`ntoskrnl.spec:175-176,327-328`). Every free-list push dropped its packet and every pop came
+back empty, so each disk request allocated a fresh transfer packet and SRB and leaked them,
+including through ntkrnl-sys's inline lookaside helpers. The symptom was not "out of memory":
+amd64-bios boots failed paging reads with `STATUS_IN_PAGE_ERROR` (C0000006) in 15 of 80 runs,
+and none in 16 runs after the shims forwarded to the real exports. The failure mechanism was
+not pinned down. Check: `objdump -p <driver>.sys | grep <name>` must show an IMPORT, and
+`objdump -d` of a shim must show a `jmp` to that import, not `xor eax,eax; ret`.
 
 ### captures(none)-class hardening that is still worth doing
 - **Stale/hoisted load through a `static mut` table across a foreign call** — a by-handle
@@ -5225,6 +5247,25 @@ lists), a capture made by a primitive other than `read_back` (`safe_copy_from_us
 local, then its buffer field used raw), and a method call — those are caught only by reading. A
 write INTO a user buffer the caller pinned with EngSecureMem/MmSecureVirtualMemory first
 (NtGdiGetDIBitsInternal) is safe and carries a nolint.
+
+**The double-fetch is the same hazard in TIME, and SMP is what makes it bite.** Capturing a
+user value ONCE and using the copy is only half enforced by the rule above; the other half is
+never capturing the SAME address TWICE. Two `read_back`/`safe_copy_from_user` of one user
+pointer take two independent snapshots, and a thread on another CPU changes the value between
+them, so a length validated on the first read no longer bounds the copy sized by the second.
+`tools/scan_double_fetch.py` (`vibeos-cli check`, baseline-gated) flags a source read twice on
+one control-flow path, and the quieting rules it needs are instructive: sibling `match`/`if-else`
+arms and a branch that `break`/`return`s before the second read are mutually exclusive (not a
+re-read); a source POINTER advanced between the reads (`p = p.add(i)`) addresses different memory
+each time (a streaming copy); and the source normaliser must strip a trailing `as T` only at
+paren depth 0, or `(*(p as *const S)).a` and `.b` collapse to one key. The real one it caught:
+`SeCaptureSecurityDescriptor` read the SD header, branched on `Control & SE_SELF_RELATIVE`, then
+re-read Control from the absolute struct — a racing flip made it copy absolute pointer fields and
+then rebase them as self-relative offsets, a wild address handed to `RtlValidSid`. Fixed by
+pinning the self-relative decision and the header scalars from the first read. The baseline holds
+two reviewed two-stage reads (header then body, size pinned from the kernel copy) and one owed
+low-severity init-time case; a NEW same-path pair fails. What it cannot see: two fetches split
+across a syscall and a worker it calls.
 
 **Syscalls are not the only door, and the scanner only watches syscalls.** `int 2d` hands the
 kernel a user pointer in a register, which arrives as `ExceptionInformation[1]`. KdpStub's
@@ -12258,6 +12299,30 @@ Two lessons beyond the fix:
   `EXCEPTION_CONTINUE_SEARCH` turns the crash into a livelock (31,511 iterations). Guard, log,
   and fix the cause.
 
+### A WoW64 thread NtContinues a native context into 32-bit compat mode
+Symptom: amd64 only. A 32-bit guest faults executing at a 32-bit address that is the LOW half
+of a native ntdll address (`eip=b7002919` for `0x7FFB7002919`), with `ebx/esi/edi/ebp` equal to
+the native registers of some earlier 64-bit context; first seen when a user APC (resumed with
+`NtContinue` of the context the kernel delivered it with) returned.
+
+Cause: `KiSystemCallEntry64` (ke/amd64/trap.S) built the trap frame without `SegCs`/`SegSs` --
+`syscall` pushes no machine frame -- so the frame kept whatever the last trap at that kernel
+stack slot left. In a WoW64 thread that is the compat code selector from an interrupt taken in
+guest code, and `KeContextToTrapFrame` turns any CS other than 64-bit user CS into compat CS, so
+a CONTEXT built from a syscall frame resumed as 32-bit code. A native process never takes a trap
+in compat mode, so it never showed. Fix: the entry stores the 64-bit user selectors.
+
+### A guest routine in the x86-64 MAIN IMAGE was run as arm64 code
+Symptom: an x86-64 guest's waitable-timer completion routine (apc64 rung 8) dies with
+`c000001d` at the routine's own address, under the native `KiUserApcDispatcher`; QueueUserAPC
+and ReadFileEx routines work.
+
+Cause: wowx64's `IsGuestCode` called anything in the NATIVE loader's module list native, and
+the x86-64 main image is in that list (the native loader maps it). QueueUserAPC hides this --
+kernel32 wraps the routine in its own `BaseDispatchApc`, which lives in a sysamd64 DLL -- but
+SetWaitableTimer passes the exe's routine straight through. Fix: native means in the native list
+AND an arm64 image.
+
 ### A WoW64 process's fixed TLS slots must be RESERVED, or the first `TlsAlloc` takes slot 1
 Symptom: every 32-bit guest crashes early in libwow64fex's rpmalloc (`heap_get_page_generic`)
 after an unrelated-looking change — here, making arm64 ntdll's `_errno`/`atan2`/`tan` its own
@@ -12287,8 +12352,9 @@ headers — and a zeroed data view is not one. Wine's wow64 notifies only when
 `NtQuerySection(SectionImageInformation)` succeeds. Fix: the same gate
 (`wow64_manual.c`). No ladder guest had mapped a data section before spawn32's rung-10 channel.
 A process stuck this way also appeared to outlive `TerminateProcess` (a named mutex it held
-was still there minutes later) — inferred, not traced; revisit if a guest ever hangs this way
-again.
+was still there minutes later). Since measured and NOT so: spawn64 rung 14 kills a 32-bit and
+an x86-64 guest busy running guest code, and each dies within the wait with the exit code it
+was killed with — so the held mutex was more likely the stuck child never being killed at all.
 
 ### The shared USER handle table has no 32-bit view `[§9.58b]`
 Client-side `ValidateHwnd` fails, so `DispatchMessage` silently drops `WM_PAINT`. **This is a
@@ -12572,6 +12638,14 @@ time.
 | Floats | **no SSE: no by-value f32/f64** | fine | fine |
 | Boot media | LiveCD ISO (`ninja livecd` repacks) | LiveCD ISO | **ramdisk — staged set is partial** |
 | Baseline boot | ~1m48s | ~3m45s | ~40s |
+
+**A 12 KB stack does not hold a by-value struct of kilobytes.** BUGCHECK 0x50 with Arg1 about a
+page below the trapframe's ESP is the stack probe hitting the guard page, faulting at the
+function's entry rather than at any suspect line. nvme.sys's `Controller::start` built a
+`Controller` holding 63 queue slots by value. Its constructor, the `Result` and the move into
+the FDO each took a copy, which was fine on amd64's 48 KB and fatal on i386. The fix is to
+build a large state in pool, in place, field by field through `&raw mut`. A
+`ptr.write(Big { .. })` still assembles the value on the stack first.
 
 **Per-arch smoke marker is the same on all three:** `[EXPLORER] _tWinMain entered` + `shell
 ready`. `shell ready` alone is an intermediate **milestone**, not the verdict.

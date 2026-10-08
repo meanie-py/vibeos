@@ -11,12 +11,12 @@ pub unsafe extern "C" fn HelpCommandList() {
 
     K32LoadStringW(
         GetModuleHandle(core::ptr::null_mut()),
-        (IDS_HELP_FORMAT_STRING) as u32,
+        IDS_HELP_FORMAT_STRING,
         szFormat.as_mut_ptr(),
         (ARRAYSIZE!(szFormat)) as i32,
     );
 
-    ConResPuts(StdOut, (IDS_APP_HEADER) as UINT);
+    ConResPuts(StdOut, IDS_APP_HEADER);
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
 
     cmdptr = (cmds).as_mut_ptr();
@@ -48,7 +48,7 @@ pub unsafe extern "C" fn HelpCommand(pCommand: PCOMMAND) -> EXIT_CODE {
 
     K32LoadStringW(
         GetModuleHandle(core::ptr::null_mut()),
-        (IDS_HELP_FORMAT_STRING) as u32,
+        IDS_HELP_FORMAT_STRING,
         szFormat.as_mut_ptr(),
         (ARRAYSIZE!(szFormat)) as i32,
     );
@@ -97,7 +97,7 @@ pub unsafe extern "C" fn HelpCommand(pCommand: PCOMMAND) -> EXIT_CODE {
                 && _wcsicmp((*pCommand).cmd2, (*cmdptr).cmd2) == 0
                 && !(*cmdptr).cmd3.is_null()
                 && _wcsicmp((*pCommand).cmd3, (*cmdptr).cmd3) == 0
-                && (*cmdptr).help_detail != (MSG_NONE) as u32
+                && (*cmdptr).help_detail != MSG_NONE
             {
                 ConMsgPuts(
                     StdOut,
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn HelpCommand(pCommand: PCOMMAND) -> EXIT_CODE {
         cmdptr = cmdptr.offset(1);
     }
 
-    if bSubCommands == FALSE && (*pCommand).help_detail != (MSG_NONE) as u32 {
+    if bSubCommands == FALSE && (*pCommand).help_detail != MSG_NONE {
         ConMsgPuts(
             StdOut,
             FORMAT_MESSAGE_FROM_HMODULE,

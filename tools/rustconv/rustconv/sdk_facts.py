@@ -303,15 +303,9 @@ _C_FNTYPE_RE = re.compile(
 )
 
 
-def function_abis(repo_root: Path, tu: Path, names: list[str]) -> dict[str, str]:
-    """The Rust ABI string for each C function, from clang's own type of `&name` on i386.
-
-    c2rust spells every extern `extern "C"`, which is wrong for an NTAPI function on i386
-    (stdcall): a cdecl call to a stdcall callee leaves the stack unbalanced. On the 64-bit
-    targets there is one convention, so i386 decides: `stdcall` -> "system", `cdecl` or none
-    -> "C". A name clang cannot type, or another convention (fastcall), is left out --
-    reported by the caller, never guessed.
-    """
+def _function_types(repo_root: Path, tu: Path, names: list[str]) -> dict[str, str]:
+    """clang's own type of `&name` on i386, as it prints it (`PPARTLIST (*)(void)
+    __attribute__((stdcall))`), for each name the TU declares as a function."""
     names = sorted(dict.fromkeys(names))
     argv = _probe_entry(repo_root, "i386", tu)
     if argv is None:
@@ -339,11 +333,61 @@ def function_abis(repo_root: Path, tu: Path, names: list[str]) -> dict[str, str]
     out: dict[str, str] = {}
     for m in _C_FNTYPE_RE.finditer(proc.stderr):
         index = int(m.group(1)) - first
-        if not 0 <= index < len(names) or "(*)" not in m.group(2):
-            continue
-        ty = m.group(2)
-        if "__attribute__((stdcall))" in ty:
-            out[names[index]] = "system"
-        elif "__attribute__((" not in ty or "__attribute__((cdecl))" in ty:
-            out[names[index]] = "C"
+        if 0 <= index < len(names) and "(*)" in m.group(2):
+            out[names[index]] = m.group(2)
+    return out
+
+
+def _abi_of(ty: str) -> str | None:
+    if "__attribute__((stdcall))" in ty:
+        return "system"
+    if "__attribute__((" not in ty or "__attribute__((cdecl))" in ty:
+        return "C"
+    return None
+
+
+def function_abis(repo_root: Path, tu: Path, names: list[str]) -> dict[str, str]:
+    """The Rust ABI string for each C function, from clang's own type of `&name` on i386.
+
+    c2rust spells every extern `extern "C"`, which is wrong for an NTAPI function on i386
+    (stdcall): a cdecl call to a stdcall callee leaves the stack unbalanced. On the 64-bit
+    targets there is one convention, so i386 decides: `stdcall` -> "system", `cdecl` or none
+    -> "C". A name clang cannot type, or another convention (fastcall), is left out --
+    reported by the caller, never guessed.
+    """
+    out: dict[str, str] = {}
+    for name, ty in _function_types(repo_root, tu, names).items():
+        abi = _abi_of(ty)
+        if abi is not None:
+            out[name] = abi
+    return out
+
+
+def param_count(ty: str) -> int | None:
+    """Parameters of a clang function-pointer type (`T (*)(A, B) __attribute__((stdcall))`),
+    `...` counting one; balanced, so the attribute's own parentheses are not the list."""
+    at = ty.find("(*)(")
+    if at < 0:
+        return None
+    i, depth, n = at + 4, 1, 1
+    while i < len(ty) and depth:
+        depth += {"(": 1, ")": -1}.get(ty[i], 0)
+        n += ty[i] == "," and depth == 1
+        i += 1
+    body = ty[at + 4 : i - 1].strip()
+    return 0 if body in ("", "void") else n
+
+
+def function_prototypes(repo_root: Path, tu: Path, names: list[str]) -> dict[str, tuple[str, int]]:
+    """(Rust ABI, parameter count -- `...` counts one) of each C function as THIS TU's
+    headers declare it. What settles a name two crates in the tree declare differently:
+    diskpart's `SelectPartition(argc, argv)` and setuplib's three-argument one are different
+    functions in different binaries, and only the caller's prototype says which it calls --
+    for a module c2rust cannot transpile (usetup), clang's type is the only exact source."""
+    out: dict[str, tuple[str, int]] = {}
+    for name, ty in _function_types(repo_root, tu, names).items():
+        abi = _abi_of(ty)
+        count = param_count(ty)
+        if abi is not None and count is not None:
+            out[name] = (abi, count)
     return out

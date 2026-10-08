@@ -442,9 +442,13 @@ def identifier_aliases(repo_root: Path, source: Path) -> dict[str, str]:
     translation calls `GetModuleHandle` as the C spells it, and only the preprocessor of the
     real build knows which function that is (diskpart: 22 calls left unresolved).
     """
+    # compile_argv, not the TU's own entry: after a cohab flip a TU HAS no entry, and this
+    # returned {} without a word -- every A/W-spelled definition in usetup's console.c
+    # (WriteConsole, ReadConsoleInput, PeekConsoleInput) was then dropped as a dead branch
+    # by the next `port replay`, the very failure the aliases exist to prevent.
     per_arch: list[dict[str, str]] = []
     for arch in _ARCHES:
-        argv = _compile_entry(repo_root, arch, source)
+        argv = compile_argv(repo_root, arch, source)
         if argv is None:
             continue
         try:
