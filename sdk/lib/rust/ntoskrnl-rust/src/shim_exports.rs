@@ -61,6 +61,21 @@ pub unsafe extern "C" fn KeGetCurrentProcessorNumber() -> ULONG {
     ntkrnl_sys::inline::ke::KeGetCurrentProcessorNumber()
 }
 
+/// The exported way (Windows 7's) for a driver to ask which processor it is on:
+/// KeGetCurrentProcessorNumber is a header inline that reads the PCR, which a
+/// driver built once for the UP and MP kernels cannot do. One group: the index is
+/// the processor number.
+#[no_mangle]
+pub unsafe extern "system" fn KeGetCurrentProcessorNumberEx(ProcNumber: ntkrnl_sys::ddk::PPROCESSOR_NUMBER) -> ULONG {
+    let number = ntkrnl_sys::inline::ke::KeGetCurrentProcessorNumber();
+    if !ProcNumber.is_null() {
+        (*ProcNumber).Group = 0;
+        (*ProcNumber).Number = number as u8;
+        (*ProcNumber).Reserved = 0;
+    }
+    number
+}
+
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn KeDisableInterrupts() -> BOOLEAN {

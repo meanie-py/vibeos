@@ -27,7 +27,7 @@ Already in the tree *(tree, 2026-10-05)*:
 | xHCI | **Rust-native** `usbxhci` (~20K lines, written in Rust from the start); SuperSpeed devices work on the Pi 4 |
 | HD Audio / PortCls | `drivers/wdm/audio/hdaudbus`, `portcls` |
 | D3DKMT thunks | `win32k-rust/src/d3dkmt.rs`: the syscall surface exists, but every adapter call returns `STATUS_PROCEDURE_NOT_FOUND` because nothing populates the dxgkrnl table |
-| NVMe | `nvme.sys` (2026-10-06), Rust from the start, all three arches: MSI-X interrupts since 2026-10-07 (the pin as fallback, a 10 ms timer behind both), one queue pair 63 commands deep with DMA to the requester's pages (also 2026-10-07), each namespace a disk.sys disk. Owed: a queue pair per CPU, controller reset on a hung command |
+| NVMe | `nvme.sys` (2026-10-06), Rust from the start, all three arches: MSI-X interrupts since 2026-10-07 (the pin as fallback, a 10 ms timer behind both), a queue pair per CPU (up to 8, each on the MSI-X message the HAL delivers to that CPU, since 2026-10-08), 63 commands deep with DMA to the requester's pages (2026-10-07), each namespace a disk.sys disk. A command hung 30 s resets the controller and is failed back for disk.sys to retry (2026-10-08; `--tripwire NVME_LOSE_COMPLETION=<n>` proves it) |
 | dxgkrnl / WDDM | **missing** |
 
 [`../product/driver-roadmap.md`](../product/driver-roadmap.md) predates the KMDF and xHCI
@@ -106,7 +106,7 @@ unchanged.
 | Order | Area | What it takes | Notes |
 |---|---|---|---|
 | 1 | **KMDF wired up** | KMDF is built. What's left: version negotiation (drivers request specific WDF versions; ours is 1.17) and real drivers loaded on it | The master key: most modern drivers are KMDF |
-| 2 | **NVMe** | **First version done** (`nvme.sys`, 2026-10-06): a PnP driver that presents namespaces straight to disk.sys, not a StorPort miniport, because our StorPort never completes an SRB (its PDO handler and bus relations are stubs) and scsiport's legacy PCI scan cannot assign resources on arm64. INTx interrupts since the same day, MSI-X and a 63-deep queue with direct DMA since 2026-10-07. Owed: per-CPU queues, controller reset, and finishing StorPort, which vendor NVMe and RAID drivers still need | No modern PC boots without it. The test box has one (below) |
+| 2 | **NVMe** | **First version done** (`nvme.sys`, 2026-10-06): a PnP driver that presents namespaces straight to disk.sys, not a StorPort miniport, because our StorPort never completes an SRB (its PDO handler and bus relations are stubs) and scsiport's legacy PCI scan cannot assign resources on arm64. INTx interrupts since the same day, MSI-X and a 63-deep queue with direct DMA since 2026-10-07, a queue per CPU and controller reset on a hung command since 2026-10-08. Owed: finishing StorPort, which vendor NVMe and RAID drivers still need | No modern PC boots without it. The test box has one (below) |
 | 3 | **USB 3** | Our xHCI driver exists and works. The remaining question is compatibility with Windows 8+'s USB stack shape (`usbxhci` + `ucx01000` class extension + `usbhub3`) for vendor USB drivers that bind to it | Much further along than the rest |
 | 4 | **NDIS 6.x, then NetAdapterCx** | Modern Intel/Realtek NIC drivers are NDIS 6; the newest are NetAdapterCx (Windows 10, on KMDF) | Our NDIS is 5-era |
 | 5 | **HD Audio and the Vista audio stack** | Kernel: WaveRT miniports on PortCls (Realtek HDA drivers). User mode: the audio engine (`audiodg`) and WASAPI, which every modern app (Chrome included) talks to | Wine has WASAPI (`mmdevapi`) |

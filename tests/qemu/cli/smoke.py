@@ -840,6 +840,10 @@ def nvme_requested() -> bool:
     return os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "1"
 
 
+# nvme-rust's self-test reports the resets its reads met (pnp.rs `self_test`): with
+# the NVME_LOSE_COMPLETION tripwire one completion is thrown away, its command hangs,
+# and the controller must be reset and the read retried.
+_NVME_RESET = re.compile(r"\[NVME\] controller 0: self-test: [1-9]\d* reset\(s\)")
 # The PnP manager prints this as it starts each device: with --nvme-bridge, QEMU's
 # PCIe root port (1b36:000c), which pci.sys then drives as the controller's bus.
 _ROOT_PORT_STARTED = "[DA] START PCI\\VEN_1B36&DEV_000C"
@@ -973,6 +977,17 @@ def _nvme_check(text: str) -> dict | None:
             "salient": [
                 "nvme.sys's self-test read went through the bounce buffer, not by DMA "
                 "to the reader's pages (nvme.rs `dma_ready` refused its MDL)",
+                *lines,
+            ],
+        }
+    if "NVME_LOSE_COMPLETION=" in os.environ.get("VIBEOS_TRIPWIRE", "") and not _NVME_RESET.search(
+        text
+    ):
+        return {
+            "classification": "NVME_NOT_RESET",
+            "salient": [
+                "the NVME_LOSE_COMPLETION tripwire threw a completion away, but nvme.sys "
+                "never reported resetting the controller for it",
                 *lines,
             ],
         }

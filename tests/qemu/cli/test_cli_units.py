@@ -9675,6 +9675,12 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     bad = smoke_mod._nvme_check(working + test.format(8, 0))
     assert bad and bad["classification"] == "NVME_BOUNCED"
     assert smoke_mod._nvme_check(working + test.format(8, 9)) is None
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET NVME_LOSE_COMPLETION=3")
+    bad = smoke_mod._nvme_check(working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_NOT_RESET"
+    reset = "[NVME] controller 0: self-test: 1 reset(s), 1 command(s) failed back by them\n"
+    assert smoke_mod._nvme_check(working + test.format(8, 9) + reset) is None
+    monkeypatch.delenv("VIBEOS_TRIPWIRE")
     monkeypatch.setenv("VIBEOS_QEMU_NVME_BRIDGE", "1")
     bad = smoke_mod._nvme_check(working + test.format(8, 9))
     assert bad and bad["classification"] == "NVME_NOT_BEHIND_BRIDGE"
