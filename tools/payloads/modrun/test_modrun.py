@@ -30,7 +30,29 @@ def suites(tmp_path, monkeypatch):
 
 
 def _serial(*lines):
-    return "\n".join(lines) + "\n"
+    """Lines in the test's shorthand -- `[MODRUN:case:variant] text` and
+    `[MODRUN] exit case variant rc=.. ms=..` -- as modrun.c writes them: numbered,
+    checksummed, every record twice, the exit carrying the record count."""
+    out, seq = [], {}
+    for ln in lines:
+        rec = mr.re.match(r"\[MODRUN:([^:\]]+):([^\]]+)\] ?(.*)", ln)
+        ex = mr.re.match(r"\[MODRUN\] exit (\S+) (\S+) (.*)", ln)
+        if rec:
+            key = (rec.group(1), rec.group(2))
+            n = seq.get(key, 0)
+            text = rec.group(3)
+            line = f"[MODRUN:{key[0]}:{key[1]}:{n}:{mr.checksum(text, n):04x}] {text}"
+            out += [line, line]
+            seq[key] = n + 1
+        elif ex:
+            rest = ex.group(3).split(" ", 2)
+            out.append(
+                f"[MODRUN] exit {ex.group(1)} {ex.group(2)} {rest[0]} {rest[1]} "
+                f"records={seq.get((ex.group(1), ex.group(2)), 0)} {' '.join(rest[2:])}".rstrip()
+            )
+        else:
+            out.append(ln)
+    return "\n".join(out) + "\n"
 
 
 def test_case_file_and_arch_filter(suites):
@@ -80,3 +102,23 @@ def test_a_missing_exit_and_an_unexpected_pass_both_fail(suites):
     _, failures = mr.grade(serial, "i386")
     assert any(f.startswith("m.same: c: never finished") for f in failures)
     assert any("m.known: XPASS" in f for f in failures)
+
+
+def test_a_torn_copy_is_recovered_and_a_lost_record_is_transport_not_a_diff(suites):
+    whole = _serial(
+        "[MODRUN:m.same:c] Disk 0 pid=1",
+        "[MODRUN] exit m.same c rc=0x00000000 ms=5",
+        "[MODRUN:m.same:rust] Disk 0 pid=2",
+        "[MODRUN] exit m.same rust rc=0x00000000 ms=5",
+    ).splitlines()
+    # Another writer lands inside the first copy of the rust record; its twin is whole.
+    torn = list(whole)
+    i = next(k for k, ln in enumerate(torn) if ":m.same:rust:0:" in ln)
+    torn[i] = torn[i][:20] + "[CENSUS] wait profile" + torn[i][20:]
+    report, _ = mr.grade("\n".join(torn), "i386")
+    assert "PASS m.same (2 variant(s), 1 line(s) each)" in report
+    # Both copies gone: the case is not graded as output.
+    lost = [ln for ln in whole if ":m.same:rust:0:" not in ln]
+    report, failures = mr.grade("\n".join(lost), "i386")
+    assert any("TRANSPORT" in f for f in failures)
+    assert not any("output differs" in r for r in report)

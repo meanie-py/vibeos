@@ -104,15 +104,36 @@ static char *as_utf8(char *buf, DWORD *len)
     }
 }
 
-static void emit(const char *id, const char *variant, const char *line, size_t n)
+/* The debug serial is not line-atomic: on i386 another thread's DbgPrint lands in the middle
+ * of ours ("ptype 0x09 AIX dat[CENSUS] wait profile..."), and a record can be lost whole. So
+ * every record carries its sequence number and a checksum, and goes out TWICE; the grader keeps
+ * the first intact copy of each and reports a gap as transport loss, never as a diff. A `+`
+ * after the number means the next record continues this line (a line longer than CHUNK). */
+static unsigned checksum(const char *s, size_t n, unsigned seq)
+{
+    unsigned h = 0x811c9dc5u ^ seq;
+    size_t i;
+    for (i = 0; i < n; ++i)
+        h = (h ^ (unsigned char)s[i]) * 0x01000193u;
+    return (h ^ (h >> 16)) & 0xFFFFu;
+}
+
+static unsigned emit(const char *id, const char *variant, const char *line, size_t n, unsigned seq)
 {
     size_t at = 0;
     do
     {
         size_t k = n - at > CHUNK ? CHUNK : n - at;
-        DbgPrint("[MODRUN:%s:%s] %.*s\n", id, variant, (int)k, line + at);
+        int more = at + k < n;
+        unsigned sum = checksum(line + at, k, seq);
+        int copy;
+        for (copy = 0; copy < 2; ++copy)
+            DbgPrint("[MODRUN:%s:%s:%u%s:%04x] %.*s\n", id, variant, seq, more ? "+" : "", sum, (int)k,
+                     line + at);
         at += k;
+        ++seq;
     } while (at < n);
+    return seq;
 }
 
 static void run(const char *id, const struct variant *v, const char *in, DWORD in_len, DWORD timeout_ms)
@@ -124,6 +145,7 @@ static void run(const char *id, const struct variant *v, const char *in, DWORD i
     struct capture cap = { 0 };
     char cmd[2048];
     DWORD rc = 0, t0, ms, wrote, i, start;
+    unsigned seq = 0;
     BOOL timed_out = FALSE;
     char *text;
 
@@ -180,12 +202,12 @@ static void run(const char *id, const struct variant *v, const char *in, DWORD i
             if (end > start && text[end - 1] == '\r')
                 --end;
             if (i < cap.Used || end > start)
-                emit(id, v->name, text + start, end - start);
+                seq = emit(id, v->name, text + start, end - start, seq);
             start = i + 1;
         }
     }
-    SAY("exit %s %s rc=0x%08lx ms=%lu%s%s\n", id, v->name, rc, ms, timed_out ? " TIMEOUT" : "",
-        cap.Truncated ? " TRUNCATED" : "");
+    SAY("exit %s %s rc=0x%08lx ms=%lu records=%u%s%s\n", id, v->name, rc, ms, seq,
+        timed_out ? " TIMEOUT" : "", cap.Truncated ? " TRUNCATED" : "");
     if (text != cap.Buf)
         free(text);
     free(cap.Buf);

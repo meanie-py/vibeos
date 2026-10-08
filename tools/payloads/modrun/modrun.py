@@ -42,8 +42,8 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 SUITES = HERE / "suites"
-_LINE = re.compile(r"\[MODRUN:([^:\]]+):([^\]]+)\] ?(.*)")
-_EXIT = re.compile(r"\[MODRUN\] exit (\S+) (\S+) rc=(\S+) ms=(\d+)(.*)")
+_LINE = re.compile(r"\[MODRUN:([^:\]]+):([^:\]]+):(\d+)(\+?):([0-9a-f]{4})\] ?(.*)")
+_EXIT = re.compile(r"\[MODRUN\] exit (\S+) (\S+) rc=(\S+) ms=(\d+) records=(\d+)(.*)")
 _STATUS_CRASH = 0xC0000000
 
 
@@ -132,19 +132,54 @@ def ninja_targets(arch: str) -> list[str]:
     ]
 
 
+def checksum(text: str, seq: int) -> int:
+    """modrun.c's: FNV-1a over the record's bytes, seeded with its sequence number."""
+    h = 0x811C9DC5 ^ seq
+    for b in text.encode("utf-8", "surrogateescape"):
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return (h ^ (h >> 16)) & 0xFFFF
+
+
 def parse(serial: str) -> tuple[dict, dict]:
-    """(case, variant) -> output lines, and (case, variant) -> (rc, ms, flags)."""
-    out: dict[tuple[str, str], list[str]] = {}
+    """(case, variant) -> output lines, and (case, variant) -> (rc, ms, flags).
+
+    The serial interleaves other writers into a record and can drop one, so each record
+    arrives twice with a sequence number and checksum: the first intact copy wins. A record
+    with no intact copy leaves a gap, reported in flags as `LOST=<n>` -- transport loss, which
+    must never be graded as the program printing something different."""
+    records: dict[tuple[str, str], dict[int, tuple[str, bool]]] = {}
     exits: dict[tuple[str, str], tuple[str, int, str]] = {}
+    totals: dict[tuple[str, str], int] = {}
     for raw in serial.splitlines():
         raw = raw.rstrip("\r")
         m = _EXIT.search(raw)
         if m:
-            exits[(m.group(1), m.group(2))] = (m.group(3), int(m.group(4)), m.group(5).strip())
+            key = (m.group(1), m.group(2))
+            exits[key] = (m.group(3), int(m.group(4)), m.group(6).strip())
+            totals[key] = int(m.group(5))
             continue
         m = _LINE.search(raw)
         if m:
-            out.setdefault((m.group(1), m.group(2)), []).append(m.group(3))
+            seq, text = int(m.group(3)), m.group(6)
+            if checksum(text, seq) != int(m.group(5), 16):
+                continue  # a torn copy; its twin may be whole
+            records.setdefault((m.group(1), m.group(2)), {}).setdefault(
+                seq, (text, bool(m.group(4)))
+            )
+    out: dict[tuple[str, str], list[str]] = {}
+    for key, (rc, ms, flags) in list(exits.items()):
+        got = records.get(key, {})
+        lost = [s for s in range(totals[key]) if s not in got]
+        if lost:
+            exits[key] = (rc, ms, f"{flags} LOST={len(lost)}@{lost[0]}".strip())
+        lines, cur = [], ""
+        for s in range(totals[key]):
+            text, more = got.get(s, ("", False))
+            cur += text
+            if not more:
+                lines.append(cur)
+                cur = ""
+        out[key] = lines
     return out, exits
 
 
@@ -179,6 +214,12 @@ def grade(serial: str, arch: str) -> tuple[list[str], list[str]]:
                 why.append(f"{v}: TIMEOUT after {ms}ms (thread dump in the serial)")
             if "TRUNCATED" in flags:
                 why.append(f"{v}: output over 1 MiB, truncated")
+            if "LOST=" in flags:
+                why.append(
+                    f"{v}: TRANSPORT: the serial lost both copies of a record "
+                    f"({flags.split('LOST=')[1].split()[0]}); output not graded"
+                )
+                continue
             code = int(rc, 16)
             if code >= _STATUS_CRASH and "TIMEOUT" not in flags:
                 why.append(f"{v}: crashed, exit 0x{code:08x}")
@@ -230,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "ninja":
         print(" ".join(ninja_targets(args.arch)))
     else:
-        report, failures = grade(args.log.read_text(errors="replace"), args.arch)
+        report, failures = grade(args.log.read_text(errors="surrogateescape"), args.arch)
         print("\n".join(report))
         cases_n = sum(r.startswith(("PASS", "FAIL", "XFAIL", "XPASS")) for r in report)
         print(f"modrun: {cases_n} case(s), {len(failures)} failed")
