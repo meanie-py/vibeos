@@ -80,7 +80,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"{rel}:{lineno}: `'{label}: {{ break '{label}; }}` jumps nowhere (a C goto?)")
     if findings and not lint:
-        print(f"\n{len(findings)} finding(s): delete the vestige, or span the block over the skipped code.")
+        print(
+            f"\n{len(findings)} finding(s): delete the vestige, "
+            "or span the block over the skipped code."
+        )
     return 1 if findings else 0
 
 

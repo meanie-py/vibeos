@@ -11,7 +11,8 @@ def _repo(tmp_path: Path, rust_repr: str) -> Path:
     mod = tmp_path / "base" / "system" / "dp"
     mod.mkdir(parents=True)
     (mod / "CMakeLists.txt").write_text(
-        "list(APPEND SOURCE\n    # partlist.c  # replaced by Rust (sdk/lib/rust/dp-rust/src/partlist.rs)\n)\n"
+        "list(APPEND SOURCE\n"
+        "    # partlist.c  # replaced by Rust (sdk/lib/rust/dp-rust/src/partlist.rs)\n)\n"
     )
     (mod / "partlist.c").write_text(
         "#include <pshpack1.h>\n"

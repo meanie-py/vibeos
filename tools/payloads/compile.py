@@ -245,7 +245,10 @@ def ensure_built(names: list[str], arch: str) -> list[str]:
             continue
         script = PAYLOADS_DIR / name / "build.sh"
         if not script.is_file():
-            die(f"payload {name!r}: {(stale or ['its build'])[0]} is stale or missing and there is no {script}")
+            die(
+                f"payload {name!r}: {(stale or ['its build'])[0]} is stale or missing "
+                f"and there is no {script}"
+            )
         cp = subprocess.run(
             ["bash", str(script), arch], cwd=str(REPO), capture_output=True, text=True
         )

@@ -125,7 +125,10 @@ def stage_entries(arch: str) -> list[dict]:
 
 def ninja_targets(arch: str) -> list[str]:
     return [
-        t for spec in load_suites().values() if _on(spec.get("arches"), arch) for t in spec.get("ninja") or []
+        t
+        for spec in load_suites().values()
+        if _on(spec.get("arches"), arch)
+        for t in spec.get("ninja") or []
     ]
 
 

@@ -15,7 +15,9 @@ def test_reads_and_writes_become_unchecked_pointer_arithmetic():
     )
     out, n = fi.rewrite(src, FIELDS)
     assert n == 3
-    assert "(*core::ptr::addr_of!((*data).MountPoints[0]).add((*data).Size as usize)).Symbolic" in out
+    assert (
+        "(*core::ptr::addr_of!((*data).MountPoints[0]).add((*data).Size as usize)).Symbolic" in out
+    )
     assert (
         "(*core::ptr::addr_of_mut!((*(*DiskEntry).LayoutBuffer).PartitionEntry[0])"
         ".add(i as usize)).RewritePartition = 1;" in out

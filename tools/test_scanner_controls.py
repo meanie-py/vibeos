@@ -732,7 +732,11 @@ pub unsafe fn g(a: *const ANSI_STRING, out: *mut i8) {
 _TYPEDBYTE_BAD = """\
 pub unsafe fn f(Irp: PIRP, size: usize) {
     let mut layoutEx: *mut _DRIVE_LAYOUT_INFORMATION_EX = core::ptr::null_mut();
-    core::ptr::copy_nonoverlapping(layoutEx as *const _, (*Irp).AssociatedIrp.SystemBuffer as *mut _, size);
+    core::ptr::copy_nonoverlapping(
+        layoutEx as *const _,
+        (*Irp).AssociatedIrp.SystemBuffer as *mut _,
+        size,
+    );
 }
 pub unsafe fn g(a: *const ENTRY, b: *mut ENTRY, n: usize) {
     core::ptr::copy_nonoverlapping(a, b, n * core::mem::size_of::<ENTRY>());
@@ -741,7 +745,11 @@ pub unsafe fn g(a: *const ENTRY, b: *mut ENTRY, n: usize) {
 _TYPEDBYTE_GOOD = """\
 pub unsafe fn f(Irp: PIRP, size: usize, h: *const HDR, out: *mut u8) {
     let mut layoutEx: *mut _DRIVE_LAYOUT_INFORMATION_EX = core::ptr::null_mut();
-    core::ptr::copy_nonoverlapping(layoutEx as *const u8, (*Irp).AssociatedIrp.SystemBuffer as *mut u8, size);
+    core::ptr::copy_nonoverlapping(
+        layoutEx as *const u8,
+        (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+        size,
+    );
     core::ptr::copy_nonoverlapping(h as *const HDR as *const u8, out, (*h).HeaderSize as usize);
 }
 pub unsafe fn g(a: *const ENTRY, b: *mut ENTRY, OldListSize: u32) {

@@ -26,9 +26,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 _FLIP = re.compile(r"#\s*\S+\.(?:c|cpp)\s+#\s*replaced by Rust \((sdk/lib/rust/[\w.-]+)")
-_REGION = re.compile(
-    r'#include\s*[<"]pshpack(\d)\.h[>"](.*?)#include\s*[<"]poppack\.h[>"]', re.S
-)
+_REGION = re.compile(r'#include\s*[<"]pshpack(\d)\.h[>"](.*?)#include\s*[<"]poppack\.h[>"]', re.S)
 _TYPEDEF = re.compile(r"typedef\s+struct\s+(\w+)?\s*\{.*?\}\s*(\w+)", re.S)
 _TAGGED = re.compile(r"(?<!typedef )\bstruct\s+(\w+)\s*\{")
 _COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
@@ -77,7 +75,9 @@ def scan() -> list[str]:
         for fname, pack, names in structs:
             for name in sorted(names):
                 for m in re.finditer(
-                    r"#\[repr\(([^)\]]*)\)\]\s*(?:#\[[^\]]*\]\s*)*pub struct " + re.escape(name) + r"\b",
+                    r"#\[repr\(([^)\]]*)\)\]\s*(?:#\[[^\]]*\]\s*)*pub struct "
+                    + re.escape(name)
+                    + r"\b",
                     rust,
                 ):
                     if "packed" not in m.group(1):

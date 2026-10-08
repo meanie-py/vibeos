@@ -58,7 +58,9 @@ BYTE_PTR_ALIASES = {"PVOID", "LPVOID", "PCVOID", "LPCVOID", "PUCHAR", "PBYTE", "
 BYTE_COUNT_RE = re.compile(
     r"\b(?:size|\w*Size|\w*_size|\w*Length|\w*Bytes\w*|\w*ByteCount|cb[A-Z_]\w*|bytes)\b"
 )
-TIMES_SIZEOF_RE = re.compile(r"\*\s*(?:\(\s*)?(?:core::|std::)?(?:mem::)?size_of\b|size_of\b[^/]*\*")
+TIMES_SIZEOF_RE = re.compile(
+    r"\*\s*(?:\(\s*)?(?:core::|std::)?(?:mem::)?size_of\b|size_of\b[^/]*\*"
+)
 DIVIDED_RE = re.compile(r"/\s*\(?\s*(?:core::|std::)?(?:mem::)?size_of")
 
 
@@ -71,7 +73,8 @@ def _declared(text: str, before: int, name: str) -> str | None:
     window = text[max(0, before - 20000) : before]
     best = None
     for m in re.finditer(
-        rf"\b{re.escape(name)}\s*:\s*(?:\*(?:mut|const)\s+((?:[\w:]+::)?\w+)|((?:[\w:]+::)?\w+))", window
+        rf"\b{re.escape(name)}\s*:\s*(?:\*(?:mut|const)\s+((?:[\w:]+::)?\w+)|((?:[\w:]+::)?\w+))",
+        window,
     ):
         best = m
     if best is None:
@@ -131,7 +134,9 @@ def scan(paths: list[Path]) -> list[tuple[Path, int, str, str]]:
                 args = _call_args(text, m.end())
                 if args is None or len(args) != 3:
                     continue
-                ptrs, count = ([args[0]], args[2]) if m.group(1) == "write_bytes" else (args[:2], args[2])
+                ptrs, count = (
+                    ([args[0]], args[2]) if m.group(1) == "write_bytes" else (args[:2], args[2])
+                )
                 elem, cast = element_type(text, m.start(), ptrs, m.group(2))
                 if elem is None or elem in BYTE_TYPES or elem in WIDE_TYPES:
                     continue

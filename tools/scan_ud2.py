@@ -299,7 +299,10 @@ def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
         fn = current_function
         expected = (
             any(e in fn for e in EXPECTED_UD2)
-            or (arch == "arm64" and (any(e in fn for e in EXPECTED_SPIN) or fn in EXPECTED_SPIN_EXACT))
+            or (
+                arch == "arm64"
+                and (any(e in fn for e in EXPECTED_SPIN) or fn in EXPECTED_SPIN_EXACT)
+            )
             or any(e in fn for e in DRIVER_INTRINSIC_SKIP)
             or _is_mangled(fn)
             or (prev_call_target and any(n in prev_call_target for n in NORETURN_CALLEES))

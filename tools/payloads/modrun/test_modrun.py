@@ -35,7 +35,10 @@ def _serial(*lines):
 
 def test_case_file_and_arch_filter(suites):
     text = mr.case_file("i386")
-    assert "case m.same\nvariant c C:\\c.exe\nvariant rust C:\\r.exe\nstdin list\ntimeout 60\nend" in text
+    assert (
+        "case m.same\nvariant c C:\\c.exe\nvariant rust C:\\r.exe\nstdin list\ntimeout 60\nend"
+        in text
+    )
     assert "m.crash" not in text
     assert "m.crash" in mr.case_file("amd64")
 

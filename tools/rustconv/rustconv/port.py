@@ -944,7 +944,10 @@ def stage_oracle(stem: str) -> None:
         current = c_oracle.write(module)
     except c_oracle.OracleError as e:
         raise PortError(f"oracle: {e}") from e
-    print(f"oracle: {(module / c_oracle.ORACLE_FILE).relative_to(REPO)} {'current' if current else 'written'}")
+    print(
+        f"oracle: {(module / c_oracle.ORACLE_FILE).relative_to(REPO)} "
+        + ("current" if current else "written")
+    )
 
 
 def _tokens(log: str) -> tuple[int, int, int]:

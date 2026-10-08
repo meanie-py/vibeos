@@ -656,7 +656,21 @@ decides a byte from clang run with the TU's own compile command -- which declara
 - Output is generated on all three arches and must be identical; each extern table's
   length is checked against the island's `extern` declaration (how the crate's code reaches
   it), and is a `#[no_mangle] pub static mut`. A NULL is `null()` / `null_mut()` through the
-  typedef chain. Unions, bit-fields, designated initializers and wide literals refuse.
+  typedef chain.
+- Since 2026-10-08 also: **designated initializers** (clang's JSON is the semantic form, in
+  field order with implicit zeros); **unions**, through the member clang names, and anonymous
+  members as bindgen's `__bindgen_anon_N: Parent__bindgen_ty_N`; **bit-fields**, packed into
+  `__BindgenBitfieldUnit::new([..])` from the offsets the island's bindgen accessors state
+  (`get_const::<OFF, WIDTH>`), so the island is the layout oracle and an island without the
+  struct refuses; **wide literals** as `wstr!("...")` (UTF-16 built by a const fn, checked
+  unit for unit against clang); and `char`/`WCHAR` arrays initialized by a string. Helpers sit
+  in a private `data_port` module: a C table named `w` or `n` must not meet a helper's local.
+- **A filler bug, found while adding these:** when an array has a filler, clang's JSON puts the
+  explicit elements INSIDE `array_filler` (after the filler) and omits `inner`, so
+  `int x[4] = {1, 2}` was rendered as four zeros. usetup's tables were unaffected (none is
+  partially initialized; regenerating changed no value). The test that pins the new shapes
+  generates against a real bindgen island, compiles with rustc and RUNS the result,
+  asserting every value the C states -- the compile step alone caught two helper-scope bugs.
 - `port data` writes `src/<stem>/<tu>/` (one file per header), wires lib.rs and comments the
   TU out of the CMakeLists. The TU stays on disk as the generator's INPUT; flipped, it
   borrows a sibling's compile command.

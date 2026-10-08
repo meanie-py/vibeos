@@ -113,7 +113,9 @@ def _written(text: str, start: int, end: int) -> bool:
         return True
     after = text[end : end + 200]
     # `x.F[i] = ..`, `x.F[i].y += ..`, `x.F[i].y.z = ..` (but not `==`)
-    return re.match(r"(\s*\.\s*\w+(\s*\[[^\]]*\])?)*\s*([-+*/%&|^]|<<|>>)?=(?!=)", after) is not None
+    return (
+        re.match(r"(\s*\.\s*\w+(\s*\[[^\]]*\])?)*\s*([-+*/%&|^]|<<|>>)?=(?!=)", after) is not None
+    )
 
 
 def rewrite(text: str, fields: frozenset[str], *, verified: bool = False) -> tuple[str, int]:
@@ -131,7 +133,10 @@ def rewrite(text: str, fields: frozenset[str], *, verified: bool = False) -> tup
         if close < 0:
             continue
         index = text[open_b + 1 : close].strip()
-        if re.fullmatch(r"\(?\s*0(?:usize|u32|i32)?\s*(?:as\s+\w+)?\s*\)?", index) or "\n" in text[m.start() : open_b]:
+        if (
+            re.fullmatch(r"\(?\s*0(?:usize|u32|i32)?\s*(?:as\s+\w+)?\s*\)?", index)
+            or "\n" in text[m.start() : open_b]
+        ):
             continue
         line_start = text.rfind("\n", 0, m.start()) + 1
         if text[line_start : m.start()].lstrip().startswith("//"):
@@ -193,7 +198,9 @@ def reject(sites: list[str]) -> int:
     for path, lines in by_file.items():
         text = path.read_text().split("\n")
         for ln in lines:
-            line, k = _VERIFIED.subn(lambda m: f"{m.group('arr')}[{_unwrap(m.group('idx'))}]", text[ln - 1])
+            line, k = _VERIFIED.subn(
+                lambda m: f"{m.group('arr')}[{_unwrap(m.group('idx'))}]", text[ln - 1]
+            )
             text[ln - 1] = line
             n += k
         path.write_text("\n".join(text))
@@ -205,7 +212,11 @@ def run(paths: list[Path], *, check: bool = False, ambiguous_too: bool = False) 
     fields, ambiguous = field_shapes()
     total = 0
     for root in paths:
-        files = [root] if root.is_file() else sorted(p for p in root.rglob("*.rs") if "/target/" not in str(p))
+        files = (
+            [root]
+            if root.is_file()
+            else sorted(p for p in root.rglob("*.rs") if "/target/" not in str(p))
+        )
         for f in files:
             text = f.read_text()
             new, n = rewrite(text, fields)
@@ -213,12 +224,17 @@ def run(paths: list[Path], *, check: bool = False, ambiguous_too: bool = False) 
             new2, maybe = rewrite(new, ambiguous, verified=True)
             if maybe and ambiguous_too:
                 new, n = new2, n + maybe
-                print(f"flex_index: {rel}: {maybe} name-ambiguous site(s) in the self-checking form "
-                      "(a compile error there means a real array: revert that site)")
+                print(
+                    f"flex_index: {rel}: {maybe} name-ambiguous site(s) in the self-checking form "
+                    "(a compile error there means a real array: revert that site)"
+                )
             elif maybe:
-                print(f"flex_index: {rel}: {maybe} index(es) of a name that is flexible in one struct "
-                      "and a real array in another: --ambiguous rewrites them in a form the "
-                      "compiler rejects for a real array")
+                print(
+                    f"flex_index: {rel}: {maybe} index(es) of a name that is flexible in "
+                    "one struct "
+                    "and a real array in another: --ambiguous rewrites them in a form the "
+                    "compiler rejects for a real array"
+                )
             if n:
                 total += n
                 print(f"flex_index: {rel}: {n} site(s)")
@@ -228,16 +244,21 @@ def run(paths: list[Path], *, check: bool = False, ambiguous_too: bool = False) 
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("paths", nargs="*", type=Path)
-    ap.add_argument("--check", action="store_true", help="report, do not rewrite; exit 1 on any site")
+    ap.add_argument(
+        "--check", action="store_true", help="report, do not rewrite; exit 1 on any site"
+    )
     ap.add_argument(
         "--ambiguous",
         action="store_true",
         help="also rewrite name-ambiguous sites, in the form only a [T; 1] compiles",
     )
     ap.add_argument(
-        "--reject", nargs="+", metavar="FILE:LINE", help="sites rustc rejected: plain indexing again"
+        "--reject",
+        nargs="+",
+        metavar="FILE:LINE",
+        help="sites rustc rejected: plain indexing again",
     )
     args = ap.parse_args(argv)
     if args.reject:
