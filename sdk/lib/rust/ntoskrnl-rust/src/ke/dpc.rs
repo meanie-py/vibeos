@@ -18,7 +18,6 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 // Use actual definitions, not extern declarations (lto=false splits them)
 use super::krnlinit::KiProcessorBlock;
 use super::processor::KeNumberProcessors;
-use super::thrdschd::KiIdleSummary;
 use super::clock::KeTickCount;
 extern "system" {
     fn _enable();
@@ -735,6 +734,15 @@ pub unsafe extern "system" fn KiDispatchSoftwareIntArm64() {
         _disable();
         KiRetireDeviceDpcs(Prcb);
         _enable();
+    } else {
+        // The request is serviced even with nothing queued. KiIpiServiceRoutine
+        // sets DpcInterruptRequested for every IPI_DPC, and KiDeferredReadyThread
+        // sends one just to wake a CPU for a readied thread. Only the retire
+        // above cleared the flag, so after such a wake it stayed 1, every later
+        // local KeInsertQueueDpc saw "already requested" and pended nothing, and
+        // this CPU's DPCs waited for the idle loop (kmtest KeDpc 316/0 -> 36/70
+        // at arm64 -smp 2: DpcCount = 0, re-insert returns FALSE).
+        (*Prcb).DpcInterruptRequested = 0;
     }
 
     // Same CONFIG_SMP drain as KiRetireDpcList_body: timer expiration above
@@ -939,9 +947,13 @@ pub unsafe extern "system" fn KeInsertQueueDpc(
         } else {
             if ((*Prcb).DpcRoutineActive == 0) && ((*Prcb).DpcInterruptRequested == 0) {
                 if Prcb != CurrentPrcb {
-                    if (((*Dpc).Importance == HighImportance as u8) ||
-                        ((*DpcData).DpcQueueDepth >= (*Prcb).MaximumDpcQueueDepth as _)) &&
-                       (((((1 as KAFFINITY) << Cpu) & KiIdleSummary) == 0) || ((*Prcb).Sleeping != 0))
+                    // The C also skips the interrupt when the target is in
+                    // KiIdleSummary and not Sleeping, trusting an idle CPU to
+                    // POLL its DPC queue. Ours halt (arm64 wfi, x86 hlt via
+                    // IdleFunction) and never set Sleeping, so a skipped IPI
+                    // left the DPC waiting for that CPU's next clock tick.
+                    if ((*Dpc).Importance == HighImportance as u8) ||
+                        ((*DpcData).DpcQueueDepth >= (*Prcb).MaximumDpcQueueDepth as _)
                     {
                         (*Prcb).DpcInterruptRequested = 1;
                         DpcInserted = 1;

@@ -1051,23 +1051,47 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     rounds with no regression, pass 209-215 (runs 20261008-010705-u8wibif3,
     20261008-011551-njv_6fyb, 20261008-011852-d36dvtvt). The baseline (204) was never raised,
     so a later timing-only drop no longer fails the ratchet.
-  - **arm64: a new thread is not blocked on its mutex within 50 ms** (OPEN, found 2026-10-08).
-    The rest of `TestFastMutexConcurrent` (ExFastMutex lines 283-315) still fails 4-10
-    assertions per run: after `PsCreateSystemThread` and a 50 ms wait, the new thread has not
-    reached `ExAcquireFastMutex` (Count 0, not -1). It happens on ONE vCPU (the gate boots
-    without `-smp`), so it is not cross-CPU placement; i386 passes the same test 246/250.
-    Suspects: how soon a readied thread runs on arm64 without a DISPATCH software interrupt,
-    or the wait's timeout expiring early. Raise the ExFastMutex baseline once this is fixed.
-  - **SMP `KiIdleSummary` bits are never cleared** (OPEN, found 2026-10-08). The C only clears
-    them in its `#ifndef CONFIG_SMP` fast path (`thrdschd.c:310-322`), and the Rust copied that,
-    so after boot every CPU reads as idle forever and `KiSelectNextProcessor` ignores real
-    idleness: a readied thread goes to its ideal processor even when that one is busy and
-    another sits in WFI. Same class on the DPC side: `KiInsertQueueDpc` skips the wake IPI for
-    "idle" CPUs, which here halt rather than poll. Drafted fix (NT's rule): in the SMP path of
-    `KiDeferredReadyThread`, when the chosen PRCB is in the summary with no NextThread and
-    CurrentThread == IdleThread, clear its bit, make the thread Standby/NextThread and IPI;
-    and clear the bit when the arm64 idle loop takes a thread off its own ready list. Not
-    landed: it did not explain the 1-vCPU flake above and needs `-smp N` evidence first.
+  - **arm64: a new thread is not blocked on its mutex within 50 ms** (FIXED 2026-10-08,
+    9573606b304). `TestFastMutexConcurrent` (ExFastMutex :283-:315) lost its 50 ms races on
+    one vCPU: the new thread sat Ready for the whole wait because livecd setup.exe's COM
+    registration (33-42 s of priority-8 user mode) was still running. kmtest-sweep now waits
+    for setup.exe to exit; arm64 ExFastMutex 219/0 and the baseline is raised.
+  - **SMP `KiIdleSummary` bits are never cleared** (FIXED 2026-10-08). The C only clears them
+    in its `#ifndef CONFIG_SMP` path (`thrdschd.c:310-322`) and the Rust copied that, so after
+    boot every CPU read as idle forever: `KiSelectNextProcessor` sent a readied thread to its
+    ideal processor even when that one was busy and another sat in WFI/hlt. Fix (NT's rule):
+    `KiDeferredReadyThread` clears the bit when it hands an idle processor a thread, and the
+    arm64 idle loop clears it when it takes work off its own ready list. Same class on the DPC
+    side: `KiInsertQueueDpc` skipped the wake IPI for "idle" CPUs, trusting them to poll, but
+    ours halt and never set `Sleeping`; the IPI is now always sent for a remote high-importance
+    DPC. Exposed the AP TTBR0 bug below. Side effect at `-smp 2`: kmtest `KeEvent`'s
+    scheduling section assumes one CPU (the boosted waiter "will always win" by preempting
+    the setter) and now loses the race on the idle CPU, fail 18-30 -> 1095-1496 on arm64. The
+    test is upstream and unmodified; the smp2 row is not gated.
+  - **arm64 APs ran System threads on the trampoline's identity map** (FIXED 2026-10-08). An
+    AP leaves the HAL trampoline (`hal-rust/src/arm64/mpboot.rs`) with TTBR0 = a temporary
+    identity map, and `KiSwapProcess` only reloads TTBR0 when the process changes; every
+    System thread shares the idle process's directory, so nothing ever replaced it. A System
+    thread touching a user-half VA on CPU1 (the ntdll view `PsLocateSystemDll` maps into
+    System) took a level-0 translation fault the pager could never satisfy: `FAULT LOOP`,
+    then `PspInitializeSystemDll FAILED subcode=7`, BugCheck 0x6B. Latent on master because
+    threads rarely ran there; with the idle-summary fix it hit 3 of 4 arm64 `-smp 2` boots.
+    Fix: `KiSystemStartupBootStack` installs the idle process's directory in TTBR0/TTBR1 on
+    each AP. After: 3/3 arm64 `-smp 2` smokes green (20261008-104247-pcb01hej).
+  - **arm64 `-smp 2`: a CPU woken by IPI_DPC stopped requesting its own DPCs** (FIXED
+    2026-10-08). kmtest `KeDpc` 316/0 -> 36/70 on master at `-smp 2` (`DpcCount = 0`, the
+    re-insert returns FALSE: the queued DPC never ran). `KiIpiServiceRoutine` sets
+    `DpcInterruptRequested` for every IPI_DPC, and `KiDeferredReadyThread` sends one just to
+    wake a CPU for a readied thread; arm64's `KiDispatchSoftwareIntArm64` only cleared the flag
+    inside `KiRetireDeviceDpcs`, which it skips on an empty queue. The flag stuck at 1, so
+    every later local `KeInsertQueueDpc` pended nothing and DPCs waited for the idle loop. The
+    gate boots one vCPU (no IPIs), so nothing caught it. Fix: clear it on the empty-queue
+    path. After: KeDpc back to 316/0 (run 20261008-113025-wj76_5zu).
+  - **arm64 `-smp 2` kmtest rows still below the smp2 baseline** (OPEN, found 2026-10-08).
+    Present on master 3663e3d838 and unchanged by the fixes above (run
+    20261008-111030-nw1pwlqr): `ZwCreateSection` fail 3 -> 48, `NtSystemDebugControl` 36/6 ->
+    22/20, `MmMdl` 575 -> 569. `KeEvent` at `-smp 2` is now nondeterministic (fail 1095 and
+    1496 in two runs) for the reason given in the KiIdleSummary entry above.
   - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
     (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
     control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU

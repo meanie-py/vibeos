@@ -11213,6 +11213,34 @@ watchdog chased that for hours. What broke it was splitting failing boots from p
 on a single fact (`[UEXC]` after `[REGSTRESS] start`: every failure, no pass), then probing
 the corrupt page itself: a page that is ALL zero is lost memory, not an overwrite.
 
+### A `FAULT LOOP` with a valid PTE: the AP never left its boot TTBR0
+**Symptom** (arm64 `-smp 2`): `*** FAULT LOOP (FATAL): the pager reported success on the
+same fault` on a user-half VA while the faulting thread is a System thread, then
+`PspInitializeSystemDll FAILED subcode=7` and BugCheck 0x6B. In the `[FAULTLOOP]` dump the
+PDE/PTE read through the self-map are valid, but `AT(VA)` reports a **level-0** fault and
+**TTBR0 != TTBR1**.
+
+**Cause:** an AP leaves the HAL trampoline with TTBR0 = its temporary identity map.
+`KiSwapProcess` reloads TTBR0 only when the process changes, and every System thread shares
+the idle process's directory, so nothing ever replaced it. The pager checks the System
+process's tables, the hardware walks the identity map, and the fault can never be satisfied.
+It stayed latent while threads rarely ran on the AP; fixing `KiIdleSummary` (threads now go to
+the idle CPU) took it from never to 3 of 4 boots.
+
+**Fix:** `KiSystemStartupBootStack` installs the idle process's directory in TTBR0 and TTBR1
+on each AP, as `KiSwapProcess` would.
+
+### A DPC queued on a CPU never runs until it idles: `DpcInterruptRequested` stuck at 1
+**Symptom** (arm64 `-smp 2` only): kmtest `KeDpc` reads `DpcCount = 0` after every insert
+and the re-insert returns FALSE; the DPC sits queued until that CPU next reaches its idle loop.
+**Cause:** every IPI_DPC sets `Prcb->DpcInterruptRequested`, including the ones
+`KiDeferredReadyThread` sends only to wake a CPU for a thread. The arm64 soft-interrupt body
+cleared it only when it retired a non-empty queue, so a wake with nothing queued left it set,
+and `KeInsertQueueDpc` skips requesting an interrupt while it is set. **Fix:** clear it on the
+empty-queue path too. Any per-PRCB "request pending" flag needs a clear on every path that
+services the request, not just the path that finds work. **Tell:** `KiSwapProcess` sets both registers to the
+same table, so TTBR0 != TTBR1 on a running CPU means TTBR0 was never set by a process switch.
+
 ### The machine keeps running after a BUGCHECK: the other CPUs were never frozen
 **Symptom** (MP, both amd64 and arm64): the serial carries thread exits, network
 self-tests and DLL loads *after* the `*** BUGCHECK` line, interleaved with the flight

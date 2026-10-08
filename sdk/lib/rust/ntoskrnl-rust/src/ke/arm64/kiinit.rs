@@ -363,6 +363,25 @@ pub unsafe extern "system" fn KiSystemStartupBootStack() -> ! {
     let ap = (*Prcb).Number != 0;
     ap_stage(ap, 10);
 
+    // An AP arrives from the HAL trampoline with TTBR0 = its temporary identity
+    // map (TTBR1 is already the kernel's). KiSwapProcess only reloads TTBR0 when
+    // the process CHANGES, and every System thread shares the idle process's
+    // directory, so nothing ever replaced it: a System thread that touched a
+    // user-half VA on this CPU (the ntdll view PsLocateSystemDll maps into
+    // System) walked the identity map, took a level-0 translation fault the
+    // pager could never satisfy, and Phase 1 died with 0x6B. Install the idle
+    // process's directory in both halves, as KiSwapProcess does; we run from
+    // high VAs only by now, so the identity map is dead.
+    if ap {
+        let Directory = (*Process).DirectoryTableBase[0];
+        core::arch::asm!("dsb ish", options(nostack));
+        core::arch::asm!("msr ttbr0_el1, {}", in(reg) Directory, options(nostack));
+        core::arch::asm!("msr ttbr1_el1, {}", in(reg) Directory, options(nostack));
+        core::arch::asm!("tlbi vmalle1", options(nostack));
+        core::arch::asm!("dsb nsh", options(nostack));
+        core::arch::asm!("isb", options(nostack));
+    }
+
     // Through the REAL _KNODE: a local one-field stand-in put ProcessorMask at
     // offset 0 instead of 32, so every CPU ORed its bit into another field and
     // the node's mask stayed 0. Every thread then got ideal processor 0 and
