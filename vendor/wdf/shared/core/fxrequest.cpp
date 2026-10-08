@@ -3096,6 +3096,7 @@ FxRequest::Release(
     BOOLEAN reservedRequest;
     BOOLEAN allocFromIo;
     BOOLEAN canComplete;
+    BOOLEAN completed;
 
     //
     // This may be the last ref, copy flags before calling Release().
@@ -3103,16 +3104,28 @@ FxRequest::Release(
     reservedRequest = IsReserved();
     allocFromIo     = IsAllocatedFromIo();
     canComplete     = IsCanComplete();
+    //
+    // m_Completed MUST be copied here for the same reason as the flags above.
+    // When retValue == 1 one reference remains and `this` is still alive, so the
+    // member read below is safe; when retValue == 0 the __super Release has already
+    // run FinalRelease() and freed `this`. The source relied on the `retValue == 1 &&`
+    // short-circuit to guard the member read, but clang treats `this` as always
+    // dereferenceable and hoists the load of m_Completed (this+0x6a) above that check,
+    // reading the freed object -- fatal when the page is unmapped (special pool), a
+    // stray load otherwise. Capturing it before the decrement removes the post-free
+    // read entirely and is value-identical in every defined case.
+    //
+    completed       = m_Completed;
 
     retValue = FxRequestBase::Release(Tag, Line, File); // __super call
 
-    if (reservedRequest && retValue == 1 && m_Completed) {
+    if (reservedRequest && retValue == 1 && completed) {
         //
         // Reserved requests should have an associated queue all the time.
         //
         m_ForwardProgressQueue->ReturnReservedRequest(this);
     }
-    else if (allocFromIo == FALSE && canComplete && retValue == 1 && m_Completed) {
+    else if (allocFromIo == FALSE && canComplete && retValue == 1 && completed) {
 
         FxRequestCompletionState    state;
         FxIoQueue*                  queue;
