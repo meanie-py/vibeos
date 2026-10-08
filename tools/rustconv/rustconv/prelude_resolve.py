@@ -746,6 +746,24 @@ def write_externs(prelude: Path, block: str) -> bool:
     return True
 
 
+def declared_outside_externs(prelude: Path) -> set[str]:
+    """Functions the prelude declares ANYWHERE except the port-externs block itself.
+
+    `hand_written_names` drops every generated block, the tree-consensus one included, so a
+    name that block already declares (appwiz: `RegQueryValueExW`, copied from desk) looked
+    undeclared and the externs pass declared it again -- E0428 on a crate nobody touched.
+    """
+    if not prelude.is_file():
+        return set()
+    text = re.sub(
+        re.escape(EXTERNS_BEGIN) + r".*?" + re.escape(EXTERNS_END) + r"\n?",
+        "",
+        prelude.read_text(),
+        flags=re.S,
+    )
+    return set(re.findall(r"^\s*(?:pub\s+)?(?:unsafe\s+)?fn\s+(\w+)\s*\(", text, re.M))
+
+
 def hand_written_names(prelude: Path) -> set[str]:
     """Names the prelude defines OUTSIDE its generated `// ==== ... ====` blocks."""
     if not prelude.is_file():

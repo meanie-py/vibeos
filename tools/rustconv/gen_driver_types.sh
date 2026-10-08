@@ -2602,6 +2602,89 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/reactos/libs/fmifs" -I"${SRC}/sdk/lib/conutils" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  browseui)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-07 from dll/win32/browseui/CMakeLists.txt
+    # (27 compiled TU(s), 231 headers in the include closure, 155 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 473 external prototype(s) declared by the include closure, 83 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/browseui"
+    WRAPPER_INC=$'#include "precomp.h"\n#include <commoncontrols.h>\n#include <shlwapi_undoc.h>\n#include <shellapi.h>\n#include <imm.h> // For IMN_OPENCANDIDATE\n#include <process.h> // _beginthreadex\n#include <shlwapi.h>\n#include <strsafe.h>\n#include <htiframe.h>\n#include <shdocvw_undoc.h>\n#include <precomp.h>\n#include <windef.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]atlbase\.h' --allowlist-file '.*[/\\]atlcom\.h'
+                  --allowlist-file '.*[/\\]atlsimpcoll\.h'
+                  --allowlist-file '.*[/\\]atlstr\.h'
+                  --allowlist-file '.*[/\\]atltypes\.h'
+                  --allowlist-file '.*[/\\]atlwin\.h'
+                  --allowlist-file '.*[/\\]browseui_undoc\.h'
+                  --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]commoncontrols\.h'
+                  --allowlist-file '.*[/\\]exdispid\.h'
+                  --allowlist-file '.*[/\\]htiframe\.h'
+                  --allowlist-file '.*[/\\]imm\.h'
+                  --allowlist-file '.*[/\\]perhist\.h'
+                  --allowlist-file '.*[/\\]shdeprecated\.h'
+                  --allowlist-file '.*[/\\]shdocvw_undoc\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shellutils\.h'
+                  --allowlist-file '.*[/\\]shlguid_undoc\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlobj_undoc\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]shlwapi_undoc\.h'
+                  --allowlist-file '.*[/\\]shobjidl\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]tlogstg\.h'
+                  --allowlist-file '.*[/\\]ui[/\\]rosctrls\.h'
+                  --allowlist-file '.*[/\\]undocshell\.h'
+                  --allowlist-file '.*[/\\]undocuser\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnetwk\.h'
+                  --allowlist-file '.*browseui[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/browseui" -I"${SRC}/build-i386/dll/win32/browseui" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  appwiz)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-07 from dll/cpl/appwiz/CMakeLists.txt
+    # (4 compiled TU(s), 180 headers in the include closure, 17 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 78 external prototype(s) declared by the include closure, 7 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/cpl/appwiz"
+    WRAPPER_INC=$'#include "appwiz.h"\n#include <stdio.h>\n# include <unistd.h>\n#include <msi.h>\n#include <shellapi.h>\n#include <cpl.h>\n#include <wine/unicode.h>\n#include <commctrl.h>\n#include <strsafe.h>\n#include <shlwapi_undoc.h> // for PathFindOnPathExW\n#include "../../win32/shell32/shresdef.h" // for IDS_NEWITEMFORMAT and IDS_LNK_FILE'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]\.\.[/\\]\.\.[/\\]win32[/\\]shell32[/\\]shresdef\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]config\.h'
+                  --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]intshcut\.h'
+                  --allowlist-file '.*[/\\]msi\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]shlwapi_undoc\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*appwiz[/\\].*\.h'
+                  --allowlist-file '.*[/\\]objidl\.h'
+                  --allowlist-file '.*[/\\]shobjidl\.h'
+                  --allowlist-file '.*[/\\]urlmon\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/cpl/appwiz" -I"${SRC}/build-i386/dll/cpl/appwiz" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_DECLARE_NONSTDC_NAMES=1 -DUNICODE -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
@@ -2703,6 +2786,16 @@ run_arch() {
   # correct translation of a same-named C LOCAL illegal, because Rust forbids a `let` binding
   # shadowing an in-scope static (E0530). See the dhcpcsvc `cur_time` case, field manual §9.108.
   local ITEM_BL=()
+  # wtypes.h's `uCLSSPEC` tagged union reaches every island that pulls in the COM headers, and
+  # bindgen emits its two anonymous member STRUCTS without `Copy`. Under REAL_UNIONS=1 a
+  # non-Copy field cannot live in a real Rust union, so the island itself fails to compile
+  # (E0740 + E0204) over a type the module never names -- desk hit it, then appwiz. Blocklist
+  # it whenever the module's own source does not mention it. The pattern reaches the NESTED
+  # name too (`..._00000009___WIDL_..._00000008`) and stays anchored at `__WIDL`, so the
+  # `_userCLIPFORMAT___WIDL_` family (STGMEDIUM's wire type) is untouched.
+  if [ "${REAL_UNIONS:-0}" = 1 ] && ! grep -rqw uCLSSPEC "${DRIVER_DIR:-/nonexistent}" 2>/dev/null; then
+    EXTRA_BL_ITEMS+=( '__WIDL_wtypes_generated_name_0000000[89].*' uCLSSPEC )
+  fi
   for _it in "${EXTRA_BL_ITEMS[@]-}"; do [ -n "$_it" ] && ITEM_BL+=( --blocklist-item "$_it" ); done
   local FN_BL=()
   if [ "${BLOCKLIST_FUNCS:-0}" = 1 ]; then FN_BL=( --blocklist-function '.*' ); fi

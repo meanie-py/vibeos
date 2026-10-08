@@ -1324,6 +1324,7 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     # this block before the hand declaration existed (E0428).
     names = (set(names) | prelude_resolve.existing_externs(prelude)) - (
         prelude_resolve.hand_written_names(prelude)
+        | prelude_resolve.declared_outside_externs(prelude)
     )
     sigs: dict[str, tuple[str, str, str]] = {}
     module_dir = REPO / state["module_dir"]
@@ -1370,7 +1371,9 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             if target and target not in macros and target != name:
                 sdk_alias[name] = target
     # A target the hand-written prelude already declares is aliased, not declared again (E0428).
-    hand = prelude_resolve.hand_written_names(prelude)
+    hand = prelude_resolve.hand_written_names(prelude) | prelude_resolve.declared_outside_externs(
+        prelude
+    )
     todo = (todo - set(sdk_alias)) | {t for t in sdk_alias.values() if t not in hand}
     for tu in state["tus"]:
         if not todo:

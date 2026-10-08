@@ -442,16 +442,27 @@ def identifier_aliases(repo_root: Path, source: Path) -> dict[str, str]:
     translation calls `GetModuleHandle` as the C spells it, and only the preprocessor of the
     real build knows which function that is (diskpart: 22 calls left unresolved).
     """
+    # `compile_argv`, not the TU's own entry: a cohab flip removes the TU from the build, and
+    # an own-entry-only lookup then answered `{}` without a word -- appwiz's re-resolve after
+    # its flip dropped every A/W alias (RegQueryValueEx, GetWindowLongPtr, ...) it had just
+    # written, and the crate stopped compiling.
     per_arch: list[dict[str, str]] = []
+    commands = 0
     for arch in _ARCHES:
-        argv = _compile_entry(repo_root, arch, source)
+        argv = compile_argv(repo_root, arch, source)
         if argv is None:
             continue
+        commands += 1
         try:
             dump = _preprocess_defines(argv)
         except MacroAuthorityError:
             continue
         per_arch.append(dict(re.findall(r"^#define ([A-Za-z_]\w*) ([A-Za-z_]\w*)\s*$", dump, re.M)))
+    if not commands:
+        raise MacroAuthorityError(
+            f"no compile command for {source} (own or borrowed) in any build-<arch>: "
+            "build an arch first"
+        )
     if not per_arch:
         return {}
     agreed = per_arch[0]

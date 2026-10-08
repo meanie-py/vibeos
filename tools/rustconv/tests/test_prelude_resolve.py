@@ -280,3 +280,21 @@ def test_a_zero_argument_function_is_not_a_placeholder():
     assert consensus("CreatePartitionList", [item])[0] is item
     stub = Item("fn", "fn NtClose(_: usize);", "system", "y.rs")
     assert consensus("NtClose", [stub])[0] is None
+
+
+def test_declared_outside_externs_sees_every_block_but_its_own(tmp_path):
+    # appwiz: the tree-consensus block already declared RegQueryValueExW, and the externs pass
+    # declared it again because `hand_written_names` skips every generated block (E0428).
+    p = tmp_path / "prelude.rs"
+    p.write_text(
+        "// ==== port resolve: tree consensus (generated) ====\n"
+        'extern "system" {\n    pub fn RegQueryValueExW(h: HKEY) -> LSTATUS;\n}\n'
+        "// ==== end port resolve ====\n"
+        f"{pr.EXTERNS_BEGIN}\n"
+        'extern "system" {\n    pub fn HeapFree(h: HANDLE) -> BOOL;\n}\n'
+        f"{pr.EXTERNS_END}\n"
+        "pub unsafe fn strcmpW(a: *const u16, b: *const u16) -> c_int { 0 }\n"
+    )
+    names = pr.declared_outside_externs(p)
+    assert {"RegQueryValueExW", "strcmpW"} <= names
+    assert "HeapFree" not in names
