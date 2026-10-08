@@ -1244,6 +1244,25 @@ cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and ch
 offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
 `entry`) or were casting to a byte or void pointer.
 
+### A list walk that reads `Flink` after freeing the entry
+
+**Symptom:** an intermittent access violation inside a list walk, at a load like
+`[entry+0x28]`, with a non-canonical or misaligned pointer, e.g. arm64 FaultVA
+`0x11FFFFFA80004241`. It hit kmtest RtlRangeList on all three arches about one sweep in five.
+Most runs pass because freed pool still holds the old link.
+
+**Cause:** `RemoveEntryList(Entry); Free(Container); Entry = (*Entry).Flink;`. The advance
+reads freed memory, and faults only when the block was reused first. `IoCompleteRequest` counts
+as a free here, because the IRP can be gone once it returns. Upstream C carries this shape in
+places (`FsRtlUninitializeOplock`'s walks), and a port can predate the place upstream fixed it
+(`RtlDeleteOwnersRanges`, fixed upstream in #9248).
+
+**Fix:** capture `let next = (*entry).Flink;` at the top of the loop body, or pop from the
+head (`while !IsListEmpty { RemoveHeadList }`). To triage, look in each loop for an advance
+`X = (*X).Flink` preceded by a free or completion of the containing record, with no `break` or
+`return` in between. The 2026-10-08 scan of `sdk/lib/rust` found 3 real hits in 13
+candidates. The rest freed a different object, or stepped to `Blink` before the free.
+
 ### A C byte count kept as the element count of a `u16` copy moves twice the bytes
 **Symptom.** A string copy that over-reads its source and over-writes its destination by
 exactly its own length. It is silent until the over-read crosses an unmapped page. On arm64,
@@ -9957,7 +9976,7 @@ cannot support.** Count what you *transformed* and reconcile it against what you
 ### A symbolicator resolves against SOME binary — make sure it is the one that booted
 **Symptom:** a bugcheck PC resolves to a function that makes no sense at the crash site, or to a
 constant (`KTRAP_FRAME_LENGTH+13864` — an ABSOLUTE symbol 13KB away), or the tool declines
-entirely. **Two independent causes, and both lie quietly** because *some* symbol always sorts
+entirely. **Three independent causes, and all lie quietly** because *some* symbol always sorts
 below any address:
 
 1. **Wrong binary.** `ntkrnlmp.exe` is a SEPARATE image from `ntoskrnl.exe` with its own layout
@@ -9969,6 +9988,13 @@ below any address:
 2. **Wrong relocation.** The index holds file VAs (`RVA + PE ImageBase`, `0x400000` here), so a
    runtime PC needs `runtime_base - ImageBase` subtracted, not `runtime_base`. Getting this
    wrong pushes every lookup below the first real function.
+
+3. **Wrong build.** A crash from a farm archive was compiled at another commit, so resolve it
+   against the index of the kernel that booted: `addr2sym.sh <arch> --index
+   <manifest.json kernels_dir>/symbols-<arch>[-mp].tsv`. Against this tree's index, the
+   RtlRangeList use-after-free spent two days attributed to fsrtl oplock code. Every hit's
+   own index said `RtlDeleteOwnersRanges`. A symbol name that moves between builds while
+   the offset stays put is the tell.
 
 **Don't guess the base at all when the banner already resolved it.** The bugcheck prints
 `***   P2 = ntoskrnl.exe+0x3788` — that offset IS the RVA, so the index address is just

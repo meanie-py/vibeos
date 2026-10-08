@@ -1255,6 +1255,43 @@ def test_symbolicate_pc_passes_reloc_for_i386_only(tmp_path):
     assert "--reloc" not in out_arm64, out_arm64
 
 
+_ADDR2SYM = Path(__file__).resolve().parents[3] / "qemu" / "addr2sym.sh"
+
+
+def _addr2sym(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(_ADDR2SYM), *args], capture_output=True, text=True, timeout=30
+    )
+
+
+def test_addr2sym_index_resolves_against_the_named_tsv(tmp_path):
+    # A farm archive's crash must be read against ITS kernel's index. Without
+    # --index, the RtlRangeList 0x1E resolved against a later build's index and
+    # named fsrtl oplock code for two days; the archived index said
+    # RtlDeleteOwnersRanges at every one of 15 hits.
+    tsv = tmp_path / "symbols-arm64-mp.tsv"
+    tsv.write_text("00528000\tOther\t-\n00528034\tRtlDeleteOwnersRanges\tlib.rs:276\n")
+    cp = _addr2sym("arm64", "--index", str(tsv), "0x528068")
+    assert cp.returncode == 0, cp.stderr
+    assert "RtlDeleteOwnersRanges+52" in cp.stdout
+
+
+@pytest.mark.parametrize(
+    "args",
+    [("--tsv", "x", "0x528068"), ("ntoskrnl+0x10",)],
+    ids=["unknown-flag", "non-hex-address"],
+)
+def test_addr2sym_refuses_what_it_cannot_parse(tmp_path, args):
+    # Both used to print a plausible symbol from the default index: an unknown
+    # flag fell through and was looked up as an address. A real index is passed
+    # so the refusal cannot come from a missing index instead.
+    tsv = tmp_path / "symbols.tsv"
+    tsv.write_text("00000000\tBase\t-\n")
+    cp = _addr2sym("arm64", "--index", str(tsv), *args)
+    assert cp.returncode != 0
+    assert cp.stdout == ""
+
+
 def test_symbolicate_pc_keeps_a_plausible_offset(tmp_path):
     tool = tmp_path / "qemu" / "addr2sym.sh"
     tool.parent.mkdir(parents=True)

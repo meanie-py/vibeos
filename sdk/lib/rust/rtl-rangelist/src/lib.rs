@@ -282,6 +282,13 @@ pub unsafe extern "system" fn RtlDeleteOwnersRanges(
 
     Entry = (*RangeList).ListHead.Flink;
     while Entry != core::ptr::addr_of_mut!((*RangeList).ListHead) {
+        // Capture the next link BEFORE the entry can be freed. Reading `(*Entry).Flink` after
+        // RtlpFreeMemory is a use-after-free that usually survives (freed pool still holds the
+        // old link) and faults only when the block is reused first: kmtest RtlRangeList's
+        // intermittent BUGCHECK 0x1E on all three arches, a non-canonical Flink from a block
+        // already handed to someone else.
+        let Next = (*Entry).Flink;
+
         Current = (Entry as *mut u8)
             .offset(-(core::mem::offset_of!(_RTL_RANGE_ENTRY, Entry) as isize))
             as PRTL_RANGE_ENTRY;
@@ -293,7 +300,7 @@ pub unsafe extern "system" fn RtlDeleteOwnersRanges(
             (*RangeList).Stamp += 1;
         }
 
-        Entry = (*Entry).Flink;
+        Entry = Next;
     }
 
     STATUS_SUCCESS
