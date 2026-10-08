@@ -772,10 +772,9 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             (*packageTable).numPackages as usize * core::mem::size_of::<SecPkgInfoW>();
 
         let mut package: *mut SecurePackage;
-        package = core::mem::transmute::<_, *mut SecurePackage>(
-            (*packageTable).table.next as usize
-                - core::mem::offset_of!(SecurePackage, entry),
-        );
+        package = ((*packageTable).table.next as *mut u8)
+            .sub(core::mem::offset_of!(SecurePackage, entry))
+            .cast::<SecurePackage>();
         while core::ptr::addr_of!((*package).entry) as *const _
             != core::ptr::addr_of!((*packageTable).table)
         {
@@ -787,10 +786,9 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
                 bytesNeeded += ((lstrlenW((*package).infoW.Comment) + 1) as usize)
                     * core::mem::size_of::<WCHAR>();
             }
-            package = core::mem::transmute::<_, *mut SecurePackage>(
-                (*package).entry.next as usize
-                    - core::mem::offset_of!(SecurePackage, entry),
-            );
+            package = ((*package).entry.next as *mut u8)
+            .sub(core::mem::offset_of!(SecurePackage, entry))
+            .cast::<SecurePackage>();
         }
 
         if bytesNeeded != 0 {
@@ -806,10 +804,9 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
                         * core::mem::size_of::<SecPkgInfoW>(),
                 )) as PWSTR;
 
-                package = core::mem::transmute::<_, *mut SecurePackage>(
-                    (*packageTable).table.next as usize
-                        - core::mem::offset_of!(SecurePackage, entry),
-                );
+                package = ((*packageTable).table.next as *mut u8)
+            .sub(core::mem::offset_of!(SecurePackage, entry))
+            .cast::<SecurePackage>();
                 while core::ptr::addr_of!((*package).entry) as *const _
                     != core::ptr::addr_of!((*packageTable).table)
                 {
@@ -832,10 +829,9 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
                         (*pkgInfo).Comment = core::ptr::null_mut();
                     }
 
-                    package = core::mem::transmute::<_, *mut SecurePackage>(
-                        (*package).entry.next as usize
-                            - core::mem::offset_of!(SecurePackage, entry),
-                    );
+                    package = ((*package).entry.next as *mut u8)
+            .sub(core::mem::offset_of!(SecurePackage, entry))
+            .cast::<SecurePackage>();
                 }
             } else {
                 ret = SEC_E_INSUFFICIENT_MEMORY;
