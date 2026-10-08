@@ -241,10 +241,7 @@ const STATUS_INTEGER_OVERFLOW: NTSTATUS = 0xC0000095_u32 as NTSTATUS;
 
 #[inline]
 unsafe fn MI_IS_PAGE_DIRTY(pte: &MMPTE) -> bool {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    { (pte.Long & (1 << 6)) != 0 }
-    #[cfg(target_arch = "aarch64")]
-    { (pte.Long & (1 << 7)) == 0 } // ARM64: AP[2]=0 means writable (dirty)
+    super::helpers::MI_PTE_IS_DIRTY(pte.Long as u64)
 }
 
 #[inline]

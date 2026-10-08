@@ -3811,6 +3811,7 @@ fn diff_math_round() {
     // Half-integer / near-boundary cases where round's ±0.5 matters.
     for v in [
         0.5f64, -0.5, 1.5, -1.5, 2.5, -2.5, 0.4999, -0.4999, 0.5001, 1e16, -1e16,
+        0.49999999999999994, -0.49999999999999994, -0.0, -1e-300,
     ] {
         xs.push(v.to_bits());
     }
@@ -3820,7 +3821,16 @@ fn diff_math_round() {
     for &b in &xs {
         let x = f64::from_bits(b);
         unsafe {
-            assert!(same_f64(cabi::round(x), ref_round(x)), "round {b:#018x}");
+            // The ORACLE is correct rounding (half away from zero), not the C: ReactOS's
+            // `x < 0 ? ceil(x - 0.5) : floor(x + 0.5)` returns +0.0 for every x in
+            // (-0.5, -0.0] and rounds 0.49999999999999994 up (the `+ 0.5` rounds first).
+            // Wherever the C IS correct it must still agree, so any other divergence fails.
+            let want = x.round();
+            assert!(same_f64(cabi::round(x), want), "round {b:#018x}");
+            let c = ref_round(x);
+            if same_f64(c, want) {
+                assert!(same_f64(cabi::round(x), c), "round {b:#018x} (vs C)");
+            }
         }
     }
 }
@@ -3828,7 +3838,7 @@ fn diff_math_round() {
 fn diff_math_roundf() {
     let mut rng = Rng(0x5004_d1ff);
     let mut xs = f32_edge_bits();
-    for v in [0.5f32, -0.5, 1.5, -1.5, 2.5, -2.5, 0.4999, -0.4999, 0.5001] {
+    for v in [0.5f32, -0.5, 1.5, -1.5, 2.5, -2.5, 0.4999, -0.4999, 0.5001, 0.49999997, -0.0] {
         xs.push(v.to_bits());
     }
     for _ in 0..20000 {
@@ -3837,7 +3847,13 @@ fn diff_math_roundf() {
     for &b in &xs {
         let x = f32::from_bits(b);
         unsafe {
-            assert!(same_f32(cabi::roundf(x), ref_roundf(x)), "roundf {b:#010x}");
+            // Oracle: correct rounding; see diff_math_round for the C's two defects.
+            let want = x.round();
+            assert!(same_f32(cabi::roundf(x), want), "roundf {b:#010x}");
+            let c = ref_roundf(x);
+            if same_f32(c, want) {
+                assert!(same_f32(cabi::roundf(x), c), "roundf {b:#010x} (vs C)");
+            }
         }
     }
 }

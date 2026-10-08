@@ -1030,6 +1030,30 @@ pub unsafe extern "system" fn KiDispatchException(
                 (*ExceptionRecord).ExceptionInformation[1] as u32,
             );
         }
+        // Bounded EBP-chain walk of the faulting user stack (we are in that process's
+        // context), so the report names callers, not just the PC. It lived on the "Kill"
+        // path below, which csrss's TerminateProcess(client, 0x80) means is almost never
+        // reached -- ucrtbase_apitest's 0xC0000008 from RtlpUnWaitCriticalSection showed
+        // up with no caller at all.
+        {
+            let mut ebp = (*TrapFrame).Ebp as usize;
+            let mut n = 0;
+            while n < 12
+                && ebp != 0
+                && ebp < 0x7FFF_0000
+                && crate::ARM3::mmsup::MmIsAddressValid(ebp as _) != 0
+                && crate::ARM3::mmsup::MmIsAddressValid((ebp + 4) as _) != 0
+            {
+                let ret = *((ebp + 4) as *const usize);
+                crate::dbg_print!(b"[KI-EXC]   caller ret=%p\n\0", ret as *const u8);
+                let next = *(ebp as *const usize);
+                if next <= ebp {
+                    break;
+                }
+                ebp = next;
+                n += 1;
+            }
+        }
         if DbgkForwardException(ExceptionRecord, 1u8, 1u8) != 0 {
             return;
         } else if DbgkForwardException(ExceptionRecord, 0u8, 1u8) != 0 {
@@ -1054,25 +1078,7 @@ pub unsafe extern "system" fn KiDispatchException(
                 (*ExceptionRecord).ExceptionInformation[0] as u32,
                 (*ExceptionRecord).ExceptionInformation[1] as u32,
             );
-            // Bounded EBP-chain walk of the faulting user stack (we are in that
-            // process's context), so the report names callers, not just the PC.
-            let mut ebp = (*TrapFrame).Ebp as usize;
-            let mut n = 0;
-            while n < 10
-                && ebp != 0
-                && ebp < 0x7FFF_0000
-                && crate::ARM3::mmsup::MmIsAddressValid(ebp as _) != 0
-                && crate::ARM3::mmsup::MmIsAddressValid((ebp + 4) as _) != 0
-            {
-                let ret = *((ebp + 4) as *const usize);
-                crate::dbg_print!(b"  Kill: caller ret=%p\n\0", ret as *const u8);
-                let next = *(ebp as *const usize);
-                if next <= ebp {
-                    break;
-                }
-                ebp = next;
-                n += 1;
-            }
+            // The caller walk is printed at second chance above, which always precedes this.
         }
         ZwTerminateProcess(NtCurrentProcess(), (*ExceptionRecord).ExceptionCode as NTSTATUS);
         KeBugCheckEx(

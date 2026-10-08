@@ -566,6 +566,11 @@ static void wait_for_livecd_setup(void)
 
 int main(void)
 {
+    /* An unhandled exception now reaches UnhandledExceptionFilter, whose fault box
+     * would leave a crashing child waiting on a dialog nobody answers. This mode is
+     * inherited by every process spawned from here, which then exits with its
+     * exception code instead -- as an unattended run on Windows does. */
+    SetErrorMode(SetErrorMode(0) | SEM_NOGPFAULTERRORBOX);
     char windir[MAX_PATH], bindir[MAX_PATH], listpath[MAX_PATH];
     char line[SWEEP_LINE_MAX];
     FILE *f;

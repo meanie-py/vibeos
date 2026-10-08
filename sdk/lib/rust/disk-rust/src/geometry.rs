@@ -1060,7 +1060,10 @@ pub unsafe extern "system" fn DiskUpdateGeometry(
                     (*diskData).RealGeometry.BytesPerSector =
                         (*FdoExtension).DiskGeometry.BytesPerSector;
                     if (*diskData).RealGeometry.BytesPerSector == 0 {
-                        if !b"!\"BytesPerSector is still zero!\"\0".as_ptr().is_null() {
+                        // NT_ASSERT(!"...") asserts FALSE: it fires whenever reached. The
+                        // translation spelled that as a null check on a literal, which is
+                        // the same constant -- written out here so it reads as one.
+                        {
                             DbgPrint(
                                 (b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8).cast(),
                                 b"drivers/storage/class/disk/geometry.c\0"
@@ -1547,7 +1550,8 @@ pub unsafe extern "C" fn DiskDriverReinitialization(
         ClassReadDriveCapacity(unmatchedDisk);
 
         if (*diskData).RealGeometry.BytesPerSector == 0 {
-            if !(b"RealGeometry not set to non-zero bps\n\0".as_ptr() as *const i8).is_null() {
+            // NT_ASSERT(!"...") asserts FALSE: it fires whenever reached.
+            {
                 DbgPrint(
                     b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const i8,
                     b"drivers/storage/class/disk/geometry.c\0"

@@ -846,6 +846,9 @@ class _Ctx:
     #: ``(struct, flattened field) -> dotted path through bindgen's ``__bindgen_anon_N``.
     #: Derived from the crate's own type declarations; empty disables ``RULE_ANON_UNION``.
     anon_unions: Mapping[tuple[str, str], str] = field(default_factory=dict)
+    #: ``field name -> {struct/union declaring a field of that name's TYPE}`` (aliases
+    #: resolved): which type a place `a.b.Field` has, for the autoref branch of the rule.
+    field_types: Mapping[str, frozenset[str]] = field(default_factory=dict)
     #: ``scrutinee span -> {type each arm wants}``, accumulated across diagnostics so
     #: ``propose_edits`` can drop a match whose arms do not agree. One ``match`` yields one
     #: diagnostic PER offending arm, and no single-diagnostic rule can see the others.
@@ -2789,6 +2792,80 @@ _RE_NO_LITERAL_FIELD = re.compile(
 )
 
 
+_AUTOREF_LINT = "implicit autoref creates a reference to the dereference of a raw pointer"
+
+
+def _anon_union_autoref(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`(*p).a.Field` where `a`'s type reaches `Field` only through the island's `Deref` impl.
+
+    The islands emulate C's anonymous members with `impl Deref for _U { .. &self.anon }`, so a
+    read through a raw pointer calls `deref(&self)` -- a reference made from a raw pointer,
+    which rustc's deny-by-default `dangerous_implicit_autorefs` refuses. Naming the anonymous
+    member (`a.__bindgen_anon_1.Field`) is the same place with no reference at all. rustc's own
+    suggestion (`(&(*p).a).Field`) only makes the reference explicit; it is not taken.
+    """
+    span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+    inserts = [
+        s
+        for c in diagnostic.get("children") or []
+        for s in c.get("spans") or []
+        if s.get("suggested_replacement") == ")"
+    ]
+    if span is None or len(inserts) != 1:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    cut = int(inserts[0].get("byte_start") or 0)
+    prefix = data[int(span.get("byte_start") or 0) : cut].decode("utf-8", "replace")
+    rest = re.match(rb"\.\s*(\w+)", data[cut:])
+    owner = re.search(r"\.\s*(\w+)\s*$", prefix)
+    if rest is None or owner is None:
+        return [], [], False
+    field_name = rest.group(1).decode()
+    types = ctx.field_types.get(owner.group(1), frozenset())
+    paths = {ctx.anon_unions.get((t, field_name)) for t in types}
+    if len(types) != 1 or len(paths) != 1 or None in paths:
+        return (
+            [],
+            [
+                Skipped(
+                    RULE_ANON_UNION,
+                    "autoref_owner_ambiguous",
+                    file_name,
+                    int(span.get("line_start") or 0),
+                    f"`.{owner.group(1)}` has types {sorted(types) or '?'}; no single anonymous "
+                    f"member reaches `{field_name}`",
+                )
+            ],
+            False,
+        )
+    path = next(iter(paths))
+    assert path is not None  # `None in paths` returned above
+    start = cut + rest.start(1)
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=start + len(field_name),
+                replacement=path,
+                rule=RULE_ANON_UNION,
+                authority=(
+                    f"`{next(iter(types))}` reaches `{field_name}` only through its Deref to "
+                    f"`{path.rsplit('.', 1)[0]}`; naming it avoids the raw-pointer autoref"
+                ),
+                original=field_name,
+            )
+        ],
+        [],
+        True,
+    )
+
+
 def _anon_union_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -2844,6 +2921,8 @@ def _anon_union_rule(
             False,
         )
 
+    if message.startswith(_AUTOREF_LINT):
+        return _anon_union_autoref(diagnostic, load, ctx)
     match = _RE_NO_FIELD.search(message)
     if match is None:
         return [], [], False
@@ -4177,6 +4256,7 @@ def propose_edits(
     anon_unions: Mapping[tuple[str, str], str] | None = None,
     constants: Mapping[str, int] | None = None,
     own_prefix: str = "",
+    field_types: Mapping[str, frozenset[str]] | None = None,
 ) -> RepairPlan:
     """PURE: parsed rustc diagnostics -> proposed edits, declined sites, and residual RED.
 
@@ -4196,6 +4276,7 @@ def propose_edits(
         anon_unions=anon_unions or {},
         constants=constants or {},
         own_prefix=own_prefix,
+        field_types=field_types or {},
     )
     cache: dict[str, bytes | None] = {}
 
@@ -5077,6 +5158,51 @@ def _local_anon_unions(crate_dir: Path) -> dict[tuple[str, str], str]:
     return unions
 
 
+_RE_PLAIN_ALIAS = re.compile(r"^pub type (\w+) = (\w+);", re.M)
+
+
+def harvest_field_types(sources: Mapping[str, bytes]) -> dict[str, frozenset[str]]:
+    """``field name -> {canonical type of every field so named}`` across the sources.
+
+    A `pub type A = B;` chain is followed to the struct it names, so `AtaScsiAddress:
+    ATA_SCSI_ADDRESS` reads as `_ATA_SCSI_ADDRESS`, the key the anon-union map uses.
+    """
+    aliases: dict[str, str] = {}
+    fields: dict[str, set[str]] = {}
+    for data in sources.values():
+        text = data.decode("utf-8", "replace")
+        aliases.update(_RE_PLAIN_ALIAS.findall(text))
+        for block in _RE_TYPE_BLOCK.finditer(text):
+            for f in _RE_TYPE_FIELD.finditer(block.group(2)):
+                fields.setdefault(f.group(1), set()).add(f.group(2).strip())
+
+    def canonical(t: str) -> str:
+        for _ in range(6):
+            if t not in aliases:
+                break
+            t = aliases[t]
+        return t
+
+    return {name: frozenset(canonical(t) for t in types) for name, types in fields.items()}
+
+
+def _local_field_types(crate_dir: Path) -> dict[str, frozenset[str]]:
+    """``harvest_field_types`` over the crate's own sources (the islands it declares)."""
+    # Imported here, with crate_integrate's fallback: rustconv also runs with cwd
+    # tools/rustconv, where `tools.` is not importable.
+    try:
+        from tools.source_walk import source_files
+    except ModuleNotFoundError:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+        from tools.source_walk import source_files
+
+    return harvest_field_types(
+        {p.as_posix(): p.read_bytes() for p in sorted(source_files(crate_dir / "src"))}
+    )
+
+
 def _local_authorities(crate_dir: Path) -> tuple[dict[str, list[str]], frozenset[str]]:
     """``RULE_WIDTH_ALIAS``'s authority: signatures and type names from THIS crate ONLY.
 
@@ -5288,6 +5414,7 @@ def repair_crate(
             _local_authorities(resolved_dir) if RULE_WIDTH_ALIAS in rules else ({}, frozenset())
         )
         anon_unions = _local_anon_unions(resolved_dir) if RULE_ANON_UNION in rules else {}
+        field_types = _local_field_types(resolved_dir) if RULE_ANON_UNION in rules else {}
         constants = local_constants(resolved_dir) if RULE_CONST_OPERAND in rules else {}
         try:
             own_prefix = resolved_dir.resolve().relative_to(root.resolve()).as_posix() + "/"
@@ -5304,6 +5431,7 @@ def repair_crate(
                 anon_unions=anon_unions,
                 constants=constants,
                 own_prefix=own_prefix,
+                field_types=field_types,
             )
             for target, run in runs.items()
         }

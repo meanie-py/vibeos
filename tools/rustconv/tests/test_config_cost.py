@@ -2,6 +2,8 @@
 depend on. Pinned as invariants (linear in tokens, batch halves, unknown model
 over-estimates) so they survive price-table edits without churning the test."""
 
+import pytest
+
 from rustconv import config
 from rustconv.__main__ import resolve_model
 
@@ -19,6 +21,29 @@ class TestCostUsd:
 
     def test_zero_tokens_zero_cost(self):
         assert config.cost_usd("claude-opus-4-8", 0, 0) == 0.0
+
+    def test_tiered_model_steps_up_per_prompt(self):
+        # Haiku 5.5 bills a prompt over 100K tokens (uncached + cached) at the long rate; the
+        # step is per call, so 100K exactly stays short and one token more goes long.
+        threshold, short, long = config.CLAUDE_TIERED_PRICING["claude-haiku-5-5"]
+        at = config.cost_usd("claude-haiku-5-5", threshold, 1000)
+        assert at == pytest.approx((threshold * short[0] + 1000 * short[1]) / 1e6)
+        over = config.cost_usd("claude-haiku-5-5", threshold - 10, 1000, cache_read_tokens=11)
+        assert over == pytest.approx(((threshold + 1) * long[0] + 1000 * long[1]) / 1e6)
+        assert long[0] > short[0] and long[1] > short[1]
+
+    def test_batch_runner_tier_matches(self):
+        from rustconv.batch_runner import LONG_PROMPT_PRICING, estimate_cost
+
+        threshold, long = LONG_PROMPT_PRICING["claude-haiku-5-5"]
+        short = estimate_cost("claude-haiku-5-5", threshold, 0)
+        over = estimate_cost("claude-haiku-5-5", threshold + 1, 0)
+        assert over == pytest.approx((threshold + 1) * long[0] / 1e6)
+        assert short == pytest.approx(threshold * config.MODEL_PRICING["claude-haiku-5-5"][0] / 1e6)
+
+    def test_haiku_alias_is_the_newest_haiku(self):
+        assert resolve_model("haiku") == "claude-haiku-5-5"
+        assert resolve_model("haiku-4-5") == "claude-haiku-4-5-20251001"
 
     def test_unknown_model_over_estimates_to_opus(self):
         # Unknown → Opus pricing (the expensive tier), never a lowball.

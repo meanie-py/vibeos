@@ -95,7 +95,13 @@ BUGCHECK = re.compile(r"\*\*\* BUGCHECK: (0x[0-9A-Fa-f]+)")
 # a non-identifier boundary: a hex address glued straight onto a name
 # (`0x000000000012F300RtlStack.c:42`) has no recoverable boundary, so it is left
 # unmatched rather than banked as a garbage identity.
-ASSERT_FAIL = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*\.c:\d+): Test failed:")
+#
+# Kmtests are C++ too: upstream made ObTypes a .cpp (synced 2026-09-21), and a `.c`-only
+# pattern silently dropped every one of its identities from the ratchet while its counts
+# still parsed, so nothing looked wrong.
+ASSERT_FAIL = re.compile(
+    r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*\.c(?:pp)?:\d+): Test failed:"
+)
 
 # The floor semantics live in ratchet.py, shared with the apitest parser; only
 # the markers above are kmtest-specific. The sys.path insert is load-bearing:

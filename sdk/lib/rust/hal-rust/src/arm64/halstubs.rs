@@ -1530,10 +1530,16 @@ pub unsafe extern "system" fn KeTryToAcquireQueuedSpinLockRaiseToSynch(
 }
 
 #[unsafe(no_mangle)]
+// OldIrql belongs to the OWNER, here as in ExTryToAcquireFastMutex below: store it
+// only once the mutex is ours, as ex.h's _ExAcquireFastMutex does. Storing it before
+// ExAcquireFastMutexUnsafe let a BLOCKED waiter overwrite the holder's saved IRQL, so
+// the holder's release lowered to the waiter's level (kmtest ExFastMutex :304 read a
+// PASSIVE waiter's IRQL in the APC_LEVEL owner's slot).
 pub unsafe extern "system" fn ExAcquireFastMutex(FastMutex: ddk::PFAST_MUTEX) {
     unsafe {
-        (*FastMutex).OldIrql = KfRaiseIrql(APC_LEVEL) as ddk::ULONG;
+        let OldIrql = KfRaiseIrql(APC_LEVEL);
         ddk::ExAcquireFastMutexUnsafe(FastMutex);
+        (*FastMutex).OldIrql = OldIrql as ddk::ULONG;
     }
 }
 
@@ -1548,14 +1554,20 @@ pub unsafe extern "system" fn ExReleaseFastMutex(FastMutex: ddk::PFAST_MUTEX) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn ExTryToAcquireFastMutex(FastMutex: ddk::PFAST_MUTEX) -> ddk::BOOLEAN {
+    // OldIrql belongs to the OWNER: store it only once the mutex is ours, as the C
+    // `_ExTryToAcquireFastMutex` does. Writing it before the compare-exchange let
+    // every failed try overwrite the holder's saved IRQL with APC_LEVEL, so the
+    // holder's release "restored" APC_LEVEL and left the thread there (kmtest
+    // ExFastMutex lines 57/59/76/78/133/283, every arm64 run).
     unsafe {
-        (*FastMutex).OldIrql = KfRaiseIrql(APC_LEVEL) as ddk::ULONG;
+        let OldIrql = KfRaiseIrql(APC_LEVEL);
         if interlocked_compare_exchange(&raw mut (*FastMutex).Count, 0, 1) == 1 {
             (*FastMutex).Owner = ddk::KeGetCurrentThread();
-            return TRUE;
+            (*FastMutex).OldIrql = OldIrql as ddk::ULONG;
+            return TRUE; // nolint: irql-balance (acquired: stays at APC_LEVEL until ExReleaseFastMutex)
         }
 
-        KfLowerIrql((*FastMutex).OldIrql as ddk::KIRQL);
+        KfLowerIrql(OldIrql);
     }
 
     FALSE

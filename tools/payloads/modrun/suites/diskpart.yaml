@@ -1,0 +1,32 @@
+# diskpart (base/system/diskpart -> diskpart-rust). Scripts go in on stdin, the way
+# `diskpart < script` runs them; the C oracle runs FIRST so a destructive case's Rust run
+# starts from the state the C left (each such case ends in `clean`, so that is a blank disk).
+module: diskpart
+variants:
+  c: '%SystemRoot%\bin\modrun\diskpart_c.exe'
+  rust: '%SystemRoot%\system32\diskpart.exe'
+ninja: [diskpart_c]
+stage:
+  - {src: 'build-{arch}/base/system/diskpart/diskpart_c.exe', dest: bin/modrun/diskpart_c.exe}
+cases:
+  - id: help
+    stdin: [help, help list, help create partition primary, help select, exit]
+    expect: ['LIST']
+  - id: list
+    stdin: [list disk, list volume, exit]
+    expect: ['Disk 0']
+  - id: disks
+    stdin:
+      - select disk 0
+      - detail disk
+      - list partition
+      - uniqueid disk
+      - select disk 1
+      - detail disk
+      - list partition
+      - select disk 2
+      - detail disk
+      - list partition
+      - exit
+  - id: errors
+    stdin: [list partition, select disk 99, select partition 1, frobnicate, 'create partition primary size=abc', detail volume, exit]

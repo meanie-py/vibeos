@@ -1975,6 +1975,7 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
                 );
             }
 
+            'Exit: {
             if (*CmHive).Hive.BaseBlock.as_ref().unwrap().BootRecover == 2 {
                 crate::dbg_print!(b"FreeLdr recovered the hive (hive 0x%p)\n\0", CmHive);
                 RtlSetAllBits(core::ptr::addr_of_mut!((*CmHive).Hive.DirtyVector) as *mut _);
@@ -1993,14 +1994,13 @@ pub unsafe extern "system" fn CmpLoadHiveThread(StartContext: *mut core::ffi::c_
                     SecondaryDisposition == 0x00000002 {
                     if HvWriteAlternateHive(&mut (*CmHive).Hive as PHHIVE) == 0 {
                         crate::dbg_print!(b"Failed to write to alternate hive\n\0");
-                        'Exit: {
-                            break 'Exit;
-                        }
+                        break 'Exit; // C: goto Exit
                     }
                 }
             }
 
             (*(*(&raw mut CmpMachineHiveList)).as_mut_ptr().add(i as usize)).CmHive2 = CmHive;
+            } // 'Exit
         }
     }
 

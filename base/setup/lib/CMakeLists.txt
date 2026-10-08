@@ -59,3 +59,12 @@ set_module_type(setuplib nativedll)
 target_link_libraries(setuplib vfatlib ${PSEH_LIB})
 add_importlibs(setuplib ntdll)
 add_cd_file(TARGET setuplib DESTINATION reactos/system32 NO_CAB FOR bootcd regtest)
+
+# modrun's runtime probe of setuplib (tools/payloads/modrun), built only on request. It links
+# setuplib_static, so c_oracle.cmake gives it a twin on the pre-flip C: setuplib_probe_c.
+add_executable(setuplib_probe EXCLUDE_FROM_ALL modrun_probe.c)
+target_link_libraries(setuplib_probe setuplib_static vfatlib ${PSEH_LIB})
+set_module_type(setuplib_probe win32cui UNICODE)
+add_importlibs(setuplib_probe msvcrt kernel32 ntdll)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

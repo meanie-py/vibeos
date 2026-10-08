@@ -117,6 +117,11 @@ static void replay(void)
 
 int main(int argc, char **argv)
 {
+    /* An unhandled exception now reaches UnhandledExceptionFilter, whose fault box
+     * would leave a crashing child waiting on a dialog nobody answers. This mode is
+     * inherited by every process spawned from here, which then exits with its
+     * exception code instead -- as an unattended run on Windows does. */
+    SetErrorMode(SetErrorMode(0) | SEM_NOGPFAULTERRORBOX);
     if (argc > 1) {           /* child mode, as misc.c re-runs itself */
         printf("child output\n");
         ExitProcess(0x37);

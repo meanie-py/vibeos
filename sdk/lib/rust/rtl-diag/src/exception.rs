@@ -60,6 +60,11 @@ const RAISE_LOG_SAMPLE: u32 = 256;
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
+// The C ends the same way (exception.c: "If we returned, raise a status"): the tail call
+// is reached only when ZwRaiseException itself FAILS, and re-raises with that failure
+// status. rustc cannot know ZwRaiseException does not return, so it sees every path end
+// in a self-call; the recursion is real only on a broken raise, as it is in the C.
+#[allow(unconditional_recursion)]
 pub unsafe extern "system" fn RtlRaiseStatus(mut Status: NTSTATUS) {
     let mut ExceptionRecord: EXCEPTION_RECORD = core::mem::zeroed();
     let mut Context: CONTEXT = core::mem::zeroed();

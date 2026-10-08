@@ -349,7 +349,7 @@ unsafe extern "C" fn StoreDriveSettings(hwndDlg: HWND) -> BOOL {
 unsafe extern "C" fn FreeDriveItemContext(hwndDlg: HWND) {
     let hDlgCtrl = GetDlgItem(hwndDlg, 14000);
     let iCount = ListView_GetItemCount(hDlgCtrl);
-    let mut li: LVITEMW = core::mem::MaybeUninit::uninit().assume_init();
+    let mut li: LVITEMW = core::mem::zeroed();
     ZeroMemory(core::ptr::addr_of_mut!(li), core::mem::size_of::<LVITEMW>());
     li.mask = LVIF_PARAM;
     for iIndex in 0..iCount {

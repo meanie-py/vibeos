@@ -594,6 +594,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **LogonUserW never succeeds: the right password fails with 1312** (OPEN, 2026-10-07, found
+  by the `modrun` payload's `logon` suite, kept visible there as an `xfail`). On a user the
+  probe creates with a password, a wrong or empty password and an unknown user all fail
+  correctly with 1326, but the right one makes msv1_0's `LsaApLogonUserEx2` return
+  `STATUS_NO_SUCH_LOGON_SESSION` (c000005f, lsasrv `authpackage.rs:1985`). Neither profile or
+  token builder returns that status; the next suspect is `CreateLogonSession` ->
+  `LsapRmCreateLogonSession` -> the kernel's SRM. Pre-existing: the passwordless Administrator
+  logon failed the same way before the msv1_0 no-op-goto fix.
+- **amd64: one BUGCHECK 0x1E (c0000006) in `MiAllocatePagesForMdl`** (OPEN, seen once in eight
+  `modrun` boots, 2026-10-07, `/tmp/vibeos-cli/20261007-225948-ecqnwhgp-smoke-amd64`, a boot
+  that also carried temporary DbgPrints in ntdll's and msvcrt's exit paths) while
+  Rust diskpart walked volumes, right after scsiport rejected `IOCTL_VOLUME_GET_VOLUME_DISK_
+  EXTENTS` on the CD-ROM. The faulting access was to the MDL itself, so it is a victim; the
+  same boot steps passed four other times. Arm special pool (`--tripwire SPECIALPOOL=*`) on a
+  `farm` of modrun boots to catch the writer.
+
 - **Pi 5: ping loses 10-30% and spikes to hundreds of ms while the serial console is
   saturated** (OPEN, 2026-10-08). On a settled desktop the debug UART runs at ~10.6 KB/s of
   115200's ~11.5: `rundll32.exe` (newdev's client-side install) is spawned again and again for
@@ -651,6 +667,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   can start a native arm64 child (system32 hides only foreign DLLs from it now, as Windows on
   ARM hides nothing), and TerminateProcess ends a spinning guest of either width. Nothing in
   the thread/process matrix is owed; see `../engineering/wow64-x64-guest-design.md`.
+- **Stock x86-64 apps run under FEX on arm64** (2026-10-08). The `appstorm64` payload sweeps the
+  stock amd64 build of ~40 apps and applets as x86-64 guests. 25 pass, each verified to be an
+  x86-64 process. Owed: rapps, iexplore, control.exe and the applets, plus memory (an exhausted
+  machine bugchecks 0x7A). See `../engineering/wow64-x64-guest-design.md`. Two arm64 kernel
+  paging bugs it found are fixed: Access-Flag livelock, and written pages paged out as clean.
+- **gui32 read back nothing on arm64 — FIXED 2026-10-08.** The arm64 syscall path (`trap.rs`,
+  `usercall.rs`) checked TEB64's GDI batch count, so a 32-bit guest's batched PatBlt was still
+  unflushed when GetPixel ran (the C `KiWow64GdiBatchCount` fix was in the cohab-flipped
+  `trap.c`). gui32 is graded on its full pass (`0x600D`) on both hosts now.
 - **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
   lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
   captured mid-body of itself, so `ZwContinue` after a vectored handler's
@@ -695,10 +720,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   was first logged as "the SD card's first write blocks" (`9208546a69b0`), then as a CSR
   wait; both were wrong, and the serial log had the panic all along. Regression:
   `test_xhci.py::test_usb_stick_cmd_redirection`. **Still owed:**
-  `tools/scan_flex_array_panic.py` would have caught this, but it reports 99 of 218 crates
+  `tools/scan_flex_array_panic.py` would have caught this, but it reports ~100 crates
   "NOT BUILT", among them smss-csrss-rust, ntoskrnl, win32k and hal. Cargo-linked
-  modules build in `sdk/lib/rust/target/<crate>-<arch>-cargo-link/`, which it never
-  reads, so the boot path has no coverage.
+  modules build in `sdk/lib/rust/target/<crate>-<arch>-cargo-link/`, which it never read.
+  **Closed 2026-10-08:** the gated reader now reads every cargo-linked image the build
+  graph declares, and its first pass found ten more of this class on the boot path (see
+  the flexible-array entry below).
 - **Explorer crashed on Enter in a Start menu with nothing selected** (FIXED 2026-10-06,
   an upstream ReactOS defect). Ctrl+Esc opens the menu with no hot item, and
   `CMenuBand::_MenuItemSelect(MPOS_EXECUTE)` calls through a NULL `m_hotBar`; the Rust now
@@ -854,9 +881,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the same binaries against the pre-takeover ucrtbase.dll (`24089de2c88`, Microsoft's C)
   staged beside them. The two agree failure for failure, so none of these is a Rust
   regression, but each is owed: `file` 10 failures of 120 (identical on both; was an AV
-  while the sweep ran it from the read-only CDFS); `misc` (198,593 checks) is down to ONE failure as of 2026-10-07:
-  misc.c:1355, `clock()` ~0.8-3 s below its window measured from the process creation time
-  (TCG start-up latency or the clock base, not yet split). Its earlier deaths and failures
+  while the sweep ran it from the read-only CDFS); `misc` (198,593 checks) is CLEAN as of 2026-10-07. Its last failure, misc.c:1355
+  (`clock()` 0.5-3 s below the system-time window), was the HAL: QPC on the APIC HAL is the
+  raw TSC at a rate calibrated from four 1/1024 s RTC interrupts, and under TCG a late tick
+  inflates a sample by up to 1.5x (4.23-7.95 GHz across boots of one image). `tsc.rs` now
+  measures against a polled PIT channel-2 one-shot over 50 ms -- 4.2023-4.2031 GHz on every
+  boot, i386 and amd64 -- and logs `[HAL] TSC ... kHz` with the RTC estimate beside it. Its earlier deaths and failures
   are all FIXED: the `log10(INFINITY)` hang (cnt-rust's `log10`/`pow`/`fmod` were ports of
   upstream's placeholder C -- `pow(2, 0.5) == 0` shipped on every arch -- and are the `libm`
   crate's now, x87 asm on no-SSE i386; `tools/payloads/matherrs` traces Wine's test per call),
@@ -872,7 +902,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (string.c:831/835) -- ROOT-CAUSED, expected: kernel32 exports `IsValidLocaleName` only at
   `-version=0x600+` and this build is NT 5.2, so ucrtbase takes its downlevel locale path,
   where ".UTF-8" is not a code page and `en_US.UTF-8` resolves by LCID to ANSI 1252 (UCRT
-  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` dies on an invalid handle (0xC0000008).
+  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` RUNS as of 2026-10-07 (it died at its first
+  call, 0xC0000008: since sdk/include/ucrt left the tree it compiled against msvcrt's
+  headers and linked msvcrt's startup through `libgcc` -> libwinpthread, so its `stdout`
+  was msvcrt's FILE handed to ucrtbase's `setvbuf`). 18 subtests, 15 clean; `round` (-0.0
+  lost its sign) and `setjmp`'s `Esp` (Windows stores esp past the return address) FIXED.
+  OPEN: `exp` 4 -- i386 `exp(NaN)` keeps the payload where Microsoft's returns the
+  canonical NaN for some inputs (exp.c's `_M_IX86` rows; no rule derivable from six points
+  without Microsoft's libm). `setjmp` 5 -- the test's own: a clang `skip()` that falls through into
+  the next `case`, and a `_SEH2_FINALLY` compiled dead. The other 23 (`_setjmp3` seeing
+  `fs:[0] == -1`) are FIXED (2026-10-08): no Win32 thread on ANY arch had a top-level SEH
+  frame, because kernel32's `BaseProcessStartup`/`BaseThreadStartup` kept only the `__try`
+  of their `__except(UnhandledExceptionFilter(...))`. They now run the start routine under
+  ntdll's `RtlSehTryExcept`, so `UnhandledExceptionFilter`, `SetUnhandledExceptionFilter`,
+  AeDebug and the fault box work, and an unhandled exception exits with its exception code
+  instead of csrss's 0x80. The i386 frame carries MSVC's EH3 `ScopeTable`/`TryLevel` so
+  `_setjmp3` reads TryLevel 0. Test runners that spawn processes set
+  `SEM_NOGPFAULTERRORBOX` (inherited), so a crashing child exits instead of waiting on a
+  dialog; `sehtest`'s `top-level filter` check covers it on every boot.
   `environ`, `printf` (1,950), `scanf` and `thread` (60) are clean on both. `thread` was
   an AV at EIP 0 until two fixes the same day: kernel32's `FindResourceA` asked for
   language 4 (LANG_CHINESE) instead of LANG_NEUTRAL, so EVERY ANSI resource lookup in the
@@ -1013,6 +1060,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     20261007-144313-uhji_66e, 20261007-145433-6emhz3k9). How the leak turned into a failed
     read is not established; reopen on any recurrence. Earlier runs: 20261006-041704-og7v50sd,
     20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
+  - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
+    part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
+    runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED
+    (e.g. research@6b775b9b9c99, which then landed unchanged). Cause: the arm64 HAL's
+    `ExTryToAcquireFastMutex` (`hal-rust/src/arm64/halstubs.rs`) stored `OldIrql` before the
+    compare-exchange, so a failed try overwrote the HOLDER's saved IRQL with APC_LEVEL and the
+    holder's release left it at APC_LEVEL (lines 57/59/76/78/133/283, every run). i386 forwards
+    to ntoskrnl's correct `Exi*`. Fix: store it only on success, as the C does. After: 3/3
+    rounds with no regression, pass 209-215 (runs 20261008-010705-u8wibif3,
+    20261008-011551-njv_6fyb, 20261008-011852-d36dvtvt). The baseline (204) was never raised,
+    so a later timing-only drop no longer fails the ratchet.
+  - **arm64: a new thread is not blocked on its mutex within 50 ms** (OPEN, found 2026-10-08).
+    The rest of `TestFastMutexConcurrent` (ExFastMutex lines 283-315) still fails 4-10
+    assertions per run: after `PsCreateSystemThread` and a 50 ms wait, the new thread has not
+    reached `ExAcquireFastMutex` (Count 0, not -1). It happens on ONE vCPU (the gate boots
+    without `-smp`), so it is not cross-CPU placement; i386 passes the same test 246/250.
+    Suspects: how soon a readied thread runs on arm64 without a DISPATCH software interrupt,
+    or the wait's timeout expiring early. Raise the ExFastMutex baseline once this is fixed.
+  - **SMP `KiIdleSummary` bits are never cleared** (OPEN, found 2026-10-08). The C only clears
+    them in its `#ifndef CONFIG_SMP` fast path (`thrdschd.c:310-322`), and the Rust copied that,
+    so after boot every CPU reads as idle forever and `KiSelectNextProcessor` ignores real
+    idleness: a readied thread goes to its ideal processor even when that one is busy and
+    another sits in WFI. Same class on the DPC side: `KiInsertQueueDpc` skips the wake IPI for
+    "idle" CPUs, which here halt rather than poll. Drafted fix (NT's rule): in the SMP path of
+    `KiDeferredReadyThread`, when the chosen PRCB is in the summary with no NextThread and
+    CurrentThread == IdleThread, clear its bit, make the thread Standby/NextThread and IPI;
+    and clear the bit when the arm64 idle loop takes a thread off its own ready list. Not
+    landed: it did not explain the 1-vCPU flake above and needs `-smp N` evidence first.
   - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
     (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
     control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU
@@ -1170,12 +1245,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   a freed array on failure; SeCaptureLuidAndAttributesArray never copied into a
   caller-supplied buffer and left `*Dest` dangling (a double free from NtFilterToken;
   the dangling pointer is the C's too). Part 2 burned the scanner's baseline from 114 rows to ZERO: every Nt* syscall body now loads and stores a pointer argument through `read_back`/`write_back`/`safe_copy_raw`/`copy_from_user` (`ntkrnl_sys::probe::read_back` is the new load-side twin of `write_back`), and the empty baseline makes any new raw access a `vibeos-cli check` failure. More real bugs: **NtWriteFile** read `Key` unprobed; **NtLoadKeyEx** "probed" each OBJECT_ATTRIBUTES with a one-byte touch (no range check); **NtGdiOpenDCW** had dropped the C's clear of `pUMdhpdev` (arbitrary-address handle store) and allocated a caller-sized DEVMODE it then wrote as a full DEVMODEW (pool overflow, the C's too); **NtUserRegisterClassExWOW** copied a whole WNDCLASSEXW after range-checking only `cbSize`; **NtGdiPolyDraw**'s `ProbeArrayForRead` was an empty fn; **NtUserSetCursorIconData**, d3dkmt Create/DestroyDCFromMemory, `NtUserBuildHwndList`'s `pcHwndNeeded` and `NtUserGetIconInfo`'s `lpModule` had no probe at all; NtOpenObjectAuditAlarm and NtPrivilegedServiceAuditAlarm re-read `PrivilegeCount` after it sized the buffer (double fetch, the C's too — the copy is pinned now); NtCreateToken and NtImpersonateClientOfPort probed with a stricter alignment than the C. Part 3 (2026-10-06) taught the scanner to follow a pointer argument into the callee it is passed to, transitively (96 rows on its first run, 0 now). Real bugs: **ObpCaptureObjectCreateInformation** read OBJECT_ATTRIBUTES and the QoS raw after the probe, and **ObpCaptureObjectName** copied the name raw — every NtCreate*/NtOpen* with attributes, any process; **SepCaptureSecurityQualityOfService** read the QoS pointer three times (probe, check, copy — swappable between); **NtAllocateLocallyUniqueId** stored outside any try (the C's too); **LpcpMoveMessageChecked** stored the header raw and re-read DataLength from the receiver's buffer to size the payload copy — a racing thread chose how much kernel message memory was copied out; **NtCreateThread** returned on a failed handle store leaving the inserted thread suspended for ever (the C kills it); **ApphelpValidateData** stored the handle into a KERNEL local through `probe_write_user`, so every user-mode apphelp lookup failed STATUS_ACCESS_VIOLATION; **NtGdiCreateDIBSection** never probed `Bits` and stored the section address through it (arbitrary-address write, the C's too); **NtGdiSetDIBitsToDeviceInternal** sized the source bitmap from the header, not `cjMaxBits` (pool over-read; with `cjMaxBits == 0` the caller's unprobed pointer was the pixel source); **NtGdiExtCreateRegion** read the unprobed `Xform`; **NtUserMessageCall** handed a pointer message's raw `lParam` to the window procedures it runs in the kernel (WM_NCCALCSIZE: a RECT store at any address), as did a same-thread send to a server-side procedure and the broadcast's sends; `CopyMsgToUserMem` re-measured a WM_CREATE message from user memory on the way back (pool over-read); `MsgMemorySize` and the broadcast's "Environment" test walked user strings raw; KdSystemDebugControl/KdChangeOption read and wrote the caller's buffers raw; NtPlugPlayControl's class-association and alias helpers handed user strings and GUIDs straight to Io* (the C's too). **NtGdiEngAlphaBlend/BitBlt/StretchBlt/LockSurface** now refuse user-mode callers: they took the caller's SURFOBJ/CLIPOBJ pointers and drew through `pvBits`, an arbitrary kernel write no probe can fix (Windows honours them only for user-mode printer drivers, which vibeos does not have). Part 4 (2026-10-06) closed two scanner blind spots and swept the bugs they had hidden. The scanner now (a) follows a pointer field read OUT of a `read_back` capture — `cap.Buffer`, lifted into a local, or handed straight to a callee (`f(oa.ObjectName)`) — and flags a raw deref/copy of it, while a scalar field passed as a length is not; and (b) catches a raw primitive whose pointer argument sits on a LATER line (`copy_nonoverlapping(\n InputBuffer, ..)`), which the per-line match had silently dropped — a false "clean" tree-wide. It also learned `.offset()` (not only `.add()`) and `slice::from_raw_parts`. Real bugs found and fixed: **NtDeviceIoControlFile/NtFsControlFile** (`IopDeviceFsIoControl`) copied the caller's InputBuffer into the system buffer raw (METHOD_BUFFERED and METHOD_*_DIRECT); **NtSetInformationFile/NtSetVolumeInformationFile** copied FileInformation/FsInformation raw (and deref'd a null quota alloc); **NtAddAtom/NtFindAtom** copied the caller's name raw into the pool capture; **NtRaiseHardError** copied the caller's Parameters raw; **NtPowerInformation** wrote SystemBatteryState/PowerCapabilities/ProcessorInformation straight through the caller's OutputBuffer (the processor arm as six field stores through a cast pointer); **NtGdiGetPath** copied the path points/types into the caller's buffers raw and then ran GdiPathDPtoLP on that user memory in place (now a kernel temp → transform → publish); **SepAccessCheckAndAuditAlarm** wrote the AccessStatus/GrantedAccess result lists back with a raw `*p.offset(i) = ..` loop, reachable from four Nt*AccessCheck*AuditAlarm syscalls; **NtGdiGetTextFaceW** NUL-terminated the caller's FaceName raw after an otherwise fault-tolerant copy; **NtGdiExtCreateRegion** iterated the caller's RGNDATA rect array raw (array-of-structs); **NtUserThunkedMenuItemInfo** (`IntSetMenuItemInfo`) copied the menu text from the captured MENUITEMINFO's un-repointed `dwTypeData` raw (embedded pointer). **Reviewed-safe:** NtGdiGetDIBitsInternal writes the caller's pjBits raw but pins it with EngSecureMem first (nolint). **Still blind:** an array of user pointers/structs indexed element by element, a capture made by a primitive other than `read_back`, and method calls — NtGdiExtCreateRegion and NtUserThunkedMenuItemInfo were found by reading, not by the scanner.
-- **PnP interface alias query never returns the alias — OPEN** (2026-10-06).
-  `IoGetDeviceInterfaceAlias` replaces the caller's UNICODE_STRING with its own pool copy,
-  so `PiControlGetInterfaceDeviceAlias` (the C as well) never writes the
-  `AliasSymbolicLinkName` buffer umpnpmgr passed and reports success. The leak is closed;
-  returning the alias needs umpnpmgr's length contract settled (it adds 1 to what it gets
-  back), so it is not guessed at.
+- **PnP interface alias query never returns the alias — FIXED 2026-10-08** (was OPEN
+  2026-10-06). `IoGetDeviceInterfaceAlias` ignores the caller's buffer and overwrites the
+  whole UNICODE_STRING with its own pool copy (`deviface.rs`,
+  `*AliasSymbolicLinkName = AliasSymbolicLink`), so `PiControlGetInterfaceDeviceAlias` (the
+  upstream C as well) allocated the alias and then leaked it without ever writing the
+  `AliasSymbolicLinkName` buffer umpnpmgr passed — yet returned success. The length
+  contract is now settled from primary sources, not guessed: the SetupAPI client
+  `CM_Get_Device_Interface_Alias_ExW` declares the buffer `_Out_writes_(*pulLength)` with
+  `pulLength` in WCHARs, and umpnpmgr's `PNP_GetInterfaceDeviceAlias` sets `*pulLength =
+  AliasSymbolicLinkNameLength` then `*pulTransferLen = *pulLength + 1` (the + 1 is the NUL).
+  So `AliasSymbolicLinkNameLength` is a WCHAR count: in = caller capacity, out = alias
+  length EXCLUDING the terminator. `PiControlGetInterfaceDeviceAlias` now copies the pool
+  alias back into the user buffer (NUL-terminated) and writes the WCHAR count, all through
+  the fault-tolerant `safe_copy_to_user`/`write_user` as the sibling
+  `PiControlDeviceClassAssociation` does, with `STATUS_BUFFER_TOO_SMALL` when the alias
+  plus terminator exceeds the caller's capacity. Not covered by any apitest (no rostest
+  calls the alias path), so verified by the settled contract + the shipping sibling's
+  mechanism + boot; a guest round-trip test is owed if the path ever regresses.
 - **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
   `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
   cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
@@ -4636,7 +4723,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   touched. A verdict that depends on which artifacts a worktree happens to carry is the same
   shape as the AGENTS.md §7-8 fleet-isolation rule about resolving generated artifacts from
   siblings — the sweep should name its corpus, not discover it.
-- **49 more bindgen flexible-array bounds checks are live in built objects — OPEN** (2026-09-06).
+- **Bindgen flexible-array bounds checks in built objects — CLEAN and GATED on all three
+  arches, staticlibs and the cargo-linked boot path** (2026-09-06; closed 2026-10-08).
   Found by generalising the cmlib fix above into `tools/scan_flex_array_panic.py`, which reads
   the i386 disassembly and keeps only `panic_bounds_check` sites whose pushed ARRAY LENGTH is 1
   — the bindgen `[T; 1]` shape — while leaving real fixed arrays alone. The method validated
@@ -4660,11 +4748,26 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   **That ratio is the point: the tool finds the SHAPE, not the bug.** Two discriminators, in
   order — does the C over-allocate, and is the declared length a LITERAL `1` or a named
   arch-dependent constant? Read the declaration before touching a site.
-  Not wired into the gate yet, deliberately: **89 of the 200 declared staticlib crates are not
-  built for i386**, so a baseline captured today would bless whatever happens to be missing.
-  The tool reports those as NOT BUILT (no coverage) rather than skipping them. Wiring it wants
-  the coverage gap closed first, or an explicit per-arch corpus like the one `scan_ud2` still
-  lacks.
+  **Status 2026-10-08.** Every staticlib site is graded: nine fixed by the
+  `warnings-burndown` lane (two in kernel32, ks, lsasrv, msafd, msgina, msv1_0, shell32's
+  `PathIsExeA`, plus the ninth the gate itself found, shell32's `SHTestTokenPrivilegeW`), and the genuine
+  one-element tables recorded in `tools/flex_array_allowlist.txt`, which a stale entry fails.
+  The reader is a `vibeos-cli build` stage, strict in the gate, on **all three arches**:
+  amd64 passes the length in `edx` and arm64 in `w1`, and reading i386 alone had missed a
+  whole crate -- `diskpart-rust` panicked on any disk with two partitions (20 sites, fixed).
+  64-bit adds one false-positive shape, a BRANCH-DERIVED constant on a slice (`cmp $1, %len;
+  je panic(1, 1)`), graded in the allowlist. **The cargo-linked images are read too** -- the
+  boot path (ntoskrnl, win32k, winsrv, ntdll, freeldr, ...), linked PEs declared by
+  `build.ninja`, whose &Location resolves by address. Their first read found TEN real sites,
+  all fixed: win32k's `TTPOLYCURVE.apfx` in both glyph-outline paths and `GLYPHSET.ranges`
+  in `ftGetFontUnicodeRanges` (KERNEL mode: any multi-point curve or multi-range font was a
+  bugcheck), `IopEnumerateDetectedDevices`'s `PartialDescriptors[Count - 1]` (kernel, device
+  enumeration), winsrv's `CONSOLE_STATE_INFO.ConsoleTitle` twice (csrss: starting a console
+  from a shortcut, or opening its Properties), freeldr's `KeyList` (the boot loader, any
+  key's second value), framebuf's `VIDEO_CLUT` (every palette), classpnp's
+  `SrbExDataOffset` and `SlabAllocationBitMap`, and mlang's `GLYPHSET` read. The correct
+  checks (`KeNodeBlock[1]`, kdbg's one-row table, vendored zlib-rs/smoltcp slices, ...) are
+  graded in the allowlist.
 - **cmlib `CmpSelectLeaf` panicked on any multi-leaf index root — FIXED** (2026-09-06).
   It wrote `*RootCell` through `addr_of_mut!((*IndexKey).List[i])` at three sites
   (i = SubKeyIndex, +1, -1). An array index inside a raw-ref still emits a bounds check, and
@@ -5250,6 +5353,31 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     `20261004-073303-11khe67v`, `20261004-171841-f8gc6gdx`. Failing asserts are the
     timeout/thread ones (`KeEvent.c:201/205/207/223`). Counted with the 2026-10-05 parser,
     which no longer mistakes serial interleaving for regressions.
+    **Likely the second load source (2026-10-08, inferred, NOT yet measured for KeEvent):**
+    livecd setup.exe's COM registration burst, which runs after PnP goes quiet and so
+    overlapped the sweep despite `QUIET`. It is proven for arm64 ExFastMutex (next bullet).
+    kmtest-sweep now waits for setup.exe to exit. If KeEvent drops again in a sweep whose
+    serial shows `[KMTEST-SWEEP] setup.exe exited`, this hypothesis is wrong.
+  - **arm64 `ExFastMutex` floor drift (204 -> 202/203, red for every lane on 2026-10-07) —
+    ROOT-CAUSED and FIXED 2026-10-08, now 219/0.** Two causes. (1) A real HAL bug:
+    `ExAcquireFastMutex`/`ExTryToAcquireFastMutex` (hal-rust arm64) stored `OldIrql` before
+    owning the mutex, so a blocked waiter or a failed try overwrote the holder's saved IRQL
+    and the release lowered to the wrong level. That was the "real arm64 divergence" fail=10
+    noted in the sweep list since 07-25. (2) setup.exe's registration burst starving the
+    test's 50 ms races, proven per-thread by `[FMUTEX-RAN]`. Field manual: the setup
+    paragraph under "A kmtest count drift on a UP guest is the boot-time ladder".
+  - **Conformance BUGCHECK 0x1E inside `RtlRangeList` — OPEN, intermittent, all three arches,
+    since 2026-10-06.** About 14 archived hits: `fails/auto/*-conformance-*-A_bugcheck_0x0000001E`
+    whose last `[KMTEST:BEGIN]` is RtlRangeList, plus 1 of 5 amd64 sweeps on 2026-10-08. It kills
+    the sweep, so every test after it loses its verdict. amd64 (`20261008-024024-fz8qe3my`): the
+    exception address is `ntoskrnl+0x185E58`, inside `fsrtl_rust::oplock::
+    FsRtlAcknowledgeOplockBreak`, on its NULL-oplock path. The same offset appears across four
+    master builds. The index matches the PE exports. The faulting thread's stack holds the
+    test's own data (`MyUserData2`, its `ok()` strings), so it is the test thread, not a
+    bystander. But nothing the test calls reaches oplock code: its exports resolve correctly,
+    and `RtlFindRange`/`RtlIsRangeAvailable` match the NDK signatures. Next step is dynamic:
+    loop RtlRangeList alone (`conformance_probe --candidates RtlRangeList`, repeated), then
+    `--tripwire SPECIALPOOL=*` or a GDB break on that PC, and get a real backtrace.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`.

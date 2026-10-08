@@ -8580,20 +8580,17 @@ def test_ladder_all_pass_is_clean():
     assert ladder_mod.summary(_ladder_log()).startswith(f"{n}/{n} guests PASS")
 
 
-def test_ladder_gui32_pass_code_is_600e_and_600d_is_an_upgrade():
-    """gui32 is the GDI/draw rung and reports its own verdict code. Asserting a
-    blanket 0x600D would make the check permanently red for a healthy boot --
-    which is how a gate gets disabled. So it is GRADED on 0x600E (drew, readback
-    mismatched). But 0x600D is Gui32.c's GUI32_PASS -- drew AND read it back --
-    and this test used to demand that be red; once desktop readback started
-    working, that turned the rung red for improving. It is accepted as a named
-    upgrade (ladder.ALSO_ACCEPTED); a real error code still fails."""
+def test_ladder_gui32_is_graded_on_the_full_pass():
+    """gui32 is the GDI/draw rung. It was graded on its soft pass 0x600E (drew,
+    readback mismatched) while arm64 could not read back a 32-bit guest's draw;
+    with that fixed on both hosts, 0x600E is a regression and fails the rung."""
     from tests.qemu.cli import ladder as ladder_mod
 
-    assert ladder_mod.LADDER["gui32"] == 0x600E
+    assert ladder_mod.LADDER["gui32"] == 0x600D
     assert ladder_mod.check(_ladder_log({"gui32": 0x600D})) is None
-    bad = ladder_mod.check(_ladder_log({"gui32": 0xBAD1}))
-    assert bad is not None and "gui32" in bad["salient"][0]
+    for code in (0x600E, 0xBAD1):
+        bad = ladder_mod.check(_ladder_log({"gui32": code}))
+        assert bad is not None and "gui32" in bad["salient"][0]
 
 
 def test_ladder_catches_the_selfmod32_amd64_regression():
@@ -8949,6 +8946,27 @@ def test_an_assertion_glued_onto_the_previous_line_is_still_seen():
         "IoDeviceObject_drv.c:198",
         "IoDeviceObject_drv.c:206",
         "NpfsFileInfo.c:57",
+    }
+
+
+def test_a_cpp_kmtest_keeps_its_assertion_identities():
+    """Upstream made ObTypes a .cpp (synced 2026-09-21). A `.c`-only pattern kept
+    parsing its counts but dropped all 12 of its failing identities, so the
+    ratchet stopped seeing which ObTypes assertions failed. Verbatim lines from
+    an arm64 sweep, 2026-10-08."""
+    P = _parser()
+    log = _SWEEP.replace(
+        "IoDeviceObject_drv.c:206: Test failed:",
+        "ObTypes.cpp:269: Test failed: ObjectType->TypeInfo.ValidAccessMask = 0x001f0003,"
+        " expected 0x001f000f\nObTypes.cpp:80: Test failed: ObOpenObjectByName failed for"
+        " '\\ObjectTypes\\FilterConnectionPort': c0000034\nIoDeviceObject_drv.c:206: Test failed:",
+    )
+    results, _, _ = P.parse(log)
+    assert results[0]["asserts"] == {
+        "IoDeviceObject_drv.c:198",
+        "IoDeviceObject_drv.c:206",
+        "ObTypes.cpp:269",
+        "ObTypes.cpp:80",
     }
 
 
@@ -9691,6 +9709,7 @@ def test_gic3_boot_must_show_the_hal_driving_a_gicv3(monkeypatch):
     from . import smoke as smoke_mod
 
     monkeypatch.delenv("VIBEOS_QEMU_GIC", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU", raising=False)
     monkeypatch.delenv("VIBEOS_QEMU_NVME", raising=False)
     assert smoke_mod._gic_check("") is None  # not requested: nothing to prove
     monkeypatch.setenv("VIBEOS_QEMU_GIC", "3")
@@ -9701,14 +9720,41 @@ def test_gic3_boot_must_show_the_hal_driving_a_gicv3(monkeypatch):
     monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
     bad = smoke_mod._gic_check(v3)
     assert bad and bad["classification"] == "GIC_NO_ITS"
-    its = v3 + "[HAL] GICv3 ITS at 0000000008080000: LPIs 8192-9215\n"
+    # The ITS's own failure lines share the prefix and must not pass.
+    failed = v3 + "[HAL] GICv3 ITS: the boot CPU takes no LPIs - no MSIs\n"
+    assert (smoke_mod._gic_check(failed) or {}).get("classification") == "GIC_NO_ITS"
+    none_up = v3 + "[HAL] GICv3 ITS: 0 of 1 up, LPIs 8192-9215 spread over CPUs 1\n"
+    assert (smoke_mod._gic_check(none_up) or {}).get("classification") == "GIC_NO_ITS"
+    its = v3 + "[HAL] GICv3 ITS: 1 of 1 up, LPIs 8192-9215 spread over CPUs f\n"
     assert smoke_mod._gic_check(its) is None
+    # On an SMP boot NVMe's I/O message lands on an AP; CPU0 alone is a regression.
+    monkeypatch.setenv("VIBEOS_QEMU_SMP", "4")
+    cpu0 = its + "[GIC] CPU0: first LPI delivered (INTID 8192)\n"
+    assert (smoke_mod._gic_check(cpu0) or {}).get("classification") == "GIC_LPIS_ONE_CPU"
+    assert smoke_mod._gic_check(cpu0 + "[GIC] CPU1: first LPI delivered (INTID 8193)\n") is None
+    monkeypatch.delenv("VIBEOS_QEMU_SMP")
+
+
+def test_smmu_boot_must_show_the_smmu_bypassing(monkeypatch):
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_GIC", raising=False)
+    monkeypatch.setenv("VIBEOS_QEMU_SMMU", "1")
+    bad = smoke_mod._gic_check("[HAL] IORT rev 3: 1 ITS group(s)\n")
+    assert bad and bad["classification"] == "SMMU_NOT_BYPASSED"
+    blocked = (
+        "[HAL] IORT: SMMUv3 at 0000000009050000 was ENABLED by firmware; now STILL BLOCKING - DMA\n"
+    )
+    assert (smoke_mod._gic_check(blocked) or {}).get("classification") == "SMMU_NOT_BYPASSED"
+    ok = "[HAL] IORT: SMMUv3 at 0000000009050000 was disabled; now bypassing: device DMA\n"
+    assert smoke_mod._gic_check(ok) is None
 
 
 def test_gic_version_puts_a_gicv3_with_an_its_on_the_virt_machine(monkeypatch):
     from tests.qemu import vm as vm_mod
 
     monkeypatch.delenv("VIBEOS_QEMU_GIC", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU", raising=False)
     monkeypatch.delenv("VIBEOS_QEMU_HOSTILE", raising=False)
     config = vm_mod.Arm64Config()
     assert vm_mod.gic_version() == 2
@@ -9717,6 +9763,10 @@ def test_gic_version_puts_a_gicv3_with_an_its_on_the_virt_machine(monkeypatch):
     monkeypatch.setenv("VIBEOS_QEMU_GIC", "3")
     machine = config.hostile_machine_args()
     assert machine[machine.index("-M") + 1] == "virt,gic-version=3,its=on"
+    monkeypatch.setenv("VIBEOS_QEMU_SMMU", "1")
+    machine = config.hostile_machine_args()
+    assert machine[machine.index("-M") + 1] == "virt,gic-version=3,its=on,iommu=smmuv3"
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU")
     # The default config is never mutated by a GICv3 run.
     assert config.machine_args[config.machine_args.index("-M") + 1] == "virt"
     monkeypatch.setenv("VIBEOS_QEMU_GIC", "4")
@@ -10675,6 +10725,41 @@ def test_payload_borrowed_binary_is_rebuilt_by_its_owner(tmp_path, monkeypatch):
     assert exe.read_text().strip() == "built"
 
 
+def test_payload_borrowed_binary_is_judged_at_its_build_arch(tmp_path, monkeypatch):
+    """appstorm64 stages the AMD64 appstorm onto arm64 media (`build_arch: amd64`).
+    Judging the owner's arm64 output instead would stage a stale x86-64 binary."""
+    import os
+
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    owner = payloads / "runner"
+    owner.mkdir(parents=True)
+    (owner / "payload.yaml").write_text(
+        "name: runner\nbinaries:\n"
+        "  - src: tools/payloads/runner/run-{arch}.exe\n    dest: run.exe\n"
+    )
+    (owner / "build.sh").write_text('echo built > "$(dirname "$0")/run-$1.exe"\n')
+    fresh = owner / "run-arm64.exe"
+    fresh.write_text("fresh")
+    exe = owner / "run-amd64.exe"
+    exe.write_text("old")
+    os.utime(exe, (1, 1))  # older than build.sh: stale
+    user = payloads / "guest"
+    user.mkdir(parents=True)
+    (user / "payload.yaml").write_text(
+        "name: guest\nbinaries:\n  - src: tools/payloads/runner/run-{arch}.exe\n"
+        "    build_arch: amd64\n    dest: run.exe\n"
+    )
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+
+    assert pc.borrowed_builds("guest", "arm64") == [("runner", "amd64")]
+    assert pc.ensure_built(["guest"], "arm64") == ["runner"]
+    assert exe.read_text().strip() == "built"
+    assert fresh.read_text() == "fresh"
+    assert pc.manifest(["guest"], "arm64") == {"reactos/run.exe": exe.resolve()}
+
+
 def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatch):
     """kmtest lists its committed kmtest-tests-<arch>.txt under `binaries`. build.sh never
     writes it, so treating it as stale failed every gate with PAYLOAD_BUILD_FAIL."""
@@ -11182,3 +11267,31 @@ def test_a_host_launch_failure_does_not_cancel_the_payload_runs():
     assert smoke_mod._guest_reached_desktop([ok, launch, ok])
     assert not smoke_mod._guest_reached_desktop([ok, hang, ok])
     assert not smoke_mod._guest_reached_desktop([launch, launch])
+
+
+def test_payload_vm_lifetime_covers_the_declared_drain():
+    """appstorm64 declares a 7200s drain; the 30-min QEMU cap SIGTERMed its VM mid-sweep."""
+    assert smoke_mod._payload_vm_lifetime(600, 7200, environ={}) == 600 + 7200 + 300
+    # A short payload keeps the cap already in force, never less.
+    assert smoke_mod._payload_vm_lifetime(600, 30, environ={}) == 30 * 60
+    assert (
+        smoke_mod._payload_vm_lifetime(600, 30, environ={"VIBEOS_QEMU_MAX_LIFETIME": "5000"})
+        == 5000
+    )
+
+
+def test_payload_vm_memory_sizes_compare_numerically():
+    """appstorm64 declares vm_memory: 2G; the largest declared size wins, compared as MiB."""
+    assert smoke_mod._mem_mb("2G") == 2048
+    assert smoke_mod._mem_mb("1536M") == 1536
+    assert max("1536M", "2G", "", key=smoke_mod._mem_mb) == "2G"
+
+
+def test_qemu_memory_override_is_validated(monkeypatch):
+    from tests.qemu import vm as vm_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_MEMORY", "2G")
+    assert vm_mod.get_arch_config("arm64").memory == "2G"
+    monkeypatch.setenv("VIBEOS_QEMU_MEMORY", "lots")
+    with pytest.raises(ValueError):
+        vm_mod.get_arch_config("arm64")

@@ -236,6 +236,10 @@ mod i386 {
     const JUMP_BUFFER_COOKIE: u32 = 0x5643_3230;
 
     // i386/_setjmp.s, _setjmp3.s, __longjmp_nounwind.s, verbatim; offsets from offset_of!.
+    // `Esp` is the stack pointer AFTER _setjmp returns (esp + 4), as Windows stores it --
+    // ReactOS's asm stored esp at the return address and had __longjmp_nounwind add the 4
+    // back, consistent with itself but 4 below what ucrtbase_apitest setjmp.c:268/435
+    // reads. Both copies moved together.
     // The symbol names carry the i386 cdecl underscore explicitly (global_asm is not
     // decorated): `_setjmp` is `__setjmp`, and so on.
     core::arch::global_asm!(
@@ -253,7 +257,8 @@ mod i386 {
         "    mov [edx + {Edi}], edi",
         "    mov eax, [esp]",
         "    mov [edx + {Eip}], eax",
-        "    mov [edx + {Esp}], esp",
+        "    lea eax, [esp + 4]",
+        "    mov [edx + {Esp}], eax",
         "    mov eax, fs:[0]",
         "    mov [edx + {Registration}], eax",
         "    cmp eax, 0xFFFFFFFF",
@@ -274,7 +279,8 @@ mod i386 {
         "    mov [edx + {Edi}], edi",
         "    mov eax, [esp]",
         "    mov [edx + {Eip}], eax",
-        "    mov [edx + {Esp}], esp",
+        "    lea eax, [esp + 4]",
+        "    mov [edx + {Esp}], eax",
         "    mov dword ptr [edx + {Cookie}], {COOKIE}",
         "    xor eax, eax",
         "    mov [edx + {UnwindFunc}], eax",
@@ -325,7 +331,6 @@ mod i386 {
         "    mov edi, [edx + {Edi}]",
         "    mov esi, [edx + {Esi}]",
         "    mov esp, [edx + {Esp}]",
-        "    add esp, 4",
         "    jmp dword ptr [edx + {Eip}]",
         Ebp = const offset_of!(JumpBuffer, Ebp),
         Ebx = const offset_of!(JumpBuffer, Ebx),

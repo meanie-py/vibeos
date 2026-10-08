@@ -436,6 +436,9 @@ const TRACE_SLOTS: usize = 64;
 static IRQ_COUNTS: [AtomicU32; TRACE_SLOTS] =
     [const { AtomicU32::new(0) }; TRACE_SLOTS];
 static IRQ_COUNT_OTHER: AtomicU32 = AtomicU32::new(0);
+/// Which CPUs have taken an LPI yet: the first on each is reported, as evidence that
+/// the ITS's per-CPU collections deliver where they were mapped.
+static LPI_SEEN: AtomicU64 = AtomicU64::new(0);
 /// Spurious IAR reads (1020..1023).
 static IRQ_SPURIOUS: AtomicU32 = AtomicU32::new(0);
 /// One-shot "fired but no ISR claimed it" bitmap for INTIDs 0..63 (+1 global
@@ -640,6 +643,9 @@ pub unsafe extern "system" fn HalInitializeClockArm64(
     gic_dist: *mut core::ffi::c_void,
     gic_cpu: *mut core::ffi::c_void,
 ) {
+    // The first point where the HAL can map MMIO and no driver has started: report
+    // the IORT and let DMA through its SMMUs (smmu.rs).
+    super::smmu::platform_init();
     let gicd = gic_dist as usize;
     let gicc = gic_cpu as usize;
     if super::gic3::present() && gicd != 0 {
@@ -842,6 +848,13 @@ pub unsafe extern "system" fn HalClockInterruptArm64(trap_frame: *mut core::ffi:
         // IoConnectInterrupt. ntoskrnl owns the KINTERRUPT registry; we EOI
         // below regardless of whether an ISR claimed it (an unconnected line
         // that somehow fired is acked-and-dropped, reported once per line).
+        if intid >= 8192 {
+            let cpu = super::halstubs::halp_cpu_number();
+            let bit = 1u64 << (cpu % 64);
+            if LPI_SEEN.fetch_or(bit, Ordering::Relaxed) & bit == 0 {
+                DbgPrint(b"[GIC] CPU%u: first LPI delivered (INTID %u)\n\0".as_ptr(), cpu, intid);
+            }
+        }
         let handled = KiDispatchInterruptArm64(intid);
         if SELFTEST_INTID
             .compare_exchange(intid, 0, Ordering::SeqCst, Ordering::SeqCst)

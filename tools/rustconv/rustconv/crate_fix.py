@@ -548,6 +548,7 @@ _ERROR_CODE = re.compile(r"^error\[(E\d{4})\]")
 _INT_LITERAL = re.compile(r"\b(0x[0-9A-Fa-f_]+|\d[\d_]*)(?:[iu](?:8|16|32|64|128|size))?\b")
 # Capitalised names, and lowercase names CALLED as functions or macros -- but not METHOD
 # calls (`.as_ptr()`, `.is_null()`): those are the Rust spelling the fix may change.
+_FIELD_LABEL = re.compile(r"([{,]\s*)[A-Za-z_]\w*\s*:(?!:)")
 _KEEP_IDENT = re.compile(r"(?<![.\w])(?:_*[A-Z]\w*|[a-z_]\w*(?=\s*!?\s*\())")
 # C's min/max are the one idiom the prompt lets the model write inline.
 _INLINE_OK = frozenset({"min", "max"})
@@ -623,9 +624,27 @@ def reply_findings(
     if _signature(fixed) != _signature(original):
         # The signature may change only when an error is IN it.
         sig_end = _body_open(original, _name_end(original)) or 0
-        if not any("fn " + orig_name in r and "(" in r for r in errors) or sig_end == 0:
+        in_sig = any("fn " + orig_name in r and "(" in r for r in errors)
+
+        # rustc renders an unknown parameter TYPE at the parameter's line, not the `fn` line:
+        # atapi's `DevExt: *mut ATA_PORT_DEVICE_EXTENSION` (no such type, E0412) was corrected
+        # to ATAPORT_DEVICE_EXTENSION and rejected twice. A change that only drops names rustc
+        # itself reported is the error's fix, not a new signature.
+        def head(t: str) -> set[str]:
+            end = _body_open(t, _name_end(t))
+            return set(_IDENT.findall(_code(t[: end if end is not None else len(t)])))
+
+        gone = head(original) - head(fixed)
+        if (not (in_sig or (gone and gone <= mentioned_names(errors)))) or sig_end == 0:
             out.append("the signature changed")
-    new_code, old_code = _code(fixed), _code(original)
+    # A struct-literal FIELD LABEL is not a name the body uses: atapi's
+    # `ATA_SCSI_ADDRESS { c2rust_unnamed: .. { Lun: 0, TargetId: 0, .. } }` -> `{ AsULONG: 0 }`
+    # zeroes the same union and drops four labels. Which field exists the compiler checks; the
+    # VALUES (constants, callees) stay counted below.
+    new_code, old_code = (
+        _FIELD_LABEL.sub(r"\1", _code(fixed)),
+        _FIELD_LABEL.sub(r"\1", _code(original)),
+    )
     # Only a construct the reply ADDED: one already in the input is not the reply's doing.
     added = sorted(
         {m.group(0) for m in _FORBIDDEN.finditer(new_code)}

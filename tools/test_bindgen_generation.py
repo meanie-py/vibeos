@@ -20,6 +20,7 @@ def fixture_repo(root):
         CRATE / "postprocess_bindgen.py",
         Path("tools/bindgen-stage.sh"),
         Path("tools/rustconv/normalize_island_abi.py"),
+        Path("tools/rustconv/widen_island_constants.py"),
     ):
         dest = root / name
         dest.parent.mkdir(parents=True, exist_ok=True)

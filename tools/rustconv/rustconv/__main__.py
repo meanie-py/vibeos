@@ -272,7 +272,9 @@ def resolve_target(args, path):
 # Model shortcuts for CLI convenience
 MODEL_ALIASES = {
     "sonnet": "claude-sonnet-4-5-20250929",
-    "haiku": "claude-haiku-4-5-20251001",
+    "haiku": "claude-haiku-5-5",
+    "haiku-5-5": "claude-haiku-5-5",
+    "haiku-4-5": "claude-haiku-4-5-20251001",
     "opus": "claude-opus-4-8",
     "opus-4-7": "claude-opus-4-7",
     "gemini-pro": "gemini-2.5-pro",
@@ -5024,6 +5026,7 @@ def cmd_estimate(args):
         ("DeepSeek v4-flash", "deepseek-v4-flash"),
         ("Opus   (claude-opus-4-8)", "claude-opus-4-8"),
         ("Sonnet (claude-sonnet-4-5)", "claude-sonnet-4-5-20250929"),
+        ("Haiku  (claude-haiku-5-5)", "claude-haiku-5-5"),
         ("Haiku  (claude-haiku-4-5)", "claude-haiku-4-5-20251001"),
         ("Gemini 2.5 Pro", "gemini-2.5-pro"),
         ("Gemini 2.5 Flash", "gemini-2.5-flash"),

@@ -312,7 +312,14 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(2, 3),
         help="arm64 only: the virt machine's GIC (VIBEOS_QEMU_GIC). 3 boots a GICv3 "
         "with an ITS, as Graviton has; the boot FAILS (GIC_NOT_V3) unless the HAL "
-        "drives it as one, and with --nvme (GIC_NO_ITS) unless MSI-X goes through the ITS",
+        "drives it as one, and with --nvme (GIC_NO_ITS) unless an ITS came up for MSI-X",
+    )
+    s.add_argument(
+        "--smmu",
+        action="store_true",
+        help="arm64 only: put an SMMUv3 in front of the PCI root complex (VIBEOS_QEMU_SMMU=1). "
+        "The boot FAILS (SMMU_NOT_BYPASSED) unless the HAL found it in the IORT and left it "
+        "passing DMA through; with --gic 3 the ITS's DeviceIDs then come through the SMMU",
     )
     s.add_argument(
         "--nvme",

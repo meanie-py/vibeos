@@ -51,12 +51,17 @@ _PYTEST_SUITES = [
     # tools/test_vendored.py existed but was collected by nothing, so the registry
     # that gates "is this C ours to translate" had its oracle sitting unrun.
     (".", ".", "tools/test_vendored.py"),
+    # The arm64 firmware-table parsers (MADT/SPCR/MCFG in the loader, IORT in the HAL)
+    # are compiled only for the target, where nothing runs their tests; a wrong answer
+    # from one is a dead device on a board nobody here has.
+    (".", ".", "tools/test_arm64_firmware_tables.py"),
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.
     (".", ".", "tools/test_verify_c_signatures.py"),
     (".", ".", "tools/test_scan_wide_literals.py"),
     (".", ".", "tools/test_scan_unaligned_wide.py"),
+    (".", ".", "tools/test_scan_pack_drift.py"),
     # The apitest sweep's parser. Its failure mode is FALSE GREEN, not a crash --
     # it shipped scoring `afd_apitest send` OK on the boot whose BUGCHECK that
     # subtest caused, because the subtest printed a clean summary before taking
@@ -68,6 +73,8 @@ _PYTEST_SUITES = [
     # at random under pipefail, so it must not become a new untested oracle.
     (".", ".", "tools/payloads/test_pecheck.py"),
     (".", ".", "tools/payloads/olewinetest/test_classify_failures.py"),
+    # modrun's grader is the whole verdict (the guest only reports), so it gets an oracle.
+    (".", ".", "tools/payloads/modrun/test_modrun.py"),
     # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
     # being named and documented as seconds, so a chatty payload spent a declared
     # 7200s in 12-28 minutes. Nothing could see it: the boot still "worked", it
@@ -166,6 +173,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_vendor_move_plan.py"),
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
+    (".", ".", "tools/test_rust_warning_census.py"),
     (".", ".", "tools/test_kernel_probe.py"),
     (".", ".", "tools/test_link_guard.py"),
     (".", ".", "tools/test_scan_orphan_modules.py"),

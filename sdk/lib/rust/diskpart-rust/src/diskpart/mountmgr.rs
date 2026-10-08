@@ -459,9 +459,6 @@ pub unsafe extern "C" fn DeleteDriveLetter(DriveLetter: u16) -> BOOL {
     if OutputBuffer.is_null() {
         DPRINT1!(b"OutputBuffer allocation failed!\n\0".as_ptr() as *const i8);
         Ret = FALSE;
-        'done: {
-            break 'done;
-        }
     } else {
         (*OutputBuffer).Size = OutputBufferLength;
 
@@ -475,9 +472,6 @@ pub unsafe extern "C" fn DeleteDriveLetter(DriveLetter: u16) -> BOOL {
                 Status,
             );
             Ret = FALSE;
-            'done: {
-                break 'done;
-            }
         } else {
             Status = NtDeviceIoControlFile(
                 MountMgrHandle,
@@ -497,9 +491,6 @@ pub unsafe extern "C" fn DeleteDriveLetter(DriveLetter: u16) -> BOOL {
                     Status,
                 );
                 Ret = FALSE;
-                'done: {
-                    break 'done;
-                }
             }
         }
     }

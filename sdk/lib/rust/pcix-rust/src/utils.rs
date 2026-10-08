@@ -1061,14 +1061,16 @@ pub unsafe extern "system" fn PciGetBiosConfig(
         return Status;
     }
 
-    // swprintf format string
-    let format_ptr: *const wchar_t = core::mem::transmute::<[u8; 36], [u16; 18]>(
+    // swprintf format string. Bound to a LOCAL, not `.as_ptr()`'d off the transmute: that
+    // temporary died at the end of its `let`, so `swprintf` read the format from a dead
+    // stack slot and the value name it built -- the one ZwQueryValueKey looks up below --
+    // was whatever had overwritten it.
+    let format: [u16; 18] = core::mem::transmute::<[u8; 36], [u16; 18]>(
         *b"D\0E\0V\0_\0%\x000\x002\0x\0&\0F\0U\0N\0_\0%\x000\x002\0x\0\0\0",
-    )
-    .as_ptr();
+    );
     swprintf(
         Buffer.as_mut_ptr() as *mut wchar_t,
-        format_ptr,
+        format.as_ptr() as *const wchar_t,
         (*DeviceExtension).Slot.u.bits.DeviceNumber() as i32,
         (*DeviceExtension).Slot.u.bits.FunctionNumber() as i32,
     );

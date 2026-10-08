@@ -37,8 +37,10 @@ __setjmp:
     mov eax, [esp]
     mov [edx + JbEip], eax
 
-    // Save the *current* stack pointer
-    mov [edx + JbEsp], esp
+    // Save the stack pointer as it will be after we return (past the return
+    // address), which is what Windows stores: ucrtbase_apitest setjmp.c:268/435.
+    lea eax, [esp + 4]
+    mov [edx + JbEsp], eax
 
     // Save the SEH registration
     mov eax, fs:[0]

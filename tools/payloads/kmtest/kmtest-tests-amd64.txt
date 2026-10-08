@@ -42,7 +42,9 @@ HalPortIo
 HalSystemInfo
 # QUARANTINED 2026-07-10 (amd64 sweep 1): BUGCHECK 0x1E — RtlRaiseStatus(0xC0000005)
 # from kmtest_drv PC, escapes __try (calls-only native-SEH coverage). Quest doc has triage.
-#IoCreateFile
+# UN-QUARANTINED 2026-10-08: `conformance_probe --auto` verdict OK, then two full sweeps
+# agreed (row banked in kmtest.txt). The history above is the audit trail.
+IoCreateFile
 IoDeviceInterface
 IoEvent
 # QUARANTINED 2026-07-10 (amd64 sweep 2): BUGCHECK 0x1E — AV in
@@ -240,5 +242,7 @@ TcpIpTdi
 # SET_RESULTBUFFER 0x5 (kmtest.c:334). First real observation — earlier sweeps never reached
 # it un-masked. Triage owed (GDB: break the hang on the tcpip/afd connect path; no faulting
 # PC — it's a hang, not a crash). Quarantining it un-masks RtlCaptureContextUM's real result.
-#TcpIpConnect
+# UN-QUARANTINED 2026-10-08: `conformance_probe --auto` verdict OK, then two full sweeps
+# agreed (row banked in kmtest.txt). The history above is the audit trail.
+TcpIpConnect
 RtlCaptureContextUM

@@ -83,7 +83,7 @@ def test_missing_inf_is_loud_not_a_silent_static_only_closure(tmp_path):
         w.declared_modules(tmp_path, "media/inf/nettcpip.inf", _WS2)
 
 
-def _run(tmp_path, monkeypatch, built, capsys):
+def _run(tmp_path, monkeypatch, built, capsys, extra=()):
     """Drive main() over a fake build tree whose root imports ws2_32."""
     build = tmp_path / "build-i386"
     build.mkdir()
@@ -104,7 +104,9 @@ def _run(tmp_path, monkeypatch, built, capsys):
         _MSAFD: {"wshtcpip.dll": "nettcpip.inf HelperDllName"},
     }
     monkeypatch.setattr(w, "declared_modules", lambda _p, _i, kinds: decls[kinds])
-    monkeypatch.setattr(sys, "argv", ["wow64-closure", str(root), "--build-dir", str(build)])
+    monkeypatch.setattr(
+        sys, "argv", ["wow64-closure", str(root), "--build-dir", str(build), *extra]
+    )
     rc = w.main()
     return rc, capsys.readouterr()
 
@@ -247,3 +249,30 @@ def test_library_literals_follows_a_runtime_load_inside_a_library(tmp_path, monk
 
     assert "msvfw32.dll" not in staged()
     assert "msvfw32.dll" in staged("--library-literals")
+
+
+def test_winmm_drivers_derive_from_the_hive_and_skip_commented_lines(tmp_path):
+    """winmm loads every Drivers32 driver by name; an x86-64 guest's sndrec32
+    was refused midimap/beepmidi/msacm32.drv until this edge was derived."""
+    inf_rel, kinds = w.DYNAMIC_LOADERS["winmm.dll"]
+    d = tmp_path / pathlib.Path(inf_rel).parent
+    d.mkdir(parents=True)
+    key = 'HKLM,"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Drivers32"'
+    (tmp_path / inf_rel).write_text(
+        f'{key},"midimapper",0x00000000,"midimap.dll"\n;{key},"wave",0x00000000,"sndblst.dll"\n'
+    )
+    assert set(w.declared_modules(tmp_path, inf_rel, kinds)) == {"midimap.dll"}
+    # ...and against the shipping hive.
+    real = w.declared_modules(pathlib.Path(_REPO), inf_rel, kinds)
+    assert {"midimap.dll", "msacm32.drv", "beepmidi.dll"} <= set(real)
+    assert "sndblst.dll" not in real
+
+
+def test_emit_roots_stages_the_programs_with_their_closure(tmp_path, monkeypatch, capsys):
+    """--emit-roots (payload guest_sets) prints the root itself beside its DLLs."""
+    rc, cap = _run(
+        tmp_path, monkeypatch, ["ws2_32.dll", "msafd.dll", "wshtcpip.dll"], capsys, ["--emit-roots"]
+    )
+    assert rc == 0
+    staged = {ln.split("\t")[0] for ln in cap.out.splitlines() if "\t" in ln}
+    assert {"guest.exe", "ws2_32.dll", "msafd.dll"} <= staged

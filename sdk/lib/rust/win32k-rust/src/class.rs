@@ -114,18 +114,22 @@ unsafe fn UserHMGetHandle<T>(obj: *mut T) -> HANDLE {
 // GETPFNCLIENT{A,W}(fnid) = (WNDPROC)*((ULONG_PTR*)&gpsi->apfnClient{A,W} + (fnid-FNID_FIRST))
 #[inline(always)]
 unsafe fn GETPFNCLIENTA(fnid: INT) -> WNDPROC {
-    let base = core::ptr::addr_of!((*gpsi).apfnClientA) as *const usize;
-    core::mem::transmute(*base.offset((fnid - FNID_FIRST as INT) as isize))
+    // Per process: an x86-64 guest's user32 has its own procs (pfnclient.rs).
+    core::mem::transmute(crate::pfnclient::client_proc(true, (fnid - FNID_FIRST as INT) as usize))
 }
 #[inline(always)]
 unsafe fn GETPFNCLIENTW(fnid: INT) -> WNDPROC {
-    let base = core::ptr::addr_of!((*gpsi).apfnClientW) as *const usize;
-    core::mem::transmute(*base.offset((fnid - FNID_FIRST as INT) as isize))
+    core::mem::transmute(crate::pfnclient::client_proc(false, (fnid - FNID_FIRST as INT) as usize))
 }
 // GETPFNSERVER(fnid) = gpsi->aStoCidPfn[fnid - FNID_FIRST]
 #[inline(always)]
 unsafe fn GETPFNSERVER(fnid: INT) -> WNDPROC {
-    (*gpsi).aStoCidPfn[(fnid - FNID_FIRST as INT) as usize]
+    // aStoCidPfn is filled from the W table, so a private W table answers it too.
+    let i = (fnid - FNID_FIRST as INT) as usize;
+    match crate::pfnclient::private_w(i) {
+        Some(p) => core::mem::transmute(p),
+        None => (*gpsi).aStoCidPfn[i],
+    }
 }
 
 // GetW32ThreadInfo is a real exported cdecl symbol (`_GetW32ThreadInfo`).

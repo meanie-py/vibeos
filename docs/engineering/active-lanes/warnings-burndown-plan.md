@@ -438,6 +438,51 @@ do not re-probe them.**
   roadmap's own framing (the trampoline as the substrate for generating crate-split's
   cross-crate decls) and it wants a quiet fleet: 12 worktrees were active on 2026-07-25.
 
+## 2026-10-08 — census by RISK, not by count
+
+`tools/rust_warning_census.py <build full.log>...` reads the warnings out of
+`vibeos-cli build` logs and sorts every site into **UB** (undefined or miscompiles),
+**LOGIC** (the code plainly does something its author did not intend), **NOISE**, or
+**UNCLASSIFIED** (a lint nobody ranked yet -- never defaulted to noise). Pass one log per
+arch; a site seen on several is one site. It reports coverage, because a warm build's log
+only carries the crates it recompiled. `--tier UB`, `--lint <name>` list the sites.
+
+Fresh arm64 + i386 logs, before this pass: **5,773 sites -- 192 UB, 2,461 LOGIC, 3,120
+NOISE**. The raw count is dominated by three buckets (`unnecessary_transmutes` 1,782,
+`clashing_extern_declarations` 1,358, `unused_assignments` 1,048); outside them, about 40
+sites were worth a human read, and they were read against the C:
+
+- **Fixed, real:** pcix's `swprintf` format was a pointer into a dead temporary
+  (`dangling_pointers_from_temporaries`); shell32's `SHELL_GetShellExtensionRegCLSID` tested
+  an uncast DWORD `>= 0` for `SUCCEEDED()`, so it never consulted a key's default value; five
+  structs built by `MaybeUninit::uninit().assume_init()` (`invalid_value`, UB on integer
+  fields -- cdrom, shell32 x3, wkssvc); scsiport dropped both `KeFlushIoBuffers` calls, and
+  cdfs and disk shimmed it as empty on every arch -- the header makes it a `dsb sy` on arm64,
+  so DMA reads were unordered on real hardware (fastfat was already right, via a C capture);
+  wshtcpip's 11 `deref_nullptr` FIELD_OFFSETs became `offset_of!` (the toolchain timebomb);
+  secur32 and gdi32 rebuilt pointers from integers (`integer_to_ptr_transmutes`).
+- **Residue, deleted:** six `unused_must_use` statements computing and discarding a
+  condition. Each was graded first, because a discarded `!NT_SUCCESS(status)` can be a lost
+  `goto` -- and two were (netapi32, scsiport), but each sat last in its success block, so
+  falling through reached the label's cleanup anyway. The rest were dropped `ASSERT`s and
+  `FAILED_UNEXPECTEDLY` traces. Also fastfat's `static PAGED_CODE: ()` extern and an lsasrv
+  `drop(None::<()>)`.
+- **Graded faithful, left:** `RtlRaiseStatus` really does end in a self-call, as the C does
+  (reached only when `ZwRaiseException` fails) -- item-level allow with the reason;
+  kernel32's `Result > 0xFFFFFFFF` is the same dead check in path.c:1521; disk's
+  `if !"msg".as_ptr().is_null()` is `NT_ASSERT(!"msg")`, i.e. assert-false, now spelled so.
+
+**Owed** (tracked here until done): `static_mut_refs` 168; the `clashing_extern` Phase 2
+below; `unused_assignments` 1,048 (some are lost writes -- grade, don't bulk-allow);
+`unreachable_code` 19, each wanting a read; 13 `path_statements` that are `STUB;` /
+`UNIMPLEMENTED;` debug macros translated as constants; and `PAGED_CODE()` declared as an
+extern fn and CALLED out of line -- 71 files in 10 crates (fastfat 26, cdfs 20, cdrom 11,
+cmlib, disk, classpnp, scsiport, pcix, pciidex-legacy, partmgr), resolving to
+`#[no_mangle] extern "C" fn PAGED_CODE() {}` shims. That is the AGENTS.md "debug macro as a
+no-op fn" anti-pattern, and it is mechanical: one `macro_rules!` per crate (fs_rec's and
+two cdfs modules already use `#[inline(always)]`). (The flexible-array reader's cargo-linked corpus, owed when this was written,
+closed the same day: ten boot-path sites fixed -- roadmap.)
+
 ## Owed follow-ups
 
 - **`clashing_extern_declarations` Phase 2 (task #4) — the audit-heavy tail after the safe ABI-class

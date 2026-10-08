@@ -323,6 +323,11 @@ static void run_dll_section(const char *self, HINF inf, const WCHAR *section)
 
 int main(int argc, char **argv)
 {
+    /* An unhandled exception now reaches UnhandledExceptionFilter, whose fault box
+     * would leave a crashing child waiting on a dialog nobody answers. This mode is
+     * inherited by every process spawned from here, which then exits with its
+     * exception code instead -- as an unattended run on Windows does. */
+    SetErrorMode(SetErrorMode(0) | SEM_NOGPFAULTERRORBOX);
     if (argc >= 6 && !strcmp(argv[1], "child"))
         return child(argv[2], argv[3], atoi(argv[4]), argv[5]);
 

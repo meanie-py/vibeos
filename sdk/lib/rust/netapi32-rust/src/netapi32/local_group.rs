@@ -1952,7 +1952,6 @@ pub unsafe extern "system" fn NetLocalGroupGetInfo(
                             ApiStatus = NetpNtStatusToApiStatus(Status);
                         } else {
                             ApiStatus = BuildAliasInfoBuffer(AliasInfo, level, &raw mut Buffer);
-                            ApiStatus != NERR_Success as u32;
                         }
                     }
                 }

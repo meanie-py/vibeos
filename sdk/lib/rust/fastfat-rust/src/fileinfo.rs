@@ -127,7 +127,6 @@ extern "system" {
     static FAT_NTC_DCB: u16;
     static FAT_NTC_FCB: u16;
     static OPLOCK_FLAG_PARENT_OBJECT: u32;
-    static PAGED_CODE: ();
     static FCB_STATE_PAGING_FILE: u32;
     static VCB_STATE_FLAG_CREATE_IN_PROGRESS: u32;
     static VCB_STATE_FLAG_REMOVABLE_MEDIA: u32;
@@ -221,7 +220,7 @@ pub unsafe extern "system" fn FatQueryBasicInfo(
     const FCB_STATE_TEMPORARY: u32 = 0x20; // placeholder – actual value as defined
     const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x100;
 
-    let _ = PAGED_CODE;
+    // PAGED_CODE(); -- a debug-only IRQL assertion: nothing in a release build
 
     // UNREFERENCED_PARAMETER(FileObject)
     let _ = FileObject;
@@ -535,7 +534,7 @@ unsafe extern "system" fn FatQueryShortNameInfo(
         Buffer: short_name_buffer.as_mut_ptr(),
     };
 
-    let _ = PAGED_CODE;
+    // PAGED_CODE(); -- a debug-only IRQL assertion: nothing in a release build
 
     DebugTrace(1, Dbg, b"FatQueryNameInfo...\n\0".as_ptr() as *const i8, 0);
 
@@ -1177,7 +1176,7 @@ pub unsafe extern "system" fn FatSetPositionInfo(
 ) -> NTSTATUS {
     let Buffer: *mut FILE_POSITION_INFORMATION;
 
-    let _ = PAGED_CODE;
+    // PAGED_CODE(); -- a debug-only IRQL assertion: nothing in a release build
 
     DebugTrace(1, Dbg, c"FatSetPositionInfo...\n".as_ptr().cast::<i8>(), 0);
 
@@ -1243,7 +1242,7 @@ pub unsafe extern "system" fn FatSetAllocationInfo(
     Fcb: *mut FCB,
     FileObject: *mut FILE_OBJECT,
 ) -> i32 {
-    let _ = PAGED_CODE;
+    // PAGED_CODE(); -- a debug-only IRQL assertion: nothing in a release build
 
     let mut Status: i32 = STATUS_SUCCESS;
     let Buffer: *mut FILE_ALLOCATION_INFORMATION =
@@ -2772,7 +2771,7 @@ pub unsafe extern "system" fn FatFsdSetInformation(
     let mut IrpContext: *mut core::ffi::c_void = core::ptr::null_mut();
     let TopLevel: i32;
 
-    let _ = PAGED_CODE;
+    // PAGED_CODE(); -- a debug-only IRQL assertion: nothing in a release build
 
     DebugTrace(
         1,

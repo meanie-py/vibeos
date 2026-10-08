@@ -394,117 +394,118 @@ unsafe extern "C" fn ParseArcName(
         return STATUS_OBJECT_PATH_SYNTAX_BAD;
     }
 
-    if _wcsicmp(Token.Buffer, RUSTCONV_WSTR_7BC572EA8FA4.as_ptr()) == 0 {
-        UseSignature = (TRUE) as u8;
-        AdapterType_local = ScsiAdapter;
-    } else {
-        AdapterType_local = ArcMatchToken_UStr(&Token, AdapterTypes_U.as_ptr()) as ADAPTER_TYPE;
-        if AdapterType_local as u32 >= AdapterTypeMax as u32 {
-            DPRINT1!("Invalid adapter type %wZ\n", &Token);
-            return STATUS_OBJECT_NAME_INVALID;
-        }
-
-        if AdapterType_local == NetAdapter || AdapterType_local == RamdiskAdapter {
-            if AdapterType_local == NetAdapter {
-                DPRINT1!(
-                    "%S(%lu) path is not supported!\n",
-                    AdapterTypes_U[AdapterType_local as usize],
-                    AdapterKey,
-                );
-                return STATUS_NOT_SUPPORTED;
+    'quit: {
+        if _wcsicmp(Token.Buffer, RUSTCONV_WSTR_7BC572EA8FA4.as_ptr()) == 0 {
+            UseSignature = (TRUE) as u8;
+            AdapterType_local = ScsiAdapter;
+        } else {
+            AdapterType_local = ArcMatchToken_UStr(&Token, AdapterTypes_U.as_ptr()) as ADAPTER_TYPE;
+            if AdapterType_local as u32 >= AdapterTypeMax as u32 {
+                DPRINT1!("Invalid adapter type %wZ\n", &Token);
+                return STATUS_OBJECT_NAME_INVALID;
             }
 
-            'quit: {
+            if AdapterType_local == NetAdapter || AdapterType_local == RamdiskAdapter {
+                if AdapterType_local == NetAdapter {
+                    DPRINT1!(
+                        "%S(%lu) path is not supported!\n",
+                        AdapterTypes_U[AdapterType_local as usize],
+                        AdapterKey,
+                    );
+                    return STATUS_NOT_SUPPORTED;
+                }
+
+                // C: `goto Quit;` -- no controller or peripheral node follows.
                 break 'quit;
             }
         }
-    }
 
-    p = ArcGetNextTokenU(p, &mut Token, &mut ControllerKey);
-    if p.is_null() {
-        DPRINT1!(
-            "%S(%lu) adapter doesn't have a controller!\n",
-            AdapterTypes_U[AdapterType_local as usize],
-            AdapterKey,
-        );
-        return STATUS_OBJECT_PATH_SYNTAX_BAD;
-    }
+        p = ArcGetNextTokenU(p, &mut Token, &mut ControllerKey);
+        if p.is_null() {
+            DPRINT1!(
+                "%S(%lu) adapter doesn't have a controller!\n",
+                AdapterTypes_U[AdapterType_local as usize],
+                AdapterKey,
+            );
+            return STATUS_OBJECT_PATH_SYNTAX_BAD;
+        }
 
-    ControllerType = ArcMatchToken_UStr(&Token, ControllerTypes_U.as_ptr()) as CONTROLLER_TYPE;
-    if ControllerType as u32 >= ControllerTypeMax as u32 {
-        DPRINT1!("Invalid controller type %wZ\n", &Token);
-        return STATUS_OBJECT_NAME_INVALID;
-    }
+        ControllerType = ArcMatchToken_UStr(&Token, ControllerTypes_U.as_ptr()) as CONTROLLER_TYPE;
+        if ControllerType as u32 >= ControllerTypeMax as u32 {
+            DPRINT1!("Invalid controller type %wZ\n", &Token);
+            return STATUS_OBJECT_NAME_INVALID;
+        }
 
-    if AdapterType_local == MultiAdapter && ControllerKey != 0 {
-        DPRINT1!(
-            "%S(%lu) adapter with %S(%lu non-zero), ignored!\n",
-            AdapterTypes_U[AdapterType_local as usize],
-            AdapterKey,
-            ControllerTypes_U[ControllerType as usize],
-            ControllerKey,
-        );
-        ControllerKey = 0;
-    }
+        if AdapterType_local == MultiAdapter && ControllerKey != 0 {
+            DPRINT1!(
+                "%S(%lu) adapter with %S(%lu non-zero), ignored!\n",
+                AdapterTypes_U[AdapterType_local as usize],
+                AdapterKey,
+                ControllerTypes_U[ControllerType as usize],
+                ControllerKey,
+            );
+            ControllerKey = 0;
+        }
 
-    if AdapterType_local != ScsiAdapter && ControllerType == CdRomController {
-        DPRINT1!(
-            "%S(%lu) adapter cannot have a CDROM controller!\n",
-            AdapterTypes_U[AdapterType_local as usize],
-            AdapterKey,
-        );
-        return STATUS_OBJECT_PATH_INVALID;
-    }
+        if AdapterType_local != ScsiAdapter && ControllerType == CdRomController {
+            DPRINT1!(
+                "%S(%lu) adapter cannot have a CDROM controller!\n",
+                AdapterTypes_U[AdapterType_local as usize],
+                AdapterKey,
+            );
+            return STATUS_OBJECT_PATH_INVALID;
+        }
 
-    p = ArcGetNextTokenU(p, &mut Token, &mut PeripheralKey);
-    if p.is_null() {
-        DPRINT1!(
-            "%S(%lu)%S(%lu) adapter-controller doesn't have a peripheral!\n",
-            AdapterTypes_U[AdapterType_local as usize],
-            AdapterKey,
-            ControllerTypes_U[ControllerType as usize],
-            ControllerKey,
-        );
-        return STATUS_OBJECT_PATH_SYNTAX_BAD;
-    }
+        p = ArcGetNextTokenU(p, &mut Token, &mut PeripheralKey);
+        if p.is_null() {
+            DPRINT1!(
+                "%S(%lu)%S(%lu) adapter-controller doesn't have a peripheral!\n",
+                AdapterTypes_U[AdapterType_local as usize],
+                AdapterKey,
+                ControllerTypes_U[ControllerType as usize],
+                ControllerKey,
+            );
+            return STATUS_OBJECT_PATH_SYNTAX_BAD;
+        }
 
-    PeripheralType = ArcMatchToken_UStr(&Token, PeripheralTypes_U.as_ptr()) as PERIPHERAL_TYPE;
-    if PeripheralType as u32 >= PeripheralTypeMax as u32 {
-        DPRINT1!("Invalid peripheral type %wZ\n", &Token);
-        return STATUS_OBJECT_NAME_INVALID;
-    }
+        PeripheralType = ArcMatchToken_UStr(&Token, PeripheralTypes_U.as_ptr()) as PERIPHERAL_TYPE;
+        if PeripheralType as u32 >= PeripheralTypeMax as u32 {
+            DPRINT1!("Invalid peripheral type %wZ\n", &Token);
+            return STATUS_OBJECT_NAME_INVALID;
+        }
 
-    if ControllerType == CdRomController && PeripheralType != FDiskPeripheral {
-        DPRINT1!(
-            "%S(%lu) controller cannot have a %S(%lu) peripheral! (note that we haven't check whether the adapter was SCSI or not)\n",
-            ControllerTypes_U[ControllerType as usize],
-            ControllerKey,
-            PeripheralTypes_U[PeripheralType as usize],
-            PeripheralKey,
-        );
-        return STATUS_OBJECT_PATH_INVALID;
-    }
+        if ControllerType == CdRomController && PeripheralType != FDiskPeripheral {
+            DPRINT1!(
+                "%S(%lu) controller cannot have a %S(%lu) peripheral! (note that we haven't check whether the adapter was SCSI or not)\n",
+                ControllerTypes_U[ControllerType as usize],
+                ControllerKey,
+                PeripheralTypes_U[PeripheralType as usize],
+                PeripheralKey,
+            );
+            return STATUS_OBJECT_PATH_INVALID;
+        }
 
-    if AdapterType_local == ScsiAdapter
-        && !(PeripheralType == RDiskPeripheral || PeripheralType == FDiskPeripheral)
-    {
-        DPRINT1!(
-            "%S(%lu)%S(%lu) SCSI adapter-controller has an invalid peripheral %S(%lu) !\n",
-            AdapterTypes_U[AdapterType_local as usize],
-            AdapterKey,
-            ControllerTypes_U[ControllerType as usize],
-            ControllerKey,
-            PeripheralTypes_U[PeripheralType as usize],
-            PeripheralKey,
-        );
-        return STATUS_OBJECT_PATH_INVALID;
-    }
+        if AdapterType_local == ScsiAdapter
+            && !(PeripheralType == RDiskPeripheral || PeripheralType == FDiskPeripheral)
+        {
+            DPRINT1!(
+                "%S(%lu)%S(%lu) SCSI adapter-controller has an invalid peripheral %S(%lu) !\n",
+                AdapterTypes_U[AdapterType_local as usize],
+                AdapterKey,
+                ControllerTypes_U[ControllerType as usize],
+                ControllerKey,
+                PeripheralTypes_U[PeripheralType as usize],
+                PeripheralKey,
+            );
+            return STATUS_OBJECT_PATH_INVALID;
+        }
 
-    q = ArcGetNextTokenU(p, &mut Token, &mut PartitionNumber);
-    if !q.is_null() && _wcsicmp(Token.Buffer, RUSTCONV_WSTR_25C59D0378B0.as_ptr()) == 0 {
-        p = q;
-    } else {
-        PartitionNumber = 0;
+        q = ArcGetNextTokenU(p, &mut Token, &mut PartitionNumber);
+        if !q.is_null() && _wcsicmp(Token.Buffer, RUSTCONV_WSTR_25C59D0378B0.as_ptr()) == 0 {
+            p = q;
+        } else {
+            PartitionNumber = 0;
+        }
     }
 
     *ArcNamePath = p;

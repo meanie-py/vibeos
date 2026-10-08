@@ -109,10 +109,18 @@ pub unsafe extern "C" fn RemoveHeadList(ListHead: *mut LIST_ENTRY) -> *mut LIST_
 // driver-fleet bomb class).
 #[no_mangle]
 pub unsafe extern "C" fn KeInitializeSpinLock(SpinLock: *mut usize) { *SpinLock = 0; }
-// KeFlushIoBuffers is a no-op macro on x86/amd64 (cache-coherent DMA). arm64: QEMU virt
-// DMA is coherent too; a real-hardware cache-maintenance impl is owed (translation audit).
+// KeFlushIoBuffers is a MACRO, per arch: empty on x86/amd64 (cache-coherent DMA,
+// xdk/x86/ke.h:188) and `_DataSynchronizationBarrier()` on arm64 (xdk/arm64/ke.h:106).
+// That barrier IS the whole arm64 implementation -- there is no cache maintenance to
+// add -- so this does exactly what the header does. QEMU virt's DMA is coherent, which
+// is why its absence never showed. The `-> i32` is the callers' declaration (diskwmi.rs).
 #[no_mangle]
-pub unsafe extern "C" fn KeFlushIoBuffers(_mdl: *mut c_void, _read: i32, _dma: i32) -> i32 { 0 }
+pub unsafe extern "C" fn KeFlushIoBuffers(_mdl: *mut c_void, _read: i32, _dma: i32) -> i32 {
+    // Not `nomem`: the barrier must also order the compiler's own memory accesses.
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+    0
+}
 
 // ---------- compiler intrinsics ----------
 use core::sync::atomic::{AtomicI32, Ordering};
