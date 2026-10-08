@@ -5365,6 +5365,18 @@ a fault. They now walk `VirtualQuery` regions (committed, not GUARD/NOACCESS, gr
 access), which also stops them consuming a stack guard page the way Windows' probe does.
 `sehtest`'s `bad-ptr-probes` covers them on every boot, all three arches.
 
+**At the top of a thread the same drop removes a whole SUBSYSTEM.** kernel32's
+`BaseProcessStartup`/`BaseThreadStartup` are `__try { start() } __except
+(UnhandledExceptionFilter(...)) { ExitProcess(code) }`; the translation kept the body and
+left the except arm as unreachable code after `ExitThread`. Symptom: every unhandled user
+exception, on every arch, ends as an anonymous exit 0x80 (csrss terminating the client at
+second chance) with no `Unhandled exception` banner; `SetUnhandledExceptionFilter`
+callbacks, AeDebug and `SEM_NOGPFAULTERRORBOX` silently do nothing; on i386 `fs:[0]` is -1
+in `main`, which `_setjmp3` reports. Fix: run the start routine under ntdll's
+`RtlSehTryExcept` (`client/except.rs` `run_under_top_level_handler`). Unattended runners
+must then set `SEM_NOGPFAULTERRORBOX` (children inherit it) or a crash waits on the fault
+box. `sehtest`'s `top-level filter` check covers it on every boot, all three arches.
+
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
 HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
 call `ProbeForWrite` — so "did it dereference a user pointer where its C validated one"
@@ -11336,6 +11348,18 @@ memory permits it. Measured across the arm64 WoW64 ladder: before the fix, 6–1
 boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 0–1 per boot,
 `PTE=…4C3` (AttrIndx 0) with `OPC=0x88DFFE85` — `ldar`, absorbed and the run passes. So the
 whole class collapsed to the one case that is *supposed* to happen.
+
+### Calibrating against interrupt ARRIVAL measures TCG latency, not the clock
+Symptom: `QueryPerformanceCounter`/`clock()` drift against system time by a different amount
+every boot (Wine ucrtbase misc.c:1355 had `clock()` 0.5-3 s short over a few seconds). Cause:
+the APIC HAL's QPC is the raw TSC at a rate `HalpInitializeTsc` derived from four 1/1024 s RTC
+interrupts. Under TCG an interrupt is delivered late whenever the host is busy, a late tick
+inflates its sample by up to 1.5x, and a 3 ms window cannot average that out: one image
+calibrated 4.23 to 7.95 GHz against a 4.20 GHz TSC. Fix: measure against something you READ,
+not something that interrupts you. `tsc.rs` polls a PIT channel-2 one-shot for 50 ms (Linux's
+`pit_calibrate_tsc`) and got 4.2023-4.2031 GHz on every boot of both x86 arches; the boot log
+prints `[HAL] TSC ... kHz` with the RTC estimate beside it. Any other "count ticks between
+interrupts" calibration in the tree has the same weakness under TCG.
 
 ### Real hardware: what QEMU's TCG does not model
 Every one of these passed smoke ×N and failed on the first physical board (Raspberry Pi 4,

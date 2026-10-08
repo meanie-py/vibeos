@@ -80,6 +80,11 @@ static void wait_for_pnp_quiet(void)
 
 int main(void)
 {
+    /* An unhandled exception now reaches UnhandledExceptionFilter, whose fault box
+     * would leave a crashing child waiting on a dialog nobody answers. This mode is
+     * inherited by every process spawned from here, which then exits with its
+     * exception code instead -- as an unattended run on Windows does. */
+    SetErrorMode(SetErrorMode(0) | SEM_NOGPFAULTERRORBOX);
     char windir[MAX_PATH], listpath[MAX_PATH], exepath[MAX_PATH];
     char line[128];
     FILE *f;

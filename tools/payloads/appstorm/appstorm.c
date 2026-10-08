@@ -660,6 +660,11 @@ static const scenario_t scenarios[] = {
 
 int main(void)
 {
+    /* An unhandled exception now reaches UnhandledExceptionFilter, whose fault box
+     * would leave a crashing child waiting on a dialog nobody answers. This mode is
+     * inherited by every process spawned from here, which then exits with its
+     * exception code instead -- as an unattended run on Windows does. */
+    SetErrorMode(SetErrorMode(0) | SEM_NOGPFAULTERRORBOX);
     int pass = 0, fail = 0, absent = 0;
     WCHAR sysdir[MAX_PATH], windir[MAX_PATH];
     GetSystemDirectoryW(sysdir, MAX_PATH);

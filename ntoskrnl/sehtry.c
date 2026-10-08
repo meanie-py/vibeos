@@ -94,10 +94,18 @@ typedef struct _SEH_POINTERS {
     void *ContextRecord;
 } SEH_POINTERS;
 
-/* EXCEPTION_REGISTRATION_RECORD first, then our state. */
+/* EXCEPTION_REGISTRATION_RECORD first, then MSVC's EH3 ScopeTable/TryLevel, then our
+ * state. The EH3 pair is for code that reads the CURRENT frame as an MSVC one: the
+ * CRT's _setjmp/_setjmp3 store fs:[0]->TryLevel ([reg+12]), and kernel32's top-level
+ * frame (BaseProcessStartup/BaseThreadStartup) is what a Win32 main() runs under.
+ * TryLevel 0 is the truth -- the body runs inside one __try -- and a NULL ScopeTable
+ * with equal levels makes _local_unwind2 a no-op. Without it [reg+12] was JmpBuf[1],
+ * a code address. */
 typedef struct _SEH_FRAME {
     struct _SEH_FRAME *Next;
     void *Handler;
+    void *ScopeTable;
+    unsigned long TryLevel;
     void *JmpBuf[5]; /* __builtin_setjmp's buffer: fp, ip, sp + 2 spare */
     SEH_FILTER Filter;
     void *FilterContext;
@@ -197,6 +205,8 @@ RtlSehTryExcept(SEH_BODY Body, void *BodyContext, SEH_FILTER Filter, void *Filte
      * context; here the try records IF and the catch puts it back. */
     __asm__ __volatile__("pushfl\n\tpopl %0" : "=r"(EFlags));
     Frame.Handler = (void *)SehExceptHandler;
+    Frame.ScopeTable = 0;
+    Frame.TryLevel = 0;
     Frame.Filter = Filter;
     Frame.FilterContext = FilterContext;
     Frame.Code = 0;
@@ -224,6 +234,8 @@ RtlSehTryFinally(SEH_BODY Body, void *BodyContext, SEH_FINALLY Finally, void *Fi
     volatile SEH_FRAME Frame;
 
     Frame.Handler = (void *)SehFinallyHandler;
+    Frame.ScopeTable = 0;
+    Frame.TryLevel = 0;
     Frame.Finally = Finally;
     Frame.FinallyContext = FinallyContext;
     Frame.Next = SehGetList();
