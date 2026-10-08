@@ -675,9 +675,6 @@ pub unsafe extern "C" fn StepLowMemRetry(Pkt: PTRANSFER_PACKET) -> BOOLEAN {
     packetDone
 }
 
-extern "system" {
-    
-}
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----

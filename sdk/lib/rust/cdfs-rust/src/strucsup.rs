@@ -28,7 +28,6 @@ extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn CdAllocateFcbIndex(IrpContext: *mut IRP_CONTEXT) -> *mut FCB;
@@ -368,7 +367,7 @@ pub unsafe extern "C" fn CdCreateIrpContext(Irp: PIRP, Wait: BOOLEAN) -> *mut IR
     let mut NewIrpContext: *mut IRP_CONTEXT = core::ptr::null_mut();
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // The only operations a filesystem device object should receive are
     // create/teardown of fsdo handles and non-fileobject operations (mount).
@@ -877,7 +876,7 @@ pub unsafe extern "C" fn CdDeleteVcb(
     Vcb: *mut VCB,
 ) {
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
         ASSERT_EXCLUSIVE_CDDATA();
         ASSERT_EXCLUSIVE_VCB(Vcb);
         UNREFERENCED_PARAMETER(IrpContext);
@@ -924,7 +923,7 @@ pub unsafe extern "C" fn CdCreateFcb(
     mut FcbExisted: *mut u8,
 ) -> *mut FCB {
     // PAGED_CODE() macro – emit the call
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut NewFcb: *mut FCB;
     let mut LocalFcbExisted: u8 = 0;
@@ -1161,7 +1160,7 @@ pub unsafe extern "C" fn CdCreateCcb(
 ) -> *mut CCB {
     let mut NewCcb: *mut CCB;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(IrpContext);
 
     NewCcb = CdAllocateCcb(IrpContext);
@@ -1252,7 +1251,7 @@ pub unsafe extern "C" fn CdTeardownStructures(
     let mut AcquiredCurrentFcb: u8 = 0;
     let mut ParentFcb: *mut FCB = core::mem::zeroed();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *RemovedStartingFcb = 0;
 
@@ -1521,7 +1520,7 @@ pub unsafe extern "C" fn CdDeleteFcb(
 ) {
 
     let mut Vcb: *mut VCB = core::ptr::null_mut();
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if (*Fcb).FcbCleanup != 0 {
         DbgPrint(
@@ -1594,7 +1593,7 @@ pub unsafe extern "C" fn CdCreateFcbNonpaged(IrpContext: *mut IRP_CONTEXT) -> *m
 
     let mut FcbNonpaged: *mut FCB_NONPAGED;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // UNREFERENCED_PARAMETER( IrpContext ) – suppress unused warning
     let _ = IrpContext;
@@ -1642,7 +1641,9 @@ pub unsafe extern "system" fn CdFcbTableCompare(
     Fid1: *mut core::ffi::c_void,
     Fid2: *mut core::ffi::c_void,
 ) -> ntkrnl_sys::ddk::RTL_GENERIC_COMPARE_RESULTS {
-    unsafe { /* PAGED_CODE(); */ }
+    unsafe { /* PAGED_CODE!(); */ }
+
+    let _ = FcbTable; // UNREFERENCED_PARAMETER(FcbTable)
 
     let Id1: FILE_ID = core::ptr::read_unaligned(Fid1 as *const FILE_ID);
     let Id2: FILE_ID = core::ptr::read_unaligned(Fid2 as *const FILE_ID);
@@ -1654,15 +1655,13 @@ pub unsafe extern "system" fn CdFcbTableCompare(
     } else {
         return GenericEqual;
     }
-
-    let _ = FcbTable; // UNREFERENCED_PARAMETER(FcbTable)
 }
 #[no_mangle]
 pub unsafe extern "system" fn CdAllocateFcbTable(
     FcbTable: *mut core::ffi::c_void,
     ByteSize: i32,
 ) -> *mut core::ffi::c_void {
-    PAGED_CODE();
+    PAGED_CODE!();
     let _ = FcbTable; // UNREFERENCED_PARAMETER
     FsRtlAllocatePoolWithTag(CdPagedPool, ByteSize as u32, TAG_FCB_TABLE)
 }
@@ -1725,7 +1724,7 @@ pub unsafe extern "C" fn CdCreateFileLock(
 ) -> u8 {
     let mut Result: u8 = 1; // TRUE
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // Lock the Fcb and check if there is really any work to do.
     CdLockFcb(IrpContext, Fcb);

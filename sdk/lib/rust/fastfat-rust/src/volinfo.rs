@@ -39,7 +39,6 @@ extern "system" {
 extern "system" {
     } extern "C" { fn DebugTrace(level: u32, component: u32, fmt: *const i8, ...); } extern "system" {
     fn UNREFERENCED_PARAMETER(_: *mut core::ffi::c_void);
-    fn PAGED_CODE();
     fn FlagOn(flags: u32, flag: u32) -> u32;
     fn SetFlag(attr: *mut u32, flag: u32);
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
@@ -144,8 +143,6 @@ pub unsafe extern "system" fn FatQueryFsVolumeInfo(
     Status
 }
 // ---- re-stitched from bank: 20260612-143211-volinfo.c/02_FatQueryFsSizeInfo.rs ----
-extern "system" {
-}
 
 unsafe extern "system" fn FatQueryFsSizeInfo(
     IrpContext: *mut PIRP_CONTEXT,
@@ -153,7 +150,7 @@ unsafe extern "system" fn FatQueryFsSizeInfo(
     Buffer: *mut FILE_FS_SIZE_INFORMATION,
     Length: *mut u32,
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(0, /* Dbg (DEBUG_TRACE_VOLINFO) */ 0, b"FatQueryFsSizeInfo...\n\0".as_ptr() as *const i8, 0);
 
@@ -171,8 +168,6 @@ unsafe extern "system" fn FatQueryFsSizeInfo(
     STATUS_SUCCESS as i32
 }
 // ---- re-stitched from bank: 20260612-143211-volinfo.c/03_FatQueryFsDeviceInfo.rs ----
-extern "system" {
-}
 
 const FILE_DEVICE_DISK: u32 = 0x0000_0007;
 
@@ -206,11 +201,7 @@ pub unsafe extern "system" fn FatQueryFsDeviceInfo(
     }
 }
 // ---- re-stitched from bank: 20260612-143211-volinfo.c/04_FatQueryFsAttributeInfo.rs ----
-extern "system" {
-}
 
-extern "system" {
-}
 
 // (FatData is the real global FAT_DATA; ChicagoMode is a packed bitfield read
 //  via FatData.ChicagoMode() — see the dirsup.rs note. The old FatDataStruct
@@ -235,7 +226,7 @@ pub unsafe extern "system" fn FatQueryFsAttributeInfo(
     let mut BytesToCopy: u32;
     let Status: NTSTATUS;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(0, Dbg, b"FatQueryFsAttributeInfo...\n\0".as_ptr() as *const i8, 0);
 
@@ -295,8 +286,6 @@ pub unsafe extern "system" fn FatQueryFsAttributeInfo(
 }
 
 // ---- re-stitched from bank: 20260612-143211-volinfo.c/05_FatQueryFsFullSizeInfo.rs ----
-extern "system" {
-}
 
 unsafe extern "system" fn FatQueryFsFullSizeInfo(
     IrpContext: *mut IRP_CONTEXT,
@@ -628,8 +617,6 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
 
 // #if (NTDDI_VERSION >= NTDDI_WIN8)
 // ---- re-stitched from bank: 20260612-143211-volinfo.c/07_FatQueryFsSectorSizeInfo.rs ----
-extern "system" {
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn FatQueryFsSectorSizeInfo(
@@ -640,7 +627,7 @@ pub unsafe extern "system" fn FatQueryFsSectorSizeInfo(
 ) -> i32 {
     let Status: i32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
 
     ASSERT((*Length as usize >= core::mem::size_of::<FatFileFsSectorSizeInformation>()) as i32);
@@ -683,7 +670,7 @@ pub unsafe extern "system" fn FatFsdSetVolumeInformation(
     let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1u32, Dbg as u32, b"FatFsdSetVolumeInformation\n\0".as_ptr() as *const i8, 0u32);
 
@@ -834,7 +821,7 @@ pub unsafe extern "system" fn FatCommonSetVolumeInfo(
     let FsInformationClass: FS_INFORMATION_CLASS;
     let Buffer: *mut core::ffi::c_void;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // Get the current stack location
     IrpSp = IoGetCurrentIrpStackLocation(Irp);

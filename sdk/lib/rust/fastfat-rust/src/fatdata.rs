@@ -18,7 +18,6 @@ use ntkrnl_sys::ddk::ExReleaseResourceLite;
 
 extern "system" {
     fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);
-    fn PAGED_CODE();
     fn SetFlag(flags: *mut u32, mask: u32);
     fn ClearFlag(flags: *mut u32, mask: u32);
     fn FlagOn(flags: u32, mask: u32) -> i32;
@@ -870,7 +869,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
     let mut FcbAcquired: i32 = 0;
 
     // PAGED_CODE()
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // UNREFERENCED_PARAMETER(DeviceObject)
     let _ = DeviceObject;
@@ -970,7 +969,7 @@ pub unsafe extern "system" fn FatPopUpFileCorrupt(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // Check if this is the root directory; if so, skip popup
     if NodeType((Fcb).cast()) == (FAT_NTC_ROOT_DCB) as u32 {

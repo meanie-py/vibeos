@@ -67,7 +67,6 @@ unsafe extern "system" {
     fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: u32, Message: *mut i8);
 }
 unsafe extern "C" {
-    fn PAGED_CODE();
     fn DPRINT1(format: *const i8, ...);
     fn ASSERT(condition: u32);
     fn DPRINT(format: *const u8, ...);
@@ -287,7 +286,7 @@ unsafe fn CmpValidateClass(
     CurrentCell: HCELL_INDEX,
     CellData: *mut CELL_DATA,
 ) -> CM_CHECK_REGISTRY_STATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
     ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
@@ -326,7 +325,7 @@ unsafe fn CmpValidateValueListByCount(
     ValuesRemoved: *mut u32,
     FixHive: u8,
 ) -> CM_CHECK_REGISTRY_STATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT(((!ValueListData.is_null()) as BOOLEAN) as _);
     ASSERT(((ListCount != 0) as BOOLEAN) as _);
@@ -498,7 +497,7 @@ unsafe fn CmpValidateValueList(
     CellData: *mut CELL_DATA,
     FixHive: u8,
 ) -> CM_CHECK_REGISTRY_STATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
     ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
@@ -565,7 +564,7 @@ unsafe fn CmpValidateSubKeyList(
     FixHive: u8,
     DoRepair: *mut u8,
 ) -> CM_CHECK_REGISTRY_STATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
     ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
@@ -719,7 +718,7 @@ unsafe fn CmpPurgeVolatiles(
     CellData: *mut CELL_DATA,
     Flags: u32,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
 
@@ -775,7 +774,7 @@ unsafe fn CmpValidateKey(
     let total_key_name_length: u32;
     let name_length: u32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
 
@@ -858,7 +857,7 @@ unsafe fn CmpValidateKey(
 
 #[no_mangle]
 pub unsafe extern "system" fn HvValidateBin(Hive: *mut HHIVE, Bin: *mut HBIN) -> i32 {
-    PAGED_CODE();
+    PAGED_CODE!();
     if !(!Bin.is_null()) {
         RtlAssert(
             b"Bin\0".as_ptr() as *mut core::ffi::c_void,
@@ -917,7 +916,7 @@ unsafe fn CmpValidateRegistryInternal(
     let mut StackDepth: i32;
     let mut AllChildrenChecked: i32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT(((!Hive.is_null()) as BOOLEAN) as _);
 
@@ -1103,7 +1102,7 @@ pub unsafe extern "system" fn HvValidateHive(Hive: *mut HHIVE) -> CM_CHECK_REGIS
     let mut StorageLength: u32;
     let mut Bin: PHBIN;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT(((!Hive.is_null()) as BOOLEAN) as _);
 
@@ -1168,7 +1167,7 @@ pub unsafe extern "system" fn CmCheckRegistry(
     let Hive: *mut HHIVE;
     let mut ShouldFixHive: i32 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if RegistryHive.is_null() {
         // DPRINT removed

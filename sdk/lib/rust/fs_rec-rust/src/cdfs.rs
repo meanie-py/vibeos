@@ -36,7 +36,7 @@ pub unsafe extern "system" fn FsRecIsCdfsVolume(
     let mut pVdHeader: *mut _VD_HEADER = core::ptr::null_mut();
 
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
     }
 
     Offset.QuadPart = VD_HEADER_OFFSET;

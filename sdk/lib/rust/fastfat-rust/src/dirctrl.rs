@@ -1,4 +1,6 @@
 use ntkrnl_sys::globals::*;
+// The real definitions, so the compiler checks every call against them.
+use crate::timesup::{FatFatDateToNtTime, FatFatTimeToNtTime};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
@@ -17,8 +19,6 @@ use ntkrnl_sys::ddk::{_UNICODE_STRING};
 extern "system" {
     static mut FatData: FAT_DATA;
     static FatJanOne1980: ntkrnl_sys::ddk::LARGE_INTEGER;
-    fn FatFatTimeToNtTime( IrpContext: *mut IRP_CONTEXT, time: FAT_TIME, centi: u8, ) -> ntkrnl_sys::ddk::LARGE_INTEGER;
-    fn FatFatDateToNtTime( IrpContext: *mut IRP_CONTEXT, date: u16, ) -> ntkrnl_sys::ddk::LARGE_INTEGER;
     fn UInt32x32To64(a: u32, b: u32) -> u64;
     static Fat8QMdot3QM: [u16; 12];
     static Dbg: u32;
@@ -63,7 +63,6 @@ extern "system" {
     fn FatCreateIrpContext(Irp: PIRP, CanWait: i32) -> PIRP_CONTEXT;
     fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: u32) -> NTSTATUS;
     fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
-    fn PAGED_CODE();
 }
 extern "C" {
     // wdm FORCEINLINE helper: cdecl body, bindgen class — was "system" (§9.99).
@@ -127,7 +126,7 @@ pub unsafe extern "system" fn FatFsdDirectoryControl(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
     DebugTrace(1, Dbg, b"FatFsdDirectoryControl\n\0".as_ptr() as *const i8);
 
     FsRtlEnterFileSystem();
@@ -867,7 +866,7 @@ pub unsafe extern "system" fn FatGetDirTimes(
     //
     (*DirInfo).LastWriteTime = FatFatTimeToNtTime(
         IrpContext as *mut IRP_CONTEXT,
-        core::ptr::read(core::ptr::addr_of!((*Dirent).LastWriteTime.Time)),
+        core::ptr::read(core::ptr::addr_of!((*Dirent).LastWriteTime)),
         0u8,
     );
 
@@ -894,7 +893,7 @@ pub unsafe extern "system" fn FatGetDirTimes(
             if *((Dirent as *const u16).add(8)) != 0 {
                 (*DirInfo).CreationTime = FatFatTimeToNtTime(
                     IrpContext as *mut IRP_CONTEXT,
-                    core::ptr::read(core::ptr::addr_of!((*Dirent).CreationTime.Time)),
+                    core::ptr::read(core::ptr::addr_of!((*Dirent).CreationTime)),
                     (*Dirent).CreationMSec,
                 );
             } else {

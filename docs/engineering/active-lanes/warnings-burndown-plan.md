@@ -473,15 +473,52 @@ sites were worth a human read, and they were read against the C:
   `if !"msg".as_ptr().is_null()` is `NT_ASSERT(!"msg")`, i.e. assert-false, now spelled so.
 
 **Owed** (tracked here until done): `static_mut_refs` 168; the `clashing_extern` Phase 2
-below; `unused_assignments` 1,048 (some are lost writes -- grade, don't bulk-allow);
-`unreachable_code` 19, each wanting a read; 13 `path_statements` that are `STUB;` /
-`UNIMPLEMENTED;` debug macros translated as constants; and `PAGED_CODE()` declared as an
-extern fn and CALLED out of line -- 71 files in 10 crates (fastfat 26, cdfs 20, cdrom 11,
-cmlib, disk, classpnp, scsiport, pcix, pciidex-legacy, partmgr), resolving to
-`#[no_mangle] extern "C" fn PAGED_CODE() {}` shims. That is the AGENTS.md "debug macro as a
-no-op fn" anti-pattern, and it is mechanical: one `macro_rules!` per crate (fs_rec's and
-two cdfs modules already use `#[inline(always)]`). (The flexible-array reader's cargo-linked corpus, owed when this was written,
-closed the same day: ten boot-path sites fixed -- roadmap.)
+below; `unused_assignments` 1,048 (some are lost writes -- grade, don't bulk-allow); 13
+`path_statements` that are `STUB;` / `UNIMPLEMENTED;` debug macros translated as constants.
+(The flexible-array reader's cargo-linked corpus, owed when this was written, closed the same
+day: ten boot-path sites fixed -- roadmap.)
+
+**Closed later the same day:**
+
+- **`PAGED_CODE()`** is a `macro_rules!` in all 12 crates that used it (acpi, cdfs, cdrom,
+  classpnp, cmlib, disk, fastfat, fs_rec, partmgr, pciidex-legacy, pcix, scsiport). Before,
+  59 files declared it `extern` and called it out of line, resolved by whichever crate in the
+  image exported a `#[no_mangle]` no-op (fastfat's 29 declarations had no definition in
+  fastfat at all), and the rest had local empty fns. `scan_macro_fn_shadow` now owns the
+  class through `DDK_MACROS`: an empty fn or an `extern` declaration of a DDK macro name is
+  a finding with no `macro_rules!` in the crate needed. Against the old tree it reports 68.
+- **`unreachable_code` (19).** All were read; 14 were dead tails (after `return`, after a
+  noreturn `ExitProcess`/`ExitThread`/`FatBugCheck`, or after a `while(TRUE)` whose every exit
+  is a `try_leave`, which is just as dead in cdfs's C) and are removed. The rest:
+  - kernel32 `LIST_FOR_EACH_ENTRY!` ran the caller's `$body` and THEN advanced, so a
+    `continue` spun on one entry forever: `add_resource_dir_entry` / `add_resource_data_entry`
+    `continue` past every entry that sorts first, so UpdateResource hung on its second
+    resource. ole32's `LIST_FOR_EACH_ENTRY!` and `_SAFE` had the same shape (datacache
+    already hand-rolled one walk around it). All three advance first now, and
+    `scan_dowhile_continue` flags any loop macro that advances after its spliced body.
+  - cdrom `RequestHandleMountQuerySuggestedLinkName` returned `STATUS_NOT_FOUND` before its
+    body, a bring-up short-circuit from `370a754c85a`, so no CD-ROM ever got its stored drive
+    letter back. The C body is live, minus an invented early `BUFFER_OVERFLOW` that returned
+    before writing the `NameLength` the caller sizes its retry from.
+  - msafd `WSPSendDisconnect` and `WSPCancelBlockingCall` were `unimplemented!()` (a panic in
+    the calling process) where the C is `UNIMPLEMENTED; return 0;`.
+  - pcix `ario_ApplyBrokenVideoHack`'s `loop {}` stays: it is the pre-#9502 arbiter stub
+    already tracked in the roadmap ("pcix-rust predates upstream's arbiters").
+
+**Newly owed from that sweep:**
+
+- The same skipped-advance shape written by hand: a `while` whose last statement is the
+  step and which `continue`s without re-running it. A prototype finds 62 such loops (shell32's
+  19 `cpp_com_string_cb_printf_w` copies, pci `PdoQueryResources`, se token filtering, kdbg,
+  ...). Unlike the macro case each needs the C beside it, since a C `while` with a trailing
+  update is faithful and only a C `for` is a bug. Spot checks (win32k `ProcessTimers`, cc
+  `CcRosFlushDirtyPages`) were both fine, because they advance before every `continue`.
+- `UNREFERENCED_PARAMETER` as an empty fn: 42 sites. Same class as PAGED_CODE, but
+  `scan_macro_fn_shadow` only sees the copies in crates that also define the macro.
+- msafd `WSPAcceptEx` / `WSPGetAcceptExSockaddrs` are still the old stubs.rs bodies
+  (`return 0` / `unimplemented!()`), but upstream has since given both real bodies in
+  `dll/win32/msafd/misc/dllmain.c` and neither is ported. This is an upstream-sync gap,
+  not a warning: port them from dllmain.c.
 
 ## Owed follow-ups
 

@@ -29,7 +29,6 @@ extern "C" {
     fn CdCleanupIrpContext(IrpContext: *mut core::ffi::c_void, Flag: i32);
 }
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn ASSERT_IRP_CONTEXT(irp: *mut IRP_CONTEXT);
@@ -574,7 +573,7 @@ pub unsafe extern "C" fn CdSetThreadContext(
     IrpContext: *mut IRP_CONTEXT,
     ThreadContext: *mut THREAD_CONTEXT,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
     ASSERT_IRP_CONTEXT(IrpContext);
 
     let CurrentThreadContext = IoGetTopLevelIrp() as *mut THREAD_CONTEXT;

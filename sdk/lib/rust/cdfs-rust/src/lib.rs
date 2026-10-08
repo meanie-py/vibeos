@@ -2,6 +2,13 @@
 #![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
 
+// PAGED_CODE() is the DDK's "pageable code" IRQL assertion (xdk/kefuncs.h): NOP_FUNCTION in
+// a free build, and a no-op here. It is a macro, never a fn -- an out-of-line no-op call is an
+// optimization barrier, and an `extern` one resolved by whichever crate happened to export it.
+macro_rules! PAGED_CODE {
+    () => {};
+}
+
 pub mod types;
 pub mod glue;       // harvested #define consts + grind-noise aliases
 pub mod ddk_shims;  // FsRtl*/macro FORCEINLINE shims (shared w/ fastfat)

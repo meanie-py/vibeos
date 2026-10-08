@@ -1255,6 +1255,43 @@ def test_symbolicate_pc_passes_reloc_for_i386_only(tmp_path):
     assert "--reloc" not in out_arm64, out_arm64
 
 
+_ADDR2SYM = Path(__file__).resolve().parents[3] / "qemu" / "addr2sym.sh"
+
+
+def _addr2sym(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(_ADDR2SYM), *args], capture_output=True, text=True, timeout=30
+    )
+
+
+def test_addr2sym_index_resolves_against_the_named_tsv(tmp_path):
+    # A farm archive's crash must be read against ITS kernel's index. Without
+    # --index, the RtlRangeList 0x1E resolved against a later build's index and
+    # named fsrtl oplock code for two days; the archived index said
+    # RtlDeleteOwnersRanges at every one of 15 hits.
+    tsv = tmp_path / "symbols-arm64-mp.tsv"
+    tsv.write_text("00528000\tOther\t-\n00528034\tRtlDeleteOwnersRanges\tlib.rs:276\n")
+    cp = _addr2sym("arm64", "--index", str(tsv), "0x528068")
+    assert cp.returncode == 0, cp.stderr
+    assert "RtlDeleteOwnersRanges+52" in cp.stdout
+
+
+@pytest.mark.parametrize(
+    "args",
+    [("--tsv", "x", "0x528068"), ("ntoskrnl+0x10",)],
+    ids=["unknown-flag", "non-hex-address"],
+)
+def test_addr2sym_refuses_what_it_cannot_parse(tmp_path, args):
+    # Both used to print a plausible symbol from the default index: an unknown
+    # flag fell through and was looked up as an address. A real index is passed
+    # so the refusal cannot come from a missing index instead.
+    tsv = tmp_path / "symbols.tsv"
+    tsv.write_text("00000000\tBase\t-\n")
+    cp = _addr2sym("arm64", "--index", str(tsv), *args)
+    assert cp.returncode != 0
+    assert cp.stdout == ""
+
+
 def test_symbolicate_pc_keeps_a_plausible_offset(tmp_path):
     tool = tmp_path / "qemu" / "addr2sym.sh"
     tool.parent.mkdir(parents=True)
@@ -8304,6 +8341,22 @@ def test_faulting_module_offset_beats_a_guessed_reloc():
     assert triage.faulting_module_offset("*** BUGCHECK: 0x0000007E (0,0,0,0)\n") is None
 
 
+def test_faulting_module_offset_only_from_a_pc_parameter():
+    # 0xF4's P4 is a message string; the banner resolved it and triage printed an
+    # anonymous constant as the fault (arm64 modrun, 2026-10-08).
+    f4 = (
+        "*** BUGCHECK: 0x000000F4 (0x0000000000000003, 0xfffffa00062e1970, "
+        "0xfffffa00062e1bd0, 0xfffff800422df6b0)\n***   P4 = ntoskrnl.exe+0x14D6B0\n"
+    )
+    assert triage.faulting_module_offset(f4) is None
+    # 0x1E names P2; a resolved P3 is a stack address, not the fault
+    p3 = (
+        "*** BUGCHECK: 0x0000001E (0x1, 0x0, 0xfffff80042193788, 0x0)\n"
+        "***   P3 = ntoskrnl.exe+0x3788\n"
+    )
+    assert triage.faulting_module_offset(p3) is None
+
+
 def test_faulting_module_offset_takes_the_LAST_bugcheck():
     """Same rule as faulting_pc: the crash being triaged is the one the boot died
     on, not the first the log happens to mention."""
@@ -11307,3 +11360,20 @@ def test_qemu_memory_override_is_validated(monkeypatch):
     monkeypatch.setenv("VIBEOS_QEMU_MEMORY", "lots")
     with pytest.raises(ValueError):
         vm_mod.get_arch_config("arm64")
+
+
+def test_payload_crash_is_triaged_with_the_booted_kernel(tmp_path, monkeypatch):
+    # A BUGCHECK in the payload VM must name itself (and be symbolicated now, against the
+    # build that booted), not hide behind "payload suite FAILED" / the net stage's NET_FLAKE.
+    from . import triage as triage_mod
+
+    (tmp_path / "amd64-uefi_serial.log").write_text(
+        "PathName: X:\\\n\n*** BUGCHECK: 0x0000001E (0xffffffffc0000006, 0xfffff800004ef96e, "
+        "0xfffff880759b3680, 0x0000000000000000)\n***   P2 = ntoskrnl.exe+0xEF96E\n"
+    )
+    monkeypatch.setattr(triage_mod, "symbolicate_pc", lambda repo, arch, text: "MmCreatePeb+0x1")
+    crash = smoke_mod._payload_crash(Path("."), "amd64", tmp_path)
+    assert crash is not None and crash["classification"] == "BUGCHECK"
+    assert crash["salient"][-1] == "MmCreatePeb+0x1"
+    (tmp_path / "amd64-uefi_serial.log").write_text("[MODRUN] exit x rust rc=0x0 ms=1 records=0\n")
+    assert smoke_mod._payload_crash(Path("."), "amd64", tmp_path) is None

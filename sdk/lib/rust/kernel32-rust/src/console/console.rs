@@ -81,7 +81,6 @@ unsafe extern "system" fn DefaultConsoleCtrlHandler(Event: DWORD) -> BOOL {
     }
 
     ExitProcess(CONTROL_C_EXIT as UINT);
-    return 1;
 }
 
 #[no_mangle]
@@ -101,13 +100,11 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
         0 => {
             // CTRL_C_EVENT
             if IsDebuggerPresent() != 0 {
-                erException.ExceptionCode = if nCode == 0 {
-                    // DBG_CONTROL_C
-                    0
-                } else {
-                    // DBG_CONTROL_BREAK
-                    1
-                };
+                // ntstatus.h's cast #defines, which bindgen drops; the translation had put
+                // the event numbers 0/1 here, so a debugger saw an unknown exception code.
+                const DBG_CONTROL_C: DWORD = 0x4001_0005;
+                const DBG_CONTROL_BREAK: DWORD = 0x4001_0008;
+                erException.ExceptionCode = if nCode == 0 { DBG_CONTROL_C } else { DBG_CONTROL_BREAK };
                 erException.ExceptionFlags = 0;
                 erException.ExceptionRecord = core::ptr::null_mut();
                 erException.ExceptionAddress = DefaultConsoleCtrlHandler as *mut core::ffi::c_void;
@@ -195,7 +192,6 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
     RtlLeaveCriticalSection(&raw mut ConsoleLock);
 
     ExitThread(nExitCode);
-    return 0; // STATUS_SUCCESS
 }
 #[no_mangle]
 pub unsafe extern "C" fn InitializeCtrlHandling() {

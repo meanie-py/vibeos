@@ -251,15 +251,12 @@ pub unsafe extern "C" fn __dllonexit(
 /// across a `#[no_mangle]` boundary: `scan_extern_arity` caught it as
 /// `[RETVOID] declared as returning a value, defined as returning nothing`.
 ///
-/// `unreachable_unchecked` after `ExitProcess` is what the C does too — the island types
-/// `ExitProcess` as returning `()` because kernel32's prototype is a plain `VOID WINAPI`,
-/// and the C compiler likewise emits nothing after the call and calls falling off the end
-/// undefined. So this is the same contract, not a stronger one.
+/// The island types `ExitProcess` as `-> !` (winbase.h's DECLSPEC_NORETURN), so the call
+/// itself is the diverging tail -- no `unreachable_unchecked` needed after it.
 #[no_mangle]
 pub unsafe extern "C" fn _exit(exitcode: i32) -> ! {
     // TRACE("(%d)\n", exitcode);
     ExitProcess(exitcode as u32);
-    core::hint::unreachable_unchecked() // nolint: assert-to-ub (after ExitProcess — noreturn)
 }
 unsafe extern "C" fn DoMessageBoxW(lead: *const wchar_t, message: *const wchar_t) {
     let mut msgbox: MSGBOXPARAMSW = core::mem::zeroed();

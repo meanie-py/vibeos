@@ -32,7 +32,6 @@ extern "system" {
     fn NT_ASSERT(cond: u32);
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
     fn KeWaitForSingleObject(Object: *mut KEVENT, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *mut i64) -> NTSTATUS;
-    fn PAGED_CODE();
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: u32) -> PIRP_CONTEXT;
     fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
@@ -192,7 +191,7 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
 
     const Dbg: u32 = 0; // placeholder for DEBUG_TRACE_DEVCTRL
 
-    PAGED_CODE();
+    PAGED_CODE!();
     DebugTrace(1, Dbg, b"FatFsdDeviceControl\n\0".as_ptr() as *const i8, 0);
 
     FsRtlEnterFileSystem();

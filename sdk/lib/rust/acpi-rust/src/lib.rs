@@ -16,6 +16,13 @@
 //! `AcpiOsPrintf` (C-variadic) stays a tiny C shim (acpi_printf_shim.c); under
 //! the driver's NDEBUG build `AcpiOsVprintf` is a no-op anyway.
 
+// PAGED_CODE() is the DDK's "pageable code" IRQL assertion (xdk/kefuncs.h): NOP_FUNCTION in
+// a free build, and a no-op here. It is a macro, never a fn -- an out-of-line no-op call is an
+// optimization barrier, and an `extern` one resolved by whichever crate happened to export it.
+macro_rules! PAGED_CODE {
+    () => {};
+}
+
 // DPRINT/DPRINT1 for the whole crate; `#[macro_use]` must precede the modules
 // that call them (macro_rules! is textually scoped).
 #[macro_use]

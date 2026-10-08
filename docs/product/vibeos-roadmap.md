@@ -423,7 +423,7 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
 | 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). **Pi 5 SD reads** (2026-10-06: the same `sdhc.sys` on the BCM2712's SDC0, ~11 MB/s; writes enabled but untested, its card holds the bench stager). **Pi 5 USB mass storage reads and writes** (2026-10-07, over RP1's xHCI: the Pico's served FAT image reads as F:; a 1.4 MB copy to a Ventoy stick's FAT partition reads back byte-identical from Linux on the same board, SHA-256 checked). Next: boot from the card instead of the RAM disk |
 | 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC; shared vectors chain since 2026-10-07, for the Pi 5's two RP1 xHCIs on one SPI) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
-| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). Next: its interrupts, then GEM and I217. The Pi 5's GEM is not in its firmware's ACPI tables at all (`docs/engineering/pi5-acpi/dsdt.dsl`), so it needs describing before a driver can find it |
+| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). **Pi 5 GEM works** (2026-10-08: the HAL synthesizes `VIBEOS\RP1GEM` because the firmware's ACPI omits it; netstack's `gem.rs`, polled; 1 Gb/s link, DHCP, ping, 1 MiB TCP echo intact at 60 KiB/s, the same as GENET). Its MAC is the board's own, from the VideoCore mailbox. Owed on the GEM: interrupts (RP1 source 6 is not routed under UEFI: `MSIX_CFG(6)` is 0). Next: interrupts for both, then I217 |
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
 | 10f | **Maybe: bring legacy BIOS boot back (loader only)** for i386 and amd64. The BIOS prune (`85102c111a3`..`5ca4d482d32`, 2026-05-29) assumed BIOS no longer mattered. That holds for amd64 PCs from about 2012 on, but almost every real 32-bit PC is BIOS-only, so without it i386 boots on no physical hardware; SeaBIOS is also the default in plain QEMU and Proxmox, and on coreboot/Libreboot machines such as the owner's OptiPlex 9020 (a candidate x64 bench: COM1, NVMe boot through SeaBIOS). **Scope: the loader, not the emulator.** The PC-AT machine layer survives in `freeldr-rust` (`machpc`, `pcmem`, `pcdisk`, `pcvesa`, `pchw`, `pxe`); restore the real-mode entry (`arch/realmode/*`) and `pcat.cmake` from git, wire `freeldr.sys` into the cargo-driven loader link (`ab763550984`), and repair four months of drift in the BIOS-only paths. The loader hands the kernel a VESA framebuffer like UEFI's GOP one, so fast486, HAL x86bios and videoprt INT10 stay retired. **Add a SeaBIOS smoke cell for i386 and amd64**, or it rots again. Quick experiment first: OpenCore's OpenDuet (UEFI loaded from disk by a legacy BIOS) runs today's `uefildr.efi` with no OS change. | — | M | considered 2026-10-05 |
 
@@ -594,29 +594,47 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **LogonUserW never succeeds: the right password fails with 1312** (OPEN, 2026-10-07, found
-  by the `modrun` payload's `logon` suite, kept visible there as an `xfail`). On a user the
-  probe creates with a password, a wrong or empty password and an unknown user all fail
-  correctly with 1326, but the right one makes msv1_0's `LsaApLogonUserEx2` return
-  `STATUS_NO_SUCH_LOGON_SESSION` (c000005f, lsasrv `authpackage.rs:1985`). Neither profile or
-  token builder returns that status; the next suspect is `CreateLogonSession` ->
-  `LsapRmCreateLogonSession` -> the kernel's SRM. Pre-existing: the passwordless Administrator
-  logon failed the same way before the msv1_0 no-op-goto fix.
-- **amd64: one BUGCHECK 0x1E (c0000006) in `MiAllocatePagesForMdl`** (OPEN, seen once in eight
-  `modrun` boots, 2026-10-07, `/tmp/vibeos-cli/20261007-225948-ecqnwhgp-smoke-amd64`, a boot
-  that also carried temporary DbgPrints in ntdll's and msvcrt's exit paths) while
-  Rust diskpart walked volumes, right after scsiport rejected `IOCTL_VOLUME_GET_VOLUME_DISK_
-  EXTENTS` on the CD-ROM. The faulting access was to the MDL itself, so it is a victim; the
-  same boot steps passed four other times. Arm special pool (`--tripwire SPECIALPOOL=*`) on a
-  `farm` of modrun boots to catch the writer.
+- **LogonUserW never succeeds: the right password fails with 1312** (FIXED 2026-10-08). se-rust's
+  SRM command server matched `RM_API_NUMBER` as 0/1/2 where srmp.h numbers it from 1, so each
+  lsass RmCreateLogonSession ran the delete handler. modrun's logon suite `accepts` case now
+  runs without its xfail.
+- **amd64: one BUGCHECK 0x1E (c0000006) creating a process** (FIX LANDED, NOT YET REPRODUCED,
+  2026-10-08; seen once in eight `modrun` boots, `/tmp/vibeos-cli/20261007-225948-ecqnwhgp-smoke-amd64`).
+  Symbolicated against the kernel that booted (flake-farm `kernels/2d34ef08c870`), the fault is
+  `PspCreateProcess -> MmCreatePeb -> RtlImageNtHeader`, an in-page error on the new image's
+  header; the earlier "MiAllocatePagesForMdl" came from symbolicating a later build. The
+  translated `MmNotPresentFaultSectionView` turned a page-in's STATUS_NO_MEMORY (which
+  MmAccessFault retries) into STATUS_IN_PAGE_ERROR, and MmCreatePeb had dropped the C's SEH
+  around the header read; both fixed. A recurrence now prints `[MM] Failed to page data in!
+  st=...` with the real status instead of bugchecking.
 
-- **FAT file dates show as 01/01/1601 in `dir`** (OPEN, 2026-10-07, Pi 5). A FAT image made by
-  mtools, its HELLO.TXT dated 2026-10-07 21:54 (`mdir` agrees), listed in VibeOS cmd as
-  `01/01/1601 12:00 AM`: a zero FILETIME. The volume label, serial, size and contents were
-  right. Every file shows it, the Ventoy stick's and the RAM disk's (`X:`) too. Writing is
-  fine: a file VibeOS copied to the stick has its real time when Linux reads it. So the fault
-  is on the read side: fastfat's directory query or cmd's formatting. Not yet narrowed, nor
-  whether QEMU shows it.
+- **Pi 5: ping loses 10-30% and spikes to hundreds of ms while the serial console is
+  saturated** (OPEN, 2026-10-08). On a settled desktop the debug UART runs at ~10.6 KB/s of
+  115200's ~11.5: `rundll32.exe` (newdev's client-side install) is spawned again and again for
+  devices it finds no driver for (`DevInstallW failed with error 259`, ~180 in one window), and
+  every spawn prints the full `[PS] PspCreateProcess`/`PspUserThreadStartup` trace, alongside
+  repeated `[FASTFAT] FatMountVolume` lines. A print on real hardware blocks its CPU until the
+  UART drains (field manual, "A UART print inside a trap costs"). The GEM itself counts no receive
+  errors (no FCS, buffer or overrun errors over the same window), and some boots ping 60/60.
+  Serving the Pico's disk did not lower the rate, so the empty disk is not the source. Not yet
+  shown: that the console is what drops the frames. Two fixes owed either way: stop the install
+  retry loop, and gate the per-thread `[PS]` tracing. Where the loop comes from is not settled:
+  umpnpmgr's queueing (`event.rs` ProcessDeviceInstallEvent) and its skip test (a `Class` value
+  or CONFIGFLAG_FAILEDINSTALL) match the C, and the kernel queues GUID_DEVICE_ENUMERATED only
+  when it initializes a devnode (`devaction.c` ~1340, `plugplay.c` ~375). So either devnodes are
+  being recreated, or newdev fails (error 259, no driver) without setting FAILEDINSTALL and
+  something re-queues. Next step: log the device ID on each `InstallDevice` call. QEMU arm64
+  shows the same failures (8 `DevInstallW failed` in one smoke boot), only fewer.
+
+- **FAT file dates showed as 01/01/1601 in `dir`** (FIXED 2026-10-08). fastfat's directory
+  query passed only the time half of the FAT stamp to its time converter, so the date read as
+  zero. `test_xhci.py::test_usb_stick_dir_dates` covers it. Owed from the same hunt: the crate
+  re-declares its own functions in `extern` blocks hundreds of times (13,141 across 104 crates),
+  which hides type mismatches from rustc; converting them to `crate::` imports, as was done here
+  for timesup, is the fix. Field manual, "An `extern` declaration for a symbol YOUR OWN CRATE
+  defines". Also owed: a file VibeOS wrote from the **Pi 4** (`REDIR.TXT` on the bench stick)
+  carries the date 08/05/2097. The same write path stamps the right year in QEMU, so suspect
+  the Pi 4's clock (no RTC; whatever UEFI hands over) before fastfat.
 
 - **arm64: keystrokes sent through QMP to the default virtio keyboard do not reach the
   desktop's windows** (OPEN, 2026-10-06, seen while gating nvme.sys). On a quiet arm64 boot,
@@ -1243,21 +1261,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   plus terminator exceeds the caller's capacity. Not covered by any apitest (no rostest
   calls the alias path), so verified by the settled contract + the shipping sibling's
   mechanism + boot; a guest round-trip test is owed if the path ever regresses.
-- **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
-  `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
-  cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
-  `DeviceGetMmcSupportInfo`'s TYPE_ONE probe (it answers with more than the one feature),
-  and the device start then tears down through `DeviceClaimRelease(Release)` ->
-  `WdfObjectDelete` -> `FxRequest::Release`, which reads past its object: amd64/i386
-  BUGCHECK 0x19 at the next free, arm64 hang. `--tripwire "SPECIALPOOL=CDRO"` (KMDF tags a
-  driver's objects with its service name) faults at the read: `wdf01000.sys+0x197FE`
-  under `cdrom-rust init.rs:313`. Bisected to the constant alone (the commit's registry
-  reads and CREATE context are innocent). The constant is held at 0x0003 with a comment;
-  owed: why start fails on a TYPE_ALL-style answer, and why releasing a request the
-  driver just created reads past it. Not a context-size mismatch: the three
-  `CDROM_REQUEST_CONTEXT` type infos all use `size_of::<CDROM_REQUEST_CONTEXT>()`, and the
-  same `DeviceClaimRelease` claims successfully on every boot, so suspect an object freed
-  earlier on the new failure path. x64 lane.
+- **cdrom FeatureProfileList: the correct value takes the boot down — FIXED** (2026-10-08).
+  `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` instead of cdrom.h's 0x0000
+  because the correct value bugchecked: with 0x0000 QEMU's DVD-ROM is correctly identified
+  as MMC, so the device start runs `DeviceSetRawReadInfo` + `DeviceGetMmcSupportInfo`'s
+  TYPE_ONE probe, and the teardown that follows corrupted the pool (amd64/i386 0x19
+  BAD_POOL_HEADER at the next free, arm64 hang; special pool escalated it to 0x1E in
+  `ExReturnPoolQuota`). 0x0003 masked it by never exercising that path. The roadmap's two
+  open questions resolved into **two independent frees**, not one read-past:
+  (1) **The real pool corruption was a double-free in `DeviceSetRawReadInfo`.** The C
+  `FREE_POOL` is a free-AND-null macro (`ExFreePool(p); p = NULL`); the translation rendered
+  it as a by-value `fn` that cannot null the caller's local, AND added a spurious
+  `FREE_POOL(buffer)` in the success branch that the C does not have (the C success branch
+  is a bare `break`, init.c:2537, with one FnExit free). So FnExit freed the same pointer
+  again. Fixed: removed the spurious success-branch free, null `buffer` after the fail-path
+  free. The free-list dump showed one pointer freed twice back to back.
+  (2) The `FxRequest::Release` read-past (the `--tripwire SPECIALPOOL=CDRO` fault at
+  `wdf01000.sys+0x197FE`) was real but **special-pool-only** and orthogonal; see the
+  SPECIALPOOL entry below. With both fixed, `FeatureProfileList` is restored to 0x0000 and
+  all three arches boot to desktop (gate smoke i386/amd64/arm64 green; conformance i386/amd64
+  green — the only gate red was the unrelated non-deterministic arm64 ExFastMutex ratchet
+  flake). Landed `8f224096404`. The broader class — `FREE_POOL` as a non-nulling fn across
+  cdrom-rust — is latent at other free-in-branch-plus-exit sites; `DeviceSetRawReadInfo` was
+  the only one on the boot path, the rest are owed (a `macro_rules!` that nulls, or a
+  per-site audit).
 - **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
   updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
   early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
@@ -1330,9 +1357,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
   so every logon, status and shutdown dialog shows no banner today: visible, on the boot
-  path.** Still to decide: cdrom carries a live C-glue `DeviceEvtIoInCallerContext` that may
-  shadow the Rust one under `--allow-multiple-definition` (check `nm`); the Rust masks the
-  APIC error LVT where the C unmasks it.
+  path.** Decided (2026-10-08): the cdrom `DeviceEvtIoInCallerContext` shadow concern is moot — the
+  C body is dead-on-disk (cdrom.c is in the flip's replaced list, not compiled), and `nm`
+  shows exactly one definition of the symbol (the Rust `#[no_mangle]`); no
+  `--allow-multiple-definition` in the cdrom CMake. The APIC error-LVT divergence was a real
+  dropped-mutation bug: the C mutates one LvtEntry template, the LINT1/NMI step clears
+  `Mask`, and the error-LVT step inherits it (unmasked, "Enable error LVTR"); the Rust
+  rebuilt the value and wrongly set the mask bit. Fixed to match C (`a25b78d8675`).
   **ntkrnl-sys was stale against the post-merge headers — FIXED** (2026-09-27): regenerated
   the kernel and HAL islands. Nine structs had drifted: `KPRCB` (upstream `144fe39589b`'s
   `StartCycles`/`CycleTime`), `EJOB`/`PS_JOB_TOKEN_FILTER` (Rust still had the leaked
@@ -1474,14 +1505,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   into the slot. See the field manual, "A self-consistent pair of DERIVED values cannot
   detect its own staleness".
 
-- **`SPECIALPOOL=*` cannot get an i386 boot past `wdf01000.sys`. OPEN, 2026-09-26.** It
-  faults (0x50, READ) in vendored KMDF `FxRequest::Release`: the source reads `m_Completed`
-  only behind `retValue == 1 &&`, but clang hoists the load of `this+0x6a` above the check
+- **`SPECIALPOOL=*` cannot get an i386 boot past `wdf01000.sys`. FIXED, 2026-10-08.** It
+  faulted (0x50, READ) in vendored KMDF `FxRequest::Release`: the source reads `m_Completed`
+  only behind `retValue == 1 &&`, but clang hoisted the load of `this+0x6a` above the check
   (it treats `this` as dereferenceable), so after `FinalRelease` deleted the object it
-  reads freed memory. Harmless on a normal pool (the value is discarded), fatal under
-  special pool because the freed page is unmapped. Not a corruption and not new. Until the
-  hoist is suppressed for that TU, arm special pool by TAG on i386, not `*`, or every
-  wildcard run stops here and reads as a new bug.
+  read freed memory. Harmless on a normal pool (the value is discarded), fatal under
+  special pool because the freed page is unmapped. Fixed in
+  `vendor/wdf/shared/core/fxrequest.cpp` (`8f224096404`): capture `m_Completed` into a local
+  before the `__super` Release, alongside the sibling `IsReserved()`/`IsAllocatedFromIo()`/
+  `IsCanComplete()` flags the function already copies there — value-identical, and the
+  post-free read is gone. `wdf.patch` regenerated to match. Direct `SPECIALPOOL=*` i386
+  confirmation is owed (not in the gate); the amd64 special-pool run that pinned the double-
+  free is now unblocked of this read.
 
 - **The ucrt Tier 2 case generator reads the WRONG headers, and drops what they lack
   without a word. OPEN, owed** (2026-09-26). `gen_ucrt_tier2_cases.ast_functions` parses
@@ -5346,18 +5381,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     noted in the sweep list since 07-25. (2) setup.exe's registration burst starving the
     test's 50 ms races, proven per-thread by `[FMUTEX-RAN]`. Field manual: the setup
     paragraph under "A kmtest count drift on a UP guest is the boot-time ladder".
-  - **Conformance BUGCHECK 0x1E inside `RtlRangeList` — OPEN, intermittent, all three arches,
-    since 2026-10-06.** About 14 archived hits: `fails/auto/*-conformance-*-A_bugcheck_0x0000001E`
-    whose last `[KMTEST:BEGIN]` is RtlRangeList, plus 1 of 5 amd64 sweeps on 2026-10-08. It kills
-    the sweep, so every test after it loses its verdict. amd64 (`20261008-024024-fz8qe3my`): the
-    exception address is `ntoskrnl+0x185E58`, inside `fsrtl_rust::oplock::
-    FsRtlAcknowledgeOplockBreak`, on its NULL-oplock path. The same offset appears across four
-    master builds. The index matches the PE exports. The faulting thread's stack holds the
-    test's own data (`MyUserData2`, its `ok()` strings), so it is the test thread, not a
-    bystander. But nothing the test calls reaches oplock code: its exports resolve correctly,
-    and `RtlFindRange`/`RtlIsRangeAvailable` match the NDK signatures. Next step is dynamic:
-    loop RtlRangeList alone (`conformance_probe --candidates RtlRangeList`, repeated), then
-    `--tripwire SPECIALPOOL=*` or a GDB break on that PC, and get a real backtrace.
+  - **Conformance BUGCHECK 0x1E inside `RtlRangeList` — ROOT-CAUSED/FIXED 2026-10-08,
+    all three arches.** A use-after-free in the Rust `RtlDeleteOwnersRanges`
+    (`rtl-rangelist`): it read `(*Entry).Flink` after `RtlpFreeMemory` had freed that entry.
+    Upstream's C captures `Next` first; that fix arrived in #9248 alongside the test
+    (`TestDeleteOwnersRanges`), after the June port. It faulted only when the freed block was
+    reused before the read. arm64 FaultVA `0x11FFFFFA80004241` is a heap pointer read one byte
+    off, plus 0x28. All 15 archived hits (10-06 to 10-08), resolved against their own
+    `kernels_dir` index, land on the same list-walk load. The earlier "fsrtl oplock" reading
+    was a symbolication error: the crash builds' addresses had been looked up in a LATER
+    build's index. `addr2sym.sh` silently treated an unknown flag as an address and fell back
+    to the live index; it now has `--index <tsv>` and refuses unknown options. A sweep for the
+    same shape found two more: the same use-after-free in both of `FsRtlUninitializeOplock`'s
+    walks (upstream oplock.c has it too), and a `CONTAINING_RECORD` of the wrong cursor in
+    mountmgr's associated-device removal (also upstream). The 10-06 onset is unexplained; it
+    is presumably pool-reuse timing. Verified by one green sweep per arch; the evidence is the
+    code and the 15/15 hits, not that one sweep.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`.

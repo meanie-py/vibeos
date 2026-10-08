@@ -33,7 +33,6 @@ extern "C" {
     fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);
 }
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn LlSectorsFromBytes(bytes: i64) -> i64;
@@ -71,7 +70,7 @@ const VCB_STATE_JOLIET: u32 = 0x04;
 const UnopenedFileObject: u32 = 0;
 #[no_mangle]
 pub unsafe extern "C" fn CdCommonQueryVolInfo(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut Status: NTSTATUS = STATUS_INVALID_PARAMETER;
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
@@ -161,7 +160,7 @@ pub unsafe extern "C" fn CdQueryFsVolumeInfo(
     let BytesToCopy: u32;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     UNREFERENCED_PARAMETER(IrpContext as *const core::ffi::c_void);
 
@@ -254,7 +253,7 @@ pub unsafe extern "C" fn CdQueryFsAttributeInfo(
     let mut BytesToCopy: u32 = 0; // ULONG
     let mut Status: i32 = 0; // STATUS_SUCCESS
 
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(Vcb as *mut core::ffi::c_void);
 
     // Fill out the fixed portion of the buffer
@@ -308,7 +307,7 @@ pub unsafe extern "C" fn CdQueryFsSectorSizeInfo(
 ) -> i32 {
     let mut Status: i32 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     let _ = IrpContext;
 
     let cond_assert = (*Length as usize) >= core::mem::size_of::<FILE_FS_SECTOR_SIZE_INFORMATION>();

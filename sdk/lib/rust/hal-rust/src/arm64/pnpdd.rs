@@ -38,7 +38,7 @@
 #![allow(non_snake_case)]
 
 use super::ecam::Window;
-use super::acpi::{find_genet, find_sdhc, find_sdhc_pi5, for_each_virtio_mmio, for_each_xhci, AcpiDevice};
+use super::acpi::{find_genet, find_rp1_gem, find_sdhc, find_sdhc_pi5, for_each_virtio_mmio, for_each_xhci, AcpiDevice};
 use ntkrnl_sys::ddk;
 use ntkrnl_sys::ddk::{
     BOOLEAN, GUID, NTSTATUS, PDEVICE_OBJECT, PDRIVER_OBJECT, PIRP, PIO_STACK_LOCATION, PUNICODE_STRING, PVOID,
@@ -118,6 +118,9 @@ static XHCI_HARDWARE_IDS: [u16; 23] = wide(b"ACPI\\PNP0D10\0*PNP0D10\0\0");
 static GENET_HARDWARE_IDS: [u16; 23] = wide(b"ACPI\\BCM6E4E\0*BCM6E4E\0\0");
 static SDHC_HARDWARE_IDS: [u16; 25] = wide(b"ACPI\\BRCME88C\0*BRCME88C\0\0");
 static SDHC5_HARDWARE_IDS: [u16; 25] = wide(b"ACPI\\BRCM5D12\0*BRCM5D12\0\0");
+/// Not an ACPI ID: the Pi 5's firmware does not describe its Ethernet, so the
+/// HAL synthesizes the device (acpi.rs `find_rp1_gem`) under its own name.
+static RP1_GEM_HARDWARE_IDS: [u16; 15] = wide(b"VIBEOS\\RP1GEM\0\0");
 /// The device type rides in the most specific ID, as PCI's DEV_ does, so a
 /// future virtio-mmio driver for another type gets its own database key.
 static VIRTIO_BLK_HARDWARE_IDS: [u16; 48] = wide(b"ACPI\\LNRO0005&DEV_0002\0ACPI\\LNRO0005\0*LNRO0005\0\0");
@@ -160,6 +163,8 @@ enum Child {
     Sdhc,
     /// The Pi 5's card slot (SDC0, BRCM5D12): the same sdhc.sys, another id.
     Sdhc5,
+    /// The Pi 5's Ethernet (RP1's Cadence GEM), which ACPI leaves out.
+    Rp1Gem,
     VirtioBlk,
     /// A PCI segment's root bus.
     PciRoot,
@@ -322,6 +327,7 @@ unsafe fn query_id(pdo: &PdoExtension, id_type: u32, out: *mut PVOID) -> NTSTATU
         Child::Genet => &GENET_HARDWARE_IDS,
         Child::Sdhc => &SDHC_HARDWARE_IDS,
         Child::Sdhc5 => &SDHC5_HARDWARE_IDS,
+        Child::Rp1Gem => &RP1_GEM_HARDWARE_IDS,
         Child::VirtioBlk => &VIRTIO_BLK_HARDWARE_IDS,
         Child::PciRoot => &PCI_ROOT_HARDWARE_IDS,
     };
@@ -651,11 +657,12 @@ unsafe fn create_pdo(driver: PDRIVER_OBJECT, child: Child, x: AcpiDevice, window
             ),
             None => 0,
         },
-        Child::Genet | Child::Sdhc | Child::Sdhc5 => DbgPrint(
+        Child::Genet | Child::Sdhc | Child::Sdhc5 | Child::Rp1Gem => DbgPrint(
             b"[HAL] ACPI %s: regs %p+0x%x, GSIV %u %s\n\0".as_ptr(),
             match child {
                 Child::Genet => b"GENET (BCM6E4E)\0".as_ptr(),
                 Child::Sdhc5 => b"SD host (BRCM5D12)\0".as_ptr(),
+                Child::Rp1Gem => b"RP1 Ethernet (Cadence GEM, not in ACPI)\0".as_ptr(),
                 _ => b"SD host (BRCME88C)\0".as_ptr(),
             },
             x.mmio as PVOID,
@@ -751,6 +758,7 @@ unsafe extern "system" fn AddDevice(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT)
         (Child::Genet, find_genet()),
         (Child::Sdhc, find_sdhc()),
         (Child::Sdhc5, find_sdhc_pi5()),
+        (Child::Rp1Gem, find_rp1_gem()),
     ] {
         if let Some(x) = found {
             add(child, x, None);

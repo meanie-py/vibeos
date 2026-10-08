@@ -32,7 +32,7 @@ pub unsafe extern "system" fn FsRecGetDeviceSectors(
     let mut Status: NTSTATUS;
     let mut Remainder: ULONG = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     /* Only needed for disks */
     if (*DeviceObject).DeviceType != FILE_DEVICE_DISK as u32 {

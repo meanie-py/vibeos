@@ -287,7 +287,7 @@ unsafe fn SepAdtInitializeBounds() {
 unsafe fn SepRmSetAuditEvent(Message: PSEP_RM_API_MESSAGE) -> NTSTATUS {
     SepAdtInitializeBounds();
 
-    ntkrnl_sys::ASSERT!((*Message).ApiNumber == 0); // RmAuditSetCommand
+    ntkrnl_sys::ASSERT!((*Message).ApiNumber == _RM_API_NUMBER_RmAuditSetCommand as ULONG);
     (*Message).ApiNumber = 0;
 
     SepAdtAuditingEnabled = (*Message).u.SetAuditEvent.Enabled;
@@ -806,8 +806,7 @@ unsafe extern "system" fn SepRmCommandServerThread(_StartContext: PVOID) {
             continue;
         }
 
-        if Message.Header.u2.s2.Type == 5 {
-            // LPC_CONNECTION_REQUEST
+        if Message.Header.u2.s2.Type == _LPC_TYPE_LPC_CONNECTION_REQUEST as CSHORT {
             ZwAcceptConnectPort(
                 &mut DummyPortHandle,
                 core::ptr::null_mut(),
@@ -821,23 +820,26 @@ unsafe extern "system" fn SepRmCommandServerThread(_StartContext: PVOID) {
             continue;
         }
 
-        if Message.Header.u2.s2.Type == 4 || Message.Header.u2.s2.Type == 3 {
-            // LPC_PORT_CLOSED || LPC_CLIENT_DIED
+        if Message.Header.u2.s2.Type == _LPC_TYPE_LPC_PORT_CLOSED as CSHORT
+            || Message.Header.u2.s2.Type == _LPC_TYPE_LPC_CLIENT_DIED as CSHORT
+        {
             break;
         }
 
-        if Message.Header.u2.s2.Type != 1 {
-            // LPC_REQUEST
+        if Message.Header.u2.s2.Type != _LPC_TYPE_LPC_REQUEST as CSHORT {
             ReplyMessage = core::ptr::null_mut();
             continue;
         }
 
         ReplyMessage = &mut Message.Header;
 
-        let ResultStatus = match Message.ApiNumber {
-            0 => SepRmSetAuditEvent(&mut Message), // RmAuditSetCommand
-            1 => SepRmCreateLogonSession(&mut Message.u.LogonLuid), // RmCreateLogonSession
-            2 => SepRmDeleteLogonSession(&mut Message.u.LogonLuid), // RmDeleteLogonSession
+        // RM_API_NUMBER starts at 1 (srmp.h). Literal 0/1/2 arms here sent every lsass
+        // RmCreateLogonSession to the DELETE handler, so each LogonUser with the right
+        // password failed STATUS_NO_SUCH_LOGON_SESSION (found by modrun's logon suite).
+        let ResultStatus = match Message.ApiNumber as _RM_API_NUMBER {
+            _RM_API_NUMBER_RmAuditSetCommand => SepRmSetAuditEvent(&mut Message),
+            _RM_API_NUMBER_RmCreateLogonSession => SepRmCreateLogonSession(&mut Message.u.LogonLuid),
+            _RM_API_NUMBER_RmDeleteLogonSession => SepRmDeleteLogonSession(&mut Message.u.LogonLuid),
             _ => {
                 ReplyMessage = core::ptr::null_mut();
                 STATUS_INVALID_PARAMETER

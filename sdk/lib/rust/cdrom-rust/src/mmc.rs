@@ -17,7 +17,6 @@ extern "system" {
     fn NT_ASSERT(condition: i32);
 }
 unsafe extern "C" {
-    fn PAGED_CODE();
 }
 
 // WPP tracing constants. These are C *compile-time* constants (`storswtr.h`), NOT linkable
@@ -116,7 +115,7 @@ pub unsafe extern "C" fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> NTSTAT
     let mmcData: *mut CDROM_MMC_EXTENSION = &raw mut (*cddata).Mmc;
     let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     NT_ASSERT(((*mmcData).CapabilitiesBuffer.is_null()) as i32);
     NT_ASSERT(((*mmcData).CapabilitiesBufferSize == 0) as i32);
@@ -554,7 +553,7 @@ pub unsafe extern "C" fn DeviceUpdateMmcWriteCapability(
     ValidationSchema: *mut FEATURE_NUMBER,
     BlockingFactor: *mut u32,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *Writable = 0u8;
     *ValidationSchema = 0;
@@ -923,7 +922,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnModePage2A(
     let mut result: i64 = -1;
     let transferSize = min(0xFFF0u32, (*DeviceExtension).ScratchContext.ScratchBufferSize);
     let mut cdb: CDB = core::mem::zeroed();
-    PAGED_CODE();
+    PAGED_CODE!();
     ScratchBuffer_BeginUse(DeviceExtension);
     RtlZeroMemory(
         &mut cdb as *mut CDB as *mut core::ffi::c_void,
@@ -1089,7 +1088,7 @@ pub unsafe extern "C" fn DeviceRetryTimeDetectionBasedOnGetPerformance(
     let mut cdb: CDB = unsafe { core::mem::zeroed() };
 
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
         ScratchBuffer_BeginUse(DeviceExtension);
 
         // RtlZeroMemory(&cdb, sizeof(CDB))

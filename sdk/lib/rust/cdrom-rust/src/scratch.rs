@@ -17,7 +17,6 @@ extern "system" {
     fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
 }
 unsafe extern "C" {
-    fn PAGED_CODE();
 }
 unsafe extern "C" {
     fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, timesAlreadyRetried: u32, status: *mut i32, retryIn100nsUnits: *mut i64, ) -> u8;
@@ -884,7 +883,7 @@ pub unsafe extern "C" fn ScratchBuffer_SetupSrb(
     irpStack = IoGetNextIrpStackLocation(irp);
     requestContext = RequestGetContext(request as *mut core::ffi::c_void);
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     core::ptr::write_volatile(core::ptr::addr_of_mut!((*requestContext).OriginalRequest), OriginalRequest);
 
@@ -1416,7 +1415,7 @@ pub unsafe extern "system" fn ScratchBuffer_ExecuteCdbEx(
     let mut timesAlreadyRetried: u32 = 0;
     let mut retryIn100nsUnits: i64 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut ecx_freq: i64 = 0;
     let ecx_t0 = KeQueryPerformanceCounter(core::ptr::addr_of_mut!(ecx_freq));

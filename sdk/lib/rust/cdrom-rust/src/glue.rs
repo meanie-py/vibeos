@@ -7,9 +7,6 @@
 #![allow(non_snake_case, dead_code, unused_variables)]
 
 #[no_mangle]
-pub extern "C" fn PAGED_CODE() {}
-
-#[no_mangle]
 pub extern "system" fn NT_ASSERT(_expr: i32) {}
 
 #[no_mangle]
