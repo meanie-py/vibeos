@@ -1,13 +1,13 @@
 /*
- * apc64.exe — x86-64 guest: user APCs into guest code, and what a guest thread
- * leaves behind when it ends (docs/engineering/wow64-x64-guest-design.md,
- * "Owed" 1 and 4). x86-64 only: the 32-bit ladder has no counterpart yet.
- * Built like the other x64 guests (no CRT, plain `start`, kernel32 only); it
- * runs under FEX on arm64 and natively on amd64, the native run being the
- * oracle that the guest itself is right.
+ * apc64.exe / apc32.exe — user APCs into guest code, and what a guest thread
+ * leaves behind when it ends. One source, built twice like the rest of the
+ * ladder (no CRT, plain `start`, kernel32 only): apc64 is an x86-64 guest
+ * (docs/engineering/wow64-x64-guest-design.md), apc32 a 32-bit WoW64 one
+ * (wow64_callback.c, "user-mode APCs into 32-bit code"). Each runs emulated on
+ * arm64; on amd64 apc64 runs natively, the oracle that the guest is right.
  *
- * Under FEX every user APC is delivered through the NATIVE KiUserApcDispatcher,
- * and its routine here is x86-64 code. The rungs, and what each would catch:
+ * Every user APC is delivered through the NATIVE KiUserApcDispatcher, and its
+ * routine here is guest code. The rungs, and what each would catch:
  *
  *   1  QueueUserAPC to self + SleepEx       a guest APC runs at all, with its
  *                                           parameter, and the wait reports
@@ -26,6 +26,8 @@
  *                                           native stack are freed at exit
  *   7  16 threads killed by TerminateThread the same, for the other way out;
  *                                           and the exit code is the killer's
+ *   8  SetWaitableTimer completion       a timer APC (kernel-queued, with the
+ *      routine                              timer's due time as its arguments)
  *
  * Verdict contract: exit 0x600D on PASS; distinct 0xBAxx names the rung.
  */
@@ -45,7 +47,14 @@
 #define A64_FAIL_JOIN_LEAK    0xBA62 /* private commit grew with thread count */
 #define A64_FAIL_KILL         0xBA71 /* TerminateThread failed or wrong exit code */
 #define A64_FAIL_KILL_LEAK    0xBA72
+#define A64_FAIL_TIMER        0xBA81 /* timer completion routine lost or wrong */
 #define A64_PASS              0x600D
+
+#ifdef _WIN64
+#define TAG "[apc64] "
+#else
+#define TAG "[apc32] "
+#endif
 
 /* rung 6 — threads that EXIT cleanly must give everything back: their JIT
  * state, native stack (~1 MB each) and thread-local CRT heap. 64 of them
@@ -68,7 +77,7 @@ static void Say(const char *msg)
     OutputDebugStringA(msg);
 }
 
-static void SayHex(const char *label, ULONG_PTR v)
+static void SayHex(const char *label, ULONGLONG v)
 {
     static const char Digits[] = "0123456789abcdef";
     char buf[112];
@@ -85,7 +94,7 @@ static void SayHex(const char *label, ULONG_PTR v)
 static void Fail(const char *what, DWORD code)
 {
     Say(what);
-    SayHex("[apc64] FAIL, exiting with", code);
+    SayHex(TAG "FAIL, exiting with", code);
     ExitProcess(code);
 }
 
@@ -111,6 +120,17 @@ static VOID CALLBACK ReadDone(DWORD Error, DWORD Bytes, LPOVERLAPPED Ov)
     (void)Ov;
     IoError = Error;
     IoBytes = Bytes;
+}
+
+static volatile LONG TimerFired;
+static volatile ULONG_PTR TimerArg;
+static volatile DWORD TimerHigh;
+static VOID CALLBACK TimerDone(LPVOID Arg, DWORD Low, DWORD High)
+{
+    (void)Low;
+    TimerArg = (ULONG_PTR)Arg;
+    TimerHigh = High;
+    InterlockedIncrement(&TimerFired);
 }
 
 static void ResetApcs(void)
@@ -161,15 +181,21 @@ static DWORD WINAPI Forever(LPVOID Param)
 static SIZE_T PrivateCommit(void)
 {
     MEMORY_BASIC_INFORMATION Mbi;
+    SYSTEM_INFO Si;
     BYTE *p = 0;
     SIZE_T Total = 0;
-    while (VirtualQuery(p, &Mbi, sizeof(Mbi)) == sizeof(Mbi))
+    /* The top of the user address space, as the system states it: a constant
+     * here (0x7FFFFFFF0000 was) truncates to 0xFFFF0000 at 32 bits and walks
+     * past the end. */
+    GetSystemInfo(&Si);
+    while ((ULONG_PTR)p < (ULONG_PTR)Si.lpMaximumApplicationAddress &&
+           VirtualQuery(p, &Mbi, sizeof(Mbi)) == sizeof(Mbi))
     {
         if (Mbi.State == MEM_COMMIT && Mbi.Type == MEM_PRIVATE)
             Total += Mbi.RegionSize;
-        p = (BYTE *)Mbi.BaseAddress + Mbi.RegionSize;
-        if ((ULONG_PTR)p >= (ULONG_PTR)0x7FFFFFFF0000ull || Mbi.RegionSize == 0)
+        if (Mbi.RegionSize == 0 || (BYTE *)Mbi.BaseAddress + Mbi.RegionSize <= p)
             break;
+        p = (BYTE *)Mbi.BaseAddress + Mbi.RegionSize;
     }
     return Total;
 }
@@ -182,10 +208,10 @@ static void JoinMany(int Count)
         DWORD Code = 0;
         HANDLE h = CreateThread(NULL, 0, Quick, (LPVOID)(ULONG_PTR)i, 0, NULL);
         if (!h)
-            Fail("[apc64] rung6 CreateThread failed\n", A64_FAIL_JOIN);
+            Fail(TAG "rung6 CreateThread failed\n", A64_FAIL_JOIN);
         if (WaitForSingleObject(h, 30000) != WAIT_OBJECT_0 || !GetExitCodeThread(h, &Code) ||
             Code != ((DWORD)i ^ 0x5A5A))
-            Fail("[apc64] rung6 a thread did not exit with its code\n", A64_FAIL_JOIN);
+            Fail(TAG "rung6 a thread did not exit with its code\n", A64_FAIL_JOIN);
         CloseHandle(h);
     }
 }
@@ -198,13 +224,13 @@ static void KillMany(int Count)
         DWORD Code = 0;
         HANDLE h = CreateThread(NULL, 0, Forever, NULL, 0, NULL);
         if (!h)
-            Fail("[apc64] rung7 CreateThread failed\n", A64_FAIL_KILL);
+            Fail(TAG "rung7 CreateThread failed\n", A64_FAIL_KILL);
         /* Into its wait: it then has guest state to free. */
         if (WaitForSingleObject(Running, 30000) != WAIT_OBJECT_0)
-            Fail("[apc64] rung7 thread never started\n", A64_FAIL_KILL);
+            Fail(TAG "rung7 thread never started\n", A64_FAIL_KILL);
         if (!TerminateThread(h, 0x7E57 + i) || WaitForSingleObject(h, 30000) != WAIT_OBJECT_0 ||
             !GetExitCodeThread(h, &Code) || Code != (DWORD)(0x7E57 + i))
-            Fail("[apc64] rung7 TerminateThread failed or wrong exit code\n", A64_FAIL_KILL);
+            Fail(TAG "rung7 TerminateThread failed or wrong exit code\n", A64_FAIL_KILL);
         CloseHandle(h);
     }
 }
@@ -216,21 +242,21 @@ void start(void)
     HANDLE h;
     SIZE_T Before, After;
 
-    Say("[apc64] start\n");
+    Say(TAG "start\n");
 
     /* rung 1 */
     ResetApcs();
     if (!QueueUserAPC(RecordApc, GetCurrentThread(), 0x1111))
-        Fail("[apc64] rung1 QueueUserAPC refused\n", A64_FAIL_SELF_RAN);
+        Fail(TAG "rung1 QueueUserAPC refused\n", A64_FAIL_SELF_RAN);
     Wait = SleepEx(5000, TRUE);
     if (Wait != WAIT_IO_COMPLETION)
     {
-        SayHex("[apc64] rung1 SleepEx returned", Wait);
-        Fail("[apc64] rung1 no WAIT_IO_COMPLETION\n", A64_FAIL_SELF_WAIT);
+        SayHex(TAG "rung1 SleepEx returned", Wait);
+        Fail(TAG "rung1 no WAIT_IO_COMPLETION\n", A64_FAIL_SELF_WAIT);
     }
     if (ApcCount != 1 || ApcSeen[0] != 0x1111 || ApcTid[0] != Me)
-        Fail("[apc64] rung1 APC did not run as queued\n", A64_FAIL_SELF_RAN);
-    Say("[apc64] rung1 APC to self OK\n");
+        Fail(TAG "rung1 APC did not run as queued\n", A64_FAIL_SELF_RAN);
+    Say(TAG "rung1 APC to self OK\n");
 
     /* rung 2 */
     ResetApcs();
@@ -239,10 +265,10 @@ void start(void)
     Wait = SleepEx(5000, TRUE);
     if (Wait != WAIT_IO_COMPLETION || ApcCount != 2 || ApcSeen[0] != 0x2222 || ApcSeen[1] != 0x3333)
     {
-        SayHex("[apc64] rung2 APCs run", (ULONG_PTR)ApcCount);
-        Fail("[apc64] rung2 two APCs not both delivered in order\n", A64_FAIL_TWO);
+        SayHex(TAG "rung2 APCs run", (ULONG_PTR)ApcCount);
+        Fail(TAG "rung2 two APCs not both delivered in order\n", A64_FAIL_TWO);
     }
-    Say("[apc64] rung2 two APCs in one wait OK\n");
+    Say(TAG "rung2 two APCs in one wait OK\n");
 
     /* rung 3 */
     {
@@ -252,32 +278,32 @@ void start(void)
         HANDLE f;
         Ov.Internal = 0; Ov.InternalHigh = 0; Ov.Offset = 0; Ov.OffsetHigh = 0; Ov.hEvent = NULL;
         if (!GetModuleFileNameA(NULL, Path, MAX_PATH))
-            Fail("[apc64] rung3 GetModuleFileNameA failed\n", A64_FAIL_FILE_OPEN);
+            Fail(TAG "rung3 GetModuleFileNameA failed\n", A64_FAIL_FILE_OPEN);
         f = CreateFileA(Path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
         if (f == INVALID_HANDLE_VALUE)
         {
-            SayHex("[apc64] rung3 CreateFileA, GetLastError", GetLastError());
-            Fail("[apc64] rung3 cannot open own image\n", A64_FAIL_FILE_OPEN);
+            SayHex(TAG "rung3 CreateFileA, GetLastError", GetLastError());
+            Fail(TAG "rung3 cannot open own image\n", A64_FAIL_FILE_OPEN);
         }
         if (!ReadFileEx(f, Buf, sizeof(Buf), &Ov, ReadDone))
         {
-            SayHex("[apc64] rung3 ReadFileEx, GetLastError", GetLastError());
-            Fail("[apc64] rung3 ReadFileEx refused\n", A64_FAIL_FILE_ISSUE);
+            SayHex(TAG "rung3 ReadFileEx, GetLastError", GetLastError());
+            Fail(TAG "rung3 ReadFileEx refused\n", A64_FAIL_FILE_ISSUE);
         }
         Wait = SleepEx(10000, TRUE);
         if (Wait != WAIT_IO_COMPLETION)
         {
-            SayHex("[apc64] rung3 SleepEx returned", Wait);
-            Fail("[apc64] rung3 no WAIT_IO_COMPLETION\n", A64_FAIL_FILE_WAIT);
+            SayHex(TAG "rung3 SleepEx returned", Wait);
+            Fail(TAG "rung3 no WAIT_IO_COMPLETION\n", A64_FAIL_FILE_WAIT);
         }
         if (IoError != 0 || IoBytes != sizeof(Buf) || Buf[0] != 'M' || Buf[1] != 'Z')
         {
-            SayHex("[apc64] rung3 completion error", IoError);
-            SayHex("[apc64] rung3 completion bytes", IoBytes);
-            Fail("[apc64] rung3 completion routine wrong or missing\n", A64_FAIL_FILE_RESULT);
+            SayHex(TAG "rung3 completion error", IoError);
+            SayHex(TAG "rung3 completion bytes", IoBytes);
+            Fail(TAG "rung3 completion routine wrong or missing\n", A64_FAIL_FILE_RESULT);
         }
         CloseHandle(f);
-        Say("[apc64] rung3 ReadFileEx completion routine OK\n");
+        Say(TAG "rung3 ReadFileEx completion routine OK\n");
     }
 
     /* rung 4 */
@@ -286,58 +312,77 @@ void start(void)
         ResetApcs();
         h = CreateThread(NULL, 0, AlertableSleeper, NULL, 0, &Tid);
         if (!h)
-            Fail("[apc64] rung4 CreateThread failed\n", A64_FAIL_CROSS);
+            Fail(TAG "rung4 CreateThread failed\n", A64_FAIL_CROSS);
         Sleep(200); /* into its SleepEx */
         QueueUserAPC(RecordApc, h, 0x4444);
         if (WaitForSingleObject(h, 10000) != WAIT_OBJECT_0 || !GetExitCodeThread(h, &Code) ||
             Code != WAIT_IO_COMPLETION || ApcCount != 1 || ApcSeen[0] != 0x4444 || ApcTid[0] != Tid)
         {
-            SayHex("[apc64] rung4 sleeper exit", Code);
-            Fail("[apc64] rung4 APC to a waiting thread lost\n", A64_FAIL_CROSS);
+            SayHex(TAG "rung4 sleeper exit", Code);
+            Fail(TAG "rung4 APC to a waiting thread lost\n", A64_FAIL_CROSS);
         }
         CloseHandle(h);
-        Say("[apc64] rung4 APC into another thread's wait OK\n");
+        Say(TAG "rung4 APC into another thread's wait OK\n");
     }
 
     /* rung 5 */
     h = CreateThread(NULL, 0, NoteStart, NULL, CREATE_SUSPENDED, NULL);
     if (!h || !QueueUserAPC(EarlyApc, h, 0) || ResumeThread(h) == (DWORD)-1 ||
         WaitForSingleObject(h, 10000) != WAIT_OBJECT_0)
-        Fail("[apc64] rung5 suspended thread setup failed\n", A64_FAIL_SUSPENDED);
+        Fail(TAG "rung5 suspended thread setup failed\n", A64_FAIL_SUSPENDED);
     CloseHandle(h);
     if (ApcAt != 1 || RoutineAt != 2)
     {
-        SayHex("[apc64] rung5 APC ran at", (ULONG_PTR)ApcAt);
-        SayHex("[apc64] rung5 routine ran at", (ULONG_PTR)RoutineAt);
-        Fail("[apc64] rung5 APC to a suspended thread lost or late\n", A64_FAIL_SUSPENDED);
+        SayHex(TAG "rung5 APC ran at", (ULONG_PTR)ApcAt);
+        SayHex(TAG "rung5 routine ran at", (ULONG_PTR)RoutineAt);
+        Fail(TAG "rung5 APC to a suspended thread lost or late\n", A64_FAIL_SUSPENDED);
     }
-    Say("[apc64] rung5 APC before a new thread's routine OK\n");
+    Say(TAG "rung5 APC before a new thread's routine OK\n");
 
     /* rung 6 — warm up first, so one-time growth is not counted */
     JoinMany(4);
     Before = PrivateCommit();
     JoinMany(64);
     After = PrivateCommit();
-    SayHex("[apc64] rung6 private commit before", Before);
-    SayHex("[apc64] rung6 private commit after 64 threads", After);
+    SayHex(TAG "rung6 private commit before", Before);
+    SayHex(TAG "rung6 private commit after 64 threads", After);
     if (After > Before && After - Before > A64_LEAK_LIMIT)
-        Fail("[apc64] rung6 per-thread state leaked\n", A64_FAIL_JOIN_LEAK);
-    Say("[apc64] rung6 64 threads joined, commit flat OK\n");
+        Fail(TAG "rung6 per-thread state leaked\n", A64_FAIL_JOIN_LEAK);
+    Say(TAG "rung6 64 threads joined, commit flat OK\n");
 
     /* rung 7 */
     Running = CreateEventA(NULL, FALSE, FALSE, NULL);
     if (!Running)
-        Fail("[apc64] rung7 CreateEventA failed\n", A64_FAIL_KILL);
+        Fail(TAG "rung7 CreateEventA failed\n", A64_FAIL_KILL);
     KillMany(2);
     Before = PrivateCommit();
     KillMany(16);
     After = PrivateCommit();
-    SayHex("[apc64] rung7 private commit before", Before);
-    SayHex("[apc64] rung7 private commit after 16 kills", After);
+    SayHex(TAG "rung7 private commit before", Before);
+    SayHex(TAG "rung7 private commit after 16 kills", After);
     if (After > Before && After - Before > 16u * A64_KILL_LEAK_PER_THREAD)
-        Fail("[apc64] rung7 terminated threads leaked JIT/stack\n", A64_FAIL_KILL_LEAK);
-    Say("[apc64] rung7 16 threads terminated, reclaimable state freed OK\n");
+        Fail(TAG "rung7 terminated threads leaked JIT/stack\n", A64_FAIL_KILL_LEAK);
+    Say(TAG "rung7 16 threads terminated, reclaimable state freed OK\n");
 
-    Say("[apc64] PASS\n");
+    /* rung 8 */
+    {
+        LARGE_INTEGER Due;
+        HANDLE t = CreateWaitableTimerA(NULL, TRUE, NULL);
+        Due.QuadPart = -100000; /* 10 ms, relative */
+        if (!t || !SetWaitableTimer(t, &Due, 0, TimerDone, (LPVOID)0x8888, FALSE))
+            Fail(TAG "rung8 waitable timer setup failed\n", A64_FAIL_TIMER);
+        Wait = SleepEx(5000, TRUE);
+        /* The arguments are the due time as an absolute FILETIME: never 0. */
+        if (Wait != WAIT_IO_COMPLETION || TimerFired != 1 || TimerArg != 0x8888 || TimerHigh == 0)
+        {
+            SayHex(TAG "rung8 SleepEx returned", Wait);
+            SayHex(TAG "rung8 completions", (ULONG_PTR)TimerFired);
+            Fail(TAG "rung8 timer completion routine lost or wrong\n", A64_FAIL_TIMER);
+        }
+        CloseHandle(t);
+        Say(TAG "rung8 waitable-timer completion routine OK\n");
+    }
+
+    Say(TAG "PASS\n");
     ExitProcess(A64_PASS);
 }

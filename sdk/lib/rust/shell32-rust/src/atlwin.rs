@@ -123,8 +123,12 @@ pub unsafe trait AtlWindow: Sized {
     ) -> BOOL;
 
     /// `CWindowImplBaseT::OnFinalMessage` — runs after the last message, with `m_hWnd` already
-    /// cleared. ATL's default is empty.
-    unsafe fn atl_on_final_message(_this: *mut Self, _hWnd: HWND) {}
+    /// cleared. ATL's default is empty, but this has NO default on purpose: an empty default
+    /// let CDefView's port omit its override (`this->Release()`, balancing the AddRef in
+    /// `OnNCCreate`), so every folder view window leaked its view and browseui warned
+    /// `Unexpected RefCount > 0 (1)` on each close. Every implementor states what it does,
+    /// even when the answer is nothing.
+    unsafe fn atl_on_final_message(this: *mut Self, hWnd: HWND);
 
     /// `CWindowImplBaseT::GetWindowProc` — the procedure [`AtlStartWindowProc`] installs on the
     /// window once `this` is known. **ATL calls the VIRTUAL**, so a derived class that overrides

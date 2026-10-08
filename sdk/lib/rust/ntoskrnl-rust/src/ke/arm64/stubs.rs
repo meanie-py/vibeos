@@ -278,14 +278,32 @@ pub static MmProtectToValue: [ULONG; 32] = [
 // not global, because dispatch holds it across the ISRs: with one global lock,
 // an ISR waiting on an interrupt lock another CPU holds in KeSynchronizeExecution
 // deadlocks the moment that CPU takes a different interrupt.
+//
+// Vectors are GIC INTIDs: SGIs, PPIs and SPIs below 1020, and on a GICv3 with an
+// ITS the LPIs the HAL hands out for message-signaled interrupts, from 8192 up.
+// LPIs take the slots after the SPIs.
 const GIC_MAX_INTID: usize = 1020;
-static INTERRUPT_TABLE: [core::sync::atomic::AtomicPtr<_KINTERRUPT>; GIC_MAX_INTID] =
-    [const { core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()) }; GIC_MAX_INTID];
+const LPI_BASE: usize = 8192;
+/// The HAL's ITS backend hands out no more than this many (hal-rust arm64/its.rs).
+const LPI_SLOTS: usize = 1024;
+const TABLE_SLOTS: usize = GIC_MAX_INTID + LPI_SLOTS;
+static INTERRUPT_TABLE: [core::sync::atomic::AtomicPtr<_KINTERRUPT>; TABLE_SLOTS] =
+    [const { core::sync::atomic::AtomicPtr::new(core::ptr::null_mut()) }; TABLE_SLOTS];
+
+/// The table slot of a connectable INTID; None for the special INTIDs 1020-8191
+/// and past the LPIs the HAL can hand out.
+fn slot(intid: ULONG) -> Option<usize> {
+    match intid as usize {
+        v if v < GIC_MAX_INTID => Some(v),
+        v if (LPI_BASE..LPI_BASE + LPI_SLOTS).contains(&v) => Some(GIC_MAX_INTID + v - LPI_BASE),
+        _ => None,
+    }
+}
 /// A plain atomic flag, not a KSPIN_LOCK: dispatch takes it before raising the
 /// software IRQL (hardware already masks IRQs for the whole exception), where
 /// KeAcquireSpinLockAtDpcLevel's IRQL check would bugcheck 0x9.
-static CHAIN_LOCKS: [core::sync::atomic::AtomicBool; GIC_MAX_INTID] =
-    [const { core::sync::atomic::AtomicBool::new(false) }; GIC_MAX_INTID];
+static CHAIN_LOCKS: [core::sync::atomic::AtomicBool; TABLE_SLOTS] =
+    [const { core::sync::atomic::AtomicBool::new(false) }; TABLE_SLOTS];
 
 unsafe fn chain_acquire(vector: usize) {
     use core::sync::atomic::Ordering;
@@ -331,11 +349,10 @@ extern "system" {
 pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
     use core::sync::atomic::Ordering;
     let Interrupt = opaque_ptr(Interrupt);
-    let vector = (*Interrupt).Vector as usize;
-    // Reject out-of-range / special INTIDs (>=1020).
-    if vector >= GIC_MAX_INTID {
+    // Reject the special INTIDs and anything past the table.
+    let Some(vector) = slot((*Interrupt).Vector) else {
         return 0u8;
-    }
+    };
     if (*Interrupt).Connected != 0 {
         return 1u8;
     }
@@ -374,9 +391,8 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
 pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN {
     use core::sync::atomic::Ordering;
     let Interrupt = opaque_ptr(Interrupt);
-    let vector = (*Interrupt).Vector as usize;
     let was_connected = (*Interrupt).Connected;
-    if vector < GIC_MAX_INTID && was_connected != 0 {
+    if let (Some(vector), true) = (slot((*Interrupt).Vector), was_connected != 0) {
         let irql = chain_lock(vector);
         let head = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
         let entry = &raw mut (*Interrupt).InterruptListEntry;
@@ -412,10 +428,9 @@ pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> B
 #[no_mangle]
 pub unsafe extern "system" fn KiDispatchInterruptArm64(Intid: ULONG) -> BOOLEAN {
     use core::sync::atomic::Ordering;
-    let vector = Intid as usize;
-    if vector >= GIC_MAX_INTID {
+    let Some(vector) = slot(Intid) else {
         return 0u8;
-    }
+    };
     let head = INTERRUPT_TABLE[vector].load(Ordering::SeqCst);
     if head.is_null() {
         return 0u8;

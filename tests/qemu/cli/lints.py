@@ -940,6 +940,34 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # The SAME user address read twice (a TOCTOU double-fetch): one snapshot validates
+    # a size and a second, re-read snapshot sizes the copy, so on SMP a thread on
+    # another CPU changes the value in between. Gated against a BASELINE of reviewed
+    # two-stage reads (header then body) and one owed low-severity case; a NEW row —
+    # a fresh same-source pair reachable on one control-flow path — fails.
+    sdf = repo / "tools" / "scan_double_fetch.py"
+    specs.append(
+        (
+            "scan_double_fetch",
+            [py, str(sdf), "--lint"] if sdf.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A user pointer validated by a NON-raising range probe (SafeProbeForRead /
+    # SafeProbeForWrite, or a crate's Ks* mirror) and then dereferenced RAW. The probe
+    # proves the range, never that the page stays mapped, so under DUMMY_PSEH a raw
+    # touch after it is an any-process BUGCHECK 0x1E where the C's _SEH2_TRY returned a
+    # status (NtUserScrollDC / NtUserSetSysColors / NtGdiGetDIBits were this). The class
+    # was driven to zero, so this gates at ZERO (empty baseline): a baseline would be a
+    # place for the next one to hide.
+    sspd = repo / "tools" / "scan_safe_probe_deref.py"
+    specs.append(
+        (
+            "scan_safe_probe_deref",
+            [py, str(sspd), "--lint"] if sspd.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
     # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
     # covers the names that emit nothing and were therefore outside every scanner here.
@@ -1646,6 +1674,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
         run.add(Stage("scan_self_recursive", status="skip", detail="no binary"))
         run.add(Stage("scan_export_thunks", status="skip", detail="no binary"))
+        run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="no binary"))
         return
     # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
     # their output is arch-specific so a single baseline can't match across arches
@@ -1699,3 +1728,19 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         )
     else:
         run.add(Stage("scan_export_thunks", status="skip", detail="amd64-only scan"))
+    # i386 inline asm that swaps ebx out for cmpxchg8b and then dereferences ebx: LLVM
+    # put the pointer operand IN ebx. slist's try_store shipped that in ntdll.dll and
+    # ks.sys, and InterlockedPushEntrySList spun forever. i386 only -- ebx is allocatable
+    # there and nowhere else; see tools/scan_xchg_ebx_deref.py.
+    if arch == "i386":
+        sxe = repo / "tools" / "scan_xchg_ebx_deref.py"
+        _lint_stage(
+            run,
+            repo,
+            "scan_xchg_ebx_deref",
+            [py, str(sxe), "--check", str(build_dir)] if sxe.is_file() else ["MISSING"],
+            strict=strict,
+            by_exit_code=True,
+        )
+    else:
+        run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="i386-only scan"))

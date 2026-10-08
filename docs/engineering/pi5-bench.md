@@ -16,7 +16,8 @@ VibeOS reached the desktop on the Pi 5 on 2026-10-04. The first hands-free
 `pi5 boot` took 2m48s from SSH stage to desktop. Since 2026-10-06/07 both of RP1's
 xHCI controllers (XHC0, XHC1) run under `usbxhci.sys`, so every USB port works and the
 Pico's keyboard and mouse with them, and the card slot (SDC0) runs under the Pi 4's
-`sdhc.sys`, at ~11 MB/s. The two controllers share one level-triggered SPI (261),
+`sdhc.sys`, at ~11 MB/s. The Pico's remote disk reads as a drive too, once the host
+serves it an image (`tools/pi5/pico.sh serve-image`; see `pi4-bench.md`). The two controllers share one level-triggered SPI (261),
 which needed shared-vector chaining in the arm64 kernel (`ke/arm64/stubs.rs`).
 
 ## How a build gets there: the Linux stager and tryboot

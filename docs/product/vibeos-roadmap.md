@@ -421,7 +421,7 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | # | Quest | Doc | Size | Status (2026-07-10) |
 |---|-------|-----|------|-----------|
 | 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
-| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). **Pi 5 SD reads** (2026-10-06: the same `sdhc.sys` on the BCM2712's SDC0, ~11 MB/s; writes enabled but untested, its card holds the bench stager). Next: boot from the card instead of the RAM disk |
+| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). **Pi 5 SD reads** (2026-10-06: the same `sdhc.sys` on the BCM2712's SDC0, ~11 MB/s; writes enabled but untested, its card holds the bench stager). **Pi 5 USB mass storage reads and writes** (2026-10-07, over RP1's xHCI: the Pico's served FAT image reads as F:; a 1.4 MB copy to a Ventoy stick's FAT partition reads back byte-identical from Linux on the same board, SHA-256 checked). Next: boot from the card instead of the RAM disk |
 | 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC; shared vectors chain since 2026-10-07, for the Pi 5's two RP1 xHCIs on one SPI) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
 | 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). Next: its interrupts, then GEM and I217. The Pi 5's GEM is not in its firmware's ACPI tables at all (`docs/engineering/pi5-acpi/dsdt.dsl`), so it needs describing before a driver can find it |
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
@@ -609,6 +609,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   EXTENTS` on the CD-ROM. The faulting access was to the MDL itself, so it is a victim; the
   same boot steps passed four other times. Arm special pool (`--tripwire SPECIALPOOL=*`) on a
   `farm` of modrun boots to catch the writer.
+
+- **FAT file dates show as 01/01/1601 in `dir`** (OPEN, 2026-10-07, Pi 5). A FAT image made by
+  mtools, its HELLO.TXT dated 2026-10-07 21:54 (`mdir` agrees), listed in VibeOS cmd as
+  `01/01/1601 12:00 AM`: a zero FILETIME. The volume label, serial, size and contents were
+  right. Every file shows it, the Ventoy stick's and the RAM disk's (`X:`) too. Writing is
+  fine: a file VibeOS copied to the stick has its real time when Linux reads it. So the fault
+  is on the read side: fastfat's directory query or cmd's formatting. Not yet narrowed, nor
+  whether QEMU shows it.
 
 - **arm64: keystrokes sent through QMP to the default virtio keyboard do not reach the
   desktop's windows** (OPEN, 2026-10-06, seen while gating nvme.sys). On a quiet arm64 boot,
@@ -842,21 +850,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the same binaries against the pre-takeover ucrtbase.dll (`24089de2c88`, Microsoft's C)
   staged beside them. The two agree failure for failure, so none of these is a Rust
   regression, but each is owed: `file` 10 failures of 120 (identical on both; was an AV
-  while the sweep ran it from the read-only CDFS); `misc` dies on an unmasked FP exception
-  (0xC0000090) or times out after calling the `fesetround`/`fegetenv` spec stubs, and its
-  math-errno checks (misc.c:774/776) fail on ours past the point where the baseline has
-  already crashed, so they are UNCOMPARED. The HANG is ROOT-CAUSED and FIXED (2026-10-03):
-  `log10(INFINITY)` never returned -- cnt-rust's `log10`/`pow`/`fmod` were ports of upstream's
-  placeholder C (`pow(2, 0.5) == 0` shipped in msvcrt.dll and ucrtbase.dll on every arch); they
-  are the `libm` crate's now, and the x87 asm on no-SSE i386 (`tools/payloads/matherrs` traces
-  Wine's test per call). The math-errno checks are FIXED (2026-10-04): cnt-rust's C89 set
-  reports through `__cnt_math_error` at Wine's `math_error` points, and `tools/payloads/matherrs`
-  (Wine's `test_math_errors`) is 304 checks, 0 failed on all three arches; misc.c:363 (`_EM_AMBIGUOUS`) is FIXED by the
-  i386 `_control87` in fenv.rs; `cpp` hangs past 120s; `string` fails two `mbstowcs` UTF-8 checks
+  while the sweep ran it from the read-only CDFS); `misc` (198,593 checks) is down to ONE failure as of 2026-10-07:
+  misc.c:1355, `clock()` ~0.8-3 s below its window measured from the process creation time
+  (TCG start-up latency or the clock base, not yet split). Its earlier deaths and failures
+  are all FIXED: the `log10(INFINITY)` hang (cnt-rust's `log10`/`pow`/`fmod` were ports of
+  upstream's placeholder C -- `pow(2, 0.5) == 0` shipped on every arch -- and are the `libm`
+  crate's now, x87 asm on no-SSE i386; `tools/payloads/matherrs` traces Wine's test per call),
+  the math-errno checks (cnt-rust reports through `__cnt_math_error` at Wine's `math_error`
+  points; `matherrs` is 304 checks, 0 failed on all three arches), misc.c:363
+  (`_EM_AMBIGUOUS`, the i386 `_control87` in fenv.rs), and misc.c:1126/1127 (gone by
+  2026-10-07; not re-bisected). `cpp` is 33 checks, 0 failed (FIXED 2026-10-07): it HUNG in
+  ntdll's `InterlockedPushEntrySList` -- the slist crate's i386 `cmpxchg8b` let LLVM put the
+  header pointer in ebx, which its own `xchg` then overwrote, so the CAS compared against the
+  entry and spun (also in ks.sys; `tools/scan_xchg_ebx_deref.py` now gates the class on every
+  i386 build) -- and then failed `__unDName`'s four ref-qualifier rows, the `#ifdef _UCRT`
+  arms the translation had pinned off for ucrtbase too. `string` fails two `mbstowcs` UTF-8 checks
   (string.c:831/835) -- ROOT-CAUSED, expected: kernel32 exports `IsValidLocaleName` only at
   `-version=0x600+` and this build is NT 5.2, so ucrtbase takes its downlevel locale path,
   where ".UTF-8" is not a code page and `en_US.UTF-8` resolves by LCID to ANSI 1252 (UCRT
-  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` dies on an invalid handle (0xC0000008). `misc` now runs to the end (198,593 checks, 2026-10-04) with 3 failures, identical with and without that day's vcstartup/TLS move (A/B on one tree): misc.c:1126/1127 (a `_mbstowcs`-class codepage conversion, `ret = 4`, `"a?"` for `"\x96\xd8"`) and misc.c:1355 (`clock()` ~3 s below its window measured from the process creation time, both runs; TCG start-up latency or the clock base, not yet split).
+  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` dies on an invalid handle (0xC0000008).
   `environ`, `printf` (1,950), `scanf` and `thread` (60) are clean on both. `thread` was
   an AV at EIP 0 until two fixes the same day: kernel32's `FindResourceA` asked for
   language 4 (LANG_CHINESE) instead of LANG_NEUTRAL, so EVERY ANSI resource lookup in the
@@ -982,14 +994,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
     without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
     i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
-  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (OPEN, unowned, found
-    2026-10-06; about 8 of 45 `smoke:amd64-bios` gate boots that day, across lanes). The lane
-    boots from a USB stick over xHCI with an NVMe disk attached. Usually csrss takes
-    `0xC0000006` (STATUS_IN_PAGE_ERROR) at the same ntdll address and the boot hangs; once the
-    font driver took it in kernel mode as BUGCHECK 0x1E in `ftfd.dll`. Every amd64-bios boot,
-    passing ones included, prints 9 `ASSERT FAILED: !Pkt->SlistEntry.Next at xferpkt.rs:706`
-    (classpnp reusing a transfer packet still on its free list), which is the first suspect.
-    Runs: 20261006-041704-og7v50sd, 20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
+  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-07; found
+    2026-10-06, 15 of 80 `smoke:amd64-bios` runs over 10-06/07 across lanes). The lane boots
+    from a USB stick over xHCI with an NVMe disk attached. Usually csrss took `0xC0000006`
+    (STATUS_IN_PAGE_ERROR) on a data read in ntdll and the boot hung; sometimes a kernel-mode
+    BUGCHECK 0x1E with the same code. Cause: classpnp's `ddk_shims.rs` defined
+    `RtlInterlockedPushEntrySList`/`PopEntrySList` as no-op stubs, and a local definition beats
+    the importlib, so the transfer-packet free list and the SRB lookaside never held anything:
+    every request allocated fresh and leaked. Its `SimplePopSlist` also skipped the C's
+    `Next = NULL`, which was the 9 `ASSERT FAILED: !Pkt->SlistEntry.Next` per boot. Fix: the
+    shims forward to `ExpInterlocked*` (64-bit) and FASTCALL `Interlocked*` (i386), verified as
+    imports in classpnp.sys; `create.rs` takes the real lookaside inline instead of a
+    null-returning stub. After: 16/16 amd64-bios boots, 0 in-page errors, 0 asserts (runs
+    20261007-144313-uhji_66e, 20261007-145433-6emhz3k9). How the leak turned into a failed
+    read is not established; reopen on any recurrence. Earlier runs: 20261006-041704-og7v50sd,
+    20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
+  - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
+    (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
+    control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU
+    can change the value between the validating read and the sizing read. Arm/early-exit/
+    advanced-source awareness cut 31 raw candidates to 3. The real bug: **SeCaptureSecurityDescriptor**
+    re-read `Control` from the absolute-descriptor copy after branching on it in the header copy,
+    so a racing SE_SELF_RELATIVE flip made it copy absolute pointer fields and then rebase them as
+    self-relative offsets — a wild kernel address into `RtlValidSid`; fixed by pinning the
+    self-relative decision from the first read (the absolute re-read can no longer flip it). Baseline (reviewed, not bugs):
+    `NtGdiCreateDIBSection` (header then full BITMAPINFO, size pinned from the kernel copy) and
+    `NtUserInitializeClientPfnArrays` (owed, low-severity, init-time client-callback tables). Still
+    blind: a fetch split across a syscall and a worker it calls. Field manual: "The double-fetch is
+    the same hazard in TIME".
   - **arm64 FAULTLOOP was the detector, not a loop** (RESOLVED 2026-10-04). The report
     fingerprinted a fault as (VA, PC, TTBR0); a stream of DISTINCT faults sharing those --
     Cc reading many small files (rapps' cab extraction), each new VACB recycled onto the same
@@ -1646,8 +1678,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     (`fCurrentShellFolder.Release()` on a freed folder). `CDefView_OnCreate_body` released
     `pdt` and `ppf2` explicitly AND through their CComPtr guards, so every view creation cost
     its folder one reference. Found with a gdb probe logging each AddRef/Release of the folder.
-  - OPEN: with that fixed, browseui warns `Unexpected RefCount > 0 (1)` for the view at close.
-    The double `pdt` release (the view's own IDropTarget) had been hiding a +1 leak on CDefView.
+  - FIXED (2026-10-07): with that fixed, browseui warned `Unexpected RefCount > 0 (1)` for the
+    view at close, so every folder window leaked its CDefView. `OnNCCreate` AddRefs the view
+    for the window's lifetime and `OnFinalMessage` releases it, but the port's `AtlWindow`
+    impl never overrode `atl_on_final_message`, whose trait default was empty. The hook is now
+    required. amd64 appstorm: 0 warnings (was 4), all 5 folder views freed, 43/43
+    (run 20261007-223230-inn5gugc).
   - FIXED: the i386 Control Panel "hang" was a thread busy loading applets while boot-time
     `setup -mini` was still installing devices (7.8s to answer). appstorm now waits for setup
     to exit and gives a slow window 60s, sampling its PC; on amd64 and i386 explorer-folder,
@@ -1666,8 +1702,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - FIXED: registration crashed csrss in `winsrv!ConSrvGetConsole` (0xF4):
     `GetThreadConsoleDesktop` read `ServerData[1]` (basesrv's slot) instead of
     `CONSRV_SERVERDLL_INDEX` (2). amd64 now logs `registration done`.
-  - amd64, OPEN: dxdiag faults in `RtlFreeHeap`; explorer raises `0xc06d007f` (a delay-load
-    import that does not resolve; arm64 too).
+  - NOT REPRODUCING (2026-10-07), amd64: dxdiag faults in `RtlFreeHeap` (fixed, see the
+    `GlobalSize` entry below); explorer raises `0xc06d007f` (a delay-load import that does not
+    resolve; arm64 too). No `c06d007f` in any of the 150 newest payload serials on disk, which
+    include 53 appstorm sweeps (48 arm64, 3 amd64, 2 i386). Reopen on any recurrence.
   - FIXED: amd64 bugchecks under long GUI runs: 0x1E `c000009a` from a pool allocation, and
     0x1E `c0000005` in win32k (`REGION_Delete(NULL)` from `IntSelectClipRgn` and
     `VIS_ComputeVisibleRegion`). All one bug. `NtUserFindExistingCursorIcon` had a stray
@@ -1941,9 +1979,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   RANGE and not the MAPPING (it cannot touch-test under DUMMY_PSEH), the C wraps probe AND
   copy in one `_SEH2_TRY`, and our Rust does `rcScroll = *(prcUnsafeScroll as *const RECTL)`
   outside any guard. Same fix: capture through `KmProtectedCopyMemory`
-  (`win32k-rust/src/copy.rs`). **Third instance of this class, which makes it systematic
-  rather than incidental** — a scanner for "`SafeProbeFor*` followed by a raw dereference of
-  the probed pointer" would enumerate the rest for free, and is owed.
+  (`win32k-rust/src/copy.rs`). **Third instance of this class, which made it systematic
+  rather than incidental.** Now enumerated and GATED: `tools/scan_safe_probe_deref.py`
+  flags a pointer passed to a `*SafeProbeFor{Read,Write}` call (the suffix match catches
+  ks.sys's `KsSafeProbeForRead` mirror) and then dereferenced raw rather than through a
+  fault-tolerant copy, reusing `scan_raw_user_access`'s `_walk` for the access detection,
+  arm-awareness and capture-shadow rules; the kernel-mode arm of an explicit
+  `if mode != KernelMode` is trusted and skipped. It gates at ZERO (empty baseline,
+  `vibeos-cli check`). Building it turned up a **fourth** instance the three win32k fixes
+  had not — ks.sys's `KsFastPropertyHandler` did a raw `copy_nonoverlapping` from the
+  user `Property` on its UserMode arm after only the range-only `KsSafeProbeForRead`
+  (the KernelMode arm's raw copy is correct and trusted); FIXED 2026-10-07 by routing it
+  through `ntkrnl_sys::probe::safe_copy_raw`, the same primitive the rest of that file
+  already used.
 
 - **`msvcrt log10(0.0)` returns a large finite negative instead of `-Inf`. OPEN**
   (2026-09-23, found by the apitest verification sweep). Exact values, from the test's
@@ -4111,8 +4159,16 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the very signal `MsafdWaitForAlert` is about to wait for — missing the re-signal is a guest
   hang with no error printed anywhere. `IOCTL_AFD_SEND_DATAGRAM` was the last refusal in this
   family and is now marshalled too (see the entry below). Still OPEN: a guest `ApcRoutine`.
-- **A guest `ApcRoutine` is still refused, but NOT for the reason previously recorded — OPEN**
-  (2026-09-06). This entry said "no 64->32 user-APC dispatch"; that was written from the
+- **A guest `ApcRoutine` is still refused, but NOT for the reason previously recorded — FIXED
+  2026-10-07**: 32-bit user APCs (QueueUserAPC, ReadFileEx completion routines, waitable-timer
+  routines) run on both hosts, graded by the new `apc32.exe` (Apc64.c at 32 bits); IOCTL
+  completion routines are wired the same way but no guest grades them yet. The routine is queued as wow64's `Wow64ApcRoutine` with the guest's routine and
+  context packed into the 64-bit context, which runs the guest's own `KiUserApcDispatcher` in a
+  nested simulate (wow64_callback.c). It found an amd64 KERNEL bug on the way: the 64-bit
+  syscall trap frame never recorded CS, so a WoW64 thread's APC context resumed in compat mode
+  (field manual, "A WoW64 thread NtContinues a native context into 32-bit compat mode").
+  `NtQueryDirectoryFile`/`NtLockFile` still refuse async (they complete on a host IOSB).
+  Original entry (2026-09-06): This entry said "no 64->32 user-APC dispatch"; that was written from the
   refusal's own comment and is wrong. The guest-entry half EXISTS and is load-bearing:
   `Wow64pBuildLoaderApcFrame` (`wow64.c`) builds a `KiUserApcDispatcher`-ABI frame and
   `Wow64pKiUserApcDispatcher32` is resolved out of ntdll32 at startup, and that pair runs on

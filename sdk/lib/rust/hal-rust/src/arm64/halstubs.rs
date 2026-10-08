@@ -183,6 +183,7 @@ pub unsafe extern "system" fn HalInitSystem(
 ) -> ddk::BOOLEAN {
     unsafe {
         if BootPhase == 0 {
+            super::gic3::record_platform(LoaderBlock);
             super::pnpdd::register(LoaderBlock);
             HalpCurrentTimeIncrement = 100000;
             HalpNextTimeIncrement = 100000;
@@ -414,6 +415,9 @@ pub unsafe extern "system" fn HalClearSoftwareInterrupt(Request: ddk::KIRQL) {}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalDisableSystemInterrupt(Vector: ddk::ULONG, Irql: ddk::KIRQL) {
+    if super::its::owns(Vector as u32) {
+        return super::its::disable(Vector as u32);
+    }
     // Clear-enable the device's GIC line (Vector == GIC INTID).
     super::clock::disable_gic_interrupt(Vector as u32);
 }
@@ -431,6 +435,10 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
     // CPU interface; the connected ISR is then dispatched by KiIrqHandler →
     // HalClockInterruptArm64 → KiDispatchInterruptArm64. Returns FALSE for an
     // out-of-range / special INTID so KeConnectInterrupt rolls back cleanly.
+    // An LPI from the ITS has no line at all: its enable is a byte in memory.
+    if super::its::owns(Vector as u32) {
+        return super::its::enable(Vector as u32, Irql) as ddk::BOOLEAN;
+    }
     if Vector as usize >= 1020 {
         return FALSE;
     }

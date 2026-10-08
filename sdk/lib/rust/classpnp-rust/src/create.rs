@@ -67,9 +67,6 @@ unsafe fn adapter_desc_ext(p: *mut core::ffi::c_void) -> *mut LocalStorageAdapte
 extern "system" {
     fn ClassAcquireRemoveLockEx(DeviceObject: PDEVICE_OBJECT, Tag: PVOID, File: *const u8, Line: ULONG) -> ULONG;
 }
-extern "C" {
-    fn ExAllocateFromNPagedLookasideList(lookaside: *mut core::ffi::c_void) -> PVOID;
-}
 
 // ---- file-scope preamble (translated) ----
 pub const CLASS_INIT_GUID: i32 = 0; // nolint: const-contradiction (create.c:24 defines it to 0 so classp.h only DECLARES the GUIDs here)
@@ -489,8 +486,8 @@ pub unsafe extern "C" fn ClasspEjectionControl(
 
         status = STATUS_SUCCESS;
         if ((*Fdo).Characteristics & FILE_REMOVABLE_MEDIA) != 0 {
-            srb = ExAllocateFromNPagedLookasideList(
-                core::ptr::addr_of_mut!((*FdoExtension).__bindgen_anon_1.CommonExtension.as_mut().SrbLookasideList) as *mut core::ffi::c_void,
+            srb = ntkrnl_sys::inline::ex::ExAllocateFromNPagedLookasideList(
+                core::ptr::addr_of_mut!((*FdoExtension).__bindgen_anon_1.CommonExtension.as_mut().SrbLookasideList).cast(),
             ) as PSCSI_REQUEST_BLOCK;
             if srb == core::ptr::null_mut() {
                 status = STATUS_INSUFFICIENT_RESOURCES;

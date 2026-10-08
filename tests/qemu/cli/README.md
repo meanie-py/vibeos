@@ -111,6 +111,12 @@ all included), then auto-triage on failure.
   `smoke:amd64-bios` lane. `VIBEOS_QEMU_BOOT_TRANSPORT=usb-ehci|ide-cd|usb-storage`
   picks the boot device on any x86 arch. See `docs/engineering/bios-boot.md`.
 
+- **`--gic 3`** (arm64) boots QEMU virt with a GICv3 and an ITS (`VIBEOS_QEMU_GIC=3`;
+  the default is the GICv2 the Pi 4 has) and FAILS the boot (`GIC_NOT_V3`) unless the HAL
+  prints `[GIC] GICv3: distributor`, and with `--nvme` (`GIC_NO_ITS`) unless MSI-X went
+  through the ITS (`[HAL] GICv3 ITS at`). With `--smp N` it also carries the IPIs, which are
+  `ICC_SGI1R_EL1` writes there instead of GICD_SGIR.
+
 - **`--nvme`** (any arch; the default for `amd64-bios`, which is the OptiPlex 9020's
   stick + NVMe drive, opt out with `VIBEOS_QEMU_NVME=0`) attaches a QEMU `nvme`
   controller with one 64M MBR+FAT16 namespace (`VIBEOS_QEMU_NVME=1`) and FAILS the
