@@ -1,0 +1,28 @@
+# modrun — translated modules at runtime, the shipped Rust diffed against its pre-flip C.
+#   VIBEOS_PAYLOAD=modrun ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload modrun
+#   re-grade a saved boot:  python3 tools/payloads/modrun/modrun.py grade <full.log> --arch <arch>
+# Adding a module is a suites/<module>.yaml (see modrun.py) plus, for an oracle,
+# `python -m rustconv.c_oracle <module dir>`. The guest only runs and reports; the host grades.
+name: modrun
+description: run each suite's commands under the Rust module and its C oracle, diff the output
+
+build_hint: "tools/payloads/modrun/build.sh {arch}"
+# build.sh's ninja step must run every build: the probes link the Rust crates, which can change
+# with no file in this directory changing.
+rebuild: always
+
+binaries:
+  - src: tools/payloads/modrun/modrun-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/modrun.exe
+  - src: tools/payloads/modrun/modrun-{arch}.txt
+    dest: bin/modrun.txt
+# Each suite's `stage:` list (oracle and probe exes from build-<arch>).
+binaries_from: tools/payloads/modrun/modrun.py
+
+test:
+  launch_marker: "[MODRUN] done"
+  launch_drain_secs: 1200
+  launch_idle_secs: 300
+  grader: tools/payloads/modrun/modrun.py

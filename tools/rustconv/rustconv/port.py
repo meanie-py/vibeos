@@ -933,6 +933,20 @@ def stage_data(stem: str, tu_arg: str) -> None:
     print(f"data: {tu.name} -> {out.relative_to(REPO)} ({len(files)} files, {lines} lines)")
 
 
+def stage_oracle(stem: str) -> None:
+    """The module's pre-flip C as an opt-in `<target>_c` (c_oracle.py): what modrun runs the
+    Rust against. Re-run after the CMakeLists changes; `python -m rustconv.c_oracle --check`
+    reports staleness."""
+    from . import c_oracle
+
+    module = REPO / load_state(stem)["module_dir"]
+    try:
+        current = c_oracle.write(module)
+    except c_oracle.OracleError as e:
+        raise PortError(f"oracle: {e}") from e
+    print(f"oracle: {(module / c_oracle.ORACLE_FILE).relative_to(REPO)} {'current' if current else 'written'}")
+
+
 def _tokens(log: str) -> tuple[int, int, int]:
     """(functions bought, input tokens, output tokens) from a translate log.
 
@@ -2949,6 +2963,8 @@ def _main(args) -> int:
             stage_flip(args.stem)
         elif args.port_stage == "data":
             stage_data(args.stem, args.tu)
+        elif args.port_stage == "oracle":
+            stage_oracle(args.stem)
         elif args.port_stage == "status":
             stage_status(args.stem)
     except (PortError, pd.ProfileDeriveError) as e:
@@ -2966,6 +2982,9 @@ def add_parser(sub) -> None:
         q.add_argument("--target", default=None, help="CMake target, when there are several")
     for name in ("island", "integrate", "resolve", "check", "status", "flip"):
         stages.add_parser(name).add_argument("stem")
+    stages.add_parser(
+        "oracle", help="the pre-flip C as <target>_c, for modrun's runtime diff (c_oracle)"
+    ).add_argument("stem")
     q = stages.add_parser("data", help="a C DATA TU (tables, no code) as Rust statics, $0")
     q.add_argument("stem")
     q.add_argument("tu", help="the .c, relative to the module (or the repo)")

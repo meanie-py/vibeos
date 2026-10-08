@@ -493,6 +493,10 @@ class the next cannot see. Rationale and measurements: field manual **§9.117**,
    `"c_host_profile": "reactos-amd64"`). It found shipping bugs in 4 of its first 10 new
    targets. Each bug is a CLASS: turn it into a static check, don't just fix the site.
    `tools/rustconv/data/difftest/README.md`.
+6. **Run it in the guest against its own C**: `python -m rustconv.c_oracle <module dir>` builds the
+   pre-flip C as `<target>_c`, and a `tools/payloads/modrun/suites/<module>.yaml` runs both on
+   the same input and diffs them (`--payload modrun`). Its first three suites found a kernel
+   pool overrun, two shipped panics and an lsass crash that smoke never reached.
 
 Note the interaction: sealing restores constant *names* into `match` patterns, so step 1 gets
 **more** important once you seal, not less.

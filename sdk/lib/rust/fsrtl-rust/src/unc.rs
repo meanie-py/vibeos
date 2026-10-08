@@ -303,9 +303,6 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
     if FsRtlpRedirs == 0 {
         status = FsRtlpOpenDev(&mut device_handle, w!("\\Device\\Null").as_ptr() as PCWSTR);
         if status < 0 {
-            'cleanup: {
-                break 'cleanup;
-            }
             if status >= 0 {
                 FsRtlpRedirs += 1;
                 *Handle = device_handle;
@@ -328,9 +325,6 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
         ) as *mut u16;
         if FsRtlpDRD.RedirectorDeviceName.Buffer.is_null() {
             status = STATUS_INSUFFICIENT_RESOURCES;
-            'cleanup2: {
-                break 'cleanup2;
-            }
             if status >= 0 {
                 FsRtlpRedirs += 1;
                 *Handle = device_handle;
@@ -369,9 +363,6 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
             ZwLoadDriver(&mut mup_string);
             status = FsRtlpOpenDev(&mut device_handle, w!("\\Device\\Mup").as_ptr() as PCWSTR);
             if status < 0 {
-                'cleanup3: {
-                    break 'cleanup3;
-                }
                 if status >= 0 {
                     FsRtlpRedirs += 1;
                     *Handle = device_handle;
@@ -395,9 +386,6 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
                 FsRtlpDRD.MailslotsSupported,
             );
             if status < 0 {
-                'cleanup4: {
-                    break 'cleanup4;
-                }
                 if status >= 0 {
                     FsRtlpRedirs += 1;
                     *Handle = device_handle;
@@ -420,9 +408,6 @@ pub unsafe extern "system" fn FsRtlRegisterUncProvider(
 
             status = FsRtlpOpenDev(&mut device_handle, w!("\\Device\\Mup").as_ptr() as PCWSTR);
             if status < 0 {
-                'cleanup5: {
-                    break 'cleanup5;
-                }
                 if status >= 0 {
                     FsRtlpRedirs += 1;
                     *Handle = device_handle;

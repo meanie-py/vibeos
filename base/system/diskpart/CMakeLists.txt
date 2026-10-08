@@ -63,3 +63,5 @@ target_link_libraries(diskpart conutils ${PSEH_LIB})
 add_importlibs(diskpart fmifs advapi32 msvcrt user32 kernel32 ntdll)
 
 add_cd_file(TARGET diskpart DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

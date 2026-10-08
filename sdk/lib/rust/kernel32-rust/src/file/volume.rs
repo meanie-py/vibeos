@@ -1145,9 +1145,9 @@ pub unsafe extern "system" fn FindNextVolumeW(
             b'{' as WCHAR,
         ];
         let link: *mut WCHAR = (data as *mut u8)
-            .offset((*data).MountPoints[(*data).Size as usize].SymbolicLinkNameOffset as isize)
+            .offset((*core::ptr::addr_of!((*data).MountPoints[0]).add((*data).Size as usize)).SymbolicLinkNameOffset as isize)
             as *mut WCHAR;
-        let size: DWORD = (*data).MountPoints[(*data).Size as usize].SymbolicLinkNameLength as DWORD;
+        let size: DWORD = (*core::ptr::addr_of!((*data).MountPoints[0]).add((*data).Size as usize)).SymbolicLinkNameLength as DWORD;
         (*data).Size += 1;
         /* skip non-volumes */
         if size < core::mem::size_of::<[WCHAR; 11]>() as DWORD

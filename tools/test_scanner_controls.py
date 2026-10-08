@@ -725,6 +725,55 @@ pub unsafe fn g(a: *const ANSI_STRING, out: *mut i8) {
 }
 """
 
+# scan_typed_byte_copy. Seeded from partmgr's FdoIoctlDiskGetDriveLayoutEx (2026-10-07):
+# `as *const _` inferred the struct from the source, so the byte count became a struct
+# count. GOOD: the fixed byte copy, a double cast that ends in u8, an element count, and an
+# uncast struct copy whose `...Size` names an entry count.
+_TYPEDBYTE_BAD = """\
+pub unsafe fn f(Irp: PIRP, size: usize) {
+    let mut layoutEx: *mut _DRIVE_LAYOUT_INFORMATION_EX = core::ptr::null_mut();
+    core::ptr::copy_nonoverlapping(layoutEx as *const _, (*Irp).AssociatedIrp.SystemBuffer as *mut _, size);
+}
+pub unsafe fn g(a: *const ENTRY, b: *mut ENTRY, n: usize) {
+    core::ptr::copy_nonoverlapping(a, b, n * core::mem::size_of::<ENTRY>());
+}
+"""
+_TYPEDBYTE_GOOD = """\
+pub unsafe fn f(Irp: PIRP, size: usize, h: *const HDR, out: *mut u8) {
+    let mut layoutEx: *mut _DRIVE_LAYOUT_INFORMATION_EX = core::ptr::null_mut();
+    core::ptr::copy_nonoverlapping(layoutEx as *const u8, (*Irp).AssociatedIrp.SystemBuffer as *mut u8, size);
+    core::ptr::copy_nonoverlapping(h as *const HDR as *const u8, out, (*h).HeaderSize as usize);
+}
+pub unsafe fn g(a: *const ENTRY, b: *mut ENTRY, OldListSize: u32) {
+    core::ptr::copy_nonoverlapping(a, b, OldListSize as usize);
+}
+"""
+
+# scan_noop_goto. Seeded from setuplib's ParseArcName (2026-10-07): `goto Quit;` became a
+# labeled block holding only its own break. GOOD: the label spans the skipped code.
+_NOOPGOTO_BAD = """\
+pub unsafe fn f(ramdisk: bool) -> i32 {
+    if ramdisk {
+        'quit: {
+            break 'quit;
+        }
+    }
+    parse_controller()
+}
+"""
+_NOOPGOTO_GOOD = """\
+// The fix replaced `'quit: { break 'quit; }` with a block that spans the parse.
+pub unsafe fn f(ramdisk: bool) -> i32 {
+    'quit: {
+        if ramdisk {
+            break 'quit;
+        }
+        parse_controller();
+    }
+    0
+}
+"""
+
 # The inline comments are load-bearing. tree-sitter makes a comment a CHILD of
 # the argument list, so counting it as an argument shifts every positional index
 # — the level check reads the comment (not DISPATCH_LEVEL) and the last-arg
@@ -2280,6 +2329,20 @@ CONTROLS: list[Control] = [
         good={"good.rs": _WIDEBYTE_GOOD},
     ),
     Control(
+        name="scan_typed_byte_copy",
+        script="tools/scan_typed_byte_copy.py",
+        argv=["--lint"],
+        bad={"bad.rs": _TYPEDBYTE_BAD},
+        good={"good.rs": _TYPEDBYTE_GOOD},
+    ),
+    Control(
+        name="scan_noop_goto",
+        script="tools/scan_noop_goto.py",
+        argv=["--lint"],
+        bad={"bad.rs": _NOOPGOTO_BAD},
+        good={"good.rs": _NOOPGOTO_GOOD},
+    ),
+    Control(
         name="scan_irql_balance",
         script="tools/scan_irql_balance.py",
         argv=["--lint"],
@@ -2328,6 +2391,13 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_pack_drift": (
+        "it maps every flipped module to its crate through the tree's own CMakeLists flip "
+        "comments, so a fixture directory has no module to resolve. Driven directly in "
+        "tools/test_scan_pack_drift.py against a temporary repo: it must flag diskpart's "
+        "unpacked PARTITION_SECTOR and must not flag a packed one or a struct outside a "
+        "pshpack region."
+    ),
     "scan_ptr_typedef_indirection": (
         "its pairing is body_audit's -- every module whose CMakeLists links a Rust crate, its "
         "flipped-out TUs (from the build's compiled-TU set) against its crates' sources -- so a "
