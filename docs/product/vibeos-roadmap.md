@@ -2076,18 +2076,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   characterised.
 
 - **`CmUnloadKey` removes a hive from the hive-file list AFTER closing its files and
-  unlinking it, reading an already-invalidated `LinkData` node. OPEN** (2026-09-22).
-  `config-rust/src/cmapi.rs` has `CmpUnlockRegistry(); CmpCloseHiveFiles(CmHive);
-  CmpRemoveFromHiveFileList(CmHive);` — the exact pre-fix order upstream corrected in
-  `396019984c9` ("[NTOS:CONFIG] Fix CmpRemoveFromHiveFileList() management", #9564, CORE-6491),
-  which is one of the 7 commits we are currently behind. Upstream's symptom is a hive that stays
-  listed under `HKLM\SYSTEM\CurrentControlSet\Control\hivelist` after being unloaded, seen in
-  1st-stage setup with `\Registry\Machine\USetup_Software`; the deduced `LinkName` can be read
-  from an invalidated `KeyNode.Flags`, so `KEY_COMP_NAME` is misread and the constructed path is
-  garbage. Note the full upstream fix is NOT just the two-line reorder: it caches the path in a
-  new `CMHIVE::HiveRootPath` member (a struct layout change, Vista+ semantics) and rewrites
-  `cmhvlist.c`. Found by the bug-oracle sweep while measuring how far behind upstream we are —
-  the newest 7 commits already contained a live hit against our Rust.
+  unlinking it, reading an already-invalidated `LinkData` node. FIXED 2026-09-26** (opened
+  2026-09-22; entry was stale — the fix landed four days after it was written and the entry was
+  never updated. Re-derived from the live tree 2026-10-08). Upstream's `396019984c9`
+  ("[NTOS:CONFIG] Fix CmpRemoveFromHiveFileList() management", #9564, CORE-6491) was ported
+  IN FULL, not just the two-line reorder:
+  - **The reorder** (`4490bf2afb3`, on master): `cmapi.rs` `CmUnloadKey` now runs
+    `CmpRemoveFromHiveFileList(CmHive)` BEFORE `CmpCloseHiveFiles(CmHive)` (cmapi.rs:1927/1929),
+    so the read happens while the node is still valid.
+  - **The cached-path member**: `CMHIVE::HiveRootPath: UNICODE_STRING` exists in the bindgen
+    layout (the Vista+ struct change); `CmpAddToHiveFileList` captures the path into it
+    (`cmhvlist.rs:339`), and `CmpRemoveFromHiveFileList` deletes the hivelist value via that
+    cached `HiveRootPath` (`cmhvlist.rs:361/391`) rather than re-deriving a `LinkName` from the
+    unlinked node. The in-code comment there documents the exact UAF this avoids.
+  Net: the invalidated-node read is gone by construction (the path no longer depends on node
+  validity at all), so the original symptom — `\Registry\Machine\USetup_Software` left listed
+  under `HKLM\SYSTEM\CurrentControlSet\Control\hivelist` after a clean unload — cannot recur.
+  Docs-only closure; no code change was needed.
 
 - **`NtUserScrollDC` probes three user RECTs and then dereferences them raw — BUGCHECK 0x1E.
   FIXED 2026-09-23**, verified by boot: `user32_apitest ScrollDC` now exits **code=0**, a clean
