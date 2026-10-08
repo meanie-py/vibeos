@@ -3852,6 +3852,22 @@ transcribe the literal from the C. It failed loudly only because an undeclared n
 compile — a preamble mistake that *is* spellable (a wrong length, a wrong flag in an initializer)
 has nothing catching it, so read assembled preambles against the C.
 
+**A c2rust-laid preamble FREEZES one arch's `#ifdef`.** Symptom: on every arch the module ships
+the values of whichever arch c2rust analysed, and it compiles everywhere. appwiz's `addons.c`
+picks `ARCH_STRING` ("x86" vs ""), `GECKO_SHA` and the installer file name by `#ifdef __i386__`,
+and the c2rust file-scope data carried the non-i386 branch on all three arches, which would have
+disabled the i386 Gecko install. The audit's `table UNVERIFIED (read by hand): addons_info` was
+the only signal. Fix: grep the TU for arch conditionals (`__i386__`, `_M_IX86`, `_WIN64`,
+`_M_ARM64`) and hand-port each affected constant as a `#[cfg(target_arch)]` pair. Treat an
+UNVERIFIED table in a TU with arch conditionals as a per-arch bug until shown otherwise.
+
+**`sizeof(TOKEN)` can come back as a bare `TOKEN`.** The fact seal deliberately seals a type
+name inside `sizeof(...)` (over-seal a type, never under-seal a value), and expects
+`size_of::<TOKEN>()` back. Haiku 5.5 returned `psp.dwSize = TOKEN;` twice in appwiz's
+`createlink.c`, which unsealed to `psp.dwSize = PROPSHEETPAGE;`. A type is never a value, so
+rustc always rejects it (E0425), but the fix is to restore the `size_of`, not to cast. Count
+`sizeof` in the C against `size_of` in the Rust per file; the difference is the dropped set.
+
 **When a worker is rejected, read the rejection before re-buying it — twice tonight the audit
 had caught a genuine semantic bug, not a formatting one.** `CNetFolderBackgroundMenuCB` reused
 the `DestroyMenu` token for the tail call to `SHELL32_DefaultContextMenuCallBack`, which would
