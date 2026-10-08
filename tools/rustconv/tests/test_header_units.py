@@ -139,6 +139,7 @@ def test_enum_aliases_read_the_substrate_island_the_types_glob(tmp_path):
 
 _SYS_LIB = """
 pub mod base;
+pub mod interlocked;
 #[cfg(feature = "inline_exports")]
 pub mod inline;
 #[cfg(feature = "never_default")]
@@ -168,7 +169,9 @@ def _fake_sys(tmp_path):
         "inline_exports = []\nnever_default = []\n"
     )
     (sys_src / "lib.rs").write_text(_SYS_LIB)
-    (sys_src / "base.rs").write_text(
+    # `base` is ntoskrnl's Rust-flavoured core, never a header port: ignored entirely.
+    (sys_src / "base.rs").write_text("pub unsafe fn OnlyInBase() {}\n")
+    (sys_src / "interlocked.rs").write_text(
         "pub unsafe fn InsertTailList(h: *mut u8, e: *mut u8) {}\n"
         '#[cfg(not(target_arch = "x86"))]\n'
         'extern "system" {\n    #[link_name = "X"]\n'
@@ -193,9 +196,9 @@ def test_substrate_helpers_are_found_per_arch_and_rendered_as_imports(tmp_path):
 
     sys_src = _fake_sys(tmp_path)
     names = {"InsertTailList", "KeQuerySystemTime", "InterlockedPushEntrySList"}
-    names |= {"Hidden", "NotAHelper"}
+    names |= {"Hidden", "NotAHelper", "OnlyInBase"}
     found, why = pr.substrate_helpers(names, sys_src, "ntkrnl_sys")
-    # inline:: beats base for the same name; i386's KeQuerySystemTime comes from the glob.
+    # inline:: beats another module for the same name; i386's KeQuerySystemTime comes from the glob.
     assert found["InsertTailList"] == dict.fromkeys(pr.ARCHES, "inline::common")
     assert found["KeQuerySystemTime"] == {
         "x86": None,
@@ -203,9 +206,10 @@ def test_substrate_helpers_are_found_per_arch_and_rendered_as_imports(tmp_path):
         "aarch64": "inline::ke",
     }
     # The extern-block declaration counts, under the block's own cfg.
-    assert found["InterlockedPushEntrySList"] == dict.fromkeys(pr.ARCHES, "base")
+    assert found["InterlockedPushEntrySList"] == dict.fromkeys(pr.ARCHES, "interlocked")
     # Behind a non-default feature, or a method of an impl: not a helper at all.
     assert "Hidden" not in found and "NotAHelper" not in found and not why
+    assert "OnlyInBase" not in found
     block = pr.render_substrate(found, "ntkrnl_sys")
     assert (
         '#[cfg(not(target_arch = "x86"))]\npub use ntkrnl_sys::inline::ke::KeQuerySystemTime;'
