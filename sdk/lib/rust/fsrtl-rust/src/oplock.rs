@@ -1093,8 +1093,14 @@ pub unsafe extern "system" fn FsRtlUninitializeOplock(Oplock: POPLOCK) {
 
     ExAcquireFastMutexUnsafe((*int_oplock).IntLock);
 
+    // Both walks below capture the next link BEFORE the entry is consumed. The C reads
+    // `NextEntry->Flink` in the for-increment, after `ExFreePoolWithTag(WaitCtx)` and after
+    // `IoCompleteRequest(Irp)` -- each of which can release the memory `NextEntry` points
+    // into. That is a use-after-free in upstream oplock.c; this is the same bug
+    // RtlDeleteOwnersRanges shipped, and it bugchecked kmtest RtlRangeList.
     let mut next_entry = (*int_oplock).WaitListHead.Flink;
     while next_entry != core::ptr::addr_of_mut!((*int_oplock).WaitListHead) as PLIST_ENTRY {
+        let following = (*next_entry).Flink;
         let wait_ctx = ((next_entry as usize) - core::mem::offset_of!(WAIT_CONTEXT, WaitListEntry)) as PWAIT_CONTEXT;
         let irp = (*wait_ctx).Irp;
 
@@ -1108,11 +1114,12 @@ pub unsafe extern "system" fn FsRtlUninitializeOplock(Oplock: POPLOCK) {
 
         ExFreePoolWithTag(wait_ctx as PVOID, TAG_OPLOCK);
 
-        next_entry = (*next_entry).Flink;
+        next_entry = following;
     }
 
     next_entry = (*int_oplock).SharedListHead.Flink;
     while next_entry != core::ptr::addr_of_mut!((*int_oplock).SharedListHead) as PLIST_ENTRY {
+        let following = (*next_entry).Flink;
         let irp = ((next_entry as usize)
             - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry))
             as PIRP;
@@ -1130,7 +1137,7 @@ pub unsafe extern "system" fn FsRtlUninitializeOplock(Oplock: POPLOCK) {
         (*irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
         IoCompleteRequest(irp, IO_DISK_INCREMENT);
 
-        next_entry = (*next_entry).Flink;
+        next_entry = following;
     }
 
     let irp = (*int_oplock).ExclusiveIrp;

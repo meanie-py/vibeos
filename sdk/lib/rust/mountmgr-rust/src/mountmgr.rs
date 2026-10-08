@@ -1676,7 +1676,13 @@ pub unsafe extern "C" fn MountMgrMountedDeviceRemoval(
 
                 DeviceEntry = (*CurrentDevice).AssociatedDevicesHead.Flink;
                 while DeviceEntry != core::ptr::addr_of_mut!((*CurrentDevice).AssociatedDevicesHead) {
-                    AssociatedDevice = (NextEntry as usize)
+                    // DIVERGES from mountmgr.c, which takes CONTAINING_RECORD of `NextEntry` --
+                    // the OUTER DeviceListHead link, i.e. a DEVICE_INFORMATION read as an
+                    // ASSOCIATED_DEVICE_ENTRY -- so the owner test compared garbage and a match
+                    // would unlink and free a live DEVICE_INFORMATION. This loop walks
+                    // `DeviceEntry`; the record is taken from it before it advances, so the
+                    // free below never touches the link it continues from.
+                    AssociatedDevice = (DeviceEntry as usize)
                         .wrapping_sub(core::mem::offset_of!(ASSOCIATED_DEVICE_ENTRY, AssociatedDevicesEntry))
                         as *mut ASSOCIATED_DEVICE_ENTRY;
                     DeviceEntry = (*DeviceEntry).Flink;

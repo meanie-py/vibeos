@@ -423,7 +423,7 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
 | 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). **Pi 5 SD reads** (2026-10-06: the same `sdhc.sys` on the BCM2712's SDC0, ~11 MB/s; writes enabled but untested, its card holds the bench stager). **Pi 5 USB mass storage reads and writes** (2026-10-07, over RP1's xHCI: the Pico's served FAT image reads as F:; a 1.4 MB copy to a Ventoy stick's FAT partition reads back byte-identical from Linux on the same board, SHA-256 checked). Next: boot from the card instead of the RAM disk |
 | 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC; shared vectors chain since 2026-10-07, for the Pi 5's two RP1 xHCIs on one SPI) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
-| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). Next: its interrupts, then GEM and I217. The Pi 5's GEM is not in its firmware's ACPI tables at all (`docs/engineering/pi5-acpi/dsdt.dsl`), so it needs describing before a driver can find it |
+| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). **Pi 5 GEM works** (2026-10-08: the HAL synthesizes `VIBEOS\RP1GEM` because the firmware's ACPI omits it; netstack's `gem.rs`, polled; 1 Gb/s link, DHCP, ping, 1 MiB TCP echo intact at 60 KiB/s, the same as GENET). Its MAC is the board's own, from the VideoCore mailbox. Owed on the GEM: interrupts (RP1 source 6 is not routed under UEFI: `MSIX_CFG(6)` is 0). Next: interrupts for both, then I217 |
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
 | 10f | **Maybe: bring legacy BIOS boot back (loader only)** for i386 and amd64. The BIOS prune (`85102c111a3`..`5ca4d482d32`, 2026-05-29) assumed BIOS no longer mattered. That holds for amd64 PCs from about 2012 on, but almost every real 32-bit PC is BIOS-only, so without it i386 boots on no physical hardware; SeaBIOS is also the default in plain QEMU and Proxmox, and on coreboot/Libreboot machines such as the owner's OptiPlex 9020 (a candidate x64 bench: COM1, NVMe boot through SeaBIOS). **Scope: the loader, not the emulator.** The PC-AT machine layer survives in `freeldr-rust` (`machpc`, `pcmem`, `pcdisk`, `pcvesa`, `pchw`, `pxe`); restore the real-mode entry (`arch/realmode/*`) and `pcat.cmake` from git, wire `freeldr.sys` into the cargo-driven loader link (`ab763550984`), and repair four months of drift in the BIOS-only paths. The loader hands the kernel a VESA framebuffer like UEFI's GOP one, so fast486, HAL x86bios and videoprt INT10 stay retired. **Add a SeaBIOS smoke cell for i386 and amd64**, or it rots again. Quick experiment first: OpenCore's OpenDuet (UEFI loaded from disk by a legacy BIOS) runs today's `uefildr.efi` with no OS change. | — | M | considered 2026-10-05 |
 
@@ -610,13 +610,33 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   same boot steps passed four other times. Arm special pool (`--tripwire SPECIALPOOL=*`) on a
   `farm` of modrun boots to catch the writer.
 
-- **FAT file dates show as 01/01/1601 in `dir`** (OPEN, 2026-10-07, Pi 5). A FAT image made by
-  mtools, its HELLO.TXT dated 2026-10-07 21:54 (`mdir` agrees), listed in VibeOS cmd as
-  `01/01/1601 12:00 AM`: a zero FILETIME. The volume label, serial, size and contents were
-  right. Every file shows it, the Ventoy stick's and the RAM disk's (`X:`) too. Writing is
-  fine: a file VibeOS copied to the stick has its real time when Linux reads it. So the fault
-  is on the read side: fastfat's directory query or cmd's formatting. Not yet narrowed, nor
-  whether QEMU shows it.
+- **Pi 5: ping loses 10-30% and spikes to hundreds of ms while the serial console is
+  saturated** (OPEN, 2026-10-08). On a settled desktop the debug UART runs at ~10.6 KB/s of
+  115200's ~11.5: `rundll32.exe` (newdev's client-side install) is spawned again and again for
+  devices it finds no driver for (`DevInstallW failed with error 259`, ~180 in one window), and
+  every spawn prints the full `[PS] PspCreateProcess`/`PspUserThreadStartup` trace, alongside
+  repeated `[FASTFAT] FatMountVolume` lines. A print on real hardware blocks its CPU until the
+  UART drains (field manual, "A UART print inside a trap costs"). The GEM itself counts no receive
+  errors (no FCS, buffer or overrun errors over the same window), and some boots ping 60/60.
+  Serving the Pico's disk did not lower the rate, so the empty disk is not the source. Not yet
+  shown: that the console is what drops the frames. Two fixes owed either way: stop the install
+  retry loop, and gate the per-thread `[PS]` tracing. Where the loop comes from is not settled:
+  umpnpmgr's queueing (`event.rs` ProcessDeviceInstallEvent) and its skip test (a `Class` value
+  or CONFIGFLAG_FAILEDINSTALL) match the C, and the kernel queues GUID_DEVICE_ENUMERATED only
+  when it initializes a devnode (`devaction.c` ~1340, `plugplay.c` ~375). So either devnodes are
+  being recreated, or newdev fails (error 259, no driver) without setting FAILEDINSTALL and
+  something re-queues. Next step: log the device ID on each `InstallDevice` call. QEMU arm64
+  shows the same failures (8 `DevInstallW failed` in one smoke boot), only fewer.
+
+- **FAT file dates showed as 01/01/1601 in `dir`** (FIXED 2026-10-08). fastfat's directory
+  query passed only the time half of the FAT stamp to its time converter, so the date read as
+  zero. `test_xhci.py::test_usb_stick_dir_dates` covers it. Owed from the same hunt: the crate
+  re-declares its own functions in `extern` blocks hundreds of times (13,141 across 104 crates),
+  which hides type mismatches from rustc; converting them to `crate::` imports, as was done here
+  for timesup, is the fix. Field manual, "An `extern` declaration for a symbol YOUR OWN CRATE
+  defines". Also owed: a file VibeOS wrote from the **Pi 4** (`REDIR.TXT` on the bench stick)
+  carries the date 08/05/2097. The same write path stamps the right year in QEMU, so suspect
+  the Pi 4's clock (no RTC; whatever UEFI hands over) before fastfat.
 
 - **arm64: keystrokes sent through QMP to the default virtio keyboard do not reach the
   desktop's windows** (OPEN, 2026-10-06, seen while gating nvme.sys). On a quiet arm64 boot,
@@ -5328,18 +5348,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     noted in the sweep list since 07-25. (2) setup.exe's registration burst starving the
     test's 50 ms races, proven per-thread by `[FMUTEX-RAN]`. Field manual: the setup
     paragraph under "A kmtest count drift on a UP guest is the boot-time ladder".
-  - **Conformance BUGCHECK 0x1E inside `RtlRangeList` — OPEN, intermittent, all three arches,
-    since 2026-10-06.** About 14 archived hits: `fails/auto/*-conformance-*-A_bugcheck_0x0000001E`
-    whose last `[KMTEST:BEGIN]` is RtlRangeList, plus 1 of 5 amd64 sweeps on 2026-10-08. It kills
-    the sweep, so every test after it loses its verdict. amd64 (`20261008-024024-fz8qe3my`): the
-    exception address is `ntoskrnl+0x185E58`, inside `fsrtl_rust::oplock::
-    FsRtlAcknowledgeOplockBreak`, on its NULL-oplock path. The same offset appears across four
-    master builds. The index matches the PE exports. The faulting thread's stack holds the
-    test's own data (`MyUserData2`, its `ok()` strings), so it is the test thread, not a
-    bystander. But nothing the test calls reaches oplock code: its exports resolve correctly,
-    and `RtlFindRange`/`RtlIsRangeAvailable` match the NDK signatures. Next step is dynamic:
-    loop RtlRangeList alone (`conformance_probe --candidates RtlRangeList`, repeated), then
-    `--tripwire SPECIALPOOL=*` or a GDB break on that PC, and get a real backtrace.
+  - **Conformance BUGCHECK 0x1E inside `RtlRangeList` — ROOT-CAUSED/FIXED 2026-10-08,
+    all three arches.** A use-after-free in the Rust `RtlDeleteOwnersRanges`
+    (`rtl-rangelist`): it read `(*Entry).Flink` after `RtlpFreeMemory` had freed that entry.
+    Upstream's C captures `Next` first; that fix arrived in #9248 alongside the test
+    (`TestDeleteOwnersRanges`), after the June port. It faulted only when the freed block was
+    reused before the read. arm64 FaultVA `0x11FFFFFA80004241` is a heap pointer read one byte
+    off, plus 0x28. All 15 archived hits (10-06 to 10-08), resolved against their own
+    `kernels_dir` index, land on the same list-walk load. The earlier "fsrtl oplock" reading
+    was a symbolication error: the crash builds' addresses had been looked up in a LATER
+    build's index. `addr2sym.sh` silently treated an unknown flag as an address and fell back
+    to the live index; it now has `--index <tsv>` and refuses unknown options. A sweep for the
+    same shape found two more: the same use-after-free in both of `FsRtlUninitializeOplock`'s
+    walks (upstream oplock.c has it too), and a `CONTAINING_RECORD` of the wrong cursor in
+    mountmgr's associated-device removal (also upstream). The 10-06 onset is unexplained; it
+    is presumably pool-reuse timing. Verified by one green sweep per arch; the evidence is the
+    code and the 15/15 hits, not that one sweep.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`.

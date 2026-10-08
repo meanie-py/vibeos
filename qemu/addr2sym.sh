@@ -2,7 +2,7 @@
 # Offline address -> symbol lookup against a cached kernel index.
 #
 # Usage:
-#   qemu/addr2sym.sh <arch> <addr> [<addr>...]
+#   qemu/addr2sym.sh <arch> [--reloc <hex> | --kernel-base <hex>] [--mp | --index <tsv>] <addr>...
 #
 # Reads qemu/symbols-<arch>.tsv (built by build-index.sh). Output one line
 # per address: <addr>\t<symbol>+<offset>\t<source>
@@ -24,6 +24,7 @@ arch_validate "$ARCH"
 # triage where you only have a hex address from a serial log.
 RELOC=0
 FLAVOR=""
+INDEX=""
 while :; do
     case "${1:-}" in
         --reloc)
@@ -49,13 +50,32 @@ while :; do
         # function for every MP crash — quietly, since some symbol always sorts
         # below the address. Callers that know which kernel booted must say so.
         --mp) FLAVOR="-mp"; shift ;;
+        # --index <tsv>: resolve against a specific index instead of this tree's
+        # qemu/symbols-<arch>.tsv. A crash from another build (a farm archive under
+        # ~/vibeos-flake-farm/kernels/<sha>/, named by the run's manifest.json
+        # kernels_dir) must be read against ITS index: the live one names some
+        # unrelated function at every address, and reads exactly like a right answer.
+        --index)
+            INDEX="${2:-}"
+            shift 2
+            [ -n "$INDEX" ] || die "--index requires a path to a symbols tsv"
+            [ -f "$INDEX" ] || die "--index: no such file: $INDEX"
+            ;;
+        # An unknown flag used to fall through to the address list and be looked up as
+        # an address, while the lookup itself ran against the default index. A
+        # misspelled index option thereby produced plausible wrong symbols.
+        -*) die "unknown option: $1" ;;
         *) break ;;
     esac
 done
 
-[ "$#" -ge 1 ] || die "usage: addr2sym.sh <arch> [--reloc <hex> | --kernel-base <hex>] [--mp] <addr> [<addr>...]"
+[ "$#" -ge 1 ] || die "usage: addr2sym.sh <arch> [--reloc <hex> | --kernel-base <hex>] [--mp | --index <tsv>] <addr> [<addr>...]"
 
-INDEX="$QEMU_DIR/symbols-$ARCH$FLAVOR.tsv"
+if [ -n "$INDEX" ]; then
+    [ -z "$FLAVOR" ] || die "pass --index OR --mp, not both (--index names the exact tsv)"
+else
+    INDEX="$QEMU_DIR/symbols-$ARCH$FLAVOR.tsv"
+fi
 if [ ! -f "$INDEX" ]; then
     if [ -n "$FLAVOR" ]; then
         # Never silently fall back to the UP index: a wrong symbol is worse than
@@ -74,6 +94,7 @@ INDEX_WIDTH=$(awk -F'\t' '$1 != "" {print length($1); exit}' "$INDEX")
 for raw in "$@"; do
     addr="${raw#0x}"; addr="${addr#0X}"
     addr="$(echo -n "$addr" | tr '[:upper:]' '[:lower:]')"
+    [[ "$addr" =~ ^[0-9a-f]+$ ]] || die "not a hex address: $raw"
     # Apply --reloc subtraction (in Python because bash arithmetic is 64-bit
     # signed and chokes on values like 0xfffff80000000000).
     if [ "$RELOC" != "0" ]; then
