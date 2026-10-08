@@ -144,36 +144,36 @@ const TX_DESC_QTAG: u32 = 0x3f << 7;
 const TX_DESC_CRC: u32 = 1 << 6;
 
 // PHY (IEEE 802.3 clause 22, plus the BCM54213PE's shadow registers).
-const MII_BMCR: u8 = 0x00;
-const MII_BMSR: u8 = 0x01;
-const MII_PHYIDR1: u8 = 0x02;
-const MII_PHYIDR2: u8 = 0x03;
-const MII_ANAR: u8 = 0x04;
-const MII_ANLPAR: u8 = 0x05;
-const MII_GBCR: u8 = 0x09;
-const MII_GBSR: u8 = 0x0a;
-const BMCR_RESET: u16 = 1 << 15;
-const BMCR_ANE: u16 = 1 << 12;
-const BMCR_RESTART_AN: u16 = 1 << 9;
-const BMSR_ANEG_COMPLETE: u16 = 1 << 5;
-const BMSR_LINK: u16 = 1 << 2;
-const ANAR_10_100_ALL: u16 = 0x01e0; // 100FDX | 100 | 10FDX | 10
-const ANAR_100: u16 = 0x0180;
-const ANAR_100_FDX: u16 = 0x0100;
-const ANAR_10_FDX: u16 = 0x0040;
-const GBCR_1000_ALL: u16 = 0x0300; // 1000BASE-T FDX | HDX
-const GBCR_1000_FDX: u16 = 0x0200;
-const BRGPHY_AUXCTL: u8 = 0x18;
-const AUXCTL_SHADOW_MISC: u16 = 0x07;
-const AUXCTL_MISC_READ_SHIFT: u16 = 12;
-const AUXCTL_MISC_DATA_MASK: u16 = 0x7ff8;
-const AUXCTL_MISC_WRITE_EN: u16 = 0x8000;
-const AUXCTL_MISC_RGMII_SKEW_EN: u16 = 0x0200;
-const BRGPHY_SHADOW_1C: u8 = 0x1c;
-const SHADOW_1C_WRITE_EN: u16 = 0x8000;
-const SHADOW_1C_CLK_CTRL: u16 = 0x03 << 10;
-const SHADOW_1C_DATA_MASK: u16 = 0x03ff;
-const SHADOW_1C_GTXCLK_EN: u16 = 0x0200;
+pub(crate) const MII_BMCR: u8 = 0x00;
+pub(crate) const MII_BMSR: u8 = 0x01;
+pub(crate) const MII_PHYIDR1: u8 = 0x02;
+pub(crate) const MII_PHYIDR2: u8 = 0x03;
+pub(crate) const MII_ANAR: u8 = 0x04;
+pub(crate) const MII_ANLPAR: u8 = 0x05;
+pub(crate) const MII_GBCR: u8 = 0x09;
+pub(crate) const MII_GBSR: u8 = 0x0a;
+pub(crate) const BMCR_RESET: u16 = 1 << 15;
+pub(crate) const BMCR_ANE: u16 = 1 << 12;
+pub(crate) const BMCR_RESTART_AN: u16 = 1 << 9;
+pub(crate) const BMSR_ANEG_COMPLETE: u16 = 1 << 5;
+pub(crate) const BMSR_LINK: u16 = 1 << 2;
+pub(crate) const ANAR_10_100_ALL: u16 = 0x01e0; // 100FDX | 100 | 10FDX | 10
+pub(crate) const ANAR_100: u16 = 0x0180;
+pub(crate) const ANAR_100_FDX: u16 = 0x0100;
+pub(crate) const ANAR_10_FDX: u16 = 0x0040;
+pub(crate) const GBCR_1000_ALL: u16 = 0x0300; // 1000BASE-T FDX | HDX
+pub(crate) const GBCR_1000_FDX: u16 = 0x0200;
+pub(crate) const BRGPHY_AUXCTL: u8 = 0x18;
+pub(crate) const AUXCTL_SHADOW_MISC: u16 = 0x07;
+pub(crate) const AUXCTL_MISC_READ_SHIFT: u16 = 12;
+pub(crate) const AUXCTL_MISC_DATA_MASK: u16 = 0x7ff8;
+pub(crate) const AUXCTL_MISC_WRITE_EN: u16 = 0x8000;
+pub(crate) const AUXCTL_MISC_RGMII_SKEW_EN: u16 = 0x0200;
+pub(crate) const BRGPHY_SHADOW_1C: u8 = 0x1c;
+pub(crate) const SHADOW_1C_WRITE_EN: u16 = 0x8000;
+pub(crate) const SHADOW_1C_CLK_CTRL: u16 = 0x03 << 10;
+pub(crate) const SHADOW_1C_DATA_MASK: u16 = 0x03ff;
+pub(crate) const SHADOW_1C_GTXCLK_EN: u16 = 0x0200;
 
 // ------------------------------------------------------------------- layout
 /// Every hardware descriptor owns a buffer; a stride of 2 KiB keeps each one
@@ -181,14 +181,14 @@ const SHADOW_1C_GTXCLK_EN: u16 = 0x0200;
 const BUF_SIZE: usize = 2048;
 /// RX buffer length programmed into the ring (the firmware's GENET_MAX_PACKET_SIZE).
 const RX_BUF_LEN: u32 = 1536;
-const ETH_MAX_FRAME: usize = 1518;
+pub(crate) const ETH_MAX_FRAME: usize = 1518;
 /// The bus can address only the low 3 GiB (the firmware caps RAM there too).
 const DMA_LIMIT: u64 = 0xBFFF_FFFF;
 const LINK_WAIT_MS: i64 = 5000;
 const LINK_POLL_MS: i64 = 500;
 
 #[inline]
-fn phys_li(v: u64) -> LARGE_INTEGER {
+pub(crate) fn phys_li(v: u64) -> LARGE_INTEGER {
     let mut p: LARGE_INTEGER = unsafe { core::mem::zeroed() };
     p.QuadPart = v as i64;
     p
@@ -199,7 +199,7 @@ fn phys_li(v: u64) -> LARGE_INTEGER {
 const DCACHE_LINE: usize = 64;
 
 /// Clean (write back) [va, va+len) so the device reads what the CPU wrote.
-unsafe fn dma_clean(va: *const u8, len: usize) {
+pub(crate) unsafe fn dma_clean(va: *const u8, len: usize) {
     #[cfg(target_arch = "aarch64")]
     {
         let mut p = (va as usize) & !(DCACHE_LINE - 1);
@@ -215,7 +215,7 @@ unsafe fn dma_clean(va: *const u8, len: usize) {
 
 /// Invalidate [va, va+len) before reading what the device wrote. The CPU never
 /// writes an RX buffer after setup, so no dirty line can be lost here.
-unsafe fn dma_invalidate(va: *const u8, len: usize) {
+pub(crate) unsafe fn dma_invalidate(va: *const u8, len: usize) {
     #[cfg(target_arch = "aarch64")]
     {
         let mut p = (va as usize) & !(DCACHE_LINE - 1);
@@ -230,7 +230,7 @@ unsafe fn dma_invalidate(va: *const u8, len: usize) {
 }
 
 /// One physically contiguous, zeroed, cleaned buffer arena below DMA_LIMIT.
-unsafe fn dma_arena(bytes: usize) -> Option<(*mut u8, u64)> {
+pub(crate) unsafe fn dma_arena(bytes: usize) -> Option<(*mut u8, u64)> {
     let va = MmAllocateContiguousMemorySpecifyCache(
         bytes as _,
         phys_li(0),
