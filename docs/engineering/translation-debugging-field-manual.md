@@ -11014,6 +11014,19 @@ budget. Do not "fix" this by lowering the boot marker; the marker is what proves
 came up. Recompute the scale from a stashed UP value, not from the current one, or a config
 reused across a retry loop multiplies each time.
 
+### On a GICv3, every IPI of the early-SMP window is lost until the distributor is enabled
+**Symptom:** arm64 `--gic 3 --smp 4` hangs right after `KeStartAllProcessors: 4 processor(s)
+online` with `[IPI] KeIpiGenericCall stuck in arrival: ... TargetSet=e`. Every AP printed
+`[GIC] CPUn percpu (GICv3): ... awake=1 SRE=1 SGI0 enabled=1`, so each redistributor was found,
+woken and had the IPI enabled. **Cause:** a GICv3 distributor's group enables (GICD_CTLR
+EnableGrp1/ARE) gate SGIs and PPIs as well as SPIs, even though SGIs and PPIs live in the
+redistributors. UEFI leaves the distributor disabled at ExitBootServices, and the BSP turns
+it on only at clock init (Phase 1), well after the AP self-test IPI. The GICv2 path never hit
+this because each AP's per-CPU init already wrote GICD_CTLR. **Fix:** per-CPU init enables
+the distributor (idempotent, through the loader's identity map of its first page), and the
+BSP's affinity is recorded at HalInitSystem, so an early IPI to it pends instead of having
+no route (`hal-rust arm64/gic3.rs`).
+
 ### Dropped `#ifdef CONFIG_SMP` blocks are TIME BOMBS, not dead code `[§9.95]`
 `KiRetireDpcList`'s SMP-only deferred-ready drain was dropped in translation, so **an idle CPU
 re-HLTs with runnable threads parked on its own `DeferredReadyListHead`** → `KeGuardedMutex`

@@ -64,10 +64,14 @@ stub first). Real subsystem work, not stubs:
    `MSISupported` under its device key; pci.sys adds one message requirement per table
    entry (in FILTER_RESOURCE_REQUIREMENTS, since ReactOS queries requirements before
    AddDevice); the HAL translates each into a vector (x86: an APIC vector with no IOAPIC
-   pin; arm64: a GICv2m SPI) and supplies the address/data pci.sys writes into the table;
-   `IoConnectInterruptEx` connects message-based, or falls back to the line. Owed: plain
-   MSI (capability 05h), the GICv3 ITS backend (Graviton), freeing vectors on removal,
-   and `CONNECT_MESSAGE_BASED_PASSIVE`.
+   pin; arm64: a GICv2m SPI, or on a GICv3 an LPI that the ITS translates from the
+   device's requester ID through the IORT) and supplies the address/data pci.sys writes
+   into the table; `IoConnectInterruptEx` connects message-based, or falls back to the
+   line. The arm64 HAL drives a GICv3 (Graviton's) as well as the Pi's GICv2 since
+   2026-10-07: `smoke --arch arm64 --gic 3 [--nvme] [--smp N]`. Owed: plain MSI
+   (capability 05h), freeing vectors on removal, `CONNECT_MESSAGE_BASED_PASSIVE`, and on
+   the ITS a two-level device table, more than one ITS, and LPIs routed anywhere but
+   CPU0.
 2. **Write-combined mappings** (`MmWriteCombined` through a correctly programmed PAT).
    Getting it wrong is mostly a performance problem, but it can show up as visible
    corruption.

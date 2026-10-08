@@ -40,7 +40,9 @@ extern "system" {
     fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN;
     fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT);
     // hal-rust message.rs: the address/data that raises a message vector.
-    fn HalVibeosMessageTarget(Vector: ULONG, Address: *mut u64, Data: *mut ULONG) -> BOOLEAN;
+    /// `RequesterId` u32::MAX: unknown here; pci.sys bound each vector to its device
+    /// when it programmed the table, which happened at START, before this.
+    fn HalVibeosMessageTarget(Vector: ULONG, RequesterId: ULONG, Address: *mut u64, Data: *mut ULONG) -> BOOLEAN;
 }
 
 const TAG_IO_INTERRUPT: ULONG = 0x6E696F49;
@@ -371,7 +373,7 @@ unsafe fn IopConnectInterruptExMessageBased(Parameters: PIO_CONNECT_INTERRUPT_PA
         e.Mode = LATCHED;
         e.Polarity = 0; // InterruptPolarityUnknown
         let mut address = 0u64;
-        if HalVibeosMessageTarget(e.Vector, &mut address, &mut e.MessageData) != 0 {
+        if HalVibeosMessageTarget(e.Vector, u32::MAX, &mut address, &mut e.MessageData) != 0 {
             e.MessageAddress.QuadPart = address as i64;
         }
         let status = IoConnectInterrupt(
