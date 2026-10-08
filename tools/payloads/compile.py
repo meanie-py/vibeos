@@ -15,6 +15,14 @@ Usage:
     compile.py list
         -> available payload names
 
+Spec keys beyond `binaries: [{src, dest, root}]` and `test:`:
+  * a binaries entry's `build_arch`: the arch its `{arch}` src is built for, when it is
+    not the media's (appstorm64 stages the AMD64 appstorm onto arm64 media);
+  * `guest_sets: [{build_dir, dest, roots}]`: programs out of ANOTHER arch's build tree
+    plus their complete import closure (tools/fex/wow64-closure.py), staged under
+    reactos/<dest> (the x86-64 guest's sysamd64);
+  * `test.vm_memory` (read by cli/smoke.py, not here): the guest RAM the payload needs.
+
 Fail-loud rules (the house rule — no silent degradation):
   * unknown payload name, missing payload.yaml, malformed spec  -> exit 1
   * a spec'd src file missing on disk                           -> exit 1
@@ -79,9 +87,59 @@ def load_spec(name: str) -> dict:
         dest = str(b["dest"])
         if dest.startswith(("/", "\\")) or ".." in dest:
             die(f"{spec_path}: dest must be a relative guest path: {dest!r}")
+        if b.get("build_arch", ARCHES[0]) not in ARCHES:
+            die(f"{spec_path}: build_arch must be one of {ARCHES}: {b!r}")
         if b.get("root", "reactos") not in ("reactos", "image"):
             die(f"{spec_path}: root must be `reactos` (default) or `image`: {b!r}")
+    sets = spec.get("guest_sets", [])
+    if not isinstance(sets, list):
+        die(f"{spec_path}: `guest_sets` must be a list")
+    for g in sets:
+        if (
+            not isinstance(g, dict)
+            or not isinstance(g.get("build_dir"), str)
+            or not isinstance(g.get("dest"), str)
+            or not isinstance(g.get("roots"), list)
+            or not g["roots"]
+        ):
+            die(
+                f"{spec_path}: each guest_sets entry needs `build_dir`, `dest` and a non-empty `roots`: {g!r}"
+            )
+        if g["dest"].startswith(("/", "\\")) or ".." in g["dest"]:
+            die(f"{spec_path}: guest_sets dest must be a relative guest path: {g['dest']!r}")
     return spec
+
+
+def guest_set(name: str, g: dict) -> dict[str, Path]:
+    """A guest_sets entry -> {file name: host path}: its root programs and their
+    COMPLETE import closure out of another arch's build tree (a guest process's
+    DLLs, e.g. the amd64 set an x86-64 guest on arm64 loads from sysamd64).
+    tools/fex/wow64-closure.py computes it and refuses a partial closure, for the
+    reason it spells out: a half-bound module crashes at first call."""
+    build_dir = REPO / g["build_dir"]
+    if not build_dir.is_dir():
+        die(f"payload {name!r}: guest set needs {build_dir} (./vibeos-cli build --arch ...)")
+    cp = subprocess.run(
+        [
+            sys.executable,
+            str(REPO / "tools/fex/wow64-closure.py"),
+            "--include-prestaged",
+            "--emit-roots",
+            "--build-dir",
+            str(build_dir),
+            *[str(r) for r in g["roots"]],
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if cp.returncode != 0:
+        die(f"payload {name!r}: guest set closure failed:\n{cp.stderr.strip()}")
+    files: dict[str, Path] = {}
+    for line in cp.stdout.splitlines():
+        if line.strip():
+            fname, path = line.split("\t", 1)
+            files[fname] = Path(path)
+    return files
 
 
 def manifest(names: list[str], arch: str) -> dict[str, Path]:
@@ -97,7 +155,7 @@ def manifest(names: list[str], arch: str) -> dict[str, Path]:
             die(f"payload {name!r} does not support arch {arch!r} (spec says arches: {arches})")
         hint = spec.get("build_hint", "").format(arch=arch)
         for b in spec["binaries"]:
-            src = (REPO / str(b["src"]).format(arch=arch)).resolve()
+            src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
             # root: reactos (default) grafts under reactos/; root: image grafts
             # at the media root (e.g. the Profiles/.../StartUp autostart folder).
             prefix = "reactos/" if b.get("root", "reactos") == "reactos" else ""
@@ -114,6 +172,16 @@ def manifest(names: list[str], arch: str) -> dict[str, Path]:
                 )
             entries[dest] = src
             owner[dest] = name
+        for g in spec.get("guest_sets", []):
+            for fname, src in guest_set(name, g).items():
+                dest = "reactos/" + g["dest"].replace("\\", "/").strip("/") + "/" + fname
+                if dest in entries and entries[dest] != src:
+                    die(
+                        f"dest collision on {dest!r}: payloads "
+                        f"{owner[dest]!r} and {name!r} both graft it"
+                    )
+                entries[dest] = src
+                owner[dest] = name
     return entries
 
 
@@ -141,7 +209,7 @@ def stale_binaries(name: str, arch: str) -> list[Path]:
     resolved_srcs = {p.resolve() for p in srcs}
     out = []
     for b in spec["binaries"]:
-        src = (REPO / str(b["src"]).format(arch=arch)).resolve()
+        src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
         # Only binaries built from this payload's own directory (never a shared artifact
         # like a build-dir DLL, which ninja owns).
         # A `binaries` entry that is itself a committed source (kmtest's
@@ -153,26 +221,35 @@ def stale_binaries(name: str, arch: str) -> list[Path]:
     return out
 
 
-def borrowed_owners(name: str, arch: str) -> list[str]:
-    """Other payloads whose build outputs `name` stages (e.g. every Wine-suite payload
-    borrows tools/payloads/apitest/apitest-sweep-<arch>.exe). stale_binaries only judges
-    a payload's OWN outputs, so without this a borrowed binary was staged however stale:
-    olewinetest booted a sweep runner built before sweep.c learned apitest-cwd.txt, and
-    the suites' scratch files went to the read-only CD (2026-10-04)."""
-    owners = []
+def borrowed_builds(name: str, arch: str) -> list[tuple[str, str]]:
+    """(owner, arch) for every other payload whose build outputs `name` stages for `arch`
+    media (e.g. every Wine-suite payload borrows tools/payloads/apitest/apitest-sweep-<arch>.exe).
+    The arch is the entry's `build_arch` when it has one: appstorm64 stages the AMD64
+    appstorm onto arm64 media, so judging the owner's arm64 output would pass a stale
+    x86-64 binary. stale_binaries only judges a payload's OWN outputs, so without this a
+    borrowed binary was staged however stale: olewinetest booted a sweep runner built before
+    sweep.c learned apitest-cwd.txt, and the suites' scratch files went to the read-only CD
+    (2026-10-04)."""
+    builds: list[tuple[str, str]] = []
     for b in load_spec(name)["binaries"]:
-        src = (REPO / str(b["src"]).format(arch=arch)).resolve()
+        src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
         try:
             owner = src.relative_to(PAYLOADS_DIR.resolve()).parts[0]
         except ValueError:
             continue  # not under tools/payloads (a build-dir artifact ninja owns)
+        build = (owner, str(b.get("build_arch", arch)))
         if (
             owner != name
-            and owner not in owners
+            and build not in builds
             and (PAYLOADS_DIR / owner / "payload.yaml").is_file()
         ):
-            owners.append(owner)
-    return owners
+            builds.append(build)
+    return builds
+
+
+def borrowed_owners(name: str, arch: str) -> list[str]:
+    """The owners borrowed_builds names, once each."""
+    return list(dict.fromkeys(owner for owner, _ in borrowed_builds(name, arch)))
 
 
 def ensure_built(names: list[str], arch: str) -> list[str]:
@@ -180,13 +257,13 @@ def ensure_built(names: list[str], arch: str) -> list[str]:
     its own build.sh, and first every payload whose outputs they borrow
     (borrowed_owners). Returns the names rebuilt; dies loudly if a build fails or a
     stale payload has no build.sh to run."""
-    expanded: list[str] = []
+    expanded: list[tuple[str, str]] = []
     for name in names:
-        for owner in borrowed_owners(name, arch) + [name]:
-            if owner not in expanded:
-                expanded.append(owner)
+        for build in borrowed_builds(name, arch) + [(name, arch)]:
+            if build not in expanded:
+                expanded.append(build)
     rebuilt = []
-    for name in expanded:
+    for name, arch in expanded:
         stale = stale_binaries(name, arch)
         if not stale:
             continue

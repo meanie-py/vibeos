@@ -259,6 +259,8 @@ unsafe fn UserProcessDestroy(Process: PEPROCESS) -> NTSTATUS {
         ppiScrnSaver = core::ptr::null_mut();
     }
 
+    crate::pfnclient::forget(ppiCurrent);
+
     IntFreeImeHotKeys();
 
     if !gpwlCache.is_null() {

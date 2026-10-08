@@ -167,3 +167,38 @@ refuses a WoW64 process's remote thread into any 64-bit process.
 
 **Owed:** nothing in the thread/process matrix. `NtCreateThreadEx` is still not in the service
 table; the build fails the day it lands without an intercept (above).
+
+**Stock x86-64 programs (2026-10-08, payload `appstorm64`).** Every guest above is one we wrote.
+`VIBEOS_FEX=1 VIBEOS_PAYLOAD=appstorm64 ./vibeos-cli build --arch arm64` stages appstorm's
+x86-64 build as the StartUp program, plus the stock amd64 build of every app and applet it
+launches, with their import closure, into sysamd64 (`guest_sets` in its payload.yaml, computed
+by `wow64-closure.py --emit-roots`). appstorm checks each launched process's PE machine against
+its own, so a native app cannot be scored as an x86-64 pass. That check caught the first run
+doing exactly that: notepad, regedit and explorer also live in `%windir%`, outside the redirect.
+Run `20261008-011853-dqktsbut-smoke-arm64`: **25 of the 40 apps pass as x86-64 processes**
+(notepad, calc, regedit, taskmgr, cmd, mspaint, wordpad, charmap, the three games, winver, clipbrd,
+sndvol32, magnify, osk, eventvwr, devmgmt, servman, msconfig, dxdiag, mplay32, sndrec32, and
+explorer opening a folder and My Computer). Getting there fixed:
+
+- win32k gave a system-class window (ScrollBar...) the NATIVE user32's proc, because the first
+  user32 fills the global client-proc tables. An amd64 user32 shares the native one's base but
+  not its layout. `win32k-rust/src/pfnclient.rs` keeps per-process tables for a user32 whose
+  procs differ.
+- Two arm64 kernel bits that x86 hardware maintains. The Access Flag: a page the working-set
+  trimmer aged faulted forever (`trap.rs ki_set_access_flag`). The dirty bit: a written page
+  made read-only paged out as clean and came back from the file, i.e. an unbound IAT
+  (`PTE_SOFTWARE_DIRTY`). See the field manual's arm64 fault-loop entries. Neither is FEX-specific;
+  x86-64 guests were simply the first workload big enough to make the trimmer run.
+- Modules loaded through the registry, which no import walk sees: winmm's `Drivers32` is derived
+  from `hivesft.inf`, and the rest are listed in the payload (each one found from wowx64's refusal
+  log, which is now never capped). Also the amd64 side-by-side assemblies (comctl32 v5/v6,
+  gdiplus), whose absence failed every activation context.
+
+**Owed, from that run:** rapps (its https database download fails, then it crashes);
+iexplore (crashes on close); control.exe and the twelve applets, which open an x86-64 explorer
+too slowly for appstorm's 30 s window wait once rapps and iexplore have run (in isolation,
+control and desk.cpl pass); and memory. A 1 GB VM leaves ~30 MB free before the sweep, with no
+pagefile, so the payload asks for 2 GB. Each x86-64 app keeps about 1 MB, and an exhausted
+machine bugchecks 0x7A instead of failing the allocation. The guest's user32 also still reads the
+native procs from `gpsi` in user mode (pfnclient.rs). appstorm's thread sampler cannot read
+an x86-64 guest thread's context (`NtGetContextThread on another thread: not supported yet`).

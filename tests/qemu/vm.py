@@ -1605,7 +1605,16 @@ def get_arch_config(arch: str) -> ArchConfig:
     cls = ARCH_CONFIGS.get(arch)
     if cls is None:
         raise ValueError(f"Unknown architecture: {arch!r}. Choose from: {list(ARCH_CONFIGS)}")
-    return cls()
+    cfg = cls()
+    # VIBEOS_QEMU_MEMORY=<qemu -m size> raises the guest RAM: smoke sets it from a payload's
+    # declared test.vm_memory (appstorm64: a sweep of x86-64 guests under FEX does not fit the
+    # 1G arm64 default with no pagefile).
+    mem = os.environ.get("VIBEOS_QEMU_MEMORY", "").strip()
+    if mem:
+        if not re.fullmatch(r"[1-9][0-9]*[MG]", mem):
+            raise ValueError(f"VIBEOS_QEMU_MEMORY must look like 2G or 1536M (got {mem!r})")
+        cfg.memory = mem
+    return cfg
 
 
 def launch_with_retry(

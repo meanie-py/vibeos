@@ -623,6 +623,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   can start a native arm64 child (system32 hides only foreign DLLs from it now, as Windows on
   ARM hides nothing), and TerminateProcess ends a spinning guest of either width. Nothing in
   the thread/process matrix is owed; see `../engineering/wow64-x64-guest-design.md`.
+- **Stock x86-64 apps run under FEX on arm64** (2026-10-08). The `appstorm64` payload sweeps the
+  stock amd64 build of ~40 apps and applets as x86-64 guests. 25 pass, each verified to be an
+  x86-64 process. Owed: rapps, iexplore, control.exe and the applets, plus memory (an exhausted
+  machine bugchecks 0x7A). See `../engineering/wow64-x64-guest-design.md`. Two arm64 kernel
+  paging bugs it found are fixed: Access-Flag livelock, and written pages paged out as clean.
+- **gui32 read back nothing on arm64 — FIXED 2026-10-08.** The arm64 syscall path (`trap.rs`,
+  `usercall.rs`) checked TEB64's GDI batch count, so a 32-bit guest's batched PatBlt was still
+  unflushed when GetPixel ran (the C `KiWow64GdiBatchCount` fix was in the cohab-flipped
+  `trap.c`). gui32 is graded on its full pass (`0x600D`) on both hosts now.
 - **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
   lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
   captured mid-body of itself, so `ZwContinue` after a vectored handler's

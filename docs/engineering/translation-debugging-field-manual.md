@@ -11385,6 +11385,35 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   the entry is published and *malformed*. Dump the PTE through the self-map before choosing: a
   well-formed user page reads `0x...443` (Valid, NotLargePage, Owner, AF), a malformed one
   `0x...041`. Guessing wrong costs a build-and-soak cycle per guess.
+- **A page the working-set trimmer aged faults forever: arm64 has no hardware Access Flag.**
+  Symptom: arm64 under memory pressure (about 25 x86-64 guests into an appstorm64 sweep) goes
+  silent: the serial stops, the kernel census included, and apps launched just before it stop
+  making windows. gdb on the stub shows one vCPU at EL0 with `ESR_EL1 = 0x8200000b`: an
+  instruction abort, IFSC 0x0B, an **access-flag** fault at level 3, on a PC in ntdll, and
+  `ELR == FAR` on every sample. Cause: `TrimWsList` (wslist.rs) ages a page by clearing
+  `PTE_ACCESSED`. On x86 the CPU sets the bit again. arm64 runs without hardware AF
+  management, so the next touch faults on a still-VALID PTE. Every Mm path that sees a valid
+  PTE (`MmArmAccessFault`, RosMm's `MmNotPresentFaultSectionView`) returns "spurious, retry"
+  without setting AF, and the retry faults again. Fix: `ki_set_access_flag` in
+  `KiSynchronousExceptionHandler` (trap.rs). It is the one place that knows the fault is an AF
+  fault (FSC 0x08-0x0B), so it sets AF on the faulting level's descriptor by compare-exchange,
+  which covers every Mm path. **A bit that hardware maintains on x86 and software maintains on
+  arm64 needs a software path to set it, not just one to clear it.**
+- **A written page made read-only pages out as CLEAN on arm64, and comes back from the file.**
+  Symptom: after the AF fix above let a long appstorm64 sweep keep running, native processes
+  (a dhcpcsvc thread, then csrss, so bugcheck 0xF4) took PC-alignment faults (`ESR
+  0x8A000000`, EC 0x22) at small odd addresses such as `0xAA462`. Those are IMAGE_IMPORT_BY_NAME
+  RVAs: the call went through an UNBOUND import slot. Cause: arm64 has no hardware dirty bit.
+  "Dirty" is NotDirty (AP[2]) clear, i.e. hardware-writable. RosMm's arm64 `MmSetPageProtect`
+  built the new PTE from scratch, so the loader's bound IAT (written, then made read-only) read
+  clean. i386 copies its Dirty bit across a protection change. Under memory pressure
+  `MmPageOutPhysicalAddress` saw a private copy-on-write page that was "clean" with no swap
+  entry, freed it, and the next fault re-read the original from the image. Fix: a sticky software
+  dirty bit (`PTE_SOFTWARE_DIRTY`, the MMU-ignored OsAvailable bit 57) that `MmSetPageProtect`
+  sets when it reprotects a dirty page. `MI_PTE_IS_DIRTY` (ARM3/helpers.rs) is the one dirty
+  test, used by `TrimWsList`, ARM3's `MI_IS_PAGE_DIRTY` and RosMm's `WasDirty`. **Same lesson as
+  the AF entry: list every bit x86 hardware keeps up to date, and give each one a software path
+  on arm64.**
 - **An EL1 instruction fetch on a user page loops silently forever — the fault handler called it
   spurious.** Symptom: a ~2% arm64 boot wedge with no bugcheck, no serial, every timed wait
   dead, every vCPU sample at the same user-range PC (`0x10000`) at EL1h; the whole box reads
@@ -12572,6 +12601,13 @@ win32k is the largest single flip surface and its failures are stereotyped:
   WoW64 osk. Fix: execute the guest batch by widening each i386 record
   (`flush_guest_batch()`, `gdibatch.rs`). **A "discard" of a command queue discards every
   command kind in it: enumerate them before calling one harmless.**
+  **Its fourth face (2026-10-07) is the arm64 fix going missing in translation.**
+  `KiWow64GdiBatchCount()` lives in `ke/arm64/trap.c`, which is cohab-flipped: `trap.rs`
+  and `usercall.rs` own both paths and read only TEB64's count. Symptom: gui32 (an i386
+  PatBlt, then GetPixel) read back the pre-draw screen on arm64 only (soft verdict
+  0x600E), while gui64 and the amd64 host were fine. Fix: `GdiBatchCountOf()` in
+  `trap.rs`, used by both paths. **A fix applied to a `.c` file that is out of the build
+  fixes nothing.** Grep `sdk/lib/rust/` for the function before trusting a C fix.
 - **`DesktopHeapReAlloc` passed the PDESKTOP as the HEAP pointer** `[§9.40]` (and never freed the old
   block) → amd64 0x1E on the first start-menu open. **When a Rust file reimplements C header
   inlines, diff EVERY helper, not just the one that crashed.**

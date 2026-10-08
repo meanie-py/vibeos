@@ -172,9 +172,13 @@ pub unsafe extern "system" fn KeUserModeCallback(
 
     let CallbackStatus: NTSTATUS = KiCallUserMode(Result, ResultLength);
 
+    // TEB32's count for a WoW64 guest (trap.rs GdiBatchCountOf).
     let mut GdiBatchCount: ULONG = 0;
-    if !Teb.is_null() && MmIsAddressValid(core::ptr::addr_of_mut!((*Teb).GdiBatchCount) as PVOID) != 0u8 {
-        GdiBatchCount = (*Teb).GdiBatchCount;
+    if !Teb.is_null() {
+        let Count = crate::ke::arm64::trap::GdiBatchCountOf(Teb as *const _);
+        if MmIsAddressValid(Count as PVOID) != 0u8 {
+            GdiBatchCount = *Count;
+        }
     }
 
     if GdiBatchCount != 0 {

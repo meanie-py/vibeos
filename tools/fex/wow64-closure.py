@@ -89,6 +89,10 @@ DYNAMIC_LOADERS = {
         ("LibraryPath", "PackedCatalogItem", "AutodialDLL"),
     ),
     "msafd.dll": ("media/inf/nettcpip.inf", ("HelperDllName",)),
+    # winmm opens every driver its Drivers32 key names (midimap, beepmidi, the
+    # msacm32.drv wave mapper) when a program first touches audio or MIDI;
+    # sndrec32 and mplay32 did, and each was refused in an x86-64 guest.
+    "winmm.dll": ("boot/bootdata/hivesft.inf", ("Drivers32",)),
 }
 
 # A declaration spells its DLL either as a plain string value or packed into a
@@ -102,6 +106,13 @@ _INF_STRING_DECLS = {
     # It is staged anyway: it is DECLARED, it is BUILT, and "the importer
     # happens to cope" is the reasoning that left msafd unstaged.
     "AutodialDLL": re.compile(r'"AutodialDLL",0x00000000,"([^"]+)"'),
+    # Anchored at the line start, so a commented-out driver (";HKLM,...") is
+    # not an edge.
+    "Drivers32": re.compile(
+        r'^HKLM,"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Drivers32",'
+        r'"[^"]+",0x00000000,"([^"]+)"',
+        re.M,
+    ),
 }
 _INF_PACKED_DECLS = {
     "PackedCatalogItem": re.compile(r'"PackedCatalogItem",0x00000001,\\\n((?:[0-9A-Fa-f, \\\n]+))'),
@@ -162,6 +173,23 @@ def find_objdump(project_dir: Path) -> str:
     return found
 
 
+def stripped_twins(build_dir: Path) -> dict:
+    """Build-relative posix path -> its stripped twin, for every module the
+    strip step recorded (see index_build for why this is keyed by path)."""
+    twins: dict[str, Path] = {}
+    stripped_dir = build_dir / "boot/stripped"
+    manifest = stripped_dir / "strip-manifest.json"
+    if manifest.is_file():
+        marker = f"/{build_dir.name}/"
+        for key in json.loads(manifest.read_text()):
+            if marker not in key:
+                continue
+            twin = stripped_dir / f"{hashlib.sha1(key.encode()).hexdigest()[:12]}-{Path(key).name}"
+            if twin.is_file():
+                twins[key.split(marker, 1)[1]] = twin
+    return twins
+
+
 def index_build(build_dir: Path, no_strip: bool = False) -> dict:
     """Map lowercase module name -> path, preferring the stripped variant.
 
@@ -181,17 +209,7 @@ def index_build(build_dir: Path, no_strip: bool = False) -> dict:
     # x86-64 guest's loader failed to bind it on an import only i386 has.
     # Manifest paths are the build's canonical mount (/tmp/vibeos/<build dir>/
     # ...), so they are matched on the part below the build directory's name.
-    twins: dict[str, Path] = {}
-    stripped_dir = build_dir / "boot/stripped"
-    manifest = stripped_dir / "strip-manifest.json"
-    if not no_strip and manifest.is_file():
-        marker = f"/{build_dir.name}/"
-        for key in json.loads(manifest.read_text()):
-            if marker not in key:
-                continue
-            twin = stripped_dir / f"{hashlib.sha1(key.encode()).hexdigest()[:12]}-{Path(key).name}"
-            if twin.is_file():
-                twins[key.split(marker, 1)[1]] = twin
+    twins = {} if no_strip else stripped_twins(build_dir)
 
     index = {}
     for p in build_dir.rglob("*"):
@@ -371,6 +389,12 @@ def main() -> int:
         help="also follow module names that appear as string literals in every "
         "staged LIBRARY, not just the roots (see string_referenced)",
     )
+    ap.add_argument(
+        "--emit-roots",
+        action="store_true",
+        help="also emit each root itself (its stripped twin when there is one), "
+        "for a consumer staging programs together with their DLLs",
+    )
     args = ap.parse_args()
 
     project_dir = Path(__file__).resolve().parent.parent.parent
@@ -422,12 +446,19 @@ def main() -> int:
             admit(target, f"{name} via {decl}")
             follow_dynamic(target)
 
+    root_twins = {} if args.no_strip else stripped_twins(build_dir)
     for r in args.roots:
         p = Path(r)
         if not p.is_absolute():
             p = build_dir / r
         if not p.exists():
             sys.exit(f"wow64-closure: root not found: {p}")
+        if args.emit_roots:
+            try:
+                rel = p.resolve().relative_to(build_dir.resolve()).as_posix()
+            except ValueError:
+                rel = None
+            out[p.name.lower()] = root_twins.get(rel, p) if rel else p
         stack.append(p)
         follow_dynamic(p.name.lower())
         # The root's own runtime loads. admit() pushes each onto the stack, so

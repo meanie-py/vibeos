@@ -49,10 +49,11 @@ def test_a_red_rung_names_the_guest_and_both_codes():
     assert any("thread32" in s and "0xc0000001" in s and "0x600d" in s for s in got["salient"])
 
 
-def test_gui32_wants_its_own_verdict_code():
-    """gui32 reports 0x600e; grading it against the common 0x600d would fail a
-    green ladder on every boot."""
-    assert ladder.LADDER["gui32"] != ladder.LADDER["hello32"]
+def test_gui32_readback_mismatch_is_red():
+    """gui32's soft pass 0x600E (drew, GetPixel readback mismatched) was the grade
+    while arm64 could not read back a 32-bit draw; it is a regression now."""
+    others = {g: c for g, c in ladder.LADDER.items() if g != "gui32"}
+    assert _red(_serial(**others) + _serial(gui32=0x600E))["classification"] == "LADDER_FAIL"
     assert ladder.check(_all_pass()) is None
 
 
@@ -207,8 +208,8 @@ def test_a_guest_already_seen_is_not_waited_for_again():
     drain sat out its whole 420s budget waiting for a marker that had gone past
     — on a run where all nine PASSED. `seen` is what stops that."""
     vm = _FakeVM([_serial(**{g: c for g, c in ladder.LADDER.items() if g != "gui32"})])
-    out = ladder.watch(vm, seconds=5, seen=_serial(gui32=0x600E))
-    assert ladder.check(out + _serial(gui32=0x600E)) is None
+    out = ladder.watch(vm, seconds=5, seen=_serial(gui32=0x600D))
+    assert ladder.check(out + _serial(gui32=0x600D)) is None
     assert vm.serial.reads == 1, "should stop the moment the remaining guests report"
 
 
@@ -316,13 +317,13 @@ def test_program_done_matches_what_winlogon_prints():
     assert ladder.PROGRAM_DONE + "\\n" in src
 
 
-def test_gui32_improving_to_a_full_pass_is_not_a_red_rung():
-    """The measured false red: desktop GetPixel readback started working, gui32
-    exited 0x600D instead of its graded soft-pass 0x600E, and the ladder failed
-    it for passing better."""
+def test_a_named_upgrade_is_not_a_red_rung(monkeypatch):
+    """The measured false red: gui32's desktop readback started working while it
+    was graded on its soft pass, it exited 0x600D, and the ladder failed it for
+    passing better. ALSO_ACCEPTED names such upgrades."""
+    monkeypatch.setitem(ladder.ALSO_ACCEPTED, "gui32", frozenset({0x600F}))
     others = {g: c for g, c in ladder.LADDER.items() if g != "gui32"}
-    text = _serial(**others) + _serial(gui32=0x600D)
-    assert ladder.check(text) is None
+    assert ladder.check(_serial(**others) + _serial(gui32=0x600F)) is None
 
 
 def test_gui32_still_fails_on_a_real_error_code():

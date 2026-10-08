@@ -486,6 +486,35 @@ static int wanted(const char *name)
  * message box from the app at any step, the app dying, or the shell dying fails it. */
 typedef struct { const char *name; int (*run)(const char *name); } scenario_t;
 
+/* The machine a process's main image was built for: the Machine field of the PE header at
+ * PEB->ImageBaseAddress, read across processes, or 0 if it cannot be read. Every app is
+ * launched by name, so the machine it ran as is decided by where the loader found it: an
+ * x86-64 appstorm on arm64 finds sysamd64's copy only through the guest's system32 redirect,
+ * and without this check a missed redirect would run the NATIVE app and score it as an x86-64
+ * pass. (Not ProcessImageInformation: the kernel answers that for the current process only.) */
+typedef struct {
+    LONG ExitStatus; PVOID PebBaseAddress; ULONG_PTR AffinityMask; LONG BasePriority;
+    ULONG_PTR UniqueProcessId, InheritedFromUniqueProcessId;
+} storm_basic_info_t;
+LONG NTAPI NtQueryInformationProcess(HANDLE, ULONG, PVOID, ULONG, PULONG);
+static USHORT image_machine(HANDLE process)
+{
+    storm_basic_info_t info;
+    PVOID base = NULL;
+    IMAGE_DOS_HEADER dos;
+    USHORT machine = 0;
+    SIZE_T got;
+    if (NtQueryInformationProcess(process, 0 /* ProcessBasicInformation */, &info, sizeof info, NULL) < 0)
+        return 0;
+    /* PEB.ImageBaseAddress follows InheritedAddressSpace..Mutant: two pointers in. */
+    if (!ReadProcessMemory(process, (BYTE *)info.PebBaseAddress + 2 * sizeof(PVOID), &base, sizeof base, &got)
+        || !ReadProcessMemory(process, base, &dos, sizeof dos, &got) || dos.e_magic != IMAGE_DOS_SIGNATURE
+        || !ReadProcessMemory(process, (BYTE *)base + dos.e_lfanew + 4, &machine, sizeof machine, &got))
+        return 0;
+    return machine;
+}
+static USHORT own_machine;
+
 /* Exit code of a finished process, or -1 while it runs; a crash is scored like main()'s. */
 static int crashed_code(DWORD rc)
 {
@@ -533,6 +562,20 @@ static int app_path(const char *exe, char *out)
     return ok;
 }
 
+/* Where to launch `exe` from: the system directory's copy first, then the search path, then
+ * App Paths. notepad, regedit, explorer and iexplore also (or only) live in %windir%, and a
+ * plain SearchPath picks that copy. It is the same binary natively, but for an x86-64 appstorm
+ * on arm64 the system directory is the one an x86-64 process sees redirected to sysamd64:
+ * the %windir% copy is the NATIVE build, and launching it scored native apps as x86-64 runs. */
+static int find_app(const char *exe, char *out)
+{
+    char sys[MAX_PATH];
+    if (GetSystemDirectoryA(sys, MAX_PATH) && snprintf(out, MAX_PATH, "%s\\%s", sys, exe) < MAX_PATH
+        && GetFileAttributesA(out) != INVALID_FILE_ATTRIBUTES)
+        return 1;
+    return SearchPathA(NULL, exe, NULL, MAX_PATH, out, NULL) || app_path(exe, out);
+}
+
 /* notepad: type text, File > Save As, name a file on the scratch volume, OK. The Pi crashed
  * notepad here, and the dialog is shell32 end to end (DefView lists the folder, the combo
  * autocompletes against the filesystem), so it reaches code no launch-and-close does. */
@@ -551,7 +594,7 @@ static int scn_notepad_save(const char *name)
     WIN32_FILE_ATTRIBUTE_DATA fa;
     int saved = 0;
 
-    if (!SearchPathA(NULL, "notepad.exe", NULL, MAX_PATH, path, NULL)) {
+    if (!find_app("notepad.exe", path)) {
         SAY("scenario %s ABSENT\n", name);
         return -1;
     }
@@ -669,7 +712,8 @@ int main(void)
         Sleep(2000);
     SAY("setup %s after %lus\n", setup_running() ? "STILL RUNNING, proceeding" : "done",
         (GetTickCount() - t0) / 1000);
-    SAY("start apps=%u\n", (unsigned)(sizeof apps / sizeof apps[0]));
+    own_machine = image_machine(GetCurrentProcess());
+    SAY("start apps=%u machine=0x%x\n", (unsigned)(sizeof apps / sizeof apps[0]), own_machine);
     fs_raise_check(windir) ? pass++ : fail++;
     fmtmsg_check() ? pass++ : fail++;
     shell_note();
@@ -680,7 +724,7 @@ int main(void)
         char path[MAX_PATH], cmd[1024], args[MAX_PATH];
         if (!wanted(a->name))
             continue;
-        if (!SearchPathA(NULL, a->exe, NULL, MAX_PATH, path, NULL) && !app_path(a->exe, path)) {
+        if (!find_app(a->exe, path)) {
             SAY("app %s ABSENT (%s)\n", a->name, a->exe);
             absent++;
             continue;
@@ -714,6 +758,11 @@ int main(void)
             fail++;
             continue;
         }
+        /* The same machine as appstorm itself, on every host: see image_machine. */
+        USHORT machine = image_machine(pi.hProcess);
+        int same_machine = machine && machine == own_machine;
+        if (!same_machine)
+            SAY("  launched as machine 0x%x, appstorm is 0x%x\n", machine, own_machine);
         launch_root = pi.dwProcessId;
         family[0] = launch_root;
         nfamily = 1;
@@ -888,12 +937,17 @@ int main(void)
         int shell = shell_check(a->name);
         /* An app that ignores WM_CLOSE is a failure, not a pass: every app on every arch
          * timing out on close (a lost PostMessage) scored PASS here until this counted. */
-        int good = ok && !hung && !errbox && !crashed && shell && !strcmp(close, "OK");
+        int good = ok && !hung && !errbox && !crashed && shell && same_machine && !strcmp(close, "OK");
         /* ms: launch to verdict. The serial log has no clock, and a run that hit the drain
          * deadline could not say which app ate the time. */
-        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s ms=%lu\n",
+        /* availMB: free physical memory once the app has gone, so a sweep that runs the
+         * machine out (an x86-64 sweep under FEX on a 1 GB arm64 VM did) shows the trend --
+         * steady means pressure, falling app after app means each one leaks. */
+        MEMORYSTATUSEX ms = { sizeof ms };
+        GlobalMemoryStatusEx(&ms);
+        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s machine=0x%x ms=%lu availMB=%lu\n",
             a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED",
-            GetTickCount() - app_t0);
+            machine, GetTickCount() - app_t0, (unsigned long)(ms.ullAvailPhys >> 20));
         good ? pass++ : fail++;
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);

@@ -415,8 +415,11 @@ unsafe fn Redirect(Oa: *const OBJECT_ATTRIBUTES, Shadow: &mut Shadow) -> bool {
     // had the guest loader map it and call arm64 code as x86-64. Redirecting
     // to the absent sysamd64 copy gives the guest "not found", which is what
     // WoW64 gives a 32-bit process in the same spot.
+    // A refusal is always logged: it is a module the guest wanted and the
+    // staged closure lacks, and capping it hid every one after the eighth
+    // benign fallback (manifest probes, .Local checks) of a busy boot.
     let Foreign = ForeignDll(Oa);
-    if FallbackCount.fetch_add(1, Ordering::Relaxed) < 8 {
+    if Foreign || FallbackCount.fetch_add(1, Ordering::Relaxed) < 8 {
         crate::trace!(
             "not in sysamd64: %wZ -> %s",
             (*Oa).ObjectName,

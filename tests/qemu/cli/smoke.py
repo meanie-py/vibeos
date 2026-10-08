@@ -673,6 +673,7 @@ def _payload_stage(
     # separately and add the longest drain.
     boot_budget = 600
     drain = 0.0
+    vm_memory = ""
     try:
         import yaml as _yaml
 
@@ -682,6 +683,8 @@ def _payload_stage(
                 _spec = _yaml.safe_load(_spec_path.read_text()) or {}
                 _test = _spec.get("test", {}) or {}
                 drain = max(drain, float(_test.get("launch_drain_secs", 30)))
+                # The largest declared guest RAM wins (vm.py get_arch_config).
+                vm_memory = max(vm_memory, str(_test.get("vm_memory", "")), key=_mem_mb)
                 if _test.get("net") and not pytest_arch.endswith("-net"):
                     pytest_arch += "-net"
     except ImportError:
@@ -717,7 +720,12 @@ def _payload_stage(
             capture_output=True,
             text=True,
             timeout=outer_timeout,
-            env={**os.environ, "VIBEOS_ARTIFACT_DIR": str(payload_dir)},
+            env={
+                **os.environ,
+                "VIBEOS_ARTIFACT_DIR": str(payload_dir),
+                "VIBEOS_QEMU_MAX_LIFETIME": str(_payload_vm_lifetime(boot_budget, drain)),
+                **({"VIBEOS_QEMU_MEMORY": vm_memory} if vm_memory else {}),
+            },
         )
     except subprocess.TimeoutExpired:
         run.add(
@@ -751,6 +759,23 @@ def _payload_stage(
                 ],
             )
         )
+
+
+def _mem_mb(size: str) -> int:
+    """A qemu -m size (2G, 1536M) in MiB; empty is 0."""
+    if not size:
+        return 0
+    return int(size[:-1]) * (1024 if size[-1] in "Gg" else 1)
+
+
+def _payload_vm_lifetime(boot_budget: float, drain: float, environ=os.environ) -> int:
+    """The QEMU lifetime cap for a payload boot: the boot budget plus the longest declared
+    drain, with five minutes' margin, and never below the cap already in force. The cap
+    (vm.py MAX_VM_LIFETIME_SECONDS, 30 min) is what the reaper enforces, so a payload that
+    declares a longer drain (appstorm64, 7200s) had its VM SIGTERMed mid-sweep while the pytest
+    timeout, sized from the same drain, was still hours away."""
+    floor = int(environ.get("VIBEOS_QEMU_MAX_LIFETIME", 30 * 60))
+    return max(floor, int(boot_budget + drain) + 300)
 
 
 # uniata-rust prints this from AhciDetect (id_sata.rs) once it has mapped the
