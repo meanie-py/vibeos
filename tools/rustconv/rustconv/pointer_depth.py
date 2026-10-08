@@ -58,6 +58,10 @@ class CFunctionDecls:
     sizeof_types: frozenset[str] = frozenset()
     #: the C takes `sizeof` of a spelled-out pointer type (`sizeof(T *)`) somewhere in it.
     sizeof_raw_pointer: bool = False
+    #: the C body uses `~` (bitwise not) anywhere; see logical_not.py.
+    bitwise_not: bool = False
+    #: the operands of the C's logical `!( .. )`, whitespace removed; see logical_not.py.
+    logical_nots: frozenset[str] = frozenset()
 
 
 def _split_commas(text: str) -> list[str]:
@@ -116,7 +120,16 @@ def c_declarations(
     for v in re.findall(r"\bsizeof\s*(?:\(\s*([A-Za-z_]\w*)\s*\)|\s([A-Za-z_]\w*)\b)", body):
         typ, depth = names.get(v[0] or v[1], ("", 0))
         raw = raw or depth > 0 or typ in types
-    return CFunctionDecls(names, ret, sized, raw)
+    code = re.sub(r'"(?:[^"\\]|\\.)*"', "", body)
+    nots: set[str] = set()
+    for m in re.finditer(r"!\s*\(", code):
+        depth, i = 0, m.end() - 1
+        for i in range(m.end() - 1, len(code)):
+            depth += {"(": 1, ")": -1}.get(code[i], 0)
+            if depth == 0:
+                break
+        nots.add(re.sub(r"\s+", "", code[m.end() : i]))
+    return CFunctionDecls(names, ret, sized, raw, "~" in code, frozenset(nots))
 
 
 def _fn_spans(text: str) -> Iterable[tuple[str, int, int, int]]:

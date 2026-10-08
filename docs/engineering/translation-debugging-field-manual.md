@@ -418,7 +418,12 @@ to it. `T *x` out-parameters are left alone.
 The quieter twin is `sizeof`: C `sizeof(*DevExt)` came back as
 `size_of::<PATAPORT_DEVICE_EXTENSION>()`, so the PDO extension handed to IoCreateDevice was 8
 bytes. `pointer_depth` restores the pointee unless that function's C itself writes
-`sizeof(PFOO)`.
+`sizeof(PFOO)`. The raw-pointer spelling is the same misreading: pciidex's
+`sizeof(*TimingMode)` came back as `size_of::<*mut _IDE_ACPI_TIMING_MODE_BLOCK>()` and sized
+the ACPI `_GTM` output buffer 8 bytes, a stack overrun at the first ACPI reply. atapi, already
+linking, had four more (a LUN list zeroed 8 bytes deep, SMART length checks that accept short
+buffers). `pointer_depth` rewrites `size_of::<*mut T>()` to `T` unless the C function takes the
+size of any pointer type or pointer variable.
 
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
@@ -988,6 +993,10 @@ hand flips the error to the other two.
   driver referencing kernel **data** (`KeLoaderBlock`) needs `raw-dylib` on i386/arm64 (PE data
   imports need an `__imp_` thunk); amd64 tolerates a plain extern static and hides it. Declare
   it crate-locally — don't change shared `globals.rs`, the kernel needs the local form.
+  pciidex.sys hit it with `InitSafeBootMode` and `HALDISPATCH` (undefined on all three arches);
+  the driver-facing readers are `ntkrnl_sys::inline::common::{InitSafeBootModeValue,
+  HalGetInterruptTranslator}`. Owed: `port resolve` should route an island `pub static` that
+  the import lib exports as `extern` (DATA) to such a reader by itself.
 - **`[T; 0]` extern-array decl** `[§9.35]` — Rust bounds-checks the *declared* length, so the C unsized-
   extern idiom panics at index 0. Declare the real per-arch size.
 
@@ -1318,6 +1327,7 @@ instruction BEFORE the trap first; it names the cause in one look.**
 | Preceding instruction | Cause | Fix |
 |---|---|---|
 | `call …panic_bounds_check` | array index the optimiser can't prove in range (see the indexing-panic entry) | pointer arithmetic at the unprovable site only |
+| `int $0x29` | `__fastfail` (`RtlFailFast`): the LIST_ENTRY integrity check in `RemoveEntryList`/`RemoveHeadList`, as in the C header inline. Expected; `scan_ud2` classifies it so since 2026-10-08 (atapi.sys showed 9) | none |
 | `call` to an ordinary function, no panic symbol | LLVM folded a UB path to `unreachable` after inlining | below |
 | none of the above | a genuine CC/sig-mismatch fold — the five shapes above | fix the ABI disagreement |
 

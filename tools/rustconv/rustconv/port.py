@@ -37,7 +37,14 @@ import sys
 import time
 from pathlib import Path
 
-from . import crate_integrate, local_macros, pointer_depth, prelude_resolve, variadic_shim
+from . import (
+    crate_integrate,
+    local_macros,
+    logical_not,
+    pointer_depth,
+    prelude_resolve,
+    variadic_shim,
+)
 from . import profile_derive as pd
 
 REPO = Path(__file__).resolve().parents[3]
@@ -1309,10 +1316,17 @@ def stage_integrate(stem: str) -> None:
         print(f"integrate: {report.summary()}")
         text = path.read_text()
         new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
+        new, not_fixed, not_refused = logical_not.repair(new, decls)
         if new != text:
             path.write_text(new)
             changed += 1
             depth_fixed += [f"{path.stem}::{f}" for f in fixes]
+        for f in not_fixed:
+            print(f"integrate: {path.stem}::{f} C logical `!x` read as bitwise `!(x) != 0`, fixed")
+        for f in not_refused:
+            print(
+                f"integrate: {path.stem}::{f} has `!(x) ==/!= 0` and its C uses `~`: check by hand"
+            )
     variadic, variadic_refused = _variadic_twins(state, crate, stem)
     changed += bool(variadic)
     if depth_fixed:

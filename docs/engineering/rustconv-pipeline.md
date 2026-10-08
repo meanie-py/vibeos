@@ -860,6 +860,40 @@ Every fix below is a stage change, not a recipe.
   post-step every generator runs) now restores `L"..."` constants; 90 in eight -sys crates,
   msvcrt-sys's Python generator calls the widener itself.
 
+### pciidex and legide to a link (2026-10-08)
+
+A $0 replay under the rules above took pciidex from ~370 to 182 per arch and legide to 8. To
+replay at all, each crate's `cohab/` CMakeLists had to be installed first: `translate` proves a
+TU's owner from the real CMake source list. `port fix` ($0.22 in all) and hand fixes then took
+both to 0/0/0; pciidex.sys links on all three arches and legide.sys on i386. Classes fixed in
+the tools on the way:
+
+- **`C2RustUnnamed_N` is a counter, not a name.** It numbers anonymous types per transpile and
+  per arch (via.c's bridge-table struct is `_154`/`_162`/`_163` on i386/amd64/arm64).
+  In-crate import resolution wired via.rs to svw_pata's unrelated `_163` (48 errors). Now it
+  never imports one, and `resolve` takes the module's own type from its TU, **by field shape**:
+  the fields its struct literals spell, identical on every arch, or refused.
+- **An invented `const` hides a function-like macro.** intel.rs defined
+  `PIIX_REG_UDMATIM: u8 = 0x4A` (channel 0's value) beside calls `PIIX_REG_UDMATIM(Channel)`;
+  the name resolved, so `port macros` never offered it. Such a const is dropped and the macro
+  ported. Calls to in-scope macros inside a bought macro get their `!` at render
+  (`NUM_TO_BITMAP`'s `RTL_BITS_OF(ULONG)`, 46 errors).
+- **Signedness of bought macros.** The reply typed C's `int` macros as `u32`. A per-macro hand
+  port outside the generated block wins over the bank (the stage skips its names), and is the
+  fix when the call sites follow C's promotion: pciidex's prelude has about two dozen.
+- **Callbacks get their C signature** through a function-typedef declaration
+  (`CHANNEL_START_IO AtaAhciStartIo;`) and, for a `static` callback, through its own definition
+  in the TU's c2rust output (`c2rust_anchor.definition_signatures`): 62 functions in pciidex.
+- `glob_ties` no longer treats a name the prelude merely calls as settled; `resolve` will not
+  declare a `va_list` extern (nightly `VaList`); the substrate-import pruner handles the
+  brace-less `use ntkrnl_sys::ddk::X;`; `resolve` unpins a module's `ddk` import of any helper
+  the prelude defines (the `KeInitializeSpinLock` wrapper was bypassed, an undefined symbol);
+  the `port fix` audit lets `NOTHING` vanish, and `DECLSPEC_ALIGN` when the reply has `align(`.
+- **The audit was right three times, and is worth reading before overriding:** a reply changed
+  `IoAllocateDriverObjectExtension`'s client id from `DriverObject` to `&DriverExtension`, and
+  two replies dropped `DECLSPEC_ALIGN` without aligning anything. Those were fixed by hand
+  (`port hand`).
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it

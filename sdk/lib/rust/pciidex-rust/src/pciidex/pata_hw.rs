@@ -182,7 +182,7 @@ pub unsafe extern "C" fn PataResetChannel(ChannelContext: PVOID) {
         let mut IdeStatus: u8 = core::mem::zeroed();
 
         if (DeviceNumber % 2) != 0 {
-            if !(DeviceBitmap & (1 << DeviceNumber)) != 0 {
+            if (DeviceBitmap & (1 << DeviceNumber)) == 0 {
                 DeviceNumber = DeviceNumber.wrapping_add(1);
                 continue;
             }
@@ -218,7 +218,7 @@ pub unsafe extern "C" fn PataResetChannel(ChannelContext: PVOID) {
                 break;
             }
 
-            if !(IdeStatus & (IDE_STATUS_BUSY as u8)) != 0 {
+            if (IdeStatus & (IDE_STATUS_BUSY as u8)) == 0 {
                 break;
             }
 

@@ -455,7 +455,7 @@ unsafe extern "C" fn AtaAhciHbaStart(Controller: PATA_CONTROLLER) {
     let mut GlobalControl: ULONG;
 
     GlobalControl = AHCI_HBA_READ(((*Controller).IoBase).cast(), HbaGlobalControl);
-    if !(GlobalControl & AHCI_GHC_AE) != 0 {
+    if (GlobalControl & AHCI_GHC_AE) == 0 {
         GlobalControl |= AHCI_GHC_AE;
         AHCI_HBA_WRITE(((*Controller).IoBase).cast(), HbaGlobalControl, GlobalControl);
     }

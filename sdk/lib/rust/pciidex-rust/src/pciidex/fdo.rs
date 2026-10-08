@@ -745,7 +745,7 @@ unsafe extern "C" fn PciIdeXFdoQueryBusRelations(
         let PdoExt: PPDO_DEVICE_EXTENSION;
         let ChannelState: IDE_CHANNEL_STATE;
 
-        if !(ChannelBitmap & (1 << i)) != 0 {
+        if (ChannelBitmap & (1 << i)) == 0 {
             i = i.wrapping_add(1);
             continue;
         }
