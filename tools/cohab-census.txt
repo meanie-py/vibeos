@@ -307,6 +307,10 @@ boot/rtl/blrtl.cmake	1	## ${NTOS_RTL_SOURCE_DIR}/amd64/rtlmem.S
 boot/rtl/blrtl.cmake	1	## ${NTOS_RTL_SOURCE_DIR}/i386/res_asm.s
 boot/rtl/blrtl.cmake	1	## message.c
 boot/rtl/blrtl.cmake	1	## res.c ## Optional? Needs SEH
+dll/cpl/appwiz/CMakeLists.txt	1	# addons.c # replaced by Rust (sdk/lib/rust/appwiz-rust/src/appwiz/addons.rs)
+dll/cpl/appwiz/CMakeLists.txt	1	# appwiz.c # replaced by Rust (sdk/lib/rust/appwiz-rust/src/appwiz/appwiz.rs)
+dll/cpl/appwiz/CMakeLists.txt	1	# createlink.c # replaced by Rust (sdk/lib/rust/appwiz-rust/src/appwiz/createlink.rs)
+dll/cpl/appwiz/CMakeLists.txt	1	# removestartmenuitems.c # replaced by Rust (sdk/lib/rust/appwiz-rust/src/appwiz/removestartmenuitems.rs)
 dll/cpl/desk/CMakeLists.txt	1	# advappdlg.c
 dll/cpl/desk/CMakeLists.txt	1	# advmon.c
 dll/cpl/desk/CMakeLists.txt	1	# appearance.c
