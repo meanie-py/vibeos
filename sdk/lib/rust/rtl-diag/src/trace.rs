@@ -10,14 +10,14 @@ pub static mut RtlpUnloadEventTraceIndex: UINT = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlGetUnloadEventTrace() -> PRTL_UNLOAD_EVENT_TRACE {
-    RtlpUnloadEventTrace.as_mut_ptr()
+    (&raw mut RtlpUnloadEventTrace).cast::<RTL_UNLOAD_EVENT_TRACE>()
 }
 #[no_mangle]
 pub unsafe extern "system" fn LdrpRecordUnloadEvent(LdrEntry: PLDR_DATA_TABLE_ENTRY) {
     let NtHeaders: PIMAGE_NT_HEADERS;
     let Sequence = RtlpUnloadEventTraceIndex;
     RtlpUnloadEventTraceIndex = RtlpUnloadEventTraceIndex.wrapping_add(1);
-    let Index = (Sequence as usize) % RtlpUnloadEventTrace.len();
+    let Index = (Sequence as usize) % (*&raw const RtlpUnloadEventTrace).len();
     let StringLen: u16;
 
     RtlpUnloadEventTrace[Index].BaseAddress = (*LdrEntry).DllBase;

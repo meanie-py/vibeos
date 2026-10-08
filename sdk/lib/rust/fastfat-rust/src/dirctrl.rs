@@ -873,7 +873,7 @@ pub unsafe extern "system" fn FatGetDirTimes(
     //
     // These fields are only non-zero when in Chicago mode.
     //
-    if (FatData.ChicagoMode() as u8) != 0 {
+    if ((*&raw const FatData).ChicagoMode() as u8) != 0 {
         //
         // Do a quick check here for Creation and LastAccess
         // times that are the same as the LastWriteTime.

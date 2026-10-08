@@ -423,7 +423,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
     if NT_SUCCESS(status) {
         DeviceRetrieveHackFlagsFromRegistry(deviceExtension);
         // scan for bad items.
-        DeviceScanForSpecial(deviceExtension, CdRomBadItems.as_mut_ptr(), Some(DeviceHackFlagsScan));
+        DeviceScanForSpecial(deviceExtension, (&raw mut CdRomBadItems).cast::<CDROM_SCAN_FOR_SPECIAL_INFO>(), Some(DeviceHackFlagsScan));
         // Check to see if it's a special device that needs special error process.
         DeviceScanSpecialDevices(deviceExtension); // may send command to device
     }

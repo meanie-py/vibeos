@@ -59,7 +59,7 @@ const HKEY_CLASSES_ROOT: HKEY = 0x80000000u32 as i32 as isize as usize as HKEY;
 static mut bstr_cache_enabled: BOOL = 0;
 
 static mut cs_bstr_cache: CRITICAL_SECTION = CRITICAL_SECTION {
-    DebugInfo: unsafe { &cs_bstr_cache_dbg as *const _ as *mut _ },
+    DebugInfo: unsafe { &raw const cs_bstr_cache_dbg as *const _ as *mut _ },
     LockCount: -1,
     RecursionCount: 0,
     OwningThread: core::ptr::null_mut(),
@@ -70,10 +70,10 @@ static mut cs_bstr_cache: CRITICAL_SECTION = CRITICAL_SECTION {
 static mut cs_bstr_cache_dbg: CRITICAL_SECTION_DEBUG = CRITICAL_SECTION_DEBUG {
     Type: 0,
     CreatorBackTraceIndex: 0,
-    CriticalSection: unsafe { &mut cs_bstr_cache },
+    CriticalSection: unsafe { &raw mut cs_bstr_cache },
     ProcessLocksList: _LIST_ENTRY {
-        Flink: unsafe { &mut cs_bstr_cache_dbg.ProcessLocksList as *mut _ },
-        Blink: unsafe { &mut cs_bstr_cache_dbg.ProcessLocksList as *mut _ },
+        Flink: unsafe { &raw mut cs_bstr_cache_dbg.ProcessLocksList },
+        Blink: unsafe { &raw mut cs_bstr_cache_dbg.ProcessLocksList },
     },
     EntryCount: 0,
     ContentionCount: 0,
@@ -172,8 +172,8 @@ unsafe fn bstr_from_str(str: BSTR) -> *mut bstr_t {
 }
 
 unsafe fn get_cache_entry_from_idx(cache_idx: u32) -> *mut bstr_cache_entry_t {
-    if bstr_cache_enabled != 0 && (cache_idx as usize) < (core::mem::size_of_val(&bstr_cache) / core::mem::size_of::<bstr_cache_entry_t>()) {
-        bstr_cache.as_mut_ptr().add(cache_idx as usize)
+    if bstr_cache_enabled != 0 && (cache_idx as usize) < (core::mem::size_of_val(&*&raw const bstr_cache) / core::mem::size_of::<bstr_cache_entry_t>()) {
+        (&raw mut bstr_cache).cast::<bstr_cache_entry_t>().add(cache_idx as usize)
     } else {
         core::ptr::null_mut()
     }

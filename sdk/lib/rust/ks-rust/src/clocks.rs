@@ -174,7 +174,7 @@ unsafe extern "C" fn run_static_initializers() {
 
     ClockPropertySet[0].Set = &raw const KSPROPSETID_Clock;
     ClockPropertySet[0].PropertiesCount =
-        (core::mem::size_of_val(&ClockPropertyTable) / core::mem::size_of::<KSPROPERTY_ITEM>())
+        (core::mem::size_of_val(&*&raw const ClockPropertyTable) / core::mem::size_of::<KSPROPERTY_ITEM>())
             as ULONG;
     ClockPropertySet[0].PropertyItem = &raw const ClockPropertyTable[0];
 }
@@ -501,7 +501,7 @@ pub unsafe extern "system" fn IKsClock_DispatchDeviceIoControl(
     ntkrnl_sys::ASSERT!((*IoStack).Parameters.DeviceIoControl.IoControlCode == IOCTL_KS_PROPERTY);
     ntkrnl_sys::ASSERT!((*IoStack).Parameters.DeviceIoControl.InputBufferLength as usize >= core::mem::size_of::<KSPROPERTY>());
 
-    Status = KsPropertyHandler(Irp, 1, ClockPropertySet.as_mut_ptr());
+    Status = KsPropertyHandler(Irp, 1, (&raw mut ClockPropertySet).cast::<KSPROPERTY_SET>());
 
     Property = (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as PKSPROPERTY;
 

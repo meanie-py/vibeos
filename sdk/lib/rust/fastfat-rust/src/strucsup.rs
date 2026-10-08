@@ -1025,7 +1025,7 @@ pub unsafe extern "system" fn FatCreateFcb(
         );
 
         // Chicago-specific time fields
-        if FatData.ChicagoMode() != 0 {
+        if (*&raw const FatData).ChicagoMode() != 0 {
             let mut fat_system_jan_one_1980: LARGE_INTEGER = LARGE_INTEGER { QuadPart: 0 };
             let fat_jan_one_1980_ptr: *const LARGE_INTEGER = &FatJanOne1980 as *const LARGE_INTEGER;
 

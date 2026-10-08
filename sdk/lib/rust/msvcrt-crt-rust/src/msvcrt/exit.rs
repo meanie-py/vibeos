@@ -137,11 +137,11 @@ unsafe extern "C" fn register_onexit_function(table: *mut _onexit_table_t, func:
         return -1;
     }
 
-    EnterCriticalSection(&mut MSVCRT_onexit_cs);
+    EnterCriticalSection(&raw mut MSVCRT_onexit_cs);
     if (*table)._first.is_null() {
         (*table)._first = calloc(32, core::mem::size_of::<*mut core::ffi::c_void>() as _) as *mut _PVFV;
         if (*table)._first.is_null() {
-            LeaveCriticalSection(&mut MSVCRT_onexit_cs);
+            LeaveCriticalSection(&raw mut MSVCRT_onexit_cs);
             return -1;
         }
         (*table)._last = (*table)._first;
@@ -153,7 +153,7 @@ unsafe extern "C" fn register_onexit_function(table: *mut _onexit_table_t, func:
         let len = (*table)._end.offset_from((*table)._first) as i32;
         let tmp = realloc((*table)._first as *mut core::ffi::c_void, (2 * len) as usize * core::mem::size_of::<*mut core::ffi::c_void>()) as *mut _PVFV;
         if tmp.is_null() {
-            LeaveCriticalSection(&mut MSVCRT_onexit_cs);
+            LeaveCriticalSection(&raw mut MSVCRT_onexit_cs);
             return -1;
         }
         (*table)._first = tmp;
@@ -163,7 +163,7 @@ unsafe extern "C" fn register_onexit_function(table: *mut _onexit_table_t, func:
 
     *(*table)._last = core::mem::transmute::<_onexit_t, _PVFV>(func);
     (*table)._last = (*table)._last.add(1);
-    LeaveCriticalSection(&mut MSVCRT_onexit_cs);
+    LeaveCriticalSection(&raw mut MSVCRT_onexit_cs);
     0
 }
 unsafe extern "C" fn execute_onexit_table(table: *mut _onexit_table_t) -> core::ffi::c_int {
@@ -174,9 +174,9 @@ unsafe extern "C" fn execute_onexit_table(table: *mut _onexit_table_t) -> core::
         return -1;
     }
 
-    EnterCriticalSection(&mut MSVCRT_onexit_cs);
+    EnterCriticalSection(&raw mut MSVCRT_onexit_cs);
     if (*table)._first.is_null() || (*table)._first >= (*table)._last {
-        LeaveCriticalSection(&mut MSVCRT_onexit_cs);
+        LeaveCriticalSection(&raw mut MSVCRT_onexit_cs);
         return 0;
     }
     copy._first = (*table)._first;
@@ -184,7 +184,7 @@ unsafe extern "C" fn execute_onexit_table(table: *mut _onexit_table_t) -> core::
     copy._end = (*table)._end;
     memset(table as *mut core::ffi::c_void, 0, core::mem::size_of::<_onexit_table_t>());
     initialize_onexit_table(table);
-    LeaveCriticalSection(&mut MSVCRT_onexit_cs);
+    LeaveCriticalSection(&raw mut MSVCRT_onexit_cs);
 
     func = copy._last.offset(-(1 as isize));
     while func >= copy._first {

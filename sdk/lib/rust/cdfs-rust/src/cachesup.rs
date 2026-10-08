@@ -309,7 +309,7 @@ pub unsafe extern "C" fn CdCreateInternalStream(
                         CdUpdateDirentName(IrpContext, &mut Dirent, 0);
 
                         if Dirent.CdFileName.FileName.Buffer
-                            != CdUnicodeSelfArray.as_ptr() as *mut u16
+                            != (&raw const CdUnicodeSelfArray).cast::<u16>() as *mut u16
                         {
                             raise_status = STATUS_FILE_CORRUPT_ERROR;
                             break;
