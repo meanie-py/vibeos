@@ -476,6 +476,97 @@ pub unsafe fn RtlInitEmptyAnsiString(
 }
 
 // ============================================================================
+// The rest of rtlfuncs.h's list FORCEINLINEs, C-shaped over ddk types (`base::` has
+// ntoskrnl's own Rust-flavoured versions: its own LIST_ENTRY, `bool` returns). The checks are
+// the C's: this tree never defines NO_KERNEL_LIST_ENTRY_CHECKS, so a C driver fast-fails on a
+// corrupted link and so does this.
+// ============================================================================
+
+/// RtlFailFast — `__fastfail(Code)`: `int 0x29` / `brk #0xF003` with the code in ecx / x0,
+/// which the kernel turns into KERNEL_SECURITY_CHECK_FAILURE. Never returns.
+#[inline]
+pub unsafe fn RtlFailFast(code: ULONG) -> ! {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    core::arch::asm!("int 0x29", in("ecx") code, options(noreturn, nostack));
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("brk #0xF003", in("x0") code as u64, options(noreturn, nostack));
+}
+
+/// FAST_FAIL_CORRUPT_LIST_ENTRY.
+const FAST_FAIL_CORRUPT_LIST_ENTRY: ULONG = 3;
+
+/// InitializeListHead — `ListHead->Flink = ListHead->Blink = ListHead;`
+#[inline]
+pub unsafe fn InitializeListHead(list_head: *mut ddk::_LIST_ENTRY) {
+    (*list_head).Flink = list_head;
+    (*list_head).Blink = list_head;
+}
+
+/// IsListEmpty — `(BOOLEAN)(ListHead->Flink == ListHead)`.
+#[inline]
+pub unsafe fn IsListEmpty(list_head: *const ddk::_LIST_ENTRY) -> BOOLEAN {
+    ((*list_head).Flink as *const ddk::_LIST_ENTRY == list_head) as BOOLEAN
+}
+
+/// RemoveEntryList — unlink `entry`; TRUE when the list is now empty.
+#[inline]
+pub unsafe fn RemoveEntryList(entry: *mut ddk::_LIST_ENTRY) -> BOOLEAN {
+    let old_flink = (*entry).Flink;
+    let old_blink = (*entry).Blink;
+    if (*old_flink).Blink != entry || (*old_blink).Flink != entry {
+        RtlFailFast(FAST_FAIL_CORRUPT_LIST_ENTRY);
+    }
+    (*old_flink).Blink = old_blink;
+    (*old_blink).Flink = old_flink;
+    (old_flink == old_blink) as BOOLEAN
+}
+
+/// RemoveHeadList — unlink and return the first entry (the head itself when empty).
+#[inline]
+pub unsafe fn RemoveHeadList(list_head: *mut ddk::_LIST_ENTRY) -> *mut ddk::_LIST_ENTRY {
+    #[cfg(feature = "dbg")]
+    if (*(*list_head).Flink).Blink != list_head || (*(*list_head).Blink).Flink != list_head {
+        RtlFailFast(FAST_FAIL_CORRUPT_LIST_ENTRY); // RtlpCheckListEntry
+    }
+    let entry = (*list_head).Flink;
+    let flink = (*entry).Flink;
+    if (*entry).Blink != list_head || (*flink).Blink != entry {
+        RtlFailFast(FAST_FAIL_CORRUPT_LIST_ENTRY);
+    }
+    (*list_head).Flink = flink;
+    (*flink).Blink = list_head;
+    entry
+}
+
+/// InsertHeadList — link `entry` in after the head.
+#[inline]
+pub unsafe fn InsertHeadList(list_head: *mut ddk::_LIST_ENTRY, entry: *mut ddk::_LIST_ENTRY) {
+    #[cfg(feature = "dbg")]
+    if (*(*list_head).Flink).Blink != list_head || (*(*list_head).Blink).Flink != list_head {
+        RtlFailFast(FAST_FAIL_CORRUPT_LIST_ENTRY); // RtlpCheckListEntry
+    }
+    let old_flink = (*list_head).Flink;
+    (*entry).Flink = old_flink;
+    (*entry).Blink = list_head;
+    if (*old_flink).Blink != list_head {
+        RtlFailFast(FAST_FAIL_CORRUPT_LIST_ENTRY);
+    }
+    (*old_flink).Blink = entry;
+    (*list_head).Flink = entry;
+}
+
+/// InitializeSListHead — rtlfuncs.h FORCEINLINE: zero the header (64-bit: after checking the
+/// 16-byte alignment the interlocked 128-bit compare-exchange needs).
+#[inline]
+pub unsafe fn InitializeSListHead(slist_head: ddk::PSLIST_HEADER) {
+    #[cfg(target_pointer_width = "64")]
+    if (slist_head as usize) & 0xf != 0 {
+        ddk::ExRaiseStatus(0x8000_0002_u32 as NTSTATUS); // STATUS_DATATYPE_MISALIGNMENT
+    }
+    core::ptr::write_bytes(slist_head as *mut u8, 0, core::mem::size_of::<ddk::SLIST_HEADER>());
+}
+
+// ============================================================================
 // InsertTailList (FORCEINLINE from wdm.h)
 // ============================================================================
 
@@ -586,6 +677,56 @@ pub unsafe fn PopEntryList(
         (*list_head).Next = (*first).Next;
     }
     first
+}
+
+/// PushEntryList — rtlfuncs.h FORCEINLINE: link `entry` in at the head.
+/// C: Entry->Next = ListHead->Next; ListHead->Next = Entry;
+#[inline]
+pub unsafe fn PushEntryList(
+    list_head: *mut ddk::_SINGLE_LIST_ENTRY,
+    entry: *mut ddk::_SINGLE_LIST_ENTRY,
+) {
+    (*entry).Next = (*list_head).Next;
+    (*list_head).Next = entry;
+}
+
+/// RtlULongAdd — intsafe.h `DEFINE_SAFE_ADD(ULongAdd, ULONG)`: on overflow the output is
+/// ULONG_ERROR and the result STATUS_INTEGER_OVERFLOW (INTSAFE_E_ARITHMETIC_OVERFLOW in kernel
+/// mode), never a wrapped sum.
+#[inline]
+pub unsafe fn RtlULongAdd(augend: ULONG, addend: ULONG, output: *mut ULONG) -> NTSTATUS {
+    match augend.checked_add(addend) {
+        Some(sum) => {
+            *output = sum;
+            0 // STATUS_SUCCESS
+        }
+        None => {
+            *output = ULONG::MAX; // ULONG_ERROR
+            0xC000_0095_u32 as NTSTATUS // STATUS_INTEGER_OVERFLOW
+        }
+    }
+}
+
+// rtlfuncs.h: `#define RtlUlongByteSwap(_x) _byteswap_ulong((_x))` (and the USHORT/ULONGLONG
+// twins) -- an intrinsic everywhere but i386, where ntoskrnl exports fastcall functions the
+// bindgen glob declares.
+/// RtlUshortByteSwap — `_byteswap_ushort`.
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub fn RtlUshortByteSwap(source: USHORT) -> USHORT {
+    source.swap_bytes()
+}
+/// RtlUlongByteSwap — `_byteswap_ulong`.
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub fn RtlUlongByteSwap(source: ULONG) -> ULONG {
+    source.swap_bytes()
+}
+/// RtlUlonglongByteSwap — `_byteswap_uint64`.
+#[cfg(not(target_arch = "x86"))]
+#[inline]
+pub fn RtlUlonglongByteSwap(source: ULONGLONG) -> ULONGLONG {
+    source.swap_bytes()
 }
 
 // ============================================================================
@@ -770,4 +911,43 @@ pub const fn RTL_CONSTANT_OBJECT_ATTRIBUTES(
         SecurityDescriptor: core::ptr::null_mut(),
         SecurityQualityOfService: core::ptr::null_mut(),
     }
+}
+
+// ============================================================================
+// GetIRPMinorFunctionString (FORCEINLINE from reactos/debug/driverdbg.h)
+// ============================================================================
+
+/// GetIRPMinorFunctionString — the PnP minor code's name, for debug prints.
+#[inline]
+pub fn GetIRPMinorFunctionString(minor_function: UCHAR) -> PCHAR {
+    // iotypes.h; private here -- a new pub name in driver_ddk is E0659 in pcix's globs.
+    const IRP_MN_QUERY_LEGACY_BUS_INFORMATION: u8 = 0x18;
+    let s: *const u8 = match minor_function {
+        crate::driver_ddk::IRP_MN_START_DEVICE => b"IRP_MN_START_DEVICE\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_QUERY_REMOVE_DEVICE => b"IRP_MN_QUERY_REMOVE_DEVICE\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_REMOVE_DEVICE => b"IRP_MN_REMOVE_DEVICE\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_CANCEL_REMOVE_DEVICE => b"IRP_MN_CANCEL_REMOVE_DEVICE\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_STOP_DEVICE => b"IRP_MN_STOP_DEVICE\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_QUERY_STOP_DEVICE => b"IRP_MN_QUERY_STOP_DEVICE\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_CANCEL_STOP_DEVICE => b"IRP_MN_CANCEL_STOP_DEVICE\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_QUERY_DEVICE_RELATIONS => b"IRP_MN_QUERY_DEVICE_RELATIONS\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_QUERY_INTERFACE => b"IRP_MN_QUERY_INTERFACE\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_QUERY_CAPABILITIES => b"IRP_MN_QUERY_CAPABILITIES\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_QUERY_RESOURCES => b"IRP_MN_QUERY_RESOURCES\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_QUERY_RESOURCE_REQUIREMENTS => b"IRP_MN_QUERY_RESOURCE_REQUIREMENTS\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_QUERY_DEVICE_TEXT => b"IRP_MN_QUERY_DEVICE_TEXT\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_FILTER_RESOURCE_REQUIREMENTS => b"IRP_MN_FILTER_RESOURCE_REQUIREMENTS\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_READ_CONFIG => b"IRP_MN_READ_CONFIG\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_WRITE_CONFIG => b"IRP_MN_WRITE_CONFIG\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_EJECT => b"IRP_MN_EJECT\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_SET_LOCK => b"IRP_MN_SET_LOCK\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_QUERY_ID => b"IRP_MN_QUERY_ID\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_QUERY_PNP_DEVICE_STATE => b"IRP_MN_QUERY_PNP_DEVICE_STATE\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_QUERY_BUS_INFORMATION => b"IRP_MN_QUERY_BUS_INFORMATION\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_DEVICE_USAGE_NOTIFICATION => b"IRP_MN_DEVICE_USAGE_NOTIFICATION\0".as_ptr(),
+        crate::driver_ddk::IRP_MN_SURPRISE_REMOVAL => b"IRP_MN_SURPRISE_REMOVAL\0".as_ptr(),
+        IRP_MN_QUERY_LEGACY_BUS_INFORMATION => b"IRP_MN_QUERY_LEGACY_BUS_INFORMATION\0".as_ptr(),
+        _ => b"(unknown)IRP_MN\0".as_ptr(),
+    };
+    s as PCHAR
 }

@@ -447,15 +447,22 @@ def identifier_aliases(repo_root: Path, source: Path) -> dict[str, str]:
     # (WriteConsole, ReadConsoleInput, PeekConsoleInput) was then dropped as a dead branch
     # by the next `port replay`, the very failure the aliases exist to prevent.
     per_arch: list[dict[str, str]] = []
+    commands = 0
     for arch in _ARCHES:
         argv = compile_argv(repo_root, arch, source)
         if argv is None:
             continue
+        commands += 1
         try:
             dump = _preprocess_defines(argv)
         except MacroAuthorityError:
             continue
         per_arch.append(dict(re.findall(r"^#define ([A-Za-z_]\w*) ([A-Za-z_]\w*)\s*$", dump, re.M)))
+    if not commands:
+        raise MacroAuthorityError(
+            f"no compile command for {source} (own or borrowed) in any build-<arch>: "
+            "build an arch first"
+        )
     if not per_arch:
         return {}
     agreed = per_arch[0]

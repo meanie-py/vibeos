@@ -594,6 +594,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **LogonUserW never succeeds: the right password fails with 1312** (OPEN, 2026-10-07, found
+  by the `modrun` payload's `logon` suite, kept visible there as an `xfail`). On a user the
+  probe creates with a password, a wrong or empty password and an unknown user all fail
+  correctly with 1326, but the right one makes msv1_0's `LsaApLogonUserEx2` return
+  `STATUS_NO_SUCH_LOGON_SESSION` (c000005f, lsasrv `authpackage.rs:1985`). Neither profile or
+  token builder returns that status; the next suspect is `CreateLogonSession` ->
+  `LsapRmCreateLogonSession` -> the kernel's SRM. Pre-existing: the passwordless Administrator
+  logon failed the same way before the msv1_0 no-op-goto fix.
+- **amd64: one BUGCHECK 0x1E (c0000006) in `MiAllocatePagesForMdl`** (OPEN, seen once in eight
+  `modrun` boots, 2026-10-07, `/tmp/vibeos-cli/20261007-225948-ecqnwhgp-smoke-amd64`, a boot
+  that also carried temporary DbgPrints in ntdll's and msvcrt's exit paths) while
+  Rust diskpart walked volumes, right after scsiport rejected `IOCTL_VOLUME_GET_VOLUME_DISK_
+  EXTENTS` on the CD-ROM. The faulting access was to the MDL itself, so it is a victim; the
+  same boot steps passed four other times. Arm special pool (`--tripwire SPECIALPOOL=*`) on a
+  `farm` of modrun boots to catch the writer.
+
 - **FAT file dates show as 01/01/1601 in `dir`** (OPEN, 2026-10-07, Pi 5). A FAT image made by
   mtools, its HELLO.TXT dated 2026-10-07 21:54 (`mdir` agrees), listed in VibeOS cmd as
   `01/01/1601 12:00 AM`: a zero FILETIME. The volume label, serial, size and contents were
@@ -995,6 +1011,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     20261007-144313-uhji_66e, 20261007-145433-6emhz3k9). How the leak turned into a failed
     read is not established; reopen on any recurrence. Earlier runs: 20261006-041704-og7v50sd,
     20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
+  - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
+    part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
+    runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED
+    (e.g. research@6b775b9b9c99, which then landed unchanged). Cause: the arm64 HAL's
+    `ExTryToAcquireFastMutex` (`hal-rust/src/arm64/halstubs.rs`) stored `OldIrql` before the
+    compare-exchange, so a failed try overwrote the HOLDER's saved IRQL with APC_LEVEL and the
+    holder's release left it at APC_LEVEL (lines 57/59/76/78/133/283, every run). i386 forwards
+    to ntoskrnl's correct `Exi*`. Fix: store it only on success, as the C does. After: 3/3
+    rounds with no regression, pass 209-215 (runs 20261008-010705-u8wibif3,
+    20261008-011551-njv_6fyb, 20261008-011852-d36dvtvt). The baseline (204) was never raised,
+    so a later timing-only drop no longer fails the ratchet.
+  - **arm64: a new thread is not blocked on its mutex within 50 ms** (OPEN, found 2026-10-08).
+    The rest of `TestFastMutexConcurrent` (ExFastMutex lines 283-315) still fails 4-10
+    assertions per run: after `PsCreateSystemThread` and a 50 ms wait, the new thread has not
+    reached `ExAcquireFastMutex` (Count 0, not -1). It happens on ONE vCPU (the gate boots
+    without `-smp`), so it is not cross-CPU placement; i386 passes the same test 246/250.
+    Suspects: how soon a readied thread runs on arm64 without a DISPATCH software interrupt,
+    or the wait's timeout expiring early. Raise the ExFastMutex baseline once this is fixed.
+  - **SMP `KiIdleSummary` bits are never cleared** (OPEN, found 2026-10-08). The C only clears
+    them in its `#ifndef CONFIG_SMP` fast path (`thrdschd.c:310-322`), and the Rust copied that,
+    so after boot every CPU reads as idle forever and `KiSelectNextProcessor` ignores real
+    idleness: a readied thread goes to its ideal processor even when that one is busy and
+    another sits in WFI. Same class on the DPC side: `KiInsertQueueDpc` skips the wake IPI for
+    "idle" CPUs, which here halt rather than poll. Drafted fix (NT's rule): in the SMP path of
+    `KiDeferredReadyThread`, when the chosen PRCB is in the summary with no NextThread and
+    CurrentThread == IdleThread, clear its bit, make the thread Standby/NextThread and IPI;
+    and clear the bit when the arm64 idle loop takes a thread off its own ready list. Not
+    landed: it did not explain the 1-vCPU flake above and needs `-smp N` evidence first.
   - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
     (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
     control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU
@@ -1152,12 +1196,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   a freed array on failure; SeCaptureLuidAndAttributesArray never copied into a
   caller-supplied buffer and left `*Dest` dangling (a double free from NtFilterToken;
   the dangling pointer is the C's too). Part 2 burned the scanner's baseline from 114 rows to ZERO: every Nt* syscall body now loads and stores a pointer argument through `read_back`/`write_back`/`safe_copy_raw`/`copy_from_user` (`ntkrnl_sys::probe::read_back` is the new load-side twin of `write_back`), and the empty baseline makes any new raw access a `vibeos-cli check` failure. More real bugs: **NtWriteFile** read `Key` unprobed; **NtLoadKeyEx** "probed" each OBJECT_ATTRIBUTES with a one-byte touch (no range check); **NtGdiOpenDCW** had dropped the C's clear of `pUMdhpdev` (arbitrary-address handle store) and allocated a caller-sized DEVMODE it then wrote as a full DEVMODEW (pool overflow, the C's too); **NtUserRegisterClassExWOW** copied a whole WNDCLASSEXW after range-checking only `cbSize`; **NtGdiPolyDraw**'s `ProbeArrayForRead` was an empty fn; **NtUserSetCursorIconData**, d3dkmt Create/DestroyDCFromMemory, `NtUserBuildHwndList`'s `pcHwndNeeded` and `NtUserGetIconInfo`'s `lpModule` had no probe at all; NtOpenObjectAuditAlarm and NtPrivilegedServiceAuditAlarm re-read `PrivilegeCount` after it sized the buffer (double fetch, the C's too — the copy is pinned now); NtCreateToken and NtImpersonateClientOfPort probed with a stricter alignment than the C. Part 3 (2026-10-06) taught the scanner to follow a pointer argument into the callee it is passed to, transitively (96 rows on its first run, 0 now). Real bugs: **ObpCaptureObjectCreateInformation** read OBJECT_ATTRIBUTES and the QoS raw after the probe, and **ObpCaptureObjectName** copied the name raw — every NtCreate*/NtOpen* with attributes, any process; **SepCaptureSecurityQualityOfService** read the QoS pointer three times (probe, check, copy — swappable between); **NtAllocateLocallyUniqueId** stored outside any try (the C's too); **LpcpMoveMessageChecked** stored the header raw and re-read DataLength from the receiver's buffer to size the payload copy — a racing thread chose how much kernel message memory was copied out; **NtCreateThread** returned on a failed handle store leaving the inserted thread suspended for ever (the C kills it); **ApphelpValidateData** stored the handle into a KERNEL local through `probe_write_user`, so every user-mode apphelp lookup failed STATUS_ACCESS_VIOLATION; **NtGdiCreateDIBSection** never probed `Bits` and stored the section address through it (arbitrary-address write, the C's too); **NtGdiSetDIBitsToDeviceInternal** sized the source bitmap from the header, not `cjMaxBits` (pool over-read; with `cjMaxBits == 0` the caller's unprobed pointer was the pixel source); **NtGdiExtCreateRegion** read the unprobed `Xform`; **NtUserMessageCall** handed a pointer message's raw `lParam` to the window procedures it runs in the kernel (WM_NCCALCSIZE: a RECT store at any address), as did a same-thread send to a server-side procedure and the broadcast's sends; `CopyMsgToUserMem` re-measured a WM_CREATE message from user memory on the way back (pool over-read); `MsgMemorySize` and the broadcast's "Environment" test walked user strings raw; KdSystemDebugControl/KdChangeOption read and wrote the caller's buffers raw; NtPlugPlayControl's class-association and alias helpers handed user strings and GUIDs straight to Io* (the C's too). **NtGdiEngAlphaBlend/BitBlt/StretchBlt/LockSurface** now refuse user-mode callers: they took the caller's SURFOBJ/CLIPOBJ pointers and drew through `pvBits`, an arbitrary kernel write no probe can fix (Windows honours them only for user-mode printer drivers, which vibeos does not have). Part 4 (2026-10-06) closed two scanner blind spots and swept the bugs they had hidden. The scanner now (a) follows a pointer field read OUT of a `read_back` capture — `cap.Buffer`, lifted into a local, or handed straight to a callee (`f(oa.ObjectName)`) — and flags a raw deref/copy of it, while a scalar field passed as a length is not; and (b) catches a raw primitive whose pointer argument sits on a LATER line (`copy_nonoverlapping(\n InputBuffer, ..)`), which the per-line match had silently dropped — a false "clean" tree-wide. It also learned `.offset()` (not only `.add()`) and `slice::from_raw_parts`. Real bugs found and fixed: **NtDeviceIoControlFile/NtFsControlFile** (`IopDeviceFsIoControl`) copied the caller's InputBuffer into the system buffer raw (METHOD_BUFFERED and METHOD_*_DIRECT); **NtSetInformationFile/NtSetVolumeInformationFile** copied FileInformation/FsInformation raw (and deref'd a null quota alloc); **NtAddAtom/NtFindAtom** copied the caller's name raw into the pool capture; **NtRaiseHardError** copied the caller's Parameters raw; **NtPowerInformation** wrote SystemBatteryState/PowerCapabilities/ProcessorInformation straight through the caller's OutputBuffer (the processor arm as six field stores through a cast pointer); **NtGdiGetPath** copied the path points/types into the caller's buffers raw and then ran GdiPathDPtoLP on that user memory in place (now a kernel temp → transform → publish); **SepAccessCheckAndAuditAlarm** wrote the AccessStatus/GrantedAccess result lists back with a raw `*p.offset(i) = ..` loop, reachable from four Nt*AccessCheck*AuditAlarm syscalls; **NtGdiGetTextFaceW** NUL-terminated the caller's FaceName raw after an otherwise fault-tolerant copy; **NtGdiExtCreateRegion** iterated the caller's RGNDATA rect array raw (array-of-structs); **NtUserThunkedMenuItemInfo** (`IntSetMenuItemInfo`) copied the menu text from the captured MENUITEMINFO's un-repointed `dwTypeData` raw (embedded pointer). **Reviewed-safe:** NtGdiGetDIBitsInternal writes the caller's pjBits raw but pins it with EngSecureMem first (nolint). **Still blind:** an array of user pointers/structs indexed element by element, a capture made by a primitive other than `read_back`, and method calls — NtGdiExtCreateRegion and NtUserThunkedMenuItemInfo were found by reading, not by the scanner.
-- **PnP interface alias query never returns the alias — OPEN** (2026-10-06).
-  `IoGetDeviceInterfaceAlias` replaces the caller's UNICODE_STRING with its own pool copy,
-  so `PiControlGetInterfaceDeviceAlias` (the C as well) never writes the
-  `AliasSymbolicLinkName` buffer umpnpmgr passed and reports success. The leak is closed;
-  returning the alias needs umpnpmgr's length contract settled (it adds 1 to what it gets
-  back), so it is not guessed at.
+- **PnP interface alias query never returns the alias — FIXED 2026-10-08** (was OPEN
+  2026-10-06). `IoGetDeviceInterfaceAlias` ignores the caller's buffer and overwrites the
+  whole UNICODE_STRING with its own pool copy (`deviface.rs`,
+  `*AliasSymbolicLinkName = AliasSymbolicLink`), so `PiControlGetInterfaceDeviceAlias` (the
+  upstream C as well) allocated the alias and then leaked it without ever writing the
+  `AliasSymbolicLinkName` buffer umpnpmgr passed — yet returned success. The length
+  contract is now settled from primary sources, not guessed: the SetupAPI client
+  `CM_Get_Device_Interface_Alias_ExW` declares the buffer `_Out_writes_(*pulLength)` with
+  `pulLength` in WCHARs, and umpnpmgr's `PNP_GetInterfaceDeviceAlias` sets `*pulLength =
+  AliasSymbolicLinkNameLength` then `*pulTransferLen = *pulLength + 1` (the + 1 is the NUL).
+  So `AliasSymbolicLinkNameLength` is a WCHAR count: in = caller capacity, out = alias
+  length EXCLUDING the terminator. `PiControlGetInterfaceDeviceAlias` now copies the pool
+  alias back into the user buffer (NUL-terminated) and writes the WCHAR count, all through
+  the fault-tolerant `safe_copy_to_user`/`write_user` as the sibling
+  `PiControlDeviceClassAssociation` does, with `STATUS_BUFFER_TOO_SMALL` when the alias
+  plus terminator exceeds the caller's capacity. Not covered by any apitest (no rostest
+  calls the alias path), so verified by the settled contract + the shipping sibling's
+  mechanism + boot; a guest round-trip test is owed if the path ever regresses.
 - **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
   `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
   cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail

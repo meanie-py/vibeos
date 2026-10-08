@@ -22,9 +22,7 @@ unsafe extern "C" fn IsDiskInVolume(
 
     i = 0;
     while i < (*(*VolumeEntry).pExtents).NumberOfDiskExtents {
-        // Extents is a C flexible array (`Extents[1]`, psdk/ntddvol.h:55) holding
-        // NumberOfDiskExtents entries; bindgen's [_; 1] panicked on the second. Constant index 0 is checked at compile time, so the walk has no panic branch.
-        if (*(&raw mut (*(*VolumeEntry).pExtents).Extents[0]).add(i as usize)).DiskNumber
+        if (*core::ptr::addr_of!((*(*VolumeEntry).pExtents).Extents[0]).add(i as usize)).DiskNumber
             == (*DiskEntry).DiskNumber
         {
             return TRUE;

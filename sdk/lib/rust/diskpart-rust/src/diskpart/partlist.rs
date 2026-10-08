@@ -120,7 +120,10 @@ pub const PARTITION_LINUX: u8 = 0x83;
 pub const PARTITION_TBL_SIZE: usize = 4;
 pub const MBR_MAGIC: u16 = 0xAA55;
 
-#[repr(C)]
+// partlist.c declares both inside `#include <pshpack1.h>`: the MBR's 16-byte entries start
+// at byte 446, and Magic is bytes 510..512. Unpacked, the table began at 448 and Magic was
+// read from PAST the 512-byte sector buffer, so no disk ever looked partitioned.
+#[repr(C, packed)]
 pub struct _PARTITION {
     pub BootFlags: u8,
     pub StartingHead: u8,
@@ -136,7 +139,7 @@ pub struct _PARTITION {
 pub type PARTITION = _PARTITION;
 pub type PPARTITION = *mut _PARTITION;
 
-#[repr(C)]
+#[repr(C, packed)]
 pub struct _PARTITION_SECTOR {
     pub BootCode: [u8; 440],
     pub Signature: u32,
@@ -145,6 +148,8 @@ pub struct _PARTITION_SECTOR {
     pub Magic: u16,
 }
 pub type PARTITION_SECTOR = _PARTITION_SECTOR;
+const _: () = assert!(core::mem::size_of::<_PARTITION_SECTOR>() == 512);
+const _: () = assert!(core::mem::offset_of!(_PARTITION_SECTOR, Partition) == 446);
 pub type PPARTITION_SECTOR = *mut _PARTITION_SECTOR;
 #[no_mangle]
 pub unsafe extern "C" fn AlignDown(
@@ -266,19 +271,15 @@ unsafe extern "system" fn DiskConfigurationDataQueryRoutine(
 
     i = 0;
     while i < (*FullResourceDescriptor).PartialResourceList.Count {
-        // PartialDescriptors is a C flexible array (`PartialDescriptors[1]`, xdk/cmtypes.h:350)
-        // in a registry-sized resource list of `Count` descriptors. bindgen's [_; 1] panicked
-        // here at the SECOND descriptor -- and the geometry this reads is always at i + 1.
-        // Constant index 0 is checked at compile time, so the walk has no panic branch.
-        if ((*(&raw mut (*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).Type) as u32 != CmResourceTypeDeviceSpecific ||
-            (*(&raw mut (*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).u.DeviceSpecificData.DataSize !=
+        if ((*core::ptr::addr_of!((*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).Type) as u32 != CmResourceTypeDeviceSpecific ||
+            (*core::ptr::addr_of!((*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).u.DeviceSpecificData.DataSize !=
                 core::mem::size_of::<CM_DISK_GEOMETRY_DEVICE_DATA>() as ULONG
         {
             i += 1;
             continue;
         }
 
-        DiskGeometry = &(*(&raw mut (*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add((i + 1) as usize))
+        DiskGeometry = &(*core::ptr::addr_of!((*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add((i + 1) as usize))
             as *const _ as PCM_DISK_GEOMETRY_DEVICE_DATA;
         (*BiosDiskEntry).DiskGeometry = *DiskGeometry;
 
@@ -308,8 +309,8 @@ unsafe extern "system" fn SystemConfigurationDataQueryRoutine(
 
     i = 0;
     while i < (*FullResourceDescriptor).PartialResourceList.Count {
-        if ((*(&raw mut (*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).Type) as u32 != CmResourceTypeDeviceSpecific ||
-            (*(&raw mut (*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).u.DeviceSpecificData.DataSize % core::mem::size_of::<CM_INT13_DRIVE_PARAMETER>() as u32 != 0 {
+        if ((*core::ptr::addr_of!((*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).Type) as u32 != CmResourceTypeDeviceSpecific ||
+            (*core::ptr::addr_of!((*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).u.DeviceSpecificData.DataSize % core::mem::size_of::<CM_INT13_DRIVE_PARAMETER>() as u32 != 0 {
             i += 1;
             continue;
         }
@@ -317,7 +318,7 @@ unsafe extern "system" fn SystemConfigurationDataQueryRoutine(
         *Int13Drives = RtlAllocateHeap(
             RtlGetProcessHeap!(),
             0,
-            ((*(&raw mut (*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).u.DeviceSpecificData.DataSize) as SIZE_T,
+            ((*core::ptr::addr_of!((*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).u.DeviceSpecificData.DataSize) as SIZE_T,
         ) as PCM_INT13_DRIVE_PARAMETER;
 
         if (*Int13Drives).is_null() {
@@ -326,8 +327,8 @@ unsafe extern "system" fn SystemConfigurationDataQueryRoutine(
 
         memcpy(
             *Int13Drives as *mut core::ffi::c_void,
-            &(*(&raw mut (*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add((i + 1) as usize)) as *const _ as *const core::ffi::c_void,
-            ((*(&raw mut (*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).u.DeviceSpecificData.DataSize) as _,
+            &(*core::ptr::addr_of!((*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add((i + 1) as usize)) as *const _ as *const core::ffi::c_void,
+            ((*core::ptr::addr_of!((*FullResourceDescriptor).PartialResourceList.PartialDescriptors[0]).add(i as usize)).u.DeviceSpecificData.DataSize) as _,
         );
 
         return STATUS_SUCCESS;
@@ -527,11 +528,7 @@ unsafe extern "C" fn AddMbrPartitionToDisk(
     let mut PartitionInfo: PPARTITION_INFORMATION_EX = core::ptr::null_mut();
     let mut PartEntry: PPARTENTRY = core::ptr::null_mut();
 
-    // PartitionEntry is a C flexible array (`PartitionEntry[1]`, psdk/ntdddisk.h:421) in a
-    // LayoutBuffer (re)allocated for PartitionCount entries. Indexing bindgen's [_; 1]
-    // panicked for every partition after the first, i.e. on any disk with two of them.
-    // Constant index 0 is checked at compile time, so the walk has no panic branch.
-    PartitionInfo = &mut (*(&raw mut (*(*DiskEntry).LayoutBuffer).PartitionEntry[0]).add(PartitionIndex as usize));
+    PartitionInfo = &mut (*{ let flex: *mut [_; 1] = core::ptr::addr_of_mut!((*(*DiskEntry).LayoutBuffer).PartitionEntry); core::ptr::addr_of_mut!((*flex)[0]) }.add(PartitionIndex as usize));
 
     if (*PartitionInfo).__bindgen_anon_1.Mbr.PartitionType == 0 ||
         ((LogicalPartition) as i32 == TRUE && IsContainerPartition!((*PartitionInfo).__bindgen_anon_1.Mbr.PartitionType))
@@ -607,7 +604,7 @@ unsafe extern "C" fn AddGptPartitionToDisk(
     let mut PartitionInfo: PPARTITION_INFORMATION_EX = core::ptr::null_mut();
     let mut PartEntry: PPARTENTRY = core::ptr::null_mut();
 
-    PartitionInfo = &mut (*(&raw mut (*(*DiskEntry).LayoutBuffer).PartitionEntry[0]).add(PartitionIndex as usize));
+    PartitionInfo = &mut (*{ let flex: *mut [_; 1] = core::ptr::addr_of_mut!((*(*DiskEntry).LayoutBuffer).PartitionEntry); core::ptr::addr_of_mut!((*flex)[0]) }.add(PartitionIndex as usize));
 
     if IsEqualGUID!(
         &(*PartitionInfo).__bindgen_anon_1.Gpt.PartitionType,
@@ -1984,11 +1981,7 @@ unsafe extern "C" fn GetVolumeExtents(
 
     i = 0;
     while i < (*pExtents).NumberOfDiskExtents {
-        // Extents is a C flexible array (`Extents[1]`, psdk/ntddvol.h:55); partlist.c sizes the
-        // buffer for NumberOfDiskExtents of them. bindgen's [_; 1] panicked on a volume's
-        // second extent -- and LLVM, peeling the first iteration, turned some of these walks
-        // into an unconditional panic(index 1, len 1) on the second. Constant index 0 is checked at compile time, so the walk has no panic branch.
-        (*VolumeEntry).Size.QuadPart += ((*(&raw mut (*pExtents).Extents[0]).add(i as usize)).ExtentLength.QuadPart) as u64;
+        (*VolumeEntry).Size.QuadPart += ((*core::ptr::addr_of!((*pExtents).Extents[0]).add(i as usize)).ExtentLength.QuadPart) as u64;
         i += 1;
     }
 
@@ -2843,7 +2836,7 @@ pub unsafe extern "C" fn UpdateMbrDiskLayout(mut DiskEntry: PDISKENTRY) {
         PartEntry = CONTAINING_RECORD!(ListEntry, PARTENTRY, ListEntry);
 
         if (*PartEntry).IsPartitioned != 0 {
-            PartitionInfo = &mut (*(&raw mut (*(*DiskEntry).LayoutBuffer).PartitionEntry[0]).add(Index as usize));
+            PartitionInfo = &mut (*{ let flex: *mut [_; 1] = core::ptr::addr_of_mut!((*(*DiskEntry).LayoutBuffer).PartitionEntry); core::ptr::addr_of_mut!((*flex)[0]) }.add(Index as usize));
             (*PartEntry).PartitionIndex = Index;
 
             if (*PartEntry).New != 0 {
@@ -2886,7 +2879,7 @@ pub unsafe extern "C" fn UpdateMbrDiskLayout(mut DiskEntry: PDISKENTRY) {
         PartEntry = CONTAINING_RECORD!(ListEntry, PARTENTRY, ListEntry);
 
         if (*PartEntry).IsPartitioned != 0 {
-            PartitionInfo = &mut (*(&raw mut (*(*DiskEntry).LayoutBuffer).PartitionEntry[0]).add(Index as usize));
+            PartitionInfo = &mut (*{ let flex: *mut [_; 1] = core::ptr::addr_of_mut!((*(*DiskEntry).LayoutBuffer).PartitionEntry); core::ptr::addr_of_mut!((*flex)[0]) }.add(Index as usize));
             (*PartEntry).PartitionIndex = Index;
 
             if (*PartEntry).New != 0 {
@@ -2920,7 +2913,7 @@ pub unsafe extern "C" fn UpdateMbrDiskLayout(mut DiskEntry: PDISKENTRY) {
                 (*LinkInfo).RewritePartition = (TRUE) as u8;
             }
 
-            LinkInfo = &mut (*(&raw mut (*(*DiskEntry).LayoutBuffer).PartitionEntry[0]).add(Index.wrapping_add(1) as usize));
+            LinkInfo = &mut (*{ let flex: *mut [_; 1] = core::ptr::addr_of_mut!((*(*DiskEntry).LayoutBuffer).PartitionEntry); core::ptr::addr_of_mut!((*flex)[0]) }.add((Index.wrapping_add(1)) as usize));
 
             PartitionNumber = PartitionNumber.wrapping_add(1);
             Index = Index.wrapping_add(4);
@@ -2933,7 +2926,7 @@ pub unsafe extern "C" fn UpdateMbrDiskLayout(mut DiskEntry: PDISKENTRY) {
     while Index < 4 {
         DbgPrint(b"Primary partition entry %lu\n\0".as_ptr() as *const i8, Index);
 
-        PartitionInfo = &mut (*(&raw mut (*(*DiskEntry).LayoutBuffer).PartitionEntry[0]).add(Index as usize));
+        PartitionInfo = &mut (*{ let flex: *mut [_; 1] = core::ptr::addr_of_mut!((*(*DiskEntry).LayoutBuffer).PartitionEntry); core::ptr::addr_of_mut!((*flex)[0]) }.add(Index as usize));
 
         if IsEmptyLayoutEntry(PartitionInfo) == 0 {
             DbgPrint(b"Wiping primary partition entry %lu\n\0".as_ptr() as *const i8, Index);
@@ -2957,7 +2950,7 @@ pub unsafe extern "C" fn UpdateMbrDiskLayout(mut DiskEntry: PDISKENTRY) {
         if Index.wrapping_rem(4) >= 2 {
             DbgPrint(b"Logical partition entry %lu\n\0".as_ptr() as *const i8, Index);
 
-            PartitionInfo = &mut (*(&raw mut (*(*DiskEntry).LayoutBuffer).PartitionEntry[0]).add(Index as usize));
+            PartitionInfo = &mut (*{ let flex: *mut [_; 1] = core::ptr::addr_of_mut!((*(*DiskEntry).LayoutBuffer).PartitionEntry); core::ptr::addr_of_mut!((*flex)[0]) }.add(Index as usize));
 
             if IsEmptyLayoutEntry(PartitionInfo) == 0 {
                 DbgPrint(b"Wiping partition entry %lu\n\0".as_ptr() as *const i8, Index);
@@ -3314,15 +3307,15 @@ pub unsafe extern "C" fn GetVolumeFromPartition(
 
         i = 0;
         while i < (*(*VolumeEntry).pExtents).NumberOfDiskExtents {
-            if (*(&raw mut (*(*VolumeEntry).pExtents).Extents[0]).add(i as usize)).DiskNumber
+            if (*core::ptr::addr_of!((*(*VolumeEntry).pExtents).Extents[0]).add(i as usize)).DiskNumber
                 == (*(*PartEntry).DiskEntry).DiskNumber
             {
-                if (*(&raw mut (*(*VolumeEntry).pExtents).Extents[0]).add(i as usize))
+                if (*core::ptr::addr_of!((*(*VolumeEntry).pExtents).Extents[0]).add(i as usize))
                     .StartingOffset
                     .QuadPart
                     == ((*PartEntry).StartSector.QuadPart
                         * (*(*PartEntry).DiskEntry).BytesPerSector as u64) as i64
-                    && (*(&raw mut (*(*VolumeEntry).pExtents).Extents[0]).add(i as usize))
+                    && (*core::ptr::addr_of!((*(*VolumeEntry).pExtents).Extents[0]).add(i as usize))
                         .ExtentLength
                         .QuadPart
                         == ((*PartEntry).SectorCount.QuadPart

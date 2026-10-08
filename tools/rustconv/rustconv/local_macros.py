@@ -327,6 +327,19 @@ def existing(prelude: Path) -> set[str]:
     return {a or b for a, b in _ITEM.findall(m.group(1))}
 
 
+def hand_ported(prelude: Path) -> set[str]:
+    """Items defined OUTSIDE the generated block: a hand port, which the stage must not shadow.
+
+    The block is rebuilt from the bank on every replay, so a fix made inside it is undone by
+    the next run; moving the item above the block is how it stays fixed (atapi's
+    NUM_TO_BITMAP needed C's integer promotion spelled out).
+    """
+    text = prelude.read_text()
+    m = re.search(re.escape(BEGIN) + r".*?" + re.escape(END), text, re.S)
+    outside = text[: m.start()] + text[m.end() :] if m else text
+    return {a or b for a, b in _ITEM.findall(outside)}
+
+
 def write_block(prelude: Path, block: str) -> bool:
     text = prelude.read_text()
     m = re.search(re.escape(BEGIN) + r".*?" + re.escape(END) + r"\n?", text, re.S)

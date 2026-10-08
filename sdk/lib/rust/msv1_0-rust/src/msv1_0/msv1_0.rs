@@ -1033,9 +1033,6 @@ unsafe extern "C" fn MsvpEnumerateUsers(
         as PMSV1_0_ENUMUSERS_RESPONSE;
     if LocalBuffer.is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
-        'done: {
-            break 'done;
-        }
     } else {
         Status = (DispatchTable.AllocateClientBuffer.unwrap_unchecked())(
             ClientRequest,
@@ -1043,9 +1040,6 @@ unsafe extern "C" fn MsvpEnumerateUsers(
             core::ptr::addr_of_mut!(ClientBaseAddress),
         );
         if !NT_SUCCESS(Status) {
-            'done: {
-                break 'done;
-            }
         } else {
             (*LocalBuffer).MessageType = MsV1_0EnumerateUsers;
             (*LocalBuffer).NumberOfLoggedOnUsers = LogonCount;
@@ -1090,9 +1084,6 @@ unsafe extern "C" fn MsvpEnumerateUsers(
                 LocalBuffer as PVOID,
             );
             if !NT_SUCCESS(Status) {
-                'done: {
-                    break 'done;
-                }
             } else {
                 *ProtocolReturnBuffer = ClientBaseAddress;
                 *ReturnBufferLength = BufferLength;
@@ -1640,6 +1631,7 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
     }
     RtlInitUnicodeString(core::ptr::addr_of_mut!(ComputerName), ComputerNameData.as_mut_ptr());
 
+    'done: {
     if LogonType == Interactive ||
         LogonType == Batch ||
         LogonType == Service {
@@ -1725,9 +1717,7 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
             SubStatus,
         );
         if !NT_SUCCESS(Status) {
-            'done: {
-                break 'done;
-            }
+            break 'done; // C: goto done
         }
     } else {
         return STATUS_NOT_IMPLEMENTED;
@@ -1746,23 +1736,17 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
         SubStatus,
     );
     if !NT_SUCCESS(Status) {
-        'done: {
-            break 'done;
-        }
+        break 'done; // C: goto done
     }
 
     Status = NtAllocateLocallyUniqueId(LogonId);
     if !NT_SUCCESS(Status) {
-        'done: {
-            break 'done;
-        }
+        break 'done; // C: goto done
     }
 
     Status = DispatchTable.CreateLogonSession.unwrap_unchecked()(LogonId);
     if !NT_SUCCESS(Status) {
-        'done: {
-            break 'done;
-        }
+        break 'done; // C: goto done
     }
 
     SessionCreated = (TRUE) as u8;
@@ -1811,9 +1795,7 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
             ProfileBufferSize,
         );
         if !NT_SUCCESS(Status) {
-            'done: {
-                break 'done;
-            }
+            break 'done; // C: goto done
         }
     } else if LogonType == Network {
     }
@@ -1827,12 +1809,12 @@ pub unsafe extern "system" fn LsaApLogonUserEx2(
         SpecialAccount,
     );
     if !NT_SUCCESS(Status) {
-        'done: {
-            break 'done;
-        }
+        break 'done; // C: goto done
     }
 
-    'done: {
+    } // 'done
+
+    {
         if !ErasePassword.is_null() {
             RtlEraseUnicodeString(ErasePassword);
         }

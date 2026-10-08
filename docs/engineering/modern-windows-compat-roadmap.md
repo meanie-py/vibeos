@@ -68,10 +68,14 @@ stub first). Real subsystem work, not stubs:
    device's requester ID through the IORT) and supplies the address/data pci.sys writes
    into the table; `IoConnectInterruptEx` connects message-based, or falls back to the
    line. The arm64 HAL drives a GICv3 (Graviton's) as well as the Pi's GICv2 since
-   2026-10-07: `smoke --arch arm64 --gic 3 [--nvme] [--smp N]`. Owed: plain MSI
-   (capability 05h), freeing vectors on removal, `CONNECT_MESSAGE_BASED_PASSIVE`, and on
-   the ITS a two-level device table, more than one ITS, and LPIs routed anywhere but
-   CPU0.
+   2026-10-07: `smoke --arch arm64 --gic 3 [--nvme] [--smp N] [--smmu]`. The ITS backend
+   brings up every ITS the MADT lists, uses a two-level device table where the ITS can,
+   and spreads each device's messages across the CPUs (one collection per CPU); the
+   IORT walk follows a root complex through an SMMU, which the HAL puts in bypass at
+   boot since no driver programs an IOMMU. Owed: plain MSI (capability 05h), freeing
+   vectors and events on removal, `CONNECT_MESSAGE_BASED_PASSIVE`, honouring a
+   driver's requested affinity (MOVI), PCI segments other than 0, and driving an SMMU
+   for real (isolation) rather than bypassing it.
 2. **Write-combined mappings** (`MmWriteCombined` through a correctly programmed PAT).
    Getting it wrong is mostly a performance problem, but it can show up as visible
    corruption.

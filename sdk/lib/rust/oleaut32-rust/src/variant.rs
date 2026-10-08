@@ -4980,9 +4980,6 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
     if ((*V_VT_ref(pVarIn)) & VT_TYPEMASK) == VT_DISPATCH && (((*V_VT_ref(pVarIn)) & !VT_TYPEMASK) == 0) {
         hRet = VARIANT_FetchDispatchValue(pVarIn, &mut temp);
         if FAILED(hRet) {
-            'VarNot_Exit: {
-                break 'VarNot_Exit;
-            }
             if FAILED(hRet) {
                 (*V_VT_ref(pVarOut)) = VT_EMPTY;
             }
@@ -5000,9 +4997,6 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
             hRet = VarBoolFromStr(*V_BSTR_ref(pVarIn) , LOCALE_USER_DEFAULT, VAR_LOCALBOOL, V_BOOL_ref(&mut varIn));
         }
         if FAILED(hRet) {
-            'VarNot_Exit: {
-                break 'VarNot_Exit;
-            }
             if FAILED(hRet) {
                 (*V_VT_ref(pVarOut)) = VT_EMPTY;
             }
@@ -5033,9 +5027,6 @@ pub unsafe extern "system" fn VarNot(pVarIn: LPVARIANT, pVarOut: LPVARIANT) -> H
         VT_DECIMAL => {
             hRet = VarI4FromDec(V_DECIMAL_ref(pVarIn), V_I4_ref(&mut varIn));
             if FAILED(hRet) {
-                'VarNot_Exit: {
-                    break 'VarNot_Exit;
-                }
                 if FAILED(hRet) {
                     (*V_VT_ref(pVarOut)) = VT_EMPTY;
                 }

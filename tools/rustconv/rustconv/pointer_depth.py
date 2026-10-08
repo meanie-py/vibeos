@@ -13,6 +13,12 @@ in the island, loses exactly one level -- the declaration, its `(*(*name))` dere
 and the `as *mut T` casts assigned to it. A name the C declares as `T *name` (an
 out-parameter: `PDEVICE_OBJECT *Pdo`) is left alone, as is any name the C declares twice
 with different depths.
+
+The same misreading has a second, quieter form: C's `sizeof(*DevExt)` came back as
+`size_of::<PATAPORT_DEVICE_EXTENSION>()` -- the size of a POINTER. atapi passed that to
+IoCreateDevice as the PDO's extension size (8 bytes for a struct of hundreds), and set three
+SCSI mode-page lengths from it. Inside a function whose C never writes `sizeof(PFOO)`, a
+`size_of::<PFOO>()` is restored to the pointee.
 """
 
 from __future__ import annotations
@@ -23,6 +29,17 @@ from dataclasses import dataclass
 
 #: `pub type PFOO = *mut _FOO;` in a bindgen island.
 _PTR_TYPEDEF = re.compile(r"^pub type ([A-Za-z_]\w*) = \*(?:mut|const) ", re.M)
+
+
+_PTR_TARGET = re.compile(r"^pub type ([A-Za-z_]\w*) = \*(?:mut|const) ([A-Za-z_]\w*);", re.M)
+
+
+def pointer_targets(islands: Iterable[str]) -> dict[str, str]:
+    """`PFOO -> _FOO` where every island agrees on the pointee."""
+    maps = [dict(_PTR_TARGET.findall(text)) for text in islands]
+    if not maps:
+        return {}
+    return {k: v for k, v in maps[0].items() if all(m.get(k) == v for m in maps[1:])}
 
 
 def pointer_typedefs(islands: Iterable[str]) -> set[str]:
@@ -37,6 +54,8 @@ class CFunctionDecls:
 
     names: dict[str, tuple[str, int]]
     ret: tuple[str, int] | None
+    #: pointer typedefs the C itself takes `sizeof` of (`sizeof(PVOID)` is meant).
+    sizeof_types: frozenset[str] = frozenset()
 
 
 def _split_commas(text: str) -> list[str]:
@@ -87,7 +106,10 @@ def c_declarations(
     for i, w in enumerate(words):
         if w in types:
             ret = (w, words[i + 1 :].count("*"))
-    return CFunctionDecls(names, ret)
+    sized = frozenset(
+        t for t in re.findall(r"\bsizeof\s*\(\s*([A-Za-z_]\w*)\s*\)", body) if t in types
+    )
+    return CFunctionDecls(names, ret, sized)
 
 
 def _fn_spans(text: str) -> Iterable[tuple[str, int, int, int]]:
@@ -113,7 +135,10 @@ def _fn_spans(text: str) -> Iterable[tuple[str, int, int, int]]:
 
 
 def repair(
-    rust: str, decls: Mapping[str, CFunctionDecls], types: set[str]
+    rust: str,
+    decls: Mapping[str, CFunctionDecls],
+    types: set[str],
+    targets: Mapping[str, str] | None = None,
 ) -> tuple[str, list[str]]:
     """Collapse the extra level for every name the C declares one level shallower."""
     fixes: list[str] = []
@@ -135,8 +160,20 @@ def repair(
         r = re.search(r"\)\s*->\s*\*(?:mut|const)\s+([A-Za-z_]\w*)\s*$", header.rstrip())
         if r and r.group(1) in types and c.ret == (r.group(1), 0):
             ret_typ = r.group(1)
-        if not wrong and ret_typ is None:
+        sized = sorted(
+            {
+                t
+                for t in re.findall(r"\bsize_of::<\s*([A-Za-z_]\w*)\s*>\s*\(\s*\)", body)
+                if targets and t in targets and t in types and t not in c.sizeof_types
+            }
+        )
+        if not wrong and ret_typ is None and not sized:
             continue
+        for typ in sized:
+            assert targets is not None  # `sized` is empty without them
+            body = re.sub(
+                rf"\bsize_of::<\s*{re.escape(typ)}\s*>", f"size_of::<{targets[typ]}>", body
+            )
         for var, typ in wrong.items():
             decl = rf"(\b(?:mut\s+)?{re.escape(var)}\s*:\s*)\*(?:mut|const)\s+{re.escape(typ)}\b"
             header = re.sub(decl, rf"\g<1>{typ}", header)
@@ -158,6 +195,7 @@ def repair(
             out.append(rust[last:start] + new)
             last = end
             what = sorted(wrong) + (["-> return"] if ret_typ else [])
+            what += [f"size_of::<{t}>" for t in sized]
             fixes.append(f"{name}: {', '.join(what)}")
     out.append(rust[last:])
     return "".join(out), fixes

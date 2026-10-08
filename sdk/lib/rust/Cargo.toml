@@ -411,6 +411,7 @@ members = [
     "wowx64-cargo",
     "usetup-rust",
     "diskpart-rust",
+    "appwiz-rust",
 ]
 resolver = "2"
 

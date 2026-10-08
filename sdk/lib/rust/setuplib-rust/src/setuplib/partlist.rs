@@ -97,11 +97,14 @@ pub const ROOT_NAME: [::core::ffi::c_ushort; 67] = unsafe {
     )
 };
 
-#[repr(C)]
+// partlist.c packs it (pshpack1): the C writes a 12-byte MountedDevices value (signature +
+// starting offset, mountmgr's basic-disk unique ID). Unpacked it was 16 bytes.
+#[repr(C, packed)]
 pub struct _REG_DISK_MOUNT_INFO {
     pub Signature: u32,
     pub StartingOffset: u64,
 }
+const _: () = assert!(core::mem::size_of::<_REG_DISK_MOUNT_INFO>() == 12);
 pub type REG_DISK_MOUNT_INFO = _REG_DISK_MOUNT_INFO;
 pub type PREG_DISK_MOUNT_INFO = *mut _REG_DISK_MOUNT_INFO;
 #[no_mangle]
@@ -1951,7 +1954,7 @@ unsafe extern "C" fn AddDiskToList(
 
         i = 0;
         while i < 4 {
-            (*(*DiskEntry).LayoutBuffer).PartitionEntry[i as usize].RewritePartition = (TRUE) as u8;
+            (*{ let flex: *mut [_; 1] = core::ptr::addr_of_mut!((*(*DiskEntry).LayoutBuffer).PartitionEntry); core::ptr::addr_of_mut!((*flex)[0]) }.add(i as usize)).RewritePartition = (TRUE) as u8;
             i = i.wrapping_add(1);
         }
     } else {
@@ -3441,7 +3444,7 @@ pub unsafe extern "C" fn WritePartitions(DiskEntry: PDISKENTRY) -> NTSTATUS {
         }
 
         if (*PartEntry).New != 0 {
-            PartitionInfo = &mut (*(*DiskEntry).LayoutBuffer).PartitionEntry[(*PartEntry).PartitionIndex as usize];
+            PartitionInfo = &mut (*{ let flex: *mut [_; 1] = core::ptr::addr_of_mut!((*(*DiskEntry).LayoutBuffer).PartitionEntry); core::ptr::addr_of_mut!((*flex)[0]) }.add((*PartEntry).PartitionIndex as usize));
             (*PartEntry).PartitionNumber = (*PartitionInfo).PartitionNumber;
             InitPartitionDeviceName(PartEntry);
         }
@@ -3459,7 +3462,7 @@ pub unsafe extern "C" fn WritePartitions(DiskEntry: PDISKENTRY) -> NTSTATUS {
         }
 
         if (*PartEntry).New != 0 {
-            PartitionInfo = &mut (*(*DiskEntry).LayoutBuffer).PartitionEntry[(*PartEntry).PartitionIndex as usize];
+            PartitionInfo = &mut (*{ let flex: *mut [_; 1] = core::ptr::addr_of_mut!((*(*DiskEntry).LayoutBuffer).PartitionEntry); core::ptr::addr_of_mut!((*flex)[0]) }.add((*PartEntry).PartitionIndex as usize));
             (*PartEntry).PartitionNumber = (*PartitionInfo).PartitionNumber;
             InitPartitionDeviceName(PartEntry);
         }

@@ -113,9 +113,16 @@ all included), then auto-triage on failure.
 
 - **`--gic 3`** (arm64) boots QEMU virt with a GICv3 and an ITS (`VIBEOS_QEMU_GIC=3`;
   the default is the GICv2 the Pi 4 has) and FAILS the boot (`GIC_NOT_V3`) unless the HAL
-  prints `[GIC] GICv3: distributor`, and with `--nvme` (`GIC_NO_ITS`) unless MSI-X went
-  through the ITS (`[HAL] GICv3 ITS at`). With `--smp N` it also carries the IPIs, which are
-  `ICC_SGI1R_EL1` writes there instead of GICD_SGIR.
+  prints `[GIC] GICv3: distributor`, and with `--nvme` (`GIC_NO_ITS`) unless an ITS came up
+  for MSI-X (`[HAL] GICv3 ITS: N of M up`, N at least 1). With `--smp N` it also carries the
+  IPIs, which are `ICC_SGI1R_EL1` writes there instead of GICD_SGIR, and the ITS spreads
+  each device's messages across the CPUs.
+
+- **`--smmu`** (arm64) puts an SMMUv3 in front of the PCI root complex
+  (`VIBEOS_QEMU_SMMU=1`, `iommu=smmuv3`) and FAILS the boot (`SMMU_NOT_BYPASSED`) unless the
+  HAL found it in the IORT and reports it passing DMA through untranslated (no vibeos
+  driver knows about an IOMMU). With `--gic 3 --nvme` the ITS's DeviceIDs then come through
+  the SMMU's own IORT mapping.
 
 - **`--nvme`** (any arch; the default for `amd64-bios`, which is the OptiPlex 9020's
   stick + NVMe drive, opt out with `VIBEOS_QEMU_NVME=0`) attaches a QEMU `nvme`

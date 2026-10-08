@@ -144,6 +144,14 @@ pub mod ddk {
     pub use super::inline::ke::KeEnterCriticalRegion;
     #[cfg(all(target_arch = "x86", feature = "inline_exports"))]
     pub use super::inline::ke::KeLeaveCriticalRegion;
+
+    // rtltypes.h, x86 only: `#define SLIST_ENTRY SINGLE_LIST_ENTRY` / `#define PSLIST_ENTRY
+    // PSINGLE_LIST_ENTRY`. Type aliases spelled as macros, which bindgen drops; the 64-bit
+    // arches typedef a real struct. (atapi's completion DPC walks an SLIST through them.)
+    #[cfg(target_arch = "x86")]
+    pub type SLIST_ENTRY = SINGLE_LIST_ENTRY;
+    #[cfg(target_arch = "x86")]
+    pub type PSLIST_ENTRY = PSINGLE_LIST_ENTRY;
 }
 
 // ============================================================================

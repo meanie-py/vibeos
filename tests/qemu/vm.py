@@ -358,6 +358,12 @@ def gic_version() -> int:
     raise ValueError(f"VIBEOS_QEMU_GIC must be 2 or 3 (got {raw!r})")
 
 
+def smmu_requested() -> bool:
+    """VIBEOS_QEMU_SMMU=1: an SMMUv3 in front of arm64's PCI root complex, the way a
+    server puts one between its devices and memory (and, on a GICv3, its ITS)."""
+    return os.environ.get("VIBEOS_QEMU_SMMU", "").strip() in ("1", "true", "yes")
+
+
 def testkernel_boot_img(src: Path, work_dir: Path) -> Path:
     """The /TESTKERNEL variant of arm64 boot.img, built ONCE and shared read-only.
 
@@ -749,6 +755,8 @@ class Arm64Config(ArchConfig):
         if gic_version() == 3:
             # virt's ITS is on by default with a GICv3; say so, so it cannot go quietly.
             machine[machine.index("-M") + 1] += ",gic-version=3,its=on"
+        if smmu_requested():
+            machine[machine.index("-M") + 1] += ",iommu=smmuv3"
         if "el2" in hazards:
             machine[machine.index("-M") + 1] += ",virtualization=on"
         if "a76" in hazards:

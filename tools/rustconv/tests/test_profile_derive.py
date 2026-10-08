@@ -546,6 +546,17 @@ def test_header_symbols_classifies_macro_kinds(tmp_path):
     assert header_symbols(h, frozenset({"LIT", "FN"})).keys() == {"LIT", "FN"}
 
 
+def test_header_symbols_owns_a_cxx_const(tmp_path):
+    # browseui's internettoolbar.h: a legal C++ case label that neither the macro nor the enum
+    # scan saw, so the module was blocked on a false SWITCH_CONST_UNOWNED.
+    h = _write(tmp_path / "itb.h", "static const int gViewsCommandID = FCIDM_SHVIEW_AUTOARRANGE;\n")
+    assert header_symbols(h, frozenset({"gViewsCommandID"}))["gViewsCommandID"] == (
+        "cxx-const",
+        "FCIDM_SHVIEW_AUTOARRANGE",
+    )
+    assert header_symbols(h)["gViewsCommandID"][0] == "cxx-const"
+
+
 def test_targeted_scan_is_not_fooled_by_a_prefix_identifier(tmp_path):
     """Regression, found on the real afd/tdihelpers closure: alternation is first-match-wins,
     so `TDI_ADDRESS_TYPE_IP` swallowed the `#define TDI_ADDRESS_TYPE_IPX` line and IPX was
@@ -931,6 +942,38 @@ class TestGeneratorBaseIncludes:
         dp = derive(_mod(tmp_path), root)
         assert any("sdk/include/wine" in e for e in dp.late_inc), dp.late_inc
         assert not any("sdk/include/wine" in e for e in dp.extra_inc)
+
+    def test_an_isystem_dir_is_read_like_an_I_dir(self, tmp_path: Path):
+        """CMake spells an INTERFACE library's include dirs `-isystem <dir>`. Reading only
+        `-I` lost browseui's atl_classes (sdk/lib/atl) and derive could not find atlstr.h."""
+        import json
+
+        from rustconv.profile_derive import load_compile_db
+
+        root = _basic_module(tmp_path)
+        (root / "sdk/lib/atl").mkdir(parents=True, exist_ok=True)
+        build = tmp_path / "build-i386"
+        build.mkdir(exist_ok=True)
+        build.joinpath("compile_commands.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "directory": "/tmp/vibeos/build-i386",
+                        "file": f"/tmp/vibeos/dll/win32/widget/{stem}.c",
+                        "command": "clang -I/tmp/vibeos/dll/win32/widget -isystem "
+                        "/tmp/vibeos/sdk/lib/atl -isystem/tmp/vibeos/sdk/include "
+                        f"-c /tmp/vibeos/dll/win32/widget/{stem}.c",
+                    }
+                    for stem in ("main", "helper")
+                ]
+            )
+        )
+        module = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+        db = load_compile_db(root, module, "i386")
+        assert db is not None
+        incs = [str(p) for p in db.include_dirs]
+        assert any(p.endswith("sdk/lib/atl") for p in incs), incs
+        assert any(p.endswith("sdk/include") for p in incs), incs
 
     def test_a_dir_the_generator_already_passes_is_not_re_emitted(self, tmp_path: Path):
         root = _basic_module(tmp_path)
