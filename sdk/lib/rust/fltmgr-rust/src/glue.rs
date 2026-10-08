@@ -103,17 +103,11 @@ pub const FLTFL_FILTERING_INITIATED: u32 = 2;
 #[inline]
 pub unsafe fn FLT_ASSERT(_cond: i32) {}
 
-// RtlAssert — debug-only ntoskrnl helper, stripped in retail (undefined at link).
-// Provide a no-op definition so the translated debug-assert call sites resolve.
-// NTAPI = stdcall on i386 → emits `_RtlAssert@N`; cdecl on amd64/arm64. The
-// param types cover every module's decl (PVOID≡*mut c_void, ULONG≡u32, CHAR≡i8).
-#[no_mangle]
-pub unsafe extern "system" fn RtlAssert(
-    _failed_assertion: PVOID,
-    _file_name: PVOID,
-    _line_number: ULONG,
-    _message: *mut ntkrnl_sys::ddk::CHAR,
-) {
+// RtlAssert is ntoskrnl's export: it prints the failed assertion and returns. An
+// empty local definition here won the link and made every failed ASSERT in this
+// driver vanish (scan_export_shadows).
+extern "system" {
+    pub fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut ntkrnl_sys::ddk::CHAR);
 }
 
 // ---- driver-private IOCTL structs (sdk/include/reactos/drivers/fltmgr/fltmgr_shared.h) ----

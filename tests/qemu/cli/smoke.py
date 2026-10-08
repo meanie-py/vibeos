@@ -15,7 +15,7 @@ import sys
 import time
 from pathlib import Path
 
-from ..vm import QemuVM, get_arch_config, launch_with_retry
+from ..vm import QemuVM, get_arch_config, launch_with_retry, smp_count
 from . import archcfg, hostlock, provenance, triage
 from . import config as cli_config
 from . import ladder as ladder_mod
@@ -424,6 +424,7 @@ def _boot_vm(
             smp_fail = (
                 _smp_check(text, arch)
                 or _ahci_check(text)
+                or _gic_check(text)
                 or _nvme_check(text)
                 or _virtio_mmio_check(text, arch)
             )
@@ -851,6 +852,59 @@ _NVME_SELF_TEST = re.compile(
 )
 
 
+# hal-rust arm64/gic3.rs prints this once clock init has mapped the GICv3...
+_GIC_V3 = "[GIC] GICv3: distributor"
+# ...and arm64/its.rs this once the ITS is up, at the first MSI-X request.
+# Its failures share the prefix, so match the success summary with at least one up.
+_GIC_ITS = re.compile(r"\[HAL\] GICv3 ITS: [1-9]\d* of \d+ up")
+# arm64/smmu.rs, once it has looked at an SMMUv3 the IORT lists, and let DMA through.
+# arm64/clock.rs, on each CPU's first LPI: the ITS spreads a device's messages over
+# the CPUs, so an NVMe on an SMP boot takes its I/O completions on CPU1.
+_LPI_ON_AN_AP = re.compile(r"\[GIC\] CPU[1-9]\d*: first LPI delivered")
+_SMMU_BYPASSED = re.compile(r"\[HAL\] IORT: SMMUv3 at \S+ was .*; now bypassing")
+
+
+def _gic_check(text: str) -> dict | None:
+    """Prove a `--gic 3` boot ran on the GICv3. The GICv2 path never runs there (QEMU
+    describes no GICC), so a desktop already implies most of it, but not that the HAL
+    took the v3 path rather than, say, booting without a clock; and with `--nvme`, that
+    MSI-X went through the ITS."""
+    if os.environ.get("VIBEOS_QEMU_SMMU", "").strip() == "1" and not _SMMU_BYPASSED.search(text):
+        return {
+            "classification": "SMMU_NOT_BYPASSED",
+            "salient": [
+                "--smmu boot, but the HAL never reported the SMMUv3 bypassing DMA",
+                *[ln.strip() for ln in text.splitlines() if "IORT" in ln][-6:],
+            ],
+        }
+    if os.environ.get("VIBEOS_QEMU_GIC", "").strip() != "3":
+        return None
+    lines = [ln.strip() for ln in text.splitlines() if "[GIC]" in ln or "GICv3" in ln][-6:]
+    if _GIC_V3 not in text:
+        return {
+            "classification": "GIC_NOT_V3",
+            "salient": [
+                f"--gic 3 boot reached the desktop but the HAL never printed `{_GIC_V3}`",
+                *lines,
+            ],
+        }
+    if nvme_requested() and not _GIC_ITS.search(text):
+        return {
+            "classification": "GIC_NO_ITS",
+            "salient": ["--gic 3 --nvme boot, but the HAL never reported an ITS up", *lines],
+        }
+    if nvme_requested() and (smp_count() or 1) > 1 and not _LPI_ON_AN_AP.search(text):
+        return {
+            "classification": "GIC_LPIS_ONE_CPU",
+            "salient": [
+                "--gic 3 --nvme --smp boot, but no CPU but CPU0 ever took an LPI: the ITS "
+                "did not spread NVMe's messages",
+                *[ln.strip() for ln in text.splitlines() if "LPI" in ln][-6:],
+            ],
+        }
+    return None
+
+
 def _nvme_check(text: str) -> dict | None:
     """Prove an `--nvme` boot brought the controller up, on MSI-X interrupts. A
     desktop alone proves nothing: the boot never needs the NVMe disk, so a driver
@@ -858,7 +912,8 @@ def _nvme_check(text: str) -> dict | None:
     still works, through its 10 ms poll, so it would quietly regress to polling.
     And with no messages assigned it falls back to its pin and works there too,
     so MSI-X could break anywhere along pci.sys -> PnP -> HAL -> IoConnectInterruptEx
-    without a symptom. Every rig's QEMU offers MSI-X (x86 APIC, arm64 GICv2m)."""
+    without a symptom. Every rig's QEMU offers MSI-X (x86 APIC, arm64 GICv2m, or
+    the ITS under --gic 3)."""
     if not nvme_requested():
         return None
     lines = [ln.strip() for ln in text.splitlines() if "[NVME]" in ln][-6:]
@@ -1077,6 +1132,28 @@ def smoke(args, repo: Path) -> int:
             return run.finalize(repo)
         os.environ["VIBEOS_AHCI_CD"] = "1"
         run.add(Stage("ahci", status="warn", detail="boot CD on ich9-ahci"))
+
+    # GIC channel: arm64's virt machine at gic-version=3 (vm.py gic_version), and
+    # every boot must then show the HAL driving it as one (_gic_check).
+    gic = getattr(args, "gic", None)
+    if gic is not None:
+        if arch != "arm64" and gic != 2:
+            run.classification = "BAD_ARGS"
+            run.add(Stage("gic", status="fail", detail="--gic 3 is arm64-only (x86 has no GIC)"))
+            return run.finalize(repo)
+        os.environ["VIBEOS_QEMU_GIC"] = str(gic)
+        if gic == 3:
+            run.add(Stage("gic", status="warn", detail="GICv3 + ITS"))
+
+    # SMMU channel: an SMMUv3 in front of arm64's PCI (vm.py smmu_requested), and every
+    # boot must then show the HAL putting it in bypass (_gic_check).
+    if getattr(args, "smmu", False):
+        if arch != "arm64":
+            run.classification = "BAD_ARGS"
+            run.add(Stage("smmu", status="fail", detail="--smmu is arm64-only"))
+            return run.finalize(repo)
+        os.environ["VIBEOS_QEMU_SMMU"] = "1"
+        run.add(Stage("smmu", status="warn", detail="SMMUv3 in front of PCI"))
 
     # NVMe channel: a controller attached on every arch (vm.py _nvme_args), and
     # every boot must then show nvme.sys publishing its namespace (_nvme_check).

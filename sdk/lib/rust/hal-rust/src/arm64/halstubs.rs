@@ -183,6 +183,7 @@ pub unsafe extern "system" fn HalInitSystem(
 ) -> ddk::BOOLEAN {
     unsafe {
         if BootPhase == 0 {
+            super::gic3::record_platform(LoaderBlock);
             super::pnpdd::register(LoaderBlock);
             HalpCurrentTimeIncrement = 100000;
             HalpNextTimeIncrement = 100000;
@@ -414,6 +415,9 @@ pub unsafe extern "system" fn HalClearSoftwareInterrupt(Request: ddk::KIRQL) {}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalDisableSystemInterrupt(Vector: ddk::ULONG, Irql: ddk::KIRQL) {
+    if super::its::owns(Vector as u32) {
+        return super::its::disable(Vector as u32);
+    }
     // Clear-enable the device's GIC line (Vector == GIC INTID).
     super::clock::disable_gic_interrupt(Vector as u32);
 }
@@ -431,6 +435,10 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
     // CPU interface; the connected ISR is then dispatched by KiIrqHandler →
     // HalClockInterruptArm64 → KiDispatchInterruptArm64. Returns FALSE for an
     // out-of-range / special INTID so KeConnectInterrupt rolls back cleanly.
+    // An LPI from the ITS has no line at all: its enable is a byte in memory.
+    if super::its::owns(Vector as u32) {
+        return super::its::enable(Vector as u32, Irql) as ddk::BOOLEAN;
+    }
     if Vector as usize >= 1020 {
         return FALSE;
     }
@@ -1540,14 +1548,20 @@ pub unsafe extern "system" fn ExReleaseFastMutex(FastMutex: ddk::PFAST_MUTEX) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn ExTryToAcquireFastMutex(FastMutex: ddk::PFAST_MUTEX) -> ddk::BOOLEAN {
+    // OldIrql belongs to the OWNER: store it only once the mutex is ours, as the C
+    // `_ExTryToAcquireFastMutex` does. Writing it before the compare-exchange let
+    // every failed try overwrite the holder's saved IRQL with APC_LEVEL, so the
+    // holder's release "restored" APC_LEVEL and left the thread there (kmtest
+    // ExFastMutex lines 57/59/76/78/133/283, every arm64 run).
     unsafe {
-        (*FastMutex).OldIrql = KfRaiseIrql(APC_LEVEL) as ddk::ULONG;
+        let OldIrql = KfRaiseIrql(APC_LEVEL);
         if interlocked_compare_exchange(&raw mut (*FastMutex).Count, 0, 1) == 1 {
             (*FastMutex).Owner = ddk::KeGetCurrentThread();
-            return TRUE;
+            (*FastMutex).OldIrql = OldIrql as ddk::ULONG;
+            return TRUE; // nolint: irql-balance (acquired: stays at APC_LEVEL until ExReleaseFastMutex)
         }
 
-        KfLowerIrql((*FastMutex).OldIrql as ddk::KIRQL);
+        KfLowerIrql(OldIrql);
     }
 
     FALSE

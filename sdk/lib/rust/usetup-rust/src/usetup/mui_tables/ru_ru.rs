@@ -4,7 +4,7 @@
 #![allow(clippy::all)]
 #[allow(unused_imports)]
 use crate::prelude::*;
-use super::{cstr_cat_join, cstr_cat_len};
+use super::data_port;
 
 pub(super) static mut ruRUSetupInitPageEntries: [MUI_ENTRY; 5] = [
     MUI_ENTRY { X: 4, Y: 3, Buffer: cstr_cat!(b" \x93\xe1\xe2\xa0\xad\xae\xa2\xaa\xa0 ReactOS ", KERNEL_VERSION_STR).as_ptr() as PCSTR, Flags: TEXT_STYLE_UNDERLINE as DWORD, TextID: TEXT_ID_STATIC as INT },

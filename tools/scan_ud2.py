@@ -129,6 +129,10 @@ EXPECTED_SPIN = {
     "FatalAppExit",
     "FatalExit",
 }
+# Matched by EXACT name: a substring "exit" would excuse every function that has one.
+# vendor/dosfstools/common.c's `exit()` (linked from vfatlib) is `NtTerminateProcess(); while(1);`
+# for the native setup programs -- the same unreachable tail as ExitProcess above.
+EXPECTED_SPIN_EXACT = {"exit"}
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +299,10 @@ def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
         fn = current_function
         expected = (
             any(e in fn for e in EXPECTED_UD2)
-            or (arch == "arm64" and any(e in fn for e in EXPECTED_SPIN))
+            or (
+                arch == "arm64"
+                and (any(e in fn for e in EXPECTED_SPIN) or fn in EXPECTED_SPIN_EXACT)
+            )
             or any(e in fn for e in DRIVER_INTRINSIC_SKIP)
             or _is_mangled(fn)
             or (prev_call_target and any(n in prev_call_target for n in NORETURN_CALLEES))
@@ -422,7 +429,10 @@ def scan_ud2(ntoskrnl_path: Path, objdump: str, arch: str = "i386") -> list[dict
             m = re.search(r"^\s+([0-9a-f]+):\s+[0-9a-f]{8}\s+b\s+0x([0-9a-f]+)\b", line)
             if m and m.group(1) == m.group(2):
                 addr = m.group(1)
-                expected = any(e in current_function for e in EXPECTED_SPIN)
+                expected = (
+                    any(e in current_function for e in EXPECTED_SPIN)
+                    or current_function in EXPECTED_SPIN_EXACT
+                )
                 findings.append(
                     {
                         "address": addr,

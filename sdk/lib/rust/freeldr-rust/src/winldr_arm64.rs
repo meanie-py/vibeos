@@ -582,7 +582,41 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
 /// GICv2 (distributor, CPU interface) physical bases from the ACPI MADT, or
 /// (0, 0) when firmware describes no GICv2. Filled by WinLdrSetupMachineDependent
 /// before WinLdrMapSpecialPages runs, and handed to the kernel in the loader block.
+/// On a GICv3 the distributor is here with a zero CPU interface, and the
+/// redistributors are in Arm64GicRedistributors.
 static mut Arm64GicBases: (ULONG64, ULONG64) = (0, 0);
+/// GICv3: (base, length) of the redistributor frames that exist, or (0, 0).
+static mut Arm64GicRedistributors: (ULONG64, ULONG64) = (0, 0);
+
+/// GICR_TYPER, and its bits that delimit a frame.
+const GICR_TYPER: ULONG64 = 0x8;
+const GICR_TYPER_VLPIS: u64 = 1 << 1;
+const GICR_TYPER_LAST: u64 = 1 << 4;
+/// RD_base + SGI_base; a GICv4 with virtual LPIs adds two more 64 KiB pages.
+const GICR_FRAME: ULONG64 = 0x2_0000;
+/// More than any machine we boot on; it bounds the walk if firmware's range
+/// holds no frame marked Last.
+const GICR_MAX_FRAMES: u32 = 256;
+
+/// The length of the frames that actually exist in a MADT discovery range.
+///
+/// The range is routinely larger than its frames - QEMU virt describes room for
+/// 123 CPUs - and the space past the last frame need not decode at all, so the
+/// kernel must never walk it. Reads through firmware's own mapping: UEFI's GIC
+/// driver walked these same TYPERs to find the boot CPU's frame.
+unsafe fn WinLdrGicRedistributorLength(Base: ULONG64, Range: ULONG64) -> ULONG64 {
+    let mut Offset: ULONG64 = 0;
+    let mut Frames = 0u32;
+    while Offset + GICR_FRAME <= Range && Frames < GICR_MAX_FRAMES {
+        let Typer = core::ptr::read_volatile((Base + Offset + GICR_TYPER) as *const u64);
+        Offset += if Typer & GICR_TYPER_VLPIS != 0 { 2 * GICR_FRAME } else { GICR_FRAME };
+        Frames += 1;
+        if Typer & GICR_TYPER_LAST != 0 {
+            break;
+        }
+    }
+    Offset
+}
 
 /// QEMU virt's fw_cfg MMIO block, which carries the Phase-0 tripwire channel.
 /// It is a QEMU device with no ACPI description, so it cannot be discovered;
@@ -656,6 +690,7 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
         ERR(b"Could not map PL011 UART page\n\0".as_ptr() as PCHAR);
     }
     let (Gicd, Gicc) = Arm64GicBases;
+    let (Gicr, GicrLength) = Arm64GicRedistributors;
     if Gicd != 0 && Gicc != 0 {
         if MempMapDevicePage(Gicd) == 0u8 {
             ERR(b"Could not map GICD page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
@@ -663,8 +698,20 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
         if MempMapDevicePage(Gicc) == 0u8 {
             ERR(b"Could not map GICC page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
         }
+    } else if Gicd != 0 && Gicr != 0 {
+        /* GICv3: an AP wakes and programs its own redistributor before
+         * MmMapIoSpace exists. Each frame's registers live in the first page of
+         * each of its 64 KiB pages (RD_base, SGI_base), so map those. */
+        let mut Offset: ULONG64 = 0;
+        while Offset < GicrLength {
+            if MempMapDevicePage(Gicr + Offset) == 0u8 {
+                ERR(b"Could not map a GICR page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+                break;
+            }
+            Offset += 0x1_0000;
+        }
     } else {
-        ERR(b"No GICv2 in ACPI MADT (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+        ERR(b"No GIC in ACPI MADT (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
     }
     if Arm64FwCfgBase != 0 && MempMapDevicePage(Arm64FwCfgBase) == 0u8 {
         ERR(b"Could not map fw_cfg page (tripwire channel disabled)\n\0".as_ptr() as PCHAR);
@@ -685,15 +732,21 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
      * kernel or HAL path has to guess an MMIO address. */
     let Xsdt = crate::arm64_debug::xsdt_base();
     let Uart = crate::arm64_debug::uart_base() as ULONG64;
-    Arm64GicBases = match crate::arm64_serial_acpi::gic_from_xsdt(Xsdt) {
-        Some((Gicd, Gicc)) => (Gicd, Gicc),
-        None => (0, 0),
-    };
+    match crate::arm64_serial_acpi::gic_from_xsdt(Xsdt) {
+        Some(crate::arm64_serial_acpi::Gic::V2 { gicd, gicc }) => Arm64GicBases = (gicd, gicc),
+        Some(crate::arm64_serial_acpi::Gic::V3 { gicd, gicr, gicr_length }) => {
+            Arm64GicBases = (gicd, 0);
+            Arm64GicRedistributors = (gicr, WinLdrGicRedistributorLength(gicr, gicr_length as ULONG64));
+        }
+        None => {}
+    }
     Arm64FwCfgBase = if Uart == QEMU_VIRT_UART { QEMU_VIRT_FW_CFG } else { 0 };
     (*LoaderBlock).u.Arm.AcpiTablePhysicalAddress = Xsdt;
     (*LoaderBlock).u.Arm.Arm64UartBase = Uart;
     (*LoaderBlock).u.Arm.Arm64GicDistributorBase = Arm64GicBases.0;
     (*LoaderBlock).u.Arm.Arm64GicCpuInterfaceBase = Arm64GicBases.1;
+    (*LoaderBlock).u.Arm.Arm64GicRedistributorBase = Arm64GicRedistributors.0;
+    (*LoaderBlock).u.Arm.Arm64GicRedistributorLength = Arm64GicRedistributors.1;
     // dbgcon, not ERR: ERR is `#if DBG` and compiles to nothing in the release
     // build that ships to hardware, which is exactly where this must be legible.
     crate::frldr::dbgcon_str(b"[FLDR] arm64 platform: UART=0x");
@@ -702,6 +755,12 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
     crate::frldr::dbgcon_hex64(Arm64GicBases.0);
     crate::frldr::dbgcon_str(b" GICC=0x");
     crate::frldr::dbgcon_hex64(Arm64GicBases.1);
+    if Arm64GicRedistributors.0 != 0 {
+        crate::frldr::dbgcon_str(b" GICR=0x");
+        crate::frldr::dbgcon_hex64(Arm64GicRedistributors.0);
+        crate::frldr::dbgcon_str(b"+0x");
+        crate::frldr::dbgcon_hex64(Arm64GicRedistributors.1);
+    }
     crate::frldr::dbgcon_str(b"\r\n");
 
     SharedUserDataAddress = MmAllocateMemoryWithType(MM_PAGE_SIZE, LoaderStartupPcrPage);

@@ -139,6 +139,7 @@ def test_enum_aliases_read_the_substrate_island_the_types_glob(tmp_path):
 
 _SYS_LIB = """
 pub mod base;
+pub mod interlocked;
 #[cfg(feature = "inline_exports")]
 pub mod inline;
 #[cfg(feature = "never_default")]
@@ -168,7 +169,9 @@ def _fake_sys(tmp_path):
         "inline_exports = []\nnever_default = []\n"
     )
     (sys_src / "lib.rs").write_text(_SYS_LIB)
-    (sys_src / "base.rs").write_text(
+    # `base` is ntoskrnl's Rust-flavoured core, never a header port: ignored entirely.
+    (sys_src / "base.rs").write_text("pub unsafe fn OnlyInBase() {}\n")
+    (sys_src / "interlocked.rs").write_text(
         "pub unsafe fn InsertTailList(h: *mut u8, e: *mut u8) {}\n"
         '#[cfg(not(target_arch = "x86"))]\n'
         'extern "system" {\n    #[link_name = "X"]\n'
@@ -193,9 +196,9 @@ def test_substrate_helpers_are_found_per_arch_and_rendered_as_imports(tmp_path):
 
     sys_src = _fake_sys(tmp_path)
     names = {"InsertTailList", "KeQuerySystemTime", "InterlockedPushEntrySList"}
-    names |= {"Hidden", "NotAHelper"}
+    names |= {"Hidden", "NotAHelper", "OnlyInBase"}
     found, why = pr.substrate_helpers(names, sys_src, "ntkrnl_sys")
-    # inline:: beats base for the same name; i386's KeQuerySystemTime comes from the glob.
+    # inline:: beats another module for the same name; i386's KeQuerySystemTime comes from the glob.
     assert found["InsertTailList"] == dict.fromkeys(pr.ARCHES, "inline::common")
     assert found["KeQuerySystemTime"] == {
         "x86": None,
@@ -203,9 +206,10 @@ def test_substrate_helpers_are_found_per_arch_and_rendered_as_imports(tmp_path):
         "aarch64": "inline::ke",
     }
     # The extern-block declaration counts, under the block's own cfg.
-    assert found["InterlockedPushEntrySList"] == dict.fromkeys(pr.ARCHES, "base")
+    assert found["InterlockedPushEntrySList"] == dict.fromkeys(pr.ARCHES, "interlocked")
     # Behind a non-default feature, or a method of an impl: not a helper at all.
     assert "Hidden" not in found and "NotAHelper" not in found and not why
+    assert "OnlyInBase" not in found
     block = pr.render_substrate(found, "ntkrnl_sys")
     assert (
         '#[cfg(not(target_arch = "x86"))]\npub use ntkrnl_sys::inline::ke::KeQuerySystemTime;'
@@ -227,3 +231,31 @@ def test_a_helper_two_modules_define_for_one_arch_is_reported_not_chosen(tmp_pat
     (sys_src / "inline" / "common.rs").write_text("pub fn Twice() {}\n")
     found, why = pr.substrate_helpers({"Twice"}, sys_src, "ntkrnl_sys")
     assert not found and "inline::common, inline::ke" in why["Twice"]
+
+
+def test_glob_ties_are_read_per_arch_from_the_islands(tmp_path):
+    # atapi: the i386 island declares KeGetCurrentIrql (a real export there), the amd64 one
+    # does not -- so the `crate::types::*` / `ntkrnl_sys::ddk::*` collision is i386-only, and
+    # resolve (which compiles amd64) never saw it.
+    from rustconv import prelude_resolve as pr
+
+    src, sys_src = tmp_path / "c" / "src", tmp_path / "sys" / "src"
+    (src / "m").mkdir(parents=True)
+    sys_src.mkdir(parents=True)
+    decl = 'extern "C" {\n    pub fn KeGetCurrentIrql() -> KIRQL;\n    pub fn Other(a: u32);\n}\n'
+    (src / "types_i386.rs").write_text(decl + "impl X { pub fn set_Foo(&mut self) {} }\n")
+    (src / "types_amd64.rs").write_text('extern "C" {\n    pub fn Other(a: u32);\n}\n')
+    (src / "prelude.rs").write_text("pub use crate::types::*;\npub use ntkrnl_sys::ddk::*;\n")
+    for suffix in ("i386", "amd64", "arm64"):
+        (sys_src / f"bindgen_{suffix}.rs").write_text(decl)
+    (src / "m" / "a.rs").write_text(
+        "use ntkrnl_sys::ddk::{Other};\nfn f() { KeGetCurrentIrql(); Other(1); x.set_Foo(); }\n"
+    )
+    ties = pr.glob_ties(src, src / "m", sys_src)
+    assert ties == {"KeGetCurrentIrql": ["x86"]}  # Other is imported explicitly in the file
+    found = pr.with_glob_ties({"KeQuerySystemTime": {"x86": None, "x86_64": "inline::ke"}}, ties)
+    out = pr.render_substrate(found, "ntkrnl_sys")
+    assert '#[cfg(target_arch = "x86")]\npub use ntkrnl_sys::ddk::KeGetCurrentIrql;' in out
+    # A name the prelude already spells out is settled there (E0252 otherwise).
+    (src / "prelude.rs").write_text("pub use ntkrnl_sys::ddk::KeGetCurrentIrql;\n")
+    assert pr.glob_ties(src, src / "m", sys_src) == {}

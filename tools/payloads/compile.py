@@ -142,6 +142,56 @@ def guest_set(name: str, g: dict) -> dict[str, Path]:
     return files
 
 
+def _from_module(spec: dict):
+    """The spec's `binaries_from` module, loaded (None when it names none)."""
+    src = spec.get("binaries_from")
+    if not src:
+        return None
+    import importlib.util
+
+    path = REPO / str(src)
+    mod_spec = importlib.util.spec_from_file_location(f"payload_from_{path.stem}", path)
+    if mod_spec is None or mod_spec.loader is None or not path.is_file():
+        die(f"payload {spec['name']!r}: binaries_from {src!r} is not a python file")
+    mod = importlib.util.module_from_spec(mod_spec)
+    sys.modules[mod_spec.name] = mod  # dataclasses look their module up while executing
+    mod_spec.loader.exec_module(mod)
+    return mod
+
+
+def ninja_targets(names: list[str], arch: str) -> list[str]:
+    """Build-dir targets the selected payloads stage (a spec's `ninja_targets`, plus its
+    `binaries_from` module's `ninja_targets(arch)`). `vibeos-cli build` keeps them in the
+    closure it prunes to: they are EXCLUDE_FROM_ALL oracles nothing else depends on, and
+    arm64's ramdisk is assembled after the prune."""
+    out: list[str] = []
+    for name in names:
+        spec = load_spec(name)
+        out += [str(t) for t in spec.get("ninja_targets") or []]
+        mod = _from_module(spec)
+        if mod is not None and hasattr(mod, "ninja_targets"):
+            out += list(mod.ninja_targets(arch))
+    return list(dict.fromkeys(out))
+
+
+def binaries(spec: dict, arch: str) -> list[dict]:
+    """The spec's `binaries`, plus what its `binaries_from` module stages for `arch`.
+
+    `binaries_from: <path to a .py>` names a module whose `stage_entries(arch)` returns more
+    entries of the same schema -- modrun's suites each stage their own oracle and probe
+    exes, so adding a module's runtime test never edits the payload.yaml.
+    """
+    out = list(spec["binaries"])
+    mod = _from_module(spec)
+    if mod is not None:
+        src = spec["binaries_from"]
+        for b in mod.stage_entries(arch):
+            if not isinstance(b, dict) or "src" not in b or "dest" not in b:
+                die(f"payload {spec['name']!r}: {src} staged an entry without src/dest: {b!r}")
+            out.append(b)
+    return out
+
+
 def manifest(names: list[str], arch: str) -> dict[str, Path]:
     """dest (graft path, e.g. reactos/system32/doom.exe) -> absolute host src."""
     if arch not in ARCHES:
@@ -154,7 +204,7 @@ def manifest(names: list[str], arch: str) -> dict[str, Path]:
         if arches is not None and arch not in arches:
             die(f"payload {name!r} does not support arch {arch!r} (spec says arches: {arches})")
         hint = spec.get("build_hint", "").format(arch=arch)
-        for b in spec["binaries"]:
+        for b in binaries(spec, arch):
             src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
             # root: reactos (default) grafts under reactos/; root: image grafts
             # at the media root (e.g. the Profiles/.../StartUp autostart folder).
@@ -199,8 +249,9 @@ def stale_binaries(name: str, arch: str) -> list[Path]:
     pdir = PAYLOADS_DIR / name
     srcs = [
         p
-        for p in pdir.iterdir()
+        for p in pdir.rglob("*")
         if p.is_file()
+        and "__pycache__" not in p.parts
         and not p.name.startswith(".")
         and p.suffix.lower() not in (".exe", ".dll", ".png", ".log")
     ]
@@ -208,7 +259,7 @@ def stale_binaries(name: str, arch: str) -> list[Path]:
     newest = max((p.stat().st_mtime for p in srcs), default=0.0)
     resolved_srcs = {p.resolve() for p in srcs}
     out = []
-    for b in spec["binaries"]:
+    for b in binaries(spec, arch):
         src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
         # Only binaries built from this payload's own directory (never a shared artifact
         # like a build-dir DLL, which ninja owns).
@@ -231,7 +282,7 @@ def borrowed_builds(name: str, arch: str) -> list[tuple[str, str]]:
     sweep.c learned apitest-cwd.txt, and the suites' scratch files went to the read-only CD
     (2026-10-04)."""
     builds: list[tuple[str, str]] = []
-    for b in load_spec(name)["binaries"]:
+    for b in binaries(load_spec(name), arch):
         src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
         try:
             owner = src.relative_to(PAYLOADS_DIR.resolve()).parts[0]
@@ -265,11 +316,16 @@ def ensure_built(names: list[str], arch: str) -> list[str]:
     rebuilt = []
     for name, arch in expanded:
         stale = stale_binaries(name, arch)
-        if not stale:
+        # `rebuild: always`: build.sh does incremental work this mtime check cannot see
+        # (modrun's ninja step relinks probes against Rust crates that live elsewhere).
+        if not stale and load_spec(name).get("rebuild") != "always":
             continue
         script = PAYLOADS_DIR / name / "build.sh"
         if not script.is_file():
-            die(f"payload {name!r}: {stale[0]} is stale or missing and there is no {script}")
+            die(
+                f"payload {name!r}: {(stale or ['its build'])[0]} is stale or missing "
+                f"and there is no {script}"
+            )
         cp = subprocess.run(
             ["bash", str(script), arch], cwd=str(REPO), capture_output=True, text=True
         )

@@ -43309,6 +43309,8 @@ pub struct _ARM_LOADER_BLOCK {
     pub Arm64UartBase: ULONG64,
     pub Arm64GicDistributorBase: ULONG64,
     pub Arm64GicCpuInterfaceBase: ULONG64,
+    pub Arm64GicRedistributorBase: ULONG64,
+    pub Arm64GicRedistributorLength: ULONG64,
 }
 pub type ARM_LOADER_BLOCK = _ARM_LOADER_BLOCK;
 pub type PARM_LOADER_BLOCK = *mut _ARM_LOADER_BLOCK;

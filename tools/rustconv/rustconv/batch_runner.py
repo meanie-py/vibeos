@@ -46,6 +46,15 @@ PRICING = {
     "claude-sonnet-4-5": (3.00, 15.00, 0.30, 3.75),
     "claude-sonnet-4-6": (3.00, 15.00, 0.30, 3.75),
     "claude-haiku-4-5": (1.00, 5.00, 0.10, 1.25),
+    # The <=100K-prompt tier; estimate_cost() switches to LONG_PROMPT_PRICING above it.
+    "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125),
+}
+
+# Models whose rates step up when ONE prompt (input + cache read + cache write) crosses a
+# threshold: model -> (threshold tokens, rates above it). Haiku 5.5 verified 2026-10-07 at
+# https://www.anthropic.com/claude/haiku (cache rates keep the 0.1x / 1.25x rule).
+LONG_PROMPT_PRICING = {
+    "claude-haiku-5-5": (100_000, (0.50, 2.50, 0.05, 0.625)),
 }
 
 
@@ -63,6 +72,9 @@ def estimate_cost(
         rates = next((v for k, v in PRICING.items() if model.startswith(k)), None)
     if rates is None:
         return None
+    tier = next((v for k, v in LONG_PROMPT_PRICING.items() if model.startswith(k)), None)
+    if tier is not None and input_tokens + cache_read_tokens + cache_write_tokens > tier[0]:
+        rates = tier[1]
     pin, pout, pread, pwrite = rates
     return (
         input_tokens * pin

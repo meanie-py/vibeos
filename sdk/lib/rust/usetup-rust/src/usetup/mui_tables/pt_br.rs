@@ -4,7 +4,7 @@
 #![allow(clippy::all)]
 #[allow(unused_imports)]
 use crate::prelude::*;
-use super::{cstr_cat_join, cstr_cat_len};
+use super::data_port;
 
 pub(super) static mut ptBRSetupInitPageEntries: [MUI_ENTRY; 5] = [
     MUI_ENTRY { X: 4, Y: 3, Buffer: cstr_cat!(b" Instala\x87\xc6o do ReactOS ", KERNEL_VERSION_STR, b" ").as_ptr() as PCSTR, Flags: TEXT_STYLE_UNDERLINE as DWORD, TextID: TEXT_ID_STATIC as INT },

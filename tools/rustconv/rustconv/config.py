@@ -623,6 +623,8 @@ MODEL_PRICING = {
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-sonnet-4-5-20250929": (3.00, 15.00),
     "claude-haiku-4-5-20251001": (1.00, 5.00),
+    # The <=100K-prompt tier; cost_usd() applies the long tier per call (CLAUDE_TIERED_PRICING).
+    "claude-haiku-5-5": (0.10, 0.50),
     "gemini-2.5-pro": (1.25, 10.00),
     "gemini-2.5-flash": (0.30, 2.50),
     # DeepSeek list prices (USD/1M, cache-miss). Server-side context caching
@@ -639,6 +641,15 @@ MODEL_PRICING = {
 # Anthropic Message Batches API runs at 50% of the list prices above. The
 # synchronous `translate`/`submit` path does NOT get this discount.
 BATCH_DISCOUNT = 0.5
+
+# Claude models whose list price steps up when ONE prompt (uncached + cached input) crosses a
+# size: model -> (threshold tokens, (input, output) at or below it, (input, output) above it).
+# Haiku 5.5 verified 2026-10-07 at https://www.anthropic.com/claude/haiku. The threshold is per
+# request, so a caller pricing a RUN TOTAL lands on the long tier and over-estimates, which is
+# the safe direction.
+CLAUDE_TIERED_PRICING = {
+    "claude-haiku-5-5": (100_000, (0.10, 0.50), (0.50, 2.50)),
+}
 
 
 def model_pricing(model: str) -> tuple[float, float]:
@@ -688,6 +699,9 @@ def cost_usd(
         scale = 1.0 if deepseek_peak(when or datetime.datetime.now(datetime.timezone.utc)) else 0.5
         return (cache_read_tokens * hit + input_tokens * miss + output_tokens * out) * scale / 1e6
     pin, pout = model_pricing(model)
+    if model in CLAUDE_TIERED_PRICING:
+        threshold, short, long = CLAUDE_TIERED_PRICING[model]
+        pin, pout = long if input_tokens + cache_read_tokens > threshold else short
     cost = (input_tokens + cache_read_tokens) * pin / 1_000_000 + output_tokens * pout / 1_000_000
     return cost * (BATCH_DISCOUNT if batch else 1.0)
 

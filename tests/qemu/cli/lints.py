@@ -953,6 +953,21 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A user pointer validated by a NON-raising range probe (SafeProbeForRead /
+    # SafeProbeForWrite, or a crate's Ks* mirror) and then dereferenced RAW. The probe
+    # proves the range, never that the page stays mapped, so under DUMMY_PSEH a raw
+    # touch after it is an any-process BUGCHECK 0x1E where the C's _SEH2_TRY returned a
+    # status (NtUserScrollDC / NtUserSetSysColors / NtGdiGetDIBits were this). The class
+    # was driven to zero, so this gates at ZERO (empty baseline): a baseline would be a
+    # place for the next one to hide.
+    sspd = repo / "tools" / "scan_safe_probe_deref.py"
+    specs.append(
+        (
+            "scan_safe_probe_deref",
+            [py, str(sspd), "--lint"] if sspd.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The same NOOP shape scan_dropped_prints finds, but keyed on a property of the CRATE
     # ("you already define this as a macro_rules!") instead of a hardcoded print list — so it
     # covers the names that emit nothing and were therefore outside every scanner here.
@@ -1068,6 +1083,42 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_wide_byte_copy",
             [py, str(swb), "--lint"] if swb.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # Its general form: the byte count kept as the element count of a copy typed as a
+    # STRUCT, often through `as *const _`. partmgr's IOCTL_DISK_GET_DRIVE_LAYOUT_EX copied
+    # size * 192 bytes into the caller's buffer; diskpart's first query bugchecked 0x19
+    # (found by the modrun payload). Baseline EMPTY.
+    stb = repo / "tools" / "scan_typed_byte_copy.py"
+    specs.append(
+        (
+            "scan_typed_byte_copy",
+            [py, str(stb), "--lint"] if stb.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A C `goto` translated as `'x: { break 'x; }` -- a block that jumps to its own end, so
+    # control falls into the code the C skipped. setuplib's ParseArcName did it for
+    # `ramdisk(0)` and no ramdisk ARC path resolved (found by the modrun payload). Baseline:
+    # the 23 sites found 2026-10-07, each a vestige or a live bug still to be read.
+    sng = repo / "tools" / "scan_noop_goto.py"
+    specs.append(
+        (
+            "scan_noop_goto",
+            [py, str(sng), "--lint"] if sng.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A struct the C declares under pshpack that its Rust port lays out unpacked. diskpart read
+    # the MBR magic from past the sector (no disk looked partitioned); setuplib's boot sectors
+    # shifted every BPB field. Baseline: freeldr's PNP_DOCK_INFO and ACPI_BIOS_DATA, whose
+    # field offsets are identical either way (only trailing padding differs).
+    spd = repo / "tools" / "scan_pack_drift.py"
+    specs.append(
+        (
+            "scan_pack_drift",
+            [py, str(spd), "--lint"] if spd.is_file() else ["MISSING"],
             "stdout",
         )
     )
@@ -1271,6 +1322,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_duplicate_symbols",
             [py, str(sds), "--lint"] if sds.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A kernel-mode driver defining a name ntoskrnl/HAL exports (or the internal name an
+    # export forwards to) runs its own copy instead of the kernel's. classpnp's no-op
+    # RtlInterlocked*EntrySList stubs dropped every transfer packet this way for four
+    # months. The baseline is the reviewed set (header inlines, real algorithms); a NEW
+    # definition fails. See the tool docstring.
+    ses = repo / "tools" / "scan_export_shadows.py"
+    specs.append(
+        (
+            "scan_export_shadows",
+            [py, str(ses), "--lint"] if ses.is_file() else ["MISSING"],
             "stdout",
         )
     )

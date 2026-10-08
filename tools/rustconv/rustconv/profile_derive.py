@@ -409,7 +409,7 @@ class ConstOwner:
 
     ident: str
     owner: Path | None
-    owner_kind: str  # header | tu-local | sys-crate | UNOWNED
+    owner_kind: str  # header | cxx-const | tu-local | sys-crate | UNOWNED
     definition: str | None
     macro_kind: str  # literal | expression | function-like | enum | n/a
     allowlisted: bool = False
@@ -2151,6 +2151,22 @@ def _strip_c_comments(text: str) -> str:
     return _C_COMMENT_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
 
 
+# A C++ namespace-scope integral constant: `static const int gViewsCommandID = FCIDM_X;`. It is
+# a legal case label in C++ and owned by the header just as a `#define` would be, but neither
+# the macro nor the enum scan sees it, so it was reported UNOWNED and blocked the module.
+_CXX_CONST_RE = (
+    r"^[ \t]*(?:static[ \t]+)?(?:constexpr|const)[ \t]+(?:(?:unsigned|signed)[ \t]+)?"
+    r"[A-Za-z_][\w:]*[ \t]+({name})[ \t]*=[ \t]*([^;\n]+);"
+)
+
+
+def _cxx_consts(text: str, alt: str) -> dict[str, tuple[str, str]]:
+    return {
+        m.group(1): ("cxx-const", m.group(2).strip())
+        for m in re.finditer(_CXX_CONST_RE.format(name=alt), text, re.M)
+    }
+
+
 def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str, tuple[str, str]]:
     """``{name: (macro_kind, definition)}`` for the constants a header OWNS.
 
@@ -2184,6 +2200,8 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
         for m in re.finditer(rf"^[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M):
             if "enum" in text:
                 out.setdefault(m.group(1), ("enum", m.group(0).strip()))
+        for name, kind in _cxx_consts(text, alt).items():
+            out.setdefault(name, kind)
         return out
     for m in _DEFINE_RE.finditer(text):
         name, sep, body = m.group(1), m.group(2), m.group(3).strip().rstrip("\\").strip()
@@ -2196,6 +2214,8 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
             mm = re.match(r"\s*([A-Za-z_]\w*)", member)
             if mm:
                 out.setdefault(mm.group(1), ("enum", member.strip()))
+    for name, kind in _cxx_consts(text, r"[A-Za-z_]\w*").items():
+        out.setdefault(name, kind)
     return out
 
 
@@ -2364,10 +2384,11 @@ def own_constants(
                 hit = (path, syms[ident])
                 break
         if hit is not None:
+            # bindgen reads headers as C, so a C++ const never reaches the island: the header
+            # owns it, but the translation has to carry it (see SWITCH_CONST_CXX).
+            kind = "cxx-const" if hit[1][0] == "cxx-const" else "header"
             owners.append(
-                ConstOwner(
-                    ident, hit[0], "header", hit[1][1], hit[1][0], in_sys=in_sys, sys_source=src
-                )
+                ConstOwner(ident, hit[0], kind, hit[1][1], hit[1][0], in_sys=in_sys, sys_source=src)
             )
         elif ident in tu_local:
             kind, body = tu_local[ident]
@@ -2548,11 +2569,22 @@ def load_compile_db(repo_root: Path, module: CMakeModule, arch: str) -> CompileD
             continue  # no -o to attribute by: fall back to the source location
         files.add(local)
         mine |= defines
-        for t in cmd.split():
+        # `-isystem` is how CMake spells an INTERFACE library's include dirs, so reading only
+        # `-I` lost every one of them: browseui's `atl_classes` (sdk/lib/atl) went missing and
+        # derive could not find atlstr.h. Both the joined and the separated spelling occur.
+        toks = cmd.split()
+        for i, t in enumerate(toks):
             if t.startswith("-I"):
-                p = Path(t[2:].replace(canon, str(repo_root)))
-                if p not in incs:
-                    incs.append(p)
+                raw = t[2:] or (toks[i + 1] if i + 1 < len(toks) else "")
+            elif t.startswith("-isystem"):
+                raw = t[len("-isystem") :] or (toks[i + 1] if i + 1 < len(toks) else "")
+            else:
+                continue
+            if not raw or raw.startswith("-"):
+                continue
+            p = Path(raw.replace(canon, str(repo_root)))
+            if p not in incs:
+                incs.append(p)
     if not files:
         return None
     return CompileDb(
@@ -3012,6 +3044,16 @@ def derive(
                     f"`{o.ident}` is used in a case label but NO header in the include closure "
                     "and no -sys crate defines it — the match arm WILL silently match "
                     "everything (§9.112). Find its owner and add it to the wrapper.",
+                )
+            )
+        elif o.owner_kind == "cxx-const" and not o.in_sys:
+            findings.append(
+                Finding(
+                    "warn",
+                    "SWITCH_CONST_CXX",
+                    f"`{o.ident}` is a C++ const in {o.owner.name if o.owner else '?'} "
+                    f"(= {o.definition}) — bindgen reads headers as C and never emits it, so "
+                    "the translation must carry it as a Rust const with that value",
                 )
             )
         elif o.owner_kind == "tu-local":
@@ -3487,7 +3529,8 @@ def emit_report(dp: DerivedProfile) -> str:
         where = used_at.get(o.ident, [])
         site = f"{where[0].tu}:{where[0].line}" if where else "?"
         owner = o.owner.name if o.owner else o.owner_kind
-        mark = "✓" if (o.allowlisted or o.owner_kind in ("sys-crate", "tu-local")) else "✗"
+        carried = o.owner_kind in ("sys-crate", "tu-local", "cxx-const")
+        mark = "✓" if (o.allowlisted or carried) else "✗"
         how = "-sys glob" if o.in_sys else ("island" if o.allowlisted else o.owner_kind)
         L.append(f"  {mark} {o.ident:38s} {owner:24s} [{o.macro_kind}] via {how:10s} {site}")
     L.append("")
@@ -3678,6 +3721,10 @@ pub unsafe fn KeAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK) {
 #[inline]
 pub unsafe fn KeReleaseSpinLockFromDpcLevel(SpinLock: PKSPIN_LOCK) {
     ntkrnl_sys::ke::KeReleaseSpinLockFromDpcLevel(SpinLock.cast())
+}
+#[inline]
+pub unsafe fn KeInitializeSpinLock(SpinLock: PKSPIN_LOCK) {
+    ntkrnl_sys::inline::ke::KeInitializeSpinLock(SpinLock.cast())
 }
 pub use ntkrnl_sys::inline::tier1::{
     IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation,

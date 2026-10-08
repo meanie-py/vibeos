@@ -760,6 +760,11 @@ typedef struct _ARM_LOADER_BLOCK
     ULONG64 Arm64UartBase;
     ULONG64 Arm64GicDistributorBase;
     ULONG64 Arm64GicCpuInterfaceBase;
+    /* GICv3 and later: the redistributor frames that exist, from the first MADT
+     * discovery range, as the loader found them by walking GICR_TYPER to the
+     * frame marked Last. Zero on a GICv2, whose CPU interface base is above. */
+    ULONG64 Arm64GicRedistributorBase;
+    ULONG64 Arm64GicRedistributorLength;
 #else
     ULONG PlaceHolder;
 #endif

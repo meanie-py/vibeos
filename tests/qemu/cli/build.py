@@ -1336,7 +1336,18 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     assert _spec is not None and _spec.loader is not None
     _prune = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_prune)
-    roots = ["build.ninja", *_PRIME_TARGETS, *targets, *cohab, *cfg.ninja_targets_optional]
+    # A payload's build-dir artifacts (modrun's C oracles and probes) are EXCLUDE_FROM_ALL, so
+    # nothing above depends on them; without these roots the prune deleted them before
+    # arm64's ramdisk step could stage them.
+    payload_roots = _payload_compile.ninja_targets(stamped, arch) if stamped else []
+    roots = [
+        "build.ninja",
+        *_PRIME_TARGETS,
+        *targets,
+        *cohab,
+        *cfg.ninja_targets_optional,
+        *payload_roots,
+    ]
     try:
         victims, unknown = _prune.plan(build_dir, roots, canon.canon_path() + f"/{build_dir.name}")
     except OSError as exc:

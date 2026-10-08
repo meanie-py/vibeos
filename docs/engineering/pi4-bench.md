@@ -27,8 +27,10 @@ to stop being black, because the display lags the marker by a few seconds.
   capture card and the staged payload. Each failure prints the command that fixes
   it.
 - **`tools/pi4/bench.sh serial-restart`** replaces a serial listener whose capture has
-  stalled. pico_serial.py can keep reporting `LISTENING, connected` for hours after its stream
-  stops, and the doctor passes it; the symptom is a boot that fails `NETBOOT_FAIL` with "serial
+  stalled. A reconnect can come up half-open and silent while status still says
+  `LISTENING, connected`. One stayed that way for 11 hours, so since 2026-10-07
+  pico_serial.py reconnects whenever 2 minutes pass with no byte; the Pico buffers the
+  newest 128 KiB meanwhile. The old symptom was a boot that fails `NETBOOT_FAIL` with "serial
   capture did not grow at all" while HDMI shows the firmware splash timing out to PXE.
 - **`./vibeos-cli pi4 status`** is the one-screen view: lease, power, Pico, serial
   and payload.
@@ -272,6 +274,21 @@ The Pico is VibeOS's keyboard and mouse on the Pi (usbxhci M4, 2026-09-26):
   1920x1080 screen, so pixel = value × 1920 / 32768 (and × 1080 / 32768 for y).
   Notepad's text area is around `pointer click 8000 12000`.
 - **Chords:** modifiers come first, e.g. `key CTRL ESC`.
+
+**Its disk is remote and starts empty.** The mass-storage interface (`PICOUSB REMOTE DISK`)
+has no medium until a host serves one: `pico.sh serve-image <raw image>` (read-only unless
+`--writable`) or `pico.sh serve <directory>`, which runs until you stop it. Without one, every
+READ answers sense 2/3A, MEDIUM NOT PRESENT, by stalling the bulk-IN endpoint: the xHCI log's
+`ep 7: transfer failed, cc 6` followed by `halt cleared`. That is the device behaving
+correctly, not a host bug. MODE SENSE(6) stalls even with media (the Pico does not implement
+it), and classpnp carries on. A boot with an image served gives a volume at offset 0 with no
+partition table (`STORAGE#Partition#..._O0_L<size>`).
+
+The Pico takes **one websocket client at a time**. While `serve`/`serve-image` holds it, other
+`pico.sh` commands fail with `{"ok": false, "error": "other"}`, and the Pi drops the medium when
+the server stops. To type at a served disk, drive input from the same `DevBox` session
+(`box.storage.serve_image(...)`, then `box.keyboard.type(...)`). The serial console is a
+separate port (8082) and is unaffected.
 
 What proves each layer, on serial:
 
