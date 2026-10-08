@@ -531,22 +531,41 @@ day: ten boot-path sites fixed -- roadmap.)
 (same callee, literal, or same-key ordinal; refuses when the counts differ, e.g. a hoisted
 Rust call) and runs a structured liveness over the C function: branches, loops to a fixed
 point, `switch` fall-through, `goto`, `#if` arms. `UNREFERENCED_PARAMETER(x)` is not a read,
-`list_for_each(x, ..)` writes its cursor, and reads that exist only through `&x` or only
-inside DPRINT/ASSERT get their own verdicts. Of the 1,025 sites:
+`list_for_each(x, ..)` writes its cursor, `sizeof` reads nothing, `#ifdef __REACTOS__` takes
+its own arm, `while (TRUE)` never exits through its condition, and reads that exist only
+through `&x` or only inside DPRINT/ASSERT (or an `if` guarding nothing else) get their own
+verdicts. Names match EXACTLY, falling back to a case/underscore-insensitive spelling only when
+it is unique: the insensitive match had made the type `FEATURE_HEADER` a read of
+`featureHeader`. Of the 1,025 sites (clean ×3 logs of 2026-10-08):
 
 | verdict | n | meaning |
 |---|---:|---|
-| `C_READS` | 14 | the C reads it and the Rust does not: read each one |
+| `C_READS` | 4 | the C reads it and the Rust does not |
 | `C_READS_ADDR` | 2 | the C reads it only by passing `&x` |
-| `C_READS_DEBUG` | 7 | only an ASSERT/DPRINT reads it |
-| `NO_MATCH` / `NO_C_FN` | 66 / 92 | no confident pairing: read by hand (uniata 39, cdrom 27, cdfs 17, atapi 16) |
-| `C_DEAD` / `C_NO_INIT` | 526 / 318 | the C has the same dead store, or no initializer at all: harmless |
+| `C_READS_DEBUG` | 12 | only an ASSERT/DPRINT reads it |
+| `NO_MATCH` / `NO_C_FN` | 57 / 92 | no confident pairing: read by hand |
+| `C_DEAD` / `C_NO_INIT` | 538 / 320 | the C has the same dead store, or no matching initializer: harmless |
 
-The first `C_READS` read was a real divergence (cdrom
-`RequestSynchronizeProcessWithSerialQueue` returns early on `isBlocked`, where the C
-falls through with `fCallSyncCallback = FALSE`). **Owed:** the 23 `C_READS*` by hand, then
-the 158 unpaired ones, then the 844 harmless ones in bulk. Removing a dead initializer lets
-rustc's definite-init check prove each site.
+**The first 23 graded `C_READS*` are read (2026-10-08)**, before the rules above sorted most
+of them into the debug and harmless verdicts. Two real bugs, both fixed:
+
+- ole32 `StorageImpl_LockRegionSync` had turned the C's
+  `do { .. } while (hr == STG_E_ACCESSDENIED || hr == STG_E_LOCKVIOLATION)` into
+  `if (contended) { .. } else break`, so a sanity probe that failed some other way kept
+  the wait going for the full 20 seconds instead of returning that error.
+- partmgr `VolumeDeleteMountPoints` freed `OutputBuffer` on `STATUS_BUFFER_OVERFLOW` and
+  looped; a second overflow ends the loop and the cleanup freed it again. The C has the same
+  double free; the Rust now nulls the pointer after the free.
+
+The rest: cdrom `RequestSynchronizeProcessWithSerialQueue` returns `STATUS_ACCESS_DENIED`
+where the C falls through and returns the blocked-query status, which every caller discards.
+cdrom `DeviceSendSrbSynchronously` sets `ioctlCode` early on purpose, fixing a C bug where the
+first send went out with 0, and says so in a comment. ole32 `create_storagefile` spelled out a
+`goto end`. rtl `RtlpInitEnvironment`'s reset of `base_address` matches the C, whose 1 MB
+reserve at `(PVOID)4` rounds the base to 0. The 12 debug ones are ASSERTs and prints that the
+Rust dropped. **Owed:** the 149 unpaired sites, then the 858 harmless ones in bulk. Remove
+each dead initializer so that rustc's definite-init check proves the site, rather than
+silencing it.
 
 ## Owed follow-ups
 

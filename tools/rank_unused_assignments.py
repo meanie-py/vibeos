@@ -143,6 +143,16 @@ DEBUG_MACROS = frozenset(
 # Iteration macros that ASSIGN their first argument (the cursor) on every pass.
 FOREACH_MACRO = re.compile(r"^(?i:list_for_each\w*|for_each\w*|LIST_FOR_EACH\w*|FOR_EACH\w*)$")
 
+# Debug output by naming convention, beyond the list: `AFD_DbgPrint`, `CdromDbgPrint`, `INFO`.
+DEBUG_RE = re.compile(
+    r"(?i)(dbg_?print|debug_?print|dprint|^trace|^info$|^warn$|^err$|^fixme$|assert)"
+)
+
+
+def is_debug(callee: str) -> bool:
+    return callee in DEBUG_MACROS or bool(DEBUG_RE.search(callee))
+
+
 Node = Any  # tree_sitter.Node; kept loose so the module imports without tree-sitter
 
 # --------------------------------------------------------------------------- parsers
@@ -173,6 +183,17 @@ def canon(name: str) -> str:
     return name.replace("_", "").lower()
 
 
+def npath(expr: str) -> str:
+    """`(*p).a.b` / `p->a.b` / `p.a.b` -> `p.a.b`, spelling kept EXACT. Comparing case- or
+    underscore-insensitively here made the type `FEATURE_HEADER` (in a `sizeof`) a read of
+    the variable `featureHeader`; the insensitive match is only for resolving a Rust name
+    to its C spelling (`resolve_c_path`), once per function."""
+    s = re.sub(r"\s+", "", expr)
+    s = s.replace("->", ".")
+    s = re.sub(r"[()*&]", "", s)
+    return ".".join(p for p in s.split(".") if p)
+
+
 def canon_path(expr: str) -> str:
     """`(*p).a.b` / `p->a.b` / `p.a.b` -> `p.a.b` (canonicalized per component)."""
     s = re.sub(r"\s+", "", expr)
@@ -184,7 +205,22 @@ def canon_path(expr: str) -> str:
 # --------------------------------------------------------------------------- RHS keys
 
 _INT = re.compile(r"^-?(0x[0-9a-fA-F]+|\d+)")
+_ZERO_CONSTS = {"STATUS_SUCCESS", "S_OK", "NO_ERROR", "ERROR_SUCCESS", "NOERROR", "AE_OK"}
 _NULLISH = {"null", "nullmut", "null_mut", "NULL", "nullptr"}
+
+
+def _strip_parens(s: str) -> str:
+    """Drop parentheses that wrap the WHOLE expression, and only those."""
+    s = s.strip()
+    while s.startswith("(") and s.endswith(")"):
+        depth = 0
+        for i, ch in enumerate(s):
+            depth += ch == "("
+            depth -= ch == ")"
+            if depth == 0 and i != len(s) - 1:
+                return s
+        s = s[1:-1].strip()
+    return s
 
 
 def rhs_key(expr: str) -> str:
@@ -194,9 +230,17 @@ def rhs_key(expr: str) -> str:
     # Rust casts / C casts
     s = re.sub(r"\s+as\s+[\w:<>*\s]+$", "", s)
     s = re.sub(r"^\(\s*[A-Z_][\w\s*]*\)\s*", "", s)
-    s = s.strip("() ")
-    if re.fullmatch(r"(core::|std::)?(ptr::)?null(_mut)?\(\)", s) or s in _NULLISH:
+    s = _strip_parens(s)
+    if re.fullmatch(r"(core::|std::)?(ptr::)?null(_mut)?(::<[^>]*>)?\(\)", s) or s in _NULLISH:
         return "0"
+    if re.fullmatch(r"\{\s*0?\s*\}", s):
+        return "0"  # C `= {0}`
+    if re.fullmatch(
+        r"(core::|std::)?(mem::)?zeroed(::<[^>]*>)?\(\)|(\w+::)*[Dd]efault(::default)?\(\)", s
+    ):
+        return "0"  # an all-zero default: what the C spells `= {0}` / `= 0` / nothing
+    if s.split("::")[-1] in _ZERO_CONSTS:
+        return "0"  # `= STATUS_SUCCESS` and `= 0 // STATUS_SUCCESS` are one write
     if s in ("TRUE", "true"):
         return "1"
     if s in ("FALSE", "false"):
@@ -213,6 +257,8 @@ def rhs_key(expr: str) -> str:
         return "call:" + canon(m.group(1).split("::")[-1])
     m = re.match(r"^.*\.(\w+)\s*\([^()]*\)\s*$", s)  # method call: x.foo(..)
     if m:
+        if re.fullmatch(r"add|sub|offset|byte_add|byte_offset|wrapping_\w+", m.group(1)):
+            return "expr"  # pointer arithmetic, the C's `p + n`
         return "call:" + canon(m.group(1))
     if re.fullmatch(r"[\w:]+", s):
         return "id:" + canon(s.split("::")[-1])
@@ -246,16 +292,16 @@ def _rust_writes(fn: Node, lhs: str) -> list[Node]:
     def walk(n: Node) -> None:
         if n.type == "let_declaration":
             pat = n.child_by_field_name("pattern")
-            named = pat is not None and canon_path(re.sub(r"^mut\s+", "", text(pat))) == lhs
+            named = pat is not None and npath(re.sub(r"^mut\s+", "", text(pat))) == lhs
             if named and n.child_by_field_name("value") is not None:
                 out.append(n)
         elif n.type in ("assignment_expression", "compound_assignment_expr"):
             left = n.child_by_field_name("left")
-            if left is not None and canon_path(text(left)) == lhs:
+            if left is not None and npath(text(left)) == lhs:
                 out.append(n)
         elif n.type == "parameter":
             pat = n.child_by_field_name("pattern")
-            if pat is not None and canon_path(re.sub(r"^mut\s+", "", text(pat))) == lhs:
+            if pat is not None and npath(re.sub(r"^mut\s+", "", text(pat))) == lhs:
                 out.append(n)
         for c in n.children:
             if c.type not in ("function_item", "closure_expression"):
@@ -300,20 +346,20 @@ def rust_site(src: bytes, line: int, col: int) -> tuple[str, RustWrite] | str:
         pat, val = n.child_by_field_name("pattern"), n.child_by_field_name("value")
         if pat is None or val is None:
             return "let without value"
-        lhs, op, key = canon_path(re.sub(r"^mut\s+", "", text(pat))), "init", rhs_key(text(val))
+        lhs, op, key = npath(re.sub(r"^mut\s+", "", text(pat))), "init", rhs_key(text(val))
         # `let mut status = RtlCreateAcl(..)` is a call's result dropped, not a C-style default
         shape = "LOST_CALL" if key.startswith("call:") else "DEAD_INIT"
     elif n.type == "parameter":
         pat = n.child_by_field_name("pattern")
         lhs, op, key, shape = (
-            canon_path(re.sub(r"^mut\s+", "", text(pat))),
+            npath(re.sub(r"^mut\s+", "", text(pat))),
             "param",
             "param",
             "PARAM",
         )
     else:
         left, right = n.child_by_field_name("left"), n.child_by_field_name("right")
-        lhs = canon_path(text(left))
+        lhs = npath(text(left))
         op = "=" if n.type == "assignment_expression" else text(n.child_by_field_name("operator"))
         key = rhs_key(text(right))
         if op != "=":
@@ -380,7 +426,7 @@ class CLive:
     # -- expressions
 
     def _is_target(self, n: Node) -> bool:
-        return canon_path(text(n)) == self.path
+        return npath(text(n)) == self.path
 
     def _lhs_write(self, n: Node) -> bool:
         """`n` is a plain `=` assignment (or declarator) whose target is our path."""
@@ -403,10 +449,10 @@ class CLive:
             "subscript_expression",
         ):
             return False
-        t = canon_path(text(n))
+        t = npath(text(n))
         if t == self.path or t.startswith(self.path + "."):
             return True
-        if n.type == "identifier" and canon(text(n)) == self.base and self.base != self.path:
+        if n.type == "identifier" and text(n) == self.base and self.base != self.path:
             # the base used whole (passed, copied, address taken) reads every field of it --
             # unless it heads a field chain, which _scan judges at the chain.
             p = n.parent
@@ -431,7 +477,7 @@ class CLive:
             callee = self._callee(n)
             if callee in UNREF_MACROS:
                 return None
-            if self.ignore_debug and callee in DEBUG_MACROS:
+            if self.ignore_debug and is_debug(callee):
                 return None
             if FOREACH_MACRO.match(callee):
                 # `list_for_each(entry, &head)` assigns its cursor: the first argument is a
@@ -446,9 +492,11 @@ class CLive:
                     return "R" if any(self._scan(k) == "R" for k in kids[1:]) else "K"
         if t == "field_identifier" or t in ("comment", "string_literal", "char_literal"):
             return None
+        if t in ("sizeof_expression", "alignof_expression", "offsetof_expression"):
+            return None  # unevaluated: `sizeof(*InputBuffer)` reads nothing
         if self.ignore_addr and t == "pointer_expression" and text(n).lstrip().startswith("&"):
             arg = n.child_by_field_name("argument")
-            if arg is not None and canon_path(text(arg)).startswith(self.path):
+            if arg is not None and npath(text(arg)).startswith(self.path):
                 return "K"  # strict mode: assume `&x` is an out-param that overwrites it
         if self._hit(n):
             return "R"
@@ -491,7 +539,7 @@ class CLive:
         for d in reversed(decls):
             name = d.child_by_field_name("declarator")
             val = d.child_by_field_name("value")
-            if name is not None and canon_path(text(name).lstrip("*&")) == self.path:
+            if name is not None and npath(text(name).lstrip("*&")) == self.path:
                 out = self.reads(val)
             else:
                 out = self._eff(val, out)
@@ -514,13 +562,17 @@ class CLive:
             cont = self._eff(upd, h) if n.type == "for_statement" else h
             inner = dict(ctx, brk=lambda o=out: o, cont=lambda c=cont: c)
             body_in = self.live_in(body, cont, inner)
+            # `while (TRUE)` / `for (;;)` never leave through the condition, and
+            # `do { } while (0)` never goes round again
+            exit_live = False if _const(cond, n.type) is True else out
+            again = False if _const(cond, n.type) is False else body_in
             if n.type == "do_statement":
                 new = body_in
             else:
-                new = self._eff(cond, body_in or out)
+                new = self._eff(cond, (body_in if again else False) or exit_live)
             if n.type == "do_statement":
                 # h here is the liveness at the condition: cond, then body again, or exit
-                cond_live = self._eff(cond, body_in or out)
+                cond_live = self._eff(cond, again or exit_live)
                 if cond_live == h:
                     return new
                 h = cond_live
@@ -544,7 +596,10 @@ class CLive:
             alt = n.child_by_field_name("alternative")
             if alt is not None and alt.type == "else_clause":
                 alt = alt.named_children[0] if alt.named_children else None
-            branches = self.live_in(n.child_by_field_name("consequence"), out, ctx) or (
+            cons = n.child_by_field_name("consequence")
+            if self.ignore_debug and _debug_only(cons) and _debug_only(alt):
+                return out  # `if (!x) ASSERT(FALSE);` is a diagnostic, its test included
+            branches = self.live_in(cons, out, ctx) or (
                 self.live_in(alt, out, ctx) if alt is not None else out
             )
             return self._eff(n.child_by_field_name("condition"), branches)
@@ -601,9 +656,14 @@ class CLive:
                 and c != n.child_by_field_name("name")
                 and c.type not in ("comment", "preproc_arg")
             ]
+            arm = _pp_arm(n)
             here = self.live_seq(kids, out, ctx)
             other = self.live_in(alt, out, ctx) if alt is not None else out
-            return here or other or out
+            if arm == "this":
+                return here
+            if arm == "other":
+                return other
+            return here or other
         if t in (
             "comment",
             ";",
@@ -751,6 +811,52 @@ class CLive:
         return []
 
 
+def _const(cond: Node | None, loop: str) -> bool | None:
+    """A loop condition that is a constant: True for `TRUE`/`1`/absent (`for (;;)`),
+    False for `FALSE`/`0`; None when it depends on anything."""
+    if cond is None:
+        return True if loop == "for_statement" else None
+    t = re.sub(r"[\s()]", "", text(cond))
+    if t in ("TRUE", "1", "true"):
+        return True
+    if t in ("FALSE", "0", "false"):
+        return False
+    return None
+
+
+def _debug_only(n: Node | None) -> bool:
+    """`n` does nothing but debug output / asserts (or nothing at all)."""
+    if n is None or n.type in ("comment", "empty_statement", ";"):
+        return True
+    if n.type == "compound_statement":
+        return all(_debug_only(c) for c in n.named_children)
+    if n.type == "expression_statement":
+        e = n.named_children[0] if n.named_children else None
+        if e is None:
+            return True
+        if e.type == "call_expression":
+            f = e.child_by_field_name("function")
+            return f is not None and is_debug(text(f))
+    return False
+
+
+# The build always defines __REACTOS__: an `#ifdef __REACTOS__` arm is the code, its
+# `#else` is Wine's, and `#if 0` is nobody's.
+def _pp_arm(n: Node) -> str | None:
+    head = text(n).lstrip()
+    name = n.child_by_field_name("name")
+    if n.type == "preproc_ifdef" and name is not None and text(name) == "__REACTOS__":
+        return "other" if head.startswith("#ifndef") else "this"
+    cond = n.child_by_field_name("condition")
+    if n.type in ("preproc_if", "preproc_elif") and cond is not None:
+        c = re.sub(r"\s+", "", text(cond))
+        if c in ("0", "defined(__REACTOS__)==0", "!defined(__REACTOS__)", "!defined__REACTOS__"):
+            return "other"
+        if c in ("1", "defined(__REACTOS__)", "defined__REACTOS__"):
+            return "this"
+    return None
+
+
 def c_fn_name(fn: Node) -> str | None:
     d = fn.child_by_field_name("declarator")
     while d is not None and d.type not in ("function_declarator",):
@@ -770,17 +876,17 @@ def c_writes(fn: Node, path: str) -> list[tuple[Node, str, str]]:
     def walk(n: Node) -> None:
         if n.type == "assignment_expression":
             left, op, right = (n.child_by_field_name(f) for f in ("left", "operator", "right"))
-            if left is not None and canon_path(text(left)) == path and op is not None:
+            if left is not None and npath(text(left)) == path and op is not None:
                 o = text(op)
                 k = rhs_key(text(right)) if right is not None else "expr"
                 out.append((n, o, k if o == "=" else o + k))
         elif n.type == "init_declarator":
             nm, val = n.child_by_field_name("declarator"), n.child_by_field_name("value")
-            if nm is not None and canon_path(text(nm).lstrip("*&")) == path:
+            if nm is not None and npath(text(nm).lstrip("*&")) == path:
                 out.append((n, "init", rhs_key(text(val)) if val is not None else "expr"))
         elif n.type == "update_expression":
             arg = n.child_by_field_name("argument")
-            if arg is not None and canon_path(text(arg)) == path:
+            if arg is not None and npath(text(arg)) == path:
                 o = "+=" if "++" in text(n) else "-="
                 out.append((n, o, o + "1"))
         for c in n.children:
@@ -799,7 +905,7 @@ def c_declared_uninit(fn: Node, path: str) -> bool:
         if n.type == "declaration":
             for c in n.named_children:
                 kinds = ("identifier", "pointer_declarator", "array_declarator")
-                if c.type in kinds and canon_path(text(c).lstrip("*&")) == path:
+                if c.type in kinds and npath(text(c).lstrip("*&")) == path:
                     found = True
         for c in n.children:
             walk(c)
@@ -819,8 +925,33 @@ def _graded(fn: Node, path: str, probe: Callable[[CLive], bool]) -> str:
     return "C_READS_DEBUG" if probe(CLive(fn, path)) else "C_DEAD"
 
 
+def resolve_c_path(fn: Node, rust_path: str) -> str | None:
+    """The C spelling of a Rust lvalue: itself if the C function names it, else the ONE C
+    spelling equal to it case- and underscore-insensitively (`status` -> `Status`,
+    `list_count_index` -> `ListCountIndex`); None when several C names would fit."""
+    seen: set[str] = set()
+
+    def walk(n: Node) -> None:
+        if n.type in ("identifier", "field_expression"):
+            seen.add(npath(text(n)))
+        for c in n.children:
+            walk(c)
+
+    walk(fn)
+    if rust_path in seen:
+        return rust_path
+    fits = {c for c in seen if canon_path(c) == canon_path(rust_path)}
+    if len(fits) == 1:
+        return fits.pop()
+    return rust_path if not fits else None
+
+
 def c_verdict(fn: Node, w: RustWrite) -> tuple[str, int]:
     """(verdict, 1-based C line of the matched write or 0)."""
+    c_path = resolve_c_path(fn, w.lhs)
+    if c_path is None:
+        return "NO_MATCH", 0
+    w = RustWrite(w.shape, c_path, w.key, w.op, w.ordinal, w.nwrites, w.key_ordinal, w.key_count)
     if w.op == "param":
         body = fn.child_by_field_name("body")
         if body is None:
@@ -833,9 +964,17 @@ def c_verdict(fn: Node, w: RustWrite) -> tuple[str, int]:
             if c_declared_uninit(fn, w.lhs):
                 return "C_NO_INIT", 0
             return "NO_MATCH", 0
-        if len(cands) > 1:
-            cands = [x for x in cands if x[2] == w.key] or cands
-        node = cands[0][0]
+        same = [x for x in cands if x[2] == w.key]
+        if not same:
+            # the C initializes it to something else: typically a C99 declaration further
+            # down (`PWCHAR typeName = GetPeripheralTypeW(..)`) that the Rust hoisted to the
+            # top with a default, which then has no C counterpart. But `= STATUS_SUCCESS`
+            # against `= 0` is the same value spelled two ways, so only a C initializer
+            # that is itself dead lets this be called harmless.
+            if any(_graded(fn, w.lhs, lambda lv, x=x: lv.after(x[0])) != "C_DEAD" for x in cands):
+                return "NO_MATCH", cands[0][0].start_point[0] + 1
+            return "C_NO_INIT", 0
+        node = same[0][0]
     else:
         keyed = [x for x in writes if x[2] == w.key]
         if keyed and len(keyed) == w.key_count:
