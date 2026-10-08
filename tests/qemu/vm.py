@@ -364,6 +364,16 @@ def smmu_requested() -> bool:
     return os.environ.get("VIBEOS_QEMU_SMMU", "").strip() in ("1", "true", "yes")
 
 
+def xhci_interrupts() -> str:
+    """VIBEOS_QEMU_XHCI_MSI: how the xHCI rig's controller interrupts. `msix` (QEMU's
+    default), `msi` (MSI-X off, so a plain MSI capability with a multiple-message
+    block) or `line` (both off: INTx, whatever the driver asked for)."""
+    mode = os.environ.get("VIBEOS_QEMU_XHCI_MSI", "").strip() or "msix"
+    if mode not in ("msix", "msi", "line"):
+        raise ValueError(f"VIBEOS_QEMU_XHCI_MSI={mode!r}: expected msix, msi or line")
+    return mode
+
+
 def nvme_bridged() -> bool:
     """VIBEOS_QEMU_NVME_BRIDGE=1 (arm64): the NVMe controller sits behind a PCIe root
     port, on bus 1, the way a server's devices do, instead of on the root bus."""
@@ -1949,9 +1959,12 @@ class QemuVM:
             if self._usb_disk_enabled()
             else []
         )
+        msi = {"msix": "", "msi": ",msix=off,msi=on", "line": ",msix=off,msi=off"}[
+            xhci_interrupts()
+        ]
         return [
             "-device",
-            "qemu-xhci,id=xhci,addr=0x8",
+            f"qemu-xhci,id=xhci,addr=0x8{msi}",
             "-device",
             "usb-kbd,bus=xhci.0,id=ukbd",
             "-device",

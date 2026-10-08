@@ -13239,6 +13239,24 @@ introduced at any heap exit — it is an external stray write.**
   IMAN.IE off and lets usbport's EnableInterrupts turn them on, as EHCI does. For any new
   device family, ask "can this line be asserted before my ISR says yes?"
 
+### A device on MSI-X hangs on its first interrupt-driven I/O; the same device on its line or MSI works
+- **Symptom:** the driver starts, everything it polls works, and the first operation that
+  needs an interrupt never completes. Seen 2026-10-08 moving QEMU's xHCI to MSI-X: the root
+  hub came up, the first USB device reached `new device, slot 1`, and the boot hung waiting
+  for the GET_DESCRIPTOR completion. A QEMU `-trace usb_xhci_*` run showed the transfer
+  event queued on interrupter 0 with the vector in use. NVMe on MSI-X, xHCI on its line,
+  and xHCI on plain MSI all worked.
+- **Cause:** **pci.sys wrote the MSI-X table before turning on the device's memory decode.**
+  The table lives in a memory BAR, and writes to a BAR the device is not decoding go
+  nowhere, so every entry kept its reset state: masked. The device then sets pending bits
+  and never sends. A table readback was all `ffffffff`. NVMe hid it because the firmware
+  leaves that controller decoding; UEFI's xHCI driver turns decode off when it exits.
+  Plain MSI was immune because its address and data live in config space.
+- **Fix:** program MSI-X after the command register write in `PdoStartDevice`, and read
+  each entry back. pci.sys now refuses to count an entry whose data does not read back,
+  and says so (`MSI-X table entry N ... did not take`). For any capability programmed
+  through a BAR, ask "is the device decoding this BAR yet?"
+
 ### A new SCSIPORT miniport loads, and no disk appears
 - **Symptom:** the `.sys` is loaded and its service is bound by the CriticalDeviceDatabase,
   but no `Found device of type 0` line follows, `IopCreateArcNames` sees no disk, and a boot
