@@ -11336,7 +11336,8 @@ It stayed latent while threads rarely ran on the AP; fixing `KiIdleSummary` (thr
 the idle CPU) took it from never to 3 of 4 boots.
 
 **Fix:** `KiSystemStartupBootStack` installs the idle process's directory in TTBR0 and TTBR1
-on each AP, as `KiSwapProcess` would.
+on each AP, as `KiSwapProcess` would. **Tell:** `KiSwapProcess` sets both registers to the
+same table, so TTBR0 != TTBR1 on a running CPU means TTBR0 was never set by a process switch.
 
 ### A kernel write to a read-only page succeeds, but only on an AP: CR0.WP never set there
 **Symptom** (i386 `-smp 2`): kmtest `ZwMapViewOfSection` :492 writes to a PAGE_READONLY
@@ -11357,8 +11358,26 @@ and the re-insert returns FALSE; the DPC sits queued until that CPU next reaches
 wake with nothing queued left it set,
 and `KeInsertQueueDpc` skips requesting an interrupt while it is set. **Fix:** clear it on the
 empty-queue path too. Any per-PRCB "request pending" flag needs a clear on every path that
-services the request, not just the path that finds work. **Tell:** `KiSwapProcess` sets both registers to the
-same table, so TTBR0 != TTBR1 on a running CPU means TTBR0 was never set by a process switch.
+services the request, not just the path that finds work.
+
+### A multi-CPU guest is several times slower and both CPUs are mostly halted: the wake IPI is masked
+**Symptom** (amd64 `-smp 2` only): boot and every kmtest launch take ~3-4x the 1-vCPU time,
+yet timers run at the right rate (sleep-bound tests take their nominal time). Tests that
+assume a thread they started has reached its wait within 10 ms fail (`ExResource` waiter
+counts). Sampling both vCPUs over gdb (`info threads` per attach, then reading each
+PRCB through `$gs_base`/`$k_gs_base` + 0x180) finds a CPU **halted in its idle thread with
+`NextThread` already set**.
+**Cause:** amd64 `KiIpiSend(IPI_DPC)` sends the DISPATCH soft vector 0x2F. On amd64 IRQL
+*is* the APIC TPR (CR8), and the idle loop blocks in `hlt` at DISPATCH_LEVEL, so vector 0x2F
+(priority class 2) is held pending in the IRR and `hlt` never returns until a higher-class
+interrupt -- the clock tick -- arrives. Every cross-CPU handoff costs up to a tick. i386 and
+arm64 send IPI_DPC through their real IPI vector and never saw it.
+**Fix:** also ring the 0xE1 IPI vector, which is above every IRQL the idle loop runs at; its
+handler services nothing, but `hlt` returns and the idle loop re-checks `NextThread` and its
+DPC queue. Keep the 0x2F request: it is what preempts a *busy* target once its IRQL drops.
+Don't filter the wake to CPUs in `KiTbLazyIdleSet`: the idle loop joins that set after its
+`NextThread` check, so a filtered wake races. A wake interrupt must be deliverable at the
+IRQL the sleeper sleeps at.
 
 ### The machine keeps running after a BUGCHECK: the other CPUs were never frozen
 **Symptom** (MP, both amd64 and arm64): the serial carries thread exits, network
@@ -13474,6 +13493,34 @@ setup.exe as the thread that ran: +50 000 µs, the full window. The preempted se
 re-queues at the head and spends the rest of its foreground quantum first, which is Windows
 behaviour, not a scheduler bug. kmtest-sweep now waits for setup.exe to exit, which costs
 9–15 s. Before blaming the scheduler for a timing miss, diff per-thread CPU across the window.
+
+### A "bistable" kmtest row on every arch, even at one vCPU: a deterministic bug fed undefined bytes
+**Symptom:** a row banked `assert?` because it flips between two values on identical media
+(`IoDeviceObject_drv.c:300`: `ZwUnloadDriver` of the driver's own RegistryPath returned
+`STATUS_OBJECT_NAME_NOT_FOUND` on about half of boots, i386/amd64/arm64 alike, `-smp 1` too).
+**Cause:** not timing. A gdb probe logging the callee arguments inside `NtUnloadDriver` showed
+`NtOpenKey` receiving `'...\KMTEST-IODEVICEOBJECT뀷☓ɑ桔敲\x01'`: `IopUnloadDriver` handed the
+COUNTED `UNICODE_STRING` buffer to `RtlQueryRegistryValues(RTL_REGISTRY_ABSOLUTE, ...)`, which
+takes a NUL-terminated PWSTR, and DriverEntry's RegistryPath pointed into a
+`KEY_NAME_INFORMATION` block with no terminator. Whether the next pool WCHAR happened to be 0
+decided the result. The C has the same bug.
+**Fix:** `IopUnloadDriver` queries through a terminated copy, and `IopInitializeDriverModule`
+terminates RegistryPath in an extra WCHAR -- outside `MaximumLength`, which Windows reports
+equal to `Length` (`:191` asserts it; counting the NUL in broke it on all arches). **Rule:** a
+row that flips on every arch with no second CPU is reading memory nobody wrote; probe the
+arguments before accepting it as noise.
+
+### A test that measures its own process sees a charge it never made: the kmtest harness is running beside it
+**Symptom** (`-smp 2` only): `PsQuota.c:88`/`:119` read nonpaged quota usage 24 bytes above what
+the test charged, in some sweeps.
+**Cause:** `KmtRunKernelTest` starts its user-callback thread and issues `IOCTL_KMTEST_RUN_TEST`
+at once. The callback thread then parks in `IOCTL_KMTEST_USERMODE_AWAIT_REQ`, which is
+METHOD_BUFFERED, so its system buffer is a quota allocation charged to the same process
+(i386: 12-byte packet + 4-byte quota-process pointer + 8-byte pool header = 24). On one CPU it
+parks after the test; on two, during it.
+**Fix:** the kmtest driver's `RUN_TEST` waits (bounded, 5 s) on an event `AWAIT_REQ` sets while
+the callback thread is parked. Any per-process counter a kmtest reads (quota, handle count,
+thread count) includes the harness's own threads.
 
 ### `NET_FLAKE` that is not a flake `[§9.84]`
 A gate showing `✓ build ×3 ✓ lint ×3 ✓ smoke: all three` and a red net suite, where **all 15
