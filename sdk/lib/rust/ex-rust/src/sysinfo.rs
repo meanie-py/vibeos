@@ -742,7 +742,13 @@ pub unsafe extern "system" fn ExIsProcessorFeaturePresent(ProcessorFeature: ULON
     if ProcessorFeature >= PROCESSOR_FEATURE_MAX {
         return 0u8;
     }
-    (*(SharedUserData as *const u8).add(ProcessorFeature as usize) != 0) as BOOLEAN
+    // The C indexes SharedUserData->ProcessorFeatures[] (offset 0x274). Indexing from the
+    // START of KUSER_SHARED_DATA instead read the clock: PF_PAE_ENABLED (9) landed in
+    // InterruptTime, so a non-PAE i386 kernel intermittently reported PAE and kmtest
+    // MmReservedMapping walked its PTEs with the PAE layout into an unmapped page.
+    // This file's `_KUSER_SHARED_DATA` is an opaque alias; the field needs the real layout.
+    (*(SharedUserData as *const ntkrnl_sys::ddk::_KUSER_SHARED_DATA)).ProcessorFeatures
+        [ProcessorFeature as usize]
 }
 
 #[no_mangle]

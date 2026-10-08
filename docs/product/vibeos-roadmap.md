@@ -5400,6 +5400,21 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     noted in the sweep list since 07-25. (2) setup.exe's registration burst starving the
     test's 50 ms races, proven per-thread by `[FMUTEX-RAN]`. Field manual: the setup
     paragraph under "A kmtest count drift on a UP guest is the boot-time ladder".
+  - **kmtest `MmReservedMapping` / `MmMapLockedPagesSpecifyCache` quarantined since 07-10 —
+    ROOT-CAUSED/FIXED 2026-10-08, four translation bugs, all arches.** (1) 0xDA/0x101:
+    `MmAllocateMappingAddress` stored the size PTE as a raw value while the map/unmap path decoded
+    `u.List.NextEntry` (bit 32 amd64 / 28 arm64 / 12 i386), reading 0. A private helper
+    `mmpte_list_next_entry` also had the wrong shift on i386 and arm64; it is gone, and every
+    site now uses `MMPTE::{set_,}list_next_entry`. (2) 0x1A/0x401: the `VadType` packing above.
+    (3) `ExIsProcessorFeaturePresent` indexed `KUSER_SHARED_DATA` from its start rather than
+    `ProcessorFeatures[]`, so every feature query returned clock bytes. `PF_PAE_ENABLED` read
+    `InterruptTime`, and the i386 test walked PTEs as PAE into an unmapped page. pcix also
+    calls it. (4) `MM_HIGHEST_VAD_ADDRESS` equalled `MM_HIGHEST_USER_ADDRESS` on all three
+    arches, since 03-13; the C is 16 pages lower. PEB/TEB and other VADs could therefore land
+    in the top band, and a request there got CONFLICTING_ADDRESSES instead of
+    INVALID_ADDRESS. Both tests now in the sweep: MapLocked 16743/0 on every arch;
+    MmReservedMapping 231/0 amd64, 84/0 arm64, and 187/44 on i386, where the 44 are the
+    test's own `<< 32` expectation for a 32-bit PTE and upstream's C fails them too.
   - **Conformance BUGCHECK 0x1E inside `RtlRangeList` — ROOT-CAUSED/FIXED 2026-10-08,
     all three arches.** A use-after-free in the Rust `RtlDeleteOwnersRanges`
     (`rtl-rangelist`): it read `(*Entry).Flink` after `RtlpFreeMemory` had freed that entry.
@@ -6282,6 +6297,11 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   result: it eliminates MiDeletePte as the reuse path. Owed next step: a "free-while-mapped" tripwire at the RosMM page-free site
   (assert `MmGetRmapListHeadPage(pfn)==NULL`) to catch the premature free. Section tests stay
   ACTIVE (the canary). Field manual §9.97 (method + full evidence); task #19.
+  **2026-10-08: the `MmMapLockedPagesSpecifyCache` face was NOT this bug.** Its 0x401 had its
+  own cause: `MiMapLockedPagesInUserSpace` hand-packed `VadType` at bit 0 (it is bit 52 on
+  64-bit), so `MiUnmapLockedPagesInUserSpace` refused the VAD and never unmapped, and process
+  teardown deleted PTEs it did not own. Fixed and un-quarantined (see below). The page-reuse
+  hunt above stays open; drop the task #7 face from its evidence.
 
   **Tripwire site pinned down (2026-07-26), with the ordering trap that would have made it
   always-NULL.** The free site is `mm/freelist.rs:391 MmDereferencePage` — the
