@@ -1556,7 +1556,13 @@ def cmd_submit(args):
             result.output_tokens,
             attempt_id=result.attempt_id,
         )
-        usd = cost_usd(model, result.input_tokens, result.output_tokens, result.cache_read_tokens)
+        usd = cost_usd(
+            model,
+            result.input_tokens,
+            result.output_tokens,
+            result.cache_read_tokens,
+            cache_write_tokens=result.cache_write_tokens,
+        )
         print(
             f"Cost: ${usd:.2f}  | archived: {archive.dir}",
             file=sys.stderr,
@@ -2345,6 +2351,17 @@ def _class_declaration_scope(cls) -> str:
     return text[m.start() : i]
 
 
+def _fanout_cheap(model: str) -> bool:
+    """Whether *model* may fan out: DeepSeek, or priced no higher than the DeepSeek default."""
+    if model.startswith("deepseek-"):
+        return True
+    if model not in MODEL_PRICING:
+        return False  # unpriced: assume the worst, as model_pricing does
+    pin, pout = MODEL_PRICING[model]
+    din, dout = MODEL_PRICING[MODEL_ALIASES["deepseek"]]
+    return pin <= din and pout <= dout
+
+
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
     # `--fn` names that matched in SOME file. A name missing from one file of a multi-file run is
@@ -2613,14 +2630,17 @@ def cmd_translate(args):
         else ""
     )
 
-    # Concurrency: fan out per-function calls. ONLY for mechanical mode on DeepSeek —
-    # mechanical functions are independent (each forward-declares its callees), and
-    # DeepSeek is cheap enough that a bounded fan-out won't black-hole the budget the
-    # way Claude could. Claude/Gemini/idiomatic stay strictly sequential by policy.
+    # Concurrency: fan out per-function calls. ONLY for mechanical mode on a model cheap
+    # enough that a bounded fan-out won't black-hole the budget -- mechanical functions
+    # are independent (each forward-declares its callees). The test is PRICE, not vendor:
+    # it was written as "DeepSeek only" when DeepSeek was the cheap lane, and Haiku 5.5
+    # ($0.10/$0.50 per 1M) then sat sequential at ~13x below the DeepSeek default it was
+    # protecting against (appwiz: 31 functions in 532s). Idiomatic stays sequential.
     conc = max(1, getattr(args, "concurrency", 1) or 1)
-    if conc > 1 and not (mode == "mechanical" and model.startswith("deepseek-")):
+    if conc > 1 and not (mode == "mechanical" and _fanout_cheap(model)):
         print(
-            f"  (--concurrency {conc} ignored: only for --mode mechanical on DeepSeek)",
+            f"  (--concurrency {conc} ignored: only for --mode mechanical on a model priced "
+            f"at or below {MODEL_ALIASES['deepseek']})",
             file=sys.stderr,
         )
         conc = 1
@@ -2850,7 +2870,11 @@ def cmd_translate(args):
                 "cache_write_tokens": result.cache_write_tokens,
                 "cost_usd": round(
                     cost_usd(
-                        model, result.input_tokens, result.output_tokens, result.cache_read_tokens
+                        model,
+                        result.input_tokens,
+                        result.output_tokens,
+                        result.cache_read_tokens,
+                        cache_write_tokens=result.cache_write_tokens,
                     ),
                     8,
                 ),
@@ -3921,7 +3945,11 @@ def cmd_translate(args):
                                 attempt_id=r.attempt_id,
                             )
                             running_cost += cost_usd(
-                                model, r.input_tokens, r.output_tokens, r.cache_read_tokens
+                                model,
+                                r.input_tokens,
+                                r.output_tokens,
+                                r.cache_read_tokens,
+                                cache_write_tokens=r.cache_write_tokens,
                             )
                         _record_outcome(
                             dp,
@@ -4154,6 +4182,7 @@ def cmd_translate(args):
                             result.input_tokens,
                             result.output_tokens,
                             result.cache_read_tokens,
+                            cache_write_tokens=result.cache_write_tokens,
                         )
 
             if result.success:
@@ -4200,7 +4229,11 @@ def cmd_translate(args):
                         attempt_id=result.attempt_id,
                     )
                     running_cost += cost_usd(
-                        model, result.input_tokens, result.output_tokens, result.cache_read_tokens
+                        model,
+                        result.input_tokens,
+                        result.output_tokens,
+                        result.cache_read_tokens,
+                        cache_write_tokens=result.cache_write_tokens,
                     )
                     print(
                         f"OK ({result.input_tokens} in / {result.output_tokens} out)"
@@ -4402,6 +4435,7 @@ def cmd_translate(args):
                         pre_res.input_tokens,
                         pre_res.output_tokens,
                         pre_res.cache_read_tokens,
+                        cache_write_tokens=pre_res.cache_write_tokens,
                     )
                 _record_preamble(
                     preamble_src,

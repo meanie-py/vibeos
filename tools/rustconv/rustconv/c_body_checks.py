@@ -145,7 +145,33 @@ _RS_FLAG_ASSIGN = re.compile(
     r"(?m)(?P<lead>(?:^|[;{}])[^\n;{}]*?)(?<![\w.*\])])(?P<name>[A-Za-z_]\w*)\s*=(?!=)\s*\(?\s*"
     r"(?P<val>[01])(?:[iu](?:8|16|32|64|size))?\s*\)?\s*(?:as\s+[\w:]+\s*)*;"
 )
-_C_ASSIGN = re.compile(r"(?<![\w.>=!<*\])])([A-Za-z_]\w*)\s*=(?!=)\s*([^;]*);")
+_C_ASSIGN = re.compile(r"(?<![\w.>=!<*\])])([A-Za-z_]\w*)\s*=(?!=)\s*")
+
+
+def _c_assignments(c_code: str):
+    """``(name, rhs)`` for each C assignment, the RHS ending where the EXPRESSION does.
+
+    Not at the next `;`: `for (i = 0, p = es->text; ...)` gave `i` the value
+    `0, p = es->text`, and `if ((page = h / w) < 1) page = 1;` swallowed the second
+    assignment into the first one's RHS -- three correct comctl32 bodies (EDIT_EM_ReplaceSel,
+    LISTBOX_GetMaxTopIndex, LISTBOX_UpdatePage) were refused as "invented" values the C
+    spells plainly. The RHS stops at `;`, a top-level comma, or an unbalanced `)`/`]`/`}`;
+    every assignment is found independently, nested ones included.
+    """
+    for m in _C_ASSIGN.finditer(c_code):
+        depth, end = 0, m.end()
+        while end < len(c_code):
+            ch = c_code[end]
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                if depth == 0:
+                    break
+                depth -= 1
+            elif ch == ";" or (ch == "," and depth == 0):
+                break
+            end += 1
+        yield m.group(1), c_code[m.end() : end]
 
 
 def invented_flag_assignments(c_body: str, rust: str) -> list[str]:
@@ -160,12 +186,12 @@ def invented_flag_assignments(c_body: str, rust: str) -> list[str]:
     """
     c_code = _C_COMMENT_OR_STRING.sub(" ", c_body)
     c_values: dict[str, set[str]] = {}
-    for m in _C_ASSIGN.finditer(c_code):
+    for first, raw_rhs in _c_assignments(c_code):
         # A chained assignment gives every name in it the final value: usetup's
         # `Pos = Length = 0;` was split into two statements by a correct translation, and
         # `Length = 0` was refused on every sample because only `Pos` was recorded.
-        names = [m.group(1)]
-        rhs = m.group(2).strip()
+        names = [first]
+        rhs = raw_rhs.strip()
         while chained := re.match(r"([A-Za-z_]\w*)\s*=(?!=)\s*(.+)$", rhs, re.S):
             names.append(chained.group(1))
             rhs = chained.group(2).strip()

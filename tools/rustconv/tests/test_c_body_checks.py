@@ -1,6 +1,8 @@
 """c_body_checks: a C goto/label that survived into Rust is caught; legal Rust is not."""
 
-from rustconv.c_body_checks import control_flow_findings
+import pytest
+
+from rustconv.c_body_checks import control_flow_findings, invented_flag_assignments
 
 C = """BOOLEAN f(void) {
     if (!x) goto Quit;
@@ -123,3 +125,28 @@ def test_a_pointer_typedef_local_gets_no_extra_level():
     assert not f(c, "let FilePathInfo: PFILEPATHS_W;")
     two = "PCM_INT13_DRIVE_PARAMETER *Int13Drives = (PCM_INT13_DRIVE_PARAMETER*)Context;"
     assert not f(two, "let mut Int13Drives: *mut PCM_INT13_DRIVE_PARAMETER = Context.cast();")
+
+
+@pytest.mark.parametrize(
+    ("c_body", "rust"),
+    [
+        # comma operator in a for-init: `i` is plainly given 0
+        (
+            "{ for (i = 0, p = es->text; i < n; i++, p++) x(p); }",
+            "i = 0;\np = (*es).text;",
+        ),
+        # an assignment nested in a condition, then a plain one after it
+        (
+            "{ if ((page = descr->height / descr->item_height) < 1) page = 1; }",
+            "page = (*descr).height / (*descr).item_height;\nif page < 1 { page = 1; }",
+        ),
+    ],
+)
+def test_invented_flag_reads_each_c_assignment_to_its_own_end(c_body, rust):
+    """The RHS ends at a top-level comma or an unbalanced paren, not at the next `;`."""
+    assert invented_flag_assignments(c_body, rust) == []
+
+
+def test_invented_flag_still_catches_a_value_the_c_never_assigns():
+    c_body = "{ Status = GetFileSystemName(x); if (!NT_SUCCESS(Status)) return Status; }"
+    assert invented_flag_assignments(c_body, "Status = 0;")

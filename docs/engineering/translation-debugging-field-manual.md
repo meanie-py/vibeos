@@ -4757,6 +4757,18 @@ already been met the note is describing a bug, not a plan.
 - **Split-TU translation covers only the first chunk.** **Scanners skip macro-wrapped, SAL,
   callback and preprocessor-conditional definitions.** **Mid-size win32k leaves lost 25–50% of
   their functions.**
+- **`WINAPI` planned as the function's name.** tree-sitter's recovery from the unknown
+  convention macro lands either way round: `LPVOID WINAPI ReAlloc (` puts `WINAPI` in an ERROR
+  node, but `LPVOID WINAPI Alloc (` makes `WINAPI` the declarator and `Alloc` the ERROR.
+  comctl32's `Alloc` and `Free` became two functions named `WINAPI`. The scanner now takes the
+  identifier when the parsed name is a calling convention.
+- **A file-local rename (`#define A B` … `#undef A`) defines the internal body under the public
+  name.** imagelist.c renames 19 `ImageList_*` to `Internal_*`, defines the internal bodies with
+  the public spelling, then `#undef`s and defines the exported wrappers. The raw scan saw each
+  public name twice, so the Rust would have exported the unchecked internal body, and c2rust
+  (which sees `Internal_Add`) could not anchor it. The scanner applies such renames inside their
+  window, as the preprocessor does, when a definition sits inside one. Only renames under no
+  `#if`, or under `#ifdef __REACTOS__`, count: bitmap.c's sit under `USE_RTL_BITMAP64`.
 - **A stitcher comment-collapse drops whole bodies into a `//` line.** **A dropped function
   name becomes a bare tuple no-op.**
 - **`verify_lost_exports` cannot see a ONE-LINE `#[no_mangle]`** — its regex is multi-line.
@@ -4870,6 +4882,24 @@ in, buy, and restore from a byte-exact backup verified with `git diff --quiet`.
 **Detection.** A column-0 sweep for `^name(` that is absent from the extracted set finds it with
 zero false positives on this file. Repo-wide it is noisy (`WINE_DEFAULT_DEBUG_CHANNEL` and other
 macro invocations sit at column 0 too), so it needs a macro-name filter before it can be a gate.
+
+**Now automatic for `__REACTOS__` (2026-10-08).** ReactOS-patched code does this constantly with
+`#ifdef __REACTOS__` / `#else` arms that each open their own `{` (comctl32's `COMBO_WindowProc`,
+`TOOLBAR_DrawButton` and six more; user32's `ComboWndProc_common`; classpnp's `class.c` lost 76
+of 91). `translate`'s `require_c_plan` refuses such a TU, and `scan_file` now rescans it with
+`__REACTOS__` defined (every compile line carries it). The rescan fires ONLY when the plain scan
+lost a live definition, so a file that already scanned completely keeps its exact body text and
+its banked translations. Resolving it unconditionally changed bodies in ~130 files.
+
+The same split can also cost money while losing nothing. Two split SIGNATURES in a row
+(listview.c's `LISTVIEW_NextIconPosTop`/`Left`) leave every function extracted, but tree-sitter
+wraps the rest of the file in one ERROR node, and the preamble keeps every top-level node
+that is not a function. listview's file context, sent with every call, was 281K characters
+of function bodies: 160K-token prompts, over Haiku 5.5's 100K price tier on every call. It
+cost more than the other 16 files of that run together. The scanner now counts definitions
+inside MALFORMED preamble nodes (`preamble_swallowed_functions`) and rescans with
+`__REACTOS__` resolved. listview 281K → 8.7K, toolbar 200K → 6.5K, user32's edit.c
+120K → 6K, and 60 more files.
 
 ### A `.c` in the source list can compile to an object with ZERO defined symbols
 
