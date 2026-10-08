@@ -79,7 +79,15 @@ pub unsafe extern "C" fn WowX64SystemService(Service: u32, RegisterArgs: *const 
         Args[i] = *((GuestRsp + 0x28 + 8 * (i - WOWX64_REGISTER_ARGS) as u64) as *const u64);
     }
 
+    // Published for RemoteGuestContext, and restored rather than cleared: a
+    // win32k callback runs guest code, and its syscalls, inside this one.
+    let Rec = crate::thread::Record();
+    let Saved = ((*Rec).SyscallRsp, (*Rec).SyscallService);
+    (*Rec).SyscallService = Service as u64;
+    core::ptr::write_volatile(&mut (*Rec).SyscallRsp, GuestRsp);
     let Ret = Dispatch(Service, &mut Args);
+    core::ptr::write_volatile(&mut (*Rec).SyscallRsp, Saved.0);
+    (*Rec).SyscallService = Saved.1;
 
     let N = SyscallCount.fetch_add(1, Ordering::Relaxed);
     if N < TRACED_SYSCALLS {
@@ -147,9 +155,12 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
             if !IsCurrentThread(Args[0] as HANDLE) {
                 // Forwarding would have the kernel read or write an ARM64
                 // CONTEXT through the guest's x86-64 one. Another thread's
-                // guest state lives in that thread's CPU layer (owed: threads).
-                crate::trace!("Nt%sContextThread on another thread: not supported yet",
-                    if Service == svc::SVC_NtGetContextThread { b"Get\0".as_ptr() } else { b"Set\0".as_ptr() });
+                // guest state lives in that thread's CPU layer; a GET is
+                // answered for a thread parked in a syscall (thread.rs).
+                if Service == svc::SVC_NtGetContextThread {
+                    return crate::thread::RemoteGuestContext(Args[0] as HANDLE, Args[1] as *mut WowX64Context);
+                }
+                crate::trace!("NtSetContextThread on another thread: not supported yet");
                 return STATUS_NOT_IMPLEMENTED;
             }
             let Ctx = Args[1] as *mut WowX64Context;

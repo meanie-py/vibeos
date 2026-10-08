@@ -44,6 +44,9 @@ binaries:
 # the list are loaded by name at run time, so no import walk finds them:
 #   apphelp     kernel32's app-compat check at every process create
 #   schannel    secur32's TLS provider (rapps's database download is https)
+#   rsaenh      the crypto provider schannel's CryptAcquireContext opens by its registry
+#               "Image Path", which rsaenh writes itself at registration (rsaenh.rgs), so no
+#               INF names it for tools/fex/wow64-closure.py to derive
 #   actxprxy    the COM proxy iexplore marshals its browser object through
 #   mshtml      ieframe's document object
 #   rosbrand    shell32's About-box branding, named by a string literal in shell32
@@ -98,6 +101,7 @@ guest_sets:
       - dll/cpl/joy/joy.cpl
       - dll/appcompat/apphelp/apphelp.dll
       - dll/win32/schannel/schannel.dll
+      - dll/win32/rsaenh/rsaenh.dll
       - dll/win32/actxprxy/actxprxy.dll
       - dll/win32/mshtml/mshtml.dll
       - dll/branding/rosbrand/rosbrand.dll

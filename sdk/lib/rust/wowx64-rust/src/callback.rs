@@ -29,6 +29,11 @@ use crate::host::{die, Cpu, CURRENT_PROCESS, CURRENT_THREAD};
 /// chained from the thread's record (thread.rs).
 struct Callout {
     Saved: WowX64Context,
+    /// The outer syscall's published guest rsp and service (thread.rs
+    /// `SyscallRsp`): NtCallbackReturn abandons the frames that would restore
+    /// them, so the callout does.
+    SyscallRsp: u64,
+    SyscallService: u64,
     Prev: *mut Callout,
 }
 
@@ -68,7 +73,16 @@ unsafe fn Head() -> *mut *mut Callout {
 }
 
 unsafe extern "system" fn WowX64UserCallback(Index: ULONG, Argument: *mut c_void, Length: ULONG) -> NTSTATUS {
-    let mut C = Callout { Saved: core::mem::zeroed(), Prev: *Head() };
+    let Rec = crate::thread::Record();
+    let mut C = Callout {
+        Saved: core::mem::zeroed(),
+        SyscallRsp: (*Rec).SyscallRsp,
+        SyscallService: (*Rec).SyscallService,
+        Prev: *Head(),
+    };
+    // Guest code runs from here until NtCallbackReturn: not parked in a
+    // syscall, so a remote sampler is refused rather than shown the outer one.
+    core::ptr::write_volatile(&mut (*Rec).SyscallRsp, 0);
     if (Cpu().GetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), &mut C.Saved) < 0 {
         die(b"win32k callback on a thread with no guest state\0");
     }
@@ -106,6 +120,9 @@ pub unsafe fn CallbackReturn(Args: &[u64; crate::syscall::WOWX64_SERVICE_ARGS]) 
         return crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCallbackReturn, Args.as_ptr());
     }
     *Head() = (*C).Prev;
+    let Rec = crate::thread::Record();
+    (*Rec).SyscallService = (*C).SyscallService;
+    core::ptr::write_volatile(&mut (*Rec).SyscallRsp, (*C).SyscallRsp);
     (Cpu().SetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), &(*C).Saved);
     let Status = crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCallbackReturn, Args.as_ptr());
     // Only an error comes back. The guest is now parked on the OUTER syscall,
