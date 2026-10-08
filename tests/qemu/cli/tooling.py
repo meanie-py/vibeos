@@ -51,6 +51,10 @@ _PYTEST_SUITES = [
     # tools/test_vendored.py existed but was collected by nothing, so the registry
     # that gates "is this C ours to translate" had its oracle sitting unrun.
     (".", ".", "tools/test_vendored.py"),
+    # The arm64 firmware-table parsers (MADT/SPCR/MCFG in the loader, IORT in the HAL)
+    # are compiled only for the target, where nothing runs their tests; a wrong answer
+    # from one is a dead device on a board nobody here has.
+    (".", ".", "tools/test_arm64_firmware_tables.py"),
     # An oracle needs an oracle. verify_c_signatures reports its own type-resolution gaps as
     # defects in the code when it is wrong, and reports "verified" over types it never
     # resolved when it is blind — neither shows up in review or in its own output.

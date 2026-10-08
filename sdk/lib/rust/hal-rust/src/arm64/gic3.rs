@@ -246,6 +246,17 @@ pub(crate) fn frame(cpu: u32) -> Option<usize> {
     }
 }
 
+/// A CPU's GICR_TYPER, once its redistributor has been found.
+pub(crate) fn redistributor_typer(cpu: u32) -> Option<u64> {
+    let rd = frame(cpu)?;
+    Some(unsafe { rd64(rd + GICR_TYPER) })
+}
+
+/// The CPUs whose redistributor has been found, as a mask (bit N == NT processor N).
+pub(crate) fn cpus() -> u64 {
+    (0..MAX_CPUS).filter(|&c| FRAME[c].load(Ordering::SeqCst) != 0).fold(0, |m, c| m | 1 << c)
+}
+
 /// The physical address of a CPU's redistributor, and its GICR_TYPER.Processor_Number:
 /// an ITS names a collection's target by one or the other (GITS_TYPER.PTA).
 pub(crate) fn frame_target(cpu: u32) -> Option<(u64, u32)> {
