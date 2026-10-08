@@ -358,7 +358,7 @@ pub unsafe extern "C" fn LsarpLookupPrivilegeName(
         return STATUS_NO_SUCH_PRIVILEGE;
     }
 
-    for priv_data in &WellKnownPrivileges {
+    for priv_data in (*&raw const WellKnownPrivileges).iter() {
         if (*Value).LowPart == priv_data.Luid.LowPart
             && (*Value).HighPart == priv_data.Luid.HighPart
         {
@@ -428,7 +428,7 @@ pub unsafe extern "C" fn LsarpLookupPrivilegeDisplayName(
     hInstance = GetModuleHandleW(module_name.as_ptr()) as HINSTANCE;
 
     Index = 0;
-    while (Index as usize) < WellKnownPrivileges.len() {
+    while (Index as usize) < (*&raw const WellKnownPrivileges).len() {
         if _wcsicmp((*Name).Buffer, WellKnownPrivileges[Index as usize].Name) == 0 {
             TRACE!(
                 b"Index: %u\n\0".as_ptr() as *const i8,
@@ -529,14 +529,14 @@ pub unsafe extern "C" fn LsarpLookupPrivilegeValue(Name: *mut _RPC_UNICODE_STRIN
         return core::ptr::null_mut::<_LUID>();
     }
     let mut Priv: u32 = 0;
-    while (Priv as usize) < WellKnownPrivileges.len() {
+    while (Priv as usize) < (*&raw const WellKnownPrivileges).len() {
         if _wcsicmp(
             (*Name).Buffer as *const u16,
             WellKnownPrivileges[Priv as usize].Name as *const u16,
         ) == 0
         {
             return core::ptr::addr_of!(
-                (*WellKnownPrivileges.as_ptr().add(Priv as usize)).Luid
+                (*(&raw const WellKnownPrivileges).cast::<PRIVILEGE_DATA>().add(Priv as usize)).Luid
             ) as *mut _LUID ;
         }
         Priv = Priv.wrapping_add(1);
@@ -655,7 +655,7 @@ pub unsafe extern "C" fn LsapLookupAccountRightName(
     Name: *mut PRPC_UNICODE_STRING,
 ) -> NTSTATUS {
     let NameBuffer: PRPC_UNICODE_STRING;
-    for right_data in &WellKnownRights {
+    for right_data in (*&raw const WellKnownRights).iter() {
         if right_data.Flag == RightValue {
             NameBuffer = MIDL_user_allocate(
                 core::mem::size_of::<RPC_UNICODE_STRING>(),
@@ -688,7 +688,7 @@ pub unsafe extern "C" fn LsapLookupAccountRightValue(Name: *mut _UNICODE_STRING)
     if (*Name).Length == 0 || (*Name).Buffer.is_null() {
         return 0;
     }
-    for i in 0..WellKnownRights.len() {
+    for i in 0..(*&raw const WellKnownRights).len() {
         if _wcsicmp(
             (*Name).Buffer as *const wchar_t,
             WellKnownRights[i].Name as *const wchar_t,

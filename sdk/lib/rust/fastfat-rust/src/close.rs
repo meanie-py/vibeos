@@ -291,7 +291,7 @@ pub unsafe extern "system" fn FatFspClose(
         // When Vcb not present (i.e., FSP path) ...
         if Vcb.is_null() {
             // FAT_DATA is a global static – we reference it as-is (assumes correct type in scope)
-            if FatData.ShutdownStarted() == 0 {
+            if (*&raw const FatData).ShutdownStarted() == 0 {
                 if (*CloseContext).Vcb != CurrentVcb {
                     LoopsWithVcbHeld = 0;
 
@@ -472,17 +472,17 @@ pub unsafe extern "system" fn FatRemoveClose(
     if Vcb.is_null() && !LastVcbHint.is_null() {
         // aggressive logic
         let max = *core::ptr::addr_of!(FatMaxDelayedCloseCount);
-        if FatData.HighAsync() == 0 && FatData.AsyncCloseCount > max * 2 {
-            FatData.set_HighAsync(1);
-        } else if FatData.HighAsync() != 0 && FatData.AsyncCloseCount < max {
-            FatData.set_HighAsync(0);
+        if (*&raw const FatData).HighAsync() == 0 && FatData.AsyncCloseCount > max * 2 {
+            (*&raw mut FatData).set_HighAsync(1);
+        } else if (*&raw const FatData).HighAsync() != 0 && FatData.AsyncCloseCount < max {
+            (*&raw mut FatData).set_HighAsync(0);
         }
-        if FatData.HighDelayed() == 0 && FatData.DelayedCloseCount > max * 2 {
-            FatData.set_HighDelayed(1);
-        } else if FatData.HighDelayed() != 0 && FatData.DelayedCloseCount < max {
-            FatData.set_HighDelayed(0);
+        if (*&raw const FatData).HighDelayed() == 0 && FatData.DelayedCloseCount > max * 2 {
+            (*&raw mut FatData).set_HighDelayed(1);
+        } else if (*&raw const FatData).HighDelayed() != 0 && FatData.DelayedCloseCount < max {
+            (*&raw mut FatData).set_HighDelayed(0);
         }
-        if FatData.HighAsync() != 0 || FatData.HighDelayed() != 0 {
+        if (*&raw const FatData).HighAsync() != 0 || (*&raw const FatData).HighDelayed() != 0 {
             Vcb = LastVcbHint;
         }
     }
@@ -505,7 +505,7 @@ pub unsafe extern "system" fn FatRemoveClose(
                 break 'any_close;
             } else if !IsListEmpty(core::ptr::addr_of_mut!(FatData.DelayedCloseList))
                 && (FatData.DelayedCloseCount > *core::ptr::addr_of!(FatMaxDelayedCloseCount) / 2
-                    || FatData.ShutdownStarted() != 0)
+                    || (*&raw const FatData).ShutdownStarted() != 0)
             {
                 Entry = RemoveHeadList(core::ptr::addr_of_mut!(FatData.DelayedCloseList));
                 FatData.DelayedCloseCount -= 1;
@@ -519,7 +519,7 @@ pub unsafe extern "system" fn FatRemoveClose(
             } else {
                 CloseContext = core::ptr::null_mut();
                 if WorkerThread != 0 {
-                    FatData.set_AsyncCloseActive(0);
+                    (*&raw mut FatData).set_AsyncCloseActive(0);
                 }
                 break 'any_close;
             }

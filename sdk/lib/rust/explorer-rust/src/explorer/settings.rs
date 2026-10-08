@@ -37,7 +37,7 @@ pub static mut g_TaskbarSettings: TaskbarSettings = TaskbarSettings {
 /// TW_STRUCKRECTS2 flags word.
 #[inline]
 pub unsafe fn GetHideClock() -> BOOL {
-    (g_TaskbarSettings.sr.HideClock() != 0 || SHRestricted(REST_HIDECLOCK) != 0) as BOOL
+    ((*&raw const g_TaskbarSettings).sr.HideClock() != 0 || SHRestricted(REST_HIDECLOCK) != 0) as BOOL
 }
 
 #[no_mangle]

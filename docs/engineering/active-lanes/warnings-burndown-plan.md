@@ -472,8 +472,7 @@ sites were worth a human read, and they were read against the C:
   kernel32's `Result > 0xFFFFFFFF` is the same dead check in path.c:1521; disk's
   `if !"msg".as_ptr().is_null()` is `NT_ASSERT(!"msg")`, i.e. assert-false, now spelled so.
 
-**Owed** (tracked here until done): `static_mut_refs` 168; the `clashing_extern` Phase 2
-below; `unused_assignments` 1,048 (some are lost writes -- grade, don't bulk-allow); 13
+**Owed** (tracked here until done): the `clashing_extern` Phase 2 below; `unused_assignments` 1,048 (some are lost writes -- grade, don't bulk-allow); 13
 `path_statements` that are `STUB;` / `UNIMPLEMENTED;` debug macros translated as constants.
 (The flexible-array reader's cargo-linked corpus, owed when this was written, closed the same
 day: ten boot-path sites fixed -- roadmap.)
@@ -504,6 +503,13 @@ day: ten boot-path sites fixed -- roadmap.)
     the calling process) where the C is `UNIMPLEMENTED; return 0;`.
   - pcix `ario_ApplyBrokenVideoHack`'s `loop {}` stays: it is the pre-#9502 arbiter stub
     already tracked in the roadmap ("pcix-rust predates upstream's arbiters").
+
+- **`static_mut_refs` 159 -> 0** (clean builds, all three arches) across 17 crates. Each
+  site took rustc's migration: `&mut X` / `&X` became `&raw mut X` / `&raw const X`,
+  `X.as_ptr()` became a typed cast of `&raw const X`, and a method or bitfield accessor
+  became `(*&raw const X).m()` or `(*&raw mut X).m()` (mut only for `set_*` / `add` /
+  `remove_all`). crt-shared's `ARRAY_SIZE!` goes through `addr_of!` like msvcrt file.rs's
+  copy. That leaves the UB tier empty.
 
 **Newly owed from that sweep:**
 

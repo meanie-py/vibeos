@@ -624,7 +624,7 @@ unsafe fn backup_windows_pos_proc_impl(hwnd: HWND, _l: LPARAM) -> BOOL {
         wposdata.hwnd = hwnd;
         wposdata.wplt.length = size_of::<WINDOWPLACEMENT>() as UINT;
         GetWindowPlacement(hwnd, &mut wposdata.wplt);
-        g_WindowPosBackup.add(wposdata);
+        (*&raw mut g_WindowPosBackup).add(wposdata);
     }
     TRUE as BOOL
 }
@@ -636,13 +636,13 @@ unsafe fn BackupWindowPos() {
 
 unsafe fn RestoreWindowPos() {
     g_Arrangement = ARRANGE_NONE;
-    let mut i = g_WindowPosBackup.get_size() - 1;
+    let mut i = (*&raw const g_WindowPosBackup).get_size() - 1;
     while i >= 0 {
-        let e = g_WindowPosBackup.at(i);
+        let e = (*&raw const g_WindowPosBackup).at(i);
         SetWindowPlacement(e.hwnd, &e.wplt);
         i -= 1;
     }
-    g_WindowPosBackup.remove_all();
+    (*&raw mut g_WindowPosBackup).remove_all();
 }
 
 unsafe fn CanBeMinimized(hwnd: HWND) -> BOOL {
@@ -1134,7 +1134,7 @@ iunknown_slots!(cm_QI, cm_AddRef, cm_Release, IContextMenu, from_cm);
 
 #[inline]
 unsafe fn ab_is_auto_hide_state(_this: *mut CTrayWindow) -> BOOL {
-    g_TaskbarSettings.sr.AutoHide() as BOOL
+    (*&raw const g_TaskbarSettings).sr.AutoHide() as BOOL
 }
 #[inline]
 unsafe fn ab_is_hiding_state(this: *mut CTrayWindow) -> BOOL {
@@ -1142,7 +1142,7 @@ unsafe fn ab_is_hiding_state(this: *mut CTrayWindow) -> BOOL {
 }
 #[inline]
 unsafe fn ab_is_always_on_top(_this: *mut CTrayWindow) -> BOOL {
-    g_TaskbarSettings.sr.AlwaysOnTop() as BOOL
+    (*&raw const g_TaskbarSettings).sr.AlwaysOnTop() as BOOL
 }
 #[inline]
 unsafe fn ab_get_monitor(this: *mut CTrayWindow) -> HMONITOR {
@@ -3195,7 +3195,7 @@ unsafe fn tw_open(this: *mut CTrayWindow) -> HRESULT {
     }
 
     let mut dw_ex_style: DWORD = WS_EX_TOOLWINDOW | WS_EX_WINDOWEDGE;
-    if g_TaskbarSettings.sr.AlwaysOnTop() != 0 {
+    if (*&raw const g_TaskbarSettings).sr.AlwaysOnTop() != 0 {
         dw_ex_style |= WS_EX_TOPMOST;
     }
 
@@ -3333,7 +3333,7 @@ unsafe fn minimize_windows_proc_impl(hwnd: HWND, l_param: LPARAM) -> BOOL {
         mwp.hwnd = hwnd;
         mwp.wndpl.length = size_of::<WINDOWPLACEMENT>() as UINT;
         if GetWindowPlacement(hwnd, &mut mwp.wndpl) != 0 && ShowWindowAsync(hwnd, SW_SHOWMINNOACTIVE as i32) != 0 {
-            g_MinimizedAll.add(mwp);
+            (*&raw mut g_MinimizedAll).add(mwp);
         }
     }
     TRUE as BOOL
@@ -3357,15 +3357,15 @@ unsafe fn tw_show_desktop(this: *mut CTrayWindow) {
 }
 
 unsafe fn tw_restore_all(_this: *mut CTrayWindow) {
-    let mut i = g_MinimizedAll.get_size() - 1;
+    let mut i = (*&raw const g_MinimizedAll).get_size() - 1;
     while i >= 0 {
-        let e = g_MinimizedAll.at(i);
+        let e = (*&raw const g_MinimizedAll).at(i);
         if IsWindowVisible(e.hwnd) != 0 && IsIconic(e.hwnd) != 0 {
             SetWindowPlacement(e.hwnd, &e.wndpl);
         }
         i -= 1;
     }
-    g_MinimizedAll.remove_all();
+    (*&raw mut g_MinimizedAll).remove_all();
 }
 
 // --- CAppBarManager overrides: SetAutoHideState / UpdateAlwaysOnTop ---
@@ -3425,7 +3425,7 @@ unsafe fn on_create(this: *mut CTrayWindow, b_handled: *mut BOOL) -> LRESULT {
         addr_of_mut!((*this).lpVtbl_TrayWindow) as *mut ITrayWindow,
         &mut (*this).m_StartMenuBand,
         hbm_banner,
-        g_TaskbarSettings.sr.SmSmallIcons() as BOOL,
+        (*&raw const g_TaskbarSettings).sr.SmSmallIcons() as BOOL,
     );
 
     // CTaskBand_CreateInstance(this, m_StartButton.m_hWnd, IID_PPV_ARG(IDeskBand, &m_TaskBand))
@@ -3577,7 +3577,7 @@ unsafe fn on_setting_changed(this: *mut CTrayWindow, u_msg: UINT, w_param: WPARA
             addr_of_mut!((*this).lpVtbl_TrayWindow) as *mut ITrayWindow,
             &mut (*this).m_StartMenuBand,
             hbm_banner,
-            g_TaskbarSettings.sr.SmSmallIcons() as BOOL,
+            (*&raw const g_TaskbarSettings).sr.SmSmallIcons() as BOOL,
         );
     }
 
@@ -4175,7 +4175,7 @@ unsafe fn on_init_menu_popup(_this: *mut CTrayWindow, w_param: WPARAM) -> LRESUL
         EnableMenuItem(h_menu, ID_SHELL_CMD_TILE_WND_V, MF_BYCOMMAND | MF_GRAYED);
         DeleteMenu(h_menu, ID_SHELL_CMD_UNDO_ACTION, MF_BYCOMMAND);
         g_Arrangement = ARRANGE_NONE;
-        g_WindowPosBackup.remove_all();
+        (*&raw mut g_WindowPosBackup).remove_all();
     }
     0
 }
@@ -4708,7 +4708,7 @@ unsafe extern "system" fn cwcm_QueryContextMenu(
         return HRESULT_FROM_WIN32(GetLastError());
     }
 
-    if g_MinimizedAll.get_size() != 0 && IsThereAnyEffectiveWindow(TRUE as BOOL) == 0 {
+    if (*&raw const g_MinimizedAll).get_size() != 0 && IsThereAnyEffectiveWindow(TRUE as BOOL) == 0 {
         let mut sz_restore: [u16; 128] = [0; 128];
         LoadStringW(hExplorerInstance, IDS_RESTORE_ALL as UINT, sz_restore.as_mut_ptr(), sz_restore.len() as i32);
         let mut mii: MENUITEMINFOW = core::mem::zeroed();

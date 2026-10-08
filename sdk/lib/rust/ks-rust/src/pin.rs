@@ -136,11 +136,11 @@ unsafe extern "C" fn run_static_initializers() {
 
     PinPropertySet[0].Set = &raw const KSPROPSETID_Connection;
     PinPropertySet[0].PropertiesCount =
-        (core::mem::size_of_val(&PinConnectionSet) / core::mem::size_of::<KSPROPERTY_ITEM>()) as ULONG;
+        (core::mem::size_of_val(&*&raw const PinConnectionSet) / core::mem::size_of::<KSPROPERTY_ITEM>()) as ULONG;
     PinPropertySet[0].PropertyItem = &raw const PinConnectionSet[0];
     PinPropertySet[1].Set = &raw const KSPROPSETID_Stream;
     PinPropertySet[1].PropertiesCount =
-        (core::mem::size_of_val(&PinStreamSet) / core::mem::size_of::<KSPROPERTY_ITEM>()) as ULONG;
+        (core::mem::size_of_val(&*&raw const PinStreamSet) / core::mem::size_of::<KSPROPERTY_ITEM>()) as ULONG;
     PinPropertySet[1].PropertyItem = &raw const PinStreamSet[0];
 }
 
@@ -2229,7 +2229,7 @@ pub unsafe extern "C" fn KspCreatePin(
 
     AutomationTable.PropertyItemSize = core::mem::size_of::<KSPROPERTY_ITEM>() as ULONG;
     AutomationTable.PropertySets = &raw const PinPropertySet as *const _ as *mut KSPROPERTY_SET;
-    AutomationTable.PropertySetsCount = (core::mem::size_of_val(&PinPropertySet) / core::mem::size_of::<KSPROPERTY_SET>()) as ULONG;
+    AutomationTable.PropertySetsCount = (core::mem::size_of_val(&*&raw const PinPropertySet) / core::mem::size_of::<KSPROPERTY_SET>()) as ULONG;
 
     Status = KsMergeAutomationTables(
         &raw const (*(*This).Pin.Descriptor).AutomationTable as *mut PKSAUTOMATION_TABLE,

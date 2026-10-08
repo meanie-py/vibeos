@@ -629,7 +629,7 @@ pub unsafe extern "system" fn FatEvaluateNameCase(
             Uppers += 1;
         } else if (c >= 'a' as u16) && (c <= 'z' as u16) {
             Lowers += 1;
-        } else if (c >= 0x0080) && FatData.CodePageInvariant() != 0 {
+        } else if (c >= 0x0080) && (*&raw const FatData).CodePageInvariant() != 0 {
             break;
         }
 

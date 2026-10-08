@@ -239,7 +239,7 @@ pub unsafe extern "system" fn FatQueryFsAttributeInfo(
         );
     }
 
-    (*Buffer).MaximumComponentNameLength = if FatData.ChicagoMode() != 0 { 255 } else { 12 };
+    (*Buffer).MaximumComponentNameLength = if (*&raw const FatData).ChicagoMode() != 0 { 255 } else { 12 };
 
     if FatIsFat32(Vcb) != 0 {
         let offset_field = core::mem::offset_of!(FILE_FS_ATTRIBUTE_INFORMATION, FileSystemName) as u32;

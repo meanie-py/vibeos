@@ -935,7 +935,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                     }
                 }
 
-                if FatData.ChicagoMode() != 0 {
+                if (*&raw const FatData).ChicagoMode() != 0 {
                     if FatIsNameLongUnicodeValid(IrpContext, &FinalName as *const _ as *mut _, 0, 0, 0) == 0 {
                         Iosb.__bindgen_anon_1.Status = STATUS_OBJECT_NAME_INVALID;
                         break 'main_try;
@@ -2907,7 +2907,7 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
         &mut CreateLfn,
     );
 
-    if FatData.ChicagoMode() == 0 {
+    if (*&raw const FatData).ChicagoMode() == 0 {
         AllLowerComponent = 0;
         AllLowerExtension = 0;
         CreateLfn = 0;
@@ -3348,7 +3348,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
         &mut CreateLfn,
     );
     RealUnicodeName = UnicodeName;
-    if FatData.ChicagoMode() == 0 {
+    if (*&raw const FatData).ChicagoMode() == 0 {
         AllLowerComponent = 0;
         AllLowerExtension = 0;
         CreateLfn = 0;
@@ -3861,7 +3861,7 @@ pub unsafe extern "system" fn FatSupersedeOrOverwriteFile(
             core::ptr::null_mut(),
         );
 
-        if FatData.ChicagoMode() != 0 {
+        if (*&raw const FatData).ChicagoMode() != 0 {
             (*dirent).LastAccessDate = core::ptr::read(&(*dirent).LastWriteTime.Date);
         }
 

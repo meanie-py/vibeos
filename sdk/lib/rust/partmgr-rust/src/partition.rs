@@ -220,7 +220,7 @@ pub unsafe extern "C" fn PartitionHandleStartDevice(
 
     swprintf(
         nameBuf.as_mut_ptr(),
-        PartitionSymLinkFormat.as_ptr(),
+        (&raw const PartitionSymLinkFormat).cast::<WCHAR>(),
         (*fdoExtension).DiskData.DeviceNumber,
         (*PartExt).DetectedNumber,
     );
@@ -456,7 +456,7 @@ pub unsafe extern "C" fn PartitionHandleRemove(
 
         swprintf(
             nameBuf.as_mut_ptr(),
-            PartitionSymLinkFormat.as_ptr(),
+            (&raw const PartitionSymLinkFormat).cast::<WCHAR>(),
             (*fdoExtension).DiskData.DeviceNumber,
             (*PartExt).DetectedNumber,
         );
@@ -645,7 +645,7 @@ pub unsafe extern "C" fn PartitionHandleQueryId(
                 TAG_PARTMGR,
             ) as PWCH;
             core::ptr::copy_nonoverlapping(
-                volumeID.as_ptr() as *const u8,
+                (&raw const volumeID).cast::<u16>() as *const u8,
                 idString.Buffer as *mut u8,
                 core::mem::size_of::<[u16; 16]>(),
             );
