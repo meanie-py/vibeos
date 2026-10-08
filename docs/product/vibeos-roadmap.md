@@ -5366,18 +5366,22 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     noted in the sweep list since 07-25. (2) setup.exe's registration burst starving the
     test's 50 ms races, proven per-thread by `[FMUTEX-RAN]`. Field manual: the setup
     paragraph under "A kmtest count drift on a UP guest is the boot-time ladder".
-  - **Conformance BUGCHECK 0x1E inside `RtlRangeList` — OPEN, intermittent, all three arches,
-    since 2026-10-06.** About 14 archived hits: `fails/auto/*-conformance-*-A_bugcheck_0x0000001E`
-    whose last `[KMTEST:BEGIN]` is RtlRangeList, plus 1 of 5 amd64 sweeps on 2026-10-08. It kills
-    the sweep, so every test after it loses its verdict. amd64 (`20261008-024024-fz8qe3my`): the
-    exception address is `ntoskrnl+0x185E58`, inside `fsrtl_rust::oplock::
-    FsRtlAcknowledgeOplockBreak`, on its NULL-oplock path. The same offset appears across four
-    master builds. The index matches the PE exports. The faulting thread's stack holds the
-    test's own data (`MyUserData2`, its `ok()` strings), so it is the test thread, not a
-    bystander. But nothing the test calls reaches oplock code: its exports resolve correctly,
-    and `RtlFindRange`/`RtlIsRangeAvailable` match the NDK signatures. Next step is dynamic:
-    loop RtlRangeList alone (`conformance_probe --candidates RtlRangeList`, repeated), then
-    `--tripwire SPECIALPOOL=*` or a GDB break on that PC, and get a real backtrace.
+  - **Conformance BUGCHECK 0x1E inside `RtlRangeList` — ROOT-CAUSED/FIXED 2026-10-08,
+    all three arches.** A use-after-free in the Rust `RtlDeleteOwnersRanges`
+    (`rtl-rangelist`): it read `(*Entry).Flink` after `RtlpFreeMemory` had freed that entry.
+    Upstream's C captures `Next` first; that fix arrived in #9248 alongside the test
+    (`TestDeleteOwnersRanges`), after the June port. It faulted only when the freed block was
+    reused before the read. arm64 FaultVA `0x11FFFFFA80004241` is a heap pointer read one byte
+    off, plus 0x28. All 15 archived hits (10-06 to 10-08), resolved against their own
+    `kernels_dir` index, land on the same list-walk load. The earlier "fsrtl oplock" reading
+    was a symbolication error: the crash builds' addresses had been looked up in a LATER
+    build's index. `addr2sym.sh` silently treated an unknown flag as an address and fell back
+    to the live index; it now has `--index <tsv>` and refuses unknown options. A sweep for the
+    same shape found two more: the same use-after-free in both of `FsRtlUninitializeOplock`'s
+    walks (upstream oplock.c has it too), and a `CONTAINING_RECORD` of the wrong cursor in
+    mountmgr's associated-device removal (also upstream). The 10-06 onset is unexplained; it
+    is presumably pool-reuse timing. Verified by one green sweep per arch; the evidence is the
+    code and the 15/15 hits, not that one sweep.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`.
