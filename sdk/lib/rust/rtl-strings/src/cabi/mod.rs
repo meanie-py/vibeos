@@ -6236,6 +6236,32 @@ pub unsafe extern "system" fn RtlQuerySecurityObject(
 // Translate-only; no byte-diff coverage.
 // ---------------------------------------------------------------------
 
+extern "system" {
+    // rtl-diag's, linked beside this crate in rtl-rust.
+    // Same types as the definition, or rustc reports a clashing extern declaration.
+    fn RtlAssert(
+        FailedAssertion: *mut core::ffi::c_void,
+        FileName: *mut core::ffi::c_void,
+        LineNumber: u32,
+        Message: *mut i8,
+    );
+}
+
+// C `ASSERT(exp)`: print via RtlAssert and CONTINUE, as -DDBG=1 does (ntkrnl-sys has the
+// same macro; this crate does not depend on it). A macro, never a fn (AGENTS.md).
+macro_rules! ASSERT {
+    ($e:expr) => {
+        if !$e {
+            RtlAssert(
+                concat!(stringify!($e), "\0").as_ptr() as *mut core::ffi::c_void,
+                concat!(file!(), "\0").as_ptr() as *mut core::ffi::c_void,
+                line!(),
+                core::ptr::null_mut(),
+            );
+        }
+    };
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn RtlDefaultNpAcl(p_acl: *mut *mut u8) -> i32 {
     let nt_authority = SID_IDENTIFIER_AUTHORITY_FFI {
@@ -6326,30 +6352,40 @@ pub unsafe extern "system" fn RtlDefaultNpAcl(p_acl: *mut *mut u8) -> i32 {
     *p_acl = acl;
 
     let mut status = RtlCreateAcl(acl, acl_size, ACL_REVISION2 as u32);
+    ASSERT!(nt_success(status));
 
     // Local System SID.
-    let _ = RtlInitializeSid(p_sid, &nt_authority as *const _ as *const u8, 1);
+    status = RtlInitializeSid(p_sid, &nt_authority as *const _ as *const u8, 1);
+    ASSERT!(nt_success(status));
     *RtlSubAuthoritySid(p_sid, 0) = SECURITY_LOCAL_SYSTEM_RID;
     status = RtlAddAccessAllowedAce(acl, ACL_REVISION2 as u32, GENERIC_ALL, p_sid);
+    ASSERT!(nt_success(status));
 
     // Administrators SID.
-    let _ = RtlInitializeSid(p_sid, &nt_authority as *const _ as *const u8, 2);
+    status = RtlInitializeSid(p_sid, &nt_authority as *const _ as *const u8, 2);
+    ASSERT!(nt_success(status));
     *RtlSubAuthoritySid(p_sid, 0) = SECURITY_BUILTIN_DOMAIN_RID;
     *RtlSubAuthoritySid(p_sid, 1) = DOMAIN_ALIAS_RID_ADMINS;
     status = RtlAddAccessAllowedAce(acl, ACL_REVISION2 as u32, GENERIC_ALL, p_sid);
+    ASSERT!(nt_success(status));
 
-    // Owner SID.
+    // Owner SID. The C discards this call's status and re-asserts the previous one.
     let _ = RtlAddAccessAllowedAce(acl, ACL_REVISION2 as u32, GENERIC_ALL, owner_sid_ptr);
+    ASSERT!(nt_success(status));
 
     // Anonymous SID.
-    let _ = RtlInitializeSid(p_sid, &nt_authority as *const _ as *const u8, 1);
+    status = RtlInitializeSid(p_sid, &nt_authority as *const _ as *const u8, 1);
+    ASSERT!(nt_success(status));
     *RtlSubAuthoritySid(p_sid, 0) = SECURITY_ANONYMOUS_LOGON_RID;
     status = RtlAddAccessAllowedAce(acl, ACL_REVISION2 as u32, GENERIC_READ, p_sid);
+    ASSERT!(nt_success(status));
 
     // World SID.
-    let _ = RtlInitializeSid(p_sid, &world_authority as *const _ as *const u8, 1);
+    status = RtlInitializeSid(p_sid, &world_authority as *const _ as *const u8, 1);
+    ASSERT!(nt_success(status));
     *RtlSubAuthoritySid(p_sid, 0) = SECURITY_WORLD_RID;
     status = RtlAddAccessAllowedAce(acl, ACL_REVISION2 as u32, GENERIC_READ, p_sid);
+    ASSERT!(nt_success(status));
 
     if !nt_success(status) {
         RtlFreeHeap(RtlGetProcessHeap(), 0, acl);

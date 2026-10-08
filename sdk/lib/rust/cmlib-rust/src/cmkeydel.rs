@@ -148,6 +148,7 @@ pub unsafe extern "system" fn CmpFreeKeyByCell(
             i = 0;
             while i < (*CellData).__bindgen_anon_1.__bindgen_anon_1.ValueList.Count {
                 Result = CmpFreeValue(Hive, *(core::ptr::addr_of!((*ListData).u.KeyList) as *const HCELL_INDEX).add(i as usize));
+                ntkrnl_sys::ASSERT!(Result != 0);
                 i += 1;
             }
 

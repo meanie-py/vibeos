@@ -199,7 +199,7 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
                     }
                 }
                 CmResourceTypeInterrupt => {
-                    /* ASSERT(InterruptResource == NULL); omitted */
+                    ntkrnl_sys::ASSERT!(InterruptResource.is_null());
                     /* ASSERT(Partial->u.Interrupt.Level == Partial->u.Interrupt.Vector); omitted */
                     InterruptResource = Partial;
 

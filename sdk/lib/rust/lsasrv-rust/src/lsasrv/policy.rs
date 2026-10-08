@@ -190,8 +190,13 @@ pub unsafe extern "C" fn LsarQueryAuditEvents(
                         (*p).EventAuditingOptions,
                         (*AuditData).MaximumAuditEventCount as usize,
                     );
-                    *PolicyInformation = p as PLSAPR_POLICY_INFORMATION;
                 }
+            }
+            // On BOTH branches, as the C does (policy.c `*PolicyInformation = p;` after the
+            // if/else): with no PolAdtEv data this returned success, a NULL output, and
+            // leaked `p`.
+            if !goto_done {
+                *PolicyInformation = p as PLSAPR_POLICY_INFORMATION;
             }
         }
     }

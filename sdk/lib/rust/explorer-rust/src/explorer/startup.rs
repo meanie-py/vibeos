@@ -228,6 +228,7 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
                                 break 'end res;
                             };
                         } else {
+                            let mut out_of_memory = false;
                             while i > 0 {
                                 let mut szCmdLineExp: *mut u16 = core::ptr::null_mut();
                                 let mut cchValLength: u32 = cchMaxValue;
@@ -275,9 +276,8 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
                                         if szCmdLineExp.is_null() {
                                             TRACE!("Couldn't allocate memory for the commands to be executed\n");
                                             res = ERROR_NOT_ENOUGH_MEMORY as i32;
-                                            res = 'end: {
-                                                break 'end res;
-                                            };
+                                            // the C's `goto end`: skip the ERROR_SUCCESS below
+                                            out_of_memory = true;
                                             break;
                                         }
 
@@ -303,10 +303,9 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
                                 TRACE!("Done processing cmd #%lu\n", i);
                             }
 
-                            res = ERROR_SUCCESS as i32;
-                            res = 'end: {
-                                break 'end res;
-                            };
+                            if !out_of_memory {
+                                res = ERROR_SUCCESS as i32;
+                            }
                         }
                     }
                 }

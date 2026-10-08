@@ -472,6 +472,8 @@ pub unsafe extern "system" fn CmpDoFindSubKeyByNumber(
             /* Check if this isn't the first iteration */
             if i != 0 {
                 /* Make sure we had something valid, and release it */
+                ntkrnl_sys::ASSERT!(!Leaf.is_null());
+                ntkrnl_sys::ASSERT!(LeafCell == index_list_get(Index, i - 1));
                 HvReleaseCell(Hive, LeafCell);
             }
 

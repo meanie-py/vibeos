@@ -2025,6 +2025,8 @@ pub unsafe extern "system" fn RtlpPageHeapReAllocate(
     AllocatedNode = RtlpDphFindBusyMemory(DphRoot, Ptr);
 
     if AllocatedNode.is_null() {
+        /* This block was not found in page heap, try a normal heap instead */
+        ntkrnl_sys::ASSERT!(false);
         OldBlockPageHeap = 0u8;
     }
 
@@ -2103,6 +2105,11 @@ pub unsafe extern "system" fn RtlpPageHeapReAllocate(
         } else {
             (*Node).UserFlags = (*AllocatedNode).UserFlags;
         }
+    }
+
+    if OldBlockPageHeap == 0 {
+        /* Weird scenario, investigate */
+        ntkrnl_sys::ASSERT!(false);
     }
 
     /* Mark the old block as no access */
