@@ -73,3 +73,11 @@ def test_an_element_size_of_a_pointer_array_is_kept():
     )
     fixed, _ = pd.repair(rust, _decls(), TYPES, TARGETS)
     assert "size_of::<[PFOO; 4]>() / core::mem::size_of::<PFOO>()" in fixed
+
+
+def test_consecutive_declarations_are_all_seen():
+    # The declaration anchor consumed the `;`, so the second of two adjacent declarations
+    # was invisible: pciidex's `PATA_CONTROLLER Controller` right after `ChanData`.
+    c = "{\n    PBAR Bar = x;\n    PFOO Foo = y;\n}\n"
+    d = pd.c_declarations("Get", [], c, TYPES)
+    assert d.names == {"Bar": ("PBAR", 0), "Foo": ("PFOO", 0)}

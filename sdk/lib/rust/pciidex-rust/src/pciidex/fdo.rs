@@ -162,11 +162,11 @@ pub unsafe extern "C" fn AtaCtrlSetTransferMode(ChannelContext: PVOID, DeviceLis
 #[no_mangle]
 pub unsafe extern "C" fn AtaCtrlSetDeviceData(ChannelContext: PVOID, DeviceObject: PDEVICE_OBJECT, IdentifyDeviceData: PIDENTIFY_DEVICE_DATA) {
     let ChanData: PCHANNEL_DATA_COMMON = ChannelContext as PCHANNEL_DATA_COMMON;
-    let Controller: *mut PATA_CONTROLLER = ((*ChanData).Controller).cast();
+    let Controller: PATA_CONTROLLER = ((*ChanData).Controller).cast();
 
     PAGED_CODE!();
 
-    if ((*(*Controller)).Flags & CTRL_FLAG_SATA_HBA_ACPI) == 0 {
+    if ((*Controller).Flags & CTRL_FLAG_SATA_HBA_ACPI) == 0 {
         return;
     }
 

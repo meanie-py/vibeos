@@ -98,7 +98,9 @@ def c_declarations(
     body = re.sub(r"/\*.*?\*/|//[^\n]*|\"(?:\\.|[^\"\\])*\"", " ", body, flags=re.S)
     alt = "|".join(sorted((re.escape(t) for t in types), key=len, reverse=True))
     if alt:
-        decl = re.compile(rf"(?:^|[;{{}}])\s*(?:const\s+|volatile\s+)*({alt})\b([^;(){{}}]*);")
+        # The anchor is a LOOKBEHIND: consuming the `;` hid every second of consecutive
+        # declarations (pciidex's `PATA_CONTROLLER Controller` after `ChanData`).
+        decl = re.compile(rf"(?:^|(?<=[;{{}}]))\s*(?:const\s+|volatile\s+)*({alt})\b([^;(){{}}]*);")
         for m in decl.finditer(body):
             for declarator in _split_commas(m.group(2)):
                 d = declarator.split("=", 1)[0]
