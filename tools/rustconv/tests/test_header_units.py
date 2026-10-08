@@ -227,3 +227,31 @@ def test_a_helper_two_modules_define_for_one_arch_is_reported_not_chosen(tmp_pat
     (sys_src / "inline" / "common.rs").write_text("pub fn Twice() {}\n")
     found, why = pr.substrate_helpers({"Twice"}, sys_src, "ntkrnl_sys")
     assert not found and "inline::common, inline::ke" in why["Twice"]
+
+
+def test_glob_ties_are_read_per_arch_from_the_islands(tmp_path):
+    # atapi: the i386 island declares KeGetCurrentIrql (a real export there), the amd64 one
+    # does not -- so the `crate::types::*` / `ntkrnl_sys::ddk::*` collision is i386-only, and
+    # resolve (which compiles amd64) never saw it.
+    from rustconv import prelude_resolve as pr
+
+    src, sys_src = tmp_path / "c" / "src", tmp_path / "sys" / "src"
+    (src / "m").mkdir(parents=True)
+    sys_src.mkdir(parents=True)
+    decl = 'extern "C" {\n    pub fn KeGetCurrentIrql() -> KIRQL;\n    pub fn Other(a: u32);\n}\n'
+    (src / "types_i386.rs").write_text(decl + "impl X { pub fn set_Foo(&mut self) {} }\n")
+    (src / "types_amd64.rs").write_text('extern "C" {\n    pub fn Other(a: u32);\n}\n')
+    (src / "prelude.rs").write_text("pub use crate::types::*;\npub use ntkrnl_sys::ddk::*;\n")
+    for suffix in ("i386", "amd64", "arm64"):
+        (sys_src / f"bindgen_{suffix}.rs").write_text(decl)
+    (src / "m" / "a.rs").write_text(
+        "use ntkrnl_sys::ddk::{Other};\nfn f() { KeGetCurrentIrql(); Other(1); x.set_Foo(); }\n"
+    )
+    ties = pr.glob_ties(src, src / "m", sys_src)
+    assert ties == {"KeGetCurrentIrql": ["x86"]}  # Other is imported explicitly in the file
+    found = pr.with_glob_ties({"KeQuerySystemTime": {"x86": None, "x86_64": "inline::ke"}}, ties)
+    out = pr.render_substrate(found, "ntkrnl_sys")
+    assert '#[cfg(target_arch = "x86")]\npub use ntkrnl_sys::ddk::KeGetCurrentIrql;' in out
+    # A name the prelude already spells out is settled there (E0252 otherwise).
+    (src / "prelude.rs").write_text("pub use ntkrnl_sys::ddk::KeGetCurrentIrql;\n")
+    assert pr.glob_ties(src, src / "m", sys_src) == {}

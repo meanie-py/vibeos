@@ -1389,6 +1389,15 @@ def c_guardian(per_arch: dict[str, dict[tuple[str, str], int]]) -> str:
     return "\n".join(out)
 
 
+def widen_l_constants(bindings: str) -> str:
+    """bindgen drops the `L` of `#define X L"..."`; every other island generator restores it
+    through normalize_island_abi.py, which this one does not run."""
+    sys.path.insert(0, str(REPO / "tools" / "rustconv"))
+    import widen_island_constants as widen
+
+    return widen.widen(bindings, widen.wide_defines(REPO))[0]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="verify committed output is current")
@@ -1411,7 +1420,7 @@ def main() -> int:
                 f"  {len(offs)} guarded offsets, e.g. "
                 f"threadlocinfo.pcumap @ {offs[('threadlocaleinfostruct', 'pcumap')]}"
             )
-            pending.append((SRC_DIR / f"bindgen_{arch}.rs", bindings))
+            pending.append((SRC_DIR / f"bindgen_{arch}.rs", widen_l_constants(bindings)))
             pending.append((SRC_DIR / f"layout_{arch}.rs", rust_layout(arch, offs)))
 
         pending.append((REPO / "dll/win32/msvcrt/rust_layout_assert.c", c_guardian(per_arch)))

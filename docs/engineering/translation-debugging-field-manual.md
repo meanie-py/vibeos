@@ -298,6 +298,13 @@ change stops the caller being dead-stripped.
   `IoSetCancelRoutine`, `IoSetCompletionRoutine`, `RtlInitEmpty{Ansi,Unicode}String`,
   `ExAllocatePoolZero/Uninitialized`, `NtCurrentTeb`, `RtlGetProcessHeap`, `RtlULongMult`,
   the `NtUserx*` wrappers, the strsafe `StringCch*` family, the `GDIOBJ_*` family.
+- **`port resolve` now finds these before the link.** It reads the module's import-lib
+  `.spec`s per arch and sends any called name not exported everywhere to ntkrnl-sys's
+  `inline::` ports, unpinning translate's `use ntkrnl_sys::ddk::{..}` lists that bind the
+  extern; the remainder is printed as "these will not link". `SharedUserData` belongs here
+  too: a MACRO for `KI_USER_SHARED_DATA`, which `inline::ke::KeQuerySystemTime` read as an
+  extern static -- uniata, mup and classpnp each hand-defined the symbol to link; the helper
+  now reads the address.
 - **`SharedUserData`** is a C macro for a fixed VA, not a symbol (amd64 `KeQuerySystemTime`
   inline references it). Provide a crate-local `#[no_mangle] pub static mut` at
   `0xFFFFF78000000000`.
@@ -408,6 +415,10 @@ so the repair loop cannot see it either. `port integrate` now runs `pointer_dept
 function, a name the C declares `T x` (no star, `T` a pointer typedef in the island) and the
 Rust declares `*mut T` loses one level — declaration, `(*(*x))` and the `as *mut T` assigned
 to it. `T *x` out-parameters are left alone.
+The quieter twin is `sizeof`: C `sizeof(*DevExt)` came back as
+`size_of::<PATAPORT_DEVICE_EXTENSION>()`, so the PDO extension handed to IoCreateDevice was 8
+bytes. `pointer_depth` restores the pointee unless that function's C itself writes
+`sizeof(PFOO)`.
 
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
@@ -8527,6 +8538,10 @@ is a NULL-returning shim in this tree — feeding NULL to a live `%s` faults, so
 string directly with `%S`. A third is worth automating around: when a script rewrites the format
 argument, scope the "strip the trailing cast" rule to *inside* the macro invocation. Applied
 file-wide it silently ate the first half of `as *const u8 as *const i8` in ordinary code.
+
+**To DEFINE one, `rustconv port integrate` writes the varargs-rust pair for you**: an `F_v`
+twin reading `VaArgs` and a generated `rust_varargs_shim.c` trampoline in primitive C types
+(`variadic_shim.py`; add the shim to the cohab CMake list).
 
 **A printf-style callee can take varargs on stable Rust: declare the slots as fixed parameters.**
 Stable cannot *define* a C-variadic (`c_variadic` is nightly), which is why `freeldr-rust`'s
