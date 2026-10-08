@@ -13,9 +13,22 @@ which reads as address-taking. It is not: the index inside the place expression
 still bounds-checks, and `&raw mut` does not suppress it. cmlib's CmpSelectLeaf
 shipped three of those in the kernel.
 
-The OBJECT CODE can tell them apart. A `panic_bounds_check` call is preceded by a
-push of the ARRAY LENGTH, so a length of 1 names the flexible-array shape and any
-larger length is a real fixed array to leave alone.
+The OBJECT CODE can tell them apart. `panic_bounds_check(index, len, &Location)` is
+handed the ARRAY LENGTH, so a constant length of 1 names the flexible-array shape and
+any larger length is a real fixed array to leave alone. Where the length lives is the
+only per-arch part: i386 PUSHES it (cdecl, the middle of three pushes), amd64 puts it
+in `edx` (Win64's second argument register) and arm64 in `w1`. Each reader takes the
+last constant written there in the call's own argument setup and forgets it at
+anything else, so a length from some earlier, unrelated computation is never
+attributed to the call.
+
+EVERY ARCH, BECAUSE THE CORPUS IS NOT THE SAME BINARY THREE TIMES. This reader was
+i386-only for its first nine sites, on the reasoning that only i386 encodes the length
+as an immediate -- true of the PUSH, and irrelevant: the other two load it as an
+immediate into a register just as reliably. What i386 alone cannot see is code that is
+not in the i386 build: amd64 and arm64 build `atapi-legacy-rust` where i386 builds
+`atapi-rust`, and `#[cfg(target_arch)]` bodies (all of arm64's HAL, every 64-bit-only
+path) do not exist in an i386 object at all. A site there was invisible by construction.
 
 It grades the BUILT ARTIFACT, so a stale `build-<arch>` reports the state of the
 last build and not of the tree -- do a build before believing a drop to zero.
@@ -25,14 +38,20 @@ the C over-allocates: `PRIVILEGE_SET`/`LPCP_DATA_INFO` do (real bugs), while
 `PKNODE KeNodeBlock[1] = { &KiNode0 };` really is one element and its check merely
 survives because the guard is a runtime variable. Read the C declaration first.
 
-There is one SYSTEMATIC false-positive source, and it is a direct consequence of
-this being i386-only: an array sized by an arch-dependent constant that happens to
-equal 1 on 32-bit. `MmSystemPageDirectory[PPE_PER_PAGE]` is `[PFN_NUMBER; 512]` on
-amd64/arm64 and `[PFN_NUMBER; 1]` on i386 (mm.rs:1265), so it is flagged here and
-would not be flagged at all on a 64-bit read. Check the declaration's LENGTH
-EXPRESSION before the length: a literal `1` is the bindgen flexible-array shape, a
-named constant is an arch-sized real array. Three of the first six sites graded
-fell this way.
+There is one SYSTEMATIC false-positive source, and it is arch-shaped: an array sized by
+an arch-dependent constant that happens to equal 1 on one arch.
+`MmSystemPageDirectory[PPE_PER_PAGE]` is `[PFN_NUMBER; 512]` on amd64/arm64 and
+`[PFN_NUMBER; 1]` on i386 (mm.rs:1265), so it is flagged on i386 and nowhere else.
+Check the declaration's LENGTH EXPRESSION before the length: a literal `1` is the
+bindgen flexible-array shape, a named constant is an arch-sized real array. Three of
+the first six sites graded fell this way. A finding on ONE arch only is the tell.
+
+A SECOND false-positive shape exists only on the register-passing arches: a constant
+length that is BRANCH-DERIVED. On a runtime-length slice LLVM may emit `cmp $1, %len;
+je` into a block calling panic_bounds_check(1, 1) -- on that path it has just proved the
+length is 1, so it materializes the constant. rtl-rust's `format_ipv6` and
+`get_checksum` both do this on amd64. The tell is a sibling panic(0, 0) block nearby
+(a [T; 1] cannot fail with length 0), and the source indexing a `&[T]`, not a field.
 
 THE SYMBOL IS WHERE THE CHECK ENDED UP, NOT WHERE IT WAS WRITTEN. A check is
 attributed to the function it was INLINED INTO, which can contain no index at all:
@@ -88,20 +107,20 @@ import re
 import struct
 import subprocess
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 RUST_WS = REPO / "sdk" / "lib" / "rust"
 OBJDUMP = REPO / ".build-tools" / "llvm-mingw" / "bin" / "llvm-objdump"
 
-# The immediate pushed just before the call is the array length. i386 pushes it;
-# on other arches the length lands in an argument register, so this reader is
-# i386-only by construction and says so rather than silently grading nothing.
-# ARGUMENT ORDER, and getting it wrong is why this reader over-reported. The callee is
-# `core::panicking::panic_bounds_check(index, len, &Location)`, and cdecl pushes
-# right-to-left, so the emission order is `push loc; push len; push index` and the LAST
-# push is the INDEX. Keying on the last push therefore selected `index == 1`, not
-# `len == 1`, while the docstring claimed the latter. Measured over the whole i386
+ARCHES = ("i386", "amd64", "arm64")
+
+# i386. ARGUMENT ORDER, and getting it wrong is why this reader over-reported. The
+# callee is `core::panicking::panic_bounds_check(index, len, &Location)`, and cdecl
+# pushes right-to-left, so the emission order is `push loc; push len; push index` and
+# the LAST push is the INDEX. Keying on the last push therefore selected `index == 1`,
+# not `len == 1`, while the docstring claimed the latter. Measured over the whole i386
 # corpus: index==1 matched 10 sites, len==1 matched 5, and NOTHING had len==1 with a
 # different index -- so the old criterion missed nothing and over-reported by five.
 #
@@ -109,7 +128,8 @@ OBJDUMP = REPO / ".build-tools" / "llvm-mingw" / "bin" / "llvm-objdump"
 # an immediate, i.e. a runtime-length slice -- which fails the grading protocol's second
 # test ("is the declared length a LITERAL 1") by construction. A `[T; 1]` cannot have a
 # dynamic length. Reporting them sent graders to `rtl_strings` functions that index a
-# plain slice and declare no array at all.
+# plain slice and declare no array at all. The same holds on every arch: only a
+# CONSTANT length counts.
 #
 # objdump appends `# imm = 0x570` to the 5-byte push form, so anchoring on end-of-line
 # also skipped every LARGE immediate -- precisely the &Location argument.
@@ -118,17 +138,54 @@ _PUSH_ANY = re.compile(r"\bpushl\s")
 # `\t\t\t00000414:  IMAGE_REL_I386_DIR32\t.rdata` — the Location argument pushed just
 # before a bounds check is a &core::panic::Location, and it lives at this offset into
 # the object's .rdata.
-_RDATA_RELOC = re.compile(r"^\s*([0-9a-f]+):\s+IMAGE_REL_I386_DIR32\s+\.rdata\s*$")
 _SYMBOL = re.compile(r"^[0-9a-f]+ <(.+)>:$")
 _CARRY = re.compile(r"pushl|calll|IMAGE_REL|movl|leal")
 _PANIC = "panic_bounds_check"
+
+# amd64 / arm64. One instruction per line, `addr: <bytes> <mnemonic> <operands>`.
+_RELOC = re.compile(r"^\s+[0-9a-f]+:\s+(IMAGE_REL_\S+)\s+(\S+)\s*$")
+_X64_INSN = re.compile(r"^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2} )+\s*(\S+)\s*([^#]*?)\s*(?:#.*)?$")
+_A64_INSN = re.compile(r"^\s*[0-9a-f]+:\s+[0-9a-f]{8}\s+(\S+)\s*([^/]*?)\s*(?://.*)?$")
+# The rest of a call's own argument setup: these may sit between the length and the
+# call without ending the run. Anything else -- a branch, a store, an arithmetic op on
+# some other value -- does.
+_X64_CARRY = {"movl", "movq", "movb", "movw", "leaq", "leal", "xorl", "xorq", "callq"}
+_A64_CARRY = {"mov", "movz", "movk", "movn", "orr", "adrp", "add", "bl"}
+_X64_LEN_REGS = ("%edx", "%rdx", "%dx", "%dl")
+_A64_LEN_REGS = ("w1", "x1")
+_RUST_HASH = re.compile(r"17h[0-9a-f]{16}E$")
+_LLVM_SUFFIX = re.compile(r"\.llvm\.\d+$")
+# v0 mangling (`_RNvNtCs6vQPevndiDL_7ex_rust7sysinfo…`, which the i386 cargo cell emits)
+# carries a crate DISAMBIGUATOR where legacy mangling carries a trailing hash.
+_V0_DISAMBIGUATOR = re.compile(r"Cs[0-9A-Za-z]+_")
+
+
+def normalize_symbol(sym: str, arch: str, *, decorated: bool = True) -> str:
+    """The arch-neutral name of a symbol: the key the allowlist is written in.
+
+    The same Rust function is `__ZN…17h<hash>E` on i386 and `_ZN…17h<other>E` on the
+    64-bit targets (i386 decorates every C name with `_`, and the legacy-mangling hash
+    covers the target), and a C-ABI export is `_Name@8` against `Name`. Keying the
+    allowlist on raw names would need one entry per arch for one graded site, and
+    would go stale on every rebuild that moved a hash."""
+    if decorated and arch == "i386" and sym.startswith("_"):
+        sym = sym[1:]
+    sym = _LLVM_SUFFIX.sub("", re.sub(r"@\d+$", "", sym))
+    if sym.startswith("_R"):
+        return _V0_DISAMBIGUATOR.sub("C", sym)
+    return _RUST_HASH.sub("E", sym)
 
 
 ALLOWLIST = REPO / "tools" / "flex_array_allowlist.txt"
 
 
-def graded_ok() -> set[tuple[str, str]]:
-    """(crate, symbol) pairs graded as correct bounds checks -- see the allowlist file."""
+def graded_ok(arch: str) -> set[tuple[str, str]]:
+    """(crate, normalized symbol) pairs graded as correct bounds checks ON `arch`.
+
+    An entry may be scoped: `@i386 crate: symbol` applies to i386 alone, `@amd64,arm64
+    …` to those two, and an unscoped entry to every arch. Scoping is what makes the
+    stale check honest per arch: a graded i386 site whose crate amd64 does not even
+    build must not read as "the reader went blind" on amd64."""
     out = set()
     if not ALLOWLIST.is_file():
         return out
@@ -136,9 +193,22 @@ def graded_ok() -> set[tuple[str, str]]:
         line = line.split("#", 1)[0].strip()
         if not line or ":" not in line:
             continue
+        if line.startswith("@"):
+            scope, _, line = line[1:].partition(" ")
+            if arch not in scope.split(","):
+                continue
         crate, sym = line.split(":", 1)
-        out.add((crate.strip(), sym.strip()))
+        # Written NORMALIZED, so no decoration to strip: stripping i386's `_` again
+        # would turn `_ZN…` into `ZN…` and the entry would read as stale on i386 only.
+        out.add((crate.strip(), normalize_symbol(sym.strip(), arch, decorated=False)))
     return out
+
+
+def is_graded(graded: set[tuple[str, str]], crate: str, sym: str) -> bool:
+    """`* : sym` grades a Rust function wherever it is linked: a translated library such
+    as `network` is compiled into several images, and its mangled name already says
+    which crate it is. The grading is about the function, not the image."""
+    return (crate, sym) in graded or ("*", sym) in graded
 
 
 def declared_corpus() -> list[str]:
@@ -169,84 +239,171 @@ def find_artifact(build: Path, crate: str) -> Path | None:
 
 
 _MEMBER = re.compile(r"^(?:\S*\((?P<mem>[^)]+)\)|(?P<obj>\S+)):\s+file format ")
+_SECHDR = re.compile(r"^\s*(\d+)\s+(\S+)\s+([0-9a-f]+)\s")
+_SYMTAB = re.compile(r"^\[\s*\d+\]\(sec\s+(-?\d+)\).*\s0x([0-9a-f]+)\s+(\S+)\s*$")
+_CONTENTS = re.compile(r"^Contents of section (\S+):")
 
 
-def _section_by_member(path: Path, section: str) -> dict[str, bytes]:
-    """{archive member -> raw bytes of `section`}.
+@dataclass
+class _Member:
+    """One archive member's read-only data, indexed the way its relocations name it.
 
     PER MEMBER, and that is the whole point. The first version dumped the ARCHIVE and
     concatenated every member's .rdata into one buffer, then indexed it with an offset
     that is section-relative WITHIN ONE MEMBER. ks-rust alone carries five 21-byte source
     paths across its members, so the wrong-base buffer decoded to a real-looking answer
-    every time -- the failure was invisible precisely because the result stayed plausible."""
-    proc = subprocess.run(
-        [str(OBJDUMP), "-s", "-j", section, str(path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode != 0:
-        return {}
-    out: dict[str, bytearray] = {}
-    cur: bytearray | None = None
-    for line in proc.stdout.splitlines():
+    every time -- the failure was invisible precisely because the result stayed plausible.
+
+    PER SECTION, for the same reason one level down. arm64 objects put every anonymous
+    constant in its OWN `.rdata` section -- dozens per member, all with the same name --
+    and a `&Location` is relocated against the anonymous SYMBOL, not against `.rdata`.
+    Concatenating those would repeat the first defect exactly: a right-looking offset
+    into the wrong base."""
+
+    rdata: dict[int, bytes] = field(default_factory=dict)  # section number -> bytes
+    syms: dict[str, tuple[int, int]] = field(default_factory=dict)  # name -> (section, value)
+
+    def section_of(self, sym: str) -> tuple[bytes, int] | None:
+        if sym == ".rdata" and len(self.rdata) == 1:
+            return next(iter(self.rdata.values())), 0
+        hit = self.syms.get(sym)
+        if hit is None or hit[0] not in self.rdata:
+            return None
+        return self.rdata[hit[0]], hit[1]
+
+
+def _objdump(*args: str) -> str:
+    proc = subprocess.run([str(OBJDUMP), *args], capture_output=True, text=True, check=False)
+    return proc.stdout if proc.returncode == 0 else ""
+
+
+def _members(path: Path) -> dict[str, _Member]:
+    """{archive member -> its .rdata sections and symbols}. Only --explain pays for this."""
+    out: dict[str, _Member] = {}
+    order: dict[str, list[int]] = {}
+    names: set[str] = set()
+    raw: dict[str, dict[int, bytearray]] = {}
+    cur = ""
+    for line in _objdump("-h", str(path)).splitlines():
         m = _MEMBER.match(line)
         if m:
-            cur = out.setdefault(m.group("mem") or m.group("obj"), bytearray())
+            cur = m.group("mem") or m.group("obj")
+            out.setdefault(cur, _Member())
+            order.setdefault(cur, [])
             continue
-        if cur is None:
+        m = _SECHDR.match(line)
+        # `.rdata` AND `.rdata$<name>`: ThinLTO promotes a constant shared across
+        # codegen units into its own named section (`.rdata$anon.<hash>.0.llvm.<n>`),
+        # and on arm64 that is where every source-path string ends up. Empty sections
+        # are skipped because `-s` prints nothing for them, and the mapping below is
+        # by order.
+        is_rdata = m is not None and (m.group(2) == ".rdata" or m.group(2).startswith(".rdata$"))
+        if m and cur and is_rdata and int(m.group(3), 16):
+            # -h numbers sections from 0; the symbol table numbers them from 1.
+            order[cur].append(int(m.group(1)) + 1)
+            names.add(m.group(2))
+    for line in _objdump("-t", str(path)).splitlines():
+        m = _MEMBER.match(line)
+        if m:
+            cur = m.group("mem") or m.group("obj")
+            continue
+        m = _SYMTAB.match(line)
+        if m and cur in out:
+            out[cur].syms.setdefault(m.group(3), (int(m.group(1)), int(m.group(2), 16)))
+    # `-s -j <name>...` prints every selected section in section order, same-named ones
+    # included, so the Nth "Contents of section .rdata*" block is the Nth header above.
+    buf: bytearray | None = None
+    nth: dict[str, int] = {}
+    selected = [a for n in sorted(names) for a in ("-j", n)]
+    for line in (_objdump("-s", *selected, str(path)) if selected else "").splitlines():
+        m = _MEMBER.match(line)
+        if m:
+            cur = m.group("mem") or m.group("obj")
+            buf = None
+            continue
+        if _CONTENTS.match(line):
+            i = nth.get(cur, 0)
+            nth[cur] = i + 1
+            secs = order.get(cur, [])
+            buf = None
+            if i < len(secs):
+                buf = bytearray()
+                raw.setdefault(cur, {})[secs[i]] = buf
+            continue
+        if buf is None:
             continue
         m = re.match(r"^\s*([0-9a-f]+)\s((?:[0-9a-f]{2,8}\s){1,4})\s", line)
         if m:
-            cur.extend(bytes.fromhex(m.group(2).replace(" ", "")))
-    return {k: bytes(v) for k, v in out.items()}
-
-
-def _path_candidates(rdata: bytes, slen: int) -> list[str]:
-    """Every NUL-delimited .rdata string of exactly `slen` bytes that looks like one of
-    our source paths."""
-    out, seen = [], set()
-    for m in re.finditer(rb"[ -~]{4,}", rdata):
-        blob, base = m.group(), m.start()
-        for piece_off, piece in _split_pieces(blob, base):
-            if len(piece) == slen and b"-rust/src/" in piece and piece not in seen:
-                seen.add(piece)
-                out.append(piece.decode())
-            del piece_off
+            buf.extend(bytes.fromhex(m.group(2).replace(" ", "")))
+    for name, secs in raw.items():
+        out[name].rdata = {k: bytes(v) for k, v in secs.items()}
     return out
 
 
-def _split_pieces(blob: bytes, base: int):
-    off = 0
-    for piece in blob.split(b"\x00"):
-        yield base + off, piece
-        off += len(piece) + 1
+def _is_source_path(b: bytes) -> bool:
+    """A workspace source path as a panic Location spells it: `<crate>/src/<..>.rs`.
+    Not `-rust/src/` -- the workspace has crates named `network` and `rtl-strings`."""
+    return b"/src/" in b and b.endswith(b".rs")
 
 
-def resolve_location(rdata: bytes, off: int, addend: int | None = None) -> str:
-    """`file:line:col` for the &core::panic::Location at `off` into .rdata.
+def _path_candidates(blobs: list[bytes], slen: int) -> list[str]:
+    """Every NUL-delimited .rdata string of exactly `slen` bytes that looks like one of
+    our source paths."""
+    out, seen = [], set()
+    for rdata in blobs:
+        for m in re.finditer(rb"[ -~]{4,}", rdata):
+            for piece in m.group().split(b"\x00"):
+                if len(piece) == slen and _is_source_path(piece) and piece not in seen:
+                    seen.add(piece)
+                    out.append(piece.decode())
+    return out
 
-    The struct is {ptr, len, line, col}. In an unlinked object the ptr is relocated, so
-    the filename must be recovered from .rdata itself.
+
+def resolve_location(
+    member: _Member, ref: tuple[str, int], *, ptr64: bool, others: list[_Member] | None = None
+) -> str:
+    """`file:line:col` for the &core::panic::Location that `ref` = (symbol, addend) names.
+
+    The struct is {ptr, len, line, col}, pointer-sized ptr and len. In an unlinked
+    object the ptr is relocated, so the filename must be recovered from .rdata itself.
 
     NEVER GUESS BETWEEN EQUALS. The first version of this searched for the first string
     whose length matched `len` and returned it -- and ks-rust has BOTH `ks-rust/src/
     filter.rs` and `ks-rust/src/swenum.rs` in one object, each exactly 21 bytes, so it
     confidently named the wrong file and sent the grader to a function containing no
     array index at all. A tool that points at the wrong source is worse than one that
-    declines, because the reader has no way to tell. So: prefer the relocation addend
-    when it lands on a plausible string, else accept a unique candidate, else say the
-    answer is ambiguous and list them."""
-    if len(rdata) < off + 16:
+    declines, because the reader has no way to tell. So: prefer the in-place relocation
+    addend when it lands on a plausible string, else accept a unique candidate, else say
+    the answer is ambiguous and list them."""
+    found = member.section_of(ref[0])
+    if found is None and ref[0] != ".rdata":
+        # ThinLTO PROMOTES a constant shared across codegen units to a global
+        # (`anon.<hash>.8.llvm.<n>`) and emits it in ONE member, so a check in another
+        # member is relocated against a symbol it does not define. Follow the name;
+        # `.rdata` is never followed, because every member has its own.
+        for other in others or []:
+            found = other.section_of(ref[0])
+            if found is not None:
+                member = other
+                break
+    if found is None:
+        return f"<location relocated against {ref[0]}, defined in no member read>"
+    rdata, base = found
+    off = base + ref[1]
+    fmt, size = ("<QQII", 24) if ptr64 else ("<IIII", 16)
+    if off < 0 or len(rdata) < off + size:
         return ""
-    _, slen, line, col = struct.unpack_from("<IIII", rdata, off)
+    addend, slen, line, col = struct.unpack_from(fmt, rdata, off)
     if not 1 <= slen <= 512 or not 1 <= line < 1_000_000:
         return ""
-    if addend is not None and addend >= 0 and addend + slen <= len(rdata):
+    if addend >= 0 and addend + slen <= len(rdata):
         cand = rdata[addend : addend + slen]
-        if b"-rust/src/" in cand and cand.isascii() and b"\x00" not in cand:
+        if _is_source_path(cand) and cand.isascii() and b"\x00" not in cand:
             return f"{cand.decode()}:{line}:{col}"
-    names = _path_candidates(rdata, slen)
+    names = _path_candidates(list(member.rdata.values()), slen)
+    if not names:
+        # arm64 keeps each path string in its own section, often in another member.
+        names = _path_candidates([b for o in others or [] for b in o.rdata.values()], slen)
     if len(names) == 1:
         return f"{names[0]}:{line}:{col}"
     if names:
@@ -256,11 +413,98 @@ def resolve_location(rdata: bytes, off: int, addend: int | None = None) -> str:
 
 # How many instructions of lead-up to keep for --explain. The useful signal is the
 # address computation feeding the check plus any relocation naming a global, and
-# those sit within a few instructions of the push.
+# those sit within a few instructions of the call.
 _EXPLAIN_WINDOW = 14
 
 
-def scan_object(path: Path, *, explain: bool = False) -> list[tuple[str, int, list[str]]]:
+@dataclass
+class _Setup:
+    """The argument setup seen so far for the next call, on one arch.
+
+    `length` is the constant last written to the length slot, or None when the slot
+    holds anything else (or nothing we saw). `loc` is the (symbol, addend) of the
+    &Location, kept for --explain."""
+
+    length: int | None = None
+    loc: tuple[str, int] | None = None
+    pushes: list[int | None] = field(default_factory=list)  # i386 only, newest last
+    pending: int | None = None  # 64-bit: displacement/immediate awaiting its relocation
+    after_call: bool = False
+
+
+def _feed_i386(st: _Setup, line: str) -> str:
+    """'' to keep going, 'reset' to drop the setup, 'call' when the panic call lands."""
+    if _PUSH_ANY.search(line):
+        m = _PUSH_CONST.search(line.rstrip())
+        st.pushes.append(int(m.group(1), 16) if m else None)
+        del st.pushes[:-3]
+        return ""
+    if _PANIC in line:
+        # pushes == [loc, len, index]; only a CONSTANT len of 1 is a [T; 1].
+        if len(st.pushes) == 3:
+            st.length = st.pushes[1]
+            st.loc = (".rdata", st.pushes[0]) if st.pushes[0] is not None else None
+        return "call"
+    return "" if _CARRY.search(line) else "reset"
+
+
+def _feed_x64(st: _Setup, line: str, arch: str) -> str:
+    m = _RELOC.match(line)
+    if m:
+        kind, target = m.groups()
+        if st.after_call:
+            # The relocation of a call names its callee: the panic is the verdict, any
+            # other callee clobbered every argument register we were tracking.
+            return "call" if _PANIC in target else "reset"
+        if st.pending is not None and (arch == "amd64" or kind.endswith("PAGEOFFSET_12A")):
+            st.loc, st.pending = (target, st.pending), None
+        return ""
+    if st.after_call:
+        # A call with no relocation after it: a LINKED image, whose call line already
+        # named its callee (below). Whatever it was, it clobbered the argument registers.
+        return "reset"
+    m = (_X64_INSN if arch == "amd64" else _A64_INSN).match(line)
+    if not m:
+        return "" if not line.strip() else "reset"
+    mn, ops = m.group(1), [o.strip() for o in m.group(2).split(",")]
+    if mn not in (_X64_CARRY if arch == "amd64" else _A64_CARRY):
+        return "reset"
+    if mn in ("callq", "bl"):
+        # In a linked image the callee is resolved onto the call line itself
+        # (`callq 0x140019a67 <…panic_bounds_check…>`); in an object it is named by the
+        # relocation on the next line, so wait for that.
+        if _PANIC in line:
+            return "call"
+        st.after_call = True
+        return ""
+    if arch == "amd64":
+        dst, src = ops[-1], ops[0]
+        if dst in _X64_LEN_REGS:
+            imm = re.fullmatch(r"\$0x([0-9a-f]+)", src) if mn.startswith("mov") else None
+            st.length = int(imm.group(1), 16) if imm else None
+        elif mn.startswith("lea") and dst == "%r8":
+            # objdump omits a zero displacement: `leaq (%rip), %r8`.
+            disp = re.fullmatch(r"(-?0x[0-9a-f]+)?\(%rip\)", src)
+            st.pending = int(disp.group(1) or "0", 16) if disp else None
+    else:
+        dst = ops[0]
+        if dst in _A64_LEN_REGS:
+            rest = ", ".join(ops[1:])
+            imm = (
+                re.fullmatch(r"(?:[wx]zr, )?#0x([0-9a-f]+)", rest)
+                if mn in ("mov", "movz", "orr")
+                else None
+            )
+            st.length = int(imm.group(1), 16) if imm else None
+        elif mn == "add" and dst == "x2":
+            imm = re.fullmatch(r"#0x([0-9a-f]+)", ops[-1])
+            st.pending = int(imm.group(1), 16) if imm else None
+    return ""
+
+
+def scan_object(
+    path: Path, *, arch: str = "i386", explain: bool = False
+) -> list[tuple[str, int, list[str]]]:
     """[(symbol, array_len, context)] for every bounds check whose array length is 1.
 
     `context` is empty unless `explain`. WHY IT EXISTS: the object scanner attributes a
@@ -275,55 +519,47 @@ def scan_object(path: Path, *, explain: bool = False) -> list[tuple[str, int, li
     )
     if proc.returncode != 0:
         raise RuntimeError(f"{OBJDUMP} failed on {path}: {proc.stderr.strip()[:200]}")
-    by_member = _section_by_member(path, ".rdata") if explain else {}
-    rdata = b""
+    members = _members(path) if explain else {}
+    member = _Member()
     sym = "?"
-    # The last three pushes, newest last, as (constant value or None).
-    pushes: list[int | None] = []
+    st = _Setup()
     window: list[str] = []
     hits = []
     for line in proc.stdout.splitlines():
         m = _MEMBER.match(line)
         if m:
-            rdata = by_member.get(m.group("mem") or m.group("obj"), b"")
-            sym, pushes, window = "?", [], []
+            member = members.get(m.group("mem") or m.group("obj"), _Member())
+            sym, st, window = "?", _Setup(), []
             continue
         m = _SYMBOL.match(line)
         if m:
-            sym = m.group(1)
-            pushes = []
-            window = []
+            sym, st, window = m.group(1), _Setup(), []
             continue
         window.append(line.rstrip())
         del window[:-_EXPLAIN_WINDOW]
-        if _PUSH_ANY.search(line):
-            m = _PUSH_CONST.search(line.rstrip())
-            pushes.append(int(m.group(1), 16) if m else None)
-            del pushes[:-3]
-            continue
-        if _PANIC in line:
-            # pushes == [loc, len, index]; only a CONSTANT len of 1 is a [T; 1].
-            if len(pushes) == 3 and pushes[1] == 1:
-                loc_off = pushes[0]
+        verdict = _feed_i386(st, line) if arch == "i386" else _feed_x64(st, line, arch)
+        if verdict == "call":
+            if st.length == 1:
                 where = (
-                    resolve_location(rdata, loc_off, struct.unpack_from("<I", rdata, loc_off)[0])
-                    if (explain and loc_off is not None and len(rdata) >= loc_off + 16)
+                    resolve_location(
+                        member, st.loc, ptr64=arch != "i386", others=list(members.values())
+                    )
+                    if explain and st.loc
                     else ""
                 )
                 ctx = list(window) if explain else []
                 if where:
                     ctx = [f"    -> {where}   (from the panic Location)", *ctx]
                 hits.append((sym, 1, ctx))
-            pushes = []
-            continue
-        if not _CARRY.search(line):
-            pushes = []
+            st = _Setup()
+        elif verdict == "reset":
+            st = _Setup()
     return hits
 
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--arch", default="i386", help="only i386 encodes the length as a push")
+    ap.add_argument("--arch", required=True, choices=ARCHES)
     ap.add_argument("--lint", action="store_true", help="exit 1 when any site is found")
     ap.add_argument(
         "--explain",
@@ -334,13 +570,6 @@ def main(argv: list[str]) -> int:
     )
     args = ap.parse_args(argv)
 
-    if args.arch != "i386":
-        print(
-            f"scan_flex_array_panic: {args.arch} passes the array length in a register, "
-            "not a push; this reader is i386-only. Refusing to grade nothing.",
-            file=sys.stderr,
-        )
-        return 2
     if not OBJDUMP.is_file():
         print(f"MISSING TOOL: {OBJDUMP}", file=sys.stderr)
         return 2
@@ -353,36 +582,46 @@ def main(argv: list[str]) -> int:
 
     corpus = declared_corpus()
     missing, findings = [], []
+    work: list[tuple[str, Path]] = []
     for crate in corpus:
         art = find_artifact(build, crate)
         if art is None:
             missing.append(crate)
-            continue
-        for sym, _, ctx in scan_object(art, explain=bool(args.explain)):
-            findings.append((crate, sym))
-            if args.explain and (args.explain in crate or args.explain in sym):
-                print(f"\n=== {crate}: {sym}")
+        else:
+            work.append((crate, art))
+    for crate, art in work:
+        for sym, _, ctx in scan_object(art, arch=args.arch, explain=bool(args.explain)):
+            key = normalize_symbol(sym, args.arch)
+            findings.append((crate, key))
+            if args.explain and (args.explain in crate or args.explain in key):
+                print(f"\n=== {crate}: {key}")
                 for line in ctx:
                     print(f"    {line}")
 
-    graded = graded_ok()
-    seen = sorted({(c, s) for c, s in findings})
-    ungraded = [p for p in seen if p not in graded]
+    graded = graded_ok(args.arch)
+    seen = sorted(set(findings))
+    ungraded = [p for p in seen if not is_graded(graded, *p)]
     for crate, sym in ungraded:
         print(f"{crate}: {sym}: bounds check on a 1-element array (bindgen flexible array?)")
-    for crate, sym in sorted(p for p in seen if p in graded):
-        print(f"{crate}: {sym}: GRADED OK (allowlisted) — correct check on a real 1-element array")
+    for crate, sym in sorted(p for p in seen if is_graded(graded, *p)):
+        print(f"{crate}: {sym}: GRADED OK (allowlisted) — a correct check; see its entry")
     # A stale entry means the site was fixed (drop the entry) or the reader stopped seeing
     # it (the gate has silently lost coverage). Either way it is not a clean result.
-    stale = sorted(graded - set(seen))
+    seen_syms = {sym for _, sym in seen}
+    stale = sorted(
+        (c, sym)
+        for c, sym in graded
+        if (sym not in seen_syms if c == "*" else (c, sym) not in seen)
+    )
     if stale:
         print(
-            "STALE ALLOWLIST ENTRIES (no longer found — remove them, or find out why the "
-            "reader went blind): " + ", ".join(f"{c}: {s}" for c, s in stale),
+            f"STALE ALLOWLIST ENTRIES on {args.arch} (no longer found — remove them, scope "
+            "them to the arches that still have the site, or find out why the reader went "
+            "blind): " + ", ".join(f"{c}: {s}" for c, s in stale),
             file=sys.stderr,
         )
     print(
-        f"\n{len(set(findings))} site(s) in {len({c for c, _ in findings})} module(s); "
+        f"\n{args.arch}: {len(seen)} site(s) in {len({c for c, _ in seen})} module(s); "
         f"corpus {len(corpus)} declared, {len(missing)} not built",
         file=sys.stderr,
     )

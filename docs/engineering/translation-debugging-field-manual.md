@@ -1828,6 +1828,10 @@ Three faces, all seen live:
   it:** `llvm-objdump -dr --disassemble-symbols=<sym>` and count `panic_bounds_check`
   relocations; the immediate pushed just before each call is the ARRAY LENGTH, so a `$0x1`
   names a flexible array and anything larger is a real fixed array you should leave alone.
+  (On amd64 the length is the constant loaded into `edx`, on arm64 into `w1` -- read all
+  three: the 64-bit corpus holds code i386 never builds, and that is how diskpart's 20
+  sites went unseen. One 64-bit-only false positive: `cmp $1, %len; je` into a
+  panic(1, 1) on a SLICE, a length LLVM just proved; a sibling panic(0, 0) gives it away.)
   Here: 4 sites, three pushing `$0x1` and one pushing `$0x2` (`SubKeyLists[Type]`, legitimate)
   — after the fix only the `$0x2` remains. Note plain `objdump` does not accept
   `--disassemble-symbols` and greps clean off its usage message, which is a zero that means

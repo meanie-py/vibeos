@@ -1635,10 +1635,14 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
     LLVM put in the very register the asm swaps out). In each case the Rust or C
     reads as correct and only the emitted code says otherwise.
 
-    Three of the six are graded on ONE arch each, for reasons of encoding rather
+    Two of the six are graded on ONE arch each, for reasons of encoding rather
     than of scope -- the defect class is arch-independent, but only one arch
     emits the evidence the reader needs. Those say so as a SKIP WITH A REASON on
-    the others; a reader that cannot see is never silently a pass.
+    the others; a reader that cannot see is never silently a pass. Before you add
+    a third, check that the other arches really cannot answer:
+    scan_flex_array_panic was i386-only on exactly that reasoning, and the 64-bit
+    arches turned out to load the same length as an immediate into a register --
+    and to carry code the i386 binary does not contain at all.
     """
     py = sys.executable
     build_dir = repo / f"build-{arch}"
@@ -1688,30 +1692,21 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
     )
     # A bounds check against a length of 1 on a bindgen flexible array: the C
     # over-allocates past a trailing `T x[1]`, bindgen believes the 1, and every
-    # element after the first panics. Only i386 encodes the length as an immediate
-    # push, so the reader can only grade there -- on the other arches say so as a
-    # SKIP WITH A REASON rather than running it and taking its refusal (exit 2) as
-    # a failure. Sites graded as genuine 1-element arrays live in
-    # tools/flex_array_allowlist.txt; a stale entry there fails this stage too,
-    # because it means the site was fixed or the reader went blind.
+    # element after the first panics. Graded on EVERY arch: the length is a push on
+    # i386 and an immediate into a register elsewhere, and the 64-bit corpus is not the
+    # i386 one (other crates, `#[cfg(target_arch)]` bodies) -- reading i386 alone is how
+    # a whole crate's worth of sites went unseen. Sites graded as genuine 1-element
+    # arrays live in tools/flex_array_allowlist.txt, scoped per arch; a stale entry
+    # fails this stage too, because it means the site was fixed or the reader went blind.
     flexarr = repo / "tools" / "scan_flex_array_panic.py"
-    if arch != "i386":
-        run.add(
-            Stage(
-                "scan_flex_array_panic",
-                status="skip",
-                detail=f"{arch} passes the length in a register, not a push; reader is i386-only",
-            )
-        )
-    else:
-        _lint_stage(
-            run,
-            repo,
-            "scan_flex_array_panic",
-            [py, str(flexarr), "--lint", "--arch", arch] if flexarr.is_file() else ["MISSING"],
-            strict=strict,
-            by_exit_code=True,
-        )
+    _lint_stage(
+        run,
+        repo,
+        "scan_flex_array_panic",
+        [py, str(flexarr), "--lint", "--arch", arch] if flexarr.is_file() else ["MISSING"],
+        strict=strict,
+        by_exit_code=True,
+    )
     # An export that is a jump to another DLL's same-named import: a local body lost the
     # link to an import library. ole32's GetErrorInfo/SetErrorInfo/CreateErrorInfo went
     # to oleaut32, which forwards them back: an endless loop for every caller. amd64 only

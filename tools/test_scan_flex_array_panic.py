@@ -94,9 +94,197 @@ def test_the_length_does_not_leak_across_symbols(monkeypatch):
     assert _run(monkeypatch, listing) == []
 
 
-def test_non_i386_refuses_rather_than_grading_nothing(capsys):
-    assert s.main(["--arch", "arm64"]) == 2
-    assert "i386-only" in capsys.readouterr().err
+# amd64 and arm64, transcribed from real atapi-legacy-rust disassembly with the length
+# changed to 1. Win64 passes (index, len, &Location) in rcx/rdx/r8 and the AAPCS in
+# x0/x1/x2; the index is left in its register by the hot path, so only the length and
+# the Location are set in the panic block itself.
+X64_FLEX = """
+0000000000001000 <Victim>:
+    1000: 4c 8d 05 58 00 00 00         \tleaq\t0x58(%rip), %r8         # 0x105f <Victim+0x5f>
+\t\t0000000000001003:  IMAGE_REL_AMD64_REL32\t.rdata
+    1007: ba 01 00 00 00               \tmovl\t$0x1, %edx
+    100c: e8 00 00 00 00               \tcallq\t0x1011 <Victim+0x11>
+\t\t000000000000100d:  IMAGE_REL_AMD64_REL32\t_ZN4core9panicking18panic_bounds_checkE
+"""
+
+A64_FLEX = """
+0000000000000000 <Victim>:
+     5f0: 90000002     \tadrp\tx2, 0x0 <Victim>
+\t\t00000000000005f0:  IMAGE_REL_ARM64_PAGEBASE_REL21\tanon.aa.6
+     5f4: 91000042     \tadd\tx2, x2, #0x0
+\t\t00000000000005f4:  IMAGE_REL_ARM64_PAGEOFFSET_12A\tanon.aa.6
+     5f8: 52800021     \tmov\tw1, #0x1                // =1
+     5fc: 94000000     \tbl\t0x5fc <Victim+0x5fc>
+\t\t00000000000005fc:  IMAGE_REL_ARM64_BRANCH26\t_ZN4core9panicking18panic_bounds_checkE
+"""
+
+
+def _run_arch(monkeypatch, listing: str, arch: str):
+    monkeypatch.setattr(s.subprocess, "run", lambda *a, **k: _Proc(listing))
+    return [(sym, ln) for sym, ln, _ in s.scan_object(Path("fake.a"), arch=arch)]
+
+
+def test_a_length_one_check_is_reported_on_amd64(monkeypatch):
+    assert _run_arch(monkeypatch, X64_FLEX, "amd64") == [("Victim", 1)]
+
+
+def test_a_length_one_check_is_reported_on_arm64(monkeypatch):
+    assert _run_arch(monkeypatch, A64_FLEX, "arm64") == [("Victim", 1)]
+
+
+def test_a_real_fixed_array_is_left_alone_on_64_bit(monkeypatch):
+    """atapi-legacy-rust's real shape: `movl $0x5, %edx` / `mov w1, #0x5`."""
+    x64 = X64_FLEX.replace("movl\t$0x1, %edx", "movl\t$0x5, %edx")
+    a64 = A64_FLEX.replace(
+        "mov\tw1, #0x1                // =1", "mov\tw1, #0x5                // =5"
+    )
+    assert _run_arch(monkeypatch, x64, "amd64") == []
+    assert _run_arch(monkeypatch, a64, "arm64") == []
+
+
+def test_a_register_length_is_a_slice_on_64_bit(monkeypatch):
+    """A length copied from another register is a runtime length -- never a [T; 1]."""
+    x64 = X64_FLEX.replace("movl\t$0x1, %edx", "movl\t%eax, %edx")
+    a64 = A64_FLEX.replace("mov\tw1, #0x1                // =1", "mov\tw1, w19")
+    assert _run_arch(monkeypatch, x64, "amd64") == []
+    assert _run_arch(monkeypatch, a64, "arm64") == []
+
+
+def test_a_later_write_to_the_length_register_wins(monkeypatch):
+    """The LAST constant in the slot is the argument; an earlier one was overwritten."""
+    x64 = X64_FLEX.replace(
+        "    1007: ba 01 00 00 00               \tmovl\t$0x1, %edx\n",
+        "    1007: ba 01 00 00 00               \tmovl\t$0x1, %edx\n"
+        "    1008: 89 c2                        \tmovl\t%eax, %edx\n",
+    )
+    assert _run_arch(monkeypatch, x64, "amd64") == []
+
+
+def test_an_unrelated_instruction_ends_the_setup_on_64_bit(monkeypatch):
+    """Same discipline as i386: only the call's own argument setup may intervene, so a
+    constant written for some earlier computation is never attributed to this call."""
+    x64 = X64_FLEX.replace(
+        "    100c: e8",
+        "    100b: 48 85 f6                     \ttestq\t%rsi, %rsi\n    100c: e8",
+    )
+    a64 = A64_FLEX.replace(
+        "     5fc: 94000000",
+        "     5fa: eb01001f     \tcmp\tx0, x1\n     5fc: 94000000",
+    )
+    assert _run_arch(monkeypatch, x64, "amd64") == []
+    assert _run_arch(monkeypatch, a64, "arm64") == []
+
+
+def test_another_call_clobbers_the_tracked_arguments(monkeypatch):
+    """rdx/x1 are caller-saved: a call to anything else between the write and the
+    panic means the value the panic sees is not the one we read."""
+    x64 = X64_FLEX.replace(
+        "    100c: e8",
+        "    100a: e8 00 00 00 00               \tcallq\t0x100f <Victim+0xf>\n"
+        "\t\t000000000000100b:  IMAGE_REL_AMD64_REL32\tsome_helper\n    100c: e8",
+    )
+    assert _run_arch(monkeypatch, x64, "amd64") == []
+
+
+def test_a_constant_index_into_a_one_element_array_is_reported(monkeypatch):
+    """Loop peeling: LLVM proves the SECOND iteration of a walk over a [T; 1] is out of
+    bounds and emits panic(index 1, len 1) unconditionally. diskpart's Extents walk
+    shipped this on all three arches; it is the strongest form of the finding."""
+    x64 = X64_FLEX.replace(
+        "    1007: ba 01 00 00 00",
+        "    1006: b9 01 00 00 00               \tmovl\t$0x1, %ecx\n    1007: ba 01 00 00 00",
+    )
+    assert _run_arch(monkeypatch, x64, "amd64") == [("Victim", 1)]
+
+
+def test_symbols_normalize_to_one_name_across_arches():
+    """The allowlist is written once per site, so the same function must have the same
+    key on every arch and across rebuilds that move a hash."""
+    i386 = "__ZN17atapi_legacy_rust5entry29AtapiFindNativeModeController17hb6081ba0f0486feeE@24"
+    x64 = "_ZN17atapi_legacy_rust5entry29AtapiFindNativeModeController17h203528268eed9fccE"
+    want = "_ZN17atapi_legacy_rust5entry29AtapiFindNativeModeControllerE"
+    assert s.normalize_symbol(i386, "i386") == want
+    assert s.normalize_symbol(x64, "amd64") == want
+    assert s.normalize_symbol(x64 + ".llvm.2798096731955180627", "arm64") == want
+    assert s.normalize_symbol("_SHTestTokenPrivilegeW@8", "i386") == "SHTestTokenPrivilegeW"
+    # Only i386 decorates C names: a 64-bit leading underscore is part of the name.
+    assert s.normalize_symbol("_Private", "amd64") == "_Private"
+
+
+def test_allowlist_scope_limits_an_entry_to_its_arches(tmp_path, monkeypatch):
+    """An entry graded on the arches where the site EXISTS must not read as stale on an
+    arch that never builds it -- and an unscoped entry applies everywhere."""
+    allow = tmp_path / "allow.txt"
+    allow.write_text(
+        "everywhere-rust: Everywhere   # rationale\n"
+        "@amd64,arm64 wide-rust: _ZN4wide1fE\n"
+        "@i386 narrow-rust: _ZN6narrow1gE\n"
+    )
+    monkeypatch.setattr(s, "ALLOWLIST", allow)
+    assert s.graded_ok("i386") == {
+        ("everywhere-rust", "Everywhere"),
+        ("narrow-rust", "_ZN6narrow1gE"),
+    }
+    assert s.graded_ok("arm64") == {("everywhere-rust", "Everywhere"), ("wide-rust", "_ZN4wide1fE")}
+
+
+def test_a_normalized_entry_is_not_normalized_twice(tmp_path, monkeypatch):
+    """The file holds normalized names. Re-applying i386's `_`-strip to one turned
+    `_ZN17atapi_legacy_rust…E` into `ZN17…` and made the entry stale on i386 alone."""
+    allow = tmp_path / "allow.txt"
+    allow.write_text("atapi-legacy-rust: _ZN17atapi_legacy_rust5entry1fE\n")
+    monkeypatch.setattr(s, "ALLOWLIST", allow)
+    for arch in s.ARCHES:
+        assert s.graded_ok(arch) == {("atapi-legacy-rust", "_ZN17atapi_legacy_rust5entry1fE")}
+
+
+def test_v0_mangling_drops_the_crate_disambiguator():
+    """The i386 cargo cell mangles v0, whose crate root carries a disambiguator."""
+    v0 = "_RNvNtCs6vQPevndiDL_7ex_rust7sysinfo26QSI_SystemNumaProcessorMap.llvm.42"
+    assert (
+        s.normalize_symbol("_" + v0, "i386")
+        == "_RNvNtC7ex_rust7sysinfo26QSI_SystemNumaProcessorMap"
+    )
+
+
+def test_a_linked_image_call_names_its_callee_on_the_call_line(monkeypatch):
+    """A linked PE has no relocations: `callq 0x… <…panic_bounds_check…>` decides, and
+    any other resolved call clobbers the setup."""
+    linked = """
+0000000140001000 <Victim>:
+   140001430: 4c 8d 05 f1 db 02 00        \tleaq\t0x2dbf1(%rip), %r8      # 0x14002f028
+   140001437: ba 01 00 00 00              \tmovl\t$0x1, %edx
+   14000143c: e8 26 86 01 00     \tcallq\t0x140019a67 <_ZN4core9panicking18panic_bounds_checkE>
+"""
+    assert _run_arch(monkeypatch, linked, "amd64") == [("Victim", 1)]
+    other = linked.replace(
+        "   14000143c:",
+        "   14000143a: e8 26 86 01 00              \tcallq\t0x140019000 <helper>\n   14000143c:",
+    )
+    assert _run_arch(monkeypatch, other, "amd64") == []
+
+
+def test_a_wildcard_entry_grades_the_function_in_every_image():
+    graded = {("*", "_ZN7network4pure11format_ipv6E")}
+    assert s.is_graded(graded, "ntdll-cargo", "_ZN7network4pure11format_ipv6E")
+    assert not s.is_graded(graded, "ntdll-cargo", "_ZN7network4pure5otherE")
+
+
+def test_the_shipped_allowlist_parses_on_every_arch():
+    """A malformed scope would silently grade nothing on that arch."""
+    for arch in s.ARCHES:
+        assert s.graded_ok(arch), f"no allowlist entries apply on {arch}"
+
+
+def test_arch_is_required():
+    """No default arch, like the rest of vibeos-cli: a reader that defaulted to i386 is
+    how the 64-bit corpus went unread."""
+    try:
+        s.main([])
+    except SystemExit as e:
+        assert e.code == 2  # argparse's usage error
+    else:
+        raise AssertionError("main() accepted a missing --arch")
 
 
 def test_the_corpus_comes_from_the_workspace_and_is_not_empty():

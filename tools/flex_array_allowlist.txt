@@ -1,6 +1,12 @@
 # scan_flex_array_panic: sites GRADED and found NOT to be bindgen flexible arrays.
 #
-# Format: <crate>: <symbol>            # rationale
+# Format: [@arch[,arch]] <crate>: <symbol>      # rationale
+#
+# The symbol is the ARCH-NEUTRAL name the scanner prints: no i386 `_` decoration, no
+# `@N` stdcall suffix, no `17h<hash>E` legacy-mangling hash, no `.llvm.<n>` ThinLTO
+# suffix. An unscoped entry applies to every arch; `@amd64,arm64` limits it to those.
+# Scope an entry to the arches where the site EXISTS, because a stale entry fails the
+# lint on the arch where it went stale.
 #
 # An entry here is a claim that the bounds check is CORRECT and must stay. It is not a
 # deferral -- deferred work belongs in the roadmap, not in a file that silences a gate.
@@ -11,13 +17,26 @@
 # than ignored: it means either the site was fixed and the entry should go, or the reader
 # stopped seeing it and the gate has quietly lost coverage.
 
-atapi-rust: __ZN10atapi_rust5entry29AtapiFindNativeModeController17hdfb3d453d68b3c94E@24
+atapi-legacy-rust: _ZN17atapi_legacy_rust5entry29AtapiFindNativeModeControllerE
 # NativeModeAdapters is a genuine one-entry static table, not an allocation:
 #   atapi.h:319  NATIVE_MODE_CONTROLLER_INFORMATION const NativeModeAdapters[] = {
 #                    { "10ad", 4, "0105", 4} };
 #   atapi.h:322  #define NUM_NATIVE_MODE_ADAPTERS (sizeof(...) / sizeof(...))
 # Test 1 (does the C over-allocate?): NO -- static const, nothing is allocated.
 # Test 2 (literal 1?): the length is DERIVED from the initializer and the bound callers
-# use is computed from it, so the [T; 1] the Rust declares is faithful. The index is
-# dynamic (atapi.c:2745 takes it from the caller's Context), so the check is real, correct
-# and must stay -- rewriting it as a pointer add would delete a live safety check.
+# use is computed from it, so the [T; 1] the Rust declares (entry.rs:52) is faithful. The
+# index is dynamic (atapi.c:2745 takes it from the caller's Context), so the check is
+# real, correct and must stay -- rewriting it as a pointer add would delete a live
+# safety check. (Graded first on atapi-rust, which no arch builds any more; the legacy
+# crate that replaced it carries the same table.)
+
+@amd64,arm64 rtl-rust: _ZN7network4pure11format_ipv6E
+@amd64 rtl-rust: _ZN11rtl_strings7core_rs8dos8dot312get_checksumE
+# NOT ARRAYS AT ALL -- both index a runtime-length SLICE (`out: &mut [C]` at
+# network/src/lib.rs:662, `buf: &[u16]` at rtl-strings dos8dot3.rs:29), and the
+# constant length is BRANCH-DERIVED: LLVM emits `cmp $1, %len; je` into a block that
+# calls panic_bounds_check(1, 1), because on that path it has just proved the length is
+# 1. Only the register-passing arches materialize it that way, which is why i386 never
+# flagged either. The tell in the disassembly is the sibling panic(0, 0) block a few
+# bytes earlier: a [T; 1] can never fail with length 0. Correct checks on Rust slices;
+# they stay.
