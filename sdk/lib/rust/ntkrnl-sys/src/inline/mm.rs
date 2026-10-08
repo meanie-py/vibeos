@@ -1057,6 +1057,16 @@ pub unsafe fn ExAllocatePoolZero(
     alloc
 }
 
+/// ExAllocatePoolUninitialized — exfuncs.h FORCEINLINE: `ExAllocatePoolWithTag`, nothing more.
+#[inline]
+pub unsafe fn ExAllocatePoolUninitialized(
+    pool_type: ddk::POOL_TYPE,
+    number_of_bytes: ULONG_PTR,
+    tag: ULONG,
+) -> PVOID {
+    ddk::ExAllocatePoolWithTag(pool_type, number_of_bytes as _, tag)
+}
+
 /// MmGetAddressSpaceOwner — return the EPROCESS that owns this address space.
 #[inline]
 pub unsafe fn MmGetAddressSpaceOwner(address_space: ddk::PMMSUPPORT) -> ddk::PEPROCESS {

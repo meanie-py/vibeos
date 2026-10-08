@@ -731,9 +731,11 @@ pub unsafe fn NtCurrentTeb() -> PVOID {
 #[cfg(not(target_arch = "x86"))]
 #[inline]
 pub unsafe fn KeQuerySystemTime(current_time: *mut ddk::_LARGE_INTEGER) {
-    extern "C" {
-        static SharedUserData: *mut ddk::_KUSER_SHARED_DATA;
-    }
+    // `SharedUserData` is a MACRO, `((KUSER_SHARED_DATA *const)KI_USER_SHARED_DATA)` -- a
+    // fixed address, not a symbol. An `extern static` of that name linked only inside
+    // ntoskrnl; atapi.sys, the first driver to call this, failed with an undefined symbol.
+    #[allow(non_snake_case)]
+    let SharedUserData = crate::mm::KI_USER_SHARED_DATA as *const ddk::_KUSER_SHARED_DATA;
     // SharedUserData is updated asynchronously by the kernel clock tick; these
     // reads must remain actual memory loads for spin-wait callers.
     loop {
@@ -2639,6 +2641,14 @@ pub unsafe fn _InterlockedExchangeAdd(target: *mut i32, value: i32) -> i32 {
     use core::sync::atomic::{AtomicI32, Ordering};
     let atomic = &*(target as *const AtomicI32);
     atomic.fetch_add(value, Ordering::SeqCst)
+}
+
+/// _InterlockedExchange — atomically store and return the old value.
+#[inline]
+pub unsafe fn _InterlockedExchange(target: *mut i32, value: i32) -> i32 {
+    use core::sync::atomic::{AtomicI32, Ordering};
+    let atomic = &*(target as *const AtomicI32);
+    atomic.swap(value, Ordering::SeqCst)
 }
 
 /// _InterlockedCompareExchange — atomically compare and exchange.

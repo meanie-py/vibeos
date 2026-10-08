@@ -764,6 +764,54 @@ for. Every change below is $0 and deterministic, and amd64 went 206 -> 55 with n
   wrappers over the island's `PKSPIN_LOCK` instead of re-exporting ntkrnl-sys's, which take
   `*mut usize` (16 E0308s in atapi).
 
+### From compiling to LINKING: atapi.sys on all three arches (2026-10-08)
+
+`port fix` ($0.38 of DeepSeek) and hand fixes took atapi from 55/66/61 to 0/0/0 under
+`cargo check`; linking the real `.sys` then found a second layer `cargo check` cannot see.
+Every fix below is a stage change, not a recipe.
+
+- **`port fix`'s reply audit was wrong twice.** A signature change that only drops names rustc
+  reported (E0412 renders at the PARAMETER line, not the `fn` line) is the error's fix; a
+  struct-literal FIELD LABEL is not a name a body must keep (`{ Lun: 0, .. }` -> `{ AsULONG: 0
+  }`). Both rejected correct replies on every round.
+- **C-variadic definitions get a trampoline** (`variadic_shim.py`, run by `integrate`): the
+  body becomes a fixed-arity `F_v(.., ap_list)` reading `varargs_rust::VaArgs`, and
+  `<module>/rust_varargs_shim.c` is generated from every twin in the crate in PRIMITIVE C
+  types, read off the twin through the islands' alias chains and required to agree on all
+  three arches. No module header is included: atapi.h pulls in `<initguid.h>`, and a shim
+  including it re-defined every WMI GUID (link-guard). The C definition is the oracle that the
+  function IS variadic, at that arity. The shim must be in the cohab CMake source list.
+- **`size_of::<PFOO>()` where the C said `sizeof(*x)`** -- `pointer_depth` restores the pointee
+  inside any function whose C never writes `sizeof(PFOO)` (atapi: the PDO extension size passed
+  to IoCreateDevice was 8 bytes; three SCSI mode-page lengths likewise).
+- **Resolve knows what LINKS, not only what resolves.** `module_exports` reads the module's
+  `add_importlibs` specs per arch; a called name not exported on every arch is offered to the
+  substrate even though rustc is happy with the island's extern (17 wdm.h inlines in atapi).
+  The per-file `use ntkrnl_sys::ddk::{..}` pins and `ntkrnl_sys::ddk::X()` paths the translate
+  stage wrote are unpinned in favour of the prelude's import. What neither exports nor ports is
+  reported loudly ("these will not link"), minus the crate's own definitions and C functions of
+  linked static libs. `base`/`rtl` are no longer substrate (ntoskrnl's Rust-flavoured core);
+  C-shaped ports of the list/SList inlines, byteswaps, `RtlULongAdd`, `PushEntryList`,
+  `_InterlockedExchange`, `GetIRPMinorFunctionString` and a driver-facing
+  `InterlockedPushEntrySList` (the export, not ntoskrnl's internal symbol) live in
+  `inline::`.
+- **Glob ties per arch.** A name both the island and `ntkrnl_sys::ddk` declare is E0659 only on
+  the arches where both do (i386's KeGetCurrentIrql); resolve emits a per-arch explicit
+  `ddk` import, read from the islands so the import cannot remove its own evidence.
+- **INITGUID storage.** When the module's C includes `<initguid.h>`, every GUID the crate
+  references and does not define gets a `#[no_mangle]` static from the tree's one DEFINE_GUID
+  value (`initguid_storage`, a generated prelude block).
+- **Stale sibling imports are dropped**, and a name that becomes hand-written leaves the
+  substrate block (both were E0603/E0255 after a rename).
+- **Hand macro ports survive replays.** `port macros` skips an item defined in the prelude
+  OUTSIDE its generated block; that is where a fixed macro goes.
+- **The anon-union Deref autoref** (`dangerous_implicit_autorefs`, deny): `(*p).a.Field` read
+  through the island's `impl Deref` is rewritten to name the member
+  (`a.__bindgen_anon_1.Field`) by crate-repair's `anon_union_field` rule.
+- **The -sys crates' own islands are widened too.** `normalize_island_abi --apply` (the one
+  post-step every generator runs) now restores `L"..."` constants; 90 in eight -sys crates,
+  msvcrt-sys's Python generator calls the widener itself.
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it

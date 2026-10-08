@@ -37,7 +37,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import crate_integrate, local_macros, pointer_depth, prelude_resolve
+from . import crate_integrate, local_macros, pointer_depth, prelude_resolve, variadic_shim
 from . import profile_derive as pd
 
 REPO = Path(__file__).resolve().parents[3]
@@ -426,11 +426,81 @@ def set_expand_macros(stem: str, tus: list[str]) -> list[str]:
     return state["expand_macros"]
 
 
+# Literal suffixes allowed: ntddstor.h writes GUID_DEVINTERFACE_STORAGEPORT's Data1 `0x2accfe60L`.
 _DEFINE_GUID_RE = re.compile(
-    r"^\s*DEFINE_GUID\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)\s*,\s*(0x[0-9A-Fa-f]+)\s*,"
-    r"\s*(0x[0-9A-Fa-f]+)\s*,((?:\s*0x[0-9A-Fa-f]+\s*,?){8})\)",
+    r"^\s*DEFINE_GUID\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)[uUlL]*\s*,\s*(0x[0-9A-Fa-f]+)[uUlL]*\s*,"
+    r"\s*(0x[0-9A-Fa-f]+)[uUlL]*\s*,((?:\s*0x[0-9A-Fa-f]+[uUlL]*\s*,?){8})\)",
     re.M,
 )
+GUID_BEGIN = "// ==== port resolve: INITGUID storage (generated) ===="
+GUID_END = "// ==== end INITGUID storage ===="
+
+
+def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, list[str]]:
+    """The prelude block DEFINING each GUID the crate references, when the module's C does.
+
+    A header that includes <initguid.h> (atapi.h, pciidex.h) makes every TU define storage
+    for each DEFINE_GUID it sees; the island declares them `extern`, so the translation's
+    references compile and are undefined at link (atapi: GUID_DEVINTERFACE_STORAGEPORT,
+    GUID_PCIIDE_INTERFACE_ROS). Values come from the tree's DEFINE_GUID lines, one value per
+    name or refused; a GUID a translated module already defines is left to it.
+    Returns (block, refused names).
+    """
+    module_dir = REPO / state["module_dir"]
+    c_texts = [p.read_text(errors="replace") for p in module_dir.glob("*.[ch]")]
+    if not any(
+        re.search(r"#\s*include\s*<initguid\.h>|#\s*define\s+INITGUID\b", t) for t in c_texts
+    ):
+        return "", []
+    declared: set[str] = set()
+    for island in (crate / "src").glob("types_*.rs"):
+        declared |= set(
+            re.findall(r"^\s*pub static (\w+): GUID;", island.read_text(errors="replace"), re.M)
+        )
+    body = "\n".join(p.read_text(errors="replace") for p in sorted(modules_dir.glob("*.rs")))
+    own = set(re.findall(r"\bstatic\s+(?:mut\s+)?(\w+)\s*:", body))
+    want = {n for n in declared if re.search(rf"\b{n}\b", body)} - own
+    out: dict[str, str] = {}
+    refused: list[str] = []
+    for name in sorted(want):
+        files = subprocess.run(
+            ["git", "grep", "-l", f"DEFINE_GUID({name},", "--", "*.h"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.split()
+        values = set()
+        for f in files:
+            for m in _DEFINE_GUID_RE.finditer((REPO / f).read_text(errors="replace")):
+                if m.group(1) == name:
+                    d4 = ", ".join(re.findall(r"0x[0-9A-Fa-f]+", m.group(5)))
+                    values.add((m.group(2), m.group(3), m.group(4), d4))
+        if len(values) != 1:
+            refused.append(name)
+            continue
+        d1, d2, d3, d4 = values.pop()
+        out[name] = (
+            f"#[no_mangle]\npub static {name}: GUID = GUID {{ Data1: {d1}, Data2: {d2}, "
+            f"Data3: {d3}, Data4: [{d4}] }};"
+        )
+    if not out:
+        return "", refused
+    return GUID_BEGIN + "\n" + "\n".join(
+        out[n] for n in sorted(out)
+    ) + "\n" + GUID_END + "\n", refused
+
+
+def write_guid_block(prelude: Path, block: str) -> bool:
+    text = prelude.read_text()
+    m = re.search(re.escape(GUID_BEGIN) + r".*?" + re.escape(GUID_END) + r"\n?", text, re.S)
+    if not block and not m:
+        return False
+    new = text[: m.start()] + block + text[m.end() :] if m else text.rstrip("\n") + "\n\n" + block
+    if new == text:
+        return False
+    prelude.write_text(new)
+    return True
 
 
 def initguid_module(c_path: Path) -> str | None:
@@ -1126,6 +1196,79 @@ def _pointer_decls(state: dict) -> tuple[set[str], dict[str, pointer_depth.CFunc
     return types, decls
 
 
+def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dict[str, str]]:
+    """C-variadic definitions -> a Rust `_v` twin + a generated C trampoline (variadic_shim).
+
+    The shim is regenerated from EVERY twin in the crate each run (not just this run's new
+    ones). Fails loud when a twin has no variadic C definition of the same arity, or a
+    parameter has no ABI-identical primitive C spelling: a twin without its trampoline links
+    nothing under the original name, and every caller is a silent unresolved import.
+    """
+    done: list[str] = []
+    refused: dict[str, str] = {}
+    all_twins: dict[str, tuple[list[tuple[str, str]], str]] = {}
+    for path in sorted((crate / "src" / stem).glob("*.rs")):
+        rw = variadic_shim.rewrite(path.read_text())
+        refused.update(rw.refused)
+        if rw.names:
+            path.write_text(rw.text)
+            done += rw.names
+        all_twins.update(variadic_shim.twins(path.read_text()))
+    for name, why in refused.items():
+        print(f"integrate: variadic {name} left as is: {why}")
+    if not all_twins:
+        return done, refused
+    units = [REPO / u for u in _units(state) if (REPO / u).is_file()]
+    sys_src = prelude_resolve.island_substrate(crate / "src", REPO / "sdk" / "lib" / "rust")
+    maps = variadic_shim.alias_maps(
+        [
+            [
+                p.read_text(errors="replace")
+                for p in (
+                    crate / "src" / f"types_{suffix}.rs",
+                    *(
+                        (sys_src / f"bindgen_{suffix}.rs", sys_src / "bindgen_common.rs")
+                        if sys_src is not None
+                        else ()
+                    ),
+                )
+                if p.is_file()
+            ]
+            for suffix in ("i386", "amd64", "arm64")
+        ]
+    )
+    entries: dict[str, tuple[str, str]] = {}
+    for name, (params, ret) in sorted(all_twins.items()):
+        tu = next(
+            (
+                u
+                for u in units
+                if variadic_shim.c_variadic_arity(u.read_text(errors="replace"), name) is not None
+            ),
+            None,
+        )
+        if tu is None:
+            raise SystemExit(f"integrate: {name}_v has no C definition of {name} with `...`")
+        arity = variadic_shim.c_variadic_arity(tu.read_text(errors="replace"), name)
+        if arity != len(params):
+            raise SystemExit(
+                f"integrate: {name}_v takes {len(params)} fixed parameter(s), the C {arity}"
+            )
+        try:
+            entries[name] = (str(tu), variadic_shim.c_trampoline(name, params, ret, maps))
+        except ValueError as e:
+            raise SystemExit(f"integrate: cannot spell {name}'s trampoline: {e}") from e
+    shim = variadic_shim.write_shim(REPO / state["module_dir"], entries)
+    variadic_shim.ensure_dependency(crate / "Cargo.toml")
+    print(
+        f"integrate: {len(entries)} C-variadic entry point(s) -> `_v` twin + "
+        f"{shim.relative_to(REPO)}: {', '.join(sorted(entries))}"
+        + (f" ({len(done)} rewritten this run)" if done else "")
+    )
+    print("integrate: the shim must be in the module's cohab CMake source list")
+    return done, refused
+
+
 def stage_integrate(stem: str) -> None:
     """Move each translated file onto the crate's prelude (crate_integrate): the per-file
     substrate globs and hand-declared externs a standalone translation carries are WRONG
@@ -1137,6 +1280,9 @@ def stage_integrate(stem: str) -> None:
     unprovided: dict[str, list[str]] = {}
     changed = 0
     ptr_types, decls = _pointer_decls(state)
+    ptr_targets = pointer_depth.pointer_targets(
+        p.read_text(errors="replace") for p in sorted((crate / "src").glob("types_*.rs"))
+    )
     depth_fixed: list[str] = []
     for path in sorted((crate / "src" / stem).glob("*.rs")):
         report = crate_integrate.integrate_path(path, crate)
@@ -1145,11 +1291,13 @@ def stage_integrate(stem: str) -> None:
             unprovided[path.stem] = report.kept_unprovided
         print(f"integrate: {report.summary()}")
         text = path.read_text()
-        new, fixes = pointer_depth.repair(text, decls, ptr_types)
+        new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
         if new != text:
             path.write_text(new)
             changed += 1
             depth_fixed += [f"{path.stem}::{f}" for f in fixes]
+    variadic, variadic_refused = _variadic_twins(state, crate, stem)
+    changed += bool(variadic)
     if depth_fixed:
         print(
             f"integrate: {len(depth_fixed)} function(s) read a pointer typedef as its struct "
@@ -1164,6 +1312,8 @@ def stage_integrate(stem: str) -> None:
         changed=changed,
         unprovided=unprovided,
         pointer_depth=depth_fixed,
+        variadic=variadic,
+        variadic_refused=variadic_refused,
     )
     if unprovided:
         print("integrate: names nothing provides (a prelude gap, or invented by the model):")
@@ -1187,6 +1337,36 @@ def _c_defined_names(tus: list[Path]) -> set[str]:
     for tu in tus:
         out.update(defined_names(blank_c(tu.read_text(errors="replace"))))
     return out
+
+
+def _static_lib_functions(module_dir: Path, names: set[str]) -> set[str]:
+    """Which of `names` a static library in the module's `target_link_libraries` defines in C
+    (atapi links sptilib for SptiHandleAtaPassthru/SptiHandleScsiPassthru)."""
+    from .crate_fix import c_function_text
+
+    cmake = module_dir / "CMakeLists.txt"
+    if not names or not cmake.is_file():
+        return set()
+    libs = {
+        w
+        for m in re.finditer(r"target_link_libraries\(\s*\S+\s+([^)]*)\)", cmake.read_text())
+        for w in m.group(1).split()
+        if re.fullmatch(r"[A-Za-z_][\w-]*", w)
+    }
+    found: set[str] = set()
+    cache: dict = {}
+    for lib in sorted(libs):
+        hits = subprocess.run(
+            ["git", "grep", "-l", f"add_library({lib}\\b", "--", "*CMakeLists.txt"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.split()
+        for cm in hits:
+            for c in sorted((REPO / cm).parent.glob("*.c")):
+                found |= {n for n in names - found if c_function_text(c, n, cache)}
+    return found
 
 
 def stage_resolve(stem: str, max_passes: int = 4) -> None:
@@ -1260,6 +1440,15 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     prelude_resolve.write_block(prelude, prelude_resolve.render(copied))
     siblings = prelude_resolve.existing_siblings(prelude)
     modules_dir = crate / "src" / stem
+    # Each kept import is re-checked against the module it names: a definition renamed since
+    # (integrate's C-variadic `F` -> `F_v`) leaves `pub use crate::m::F;` pointing at m's own
+    # glob import of F -- E0603 "private function import" -- and nothing else revisits it.
+    live = prelude_resolve.sibling_definitions(set(siblings), modules_dir)
+    stale = {n for n, mod in siblings.items() if mod not in {m for m, _ in live.get(n, [])}}
+    if stale:
+        siblings = {n: m for n, m in siblings.items() if n not in stale}
+        prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
+        print(f"resolve: dropped {len(stale)} stale sibling import(s): {', '.join(sorted(stale))}")
     island_sys = prelude_resolve.island_substrate(crate / "src", workspace)
     kernel_sys = (
         island_sys if island_sys is not None and island_sys.parent.name == "ntkrnl-sys" else None
@@ -1268,6 +1457,13 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         n: {} for n in prelude_resolve.existing_substrate(prelude)
     }
     substrate_why: dict[str, str] = {}
+    # Names the crate calls that no import library exports on every arch: header inlines the
+    # island declares as externs. They resolve, so the unresolved list never asks for them --
+    # the link does. Offered to the substrate alongside the unresolved names.
+    exported = prelude_resolve.module_exports(REPO / state["module_dir"], REPO)
+    link_wanted: set[str] = set()
+    if kernel_sys is not None and exported is not None:
+        link_wanted = prelude_resolve.called_names(modules_dir) - exported
     res = prelude_resolve.Resolution()
     ambiguous: dict[str, list[str]] = {}
     types_only: set[str] = set()
@@ -1309,15 +1505,23 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         # and MmGetMdlVirtualAddress (C macros, never asked) all live in ntkrnl-sys.
         if kernel_sys is not None:
             found_sub, sub_why = prelude_resolve.substrate_helpers(
-                (names - shared) | set(substrate), kernel_sys, "ntkrnl_sys"
+                # A name that became hand-written (or a sibling's) since the block was last
+                # written leaves it: re-offering the old block unfiltered was an E0255.
+                (names | set(substrate) | link_wanted) - shared - set(siblings),
+                kernel_sys,
+                "ntkrnl_sys",
             )
             wired += len(set(found_sub) - set(substrate))
             substrate = found_sub
             substrate_why = {k: v for k, v in sub_why.items() if k in names}
             for name in substrate:
                 copied.pop(name, None)
+            ties = prelude_resolve.glob_ties(crate / "src", modules_dir, kernel_sys)
             prelude_resolve.write_substrate(
-                prelude, prelude_resolve.render_substrate(substrate, "ntkrnl_sys")
+                prelude,
+                prelude_resolve.render_substrate(
+                    prelude_resolve.with_glob_ties(substrate, ties), "ntkrnl_sys"
+                ),
             )
             names -= set(substrate)
         res.pending = sorted(names & pending)
@@ -1440,6 +1644,44 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         print(f"resolve: {len(siblings)} name(s) imported from the module's own translations")
     if substrate:
         print(f"resolve: {len(substrate)} header helper(s) imported from ntkrnl-sys")
+        # Only names with a Rust port on some arch: a pure glob tie needs no unpinning.
+        ported = {n for n, per in substrate.items() if any(v is not None for v in per.values())}
+        unpinned = prelude_resolve.unpin_substrate(modules_dir, ported, "ntkrnl_sys")
+        if unpinned:
+            print(
+                f"resolve: {sum(unpinned.values())} per-file pin(s) of the bindgen extern dropped "
+                f"in favour of the prelude's helper ({', '.join(sorted(unpinned))})"
+            )
+    guid_block, guid_refused = initguid_storage(state, crate, modules_dir)
+    write_guid_block(prelude, guid_block)
+    if guid_block:
+        print(f"resolve: {guid_block.count('pub static')} INITGUID GUID(s) given storage")
+    if guid_refused:
+        refused = ", ".join(guid_refused)
+        print(f"resolve: GUIDs with no single DEFINE_GUID value in the tree: {refused}")
+    if link_wanted:
+        # Declared as an extern (by the island or a consensus copy), exported by nothing the
+        # module imports, and not ported by the substrate either: these fail at LINK. Loud
+        # here, where the fix (a port in ntkrnl-sys/src/inline) is still cheap to name.
+        declared = {k for k, v in copied.items() if v.kind == "fn"}
+        for island in (crate / "src").glob("types_*.rs"):
+            declared |= set(
+                re.findall(
+                    r"^\s*pub\s+fn\s+([A-Za-z_]\w*)\b[^{;=]*;",
+                    island.read_text(errors="replace"),
+                    re.M,
+                )
+            )
+        gaps = (link_wanted & declared) - set(substrate) - shared - set(siblings)
+        # ...minus what the crate defines itself (atapi.h prototypes AtaAddChannel, so the
+        # island declares it) and what a static library the module links defines in C.
+        gaps -= set(prelude_resolve.sibling_definitions(gaps, modules_dir))
+        gaps = sorted(gaps - _static_lib_functions(REPO / state["module_dir"], gaps))
+        if gaps:
+            print(
+                f"resolve: {len(gaps)} called name(s) no import library exports on every arch "
+                f"and ntkrnl-sys does not port -- these will not link: {', '.join(gaps)}"
+            )
     if substrate_why:
         print(
             "resolve: ntkrnl-sys defines these but cannot provide them: "
@@ -2035,7 +2277,8 @@ def stage_macros(
         )
     }
     wanted = called | local_macros.existing(prelude)
-    macros = local_macros.closure(wanted, defs)
+    hand = local_macros.hand_ported(prelude)
+    macros = {n: m for n, m in local_macros.closure(wanted, defs).items() if n not in hand}
     skipped = sorted(names & ambiguous)
     if skipped:
         print(f"macros: defined differently in two places, hand-port: {', '.join(skipped)}")
