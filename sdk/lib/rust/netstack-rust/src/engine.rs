@@ -113,6 +113,7 @@ enum AnyPhy {
     Virtio(VirtioPhy),
     E1000(crate::e1000::E1000Phy),
     Genet(crate::genet::GenetPhy),
+    Gem(crate::gem::GemPhy),
 }
 
 #[cfg(not(feature = "ndis"))]
@@ -122,6 +123,7 @@ impl AnyPhy {
             AnyPhy::Virtio(v) => v.mac(),
             AnyPhy::E1000(e) => e.mac(),
             AnyPhy::Genet(g) => g.mac(),
+            AnyPhy::Gem(g) => g.mac(),
         }
     }
 }
@@ -131,6 +133,7 @@ enum AnyRxToken {
     Virtio(crate::device::VirtioRxToken),
     E1000(crate::e1000::E1000RxToken),
     Genet(crate::genet::GenetRxToken),
+    Gem(crate::gem::GemRxToken),
 }
 
 #[cfg(not(feature = "ndis"))]
@@ -143,6 +146,7 @@ impl smoltcp::phy::RxToken for AnyRxToken {
             AnyRxToken::Virtio(t) => smoltcp::phy::RxToken::consume(t, f),
             AnyRxToken::E1000(t) => smoltcp::phy::RxToken::consume(t, f),
             AnyRxToken::Genet(t) => smoltcp::phy::RxToken::consume(t, f),
+            AnyRxToken::Gem(t) => smoltcp::phy::RxToken::consume(t, f),
         }
     }
 }
@@ -152,6 +156,7 @@ enum AnyTxToken<'a> {
     Virtio(crate::device::VirtioTxToken<'a>),
     E1000(crate::e1000::E1000TxToken<'a>),
     Genet(crate::genet::GenetTxToken<'a>),
+    Gem(crate::gem::GemTxToken<'a>),
 }
 
 #[cfg(not(feature = "ndis"))]
@@ -164,6 +169,7 @@ impl<'a> smoltcp::phy::TxToken for AnyTxToken<'a> {
             AnyTxToken::Virtio(t) => smoltcp::phy::TxToken::consume(t, len, f),
             AnyTxToken::E1000(t) => smoltcp::phy::TxToken::consume(t, len, f),
             AnyTxToken::Genet(t) => smoltcp::phy::TxToken::consume(t, len, f),
+            AnyTxToken::Gem(t) => smoltcp::phy::TxToken::consume(t, len, f),
         }
     }
 }
@@ -187,6 +193,9 @@ impl smoltcp::phy::Device for AnyPhy {
             AnyPhy::Genet(g) => g
                 .receive(ts)
                 .map(|(r, t)| (AnyRxToken::Genet(r), AnyTxToken::Genet(t))),
+            AnyPhy::Gem(g) => g
+                .receive(ts)
+                .map(|(r, t)| (AnyRxToken::Gem(r), AnyTxToken::Gem(t))),
         }
     }
 
@@ -195,6 +204,7 @@ impl smoltcp::phy::Device for AnyPhy {
             AnyPhy::Virtio(v) => v.transmit(ts).map(AnyTxToken::Virtio),
             AnyPhy::E1000(e) => e.transmit(ts).map(AnyTxToken::E1000),
             AnyPhy::Genet(g) => g.transmit(ts).map(AnyTxToken::Genet),
+            AnyPhy::Gem(g) => g.transmit(ts).map(AnyTxToken::Gem),
         }
     }
 
@@ -203,6 +213,7 @@ impl smoltcp::phy::Device for AnyPhy {
             AnyPhy::Virtio(v) => v.capabilities(),
             AnyPhy::E1000(e) => e.capabilities(),
             AnyPhy::Genet(g) => g.capabilities(),
+            AnyPhy::Gem(g) => g.capabilities(),
         }
     }
 }
@@ -220,8 +231,13 @@ unsafe extern "system" fn worker(_context: PVOID) {
             Some(d) => AnyPhy::E1000(crate::e1000::E1000Phy::new(d)),
             // No PCI NIC: a platform NIC (pnp.rs) starts moments after
             // DriverEntry when the machine has one.
-            None => match crate::pnp::wait().and_then(crate::genet::bringup) {
-                Some(d) => AnyPhy::Genet(crate::genet::GenetPhy::new(d)),
+            None => match crate::pnp::wait().and_then(|nic| match nic.kind {
+                crate::pnp::NicKind::Genet => {
+                    crate::genet::bringup(nic).map(|d| AnyPhy::Genet(crate::genet::GenetPhy::new(d)))
+                }
+                crate::pnp::NicKind::Gem => crate::gem::bringup(nic).map(|d| AnyPhy::Gem(crate::gem::GemPhy::new(d))),
+            }) {
+                Some(phy) => phy,
                 None => {
                     nsprint!("[NETSTACK] FAIL: M2 device bringup\n");
                     crate::tditrans::mark_engine_dead();
@@ -267,7 +283,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         }
         // e1000 v1 is pure-poll: interrupts stay masked (IMC), the poll loop's
         // delay_ms cadence drives RX. No regression vs the no-IRQ fallback path.
-        AnyPhy::E1000(_) | AnyPhy::Genet(_) => null_mut(),
+        AnyPhy::E1000(_) | AnyPhy::Genet(_) | AnyPhy::Gem(_) => null_mut(),
     };
 
     let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));

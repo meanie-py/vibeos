@@ -11336,6 +11336,19 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   handoff, then halve the window that flips 0 to 0x100. Five boots found it. Do not trust
   firmware ECAM on boards that are not SBSA: the loader keeps an MCFG quirk list
   (`freeldr-rust/src/arm64_serial_acpi.rs`) the way Linux's `pci_mcfg.c` does.
+- **A pin the firmware never configured has its pad's output disabled.** Symptom: the Pi 5's
+  GEM came up, but no PHY answered on MDIO after the driver pulsed the PHY's reset line (RP1
+  GPIO 32). The pulse never left the chip: RP1 pads come out of reset with output-disable set
+  (bit 7, `0xd6`), and only Linux's pinctrl clears it (`0x56`), so a reset sequence copied from
+  the device tree does nothing under UEFI. Fix: clear the pad's OD bit (and set IE) before
+  driving the pin (`netstack-rust/src/gem.rs` `reset_phy`). Read the pad, the function select and
+  the RIO bits on both sides before guessing.
+- **A Cadence GEM can go idle with a frame queued.** If the TX DMA reads the next descriptor
+  while it is still CPU-owned, it stops, and a TSTART written as it finished the previous frame
+  is ignored; the frame then waits for the next send. The log shows `TSR` 0x21 (used bit read,
+  complete) with `TGO` clear and a CPU-released descriptor at the consumer index. Fix: from the
+  poll path, re-issue TSTART whenever frames are outstanding and `TGO` is clear, as Linux's
+  `macb_tx_restart` does.
 - **A UART print inside a trap costs ~90 ms per KB at 115200 baud.** QEMU's UART is instant, so
   per-fault diagnostics are free there. FEX takes ~1,200 alignment faults per ladder boot by
   design (unaligned `STLR`/`LDAR` on an A72, which has no LSE2; QEMU raises them too), and the
