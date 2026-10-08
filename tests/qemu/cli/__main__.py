@@ -329,6 +329,14 @@ def build_parser() -> argparse.ArgumentParser:
         "namespace as a disk; tests/qemu/test_nvme.py then drives it from the desktop",
     )
     s.add_argument(
+        "--nvme-bridge",
+        action="store_true",
+        help="arm64 only, implies --nvme: put the NVMe controller behind a PCIe root port, "
+        "on bus 1 (VIBEOS_QEMU_NVME_BRIDGE=1), as a server's devices are. The boot FAILS "
+        "(NVME_NOT_BEHIND_BRIDGE) unless pci.sys started on the root port and the controller "
+        "behind it came up",
+    )
+    s.add_argument(
         "--no-net",
         action="store_true",
         help="skip the amd64 netstack net-suite (default-on; escape hatch for fast iteration)",

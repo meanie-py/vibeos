@@ -364,6 +364,12 @@ def smmu_requested() -> bool:
     return os.environ.get("VIBEOS_QEMU_SMMU", "").strip() in ("1", "true", "yes")
 
 
+def nvme_bridged() -> bool:
+    """VIBEOS_QEMU_NVME_BRIDGE=1 (arm64): the NVMe controller sits behind a PCIe root
+    port, on bus 1, the way a server's devices do, instead of on the root bus."""
+    return os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip() in ("1", "true", "yes")
+
+
 def testkernel_boot_img(src: Path, work_dir: Path) -> Path:
     """The /TESTKERNEL variant of arm64 boot.img, built ONCE and shared read-only.
 
@@ -2041,12 +2047,17 @@ class QemuVM:
         disk = self.scratch_path.parent / "nvmedisk.qcow2"
         if not disk.exists():
             make_usb_stick_image(disk)
-        return [
-            "-drive",
-            f"file={disk},format=qcow2,if=none,id=nvme0",
-            "-device",
-            "nvme,serial=VIBEOSNVME0,drive=nvme0,addr=0x9",
-        ]
+        drive = ["-drive", f"file={disk},format=qcow2,if=none,id=nvme0"]
+        if nvme_bridged():
+            # The root port takes slot 9 instead; the controller is its bus's device 0.
+            return [
+                *drive,
+                "-device",
+                "pcie-root-port,id=nvmeport,chassis=1,slot=1,addr=0x9",
+                "-device",
+                "nvme,serial=VIBEOSNVME0,drive=nvme0,bus=nvmeport",
+            ]
+        return [*drive, "-device", "nvme,serial=VIBEOSNVME0,drive=nvme0,addr=0x9"]
 
     def _virtio_mmio_disk_args(self) -> list[str]:
         """VIBEOS_QEMU_VIRTIO_MMIO_DISK=1 (arm64) attaches a second virtio-blk-device

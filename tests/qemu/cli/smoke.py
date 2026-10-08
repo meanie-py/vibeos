@@ -840,6 +840,9 @@ def nvme_requested() -> bool:
     return os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "1"
 
 
+# The PnP manager prints this as it starts each device: with --nvme-bridge, QEMU's
+# PCIe root port (1b36:000c), which pci.sys then drives as the controller's bus.
+_ROOT_PORT_STARTED = "[DA] START PCI\\VEN_1B36&DEV_000C"
 # ...this once its MSI-X messages are connected (nvme-rust pnp.rs `connect`)...
 _NVME_MSIX = "[NVME] controller 0: MSI-X: "
 # ...this once a completion arrived by interrupt (nvme-rust nvme.rs `tally`)...
@@ -971,6 +974,16 @@ def _nvme_check(text: str) -> dict | None:
                 "nvme.sys's self-test read went through the bounce buffer, not by DMA "
                 "to the reader's pages (nvme.rs `dma_ready` refused its MDL)",
                 *lines,
+            ],
+        }
+    bridged = os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip() == "1"
+    if bridged and _ROOT_PORT_STARTED not in text:
+        return {
+            "classification": "NVME_NOT_BEHIND_BRIDGE",
+            "salient": [
+                "--nvme-bridge boot, but the PnP manager never started the root port "
+                f"(`{_ROOT_PORT_STARTED}`): the controller cannot have been behind it",
+                *[ln.strip() for ln in text.splitlines() if "[HAL] PCI" in ln][-4:],
             ],
         }
     return None
@@ -1155,6 +1168,15 @@ def smoke(args, repo: Path) -> int:
         os.environ["VIBEOS_QEMU_SMMU"] = "1"
         run.add(Stage("smmu", status="warn", detail="SMMUv3 in front of PCI"))
 
+    # NVMe behind a root port (arm64): the config space, the bridge's own pci.sys
+    # and the requester ID of a device off the root bus.
+    if getattr(args, "nvme_bridge", False):
+        if arch != "arm64":
+            run.classification = "BAD_ARGS"
+            run.add(Stage("nvme", status="fail", detail="--nvme-bridge is arm64-only"))
+            return run.finalize(repo)
+        os.environ["VIBEOS_QEMU_NVME_BRIDGE"] = "1"
+        args.nvme = True
     # NVMe channel: a controller attached on every arch (vm.py _nvme_args), and
     # every boot must then show nvme.sys publishing its namespace (_nvme_check).
     if nvme_default_on(args):

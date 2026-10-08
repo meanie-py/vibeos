@@ -9675,6 +9675,12 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     bad = smoke_mod._nvme_check(working + test.format(8, 0))
     assert bad and bad["classification"] == "NVME_BOUNCED"
     assert smoke_mod._nvme_check(working + test.format(8, 9)) is None
+    monkeypatch.setenv("VIBEOS_QEMU_NVME_BRIDGE", "1")
+    bad = smoke_mod._nvme_check(working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_NOT_BEHIND_BRIDGE"
+    port = "[DA] START PCI\\VEN_1B36&DEV_000C&SUBSYS_00000000&REV_00\\1&f103bba4&48 -> 0x0\n"
+    assert smoke_mod._nvme_check(port + working + test.format(8, 9)) is None
+    monkeypatch.delenv("VIBEOS_QEMU_NVME_BRIDGE")
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
     assert smoke_mod._nvme_check(never_loaded) is None
 

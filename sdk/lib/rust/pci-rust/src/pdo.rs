@@ -903,7 +903,11 @@ unsafe fn PdoQueryResourceRequirements(
             )))
             .u
             .type1
-            .SecondaryBus as ULONG;
+            .SecondaryBus as ULONG
+                // The segment rides above the bus (PCI_SEGMENT_BUS_NUMBER), so the
+                // bridge's own FDO stays on its segment and two segments' bus 1 are
+                // different resources to the PnP manager.
+                | (*(*DeviceExtension).PciDevice).BusNumber & !0xFF;
             (*ResourceList).BusNumber = secondary;
             (*Descriptor).u.BusNumber.MinBusNumber = secondary;
             (*Descriptor).u.BusNumber.MaxBusNumber = secondary;
@@ -1186,7 +1190,11 @@ unsafe fn PdoQueryResources(
             )))
             .u
             .type1
-            .SecondaryBus as ULONG;
+            .SecondaryBus as ULONG
+                // The segment rides above the bus (PCI_SEGMENT_BUS_NUMBER), so the
+                // bridge's own FDO stays on its segment and two segments' bus 1 are
+                // different resources to the PnP manager.
+                | (*(*DeviceExtension).PciDevice).BusNumber & !0xFF;
             (*full0).BusNumber = secondary;
             (*Descriptor).u.BusNumber.Start = secondary;
             (*Descriptor).u.BusNumber.Length = 1;

@@ -82,9 +82,13 @@ stub first). Real subsystem work, not stubs:
    unmapped), and pci.sys turns MSI/MSI-X off at STOP and REMOVE. A device with MSI
    but no MSI-X gets one MSI message. Owed: multi-message MSI (an aligned block of
    data values), `CONNECT_MESSAGE_BASED_PASSIVE` (no consumer: KMDF does passive
-   handling itself over a DIRQL interrupt), the arm64 HAL's PCI config space beyond
-   QEMU's bus 0 (MCFG, every bus, segments other than 0), and driving an SMMU for real
-   (isolation) rather than bypassing it.
+   handling itself over a DIRQL interrupt), and driving an SMMU for real (isolation)
+   rather than bypassing it. The arm64 HAL's PCI config space comes from the MCFG since
+   2026-10-08: every bus of every segment, bus numbers being PCI_SEGMENT_BUS_NUMBERs
+   (pci.sys keeps the segment through bridges and in the requester ID the ITS routes
+   by), and the HAL publishes a root bus for each segment past 0. `smoke --arch arm64
+   --nvme-bridge` runs nvme.sys behind a PCIe root port on bus 1. Segments past 0 are
+   untested: QEMU's virt machine has one.
 2. **Write-combined mappings** (`MmWriteCombined` through a correctly programmed PAT).
    Getting it wrong is mostly a performance problem, but it can show up as visible
    corruption.
